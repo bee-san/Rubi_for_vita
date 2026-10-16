@@ -43,7 +43,7 @@ target_include_directories(smoke_bearssl PRIVATE ${ROOT}/third_party/bearssl/inc
 target_compile_options(smoke_bearssl PRIVATE ${ARCH} -O2 -w)
 
 add_executable(vjo_smoke main.c ${ROOT}/game_ocr/main.c ${ROOT}/core/vocr_ocr.c ${ROOT}/core/ledger.c
-  ${ROOT}/core/games.c ${ROOT}/core/textnorm.c)
+  ${ROOT}/core/games.c ${ROOT}/core/textnorm.c ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c)
 target_include_directories(vjo_smoke PRIVATE ${ROOT}/core ${ROOT}/include ${RT} ${ROOT}/third_party/bearssl/inc)
 target_compile_definitions(vjo_smoke PRIVATE VJO_GAME_OCR_NO_MODULE_ENTRY=1 VJO_WITH_VOCR=1)
 target_compile_options(vjo_smoke PRIVATE ${ARCH} -O2 -Wall -Wextra -Wno-unused-parameter)

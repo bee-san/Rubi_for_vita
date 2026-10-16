@@ -53,8 +53,10 @@ int vjoOcrComplete(const VjoGameOcrResult *r) { (void)r; return 0; }
 int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
 {
     unsigned bpp = frame_fmt == VJO_FB_A1B5G5R5 ? 2u : 4u;
+    int rgba = req && (req->flags & VJO_ROWS_RGBA); /* API 23, a shot: the rows in colour */
     if (!req || req->size != sizeof(*req) || req->seq != job.seq || !req->n || req->n > VJO_GAME_OCR_ROWS_MAX ||
-        req->y + req->n > job.height || req->dst_stride < job.width || !dst)
+        req->y + req->n > job.height || req->dst_stride < job.width * (rgba ? 4u : 1u) || !dst ||
+        rgba != !!(job.flags & VJO_GAME_OCR_F_SHOT))
         return VJO_ERR_ARG;
     for (uint32_t r = 0; r < req->n; r++) {
         const uint8_t *src = (const uint8_t *)frame + ((size_t)(job.y + req->y + r) * W + job.x) * bpp;
@@ -62,7 +64,10 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
         for (uint32_t x = 0; x < job.width; x++) {
             uint32_t abgr;
             vjo_fb_to_abgr(&abgr, src + (size_t)x * bpp, 1, frame_fmt);
-            d[x] = (uint8_t)vjo_grey(abgr & 0xFFu, (abgr >> 8) & 0xFFu, (abgr >> 16) & 0xFFu);
+            if (rgba)
+                memcpy(d + (size_t)x * 4u, &abgr, 4);
+            else
+                d[x] = (uint8_t)vjo_grey(abgr & 0xFFu, (abgr >> 8) & 0xFFu, (abgr >> 16) & 0xFFu);
         }
     }
     if (info && info->size == sizeof(*info)) {
@@ -102,6 +107,32 @@ int vjoOcrModelClose(uint32_t seq)
     if (model_fd >= 0) sceIoClose(model_fd);
     model_fd = -1;
     return 0;
+}
+/* API 23: a shot's JPEG, as kernel/game_ocr.c writes it (here into DIR/<shot>.jpg): in order, then saved. */
+static uint32_t shot_written;
+int vjoOcrShotWrite(uint32_t seq, uint32_t off, uint32_t bytes, const void *src)
+{
+    char path[160];
+    if (seq != job.seq || !(job.flags & VJO_GAME_OCR_F_SHOT) || off != (model_fd < 0 ? 0u : shot_written) ||
+        !bytes || bytes > VJO_GAME_OCR_SHOT_CHUNK || off + bytes > VJO_GAME_OCR_SHOT_MAX)
+        return VJO_ERR_ARG;
+    snprintf(path, sizeof(path), DIR "/%s.jpg.tmp", job.shot);
+    if (model_fd < 0 && (model_fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0)
+        return model_fd;
+    if (sceIoWrite(model_fd, src, bytes) != (int)bytes) return VJO_ERR_COPY;
+    shot_written = off + bytes;
+    return (int)bytes;
+}
+int vjoOcrShotSave(uint32_t seq, uint32_t bytes)
+{
+    char tmp[160], path[160];
+    if (seq != job.seq || model_fd < 0 || bytes != shot_written) return VJO_ERR_ARG;
+    sceIoClose(model_fd);
+    model_fd = -1;
+    snprintf(tmp, sizeof(tmp), DIR "/%s.jpg.tmp", job.shot);
+    snprintf(path, sizeof(path), DIR "/%s.jpg", job.shot);
+    sceIoRemove(path);
+    return sceIoRename(tmp, path) < 0 ? VJO_ERR_COPY : 0;
 }
 
 /* ---- the frame: a VN screen with a dark textbox and three lines of strokes ---- */
@@ -166,11 +197,20 @@ static int stage(const char *name, uint32_t flags, const char *model, const char
     job.speed = stage_speed;
     job.fb_width = W; job.fb_height = H;
     job.x = full ? 0 : 22; job.y = full ? 0 : 400; job.width = full ? W : 917; job.height = full ? H : 125;
-    snprintf(job.model_dir, sizeof(job.model_dir), "ux0:data/VitaJPOverlay/ocr");
-    snprintf(job.model, sizeof(job.model), "%s", model);
-    snprintf(job.fallback, sizeof(job.fallback), "%s", fallback);
+    if (flags & VJO_GAME_OCR_F_SHOT) /* API 23: a card's screenshot names its card, no model */
+        snprintf(job.shot, sizeof(job.shot), "%s", model);
+    else {
+        snprintf(job.model_dir, sizeof(job.model_dir), "ux0:data/VitaJPOverlay/ocr");
+        snprintf(job.model, sizeof(job.model), "%s", model);
+        snprintf(job.fallback, sizeof(job.fallback), "%s", fallback);
+    }
     memset(&r, 0, sizeof(r));
     int rc = vjo_game_ocr_run_request(&job, &r);
+    if (flags & VJO_GAME_OCR_F_SHOT)
+        fprintf(out, "shot %s fmt=0x%08X rc=%d bytes=%u quality=%u tries=%u block=%u mem=%u strips=%u source=%u\n",
+                job.shot, (unsigned)frame_fmt, rc, (unsigned)r.shot_bytes, (unsigned)r.shot_quality,
+                (unsigned)r.shot_tries, (unsigned)r.shot_block, (unsigned)r.shot_memory, (unsigned)r.captures,
+                (unsigned)r.source);
     fprintf(out, "stage %s fmt=0x%08X rc=%d lines=%u recognized=%u fallback=%u source=%u mem=%u capture=%u strips=%u "
                  "tears=%u weights=%u resident=%u text_len=%u text_fnv=0x%08X steps=%u\n",
             name, (unsigned)frame_fmt, rc, (unsigned)r.lines, (unsigned)r.recognized, (unsigned)r.fallback,
@@ -225,6 +265,14 @@ static int run(SceSize args, void *argp)
     for (unsigned f = 1; f < 3; f++) {
         draw(fmts[f]);
         failures += stage("textbox-format", 0, "H15_w8.vocr", "FL10_w8.vocr", 0) != 0;
+    }
+    /* API 23: a card's screenshot of the whole frame in each format (the JPEG encoder as the Vita
+     * compiler builds it, in a Vita user process); tools/vita3k_smoke.sh decodes the three JPEGs */
+    static const char *const cards[] = {"0123456789abcdef0123456789abcde0", "0123456789abcdef0123456789abcde1",
+                                        "0123456789abcdef0123456789abcde2"};
+    for (unsigned f = 0; f < 3; f++) {
+        draw(fmts[f]);
+        failures += stage("shot", VJO_GAME_OCR_F_SHOT, cards[f], "", 1) != 0;
     }
     fprintf(out, "worker stop rc=%d\n", vjo_game_ocr_worker_stop());
     fprintf(out, "done failures=%d\n", failures);

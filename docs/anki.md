@@ -4,7 +4,8 @@ Enter and Cancel below are the Vita's own buttons: × and ○ on most consoles,
 ○ and × on Japanese ones or after a HENkaku swap ([README](../README.md#use-in-a-game)).
 
 With card mining on, Enter in the open overlay saves the shown dictionary entry
-as a card in a queue on the memory card. Nothing is sent anywhere: saving
+as a card in a queue on the memory card, with a JPEG of the game's screen
+([the screenshot](#the-screenshot)). Nothing is sent anywhere: saving
 needs no network, and the queue survives restarts. When you want the cards in
 Anki, the **Overlay** app's Anki page writes them into one file,
 `ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>-<N>cards.apkg`, as notes of
@@ -23,6 +24,9 @@ directory.
 1. In the **Overlay** app's **Anki** page (Select, or tap the tab), turn
    **Card mining** ON (Enter, or Left/Right). This is `anki_mining` in
    `ux0:data/VitaJPOverlay/config.ini`; the overlay reads it when it next opens.
+   **Screenshots**, below it, is ON by default (`anki_screenshot`): each card
+   keeps a picture of the game's screen, about 60 KB. Turn it OFF for
+   text-only cards.
 2. In a game, open the overlay, select a word and press Enter. The status line
    shows `Saving card…`, then `Saved for Anki`, and the entry shows
    `Queued for Anki` (on every occurrence of that word in the text). Enter
@@ -52,7 +56,8 @@ collection that has the earlier ones adds nothing twice.
 
 | Status (overlay) | Meaning |
 | --- | --- |
-| `Saved for Anki` | The card is on the memory card |
+| `Saved for Anki` | The card is on the memory card, with its screenshot when Screenshots is ON |
+| `Saved for Anki, without a screenshot (log.txt)` | The card is saved, but its screenshot could not be taken (the game's memory, the game worker busy or not registered for this game, a write that failed, the overlay closed meanwhile); `log.txt` says which, in an `anki: screenshot rc=` line |
 | `Already queued` | The same card is queued already |
 | `Already exported (in an .apkg)` | This exact card was exported before (the √ on the word) |
 | `Card not saved: cannot write …anki_queue (space?)` | The memory card refused the write; the card was not saved |
@@ -106,7 +111,7 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 | `MainDefinition` | The entry shown, as Yomitan writes one dictionary's glossary: `<div class="yomitan-glossary"><ol><li data-dictionary="JMdict">…</li></ol></div>`, so Lapis names its page after the dictionary |
 | `Sentence` | The recognized text, the word in `<b>` |
 | `SentenceFurigana` | Empty, as Lapis's README asks (Lapis then shows `{{furigana:Sentence}}`); only a card queued with the removed online dictionaries, which gave readings per word, fills it |
-| `Picture` | `<img src="vitajp_….jpg">`: the card's screenshot, when it has one (none in this build, see below) |
+| `Picture` | `<img src="vitajp_….jpg">`: the card's screenshot, when it has one ([below](#the-screenshot)) |
 | `Glossary` | Every dictionary's entry for the word, the shown one first, when there are two or more (Dictionaries shown above 1); Lapis hides the ones `MainDefinition` has |
 | `PitchPosition`, `PitchCategories` | Pitch accents, when the dictionary has them (Yomitan's `[2]` markup and `heiban,kifuku`) |
 | `Frequency` | `<ul><li>SOURCE: 1234</li></ul>`, when the entry has a frequency rank (`<li>Jiten: 1536</li>` with the bundled dictionary) |
@@ -187,15 +192,21 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
 - `<id>.json`: the card, readable UTF-8 JSON (below). The ID is the first 128
   bits of the record's SHA-256, so the same card saved twice in the same
   minute has the same name (the record holds the minute of the Enter press).
+- `<id>.jpg`: the card's screenshot, a baseline JPEG of the game's screen
+  ([below](#the-screenshot)), when its record says `"picture": true`. A JPEG
+  whose record is not there (a save that stopped between the two) is no card:
+  it is ignored, and the next save of that card replaces it.
 - `exported/<id>.json`: a card an export has put in a package (and
   `exported/<id>.jpg`, its screenshot). **Export all cards** reads these too.
-- `<id>.jpg`: the screenshot of a card an earlier development build took.
 - `<id>.duplicate.json`: a card an earlier build's AnkiConnect send found in
   Anki already; it is kept, not exported.
 
 A card is written to a temp file, flushed and renamed, and the memory card's
 directory is synced before Enter reports it; an interrupted save leaves no
-card or the complete one, never a partial one. Files with other names,
+card or the complete one, never a partial one. A card's screenshot is on the
+memory card (renamed from its own temp file, `<id>.jpg.tmp`, and synced)
+before its record is written, so a record never names a picture that is not
+there. Files with other names,
 including leftover `.tmp` files, are ignored. Editing a record changes its
 checksum, so the card is kept and reported as unreadable rather than exported.
 Delete a card's `.json` to drop it.
@@ -214,7 +225,7 @@ card can be made into a note later, by any version that reads the record:
 | `rank`, `source`, `pitch`, `pos` | Frequency rank (1 = most frequent, 0 = none) and its source (the frequency list's name, `Jiten` for the bundled dictionary; `null` when there is none), pitch-accent downsteps, parts of speech |
 | `sentence`, `hl_start`, `hl_end` | The whole recognized text (every line of the textbox) and the word's UTF-8 byte offsets in it |
 | `sentence_furigana`, `sf_hl_start`, `sf_hl_end` | The text with readings and the word's offsets in it, or `null` |
-| `picture` | Whether `<id>.jpg` goes with it |
+| `picture` | Whether `<id>.jpg`, its screenshot, goes with it. The ID is the record's checksum, so a card with a screenshot has another ID than the same card without one; saving a card checks both, so the same card is never queued twice whatever the setting |
 | `misc` | MiscInfo: `CLANNAD (2026-10-14 17:12)` |
 | `game`, `title_id`, `platform` | The game's name, its title ID, and `vita` or `psp`. A PSP game started from an Adrenaline bubble is recorded with the title and disc ID the Overlay app read from the file it boots (`ux0:data/VitaJPOverlay/psp/<bubble ID>.txt`), else with the bubble's own; games started from inside Adrenaline are recorded as `PSPEMUCFW`, under the name AppMgr gives that process (not checked on a console), or as `NPXS10028`, named `PSP`, when the Shell cannot tell which app started the emulator |
 | `ocr_engine`, `ocr_model` | The engine, `vocr` (a record of a build before Google Lens's removal may say `lens`), and the model of the last recognition (`VOCR3_H15_w8.vocr`, or its fallback when that ran) |
@@ -230,19 +241,133 @@ a fixed time, 2023-11-14, the same in every package); a local definition's
 first line names its dictionary there too. A version this build does not know
 is kept, not exported.
 
-Not in the record, and why:
+Not in the record, and why: **the previous and next dialogue.** The Shell
+keeps only the text on screen (one 4 KiB copy); the next line is not known when
+Enter is pressed. The record has the whole textbox, every line of it.
 
-- **A screenshot of the textbox.** OCR reads the screen in the game's own
-  process, a strip of grey rows at a time ([in-game capture](ingame-capture.md));
-  a screenshot from those strips needs the game worker to encode it and a path
-  to the memory card from the game (the game cannot see `ux0:`), which this
-  change does not add. The old full-frame screenshot used the kernel's
-  2,088,960 B capture buffer #74's console refused, so this build takes none.
-  A card of an earlier development build that has a JPEG exports it in the
-  note's `Picture`.
-- **The previous and next dialogue.** The Shell keeps only the text on screen
-  (one 4 KiB copy); the next line is not known when Enter is pressed. The record
-  has the whole textbox, every line of it.
+## The screenshot
+
+With **Screenshots** ON (`anki_screenshot = on`, the default), Enter keeps a
+JPEG of the game's screen with the card, and the export puts it in the note's
+`Picture`: Lapis shows it beside the word, at most 400 px tall, and full size
+when it is tapped. Upstream's builds and this fork's until #125 sent one to
+AnkiConnect with each note; this is its return, made where heavy work belongs
+(AGENTS.md rule 1): in the game's process, never in SceShell.
+
+It is the game's whole frame when Enter is pressed, 960 × 544 (a PSP game as
+Adrenaline shows it, at 2×), without the overlay, which is SceShell's layer
+and not in the game's frame. With the overlay open the game has no input, so
+this is normally the screen the text was read from; a game that changes its
+screen by itself (a scene that goes on alone, a video) is pictured as it is
+then, and, as the frame is read over 9 of the game's frames, possibly with a
+seam between two bands of rows.
+
+### How it is made (API 23)
+
+1. The Shell's Anki thread makes the card's record and its ID first, then asks
+   the game worker for a screenshot of that card (`VJO_GAME_OCR_F_SHOT`): a job
+   of the worker's one job slot, which `shell/worker.c` shares with the OCR jobs.
+   A quiet refresh of the open overlay yields to it; a running OCR job is waited
+   for, at most 4 s.
+2. The game worker checks the game's free memory (its block beside the 4 MiB
+   every job leaves to the game), takes one block of 450,560 B (`USER_RW`, else
+   CDRAM, else phycont) and reads the frame in colour, 64 rows a frame, through
+   the OCR capture's own path: the display hook copies the rows as A8B8G8R8
+   words straight into the block (`VJO_ROWS_RGBA`), or, when it cannot write
+   the block, through the kernel strip, 16 rows a call
+   ([in-game capture](ingame-capture.md#an-anki-cards-screenshot-api-23)).
+3. It encodes each band of 16 rows as it comes (`core/jpegsw.c`: baseline JPEG,
+   YCbCr 4:2:0, the standard tables, quality 70) into the same block. A JPEG
+   over 192 KiB (the most an export reads) is encoded again at quality 50, then
+   35; none of the 598 frames measured below needed it.
+4. It hands the JPEG to the kernel in 32 KiB pieces (`vjoOcrShotWrite`, through
+   the staging buffer the model reads use), and the kernel's worker thread
+   writes them to `anki_queue/<id>.jpg.tmp`, closes it, syncs the memory card,
+   renames it to `<id>.jpg` and syncs again (`vjoOcrShotSave`). The game has no
+   `ux0:` of its own (`0x80010013`, as for the models); the path is the kernel's,
+   made from the card's ID it checked (32 lowercase hex digits), and the bytes
+   must start and end as a JPEG does.
+5. The Shell commits the record, with `"picture": true`, once `<id>.jpg` is
+   there. Any failure on the way leaves no file and saves the card without one
+   (`Saved for Anki, without a screenshot (log.txt)`). The Shell waits at most
+   15 s for the whole screenshot; the game worker waits up to 30 s for a slow
+   memory card's save, and a screenshot given up, by either, has its file
+   removed by the kernel's worker thread, the worker free for the next job.
+
+SceShell holds no pixel and no byte of the JPEG, only the job's request and
+result (5,404 B) in the Anki job's arena. Closing the overlay stops a
+screenshot in progress.
+
+### Size and quality
+
+Quality 70 at the full 960 × 544, measured with the encoder itself
+(`vjo-jpeg`, `host/jpeg_tool.c`) on local copies of the owner's game screens
+(598 frames of 80 games; not in the repository), in KB of 1,024 B:
+
+| Frames | Count (games) | Median | Mean | p90 | p95 | Largest |
+| --- | --- | --- | --- | --- | --- | --- |
+| Vita, 960 × 544 | 294 (47) | 55.6 KB | 55.5 KB | 89.7 KB | 101.8 KB | 135.3 KB |
+| PSP, 480 × 272 shown at 2× (bilinear) | 304 (33) | 46.6 KB | 46.0 KB | 69.7 KB | 74.3 KB | 87.4 KB |
+
+Quality 70 keeps a typical card near 50 to 60 KB with the game's text legible
+in the picture: `docs/screenshot.jpg` (a game screen with the overlay) comes
+out at 48,655 B and 36.6 dB PSNR, against 38,579 B and 33.9 dB at quality 50
+(medians 41.8 KB for Vita frames, 36.0 KB for PSP ones) and 103,421 B and
+49.5 dB at 95. The full resolution is kept because Lapis opens the picture at
+its own size when it is tapped: a smaller one would be blurred there, and
+saves little (the JPEG's size goes with its detail, not its pixels alone).
+
+On the memory card a card takes its JPEG and its record (at most 32 KiB;
+under 1 KB for a short entry, more with long definitions and, with
+Dictionaries shown above 1, the other dictionaries' entries), each rounded up
+to the file system's clusters (not measured here). A thousand Vita cards'
+screenshots are about 54 MiB.
+
+### Time and memory
+
+Not measured on a console yet; `log.txt`'s `anki: screenshot rc=…` line has
+every part of it for a console run (the strips' wait, the encoding, the file,
+the whole). Estimates: the colour strips take 9 of the game's frames (150 ms at
+60 fps), each strip's copy 0.28 to 2.45 ms in the game's display call at 444 MHz
+(0.38 to 3.02 ms at 333 MHz; 131,401 instructions, mostly the copy, whose
+firmware routine is unknown code: `capture_shot_abgr`); the encoding is 60.0
+million instructions for a 960 × 544 frame on
+the Cortex-A9 (`tools/bench_stages.py`'s `jpeg_shot`, the Vita compiler's code
+counted under qemu-arm, `docs/performance.md`): 69 to 149 ms at 444 MHz, 93 to
+198 ms at 333 MHz (a screenshot keeps the game's clock); it runs at the lowest
+priority on the game's cores, so every game thread goes first. The memory
+card's writes and its two syncs are unmeasured.
+
+In the game, the screenshot's block is 450,560 B (the encoder's state, one
+strip of 64 colour rows and the JPEG, page-rounded; `VJO_BUDGET_GAME_SHOT`),
+only while it runs; a screenshot is a job of the one job slot, so it never runs
+beside an OCR job's workspace and adds nothing to the game's worst case
+([memory ledger](memory-ledger.md)). The kernel takes nothing new: the 32 KiB
+staging buffer it already has, and on the last rung a kernel strip of at most
+64 KiB for one call, as for OCR.
+
+### Export
+
+The export (`settings/anki_export.c`, unchanged since #125) reads `<id>.jpg`
+beside its record, names it in the package by its own SHA-256
+(`vitajp_<32 hex digits>.jpg`, so the same picture is one file), adds it to the
+`media` map and writes `<img src="…">` into `Picture`. Once the package is
+written, read back and checked it moves the JPEG into `anki_queue/exported/`
+before its record, never earlier, and **Export all cards** reads it there
+again. Nothing deletes a screenshot: an exported card's stays in `exported/` so
+that **Export all** can include it; delete `exported/<id>.jpg` and its record
+to free the space.
+
+What the host checks: every encoder output decoded by Pillow
+(`host/tests/test_jpegsw.py`); a screenshot through the actual game worker and
+kernel transport in each pixel format a game submits, decoded too
+(`host/tests/test_game_shot.c`, `test_game_shot.py`); the kernel's rules
+(`test_kernel_game_ocr.c`); the Shell's saves with one and without
+(`test_shell_anki.c`); a save stopped at each of its writes in a fresh process
+(`test_anki_restart.py`); and Anki 26.09.3 importing a package whose card shows
+its screenshot (`test_apkg.py`: the `<img>` in the rendered answer, the file in
+the collection's media with the same bytes, a JPEG that decodes). The console
+has not run it yet.
 
 ## Settings that were removed
 
@@ -255,8 +380,8 @@ audio source's URL can carry a key), and
 `anki_host.txt` (where the app's network search kept AnkiConnect's address) is
 no longer read or written; delete it if you like. Earlier builds had a field
 mapping too: `anki_deck`, `anki_note_type`, `anki_tags` and the 13
-`anki_field_*` keys, ignored and removed the same way. Only `anki_mining`
-remains.
+`anki_field_*` keys, ignored and removed the same way. `anki_mining` and,
+since the screenshot's return, `anki_screenshot` remain.
 
 ## Memory
 
@@ -281,12 +406,17 @@ In SceShell (the overlay, `shell/anki.c`):
   kept. Measured on the host with 8 dictionaries
   (`what_enter_saves_whatever_the_dictionaries`): entries of 2,700 B of kana all
   kept (a 22,673 B record); 7,000 B, 3 of 7; text that JSON escaping grows keeps
-  fewer. The arena's peak was 102,680 B of the 128 KiB (7,000 B entries of kana).
+  fewer. The arena's peak was 102,688 B of the 128 KiB (7,000 B entries of kana; 102,680 B before
+  `anki_screenshot` added a field to the settings' copy at the arena's start).
 - The note is copied out of the shown lookup under the view lock before
   anything is written; the result memory is never read during file I/O. If
   memory is refused or a write fails, only the Anki status line changes: the
   recognized text, its lookup and the overlay stay usable, the queued cards
   stay, and Enter can be pressed again.
+- A card's screenshot adds only its job's request and result to the arena,
+  5,404 B: a one-word card's save peaks at 6,928 B with it, and the 8-dictionary
+  worst case is unchanged (102,688 B) [measured, host]. Its pixels and its JPEG
+  are the game's ([above](#the-screenshot)).
 - SceShell sends nothing and opens no socket for Anki.
 
 The Overlay app is its own process (a system application with a 50 MiB
@@ -306,4 +436,4 @@ run this code yet.
 No AnkiConnect, AnkiWeb or self-hosted sync and no login: the package is the
 only way cards leave the Vita, and you copy it yourself. A package is not
 compressed (a deflated one would be smaller over FTP; the app has zlib, a
-possible follow-up). Cards have no audio and, in this build, no screenshot.
+possible follow-up). Cards have no audio.

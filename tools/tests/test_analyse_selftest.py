@@ -1125,6 +1125,19 @@ class AnkiExportLines(unittest.TestCase):
             "to export, 0 failed; 4 card(s) in the packages; still queued for the next export, not a problem: 3 a "
             "stop left, 3 over a package's cap"])
 
+    def test_the_cards_screenshots_are_counted(self):
+        # API 23, shell/anki.c take_shot: one line per card saved with screenshots on
+        def shot(rc, b, enc, whole):
+            return (f"anki: screenshot rc={rc} 960x544 q70 try 1: {b} B; block 450560 B mem 1, free USER 90177536; "
+                    f"9 strips src 1 150 ms, encode {enc} ms, write 40 ms; {whole} ms\n")
+        lg = a.summarise_log(shot(0, 57000, 120, 330) + shot(0, 41000, 100, 300) + shot(-103, 0, 0, 2)
+                             + "anki: queue 2 card(s)\n")
+        an = lg["anki"]
+        self.assertEqual((an["shots"], an["shot_fail"], an["shot_bytes"]), (2, {-103: 1}, [57000, 41000]))
+        self.assertEqual(a.shot_summary(an), ["  Anki screenshots: 2 taken, 1 not (out of memory (rc -103) x1); "
+                                              "40.0-55.7 KB (median 55.7), encode 100-120 ms, the whole 300-330 ms"])
+        self.assertEqual(a.shot_summary(a.summarise_log("anki: queue 1 card(s)\n")["anki"]), [])
+
     def test_no_export_and_an_older_line_without_its_stop_count(self):
         self.assertEqual(a.export_summary(a.summarise_log("anki: queue 1 card(s)\n")["anki"]),
                          ["  Anki exports (the Overlay app): none in the log"])

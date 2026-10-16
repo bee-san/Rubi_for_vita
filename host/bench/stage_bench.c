@@ -19,6 +19,7 @@
 #include "config.h"
 #include "fbgrey.h"
 #include "furigana.h"
+#include "jpegsw.h"
 #include "local_dict.h"
 #include "port.h"
 #include "textfilter.h"
@@ -132,14 +133,18 @@ static unsigned strip_rows(const BenchIn *in)
 
 /* One pass over the region, a rows call (one display frame) per strip.
  * mode bit 0: the first pass, which also builds the capture's signature. */
+/* mode 1: the first pass (the signature too); mode 2 (API 23): an Anki
+ * screenshot's colour rows, 4 bytes a pixel, 64 rows a strip. */
 static int stage_capture(const BenchIn *in, unsigned iters, BenchOut *out)
 {
+    static unsigned char colour[64 * 960 * 4];
     const void *fb;
-    unsigned rows = strip_rows(in);
-    int sig = (int)(in->mode & 1u);
+    int rgba = (in->mode & 3u) == 2u, sig = !rgba && (in->mode & 1u);
+    unsigned rows = rgba ? 64u : strip_rows(in), px = rgba ? 4u : 1u;
+    unsigned char *dst = rgba ? colour : strip;
     uint32_t bpp = vjo_fb_bpp(in->fmt);
     uint64_t t0 = 0;
-    if (!region_ok(in) || !bpp) return -1;
+    if (!region_ok(in) || !bpp || (rgba && in->w > 960)) return -1;
     fb = frame_in(in, in->fmt);
     for (unsigned it = 0; it <= iters; it++) {
         if (it == 1) t0 = now_ns(in);
@@ -147,9 +152,9 @@ static int stage_capture(const BenchIn *in, unsigned iters, BenchOut *out)
         for (uint32_t y = 0; y < in->h; y += rows) {
             uint32_t n = in->h - y < rows ? in->h - y : rows;
             int rc = bench_grey_rows((uintptr_t)fb, in->fb_w, in->fmt, in->fb_w, in->fb_h, in->x, in->y, in->w,
-                                     in->h, y, n, strip, in->w, sig);
+                                     in->h, y, n, dst, in->w * px, rgba ? 2 : sig);
             if (rc != (int)n) return -2;
-            if (it == 0) out->check = fnv64(out->check, strip, (size_t)n * in->w);
+            if (it == 0) out->check = fnv64(out->check, dst, (size_t)n * in->w * px);
         }
     }
     out->ns = now_ns(in) - t0;
@@ -159,7 +164,7 @@ static int stage_capture(const BenchIn *in, unsigned iters, BenchOut *out)
     out->c[1] = in->h;
     out->c[2] = (uint64_t)in->w * in->h;
     out->c[3] = (uint64_t)in->w * in->h * bpp;
-    out->c[4] = (uint64_t)in->w * in->h;
+    out->c[4] = (uint64_t)in->w * in->h * px;
     out->c[5] = rows;
     return 0;
 }
@@ -698,7 +703,8 @@ static const char nondefault_config[] =
     "ocr_threads = 1\n"
     "ocr_boost_clock = on\n"
     "log_file = off\n"
-    "anki_mining = on\n";
+    "anki_mining = on\n"
+    "anki_screenshot = off\n";
 
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {
@@ -877,6 +883,38 @@ static int stage_furigana(const BenchIn *in, unsigned iters, BenchOut *out)
     return 0;
 }
 
+/* ---- API 23: the Anki screenshot's JPEG (core/jpegsw.c, in the game worker) ----
+ * The whole frame at the shot's first quality, 70, band by band as the worker
+ * encodes its strips (game_ocr/main.c run_shot), into an arena of the worker's
+ * block: the encoder's state and the JPEG. */
+static int stage_jpeg(const BenchIn *in, unsigned iters, BenchOut *out)
+{
+    static uint8_t mem[4096 + 16 + 192 * 1024 + 16];
+    VjoArena a;
+    VjoBuf b = {0};
+    uint64_t t0 = 0;
+    if (!in->rgba || !in->fb_w || in->fb_w > 960 || !in->fb_h || in->fb_h > 544) return -1;
+    for (unsigned it = 0; it <= iters; it++) {
+        VjoJpeg *e;
+        if (it == 1) t0 = now_ns(in);
+        vjo_arena_init(&a, mem, sizeof(mem));
+        if (!(e = vjo_jpeg_begin(&a, in->fb_w, in->fb_h, 70, &b))) return -2;
+        for (uint32_t y = 0; y < in->fb_h; y += VJO_JPEG_BAND) {
+            uint32_t n = in->fb_h - y < VJO_JPEG_BAND ? in->fb_h - y : VJO_JPEG_BAND;
+            if (vjo_jpeg_rows(e, in->rgba + (size_t)y * in->fb_w * 4u, n, in->fb_w * 4u) < 0) return -3;
+        }
+        if (vjo_jpeg_end(e) < 0) return -4;
+    }
+    out->ns = now_ns(in) - t0;
+    out->check = fnv64(0, b.data, b.len);
+    out->ops = 1;
+    out->c[0] = b.len;
+    out->c[1] = in->fb_w;
+    out->c[2] = in->fb_h;
+    out->c[3] = a.peak;
+    return 0;
+}
+
 /* ---- the table ---- */
 
 typedef struct {
@@ -902,6 +940,7 @@ static const Stage stages[] = {
     {"log", stage_log, {"lines", "bytes"}},
     {"anki", stage_anki, {"cards", "json_bytes"}},
     {"furigana", stage_furigana, {"words", "bytes"}},
+    {"jpeg", stage_jpeg, {"jpeg_bytes", "w", "h", "arena_peak"}},
 };
 #define N_STAGES (sizeof(stages) / sizeof(stages[0]))
 

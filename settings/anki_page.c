@@ -18,12 +18,17 @@
 
 #define WORKER_STACK (64 * 1024)
 
+/* Four rows (API 23 added Screenshots), then the 3-line status box, which ends above the
+ * controls line main.c draws at y 535: the export rows' help is one line. */
 #define MINING_Y 112
-#define EXPORT_Y 188
-#define ALL_Y 296
+#define SHOT_Y 184     /* API 23: the card's screenshot on/off */
+#define EXPORT_Y 256
+#define ALL_Y 336
 #define CARD_H 68
-#define ACTION_H 100
-#define ROWS 3
+#define ACTION_H 76
+#define FOOTER_Y 416
+#define FOOTER_H 92
+#define ROWS 4
 
 static VjoConfig cfg;           /* the settings shown (main thread) */
 static int writable, selected;
@@ -147,14 +152,14 @@ static void cancel(void)
 
 /* ---------------- settings ---------------- */
 
-static void save(int mining, VjoArena *scratch)
+static void save(int mining, int screenshot, VjoArena *scratch)
 {
     if (!writable) {
         snprintf(note, sizeof(note), "Cannot read config.ini. Choices have not been changed.");
         note_error = 1;
         return;
     }
-    int rc = vjo_preferences_save_anki(mining, scratch);
+    int rc = vjo_preferences_save_anki(mining, screenshot, scratch);
     int read_rc = vjo_preferences_load(&cfg, scratch);
     writable = read_rc >= 0;
     note_error = rc < 0 || read_rc < 0;
@@ -186,9 +191,11 @@ static void activate(int row, VjoArena *scratch)
     if (running)
         return;
     if (row == 0)
-        save(!cfg.anki_mining, scratch);
+        save(!cfg.anki_mining, cfg.anki_screenshot, scratch);
+    else if (row == 1)
+        save(cfg.anki_mining, !cfg.anki_screenshot, scratch);
     else
-        start(row == 2);
+        start(row == 3);
 }
 
 void vjo_anki_page_stick(int move)
@@ -220,14 +227,15 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
         selected = vjo_stick_step(selected, ROWS, stick);
     if (pressed & ui->buttons->enter)
         activate(selected, scratch);
-    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == 0 && !busy &&
-        !!(pressed & SCE_CTRL_RIGHT) != cfg.anki_mining)
-        save(!!(pressed & SCE_CTRL_RIGHT), scratch);
+    /* Left/Right: OFF/ON on the two settings' rows */
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < 2 && !busy &&
+        !!(pressed & SCE_CTRL_RIGHT) != (selected ? cfg.anki_screenshot : cfg.anki_mining))
+        activate(selected, scratch);
     if ((pressed & ui->buttons->cancel) && busy)
         cancel();
     if (touch_y >= 0 && touch_x >= 24 && touch_x < 936) {
-        static const int top[ROWS] = {MINING_Y, EXPORT_Y, ALL_Y};
-        static const int height[ROWS] = {CARD_H, ACTION_H, ACTION_H};
+        static const int top[ROWS] = {MINING_Y, SHOT_Y, EXPORT_Y, ALL_Y};
+        static const int height[ROWS] = {CARD_H, CARD_H, ACTION_H, ACTION_H};
         for (int r = 0; r < ROWS; r++)
             if (touch_y >= top[r] && touch_y < top[r] + height[r]) {
                 selected = r;
@@ -255,32 +263,30 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     snprintf(line, sizeof(line), "%s in the overlay saves the word to a queue on the memory card.",
              ui->buttons->enter_glyph);
     ui->text(42, MINING_Y + 60, ui->dim, 24, line);
+    /* The card's screenshot (anki_screenshot, API 23) */
+    ui->card(SHOT_Y, CARD_H, selected == 1);
+    ui->text(42, SHOT_Y + 30, ui->white, 28, "Screenshots");
+    ui->badge(812, SHOT_Y + 6, 108, 34, !writable ? "--" : cfg.anki_screenshot ? "ON" : "OFF",
+              writable && cfg.anki_screenshot);
+    ui->text(42, SHOT_Y + 60, ui->dim, 24, "Each card keeps a picture of the game screen (about 60 KB).");
     /* Export the queued cards */
-    ui->card(EXPORT_Y, ACTION_H, selected == 1);
+    ui->card(EXPORT_Y, ACTION_H, selected == 2);
     if (counts.queued < 0)
         snprintf(line, sizeof(line), "Export cards (queue unreadable)");
     else
         snprintf(line, sizeof(line), "Export cards (%d queued)", counts.queued);
     ui->text(42, EXPORT_Y + 30, counts.queued < 0 ? ui->off : ui->white, 28, line);
     ui->badge(760, EXPORT_Y + 6, 160, 34, busy && !all ? "Exporting…" : "Export", busy && !all);
-    if (busy && !all)
-        ui->wrapped(42, EXPORT_Y + 62, 870, ui->dim, 22, 24, 2, busy_text);
-    else
-        ui->wrapped(42, EXPORT_Y + 62, 870, ui->dim, 22, 24, 2,
-                    "A new .apkg of Lapis cards in ux0:data/VitaJPOverlay/anki/. The queue is cleared "
-                    "once the file is written and checked.");
+    ui->wrapped(42, EXPORT_Y + 62, 870, ui->dim, 22, 24, 1,
+                busy && !all ? busy_text : "Writes a new .apkg; the queue clears once it is checked.");
     /* Export every card */
-    ui->card(ALL_Y, ACTION_H, selected == 2);
+    ui->card(ALL_Y, ACTION_H, selected == 3);
     ui->text(42, ALL_Y + 30, ui->white, 28, "Export all cards");
     count_text(line, sizeof(line), total, "in all");
     ui->text(500, ALL_Y + 30, total < 0 ? ui->off : ui->dim, 24, line);
     ui->badge(760, ALL_Y + 6, 160, 34, busy && all ? "Exporting…" : "Export all", busy && all);
-    if (busy && all)
-        ui->wrapped(42, ALL_Y + 62, 870, ui->dim, 22, 24, 2, busy_text);
-    else
-        ui->wrapped(42, ALL_Y + 62, 870, ui->dim, 22, 24, 2,
-                    "Every card again, the exported ones too (a new device, a lost file): Anki adds only "
-                    "the notes it does not have.");
+    ui->wrapped(42, ALL_Y + 62, 870, ui->dim, 22, 24, 1,
+                busy && all ? busy_text : "Every card again, the exported too: Anki adds only new notes.");
     /* The last result, else how to get the file to Anki */
     if (busy)
         snprintf(controls, sizeof(controls), "%s: stop   Select: page", ui->buttons->cancel_glyph);
@@ -288,11 +294,11 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
         snprintf(controls, sizeof(controls), "Up/Down: choose   %s: select   Select: page   %s: exit",
                  ui->buttons->enter_glyph, ui->buttons->cancel_glyph);
     if (note[0])
-        ui->footer(408, 92, 435, 3, note, note_error, controls);
+        ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3, note, note_error, controls);
     else if (last[0] && !busy)
-        ui->footer(408, 92, 435, 3, last, err, controls);
+        ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3, last, err, controls);
     else
-        ui->footer(408, 92, 435, 3,
+        ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 27, 3,
                    "Copy the .apkg from ux0:data/VitaJPOverlay/anki/ with VitaShell's FTP or USB (Select in "
                    "VitaShell), or with an SD2Vita as ux0: its card in a reader, then open it in Anki.",
                    0, controls);

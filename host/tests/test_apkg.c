@@ -25,6 +25,7 @@
 #undef main
 #include "anki_queue.h"
 #include "apkg.h"
+#include "jpegsw.h"
 #include "lapis.h"
 #include "sqlw.h"
 #include "zipw.h"
@@ -292,6 +293,35 @@ static size_t jpeg(uint8_t *out, int seed, size_t len)
     return len;
 }
 
+/* A real screenshot (API 23), as the game worker makes one: its encoder
+ * (core/jpegsw.c) on a 960 x 544 picture of a light gradient with dark
+ * strokes, at its quality, 70; the same bytes every time. */
+#define REAL_PICTURE 100 /* Card.picture: this JPEG instead of jpeg()'s pattern */
+static int real_rows(void *ud, uint32_t row, uint32_t n, uint8_t *dst)
+{
+    (void)ud;
+    for (uint32_t r = 0; r < n; r++)
+        for (uint32_t x = 0; x < 960; x++) {
+            uint8_t *p = dst + (r * 960u + x) * 4u;
+            uint32_t y = row + r, ink = y > 380 && y < 520 && (x / 3) % 9 < 2 && (y / 6) % 5 < 4;
+            p[0] = (uint8_t)(ink ? 25 : 180 + x * 60 / 960);
+            p[1] = (uint8_t)(ink ? 25 : 160 + y * 80 / 544);
+            p[2] = (uint8_t)(ink ? 25 : 200 - x * 80 / 960);
+            p[3] = 0xFF;
+        }
+    return (int)n;
+}
+static size_t real_jpeg(const uint8_t **out)
+{
+    static uint8_t mem[512 * 1024];
+    VjoArena a;
+    VjoBuf b;
+    vjo_arena_init(&a, mem, sizeof(mem));
+    TEST_ASSERT(vjo_jpeg_encode(&a, 960, 544, 960 * 4, real_rows, NULL, 70, &b) == 0);
+    *out = b.data;
+    return b.len;
+}
+
 typedef struct {
     const char *spelling, *reading, *sentence, *meaning, *dictionary, *misc, *game;
     int hl_start, hl_end, rank, picture;
@@ -347,7 +377,13 @@ static const char *queue_card(const Card *c, int archive)
         uint8_t pic[300];
         char path[256];
         snprintf(path, sizeof(path), "%s/%s.jpg", archive ? VJO_EXPORT_ARCHIVE_DIR : VJO_EXPORT_QUEUE_DIR, id);
-        put_file(path, pic, jpeg(pic, c->picture, sizeof(pic)));
+        if (c->picture == REAL_PICTURE) {
+            const uint8_t *real;
+            size_t n = real_jpeg(&real);
+            put_file(path, real, n);
+        } else {
+            put_file(path, pic, jpeg(pic, c->picture, sizeof(pic)));
+        }
     }
     vjo_arena_release(&A, mark);
     return id;
@@ -1095,8 +1131,9 @@ static int write_packages(const char *dir)
     char saved[8][VJO_QUEUE_ID_SIZE];
     int n = 0;
     reset();
-    /* first: three cards, one with a screenshot; v1 and v2 records too */
-    a.picture = 3;
+    /* first: three cards, one with a screenshot (a real JPEG, the game worker's encoder's: API 23);
+     * v1 and v2 records too */
+    a.picture = REAL_PICTURE;
     ids[0] = queue_card(&a, 0);
     snprintf(saved[n++], VJO_QUEUE_ID_SIZE, "%s", ids[0]);
     snprintf(saved[n++], VJO_QUEUE_ID_SIZE, "%s", queue_card(&b, 0));
@@ -1108,7 +1145,7 @@ static int write_packages(const char *dir)
     if (take_package(r.path, path))
         return 1;
     /* then two more, one sharing the first's screenshot */
-    c.picture = 3;
+    c.picture = REAL_PICTURE;
     snprintf(saved[n++], VJO_QUEUE_ID_SIZE, "%s", queue_card(&c, 0));
     b.spelling = "犬小屋";
     b.reading = "いぬごや";

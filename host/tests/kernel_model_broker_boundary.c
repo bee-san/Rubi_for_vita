@@ -11,4 +11,6 @@
 #define vjoOcrModelOpen test_kernel_model_open
 #define vjoOcrModelRead test_kernel_model_read
 #define vjoOcrModelClose test_kernel_model_close
+#define vjoOcrShotWrite test_kernel_shot_write
+#define vjoOcrShotSave test_kernel_shot_save
 #include "../../kernel/game_ocr.c"

@@ -15,4 +15,9 @@ int ksceIoPread(SceUID, void *, SceSize, SceOff);
 int ksceIoRead(SceUID, void *, SceSize);
 int ksceIoWrite(SceUID, const void *, SceSize);
 int ksceIoClose(SceUID);
+/* API 23: a shot's JPEG (kernel/game_ocr.c) */
+int ksceIoPwrite(SceUID, const void *, SceSize, SceOff);
+int ksceIoRemove(const char *);
+int ksceIoRename(const char *, const char *);
+int ksceIoSync(const char *, unsigned int);
 #endif

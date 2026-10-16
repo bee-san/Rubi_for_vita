@@ -47,6 +47,8 @@ int test_kernel_cancel(uint32_t seq);
 int test_kernel_model_open(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info);
 int test_kernel_model_read(uint32_t seq, uint32_t off, uint32_t bytes, void *dst);
 int test_kernel_model_close(uint32_t seq);
+int test_kernel_shot_write(uint32_t seq, uint32_t off, uint32_t bytes, const void *src);
+int test_kernel_shot_save(uint32_t seq, uint32_t bytes);
 static int retail_return(int rc)
 { return rc < 0 ? (int32_t)((uint32_t)rc & ~0x40000000u) : rc; }
 int vjoBootInfo(VjoBootInfo *out) { out->mode = VJO_BOOT_NORMAL; return 0; }
@@ -65,6 +67,14 @@ int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t bytes, void *dst)
 { int rc = retail_return(test_kernel_model_read(seq, off, bytes, dst)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
 int vjoOcrModelClose(uint32_t seq)
 { int rc = retail_return(test_kernel_model_close(seq)); if ((uint32_t)rc == 0xBFFFFFFDu) boundary_busy++; return rc; }
+/* API 23: a shot's file (the shot's own integration test is test_game_shot.c; no shot runs here) */
+int vjoOcrShotWrite(uint32_t seq, uint32_t off, uint32_t bytes, const void *src)
+{ return retail_return(test_kernel_shot_write(seq, off, bytes, src)); }
+int vjoOcrShotSave(uint32_t seq, uint32_t bytes) { return retail_return(test_kernel_shot_save(seq, bytes)); }
+int ksceIoPwrite(SceUID fd, const void *p, SceSize n, SceOff off) { (void)fd; (void)p; (void)n; (void)off; TEST_CHECK(0); return -1; }
+int ksceIoRemove(const char *path) { (void)path; TEST_CHECK(0); return -1; }
+int ksceIoRename(const char *a, const char *b) { (void)a; (void)b; TEST_CHECK(0); return -1; }
+int ksceIoSync(const char *dev, unsigned int unk) { (void)dev; (void)unk; TEST_CHECK(0); return -1; }
 
 void klog(const char *format, ...) { (void)format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }

@@ -158,7 +158,8 @@ void capture_sig_begin(uint32_t w, uint32_t h)
  * job's region (x0, y0, w, h in a frame of fb_w x fb_h) of the frame at base,
  * as grey bytes, row r at dst + r * stride: user memory of the current process
  * (dst_user) or a kernel strip (dst_kernel). sig: the rows also continue the
- * capture's signature (g.capture_sig, capture_sig_begin). No allocation, no
+ * capture's signature (g.capture_sig, capture_sig_begin). rgba (API 23, a shot):
+ * the rows as A8B8G8R8 words instead, 4 bytes a pixel. No allocation, no
  * lock; the job's geometry was checked when it was armed. */
 int capture_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_w, uint32_t fb_h,
                       const OcrRowsJob *job)
@@ -175,6 +176,17 @@ int capture_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_
     for (uint32_t r = 0; r < job->n; r++) {
         uint32_t row = job->y + r;
         uintptr_t src = base + ((job->y0 + row) * pitch + job->x0) * bpp;
+        if (job->rgba) {
+            /* API 23, a shot: the row in colour (A8B8G8R8, read_row's expansion), 4 bytes a pixel */
+            if (read_row(scratch_row, scratch_tmp, src, job->w, fmt) < 0)
+                return VJO_ERR_COPY;
+            if (job->dst_kernel)
+                memcpy(job->dst_kernel + r * job->stride, scratch_row, job->w * 4);
+            else if (ksceKernelMemcpyKernelToUser((void *)(job->dst_user + r * job->stride), scratch_row,
+                                                  job->w * 4) < 0)
+                return VJO_ERR_COPY;
+            continue;
+        }
         if (fmt == VJO_FB_A1B5G5R5 && !(job->sig && row == scene_acc_next_row(&capture_acc))) {
             /* The PSP emulator's 16-bit rows straight to grey, one pass (core/fbgrey.h);
              * a row the capture's signature samples hashes A8B8G8R8 words below. */

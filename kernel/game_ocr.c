@@ -25,7 +25,8 @@ static int valid, pending, claimed, cancelled, completed, stopping;
 static int waiters;
 
 enum { MODEL_IDLE, MODEL_QUEUED, MODEL_RUNNING, MODEL_DONE };
-enum { MODEL_OPEN = 1, MODEL_READ, MODEL_CLOSE };
+/* SHOT_WRITE, SHOT_SAVE (API 23): a shot's JPEG, the other way through the same broker. */
+enum { MODEL_OPEN = 1, MODEL_READ, MODEL_CLOSE, SHOT_WRITE, SHOT_SAVE };
 static struct {
     uint32_t seq, offset, bytes, size;
     uint32_t which;    /* VJO_GAME_OCR_OPEN_*: the request's model or its fallback */
@@ -34,10 +35,17 @@ static struct {
     int stat_rc;       /* Open: the modification-time query's native error, or 0 */
     uint64_t retry_us;
     uint64_t mtime;    /* Open: packed modification time, 0 if unknown */
+    /* API 23: a shot's file (shot): the bytes written so far and the last two of them;
+     * saved once it has its .jpg name (a close then removes nothing) */
+    int shot, saved;
+    uint32_t written;
+    uint8_t tail[2];
     char path[VJO_GAME_OCR_MODEL_DIR_BYTES];
 } model_io;
-/* One kernel staging buffer; weights and inference remain in game USER_RW. */
+/* One kernel staging buffer; weights and inference remain in game USER_RW. A
+ * shot's JPEG crosses it too, a chunk at a time (API 23). */
 static unsigned char model_stage[VJO_GAME_OCR_MODEL_CHUNK];
+typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage) ? 1 : -1];
 
 /* The worker's rows request (vjoOcrCaptureRows), armed by its syscall and
  * copied by the display hook in the game's own thread. state moves IDLE ->
@@ -262,6 +270,16 @@ void game_ocr_process_gone(SceUID pid)
     VJO_UNLOCK();
 }
 
+/* API 23: a shot's card, 32 lowercase hex digits and a NUL (core/anki_queue.h
+ * vjo_queue_valid_id): the file name the kernel makes, nothing that could name
+ * another path. */
+static int shot_id_ok(const char *id)
+{
+    for (unsigned i = 0; i < 32u; i++)
+        if (!((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'f'))) return 0;
+    return id[32] == 0;
+}
+
 int vjoOcrRegister(void)
 {
     uint32_t state;
@@ -309,16 +327,22 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
     uint32_t state;
     VjoGameOcrRequest next;
     SceUID pid = ksceKernelGetProcessId();
-    int rc;
+    int rc, shot;
     if (!shell_caller(pid)) return VJO_ERR_PERM;
     ENTER_SYSCALL(state);
     if (!user_request || ksceKernelMemcpyUserToKernel(&next, user_request, sizeof(next)) < 0) {
         rc = VJO_ERR_COPY; goto out;
     }
-    if (next.size != sizeof(next) || !next.model[0] || next.model[sizeof(next.model)-1] != 0 ||
-        !next.model_dir[0] || next.model_dir[sizeof(next.model_dir)-1] != 0 ||
+    /* API 23: a shot names its card (32 lowercase hex digits) and nothing else; an OCR job its
+     * models and no card. */
+    shot = (next.flags & VJO_GAME_OCR_F_SHOT) != 0;
+    if (next.size != sizeof(next) || next.model[sizeof(next.model)-1] != 0 ||
+        next.model_dir[sizeof(next.model_dir)-1] != 0 ||
         next.fallback[sizeof(next.fallback)-1] != 0 || (next.flags & ~VJO_GAME_OCR_F_ALL) ||
-        (next.tiers & ~VJO_VOCR_TIERS_ALL) || (next.speed & ~VJO_GAME_OCR_S_ALL)) {
+        (next.tiers & ~VJO_VOCR_TIERS_ALL) || (next.speed & ~VJO_GAME_OCR_S_ALL) ||
+        (shot ? !shot_id_ok(next.shot) || (next.flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL)) ||
+                    next.tiers || next.speed
+              : !next.model[0] || !next.model_dir[0] || next.shot[0])) {
         rc = VJO_ERR_ARG; goto out;
     }
     VJO_LOCK();
@@ -334,7 +358,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         uint32_t fw = g.fb_w ? g.fb_w : VJO_MAX_W, fh = g.fb_h ? g.fb_h : VJO_MAX_H;
         if (fw > VJO_MAX_W) fw = VJO_MAX_W;
         if (fh > VJO_MAX_H) fh = VJO_MAX_H;
-        if (next.flags & VJO_GAME_OCR_F_FULL) memset(&next.region, 0, sizeof(next.region));
+        if (next.flags & (VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_SHOT)) memset(&next.region, 0, sizeof(next.region));
         else next.region = g.region;
         capture_crop_of(&next.region, fw, fh, &next.x, &next.y, &next.width, &next.height);
         next.fb_width = fw;
@@ -484,23 +508,28 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     VjoGameOcrRowsInfo info;
     SceUID pid = ksceKernelGetProcessId();
     uint64_t deadline;
-    uint32_t span = 0, kbytes = 0;
-    int rc = 0, armed = 0, kalloc = 0;
+    uint32_t span = 0, kbytes = 0, bpp;
+    int rc = 0, armed = 0, kalloc = 0, rgba;
     ENTER_SYSCALL(state);
     memset(&info, 0, sizeof(info));
     info.size = sizeof(info);
     if (!user_req || ksceKernelMemcpyUserToKernel(&req, user_req, sizeof(req)) < 0) {
         rc = VJO_ERR_COPY; goto out;
     }
+    /* API 23: a shot's rows are in colour (4 bytes a pixel), an OCR job's grey; a shot
+     * publishes no capture. */
+    rgba = (req.flags & VJO_ROWS_RGBA) != 0;
+    bpp = rgba ? 4u : 1u;
     VJO_LOCK();
     sync_locked();
     if (pid <= 0 || pid != request_pid) rc = VJO_ERR_PERM;
     else if (!valid || !claimed || req.seq != request.seq || req.size != sizeof(req)) rc = VJO_ERR_ARG;
     else if (cancelled || !registration_current(pid)) rc = VJO_ERR_CANCELLED;
     else if (!req.n || req.n > VJO_GAME_OCR_ROWS_MAX || req.y >= request.height || req.n > request.height - req.y ||
-             req.dst_stride < request.width || req.dst_stride > VJO_MAX_W ||
-             (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST)) ||
+             req.dst_stride < request.width * bpp || req.dst_stride > VJO_MAX_W * bpp ||
+             (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_RGBA)) ||
              ((req.flags & VJO_ROWS_LAST) && !(req.flags & VJO_ROWS_SIG)) ||
+             rgba != !!(request.flags & VJO_GAME_OCR_F_SHOT) || (rgba && (req.flags & VJO_ROWS_SIG)) ||
              (req.mode != VJO_GAME_OCR_SRC_HOOK && req.mode != VJO_GAME_OCR_SRC_KSTRIP))
         rc = VJO_ERR_ARG;
     else if ((req.flags & VJO_ROWS_SIG) && !(req.y == 0 || (rows.sig_seq == req.seq && req.y == rows.sig_next)))
@@ -509,12 +538,13 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
      * is not tidied yet: the kernel worker returns it to IDLE within a tick. */
     else if (rows.state != ROWS_IDLE) rc = VJO_ERR_BUSY;
     else {
-        uint64_t bytes = (uint64_t)(req.n - 1u) * req.dst_stride + request.width; /* <= 61,440: no wrap */
+        /* <= 61,440 B grey, 245,760 B in colour (64 rows of 960 px): no wrap */
+        uint64_t bytes = (uint64_t)(req.n - 1u) * req.dst_stride + request.width * bpp;
         span = (uint32_t)bytes;
         if (bytes > 0xFFFFFFFFu || !user_range_ok(pid, (uintptr_t)dst, span)) rc = VJO_ERR_ARG;
     }
     if (!rc && req.mode == VJO_GAME_OCR_SRC_KSTRIP) {
-        kbytes = req.n * request.width;
+        kbytes = req.n * request.width * bpp; /* over VJO_GAME_OCR_KSTRIP_MAX: refused (ARG) */
         rc = buffers_kstrip_alloc(kbytes);
         info.kstrip_rc = rc;
         if (!rc) kalloc = 1;
@@ -531,12 +561,13 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         rows.job.n = req.n;
         if (kalloc) {
             rows.job.dst_kernel = buffers_kstrip();
-            rows.job.stride = request.width;
+            rows.job.stride = request.width * bpp;
         } else {
             rows.job.dst_user = (uintptr_t)dst;
             rows.job.stride = req.dst_stride;
         }
         rows.job.sig = (req.flags & VJO_ROWS_SIG) != 0;
+        rows.job.rgba = rgba;
         if (rows.job.sig && req.y == 0) {
             g.region_seq = 0; /* capture_sig gets rewritten */
             capture_sig_begin(request.width, request.height);
@@ -609,8 +640,8 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         /* Last rung of the ladder: the hook filled the kernel strip; copy it out here. */
         const uint8_t *k = buffers_kstrip();
         for (uint32_t r = 0; r < req.n && rc > 0; r++)
-            if (ksceKernelMemcpyKernelToUser((uint8_t *)dst + r * req.dst_stride, k + r * request.width,
-                                             request.width) < 0)
+            if (ksceKernelMemcpyKernelToUser((uint8_t *)dst + r * req.dst_stride, k + r * request.width * bpp,
+                                             request.width * bpp) < 0)
                 rc = VJO_ERR_COPY;
     }
     if (kalloc) buffers_kstrip_free();
@@ -864,6 +895,7 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     int rc = model_caller_locked(pid, seq, 0);
     const char *name;
     if (rc) return rc;
+    if (request.flags & VJO_GAME_OCR_F_SHOT) return VJO_ERR_ARG; /* a shot reads no model (API 23) */
     if (model_io.seq) {
         if (model_io.seq != seq || model_io.pid != pid) return VJO_ERR_BUSY;
         if (model_io.closing) return VJO_ERR_CANCELLED;
@@ -937,7 +969,7 @@ static int model_read_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t
 {
     int rc = model_caller_locked(pid, seq, 0);
     if (rc) return rc;
-    if (model_io.seq != seq || model_io.pid != pid || model_io.fd < 0 ||
+    if (model_io.seq != seq || model_io.pid != pid || model_io.fd < 0 || model_io.shot ||
         !dst || !bytes || bytes > sizeof(model_stage) || offset > model_io.size ||
         bytes > model_io.size - offset) return VJO_ERR_ARG;
     if (model_io.closing) return VJO_ERR_CANCELLED;
@@ -1011,13 +1043,122 @@ int vjoOcrModelClose(uint32_t seq)
     return rc;
 }
 
+/* ---- API 23: a shot's JPEG, written by the kernel worker thread ----
+ * The game worker hands its JPEG over in order, a staging buffer at a time; the
+ * kernel worker writes each piece to the queue's <shot>.jpg.tmp (the first
+ * creates it) and, on Save, closes it, syncs the memory card, renames it to
+ * <shot>.jpg and syncs again: the card's record (shell/anki_queue.c), committed
+ * after it, never names a picture whose bytes are not on the card. The path is
+ * the kernel's own (the request's checked card ID); the game supplies bytes. */
+static int shot_write_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t bytes, const void *src)
+{
+    int rc = model_caller_locked(pid, seq, 0);
+    if (rc) return rc;
+    if (!(request.flags & VJO_GAME_OCR_F_SHOT) || !src || !bytes || bytes > sizeof(model_stage) ||
+        offset > VJO_GAME_OCR_SHOT_MAX || bytes > VJO_GAME_OCR_SHOT_MAX - offset) return VJO_ERR_ARG;
+    if (model_io.seq) {
+        if (model_io.seq != seq || model_io.pid != pid || !model_io.shot) return VJO_ERR_ARG;
+        if (model_io.closing) return VJO_ERR_CANCELLED;
+        if (model_io.phase != MODEL_IDLE) {
+            /* the same piece again: its result once the kernel worker has written it */
+            if (model_io.operation != SHOT_WRITE || offset != model_io.offset || bytes != model_io.bytes)
+                return VJO_ERR_ARG;
+            if (model_io.phase != MODEL_DONE) return VJO_ERR_BUSY;
+            model_io.phase = MODEL_IDLE;
+            return model_io.rc;
+        }
+        if (offset != model_io.written) return VJO_ERR_ARG; /* in order, no gap, no rewrite */
+    } else {
+        if (offset) return VJO_ERR_ARG;
+        model_reset_locked();
+        model_io.seq = seq;
+        model_io.pid = pid;
+        model_io.shot = 1;
+        /* VJO_GAME_OCR_SHOT_DIR/<32 hex digits>.jpg.tmp, from the request Submit checked */
+        memcpy(model_io.path, VJO_GAME_OCR_SHOT_DIR "/", sizeof(VJO_GAME_OCR_SHOT_DIR));
+        memcpy(model_io.path + sizeof(VJO_GAME_OCR_SHOT_DIR), request.shot, 32);
+        memcpy(model_io.path + sizeof(VJO_GAME_OCR_SHOT_DIR) + 32, ".jpg.tmp", sizeof(".jpg.tmp"));
+    }
+    if (ksceKernelMemcpyUserToKernel(model_stage, src, bytes) < 0)
+        rc = VJO_ERR_COPY;
+    else if (!offset && (bytes < 3 || model_stage[0] != 0xFF || model_stage[1] != 0xD8 || model_stage[2] != 0xFF))
+        rc = VJO_ERR_FORMAT; /* not a JPEG's start */
+    if (rc) {
+        if (!offset) model_reset_locked(); /* nothing was opened */
+        return rc;
+    }
+    model_io.offset = offset;
+    model_io.bytes = bytes;
+    model_io.operation = SHOT_WRITE;
+    model_io.phase = MODEL_QUEUED;
+    model_wake_locked();
+    return VJO_ERR_BUSY;
+}
+
+int vjoOcrShotWrite(uint32_t seq, uint32_t offset, uint32_t bytes, const void *src)
+{
+    uint32_t state;
+    SceUID pid = ksceKernelGetProcessId();
+    uint64_t deadline;
+    int rc;
+    ENTER_SYSCALL(state);
+    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
+    do {
+        VJO_LOCK();
+        rc = shot_write_locked(pid, seq, offset, bytes, src);
+        VJO_UNLOCK();
+    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
+    EXIT_SYSCALL(state);
+    return rc;
+}
+
+static int shot_save_locked(SceUID pid, uint32_t seq, uint32_t bytes)
+{
+    int rc = model_caller_locked(pid, seq, 0);
+    if (rc) return rc;
+    if (!model_io.seq || model_io.seq != seq || model_io.pid != pid || !model_io.shot) return VJO_ERR_ARG;
+    if (model_io.closing) return VJO_ERR_CANCELLED;
+    if (model_io.phase != MODEL_IDLE) {
+        if (model_io.operation != SHOT_SAVE) return VJO_ERR_ARG;
+        if (model_io.phase != MODEL_DONE) return VJO_ERR_BUSY;
+        rc = model_io.rc;
+        if (!rc) model_reset_locked(); /* saved: the job holds no file any more */
+        else model_io.phase = MODEL_IDLE; /* a Close removes what is left */
+        return rc;
+    }
+    /* every byte written, and a JPEG's end (EOI) last */
+    if (model_io.fd < 0 || bytes != model_io.written || bytes < 4 || model_io.tail[0] != 0xFF ||
+        model_io.tail[1] != 0xD9) return VJO_ERR_ARG;
+    model_io.operation = SHOT_SAVE;
+    model_io.phase = MODEL_QUEUED;
+    model_wake_locked();
+    return VJO_ERR_BUSY;
+}
+
+int vjoOcrShotSave(uint32_t seq, uint32_t bytes)
+{
+    uint32_t state;
+    SceUID pid = ksceKernelGetProcessId();
+    uint64_t deadline;
+    int rc;
+    ENTER_SYSCALL(state);
+    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
+    do {
+        VJO_LOCK();
+        rc = shot_save_locked(pid, seq, bytes);
+        VJO_UNLOCK();
+    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
+    EXIT_SYSCALL(state);
+    return rc;
+}
+
 void game_ocr_model_tick(void)
 {
-    int operation, rc, stat_rc = 0;
+    int operation, rc, stat_rc = 0, shot, saved;
     SceUID fd;
     uint32_t offset, bytes, size;
     uint64_t mtime = 0;
-    char path[sizeof(model_io.path)];
+    char path[sizeof(model_io.path)], final[sizeof(model_io.path)];
     VJO_LOCK();
     /* A rows copy whose process exited during it, or that outlived its call:
      * nobody waits for it now. */
@@ -1051,9 +1192,16 @@ void game_ocr_model_tick(void)
     offset = model_io.offset;
     bytes = model_io.bytes;
     size = model_io.size;
+    shot = model_io.shot;
+    saved = model_io.saved;
     memcpy(path, model_io.path, sizeof(path));
     model_io.phase = MODEL_RUNNING;
     VJO_UNLOCK();
+    if (shot) { /* a shot's final name: its .tmp's without ".tmp" */
+        size_t n = strlen(path) - 4;
+        memcpy(final, path, n);
+        final[n] = '\0';
+    }
 
     /* Only the persistent kernel worker executes these calls. Calling them
      * directly in a game's syscall would retain its unavailable ux0 namespace. */
@@ -1076,9 +1224,37 @@ void game_ocr_model_tick(void)
     } else if (operation == MODEL_READ) {
         rc = ksceIoPread(fd, model_stage, bytes, (SceOff)offset);
         if (rc > (int)bytes) rc = VJO_ERR_FORMAT;
+    } else if (operation == SHOT_WRITE) {
+        /* API 23: the shot's next piece, at its place; the first creates the .tmp */
+        rc = 0;
+        if (fd < 0 && (fd = ksceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0) rc = fd;
+        for (uint32_t done = 0; !rc && done < bytes;) {
+            int n = ksceIoPwrite(fd, model_stage + done, bytes - done, (SceOff)(offset + done));
+            if (n <= 0 || (uint32_t)n > bytes - done) rc = n < 0 ? n : VJO_ERR_COPY;
+            else done += (uint32_t)n;
+        }
+        if (!rc) rc = (int)bytes;
+    } else if (operation == SHOT_SAVE) {
+        /* closed, its bytes on the card, then its name, and that on the card too */
+        rc = ksceIoClose(fd);
+        if (rc >= 0) {
+            fd = -1;
+            if ((rc = ksceIoSync("ux0:", 0)) >= 0 && (rc = ksceIoRename(path, final)) >= 0 &&
+                (rc = ksceIoSync("ux0:", 0)) < 0)
+                ksceIoRemove(final); /* renamed, but not known to be on the card: the card goes without it */
+            if (rc < 0) ksceIoRemove(path); /* (gone already once it was renamed) */
+        }
+        rc = rc < 0 ? rc : 0;
+        saved = !rc;
     } else {
         rc = fd < 0 ? 0 : ksceIoClose(fd);
         if (rc >= 0) fd = -1;
+        /* An abandoned shot leaves nothing: its .tmp, or the .jpg a save made that the game never
+         * collected (a collected save resets the slot, so no close follows it). Every way a shot is
+         * abandoned ends here: the game's Close after a failure or a timeout, a cancellation, the
+         * game's exit, the Shell's restart (they set closing); the Shell then saves the card without
+         * a screenshot, so no record names this file. */
+        if (rc >= 0 && shot) ksceIoRemove(saved ? final : path);
     }
 
     VJO_LOCK();
@@ -1090,6 +1266,12 @@ void game_ocr_model_tick(void)
         model_io.stat_rc = stat_rc;
         model_io.mtime = mtime;
     }
+    if (operation == SHOT_WRITE && rc > 0) {
+        model_io.written = offset + bytes;
+        model_io.tail[0] = bytes > 1 ? model_stage[bytes - 2] : model_io.tail[1];
+        model_io.tail[1] = model_stage[bytes - 1];
+    }
+    if (operation == SHOT_SAVE) model_io.saved = saved;
     sync_locked();
     if (operation == MODEL_CLOSE && rc >= 0) model_reset_locked();
     else if (operation == MODEL_CLOSE) {

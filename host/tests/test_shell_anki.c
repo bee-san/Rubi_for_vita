@@ -369,9 +369,102 @@ void vjo_platform_vita(VjoPlatform *p)
     p->file_open = dict_open;
 }
 
+#include "../../core/anki_queue.h"
+#include "../../include/vjo_ledger_budget.h"
+/* ---------------- a card's screenshot (API 23) ----------------
+ * What the kernel and the game worker do for a shot job (include/vjo_game_ocr.h
+ * VJO_GAME_OCR_F_SHOT), at once: the JPEG is on the card as <id>.jpg in the
+ * queue (a real file, the bytes the game writes through the kernel), and the
+ * job's result says how it went. The kernel's part (test_kernel_game_ocr.c) and
+ * the game worker's with the real kernel (test_game_shot.c) are tested apart;
+ * here, what the Shell does with them. The Shell never sees a JPEG byte: these
+ * fakes write the file, anki.c only names it. */
+static const uint8_t shot_jpeg[] = {0xFF, 0xD8, 0xFF, 0xE0, 0, 16, 'J', 'F', 'I', 'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0,
+                                    0x12, 0x34, 0x56, 0xFF, 0xD9};
+static int shot_jobs, shot_rc, shot_submit_rc, shot_no_file, slot_busy, slot_begins, slot_ends, shot_close_overlay;
+static int shot_reads;
+static uint32_t shot_seq;
+static char shot_id[VJO_QUEUE_ID_SIZE];
+int vjo_game_job_begin(int (*stop)(void *), int64_t wait_us)
+{
+    TEST_CHECK(stop != NULL && wait_us > 0 && !held_box && !held_view && slot_begins == slot_ends);
+    slot_begins++;
+    if (slot_busy) {
+        slot_ends++; /* not taken: nothing to give back */
+        return -1;
+    }
+    return 0;
+}
+void vjo_game_job_end(void)
+{
+    TEST_CHECK(slot_ends + 1 == slot_begins);
+    slot_ends++;
+}
+int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrStep *s)
+{
+    return snprintf(buf, cap, "gstep %s %u rc=0x%08X", who, (unsigned)s->id, (unsigned)s->rc);
+}
+int sceKernelDelayThread(unsigned int us) { (void)us; return 0; }
+int vjoOcrSubmit(const VjoGameOcrRequest *r)
+{
+    char path[256];
+    FILE *f;
+    TEST_CHECK(slot_begins == slot_ends + 1); /* in the game worker's slot */
+    TEST_CHECK(r->size == sizeof(*r) && r->flags == VJO_GAME_OCR_F_SHOT && !r->tiers && !r->speed && !r->model[0] &&
+               !r->model_dir[0] && strlen(r->shot) == 32 && vjo_queue_valid_id(r->shot));
+    if (shot_submit_rc)
+        return shot_submit_rc;
+    memcpy(shot_id, r->shot, sizeof(shot_id));
+    shot_jobs++;
+    if (!shot_rc && !shot_no_file) { /* the game's JPEG, through the kernel, beside the card to be */
+        snprintf(path, sizeof(path), VJO_ANKI_QUEUE_DIR "/%s.jpg", r->shot);
+        TEST_ASSERT((f = fopen(path, "wb")) != NULL);
+        TEST_ASSERT(fwrite(shot_jpeg, 1, sizeof(shot_jpeg), f) == sizeof(shot_jpeg));
+        TEST_ASSERT(fclose(f) == 0);
+        crash_at("jpeg_saved"); /* on the card, its record not yet */
+    }
+    if (shot_close_overlay)
+        __atomic_store_n(&g_view.open, 0, __ATOMIC_RELEASE); /* the user closes it meanwhile */
+    return (int)++shot_seq;
+}
+int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
+{
+    TEST_CHECK(seq == shot_seq && slot_begins == slot_ends + 1);
+    shot_reads++;
+    memset(out, 0, sizeof(*out));
+    out->size = sizeof(*out);
+    out->seq = seq;
+    out->rc = shot_rc;
+    out->width = 960;
+    out->height = 544;
+    out->shot_quality = 70;
+    out->shot_tries = 1;
+    out->shot_block = VJO_BUDGET_GAME_SHOT;
+    out->shot_bytes = shot_rc ? 0 : (uint32_t)sizeof(shot_jpeg);
+    out->n_steps = 1;
+    out->step[0].id = VJO_GSTEP_SHOT;
+    out->step[0].rc = shot_rc;
+    return 0;
+}
+int vjoOcrCancel(uint32_t seq) { (void)seq; return 0; }
+static void shot_reset(void)
+{
+    shot_jobs = shot_rc = shot_submit_rc = shot_no_file = slot_busy = slot_begins = slot_ends = 0;
+    shot_close_overlay = shot_reads = 0;
+    shot_id[0] = '\0';
+}
+
 #include "../../shell/anki.c"
 #include "../../shell/anki_queue.c"
 #include "../../shell/ledger.c" /* the thread wrappers anki.c uses */
+
+/* worker.c's client, on the fakes above */
+static int client_submit(void *ud, const VjoGameOcrRequest *r) { (void)ud; return vjoOcrSubmit(r); }
+static int client_read(void *ud, uint32_t seq, VjoGameOcrResult *r) { (void)ud; return vjoOcrRead(seq, r); }
+static int client_cancel(void *ud, uint32_t seq) { (void)ud; return vjoOcrCancel(seq); }
+static int64_t client_clock(void *ud) { (void)ud; return now_us(); }
+static void client_delay(void *ud, uint32_t us) { (void)ud; sceKernelDelayThread(us); }
+const VjoGameOcrClient vjo_game_client = {NULL, client_submit, client_read, client_cancel, client_clock, client_delay};
 
 /* ---------------- fixtures ---------------- */
 
@@ -397,6 +490,8 @@ static void fixture(void)
     g_view.list_seq = 5;
     vjo_config_defaults(&cfg);
     cfg.anki_mining = 1;
+    /* text-only cards unless a test asks for the screenshot (anki_screenshot is on by default) */
+    cfg.anki_screenshot = 0;
     clock_fails = 0;
     view_pages = NULL;
     view_page = 0;
@@ -487,6 +582,7 @@ static void reset(void)
     write_fd = -1;
     write_path[0] = last_rename[0] = '\0';
     rtc_unix_us = 1791158400007000ull;
+    shot_reset();
     /* the Shell starts the mailbox before its first config load */
     TEST_ASSERT(vjo_anki_start() == 0);
     fixture();
@@ -808,22 +904,22 @@ static void test_failed_directory_flush_is_retried(void)
     reset();
     vjo_arena_init(&a, mem, sizeof(mem));
     fail_mount_sync = 1;
-    TEST_CHECK(vjo_queue_save(&a, &n) == VJO_QUEUE_FAILED);
+    TEST_CHECK(vjo_queue_save(&a, &n, NULL) == VJO_QUEUE_FAILED);
     TEST_CHECK(vjo_queue_count() == 1); /* visible, but never acknowledged */
     barriers = mount_sync_calls;
     vjo_arena_reset(&a);
-    TEST_CHECK(vjo_queue_save(&a, &n) == VJO_QUEUE_FAILED && mount_sync_calls == barriers + 1);
+    TEST_CHECK(vjo_queue_save(&a, &n, NULL) == VJO_QUEUE_FAILED && mount_sync_calls == barriers + 1);
     fail_mount_sync = 0;
     vjo_arena_reset(&a);
-    TEST_CHECK(vjo_queue_save(&a, &n) == VJO_QUEUE_EXISTS && mount_sync_calls == barriers + 2);
+    TEST_CHECK(vjo_queue_save(&a, &n, NULL) == VJO_QUEUE_EXISTS && mount_sync_calls == barriers + 2);
     only_id(id);
     export_card(id);
     fail_mount_sync = 1;
     vjo_arena_reset(&a);
-    TEST_CHECK(vjo_queue_save(&a, &n) == VJO_QUEUE_FAILED);
+    TEST_CHECK(vjo_queue_save(&a, &n, NULL) == VJO_QUEUE_FAILED);
     fail_mount_sync = 0;
     vjo_arena_reset(&a);
-    TEST_CHECK(vjo_queue_save(&a, &n) == VJO_QUEUE_ARCHIVED && vjo_queue_count() == 0);
+    TEST_CHECK(vjo_queue_save(&a, &n, NULL) == VJO_QUEUE_ARCHIVED && vjo_queue_count() == 0);
     finish();
 }
 
@@ -1036,7 +1132,10 @@ static void test_what_enter_saves_whatever_the_dictionaries(void)
     static uint8_t mem[256 * 1024];
     static VjoLocalPages pages;
     for (int heavy = 0; heavy < 2; heavy++) {
-        for (unsigned z = 0; z < sizeof(sizes) / sizeof(sizes[0]); z++) {
+        /* each case twice: text only, then with a screenshot (API 23: its request and result in the arena) */
+        for (unsigned zz = 0; zz < 2 * sizeof(sizes) / sizeof(sizes[0]); zz++) {
+            unsigned z = zz / 2;
+            int with = (int)(zz % 2);
             VjoArena a;
             VjoPlatform p;
             VjoDictResult res;
@@ -1063,6 +1162,11 @@ static void test_what_enter_saves_whatever_the_dictionaries(void)
             snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "fixture");
             snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", list_names);
             cfg.local_dictionary_results = 8;
+#ifdef VJO_WITH_VOCR
+            cfg.anki_screenshot = with;
+#else
+            if (with) continue;
+#endif
             reconfigure();
             vjo_arena_init(&a, mem, sizeof(mem));
             vjo_platform_vita(&p);
@@ -1080,8 +1184,10 @@ static void test_what_enter_saves_whatever_the_dictionaries(void)
             for (const char *q = json; (q = strstr(q, "{\"dictionary\":")); q++)
                 kept++;
             TEST_CHECK(strlen(json) <= VJO_QUEUE_TEXT_MAX && last_peak <= ANKI_TEXT_MEM);
-            printf("measure: 8 dictionaries, entries of %d B (%s): record %u B with %d of 7 others, peak %u\n",
-                   sizes[z], heavy ? "escaping" : "kana", (unsigned)strlen(json), kept, (unsigned)last_peak);
+            TEST_CHECK(files_ending(".jpg") == with && !strstr(json, with ? "\"picture\":false" : "\"picture\":true"));
+            printf("measure: 8 dictionaries, entries of %d B (%s)%s: record %u B with %d of 7 others, peak %u\n",
+                   sizes[z], heavy ? "escaping" : "kana", with ? ", with a screenshot" : "", (unsigned)strlen(json),
+                   kept, (unsigned)last_peak);
             /* every other dictionary's entry fits a record while they are small: up to
              * 2,700 B of kana, 900 B of text that JSON escaping grows */
             if (sizes[z] <= (heavy ? 900 : 2700))
@@ -1278,6 +1384,159 @@ static void test_a_refused_job_thread_is_logged(void)
     finish();
 }
 
+
+#ifdef VJO_WITH_VOCR
+/* ---------------- a card's screenshot (API 23) ---------------- */
+
+static void screenshots_on(void)
+{
+    cfg.anki_screenshot = 1;
+    reconfigure();
+}
+
+/* Enter with screenshots on (the default): the game worker's JPEG is beside the
+ * card, named by its record's ID, and the record says so; SceShell took only its
+ * job's arena, as for a text-only card. */
+static void test_enter_saves_the_screenshot_beside_the_card(void)
+{
+    char id[VJO_QUEUE_ID_SIZE];
+    size_t len;
+    const char *json, *jpg;
+    VjoConfig d;
+    vjo_config_defaults(&d);
+    TEST_CHECK(d.anki_screenshot == 1); /* on unless anki_screenshot = off */
+    reset();
+    screenshots_on();
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && g_view.anki_mark[0] == VJO_ANKI_MARK_QUEUED);
+    TEST_MSG("%s", g_view.anki_status);
+    TEST_CHECK(files_ending(".json") == 1 && files_ending(".jpg") == 1 && files_ending(".tmp") == 0);
+    only_id(id);
+    TEST_CHECK(!strcmp(id, shot_id)); /* the shot named the card's record */
+    TEST_CHECK((json = queue_file(id, "json", &len)) && strstr(json, "\"picture\":true"));
+    TEST_CHECK((jpg = queue_file(id, "jpg", &len)) && len == sizeof(shot_jpeg) && !memcmp(jpg, shot_jpeg, len));
+    TEST_CHECK(shot_jobs == 1 && shot_reads == 1 && slot_begins == 1 && slot_ends == 1);
+    TEST_CHECK(!heap_live && heap_allocs == 1 && heap_frees == 1 && heap_last == ANKI_TEXT_MEM);
+    printf("measure: save with a screenshot: arena peak %u of %u\n", (unsigned)last_peak, (unsigned)ANKI_TEXT_MEM);
+    TEST_CHECK(last_peak < ANKI_TEXT_MEM / 4);
+    /* the debug build logs every screenshot and the record; the normal build only a failed one */
+#if VJO_DEBUG
+    TEST_CHECK(logged("anki: screenshot rc=0 960x544 q70 try 1: 25 B; block 450560 B") && logged(" + .jpg\n"));
+#else
+    TEST_CHECK(!logged("anki: screenshot") && !logged(" + .jpg\n") && logged("anki: save rc=0, "));
+#endif
+    TEST_MSG("%s", all_logs);
+    /* the same card from a new lookup in the same minute: queued already, no second screenshot */
+    g_view.list_seq = 6;
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Already queued") && shot_jobs == 1 && files_ending(".jpg") == 1);
+    /* ... and with screenshots off now: still the same card */
+    cfg.anki_screenshot = 0;
+    reconfigure();
+    g_view.list_seq = 7;
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Already queued") && files_ending(".json") == 1 && shot_jobs == 1);
+    finish();
+}
+
+/* Without the screenshot it asked for (the game worker busy, absent, out of
+ * memory, a file that is not there, the overlay closed meanwhile), the card is
+ * saved as it would have been with screenshots off, and nothing of the
+ * screenshot is left; the status says so, log.txt why. */
+static void test_a_failed_screenshot_saves_the_card_without_one(void)
+{
+    static const char *const why[] = {"the slot stayed busy", "no game worker", "the game's memory",
+                                      "no file", "the overlay closed"};
+    char id[VJO_QUEUE_ID_SIZE];
+    size_t len;
+    const char *json;
+    for (int k = 0; k < 5; k++) {
+        reset();
+        screenshots_on();
+        slot_busy = k == 0;
+        shot_submit_rc = k == 1 ? VJO_ERR_NO_GAME : 0;
+        shot_rc = k == 2 ? VJO_E_OOM : 0;
+        shot_no_file = k == 3;
+        shot_close_overlay = k == 4;
+        enter(0);
+        TEST_CHECK_(files_ending(".json") == 1 && files_ending(".jpg") == 0 && files_ending(".tmp") == 0, "%s", why[k]);
+        only_id(id);
+        TEST_CHECK_((json = queue_file(id, "json", &len)) && strstr(json, "\"picture\":false"), "%s", why[k]);
+        TEST_CHECK_(!strcmp(g_view.anki_status, "Saved for Anki, without a screenshot (log.txt)"), "%s: %s", why[k],
+                    g_view.anki_status);
+        /* why, in both builds: the screenshot's failure, or its file not there */
+        TEST_CHECK_((k == 3 ? logged(".jpg missing after its screenshot") : logged("anki: screenshot rc=")) &&
+                    slot_begins == slot_ends, "%s", why[k]);
+        /* the game worker's steps: the debug build's (shell/selftest.c formats them), when it had any */
+#if VJO_DEBUG
+        TEST_CHECK_(k != 2 || logged("gstep shot "), "%s: the worker's steps", why[k]);
+#else
+        TEST_CHECK_(!logged("gstep "), "%s: no step lines in the normal build", why[k]);
+#endif
+        TEST_CHECK(!heap_live && heap_allocs == heap_frees);
+        finish();
+    }
+}
+
+/* The record that names the screenshot is committed after it, and a commit that
+ * fails takes the screenshot with it: no card, no JPEG. */
+static void test_a_failed_record_takes_its_screenshot_with_it(void)
+{
+    reset();
+    screenshots_on();
+    fail_rename = 1;
+    enter(0);
+    TEST_CHECK(!strncmp(g_view.anki_status, "Card not saved: cannot write", 28) && shot_jobs == 1);
+    TEST_CHECK(files_ending(".json") == 0 && files_ending(".jpg") == 0 && files_ending(".tmp") == 0);
+    fail_rename = 0;
+    finish();
+}
+
+/* A save that stopped between the two writes left the card's JPEG with no record
+ * (never a card: the queue counts records). Saving the card again replaces it. */
+static void test_an_interrupted_saves_jpeg_is_replaced(void)
+{
+    char id[VJO_QUEUE_ID_SIZE], path[256];
+    size_t len;
+    const char *jpg;
+    FILE *f;
+    reset();
+    screenshots_on();
+    enter(0);
+    only_id(id);
+    snprintf(path, sizeof(path), VJO_ANKI_QUEUE_DIR "/%s.json", id);
+    TEST_ASSERT(unlink(path) == 0);
+    snprintf(path, sizeof(path), VJO_ANKI_QUEUE_DIR "/%s.jpg", id);
+    TEST_ASSERT((f = fopen(path, "wb")) != NULL);
+    fputs("not this card's picture", f);
+    fclose(f);
+    vjo_anki_post_count();
+    vjo_anki_reap();
+    TEST_CHECK(g_view.anki_pending == 0); /* a JPEG alone is no card */
+    g_view.list_seq = 6;
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && shot_jobs == 2);
+    TEST_CHECK(files_ending(".json") == 1 && files_ending(".jpg") == 1);
+    TEST_CHECK((jpg = queue_file(id, "jpg", &len)) && len == sizeof(shot_jpeg) && !memcmp(jpg, shot_jpeg, len));
+    finish();
+}
+
+/* With screenshots off, or no game in front, nothing asks the game worker. */
+static void test_no_screenshot_is_asked_for_when_off_or_without_a_game(void)
+{
+    reset(); /* (the fixture's anki_screenshot = off) */
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && !slot_begins && !shot_jobs && files_ending(".jpg") == 0);
+    finish();
+    reset();
+    screenshots_on();
+    vjo_anki_set_game("", "", 0);
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && !slot_begins && !shot_jobs && files_ending(".jpg") == 0);
+    finish();
+}
+#endif
+
 TEST_LIST = {
     {"anki_off_by_default_starts_no_thread_and_allocates_nothing", test_off_by_default_allocates_nothing},
     {"enter_saves_offline_and_the_queue_survives_restart", test_enter_saves_offline},
@@ -1294,6 +1553,13 @@ TEST_LIST = {
     {"record_round_trip_stable_ids_and_strict_decoding", test_record_format},
     {"fifty_cards_release_memory_and_threads", test_fifty_cards_release_everything},
     {"a_refused_job_thread_is_logged_with_its_rc_and_sceshell_free", test_a_refused_job_thread_is_logged},
+#ifdef VJO_WITH_VOCR
+    {"api23_enter_saves_the_screenshot_beside_the_card", test_enter_saves_the_screenshot_beside_the_card},
+    {"api23_a_failed_screenshot_saves_the_card_without_one", test_a_failed_screenshot_saves_the_card_without_one},
+    {"api23_a_failed_record_takes_its_screenshot_with_it", test_a_failed_record_takes_its_screenshot_with_it},
+    {"api23_an_interrupted_saves_jpeg_is_replaced", test_an_interrupted_saves_jpeg_is_replaced},
+    {"api23_no_screenshot_is_asked_for_when_off_or_without_a_game", test_no_screenshot_is_asked_for_when_off_or_without_a_game},
+#endif
     {NULL, NULL}
 };
 
@@ -1310,7 +1576,9 @@ static void print_string(const char *s)
     fputs(vjo_buf_cstr(&b), stdout);
 }
 
-/* DIR ACTION [CRASH]: save (the shown 猫) or save-other (好き). Prints one JSON line. */
+/* DIR ACTION [CRASH]: save (the shown 猫) or save-other (好き), text only; save-shot and
+ * save-shot-other the same with its screenshot (API 23: the game's JPEG, then the record).
+ * Prints one JSON line. */
 static int restart_step(int argc, char **argv)
 {
     const char *what;
@@ -1324,6 +1592,14 @@ static int restart_step(int argc, char **argv)
     if (vjo_anki_start() < 0)
         return 2;
     fixture();
+    if (!strncmp(what, "save-shot", 9)) {
+#ifdef VJO_WITH_VOCR
+        cfg.anki_screenshot = 1;
+        what = what[9] ? "save-other" : "save";
+#else
+        return 2;
+#endif
+    }
     vjo_anki_configure(&cfg);
     vjo_anki_set_game("PCSG00415", "CLANNAD", 0);
     if (strcmp(what, "save") && strcmp(what, "save-other"))

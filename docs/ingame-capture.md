@@ -75,7 +75,7 @@ block, the native rc and the game's free memory after it):
 | 1 | the worker's `USER_RW` block (4 KiB units, cached) | first |
 | 2 | `USER_CDRAM_RW` (256 KiB units, uncached; slower CPU reads [SDK: Memory Management Tutorial]) | `USER_RW` refused the block |
 | 3 | `USER_MAIN_PHYCONT_NC_RW` (1 MiB units, uncached) | CDRAM refused it too |
-| 4 | a kernel strip (`VjoOcrStrip`, ≤ 64 KiB of `KERNEL_RW` for one call, copied out by the syscall) | the hook could not write the game's memory (`VJO_ERR_COPY`/`VJO_ERR_ARG`); never while the JPEG capture holds its buffer |
+| 4 | a kernel strip (`VjoOcrStrip`, ≤ 64 KiB of `KERNEL_RW` for one call, copied out by the syscall) | the hook could not write the game's memory (`VJO_ERR_COPY`/`VJO_ERR_ARG`); never while the kernel's full-frame capture holds its buffer |
 
 The workspace and a tall line's block take the same rungs 1-3; the verified weights stay in
 `USER_RW`. Before any of them the existing model fallback applies: the configured model → its
@@ -106,8 +106,35 @@ the finder ever report a band that large). A strict 64 KiB bound for those regio
 row-callback form of `vocr_run` in vita-vn-ocr (not done: `vocr.c` is unchanged). Page-rounded figures from `vjo_vocr_job_bytes`/`vjo_vocr_capture_bytes` on the host build; the
 ledger counts them as `VJO_BUDGET_GAME_CAPTURE`, `VJO_BUDGET_GAME_LINE`,
 `VJO_BUDGET_GAME_WORKSPACE` and `VJO_BUDGET_KERNEL_OCR_STRIP` ([memory-ledger.md](memory-ledger.md)).
-The kernel's region-sized capture buffer has no Shell user left: Google Lens's JPEG was the last
-(Anki takes no screenshot). #74's refusal would have reached a full-screen JPEG too.
+The kernel's region-sized capture buffer has no Shell user left: Google Lens's JPEG was the last,
+and an Anki card's screenshot is read in the game too, in colour strips (below). #74's refusal
+would have reached a full-screen JPEG too.
+
+## An Anki card's screenshot (API 23)
+
+A card's screenshot ([docs/anki.md](anki.md#the-screenshot)) is a job of the same slot
+(`VJO_GAME_OCR_F_SHOT`) and reads the frame through the same path, with three differences:
+
+- **The whole frame, in colour.** The job's region is the frame (whatever the user's region is),
+  and its rows calls carry `VJO_ROWS_RGBA`: the hook copies each row as A8B8G8R8 words, the frame's
+  format expanded to 8 bits per channel exactly as for grey (`kernel/capture.c` `read_row`), 4 bytes
+  a pixel, into the worker's block. Only a shot reads colour, and a shot reads nothing else; it
+  publishes no capture and builds no signature (no `VJO_ROWS_SIG`).
+- **64 rows a frame, one pass.** The worker reads the frame once, top to bottom, 64 rows (a strip
+  of 245,760 B at 960 px) a display frame, 9 frames for 544 rows, and encodes each band of 16 rows
+  as it comes; there are no checksums and no second pass. A screen that changes during those 9
+  frames is pictured partly before and partly after the change (a band at the seam); with the
+  overlay open the game has no input and normally shows a still screen. When the hook cannot write
+  the block, the rows come through the kernel strip, 16 rows a call (61,440 B, inside its 64 KiB).
+- **Its own block.** One block of 450,560 B (`VjoGameShot`: the encoder's state, the strip and the
+  JPEG, page-rounded) on the same ladder (`USER_RW`, CDRAM, phycont), after a check that the game
+  keeps its 4 MiB beside it; freed when the job ends, the resident weights untouched.
+
+Then the JPEG goes to the memory card through the kernel's worker thread, as the models come from
+it (`vjoOcrShotWrite`, `vjoOcrShotSave`; the game itself has no `ux0:`). `host/tests/test_game_shot.c`
+runs it through the actual worker and kernel transport on a 960 × 544 frame in each of the three
+pixel formats, and `test_kernel_game_ocr.c` the kernel's rules: colour only for a shot, the
+strides and the kernel strip in colour, the file's order, size and form.
 
 ## Memory queries on 3.60-3.74
 

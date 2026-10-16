@@ -252,6 +252,15 @@ r["deck_cards"] = len(col.find_cards(f'"deck:{expected["deck"]}"'))
 card = col.get_card(col.find_cards('"Expression:猫" "MiscInfo:_*"')[0])   # the version-3 card
 r["question"] = card.question(); r["answer"] = card.answer()
 r["media"] = sorted(os.listdir(col.media.dir()))
+# API 23: the card's screenshot as Anki shows it: the answer's <img>, the file it names in the
+# collection's media (copied out for Pillow), and Anki's own media check
+import re
+m = re.search(r'<img src="(vitajp_[0-9a-f]{32}[.]jpg)">', r["answer"])
+r["img"] = m.group(1) if m else None
+if m:
+    shutil.copyfile(os.path.join(col.media.dir(), m.group(1)), out / "imported.jpg")
+check = col.media.check()
+r["media_missing"] = list(check.missing); r["media_unused"] = list(check.unused)
 r["again_new"] = len(imp(col, "first").new)   # the same package again
 # the user edits a note and its card is in review (10 days); importing the same card again changes neither
 edited = col.get_note(col.find_notes('"Expression:猫" "MiscInfo:_*"')[0])
@@ -339,6 +348,22 @@ class TestAnkiImport(unittest.TestCase):
         self.assertIn("猫", self.r["question"])
         for text in ("<b>猫</b>", "JMdict", "SOME GAME (2026-10-11 17:11)", "vitajp_", "1234"):
             self.assertIn(text, self.r["answer"])
+
+    def test_the_screenshot_is_shown_on_the_card(self):
+        """API 23: the card's answer shows its screenshot: an <img> of a file Anki has in its media,
+        byte for byte the JPEG the game worker's encoder made (named by its SHA-256), a picture
+        Pillow decodes; Anki's media check finds nothing missing."""
+        from PIL import Image
+        r = self.r
+        self.assertRegex(r["img"] or "", r"^vitajp_[0-9a-f]{32}[.]jpg$")
+        self.assertIn(f'<img src="{r["img"]}">', r["answer"])
+        self.assertIn(r["img"], r["media"])
+        self.assertEqual(r["media_missing"], [])
+        data = (pathlib.Path(self.tmp.name) / "imported.jpg").read_bytes()
+        self.assertEqual("vitajp_%s.jpg" % hashlib.sha256(data).hexdigest()[:32], r["img"])
+        with Image.open(pathlib.Path(self.tmp.name) / "imported.jpg") as im:
+            im.load()
+            self.assertEqual((im.format, im.size), ("JPEG", (960, 544)))
 
     def test_imports_again_add_nothing_and_all_adds_only_new_notes(self):
         r = self.r

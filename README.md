@@ -236,9 +236,9 @@ shows nothing and is retried quietly. The Overlay app's **Read text** chooses th
 only when the overlay opens: nothing runs before, and the press then waits for the reading
 ([what each costs, and test.3's times](docs/auto-vs-press.md)). With card mining on, Enter saves the shown word,
 its sentence and every dictionary's entry for it to the card queue on the
-memory card; the Overlay app exports the queue as an `.apkg`. The card has no screenshot yet: the old full-frame capture is the
-kernel buffer #74's console refused, and one from the game's own strips is
-not built yet ([Anki](docs/anki.md#the-record-version-4)).
+memory card, with a JPEG of the game's screen (about 60 KB, made in the game's
+own process: [screenshots](docs/anki.md#the-screenshot)); the Overlay app exports
+the queue as an `.apkg`, the screenshot in each note's Picture.
 
 ### Drawing the region
 
@@ -429,8 +429,9 @@ error names where the memory ran out: the game's memory for this region
 (a tighter region helps) or for the smallest size's weights, or the Shell's
 memory for results (restart the Vita). Local OCR
 takes no kernel memory for the screen since API 19: the game reads its own
-screen ([in-game capture](docs/ingame-capture.md)). The kernel's capture buffer
-is only for an Anki card's screenshot, which this build does not take. A Shell UI memory error
+screen ([in-game capture](docs/ingame-capture.md)). The kernel's full-frame capture buffer
+has no user: an Anki card's screenshot is read in the game too, in colour strips, and
+encoded there. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
 
@@ -551,16 +552,20 @@ ignored, and the installer drops it.
 ### Anki
 
 Card mining is off by default (the test builds turn it on). With it on, Enter
-saves cards as readable JSON files, text only (this build takes no
-screenshot), in `ux0:data/VitaJPOverlay/anki_queue/`; they survive restarts
-and need no network. Each record (version 4) keeps everything known at the
+saves cards as readable JSON files in `ux0:data/VitaJPOverlay/anki_queue/`, each
+with a JPEG of the game's screen beside it (`anki_screenshot = on`, the default:
+960 × 544 at quality 70, 55.6 KB for the median of 294 Vita screens, 46.6 KB of
+304 PSP ones). The game worker reads the frame and encodes it in the game's
+memory (a 450,560 B block while it runs), and the kernel writes it to the memory
+card; SceShell holds none of it ([the screenshot](docs/anki.md#the-screenshot)).
+The cards survive restarts and need no network. Each record (version 4) keeps everything known at the
 press: the word, its reading and furigana, the shown entry and its
 dictionary's name, the other dictionaries' entries, the whole recognized text
 with the word's offsets, the game, its title ID and platform, the time, and
 the OCR engine and model.
 
-The Overlay app's **Anki** page has card mining ON/OFF, **Export cards (N
-queued)** and **Export all cards**. An export writes the cards as
+The Overlay app's **Anki** page has card mining ON/OFF, **Screenshots**
+ON/OFF, **Export cards (N queued)** and **Export all cards**. An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay**, into
 `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`; the page shows the
@@ -654,7 +659,7 @@ previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
 Native SDK file errors are unchanged. Install all three plugins of one build
-together (API 22 since the OCR speed settings) and reboot; older plugin versions
+together (API 23 since the Anki screenshot) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
@@ -678,8 +683,9 @@ local result allocation is refused after OCR succeeds, the recognized text
 stays visible and only dictionary lookup backs off. Failed joins/frees keep
 ownership for a safe stop retry.
 With `anki_mining = on`, saving a card (Enter) takes one
-bounded Paf allocation through the same reserve guard (128 KiB: cards are
-text-only, no screenshot and no kernel capture) and a 16 KiB thread stack; both
+bounded Paf allocation through the same reserve guard (128 KiB; a card's
+screenshot is the game worker's, so it adds only its job's 5,404 B request and
+result, and no kernel capture) and a 16 KiB thread stack; both
 are released when the job is done. Counting the queue when the
 overlay opens takes only the thread's stack. Anki failures, storage errors
 and refused memory never touch the recognized text. Nothing in SceShell or

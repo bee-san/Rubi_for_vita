@@ -160,8 +160,96 @@ static void interrupt_io(void)
         caller = saved;
     }
 }
+/* ---- API 23: a shot's file, on an in-memory card: the .tmp the first write
+ * creates, the .jpg the save renames it to. Only the kernel worker (caller 0,
+ * no lock, no syscall) may touch it. ---- */
+#define SHOT_FD 32
+static struct {
+    char name[128];
+    unsigned char data[VJO_GAME_OCR_SHOT_MAX];
+    uint32_t len;
+    int live;
+} shot_fs[2];
+static int shot_open, shot_index, shot_open_error, shot_write_error, shot_close_error, shot_rename_error, shot_sync_error;
+static int shot_short_writes;
+static uint32_t shot_cancel_on_rename; /* the Shell cancels this job while its file is renamed */
+static unsigned shot_opens, shot_writes, shot_closes, shot_renames, shot_removes, shot_syncs;
+static int shot_entry(const char *name)
+{
+    for (int i = 0; i < 2; i++)
+        if (shot_fs[i].live && !strcmp(shot_fs[i].name, name)) return i;
+    return -1;
+}
+static int shot_worker_context(void) { return caller == 0 && !locks && !syscall_depth; }
+static SceUID shot_file_open(const char *path, int flags)
+{
+    int i;
+    TEST_ASSERT(shot_worker_context() && !shot_open);
+    TEST_CHECK(flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC) && strlen(path) > 8 &&
+               !strcmp(path + strlen(path) - 8, ".jpg.tmp"));
+    shot_opens++;
+    if (shot_open_error) return shot_open_error;
+    if ((i = shot_entry(path)) < 0) {
+        i = shot_fs[0].live ? 1 : 0;
+        TEST_ASSERT(!shot_fs[i].live);
+        snprintf(shot_fs[i].name, sizeof(shot_fs[i].name), "%s", path);
+        shot_fs[i].live = 1;
+    }
+    shot_fs[i].len = 0; /* O_TRUNC */
+    shot_open = 1;
+    shot_index = i;
+    return SHOT_FD;
+}
+int ksceIoPwrite(SceUID fd, const void *data, SceSize bytes, SceOff offset)
+{
+    int i = shot_index;
+    TEST_ASSERT(shot_worker_context() && fd == SHOT_FD && shot_open);
+    TEST_ASSERT(shot_fs[i].live && offset >= 0 && (uint64_t)offset + bytes <= sizeof(shot_fs[i].data));
+    TEST_CHECK((uint32_t)offset == shot_fs[i].len); /* in order */
+    shot_writes++;
+    if (shot_write_error) return shot_write_error;
+    if (shot_short_writes && bytes > 1000) bytes = 1000;
+    memcpy(shot_fs[i].data + offset, data, bytes);
+    if ((uint32_t)offset + bytes > shot_fs[i].len) shot_fs[i].len = (uint32_t)offset + bytes;
+    return (int)bytes;
+}
+int ksceIoRename(const char *from, const char *to)
+{
+    int i;
+    TEST_ASSERT(shot_worker_context() && !shot_open);
+    shot_renames++;
+    if (shot_rename_error) return shot_rename_error;
+    if (shot_cancel_on_rename) { /* the Shell's cancel, on another thread, while the kernel worker saves */
+        uint32_t seq = shot_cancel_on_rename;
+        shot_cancel_on_rename = 0;
+        caller = 3;
+        TEST_CHECK(vjoOcrCancel(seq) == 0);
+        caller = 0;
+    }
+    if ((i = shot_entry(from)) < 0) return (int)0x80010002u;
+    TEST_CHECK(shot_entry(to) < 0); /* never renamed over a file */
+    snprintf(shot_fs[i].name, sizeof(shot_fs[i].name), "%s", to);
+    return 0;
+}
+int ksceIoRemove(const char *path)
+{
+    int i;
+    TEST_ASSERT(shot_worker_context() && !shot_open);
+    shot_removes++;
+    if ((i = shot_entry(path)) < 0) return (int)0x80010002u;
+    shot_fs[i].live = 0;
+    return 0;
+}
+int ksceIoSync(const char *device, unsigned int unk)
+{
+    TEST_ASSERT(shot_worker_context());
+    TEST_CHECK(!strcmp(device, "ux0:") && unk == 0);
+    shot_syncs++;
+    return shot_sync_error;
+}
 SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
+    if (!strncmp(path, VJO_GAME_OCR_SHOT_DIR "/", sizeof(VJO_GAME_OCR_SHOT_DIR))) return shot_file_open(path, flags);
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && !file_live);
     char expected[320]; snprintf(expected,sizeof(expected),"%s/%s",VJO_VOCR_MODEL_ROOT,
                                  expect_lm ? expect_lm : expect_fallback ? request.fallback : request.model);
@@ -185,6 +273,13 @@ int ksceIoPread(SceUID fd, void *out, SceSize bytes, SceOff offset)
 }
 int ksceIoClose(SceUID fd)
 {
+    if (fd == SHOT_FD) {
+        TEST_ASSERT(shot_worker_context() && shot_open);
+        shot_closes++;
+        if (shot_close_error) return shot_close_error;
+        shot_open = 0;
+        return 0;
+    }
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && file_live && fd == 31);
     model_closes++;
     if (close_error) return close_error;
@@ -862,7 +957,8 @@ static void invalid_capture_and_wire(void)
     setup(); VjoGameOcrRequest r = make_request();
     r.size--; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.size++;
     r.model[31] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.model[31] = 0;
-    r.model_dir[255] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.model_dir[255] = 0;
+    r.model_dir[sizeof(r.model_dir) - 1] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.model_dir[sizeof(r.model_dir) - 1] = 0;
     r.flags = 0x4000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 20: bits 14-15 are still unknown */
     r.flags = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.flags = 0;
@@ -1126,6 +1222,238 @@ static void rows_process_exit_cannot_pull_state_from_a_call(void)
     TEST_CHECK(rows.state == ROWS_DONE && rows.in_call);         /* not yet */
     model_clock += ROWS_GONE_US + 1; model_tick();
     TEST_CHECK(rows.state == ROWS_IDLE && !rows.in_call && !rows.orphan);
+}
+
+/* ---- API 23: a shot (VJO_GAME_OCR_F_SHOT): the whole frame in colour, its JPEG
+ * written beside the card by the kernel's worker thread ---- */
+static const char SHOT_ID[] = "0123456789abcdef0123456789abcdef";
+static char shot_tmp[160], shot_jpg[160];
+static VjoGameOcrRequest shot_request(void)
+{
+    VjoGameOcrRequest r = {0};
+    r.size = sizeof(r);
+    r.flags = VJO_GAME_OCR_F_SHOT;
+    memcpy(r.shot, SHOT_ID, sizeof(SHOT_ID));
+    return r;
+}
+static void shot_fs_reset(void)
+{
+    memset(shot_fs, 0, sizeof(shot_fs));
+    shot_open = shot_index = 0;
+    shot_open_error = shot_write_error = shot_close_error = shot_rename_error = shot_sync_error = 0;
+    shot_short_writes = 0;
+    shot_cancel_on_rename = 0;
+    shot_opens = shot_writes = shot_closes = shot_renames = shot_removes = shot_syncs = 0;
+    snprintf(shot_tmp, sizeof(shot_tmp), VJO_GAME_OCR_SHOT_DIR "/%s.jpg.tmp", SHOT_ID);
+    snprintf(shot_jpg, sizeof(shot_jpg), VJO_GAME_OCR_SHOT_DIR "/%s.jpg", SHOT_ID);
+}
+/* A shot submitted by the Shell and claimed by the worker. */
+static uint32_t shot_job(void)
+{
+    VjoGameOcrRequest r = shot_request(), got = {0};
+    int seq;
+    shot_fs_reset();
+    caller = 3;
+    TEST_ASSERT((seq = vjoOcrSubmit(&r)) > 0);
+    caller = 7;
+    TEST_ASSERT(vjoOcrTake(&got) == 0);
+    /* the whole frame, whatever the region; the card it names, nothing else */
+    TEST_CHECK(got.seq == (uint32_t)seq && got.flags == VJO_GAME_OCR_F_SHOT && !strcmp(got.shot, SHOT_ID));
+    TEST_CHECK(got.x == 0 && got.y == 0 && got.width == FB_W && got.height == FB_H && !got.region.w);
+    memset(&message, 0, sizeof(message));
+    message.size = sizeof(message);
+    message.seq = (uint32_t)seq;
+    return (uint32_t)seq;
+}
+/* A JPEG-shaped payload: SOI and a marker first, EOI last. */
+static unsigned char shot_bytes[VJO_GAME_OCR_SHOT_MAX];
+static uint32_t make_jpeg(uint32_t len)
+{
+    for (uint32_t i = 0; i < len; i++) shot_bytes[i] = (unsigned char)(i * 31u + 7u);
+    shot_bytes[0] = 0xFF; shot_bytes[1] = 0xD8; shot_bytes[2] = 0xFF;
+    shot_bytes[len - 2] = 0xFF; shot_bytes[len - 1] = 0xD9;
+    return len;
+}
+static int shot_write(uint32_t seq, uint32_t off, uint32_t n) { caller = 7; return vjoOcrShotWrite(seq, off, n, shot_bytes + off); }
+static int shot_save(uint32_t seq, uint32_t n) { caller = 7; return vjoOcrShotSave(seq, n); }
+
+static void shot_requests_name_a_card_and_nothing_else(void)
+{
+    VjoGameOcrRequest r;
+    setup();
+    g.region = (VjoRect){1000, 2000, 30000, 20000}; /* a shot ignores it */
+    static const char *const bad[] = {"0123456789ABCDEF0123456789abcdef", "0123456789abcdeg0123456789abcdef",
+                                      "0123456789abcdef0123456789abcde", ""};
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        r = shot_request();
+        memset(r.shot, 0, sizeof(r.shot));
+        memcpy(r.shot, bad[i], strlen(bad[i]));
+        TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    }
+    r = shot_request(); r.shot[32] = '0'; /* not ended where the 32 digits end */
+    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    /* a shot carries no job policy, no tiers and no speed */
+    r = shot_request(); r.flags |= VJO_GAME_OCR_F_BLANK; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.flags |= VJO_GAME_OCR_F_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.tiers = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.speed = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    /* an OCR job names no card; without models it is refused as before */
+    r = make_request(); memcpy(r.shot, SHOT_ID, sizeof(SHOT_ID)); TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    TEST_CHECK(!valid && !pending);
+    /* F_FULL is a shot's anyway; without a model, which a shot never opens */
+    r = shot_request(); r.flags |= VJO_GAME_OCR_F_FULL;
+    TEST_CHECK(vjoOcrSubmit(&r) > 0 && request.width == FB_W && request.height == FB_H && !request.x && !request.y);
+    caller = 7; TEST_CHECK(vjoOcrTake(&r) == 0);
+    TEST_CHECK(vjoOcrModelOpen(r.seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == VJO_ERR_ARG && !model_io.seq);
+    message.size = sizeof(message); message.seq = r.seq; message.text[0] = 0;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
+/* A shot's rows are the frame's colours, A8B8G8R8 words, and only a shot reads
+ * colour; through the hook or the kernel strip. */
+static int colour_rows_match(const unsigned char *dst, unsigned y0, unsigned n, unsigned stride)
+{
+    for (unsigned r = 0; r < n; r++)
+        if (memcmp(dst + r * stride, &game_fb[(y0 + r) * FB_PITCH], FB_W * 4u)) return 0;
+    return 1;
+}
+static void shot_rows_are_colour_and_only_a_shots(void)
+{
+    VjoGameOcrRowsInfo info;
+    setup();
+    uint32_t seq = shot_job();
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 16, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_RGBA, FB_W * 4u, user_rows, &info) == 16);
+    TEST_CHECK(colour_rows_match(user_rows, 0, 16, FB_W * 4u) && hook_frames == 1 && !kstrip_allocs);
+    /* refused before anything is armed: grey rows, a signature, a stride under 4 bytes a pixel */
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, 0, FB_W, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_RGBA | VJO_ROWS_SIG, FB_W * 4u, user_rows, &info) ==
+               VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_RGBA, FB_W * 4u - 1u, user_rows, &info) ==
+               VJO_ERR_ARG);
+    TEST_CHECK(hook_frames == 1 && rows.state == ROWS_IDLE);
+    /* the ladder's last rung in colour: the kernel strip holds 4 bytes a pixel, freed by the call */
+    memset(user_rows, 0xCC, sizeof(user_rows));
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 8, 16, VJO_GAME_OCR_SRC_KSTRIP, VJO_ROWS_RGBA, FB_W * 4u, user_rows, &info) == 16);
+    TEST_CHECK(colour_rows_match(user_rows, 8, 16, FB_W * 4u) && info.kstrip_bytes == 16u * FB_W * 4u);
+    TEST_CHECK(kstrip_allocs == 1 && kstrip_frees == 1 && g.done_seq == 11 && !capture_events); /* nothing published */
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* an OCR job reads grey only */
+    seq = submit(); take(seq);
+    TEST_CHECK(rows_call(seq, 0, 4, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_RGBA, FB_W * 4u, user_rows, &info) == VJO_ERR_ARG);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
+/* The JPEG in staging-buffer pieces, in order, written by the kernel worker
+ * (each call waits for it) into the .tmp, then saved: closed, the card synced,
+ * renamed to <card>.jpg, synced again. The job then holds no file. */
+static void shot_jpeg_is_written_in_order_and_saved_under_its_name(void)
+{
+    setup();
+    uint32_t seq = shot_job(), len = make_jpeg(70001), off = 0;
+    wait_runs_worker = 1;
+    while (off < len) {
+        uint32_t n = len - off < VJO_GAME_OCR_SHOT_CHUNK ? len - off : VJO_GAME_OCR_SHOT_CHUNK;
+        TEST_CHECK(shot_write(seq, off, n) == (int)n);
+        off += n;
+    }
+    TEST_CHECK(shot_opens == 1 && shot_writes == 3 && shot_open && shot_entry(shot_tmp) >= 0 && shot_entry(shot_jpg) < 0);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_BUSY); /* its file is still open */
+    TEST_CHECK(shot_save(seq, len) == 0);
+    int i = shot_entry(shot_jpg);
+    TEST_ASSERT(i >= 0);
+    TEST_CHECK(shot_fs[i].len == len && !memcmp(shot_fs[i].data, shot_bytes, len) && shot_entry(shot_tmp) < 0);
+    TEST_CHECK(shot_closes == 1 && shot_renames == 1 && shot_syncs == 2 && !shot_open && !model_io.seq);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
+    /* and the Shell reads the shot's result as any job's */
+    VjoGameOcrResult got; caller = 3;
+    TEST_CHECK(vjoOcrRead(seq, &got) == 0 && got.seq == seq && !got.rc);
+    /* the kernel's short writes are its own to finish: one call still writes a whole piece */
+    setup(); seq = shot_job(); len = make_jpeg(5000); wait_runs_worker = 1; shot_short_writes = 1;
+    TEST_CHECK(shot_write(seq, 0, len) == (int)len && shot_writes == 5 && shot_save(seq, len) == 0);
+    TEST_CHECK((i = shot_entry(shot_jpg)) >= 0 && shot_fs[i].len == len && !memcmp(shot_fs[i].data, shot_bytes, len));
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
+static void shot_writes_are_checked(void)
+{
+    VjoGameOcrModelInfo mi;
+    setup();
+    uint32_t seq = shot_job(), len = make_jpeg(40000);
+    wait_runs_worker = 1;
+    /* not a JPEG's start: refused, nothing opened */
+    shot_bytes[1] = 0xD9;
+    TEST_CHECK(shot_write(seq, 0, 100) == VJO_ERR_FORMAT && !shot_opens && !model_io.seq);
+    shot_bytes[1] = 0xD8;
+    /* the first piece from 0, at most the staging buffer, at most VJO_GAME_OCR_SHOT_MAX in all */
+    TEST_CHECK(shot_write(seq, 10, 100) == VJO_ERR_ARG && !model_io.seq);
+    TEST_CHECK(shot_write(seq, 0, VJO_GAME_OCR_SHOT_CHUNK + 1) == VJO_ERR_ARG);
+    caller = 7; TEST_CHECK(vjoOcrShotWrite(seq, 0, 100, NULL) == VJO_ERR_ARG);
+    TEST_CHECK(vjoOcrShotWrite(seq, VJO_GAME_OCR_SHOT_MAX - 10, 100, shot_bytes) == VJO_ERR_ARG);
+    TEST_CHECK(shot_write(seq, 0, 30000) == 30000);
+    /* in order: no gap, no rewrite */
+    TEST_CHECK(shot_write(seq, 30001, 100) == VJO_ERR_ARG && shot_write(seq, 0, 100) == VJO_ERR_ARG);
+    /* another process, another job: refused */
+    caller = 8; TEST_CHECK(vjoOcrShotWrite(seq, 30000, 100, shot_bytes) == VJO_ERR_PERM);
+    caller = 7; TEST_CHECK(vjoOcrShotWrite(seq + 1, 30000, 100, shot_bytes) == VJO_ERR_ARG);
+    /* the shot's file is never read back, and a shot opens no model */
+    caller = 7; TEST_CHECK(vjoOcrModelRead(seq, 0, 100, user_rows) == VJO_ERR_ARG);
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, &mi) == VJO_ERR_ARG);
+    /* saved only whole: every byte written, the EOI last */
+    TEST_CHECK(shot_save(seq, 30000) == VJO_ERR_ARG); /* (the piece's last bytes are no EOI) */
+    TEST_CHECK(shot_write(seq, 30000, len - 30000) == (int)(len - 30000));
+    TEST_CHECK(shot_save(seq, len - 1) == VJO_ERR_ARG && shot_save(seq, len + 1) == VJO_ERR_ARG && !shot_renames);
+    TEST_CHECK(shot_save(seq, len) == 0 && shot_entry(shot_jpg) >= 0);
+    TEST_CHECK(shot_save(seq, len) == VJO_ERR_ARG); /* (saved: nothing open any more) */
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* an OCR job writes no JPEG */
+    seq = submit(); take(seq);
+    TEST_CHECK(shot_write(seq, 0, 100) == VJO_ERR_ARG && !model_io.seq);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
+/* An unsaved shot leaves nothing: its Close, a cancellation or the game's exit
+ * close and remove the .tmp; a failed write, close, sync or rename does too. */
+static void an_abandoned_shot_leaves_no_file(void)
+{
+    for (int how = 0; how < 10; how++) {
+        setup();
+        uint32_t seq = shot_job(), len = make_jpeg(9000);
+        wait_runs_worker = 1;
+        if (how == 3) shot_open_error = (int)0x80010013u;
+        if (how == 4) shot_write_error = (int)0x80010005u;
+        int w = shot_write(seq, 0, len);
+        TEST_CHECK(w == (how == 3 ? shot_open_error : how == 4 ? shot_write_error : (int)len));
+        if (how == 0) { caller = 7; TEST_CHECK(vjoOcrModelClose(seq) == 0); }
+        if (how == 1) { caller = 3; TEST_CHECK(vjoOcrCancel(seq) == 0); model_tick(); }
+        if (how == 2) { game_ocr_process_gone(7); model_tick(); }
+        if (how == 3 || how == 4) { caller = 7; TEST_CHECK(vjoOcrModelClose(seq) == 0); }
+        if (how == 9) { /* saved, but the game gave up waiting for it: its Close removes the .jpg */
+            wait_runs_worker = 0;
+            TEST_CHECK(shot_save(seq, len) == VJO_ERR_BUSY);
+            model_tick(); /* the kernel worker saves it after all */
+            TEST_CHECK(shot_entry(shot_jpg) >= 0 && shot_renames == 1);
+            wait_runs_worker = 1;
+            caller = 7; TEST_CHECK(vjoOcrModelClose(seq) == 0);
+        }
+        if (how == 8) { /* cancelled while it is renamed: the kernel removes the .jpg it made */
+            shot_cancel_on_rename = seq;
+            TEST_CHECK(shot_save(seq, len) == VJO_ERR_CANCELLED && shot_renames == 1);
+            caller = 7; TEST_CHECK(vjoOcrModelClose(seq) == 0);
+        }
+        if (how >= 5 && how < 8) {
+            if (how == 5) shot_close_error = (int)0x80010005u;
+            if (how == 6) shot_sync_error = (int)0x80010005u;
+            if (how == 7) shot_rename_error = (int)0x80010011u;
+            TEST_CHECK(shot_save(seq, len) == (how == 5 ? shot_close_error : how == 6 ? shot_sync_error : shot_rename_error));
+            shot_close_error = 0;
+            caller = 7; TEST_CHECK(vjoOcrModelClose(seq) == 0);
+        }
+        TEST_CHECK_(shot_entry(shot_tmp) < 0 && shot_entry(shot_jpg) < 0 && !shot_open && !model_io.seq, "case %d", how);
+        if (how != 2) { caller = 7; message.rc = -113; /* VJO_E_LOCAL_IO */ TEST_CHECK(vjoOcrComplete(&message) == 0); message.rc = 0; }
+        TEST_CHECK(!game_ocr_capture_busy_locked() || how == 1 || how == 8);
+    }
 }
 
 static void open_model(uint32_t seq)
@@ -1550,6 +1878,15 @@ TEST_LIST = {
     {"rows: the destination stride is bounded (no wrapped span)", rows_stride_is_bounded},
     {"rows: a process exit never pulls state or the strip from a call", rows_process_exit_cannot_pull_state_from_a_call},
     {"rows: a pending request pins captures; process exit clears it", rows_pending_pins_and_process_exit},
+    {"API 23: a shot names its card and nothing else; it reads the whole frame and opens no model",
+     shot_requests_name_a_card_and_nothing_else},
+    {"API 23: a shot's rows are the frame's colours, through the hook or the kernel strip; only a shot's",
+     shot_rows_are_colour_and_only_a_shots},
+    {"API 23: the shot's JPEG is written in order by the kernel worker and saved under the card's name",
+     shot_jpeg_is_written_in_order_and_saved_under_its_name},
+    {"API 23: the shot's writes are checked: a JPEG's start, in order, bounded, saved only whole",
+     shot_writes_are_checked},
+    {"API 23: an abandoned or failed shot leaves no file", an_abandoned_shot_leaves_no_file},
 #if VJO_DEBUG
     {"API 22: the frame pacing of each job, one step the kernel adds", frame_pacing_step},
     {"API 22: the pacing windows follow the claim, a cancelled job ends one, the step is written under the lock",

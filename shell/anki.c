@@ -17,7 +17,13 @@
  * frees result memory under that lock), and the note is copied out of it
  * before anything is written. Anki never touches the recognized text or its
  * lookup: a refused allocation or a failed write only changes the Anki
- * status line. */
+ * status line.
+ *
+ * A card's screenshot (anki_screenshot, on by default; API 23) is the game
+ * worker's: a job of its one slot (take_shot) has it read the game's frame,
+ * encode the JPEG in the game's memory and write it beside the card through the
+ * kernel. Here it is only a request and a result in the job's arena; no pixel
+ * and no JPEG byte is ever in SceShell (AGENTS.md rule 1). */
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
@@ -31,6 +37,9 @@
 #include "../core/utf.h"
 #include "anki_queue.h"
 #include "shell.h"
+#ifdef VJO_WITH_VOCR
+#include "game_ocr_client.h"
+#endif
 
 /* A card: the settings and note copies, the other dictionaries' entries and
  * the record (at most VJO_QUEUE_TEXT_MAX). The ledger's
@@ -289,10 +298,70 @@ static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
     }
 }
 
+/* ---------------- the card's screenshot (API 23) ---------------- */
+
+/* The game worker reads the game's whole frame, encodes it as a JPEG in the game's
+ * memory and has the kernel write it as <id>.jpg in the queue
+ * (include/vjo_game_ocr.h VJO_GAME_OCR_F_SHOT): SceShell holds no pixel and no byte
+ * of it, only the request and the job's result, in this job's arena. The game
+ * worker's one job slot is the network thread's OCR jobs' too: the exchange runs
+ * under vjo_game_job_begin (worker.c), which has a quiet refresh in progress yield.
+ * It stops when the overlay closes: the game then has its input back, and its
+ * screen is no longer the card's. */
+#define SHOT_WAIT_US 4000000    /* for the slot: a refresh yields within a strip, a lookup's OCR runs on */
+#define SHOT_TIMEOUT_US 15000000 /* the job: 9 frames, the JPEG and its file, three tries at most */
+
+#ifdef VJO_WITH_VOCR
+static int shot_stopped(void *ud)
+{
+    (void)ud;
+    return stopping() || !__atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE);
+}
+
+static int take_shot(void *ud, const char id[VJO_QUEUE_ID_SIZE])
+{
+    size_t mark = vjo_arena_mark(&arena);
+    VjoGameOcrRequest *req = (VjoGameOcrRequest *)vjo_arena_zalloc(&arena, sizeof(*req));
+    VjoGameOcrResult *res = (VjoGameOcrResult *)vjo_arena_zalloc(&arena, sizeof(*res));
+    int64_t t0 = now_us();
+    int rc = VJO_E_OOM;
+    (void)ud;
+    if (req && res) {
+        req->size = sizeof(*req);
+        req->flags = VJO_GAME_OCR_F_SHOT;
+        sceClibMemcpy(req->shot, id, VJO_QUEUE_ID_SIZE);
+        rc = VJO_E_OCR_UNAVAILABLE; /* the slot stayed busy */
+        if (!vjo_game_job_begin(shot_stopped, SHOT_WAIT_US)) {
+            rc = vjo_game_ocr_exchange(&vjo_game_client, req, res, shot_stopped, NULL, SHOT_TIMEOUT_US);
+            vjo_game_job_end();
+        }
+        /* every screenshot in the debug build; the normal build logs a failed one (docs/release-variants.md) */
+        if (VJO_DEBUG || rc)
+            vjo_log("anki: screenshot rc=%d %ux%u q%u try %u: %u B; block %u B mem %u, free USER %d; %u strips src %u "
+                    "%u ms, encode %u ms, write %u ms; %d ms", rc, res->width, res->height, res->shot_quality,
+                    res->shot_tries, res->shot_bytes, res->shot_block, res->shot_memory, (int)res->free_user,
+                    res->captures, res->source, res->capture_us / 1000, res->shot_encode_us / 1000,
+                    res->shot_write_us / 1000, (int)((now_us() - t0) / 1000));
+#if VJO_DEBUG /* the game worker's steps (shell/selftest.c vjo_gstep_format, the debug build's) */
+        for (uint32_t i = 0; rc && i < res->n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+            char line[224];
+            if (vjo_gstep_format(line, sizeof(line), "shot", &res->step[i]) > 0)
+                vjo_log("%s", line);
+        }
+#endif
+    }
+    vjo_arena_release(&arena, mark);
+    return rc;
+}
+#else
+#define take_shot NULL /* no game worker in this build: cards without a screenshot */
+#endif
+
 static void do_save(unsigned seq, int entry)
 {
     VjoAnkiNote note;
     VjoLocalPages *pages = NULL;
+    VjoQueueShot shot = {take_shot, NULL, 0, 0};
     char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)], name[96];
     int shown, mark_value = 0, ok = 0, rc, page = 0;
     int64_t t0 = now_us();
@@ -336,7 +405,9 @@ static void do_save(unsigned seq, int entry)
     vjo_anki_meaning_source(note.n_meanings ? note.meanings[0] : "", name, sizeof(name));
     note.dictionary = *name ? keep_str(name) : NULL;
     read_more(&note, pages, page);
-    rc = vjo_queue_save(&arena, &note);
+    /* The screenshot (anki_screenshot, on by default) of the game in front: the
+     * game worker's, never SceShell's (take_shot). */
+    rc = vjo_queue_save(&arena, &note, acfg->anki_screenshot && note.title_id ? &shot : NULL);
 #if VJO_DEBUG
     vjo_log("anki: save %s rc=%d, %d ms", note.spelling, rc, (int)((now_us() - t0) / 1000));
 #else
@@ -358,8 +429,9 @@ static void do_save(unsigned seq, int entry)
         publish(seq, "Already exported (in an .apkg)", VJO_ANKI_STATUS_DIM, entry, VJO_ANKI_MARK_ADDED);
         return;
     }
-    publish(seq, rc == VJO_QUEUE_EXISTS ? "Already queued" : "Saved for Anki", VJO_ANKI_STATUS_DIM, entry,
-            VJO_ANKI_MARK_QUEUED);
+    publish(seq, rc == VJO_QUEUE_EXISTS ? "Already queued"
+                 : shot.rc ? "Saved for Anki, without a screenshot (log.txt)" : "Saved for Anki",
+            VJO_ANKI_STATUS_DIM, entry, VJO_ANKI_MARK_QUEUED);
 }
 
 /* ---------------- thread ---------------- */

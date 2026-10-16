@@ -1,8 +1,9 @@
-/* The Overlay app's Anki page: card mining on/off, and the export of the
- * queued cards (or all of them) as Lapis notes in a new .apkg file under
+/* The Overlay app's Anki page: card mining on/off, the cards' screenshots
+ * on/off (anki_screenshot, API 23), and the export of the queued cards (or all
+ * of them) as Lapis notes in a new .apkg file under
  * ux0:data/VitaJPOverlay/anki/ (settings/anki_export.h), which Anki imports
- * on any computer or phone. Nothing is sent anywhere: the app uses no
- * network. */
+ * on any computer or phone; a card's screenshot goes into its Picture field.
+ * Nothing is sent anywhere: the app uses no network. */
 #ifndef VJO_SETTINGS_ANKI_PAGE_H
 #define VJO_SETTINGS_ANKI_PAGE_H
 #include <stddef.h>

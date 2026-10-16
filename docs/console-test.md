@@ -125,8 +125,11 @@ PCSG00415 (need N, free F); using normal`). It applies when the overlay next ope
 in `ux0:data/VitaJPOverlay/anki_queue/`; nothing uses the network. In the Overlay app's Anki page,
 **Export cards** writes them into `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`: note the
 time the page shows it took and the file's size, copy the file to your computer (VitaShell's FTP or USB
-mode, or the SD2Vita card) and open it in Anki. Cards have no screenshot in this build: its full-frame
-capture is the kernel buffer #74's console refused. See [anki.md](anki.md).
+mode, or the SD2Vita card) and open it in Anki. Each card keeps a JPEG of the game's screen
+(`anki_screenshot = on`, the default; the game worker makes it, [anki.md](anki.md#the-screenshot)):
+check that the note's Picture shows the game, and note the `anki: screenshot rc=0 ...` line in
+`log.txt` (its strips, encoding and write times and the JPEG's size: the first console figures for
+them). See [anki.md](anki.md).
 
 ## What it tells us
 - **The capture in the game:** whether the display hook can write the game's own memory, per

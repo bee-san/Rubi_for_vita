@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Vita3K smoke test (#74 preflight): tools/vita3k_smoke/ as a homebrew app in Vita3K,
 # headless under Xvfb. It runs the real game worker's OCR jobs (probe, forced
-# fallback, textbox, full screen, textbox again, the 16-bit and 10-bit formats) in a
-# Vita user process with the release weights, and fails on a crash, a hang or a
-# failed stage. It is not evidence about the console: Vita3K cannot load the
+# fallback, textbox, full screen, textbox again, the 16-bit and 10-bit formats) and an
+# Anki card's screenshot in each format (API 23: the JPEG encoder, which Pillow then
+# decodes) in a Vita user process with the release weights, and fails on a crash, a hang
+# or a failed stage. It is not evidence about the console: Vita3K cannot load the
 # kernel plugin, and has no ScePhyMemPartKD, SceShell or taiHEN kernel
 # (docs/offline-testing.md section 5, AGENTS.md rule 5).
 #
@@ -72,4 +73,23 @@ grep -q "^done failures=0$" "$out/results.txt" \
   || fail "(the jobs finished, then Vita3K exit $rc after ${secs}s: a crash or hang at the end; $out/vita3k.stdout)"
 stages=$(grep -c "^stage " "$out/results.txt")
 lines=$(awk '/^stage /{for(i=1;i<=NF;i++) if ($i ~ /^recognized=/) {split($i,a,"="); n+=a[2]}} END{print n+0}' "$out/results.txt")
-echo "vita3k smoke: PASS ($stages jobs, $lines lines recognized, the app and Vita3K exited 0 after ${secs}s; $out/results.txt)"
+# API 23: the three screenshots' JPEGs, each the size its job reported, decoded at 960x544
+cp "$ux0"/data/vjo_smoke/*.jpg "$out/" 2>/dev/null
+shots=$("${PYTHON:-python3}" - "$out" <<'PY' 2>&1
+import re, sys
+from pathlib import Path
+from PIL import Image
+out = Path(sys.argv[1])
+rows = [l for l in (out / "results.txt").read_text().splitlines() if l.startswith("shot ")]
+assert len(rows) == 3, rows
+for l in rows:
+    card, size = l.split()[1], int(re.search(r" bytes=(\d+)", l).group(1))
+    jpg = out / f"{card}.jpg"
+    assert jpg.stat().st_size == size, (jpg, size)
+    with Image.open(jpg) as im:
+        im.load()
+        assert (im.format, im.size) == ("JPEG", (960, 544)), (jpg, im.format, im.size)
+print(" ".join(str((out / f"{l.split()[1]}.jpg").stat().st_size) for l in rows))
+PY
+) || fail "(a screenshot's JPEG is missing or does not decode: $shots)"
+echo "vita3k smoke: PASS ($stages jobs, $lines lines recognized, 3 screenshots of $shots B decoded, the app and Vita3K exited 0 after ${secs}s; $out/results.txt)"

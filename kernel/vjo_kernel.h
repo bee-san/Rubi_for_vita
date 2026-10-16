@@ -127,6 +127,7 @@ typedef struct {
     uintptr_t dst_user;                /* the worker's buffer (same process as the hook), or 0 */
     uint8_t *dst_kernel;               /* a kernel strip, or NULL */
     int sig;                           /* the rows continue g.capture_sig (capture_sig_begin) */
+    int rgba;                          /* API 23, a shot: A8B8G8R8 words (4 bytes a pixel), not grey */
 } OcrRowsJob;
 int capture_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_w, uint32_t fb_h,
                       const OcrRowsJob *job);

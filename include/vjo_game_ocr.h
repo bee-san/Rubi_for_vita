@@ -16,7 +16,9 @@
 #include "vjo_api.h" /* VjoRect */
 
 #define VJO_GAME_OCR_MODULE "VitaJPOverlay_OCR"
-#define VJO_GAME_OCR_MODEL_DIR_BYTES 256u
+/* The model directory (API 23: 128 B, from 256): the kernel accepts only VJO_VOCR_MODEL_ROOT
+ * (27 characters), and its file paths, the root's and a shot's (75 characters), fit. */
+#define VJO_GAME_OCR_MODEL_DIR_BYTES 128u
 #define VJO_GAME_OCR_TEXT_BYTES 4096u
 #define VJO_GAME_OCR_MODEL_BYTES 32u
 /* The kernel's one staging buffer, and the most one model Read copies: the
@@ -56,7 +58,21 @@
 #define VJO_GAME_OCR_SETTLE_UNIT_US 10000u
 #define VJO_GAME_OCR_SETTLE_MAX_SHIFT 24u
 #define VJO_GAME_OCR_SETTLE_MAX_UNIT_US 50000u
-#define VJO_GAME_OCR_F_ALL 0xFFFF3FFFu
+/* API 23, bit 14: the Anki screenshot (docs/anki.md). The worker reads the game's whole
+ * frame in colour (VJO_ROWS_RGBA strips), encodes it as a baseline JPEG in its own memory
+ * (core/jpegsw.h) and has the kernel's worker thread write it, a VJO_GAME_OCR_SHOT_CHUNK
+ * at a time, to VJO_GAME_OCR_SHOT_DIR/<shot>.jpg (vjoOcrShotWrite, vjoOcrShotSave): the
+ * card's screenshot, beside its record. A shot recognizes nothing, opens no model and
+ * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed. */
+#define VJO_GAME_OCR_F_SHOT 0x4000u
+#define VJO_GAME_OCR_F_ALL 0xFFFF7FFFu
+/* The shot's file: the Anki queue (core/anki_queue.h VJO_QUEUE_DIR; a host test checks the
+ * two agree), named by the card's queue ID (32 lowercase hex digits), at most
+ * VJO_GAME_OCR_SHOT_MAX bytes (core/anki.h VJO_ANKI_PICTURE_MAX, what an export reads). */
+#define VJO_GAME_OCR_SHOT_DIR "ux0:data/VitaJPOverlay/anki_queue"
+#define VJO_GAME_OCR_SHOT_ID_BYTES 36u
+#define VJO_GAME_OCR_SHOT_MAX (192u * 1024u)
+#define VJO_GAME_OCR_SHOT_CHUNK 32768u /* the kernel's staging buffer (VJO_GAME_OCR_MODEL_CHUNK) */
 /* API 22 (ocr-speed), VjoGameOcrRequest.speed: bits 0-1 the helper threads that
  * recognize lines in parallel (0-2, VjoVocrPool: config ocr_threads minus one);
  * bit 2 the ARM clock at 444 MHz while the job recognizes (ocr_boost_clock, on
@@ -93,6 +109,10 @@ typedef struct {
      * down, and opens each by its tier (VJO_GAME_OCR_OPEN_TIER), never by `model`
      * (which names the largest, for the logs) or `fallback` (""). */
     uint32_t tiers;
+    /* API 23: a shot's card (VJO_GAME_OCR_F_SHOT): its queue ID, 32 lowercase hex digits and a
+     * NUL; the kernel writes VJO_GAME_OCR_SHOT_DIR/<shot>.jpg, a name no caller supplies. Empty for
+     * an OCR job. */
+    char shot[VJO_GAME_OCR_SHOT_ID_BYTES];
 } VjoGameOcrRequest;
 
 /* vjoOcrModelOpen's `which`: the request's model or its fallback, or (API 20)
@@ -192,6 +212,11 @@ enum {
                             rc the longest gap (us), bytes their sum (us), sum the gaps over
                             VJO_PACE_SLOW_US; and since the job before: us how many frames, main their
                             sum, cdram the longest gap, phycont the gaps over VJO_PACE_SLOW_US */
+    VJO_GSTEP_SHOT,      /* API 23, a shot's encoding, one per try: kind the JPEG quality, arg the try (1-3),
+                            rc 0 or why it stopped (VJO_E_TOO_LARGE: over VJO_GAME_OCR_SHOT_MAX, the next try
+                            encodes a lower quality), bytes the JPEG's, sum the strips read, us the try */
+    VJO_GSTEP_SAVE,      /* API 23, a shot's file: kind the chunks written, rc 0 or the kernel's error,
+                            bytes written, us the writes and the save */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */
@@ -213,7 +238,8 @@ enum {
 #define VJO_GITEM_LINE 5u      /* "VjoGameVocrLine": a line taller than a strip, read whole */
 #define VJO_GITEM_LM 6u        /* "VjoGameVocrLM": the beam + LM decoder's LM (API 20) */
 #define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
-#define VJO_GITEM_COUNT 8u
+#define VJO_GITEM_SHOT 8u      /* "VjoGameShot": a shot's colour strip, encoder and JPEG (API 23) */
+#define VJO_GITEM_COUNT 9u
 
 typedef struct {
     uint8_t id;      /* VJO_GSTEP_* */
@@ -281,6 +307,11 @@ typedef struct {
     uint32_t region_sum;     /* FNV-1a over the region's grey rows on the first pass */
     uint32_t n_steps;        /* entries of step[] (the first VJO_GAME_OCR_STEPS of the job) */
     VjoGameOcrStep step[VJO_GAME_OCR_STEPS];
+    /* API 23, a shot: the JPEG written (bytes, 0 for none), the quality and the tries it was
+     * encoded in, its block (page-rounded) and where it was (VJO_GAME_OCR_MEM_*), the encoding's
+     * time (strips included) and the file's (the kernel's writes and its save). The rows' source,
+     * strips, strip rows and waits are in source, captures, strip_rows and capture_us. */
+    uint32_t shot_bytes, shot_quality, shot_tries, shot_block, shot_memory, shot_encode_us, shot_write_us;
     /* UTF-8 OCR text on success; every failed result carries empty text. API 20:
      * the text is normalised (core/textnorm.h) and the recognizer's own text
      * follows its NUL (vjo_text_raw), for the log. */
@@ -301,6 +332,10 @@ typedef struct {
  * (77 R + 150 G + 29 B) >> 8, width bytes each, dst_stride apart in dst. */
 #define VJO_ROWS_SIG 0x1u  /* these rows continue the job's first pass from row 0 (scene signature) */
 #define VJO_ROWS_LAST 0x2u /* with SIG: the first pass ends here; the capture is published */
+/* API 23: the rows in colour, as A8B8G8R8 words (R in the low byte, the frame's format
+ * expanded as core/fbgrey.h does), 4 bytes a pixel: a shot's rows, and only a shot's; never
+ * with SIG or LAST (a shot publishes no capture). dst_stride >= 4 x the width. */
+#define VJO_ROWS_RGBA 0x4u
 #define VJO_GAME_OCR_ROWS_MAX 64u  /* rows per call */
 #define VJO_GAME_OCR_KSTRIP_MAX (64u * 1024u) /* the kernel strip's largest size */
 
@@ -356,6 +391,18 @@ int vjoOcrCancel(uint32_t seq); /* Signals cancellation; worker must acknowledge
 int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info);
 int vjoOcrModelRead(uint32_t seq, uint32_t offset, uint32_t bytes, void *dst);
 int vjoOcrModelClose(uint32_t seq);
+/* API 23, a shot's JPEG (a VJO_GAME_OCR_F_SHOT job only), through the same broker and its one
+ * staging buffer, the other way: Write copies bytes [offset, offset + bytes) of the JPEG from
+ * src (the calling worker's memory), in order from 0, at most VJO_GAME_OCR_SHOT_CHUNK a call
+ * and VJO_GAME_OCR_SHOT_MAX in all, the first starting with FF D8 FF (a JPEG's SOI and a
+ * marker), and the kernel's worker thread writes them to VJO_GAME_OCR_SHOT_DIR/<shot>.jpg.tmp,
+ * which the first creates; it returns the bytes written. Save, once every byte is (bytes: their
+ * total, the last two FF D9, the EOI): that thread flushes and closes the file, renames it to
+ * <shot>.jpg and syncs the memory card; 0, or the native error (the .tmp is then removed).
+ * VJO_ERR_BUSY: repeat the exact call. vjoOcrModelClose abandons an unsaved file (closed and
+ * removed), as a cancellation or the worker's exit does. The path is the kernel's own. */
+int vjoOcrShotWrite(uint32_t seq, uint32_t offset, uint32_t bytes, const void *src);
+int vjoOcrShotSave(uint32_t seq, uint32_t bytes);
 #ifdef __cplusplus
 }
 #endif

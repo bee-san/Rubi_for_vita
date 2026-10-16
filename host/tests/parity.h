@@ -47,6 +47,7 @@ typedef struct {
     uintptr_t dst_user;
     uint8_t *dst_kernel;
     int sig;
+    int rgba; /* API 23: 0 here, the grey rows (a shot's colour rows are test_game_shot.c's) */
 } ParityRowsJob;
 void parity_crop_of(uint16_t rx, uint16_t ry, uint16_t rw, uint16_t rh, uint32_t fb_w, uint32_t fb_h, uint32_t *x,
                     uint32_t *y, uint32_t *w, uint32_t *h);

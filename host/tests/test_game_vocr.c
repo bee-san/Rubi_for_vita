@@ -302,6 +302,10 @@ int vjoOcrModelRead(uint32_t seq, uint32_t offset, uint32_t n, void *out)
     if (short_reads && n > 37) n = 37;
     int got = (int)fread(out, 1, n, model); bytes_read += (unsigned)got; return got;
 }
+/* API 23: a shot's file; this test's jobs are OCR jobs (test_game_shot.c has the shot's) */
+int vjoOcrShotWrite(uint32_t seq, uint32_t off, uint32_t bytes, const void *src)
+{ (void)seq; (void)off; (void)bytes; (void)src; TEST_CHECK(0); return -1; }
+int vjoOcrShotSave(uint32_t seq, uint32_t bytes) { (void)seq; (void)bytes; TEST_CHECK(0); return -1; }
 int vjoOcrModelClose(uint32_t seq)
 { TEST_CHECK(seq == 12); if (close_busy) return VJO_ERR_BUSY; if (!model) return 0; if (close_failure) return -789; int rc = fclose(model); model = NULL; return rc; }
 
@@ -419,7 +423,7 @@ static void cancel_and_wire(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.width = 200; r.x = 1; /* past the frame's edge */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
-    r.x = 0; r.flags = 0x4000; /* API 20: bits 14-15 mean nothing yet */
+    r.x = 0; r.flags = 0x8000; /* bit 15 means nothing yet (bit 14 is API 23's shot) */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.flags = 0; r.speed = 0x10; /* API 22: VJO_GAME_OCR_S_* bits 4-31 unknown */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
@@ -757,8 +761,15 @@ static void policy_in_the_flags(void)
              rows_calls, plain);
     TEST_CHECK(!blank && out.lines == 1 && rows_calls > plain && !memory_live && !capture_live);
     allocations = 0;
-    r.flags = 0x4000u; /* bits 14-15 mean nothing yet */
+    r.flags = 0x8000u; /* bit 15 means nothing yet (bit 14 is API 23's shot) */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
+    /* a shot carries no job policy: refused before anything is taken */
+    r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_BLANK;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
+    r.flags = VJO_GAME_OCR_F_SHOT;
+    r.speed = 1;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
+    r.speed = 0;
 }
 
 /* API 22 (ocr-speed): helpers and the ARM clock ride in the flags. Helpers are

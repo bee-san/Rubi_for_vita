@@ -93,6 +93,8 @@ WORKLOADS = [
     W("capture_a1b5", "capture", ("frame",), fmt="a1b5", unit="strip", what="the same, A1B5G5R5 (PSP emulator)"),
     W("capture_full_abgr", "capture", ("frame",), region=FULL, unit="strip",
       what="display hook, full screen (the self-test's stage), A8B8G8R8"),
+    W("capture_shot_abgr", "capture", ("frame",), mode=2, region=FULL, unit="strip",
+      what="display hook: an Anki screenshot's 64 colour rows of the full frame (API 23), A8B8G8R8"),
     W("scene_sig", "scene_sig", ("frame",), unit="signature",
       what="display hook: the region's change-detection signature (every 8th game frame)"),
     W("scene_update", "scene_update", ("frame",), unit="update",
@@ -124,6 +126,8 @@ WORKLOADS = [
     W("lookup_every", "lookup", ("texts", "dict"), mode=1, unit="lookup",
       what="Shell: a lookup at every selectable letter (Right in Character mode, a tap)"),
     W("config", "config", (), unit="parse", what="Shell: config.ini parsed (every overlay open)"),
+    W("jpeg_shot", "jpeg", ("frame",), unit="shot",
+      what="game worker: an Anki card's screenshot, the whole frame as a JPEG (core/jpegsw.c, quality 70; API 23)"),
     W("log", "log", (), unit="line", what="Shell: formatting a job's log lines (formatting only)"),
     W("anki", "anki", ("texts", "dict"), unit="card", what="Shell: an Anki card's note and queue record"),
     W("furigana", "furigana", ("texts", "dict"), unit="word",
@@ -399,10 +403,13 @@ def kernel_objects(vita_build):
     found = {}
     for p in Path(vita_build).glob("CMakeFiles/VitaJPOverlay_Kernel.dir/**/kernel/*.c.obj"):
         found[p.name] = p
+    # API 23: the Anki screenshot's JPEG encoder is the game worker's own object (not a library)
+    for p in Path(vita_build).glob("CMakeFiles/VitaJPOverlay_OCR.dir/**/core/jpegsw.c.obj"):
+        found[p.name] = p
     try:
-        return [found["capture.c.obj"], found["scene.c.obj"]]
+        return [found["capture.c.obj"], found["scene.c.obj"], found["jpegsw.c.obj"]]
     except KeyError:
-        die(f"{vita_build}: no kernel capture.c.obj/scene.c.obj (build the Vita tree first)")
+        die(f"{vita_build}: no kernel capture.c.obj/scene.c.obj or worker jpegsw.c.obj (build the Vita tree first)")
 
 
 def build_a9(vita_build, out):

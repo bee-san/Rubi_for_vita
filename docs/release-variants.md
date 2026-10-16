@@ -48,6 +48,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | every Paf allocation | `memory.cpp` | **reduced**: refusals only (the reserve guard's line is kept) |
 | the ledger's per-item table at boot, game start and exit | `ledger.c` | **reduced**: the two pool lines stay |
 | Anki: the queue count, the arena peak, the record's bytes | `anki.c`, `anki_queue.c` | **drop**; each save is kept without its word (`anki: save rc=0, 12 ms`; the debug build's names it), and every error |
+| an Anki card's screenshot (API 23): its line (`anki: screenshot rc=…`: size, block, strips, times) and, for a failed one, the game worker's steps | `anki.c` `take_shot` | **reduced**: a failed screenshot's line only (it says why the card has none; the overlay points to log.txt), no step lines; the screenshot itself is the same in both builds |
 | the title's parameter line | `game.c` | **drop** |
 | a PSP game's launch: its IDs, disc ID and the file it boots (`psp: …`, #124) | `game.c` | **keep** (the README's way to register a bubble: one line per launch) |
 | the log's append timing (`vjo_log_io`) | `log_vita.c` | **drop** |
@@ -116,6 +117,11 @@ to 4 KiB) [measured: `build/rv`, the `release_variants` target]:
 | the same after #138's worker loader | 40,648 + 77,824 | 118,784 B | 36,444 + 76,136 | 114,688 B | 4,096 B (1 page) |
 | `VitaJPOverlay_OCR.suprx` (each registered game) | 71,072 + 14,208 | 90,112 B | 69,708 + 14,208 | 90,112 B | 0 (1,364 B of text) |
 | `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 485,988 + 3,213,728 | 3,702,784 B | 485,516 + 3,213,696 | 3,702,784 B | 0 |
+
+With API 23's Anki screenshot (both builds of main `3aa08a6` and that change, the build log's module
+rows): the Shell 102,320 + 70,108 and 92,192 + 70,036 (the same pages), the kernel 36,124 + 77,616 and
+31,880 + 75,928 (the same pages), the game worker 76,688 + 14,160 and 75,420 + 14,160 in 94,208 B, one
+text page more in both builds for the JPEG encoder ([memory-ledger.md](memory-ledger.md#the-two-builds)).
 
 The normal Shell's 8,192 B are SceShell's for as long as the console is on (its partition had
 28-98 KiB free beside a game [measured, vita-memory.md 5.1]). The saving moves with the code: three

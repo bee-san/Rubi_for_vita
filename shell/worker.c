@@ -569,17 +569,71 @@ static const char *game_oom_detail(const VjoGameOcrResult *r)
 #endif
 
 #ifdef VJO_WITH_VOCR
+/* ---- the game worker's one job slot (API 23: shared with anki.c's screenshots) ----
+ * The kernel holds one job and its one result: an exchange is submit to read, and
+ * another thread's submission in between would replace the result this one waits
+ * for. game_lock is held for each exchange; a screenshot waiting for it
+ * (shot_request) has a quiet refresh in progress yield, as a lookup does, and
+ * keeps the next one from starting. */
+static SceUID game_lock = -1;
+static volatile int shot_request;
+
+/* Waits for the slot in 50 ms steps, while stop(NULL) says no, at most wait_us.
+ * Before vjo_worker_start made the lock no other thread submits (the Anki thread
+ * starts after it): the slot is this thread's. */
+static int game_job_lock(int (*stop)(void *), int64_t wait_us)
+{
+    int64_t until = now_us() + wait_us;
+    for (;;) {
+        unsigned int timeout = 50000;
+        if (game_lock < 0 || sceKernelLockMutex(game_lock, 1, &timeout) >= 0)
+            return 0;
+        if (stop(NULL) || now_us() >= until)
+            return -1;
+    }
+}
+
+int vjo_game_job_begin(int (*stop)(void *), int64_t wait_us)
+{
+    shot_request = 1;
+    __sync_synchronize();
+    if (!game_job_lock(stop, wait_us))
+        return 0;
+    shot_request = 0;
+    return -1;
+}
+
+static void game_job_unlock(void)
+{
+    if (game_lock >= 0)
+        sceKernelUnlockMutex(game_lock, 1);
+}
+
+void vjo_game_job_end(void)
+{
+    game_job_unlock();
+    shot_request = 0;
+}
+
+/* A screenshot waits for the slot or holds it (control thread: no refresh starts). */
+static int shot_waiting(void)
+{
+    __sync_synchronize();
+    return shot_request;
+}
+
 static int vocr_cancelled(void *ud)
 {
     (void)ud;
     __sync_synchronize();
-    return !running || job_cancelled;
+    return !running || job_cancelled || (job_refresh && shot_request);
 }
 static int ocr_submit(void *ud, const VjoGameOcrRequest *r) { (void)ud; return vjoOcrSubmit(r); }
 static int ocr_read(void *ud, uint32_t seq, VjoGameOcrResult *r) { (void)ud; return vjoOcrRead(seq, r); }
 static int ocr_cancel(void *ud, uint32_t seq) { (void)ud; return vjoOcrCancel(seq); }
 static int64_t ocr_clock(void *ud) { (void)ud; return now_us(); }
 static void ocr_delay(void *ud, uint32_t us) { (void)ud; sceKernelDelayThread(us); }
+const VjoGameOcrClient vjo_game_client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
 
 /* The job's headroom: free USER (+ another model's resident weights, released
  * first) minus the reserve and what the job needs; negative means refused.
@@ -850,12 +904,14 @@ static void log_tier_checks(const VjoGameOcrResult *r)
 static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers, unsigned *ran, int stage)
 {
     VjoGameOcrRequest request = {.size=sizeof(request), .flags=flags, .tiers=tiers};
-    VjoGameOcrClient client = {NULL, ocr_submit, ocr_read, ocr_cancel, ocr_clock, ocr_delay};
     VjoState st0;
     unsigned top = vocr_top_tier(tiers);
     *ran = top;
     if (!top) return VJO_E_OCR_MODEL;
-    sceClibSnprintf(request.model_dir, sizeof(request.model_dir), "%s", job_cfg.ocr_model_dir);
+    /* At most the field's 127 characters (zeroed above, so terminated): the kernel accepts no other
+     * directory than VJO_VOCR_MODEL_ROOT, a longer one included. */
+    sceClibMemcpy(request.model_dir, job_cfg.ocr_model_dir,
+                  sceClibStrnlen(job_cfg.ocr_model_dir, sizeof(request.model_dir) - 1));
     /* The largest tier's model names the job (the kernel's log); the worker opens each by its tier. */
     sceClibSnprintf(request.model, sizeof(request.model), "%s", vjo_vocr_tier_model((int)top));
     st0.size = sizeof(st0);
@@ -887,7 +943,12 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     /* API 22 (ocr-speed): helper threads for parallel lines, the ARM clock. */
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
     int64_t t0 = now_us();
-    int rc = vjo_game_ocr_exchange(&client, &request, result, vocr_poll_cancelled, NULL, 60000000);
+    /* the slot: a screenshot's exchange may hold it (a cancellation ends the wait) */
+    int locked = !game_job_lock(vocr_poll_cancelled, INT64_MAX / 2);
+    int rc = locked ? vjo_game_ocr_exchange(&vjo_game_client, &request, result, vocr_poll_cancelled, NULL, 60000000)
+                    : VJO_E_CANCELLED;
+    if (locked)
+        game_job_unlock();
 #if VJO_DEBUG
     job_game_us += now_us() - t0; /* the done line's (net_job) */
 #endif
@@ -1123,6 +1184,7 @@ static int run_vocr(VjoOverlayData *out)
     out->err.detail = "This build has no vita-vn-ocr backend. Install a build made with VJO_WITH_VOCR.";
     return out->err.rc = VJO_E_OCR_UNAVAILABLE;
 }
+static int shot_waiting(void) { return 0; } /* no game worker: no screenshot */
 #endif
 
 static int run_job(VjoArena *a, VjoOverlayData *out)
@@ -1784,6 +1846,8 @@ static void on_refresh_done(void)
     size_t mark = vjo_arena_mark(&scratch);
     __sync_synchronize(); /* pairs with the network thread's barrier: its result is read after it */
     rc = cache_data[1].err.rc;
+    /* (one that yielded to a screenshot ended cancelled too: it is asked again) */
+    cancelled |= rc == VJO_E_CANCELLED;
     job_running = job_done = job_text_ready = job_refresh = job_cancelled = 0;
     refresh_after_us = now_us() + REFRESH_GAP_US;
     if (ov == OV_OPEN_OLD_JOB) {
@@ -2324,7 +2388,8 @@ static void background_open(void)
         }
         return;
     }
-    if (!refresh_pending || t < refresh_after_us || t < ocr_backoff.until || t - lookup_us < REFRESH_IDLE_US)
+    if (!refresh_pending || t < refresh_after_us || t < ocr_backoff.until || t - lookup_us < REFRESH_IDLE_US ||
+        shot_waiting())
         return;
     refresh_pending = 0;
     /* Local text is valid only for this game's local pipeline (retired at every
@@ -2495,6 +2560,13 @@ int vjo_worker_start(void)
     view_lock = sceKernelCreateMutex("VjoView", 0, 0, NULL);
     cmd_lock = sceKernelCreateMutex("VjoCmd", 0, 0, NULL);
     net_evf = sceKernelCreateEventFlag("VjoNetEv", 0, 0, NULL);
+#ifdef VJO_WITH_VOCR
+    game_lock = sceKernelCreateMutex("VjoGameJob", 0, 0, NULL); /* before Anki: its screenshots take it */
+    if (game_lock < 0) {
+        vjo_worker_stop();
+        return -1;
+    }
+#endif
     if (view_lock < 0 || cmd_lock < 0 || net_evf < 0) {
         vjo_worker_stop();
         return -1;
@@ -2566,5 +2638,10 @@ int vjo_worker_stop(void)
     if (view_lock >= 0)
         sceKernelDeleteMutex(view_lock);
     net_evf = cmd_lock = view_lock = -1;
+#ifdef VJO_WITH_VOCR
+    if (game_lock >= 0) /* (the Anki job, which takes it for a screenshot, was joined above) */
+        sceKernelDeleteMutex(game_lock);
+    game_lock = -1;
+#endif
     return 0;
 }

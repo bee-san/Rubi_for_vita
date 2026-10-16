@@ -35,8 +35,13 @@
  * 22: VjoGameOcrRequest.speed (VJO_GAME_OCR_S_*: helper threads for parallel
  * lines, the 444 MHz clock while recognizing, no line cache), a word of its own
  * after flags; three new step kinds (parallel lines, the clock, the game's frame
- * pacing, which the kernel appends). The request grows by that word. */
-#define VJO_API_VERSION 22
+ * pacing, which the kernel appends). The request grows by that word.
+ * 23: the Anki screenshot. A request with VJO_GAME_OCR_F_SHOT (and the card's ID,
+ * VjoGameOcrRequest.shot, a new last field) has the game worker read the whole frame
+ * in colour (VJO_ROWS_RGBA), encode a JPEG in its own memory and write it through the
+ * kernel's worker thread (vjoOcrShotWrite, vjoOcrShotSave) beside the card in the Anki
+ * queue; results carry the shot's figures, two new step kinds (shot, save). */
+#define VJO_API_VERSION 23
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from

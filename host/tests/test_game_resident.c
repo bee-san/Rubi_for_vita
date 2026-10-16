@@ -174,6 +174,10 @@ int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t n, void *dst)
     bytes_read += n;
     return (int)n;
 }
+/* API 23: a shot's file; this test's jobs are OCR jobs (test_game_shot.c has the shot's) */
+int vjoOcrShotWrite(uint32_t seq, uint32_t off, uint32_t bytes, const void *src)
+{ (void)seq; (void)off; (void)bytes; (void)src; TEST_CHECK(0); return -1; }
+int vjoOcrShotSave(uint32_t seq, uint32_t bytes) { (void)seq; (void)bytes; TEST_CHECK(0); return -1; }
 int vjoOcrModelClose(uint32_t seq) { TEST_CHECK(seq == 12); if (file_open_now) closes++; file_open_now = 0; return 0; }
 
 /* ---- the runtime: spies, each checking it got the verified resident bytes ---- */

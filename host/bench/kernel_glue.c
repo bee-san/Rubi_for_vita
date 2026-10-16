@@ -32,7 +32,8 @@ int bench_grey_rows(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t fb_w,
                     uint32_t y0, uint32_t w, uint32_t h, uint32_t y, uint32_t n, unsigned char *dst,
                     uint32_t stride, int sig)
 {
-    OcrRowsJob job = {x0, y0, w, h, fb_w, fb_h, y, n, stride, (uintptr_t)dst, NULL, sig};
+    /* sig 2: an Anki screenshot's colour rows (API 23, VJO_ROWS_RGBA), no signature */
+    OcrRowsJob job = {x0, y0, w, h, fb_w, fb_h, y, n, stride, (uintptr_t)dst, NULL, sig == 1, sig == 2};
     return capture_grey_rows(base, pitch, fmt, fb_w, fb_h, &job);
 }
 

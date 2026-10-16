@@ -15,6 +15,7 @@
  * the job's step log, so one console run says which works. */
 #include "main.h"
 #include "../core/fbgrey.h"
+#include "../core/jpegsw.h"
 #include "../core/textnorm.h"
 #include "../core/vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
@@ -60,6 +61,9 @@
 
 static SceUID worker = -1, workspace_uid = -1, weights_uid = -1, capture_uid = -1, line_uid = -1, lm_uid = -1;
 static SceUID cascade_uid = -1;
+/* API 23: a shot's block (its colour strip, the encoder and the JPEG), only while a shot runs. */
+static SceUID shot_uid = -1;
+static uint32_t shot_bytes_held;
 /* A rows call returned BUSY: the display hook may still write into the capture
  * (or tall-line) block, so neither is freed (they go with the process). */
 static int hook_owns_capture;
@@ -75,7 +79,8 @@ static void *line_base;
  * partition. The game has no file access, so it is read through the result
  * fields (workspace_bytes, resident_bytes, capture_bytes, the step log) rather
  * than printed here. */
-enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_LM, GL_CASCADE, GL_HELPERS, GL_COUNT };
+enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_LM, GL_CASCADE, GL_HELPERS, GL_SHOT,
+       GL_COUNT };
 static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
     [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
@@ -86,6 +91,7 @@ static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_LM] = {"VjoGameVocrLM", VJO_LEDGER_POOL_GAME},
     [GL_CASCADE] = {"VjoGameVocrCascade", VJO_LEDGER_POOL_GAME},
     [GL_HELPERS] = {"VjoGameVocrHelper stacks+TLS", VJO_LEDGER_POOL_GAME},
+    [GL_SHOT] = {"VjoGameShot", VJO_LEDGER_POOL_GAME},
 };
 VjoLedger g_game_ledger;
 
@@ -287,6 +293,7 @@ typedef struct {
     int failed;             /* the rows call that ended the job, for the log */
     int fixed;              /* the probe: test this mode only, no ladder */
     int logged;             /* the first pass's PASS and SIG steps are in (a retry's are not logged) */
+    int rgba;               /* API 23, a shot: the rows in colour (VJO_ROWS_RGBA), 4 bytes a pixel */
 } Capture;
 
 /* A BUSY from a request that never reached the hook (info.armed 0) is a
@@ -314,13 +321,14 @@ static int capture_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, 
         req.y = y;
         req.n = n;
         req.mode = c->mode;
-        req.flags = (flags & VJO_STRIP_FIRST ? VJO_ROWS_SIG : 0u) | (flags & VJO_STRIP_LAST ? VJO_ROWS_LAST : 0u);
+        req.flags = (flags & VJO_STRIP_FIRST ? VJO_ROWS_SIG : 0u) | (flags & VJO_STRIP_LAST ? VJO_ROWS_LAST : 0u) |
+                    (c->rgba ? VJO_ROWS_RGBA : 0u);
         req.dst_stride = (uint32_t)stride;
         sceClibMemset(&c->last, 0, sizeof(c->last));
         c->last.size = sizeof(c->last);
         rc = vjoOcrCaptureRows(&req, dst, &c->last);
         if (rc == (int)n) {
-            c->pass_bytes += n * c->r->width;
+            c->pass_bytes += n * c->r->width * (c->rgba ? 4u : 1u);
             c->pass_strips++;
             c->pass_us += c->last.wait_us;
             return rc;
@@ -337,8 +345,8 @@ static int capture_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, 
             continue;
         }
         if (c->mode == VJO_GAME_OCR_SRC_KSTRIP && c->last.kstrip_rc < 0)
-            step_add(VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_KERNEL, VJO_GITEM_CAPTURE, c->last.kstrip_rc,
-                     n * c->r->width, 0, 0, 0);
+            step_add(VJO_GSTEP_ALLOC, VJO_GAME_OCR_MEM_KERNEL, c->rgba ? VJO_GITEM_SHOT : VJO_GITEM_CAPTURE,
+                     c->last.kstrip_rc, n * c->r->width * (c->rgba ? 4u : 1u), 0, 0, 0);
         c->failed = rc;
         /* An armed request's copy outlived the call: the hook may still write dst, so the
          * block is never freed and this worker takes no more jobs. */
@@ -418,6 +426,11 @@ static int file_read(void *ud, uint64_t off, void *dst, size_t bytes)
     return 0;
 }
 
+/* API 23: the file the kernel holds is a shot's JPEG, whose save (a close, two memory card syncs and
+ * a rename) may outlast a model operation's wait: its close waits SHOT_FILE_WAIT_US. */
+static int shot_file;
+#define SHOT_FILE_WAIT_US 30000000u
+
 static void file_close(void *ud)
 {
     (void)ud;
@@ -428,10 +441,13 @@ static void file_close(void *ud)
             /* Cleanup must drain even after cancellation or active_seq reset. */
             rc = vjoOcrModelClose(model_seq);
             if (rc != VJO_ERR_BUSY) break;
-            if (sceKernelGetProcessTimeWide()-started >= MODEL_WAIT_US) { rc = VJO_ERR_TIMEOUT; break; }
+            if (sceKernelGetProcessTimeWide()-started >= (shot_file ? SHOT_FILE_WAIT_US : MODEL_WAIT_US)) {
+                rc = VJO_ERR_TIMEOUT;
+                break;
+            }
             sceKernelDelayThread(MODEL_POLL_US);
         } while (1);
-        if (rc >= 0) { model_owned = 0; model_seq = 0; }
+        if (rc >= 0) { model_owned = 0; model_seq = 0; shot_file = 0; }
         else io_error = rc; /* cleanup retries; never acknowledge a leaked descriptor */
     }
 }
@@ -775,6 +791,10 @@ static int cleanup(void)
         if (game_memblock_free(GL_LINE, VJO_GITEM_LINE, line_uid, line_bytes_held) < 0) rc = VJO_E_OCR_UNAVAILABLE;
         else { line_uid = -1; line_bytes_held = 0; line_base = NULL; }
     }
+    if (shot_uid >= 0 && !hook_owns_capture) { /* a shot's colour rows were written here */
+        if (game_memblock_free(GL_SHOT, VJO_GITEM_SHOT, shot_uid, shot_bytes_held) < 0) rc = VJO_E_OCR_UNAVAILABLE;
+        else { shot_uid = -1; shot_bytes_held = 0; }
+    }
     file_close(NULL);
     if (model_owned) rc = VJO_E_OCR_UNAVAILABLE;
     /* Between jobs a weights (or LM) block holds verified bytes or nothing. */
@@ -844,7 +864,7 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     unsigned rows = vjo_vocr_strip_rows(r->width, r->height);
     uint32_t bytes = rows * r->width;
-    Capture c = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 1, 0};
+    Capture c = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 1, 0, 0};
     int rc = VJO_OK, any = 0;
     if (!rows) return VJO_E_OCR_REGION;
     for (unsigned i = 0; i < sizeof(ladder) / sizeof(ladder[0]); i++) {
@@ -896,6 +916,168 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     return any ? rc : VJO_E_SOURCE;
 }
 #endif
+
+/* ---- API 23: the Anki screenshot (VJO_GAME_OCR_F_SHOT, docs/anki.md) ----
+ * The game's whole frame in colour, a strip of rows a frame through the display hook
+ * (an OCR job's capture path: its waits, its checks and the kernel strip as the last
+ * rung), encoded band by band (core/jpegsw.h) into one block of the game's memory, and
+ * the JPEG written through the kernel's worker thread beside the card in the Anki queue
+ * (vjoOcrShotWrite, vjoOcrShotSave; the game itself may have no ux0:). The block holds a
+ * strip, the encoder and the JPEG, only while the shot runs; nothing of it reaches
+ * SceShell, which learns the JPEG's size from the result. */
+#define SHOT_QUALITY 70                       /* the first try: docs/anki.md has the sizes it gives */
+#define SHOT_TRIES 3                          /* 70, 50, 35: a JPEG over VJO_GAME_OCR_SHOT_MAX again, lower */
+#define SHOT_HOOK_ROWS VJO_GAME_OCR_ROWS_MAX  /* rows a frame through the hook: 9 frames for 544 */
+#define SHOT_KSTRIP_ROWS VJO_JPEG_BAND        /* through the kernel strip: 16 x 960 x 4 within its 64 KiB */
+/* The save (a close, two memory card syncs and a rename) on a slow card: the Shell's exchange gives up
+ * first (shell/anki.c SHOT_TIMEOUT_US) and cancels, which ends this wait; its file then goes (file_close
+ * waits as long, so a slow save never leaves the worker blocked for the game's session). */
+#define SHOT_SAVE_WAIT_US SHOT_FILE_WAIT_US
+/* The block: the encoder's state, one strip of colour rows and the JPEG (at most
+ * VJO_GAME_OCR_SHOT_MAX), with the arena's alignment and the buffer's spare byte. */
+#define SHOT_BLOCK_BYTES(width) \
+    PAGE_ROUND(VJO_JPEG_STATE_BYTES + 16u + SHOT_HOOK_ROWS * (width) * 4u + VJO_GAME_OCR_SHOT_MAX + 16u)
+typedef char vjo_shot_budget_check[SHOT_BLOCK_BYTES(VJO_OCR_MAX_WIDTH) <= VJO_BUDGET_GAME_SHOT ? 1 : -1];
+typedef char vjo_shot_rows_check[SHOT_HOOK_ROWS % VJO_JPEG_BAND == 0 &&
+                                 SHOT_KSTRIP_ROWS * VJO_OCR_MAX_WIDTH * 4u <= VJO_GAME_OCR_KSTRIP_MAX ? 1 : -1];
+
+/* Rows [y, y + n) of the frame into dst: through the hook, or once the hook could not
+ * write the block (the ladder's last rung) through the kernel strip, 16 rows a call. */
+static int shot_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, size_t stride)
+{
+    for (unsigned done = 0; done < n;) {
+        unsigned k = c->mode == VJO_GAME_OCR_SRC_KSTRIP && n - done > SHOT_KSTRIP_ROWS ? SHOT_KSTRIP_ROWS : n - done;
+        int got = cancelled(NULL) ? VJO_E_CANCELLED : capture_rows(c, y + done, k, dst + (size_t)done * stride, stride, 0);
+        if (got == (int)k) {
+            done += k;
+            continue;
+        }
+        if (got != VJO_E_CANCELLED && !blocked && c->mode == VJO_GAME_OCR_SRC_HOOK && kernel_strip_may_help(c->failed)) {
+            step_add(VJO_GSTEP_PASS, VJO_GAME_OCR_SRC_HOOK, y + done, c->failed, 0, 0, c->last.wait_us, 0);
+            c->mode = VJO_GAME_OCR_SRC_KSTRIP;
+            c->failed = 0;
+            continue;
+        }
+        return got < 0 ? got : VJO_E_SOURCE;
+    }
+    return (int)n;
+}
+
+/* One call of the shot's file (vjoOcrShotWrite, or with src NULL vjoOcrShotSave), repeated
+ * while the kernel's worker is still at it, at most wait_us. */
+static int shot_call(uint32_t offset, uint32_t bytes, const void *src, uint32_t wait_us)
+{
+    uint64_t started = now_wide();
+    for (;;) {
+        int rc;
+        if (cancelled(NULL)) return VJO_E_CANCELLED;
+        rc = src ? vjoOcrShotWrite(model_seq, offset, bytes, src) : vjoOcrShotSave(model_seq, bytes);
+        if (rc != VJO_ERR_BUSY) return rc;
+        if (now_wide() - started >= wait_us) return VJO_ERR_TIMEOUT;
+        sceKernelDelayThread(MODEL_POLL_US);
+    }
+}
+
+static int run_shot(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
+{
+    const uint32_t w = r->width, h = r->height, stride = w * 4u, need = SHOT_BLOCK_BYTES(w);
+    Capture c = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 1, 0, 1}; /* fixed: shot_rows picks the rung */
+    VjoArena a;
+    VjoBuf jpg = {0};
+    void *base = NULL;
+    SceUID leaked;
+    uint32_t held, mem, off = 0, chunks = 0;
+    int rc, quality = SHOT_QUALITY;
+    uint64_t t0;
+    if (!IMPORT_READY(vjoOcrShotWrite) || !IMPORT_READY(vjoOcrShotSave)) return VJO_E_OCR_UNAVAILABLE;
+    /* The memory check: the block beside the reserve the game always keeps (the
+     * resident weights stay; a shot runs no model). */
+    out->free_user = free_user();
+    out->reserve_bytes = GAME_RESERVE;
+    out->need_workspace = need;
+    rc = out->free_user < 0 || (int64_t)out->free_user - GAME_RESERVE < (int64_t)need;
+    step_add(VJO_GSTEP_CHECK, 0, 0, rc, need, 0, 0, 0);
+    if (rc) return VJO_E_OOM;
+    shot_uid = game_memblock_alloc(GL_SHOT, VJO_GITEM_SHOT, "VjoGameShot", need, LADDER_ALL, &base, &leaked, &held,
+                                   &mem);
+    if (shot_uid < 0) {
+        shot_uid = leaked;
+        return VJO_E_OOM;
+    }
+    shot_bytes_held = out->shot_block = held;
+    out->shot_memory = mem;
+    t0 = now_wide();
+    for (unsigned t = 1; t <= SHOT_TRIES; t++) {
+        uint64_t t1 = now_wide();
+        uint32_t strips = c.pass_strips;
+        uint8_t *band;
+        VjoJpeg *e = NULL;
+        vjo_arena_init(&a, base, held);
+        rc = VJO_E_OOM;
+        if ((band = (uint8_t *)vjo_arena_alloc(&a, (size_t)SHOT_HOOK_ROWS * stride)) &&
+            (e = vjo_jpeg_begin(&a, w, h, quality, &jpg)))
+            rc = VJO_OK;
+        for (uint32_t y = 0; !rc && y < h;) {
+            uint32_t n = h - y < SHOT_HOOK_ROWS ? h - y : SHOT_HOOK_ROWS;
+            int got = shot_rows(&c, y, n, band, stride);
+            if (got != (int)n) {
+                rc = got;
+                break;
+            }
+            for (uint32_t k = 0; !rc && k < n; k += VJO_JPEG_BAND)
+                if (vjo_jpeg_rows(e, band + (size_t)k * stride, n - k < VJO_JPEG_BAND ? n - k : VJO_JPEG_BAND,
+                                  stride) < 0 || jpg.len > VJO_GAME_OCR_SHOT_MAX)
+                    rc = VJO_E_TOO_LARGE;
+            y += n;
+        }
+        if (!rc && (vjo_jpeg_end(e) < 0 || jpg.len > VJO_GAME_OCR_SHOT_MAX)) rc = VJO_E_TOO_LARGE;
+        step_add(VJO_GSTEP_SHOT, (unsigned)quality, t, rc, (uint32_t)jpg.len, c.pass_strips - strips,
+                 (uint32_t)(now_wide() - t1), 0);
+        out->shot_quality = (uint32_t)quality;
+        out->shot_tries = t;
+        if (rc != VJO_E_TOO_LARGE) break;
+        quality = quality > 50 ? 50 : 35;
+    }
+    out->shot_encode_us = (uint32_t)(now_wide() - t0);
+    if (rc < -199) rc = VJO_E_SOURCE; /* a native capture error: its code is in the PASS step */
+    out->source = c.pass_strips ? c.mode : VJO_GAME_OCR_SRC_NONE;
+    out->captures = c.pass_strips;
+    out->capture_us = c.pass_us;
+    out->strip_rows = c.mode == VJO_GAME_OCR_SRC_KSTRIP ? SHOT_KSTRIP_ROWS : SHOT_HOOK_ROWS;
+    if (c.last.fb_width) {
+        out->fb_width = c.last.fb_width; out->fb_height = c.last.fb_height;
+        out->fb_pitch = c.last.fb_pitch; out->fb_format = c.last.fb_format;
+    }
+    if (rc) return rc;
+    /* The file, a staging buffer at a time, then saved: until then cleanup's file_close
+     * abandons it (the kernel closes and removes it). */
+    t0 = now_wide();
+    model_seq = active_seq;
+    model_owned = 1;
+    shot_file = 1;
+    while (!rc && off < jpg.len) {
+        uint32_t n = (uint32_t)jpg.len - off < VJO_GAME_OCR_SHOT_CHUNK ? (uint32_t)jpg.len - off : VJO_GAME_OCR_SHOT_CHUNK;
+        int got = shot_call(off, n, jpg.data + off, MODEL_WAIT_US);
+        if (got == (int)n) {
+            off += n;
+            chunks++;
+        } else {
+            rc = got < 0 ? got : VJO_E_LOCAL_IO;
+        }
+    }
+    if (!rc) rc = shot_call(0, (uint32_t)jpg.len, NULL, SHOT_SAVE_WAIT_US);
+    out->shot_write_us = (uint32_t)(now_wide() - t0);
+    step_add(VJO_GSTEP_SAVE, chunks, 0, rc, off, 0, out->shot_write_us + 1u, 0);
+    if (!rc) {
+        model_owned = 0; /* saved: the kernel holds no file of this job any more */
+        model_seq = 0;
+        shot_file = 0;
+        out->shot_bytes = (uint32_t)jpg.len;
+        return VJO_OK;
+    }
+    io_error = rc;
+    return rc == VJO_E_CANCELLED || rc == VJO_ERR_CANCELLED ? VJO_E_CANCELLED : VJO_E_LOCAL_IO;
+}
 
 /* ---- ocr-speed: helper threads for parallel lines (core/vocr_ocr.h VjoVocrPool) ----
  * A line handed to a helper runs on a thread of its own, created for that line
@@ -1081,23 +1263,29 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     job_started_us = now_wide();
     int rc = VJO_E_SOURCE;
     VjoVocrStats stats = {0};
-    Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0};
-    if (blocked || workspace_uid >= 0 || capture_uid >= 0 || model_owned) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
+    if (blocked || workspace_uid >= 0 || capture_uid >= 0 || shot_uid >= 0 || model_owned) {
+        rc = VJO_E_OCR_UNAVAILABLE; goto done;
+    }
     /* The refinement's mode (bits 12-13): 3 is refused here, as unknown bits are. */
     unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
+    /* API 23: a shot carries no model, tiers, speed or other flag but F_FULL */
+    int shot = (r->flags & VJO_GAME_OCR_F_SHOT) != 0;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
         refine_mode > VJO_GAME_OCR_REFINE_PSP || (r->tiers & ~VJO_VOCR_TIERS_ALL) ||
         (r->speed & ~VJO_GAME_OCR_S_ALL) ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
         !r->fb_width || r->fb_width > VJO_OCR_MAX_WIDTH || !r->fb_height || r->fb_height > VJO_OCR_MAX_HEIGHT ||
         r->x > r->fb_width - r->width || r->y > r->fb_height - r->height ||
-        !r->model_dir[0] || !r->model[0] ||
+        (shot ? r->tiers || r->speed || (r->flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL))
+              : !r->model_dir[0] || !r->model[0]) ||
         r->model_dir[sizeof(r->model_dir)-1] || r->model[sizeof(r->model)-1] ||
         r->fallback[sizeof(r->fallback)-1]) goto done;
     out->region_x = r->x; out->region_y = r->y; out->width = r->width; out->height = r->height;
     out->fb_width = r->fb_width; out->fb_height = r->fb_height;
     if (cancelled(NULL)) { rc = VJO_E_CANCELLED; goto done; }
     step_add(VJO_GSTEP_MEM, 0, 0, 0, 0, 0, 0, 1);
+    if (shot) { rc = run_shot(r, out); goto done; } /* both builds: an Anki card's screenshot (API 23) */
 #if VJO_DEBUG
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
 #else
@@ -1394,7 +1582,7 @@ done:
         out->line[i].flags = stats.line[i].flags;
         out->line[i].us = stats.line[i].us;
     }
-    if (!(r && (r->flags & VJO_GAME_OCR_F_PROBE))) {
+    if (!(r && (r->flags & (VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT)))) { /* (theirs are their own) */
         out->source = capture.pass_strips ? capture.mode : VJO_GAME_OCR_SRC_NONE;
         out->strip_rows = stats.strip_rows;
         out->captures = stats.strips;
