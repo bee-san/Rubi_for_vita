@@ -111,8 +111,8 @@
  * 2,080 B line queue and slots, both on vita-vn-ocr a540027), and one text page for #85 (the build's
  * vocr.c object 15,288 -> 17,952 B of code; the worker's text 67,452 -> 70,124 B) [measured: main
  * 8f1ec8f against the API 22 build], in the same game partition. #138's one-copy check (game_ocr/main.c
- * another_copy, outside_segments) adds 300 B of text in both builds, the same pages: 71,072 -> 71,372 B
- * debug, 69,708 -> 70,008 B normal [measured: the build log's module rows, main 2833509 and #138]. */
+ * another_copy, outside_segments) adds 284 B of text in both builds, the same pages: 71,088 -> 71,372 B
+ * debug, 69,724 -> 70,008 B normal [measured: the build log's module rows, main c08db18 and #138]. */
 /* Both builds (docs/release-variants.md): the normal build compiles the self-test's capture probe
  * out, 1,348 B of text, in the same pages since #124 (the PSP bubbles' ID: +260 B): 69,724 + 14,208
  * against the debug build's 71,072 + 14,208 [measured: the build log's module rows, both builds on
@@ -202,7 +202,8 @@
  * code, so that the kernel decides by the Shell's rules), the registration's one-thread check
  * 150 B and 8 B, and five more SceSysclibForDriver stubs [measured: the build's objects]. The debug
  * build: 36,640 -> 40,648 B of text and 77,768 -> 77,824 B of data/bss, the data/bss pages full
- * (one more byte takes a page) [measured: the build log's module rows, main 3aa08a6 and #138]. */
+ * (one more byte takes a page) [measured: the build log's module rows, main 3aa08a6 and #138; the same on
+ * main c08db18]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
 #else

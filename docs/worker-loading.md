@@ -100,7 +100,9 @@ its module up by name (`taiGetModuleInfo`, which finds the oldest of that name) 
 its own code, so a younger copy gives its pages back at once, whichever loader came first. A lookup
 that fails or reports no segment counts as "no other copy", so the only copy never unloads itself.
 That the lookup finds the oldest is read from taiHEN's source, not seen on a console; were it the
-newest, both copies would stay. The kernel is the second line of defence either way: one registered
+newest, both copies would stay. The pairing itself, `taiGetModuleInfo`'s `modid` handed to
+`sceKernelGetModuleInfo` for the module's segments, is Adrenaline's user module's for the PSP
+emulator (`user/main.c:530-548`: `segments[0].vaddr`/`memsz` its text). The kernel is the second line of defence either way: one registered
 worker thread per process; another thread's `vjoOcrRegister` in the same process is refused
 (`VJO_ERR_BUSY`, never a job, never weights) and logged once, so a console run shows a second copy
 that stayed.

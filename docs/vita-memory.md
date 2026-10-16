@@ -637,8 +637,9 @@ troubleshooting').
 
 Do:
 
-- Run inference, weights, workspaces, dictionaries and screenshots in the game's process, under
-  a `*TITLEID` section [expert].
+- Run inference, weights, workspaces, dictionaries and screenshots in the game's process, never
+  under `*ALL` [expert]: since #138 the kernel plugin loads the worker into each game ON in
+  `games.ini` ([worker-loading.md](worker-loading.md)); a `*TITLEID` section per game did it before.
 - Preflight with `sceKernelGetFreeMemorySize().sizeMain`, round to 4 KiB, keep a reserve, allocate
   per job, free after, and accept that a game may take the memory first.
 - Return `SCE_KERNEL_START_NO_RESIDENT` from any process the plugin does not serve.

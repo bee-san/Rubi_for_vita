@@ -100,7 +100,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | asserts | none at run time in the plugins or the app; the compile-time checks (`static_assert`, the negative-array typedefs) cost nothing in either |
 | test and mutation hooks (`VJO_HOST`, `VJO_GAME_CASCADE_CONF`, `VJO_GAME_OCR_NO_MODULE_ENTRY`, `VJO_SETTINGS_SMOKE`, `VJO_LOCAL_STATS`, `VJO_VOCR_MODEL_INFO_TEST`) | in neither release build: host tests and the Vita3K smokes only |
 | symbols | in neither zip: the SELFs carry no symbol table (exports by NID); the ELFs stay in the build directory |
-| the boot-safety guard, the memory ledger's checks, `*TITLEID` registration | keep: unchanged in both |
+| the boot-safety guard, the memory ledger's checks, the worker's loading (the kernel's loader since #138; `*TITLEID` lines before) | keep: unchanged in both |
 
 ## Measured
 
