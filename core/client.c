@@ -198,13 +198,6 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
     switch (err->rc) {
     case VJO_OK:
         return "";
-    case VJO_E_NET:
-        vjo_buf_printf(&b, "%s failed: no network connection", what);
-        break;
-    case VJO_E_TLS:
-        vjo_buf_printf(&b, "%s failed: secure connection error (TLS %d). Check the date/time.",
-                       what, err->tls_error);
-        break;
     case VJO_E_OOM:
         vjo_buf_printf(&b, "%s failed: not enough memory", what);
         if (err->detail) vjo_buf_printf(&b, ". %s", err->detail);
@@ -246,13 +239,6 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
             break;
         }
         vjo_buf_printf(&b, "%s failed: response too large", what);
-        break;
-    case VJO_E_STATUS:
-        vjo_buf_printf(&b, "%s failed: HTTP %d", what, err->http_status);
-        if (err->detail) {
-            vjo_buf_puts(&b, " - ");
-            vjo_buf_puts(&b, err->detail);
-        }
         break;
     default:
         vjo_buf_printf(&b, "%s failed: unexpected response (%d)", what, err->rc);

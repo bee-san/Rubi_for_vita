@@ -33,7 +33,7 @@
 #include <stdint.h>
 
 #include "local_ocr.h" /* VJO_OCR_MAX_WIDTH/HEIGHT, VJO_OCR_TEXT_CAP */
-#include "net.h"       /* VjoPlatform.file_open, now_us */
+#include "platform.h"  /* VjoPlatform.file_open, now_us */
 
 #ifdef __cplusplus
 extern "C" {

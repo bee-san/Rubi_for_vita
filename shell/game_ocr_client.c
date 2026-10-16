@@ -1,5 +1,5 @@
 #include "game_ocr_client.h"
-#include "../core/conn.h"
+#include "../core/errors.h"
 #include <string.h>
 
 /* The kernel answers a submission BUSY while the worker still cleans up the

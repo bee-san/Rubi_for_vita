@@ -14,7 +14,10 @@ enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
  * ignored, Lens and the trials with a config warning; the Overlay app's next
  * save and the installer (tools/migrate_config.py) drop the line
  * (vjo_config_removed_line). The self-test still reports backend=2, the old
- * VOCR id, so its reports keep their form. */
+ * VOCR id, so its reports keep their form. log_host, the UDP log's computer,
+ * went with the network too: a set one gives one config warning, an empty one
+ * none, and the app's next save and the installer drop the line; log.txt and
+ * status.txt stay. */
 enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 /* dictionary: the local .vjdict files, the only dictionary (VJO_DICT_NAME in
@@ -71,7 +74,6 @@ typedef struct {
     int ocr_lm;
     int ocr_cascade_ms;       /* 0 (off) or 250..3750: the cascade's time ceiling per recognition */
     int ocr_refine_lines;     /* 0 off, 1 on, 2 PSP games only (VJO_GAME_OCR_REFINE_*) */
-    char log_host[64];        /* "" = UDP log off */
     int log_file;             /* 0/1 */
     /* Anki (docs/anki.md): the Overlay app exports the queue as Lapis notes; nothing else to set. */
     int anki_mining;          /* 0/1: enter saves the shown word to the offline queue */
@@ -131,7 +133,8 @@ int vjo_vocr_tier_of_model(const char *name);
  * older name, in any case, with or without '=') and for the removed Anki
  * settings (vjo_config_removed_anki_key: anki_audio_url's URL can hold a key),
  * which are secrets; VJO_LINE_DROP_SETTING for a removed setting's line, which
- * is not (the engine choice: an ocr_backend line, whatever its value);
+ * is not (the engine choice and the UDP log: an ocr_backend or log_host line,
+ * whatever its value);
  * VJO_LINE_REPLACE with *replacement ("dictionary = local\n") for dictionary =
  * jpdb, jiten or hachidori, else VJO_LINE_KEEP. */
 enum { VJO_LINE_KEEP = 0, VJO_LINE_DROP = 1, VJO_LINE_REPLACE = 2, VJO_LINE_DROP_SETTING = 3 };

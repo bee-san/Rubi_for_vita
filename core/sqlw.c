@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include "conn.h"
+#include "errors.h"
 
 #define U VJO_SQLW_PAGE
 #define LEAF_HDR 8u

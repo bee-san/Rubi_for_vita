@@ -18,7 +18,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "net_posix.h"
+#include "platform_posix.h"
 #include "vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
 

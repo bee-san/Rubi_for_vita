@@ -3,7 +3,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "client.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 #include "textfilter.h"
 #define VJO_TEST_MEMORY_STUBS 1
 #define VJO_TEST_THREAD_STUBS 1
@@ -15,7 +15,7 @@
 static VjoState state;
 static VjoConfig loaded;
 static uint64_t test_now;
-static unsigned posted, user_allocs, user_frees, heap_allocs, heap_frees, cancels;
+static unsigned posted, user_allocs, user_frees, heap_allocs, heap_frees;
 static int fail_alloc, fail_base, input_blocked, fail_input_block, game_enabled = 1;
 static uint8_t storage[2 * 1024 * 1024];
 /* Separate simulated game process workspace. Shell allocator must never own it. */
@@ -325,10 +325,7 @@ void vjo_anki_set_game(const char *tid, const char *name, int psp)
 }
 void vjo_anki_set_ocr_model(const char *model) { snprintf(anki_model, sizeof(anki_model), "%s", model); }
 void vjo_title_name(SceUID pid, const char *tid, char *name, int size) { snprintf(name, size, "Title of %s", tid); }
-void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *c) {}
-int vjo_net_cancel_init(VjoNetCancel *c) { return 0; }
-void vjo_net_cancel(VjoNetCancel *c) { c->cancelled = 1; cancels++; }
-void vjo_net_cancel_clear(VjoNetCancel *c) { c->cancelled = 0; }
+void vjo_platform_vita(VjoPlatform *p) {}
 /* shell/game.c (its own suite, shell_game): not readable unless a test says. */
 static int identify_rc = -1, enabled_psp = -1;
 static VjoGameId identified;
@@ -582,7 +579,7 @@ static void reset(void)
     state.region_seq = 4;
     state.stable = 1;
     test_now = 10000000;
-    posted = user_allocs = user_frees = heap_allocs = heap_frees = cancels = 0;
+    posted = user_allocs = user_frees = heap_allocs = heap_frees = 0;
     fail_alloc = fail_base = input_blocked = fail_input_block = input_block_error = 0;
     game_enabled = 1;
     running = 1; threads_started = 0;
@@ -729,8 +726,8 @@ static void test_stale_cancel(void)
     job_capture_scene = 1;
     job_capture_seq = 1;
     TEST_CHECK(cancel_outdated_job(&state));
-    TEST_CHECK(job_cancelled && cancels == 1);
-    TEST_CHECK(!cancel_outdated_job(&state) && cancels == 1);
+    TEST_CHECK(job_cancelled);
+    TEST_CHECK(!cancel_outdated_job(&state)); /* once: the job is already cancelled */
     job_running = 0;
 }
 
@@ -811,7 +808,7 @@ static void test_changed_dictionary_drops_running_result(void)
     ov = OV_OPEN_OLD_JOB;
     strcpy(loaded.local_dictionaries, "new.vjdict");
     apply_config();
-    TEST_CHECK(job_cancelled && cancels == 1 && !cache_ok);
+    TEST_CHECK(job_cancelled && !cache_ok);
     on_job_done();
     TEST_CHECK(job_running && !cache_ok);
     TEST_CHECK(strcmp(job_cfg.local_dictionaries, "new.vjdict") == 0);
@@ -835,7 +832,7 @@ static void test_game_exit_drains_previous_job(void)
     input_blocked = 1;
 
     on_game_exit();
-    TEST_CHECK(job_cancelled && cancels == 1 && !cache_ok);
+    TEST_CHECK(job_cancelled && !cache_ok);
     TEST_CHECK(!game_active() && ov == OV_CLOSED && !input_blocked);
     TEST_CHECK(has_result_memory()); /* the running job still owns its arena */
     TEST_CHECK(job_generation != game_generation);
@@ -864,7 +861,7 @@ static void test_game_start_rejects_previous_generation(void)
     state.game_pid = 101;
 
     on_game_start(); /* a foreground switch need not include GAME_EXIT */
-    TEST_CHECK(job_cancelled && cancels == 1 && !cache_ok);
+    TEST_CHECK(job_cancelled && !cache_ok);
     TEST_CHECK(ov == OV_CLOSED && !input_blocked && pending_pid == 101);
     activate(state.game_pid, "PCSG00202", VJO_GAME);
     open_overlay(); /* the kernel has not sampled a new scene ID yet */
@@ -1125,7 +1122,6 @@ static void test_removed_engine_choice_runs_the_local_engine(void)
         TEST_CHECK(!job_captured && !vocr_allocs && cache_data[0].failed_stage == VJO_STAGE_OCR);
         TEST_CHECK(rc == VJO_E_OCR_UNAVAILABLE);
 #endif
-        TEST_CHECK(!cancels); /* nothing to cancel: no request leaves the console */
         mem_free();
     }
 }

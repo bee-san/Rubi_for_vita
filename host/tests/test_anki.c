@@ -364,7 +364,7 @@ static void test_anki_config(void)
         TEST_CHECK(c.n_warnings == 0 && c.anki_mining == 1);
         TEST_MSG("%d: %s", c.n_warnings, c.warnings[0]);
         /* a setting that is not removed still warns there */
-        const char *other = "local_dictionary_dir\nlog_host 10.0.0.2\n";
+        const char *other = "local_dictionary_dir\nocr_mode on_press\n";
         vjo_config_defaults(&c);
         vjo_config_parse(&c, other, strlen(other));
         TEST_CHECK(c.n_warnings == 2 && strstr(c.warnings[0], "ignored line 'local_dictionary_dir'"));

@@ -1,6 +1,6 @@
 #include "acutest.h"
 #include "../../shell/game_ocr_client.h"
-#include "../../core/conn.h"
+#include "../../core/errors.h"
 #include <string.h>
 
 typedef struct {

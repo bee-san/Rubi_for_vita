@@ -124,15 +124,26 @@ On main `6020c0b` the Shell's text segment goes from 188,000 to 100,792 B (`.tex
 `.rodata` −20,424 B) and data and `.bss` from 70,132 to 70,060 B: 262,144 → 176,128 B of module
 pages, 21 text pages, and the declared budget from 266,240 to 176,128 B [measured: the build log's
 module rows and `arm-vita-eabi-size`; by object in [memory-ledger.md](memory-ledger.md)]. The kernel's
-capture syscalls (`vjoRequestCapture`, `vjoReadRaw`) stay for step 2. **PR-B**: the rest of this
-step.
+capture syscalls (`vjoRequestCapture`, `vjoReadRaw`) stay for step 2. **PR-B** [measured]: the
+rest of this step, done; the Shell keeps its 176,128 B of pages (text 101,488 → 99,268 B, data and
+`.bss` 70,076 → 69,772 B, on #132 and main `3aa08a6`; the normal build loses a page, 167,936 →
+163,840 B) and imports no SceNet or SceNetCtl, and VjoAnki's stack goes from
+64 to 16 KiB (its chain is 1,728 B): the worst case 286,720 → 237,568 B [docs/memory-ledger.md].
 
 - **Google Lens** (PR-A, above).
-- **The network stack**: `core/net.c`, `core/http.c`, `core/tls.c`, `core/tls_roots.c` and
+- **The network stack** (PR-B): `core/net.c`, `core/http.c`, `core/tls.c`, `core/tls_roots.c` and
   `third_party/roots`, BearSSL but its SHA-256 and SHA-1 (the queue's IDs, the models' hashes,
   the `.apkg`'s checksums), the sockets, resolver and cancellation in `shell/platform_vita.c`, the
-  UDP log (`log_host`, `tools/udp_log_listener.py`), the SceNet, SceNetCtl, SceHttp and SceSsl
-  imports in the Shell, the worker and the Overlay app.
+  UDP log (`log_host`, `tools/udp_log_listener.py`), the SceNet and SceNetCtl imports of the Shell
+  (the worker had none; nothing imported SceHttp or SceSsl since Lens) and of the Overlay app. The
+  app's three were newlib's: VitaSDK's `libc.a` calls `sceNetRecv` and `sceNetSend` in `_read_r` and
+  `_write_r` (`syscalls.o`) and `sceNetSocketClose` in `__vita_fd_drop` (`io.o`, which crt0's
+  `_init_vita_io` pulls in) for a socket descriptor, which the app can never hold, as newlib's
+  `socket()` is not linked [measured: the app's link map, `--trace-symbol`].
+  `settings/no_net.c` defines the three to fail as for a bad descriptor, so the app imports no
+  SceNet, and the Vita build checks every module: `tools/check_offline_imports.py` fails it when
+  the kernel plugin, the Shell, the worker or the app imports a SceNet*, SceHttp* or SceSsl*
+  library.
 - **The Shell worker's network pipeline**: the double-buffered 2 × 256 KiB result arenas, the
   connection pool, the warm-up and its 50 ms timer path, the cached-sentence comparison; one 64 KiB
   arena remains, as the local pipeline always used.
@@ -141,17 +152,20 @@ step.
   batch) [measured: `arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su` of the Shell's sources,
   main `32bfc6a` with #132]. The thread paints its stack and logs its high water at game exits.
 
-| | before (#117) | after #126 | after #125 (main `6020c0b`, with #123, #122, #127 and #124) [measured] | after PR-A [measured] | after PR-A2 [measured] |
-|---|---:|---:|---:|---:|---:|
-| Shell code + rodata | 210,184 B | 206,192 B | 188,000 B | 100,792 B | 101,488 B (main `32bfc6a`: 101,024 B with #140) |
-| Shell module pages | 286,720 B | 282,624 B | 262,144 B (266,240 B declared) | 176,128 B (declared too) | 176,128 B |
-| Shell permanent (the ledger: declared module + stacks + TLS) | 376,832 B | 372,736 B | 356,352 B | 266,240 B | 217,088 B |
-| PAF worst case (network configuration) | 731,632 B | 707,840 B | 707,840 B | gone: 225,280 B is the only one | 225,280 B |
+| | before (#117) | after #126 | after #125 (main `6020c0b`, with #123, #122, #127 and #124) [measured] | after PR-A [measured] | after PR-A2 [measured] | after PR-B [measured] |
+|---|---:|---:|---:|---:|---:|---:|
+| Shell code + rodata | 210,184 B | 206,192 B | 188,000 B | 100,792 B | 101,488 B (main `32bfc6a`: 101,024 B with #140) | 99,268 B |
+| Shell module pages | 286,720 B | 282,624 B | 262,144 B (266,240 B declared) | 176,128 B (declared too) | 176,128 B | 176,128 B |
+| Shell permanent (the ledger: declared module + stacks + TLS) | 376,832 B | 372,736 B | 356,352 B | 266,240 B | 217,088 B | 217,088 B |
+| Shell pages worst case (an Anki job's stack) | | | 425,984 B | 335,872 B | 286,720 B | 237,568 B |
+| PAF worst case (network configuration) | 731,632 B | 707,840 B | 707,840 B | gone: 225,280 B is the only one | 225,280 B | 225,280 B |
+| Shell `sce*` imports (function stubs by `nm`) | | | | | 72 | 55 (no SceNet, SceNetCtl) |
 
-PR-B now removes sources the link already drops, plus the sockets the UDP log and the cancel
-paths keep (SceNet, SceNetCtl): a few pages at most [estimate], against this plan's earlier
-"about 196,000 B" for both PRs together. PR-A2 (#132) lowers VjoNet's stack from 64 to 16 KiB:
-SceShell's permanent pages 266,240 → 217,088 B.
+PR-B removed sources the link already dropped, plus the sockets the UDP log and the cancel
+paths kept (SceNet, SceNetCtl): 2,220 B of text and 304 B of data, no page [measured], against
+this plan's "a few pages at most" estimate and its earlier "about 196,000 B" for both PRs together.
+PR-A2 (#132) lowered VjoNet's stack from 64 to 16 KiB (SceShell's permanent pages 266,240 →
+217,088 B), and PR-B VjoAnki's (the worst case 286,720 → 237,568 B).
 
 ### 4.3 Step 2: the kernel's full-frame capture
 

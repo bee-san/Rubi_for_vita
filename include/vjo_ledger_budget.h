@@ -72,7 +72,10 @@
  * change], 21 text pages fewer than main's packaged 262,144 B: 102,400 + 73,728 B of pages. #140's
  * posting hints make it 101,024 text, the same pages, and #132's VjoNet stack paint and check
  * 101,488 + 70,076 [measured: the build log's module rows, main 32bfc6a and #132; the same on
- * 3aa08a6, #141]. */
+ * 3aa08a6, #141]. The network stack's last users (shell/platform_vita.c's sockets, resolver and
+ * cancellation, the UDP log, log_host) went next: 99,268 text + 69,772 data/bss, the same pages, and no
+ * SceNet or SceNetCtl import [measured: the build log's module rows, main 3aa08a6 with #132 and this
+ * change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -82,8 +85,11 @@
  * 94,208 + 73,728 B of pages, two text pages fewer [measured: the build log's module rows, both builds
  * of this tree on main 3805a13 (#130, #142)]. #140's posting hints make it 91,016 + 69,988, and #132's
  * VjoNet stack paint and check 91,464 + 70,004, the same pages [measured: the build log's module
- * rows, main 3aa08a6 and #132]. Its check is exact (--exact): this must equal its pages. */
-#define VJO_BUDGET_SHELL_MODULE_PAGES 167936u
+ * rows, main 3aa08a6 and #132]. Lowered from 167,936 B by the network stack's removal (its sockets,
+ * resolver, cancellation and UDP log): 89,220 text + 69,700 data/bss, one text page fewer, 90,112 +
+ * 73,728 B of pages [measured: the build log's module rows, the normal builds of main 3aa08a6 with
+ * #132 and of this change]. Its check is exact (--exact): this must equal its pages. */
+#define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
  * (36,864 + 8,192): the in-game capture, its memory ladder, probe and step log run in the worker,
@@ -121,17 +127,23 @@
 /* VjoNet: a job's OCR exchange with the game worker and the local dictionary's lookup. Lowered from
  * 65,536 B ("BearSSL needs it for TLS") once Google Lens, the last of its jobs that made a TLS
  * connection, was removed: nothing on the thread reaches BearSSL, the HTTP client or a TCP socket
- * any more (the UDP log's send is the one network call left, PR-B's), and its deepest chain of the
- * Shell's own code is 5,624 B: net_main 144, a job's vocr_run_one 5,000 (its log batch), then
- * vjo_log down to the file write 480 [measured: arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su
- * of this build, on main 32bfc6a; the SDK's own code and the indirect-call sites are not
- * counted]. The thread paints its
+ * any more (and, since the network stack's removal, no network call at all), and its deepest chain
+ * of the Shell's own code is 5,616 B: net_main 144, a job's vocr_run_one 5,000 (its log batch), then
+ * vjo_log down to the file write 472 [measured: arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su
+ * of this build, on main 3aa08a6 with #132 and the network's removal; 5,624 B with the UDP send;
+ * the SDK's own code and the indirect-call sites are not counted]. The thread paints its
  * unused stack and logs, at each game exit, the most it has used (shell/worker.c net_stack_check),
  * so a console run measures it. */
 #define VJO_STACK_SHELL_NET 16384u
 #define VJO_STACK_SHELL_CTL 16384u                 /* VjoControl */
-#define VJO_STACK_SHELL_ANKI 65536u                /* VjoAnki, while an Anki job runs: with anki_mining on, a count
-                                                    * of the queue on every overlay open, a save (Enter) */
+/* VjoAnki, while an Anki job runs: with anki_mining on, a count of the queue on every overlay open, a
+ * save (Enter). Lowered from 65,536 B (BearSSL's TLS, for AnkiConnect and an https audio source, both
+ * removed with #125): its deepest chain of the Shell's own code is 1,728 B, a save's queue ID (job_main
+ * 24, do_save 672, vjo_queue_save 416, vjo_queue_id 160, SHA-256 456), the file callbacks of its
+ * indirect calls included [measured: arm-vita-eabi-gcc -fstack-usage -fcallgraph-info=su of this
+ * build; the SDK's own code is not counted]. 16 KiB is VjoControl's stack, which runs the same kinds of
+ * SDK calls (sceIo, the log, Paf's heap) on every console. */
+#define VJO_STACK_SHELL_ANKI 16384u
 #define VJO_BUDGET_SHELL_NET_STACK (VJO_STACK_SHELL_NET + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_CTL_STACK (VJO_STACK_SHELL_CTL + VJO_LEDGER_TLS)
 #define VJO_BUDGET_SHELL_ANKI_STACK (VJO_STACK_SHELL_ANKI + VJO_LEDGER_TLS)

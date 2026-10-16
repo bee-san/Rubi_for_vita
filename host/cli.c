@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "client.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 #include "render.h"
 #include "replay.h"
 

@@ -8,7 +8,6 @@
 #include "entries.h"
 #include "foreground.h"
 #include "furigana.h"
-#include "http.h"
 #include "json.h"
 #include "styled.h"
 #include "vjo_vocr_sizes.h"
@@ -538,11 +537,16 @@ static void test_config(void)
     TEST_CHECK(c.font_size_en == 10);
     TEST_CHECK(c.toggle_button == VJO_TRIGGER_SELECT_R && c.subtitle_button == VJO_TRIGGER_SELECT);
     TEST_CHECK(c.ocr_mode == VJO_OCR_ON_PRESS);
-    TEST_CHECK(!strcmp(c.log_host, "192.168.1.5"));
     TEST_CHECK(c.log_file == 1);
-    /* font_size_ja and bogus; the removed frequency_filter, hachidori_host and API keys are silent */
-    TEST_CHECK(c.n_warnings == 2);
-    TEST_MSG("warnings: %d", c.n_warnings);
+    /* font_size_ja, the removed UDP log's set log_host, and bogus; the removed frequency_filter,
+     * hachidori_host and API keys are silent */
+    TEST_CHECK(c.n_warnings == 3 &&
+               !strcmp(c.warnings[1], "log_host: the UDP log was removed (the overlay is offline); log.txt stays"));
+    TEST_MSG("warnings: %d, the second '%s'", c.n_warnings, c.n_warnings > 1 ? c.warnings[1] : "");
+    /* an empty log_host (the old template's line) says nothing: the app's save and the installer drop it */
+    vjo_config_defaults(&c);
+    vjo_config_parse(&c, "log_host =\nLOG_HOST=\n", strlen("log_host =\nLOG_HOST=\n"));
+    TEST_CHECK(c.n_warnings == 0);
     /* jpdb.io and jiten.moe, the removed online dictionaries, and the removed
      * Hachidori relay: local, with one warning, in any case; the online ones'
      * API keys (and api_key, jpdb's older name) are ignored without one, so no
@@ -626,7 +630,9 @@ static void test_config(void)
                                            "ocr_backendx = lens\n", "; ocr_backend = lens\n", "ocr_backend lens\n",
                                            "my_api_key = x\n", "anki_mining = on\n", "anki_hosts = x\n",
                                            "anki_field = x\n", "anki_hosts\n", "anki_mining\n", "jpdb_api_ke = x\n",
-                                           "; jpdb_api_key = x\n", "", "\n", "dictionary\n", "dictionary = \n"};
+                                           "; jpdb_api_key = x\n", "", "\n", "dictionary\n", "dictionary = \n",
+                                           "log_hosts = x\n", "; log_host = 10.0.0.1\n", "log_host 10.0.0.1\n",
+                                           "log_file = on\n"};
         const char *r;
         for (size_t i = 0; i < sizeof(drop) / sizeof(drop[0]); i++) {
             TEST_CHECK(vjo_config_removed_line(drop[i], strlen(drop[i]), &r) == VJO_LINE_DROP && !r);
@@ -641,9 +647,11 @@ static void test_config(void)
             TEST_CHECK(vjo_config_removed_line(keep[i], strlen(keep[i]), &r) == VJO_LINE_KEEP && !r);
             TEST_MSG("%s", keep[i]);
         }
-        /* The removed engine choice: dropped whatever its value, and not a secret. */
+        /* The removed engine choice and UDP log: dropped whatever their value, and not secrets. */
         static const char *const setting[] = {"ocr_backend = lens\n", "ocr_backend = vocr\n", "OCR_BACKEND=Lens\r\n",
-                                              "  ocr_backend =\n", "ocr_backend = vocr2 ; old\n", "ocr_backend\t= meiki"};
+                                              "  ocr_backend =\n", "ocr_backend = vocr2 ; old\n", "ocr_backend\t= meiki",
+                                              "log_host =\n", "log_host = 192.168.1.5\n", "LOG_HOST=10.0.0.1 ; pc\r\n",
+                                              "\tlog_host\t= x"};
         for (size_t i = 0; i < sizeof(setting) / sizeof(setting[0]); i++) {
             TEST_CHECK(vjo_config_removed_line(setting[i], strlen(setting[i]), &r) == VJO_LINE_DROP_SETTING && !r);
             TEST_MSG("%s", setting[i]);
@@ -936,283 +944,6 @@ static void test_regions(void)
         TEST_CHECK(t && !strcmp(t, "PCSG00123 = 5,6,7,8\n"));
     }
 #undef P
-}
-
-/* ---------- http over a memory connection ---------- */
-
-static int body_cb(void *ud, VjoConn *c)
-{
-    return vjo_conn_send_all(c, "hello", 5);
-}
-
-static void test_http(void)
-{
-    VjoMemConn m = {0};
-    char sent[4096];
-    VjoConn c;
-    VjoHttpRequest req = {"POST", "example.com", "/x", "text/plain", "A: b\r\n", 5, body_cb, NULL};
-    VjoHttpResponse resp;
-    setup();
-    m.out = sent;
-    m.out_cap = sizeof(sent) - 1;
-    vjo_memconn_init(&m, &c);
-    TEST_CHECK(vjo_http_send(&c, &req) == 0);
-    m.out[m.out_len] = 0;
-    TEST_CHECK(strstr(m.out, "POST /x HTTP/1.1\r\nHost: example.com\r\n") == m.out);
-    TEST_CHECK(strstr(m.out, "Content-Length: 5\r\n") != NULL);
-    TEST_CHECK(strstr(m.out, "A: b\r\n\r\nhello") != NULL);
-    TEST_CHECK(strstr(m.out, "Connection: close\r\n") != NULL);
-    /* a kept-alive request */
-    m.out_len = 0;
-    req.keep_alive = 1;
-    TEST_CHECK(vjo_http_send(&c, &req) == 0);
-    m.out[m.out_len] = 0;
-    TEST_CHECK(strstr(m.out, "Connection:") == NULL && strstr(m.out, "A: b\r\n\r\nhello") != NULL);
-
-    m.in = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n";
-    m.len = strlen(m.in);
-    m.step = 3;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == 0);
-    TEST_CHECK(resp.status == 200 && !strcmp(resp.body, "Wikipedia") && resp.keep_alive);
-    /* trailers are read up to the end of the reply */
-    m.in = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nok\r\n0\r\nX-T: 1\r\n\r\n";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == 0 && !strcmp(resp.body, "ok") && resp.keep_alive);
-    TEST_CHECK(m.pos == m.len);
-    /* the server closes after this reply */
-    m.in = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\nok";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == 0 && !strcmp(resp.body, "ok") && !resp.keep_alive);
-    /* more than the reply arrived: the connection is out of step */
-    m.in = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nokHTTP";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    m.step = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == 0 && !strcmp(resp.body, "ok") && !resp.keep_alive);
-    m.step = 3;
-
-    m.in = "HTTP/1.1 403 Forbidden\r\ncontent-length: 2\r\nContent-Encoding: gzip\r\n\r\nno";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == 0);
-    TEST_CHECK(resp.status == 403 && resp.gzip && !strcmp(resp.body, "no"));
-
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 1, &resp) == VJO_E_TOO_LARGE);
-
-    m.in = "HTTP/1.0 200 OK\r\n\r\nuntil close";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == 0 && !strcmp(resp.body, "until close") && !resp.keep_alive);
-    /* closed without close_notify: a read-until-close body may be cut */
-    m.pos = 0;
-    m.end_rc = VJO_E_HTTP;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == VJO_E_HTTP);
-    /* ... but a Content-Length body is complete */
-    m.in = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == 0 && !strcmp(resp.body, "ok"));
-    m.end_rc = 0;
-
-    /* overflowing Content-Length (UB on a 32-bit long before) */
-    m.in = "HTTP/1.1 200 OK\r\nContent-Length: 99999999999999999999999999999999\r\n\r\nx";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == VJO_E_TOO_LARGE);
-    m.in = "HTTP/1.1 200 OK\r\nContent-Length: 18446744073709551617\r\n\r\nx";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == VJO_E_TOO_LARGE);
-    m.in = "HTTP/1.1 200 OK\r\nContent-Length: abc\r\n\r\nx";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == VJO_E_HTTP);
-
-    /* status must be three digits */
-    m.in = "HTTP/1.1 2x0 OK\r\nContent-Length: 0\r\n\r\n";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == VJO_E_HTTP && resp.status == 0);
-    m.in = "HTTP/1.1 -20 OK\r\nContent-Length: 0\r\n\r\n";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == VJO_E_HTTP);
-    /* no body, whatever the headers say */
-    m.in = "HTTP/1.1 204 No Content\r\nTransfer-Encoding: chunked\r\n\r\n";
-    m.len = strlen(m.in);
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == 0 && resp.body_len == 0 && resp.keep_alive);
-    /* no reply at all (a kept connection the server dropped) */
-    m.in = "";
-    m.len = 0;
-    m.pos = 0;
-    TEST_CHECK(vjo_http_recv(&A, &c, 100, &resp) == VJO_E_HTTP && resp.status == 0);
-}
-
-/* ---------- kept connections (VjoNetPool) over a fake network ---------- */
-
-/* Connection k serves responses[k] (several replies in turn when kept;
- * NULL = refused) one byte per read, so the reader never reads ahead. */
-typedef struct {
-    const char *responses[4];
-    VjoMemConn conns[4];
-    char hosts[4][32];
-    int n_connects, n_disconnects;
-    int acquire_rc; /* what acquire() reports */
-    uint64_t now;
-} PoolNet;
-
-static int pool_connect(void *ud, const char *host, int port, int timeout_us, int io_timeout_us, VjoConn *out)
-{
-    PoolNet *f = (PoolNet *)ud;
-    int k = f->n_connects;
-    (void)port;
-    (void)timeout_us;
-    (void)io_timeout_us;
-    if (k >= 4 || !f->responses[k])
-        return VJO_E_NET;
-    f->n_connects++;
-    snprintf(f->hosts[k], sizeof(f->hosts[k]), "%s", host);
-    memset(&f->conns[k], 0, sizeof(f->conns[k]));
-    f->conns[k].in = f->responses[k];
-    f->conns[k].len = strlen(f->responses[k]);
-    f->conns[k].step = 1;
-    vjo_memconn_init(&f->conns[k], out);
-    return VJO_OK;
-}
-
-static void pool_disconnect(void *ud, VjoConn *c)
-{
-    (void)c;
-    ((PoolNet *)ud)->n_disconnects++;
-}
-
-static int pool_acquire(void *ud, VjoConn *c)
-{
-    (void)c;
-    return ((PoolNet *)ud)->acquire_rc;
-}
-
-static uint64_t pool_now(void *ud)
-{
-    return ((PoolNet *)ud)->now;
-}
-
-static void pool_net(PoolNet *f, VjoPlatform *p, VjoNetPool *pool, int slots)
-{
-    static uint8_t mem[4][32 * 1024];
-    TEST_ASSERT(vjo_net_pool_size(slots) <= sizeof(mem));
-    memset(f, 0, sizeof(*f));
-    f->now = 1000000;
-    memset(p, 0, sizeof(*p));
-    p->ud = f;
-    p->connect = pool_connect;
-    p->disconnect = pool_disconnect;
-    p->acquire = pool_acquire;
-    p->now_us = pool_now;
-    p->plain_http = 1;
-    vjo_net_pool_init(pool, mem, vjo_net_pool_size(slots), 10000000);
-    p->pool = pool;
-}
-
-#define REPLY1(c) "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n" c
-
-static int pool_get(const VjoPlatform *p, const char *host, const char *expect)
-{
-    VjoHttpRequest req;
-    VjoHttpResponse resp;
-    VjoErr err;
-    int rc;
-    memset(&req, 0, sizeof(req));
-    memset(&err, 0, sizeof(err));
-    req.method = "GET";
-    req.host = host;
-    req.path = "/";
-    rc = vjo_http_request(&A, p, 443, 1, &req, 100, &resp, &err);
-    if (rc == VJO_OK && expect && strcmp(resp.body, expect))
-        return -1;
-    return rc;
-}
-
-static void test_net_pool(void)
-{
-    PoolNet f;
-    VjoPlatform p;
-    VjoNetPool pool;
-    setup();
-
-    /* two requests on one connection */
-    pool_net(&f, &p, &pool, 2);
-    f.responses[0] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nab" "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\ncd";
-    TEST_CHECK(pool_get(&p, "a.example", "ab") == VJO_OK && pool_get(&p, "a.example", "cd") == VJO_OK);
-    TEST_CHECK(f.n_connects == 1 && f.n_disconnects == 0);
-    vjo_net_pool_close(&p);
-    TEST_CHECK(f.n_disconnects == 1);
-
-    /* no reply on the kept connection (the server dropped it): once more
-     * on a new one */
-    pool_net(&f, &p, &pool, 2);
-    f.responses[0] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nab";
-    f.responses[1] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\ncd";
-    TEST_CHECK(pool_get(&p, "a.example", "ab") == VJO_OK && pool_get(&p, "a.example", "cd") == VJO_OK);
-    TEST_CHECK(f.n_connects == 2 && f.n_disconnects == 1);
-
-    /* a reply cut short is an error, not retried */
-    pool_net(&f, &p, &pool, 2);
-    f.responses[0] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nab" "HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\ncd";
-    f.responses[1] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nef";
-    TEST_CHECK(pool_get(&p, "a.example", "ab") == VJO_OK && pool_get(&p, "a.example", NULL) != VJO_OK);
-    TEST_CHECK(f.n_connects == 1 && f.n_disconnects == 1);
-
-    /* the server closed it while idle (acquire says so): a new one */
-    pool_net(&f, &p, &pool, 2);
-    f.responses[0] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nab";
-    f.responses[1] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\ncd";
-    TEST_CHECK(pool_get(&p, "a.example", "ab") == VJO_OK);
-    f.acquire_rc = VJO_E_NET;
-    TEST_CHECK(pool_get(&p, "a.example", "cd") == VJO_OK && f.n_connects == 2 && f.n_disconnects == 1);
-
-    /* cancelled: no request, no new connection, the kept one stays */
-    pool_net(&f, &p, &pool, 2);
-    f.responses[0] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nab";
-    f.responses[1] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\ncd";
-    TEST_CHECK(pool_get(&p, "a.example", "ab") == VJO_OK);
-    f.acquire_rc = VJO_E_CANCELLED;
-    TEST_CHECK(pool_get(&p, "a.example", NULL) == VJO_E_CANCELLED && f.n_connects == 1 && f.n_disconnects == 0);
-
-    /* idle too long: closed, a new one */
-    pool_net(&f, &p, &pool, 2);
-    f.responses[0] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nab" "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nxx";
-    f.responses[1] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\ncd";
-    TEST_CHECK(pool_get(&p, "a.example", "ab") == VJO_OK);
-    f.now += 10000001;
-    TEST_CHECK(pool_get(&p, "a.example", "cd") == VJO_OK && f.n_connects == 2 && f.n_disconnects == 1);
-
-    /* "Connection: close": not kept */
-    pool_net(&f, &p, &pool, 2);
-    f.responses[0] = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\nab";
-    f.responses[1] = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\ncd";
-    TEST_CHECK(pool_get(&p, "a.example", "ab") == VJO_OK && f.n_disconnects == 1);
-    TEST_CHECK(pool_get(&p, "a.example", "cd") == VJO_OK && f.n_connects == 2);
-
-    /* a third host takes the least recently used slot */
-    pool_net(&f, &p, &pool, 2);
-    f.responses[0] = REPLY1("a") REPLY1("A");
-    f.responses[1] = REPLY1("b");
-    f.responses[2] = REPLY1("c");
-    TEST_CHECK(pool_get(&p, "a.example", "a") == VJO_OK);
-    f.now += 1000;
-    TEST_CHECK(pool_get(&p, "b.example", "b") == VJO_OK);
-    f.now += 1000;
-    TEST_CHECK(pool_get(&p, "a.example", "A") == VJO_OK); /* a is now the more recent */
-    f.now += 1000;
-    TEST_CHECK(pool_get(&p, "c.example", "c") == VJO_OK);
-    TEST_CHECK(f.n_connects == 3 && f.n_disconnects == 1);
-    vjo_net_pool_close(&p);
-    TEST_CHECK(f.n_disconnects == 3);
 }
 
 /* ---------- styled text (ui::Text) ---------- */
@@ -2254,8 +1985,6 @@ TEST_LIST = {
     {"highlight_config", test_highlight_config},
     {"frequency_badge_config", test_frequency_badge_config},
     {"regions", test_regions},
-    {"http", test_http},
-    {"net_pool", test_net_pool},
     {"styled", test_styled},
     {NULL, NULL},
 };

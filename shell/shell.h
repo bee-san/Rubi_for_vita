@@ -221,20 +221,8 @@ void vjo_anki_reap(void);
 /* overlay.cpp (paf main thread) */
 void vjo_overlay_init(void *plugin);
 
-/* platform_vita.c */
-/* Lets another thread abandon the requests of the thread using a platform
- * set up with it: vjo_net_cancel aborts the socket in use, and every
- * connect fails until vjo_net_cancel_clear. */
-typedef struct {
-    SceUID lock; /* the socket in use vs an abort */
-    int fd;      /* -1: none */
-    volatile int cancelled;
-} VjoNetCancel;
-int vjo_net_cancel_init(VjoNetCancel *c);
-void vjo_net_cancel(VjoNetCancel *c);
-void vjo_net_cancel_clear(VjoNetCancel *c);
-/* cancel: NULL, or the VjoNetCancel of the thread using p. */
-void vjo_platform_vita(VjoPlatform *p, VjoNetCancel *cancel);
+/* platform_vita.c: the local dictionaries' files and the process clock */
+void vjo_platform_vita(VjoPlatform *p);
 /* Reuses ScePaf's existing heap. Returns NULL when its bounded allocation fails. */
 void *vjo_shell_heap_alloc(size_t bytes);
 /* The same, for ledger item `item` (VJO_SL_PAF_*, named in the log). */

@@ -311,10 +311,10 @@ data pages; a Shell change that adds a page breaks AGENTS.md rule 1. Without the
 dictionaries (jpdb.io, jiten.moe) it holds 286,720 B (294,912 B on main `ba5f69a`, with API 21's model
 sizes and API 22), with 2,808 B left in its code pages (210,184 of 212,992) and 2,524 B in its data
 pages, and without the Hachidori relay client 282,624 B, with 2,704 B left in its code pages
-(206,192 of 208,896) and 2,708 B in its data pages [measured: the build log's module row]; without AnkiConnect it holds 266,240 B, with 3,408 B left in its code pages (189,104 of 192,512, with #123's key filter) and 3,624 B in its data pages [main `c641bdf`]; with #122's app check, without the config template, 262,144 B, with 2,000 B left in its code pages (186,416 of 188,416) and 3,616 B in its data pages [main `ac905b1`], with #127's frequency ranks 864 and 3,600 B (187,552 and 70,128 B) [main `9f92bc6`], and with #124's PSP games 416 and 3,596 B (188,000 and 70,132 B) [main `6020c0b`]; without Google Lens it holds 176,128 B, with 1,608 B left in its code pages (100,792 of 102,400) and 3,668 B in its data pages [main `6020c0b` and #130], with #140's posting hints 1,376 and 3,668 B (101,024 and 70,060 B) [main `32bfc6a`], and with #132's VjoNet stack paint 912 and 3,652 B (101,488 and 70,076 B) [main `32bfc6a` and #132]. The kernel module has
-224 B (code) and 56 B (data) left (36,640 of 36,864 and 77,768 of 77,824), the game worker 2,656 B
-and 2,176 B (71,072 of 73,728 and 14,208 of 16,384) [measured: the build log's module rows, main
-`6020c0b` and #130].
+(206,192 of 208,896) and 2,708 B in its data pages [measured: the build log's module row]; without AnkiConnect it holds 266,240 B, with 3,408 B left in its code pages (189,104 of 192,512, with #123's key filter) and 3,624 B in its data pages [main `c641bdf`]; with #122's app check, without the config template, 262,144 B, with 2,000 B left in its code pages (186,416 of 188,416) and 3,616 B in its data pages [main `ac905b1`], with #127's frequency ranks 864 and 3,600 B (187,552 and 70,128 B) [main `9f92bc6`], and with #124's PSP games 416 and 3,596 B (188,000 and 70,132 B) [main `6020c0b`]; without Google Lens it holds 176,128 B, with 1,608 B left in its code pages (100,792 of 102,400) and 3,668 B in its data pages [main `6020c0b` and #130], with #140's posting hints 1,376 and 3,668 B (101,024 and 70,060 B) [main `32bfc6a`], and with #132's VjoNet stack paint 912 and 3,652 B (101,488 and 70,076 B) [main `32bfc6a` and #132]; without the network stack 3,132 and 3,956 B (99,268 and 69,772 B) [main `3aa08a6` with #132, and PR-B]. The kernel module has
+224 B (code) and 56 B (data) left (36,640 of 36,864 and 77,768 of 77,824), the game worker 2,640 B
+and 2,176 B (71,088 of 73,728 and 14,208 of 16,384) [measured: the build log's module rows, main
+`3aa08a6` with #132, and PR-B].
 
 ## Reproduce
 

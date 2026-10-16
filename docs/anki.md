@@ -263,7 +263,7 @@ remains.
 In SceShell (the overlay, `shell/anki.c`):
 
 - One job at a time: counting the queue (the overlay opens) or saving a card
-  (Enter). A job runs on a short-lived thread with a 64 KiB stack, which the
+  (Enter). A job runs on a short-lived thread with a 16 KiB stack, which the
   control thread joins once it ends. Enter during a count saves right after it.
 - Saving takes one bounded allocation from the Shell's Paf heap, through the
   same guard as the result workspace, which keeps the 1.5 MiB UI reserve:

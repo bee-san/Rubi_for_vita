@@ -23,7 +23,11 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
-file(GLOB_RECURSE BEARSSL_SRC ${CMAKE_SOURCE_DIR}/third_party/bearssl/src/*.c)
+# BearSSL: only its SHA-1 and SHA-224/256 are kept (the Anki queue's IDs, the models' hashes, the
+# .apkg's checksums); its TLS, X.509 and ciphers went with the network (the overlay is offline).
+set(BEARSSL_SRC
+  ${CMAKE_SOURCE_DIR}/third_party/bearssl/src/hash/sha1.c ${CMAKE_SOURCE_DIR}/third_party/bearssl/src/hash/sha2small.c
+  ${CMAKE_SOURCE_DIR}/third_party/bearssl/src/codec/dec32be.c ${CMAKE_SOURCE_DIR}/third_party/bearssl/src/codec/enc32be.c)
 add_library(bearssl STATIC ${BEARSSL_SRC})
 target_include_directories(bearssl PUBLIC third_party/bearssl/inc PRIVATE third_party/bearssl/src)
 target_compile_options(bearssl PRIVATE -w)
@@ -31,8 +35,8 @@ target_compile_options(bearssl PRIVATE -w)
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
   core/textfilter.c core/entries.c core/config.c core/regions.c
-  core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c
-  core/anki.c core/anki_queue.c core/net.c core/local_dict.c core/ocr_lines.c
+  core/client.c core/styled.c
+  core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
   core/pspbubble.c core/psptarget.c core/taicfg.c)
@@ -52,7 +56,7 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo_vocr PUBLIC vjo_core)
 endif()
 
-add_library(vjo_host STATIC host/net_posix.c host/render.c host/replay.c)
+add_library(vjo_host STATIC host/platform_posix.c host/render.c host/replay.c)
 target_include_directories(vjo_host PUBLIC host)
 target_link_libraries(vjo_host PUBLIC vjo_core)
 target_compile_options(vjo_host PRIVATE -Wall -Wextra)
@@ -80,11 +84,6 @@ endif()
 
 
 enable_testing()
-add_executable(vjo-http-transport-tests host/tests/test_http_transport.c)
-target_include_directories(vjo-http-transport-tests PRIVATE third_party/acutest/include)
-target_link_libraries(vjo-http-transport-tests vjo_host)
-target_compile_options(vjo-http-transport-tests PRIVATE -Wall -Wextra)
-add_test(NAME http_transport COMMAND vjo-http-transport-tests)
 add_executable(vjo-kernel-capture-tests host/tests/test_kernel_capture.c kernel/scene.c kernel/ledger.c core/ledger.c
   core/region_select.c)
 target_include_directories(vjo-kernel-capture-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
@@ -248,6 +247,13 @@ target_include_directories(vjo-shell-log-tests PRIVATE third_party/acutest/inclu
 target_compile_definitions(vjo-shell-log-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-shell-log-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME shell_log COMMAND vjo-shell-log-tests)
+# The Shell's VjoPlatform (shell/platform_vita.c): its files over stubbed sceIo, and its clock.
+add_executable(vjo-platform-vita-tests host/tests/test_platform_vita.c)
+target_include_directories(vjo-platform-vita-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_link_libraries(vjo-platform-vita-tests vjo_core)
+target_compile_options(vjo-platform-vita-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME platform_vita COMMAND vjo-platform-vita-tests)
+
 add_executable(vjo-shell-worker-tests host/tests/test_shell_worker.c)
 target_include_directories(vjo-shell-worker-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-shell-worker-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)

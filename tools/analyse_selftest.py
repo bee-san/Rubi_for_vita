@@ -189,8 +189,9 @@ def render_tiers(t, where):
 MEMSTEPS = {1: "find", 2: "block/address-space info", 3: "pointer outside the kernel range",
             4: "no kernel memory block", 5: "InfoCore"}
 
-# VJO_E_* of core/conn.h, as the game result reports them (read from the
-# source when it is at hand, so the two cannot drift).
+# VJO_E_* of core/errors.h, as the game result reports them (read from the
+# source when it is at hand, so the two cannot drift). The network's codes
+# (-100 to -102, -106) are kept for an older build's log.
 RC_NAMES = {0: "ok", -100: "connect", -101: "tls", -102: "http", -103: "out of memory", -104: "parse",
             -105: "too large", -106: "status", -107: "no key", -108: "source", -109: "anki", -110: "not found",
             -111: "anki duplicate", -112: "no host", -113: "local io", -114: "local format", -115: "ocr model",
@@ -204,8 +205,8 @@ NATIVE = {0xBFFFFFFF: "no game", 0xBFFFFFFE: "no memory", 0xBFFFFFFD: "busy", 0x
 
 
 def load_rc_names():
-    """The VJO_E_* values from core/conn.h, if the source is at hand."""
-    path = ROOT / "core/conn.h"
+    """The VJO_E_* values from core/errors.h, if the source is at hand."""
+    path = ROOT / "core/errors.h"
     if not path.is_file():
         return
     for m in re.finditer(r"VJO_E_([A-Z_]+)\s*=\s*(-\d+)", path.read_text(errors="replace")):
@@ -1796,6 +1797,10 @@ def summarise_collect(folder):
     for k in ("ocr_backend", "vocr_model", "vocr_fallback_model"):
         if k in cfg:
             out["config"][k] = cfg[k]
+    # the removed UDP log's computer: whether one is set, never the address (a machine on the user's
+    # network), in the text and in analysis.json alike
+    if "log_host" in cfg:
+        out["config"]["log_host"] = "set" if cfg["log_host"] else ""
     out["app"] = summarise_app(folder, record)
     out["tai"] = {}
     for dev in ("ur0", "ux0"):
@@ -1906,6 +1911,15 @@ def net_stack_lines(lg):
     return out
 
 
+def log_host_line(value):
+    """config.ini's log_host, the removed UDP log's computer: the line to say, or None. Its value (an
+    address on the user's network) is not printed."""
+    if value is None:
+        return None
+    return (f"    log_host ({'set' if value else 'empty'}): the UDP log was removed (the overlay is offline); "
+            "today's app or installer deletes the line")
+
+
 def backend_line(value):
     """config.ini's ocr_backend, which is no setting any more (VOCR is the only engine): the line to say, or None."""
     if value is None:
@@ -1943,6 +1957,8 @@ def render_collect(c):
              + f"; API keys redacted: {', '.join(c['record'].get('redacted_keys') or []) or 'none set'}")
     if backend_line(cfg.get("ocr_backend")):
         L.append(backend_line(cfg.get("ocr_backend")))
+    if log_host_line(cfg.get("log_host")):
+        L.append(log_host_line(cfg.get("log_host")))
     for name, t in c["tai"].items():
         L.append(f"  {name}: kernel under {t['kernel'] or 'NOTHING'}, shell under {t['shell'] or 'NOTHING'}, "
                  f"OCR worker under {t['worker'] or 'no game'}" + (" and *ALL (WRONG: SceShell loads it)" if t["worker_all"]

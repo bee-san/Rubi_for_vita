@@ -5,7 +5,7 @@
  * VJO_VOCR_MODEL_DIR set, the pinned table is also checked against the real
  * release files. */
 #include "acutest.h"
-#include "net_posix.h"
+#include "platform_posix.h"
 #include "vocr.h"
 #include "vocr_ocr.h"
 #include "vocr_models.h"

@@ -13,7 +13,7 @@ partition, and taiHEN loading our modules into firmware processes
 |---|---|---|---|---|
 | kernel: scene detection, triggers, foreground state machine and the process event hook's input release, capture buffers, the game-OCR broker, the boot guard, the ledger | real code, SDK calls stubbed (`host/tests/vita_stubs`) | real code, same stubs, 32-bit, LDREX/STREX atomics | not loadable: the kernel plugin needs `SceDisplay`/`SceCtrl`/`SceTouch`/`SceProcessmgr` ForDriver exports to hook and `SceSysmem`/`SceIofilemgr` ForDriver calls; Vita3K has no firmware kernel to export them (its taiHEN HLE implements "all functions taiHEN itself relies on", nothing of a kernel plugin's imports) | the only place its hooks, its partition and its pool exist |
 | kernel: the hooks themselves (display, pad, touch, process events) | no | no | no | only here |
-| Shell plugin: control policy, memory lifetime, Anki miner and queue, strip, cursor, dictionary paging | real `shell/worker.c`, `anki.c`, `anki_queue.c`, `capture.c`, `strip_view.c`, `files.c` with stubs (16 suites) | not built (needs BearSSL and the core library; vita-vn-ocr's ARM lane covers the recognizer) | not loadable in its real context: Vita3K has no SceShell ("Shell support is pretty spotty" is about its own replacement UI); ScePaf, SceShell's partition and the LiveArea daily job do not exist there | only here |
+| Shell plugin: control policy, memory lifetime, Anki miner and queue, strip, cursor, dictionary paging | real `shell/worker.c`, `anki.c`, `anki_queue.c`, `platform_vita.c`, `strip_view.c`, `files.c` with stubs (16 suites) | not built (needs BearSSL and the core library; vita-vn-ocr's ARM lane covers the recognizer) | not loadable in its real context: Vita3K has no SceShell ("Shell support is pretty spotty" is about its own replacement UI); ScePaf, SceShell's partition and the LiveArea daily job do not exist there | only here |
 | Shell plugin: the Paf UI (`overlay.cpp`, `strip.cpp`) | header-level tests (`test_header_highlight.cpp`, `test_word_navigation.cpp`, `test_touch_hold.c`: what the page's close does with the touch region, #104); the arrows' row walk (`core/text_rows.c`) against a layout double (`test_text_rows.c`) | `test_text_rows.c` only | no | only here |
 | game worker: memory check and the model-size ladder (API 21), the capture ladder and probe, resident weights, model I/O through the broker, cancellation, the safe-boot exit | real `game_ocr/main.c` with stubs, real FL10/H15 when the models are present; with the real kernel (rows syscall, display-hook copy) in `test_game_model_broker.c` and under #74's measured pools in `test_alloc_sim.c` | the capture parity test (API 18's capture against API 19's, `test_capture_parity.c`) | as a plugin it could load into a game through Vita3K's taiHEN HLE, but its `vjoOcr*` syscalls come from our kernel plugin, which cannot load. `tools/vita3k_smoke.sh` runs its job code as a homebrew app instead, with an in-process kernel stand-in: a crash check, nothing more | only here |
 | packaged modules: syscall ABI, firmware-independent kernel imports, ARM-only instructions, page budgets | `check_vita_syscall_abi.py`, `check_kernel_instructions.py`, `check_memory_ledger.py` in the `vita` job | | | |
@@ -24,10 +24,13 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 55 ctest suites
+failed joins, cancelled jobs and crashes between steps are injected there. 55 ctest suites (54 in
+the normal build, which has no self-test memory routes to test: `kernel_meminfo`)
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
 word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out) (the Hachidori relay's contract
-test went with the relay client, `test_jpegsw.py` with Google Lens's JPEG encoder). The Overlay app's `.apkg` packages are imported there by Anki itself:
+test went with the relay client, `test_jpegsw.py` with Google Lens's JPEG encoder, and the HTTP
+transport test, `vjo-http-transport-tests`, with the network stack, whose `platform_vita` suite now
+tests what is left of the Shell's platform: its files and its clock). The Overlay app's `.apkg` packages are imported there by Anki itself:
 the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-anki.txt`, in a
 venv of its own (`VJO_ANKI_PYTHON`; `VJO_REQUIRE_ANKI=1` makes a missing one fail, not skip).
 AnkiDroid and AnkiMobile have not imported one.
@@ -148,7 +151,7 @@ OCR worker pages in SceShell             176,128       385,024   (0: registered 
 VjoNet thread                            196,608       364,544
 VjoControl thread (boot complete)        217,088       344,064
 game start: result memory (local)        217,088       344,064
-Anki card saved: job thread              286,720       274,432
+Anki card saved: job thread              237,568       323,584
 ```
 
 (The model holds the declared module pages: the online dictionaries' removal lowered them from
@@ -158,7 +161,8 @@ Lens's to 176,128 B, 90,112 B less again; the packaged module went from 294,912 
 `ba5f69a`'s, to 286,720 B (main `a5d79f2`), 282,624 B (main `9824b55`; #116 and #111 kept those
 pages), 266,240 B (main `e53d9fb`), 262,144 B (main `ac905b1`, #122, to `6020c0b`, #124; still
 266,240 B declared) and then to 176,128 B [measured: the build log's module row]. VjoNet's stack, 65,536 B until
-#132, is 16,384 B: 49,152 B less from the VjoNet thread's step on.)
+#132, is 16,384 B: 49,152 B less from the VjoNet thread's step on. VjoAnki's
+stack, 65,536 B until the network went, is 16,384 B: 49,152 B less at the Anki step.)
 
 What this says, and what it does not:
 

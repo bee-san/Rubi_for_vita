@@ -8,7 +8,7 @@
 #include <string.h>
 
 #include "../core/anki_queue.h"
-#include "../core/conn.h"
+#include "../core/errors.h"
 
 void vjo_log(const char *fmt, ...); /* the app's log.txt lines (anki_page.c) */
 

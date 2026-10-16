@@ -127,9 +127,6 @@ const char *vjo_config_default_text(void)
            "; on_press: recognize only when the overlay is opened\n"
            "ocr_mode = auto\n"
            "\n"
-           "; Debugging: IP of a computer running tools/udp_log_listener.py (empty = off)\n"
-           "log_host =\n"
-           "\n"
            "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 1 MB + one rotated file): on | off\n"
            "log_file = on\n"
            "\n"
@@ -210,8 +207,9 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
         return VJO_LINE_DROP;
     v = e;
     while (v < n && is_space(line[v])) v++;
-    /* the engine choice: VOCR is the only engine (core/config.h) */
-    if (e - b == 11 && vjo_ieq_prefix(line + b, "ocr_backend") && v < n && line[v] == '=')
+    /* the engine choice: VOCR is the only engine; the UDP log went with the network (core/config.h) */
+    if (((e - b == 11 && vjo_ieq_prefix(line + b, "ocr_backend")) ||
+         (e - b == 8 && vjo_ieq_prefix(line + b, "log_host"))) && v < n && line[v] == '=')
         return VJO_LINE_DROP_SETTING;
     if (e - b != 10 || !vjo_ieq_prefix(line + b, "dictionary") || v >= n || line[v] != '=')
         return VJO_LINE_KEEP;
@@ -318,7 +316,6 @@ static const StrSetting str_settings[] = {
     STR_SETTING(local_dictionary_dir, 1, 1),
     STR_SETTING(ocr_model_dir, 1, 1),
     CHECKED_SETTING(local_dictionaries, 0, vjo_local_names_valid, "1-8 relative .vjdict filenames separated by commas", 1),
-    STR_SETTING(log_host, 0, 0),
 };
 #define N_STR_SETTINGS ((int)(sizeof(str_settings) / sizeof(str_settings[0])))
 
@@ -417,6 +414,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             warn(c, "%s: %s was removed; using local", key, removed);
         else if (!vjo_ieq(val, "local"))
             warn(c, "%s: invalid value '%s'", key, val);
+    } else if (vjo_ieq(key, "log_host")) {
+        /* the UDP log was removed with the network (core/config.h): said once when one was set */
+        if (val[0])
+            warn(c, "%s: the UDP log was removed (the overlay is offline); log.txt stays", key, "");
     } else if (vjo_ieq(key, "frequency_filter") || vjo_ieq(key, "font_size") || vjo_ieq(key, "hw_jpeg") ||
                vjo_ieq(key, "combo_delay_ms") || vjo_ieq(key, "hachidori_host") || vjo_config_removed_anki_key(key) ||
                removed_secret(key, strlen(key))) {

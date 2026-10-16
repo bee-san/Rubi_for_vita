@@ -591,6 +591,38 @@ class SharedTierTable(unittest.TestCase):
     def table(self):
         return json.loads(TIERS_JSON.read_text(encoding="utf-8"))
 
+    def test_the_result_codes_are_read_from_core_errors_h(self):
+        # core/errors.h holds the VJO_E_* codes since core/conn.h went with the network; -118 and -119
+        # are in no table of the analyser's own, so only that read names them (audit-overlay-shell-slim-3 N5)
+        a.load_rc_names()
+        self.assertEqual(a.rc_text(-118), "cancelled (rc -118)")
+        self.assertEqual(a.rc_text(-119), "ocr inference (rc -119)")
+        self.assertEqual(a.rc_text(-100), "connect (rc -100)")  # an older build's network code keeps its name
+
+    def test_a_log_host_line_is_one_to_delete_and_its_address_is_not_shown(self):
+        self.assertIsNone(a.log_host_line(None))
+        self.assertEqual(a.log_host_line(""), "    log_host (empty): the UDP log was removed (the overlay is "
+                                                "offline); today's app or installer deletes the line")
+        line = a.log_host_line("192.168.1.5")
+        self.assertTrue(line.startswith("    log_host (set): ") and "192.168" not in line)
+
+    def test_collect_never_shows_a_log_host_address(self):
+        # audit-overlay-shell-slim-3b B1: the config line and analysis.json say set or empty, not the address
+        with tempfile.TemporaryDirectory() as d:
+            data = Path(d) / "ux0/data/VitaJPOverlay"
+            data.mkdir(parents=True)
+            (Path(d) / "COLLECT.json").write_text("{}")
+            for value, shown in (("192.168.1.5", "set"), ("", "empty")):
+                with self.subTest(value=value):
+                    (data / "config.ini").write_text(f"log_file = on\nlog_host = {value}\n")
+                    r = subprocess.run([sys.executable, str(SCRIPT), "--collect", d], capture_output=True, text=True,
+                                       timeout=60)
+                    text = r.stdout + r.stderr
+                    for out in Path(d).glob("analysis.*"):
+                        text += out.read_text(errors="replace")
+                    self.assertNotIn("192.168", text)
+                    self.assertIn(f"log_host ({shown}): the UDP log was removed", r.stdout)
+
     def test_any_ocr_backend_line_is_one_to_delete(self):
         # VOCR is the only engine since Google Lens's removal: the plugins warn for a removed engine's
         # value (core/config.c removed_engine) and ignore vocr; the app's next save and the installer

@@ -108,6 +108,9 @@ fi
 # the ledger's, and the Shell budget model replays them against the console's measured SceShell
 ab=$BUILD/vjo-shell-anki-tests
 ae=$BUILD/vjo-apkg-tests
+# VJO_BUDGET_SHELL_ANKI_STACK: the Anki job's thread stack and its TLS, from the budget header
+anki_stack=$(( $(grep -E '^#define VJO_STACK_SHELL_ANKI ' include/vjo_ledger_budget.h | grep -oE '[0-9]+u' | tr -d u)
+               + $(grep -E '^#define VJO_LEDGER_TLS ' include/vjo_ledger_budget.h | grep -oE '[0-9]+u' | tr -d u) ))
 if [ -x "$ab" ] && [ -x "$ae" ] && "$ab" > "$log/anki-build.log" 2>&1 \
    && "$PY" host/tests/test_anki_restart.py "$ab" "$ae" > "$log/anki-restart.log" 2>&1; then
   am=$("$PY" tools/shell_budget_model.py --anki --json 2>/dev/null | "$PY" -c '
@@ -120,7 +123,7 @@ print(min(s["headroom"] for s in anki), r["peak_pages"], r["peak_paf"])' 2>/dev/
   arena=$(grep -E '^#define VJO_BUDGET_PAF_ANKI ' include/vjo_ledger_budget.h | grep -oE '[0-9]+u' | tr -d u)
   if [ -n "$am_head" ] && [ "$am_head" -gt 0 ] && [ "$arena" = 131072 ] \
      && "$PY" tools/check_memory_ledger.py > "$log/ledger-src.log" 2>&1 && ! grep -q WARNING "$log/ledger-src.log"; then
-    pass "Anki offline queue (Shell)" "text-only cards, no network, 0 kernel captures; arena ${arena} B (VJO_BUDGET_PAF_ANKI) + 69,632 B stack; SceShell headroom at the Anki step ${am_head} B on the measured CLANNAD sample (model, not a measurement); saves and exports stopped at every storage boundary $(grep -o 'Ran [0-9]* tests' "$log/anki-restart.log")"
+    pass "Anki offline queue (Shell)" "text-only cards, no network, 0 kernel captures; arena ${arena} B (VJO_BUDGET_PAF_ANKI) + ${anki_stack} B stack and TLS (VJO_BUDGET_SHELL_ANKI_STACK); SceShell headroom at the Anki step ${am_head} B on the measured CLANNAD sample (model, not a measurement); saves and exports stopped at every storage boundary $(grep -o 'Ran [0-9]* tests' "$log/anki-restart.log")"
   else
     fail "Anki offline queue (Shell)" "budget/model check (arena ${arena:-?}, headroom ${am_head:-?}; $log/ledger-src.log)"
   fi
@@ -289,7 +292,9 @@ assumptions the console still has to confirm (none of these is measured yet):
     (argument), each OCR stage FAILs with that step, and the probe shows it per memory type.
   - taiHEN binding of the new export vjoOcrCaptureRows: the ABI check covers packaged metadata
     and relocations only.
-  - Anki (anki_mining = on in the test build): every Anki job holds a 69,632 B thread stack in
+EOF
+echo "  - Anki (anki_mining = on in the test build): every Anki job holds a ${anki_stack} B thread stack in"
+cat <<'EOF'
     SceShell's partition while it runs (a count of the queue on every overlay open, a save),
     and a save a 131,072 B PAF arena; a refused thread is logged with its rc. SceShell's free pages
     beside a game were measured once at 98,304 B with an older, larger build; the model's

@@ -6,8 +6,9 @@ file and applying key=value overrides.
 
 OLD may be missing (first install). Removed settings are dropped (the API keys of
 jpdb.io and jiten.moe, the removed online dictionaries, among them: printed as removed,
-never their values; the removed Hachidori relay's hachidori_host too; and the engine choice,
-ocr_backend: VOCR is the only engine), and values of removed features (dictionary = jpdb,
+never their values; the removed Hachidori relay's hachidori_host too; the engine choice,
+ocr_backend: VOCR is the only engine; and log_host, the removed UDP log's computer), and
+values of removed features (dictionary = jpdb,
 jiten or hachidori) are replaced. An older build's model choice (vocr_model) becomes its
 model size (vocr_tier) unless the file already names a valid one; vocr_model and
 vocr_fallback_model go. A vocr_tier core/config.c cannot read is replaced by the size the
@@ -33,7 +34,10 @@ REMOVED = {"frequency_filter", "font_size", "hw_jpeg", "combo_delay_ms",
            "hachidori_host",
            # The engine choice: VOCR is the only engine since Google Lens was removed (the overlay
            # is offline); core/config.c ignores a vocr line and warns for a removed engine's.
-           "ocr_backend"}
+           "ocr_backend",
+           # The UDP log's computer: the log went with the network (the overlay is offline);
+           # core/config.c warns once for a set one. log.txt stays.
+           "log_host"}
 REMOVED_PREFIXES = ("anki_field_",)
 # The removed online dictionaries' API keys (secrets; api_key: jpdb_api_key's older name): a key
 # that starts with one is dropped, and reported by that name only, as its line's text may hold the
@@ -41,7 +45,8 @@ REMOVED_PREFIXES = ("anki_field_",)
 SECRETS = ("jpdb_api_key", "jiten_api_key", "api_key")
 # Why a removed setting went, printed beside it (the log line the installer shows).
 REMOVED_WHY = {"anki_host": "AnkiConnect was removed: the Overlay app exports the cards as an .apkg",
-               "anki_audio_url": "AnkiConnect was removed: the Overlay app exports the cards as an .apkg"}
+               "anki_audio_url": "AnkiConnect was removed: the Overlay app exports the cards as an .apkg",
+               "log_host": "the UDP log was removed: the overlay is offline; log.txt stays"}
 # Values whose feature was removed, with their replacement. dictionary offers local only;
 # jpdb, jiten and hachidori load as local (core/config.c removed_dictionary).
 REPLACED_VALUES = {"dictionary": {"jpdb": "local", "jiten": "local", "hachidori": "local"}}

@@ -14,7 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "net.h" /* VjoFile */
+#include "platform.h" /* VjoFile */
 
 typedef struct {
     const uint8_t *rgba;      /* the frame: R, G, B, A bytes, fb_w x fb_h */
