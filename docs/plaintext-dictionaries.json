@@ -78,5 +78,15 @@
     }
   ],
   "repository": "bee-san/plaintext-dicts",
-  "revision": "8d3d80ace15001500e88709c4981baf664732de4"
+  "revision": "8d3d80ace15001500e88709c4981baf664732de4",
+  "key_filter": {
+    "note": "the released file: the frozen file with the key filter added by tools/prepare_plaintext.py (convert_dictionary.add_key_filter, deterministic; docs/local-dictionaries.md)",
+    "bytes": 141484032,
+    "sha256": "ab739112312ef921c80c0112c86a88f7355f18516ed010163758253f409ec81d",
+    "filter_blocks": 226,
+    "filter_bytes": 925696,
+    "filter_keys": 661469,
+    "filter_max_block_keys": 3706,
+    "filter_bits_per_key": 10
+  }
 }

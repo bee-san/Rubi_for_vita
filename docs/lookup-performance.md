@@ -137,6 +137,25 @@ python3 tools/dict_lookup_bench.py --bench build/host/vjo-dict-bench --directory
   [--pool LABELS.jsonl --reserved /path/to/vita-vn-ocr/eval/manifests/reserved.json] --rounds 21 -o out.json
 ```
 
+### Key filter
+
+The key filter ([format](local-dictionaries.md#key-filter)) answers most deinflection
+candidates that are not keys from one 4 KiB Bloom block per lookup. The block is chosen by
+the cursor's first two characters and read through the existing page cache.
+
+Whole word stepping, the same lookups, every shown entry identical; console times are
+estimates from the console fit:
+
+| line set | lookups | reads | index-page reads | console ms p50 / p95 (est.) | per screen p50 / p95 (est.) |
+|---|---:|---:|---:|---:|---:|
+| 50 committed VOCR lines | 629 | 13.51 → 8.59 | 6.96 → 1.13 | 66.7 → 48.4 / 122.6 → 77.8 | 962 → 714 / 1532 → 1213 ms |
+| 500 realplus-v3 screens | 5,005 | 15.21 → 8.34 | 8.94 → 1.14 | 70.4 → 48.0 / 148.7 → 81.6 | 485 → 358 / 2175 → 1361 ms |
+| 500 owner-pool-2 screens | 5,423 | 15.78 → 8.33 | 9.55 → 1.15 | 70.4 → 48.0 / 148.7 → 77.8 | 744 → 521 / 2034 → 1238 ms |
+
+The filter costs 0.91-1.00 reads and 0 bytes of RAM, and adds 904 KiB to the bundled file.
+Results for every mode and set:
+[dict-key-filter-20261015.json](benchmarks/dict-key-filter-20261015.json).
+
 ## Dictionary pages
 
 `tools/benchmark_dictionary_pages.py` measures the selected-character lookup

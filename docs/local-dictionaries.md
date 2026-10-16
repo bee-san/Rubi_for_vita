@@ -32,6 +32,13 @@ Rebuild the frozen artifact with `python3 tools/build.py` in the private repo.
 Its `sources.json` verifies all three original ZIPs before processing. Prepare
 an existing artifact with `tools/prepare_plaintext.py`; the Vita reads only the
 resulting `.vjdict`. This combined file counts as one dictionary for paging.
+Preparing checks the frozen file's SHA-256, adds the [key filter](#key-filter)
+and checks the result against its own pin (`key_filter` in
+`plaintext-dictionaries.json`). That file's top-level `bytes` and `sha256`
+describe the frozen file in the private repository, and `key_filter` the file
+the release ships. A package manifest's `dictionary` block copies both: the
+shipped file's checksum is also under `files`. That step is deterministic: it indexes what the
+file already holds and changes no entry.
 
 ## Convert and install
 
@@ -200,9 +207,12 @@ table is allocated.
 
 The plugin does **not** unzip banks, build an in-memory map, load a whole index,
 or memory-map dictionaries. A term hashes directly to a 4 KiB index bucket on
-storage; a hit verifies the full key before reading its definitions. Four shared
-4 KiB page buffers and a small absent-hash cache reduce repeated reads. These
-caches are shared across all enabled files and released after each request.
+storage; a hit verifies the full key before reading its definitions. A
+[key filter](#key-filter) on storage answers most deinflection candidates that
+are not words with no index read. Four shared 4 KiB page buffers and a small
+absent-hash cache reduce repeated reads; the filter's one block per lookup is
+read into the same buffers. These caches are shared across all enabled files
+and released after each request.
 Dictionaries are opened for a lookup and closed on both success and error;
 no dictionary-sized persistent allocation is added.
 
@@ -399,8 +409,52 @@ by comparing the full key. All offsets are absolute.
 
 Payloads are three UTF-8 NUL-terminated strings: spelling, reading, definition.
 Spelling and reading indexes share payloads. Rule bits are v1=1, v5=2, vs=4,
-vk=8, vz=16, adj-i=32, iru=64. Opening a dictionary reads only its header;
-pages, offsets, bounds and payloads are validated as they are accessed.
+vk=8, vz=16, adj-i=32, iru=64. Opening a dictionary reads only its first page
+(the header and the key filter's descriptor); pages, offsets, bounds and
+payloads are validated as they are accessed.
+
+#### Key filter
+
+An optional part of version 2 and later files. The converter writes it by
+default when the index has at least 4 buckets: with fewer, the index stays in
+the page cache and the filter's own read costs more than it saves. Use
+`--no-key-filter` to leave it out, or `--add-key-filter FILE [-o OUT]` to add it
+to an existing file without changing anything else in it. Readers that predate
+it read only the 64-byte header, so they still read a file that has one, and
+read it as before.
+
+- **Descriptor.** At byte 128 of page 0, 32 bytes: magic `VJKF`; u32 version=1;
+  u32 block count; u32 hash count=7; u64 offset of the first block; u32 key
+  count; u32 reserved=0.
+- **Directory.** From byte 256 of page 0: one u32 per block, the block's first
+  prefix. The first is 0, the rest increase. Bytes 160..191 are reserved (0), and
+  bytes 192..255 are not the filter's: a dictionary title may use them
+  (bee-san/plaintext-dicts).
+- **Blocks.** Page-aligned, 4 KiB each, and they end the file (the header's file
+  size includes them). Each is a 32,768-bit Bloom filter, bit `i` being byte
+  `i / 8`, bit `i % 8`. A key sets bits `(h1 + k * h2) mod 32768` for k = 0..6,
+  where h1 is the low 32 bits of `key_hash`, and h2 the high 32 bits with bit 0
+  set (wrapping 32-bit arithmetic).
+- **Prefix.** Each key's bits go into the block whose directory range holds the
+  key's prefix: its first two code points, 16 bits each (0xFFFF for a code point
+  beyond the BMP). The second is 0 for a one-character key.
+- **Packing.** The converter packs prefixes in increasing order at about 10
+  bits a key (fewer only when 960 blocks would not hold them). It keeps a first
+  character's whole range in one block when the range fits one.
+
+A lookup uses one block per file: the one for its cursor's first two
+characters, read through the shared page cache when the first candidate needs
+it. A candidate with two or more characters whose prefix is in that block's
+range, and whose bits are not all set, is not a key, so its index page is not
+read. Every other candidate searches the index as before: a one-character
+candidate, or one whose prefix lies outside the block's range (an inflection
+such as した → する).
+
+A Bloom filter has no false negatives, so lookups show exactly the same entries
+with or without it (`tools/dict_lookup_bench.py` checks every lookup of the
+benchmark sets). The bundled file's filter is 226 blocks (904 KiB) for 661,469
+keys. It is never resident: one block a lookup is read into the existing page
+cache.
 
 ### Binary format, version 1 (legacy, still readable)
 

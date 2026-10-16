@@ -35,6 +35,22 @@ MAX_ENTRY = 8192
 MAX_ROW_CHARS = 8 * 1024 * 1024
 MAX_INDEX_BYTES = 1024 * 1024
 RULES = {"v1": 1, "v5": 2, "vs": 4, "vk": 8, "vz": 16, "adj-i": 32, "iru": 64}
+# Key filter (docs/local-dictionaries.md): page-sized Bloom blocks after all other data,
+# announced in page 0 after the header. Readers that predate it read only the header.
+FILTER_MAGIC = b"VJKF"
+FILTER_DESCRIPTOR = struct.Struct("<4sIIIQII")  # magic, version 1, blocks, hashes, offset, keys, 0
+FILTER_DESCRIPTOR_OFFSET = 128
+# Page-0 bytes 192..255 belong to the dictionary's title (bee-san/plaintext-dicts), not the filter.
+FILTER_TITLE_GAP = (192, 256)
+FILTER_DIRECTORY_OFFSET = 256  # one u32 first prefix per block
+FILTER_MAX_BLOCKS = (PAGE_SIZE - FILTER_DIRECTORY_OFFSET) // 4
+FILTER_BLOCK_BITS = PAGE_SIZE * 8
+FILTER_HASHES = 7
+FILTER_BITS_PER_KEY = 10
+# Below this many hash buckets the few index pages mostly stay in the lookup's page cache and
+# the filter's own block read costs more than it saves (JMdict subsets: 2 buckets 2.82 -> 3.08
+# reads a lookup, 4 buckets 4.07 -> 3.16; reports/dict-lookup-speed.md, 6.1).
+FILTER_MIN_BUCKETS = 4
 
 
 def normalize(text):
@@ -247,7 +263,149 @@ def key_hash(key):
     return h ^ (h >> 33)
 
 
-def write_v2(db, data, final, count):
+def filter_prefix(key):
+    """A key's filter block is chosen by its first two code points, 16 bits each (0xFFFF
+    beyond the BMP), the second 0 for a one-character key: nearly every candidate searched
+    at one cursor keeps the cursor's two."""
+    text = key.decode("utf-8")  # converted keys are valid UTF-8; anything else is refused
+    return min(ord(text[0]), 0xFFFF) << 16 | (min(ord(text[1]), 0xFFFF) if len(text) > 1 else 0)
+
+
+def filter_bits(h, hashes=FILTER_HASHES):
+    """The Bloom bits of a key hash within its 32,768-bit block (double hashing)."""
+    h1, h2 = h & 0xFFFFFFFF, (h >> 32) | 1
+    return [(h1 + i * h2) & (FILTER_BLOCK_BITS - 1) for i in range(hashes)]
+
+
+def build_key_filter(keys):
+    """keys: (key bytes, key_hash) of every index key. Returns (directory, blocks, stats).
+
+    Keys are grouped by filter_prefix and the groups packed in prefix order into
+    4 KiB blocks of about FILTER_BITS_PER_KEY bits a key. A first character's whole
+    range goes into one block whenever it fits one, so a lookup's candidates stay in
+    one block; a group larger than a block gets one to itself. The directory holds
+    each block's first prefix (block 0 starts at 0)."""
+    groups, n_keys = {}, 0
+    for key, h in keys:
+        groups.setdefault(filter_prefix(key), []).append(h)
+        n_keys += 1
+    order = sorted(groups)
+    by_first = {}
+    for prefix in order:
+        by_first[prefix >> 16] = by_first.get(prefix >> 16, 0) + len(groups[prefix])
+    bits_per_key = FILTER_BITS_PER_KEY
+    while True:
+        capacity = FILTER_BLOCK_BITS // bits_per_key
+        starts, load, previous = [], 0, None
+        for prefix in order:
+            size, first = len(groups[prefix]), prefix >> 16
+            whole = first != previous and by_first[first] <= capacity
+            if not starts or (load and (load + size > capacity or (whole and load + by_first[first] > capacity))):
+                starts.append(prefix)
+                load = 0
+            load += size
+            previous = first
+        if len(starts) <= FILTER_MAX_BLOCKS or bits_per_key == 1:
+            break
+        bits_per_key -= 1  # very large dictionaries: fewer bits a key, more false positives
+    if len(starts) > FILTER_MAX_BLOCKS:
+        raise ValueError("too many keys for the key filter")
+    starts[0] = 0
+    blocks = [bytearray(PAGE_SIZE) for _ in starts]
+    loads = [0] * len(starts)
+    block = 0
+    for prefix in order:
+        while block + 1 < len(starts) and starts[block + 1] <= prefix:
+            block += 1
+        loads[block] += len(groups[prefix])
+        bits = blocks[block]
+        for h in groups[prefix]:
+            for bit in filter_bits(h):
+                bits[bit >> 3] |= 1 << (bit & 7)
+    return starts, blocks, {"filter_blocks": len(starts), "filter_bytes": len(starts) * PAGE_SIZE,
+                            "filter_keys": n_keys, "filter_max_block_keys": max(loads),
+                            "filter_bits_per_key": bits_per_key}
+
+
+def write_key_filter(final, keys, size):
+    """Appends the key filter at the next page boundary after `size` bytes of a version
+    2+ file and announces it in page 0. Returns the new file size and statistics."""
+    directory, blocks, stats = build_key_filter(keys)
+    offset = (size + PAGE_SIZE - 1) // PAGE_SIZE * PAGE_SIZE
+    if offset + len(blocks) * PAGE_SIZE > 0x7FFFFFFFFFFFFFFF:
+        raise ValueError("dictionary exceeds the supported file size")
+    final.seek(size)
+    final.write(bytes(offset - size))
+    for bits in blocks:
+        final.write(bits)
+    end = final.tell()
+    final.seek(FILTER_DESCRIPTOR_OFFSET)
+    final.write(FILTER_DESCRIPTOR.pack(FILTER_MAGIC, 1, len(blocks), FILTER_HASHES, offset, stats["filter_keys"], 0))
+    final.seek(FILTER_DIRECTORY_OFFSET)
+    final.write(struct.pack(f"<{len(directory)}I", *directory))
+    final.seek(40)  # the header's exact file size
+    final.write(struct.pack("<Q", end))
+    return end, stats
+
+
+def index_keys(stream):
+    """(key bytes, hash) of every index key of an opened version 2+ file, page by page."""
+    stream.seek(0)
+    header = HEADER.unpack(stream.read(HEADER.size))
+    if header[0][:6] != b"VJDICT" or header[1] < 2:
+        raise ValueError("a key filter needs a version 2 or later dictionary")
+    for page in range(header[9]):
+        stream.seek(PAGE_SIZE * (1 + page))
+        block = stream.read(PAGE_SIZE)
+        magic, count, _ = PAGE_HEADER.unpack_from(block)
+        if magic != b"VJHP" or count > HASH_PAGE_RECORDS:
+            raise ValueError("invalid hash index page")
+        for slot in range(count):
+            h, group, _, length, _ = HASH_RECORD.unpack_from(block, PAGE_HEADER.size + slot * HASH_RECORD.size)
+            stream.seek(group)
+            key = stream.read(length)
+            if len(key) != length or key_hash(key) != h:
+                raise ValueError("an index key does not match its hash")
+            yield key, h
+
+
+def add_key_filter(path, output=None):
+    """Adds a key filter to an existing version 2+ dictionary without changing anything a
+    reader without it uses (deterministic: the same input gives the same bytes)."""
+    path, output = Path(path), Path(output or path)
+    with path.open("rb") as stream:
+        page0 = stream.read(PAGE_SIZE)
+        if len(page0) < PAGE_SIZE or page0[:6] != b"VJDICT" or struct.unpack_from("<I", page0, 8)[0] < 2:
+            raise ValueError(f"{path}: not a version 2 or later dictionary")
+        if page0[FILTER_DESCRIPTOR_OFFSET:FILTER_DESCRIPTOR_OFFSET + 4] == FILTER_MAGIC:
+            raise ValueError(f"{path}: already has a key filter")
+        if any(page0[FILTER_DESCRIPTOR_OFFSET:FILTER_TITLE_GAP[0]]) or any(page0[FILTER_DIRECTORY_OFFSET:]):
+            raise ValueError(f"{path}: page 0's bytes {FILTER_DESCRIPTOR_OFFSET}..{FILTER_TITLE_GAP[0] - 1} or "
+                             f"{FILTER_DIRECTORY_OFFSET}..{PAGE_SIZE - 1} are not empty")
+        size = struct.unpack_from("<Q", page0, 40)[0]
+        if size != path.stat().st_size:
+            raise ValueError(f"{path}: size does not match its header")
+        buckets = struct.unpack_from("<Q", page0, 48)[0]
+        if buckets < FILTER_MIN_BUCKETS:
+            raise ValueError(f"{path}: {buckets} hash bucket(s); below {FILTER_MIN_BUCKETS} a key filter "
+                             "costs a lookup more reads than it saves")
+        with tempfile.NamedTemporaryFile(prefix=output.name + ".", suffix=".tmp", dir=output.parent,
+                                         delete=False) as final:
+            try:
+                stream.seek(0)
+                shutil.copyfileobj(stream, final, length=1024 * 1024)
+                end, stats = write_key_filter(final, index_keys(stream), size)
+                final.flush()
+                os.fsync(final.fileno())
+                os.chmod(final.name, path.stat().st_mode & 0o777)
+            except BaseException:
+                Path(final.name).unlink(missing_ok=True)
+                raise
+    os.replace(final.name, output)
+    return {"bytes": end, **stats}
+
+
+def write_v2(db, data, final, count, key_filter=True):
     # Sorting and all per-key metadata live on the computer's disk, not the Vita.
     db.execute("CREATE INDEX lookup_order ON lookups(key, priority, score, seq)")
     unique = db.execute("SELECT COUNT(DISTINCT key) FROM lookups").fetchone()[0]
@@ -309,11 +467,16 @@ def write_v2(db, data, final, count):
             if following:
                 page_number = overflow
                 overflow += 1
-    return {"bytes": size, "unique_keys": unique, "hash_buckets": buckets, "index_pages": pages}
+    result = {"bytes": size, "unique_keys": unique, "hash_buckets": buckets, "index_pages": pages}
+    if key_filter and buckets >= FILTER_MIN_BUCKETS:
+        keys = ((bytes(key), int.from_bytes(h, "big")) for key, h in db.execute("SELECT key, hash FROM hash_keys"))
+        size, filter_stats = write_key_filter(final, keys, size)
+        result.update(bytes=size, **filter_stats)
+    return result
 
 
 def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_version=2,
-            deduplicate=False):
+            deduplicate=False, key_filter=True):
     if format_version not in (1, 2):
         raise ValueError("format-version must be 1 or 2")
     output = Path(output)
@@ -437,7 +600,7 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
                                                      delete=False) as final:
                         final_name = Path(final.name)
                         if format_version == 2:
-                            stats.update(write_v2(db, data, final, count))
+                            stats.update(write_v2(db, data, final, count, key_filter))
                             size = stats["bytes"]
                         else:
                             final.write(HEADER.pack(MAGIC, 1, HEADER.size, count, RECORD.size,
@@ -462,8 +625,12 @@ def convert(inputs, output, max_definition_bytes=4096, temp_dir=None, format_ver
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("inputs", nargs="+", type=Path, help="Yomitan term ZIP(s), in priority order")
-    parser.add_argument("-o", "--output", required=True, type=Path, help="output .vjdict file")
+    parser.add_argument("inputs", nargs="*", type=Path, help="Yomitan term ZIP(s), in priority order")
+    parser.add_argument("-o", "--output", type=Path, help="output .vjdict file")
+    parser.add_argument("--add-key-filter", type=Path, metavar="VJDICT",
+                        help="add the key filter to an existing version 2 file (in place, or to -o)")
+    parser.add_argument("--no-key-filter", action="store_true",
+                        help="write no key filter (lookups then read more of the index)")
     parser.add_argument("--max-definition-bytes", type=int, default=4096)
     parser.add_argument("--format-version", type=int, choices=(1, 2), default=2,
                         help="2: page hash index (default); 1: legacy binary-search format")
@@ -471,9 +638,20 @@ def main():
     parser.add_argument("--deduplicate", action="store_true",
                         help="keep each spelling/reading pair only from its first input dictionary; preserve its senses")
     args = parser.parse_args()
+    if args.add_key_filter:
+        if args.inputs:
+            parser.error("--add-key-filter takes no input ZIPs")
+        try:
+            stats = add_key_filter(args.add_key_filter, args.output)
+        except (ValueError, OSError, UnicodeError) as exc:
+            parser.exit(1, f"Adding the key filter failed: {exc}\n")
+        print(json.dumps(stats, indent=2))
+        return
+    if not args.inputs or not args.output:
+        parser.error("give the input ZIPs and -o OUTPUT")
     try:
         stats = convert(args.inputs, args.output, args.max_definition_bytes, args.temp_dir,
-                        args.format_version, args.deduplicate)
+                        args.format_version, args.deduplicate, not args.no_key_filter)
     except (ValueError, OSError, sqlite3.Error, RuntimeError) as exc:
         parser.exit(1, f"Conversion failed: {exc}\n")
     print(json.dumps(stats, ensure_ascii=False, indent=2))

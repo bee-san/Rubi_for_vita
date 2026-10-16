@@ -15,6 +15,14 @@
 #define MISS_SLOTS 64
 #define HASH_PAGE_RECORDS 170u
 #define MAX_HASH_CHAIN 64u
+/* Key filter (docs/local-dictionaries.md): a descriptor at byte 128 of page 0, one u32
+ * first prefix a block from byte 256, and page-sized Bloom blocks ending the file. */
+#define FILTER_DESCRIPTOR 128u
+#define FILTER_DIRECTORY 256u
+#define FILTER_MAX_BLOCKS ((PAGE_SIZE - FILTER_DIRECTORY) / 4u)
+#define FILTER_BITS (PAGE_SIZE * 8u)
+#define FILTER_HASHES 7u
+#define NO_BLOCK UINT32_MAX
 
 #ifdef VJO_LOCAL_STATS
 VjoLocalStats vjo_local_stats;
@@ -48,6 +56,11 @@ typedef struct {
     VjoFile file;
     uint32_t count, version, buckets;
     uint64_t data;
+    /* The key filter (filter_blocks 0: none): where its blocks start, and the one
+     * block this lookup's candidates use (NO_BLOCK: none yet), covering prefixes
+     * [lo, hi). */
+    uint64_t filter;
+    uint32_t filter_blocks, block, lo, hi;
 } Dictionary;
 
 typedef struct {
@@ -147,6 +160,30 @@ static int range_ok(Dictionary *d, uint64_t off, size_t n)
     return off <= d->file.size && n <= d->file.size - off;
 }
 
+/* The page at base (a PAGE_SIZE multiple below the file size) in the shared LRU cache. */
+static int cached_page(Workspace *w, Dictionary *d, uint64_t base, Page **out)
+{
+    Page *page = NULL, *victim = &w->pages[0];
+    for (int i = 0; i < CACHE_PAGES; i++) {
+        Page *p = &w->pages[i];
+        if (p->dict == d && p->off == base) { page = p; break; }
+        if (!p->dict || (victim->dict && p->used < victim->used)) victim = p;
+    }
+    if (!page) {
+        uint64_t remaining = d->file.size - base;
+        page = victim;
+        page->dict = NULL;
+        page->off = base;
+        page->len = remaining < PAGE_SIZE ? (size_t)remaining : PAGE_SIZE;
+        STAT_READ(page->len);
+        if (d->file.read(d->file.ctx, base, page->bytes, page->len)) return VJO_E_LOCAL_IO;
+        page->dict = d;
+    }
+    page->used = ++w->clock;
+    *out = page;
+    return VJO_OK;
+}
+
 static int cached_read(Workspace *w, Dictionary *d, uint64_t off, void *dst, size_t n)
 {
     uint8_t *out = dst;
@@ -154,23 +191,9 @@ static int cached_read(Workspace *w, Dictionary *d, uint64_t off, void *dst, siz
     while (n) {
         uint64_t base = off & ~(uint64_t)(PAGE_SIZE - 1);
         size_t pos = (size_t)(off - base), take;
-        Page *page = NULL, *victim = &w->pages[0];
-        for (int i = 0; i < CACHE_PAGES; i++) {
-            Page *p = &w->pages[i];
-            if (p->dict == d && p->off == base) { page = p; break; }
-            if (!p->dict || (victim->dict && p->used < victim->used)) victim = p;
-        }
-        if (!page) {
-            page = victim;
-            uint64_t remaining = d->file.size - base;
-            page->dict = NULL;
-            page->off = base;
-            page->len = remaining < PAGE_SIZE ? (size_t)remaining : PAGE_SIZE;
-            STAT_READ(page->len);
-            if (d->file.read(d->file.ctx, base, page->bytes, page->len)) return VJO_E_LOCAL_IO;
-            page->dict = d;
-        }
-        page->used = ++w->clock;
+        Page *page;
+        int rc = cached_page(w, d, base, &page);
+        if (rc) return rc;
         take = page->len - pos;
         if (take > n) take = n;
         memcpy(out, page->bytes + pos, take);
@@ -190,14 +213,9 @@ static int open_file(const VjoPlatform *p, const VjoConfig *cfg, const char *nam
     return VJO_OK;
 }
 
-/* Reads and validates only the 64-byte header of an opened file. */
-static int check_header(Dictionary *d)
+/* Validates the 64-byte header h of an opened file. */
+static int parse_header(Dictionary *d, const uint8_t *h)
 {
-    uint8_t h[HEADER_SIZE];
-    if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
-    READ_KIND(VJO_READ_HEADER);
-    STAT_READ(sizeof(h));
-    if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, 0, h, sizeof(h))) return VJO_E_LOCAL_IO;
     d->version = u32(h + 8);
     d->count = u32(h + 16);
     d->data = u64(h + 32);
@@ -219,6 +237,112 @@ static int check_header(Dictionary *d)
     return VJO_OK;
 }
 
+/* Reads and validates only the 64-byte header (a page change: no cache). */
+static int check_header(Dictionary *d)
+{
+    uint8_t h[HEADER_SIZE];
+    if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
+    READ_KIND(VJO_READ_HEADER);
+    STAT_READ(sizeof(h));
+    if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, 0, h, sizeof(h))) return VJO_E_LOCAL_IO;
+    return parse_header(d, h);
+}
+
+/* A key's filter prefix: its first two code points, 16 bits each (beyond the
+ * BMP: 0xffff), the second 0 for one character (the converter's filter_prefix). */
+static uint32_t filter_prefix(const char *key, size_t len)
+{
+    size_t i = 0;
+    uint32_t c0 = vjo_utf8_next(key, len, &i), c1 = i < len ? vjo_utf8_next(key, len, &i) : 0;
+    return (c0 < 0xffffu ? c0 : 0xffffu) << 16 | (c1 < 0xffffu ? c1 : 0xffffu);
+}
+
+/* The filter block of prefix: the last directory entry at or below it. */
+static int filter_resolve(Workspace *w, Dictionary *d, uint32_t prefix)
+{
+    Page *page0;
+    uint32_t lo = 0, hi = d->filter_blocks;
+    int rc;
+    READ_KIND(VJO_READ_HEADER);
+    if ((rc = cached_page(w, d, 0, &page0))) return rc;
+    while (hi - lo > 1) {
+        uint32_t mid = lo + (hi - lo) / 2;
+        if (u32(page0->bytes + FILTER_DIRECTORY + mid * 4u) <= prefix) lo = mid; else hi = mid;
+    }
+    d->block = lo;
+    d->lo = u32(page0->bytes + FILTER_DIRECTORY + lo * 4u);
+    d->hi = lo + 1 < d->filter_blocks ? u32(page0->bytes + FILTER_DIRECTORY + (lo + 1) * 4u) : UINT32_MAX;
+    return VJO_OK;
+}
+
+/* A file's header and, from version 2, its key filter descriptor: page 0, read
+ * once into the page cache (a version 2 file's data starts at 8 KiB or later, so
+ * page 0 is whole). Without the descriptor's magic: no filter. The blocks must be
+ * the file's last pages and at most 960 (the directory then ends inside page 0).
+ * The directory itself is not checked: a block read through it stays inside the
+ * filter, and like any corrupt part of a file a corrupt filter can only hide
+ * entries. */
+static int open_header(Workspace *w, Dictionary *d)
+{
+    const uint8_t *f;
+    Page *page0;
+    uint64_t off;
+    uint32_t blocks;
+    int rc;
+    d->filter_blocks = 0;
+    d->block = NO_BLOCK;
+    if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
+    if (!d->file.read || !d->file.close) return VJO_E_LOCAL_IO;
+    READ_KIND(VJO_READ_HEADER);
+    if ((rc = cached_page(w, d, 0, &page0)) || (rc = parse_header(d, page0->bytes))) return rc;
+    f = page0->bytes + FILTER_DESCRIPTOR;
+    if (d->version < 2 || memcmp(f, "VJKF", 4)) return VJO_OK;
+    blocks = u32(f + 8);
+    off = u64(f + 16);
+    if (u32(f + 4) != 1 || !blocks || blocks > FILTER_MAX_BLOCKS || u32(f + 12) != FILTER_HASHES ||
+        off % PAGE_SIZE || off < d->data || off > d->file.size ||
+        d->file.size - off != (uint64_t)blocks * PAGE_SIZE) return VJO_E_LOCAL_FORMAT;
+    d->filter = off;
+    d->filter_blocks = blocks;
+    return VJO_OK;
+}
+
+/* *absent = 1 when candidate c is certainly not a key: its Bloom bits are not
+ * all set in its block (no index read). One block serves a lookup: the first
+ * candidate with two characters or more picks it (at the cursor, the longest
+ * span: the cursor's two characters, which nearly every candidate keeps).
+ * A one-character candidate, nearly always a key, or one with another block's
+ * prefix (an inflection such as した -> する) searches the index as before. */
+static int filter_check(Workspace *w, Dictionary *d, const Candidate *c, uint64_t hash, int *absent)
+{
+    uint32_t prefix, h1 = (uint32_t)hash, h2 = (uint32_t)(hash >> 32) | 1u;
+    Page *block;
+    int rc;
+    *absent = 0;
+    if (!d->filter_blocks) return VJO_OK;
+    prefix = filter_prefix(c->key, c->len);
+    if (!(prefix & 0xffffu)) return VJO_OK; /* one character: no key has a second code point 0 */
+    if (d->block == NO_BLOCK && (rc = filter_resolve(w, d, prefix))) return rc;
+    if (prefix < d->lo || prefix >= d->hi) return VJO_OK; /* the last block's hi: UINT32_MAX */
+    READ_KIND(VJO_READ_FILTER);
+    if ((rc = cached_page(w, d, d->filter + (uint64_t)d->block * PAGE_SIZE, &block))) return rc;
+    for (uint32_t k = 0; k < FILTER_HASHES; k++) {
+        uint32_t bit = (h1 + k * h2) & (FILTER_BITS - 1u);
+        if (!(block->bytes[bit >> 3] & (1u << (bit & 7u)))) {
+            STAT(filtered);
+            *absent = 1;
+            return VJO_OK;
+        }
+    }
+    return VJO_OK;
+}
+
+/* A new position in the text: the next candidate picks the block again. */
+static void filter_restart(Workspace *w)
+{
+    for (int i = 0; i < w->n_dicts; i++) w->dicts[i].block = NO_BLOCK;
+}
+
 static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig *cfg, VjoErr *err)
 {
     const char *names = cfg->local_dictionaries;
@@ -232,7 +356,7 @@ static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig
         int rc = open_file(p, cfg, name, d, err);
         if (rc) return rc;
         w->n_dicts++; /* close even if header validation fails */
-        if ((rc = check_header(d))) return rc;
+        if ((rc = open_header(w, d))) return rc;
     }
     return VJO_OK;
 }
@@ -460,11 +584,13 @@ static int find_matches_v2(Workspace *w, int di, const Candidate *c, Query *q, i
     Dictionary *d = &w->dicts[di];
     uint64_t hash = key_hash(c->key), page = PAGE_SIZE + (hash & (d->buckets - 1)) * PAGE_SIZE;
     unsigned miss = (unsigned)(hash >> 32) & (MISS_SLOTS - 1);
-    int rc, hash_present = 0;
+    int rc, hash_present = 0, absent;
     if (w->misses[miss].dict == (unsigned)di + 1 && w->misses[miss].hash == hash) {
         STAT(miss_cached);
         return VJO_OK;
     }
+    if ((rc = filter_check(w, d, c, hash, &absent))) return rc;
+    if (absent) return VJO_OK;
     for (unsigned chain = 0; ; chain++) {
         uint8_t header[16], slot[24];
         uint32_t count, lo = 0, hi;
@@ -647,6 +773,7 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     if ((rc = open_dictionaries(w, p, cfg, err))) goto done;
     while (off < len) {
         char key[VJO_LOCAL_MAX_KEY + 1];
+        filter_restart(w);
         size_t ends[MAX_SCAN_CHARS + 1], lengths[MAX_SCAN_CHARS + 1], scan = off, bytes = 0;
         int units[MAX_SCAN_CHARS + 1], count = 0, u = 0, matched = 0;
         while (scan < len && count < MAX_SCAN_CHARS) {

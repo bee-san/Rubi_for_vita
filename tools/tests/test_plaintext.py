@@ -129,6 +129,58 @@ class FrozenPlaintext(unittest.TestCase):
         self.assertFalse((self.root / "rejected.zip").exists())
 
 
+class KeyFilteredRelease(unittest.TestCase):
+    """The released file is the frozen one plus the key filter, pinned by its own checksum."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        source = self.root / "source.zip"
+        rows = [["食べる", "たべる", "", "v1", 0, ["synthetic frozen verb"], 1, ""]]
+        rows += [[f"語彙{i:05d}", "", "", "", 0, [f"filler {i}"], 1, ""] for i in range(1200)]
+        with zipfile.ZipFile(source, "w") as zipped:
+            zipped.writestr("index.json", json.dumps({"format": 3, "title": "Frozen fixture"}))
+            zipped.writestr("term_bank_1.json", json.dumps(rows, ensure_ascii=False))
+        frozen = self.root / "frozen" / prepare.FILENAME
+        frozen.parent.mkdir()
+        convert.convert([source], frozen, key_filter=False)  # as committed before the filter existed
+        self.archive = self.root / "frozen.zip"
+        with zipfile.ZipFile(self.archive, "w") as zipped:
+            zipped.write(frozen, prepare.FILENAME)
+        filtered = self.root / "filtered.vjdict"
+        convert.add_key_filter(frozen, filtered)
+        self.pin = {"bytes": frozen.stat().st_size, "sha256": prepare.digest(frozen),
+                    "archive": "processed/plaintext.vjdict.zip", "archive_bytes": self.archive.stat().st_size,
+                    "archive_sha256": prepare.digest(self.archive), "repository": "fixture/private",
+                    "revision": "a" * 40,
+                    "key_filter": {"bytes": filtered.stat().st_size, "sha256": prepare.digest(filtered)}}
+
+    def test_prepare_adds_the_pinned_filter_and_rejects_another(self):
+        output = self.root / "out" / prepare.FILENAME
+        with mock.patch.object(prepare, "load_manifest", return_value=self.pin):
+            prepare.prepare(output, self.archive)
+            prepare.validate(output, self.pin)
+            data = output.read_bytes()
+            self.assertEqual(data[convert.FILTER_DESCRIPTOR_OFFSET:convert.FILTER_DESCRIPTOR_OFFSET + 4], b"VJKF")
+            self.assertEqual(len(data), self.pin["key_filter"]["bytes"])
+            with self.assertRaisesRegex(ValueError, "checksum"):
+                prepare.validate(output, self.pin, frozen=True)  # not the committed bytes any more
+            prepare.prepare(output, self.archive)  # a valid cached output is kept
+            self.assertEqual(output.read_bytes(), data)
+        wrong = dict(self.pin, key_filter={"bytes": self.pin["key_filter"]["bytes"], "sha256": "0" * 64})
+        other = self.root / "other" / prepare.FILENAME
+        with mock.patch.object(prepare, "load_manifest", return_value=wrong), \
+                self.assertRaisesRegex(ValueError, "dictionary checksum"):
+            prepare.prepare(other, self.archive)
+        self.assertFalse(other.exists())
+        cli = os.environ.get("VJO_CLI", ROOT / "build/host/vjo-cli")
+        lookup = subprocess.run([str(cli), "--dict", "local", "--local-dir", str(output.parent),
+                                 "--local-dicts", prepare.FILENAME, "--text", "食べました", "--nav"],
+                                capture_output=True, text=True, check=True)
+        self.assertIn("synthetic frozen verb", lookup.stdout)
+
+
 class CommittedSnapshot(unittest.TestCase):
     def test_real_frozen_archive_and_all_three_sources(self):
         source = Path(os.environ.get("VJO_PLAINTEXT_SOURCE", ROOT / ".refs/plaintext-dicts"))
