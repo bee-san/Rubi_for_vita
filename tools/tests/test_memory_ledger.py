@@ -51,7 +51,7 @@ class MemoryLedgerCheck(unittest.TestCase):
         for pool in ("shell pages", "shell paf", "kernel", "game"):
             self.assertIn(pool, result.stdout)
         # 10 since #138's games.ini read for a starting game (kernel/loader.c policy_alloc)
-        self.assertIn("allocation sites: 10, all in ledger wrappers", result.stdout)
+        self.assertIn("allocation sites: 9, all in ledger wrappers", result.stdout)  # API 24: no buffers_alloc
         self.assertIn("kernel/loader.c:", result.stdout)
         as_json = json.loads(run("--json").stdout)
         self.assertEqual(as_json["result"], "pass")

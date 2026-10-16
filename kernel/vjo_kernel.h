@@ -15,11 +15,6 @@
 #include "scene.h"
 #include "triggers.h"   /* TRIG_* */
 
-#define CAPTURE_IDLE    0
-#define CAPTURE_PENDING 1     /* the next game frame is copied in game context (display.c) */
-#define CAPTURE_COPYING 2     /* claimed (CAS from PENDING) by a hook or the worker */
-#define CAPTURE_COPIED  3     /* copy finished; the worker publishes the result */
-
 #define VJO_MAX_W 960
 #define VJO_MAX_H 544
 #define VJO_CHECK_EVERY_FRAMES 8 /* a region signature every 8th game frame */
@@ -28,7 +23,7 @@ typedef struct {
     SceUID evf;    /* public events (VJO_EV_*) */
     SceUID ievf;   /* internal events (IEV_*) */
     SceUID mevf;   /* MEV_DONE: a model operation finished (game_ocr.c); its syscalls wait on it */
-    SceUID lock;   /* mutex: buffers and capture */
+    SceUID lock;   /* mutex: the OCR transport (game_ocr.c), the region, its signatures and the kernel strip */
     SceUID game_lock; /* mutex: game_pid, game_active, prev_game_pid changes (lifecycle.c) */
 
     /* foreground game (VjoForeground in foreground.h) */
@@ -43,31 +38,15 @@ typedef struct {
     /* OCR region (normalized), set by the shell */
     VjoRect region;
 
-    /* per-game capture buffer (see buffers.c) */
-    SceUID mem_uid;
-    uint8_t *raw;           /* A8B8G8R8, crop_h rows of raw_stride bytes */
-    uint32_t raw_capacity;  /* allocated bytes; checked before a display-hook copy */
-    volatile int alloc_status;
-
-    /* capture */
-    volatile int capture_state; /* CAPTURE_*, claimed with __sync CAS */
-    int capture_result;
+    /* the capture of the last OCR job's region: its first pass (game_ocr.c
+     * publish_capture_locked); no pixels are kept */
     uint32_t crop_w, crop_h;   /* captured pixels */
-    uint32_t capture_x, capture_y, capture_fb_w, capture_fb_h; /* request geometry */
-    uint32_t raw_stride;       /* bytes per row in raw */
-    SceneSig capture_sig;      /* of the captured region (not for capture_full) */
+    SceneSig capture_sig;      /* of the captured region */
     uint32_t capture_scene;    /* scene of the captured pixels, 0 = unknown */
-    int64_t capture_copy_us;   /* when the copy started (display.c) */
     uint32_t region_seq;       /* capture_sig is this capture's (0 = none) */
-    int64_t region_us;         /* its copy_us */
-    int64_t capture_requested_us;
-    volatile int raw_valid;
-    uint32_t capture_seq;      /* bumped per request */
-    uint32_t done_seq;         /* seq of the last finished capture */
-    int capture_full;          /* the pending capture is the whole frame (VJO_CAPTURE_FULL) */
-    SceUID capture_game_pid;
-    uint32_t capture_epoch;
-    int capture_once;          /* protect then release a single-pass JPEG capture */
+    int64_t region_us;         /* when its first pass started */
+    uint32_t capture_seq;      /* bumped per job */
+    uint32_t done_seq;         /* seq of the last finished first pass */
 
     /* change detection: the display hook writes hook_sig[(seq + 1) & 1],
      * then bumps hook_sig_seq; the worker reads hook_sig[seq & 1] */
@@ -96,21 +75,12 @@ void input_trace_reset(void);
 void klog(const char *fmt, ...);
 /* klog_d: a debug-build line (include/vjo_build.h, docs/release-variants.md). */
 unsigned klog_ms(void); /* the system clock in ms: the t= of transition lines */
-/* Atomically claims a pending capture; only the winner copies. */
-static inline int capture_claim(void)
-{
-    return __sync_bool_compare_and_swap(&g.capture_state, CAPTURE_PENDING, CAPTURE_COPYING);
-}
 int klog_read(char *dst, int len);
 
 /* buffers.c */
-int buffers_alloc(uint32_t bytes); /* capture lock held, idle; page-aligned internally */
-void buffers_free(void);
-void buffers_read_done(uint32_t row, uint32_t rows); /* lock held, successful user copy */
 int buffers_kstrip_alloc(uint32_t bytes); /* the OCR kernel strip (lock held): 0 or the error */
 uint8_t *buffers_kstrip(void);
 void buffers_kstrip_free(void);
-int capture_request(uint32_t flags);
 
 /* capture.c */
 void capture_compute_crop(uint32_t fb_w, uint32_t fb_h, uint32_t *x, uint32_t *y, uint32_t *w,
@@ -118,7 +88,6 @@ void capture_compute_crop(uint32_t fb_w, uint32_t fb_h, uint32_t *x, uint32_t *y
 /* The same crop for any normalized region (w == 0: the whole frame). */
 void capture_crop_of(const VjoRect *region, uint32_t fb_w, uint32_t fb_h, uint32_t *x, uint32_t *y,
                      uint32_t *w, uint32_t *h);
-int capture_copy(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t w, uint32_t h);
 int region_sig_hook(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t w, uint32_t h, SceneSig *out);
 /* An armed vjoOcrCaptureRows (game_ocr.c), as the display hook copies it. */
 typedef struct {
@@ -150,7 +119,7 @@ void display_hook_release(void);
 void display_static_fb_sample(void); /* game context, from its pad calls */
 
 /* ledger.c: the memory ledger (core/ledger.h, include/vjo_ledger_budget.h) */
-enum VjoKernelLedgerItem { VJO_KL_MODULE = 0, VJO_KL_STACK, VJO_KL_CAPTURE, VJO_KL_OCR_STRIP, VJO_KL_POLICY, VJO_KL_COUNT };
+enum VjoKernelLedgerItem { VJO_KL_MODULE = 0, VJO_KL_STACK, VJO_KL_OCR_STRIP, VJO_KL_POLICY, VJO_KL_COUNT };
 extern VjoLedger g_kernel_ledger;
 void kledger_init(void);
 void kledger_log(const char *when); /* the pool and its items, to kernel.txt */

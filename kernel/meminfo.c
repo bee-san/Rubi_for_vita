@@ -270,5 +270,4 @@ void meminfo_fill(SceUID caller_pid, const void *caller_addr, VjoMemInfo *out)
     out->ledger_peak = g_kernel_ledger.pool_peak[VJO_LEDGER_POOL_KERNEL];
     VJO_UNLOCK();
     out->ledger_limit = VJO_LIMIT_KERNEL;
-    out->capture_bytes = g.raw_capacity;
 }

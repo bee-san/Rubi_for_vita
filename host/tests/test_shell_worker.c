@@ -488,7 +488,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         size_t bytes = vjo_vocr_workspace_bytes(ran_model, raw_state.width, raw_state.height);
         static unsigned char capture[64 * 1024];
         VjoPlatform game_platform = {0}; VjoVocrStats stats;
-        VjoRgbaImage rgba = {raw_region, raw_state.width, raw_state.height, raw_state.raw_stride};
+        VjoRgbaImage rgba = {raw_region, raw_state.width, raw_state.height, raw_state.width * 4};
         VjoGreySource im;
         vjo_grey_source_rgba(&rgba, &im);
         vocr_live = 1;
@@ -633,7 +633,6 @@ static void reset(void)
     raw_state.done_seq = 11;
     raw_state.width = 200;
     raw_state.height = 60;
-    raw_state.raw_stride = 200 * 4;
     raw_state.capture_scene = 2;
     raw_state.region_seq = 4;
     memset(raw_region, 0, sizeof(raw_region));

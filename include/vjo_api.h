@@ -40,8 +40,12 @@
  * VjoGameOcrRequest.shot, a new last field) has the game worker read the whole frame
  * in colour (VJO_ROWS_RGBA), encode a JPEG in its own memory and write it through the
  * kernel's worker thread (vjoOcrShotWrite, vjoOcrShotSave) beside the card in the Anki
- * queue; results carry the shot's figures, two new step kinds (shot, save). */
-#define VJO_API_VERSION 23
+ * queue; results carry the shot's figures, two new step kinds (shot, save).
+ * 24: the kernel's full-frame capture is gone: vjoRequestCapture and vjoReadRaw (its
+ * last users, Google Lens's and the Shell's Anki JPEGs, were removed), the VjoCapture
+ * buffer, VJO_CAPTURE_*, VJO_ALLOC_*, and VjoState's alloc_status, capture_result and
+ * raw_stride (VjoMemInfo's capture_bytes). VjoState's capture fields are an OCR job's. */
+#define VJO_API_VERSION 24
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from
@@ -73,15 +77,10 @@ enum VjoTrigger {
 #define VJO_EV_REGION_STABLE 0x02u /* region changed, then unchanged (animation aside) for ~300 ms */
 #define VJO_EV_GAME_START    0x04u
 #define VJO_EV_GAME_EXIT     0x08u
-#define VJO_EV_CAPTURE_DONE  0x10u /* raw rows ready (or failed, see VjoState.capture_result) */
+#define VJO_EV_CAPTURE_DONE  0x10u /* an OCR job's first pass is in (VjoState.done_seq, capture_scene, region_seq) */
 #define VJO_EV_SUBTITLE      0x20u /* subtitle trigger pressed */
 #define VJO_EV_REGION_QUIET  0x40u /* the region became quiet (VjoState.quiet) */
 #define VJO_EV_ALL           0x7Fu
-
-/* VjoState.alloc_status */
-#define VJO_ALLOC_NONE 0  /* no game running */
-#define VJO_ALLOC_OK   1
-#define VJO_ALLOC_FAIL 2  /* not enough memory for capture buffers */
 
 typedef struct {
     uint32_t size;          /* sizeof(VjoState), set by caller */
@@ -89,17 +88,17 @@ typedef struct {
     uint32_t fb_width, fb_height, fb_pitch, fb_pixelformat;
     uint32_t scene;         /* the screen in the region: a new number per change (animation aside), 0 = none yet */
     uint32_t stable;        /* 1 if the scene has settled */
-    uint32_t alloc_status;
-    int32_t capture_result; /* 0 ok (rows readable via vjoReadRaw), <0 error code */
+    /* The capture of the last region job (not a full-frame, probe or shot job's), published
+     * when its first pass is in (kernel/game_ocr.c publish_capture_locked): no pixels are
+     * kept, only its size and its signature's scene. */
     uint32_t width, height; /* captured region size in pixels */
-    uint32_t capture_scene; /* scene of the captured pixels; 0 = unknown (or VJO_CAPTURE_FULL) */
-    uint32_t raw_stride;    /* bytes per raw row (A8B8G8R8) */
-    uint32_t done_seq;      /* sequence number of the last finished capture */
+    uint32_t capture_scene; /* scene of the captured pixels; 0 = unknown */
+    uint32_t done_seq;      /* that job's capture sequence number */
     uint32_t unsettled_ms;  /* the region has been changing this long without settling (0 = settled) */
     /* not settled, but only a small spot keeps changing (an icon not
      * masked yet): worth capturing */
     uint32_t quiet;
-    uint32_t region_seq;    /* the last successful region capture (not VJO_CAPTURE_FULL); 0 = none */
+    uint32_t region_seq;    /* the same capture's; 0 after a region change, and while a job's first pass rewrites it */
     /* the scene if that capture shows it now (animated cells aside, and
      * the quiet spot for one taken since it started), else 0: a capture
      * taken before an icon was masked shows the screen once it is */
@@ -110,11 +109,6 @@ typedef struct {
     uint32_t buttons;       /* SCE_CTRL_* of the real pad, unfiltered */
     uint8_t lx, ly, rx, ry; /* analog sticks, 128 = centre */
 } VjoInput;
-
-/* vjoRequestCapture flags */
-#define VJO_CAPTURE_FULL 0x1u /* the whole frame instead of the region (Anki screenshot) */
-#define VJO_CAPTURE_ONCE 0x2u /* JPEG reader: release after copying the final row */
-#define VJO_CAPTURE_DISCARD 0x4u /* release an idle single-pass capture after an encoder error */
 
 /* Shared syscall and copied-payload statuses. Physical retail hardware returned
  * queued -3 as 0xBFFFFFFD. Keep every custom status negative with bit 30 clear,
@@ -188,7 +182,6 @@ typedef struct {
     int32_t caller_rc;
     uint32_t caller_total, caller_free;
     uint32_t ledger_current, ledger_peak, ledger_limit; /* the kernel ledger's pool */
-    uint32_t capture_bytes;  /* the kernel capture block held right now, 0 = none */
     int32_t kernel_step, caller_step;
     /* Route 2 (PSVshell, PSVshellPlus): the caller's address space control
      * block at +328 (main), +332 (CDRAM), +316 (phycont), each partition's
@@ -222,8 +215,6 @@ int vjoSetTriggers(int toggle, int subtitle); /* enum VjoTrigger each, not equal
 int vjoSetGameActive(int pid, int mode);  /* shell: enum VjoGameMode of the foreground process */
 int vjoSetInputBlock(int on);            /* block all game input (not the shell) */
 int vjoPollInput(VjoInput *out);         /* raw pad, unfiltered */
-int vjoRequestCapture(uint32_t flags);   /* VJO_CAPTURE_*; returns seq > 0; raw rows, the shell encodes the JPEG */
-int vjoReadRaw(uint32_t row, uint32_t n, void *dst);      /* returns rows copied */
 #endif
 /* Boot-safety guard (core/boot_guard.h); declared for the host tests too. */
 #ifdef __cplusplus

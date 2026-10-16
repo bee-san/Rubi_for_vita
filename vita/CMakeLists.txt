@@ -64,7 +64,6 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/log.c
   ${ROOT}/kernel/buffers.c
   ${ROOT}/kernel/capture.c
-  ${ROOT}/kernel/capture_request.c
   ${ROOT}/kernel/game_ocr.c
   ${ROOT}/kernel/display.c
   ${ROOT}/kernel/input.c
@@ -93,12 +92,12 @@ target_compile_definitions(VitaJPOverlay_Kernel PRIVATE VJO_KERNEL=1)
 # module's pages: the syscalls and the worker thread's loop (kernel/main.c: a few calls every
 # 16 ms tick or 50 ms Shell poll, none per pixel), the boot-safety guard (kernel/boot.c,
 # core/boot_guard.c: at boot and when a stage is marked), the kernel strip and the log
-# (kernel/buffers.c, kernel/log.c, kernel/capture_request.c). The per-pixel and per-frame code
+# (kernel/buffers.c, kernel/log.c). The per-pixel and per-frame code
 # (kernel/capture.c, kernel/display.c, kernel/scene.c) and the pad and touch hooks
 # (kernel/input.c, kernel/triggers.c) stay at -O2.
 set_source_files_properties(${ROOT}/kernel/game_ocr.c ${ROOT}/kernel/lifecycle.c ${ROOT}/kernel/foreground.c
   ${ROOT}/kernel/meminfo.c ${ROOT}/kernel/loader.c ${ROOT}/kernel/main.c ${ROOT}/kernel/boot.c
-  ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c ${ROOT}/kernel/capture_request.c
+  ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 
 target_link_options(VitaJPOverlay_Kernel PRIVATE -nostdlib -Wl,-q)

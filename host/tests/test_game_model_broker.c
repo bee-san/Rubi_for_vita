@@ -33,8 +33,8 @@ static int live, open_error, read_error, close_error, bad_length, early_eof, cor
 static int schedule_kernel, cancel_after, substitute_legacy;
 static uint64_t clock_us;
 static FILE *file;
-static unsigned boundary_busy, capture_allocations, capture_releases;
-static int capture_live;
+static unsigned boundary_busy, kblock_allocations, kblock_releases;
+static int kblock_live;
 
 int test_kernel_register(void);
 int test_kernel_submit(const VjoGameOcrRequest *request);
@@ -151,13 +151,15 @@ int ksceKernelMemcpyUserToKernel(void *dst, const void *src, SceSize n)
 { TEST_CHECK(syscall_depth == 1); if (!dst || !src) return -1; memcpy(dst, src, n); return 0; }
 int ksceKernelMemcpyKernelToUser(void *dst, const void *src, SceSize n)
 { TEST_CHECK(syscall_depth == 1 && (in_hook ? !locks : locks == 1)); if (!dst || !src) return -1; memcpy(dst, src, n); return 0; }
-static unsigned char jpeg_capture[200 * 60 * 4 + 4096];
+/* The kernel's own blocks: an OCR job takes none (its capture block is the game worker's; the
+ * ladder's kernel strip only when the game refuses that block), so finish() checks none was. */
+static unsigned char kernel_block[200 * 60 * 4 + 4096];
 SceUID ksceKernelAllocMemBlock(const char *name, unsigned type, SceSize bytes, void *opt)
-{ TEST_CHECK(!capture_live && type == SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW && bytes <= sizeof(jpeg_capture)); capture_live = 1; capture_allocations++; return 27; }
+{ TEST_CHECK(!kblock_live && type == SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW && bytes <= sizeof(kernel_block)); kblock_live = 1; kblock_allocations++; return 27; }
 int ksceKernelGetMemBlockBase(SceUID uid, void **base)
-{ TEST_CHECK(uid == 27 && capture_live); *base = jpeg_capture; return 0; }
+{ TEST_CHECK(uid == 27 && kblock_live); *base = kernel_block; return 0; }
 int ksceKernelFreeMemBlock(SceUID uid)
-{ TEST_CHECK(uid == 27 && capture_live); capture_live = 0; capture_releases++; return 0; }
+{ TEST_CHECK(uid == 27 && kblock_live); kblock_live = 0; kblock_releases++; return 0; }
 
 SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
@@ -275,12 +277,12 @@ static VjoGameOcrRequest setup_job(const char *name, int keep_weights)
     quitting = active_seq = 0; worker_started = claim_outstanding = blocked = io_error = 0;
     locks = syscall_depth = user_opens = kernel_opens = kernel_reads = kernel_closes = 0;
     allocated = released = received = 0;
-    boundary_busy = capture_allocations = capture_releases = 0; capture_live = 0;
+    boundary_busy = kblock_allocations = kblock_releases = 0; kblock_live = 0;
     hook_frames = capture_blocks = 0; capture_block_live = 0; capture_uid = line_uid = -1;
     open_error = read_error = close_error = bad_length = early_eof = corrupt = short_read = cancel_after = 0;
     schedule_kernel = 1; substitute_legacy = 0; clock_us = 1000000;
     g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
-    g.capture_state = CAPTURE_IDLE; g.fb_w = 200; g.fb_h = 60; g.done_seq = g.capture_seq = 11;
+    g.fb_w = 200; g.fb_h = 60; g.done_seq = g.capture_seq = 11;
     /* the game's frame: black, one line of strokes at rows 15-38, the same grey
      * as the API 18 test's raw region (memset(.., 235, 6): one white pixel and
      * one with red and green only, every 6 px) */
@@ -297,6 +299,20 @@ static VjoGameOcrRequest setup_job(const char *name, int keep_weights)
     return request;
 }
 static VjoGameOcrRequest setup(const char *name) { return setup_job(name, 0); }
+/* The Shell's next job is accepted: nothing of the last one still holds the kernel's job slot.
+ * The first hardware failure pinned it and refused the next request although every pixel copy
+ * had worked. API 18-23 probed it with the kernel's full-frame capture request, which the same
+ * states refused; API 24 removed that request. The next test's setup resets the kernel. */
+static void next_job_accepted(void)
+{
+    VjoGameOcrRequest next = {.size = sizeof(next)};
+    int rc;
+    strcpy(next.model_dir, VJO_VOCR_MODEL_ROOT); strcpy(next.model, "FL10_w8.vocr");
+    TEST_CHECK(!game_ocr_capture_busy_locked());
+    caller = 3; rc = vjoOcrSubmit(&next);
+    TEST_CHECK(rc > 0);
+    TEST_MSG("the next job: %d", rc);
+}
 static void finish(const VjoGameOcrResult *out)
 {
     TEST_CHECK(!file && !live && !model_owned && allocated == released && !locks && !syscall_depth);
@@ -317,15 +333,9 @@ static void finish(const VjoGameOcrResult *out)
         TEST_CHECK(!memcmp(out, &received_result, sizeof(*out)));
     }
     /* No kernel block was taken for OCR, and the worker's capture block is gone. */
-    TEST_CHECK(!capture_live && !capture_allocations && !capture_block_live && !game_ocr_capture_busy_locked());
-    if (g.game_active) {
-        /* The first hardware failure pinned ownership and blocked this next
-         * real capture request even though all previous pixel copies worked. */
-        TEST_CHECK(retail_return(capture_request(VJO_CAPTURE_ONCE)) > 0);
-        TEST_CHECK(capture_live && g.capture_state == CAPTURE_PENDING);
-        g.capture_state = CAPTURE_IDLE; buffers_free();
-        TEST_CHECK(!capture_live && capture_allocations == 1 && capture_releases == 1);
-    }
+    TEST_CHECK(!kblock_live && !kblock_allocations && !kblock_releases && !capture_block_live &&
+               !game_ocr_capture_busy_locked());
+    if (g.game_active) next_job_accepted();
 }
 static void real_models_cross_namespace(void)
 {
@@ -463,9 +473,7 @@ static void real_model_failure_recovery(void)
             TEST_CHECK(!vjoOcrComplete(&out)); /* Failure retains the claimed job. */
             pending_result = out; claim_outstanding = 1; close_error = 0;
             TEST_CHECK(!vjo_game_ocr_worker_stop() && !file && !model_owned);
-            caller = 3;
-            TEST_CHECK(retail_return(capture_request(VJO_CAPTURE_ONCE)) > 0);
-            g.capture_state = CAPTURE_IDLE; buffers_free();
+            next_job_accepted();
             continue;
         }
         finish(&out);
@@ -484,8 +492,7 @@ static void queued_open_timeout_and_drain(void)
     TEST_CHECK(!model_owned && !kernel_opens && !file && !locks);
     VjoGameOcrResult result = {.size=sizeof(result), .seq=request.seq, .rc=VJO_E_CANCELLED};
     TEST_CHECK(!vjoOcrComplete(&result));
-    caller = 3; TEST_CHECK(retail_return(capture_request(VJO_CAPTURE_ONCE)) > 0);
-    g.capture_state = CAPTURE_IDLE; buffers_free();
+    next_job_accepted();
 }
 static void native_status_contract(void)
 {

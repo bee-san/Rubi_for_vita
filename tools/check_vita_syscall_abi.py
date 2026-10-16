@@ -27,8 +27,9 @@ GAME_FUNCTIONS = ("vjoOcrRegister", "vjoOcrTake", "vjoOcrCancelled", "vjoOcrCapt
                   "vjoOcrModelOpen", "vjoOcrModelRead", "vjoOcrModelClose",
                   # API 23: the Anki screenshot's JPEG, written through the kernel's worker
                   "vjoOcrShotWrite", "vjoOcrShotSave")
-# API 19 removed the RGBA reader: no module may still import it.
-REMOVED = ("vjoOcrReadRaw",)
+# Removed syscalls, with the API that removed them: no module may still export or import one.
+# API 19 the game worker's RGBA reader; API 24 the kernel's full-frame capture and its reader.
+REMOVED = {"vjoOcrReadRaw": 19, "vjoRequestCapture": 24, "vjoReadRaw": 24}
 GAME = {name: int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
         for name in GAME_FUNCTIONS}
 WEAK_STUB = (0xE3E00000, 0xE12FFF1E, 0xE1A00000, 0)
@@ -211,10 +212,10 @@ def audit(kernel, shell, require_hooks=False, worker=None):
             require(nid in exports, f"Kernel does not export {name}")
             owner = imports if name in ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel") else worker_imports
             require(nid in owner, f"Missing role-specific import {name}")
-        for name in REMOVED:
+        for name, api in REMOVED.items():
             nid = int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
             require(nid not in exports and nid not in worker_imports and nid not in imports,
-                    f"{name} was removed in API 19")
+                    f"{name} was removed in API {api}")
         shell_only = ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel", "vjoRegisterShell")
         for name in shell_only:
             nid = int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")

@@ -156,8 +156,8 @@ static void sample(Group *g, const char *step)
                m.as_caller ? "shell" : "kernel", (unsigned)m.as_rc, (int)m.as_step, (unsigned)m.as_parts,
                (unsigned)m.as_skipped, parts);
     }
-    report(g, "kernel %s ledger=%u/%u limit=%u capture=%u", step, (unsigned)m.ledger_current, (unsigned)m.ledger_peak,
-           (unsigned)m.ledger_limit, (unsigned)m.capture_bytes);
+    report(g, "kernel %s ledger=%u/%u limit=%u", step, (unsigned)m.ledger_current, (unsigned)m.ledger_peak,
+           (unsigned)m.ledger_limit);
 }
 
 int vjo_selftest_armed(void)

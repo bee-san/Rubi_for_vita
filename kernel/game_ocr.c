@@ -160,6 +160,8 @@ void game_ocr_init(void)
     memset(&rows, 0, sizeof(rows));
 }
 
+/* A job is queued or claimed, or a model or rows call is in flight: what
+ * vjoOcrSubmit refuses a new job on (VJO_ERR_BUSY). The host tests observe it. */
 int game_ocr_capture_busy_locked(void)
 {
     sync_locked();
@@ -350,7 +352,6 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
     if (!shell_caller(pid)) rc = VJO_ERR_PERM;
     else if (pending || claimed || model_io.seq || rows.state != ROWS_IDLE) rc = VJO_ERR_BUSY;
     else if (!registration_current(worker_pid)) rc = VJO_ERR_NO_GAME;
-    else if (g.capture_state != CAPTURE_IDLE) rc = VJO_ERR_BUSY; /* a raw capture in flight */
     else if (sequence == 0x7FFFFFFFu) rc = VJO_ERR_BUSY; /* Never recycle a sequence. */
     else {
         /* The region in the game's last frame. Every row request reads that
@@ -368,8 +369,6 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         g.capture_seq = (g.capture_seq + 1) & 0x7FFFFFFF;
         if (!g.capture_seq) g.capture_seq = 1;
         next.capture_seq = g.capture_seq;
-        g.capture_game_pid = worker_pid;
-        g.capture_epoch = __atomic_load_n(&g.ocr_epoch, __ATOMIC_ACQUIRE);
         request = next;
         request_pid = worker_pid;
         request_shell = pid;
@@ -475,17 +474,14 @@ void game_ocr_rows_hook(SceUID pid, uintptr_t base, uint32_t pitch, uint32_t fmt
 }
 
 /* The first pass of the job's capture is in (VJO_ROWS_LAST): its signature
- * against the current screen, published like a region capture's
- * (main.c finish_capture), so the Shell can tell whether the job's text is for
- * the screen it shows now. */
+ * against the current screen, published in VjoState (capture_scene, region_seq,
+ * done_seq), so the Shell can tell whether the job's text is for the screen it
+ * shows now. */
 static void publish_capture_locked(void)
 {
     g.capture_scene = scene_match(&g.tracker, &g.capture_sig);
     g.crop_w = request.width;
     g.crop_h = request.height;
-    g.capture_result = 0;
-    g.raw_valid = 0;
-    g.capture_full = 0;
     g.region_seq = request.capture_seq;
     g.region_us = rows.copy_start_us;
     g.done_seq = request.capture_seq;
@@ -618,7 +614,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         if (__atomic_load_n(&rows.state, __ATOMIC_ACQUIRE) != ROWS_DONE) {
             /* Never seen: the hook still owns dst (and a kernel strip). The caller must
              * not free dst; the kernel worker frees the strip and returns the state to
-             * IDLE once the copy ends, so a later raw capture is not refused. */
+             * IDLE once the copy ends, so a later rows call is not refused. */
             klog("ocr rows: copy still running after %u us", ROWS_COPY_WAIT_US);
             VJO_LOCK();
             rows.abandoned = 1;

@@ -12,8 +12,8 @@
  *                    CDRAM and phycont are modelled pools, refusable one by one.
  *   PAF (SceShell)   2,346,312 B free at the game start [#74].
  *
- * API 18's kernel capture buffer is the same allocator the JPEG capture still
- * uses (buffers_alloc), so its refusal is shown with the real code. Each case
+ * API 18's kernel capture buffer (VjoCapture, which API 24 removed with its
+ * allocator) is asked of the kernel pool's model at the sizes it took. Each case
  * prints one line; preflight.sh collects them. Not device evidence: the pools
  * are models of the measured numbers. */
 #include "acutest.h"
@@ -331,7 +331,7 @@ static Outcome run_case(const char *model, uint32_t flags, uint16_t rx, uint16_t
     game_ocr_init();
     clock_us = 1000000;
     g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME;
-    g.ocr_epoch = 1; g.capture_state = CAPTURE_IDLE; g.fb_w = FB_W; g.fb_h = FB_H; g.done_seq = g.capture_seq = 11;
+    g.ocr_epoch = 1; g.fb_w = FB_W; g.fb_h = FB_H; g.done_seq = g.capture_seq = 11;
     g.region = (VjoRect){rx, ry, rw, rh};
     caller = 7; TEST_ASSERT(!vjoOcrRegister()); caller = 3;
     VjoGameOcrRequest request = {.size = sizeof(request), .flags = flags};
@@ -382,22 +382,21 @@ static int have_models(void)
     return 1;
 }
 
-/* API 18: the kernel's region-sized capture buffer, the real allocator. */
+/* API 18: the kernel's region-sized capture buffer (VjoCapture, KERNEL_RW), asked of the pool
+ * model at the sizes it took, page-rounded as kernel/buffers.c rounded them until API 24. */
 static void api18_kernel_capture_is_refused_at_the_full_screen(void)
 {
     kd_largest = KD_GRANTED_74; kd_refusals = 0;
-    memset(&g, 0, sizeof(g));
-    g.capture_state = CAPTURE_IDLE;
-    int full = buffers_alloc(FB_W * FB_H * 4);
+    SceUID full = ksceKernelAllocMemBlock("VjoCapture", SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW, FB_W * FB_H * 4, NULL);
     TEST_CHECK(full == NO_PAGE && kd_refusals == 1);
     fprintf(stderr, "alloc-sim: %-58s rc=0x%08X (as #74: 0x80024302, five times)\n",
             "API 18 full screen: kernel VjoCapture 2,088,960 B", (unsigned)full);
-    buffers_free();
-    int box = buffers_alloc(917 * 125 * 4);
-    TEST_CHECK(box == 0);
+    SceUID box = ksceKernelAllocMemBlock("VjoCapture", SCE_KERNEL_MEMBLOCK_TYPE_KERNEL_RW,
+                                         (917u * 125u * 4u + 4095u) & ~4095u, NULL);
+    TEST_CHECK(box > 0 && kd_taken == KD_GRANTED_74);
     fprintf(stderr, "alloc-sim: %-58s rc=%d (granted, as in #74's earlier session)\n",
-            "API 18 textbox 917x125: kernel VjoCapture 458,752 B", box);
-    buffers_free();
+            "API 18 textbox 917x125: kernel VjoCapture 458,752 B", box > 0 ? 0 : (int)box);
+    TEST_CHECK(box > 0 && ksceKernelFreeMemBlock(box) == 0);
     TEST_CHECK(kd_taken == 0);
 }
 

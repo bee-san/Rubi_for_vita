@@ -1,6 +1,7 @@
-/* Region capture and region signatures (scene.h), both inside the display
- * hook, and the game OCR worker's grey rows (API 19). The shell reads the raw
- * rows of a JPEG capture and encodes the JPEG itself. */
+/* Region signatures (scene.h) and the game OCR worker's rows (API 19: grey; API 23,
+ * a shot: colour), both inside the display hook. The kernel keeps no copy of the
+ * frame: its full-frame capture (vjoRequestCapture, vjoReadRaw) was removed in
+ * API 24. */
 #include <psp2kern/kernel/sysclib.h>
 #include <psp2kern/kernel/sysmem.h>
 
@@ -8,14 +9,14 @@
 #include "vjo_kernel.h"
 
 /* Two rows of scratch for every copy below. They are only used from on_frame,
- * which runs for one caller at a time (display.c frame_busy): a JPEG capture,
- * a region signature and a worker's rows run one after the other, never at
- * once, so they share these instead of holding three pairs in .bss. */
+ * which runs for one caller at a time (display.c frame_busy): a region
+ * signature and a worker's rows run one after the other, never at once, so
+ * they share these instead of holding two pairs in .bss. */
 static uint32_t scratch_row32[VJO_MAX_W], scratch_tmp32[VJO_MAX_W]; /* word-aligned rows */
 #define scratch_row ((uint8_t *)scratch_row32)
 #define scratch_tmp ((uint8_t *)scratch_tmp32)
-/* The capture's signature accumulator: a JPEG region capture or the OCR job's
- * first pass, which cannot be pending together (game_ocr_capture_busy_locked). */
+/* The capture's signature accumulator: the OCR job's first pass (one job at a
+ * time, kernel/game_ocr.c). */
 static SceneAcc capture_acc;
 
 void capture_compute_crop(uint32_t fb_w, uint32_t fb_h, uint32_t *x, uint32_t *y, uint32_t *w,
@@ -82,44 +83,6 @@ static int read_row(uint8_t *dst, uint8_t *tmp, uintptr_t src, uint32_t n, uint3
     if (copy_from_game(tmp, src, n * vjo_fb_bpp(fmt)) < 0)
         return -1;
     vjo_fb_to_abgr((uint32_t *)dst, tmp, n, fmt);
-    return 0;
-}
-
-/* Copies the region (or, for a VJO_CAPTURE_FULL request, the whole frame)
- * of a game frame into g.raw (A8B8G8R8, raw_stride bytes per row), and the
- * region's signature into g.capture_sig. Game context only (display or pad
- * hook, display.c). */
-int capture_copy(uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t w, uint32_t h)
-{
-    uint32_t x, y, cw, ch, bpp, stride;
-    int full = g.capture_full;
-
-    if (!g.raw)
-        return VJO_ERR_NO_MEMORY;
-    bpp = vjo_fb_bpp(fmt);
-    if (!bpp)
-        return VJO_ERR_FORMAT;
-    w = w > VJO_MAX_W ? VJO_MAX_W : w;
-    h = h > VJO_MAX_H ? VJO_MAX_H : h;
-    x = g.capture_x;
-    y = g.capture_y;
-    cw = g.crop_w;
-    ch = g.crop_h;
-    if (w != g.capture_fb_w || h != g.capture_fb_h || !cw || !ch ||
-        pitch < w || x > w || cw > w - x || y > h || ch > h - y ||
-        cw * ch * 4 > g.raw_capacity)
-        return VJO_ERR_ARG;
-    if (!full) scene_acc_begin(&capture_acc, &g.capture_sig, cw, ch);
-
-    stride = g.raw_stride = cw * 4;
-
-    for (uint32_t row = 0; row < ch; row++) {
-        uint8_t *dst = g.raw + row * stride;
-        if (read_row(dst, scratch_tmp, base + ((y + row) * pitch + x) * bpp, cw, fmt) < 0)
-            return VJO_ERR_COPY;
-        if (!full)
-            scene_acc_row(&capture_acc, row, (const uint32_t *)dst);
-    }
     return 0;
 }
 

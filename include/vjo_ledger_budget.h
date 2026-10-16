@@ -246,29 +246,30 @@
 #endif
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
-/* The kernel's full-frame capture (vjoRequestCapture), which no Shell code takes any more: Google
- * Lens's JPEG and the Anki screenshot were its users, both removed. At a full frame, KERNEL_RW,
- * per request. Local OCR takes no kernel block since API 19 (#74: on the owner's
- * 3.65 this 2,088,960 B request failed with 0x80024302 at every attempt). */
-#define VJO_BUDGET_KERNEL_CAPTURE (960u * 544u * 4u)
-/* The OCR ladder's last rung (kernel/buffers.c buffers_kstrip_alloc): one strip of
- * grey rows for one vjoOcrCaptureRows call, only after the display hook could not
- * write into the game's own block; never held together with the JPEG capture
- * (an OCR job and a capture exclude each other), so it adds nothing to the worst case. */
+/* API 24 removed the kernel's full-frame capture (vjoRequestCapture, vjoReadRaw; VjoCapture,
+ * KERNEL_RW, at most 960 x 544 x 4 = 2,088,960 B, per request), the worst case's largest item
+ * until then: no Shell code had requested it since Google Lens's JPEG and the Shell's Anki
+ * screenshot were removed (#130, #125), and local OCR (API 19) and the Anki screenshot (API 23)
+ * read the screen in the game. On the owner's 3.65 that 2,088,960 B request failed with
+ * 0x80024302 at every attempt (#74). */
+/* The capture ladder's last rung (kernel/buffers.c buffers_kstrip_alloc): one strip of a job's
+ * rows for one vjoOcrCaptureRows call, only after the display hook could not write into the
+ * game's own block; freed before the call returns. Counted in the worst case. */
 #define VJO_BUDGET_KERNEL_OCR_STRIP (64u * 1024u)
 /* #138: a starting game's games.ini read (kernel/loader.c policy_alloc, KERNEL_RW,
  * "VjoPolicy"): the parsed table (sizeof(VjoGames), 8,200 B) and the file's text
  * (VJO_GAMES_TEXT_MAX, 12,288 B), page-rounded. The kernel worker takes it for one
  * read of a game the Shell may enable and frees it before the game's start goes
- * on; loader.c checks at compile time that both fit. It is not refused while the
- * capture buffer is held, so the worst case counts both. */
+ * on; loader.c checks at compile time that both fit. It is not refused while a
+ * kernel strip is held, so the worst case counts both. */
 #define VJO_BUDGET_KERNEL_POLICY 24576u
 #define VJO_WORST_KERNEL_PERMANENT (VJO_BUDGET_KERNEL_MODULE_PAGES + VJO_BUDGET_KERNEL_STACK)
-#define VJO_WORST_KERNEL (VJO_WORST_KERNEL_PERMANENT + VJO_BUDGET_KERNEL_CAPTURE + VJO_BUDGET_KERNEL_POLICY)
+#define VJO_WORST_KERNEL (VJO_WORST_KERNEL_PERMANENT + VJO_BUDGET_KERNEL_OCR_STRIP + VJO_BUDGET_KERNEL_POLICY)
 /* No cited safe size exists for this pool: its free space on a retail console
- * is unmeasured, and a 2,088,960 B capture has failed there once (#14) and
- * succeeded since. Until the self-test measures the partition, the limit is
- * today's worst case: a ratchet, so nothing grows unnoticed. */
+ * is unmeasured, and a 2,088,960 B capture failed there (#14, #74) and
+ * succeeded in other sessions before API 24 removed it. Until the self-test
+ * measures the partition, the limit is today's worst case: a ratchet, so
+ * nothing grows unnoticed. */
 #define VJO_LIMIT_KERNEL VJO_WORST_KERNEL
 
 /* ---- the game's partition (ScePhyMemPartGame, 256 MiB minus the game's own use; pool "game") ---- */

@@ -296,7 +296,7 @@ static void reset(void)
     late_after_last_write_us = late_until = 0;
     kstrip_live = 0; kstrip_allocs = 0;
     g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
-    g.capture_state = CAPTURE_IDLE; g.fb_w = 960; g.fb_h = 544; g.done_seq = g.capture_seq = 11;
+    g.fb_w = 960; g.fb_h = 544; g.done_seq = g.capture_seq = 11;
     g.region = (VjoRect){2000, 40000, 60000, 20000}; /* the user's textbox: a shot ignores it */
     mkdir("ux0:data", 0777);
     mkdir("ux0:data/VitaJPOverlay", 0777);
