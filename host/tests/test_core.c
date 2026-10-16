@@ -969,7 +969,7 @@ static void test_config(void)
         TEST_CHECK(c.n_warnings == 0 && c.font_size_ja == 18 && c.dictionary == VJO_DICT_LOCAL);
     }
 
-    /* docs/config.example.ini is the file written on first run */
+    /* docs/config.example.ini is the default file (the Overlay app's first save) */
     {
         size_t len;
         const char *t = vjo_config_default_text();

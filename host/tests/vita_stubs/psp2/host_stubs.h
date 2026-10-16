@@ -13,6 +13,7 @@ typedef unsigned int SceSize;
 #define SCE_EVENT_WAITOR 1
 #define SCE_EVENT_WAITCLEAR_PAT 2
 #define sceClibMemcpy memcpy
+#define sceClibMemcmp memcmp
 #define sceClibMemmove memmove
 #define sceClibMemset memset
 #define sceClibSnprintf snprintf

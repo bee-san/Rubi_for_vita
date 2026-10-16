@@ -2,6 +2,7 @@
 """Combine tested plugins/settings VPK with pinned OCR and frozen dictionaries."""
 import argparse
 import hashlib
+import io
 import json
 import re
 from pathlib import Path
@@ -25,6 +26,33 @@ NUMBERS = ("local_dictionary_results", "font_size_ja", "font_size_en", "ocr_sett
 # the owner sends. install-vita.sh takes a set one's value from the package's config.ini, which holds it.
 # tools/install-vita.sh, migrate_config.py, collect_vita.py and analyse_selftest.py use the same pattern.
 SECRET = re.compile(r"api_key$|^anki_audio_url$")
+APP_RECORD = DATA + "vjo_app.txt"  # the record of the Overlay app these plugins come with (core/app_stamp.h)
+APP_STAMP = re.compile(r"vjoapp1 api=\d{1,6} build=[0-9a-f]{16}")
+
+
+def app_info(original):
+    """The base zip's Overlay app: {"stamp", "title_id", "eboot_bytes", "eboot_sha256"} from JPOverlaySettings.vpk's
+    vjo_app.txt and eboot.bin, which must equal the base's ux0/data/VitaJPOverlay/vjo_app.txt (the Vita build writes
+    both from one file); None for a base from before the stamps, which has neither."""
+    names = set(original.namelist())
+    record = original.read(APP_RECORD).decode("utf-8", "replace") if APP_RECORD in names else None
+    stamp = eboot = None
+    try:
+        with zipfile.ZipFile(io.BytesIO(original.read("JPOverlaySettings.vpk"))) as vpk:
+            vpk_names = set(vpk.namelist())
+            stamp = vpk.read("vjo_app.txt").decode("utf-8", "replace") if "vjo_app.txt" in vpk_names else None
+            eboot = vpk.read("eboot.bin") if "eboot.bin" in vpk_names else None
+    except zipfile.BadZipFile:
+        pass  # not a VPK that can carry a stamp: an error below only when the base has a record
+    if record is None and stamp is None:
+        return None
+    if record is None or stamp is None or record != stamp or not APP_STAMP.fullmatch(stamp.strip()):
+        raise ValueError("The Overlay app's stamp: " + APP_RECORD + " and JPOverlaySettings.vpk's vjo_app.txt must be "
+                         "one stamp line (vita/CMakeLists.txt writes both)")
+    if eboot is None or hashlib.sha256(eboot).hexdigest()[:16] != stamp.split("build=")[1].strip():
+        raise ValueError("The Overlay app's stamp is not its VPK's eboot.bin's")
+    return {"stamp": stamp.strip(), "title_id": "VJOSET001", "eboot_bytes": len(eboot),
+            "eboot_sha256": hashlib.sha256(eboot).hexdigest()}
 
 
 def tier_release(name):
@@ -227,6 +255,9 @@ def write_package(base, output, models, assets, conversion, version, source_revi
                     "ur0/tai/VitaJPOverlay_OCR.suprx"}
         if not required.issubset(original.namelist()):
             raise ValueError("Base archive is missing plugins, RCO or settings VPK")
+        app = app_info(original)
+        if app:
+            manifest["app"] = app  # install_ftp.sh --check-app and --collect compare the Vita's app with it
         for info in original.infolist():
             if info.is_dir() or info.filename in assets or info.filename == "package-manifest.json":
                 continue

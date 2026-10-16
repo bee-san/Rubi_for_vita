@@ -95,7 +95,10 @@ void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and
  * add a warning. */
 void vjo_config_parse(VjoConfig *c, const char *text, size_t len);
-/* Default file written on first run (with comments). */
+/* The commented default file: docs/config.example.ini, the installer's and the
+ * package's template, and what the Overlay app's first save publishes when
+ * there is no config.ini (settings/preferences.c). SceShell never writes it:
+ * without a file the Shell plugin runs on vjo_config_defaults, the same values. */
 const char *vjo_config_default_text(void);
 
 /* Changes only the app's five OCR/lookup preferences (ocr_backend, vocr_tier,

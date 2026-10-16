@@ -23,8 +23,8 @@ set(CORE_SRC
   core/textfilter.c core/entries.c core/config.c core/regions.c
   core/http.c core/tls.c core/tls_roots.c core/client.c core/styled.c core/jpegsw.c
   core/anki.c core/anki_queue.c core/net.c core/local_dict.c core/ocr_lines.c
-  core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c shell/game_ocr_client.c
-  core/sqlw.c core/zipw.c core/lapis.c core/apkg.c)
+  core/games.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
+  shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl)
@@ -400,6 +400,7 @@ add_executable(vjo-preferences-tests host/tests/test_preferences.c settings/pref
 target_include_directories(vjo-preferences-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_link_libraries(vjo-preferences-tests vjo_host)
 target_compile_options(vjo-preferences-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_compile_definitions(vjo-preferences-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME preferences COMMAND vjo-preferences-tests)
 # The Overlay app's actual input/draw loop (settings/main.c) with a scripted SDK
 # boundary: the OCR engine card's two engines, the local one named after its
@@ -408,7 +409,8 @@ add_test(NAME preferences COMMAND vjo-preferences-tests)
 foreach(_vjo_variant IN ITEMS app vocr5)
   set(_vjo_target vjo-settings-${_vjo_variant}-tests)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
-    settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c vita/games_storage.c
+    settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
+    vita/games_storage.c
     vita/buttons_vita.c
     host/tests/settings_stubs/anki_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
@@ -448,7 +450,8 @@ foreach(_vjo_games IN ITEMS tests bench)
     set(_vjo_main ${VJO_SETTINGS_BENCH_MAIN})
   endif()
   add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/engine.c
-    settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c vita/games_storage.c
+    settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
+    vita/games_storage.c
     vita/buttons_vita.c
     host/tests/settings_stubs/anki_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs

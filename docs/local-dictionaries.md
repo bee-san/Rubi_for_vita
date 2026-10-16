@@ -73,8 +73,9 @@ file already holds and changes no entry.
    Return to your game and open the overlay. No reboot is required for dictionary
    changes. The updated plugin binaries themselves require the usual reboot.
 
-Alternatively, after installing the plugin and opening the overlay once to
-create `config.ini`, start VitaShell's FTP server and run:
+Alternatively, once `config.ini` exists (the overlay's installer, `install-vita.sh`, creates it, and so
+does any change in the Overlay app; the Shell plugin never writes it), start VitaShell's FTP server and
+run:
 
 ```sh
 python3 tools/install_dictionary.py 192.168.1.30 main.vjdict --enable

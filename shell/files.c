@@ -65,33 +65,48 @@ int vjo_file_write(const char *path, const void *data, size_t len)
     return sceIoRename(tmp, path);
 }
 
-static int file_exists(const char *path)
+int vjo_file_exists(const char *path)
 {
     SceIoStat st;
     return sceIoGetstat(path, &st) >= 0;
+}
+
+int vjo_file_line(const char *path, char *buf, int cap)
+{
+    SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
+    int used = 0, n = 0;
+    buf[0] = '\0';
+    if (fd < 0)
+        return fd;
+    while (used < cap - 1 && (n = sceIoRead(fd, buf + used, (SceSize)(cap - 1 - used))) > 0)
+        used += n;
+    sceIoClose(fd);
+    buf[used] = '\0';
+    for (char *p = buf; *p; p++)
+        if ((unsigned char)*p < ' ') { /* the first line only */
+            *p = '\0';
+            break;
+        }
+    return n < 0 ? n : used;
 }
 
 void vjo_config_load(VjoConfig *cfg, VjoArena *scratch)
 {
     size_t mark = vjo_arena_mark(scratch), len = 0;
     char *text = file_read_limit(scratch, VJO_CONFIG_PATH, &len, VJO_CONFIG_TEXT_MAX);
+    SceIoStat st;
     vjo_config_defaults(cfg);
-    if (text && !memchr(text, 0, len)) {
-        vjo_config_parse(cfg, text, len);
-    } else {
-        SceIoStat st;
-        if (sceIoGetstat(VJO_CONFIG_PATH, &st) == (int)0x80010002u) {
-            /* Interrupted settings publication may leave only the backup.
-             * Never alter it or create defaults over an unreadable backup. */
-            vjo_arena_release(scratch, mark);
-            text = file_read_limit(scratch, VJO_CONFIG_PATH ".bak", &len, VJO_CONFIG_TEXT_MAX);
-            if (text && !memchr(text, 0, len)) vjo_config_parse(cfg, text, len);
-            else if (sceIoGetstat(VJO_CONFIG_PATH ".bak", &st) == (int)0x80010002u) {
-                const char *def = vjo_config_default_text();
-                vjo_file_write(VJO_CONFIG_PATH, def, strlen(def));
-            }
-        }
+    /* An interrupted settings publication may leave only the backup: it is
+     * read, never altered. With neither file the defaults apply. SceShell
+     * never writes config.ini: the installer, the package (its copy in
+     * ux0/data/VitaJPOverlay) and the Overlay app do, so the commented
+     * template (docs/memory-ledger.md) is not in the module. */
+    if (!text && sceIoGetstat(VJO_CONFIG_PATH, &st) == (int)0x80010002u) {
+        vjo_arena_release(scratch, mark);
+        text = file_read_limit(scratch, VJO_CONFIG_PATH ".bak", &len, VJO_CONFIG_TEXT_MAX);
     }
+    if (text && !memchr(text, 0, len))
+        vjo_config_parse(cfg, text, len);
     vjo_arena_release(scratch, mark);
 }
 
@@ -113,7 +128,7 @@ int vjo_region_save(const char *title_id, const VjoRect *r, VjoArena *scratch)
     int rc = -1;
     /* never rewrite a file that exists but could not be read: it holds the
      * other games' regions */
-    if (text || !file_exists(VJO_REGION_PATH)) {
+    if (text || !vjo_file_exists(VJO_REGION_PATH)) {
         next = vjo_region_update(scratch, text ? text : "", text ? len : 0, title_id, r ? r : &full);
         if (next)
             rc = vjo_file_write(VJO_REGION_PATH, next, strlen(next));

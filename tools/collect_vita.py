@@ -10,7 +10,10 @@ Downloads, over VitaShell's FTP (VitaShell: SELECT -> FTP), with curl as the ins
                            region.ini anki_queue/* (every card, screenshot, temp and duplicate file)
                            and anki_queue/exported/* (the cards the Overlay app exported); anki/ (its
                            .apkg packages) is listed only
+                           vjo_app.txt (the record of the Overlay app the plugins came with)
   ur0:data/VitaJPOverlay/  boot.txt
+  ux0:app/VJOSET001/       vjo_app.txt (the installed Overlay app's stamp, core/app_stamp.h); its eboot.bin
+                           is hashed, never kept
   ur0:tai/, ux0:tai/       config.txt and the installer's config.txt.vjo-bak
   ux0:data/                every *.psp2dmp crash dump
 The directories are listed (Python's ftplib, LIST as --dumps does) into listings/; the
@@ -38,9 +41,11 @@ import urllib.parse
 from pathlib import Path
 
 DATA = "ux0:/data/VitaJPOverlay"
+APP = "ux0:/app/VJOSET001"  # the Overlay app (JPOverlaySettings.vpk)
 FILES = [f"{DATA}/{n}" for n in ("log.txt", "log.old.txt", "selftest-report.txt", "selftest.txt", "status.txt",
                                   "status.prev.txt", "kernel.txt", "kernel.prev.txt", "config.ini", "games.ini",
-                                  "region.ini")]
+                                  "region.ini", "vjo_app.txt")]
+FILES += [f"{APP}/vjo_app.txt"]
 FILES += ["ur0:/data/VitaJPOverlay/boot.txt", "ur0:/tai/config.txt", "ur0:/tai/config.txt.vjo-bak",
           "ux0:/tai/config.txt", "ux0:/tai/config.txt.vjo-bak"]
 # Listed, and what to do with their files: "keep" downloads them, "hash" hashes them only.
@@ -229,18 +234,40 @@ class Collector:
             self.record["errors"].append(f"{device_path}: curl exit {rc}: {err}")
         return False
 
-    def hash_remote(self, device_path):
+    def sha256_remote(self, device_path):
+        """{"bytes", "sha256"} of a device file, downloaded to a temporary file and deleted again; None (the
+        error recorded) when it cannot be read."""
         with tempfile.TemporaryDirectory(prefix="vjo-collect-") as tmp:
             tmpfile = Path(tmp) / "f"
             rc, err = self.curl(device_path, tmpfile)
             if rc:
                 self.record["errors"].append(f"{device_path}: not hashed, curl exit {rc}: {err}")
-                return
+                return None
             h = hashlib.sha256()
             with tmpfile.open("rb") as s:
                 for block in iter(lambda: s.read(1 << 20), b""):
                     h.update(block)
-            self.record["hashed"][device_path] = {"bytes": tmpfile.stat().st_size, "sha256": h.hexdigest()}
+            return {"bytes": tmpfile.stat().st_size, "sha256": h.hexdigest()}
+
+    def hash_remote(self, device_path):
+        got = self.sha256_remote(device_path)
+        if got:
+            self.record["hashed"][device_path] = got
+
+    def collect_app(self):
+        """The installed Overlay app (core/app_stamp.h): whether its eboot.bin is there, and that file's hash (its
+        stamp is one of FILES). Kept apart from "hashed", whose files the package lists one by one."""
+        status, lines = self.listdir(APP)
+        app = {"listed": status == "ok", "eboot": None}
+        if status == "missing":
+            self.record["missing"].append(APP + "/")
+        elif status == "error":
+            self.record["errors"].append(f"{APP}/: LIST failed: {lines}")
+        else:
+            self.record["listings"][APP] = entries = self.parse_list(lines)
+            if any(e["name"] == "eboot.bin" and not e["dir"] for e in entries):
+                app["eboot"] = self.sha256_remote(f"{APP}/eboot.bin")
+        self.record["app"] = app
 
     def run(self):
         for p in FILES:
@@ -274,6 +301,7 @@ class Collector:
                     self.fetch(child)
                 else:
                     self.hash_remote(child)
+        self.collect_app()
         if self.ftp is not None:
             try:
                 self.ftp.quit()
@@ -284,6 +312,7 @@ class Collector:
         """Each hashed device file against the package it should come from."""
         manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         files = manifest.get("files", {})
+        self.record["package_app"] = manifest.get("app")  # the package's Overlay app (package_release.py)
         self.record["package"] = {k: masked(manifest[k]) if k in ("defaults", "install_settings") else manifest[k]
                                   for k in ("version", "source_revision", "defaults", "install_settings") if k in manifest}
         checks = {}

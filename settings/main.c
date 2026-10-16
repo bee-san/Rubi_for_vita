@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "anki_page.h"
+#include "app_check.h"
 #include "catalog.h"
 #include "engine.h"
 #include "icons.h"
@@ -168,13 +169,25 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 #define PAGES 3
 #define TAB_X(i) (24 + (i) * 304)
 #define TAB_W 296
+/* When this app and the overlay plugins do not match (app_check.h), a red
+ * band in place of the title row says so on every page, in two rows. */
+#define BANNER_Y 4
+#define BANNER_H 46
+#define BANNER_TEXT_Y 24
+#define BANNER_LINE_H 22
+static char app_banner[192];
 
 static void header(void)
 {
     static const char *const tabs[PAGES] = {"Games", "OCR & lookup", "Anki"};
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
-    wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "Overlay");
-    text(744, 34, DIM, 24, "Select: page");
+    if (app_banner[0]) {
+        vita2d_draw_rectangle(0, BANNER_Y, 960, BANNER_H, OFF);
+        wrapped_text(24, BANNER_TEXT_Y, 912, BG, 20, BANNER_LINE_H, 2, app_banner);
+    } else {
+        wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "Overlay");
+        text(744, 34, DIM, 24, "Select: page");
+    }
     for (int i = 0; i < PAGES; i++) {
         vita2d_draw_rectangle(TAB_X(i), TAB_Y, TAB_W, TAB_H, page == i ? ACCENT : CARD);
         centered_text(TAB_X(i), TAB_Y + 33, TAB_W, page == i ? BG : WHITE, 28, tabs[i]);
@@ -783,6 +796,7 @@ int main(void)
     load_preferences();
     vjo_log_enable(preferences.log_file);
     log_start();
+    vjo_app_banner(app_banner, sizeof(app_banner)); /* read once, at start */
     status_error = load < 0;
     snprintf(status, sizeof(status), "%s", load < 0 ? "Cannot read settings. Repair games.ini first." :
         load > 0 ? "Recovered saved choices from backup. Changes save automatically." :

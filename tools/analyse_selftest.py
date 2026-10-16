@@ -974,6 +974,59 @@ def masked(settings):
     return {k: ("set" if v not in ("", None) else "") if CREDENTIAL.search(str(k)) else v for k, v in settings.items()}
 
 
+# shell/worker.c vjo_worker_start: each boot's Shell names its API ("kernel API 20" is the kernel's, which the
+# Shell starts only with when it is its own)
+SHELL_STARTED = re.compile(r"^Vita JP Overlay shell started \(kernel API (\d+)\)")
+# shell/worker.c check_app: "overlay app MISMATCH: installed '...' (0x..., app 1), plugins' '...' (0x...)"
+APP_LINE = re.compile(r"^overlay app (ok|MISMATCH|unknown): ")
+# ocr_backend values of removed engines, which an older Overlay app can still write (#101: test.1's app wrote
+# vocr2 beside test.2's plugins); the plugins load them as vocr (core/config.c removed_engine)
+REMOVED_ENGINES = ("vocr2", "meiki", "ncnn")
+
+
+def summarise_app(folder, record):
+    """The installed Overlay app against the one the plugins came with (core/app_stamp.h): its stamp
+    (ux0/app/VJOSET001/vjo_app.txt), the plugins' record (ux0/data/VitaJPOverlay/vjo_app.txt), the package's
+    (package-manifest.json "app") and the installed eboot.bin's hash (collect_vita.py; never kept)."""
+    def first(rel):
+        text = _read(folder, rel)
+        return None if text is None else (text.splitlines() or [""])[0].strip()
+    installed, plugins = first("ux0/app/VJOSET001/vjo_app.txt"), first("ux0/data/VitaJPOverlay/vjo_app.txt")
+    app, pkg = record.get("app"), record.get("package_app") or {}
+    want = plugins or pkg.get("stamp")
+    eboot = (app or {}).get("eboot")
+    out = {"installed": installed, "plugins": plugins, "package": pkg.get("stamp"),
+           "eboot_sha256": eboot["sha256"] if eboot else None,
+           "eboot_match": None if not (eboot and pkg.get("eboot_sha256")) else eboot["sha256"] == pkg["eboot_sha256"]}
+    if app is None and installed is None:
+        out["state"] = "unknown"  # a collect from before the app was collected
+    elif not want:
+        out["state"] = "unknown"  # plugins and package from before the stamps
+    elif installed is not None:
+        out["state"] = "ok" if installed == want else "MISMATCH"
+    elif eboot:
+        out["state"] = "MISMATCH"  # an app without a stamp: from before the stamps (v0.8.0-test.2 or older)
+    else:
+        out["state"] = "not installed"
+    return out
+
+
+def render_app(a):
+    if a["state"] == "ok":
+        return (f"  Overlay app: the plugins' ({a['installed']})"
+                + ("; its eboot.bin is the package's" if a["eboot_match"] else
+                   "; its eboot.bin is not byte-identical to the package's (the stamp decides; whether VitaShell "
+                   "installs it byte for byte is unmeasured)" if a["eboot_match"] is False else ""))
+    if a["state"] == "MISMATCH":
+        have = a["installed"] or ("an app from before the version stamps, eboot.bin " + (a["eboot_sha256"] or "?")[:16])
+        return (f"  Overlay app: NOT the plugins' (installed: {have}; the plugins came with "
+                f"{a['plugins'] or a['package']}): what the app showed and saved (its engine card, Anki page, "
+                "config.ini values) was another build's; install ux0:data/JPOverlaySettings.vpk in VitaShell")
+    if a["state"] == "not installed":
+        return "  Overlay app: not installed (no ux0:app/VJOSET001/eboot.bin)"
+    return "  Overlay app: not checked (no version stamp to compare: the plugins or this collect predate them)"
+
+
 def _read(folder, rel):
     p = folder / rel
     return p.read_text(encoding="utf-8", errors="replace") if p.is_file() else None
@@ -1004,6 +1057,8 @@ def summarise_log(text):
          "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
          "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0}}
     in_blank = False  # the job's BLANK steps follow each other; each carries the job's total in rc
+    api = None  # the API of the Shell build that logged the lines that follow (its "shell started" line)
+    boot_run = 0  # config warnings in a row just seen: a boot logs its own before its "shell started" line
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
@@ -1014,8 +1069,26 @@ def summarise_log(text):
                             "kernel plugin not loaded", "kernel API version", "RCO missing")):
             if len(s["boot"]) < 40:
                 s["boot"].append(line)
+        m = SHELL_STARTED.match(line)
+        if m:
+            new_api = int(m.group(1))
+            by = s.get("config_warnings_by_api")
+            if boot_run and by is not None:  # shell/worker.c vjo_worker_start: apply_config, then this line
+                by[api] -= boot_run
+                if not by[api]:
+                    del by[api]
+                by[new_api] = by.get(new_api, 0) + boot_run
+            api = new_api
         if line.startswith("config warning:"):
             s["config_warnings"].append(line[16:])
+            by = s.setdefault("config_warnings_by_api", {})
+            by[api] = by.get(api, 0) + 1
+            boot_run += 1
+        else:
+            boot_run = 0
+        m = APP_LINE.match(line)
+        if m:  # the Shell's check of the installed Overlay app at a game start (shell/worker.c check_app)
+            s.setdefault("app", []).append(m.group(1))
         m = LOG["settle"].match(line)
         if m:
             st, rc = s["settle"], int(m.group(2), 16)
@@ -1316,6 +1389,7 @@ def summarise_collect(folder):
     for k in ("vocr_model", "vocr_fallback_model"):  # an older build's model choice (API 20 and before)
         if k in cfg:
             out["config"][k] = cfg[k]
+    out["app"] = summarise_app(folder, record)
     out["tai"] = {}
     for dev in ("ur0", "ux0"):
         t = _read(folder, f"{dev}/tai/config.txt")
@@ -1417,9 +1491,14 @@ def render_collect(c):
         L.append(f"  not on the Vita: {', '.join(c['record']['missing'])}")
     for e in c["record"].get("errors") or []:
         L.append(f"  collect error: {e}")
+    if c.get("app"):
+        L.append(render_app(c["app"]))
     cfg = c["config"]
     L.append("  config.ini: " + ", ".join(f"{k}={v}" for k, v in cfg.items() if v is not None)
              + f"; API keys redacted: {', '.join(c['record'].get('redacted_keys') or []) or 'none set'}")
+    if (cfg.get("ocr_backend") or "").lower() in REMOVED_ENGINES:
+        L.append(f"    ocr_backend={cfg['ocr_backend']}: a removed engine, which an older Overlay app writes; the plugins "
+                 "run vocr, and today's app or installer rewrites it")
     for name, t in c["tai"].items():
         L.append(f"  {name}: kernel under {t['kernel'] or 'NOTHING'}, shell under {t['shell'] or 'NOTHING'}, "
                  f"OCR worker under {t['worker'] or 'no game'}" + (" and *ALL (WRONG: SceShell loads it)" if t["worker_all"]
@@ -1561,7 +1640,20 @@ def render_collect(c):
                  + f", {a['exports']} export(s) ({a['export_fail']} failed) of {a['exported']} card(s)"
                  + (", Picture off in this build" if a["picture_off"] else ""))
         if lg["config_warnings"]:
-            L.append("  config warnings: " + "; ".join(lg["config_warnings"][:5]))
+            seen = {}
+            for w in lg["config_warnings"]:
+                seen[w] = seen.get(w, 0) + 1
+            L.append(f"  config warnings: {len(lg['config_warnings'])} line(s), {len(seen)} distinct: "
+                     + "; ".join(f"{w} x{n}" for w, n in sorted(seen.items(), key=lambda kv: -kv[1])[:6]))
+            by = lg.get("config_warnings_by_api") or {}
+            if len(by) > 1 or None not in by:
+                L.append("    logged by builds of API " + ", ".join(f"{a if a is not None else '?'}: {n}"
+                                                             for a, n in sorted(by.items(), key=lambda kv: (kv[0] is None, kv[0] or 0))))
+        if lg.get("app"):
+            seen = {}
+            for state in lg["app"]:
+                seen[state] = seen.get(state, 0) + 1
+            L.append("  the Shell's Overlay app check: " + ", ".join(f"{k} x{n}" for k, n in seen.items()))
         if lg["trouble"]:
             L.append("  lines reporting a problem (digits as N; count):")
             for t, n in sorted(lg["trouble"].items(), key=lambda kv: -kv[1])[:20]:
