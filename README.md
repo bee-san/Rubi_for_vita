@@ -345,13 +345,10 @@ the game's. A bubble without its own choice follows the shared row
 **Adrenaline / PSP games without a setting of their own** (`NPXS10028`), and so do
 games started from inside Adrenaline (`PSPEMUCFW`, if it has no choice of its
 own); with none there, the default applies. The kernel plugin loads the OCR
-worker by the same rows. Turning a bubble or Adrenaline ON
-also registers the OCR worker for it, which is no longer needed and harmless. The app appends a `*<its ID>` section with
-the worker to `ur0:tai/config.txt`, and to `ux0:tai/config.txt` if there is one,
-after keeping a copy as `config.txt.vjo-app-bak`. It never touches anything else
-in the file, never uses `*ALL`, and refuses a configuration that taiHEN would stop
-reading before its end. Restart the Vita afterwards. A PSP game that is ON but
-not registered has a dim tag, and Enter registers it. Each bubble keeps its own
+worker by the same rows, so turning a bubble or Adrenaline ON, like any game,
+edits no taiHEN configuration and takes effect at its next start (an earlier
+build's app appended a `*<its ID>` section for it; the Install page removes it).
+Each bubble keeps its own
 OCR region, and so does Adrenaline (`PSPEMUCFW`). A region drawn for PSP games before this release,
 under `NPXS10028`, is used only when the Shell cannot tell which app started the
 emulator, so draw it again once. The app writes what
@@ -359,8 +356,8 @@ it found for each bubble to `ux0:data/VitaJPOverlay/psp/<ID>.txt`, the only file
 the Shell reads for it, and logs it to `log.txt`. Reading the bubbles makes the
 app's start and Start slower by a few small file reads per bubble; how much with
 many bubbles is not measured on a console yet. A folder in `ux0:app` that is not
-named like a title ID (nine capital letters and digits) is never registered,
-whatever it holds.
+named like a title ID (nine capital letters and digits) is never taken for a
+bubble, whatever it holds.
 
 ## Settings and dictionaries
 

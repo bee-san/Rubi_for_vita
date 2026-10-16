@@ -73,7 +73,7 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 
 The dictionary is 93% of the 154,220,148 B the payload installs; the app itself is 0.5 MB.
 
-`payload/manifest.txt` is written by `tools/package_release.py`, one item per line:
+`payload/manifest.txt` is written by `tools/package_vpk.py`, one item per line:
 
 ```
 vjopayload 1
@@ -195,22 +195,25 @@ the installed overlay (0.8.1): Install goes back to 0.8.0", or "the same version
 The page shows what the action will do before anything happens, with the exact lines:
 
 ```
-Install the overlay (v0.8.0)
-1. Copy 3 plugins to ur0:tai and the OCR models (10.6 MB) to ux0:data/VitaJPOverlay;
-   move the dictionary (143 MB) there from this app.
-2. Back up ux0:tai/config.txt and ur0:tai/config.txt as config.txt.vjo-20261016-071503.bak.
-3. Add to both:  *KERNEL  ur0:tai/VitaJPOverlay_Kernel.skprx
-                 *main    ur0:tai/VitaJPOverlay_Shell.suprx
-   Remove the OCR worker's lines an older install left: *PCSG00415, *ALL (3 lines).
-4. config.ini: local_dictionaries = plaintext.vjdict (was jmdict.vjdict); 2 more lines.
-5. Read everything back to check it.
-Then restart the Vita yourself.
-If it does not start: hold L while you turn it on (h-encore or h-encore2: open its menu, holding R
-as h-encore starts, and choose Exit while holding L), open VitaShell and put # before the two
-VitaJPOverlay lines of ur0:tai/config.txt and ux0:tai/config.txt; or, after that L start, choose
-Uninstall here.
-If one game does not start: turn it OFF on the Games page, or hold L while you start it.
-Enter: install   Cancel: not now
+Update the overlay from v0.8.0 to v0.8.1
+1. Copy the 3 plugins and their RCO to ur0:tai and ur0:data/VitaJPOverlay, and the OCR models
+   (10.6 MB) to ux0:data/VitaJPOverlay/ocr; a file that already matches is not written again.
+   The dictionary is already installed: once it is checked, this app's copy is deleted (143 MB freed).
+2. Back up ux0:tai/config.txt and ur0:tai/config.txt as config.txt.vjo-20261016-071503.bak in each
+   folder (kept).
+3. ux0:tai/config.txt (taiHEN reads this one at boot): remove the OCR worker's lines from *ALL,
+   *PCSG00415.
+4. ur0:tai/config.txt: remove the OCR worker's lines from *ALL, *PCSG00415.
+5. config.ini: local_dictionaries = plaintext.vjdict (every other setting stays; the old file is kept
+   as config.ini.bak).
+6. Read everything back to check it.
+Then restart the Vita yourself: this app never restarts it.
+If the Vita does not start: hold L while you turn it on (h-encore or h-encore2: open its menu, holding
+R as h-encore starts, and choose Exit while holding L), then in VitaShell put # before the two
+VitaJPOverlay lines of ur0:tai/config.txt and ux0:tai/config.txt, or choose Uninstall here.
+If a game does not start: turn it OFF on the Games page, or hold L while you start it.
+[Update]  [Uninstall]
+×: Update   Left/Right: action   Up/Down: scroll   ○: exit
 ```
 
 Enter starts it; a progress bar shows the step and the bytes; at the end the page says what was done
@@ -562,11 +565,14 @@ The app's pages and the README say the same, in this order:
 
 ## The release process
 
-- `tools/package_release.py --vpk OUT.vpk` writes the VPK beside the zip: the base zip's
-  `JPOverlaySettings.vpk`, with `payload/` (the files the zip installs, the same bytes) and
-  `payload/manifest.txt` after its eboot. It checks that the eboot and stamp are the base's, that the
-  payload's hashes are the zip manifest's, the entry order and the SELF scan (above), and reports the
-  VPK's size; `--verify` checks a VPK against its manifest.
+- `tools/package_vpk.py RELEASE.zip -o OUT.vpk` writes the VPK of a `package_release.py` zip: the zip's
+  `JPOverlaySettings.vpk`, entry for entry, then `payload/` (the files the zip installs, the same bytes,
+  deflated) and `payload/manifest.txt`. It takes the app's facts from the app itself (its start line,
+  its `vjoworker=` mark, its stamp), checks that the payload's hashes are the zip manifest's, the entry
+  order and the SELF scan (above); `--verify` checks a VPK again, `--check-build` is the Vita build's
+  module check (`vjo_one_vpk`). `package_release.py` writes the same payload manifest into the zip as
+  `payload-manifest.txt` and its `worker` into `package-manifest.json`, so that `install-vita.sh` records
+  the same `installed.txt` line.
 - `tools/package_variants.py` writes both VPKs, both zips and `SHA256SUMS`, normal first; the debug
   VPK and zip `set log_file on`.
 - CI keeps building the base zips (the models are added at packaging, as for the zips today), and a
