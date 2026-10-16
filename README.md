@@ -58,7 +58,8 @@
   text in the background, so the popup is ready when you press. Or set it to read only when you
   press L + R.
 - **On or off for each game.** Every game is ON to start with; turn off the ones that need L + R
-  themselves. The app opens beside your game, which waits suspended behind it.
+  themselves. The app opens beside your game, which waits suspended behind it (a game that uses
+  extended memory may have to close first).
 
 ## Install
 
@@ -158,7 +159,7 @@ you start it. Uninstalling keeps your settings and cards.
 
 ### Does it send anything over the internet?
 
-No. Rubi has no network code: the Vita build fails if any part of it imports a network library.
+No. Rubi has no network code: the Vita build fails if any of its modules imports a network library.
 Recognition, lookups and cards all stay on the Vita; your cards leave it only when you copy the
 `.apkg` yourself. Rubi keeps a log on the memory card (`ux0:data/VitaJPOverlay/log.txt`;
 `log_file = off` in `config.ini` turns it off). The normal build, the release's main download, logs
