@@ -156,7 +156,9 @@ class PayloadList(unittest.TestCase):
             sizes = (ROOT / "include/vjo_vocr_sizes.h").read_text()
             shared = re.sub(r"#define VJO_VOCR_TIER3_NAME \w+", "#define VJO_VOCR_TIER3_NAME VJO_VOCR4_W20_NAME",
                             re.sub(r"#define VJO_VOCR_TIER2_NAME \w+", "#define VJO_VOCR_TIER2_NAME VJO_VOCR4_W20_NAME", sizes))
-            self.assertNotEqual(shared, sizes)
+            # Normal and Large one model, whatever this tree's pins (a tree that shares already reads the same)
+            for tier in (2, 3):
+                self.assertIn(f"#define VJO_VOCR_TIER{tier}_NAME VJO_VOCR4_W20_NAME", shared)
             (root / "include/vjo_vocr_sizes.h").write_text(shared)
             with unittest.mock.patch.object(vpk, "ROOT", root):
                 with self.assertRaisesRegex(ValueError, "VOCR4_W20_w8.vocr twice"):

@@ -329,7 +329,21 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         except ValueError:
             facts = None  # an app from before the one-VPK install (or a test's placeholder)
         manifest["worker"] = facts[2] if facts else "lines"
+        if facts:
+            package_vpk.payload_files()  # a payload list the Overlay app would refuse stops here (a file named twice)
     output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        write_archive(base, output, assets, manifest, facts, app_vpk, version)
+    except BaseException:
+        output.unlink(missing_ok=True)  # a refusal while writing (the payload manifest's, say) leaves no partial zip
+        raise
+    print(json.dumps({"file": str(output), "bytes": output.stat().st_size, "sha256": digest(output)}))
+
+
+def write_archive(base, output, assets, manifest, facts, app_vpk, version):
+    """The package zip: the base's files, the assets, the payload manifest (when the app has the one-VPK
+    install) and package-manifest.json, which records them."""
+    import package_vpk  # noqa: PLC0415  (packaging only)
     with zipfile.ZipFile(base) as original, zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for info in original.infolist():
             if info.is_dir() or info.filename in assets or info.filename == "package-manifest.json":
@@ -355,7 +369,6 @@ def write_package(base, output, models, assets, conversion, version, source_revi
             archive.writestr(info, text)
             manifest["files"]["payload-manifest.txt"] = {"bytes": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest()}
         archive.writestr("package-manifest.json", json.dumps(manifest, indent=2) + "\n")
-    print(json.dumps({"file": str(output), "bytes": output.stat().st_size, "sha256": digest(output)}))
 
 
 def main():

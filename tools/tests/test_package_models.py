@@ -235,6 +235,28 @@ class PackageModels(unittest.TestCase):
             self.package_fixture(write_models=False)
         self.assertFalse((self.root / "package.zip").exists())
 
+    def test_a_payload_list_the_app_refuses_leaves_no_package(self):
+        """The one-VPK payload list is checked before the output is opened, and a refusal while writing
+        removes what was written: a list the Overlay app would refuse (a file named twice,
+        package_vpk.payload_files) stops the packaging with no partial zip behind."""
+        import package_vpk  # noqa: PLC0415
+        facts = ("0.8.0", "normal", "kernel", 23, "0123456789abcdef")
+        output = self.root / "package.zip"
+        output.write_bytes(b"an earlier package")
+        with mock.patch.object(package_vpk, "app_facts", return_value=facts), \
+             mock.patch.object(package_vpk, "payload_files", side_effect=ValueError("names a file twice")):
+            with self.assertRaisesRegex(ValueError, "names a file twice"):
+                self.package_fixture()
+        self.assertEqual(output.read_bytes(), b"an earlier package")  # refused before the output is opened
+        output.unlink()
+        # a refusal from inside the payload manifest's writing too (a payload file the zip lacks): what was
+        # written is removed
+        with mock.patch.object(package_vpk, "app_facts", return_value=facts), \
+             mock.patch.object(package_vpk, "build_manifest", side_effect=ValueError("the package has no x")):
+            with self.assertRaisesRegex(ValueError, "the package has no x"):
+                self.package_fixture()
+        self.assertFalse((self.root / "package.zip").exists())
+
     def test_two_sizes_with_one_model_ship_it_once(self):
         """vita-vn-ocr eval/vocr5_protocol.json amendment 3: Normal is the better of VOCR5-N and
         VOCR4-W20, which Large may keep. Normal and Large then have one model: the package ships it

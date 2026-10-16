@@ -54,10 +54,14 @@
  * (include/vjo_ledger_budget.h VJO_GAME_RESERVE_*), else the next smaller one;
  * the confidence cascade reads doubtful lines again with the next tier up, when
  * that fits too. A later generation's three blobs (or an earlier one's, for a
- * tier whose new candidate did not beat it) replace these through the pins
- * alone: these six lines, the model's pins where every model is pinned
- * (core/vocr_ocr.c, core/vocr_models.c, kernel/game_ocr.c, tools/prepare_ocr.py)
- * and tools/model_tiers.json. */
+ * tier whose new candidate did not beat it) replace these through the pins:
+ * these six lines, the model's pins where every model is pinned
+ * (core/vocr_ocr.c, core/vocr_models.c, kernel/game_ocr.c, tools/prepare_ocr.py),
+ * tools/model_tiers.json, and a new release's attribution (tools/prepare_ocr.py
+ * VOCR_MODEL_ATTRIBUTION_PIN). Two sizes with one model take one edit more: the
+ * one-VPK payload (include/vjo_payload.h) names each size's file, and the
+ * Overlay app refuses a payload that names a file twice, so it must name the
+ * shared file once (tools/package_vpk.py refuses the list until it does). */
 #define VJO_VOCR_TIERS 3u
 #define VJO_VOCR_TIER_SMALL 1u
 #define VJO_VOCR_TIER_NORMAL 2u
