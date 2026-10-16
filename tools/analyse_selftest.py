@@ -1843,20 +1843,23 @@ def presses_and_rereads(text):
     the open overlay is no press's. Jobs run one at a time on the Shell's network thread, from their `job start` to
     their `done` line; the self-test's job is left out. As in clock_windows, windows of builds before API 22 are left
     out: their logs have neither the times nor the texts."""
-    windows, win, api, job, press = [], None, None, None, None
+    windows, win, api, job, press, normal, normal_boots = [], None, None, None, None, False, 0
     for n, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         m = SHELL_STARTED.match(line)
         if m:
             api, win, job, press = int(m.group(1)), None, None, None
+            normal = m.group(2) is not None  # the normal build: none of the lines below (vjo_dlog, #if VJO_DEBUG)
+            normal_boots += normal
             continue
         m = LOG["game"].match(line)
         if m:  # a start or a resume: config.ini read again, so one ocr_mode for the window
             win = {"line": n, "api": api, "ocr_mode": m.group(6), "presses": [], "jobs": []}
-            windows.append(win)
+            if not normal:
+                windows.append(win)
             job = press = None
             continue
-        if win is None or (api is not None and api < BOOST_API):
+        if win is None or normal or (api is not None and api < BOOST_API):
             continue
         m = PRESS_OPEN.match(line)
         if m:
@@ -1897,7 +1900,7 @@ def presses_and_rereads(text):
         m = JOB_END.match(line)
         if m:
             job["rc"], job["done_ms"], job = int(m.group(2)), int(m.group(3)), None
-    out = {"modes": {}, "pairs": 0, "same": 0, "early": [], "text_jobs": 0, "windows": 0}
+    out = {"modes": {}, "pairs": 0, "same": 0, "early": [], "text_jobs": 0, "windows": 0, "normal_boots": normal_boots}
     for w in windows:
         if not w["presses"] and not w["jobs"]:
             continue
@@ -1956,8 +1959,11 @@ def _secs(values):
 def render_presses(lg):
     """The presses by ocr_mode and the jobs read before their text had finished (presses_and_rereads)."""
     pr = lg.get("presses") or {}
+    normal = pr.get("normal_boots", 0)
+    note = (f"  presses and read before finished: the normal build's short log ({_n(normal, 'boot')}) logs no press, "
+            "job or recognized text, so its game windows are not read here; the -debug zip logs them")
     if not pr.get("windows"):
-        return []
+        return [note] if normal else []
     L = []
     for mode, m in sorted(pr["modes"].items()):
         if not m["presses"]:
@@ -1983,14 +1989,14 @@ def render_presses(lg):
                      "the screen changed under them, cancelled, or a failed job)")
         if m["unclear"]:
             L.append(f"    {m['unclear']} not counted (closed before a job began, or a job the log does not end)")
+    early = pr["early"]
     if not pr["text_jobs"]:
         L.append("  read before finished: no job's text is in this log, so nothing to compare")
-        return L
-    early = pr["early"]
-    L.append(f"  read before finished: {len(early)} of {_n(pr['pairs'], 'pair')} of a game window's jobs with text, one "
-             "after the other (the next job's text began with the whole of this one's and went on: a line read while "
-             f"it was still typing out, or text the game added to the box after a press); {pr['same']} read the same "
-             "text again")
+    else:
+        L.append(f"  read before finished: {len(early)} of {_n(pr['pairs'], 'pair')} of a game window's jobs with text, "
+                 "one after the other (the next job's text began with the whole of this one's and went on: a line read "
+                 f"while it was still typing out, or text the game added to the box after a press); {pr['same']} read "
+                 "the same text again")
     for e in early[:10]:
         st = e["settle"]
         wait = (f"its wait held after {_n(st[0], 'pass', 'passes')} ({st[2]:,} ms)" if st and st[1] == 1 else
@@ -1999,6 +2005,8 @@ def render_presses(lg):
                  f"({e['next_why']}), {e['next_chars']} characters")
     if len(early) > 10:
         L.append(f"    ... and {len(early) - 10} more")
+    if normal:  # a log with both builds' boots (an update between them, a rotated log)
+        L.append("    (" + note.strip()[len("presses and read before finished: "):] + ")")
     return L
 
 

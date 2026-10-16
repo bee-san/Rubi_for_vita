@@ -100,9 +100,10 @@ characters, 1.6 s), and with 12 of 25 characters shown, a pause of 8 frames (133
 `tools/analyse_selftest.py --collect` now reports such reads: **read before finished** counts, in each
 game window, a job whose text the next job's began with and went on from, with both jobs' `log.txt`
 lines and lengths and the first job's wait, never the text. It needs the recognized text and the job
-lines in `log.txt`, which the test builds log (a build whose log has neither, such as the normal
-build of #141, cannot be checked this way). In test.3 (Automatically, CLANNAD) it found none: 0 of 18
-pairs, and 2 jobs that read the same text again.
+lines in `log.txt`, which the debug build (the test builds') logs; the normal build's short log has
+neither ([release-variants.md](release-variants.md)), and for its boots the analysis says so instead.
+In test.3 (Automatically, CLANNAD) it found none: 0 of 18 pairs, and 2 jobs that read the same text
+again.
 
 ## From the press to the popup
 
@@ -161,7 +162,8 @@ most of a press's time, are frame-bound and do not change.
 
 ## What test.4 should measure
 
-With a test build (its `log.txt` has the job lines and the recognized text these figures come from):
+With a test build, which is the debug build (its `log.txt` has the job lines and the recognized text
+these figures come from; the release's normal zip logs neither):
 - One session each way: Read text **Automatically**, then **Only when I press** (the app's OCR & lookup
   page, then resume the game), on the same kind of screens, presses made right after the text appears
   and again a few seconds later. The analysis' `presses (the overlay opened) with ocr_mode ...` lines

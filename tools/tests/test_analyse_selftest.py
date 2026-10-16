@@ -2427,6 +2427,20 @@ class PressesAndRereads(unittest.TestCase):
         self.assertIn("1 with no text from any job while the overlay was open", text)
         self.assertIn("read before finished: no job's text is in this log, so nothing to compare", text)
         self.assertEqual(a.render_presses(a.summarise_log(BOOT22)), [])
+        # #141's normal build logs none of these lines (vjo_dlog, #if VJO_DEBUG): said, never counted as no presses
+        normal = ("Vita JP Overlay shell started (kernel API 22, the normal build: a short log)\n" + START
+                  + "ocr rc=0 VOCR3_H15_w8.vocr: 1 lines, 640 ms\nclock: 333 -> 444 MHz while reading, 333 after\n")
+        self.assertEqual(flat("\n".join(a.render_presses(a.summarise_log(normal)))),
+                         "presses and read before finished: the normal build's short log (1 boot) logs no press, job "
+                         "or recognized text, so its game windows are not read here; the -debug zip logs them")
+        # both builds in one log (an update between two boots): the debug boot's presses, and the note
+        both = normal + BOOT22 + START + press("no background result") + shell_job("overlay opened", 900, 1000, ["あ"])
+        lg = a.summarise_log(both)
+        self.assertEqual((lg["presses"]["modes"]["auto"]["presses"], lg["presses"]["normal_boots"]), (1, 1))
+        text = flat("\n".join(a.render_presses(lg)))
+        self.assertIn("1 recognized on the press: the text 0.9 s after it", text)
+        self.assertTrue(text.endswith("(the normal build's short log (1 boot) logs no press, job or recognized text, so "
+                                      "its game windows are not read here; the -debug zip logs them)"), text)
 
     def test_the_patterns_are_the_shells_own_lines(self):
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
@@ -2434,7 +2448,8 @@ class PressesAndRereads(unittest.TestCase):
                     '"open: %s (stable %u, quiet %u)"', '"background job still running"', '"no background result"',
                     '"screen changed since the background result"', '"job start (%s)%s"',
                     '"subtitle text ready in %d ms"', '"game vocr text %u: %s"', '"game vocr text %u shown: %s"',
-                    '", refresh"', '"overlay opened"', '"job start (self-test)"'):
+                    '", refresh"', '"overlay opened"', '"job start (self-test)"',
+                    '"Vita JP Overlay shell started (kernel API %d, the normal build: a short log)"'):
             self.assertIn(fmt, worker)
         self.assertTrue(a.JOB_END.match("job 7 done rc=-120 in 2393 ms, arena peak 0, dictionary page 1/0, game 2343 "
                                         "ms, log 49 ms in 2 appends"))
