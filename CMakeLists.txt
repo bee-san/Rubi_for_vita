@@ -42,7 +42,7 @@ target_compile_options(vjo_taihen_parser PRIVATE -w)
 
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
-  core/textfilter.c core/entries.c core/config.c core/regions.c
+  core/textfilter.c core/textjoin.c core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
@@ -252,6 +252,13 @@ target_link_libraries(vjo-text-hit-tests vjo_host)
 target_compile_options(vjo-text-hit-tests PRIVATE -Wall -Wextra)
 add_test(NAME text_hit COMMAND vjo-text-hit-tests)
 # The arrow keys over the header's displayed rows (#81), on layout fixtures.
+# The recognized text's lines as one running text (core/textjoin.h, owner 2026-10-16 item 4): which
+# breaks join for the lookup and the Anki sentence, and the in-place join.
+add_executable(vjo-text-join-tests host/tests/test_textjoin.c)
+target_include_directories(vjo-text-join-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-text-join-tests vjo_host)
+target_compile_options(vjo-text-join-tests PRIVATE -Wall -Wextra)
+add_test(NAME text_join COMMAND vjo-text-join-tests)
 add_executable(vjo-text-rows-tests host/tests/test_text_rows.c)
 target_include_directories(vjo-text-rows-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-text-rows-tests vjo_host)

@@ -9,6 +9,7 @@
 #include "anki_queue.h"
 #include "client.h"
 #include "local_dict.h"
+#include "styled.h"
 #include "utf.h"
 
 typedef struct {
@@ -530,6 +531,96 @@ static int pages_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     TEST_CHECK(opened == closed && e->rc == rc && e->dict == VJO_DICT_LOCAL);
     TEST_CHECK(pages->count >= 0 && pages->count <= limit && (pages->count > 0) == (r->n_vocab == 1));
     return rc;
+}
+
+/* A word the game's own wrapping split over two lines is one word (owner,
+ * 2026-10-16 item 4; core/textjoin.h): looked up whole from its first part,
+ * highlighted over both parts, ranked by how it is written without the
+ * break, and the card's sentence is the text the lines make. A break the
+ * rule keeps (a name, a short line, a sentence's end) still ends the scan,
+ * as raw_newline_and_supplementary_highlights checks for short lines. */
+static void joined_lines_are_one_text(void)
+{
+    const Row rows[] = {
+        {"食べる", "食べる", "たべる", "eat", 1, 0}, {"食べ", "食べ", "たべ", "the first part only", 0, 0},
+        {"じゅーす", "じゅーす", "", "hiragana spelled, longer article", 0, 0},
+        {"じゅーす", "ジュース", "", "katakana", 0, 0}};
+    for (int version = 1; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out; VjoDictResult r; VjoErr e; VjoAnkiNote note;
+        uint32_t start = 0, units = 0;
+        char *field;
+        /* the first line full (12 characters, the longest), the sentence going on on the next */
+        const char *text = "あいうえおかきくけこ食べ\nるかな？";
+        size_t at = (size_t)(strstr(text, "食") - text);
+        TEST_CASE_("v%d", version);
+        setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", rows, 4, version);
+        out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
+        TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, at, &out) && out.list.n_entries == 1);
+        TEST_CHECK(!strcmp(out.list.entries[0].vocab->meanings[0], "eat"));
+        TEST_CHECK(out.list.entries[0].pos16 == 10 && out.list.entries[0].hl_start == (int)at);
+        TEST_CHECK(out.list.entries[0].hl_end == (int)(strstr(text, "かな") - text));
+        /* the header's highlight: 食べ, the break, る */
+        TEST_CHECK(vjo_entry_header_range(&out.list, 0, &start, &units) && start == 10 && units == 4);
+        /* the card: the sentence the two lines make, the word in it */
+        TEST_ASSERT(!vjo_anki_note_from_entry(&a, &out.list, 0, &note));
+        TEST_CHECK(!strcmp(note.sentence, "あいうえおかきくけこ食べるかな？"));
+        TEST_CHECK(note.hl_start == 30 && note.hl_end == 39 && note.sf_hl_start == 30 && note.sf_hl_end == 39);
+        field = vjo_anki_field_value(&a, VJO_LAPIS_SENTENCE, &note);
+        TEST_CHECK(field && !strcmp(field, "あいうえおかきくけこ<b>食べる</b>かな？"));
+        TEST_MSG("%s", field ? field : "(null)");
+        /* "\r\n": two source units in the span, the header's one (it draws no CR) */
+        text = "あいうえおかきくけこ食べ\r\nるかな？";
+        out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, at, &out) && out.list.n_entries == 1);
+        TEST_CHECK(out.list.entries[0].hl_end == (int)(strstr(text, "かな") - text));
+        TEST_CHECK(vjo_entry_header_range(&out.list, 0, &start, &units) && start == 10 && units == 4);
+        /* a speaker's name before it keeps its own line on the card */
+        text = "健太\nあいうえおかきくけこ食べ\nるかな？";
+        out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, at + 7, &out) && out.list.n_entries == 1);
+        TEST_CHECK(!strcmp(out.list.entries[0].vocab->meanings[0], "eat"));
+        TEST_ASSERT(!vjo_anki_note_from_entry(&a, &out.list, 0, &note));
+        field = vjo_anki_field_value(&a, VJO_LAPIS_SENTENCE, &note);
+        TEST_CHECK(field && !strcmp(field, "健太<br>あいうえおかきくけこ<b>食べる</b>かな？"));
+        TEST_MSG("%s", field ? field : "(null)");
+        /* written as the text is, without the break: the katakana entry, not the longer hiragana article */
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "あいうえおかきくけこジュ\nースです", 30, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], "katakana"), "got %s", r.vocab[0].meanings[0]);
+        TEST_CHECK(r.tokens[0].pos16 == 10 && r.tokens[0].len16 == 5);
+        /* a short line (a name, a line broken by hand) keeps its break: the first part's own entry */
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "けこ食べ\nるかな？", 6, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "the first part only") && r.tokens[0].len16 == 2);
+        /* and so does a line the next opens a quotation after */
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "あいうえおかきくけこ食べ\n「るかな」", 30, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "the first part only"));
+    }
+}
+
+/* Every dictionary's page starts at the cursor and spans both parts of the
+ * joined word; a page read later shows the same highlight. */
+static void joined_word_pages_span_both_lines(void)
+{
+    const Row d0[] = {{"食べる", "食べる", "たべる", "d0 eat", 1, 0}};
+    const Row d1[] = {{"食べる", "食べる", "たべる", "d1 eat", 1, 0}, {"食べ", "食べ", "たべ", "d1 part", 0, 0}};
+    const char *text = "あいうえおかきくけこ食べ\nるかな？";
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out; VjoDictResult r; VjoErr e; VjoLocalPages pages;
+    setup(&a, &p, &cfg); set_names(&cfg, 2);
+    build(&fixtures[0], page_names[0], d0, 1, 2);
+    build(&fixtures[1], page_names[1], d1, 2, 2);
+    TEST_ASSERT(!pages_lookup(&a, &p, &cfg, text, 30, 8, &pages, &r, &e) && pages.count == 2);
+    TEST_CHECK(pages.page[0].len16 == 4 && pages.page[1].len16 == 4);
+    cfg.local_dictionary_results = 2;
+    vjo_arena_reset(&a);
+    out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
+    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 30, &out) && out.list.n_entries == 1 && out.pages);
+    TEST_ASSERT(!vjo_overlay_lookup_page(&a, &p, &cfg, 1, &out) && out.list.n_entries == 1);
+    TEST_CHECK(!strcmp(out.list.entries[0].vocab->meanings[0], "d1 eat"));
+    TEST_CHECK(out.list.entries[0].hl_start == 30 && out.list.entries[0].hl_end == (int)(strstr(text, "かな") - text));
 }
 
 static void pages_follow_best_match_then_priority(void)
@@ -1495,6 +1586,8 @@ TEST_LIST = {
     {"inflection_and_dictionary_priority", inflection_and_dictionary_priority},
     {"cursor_boundary_and_no_later_word", cursor_boundary_and_no_later_word},
     {"raw_newline_and_supplementary_highlights", raw_newline_and_supplementary_highlights},
+    {"joined_lines_are_one_text", joined_lines_are_one_text},
+    {"joined_word_pages_span_both_lines", joined_word_pages_span_both_lines},
     {"punctuation_and_read_counts_do_not_scan_remainder", punctuation_and_read_counts_do_not_scan_remainder},
     {"largest_entry_and_input_fit_64k", largest_entry_and_input_fit_64k},
     {"repeated_lookups_oom_and_io_recovery", repeated_lookups_oom_and_io_recovery},
