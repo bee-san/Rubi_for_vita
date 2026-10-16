@@ -1,4 +1,5 @@
 """tools/e2e_package.py's own edges; CI's `package` job runs it on the two real release zips."""
+import os
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,72 @@ class E2EPackageEdges(unittest.TestCase):
                     self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
                     self.assertIn(why, r.stderr)
                     self.assertFalse((Path(tmp) / "work").exists())
+
+    def test_the_working_directory_keeps_the_callers_files(self):
+        """audit-overlay-release-variants-d B1: `--work out`, where out/ holds the release itself, must keep it.
+        The e2e removes only its own entries, and only beside its marker; a package that is not one stops after
+        the work directory is ready, with the caller's files intact."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out"
+            out.mkdir()
+            package = out / "VitaJPOverlay-0.8.0.zip"
+            with zipfile.ZipFile(package, "w") as z:  # a manifest but no package around it
+                z.writestr("package-manifest.json", "{}")
+            (out / "SHA256SUMS").write_text("sums\n")
+            (out / "notes.txt").write_text("the owner's notes\n")
+            for _ in range(2):  # the second run replaces the first one's entries, beside its marker
+                r = run(package, "--work", out)
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn("is not a release package", r.stderr)
+                self.assertEqual(sorted(p.name for p in out.iterdir()),
+                                 [".e2e_package", "SHA256SUMS", "VitaJPOverlay-0.8.0.zip", "notes.txt", "pkg"])
+                self.assertEqual((out / "notes.txt").read_text(), "the owner's notes\n")
+                self.assertTrue(zipfile.is_zipfile(package))
+
+    def test_a_directory_it_did_not_make_is_refused_and_left_alone(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            package = tmp / "p.zip"
+            with zipfile.ZipFile(package, "w") as z:
+                z.writestr("package-manifest.json", "{}")
+            checkout = tmp / "checkout"  # `--work .` in a checkout that has a pkg/ of its own
+            (checkout / "pkg").mkdir(parents=True)
+            (checkout / "pkg" / "keep.c").write_text("x")
+            a_file = tmp / "a-file"
+            a_file.write_text("x")
+            linked = tmp / "linked"  # a marker that is a link: never written through
+            linked.mkdir()
+            (linked / ".e2e_package").symlink_to(a_file)
+            inside = tmp / "inside"
+            (inside / "pkg").mkdir(parents=True)
+            for work, pkg, why in ((checkout, package, "which tools/e2e_package.py did not make"),
+                                   (a_file, package, "is not a directory"),
+                                   (linked, package, "is not tools/e2e_package.py's marker file"),
+                                   (inside, inside / "pkg" / "p.zip", "the package is inside")):
+                if not pkg.exists():
+                    pkg.write_bytes(package.read_bytes())
+                with self.subTest(why=why):
+                    r = run(pkg, "--work", work)
+                    self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                    self.assertIn(why, r.stderr)
+            self.assertEqual((checkout / "pkg" / "keep.c").read_text(), "x")
+            self.assertFalse((checkout / ".e2e_package").exists())
+            self.assertEqual(a_file.read_text(), "x")
+            self.assertTrue((inside / "pkg" / "p.zip").is_file())
+
+    def test_an_entry_that_is_a_link_is_removed_not_followed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            work, target = tmp / "work", tmp / "elsewhere"
+            (target / "sub").mkdir(parents=True)
+            (target / "sub" / "f").write_text("x")
+            work.mkdir()
+            (work / e2e_package.MARKER).write_text("")
+            (work / "A-test2").symlink_to(target)
+            (work / "pkg").mkdir()
+            self.assertIsNone(e2e_package.prepare_work(work, tmp / "p.zip"))
+            self.assertFalse(os.path.lexists(work / "A-test2") or (work / "pkg").exists())
+            self.assertEqual((target / "sub" / "f").read_text(), "x")
 
     def test_unpack_keeps_each_files_mode(self):
         """The package's scripts run as they were packed (zipfile's extractall drops the mode bits)."""

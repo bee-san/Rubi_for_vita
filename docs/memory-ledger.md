@@ -418,7 +418,10 @@ On main `3aa08a6` it is 91,016 B of text (#140), and #132's VjoNet stack paint a
 91,464 B of text and 70,004 B of data/bss, the same pages (2,744 and 3,724 B of room); the normal
 build's shell pages are then 208,896 B permanent and 278,528 B at worst (258,048 and 327,680 B
 before: VjoNet's stack is the same in both builds) [measured: the build log's module rows and
-ledger, both builds of main `3aa08a6` and of #132].
+ledger, both builds of main `3aa08a6` and of #132]. With the network stack gone (#145, main
+`c08db18`) the normal Shell is 163,840 B (89,220 + 69,700) against the debug Shell's 176,128 B
+(99,268 + 69,772), three SceShell pages fewer; the kernel and the worker are as in the table
+[measured: CI's module rows of both builds, Release run 38899320744].
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would

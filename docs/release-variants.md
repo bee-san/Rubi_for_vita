@@ -147,14 +147,15 @@ none of the debug build's own strings, the debug modules all of them, the app's 
 `--sources`, which the build passes, the normal modules also carry none of the literals of 12 bytes or
 more that their sources compile only into the debug build and kept code does not use too
 (`#if VJO_DEBUG` branches, `vjo_dlog()`/`klog_d()` calls, `shell/selftest.c`, `kernel/meminfo.c`:
-71 of the Shell's, 11 of the kernel's, 1 of the worker's and 1 of the app's at main `3aa08a6`), and
+71 of the Shell's, 11 of the kernel's, 1 of the worker's and 1 of the app's at main `c08db18`), and
 each debug module at least one of them, the worker's only check). That catches a module built with the
 wrong `VJO_DEBUG`. It cannot catch a source change that moves a debug line into the normal build (the
 sources and the module then agree): that is the inventory's to review. Nor does it see a literal
 joined from macros (one of the Shell's 71), or a leaked string that follows non-string data with no
-separating byte (about 1 of 847 literals, measured by audit-overlay-release-variants-c). The build also
-checks its pages against its own budget (`include/vjo_ledger_budget.h`'s `#if VJO_DEBUG` branches,
-`tools/check_memory_ledger.py --variant`). The host suites, the ARM lane, the Vita3K smokes and
+separating byte (about 1 of 847 literals at main `7fc40df`, measured by
+audit-overlay-release-variants-c). The build also checks its pages against its own budget
+(`include/vjo_ledger_budget.h`'s `#if VJO_DEBUG` branches, `tools/check_memory_ledger.py --variant`).
+The host suites, the ARM lane, the Vita3K smokes and
 `tools/preflight.sh` take the same switch (`-DVJO_DEBUG=OFF`, or `VJO_DEBUG=0` in the environment);
 CI runs the host and vita jobs once for each build. Its `package` job then makes the release's two
 zips of the vita jobs' artifacts, as below, and runs `tools/e2e_package.py` on each: the package's

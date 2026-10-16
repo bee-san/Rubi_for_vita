@@ -10,6 +10,11 @@ DIR/pkg (default build/e2e-package/<the zip's name>), and each scenario runs a c
 package's own install-vita.sh and tools/install_ftp.sh, against a fake Vita's partitions
 (DIR/<scenario>/device) served over FTP by this tree's tools/tests/ftp_mock.py.
 
+DIR may hold other files (the release's out/ with the zip itself): the e2e makes, and on a later run
+replaces, only its own entries (ENTRIES: pkg/, the scenarios' directories and logs) beside its marker
+DIR/.e2e_package, which it writes first, and touches nothing else. It refuses a DIR that already has
+one of those names without the marker, a DIR that is a file, and a package inside one of its entries.
+
 Scenario A, the owner's case (#101): a Vita with v0.8.0-test.2 installed and test.1's Overlay app
 still on it: test.2's taiHEN lines (*KERNEL, *main, *PCSG00415, the commented *ALL, Meiki and Text
 lines), its model files, its VPK in ux0:data, and the config.ini the old app left (ocr_backend =
@@ -28,6 +33,7 @@ are removed unless --keep; DIR keeps the scenarios' logs.
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -45,10 +51,46 @@ SECRET2 = "e2e-secret-jiten-key"
 AUDIO = "https://audio.example.invalid/?term={term}&token=e2e-secret-audio"
 SECRETS = (SECRET, SECRET2, "e2e-secret-audio")
 SCENARIOS = ("A-test2", "B-fresh", "C-migrate")
+LOGS = ("A-install.log", "A-collect.log", "B-install.log", "C-install.log")
+ENTRIES = ("pkg", *SCENARIOS, *LOGS)  # all the e2e makes in its working directory, and all it ever removes
+MARKER = ".e2e_package"  # written before any entry: the entries beside it are the e2e's own
 
 
 def config_values(text):
     return {k: v for k, v in re.findall(r"^(\w+) = ?(.*)$", text, re.M)}
+
+
+def remove(path):
+    """One of the e2e's own entries: a directory (never followed through a link), a file or a link."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def prepare_work(work, package):
+    """Readies the working directory, or says why it cannot be used (audit-overlay-release-variants-d B1:
+    DIR is the caller's, so only the e2e's own entries of an earlier run are removed, and only where its
+    marker says it made them). Returns the problem, or None."""
+    if work.exists() and not work.is_dir():
+        return f"--work {work} is not a directory"
+    marker = work / MARKER
+    if marker.is_symlink() or (marker.exists() and not marker.is_file()):
+        return f"{marker} is not tools/e2e_package.py's marker file: choose another --work"
+    package = package.resolve()
+    for name in ENTRIES:
+        if package == work / name or work / name in package.parents:
+            return f"the package is inside {work / name}, which the e2e replaces: choose another --work"
+    found = [name for name in ENTRIES if os.path.lexists(work / name)]
+    if found and not marker.is_file():
+        return (f"--work {work} has {', '.join(found)}, which tools/e2e_package.py did not make (no {MARKER}): "
+                "choose another directory (a new one, or the default)")
+    work.mkdir(parents=True, exist_ok=True)
+    marker.write_text("tools/e2e_package.py's working directory; a run replaces only these entries: "
+                      + ", ".join(ENTRIES) + "\n")
+    for name in found:
+        remove(work / name)
+    return None
 
 
 def unpack(zip_path, dest):
@@ -80,6 +122,10 @@ class E2E:
         self.device_files = sorted(n for n in self.manifest["files"]
                                    if n.startswith(("ur0/", "ux0/")) and not n.endswith("config.ini"))
 
+    def save_log(self, name, text):
+        assert name in LOGS, name  # ENTRIES: what the e2e may make, and replace, in its working directory
+        (self.work / name).write_text(text)
+
     def check(self, ok, what):
         self.checks.append((bool(ok), what))
         print(("PASS " if ok else "FAIL ") + what, flush=True)
@@ -89,6 +135,7 @@ class E2E:
         return subprocess.run(["bash", *args], cwd=run_pkg, capture_output=True, text=True, timeout=timeout)
 
     def fresh(self, name):
+        assert name in SCENARIOS, name  # ENTRIES: what the e2e may make, and replace, in its working directory
         base = self.work / name
         shutil.rmtree(base, ignore_errors=True)
         dev = base / "device"
@@ -191,7 +238,7 @@ class E2E:
             host = f"127.0.0.1:{ftp.port}"
             r = self.sh(run_pkg, "install-vita.sh", "--title", "PCSG00415", host)
             log = r.stdout + r.stderr
-            (self.work / "A-install.log").write_text(log)
+            self.save_log("A-install.log", log)
             check(r.returncode == 0 and "Installed. Reboot the Vita" in r.stdout,
                   f"A install-vita.sh --title PCSG00415: rc {r.returncode}")
             if self.shown:
@@ -222,9 +269,9 @@ class E2E:
                   "A config.ini: vocr_model/vocr_fallback_model gone (vocr_tier)")
             check("ocr_backend" not in cfg, "A config.ini: ocr_backend gone (#130: VOCR is the only engine)")
             # a setting the template still has keeps the old value; a removed one (#117 jpdb/jiten, #126 Hachidori,
-            # #125 AnkiConnect) is dropped
+            # #125 AnkiConnect, #145 the UDP log's computer) is dropped
             for k, old_v in (("jpdb_api_key", SECRET), ("jiten_api_key", SECRET2), ("hachidori_host", ""),
-                             ("anki_host", "192.168.1.23"), ("anki_audio_url", AUDIO)):
+                             ("anki_host", "192.168.1.23"), ("anki_audio_url", AUDIO), ("log_host", "")):
                 if k in template:
                     check(cfg.get(k) == old_v, f"A config.ini: {k} kept (the template still has it)")
                 else:
@@ -240,7 +287,7 @@ class E2E:
             snapshot = {p: p.read_bytes() for p in dev.rglob("*") if p.is_file()}
             n = len(ftp.stored)
             r = self.sh(run_pkg, "tools/install_ftp.sh", "--collect", host)
-            (self.work / "A-collect.log").write_text(r.stdout + r.stderr)
+            self.save_log("A-collect.log", r.stdout + r.stderr)
             check(r.returncode == 0, f"A --collect rc {r.returncode}")
             self.no_secret(r.stdout + r.stderr, "A --collect output")
             check(ftp.stored[n:] == [] and {p: p.read_bytes() for p in dev.rglob("*") if p.is_file()} == snapshot,
@@ -337,7 +384,7 @@ class E2E:
         with FtpMock(dev) as ftp:
             host = f"127.0.0.1:{ftp.port}"
             r = self.sh(run_pkg, "install-vita.sh", "--title", "PCSG00415", host)
-            (self.work / "B-install.log").write_text(r.stdout + r.stderr)
+            self.save_log("B-install.log", r.stdout + r.stderr)
             check(r.returncode == 0 and "Installed. Reboot the Vita" in r.stdout,
                   f"B install-vita.sh --title PCSG00415: rc {r.returncode}")
             self.vpk_loud(r.stdout, "B install")
@@ -365,7 +412,7 @@ class E2E:
         with FtpMock(dev) as ftp:
             host = f"127.0.0.1:{ftp.port}"
             r = self.sh(run_pkg, "install-vita.sh", host)
-            (self.work / "C-install.log").write_text(r.stdout + r.stderr)
+            self.save_log("C-install.log", r.stdout + r.stderr)
             check(r.returncode == 0 and "Installed. Reboot the Vita" in r.stdout,
                   f"C install-vita.sh (no --title; kept *PCSG00415): rc {r.returncode}")
             self.no_secret(r.stdout + r.stderr, "C install")
@@ -385,7 +432,8 @@ class E2E:
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("package", type=Path, help="A release zip (tools/package_release.py or package_variants.py)")
-    parser.add_argument("--work", type=Path, help="Working directory (default: build/e2e-package/<the zip's name>)")
+    parser.add_argument("--work", type=Path, help="Working directory (default: build/e2e-package/<the zip's name>); "
+                        "its other files are never touched")
     parser.add_argument("--keep", action="store_true", help="Keep the unpacked package and the fake Vitas after a pass")
     args = parser.parse_args()
     try:
@@ -397,11 +445,17 @@ def main():
         sys.exit(f"e2e_package: {args.package.name} has no package-manifest.json: a base zip (the Vita build's own, "
                  "a CI artifact)? Package it with tools/package_release.py or tools/package_variants.py first.")
     work = (args.work or ROOT / "build/e2e-package" / args.package.stem).resolve()
-    shutil.rmtree(work, ignore_errors=True)
-    work.mkdir(parents=True)
+    problem = prepare_work(work, args.package)
+    if problem:
+        sys.exit(f"e2e_package: {problem}")
+    others = {p.name for p in work.iterdir()} - set(ENTRIES) - {MARKER}  # the caller's: never touched
     pkg = work / "pkg"
     unpack(args.package, pkg)
-    e = E2E(pkg, work)
+    try:
+        e = E2E(pkg, work)
+    except (OSError, KeyError, ValueError, AttributeError) as exc:  # no config.ini, no app record, a bad manifest
+        sys.exit(f"e2e_package: {args.package.name} is not a release package ({type(exc).__name__}: {exc}); "
+                 f"its files are in {pkg}")
     m = e.manifest
     print(f"e2e_package: {args.package.name}: the {e.variant or 'unnamed'} build, v{m.get('version')}, source "
           f"{m.get('source_revision', 'not recorded')}, API {e.api}, install settings: {e.shown or 'none'}", flush=True)
@@ -410,10 +464,14 @@ def main():
             scenario()
         except Exception as exc:  # a scenario that stops half way is one failure, and the next still runs
             e.check(False, f"{scenario.__name__} stopped: {type(exc).__name__}: {exc}")
+    left = {p.name for p in work.iterdir()} - {MARKER}
+    e.check(left - set(ENTRIES) == others,
+            f"the e2e made nothing in {work.name}/ but its own entries, and left the {len(others)} other(s) there")
     failed = [w for ok, w in e.checks if not ok]
     if not failed and not args.keep:
         for name in ("pkg", *SCENARIOS):
-            shutil.rmtree(work / name, ignore_errors=True)
+            if os.path.lexists(work / name):
+                remove(work / name)
     print(json.dumps({"package": args.package.name, "variant": e.variant, "checks": len(e.checks), "failed": failed},
                      ensure_ascii=False))
     if failed:

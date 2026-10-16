@@ -772,8 +772,8 @@ Overlay app's [PNG ABI check](docs/settings-png-runtime.md), so the app does not
 build.
 
 `-DVJO_DEBUG=OFF` builds the normal build, the release's main download, without
-the debug build's log lines, self-test, timings and traces (8 KiB of SceShell
-pages fewer); `ON`, the default, is the debug build, which the test builds are. The
+the debug build's log lines, self-test, timings and traces (12 KiB of SceShell
+pages fewer on main `c08db18`); `ON`, the default, is the debug build, which the test builds are. The
 `release_variants` target builds the other one too and, with
 `-DVJO_RELEASE_MODELS=/path/to/models`, packages both as
 `VitaJPOverlay-<version>.zip` and `-debug.zip` with their `SHA256SUMS`; CI builds
