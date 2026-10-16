@@ -446,12 +446,26 @@ class PackageVariants(unittest.TestCase):
                          ["VitaJPOverlay-0.8.0-test.4.vpk", "VitaJPOverlay-0.8.0-test.4-debug.vpk",
                           "VitaJPOverlay-0.8.0-test.4.zip", "VitaJPOverlay-0.8.0-test.4-debug.zip"])
         for version in ("0.8.1-test.1", "0.7.12-test.4", "0.8.0-test", "0.8.0-test.0", "0.8.0-test.4x", "0.8.0-rc.1",
-                        "0.8.0.1", "x0.8.0-test.4"):
+                        "0.8.0.1", "x0.8.0-test.4", "0x8x0-test.1", "0.8.0-test.10000"):
             with self.subTest(version=version), self.assertRaises(SystemExit) as caught:
                 self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
                               "--version", version, "-o", self.root / "out-bad")
             self.assertIn(f"the Overlay app is v0.8.0, the release v{version}", str(caught.exception))
             self.assertFalse((self.root / "out-bad").exists())
+
+    def test_a_base_with_no_app_version_names_none(self):
+        """A base from before the two builds has no app version (package_release.base_variant gives None): it is
+        refused as one, not as an app of version None, and no version, test or not, is a release of it."""
+        for version in ("0.8.0", "0.8.0-test.4", "-test.1", "None"):
+            self.assertFalse(package_variants.release_of(None, version), version)
+        self.assertTrue(package_variants.release_of("0.8.0", "0.8.0-test.9999"))
+        builds = iter((("normal", None), ("debug", None)))
+        with mock.patch.object(release, "base_variant", side_effect=lambda z: next(builds)):
+            problems = package_variants.check_bases(self.base("normal"), self.base("debug"), "0.8.0")
+        self.assertEqual(len(problems), 2, problems)
+        for p in problems:
+            self.assertIn("the Overlay app names no version (a base from before the two builds)", p)
+            self.assertNotIn("vNone", p)
 
     def test_bases_that_are_not_the_builds_they_are_given_as_are_refused(self):
         out = self.root / "out"

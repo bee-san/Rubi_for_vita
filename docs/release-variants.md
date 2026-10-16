@@ -206,8 +206,8 @@ builds add `--set anki_mining=on`.
 
 The Overlay app's version is the tree's `VJO_VERSION` (0.8.0 now): a test package
 (`VitaJPOverlay-0.8.0-test.N.zip`, `package_variants.py` or `package_release.py --version 0.8.0-test.N`)
-shows `Overlay v0.8.0 debug`, the build its binaries are; its manifests record `version 0.8.0-test.N`
-beside `app_version 0.8.0`.
+shows `Overlay v0.8.0` (`Overlay v0.8.0 debug` for the -debug build), the build its binaries are; its
+manifests record `version 0.8.0-test.N` beside `app_version 0.8.0`.
 
 `tools/package_variants.py` refuses bases that are not the builds they are given as (with `--sources`,
 a checkout of their commit, each module is checked as the Vita build checks it, the worker included; a
