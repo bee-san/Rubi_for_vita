@@ -1226,7 +1226,7 @@ def render_app(a):
 # the one-VPK install's record (core/payload.c vjo_installed_format) and the names settings/install.c gives
 # a taiHEN configuration's backups and an interrupted swap's leftovers (collect_vita.py keeps them)
 INSTALLED_LINE = re.compile(r"^vjoinst1 version=(\S+) variant=(\S+) api=(\d+) build=([0-9a-f]{16}) manifest=([0-9a-f]{64})$")
-TAI_BACKUP = re.compile(r"^config\.txt\.vjo-\d{8}-\d{6}(-\d+)?\.bak$")
+TAI_BACKUP = re.compile(r"^config\.txt\.vjo-(\d{8}-\d{6}(-old|-new)?(-\d+)?\.bak|bad.*|bak)$")
 TAI_LEFTOVER = re.compile(r"^config\.txt\.vjo-(new|old)$")
 
 

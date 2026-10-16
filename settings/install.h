@@ -29,7 +29,8 @@ enum { VJO_INSTALL_ACT_INSTALL = 1, VJO_INSTALL_ACT_UNINSTALL = 2, VJO_INSTALL_A
 /* What a config.txt beside a leftover is now. */
 enum { VJO_TAI_NOW_OTHER = 0, VJO_TAI_NOW_STOCK = 1, VJO_TAI_NOW_OURS = 2 };
 
-#define VJO_INSTALL_LINES 28
+#define VJO_INSTALL_LINES 40
+#define VJO_INSTALL_DIFF 8 /* exact config.txt lines a plan shows per file */
 #define VJO_INSTALL_LINE 320
 
 /* What the app is (core/payload.h): the page passes its compiled values; the host tests vary them. */
@@ -53,6 +54,10 @@ typedef struct {
     int has_kernel;            /* a kernel line of ours that is not a comment */
     int loads_ours;            /* taiHEN loads the kernel plugin and the Shell from it now */
     uint8_t sha256[32];        /* its text's, so that a run knows the plan is still the card's */
+    /* the exact lines an install (0) or an uninstall (1) adds (+) or removes (-), in file order
+     * (AGENTS.md rule 7: the plan shows the exact edits); more than VJO_INSTALL_DIFF are counted */
+    char diff[2][VJO_INSTALL_DIFF][VJO_TAI_LINE_MAX + 4];
+    int diff_count[2], diff_more[2];
 } VjoInstallConfig;
 
 typedef struct {

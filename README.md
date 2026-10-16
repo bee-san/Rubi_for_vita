@@ -162,9 +162,9 @@ press Select to start FTP, and run from the extracted folder:
 bash install-vita.sh VITA_IP:1337
 ```
 
-It checks the package manifest, backs up both taiHEN configurations (on the Vita as
-`config.txt.vjo-bak` and a dated `config.txt.vjo-<date-time>.bak`, and in `build/device/backup/` of the
-extracted folder) and your overlay settings, uploads and checksum-reads back each file, and edits the
+It checks the package manifest, backs up both taiHEN configurations in `build/device/backup/` of the
+extracted folder, and on the Vita each one it changes (as `config.txt.vjo-bak` and a dated
+`config.txt.vjo-<date-time>.bak`), and your overlay settings, uploads and checksum-reads back each file, and edits the
 configurations with the same rules as the Overlay app (`tools/patch_tai_config.py`, the app's
 `core/taicfg.c` in Python; both are tested on one set of fixtures). `--title` is no longer needed and
 is ignored with a note. It ends with a box that says whether the Vita's Overlay app is this

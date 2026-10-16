@@ -77,7 +77,7 @@ DIRS = [(f"{DATA}/anki_queue", "keep", None), (f"{DATA}/anki_queue/exported", "k
         ("ur0:/data/VitaJPOverlay", "hash", re.compile(r"\.rco$")), ("ux0:/data", "hash", re.compile(r"^JPOverlaySettings\.vpk$"))]
 # the taiHEN configurations' backups (both installers: dated, kept) and an interrupted swap's leftovers
 # (the Overlay app's: settings/install.c), beside each config.txt
-TAI_BACKUPS = re.compile(r"^config\.txt\.vjo-(\d{8}-\d{6}(-\d+)?\.bak|new|old)$")
+TAI_BACKUPS = re.compile(r"^config\.txt\.vjo-.+$")  # dated, -old/-new, .vjo-bad, .vjo-new/.vjo-old (settings/install.c)
 DIRS += [("ur0:/tai", "keep", TAI_BACKUPS), ("ux0:/tai", "keep", TAI_BACKUPS)]
 # Device paths of the hashed files -> their package path (package-manifest.json "files")
 PACKAGE_PATHS = {"ur0:/tai/": "ur0/tai/", "ur0:/data/VitaJPOverlay/": "ur0/data/VitaJPOverlay/",

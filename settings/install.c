@@ -304,6 +304,77 @@ static int new_is_result_of_old(const char *path, const char *current, int len, 
 
 static const char *tai_path(int c) { return c ? VJO_TAI_UR0 : VJO_TAI_UX0; }
 
+/* One line of text from *pos (its bytes up to its end: CRLF, CR or LF, without it); 0 at the end. */
+static int next_line(const char *t, int len, int *pos, const char **start, int *n)
+{
+    if (*pos >= len) return 0;
+    int i = *pos;
+    while (i < len && t[i] != '\r' && t[i] != '\n') i++;
+    *start = t + *pos;
+    *n = i - *pos;
+    if (i < len && t[i] == '\r') {
+        i++;
+        if (i < len && t[i] == '\n') i++; /* CRLF is one end */
+    } else if (i < len) {
+        i++; /* LF */
+    }
+    *pos = i;
+    return 1;
+}
+
+/* The edit's lines in file order, each given to emit with its sign: a line of old that new does not have at
+ * the same place is "-", one of new that old does not have "+". The editor only inserts, removes and comments
+ * out lines, keeping every other line in order, so a greedy walk is exact: an old line found further on in new
+ * means lines were added before it, else it was removed. */
+static void walk_diff(const char *old, int old_len, const char *neu, int new_len,
+                      void (*emit)(void *ctx, char sign, const char *s, int n), void *ctx)
+{
+    int a = 0, b = 0;
+    const char *ls, *ns;
+    int ln, nn;
+    int have_l = next_line(old, old_len, &a, &ls, &ln), have_n = next_line(neu, new_len, &b, &ns, &nn);
+    while (have_l || have_n) {
+        if (have_l && have_n && ln == nn && !memcmp(ls, ns, (size_t)ln)) {
+            have_l = next_line(old, old_len, &a, &ls, &ln);
+            have_n = next_line(neu, new_len, &b, &ns, &nn);
+            continue;
+        }
+        int found = 0;
+        if (have_l && have_n) {
+            int p = b;
+            const char *qs;
+            int qn;
+            while (!found && next_line(neu, new_len, &p, &qs, &qn)) found = qn == ln && !memcmp(qs, ls, (size_t)ln);
+        }
+        if (have_n && (found || !have_l)) {
+            emit(ctx, '+', ns, nn);
+            have_n = next_line(neu, new_len, &b, &ns, &nn);
+        } else {
+            emit(ctx, '-', ls, ln);
+            have_l = next_line(old, old_len, &a, &ls, &ln);
+        }
+    }
+}
+
+typedef struct { VjoInstallConfig *g; int which; } DiffKeep;
+static void keep_line(void *ctx, char sign, const char *s, int n)
+{
+    DiffKeep *k = ctx;
+    VjoInstallConfig *g = k->g;
+    if (g->diff_count[k->which] < VJO_INSTALL_DIFF)
+        snprintf(g->diff[k->which][g->diff_count[k->which]++], sizeof(g->diff[0][0]), "%c %.*s", sign,
+                 n > VJO_TAI_LINE_MAX ? VJO_TAI_LINE_MAX : n, s);
+    else
+        g->diff_more[k->which]++;
+}
+
+static void diff_lines(VjoInstallConfig *g, int which, const char *old, int old_len, const char *neu, int new_len)
+{
+    DiffKeep k = {g, which};
+    g->diff_count[which] = g->diff_more[which] = 0;
+    walk_diff(old, old_len, neu, new_len, keep_line, &k);
+}
+
 static void sha_text(const char *text, size_t len, uint8_t out[32])
 {
     br_sha256_context h;
@@ -559,9 +630,11 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
             g->install_changes = g->install.changed;
             need_lines |= g->install_changes;
         }
+        if (cfg_new_len[c] >= 0 && g->install_changes) diff_lines(g, 0, cfg_text[c], n, cfg_new[c], cfg_new_len[c]);
         VjoTaiReport u;
         rc = vjo_tai_edit(cfg_text[c], (size_t)n, VJO_TAI_UNINSTALL, build->worker, NULL, 0, cfg_check, sizeof(cfg_check), &u);
         g->uninstall_changes = rc >= 0 && u.changed;
+        if (g->uninstall_changes) diff_lines(g, 1, cfg_text[c], n, cfg_check, rc);
         before_overlay(g->path, s->before_overlay[c], sizeof(s->before_overlay[c]));
         if (g->leftover) {
             interrupted = 1;
@@ -765,6 +838,27 @@ static int add(char lines[][VJO_INSTALL_LINE], int n, int max, const char *fmt, 
 }
 
 /* What an edit of one configuration does, in a few words. */
+/* Every line the swap changed (the plan shows VJO_INSTALL_DIFF of them per file), in log.txt. */
+static void log_line(void *ctx, char sign, const char *s, int n)
+{
+    vjo_log("install: %s: %c %.*s", (const char *)ctx, sign, n > VJO_TAI_LINE_MAX ? VJO_TAI_LINE_MAX : n, s);
+}
+static void log_diff(const char *path, const char *old, int old_len, const char *neu, int new_len)
+{
+    walk_diff(old, old_len, neu, new_len, log_line, (void *)path);
+}
+
+/* The configuration's exact changed lines, one plan line each, as they stand in the file ("+" added,
+ * "-" removed; a commented-out line shows as its old text removed and the commented one added). */
+static int add_diff(char lines[][VJO_INSTALL_LINE], int n, int max, const VjoInstallConfig *g, int which)
+{
+    for (int i = 0; i < g->diff_count[which]; i++) n = add(lines, n, max, "   %s", g->diff[which][i]);
+    if (g->diff_more[which])
+        n = add(lines, n, max, "   and %d more line%s (log.txt has every one).", g->diff_more[which],
+                g->diff_more[which] == 1 ? "" : "s");
+    return n;
+}
+
 static void edit_words(const VjoTaiReport *r, int install, char *out, size_t cap)
 {
     size_t used = 0;
@@ -831,8 +925,9 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
             if (s->cfg[c].uninstall_changes) {
                 char name[PATH];
                 backup_name(s->cfg[c].path, s->stamp, name, sizeof(name));
-                n = add(lines, n, max, "%d. Back up %s as %s (kept), then remove the overlay's lines from it.", k++,
+                n = add(lines, n, max, "%d. Back up %s as %s (kept), then remove the overlay's lines from it. Exactly:", k++,
                         s->cfg[c].path, strrchr(name, '/') + 1);
+                n = add_diff(lines, n, max, &s->cfg[c], 1);
             }
         n = add(lines, n, max, "%d. Keep the plugin files, the models, the dictionary, your settings and your cards: delete "
                 "ur0:tai/VitaJPOverlay_*, ux0:data/VitaJPOverlay and ur0:data/VitaJPOverlay in VitaShell for the room.", k++);
@@ -893,7 +988,8 @@ int vjo_install_plan(const VjoInstallScan *s, int action, char lines[][VJO_INSTA
         if (!g->exists) continue;
         if (g->install_changes) {
             edit_words(&g->install, 1, words, sizeof(words));
-            n = add(lines, n, max, "%d. %s%s: %s.", k++, g->path, reads_note(s, c), words);
+            n = add(lines, n, max, "%d. %s%s: %s. Exactly:", k++, g->path, reads_note(s, c), words);
+            n = add_diff(lines, n, max, g, 0);
         } else {
             n = add(lines, n, max, "%d. %s%s: unchanged (it already loads the overlay).", k++, g->path, reads_note(s, c));
         }
@@ -1026,6 +1122,7 @@ static int swap_config(Run *x, int c, const char *text, int len)
     }
     sceIoRemove(old);
     vjo_log("install: %s written (%d B)", path, len);
+    log_diff(path, cfg_text[c], cfg_len[c], text, len);
     return 0;
 }
 

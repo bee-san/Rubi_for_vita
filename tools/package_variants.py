@@ -166,6 +166,13 @@ def main():
     problems = check_packages(zips["normal"], zips["debug"])
     if problems:
         sys.exit("package_variants: the two packages are not one release:\n  " + "\n  ".join(problems))
+    # the worker mode first: no VPK is written of a build whose payload would install no game's OCR
+    with zipfile.ZipFile(zips["normal"]) as z:
+        worker = json.loads(z.read(MANIFEST)).get("worker")
+    if worker != "kernel":
+        # the per-title rules need install-vita.sh --title: no main VPK in that mode without the owner
+        sys.exit("package_variants: the build's worker mode is " + str(worker) + ", not kernel: a VPK of it would "
+                 "install no game's OCR (docs/one-vpk-install.md, lines mode)")
     # the one-VPK install of each build (tools/package_vpk.py): the zip's own files, the app's own facts
     vpks = {}
     for variant in ("normal", "debug"):
@@ -174,12 +181,6 @@ def main():
             package_vpk.write_vpk(zips[variant], vpks[variant])
         except ValueError as e:
             sys.exit(f"package_variants: {vpks[variant].name}: {e}")
-    with zipfile.ZipFile(zips["normal"]) as z:
-        worker = json.loads(z.read(MANIFEST)).get("worker")
-    if worker != "kernel":
-        # the per-title rules need install-vita.sh --title: no main VPK in that mode without the owner
-        sys.exit("package_variants: the build's worker mode is " + str(worker) + ", not kernel: a VPK of it would "
-                 "install no game's OCR (docs/one-vpk-install.md, lines mode)")
     assets = [vpks["normal"], vpks["debug"], zips["normal"], zips["debug"]]
     sums = "".join(f"{sha256(p)}  {p.name}\n" for p in assets)
     (args.output / "SHA256SUMS").write_text(sums)

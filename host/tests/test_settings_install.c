@@ -299,8 +299,15 @@ static const char *stock =
     "ur0:tai/henkaku.suprx\n*NPXS10015\n# this is for modifying the version string\nur0:tai/henkaku.suprx\n"
     "*NPXS10016\n# this is for modifying the version string in settings widget\nur0:tai/henkaku.suprx\n";
 
+static void remove_last_card(void)
+{
+    if (card[0] && chdir("/") == 0) remove_tree(card);
+}
+
 static void fresh_card(int with_ux0)
 {
+    static int registered;
+    if (!registered) registered = atexit(remove_last_card) == 0;
     if (card[0]) { if (chdir("/") == 0) remove_tree(card); }
     snprintf(card, sizeof(card), "/tmp/vjo-install-XXXXXX");
     TEST_ASSERT(mkdtemp(card) != NULL);
@@ -399,7 +406,13 @@ static void fresh_install_on_both_configurations(void)
     dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
     TEST_CHECK(has_line(plan, n, "Move the dictionary (1 MB) to ux0:data/VitaJPOverlay/dictionaries from this app: moved, not copied"));
     TEST_CHECK(has_line(plan, n, "Back up ux0:tai/config.txt and ur0:tai/config.txt as config.txt.vjo-20261016-071503.bak in each folder (kept)."));
-    TEST_CHECK(has_line(plan, n, "ux0:tai/config.txt (taiHEN reads this one at boot): add the kernel line under *KERNEL and the Shell line under *main."));
+    TEST_CHECK(has_line(plan, n, "ux0:tai/config.txt (taiHEN reads this one at boot): add the kernel line under *KERNEL and the Shell line under *main. Exactly:"));
+    /* rule 7: the exact lines, in the file's order */
+    int at = -1;
+    for (int i = 0; i < n; i++)
+        if (strstr(plan[i], "ux0:tai/config.txt (taiHEN reads this one at boot)")) at = i;
+    TEST_ASSERT(at >= 0 && at + 2 < n);
+    TEST_CHECK_(!strcmp(plan[at + 1], "   + " K) && !strcmp(plan[at + 2], "   + " S), "[%s] [%s]", plan[at + 1], plan[at + 2]);
     TEST_CHECK(has_line(plan, n, "ur0:tai/config.txt: add the kernel line"));
     TEST_CHECK(has_line(plan, n, "config.ini: written from the package's template."));
     TEST_CHECK(has_line(plan, n, "Then restart the Vita yourself: this app never restarts it."));
@@ -474,7 +487,17 @@ static void update_over_a_test3_install(void)
     char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
     int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
     dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
-    TEST_CHECK(has_line(plan, n, "ur0:tai/config.txt (taiHEN reads this one at boot): remove the OCR worker's lines from *ALL, *PCSG00415."));
+    TEST_CHECK(has_line(plan, n, "ur0:tai/config.txt (taiHEN reads this one at boot): remove the OCR worker's lines from *ALL, *PCSG00415. Exactly:"));
+    {
+        /* the worker under *ALL, the blank line and *PCSG00415 with its worker: removed, in that order */
+        static const char *const want[] = {"   - " W, "   - ", "   - *PCSG00415", "   - " W};
+        int at = -1;
+        for (int i = 0; i < n; i++)
+            if (strstr(plan[i], "ur0:tai/config.txt (taiHEN reads this one at boot): remove")) at = i;
+        TEST_ASSERT(at >= 0 && at + 4 < n);
+        for (int i = 0; i < 4; i++) TEST_CHECK_(!strcmp(plan[at + 1 + i], want[i]), "%d: [%s]", i, plan[at + 1 + i]);
+        TEST_CHECK(strncmp(plan[at + 5], "   ", 3) != 0);
+    }
     TEST_CHECK(has_line(plan, n, "config.ini: "));
     VjoInstallResult r;
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
