@@ -135,7 +135,7 @@ when it changes; and every failed job with its refused memory check
 ## Building
 
 ```sh
-cmake -S vita -B build/vita -DVJO_DEBUG=OFF ...   # the normal build; ON (the default): the debug build
+cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG=OFF ...   # the normal build; ON (the default): debug
 cmake --build build/vita --target release         # VitaJPOverlay-<version>.zip, or -debug.zip
 ```
 
@@ -152,7 +152,7 @@ From source, one target builds both and packages them (the other build in `varia
 same build directory):
 
 ```sh
-cmake -S vita -B build/vita -DVJO_VERSION=0.8.0 -DVJO_RELEASE_MODELS=/path/to/models \
+cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_VERSION=0.8.0 -DVJO_RELEASE_MODELS=/path/to/models \
   -DVJO_RELEASE_SOURCE_REVISION=$(git rev-parse HEAD) ...
 cmake --build build/vita --target release_variants
 # build/vita/release-variants/VitaJPOverlay-0.8.0.zip, VitaJPOverlay-0.8.0-debug.zip, SHA256SUMS
