@@ -33,6 +33,13 @@
 #define FILTER_BITS (PAGE_SIZE * 8u)
 #define FILTER_HASHES 7u
 #define NO_BLOCK UINT32_MAX
+/* Posting hints (docs/local-dictionaries.md): page-0 bytes 160..167 announce
+ * that every v3 posting's last u16 ranks it without its payload's head. */
+#define HINTS_DESCRIPTOR 160u
+#define HINT_SPELLING 1u      /* the spelling is the key */
+#define HINT_NORMALIZED 2u    /* the spelling normalizes to the key */
+#define HINT_READING 4u       /* the entry has a reading */
+#define HINT_FREQ_SHIFT 3     /* bits 3-15: freq_key of the payload's frequency word */
 
 #ifdef VJO_LOCAL_STATS
 VjoLocalStats vjo_local_stats;
@@ -68,6 +75,7 @@ typedef struct {
     uint64_t data;
     uint32_t prefix;                   /* bytes before a payload's spelling: 4 in v3, else 0 */
     char freq_title[FREQ_TITLE_SIZE];  /* v3: the frequency list's name; "" without one */
+    uint8_t hints;                     /* v3 with posting hints: most postings ranked without their head */
     /* The key filter (filter_blocks 0: none): where its blocks start, and the one
      * block this lookup's candidates use (NO_BLOCK: none yet), covering prefixes
      * [lo, hi). */
@@ -320,10 +328,15 @@ static int open_header(Workspace *w, Dictionary *d)
     int rc;
     d->filter_blocks = 0;
     d->block = NO_BLOCK;
+    d->hints = 0;
     if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
     if (!d->file.read || !d->file.close) return VJO_E_LOCAL_IO;
     READ_KIND(VJO_READ_HEADER);
     if ((rc = cached_page(w, d, 0, &page0)) || (rc = parse_header(d, page0->bytes))) return rc;
+    if (d->version == 3 && !memcmp(page0->bytes + HINTS_DESCRIPTOR, "VJPH", 4)) {
+        if (u32(page0->bytes + HINTS_DESCRIPTOR + 4) != 1) return VJO_E_LOCAL_FORMAT;
+        d->hints = 1;
+    }
     f = page0->bytes + FILTER_DESCRIPTOR;
     if (d->version < 2 || memcmp(f, "VJKF", 4)) return VJO_OK;
     blocks = u32(f + 8);
@@ -442,9 +455,9 @@ static int record_at(Workspace *w, Dictionary *d, uint32_t i, Record *r, char *k
  * any borrowed one, FREQ_BORROWED), plus 4095 - (e * 128 + m) for rank
  * 2^e * (1 + m / 128 + ...), e <= 23. Exact below rank 256; above it, ranks
  * within 1/128 of an octave of each other tie, and the longer article
- * decides. 13 bits fit an index's spare posting field, but the flags above
- * it depend on the query and the payload's spelling and reading, so storing
- * the key there alone saves no head read. */
+ * decides. Format 3's posting hints store it in bits 3-15 of a posting's
+ * last u16, beside the query-independent flags rank_posting needs from the
+ * head (HINT_SPELLING, HINT_NORMALIZED, HINT_READING). */
 static uint32_t freq_key(uint32_t word)
 {
     uint32_t rank = word & FREQ_RANK_MASK, e = 0, m;
@@ -565,8 +578,23 @@ static int spelled_or_read(const char *value, const char *head, size_t spelling,
 
 /* Reads the payload's spelling and reading (one bounded head; in v3 after
  * the frequency word, read with it) to rank it. */
-static int rank_posting(Workspace *w, Dictionary *d, const Record *r, const Query *q, uint32_t *score)
+static int rank_posting(Workspace *w, Dictionary *d, const Record *r, uint32_t hint, const Query *q,
+                        uint32_t *score)
 {
+    /* With hints the posting gives the score without the head, as the head
+     * would: written so is "the spelling is the key", kana text compares the
+     * normalized spelling. The head is still read for a key with a preferred
+     * reading or a usual spelling (both compare the head's strings), and for
+     * kana text whose entry is spelled otherwise yet normalizes to the key (it
+     * may or may not be spelled as the text is). */
+    if (d->hints && !q->preferred && !q->usual &&
+        !(q->key && (hint & HINT_NORMALIZED) && !(hint & HINT_SPELLING))) {
+        STAT(hinted);
+        *score = r->entry_len | (hint >> HINT_FREQ_SHIFT) << FREQ_KEY_SHIFT;
+        if (hint & (q->key ? HINT_NORMALIZED : HINT_SPELLING)) *score |= q->key ? RANK_KANA : RANK_WRITTEN | RANK_KANA;
+        if (hint & HINT_READING) *score |= RANK_READING;
+        return VJO_OK;
+    }
     char bytes[FREQ_PREFIX + HEAD_BYTES], *head = bytes + d->prefix;
     size_t n = r->entry_len < d->prefix + HEAD_BYTES ? r->entry_len : d->prefix + HEAD_BYTES, spelling;
     const char *reading;
@@ -592,12 +620,15 @@ static int rank_posting(Workspace *w, Dictionary *d, const Record *r, const Quer
 }
 
 /* Posting j of a key: v2/v3, the group's 16-byte postings; v1, index record
- * group + j (group is the key's first record). v3 leaves a posting's last
- * u16 to later index hints: this reader ignores it, v2 requires it zero. */
-static int posting_at(Workspace *w, Dictionary *d, uint64_t group, uint16_t key_len, uint32_t j, Record *r)
+ * group + j (group is the key's first record). *hint (when asked): v3's last
+ * u16, the posting hints rank_posting uses when the file announces them; v2
+ * requires it zero; 0 for v1. */
+static int posting_at(Workspace *w, Dictionary *d, uint64_t group, uint16_t key_len, uint32_t j, Record *r,
+                      uint32_t *hint)
 {
     uint8_t post[16];
     int rc;
+    if (hint) *hint = 0;
     if (d->version == 1) {
         char key[VJO_LOCAL_MAX_KEY + 1];
         return record_at(w, d, (uint32_t)group + j, r, key);
@@ -606,6 +637,7 @@ static int posting_at(Workspace *w, Dictionary *d, uint64_t group, uint16_t key_
     if ((rc = cached_read(w, d, group + key_len + j * 16, post, sizeof(post)))) return rc;
     r->entry_off = u64(post); r->entry_len = u32(post + 8); r->rules = u16(post + 12);
     r->key_off = group; r->key_len = key_len;
+    if (hint) *hint = d->version == 3 ? u16(post + 14) : 0;
     if ((d->version == 2 && u16(post + 14)) || (r->rules & ~RULE_MASK) || r->entry_off < d->data ||
         r->entry_len < min_entry(d) || r->entry_len > VJO_LOCAL_MAX_ENTRY ||
         !range_ok(d, r->entry_off, r->entry_len)) return VJO_E_LOCAL_FORMAT;
@@ -619,12 +651,12 @@ static int take_postings(Workspace *w, int di, const Candidate *c, Query *q, int
 {
     Dictionary *d = &w->dicts[di];
     Record r, top, other;
-    uint32_t best = n, best_score = 0, other_score = 0, score;
+    uint32_t best = n, best_score = 0, other_score = 0, score, hint;
     int rc, any = 0;
     for (uint32_t j = 0; j < n; j++) {
-        if ((rc = posting_at(w, d, group, key_len, j, &r))) return rc;
+        if ((rc = posting_at(w, d, group, key_len, j, &r, &hint))) return rc;
         if ((c->rules && !(c->rules & r.rules)) || is_duplicate(w, di, &r)) continue;
-        if ((rc = rank_posting(w, d, &r, q, &score))) return rc;
+        if ((rc = rank_posting(w, d, &r, hint, q, &score))) return rc;
         if (q->strict && !(score & (RANK_PREFERRED | RANK_KANA))) {
             if (!any || score > other_score) { other = r; other_score = score; any = 1; }
             continue;
@@ -642,7 +674,7 @@ static int take_postings(Workspace *w, int di, const Candidate *c, Query *q, int
     w->matches[w->n_matches++].record = top;
     for (uint32_t j = 0; j < n && !q->strict && w->n_matches < limit; j++) {
         if (j == best) continue;
-        if ((rc = posting_at(w, d, group, key_len, j, &r))) return rc;
+        if ((rc = posting_at(w, d, group, key_len, j, &r, NULL))) return rc;
         if ((c->rules && !(c->rules & r.rules)) || is_duplicate(w, di, &r)) continue;
         w->matches[w->n_matches].dict = di;
         w->matches[w->n_matches++].record = r;

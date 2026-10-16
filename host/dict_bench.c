@@ -345,14 +345,14 @@ int main(int argc, char **argv)
                ",\"bytes\":%" PRIu64 ",\"excess_bytes\":%" PRIu64 ",\"pages\":%" PRIu64 ",\"nonsequential\":%" PRIu64 ",\"arena_peak\":%" PRIu64
                ",\"spans\":%" PRIu64 ",\"candidates\":%" PRIu64 ",\"probes\":%" PRIu64 ",\"filtered\":%" PRIu64
                ",\"miss_cached\":%" PRIu64 ",\"hash_present\":%" PRIu64 ",\"found\":%" PRIu64 ",\"ranked\":%" PRIu64
-               ",\"absent_reads\":%" PRIu64
+               ",\"hinted\":%" PRIu64 ",\"absent_reads\":%" PRIu64
                ",\"reads_by\":{\"header\":%" PRIu64 ",\"index\":%" PRIu64 ",\"group\":%" PRIu64 ",\"head\":%" PRIu64
                ",\"payload\":%" PRIu64 ",\"filter\":%" PRIu64 "},\"bytes_by\":{\"header\":%" PRIu64
                ",\"index\":%" PRIu64 ",\"group\":%" PRIu64 ",\"head\":%" PRIu64 ",\"payload\":%" PRIu64
                ",\"filter\":%" PRIu64 "}}\n",
                q->line, lines[q->line].id, lines[q->line].model, k, q->cursor, q->rc, q->entries, q->end, q->digest,
                us, q->opens, q->reads, q->bytes, q->excess, q->pages, q->seeks, q->arena_peak, st->spans, st->candidates,
-               st->probes, st->filtered, st->miss_cached, st->hash_present, st->found, st->ranked, st->absent_reads,
+               st->probes, st->filtered, st->miss_cached, st->hash_present, st->found, st->ranked, st->hinted, st->absent_reads,
                st->reads[VJO_READ_HEADER], st->reads[VJO_READ_INDEX], st->reads[VJO_READ_GROUP],
                st->reads[VJO_READ_HEAD], st->reads[VJO_READ_PAYLOAD], st->reads[VJO_READ_FILTER],
                st->bytes[VJO_READ_HEADER], st->bytes[VJO_READ_INDEX], st->bytes[VJO_READ_GROUP],
@@ -360,5 +360,13 @@ int main(int argc, char **argv)
     }
     printf("{\"summary\":{\"lines\":%d,\"lookups\":%zu,\"mode\":\"%s\",\"rounds\":%d,\"arena_bytes\":%u}}\n", n_lines,
            n_queries, argv[4], rounds, ARENA_BYTES);
+    /* Everything allocated is freed: the sanitizer lane runs with leak checks on. */
+    for (size_t k = 0; k < n_queries; k++) free(queries[k].us);
+    free(queries);
+    for (int i = 0; i < n_lines; i++) {
+        free(sentences[i]);
+        free(lines[i].text);
+    }
+    free(sentences);
     return 0;
 }

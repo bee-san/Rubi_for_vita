@@ -87,7 +87,9 @@ def prepare(output, source=None):
         validate(extracted, manifest, frozen=True)
         if "key_filter" in manifest:
             # Deferred import: the converter is only needed for this step.
-            from convert_dictionary import add_key_filter
+            from convert_dictionary import add_index_hints, add_key_filter
+            if manifest["key_filter"].get("hinted_postings"):
+                add_index_hints(extracted)
             add_key_filter(extracted)
         validate(extracted, manifest)
         os.replace(extracted, output)

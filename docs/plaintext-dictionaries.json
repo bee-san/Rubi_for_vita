@@ -170,13 +170,14 @@
   "repository": "bee-san/plaintext-dicts",
   "revision": "6f841cee43425053064c46d09fc627aa5d512e76",
   "key_filter": {
-    "note": "the released file: the frozen file with the key filter added by tools/prepare_plaintext.py (convert_dictionary.add_key_filter, deterministic; docs/local-dictionaries.md)",
+    "note": "the released file: the frozen file with the posting hints and the key filter added by tools/prepare_plaintext.py (convert_dictionary.add_index_hints, add_key_filter; deterministic; docs/local-dictionaries.md)",
     "bytes": 143425536,
-    "sha256": "e1bbd379aa637064624e080ed33098f7245529e3b9554fca6b0a28c9e876128b",
+    "sha256": "e3ac485e76c39e64ea16633c2e9b735f8bc5b59a88c096617c40873247cf6e19",
     "filter_blocks": 226,
     "filter_bytes": 925696,
     "filter_keys": 661469,
     "filter_max_block_keys": 3706,
-    "filter_bits_per_key": 10
+    "filter_bits_per_key": 10,
+    "hinted_postings": 840994
   }
 }

@@ -5,6 +5,8 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -147,8 +149,23 @@ class FrozenPlaintext(unittest.TestCase):
         self.assertFalse((self.root / "rejected.zip").exists())
 
 
+def strip_hints(path):
+    """A format 3 file as #127's converter wrote it: no posting-hints descriptor, every posting's u16 0."""
+    data = bytearray(path.read_bytes())
+    data[convert.HINTS_DESCRIPTOR_OFFSET:convert.HINTS_DESCRIPTOR_OFFSET + 8] = bytes(8)
+    for page in range(convert.HEADER.unpack_from(data)[9]):
+        base = convert.PAGE_SIZE * (1 + page)
+        for slot in range(struct.unpack_from("<I", data, base + 4)[0]):
+            _, group, postings, key_len, _ = convert.HASH_RECORD.unpack_from(data, base + 16 + 24 * slot)
+            for j in range(postings):
+                at = group + key_len + 16 * j + 14
+                data[at:at + 2] = bytes(2)
+    path.write_bytes(data)
+
+
 class KeyFilteredRelease(unittest.TestCase):
-    """The released file is the frozen one plus the key filter, pinned by its own checksum."""
+    """The released file is the frozen one plus the posting hints and the key filter, pinned by its own
+    checksum."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -169,18 +186,28 @@ class KeyFilteredRelease(unittest.TestCase):
                 ensure_ascii=False))
         frozen = self.root / "frozen" / prepare.FILENAME
         frozen.parent.mkdir()
-        # as committed: format 3, without the filter
-        convert.convert([source], frozen, frequency=frequency, key_filter=False)
-        self.archive = self.root / "frozen.zip"
-        with zipfile.ZipFile(self.archive, "w") as zipped:
+        self.hinted = self.root / "hinted.vjdict"  # this converter's --frequency: the hints included
+        convert.convert([source], self.hinted, frequency=frequency, key_filter=False)
+        # as committed: format 3 from #127's converter, without the hints and the filter
+        shutil.copyfile(self.hinted, frozen)
+        strip_hints(frozen)
+        added = self.root / "added.vjdict"
+        self.hinted_postings = convert.add_index_hints(frozen, added)["hinted_postings"]
+        self.assertEqual(added.read_bytes(), self.hinted.read_bytes())  # the hints step = the converter's
+        self.filtered = self.root / "filtered.vjdict"
+        convert.add_key_filter(self.hinted, self.filtered)
+        self.archive, self.pin = self.pinned(frozen, "frozen.zip")
+        self.pin["key_filter"] = {"bytes": self.filtered.stat().st_size, "sha256": prepare.digest(self.filtered),
+                                  "hinted_postings": self.hinted_postings}
+
+    def pinned(self, frozen, name):
+        archive = self.root / name
+        with zipfile.ZipFile(archive, "w") as zipped:
             zipped.write(frozen, prepare.FILENAME)
-        filtered = self.root / "filtered.vjdict"
-        convert.add_key_filter(frozen, filtered)
-        self.pin = {"bytes": frozen.stat().st_size, "sha256": prepare.digest(frozen),
-                    "archive": "processed/plaintext.vjdict.zip", "archive_bytes": self.archive.stat().st_size,
-                    "archive_sha256": prepare.digest(self.archive), "repository": "fixture/private",
-                    "revision": "a" * 40,
-                    "key_filter": {"bytes": filtered.stat().st_size, "sha256": prepare.digest(filtered)}}
+        return archive, {"bytes": frozen.stat().st_size, "sha256": prepare.digest(frozen),
+                         "archive": "processed/plaintext.vjdict.zip", "archive_bytes": archive.stat().st_size,
+                         "archive_sha256": prepare.digest(archive), "repository": "fixture/private",
+                         "revision": "a" * 40}
 
     def test_prepare_adds_the_pinned_filter_and_rejects_another(self):
         output = self.root / "out" / prepare.FILENAME
@@ -189,6 +216,9 @@ class KeyFilteredRelease(unittest.TestCase):
             prepare.validate(output, self.pin)
             data = output.read_bytes()
             self.assertEqual(data[convert.FILTER_DESCRIPTOR_OFFSET:convert.FILTER_DESCRIPTOR_OFFSET + 4], b"VJKF")
+            self.assertEqual(data[convert.HINTS_DESCRIPTOR_OFFSET:convert.HINTS_DESCRIPTOR_OFFSET + 8],
+                             convert.HINTS_DESCRIPTOR.pack(convert.HINTS_MAGIC, 1))
+            self.assertEqual(data, self.filtered.read_bytes())
             self.assertEqual(len(data), self.pin["key_filter"]["bytes"])
             with self.assertRaisesRegex(ValueError, "checksum"):
                 prepare.validate(output, self.pin, frozen=True)  # not the committed bytes any more
@@ -205,6 +235,26 @@ class KeyFilteredRelease(unittest.TestCase):
                                  "--local-dicts", prepare.FILENAME, "--text", "食べました", "--nav"],
                                 capture_output=True, text=True, check=True)
         self.assertIn("synthetic frozen verb", lookup.stdout)
+
+    def test_hinted_postings_switches_the_hint_step(self):
+        """hinted_postings means "add the hints": the frozen file predates them. Without it the pinned
+        (hinted) file cannot result; a frozen file that already has its hints is pinned without it."""
+        def fails(pin, archive, pattern):
+            out = self.root / "never" / prepare.FILENAME
+            with mock.patch.object(prepare, "load_manifest", return_value=pin), \
+                    self.assertRaisesRegex(ValueError, pattern):
+                prepare.prepare(out, archive)
+            self.assertFalse(out.exists())
+        no_switch = dict(self.pin, key_filter={k: v for k, v in self.pin["key_filter"].items()
+                                               if k != "hinted_postings"})
+        fails(no_switch, self.archive, "dictionary checksum")
+        archive, pin = self.pinned(self.hinted, "hinted.zip")
+        fails(dict(pin, key_filter=self.pin["key_filter"]), archive, "not empty")
+        pin["key_filter"] = no_switch["key_filter"]
+        output = self.root / "repinned" / prepare.FILENAME
+        with mock.patch.object(prepare, "load_manifest", return_value=pin):
+            prepare.prepare(output, archive)
+        self.assertEqual(output.read_bytes(), self.filtered.read_bytes())
 
 
 class CommittedSnapshot(unittest.TestCase):
