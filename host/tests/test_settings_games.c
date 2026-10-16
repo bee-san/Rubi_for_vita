@@ -1373,8 +1373,8 @@ static void the_frame_interval_is_logged_once(void)
 }
 #endif
 
-/* The list keys act on the Games page only: on the OCR & lookup and Anki pages
- * Up/Down/L/R leave the list where it was. */
+/* The list keys act on the Games page only: on the OCR & lookup, Anki and Install
+ * pages Up/Down/L/R leave the list where it was. */
 static void list_keys_only_on_the_games_page(void)
 {
     card(30, NULL);
@@ -1393,6 +1393,10 @@ static void list_keys_only_on_the_games_page(void)
     tap(DOWN, 8);
     tap(SCE_CTRL_RTRIGGER, 8);
     hold(UP, 30);
+    hold(0, 8);
+    tap(SCE_CTRL_SELECT, 8); /* Install (docs/one-vpk-install.md) */
+    tap(DOWN, 8);
+    tap(SCE_CTRL_RTRIGGER, 8);
     hold(0, 8);
     tap(SCE_CTRL_SELECT, 8); /* Games again */
     int after = at - 1, frames = run(at);
@@ -1489,7 +1493,9 @@ static void a_page_change_latches_the_stick(void)
     hold_stick(-128, 1); /* pushed up */
     hold(0, 4);
     int up_push = at - 1;
-    with_stick(SCE_CTRL_SELECT, -128); /* Games again, the stick up */
+    with_stick(SCE_CTRL_SELECT, -128); /* Install, the stick up */
+    with_stick(0, -128);
+    with_stick(SCE_CTRL_SELECT, -128); /* Games again, the stick still up */
     hold_stick(-128, 30);
     int games_held = at - 1;
     hold(0, 4);

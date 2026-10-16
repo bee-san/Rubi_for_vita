@@ -490,12 +490,15 @@ for CFG in "${CFGS[@]}"; do
   cmp -s "$TMP/${CFG%%:*}.txt" "$TMP/${CFG%%:*}.new" || put "$TMP/${CFG%%:*}.new" "$CFG"
 done
 # A copy of ours in ux0:tai (a hand install's): our installers put the plugins in ur0:tai only, and the
-# kernel loads the worker from ux0:tai only when ur0's is missing, so a stale copy there goes aside as
-# .vjo-old (renamed, never deleted).
+# kernel loads the worker from ux0:tai only when ur0's is missing, so a stale copy there goes aside under
+# a name of its own, <name>.vjo-stale-<date> (renamed, never deleted; docs/one-vpk-install.md step 6). A
+# failed RNTO still answers 226 (libftpvita ftpvita.c:719-723): the rename is checked by the file's absence.
 for name in VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_OCR.suprx; do
   if exists "ux0:/tai/$name"; then
-    c -o /dev/null -Q "RNFR /ux0:/tai/$name" -Q "RNTO /ux0:/tai/$name.vjo-old" "$FTP/" \
-      && echo "renamed a stale copy: ux0:tai/$name -> $name.vjo-old" || echo "could not rename ux0:tai/$name"
+    aside="$name.vjo-stale-$STAMP"
+    c -o /dev/null -Q "RNFR /ux0:/tai/$name" -Q "RNTO /ux0:/tai/$aside" "$FTP/" 2>/dev/null || true
+    if exists "ux0:/tai/$name"; then echo "could not rename ux0:tai/$name: delete it in VitaShell"
+    else echo "renamed a stale copy: ux0:tai/$name -> $aside"; fi
   fi
 done
 # The record of the build installed (docs/one-vpk-install.md, "installed.txt"): the package's, the same

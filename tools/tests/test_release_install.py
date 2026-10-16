@@ -636,17 +636,20 @@ elif '-o' in a:
     # ---- the kernel loads the worker (#138, Agent A; docs/one-vpk-install.md) ----
     def test_a_stale_ux0_copy_is_renamed_aside(self):
         # A hand install's copy in ux0:tai: the kernel loads the worker from there only when ur0's is
-        # missing, so it goes aside as .vjo-old (renamed, never deleted).
+        # missing, so it goes aside under a name of its own (renamed, never deleted).
         tai = self.device / "ux0/tai"
         (tai / "VitaJPOverlay_OCR.suprx").write_bytes(b"an old worker")
         (tai / "VitaJPOverlay_Kernel.skprx").write_bytes(b"an old kernel plugin")
         result = self.install("install-vita.sh")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse((tai / "VitaJPOverlay_OCR.suprx").exists())
-        self.assertEqual((tai / "VitaJPOverlay_OCR.suprx.vjo-old").read_bytes(), b"an old worker")
-        self.assertEqual((tai / "VitaJPOverlay_Kernel.skprx.vjo-old").read_bytes(), b"an old kernel plugin")
-        self.assertIn("renamed a stale copy: ux0:tai/VitaJPOverlay_OCR.suprx -> VitaJPOverlay_OCR.suprx.vjo-old",
-                      result.stdout)
+        stale = sorted(q.name for q in tai.glob("VitaJPOverlay_*.vjo-stale-*"))
+        self.assertEqual(len(stale), 2, stale)
+        worker = next(n for n in stale if n.startswith("VitaJPOverlay_OCR"))
+        self.assertRegex(worker, r"^VitaJPOverlay_OCR\.suprx\.vjo-stale-\d{8}-\d{6}$")
+        self.assertEqual((tai / worker).read_bytes(), b"an old worker")
+        self.assertFalse(list(tai.glob("*.vjo-old")))
+        self.assertIn("renamed a stale copy: ux0:tai/VitaJPOverlay_OCR.suprx -> " + worker, result.stdout)
         self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
                          (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
 

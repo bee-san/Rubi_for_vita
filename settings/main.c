@@ -14,6 +14,7 @@
 #include "catalog.h"
 #include "engine.h"
 #include "icons.h"
+#include "install_page.h"
 #include "letter.h"
 #include "preferences.h"
 #include "psp.h"
@@ -185,10 +186,12 @@ static void badge(int x, int y, int width, int height, const char *label, int ac
 #define VJO_APP_VERSION "v" VJO_VERSION_STRING
 #endif
 
-/* The page tabs: Games, OCR & lookup, Anki. */
-#define PAGES 3
-#define TAB_X(i) (24 + (i) * 304)
-#define TAB_W 296
+/* The page tabs: Games, OCR & lookup, Anki, Install (docs/one-vpk-install.md). */
+#define PAGES 4
+#define PAGE_INSTALL 3
+#define TAB_PITCH 228
+#define TAB_X(i) (24 + (i) * TAB_PITCH)
+#define TAB_W 220
 /* When this app and the overlay plugins do not match (app_check.h), a red
  * band in place of the title row says so on every page, in two rows. */
 #define BANNER_Y 4
@@ -199,7 +202,7 @@ static char app_banner[192];
 
 static void header(void)
 {
-    static const char *const tabs[PAGES] = {"Games", "OCR & lookup", "Anki"};
+    static const char *const tabs[PAGES] = {"Games", "OCR & lookup", "Anki", "Install"};
     static int version_x; /* after the title, measured once */
     vita2d_draw_rectangle(0, 0, 960, 4, ACCENT);
     if (app_banner[0]) {
@@ -257,6 +260,11 @@ static void read_buttons(void)
 
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
                                   WHITE, DIM, ACCENT, OFF, &buttons};
+
+static void rect(int x, int y, int width, int height, unsigned color) { vita2d_draw_rectangle(x, y, width, height, color); }
+static void hints_row(const char *controls) { wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls); }
+static const VjoInstallDraw install_ui = {text, text_width, rect, focus_card, badge, hints_row, header,
+                                          WHITE, DIM, ACCENT, OFF, SELECTED, &buttons};
 
 static void release_icon(void *texture) { vita2d_free_texture(texture); }
 
@@ -1050,7 +1058,10 @@ int main(void)
     load_preferences();
     vjo_log_enable(preferences.log_file);
     log_start();
-    vjo_app_banner(app_banner, sizeof(app_banner)); /* read once, at start */
+    /* The Install page (docs/one-vpk-install.md): the app opens on it when the overlay is not installed,
+     * is another build's, is damaged or was interrupted, or cannot be installed yet. */
+    int open_install = vjo_install_page_start();
+    vjo_app_banner(app_banner, sizeof(app_banner), vjo_install_page_has_payload()); /* read once, at start */
     status_error = load < 0;
     snprintf(status, sizeof(status), "%s", load < 0 ? "Cannot read settings. Repair games.ini first." :
         load > 0 ? "Recovered saved choices from backup. Changes save automatically." :
@@ -1069,6 +1080,7 @@ int main(void)
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG); /* the left stick scrolls, as in VitaShell */
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     scan();
+    if (open_install) page = PAGE_INSTALL;
     uint32_t previous = 0;
     uint64_t repeat_at = 0;
     int touched = 0;
@@ -1092,17 +1104,20 @@ int main(void)
         int stick = vjo_stick_scroll(&stick_state, pad.ly, now);
         uint32_t direction = pad.buttons & (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LTRIGGER |
                                             SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
-        if ((pressed & buttons.cancel) && !(page == 2 && vjo_anki_page_busy())) break;
-        if (pressed & SCE_CTRL_SELECT) {
+        /* An install runs: the app neither leaves nor changes page (install_page.h). */
+        int installing = vjo_install_page_busy();
+        if ((pressed & buttons.cancel) && !(page == 2 && vjo_anki_page_busy()) && !installing) break;
+        if ((pressed & SCE_CTRL_SELECT) && !installing) {
             page = (page + 1) % PAGES;
             repeat_at = now + 350000;
             /* The new page takes no move from a stick still pushed, this frame or until it is let go. */
             vjo_stick_latch(&stick_state);
             stick = 0;
             if (page == 2) vjo_anki_page_show(&scratch);
+            if (page == PAGE_INSTALL) vjo_install_page_show();
         }
-        if (page == 2) {
-            /* anki_page.c reads its own buttons and touches */
+        if (page == 2 || page == PAGE_INSTALL) {
+            /* anki_page.c and install_page.c read their own buttons and touches */
         } else if (page) {
             if (pressed & SCE_CTRL_UP) preference_selected = (preference_selected + PREFERENCES - 1) % PREFERENCES;
             if (pressed & SCE_CTRL_DOWN) preference_selected = (preference_selected + 1) % PREFERENCES;
@@ -1133,17 +1148,18 @@ int main(void)
         int touch_x = -1, touch_y = -1;
         if (touch.reportNum && !touched) {
             int x = touch.report[0].x / 2, y = touch.report[0].y / 2;
-            int tab = y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 936 && (x - 24) % 304 < TAB_W
-                      ? (x - 24) / 304 : -1;
+            int tab = y >= TAB_Y && y < TAB_Y + TAB_H && x >= 24 && x < 24 + PAGES * TAB_PITCH &&
+                      (x - 24) % TAB_PITCH < TAB_W && !installing ? (x - 24) / TAB_PITCH : -1;
             if (tab >= 0) {
                 if (tab == 2 && page != 2) vjo_anki_page_show(&scratch);
+                if (tab == PAGE_INSTALL && page != PAGE_INSTALL) vjo_install_page_show();
                 if (tab != page) { /* as Select */
                     vjo_stick_latch(&stick_state);
                     stick = 0;
                 }
                 page = tab;
             }
-            else if (page == 2) { touch_x = x; touch_y = y; }
+            else if (page == 2 || page == PAGE_INSTALL) { touch_x = x; touch_y = y; }
             else if (page == 1 && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
                 touch_preference(x, y); /* the OCR & lookup page's cards */
             else if (page) { /* no game actions on the OCR page */ }
@@ -1158,7 +1174,14 @@ int main(void)
             }
         }
         touched = touch.reportNum != 0;
-        if (page == 2) {
+        if (page == PAGE_INSTALL) {
+            vjo_install_page_stick(stick);
+            vita2d_start_drawing();
+            vita2d_clear_screen();
+            vjo_install_page_frame(&install_ui, pressed, touch_x, touch_y);
+            vita2d_end_drawing();
+            vita2d_swap_buffers();
+        } else if (page == 2) {
             vjo_anki_page_stick(stick);
             vjo_anki_page_frame(&anki_ui, pressed, touch_x, touch_y, &scratch);
         }
@@ -1166,6 +1189,7 @@ int main(void)
         sceDisplayWaitVblankStart();
     }
     vjo_anki_page_quit();
+    vjo_install_page_quit();
     vita2d_wait_rendering_done();
     clear_icons();
     vita2d_free_pvf(font);

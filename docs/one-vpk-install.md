@@ -96,8 +96,10 @@ The app accepts a manifest only when it is exactly its own build's (R4); anythin
   dictionary, each with its kind (`copy`, or `move` for the dictionary only), and `template` for
   `config.ini` only; a test checks the list against `package_release.py`'s;
 - no destination twice; sizes parse as 64-bit decimals without overflow; hashes are 64 hex digits;
-- `api` equals the app's `VJO_API_VERSION`, `variant` is `normal` or `debug`, `worker` is `kernel` or
-  `lines`, `version` is the app's own;
+- `api`, `app_version`, `variant` and `worker` equal the app's compiled values (`VJO_API_VERSION`,
+  `VJO_VERSION`, `VJO_DEBUG`, `VJO_KERNEL_LOADS_WORKER`), and `build` is the app's own eboot stamp;
+  `version` is the package's (a test build's `0.8.0-test.4` beside the app's `0.8.0`), shown in titles and
+  recorded in `installed.txt`;
 - `set` keys come from a compiled list (`anki_mining`, `log_file`), at most 4, each value one of the
   key's own (`on`, `off`);
 - at most 64 lines of at most 255 bytes, ASCII only.
@@ -170,7 +172,7 @@ A fourth tab: **Games | OCR & lookup | Anki | Install**. At start the app reads 
 
 | state | when | start page |
 |---|---|---|
-| interrupted | a `config.txt` is missing beside its `config.txt.vjo-new` or `config.txt.vjo-old` (a stop between the swap's two renames, step 5) | Install, offering to finish the swap |
+| interrupted | a `config.txt.vjo-new` or `config.txt.vjo-old` left by a stopped swap (step 5), beside a missing `config.txt`, or beside one that came back (h-encore and h-encore2 write their stock text into both configurations when both are missing, h-encore-2 c59a248 `bootstrap/bootstrap.c:372-379,574-581`) | Install, offering to put it back or to keep the current one |
 | cannot | Unsafe Homebrew is off; or the package is damaged (R4); or a configuration the editor refuses (below) | Install, with the reason and what to do |
 | no payload | the zip's `JPOverlaySettings.vpk`, or a source build: the app carries no overlay | Games; Install offers Uninstall and Check, and says `install-vita.sh` installs this build |
 | not installed | no configuration loads the overlay's kernel and Shell plugins | Install |
@@ -218,7 +220,8 @@ power call), and it never repeats anything after a failure: it stops and says wh
 The page's actions, each with its own plan and confirmation: **Install**, **Update** or **Repair** by
 the state (one procedure: a file that already has the payload's SHA-256 is not written again), or
 **Check and repair** when everything is installed (it hashes every file and resets a stuck boot
-guard, below); **Finish the interrupted install** in that state; and **Uninstall**.
+guard, below); in the interrupted state **Put it back** and **Keep the current one** (below); and
+**Uninstall**.
 
 ## What Install (and Update, Repair) does, in order
 
@@ -253,7 +256,10 @@ guard, below); **Finish the interrupted install** in that state; and **Uninstall
    and `.vjo-old` removed. The dictionary is moved and hashed (above). At most 256 KiB is read,
    written or hashed per call on the install's thread, so the page keeps drawing; the boot guard's
    record `ur0:data/VitaJPOverlay/boot.txt` is emptied with the plugins, as `install_ftp.sh`
-   `reset_boot_record` does: a new build starts with a clean record (`docs/boot-safety.md`).
+   `reset_boot_record` does: a new build starts with a clean record (`docs/boot-safety.md`). The running
+   kernel writes its in-memory record at its next change, the Shell's ok 60 s after the start
+   (`kernel/boot.c` `BOOT_OK_MIN_US`), so the reset waits for 70 s of uptime and the done text says when it
+   was left for a later Check and repair.
 4. **config.ini** (below), by the app's own `publish` (a temp file, sync, the old file as
    `config.ini.bak`, rename; `settings/preferences.c:61-90`). Only one `config.ini.bak` is kept, as for
    the app's saves; the plan says so.
@@ -267,16 +273,21 @@ guard, below); **Finish the interrupted install** in that state; and **Uninstall
    configurations exist that moment stays bootable (taiHEN reads the other one), which is why ux0's is
    swapped first. With only ur0's, or on an SD2Vita setup (whose ux0 file taiHEN cannot see at boot), a
    power cut exactly then leaves taiHEN no configuration, and HENkaku does not start (below); holding L
-   at power-on recovers it. The next start of the app finds the configuration missing beside its
-   `.vjo-new` (complete: written, synced and read back before the first rename) or `.vjo-old` and
-   offers to finish the swap (`.vjo-new` to `config.txt`, else `.vjo-old` back), with the user's OK; it
-   deletes neither while `config.txt` is missing. Writing the file in place instead has no such moment,
+   at power-on recovers it. The next start of the app finds the stopped swap's files and offers, with the
+   user's OK, to put one back: `.vjo-new` when it is the editor's result of `.vjo-old` (an install's or an
+   uninstall's; complete: written, synced and read back before the first rename), else `.vjo-old`. With
+   h-encore the configuration may have come back as the stock text meanwhile (both files missing make it
+   write both): the page says what `config.txt` is now (HENkaku's default, the overlay's, or another),
+   and **Put it back** renames the current one to a dated backup first, **Keep the current one** keeps
+   it and renames the leftovers to dated backups (`config.txt.vjo-<date>-old.bak`, `-new.bak`). Neither
+   removes a file; an Install stops rather than write over a leftover. Writing the file in place instead has no such moment,
    but a cut during the write leaves a prefix of it, which can end at a multiple of 4 KiB (a full card,
    a cluster), the one length taiHEN reads past its buffer (`plugin.c:96`). The rename's window is two
    metadata calls on a thread that does nothing else; it is the smaller risk, and both are recoverable
    with L.
 6. **Stale copies.** A `VitaJPOverlay_Kernel.skprx`, `VitaJPOverlay_Shell.suprx` or
-   `VitaJPOverlay_OCR.suprx` in `ux0:tai/` is renamed to `.vjo-old` (our installers never put one there;
+   `VitaJPOverlay_OCR.suprx` in `ux0:tai/` is renamed to `<name>.vjo-stale-<date>` (a name of its own,
+   outside the leftover rule below; our installers never put one there;
    the kernel loads the worker from `ux0:tai/` only when `ur0:tai/`'s is missing, `VJO_GAME_OCR_PATH_UX0`
    in t3-worker-any-game's PR, so a stale copy there could be loaded in its place). The plan lists each.
 7. **The records.** `ux0:data/VitaJPOverlay/vjo_app.txt` gets the app's own stamp (read from
@@ -287,8 +298,11 @@ Files go first so that a configuration never names a missing file; the configura
 the files so that a failure before step 5 leaves the old overlay loading as it was. Each file is the
 old or the new one at any moment, and each configuration too except between the swap's two renames. A
 power cut or a crash leaves the next start in "update", "repair" or "interrupted", whose action
-finishes the job. A `.vjo-new` or `.vjo-old` left beside a file that exists is removed by the next
-install; one beside a missing file is used first and never removed.
+finishes the job. The leftover rule: a configuration's `config.txt.vjo-new` and `.vjo-old` are never
+removed (they make the state "interrupted", above). A payload file's `.vjo-new` or `.vjo-old` with the
+payload's SHA-256 is used first (a stopped swap's new file, or the old one put aside when the payload's
+is the same, as with the frozen dictionary); one without it is an interrupted copy of the overlay's own
+file and is replaced; beside a destination that is right, both are the overlay's own and go.
 
 | a stop at | on the card | next boot |
 |---|---|---|
@@ -332,7 +346,9 @@ DaveeFTW/taihen-parser 6d817fd `lexer.c`, `parser.c`):
   documented, so an empty file is treated as missing.
 - When neither file can be opened, `plugin_load_config` returns the open's error and taiHEN's
   `module_start` fails (`taihen.c:349-353`): no HENkaku, so no VitaShell, until the Vita is started
-  with L held, which skips the configuration altogether (`taihen.c:346-357`).
+  with L held, which skips the configuration altogether (`taihen.c:346-357`). TheOfficialFloW's taiHEN
+  9f9a904, which h-encore and h-encore2 ship, starts anyway without a configuration (`taihen.c:348-353`),
+  with no plugin loaded.
 - Holding L when an app starts skips that app's taiHEN plugins (`hen.c:368-373`); t3-worker-any-game's
   kernel loader repeats that test for the worker it loads.
 
@@ -445,6 +461,9 @@ So this installer, and `install-vita.sh` with it, in **`kernel` mode**:
   registers nothing (#124's `vjo_psp_register`, its dim "not registered" PSP tag and its status line
   go). Turning any game ON or OFF takes effect at its next start.
 
+In lines mode the done text says that no game has OCR yet and names `install-vita.sh --title`; the
+release recipe ships a kernel-mode main VPK only, unless the owner decides otherwise.
+
 The mode is gated twice (R2), so that the loader can be reverted or fixed without an editor change and
 no user loses working lines:
 
@@ -529,9 +548,11 @@ The app's pages and the README say the same, in this order:
    configuration (`taihen.c:346-357`). Then either open VitaShell and
    put `#` before the two `VitaJPOverlay` lines of `ur0:tai/config.txt` (and `ux0:tai/config.txt`), or
    open the Overlay app and choose Uninstall: homebrew still runs after an L start, since taiHEN installs
-   its patches before the L test (`taihen.c:341-348`); that the app then has its extended permissions,
-   which henkaku.skprx grants outside `config.txt`, is not verified, and the app says so if it finds
-   itself sandboxed. Restart normally. This works after any install.
+   its patches before the L test (`taihen.c:341-348`), and the app keeps its extended permissions: Ensō
+   loads `taihen.skprx` and `henkaku.skprx` from `boot_config.txt` (enso `installer/src/kernel.c:521`;
+   h-encore loads both itself, `payload.c:555-581`), and henkaku's `module_start` installs the permission
+   hook with no button test (henkaku `plugin/kernel.c:179-189`) [from the sources; a console run shows
+   it]. Restart normally. This works after any install.
    A `config.txt.vjo-<date>.bak` is the configuration from before that install; it does not undo an
    update, whose plugin files are replaced. If a `config.txt` is missing, copying the newest backup to
    `config.txt` makes taiHEN start again.
@@ -559,9 +580,10 @@ The app's pages and the README say the same, in this order:
   "Advanced: install from a computer".
 - `install-vita.sh` keeps parity: the same patcher and rules, the same dated on-Vita backup name
   (beside today's `config.txt.vjo-bak`), `installed.txt`, and stale `ux0:tai` copies renamed. It
-  uploads `config.txt` by FTP STOR in place, as today: VitaShell's FTP server (ftpvita) is not in
-  VitaShell's repository, so whether it renames (RNFR/RNTO) is unverified, and the PC path keeps the
-  partial-write risk the app avoids.
+  uploads `config.txt` by FTP STOR in place, as today. VitaShell's FTP server (libftpvita) can rename
+  (RNFR/RNTO with `sceIoRename`, `ftpvita.c:691-723`; a failed RNTO answers 550 and then 226, so a rename
+  is checked by listing, as `install_ftp.sh` does for a stale copy), so the PC path could swap like the
+  app; it keeps its in-place upload for now.
 
 ## Tests
 
@@ -643,6 +665,15 @@ version folds in:
 - R6: every new text made and checked before the OK, `config.ini` included; probes after the OK; no
   write of an unchanged file; the PS button, power-off menu and auto-suspend held.
 - R7: `installed.txt` names the version and the variant.
+
+The delta review (audit-overlay-one-vpk-install-design-b, on daa5107 and 4291ccc) added C1-C4: the
+h-encore and h-encore2 recovery (open the menu, Exit while holding L); the worker mode from the built
+base zip, with the app requiring its compiled worker mode and variant; `config.ini` "none" meaning
+neither `config.ini` nor its `.bak`; and the leftover rule (a configuration's leftovers are never
+removed, the "interrupted" state also beside a `config.txt` h-encore wrote back; stale `ux0:tai`
+copies as `.vjo-stale-<date>`). Its notes N1-N17 are folded in where they change the design (the
+compiled-values bullet, the taiHEN fork, the permissions after an L start, the boot record's 60 s,
+lines mode's done text, libftpvita's rename).
 - Notes taken: an empty file treated as missing (N1), the 4 KiB input (N2), `config.ini` details (N3),
   stale copies renamed (N4), the storage plugin in "Which file" (N5), sizes (N6), wording (N7),
   `install-vita.sh` parity (N8), "interrupted" first (N9), the no-payload app's Uninstall and Check

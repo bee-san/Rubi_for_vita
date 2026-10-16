@@ -243,3 +243,26 @@ int vjo_preferences_save_reading(int ocr_mode, int boost_clock, VjoArena *a)
     values[1] = boost_clock ? "on" : "off";
     return save_keys(keys, values, 2, a);
 }
+
+int vjo_preferences_text(VjoArena *a, char **out, size_t *bytes)
+{
+    int rc = read_text(VJO_PREFERENCES_PATH, a, out, bytes);
+    if (rc != 1) return rc; /* 0, or -1 */
+    rc = read_text(BACKUP, a, out, bytes);
+    if (rc == 1) { *out = NULL; *bytes = 0; return 2; }
+    return rc < 0 ? -1 : 1;
+}
+
+int vjo_preferences_publish_text(const char *next, size_t len, VjoArena *a)
+{
+    size_t mark = vjo_arena_mark(a), bytes = 0;
+    char *old = NULL;
+    int primary, rc = -1;
+    if (len > VJO_PREFERENCES_TEXT_MAX || (len && memchr(next, 0, len))) return -1;
+    if (current_text(a, &old, &bytes, &primary) < 0 || publish_without_secrets(old, bytes, &primary, a) < 0)
+        goto done;
+    rc = publish(next, (int)len, primary);
+done:
+    vjo_arena_release(a, mark);
+    return rc;
+}
