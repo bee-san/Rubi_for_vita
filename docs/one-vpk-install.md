@@ -150,7 +150,7 @@ Install the overlay (v0.8.0)
 2. Back up ux0:tai/config.txt and ur0:tai/config.txt as config.txt.vjo-20261016-071503.bak (kept).
 3. Add to both: *KERNEL  ur0:tai/VitaJPOverlay_Kernel.skprx
                 *main    ur0:tai/VitaJPOverlay_Shell.suprx
-                the OCR worker in 12 games (CLANNAD, planetarian, ...): *PCSG00415 ...
+   and remove the OCR worker's lines an older install left: *PCSG00415, *ALL (3 lines).
 4. Read everything back to check it.
 Then restart the Vita yourself. If it does not start: hold L while you turn it on, then in
 VitaShell copy config.txt.vjo-20261016-071503.bak over config.txt in ur0:tai (and ux0:tai).
@@ -163,8 +163,8 @@ power call), and it never repeats anything after a failure: it stops and says wh
 
 The page's actions, each with its own plan and confirmation: the main one is **Install**, **Update**
 or **Repair** by the state (one procedure: files that already have the payload's SHA-256 are not
-written again), or **Check and repair** when everything is installed (it hashes every file);
-**Add the OCR worker to N games** when games are ON but not registered (below); and **Uninstall**.
+written again), or **Check and repair** when everything is installed (it hashes every file); and
+**Uninstall**.
 
 ## What Install (and Update, Repair) does, in order
 
@@ -187,21 +187,29 @@ Nothing is written until every check of step 0 passes.
    plus: the package's `set` lines; `local_dictionary_dir`, `ocr_model_dir` and `text_source` set to
    the paths the overlay installs to (`install-vita.sh` sets them too); and `plaintext.vjdict` first in
    `local_dictionaries` when it is not listed (0.7.12's `jmdict.vjdict` is replaced by it; other
-   dictionaries keep their order). Every other setting is the user's: unlike `install-vita.sh`, the
-   app does not reset `ocr_mode` or `log_file`. The plan lists each changed line.
+   dictionaries keep their order). Every other setting is the user's and is kept: `vocr_tier`,
+   `ocr_mode`, `ocr_boost_clock` (the OCR & lookup page's choices, overlay-ocr-mode-setting),
+   `log_file`, the Anki page's `anki_mining` (unless the package sets it). The plan lists each changed
+   line.
 4. **config.txt.** For each configuration: the editor's new text is written to `config.txt.vjo-new`
    and read back; `config.txt` is renamed to `config.txt.vjo-old`, `config.txt.vjo-new` to
    `config.txt`, read back and compared byte for byte, and `config.txt.vjo-old` removed. If the last
    read-back differs, the backup is written back and the step reports what is on the card.
-5. **The record.** `ux0:data/VitaJPOverlay/vjo_app.txt` gets the app's own stamp
+5. **Stale copies.** A `VitaJPOverlay_Kernel.skprx`, `VitaJPOverlay_Shell.suprx` or
+   `VitaJPOverlay_OCR.suprx` in `ux0:tai/` is deleted (our installers never put one there; the kernel
+   loads the worker from `ur0:tai/`, and from `ux0:tai/` only when ur0's is missing, so a stale copy
+   there could be loaded instead of the new one). The plan lists each.
+6. **The record.** `ux0:data/VitaJPOverlay/vjo_app.txt` gets the app's own stamp
    (`app0:vjo_app.txt`): the Shell's check (#122, `shell/worker.c check_app`) then finds the installed
    app and the plugins' record equal.
-6. **The boot record.** `ur0:data/VitaJPOverlay/boot.txt` is emptied, as `install_ftp.sh`
+7. **The boot record.** `ur0:data/VitaJPOverlay/boot.txt` is emptied, as `install_ftp.sh`
    `reset_boot_record` does: a new build starts with a clean boot-guard record
    (`docs/boot-safety.md`).
 
 Files go first so that a configuration never names a missing file; the configurations come after
-the files so that a failure before step 4 leaves the old overlay loading as it was; each file and
+the files so that a failure before step 4 leaves the old overlay loading as it was (the new kernel
+plugin with an old configuration's worker lines is the one-release fallback of the kernel-loaded
+worker, below); each file and
 each configuration is either the old or the new one at any moment. A power cut or a crash in the
 middle leaves the next start in "update" or "repair", whose Install finishes the job; `.vjo-new` and
 `.vjo-old` files left behind are removed by the next run.
@@ -246,23 +254,31 @@ refuses ("taiHEN's config.txt was not found: is HENkaku installed?"); it never c
 `ur0:tai/` paths, ur0 is mounted before any plugin loads (so an SD2Vita setup loads them too), and
 every earlier install put them there, so an update replaces the same files.
 
-**Install** (with the list of games, below):
+**Our lines.** A path line is the overlay's when its file name (after the last `/` or `:`) is
+`VitaJPOverlay_Kernel.skprx`, `VitaJPOverlay_Shell.suprx`, `VitaJPOverlay_OCR.suprx` or the removed
+`VitaJPOverlay_Text.suprx`, in any letter case and on any device (`ur0:tai/`, `ur0:/tai/`, a manual
+install's `ux0:tai/`): the memory card's file system ignores case, so taiHEN loads each spelling, and
+two copies of the kernel plugin would install its hooks twice. The canonical lines are
+`ur0:tai/VitaJPOverlay_Kernel.skprx` and `ur0:tai/VitaJPOverlay_Shell.suprx`.
 
-- the kernel plugin right after the first `*KERNEL` header and the Shell plugin right after the first
-  `*main` header, as today; a missing section is added at the end;
-- the worker right after the first header of each game's section, or in a new section at the end;
-- commented out with today's prefix `# Mainline OCR: `: the removed Text plugin's lines; worker lines
-  outside a game's section (`*ALL`, `*main`, system apps) and a second one in a section; kernel lines
-  outside `*KERNEL` and a second one; Shell lines outside `*main` and a second one (new: two copies of
-  a kernel plugin would install its hooks twice);
-- the overlay's four paths are recognized in any letter case and with `ur0:/tai/` (the memory card's
-  file system ignores case, so taiHEN would load each spelling; `core/taicfg.c` already does this for
-  the worker);
-- a section the editor adds is one note line, its header and the plugin, with no blank line:
-  `# VitaJPOverlay (added by its installer)`, `*PCSG00415`, `ur0:tai/VitaJPOverlay_OCR.suprx`.
-  (Today `install-vita.sh` adds a blank line instead of the note; the note is what lets Uninstall
-  remove the section.) The Games page's registration (#124's `vjo_tai_worker_block`, which appends)
-  writes the same three lines; its older note stays recognized;
+**Install:**
+
+- one canonical kernel line in a `*KERNEL` section that taiHEN reads for `KERNEL` (the first one there
+  is kept; else it goes right after the first `*KERNEL` header, as today; else a section is added at
+  the end), and one canonical Shell line in a `*main` section likewise;
+- every other kernel or Shell line of ours (a second copy, another spelling or device, one in another
+  section such as `*ALL`) is commented out with today's prefix `# Mainline OCR: `, so the user sees
+  what it was;
+- **no worker line.** The kernel plugin loads the worker into every game turned ON (#138, Agent A,
+  t3-worker-any-game's PR, which merges first). Every worker line and every removed Text plugin line
+  is removed, and with it the section header an older installer added for it (a `*TITLEID`, not `*!`,
+  with nothing else left in it, and the blank line or note before it). A worker line in a section with
+  other plugins (an `*ALL` one) goes alone;
+- a section the editor adds (only `*KERNEL` or `*main`, when a file has none) is one note line, its
+  header and the plugin, with no blank line: `# VitaJPOverlay (added by its installer)`, `*KERNEL`,
+  `ur0:tai/VitaJPOverlay_Kernel.skprx`. The note is what lets Uninstall remove the section; #124's note
+  (`# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)`) is treated the
+  same way;
 - each line keeps its own line end; added lines use the file's (CRLF when it has one, else LF, or CR
   when it uses only CR). (`install-vita.sh` rewrote every line end to one style; now neither does.)
 - a result whose length is a multiple of 4,096 bytes gets one more line end (taiHEN's buffer has no
@@ -273,63 +289,49 @@ every earlier install put them there, so an update replaces the same files.
 
 Installing twice gives the same bytes as installing once.
 
-**Uninstall** removes every line of the four plugins that is not commented out (in any spelling),
-every note line and the section header after it when nothing else is left in that section, and the
-older note of #124 (`# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay
-app)`) the same way. Lines it commented out stay commented (they were an old `*ALL` worker or the
-removed Text plugin). So uninstalling after an install gives back the original file, except a line
-end added at the end of a file that had none, the 4 KiB pad, and the commented lines.
-
-**One game** (the Games page): register or unregister one title, nothing else.
+**Uninstall** removes every line of ours that is not commented out (in any spelling), every note
+line and the section header after it when nothing else is left in that section. Lines Install
+commented out stay commented. So uninstalling after an install of a file that had none of our lines
+gives back the original file, except a line end added at the end of a file that had none and the
+4 KiB pad.
 
 **Refused** (nothing is written; the message says what to do): a file over 64 KiB, a NUL byte, text
 that is not UTF-8, a line of 256 bytes or more, no section or path line at all (taiHEN loads nothing
 from it: restore a backup or HENkaku's default first), and any result the check below rejects.
 
 **The check.** The editor simulates `taihen_config_parse` on the old and the new text for `KERNEL`,
-`main`, every game it registers or unregisters, and every section name in the file. The new text must
-load the kernel plugin once for `KERNEL`, the Shell once for `main`, the worker once for each game and
-never for `main` (none of them after Uninstall), and every other plugin for exactly the titles and in
-the order it loaded before. A `*!` section that would stop taiHEN before an added line (a `*!ALL`
-before the end, say) fails it: refused, naming the line.
-
-Size: each game section is 87 bytes with CRLF line ends, so 512 games (the app's catalog limit) is
-about 44.5 KB, within the 64 KiB the app reads; taiHEN's buffer for it is kernel memory for as long
-as the console is on (48 KiB then) [estimate from the line lengths].
+`main`, every section name in the file and one title named in none (what `*ALL` gives any other
+game). The new text must load the kernel plugin exactly once for `KERNEL` and never for another title,
+the Shell exactly once for `main` and never for another title, the worker for no title, and every
+other plugin for exactly the titles and in the order it loaded before (none of ours after
+Uninstall). A `*!` section that would stop taiHEN before an added line (a `*!ALL` before the end of a
+file that has no `*main`, say) fails it: refused, naming the line.
 
 ## Which games get the worker
 
-The worker is registered per game, never under `*ALL` (AGENTS.md rule 2: "Register one `*TITLEID`
-section per enabled game"). Today `install-vita.sh` registers the `--title` games and keeps those
-registered before; the app registers an Adrenaline bubble when it is turned ON (#124).
+None through config.txt. The owner (issue #138, Agent A, 2026-10-16): "Remove the need for a taiHEN
+line for each title before the OCR worker can run ... Load the worker from the kernel plugin when a
+process starts and its title is enabled in `games.ini` ... Do not use `*ALL`. The installer should
+stop writing worker lines for each title and remove the ones older installs left." That is
+t3-worker-any-game's PR (kernel, Shell, worker; it merges before this one): the kernel loads
+`ur0:tai/VitaJPOverlay_OCR.suprx` (or `ux0:tai/`'s when ur0's is missing) into every process whose
+title is ON, never SceShell or a system app but Adrenaline's; for one release it also tolerates a
+worker line left in a configuration (the worker refuses a second copy of itself in a process).
 
-With one VPK there is no `--title`. Install registers:
+So this installer, and `install-vita.sh` with it:
 
-- every game registered before (in either configuration): an update never drops one;
-- every installed Vita game that is ON in the Games page and is a retail title: its `param.sfo` has a
-  `CONTENT_ID` with the title's own ID (`JP0741-PCSG00415_00-...`), as every PSN or cartridge game has
-  and homebrew built with vita-mksfoex has not;
-- every Adrenaline bubble and Adrenaline itself that is ON (as #124).
+- installs the worker file in `ur0:tai/` as before, although no line names it;
+- writes no worker line, and removes the ones older installs left (above);
+- needs no game list: `install-vita.sh --title` is accepted and ignored with a note, and the patcher's
+  refusal of an install with no game (`NO_TITLES`) goes;
+- the Overlay app's Games page no longer edits config.txt: turning a PSP bubble or Adrenaline ON
+  registers nothing (#124's `vjo_psp_register`, its dim "not registered" PSP tag and the status line
+  about it go). Turning any game ON or OFF takes effect at its next start, as the Shell's input
+  already does.
 
-So after Install, L + R works in the user's games with no further step. Homebrew apps (ports,
-emulators, tools) are not registered: many take nearly all of their memory (the expert: "homebrews
-often do"). On the Games page a homebrew row shows the dim tag that PSP rows show today, and Enter
-registers it.
-
-What a registered game pays: the worker's module, 90,112 B of pages [measured: the ledger,
-`VJO_BUDGET_WORKER_MODULE_PAGES`], and its 32 KiB stack (`VJO_STACK_GAME`), in the game's own USER_RW
-(CLANNAD had 90 MB free [measured, #81]); it loads no weights and allocates no OCR memory until the
-Shell confirms the game is ON (README, "Memory and troubleshooting"). A game that allocates all of its
-memory unconditionally could fail to start with those pages taken; few games do (the expert, 2026-10-11).
-
-The remedy is the Games page: **turning a registered game OFF also removes its worker** (one-game
-edit, then "restart the Vita"), and turning it ON registers it again. The Default row (Triangle)
-changes no configuration. Uninstall removes every game's worker.
-
-A retail game installed later is ON by default but not registered: the Games page shows it with the
-dim tag and its status line says so at start (as for PSP rows today), and Enter registers it. The
-Install page then also offers **Add the OCR worker to N games** (the same one-game edit for each),
-so reopening the app after installing games is enough.
+If t3-worker-any-game's PR did not land, this PR would not merge as written: the per-game lines would
+still be needed (today's rules: the worker after the first header of each registered game's section,
+never `*ALL`).
 
 ## Versions (#122)
 
@@ -339,10 +341,10 @@ so reopening the app after installing games is enough.
   Installing an older VPK is the same, with "this app's overlay is older than the installed one".
 - The Shell's in-game notice becomes one neutral line, since the Shell cannot tell which side is
   newer when both have one API: `Overlay app and plugins are different builds: open the Overlay app.`
-  The app says which way it is and what to do. The Shell's "worker unavailable" message points at the
-  app too: `... Turn this game ON in the Overlay app, then restart.` Both strings are shorter than the
-  ones they replace, so SceShell's pages do not grow (AGENTS.md rule 1); no other Shell, kernel or
-  worker code changes, and the API stays 22.
+  The app says which way it is and what to do. It replaces both of today's notices
+  (`VJO_APP_NOTICE`, `VJO_APP_NOTICE_NEWER` in `core/app_stamp.h`) with one shorter string, so
+  SceShell's pages do not grow (AGENTS.md rule 1). Nothing else of the Shell, the kernel or the worker
+  changes here (the "worker unavailable" message is t3-worker-any-game's), and the API stays 22.
 - An app without a payload (the zip's) keeps today's banner texts, which name `install-vita.sh`.
 
 ## Uninstall
@@ -361,8 +363,9 @@ The app's pages and the README say the same:
 - A boot that does not complete makes the next one a safe boot (no hooks, no overlay; `status.txt`
   says why), as today (`docs/boot-safety.md`).
 - If the Vita does not start: hold L while turning it on (taiHEN then loads no plugin), open VitaShell,
-  and in `ur0:tai` (and `ux0:tai`) copy `config.txt.vjo-<date>.bak` over `config.txt`, or comment out
-  the three `VitaJPOverlay` lines. Then restart normally.
+  and in `ur0:tai` (and `ux0:tai`) copy `config.txt.vjo-<date>.bak` over `config.txt`, or put `#` before
+  the two `VitaJPOverlay` lines. Then restart normally. (The worker needs no line: without the kernel
+  plugin nothing loads it.)
 - Never more than one attempt: the app does nothing by itself after a restart.
 
 ## The release process
@@ -383,12 +386,14 @@ The app's pages and the README say the same:
 ## Tests
 
 - The editor: the fixtures (HENkaku's stock `ur0` and `ux0` files from `bootstrap.c`; Adrenaline's
-  kernel plugin and `*PSPEMUCFW`; repeated sections; CRLF; CR; a BOM before a comment and before
-  `*KERNEL`; old lines: the Text plugin, an `*ALL` worker, a commented-out line, a duplicate and a
-  case-variant kernel line, the #124 note; `*!` sections that do and do not block; the 4 KiB pad;
-  refusals: NUL, not UTF-8, a 256-byte line, comments only, over 64 KiB), each through install,
-  install again, uninstall and the one-game edit, in C (ctest) and Python (pytest) against the same
-  expected files; the simulation against hand-worked cases of `taihen_config_parse`.
+  kernel plugin (`ux0:app/PSPEMUCFW/sce_module/adrenaline_kernel.skprx`, Adrenaline's readme) and an
+  older install's `*PSPEMUCFW` worker section; repeated sections; CRLF; CR; a BOM before a comment and
+  before `*KERNEL`; old lines: the Text plugin, an `*ALL` worker, per-title worker sections from
+  `install-vita.sh` and #124, a commented-out line, a duplicate, a `ux0:tai/` and a case-variant
+  kernel line; `*!` sections that do and do not block; the 4 KiB pad; refusals: NUL, not UTF-8, a
+  256-byte line, comments only, empty, over 64 KiB), each through install, install again and
+  uninstall, in C (ctest) and Python (pytest) against the same expected files; the simulation against
+  hand-worked cases of `taihen_config_parse`.
 - The install engine: the app's real code on a temporary memory card (real files, as the Games page
   tests), with `sceIoRename` refusing an existing destination as the Vita does: a fresh install (ur0
   only, both), update, repair, uninstall, the dictionary present/absent/different, failures injected
