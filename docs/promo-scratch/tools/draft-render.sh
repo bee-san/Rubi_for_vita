@@ -17,7 +17,7 @@ m() { grep "\"$1\"" "$O/loud1.txt" | sed 's/.*: "\(.*\)".*/\1/'; }
 "$FFMPEG" -hide_banner -nostats -y -i "$O/mix.wav" -af "loudnorm=I=-16:TP=-1.5:LRA=11:measured_I=$(m input_i):measured_TP=$(m input_tp):measured_LRA=$(m input_lra):measured_thresh=$(m input_thresh):offset=$(m target_offset):linear=true,alimiter=limit=0.70:attack=4:release=60:level=false,aresample=48000" -c:a pcm_s24le "$O/mix-16.wav" 2> /dev/null
 for cut in 16x9 9x16; do
   "$FFMPEG" -hide_banner -nostats -y -framerate $FPS -i "$O/$cut/f%05d.png" -i "$O/mix-16.wav" -map 0:v -map 1:a \
-    -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -r $FPS -g 30 -c:a aac -b:a 192k -ar 48000 -movflags +faststart -shortest \
+    -c:v libx264 -threads 5 -preset slow -crf 18 -pix_fmt yuv420p -r $FPS -g 30 -c:a aac -b:a 192k -ar 48000 -movflags +faststart -shortest \
     "$O/media/promo-scratch-$cut.mp4" 2> "$O/encode-$cut.log"
 done
 "$FFMPEG" -hide_banner -nostats -y -ss 4.9 -t 7.4 -framerate $FPS -i "$O/16x9/f%05d.png" \

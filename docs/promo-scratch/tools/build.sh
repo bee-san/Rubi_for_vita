@@ -45,7 +45,7 @@ m() { grep "\"$1\"" out/loud1.txt | sed 's/.*: "\(.*\)".*/\1/'; }
 
 for cut in $cuts; do
   "$FFMPEG" -hide_banner -nostats -y -framerate $FPS -i "out/$cut/f%05d.png" -i out/mix-16.wav -map 0:v -map 1:a \
-    -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -profile:v high -r $FPS -g 60 \
+    -c:v libx264 -threads 5 -preset slow -crf 18 -pix_fmt yuv420p -profile:v high -r $FPS -g 60 \
     -c:a aac -b:a 192k -ar 48000 -movflags +faststart -shortest "out/media/promo-scratch-$cut.mp4" 2> "out/encode-$cut.log"
 done
 
