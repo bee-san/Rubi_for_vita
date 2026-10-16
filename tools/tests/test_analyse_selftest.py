@@ -229,23 +229,24 @@ class AnalyseV2(unittest.TestCase):
         smaller (the config record says fallback=-), so the stage runs Small itself: a pass, not "the
         fallback model was not used"; with a larger size it still has to run a smaller one."""
         text = (FIXTURES / "selftest-v2-pass.txt").read_text()
-        config = "config backend=2 model=VOCR3_H15_w8.vocr fallback=VOCR3_FL10_w8.vocr tier=normal dictionary=3 anki=0"
+        small_m, normal_m = (t["model"] for t in json.loads((ROOT / "tools/model_tiers.json").read_text())["tiers"][:2])
+        config = f"config backend=2 model={normal_m} fallback={small_m} tier=normal dictionary=3 anki=0"
         self.assertIn(config, text)
         self.assertIn(" model=FL10_w8.vocr fallback=1 ", text)
-        small = text.replace(config, "config backend=2 model=VOCR3_FL10_w8.vocr fallback=- tier=small dictionary=3 anki=0")
+        small = text.replace(config, f"config backend=2 model={small_m} fallback=- tier=small dictionary=3 anki=0")
         small = small.replace(" model=FL10_w8.vocr fallback=1 ", " model=FL10_w8.vocr fallback=0 ")
         r = run(small)
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertEqual(rows(r.stdout)["fallback"], "PASS")
-        self.assertIn("Configured the small model size (VOCR3_FL10_w8.vocr); the fallback stage runs it too: it is "
+        self.assertIn(f"Configured the small model size ({small_m}); the fallback stage runs it too: it is "
                       "the smallest.", r.stdout)
         normal = text.replace(" model=FL10_w8.vocr fallback=1 ", " model=FL10_w8.vocr fallback=0 ")
         r = run(normal)
         self.assertEqual(rows(r.stdout)["fallback"], "FAIL")
         self.assertIn("the fallback model was not used", r.stdout)
         r = run(text)
-        self.assertIn("Configured the normal model size (VOCR3_H15_w8.vocr); the fallback stage runs the smallest, "
-                      "VOCR3_FL10_w8.vocr.", r.stdout)
+        self.assertIn(f"Configured the normal model size ({normal_m}); the fallback stage runs the smallest, "
+                      f"{small_m}.", r.stdout)
 
     def test_a_complete_run_passes_every_row(self):
         r = self.analyse("pass")
@@ -1301,6 +1302,13 @@ START = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, sub
 RAISED = (333, 0, 444, 333)
 
 
+# The tier table test.3's logs were made with, before VOCR5 (VOCR3-FL10 Small, VOCR3-H15 Normal, VOCR4-W20 Large):
+# the clock and boost classes' fixtures name its models, and the analyser names a model's size from the tier
+# table beside it, which a later package's pins change.
+TEST3_TIER_MODELS = {"VOCR3_FL10_w8.vocr": ("small", "Small"), "VOCR3_H15_w8.vocr": ("normal", "Normal"),
+                     "VOCR4_W20_w8.vocr": ("large", "Large")}
+
+
 class ClockWindows(unittest.TestCase):
     """ocr_boost_clock in log.txt, per game window (audit-test-build-3-b D6; test.3's step 6). A job logs the clock
     (`gstep job clock`) only when it recognizes a line: game_ocr/main.c job_busy is the busy hook core/vocr_ocr.c
@@ -1308,6 +1316,9 @@ class ClockWindows(unittest.TestCase):
     logs none, boost on or off. A window, from a `game TITLE started` line (a start or a resume; shell/worker.c
     activate_game reads config.ini again just before it) to the next, is read from its jobs that recognized a line,
     and the time per CTC frame is each recognized line's own."""
+
+    def setUp(self):
+        self.enterContext(mock.patch.object(a, "TIER_MODELS", TEST3_TIER_MODELS))  # its fixtures are test.3's logs
 
     def test_a_job_from_the_cache_does_not_make_a_window_boost_off(self):
         log = (BOOT22 + START + game_job([(80, 176.0)], RAISED) + game_job([(80, 0.0)])  # 1: on, then the cache
@@ -1520,6 +1531,9 @@ class BoostLikeForLike(unittest.TestCase):
     overlay closed, or the overlay's own). It is given per model, per window and against the off window's
     neighbours, with job counts; the off window's clock is said to be assumed, with what the logs hold about it; and
     a one-line verdict states its thresholds."""
+
+    def setUp(self):
+        self.enterContext(mock.patch.object(a, "TIER_MODELS", TEST3_TIER_MODELS))  # its fixtures are test.3's logs
 
     H15 = "VOCR3_H15_w8.vocr"
     FL10 = "VOCR3_FL10_w8.vocr"

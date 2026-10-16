@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Vita3K smoke test (#74 preflight): tools/vita3k_smoke/ as a homebrew app in Vita3K,
 # headless under Xvfb. It runs the real game worker's OCR jobs (probe, forced
-# fallback, textbox, full screen, textbox again, the 16-bit and 10-bit formats) and an
+# fallback, textbox, full screen, textbox again, each model size's own recognizer at
+# the full screen, the 16-bit and 10-bit formats) and an
 # Anki card's screenshot in each format (API 23: the JPEG encoder, which Pillow then
 # decodes) in a Vita user process with the release weights, and fails on a crash, a hang
 # or a failed stage. It is not evidence about the console: Vita3K cannot load the
@@ -12,7 +13,8 @@
 #
 #   env VITASDK              VitaSDK (to build the app)
 #   env VJO_VOCR_SOURCE_DIR  vita-vn-ocr checkout at the pinned commit
-#   env VJO_VOCR_MODEL_DIR   directory with H15_w8.vocr and FL10_w8.vocr
+#   env VJO_VOCR_MODEL_DIR   directory with H15_w8.vocr, FL10_w8.vocr and the three model sizes'
+#                            recognizers (tools/model_tiers.json "model")
 #   env VITA3K               an extracted Vita3K build (vita-vn-ocr vita/scripts/fetch_vita3k.sh),
 #                            with app/usr/bin/Vita3K and, if the host glibc is older, compat/
 #   env TIMEOUT              seconds (default 900)
@@ -25,6 +27,9 @@ fail() { echo "vita3k smoke: FAIL $*"; exit 1; }
 [ -n "${VITASDK:-}" ] && [ -x "$VITASDK/bin/arm-vita-eabi-gcc" ] || skip "(no VitaSDK: set VITASDK)"
 [ -n "${VJO_VOCR_SOURCE_DIR:-}" ] && [ -f "$VJO_VOCR_SOURCE_DIR/runtime/vocr_lines_rows.c" ] || skip "(no vita-vn-ocr runtime: set VJO_VOCR_SOURCE_DIR)"
 [ -f "${VJO_VOCR_MODEL_DIR:-}/H15_w8.vocr" ] && [ -f "$VJO_VOCR_MODEL_DIR/FL10_w8.vocr" ] || skip "(no release weights: set VJO_VOCR_MODEL_DIR)"
+sizes=$(sed -n 's/.*"model": "\([^"]*\)".*/\1/p' "$root/tools/model_tiers.json")
+[ "$(echo "$sizes" | wc -w)" -eq 3 ] || fail "(tools/model_tiers.json: expected three model sizes, read: $sizes)"
+for m in $sizes; do [ -f "$VJO_VOCR_MODEL_DIR/$m" ] || skip "(no $m, a model size's recognizer, in VJO_VOCR_MODEL_DIR)"; done
 V=${VITA3K:-}
 [ -n "$V" ] && [ -x "$V/app/usr/bin/Vita3K" ] || skip "(no Vita3K build: set VITA3K)"
 command -v xvfb-run > /dev/null || skip "(xvfb-run is not installed)"
@@ -53,6 +58,7 @@ log-level: 2
 EOF
 ux0=$sbx/data/Vita3K/Vita3K/ux0
 cp "$VJO_VOCR_MODEL_DIR/H15_w8.vocr" "$VJO_VOCR_MODEL_DIR/FL10_w8.vocr" "$ux0/data/vjo_smoke/"
+for m in $sizes; do cp -L "$VJO_VOCR_MODEL_DIR/$m" "$ux0/data/vjo_smoke/"; done
 libs="$V/app/usr/lib:/usr/lib64:/usr/lib/x86_64-linux-gnu"
 if [ -x "$V/app/usr/bin/ld-linux-x86-64.so.2" ]; then loader=("$V/app/usr/bin/ld-linux-x86-64.so.2" --library-path "$V/compat:$libs")
 elif [ -d "$V/compat" ]; then loader=("$V/compat/ld-linux-x86-64.so.2" --library-path "$V/compat:$libs")

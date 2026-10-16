@@ -57,10 +57,15 @@ FB = (960, 544)
 # The sample's dialogue box (host/samples/vn_textbox.jpg, tools/make_test_screens.py): 2 lines.
 REGION = (32, 362, 896, 156)
 FULL = (0, 0, 960, 544)
+# The models the stages were recorded with (bench_stages_expected.json's checksums are theirs): the
+# model sizes before VOCR5 (VOCR3-H15 Normal, VOCR3-FL10 Small, VOCR4-W20 Large and Normal's
+# cascade), still pinned by name. VOCR5's sizes run the same stages; re-recording the checksums with
+# them is a separate measurement.
 MODELS = ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR4_W20_w8.vocr")
-# The game worker's default job on main (core/config.c defaults): beam + LM decoding with the
-# 1000k LM (ocr_lm = 1000k), the confidence cascade with VOCR4-W20 (ocr_cascade_ms = 2000) and
-# the stable-text wait (ocr_settle_ms = 150); host/bench/stage_bench.c stage_job's mode bits.
+# The game worker's default job (core/config.c defaults): beam + LM decoding with the 1000k LM
+# (ocr_lm = 1000k), the confidence cascade with the next size up (ocr_cascade_ms = 2000; here
+# VOCR4-W20 beside VOCR3-H15) and the stable-text wait (ocr_settle_ms = 150);
+# host/bench/stage_bench.c stage_job's mode bits.
 LM = "vocr_lm_o3_1000k.vlm"
 CASCADE = MODELS[2]
 JOB_FIRST, JOB_LM, JOB_CASCADE, JOB_SETTLE, JOB_REFINE = 1, 2, 4, 8, 16

@@ -342,10 +342,10 @@ class PackageVariants(unittest.TestCase):
                                              hashlib.sha256(attribution).hexdigest())}
         self.enterContext(mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att))
         for mod in (prepare, release):
-            for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR_LM_ASSETS"):
+            for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR_LM_ASSETS"):
                 pinned = {name: spec for name in getattr(mod, table)}
                 self.enterContext(mock.patch.object(mod, table, pinned))
-        for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR_LM_ASSETS"):
+        for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR_LM_ASSETS"):
             for name in getattr(prepare, table):
                 (self.models / name).write_bytes(blob)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution)

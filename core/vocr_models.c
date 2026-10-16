@@ -18,21 +18,35 @@
 #define FL10_JOB_BYTES 856064u  /* 659,456 + 131,072 + 65,536 */
 #define H15_JOB_BYTES 1413120u  /* 1,159,168 + 188,416 + 65,536 */
 #define W20_JOB_BYTES 1871872u  /* 1,560,576 + 245,760 + 65,536 (F20's shape) */
+/* VOCR5's three shapes (vita-vn-ocr eval/vocr5_protocol.json "estimates": one core,
+ * vita-vn-ocr #85's runtime without credit for its prefetch, 333 MHz, a box of
+ * 240 frames + 0.1 s for the finder, calibrated to VOCR3-H15's measured console
+ * rate). */
+#define VOCR5_S_BOX_MS 631u
+#define VOCR5_N_BOX_MS 921u
+#define VOCR5_L_BOX_MS 2077u
+#define VOCR5_S_JOB_BYTES 1019904u  /* 823,296 + 131,072 + 65,536 */
+#define VOCR5_N_JOB_BYTES 1441792u  /* 1,187,840 + 188,416 + 65,536 */
+#define VOCR5_L_JOB_BYTES 2805760u  /* 2,473,984 + 266,240 + 65,536 */
 
 #ifdef VJO_VOCR_MODEL_INFO_TEST
 /* Host tests only: another package's tables (a later generation's tiers). */
 #include VJO_VOCR_MODEL_INFO_TEST
 #else
 static const VjoVocrModelInfo infos[] = {
-    /* v0.2.5-vocr3.1 (vita-vn-ocr #67): the Normal and Small tiers. */
+    /* v0.3.0 (vita-vn-ocr eval/vocr5_protocol.json): the Small, Normal and Large tiers. */
+    {VJO_VOCR5_S_NAME, "VOCR5", "S", VJO_VOCR5_S_BYTES, VOCR5_S_BOX_MS, VOCR5_S_JOB_BYTES},
+    {VJO_VOCR5_N_NAME, "VOCR5", "N", VJO_VOCR5_N_BYTES, VOCR5_N_BOX_MS, VOCR5_N_JOB_BYTES},
+    {VJO_VOCR5_L_NAME, "VOCR5", "L", VJO_VOCR5_L_BYTES, VOCR5_L_BOX_MS, VOCR5_L_JOB_BYTES},
+    /* v0.2.5-vocr3.1 (vita-vn-ocr #67): the Normal and Small tiers before VOCR5. */
     {VJO_VOCR3_H15_NAME, "VOCR3", "H15", VJO_VOCR_H15_BYTES, H15_BOX_MS, H15_JOB_BYTES},
     {VJO_VOCR3_FL10_NAME, "VOCR3", "FL10", VJO_VOCR_FL10_BYTES, FL10_BOX_MS, FL10_JOB_BYTES},
     /* v0.2.0, the first released generation (vita-vn-ocr calls its FL10 "VOCR1"). */
     {"H15_w8.vocr", "VOCR1", "H15", VJO_VOCR_H15_BYTES, H15_BOX_MS, H15_JOB_BYTES},
     {"FL10_w8.vocr", "VOCR1", "FL10", VJO_VOCR_FL10_BYTES, FL10_BOX_MS, FL10_JOB_BYTES},
     {"F20_w8.vocr", "VOCR1", "F20", VJO_VOCR_F20_BYTES, W20_BOX_MS, W20_JOB_BYTES},
-    /* v0.2.5-vocr4.1 (vita-vn-ocr #78): the Large tier (the confidence cascade's
-     * model before tiers; now the cascade of Normal). */
+    /* v0.2.5-vocr4.1 (vita-vn-ocr #78): the Large tier before VOCR5, the confidence
+     * cascade's model of a request by name (the host tools). */
     {VJO_VOCR4_W20_NAME, "VOCR4", "W20", VJO_VOCR_CASCADE_BYTES, W20_BOX_MS, W20_JOB_BYTES},
 };
 /* The Overlay app's Model size choices, smallest first (include/vjo_vocr_sizes.h,

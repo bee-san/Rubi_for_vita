@@ -42,7 +42,7 @@ class ModelTiers(unittest.TestCase):
         self.assertEqual([t["id"] for t in TIERS["tiers"]], ["small", "normal", "large"])
         for tier in TIERS["tiers"]:
             for key in ("id", "name", "weights_max_bytes", "box_ms_under", "arena_max_bytes", "reserve_bytes",
-                        "model", "tagline", "est_box_ms", "job_bytes", "need_bytes"):
+                        "model", "tagline", "est_box_ms", "est_box_ms_444", "job_bytes", "need_bytes"):
                 self.assertIn(key, tier, tier["id"])
 
     def test_the_c_tiers_are_the_table(self):
@@ -88,9 +88,18 @@ class ModelTiers(unittest.TestCase):
             self.assertLessEqual(size, tier["weights_max_bytes"], tier["id"])
             self.assertLessEqual(arena, tier["arena_max_bytes"], tier["id"])
             self.assertLess(tier["est_box_ms"], tier["box_ms_under"], tier["id"])
-            if previous:
+            # the same estimate at 444 MHz (est_box_ms is 333 MHz's): faster, under the same limit
+            self.assertLess(tier["est_box_ms_444"], tier["est_box_ms"], tier["id"])
+            if previous and tier["model"] == previous["model"]:
+                # a size that kept the model of the size below it (vita-vn-ocr eval/vocr5_protocol.json
+                # amendment 3): the same figures, a larger reserve
+                for key in ("est_box_ms", "est_box_ms_444", "job_bytes"):
+                    self.assertEqual(tier[key], previous[key], tier["id"])
+                self.assertGreater(tier["reserve_bytes"], previous["reserve_bytes"])
+            elif previous:
                 self.assertGreater(size, pins[previous["model"]][0])
                 self.assertGreater(tier["est_box_ms"], previous["est_box_ms"])
+                self.assertGreater(tier["est_box_ms_444"], previous["est_box_ms_444"])
                 self.assertGreater(tier["reserve_bytes"], previous["reserve_bytes"])
             previous = tier
 
@@ -98,16 +107,18 @@ class ModelTiers(unittest.TestCase):
         for tier in TIERS["tiers"]:
             assets, _ = prepare_ocr.release_assets(tier["model"])
             self.assertEqual(assets[tier["model"]][1], c_table()[tier["model"]][0])
-        self.assertEqual(len({t["model"] for t in TIERS["tiers"]}), 3)
+        # three models, or one size's twice: two adjacent sizes, the larger of which kept the smaller's
+        models = [t["model"] for t in TIERS["tiers"]]
+        self.assertEqual(len(set(models)) + sum(a == b for a, b in zip(models, models[1:])), 3)
 
     def test_a_tier_table_that_disagrees_fails(self):
         source = (ROOT / "core/vocr_models.c").read_text()
         rows = dict(c_tiers(source))
-        self.assertEqual(rows["large"][2], "VOCR4_W20_w8.vocr")
+        self.assertEqual(rows["large"][2], TIERS["tiers"][2]["model"])
         broken = source.replace('{"large", "Large", "most accurate", VJO_VOCR_TIER3_NAME, VJO_GAME_RESERVE_LARGE}',
                                 '{"large", "Large", "most accurate", VJO_VOCR_TIER2_NAME, VJO_GAME_RESERVE_LARGE}')
         self.assertNotEqual(broken, source)
-        self.assertEqual(dict(c_tiers(broken))["large"][2], "VOCR3_H15_w8.vocr")  # read, and so it would differ
+        self.assertEqual(dict(c_tiers(broken))["large"][2], TIERS["tiers"][1]["model"])  # read, and so it would differ
         with self.assertRaises(AssertionError):  # an entry in another form is not silently skipped
             c_tiers(source.replace('{"small", "Small",', '{.id = "small", "Small",'))
 

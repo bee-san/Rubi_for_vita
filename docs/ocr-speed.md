@@ -186,7 +186,9 @@ Each block still goes through the ledger wrappers (`tools/check_memory_ledger.py
 core at 333 MHz: **Small < 1 MB, Normal about 1.26 MB, Large ≤ 2.5 MB**, provisional until test.3's logs confirm the
 speed. The table gives the time ceilings those sizes stay inside. 333 MHz is the safe clock for the sizing: the
 default raises the clock to 444 MHz while a job recognizes, but `ocr_boost_clock = off` and a refused set call keep
-the game's.
+the game's. VOCR5's shapes inside those sizes (vita-vn-ocr `eval/vocr5_protocol.json`, the model sizes since this
+package): Small 819,792 B, Normal 1,185,632 B, Large 2,473,696 B, an estimated 0.63, 0.92 and 2.08 s per 3-line box
+on one core at 333 MHz without prefetch credit (0.50, 0.72 and 1.63 s at 444 MHz).
 
 The largest int8 weights whose 3-line box (3 x 640-px lines = 240 CTC frames, plus 0.1 s for the finder and the
 strips) stays under each tier's time, with the LM's top 8: random-init blobs of vita-vn-ocr's `vita/model_tiers.py`

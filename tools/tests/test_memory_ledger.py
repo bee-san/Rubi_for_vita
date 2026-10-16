@@ -141,10 +141,11 @@ class MemoryLedgerCheck(unittest.TestCase):
         # a per-item limit too
         tmp = self.copy_tree()
         budget = tmp / "include/vjo_ledger_budget.h"
-        budget.write_text(re.sub(r"#define VJO_BUDGET_GAME_WEIGHTS \d+u", "#define VJO_BUDGET_GAME_WEIGHTS 1605632u", budget.read_text()))
+        # one page over the Large size's 2.5 MB weights ceiling
+        budget.write_text(re.sub(r"#define VJO_BUDGET_GAME_WEIGHTS \d+u", "#define VJO_BUDGET_GAME_WEIGHTS 2506752u", budget.read_text()))
         result = run("--root", str(tmp))
         self.assertEqual(result.returncode, 1)
-        self.assertIn("VJO_BUDGET_GAME_WEIGHTS 1,605,632 B exceeds VJO_LIMIT_GAME_WEIGHTS 1,601,536 B", result.stderr)
+        self.assertIn("VJO_BUDGET_GAME_WEIGHTS 2,506,752 B exceeds VJO_LIMIT_GAME_WEIGHTS 2,502,656 B", result.stderr)
 
     def test_a_budget_header_that_is_not_arithmetic_is_rejected(self):
         tmp = self.copy_tree()

@@ -21,7 +21,7 @@ static SceUID caller;
 static unsigned locks, user_opens, kernel_opens, kernel_reads, kernel_closes, kernel_stats;
 static unsigned allocated, released, received, weights_allocated, weights_released, game_delays;
 static unsigned char arena[2*1024*1024] __attribute__((aligned(64)));
-static unsigned char weights_memory[VJO_VOCR_F20_BYTES + 4096] __attribute__((aligned(64)));
+static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static int weights_live, kernel_waits, done_pending;
 static unsigned live_bytes, peak_bytes, job_block, weights_block, kernel_wait_calls;
 static SceDateTime file_mtime;

@@ -35,13 +35,17 @@ class DocsModelNames(unittest.TestCase):
         self.assertEqual(set(models), set(pins.c_table()))   # the game worker's pins
         self.assertEqual(lms, sorted(pins.c_lm_table(), key=lambda n: pins.c_lm_table()[n][2]))
         self.assertEqual(set(lms), set(prepare_ocr.VOCR_LM_ASSETS))
-        # VOCR3, the originals and VOCR4-W20, and the four LMs (the audit's list)
-        self.assertEqual(sorted(models), sorted(["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "FL10_w8.vocr",
-                                                 "H15_w8.vocr", "F20_w8.vocr", "VOCR4_W20_w8.vocr"]))
+        # the three sizes' models, and by name (the host tools) VOCR3, the originals and VOCR4-W20, and the
+        # four LMs (the audit's list)
+        by_name = ["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "FL10_w8.vocr", "H15_w8.vocr", "F20_w8.vocr",
+                   "VOCR4_W20_w8.vocr"]
+        self.assertEqual(sorted(models), sorted({*pins.TIER_FILES, *by_name}))
         self.assertEqual(lms, ["vocr_lm_o3_500k.vlm", "vocr_lm_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm",
                                "vocr_lm_o3_4000k.vlm"])
         text = names.names_text(models, lms)
-        for generation, tag in (("VOCR3", "v0.2.5-vocr3.1"), ("VOCR1", "v0.2.0"), ("VOCR4", "v0.2.5-vocr4.1")):
+        releases = {(p[5], p[4]) for p in pins.TIER_PINS.values()}
+        releases |= {("VOCR3", "v0.2.5-vocr3.1"), ("VOCR1", "v0.2.0"), ("VOCR4", "v0.2.5-vocr4.1")}
+        for generation, tag in sorted(releases):
             self.assertIn(f"({generation}, release {tag})", text)
         self.assertIn("(release v0.2.6-ctclm.2)", text)
 
@@ -49,12 +53,12 @@ class DocsModelNames(unittest.TestCase):
         kernel = (ROOT / "kernel/game_ocr.c").read_text(encoding="utf-8")
         w20 = "    if (!strcmp(name, VJO_VOCR4_W20_NAME)) return VJO_VOCR_CASCADE_BYTES;\n"
         self.assertEqual(kernel.count(w20), 1)
-        added = kernel.replace(w20, w20 + '    if (!strcmp(name, "VOCR5_N_w8.vocr")) return VJO_VOCR_H15_BYTES;\n')
-        assets = {**prepare_ocr.VOCR4_ASSETS, "VOCR5_N_w8.vocr": ("https://fixture.invalid/N", 1, "00" * 32)}
+        added = kernel.replace(w20, w20 + '    if (!strcmp(name, "VOCR6_N_w8.vocr")) return VJO_VOCR_H15_BYTES;\n')
+        assets = {**prepare_ocr.VOCR4_ASSETS, "VOCR6_N_w8.vocr": ("https://fixture.invalid/N", 1, "00" * 32)}
         real = names.kernel_names
         with mock.patch.object(names, "kernel_names", lambda: real(added)), \
              mock.patch.object(prepare_ocr, "VOCR4_ASSETS", assets):
-            self.assertIn("`VOCR5_N_w8.vocr`", names.block())
+            self.assertIn("`VOCR6_N_w8.vocr`", names.block())
             self.assertEqual(names.stale(), list(names.DOCS))
             with tempfile.TemporaryDirectory() as d:  # writing them brings them back in line
                 for doc in names.DOCS:
@@ -64,13 +68,13 @@ class DocsModelNames(unittest.TestCase):
                     names.write(d)
                 self.assertEqual(names.stale(d), [])
         # a pin the tool cannot read, or that no release pins, fails rather than being left out
-        for line in ('    if (!memcmp(name, "VOCR5", 5)) return VJO_VOCR_H15_BYTES;\n',
-                     '    if (!strcmp(name, VJO_VOCR5_N_NAME)) return VJO_VOCR_H15_BYTES;\n',
+        for line in ('    if (!memcmp(name, "VOCR6", 5)) return VJO_VOCR_H15_BYTES;\n',
+                     '    if (!strcmp(name, VJO_VOCR6_N_NAME)) return VJO_VOCR_H15_BYTES;\n',
                      '    if (!strcmp(name, "H15_w8.vocr")) return VJO_VOCR_H15_BYTES;\n'):
             with self.assertRaises(ValueError, msg=line):
                 names.kernel_names(kernel.replace(w20, w20 + line))
         with self.assertRaises(ValueError):
-            names.names_text(*real(added))  # VOCR5_N_w8.vocr is in no release table
+            names.names_text(*real(added))  # VOCR6_N_w8.vocr is in no release table
         lm = "VJO_VOCR_LM4_NAME}"
         self.assertEqual(kernel.count(lm), 1)
         with self.assertRaises(ValueError):

@@ -17,7 +17,7 @@
 #define W 200u
 #define H 60u
 static unsigned char job_memory[1024*1024] __attribute__((aligned(64)));
-static unsigned char weights_memory[VJO_VOCR_F20_BYTES + 4096] __attribute__((aligned(64)));
+static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static unsigned char pixels[W*H*4];
 static unsigned char capture_mem_block[64*1024] __attribute__((aligned(64)));
 static int capture_live;

@@ -808,11 +808,13 @@ static void cannot_states(void)
     (void)plan;
 }
 
-/* A fault at each step of an install: the card is then as the result says, and Install again finishes. */
+/* A fault at each step of an install: the card is then as the result says, and Install again finishes.
+ * A model's cases fault the Normal size's file, whatever the pins. */
 static void faults_leave_old_or_new_files(void)
 {
     static const struct { const char *pattern; int open_write, write, rename, remove; } cases[] = {
-        {"VOCR3_H15", 1, 0, 0, 0}, {"VOCR3_H15", 0, 1, 0, 0}, {"VOCR3_H15", 0, 0, 1, 0}, {"VOCR3_H15", 0, 0, 2, 0},
+        {VJO_VOCR_TIER2_NAME, 1, 0, 0, 0}, {VJO_VOCR_TIER2_NAME, 0, 1, 0, 0}, {VJO_VOCR_TIER2_NAME, 0, 0, 1, 0},
+        {VJO_VOCR_TIER2_NAME, 0, 0, 2, 0},
         {"plaintext.vjdict", 0, 0, 1, 0}, {"plaintext.vjdict", 0, 0, 2, 0}, {"VitaJPOverlay_Kernel", 0, 1, 0, 0},
         {"VitaJPOverlay_Shell", 0, 0, 2, 0}, {"config.ini", 1, 0, 0, 0}, {"ux0:tai/config.txt", 0, 1, 0, 0},
         {"ux0:tai/config.txt", 0, 0, 1, 0}, {"ur0:tai/config.txt", 0, 0, 1, 0}, {".bak", 1, 0, 0, 0},
@@ -833,7 +835,12 @@ static void faults_leave_old_or_new_files(void)
         fault.calls = 0;
         s = scan_now();
         int rc = run(&s, VJO_INSTALL_ACT_INSTALL, &r);
+        int calls = fault.calls, nth = cases[c].open_write + cases[c].write + cases[c].rename + cases[c].remove;
         memset(&fault, 0, sizeof(fault));
+        /* a model's case follows the pins: its fault fires (a pattern no payload file has would test nothing) */
+        if (!strcmp(cases[c].pattern, VJO_VOCR_TIER2_NAME))
+            TEST_CHECK_(calls >= nth, "case %u (%s): %d matching calls, the fault is the %dth", c, cases[c].pattern,
+                        calls, nth);
         TEST_CHECK_(every_file_old_or_new(0, 1), "case %u (%s)", c, cases[c].pattern);
         VjoInstallScan after = scan_now();
         if (rc < 0) {

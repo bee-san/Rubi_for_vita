@@ -54,10 +54,10 @@ that its overlay is not the installed one, and its Install page offers **Update*
 The two builds are #141's (`docs/release-variants.md`): the same models, dictionary and config
 template; the debug build has the full log and the self-test. Both VPKs are the same app (title ID
 `VJOSET001`), so either installs over the other, and each carries its own build's plugins. A release
-is about 4 × 53 MB of assets.
+is about 4 × 55 MB of assets.
 
 The zips keep today's layout and their own `JPOverlaySettings.vpk`, which carries no overlay files
-(the "no payload" state below), so a zip is not 53 MB larger.
+(the "no payload" state below), so a zip is not 55 MB larger.
 
 ## Inside the VPK
 
@@ -161,7 +161,7 @@ anything is written.
   app deletes the app folder's copy and frees 136.8 MiB; only the installed one is hashed. Otherwise
   it replaces it: the old file to `plaintext.vjdict.vjo-old`, the new one moved in and hashed, the old
   one deleted (renamed back when the hash fails).
-- Plugins, the RCO and the models (10.8 MB) are copied: the app keeps them for a Repair without the
+- Plugins, the RCO and the models (11.9 MB) are copied: the app keeps them for a Repair without the
   VPK.
 - An 0.7.12 install's `dictionaries/jmdict.vjdict` is no longer used (`local_dictionaries` names
   `plaintext.vjdict` in its place); the app deletes nothing of the user's, so it stays until deleted in

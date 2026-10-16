@@ -375,7 +375,11 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
 typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LINE ? 1 : -1];
 typedef char vjo_capture_budget_check[VJO_VOCR_CAPTURE_LIMIT <= VJO_BUDGET_GAME_CAPTURE ? 1 : -1];
 typedef char vjo_lm_budget_check[PAGE_ROUND(VJO_VOCR_LM_MAX_BYTES) <= VJO_BUDGET_GAME_LM ? 1 : -1];
-typedef char vjo_cascade_budget_check[PAGE_ROUND(VJO_VOCR_CASCADE_BYTES) <= VJO_BUDGET_GAME_CASCADE ? 1 : -1];
+/* The weights and the cascade's model: at most the largest pinned model each (since API 21
+ * the cascade's is the next tier up, so Normal's is Large's, the largest). */
+typedef char vjo_weights_budget_check[PAGE_ROUND(VJO_VOCR_MAX_BYTES) <= VJO_BUDGET_GAME_WEIGHTS ? 1 : -1];
+typedef char vjo_cascade_budget_check[PAGE_ROUND(VJO_VOCR_MAX_BYTES) <= VJO_BUDGET_GAME_CASCADE &&
+                                      VJO_VOCR_CASCADE_BYTES <= VJO_VOCR_MAX_BYTES ? 1 : -1];
 
 /* One block for a line taller than a strip (VjoGreySource.line_buffer). */
 static void *line_buffer(void *ud, size_t bytes)
@@ -452,6 +456,19 @@ static void file_close(void *ud)
     }
 }
 
+/* API 21: the tier a request by tiers opens a model file as. Two sizes may share
+ * one model (a size that kept the model of the size below it), so the job's own
+ * model is its own tier's (own: 1..VJO_VOCR_TIERS, 0 none) and any other the
+ * first tier that has it: the cascade's, the next size up, whose model is always
+ * larger than the job's (cascade_of), so no smaller size has it. 0: no tier's. */
+static unsigned tier_of_file(const char *const *names, unsigned own, const char *name)
+{
+    if (own >= 1u && own <= VJO_VOCR_TIERS && !sceClibStrcmp(name, names[own - 1u])) return own;
+    for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++)
+        if (!sceClibStrcmp(name, names[t - 1u])) return t;
+    return 0;
+}
+
 /* Which of the request's files a path names: an LM by its pinned name (API 20),
  * else the job's model or fallback (open_which). */
 static uint32_t which_file(const char *path)
@@ -463,10 +480,12 @@ static uint32_t which_file(const char *path)
         if (!sceClibStrcmp(name, vjo_vocr_lm_tier(t)->name)) return VJO_GAME_OCR_OPEN_LM + t - 1u;
     if (tiered) {
         /* API 21: a request by tiers opens each model by its tier (the job's and its
-         * cascade's); the kernel checks the request allows it. */
-        for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++)
-            if (!sceClibStrcmp(name, tier_names[t - 1u])) return VJO_GAME_OCR_OPEN_TIER + t - 1u;
-        return VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS; /* no tier's: the kernel refuses it */
+         * cascade's); the kernel checks the request allows it. A tier with no file of
+         * that name: one past the last, which the kernel refuses. */
+        unsigned own = open_which >= VJO_GAME_OCR_OPEN_TIER && open_which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS
+                       ? open_which - VJO_GAME_OCR_OPEN_TIER + 1u : 0u;
+        unsigned t = tier_of_file(tier_names, own, name);
+        return VJO_GAME_OCR_OPEN_TIER + (t ? t - 1u : VJO_VOCR_TIERS);
     }
     if (open_cascade && !sceClibStrcmp(name, VJO_VOCR_CASCADE_NAME)) return VJO_GAME_OCR_OPEN_CASCADE;
     return open_which;
@@ -533,7 +552,7 @@ static void *weights_alloc(void *ud, size_t bytes)
     uint32_t rounded = PAGE_ROUND(bytes), held, mem;
     void *base = NULL;
     SceUID leaked;
-    if (weights_uid >= 0 || !bytes || bytes > VJO_VOCR_F20_BYTES) return NULL; /* never two blocks */
+    if (weights_uid >= 0 || !bytes || bytes > VJO_VOCR_MAX_BYTES) return NULL; /* never two blocks */
     if (free_user_after_reserve() < (int64_t)rounded) return NULL;
     weights_uid = game_memblock_alloc(GL_WEIGHTS, VJO_GITEM_WEIGHTS, "VjoGameVocrWeights", rounded, LADDER_USER,
                                       &base, &leaked, &held, &mem);
@@ -608,7 +627,7 @@ static void *cascade_alloc(void *ud, size_t bytes)
     uint32_t rounded = PAGE_ROUND(bytes), held, mem;
     void *base = NULL;
     SceUID leaked;
-    if (cascade_uid >= 0 || !bytes || bytes > VJO_VOCR_CASCADE_BYTES) return NULL; /* never two blocks */
+    if (cascade_uid >= 0 || !bytes || bytes > VJO_VOCR_MAX_BYTES) return NULL; /* never two blocks */
     if (free_user_after_reserve() < (int64_t)rounded) return NULL;
     cascade_uid = game_memblock_alloc(GL_CASCADE, VJO_GITEM_CASCADE, "VjoGameVocrCascade", rounded, LADDER_USER,
                                       &base, &leaked, &held, &mem);
@@ -760,7 +779,9 @@ static int candidate_of(const Candidate *cand, unsigned n, const VjoVocrModel *m
 /* The cascade's model for candidate c, when the request gives the cascade a time
  * ceiling: a request by name has VOCR4-W20 read again beside a smaller model; one
  * by tiers the next tier up (API 21), unless that tier is one the request leaves
- * out below its largest (a tier the Shell found unusable). Larger than c's own. */
+ * out below its largest (a tier the Shell found unusable). Larger than c's own:
+ * a size that kept the model of the size below it (two sizes, one file) gives
+ * that size no cascade, since the same model reads a line the same again. */
 static const VjoVocrModel *cascade_of(const Candidate *c, const VjoGameOcrRequest *r, unsigned top, uint32_t casc_us)
 {
     const VjoVocrModel *m;
@@ -1325,7 +1346,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         (!cand[1].bytes || cand[1].m == cand[0].m ||
          PAGE_ROUND(cand[1].bytes) + PAGE_ROUND(cand[1].m->bytes) >= PAGE_ROUND(cand[0].bytes) + PAGE_ROUND(cand[0].m->bytes)))
         n = 1;
-    /* The self-test runs the fallback on purpose (its FL10 stage): the model's
+    /* The self-test runs the fallback on purpose (its smallest-size stage): the model's
      * check, for the record, then the smallest one's. */
     int forced = (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK) && n > 1;
     if (forced) { cand[1] = cand[n - 1u]; n = 2; }
@@ -1467,7 +1488,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     policy.refine = refine;
     /* The cache's entries are those of jobs with this LM (bits 0-2), cascade (bit 3),
      * cascade ceiling (ms, bits 4-15: at most 3,750), cascade model (since API 21 the
-     * next tier up of the job's, so a Small job's is H15 and a Normal one's W20: its
+     * next tier up of the job's, so a Small job's is Normal's model and a Normal one's Large's: its
      * index among the pinned models + 1, bits 16-23) and refinement (bits 24-28). */
     unsigned casc_index = 0;
     if (casc) {

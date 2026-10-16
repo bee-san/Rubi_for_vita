@@ -2,7 +2,7 @@
 
 A test build is a GitHub **pre-release** of this fork (tag `v0.8.0-test.N`, never "Latest") with the
 one-VPK install, `VitaJPOverlay-TAG-debug.vpk` (the **Overlay** app with the three plugins, the OCR models
-of the three model sizes, VOCR3-FL10, VOCR3-H15 and VOCR4-W20, and the frozen dictionary inside it;
+of the three model sizes, VOCR5-S, VOCR5-N and VOCR5-L, and the frozen dictionary inside it;
 [one-vpk-install.md](one-vpk-install.md)), and the zip of the same build with the installer and the
 analyser (`--collect`). Its install issue names the tag and gives both SHA-256s. Since #138 the kernel
 plugin loads the OCR worker into every game that is ON in the Overlay app, so no game is named
@@ -73,7 +73,7 @@ by an empty `ux0:data/VitaJPOverlay/selftest.txt` (what `--self-test` uploads); 
 1. Reboot. Wait for the LiveArea, then leave the Vita alone for 1 minute.
 2. Start CLANNAD and go to a dialogue screen. Keep your saved textbox region; with none, draw it
    first: L+R, Square, drag around the text, Enter, Cancel. Wait 1 minute without pressing anything:
-   the self-test runs its five stages (VOCR3-FL10, VOCR3-H15, full screen, capture probe, VOCR3-H15
+   the self-test runs its five stages (VOCR5-S, VOCR5-N, full screen, capture probe, VOCR5-N
    again) once, on this first launch, in the background, after the first scan that reads text in
    your region, and finishes by itself (screens without text, such as the game's opening notice,
    are not tested). It shows nothing and your scans never wait for it: opening the overlay or
@@ -122,8 +122,8 @@ the memory routes) are measurements to send back, not failures.
 - Run it **once**. Don't keep rebooting to retry; send what you have.
 
 ## Models
-The Overlay app's OCR page has the **Model size**: Small (VOCR3-FL10), Normal (VOCR3-H15, the
-default) and Large (VOCR4-W20). When the game has too little free memory for the chosen size a job
+The Overlay app's OCR page has the **Model size**: Small (VOCR5-S), Normal (VOCR5-N, the
+default) and Large (VOCR5-L). When the game has too little free memory for the chosen size a job
 runs the next smaller one; the screen does not say so, `log.txt` does (`tier large did not fit in
 PCSG00415 (need N, free F); using normal`). It applies when the overlay next opens.
 
@@ -151,8 +151,8 @@ restart of the game loads the worker. See [anki.md](anki.md).
   and the model tier (Small/Normal/Large, vita-vn-ocr #74's proposal) the game's free memory allows;
   SceShell's and the kernel pool's free memory by each of three query routes, from boot into the
   game and back.
-- **Speed:** VOCR3-H15's and VOCR3-FL10's load and recognition times on a console (est. until
-  measured), the warm second recognition, and the time per line and per CTC frame of every job;
+- **Speed:** VOCR5-N's and VOCR5-S's load and recognition times on a console (est. until
+  measured; no console has run a VOCR5 model before), the warm second recognition, and the time per line and per CTC frame of every job;
   each job's timeline (`python3 tools/analyse_timeline.py --collect DIR --jobs`: the game's job
   stage by stage, its exchange with the Shell, the log's appends, the first scan of each game
   start).

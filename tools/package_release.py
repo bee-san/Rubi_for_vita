@@ -11,7 +11,8 @@ import tempfile
 import zipfile
 
 from prepare_ocr import (VOCR_ASSETS, VOCR_GENERATION, VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN,
-                         VOCR_LM_TAG, VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, model_tiers)
+                         VOCR_LM_TAG, VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, VOCR5_ASSETS,
+                         VOCR5_TAG, model_tiers)
 from prepare_plaintext import FILENAME, load_manifest, validate
 
 DATA = "ux0/data/VitaJPOverlay/"
@@ -90,7 +91,8 @@ def base_variant(original):
 
 def tier_release(name):
     """(asset table, release tag) of a model size's recognizer, by the tables this module sees."""
-    for assets, tag in ((VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG), (VOCR_ASSETS, VOCR_TAG)):
+    for assets, tag in ((VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
+                        (VOCR_ASSETS, VOCR_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError("Not a pinned recognizer: " + name)
@@ -100,13 +102,15 @@ def shipped_models():
     """(name, pins, release tag, role) of every shipped weights file: the three model sizes'
     recognizers (tools/model_tiers.json, smallest first: Small, Normal the default, Large; each
     reads its doubtful lines again with the next size up, the confidence cascade), and the beam +
-    LM decoder's four LMs. A later generation's three blobs replace the sizes' through the pins."""
+    LM decoder's four LMs. A later generation's three blobs replace the sizes' through the pins.
+    Two sizes may have one model (a size that kept the model of the size below it): it is
+    shipped once, its role naming both sizes."""
     tiers = model_tiers()
-    models = []
+    roles = {}
     for tier in tiers["tiers"]:
-        assets, tag = tier_release(tier["model"])
-        models.append((tier["model"], assets, tag,
-                       tier["name"] + " model size" + (" (default)" if tier["id"] == tiers["default"] else "")))
+        roles.setdefault(tier["model"], []).append(
+            tier["name"] + " model size" + (" (default)" if tier["id"] == tiers["default"] else ""))
+    models = [(name, *tier_release(name), " and ".join(role)) for name, role in roles.items()]
     # the beam + LM decoder's LM tiers (ocr_lm, the largest that fits up to 1000k by default)
     for name in VOCR_LM_ASSETS:
         models.append((name, VOCR_LM_ASSETS, VOCR_LM_TAG, "character LM (beam + LM decoder)"))
@@ -247,7 +251,9 @@ def package_with_dictionary(base, output, models, dictionary, license_file, vers
 def write_package(base, output, models, assets, conversion, version, source_revision, settings, variant=None):
     shipped = {}
     tiers = model_tiers()
-    tier_of = {tier["model"]: tier["id"] for tier in tiers["tiers"]}
+    tiers_of = {}  # a model's sizes, smallest first: two sizes may have one model
+    for tier in tiers["tiers"]:
+        tiers_of.setdefault(tier["model"], []).append(tier["id"])
     for name, pins, tag, role in shipped_models():
         path = models / name
         if not path.is_file():
@@ -257,10 +263,11 @@ def write_package(base, output, models, assets, conversion, version, source_revi
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
         # The generation the Overlay app names the local engine after (core/vocr_models.c): a
-        # recognizer's only; an LM is not an engine. A model size's recognizer also names its tier.
+        # recognizer's only; an LM is not an engine. A model size's recognizer also names its tier,
+        # the smallest of its sizes, and in tiers every size it is the model of.
         shipped[name] = {"release": "bee-san/vita-vn-ocr " + tag,
                          **({"generation": VOCR_GENERATION[tag]} if name.endswith(".vocr") else {}),
-                         **({"tier": tier_of[name]} if name in tier_of else {}),
+                         **({"tier": tiers_of[name][0], "tiers": tiers_of[name]} if name in tiers_of else {}),
                          "bytes": size, "sha256": sha, "role": role}
     # The LMs are CC BY-SA 4.0: their attribution ships with them.
     attribution = models / VOCR_LM_ATTRIBUTION

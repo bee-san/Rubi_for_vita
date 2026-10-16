@@ -1,6 +1,7 @@
 /* vita-vn-ocr backend: bee-san/vita-vn-ocr's polarity-agnostic dialogue line
  * finder and tiny CTC recognizer (plain C99, no malloc), with the int8 weights
- * published in its v0.2.5-vocr3.1 (VOCR3) and v0.2.0 releases. Built with
+ * published in its v0.3.0 (VOCR5, the model tiers), v0.2.5-vocr3.1 (VOCR3),
+ * v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0 releases. Built with
  * -DVJO_WITH_VOCR=ON; see docs/vita-vn-ocr.md.
  *
  * API 19: a job never holds the region. It reads the region in strips of grey
@@ -39,7 +40,7 @@
 extern "C" {
 #endif
 
-#define VJO_VOCR_DEFAULT_MODEL "VOCR3_H15_w8.vocr" /* VJO_VOCR3_H15_NAME (include/vjo_vocr_sizes.h) */
+#define VJO_VOCR_DEFAULT_MODEL "VOCR5_N_w8.vocr" /* the Normal tier's, VJO_VOCR_TIER2_NAME (include/vjo_vocr_sizes.h) */
 
 /* The capture block: one strip of at most this many bytes of grey rows (the
  * strip is region width x VJO_VOCR_STRIP_ROWS(width) rows), plus per region
@@ -151,6 +152,9 @@ size_t vjo_vocr_lm_job_bytes(const char *model);
  * again with the larger model `cascade` (its arena, structs and LM decoder); 0
  * for a model this build does not pin. */
 size_t vjo_vocr_cascade_job_bytes(const char *cascade);
+/* The cascade's estimated time per line against the job's model's, x 256, before a
+ * re-read measures it (the ratio of their weights); 0 for a model not pinned. */
+uint32_t vjo_vocr_cascade_ratio(const char *cascade, const char *model);
 /* The refinement's arena for a width x height region (VjoVocrPolicy.refine). */
 size_t vjo_vocr_refine_bytes(unsigned width, unsigned height);
 
