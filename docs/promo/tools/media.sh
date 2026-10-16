@@ -28,9 +28,9 @@ norm renders/promo-1080x1920.mp4 media/promo-1080x1920.mp4
   -loop 0 media/promo.gif
 size=$(stat -c %s media/promo.gif)
 if [ "$size" -gt 5000000 ]; then echo "media/promo.gif is $size B, over 5 MB" >&2; exit 1; fi
-# one still per scene: 1 2 3 4 5 (and its setting) 6 (VitaShell, the app) 7 8, the end card
+# one still per scene: 1 2 3 4, 5 (and its setting), 6 (GitHub, VitaShell, the Install page, done), 7 8, the end card
 i=0
-for t in 2.6 7.6 11.6 17.2 20.6 22.6 25.0 27.4 29.7 34.6 40.4 43.0; do
+for t in 2.6 7.6 11.6 16.9 20.6 22.6 24.3 26.4 28.9 30.3 34.6 40.4 43.0; do
   i=$((i + 1))
   "$FFMPEG" -hide_banner -loglevel error -y -ss "$t" -i media/promo-1920x1080.mp4 -frames:v 1 -vf scale=1280:-1 -q:v 4 \
     "media/stills/$(printf '%02d' "$i")-$t.jpg"
