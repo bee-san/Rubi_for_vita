@@ -191,10 +191,20 @@ Nothing is written until every check of step 0 passes.
    `ocr_mode`, `ocr_boost_clock` (the OCR & lookup page's choices, overlay-ocr-mode-setting),
    `log_file`, the Anki page's `anki_mining` (unless the package sets it). The plan lists each changed
    line.
-4. **config.txt.** For each configuration: the editor's new text is written to `config.txt.vjo-new`
-   and read back; `config.txt` is renamed to `config.txt.vjo-old`, `config.txt.vjo-new` to
-   `config.txt`, read back and compared byte for byte, and `config.txt.vjo-old` removed. If the last
-   read-back differs, the backup is written back and the step reports what is on the card.
+4. **config.txt.** For each configuration: the editor's new text is written to `config.txt.vjo-new`,
+   synced and read back; `config.txt` is renamed to `config.txt.vjo-old` and `config.txt.vjo-new` to
+   `config.txt` in two consecutive calls, synced, read back and compared byte for byte, and
+   `config.txt.vjo-old` removed. If the last read-back differs, the backup is written back and the
+   step reports what is on the card. ux0's file is replaced before ur0's.
+
+   The Vita's rename cannot replace a file, so between those two calls the file is missing. A power
+   cut exactly then, with no other configuration, would leave taiHEN unable to start (above); holding
+   L at power-on recovers it, and the recovery text says to copy the backup to `config.txt`. Writing
+   the file in place instead has no such moment, but a cut during the write leaves a prefix of it,
+   which can end at a multiple of 4 KiB (a full card or a cluster write), the one length taiHEN reads
+   past its buffer (`plugin.c:96`). The rename's window is two metadata calls on a thread that does
+   nothing else; the write's is the whole write. The rename is the smaller risk; both are
+   recoverable with L.
 5. **Stale copies.** A `VitaJPOverlay_Kernel.skprx`, `VitaJPOverlay_Shell.suprx` or
    `VitaJPOverlay_OCR.suprx` in `ux0:tai/` is deleted (our installers never put one there; the kernel
    loads the worker from `ur0:tai/`, and from `ux0:tai/` only when ur0's is missing, so a stale copy
@@ -238,7 +248,13 @@ DaveeFTW/taihen-parser 6d817fd `lexer.c`, `parser.c`):
 - `taihen_config_validate` returns non-zero for a valid file and zero for an invalid one, but
   `plugin.c:129` treats non-zero as the failure, and `check_utf8` rejects any valid character, so in
   effect taiHEN loads every file that has a section or a path line and **refuses one with nothing but
-  comments and blank lines** (it then loads no plugin at all).
+  comments and blank lines, or an empty one** (it then loads no plugin at all, but starts:
+  `plugin_load_config` returns 1, which `taihen.c:349` does not treat as a failure).
+- When neither file can be opened, `plugin_load_config` returns the open's error and taiHEN's
+  `module_start` fails (`taihen.c:349-352`): no HENkaku, so no VitaShell, until the Vita is started
+  with L held, which skips the configuration altogether (`taihen.c:348`). A missing configuration is
+  therefore the one state the editor must never leave, even for a moment, where the other one does
+  not exist.
 - Holding L when taiHEN starts skips the configuration and every plugin (`taihen.c:346-356`); holding
   it when an app starts skips that app's plugins (`hen.c:368-372`).
 
