@@ -661,7 +661,9 @@ def patch(raw, extra_kernel=(), uninstall=False, titles=(), keep_from=(), mode=W
     return add_kernel_plugins(out, extra_kernel) if extra_kernel else out
 
 
-def summary(report, op, mode, raw, out):
+def summary(report, op, mode, raw, out, games=()):
+    """One line for the installer's output; games: lines mode's, in the editor's order (the --title
+    games, the other configurations' and this one's), so that every configuration names them alike."""
     parts = []
     if op == UNINSTALL:
         parts.append("removed the overlay's lines" if report["removed"] else "no line of the overlay")
@@ -672,8 +674,9 @@ def summary(report, op, mode, raw, out):
             parts.append("removed the OCR worker's lines from " + ", ".join(report["removed_sections"]) +
                          " (the kernel plugin loads it now)")
         if mode == WORKER_LINES:
-            games = registered(out)
-            parts.append("OCR worker registered for " + (", ".join(games) if games else "no game"))
+            loaded = [g for g in games if g in registered(out)]
+            loaded += [g for g in registered(out) if g not in loaded]
+            parts.append("OCR worker registered for " + (", ".join(loaded) if loaded else "no game"))
         if report["commented"]:
             parts.append("commented out %d old line%s" % (report["commented"], "" if report["commented"] == 1 else "s"))
     if report["bom_hides_section"]:
@@ -703,9 +706,10 @@ def main():
     except OSError as error:
         parser.error(str(error))
     op = UNINSTALL if args.uninstall else INSTALL
+    names = []
     try:
         if op == INSTALL and args.worker == WORKER_LINES:
-            names = list(args.title)
+            names = [game_title(value) for value in args.title]
             for other in keep:
                 names += [g for g in registered(other) if g not in names]
             if not names and not registered(raw):
@@ -729,7 +733,7 @@ def main():
         args.output.write_bytes(out)
     except OSError as error:
         parser.error(str(error))
-    print(summary(report, op, args.worker, raw, out))
+    print(summary(report, op, args.worker, raw, out, names + [g for g in registered(raw) if g not in names]))
 
 
 if __name__ == "__main__":

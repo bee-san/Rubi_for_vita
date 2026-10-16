@@ -203,9 +203,10 @@ Install the overlay (v0.8.0)
 4. config.ini: local_dictionaries = plaintext.vjdict (was jmdict.vjdict); 2 more lines.
 5. Read everything back to check it.
 Then restart the Vita yourself.
-If it does not start: hold L while you turn it on (with h-encore: while you start h-encore),
-open VitaShell and put # before the two VitaJPOverlay lines of ur0:tai/config.txt and
-ux0:tai/config.txt; or, after that L start, choose Uninstall here.
+If it does not start: hold L while you turn it on (h-encore or h-encore2: open its menu, holding R
+as h-encore starts, and choose Exit while holding L), open VitaShell and put # before the two
+VitaJPOverlay lines of ur0:tai/config.txt and ux0:tai/config.txt; or, after that L start, choose
+Uninstall here.
 If one game does not start: turn it OFF on the Games page, or hold L while you start it.
 Enter: install   Cancel: not now
 ```
@@ -450,8 +451,13 @@ no user loses working lines:
 - at build time by `VJO_KERNEL_LOADS_WORKER` (`include/vjo_api.h`, t3-worker-any-game's PR): this PR's
   code fails to build without it (`#error`), which enforces the merge order;
 - at run time by the manifests' `worker kernel` or `worker lines` (the VPK's `payload/manifest.txt`
-  and the zip's `package-manifest.json`), which `package_release.py` writes from that define and which
-  `install-vita.sh` passes to the patcher.
+  and the zip's `package-manifest.json`). They come from the built base zip, never from the checkout
+  that packages it: the Vita build writes `vjo_build.txt` (`vjobuild1 worker=kernel`) into the base zip
+  from the header it compiled the kernel with, `package_release.py` copies it into both manifests (a
+  base without it is `lines`), and `install-vita.sh` passes it to the patcher. The app accepts a
+  payload only when its `worker` and `variant` are its own compiled values (`VJO_KERNEL_LOADS_WORKER`,
+  `VJO_DEBUG`), as for `api` and `version` (R4): a mismatched package could otherwise remove working
+  worker lines.
 
 In **`lines` mode** (the define 0) the editor and the patcher keep today's per-title rules: every game
 registered before keeps its worker line, the worker goes right after the first header of each named
@@ -477,8 +483,11 @@ also need it back for PSP rows. The fixtures run both modes.
 
 ## config.ini on install and update
 
-When there is none, the payload's template is written (the PC installer's first install writes the
-same template). Otherwise it is kept and patched as the app's own saves patch it
+When there is none (neither `config.ini` nor its `config.ini.bak`: the app reads the backup when the
+file is missing, `settings/preferences.c:34-44`, which a stop between `publish`'s two renames leaves,
+`:80-82`), the payload's template is written (the PC installer's first install writes the same
+template). Otherwise the text the app's own load reads (the file, else its backup) is kept and patched
+as the app's own saves patch it
 (`vjo_config_patch_keys`: a removed feature's line is dropped or replaced, an API key goes), plus:
 
 - an older build's `vocr_model` becomes its `vocr_tier` unless the file already names a valid one, and
@@ -513,8 +522,11 @@ The app's pages and the README say the same, in this order:
    says why), as today (`docs/boot-safety.md`): most bad builds never need more. **Check and repair**
    resets a boot guard stuck in safe mode once the files are right.
 2. If the Vita does not start, or HENkaku does not (no VitaShell): hold L while turning it on with
-   Ensō, or while starting h-encore (taiHEN then reads no configuration, `taihen.c:346-357`; inferred
-   for h-encore from taiHEN, whose L test runs whenever taiHEN starts). Then either open VitaShell and
+   Ensō; with h-encore or h-encore2, open its menu (h-encore shows it only while R is held as it
+   starts, h-encore 6d43b4c `payload.c:672-713`; h-encore2 always shows it, h-encore-2 c59a248
+   `payload/payload.c:690-711`) and choose Exit while holding L, as h-encore2's README says ("holding
+   the L trigger while exiting the h-encore bootstrap menu", `README.md:64`): taiHEN then reads no
+   configuration (`taihen.c:346-357`). Then either open VitaShell and
    put `#` before the two `VitaJPOverlay` lines of `ur0:tai/config.txt` (and `ux0:tai/config.txt`), or
    open the Overlay app and choose Uninstall: homebrew still runs after an L start, since taiHEN installs
    its patches before the L test (`taihen.c:341-348`); that the app then has its extended permissions,
