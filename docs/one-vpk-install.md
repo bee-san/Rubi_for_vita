@@ -249,9 +249,9 @@ DaveeFTW/taihen-parser 6d817fd `lexer.c`, `parser.c`):
   `plugin.c:129` treats non-zero as the failure, and `check_utf8` rejects any valid character, so in
   effect taiHEN loads every file that has a section or a path line and **refuses one with nothing but
   comments and blank lines, or an empty one** (it then loads no plugin at all, but starts:
-  `plugin_load_config` returns 1, which `taihen.c:349` does not treat as a failure).
+  `plugin_load_config` returns 1, which `taihen.c:350` does not treat as a failure).
 - When neither file can be opened, `plugin_load_config` returns the open's error and taiHEN's
-  `module_start` fails (`taihen.c:349-352`): no HENkaku, so no VitaShell, until the Vita is started
+  `module_start` fails (`taihen.c:349-353`): no HENkaku, so no VitaShell, until the Vita is started
   with L held, which skips the configuration altogether (`taihen.c:348`). A missing configuration is
   therefore the one state the editor must never leave, even for a moment, where the other one does
   not exist.
