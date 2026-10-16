@@ -120,7 +120,7 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | kernel_capture | 11 | 32-bit stride and capacity arithmetic; the OCR grey rows in every pixel format; the first pass's region signature in every format, strip height and 400 random regions (the A1B5G5R5 one-pass rows never skip a sampled row); every box the region selector can save is cropped as drawn |
 | kernel_input | 14 | the trigger state machine |
 | kernel_lifecycle | 5 | the process event hook (`kernel/lifecycle.c`, #104): a foreground change releases the game's input block in the hook's own call, an `__atomic_exchange_n` (LDREX/STREX) |
-| kernel_game_ocr | 45 (44 normal) | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine; the job hand-off's bounded waits (take and read wake on submit and complete); a request by model sizes opens only its sizes' models by size (API 21); the frame-pacing step's 32-bit sums (API 22) |
+| kernel_game_ocr | 50 (49 normal) | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine; the job hand-off's bounded waits (take and read wake on submit and complete); a request by model sizes opens only its sizes' models by size (API 21); the frame-pacing step's 32-bit sums (API 22) |
 | kernel_loader | 12 | the worker loader's question to the kernel worker (`kernel/loader.c`, #138): its 32-bit seqlock and tagged answer, and the Shell's `games.ini` rules on the Vita's word size |
 | kernel_meminfo | 6 | the three kernel memory routes with the firmware's objects at 32-bit kernel-range, upper-kernel and user-range addresses (the user-half ones unreadable, at 0x5... and 0x8...), and the guard at each of its edges |
 | touch_hold | 6 | the overlay page's hold on SceShell's front touch region (`shell/touch_hold.h`, #104) against a model of the region |
@@ -134,8 +134,8 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 225 cases of the
-debug build pass (217 of the normal build, which has no `kernel_meminfo` and fewer log cases),
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 230 cases of the
+debug build pass (222 of the normal build, which has no `kernel_meminfo` and fewer log cases),
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-14-arm-linux-gnueabihf`, `qemu-user-static`; the
 pinned runtime's NEON kernels need GCC 14 or later, and Ubuntu 24.04's default cross gcc is 13). It
