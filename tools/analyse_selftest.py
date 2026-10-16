@@ -149,6 +149,20 @@ except Exception as e:  # noqa: BLE001
     TIERS, TIER_DEFAULT, TIER_BOX, TIERS_ERROR = (), None, None, tiers_error(e)
 
 
+def load_tier_models(path=TIERS_FILE):
+    """Each tier's model file in the shared tier table (its "model", which the Overlay app's tier choice shows):
+    {model: (id, name)}; empty when the table cannot be read (TIERS_ERROR says why)."""
+    try:
+        tiers = json.loads(Path(path).read_text(encoding="utf-8")).get("tiers")
+        return {t["model"]: (t["id"], t["name"]) for t in tiers if isinstance(t, dict) and all(
+            isinstance(t.get(k), str) and t[k] for k in ("model", "id", "name"))}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+TIER_MODELS = load_tier_models()
+
+
 def tier_need(weights, arena):
     return page(weights) + page(max(TIER_FINDER_ARENA, arena) + TIER_RUNTIME_STRUCTS) + TIER_CAPTURE + TIER_LINE
 
@@ -1259,10 +1273,10 @@ def export_summary(a):
 
 # The boost's verdict (test.3's step 6; audit-overlay-analyser-fixes N1-N3): the like-for-like off / raised ratio
 # against the gain of a time that scales with the clock (during / before: 444 / 333 = 1.33). Effective at three
-# quarters of that gain or more (1.25 at 333 -> 444), not at a quarter or less (1.08), unclear between them, with
-# fewer than BOOST_MIN_JOBS jobs a side, or with no like-for-like pair; unclear too above a quarter more than the
-# gain (1.42): a time cannot scale more than the clock, so the off side lost time to something else.
-BOOST_YES, BOOST_NO, BOOST_OVER, BOOST_MIN_JOBS = 0.75, 0.24, 1.25, 2
+# quarters of that gain or more (1.25 at 333 -> 444), not at a quarter or less (1.08), unclear between them, and
+# unclear above a quarter more than the gain (1.42): a recognizer's time cannot scale more than its clock, so a
+# wall-time ratio above it means the off side lost time to something else (boost_verdicts has the other cases).
+BOOST_YES, BOOST_NO, BOOST_OVER, BOOST_MIN_JOBS = 0.75, 0.25, 1.25, 2
 BOOST_GAIN = (333, BOOST_MHZ)  # the thresholds stated when no job logged its clock pair: the Vita's 333 MHz raised
 # Plugins that set the ARM clock themselves (a PSVshell profile per game holds it whatever the game asks for): in
 # the collect's taiHEN configurations; nothing logs the clock they hold
@@ -1288,8 +1302,9 @@ def clock_windows(windows):
     a line in a window whose boost is known, with its window, model, side ("off"; "raised"; "left": at 444 MHz or
     more already; "not_raised": the set call refused, or the clock not moved), the self-test's stage it ran (or None),
     what started it (trigger(): "auto", "overlay", "subtitles", "self-test" or None), its helpers (the par step's; 0
-    for a job that logged none and had room for it; None when its step log filled first), its recognized lines, their
-    frames and time, its core share and its clock (before, during, after)."""
+    for a job that logged none and had room for it, which only the kernel's PACE after it shows; None when its step
+    log filled first), its recognized lines, their frames and time, its core share (the par step's mean, percent; 0
+    or None: not logged) and its clock (before, during, after)."""
     rows, older, samples = [], 0, []
     for number, w in enumerate(windows, 1):
         jobs = w["jobs"]
@@ -1368,7 +1383,11 @@ def like_for_like(off, raised):
     both = sorted(set(a) & set(b), key=order)
     if not both:
         return None
-    strata, num, den = [], 0, 0.0
+    strata, num, den, cnum, cden = [], 0, 0.0, 0.0, 0.0
+    used_off, used_raised = [s for k in both for s in a[k]], [s for k in both for s in b[k]]
+    # the same on CPU time: each job's line time x its recognizing threads' share of a core, the time they ran (a
+    # game thread that took the core meanwhile is not in it); only when every job compared logged its share
+    unshared = sum(not s["share"] for s in used_off + used_raised)
     for k in both:
         o, r = _total(a[k]), _total(b[k])
         o["share"], r["share"] = _shares(a[k]), _shares(b[k])
@@ -1377,14 +1396,19 @@ def like_for_like(off, raised):
                        "ratio": per_off / per_raised})
         num += o["us"]
         den += o["frames"] * per_raised
-    used_off, used_raised = [s for k in both for s in a[k]], [s for k in both for s in b[k]]
+        if not unshared:
+            cnum += sum(s["us"] * s["share"] / 100 for s in a[k])
+            cden += o["frames"] * sum(s["us"] * s["share"] / 100 for s in b[k]) / r["frames"]
     pair = _commonest([s["clock"][:2] for s in used_raised if s["clock"]])
-    return {"ratio": num / den, "strata": strata, "off": _total(used_off), "raised": _total(used_raised),
+    return {"ratio": num / den, "cpu_ratio": None if unshared else cnum / cden, "unshared": unshared,
+            "strata": strata, "off": _total(used_off), "raised": _total(used_raised),
             "off_windows": sorted({s["window"] for s in used_off}),
             "raised_windows": sorted({s["window"] for s in used_raised}),
             "before": pair[0] if pair else None, "during": pair[1] if pair else None,
-            # the game's own clock around the raised jobs (before and after each): the off side's is assumed from it
+            # the game's own clock around the raised jobs (before and after each): the off side's is assumed from it;
+            # and the clock they ran at
             "own_clocks": sorted({c for s in used_raised if s["clock"] for c in (s["clock"][0], s["clock"][2])}),
+            "during_clocks": sorted({s["clock"][1] for s in used_raised if s["clock"]}),
             "unmatched": {side: [{"lines": k[0], "helpers": k[1], "trigger": k[2], "jobs": len(d[k])}
                                  for k in sorted(set(d) - set(both), key=order)]
                           for side, d in (("off", a), ("raised", b))}}
@@ -1465,17 +1489,38 @@ def boost_compare(samples):
     return groups, like
 
 
+def nearest_clock(rows, r):
+    """The clock readings nearest a boost-off window r in time: the previous window that logged the clock and the
+    clock its last job left (after), the next one and the clock its first job found (before); None for a side with
+    no such window."""
+    timed = [t for t in rows if t["clock_lines"]]
+    prev = max((t for t in timed if t["window"] < r["window"]), key=lambda t: t["window"], default=None)
+    nxt = min((t for t in timed if t["window"] > r["window"]), key=lambda t: t["window"], default=None)
+    return (prev, prev["after"][-1] if prev else None), (nxt, nxt["before"][0] if nxt else None)
+
+
+def _class(r, v):
+    """A ratio's verdict at v's thresholds, rounded as it is printed."""
+    r = round(r, 2)
+    return "yes" if v["yes_at"] <= r <= v["over_at"] else "no" if r <= v["no_at"] else "unclear"
+
+
 def boost_verdicts(rows, groups, like):
     """Whether the boost took effect and the box time scales with the clock (test.3's step 6, which decides VOCR5's
-    Normal size): per model read with the boost off and with it on, "yes" when the like-for-like ratio is at
-    BOOST_YES of the clock's gain or more, "no" at BOOST_NO or less, else "unclear"; "unclear" too with fewer than
-    BOOST_MIN_JOBS like-for-like jobs a side, or none. With no model to compare, one "unclear" saying why."""
+    Normal size): per model read with the boost off and with it on, from the like-for-like ratio (like_for_like),
+    "yes" at BOOST_YES of the clock's gain to BOOST_OVER of it, "no" at BOOST_NO or less, else "unclear". Unclear too
+    when the ratio cannot decide it alone: fewer than BOOST_MIN_JOBS like-for-like jobs a side, or none; the game's
+    own clock not one figure around the raised jobs and next to the off windows (the off side's is assumed from it;
+    audit-overlay-analyser-fixes-2 N2), or the raised jobs' clock not one figure; the same ratio on CPU time (each
+    line's share of a core, when every job compared logged it) giving another verdict (B2: game threads that took
+    the core at one clock and not the other); or an off window against its neighbours giving another verdict (N1:
+    the windows drifted). With no model to compare, one "unclear" saying why."""
     out = []
     for m, g in groups.items():
         if "off" not in g or not ("raised" in g or "left" in g):
             continue
         v = {"model": m, "verdict": "unclear", "ratio": None, "n": 0, "off_jobs": 0, "raised_jobs": 0,
-             "all_jobs": None, "why": None, **_thresholds(BOOST_GAIN)}
+             "all_jobs": None, "cpu_ratio": None, "unshared": 0, "why": None, **_thresholds(BOOST_GAIN)}
         out.append(v)
         if "raised" not in g:
             v["why"] = (f"no job raised the clock: it was at {BOOST_MHZ} MHz or more already in {_n(g['left']['jobs'], 'job')} "
@@ -1491,18 +1536,39 @@ def boost_verdicts(rows, groups, like):
             continue
         v["ratio"], v["off_jobs"], v["raised_jobs"] = p["ratio"], p["off"]["jobs"], p["raised"]["jobs"]
         v["n"] = v["off_jobs"] + v["raised_jobs"]
-        if len(p["own_clocks"]) > 1:
-            v["why"] = (f"the game's own clock was not one figure around the raised jobs ({_mhz(p['own_clocks'])} MHz "
-                        "before or after them), so the boost-off side's, assumed from it, is not known")
+        v["cpu_ratio"], v["unshared"] = p["cpu_ratio"], p["unshared"]
+        # the game's own clock: around the matched raised jobs, and the readings nearest each off window
+        offs = [r for r in rows if r["window"] in p["off_windows"]]
+        own = set(p["own_clocks"]) | {c for r in offs for _, c in nearest_clock(rows, r) if c is not None}
+        if len(own) > 1:
+            v["why"] = (f"the game's own clock was not one figure around the raised jobs and next to the boost-off "
+                        f"windows ({_mhz(sorted(own))} MHz), so the boost-off side's, assumed from it, is not known")
+            continue
+        if len(p["during_clocks"]) > 1:
+            v["why"] = (f"the raised jobs' clock was not one figure ({_mhz(p['during_clocks'])} MHz during them: a clock "
+                        "plugin's profile, say)")
             continue
         if min(v["off_jobs"], v["raised_jobs"]) < BOOST_MIN_JOBS:
             v["why"] = f"too few jobs to decide: at least {BOOST_MIN_JOBS} a side"
             continue
-        r = round(p["ratio"], 2)
-        v["verdict"] = "yes" if v["yes_at"] <= r <= v["over_at"] else "no" if r <= v["no_at"] else "unclear"
-        if v["verdict"] == "unclear":
-            v["why"] = ("more than the clock explains: the off side lost time to something else (its share of a core, "
-                        "the game's load; see each window's ratio)" if r > v["over_at"] else "between the two thresholds")
+        wall = _class(p["ratio"], v)
+        if p["cpu_ratio"] is not None and _class(p["cpu_ratio"], v) != wall:
+            v["why"] = (f"on CPU time (each job's lines' time x their share of a core) the ratio is {p['cpu_ratio']:.2f}, "
+                        f"{_class(p['cpu_ratio'], v)}: the shares differ between the sides, so part of the wall time is "
+                        "game threads holding the core, not the clock")
+            continue
+        drift = [(w["window"], w["near"]["ratio"]) for w in like[m]["windows"]
+                 if w["side"] == "off" and w.get("near") and _class(w["near"]["ratio"], v) != wall]
+        if drift:
+            v["why"] = ("an off window against its neighbours gives another verdict ("
+                        + ", ".join(f"window {w}: {r:.2f}" for w, r in drift)
+                        + "): the windows drifted (another scene, the game's load)")
+            continue
+        v["verdict"] = wall
+        if wall == "unclear":
+            v["why"] = ("more than the clock explains: a recognizer's time cannot scale more than its clock, so the off "
+                        "side lost time to something else (its share of a core, the game's load; see each window's "
+                        "ratio)" if round(p["ratio"], 2) > v["over_at"] else "between the two thresholds")
     if not out:
         mixed = [r["window"] for r in rows if r["state"] == "mixed"]
         off = any("off" in g for g in groups.values())
@@ -1518,7 +1584,7 @@ def boost_verdicts(rows, groups, like):
             why += (f"; {'window' if len(mixed) == 1 else 'windows'} {', '.join(map(str, mixed))} MIXED (some recognizing "
                     "jobs logged the clock, some did not: config.ini changed with the game in front?), left out")
         out.append({"model": None, "verdict": "unclear", "ratio": None, "n": 0, "off_jobs": 0, "raised_jobs": 0,
-                    "all_jobs": None, "why": why, **_thresholds(BOOST_GAIN)})
+                    "all_jobs": None, "cpu_ratio": None, "unshared": 0, "why": why, **_thresholds(BOOST_GAIN)})
     return out
 
 
@@ -1550,23 +1616,22 @@ def _windows_text(ws):
 
 def render_off_clock(rows, tai=None):
     """N2: each boost-off window's clock is assumed, never logged (with ocr_boost_clock off game_ocr/main.c job_busy
-    returns before it reads the clock); what the logs hold about it: the clock the windows next to it logged (the
-    game's own before their jobs, and after them), and a clock plugin in the taiHEN configurations."""
+    returns before it reads the clock); what the logs hold about it: the readings nearest it (nearest_clock, which
+    the verdict's own-clock check reads too), the windows next to it (the game's own clock before their jobs, and
+    after them), and a clock plugin in the taiHEN configurations."""
     offs = [r for r in rows if r["state"] == "off"]
     if not offs:
         return []
-    timed = [r for r in rows if r["clock_lines"]]
     L = ["  the boost-off windows' clock is assumed (not logged): with ocr_boost_clock off no job reads it, and no "
          "plugin's start line logs it:"]
     for r in offs:
         # the readings nearest it in time: the clock the previous window's last job left, the next one's first found
-        prev = max((t for t in timed if t["window"] < r["window"]), key=lambda t: t["window"], default=None)
-        nxt = min((t for t in timed if t["window"] > r["window"]), key=lambda t: t["window"], default=None)
-        said = ([f"{prev['after'][-1]} after window {prev['window']}'s last job (before it; its jobs "
+        (prev, left), (nxt, found) = nearest_clock(rows, r)
+        said = ([f"{left} after window {prev['window']}'s last job (before it; its jobs "
                  f"{_mhz(prev['before'])} MHz before, {_mhz(prev['after'])} after)"] if prev else []) + \
-               ([f"{nxt['before'][0]} before window {nxt['window']}'s first job (after it; its jobs "
+               ([f"{found} before window {nxt['window']}'s first job (after it; its jobs "
                  f"{_mhz(nxt['before'])} MHz before, {_mhz(nxt['after'])} after)"] if nxt else [])
-        guess = sorted(set(([prev["after"][-1]] if prev else []) + ([nxt["before"][0]] if nxt else [])))
+        guess = sorted({c for c in (left, found) if c is not None})
         L.append(f"    window {r['window']}: "
                  + (f"assumed {_mhz(guess)} MHz, as the jobs nearest it read it: {', '.join(said)}" if said else
                     "no window logged a clock to assume it from"))
@@ -1580,10 +1645,11 @@ def render_off_clock(rows, tai=None):
     return L
 
 
-def render_clock_windows(lg, tai=None):
+def render_clock_windows(lg, tai=None, configured=None):
     """The ARM clock by game window, the time per CTC frame boost off against raised (all jobs, and like for like:
     pooled, by window), the assumed clock of the boost-off windows and the verdict (clock_windows, boost_compare,
-    boost_verdicts). tai: the collect's taiHEN configurations (summarise_tai), for clock plugins."""
+    boost_verdicts). tai: the collect's taiHEN configurations (summarise_tai), for clock plugins; configured: the
+    model of the size config.ini chooses, whose verdict line says so."""
     rows, older, groups = lg.get("clock_windows") or [], lg.get("clock_windows_older", 0), lg.get("clock_compare") or {}
     like, verdicts = lg.get("clock_like") or {}, lg.get("boost_verdicts") or []
     # the normal build (docs/release-variants.md) logs no job's line or step: its windows have no job here, and
@@ -1678,8 +1744,11 @@ def render_clock_windows(lg, tai=None):
             + f"), raised {round(_per(k['raised'])):,} us ({_n(k['raised']['jobs'], 'job')}"
             + (f"; {_share_text(k['raised']['share'])}" if k["raised"]["share"] else "") + f"): {k['ratio']:.2f}"
             for k in p["strata"])
+        cpu = (f"; on CPU time (each job's lines' time x their share of a core) {p['cpu_ratio']:.2f}"
+               if p["cpu_ratio"] is not None else
+               f"; not on CPU time: {_n(p['unshared'], 'job')} logged no share of a core")
         compared.append(head + f"off / raised = {p['ratio']:.2f} ({p['off']['jobs']} off, {p['raised']['jobs']} raised "
-                        f"{'job' if p['raised']['jobs'] == 1 else 'jobs'}): {kinds}"
+                        f"{'job' if p['raised']['jobs'] == 1 else 'jobs'}{cpu}): {kinds}"
                         + (f"; left out: {', '.join(left)}" if left else ""))
         per = []
         for w in lk["windows"]:
@@ -1707,10 +1776,14 @@ def render_clock_windows(lg, tai=None):
         ratio = f"{v['ratio']:.2f}" if v["ratio"] is not None else "-"
         t = f"  boost effective: {v['verdict']} (ratio {ratio}, n={v['n']})"
         if v["model"]:
-            t += f": {v['model']}"
+            tier = TIER_MODELS.get(v["model"])
+            t += f": {v['model']}" + (f" ({tier[1]}{', the configured size' if v['model'] == configured else ''})"
+                                      if tier else "")
             if v["ratio"] is not None:
                 t += (f" like for like, {v['off_jobs']} off and {v['raised_jobs']} raised jobs (all jobs: "
-                      f"{v['all_jobs']:.2f})")
+                      f"{v['all_jobs']:.2f}; " + (f"on CPU time: {v['cpu_ratio']:.2f})" if v["cpu_ratio"] is not None
+                                                 else f"not on CPU time: {_n(v['unshared'], 'job')} logged no share of "
+                                                      "a core)"))
         if v["why"]:
             t += f"; {v['why']}" if v["model"] else f": {v['why']}"
         before, during = v["gain"]
@@ -1794,9 +1867,11 @@ def summarise_log(text):
             # steps only API 22 on logs: a window whose build the log does not name (the start of a rotated log)
             if step in ("par", "clock", "pace"):
                 job["api22"] = boot["api22"] = True
-            # PAR's place is before the job's last free (its workspace, game_ocr/main.c cleanup) and the kernel's
-            # PACE: a job with either and no PAR logged none (no helpers and no line from the cache)
-            job["after_par"] |= step == "pace" or (step == "free" and " arg=workspace " in line)
+            # the kernel adds PACE only while the step log has a slot left after the worker's steps
+            # (kernel/game_ocr.c), so a job with PACE had room for PAR: one with PACE and no PAR logged none (no
+            # helpers, no line from the cache). Not its FREEs: game_ocr/main.c step_add keeps a slot for every
+            # block still held, so they follow a log that filled before PAR's place too
+            job["after_par"] |= step == "pace"
         if line.startswith("config warning:"):
             s["config_warnings"].append(line[16:])
             by = s.setdefault("config_warnings_by_api", {})
@@ -2583,7 +2658,8 @@ def render_collect(c):
             kept = f", left at 444 or more in {ck['kept']}" if ck.get("kept") else ""
             L.append(f"  ARM clock (ocr_boost_clock): {ck['jobs']} job(s), raised in {ck['raised']}{kept}; MHz before "
                      f"{_span(ck['before'])}, during {_span(ck['during'])}, after {_span(ck['after'])}")
-        L += render_clock_windows(lg, c.get("tai"))
+        tier = c["config"].get("vocr_tier") or TIER_DEFAULT  # the Shell's default with no vocr_tier line
+        L += render_clock_windows(lg, c.get("tai"), next((m for m, (i, _) in TIER_MODELS.items() if i == tier), None))
         pc = lg.get("pace") or {}
         if pc.get("jobs"):
             L.append(f"  game frames during OCR jobs: {pc['frames']} in {pc['jobs']} job(s), longest gap "
