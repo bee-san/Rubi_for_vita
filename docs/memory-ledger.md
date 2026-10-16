@@ -318,18 +318,18 @@ removal, which changes the kernel API.
 
 The release ships two builds of one tree (docs/release-variants.md): the debug build (`VJO_DEBUG=ON`,
 the test builds') and the normal build (`OFF`), which compiles the debug-only logging, the
-self-test and the traces out. Their module pages differ, so the three module budgets have an
+self-test and the traces out. Their module pages differ, so the Shell's and the kernel's module budgets have an
 `#if VJO_DEBUG` branch each in `include/vjo_ledger_budget.h`, which `tools/check_memory_ledger.py
 --variant debug|normal` reads (the C code sees the same branch). Every other budget is the same.
-[measured: both builds of main `9f92bc6` plus the variants change, the build log's module rows]
+[measured: both builds of main `6020c0b` plus the variants change, the build log's module rows]
 
 | module | debug | normal | |
 |---|---:|---:|---|
-| `VitaJPOverlay_Shell.suprx` | 262,144 B (187,552 + 70,128) | 253,952 B (177,184 + 70,048) | 2 SceShell pages fewer |
+| `VitaJPOverlay_Shell.suprx` | 262,144 B (188,000 + 70,132) | 253,952 B (177,608 + 70,052) | 2 SceShell pages fewer |
 | `VitaJPOverlay_Kernel.skprx` | 114,688 B (36,640 + 77,768) | 110,592 B (32,332 + 76,080) | 1 page of the kernel pool fewer |
-| `VitaJPOverlay_OCR.suprx` | 90,112 B (70,812 + 14,208) | 86,016 B (69,464 + 14,208) | 1 page fewer in each registered game |
+| `VitaJPOverlay_OCR.suprx` | 90,112 B (71,072 + 14,208) | 90,112 B (69,724 + 14,208) | the same pages (one budget for both since #124) |
 
-The normal Shell's text is 177,184 B in 180,224 B of pages (3,040 B of room); its data/bss has 3,680 B.
+The normal Shell's text is 177,608 B in 180,224 B of pages (2,616 B of room); its data/bss has 3,676 B.
 
 ## The CI check
 

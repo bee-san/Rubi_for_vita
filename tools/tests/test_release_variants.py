@@ -119,6 +119,7 @@ class Ledger(unittest.TestCase):
                    "VJO_WORST_KERNEL", "VJO_LIMIT_KERNEL", "VJO_BUDGET_GAME_MODULE_PAGES", "VJO_WORST_GAME_PERMANENT"}
         self.assertLessEqual(differ, {"VJO_BUDGET_SHELL_MODULE_PAGES", "VJO_BUDGET_KERNEL_MODULE_PAGES",
                                       "VJO_BUDGET_WORKER_MODULE_PAGES"} | derived)
+        self.assertIn("VJO_BUDGET_SHELL_MODULE_PAGES", differ)  # the normal Shell is smaller
         self.assertEqual(set(debug), set(normal))
 
     def test_conditionals_pick_one_build(self):

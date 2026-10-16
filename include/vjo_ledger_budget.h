@@ -96,13 +96,13 @@
  * 2,080 B line queue and slots, both on vita-vn-ocr a540027), and one text page for #85 (the build's
  * vocr.c object 15,288 -> 17,952 B of code; the worker's text 67,452 -> 70,124 B) [measured: main
  * 8f1ec8f against the API 22 build], in the same game partition. */
-#if VJO_DEBUG
+/* Both builds (docs/release-variants.md): the normal build compiles the self-test's capture probe
+ * out, 1,348 B of text, in the same pages since #124 (the PSP bubbles' ID: +260 B): 69,724 + 14,208
+ * against the debug build's 71,072 + 14,208 [measured: the build log's module rows, both builds on
+ * main 6020c0b; on 9f92bc6 the normal worker was 69,464 B, a text page fewer]. The rest of the
+ * worker's debug-only code is the step log, whose tier checks and clock step the normal Shell's
+ * short log reads. */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 90112u
-#else
-/* The normal build: the self-test's capture probe compiled out: 69,464 text + 14,208 data/bss
- * against 70,812 + 14,208, one text page fewer [measured: the build log's module rows, both builds]. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 86016u
-#endif
 /* The installer registers the worker per game (*TITLEID), never under *ALL,
  * so taiHEN does not load it into SceShell. Were it loaded there (an older
  * install's *ALL line, a hand edit), its module_start returns
