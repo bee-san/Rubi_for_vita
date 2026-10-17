@@ -1,22 +1,150 @@
-/* The Overlay app's graphics start as a system application: libvita2d's two calls into the
- * system, through the link's wrappers. This first version passes both on unchanged, as main's
- * app makes them (the tests' baseline, host/tests/test_settings_sysapp_gfx.c). */
+/* The Overlay app's graphics start as a system application, with or without a game running.
+ *
+ * As a system application the app draws into SceShell's shared framebuffer, and libvita2d's
+ * start (a8f15ab vita2d.c:233-262, the pinned libvita2d.a) depends on SceShell twice:
+ *
+ * - sceGxmVshInitialize(SHARED_SYNC | SHAREDPB_OPEN, 0x0A): the GPU library opens the parameter
+ *   buffer another process made. libvita2d keeps no result: refused, the GPU library stays down
+ *   and every later call of it fails (the rings, the render target, the shaders).
+ * - its framebuffer loop: open the shared framebuffer, read it, close it and try again while its
+ *   buffer index is 1, with no pause. The index is the buffer SceShell last handed over, which
+ *   SceShell changes only when it runs; the app's main thread runs on CPU3 at 96 (0x10000100 in a
+ *   system application, wiki SceKernelThreadMgr), above SceShell's job threads there (96-120 in
+ *   test.3's SceShell dumps), so while it reads SceShell's jobs do not run. A read before any
+ *   hand-over (index 0, the second buffer NULL) ends the loop with a NULL buffer to draw into.
+ *
+ * Beside a game (test.3's console run) SceShell had handed over by the first read and the
+ * shared buffer was open. With no game running the app does not open (owner, 2026-10-16), and
+ * nothing of it is logged: these are the two places that wait on SceShell. Which of them stops
+ * it on a console is not known; this line in log.txt will say.
+ *
+ * The link wraps libvita2d's two calls into the system (vita/CMakeLists.txt --wrap; the build
+ * checks that libvita2d calls them, tools/check_settings_self.py):
+ *
+ * - the GPU library: refused, it is asked again for the app's own parameter buffer in main memory
+ *   (the same flags without SHAREDPB_OPEN, with PB_LPDDR: a system application has no CDRAM; the
+ *   2 MiB libvita2d asks for, which docs/vita-memory.md section 5.4 already counts). Refused
+ *   again, the app closes with a log.txt line instead of drawing with a GPU library it never had.
+ * - the framebuffer read: an answer libvita2d cannot draw with (no framebuffer, a failed read, no
+ *   hand-over yet, buffer 1 still the last one, no second buffer) is given to it as "buffer 1",
+ *   on which libvita2d closes the framebuffer and opens it again, after a 1 ms pause in which
+ *   SceShell runs. A wait over a second is logged; after 10 s the app closes with a log.txt line.
+ *
+ * The first answer it can draw with goes to libvita2d unchanged: beside a game nothing changes.
+ * One log.txt line, in both builds, says how the start went. */
 #include "sysapp_gfx.h"
+#include "anki_page.h" /* vjo_log: log.txt */
 #include <psp2/gxm.h>
+#include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
 #include <psp2/sharedfb.h>
+#include <stdio.h>
+#include <string.h>
 
 static VjoSysappGfx gfx = {.fb_id = -1};
 
 const VjoSysappGfx *vjo_sysapp_gfx(void) { return &gfx; }
 
+/* The process ends here: what libvita2d holds goes with it, as at the app's own exit. */
+static void close_app(void)
+{
+    sceKernelExitProcess(1);
+    for (;;) sceKernelDelayThread(100 * 1000); /* an exit that comes back (Vita3K's): never return into libvita2d */
+}
+
+static void note_gxm(unsigned flags, int rc)
+{
+    if (gfx.gxm_calls < 2) {
+        gfx.flags[gfx.gxm_calls] = flags;
+        gfx.rc[gfx.gxm_calls] = rc;
+    }
+    gfx.gxm_calls++;
+}
+
 int __real_sceGxmVshInitialize(const SceGxmInitializeParams *params);
 int __wrap_sceGxmVshInitialize(const SceGxmInitializeParams *params)
 {
-    return __real_sceGxmVshInitialize(params);
+    int rc = __real_sceGxmVshInitialize(params);
+    if (!params) return rc;
+    note_gxm(params->flags, rc);
+    if (rc >= 0) return rc;
+    if (params->flags & SCE_GXM_INITIALIZE_FLAG_SHAREDPB_OPEN) {
+        SceGxmInitializeParams own = *params;
+        own.flags = (params->flags & ~(SCE_GXM_INITIALIZE_FLAG_SHAREDPB_OPEN | SCE_GXM_INITIALIZE_FLAG_SHAREDPB_CREATE)) |
+                    SCE_GXM_INITIALIZE_FLAG_PB_LPDDR;
+        rc = __real_sceGxmVshInitialize(&own);
+        note_gxm(own.flags, rc);
+        if (rc >= 0) return rc;
+        vjo_log("graphics: the GPU library refused the app: 0x%02X: 0x%08X, then its own parameter buffer 0x%02X: 0x%08X; "
+                "closing", gfx.flags[0], (unsigned)gfx.rc[0], gfx.flags[1], (unsigned)gfx.rc[1]);
+    } else {
+        vjo_log("graphics: the GPU library refused the app: 0x%02X: 0x%08X; closing", params->flags, (unsigned)rc);
+    }
+    close_app();
+    return rc;
+}
+
+/* What the last read said, for log.txt. */
+static void last_read(char *out, size_t cap)
+{
+    if (gfx.fb_id < 0) snprintf(out, cap, "the framebuffer did not open: 0x%08X", (unsigned)gfx.fb_id);
+    else if (gfx.fb_rc < 0) snprintf(out, cap, "its read failed: 0x%08X", (unsigned)gfx.fb_rc);
+    else snprintf(out, cap, "buffer index %d", gfx.index);
+}
+
+static unsigned ms_since_first(uint64_t now) { return (unsigned)((now - gfx.first_us) / 1000u); }
+
+/* The hand-over's line: what the GPU library and the framebuffer did, and the main thread's
+ * place on the CPU (the console's own figures for docs/vita-memory.md section 5.4). */
+static void log_ready(void)
+{
+    char gpu[96];
+    if (gfx.gxm_calls >= 2)
+        snprintf(gpu, sizeof(gpu), "0x%02X: 0x%08X, then its own parameter buffer 0x%02X: 0x%08X", gfx.flags[0],
+                 (unsigned)gfx.rc[0], gfx.flags[1], (unsigned)gfx.rc[1]);
+    else if (gfx.gxm_calls)
+        snprintf(gpu, sizeof(gpu), "0x%02X: 0x%08X", gfx.flags[0], (unsigned)gfx.rc[0]);
+    else
+        snprintf(gpu, sizeof(gpu), "-");
+    vjo_log("graphics: system application; GPU library %s; display: buffer %d at read %u after %u ms; main thread "
+            "priority %d, CPU mask 0x%08X", gpu, gfx.index, gfx.reads, ms_since_first(gfx.ready_us),
+            sceKernelGetThreadCurrentPriority(), (unsigned)sceKernelGetThreadCpuAffinityMask(0));
 }
 
 int __real_sceSharedFbGetInfo(SceUID fb_id, SceSharedFbInfo *info);
 int __wrap_sceSharedFbGetInfo(SceUID fb_id, SceSharedFbInfo *info)
 {
-    return __real_sceSharedFbGetInfo(fb_id, info);
+    int rc = __real_sceSharedFbGetInfo(fb_id, info);
+    uint64_t now = sceKernelGetProcessTimeWide();
+    if (!info) return rc;
+    if (!gfx.reads++) gfx.first_us = now;
+    gfx.fb_id = fb_id;
+    gfx.fb_rc = rc;
+    gfx.index = rc >= 0 ? info->index : -1;
+    /* libvita2d draws into fb_base and fb_base2, the buffer SceShell handed over last: the second
+     * one once its index is past 1 */
+    if (fb_id >= 0 && rc >= 0 && info->index >= 2 && info->fb_base && info->fb_base2 && info->fb_base2 != info->fb_base) {
+        if (!gfx.ready) {
+            gfx.ready = 1;
+            gfx.ready_us = now;
+            log_ready();
+        }
+        return rc;
+    }
+    char why[64];
+    if (now - gfx.first_us >= VJO_GFX_GIVE_UP_US) {
+        last_read(why, sizeof(why));
+        vjo_log("graphics: no display from the system in %u s (%u reads; last: %s); closing",
+                VJO_GFX_GIVE_UP_US / 1000000u, gfx.reads, why);
+        close_app();
+    }
+    if (!gfx.waiting_logged && now - gfx.first_us >= VJO_GFX_LOG_AFTER_US) {
+        gfx.waiting_logged = 1;
+        last_read(why, sizeof(why));
+        vjo_log("graphics: waiting for the display: nothing handed over in %u ms (%u reads; last: %s)",
+                ms_since_first(now), gfx.reads, why);
+    }
+    sceKernelDelayThread(VJO_GFX_RETRY_US); /* SceShell's turn on CPU3 */
+    info->index = 1;                         /* libvita2d closes the framebuffer and opens it again */
+    return rc;
 }

@@ -134,7 +134,15 @@ different builds: open the Overlay app.`), and the app's Install page says which
 
 The Overlay app is a system application, like the Music or Video app: it
 opens beside a running game, which stays suspended behind it, so there is no
-need to close the game first. Games turned ON or OFF there take effect when the
+need to close the game first. It should also open from its LiveArea with no game
+running; up to v0.8.0-test.3 it did not (the owner's test.3 run), and test.4 is the
+first build to check it on a console. The likely cause, found in its graphics
+library's source and not yet seen on a console: its start waited for SceShell to
+hand it the screen without letting SceShell run, and used the system's shared GPU
+parameter buffer with no fallback. It now pauses for SceShell, falls back to a
+buffer of its own, closes itself after 10 s if the system never hands it the
+screen, and says how its start went in `log.txt` (`overlay app: graphics: ...`;
+[no game running](docs/vita-memory.md#starting-with-no-game-running)). Games turned ON or OFF there take effect when the
 game next starts or resumes, except that a game turned ON while it runs gets
 OCR at its next start (the worker is loaded as a game starts; until then the
 overlay says `OCR is not running in this game. Close the game and start it

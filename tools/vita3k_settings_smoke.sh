@@ -22,6 +22,12 @@
 #   env GAMES                synthetic games to install (default 120), TIMEOUT seconds (default 900)
 #   env RELEASE_VPK          optional: the release JPOverlaySettings.vpk, then booted over the same
 #                            games with no input; it must still be running after 30 s
+#   env SYSAPP               0 leaves out the system-application starts: the same app built to start
+#                            as a system application (VJO_SETTINGS_SMOKE_SYSAPP), which Vita3K never
+#                            does by itself, with stand-ins for SceShell's framebuffer hand-over and
+#                            the GPU library's shared parameter buffer: a hand-over, the same with the
+#                            shared buffer refused, and none (the app must close itself after 10 s);
+#                            SYSAPP_TIMEOUT seconds each (default 300)
 # Prints one line, "vita3k settings smoke: PASS|FAIL|SKIPPED <why>"; exit 0 for PASS or SKIPPED.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -157,6 +163,63 @@ if [ -n "${RELEASE_VPK:-}" ]; then
     || fail "(the release VPK did not keep running for 30 s: exit $rrc, $out/release.stdout)"
   release="; the release VPK ran 30 s on its Games page"
 fi
+# The system-application start, which Vita3K never takes by itself (its sceAppMgrGetBudgetInfo is a
+# stub that refuses): the same app built with VJO_SETTINGS_SMOKE_SYSAPP, where the smoke answers it
+# as a system application and stands in for SceShell's hand-over of the shared framebuffer and the
+# GPU library's shared parameter buffer (tools/vita3k_settings_smoke.c), with the app's own
+# settings/sysapp_gfx.c linked unchanged. Three starts: a hand-over at the 31st read, the same with
+# the shared parameter buffer refused (the app's own), and none (the app closes after 10 s, says why
+# in log.txt). SYSAPP=0 leaves them out.
+sysapp=
+if [ "${SYSAPP:-1}" != 0 ]; then
+  sbuild=$build-sysapp
+  make_sysapp() { # make_sysapp PAD
+    cmake -S "$root/vita" -B "$sbuild" -DVJO_SETTINGS_SMOKE=ON -DVJO_SETTINGS_SMOKE_SYSAPP=ON -DVJO_SETTINGS_SMOKE_PAD="$1" \
+      -DVJO_DEBUG="$([ "${VJO_DEBUG:-1}" = 0 ] && echo OFF || echo ON)" \
+      -DVJO_VOCR_SOURCE_DIR="$VJO_VOCR_SOURCE_DIR" -DPython3_EXECUTABLE="$(command -v "$PY")" > "$sbuild.config.log" 2>&1 \
+      && cmake --build "$sbuild" --target vjo_settings_smoke.vpk-vpk -j4 > "$sbuild.build.log" 2>&1
+  }
+  make_sysapp 0 || { grep -q "segment 1 overlaps" "$sbuild.build.log" && make_sysapp 4096; } \
+    || fail "(the system-application smoke app did not build: $sbuild.config.log, $sbuild.build.log)"
+  mkdir -p "$ux0/data/VitaJPOverlay"
+  applog=$ux0/data/VitaJPOverlay/log.txt
+  for mode in "handover 30" "nopb 30" "never"; do
+    name=${mode%% *}
+    printf '%s' "$mode" > "$ux0/data/vjo_settings_smoke_sysapp.txt"
+    rm -f "$ux0/data/vjo_settings_smoke.txt" "$applog"
+    t0=$(date +%s)
+    TIMEOUT=${SYSAPP_TIMEOUT:-300} vita3k --frontend sdl "$sbuild/vjo_settings_smoke.vpk" > "$out/sysapp-$name.stdout" 2>&1
+    src=$?
+    ssecs=$(( $(date +%s) - t0 ))
+    cp "$applog" "$out/sysapp-$name.log.txt" 2>/dev/null || : > "$out/sysapp-$name.log.txt"
+    guest_faults "the system-application start ($mode)" "$out/sysapp-$name.stdout"
+    [ "$src" -eq 124 ] && fail "(the system-application start ($mode) hung: timeout ended it after ${SYSAPP_TIMEOUT:-300}s; $out/sysapp-$name.stdout)"
+    [ "$src" -le 128 ] || fail "(the system-application start ($mode): Vita3K exit $src; $out/sysapp-$name.stdout)"
+    sr=$(cat "$ux0/data/vjo_settings_smoke.txt" 2>/dev/null)
+    gfx=$(grep -h "overlay app: graphics: " "$out/sysapp-$name.log.txt" | tr '\n' '|')
+    case $mode in
+      never)
+        case $sr in exit-error*frames=0\ *) ;; *) fail "(no hand-over: the app did not close before its first frame: '$sr'; $out/sysapp-$name.stdout)" ;; esac
+        grep -q "The app exited with code 1" "$out/sysapp-$name.stdout" || fail "(no hand-over: not the app's exit code 1: $out/sysapp-$name.stdout)"
+        case $gfx in *"graphics: waiting for the display: nothing handed over in "*"graphics: no display from the system in 10 s ("*"buffer index 1); closing"*) ;;
+          *) fail "(no hand-over: log.txt does not say why the app closed: '$gfx')" ;; esac
+        [ "$ssecs" -ge 10 ] || fail "(no hand-over: the app closed after ${ssecs}s, before its 10 s)"
+        sysapp="$sysapp; none: closed itself after ${ssecs}s with its two log.txt lines" ;;
+      *)
+        case $sr in done*) ;; *) fail "(the system-application start ($mode) stopped at: '$sr'; $out/sysapp-$name.stdout)" ;; esac
+        grep -q "The app exited with code 0" "$out/sysapp-$name.stdout" || fail "(the system-application start ($mode): not the app's exit 0: $out/sysapp-$name.stdout)"
+        sfield() { echo "$sr" | tr ' ' '\n' | sed -n "s/^$1=//p"; }
+        [ "$(sfield unsafe_frees)" = 0 ] && [ "$(sfield live)" = 0 ] && [ "$(sfield frames)" -ge "$(sfield script)" ] \
+          || fail "(the system-application start ($mode): $sr)"
+        want="graphics: system application; GPU library 0x0A: 0x00000000; display: buffer 2 at read 31 after "
+        [ "$name" = nopb ] && want="graphics: system application; GPU library 0x0A: 0x805B0017, then its own parameter buffer 0x03: 0x00000000; display: buffer 2 at read 31 after "
+        case $gfx in *"$want"*) ;; *) fail "(the system-application start ($mode): log.txt has '$gfx', not '$want...')" ;; esac
+        ms=$(echo "$gfx" | sed -n 's/.*display: buffer 2 at read 31 after \([0-9]*\) ms.*/\1/p')
+        sysapp="$sysapp; $mode: $(sfield frames) frames, buffer 2 after ${ms:-?} ms" ;;
+    esac
+  done
+  sysapp="; the system-application start under Vita3K's stand-ins${sysapp}"
+fi
 echo "vita3k settings smoke: PASS ($(field frames) frames, $(field loads) icon loads, $(field failed) refused," \
   "$(field frees) frees after $(field waits) GPU waits, $(field draws) draws, at most $(field max_live) alive," \
-  "no unsafe free; $(cat "$out/games.txt"); the app and Vita3K exited 0 after ${secs}s$release; $out/results.txt)"
+  "no unsafe free; $(cat "$out/games.txt"); the app and Vita3K exited 0 after ${secs}s$release$sysapp; $out/results.txt)"

@@ -15,7 +15,11 @@ priority, a worker off CPU3) built and packaged. This reads, without dependencie
 - the linked ELF: newlib's heap (_newlib_heap_size_user, else newlib's 128 MiB), which with the
   SELF's segments and libvita2d's fixed allocations must fit the budget; and every call of
   sceKernelCreateThread made from settings/sysapp.c's wrapper (the link's --wrap), which puts
-  each thread on CPU3, and none of sceKernelChangeThreadCpuAffinityMask.
+  each thread on CPU3, and none of sceKernelChangeThreadCpuAffinityMask;
+- libvita2d's calls of sceGxmVshInitialize and sceSharedFbGetInfo going to settings/sysapp_gfx.c's
+  wrappers (the link's --wrap), which make its system start wait for SceShell's hand-over with a
+  pause and fall back to the app's own parameter buffer: without them the app does not open with
+  no game running (owner, 2026-10-16), and the build gave no sign.
 
 The memory sum is a lower bound from the build and docs/vita-memory.md section 5.4's estimates,
 not a measurement: the console's own numbers are the app's start line in log.txt.
@@ -35,6 +39,10 @@ HEAP_SYMBOL = "_newlib_heap_size_user"
 THREAD_IMPORT = "sceKernelCreateThread"
 THREAD_WRAPPER = "__wrap_sceKernelCreateThread"
 FORBIDDEN_CALLS = ("sceKernelChangeThreadCpuAffinityMask",)
+# libvita2d's two calls into the system that settings/sysapp_gfx.c wraps (the link's --wrap), so
+# that its system start waits for SceShell's hand-over and falls back to the app's own parameter
+# buffer: with no game running the app does not open otherwise (owner, 2026-10-16).
+GRAPHICS_IMPORTS = ("sceGxmVshInitialize", "sceSharedFbGetInfo")
 MODULE_INFO_SIZE = 0x5C       # sce_module_info_raw (src/sce-elf-defs.h)
 # What the app holds besides its heap and its segments, by source (docs/vita-memory.md section
 # 5.4; estimates, not measured on a console): libvita2d a8f15ab's GXM rings, depth and stencil,
@@ -191,6 +199,29 @@ def thread_calls(elf):
     return sum(1 for _, symbol in elf["relocations"] if symbol == THREAD_WRAPPER)
 
 
+def graphics_calls(elf):
+    """libvita2d's calls of each graphics import go to its wrapper, and the import is called only
+    from there (the wrapper's __real_ call): {import: the calls of its wrapper}."""
+    counts = {}
+    for name in GRAPHICS_IMPORTS:
+        wrapper = "__wrap_" + name
+        calls = sum(1 for _, symbol in elf["relocations"] if symbol == wrapper)
+        if not calls:
+            raise Invalid(f"nothing calls {wrapper}: the link's --wrap={name} is missing, so libvita2d's system start "
+                          "does not wait for SceShell (settings/sysapp_gfx.c)")
+        found = elf["symbols"].get(wrapper)
+        if not found:
+            raise Invalid(f"{wrapper} is called but not defined (settings/sysapp_gfx.c)")
+        start = found[0][0] & ~1
+        end = start + found[0][1]
+        outside = [place for place, symbol in elf["relocations"] if symbol == name and not start <= place < end]
+        if outside:
+            raise Invalid(f"{name} is called at 0x{outside[0]:08x}, outside {wrapper} (0x{start:08x}-0x{end:08x}): "
+                          f"the link's --wrap={name} is missing there")
+        counts[name] = calls
+    return counts
+
+
 def check(self_path, elf_path):
     sce = read_self(Path(self_path).read_bytes())
     require(sce["is_used"] == 1, "control info 6 is not in use")
@@ -213,11 +244,13 @@ def check(self_path, elf_path):
                             f"atlas' and the stacks' {sum(FIXED.values())} B are {used} B, more than the "
                             f"{budget} B budget")
     calls = thread_calls(elf)
+    graphics = graphics_calls(elf)
     return {"attribute": f"0x{sce['attribute']:02X}", "budget_bytes": budget, "phycont_bytes": 0,
             "main_thread": {"priority": f"0x{sce['priority']:08X}", "cpu_mask": f"0x{sce['cpu_mask']:08X}"},
             "heap_bytes": heap, "segment_bytes": sce["segments"],
             "at_least_bytes": used, "headroom_bytes": budget - used, "estimated": FIXED,
-            "thread_creations_through_the_wrapper": calls, "result": "pass"}
+            "thread_creations_through_the_wrapper": calls, "graphics_calls_through_the_wrappers": graphics,
+            "result": "pass"}
 
 
 def main():

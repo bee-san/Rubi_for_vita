@@ -1120,8 +1120,8 @@ static void test_a_saved_choice_says_when_it_applies(void)
     saved_value("vocr_tier", tier);
     TEST_CHECK_(!strcmp(tier, "large"), "vocr_tier = %s", tier);
     const Text *st = text_at(3, ROOM_END + 4 + 22, 40, 41); /* the page's status line */
-    TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when a game resumes or the overlay next opens.") &&
-                st->color == WHITE, "the status line: '%s'", st ? st->text : "(none)");
+    TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the overlay next opens.") && st->color == WHITE,
+                "the status line: '%s'", st ? st->text : "(none)");
 }
 
 /* engine.c on its own: the card of a parsed config.ini, its status line, the sizes' lines. */

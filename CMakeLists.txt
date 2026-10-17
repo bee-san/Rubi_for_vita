@@ -211,6 +211,7 @@ add_test(NAME settings_sysapp COMMAND vjo-settings-sysapp-tests)
 add_executable(vjo-settings-sysapp-gfx-tests host/tests/test_settings_sysapp_gfx.c host/tests/sysapp_gfx_model.c
   settings/sysapp_gfx.c)
 target_include_directories(vjo-settings-sysapp-gfx-tests PRIVATE third_party/acutest/include host/tests/sysapp_gfx_stubs)
+target_compile_definitions(vjo-settings-sysapp-gfx-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-settings-sysapp-gfx-tests PRIVATE -Wall -Wextra)
 target_link_options(vjo-settings-sysapp-gfx-tests PRIVATE "LINKER:--wrap=sceGxmVshInitialize"
   "LINKER:--wrap=sceSharedFbGetInfo")

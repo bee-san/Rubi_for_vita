@@ -461,6 +461,79 @@ Not in the table: libgxm's own memory for the render target (libvita2d passes no
 block, `driverMemBlock = -1`) is unmeasured, and where `sceGxmVshInitialize` places the 2 MiB
 parameter buffer was not checked; for a game it must be CDRAM (§8).
 
+#### Starting with no game running
+
+The owner (2026-10-16): "I can't open the Overlay app first. First I have to open a game, run
+the overlay, and then open the Overlay app." In test.3's collect the app's one start line
+(`log.txt` 11345, the first build that logs one) is beside CLANNAD; older boots also show the
+app in front before any game (an API 19 boot, line 4997), from builds whose app may still have
+been an ordinary application [unmeasured: which app was installed then]. No crash dump is of
+the app since v0.7.7 (the ten on the card are older: `t3-crash-dumps`), and the app logs
+nothing before its graphics start, so the logs cannot say where a start with no game stops.
+The app's own code waits on no game: the kernel's worker loader and input and display hooks
+pass it by (`kernel/loader.c` `vjo_game_is_candidate`, `kernel/input.c`, `kernel/display.c`
+act for `g.game_pid` only), and the Games list, the OCR & lookup page, the Anki export and the
+Install page read and write the memory card alone [source]. What waits is libvita2d's start as
+a system application, on SceShell, twice [source: libvita2d a8f15ab `vita2d.c:233-262`, and the
+pinned `libvita2d.a`'s disassembly: flags `0x0A`, 2 pending swaps, a 2 MiB parameter buffer, a
+read loop with no call between its tries]:
+
+- **The GPU library** starts with `SHARED_SYNC | SHAREDPB_OPEN` (`0x0A`): it opens the
+  parameter buffer another process made, and libvita2d keeps no result. Refused, the library
+  stays down and the rings, the render target and the shaders fail after it [source:
+  shoui520/psp2 `src/os0/us/libgxm_es4/source/init.c` and `gpu_es4/source/client_render.c`, a
+  reimplementation of the firmware: `SHAREDPB_OPEN` allocates no buffer and a render context
+  without a shared one fails]. Who creates that buffer, and whether it exists when no game runs,
+  is not known [unmeasured].
+- **The shared framebuffer**: libvita2d opens it, reads it and, while its buffer index is 1,
+  closes it and tries again, with no pause. The index is the buffer SceShell handed over last
+  (appmgr's `sceSharedFbUpdateProcessBegin` copies SceShell's render info into it, index at
+  0x34) [source: shoui520/psp2 `appmgr/source/sharedfb.c`], so it moves only when SceShell runs.
+  The app's main thread runs on CPU3 at 96 (`0x10000100` is 96 in a system application [wiki:
+  SceKernelThreadMgr, "Thread Priority"; source: psp2 `threadmgr/source/thread_create.c`]),
+  where most of SceShell's threads run: its job threads at 96-120, among them
+  SceShellAppExecChk at 106, are below it or equal (SceShellMain, at 76, is above it)
+  [measured: the SceShell dumps in test.3's collect], and the scheduler gives a CPU to the
+  highest-priority ready thread, with no time slicing between equals [SDK: Kernel-Overview,
+  "Thread Scheduling"]: while the loop spins, those threads do not run. A read before any
+  hand-over (index 0, no second buffer) ends the loop with a NULL buffer to draw into. Beside a
+  game both went well [measured: test.3's app drew its 60 logged frames]; why, and which of
+  them stops a start with no game, is not known [unmeasured].
+
+The app now wraps libvita2d's two calls (`settings/sysapp_gfx.c`; the link's
+`--wrap=sceGxmVshInitialize,--wrap=sceSharedFbGetInfo`, which `tools/check_settings_self.py`
+checks the built ELF for):
+
+- a refused shared parameter buffer is followed by one of the app's own, the same flags with
+  `PB_LPDDR` instead of `SHAREDPB_OPEN` (`0x03`): main memory, as a system application has no
+  CDRAM, the 2 MiB already in the table above [estimate: that it fits; test.3's app had
+  28,286,976 B free 60 frames after its start, measured]. Refused again, the app closes with a
+  `log.txt` line instead of drawing with a library that never started;
+- a read libvita2d cannot draw with (no framebuffer, a failed read, buffer 1 still the last one,
+  index 0, no second buffer) is given to it as buffer 1 after a 1 ms pause, in which SceShell has
+  CPU3; libvita2d then closes the framebuffer and opens it again. A wait over a second is logged;
+  after 10 s the app closes with a line that names the last read;
+- the first read libvita2d can draw with goes to it unchanged, so beside a game nothing changes.
+
+One line in both builds says how the start went, with the main thread's priority and CPU mask as
+the console reports them:
+
+```text
+overlay app: graphics: system application; GPU library 0x0A: 0x00000000; display: buffer 2 at read 1 after 0 ms; main thread priority 96, CPU mask 0x00080000
+```
+
+That is the host model's line beside a game (`host/tests/test_settings_sysapp_gfx.c`); a console
+has not logged it yet. The host tests run libvita2d's start (a copy of the pinned one's,
+`host/tests/sysapp_gfx_model.c`) through the same wrappers against a model of SceShell and the
+GPU library: no hand-over for 5 ms, none yet (index 0), a framebuffer that does not open, no
+shared parameter buffer, all of them, none for ever, both buffers refused. Without the wrappers
+eight of their ten fail [measured: on the host]. Vita3K never takes this path (its
+`sceAppMgrGetBudgetInfo` refuses), so its settings smoke also builds the app with that call
+answered as a system application and the hand-over and the shared buffer stood in for
+(`tools/vita3k_settings_smoke.sh`, `VJO_SETTINGS_SMOKE_SYSAPP`): a crash check of the app's code on
+that path, not evidence about the console (AGENTS.md rule 5). CPU3: the wait adds a pause, not
+load; its cost is unmeasured (rule 8).
+
 ## 6. Game memory modes, free memory, and the PS TV
 
 ### 6.1 Memory modes
