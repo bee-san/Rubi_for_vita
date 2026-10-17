@@ -46,6 +46,16 @@ static struct {
  * shot's JPEG crosses it too, a chunk at a time (API 23). */
 static unsigned char model_stage[VJO_GAME_OCR_MODEL_CHUNK];
 typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage) ? 1 : -1];
+/* exFAT's first file extension while a game ran took 20.9 s on the console;
+ * overwriting reserved space took 6 ms. Keep one maximum-sized spare on disk,
+ * prepared while the broker is idle. No image or extra buffer is kept here. */
+#define SHOT_SPARE_PATH "ux0:data/VitaJPOverlay/screenshot.reserve"
+static int shot_spare_ready, shot_spare_usable; /* file worker only */
+static SceUID shot_spare_fd = -1; /* retained across a failed close */
+static int shot_spare_busy; /* g.lock: do not unload while its file is owned */
+static int shot_spare_preparing; /* g.lock: no job may start behind reserve I/O */
+static uint64_t shot_spare_retry_us;
+
 
 /* The worker's rows request (vjoOcrCaptureRows), armed by its syscall and
  * copied by the display hook in the game's own thread. state moves IDLE ->
@@ -105,7 +115,7 @@ static void model_reset_locked(void)
 
 static void model_wake_locked(void)
 {
-    ksceKernelSetEventFlag(g.ievf, IEV_MODEL);
+    ksceKernelSetEventFlag(g.ioevf, IEV_MODEL);
 }
 
 static void model_invalidate_locked(void)
@@ -155,6 +165,9 @@ void game_ocr_init(void)
     worker_thread = refused_thread = 0;
     worker_epoch = request_epoch = sequence = 0;
     valid = pending = claimed = cancelled = completed = stopping = 0;
+    shot_spare_ready = shot_spare_usable = shot_spare_busy = shot_spare_preparing = 0;
+    shot_spare_fd = -1;
+    shot_spare_retry_us = 0;
     waiters = 0;
     model_reset_locked();
     memset(&rows, 0, sizeof(rows));
@@ -166,7 +179,7 @@ void game_ocr_init(void)
 int game_ocr_capture_busy_locked(void)
 {
     sync_locked();
-    return pending || claimed || model_io.seq || rows.state != ROWS_IDLE;
+    return pending || claimed || model_io.seq || rows.state != ROWS_IDLE || shot_spare_preparing;
 }
 
 SceUID game_ocr_worker_pid_locked(void)
@@ -181,7 +194,7 @@ SceUID game_ocr_worker_pid_locked(void)
 int game_ocr_shutdown_locked(void)
 {
     sync_locked();
-    if (pending || claimed || model_io.seq || rows.state != ROWS_IDLE) return VJO_ERR_BUSY;
+    if (pending || claimed || model_io.seq || rows.state != ROWS_IDLE || shot_spare_busy) return VJO_ERR_BUSY;
     stopping = 1;
     if (waiters && g.mevf > 0) ksceKernelSetEventFlag(g.mevf, MEV_JOB | MEV_RESULT);
     return 0;
@@ -354,7 +367,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
     VJO_LOCK();
     sync_locked();
     if (!shell_caller(pid)) rc = VJO_ERR_PERM;
-    else if (pending || claimed || model_io.seq || rows.state != ROWS_IDLE) rc = VJO_ERR_BUSY;
+    else if (pending || claimed || model_io.seq || rows.state != ROWS_IDLE || shot_spare_preparing) rc = VJO_ERR_BUSY;
     else if (!registration_current(worker_pid)) rc = VJO_ERR_NO_GAME;
     else if (sequence == 0x7FFFFFFFu) rc = VJO_ERR_BUSY; /* Never recycle a sequence. */
     else {
@@ -777,7 +790,14 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
         if (!shell_caller(pid)) rc = VJO_ERR_PERM;
         else if (!valid || seq != request.seq || request_shell != pid) rc = VJO_ERR_ARG;
         else if (cancelled) rc = VJO_ERR_CANCELLED;
-        else if (!completed) rc = 1;
+        else if (!completed) {
+            /* A screenshot is frozen once its first encoded JPEG chunk is
+             * accepted. Pending Read can then release Shell's capture hold.
+             * Submit cleared this result, so it exposes no stale text. */
+            if ((request.flags & VJO_GAME_OCR_F_SHOT) && result.shot_bytes && out &&
+                ksceKernelMemcpyKernelToUser(out, &result, sizeof(result)) < 0) rc = VJO_ERR_COPY;
+            else rc = 1;
+        }
         else if (!out || ksceKernelMemcpyKernelToUser(out, &result, sizeof(result)) < 0)
             rc = VJO_ERR_COPY;
         else rc = 0;
@@ -1066,9 +1086,9 @@ int vjoOcrModelClose(uint32_t seq)
 /* ---- API 23: a shot's JPEG, written by the kernel worker thread ----
  * The game worker hands its JPEG over in order, a staging buffer at a time; the
  * kernel worker writes each piece to the queue's <shot>.jpg.tmp (the first
- * creates it) and, on Save, closes it, syncs the memory card, renames it to
- * <shot>.jpg and syncs again: the card's record (shell/anki_queue.c), committed
- * after it, never names a picture whose bytes are not on the card. The path is
+ * creates it) and, on Save, closes it and renames it to <shot>.jpg. The Shell's
+ * subsequent record commit syncs the mount, including this JPEG and its name.
+ * The path is
  * the kernel's own (the request's checked card ID); the game supplies bytes. */
 static int shot_write_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t bytes, const void *src)
 {
@@ -1107,6 +1127,9 @@ static int shot_write_locked(SceUID pid, uint32_t seq, uint32_t offset, uint32_t
         if (!offset) model_reset_locked(); /* nothing was opened */
         return rc;
     }
+    result.size = sizeof(result);
+    result.seq = seq;
+    result.shot_bytes = bytes; /* pending Read: the JPEG is frozen in the game */
     model_io.offset = offset;
     model_io.bytes = bytes;
     model_io.operation = SHOT_WRITE;
@@ -1172,13 +1195,8 @@ int vjoOcrShotSave(uint32_t seq, uint32_t bytes)
     return rc;
 }
 
-void game_ocr_model_tick(void)
+void game_ocr_rows_tick(void)
 {
-    int operation, rc, stat_rc = 0, shot, saved;
-    SceUID fd;
-    uint32_t offset, bytes, size;
-    uint64_t mtime = 0;
-    char path[sizeof(model_io.path)], final[sizeof(model_io.path)];
     VJO_LOCK();
     /* A rows copy whose process exited during it, or that outlived its call:
      * nobody waits for it now. */
@@ -1197,8 +1215,80 @@ void game_ocr_model_tick(void)
         rows.in_call = rows.orphan = rows.abandoned = 0;
         buffers_kstrip_free();
     }
+    VJO_UNLOCK();
+}
+
+/* File worker only, with no active broker job. Do not use model_stage: a
+ * syscall can queue the next chunk while this thread is inside the filesystem.
+ * One byte at the end allocates the spare's capacity without an image buffer.
+ * Wait for Shell registration: ux0 may still be remapped before then. */
+static void shot_spare_prepare(void)
+{
+    uint64_t started = ksceKernelGetSystemTimeWide();
+    shot_spare_retry_us = started + 1000000u;
+    int rc = 0;
+    if (shot_spare_fd < 0) {
+        shot_spare_usable = 0;
+        shot_spare_fd = ksceIoOpen(SHOT_SPARE_PATH, SCE_O_WRONLY | SCE_O_CREAT, 0666);
+        rc = shot_spare_fd;
+        if (shot_spare_fd >= 0) {
+            SceIoStat st;
+            memset(&st, 0, sizeof(st));
+            rc = ksceIoGetstatByFd(shot_spare_fd, &st);
+            if (rc >= 0 && st.st_size < VJO_GAME_OCR_SHOT_MAX) {
+                const unsigned char zero = 0;
+                rc = ksceIoPwrite(shot_spare_fd, &zero, 1, VJO_GAME_OCR_SHOT_MAX - 1u);
+                if (rc != 1) rc = rc < 0 ? rc : VJO_ERR_COPY;
+            } else if (rc >= 0 && st.st_size > VJO_GAME_OCR_SHOT_MAX) {
+                st.st_size = VJO_GAME_OCR_SHOT_MAX;
+                rc = ksceIoChstatByFd(shot_spare_fd, &st, SCE_CST_SIZE);
+            }
+            if (rc >= 0) {
+                rc = ksceIoGetstatByFd(shot_spare_fd, &st);
+                if (rc >= 0 && st.st_size != VJO_GAME_OCR_SHOT_MAX) rc = VJO_ERR_COPY;
+            }
+            shot_spare_usable = rc >= 0;
+        }
+    }
+    if (shot_spare_fd >= 0) {
+        int closed = ksceIoClose(shot_spare_fd);
+        if (closed >= 0) {
+            shot_spare_fd = -1;
+            shot_spare_ready = shot_spare_usable;
+        } else if (rc >= 0) rc = closed;
+    }
+    VJO_LOCK();
+    shot_spare_busy = shot_spare_fd >= 0;
+    shot_spare_preparing = 0;
+    VJO_UNLOCK();
+    if (rc < 0 || ksceKernelGetSystemTimeWide() - started >= 100000u)
+        klog("screenshot reserve: %u ms, rc 0x%08X",
+             (uint32_t)(ksceKernelGetSystemTimeWide() - started) / 1000, (unsigned)(rc < 0 ? rc : 0));
+}
+
+void game_ocr_model_tick(void)
+{
+    int operation, rc, stat_rc = 0, shot, saved;
+    SceUID fd;
+    uint32_t offset, bytes, size, written;
+    uint64_t mtime = 0;
+    char path[sizeof(model_io.path)], final[sizeof(model_io.path)];
+    game_ocr_rows_tick();
+    VJO_LOCK();
     sync_locked();
-    if (!model_io.seq || model_io.phase == MODEL_RUNNING) { VJO_UNLOCK(); return; }
+    if (!model_io.seq || model_io.phase == MODEL_RUNNING) {
+        int prepare = !model_io.seq && !pending && !claimed &&
+                      rows.state == ROWS_IDLE && g.shell_pid > 0 && !stopping &&
+                      !shot_spare_ready && ksceKernelGetSystemTimeWide() >= shot_spare_retry_us;
+        /* Preparation and retained-close retries both wait for an idle
+         * transport. A job arriving meanwhile stays unclaimed, so its model
+         * operation's two-second deadline cannot expire behind this I/O.
+         * A valid cancelled result owns nothing once its claim is drained. */
+        if (prepare) shot_spare_busy = shot_spare_preparing = 1;
+        VJO_UNLOCK();
+        if (prepare) shot_spare_prepare();
+        return;
+    }
     if (model_io.closing || model_io.orphan) {
         if (model_io.retry_us > (uint64_t)ksceKernelGetSystemTimeWide()) { VJO_UNLOCK(); return; }
         /* Pending I/O has no caller pointer and can be discarded before it
@@ -1212,6 +1302,7 @@ void game_ocr_model_tick(void)
     offset = model_io.offset;
     bytes = model_io.bytes;
     size = model_io.size;
+    written = model_io.written;
     shot = model_io.shot;
     saved = model_io.saved;
     memcpy(path, model_io.path, sizeof(path));
@@ -1246,14 +1337,29 @@ void game_ocr_model_tick(void)
         if (rc > (int)bytes) rc = VJO_ERR_FORMAT;
     } else if (operation == SHOT_WRITE) {
         /* API 23: the shot's next piece, at its place; the first creates the .tmp */
+        uint64_t t0 = ksceKernelGetSystemTimeWide(), opened;
         rc = 0;
-        if (fd < 0 && (fd = ksceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0) rc = fd;
+        if (fd < 0) {
+            int prepared = shot_spare_ready;
+            shot_spare_ready = 0;
+            int reserved = prepared && ksceIoRename(SHOT_SPARE_PATH, path) >= 0;
+            /* O_TRUNC would discard the space that makes the first save fast.
+             * If preparation failed or the spare disappeared, retain the
+             * original bounded create/write path. */
+            fd = ksceIoOpen(path, SCE_O_WRONLY | (reserved ? 0 : SCE_O_CREAT | SCE_O_TRUNC), 0666);
+            if (fd < 0) rc = fd;
+        }
+        opened = ksceKernelGetSystemTimeWide();
         for (uint32_t done = 0; !rc && done < bytes;) {
             int n = ksceIoPwrite(fd, model_stage + done, bytes - done, (SceOff)(offset + done));
             if (n <= 0 || (uint32_t)n > bytes - done) rc = n < 0 ? n : VJO_ERR_COPY;
             else done += (uint32_t)n;
         }
         if (!rc) rc = (int)bytes;
+        if (ksceKernelGetSystemTimeWide() - t0 >= 100000u)
+            klog("screenshot file: offset %u, open %u ms, write %u ms, rc %d", offset,
+                 (uint32_t)(opened - t0) / 1000,
+                 (uint32_t)(ksceKernelGetSystemTimeWide() - opened) / 1000, rc);
         klog_d("ocr shot write: %u B at %u -> %d t=%u ms", bytes, offset, rc, shot_ms());
     } else if (operation == SHOT_SAVE) {
         /* closed, then its name. #194: no sync here. test.4's two ksceIoSync("ux0:") held this thread,
@@ -1263,12 +1369,21 @@ void game_ocr_model_tick(void)
          * which syncs this file and its name too. */
         uint64_t t0 = ksceKernelGetSystemTimeWide();
         klog_d("ocr shot save: closing t=%u ms", shot_ms()); /* a stop in the close or rename shows */
-        if ((rc = ksceIoClose(fd)) >= 0) {
+        /* Trim the reservation to the entire JPEG, not the last chunk. A
+         * failed trim must never publish a padded or incomplete image. */
+        SceIoStat st;
+        memset(&st, 0, sizeof(st));
+        st.st_size = written;
+        rc = ksceIoChstatByFd(fd, &st, SCE_CST_SIZE);
+        if (rc >= 0 && (rc = ksceIoClose(fd)) >= 0) {
             fd = -1;
             if ((rc = ksceIoRename(path, final)) < 0) ksceIoRemove(path);
         } /* else still open: the game's Close closes and removes it */
         klog_d("ocr shot save: close and rename %u us -> 0x%08X t=%u ms", (uint32_t)(ksceKernelGetSystemTimeWide() - t0),
                (unsigned)(rc < 0 ? rc : 0), shot_ms());
+        if (ksceKernelGetSystemTimeWide() - t0 >= 100000u)
+            klog("screenshot file: close/rename %u ms, rc 0x%08X",
+                 (uint32_t)(ksceKernelGetSystemTimeWide() - t0) / 1000, (unsigned)(rc < 0 ? rc : 0));
         rc = rc < 0 ? rc : 0;
         saved = !rc;
     } else {

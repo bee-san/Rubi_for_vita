@@ -270,6 +270,10 @@
 #endif
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
+/* Deliberately add one 16 KiB kernel stack so slow disk I/O cannot stall
+ * input polling. No new Shell memory, image buffer or heap. */
+#define VJO_STACK_KERNEL_IO 16384u
+#define VJO_BUDGET_KERNEL_IO_STACK VJO_STACK_KERNEL_IO
 /* API 24 removed the kernel's full-frame capture (vjoRequestCapture, vjoReadRaw; VjoCapture,
  * KERNEL_RW, at most 960 x 544 x 4 = 2,088,960 B, per request), the worst case's largest item
  * until then: no Shell code had requested it since Google Lens's JPEG and the Shell's Anki
@@ -288,7 +292,7 @@
  * on; loader.c checks at compile time that both fit. It is not refused while a
  * kernel strip is held, so the worst case counts both. */
 #define VJO_BUDGET_KERNEL_POLICY 24576u
-#define VJO_WORST_KERNEL_PERMANENT (VJO_BUDGET_KERNEL_MODULE_PAGES + VJO_BUDGET_KERNEL_STACK)
+#define VJO_WORST_KERNEL_PERMANENT (VJO_BUDGET_KERNEL_MODULE_PAGES + VJO_BUDGET_KERNEL_STACK + VJO_BUDGET_KERNEL_IO_STACK)
 #define VJO_WORST_KERNEL (VJO_WORST_KERNEL_PERMANENT + VJO_BUDGET_KERNEL_OCR_STRIP + VJO_BUDGET_KERNEL_POLICY)
 /* No cited safe size exists for this pool: its free space on a retail console
  * is unmeasured, and a 2,088,960 B capture failed there (#14, #74) and

@@ -49,7 +49,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | every Paf allocation | `memory.cpp` | **reduced**: refusals only (the reserve guard's line is kept) |
 | the ledger's per-item table at boot, game start and exit | `ledger.c` | **reduced**: the two pool lines stay |
 | Anki: the queue count, the arena peak, the record's bytes | `anki.c`, `anki_queue.c` | **drop**; each save is kept without its word (`anki: save rc=0, 12 ms`; the debug build's names it), and every error |
-| an Anki card's screenshot (API 23): its line (`anki: screenshot rc=…`: size, block, strips, times) and, for a failed one, the game worker's steps | `anki.c` `take_shot` | **reduced**: a failed screenshot's reason only, after the save's line (`anki: screenshot rc=-103`; rc -1: no file after it; the overlay points to log.txt), no figures and no step lines, for the Shell's pages; the screenshot itself is the same in both builds |
+| an Anki card's screenshot (API 23): its line (`anki: screenshot rc=…`: size, block, strips, times) and, for a failed one, the game worker's steps | `anki.c` `take_shot` | **reduced**: total, capture/encode and file-write timings, plus native I/O errors and failed screenshot details; no per-step lines. The screenshot itself is the same in both builds. |
 | the title's parameter line | `game.c` | **drop** |
 | a PSP game's launch: its IDs, disc ID and the file it boots (`psp: …`, #124) | `game.c` | **keep** (the guide's way to register a bubble: one line per launch) |
 | the log's append timing (`vjo_log_io`) | `log_vita.c` | **drop** |

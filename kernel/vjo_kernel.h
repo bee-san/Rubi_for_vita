@@ -22,6 +22,7 @@
 typedef struct {
     SceUID evf;    /* public events (VJO_EV_*) */
     SceUID ievf;   /* internal events (IEV_*) */
+    SceUID ioevf;  /* file worker events; disk I/O must not hold up input */
     SceUID mevf;   /* MEV_DONE: a model operation finished (game_ocr.c); its syscalls wait on it */
     SceUID lock;   /* mutex: the OCR transport (game_ocr.c), the region, its signatures and the kernel strip */
     SceUID game_lock; /* mutex: game_pid, game_active, prev_game_pid changes (lifecycle.c) */
@@ -119,10 +120,13 @@ void display_hook_release(void);
 void display_static_fb_sample(void); /* game context, from its pad calls */
 
 /* ledger.c: the memory ledger (core/ledger.h, include/vjo_ledger_budget.h) */
-enum VjoKernelLedgerItem { VJO_KL_MODULE = 0, VJO_KL_STACK, VJO_KL_OCR_STRIP, VJO_KL_POLICY, VJO_KL_COUNT };
+enum VjoKernelLedgerItem { VJO_KL_MODULE = 0, VJO_KL_STACK, VJO_KL_OCR_STRIP, VJO_KL_POLICY, VJO_KL_IO_STACK, VJO_KL_COUNT };
 extern VjoLedger g_kernel_ledger;
 void kledger_init(void);
 void kledger_log(const char *when); /* the pool and its items, to kernel.txt */
+int kernel_io_start(void);
+void kernel_io_stop(void); /* after game_ocr_stop has drained the broker */
+void kernel_file_flush(void); /* file worker only */
 
 /* loader.c: the game OCR worker loaded into every game ON in games.ini at its start (#138) */
 int loader_hook_install(void);  /* 0, or why the loader is off (the per-title lines still work) */

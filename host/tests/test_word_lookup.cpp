@@ -259,7 +259,6 @@ void worst_case_body(VjoStyled *st, VjoArena *a, const VjoEntryList *l, int ja, 
     vjo_styled_puts(st, "\n", VJO_RGB_DIM, en);
     vjo_styled_puts(st, anki.c_str(), VJO_RGB_DIM, en);
     vjo_styled_puts(st, "\n", VJO_RGB_DIM, en);
-    vjo_styled_puts(st, "Queued for Anki\n", VJO_RGB_DIM, en);
     st->cap -= 4 * (1 + 12 + 96); /* overlay.cpp: each warning's room, at its longest */
     vjo_styled_entry(st, l, 0, ja, en, 1, 1);
     st->cap += 4 * (1 + 12 + 96);

@@ -459,7 +459,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
             crash_at("jpeg_saved"); /* on the card, its record not yet */
         }
     }
-    if (shot_close_overlay)
+    if (shot_close_overlay == 1)
         __atomic_store_n(&g_view.open, 0, __ATOMIC_RELEASE); /* the user closes it meanwhile */
     return (int)++shot_seq;
 }
@@ -480,6 +480,12 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     out->n_steps = 1;
     out->step[0].id = VJO_GSTEP_SHOT;
     out->step[0].rc = shot_job_rc;
+    if (shot_close_overlay == 2 && shot_reads == 1) {
+        __atomic_store_n(&g_view.open, 0, __ATOMIC_RELEASE);
+        return 1; /* JPEG frozen; file still being written */
+    }
+    if (shot_close_overlay == 2)
+        TEST_CHECK(!strcmp(g_view.anki_status, "Saving in background; you can close the overlay"));
     return 0;
 }
 int vjoOcrCancel(uint32_t seq) { (void)seq; return 0; }
@@ -1554,11 +1560,13 @@ static void test_enter_saves_the_screenshot_beside_the_card(void)
      * alignment), and no .jpg opened (finish) */
     TEST_CHECK_(last_peak <= text_peak + sizeof(VjoGameOcrRequest) + sizeof(VjoGameOcrResult) + 8,
                 "peak %u, %u without the screenshot", (unsigned)last_peak, (unsigned)text_peak);
-    /* the debug build logs every screenshot and the record; the normal build only a failed one */
+    /* The normal build keeps phase timings for slow-card diagnosis; the debug
+     * build includes the detailed screenshot and record metadata too. */
 #if VJO_DEBUG
     TEST_CHECK(logged("anki: screenshot rc=0 960x544 q70 try 1: 56934 B; block 450560 B") && logged(" + .jpg\n"));
 #else
-    TEST_CHECK(!logged("anki: screenshot") && !logged(" + .jpg\n") && logged("anki: save rc=0, "));
+    TEST_CHECK(logged("capture/encode 0 ms, write 0 ms; io=0x00000000") &&
+               !logged(" + .jpg\n") && logged("anki: save rc=0, "));
 #endif
     TEST_MSG("%s", all_logs);
     /* the same card from a new lookup in the same minute: queued already, no second screenshot */
@@ -1622,6 +1630,19 @@ static void test_a_failed_screenshot_saves_the_card_without_one(void)
 
 /* The record that names the screenshot is committed after it, and a commit that
  * fails takes the screenshot with it: no card, no JPEG. */
+static void test_a_captured_shot_finishes_after_overlay_closes(void)
+{
+    reset();
+    screenshots_on();
+    shot_close_overlay = 2;
+    enter(0);
+    TEST_CHECK(!g_view.open && shot_reads == 2 && slot_begins == slot_ends);
+    TEST_CHECK(files_ending(".jpg") == 1 && files_ending(".json") == 1 && files_ending(".tmp") == 0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki"));
+    TEST_CHECK(!heap_live && heap_allocs == heap_frees);
+    finish();
+}
+
 static void test_a_failed_record_takes_its_screenshot_with_it(void)
 {
     reset();
@@ -1700,6 +1721,7 @@ TEST_LIST = {
     {"api23_enter_saves_the_screenshot_beside_the_card", test_enter_saves_the_screenshot_beside_the_card},
     {"api23_a_failed_screenshot_saves_the_card_without_one", test_a_failed_screenshot_saves_the_card_without_one},
     {"api23_a_failed_record_takes_its_screenshot_with_it", test_a_failed_record_takes_its_screenshot_with_it},
+    {"api23_a_captured_shot_finishes_after_overlay_closes", test_a_captured_shot_finishes_after_overlay_closes},
     {"api23_an_interrupted_saves_jpeg_is_replaced", test_an_interrupted_saves_jpeg_is_replaced},
     {"api23_no_screenshot_is_asked_for_when_off_or_without_a_game", test_no_screenshot_is_asked_for_when_off_or_without_a_game},
 #endif

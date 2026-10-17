@@ -41,6 +41,12 @@ int ksceKernelMemcpyUserToKernel(void *, const void *, SceSize);
 int ksceKernelMemcpyKernelToUser(void *, const void *, SceSize);
 int ksceKernelStrncpyUserToKernel(char *, const char *, SceSize);
 int ksceKernelSetEventFlag(SceUID, unsigned);
+SceUID ksceKernelCreateEventFlag(const char *, unsigned, unsigned, void *);
+int ksceKernelDeleteEventFlag(SceUID);
+SceUID ksceKernelCreateThread(const char *, int (*)(SceSize, void *), int, SceSize, unsigned, int, void *);
+int ksceKernelStartThread(SceUID, SceSize, void *);
+int ksceKernelWaitThreadEnd(SceUID, int *, void *);
+int ksceKernelDeleteThread(SceUID);
 typedef unsigned int SceUInt;
 #define SCE_EVENT_WAITOR 1
 #define SCE_EVENT_WAITCLEAR_PAT 4

@@ -80,7 +80,7 @@ static void change_detection(void)
 #define KFILE_CAP (256 * 1024)
 static int kfile_size = -1;
 
-static void kernel_file_flush(void)
+void kernel_file_flush(void)
 {
     char buf[512];
     int n;
@@ -128,7 +128,7 @@ static int worker(SceSize args, void *argp)
         /* A starting game waits for this (loader.c): first. Every round, so a
          * question is never left behind a lost wakeup. */
         loader_tick();
-        game_ocr_model_tick();
+        game_ocr_rows_tick();
         if (bits & IEV_GAME_EXIT) {
             klog("game exit");
             ksceKernelSetEventFlag(g.evf, VJO_EV_GAME_EXIT);
@@ -149,9 +149,11 @@ static int worker(SceSize args, void *argp)
             input_poll();
             if (++tick % CHECK_EVERY == 0)
                 change_detection();
+        } else {
+            /* Recovery keeps its original one worker; no extra file stack. */
+            boot_tick();
+            kernel_file_flush();
         }
-        boot_tick();
-        kernel_file_flush();
     }
     return 0;
 }
@@ -498,6 +500,11 @@ int module_start(SceSize argc, const void *args)
         }
     }
 
+    if (!safe && kernel_io_start() < 0) {
+        release_hooks();
+        delete_sync_objects();
+        return SCE_KERNEL_START_FAILED;
+    }
     /* Without the worker nothing would ever be polled or finished. */
     worker_uid = ksceKernelCreateThread("VjoWorker", worker, 0x3C, VJO_STACK_KERNEL, 0, 0x10000, NULL);
     if (worker_uid >= 0)
@@ -506,6 +513,7 @@ int module_start(SceSize argc, const void *args)
         if (worker_uid >= 0)
             ksceKernelDeleteThread(worker_uid);
         worker_uid = -1;
+        kernel_io_stop();
         release_hooks();
         delete_sync_objects();
         return SCE_KERNEL_START_FAILED;
@@ -536,6 +544,7 @@ int module_stop(SceSize argc, const void *args)
         ksceKernelWaitThreadEnd(worker_uid, NULL, NULL);
         ksceKernelDeleteThread(worker_uid);
     }
+    kernel_io_stop();
     release_hooks();
     delete_sync_objects();
     return SCE_KERNEL_STOP_SUCCESS;

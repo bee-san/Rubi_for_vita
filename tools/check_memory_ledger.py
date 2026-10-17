@@ -48,6 +48,7 @@ ALLOWED = {
     ("kernel/buffers.c", "ksceKernelAllocMemBlock"): 1, # buffers_kstrip_alloc (the capture ladder's last rung)
     ("kernel/loader.c", "ksceKernelAllocMemBlock"): 1,  # policy_alloc (a starting game's games.ini read, #138)
     ("kernel/main.c", "ksceKernelCreateThread"): 1,  # the worker thread, counted right after
+    ("kernel/io_worker.c", "ksceKernelCreateThread"): 1, # kernel_io_start, fixed file-worker stack
     ("game_ocr/main.c", "sceKernelAllocMemBlock"): 1, # game_memblock_alloc
     ("game_ocr/main.c", "sceKernelCreateThread"): 2, # vjo_game_ocr_worker_start and pool_run (a helper), each counted right after
 }
@@ -72,7 +73,7 @@ ITEMS = {
                     "VJO_BUDGET_SHELL_CTL_STACK", "VJO_BUDGET_SHELL_ANKI_STACK", "VJO_BUDGET_SHELL_USERRW_RESULTS"),
     "shell paf": ("VJO_BUDGET_PAF_PLUGIN", "VJO_BUDGET_PAF_RESULTS_LOCAL", "VJO_BUDGET_PAF_ANKI", "VJO_BUDGET_PAF_UI"),
     # API 24 removed the full-frame capture (VJO_BUDGET_KERNEL_CAPTURE); the strip and the policy read are in the sum
-    "kernel": ("VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK", "VJO_BUDGET_KERNEL_OCR_STRIP",
+    "kernel": ("VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK", "VJO_BUDGET_KERNEL_IO_STACK", "VJO_BUDGET_KERNEL_OCR_STRIP",
                "VJO_BUDGET_KERNEL_POLICY"),
     # VJO_BUDGET_GAME_SHOT (API 23, a screenshot) is a job of the one slot: never beside an OCR
     # job's workspace, capture, line or helpers, so not in the sum (include/vjo_ledger_budget.h)

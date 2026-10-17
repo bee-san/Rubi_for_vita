@@ -51,7 +51,7 @@ class MemoryLedgerCheck(unittest.TestCase):
         for pool in ("shell pages", "shell paf", "kernel", "game"):
             self.assertIn(pool, result.stdout)
         # 10 since #138's games.ini read for a starting game (kernel/loader.c policy_alloc)
-        self.assertIn("allocation sites: 9, all in ledger wrappers", result.stdout)  # API 24: no buffers_alloc
+        self.assertIn("allocation sites: 10, all in ledger wrappers", result.stdout)  # includes the file worker stack
         self.assertIn("kernel/loader.c:", result.stdout)
         as_json = json.loads(run("--json").stdout)
         self.assertEqual(as_json["result"], "pass")
@@ -74,7 +74,7 @@ class MemoryLedgerCheck(unittest.TestCase):
             kernel = next(p for p in json.loads(run("--json", "--variant", variant).stdout)["pools"]
                           if p["pool"] == "kernel")
             self.assertEqual(set(kernel["items"]), {"VJO_BUDGET_KERNEL_MODULE_PAGES", "VJO_BUDGET_KERNEL_STACK",
-                                                    "VJO_BUDGET_KERNEL_OCR_STRIP", "VJO_BUDGET_KERNEL_POLICY"}, variant)
+                                                    "VJO_BUDGET_KERNEL_IO_STACK", "VJO_BUDGET_KERNEL_OCR_STRIP", "VJO_BUDGET_KERNEL_POLICY"}, variant)
             self.assertEqual(kernel["worst"], sum(kernel["items"].values()), variant)
             self.assertEqual(kernel["worst"] - kernel["permanent"], kernel["items"]["VJO_BUDGET_KERNEL_OCR_STRIP"] +
                              kernel["items"]["VJO_BUDGET_KERNEL_POLICY"], variant)

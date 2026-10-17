@@ -90,7 +90,7 @@ int ksceKernelSetEventFlag(SceUID uid, unsigned bits)
     if (g.mevf > 0 && uid == g.mevf && bits == MEV_RESULT) { result_bit = 1; return 0; }
     if (g.mevf > 0 && uid == g.mevf) { TEST_CHECK(bits == MEV_DONE); done_pending = 1; return 0; }
     if (uid == g.evf && bits == VJO_EV_CAPTURE_DONE) return 0;
-    TEST_CHECK(uid == g.ievf && bits == IEV_MODEL); return 0;
+    TEST_CHECK(uid == g.ioevf && bits == IEV_MODEL); return 0;
 }
 int ksceKernelClearEventFlag(SceUID uid, unsigned bits)
 {

@@ -57,6 +57,7 @@ message(STATUS "Rubi ${VJO_VERSION}: the ${VJO_VARIANT} build (VJO_DEBUG=${VJO_D
 # ---------------- kernel ----------------
 add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/main.c
+  ${ROOT}/kernel/io_worker.c
   ${ROOT}/kernel/boot.c
   ${ROOT}/kernel/ledger.c
   $<$<BOOL:${VJO_DEBUG}>:${ROOT}/kernel/meminfo.c> # the self-test's memory sample: debug build only
@@ -97,7 +98,7 @@ target_compile_definitions(VitaJPOverlay_Kernel PRIVATE VJO_KERNEL=1)
 # (kernel/capture.c, kernel/display.c, kernel/scene.c) and the pad and touch hooks
 # (kernel/input.c, kernel/triggers.c) stay at -O2.
 set_source_files_properties(${ROOT}/kernel/game_ocr.c ${ROOT}/kernel/lifecycle.c ${ROOT}/kernel/foreground.c
-  ${ROOT}/kernel/meminfo.c ${ROOT}/kernel/loader.c ${ROOT}/kernel/main.c ${ROOT}/kernel/boot.c
+  ${ROOT}/kernel/meminfo.c ${ROOT}/kernel/loader.c ${ROOT}/kernel/main.c ${ROOT}/kernel/io_worker.c ${ROOT}/kernel/boot.c
   ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 

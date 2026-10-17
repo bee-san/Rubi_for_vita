@@ -371,8 +371,11 @@ Facts:
   again five times on the owner's PCH-1001 on 3.65 (#74) [measured]. Since API 19 OCR takes no
   kernel buffer: the display hook writes the region's grey rows into the game worker's own
   `USER_RW` block, at most 64 KiB, a strip at a time ([ingame-capture.md](ingame-capture.md)).
-  API 24 removed the full-frame buffer: the kernel pool's worst case is 225,280 B (debug build)
-  [memory-ledger.md].
+  API 24 removed the full-frame buffer. The screenshot-saving fix (#207) adds a separate
+  16 KiB kernel file-worker stack, with no new image buffer or Shell pages: the kernel pool's
+  declared worst case is 241,664 B (debug build), 237,568 B (normal build)
+  [source: `include/vjo_ledger_budget.h`; memory-ledger.md]. These are accounted sizes,
+  not console headroom measurements.
 - PSVshell reads the foreground process's budget (main, CDRAM, phycont: free and total) from the
   kernel's address-space information of the current context [source: PSVshell `src/perf.c`,
   `psvs_perf_poll_memory`]. Its numbers are the game's or the Shell's, whichever is in front;

@@ -53,7 +53,7 @@ static int64_t game_free = 64 * 1024 * 1024;
 static int file_fd = -1, open_error, write_error, kernel_files;
 /* a slow memory card: after the JPEG's last piece the kernel worker gets to the save only this much
  * later (its syscalls answer BUSY meanwhile), as when its close waits for the card */
-static uint64_t late_after_last_write_us, late_until;
+static uint64_t late_after_last_write_us, late_after_each_write_us, late_until;
 static unsigned file_opens, file_writes, renames, syncs, removes;
 
 int test_kernel_register(void);
@@ -200,8 +200,16 @@ int ksceIoPwrite(SceUID fd, const void *data, SceSize n, SceOff off)
     TEST_ASSERT(fd == 32 && file_fd >= 0);
     file_writes++;
     if (write_error) return write_error;
+    if (late_after_each_write_us) late_until = clock_us + late_after_each_write_us;
     if (late_after_last_write_us && n < VJO_GAME_OCR_SHOT_CHUNK) late_until = clock_us + late_after_last_write_us;
     return (int)pwrite(file_fd, data, n, (off_t)off);
+}
+int ksceIoChstatByFd(SceUID fd, SceIoStat *st, int bits)
+{
+    in_kernel_worker();
+    TEST_ASSERT(fd == 32 && file_fd >= 0 && st);
+    TEST_CHECK(bits == SCE_CST_SIZE);
+    return ftruncate(file_fd, (off_t)st->st_size) ? -1 : 0;
 }
 int ksceIoClose(SceUID fd)
 {
@@ -294,7 +302,7 @@ static void reset(void)
     block_live = refuse_user = refuse_all = 0; block_allocs = block_frees = live_bytes = peak_bytes = cdram_allocs = 0;
     game_free = 64 * 1024 * 1024;
     file_fd = -1; open_error = write_error = kernel_files = 0; file_opens = file_writes = renames = syncs = removes = 0;
-    late_after_last_write_us = late_until = 0;
+    late_after_last_write_us = late_after_each_write_us = late_until = 0;
     kstrip_live = 0; kstrip_allocs = 0;
     g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
     g.fb_w = 960; g.fb_h = 544; g.done_seq = g.capture_seq = 11;
@@ -467,6 +475,10 @@ static void a_slow_card_is_waited_for_and_never_blocks_the_worker(void)
 {
     VjoGameOcrResult out;
     reset(); procedural_frame();
+    late_after_each_write_us = 3000000;
+    TEST_CHECK(shot(&out) == VJO_OK && file_size(jpg_path) == (long)out.shot_bytes && !blocked);
+    TEST_CHECK(file_writes > 1 && out.shot_write_us >= 6000000u);
+    reset(); procedural_frame();
     late_after_last_write_us = 10000000;
     TEST_CHECK(shot(&out) == VJO_OK && file_size(jpg_path) == (long)out.shot_bytes && !blocked);
     TEST_CHECK(out.shot_write_us >= 10000000u);
@@ -475,6 +487,22 @@ static void a_slow_card_is_waited_for_and_never_blocks_the_worker(void)
     TEST_CHECK(shot(&out) == VJO_E_LOCAL_IO && out.io_error == VJO_ERR_TIMEOUT);
     TEST_CHECK(!blocked && !out.cleanup_status && file_size(jpg_path) < 0 && file_size(tmp_path) < 0);
     late_after_last_write_us = late_until = 0;
+    TEST_CHECK(shot(&out) == VJO_OK && file_size(jpg_path) == (long)out.shot_bytes);
+}
+
+/* Each individual card delay fits thirty seconds, but the chunks and final
+ * close share that time: two sixteen-second waits must not publish a JPEG. */
+static void all_file_calls_share_one_deadline(void)
+{
+    VjoGameOcrResult out;
+    reset(); procedural_frame();
+    late_after_each_write_us = 16000000;
+    TEST_CHECK(shot(&out) == VJO_E_LOCAL_IO && out.io_error == VJO_ERR_TIMEOUT);
+    TEST_CHECK(file_writes > 1 && out.shot_write_us >= VJO_GAME_OCR_SHOT_FILE_US &&
+               out.shot_write_us < VJO_GAME_OCR_SHOT_FILE_US + 1000000u);
+    TEST_CHECK(!out.shot_bytes && !out.cleanup_status && !blocked && !renames);
+    TEST_CHECK(file_size(jpg_path) < 0 && file_size(tmp_path) < 0 && removes == 1);
+    late_after_each_write_us = late_until = 0;
     TEST_CHECK(shot(&out) == VJO_OK && file_size(jpg_path) == (long)out.shot_bytes);
 }
 
@@ -534,6 +562,7 @@ TEST_LIST = {
     {"API 23: five shots leave the slot, the kernel and the game as they were", a_shot_leaves_the_slot_as_it_found_it},
     {"API 23: a slow card's save is waited for; one given up leaves no file and no blocked worker",
      a_slow_card_is_waited_for_and_never_blocks_the_worker},
+    {"API 23: all JPEG chunks and the close share one file deadline", all_file_calls_share_one_deadline},
     {NULL, NULL}
 };
 
