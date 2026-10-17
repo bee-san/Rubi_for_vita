@@ -36,7 +36,7 @@
 <p align="center">
   <img src="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/stills/02-7.8.jpg" width="32%" alt="The overlay over the promo's mock visual novel: the line 「また明日、一緒に見に行こう!」 with 一緒に highlighted, and its entry: いっしょに, frequency rank 125, together (with), and the meanings of its two kanji.">
   <img src="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/stills/04-15.9.jpg" width="32%" alt="The Anki card Rubi made of 一緒に, a Lapis note: the word and its reading, the sentence, the definition from Bee's Ultimate Dictionary and the game's screenshot.">
-  <img src="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/stills/07-26.2.jpg" width="32%" alt="The Rubi app's Games page: Ember Garden turned OFF, with the app's line: Saved. It applies when the game next starts or resumes.">
+  <img src="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/stills/07-26.2.jpg" width="32%" alt="The Rubi app's Games page: Ember Garden turned OFF, with the app's line “Saved. It applies when the game next starts or resumes.”">
 </p>
 
 - **Look up any word in the dialogue.** L + R opens the overlay over the game: the dialogue at the
