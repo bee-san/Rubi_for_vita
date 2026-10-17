@@ -1,0 +1,179 @@
+{
+  "baseline_commit": "1f113ad6f29f452cb9ab7a81df6d8d2af5d31b8b",
+  "before": "previous handle-session implementation, captured normal host executable",
+  "before_binary_sha256": "ad2c2eca80ad43a2b319000f237b045b535eea47203b79286c620be9187431b4",
+  "after_binary_sha256": "64e0e0282d6fa103029c784515b02fad01e5fc8c611b296b511b54c27cd8dadd",
+  "dictionary_sha256": "1c563c86a29801267c37fdf1def42650b02c69657f4144f09bd26d61b80d79b5",
+  "dictionary_bytes": 157298688,
+  "fixture_sha256": "30537c0a55c55621e860672da5b6b01a4e31d3c5ef935e9c0900d2d5f4f5df58",
+  "rounds": 11,
+  "scope": "Host file operations and warm-host foreground timing; no console timing. Prepared case assumes a completed idle opportunity before each subsequent selection. Preparation work is counted separately. First selection stays cold. Letter preparation is diagnostic only; runtime lookahead is Auto + Whole word.",
+  "cases": [
+    {
+      "mode": "first",
+      "variants": {
+        "before_sessions": {
+          "lookups": 50,
+          "foreground_opens": 50,
+          "foreground_reads": 312,
+          "foreground_header_reads": 50,
+          "background_reads": 0,
+          "background_opens": 0,
+          "total_reads": 312,
+          "mean_foreground_reads": 6.24,
+          "foreground_reads_p95": 10,
+          "peak_bytes": 57416,
+          "warm_host_foreground_median_us": 6.3055,
+          "warm_host_foreground_p95_us": 36.603,
+          "preparation_failures": 0,
+          "preparation_error_codes": []
+        },
+        "after_sessions": {
+          "lookups": 50,
+          "foreground_opens": 50,
+          "foreground_reads": 312,
+          "foreground_header_reads": 50,
+          "background_reads": 0,
+          "background_opens": 0,
+          "total_reads": 312,
+          "mean_foreground_reads": 6.24,
+          "foreground_reads_p95": 10,
+          "peak_bytes": 61792,
+          "warm_host_foreground_median_us": 5.941000000000001,
+          "warm_host_foreground_p95_us": 33.658,
+          "preparation_failures": 0,
+          "preparation_error_codes": []
+        },
+        "after_prepared": {
+          "lookups": 50,
+          "foreground_opens": 50,
+          "foreground_reads": 312,
+          "foreground_header_reads": 50,
+          "background_reads": 0,
+          "background_opens": 0,
+          "total_reads": 312,
+          "mean_foreground_reads": 6.24,
+          "foreground_reads_p95": 10,
+          "peak_bytes": 61792,
+          "warm_host_foreground_median_us": 11.02,
+          "warm_host_foreground_p95_us": 56.893,
+          "preparation_failures": 0,
+          "preparation_error_codes": []
+        }
+      },
+      "all_outputs_identical": true
+    },
+    {
+      "mode": "words",
+      "variants": {
+        "before_sessions": {
+          "lookups": 616,
+          "foreground_opens": 50,
+          "foreground_reads": 3349,
+          "foreground_header_reads": 549,
+          "background_reads": 0,
+          "background_opens": 0,
+          "total_reads": 3349,
+          "mean_foreground_reads": 5.436688311688312,
+          "foreground_reads_p95": 10,
+          "peak_bytes": 57416,
+          "warm_host_foreground_median_us": 8.118500000000001,
+          "warm_host_foreground_p95_us": 29.955,
+          "preparation_failures": 0,
+          "preparation_error_codes": []
+        },
+        "after_sessions": {
+          "lookups": 616,
+          "foreground_opens": 50,
+          "foreground_reads": 2850,
+          "foreground_header_reads": 50,
+          "background_reads": 0,
+          "background_opens": 0,
+          "total_reads": 2850,
+          "mean_foreground_reads": 4.626623376623376,
+          "foreground_reads_p95": 9,
+          "peak_bytes": 61792,
+          "warm_host_foreground_median_us": 8.517,
+          "warm_host_foreground_p95_us": 29.868,
+          "preparation_failures": 0,
+          "preparation_error_codes": []
+        },
+        "after_prepared": {
+          "lookups": 616,
+          "foreground_opens": 50,
+          "foreground_reads": 890,
+          "foreground_header_reads": 50,
+          "background_reads": 1960,
+          "background_opens": 0,
+          "total_reads": 2850,
+          "mean_foreground_reads": 1.4448051948051948,
+          "foreground_reads_p95": 5,
+          "peak_bytes": 61792,
+          "warm_host_foreground_median_us": 0.5535000000000001,
+          "warm_host_foreground_p95_us": 7.188,
+          "preparation_failures": 5,
+          "preparation_error_codes": [
+            -103
+          ]
+        }
+      },
+      "all_outputs_identical": true
+    },
+    {
+      "mode": "letters",
+      "variants": {
+        "before_sessions": {
+          "lookups": 1321,
+          "foreground_opens": 50,
+          "foreground_reads": 7169,
+          "foreground_header_reads": 1155,
+          "background_reads": 0,
+          "background_opens": 0,
+          "total_reads": 7169,
+          "mean_foreground_reads": 5.426949280847842,
+          "foreground_reads_p95": 9,
+          "peak_bytes": 57416,
+          "warm_host_foreground_median_us": 7.787,
+          "warm_host_foreground_p95_us": 28.644,
+          "preparation_failures": 0,
+          "preparation_error_codes": []
+        },
+        "after_sessions": {
+          "lookups": 1321,
+          "foreground_opens": 50,
+          "foreground_reads": 6064,
+          "foreground_header_reads": 50,
+          "background_reads": 0,
+          "background_opens": 0,
+          "total_reads": 6064,
+          "mean_foreground_reads": 4.590461771385314,
+          "foreground_reads_p95": 8,
+          "peak_bytes": 61792,
+          "warm_host_foreground_median_us": 7.313,
+          "warm_host_foreground_p95_us": 27.006,
+          "preparation_failures": 0,
+          "preparation_error_codes": []
+        },
+        "after_prepared": {
+          "lookups": 1321,
+          "foreground_opens": 50,
+          "foreground_reads": 1611,
+          "foreground_header_reads": 50,
+          "background_reads": 4453,
+          "background_opens": 0,
+          "total_reads": 6064,
+          "mean_foreground_reads": 1.2195306585919758,
+          "foreground_reads_p95": 1,
+          "peak_bytes": 61792,
+          "warm_host_foreground_median_us": 0.539,
+          "warm_host_foreground_p95_us": 1.531,
+          "preparation_failures": 13,
+          "preparation_error_codes": [
+            -103
+          ]
+        }
+      },
+      "all_outputs_identical": true
+    }
+  ]
+}

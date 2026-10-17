@@ -271,12 +271,12 @@ would keep several definitions resident and make each entry shorter.
 Only the entry on screen is in memory. When looking up a word, the worker
 records where each other dictionary's best entry is on disk: 24 bytes per
 dictionary, a 208-byte table at the start of the single result arena. A page
-change releases the shown entry, then opens only that page's dictionary and reads its
-header and one payload into the same arena. It needs no page cache,
+change releases the shown entry, then reuses that dictionary's session handle
+and reads one payload into the same arena. Without a live session it opens
+only that page's dictionary and validates its header first. It needs no page cache,
 deinflection scratch or allocation, and is checked against the file's size
 when located; a replaced file reports an error and is located again next time.
-With 1, lookups perform exactly the same reads and arena use as before; no
-table is allocated.
+With 1, no locator table is allocated.
 
 ## Memory and lookup behavior
 
@@ -288,8 +288,37 @@ are not words with no index read. Four shared 4 KiB page buffers and a small
 absent-hash cache reduce repeated reads; the filter's one block per lookup is
 read into the same buffers. These caches are shared across all enabled files
 and released after each request.
-Dictionaries are opened for a lookup and closed on both success and error;
-no dictionary-sized persistent allocation is added.
+When a cached page already contains the entire selected payload, showing it
+copies those bytes into the output instead of reading them again. Entries that
+cross pages keep the direct payload read. Candidate scratch starts at eight
+records and grows up to the same 128-record bound; failed growth reports OOM
+without returning a shortened candidate set. The allocation stays at 64 KiB.
+The [follow-up benchmark](../reports/dictionary-cache-experiments.md) records the
+read savings and the smaller scratch high-water mark.
+The Shell reuses open files and parsed headers between selections. The session also
+keeps one filter directory (up to 256 blocks; larger directories use the page cache)
+and 16 word-location records, including misses. Together these occupy 6,784 bytes
+inside the existing 64 KiB allocation [measured Vita build;
+[lookup report](../reports/dictionary-lookahead.md)]. Definitions and the four page
+buffers are not retained in this cache. Auto keeps the session with its recognized
+text, including while preparing words before the overlay opens. Closing the overlay
+ends it after any in-flight lookup. Freeing results, a new full OCR job, a changed
+dictionary directory/list or platform, or a dictionary I/O/format error also releases it.
+
+Auto with Whole word prepares up to eight positions starting at the current word, one per idle job
+after 100 ms without foreground work [source: `shell/worker.c`]. It uses the normal
+matching and navigation rules, keeps the displayed definition intact and yields
+between words. A prepared hit reads only its definition; a prepared miss reads
+nothing. User lookups, refreshes, subtitles, Anki screenshots and self-tests take
+priority. If scratch will not fit beside the displayed entry, preparation stops
+and selections use the normal lookup. Text generations and result limits scope
+the cache; a changed text or dictionary cannot reuse another's locators.
+As the installation instructions require, finish replacing dictionaries with games
+closed; files must not be modified during an open session. A new lookup after the
+close opens and validates fresh files. The stateless host/core API is unchanged when
+`VjoPlatform.local_session` is NULL. Core callers enable word-location reuse with
+a nonzero `local_text_generation` and must change it whenever their text changes;
+zero leaves locator caching disabled.
 
 | Resource | Bound |
 | --- | --- |
@@ -297,6 +326,7 @@ no dictionary-sized persistent allocation is added.
 | Other dictionaries' page locators (Dictionaries shown 2–8) | 208 bytes in the result arena; none for 1 |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
 | Local worker result arena | One 64 KiB arena; none for OCR-only jobs |
+| Session, filter directory and word locators | 6,784 bytes inside that 64 KiB allocation on Vita [measured]; at most 7 KiB [compile-time bound] |
 | Network worker result arenas | none since Google Lens and the Hachidori relay were removed (they were two 256 KiB arenas, plus a connection pool) |
 | Persistent recognized text / UI character copy | 4 KiB each |
 | Enabled dictionary files | 8 |

@@ -75,8 +75,9 @@ class DictLookupBench(unittest.TestCase):
         今日は猫を見ました。 tries spans of 9..2 characters (8 spans) until 今日 matches;
         猫舌なので... tries 14..2 (13 spans) until 猫舌: its line is full, so the break after it
         joins the next line's 猫 (core/textjoin.h) and the longest span crosses it. One file: one header read; one
-        key found, its bucket page, key group, the head ranking its one posting (another
-        page: the filler sits between the payloads and the groups) and its payload."""
+        key found, its bucket page, key group and the head ranking its one posting
+        (another page: filler separates payloads from groups). That head page also
+        contains the whole short payload, so showing it needs no further read."""
         self.build(ROWS + FILLER)
         sets = self.run_bench("--modes", "first", "--rounds", "1")
         rows = bench.run(BENCH, self.dir, "main.vjdict", self.lines, "first", 1)
@@ -85,9 +86,9 @@ class DictLookupBench(unittest.TestCase):
         for q, spans in ((one, 8), (two, 13)):
             self.assertEqual(q["spans"], spans)
             self.assertEqual((q["opens"], q["entries"], q["found"], q["ranked"]), (1, 1, 1, 1))
-            self.assertEqual(q["reads_by"], {"header": 1, "index": 1, "group": 1, "head": 1, "payload": 1,
+            self.assertEqual(q["reads_by"], {"header": 1, "index": 1, "group": 1, "head": 1, "payload": 0,
                                              "filter": 0})
-            self.assertEqual(q["reads"], 5)
+            self.assertEqual(q["reads"], 4)
             # Every probe but the one found is absent; the first absent one reads the
             # bucket page (one bucket), the others find it cached.
             self.assertEqual(q["absent_reads"], 1)
@@ -123,6 +124,29 @@ class DictLookupBench(unittest.TestCase):
         self.assertEqual(ok.returncode, 0, ok.stderr)
         bad = subprocess.run(argv, capture_output=True, text=True, timeout=60, check=False,
                              env={**os.environ, "VJO_DICT_BENCH_CHANGE_ROUND": "2"})
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn("result changed between rounds", bad.stderr)
+
+    def test_preparation_counts_background_work_and_preserves_every_result(self):
+        self.build(ROWS + FILLER)
+        argv = [BENCH, str(self.dir), "main.vjdict", str(self.lines), "words", "3"]
+        variants = []
+        for flags in ({}, {"VJO_DICT_BENCH_SESSION": "1"}, {"VJO_DICT_BENCH_PREPARE": "1"}):
+            run = subprocess.run(argv, capture_output=True, text=True, timeout=60,
+                                 env={**os.environ, **flags})
+            self.assertEqual(run.returncode, 0, run.stderr)
+            variants.append([q for line in run.stdout.splitlines() if "summary" not in (q := json.loads(line))])
+        identity = lambda rows: [(q["cursor"], q["rc"], q["entries"], q["end"], q["digest"]) for q in rows]
+        self.assertEqual(identity(variants[0]), identity(variants[1]))
+        self.assertEqual(identity(variants[0]), identity(variants[2]))
+        for q in variants[2]:
+            self.assertEqual(q["prepare"]["rc"], 0)
+            self.assertLessEqual(q["arena_peak"], 65536)
+        self.assertTrue(any(q["prepare"]["reads"] for q in variants[2]))
+        self.assertLess(sum(q["reads"] for q in variants[2]), sum(q["reads"] for q in variants[1]))
+        # Preparation is outside foreground timing, but the round-equivalence guard still runs.
+        bad = subprocess.run(argv, capture_output=True, text=True, timeout=60,
+                             env={**os.environ, "VJO_DICT_BENCH_PREPARE": "1", "VJO_DICT_BENCH_CHANGE_ROUND": "1"})
         self.assertEqual(bad.returncode, 1)
         self.assertIn("result changed between rounds", bad.stderr)
 

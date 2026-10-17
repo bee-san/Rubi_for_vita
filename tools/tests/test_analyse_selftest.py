@@ -2616,15 +2616,20 @@ class PressesAndRereads(unittest.TestCase):
 
     def test_the_waited_bound_counts_what_follows_a_done_line_and_the_press_handling_is_stated(self):
         """audit-b B1b: net_job takes a job's time, logs its done line (an append to log.txt, and one to status.txt
-        while that is under 64 KiB), and only then sets job_done, which the control thread polls every 50 ms: the bound
-        adds both appends at their most measured time and the poll. A running job whose done line comes before the
+        while that is under 64 KiB), and only then sets job_done. API 25 also signals the control thread; the bound
+        retains the 50 ms fallback poll for older logs and adds both appends at their most measured time.
+        A running job whose done line comes before the
         press's `open:` line ended during the press's own handling: not counted. A press job's times run from its
         start, after the press's own handling, which the line says."""
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
         net_job = worker[worker.index("static void net_job(void)"):]
         net_job = net_job[:net_job.index("\n}\n")]
-        self.assertLess(net_job.index('vjo_log("job %d done rc=%d in %d ms'), net_job.index("job_done = 1;"))
-        self.assertLess(net_job.index("(int)((now_us() - t0) / 1000)"), net_job.index("job_done = 1;"))
+        # The early preparation branch has no done log: the final publication is the
+        # foreground/OCR job whose done line the analyser reads.
+        done = net_job.rindex("job_done = 1;")
+        self.assertLess(net_job.index('vjo_log("job %d done rc=%d in %d ms'), done)
+        self.assertLess(net_job.index("(int)((now_us() - t0) / 1000)"), done)
+        self.assertIn("vjoNotifyShell();", net_job[done:])
         self.assertIn("#define POLL_TIMEOUT_US   50000", worker)
         self.assertIn("#define STATUS_CAP (64 * 1024)", (ROOT / "shell/log_vita.c").read_text(encoding="utf-8"))
         self.assertIn("12.1-46.0 ms per append", (ROOT / "docs/performance.md").read_text(encoding="utf-8"))

@@ -44,8 +44,10 @@
  * 24: the kernel's full-frame capture is gone: vjoRequestCapture and vjoReadRaw (its
  * last users, Google Lens's and the Shell's Anki JPEGs, were removed), the VjoCapture
  * buffer, VJO_CAPTURE_*, VJO_ALLOC_*, and VjoState's alloc_status, capture_result and
- * raw_stride (VjoMemInfo's capture_bytes). VjoState's capture fields are an OCR job's. */
-#define VJO_API_VERSION 24
+ * raw_stride (VjoMemInfo's capture_bytes). VjoState's capture fields are an OCR job's.
+ * 25: vjoNotifyShell wakes the registered Shell's event wait after local input
+ * or job completion; no new thread, event object or buffer. */
+#define VJO_API_VERSION 25
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from
@@ -80,7 +82,8 @@ enum VjoTrigger {
 #define VJO_EV_CAPTURE_DONE  0x10u /* an OCR job's first pass is in (VjoState.done_seq, capture_scene, region_seq) */
 #define VJO_EV_SUBTITLE      0x20u /* subtitle trigger pressed */
 #define VJO_EV_REGION_QUIET  0x40u /* the region became quiet (VjoState.quiet) */
-#define VJO_EV_ALL           0x7Fu
+#define VJO_EV_SHELL         0x80u /* local command/text/result ready: inspect Shell state */
+#define VJO_EV_ALL           0xFFu
 
 typedef struct {
     uint32_t size;          /* sizeof(VjoState), set by caller */
@@ -209,6 +212,7 @@ typedef struct {
 int vjoGetVersion(void);                 /* VJO_API_VERSION, no side effects */
 int vjoRegisterShell(void);              /* caller becomes the shell if it has VitaJPOverlay_Shell loaded */
 int vjoWaitEvent(uint32_t mask, uint32_t *out, SceUInt32 timeout_us); /* 0 timeout = forever */
+int vjoNotifyShell(void);               /* registered Shell only; coalesced wakeup */
 int vjoGetState(VjoState *out);          /* set out->size first */
 int vjoSetRegion(const VjoRect *r);      /* NULL = full screen */
 int vjoSetTriggers(int toggle, int subtitle); /* enum VjoTrigger each, not equal */

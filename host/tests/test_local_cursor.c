@@ -293,7 +293,7 @@ static void longest_and_first_posting(void)
         TEST_ASSERT(r.n_vocab == 1);
         TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "first long meaning"));
         TEST_CHECK(r.tokens[0].pos16 == 0 && r.tokens[0].len16 == 2);
-        TEST_CHECK(payload_reads == 1 && a.peak <= 64 * 1024);
+        TEST_CHECK(payload_reads == 0 && a.peak <= 64 * 1024); /* already in the key/head page */
     }
 }
 static void inflection_and_dictionary_priority(void)
@@ -380,7 +380,7 @@ static void punctuation_and_read_counts_do_not_scan_remainder(void)
         long_text[sizeof(long_text) - 1] = 0;
         vjo_arena_reset(&a); reads = payload_reads = 0;
         TEST_ASSERT(!lookup(&a, &p, &cfg, long_text, 0, &r, &e));
-        TEST_CHECK(reads == short_reads && payload_reads == 1);
+        TEST_CHECK(reads == short_reads && payload_reads == 0);
         TEST_CHECK(r.tokens[0].len16 == 1);
         vjo_arena_reset(&a);
         TEST_ASSERT(!lookup(&a, &p, &cfg, "猫\n犬", 0, &r, &e));
@@ -487,8 +487,11 @@ static void normalized_source_span_and_invalid_input(void)
 
 static void every_file_read_failure_closes_and_rolls_back(void)
 {
-    const Row row = {"猫", "猫", "ねこ", "cat", 0, 0};
-    for (int version = 1; version <= 3; version++) {
+    static char article[5001];
+    memset(article, 'x', sizeof(article) - 1);
+    for (int large = 0; large < 2; large++)
+      for (int version = 1; version <= 3; version++) {
+        const Row row = {"猫", "猫", "ねこ", large ? article : "cat", 0, 0};
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
         setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, version);
         TEST_ASSERT(!vjo_overlay_ocr_text(&a, &cfg, "猫。", &out));
@@ -496,7 +499,7 @@ static void every_file_read_failure_closes_and_rolls_back(void)
         size_t mark = a.used;
         TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
         int total = reads;
-        TEST_CHECK(payload_reads == 1);
+        TEST_CHECK(payload_reads == large); /* spans pages, or wholly cached */
         for (int i = 1; i <= total; i++) {
             vjo_arena_release(&a, mark); reads = 0; fail_read = i;
             TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_LOCAL_IO);
@@ -710,7 +713,7 @@ static void pages_follow_best_match_then_priority(void)
         TEST_ASSERT(single.n_vocab == 1 && !strcmp(single.vocab[0].meanings[0], "d1 other"));
         vjo_arena_reset(&a); payload_reads = 0;
         TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫舌。", 0, 8, &pages, &r, &e));
-        TEST_CHECK(payload_reads == 1); /* only the shown entry is read */
+        TEST_CHECK(payload_reads <= 1); /* only the shown entry, unless already cached */
         TEST_ASSERT(pages.count == 3 && r.n_vocab == 1);
         TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "d1 other") && r.tokens[0].len16 == 2);
         TEST_CHECK(pages.page[0].dict == 1 && pages.page[0].len16 == 2);
@@ -859,7 +862,7 @@ static void single_result_reads_are_unchanged(void)
     TEST_CHECK(reads == single_reads && pages.count == 1 && a.peak == single_peak && a.used == single_used);
     vjo_arena_init(&a, arena_mem, sizeof(arena_mem)); reads = payload_reads = 0;
     TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫", 0, 2, &pages, &r, &e));
-    TEST_CHECK(pages.count == 2 && reads > single_reads && payload_reads == 1);
+    TEST_CHECK(pages.count == 2 && reads > single_reads && payload_reads == 0);
     TEST_CHECK(a.peak == single_peak && a.used == single_used); /* locators are the caller's */
     printf("  two dictionaries, limit 1: %d reads; limit 2: %d reads; peak %zu both\n",
            single_reads, reads, a.peak);
@@ -1025,7 +1028,7 @@ static void v3_rank_and_source_come_with_the_entry(void)
         TEST_ASSERT(!lookup(&a, &p, &cfg, "猫", 0, &r, &e) && r.n_vocab == 1);
         TEST_CHECK(r.vocab[0].rank == (version == 3 ? 1536 : VJO_NO_RANK));
         TEST_CHECK(!strcmp(r.vocab[0].spelling, "猫") && !strcmp(r.vocab[0].reading, "ねこ"));
-        TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "cat") && payload_reads == 1);
+        TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "cat") && payload_reads == 0);
         if (version == 2) {
             TEST_CHECK(!r.source);
             reads_v2 = reads; bytes_v2 = read_bytes;
@@ -1627,7 +1630,259 @@ static void posting_hints_rank_as_the_head_does(void)
     }
 }
 
+/* The Shell reserves the session ahead of the resettable lookup arena, in
+ * its original 64 KiB block. These are real lookups over every file format. */
+static void session_reuses_handles_headers_and_dictionary_pages(void)
+{
+    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 10},
+                        {"食べる", "食べる", "たべる", "eat", 1, 20}};
+    const char *texts[] = {"猫", "食べました", "猫", "食べる"};
+    char expected[4][256];
+    int ends[4];
+    for (int version = 1; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        VjoOverlayData out;
+        int stateless_reads, start_reads;
+        size_t size = vjo_local_session_size();
+        setup(&a, &p, &cfg);
+        TEST_ASSERT(size < sizeof(arena_mem) - VJO_LOCAL_SCRATCH_BUDGET - VJO_LOCAL_SELECTED_BUDGET);
+        build(&fixtures[0], "main.vjdict", rows, 2, version);
+        build(&fixtures[1], "other.vjdict", rows, 2, version);
+        strcpy(cfg.local_dictionaries, "main.vjdict,other.vjdict");
+        cfg.local_dictionary_results = 2;
+        if (version >= 2) {
+            uint32_t split[2] = {0, prefix_of("食べ")};
+            add_filter(&fixtures[0], rows, 2, split, 2, 0);
+            add_filter(&fixtures[1], rows, 2, split, 2, 0);
+        }
+        if (version == 3) {
+            add_hints(&fixtures[0]); add_hints(&fixtures[1]);
+        }
+        start_reads = reads;
+        for (int i = 0; i < 4; i++) {
+            vjo_arena_reset(&a);
+            memset(&out, 0, sizeof(out)); out.sentence = texts[i];
+            TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_OK && out.list.n_entries == 1);
+            snprintf(expected[i], sizeof(expected[i]), "%s", out.list.entries[0].text);
+            ends[i] = out.list.entries[0].hl_end;
+        }
+        stateless_reads = reads - start_reads;
+        TEST_CHECK(opened == closed);
+        memset(arena_mem, 0, size);
+        p.local_session = (VjoLocalSession *)arena_mem;
+        vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+        int start_opens = opened, start_closes = closed;
+        start_reads = reads;
+        for (int i = 0; i < 4; i++) {
+            vjo_arena_reset(&a);
+            memset(&out, 0, sizeof(out)); out.sentence = texts[i];
+            TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_OK && out.list.n_entries == 1);
+            TEST_CHECK(!strcmp(expected[i], out.list.entries[0].text));
+            TEST_CHECK(out.list.entries[0].hl_start == 0 && out.list.entries[0].hl_end == ends[i]);
+            TEST_CHECK(a.peak + size <= sizeof(arena_mem));
+        }
+        TEST_CHECK(opened - start_opens == 2 && closed == start_closes);
+        TEST_CHECK_(reads - start_reads <= stateless_reads, "v%d: %d reads, stateless %d", version, reads - start_reads, stateless_reads);
+        int before = reads;
+        TEST_ASSERT(vjo_overlay_lookup_page(&a, &p, &cfg, 1, &out) == VJO_OK);
+        TEST_CHECK(reads - before == 1 && opened - start_opens == 2); /* payload only */
+        vjo_local_session_close(p.local_session);
+        vjo_local_session_close(p.local_session);
+        TEST_CHECK(opened == closed && !fixtures[0].active && !fixtures[1].active);
+    }
+}
+
+static void session_discards_changed_config_and_failed_files(void)
+{
+    const Row row = {"猫", "猫", "ねこ", "cat", 0, 0};
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    VjoDictResult result; VjoErr err;
+    size_t size = vjo_local_session_size();
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "main.vjdict", &row, 1, 3);
+    build(&fixtures[1], "other.vjdict", &row, 1, 3);
+    memset(arena_mem, 0, size);
+    p.local_session = (VjoLocalSession *)arena_mem;
+    vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_OK);
+    TEST_CHECK(opened == 1 && closed == 0);
+    /* A changed directory, list/order or platform owner ends the old session. */
+    strcpy(cfg.local_dictionary_dir, "another");
+    vjo_arena_reset(&a);
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_OK);
+    TEST_CHECK(opened == 2 && closed == 1);
+    strcpy(cfg.local_dictionaries, "other.vjdict,main.vjdict");
+    vjo_arena_reset(&a);
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_OK);
+    TEST_CHECK(opened == 4 && closed == 2);
+    p.ud = &cfg;
+    vjo_arena_reset(&a);
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_OK);
+    TEST_CHECK(opened == 6 && closed == 4);
+    /* A warm-session read error closes every handle; retry opens fresh files. */
+    vjo_arena_reset(&a); fail_read = reads + 1;
+    TEST_CHECK(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_E_LOCAL_IO);
+    TEST_CHECK(opened == closed && !result.n_vocab && !a.used);
+    fail_read = 0;
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_OK);
+    TEST_CHECK(opened == 8 && closed == 6);
+    /* Invalid configuration and a partially opened set leak nothing. */
+    strcpy(cfg.local_dictionaries, "../bad.vjdict");
+    vjo_arena_reset(&a);
+    TEST_CHECK(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_E_LOCAL_IO);
+    TEST_CHECK(opened == closed);
+    strcpy(cfg.local_dictionaries, "main.vjdict,other.vjdict");
+    fail_read = reads + 2;
+    TEST_CHECK(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_E_LOCAL_IO);
+    TEST_CHECK(opened == closed && !a.used);
+    vjo_local_session_close(p.local_session);
+}
+
+static void session_owns_all_eight_dictionaries_and_closes_a_failed_page(void)
+{
+    const Row row = {"猫", "猫", "ねこ", "cat", 0, 0};
+    char names[VJO_LOCAL_MAX_DICTS][32];
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    VjoOverlayData out;
+    size_t size = vjo_local_session_size();
+    setup(&a, &p, &cfg);
+    cfg.local_dictionaries[0] = 0;
+    cfg.local_dictionary_results = VJO_LOCAL_MAX_DICTS;
+    for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) {
+        snprintf(names[i], sizeof(names[i]), "dict%d.vjdict", i);
+        build(&fixtures[i], names[i], &row, 1, 3);
+        if (i) strcat(cfg.local_dictionaries, ",");
+        strcat(cfg.local_dictionaries, names[i]);
+    }
+    memset(arena_mem, 0, size);
+    p.local_session = (VjoLocalSession *)arena_mem;
+    vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+    memset(&out, 0, sizeof(out)); out.sentence = "猫";
+    TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_OK);
+    TEST_ASSERT(out.pages && out.pages->count == VJO_LOCAL_MAX_DICTS);
+    TEST_CHECK(opened == VJO_LOCAL_MAX_DICTS && closed == 0);
+    for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) {
+        int before = reads;
+        TEST_ASSERT(vjo_overlay_lookup_page(&a, &p, &cfg, i, &out) == VJO_OK);
+        TEST_CHECK(reads - before == 1 && opened == VJO_LOCAL_MAX_DICTS);
+    }
+    fail_read = reads + 1;
+    TEST_CHECK(vjo_overlay_lookup_page(&a, &p, &cfg, 0, &out) == VJO_E_LOCAL_IO);
+    TEST_CHECK(opened == closed && !out.list.n_entries);
+    for (int i = 0; i < VJO_LOCAL_MAX_DICTS; i++) TEST_CHECK(!fixtures[i].active);
+    fail_read = 0;
+    vjo_local_session_close(p.local_session);
+}
+
+static void prepared_words_keep_output_and_read_only_the_selected_payload(void)
+{
+    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 10},
+                        {"食べる", "食べる", "たべる", "eat", 1, 20}};
+    const char *text = "猫 食べました 未知";
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    VjoOverlayData out = {0};
+    size_t size = vjo_local_session_size(), end;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "main.vjdict", rows, 2, 3);
+    add_hints(&fixtures[0]);
+    uint32_t split = 0;
+    add_filter(&fixtures[0], rows, 2, &split, 1, 0);
+    memset(arena_mem, 0, size);
+    p.local_session = (VjoLocalSession *)arena_mem;
+    p.local_text_generation = 1;
+    vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+    out.sentence = text;
+    TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_OK);
+    size_t used = a.used;
+    const char *shown = out.list.entries[0].text;
+    char saved[256]; snprintf(saved, sizeof(saved), "%s", shown);
+    int before_payloads = payload_reads;
+    TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, text, 4, &end) == VJO_OK);
+    TEST_CHECK(end == strlen("猫 食べました") && a.used == used && !strcmp(saved, shown));
+    TEST_CHECK(payload_reads == before_payloads); /* hints: no definition read */
+    TEST_CHECK(a.peak + size <= sizeof(arena_mem));
+    int before = reads;
+    vjo_arena_reset(&a); out = (VjoOverlayData){.sentence = text};
+    TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 4, &out) == VJO_OK);
+    TEST_CHECK(reads == before + 1 && opened == 1 && closed == 0);
+    TEST_CHECK(out.list.n_entries == 1 && out.list.entries[0].hl_end == (int)strlen("猫 食べました"));
+    TEST_CHECK(strstr(out.list.entries[0].text, "eat") != NULL);
+    TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, text, strlen("猫 食べました "), &end) == VJO_OK);
+    TEST_CHECK(end == strlen("猫 食べました "));
+    before = reads;
+    vjo_arena_reset(&a); out = (VjoOverlayData){.sentence = text};
+    TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, strlen("猫 食べました "), &out) == VJO_OK);
+    TEST_CHECK(!out.list.n_entries && reads == before); /* prepared miss: zero I/O */
+    /* A different immutable text at the same position must search again. */
+    p.local_text_generation++;
+    vjo_arena_reset(&a); out = (VjoOverlayData){.sentence = "猫"};
+    before = reads;
+    TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_OK);
+    TEST_CHECK(reads > before + 1 && out.list.n_entries == 1);
+    /* A failed payload invalidates all locators as well as the handles. */
+    vjo_arena_reset(&a); fail_read = reads + 1;
+    TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_LOCAL_IO);
+    TEST_CHECK(opened == closed);
+    fail_read = 0;
+    vjo_arena_reset(&a);
+    TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_OK);
+    TEST_CHECK(out.list.n_entries == 1);
+    vjo_local_session_close(p.local_session);
+}
+
+static void preparation_oom_preserves_the_displayed_result(void)
+{
+    const Row row = {"猫", "猫", "ねこ", "cat", 0, 0};
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    VjoOverlayData out = {.sentence = "猫猫"};
+    size_t size = vjo_local_session_size(), end;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "main.vjdict", &row, 1, 3);
+    memset(arena_mem, 0, size);
+    p.local_session = (VjoLocalSession *)arena_mem;
+    p.local_text_generation = 7;
+    vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+    TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_OK);
+    size_t used = a.used, cap = a.size;
+    a.size = used + 32;
+    TEST_CHECK(vjo_local_prepare_at(&a, &p, &cfg, "猫猫", 3, &end) == VJO_E_OOM);
+    TEST_CHECK(a.used == used && out.list.n_entries == 1 && strstr(out.list.entries[0].text, "cat"));
+    a.size = cap;
+    TEST_ASSERT(vjo_local_prepare_at(&a, &p, &cfg, "猫猫", 3, &end) == VJO_OK);
+    TEST_CHECK(end == 6 && a.used == used);
+    vjo_local_session_close(p.local_session);
+}
+
+static void candidate_growth_fails_without_truncating_a_lookup(void)
+{
+    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 0},
+                        {"食べる", "食べる", "たべる", "eat", 1, 0}};
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    VjoDictResult result; VjoErr err;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "main.vjdict", rows, 2, 3);
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_OK);
+    size_t small_peak = a.peak;
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "食べさせられませんでした", 0, &result, &err) == VJO_OK);
+    TEST_ASSERT(result.n_vocab == 1 && !strcmp(result.vocab[0].meanings[0], "eat"));
+    size_t peak = a.peak;
+    TEST_ASSERT(peak > small_peak); /* the candidate vector grew beyond eight */
+    vjo_arena_init(&a, arena_mem, peak - 1);
+    TEST_CHECK(vjo_local_lookup_at(&a, &p, &cfg, "食べさせられませんでした", 0, &result, &err) == VJO_E_OOM);
+    TEST_CHECK(!result.n_vocab && !a.used && opened == closed);
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "食べさせられませんでした", 0, &result, &err) == VJO_OK);
+    TEST_CHECK(result.n_vocab == 1 && !strcmp(result.vocab[0].meanings[0], "eat"));
+}
+
 TEST_LIST = {
+    {"candidate_growth_fails_without_truncating_a_lookup", candidate_growth_fails_without_truncating_a_lookup},
+    {"prepared_words_keep_output_and_read_only_the_selected_payload", prepared_words_keep_output_and_read_only_the_selected_payload},
+    {"preparation_oom_preserves_the_displayed_result", preparation_oom_preserves_the_displayed_result},
+    {"session_owns_all_eight_dictionaries_and_closes_a_failed_page", session_owns_all_eight_dictionaries_and_closes_a_failed_page},
+    {"session_reuses_handles_headers_and_dictionary_pages", session_reuses_handles_headers_and_dictionary_pages},
+    {"session_discards_changed_config_and_failed_files", session_discards_changed_config_and_failed_files},
     {"posting_hints_rank_as_the_head_does", posting_hints_rank_as_the_head_does},
     {"key_filter_shows_what_the_plain_file_shows", key_filter_shows_what_the_plain_file_shows},
     {"key_filter_never_hides_a_key", key_filter_never_hides_a_key},
