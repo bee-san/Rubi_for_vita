@@ -3,8 +3,8 @@
  * vjo_page_strip). It takes no input. It grows with its text; text that
  * would pass the screen's bottom is cut with "…". A status or an error
  * shows in the strip too, and the system's busy spinner in its corner while a new
- * sentence is being recognized. A line paf broke inside a word is broken
- * earlier instead (wrap_fix.h), before any cut. */
+ * sentence is being recognized. A line paf broke where core/linebreak.h forbids
+ * is broken earlier instead (wrap_fix.h), before any cut. */
 #include "paf_ui.h"
 #include "wrap_fix.h"
 
@@ -106,7 +106,7 @@ static uint32_t strip_line_start(uint32_t line)
  * that would pass the screen's bottom is cut with "…" after the last line
  * that fits; if the "…" wraps to one more line, a line earlier. The cut
  * waits for the re-wrap (wrap_fix.h) to settle, so the lines it keeps are
- * the ones that end between words; the strip is sized meanwhile. */
+ * the ones that end between phrases; the strip is sized meanwhile. */
 static void strip_fit(void)
 {
     uint32_t lines = 0, b;

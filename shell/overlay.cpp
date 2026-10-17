@@ -180,7 +180,7 @@ static int s_square_clear_armed;
 static uint8_t *s_ui_mem;
 static VjoArena s_ui;
 
-/* paf breaks Japanese anywhere; a break it put inside a word is moved to the
+/* paf breaks Japanese anywhere; a break it put where core/linebreak.h forbids is moved to the
  * last place the line may break (wrap_fix.h, core/linebreak.h), a break a
  * frame once the text is laid out. The shown texts stay in s_ui until the
  * next render, the header's across the renders that keep it (s_hdr_mark).
@@ -533,7 +533,7 @@ static void render(int new_content)
 }
 
 /* A shown text's step of its re-wrap (wrap_fix.h): a break put in where paf
- * broke inside a word, and the text set again. 1 when one was. */
+ * broke where core/linebreak.h forbids, and the text set again. 1 when one was. */
 static int wrap_step(VjoWrap *w, ui::Text *t, VjoStyled *st)
 {
     uint32_t b = vjo_wrap_paf(w, t, st->text, st->len, st->cap - st->len);

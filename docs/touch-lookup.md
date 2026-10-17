@@ -528,11 +528,11 @@ and between kanji and the kana that inflects it (食べ|る), it never breaks.
 
 - **The recognized text, the popup and the subtitle strip** are paf texts that paf wraps (word wrap
   and kinsoku on, which still breaks Japanese anywhere). Once a text is laid out, the overlay looks
-  for the first line paf started inside a word (`shell/wrap_fix.h`) and puts a line break at the
+  for the first line paf started where the rule forbids (`shell/wrap_fix.h`) and puts a line break at the
   last place that line may break instead, sets the text again, and repeats a frame later, up to 16
   breaks a text. Only paf's own layout of the text is read (its lines and character positions), so
   the console's glyph widths decide. The strip cuts a text taller than the screen only once that
-  has settled, so the lines it keeps end between words too. A word wider than the line keeps paf's break. The header's
+  has settled, so the lines it keeps end between phrases too. A word wider than the line keeps paf's break. The header's
   breaks are mapped back to the recognized text's own characters for the cursor, taps, arrows and
   the highlight. The popup's definitions, mostly English, already break at spaces; its Japanese
   (headwords, examples, kanji lines) is what this changes.

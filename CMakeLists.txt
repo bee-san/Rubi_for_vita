@@ -260,7 +260,7 @@ target_compile_features(vjo-wrap-fix-tests PRIVATE cxx_std_11)
 target_compile_options(vjo-wrap-fix-tests PRIVATE -Wall -Wextra)
 add_test(NAME wrap_fix COMMAND vjo-wrap-fix-tests)
 # Where the overlay's own wrapping may break a line (core/linebreak.h, owner 2026-10-16 item 4):
-# never inside a word, Japanese line-breaking rules.
+# between phrases, never inside a run of kanji, katakana or kana; Japanese line-breaking rules.
 add_executable(vjo-linebreak-tests host/tests/test_linebreak.c)
 target_include_directories(vjo-linebreak-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-linebreak-tests vjo_host)
