@@ -23,6 +23,11 @@ INFO_AT = 0x400                      # the module info, then the process paramet
 WRAP, WRAP_SIZE = 0x81000100, 0x20   # __wrap_sceKernelCreateThread (Thumb)
 STUB = 0x81000300                    # the sceKernelCreateThread import stub
 HEAP = 8 * 1024 * 1024
+# settings/sysapp_gfx.c's wrappers of libvita2d's two calls into the system, their import stubs,
+# and libvita2d's calls of them (vita2d.c's system start)
+GXM_WRAP, GXM_STUB, GXM_CALL = 0x81000140, 0x81000320, CODE + 0x2A0
+FB_WRAP, FB_STUB, FB_CALL = 0x81000180, 0x81000330, CODE + 0x2B0
+GFX_WRAP_SIZE = 0x40
 
 
 def code_segment(priority=0x10000100, mask=0x80000, pointers=True, magic=b"PSP2"):
@@ -71,9 +76,25 @@ def make_self(code=None, attribute=0x0E, phycont=0, total=0xC800, compress=True,
     return bytes(out)
 
 
-def make_elf(symbols=None, relocations=None, heap=HEAP, heap_section=".data"):
+def gfx_symbols():
+    return {"__wrap_sceGxmVshInitialize": (GXM_WRAP | 1, GFX_WRAP_SIZE, ".text"),
+            "sceGxmVshInitialize": (GXM_STUB, 16, ".text"),
+            "__wrap_sceSharedFbGetInfo": (FB_WRAP | 1, GFX_WRAP_SIZE, ".text"),
+            "sceSharedFbGetInfo": (FB_STUB, 16, ".text")}
+
+
+def gfx_relocations():
+    """Each wrapper calls the import (its __real_, twice for the GPU library's second try); libvita2d
+    calls the wrappers."""
+    return [(GXM_WRAP + 0x08, "sceGxmVshInitialize", 30), (GXM_WRAP + 0x20, "sceGxmVshInitialize", 30),
+            (FB_WRAP + 0x08, "sceSharedFbGetInfo", 30),
+            (GXM_CALL, "__wrap_sceGxmVshInitialize", 10), (FB_CALL, "__wrap_sceSharedFbGetInfo", 10)]
+
+
+def make_elf(symbols=None, relocations=None, heap=HEAP, heap_section=".data", gfx=True):
     """A linked ELF32 with .text, .data, .bss, a symbol table and .rel.text (the link's -q).
-    symbols: name -> (value, size, section name); relocations: [(place, symbol name, type)]."""
+    symbols: name -> (value, size, section name); relocations: [(place, symbol name, type)];
+    gfx: add settings/sysapp_gfx.c's wrappers and libvita2d's calls of them."""
     if symbols is None:
         symbols = {"__wrap_sceKernelCreateThread": (WRAP | 1, WRAP_SIZE, ".text"),
                    "sceKernelCreateThread": (STUB, 16, ".text")}
@@ -81,6 +102,9 @@ def make_elf(symbols=None, relocations=None, heap=HEAP, heap_section=".data"):
             symbols[check.HEAP_SYMBOL] = (DATA + 0x24, 4, heap_section)
     if relocations is None:
         relocations = [(WRAP + 0x18, "sceKernelCreateThread", 30), (CODE + 0x2E0, "__wrap_sceKernelCreateThread", 10)]
+    if gfx:
+        symbols = {**gfx_symbols(), **symbols}
+        relocations = gfx_relocations() + list(relocations)
     text = b"\0" * 0x400
     data = bytearray(0x40)
     if heap is not None:
@@ -202,6 +226,37 @@ class SettingsSelf(unittest.TestCase):
         report = self.run_check(elf_bytes=make_elf(symbols={check.HEAP_SYMBOL: (DATA + 0x24, 4, ".data")},
                                                    relocations=[]))
         self.assertEqual(report["thread_creations_through_the_wrapper"], 0)
+
+    def test_libvita2d_starts_through_the_graphics_wrappers(self):
+        """settings/sysapp_gfx.c: libvita2d's sceGxmVshInitialize and sceSharedFbGetInfo go through the
+        wrappers that make its system start wait for SceShell and fall back (no game running)."""
+        report = self.run_check()
+        self.assertEqual(report["graphics_calls_through_the_wrappers"],
+                         {"sceGxmVshInitialize": 1, "sceSharedFbGetInfo": 1})
+        for name, place in (("sceGxmVshInitialize", GXM_CALL), ("sceSharedFbGetInfo", FB_CALL)):
+            with self.subTest(name):
+                # the link without --wrap=name: libvita2d calls the import, and the wrapper is gc'd
+                symbols = {k: v for k, v in gfx_symbols().items() if k != "__wrap_" + name}
+                relocations = [r for r in gfx_relocations() if r[1] not in (name, "__wrap_" + name)]
+                relocations.append((place, name, 10))
+                elf = make_elf(gfx=False, symbols={**symbols, **{
+                    "__wrap_sceKernelCreateThread": (WRAP | 1, WRAP_SIZE, ".text"),
+                    "sceKernelCreateThread": (STUB, 16, ".text"), check.HEAP_SYMBOL: (DATA + 0x24, 4, ".data")}},
+                    relocations=relocations + [(WRAP + 0x18, "sceKernelCreateThread", 30)])
+                self.fails(f"nothing calls __wrap_{name}", elf_bytes=elf)
+                # the wrapper there, and a second call of the import outside it
+                elf = make_elf(relocations=[(WRAP + 0x18, "sceKernelCreateThread", 30), (place + 0x40, name, 10)])
+                self.fails(f"{name} is called at 0x{place + 0x40:08x}, outside __wrap_{name}", elf_bytes=elf)
+        # main's eboot (#109 to this change): no graphics wrapper at all
+        self.fails("nothing calls __wrap_sceGxmVshInitialize",
+                   elf_bytes=make_elf(gfx=False, relocations=[(WRAP + 0x18, "sceKernelCreateThread", 30),
+                                                              (GXM_CALL, "sceGxmVshInitialize", 10),
+                                                              (FB_CALL, "sceSharedFbGetInfo", 10)],
+                                      symbols={"__wrap_sceKernelCreateThread": (WRAP | 1, WRAP_SIZE, ".text"),
+                                               "sceKernelCreateThread": (STUB, 16, ".text"),
+                                               "sceGxmVshInitialize": (GXM_STUB, 16, ".text"),
+                                               "sceSharedFbGetInfo": (FB_STUB, 16, ".text"),
+                                               check.HEAP_SYMBOL: (DATA + 0x24, 4, ".data")}))
 
     def test_not_a_self_or_not_an_elf(self):
         self.fails("not a SELF", self_bytes=b"\x7fELF" + b"\0" * 200)

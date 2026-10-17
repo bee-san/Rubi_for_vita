@@ -1676,7 +1676,10 @@ static void toggles_and_filters_keep_icons(void)
     TEST_CHECK(check_cards(frames, NULL) == 0);
     /* Toggling saves games.ini and rebuilds the list; the icons in the window stay. */
     TEST_CHECK_(sum_loads(20, TOGGLE_FRAMES) == 0, "%d loads while toggling", sum_loads(20, TOGGLE_FRAMES));
-    TEST_CHECK(!strncmp(session->shown[TOGGLE_FRAMES - 1].status[0], "Saved.", 6));
+    /* when it applies, true with no game running as beside one */
+    TEST_CHECK_(!strcmp(session->shown[TOGGLE_FRAMES - 1].status[0], "Saved. It applies when the game next starts or "
+                "resumes.") && !session->shown[TOGGLE_FRAMES - 1].status[1][0], "%s | %s",
+                session->shown[TOGGLE_FRAMES - 1].status[0], session->shown[TOGGLE_FRAMES - 1].status[1]);
     /* The filters show other lists: Enabled lacks the two games, Disabled is them. */
     int enabled = TOGGLE_FRAMES + 15, disabled = enabled + 16, all = disabled + 16;
     TEST_CHECK(selected_of(enabled) == 2 && top_of(enabled) == 2);
@@ -2857,7 +2860,8 @@ static void disable_all_turns_off_the_games_on_by_their_own_choice(void)
         TEST_CHECK_(!session->shown[off].id[q][0] || !strcmp(session->shown[off].badge[q], "OFF"), "%s: %s",
                     session->shown[off].id[q], session->shown[off].badge[q]);
     snprintf(both, sizeof(both), "%s %s", session->shown[off].status[0], session->shown[off].status[1]);
-    TEST_CHECK_(strstr(both, "Saved: every game is OFF; resume your game to apply. Turned OFF too: ") != NULL, "%s", both);
+    TEST_CHECK_(strstr(both, "Saved: every game is OFF from its next start or resume. Turned OFF too: ") != NULL, "%s",
+                both);
     TEST_CHECK_(strstr(both, games[1].title) != NULL || strstr(both, "...") != NULL, "%s", both);
     /* the file: no "= enabled" rule, the "= disabled" one kept, the default OFF */
     const char *snap = slurp("games.snap0", NULL);
@@ -2885,7 +2889,8 @@ static void disable_all_turns_off_the_games_on_by_their_own_choice(void)
         TEST_CHECK_(shell_sees("ux0:data/VitaJPOverlay/games.ini", psp[i], 1), "%s OFF", psp[i]);
     snprintf(both, sizeof(both), "%s %s", session->shown[last].status[0], session->shown[last].status[1]);
     char want[320];
-    snprintf(want, sizeof(want), "Saved: every game is ON but 1; resume your game to apply. Still OFF: %s.", games[2].title);
+    snprintf(want, sizeof(want), "Saved: every game is ON but 1 from its next start or resume. Still OFF: %s.",
+             games[2].title);
     TEST_CHECK_(!strcmp(both, want), "%s\n  want: %s", both, want);
     TEST_MSG("off: %s | on: %s", session->shown[off].status[0], both);
     /* log.txt: each change and the rules it removed or kept */
