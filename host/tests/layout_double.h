@@ -9,7 +9,7 @@
  * paf's kinsoku lets them. The query callback is text_hit.h's VjoCharPosition:
  * a query of a low surrogate, of a CR or past the text counts as a bad query.
  *
- * ref_step/ref_vertical restate the cursor keys' rules over the laid-out
+ * ref_read_step/ref_vertical restate the cursor keys' rules over the laid-out
  * cells directly (no scan, no early exit), for differential checks. */
 #ifndef VJO_LAYOUT_DOUBLE_H
 #define VJO_LAYOUT_DOUBLE_H
@@ -143,35 +143,32 @@ static inline float layout_end(const Layout *l, unsigned k)
     return k + 1 < l->n && l->line[k + 1] == l->line[k] && l->x[k + 1] >= l->x[k] ? l->x[k + 1] : l->x[k] + l->ja;
 }
 
-/* Left/Right on the cursor's row (vjo_text_row_step's rule); returns the
- * new cursor, or `cursor` to stay; *wrapped tells a wrap. */
-static inline size_t ref_step(const Layout *l, size_t cursor, size_t from, int direction, int japanese_only, int *wrapped)
+/* Left/Right in reading order across the rows (the owner's 2026-10-16 rule,
+ * test.3's item G): direction > 0 the first selectable character at or after
+ * `from`, direction < 0 the last one before the cursor, whatever row it is on.
+ * Past the text's end that way the cursor stays, unless `wrap` is set and every
+ * selectable character is on one row: then that row's first (Right) or last
+ * (Left), *wrapped set. Returns the new cursor, or `cursor` to stay. */
+static inline size_t ref_read_step(const Layout *l, size_t cursor, size_t from, int direction, int japanese_only,
+                                   int wrap, int *wrapped)
 {
-    int c = layout_at(l, cursor), first = -1, last = -1, before = -1, before_row = -1, next = -1;
-    uint32_t row = l->line[c];
+    int first = -1, last = -1, before = -1, next = -1, to;
     *wrapped = 0;
     for (unsigned k = 0; k < l->n; k++) {
         if (!layout_selectable(l, k, japanese_only))
             continue;
-        if (l->line[k] == row) {
-            if (first < 0)
-                first = (int)k;
-            last = (int)k;
-        }
-        if (l->begin[k] < cursor) {
+        if (first < 0)
+            first = (int)k;
+        last = (int)k;
+        if (l->begin[k] < cursor)
             before = (int)k;
-            if (l->line[k] == row)
-                before_row = (int)k;
-        } else if (l->begin[k] >= from && next < 0)
+        else if (l->begin[k] >= from && next < 0)
             next = (int)k;
     }
-    int to;
-    if (direction > 0) {
-        to = next >= 0 && l->line[next] == row ? next : first >= 0 ? first : next;
-        *wrapped = !(next >= 0 && l->line[next] == row) && first >= 0;
-    } else {
-        to = before_row >= 0 ? before_row : last >= 0 ? last : before;
-        *wrapped = before_row < 0 && last >= 0;
+    to = direction > 0 ? next : before;
+    if (to < 0 && wrap && first >= 0 && l->line[first] == l->line[last]) {
+        to = direction > 0 ? first : last;
+        *wrapped = 1;
     }
     if (to < 0 || l->begin[to] == cursor) {
         *wrapped = 0;

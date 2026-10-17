@@ -243,6 +243,13 @@ target_include_directories(vjo-text-rows-tests PRIVATE third_party/acutest/inclu
 target_link_libraries(vjo-text-rows-tests vjo_host)
 target_compile_options(vjo-text-rows-tests PRIVATE -Wall -Wextra)
 add_test(NAME text_rows COMMAND vjo-text-rows-tests)
+# The cursor over several lines with the d-pad and the left stick (owner 2026-10-16, items 1 and 3):
+# Left/Right across the rows, stopping at the text's ends; the stick's four directions as the d-pad's.
+add_executable(vjo-cursor-nav-tests host/tests/test_cursor_nav.c)
+target_include_directories(vjo-cursor-nav-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-cursor-nav-tests vjo_host)
+target_compile_options(vjo-cursor-nav-tests PRIVATE -Wall -Wextra)
+add_test(NAME cursor_nav COMMAND vjo-cursor-nav-tests)
 add_executable(vjo-anki-tests host/tests/test_anki.c)
 target_include_directories(vjo-anki-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-anki-tests vjo_host)

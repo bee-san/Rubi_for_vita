@@ -19,16 +19,17 @@ static void matched_source_and_back(void)
 }
 
 /* Without a layout (the first frames after opening, or GetCharInfo
- * failing) the whole text is one row: the end wraps to the start. */
-static void unlaid_text_is_one_row(void)
+ * failing) the line breaks stand for the rows: a text of one line goes round
+ * its ends, a text of several stops at them; in between nothing needs one. */
+static void unlaid_text_goes_by_its_line_breaks(void)
 {
     const char *text = "猫犬。ABC";
     size_t len = std::strlen(text);
     VjoWordNavigation history = {};
     int rc = 0;
-    TEST_CHECK(vjo_word_cursor_step(history, text, len, 0, 0, 1, 1, NULL, &rc) == 3 && rc == VJO_ROW_UNAVAILABLE);
-    TEST_CHECK(vjo_word_cursor_step(history, text, len, 3, 6, 1, 1) == 0); /* only punctuation/Latin after */
-    TEST_CHECK(history.count == 2);
+    TEST_CHECK(vjo_word_cursor_step(history, text, len, 0, 0, 1, 1, NULL, &rc) == 3 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(vjo_word_cursor_step(history, text, len, 3, 6, 1, 1, NULL, &rc) == 0); /* only punctuation/Latin after */
+    TEST_CHECK(rc == VJO_ROW_UNAVAILABLE && history.count == 2);
     history.count = 0;
     TEST_CHECK(vjo_word_cursor_step(history, text, len, 3, len, 1, 0) == 0);   /* the match reaches the end */
     TEST_CHECK(vjo_word_cursor_step(history, text, len, 3, 6, 1, 0) == 6);     /* 。 is a character when off */
@@ -36,9 +37,19 @@ static void unlaid_text_is_one_row(void)
     TEST_CHECK(vjo_word_cursor_step(history, text, len, 3, len + 1, 1, 1) == 0);
     history.count = 0;
     TEST_CHECK(vjo_word_cursor_step(history, text, len, 0, 0, -1, 1) == 3 && history.count == 0); /* wraps back */
+    TEST_CHECK(vjo_word_cursor_step(history, text, len, 0, 0, -1, 1, NULL, &rc, 0) == 0 && rc == VJO_ROW_STAY);
     TEST_CHECK(vjo_word_cursor_step(history, "", 0, 0, 0, 1, 1) == 0);
     TEST_CHECK(vjo_word_cursor_step(history, text, len, len, 0, 1, 1) == len); /* no Japanese: nothing moves */
     TEST_CHECK(vjo_word_cursor_step(history, text, len, 0, 0, 0, 1, NULL, &rc) == 0 && rc == VJO_ROW_STAY);
+    /* two lines: across the break, and nowhere past the ends */
+    const char *two = "猫犬\n鳥"; /* 猫 0, 犬 3, LF 6, 鳥 7 */
+    size_t n = std::strlen(two);
+    history.count = 0;
+    TEST_CHECK(vjo_word_cursor_step(history, two, n, 3, 0, 1, 1, NULL, &rc) == 7 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(vjo_word_cursor_step(history, two, n, 7, 0, 1, 1, NULL, &rc) == 7 && rc == VJO_ROW_UNAVAILABLE);
+    history.count = 0;
+    TEST_CHECK(vjo_word_cursor_step(history, two, n, 7, 0, -1, 1, NULL, &rc) == 3 && rc == VJO_ROW_MOVED);
+    TEST_CHECK(vjo_word_cursor_step(history, two, n, 0, 0, -1, 1, NULL, &rc) == 0 && rc == VJO_ROW_UNAVAILABLE);
 }
 
 static void supplementary_and_history_bound(void)
@@ -58,9 +69,9 @@ static void supplementary_and_history_bound(void)
     TEST_CHECK(history.count == 0);
 }
 
-/* With the header's rows: Right wraps from the row's last word, Left
- * retraces it, and history from a wrap is undone exactly. */
-static void row_wrap_and_retrace(void)
+/* With the header's rows: Right from a row's last word goes on to the next
+ * row's first, Left retraces it exactly; the text's ends stop. */
+static void rows_crossed_and_retraced(void)
 {
     static Layout l;
     /* 10 cells per row: 食べました、猫です。 | 犬も好き */
@@ -75,18 +86,30 @@ static void row_wrap_and_retrace(void)
     cursor = vjo_word_cursor_step(history, text, len, cursor, 21, 1, 1, &rows, &rc);
     TEST_CHECK(cursor == 21 && rc == VJO_ROW_MOVED);
     cursor = vjo_word_cursor_step(history, text, len, cursor, 27, 1, 1, &rows, &rc); /* です; 。; row 1 */
-    TEST_CHECK(cursor == 0 && rc == VJO_ROW_WRAPPED && history.count == 3);
+    TEST_CHECK(cursor == 30 && rc == VJO_ROW_MOVED && history.count == 3);          /* 犬, row 1's first */
     cursor = vjo_word_cursor_step(history, text, len, cursor, 0, -1, 1, &rows, &rc);
-    TEST_CHECK(cursor == 21 && rc == VJO_ROW_MOVED); /* the wrap undone */
+    TEST_CHECK(cursor == 21 && rc == VJO_ROW_MOVED); /* back to です */
     cursor = vjo_word_cursor_step(history, text, len, cursor, 0, -1, 1, &rows, &rc);
     cursor = vjo_word_cursor_step(history, text, len, cursor, 0, -1, 1, &rows, &rc);
     TEST_CHECK(cursor == 0 && history.count == 0);
     cursor = vjo_word_cursor_step(history, text, len, cursor, 0, -1, 1, &rows, &rc);
-    TEST_CHECK(cursor == 24 && rc == VJO_ROW_WRAPPED); /* す, the row's last letter */
-    /* A word that fills the rest of its row: nowhere else to go. */
+    TEST_CHECK(cursor == 0 && rc == VJO_ROW_STAY); /* the text's first: no wrap to the far end */
+    /* Left from row 1's first without a history: row 0's last letter, す */
+    TEST_CHECK(vjo_word_cursor_step(history, text, len, 30, 0, -1, 1, &rows, &rc) == 24 && rc == VJO_ROW_MOVED);
+    /* A word that runs to the text's end: nowhere else to go. */
     TEST_CHECK(vjo_word_cursor_step(history, text, len, 30, len, 1, 1, &rows, &rc) == 30 && rc == VJO_ROW_STAY);
     TEST_CHECK(vjo_word_cursor_step(history, text, len, 30, 33, 1, 1, &rows, &rc) == 33);
     TEST_CHECK(l.bad_queries == 0);
+    /* One row goes round its ends with the d-pad, not with the stick (wrap 0). */
+    const char *one = "食べました、猫です。";
+    TEST_ASSERT(layout_text(&l, one, 240.0f, 24.0f, 12.0f) == 1);
+    rows = layout_rows(&l);
+    history.count = 0;
+    TEST_CHECK(vjo_word_cursor_step(history, one, std::strlen(one), 21, 27, 1, 1, &rows, &rc) == 0 &&
+               rc == VJO_ROW_WRAPPED);
+    TEST_CHECK(vjo_word_cursor_step(history, one, std::strlen(one), 0, 0, -1, 1, &rows, &rc) == 21); /* retraced */
+    TEST_CHECK(vjo_word_cursor_step(history, one, std::strlen(one), 21, 27, 1, 1, &rows, &rc, 0) == 21 &&
+               rc == VJO_ROW_STAY);
 }
 
 /* L or R tapped alone pages dictionaries; the L + R chord never does. */
@@ -121,9 +144,9 @@ static void shoulder_taps(void)
 
 TEST_LIST = {
     {"matched_inflection_and_backward_history", matched_source_and_back},
-    {"unlaid_text_is_one_row", unlaid_text_is_one_row},
+    {"unlaid_text_goes_by_its_line_breaks", unlaid_text_goes_by_its_line_breaks},
     {"supplementary_Han_and_bounded_history", supplementary_and_history_bound},
-    {"row_wrap_and_retrace", row_wrap_and_retrace},
+    {"rows_crossed_and_retraced", rows_crossed_and_retraced},
     {"shoulder_taps", shoulder_taps},
     {NULL, NULL}
 };
