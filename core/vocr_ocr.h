@@ -105,7 +105,7 @@ typedef struct {
     uint32_t bytes;
     unsigned char sha256[32];
     uint32_t arena_bytes;
-    unsigned finder_mode;     /* vocr_lines.h: VOCR_LINES_GRAD for every pinned model */
+    unsigned finder_mode;     /* vocr_lines.h: VOCR_LINES_TEXTBOX_RECOVERY for every pinned model */
 } VjoVocrModel;
 
 /* The model named `name` (a file name in ocr_model_dir), or NULL. */

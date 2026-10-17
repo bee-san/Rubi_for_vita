@@ -112,7 +112,7 @@ static void test_models_and_sizes(void)
     }
     TEST_CHECK_(n == expected && all != NULL, "%u pinned models, %u expected", n, expected);
     for (unsigned k = 0; k < 6; k++) TEST_CHECK_(vjo_vocr_model(by_name[k]) != NULL, "%s", by_name[k]);
-    for (unsigned i = 0; i < n; i++) TEST_CHECK(all[i].finder_mode == VOCR_LINES_GRAD);
+    for (unsigned i = 0; i < n; i++) TEST_CHECK(all[i].finder_mode == VOCR_LINES_TEXTBOX_RECOVERY);
     /* the three sizes' models (test_tier_pins.h: their releases' exact sizes and W8I arenas) */
     for (unsigned i = 0; i < 3; i++) {
         const VjoVocrModel *m = vjo_vocr_model(test_tier_pins[i].name);

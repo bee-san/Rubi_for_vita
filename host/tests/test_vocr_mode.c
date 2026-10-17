@@ -83,9 +83,9 @@ static void test_each_model_dispatches_without_extra_capture_or_workspace(void)
         reset(0);
         TEST_CHECK(vjo_vocr_ocr(&platform, "absent", models[i].name, &image, workspace, size, capture, cap,
                                 text, sizeof(text), &stats) == VJO_OK);
-        /* the model's own finder (every pinned model uses the gradient finder, 0) */
+        /* the model's own finder (every pinned model uses textbox recovery, 3) */
         int expected = (int)models[i].finder_mode;
-        TEST_CHECK(expected == 0 && finder_calls == 1 && selected_mode == expected && !model_opens);
+        TEST_CHECK(expected == VOCR_LINES_TEXTBOX_RECOVERY && finder_calls == 1 && selected_mode == expected && !model_opens);
         TEST_CHECK(stats.workspace == size && stats.capture == cap && !stats.model_loaded && !text[0]);
         /* One strip holds the region: read once (the first pass, whole: FIRST and LAST),
          * then once more to see that it did not change; the finder's passes hit the strip. */

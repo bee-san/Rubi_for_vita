@@ -7,6 +7,8 @@
 #define vocr_arena_bytes api19_spy_arena_bytes
 #define vocr_init api19_spy_init
 #define vocr_run api19_spy_run
+/* API 18's finder (8228c3c: GRAD), so only the capture differs (core/vocr_ocr.c VJO_VOCR_FINDER) */
+#define VJO_VOCR_FINDER VOCR_LINES_GRAD
 #include "../../core/vocr_ocr.c"
 
 #include <stdlib.h>

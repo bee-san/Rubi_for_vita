@@ -1304,7 +1304,9 @@ static int refine_job(unsigned flags, VocrLineSet *found, VocrLineSet *whole, un
                              vjo_vocr_capture_bytes(refine_w, refine_h), &pol, text, sizeof(text), st);
     free(ws);
     TEST_ASSERT(vocr_lines_arena_bytes(refine_w, refine_h) <= sizeof(arena));
-    TEST_CHECK(vocr_find_lines(&gim, VOCR_LINES_GRAD, arena, sizeof(arena), found) == VOCR_LINES_OK);
+    /* the policy's own finder: the model's (core/vocr_ocr.c VJO_VOCR_FINDER) */
+    TEST_CHECK(vocr_find_lines(&gim, (int)vjo_vocr_model("FL10_w8.vocr")->finder_mode, arena, sizeof(arena), found) ==
+               VOCR_LINES_OK);
     *whole = *found;
     *splittable = 0;
     if (!flags) return rc;
