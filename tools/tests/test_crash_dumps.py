@@ -513,6 +513,31 @@ class Placement(unittest.TestCase):
                 KERNEL_HEAD + "game exit\nforeground 0x20000 -> 0x0 (suspend) t=5400000 ms\n", "checked", None),
             "the suspend's game exit, then a lone one": (kernel_text() + "game exit\n", "unchecked",
                                                          "kernel.txt's last line carries no uptime (t=N ms)"),
+            # audit-c N-1: lines the kernel logs without g.game_lock never end the scan, an uptime included: the debug
+            # build's input block= (a Shell syscall), shell registered (g.lock only), ocr worker registered (a game's)
+            "game exit, the debug build's input block=, the suspend, a lone game exit": (
+                KERNEL_HEAD + "game exit\ninput block=0 pid=118FF game=0 raw=00000000 t=5390000 ms\n"
+                "foreground 0x20000 -> 0x0 (suspend) t=5400000 ms\ngame exit\n", "unchecked",
+                "kernel.txt ends with a game exit that may be a later app's: one is logged before its last foreground "
+                "line too, which the worker can log first"),
+            "game exit, a Shell registration, the suspend, a lone game exit": (
+                KERNEL_HEAD + "game exit\nshell registered: pid 0x118AA (was 0x118FF)\n"
+                "foreground 0x20000 -> 0x0 (suspend) t=5400000 ms\ngame exit\n", "unchecked",
+                "kernel.txt ends with a game exit that may be a later app's: one is logged before its last foreground "
+                "line too, which the worker can log first"),
+            "game exit, an OCR worker registration, the suspend, a lone game exit": (
+                KERNEL_HEAD + "game exit\nocr worker registered: game pid 0x20000 module 0x30000\n"
+                "foreground 0x20000 -> 0x0 (suspend) t=5400000 ms\ngame exit\n", "unchecked",
+                "kernel.txt ends with a game exit that may be a later app's: one is logged before its last foreground "
+                "line too, which the worker can log first"),
+            # audit-c N-1: a startup over a confirmed game, or the Shell's verdict, raises no game exit of its own: a game
+            # exit after either is a later, lone one (kernel/foreground.c)
+            "a startup over the game, then a lone game exit": (
+                KERNEL_HEAD + "foreground 0x20000 -> 0x30000 (startup) t=5400000 ms\ngame exit\n", "unchecked",
+                "kernel.txt's last line carries no uptime (t=N ms)"),
+            "the Shell's verdict, then a lone game exit": (
+                KERNEL_HEAD + "foreground 0x30000 -> 0x20000 (shell) t=5400000 ms\ngame exit\n", "unchecked",
+                "kernel.txt's last line carries no uptime (t=N ms)"),
             "uptimes that go back": (kernel_text(last_ms=50_000) + "foreground 0x0 -> 0x20000 (resume) t=40000 ms\n",
                                      "unchecked", "kernel.txt's uptimes go backwards"),
         }
