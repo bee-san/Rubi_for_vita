@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # capture/run.sh CHECKOUT OUT: every real picture and string the promo shows, made from one Rubi checkout.
 #
-# CHECKOUT is built first, as the README's "Build and validation" says: the host tree in build/host and the Vita
+# CHECKOUT is built first, as docs/guide.md's "Build and validation" says: the host tree in build/host and the Vita
 # release in build/vita-normal and build/vita-debug (cmake --build ... --target release, VJO_DEBUG=OFF and ON).
 # OUT gets (tools/prep_assets.py copies them into assets/ and src/):
 #   overlay-states.json      the overlay at each beat: the checkout's lookups and render() (overlay_lookups.c, overlay_states.py)

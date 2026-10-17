@@ -50,8 +50,8 @@ render it with `-f 15` for a quick look. The npm scripts set `HYPERFRAMES_NO_TEL
 
 ## The captures (`capture/run.sh`)
 
-`capture/run.sh CHECKOUT OUT` makes every real picture from one Rubi checkout, built as the
-repository's README says (the host tree in `build/host`, the Vita release in `build/vita-normal` and
+`capture/run.sh CHECKOUT OUT` makes every real picture from one Rubi checkout, built as the guide's
+[Build and validation](../guide.md#build-and-validation) says (the host tree in `build/host`, the Vita release in `build/vita-normal` and
 `build/vita-debug`); the film shows the commit in `OUT/commit.txt`. Its environment is listed at its top
 (VitaSDK, the pinned vita-vn-ocr runtime and models, the released dictionary, Vita3K and the official
 firmware, docker for Anki). `PROMO_ASSETS` is the folder the fleet's promo-assets agent made for the film: the
@@ -126,7 +126,7 @@ Checked against the checkout the captures are of (`assets/SOURCES.md` names it).
   release's VPK, copied to the Vita and installed in VitaShell (its own two questions), then the app's
   Install page, then a restart by the user (the app never restarts the Vita). Every game is ON by default
   and the kernel loads the OCR worker into each (#148), so no per-game step follows. Not yet verified on a
-  console: the owner's test.4 run checks it, and the film is published as final only once it does.
+  console: test.4 ([#191](https://github.com/bee-san/Rubi_for_vita/issues/191)) checks it.
 - **L + R**: the default `toggle_button` is `l+r`.
 - **Turn it off per game**: the app's Games page, reached by a tap on its tab (the tabs take a tap as Select
   changes pages, `settings/main.c`); the status line is the app's own.
@@ -144,8 +144,8 @@ archives); the restart: a finger holds the power button while a ring fills (the 
 shorter), selects [Power Off] on the screen that appears (drawn simplified), and the screen goes dark; the
 film then cuts to the game on the Vita turned on again (the guide: hold the power button for two seconds to
 turn it on; starting the game is not shown). The
-release is the one its checkout builds (version 0.8.0); the published release's sizes may differ by a few
-bytes.
+release is the one its checkout builds (version 0.8.0); the published release's files may differ by a few KB
+(a later checkout ships other docs), enough to move the last digit of a size.
 
 ## Licences
 
