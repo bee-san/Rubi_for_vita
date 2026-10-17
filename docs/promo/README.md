@@ -119,10 +119,10 @@ Checked against the checkout the captures are of (`assets/SOURCES.md` names it).
   Anki", "Queued for Anki", "Anki queue: N · export in the … app"). Mining is off by default, so the overlay
   right after the install (scene 7) has no queue line and no "× queue".
 - **With screenshots**: the card keeps the game's whole frame when × is pressed, without the overlay (#150;
-  the app's Screenshots setting is on by default); the card in scene 4 is the app's own export of it. Not yet
-  verified on a console: test.4's two saves timed out without a picture
-  ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194) section 1); the next test build (0.8.0-test.4.1)
-  checks the fix.
+  the app's Screenshots setting is on by default); the card in scene 4 is the app's own export of it. On a console:
+  test.4's two saves timed out without a picture ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)
+  section 1); with b622c18 (test.4.3) the save took its picture, the game's 960×544 frame, in 851 ms, and the
+  export carried it.
 - **It only reads text when it changes**: Read text on Automatically (the default) reads each new screen
   once it settles; "Only when I press L + R" reads nothing until the press (#146). No battery claim: battery
   use is not measured.
