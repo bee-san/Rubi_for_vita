@@ -363,7 +363,8 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/core/taicfg.c ${ROOT}/core/payload.c ${ROOT}/settings/install.c ${ROOT}/settings/install_page.c
   ${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
-  ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${VJO_SETTINGS_ANKI_SRC})
+  ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
+  ${VJO_SETTINGS_ANKI_SRC})
 # The one-VPK install's config.txt check is taiHEN's own parser (DaveeFTW/taihen-parser 6d817fd, MIT),
 # built as taiHEN 309b380 builds it: its inbuilt ctype and string functions (docs/one-vpk-install.md).
 set_source_files_properties(${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
@@ -388,9 +389,14 @@ target_compile_options(VitaJPOverlay_Settings PRIVATE -O2 -Wall -Wextra -ffuncti
 # vita-elf-create refuses, then crashes, when that is less ("Cannot allocate 2612 bytes for SCE data at end
 # of segment 0; segment 1 overlaps": CI's normal build of the one-VPK install). The gap costs no memory:
 # only the segments are loaded, and tools/check_settings_self.py counts them.
+# settings/sysapp_gfx.c wraps libvita2d's two calls into the system (its graphics start with no
+# game running: the GPU library's shared parameter buffer and SceShell's framebuffer hand-over);
+# VJO_SETTINGS_GFX_WRAP is the smoke app's too. tools/check_settings_self.py checks that libvita2d
+# calls the wrappers.
+set(VJO_SETTINGS_GFX_WRAP -Wl,--wrap=sceGxmVshInitialize,--wrap=sceSharedFbGetInfo)
 target_link_options(VitaJPOverlay_Settings PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
   -Wl,--undefined=sceUserMainThreadCpuAffinityMask,--undefined=sceUserMainThreadPriority
-  -Wl,--wrap=sceKernelCreateThread -Wl,--defsym,__sce_headroom=0x4000)
+  -Wl,--wrap=sceKernelCreateThread ${VJO_SETTINGS_GFX_WRAP} -Wl,--defsym,__sce_headroom=0x4000)
 target_link_libraries(VitaJPOverlay_Settings ${VJO_SETTINGS_LIBS})
 add_dependencies(VitaJPOverlay_Settings vjo_settings_png_geometry)
 add_custom_command(TARGET VitaJPOverlay_Settings POST_BUILD
@@ -471,7 +477,18 @@ if(VJO_SETTINGS_SMOKE)
   target_link_options(vjo_settings_smoke PRIVATE -Wl,-q,--gc-sections -Wl,--no-wchar-size-warning
     -Wl,--wrap=sceCtrlPeekBufferPositive,--wrap=sceKernelExitProcess,--wrap=vita2d_load_PNG_buffer
     -Wl,--wrap=vita2d_load_PNG_file,--wrap=vita2d_free_texture,--wrap=vita2d_wait_rendering_done
-    -Wl,--wrap=vita2d_draw_texture_scale,--wrap=sceKernelCreateThread)
+    -Wl,--wrap=vita2d_draw_texture_scale,--wrap=sceKernelCreateThread ${VJO_SETTINGS_GFX_WRAP})
+  # VJO_SETTINGS_SMOKE_SYSAPP: the system-application start, which Vita3K never takes (its
+  # sceAppMgrGetBudgetInfo is a stub that refuses): the smoke answers it as a system application,
+  # and stands in for SceShell's framebuffer hand-over and the GPU library's shared parameter
+  # buffer as ux0:data/vjo_settings_smoke_sysapp.txt says (tools/vita3k_settings_smoke.c).
+  option(VJO_SETTINGS_SMOKE_SYSAPP "Build the smoke app to start as a system application under Vita3K" OFF)
+  set(VJO_SETTINGS_SMOKE_TITLE VJOSMK002)
+  if(VJO_SETTINGS_SMOKE_SYSAPP)
+    target_compile_definitions(vjo_settings_smoke PRIVATE VJO_SMOKE_SYSAPP=1)
+    target_link_options(vjo_settings_smoke PRIVATE -Wl,--wrap=sceAppMgrGetBudgetInfo)
+    set(VJO_SETTINGS_SMOKE_TITLE VJOSMK003) # installed beside the ordinary smoke app
+  endif()
   target_link_libraries(vjo_settings_smoke ${VJO_SETTINGS_LIBS})
   # An ordinary app, from the plugins' flags: vita_create_self (a macro) leaves the eboot's
   # in these, since #109 a list (-c;-at;0x0E;-m;0xC800) that the shell splits at each ';'.
@@ -486,7 +503,7 @@ if(VJO_SETTINGS_SMOKE)
   # Overlay app itself, and fail with it in a build without optimisation (#135: libpng at -O0, which
   # check_settings_png_abi.py refuses).
   set(resources "")
-  vita_create_vpk(vjo_settings_smoke.vpk VJOSMK002 vjo_settings_smoke.self
+  vita_create_vpk(vjo_settings_smoke.vpk ${VJO_SETTINGS_SMOKE_TITLE} vjo_settings_smoke.self
     VERSION "01.00" NAME "VJO settings smoke"
     FILE ${ROOT}/settings/assets/icon0.png sce_sys/icon0.png)
 endif()

@@ -387,7 +387,7 @@ static void save(void)
     } else {
         status_error = 0;
         saved = policy;
-        snprintf(status, sizeof(status), "Saved. Resume or restart your game to apply.");
+        snprintf(status, sizeof(status), "Saved. It applies when the game next starts or resumes.");
     }
     rebuild();
 }
@@ -451,13 +451,13 @@ static void toggle_default(void)
     else
         vjo_log("games: Default ON, %d own OFF choice%s kept%s%s", rules, rules == 1 ? "" : "s", rules ? ": " : "", ids);
     if (disable && n)
-        snprintf(status, sizeof(status), "Saved: every game is OFF; resume your game to apply. Turned OFF too: %s.", names);
+        snprintf(status, sizeof(status), "Saved: every game is OFF from its next start or resume. Turned OFF too: %s.", names);
     else if (disable)
-        snprintf(status, sizeof(status), "Saved: every game is OFF; resume your game to apply. Turn ON the ones you want.");
+        snprintf(status, sizeof(status), "Saved: every game is OFF from its next start or resume. Turn ON the ones you want.");
     else if (n)
-        snprintf(status, sizeof(status), "Saved: every game is ON but %d; resume your game to apply. Still OFF: %s.", n, names);
+        snprintf(status, sizeof(status), "Saved: every game but %d is ON from its next start or resume. Still OFF: %s.", n, names);
     else
-        snprintf(status, sizeof(status), "Saved: every game is ON; resume your game to apply.");
+        snprintf(status, sizeof(status), "Saved: every game is ON from its next start or resume.");
 }
 
 static void change_filter(void)
@@ -617,7 +617,7 @@ static void preference_saved(int rc)
     check_models();
     snprintf(preference_status, sizeof(preference_status), "%s", rc < 0 || read_rc < 0
         ? "Save not confirmed. Check the displayed choices, then retry."
-        : "Saved. Resume your game, then reopen the overlay.");
+        : "Saved. It applies when the overlay next opens.");
 }
 
 static void change_preference(int tier, int japanese_only, int highlight_mode, int dictionary_results)

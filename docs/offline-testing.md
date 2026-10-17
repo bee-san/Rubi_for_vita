@@ -242,7 +242,8 @@ smoke target below is built as an ordinary app (`vita-make-fself -c`: no attribu
 libvita2d picks its system-application path when `sceAppMgrGetBudgetInfo` succeeds, and
 Vita3K's is a stub that returns -1, "not system mode" (Vita3K b75d5e6,
 `SceAppMgrUser.cpp:234-238`; the logs of the smoke app's run and of the release VPK's show it
-called), so under Vita3K libvita2d takes its ordinary path for any SELF. A pass is not evidence
+called), so under Vita3K libvita2d takes its ordinary path for any SELF (the smoke's second build
+below answers that call itself). A pass is not evidence
 for the system-application path on a console: the shared framebuffer, the VSH GXM
 initialisation, the 50 MiB budget, or the exit through `vita2d_fini` that would crash it (#112:
 found in libvita2d's source and the pinned `.a`, not run on a console). What else Vita3K does
@@ -258,7 +259,16 @@ libvita2d's stencil), the other pages, Cancel. Toggles and the exit use the ente
 reads from the console's setting (#106; Vita3K's registry has ○ enter, and the script's old
 × exited the app at its first toggle). It fails on a crash, a hang, an icon texture freed after a
 draw with no GPU wait in between, or one left alive. Given `RELEASE_VPK`, the release
-`JPOverlaySettings.vpk` must also keep running for 30 s over the same games. The app draws
+`JPOverlaySettings.vpk` must also keep running for 30 s over the same games. Then (unless
+`SYSAPP=0`) the same sources are built a second time with `VJO_SETTINGS_SMOKE_SYSAPP`, where the
+smoke answers `sceAppMgrGetBudgetInfo` as a system application, so libvita2d takes its
+system-application start under Vita3K, and stands in for the two things that start waits on with
+no game running (`settings/sysapp_gfx.c`; [vita-memory.md](vita-memory.md#starting-with-no-game-running)):
+SceShell's hand-over of the shared framebuffer at the 31st read, the same with the GPU library's
+shared parameter buffer refused (the app's own then), and no hand-over at all, where the app must
+close itself after 10 s with its two `log.txt` lines. The rest of that path is Vita3K's own GPU
+library and shared framebuffer, so a pass says the app's code survives it, nothing about
+SceShell, the hand-over's timing or the GPU library on a console. The app draws
 text with the firmware's PVF library, which this Vita3K does not emulate (`scePvfNewLib` is
 unimplemented): it needs Sony's 3.74 system software and font package
 (`VITA3K_FIRMWARE`, `VITA3K_FONTS`), which Vita3K then loads as the real modules. A pass

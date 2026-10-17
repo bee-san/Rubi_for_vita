@@ -33,6 +33,16 @@ typedef struct { unsigned short frames; unsigned buttons; } Step;
 #define TAP(b, gap) {1, (b)}, {(gap), 0}
 #define ENTER 0x01000000u  /* no SceCtrl button has this bit: replaced by the enter button */
 #define CANCEL 0x02000000u /* nor this one: replaced by the cancel button */
+#if VJO_SMOKE_SYSAPP
+/* The system-application start (below): each page drawn into the shared framebuffer, then Cancel. */
+static const Step script[] = {
+    {60, 0}, {60, SCE_CTRL_DOWN}, {10, 0},          /* the Games list, icons loading, moved */
+    TAP(SCE_CTRL_SELECT, 40), TAP(SCE_CTRL_DOWN, 10), /* OCR & lookup, a card down */
+    TAP(SCE_CTRL_SELECT, 40), TAP(SCE_CTRL_SELECT, 60), /* Anki, Install */
+    TAP(SCE_CTRL_SELECT, 40),                         /* Games */
+    TAP(CANCEL, 0),
+};
+#else
 static const Step script[] = {
     {90, 0},                                         /* the window's icons load, one a frame */
     {300, SCE_CTRL_DOWN}, {30, 0}, {300, SCE_CTRL_UP}, {30, 0},  /* down about 47 rows, back */
@@ -54,6 +64,84 @@ static const Step script[] = {
     {200, SCE_CTRL_DOWN}, TAP(SCE_CTRL_LEFT, 30),
     TAP(CANCEL, 0),
 };
+#endif
+
+#if VJO_SMOKE_SYSAPP
+#include <psp2/appmgr.h>
+#include <psp2/gxm.h>
+#include <psp2/sharedfb.h>
+#include <stdlib.h>
+/* The system-application start under Vita3K (vita/CMakeLists.txt VJO_SETTINGS_SMOKE_SYSAPP).
+ * Vita3K's sceAppMgrGetBudgetInfo is a stub that refuses, so libvita2d starts there as an
+ * ordinary application; here it is answered as a system application, and the system's side of
+ * the two calls libvita2d's system start makes (the app wraps them, settings/sysapp_gfx.c,
+ * linked unchanged) is stood in for, as ux0:data/vjo_settings_smoke_sysapp.txt says:
+ *   "handover N"  the framebuffer's first N reads give buffer 1, the next buffer 2 (SceShell's hand-over);
+ *   "nopb N"      the same, and the GPU library refuses the shared parameter buffer (SHAREDPB_OPEN);
+ *   "never"       every read gives buffer 1: no hand-over.
+ * The rest is Vita3K's: its GPU library, and its shared framebuffer's two buffers, one shown at
+ * each sceSharedFbEnd. A crash check of that code under Vita3K, not evidence about the console. */
+static int mode_read, mode_never, mode_nopb;
+static unsigned mode_after, fb_reads;
+
+static void read_mode(void)
+{
+    char text[32];
+    int n = -1;
+    if (mode_read) return;
+    mode_read = 1;
+    memset(text, 0, sizeof(text));
+    SceUID fd = sceIoOpen("ux0:data/vjo_settings_smoke_sysapp.txt", SCE_O_RDONLY, 0);
+    if (fd >= 0) {
+        n = sceIoRead(fd, text, sizeof(text) - 1);
+        sceIoClose(fd);
+    }
+    if (n < 0) text[0] = '\0';
+    mode_never = !strncmp(text, "never", 5);
+    mode_nopb = !strncmp(text, "nopb", 4);
+    const char *number = strchr(text, ' ');
+    mode_after = number ? (unsigned)strtoul(number + 1, NULL, 10) : 0;
+}
+
+/* A system application's budget: the app's 50 MiB, as test.3's console logged it beside CLANNAD. */
+int __wrap_sceAppMgrGetBudgetInfo(SceAppMgrBudgetInfo *info)
+{
+    int size = info->size;
+    memset(info, 0, sizeof(*info));
+    info->size = size;
+    info->app_mode = 3;
+    info->total_user_rw_mem = 52428800;
+    info->free_user_rw = 38899712;
+    return 0;
+}
+
+/* The GPU library: Vita3K's own clears the flags and starts its sceGxmInitialize (b75d5e6
+ * SceGxmInternalForVsh.cpp), as this does; in "nopb" the shared parameter buffer is refused. */
+int sceGxmVshInitialize(const SceGxmInitializeParams *params)
+{
+    read_mode();
+    if (mode_nopb && (params->flags & SCE_GXM_INITIALIZE_FLAG_SHAREDPB_OPEN)) return SCE_GXM_ERROR_DRIVER;
+    SceGxmInitializeParams own = *params;
+    own.flags = 0;
+    return sceGxmInitialize(&own);
+}
+
+/* The framebuffer's read: Vita3K's two buffers, as its sceSharedFbBegin gives them (its own
+ * read says buffer 1 whatever happens), with the buffer index the mode gives. */
+int sceSharedFbGetInfo(SceUID fb_id, SceSharedFbInfo *info)
+{
+    read_mode();
+    int rc = sceSharedFbBegin(fb_id, info);
+    if (rc < 0) return rc;
+    if (mode_never || fb_reads++ < mode_after) {
+        info->index = 1;
+        info->fb_base2 = info->fb_base;
+    } else {
+        info->index = 2;
+    }
+    return 0;
+}
+#endif
 
 #if VJO_SMOKE_PAD > 0
 /* Moves the code segment's end (vita/CMakeLists.txt VJO_SETTINGS_SMOKE_PAD). */

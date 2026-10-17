@@ -1676,7 +1676,10 @@ static void toggles_and_filters_keep_icons(void)
     TEST_CHECK(check_cards(frames, NULL) == 0);
     /* Toggling saves games.ini and rebuilds the list; the icons in the window stay. */
     TEST_CHECK_(sum_loads(20, TOGGLE_FRAMES) == 0, "%d loads while toggling", sum_loads(20, TOGGLE_FRAMES));
-    TEST_CHECK(!strncmp(session->shown[TOGGLE_FRAMES - 1].status[0], "Saved.", 6));
+    /* when it applies, true with no game running as beside one */
+    TEST_CHECK_(!strcmp(session->shown[TOGGLE_FRAMES - 1].status[0], "Saved. It applies when the game next starts or "
+                "resumes.") && !session->shown[TOGGLE_FRAMES - 1].status[1][0], "%s | %s",
+                session->shown[TOGGLE_FRAMES - 1].status[0], session->shown[TOGGLE_FRAMES - 1].status[1]);
     /* The filters show other lists: Enabled lacks the two games, Disabled is them. */
     int enabled = TOGGLE_FRAMES + 15, disabled = enabled + 16, all = disabled + 16;
     TEST_CHECK(selected_of(enabled) == 2 && top_of(enabled) == 2);
@@ -2857,7 +2860,8 @@ static void disable_all_turns_off_the_games_on_by_their_own_choice(void)
         TEST_CHECK_(!session->shown[off].id[q][0] || !strcmp(session->shown[off].badge[q], "OFF"), "%s: %s",
                     session->shown[off].id[q], session->shown[off].badge[q]);
     snprintf(both, sizeof(both), "%s %s", session->shown[off].status[0], session->shown[off].status[1]);
-    TEST_CHECK_(strstr(both, "Saved: every game is OFF; resume your game to apply. Turned OFF too: ") != NULL, "%s", both);
+    TEST_CHECK_(strstr(both, "Saved: every game is OFF from its next start or resume. Turned OFF too: ") != NULL, "%s",
+                both);
     TEST_CHECK_(strstr(both, games[1].title) != NULL || strstr(both, "...") != NULL, "%s", both);
     /* the file: no "= enabled" rule, the "= disabled" one kept, the default OFF */
     const char *snap = slurp("games.snap0", NULL);
@@ -2885,12 +2889,39 @@ static void disable_all_turns_off_the_games_on_by_their_own_choice(void)
         TEST_CHECK_(shell_sees("ux0:data/VitaJPOverlay/games.ini", psp[i], 1), "%s OFF", psp[i]);
     snprintf(both, sizeof(both), "%s %s", session->shown[last].status[0], session->shown[last].status[1]);
     char want[320];
-    snprintf(want, sizeof(want), "Saved: every game is ON but 1; resume your game to apply. Still OFF: %s.", games[2].title);
+    snprintf(want, sizeof(want), "Saved: every game but 1 is ON from its next start or resume. Still OFF: %s.",
+             games[2].title);
     TEST_CHECK_(!strcmp(both, want), "%s\n  want: %s", both, want);
     TEST_MSG("off: %s | on: %s", session->shown[off].status[0], both);
     /* log.txt: each change and the rules it removed or kept */
     CHECK_LINE("games: Default OFF", "games: Default OFF, 4 own ON choices removed: VJOT00001, PCSG00415, NPXS10028, PSPEMUCFW");
     CHECK_LINE("games: Default ON", "games: Default ON, 1 own OFF choice kept: VJOT00002");
+}
+
+/* The Default row's two statuses with no choice of its own on the card: when they apply, true
+ * with or without a game running. */
+static void default_changes_say_when_they_apply(void)
+{
+    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\n";
+    char both[300];
+    card(3, NULL);
+    put_file("ux0:data/VitaJPOverlay/games.ini", ini, sizeof(ini) - 1);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    tap(SCE_CTRL_TRIANGLE, 10);                      /* ON -> OFF: no game ON by its own choice */
+    int off = at - 1;
+    script[at++] = (Input){0, 1, 100, 112 + 20, 0}; /* the Default row: OFF -> ON, none kept OFF */
+    hold(0, 10);
+    int frames = run(at), last = frames - 1;
+    for (int k = 0; k < 2; k++) {
+        int f = k ? last : off;
+        snprintf(both, sizeof(both), "%s%s%s", session->shown[f].status[0], session->shown[f].status[1][0] ? " " : "",
+                 session->shown[f].status[1]);
+        const char *want = k ? "Saved: every game is ON from its next start or resume."
+                             : "Saved: every game is OFF from its next start or resume. Turn ON the ones you want.";
+        TEST_CHECK_(!strcmp(both, want), "%s\n  want: %s", both, want);
+    }
 }
 
 /* A Default change whose save fails changes nothing: the choices on screen and
@@ -2931,6 +2962,7 @@ TEST_LIST = {
 #if VJO_DEBUG
     {"the_frame_interval_is_logged_once", the_frame_interval_is_logged_once},
 #endif
+    {"default_changes_say_when_they_apply", default_changes_say_when_they_apply},
     {"stick_stops_at_the_first_and_last_card", stick_stops_at_the_first_and_last_card},
     {"a_page_change_latches_the_stick", a_page_change_latches_the_stick},
     {"a_touched_tab_latches_the_stick", a_touched_tab_latches_the_stick},

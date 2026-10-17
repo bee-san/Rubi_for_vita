@@ -204,6 +204,20 @@ add_executable(vjo-settings-sysapp-tests host/tests/test_settings_sysapp.c)
 target_include_directories(vjo-settings-sysapp-tests PRIVATE third_party/acutest/include host/tests/sysapp_stubs)
 target_compile_options(vjo-settings-sysapp-tests PRIVATE -Wall -Wextra)
 add_test(NAME settings_sysapp COMMAND vjo-settings-sysapp-tests)
+# Its graphics start with no game running (settings/sysapp_gfx.c): libvita2d's start
+# (host/tests/sysapp_gfx_model.c, its own object as libvita2d.a's is) through the link's
+# --wrap of its two calls into the system, as vita/CMakeLists.txt links the app, against
+# a model of SceShell and the GPU library.
+add_executable(vjo-settings-sysapp-gfx-tests host/tests/test_settings_sysapp_gfx.c host/tests/sysapp_gfx_model.c
+  settings/sysapp_gfx.c)
+target_include_directories(vjo-settings-sysapp-gfx-tests PRIVATE third_party/acutest/include host/tests/sysapp_gfx_stubs)
+target_compile_definitions(vjo-settings-sysapp-gfx-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-settings-sysapp-gfx-tests PRIVATE -Wall -Wextra)
+target_link_options(vjo-settings-sysapp-gfx-tests PRIVATE "LINKER:--wrap=sceGxmVshInitialize"
+  "LINKER:--wrap=sceSharedFbGetInfo")
+add_test(NAME settings_sysapp_gfx COMMAND vjo-settings-sysapp-gfx-tests)
+# A start that never ends fails in the model (STUCK_US); this bounds anything else.
+set_tests_properties(settings_sysapp_gfx PROPERTIES TIMEOUT 60)
 
 # End-to-end word lookup on real VOCR output with the bundled dictionary
 # (#73's frozen plaintext.vjdict). VJO_PLAINTEXT_SOURCE: a plaintext-dicts

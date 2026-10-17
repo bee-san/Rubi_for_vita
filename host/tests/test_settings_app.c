@@ -1109,6 +1109,21 @@ static void test_unreadable_config_selects_and_saves_nothing(void)
     TEST_CHECK(!strcmp(backend, "lens") && !strcmp(tier, "large")); /* the file was never written */
 }
 
+/* A saved choice says when it applies: true with no game running as beside one (the app
+ * opens from the LiveArea either way). */
+static void test_a_saved_choice_says_when_it_applies(void)
+{
+    card(NULL);
+    static const Input in[] = {OCR_PAGE, TAP(SIZE_X + 2 * SIZE_PITCH + 20, SIZE_Y + 20)}; /* Large */
+    run(in, (int)(sizeof(in) / sizeof(in[0])));
+    char tier[16];
+    saved_value("vocr_tier", tier);
+    TEST_CHECK_(!strcmp(tier, "large"), "vocr_tier = %s", tier);
+    const Text *st = text_at(3, ROOM_END + 4 + 22, 40, 41); /* the page's status line */
+    TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the overlay next opens.") && st->color == WHITE,
+                "the status line: '%s'", st ? st->text : "(none)");
+}
+
 /* engine.c on its own: the card of a parsed config.ini, its status line, the sizes' lines. */
 static void test_engine_card_and_size_lines(void)
 {
@@ -1365,6 +1380,7 @@ TEST_LIST = {
     {"engine_line_vocr_Lens_VOCR2_Meiki_ncnn_shows_the_size_and_next_save_drops_it", test_engine_line_shows_the_size_and_next_save_drops_it},
     {"status_follows_the_configured_models_and_files", test_status_follows_the_configured_models},
     {"unreadable_config_selects_and_saves_nothing", test_unreadable_config_selects_and_saves_nothing},
+    {"a_saved_choice_says_when_it_applies_with_or_without_a_game", test_a_saved_choice_says_when_it_applies},
     {"read_text_and_speed_boost_first_run_auto_and_on_below_the_model_size", test_read_text_and_speed_boost_defaults},
     {"read_text_and_speed_boost_by_keys_and_touch_saved_as_ocr_mode_and_ocr_boost_clock",
      test_read_text_and_speed_boost_by_keys_and_touch},
