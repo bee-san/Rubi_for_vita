@@ -600,6 +600,105 @@ static void configure_inside_a_batch(void)
     lock_check();
 }
 
+/* t3-log-path (audit-t3-log-path's test): one thread holds a batch across many lines, re-begun after
+ * each end, as the normal build's network thread does (shell/worker.c net_main), while another thread
+ * logs now and then and a third re-reads the config (log_file kept, or turned off and on), across
+ * status.txt's 64 KiB cap and, with a prefill, a rotation of log.txt: the files equal line by line, byte
+ * for byte, in both builds. */
+static void long_held_batch_with_configures(void)
+{
+    char line[256];
+    for (unsigned seed = 1; seed <= 8; seed++) {
+        size_t fill = seed & 1 ? LOG_FILE_CAP - 40000 : 0;
+        const unsigned n = 1500;
+        Snapshot ref, got;
+        fresh_logger(fill); /* line by line */
+        ref_file_size = -1; ref_file_on = 1; ref_status_size = 0;
+        rng = seed * 7919u;
+        for (unsigned i = 0; i < n; i++) {
+            unsigned len = 2 + next(254), what = next(12), who = next(4);
+            int k;
+            (void)who;
+            if (what == 0) { ref_file_on = !ref_file_on; ref_file_size = -1; } /* configure: log_file toggled */
+            else if (what == 1) ref_file_size = -1;                           /* configure: log_file kept */
+            k = make_line(line, i, len);
+            ref_status_append(line, k);
+            if (ref_file_on) ref_file_append(line, k);
+        }
+        snap(&ref);
+        fresh_logger(fill); /* the logger */
+        rng = seed * 7919u;
+        {
+            VjoLogBatch b;
+            static char buf[2048];
+            VjoConfig cfg;
+            int open = 0, on = 1;
+            memset(&cfg, 0, sizeof(cfg));
+            for (unsigned i = 0; i < n; i++) {
+                unsigned len = 2 + next(254), what = next(12), who = next(4);
+                int k;
+                if (what == 0 || what == 1) {
+                    if (what == 0) on = !on;
+                    cfg.log_file = on;
+                    thread = 3; vjo_log_configure(&cfg); thread = 1;
+                } else if (what == 2 && open) {
+                    vjo_log_batch_end(&b);
+                    open = 0;
+                }
+                if (!open) open = vjo_log_batch_begin(&b, buf, sizeof(buf));
+                k = make_line(line, i, len);
+                thread = who == 0 ? 2 : 1;
+                vjo_log_raw(line, k);
+                thread = 1;
+            }
+            if (open) vjo_log_batch_end(&b);
+        }
+        snap(&got);
+        check_same(&ref, &got);
+        TEST_MSG("seed %u, prefill %zu", seed, fill);
+        if (seed == 1) TEST_CHECK(ref.status_n > STATUS_CAP - 256 && ref.old_n > 0); /* the cap, the rotation */
+        snap_free(&ref); snap_free(&got);
+        lock_check();
+    }
+}
+
+/* t3-log-path (audit-t3-log-path-d's N1): a configure (another thread's: the overlay's open re-reads
+ * config.ini) that keeps log_file leaves an open batch's lines held in the normal build, whose network
+ * thread holds a job's lines until its result is taken (shell/worker.c net_main); the debug build's, as
+ * main's, writes them. One that changes log_file writes them first in both, to the files of the setting
+ * they were logged under. */
+static void configure_keeps_a_held_batch(void)
+{
+    VjoConfig cfg;
+    VjoLogBatch b;
+    char buf[1024], line[256];
+    fresh_logger(0); /* log_file on */
+    TEST_ASSERT(vjo_log_batch_begin(&b, buf, sizeof(buf)) == 1);
+    vjo_log_raw(line, make_line(line, 0, 40));
+    vjo_log_raw(line, make_line(line, 1, 40));
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.log_file = 1;
+    thread = 3; vjo_log_configure(&cfg); thread = 1; /* log_file kept */
+    lock_check();
+#if VJO_DEBUG
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 80); /* written */
+    TEST_CHECK(batch == &b && b.n == 0);
+#else
+    TEST_CHECK(!lookup(VJO_LOG_PATH, 0) || lookup(VJO_LOG_PATH, 0)->size == 0); /* held */
+    TEST_CHECK(batch == &b && b.n == 2);
+#endif
+    vjo_log_raw(line, make_line(line, 2, 40));
+    cfg.log_file = 0;
+    thread = 3; vjo_log_configure(&cfg); thread = 1; /* changed: what is held goes out first, to log.txt */
+    lock_check();
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0) && lookup(VJO_LOG_PATH, 0)->size == 120 && batch == &b && b.n == 0);
+    vjo_log_raw(line, make_line(line, 3, 40)); /* log.txt off: status.txt only */
+    vjo_log_batch_end(&b);
+    TEST_CHECK(lookup(VJO_LOG_PATH, 0)->size == 120 && lookup(VJO_STATUS_PATH, 0)->size == 160);
+    TEST_CHECK(!batch);
+    lock_check();
+}
+
 /* Another thread's line during a batch is written at once, after the batch's lines so far;
  * the batch goes on. */
 static void another_thread_is_not_held(void)
@@ -757,6 +856,8 @@ TEST_LIST = {
     {"failures_lose_lines_but_not_the_sizes", failures_lose_lines_but_not_the_sizes},
     {"lines_at_the_caps", lines_at_the_caps},
     {"configure_inside_a_batch", configure_inside_a_batch},
+    {"long_held_batch_with_configures", long_held_batch_with_configures},
+    {"configure_keeps_a_held_batch", configure_keeps_a_held_batch},
     {"another_thread_is_not_held", another_thread_is_not_held},
     {"a_batch_stays_inside_its_memory", a_batch_stays_inside_its_memory},
     {"a_failed_run_at_the_cap", a_failed_run_at_the_cap},

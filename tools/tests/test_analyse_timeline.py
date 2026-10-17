@@ -141,6 +141,68 @@ class TimelineTest(unittest.TestCase):
         t = at.analyse(log)["jobs"][0]["games"][0]["timeline"]
         self.assertEqual(t["retry_at_ms"], 180.0)
 
+    def test_the_result_path_is_the_network_threads_appends_after_the_exchange(self):
+        """t3-log-path: a job's appends split into the network thread's after its exchange (the result's
+        lines and the text's as a batch each, the lookup's lines one each) and the other threads'."""
+        steps = [gstep("mem", 10 + k) for k in range(29)]  # 30 result lines: a batch of 24, then one of 6
+        job = ["job start (auto: screen settled)",
+               "input block on rc=0 (00000000) t=1000 ms",                       # the control thread's
+               job_line(), *steps[:20],
+               "open: background job still running (stable 1, quiet 0)",         # its append splits the batch
+               *steps[20:],
+               "game vocr text 0: SENTINEL-TEXT-4", "game vocr text 1: SENTINEL-TEXT-5",
+               "anki: queue 2 card(s)",                                          # the Anki thread's
+               "result arenas Paf allocation: free=2589816 requested=65536 reserve=1572864 success=1",
+               "local dictionary workspace: 65536 bytes",
+               "subtitle text ready in 900 ms",
+               "lookup first word at 0: 2 chars, dictionary 1/1, page 1/1, 13 reads 45429 B, rc=0, 65 ms; \"x\" -> x"]
+        # groups: the network thread's: result 21 + 9 (split by the open: line) = 2, text 1, Paf 1, workspace 1,
+        # lookup 1 = 6; the others': input block, open, anki, subtitle = 4. status.txt open: 2 appends each.
+        done = "job 0 done rc=0 in 2000 ms, arena peak 53552, dictionary page 1/1, game 1000 ms, log 400 ms in 20 appends"
+        lookup = ["overlay close (in game) t=5000 ms: input block off rc=0",
+                  "lookup cursor at 3: 1 chars, dictionary 1/1, page 1/1, 3 reads 12288 B, rc=0, 30 ms; \"y\" -> y",
+                  "job 0 done rc=0 in 50 ms, arena peak 53552, dictionary page 1/1, game 0 ms, log 20 ms in 2 appends"]
+        head = ["Vita JP Overlay shell started (kernel API 22)", "game PCSG00415 started: dictionary Local dictionaries, "
+                "trigger l+r, subtitles select+r, ocr_mode auto"]
+        res = at.analyse("\n".join(head + job + [done] + lookup) + "\n")
+        ocr, look = res["jobs"]
+        rp = ocr["result_path"]
+        self.assertEqual((rp["net_groups"], rp["other_groups"], rp["status_open"]), (6, 4, True))
+        self.assertEqual((rp["appends"], rp["done_line_appends"], rp["per_append_ms"], rp["est_ms"]), (12, 2, 20.0, 240.0))
+        lp = look["result_path"]  # a lookup's window: the lines since the last done line
+        self.assertEqual((lp["net_groups"], lp["other_groups"], lp["appends"]), (1, 1, 2))
+        self.assertEqual(res["distributions"]["user_result_path_ms"], [240.0])  # OCR jobs only, as the others
+        text = at.render(res, show_jobs=True)
+        self.assertIn("result path: 12 of the 20 appends (the network thread's 6 after the exchange, each twice: "
+                      "status.txt too), est. 240 ms at the job's 20.0 ms an append, and the done line's 2", text)
+        self.assertNotIn("SENTINEL", text + json.dumps(res))
+        # status.txt full (64 KiB of lines since the boot's start): each group is one append
+        filler = [f"config warning: filler {k} " + "z" * 90 for k in range(700)]
+        res = at.analyse("\n".join(head + filler + job + [done.replace("in 20 appends", "in 10 appends")]) + "\n")
+        rp = res["jobs"][0]["result_path"]
+        self.assertEqual((rp["status_open"], rp["appends"], rp["done_line_appends"], rp["est_ms"]), (False, 6, 1, 240.0))
+        # the self-test's job shows nothing: no result path
+        self.assertNotIn("result_path", at.analyse(LOG)["jobs"][3])
+
+    def test_a_batch_ends_at_its_lines_and_its_buffer(self):
+        """30 result lines in a row: two batches (24 lines each at most); 10 text lines of 190 B: two (1,536 B)."""
+        job = at.ShellJob("auto", "ocr", 1, 0)
+        for k in range(30):
+            job.note_line(gstep("mem", k))
+        self.assertEqual(job.net_groups, 2)
+        for k in range(10):
+            job.note_line(f"game vocr text {k}: " + "y" * (190 - 18))  # 191 B with its newline: 8 a batch
+        self.assertEqual((job.net_groups, job.other_groups), (4, 0))
+
+    def test_the_normal_builds_short_log_has_no_result_path_to_time(self):
+        log = ("Vita JP Overlay shell started (kernel API 22, the normal build: a short log)\n"
+               "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+               "ocr rc=0 VOCR3_H15_w8.vocr: 2 lines, 812 ms\nclock: 333 -> 444 MHz while reading, 333 after\n")
+        res = at.analyse(log)
+        self.assertEqual((res["jobs"], res["normal_boots"]), ([], 1))
+        self.assertEqual(res["distributions"]["user_result_path_appends"], [])
+        self.assertIn("the normal build's short log", at.render(res))
+
     def test_render_and_the_command_line(self):
         res = at.analyse(LOG)
         text = at.render(res, show_jobs=True)

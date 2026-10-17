@@ -26,9 +26,19 @@ The Shell's side of a job is what the game's log does not cover: its submission 
 its log lines (each an open/append/close of log.txt and, until it is full, status.txt: 12-46 ms
 an append on the console, #81's self-test timestamps) and the lookup. This build's done line also
 gives the time spent in exchanges with the game (`game N ms`) and in log appends (`log N ms in K
-appends`). The self-test's records (`stage NAME begin/end/wait t=MS`) carry the Shell's clock
+appends`, every thread's). The self-test's records (`stage NAME begin/end/wait t=MS`) carry the Shell's clock
 (ms since it started): with them a stage splits into the game's job, the rest of its exchange
 and the record's own writes.
+
+The result path (t3-log-path): of a job's appends, the network thread's after its exchange with the
+game (the job's result lines, its text, the lookup's allocation and line; then the done line, which
+its own count leaves out) come before the control thread can take the result (job_done), so they
+delay it. Each is one append of log.txt and, while status.txt is under 64 KiB, one of status.txt:
+the debug build writes a job's result lines and its text's as a batch each (#100), every other line
+alone. The other threads' appends meanwhile (the overlay opening, the control thread) delay it only
+where the network thread waited for the log's lock, which the log does not say. The estimate prices
+the result path's appends at the job's own mean (log ms / appends). The normal build holds its few
+lines until after the result (shell/worker.c net_main) and logs no timing at all.
 
 Sessions: a game process from its `game TITLE started` to the next start; kernel.txt's `game pid`
 lines (--collect) count the processes.
@@ -63,6 +73,17 @@ STEP = re.compile(r"^step (\w+) t=(\d+)")
 KPID = re.compile(r"^game pid 0x([0-9A-Fa-f]+) active")
 
 INSTANT = {"mem", "check", "alloc", "free", "sig", "tear", "fb", "clock", "fallback"}
+# The network thread's lines after a job's exchange (shell/worker.c vocr_run_one, log_vocr_measurements,
+# log_tier_checks, log_vocr_steps, log_text_lines, run_vocr, mem_alloc, log_lookup; shell/memory.cpp for the
+# result arena's Paf allocation). The result's and the text's lines are one batch each, of at most
+# BATCH_LINES lines and the buffer's bytes (a line that does not fit, or another thread's line, starts the next).
+NET_RESULT = ("game vocr rc=", "game vocr capture:", "game vocr memory:", "game vocr speed:", "game vocr cascade speed:",
+              "game vocr lines", "tier ", "gstep ")
+NET_TEXT = ("game vocr text ",)
+NET_SINGLE = ("game vocr: ", "result arenas Paf", "result workspace Paf", "local dictionary workspace", "lookup ")
+BATCH_LINES = 24  # shell/shell.h VJO_LOG_BATCH_LINES
+BATCH_BYTES = {"result": 4096, "text": 1536}  # vocr_run_one's and log_text_lines' buffers
+STATUS_CAP = 64 * 1024  # status.txt: every line is an append of it too until it holds this much
 GLM_READ = 0x80000000
 VJO_E = {0: "ok", -103: "out of memory", -105: "too large", -108: "source", -115: "ocr model", -116: "ocr region",
          -117: "ocr unavailable", -118: "cancelled", -119: "inference", -120: "screen changed"}
@@ -193,6 +214,30 @@ class ShellJob:
         self.lookup_ms, self.games, self.stages = [], [], []
         self.lines = self.opened_during = self.text_lines = 0  # text_lines: the shown text's lines (counted only)
         self.cancelled = False
+        # the result path: the network thread's line groups (appends) after the exchange, the others', and whether
+        # status.txt took each line too (still under 64 KiB) when the job ended
+        self.net_groups = self.other_groups = 0
+        self.status_open = False
+        self._batch = None  # the network thread's open batch: [kind, lines, bytes]
+
+    def note_line(self, line):
+        """One log line of the job's window, as the logger wrote it (shell/log_vita.c)."""
+        n = len(line.encode("utf-8")) + 1
+        kind = "result" if line.startswith(NET_RESULT) else "text" if line.startswith(NET_TEXT) else None
+        if kind:
+            b = self._batch
+            if b and b[0] == kind and b[1] < BATCH_LINES and b[2] + n <= BATCH_BYTES[kind]:
+                b[1] += 1
+                b[2] += n
+            else:
+                self._batch = [kind, 1, n]
+                self.net_groups += 1
+            return
+        self._batch = None  # the batch so far went out before this line
+        if line.startswith(NET_SINGLE):
+            self.net_groups += 1
+        else:
+            self.other_groups += 1
 
     def as_dict(self):
         game_end = round(sum(g.timeline()["end_ms"] or 0 for g in self.games), 1)
@@ -203,6 +248,15 @@ class ShellJob:
              "text_lines": self.text_lines,
              "session": self.session, "selftest": bool(self.stages), "exchange_ms": self.game_ms,
              "log_ms": self.log_ms, "appends": self.appends}
+        # the result path (the debug build's lines; the self-test's job shows nothing, so it has none)
+        if self.appends is not None and not self.stages:
+            per_group = 2 if self.status_open else 1
+            net = self.net_groups * per_group
+            d["result_path"] = {
+                "net_groups": self.net_groups, "other_groups": self.other_groups, "status_open": self.status_open,
+                "appends": net, "done_line_appends": per_group,
+                "est_ms": round(self.log_ms * min(net, self.appends) / self.appends, 1) if self.appends else 0.0,
+                "per_append_ms": round(self.log_ms / self.appends, 1) if self.appends else None}
         if self.done_ms is not None:
             # the Shell's own: the job less the game's (its exchanges, or the game's step log) and the lookup
             game = self.game_ms if self.game_ms is not None else game_end
@@ -215,6 +269,8 @@ def parse_log(text):
     job, game, stage_now, session = None, None, None, None
     n = 0
     normal = 0  # boots of the normal build, whose short log has no job, step or timing line (docs/release-variants.md)
+    status = 0  # bytes in status.txt (rewritten at each boot), est. from log.txt's lines since the boot's start line
+    pending = []  # the lines since the last job's done line: a lookup's window (it logs no start line)
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
@@ -224,7 +280,17 @@ def parse_log(text):
         if line.startswith("Vita JP Overlay shell started"):
             session = None
             normal += "the normal build" in line
+            status = 0
+        n_bytes = len(raw.encode("utf-8")) + 1
+        if status + n_bytes <= STATUS_CAP:
+            status += n_bytes
+        if line.startswith("Vita JP Overlay shell started"):
             continue
+        if not (JOB_START.match(line) or JOB_DONE.match(line)):
+            if job is not None:
+                job.note_line(line)
+            else:
+                pending.append(line)
         m = GAME_START.match(line)
         if m:
             session = {"index": len(sessions), "title": m.group(1), "jobs": 0, "opened": 0, "weights_read": [],
@@ -256,11 +322,15 @@ def parse_log(text):
                 "selftest" if m.group(1) == "self-test" else "ocr"
             job = ShellJob(m.group(1), kind, n, session["index"] if session else None)
             game = None
+            pending = []
             continue
         m = JOB_DONE.match(line)
         if m:
-            if job is None:  # a lookup (cursor) job logs no start line
+            if job is None:  # a lookup (cursor) job logs no start line: its window is the lines since the last
                 job = ShellJob("lookup", "lookup", n, session["index"] if session else None)
+                for p in pending:
+                    job.note_line(p)
+            job.status_open = status < STATUS_CAP - 256  # est.: room for a line or more
             job.done_ms, job.rc = int(m.group(3)), int(m.group(2))
             job.arena_peak = int(m.group(4) or 0)
             if m.group(5) is not None:
@@ -269,6 +339,7 @@ def parse_log(text):
             if session is not None:
                 session["jobs"] += 1
             job, game = None, None
+            pending = []
             continue
         if line.startswith("input block on"):
             if session is not None:
@@ -379,6 +450,8 @@ def analyse(text, kernel_text=None):
         "user_job_ms": [d["done_ms"] for d in user], "user_shell_ms": [d["shell_ms"] for d in user if "shell_ms" in d],
         "user_log_ms": [d["log_ms"] for d in user if d["log_ms"] is not None],
         "user_log_lines": [d["log_lines"] for d in user],
+        "user_result_path_appends": [d["result_path"]["appends"] for d in user if "result_path" in d],
+        "user_result_path_ms": [d["result_path"]["est_ms"] for d in user if "result_path" in d],
         "pace_max_gap_ms": [t["pace"]["max_gap_ms"] for t in tl if t["pace"]],
     }
     return res
@@ -425,6 +498,12 @@ def render_job(j, out):
                  if j["exchange_ms"] is not None else "")
         out.append(f"      Shell: {fmt_ms(j['shell_ms'])} ms beside the game's job and the lookup "
                    f"({fmt_ms(j['lookup_ms'])} ms); {j['log_lines']} log lines{extra}")
+        rp = j.get("result_path")
+        if rp:
+            out.append(f"      result path: {rp['appends']} of the {j['appends']} appends (the network thread's "
+                       f"{rp['net_groups']} after the exchange{', each twice: status.txt too' if rp['status_open'] else ''}), "
+                       f"est. {fmt_ms(rp['est_ms'])} ms at the job's {rp['per_append_ms']} ms an append, and the done "
+                       f"line's {rp['done_line_appends']}")
 
 
 def render(res, show_jobs=False):
@@ -464,7 +543,9 @@ def render(res, show_jobs=False):
         out.append(f"  {what:<30} {len(d[key]):>3}: {span(d[key])}")
     out.append("OCR jobs, the Shell's side (ms; the self-test's left out):")
     for key, what in (("user_job_ms", "job"), ("user_shell_ms", "beside the game and lookup"),
-                      ("user_log_ms", "log appends"), ("user_log_lines", "log lines meanwhile")):
+                      ("user_log_ms", "log appends"), ("user_log_lines", "log lines meanwhile"),
+                      ("user_result_path_appends", "result-path appends"),
+                      ("user_result_path_ms", "result-path appends, est. ms")):
         out.append(f"  {what:<30} {len(d[key]):>3}: {span(d[key])}")
     if show_jobs:
         out.append("jobs:")
