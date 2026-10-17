@@ -80,6 +80,7 @@ static void sentence_ends_and_brackets_keep_their_break(void)
 static void spaces_ends_and_empty_lines(void)
 {
     TEST_CHECK(joins_at("  あいうえおかきく  \nけこ", "\n"));
+    TEST_CHECK(!joins_at("あいうえおかきくけこ。 \nさしすせそ", "\n")); /* a space after 。 ends nothing */
     TEST_CHECK(!joins_at("  あいうえおかき  \nけこ", "\n"));
     TEST_CHECK(joins_at("あいう　えおかき\nけこ", "\n")); /* a space between characters counts */
     TEST_CHECK(!joins_at("あいうえおかきくけこ\n\nさし", "こ\n"));
@@ -128,6 +129,22 @@ static void join_removes_the_breaks_and_moves_offsets(void)
     TEST_CHECK(vjo_text_join(v, w, 1) == strlen("猫が\n好き") && !strcmp(v, "猫が\n好き") && w[0] == 7);
     char e[1] = "";
     TEST_CHECK(vjo_text_join(e, NULL, 0) == 0);
+    /* VJO_JOIN_MAX_BREAKS: the first 32 breaks are decided, later ones stay (more lines than a
+     * screen's text box holds) */
+    {
+        static char many[64 * 40];
+        size_t at = 0, left;
+        for (int k = 0; k < 34; k++) {
+            memcpy(many + at, "あいうえおかきくけこ\n", 31);
+            at += 31;
+        }
+        memcpy(many + at, "さしすせそ", 16);
+        TEST_CHECK(vjo_text_join(many, NULL, 0) == at + 15 - 32);
+        left = 0;
+        for (const char *c = many; *c; c++)
+            left += *c == '\n';
+        TEST_CHECK_(left == 2, "%zu breaks left", left);
+    }
 }
 
 TEST_LIST = {

@@ -8,8 +8,10 @@
  * (settings/main.c's fit_line but for the measure callback and where a row
  * ends.) When the text goes on, the row ends at its last space that fits, as
  * before, or later where a line may break (core/linebreak.h: after
- * punctuation, where a Japanese phrase starts; never inside a word), before a
- * space there: so Latin text breaks as before and Japanese no longer
+ * punctuation, where a Japanese phrase starts; never inside a run of kanji
+ * or kana), before a
+ * space there: so Latin text breaks at its spaces as before (and after an
+ * ASCII ! or ?, a closing mark) and Japanese between phrases, no longer
  * anywhere. With neither in the row (one word wider than it), at its last glyph. */
 static size_t fit_line(const char *s, float pixels, int width, char out[512], VjoTextMeasure measure)
 {

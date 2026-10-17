@@ -1,5 +1,5 @@
 /* Where the overlay's own wrapping may break a line (core/linebreak.h, the
- * owner's 2026-10-16 item 4: never inside a word, Japanese line-breaking
+ * owner's 2026-10-16 item 4: between phrases, Japanese line-breaking
  * rules). Synthetic texts; each case marks with | every place a line may
  * break. Also the UTF-16 and UTF-8 walks against each other. Pure C: also
  * on the Vita's CPU under qemu-arm (tools/arm_host_tests.sh). */
@@ -56,6 +56,11 @@ static void japanese_breaks_between_phrases(void)
     check("いったっ|彼が");
     check("６年生の|教室");               /* digits stay with their kanji */
     check("ああ、|そうか。|分かった");
+    check("人々は|集まった");              /* 々 goes with its kanji: no line starts with it */
+    check("何か|用ですか？");              /* か between kanji is a particle */
+    check("コーヒー・|紅茶");              /* no line starts with ・ */
+    check("あいう　|えお");                /* U+3000 only ends a line */
+    check("𠮷野家の|牛丼");                /* a kanji beyond the BMP is a kanji */
 }
 
 /* Kinsoku: no line starts with a closing mark, a small kana, ー or a pause,

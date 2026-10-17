@@ -374,8 +374,11 @@ line the game broke short keeps its own line. In the real line sets about one
 line in six that has a next line in its box ends inside a word
 ([words split over two lines](docs/touch-lookup.md#words-split-over-two-lines)).
 Where the overlay wraps text itself (the recognized text, the popup, the
-subtitle strip, the Overlay app's rows) it never breaks inside a word, and keeps
-Japanese line-breaking rules: no line starts with 、。」ー っ, none ends with 「
+subtitle strip, the Overlay app's rows) it breaks a line between phrases, where
+kana gives way to kanji or katakana, at spaces and at punctuation, never inside a
+run of kanji, katakana or kana, and keeps Japanese line-breaking rules: no line
+starts with 、。」ー っ, none ends with 「. It is no dictionary walk, so a compound
+can still break at its seam (女の|子)
 ([the overlay's own line breaks](docs/touch-lookup.md#the-overlays-own-line-breaks)).
 How these look on a console is not tested yet.
 [Touch selection details and validation](docs/touch-lookup.md).

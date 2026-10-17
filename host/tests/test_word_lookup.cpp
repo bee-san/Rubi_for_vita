@@ -885,10 +885,11 @@ static std::string unescape(const std::string &s)
     return t;
 }
 
-/* Words a game's own wrapping split over two lines, in real text boxes
- * (host/fixtures/cross_lines, owner 2026-10-16 item 4): the lookup at the
- * word's first character shows the whole word, its highlight running across
- * the break, and the card's Sentence has the lines joined there. */
+/* Words a text box's wrapping split over two lines (host/fixtures/cross_lines,
+ * owner 2026-10-16 item 4: boxes of vita-test and psp-test, and synthetic ones
+ * in the layouts of the real pool's): the lookup at the word's first character
+ * shows the whole word, its highlight running across the break, and the arrows
+ * step over it. Every row is checked: one without an entry does not stop the rest. */
 static void split_words_are_looked_up_whole(void)
 {
     VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
@@ -904,7 +905,10 @@ static void split_words_are_looked_up_whole(void)
         vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
         TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, text.c_str(), &d) == VJO_OK);
         TEST_ASSERT(!strcmp(d.sentence, text.c_str())); /* every line Japanese, nothing trimmed */
-        TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, cursor, &d) == VJO_OK && d.list.n_entries == 1);
+        n++;
+        TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, cursor, &d) == VJO_OK);
+        if (!TEST_CHECK_(d.list.n_entries == 1, "no entry at the cursor"))
+            continue;
         const VjoEntry *e = &d.list.entries[0];
         std::string span(d.sentence + e->hl_start, (size_t)(e->hl_end - e->hl_start));
         TEST_CHECK_(span.find('\n') != std::string::npos, "the span %s ends before the break", span.c_str());
@@ -936,9 +940,8 @@ static void split_words_are_looked_up_whole(void)
                 TEST_CHECK_(to == cursor, "Left came back to %zu, not %zu (layout %d)", to, cursor, laid);
             }
         }
-        n++;
     }
-    TEST_CHECK(n == 56);
+    TEST_CHECK(n == 77); /* 56 synthetic, 21 of vita-test and psp-test */
 }
 
 /* Breaks after a speaker's name or at a sentence's end stay breaks. */
@@ -955,7 +958,7 @@ static void kept_breaks_stay_breaks(void)
         TEST_CHECK(!vjo_text_joins(text.c_str(), text.size(), at));
         n++;
     }
-    TEST_CHECK(n == 32);
+    TEST_CHECK(n == 54); /* 32 synthetic, 22 of vita-test and psp-test */
 }
 
 TEST_LIST = {

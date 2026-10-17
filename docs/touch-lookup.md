@@ -499,22 +499,32 @@ a line clearly shorter than the box's widest. Realplus-v3's boxes are line label
 position (consecutive labels just below each other), so its counts include some lines that are no
 dialogue box. [measured: host build of this change, the bundled dictionary, 2026-10-16]
 
-`host/fixtures/cross_lines` holds 56 of the reviewed realplus-v3 boxes, each a word looked up
-whole across its break (`split_words_are_looked_up_whole`), and 32 breaks that must stay
-(`kept_breaks_stay_breaks`: 20 after a name, 12 at a sentence's end); `host/tests/test_textjoin.c`
-the rule, `test_local_cursor.c` the lookup, its pages, its highlight and the card, all on
-synthetic texts too.
+`host/fixtures/cross_lines` holds 77 boxes with a word looked up whole across its break
+(`split_words_are_looked_up_whole`, with the arrows over it) and 54 breaks that must stay
+(`kept_breaks_stay_breaks`: 34 after a name, 20 at a sentence's end): vita-test and psp-test boxes
+(their text is public in vita-vn-ocr's manifests), and synthetic, original boxes in the layouts of
+the 56 split words and 32 kept breaks reviewed in realplus-v3, whose own text stays out of git
+([README](../host/fixtures/cross_lines/README.md)). `host/tests/test_textjoin.c` tests the rule,
+`test_local_cursor.c` the lookup, its pages, its highlight and the card, on synthetic texts.
 
 ## The overlay's own line breaks
 
-Where the overlay wraps text itself it never breaks inside a word (the owner: "we shouldn't split a
-word down the middle either"). `core/linebreak.h` says where a line may break: after a space, after
-punctuation or a closing mark, before an opening mark, and where a Japanese phrase starts after kana
-(a kanji or katakana after hiragana, 彼女は|学校へ, but not after the prefixes お ご, not after one
-hiragana between kanji that is no particle, 振り返る, and not before a suffix such as 様 達); never
-inside a run of kanji, katakana or kana, between kanji and its kana, inside a Latin word or number,
-or between Latin and Japanese; and by the Japanese line-breaking rules (kinsoku): no line starts
-with 、。」』）！？…ー っ ゃ and the like, none ends with 「『（.
+Where the overlay wraps text itself it breaks a line between phrases, not anywhere (the owner: "we
+shouldn't split a word down the middle either"). `core/linebreak.h` says where a line may break:
+after a space, after punctuation or a closing mark, before an opening mark, and where a Japanese
+phrase starts after kana (a kanji or katakana after hiragana, 彼女は|学校へ, but not after the
+prefixes お ご, not after one hiragana between kanji that is no particle, 振り返る, and not before a
+suffix such as 様 達); never inside a run of kanji, katakana or kana, between kanji and its kana,
+inside a Latin word or number, or between Latin and Japanese; and by the Japanese line-breaking
+rules (kinsoku): no line starts with 、。」』）！？…ー っ ゃ and the like, none ends with 「『（.
+
+It is a rule on the kinds of characters, not a dictionary walk (that would read the dictionary file
+at every wrap, in SceShell), so a compound can still break at its seam between kana and kanji:
+女の|子, たこ|焼き, 耳を|傾け. The audit counted the places it allows that fall inside the overlay's
+own longest-match entry: 27 of 344 in vita-test (7.8 %), 17 of 277 in psp-test (6.1 %) and 577 of
+8,323 in 5,000 realplus-v3 lines (6.9 %), some of them longest-match artefacts rather than words
+[measured: audit-overlay-cross-line-lookup, 2026-10-17]. Inside a run of kanji, katakana or kana,
+and between kanji and the kana that inflects it (食べ|る), it never breaks.
 
 - **The recognized text, the popup and the subtitle strip** are paf texts that paf wraps (word wrap
   and kinsoku on, which still breaks Japanese anywhere). Once a text is laid out, the overlay looks
@@ -527,8 +537,10 @@ with 、。」』）！？…ー っ ゃ and the like, none ends with 「『（.
   the highlight. The popup's definitions, mostly English, already break at spaces; its Japanese
   (headwords, examples, kanji lines) is what this changes.
 - **The Overlay app**'s rows (`settings/text_layout.c`) end at the last space that fits, as before,
-  or later where a line may break: a Japanese game title no longer breaks inside a word, and Latin
-  text breaks as before (host test `latin_text_breaks_as_before`).
+  or later where a line may break: a Japanese game title no longer breaks inside a run of kanji or
+  kana, and Latin text breaks as before at its spaces (host test `latin_text_breaks_as_before`),
+  except that an ASCII `!` or `?` is a closing mark now, so a title may also break after one inside
+  a word (`Hello!` / `Project`).
 
 Host tests: `test_linebreak.c` (the places, kinsoku, the UTF-16 and UTF-8 walks), `test_wrap_fix.cpp`
 (the re-wrap on a model of paf's layout: greedy lines, Japanese broken anywhere, Latin at its last
@@ -536,7 +548,7 @@ space, a layout missing or one text behind; the header's unit map), `test_settin
 app's rows). Not verified on a console: how soon paf lays a text out after it is set (the step
 waits two frames, then up to six more), that a position past the end of an older layout is refused
 (which tells a layout of the text before the last break; one read too early can only end a line
-early, never inside a word), and the frame time it takes (a binary search of the text's units per
+early, never at a place the rule forbids), and the frame time it takes (a binary search of the text's units per
 line, at most once a frame per text) [estimate: well under a millisecond for the header, unmeasured
 for a long definition; the debug build's close line logs the slowest frame].
 

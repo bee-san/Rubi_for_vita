@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Candidate host fixtures of words a VN's own wrapping split over two lines (core/textjoin.h).
+"""Candidates for reviewing words a VN's own wrapping split over two lines (core/textjoin.h).
 
 From a line-label pool (realplus-v3 lines_full: kept labels of VNDB PS Vita/PSP screenshots, the
 training pool), the text boxes as tools/cross_line_eval.py groups them, without every VN that
 vita-vn-ocr reserves (eval/manifests/reserved.json "test" and "dev_sample", test_games.json "all"):
 each break the overlay joins and its lookup crosses (vjo-cross-lines), at most one per VN, in a
-deterministic order (sha256 of the box). Text only; the rows are reviewed by eye before any is
-committed to host/fixtures/cross_lines/split_words.tsv (README there).
+deterministic order (sha256 of the box). Text only, and LOCAL ONLY: the pool's text never goes
+into git (conductor 2026-10-17). The committed fixtures (host/fixtures/cross_lines, README there)
+are vita-test/psp-test boxes and synthetic, original boxes written in the reviewed candidates'
+layouts.
 
   cross_line_fixture.py --tool build/host/vjo-cross-lines --dict DIR --pool lines_full_v3.jsonl \
                         --reserved eval/manifests/reserved.json --test-games eval/manifests/test_games.json \

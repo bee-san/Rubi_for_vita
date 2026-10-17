@@ -1,5 +1,5 @@
 /* The re-wrap of the overlay's paf texts (shell/wrap_fix.h, the owner's
- * 2026-10-16 item 4: never break inside a word) on a model of paf's layout:
+ * 2026-10-16 item 4: break between phrases, not anywhere) on a model of paf's layout:
  * greedy lines in a box, Japanese broken at any character, Latin at its last
  * space, '\n' a hard break, a layout that can be missing or one SetString
  * behind. It shows what the overlay's header, popup and strip get: every line

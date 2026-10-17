@@ -1,10 +1,10 @@
 /* Where the overlay's own wrapping may break a line (owner, 2026-10-16, item
  * 4: "VNs normally don't split a word down the middle. We shouldn't either"):
- * never inside a word, and by Japanese line-breaking rules (kinsoku). Used
- * where text is wrapped for the screen: the Shell's paf texts (the
- * recognized text, the popup, the subtitle strip: shell/strip.cpp
- * vjo_wrap_fix moves a break paf put inside a word back to the last place
- * allowed here) and the Overlay app's rows (settings/text_layout.c).
+ * between phrases, and by Japanese line-breaking rules (kinsoku). Used where
+ * text is wrapped for the screen: the Shell's paf texts (the recognized text,
+ * the popup, the subtitle strip: shell/wrap_fix.h moves a break paf put where
+ * this forbids it back to the last place allowed here) and the Overlay app's
+ * rows (settings/text_layout.c).
  *
  * A line may break before a character, after the one before it, when:
  *   - neither forbids it: no line starts with a closing mark, a small kana,
@@ -21,11 +21,12 @@
  *     before a suffix (あなた達, おばあ様: 様 達 君 殿 氏 等 共).
  * Nowhere else: never inside a kanji or katakana run, between kanji and its
  * kana (食べ|る), inside a kana run, a Latin word or a number, or between
- * Latin letters or digits and Japanese. So a line breaks between phrases,
- * the way the bundled dictionary's words fall (tools/cross_line_eval.py
- * --breaks measures it on the real line pools), or at a space. A text with
- * no such place in a line (one word wider than the line) keeps the break the
- * layout chose. */
+ * Latin letters or digits and Japanese. So a line breaks between phrases or
+ * at a space. It is a rule on the kinds of characters, no dictionary walk: a
+ * compound can still break at its seam between kana and kanji (女の|子;
+ * docs/touch-lookup.md "The overlay's own line breaks" has the share of
+ * allowed places inside a dictionary entry). A text with no such place in a
+ * line (one word wider than the line) keeps the break the layout chose. */
 #ifndef VJO_LINEBREAK_H
 #define VJO_LINEBREAK_H
 #include <stddef.h>

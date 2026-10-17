@@ -1,6 +1,7 @@
 /* The overlay's paf texts are wrapped by paf (WordWrap and Kinsoku), which
  * breaks Japanese anywhere. Once a text is laid out, vjo_wrap_fix finds the
- * first line paf started where core/linebreak.h forbids it, inside a word,
+ * first line paf started where core/linebreak.h forbids it (inside a run of
+ * kanji, katakana or kana, between kanji and its kana, before a closing mark),
  * and gives the last place the line before may break instead; the caller
  * puts a hard break ('\n') there and sets the text again, one break a
  * frame, until no such line is left (owner, 2026-10-16, item 4: "we
