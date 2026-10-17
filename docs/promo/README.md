@@ -119,17 +119,21 @@ Checked against the checkout the captures are of (`assets/SOURCES.md` names it).
   Anki", "Queued for Anki", "Anki queue: N · export in the … app"). Mining is off by default, so the overlay
   right after the install (scene 7) has no queue line and no "× queue".
 - **With screenshots**: the card keeps the game's whole frame when × is pressed, without the overlay (#150;
-  the app's Screenshots setting is on by default); the card in scene 4 is the app's own export of it.
+  the app's Screenshots setting is on by default); the card in scene 4 is the app's own export of it. Not yet
+  verified on a console: test.4's two saves timed out without a picture
+  ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194) section 1); the next test build (0.8.0-test.4.1)
+  checks the fix.
 - **It only reads text when it changes**: Read text on Automatically (the default) reads each new screen
   once it settles; "Only when I press L + R" reads nothing until the press (#146). No battery claim: battery
   use is not measured.
 - **Easy install**: the one-VPK install (#158; the README's Install, `docs/one-vpk-install.md`): the
-  release's VPK, copied to the Vita and installed in VitaShell (its own two questions), a restart, then the
-  app's Install page, then a restart by the user (the app never restarts the Vita). Every game is ON by default
-  and the kernel loads the OCR worker into each (#148), so no per-game step follows. Not yet verified on a
-  console: test.4's run found the Install page refusing it after a VitaShell install until a restart
-  ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194) section 3), so the film restarts the Vita
-  before it opens the app; test.5 checks the fix.
+  release's VPK, copied to the Vita and installed in VitaShell (its own two questions), then the app's
+  Install page, then a restart by the user (the app never restarts the Vita). Between VitaShell and the app
+  the film restarts the Vita too: on the console the app's own folder reads only after a restart (test.4,
+  [#194](https://github.com/bee-san/Rubi_for_vita/issues/194) section 3), and since b6755cf the Install page
+  says "Restart the Vita first" until then. Every game is ON by default and the kernel loads the OCR worker
+  into each (#148), so no per-game step follows. Not yet verified on a console: the next test build
+  (0.8.0-test.4.1, with #194's fixes) checks it.
 - **L + R**: the default `toggle_button` is `l+r`.
 - **Turn it off per game**: the app's Games page, reached by a tap on its tab (the tabs take a tap as Select
   changes pages, `settings/main.c`); the status line is the app's own.

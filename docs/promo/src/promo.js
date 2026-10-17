@@ -138,7 +138,7 @@
         // Device coordinates (assets/device/vita-white.svg, 0.1 mm units) of what is pressed.
         const B = {
           L: [292, 44], R: [1528, 44], X: [1650, 410], O: [1745, 315], SQ: [1555, 315],
-          DR: [265, 315], DD: [185, 395], PS: [150, 745], PW: [514, 34],
+          DR: [265, 315], DD: [185, 395], PW: [514, 34],
         };
         // a button press: it sinks a little, holds and glows, and comes back up: done within 0.3 s,
         // so two presses of one button 0.45 s or more apart never overlap (the owner, 14:15Z: "the
