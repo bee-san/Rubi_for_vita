@@ -473,7 +473,21 @@ void vjo_anki_set_game(const char *tid, const char *name, int psp)
     snprintf(anki_tid, sizeof(anki_tid), "%s", tid);
     anki_psp = psp;
 }
-void vjo_anki_set_ocr_model(const char *model) { snprintf(anki_model, sizeof(anki_model), "%s", model); }
+/* Runs once, as the control thread, where run_vocr calls this stub: after the game's answer (the exchange's
+ * last cancel check) and before the text is published (#186's audit N1: a region change in that window). */
+static void (*between_answer_and_publish)(void);
+void vjo_anki_set_ocr_model(const char *model)
+{
+    snprintf(anki_model, sizeof(anki_model), "%s", model);
+    if (between_answer_and_publish) {
+        void (*hook)(void) = between_answer_and_publish;
+        int thread = test_thread;
+        between_answer_and_publish = NULL;
+        test_thread = CTL_THREAD;
+        hook();
+        test_thread = thread;
+    }
+}
 void vjo_title_name(SceUID pid, const char *tid, char *name, int size) { snprintf(name, size, "Title of %s", tid); }
 void vjo_platform_vita(VjoPlatform *p) {}
 /* shell/game.c (its own suite, shell_game): not readable unless a test says. */
@@ -862,6 +876,7 @@ static void reset(void)
 #endif
     cache_ok = subtitles = stable_pending = job_running = job_cancelled = 0;
     strip_waiting = 0;
+    between_answer_and_publish = NULL;
     view_waiting = view_job_text = 0;
     memset(&ocr_backoff, 0, sizeof(ocr_backoff));
     memset(&dict_backoff, 0, sizeof(dict_backoff));
@@ -4756,10 +4771,11 @@ static void test_history_excludes_disabled_failed_cancelled_and_invalid_clock(vo
 
 /* #179's audit, O2: a job of the previous game whose answer was already in
  * publishes that game's text after the switch retired it (run_vocr takes cmd_lock
- * after retire_local_text did). The text is valid but the previous game's, so
- * Select + R in the new game, before the kernel has sampled a new scene, never
- * shows it on the strip (subtitles_show checks the text's game); a job of the
- * strip's reads the new game's screen. */
+ * after retire_local_text did). That job's end retires the text again (#186's
+ * audit N1: a cancelled job's result goes, the text it published too), so Select
+ * + R in the new game, before the kernel has sampled a new scene, never shows it
+ * on the strip; a job of the strip's reads the new game's screen. subtitles_show's
+ * check of the text's game stays as a second guard. */
 static void test_the_previous_games_text_is_never_the_strips(void)
 {
     cursor_setup();
@@ -4777,8 +4793,10 @@ static void test_the_previous_games_text_is_never_the_strips(void)
     TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
     job_cancelled = 1;
     state.stable = 0; /* nothing has settled in game B */
-    job_done = 1; control_tick(0); /* the stale job's end shows nothing */
-    TEST_ASSERT(!job_running && local_text_valid && local_text_game_generation != game_generation);
+    job_done = 1; control_tick(0); /* the stale job's end shows nothing and retires its text */
+    TEST_ASSERT(!job_running);
+    TEST_CHECK_(!local_text_valid, "the previous game's text is valid after its job's end (its game %u, now %u)",
+                local_text_game_generation, game_generation);
     control_tick(VJO_EV_SUBTITLE); /* Select + R in game B: still scene 2 */
     TEST_CHECK_(g_view.strip_kind == VJO_STRIP_STATUS && !strcmp(g_view.strip_text, "Recognizing…"),
                 "game B's strip shows '%s'", g_view.strip_text);
@@ -4856,6 +4874,462 @@ static void test_an_opening_during_autos_job_on_a_changed_screen_gets_its_own(vo
         close_overlay(); mem_free();
     }
 }
+
+/* #182 (a), #179's audit N4: a region drawn (Square, a box, Enter) while the
+ * open overlay's lookup or refresh runs, the subtitle strip on. The region change
+ * retires the text and the cached result, and the close drops that job, which
+ * brings the strip nothing; the strip's job for the new region cannot start
+ * beside it. The strip says "Recognizing…" and waits for the job's end
+ * (strip_after_wait), which starts the strip's job: the new region's sentence.
+ * Before, the strip kept the old region's sentence, not busy, until the new
+ * region's screen settled (here no event comes), whether or not the kernel's
+ * scene number had moved on. */
+static void test_a_region_drawn_during_a_lookup_or_refresh_gives_the_strip_its_sentence(void)
+{
+    VjoRect r = {10, 10, 200, 60};
+    for (int moved = 0; moved < 2; moved++) { /* the kernel's scene number not moved on yet, then moved on */
+        cursor_saved_text(); /* Auto read 猫犬鳥 (Character mode: OCR only) */
+        control_tick(VJO_EV_SUBTITLE); /* Select + R: its sentence */
+        TEST_CHECK(subtitles && g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥"));
+        open_overlay(); /* the saved text: its word's lookup */
+        TEST_ASSERT(job_running && job_cursor_only);
+        vjo_post_command(VJO_CMD_SET_REGION, &r); /* Square, a box, Enter */
+        fake_recognized_text = "鳥"; /* the new region's text */
+        if (moved) next_scene(30);
+        unsigned inferences = vocr_allocs;
+        control_tick(0); /* saved: the text and the cache retired, the overlay closed */
+        TEST_ASSERT(ov == OV_CLOSED && !local_text_valid && job_running && job_cursor_only);
+        TEST_CHECK_(g_view.strip_kind == VJO_STRIP_STATUS && g_view.strip_busy && !strcmp(g_view.strip_text, "Recognizing…"),
+                    "moved %d, at the region change: strip '%s' (kind %d, busy %d)", moved, g_view.strip_text,
+                    g_view.strip_kind, g_view.strip_busy);
+        finish_by_tick(); /* the dropped lookup ends */
+        TEST_CHECK_(job_running && !job_cursor_only,
+                    "moved %d, after the dropped lookup: no job for the new region (job %d, strip '%s', busy %d)",
+                    moved, job_running, g_view.strip_text, g_view.strip_busy);
+        if (job_running) finish_by_tick(); /* the new region's sentence */
+        TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "鳥"),
+                    "moved %d: strip '%s' (kind %d, busy %d)", moved, g_view.strip_text, g_view.strip_kind,
+                    g_view.strip_busy);
+        TEST_CHECK(vocr_allocs == inferences + 1 && local_text_valid && !strcmp(local_text, "鳥") && !strip_waiting);
+        subtitles = 0;
+        mem_free();
+    }
+    /* The same with a refresh in progress. */
+    cursor_setup();
+    control_tick(VJO_EV_SUBTITLE); /* Select + R: nothing yet, the strip's job */
+    TEST_ASSERT(job_running);
+    finish_by_tick();
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥"));
+    open_overlay(); /* the saved word */
+    check_shown("猫犬鳥", "cat", 0);
+    next_scene(9); /* a screen settles that the text was not read from: a refresh */
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    vjo_post_command(VJO_CMD_SET_REGION, &r);
+    fake_recognized_text = "鳥";
+    control_tick(0);
+    TEST_ASSERT(ov == OV_CLOSED && job_running && job_refresh && job_cancelled);
+    TEST_CHECK_(g_view.strip_busy && !strcmp(g_view.strip_text, "Recognizing…"),
+                "a refresh, at the region change: strip '%s' (busy %d)", g_view.strip_text, g_view.strip_busy);
+    finish_by_tick(); /* the dropped refresh ends */
+    TEST_CHECK_(job_running && !job_refresh && !job_cursor_only,
+                "after the dropped refresh: no job for the new region (job %d, strip '%s')", job_running,
+                g_view.strip_text);
+    if (job_running) finish_by_tick();
+    TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "鳥"),
+                "a refresh: strip '%s' (kind %d, busy %d)", g_view.strip_text, g_view.strip_kind, g_view.strip_busy);
+    subtitles = 0;
+    mem_free();
+}
+
+/* #182 (a), an OCR job in progress: a region drawn while a job reads the old
+ * region (the overlay opened during Auto's job, which it waits for; then Square, a
+ * box, Enter, the job's result already in). The region change cancels that job:
+ * its text and its lookup are the old region's, which the change retired. With
+ * the strip on, the strip says "Recognizing…" and the job's end starts the
+ * strip's job for the new region; with it off, Auto reads the new region. Before,
+ * the job published them again after the change: its lookup cached as if the new
+ * region's (a reopen showed it at once), and the strip showed the old region's
+ * sentence until a screen settled. */
+static void test_a_region_drawn_during_an_ocr_job_drops_its_old_regions_result(void)
+{
+    VjoRect r = {10, 10, 200, 60};
+    for (int strip = 0; strip < 2; strip++) {
+        cursor_setup(); /* Whole word: the job looks the first word up too */
+        if (strip)
+            control_tick(VJO_EV_SUBTITLE); /* Select + R: nothing yet, the strip's job reads the screen */
+        else
+            stable_pending = 1, auto_prefetch(); /* Auto reads the screen */
+        TEST_ASSERT(job_running && !job_cursor_only && job_lookup);
+        open_overlay(); /* L + R during it: the opening waits for it */
+        TEST_CHECK(ov == OV_OPEN_OLD_JOB && view_waiting);
+        TEST_CHECK(run_job(&results[0], &cache_data[0]) == VJO_OK); /* it has read the old region: 猫犬鳥 */
+        job_done = 1;
+        vjo_post_command(VJO_CMD_SET_REGION, &r); /* Enter, before the control thread takes the result */
+        fake_recognized_text = "鳥"; /* the new region's text */
+        control_tick(0); /* the region change, then the job's end (control_tick's order) */
+        TEST_CHECK_(!cache_ok && !(local_text_valid && !strcmp(local_text, "猫犬鳥")),
+                    "strip %d: the old region's result kept: cache_ok %d, text valid %d '%s'", strip, cache_ok,
+                    local_text_valid, local_text);
+        if (strip) {
+            TEST_CHECK_(g_view.strip_kind == VJO_STRIP_STATUS && g_view.strip_busy &&
+                        !strcmp(g_view.strip_text, "Recognizing…"),
+                        "after the region change the strip shows '%s' (kind %d, busy %d)", g_view.strip_text,
+                        g_view.strip_kind, g_view.strip_busy);
+            TEST_CHECK_(job_running && !job_cursor_only, "no job of the strip's for the new region (job %d)",
+                        job_running);
+            if (job_running) finish_by_tick();
+            TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "鳥"),
+                        "strip '%s' (kind %d, busy %d)", g_view.strip_text, g_view.strip_kind, g_view.strip_busy);
+            TEST_CHECK(!strip_waiting);
+        } else {
+            open_overlay(); /* L + R at once: the new region's recognition, never the old region's word */
+            TEST_CHECK_(!strcmp(g_view.status, "Recognizing…") && !(g_view.list && g_view.list->n_entries),
+                        "the reopen shows '%s' with %d entries", g_view.status,
+                        g_view.list ? g_view.list->n_entries : -1);
+            TEST_CHECK(job_running && !job_cursor_only);
+            if (job_running) finish_by_tick();
+            check_shown("鳥", "bird", 0);
+            close_overlay();
+        }
+        subtitles = 0;
+        mem_free();
+    }
+}
+
+/* #182 (b), #179's audit N4: the strip's cached sentence is the shown text
+ * (run_vocr reads it into local_text, cache_data[active].sentence), so it is the
+ * strip's only while that text is valid. Select + R right after a direct switch to
+ * another game (a GAME_START with no GAME_EXIT, classified in the same wakeup),
+ * before the kernel samples a new scene, says "Recognizing…" and reads game B's
+ * screen; so does Select + R right after a region was drawn with the strip off.
+ * Before, the strip showed game A's sentence (the old region's) until a screen
+ * settled. */
+static void test_a_retired_texts_cached_sentence_is_never_the_strips(void)
+{
+    cursor_setup();
+    stable_pending = 1; auto_prefetch(); finish_current_job(); /* game A: 猫犬鳥, its word cached */
+    TEST_ASSERT(cache_ok && active == 0 && local_text_valid);
+    identify_rc = 0;
+    memset(&identified, 0, sizeof(identified));
+    snprintf(identified.key, sizeof(identified.key), "PCSG00202");
+    identified.mode = VJO_GAME;
+    state.game_pid = 101;
+    control_tick(VJO_EV_GAME_START); /* game B in front, classified in the same wakeup */
+    identify_rc = -1;
+    TEST_ASSERT(game_active() && !strcmp(title_id, "PCSG00202") && !local_text_valid);
+    fake_recognized_text = "鳥";
+    control_tick(VJO_EV_SUBTITLE); /* Select + R in game B: the kernel's scene number is still 2 */
+    TEST_CHECK_(g_view.strip_kind == VJO_STRIP_STATUS && !strcmp(g_view.strip_text, "Recognizing…"),
+                "game B's strip shows '%s'", g_view.strip_text);
+    TEST_CHECK(job_running && !job_cursor_only); /* game B's own */
+    if (job_running) finish_by_tick();
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "鳥"));
+    subtitles = 0;
+    mem_free();
+
+    /* A region drawn with the strip off, then Select + R at once. */
+    cursor_setup();
+    stable_pending = 1; auto_prefetch(); finish_current_job();
+    open_overlay(); /* the saved word, at once */
+    check_shown("猫犬鳥", "cat", 0);
+    VjoRect r = {10, 10, 200, 60};
+    vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0);
+    TEST_ASSERT(ov == OV_CLOSED && !job_running && !local_text_valid);
+    fake_recognized_text = "鳥";
+    control_tick(VJO_EV_SUBTITLE); /* Select + R: the scene number has not moved on yet */
+    TEST_CHECK_(g_view.strip_kind == VJO_STRIP_STATUS && !strcmp(g_view.strip_text, "Recognizing…"),
+                "after the region change the strip shows '%s'", g_view.strip_text);
+    TEST_CHECK(job_running && !job_cursor_only);
+    if (job_running) finish_by_tick();
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "鳥"));
+    subtitles = 0;
+    mem_free();
+}
+
+/* Square, a box, Enter, handled by the control thread (the hook between_answer_and_publish runs it). */
+static void region_drawn_now(void)
+{
+    static const VjoRect r = {10, 10, 200, 60};
+    vjo_post_command(VJO_CMD_SET_REGION, &r);
+    on_command();
+}
+
+/* #186's audit N1: a region drawn after the game has answered a job but before
+ * run_vocr publishes its text (the exchange's last cancel check is behind it). The
+ * job publishes the old region's text after the change retired it; the cancelled
+ * job's end retires it again: a cancelled job's result goes, the text it published
+ * too. So neither the strip (on) nor an L + R at once (strip off) shows the old
+ * region's text, and the new region is read. Before, the old text stayed valid
+ * until the next job; while the kernel's scene number had not moved on, the strip
+ * showed it and a reopen looked its word up. */
+static void test_a_region_drawn_between_a_jobs_answer_and_its_publish_never_brings_its_text_back(void)
+{
+    for (int strip = 0; strip < 2; strip++) {
+        for (int moved = 0; moved < 2; moved++) {
+            cursor_setup();
+            cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER; /* the jobs read the text only */
+            if (strip)
+                control_tick(VJO_EV_SUBTITLE); /* Select + R: the strip's job reads the screen */
+            else
+                stable_pending = 1, auto_prefetch(); /* Auto's job reads the screen */
+            TEST_ASSERT(job_running && !job_cursor_only);
+            open_overlay(); /* L + R during it: the opening waits for it */
+            TEST_ASSERT(ov == OV_OPEN_OLD_JOB);
+            between_answer_and_publish = region_drawn_now; /* Enter, once the game has answered: 猫犬鳥 */
+            int idx = job_idx;
+            test_thread = NET_THREAD;
+            job_rc = run_job(&results[idx], &cache_data[idx]);
+            test_thread = CTL_THREAD;
+            TEST_ASSERT(!between_answer_and_publish && job_cancelled && ov == OV_CLOSED);
+            fake_recognized_text = "鳥"; /* the new region's text, for the jobs after it */
+            if (moved) next_scene(30); /* the kernel sampled the new region before the job's end was taken */
+            state.stable = 0;           /* not settled yet: no Auto job for it */
+            job_done = 1; control_tick(0); /* the cancelled job's end */
+            TEST_CHECK_(!(local_text_valid && !strcmp(local_text, "猫犬鳥")),
+                        "strip %d moved %d: the old region's text is valid after the cancelled job's end", strip, moved);
+            if (strip) {
+                TEST_CHECK_(strcmp(g_view.strip_text, "猫犬鳥"),
+                            "strip on, moved %d: the strip shows the old region's sentence (busy %d)", moved,
+                            g_view.strip_busy);
+                TEST_CHECK_(job_running && !job_cursor_only, "strip on, moved %d: no job for the new region", moved);
+            } else {
+                open_overlay(); /* L + R at once */
+                TEST_CHECK_(!(g_view.list && g_view.list->header && !strcmp(g_view.list->header, "猫犬鳥")) &&
+                            !strcmp(g_view.status, "Recognizing…"),
+                            "strip off, moved %d: the reopen shows '%s' (status '%s', a lookup %d)", moved,
+                            g_view.list && g_view.list->header ? g_view.list->header : "", g_view.status,
+                            job_cursor_only);
+                TEST_CHECK(job_running && !job_cursor_only);
+            }
+            if (job_running) finish_by_tick();
+            if (strip)
+                TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy &&
+                            !strcmp(g_view.strip_text, "鳥"), "strip on, moved %d: strip '%s' (busy %d)", moved,
+                            g_view.strip_text, g_view.strip_busy);
+            else
+                check_shown("鳥", "bird", 0);
+            close_overlay();
+            subtitles = 0;
+            mem_free();
+        }
+    }
+}
+
+/* #186's audit N2: the strip waits for any job in progress that brings it
+ * nothing (subtitles_show): a lookup, a refresh, or one that was cancelled, as a
+ * region change cancels the job it finds. Select + R off and on during the region
+ * change's wait keeps it; Select + R on during a job the change cancelled with the
+ * strip off waits for it too, and so does Select + R on during a job of the
+ * previous game (a direct switch). Each end starts the strip's job. Before, the
+ * strip said "Recognizing…" with no job until the new screen settled (here it does
+ * not), and once the old region's text came back (N1) it showed that. */
+static void test_select_r_during_a_cancelled_job_waits_for_its_end(void)
+{
+    static const VjoRect r = {10, 10, 200, 60};
+    for (int how = 0; how < 3; how++) { /* 0: off and on during the wait; 1: on, strip off at the change; 2: a switch */
+        cursor_setup();
+        cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+        if (!how)
+            control_tick(VJO_EV_SUBTITLE); /* Select + R: the strip's job reads the screen */
+        else
+            stable_pending = 1, auto_prefetch(); /* Auto's job reads the screen */
+        TEST_ASSERT(job_running && !job_cursor_only);
+        if (how < 2) {
+            open_overlay(); /* L + R during it */
+            TEST_ASSERT(ov == OV_OPEN_OLD_JOB);
+            next_scene(30); state.stable = 0; /* the region about to be drawn: a new scene, not settled */
+            vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0); /* the job cancelled */
+            TEST_ASSERT(ov == OV_CLOSED && job_running && job_cancelled && strip_waiting == !how);
+        } else {
+            identify_rc = 0;
+            memset(&identified, 0, sizeof(identified));
+            snprintf(identified.key, sizeof(identified.key), "PCSG00202");
+            identified.mode = VJO_GAME;
+            state.game_pid = 101;
+            state.stable = 0; /* game B's screen not settled yet */
+            control_tick(VJO_EV_GAME_START); /* game B in front, classified at once: game A's job cancelled */
+            identify_rc = -1;
+            TEST_ASSERT(game_active() && job_running && job_cancelled);
+        }
+        if (!how)
+            control_tick(VJO_EV_SUBTITLE); /* Select + R: off */
+        control_tick(VJO_EV_SUBTITLE); /* Select + R: on, during the cancelled job */
+        TEST_CHECK_(subtitles && g_view.strip_busy && !strcmp(g_view.strip_text, "Recognizing…") && strip_waiting,
+                    "how %d: strip '%s' (busy %d), strip_waiting %d", how, g_view.strip_text, g_view.strip_busy,
+                    strip_waiting);
+        finish_by_tick(); /* the cancelled job ends: it read the old region (game A's screen): 猫犬鳥 */
+        fake_recognized_text = "鳥";
+        TEST_CHECK_(job_running && !job_cursor_only,
+                    "how %d: after the cancelled job no job for the strip: strip '%s' (kind %d, busy %d)", how,
+                    g_view.strip_text, g_view.strip_kind, g_view.strip_busy);
+        TEST_CHECK(!strip_waiting);
+        if (job_running) finish_by_tick();
+        TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "鳥"),
+                    "how %d: strip '%s' (kind %d, busy %d)", how, g_view.strip_text, g_view.strip_kind,
+                    g_view.strip_busy);
+        subtitles = 0;
+        mem_free();
+    }
+}
+
+/* #186's audit N3, X1: a region drawn with the strip on and no job running starts
+ * the strip's job for the new region ("region changed"); the change cancels only a
+ * job it finds, never that one. */
+static void test_a_region_drawn_with_the_strip_on_and_no_job_starts_the_strips_own(void)
+{
+    static const VjoRect r = {10, 10, 200, 60};
+    cursor_saved_text();
+    control_tick(VJO_EV_SUBTITLE); /* Select + R: its sentence */
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥"));
+    open_overlay(); finish_by_tick(); /* the saved word, shown: no job runs */
+    TEST_ASSERT(!job_running);
+    fake_recognized_text = "鳥";
+    log_count = 0;
+    vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0);
+    TEST_ASSERT_(job_running && !job_cursor_only, "no job for the new region");
+    TEST_CHECK_(!job_cancelled && !strip_waiting && DLOGGED("job start (region changed)"),
+                "the strip's own job: cancelled %d, strip_waiting %d", job_cancelled, strip_waiting);
+    finish_by_tick();
+    TEST_CHECK_(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "鳥"),
+                "strip '%s' (kind %d, busy %d)", g_view.strip_text, g_view.strip_kind, g_view.strip_busy);
+    TEST_CHECK(local_text_valid && !strcmp(local_text, "鳥"));
+    subtitles = 0;
+    mem_free();
+}
+
+/* #186's audit N3, X8: an L + R during the strip's wait for a job the region
+ * change cancelled. That job's end starts the opening's recognition, whose result
+ * the strip takes, and leaves nothing waiting: a lookup the close drops later
+ * starts no job of the strip's. */
+static void test_a_reopen_during_the_strips_wait_leaves_nothing_waiting(void)
+{
+    static const VjoRect r = {10, 10, 200, 60};
+    cursor_setup();
+    cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+    control_tick(VJO_EV_SUBTITLE); /* Select + R: the strip's job reads the screen */
+    TEST_ASSERT(job_running && !job_cursor_only);
+    open_overlay(); /* L + R: waits for it */
+    TEST_ASSERT(ov == OV_OPEN_OLD_JOB);
+    next_scene(30); state.stable = 0;
+    vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0); /* the job cancelled: the strip waits */
+    TEST_ASSERT(ov == OV_CLOSED && job_running && job_cancelled && strip_waiting);
+    control_tick(VJO_EV_TRIGGER); /* L + R during the wait */
+    TEST_ASSERT(ov == OV_OPEN_OLD_JOB && !strcmp(g_view.status, "Recognizing…"));
+    finish_by_tick(); /* the cancelled job ends (it read the old region): the opening's own recognition */
+    fake_recognized_text = "犬猫";
+    TEST_ASSERT(job_running && !job_cursor_only && ov == OV_OPEN);
+    TEST_CHECK_(!strip_waiting, "strip_waiting %d after the job it waited for", strip_waiting);
+    finish_by_tick();
+    check_shown("犬猫", "dog", 0);
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !g_view.strip_busy && !strcmp(g_view.strip_text, "犬猫"));
+    vjo_post_cursor(3, local_text_generation); on_command(); /* Right: a lookup */
+    TEST_ASSERT(job_running && job_cursor_only);
+    next_scene(40); /* the next line types out */
+    unsigned inferences = vocr_allocs;
+    close_overlay(); /* Cancel: the lookup is dropped */
+    finish_by_tick();
+    TEST_CHECK_(!job_running && vocr_allocs == inferences && !g_view.strip_busy && !strcmp(g_view.strip_text, "犬猫"),
+                "after the dropped lookup: job_running %d, jobs %u, strip '%s' (busy %d)", job_running,
+                vocr_allocs - inferences, g_view.strip_text, g_view.strip_busy);
+    subtitles = 0;
+    if (job_running) finish_by_tick();
+    mem_free();
+}
+
+#if VJO_DEBUG /* a self-test test: the debug build's */
+/* #182 (a), the self-test's job: never what the strip waits for. Its end shows
+ * the strip the screen's sentence itself (on_selftest_done), or an opening during
+ * it gets a recognition whose result the strip takes. A region drawn while it
+ * still runs (the overlay opened, which stops it, then Square, a box, Enter before
+ * its exchange has ended) leaves nothing waiting, so a lookup a close drops later
+ * starts no job of the strip's. */
+static void test_a_region_drawn_during_the_selftest_job_leaves_the_strip_no_wait(void)
+{
+    cursor_setup();
+    game_generation = 1;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5; selftest_begins = 0;
+    apply_config();
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running && !job_selftest);
+    finish_current_job(); /* Auto read 猫犬鳥 and its word */
+    control_tick(VJO_EV_SUBTITLE); /* Select + R: its sentence */
+    TEST_CHECK(subtitles && !strcmp(g_view.strip_text, "猫犬鳥"));
+    test_now += SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest); /* the self-test's job */
+    open_overlay(); /* L + R: it yields (its exchange ends a little later) */
+    TEST_CHECK(job_cancelled && ov == OV_OPEN);
+    VjoRect r = {10, 10, 200, 60};
+    vjo_post_command(VJO_CMD_SET_REGION, &r); control_tick(0); /* Square, a box, Enter */
+    TEST_CHECK_(!strip_waiting && ov == OV_CLOSED && job_running && job_selftest, "strip_waiting %d", strip_waiting);
+    open_overlay(); /* L + R again: it waits for that job */
+    TEST_CHECK(ov == OV_OPEN_OLD_JOB);
+    fake_recognized_text = "犬猫"; /* the new region's text */
+    finish_by_tick(); /* the self-test's job ends: the opening's own recognition */
+    TEST_ASSERT(job_running && !job_selftest && !job_cursor_only);
+    finish_by_tick(); /* its result, the strip's too */
+    check_shown("犬猫", "dog", 0);
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "犬猫") && !strip_waiting);
+    vjo_post_cursor(3, local_text_generation); on_command(); /* Right: a lookup */
+    TEST_ASSERT(job_running && job_cursor_only);
+    next_scene(9);
+    state.stable = 0; /* the next line types out */
+    unsigned inferences = vocr_allocs;
+    close_overlay(); /* Cancel: the lookup is dropped */
+    finish_by_tick();
+    TEST_CHECK_(!job_running && vocr_allocs == inferences && !g_view.strip_busy && !strcmp(g_view.strip_text, "犬猫"),
+                "after the dropped lookup: job_running %d, jobs %u, strip '%s' (busy %d)", job_running,
+                vocr_allocs - inferences, g_view.strip_text, g_view.strip_busy);
+    subtitles = 0;
+    selftest_armed = selftest_done = 0; selftest_stage_count = 0;
+    if (job_running) finish_by_tick();
+    mem_free();
+}
+#endif
+
+#if VJO_DEBUG /* a self-test test: the debug build's */
+/* Select + R during the self-test's job after the overlay stopped it: the strip
+ * says "Recognizing…" but waits for nothing, as that job's end shows the strip
+ * its sentence itself (on_selftest_done), never through strip_after_wait. So
+ * nothing is left waiting after it, and a lookup a close drops later starts no
+ * job of the strip's (subtitles_show leaves the self-test's job out of the jobs
+ * it waits for, a cancelled one included). */
+static void test_select_r_during_a_stopped_selftest_job_leaves_no_wait(void)
+{
+    cursor_setup();
+    game_generation = 1;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5; selftest_begins = 0;
+    apply_config();
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running && !job_selftest);
+    finish_current_job(); /* Auto read 猫犬鳥 and its word */
+    test_now += SELFTEST_IDLE_US; control_tick(0);
+    TEST_ASSERT(job_running && job_selftest); /* the self-test's job */
+    open_overlay(); /* L + R: it yields; the saved word shows */
+    TEST_CHECK(job_cancelled);
+    close_overlay(); /* Cancel, before that job's exchange has ended */
+    control_tick(VJO_EV_SUBTITLE); /* Select + R during it */
+    TEST_CHECK_(subtitles && !strip_waiting, "strip_waiting %d for the self-test's job", strip_waiting);
+    finish_by_tick(); /* the self-test's job ends: the strip shows the cached sentence */
+    TEST_CHECK(g_view.strip_kind == VJO_STRIP_SENTENCE && !strcmp(g_view.strip_text, "猫犬鳥") && !strip_waiting);
+    selftest_armed = selftest_done = 0; selftest_stage_count = 0;
+    open_overlay(); /* the saved word, at once */
+    TEST_ASSERT(!job_running);
+    vjo_post_cursor(3, local_text_generation); on_command(); /* Right: a lookup */
+    TEST_ASSERT(job_running && job_cursor_only);
+    next_scene(9);
+    state.stable = 0; /* the next line types out */
+    unsigned inferences = vocr_allocs;
+    close_overlay(); /* Cancel: the lookup is dropped */
+    finish_by_tick();
+    TEST_CHECK_(!job_running && vocr_allocs == inferences && !strcmp(g_view.strip_text, "猫犬鳥"),
+                "after the dropped lookup: job_running %d, jobs %u, strip '%s' (busy %d)", job_running,
+                vocr_allocs - inferences, g_view.strip_text, g_view.strip_busy);
+    subtitles = 0;
+    if (job_running) finish_by_tick();
+    mem_free();
+}
+#endif
 
 #if VJO_DEBUG /* a self-test test: the debug build's */
 /* Subtitles turned on while the self-test's job runs show "Recognizing…" and
@@ -6444,6 +6918,24 @@ TEST_LIST = {
     {"the_refreshes_backoff_outlasts_a_close_with_no_job", test_the_refreshes_backoff_outlasts_a_close_with_no_job},
     {"an_opening_during_autos_job_on_a_changed_screen_gets_its_own",
      test_an_opening_during_autos_job_on_a_changed_screen_gets_its_own},
+    {"a_region_drawn_during_a_lookup_or_refresh_gives_the_strip_its_sentence (#182 a)",
+     test_a_region_drawn_during_a_lookup_or_refresh_gives_the_strip_its_sentence},
+    {"a_region_drawn_during_an_ocr_job_drops_its_old_regions_result (#182 a)",
+     test_a_region_drawn_during_an_ocr_job_drops_its_old_regions_result},
+    {"a_retired_texts_cached_sentence_is_never_the_strips (#182 b)", test_a_retired_texts_cached_sentence_is_never_the_strips},
+    {"a_region_drawn_between_a_jobs_answer_and_its_publish_never_brings_its_text_back",
+     test_a_region_drawn_between_a_jobs_answer_and_its_publish_never_brings_its_text_back},
+    {"select_r_during_a_cancelled_job_waits_for_its_end", test_select_r_during_a_cancelled_job_waits_for_its_end},
+    {"a_region_drawn_with_the_strip_on_and_no_job_starts_the_strips_own",
+     test_a_region_drawn_with_the_strip_on_and_no_job_starts_the_strips_own},
+    {"a_reopen_during_the_strips_wait_leaves_nothing_waiting", test_a_reopen_during_the_strips_wait_leaves_nothing_waiting},
+#if VJO_DEBUG
+    {"a_region_drawn_during_the_selftest_job_leaves_the_strip_no_wait",
+     test_a_region_drawn_during_the_selftest_job_leaves_the_strip_no_wait},
+#endif
+#if VJO_DEBUG
+    {"select_r_during_a_stopped_selftest_job_leaves_no_wait", test_select_r_during_a_stopped_selftest_job_leaves_no_wait},
+#endif
 #if VJO_DEBUG
     {"refresh_while_the_selftest_is_armed", test_refresh_while_the_selftest_is_armed},
 #endif
