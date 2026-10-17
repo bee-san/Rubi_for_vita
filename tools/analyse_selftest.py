@@ -2017,12 +2017,22 @@ def presses_and_rereads(text):
                 press["cursor"] = cursor  # the first done line after the running job's: its word's lookup
             last_end = cursor
             continue
-        if job is None:
-            continue
-        if JOB_CANCELLED.match(line):  # the control thread's line, while this job runs (one job at a time)
-            job["cancelled"] = True
+        # The control thread's lines for the one job running: the parser's job, or, when its done line came first, the
+        # job that ended last (one with a start: a cursor lookup is never cancelled and posts no text). net_job writes
+        # the done line before it sets job_done, and meanwhile the control thread can cancel the job
+        # (cancel_outdated_job: audit R2) or post its text (on_job_text, then on_job_done in one control_tick: audit N4).
+        late = None if job is not None else last_end if last_end is not None and "cancelled" in last_end else None
+        if JOB_CANCELLED.match(line):
+            if job is not None or late is not None:
+                (job or late)["cancelled"] = n  # its line: press_kind counts a cancel before the press's close
             continue
         m = JOB_TEXT.match(line)
+        if m and job is None:
+            if late is not None and late["text_ms"] is None:
+                late["text_ms"], late["text_line"] = int(m.group(1)), n
+            continue
+        if job is None:
+            continue
         if m:
             job["text_ms"], job["text_line"] = int(m.group(1)), n
             continue
@@ -2094,13 +2104,20 @@ def press_kind(p):
     def text_no_word(j, shown_line):  # its text read (logged), then its word's lookup failed: the text was shown
         return ("closed_before",) if closed_before(shown_line) else ("text_no_word", j["rc"])
 
+    def stale(j):
+        """Cancelled while this press's overlay was open: cancel_outdated_job's line before the press's close. A stale
+        job's end shows nothing (on_job_done), and its retry's "Recognizing…" (start_job_kind) replaces whatever it
+        posted. One cancelled after the close changed nothing the press showed (audit N1)."""
+        return bool(j["cancelled"]) and not closed_before(j["cancelled"])
+
     def showed_text(j):
         """Its text read and shown, then its word's lookup failed (shell/worker.c run_job; run_vocr's result memory,
-        rc -103). A stale job shows nothing, its text included (on_job_done; audit N1): one cancelled while it ran
-        (cancel_outdated_job's line), or one whose lookup failed after on_job_text had passed over its text (cancelled
-        or another game's: no `subtitle text ready` line). run_vocr's -103 comes before the text is posted, so it has
-        no such line."""
-        return (j["rc"] not in (0, None) and bool(j["raw"]) and not j["cancelled"]
+        rc -103). A stale job shows nothing, its text included: one cancelled while the overlay was open (stale), or
+        one whose lookup failed after on_job_text had passed over its text (cancelled or another game's: no
+        `subtitle text ready` line). run_vocr's -103 comes before the text is posted, so it has no such line. A job
+        that config.ini's re-read cancels (apply_config, its pipeline changed) logs no line and is taken as not
+        cancelled (audit R4)."""
+        return (j["rc"] not in (0, None) and bool(j["raw"]) and not stale(j)
                 and (j["text_ms"] is not None or j["rc"] == -103))
 
     if p["not_opened"]:
@@ -2109,7 +2126,9 @@ def press_kind(p):
     if found is None or found in ("saved local word", "background result"):
         return ("at_once",)  # (no "open:" line: the shown text kept, only its word looked up)
     if jobs:  # the press's own jobs (PRESS_REASONS), all begun after the press: its text is the first that read one
-        text_job = next((j for j in jobs if j["rc"] == 0 and j["raw"] and j["text_ms"] is not None), None)
+        # (a stale one posted its text, if at all, only until its retry or the close, and never its word: audit R1)
+        text_job = next((j for j in jobs if j["rc"] == 0 and j["raw"] and j["text_ms"] is not None
+                         and not stale(j)), None)
         if text_job is None:
             # a job that read text and then failed its word's lookup, and showed that text (showed_text)
             failed = next((j for j in jobs if showed_text(j)), None)
@@ -2129,6 +2148,8 @@ def press_kind(p):
         return ("closed_before",) if p["close_line"] is not None else ("unclear",)
     if p["found_line"] is not None and r["done_line"] < p["found_line"]:
         return ("unclear",)  # it ended during the press's own handling: the bound below does not hold
+    if stale(r):  # its end showed nothing, and no job of the press's own followed (that branch decides then): N2
+        return ("closed_before",) if closed_before(r["done_line"]) else ("read_without_text",)
     if showed_text(r):  # its text, then its word's lookup failed: on_job_done shows the text and the error
         shown = r["text_line"] if r["text_line"] and r["text_line"] > p["found_line"] else r["done_line"]
         return text_no_word(r, shown)

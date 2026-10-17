@@ -2586,6 +2586,81 @@ class PressesAndRereads(unittest.TestCase):
         self.assertEqual((mode["presses"], mode["waited"], mode["at_once"], mode["read_text"], mode["read_without_text"],
                           mode["unclear"]), (3, [1742], 1, [1100], 0, 0))
 
+    def test_a_cancelled_job_is_never_the_presss_text(self):
+        """audit R1, R2: a job of the press's own that cancel_outdated_job cancelled showed its text, if at all, only until
+        its retry's "Recognizing…" (start_job_kind), and never its word: not the press's text, whatever its rc. The
+        cancel line can also come after the job's done line: net_job appends that line before it sets job_done, and the
+        control thread can cancel the job meanwhile (control_tick's region event)."""
+        def cancelled_job(rc, late=False):
+            cancel = "job cancelled: the screen changed since its capture\n"
+            return ("job start (overlay opened)\ngame vocr text 0: さ\nsubtitle text ready in 700 ms\n"
+                    + ("" if late else cancel)
+                    + f"job 0 done rc={rc} in 900 ms, arena peak 53744, dictionary page 1/1, game 450 ms, log 30 ms in 3 "
+                    "appends\n" + (cancel if late else ""))
+        retry = shell_job("the screen changed during the last one", 400, 500, ["し"])
+        log = (BOOT22 + START
+               # R1: its lookup succeeded, but it was cancelled: its retry brings the text
+               + press("no background result") + cancelled_job(0) + retry + CLOSE
+               # R2: the cancel line after its done line, the same
+               + press("no background result") + cancelled_job(0, late=True) + retry + CLOSE
+               # R2: and with a failed lookup after its text: no text, not text without its word
+               + press("no background result") + cancelled_job(-113, late=True)
+               + shell_job("the screen changed during the last one", None, 600) + CLOSE
+               # a cancelled job with no retry that read text: no text
+               + press("no background result") + cancelled_job(0) + CLOSE)
+        mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["read_text"], mode["then_text"], mode["then_word"], mode["text_no_word"],
+                          mode["read_without_text"]), (4, [], [1300, 1300], [1400, 1400], [], 2))
+        # a cursor lookup is never cancelled: a cancel line after one's end is no job's
+        cursor_end = "job 0 done rc=0 in 50 ms, arena peak 53744, dictionary page 1/1, game 0 ms, log 19 ms in 1 appends\n"
+        log = (BOOT22 + START + press("no background result") + shell_job("overlay opened", 900, 1000, ["す"]) + CLOSE
+               + press() + cursor_end + "job cancelled: the screen changed since its capture\n" + CLOSE)
+        mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["read_text"], mode["at_once"]), (2, [900], 1))
+
+    def test_a_cancel_after_the_close_changes_nothing_the_press_showed(self):
+        """audit-sweep-overlay-b N1, N2, N4, N5. A cancel line after the press's close (cancel_outdated_job: a new
+        screen settled while the job still looked its word up) changed nothing the press showed: its text was shown
+        before the close, so the press is timed as before. A job running at the press and cancelled while the overlay
+        was open showed nothing at its end, so it is not the press's wait. `subtitle text ready` can follow its job's
+        done line (on_job_text, then on_job_done in one control_tick): it belongs to the job that ended last."""
+        cancel = "job cancelled: the screen changed since its capture\n"
+
+        def end(rc, ms=900):
+            return f"job 0 done rc={rc} in {ms} ms, arena peak 53744, dictionary page 1/1, game 450 ms, log 30 ms in 3 appends\n"
+        posted = "job start (overlay opened)\ngame vocr text 0: た\nsubtitle text ready in 700 ms\n"
+        log = (BOOT22 + START
+               # X1: text, the close, then the cancel, then its end
+               + press("no background result") + posted + CLOSE + cancel + end(0)
+               # X2: text, its end, the close, then R2's late cancel
+               + press("no background result") + posted + end(0) + CLOSE + cancel
+               # X1b: as X1 with a failed lookup: its text was shown, its word not
+               + press("no background result") + posted + CLOSE + cancel + end(-113)
+               # N4: its text posted after its done line, while the overlay was open
+               + press("no background result") + "job start (overlay opened)\ngame vocr text 0: ち\n" + end(0, 950)
+               + "subtitle text ready in 940 ms\n" + CLOSE)
+        mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["read_text"], mode["read_word"], mode["text_no_word"],
+                          mode["read_without_text"], mode["closed_before"]), (4, [700, 700, 940], [900, 900, 950], [-113],
+                                                                              0, 0))
+        # N2: a job running at the press, cancelled while the overlay was open, with no retry before the close
+        running = ("job start (auto: screen quiet)\n" + press("background job still running") + cancel
+                   + "game vocr text 0: つ\nsubtitle text ready in 1500 ms\n" + end(0, 1600))
+        mode = a.summarise_log(BOOT22 + START + running + CLOSE)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["waited"], mode["read_without_text"]), (1, [], 1))
+        # ... and closed before its end
+        mode = a.summarise_log(BOOT22 + START + "job start (auto: screen quiet)\n" + press("background job still running")
+                               + cancel + CLOSE + end(0, 1600))["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["waited"], mode["closed_before"]), (1, [], 1))
+        # ... and cancelled after the close: as before (closed before its word)
+        mode = a.summarise_log(BOOT22 + START + "job start (auto: screen quiet)\n" + press("background job still running")
+                               + CLOSE + cancel + end(0, 1600))["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["closed_before"]), (1, 1))
+        # N5: a cancel or text line with no job before it in its window (right after a game line) is no job's
+        log = BOOT22 + START + cancel + "subtitle text ready in 10 ms\n" + press("saved local word") + CLOSE
+        mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["at_once"]), (1, 1))
+
     def test_a_press_closed_before_its_text_or_never_opened_is_not_timed(self):
         """audit N2 and N6: a press closed before its text or word came is no latency sample, nor one whose overlay
         could not open (shell/overlay.cpp: no Paf memory for its text)."""
