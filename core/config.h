@@ -134,6 +134,12 @@ int vjo_vocr_tier_parse(const char *id);
 const char *vjo_vocr_tier_model(int tier);
 int vjo_vocr_tier_of_model(const char *name);
 
+/* Where a line's name starts: after its spaces, tabs and CRs and its UTF-8 BOMs, in any order (Notepad's BOM at
+ * the file's start, and one a hand-joined file leaves at a later line's). The parser, the app's saves and the
+ * install's patches read a line's name from there, so a BOM-led line is the same setting to all of them
+ * (audit-pr180-b N3; audit-pr183 N1). */
+size_t vjo_config_line_start(const char *line, size_t n);
+
 /* A config.ini line (n bytes, its newline included or not) of a removed
  * feature, which the Overlay app's saves rewrite as they patch the file:
  * VJO_LINE_DROP for the API keys of the removed online dictionaries (a line

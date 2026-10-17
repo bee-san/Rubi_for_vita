@@ -1154,8 +1154,43 @@ static void test_file_line_and_exists(void)
     unlink(path);
 }
 
+/* A UTF-8 BOM at a later line's start (a hand-joined file) is no part of its name, for the parser and for every
+ * writer alike (core/config.c vjo_config_line_start; audit-pr180-b N3, audit-pr183 N1): the app's save replaces a
+ * BOM-led owned line and drops its copies, the install's keys find a BOM-led copy, and a BOM-led API key goes, so
+ * a choice made in the app is the one the plugins read. */
+static void test_a_bom_led_line_is_the_same_setting_to_every_writer(void)
+{
+    static char out[4096], out2[4096];
+    VjoConfig cfg;
+    /* the app's save: a BOM-led vocr_tier after a plain one; the app chooses Small */
+    static const char a[] = "vocr_tier = normal\n" "\xEF\xBB\xBF" "vocr_tier = large\n"
+                            "\xEF\xBB\xBF" "jpdb_api_key = SECRET1\n" "anki_mining = on\n";
+    int n = vjo_config_patch_preferences(a, sizeof(a) - 1, VJO_VOCR_TIER_SMALL, 1, VJO_HIGHLIGHT_WORD, 1, out, sizeof(out));
+    TEST_ASSERT(n > 0);
+    TEST_MSG("%s", out);
+    TEST_CHECK(strstr(out, "vocr_tier = small\n") && !strstr(out, "large") && !strstr(out, "SECRET1"));
+    vjo_config_defaults(&cfg);
+    vjo_config_parse(&cfg, out, (size_t)n);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_SMALL && cfg.anki_mining == 1 && cfg.n_warnings == 0);
+    /* the install's keys: a BOM-led copy of log_file is the same setting, so the key's new value is the one read */
+    static const char b[] = "log_file = on\n" "\xEF\xBB\xBF" "log_file = off\n" "anki_mining = on\n";
+    const char *keys[] = {"log_file"}, *values[] = {"on"};
+    int m = vjo_config_patch_keys(b, sizeof(b) - 1, keys, values, 1, out2, sizeof(out2));
+    TEST_ASSERT(m > 0);
+    TEST_MSG("%s", out2);
+    TEST_CHECK(strstr(out2, "log_file = on\n") && !strstr(out2, "log_file = off"));
+    vjo_config_defaults(&cfg);
+    vjo_config_parse(&cfg, out2, (size_t)m);
+    TEST_CHECK(cfg.log_file == 1 && cfg.n_warnings == 0);
+    /* the parser before either save: the BOM-led line is read, and the key's is silent */
+    vjo_config_defaults(&cfg);
+    vjo_config_parse(&cfg, a, sizeof(a) - 1);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_LARGE && cfg.n_warnings == 0);
+}
+
 TEST_LIST = {
     {"settings_save_drops_removed_anki_settings", test_settings_save_drops_removed_anki_settings},
+    {"a_bom_led_line_is_the_same_setting_to_every_writer", test_a_bom_led_line_is_the_same_setting_to_every_writer},
     {"anki_page_saves_mining_and_address_keeping_every_other_byte", test_anki_page_save},
     {"read_text_and_speed_boost_save_where_their_lines_are_and_the_Shell_reads_them", test_reading_settings_save},
     {"preference_patch_preserves_comments_BOM_keys_and_collapses_duplicates", test_patch_preserves_unrelated_bytes},

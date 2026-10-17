@@ -101,8 +101,9 @@ CREDENTIAL_NAME = r"[A-Za-z0-9_]*api_key|anki_audio_url"
 # one is theirs too (a typo, "jpdb_api_keyKEY"), as core/config.c and the installer treat it.
 REMOVED_KEY = r"(?:jpdb_api_key|jiten_api_key|api_key)"
 NAME = r"(" + REMOVED_KEY + r"|(?:" + CREDENTIAL_NAME + r")(?![A-Za-z0-9_]))"
-# A line whose first word is one of them, whatever follows it (=, :, a space: the C parser logs a
-# line without = whole, as "ignored line '...'"), commented out (; or #) or not, is a secret line.
+# A line whose first word is one of them, whatever follows it (=, :, a space: the C parser of builds before
+# audit-pr180-b's N3 fix logged a line without = whole, as "ignored line '...'"; it names the line's number now, and
+# earlier builds' logs stay on the card), commented out (; or #) or not, is a secret line.
 SECRET = re.compile(r"^([\ufeff\s]*(?:[;#][;#\s]*)?)" + NAME + r"(\s*[=:]?\s*)(.*?)(\s*)$", re.I)
 # In the logs: anything after such a name on the same line, up to a quote (config warnings).
 LOG_SECRET = re.compile(r"(?i)((?<![A-Za-z0-9_])" + REMOVED_KEY + r"|(?:" + CREDENTIAL_NAME + r")(?![A-Za-z0-9_]))"

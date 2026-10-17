@@ -88,7 +88,9 @@ def name(k):
 def parse(text):
     vals = {}
     for line in text.splitlines():
-        line = line.strip()
+        # a line's leading spaces and UTF-8 BOMs (a hand-joined file's, mid-file) are no part of its name, as for
+        # core/config.c vjo_config_line_start: a BOM-led copy of a setting is that setting (audit-pr185 B2)
+        line = re.sub(r"^[\s\ufeff]+", "", line).rstrip()
         if not line or line[0] in ";#" or "=" not in line:
             continue
         k, v = line.split("=", 1)

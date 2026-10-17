@@ -420,7 +420,9 @@ bubble, whatever it holds.
 `ux0:data/VitaJPOverlay/config.ini` is reloaded when the overlay opens. A line
 the plugins do not know or cannot use is listed in red in the open overlay and
 logged in `log.txt` once, and again only when the set of such lines changes
-(test.2's log had 76 lines from 8 of them, #101). A removed engine
+(test.2's log had 76 lines from 8 of them, #101). A warning names the setting, or
+a line without `=` by its number, and never quotes a value, which can be a key or
+an address. A removed engine
 (`ocr_backend = lens`, `vocr2`, `meiki`, `ncnn`) runs the local engine with a
 config warning, and the app's next save and the installer delete the line (any
 `ocr_backend` line: VOCR is the only engine). The installer, the package's own copy and the Overlay

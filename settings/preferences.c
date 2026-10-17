@@ -149,8 +149,7 @@ done:
 /* The key of an INI line (lowercase into key), or 0 for none. */
 static int line_key(const char *line, size_t n, char key[40])
 {
-    size_t b = 0, e;
-    while (b < n && (line[b] == ' ' || line[b] == '\t' || line[b] == '\r')) b++;
+    size_t b = vjo_config_line_start(line, n), e; /* as the parser reads a name: after spaces and BOMs */
     e = b;
     while (e < n && line[e] != '=' && line[e] != ' ' && line[e] != '\t') e++;
     if (e == b || e - b >= 40 || line[b] == ';' || line[b] == '#') return 0;

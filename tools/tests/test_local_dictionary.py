@@ -945,6 +945,23 @@ class InstallerTest(unittest.TestCase):
         self.assertEqual(install.without_secrets(b"\xef\xbb\xbfjpdb_api_key = k\r\nx = 1\r\n"), b"\xef\xbb\xbfx = 1\r\n")
         self.assertEqual(install.without_secrets(b"x = 1\n"), b"x = 1\n")
 
+    def test_a_bom_led_copy_is_the_setting_enable_sets(self):
+        """audit-pr185-b B1: core/config.c reads a line behind a mid-file BOM (a hand-joined file) as its setting, so a
+        BOM-led copy of a key --enable sets is that key, replaced, not left after it for the plugins to read last; a
+        BOM-led API key goes from the file and from the backup. (The case is the audit's.)"""
+        old = (b"dictionary = local\nlocal_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n"
+               b"local_dictionaries = plaintext.vjdict\n\xef\xbb\xbflocal_dictionaries = old.vjdict\n"
+               b" \xef\xbb\xbf\tlocal_dictionary_dir = ux0:Other\n\xef\xbb\xbf \xef\xbb\xbfjpdb_api_key = secret\n")
+        key = install.DATA_DIR + "/config.ini"
+        ftp = FakeFTP({key: old})
+        with contextlib.redirect_stdout(io.StringIO()):
+            install.enable(ftp, ["main.vjdict"])
+        config = ftp.files[key].decode()
+        self.assertNotIn("\ufeff", config)
+        self.assertEqual([l for l in config.splitlines() if l.startswith("local_dictionar")],
+                         ["local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries", "local_dictionaries = main.vjdict"])
+        self.assertFalse(any(b"secret" in value for value in ftp.files.values()))
+
     def test_restore_after_failed_config_rename(self):
         key = install.DATA_DIR + "/config.ini"
         ftp = FakeFTP({key: b"dictionary = hachidori\n"}, fail_replace=True)

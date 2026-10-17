@@ -46,6 +46,11 @@ def inspect(path):
     return f"{stem}-{sha.hexdigest()[:12]}.vjdict"
 
 
+def name_start(line):
+    """A config.ini line from where core/config.c reads its name: after its leading spaces and UTF-8 BOMs."""
+    return re.sub(r"^[\s\ufeff]+", "", line)
+
+
 def config_with_local(text, names):
     if not names or len(names) > 8:
         raise ValueError("select between 1 and 8 dictionaries")
@@ -53,9 +58,12 @@ def config_with_local(text, names):
               "local_dictionaries": ",".join(names)}
     lines, used = [], set()
     for line in text.splitlines():
-        if line.lstrip().lower().startswith(REMOVED_SECRETS):
+        # a line's leading spaces and UTF-8 BOMs (a hand-joined file's, mid-file) are no part of its name, as for
+        # core/config.c vjo_config_line_start: a BOM-led copy of a setting is that setting (audit-pr185-b B1)
+        body = name_start(line)
+        if body.lower().startswith(REMOVED_SECRETS):
             continue  # the removed online dictionaries' API keys (core/config.c removed_secret)
-        match = re.match(r"\s*([a-zA-Z_]+)\s*=", line)
+        match = re.match(r"([a-zA-Z_]+)\s*=", body)
         key = match.group(1).lower() if match else None
         if key in values:
             # Collapse duplicates so the last setting cannot undo the change.
@@ -73,7 +81,7 @@ def without_secrets(raw):
     other byte kept): the backup --enable leaves on the Vita holds no key either."""
     bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
     kept = [line for line in raw[len(bom):].split(b"\n")
-            if not line.decode("utf-8", "replace").lstrip().lower().startswith(REMOVED_SECRETS)]
+            if not name_start(line.decode("utf-8", "replace")).lower().startswith(REMOVED_SECRETS)]
     return bom + b"\n".join(kept)
 
 

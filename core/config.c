@@ -148,16 +148,52 @@ const char *vjo_config_default_text(void)
            "anki_screenshot = on\n";
 }
 
-static void warn(VjoConfig *c, const char *fmt, const char *a, const char *b)
+/* A warning names a setting (its key as typed, at most VJO_CONFIG_WARN_KEY bytes of it for an unknown one) or a
+ * line's number, never a value: a line's value can hold a key or an address, and a warning is shown in the open
+ * overlay and written to log.txt (audit-pr180-b N3). */
+#define VJO_CONFIG_WARN_KEY 32 /* the bytes of an unknown setting's key a warning names */
+
+static void warn(VjoConfig *c, const char *fmt, ...)
 {
+    va_list ap;
     if (c->n_warnings >= VJO_CONFIG_MAX_WARNINGS)
         return;
-    vjo_snprintf(c->warnings[c->n_warnings++], sizeof(c->warnings[0]), fmt, a, b);
+    va_start(ap, fmt);
+    vjo_vsnprintf(c->warnings[c->n_warnings++], sizeof(c->warnings[0]), fmt, ap);
+    va_end(ap);
 }
 
 static int is_space(char ch)
 {
     return ch == ' ' || ch == '\t' || ch == '\r';
+}
+
+/* The name a warning gives a key as typed: up to its first space, at most VJO_CONFIG_WARN_KEY bytes. A known
+ * setting's name is shorter and has no space; an unknown key is whatever came before the '=' (a pasted token, a
+ * URL), so only that much of it is shown (audit-pr185 B1). */
+static const char *warn_name(char name[VJO_CONFIG_WARN_KEY + 1], const char *key)
+{
+    size_t k = 0;
+    while (key[k] && k < VJO_CONFIG_WARN_KEY && !is_space(key[k])) {
+        name[k] = key[k];
+        k++;
+    }
+    name[k] = '\0';
+    return name;
+}
+
+size_t vjo_config_line_start(const char *line, size_t n)
+{
+    size_t s = 0;
+    for (;;) {
+        if (s < n && is_space(line[s]))
+            s++;
+        else if (n - s >= 3 && (unsigned char)line[s] == 0xEF && (unsigned char)line[s + 1] == 0xBB &&
+                 (unsigned char)line[s + 2] == 0xBF)
+            s += 3;
+        else
+            return s;
+    }
 }
 
 static int parse_int(const char *s, int *out)
@@ -205,9 +241,8 @@ static int removed_anki_name(const char *s, size_t n);
 
 int vjo_config_removed_line(const char *line, size_t n, const char **replacement)
 {
-    size_t b = 0, e, v;
+    size_t b = vjo_config_line_start(line, n), e, v;
     *replacement = NULL;
-    while (b < n && is_space(line[b])) b++;
     if (removed_secret(line + b, n - b))
         return VJO_LINE_DROP;
     e = b;
@@ -316,18 +351,17 @@ typedef struct {
     int required; /* an empty value keeps the default, with a warning */
     int raw;
     int (*valid)(const char *v); /* NULL = anything; an invalid value turns the setting off ("") */
-    const char *expected;        /* the warning's description of a valid value */
-    int quiet;                   /* the warning leaves out the value (long, or secret) */
+    const char *expected;        /* the warning's description of a valid value (a warning never quotes the value) */
 } StrSetting;
 
 #define STR_SETTING(name, required, raw) \
-    {#name, offsetof(VjoConfig, name), sizeof(((VjoConfig *)0)->name), required, raw, NULL, NULL, 0}
-#define CHECKED_SETTING(name, raw, valid, expected, quiet) \
-    {#name, offsetof(VjoConfig, name), sizeof(((VjoConfig *)0)->name), 0, raw, valid, expected, quiet}
+    {#name, offsetof(VjoConfig, name), sizeof(((VjoConfig *)0)->name), required, raw, NULL, NULL}
+#define CHECKED_SETTING(name, raw, valid, expected) \
+    {#name, offsetof(VjoConfig, name), sizeof(((VjoConfig *)0)->name), 0, raw, valid, expected}
 static const StrSetting str_settings[] = {
     STR_SETTING(local_dictionary_dir, 1, 1),
     STR_SETTING(ocr_model_dir, 1, 1),
-    CHECKED_SETTING(local_dictionaries, 0, vjo_local_names_valid, "1-8 relative .vjdict filenames separated by commas", 1),
+    CHECKED_SETTING(local_dictionaries, 0, vjo_local_names_valid, "1-8 relative .vjdict filenames separated by commas"),
 };
 #define N_STR_SETTINGS ((int)(sizeof(str_settings) / sizeof(str_settings[0])))
 
@@ -370,7 +404,7 @@ static int keeps_comment_chars(const char *key)
 static void set_str(VjoConfig *c, const char *key, const char *val, char *dst, size_t size)
 {
     if (strlen(val) >= size)
-        warn(c, "%s: value too long%s", key, "");
+        warn(c, "%s: value too long", key);
     else
         memcpy(dst, val, strlen(val) + 1);
 }
@@ -381,7 +415,7 @@ static void set_font(VjoConfig *c, const char *key, const char *val, int *dst)
     if (parse_int(val, &v) == 0 && v >= 8 && v <= 40)
         *dst = v;
     else
-        warn(c, "%s: invalid value '%s' (8-40)", key, val);
+        warn(c, "%s: invalid value (8-40)", key);
 }
 
 /* A time in ms within [lo, hi]. */
@@ -393,7 +427,7 @@ static void set_choice(VjoConfig *c, const char *key, const char *val, int *dst,
             *dst = i;
             return;
         }
-    warn(c, "%s: invalid value '%s'", key, val);
+    warn(c, "%s: invalid value", key);
 }
 
 static void set_ms(VjoConfig *c, const char *key, const char *val, int *dst, int lo, int hi)
@@ -402,7 +436,7 @@ static void set_ms(VjoConfig *c, const char *key, const char *val, int *dst, int
     if (parse_int(val, &v) == 0 && v >= lo && v <= hi)
         *dst = v;
     else
-        warn(c, "%s: invalid value '%s' (ms, out of range)", key, val);
+        warn(c, "%s: invalid value (ms, out of range)", key);
 }
 
 static void set_trigger(VjoConfig *c, const char *key, const char *val, int *dst)
@@ -413,7 +447,7 @@ static void set_trigger(VjoConfig *c, const char *key, const char *val, int *dst
             return;
         }
     }
-    warn(c, "%s: invalid value '%s'", key, val);
+    warn(c, "%s: invalid value", key);
 }
 
 static void set_kv(VjoConfig *c, const char *key, const char *val)
@@ -425,11 +459,11 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         if (removed)
             warn(c, "%s: %s was removed; using local", key, removed);
         else if (!vjo_ieq(val, "local"))
-            warn(c, "%s: invalid value '%s'", key, val);
+            warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "log_host")) {
         /* the UDP log was removed with the network (core/config.h): said once when one was set */
         if (val[0])
-            warn(c, "%s: the UDP log was removed (the overlay is offline); log.txt stays", key, "");
+            warn(c, "%s: the UDP log was removed (the overlay is offline); log.txt stays", key);
     } else if (vjo_ieq(key, "frequency_filter") || vjo_ieq(key, "font_size") || vjo_ieq(key, "hw_jpeg") ||
                vjo_ieq(key, "combo_delay_ms") || vjo_ieq(key, "hachidori_host") || vjo_config_removed_anki_key(key) ||
                removed_secret(key, strlen(key))) {
@@ -441,25 +475,25 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         else if (vjo_ieq(val, "none"))
             c->non_japanese_filter = VJO_FILTER_NONE;
         else
-            warn(c, "%s: invalid value '%s'", key, val);
+            warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "japanese_only_selection")) {
         if (vjo_ieq(val, "on")) c->japanese_only_selection = 1;
         else if (vjo_ieq(val, "off")) c->japanese_only_selection = 0;
-        else warn(c, "%s: invalid value '%s'", key, val);
+        else warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "highlight_mode")) {
         if (vjo_ieq(val, "word")) c->highlight_mode = VJO_HIGHLIGHT_WORD;
         else if (vjo_ieq(val, "character")) c->highlight_mode = VJO_HIGHLIGHT_CHARACTER;
-        else warn(c, "%s: invalid value '%s'", key, val);
+        else warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "frequency_badge")) {
         if (vjo_ieq(val, "on")) c->frequency_badge = 1;
         else if (vjo_ieq(val, "off")) c->frequency_badge = 0;
-        else warn(c, "%s: invalid value '%s'", key, val);
+        else warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "local_dictionary_results")) {
         int v;
         if (parse_int(val, &v) == 0 && v >= 1 && v <= VJO_LOCAL_MAX_DICTS)
             c->local_dictionary_results = v;
         else
-            warn(c, "%s: invalid value '%s' (1-8)", key, val);
+            warn(c, "%s: invalid value (1-8)", key);
     } else if (vjo_ieq(key, "font_size_ja")) {
         set_font(c, key, val, &c->font_size_ja);
     } else if (vjo_ieq(key, "font_size_en")) {
@@ -472,29 +506,29 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         if (vjo_ieq(val, "auto")) c->text_source = VJO_SOURCE_OCR;
         else if (vjo_ieq(val, "hooks")) {
             c->text_source = VJO_SOURCE_OCR;
-            warn(c, "%s: hooks are unavailable in this OCR build", key, "");
+            warn(c, "%s: hooks are unavailable in this OCR build", key);
         }
         else if (vjo_ieq(val, "ocr")) c->text_source = VJO_SOURCE_OCR;
-        else warn(c, "%s: invalid value '%s'", key, val);
+        else warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "ocr_backend")) {
         /* The removed engine choice (core/config.h): vocr is the only engine. */
         const char *removed = removed_engine(val);
         if (removed)
             warn(c, "%s: %s; using vocr", key, removed);
         else if (!vjo_ieq(val, "vocr"))
-            warn(c, "%s: invalid value '%s'", key, val);
+            warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "vocr_tier")) {
         int t = vjo_vocr_tier_parse(val);
         if (t) {
             c->vocr_tier = t;
             c->vocr_tier_explicit = 1;
         } else
-            warn(c, "%s: invalid value '%s' (small, normal or large)", key, val);
+            warn(c, "%s: invalid value (small, normal or large)", key);
     } else if (vjo_ieq(key, "vocr_model")) {
         /* An older build's model choice: its tier, unless a vocr_tier line says otherwise. */
         int t = valid_vocr_model(val) ? vjo_vocr_tier_of_model(val) : 0;
         if (!t)
-            warn(c, "%s: '%s' is not a model of this build; using vocr_tier", key, val);
+            warn(c, "%s: not a model of this build; using vocr_tier", key);
         else if (!c->vocr_tier_explicit)
             c->vocr_tier = t;
     } else if (vjo_ieq(key, "vocr_fallback_model")) {
@@ -508,7 +542,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         set_ms(c, key, val, &c->ocr_settle_press_ms, 0, 10000);
         if (c->ocr_settle_press_ms && c->ocr_settle_press_ms < 100) {
             c->ocr_settle_press_ms = keep;
-            warn(c, "%s: invalid value '%s' (ms, out of range)", key, val);
+            warn(c, "%s: invalid value (ms, out of range)", key);
         }
     } else if (vjo_ieq(key, "ocr_cascade_ms")) {
         set_ms(c, key, val, &c->ocr_cascade_ms, 0, 3750);
@@ -523,7 +557,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;
-        else warn(c, "%s: invalid value '%s'", key, val);
+        else warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "ocr_threads")) {
         static const char *const threads[] = {"1", "2", "3", NULL}; /* stored as the helpers: 0-2 */
         set_choice(c, key, val, &c->ocr_helpers, threads);
@@ -536,21 +570,15 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         else if (vjo_ieq(val, "on_press"))
             c->ocr_mode = VJO_OCR_ON_PRESS;
         else
-            warn(c, "%s: invalid value '%s'", key, val);
+            warn(c, "%s: invalid value", key);
     } else if ((ss = find_str_setting(key)) != NULL) {
         char *dst = (char *)c + ss->offset;
         if (!*val && ss->required)
-            warn(c, "%s: empty (keeping %s)", key, dst);
+            warn(c, "%s: empty (ignored)", key);
         else
             set_str(c, key, val, dst, ss->size);
         if (ss->valid && !ss->valid(dst)) {
-            if (ss->quiet) {
-                warn(c, "%s: invalid value (%s)", key, ss->expected);
-            } else {
-                char what[96];
-                vjo_snprintf(what, sizeof(what), "'%s' (%s)", val, ss->expected);
-                warn(c, "%s: invalid value %s", key, what);
-            }
+            warn(c, "%s: invalid value (%s)", key, ss->expected);
             dst[0] = '\0';
         }
     } else if (vjo_ieq(key, "log_file")) {
@@ -559,7 +587,7 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         else if (vjo_ieq(val, "off"))
             c->log_file = 0;
         else
-            warn(c, "%s: invalid value '%s'", key, val);
+            warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "anki_mining") || vjo_ieq(key, "anki_screenshot")) {
         int *dst = vjo_ieq(key, "anki_mining") ? &c->anki_mining : &c->anki_screenshot;
         if (vjo_ieq(val, "on"))
@@ -567,9 +595,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         else if (vjo_ieq(val, "off"))
             *dst = 0;
         else
-            warn(c, "%s: invalid value '%s'", key, val);
+            warn(c, "%s: invalid value", key);
     } else {
-        warn(c, "unknown setting '%s'%s", key, "");
+        char name[VJO_CONFIG_WARN_KEY + 1];
+        warn(c, "unknown setting '%s'", warn_name(name, key));
     }
 }
 
@@ -577,9 +606,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
 
 static int preference_key(const char *line, size_t n)
 {
-    size_t begin = 0, end;
+    size_t begin = vjo_config_line_start(line, n), end;
     char key[40];
-    while (begin < n && is_space(line[begin])) begin++;
     end = begin;
     while (end < n && line[end] != '=' && !is_space(line[end])) end++;
     size_t key_len = end - begin;
@@ -662,14 +690,12 @@ int vjo_config_patch_preferences(const char *text, size_t len, int vocr_tier,
 void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
 {
     size_t i = 0;
-    /* Skip a UTF-8 BOM (Notepad). */
-    if (len >= 3 && (unsigned char)text[0] == 0xEF && (unsigned char)text[1] == 0xBB &&
-        (unsigned char)text[2] == 0xBF)
-        i = 3;
+    unsigned line_no = 0; /* a line without '=' is named by its number: its text could be a key */
     while (i < len) {
         char line[1024], key[64], val[sizeof(((VjoConfig *)0)->local_dictionaries)]; /* the longest value */
         size_t n = 0, s, e, eq;
         int cut = 0;
+        line_no++;
         while (i < len && text[i] != '\n') {
             if (n < sizeof(line) - 1)
                 line[n++] = text[i];
@@ -680,9 +706,7 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         i++;
         line[n] = '\0';
 
-        s = 0;
-        while (s < n && is_space(line[s]))
-            s++;
+        s = vjo_config_line_start(line, n);
         if (s == n || line[s] == ';' || line[s] == '#')
             continue;
         {
@@ -698,9 +722,9 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         {
             char *p = strchr(line + s, '=');
             if (!p) {
-                /* a removed API key's line is not quoted: its value may be the key */
+                /* named by its number, never quoted: its text may be a key (a removed API key's is silent) */
                 if (!removed_secret(line + s, n - s))
-                    warn(c, "ignored line '%s'%s", line + s, "");
+                    warn(c, "ignored line %u (no '=')", line_no);
                 continue;
             }
             eq = (size_t)(p - line);
@@ -731,8 +755,10 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         while (e > s && is_space(line[e - 1]))
             e--;
         if (cut || e - s >= sizeof(val)) {
-            if (!removed_secret(key, strlen(key))) /* a removed setting stays silent */
-                warn(c, "%s: value too long%s", key, "");
+            if (!removed_secret(key, strlen(key))) { /* a removed setting stays silent */
+                char name[VJO_CONFIG_WARN_KEY + 1];
+                warn(c, "%s: value too long", warn_name(name, key));
+            }
             continue;
         }
         memcpy(val, line + s, e - s);

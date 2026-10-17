@@ -386,7 +386,7 @@ static void test_anki_config(void)
         const char *other = "local_dictionary_dir\nocr_mode on_press\n";
         vjo_config_defaults(&c);
         vjo_config_parse(&c, other, strlen(other));
-        TEST_CHECK(c.n_warnings == 2 && strstr(c.warnings[0], "ignored line 'local_dictionary_dir'"));
+        TEST_CHECK(c.n_warnings == 2 && !strcmp(c.warnings[0], "ignored line 1 (no '=')"));
         TEST_MSG("%d: %s", c.n_warnings, c.warnings[0]);
     }
     /* only those names: a near miss is still an unknown setting */
