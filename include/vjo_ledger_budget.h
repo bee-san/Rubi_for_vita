@@ -361,19 +361,26 @@
 #define VJO_GAME_RESERVE_LARGE (16u * 1024u * 1024u)
 #define VJO_GAME_RESERVE VJO_GAME_RESERVE_SMALL    /* kept free in the game before either block (game_ocr/main.c) */
 /* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG
- * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), one strip of
- * 64 colour rows at 960 px (245,760 B) and the JPEG, at most VJO_GAME_OCR_SHOT_MAX
- * (196,608 B), page-rounded: 450,560 B, only while a shot runs. A shot is a job of
- * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
- * line or helpers (1,835,008 B of the job's worst case besides the resident weights, LM
- * and cascade model, which a shot keeps: 8,732,672 + 450,560 B under the job's
- * 10,567,680 B): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
- * keeps VJO_GAME_RESERVE free beside it. */
-#define VJO_BUDGET_GAME_SHOT 450560u
+ * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), the whole frame in
+ * colour, copied once by the display hook (#194: 960 x 544 x 4 = 2,088,960 B; until #194 one
+ * strip of 64 colour rows, 245,760 B, read again over 9 of the game's frames, 450,560 B in all)
+ * and the JPEG, at most VJO_GAME_OCR_SHOT_MAX (196,608 B), page-rounded: 2,293,760 B, only while
+ * a shot runs. A shot is a job of the one job slot, so it never runs beside an OCR job's
+ * workspace, capture, tall line or helpers (VJO_BUDGET_GAME_OCR_TRANSIENT, 1,835,008 B), only
+ * beside the resident weights, LM and cascade model, which it keeps (it runs no model): since
+ * #194 it is the slot's larger job, VJO_WORST_GAME_JOB's. Its own memory check keeps
+ * VJO_GAME_RESERVE free beside it. */
+#define VJO_BUDGET_GAME_SHOT 2293760u
+/* The blocks an OCR job holds only while it runs (the job slot's other kind of job), and the
+ * ones kept between jobs while the game is the active one. */
+#define VJO_BUDGET_GAME_OCR_TRANSIENT (VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + VJO_BUDGET_GAME_LINE + \
+                                       VJO_BUDGET_GAME_HELPERS)
+#define VJO_BUDGET_GAME_RESIDENT (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE)
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
-#define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
-                            VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE + \
-                            VJO_BUDGET_GAME_HELPERS)
+/* A job's peak: the resident blocks and the slot's larger job, since #194 a shot's block
+ * (game_ocr/main.c checks at compile time that it is the larger): 8,732,672 + 2,293,760 =
+ * 11,026,432 B, against an OCR job's 8,732,672 + 1,835,008 = 10,567,680 B. */
+#define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_RESIDENT + VJO_BUDGET_GAME_SHOT)
 /* The recognizer ceiling: weights <= 2,502,656 B, the owner's int8 ceiling for the Large tier
  * (2026-10-14 18:09Z: Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB; 2,500,000 B page-rounded;
  * 1,601,536 B, Normal's 1.6 MB, before VOCR5's Large), and a full-screen workspace of at most
@@ -387,9 +394,17 @@
  * VOCR5-N: 10,567,680 B, 11.7 % of that free USER (a job's real peak, VOCR5-N with VOCR5-L's
  * cascade, the 4 MB LM and both helpers, is 1,286,144 B less: the two model budgets' over-count).
  * A game with less runs fewer helpers, a smaller LM, no cascade or none of them, then a smaller
- * tier (game_ocr/main.c), never a smaller tier for the helpers. */
+ * tier (game_ocr/main.c), never a smaller tier for the helpers. #194: raised by 458,752 B to
+ * 11,026,432 B (12.2 % of that free USER) for an Anki screenshot's block, the whole frame copied
+ * once in one display call instead of 9 strips over 9 frames: 2,293,760 B, the slot's larger job,
+ * beside the resident blocks. Every OCR job of #194's console run (CLANNAD, test.4) saw
+ * 87,031,808-91,226,112 B free USER [measured, the run's log.txt]. A shot takes its block only
+ * while it runs (no model is read or kept for it), only when the game keeps its 4 MiB reserve
+ * beside it (else the card is saved without a screenshot), from USER_RW, else CDRAM, else phycont;
+ * its real peak with VOCR5-N's weights, VOCR5-L's cascade and the 4 MB LM resident is 9,740,288 B
+ * (the two model budgets' over-count, 1,286,144 B). */
 #define VJO_LIMIT_GAME_WEIGHTS 2502656u
 #define VJO_LIMIT_GAME_WORKSPACE 1212416u
-#define VJO_LIMIT_GAME_JOB 10567680u
+#define VJO_LIMIT_GAME_JOB 11026432u
 
 #endif

@@ -287,8 +287,9 @@ Adrenaline shows it, at 2×), without the overlay, which is SceShell's layer
 and not in the game's frame. With the overlay open the game has no input, so
 this is normally the screen the text was read from; a game that changes its
 screen by itself (a scene that goes on alone, a video) is pictured as it is
-then, and, as the frame is read over 9 of the game's frames, possibly with a
-seam between two bands of rows.
+then: one frame, copied whole in the display call that shows it (#194; until
+then it was read over 9 of the game's frames, possibly with a seam between two
+bands of rows).
 
 ### How it is made (API 23)
 
@@ -301,16 +302,22 @@ seam between two bands of rows.
    every job leaves to the game: a screenshot holds no model, and the larger
    reserves, 8 and 16 MiB, follow the largest model a job holds, so it keeps
    the base one even beside Large's resident weights), takes one block of
-   450,560 B (`USER_RW`, else
-   CDRAM, else phycont) and reads the frame in colour, 64 rows a frame, through
-   the OCR capture's own path: the display hook copies the rows as A8B8G8R8
-   words straight into the block (`VJO_ROWS_RGBA`), or, when it cannot write
-   the block, through the kernel strip, 16 rows a call
+   2,293,760 B (`USER_RW`, else
+   CDRAM, else phycont) and has the frame copied into it in colour, whole, in
+   one rows call (#194): the display hook copies every row as A8B8G8R8 words
+   (`VJO_ROWS_RGBA`) straight into the block, in the one display call of the
+   game that shows that frame, as upstream's kernel capture did (Dartv/vita-jp-overlay
+   `0b5fa95`, `kernel/capture.c` `capture_copy`) but with no kernel buffer. When
+   the hook cannot write the block, or the kernel takes 64 rows a call at most
+   (test.4's, still running after an update until the Vita restarts), the frame
+   comes through the kernel strip instead, 16 rows a call and a frame each
    ([in-game capture](ingame-capture.md#an-anki-cards-screenshot-api-23)).
-3. It encodes each band of 16 rows as it comes (`core/jpegsw.c`: baseline JPEG,
-   YCbCr 4:2:0, the standard tables, quality 70) into the same block. A JPEG
-   over 192 KiB (the most an export reads) is encoded again at quality 50, then
-   35; none of the 598 frames measured below needed it.
+3. It encodes that copy, 16 rows at a time (`core/jpegsw.c`: baseline JPEG,
+   YCbCr 4:2:0, the standard tables, quality 70), into the same block, and stops
+   between two bands when the Shell gives up or the overlay closes. A JPEG
+   over 192 KiB (the most an export reads) is encoded again from the same copy
+   at quality 50, then 35, with no other frame read; none of the 598 frames
+   measured below needed it.
 4. It hands the JPEG to the kernel in 32 KiB pieces (`vjoOcrShotWrite`, through
    the staging buffer the model reads use), and the kernel's worker thread
    writes them to `anki_queue/<id>.jpg.tmp`, closes it, syncs the memory card,
@@ -362,11 +369,17 @@ screenshots are about 54 MiB.
 ### Time and memory
 
 Not measured on a console yet; `log.txt`'s `anki: screenshot rc=…` line has
-every part of it for a console run (the strips' wait, the encoding, the file,
-the whole). Estimates: the colour strips take 9 of the game's frames (150 ms at
-60 fps), each strip's copy 0.28 to 2.45 ms in the game's display call at 444 MHz
-(0.38 to 3.02 ms at 333 MHz; 131,401 instructions, mostly the copy, whose
-firmware routine is unknown code: `capture_shot_abgr`); the encoding is 60.0
+every part of it for a console run (the copy's wait, the encoding, the file,
+the whole), and a failed screenshot's steps (`gstep shot pass`: the copy's
+time in the game's display call, in `sum`). Estimates: the copy takes one of
+the game's frames, about 2.4 to 20.8 ms in that one display call at 444 MHz
+(3.2 to 25.7 ms at 333 MHz; 8.5 times the measured 64-row strip,
+`capture_shot_abgr`'s 131,401 instructions and 0.28 to 2.45 ms, 0.38 to
+3.02 ms, as the copy is the same for every row; mostly the copy, whose
+firmware routine is unknown code). That is an A8B8G8R8 frame's; an
+A2B10G10R10 or A1B5G5R5 frame (Adrenaline's) is expanded to A8B8G8R8 in the
+same call, which is longer and unmeasured. Until #194 it was 9 such strips,
+one in each of 9 display calls (150 ms at 60 fps). The encoding is 60.0
 million instructions for a 960 × 544 frame on
 the Cortex-A9 (`tools/bench_stages.py`'s `jpeg_shot`, the Vita compiler's code
 counted under qemu-arm, `docs/performance.md`): 69 to 149 ms at 444 MHz, 93 to
@@ -375,13 +388,15 @@ priority on the game's cores, so every game thread goes first. The memory
 card's writes and its two syncs are unmeasured. The screenshot's load on CPU3
 is unmeasured too (AGENTS.md rule 8): no PSVshell reading exists.
 
-In the game, the screenshot's block is 450,560 B (the encoder's state, one
-strip of 64 colour rows and the JPEG, page-rounded; `VJO_BUDGET_GAME_SHOT`),
-only while it runs; a screenshot is a job of the one job slot, so it never runs
-beside an OCR job's workspace and adds nothing to the game's worst case
-([memory ledger](memory-ledger.md)). The kernel takes nothing new: the 32 KiB
-staging buffer it already has, and on the last rung a kernel strip of at most
-64 KiB for one call, as for OCR.
+In the game, the screenshot's block is 2,293,760 B (the encoder's state, the
+whole frame in colour, 2,088,960 B, and the JPEG, page-rounded;
+`VJO_BUDGET_GAME_SHOT`; 450,560 B, with one 64-row strip, until #194), only
+while it runs. A screenshot is a job of the one job slot, so it never runs
+beside an OCR job's workspace; it keeps the resident models, and since #194 it
+is the slot's larger job: the game's worst case is the resident blocks and this
+block, 11,026,432 B ([memory ledger](memory-ledger.md)). The kernel takes
+nothing new: the 32 KiB staging buffer it already has, and on the last rung a
+kernel strip of at most 64 KiB for one call, as for OCR.
 
 ### Export
 
@@ -398,8 +413,10 @@ no card names ([above](#the-queue-on-the-memory-card), #161).
 
 What the host checks: every encoder output decoded by Pillow
 (`host/tests/test_jpegsw.py`); a screenshot through the actual game worker and
-kernel transport in each pixel format a game submits, decoded too
-(`host/tests/test_game_shot.c`, `test_game_shot.py`); the kernel's rules
+kernel transport in each pixel format a game submits, decoded too, one frame in
+one rows call, the same JPEG while the game draws other frames, and the same
+through the kernel strip or an API 24 kernel (`host/tests/test_game_shot.c`,
+`test_game_shot.py`); the kernel's rules
 (`test_kernel_game_ocr.c`); the Shell's saves with one and without
 (`test_shell_anki.c`); a save stopped at each of its writes in a fresh process
 (`test_anki_restart.py`); the screenshots such a stop leaves without a card,

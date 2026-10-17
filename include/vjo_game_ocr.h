@@ -59,7 +59,8 @@
 #define VJO_GAME_OCR_SETTLE_MAX_SHIFT 24u
 #define VJO_GAME_OCR_SETTLE_MAX_UNIT_US 50000u
 /* API 23, bit 14: the Anki screenshot (docs/anki.md). The worker reads the game's whole
- * frame in colour (VJO_ROWS_RGBA strips), encodes it as a baseline JPEG in its own memory
+ * frame in colour (VJO_ROWS_RGBA; #194: in one rows call through the display hook, else
+ * through the kernel strip), encodes it as a baseline JPEG in its own memory
  * (core/jpegsw.h) and has the kernel's worker thread write it, a VJO_GAME_OCR_SHOT_CHUNK
  * at a time, to VJO_GAME_OCR_SHOT_DIR/<shot>.jpg (vjoOcrShotWrite, vjoOcrShotSave): the
  * card's screenshot, beside its record. A shot recognizes nothing, opens no model and
@@ -164,7 +165,10 @@ enum {
                             (VJO_GAME_RESERVE_*: of the cascade's tier with the cascade) */
     VJO_GSTEP_ALLOC,     /* kind VJO_GAME_OCR_MEM_*, arg VJO_GITEM_*; rc the block uid or the error */
     VJO_GSTEP_FREE,      /* arg VJO_GITEM_* */
-    VJO_GSTEP_PASS,      /* a pass over the region: kind VJO_GAME_OCR_SRC_*, arg captures, bytes copied */
+    VJO_GSTEP_PASS,      /* a pass over the region: kind VJO_GAME_OCR_SRC_*, arg captures, bytes copied. A shot's
+                            (#194): its frame's copy, arg the rows calls, rc 0 or the error (a native one as
+                            the kernel gave it), sum the copies' time in the game's display calls (us), us from
+                            the first request to the end of the last copy */
     VJO_GSTEP_TEAR,      /* rows read differently than before: arg how many, rc the tries, bytes when the last
                             try began (us since the job started; 0 with one try), us when it was logged,
                             after the tries */
@@ -214,7 +218,8 @@ enum {
                             sum, cdram the longest gap, phycont the gaps over VJO_PACE_SLOW_US */
     VJO_GSTEP_SHOT,      /* API 23, a shot's encoding, one per try: kind the JPEG quality, arg the try (1-3),
                             rc 0 or why it stopped (VJO_E_TOO_LARGE: over VJO_GAME_OCR_SHOT_MAX, the next try
-                            encodes a lower quality), bytes the JPEG's, sum the strips read, us the try */
+                            encodes a lower quality, from the same copy of the frame), bytes the JPEG's, sum
+                            the rows calls the frame came from, us the try */
     VJO_GSTEP_SAVE,      /* API 23, a shot's file: kind the chunks written, rc 0 or the kernel's error,
                             bytes written, us the writes and the save */
     VJO_GSTEP_COUNT
@@ -336,13 +341,15 @@ typedef struct {
  * expanded as core/fbgrey.h does), 4 bytes a pixel: a shot's rows, and only a shot's; never
  * with SIG or LAST (a shot publishes no capture). dst_stride >= 4 x the width. */
 #define VJO_ROWS_RGBA 0x4u
-#define VJO_GAME_OCR_ROWS_MAX 64u  /* rows per call */
+#define VJO_GAME_OCR_ROWS_MAX 64u  /* rows per call; #194: a shot's colour rows through the hook, its whole frame */
 #define VJO_GAME_OCR_KSTRIP_MAX (64u * 1024u) /* the kernel strip's largest size */
 
 typedef struct {
     uint32_t size;       /* sizeof(VjoGameOcrRows) */
     uint32_t seq;        /* the claimed job */
-    uint32_t y, n;       /* region rows; 1 <= n <= VJO_GAME_OCR_ROWS_MAX */
+    uint32_t y, n;       /* region rows; 1 <= n <= VJO_GAME_OCR_ROWS_MAX, or (#194) up to the region's height
+                            for a shot's VJO_ROWS_RGBA rows through the hook: the whole frame, copied in one
+                            display call of the game */
     uint32_t mode;       /* VJO_GAME_OCR_SRC_HOOK or VJO_GAME_OCR_SRC_KSTRIP */
     uint32_t flags;      /* VJO_ROWS_* */
     uint32_t dst_stride; /* >= the region's width */

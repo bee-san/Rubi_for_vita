@@ -55,7 +55,9 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
 {
     unsigned bpp = frame_fmt == VJO_FB_A1B5G5R5 ? 2u : 4u;
     int rgba = req && (req->flags & VJO_ROWS_RGBA); /* API 23, a shot: the rows in colour */
-    if (!req || req->size != sizeof(*req) || req->seq != job.seq || !req->n || req->n > VJO_GAME_OCR_ROWS_MAX ||
+    /* #194: a shot's colour rows through the hook may be its whole frame in one call, as kernel/game_ocr.c takes them */
+    uint32_t most = rgba && req->mode == VJO_GAME_OCR_SRC_HOOK ? job.height : VJO_GAME_OCR_ROWS_MAX;
+    if (!req || req->size != sizeof(*req) || req->seq != job.seq || !req->n || req->n > most ||
         req->y + req->n > job.height || req->dst_stride < job.width * (rgba ? 4u : 1u) || !dst ||
         rgba != !!(job.flags & VJO_GAME_OCR_F_SHOT))
         return VJO_ERR_ARG;

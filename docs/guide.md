@@ -648,7 +648,7 @@ saves cards as readable JSON files in `ux0:data/VitaJPOverlay/anki_queue/`, each
 with a JPEG of the game's screen beside it (`anki_screenshot = on`, the default:
 960 × 544 at quality 70, 55.6 KB for the median of 294 Vita screens, 46.6 KB of
 304 PSP ones). The game worker reads the frame and encodes it in the game's
-memory (a 450,560 B block while it runs), and the kernel writes it to the memory
+memory (a 2,293,760 B block while it runs), and the kernel writes it to the memory
 card; SceShell holds none of it ([the screenshot](anki.md#the-screenshot)).
 The cards survive restarts and need no network. Each record (version 4) keeps everything known at the
 press: the word, its reading and furigana, the shown entry and its

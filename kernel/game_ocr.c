@@ -73,7 +73,8 @@ static struct {
 /* A frame has to come within this; cancellation is checked every slice. */
 #define ROWS_WAIT_US 1500000u
 #define ROWS_SLICE_US 50000u
-/* A copy the hook started finishes within this (one strip, a few ms). */
+/* A copy the hook started finishes within this (one strip, a few ms; a shot's whole frame, 8.5
+ * strips' worth: 2.4-25.7 ms [estimate, docs/anki.md]). */
 #define ROWS_COPY_WAIT_US 2000000u
 /* Longer than any call can stay inside the kernel (ROWS_WAIT_US + ROWS_COPY_WAIT_US). */
 #define ROWS_GONE_US 10000000u
@@ -522,7 +523,10 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     if (pid <= 0 || pid != request_pid) rc = VJO_ERR_PERM;
     else if (!valid || !claimed || req.seq != request.seq || req.size != sizeof(req)) rc = VJO_ERR_ARG;
     else if (cancelled || !registration_current(pid)) rc = VJO_ERR_CANCELLED;
-    else if (!req.n || req.n > VJO_GAME_OCR_ROWS_MAX || req.y >= request.height || req.n > request.height - req.y ||
+    /* #194: a shot's colour rows through the hook may be the whole frame in one call, which the display
+     * hook copies in one display call of the game; any other call, at most VJO_GAME_OCR_ROWS_MAX rows */
+    else if (!req.n || req.n > (rgba && req.mode == VJO_GAME_OCR_SRC_HOOK ? request.height : VJO_GAME_OCR_ROWS_MAX) ||
+             req.y >= request.height || req.n > request.height - req.y ||
              req.dst_stride < request.width * bpp || req.dst_stride > VJO_MAX_W * bpp ||
              (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_RGBA)) ||
              ((req.flags & VJO_ROWS_LAST) && !(req.flags & VJO_ROWS_SIG)) ||
@@ -535,7 +539,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
      * is not tidied yet: the kernel worker returns it to IDLE within a tick. */
     else if (rows.state != ROWS_IDLE) rc = VJO_ERR_BUSY;
     else {
-        /* <= 61,440 B grey, 245,760 B in colour (64 rows of 960 px): no wrap */
+        /* <= 61,440 B grey (64 rows of 960 px), 2,088,960 B for a shot's whole frame in colour: no wrap */
         uint64_t bytes = (uint64_t)(req.n - 1u) * req.dst_stride + request.width * bpp;
         span = (uint32_t)bytes;
         if (bytes > 0xFFFFFFFFu || !user_range_ok(pid, (uintptr_t)dst, span)) rc = VJO_ERR_ARG;

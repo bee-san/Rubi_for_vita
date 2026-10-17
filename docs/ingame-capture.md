@@ -108,7 +108,7 @@ ledger counts them as `VJO_BUDGET_GAME_CAPTURE`, `VJO_BUDGET_GAME_LINE`,
 `VJO_BUDGET_GAME_WORKSPACE` and `VJO_BUDGET_KERNEL_OCR_STRIP` ([memory-ledger.md](memory-ledger.md)).
 API 24 removed the kernel's region-sized capture buffer (`VjoCapture`, with `vjoRequestCapture` and
 `vjoReadRaw`): Google Lens's JPEG was its last Shell user, and an Anki card's screenshot is read in
-the game too, in colour strips (below). #74's refusal would have reached a full-screen JPEG too. The
+the game too, in colour, into the worker's own block (below). #74's refusal would have reached a full-screen JPEG too. The
 kernel strip (rung 4) is now the kernel's only block for a job.
 
 ## An Anki card's screenshot (API 23)
@@ -121,21 +121,31 @@ A card's screenshot ([docs/anki.md](anki.md#the-screenshot)) is a job of the sam
   format expanded to 8 bits per channel exactly as for grey (`kernel/capture.c` `read_row`), 4 bytes
   a pixel, into the worker's block. Only a shot reads colour, and a shot reads nothing else; it
   publishes no capture and builds no signature (no `VJO_ROWS_SIG`).
-- **64 rows a frame, one pass.** The worker reads the frame once, top to bottom, 64 rows (a strip
-  of 245,760 B at 960 px) a display frame, 9 frames for 544 rows, and encodes each band of 16 rows
-  as it comes; there are no checksums and no second pass. A screen that changes during those 9
-  frames is pictured partly before and partly after the change (a band at the seam); with the
-  overlay open the game has no input and normally shows a still screen. When the hook cannot write
-  the block, the rows come through the kernel strip, 16 rows a call (61,440 B, inside its 64 KiB).
-- **Its own block.** One block of 450,560 B (`VjoGameShot`: the encoder's state, the strip and the
-  JPEG, page-rounded) on the same ladder (`USER_RW`, CDRAM, phycont), after a check that the game
-  keeps its 4 MiB beside it; freed when the job ends, the resident weights untouched.
+- **The whole frame in one call, one frame (#194).** The worker asks for every row in one rows
+  call, and the hook copies them, 2,088,960 B at 960 × 544, in the one display call of the game
+  that shows that frame, as upstream's kernel capture copied its frame (`0b5fa95`
+  `kernel/capture.c` `capture_copy`), but into the worker's block: no kernel buffer. Only a shot's
+  colour rows through the hook may be more than 64 a call. The worker then encodes that copy, 16
+  rows at a time, and a lower quality's try encodes it again: no frame is read twice, there are no
+  checksums and no second pass, and the picture is one frame, whatever the game draws next. Until
+  #194 the frame was read 64 rows (245,760 B) a display frame over 9 frames, and a screen that
+  changed meanwhile was pictured in bands of different frames. When the hook cannot write the
+  block, or the kernel refuses the whole frame (an API 24 kernel of before #194, until the Vita
+  restarts after an update: `VJO_ERR_ARG`, nothing armed), the rows come through the kernel strip,
+  16 rows a call (61,440 B, inside its 64 KiB), a frame each.
+- **Its own block.** One block of 2,293,760 B (`VjoGameShot`: the encoder's state, the frame and the
+  JPEG, page-rounded; 450,560 B with one strip until #194) on the same ladder (`USER_RW`, CDRAM,
+  phycont), after a check that the game keeps its 4 MiB beside it; freed when the job ends, the
+  resident weights untouched.
 
 Then the JPEG goes to the memory card through the kernel's worker thread, as the models come from
 it (`vjoOcrShotWrite`, `vjoOcrShotSave`; the game itself has no `ux0:`). `host/tests/test_game_shot.c`
 runs it through the actual worker and kernel transport on a 960 × 544 frame in each of the three
-pixel formats, and `test_kernel_game_ocr.c` the kernel's rules: colour only for a shot, the
-strides and the kernel strip in colour, the file's order, size and form.
+pixel formats (one rows call, one frame, the same JPEG while the game draws other frames, the
+kernel strip and an API 24 kernel's refusal giving the same JPEG), and `test_kernel_game_ocr.c` and
+`test_game_shot.c` the kernel's rules: colour only for a shot, the whole frame in one call only for a
+shot's colour rows through the hook, the strides and the kernel strip in colour, the file's order,
+size and form.
 
 ## Memory queries on 3.60-3.74
 

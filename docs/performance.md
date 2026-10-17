@@ -172,7 +172,9 @@ none, so the wait reads exactly the passes it would at that rate (and the cascad
 *capture_shot_abgr* and *jpeg_shot* (API 23, an Anki card's screenshot; their rows are measured on
 this change, the others are the baseline above): the display hook's copy of one strip of 64 colour
 rows of the full frame (A8B8G8R8 rows are a plain copy, the firmware's `memcpy` stands in for its
-own, hence the libc share; nine strips a screenshot, one per game frame, in the game's display call),
+own, hence the libc share; nine strips a screenshot, one per game frame, in the game's display call,
+until #194; since then the whole frame in one display call, 8.5 strips' worth: 2.4-20.8 ms at 444 MHz,
+3.2-25.7 ms at 333 MHz [estimate]),
 and `core/jpegsw.c` in the game worker on the whole frame at quality 70, its strips' wait not
 included ([anki.md](anki.md#time-and-memory)).
 *lookup_first* and *lookup_every* since #138: `core/local_dict.c` is built `-Os` (the normal Shell's

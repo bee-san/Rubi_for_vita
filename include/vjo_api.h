@@ -44,7 +44,12 @@
  * 24: the kernel's full-frame capture is gone: vjoRequestCapture and vjoReadRaw (its
  * last users, Google Lens's and the Shell's Anki JPEGs, were removed), the VjoCapture
  * buffer, VJO_CAPTURE_*, VJO_ALLOC_*, and VjoState's alloc_status, capture_result and
- * raw_stride (VjoMemInfo's capture_bytes). VjoState's capture fields are an OCR job's. */
+ * raw_stride (VjoMemInfo's capture_bytes). VjoState's capture fields are an OCR job's.
+ * Since #194, with the same number: a shot's VJO_ROWS_RGBA rows call through the hook may be its
+ * whole frame (up to the region's height), which the display hook copies in one display call. No
+ * struct or syscall changes: an older worker's 64-row calls are served as before, and a worker that
+ * meets a kernel of before #194 (VJO_ERR_ARG for the whole frame, nothing armed) reads the frame
+ * through the kernel strip instead. */
 #define VJO_API_VERSION 24
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
