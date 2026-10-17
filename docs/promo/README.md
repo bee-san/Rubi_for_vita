@@ -1,15 +1,17 @@
-# Promo video (v2)
+# Promo video
 
-A 44-second promo for Vita JP Overlay, written as a [HyperFrames](https://hyperframes.heygen.com)
+A 44-second promo for Rubi (Rubi for Vita), written as a [HyperFrames](https://hyperframes.heygen.com)
 composition: HTML, CSS and one GSAP timeline, rendered frame by frame in headless Chrome. It follows the
 owner's script in his order, as someone playing a visual novel would: the text types, L + R opens the
-overlay, Right walks the words, × mines a card, and the camera follows each press.
+overlay, Right walks the words, × mines a card, and the camera follows each press. Everything the console
+shows is the software's own: the overlay as its code lays it out, with its own lookups; the card the app
+exports, as Anki renders it; the app's pages as its code draws them in Vita3K (see below).
 
 | File | What it is |
 | --- | --- |
 | `media/promo-1920x1080.mp4` | 1920 × 1080, 30 fps, H.264 and AAC, 44 s, -16 LUFS |
 | `media/promo-1080x1920.mp4` | 1080 × 1920, the vertical cut (its own camera, not a crop) |
-| `media/promo.gif`, `media/poster.jpg`, `media/stills/` | a loop of the lookup and the mining, the poster, one still per scene |
+| `media/promo.gif`, `media/poster.jpg`, `media/stills/` | a loop of the lookup and the mining, the poster, one still per beat |
 
 ## Re-render
 
@@ -20,7 +22,8 @@ You need Node.js 22 or newer, FFmpeg and FFprobe on `PATH`, and Python 3 with Pi
 cd docs/promo
 npm ci                              # hyperframes 0.8.162 and gsap 3.14.2, both pinned
 npx hyperframes browser ensure      # the chrome-headless-shell HyperFrames renders with
-npm run prep                        # the shared art, captures and sound -> assets/ (tools/prep_assets.py)
+bash capture/run.sh CHECKOUT CAP    # the real captures of a built checkout (below)
+python3 tools/prep_assets.py CAP CHECKOUT   # the captures, the app's art, the mock game and the sound -> assets/, src/
 npm run build && npm run fonts && npm run build
 npm run check                       # index.html fresh, the font subsets fresh, hyperframes check
 npm run render                      # renders/promo-1920x1080.mp4
@@ -34,71 +37,110 @@ render it with `-f 15` for a quick look. The npm scripts set `HYPERFRAMES_NO_TEL
 
 | Path | What it is |
 | --- | --- |
-| `src/script.mjs` | the words and the timing: scene starts, the cue sheet of every press and tap, captions, the sound cues |
+| `src/script.mjs` | the words and the timing: scene starts, the cue sheet of every press and tap, captions, the sound cues, the names |
 | `src/promo.template.html`, `src/promo.css`, `src/promo.js` | the markup, the styles, and the one paused GSAP timeline: the camera rig, the hands, the presses, every screen change |
-| `src/overlay-states.json` | the overlay at each beat, as main lays it out, with main's own lookups in the released dictionary |
+| `src/overlay-states.json`, `src/release.json` | the overlay at each beat and the release's files, from `capture/run.sh` |
+| `capture/` | the tools that make every real picture from one checkout (below) |
 | `tools/build.mjs` | builds `index.html` (`--layout landscape` or `portrait`, `--scale`); `--check` fails when it is stale |
-| `tools/prep_assets.py` | copies the shared art, the Vita3K captures and the sound into `assets/`, with their sha256 in `assets/SOURCES.md` |
+| `tools/prep_assets.py` | copies the captures, the app's art, the mock game and the sound into `assets/`, with their sha256 in `assets/SOURCES.md` |
 | `tools/fonts.py` | fetches the fonts at a pinned google/fonts commit, checks their SHA-256 and subsets them |
 | `tools/media.sh`, `tools/motion.py` | the media from the renders; a frame-to-frame motion check |
+
+## The captures (`capture/run.sh`)
+
+`capture/run.sh CHECKOUT OUT` makes every real picture from one vita-jp-overlay checkout, built as the
+repository's README says (the host tree in `build/host`, the Vita release in `build/vita-normal` and
+`build/vita-debug`); the film shows the commit in `OUT/commit.txt`. Its environment is listed at its top
+(VitaSDK, the pinned vita-vn-ocr runtime and models, the released dictionary, Vita3K and the official
+firmware, docker for Anki).
+
+- **The overlay** (`overlay_lookups.c`, `overlay_states.py`): the checkout's own lookups in the released
+  `plaintext.vjdict` (its sha256 is checked against `docs/plaintext-dictionaries.json`), each entry drawn by
+  `vjo_styled_entry`, laid out in the order `shell/overlay.cpp` `render()` writes the body, with its strings
+  read from `shell/overlay.cpp` and `shell/anki.c` (a string that is gone stops the run). `ocr_check.py`: the
+  checkout's recognizer reads each line the film types exactly as the film types it (`OUT/ocr-check.md`).
+- **The card** (`anki_card.c`, `anki_cards.py`, `render_cards.js`): the game's frame when × is pressed,
+  encoded by the game worker's JPEG encoder at its quality (host `vjo-jpeg`, `core/jpegsw.c` at 70); the
+  Shell's note and queue record with that screenshot (`vjo_anki_note_from_entry`, `card_facts`'s values,
+  `vjo_queue_encode`); the app's export (`vjo_export_run`) into a real `.apkg`; imported by Anki 26.09.3
+  (`tools/requirements-anki.txt`) and rendered by Anki itself, then drawn in Chrome.
+- **The release** (`run.sh`): `tools/package_variants.py` of the two builds, as a release makes it: the
+  file names and sizes on the Releases page and in VitaShell's list.
+- **The app** (`app_capture_patch.py`, `capture_package.py`, `capture_app.sh`, `split_holds.py`): the
+  app's Vita3K smoke build with the promo's pad scripts (and two Vita3K workarounds under `VJO_SMOKE_PAD`),
+  its eboot put in the release's app VPK, the release packaged around it by the checkout's own
+  `package_release.py` and `package_vpk.py`, and that one VPK installed in Vita3K on a card with HENkaku's
+  stock taiHEN configurations: the app opens on its Install page, Install runs on Vita3K's card (it copies
+  the plugins and the models, moves the dictionary, backs up and edits both `config.txt`, writes
+  `installed.txt`: `OUT/app/run/card-after-install.txt`), then the app started again opens on Games. The
+  shots are its own drawing; `tools/prep_assets.py` names the holds it uses. Vita3K says nothing about the
+  console ([AGENTS.md](../../AGENTS.md) rule 5).
 
 ## Scenes
 
 | # | Time | Caption | On the console |
 | --- | --- | --- | --- |
-| 1 | 0–4.5 s | Learn Japanese with your PS Vita *for free* | The mock visual novel types its line; the camera pulls back to the Vita; × shows the next line. |
+| 1 | 0–4.5 s | Learn Japanese with your PS&nbsp;Vita *for free* | The mock visual novel types its line; the camera pulls back to the Vita; × shows the next line. |
 | 2 | 4.5–10 s | Look up words from the games you play, *entirely offline* | L + R (two fingers on the shoulders) opens the overlay on また明日; Right goes to 一緒に. |
-| 3 | 10–14.5 s | Create flashcards of *words you don't know* | × saves 一緒に with its screenshot; Right, × saves 見に行く; the cards fly to the queue (0 → 1 → 2). |
-| 4 | 14.5–19 s | With *screenshots* | The card in Anki (Lapis), the game's screen in its Picture. |
-| 5 | 19–23.5 s | It only reads text *when it changes* / Or only when you press L + R | ○, × shows a new scene and line; the Overlay app's Read text goes to "Only when I press L + R". |
-| 6 | 23.5–31 s | *Easy install* | GitHub Releases, the .vpk to the Vita, VitaShell installs it, Overlay's Install page, a restart, done. |
-| 7 | 31–37 s | Now it's installed: go to your game and press *L + R* to look up words. | The game starts from its bubble; L + R opens the overlay on キラキラ; Right, Right. |
-| 8 | 37–41.5 s | Turn it off for specific games, *so it doesn't get in the way* | ○, PS (the game stays suspended), the home screen, the Overlay app: Neon Drift turned OFF. |
-| | 41.5–44 s | End card | Free, fully offline, open source; the project's address. |
+| 3 | 10–14.6 s | Create flashcards of *words you don't know* | × saves 一緒に with its screenshot; Right, × saves 見に行く; the cards fly to the queue (0 → 1 → 2). |
+| 4 | 14.6–19 s | With *screenshots* | The card in Anki (Lapis): its front turns to its back, the game's screen in its Picture. |
+| 5 | 19–23.5 s | It only reads text *when it changes* / or only when you press L + R | ○, × shows a new scene and line; the app's Read text goes to "Only when I press L + R". |
+| 6 | 23.5–31.2 s | *Easy install* | GitHub Releases, the .vpk to the Vita, VitaShell installs it, the app's Install page and its run, a restart, done. |
+| 7 | 31–36.5 s | Now it's installed: go to your game and press *L&nbsp;+&nbsp;R* to look up words. | The game starts from its bubble; L + R opens the overlay on キラキラ; Right goes to 子供の頃. |
+| 8 | 36.5–41.7 s | Turn it off for specific games, *so it doesn't get in the way* | ○, PS (the game stays suspended), the home screen, the app: Down, Down, × turns Ember Garden OFF. |
+| | 41.7–44 s | End card | Rubi for Vita: free, fully offline, open source; the project's address. |
 
-## Mock-ups of features still landing
-
-Three shots show features that are not on `main` yet, as their branches build them. Each stays a mock-up
-until its feature merges (and, for the install, until the owner's console check), and the real captures
-replace it then:
-
-| Scenes | Feature | What the shot is |
-| --- | --- | --- |
-| 3, 4 | the card's screenshot (overlay-anki-screenshot) | the game's frame as that branch's encoder makes it (960 × 544, quality 70, without the overlay); the card made by its exporter and rendered by Anki 26.09.3 (Lapis 1.7.0) |
-| 5 | Read text (PR #146, feat/ocr-mode-setting) | Vita3K captures of that branch's Overlay app |
-| 6 | the one-VPK install (overlay-one-vpk-install) | the release's asset names and the ~53 MB size (an estimate) from its design; VitaShell's own strings; the Install page drawn by the app's own code in Vita3K from the design (`docs/one-vpk-install.md`) |
+The owner's note on the first cut (#134, 2026-10-16 14:15Z: "the pressing is a little too fast, slow it
+down a tad"): every press now sinks, holds and comes back over 0.3 s (0.2 s before), each finger comes in
+and goes out more slowly, and no two presses are closer than 0.5 s; the install and turning a game off
+have more time, and scene 7 has one Right instead of two. His frames 1 and 2 (the export page; "It only
+runs in the games you turn on") are not in the film.
 
 ## What the video claims, and why it is true
 
+Checked against the checkout the captures are of (`assets/SOURCES.md` names it).
+
 - **Free**: GPL-3.0; the release bundles the dictionary and the models.
-- **Entirely offline**: VOCR, the only engine since #130, runs in the game's process, and the bundled
-  `plaintext.vjdict` is read from the memory card. The lookups shown are main's own, in the released
-  dictionary (sha256 e1bbd379…): また明日 #3726, 一緒に #125, 見に行く #2199 (見に行こう deinflected),
-  キラキラ #3383, 子供の頃 #3356, みたい #95, all JMdict entries with their Jiten ranks.
+- **Entirely offline**: VOCR, the only engine, runs in the game's process, and the bundled
+  `plaintext.vjdict` is read from the memory card; there is no network code (#130, #145). The lookups shown
+  are the checkout's own, in the released dictionary: また明日 #3726, 一緒に #125, 見に行く #2199
+  (見に行こう deinflected), キラキラ #3383, 子供の頃 #3356. Their definitions are JMdict's, and their kanji
+  lines (一=one, ...) are Bee's Ultimate Kanji Dictionary's, both as the bundle carries them.
 - **Flashcards**: with card mining on, × queues the word on the memory card ("Saving card…", "Saved for
-  Anki", "Queued for Anki", "Anki queue: N · export in the Overlay app"). Mining is off by default, so the
-  overlay after a fresh install (scene 7) has no queue line and no "× queue".
-- **With screenshots**: the anki-screenshot feature (above): the card keeps the game's whole frame when ×
-  is pressed, without the overlay.
-- **It only reads text when it changes**: with Read text on Automatically (the default), each new screen is
-  read once after it settles; "Only when I press L + R" reads nothing until the press. No battery claim:
-  battery use is not measured.
-- **Easy install**: the one-VPK flow (above); the app never restarts the Vita itself.
+  Anki", "Queued for Anki", "Anki queue: N · export in the … app"). Mining is off by default, so the overlay
+  after a first install (scene 7) has no queue line and no "× queue".
+- **With screenshots**: the card keeps the game's whole frame when × is pressed, without the overlay (#150;
+  the app's Screenshots setting is on by default); the card in scene 4 is the app's own export of it.
+- **It only reads text when it changes**: Read text on Automatically (the default) reads each new screen
+  once it settles; "Only when I press L + R" reads nothing until the press (#146). No battery claim: battery
+  use is not measured.
+- **Easy install**: the one-VPK install (#158; the README's Install, `docs/one-vpk-install.md`): the
+  release's VPK, copied to the Vita and installed in VitaShell (its own two questions), then the app's
+  Install page, then a restart by the user (the app never restarts the Vita). Every game is ON by default
+  and the kernel loads the OCR worker into each (#148), so no per-game step follows. Not yet verified on a
+  console: the owner's test.4 run checks it; the film is published as final only once it does.
 - **L + R**: the default `toggle_button` is `l+r`.
-- **Turn it off per game**: the Overlay app's Games page; the status line is the app's own.
+- **Turn it off per game**: the app's Games page; the status line is the app's own.
+
+Drawn by the film itself, not captured: the console and the hands; the home screen and the LiveArea pages
+(simplified, with the app's own icon, name and LiveArea art); VitaShell's screens, from VitaShell 2.02's
+layout, Default theme and strings, with the release's file and its size as VitaShell writes it; the
+Releases page, with the release's files and sizes as GitHub writes them; the restart, shown as the screen
+going dark. The release is the one its checkout builds (version 0.8.0); the published release's sizes may
+differ by a few bytes.
 
 ## Licences
 
 | Part | Source | Licence |
 | --- | --- | --- |
-| The composition's code (`src/`, `tools/`, `index.html`) | this project | GPL-3.0-only |
+| The composition's code (`src/`, `tools/`, `capture/`, `index.html`) | this project | GPL-3.0-only |
 | The console drawing (`assets/device/vita-white.svg`) | drawn from scratch from the console's published dimensions; no photo traced, no logos | CC0-1.0 |
 | The mock game 夕凪ステップ (`assets/vn/`), the game icons (`assets/icons/`) | promo-assets: original art made with FLUX.1 [schnell] (Apache-2.0), released CC0 (`assets/SOURCES.md`) | CC0-1.0 |
-| The Overlay app's pages (`assets/shots/`), icon and LiveArea art (`assets/app/`) | this project's app, captured in Vita3K; copies of `settings/assets/` | GPL-3.0-only |
-| The Anki card (`assets/anki/`) | Lapis 1.7.0's note type as Anki renders it, with JMdict content | GPL-3.0 (Lapis), CC BY-SA 4.0 (JMdict) |
+| The app's pages (`assets/shots/`), icon and LiveArea art (`assets/app/`) | this project's app, captured in Vita3K; copies of `settings/assets/` | GPL-3.0-only |
+| The Anki card (`assets/anki/`) | Lapis 1.7.0's note type as Anki renders it, with JMdict and Bee's Ultimate Kanji Dictionary content | GPL-3.0 (Lapis), CC BY-SA 4.0 (content) |
 | The music and the sound effects (`assets/audio/`) | promo-assets: synthesised, no samples | CC0-1.0 |
 | Noto Sans JP, Zen Maru Gothic (`assets/fonts/`, subsets) | [google/fonts@9430147](https://github.com/google/fonts/tree/94301472b4d809299b4775bc6502592b83dd6934/ofl) | SIL OFL 1.1 |
-| The dictionary entries and their ranks | JMdict (EDRDG), the Jiten frequency list | CC BY-SA 4.0 |
+| The dictionary entries, kanji lines and ranks | JMdict (EDRDG); Bee's Ultimate Kanji Dictionary (Jiten, KANJIDIC2); the Jiten frequency list | CC BY-SA 4.0 |
 | VitaShell's strings, colours and layout | [VitaShell](https://github.com/TheOfficialFloW/VitaShell), recreated in HTML | GPL-3.0 |
 | HyperFrames, GSAP (`npm ci`, not committed) | heygen-com/hyperframes 0.8.162; gsap 3.14.2 | Apache-2.0; GreenSock's standard licence |
 

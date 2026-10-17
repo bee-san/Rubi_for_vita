@@ -6,10 +6,11 @@
 // and the device drawing. `node tools/build.mjs --check` fails when index.html is stale.
 //
 // What is drawn here, and from where:
-// - the overlay: src/overlay-states.json (main's layout and its own lookups), laid out as
-//   shell/rco/vitajpoverlay.xml and shell/overlay.cpp place it;
-// - nothing of the Overlay app: its pages are Vita3K captures (assets/shots/, tools/prep_assets.py);
-// - VitaShell's screens: VitaShell 81af709's layout, Default theme and strings.
+// - the overlay: src/overlay-states.json (the checkout's own render order, strings and lookups:
+//   capture/overlay_states.py), laid out as shell/rco/vitajpoverlay.xml and shell/overlay.cpp place it;
+// - nothing of the Overlay app: its pages are Vita3K captures (assets/shots/, capture/capture_app.sh);
+// - VitaShell's screens: VitaShell 81af709's layout, Default theme and strings, with the release's file;
+// - the Releases page: the release's file names and sizes (src/release.json).
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,17 +28,6 @@ const cps = (s) => Array.from(s);
 // hint centred at y 522; colours from core/styled.h.
 const RGB = { text: "#ffffff", highlight: "#ffd24a", reading: "#9fd0ff", rank: "#8a94a6", dim: "#b8c0cc", ok: "#7cd992" };
 const OV = JSON.parse(read("src/overlay-states.json")).states;
-// The second card's save shows "Saving card…" as the first does (s1-m2-ov04): the same code
-// path (shell/overlay.cpp), with 見に行く's entry and the queue at 1.
-OV["s1-m2-ov06b-miniiku-saving"] = {
-  ...OV["s1-m2-ov06-miniiku"],
-  body: [
-    ...OV["s1-m2-ov06-miniiku"].body.slice(0, 2),
-    { text: "Saving card…", rgb: "dim", px: 21 },
-    { text: "\n", rgb: "dim", px: 21 },
-    ...OV["s1-m2-ov06-miniiku"].body.slice(2),
-  ],
-};
 function overlayState(key, id) {
   const o = OV[key];
   if (!o) throw new Error(`no overlay state ${key}`);
@@ -72,7 +62,6 @@ const OV_STATES = [
   ["s1-m2-ov07-miniiku-saved", "ov-a8"],
   ["s3-m1-ov03-open", "ov-b1"],
   ["s3-m1-ov04-kodomonokoro", "ov-b2"],
-  ["s3-m1-ov05-mitai", "ov-b3"],
 ];
 
 // ---------------------------------------------------------------- the game (夕凪ステップ)
@@ -109,8 +98,14 @@ function vsRows(rows, focus) {
 }
 const VS_DATA = [
   ["..", "Folder", "2026/10/14 22:07"],
-  [S.RELEASE.vpk, S.RELEASE.vpkSizeShell, "2026/10/16 09:41"],
+  [S.RELEASE.vpk.name, S.RELEASE.vpk.vitashell, "2026/10/16 09:41"],
 ];
+// The Releases page's assets: the release's files, their sizes as GitHub shows them.
+const ghAssets = () =>
+  S.RELEASE.assets
+    .map((a, i) => `<div class="gh-asset"${i ? "" : ' id="gh-vpk"'}><i class="pk"></i><span class="gh-name">${esc(a.name)}</span>` +
+      `<span class="gh-size">${esc(a.github)}</span></div>`)
+    .join("\n                      ");
 
 // ---------------------------------------------------------------- captions
 const words = (html) =>
@@ -218,12 +213,13 @@ function build(layout, scale = 1) {
     W: String(Math.round(fw * scale)),
     H: String(Math.round(fh * scale)),
     LAYOUT: layout,
-    TITLE: portrait ? "Vita JP Overlay promo (1080x1920)" : "Vita JP Overlay promo (1920x1080)",
+    TITLE: `${S.LONG_NAME} promo (${portrait ? "1080x1920" : "1920x1080"})`,
     DURATION: String(S.T.total),
     CSS: read("src/promo.css") + draft,
     JS: read("src/promo.js")
       .replace("/*{{TIMES}}*/ null", JSON.stringify(S.T))
-      .replace("/*{{CUES}}*/ null", JSON.stringify(S.C)),
+      .replace("/*{{CUES}}*/ null", JSON.stringify(S.C))
+      .replace("/*{{CAPS}}*/ null", JSON.stringify(S.CAPTIONS)),
     DEVICE_SVG: device(),
     CAPTIONS: captions(),
     VN_NAME: esc(S.VN.name),
@@ -237,9 +233,15 @@ function build(layout, scale = 1) {
     VS_DATA_E: vsRows(VS_DATA.slice(0, 1), 0),
     VS_DATA_0: vsRows(VS_DATA, 0),
     VS_DATA_1: vsRows(VS_DATA, 1),
-    VPK: esc(S.RELEASE.vpk),
-    VPK_SIZE: esc(S.RELEASE.vpkSize),
+    VPK: esc(S.RELEASE.vpk.name),
+    GH_ASSETS: ghAssets(),
+    GH_COUNT: String(S.RELEASE.assets.length),
     VERSION: esc(S.RELEASE.version),
+    NAME: esc(S.NAME),
+    LONG_NAME: esc(S.LONG_NAME),
+    REPO: esc(S.REPO),
+    REPO_OWNER: esc(S.REPO.split("/")[0]),
+    REPO_NAME: esc(S.REPO.split("/")[1]),
     ENDCARD_FINE: esc(S.ENDCARD_FINE),
     SFX: sfx(),
   };

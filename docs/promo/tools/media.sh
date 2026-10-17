@@ -2,7 +2,7 @@
 # Makes the films' media from the renders (run after `npm run render` and `npm run render:vertical`):
 #   media/promo-1920x1080.mp4, media/promo-1080x1920.mp4: the renders with their sound brought to
 #     -16 LUFS integrated, true peak -1.5 dBTP (ffmpeg loudnorm, two passes; the picture is copied);
-#   media/promo.gif: the L + R lookup and the mining, 560 px wide, 10 fps (at most 5 MB);
+#   media/promo.gif: the L + R lookup and the mining, 540 px wide, 10 fps (at most 5 MB);
 #   media/poster.jpg and media/stills/: one still per scene, from the landscape film.
 # Needs ffmpeg and ffprobe (FFMPEG / FFPROBE override them) and python3.
 set -euo pipefail
@@ -21,16 +21,17 @@ norm() { # in out
 norm renders/promo-1920x1080.mp4 media/promo-1920x1080.mp4
 norm renders/promo-1080x1920.mp4 media/promo-1080x1920.mp4
 # the poster: the overlay on 一緒に (scene 2)
-"$FFMPEG" -hide_banner -loglevel error -y -ss 7.6 -i media/promo-1920x1080.mp4 -frames:v 1 -q:v 3 media/poster.jpg
+"$FFMPEG" -hide_banner -loglevel error -y -ss 7.8 -i media/promo-1920x1080.mp4 -frames:v 1 -q:v 3 media/poster.jpg
 # the README loop: L + R, the lookup, the mining (4.6-12.1 s), one 128-colour palette
 "$FFMPEG" -hide_banner -loglevel error -y -ss 4.6 -t 7.5 -i media/promo-1920x1080.mp4 \
-  -vf "fps=10,scale=560:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
+  -vf "fps=10,scale=540:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
   -loop 0 media/promo.gif
 size=$(stat -c %s media/promo.gif)
 if [ "$size" -gt 5000000 ]; then echo "media/promo.gif is $size B, over 5 MB" >&2; exit 1; fi
-# one still per scene: 1 2 3 4, 5 (and its setting), 6 (GitHub, VitaShell, the Install page, done), 7 8, the end card
+# one still per beat: 1 2 3 4, 5 (and its setting), 6 (GitHub, VitaShell, the Install page and its run, the result), 7 8,
+# the end card
 i=0
-for t in 2.6 7.6 11.6 16.9 20.6 22.6 24.3 26.4 28.9 30.3 34.6 40.4 43.0; do
+for t in 2.6 7.8 11.6 16.9 20.9 22.9 24.1 25.75 28.95 29.5 30.1 35.9 41.0 43.0; do
   i=$((i + 1))
   "$FFMPEG" -hide_banner -loglevel error -y -ss "$t" -i media/promo-1920x1080.mp4 -frames:v 1 -vf scale=1280:-1 -q:v 4 \
     "media/stills/$(printf '%02d' "$i")-$t.jpg"

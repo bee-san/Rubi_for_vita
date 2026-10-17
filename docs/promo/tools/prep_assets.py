@@ -1,25 +1,53 @@
 #!/usr/bin/env python3
-"""Copy the promo's shared art into docs/promo/assets, in the forms the composition loads.
+"""Copy the promo's art and captures into docs/promo/assets (and the overlay's states into src/).
 
-    python3 tools/prep_assets.py [SHARED_ASSETS_DIR]
+    python3 tools/prep_assets.py CAPTURE_DIR CHECKOUT [SHARED_ASSETS_DIR]
 
-SHARED_ASSETS_DIR is promo-assets' folder (MANIFEST.md lists every file's licence, source and
-sha256; default: the fleet's shared path). Needs Pillow. Writes:
-
-- assets/vn/: the mock visual novel 夕凪ステップ (original, CC0): the three backgrounds as JPEG
-  (from bg@2x.png, 1920 x 1088) and the heroine's three expressions (vn/sprite/*.png);
-- assets/shots/: the Overlay app as main draws it, captured in Vita3K (main 1ed95ca), each
-  checked against settings/main.c's accent colour;
+CAPTURE_DIR is capture/run.sh's output for CHECKOUT, the vita-jp-overlay checkout the film shows (its commit is
+CAPTURE_DIR/commit.txt); SHARED_ASSETS_DIR is promo-assets' folder (the original mock game's art, the sound;
+its MANIFEST.md has each file's licence, source and sha256; default: the fleet's shared path). Needs Pillow.
+Writes:
+- src/overlay-states.json: the overlay at each beat (capture/overlay_states.py);
+- assets/shots/: the Overlay app in Vita3K (capture/capture_app.sh): its Install page, the run and its result,
+  Games and OCR & lookup, each checked against settings/main.c's accent colour;
+- assets/anki/: the mined card's front and back as Anki renders it; assets/vn/shot-s1-m2.jpg: its screenshot,
+  the game worker's JPEG (capture/run.sh);
+- assets/app/: the app's icon and LiveArea art, the checkout's settings/assets/;
+- assets/vn/, assets/audio/, assets/icons/: the mock game, the sound and the home screen's icons (promo-assets);
+- src/release.json: the release's file names and sizes (capture/run.sh release/sizes.json);
 - assets/SOURCES.md: each output with the sha256 of its input and of itself.
 """
 import hashlib
+import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/local/home/skerraut/herd-vita-ocr/shared/artifacts/promo-v2/assets")
+CAP = Path(sys.argv[1]).resolve()
+CHECKOUT = Path(sys.argv[2]).resolve()
+SRC = Path(sys.argv[3]) if len(sys.argv) > 3 else Path("/local/home/skerraut/herd-vita-ocr/shared/artifacts/promo-v2/assets")
+
+# The app's shots, by capture run and hold (capture/split_holds.py) or the Install page's run frame
+# (CAPTURE_DIR/app/run/progress/f-NNN.png), as the run's contact sheets show them (holds-*/contact.png):
+# the capture script's beats (capture/app_capture_patch.py) are one hold each. Checked by eye for each capture.
+APP_SHOTS = {
+    "install-1-plan": ("holds-1", 4),          # Install the overlay (v0.8.0): the plan, [Install]
+    "install-2-checking": ("progress", 10),    # Installing...: Checking this app's plaintext.vjdict, 33.8 of 157.3 MB
+    "install-3-checking": ("progress", 27),    # ... 115.1 of 157.3 MB
+    "install-4-copying": ("progress", 37),     # Copying VOCR4_W20_w8.vocr
+    "install-5-copying": ("progress", 40),     # Copying vocr_lm_o3_4000k.vlm
+    "install-6-done": ("holds-1", 5),          # The overlay is installed: Installed ... Restart the Vita now
+    "games-1-top": ("holds-2", 3),             # Games, as the app opens once it is installed
+    "games-2-down": ("holds-2", 4),            # Down: Courier Run
+    "games-3-down": ("holds-2", 5),            # Down: Ember Garden
+    "games-4-off": ("holds-2", 6),             # Enter: Ember Garden OFF, "Saved. Resume or restart your game to apply."
+    "read-1-auto": ("holds-2", 17),            # OCR & lookup scrolled to Read text: Automatically (when it changes)
+    "read-2-on-press": ("holds-2", 18),        # Right: Only when I press L + R, "Saved. Resume your game, then reopen ..."
+}
 
 rows = []
 
@@ -28,8 +56,16 @@ def sha(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 
+def rel(p):
+    p = Path(p).resolve()
+    for base, name in ((CAP, "capture"), (CHECKOUT, "checkout"), (SRC.resolve(), "promo-assets")):
+        if p.is_relative_to(base):
+            return f"{name}: {p.relative_to(base)}"
+    return str(p)
+
+
 def note(src, out, how):
-    rows.append((str(out.relative_to(ROOT)), str(src.relative_to(SRC)), sha(src), sha(out), how))
+    rows.append((str(out.relative_to(ROOT)), rel(src), sha(src), sha(out), how))
 
 
 def jpeg(src, out, q=90):
@@ -37,84 +73,88 @@ def jpeg(src, out, q=90):
     note(src, out, f"JPEG q{q} 4:4:4")
 
 
-def copy(src, out):
-    out.write_bytes(src.read_bytes())
-    note(src, out, "copy")
+def copy(src, out, how="copy"):
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, out)
+    note(src, out, how)
 
 
 ACCENT = (91, 220, 207)  # settings/main.c ACCENT: the 4 px bar along the top of every page
 
 
 def app_shot(src, out):
-    """A capture of the Overlay app, checked against settings/main.c's colours (an earlier cut of
-    these captures had red and blue swapped)."""
+    """A Vita3K capture of the Overlay app, checked against settings/main.c's colours (the Xvfb path swaps red and
+    blue; capture/split_holds.py swaps them back)."""
     im = Image.open(src).convert("RGB")
+    if im.size != (960, 544):
+        sys.exit(f"{src}: {im.size}, not the Vita's 960 x 544")
     got = im.getpixel((480, 1))
     if any(abs(a - b) > 3 for a, b in zip(got, ACCENT)):
         sys.exit(f"{src}: top bar {got}, expected settings/main.c's ACCENT {ACCENT}")
     im.save(out, optimize=True)
-    note(src, out, "copy (colours checked against settings/main.c)")
+    note(src, out, "PNG (colours checked against settings/main.c)")
 
 
 def main():
+    commit = (CAP / "commit.txt").read_text().strip()
+    head = subprocess.run(["git", "-C", str(CHECKOUT), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    if head != commit:
+        sys.exit(f"the capture is of {commit[:7]}, the checkout is at {head[:7]}")
+    for d in ("vn", "shots", "anki", "app", "audio", "icons"):
+        (ROOT / "assets" / d).mkdir(parents=True, exist_ok=True)
+    for old in (ROOT / "assets" / "shots").glob("*.png"):
+        old.unlink()
+    for old in (ROOT / "assets" / "anki").glob("*.png"):
+        old.unlink()
+    # the overlay's states (the checkout's own render order, strings and lookups)
+    copy(CAP / "overlay-states.json", ROOT / "src" / "overlay-states.json")
+    # the mock game (original, CC0: promo-assets) and its heroine
     vn = ROOT / "assets" / "vn"
-    shots = ROOT / "assets" / "shots"
-    vn.mkdir(parents=True, exist_ok=True)
-    shots.mkdir(parents=True, exist_ok=True)
     for s in ("s1", "s2", "s3"):
         jpeg(SRC / "vn" / s / "bg@2x.png", vn / f"bg-{s}.jpg")
-    # the card's screenshot: the game's whole frame when × is pressed, without the overlay, as
-    # overlay-anki-screenshot's own encoder makes it (quality 70), and the card its exporter makes,
-    # rendered by Anki: MOCK-UPS until that branch merges
-    shot = SRC / "anki" / "with-screenshot-MOCKUP-feat-anki-screenshot"
-    copy(shot / "MOCKUP-screenshot-s1-m2-q70.jpg", vn / "shot-s1-m2.jpg")
+    for e in ("smile", "surprised", "happy"):
+        copy(SRC / "vn" / "sprite" / f"hinata-{e}.png", vn / f"hinata-{e}.png")
+    # the card's screenshot: the game worker's JPEG of the game's frame when × is pressed (the overlay is not in it)
+    copy(CAP / "anki" / "shot-s1-m2-q70.jpg", vn / "shot-s1-m2.jpg", "copy (core/jpegsw.c at quality 70, host vjo-jpeg)")
+    # the card as Anki renders it (Lapis), front and back
     anki = ROOT / "assets" / "anki"
-    anki.mkdir(parents=True, exist_ok=True)
-    copy(shot / "png" / "card-1-back-desktop-light-MOCKUP.png", anki / "card-1-back-mockup.png")
-    copy(shot / "png" / "card-1-front-desktop-light-MOCKUP.png", anki / "card-1-front-mockup.png")
-    # the music and the sound effects (CC0, promo-assets: audio/MANIFEST-fragment.md)
+    copy(CAP / "anki" / "png" / "card-1-front-desktop-light.png", anki / "card-1-front.png", "copy (Anki 26.09.3, Lapis 1.7.0)")
+    copy(CAP / "anki" / "png" / "card-1-back-desktop-light.png", anki / "card-1-back.png", "copy (Anki 26.09.3, Lapis 1.7.0)")
+    # the app in Vita3K
+    run = CAP / "app" / "run"
+    for name, (where, k) in APP_SHOTS.items():
+        src = run / where / (f"f-{k:03d}.png" if where == "progress" else f"hold-{k:02d}.png")
+        app_shot(src, ROOT / "assets" / "shots" / f"{name}.png")
+    # the app's icon and LiveArea art (the bubble, the LiveArea page, the end card)
+    for n in ("icon0.png", "bg.png", "startup.png"):
+        copy(CHECKOUT / "settings" / "assets" / n, ROOT / "assets" / "app" / n)
+    # the music and the sound effects (CC0, promo-assets: audio/README.md)
     audio = ROOT / "assets" / "audio"
-    audio.mkdir(parents=True, exist_ok=True)
     copy(SRC / "audio" / "music" / "bed-44s.m4a", audio / "bed-44s.m4a")
     for n in ("click", "lr", "dpad", "whoosh-in", "whoosh-out", "swish", "pop", "chime", "confirm",
               "text-blip-1", "text-blip-2", "text-blip-3", "text-blip-4", "text-blip-5"):
         copy(SRC / "audio" / "sfx" / f"{n}.wav", audio / f"sfx-{n}.wav")
-    for e in ("smile", "surprised", "happy"):
-        copy(SRC / "vn" / "sprite" / f"hinata-{e}.png", vn / f"hinata-{e}.png")
-    cap = SRC / "app" / "main-1ed95ca" / "png"
-    for n in ("01-games-top", "02-games-scroll-1", "03-games-scroll-2", "04-games-neon-drift-selected",
-              "05-games-neon-drift-OFF-saved"):
-        app_shot(cap / f"{n}.png", shots / f"app-{n}.png")
-    # PR #146 (feat/ocr-mode-setting 21488a7, not merged yet): its Read text row, in Vita3K
-    pr = SRC / "app" / "pr146-ocr-mode-21488a7-NOT-MERGED" / "png"
-    # the page scrolled so that Read text is its first card (the owner dropped the model choice
-    # from the video: Model size is not in view)
-    app_shot(pr / "PR146-10-read-text-at-top-automatically.png", shots / "pr146-read-auto.png")
-    app_shot(pr / "PR146-11-read-text-at-top-only-when-I-press-LR.png", shots / "pr146-read-on-press.png")
-    # the one-VPK install's Install page (overlay-one-vpk-install's design, not built yet), drawn by
-    # the app's own drawing code in Vita3K: a MOCK-UP (promo-assets' README-MOCKUP.md)
-    mk = SRC / "app" / "install-MOCKUP-one-vpk" / "png"
-    for n in ("01-install-plan", "02-installing-plugins-and-models", "03-installing-checking-the-dictionary-56MB",
-              "04-installing-checking-the-dictionary-121MB", "05-installing-config-txt-lines",
-              "06-installed-restart-the-vita-now"):
-        app_shot(mk / f"MOCKUP-{n}.png", shots / f"install-MOCKUP-{n[:2]}.png")
-    # the home screen's icons: the icon0.png files the app capture installed
-    icons = ROOT / "assets" / "icons"
+    # the home screen's icons: the icon0.png files the app capture installed (capture/make_promo_games.py)
     for p in sorted((SRC / "app" / "icons").glob("PROMO000[1-5]-*.png")):
-        copy(p, icons / (p.name[:9] + ".png"))
+        copy(p, ROOT / "assets" / "icons" / (p.name[:9] + ".png"))
+    # the release's names and sizes (the Releases page, VitaShell's list)
+    sizes = json.loads((CAP / "release" / "sizes.json").read_text())
+    (ROOT / "src" / "release.json").write_text(json.dumps({"commit": commit, "files": sizes}, indent=1) + "\n")
+    note(CAP / "release" / "sizes.json", ROOT / "src" / "release.json", "the sizes of capture/run.sh's package_variants.py release")
     lines = [
         "# Where the composition's art comes from",
         "",
-        "Written by `tools/prep_assets.py` from promo-assets' shared folder (its MANIFEST.md has each",
-        "input's licence and source). The VN art is original (FLUX.1 [schnell], Apache-2.0, released CC0 by",
-        "promo-assets); the app shots are Vita3K captures of this repository's Overlay app (GPL-3.0).",
+        f"Written by `tools/prep_assets.py` from `capture/run.sh`'s output for vita-jp-overlay `{commit[:7]}` (the real",
+        "captures: the overlay's states, the card, the app in Vita3K, the release's sizes), that checkout's",
+        "`settings/assets/`, and promo-assets' shared folder (the original mock game, the sound; its MANIFEST.md has each",
+        "file's licence and source).",
         "",
         "| output | input | input sha256 | output sha256 | how |",
         "| --- | --- | --- | --- | --- |",
     ]
     lines += [f"| `{o}` | `{i}` | `{a[:16]}…` | `{b[:16]}…` | {h} |" for o, i, a, b, h in rows]
     (ROOT / "assets" / "SOURCES.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"{len(rows)} files")
+    print(f"{len(rows)} files from {commit[:7]}")
 
 
 if __name__ == "__main__":

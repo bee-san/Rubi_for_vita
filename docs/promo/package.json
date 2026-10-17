@@ -1,13 +1,14 @@
 {
-  "name": "vita-jp-overlay-promo",
+  "name": "rubi-promo",
   "version": "1.0.0",
   "private": true,
-  "description": "HyperFrames source of the Vita JP Overlay promo video (v2: continuous motion)",
+  "description": "HyperFrames source of the Rubi promo video",
   "license": "GPL-3.0-only",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "capture": "bash capture/run.sh",
     "prep": "python3 tools/prep_assets.py",
     "build": "node tools/build.mjs",
     "fonts": "python3 tools/fonts.py",

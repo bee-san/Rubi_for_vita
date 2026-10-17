@@ -1,20 +1,24 @@
 // The promo's words and timing in one place (read by tools/build.mjs, which injects T and C into
-// src/promo.js and places the sound effects). Everything on the console's screen is checked
-// against the code; README.md says what each shot shows and what is a mock-up.
+// src/promo.js and places the sound effects). Everything on the console's screen is a capture of the
+// code or is laid out from it; README.md says which and from where.
 //
-// 44.0 s at 120 BPM: a beat is 0.5 s, a bar 2 s (the music is 22 bars).
+// 44.0 s at 120 BPM: a beat is 0.5 s, a bar 2 s (the music is 22 bars). The owner's note on the
+// first cut (#134, 14:15Z: "the pressing is a little too fast, slow it down a tad"): every press is
+// slower (tools: press() and the fingers in src/promo.js) and no two presses come closer than 0.5 s,
+// the busiest scenes (the install, turning a game off) given time from the quieter ones.
+import { readFileSync } from "node:fs";
 
 // Scene starts (the owner's script, in his order; his line 9 was dropped on 2026-10-15).
 export const T = {
   s1: 0, //    Learn Japanese with your PS Vita for free
   s2: 4.5, //  Look up words from the games you play, entirely offline
   s3: 10.0, // Create flashcards of words you don't know
-  s4: 14.5, // With screenshots
+  s4: 14.6, // With screenshots
   s5: 19.0, // It only reads text when it changes
   s6: 23.5, // Easy install
   s7: 31.0, // Now it's installed: go to your game and press L + R to look up words.
-  s8: 37.0, // Turn it off for specific games, so it doesn't get in the way
-  end: 41.5,
+  s8: 36.5, // Turn it off for specific games, so it doesn't get in the way
+  end: 41.7,
   total: 44.0,
 };
 
@@ -23,86 +27,93 @@ export const T = {
 export const C = {
   // S1: the game types its first line; × shows the next.
   typeA: 0.35,
-  pressX1: 3.5,
-  typeB: 3.62,
+  pressX1: 3.45,
+  typeB: 3.6,
   // S2: L + R opens the overlay on また明日; Right goes to 一緒に.
   lr1: 5.0,
   ovOpen1: 5.1,
-  right1: 6.6,
-  // S3: × saves 一緒に (and its screenshot); Right, × saves 見に行く.
-  mine1: 10.75,
-  saved1: 11.25,
-  land1: 12.0,
-  right2: 12.25,
-  mine2: 12.9,
-  saved2: 13.35,
-  land2: 14.05,
+  right1: 6.75,
+  // S3: × saves 一緒に (and its screenshot); Right, × saves 見に行く. "Saving card…" about 0.5 s
+  // (shell/anki.c; an estimate, not measured on a console).
+  mine1: 10.7,
+  saved1: 11.2,
+  land1: 11.95,
+  right2: 12.45,
+  mine2: 13.25,
+  saved2: 13.75,
+  land2: 14.4,
   // S4: the card in Anki.
-  whipA: 14.45,
-  cardOpen: 14.95,
-  whipB: 18.55,
+  whipA: 14.6,
+  cardOpen: 15.1,
+  whipB: 18.75,
   // S5: ○ closes the overlay, × shows a new line; the Overlay app's Read text.
-  pressO1: 19.4,
-  pressX2: 19.85,
-  typeC: 20.35,
-  appIn: 21.15,
-  right3: 21.95,
+  pressO1: 19.55,
+  pressX2: 20.15,
+  typeC: 20.6,
+  appIn: 21.45,
+  right3: 22.35,
   // S6: the install: the release, VitaShell, the app's Install page, a restart.
-  laptopIn: 23.55,
-  clickVpk: 24.4,
-  fileFly: 24.9,
-  shellIn: 25.55,
-  vsX1: 25.9,
-  vsX2: 26.25,
-  vsX3: 26.75,
-  vsDone: 27.25,
-  ps1: 27.45,
-  tapBubbleApp: 27.85,
-  tapStartApp: 28.2,
-  installX: 28.6,
-  installDone: 29.3,
-  restart: 29.95,
-  // S7: the game, L + R, Right, Right.
+  laptopIn: 23.45,
+  clickVpk: 24.05,
+  fileFly: 24.45,
+  shellIn: 25.05,
+  vsX1: 25.45,
+  vsX2: 26.05,
+  vsX3: 26.65,
+  vsDone: 27.3,
+  ps1: 27.6,
+  tapBubbleApp: 28.1,
+  tapStartApp: 28.6,
+  installX: 29.35,
+  installDone: 30.0,
+  restart: 30.45,
+  // S7: the game, L + R, Right.
   boot: 31.1,
-  tapBubbleGame: 31.65,
-  tapStartGame: 32.05,
-  typeD: 32.4,
-  lr2: 33.8,
-  ovOpen2: 33.9,
-  right4: 35.1,
-  right5: 35.9,
-  // S8: ○, PS, the home screen, Overlay, Games: Down, Down, × turns Neon Drift OFF.
-  pressO2: 36.75,
-  ps2: 37.15,
-  flick: 37.6,
-  tapBubbleApp2: 38.15,
-  tapStartApp2: 38.55,
-  down1: 39.0,
-  down2: 39.35,
-  toggle: 39.8,
+  tapBubbleGame: 31.7,
+  tapStartGame: 32.2,
+  typeD: 32.55,
+  lr2: 33.9,
+  ovOpen2: 34.0,
+  right4: 35.2,
+  // S8: ○, PS, the home screen, the app, Games: Down, Down, × turns Ember Garden OFF.
+  pressO2: 36.65,
+  ps2: 37.2,
+  flick: 37.75,
+  tapBubbleApp2: 38.3,
+  tapStartApp2: 38.8,
+  down1: 39.4,
+  down2: 39.9,
+  toggle: 40.45,
 };
 
 // A western console: × enters, ○ cancels (core/buttons.h).
 export const ENTER = "×";
 export const CANCEL = "○";
 
+// The product's name in what the film draws itself (owner, 2026-10-16 13:04Z: "Rubi", "Rubi for Vita";
+// docs/rename-rubi.md): the app's bubble and LiveArea title, the install step, the end card, the address.
+export const NAME = "Rubi";
+export const LONG_NAME = "Rubi for Vita";
+export const REPO = "bee-san/Rubi_for_vita";
+
 // Captions: the owner's script. <em> marks the accent words.
 export const CAPTIONS = {
   cap1: { h: "Learn Japanese with your PS&nbsp;Vita <em>for free</em>", in: 0.6, out: 4.3 },
   cap2: { h: "Look up words from the games you play, <em>entirely offline</em>", in: 4.55, out: 9.8 },
-  cap3: { h: "Create flashcards of <em>words you don't know</em>", in: 10.05, out: 14.3 },
-  cap4: { h: "With <em>screenshots</em>", in: 14.6, out: 18.75 },
-  cap5: { h: "It only reads text <em>when it changes</em>", p: "or only when you press L&nbsp;+&nbsp;R", pIn: 21.6, in: 19.1, out: 23.3 },
-  cap6: { h: "<em>Easy install</em>", in: 23.6, out: 31.0 },
-  cap7: { h: "Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.", in: 31.15, out: 36.6 },
-  cap8: { h: "Turn it off for specific games, <em>so it doesn't get in the way</em>", in: 36.7, out: 41.35 },
+  cap3: { h: "Create flashcards of <em>words you don't know</em>", in: 10.05, out: 14.4 },
+  cap4: { h: "With <em>screenshots</em>", in: 14.7, out: 18.75 },
+  cap5: { h: "It only reads text <em>when it changes</em>", p: "or only when you press L&nbsp;+&nbsp;R", pIn: 21.85, in: 19.1, out: 23.3 },
+  cap6: { h: "<em>Easy install</em>", in: 23.6, out: 31.25 },
+  cap7: { h: "Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.", in: 31.55, out: 36.45 },
+  cap8: { h: "Turn it off for specific games, <em>so it doesn't get in the way</em>", in: 36.75, out: 41.5 },
 };
 
-// Scene 6's steps, shown under its caption (the one-VPK install, overlay-one-vpk-install's design).
+// Scene 6's steps, shown under its caption (the one-VPK install: docs/one-vpk-install.md, the README's
+// Install; promo-final-flow.txt).
 export const STEPS = [
   "Download the <em>.vpk</em>",
   "Install it in <em>VitaShell</em>",
-  "Open <em>Overlay</em>: Install, restart",
+  `Open <em>${NAME}</em>: Install, restart`,
 ];
 
 // The mock visual novel 夕凪ステップ (original; promo-assets' vn/). Every line is read exactly by
@@ -117,8 +128,8 @@ export const VN = {
   m4: "「キラキラ……。\n子供の頃みたい。」",
 };
 
-// The games on the home screen and in the Overlay app's list (promo-assets' Vita3K capture:
-// src/app_capture/make_promo_games.py, original titles and icons).
+// The games on the home screen and in the app's list (capture/make_promo_games.py: original titles and
+// icons, installed on the capture's card).
 export const GAMES = {
   PROMO0001: "夕凪ステップ",
   PROMO0002: "Neon Drift",
@@ -127,21 +138,28 @@ export const GAMES = {
   PROMO0005: "Hoshizora Diary",
 };
 
-// The release (overlay-one-vpk-install: the normal build's VPK is the main download, about 53 MB,
-// an estimate from the release zip's 53,005,464 B). Version: the one its design shows.
+// The release: the files package_variants.py makes of the checkout the film shows (src/release.json,
+// written by tools/prep_assets.py from capture/run.sh), in the order the README's Install lists them.
+// Their sizes are what the Releases page and VitaShell show for them (both 1024-based: GitHub one
+// decimal, VitaShell's getSizeString() two). Named as after the rename (docs/rename-rubi.md:
+// Rubi-<version>.vpk); a checkout from before it names them VitaJPOverlay-<version>.
+const REL = JSON.parse(readFileSync(new URL("./release.json", import.meta.url), "utf8")).files;
+const relName = (suffix) => {
+  const k = Object.keys(REL).find((n) => n.endsWith(suffix) && (suffix.includes("debug") || !n.includes("-debug")));
+  if (!k) throw new Error(`release.json has no *${suffix}`);
+  return { name: k.replace(/^VitaJPOverlay-/, `${NAME}-`), ...REL[k] };
+};
 export const RELEASE = {
   version: "0.8.0",
-  vpk: "VitaJPOverlay-0.8.0.vpk",
-  // GitHub's release page and VitaShell show sizes 1024-based: 53,005,464 B is 50.6 MB on the one and
-  // 50.55 MB (getSizeString(), two decimals) on the other; both estimates
-  vpkSize: "50.6 MB",
-  vpkSizeShell: "50.55 MB",
+  assets: [relName("0.8.0.vpk"), relName("0.8.0-debug.vpk"), relName("0.8.0.zip"), relName("0.8.0-debug.zip"),
+    { name: "SHA256SUMS", ...REL.SHA256SUMS }],
 };
+RELEASE.vpk = RELEASE.assets[0];
 
 export const ENDCARD_FINE =
   "Not affiliated with or endorsed by Sony Interactive Entertainment. The game shown is an original mock-up made for this video. " +
-  "Dictionary entries: JMdict (EDRDG, CC BY-SA 4.0). Frequency ranks: the Jiten frequency list (CC BY-SA 4.0). " +
-  "Card design: the Lapis note type (GPL-3.0).";
+  "Dictionary entries: JMdict (EDRDG, CC BY-SA 4.0); kanji lines: Bee's Ultimate Kanji Dictionary (Jiten, KANJIDIC2; CC BY-SA 4.0). " +
+  "Frequency ranks: the Jiten frequency list (CC BY-SA 4.0). Card design: the Lapis note type (GPL-3.0).";
 
 // The lines as they type: [message, start, seconds per character] (promo.js types them so).
 export const TYPING = [
@@ -170,7 +188,7 @@ export const SFX = [
   ["click", C.pressX2, 0.5],
   ["swish", C.appIn - 0.05, 0.35],
   ["dpad", C.right3, 0.45],
-  ["whoosh", C.laptopIn - 0.15, 0.35],
+  ["whoosh", C.laptopIn - 0.1, 0.35],
   ["tap", C.clickVpk, 0.55],
   ["whoosh", C.fileFly, 0.3],
   ["click", C.vsX1, 0.5],
@@ -186,7 +204,6 @@ export const SFX = [
   ["tap", C.tapStartGame, 0.55],
   ["lr", C.lr2, 0.6],
   ["dpad", C.right4, 0.45],
-  ["dpad", C.right5, 0.45],
   ["click", C.pressO2, 0.5],
   ["click", C.ps2, 0.5],
   ["swish", C.flick, 0.3],
