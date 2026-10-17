@@ -92,13 +92,30 @@ out:
     return TAI_CONTINUE(int, hook_ref, pid, ev, a3, a4, a5, a6);
 }
 
-/* vjoSetGameActive: the shell's verdict on the foreground process. */
+/* vjoSetGameActive: the shell's verdict on the foreground process. As in the
+ * hook, nothing is changed without g.game_lock. It is locked with no timeout,
+ * never recursively (neither holder calls this) and never cancelled, so only
+ * module_stop's delete_sync_objects makes the lock fail: a thread waiting in
+ * it wakes with SCE_KERNEL_ERROR_WAIT_DELETE, and a later lock names a deleted
+ * id (then 0) [SDK: Kernel-Overview, Deleting Synchronization Objects]. That
+ * does not come back, so the verdict is dropped, never retried: the
+ * foreground stays as it was (an app the Shell has not confirmed stays
+ * inactive: its input passes, no region of it is read; a confirmed game stays
+ * confirmed), the Shell gets the lock's error, and the first refusal is
+ * logged, once a boot. */
+static int lock_refusal_logged;
+
 int lifecycle_set_game_active(SceUID pid, int mode)
 {
     VjoForeground f;
     uint32_t iev;
-    int ret = 0;
-    ksceKernelLockMutex(g.game_lock, 1, NULL);
+    int ret = 0, rc = ksceKernelLockMutex(g.game_lock, 1, NULL);
+    if (rc < 0) {
+        if (!__atomic_exchange_n(&lock_refusal_logged, 1, __ATOMIC_RELAXED))
+            klog("vjoSetGameActive(pid 0x%X, mode %d) not applied: the game lock refused 0x%08X, the foreground is "
+                 "unchanged (logged once a boot)", pid, mode, rc);
+        return rc;
+    }
     f = fg_load();
     if (fg_set_game_active(&f, pid, mode, &iev) < 0) {
         ret = VJO_ERR_NO_GAME;
