@@ -340,11 +340,20 @@ only when nothing points the other way, because those dumps can be archived off 
     boot when this boot's `kernel.txt` or `status.txt` (both rewritten every boot) was last written
     before the boot began. Nothing is placed in either case.
 - **The clock, checked at `kernel.txt`'s last write.** The kernel's foreground and game lines carry
-  the uptime (`t=… ms`, the system time since power-on), and so do the debug build's input lines.
-  When `kernel.txt`'s last line is one of them, its LIST time less that uptime is this boot's start
-  by the clock at that write. A `game exit` line may follow the foreground line of its own exit or
-  suspend. test.3's `kernel.txt`, last written at 07:15 and ending at 878,340 ms, puts its start at
-  07:00:21–07:01:21, inside its window.
+  the uptime (`t=… ms`, the system time since power-on), and so does the debug build's `input block=`
+  line. When `kernel.txt`'s last line is one of them, its LIST time less that uptime is this boot's
+  start by the clock at that write. test.3's `kernel.txt`, last written at 07:15 and ending at
+  878,340 ms, puts its start at 07:00:21–07:01:21, inside its window.
+  - A final `game exit` may follow a game's exit or suspend line, as the worker's own line for
+    that event. A `game exit` alone, though, comes from any app that exits without a line of its own
+    (the Overlay app closed, VitaShell), at any later time. And the hook raises the worker's flag
+    before it logs its own line (`kernel/lifecycle.c` `fg_store`), so the event's `game exit` can
+    come first: test.3's `kernel.txt` has that order at lines 104–105.
+  - The kernel logs every foreground line, and every `game pid … active` and `pid … gone` or
+    `is not a game` line, while it holds its foreground lock, and it raises that flag within the
+    hold. So an event's `game exit` logged before its own line lies after the last such line before
+    it. The final `game exit` counts as the line's own only when no other `game exit` lies between
+    them; otherwise the clock is not checked.
   - A start before the window means the clock was set back during this boot, or between the boots,
     and nothing is placed.
   - A start more than 2 minutes after the window means the clock went forward, which may hide a

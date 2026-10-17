@@ -437,6 +437,36 @@ class Placement(unittest.TestCase):
         self.assertEqual(f.dumps()["boot"]["clock"]["state"], "checked")
         self.assertEqual(self.placed(f)[app], ("before", "dated before this boot began"))
 
+    def test_delta_audit_b2_a_raced_game_exit_and_a_lone_one(self):
+        # the clock set back 1 hour 5 minutes into the boot, after status.txt's last write; the Overlay app (whose pid the
+        # kernel never names) crashes at 12:10 true, dated 11:10. The game's suspend at 30 minutes has its game exit
+        # logged first, and the Overlay app's exit at 13:30 true, dated 12:30, ends kernel.txt with a lone game exit
+        f = self.folder(kernel=KERNEL_HEAD + "game exit\ngame exit\nforeground 0x20000 -> 0x0 (suspend) t=1800000 ms\n"
+                                             "game exit\n")
+        f.times["ux0:/data/VitaJPOverlay"]["kernel.txt"] = unix("2026-10-20 12:30:20")
+        f.times["ux0:/data/VitaJPOverlay"]["status.txt"] = unix("2026-10-20 12:04:00")
+        f.save()
+        app = f.dump(unix("2026-10-20 11:10:00"), 0x50000, "eboot.bin")
+        self.assertEqual(f.dumps()["boot"]["clock"]["state"], "unchecked")
+        self.assertEqual(self.placed(f)[app], ("unclear", self.UNCHECKED))
+
+    def test_the_forward_tolerance(self):
+        # with the clock unchanged the start lies in the window, at most LIST's minute after its close; 2 minutes more
+        # are allowed. The window closes at 12:01:04; kernel.txt's last write is in the minute 13:30
+        cases = {  # uptime of the last line -> (this boot's start by the clock, the clock checked)
+            5_340_000: ("2026-10-20 12:01:00 to 2026-10-20 12:01:59", True),  # a minute after the close
+            5_249_000: ("2026-10-20 12:02:31 to 2026-10-20 12:03:30", False),  # its latest second past 12:03:04
+            5_160_000: ("2026-10-20 12:04:00 to 2026-10-20 12:04:59", False),  # 3 minutes after
+        }
+        for uptime, (start, checked) in cases.items():
+            with self.subTest(uptime=uptime):
+                f = self.folder(kernel=kernel_text(last_ms=uptime))
+                old = f.dump(unix("2026-10-19 10:00:00"), 0x72FC5, "eboot.bin")
+                clock = f.dumps()["boot"]["clock"]
+                self.assertIn(f"put this boot's start at {start}", clock["why"])
+                self.assertEqual(clock["state"], "checked" if checked else "unchecked")
+                self.assertEqual(self.placed(f)[old][0], "before" if checked else "unclear")
+
     def test_a_clock_gone_forward(self):
         # kernel.txt's last write gives a start an hour after the window: the clock went forward (or the Vita slept),
         # which may hide a set-back before it
@@ -458,6 +488,31 @@ class Placement(unittest.TestCase):
             "game exit after its suspend": (kernel_text(), "checked", None),
             "game exit after a resume": (KERNEL_HEAD + "foreground 0x0 -> 0x20000 (resume) t=5400000 ms\ngame exit\n",
                                          "unchecked", "kernel.txt's last line carries no uptime (t=N ms)"),
+            # other threads' lines between the previous locked line ("game pid ... active") and the suspend
+            "game exit after its suspend, other lines between": (
+                kernel_text(extra="region settled: scene 1 (0 animated cells masked)\nocr job 1: first pass in (135 "
+                                  "rows, frame 960x544 fmt 00000000 pitch 1024), scene 1\n"), "checked", None),
+            # a suspend, a resume and a suspend: the first suspend's game exit lies before a locked line
+            "game exit after its suspend, an earlier suspend's before a resume": (
+                kernel_text(extra="foreground 0x20000 -> 0x0 (suspend) t=1000000 ms\ngame exit\n"
+                                  "foreground 0x0 -> 0x20000 (resume) t=1100000 ms\n"
+                                  "game pid 0x20000 active t=1100100 ms\n"), "checked", None),
+            # the delta audit's B2: the suspend's game exit logged first (test.3's lines 104-105), then a lone one,
+            # another app's exit, at any later time
+            "game exit, the suspend, a lone game exit": (
+                KERNEL_HEAD + "game exit\nforeground 0x20000 -> 0x0 (suspend) t=5400000 ms\ngame exit\n", "unchecked",
+                "kernel.txt ends with a game exit that may be a later app's: one is logged before its last foreground "
+                "line too, which the worker can log first"),
+            "game exit, another thread's line, the suspend, a lone game exit": (
+                KERNEL_HEAD + "game exit\ninput blocked hook=2 pid=20000 game=20000 read=00000300 write=00000000 "
+                "buttons=00000300 out=00000000 LR=1/1 L1R1=0/0 raw=00000300\n"
+                "foreground 0x20000 -> 0x0 (suspend) t=5400000 ms\ngame exit\n", "unchecked",
+                "kernel.txt ends with a game exit that may be a later app's: one is logged before its last foreground "
+                "line too, which the worker can log first"),
+            "game exit, then the suspend last": (
+                KERNEL_HEAD + "game exit\nforeground 0x20000 -> 0x0 (suspend) t=5400000 ms\n", "checked", None),
+            "the suspend's game exit, then a lone one": (kernel_text() + "game exit\n", "unchecked",
+                                                         "kernel.txt's last line carries no uptime (t=N ms)"),
             "uptimes that go back": (kernel_text(last_ms=50_000) + "foreground 0x0 -> 0x20000 (resume) t=40000 ms\n",
                                      "unchecked", "kernel.txt's uptimes go backwards"),
         }
@@ -956,6 +1011,51 @@ class Archive(unittest.TestCase):
                                             r"ux0:data still lists it\)")
             self.assertTrue((self.device / "ux0/data" / n).is_file())
         self.assertIn("archived: 0 deleted from the Vita, 2 left on it;", result.stdout)
+
+    def test_delta_audit_b2_end_to_end(self):
+        # the delta audit's B2 over the FTP mock: this boot's Overlay-app dump, dated before the boot by a clock set back
+        # during it, and kernel.txt ending with a raced game exit and a lone one: nothing is offered or deleted
+        self.put("ux0/data/VitaJPOverlay/kernel.txt", KERNEL_HEAD + "game exit\ngame exit\n"
+                 "foreground 0x20000 -> 0x0 (suspend) t=1800000 ms\ngame exit\n", "2026-10-20 12:30:20")
+        self.put("ux0/data/VitaJPOverlay/status.txt", "bootstrap: shell API 22 entered\n", "2026-10-20 12:04:00")
+        mine = self.put_dump("2026-10-20 11:10:00", 0x50000, "eboot.bin", 4000)
+        before = self.device_files()
+        with FtpMock(self.device, clock=lambda: self.VITA_NOW) as ftp:
+            result = self.run_ftp(ftp, "--collect")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the Vita's clock, NOT checked for this boot: kernel.txt ends with a game exit that may be a later "
+                      "app's", result.stdout)
+        self.assertNotIn("To archive them off the Vita", result.stdout)
+        with FtpMock(self.device, clock=lambda: self.VITA_NOW) as ftp:
+            result = self.run_ftp(ftp, "--archive-dumps")
+            deletes = [line for line in ftp.log if line.upper().startswith("DELE")]
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(deletes, [])
+        self.assertIn("crash dumps: none from before this boot to archive", result.stdout)
+        self.assertEqual(self.device_files(), before)
+        self.assertTrue((self.device / "ux0/data" / mine).is_file())
+
+    def test_a_lost_answer_then_no_listing_is_not_known(self):
+        # audit-b N-c: each DELE is done and its answer lost, then ux0:data cannot be listed again: not known, never
+        # "deleted" or "left on it"
+        with FtpMock(self.device, clock=lambda: self.VITA_NOW) as ftp:
+            self.assertEqual(self.run_ftp(ftp, "--collect").returncode, 0)
+        holder = {}
+        mock = FtpMock(self.device, clock=lambda: self.VITA_NOW, drop_after={"DELE": lambda arg: True},
+                       fail={"LIST": lambda arg: bool(holder["ftp"].stored)})  # every LIST after the first DELE
+        with mock as ftp:
+            holder["ftp"] = ftp
+            result = self.run_ftp(ftp, "--archive-dumps")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        for n in self.old:
+            self.assertIn(f"  not known: {n} (its DELE's answer was lost, and ux0:data could not be listed again)",
+                          result.stdout)
+            self.assertFalse((self.device / "ux0/data" / n).exists())  # done, though not known
+        self.assertIn("archived: 0 deleted from the Vita, 2 not known (a collect shows whether they are still there);",
+                      result.stdout)
+        log = (self.collect_folder() / "archive.log").read_text()
+        self.assertEqual(log.count(" unknown psp2core-"), 2)
+        self.assertNotIn(" deleted ux0:data/", log)
 
     def test_a_dump_whose_listed_time_changed_stays(self):
         # the same name and size, another LIST time: not the file this collect fetched

@@ -484,7 +484,8 @@ def archive_dumps(host, port, folder, plan=False):
     """--archive-dumps: deletes from ux0:data each crash dump of archive_plan, after a new listing shows the Vita's file
     still the size of the collect's checked copy, with DELE alone, then lists ux0:data again to see it gone; appends
     what it did to the collect's archive.log. With plan, prints them and sends nothing: exit 0 when there is one to
-    archive, 3 when there is none. Else 0 when each was archived, 2 when one was not or ux0:data cannot be listed."""
+    archive, 3 when there is none. Else 0 when each was archived, 2 when one was not or is not known, or ux0:data
+    cannot be listed."""
     folder = Path(folder)
     if not plan:
         try:
@@ -562,7 +563,7 @@ def archive_dumps(host, port, folder, plan=False):
     # the second listing, not DELE's answer, says what is gone: also of a DELE whose answer the connection lost
     status, lines = c.listdir("ux0:/data")
     left = {e["name"] for e in c.parse_list(lines)} if status == "ok" else None
-    deleted = 0
+    deleted = unknown = 0
     for d in sent:
         lost = d.get("lost")
         if left is not None and d["name"] in left:
@@ -575,7 +576,7 @@ def archive_dumps(host, port, folder, plan=False):
         if left is None and lost:
             print(f"  not known: {d['name']} (its DELE's answer was lost, and ux0:data could not be listed again)")
             log.append(f"{stamp} unknown {d['name']} (its DELE's answer lost: {lost}; not listed again)")
-            kept += 1
+            unknown += 1
             continue
         deleted += 1
         print(f"  deleted ux0:data/{d['name']} ({d['bytes']:,} B)" + (" (ux0:data could not be listed again)"
@@ -591,8 +592,10 @@ def archive_dumps(host, port, folder, plan=False):
     with (folder / "archive.log").open("a", encoding="utf-8") as f:
         f.write("".join(line + "\n" for line in log))
     print(f"archived: {deleted} deleted from the Vita" + (f", {gone} already gone" if gone else "")
-          + (f", {kept} left on it" if kept else "") + f"; {folder / 'archive.log'} lists them")
-    return 2 if kept else 0
+          + (f", {kept} left on it" if kept else "")
+          + (f", {unknown} not known (a collect shows whether they are still there)" if unknown else "")
+          + f"; {folder / 'archive.log'} lists them")
+    return 2 if kept or unknown else 0
 
 
 def main():

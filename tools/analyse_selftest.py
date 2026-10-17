@@ -2834,6 +2834,9 @@ KERNEL_FOREGROUND = re.compile(r"^foreground 0x([0-9A-Fa-f]+) -> 0x([0-9A-Fa-f]+
 KERNEL_UPTIME = re.compile(r"\bt=(\d+) ms\b")  # the system time since power-on (kernel/log.c klog_ms)
 # a game's exit or suspend (kernel/lifecycle.c fg_log), which the worker's "game exit" follows at once
 KERNEL_LEFT = re.compile(r"^foreground 0x[0-9A-Fa-f]+ -> 0x[0-9A-Fa-f]+ \((?:exit|suspend)\) t=\d+ ms")
+# the lines the kernel logs only with g.game_lock held (kernel/lifecycle.c procevent_patched, lifecycle_set_game_active)
+KERNEL_LOCKED = re.compile(r"^(?:foreground 0x[0-9A-Fa-f]+ -> 0x|game pid 0x[0-9A-Fa-f]+ active|"
+                           r"pid 0x[0-9A-Fa-f]+ (?:gone|is not a game): )")
 
 
 def listing(folder, device_path):
@@ -2979,28 +2982,43 @@ def kernel_facts(folder, year):
         if r:
             pids.update(int(p, 16) for p in r.groups())
     pids.discard(0)
-    # the uptime of kernel.txt's last write: its last line's t=, as the worker writes each line within a tick of its
-    # klog (kernel/main.c kernel_file_flush). The one exception: "game exit" after the foreground line of the same
-    # exit or suspend, which the worker logs as the hook raises it (kernel/lifecycle.c fg_store); a "game exit" alone
-    # can come at any time later (an app that was never a game, exiting), and gives no uptime
+    # The uptime of kernel.txt's last write: its last line's t=, as the worker writes each line within a tick of its
+    # klog (kernel/main.c kernel_file_flush). The one exception: a "game exit" right after a game's exit or suspend line
+    # can be that event's, logged by the worker as it wakes (kernel/main.c worker), and so within a tick of the line.
+    # But a "game exit" alone comes from any app that exits without a line (one never confirmed as a game: the Overlay
+    # app closed, VitaShell), at any later time; and the hook raises the worker's flag before it logs its own line
+    # (kernel/lifecycle.c fg_store), so the event's "game exit" can come first, as test.3's kernel.txt has it (lines
+    # 104-105). Every exit or suspend line, and every other line of KERNEL_LOCKED, is logged with g.game_lock held, and
+    # the flag is raised within that hold, after the hold's earlier lines: an event's "game exit" logged before its own
+    # line therefore lies after the last KERNEL_LOCKED line before it. So the last "game exit" is the line's own only
+    # when no "game exit" lies between them (other threads' lines may).
     lines = [line.strip() for line in text.splitlines() if line.strip()]
+    uptime_why = None
     if len(lines) >= 2 and lines[-1] == "game exit" and KERNEL_LEFT.match(lines[-2]):
-        lines.pop()
-    last = KERNEL_UPTIME.search(lines[-1]) if lines else None
+        i = len(lines) - 3
+        while i >= 0 and lines[i] != "game exit" and not KERNEL_LOCKED.match(lines[i]):
+            i -= 1
+        if i >= 0 and lines[i] == "game exit":
+            uptime_why = ("kernel.txt ends with a game exit that may be a later app's: one is logged before its last "
+                          "foreground line too, which the worker can log first")
+        else:
+            lines.pop()
+    last = KERNEL_UPTIME.search(lines[-1]) if lines and not uptime_why else None
     uptimes = [int(u) for u in KERNEL_UPTIME.findall(text)]
     ux = listing(folder, "ux0:/data/VitaJPOverlay") or {}
     span = list_span(ux["kernel.txt"]["date"], year) if "kernel.txt" in ux else None
     size = (folder / (data + "kernel.txt")).stat().st_size
     uptime = int(last.group(1)) if last else None
     return {"ok": True, "shells": shells, "pids": pids | shells, "titles": titles, "uptime_ms": uptime,
-            "uptimes_back": uptime is not None and uptime < max(uptimes), "span": span,
+            "uptime_why": uptime_why, "uptimes_back": uptime is not None and uptime < max(uptimes), "span": span,
             "newest": span[1] if span else None, "capped": size >= KERNEL_TXT_CAP - 512}  # as summarise_kernel
 
 
 def clock_check(boot, kernel):
     """Whether the Vita's clock is shown unchanged during this boot, at kernel.txt's last write: its last line carries
     the uptime ("t=N ms", the system time since power-on: the foreground and game lines, kernel/lifecycle.c, and the
-    debug build's input lines), so its LIST time less that uptime is this boot's start by the clock at that write.
+    debug build's "input block=" line, kernel/main.c), so its LIST time less that uptime is this boot's start by the
+    clock at that write.
     Returns ("checked" | "set back" | "unchecked", text). Set back: that start is before the window (the clock went
     back during this boot, or between the boots by more than the window allows). Unchecked: kernel.txt cannot say (not
     this boot's whole log, at its cap, a last line without the uptime, an estimated window), or the start is more than
@@ -3015,7 +3033,7 @@ def clock_check(boot, kernel):
         return "unchecked", "kernel.txt's uptimes go backwards"
     u, span = kernel.get("uptime_ms"), kernel.get("span")
     if u is None:
-        return "unchecked", "kernel.txt's last line carries no uptime (t=N ms)"
+        return "unchecked", kernel.get("uptime_why") or "kernel.txt's last line carries no uptime (t=N ms)"
     if span is None:
         return "unchecked", "the collect has no LIST time of kernel.txt"
     hi, lo = span[1] - u // 1000, span[0] - (u + 999) // 1000
