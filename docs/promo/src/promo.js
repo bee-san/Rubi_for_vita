@@ -480,7 +480,7 @@
         press(C.vsDown, "dpad-down");
         swap("#vs-list-0", "#vs-list-1", C.vsDown + 0.05, 0.02);
         camTo(C.shellIn, "installDev", 0.6, "power3.inOut");
-        camTo(C.shellIn + 0.6, "installDevB", C.ps1 - (C.shellIn + 0.6), "sine.inOut");
+        camTo(C.shellIn + 0.6, "installDevB", C.powerHold1 - 0.45 - (C.shellIn + 0.6), "sine.inOut");
         glow(C.shellIn, "green", 0.4);
         fingerIn("t-r", C.vsX1 - 0.4, B.X, -32, 0.36);
         function vsOpen(sel, t) {
@@ -511,28 +511,47 @@
         swap("#vs-pct50", "#vs-pct100", C.vsDone - 0.1, 0.01);
         vsClose("#vs-prog", C.vsDone);
         fingerOut("t-r", C.vsX3 + 0.3);
-        // PS: VitaShell's LiveArea (it stays open: Continue); a flick to the home screen, with the app's new bubble
-        poke("t-l", C.ps1, B.PS, 20, 0.34, 0.22);
-        press(C.ps1, "btn-ps");
-        tl.fromTo("#scr-la-shell", { opacity: 0, scale: 1.08 }, { opacity: 1, scale: 1, duration: 0.22, ease: "power2.out", immediateRender: false }, C.ps1 + 0.06);
-        off("#scr-shell", C.ps1 + 0.25);
-        fingerIn("f-tap", C.flick1 - 0.36, SCR(300, 280), -22, 0.32);
-        fingerMove("f-tap", C.flick1, SCR(700, 280), 0.34);
-        tl.fromTo("#scr-la-shell", { x: 0 }, { x: 960, duration: 0.34, ease: "power2.inOut", immediateRender: false }, C.flick1);
-        tl.fromTo("#scr-home", { opacity: 1, x: -960, scale: 1 }, { opacity: 1, x: 0, duration: 0.34, ease: "power2.inOut", immediateRender: false }, C.flick1);
-        off("#scr-la-shell", C.flick1 + 0.36);
-        tl.fromTo("#bub-app", { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.flick1 + 0.3);
-        stepOut("#step2", C.ps1 - 0.1);
-        stepIn("#step3", C.ps1 + 0.1);
-        camTo(C.ps1, "home", 0.5, "power2.inOut");
+        // a restart, as the console's guide says: hold the power button (two seconds: drawn shorter, a ring fills
+        // as it is held) until a screen appears, select [Power Off] on it, and the screen goes dark; the film then
+        // cuts to the Vita on again. The user restarts after VitaShell's install (test.4, #194 section 3: the app's
+        // folder is readable only after a restart) and after the app's Install (its result asks for it; the app
+        // never restarts the Vita).
+        function restart(hold, screen, tapAt, dark, from) {
+          camTo(hold - 0.45, "power", 0.45, "power2.inOut");
+          camTo(hold, "powerB", tapAt - 0.25 - hold, "sine.inOut"); // in as it is held
+          const held = screen + 0.1 - hold; // the press, until the screen has appeared
+          fingerIn("f-l", hold - 0.42, B.PW, 180 - 8, 0.36);
+          fingerPress("f-l", hold, held - 0.04);
+          tl.fromTo("#btn-power", { y: 0 }, { y: 8, duration: 0.08, ease: "power1.out", immediateRender: false }, hold);
+          tl.fromTo("#btn-power", { y: 8 }, { y: 0, duration: 0.13, ease: "power1.out", immediateRender: false }, hold + held);
+          fade("#btn-power .glow", hold, 0, 0.9, 0.06);
+          fade("#btn-power .glow", hold + held, 0.9, 0, 0.14);
+          on("#hold-ring", hold, 0.08);
+          tl.fromTo("#hold-ring circle.fill", { strokeDashoffset: 377 }, { strokeDashoffset: 0, duration: screen - hold, ease: "none", immediateRender: false }, hold);
+          off("#hold-ring", hold + held, 0.12);
+          fingerOut("f-l", hold + held + 0.18);
+          // the screen that appears (simplified): [Power Off], tapped
+          tl.set("#po-btn", { backgroundColor: "rgba(255,255,255,0.16)" }, screen);
+          tl.fromTo("#scr-poweroff", { opacity: 0 }, { opacity: 1, duration: 0.15, immediateRender: false }, screen);
+          tl.fromTo("#scr-poweroff .po-box", { scale: 0.9 }, { scale: 1, duration: 0.2, ease: "power2.out", immediateRender: false }, screen);
+          tap(tapAt, 480, 272, 0.38);
+          tl.fromTo("#po-btn", { backgroundColor: "rgba(255,255,255,0.16)" }, { backgroundColor: "rgba(91,220,207,0.5)", duration: 0.06, immediateRender: false }, tapAt);
+          // off: the screen goes dark
+          swap(from, "#scr-black", dark, 0.25);
+          off("#scr-poweroff", dark + 0.05, 0.2);
+        }
+        restart(C.powerHold1, C.powerScreen1, C.tapPowerOff1, C.dark1, "#scr-shell");
+        // on again: at the whip's fastest (boot1) the home screen, with the app's bubble, replaces the dark one in
+        // one frame
+        tl.set("#bub-app", { opacity: 1, scale: 1 }, C.boot1);
+        tl.fromTo("#scr-home", { opacity: 0, x: 0, scale: 1 }, { opacity: 1, x: 0, scale: 1, duration: 0.01, immediateRender: false }, C.boot1);
+        off("#scr-black", C.boot1);
+        glow(C.boot1, "blue", 0.5);
+        whip(C.boot1 - 0.3, "home", 0.6);
+        stepOut("#step2", C.boot1 - 0.15);
+        stepIn("#step3", C.boot1 + 0.05);
         // open the app: its LiveArea, Start; it opens on its Install page
-        fingerMove("f-tap", C.tapBubbleApp - 0.28, SCR(639, 350), 0.22);
-        fingerPress("f-tap", C.tapBubbleApp);
-        ripple(C.tapBubbleApp, 639, 350);
-        fingerMove("f-tap", C.tapStartApp - 0.27, SCR(480, 293), 0.2);
-        fingerPress("f-tap", C.tapStartApp);
-        ripple(C.tapStartApp, 480, 293);
-        fingerOut("f-tap", C.tapStartApp + 0.32, 0.22); // off the Install page quickly
+        tapSeq([[C.tapBubbleApp, 639, 350], [C.tapStartApp, 480, 293]], 0.36, 0.2, 0.22);
         tl.fromTo("#scr-la-app", { opacity: 0, scale: 0.25, transformOrigin: "639px 350px" }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, C.tapBubbleApp + 0.06);
         off("#scr-home", C.tapBubbleApp + 0.3);
         grow("#scr-app", C.tapStartApp + 0.08, 0.94, 0.2);
@@ -549,32 +568,9 @@
         swap("#inst-4", "#inst-5", C.installX + 0.05 + 3 * run, 0.02);
         swap("#inst-5", "#inst-6", C.installDone, 0.02);
         camTo(C.tapStartApp, "installDev", 0.8, "power2.inOut");
-        camTo(C.tapStartApp + 0.8, "installDevB", C.powerHold - 0.5 - (C.tapStartApp + 0.8), "sine.inOut");
-        // the user restarts the Vita (the app never does), as the console's guide says: hold the power button
-        // (two seconds: drawn shorter, a ring fills as it is held) until a screen appears, select [Power Off] on
-        // it, and the Vita turns off; the film then cuts to it on again, in the game
-        camTo(C.powerHold - 0.5, "power", 0.5, "power2.inOut");
-        camTo(C.powerHold, "powerB", C.tapPowerOff - 0.25 - C.powerHold, "sine.inOut"); // in as it is held
-        const held = C.powerScreen + 0.1 - C.powerHold; // the press, until the screen has appeared
-        fingerIn("f-l", C.powerHold - 0.42, B.PW, 180 - 8, 0.36);
-        fingerPress("f-l", C.powerHold, held - 0.04);
-        tl.fromTo("#btn-power", { y: 0 }, { y: 8, duration: 0.08, ease: "power1.out", immediateRender: false }, C.powerHold);
-        tl.fromTo("#btn-power", { y: 8 }, { y: 0, duration: 0.13, ease: "power1.out", immediateRender: false }, C.powerHold + held);
-        fade("#btn-power .glow", C.powerHold, 0, 0.9, 0.06);
-        fade("#btn-power .glow", C.powerHold + held, 0.9, 0, 0.14);
-        on("#hold-ring", C.powerHold, 0.08);
-        tl.fromTo("#hold-ring circle.fill", { strokeDashoffset: 377 }, { strokeDashoffset: 0, duration: C.powerScreen - C.powerHold, ease: "none", immediateRender: false }, C.powerHold);
-        off("#hold-ring", C.powerHold + held, 0.12);
-        fingerOut("f-l", C.powerHold + held + 0.18);
-        // the screen that appears (simplified): [Power Off], tapped
-        tl.fromTo("#scr-poweroff", { opacity: 0 }, { opacity: 1, duration: 0.15, immediateRender: false }, C.powerScreen);
-        tl.fromTo("#scr-poweroff .po-box", { scale: 0.9 }, { scale: 1, duration: 0.2, ease: "power2.out", immediateRender: false }, C.powerScreen);
-        tap(C.tapPowerOff, 480, 272, 0.38);
-        tl.fromTo("#po-btn", { backgroundColor: "rgba(255,255,255,0.16)" }, { backgroundColor: "rgba(91,220,207,0.5)", duration: 0.06, immediateRender: false }, C.tapPowerOff);
-        // off: the screen goes dark
-        swap("#scr-app", "#scr-black", C.dark, 0.25);
-        off("#scr-poweroff", C.dark + 0.05, 0.2);
-
+        camTo(C.tapStartApp + 0.8, "installDevB", C.powerHold - 0.45 - (C.tapStartApp + 0.8), "sine.inOut");
+        // the restart its result asks for; the film then cuts to the Vita on again, in the game
+        restart(C.powerHold, C.powerScreen, C.tapPowerOff, C.dark, "#scr-app");
 
         // the Vita on again (a cut at the whip's fastest), in the game: L + R, and the overlay opens (no second
         // lookup: the owner, 06:46Z). Right after the install card mining is off: no queue line, no × queue.

@@ -7,7 +7,7 @@
 // it only reads text when it changes, turning it off for a game, and last the install, ending on one
 // short beat (then press L + R in your game), then the end card. 42.0 s at 120 BPM: a beat is 0.5 s
 // (the music, tools/make_bed.py: promo-assets' bed synthesised without its 13th bar, so its second lift
-// is on 29.0 s, as the .vpk lands in VitaShell, and its last chord on 39.5 s, as the end card's logo lands). The owner's note on the first cut (14:15Z: "the pressing is a
+// is on 29.0 s, as the .vpk lands in VitaShell, and its last chord on 39.5 s, as the end card's logo comes in). The owner's note on the first cut (14:15Z: "the pressing is a
 // little too fast, slow it down a tad"): every press is slower (press() and the fingers in
 // src/promo.js) and no two presses come closer than 0.5 s.
 import { readFileSync } from "node:fs";
@@ -21,7 +21,7 @@ export const T = {
   s5: 17.6, // It only reads text when it changes
   s6: 22.4, // Turn it off for specific games, so it doesn't get in the way
   s7: 27.65, // Easy install ... then press L + R in your game
-  end: 39.0,
+  end: 39.2,
   total: 42.0,
 };
 
@@ -60,7 +60,9 @@ export const C = {
   down1: 23.7,
   down2: 24.3,
   toggle: 25.0,
-  // S7: the install: the release, VitaShell, the app's Install page, the user's restart, then L + R.
+  // S7: the install: the release, VitaShell, a restart, the app's Install page, a restart, then L + R. The app's
+  // folder is readable only after a restart once VitaShell has installed it (test.4, #194 §3: the Install page
+  // refused until then; the fix says "Restart the Vita first"), so the user restarts before opening the app.
   laptopIn: 27.6,
   clickVpk: 28.05,
   fileFly: 28.45,
@@ -69,24 +71,27 @@ export const C = {
   vsX1: 29.85,
   vsX2: 30.4,
   vsX3: 30.95,
-  vsDone: 31.55,
-  ps1: 31.8, // PS: VitaShell's LiveArea (it stays open: Continue)
-  flick1: 32.3, // a flick to the home screen, with the app's new bubble
-  tapBubbleApp: 32.85,
-  tapStartApp: 33.35,
-  installX: 33.9,
-  installDone: 34.5,
-  // the user restarts the Vita (the app never does), as the console's guide says: hold the power button
-  // (two seconds; drawn shorter), select [Power Off] on the screen that appears; then the film cuts to it on
-  powerHold: 35.25,
-  powerScreen: 36.05,
-  tapPowerOff: 36.55,
-  dark: 36.65,
-  // the Vita on again (a cut, at the whip's fastest), in the game (its line already shown): L + R, the
-  // overlay opens as the camera pulls out to the end card (one short beat; no second lookup)
-  boot: 37.25,
-  lrEnd: 38.0,
-  ovEnd: 38.1,
+  vsDone: 31.5,
+  // each restart as the console's guide says: hold the power button (two seconds; drawn shorter, a ring fills),
+  // select [Power Off] on the screen that appears, the screen goes dark; the film cuts to the Vita on again
+  powerHold1: 31.85,
+  powerScreen1: 32.3,
+  tapPowerOff1: 32.75,
+  dark1: 32.85,
+  boot1: 33.2, // the home screen, with the app's bubble
+  tapBubbleApp: 33.75,
+  tapStartApp: 34.25,
+  installX: 34.8,
+  installDone: 35.4,
+  powerHold: 35.95, // the restart the result asks for (the app never restarts the Vita)
+  powerScreen: 36.4,
+  tapPowerOff: 36.85,
+  dark: 36.95,
+  // the Vita on again, in the game (its line already shown): L + R, the overlay opens as the camera pulls out
+  // to the end card (one short beat; no second lookup)
+  boot: 37.3,
+  lrEnd: 37.95,
+  ovEnd: 38.05,
 };
 
 // A western console: × enters, ○ cancels (core/buttons.h).
@@ -107,14 +112,14 @@ export const CAPTIONS = {
   cap4: { h: "With <em>screenshots</em>", in: 14.1, out: 17.5 },
   cap5: { h: "It only reads text <em>when it changes</em>", p: "or only when you press L&nbsp;+&nbsp;R", pIn: 19.85, in: 17.8, out: 22.2 },
   cap6: { h: "Turn it off for specific games, <em>so it doesn't get in the way</em>", in: 22.5, out: 27.4 },
-  cap7: { h: "<em>Easy install</em>", steps: true, in: 27.75, out: 38.85 },
+  cap7: { h: "<em>Easy install</em>", steps: true, in: 27.75, out: 39.05 },
 };
 
 // The install's steps, shown under its caption (the one-VPK install: docs/one-vpk-install.md, the README's
 // Install; promo-final-flow.txt), and its last beat (the owner, 06:46Z: "then press L + R in your game").
 export const STEPS = [
   "Download the <em>.vpk</em>",
-  "Install it in <em>VitaShell</em>",
+  "Install it in <em>VitaShell</em>, restart",
   `Open <em>${NAME}</em>: Install, restart`,
 ];
 export const LAST_STEP = "Then press <em>L&nbsp;+&nbsp;R</em> in your game";
@@ -207,8 +212,10 @@ export const SFX = [
   ["click", C.vsX2, 0.5],
   ["click", C.vsX3, 0.5],
   ["chime", C.vsDone, 0.3],
-  ["click", C.ps1, 0.5],
-  ["swish", C.flick1, 0.3],
+  ["click", C.powerHold1, 0.5],
+  ["pop", C.powerScreen1, 0.3],
+  ["tap", C.tapPowerOff1, 0.55],
+  ["whoosh", C.boot1 - 0.3, 0.35],
   ["tap", C.tapBubbleApp, 0.55],
   ["tap", C.tapStartApp, 0.55],
   ["click", C.installX, 0.5],

@@ -33,10 +33,10 @@ norm renders/promo-1080x1920.mp4 media/promo-1080x1920.mp4
   -loop 0 media/promo.gif
 size=$(stat -c %s media/promo.gif)
 if [ "$size" -gt 5000000 ]; then echo "media/promo.gif is $size B, over 5 MB" >&2; exit 1; fi
-# one still per beat: 1 2 3 4, 5 (and its setting), 6 (OFF), 7 (GitHub, VitaShell, its LiveArea, the Install page,
-# the result, the restart, then L + R in the game), the end card
+# one still per beat: 1 2 3 4, 5 (and its setting), 6 (OFF), 7 (GitHub, VitaShell, the restart, the home screen,
+# the Install page, the result, the restart, then L + R in the game), the end card
 i=0
-for t in 2.6 7.8 11.0 15.9 19.8 21.6 26.2 28.15 30.15 32.05 33.65 34.85 35.85 36.35 38.3 41.4; do
+for t in 2.6 7.8 11.0 15.9 19.8 21.6 26.2 28.15 30.15 32.55 33.55 34.65 35.55 36.65 38.3 41.4; do
   i=$((i + 1))
   "$FFMPEG" -hide_banner -loglevel error -y -ss "$t" -i media/promo-1920x1080.mp4 -frames:v 1 -vf scale=1280:-1 -q:v 4 \
     "media/stills/$(printf '%02d' "$i")-$t.jpg"

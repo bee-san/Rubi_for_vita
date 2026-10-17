@@ -523,23 +523,6 @@
         background: linear-gradient(180deg, rgba(20, 20, 40, 0), rgba(20, 20, 40, 0.65));
         text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
       }
-      .la-gate-game {
-        left: 120px;
-        top: 330px;
-        height: 110px;
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.14));
-        font-weight: 700;
-        font-size: 30px;
-        color: #fff;
-        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
-      }
-      .la-gate-game span {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
       /* the power-off screen (simplified, original: the guide's [Power Off] button on a dimmed screen) */
       #scr-poweroff {
         background: rgba(6, 8, 14, 0.62);
@@ -590,9 +573,6 @@
         stroke-linecap: round;
         stroke-dasharray: 377;
         stroke-dashoffset: 377;
-      }
-      .la-frame-shell {
-        background: radial-gradient(120% 90% at 30% 20%, #2a3550 0%, #121a2c 55%, #0a0f1a 100%);
       }
 
 
