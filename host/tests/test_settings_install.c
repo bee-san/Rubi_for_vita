@@ -756,6 +756,37 @@ static void any_changed_same_named_line_makes_it_a_change(void)
                 "config_ini %d, %d lines", s.config_ini, s.config_change_count);
     TEST_CHECK(!ini_listed(&s, "dictionary: a repeated line goes"));
 }
+/* audit-pr180-b N1: a BOM in the middle of a hand-joined file, on a line that goes after every line before it went,
+ * moves onto the next line (the patches take a BOM at offset 0 as the file's own). That line is unchanged, so it is
+ * not listed, and never with its value; the line that went is named by its own setting. Cards K1, K3 and K4 of the
+ * audit: the next line an unknown setting with a value, a comment holding a key, and a key behind a BOM. */
+static void a_mid_file_bom_never_shows_a_value(void)
+{
+    static const struct { const char *third, *never; } cards[] = {
+        {"unknown_setting = VALUEKEEP\n", "VALUEKEEP"},                    /* K1 */
+        {"; my jpdb_api_key = SECRETk3\n", "SECRETk3"},                   /* K3 */
+        {"\xEF\xBB\xBF" "jpdb_api_key = SECRETk4\n", "SECRETk4"},         /* K4 */
+    };
+    char text[1024];
+    for (unsigned c = 0; c < sizeof(cards) / sizeof(cards[0]); c++) {
+        snprintf(text, sizeof(text), "ocr_backend = vocr\n" "\xEF\xBB\xBF" "log_host = 10.9.8.1\n%s" COMPLETE, cards[c].third);
+        fresh_card(1);
+        put_text(VJO_PREFERENCES_PATH_TEST, text);
+        VjoInstallScan s = scan_now();
+        for (int i = 0; i < s.config_change_count; i++) TEST_MSG("K%u: %s", c, s.config_changes[i]);
+        TEST_CHECK_(s.config_ini == 1, "card %u: config_ini %d", c, s.config_ini);
+        TEST_CHECK_(ini_listed(&s, "ocr_backend: a removed setting, goes"), "card %u", c);
+        TEST_CHECK_(ini_listed(&s, "log_host: a removed setting, goes"), "card %u", c);
+        TEST_CHECK_(s.config_change_count == 2 && s.config_change_more == 0, "card %u: %d lines", c, s.config_change_count);
+        TEST_CHECK_(!ini_listed(&s, "unknown_setting: a removed setting, goes"), "card %u", c);
+        char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+        int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+        for (int i = 0; i < n + s.config_change_count; i++) {
+            const char *l = i < n ? plan[i] : s.config_changes[i - n];
+            TEST_CHECK_(!strstr(l, cards[c].never) && !strstr(l, "10.9.8.1") && !strstr(l, "\xEF\xBB\xBF"), "card %u: [%s]", c, l);
+        }
+    }
+}
 #undef COMPLETE
 
 /* audit-pr177 N3 and N6: an API key's name in capitals glued to its value is named by the key alone; a setting in
@@ -2220,6 +2251,7 @@ TEST_LIST = {
     {"a_later_lines_bom_stays_part_of_it", a_later_lines_bom_stays_part_of_it},
     {"each_scan_marks_its_own_lines", each_scan_marks_its_own_lines},
     {"any_changed_same_named_line_makes_it_a_change", any_changed_same_named_line_makes_it_a_change},
+    {"a_mid_file_bom_never_shows_a_value", a_mid_file_bom_never_shows_a_value},
     {"a_line_that_goes_is_named_whatever_its_case_or_line_ends", a_line_that_goes_is_named_whatever_its_case_or_line_ends},
     {"a_crafted_config_ini_is_scanned_in_bounded_time", a_crafted_config_ini_is_scanned_in_bounded_time},
     {"the_dictionary_already_installed_is_not_moved_again", the_dictionary_already_installed_is_not_moved_again},

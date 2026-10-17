@@ -615,6 +615,16 @@ static char *ini_change(VjoInstallScan *s)
         if (line_) snprintf(line_, sizeof((s)->config_changes[0]), __VA_ARGS__);          \
     } while (0)
 
+/* The bytes of the UTF-8 BOMs a line starts with (none, one, or several). A BOM is no part of a line here: the
+ * patches keep the file's one at offset 0, and a BOM in the middle of a hand-joined file moves onto the next line
+ * when its own line goes (audit-pr180-b N1: such a line was listed with its value, and its setting named wrongly). */
+static size_t ini_skip_bom(const char *s, size_t n)
+{
+    size_t b = 0;
+    while (n - b >= 3 && !memcmp(s + b, "\xEF\xBB\xBF", 3)) b += 3;
+    return b;
+}
+
 /* The setting a config.ini line sets, safe to show on the page and in log.txt: its name, never its value.
  * The name is the line's leading run of letters, digits and '_' (no setting's name has another character).
  * An API key's line is named by the key alone, whatever follows it: core/config.c removed_secret drops a
@@ -623,7 +633,7 @@ static char *ini_change(VjoInstallScan *s)
 static size_t ini_line_name(const char *line, size_t n, char *out, size_t cap)
 {
     static const char *const secrets[] = {"jpdb_api_key", "jiten_api_key", "api_key"}; /* removed_secret's */
-    size_t b = 0, e;
+    size_t b = ini_skip_bom(line, n), e;
     /* the spaces core/config.c is_space skips before a name (space, tab, CR), as removed_secret does */
     while (b < n && (line[b] == ' ' || line[b] == '\t' || line[b] == '\r')) b++;
     for (size_t i = 0; i < sizeof(secrets) / sizeof(secrets[0]); i++) {
@@ -643,15 +653,20 @@ static size_t ini_line_name(const char *line, size_t n, char *out, size_t cap)
     return e - b;
 }
 
-/* Whether text (len bytes, LF lines) has a line equal to the n bytes at line (a CR before its LF ignored). */
+/* Whether text (len bytes, LF lines) has a line equal to the n bytes at line (a CR before its LF ignored, and
+ * either line's leading BOMs: ini_skip_bom). */
 static int ini_has_line(const char *text, size_t len, const char *line, size_t n)
 {
+    size_t lb = ini_skip_bom(line, n);
+    line += lb;
+    n -= lb;
     for (size_t q = 0; q < len;) {
         size_t qe = q;
         while (qe < len && text[qe] != '\n') qe++;
         size_t ql = qe - q;
         if (ql && text[qe - 1] == '\r') ql--;
-        if (ql == n && !memcmp(text + q, line, n)) return 1;
+        size_t tb = ini_skip_bom(text + q, ql);
+        if (ql - tb == n && !memcmp(text + q + tb, line, n)) return 1;
         q = qe + 1;
     }
     return 0;
@@ -791,9 +806,9 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     if ((size_t)ini_new_len == bytes && !memcmp(ini_new, old, bytes)) return 0;
     /* both texts' lines after the old text's UTF-8 BOM: the patches keep it at offset 0, in front of whatever line
      * comes first (core/config.c, settings/preferences.c), so it is no part of a line here (audit-pr177 N1). A BOM
-     * the new text starts with and the old one does not is a later line's own (every line before it went): it stays
-     * part of that line in both texts (audit-pr180 B1: stripped from one side only, the unchanged line was listed
-     * with its value). */
+     * the new text starts with and the old one does not was a later line's (every line before it went): it is not
+     * stripped here on one side only (audit-pr180 B1: the unchanged line was then listed with its value); the line
+     * comparisons and names skip a line's leading BOMs on both sides (ini_skip_bom), whichever line it is on now. */
     size_t ob = bytes >= 3 && !memcmp(old, "\xEF\xBB\xBF", 3) ? 3 : 0;
     int nb = ob && ini_new_len >= 3 && !memcmp(ini_new, "\xEF\xBB\xBF", 3) ? 3 : 0;
     const char *ot = old + ob;
