@@ -1660,10 +1660,6 @@ static void open_overlay(void)
         start_cursor_job();
         return;
     }
-    if (st.alloc_status == VJO_ALLOC_FAIL) {
-        view_publish(1, NULL, "Not enough memory to capture the screen", 1);
-        return;
-    }
     if (claim_cache_for(&st)) { /* a background job's, or the subtitles' */
         vjo_dlog("open: background result");
         view_show_cache();
@@ -2110,10 +2106,6 @@ static void set_subtitles(int on)
     /* settings were re-read before choosing the backend */
     st.size = sizeof(st);
     vjoGetState(&st);
-    if (st.alloc_status == VJO_ALLOC_FAIL) {
-        vjo_strip_show("Not enough memory to capture the screen", VJO_STRIP_ERROR, 0);
-        return;
-    }
     subtitles_show(&st);
 }
 

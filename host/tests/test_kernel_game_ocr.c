@@ -7,14 +7,12 @@ int taiGetModuleInfoForKernel(SceUID, const char *, tai_module_info_t *);
 #include "../../kernel/game_ocr.c"
 #include "../../kernel/buffers.c"
 #include "../../kernel/capture.c"
-#include "../../kernel/capture_request.c"
 
 VjoKernelState g;
 unsigned syscall_depth;
 static SceUID caller;
 static int module_missing, module_id, copy_in_fail, copy_out_fail;
-static unsigned locks, frees, allocations;
-static uint8_t raw_storage[VJO_MAX_W * VJO_MAX_H * 4];
+static unsigned locks, allocations;
 static VjoGameOcrResult message;
 static unsigned model_opens, model_reads, model_closes;
 static unsigned model_events;
@@ -344,17 +342,18 @@ SceUID ksceKernelAllocMemBlock(const char *name, unsigned type, SceSize bytes, v
         kstrip_allocs++;
         return kstrip_alloc_fail ? (int)0x80024302u : 28;
     }
-    TEST_CHECK(bytes <= sizeof(raw_storage));
-    allocations++; return 27;
+    /* API 24: the strip is the kernel's only block for a job (no VjoCapture) */
+    TEST_CHECK_(0, "kernel block %s of %u B", name, (unsigned)bytes);
+    allocations++; return (int)0x80024302u;
 }
 int ksceKernelGetMemBlockBase(SceUID uid, void **base)
 {
-    TEST_CHECK(uid == 27 || uid == 28); *base = uid == 28 ? (void *)kstrip_storage : (void *)raw_storage; return 0;
+    TEST_CHECK(uid == 28); *base = kstrip_storage; return 0;
 }
 int ksceKernelFreeMemBlock(SceUID uid)
 {
-    TEST_CHECK(uid == 27 || uid == 28);
-    if (uid == 28) kstrip_frees++; else frees++;
+    TEST_CHECK(uid == 28);
+    kstrip_frees++;
     return 0;
 }
 
@@ -365,7 +364,6 @@ static void setup(void)
     buffers_kstrip_free();
     g.lock = 1; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
     g.evf = 2; g.ievf = 6; g.mevf = 5;
-    g.capture_state = CAPTURE_IDLE;
     g.capture_seq = g.done_seq = 11; g.fb_w = FB_W; g.fb_h = FB_H;
     for (unsigned y = 0; y < FB_H; y++)
         for (unsigned x = 0; x < FB_PITCH; x++) /* R, G, B, A bytes: R = x * 7, G = y * 5, B = x ^ y */
@@ -378,7 +376,7 @@ static void setup(void)
     memset(user_rows, 0xCC, sizeof(user_rows));
     caller = 7; module_id = 99;
     module_missing = copy_in_fail = copy_out_fail = 0;
-    locks = allocations = frees = syscall_depth = 0;
+    locks = allocations = syscall_depth = 0;
     memset(&message, 0, sizeof(message));
     model_clock = 1000000; expected_model_size = VJO_VOCR_FL10_BYTES;
     model_opens = model_reads = model_closes = model_events = 0;
@@ -446,6 +444,16 @@ static uint32_t submit(void)
     int seq = vjoOcrSubmit(&r);
     TEST_ASSERT(seq > 0);
     return (uint32_t)seq;
+}
+
+/* The Shell's next job: VJO_ERR_BUSY while the slot is held (queued, claimed, a model or rows
+ * call in flight), its sequence once it is free. API 18-23 probed the slot with the kernel's
+ * full-frame capture request, which the same states refused; API 24 removed it. */
+static int next_submit(void)
+{
+    VjoGameOcrRequest r = make_request();
+    caller = 3;
+    return vjoOcrSubmit(&r);
 }
 
 static void take(uint32_t seq)
@@ -859,15 +867,14 @@ static void complete_and_replacement(void)
     TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG && game_ocr_capture_busy_locked());
 }
 
-static void capture_pins_queued_and_claimed(void)
+static void job_slot_pins_queued_and_claimed(void)
 {
     setup(); uint32_t seq = submit();
-    TEST_CHECK(capture_request(0) == VJO_ERR_BUSY);
-    TEST_CHECK(capture_request(VJO_CAPTURE_DISCARD) == VJO_ERR_BUSY);
+    TEST_CHECK(next_submit() == VJO_ERR_BUSY && game_ocr_capture_busy_locked());
     take(seq);
-    TEST_CHECK(capture_request(0) == VJO_ERR_BUSY);
-    TEST_CHECK(vjoOcrComplete(&message) == 0);
-    TEST_CHECK(capture_request(0) > 0);
+    TEST_CHECK(next_submit() == VJO_ERR_BUSY && game_ocr_capture_busy_locked());
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    TEST_CHECK(!game_ocr_capture_busy_locked() && next_submit() == (int)seq + 1);
 }
 
 static void cancellation_drains_reader(void)
@@ -875,14 +882,14 @@ static void cancellation_drains_reader(void)
     setup(); uint32_t seq = submit(); take(seq); caller = 3;
     TEST_CHECK(vjoOcrCancel(seq) == 0);
     TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_CANCELLED);
-    TEST_CHECK(capture_request(0) == VJO_ERR_BUSY);
+    TEST_CHECK(next_submit() == VJO_ERR_BUSY);
     caller = 7;
     TEST_CHECK(vjoOcrCancelled(seq) == 1);
     TEST_CHECK(vjoOcrComplete(&message) == 0);
     TEST_CHECK(!game_ocr_capture_busy_locked());
     caller = 3;
     TEST_CHECK(vjoOcrRead(seq, &message) == VJO_ERR_CANCELLED);
-    TEST_CHECK(capture_request(0) > 0);
+    TEST_CHECK(next_submit() == (int)seq + 1);
 }
 
 static void cancel_before_take(void)
@@ -906,7 +913,6 @@ static void suspended_and_same_pid_epoch(void)
     TEST_CHECK(vjoOcrRegister() == VJO_ERR_BUSY);
     TEST_CHECK(vjoOcrComplete(&message) == 0);
     TEST_CHECK(vjoOcrRegister() == 0);
-    g.capture_epoch = g.ocr_epoch; /* A fresh capture in the resumed session. */
     caller = 3; uint32_t next = submit(); TEST_CHECK(next > seq);
     caller = 7;
     TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); /* Old reply cannot claim a new job. */
@@ -945,7 +951,7 @@ static void cleanup_failure_and_module_replacement(void)
     message.cleanup_status = -1; message.rc = -12; message.text[0] = 0;
     TEST_CHECK(vjoOcrComplete(&message) == 0 && game_ocr_capture_busy_locked());
     caller = 3; TEST_CHECK(vjoOcrRead(seq, &message) == 0 && message.cleanup_status == -1);
-    TEST_CHECK(capture_request(0) == VJO_ERR_BUSY);
+    TEST_CHECK(next_submit() == VJO_ERR_BUSY);
     caller = 7; module_id++;
     TEST_CHECK(vjoOcrRegister() == VJO_ERR_BUSY);
     module_id--; message.cleanup_status = 0;
@@ -964,9 +970,7 @@ static void invalid_capture_and_wire(void)
     r.flags = 0;
     r.speed = 0x10; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 22: VJO_GAME_OCR_S_* bits 4-31 unknown */
     r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache: known */
-    /* A Lens/Anki capture in flight: the OCR job waits for it. */
-    g.capture_state = CAPTURE_PENDING; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_BUSY);
-    g.capture_state = CAPTURE_IDLE; uint32_t seq = submit(); take(seq);
+    uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;
     message.cleanup_status = -1; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG);
@@ -1038,7 +1042,7 @@ static void rows_hook_copies_grey_and_publishes_the_capture(void)
     TEST_CHECK(rows_call(seq, 16, 16, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | VJO_ROWS_LAST, 40, user_rows, &info) == 16);
     TEST_CHECK(rows_match(user_rows, 16, 16, 40, 0));
     TEST_CHECK(g.done_seq == request.capture_seq && g.region_seq == request.capture_seq && capture_events == 1);
-    TEST_CHECK(g.crop_w == 32 && g.crop_h == 32 && !g.capture_result);
+    TEST_CHECK(g.crop_w == 32 && g.crop_h == 32);
     /* Later reads (the second pass, a line) need no signature. */
     frames_come = 1;
     TEST_CHECK(rows_call(seq, 3, 5, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == 5 && rows_match(user_rows, 3, 5, 32, 0));
@@ -1114,17 +1118,12 @@ static void rows_kernel_strip_rung(void)
                vjo_ledger_peak(&g_kernel_ledger, VJO_KL_OCR_STRIP) == 4096);
     TEST_MSG("ledger current %u peak %u", (unsigned)vjo_ledger_current(&g_kernel_ledger, VJO_KL_OCR_STRIP),
              (unsigned)vjo_ledger_peak(&g_kernel_ledger, VJO_KL_OCR_STRIP));
-    /* never while the Shell's JPEG capture holds its buffer */
-    g.mem_uid = 5;
-    TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_KSTRIP, 0, 48, user_rows, &info) == VJO_ERR_NO_MEMORY);
-    TEST_CHECK(info.kstrip_rc == VJO_ERR_NO_MEMORY && kstrip_allocs == 1 && rows.state == ROWS_IDLE);
-    g.mem_uid = 0;
     kstrip_alloc_fail = 1;
     TEST_CHECK(rows_call(seq, 0, 8, VJO_GAME_OCR_SRC_KSTRIP, 0, 48, user_rows, &info) == (int)0x80024302u);
     TEST_CHECK(info.kstrip_rc == (int)0x80024302u && rows.state == ROWS_IDLE && kstrip_frees == 1);
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
 }
-/* A pending request holds off Lens/Anki captures and Submit; the game exiting
+/* A pending rows request holds off the next job's Submit; the game exiting
  * clears it without any copy. */
 static void rows_pending_pins_and_process_exit(void)
 {
@@ -1150,7 +1149,7 @@ static void rows_pending_pins_and_process_exit(void)
 /* A copy the hook started and has not finished when the call gives up: BUSY,
  * the destination stays the hook's (and so does a kernel strip), no new
  * request is armed meanwhile, and once the copy ends the kernel worker returns
- * the state to IDLE so a Lens/Anki capture is not refused for the rest of the game. */
+ * the state to IDLE so the next job is not refused for the rest of the game. */
 static void rows_copy_outliving_its_call(void)
 {
     for (int mode = 0; mode < 2; mode++) {
@@ -1172,7 +1171,7 @@ static void rows_copy_outliving_its_call(void)
         TEST_CHECK(rows.state == ROWS_IDLE && !rows.abandoned && kstrip_frees == (unsigned)mode);
         TEST_CHECK(rows_call(seq, 0, 8, m, 0, 48, user_rows, &info) == 8); /* usable again */
         caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
-        VJO_LOCK(); TEST_CHECK(!game_ocr_capture_busy_locked()); VJO_UNLOCK(); /* Lens/Anki may capture */
+        VJO_LOCK(); TEST_CHECK(!game_ocr_capture_busy_locked()); VJO_UNLOCK(); /* the next job may start */
     }
 }
 
@@ -1896,7 +1895,7 @@ TEST_LIST = {
 #endif
     {"registration and caller permissions", registration_and_permissions},
     {"completion and stale replacement", complete_and_replacement},
-    {"queued and claimed capture pins", capture_pins_queued_and_claimed},
+    {"a queued or claimed job pins the slot", job_slot_pins_queued_and_claimed},
     {"cancelled reader must drain", cancellation_drains_reader},
     {"cancel before take", cancel_before_take},
     {"suspend and same PID epoch", suspended_and_same_pid_epoch},

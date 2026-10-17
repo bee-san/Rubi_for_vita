@@ -19,8 +19,6 @@ VitaJPOverlay_Kernel:
         - vjoSetGameActive
         - vjoSetInputBlock
         - vjoPollInput
-        - vjoRequestCapture
-        - vjoReadRaw
         - vjoOcrRegister
         - vjoOcrTake
         - vjoOcrCancelled

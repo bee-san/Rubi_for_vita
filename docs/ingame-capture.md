@@ -75,7 +75,7 @@ block, the native rc and the game's free memory after it):
 | 1 | the worker's `USER_RW` block (4 KiB units, cached) | first |
 | 2 | `USER_CDRAM_RW` (256 KiB units, uncached; slower CPU reads [SDK: Memory Management Tutorial]) | `USER_RW` refused the block |
 | 3 | `USER_MAIN_PHYCONT_NC_RW` (1 MiB units, uncached) | CDRAM refused it too |
-| 4 | a kernel strip (`VjoOcrStrip`, ≤ 64 KiB of `KERNEL_RW` for one call, copied out by the syscall) | the hook could not write the game's memory (`VJO_ERR_COPY`/`VJO_ERR_ARG`); never while the kernel's full-frame capture holds its buffer |
+| 4 | a kernel strip (`VjoOcrStrip`, ≤ 64 KiB of `KERNEL_RW` for one call, copied out by the syscall) | the hook could not write the game's memory (`VJO_ERR_COPY`/`VJO_ERR_ARG`) |
 
 The workspace and a tall line's block take the same rungs 1-3; the verified weights stay in
 `USER_RW`. Before any of them the existing model fallback applies: the configured model → its
@@ -106,9 +106,10 @@ the finder ever report a band that large). A strict 64 KiB bound for those regio
 row-callback form of `vocr_run` in vita-vn-ocr (not done: `vocr.c` is unchanged). Page-rounded figures from `vjo_vocr_job_bytes`/`vjo_vocr_capture_bytes` on the host build; the
 ledger counts them as `VJO_BUDGET_GAME_CAPTURE`, `VJO_BUDGET_GAME_LINE`,
 `VJO_BUDGET_GAME_WORKSPACE` and `VJO_BUDGET_KERNEL_OCR_STRIP` ([memory-ledger.md](memory-ledger.md)).
-The kernel's region-sized capture buffer has no Shell user left: Google Lens's JPEG was the last,
-and an Anki card's screenshot is read in the game too, in colour strips (below). #74's refusal
-would have reached a full-screen JPEG too.
+API 24 removed the kernel's region-sized capture buffer (`VjoCapture`, with `vjoRequestCapture` and
+`vjoReadRaw`): Google Lens's JPEG was its last Shell user, and an Anki card's screenshot is read in
+the game too, in colour strips (below). #74's refusal would have reached a full-screen JPEG too. The
+kernel strip (rung 4) is now the kernel's only block for a job.
 
 ## An Anki card's screenshot (API 23)
 

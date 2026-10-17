@@ -296,6 +296,12 @@ Direction: allocate one region-sized block when a game is confirmed and keep it 
 game exits (the PSVshell pattern), sized from the saved region rather than per request;
 cap full-frame captures or take them in bands.
 
+Since this audit: OCR reads its region in the game (API 19) and so does an Anki card's
+screenshot (API 23), in strips into the game worker's own memory, and API 24 removed the
+kernel block and its syscalls (`vjoRequestCapture`, `vjoReadRaw`). The kernel's only block for
+a job is the capture ladder's last rung, a strip of at most 64 KiB for one call
+([ingame-capture.md](ingame-capture.md)).
+
 ### 7. In-game weights and workspace: the right process, but allocations none of the reference overlays make (OOM in the game, medium)
 
 The `*ALL` worker allocates 659,456 or 1,159,168 B for weights and a region-sized

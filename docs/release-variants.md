@@ -123,7 +123,10 @@ With API 23's Anki screenshot (both builds of main `c6e0a4d` and that change, th
 rows): the Shell 100,484 + 69,828 and 90,012 + 69,756 (the same pages, 176,128 and 163,840 B; the normal
 one's text has 100 B of room left), the kernel 40,040 + 77,672 and 35,900 + 75,984 (the same pages), the
 game worker 77,004 + 14,160 and 75,688 + 14,160 in 94,208 B, one text page more in both builds for the
-JPEG encoder ([memory-ledger.md](memory-ledger.md#the-two-builds)).
+JPEG encoder ([memory-ledger.md](memory-ledger.md#the-two-builds)). API 24's removal of the kernel's
+full-frame capture: the kernel 37,964 + 77,584 and 33,840 + 75,896, the Shell 100,396 + 69,828 and
+89,924 + 69,756, every module in the same pages [measured: the build log's module rows, both builds of
+main `836259e` (#150) and that change].
 
 The normal Shell's 8,192 B are SceShell's for as long as the console is on (its partition had
 28-98 KiB free beside a game [measured, vita-memory.md 5.1]). The saving moves with the code: three

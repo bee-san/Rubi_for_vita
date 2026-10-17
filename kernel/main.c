@@ -20,7 +20,6 @@ static volatile int worker_run = 1;
 
 #define POLL_US         16000   /* input poll period */
 #define CHECK_EVERY     4       /* change detection every 4th poll (~64 ms) */
-#define CAPTURE_WAIT_US 1500000 /* no new frame from the game within this -> timeout */
 
 /* Called with the lock held. Signatures already published are skipped. One
  * the hook is still building for the old region can still arrive; it only
@@ -65,53 +64,6 @@ static void change_detection(void)
         klog_d("region settled: scene %u (%d animated cells masked)", id, animated);
         ksceKernelSetEventFlag(g.evf, VJO_EV_REGION_STABLE);
     }
-}
-
-static void finish_capture(void)
-{
-    VJO_LOCK();
-    if (g.alloc_status != VJO_ALLOC_OK || !g.raw || !g.game_active ||
-        g.capture_game_pid != g.game_pid ||
-        g.capture_epoch != __atomic_load_n(&g.ocr_epoch, __ATOMIC_ACQUIRE)) {
-        /* The game exited (buffers freed) between the copy and now. */
-        if (g.capture_result == 0)
-            g.capture_result = VJO_ERR_NO_GAME;
-    }
-    g.raw_valid = g.capture_result == 0;
-    g.capture_scene = g.raw_valid && !g.capture_full ? scene_match(&g.tracker, &g.capture_sig) : 0;
-    if (g.raw_valid && !g.capture_full) {
-        g.region_seq = g.capture_seq;
-        g.region_us = g.capture_copy_us;
-    }
-    g.done_seq = g.capture_seq;
-    g.capture_state = CAPTURE_IDLE;
-    VJO_UNLOCK();
-    ksceKernelSetEventFlag(g.evf, VJO_EV_CAPTURE_DONE);
-}
-
-/* Cancels a pending capture and waits for a copy in progress in the display
- * hook, so the buffers can be freed safely. Called with the lock held. */
-static void capture_quiesce(void)
-{
-    int spins = 0;
-    if (__sync_bool_compare_and_swap(&g.capture_state, CAPTURE_PENDING, CAPTURE_IDLE))
-        return;
-    while (g.capture_state == CAPTURE_COPYING && spins++ < 200)
-        ksceKernelDelayThread(1000);
-}
-
-static void free_game_buffers(void)
-{
-    VJO_LOCK();
-    capture_quiesce();
-    if (g.capture_state != CAPTURE_COPYING) {
-        g.capture_state = CAPTURE_IDLE;
-        g.raw_valid = 0;
-        buffers_free();
-    } else {
-        klog("buffers kept: capture still copying");
-    }
-    VJO_UNLOCK();
 }
 
 /* The kernel log goes straight to ux0:data/VitaJPOverlay/kernel.txt (flushed
@@ -169,18 +121,15 @@ static int worker(SceSize args, void *argp)
     while (worker_run) {
         unsigned int bits = 0;
         SceUInt timeout = POLL_US;
-        ksceKernelWaitEventFlag(g.ievf, IEV_GAME_START | IEV_GAME_EXIT | IEV_CAPTURED | IEV_ACTIVATE | IEV_MODEL | IEV_QUIT |
-                                IEV_POLICY, SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, &timeout);
+        ksceKernelWaitEventFlag(g.ievf, IEV_GAME_START | IEV_GAME_EXIT | IEV_ACTIVATE | IEV_MODEL | IEV_QUIT | IEV_POLICY,
+                                SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT, &bits, &timeout);
         if (bits & IEV_QUIT)
             break;
         /* A starting game waits for this (loader.c): first. Every round, so a
          * question is never left behind a lost wakeup. */
         loader_tick();
         game_ocr_model_tick();
-        if (bits & IEV_CAPTURED)
-            finish_capture();
         if (bits & IEV_GAME_EXIT) {
-            free_game_buffers();
             klog("game exit");
             ksceKernelSetEventFlag(g.evf, VJO_EV_GAME_EXIT);
         }
@@ -190,25 +139,10 @@ static int worker(SceSize args, void *argp)
             VJO_UNLOCK();
             ksceKernelSetEventFlag(g.evf, VJO_EV_GAME_START);
         }
-        /* Pixel buffers are allocated only by an explicit capture request. */
         if ((bits & IEV_ACTIVATE) && g.game_pid > 0 && g.game_active) {
             VJO_LOCK();
             reset_change_detection();
             VJO_UNLOCK();
-        }
-        if ((g.game_pid <= 0 || !g.game_active) && g.mem_uid > 0 && g.capture_state != CAPTURE_COPIED)
-            free_game_buffers();
-
-        /* A capture request but no new frame from the game in time (paused
-         * game): the capture fails with a timeout. The last frame is not read
-         * from the worker: cross-process framebuffer reads were the suspected
-         * cause of the first on-device crash. */
-        if (g.capture_state == CAPTURE_PENDING &&
-            ksceKernelGetSystemTimeWide() - g.capture_requested_us > CAPTURE_WAIT_US && capture_claim()) {
-            g.capture_result = VJO_ERR_TIMEOUT;
-            klog("capture timed out: no frame from the game");
-            g.capture_state = CAPTURE_COPIED;
-            finish_capture();
         }
 
         if (boot_mode() == VJO_BOOT_NORMAL) {
@@ -315,12 +249,9 @@ int vjoGetState(VjoState *out)
         s.region_scene = scene_match_since(&g.tracker, &g.capture_sig, g.region_us);
     }
     VJO_UNLOCK();
-    s.alloc_status = g.alloc_status;
-    s.capture_result = g.capture_result;
     s.width = g.crop_w;
     s.height = g.crop_h;
     s.capture_scene = g.capture_scene;
-    s.raw_stride = g.raw_stride;
     s.done_seq = g.done_seq;
     if (size >= sizeof(uint32_t))
         ksceKernelMemcpyKernelToUser(out, &s, size);
@@ -402,43 +333,6 @@ int vjoPollInput(VjoInput *out)
     ksceKernelMemcpyKernelToUser(out, &in, sizeof(in));
     EXIT_SYSCALL(state);
     return 0;
-}
-
-/* Returns the capture sequence number (> 0); VjoState.done_seq reaches it
- * when this capture has finished. */
-int vjoRequestCapture(uint32_t flags)
-{
-    uint32_t state;
-    int ret;
-    if (!caller_ok())
-        return VJO_ERR_PERM;
-    ENTER_SYSCALL(state);
-    ret = capture_request(flags);
-    EXIT_SYSCALL(state);
-    return ret;
-}
-
-/* Rows [row, row + n) of the last capture, raw_stride bytes each. */
-int vjoReadRaw(uint32_t row, uint32_t n, void *dst)
-{
-    uint32_t state;
-    if (!caller_ok())
-        return VJO_ERR_PERM;
-    int ret;
-    ENTER_SYSCALL(state);
-    VJO_LOCK();
-    if (game_ocr_capture_busy_locked() || g.capture_state != CAPTURE_IDLE || !g.raw_valid || !g.raw || row >= g.crop_h) {
-        ret = -1;
-    } else {
-        uint32_t stride = g.raw_stride;
-        if (n > g.crop_h - row)
-            n = g.crop_h - row;
-        ret = ksceKernelMemcpyKernelToUser(dst, g.raw + row * stride, n * stride) < 0 ? -1 : (int)n;
-        if (ret > 0) buffers_read_done(row, (uint32_t)ret);
-    }
-    VJO_UNLOCK();
-    EXIT_SYSCALL(state);
-    return ret;
 }
 
 /* The boot-safety guard's record of this boot, for any process: the Shell
@@ -633,7 +527,6 @@ int module_stop(SceSize argc, const void *args)
         ksceKernelDeleteThread(worker_uid);
     }
     release_hooks();
-    buffers_free();
     delete_sync_objects();
     return SCE_KERNEL_STOP_SUCCESS;
 }

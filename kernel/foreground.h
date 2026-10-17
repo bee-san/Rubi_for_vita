@@ -10,7 +10,6 @@
 /* Internal event bits (g.ievf), consumed by the kernel worker thread. */
 #define IEV_GAME_START  0x01u
 #define IEV_GAME_EXIT   0x02u
-#define IEV_CAPTURED    0x04u /* raw region copied in the display hook */
 #define IEV_QUIT        0x08u
 #define IEV_ACTIVATE    0x10u /* shell marked game_pid as a game */
 #define IEV_MODEL       0x20u /* bounded OCR model operation queued for kernel context */

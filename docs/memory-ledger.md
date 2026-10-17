@@ -24,11 +24,11 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   pool                              permanent   worst case        limit     headroom
   shell pages                         217,088      237,568    1,048,576      811,008
   shell paf                             8,192      225,280      985,088      759,808
-  kernel                              135,168    2,248,704    2,248,704            0
+  kernel                              135,168      225,280      225,280            0
   game                                131,072    8,720,384    8,720,384            0
   packaged modules (loaded pages vs declared budget)
-      VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (40,040->40,960 + 77,672->77,824)
-      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (99,276->102,400 + 69,860->73,728)
+      VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (37,964->40,960 + 77,584->77,824)
+      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (99,196->102,400 + 69,860->73,728)
       VitaJPOverlay_OCR          94,208 B of     94,208 B declared (77,004->77,824 + 14,160->16,384)
 ```
 
@@ -38,9 +38,10 @@ network row (it was 707,840 B with Google Lens alone, 731,632 B with the relay's
 slot). An Anki card's screenshot (API 23) is made in the game: the Shell's 128 KiB Anki arena
 holds only its job's request and result, and the game's `VjoGameShot` block (450,560 B) is a job of
 the one job slot, never beside an OCR job's transient blocks, so neither pool's worst case moves.
-The shipped default (local JMdict) has 759,808 B of headroom. The kernel row keeps the full-frame
-capture's 2,088,960 B (`kernel/buffers.c`): since Google Lens's removal no Shell code takes it (the
-screenshot and OCR read the screen in the game); it goes with the capture's own removal.
+The shipped default (local JMdict) has 759,808 B of headroom. The kernel row has no full-frame
+capture since API 24 (2,088,960 B of its 2,248,704 B worst case until then): no Shell code took it
+after Google Lens's removal, and OCR and the screenshot read the screen in the game. Its worst case is
+now the permanent part, a kernel strip and a starting game's `games.ini` read.
 
 *Permanent* is held from boot (or from the game's start) until exit; *worst case* adds the largest
 transient set that can be live at once.
@@ -313,8 +314,8 @@ its static tables and helpers without the prefix. What went:
 The PAF items lose the network row: `VJO_BUDGET_PAF_RESULTS_NET` (548,096 B with one slot) and
 `VJO_WORST_SHELL_PAF_NET` (707,840 B) are gone, and a job's lookup takes the one 64 KiB arena. The
 kernel's capture syscalls (`vjoRequestCapture`, `vjoReadRaw`) and its full-frame block
-(`VjoCapture`, 2,088,960 B at most) stay, unused, until their own removal, which changes the
-kernel API.
+(`VjoCapture`, 2,088,960 B at most) stayed, unused, until their own removal, which changed the
+kernel API (API 24, [pool "kernel"](#pool-kernel-scephymempartkd-36-mib-shared-by-every-driver)).
 
 Then the network stack itself went (PR-B): the sources the link had stopped keeping
 (`core/net.c`, `core/http.c`, `core/tls.c`, `core/tls_roots.c` and `third_party/roots`, BearSSL
@@ -414,10 +415,21 @@ VjoNet figures read the painted area as used. The boot guard makes the boot afte
 |---|---|---|---|
 | kernel module pages | 118,784 | `VitaJPOverlay_Kernel.skprx` (the debug build; the normal one's below): 40,960 text + 77,824 data/bss (the 32 KiB model staging buffer and the 4 KiB log ring are in it); API 22's frame-pacing step adds 272 B of text (36,608 B) and 48 B of data/bss, the same pages [main 8f1ec8f]; the worker loader (#138: the kernel loads the game worker into every game ON in `games.ini`) adds one text page: `kernel/loader.c` 2,354 B of text and 48 B of bss, `core/games.c` 1,251 B (the Shell's own policy code), the registration's one-thread check 150 B and 8 B, and five more `SceSysclibForDriver` stubs, 36,640 → 40,648 B of text; data/bss 77,768 → 77,824 B fills its pages (one more byte takes a page); API 23's screenshot (its colour rows and its JPEG's file broker, which uses the same staging buffer) within the same pages, paid for by the rest of the kernel's cold code built for size (the syscalls and the worker's loop, the boot guard, the kernel strip, the log) and the request's model directory 256 → 128 B: 40,648 → 40,040 B of text and 77,824 → 77,672 B of data/bss, the data pages no longer full (the normal build 36,444 → 35,900 and 76,136 → 75,984 B, the same 114,688 B) [the build log's module rows, main `dcb7b31` and this change, both builds] | packaged SELF segments [measured: the build log's module rows, main 3aa08a6 and #138; the same on main c08db18] |
 | VjoWorker stack | 16,384 | permanent | `kernel/main.c` |
-| VjoCapture | 2,088,960 at most (960 × 544 × 4) | no Shell code takes it any more (its users, Google Lens's JPEG and the Shell's Anki screenshot, were removed; since API 23 the game worker reads a card's screenshot in colour strips, the OCR capture's path) since API 19: region-sized, `KERNEL_RW`, per capture, freed when the reader has the last row; 458,752 B at 917 × 125 [measured]; #74's console refused 2,088,960 B five times (`0x80024302`) [measured] | `kernel/buffers.c` |
-| VjoOcrStrip | 65,536 at most | the OCR ladder's last rung: one strip for one `vjoOcrCaptureRows` call, only when the display hook could not write the game's memory; never held with `VjoCapture` (refused while that is), so it adds nothing to the worst case | `kernel/buffers.c` |
-| VjoPolicy | 24,576 | #138: a starting game's `games.ini` read by the kernel worker, `KERNEL_RW`: the parsed table (8,200 B) and the file's text (at most 12,288 B), page-rounded; taken for a candidate game's start only and freed before that start goes on, never refused while `VjoCapture` is held, so the worst case counts both. Refused: the game starts without the worker, and `kernel.txt` says so | `kernel/loader.c` `policy_alloc`; the fit is checked at compile time |
-| **limit** | **2,248,704** | today's worst case: a **ratchet**, not a cited safe size (2,220,032 B before #138's page and block). The pool's free space on a retail console is unmeasured; a 2,088,960 B capture failed there once (#14) and has succeeded since. The self-test reads the partition kernel-side and replaces this number | [vita-memory.md 5.3](vita-memory.md) |
+| VjoOcrStrip | 65,536 at most | the capture ladder's last rung: one strip for one `vjoOcrCaptureRows` call, only when the display hook could not write the game's memory, freed before the call returns (a copy the call abandoned keeps it until the copy ends, when the kernel worker frees it); counted in the worst case since API 24 (before, it was never held with `VjoCapture`, the larger) | `kernel/buffers.c` |
+| VjoPolicy | 24,576 | #138: a starting game's `games.ini` read by the kernel worker, `KERNEL_RW`: the parsed table (8,200 B) and the file's text (at most 12,288 B), page-rounded; taken for a candidate game's start only and freed before that start goes on, not refused while a strip is held, so the worst case counts both. Refused: the game starts without the worker, and `kernel.txt` says so | `kernel/loader.c` `policy_alloc`; the fit is checked at compile time |
+| **limit** | **225,280** | today's worst case (the debug build's; the normal build's is 221,184 B): a **ratchet**, not a cited safe size. It was 2,248,704 B with the full-frame capture until API 24 (2,220,032 B before #138's page and block). The pool's free space on a retail console is unmeasured; a 2,088,960 B capture failed there (#14, #74) and succeeded in other sessions. The self-test reads the partition kernel-side and replaces this number | [vita-memory.md 5.3](vita-memory.md) |
+
+**API 24** removed the kernel's full-frame capture: `vjoRequestCapture` and `vjoReadRaw`, the
+`VjoCapture` block (2,088,960 B at most, 458,752 B at 917 × 125), `kernel/capture_request.c`, the
+display hook's copy, the worker's completion and timeout, and `VjoState`'s `alloc_status`,
+`capture_result` and `raw_stride`. Its last users were Google Lens's JPEG (#130) and the Shell's Anki
+screenshot (#125); OCR reads its region in the game since API 19, and an Anki card's screenshot since
+API 23. The kernel pool's worst case goes from 2,248,704 to 225,280 B (debug) and from 2,244,608 to
+221,184 B (normal), and the limit with it. The kernel's text goes from 40,040 to 37,964 B and its
+data/bss from 77,672 to 77,584 B (normal: 35,900 → 33,840 and 75,984 → 75,896 B), the same pages, and
+the Shell's from 100,484 to 100,396 B of text (normal: 90,012 → 89,924 B), the same pages [measured: the
+build log's module rows and ledger, both builds of main `836259e` (#150) and API 24]. `tools/check_vita_syscall_abi.py`
+fails a module that still exports or imports either syscall.
 
 ### Pool "game": `ScePhyMemPartGame` (256 MiB minus the game's own use)
 
@@ -490,6 +502,10 @@ qemu-arm, both normal builds], which vita-vn-ocr's Cortex-A9 cost model puts at 
 1.6 µs at 444 MHz [estimate], against a console lookup's 70-81 ms, nearly all file reads
 ([performance.md](performance.md)) [measured: both builds' module rows, main `10c8011` and #138]. The kernel and
 the worker are byte-identical to main's in both builds.
+API 24 (the kernel's full-frame capture removed): the normal kernel 35,900 → 33,840 B of text and
+75,984 → 75,896 B of data/bss in its 114,688 B, the normal Shell 90,012 → 89,924 B of text in its
+163,840 B (188 B of room in its text pages), and the normal ledger's kernel worst case 221,184 B
+[measured: the build log's module rows and ledger, both builds of main `836259e` (#150) and API 24].
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would
@@ -535,7 +551,8 @@ ledger   Paf plugin (est.): current=8192 peak=8192
 
 `free=` is the PAF heap's free size as `GetFreeSize()` reports it (0 before Paf is ready). Stacks
 include their 4 KiB of TLS. The kernel writes `ledger kernel: current=… peak=… limit=…` and its
-items to `kernel.txt` at start and at every capture. The game worker keeps its ledger in the
+items to `kernel.txt` once a boot, at its start (`kernel/main.c`; until API 24 also at every
+full-frame capture, from the removed `VjoCapture` allocator). The game worker keeps its ledger in the
 game's process, which has no file access; its numbers reach the Shell log through the job result
 (`game vocr memory: free USER=… need …`, `workspace_bytes`, `resident_bytes`).
 

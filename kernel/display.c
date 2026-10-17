@@ -1,5 +1,6 @@
-/* sceDisplaySetFrameBufInternal hook: remembers the game's frame geometry and
- * performs pending captures on the exact frame the game submits. A game that
+/* sceDisplaySetFrameBufInternal hook: remembers the game's frame geometry, samples
+ * the region's signature and copies an OCR job's armed rows (game_ocr.c) from the
+ * exact frame the game submits. A game that
  * submits no frames (VJO_GAME_STATIC_FB) is sampled from its pad calls
  * instead (display_static_fb_sample). */
 #include <psp2kern/display.h>
@@ -54,8 +55,8 @@ static int fb_read(GameFb *out)
 }
 
 /* A frame of the game, in its context: geometry, the change detection
- * signature, and a pending capture. One caller at a time (frame_busy, held
- * for a whole capture copy): the display hook and the static framebuffer
+ * signature, and an armed job's rows. One caller at a time (frame_busy, held
+ * for a whole rows copy): the display hook and the static framebuffer
  * sampling may run at once on different threads. */
 static volatile int frame_busy;
 
@@ -68,7 +69,7 @@ static void on_frame(const GameFb *fb)
     g.fb_w = fb->w;
     g.fb_h = fb->h;
 
-    if (g.game_active && g.capture_state == CAPTURE_IDLE && ++frame_n % VJO_CHECK_EVERY_FRAMES == 0) {
+    if (g.game_active && ++frame_n % VJO_CHECK_EVERY_FRAMES == 0) {
         uint32_t seq = g.hook_sig_seq;
         if (region_sig_hook(fb->base, fb->pitch, fb->fmt, fb->w, fb->h, &g.hook_sig[(seq + 1) & 1]) == 0) {
             __sync_synchronize(); /* the signature is written before the bump */
@@ -76,15 +77,6 @@ static void on_frame(const GameFb *fb)
         }
     }
 
-    if (g.capture_state == CAPTURE_PENDING && capture_claim()) {
-        int64_t t0 = ksceKernelGetSystemTimeWide();
-        g.capture_copy_us = t0;
-        g.capture_result = capture_copy(fb->base, fb->pitch, fb->fmt, fb->w, fb->h);
-        g.capture_state = CAPTURE_COPIED;
-        ksceKernelSetEventFlag(g.ievf, IEV_CAPTURED);
-        klog("capture %ux%u fmt %08X in %d us -> %d", g.crop_w, g.crop_h, fb->fmt,
-             (int)(ksceKernelGetSystemTimeWide() - t0), g.capture_result);
-    }
     /* The game OCR worker's rows (API 19), straight into its own memory. */
     game_ocr_rows_hook(fb->pid, fb->base, fb->pitch, fb->fmt, fb->w, fb->h);
     __sync_lock_release(&frame_busy);

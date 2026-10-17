@@ -436,10 +436,11 @@ rewrite them. `install-vita.sh` keeps the chosen size on an update, and the app'
 error names where the memory ran out: the game's memory for this region
 (a tighter region helps) or for the smallest size's weights, or the Shell's
 memory for results (restart the Vita). Local OCR
-takes no kernel memory for the screen since API 19: the game reads its own
-screen ([in-game capture](docs/ingame-capture.md)). The kernel's full-frame capture buffer
-has no user: an Anki card's screenshot is read in the game too, in colour strips, and
-encoded there. A Shell UI memory error
+reads the screen in the game since API 19, into the game worker's own memory; the
+kernel takes memory for it only on the capture ladder's last rung, a strip of at most
+64 KiB for one call ([in-game capture](docs/ingame-capture.md)). An Anki card's screenshot
+is read in the game too, in colour strips, and encoded there. API 24 removed the kernel's
+full-frame capture buffer, which nothing used any more. A Shell UI memory error
 after recognition keeps the recognized text and identifies the unavailable
 dictionary results.
 
@@ -691,7 +692,7 @@ previous BUSY value `-3` arrived as `0xBFFFFFFD`, so the game failed to poll a
 pending model operation and retained its job ownership. The new codes match
 that return encoding and also remain consistent in copied status fields.
 Native SDK file errors are unchanged. Install all three plugins of one build
-together (API 23 since the Anki screenshot) and reboot; older plugin versions
+together (API 24 since the kernel's full-frame capture was removed) and reboot; older plugin versions
 cannot use this transport.
 
 The `*main` plugin handles UI and disk-backed dictionary lookup with one
@@ -732,7 +733,8 @@ pools, which process each plugin runs in, and the budgets each context can use.
 three plugins take from those pools: a budget table checked in CI (an allocation
 outside the wrappers, a worst case over a pool's limit, or a module that grew by a
 page fails the build), printed in the build log and, with current and peak per
-pool, in `status.txt` and `kernel.txt` at boot and at each game start and exit.
+pool, in `status.txt` at boot and at each game start and exit and in `kernel.txt`
+at boot.
 
 `log_file = on`, the default, records bounded diagnostic logs:
 `ux0:data/VitaJPOverlay/log.txt` holds at most 1 MB and one rotated
