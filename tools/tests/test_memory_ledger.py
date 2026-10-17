@@ -80,6 +80,24 @@ class MemoryLedgerCheck(unittest.TestCase):
                              kernel["items"]["VJO_BUDGET_KERNEL_POLICY"], variant)
             self.assertGreaterEqual(kernel["items"]["VJO_BUDGET_KERNEL_OCR_STRIP"], kstrip_max, variant)
 
+    def test_the_game_worst_case_holds_a_shot_beside_the_resident_models(self):
+        # #194: an Anki screenshot's block holds the encoder's state, the whole frame in colour (copied once by
+        # the display hook) and the JPEG at most (include/vjo_game_ocr.h VJO_GAME_OCR_SHOT_MAX), page-rounded;
+        # it is a job of the one slot, held beside the resident weights, LM and cascade model (a shot runs no
+        # model), never beside an OCR job's workspace, capture, tall line or helpers: the pool's worst case is
+        # the resident blocks and the slot's larger job, both builds
+        shot_max = int(re.search(r"#define VJO_GAME_OCR_SHOT_MAX \((\d+)u \* (\d+)u\)",
+                                 (ROOT / "include/vjo_game_ocr.h").read_text()).group(1)) * 1024
+        frame_block = (4096 + 16 + 960 * 544 * 4 + shot_max + 16 + 4095) // 4096 * 4096
+        for variant in ("debug", "normal"):
+            v = ledger.parse_budget(ROOT / "include/vjo_ledger_budget.h", variant)
+            resident = v["VJO_BUDGET_GAME_WEIGHTS"] + v["VJO_BUDGET_GAME_LM"] + v["VJO_BUDGET_GAME_CASCADE"]
+            ocr_job = (v["VJO_BUDGET_GAME_WORKSPACE"] + v["VJO_BUDGET_GAME_CAPTURE"] + v["VJO_BUDGET_GAME_LINE"] +
+                       v["VJO_BUDGET_GAME_HELPERS"])
+            self.assertGreaterEqual(v["VJO_BUDGET_GAME_SHOT"], frame_block, variant)
+            self.assertEqual(v["VJO_WORST_GAME_JOB"], resident + max(ocr_job, v["VJO_BUDGET_GAME_SHOT"]), variant)
+            self.assertLessEqual(v["VJO_WORST_GAME_JOB"], v["VJO_LIMIT_GAME_JOB"], variant)
+
     def test_a_picture_card_fits_the_only_configuration(self):
         # a 384 KiB Anki arena (the removed screenshot card's) put the network configuration over the
         # limit by 8,688 B (a warning) while it existed; beside the one 64 KiB arena it fits: 487,424 B

@@ -43,7 +43,8 @@ class GameShot(unittest.TestCase):
                                       text=True, timeout=300)
                 self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
                 r = json.loads(done.stdout.strip().splitlines()[-1])
-                self.assertEqual((r["rc"], r["quality"], r["tries"], r["strips"]), (0, 70, 1, 9))
+                # #194: the whole frame in one rows call, copied in one display call of the game
+                self.assertEqual((r["rc"], r["quality"], r["tries"], r["strips"]), (0, 70, 1, 1))
                 jpg = Path(r["path"])
                 data = jpg.read_bytes()
                 self.assertEqual(len(data), r["bytes"])

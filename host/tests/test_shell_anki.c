@@ -1556,7 +1556,12 @@ static void test_enter_saves_the_screenshot_beside_the_card(void)
                 "peak %u, %u without the screenshot", (unsigned)last_peak, (unsigned)text_peak);
     /* the debug build logs every screenshot and the record; the normal build only a failed one */
 #if VJO_DEBUG
-    TEST_CHECK(logged("anki: screenshot rc=0 960x544 q70 try 1: 56934 B; block 450560 B") && logged(" + .jpg\n"));
+    {
+        char want[96];
+        snprintf(want, sizeof(want), "anki: screenshot rc=0 960x544 q70 try 1: 56934 B; block %u B",
+                 (unsigned)VJO_BUDGET_GAME_SHOT);
+        TEST_CHECK(logged(want) && logged(" + .jpg\n"));
+    }
 #else
     TEST_CHECK(!logged("anki: screenshot") && !logged(" + .jpg\n") && logged("anki: save rc=0, "));
 #endif
