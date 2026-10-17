@@ -42,14 +42,16 @@ the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-
 venv of its own (`VJO_ANKI_PYTHON`; `VJO_REQUIRE_ANKI=1` makes a missing one fail, not skip).
 AnkiDroid and AnkiMobile have not imported one.
 
-Two of those tests are the run's temporary files: every test runs with `TMPDIR` set to a directory
-of the build's own (`vjo-ctest-<hash of the build directory>` in the system's temporary directory),
-which `tmp_leak_setup` makes empty before the first test and `tmp_leak_check` counts after the last.
-The check fails on every entry a test left there, named with its files and its suite's source, and
-on a test source that names `/tmp` instead of `TMPDIR` (its files would go around the count); then
-it removes the directory. Each suite keeps its files in one directory that its own process makes
-before acutest forks the tests and removes, with whatever the tests left in it, when it ends
-(`host/tests/test_tmpdir.h`).
+Two of those tests are the run's temporary files. Every test runs with a `TMPDIR` of its own,
+`<the build's directory>/<test>`, where the build's directory is `vjo-ctest-<hash of the build
+directory>` in the system's temporary directory. `tmp_leak_setup` makes each test's directory,
+empty, before the first test, and `tmp_leak_check` counts them after the last. The check fails on
+every entry a test left in its own, named with the test, its files and, for a suite's directory,
+the suite's source; on a test source in `host/tests` or `tools/tests` that names `/tmp` instead of
+`TMPDIR` (its files would go around the count); then it removes the directory. Each suite keeps its
+files in one directory that its own process makes before acutest forks the tests and removes, with
+whatever the tests left in it, when it ends (`host/tests/test_tmpdir.h`, which removes a tree
+in-process: no shell, no link followed, no path it could not spell whole).
 
 Both builds run (docs/release-variants.md): the `host` and `vita` jobs are a matrix of the debug
 build (`VJO_DEBUG=ON`, the test builds') and the normal one (`OFF`), the ARM lane included
@@ -147,9 +149,9 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-The suites run with `TMPDIR` set to a directory of the lane's own, which must be empty again at the
-end (`arm TMPDIR: nothing left in it`); the lane fails on whatever a suite left there, named, and
-removes the directory either way.
+Each suite runs with a `TMPDIR` of its own, in a directory of the lane's, which must be empty again
+at the end (`arm TMPDIR: nothing left in it`); the lane fails on whatever a suite left, named with
+the suite, and removes the directory either way.
 
 Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 265 cases of the
 debug build pass (257 of the normal build, which has no `kernel_meminfo` and fewer log cases;

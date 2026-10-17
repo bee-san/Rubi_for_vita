@@ -27,9 +27,10 @@
 # SHA-256 only) runs here too, and the packages it writes (--write) must be
 # the same bytes on ARM as natively (HOST_CC).
 #
-# Every suite runs with TMPDIR set to a private directory of the lane's own (host/tests/test_tmpdir.h),
-# which must be empty again at the end: the lane fails on whatever a suite left there (named), and
-# removes it either way.
+# Every suite runs with a TMPDIR of its own (host/tests/test_tmpdir.h), and the lane's other steps
+# (the builds, the comparisons) with theirs, all in one directory of the lane's: each must be empty
+# again at the end. The lane fails on whatever is left, named with its suite, and removes the
+# directory either way.
 #
 # Ubuntu: apt-get install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 # qemu-user-static (the cross gcc alone has no ARM libc headers or static
@@ -58,9 +59,12 @@ QEMU_ARGS=(-cpu cortex-a9)
 "$ARM_CC" --version | head -1
 "$QEMU" --version | head -1
 TMP_BASE=${TMPDIR:-/tmp}
-TMPDIR=$(mktemp -d "$TMP_BASE/vjo-arm-tests-XXXXXX")
+case $TMP_BASE in /*) ;; *) TMP_BASE=/tmp ;; esac
+TMP_ROOT=$(mktemp -d "$TMP_BASE/vjo-arm-tests-XXXXXX")
+trap 'rm -rf "$TMP_ROOT"' EXIT
+tmp_of() { mkdir -p "$TMP_ROOT/$1" && printf '%s' "$TMP_ROOT/$1"; } # tmp_of NAME: that step's own TMPDIR
+TMPDIR=$(tmp_of lane)
 export TMPDIR
-trap 'rm -rf "$TMPDIR"' EXIT
 
 build() { # build NAME SOURCES...
   local name=$1; shift
@@ -136,8 +140,9 @@ fail=0
 "${HOST_CC:-cc}" -O2 -Wall -Wextra -Wno-unused-parameter -I third_party/acutest/include -I host/tests/vita_stubs -I core \
   -I include -I third_party/bearssl/inc -I "$BS" -DVJO_HOST=1 -o "$OUT/apkg_host" "${APKG[@]}"
 rm -rf "$OUT/apkg.arm" "$OUT/apkg.host" && mkdir -p "$OUT/apkg.arm" "$OUT/apkg.host"
-if "$QEMU" "${QEMU_ARGS[@]}" "$OUT/apkg" --write "$OUT/apkg.arm" > "$OUT/apkg_write.log" 2>&1 &&
-   "$OUT/apkg_host" --write "$OUT/apkg.host" >> "$OUT/apkg_write.log" 2>&1 && diff -r "$OUT/apkg.arm" "$OUT/apkg.host" > /dev/null; then
+if TMPDIR=$(tmp_of apkg_write) "$QEMU" "${QEMU_ARGS[@]}" "$OUT/apkg" --write "$OUT/apkg.arm" > "$OUT/apkg_write.log" 2>&1 &&
+   TMPDIR=$(tmp_of apkg_write) "$OUT/apkg_host" --write "$OUT/apkg.host" >> "$OUT/apkg_write.log" 2>&1 &&
+   diff -r "$OUT/apkg.arm" "$OUT/apkg.host" > /dev/null; then
   echo "arm apkg packages: $(ls "$OUT/apkg.arm" | grep -c '\.apkg$') .apkg files, identical to the host's"
 else
   echo "arm apkg packages: FAILED"; cat "$OUT/apkg_write.log"; fail=1
@@ -148,8 +153,10 @@ if [ -n "${VJO_PLAINTEXT_DIR:-}" ]; then
   "$ARM_CC" -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity" "${WL[@]}"
   "${HOST_CC:-cc}" "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity_host" "${WL[@]}"
   fx=host/fixtures/word_lookup/vocr_lines.tsv
-  if "$QEMU" "${QEMU_ARGS[@]}" "$OUT/word_lookup_parity" "$VJO_PLAINTEXT_DIR" "$fx" > "$OUT/word_lookup.arm" 2> "$OUT/word_lookup.log" &&
-     "$OUT/word_lookup_parity_host" "$VJO_PLAINTEXT_DIR" "$fx" > "$OUT/word_lookup.host" 2>> "$OUT/word_lookup.log" &&
+  if TMPDIR=$(tmp_of word_lookup) "$QEMU" "${QEMU_ARGS[@]}" "$OUT/word_lookup_parity" "$VJO_PLAINTEXT_DIR" "$fx" \
+       > "$OUT/word_lookup.arm" 2> "$OUT/word_lookup.log" &&
+     TMPDIR=$(tmp_of word_lookup) "$OUT/word_lookup_parity_host" "$VJO_PLAINTEXT_DIR" "$fx" > "$OUT/word_lookup.host" \
+       2>> "$OUT/word_lookup.log" &&
      cmp -s "$OUT/word_lookup.arm" "$OUT/word_lookup.host"; then
     echo "arm word_lookup: $(head -1 "$OUT/word_lookup.log"), identical to the host's"
   else
@@ -158,20 +165,26 @@ if [ -n "${VJO_PLAINTEXT_DIR:-}" ]; then
   fi
 fi
 for t in "${TESTS[@]}"; do
-  if "$QEMU" "${QEMU_ARGS[@]}" "$OUT/$t" > "$OUT/$t.log" 2>&1; then
+  if TMPDIR=$(tmp_of "$t") "$QEMU" "${QEMU_ARGS[@]}" "$OUT/$t" > "$OUT/$t.log" 2>&1; then
     echo "arm $t: $(grep -c '\[ OK \]' "$OUT/$t.log") cases pass"
   else
     echo "arm $t: FAILED"; tail -20 "$OUT/$t.log"; fail=1
   fi
 done
 # The record the kernel writes must be the same bytes on ARM and on the host.
-"$QEMU" "${QEMU_ARGS[@]}" "$OUT/boot_guard" record_format_and_parse_round_trip > /dev/null
-left=$(ls -A "$TMPDIR")
+TMPDIR=$(tmp_of boot_guard) "$QEMU" "${QEMU_ARGS[@]}" "$OUT/boot_guard" record_format_and_parse_round_trip > /dev/null
+# What each suite or step left in its TMPDIR (SUITE/ENTRY), and anything outside them.
+left=$(cd "$TMP_ROOT" && { find . -mindepth 2 -maxdepth 2; find . -mindepth 1 -maxdepth 1 ! -type d; } | sed 's|^\./||' | sort)
 if [ -z "$left" ]; then
   echo "arm TMPDIR: nothing left in it"
 else
-  echo "arm TMPDIR: FAILED, the suites left $(printf '%s\n' "$left" | wc -l) entries in it:"
-  for e in $left; do echo "  $e: $(find "$TMPDIR/$e" | wc -l) files and directories"; done
+  echo "arm TMPDIR: FAILED, $(printf '%s\n' "$left" | wc -l) entries left:"
+  while IFS= read -r e; do
+    case $e in
+      */*) echo "  ${e%%/*}: ${e#*/}: $(find "$TMP_ROOT/$e" | wc -l) files and directories" ;;
+      *) echo "  $e (in no suite's directory)" ;;
+    esac
+  done <<< "$left"
   fail=1
 fi
 exit $fail

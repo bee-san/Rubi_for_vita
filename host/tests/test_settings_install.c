@@ -85,10 +85,10 @@ int sceIoRead(int fd, void *b, size_t n) { return native((int)read(fd, b, n)); }
 static char fd_path[1024][64];
 int sceIoWrite(int fd, const void *b, size_t n)
 {
-    char link[64], path[512];
+    char link[64], path[PATH_MAX]; /* the card is in TMPDIR: its files' paths are as long as it is */
     snprintf(link, sizeof(link), "/proc/self/fd/%d", fd);
     ssize_t m = readlink(link, path, sizeof(path) - 1);
-    if (m > 0) {
+    if (m > 0 && m < (ssize_t)sizeof(path) - 1) {
         path[m] = '\0';
         if (fault.pattern && strstr(path, fault.pattern) && hit(fault.write)) return (int)(0x80010000u | ENOSPC);
     }
@@ -220,20 +220,8 @@ static char *slurp(const char *path, size_t *n)
     return b;
 }
 static int there(const char *path) { struct stat st; return !stat(path, &st); }
-static void remove_tree(const char *path)
-{
-    DIR *d = opendir(path);
-    struct dirent *e;
-    if (!d) { unlink(path); return; }
-    while ((e = readdir(d))) {
-        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-        char sub[1024];
-        snprintf(sub, sizeof(sub), "%s/%s", path, e->d_name);
-        remove_tree(sub);
-    }
-    closedir(d);
-    rmdir(path);
-}
+/* (test_tmpdir.h's: no link followed, no truncated path walked) */
+static void remove_tree(const char *path) { vjo_test_remove_tree(path); }
 static int count_files(const char *dir, const char *prefix)
 {
     DIR *d = opendir(dir);

@@ -204,7 +204,7 @@ static size_t build_lm(void)
     return lpos;
 }
 
-static char model_dir[256];
+static char model_dir[256]; /* the product joins it and a name in 256 bytes (core/vocr_ocr.c join_path) */
 
 static void write_file(const char *name, const void *data, size_t n, unsigned char sha[32])
 {

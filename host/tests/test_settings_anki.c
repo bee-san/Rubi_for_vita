@@ -344,10 +344,12 @@ static int files_in(const char *dir, const char *suffix)
 }
 static void reset(int assign)
 {
-    char cmd[2 * PATH_MAX + 64];
-    snprintf(cmd, sizeof(cmd), "rm -rf '%s/ux0:data' && mkdir -p '%s/ux0:data/VitaJPOverlay'", vjo_test_tmpdir_path,
-             vjo_test_tmpdir_path);
-    TEST_ASSERT(system(cmd) == 0);
+    /* an empty ux0:data/VitaJPOverlay in the suite's directory, removed and made in-process (no shell) */
+    char data[PATH_MAX], overlay[PATH_MAX];
+    TEST_ASSERT(snprintf(data, sizeof(data), "%s/ux0:data", vjo_test_tmpdir_path) < (int)sizeof(data));
+    TEST_ASSERT(snprintf(overlay, sizeof(overlay), "%s/VitaJPOverlay", data) < (int)sizeof(overlay));
+    TEST_ASSERT(vjo_test_remove_tree(data) == 0);
+    TEST_ASSERT(mkdir(data, 0777) == 0 && mkdir(overlay, 0777) == 0);
     fail_open = fail_dopen = NULL;
     fail_rename = fail_create = renames = writes_opened = 0;
     logs[0] = '\0';

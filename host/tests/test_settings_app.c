@@ -303,22 +303,8 @@ static void remove_model(const char *name)
  * the suite's directory, which goes with whatever is left in it when the suite
  * ends (test_tmpdir.h). */
 static char card_dir[PATH_MAX];
-static void remove_tree(const char *path)
-{
-    struct stat st;
-    if (lstat(path, &st)) return;
-    if (S_ISDIR(st.st_mode)) {
-        DIR *d = opendir(path);
-        struct dirent *e;
-        while (d && (e = readdir(d))) {
-            char child[512];
-            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-            if (snprintf(child, sizeof(child), "%s/%s", path, e->d_name) < (int)sizeof(child)) remove_tree(child);
-        }
-        if (d) closedir(d);
-        rmdir(path);
-    } else unlink(path);
-}
+/* (test_tmpdir.h's: no link followed, no truncated path walked) */
+static void remove_tree(const char *path) { vjo_test_remove_tree(path); }
 static void remove_card(void)
 {
     if (card_dir[0] && chdir("/") == 0) remove_tree(card_dir);
