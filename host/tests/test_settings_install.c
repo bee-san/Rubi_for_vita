@@ -64,9 +64,25 @@ static struct {
     int calls;
 } fault;
 static int unsafe_off, umount_rc, app_readonly, locked, lock_calls;
-/* The app's log.txt lines (settings/applog.c, #149): not this suite's to check. */
+/* The app's log.txt lines (settings/applog.c, #149), kept since the card was made (the oldest go when it
+ * is full): a run's lines that the collect reads (#194: what became of the app's dictionary copy). */
+static char log_text[1 << 16];
+static size_t log_used;
 void vjo_log_enable(int on) { (void)on; }
-void vjo_log(const char *fmt, ...) { (void)fmt; }
+void vjo_log(const char *fmt, ...)
+{
+    char line[512];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    size_t n = strlen(line);
+    if (log_used + n + 2 > sizeof(log_text)) log_used = 0;
+    memcpy(log_text + log_used, line, n);
+    log_used += n;
+    log_text[log_used++] = '\n';
+    log_text[log_used] = '\0';
+}
 static long long free_space[2] = {1LL << 34, 1LL << 34}; /* ux0, ur0 */
 
 static int matches(const char *p) { return fault.pattern && p && strstr(p, fault.pattern); }
@@ -309,6 +325,8 @@ static void fresh_card(int with_ux0)
     memset(&fault, 0, sizeof(fault));
     unsafe_off = umount_rc = app_readonly = locked = lock_calls = 0;
     free_space[0] = free_space[1] = 1LL << 34;
+    log_used = 0;
+    log_text[0] = '\0';
     if (!template_len) {
         size_t n;
         char *t = slurp(VJO_SOURCE_DIR "/docs/config.example.ini", &n);
@@ -1007,6 +1025,100 @@ static void a_move_that_cannot_happen_copies(void)
     TEST_CHECK(has_line(r.lines, r.count, "Nothing on the card was changed."));
     TEST_CHECK(!strcmp(slurp("ux0:tai/config.txt", NULL), stock) && count_files("ux0:tai", "config.txt.vjo-") == 0);
     TEST_CHECK(!there(VJO_PAYLOAD_DATA "dictionaries/plaintext.vjdict"));
+}
+
+/* #194, test.4's console: the overlay's files came by FTP and VitaShell installed the VPK, so the app held its
+ * own 157 MB copy of the dictionary beside the installed one (the same layout as the same VPK installed again).
+ * The state is "installed"; Check and repair checks the installed dictionary and deletes the app's copy. That
+ * is a change on the card: the result and log.txt say it, and say it when the copy cannot be deleted (test.4's
+ * result said "nothing needed writing" and log.txt had no line, whichever it was). */
+static void check_and_repair_says_what_became_of_the_apps_dictionary_copy(void)
+{
+    char src[256], plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    TEST_ASSERT(vjo_payload_source(s.dict_index, src, sizeof(src)) == 0 && !there(src)); /* moved */
+    install_app(1, "0.8.0", NULL); /* the same VPK in VitaShell again: its payload, the dictionary with it */
+    TEST_ASSERT(there(src));
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INSTALLED && s.dict_in_app, "state %d, dict_in_app %d", s.state, s.dict_in_app);
+    int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
+    TEST_CHECK(has_line(plan, n, "The dictionary is already installed: once it is checked, this app's copy is deleted (1 MB freed)."));
+    log_used = 0;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && r.rc == 0);
+    TEST_CHECK(!there(src) && installed_files(1));
+    TEST_CHECK(r.written); /* the app's copy is gone: the card changed */
+    TEST_CHECK(has_line(r.lines, r.count, "Every file and line is in place: nothing needed writing"));
+    TEST_CHECK(has_line(r.lines, r.count, "The dictionary was already installed: this app's copy was deleted (1 MB freed)."));
+    TEST_CHECK(!has_line(r.lines, r.count, "Restart the Vita now")); /* nothing that loads at a start changed */
+    TEST_CHECK_(strstr(log_text, "install: this app's copy of the dictionary deleted (614417 B freed)\n") != NULL, "%s", log_text);
+    s = scan_now();
+    TEST_CHECK(s.state == VJO_INSTALL_INSTALLED && !s.dict_in_app);
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && !r.written);
+    TEST_CHECK(!has_line(r.lines, r.count, "this app's copy"));
+
+    /* the app folder cannot be written (app0: stays mounted): the copy stays, and the result says so */
+    install_app(1, "0.8.0", NULL);
+    app_readonly = 1;
+    umount_rc = (int)0x80800001u;
+    s = scan_now();
+    TEST_CHECK(s.state == VJO_INSTALL_INSTALLED && s.dict_in_app);
+    log_used = 0;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && r.rc == 0 && !r.written);
+    TEST_CHECK(there(src));
+    TEST_CHECK(has_line(r.lines, r.count, "The dictionary was already installed; this app's copy could not be deleted (1 MB)."));
+    TEST_CHECK_(strstr(log_text, "install: this app's copy of the dictionary kept (614417 B): this app's folder cannot be written\n")
+                != NULL, "%s", log_text);
+}
+
+/* An earlier run's dictionary (its .vjo-new, with the payload's SHA-256) is put in place: the app's copy beside
+ * it is deleted, and said (it was deleted without a word). */
+static void an_earlier_runs_dictionary_put_in_place_says_the_apps_copy_went(void)
+{
+    char src[256], dest[256], fresh[300];
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    snprintf(dest, sizeof(dest), "%s", vjo_payload_dest(s.dict_index));
+    snprintf(fresh, sizeof(fresh), "%s.vjo-new", dest);
+    TEST_ASSERT(rename(dest, fresh) == 0); /* a stop between the copy and its swap */
+    install_app(1, "0.8.0", NULL);
+    TEST_ASSERT(vjo_payload_source(s.dict_index, src, sizeof(src)) == 0 && there(src));
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_REPAIR, "state %d: %s", s.state, s.title);
+    log_used = 0;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && r.rc == 0);
+    TEST_CHECK(installed_files(1) && !there(src) && !there(fresh));
+    TEST_CHECK(has_line(r.lines, r.count, "The dictionary was put in place from an earlier run's copy: this app's copy was deleted (1 MB freed)."));
+    TEST_CHECK_(strstr(log_text, "install: this app's copy of the dictionary deleted (614417 B freed)\n") != NULL, "%s", log_text);
+    TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+}
+
+/* The move fails but the app folder can be written (the probe passed): the dictionary is copied, checked and put
+ * in place, then the app's copy is deleted, so the card does not keep the 157 MB twice. */
+static void a_copied_dictionary_leaves_no_copy_in_the_app_when_it_can_go(void)
+{
+    char src[256];
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    fault.pattern = "plaintext.vjdict";
+    fault.rename = 1; /* the move's rename */
+    log_used = 0;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && r.rc == 0);
+    TEST_CHECK(fault.calls >= 1);
+    memset(&fault, 0, sizeof(fault));
+    TEST_CHECK(installed_files(1));
+    TEST_ASSERT(vjo_payload_source(s.dict_index, src, sizeof(src)) == 0);
+    TEST_CHECK(!there(src));
+    TEST_CHECK(has_line(r.lines, r.count, "The dictionary was copied (it could not be moved), then this app's copy was deleted (1 MB freed)."));
+    TEST_CHECK(!has_line(r.lines, r.count, "this app keeps its copy too"));
+    TEST_CHECK_(strstr(log_text, "install: this app's copy of the dictionary deleted (614417 B freed)\n") != NULL, "%s", log_text);
+    TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
 }
 
 static void cannot_states(void)
@@ -2371,6 +2483,9 @@ TEST_LIST = {
     {"a_crafted_config_ini_is_scanned_in_bounded_time", a_crafted_config_ini_is_scanned_in_bounded_time},
     {"the_dictionary_already_installed_is_not_moved_again", the_dictionary_already_installed_is_not_moved_again},
     {"a_move_that_cannot_happen_copies", a_move_that_cannot_happen_copies},
+    {"check_and_repair_says_what_became_of_the_apps_dictionary_copy", check_and_repair_says_what_became_of_the_apps_dictionary_copy},
+    {"an_earlier_runs_dictionary_put_in_place_says_the_apps_copy_went", an_earlier_runs_dictionary_put_in_place_says_the_apps_copy_went},
+    {"a_copied_dictionary_leaves_no_copy_in_the_app_when_it_can_go", a_copied_dictionary_leaves_no_copy_in_the_app_when_it_can_go},
     {"cannot_states", cannot_states},
     {"faults_leave_old_or_new_files", faults_leave_old_or_new_files},
     {"an_interrupted_swap_is_finished", an_interrupted_swap_is_finished},
