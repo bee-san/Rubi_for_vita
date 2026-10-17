@@ -42,7 +42,8 @@ the installed files against the package, config.ini (API keys already redacted),
 both taiHEN configurations, boot.txt, kernel.txt, log.txt and log.old.txt (every
 OCR job, its memory and times, the ARM clock by game window with the boost's like-for-like ratio and verdict, the
 dictionary, the overlay, Anki and each .apkg export's result), the Anki queue,
-crash dumps, the self-test analysis when a report is there, the tier from the lowest
+crash dumps (each dated against the boot: this boot's, an earlier boot's, or not placed), the self-test
+analysis when a report is there, the tier from the lowest
 free game memory seen, and what this tool cannot decide, with where the data is.
 
 Exit status follows the verdict: 0 PASS (diagnostic WARNs included), 1 FAIL,
@@ -54,6 +55,7 @@ import argparse
 import json
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -2804,6 +2806,388 @@ def summarise_tai(text):
     return out
 
 
+# ---- crash dumps (#138): which boot each one is from
+# The system names a crashed process's dump ux0:data/psp2core-<time>-0x<pid>-<executable>.psp2dmp, <time> the crash's
+# Unix time by the Vita's clock (each of test.3's ten files is listed at its name's minute or the next: the dump is
+# finished after the crash). VitaShell's LIST (libftpvita gen_list_format) gives a file's time by the same clock:
+# "Oct 10 06:38" when its year is the Vita's current one, else "Oct 10 2025". This boot is dated by that clock as well
+# (boot_start): it began after the previous boot's last kernel.txt write (kernel/main.c renames it to kernel.prev.txt
+# once per boot, and a rename keeps a file's time: test.1's listing shows it for the Shell's rename; the window opens
+# PREV_MARGIN_S earlier for the kernel's) and before boot.txt's last write, its ok mark when the record says so, which
+# the kernel takes only 55 s into the boot (kernel/boot.c). status.prev.txt is not used: the Shell plugin rotates
+# status.txt at every start, a SceShell restart's included. The clock can be set back (test.3's ran about three days
+# behind), so a date says "before" only with the clock checked for this boot at kernel.txt's last write (clock_check:
+# its last line's uptime against its LIST time) and no pid this boot's kernel.txt named (kernel_facts, place_dump):
+# install_ftp.sh offers to archive those dumps off the Vita (tools/collect_vita.py --archive-dumps). A set-back after
+# kernel.txt's last write, or one put right again before it, is not seen (docs/self-test.md#crash-dumps).
+DUMP_NAME = re.compile(r"^psp2core-(\d{1,12})-0x([0-9A-Fa-f]{1,16})-([^/\\]+)\.psp2dmp$", re.I)
+LIST_ENTRY = re.compile(r"^(\S)\S*\s+\S+\s+\S+\s+\S+\s+(\d+)\s+([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{1,2}:\d{2}|\d{4}) (.*)$")
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+BOOT_OK_MIN_S = 55        # kernel/boot.c BOOT_OK_MIN_US: the kernel takes the Shell's ok mark this long into the boot
+BOOT_START_EST_S = 180    # no kernel.prev.txt: the ok mark within 3 minutes of the boot's start (an estimate)
+PREV_MARGIN_S = 120       # the window opens this long before kernel.prev.txt's time, should its rename date it
+CLOCK_FORWARD_S = 120     # clock_check: the start kernel.txt's last write gives may be this much after the window
+# Every pid a kernel.txt line names (kernel/*.c klog formats: "pid 0x..", "pid=..", "game pid 0x..", "game=..",
+# "shell=..", and the foreground transitions "foreground 0x.. -> 0x..")
+KERNEL_PIDS = re.compile(r"\b(?:pid|game|shell)[ =](?:pid )?(?:0x)?([0-9A-Fa-f]+)\b")
+KERNEL_FOREGROUND = re.compile(r"^foreground 0x([0-9A-Fa-f]+) -> 0x([0-9A-Fa-f]+)")
+KERNEL_UPTIME = re.compile(r"\bt=(\d+) ms\b")  # the system time since power-on (kernel/log.c klog_ms)
+# a game's exit or suspend (kernel/lifecycle.c fg_log), which the worker's "game exit" follows at once
+KERNEL_LEFT = re.compile(r"^foreground 0x[0-9A-Fa-f]+ -> 0x[0-9A-Fa-f]+ \((?:exit|suspend)\) t=\d+ ms")
+# the lines the kernel logs only with g.game_lock held (kernel/lifecycle.c procevent_patched, lifecycle_set_game_active)
+KERNEL_LOCKED = re.compile(r"^(?:foreground 0x[0-9A-Fa-f]+ -> 0x|game pid 0x[0-9A-Fa-f]+ active|"
+                           r"pid 0x[0-9A-Fa-f]+ (?:gone|is not a game): )")
+
+
+def listing(folder, device_path):
+    """A directory's LIST lines as the collect saved them (listings/, tools/collect_vita.py), as {name: {"dir", "bytes",
+    "date"}}, "date" the LIST's own ("Oct 10 06:38", "Oct 10 2025"); None when the collect has no listing of it."""
+    text = _read(Path(folder), "listings/" + re.sub(r"[^A-Za-z0-9]+", "_", device_path).strip("_") + ".txt")
+    if text is None:
+        return None
+    out = {}
+    for raw in text.splitlines():
+        m = LIST_ENTRY.match(raw.rstrip("\r"))
+        if m:
+            out[m.group(6)] = {"dir": m.group(1) == "d", "bytes": int(m.group(2)),
+                               "date": f"{m.group(3)} {int(m.group(4))} {m.group(5)}"}
+    return out
+
+
+def list_span(date, year):
+    """(first, last) Unix second of a LIST date by the Vita's clock: "Oct 10 06:38" is that minute of `year`, the
+    Vita's current year (which LIST leaves out), "Oct 10 2025" that day; None when it cannot be read."""
+    try:
+        mon, day, tail = date.split()
+        month = MONTHS.index(mon) + 1
+        if ":" in tail:
+            if year is None:
+                return None
+            hour, minute = (int(x) for x in tail.split(":"))
+            first = int(datetime(year, month, int(day), hour, minute, tzinfo=timezone.utc).timestamp())
+            return first, first + 59
+        first = int(datetime(int(tail), month, int(day), tzinfo=timezone.utc).timestamp())
+        return first, first + 86399
+    except (ValueError, OverflowError):
+        return None
+
+
+def vita_time(t):
+    """A Unix second by the Vita's clock, as its LIST and the dumps' names give it."""
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def dump_time(name):
+    """(crash time, pid, executable) from a dump's name; (None, None, None) for another name."""
+    m = DUMP_NAME.match(name)
+    if not m:
+        return None, None, None
+    t = int(m.group(1))
+    try:
+        vita_time(t)
+    except (ValueError, OverflowError, OSError):
+        t = None
+    return t, int(m.group(2), 16), m.group(3)
+
+
+def vita_year(dumps, collected_at):
+    """The Vita's current year, which LIST leaves out of a time of it ("Oct 10 06:38"): a dump listed so was written in
+    it, and its name has the year. Else this computer's at the collect. (year, where it came from)."""
+    for name, e in sorted(dumps.items()):
+        t, _, _ = dump_time(name)
+        if t is None or not e.get("date") or ":" not in e["date"]:
+            continue
+        mon, day, _ = e["date"].split()
+        crash = datetime.fromtimestamp(t, timezone.utc)
+        for d in (crash, crash + timedelta(days=1)):  # written within minutes of the crash, maybe after midnight
+            if mon == MONTHS[d.month - 1] and int(day) == d.day:
+                return d.year, "the crash dumps' names"
+    m = re.match(r"^(\d{4})-", str(collected_at or ""))
+    return (int(m.group(1)), "this computer's clock at the collect (no dump names the Vita's)") if m else (None, None)
+
+
+def boot_start(folder, year):
+    """When this boot began by the Vita's clock: {"first", "last" (Unix seconds), "how", "estimate", "shell_exit"}, or
+    {"unknown": why}. This boot is the last one the overlay recorded, normally the one the collect ran in."""
+    ur = listing(folder, "ur0:/data/VitaJPOverlay")
+    ux = listing(folder, "ux0:/data/VitaJPOverlay") or {}
+    record = _read(Path(folder), "ur0/data/VitaJPOverlay/boot.txt")
+    if not ur or "boot.txt" not in ur:
+        return {"unknown": "the collect has no LIST time of ur0:data/VitaJPOverlay/boot.txt, the boot guard's record"}
+    if record is not None and not record.strip():
+        return {"unknown": "boot.txt is empty: the installer reset it, and no boot has written it since"}
+    b = list_span(ur["boot.txt"]["date"], year)
+    if b is None:
+        return {"unknown": f"boot.txt's LIST time ({ur['boot.txt']['date']}) cannot be read"}
+    fields = dict(re.findall(r"(\w+)=(\d+)", record or ""))
+    at_ok = (fields.get("stage"), fields.get("fault"), fields.get("inert")) == ("4", "0", "0")
+    last = b[1] - (BOOT_OK_MIN_S if at_ok else 0)
+    k = list_span(ux["kernel.prev.txt"]["date"], year) if "kernel.prev.txt" in ux else None
+    # every write of this boot follows the previous boot's last kernel.txt write, its ok mark by 55 s or more
+    if k and b[1] < k[0] + (BOOT_OK_MIN_S if at_ok else 0):
+        return {"unknown": f"boot.txt's last write ({ur['boot.txt']['date']}) is not "
+                           + (f"{BOOT_OK_MIN_S} s or more " if at_ok else "") + f"after kernel.prev.txt's "
+                           f"({ux['kernel.prev.txt']['date']}): the Vita's clock was set back between the two boots"}
+    if k:
+        first = k[0] - PREV_MARGIN_S
+        how = (f"after the previous boot's last kernel.txt write (kernel.prev.txt, less {PREV_MARGIN_S // 60} minutes)"
+               + (f", {BOOT_OK_MIN_S} s or more before boot.txt's ok mark" if at_ok else ", before boot.txt's last write"))
+    elif at_ok:
+        first = last - BOOT_START_EST_S
+        how = (f"an estimate, as there is no kernel.prev.txt: {BOOT_OK_MIN_S} s to {BOOT_START_EST_S // 60} minutes "
+               "before boot.txt's ok mark")
+    else:
+        return {"unknown": "there is no kernel.prev.txt, and boot.txt's last write is not its ok mark "
+                           f"(stage={fields.get('stage')}, fault={fields.get('fault')}, inert={fields.get('inert')})"}
+    # kernel.txt and status.txt are this boot's own (each rewritten every boot; when this boot wrote neither, they are an
+    # older boot's, dated before it, and nothing is placed: the safe way); one written by a clock set back during this
+    # boot is dated before it began (kernel.txt stops at its cap, status.txt at 64 KB)
+    for name in ("kernel.txt", "status.txt"):
+        s = list_span(ux[name]["date"], year) if name in ux else None
+        if s and s[1] < first:
+            return {"unknown": f"this boot's {name} was last written {vita_time(s[1])[:16]}, before this boot began "
+                               f"({vita_time(first)} or later): the Vita's clock was set back during this boot"}
+    return {"first": first, "last": last, "from": vita_time(first), "to": vita_time(last), "how": how,
+            "estimate": not k, "shell_exit": fields.get("fault") == "1", "seq": fields.get("seq")}
+
+
+def kernel_facts(folder, year):
+    """kernel.txt's pids, its last uptime and its newest write, used only when it is this boot's whole log: it starts
+    with the boot guard's first line (the kernel's 4 KiB ring, kernel/log.c, drops its oldest bytes when lines come
+    faster than the first write) and its "boot guard: boot N" is boot.txt's seq=N. {"ok", "why", "shells" (the SceShell
+    pids it registered), "pids" (every pid a line names, the SceShells' included), "titles" ({pid: title} of its worker
+    lines), "uptime_ms" (the uptime its last line carries, "t=N ms", or None), "uptimes_back" (that uptime is below an
+    earlier line's), "span" and "newest" (its LIST time, and that minute's last second), "capped"}; with "ok" False
+    only "why"."""
+    folder, data = Path(folder), "ux0/data/VitaJPOverlay/"
+    text = _read(folder, data + "kernel.txt")
+    seq = dict(re.findall(r"(\w+)=(\d+)", _read(folder, "ur0/data/VitaJPOverlay/boot.txt") or "")).get("seq")
+    if text is None:
+        return {"ok": False, "why": "the collect has no kernel.txt"}
+    m = re.search(r"^boot guard: boot (\d+) ", text[:1024], re.M)
+    if not text.startswith("boot guard:"):
+        return {"ok": False, "why": "kernel.txt does not start with the boot's first line (lines may be missing)"}
+    if not m or m.group(1) != seq:
+        return {"ok": False, "why": f"kernel.txt is boot {m.group(1) if m else '?'}'s, boot.txt boot {seq or '?'}'s"}
+    shells, pids, titles = set(), set(), {}
+    for line in text.splitlines():
+        r = re.match(r"^shell registered: pid 0x([0-9A-Fa-f]+)", line)
+        if r:
+            shells.add(int(r.group(1), 16))
+        r = re.match(r"^worker for (\S+)(?: \(PSP\))? \(pid 0x([0-9A-Fa-f]+)\)", line)
+        if r:
+            titles[int(r.group(2), 16)] = r.group(1)
+        pids.update(int(p, 16) for p in KERNEL_PIDS.findall(line))
+        r = KERNEL_FOREGROUND.match(line)
+        if r:
+            pids.update(int(p, 16) for p in r.groups())
+    pids.discard(0)
+    # The uptime of kernel.txt's last write: its last line's t=, as the worker writes each line within a tick of its
+    # klog (kernel/main.c kernel_file_flush). The one exception: a "game exit" right after a game's exit or suspend line
+    # can be that event's, logged by the worker as it wakes (kernel/main.c worker), and so within a tick of the line.
+    # But a "game exit" alone comes from any app that exits without a line (one never confirmed as a game: the Overlay
+    # app closed, VitaShell), at any later time; and the hook raises the worker's flag before it logs its own line
+    # (kernel/lifecycle.c fg_store), so the event's "game exit" can come first, as test.3's kernel.txt has it (lines
+    # 104-105). Every exit or suspend line, and every other line of KERNEL_LOCKED, is logged with g.game_lock held, and
+    # the flag is raised within that hold, after the hold's earlier lines: an event's "game exit" logged before its own
+    # line therefore lies after the last KERNEL_LOCKED line before it. So the last "game exit" is the line's own only
+    # when no "game exit" lies between them (other threads' lines may).
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    uptime_why = None
+    if len(lines) >= 2 and lines[-1] == "game exit" and KERNEL_LEFT.match(lines[-2]):
+        i = len(lines) - 3
+        while i >= 0 and lines[i] != "game exit" and not KERNEL_LOCKED.match(lines[i]):
+            i -= 1
+        if i >= 0 and lines[i] == "game exit":
+            uptime_why = ("kernel.txt ends with a game exit that may be a later app's: one is logged before its last "
+                          "foreground line too, which the worker can log first")
+        else:
+            lines.pop()
+    last = KERNEL_UPTIME.search(lines[-1]) if lines and not uptime_why else None
+    uptimes = [int(u) for u in KERNEL_UPTIME.findall(text)]
+    ux = listing(folder, "ux0:/data/VitaJPOverlay") or {}
+    span = list_span(ux["kernel.txt"]["date"], year) if "kernel.txt" in ux else None
+    size = (folder / (data + "kernel.txt")).stat().st_size
+    uptime = int(last.group(1)) if last else None
+    return {"ok": True, "shells": shells, "pids": pids | shells, "titles": titles, "uptime_ms": uptime,
+            "uptime_why": uptime_why, "uptimes_back": uptime is not None and uptime < max(uptimes), "span": span,
+            "newest": span[1] if span else None, "capped": size >= KERNEL_TXT_CAP - 512}  # as summarise_kernel
+
+
+def clock_check(boot, kernel):
+    """Whether the Vita's clock is shown unchanged during this boot, at kernel.txt's last write: its last line carries
+    the uptime ("t=N ms", the system time since power-on: the foreground and game lines, kernel/lifecycle.c, and the
+    debug build's "input block=" line, kernel/main.c), so its LIST time less that uptime is this boot's start by the
+    clock at that write.
+    Returns ("checked" | "set back" | "unchecked", text). Set back: that start is before the window (the clock went
+    back during this boot, or between the boots by more than the window allows). Unchecked: kernel.txt cannot say (not
+    this boot's whole log, at its cap, a last line without the uptime, an estimated window), or the start is more than
+    CLOCK_FORWARD_S after the window (the clock went forward, which may hide a set-back before it, or the Vita slept):
+    no date then says "before" (place_dump). A set-back after kernel.txt's last write, or one put right again before
+    it, is not seen."""
+    if not kernel.get("ok"):
+        return "unchecked", kernel["why"]
+    if kernel["capped"]:
+        return "unchecked", "kernel.txt reached its cap, so its last write is not this boot's latest"
+    if kernel.get("uptimes_back"):
+        return "unchecked", "kernel.txt's uptimes go backwards"
+    u, span = kernel.get("uptime_ms"), kernel.get("span")
+    if u is None:
+        return "unchecked", kernel.get("uptime_why") or "kernel.txt's last line carries no uptime (t=N ms)"
+    if span is None:
+        return "unchecked", "the collect has no LIST time of kernel.txt"
+    hi, lo = span[1] - u // 1000, span[0] - (u + 999) // 1000
+    at = (f"kernel.txt's last uptime line (t={u:,} ms) and its last write ({vita_time(span[0])[:16]} by the clock) put "
+          f"this boot's start at {vita_time(lo)} to {vita_time(hi)}")
+    if boot.get("estimate"):
+        return "unchecked", "the window is an estimate (no kernel.prev.txt)"
+    # This boot began after the previous boot's last kernel.txt write: with the clock unchanged, kernel.txt's last
+    # write puts the start no earlier than a minute (LIST's minute) before kernel.prev.txt's time, inside the window,
+    # which opens PREV_MARGIN_S before it. A clock set back far enough to date a crash of this boot before the window,
+    # and still set back at that write, puts it before: so the earliest second is compared.
+    if lo < boot["first"]:
+        return "set back", (f"{at}, before {boot['from']}: the Vita's clock was set back during this boot, or between "
+                            "the boots")
+    # With the clock unchanged the start is in the window, within LIST's minute. Later: the clock went forward during
+    # this boot (which may hide a set-back before it), or the Vita slept, if the uptime stops in standby (the wiki's
+    # Suspend page has the system time in the context it saves): unchecked either way.
+    if hi > boot["last"] + CLOCK_FORWARD_S:
+        return "unchecked", (f"{at}, after {boot['to']}: the Vita's clock went forward during this boot, or the Vita "
+                             "slept")
+    return "checked", at
+
+
+def prev_shells(folder):
+    """The SceShell pids kernel.prev.txt registered (the previous boot's): a note only, pids repeat across boots."""
+    text = _read(Path(folder), "ux0/data/VitaJPOverlay/kernel.prev.txt") or ""
+    return {int(m, 16) for m in re.findall(r"^shell registered: pid 0x([0-9A-Fa-f]+)", text, re.M)}
+
+
+def place_dump(span, exe, pid, boot, kernel, prev=frozenset()):
+    """(when, why) of one dump, span its crash time as (first, last) Unix second: "this boot", "before" (an earlier
+    boot's) or "unclear". "before" needs all of: a date before the window, the clock checked for this boot
+    (boot["clock"], clock_check), and a pid this boot's kernel.txt never named; install_ftp.sh offers to archive those
+    off the Vita. "this boot": a date after the window, unless it is a SceShell this boot never registered (an earlier
+    boot's under a clock set back since, or a later boot's the overlay did not record), or this boot's registered
+    SceShell with boot.txt's fault=1. Everything else is not placed."""
+    if span is None:
+        return "unclear", "neither its name nor its listing gives its time"
+    if "first" not in boot:
+        return "unclear", boot["unknown"]
+    shell = (exe or "").lower() == "shell.self"
+    k_ok = kernel.get("ok")
+    shells, pids, titles = (kernel["shells"], kernel["pids"], kernel["titles"]) if k_ok else (set(), set(), {})
+    mine = shell and pid in shells
+    who = (f"its SceShell (pid 0x{pid:X}) is this boot's" if mine else
+           f"kernel.txt names its pid (0x{pid:X}" + (f", {titles[pid]}" if titles.get(pid) else "") + ") this boot"
+           if pid in pids else None)
+    if span[1] < boot["first"]:
+        if who:
+            return "unclear", f"dated before this boot began, but {who}: a pid that repeats, or the clock set back during it"
+        clock = boot.get("clock") or {"state": "unchecked", "why": "no check"}
+        if clock["state"] != "checked":
+            return "unclear", ("dated before this boot began, but the Vita's clock is not checked for this boot: a "
+                               "clock set back during it would date a crash of this boot so too")
+        return "before", "dated before this boot began"
+    stranger = shell and k_ok and shells and pid is not None and pid not in shells
+    if span[0] > boot["last"]:
+        if stranger:
+            registered = ", ".join(f"0x{p:X}" for p in sorted(shells))
+            return "unclear", (f"dated after this boot began, but its SceShell (pid 0x{pid:X}) is not this boot's "
+                               f"(kernel.txt registered {registered}): an earlier boot's under a clock set back since "
+                               "it crashed, or a later boot's that the overlay did not record (one started with L held)")
+        why = "dated after this boot began" + (f", and {who}" if who else "")
+        if kernel.get("newest") is not None and span[0] > kernel["newest"]:
+            why += ("; it is also dated after this boot's newest kernel.txt write: it crashed after it, or the Vita's "
+                    "clock was set back since")
+        return "this boot", why
+    if mine and boot.get("shell_exit"):
+        return "this boot", f"its SceShell (pid 0x{pid:X}) is this boot's, and boot.txt records SceShell's exit (fault=1)"
+    if stranger:
+        note = ("; it was the previous boot's SceShell pid (kernel.prev.txt), but pids repeat across boots"
+                if pid in prev else "")
+        return "unclear", (f"dated when this boot began ({boot['from']} to {boot['to']}), and its SceShell (pid "
+                           f"0x{pid:X}) is not among kernel.txt's registrations: a SceShell that crashed before the "
+                           f"overlay registered it, or an earlier boot's{note}")
+    return "unclear", (f"dated when this boot began, between {boot['from']} and {boot['to']}"
+                       + (f"; {who}, but pids repeat across boots" if who else ""))
+
+
+def summarise_dumps(folder, record):
+    """The crash dumps on the card (the collect's listing of ux0:data, and the ones it fetched), each with its crash time
+    by the Vita's clock and whether it is from this boot; None when there is none. tools/collect_vita.py --archive-dumps
+    archives the ones placed "before" from this, not from analysis.json."""
+    folder = Path(folder)
+    listed = listing(folder, "ux0:/data")
+    found = {n: e for n, e in (listed or {}).items() if not e["dir"] and n.lower().endswith(".psp2dmp")}
+    local = folder / "ux0/data"
+    for p in sorted(local.iterdir()) if local.is_dir() else []:
+        if p.is_file() and p.name.lower().endswith(".psp2dmp") and p.name not in found:
+            found[p.name] = {"dir": False, "bytes": p.stat().st_size, "date": None}
+    if not found:
+        failed = [e for e in record.get("errors") or [] if str(e).startswith("ux0:/data/:")]
+        return {"entries": [], "unlisted": failed[0]} if listed is None and failed else None
+    year, year_from = vita_year(found, record.get("collected_at"))
+    kernel = kernel_facts(folder, year)
+    boot = boot_start(folder, year)
+    if "first" in boot:
+        state, why = clock_check(boot, kernel)
+        boot = {"unknown": why} if state == "set back" else dict(boot, clock={"state": state, "why": why})
+    prev = prev_shells(folder)
+    files = record.get("files") or {}
+    entries = []
+    for name, e in found.items():
+        t, pid, exe = dump_time(name)
+        span = (t, t) if t is not None else (list_span(e["date"], year) if e["date"] else None)
+        when, why = place_dump(span, exe, pid, boot, kernel, prev)
+        entries.append({"name": name, "bytes": e["bytes"], "written": e["date"], "crashed": vita_time(t) if t else None,
+                        "sort": span[0] if span else -1, "process": {"shell.self": "SceShell", "eboot.bin":
+                        "an app or game (eboot.bin)"}.get((exe or "").lower(), exe or "?"),
+                        "pid": f"0x{pid:X}" if pid is not None else None, "fetched": f"ux0:/data/{name}" in files,
+                        "when": when, "why": why})
+    entries.sort(key=lambda d: (d.pop("sort"), d["name"]))
+    return {"entries": entries, "boot": boot, "year": year, "year_from": year_from,
+            "newest": vita_time(kernel["newest"]) if kernel.get("newest") is not None else None,
+            "collected_at": record.get("collected_at"),
+            "pids_note": None if kernel["ok"] else f"no SceShell or process pid is used: {kernel['why']}"}
+
+
+def render_dumps(d):
+    """The crash dumps' lines of the collect summary."""
+    if not d:
+        return ["  crash dumps: none"]
+    if d.get("unlisted"):
+        return [f"  crash dumps: not known: ux0:data could not be listed ({d['unlisted']})"]
+    E, b = d["entries"], d["boot"]
+    new = [e for e in E if e["when"] == "this boot"]
+    old = [e for e in E if e["when"] == "before"]
+    unclear = [e for e in E if e["when"] == "unclear"]
+    parts = ([f"{len(new)} NEW, from this boot"] if new else ["none from this boot"]) + \
+            ([f"{len(old)} from before it"] if old else []) + ([f"{len(unclear)} not placed"] if unclear else [])
+    if "first" in b:
+        began = (f"this boot began between {b['from']} and {b['to']} by the Vita's clock ({b['how']}"
+                 + (f"; the year from {d['year_from']}" if d["year_from"] and "names" not in d["year_from"] else "") + ")")
+    else:
+        began = f"this boot's start is unknown: {b['unknown']}"
+    L = [f"  crash dumps: {len(E)} on the card, " + ", ".join(parts) + f"; {began}"]
+    for e in E:
+        label = {"this boot": "NEW (this boot)", "before": "before this boot"}.get(e["when"], "not placed")
+        L.append(f"    {label:<16} {e['crashed'] or e['written'] or '?':<19}  {e['process']}"
+                 + (f" pid {e['pid']}" if e["pid"] else "") + f", {e['bytes']:,} B"
+                 + ("" if e["fetched"] else ", NOT fetched") + f": {e['name']} ({e['why']})")
+    clock = b.get("clock")
+    if clock:
+        L.append(f"    the Vita's clock, {'checked' if clock['state'] == 'checked' else 'NOT checked'} for this boot: "
+                 + clock["why"] + ("" if clock["state"] == "checked" else "; no dump is placed before this boot by its "
+                                   "date"))
+    if d.get("newest"):
+        L.append(f"    the Vita's clock: this boot's newest kernel.txt write is dated {d['newest'][:16]} by it; this "
+                 f"computer's clock read {d['collected_at']} at the collect")
+    if d.get("pids_note"):
+        L.append(f"    {d['pids_note']}")
+    return L
+
+
 def summarise_collect(folder):
     folder = Path(folder)
     data = "ux0/data/VitaJPOverlay/"
@@ -2880,8 +3264,7 @@ def summarise_collect(folder):
                          "pictures": sum(n.endswith(".jpg") for n in names), "temp": sum(n.endswith(".tmp") for n in names),
                          "exported": sum(p.name.endswith(".json") for p in exported.iterdir()) if exported.is_dir() else 0,
                          "packages": len(re.findall(r"\.apkg\s*$", listing, re.M))}
-    out["dumps"] = sorted((p.name, p.stat().st_size) for p in (folder / "ux0/data").glob("*.psp2dmp")) \
-        if (folder / "ux0/data").is_dir() else []
+    out["dumps"] = summarise_dumps(folder, record)
     # the self-test
     report = _read(folder, data + "selftest-report.txt")
     armed = (folder / (data + "selftest.txt")).is_file()
@@ -2924,9 +3307,18 @@ def summarise_collect(folder):
             src = {"probe": "the probe stage's gstep lines", "kernel-memory": "the kmem lines",
                    "capture<64KiB": "the result/gstep lines", "kernel-pool": "the result lines"}.get(w, "its rows")
             und.append(f"diagnostic {w} warned: {src} in {data}selftest-report.txt")
-    if out["dumps"]:
-        und.append("a crash dump is on the card: the analyser cannot decode it; ux0/data/*.psp2dmp is in the zip "
-                   "(vita-parse-core reads it with the matching ELFs)")
+    if out["dumps"] and out["dumps"]["entries"]:
+        E = out["dumps"]["entries"]
+        mine = [e for e in E if e["when"] != "before"]
+        old = len(E) - len(mine)
+        if mine:
+            und.append(f"{_n(len(mine), 'crash dump')} on the card {'is' if len(mine) == 1 else 'are'} from this boot or "
+                       "not placed (above): the analyser does not decode a dump; vita-parse-core does, with the ELFs of "
+                       "the build that ran (docs/self-test.md#crash-dumps); ux0/data/*.psp2dmp is in the zip")
+        if old:
+            und.append(f"{_n(old, 'crash dump')} on the card {'is' if old == 1 else 'are'} from earlier boots (above): "
+                       "install_ftp.sh --collect offers to archive them off the Vita, this collect keeps them; "
+                       "vita-parse-core decodes one with the ELFs of the build that ran (docs/self-test.md#crash-dumps)")
     if out["kernel"] and out["kernel"]["capped"]:
         und.append(f"kernel.txt reached its {KERNEL_TXT_CAP:,} B cap this boot: later kernel lines were dropped")
     if out["log_rotated"]:
@@ -3198,7 +3590,7 @@ def render_collect(c):
     q = c["anki_queue"]
     L.append(f"  anki_queue on the card: {q['cards']} card(s), {q['duplicates']} duplicate(s), {q['pictures']} picture(s), "
              f"{q['temp']} temp file(s); {q['exported']} exported card(s), {q['packages']} .apkg package(s) in anki/")
-    L.append("  crash dumps: " + (", ".join(f"{n} ({b:,} B)" for n, b in c["dumps"]) if c["dumps"] else "none"))
+    L += render_dumps(c["dumps"])
     for t in c.get("tiers_all") or []:
         L += [""] + render_tiers(t, t["where"])
     if c.get("tiers"):

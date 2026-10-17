@@ -240,7 +240,8 @@ bash tools/install_ftp.sh --collect VITA_IP
 
 With VitaShell's FTP running, this fetches, **read-only** (the Vita receives only the login and
 `PWD`, `CWD`, `TYPE`, `PASV`/`EPSV`, `LIST`, `SIZE`, `RETR` and `QUIT`; nothing that writes, renames or
-deletes; `tools/collect_vita.py`), into one timestamped folder
+deletes; `tools/collect_vita.py`; the offer to archive old crash dumps after it is a separate step, taken
+only on a yes: [below](#archiving-older-dumps-off-the-vita)), into one timestamped folder
 `build/device/collect/vjo-collect-YYYYMMDD-HHMMSSZ/` and a zip of it next to it:
 
 - `ux0:data/VitaJPOverlay/`: `log.txt`, `log.old.txt`, `selftest-report.txt`, `selftest.txt` (the
@@ -264,7 +265,8 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
   listed, and, when it cannot be entered, `ux0:app`, of which only whether it lists `VJOSET001` is kept;
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
   installers' `.vjo-bak` copies, their dated backups (`config.txt.vjo-YYYYMMDD-HHMMSS.bak`) and an
-  interrupted swap's `config.txt.vjo-new` / `.vjo-old`; every `ux0:data/*.psp2dmp` crash dump;
+  interrupted swap's `config.txt.vjo-new` / `.vjo-old`; every `ux0:data/*.psp2dmp` crash dump, with its
+  LIST time ([crash dumps](#crash-dumps));
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
   models, the beam + LM decoder's LMs (`*.vlm`), their `LM-ATTRIBUTION.md` and the model sizes'
   `MODEL-ATTRIBUTION.md` (downloaded to a
@@ -272,7 +274,8 @@ deletes; `tools/collect_vita.py`), into one timestamped folder
   dictionary is compared by size.
 
 Each file keeps its device path in the folder (`ux0/data/VitaJPOverlay/log.txt`, ...); `COLLECT.json`
-lists every file with its bytes and SHA-256, what was not on the Vita and every error, and the
+lists every file with its bytes and SHA-256, every listed file with its LIST time by the Vita's clock
+(`date`), what was not on the Vita and every error, and the
 package's version, defaults and install settings, with each API key and the audio source URL only as
 `set` or empty. Then
 `analyse_selftest.py --collect` writes `analysis.txt` and `analysis.json` into the folder and prints
@@ -294,9 +297,155 @@ with `ocr_boost_clock` off against raised, over all jobs and like for like, by w
 slowest frame, Anki saves and each export's result (a failed export, or one that left cards queued for a
 problem, is also among the problem lines; a successful one is not), the config warnings counted once
 each, the Shell's own checks of the
-Overlay app at game starts, the lines that report a problem, the Anki queue, crash dumps, the
+Overlay app at game starts, the lines that report a problem, the Anki queue, the crash dumps, each dated
+against the boot ([below](#crash-dumps)), the
 model tier from each free-memory sample, the full self-test analysis when a report is there, and what
 it cannot decide, with where in the zip the data to decide it is. The zip is the one file to send.
+
+## Crash dumps
+
+When a process crashes, the system writes a memory image of it to
+`ux0:data/psp2core-<time>-0x<pid>-<executable>.psp2dmp`. `<time>` is the crash's Unix time by the
+Vita's clock, `0x<pid>` is the process, and `<executable>` is `shell.self` for SceShell or `eboot.bin`
+for an app or a game. The card keeps every dump until something deletes it. test.3's card held ten,
+from October 10 to 13 (#138): the oldest came from before v0.7.0, and none came from test.1, test.2 or
+test.3.
+
+The collect fetches every dump and lists `ux0:data`. Its analysis then gives each dump's crash time,
+process, pid and size, and places it as `NEW (this boot)`, `before this boot` or `not placed`. "This
+boot" is the last one the overlay recorded, normally the one the collect ran in. A dump from this
+boot is also named among the things the analyser cannot decide. The analysis says `before this boot`
+only when nothing points the other way, because those dumps can be archived off the Vita
+([below](#archiving-older-dumps-off-the-vita)).
+
+- **This boot's start, by the Vita's clock.** VitaShell's LIST gives each file's time to the minute
+  (libftpvita `gen_list_format`: the month, the day and `HH:MM`, or the year for another year than
+  the Vita's current one). The year of an `HH:MM` time comes from a dump's name, or from this
+  computer's clock when no dump names it.
+  - This boot began after the previous boot's last `kernel.txt` write. The kernel renames that file
+    to `kernel.prev.txt` once per boot, the first time the Shell registers or marks a stage, and a
+    rename keeps a file's time. test.1's listing shows that for the Shell's own rename: its
+    `status.prev.txt`, renamed as that boot's Shell plugin started, is dated 15:55, while that boot
+    began at about 16:03–16:04 (its `kernel.prev.txt` 16:03, its `boot.txt` ok mark 16:05). No
+    listing shows it for the kernel's rename, so the analysis opens the window 2 minutes before
+    `kernel.prev.txt`'s time.
+  - `status.prev.txt` is not used: the Shell plugin rotates `status.txt` every time it starts,
+    including in a SceShell restarted after a crash.
+  - This boot began before `boot.txt`'s last write. When the record says the boot reached its ok
+    mark (`stage=4`, no fault, not inert), that write came at least 55 s into the boot
+    (`kernel/boot.c`). Without `kernel.prev.txt`, the start is estimated as at most 3 minutes
+    before that mark, and without that mark too, it is not known.
+  - The clock was set back between the boots when `boot.txt`'s last write is dated before
+    `kernel.prev.txt`'s, or less than 55 s after it for an ok mark. It was set back during this
+    boot when this boot's `kernel.txt` or `status.txt` (both rewritten every boot) was last written
+    before the boot began. Nothing is placed in either case.
+- **The clock, checked at `kernel.txt`'s last write.** The kernel's foreground and game lines carry
+  the uptime (`t=… ms`, the system time since power-on), and so does the debug build's `input block=`
+  line. When `kernel.txt`'s last line is one of them, its LIST time less that uptime is this boot's
+  start by the clock at that write. test.3's `kernel.txt`, last written at 07:15 and ending at
+  878,340 ms, puts its start at 07:00:21–07:01:21, inside its window.
+  - A final `game exit` may follow a game's exit or suspend line, as the worker's own line for
+    that event. A `game exit` alone, though, comes from any app that exits without a line of its own
+    (the Overlay app closed, VitaShell), at any later time. And the hook raises the worker's flag
+    before it logs its own line (`kernel/lifecycle.c` `fg_store`), so the event's `game exit` can
+    come first: test.3's `kernel.txt` has that order at lines 104–105.
+  - The kernel logs every foreground line, and every `game pid … active` and `pid … gone` or
+    `is not a game` line, while it holds its foreground lock, and it raises that flag within the
+    hold. So an event's `game exit` logged before its own line lies after the last such line before
+    it. The final `game exit` counts as the line's own only when no other `game exit` lies between
+    them; otherwise the clock is not checked.
+  - A start before the window means the clock was set back during this boot, or between the boots,
+    and nothing is placed.
+  - A start more than 2 minutes after the window means the clock went forward, which may hide a
+    set-back before it, or the Vita slept, should the uptime stop in standby (the wiki's Suspend
+    page has the system time in the context the kernel saves; not measured). The clock is then not
+    checked.
+  - The clock is not checked either when `kernel.txt`'s last line carries no uptime, when it reached
+    its 256 KB cap, when it is not this boot's whole log (below), or when the window is only an
+    estimate.
+  - The summary says whether the clock was checked, and how.
+- **The pids of this boot.** The analysis uses `kernel.txt` only when it is this boot's whole log:
+  it starts with the boot guard's first line, and its `boot guard: boot N` is `boot.txt`'s `seq=N`.
+  Otherwise, the kernel's 4 KiB ring dropped lines before its first write, or it is another boot's
+  log. `kernel.txt` registers each SceShell (`shell registered: pid ...`), a restarted one
+  included. Its other lines name the games' pids and others (the foreground transitions, the input
+  lines); the analysis takes every pid any line names.
+- **How a dump is placed.**
+  - `before this boot` needs all three: a date before this boot began, the clock checked, and a pid
+    that `kernel.txt` never names. A named pid is not placed: the pid repeated, or the clock went
+    back during the boot. With the clock not checked, no dump is placed before this boot.
+  - A dump dated after this boot began is from this boot, unless it is a SceShell whose pid this
+    boot never registered. Such a dump is not placed. It may be from an earlier boot under a clock
+    set back since: test.3's last dump, from October 13 14:09, is dated after test.3's boot by a
+    clock about three days behind. It may also be from a later boot that the overlay did not record,
+    one started with L held.
+  - A dump dated within the start window is not placed. The exception is this boot's own SceShell
+    when `boot.txt` records its exit (`fault=1`). A match with the previous boot's SceShell pid
+    (`kernel.prev.txt`) is only noted, because pids repeat across boots.
+- **What the clock check cannot see.** A set-back after `kernel.txt`'s last write, or one put right
+  again before it, leaves no trace in these times. Should the uptime stop in standby, a standby
+  during the boot would also offset a set-back of about its own length. A crash after such a
+  set-back, of a process whose pid `kernel.txt` does not name, is then dated, and placed, before
+  this boot. The kernel
+  names no pid for the Overlay app, VitaShell or a system app, nor for a game started after its
+  last write. An archived dump stays in the collect's folder and zip
+  ([below](#archiving-older-dumps-off-the-vita)).
+- **Notes the analysis adds.** A game's pid is named with the game. A dump dated after this boot's
+  newest `kernel.txt` write gets a note: it crashed after it, or the clock was set back since. The
+  summary prints that write's time beside this computer's at the collect, so a wrong Vita clock is
+  plain to see.
+
+The analyser does not decode a dump. vita-parse-core (xyzz/vita-parse-core, Python 3.9 with
+pyelftools 0.24, and VitaSDK's `arm-vita-eabi-addr2line` and `objdump`) does, given the ELF of the
+crashed module, which `cmake --build build/vita` leaves as `build/vita/VitaJPOverlay_Shell` (and
+`_OCR`, `_Kernel`, `_Settings`).
+
+1. Find which build ran from the dump's own module list. Each module's segment sizes are the
+   `p_memsz` of the program headers of that build's SELF (`.suprx`, or the VPK's `eboot.bin`).
+2. Rebuild that tag with the pinned VitaSDK. Check that the SELF it makes is byte-identical to the
+   release's.
+3. Run vita-parse-core with that ELF for the module it belongs to. Its `main.py` hands every address
+   to the one ELF it is given, and adds `addr2line` only for a module named `*.elf`. For a plugin's
+   frames, symbolise the addresses in that module alone.
+
+The decode of test.3's ten dumps, posted on #138:
+
+- two are v0.7.7's Overlay app, crashing in libpng's jump buffer while it loads an icon (fixed in
+  v0.7.8, [settings-png-runtime.md](settings-png-runtime.md));
+- six are SceShell out of physical pages, `ScePaf` aborting with `0x80024302` in firmware threads,
+  #59's pattern;
+- two are a remote-control agent's thread inside the pngshot plugin, neither of them ours.
+
+### Archiving older dumps off the Vita
+
+The collect itself writes nothing. After it, the dumps it placed before this boot can be archived:
+this collect keeps them, and they are deleted from `ux0:data`. The next collect then shows only the
+dumps that were kept. In a terminal, `--collect` asks after printing the analysis. The default,
+Enter, leaves them on the Vita, and so does running without a terminal or with `VJO_NO_PROMPT` set;
+the collect then prints the command:
+
+```sh
+bash tools/install_ftp.sh --archive-dumps VITA_IP
+```
+
+It archives from the newest collect under `build/device/collect/`, and only when that collect is of
+this Vita (its `COLLECT.json` names the same address). It places the dumps again from that collect's
+own records, never from an `analysis.json` that can be edited or that an older analyser wrote. It
+deletes a dump only when all of these hold:
+
+- the dump is placed before that collect's boot;
+- it has the system's own name (`psp2core-<digits>-0x<hex>-<name>.psp2dmp`, directly in `ux0:data`);
+- that collect's copy is the file it fetched (its bytes and SHA-256 in `COLLECT.json`);
+- a new listing shows the Vita's file with the size and LIST time of that collect's listing
+  (`listings/ux0_data.txt`, also of a collect made before `COLLECT.json` recorded the times).
+
+Besides the login, the passive data connections and the listings, it sends `DELE` for each such
+dump and no other command that writes. It then lists `ux0:data` again: that listing, not `DELE`'s
+answer, says whether each one is gone, also when the connection dropped before the answer came. It
+prints and appends to the collect's `archive.log` every deletion and every dump it left, with the
+reason. A dump from this boot, or one not placed, stays on the Vita until a later collect places it.
+An archived dump is not lost: the collect's folder and zip keep the copy it checked, so a dump
+placed before this boot by mistake ([the clock check's limit](#crash-dumps)) can still be sent.
 
 ## Cost and limits
 

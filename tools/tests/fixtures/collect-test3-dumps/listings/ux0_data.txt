@@ -1,0 +1,10 @@
+-rw-r--r-- 1 vita vita 1327440 Oct 10 06:38 psp2core-1791614280-0x0000011905-shell.self.psp2dmp
+-rw-r--r-- 1 vita vita 1293792 Oct 10 07:04 psp2core-1791615816-0x0000011a47-shell.self.psp2dmp
+-rw-r--r-- 1 vita vita 1457024 Oct 10 10:14 psp2core-1791627225-0x0000011903-shell.self.psp2dmp
+-rw-r--r-- 1 vita vita 1438768 Oct 11 13:57 psp2core-1791727037-0x0000072fc5-eboot.bin.psp2dmp
+-rw-r--r-- 1 vita vita 90096 Oct 11 13:59 psp2core-1791727184-0x0000122b87-eboot.bin.psp2dmp
+-rw-r--r-- 1 vita vita 1809728 Oct 11 14:12 psp2core-1791727902-0x00000118e5-shell.self.psp2dmp
+-rw-r--r-- 1 vita vita 2063440 Oct 11 15:35 psp2core-1791732858-0x00000118db-shell.self.psp2dmp
+-rw-r--r-- 1 vita vita 1830176 Oct 13 05:21 psp2core-1791868846-0x00000118e5-shell.self.psp2dmp
+-rw-r--r-- 1 vita vita 1109040 Oct 13 05:23 psp2core-1791868991-0x00000118dd-shell.self.psp2dmp
+-rw-r--r-- 1 vita vita 1302256 Oct 13 14:09 psp2core-1791900588-0x00000118db-shell.self.psp2dmp

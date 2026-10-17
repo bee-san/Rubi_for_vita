@@ -1,0 +1,277 @@
+boot guard: empty record (reset by the installer): first boot
+boot guard: boot 1 normal (previous: none, stage none, failures 0) write 0x00000000
+hooks: display 0, input 0, procevent 0 (0 = ok)
+Vita JP Overlay kernel 22 started (normal mode)
+ledger kernel: current=131072 peak=131072 limit=2220032 (start)
+ledger   kernel module pages: current=114688 peak=114688
+ledger   VjoWorker stack: current=16384 peak=16384
+pad sampling: digital -> analog (0x0)
+boot guard: stage shell
+shell registered: pid 0x118FF (was 0x0)
+boot guard: stage worker
+foreground 0x3269D -> 0x0 (suspend) t=13512 ms
+game exit
+boot guard: stage ok
+game pid 0x72ED3 active t=93670 ms
+ocr worker registered: game pid 0x72ED3 module 0x40010129
+region settled: scene 1 (0 animated cells masked)
+ocr job 1: 852x135 at 50,409 of 960x544, capture 1, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 1: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 1
+region settled: scene 4 (0 animated cells masked)
+ocr job 2: 852x135 at 50,409 of 960x544, capture 2, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 2: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 4
+region settled: scene 24 (0 animated cells masked)
+ocr job 3: 852x135 at 50,409 of 960x544, capture 3, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 3: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 24
+ocr job 4: 852x135 at 50,409 of 960x544, capture 4, flags 0x280F2842, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 4: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 24
+ocr job 5: 852x135 at 50,409 of 960x544, capture 5, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 5: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 24
+ocr job 6: 960x544 at 0,0 of 960x544, capture 6, flags 0x280F2841, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 7: 852x135 at 50,409 of 960x544, capture 7, flags 0x280F2844, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 8: 852x135 at 50,409 of 960x544, capture 8, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 8: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 24
+region settled: scene 33 (0 animated cells masked)
+ocr job 9: 852x135 at 50,409 of 960x544, capture 9, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 9: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 33
+region settled: scene 37 (0 animated cells masked)
+ocr job 10: 852x135 at 50,409 of 960x544, capture 10, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 10: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 37
+ocr job 10: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 0
+region settled: scene 59 (0 animated cells masked)
+ocr job 11: 852x135 at 50,409 of 960x544, capture 11, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 11: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 59
+region quiet: scene 65
+region settled: scene 65 (1 animated cells masked)
+ocr job 11: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 65
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000200
+input block=1 pid=118FF game=72ED3 raw=00000300 t=141395 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+region settled: scene 66 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=152468 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region settled: scene 67 (1 animated cells masked)
+region settled: scene 71 (0 animated cells masked)
+ocr job 12: 852x135 at 50,409 of 960x544, capture 12, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 12: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 71
+region settled: scene 78 (0 animated cells masked)
+ocr job 13: 852x135 at 50,409 of 960x544, capture 13, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 13: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 78
+ocr job 13: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 86
+region settled: scene 91 (1 animated cells masked)
+region settled: scene 93 (1 animated cells masked)
+region settled: scene 94 (1 animated cells masked)
+region settled: scene 95 (1 animated cells masked)
+region quiet: scene 102
+ocr job 14: 852x135 at 50,409 of 960x544, capture 14, flags 0x280F2850, tiers 0x3, VOCR3_H15_w8.vocr / -
+input block=1 pid=118FF game=72ED3 raw=00000300 t=273272 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+ocr job 14: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 108
+region settled: scene 108 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=276566 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region settled: scene 110 (1 animated cells masked)
+region quiet: scene 127
+ocr job 15: 852x135 at 50,409 of 960x544, capture 15, flags 0x280F2850, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 15: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 127
+region settled: scene 127 (1 animated cells masked)
+ocr job 15: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 127
+input block=1 pid=118FF game=72ED3 raw=00000300 t=288241 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+region quiet: scene 136
+region settled: scene 143 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=295676 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+input block=1 pid=118FF game=72ED3 raw=00000300 t=301126 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+region settled: scene 177 (0 animated cells masked)
+ocr job 16: 852x135 at 50,409 of 960x544, capture 16, flags 0x140F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 16: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 0
+region quiet: scene 179
+region settled: scene 181 (1 animated cells masked)
+ocr job 16: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 181
+region settled: scene 183 (1 animated cells masked)
+region settled: scene 184 (1 animated cells masked)
+region settled: scene 185 (1 animated cells masked)
+region settled: scene 186 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=416310 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region quiet: scene 193
+region settled: scene 193 (1 animated cells masked)
+ocr job 17: 852x135 at 50,409 of 960x544, capture 17, flags 0x280F2840, tiers 0x3, VOCR3_H15_w8.vocr / -
+ocr job 17: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 193
+region settled: scene 194 (1 animated cells masked)
+game exit
+foreground 0x72ED3 -> 0x0 (suspend) t=422105 ms
+foreground 0x11B2F15 -> 0x0 (suspend) t=472729 ms
+game exit
+foreground 0x0 -> 0x72ED3 (resume) t=476633 ms
+game pid 0x72ED3 active t=476730 ms
+input block=1 pid=118FF game=72ED3 raw=00000300 t=478808 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+region quiet: scene 207
+ocr job 18: 852x135 at 50,409 of 960x544, capture 18, flags 0x140F2850, tiers 0x1, VOCR3_FL10_w8.vocr / -
+ocr job 18: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 213
+region settled: scene 213 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=481402 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+input block=1 pid=118FF game=72ED3 raw=00000300 t=483516 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+ocr job 19: 852x135 at 50,409 of 960x544, capture 19, flags 0x140F2850, tiers 0x1, VOCR3_FL10_w8.vocr / -
+ocr job 19: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 229
+region settled: scene 229 (0 animated cells masked)
+region quiet: scene 230
+region settled: scene 230 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=492498 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region quiet: scene 244
+ocr job 20: 852x135 at 50,409 of 960x544, capture 20, flags 0x280F2850, tiers 0x1, VOCR3_FL10_w8.vocr / -
+input block=1 pid=118FF game=72ED3 raw=00000300 t=495113 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+region settled: scene 244 (1 animated cells masked)
+ocr job 20: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 244
+input block=0 pid=118FF game=72ED3 raw=00000300 t=496817 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region quiet: scene 260
+ocr job 21: 852x135 at 50,409 of 960x544, capture 21, flags 0x280F2850, tiers 0x1, VOCR3_FL10_w8.vocr / -
+ocr job 21: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 267
+input block=1 pid=118FF game=72ED3 raw=00000300 t=501664 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+region settled: scene 273 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=502602 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+input block=1 pid=118FF game=72ED3 raw=00000300 t=504450 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+ocr job 22: 852x135 at 50,409 of 960x544, capture 22, flags 0x140F2850, tiers 0x1, VOCR3_FL10_w8.vocr / -
+region quiet: scene 290
+ocr job 22: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 290
+region settled: scene 290 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=506209 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region quiet: scene 297
+ocr job 23: 852x135 at 50,409 of 960x544, capture 23, flags 0x280F2850, tiers 0x1, VOCR3_FL10_w8.vocr / -
+ocr job 23: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 297
+region settled: scene 297 (1 animated cells masked)
+input block=1 pid=118FF game=72ED3 raw=00000300 t=512941 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+ocr job 24: 852x135 at 50,409 of 960x544, capture 24, flags 0x140F2850, tiers 0x1, VOCR3_FL10_w8.vocr / -
+region quiet: scene 305
+ocr job 24: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 309
+region settled: scene 309 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=516005 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region quiet: scene 325
+ocr job 25: 852x135 at 50,409 of 960x544, capture 25, flags 0x280F2850, tiers 0x1, VOCR3_FL10_w8.vocr / -
+input block=1 pid=118FF game=72ED3 raw=00000300 t=518617 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+ocr job 25: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 325
+input block=0 pid=118FF game=72ED3 raw=00000300 t=519840 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+foreground 0x72ED3 -> 0x0 (suspend) t=521070 ms
+game exit
+foreground 0x0 -> 0x11B2F15 (resume) t=522812 ms
+foreground 0x11B2F15 -> 0x0 (suspend) t=527167 ms
+game exit
+foreground 0x0 -> 0x72ED3 (resume) t=529402 ms
+game pid 0x72ED3 active t=529494 ms
+input block=1 pid=118FF game=72ED3 raw=00000300 t=531884 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+ocr job 26: 852x135 at 50,409 of 960x544, capture 26, flags 0x140F2850, tiers 0x7, VOCR4_W20_w8.vocr / -
+region quiet: scene 358
+ocr job 26: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 358
+region settled: scene 366 (0 animated cells masked)
+region settled: scene 367 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=542216 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region quiet: scene 378
+ocr job 27: 852x135 at 50,409 of 960x544, capture 27, flags 0x280F2850, tiers 0x7, VOCR4_W20_w8.vocr / -
+input block=1 pid=118FF game=72ED3 raw=00000300 t=546198 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+ocr job 27: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 0
+region quiet: scene 393
+region settled: scene 393 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=549295 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region settled: scene 415 (0 animated cells masked)
+ocr job 28: 852x135 at 50,409 of 960x544, capture 28, flags 0x280F2840, tiers 0x7, VOCR4_W20_w8.vocr / -
+ocr job 28: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 415
+input block=1 pid=118FF game=72ED3 raw=00000300 t=553305 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+region quiet: scene 417
+ocr job 28: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 422
+region settled: scene 433 (1 animated cells masked)
+region settled: scene 435 (1 animated cells masked)
+region settled: scene 436 (1 animated cells masked)
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00004000 out=00000000 LR=0/0 L1R1=0/0 raw=00004000
+input block=0 pid=118FF game=72ED3 raw=00000300 t=616243 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+foreground 0x72ED3 -> 0x0 (suspend) t=621223 ms
+game exit
+foreground 0x0 -> 0x11B2F15 (resume) t=624664 ms
+foreground 0x11B2F15 -> 0x0 (suspend) t=655228 ms
+game exit
+foreground 0x0 -> 0x72ED3 (resume) t=656779 ms
+game pid 0x72ED3 active t=656853 ms
+input block=1 pid=118FF game=72ED3 raw=00000300 t=657179 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+ocr job 29: 852x135 at 50,409 of 960x544, capture 29, flags 0x140F2850, tiers 0x7, VOCR4_W20_w8.vocr / -
+ocr job 29: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 444
+region settled: scene 444 (0 animated cells masked)
+region quiet: scene 446
+region settled: scene 460 (1 animated cells masked)
+foreground 0x72ED3 -> 0x0 (suspend) t=674543 ms: input released
+game exit
+input block=0 pid=118FF game=0 raw=00000000 t=674544 ms
+foreground 0x0 -> 0x72ED3 (resume) t=682555 ms
+game pid 0x72ED3 active t=682632 ms
+region quiet: scene 470
+ocr job 30: 852x135 at 50,409 of 960x544, capture 30, flags 0x280F2850, tiers 0x7, VOCR4_W20_w8.vocr / -
+ocr job 30: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 470
+region settled: scene 487 (0 animated cells masked)
+region settled: scene 488 (1 animated cells masked)
+foreground 0x72ED3 -> 0x0 (suspend) t=699467 ms
+game exit
+foreground 0x0 -> 0x11B2F15 (resume) t=701524 ms
+foreground 0x11B2F15 -> 0x0 (suspend) t=721127 ms
+game exit
+foreground 0x0 -> 0x72ED3 (resume) t=723229 ms
+game pid 0x72ED3 active t=723314 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000200
+input block=1 pid=118FF game=72ED3 raw=00000300 t=723959 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+ocr job 31: 852x135 at 50,409 of 960x544, capture 31, flags 0x140F2850, tiers 0x7, VOCR4_W20_w8.vocr / -
+input block=0 pid=118FF game=72ED3 raw=00000300 t=724390 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+ocr job 31: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 496
+region settled: scene 496 (0 animated cells masked)
+input block=1 pid=118FF game=72ED3 raw=00000000 t=725066 ms
+input blocked hook=7 pid=72ED3 game=72ED3 read=00000000 write=00000000 buttons=00000000 out=00000000 LR=0/0 L1R1=0/0 raw=00000000
+ocr job 32: 852x135 at 50,409 of 960x544, capture 32, flags 0x140F2850, tiers 0x7, VOCR4_W20_w8.vocr / -
+region quiet: scene 500
+ocr job 32: first pass in (135 rows, frame 960x544 fmt 00000000 pitch 1024), scene 503
+region settled: scene 503 (1 animated cells masked)
+input block=0 pid=118FF game=72ED3 raw=00000300 t=727152 ms
+input trigger hook=7 pid=72ED3 in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+foreground 0x72ED3 -> 0x0 (suspend) t=728026 ms
+game exit
+foreground 0x0 -> 0x11B2F15 (resume) t=729769 ms
+foreground 0x11B2F15 -> 0x0 (suspend) t=773430 ms
+game exit
+foreground 0x17370F -> 0x0 (suspend) t=799031 ms
+game exit
+foreground 0x0 -> 0x11B2F15 (resume) t=802224 ms
+foreground 0x11B2F15 -> 0x0 (suspend) t=810250 ms
+game exit
+foreground 0x0 -> 0x17370F (resume) t=813386 ms
+game pid 0x17370F active t=813482 ms
+input block=1 pid=118FF game=17370F raw=00000300 t=813791 ms
+input blocked hook=7 pid=17370F game=17370F read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+region settled: scene 504 (0 animated cells masked)
+input block=0 pid=118FF game=17370F raw=00000300 t=815814 ms
+input trigger hook=7 pid=17370F in=00000C00 out=00000000 LR=0/0 L1R1=0/0 write=00000000 raw=00000300
+region quiet: scene 534
+input block=1 pid=118FF game=17370F raw=00000300 t=827929 ms
+input blocked hook=7 pid=17370F game=17370F read=00000000 write=00000000 buttons=00000C00 out=00000000 LR=0/0 L1R1=0/0 raw=00000300
+foreground 0x17370F -> 0x0 (suspend) t=878339 ms: input released
+game exit
+input block=0 pid=118FF game=0 raw=00000000 t=878340 ms

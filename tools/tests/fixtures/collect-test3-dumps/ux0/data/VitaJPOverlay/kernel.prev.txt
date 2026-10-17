@@ -1,0 +1,13 @@
+boot guard: boot 3 normal (previous: normal, stage ok, failures 0) write 0x00000000
+hooks: display 0, input 0, procevent 0 (0 = ok)
+Vita JP Overlay kernel 20 started (normal mode)
+ledger kernel: current=131072 peak=131072 limit=2220032 (start)
+ledger   kernel module pages: current=114688 peak=114688
+ledger   VjoWorker stack: current=16384 peak=16384
+pad sampling: digital -> analog (0x0)
+boot guard: stage shell
+shell registered: pid 0x11901 (was 0x0)
+boot guard: stage worker
+game exit
+boot guard: stage ok
+game exit

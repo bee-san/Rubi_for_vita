@@ -2,6 +2,7 @@
 """Collect everything the overlay wrote on the Vita, read-only, into one folder (install_ftp.sh --collect).
 
     python3 tools/collect_vita.py VITA_IP PORT OUT_DIR [--manifest package-manifest.json]
+    python3 tools/collect_vita.py VITA_IP PORT OUT_DIR --archive-dumps [--plan]
 
 Downloads, over VitaShell's FTP (VitaShell: SELECT button set to FTP in its settings, then SELECT),
 with curl as the installer does:
@@ -26,12 +27,20 @@ installed plugins, the RCO, the settings VPK, every OCR model, the beam + LM dec
 their LM-ATTRIBUTION.md and the model sizes' MODEL-ATTRIBUTION.md are hashed (downloaded to a
 temporary file and deleted again, never kept) and compared with package-manifest.json when given.
 Every file keeps its device path under OUT_DIR (ux0/data/VitaJPOverlay/log.txt, ...).
-COLLECT.json lists what was fetched (bytes, sha256), what was missing and every error, and in
-"app" how each of the app's two files was read (collect_app).
+COLLECT.json lists what was fetched (bytes, sha256), what was missing and every error, in
+"app" how each of the app's two files was read (collect_app), and each listed file's LIST time
+by the Vita's clock ("date"), from which analyse_selftest.py --collect dates the crash dumps
+against the boot (docs/self-test.md#crash-dumps).
 
 Nothing on the Vita is written, renamed or deleted: only CWD, LIST, SIZE and RETR are sent.
 A file that cannot be read is recorded and skipped; the exit status is 1 only when the Vita
 cannot be reached at all.
+
+--archive-dumps, run apart from a collect (install_ftp.sh asks first, or its own --archive-dumps),
+is the one exception: it deletes from ux0:data the crash dumps that collect's analysis placed before
+its boot, each only when the collect holds an intact copy (the bytes and SHA-256 its COLLECT.json
+recorded) and the Vita's file is still that size, with DELE and nothing else, and lists ux0:data
+again to see each one gone (archive_dumps). With --plan it lists them and sends nothing.
 """
 import argparse
 import ftplib
@@ -208,15 +217,18 @@ class Collector:
 
     @staticmethod
     def parse_list(lines):
-        """VitaShell's LIST (`%c%s 1 vita vita %u %s %-2d %s %s`): the name is the rest after the eighth
-        field and one space, its own spaces kept."""
+        """VitaShell's LIST (`%c%s 1 vita vita %u %s %-2d %s %s`, libftpvita gen_list_format): the size; the time, by
+        the Vita's clock, as listed ("Oct 10 06:38": the hour and minute when the file's year is the Vita's current
+        one, else the year, "Oct 10 2025"); and the name, the rest after the eighth field and one space, its own
+        spaces kept."""
         entries = []
-        for l in lines:
-            m = re.match(r"^(\S+)\s+\S+\s+\S+\s+\S+\s+(\S+)\s+\S+\s+\S+\s+\S+ (.*)$", l.rstrip("\r\n"))
+        for line in lines:
+            m = re.match(r"^(\S+)\s+\S+\s+\S+\s+\S+\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+) (.*)$", line.rstrip("\r\n"))
             if not m:
                 continue
-            entries.append({"name": m.group(3), "bytes": int(m.group(2)) if m.group(2).isdigit() else None,
-                            "dir": l.startswith("d")})
+            day = str(int(m.group(4))) if m.group(4).isdigit() else m.group(4)
+            entries.append({"name": m.group(6), "bytes": int(m.group(2)) if m.group(2).isdigit() else None,
+                            "dir": line.startswith("d"), "date": f"{m.group(3)} {day} {m.group(5)}"})
         return entries
 
     # ---- collection ----
@@ -414,6 +426,178 @@ class Collector:
         self.record["package_check"] = checks
 
 
+# The only names --archive-dumps deletes: the system's crash dump names, directly in ux0:data
+ARCHIVABLE = re.compile(r"^psp2core-\d{1,12}-0x[0-9A-Fa-f]{1,16}-[A-Za-z0-9._-]{1,64}\.psp2dmp$", re.I)
+
+
+def file_sha256(path):
+    h = hashlib.sha256()
+    with Path(path).open("rb") as s:
+        for block in iter(lambda: s.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def archive_plan(folder):
+    """The crash dumps the collect in `folder` placed before its boot, placed again from the collect itself
+    (analyse_selftest.py's summarise_dumps on its COLLECT.json and listings, never an analysis.json that can be edited
+    or an older analyser's), each with an intact copy in that collect (the bytes and SHA-256 its COLLECT.json recorded):
+    (archive, keep, problem). archive: [{"name", "bytes", "sha256", "date", "crashed", "process"}]; keep: [(name, why)],
+    the dumps that stay on the Vita; problem: why none can be archived, or None."""
+    import analyse_selftest  # beside this file, in the package's tools/ too
+    folder = Path(folder)
+    try:
+        record = json.loads((folder / "COLLECT.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return [], [], f"{folder} has no readable COLLECT.json ({type(e).__name__})"
+    dumps = analyse_selftest.summarise_dumps(folder, record)
+    if not dumps:
+        return [], [], None
+    if dumps.get("unlisted"):
+        return [], [], f"that collect could not list ux0:data ({dumps['unlisted']})"
+    files = record.get("files") or {}
+    archive, keep = [], []
+    for e in dumps["entries"]:
+        name = e["name"]
+        got = files.get(f"ux0:/data/{name}") or {}
+        copy = local_path(folder, f"ux0:/data/{name}")
+        if e["when"] != "before":
+            fetched = "" if got and copy.is_file() else "; this collect could not fetch it"
+            keep.append((name, "from this boot" + fetched if e["when"] == "this boot" else "not placed before this boot"))
+        elif not (ARCHIVABLE.match(name) and safe_name(name)):
+            keep.append((name, "not a crash dump name the archive deletes"))
+        elif not got or not copy.is_file():
+            keep.append((name, "this collect has no copy of it"))
+        elif copy.stat().st_size != got.get("bytes") or file_sha256(copy) != got.get("sha256"):
+            keep.append((name, "this collect's copy is not the file it fetched (its size or SHA-256 differs)"))
+        elif e["bytes"] != got.get("bytes"):
+            keep.append((name, f"the collect fetched {got.get('bytes'):,} B of its {e['bytes']} B"))
+        elif not e["written"]:  # the LIST time the archive compares (the collect's own listings/ux0_data.txt)
+            keep.append((name, "the collect's listing of ux0:data does not have it"))
+        else:
+            archive.append({"name": name, "bytes": got["bytes"], "sha256": got["sha256"], "date": e["written"],
+                            "crashed": e["crashed"], "process": e["process"]})
+    return archive, keep, None
+
+
+def archive_dumps(host, port, folder, plan=False):
+    """--archive-dumps: deletes from ux0:data each crash dump of archive_plan, after a new listing shows the Vita's file
+    still the size of the collect's checked copy, with DELE alone, then lists ux0:data again to see it gone; appends
+    what it did to the collect's archive.log. With plan, prints them and sends nothing: exit 0 when there is one to
+    archive, 3 when there is none. Else 0 when each was archived, 2 when one was not or is not known, or ux0:data
+    cannot be listed."""
+    folder = Path(folder)
+    if not plan:
+        try:
+            was = json.loads((folder / "COLLECT.json").read_text(encoding="utf-8")).get("host")
+        except (OSError, ValueError):
+            was = None
+        if not was or str(was).rpartition(":")[0] != host:  # the address: VitaShell's FTP port is always the same
+            print(f"crash dumps: nothing archived: {folder.name} is a collect of {was or 'an unknown host'}, not of "
+                  f"{host}; collect this Vita first")
+            return 2
+    archive, keep, problem = archive_plan(folder)
+    if problem:
+        print(f"crash dumps: nothing archived: {problem}")
+        return 3 if plan else 2
+    for name, why in keep:
+        if why == "from this boot":
+            print(f"crash dump from this boot, left on the Vita (this collect has it): {name}")
+        elif why.startswith("from this boot"):
+            print(f"crash dump from this boot, left on the Vita ({why[len('from this boot; '):]}): {name}")
+    others = [(n, w) for n, w in keep if not w.startswith("from this boot")]
+    if not plan:
+        for name, why in others:
+            print(f"crash dump left on the Vita ({why}): {name}")
+    if plan:
+        if archive:
+            print(f"{len(archive)} crash dump(s) from before this boot are on the Vita "
+                  f"({sum(d['bytes'] for d in archive):,} B); this collect keeps a checked copy of each "
+                  f"({local_path(folder, 'ux0:/data')}):")
+            for d in archive:
+                print(f"  {d['name']} ({d['bytes']:,} B, {d['process']}, {d['crashed']})")
+        for name, why in others:
+            print(f"crash dump left on the Vita ({why}): {name}")
+        return 0 if archive else 3
+    if not archive:
+        print("crash dumps: none from before this boot to archive" + (f" ({len(others)} left: "
+              + "; ".join(f"{n}: {w}" for n, w in others) + ")" if others else ""))
+        return 0
+    c = Collector(host, port, folder)
+    status, lines = c.listdir("ux0:/data")
+    if status != "ok":
+        print(f"cannot list ux0:data ({lines}): nothing deleted")
+        return 2
+    on_vita = {e["name"]: e for e in c.parse_list(lines)}
+    print(f"archiving {len(archive)} crash dump(s) from before this boot off the Vita (this collect keeps them: "
+          f"{local_path(folder, 'ux0:/data')}):")
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    log, kept, gone, sent = [f"{stamp} left {n} ({w})" for n, w in keep], 0, 0, []
+    for d in archive:
+        e = on_vita.get(d["name"])
+        if e is None:
+            print(f"  already gone: {d['name']}")
+            log.append(f"{stamp} gone {d['name']} (not on the Vita any more)")
+            gone += 1
+            continue
+        if e["dir"] or e["bytes"] != d["bytes"] or e.get("date") != d["date"]:
+            why = (f"on the Vita it is {e['bytes']} B, {e.get('date')} now, not the collect's {d['bytes']:,} B, "
+                   f"{d['date']}")
+            print(f"  kept: {d['name']} ({why})")
+            log.append(f"{stamp} kept {d['name']} ({why})")
+            kept += 1
+            continue
+        try:
+            resp = c.connect().sendcmd(f"DELE /ux0:/data/{d['name']}")  # VitaShell's FTP answers 226
+        except ftplib.Error as err:  # a refusal (550): the connection is fine
+            resp = f"{type(err).__name__}: {err}"
+        except (OSError, EOFError) as err:  # a dropped connection: the DELE may have been done; the next one reconnects
+            resp, c.ftp = None, None
+            d["lost"] = f"{type(err).__name__}: {err}"
+        if resp is None or resp.startswith("2"):
+            sent.append(d)
+        else:
+            print(f"  kept: {d['name']} (DELE answered {resp})")
+            log.append(f"{stamp} kept {d['name']} (DELE answered {resp})")
+            kept += 1
+    # the second listing, not DELE's answer, says what is gone: also of a DELE whose answer the connection lost
+    status, lines = c.listdir("ux0:/data")
+    left = {e["name"] for e in c.parse_list(lines)} if status == "ok" else None
+    deleted = unknown = 0
+    for d in sent:
+        lost = d.get("lost")
+        if left is not None and d["name"] in left:
+            why = f"its DELE's answer was lost ({lost}), and" if lost else "DELE was answered, but"
+            print(f"  kept: {d['name']} ({why} ux0:data still lists it)")
+            log.append(f"{stamp} kept {d['name']} (still listed after DELE" + (f", its answer lost: {lost}" if lost
+                                                                               else "") + ")")
+            kept += 1
+            continue
+        if left is None and lost:
+            print(f"  not known: {d['name']} (its DELE's answer was lost, and ux0:data could not be listed again)")
+            log.append(f"{stamp} unknown {d['name']} (its DELE's answer lost: {lost}; not listed again)")
+            unknown += 1
+            continue
+        deleted += 1
+        print(f"  deleted ux0:data/{d['name']} ({d['bytes']:,} B)" + (" (ux0:data could not be listed again)"
+                                                                    if left is None else
+                                                                    " (its DELE's answer was lost)" if lost else ""))
+        log.append(f"{stamp} deleted ux0:data/{d['name']} ({d['bytes']} B, sha256 {d['sha256']}, "
+                   f"{d['process']}, crashed {d['crashed']})")
+    if c.ftp is not None:
+        try:
+            c.ftp.quit()
+        except (OSError, EOFError, ftplib.Error):
+            pass
+    with (folder / "archive.log").open("a", encoding="utf-8") as f:
+        f.write("".join(line + "\n" for line in log))
+    print(f"archived: {deleted} deleted from the Vita" + (f", {gone} already gone" if gone else "")
+          + (f", {kept} left on it" if kept else "")
+          + (f", {unknown} not known (a collect shows whether they are still there)" if unknown else "")
+          + f"; {folder / 'archive.log'} lists them")
+    return 2 if kept or unknown else 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("host")
@@ -421,13 +605,20 @@ def main():
     ap.add_argument("out", type=Path)
     ap.add_argument("--manifest", type=Path, help="package-manifest.json of the installed package")
     ap.add_argument("--timeout", type=int, default=120)
+    ap.add_argument("--archive-dumps", action="store_true",
+                    help="delete from ux0:data the crash dumps the collect in OUT_DIR placed before its boot")
+    ap.add_argument("--plan", action="store_true", help="with --archive-dumps: list them only, send nothing")
     args = ap.parse_args()
+    if args.archive_dumps and args.plan:
+        return archive_dumps(args.host, args.port, args.out, plan=True)
     try:
         socket.create_connection((args.host, args.port), 5).close()
     except OSError:
         print(f"Cannot reach {args.host}:{args.port}. In VitaShell press SELECT to start FTP (with SELECT button set to "
               "FTP in VitaShell's settings, Start: a Vita's default is USB), and keep the screen on.")
         return 1
+    if args.archive_dumps:
+        return archive_dumps(args.host, args.port, args.out)
     args.out.mkdir(parents=True, exist_ok=True)
     c = Collector(args.host, args.port, args.out, args.timeout)
     c.run()

@@ -104,6 +104,12 @@ public issue: API keys are removed, but it holds your queued Anki cards' sentenc
 copyrighted game), your taiHEN plugin list, your games' title
 IDs and any crash dump (a memory image of the crashed process). Keep the photos private too.
 
+The analysis dates each crash dump against this boot: `NEW (this boot)` for this run's, `before this
+boot` for older ones, `not placed` when the records cannot tell ([self-test.md](self-test.md#crash-dumps)).
+When there are older ones, the collect asks at the end whether to archive them off the Vita. Answer `y`
+to delete them from `ux0:data` (the zip keeps them, and the next collect then shows only the ones kept),
+or press Enter to leave them.
+
 The analysis's self-test verdict is decided by the OCR rows alone; diagnostics marked WARN (the probe,
 the memory routes) are measurements to send back, not failures.
 
@@ -111,7 +117,7 @@ the memory routes) are measurements to send back, not failures.
 - **No overlay or no OCR:** run step 4 anyway; the analysis shows the boot lines (`shell API 19
   entered`, `worker started`) and where taiHEN loads each plugin. `BOOT GUARD: SAFE MODE` means the
   previous boot did not finish: reboot once (one normal retry is allowed), then do step 4.
-- **Crash:** step 4 collects the crash dumps too.
+- **Crash:** step 4 collects the crash dumps too, and its analysis marks this run's `NEW (this boot)`.
 - **Won't boot:** hold **L** while powering on (taiHEN skips every plugin), start VitaShell FTP, run
   `bash tools/install_ftp.sh --uninstall VITA_IP` in `vjo`, reboot. If that fails, comment out the
   `VitaJPOverlay` lines in `ur0:tai/config.txt` (and `ux0:tai/config.txt` if it exists) with
