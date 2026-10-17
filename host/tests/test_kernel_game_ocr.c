@@ -240,14 +240,8 @@ int ksceIoRemove(const char *path)
     return 0;
 }
 int ksceIoSync(const char *device, unsigned int unk) { (void)device; (void)unk; TEST_CHECK(0); return -1; }
-/* #194: a shot's save syncs its own file, never the whole card */
-int ksceIoSyncByFd(SceUID fd, int flag)
-{
-    TEST_ASSERT(shot_worker_context() && fd == SHOT_FD && shot_open);
-    TEST_CHECK(flag == 0);
-    shot_syncs++;
-    return shot_sync_error;
-}
+/* #194: a shot's save syncs nothing (test.4.2's ksceIoSyncByFd turned the console off) */
+int ksceIoSyncByFd(SceUID fd, int flag) { (void)fd; (void)flag; TEST_CHECK(0); shot_syncs++; return shot_sync_error; }
 SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
     if (!strncmp(path, VJO_GAME_OCR_SHOT_DIR "/", sizeof(VJO_GAME_OCR_SHOT_DIR))) return shot_file_open(path, flags);
@@ -1366,7 +1360,7 @@ static void shot_jpeg_is_written_in_order_and_saved_under_its_name(void)
     int i = shot_entry(shot_jpg);
     TEST_ASSERT(i >= 0);
     TEST_CHECK(shot_fs[i].len == len && !memcmp(shot_fs[i].data, shot_bytes, len) && shot_entry(shot_tmp) < 0);
-    TEST_CHECK(shot_closes == 1 && shot_renames == 1 && shot_syncs == 1 && !shot_open && !model_io.seq);
+    TEST_CHECK(shot_closes == 1 && shot_renames == 1 && shot_syncs == 0 && !shot_open && !model_io.seq);
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
     /* and the Shell reads the shot's result as any job's */
     VjoGameOcrResult got; caller = 3;
@@ -1416,7 +1410,7 @@ static void shot_writes_are_checked(void)
 }
 
 /* An unsaved shot leaves nothing: its Close, a cancellation or the game's exit
- * close and remove the .tmp; a failed write, close, sync or rename does too. */
+ * close and remove the .tmp; a failed write, close or rename does too. */
 static void an_abandoned_shot_leaves_no_file(void)
 {
     for (int how = 0; how < 10; how++) {
@@ -1446,10 +1440,10 @@ static void an_abandoned_shot_leaves_no_file(void)
         }
         if (how >= 5 && how < 8) {
             if (how == 5) shot_close_error = (int)0x80010005u;
-            if (how == 6) shot_sync_error = (int)0x80010005u;
+            if (how == 6) shot_rename_error = (int)0x80010005u; /* (was a sync's error: a save syncs nothing since #194) */
             if (how == 7) shot_rename_error = (int)0x80010011u;
-            TEST_CHECK(shot_save(seq, len) == (how == 5 ? shot_close_error : how == 6 ? shot_sync_error : shot_rename_error));
-            shot_close_error = 0;
+            TEST_CHECK(shot_save(seq, len) == (how == 5 ? shot_close_error : shot_rename_error));
+            shot_close_error = shot_rename_error = 0;
             caller = 7; TEST_CHECK(vjoOcrModelClose(seq) == 0);
         }
         TEST_CHECK_(shot_entry(shot_tmp) < 0 && shot_entry(shot_jpg) < 0 && !shot_open && !model_io.seq, "case %d", how);

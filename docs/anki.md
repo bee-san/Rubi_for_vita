@@ -232,8 +232,8 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
 A card is written to a temp file, flushed and renamed, and the memory card's
 directory is synced before Enter reports it; an interrupted save leaves no
 card or the complete one, never a partial one. A card's screenshot is on the
-memory card (renamed from its own temp file, `<id>.jpg.tmp`, and synced)
-before its record is written, so a record never names a picture that is not
+memory card (renamed from its own temp file, `<id>.jpg.tmp`; the record's
+own sync syncs it too, #194) before its record is written, so a record never names a picture that is not
 there. Files with other names,
 including leftover `.tmp` files, are ignored. Editing a record changes its
 checksum, so the card is kept and reported as unreadable rather than exported.
@@ -313,8 +313,11 @@ seam between two bands of rows.
    35; none of the 598 frames measured below needed it.
 4. It hands the JPEG to the kernel in 32 KiB pieces (`vjoOcrShotWrite`, through
    the staging buffer the model reads use), and the kernel's worker thread
-   writes them to `anki_queue/<id>.jpg.tmp`, closes it, syncs the memory card,
-   renames it to `<id>.jpg` and syncs again (`vjoOcrShotSave`). The game has no
+   writes them to `anki_queue/<id>.jpg.tmp`, closes it and renames it to
+   `<id>.jpg` (`vjoOcrShotSave`). It syncs nothing: test.4's two whole-card
+   syncs held the kernel's worker thread for over 15 s, and test.4.2's sync of
+   the file turned the console off (#194). The Shell's record, written next,
+   is committed with a sync of the memory card, which takes the JPEG with it. The game has no
    `ux0:` of its own (`0x80010013`, as for the models); the path is the kernel's,
    made from the card's ID it checked (32 lowercase hex digits), and the bytes
    must start and end as a JPEG does.
@@ -372,7 +375,8 @@ the Cortex-A9 (`tools/bench_stages.py`'s `jpeg_shot`, the Vita compiler's code
 counted under qemu-arm, `docs/performance.md`): 69 to 149 ms at 444 MHz, 93 to
 198 ms at 333 MHz (a screenshot keeps the game's clock); it runs at the lowest
 priority on the game's cores, so every game thread goes first. The memory
-card's writes and its two syncs are unmeasured. The screenshot's load on CPU3
+card's writes, close and rename are timed in the debug build's `kernel.txt`
+(`ocr shot write`, `ocr shot save`). The screenshot's load on CPU3
 is unmeasured too (AGENTS.md rule 8): no PSVshell reading exists.
 
 In the game, the screenshot's block is 450,560 B (the encoder's state, one

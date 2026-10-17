@@ -1256,18 +1256,19 @@ void game_ocr_model_tick(void)
         if (!rc) rc = (int)bytes;
         klog_d("ocr shot write: %u B at %u -> %d t=%u ms", bytes, offset, rc, shot_ms());
     } else if (operation == SHOT_SAVE) {
-        /* its bytes on the card, closed, then its name. #194: no whole-card ksceIoSync("ux0:") any more,
-         * which the game's own card reads (CLANNAD streams its audio) wait behind; the Shell's record
-         * that names this file is synced after it. */
-        uint64_t t0 = ksceKernelGetSystemTimeWide(), t1;
-        rc = ksceIoSyncByFd(fd, 0);
-        t1 = ksceKernelGetSystemTimeWide();
-        if (rc >= 0 && (rc = ksceIoClose(fd)) >= 0) {
+        /* closed, then its name. #194: no sync here. test.4's two ksceIoSync("ux0:") held this thread,
+         * which also polls the overlay's pad, for over 15 s, and test.4.2's ksceIoSyncByFd turned the
+         * console off (the last line of its kernel.txt is the shot's write). The Shell's record that
+         * names this file is committed with a sceIoSync("ux0:") after it (shell/anki_queue.c commit),
+         * which syncs this file and its name too. */
+        uint64_t t0 = ksceKernelGetSystemTimeWide();
+        klog_d("ocr shot save: closing t=%u ms", shot_ms()); /* a stop in the close or rename shows */
+        if ((rc = ksceIoClose(fd)) >= 0) {
             fd = -1;
             if ((rc = ksceIoRename(path, final)) < 0) ksceIoRemove(path);
         } /* else still open: the game's Close closes and removes it */
-        klog_d("ocr shot save: sync %u us, close and rename %u us -> 0x%08X t=%u ms", (uint32_t)(t1 - t0), (uint32_t)(ksceKernelGetSystemTimeWide() - t1), (unsigned)(rc < 0 ? rc : 0),
-               shot_ms());
+        klog_d("ocr shot save: close and rename %u us -> 0x%08X t=%u ms", (uint32_t)(ksceKernelGetSystemTimeWide() - t0),
+               (unsigned)(rc < 0 ? rc : 0), shot_ms());
         rc = rc < 0 ? rc : 0;
         saved = !rc;
     } else {
