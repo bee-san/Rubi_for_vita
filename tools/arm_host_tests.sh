@@ -61,7 +61,8 @@ QEMU_ARGS=(-cpu cortex-a9)
 TMP_BASE=${TMPDIR:-/tmp}
 case $TMP_BASE in /*) ;; *) TMP_BASE=/tmp ;; esac
 TMP_ROOT=$(mktemp -d "$TMP_BASE/vjo-arm-tests-XXXXXX")
-trap 'rm -rf "$TMP_ROOT"' EXIT
+# (chmod -R gives back the permissions a suite took from a directory of its own; it follows no link)
+trap 'chmod -R u+rwx "$TMP_ROOT" 2> /dev/null; rm -rf "$TMP_ROOT"' EXIT
 tmp_of() { mkdir -p "$TMP_ROOT/$1" && printf '%s' "$TMP_ROOT/$1"; } # tmp_of NAME: that step's own TMPDIR
 TMPDIR=$(tmp_of lane)
 export TMPDIR
@@ -173,7 +174,8 @@ for t in "${TESTS[@]}"; do
 done
 # The record the kernel writes must be the same bytes on ARM and on the host.
 TMPDIR=$(tmp_of boot_guard) "$QEMU" "${QEMU_ARGS[@]}" "$OUT/boot_guard" record_format_and_parse_round_trip > /dev/null
-# What each suite or step left in its TMPDIR (SUITE/ENTRY), and anything outside them.
+# What each suite or step left in its TMPDIR (SUITE/ENTRY), and anything outside them, listed whole.
+chmod -R u+rwx "$TMP_ROOT" 2> /dev/null || true
 left=$(cd "$TMP_ROOT" && { find . -mindepth 2 -maxdepth 2; find . -mindepth 1 -maxdepth 1 ! -type d; } | sed 's|^\./||' | sort)
 if [ -z "$left" ]; then
   echo "arm TMPDIR: nothing left in it"

@@ -1536,9 +1536,10 @@ static int write_sqlw_shapes(const char *dir)
         int rc;
         FILE *f;
         VjoSqlwOut out;
-        snprintf(path, sizeof(path), "%s/rows-%d-%u.sqlite", dir, shapes[k].rows, (unsigned)shapes[k].bytes);
-        if (!(f = fopen(path, "w+b")))
-            return 1;
+        if (snprintf(path, sizeof(path), "%s/rows-%d-%u.sqlite", dir, shapes[k].rows, (unsigned)shapes[k].bytes) >=
+                (int)sizeof(path) ||
+            !(f = fopen(path, "w+b")))
+            return 1; /* (a cut path would name a file outside DIR) */
         out.ctx = f;
         out.write = sqlw_file_write;
         vjo_sqlw_init(&w, &out);

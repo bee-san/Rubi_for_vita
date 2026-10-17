@@ -233,7 +233,11 @@ static void setup_files(void)
     vocr_opts o;
     size_t n;
     if (done) return;
-    TEST_ASSERT(vjo_test_tmpdir_new(model_dir, sizeof model_dir) != NULL);
+    /* The product opens DIR/NAME in 256 bytes (core/vocr_ocr.c join_path): a long TMPDIR is refused here. */
+    TEST_ASSERT_(vjo_test_tmpdir_new(model_dir, sizeof model_dir) != NULL &&
+                     strlen(model_dir) + 1 + sizeof(M2) - 1 < 256,
+                 "no models' directory in %s with room for %s in the product's 256-byte model path "
+                 "(core/vocr_ocr.c join_path): is TMPDIR too long?", vjo_test_tmpdir_path, M2);
     for (unsigned i = 0; i < 2; i++) {
         n = build_blob(seeds[i]);
         TEST_ASSERT(vocr_load(&m, blob, n) == VOCR_OK);

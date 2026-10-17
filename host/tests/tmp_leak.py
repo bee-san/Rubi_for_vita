@@ -18,7 +18,9 @@ test, its files and, for a suite's directory (vjo-NAME-XXXXXX, host/tests/test_t
 suite's source; on anything else in DIR; and on a test's directory that is gone (a test that removed
 its TMPDIR, or a run without setup). It also fails when a test source (host/tests, tools/tests) names
 /tmp itself: such a test's files go around TMPDIR, where this check cannot count them. Then it
-removes DIR, so a run leaves nothing either way.
+removes DIR, so a run leaves nothing either way. A directory a test left without permissions is made
+this user's to list and remove first (u+rwx, on this user's directories only, never through a link);
+whatever DIR still holds then is named, and fails the check, and the next setup refuses it.
 """
 import os
 import pathlib
@@ -73,10 +75,30 @@ def describe(path, label):
     return f"  {label}: {count} files and directories, {size} bytes" + (f" (made by {src})" if src else "")
 
 
+def make_removable(path):
+    """u+rwx on path and on every directory under it that is this user's and not a link, top down, so
+    that a directory a test left without permissions can be listed and emptied"""
+    uid = os.getuid()
+
+    def fix(q):
+        try:
+            st = os.lstat(q)
+            if stat.S_ISDIR(st.st_mode) and st.st_uid == uid and st.st_mode & 0o700 != 0o700:
+                os.chmod(q, stat.S_IMODE(st.st_mode) | 0o700)
+        except OSError:
+            pass
+
+    fix(path)
+    for parent, dirs, _ in os.walk(path):  # (followlinks=False: a link to a directory is not entered)
+        for name in dirs:
+            fix(os.path.join(parent, name))
+
+
 def remove(path):
     """path and everything under it, no link followed: whether it is gone"""
     try:
         if stat.S_ISDIR(path.lstat().st_mode):
+            make_removable(path)
             shutil.rmtree(path, ignore_errors=True)
         else:
             path.unlink()
@@ -102,7 +124,10 @@ def leftovers(d, tests):
     for name in entries(d):
         p = d / name
         if name in tests and stat.S_ISDIR(p.lstat().st_mode):
-            found += [(p / e, f"{name}: {e}") for e in entries(p)]
+            try:
+                found += [(p / e, f"{name}: {e}") for e in sorted(os.listdir(p))]
+            except OSError as e:
+                found.append((p, f"{name}: its TMPDIR cannot be listed ({e.strerror})"))
         else:
             found.append((p, f"{name} (in no test's directory)"))
     return found
@@ -112,6 +137,8 @@ def setup(d, tests):
     if not ours(d):
         print(f"{d} is not a directory of this user's: refused")
         return 1
+    if os.path.lexists(d):
+        make_removable(d)
     left = leftovers(d, tests)
     if left:
         print(f"{d}: an interrupted run left {len(left)} entries, removed now:")
@@ -147,7 +174,8 @@ def tmp_in_sources():
     found = []
     for top in SCANNED:
         for path in sorted(top.rglob("*")):
-            if path.suffix not in (".c", ".cpp", ".h", ".py") or path.name in SCAN_EXEMPT or "fixtures" in path.parts:
+            if (path.suffix not in (".c", ".cpp", ".h", ".py") or path.name in SCAN_EXEMPT
+                    or "fixtures" in path.relative_to(ROOT).parts):  # (the checkout's own path may hold one)
                 continue
             for i, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
                 if TMP_LITERAL.search(line):
@@ -160,6 +188,7 @@ def check(d, tests):
         print(f"{d} is not a directory of this user's: refused")
         return 1
     missing = [t for t in tests if not (d / t).is_dir() or (d / t).is_symlink()]
+    make_removable(d)  # what a test left without permissions is listed and counted whole
     left = leftovers(d, tests)
     print(f"TMPDIR {d}/TEST: 0 entries before the run, {len(left)} after, in the {len(tests)} tests' directories")
     for p, label in left:
@@ -172,8 +201,13 @@ def check(d, tests):
         print("\n".join(found))
     if left:
         print("tests left these in their TMPDIR: a suite must remove what it makes (host/tests/test_tmpdir.h)")
-    remove(d)
-    return 1 if left or missing or found else 0
+    stuck = not remove(d)
+    if stuck:
+        print(f"could not remove {d}; it still holds:")
+        for parent, dirs, files in os.walk(d):
+            for name in sorted(dirs + files):
+                print(f"  {os.path.relpath(os.path.join(parent, name), d)}")
+    return 1 if left or missing or found or stuck else 0
 
 
 def main(argv):
