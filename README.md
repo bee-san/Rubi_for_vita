@@ -113,7 +113,7 @@ Every control, setting and file is in the [guide](docs/guide.md#use-in-a-game).
 | PS Vita Slim (PCH-2000), PS TV | Not tested yet. |
 | Firmware | 3.60–3.74 with taiHEN: HENkaku (Ensō) or h-encore. Tested on 3.65. |
 | Vita games | Any game that is ON. On a console, Rubi's OCR has run in CLANNAD in every test build. In test.4 the kernel plugin loaded the OCR worker into CLANNAD with no taiHEN line for it ([#191](https://github.com/bee-san/Rubi_for_vita/issues/191), [#194](https://github.com/bee-san/Rubi_for_vita/issues/194)); AIR got none in test.3, which loaded the worker only into a game with such a line. Other games are untested. A game that uses L + R itself: turn it OFF. |
-| PSP games (Adrenaline) | Built in, not yet confirmed on a console. Adrenaline and each Adrenaline Bubble Manager bubble are listed in the app, a bubble under its game's title, and get OCR like a Vita game. The test.3 build's tester got no OCR in Adrenaline; its likely cause, the OCR worker never being loaded into it, is fixed since #148, and no console run has started a PSP game since (test.4 did not reach that step, [#191](https://github.com/bee-san/Rubi_for_vita/issues/191)). |
+| PSP games (Adrenaline) | Built in, not yet confirmed on a console. Adrenaline and each Adrenaline Bubble Manager bubble are listed in the app, a bubble under its game's title, and get OCR like a Vita game. The test.3 build's tester got no OCR in Adrenaline; its likely cause, the OCR worker never being loaded into it, is fixed since [#148](https://github.com/bee-san/Rubi_for_vita/pull/148), and no console run has started a PSP game since (test.4 did not run that step, [#191](https://github.com/bee-san/Rubi_for_vita/issues/191)). |
 | A PSP | No: Rubi runs on a PS Vita. |
 
 ## FAQ
@@ -148,11 +148,12 @@ hold L while you start it. The guide has every byte, in
 ### Can it break my Vita? How do I undo it?
 
 The app's Install page changes nothing until you choose Install, and it keeps a dated backup of
-each taiHEN `config.txt` it changes. On the owner's Vita its **Update** has run (test.4.1 over
-test.4: it wrote the three plugins, and Check and repair then reported it installed); an install on
-a Vita without the overlay has not run on a console yet ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)). If a start of the Vita doesn't
-finish, the next one is a safe boot: Rubi installs no hooks and unloads itself, so the Vita starts
-as if Rubi weren't there ([safe boot](docs/boot-safety.md)).
+each taiHEN `config.txt` it changes. On the owner's Vita its **Update** has run three times
+(test.4.1, 4.2 and 4.3, each over the build before it; the first wrote the three plugins, and Check
+and repair then reported it installed); an install on a Vita without the overlay has not run on a
+console yet ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)). If a start of the Vita
+doesn't finish, the next one is a safe boot: Rubi installs no hooks and unloads itself, so the Vita
+starts as if Rubi weren't there ([safe boot](docs/boot-safety.md)).
 
 If the Vita does not start: hold L while you turn it on (h-encore or h-encore2: open its menu,
 holding R as h-encore starts, and choose Exit while holding L), then in VitaShell put `#` before the
