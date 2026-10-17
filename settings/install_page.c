@@ -114,6 +114,8 @@ static void rescan(void)
         if (scan.actions & order[i]) actions[action_count++] = order[i];
     if (action_index >= action_count) action_index = 0;
     vjo_log("install page: %s (state %d, actions 0x%x; " VJO_WORKER_MARK ")", scan.title, scan.state, (unsigned)scan.actions);
+    if (scan.reason[0]) /* why it cannot, as the page shows it (#194: the console run had only the title) */
+        vjo_log("install page: %s", scan.reason);
 }
 
 int vjo_install_page_start(void)

@@ -1052,6 +1052,19 @@ static void cannot_states(void)
     unlink(src);
     s = scan_now();
     TEST_CHECK_(s.state == VJO_INSTALL_CANNOT && strstr(s.reason, "The dictionary is missing"), "%s", s.reason);
+    /* #194: right after VitaShell's install the console showed the app's folder unreadable while its
+     * app0: read: restart first, no action (each reads that folder), and nothing written */
+    fresh_card(1);
+    put_text("app0:payload/manifest.txt", manifest_text);
+    unlink(VJO_PAYLOAD_MANIFEST);
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_CANNOT && !s.actions && !strcmp(s.title, "Restart the Vita first") &&
+                strstr(s.reason, "Restart the Vita, then open Rubi again"), "%s: %s", s.title, s.reason);
+    /* the zip's app has no app0:payload: still "no overlay", never a restart */
+    fresh_card(1);
+    remove_tree(VJO_PAYLOAD_DIR);
+    s = scan_now();
+    TEST_CHECK(s.state == VJO_INSTALL_NO_PAYLOAD);
     (void)plan;
 }
 

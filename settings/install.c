@@ -896,6 +896,16 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
         damaged = 1;
         snprintf(s->reason, sizeof(s->reason), "this app's files cannot be read (0x%08X).", (unsigned)m);
     }
+    /* Its folder unreadable while app0: reads the same manifest: on the console, right after VitaShell
+     * installed this app (#194: VitaShell's FTP was refused ux0:app/VJOSET001 until a restart, and the
+     * same scan found every file after one). Every action reads that folder, so none is offered. */
+    int unreadable = 0;
+    if (m < 0 && exists("app0:payload/manifest.txt")) {
+        damaged = unreadable = 1;
+        snprintf(s->reason, sizeof(s->reason), "This app cannot read its own folder, " VJO_PAYLOAD_APP_DIR ", yet "
+                 "(0x%08X), as right after VitaShell installs it. Restart the Vita, then open Rubi again. "
+                 "Nothing has been written.", (unsigned)m);
+    }
 
     /* the configurations */
     int configs = 0, refused = 0, loaded = 0, kernel_lines = 0, need_lines = 0, interrupted = 0;
@@ -1081,8 +1091,8 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
     }
     if (damaged || refused || s->config_ini < 0) {
         s->state = VJO_INSTALL_CANNOT;
-        s->actions = can_uninstall;
-        snprintf(s->title, sizeof(s->title), "Cannot install the overlay");
+        s->actions = unreadable ? 0 : can_uninstall;
+        snprintf(s->title, sizeof(s->title), unreadable ? "Restart the Vita first" : "Cannot install the overlay");
         if (!damaged && refused) {
             int c = s->cfg[0].refused ? 0 : 1;
             snprintf(s->reason, sizeof(s->reason), "%s: %s", s->cfg[c].path, s->cfg[c].why);
@@ -1103,7 +1113,8 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
         s->actions = can_uninstall;
         snprintf(s->title, sizeof(s->title), "Cannot install the overlay");
         snprintf(s->reason, sizeof(s->reason), "The dictionary is missing, and this app no longer has its copy (an "
-                 "earlier install moved it): install the VPK again in VitaShell, then open Rubi.");
+                 "earlier install moved it). If VitaShell has just installed the VPK, restart the Vita and open "
+                 "Rubi again; otherwise install the VPK again in VitaShell, then open Rubi.");
         return;
     }
     s->actions = VJO_INSTALL_ACT_INSTALL | can_uninstall;
