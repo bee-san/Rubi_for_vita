@@ -55,6 +55,7 @@ typedef struct {
     int open_fails;           /* the framebuffer does not open before the hand-over */
     int first_index;          /* the render info before the hand-over: 0 none, 1 buffer 1, 2 buffer 2 */
     uint64_t shell_needs_us;  /* CPU3 time SceShell needs to hand over buffer 2 (NEVER: it does not) */
+    int stale_base2;          /* index 0 with the second buffer set (an earlier hand-over's render info) */
 } World;
 
 /* What one start did, from its process (each runs in its own: the wrappers keep their state in statics). */
@@ -127,7 +128,7 @@ int sceSharedFbGetInfo(SceUID fb_id, SceSharedFbInfo *info)
     int index = handed_over() ? 2 : world.first_index;
     info->fb_base = buffers[0];
     info->fb_size = 0x400000;
-    info->fb_base2 = index == 2 ? buffers[1] : index == 1 ? buffers[0] : NULL;
+    info->fb_base2 = index == 2 || (index == 0 && world.stale_base2) ? buffers[1] : index == 1 ? buffers[0] : NULL;
     info->stride = info->width = 960;
     info->height = 544;
     info->index = index;
@@ -248,6 +249,20 @@ static void beside_a_game_nothing_changes(void)
 }
 
 /* ---- no game: each way the start can depend on SceShell ---- */
+
+/* Whatever libvita2d takes (any index but 1) and can draw with (both buffers there) goes to it
+ * at once, as on main: index 0 with an earlier hand-over's second buffer. */
+static void what_libvita2d_takes_and_can_draw_with_is_unchanged(void)
+{
+    World w = beside_a_game;
+    w.first_index = 0;
+    w.stale_base2 = 1;
+    w.shell_needs_us = NEVER;
+    Result r = run(w);
+    started(&r);
+    TEST_CHECK_(r.reads == 1 && r.delays == 0 && r.gfx.index == 0, "%u reads, %u pauses, index %d", r.reads, r.delays,
+                r.gfx.index);
+}
 
 /* Buffer 1 handed over; buffer 2 needs 5 ms of SceShell's CPU3 time. */
 static void no_game_the_hand_over_needs_cpu3(void)
@@ -381,6 +396,7 @@ static void an_ordinary_application_starts_as_before(void)
 
 TEST_LIST = {
     {"beside a game: nothing changes", beside_a_game_nothing_changes},
+    {"what libvita2d takes and can draw with is unchanged", what_libvita2d_takes_and_can_draw_with_is_unchanged},
     {"no game: the hand-over needs CPU3", no_game_the_hand_over_needs_cpu3},
     {"no game: before the first hand-over", no_game_before_the_first_hand_over},
     {"no game: the framebuffer does not open yet", no_game_the_framebuffer_does_not_open_yet},

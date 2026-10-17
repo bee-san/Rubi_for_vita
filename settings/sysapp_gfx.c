@@ -25,13 +25,14 @@
  *   (the same flags without SHAREDPB_OPEN, with PB_LPDDR: a system application has no CDRAM; the
  *   2 MiB libvita2d asks for, which docs/vita-memory.md section 5.4 already counts). Refused
  *   again, the app closes with a log.txt line instead of drawing with a GPU library it never had.
- * - the framebuffer read: an answer libvita2d cannot draw with (no framebuffer, a failed read, no
- *   hand-over yet, buffer 1 still the last one, no second buffer) is given to it as "buffer 1",
- *   on which libvita2d closes the framebuffer and opens it again, after a 1 ms pause in which
- *   SceShell runs. A wait over a second is logged; after 10 s the app closes with a log.txt line.
+ * - the framebuffer read: an answer libvita2d would take but cannot draw with (no framebuffer, a
+ *   failed read, no second buffer: index 0 before SceShell's first hand-over), or one it retries
+ *   (buffer 1 still the last one), is given to it as "buffer 1", on which libvita2d closes the
+ *   framebuffer and opens it again, after a 1 ms pause in which SceShell runs. A wait over a
+ *   second is logged; after 10 s the app closes with a log.txt line.
  *
- * The first answer it can draw with goes to libvita2d unchanged: beside a game nothing changes.
- * One log.txt line, in both builds, says how the start went. */
+ * Every answer libvita2d takes and can draw with goes to it unchanged: beside a game nothing
+ * changes. One log.txt line, in both builds, says how the start went. */
 #include "sysapp_gfx.h"
 #include "anki_page.h" /* vjo_log: log.txt */
 #include <psp2/gxm.h>
@@ -116,19 +117,17 @@ int __wrap_sceSharedFbGetInfo(SceUID fb_id, SceSharedFbInfo *info)
 {
     int rc = __real_sceSharedFbGetInfo(fb_id, info);
     uint64_t now = sceKernelGetProcessTimeWide();
-    if (!info) return rc;
+    if (!info || gfx.ready) return rc; /* libvita2d reads it only to start */
     if (!gfx.reads++) gfx.first_us = now;
     gfx.fb_id = fb_id;
     gfx.fb_rc = rc;
     gfx.index = rc >= 0 ? info->index : -1;
-    /* libvita2d draws into fb_base and fb_base2, the buffer SceShell handed over last: the second
-     * one once its index is past 1 */
-    if (fb_id >= 0 && rc >= 0 && info->index >= 2 && info->fb_base && info->fb_base2 && info->fb_base2 != info->fb_base) {
-        if (!gfx.ready) {
-            gfx.ready = 1;
-            gfx.ready_us = now;
-            log_ready();
-        }
+    /* What libvita2d takes (any index but 1: it then draws into fb_base and fb_base2), when both
+     * are there: before SceShell's first hand-over the second is NULL (index 0) */
+    if (fb_id >= 0 && rc >= 0 && info->index != 1 && info->fb_base && info->fb_base2) {
+        gfx.ready = 1;
+        gfx.ready_us = now;
+        log_ready();
         return rc;
     }
     char why[64];

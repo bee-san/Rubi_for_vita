@@ -509,11 +509,13 @@ checks the built ELF for):
   CDRAM, the 2 MiB already in the table above [estimate: that it fits; test.3's app had
   28,286,976 B free 60 frames after its start, measured]. Refused again, the app closes with a
   `log.txt` line instead of drawing with a library that never started;
-- a read libvita2d cannot draw with (no framebuffer, a failed read, buffer 1 still the last one,
-  index 0, no second buffer) is given to it as buffer 1 after a 1 ms pause, in which SceShell has
-  CPU3; libvita2d then closes the framebuffer and opens it again. A wait over a second is logged;
-  after 10 s the app closes with a line that names the last read;
-- the first read libvita2d can draw with goes to it unchanged, so beside a game nothing changes.
+- a read libvita2d would take but cannot draw with (no framebuffer, a failed read, no second
+  buffer: index 0 before SceShell's first hand-over), or one it retries (buffer 1 still the last
+  one), is given to it as buffer 1 after a 1 ms pause, in which SceShell has CPU3; libvita2d then
+  closes the framebuffer and opens it again. A wait over a second is logged; after 10 s the app
+  closes with a line that names the last read;
+- every read libvita2d takes and can draw with goes to it unchanged, so beside a game nothing
+  changes.
 
 One line in both builds says how the start went, with the main thread's priority and CPU mask as
 the console reports them:
@@ -527,7 +529,7 @@ has not logged it yet. The host tests run libvita2d's start (a copy of the pinne
 `host/tests/sysapp_gfx_model.c`) through the same wrappers against a model of SceShell and the
 GPU library: no hand-over for 5 ms, none yet (index 0), a framebuffer that does not open, no
 shared parameter buffer, all of them, none for ever, both buffers refused. Without the wrappers
-eight of their ten fail [measured: on the host]. Vita3K never takes this path (its
+eight of their eleven fail [measured: on the host]. Vita3K never takes this path (its
 `sceAppMgrGetBudgetInfo` refuses), so its settings smoke also builds the app with that call
 answered as a system application and the hand-over and the shared buffer stood in for
 (`tools/vita3k_settings_smoke.sh`, `VJO_SETTINGS_SMOKE_SYSAPP`): a crash check of the app's code on
