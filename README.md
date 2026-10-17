@@ -72,8 +72,8 @@
 > and predate much of this page: their release notes say what each one has.
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 240 MB free on the memory card before you
-copy the VPK to it (estimated from the package's size; 60 MB of it is the VPK itself, which you can
+HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card before you
+copy the VPK to it (estimated from the package's size; 61 MB of it is the VPK itself, which you can
 delete once it is installed).
 
 1. Download `VitaJPOverlay-<version>.vpk` from the
@@ -212,8 +212,12 @@ not be possible without her. She also made the app a system app, so it opens bes
 game ([#109](https://github.com/bee-san/vita-jp-overlay/pull/109)).
 
 - Based on [Dartv/vita-jp-overlay](https://github.com/Dartv/vita-jp-overlay).
-- **OCR:** VOCR, from [bee-san/vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr) (GPL-3.0); its
-  character language models are CC BY-SA 4.0.
+- **OCR:** VOCR, from [bee-san/vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr) (GPL-3.0). Its
+  VOCR5 recognizers, the three model sizes, were trained in part on NVIDIA's
+  OCR-Synthetic-Multilingual-v1 (CC BY 4.0) and on fonts and text that are free for non-commercial
+  use only, so their weights are for non-commercial use only: their attribution and terms ship
+  beside them as `ocr/MODEL-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#models)). Its character
+  language models are CC BY-SA 4.0.
 - **Dictionary:** Bee's Ultimate Dictionary. English definitions from Daijirin4 and Sankoku8
   (© Sanseido) and [JMdict](https://www.edrdg.org/) (EDRDG, CC BY-SA 4.0); frequency ranks from
   [Jiten](https://jiten.moe) (CC BY-SA 4.0); kanji lines from Bee's Ultimate Kanji Dictionary
@@ -248,6 +252,7 @@ game ([#109](https://github.com/bee-san/vita-jp-overlay/pull/109)).
 
 ## License
 
-Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The dictionary data, the language models and the
-third-party code keep their own licences ([attribution](docs/plaintext-attribution.txt),
-[third_party/](third_party/README.md)).
+Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The OCR's recognizer weights are for non-commercial
+use only (`ocr/MODEL-ATTRIBUTION.md`, [details](docs/vita-vn-ocr.md#models)). The dictionary data,
+the language models and the third-party code keep their own licences
+([attribution](docs/plaintext-attribution.txt), [third_party/](third_party/README.md)).
