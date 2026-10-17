@@ -1077,6 +1077,18 @@ static void check_and_repair_says_what_became_of_the_apps_dictionary_copy(void)
     TEST_CHECK(has_line(r.lines, r.count, "The dictionary was already installed; this app's copy could not be deleted (1 MB)."));
     TEST_CHECK_(strstr(log_text, "install: this app's copy of the dictionary kept (614417 B): this app's folder cannot be written\n")
                 != NULL, "%s", log_text);
+
+    /* the probe of the app folder fails, though a delete there would work: nothing in the app folder is touched */
+    app_readonly = 0;
+    umount_rc = 0;
+    fault.pattern = VJO_PAYLOAD_APP_DIR "/.vjo-probe";
+    fault.open_write = 1;
+    s = scan_now();
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && r.rc == 0 && !r.written);
+    TEST_CHECK(fault.calls >= 1);
+    memset(&fault, 0, sizeof(fault));
+    TEST_CHECK(there(src));
+    TEST_CHECK(has_line(r.lines, r.count, "The dictionary was already installed; this app's copy could not be deleted (1 MB)."));
 }
 
 /* An earlier run's dictionary (its .vjo-new, with the payload's SHA-256) is put in place: the app's copy beside
