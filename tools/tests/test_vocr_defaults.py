@@ -276,7 +276,9 @@ class VocrDefaults(unittest.TestCase):
         url, size, sha = prepare_ocr.VOCR_MODEL_ATTRIBUTION_PIN[prepare_ocr.VOCR_MODEL_ATTRIBUTION]
         self.assertTrue(url.endswith("/releases/download/v0.3.0/ATTRIBUTION.md"))
         self.assertEqual((size, sha), (3158, "db307ca08f4282a235173a77d0ef0f9c4c918dc43ac17fa289d27b831bf1c194"))
-        self.assertEqual(prepare_ocr.VOCR_MODEL_ATTRIBUTION_TAG, TIER_PINS["normal"][4])
+        # it is VOCR5's release's, which every size with a VOCR5 model comes from (a size may keep an earlier model)
+        self.assertEqual(prepare_ocr.VOCR_MODEL_ATTRIBUTION_TAG, prepare_ocr.VOCR5_TAG)
+        self.assertLessEqual({pin[4] for pin in TIER_PINS.values() if pin[5] == "VOCR5"}, {prepare_ocr.VOCR5_TAG})
         self.assertIn('X(VJO_PAYLOAD_OCR "MODEL-ATTRIBUTION.md", VJO_PAYLOAD_COPY)',
                       (ROOT / "include/vjo_payload.h").read_text())  # the one-VPK install copies it too
 

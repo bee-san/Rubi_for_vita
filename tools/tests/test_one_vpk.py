@@ -152,7 +152,12 @@ class PayloadList(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "include").mkdir()
-            (root / "include/vjo_payload.h").write_text((ROOT / "include/vjo_payload.h").read_text())
+            header = (ROOT / "include/vjo_payload.h").read_text()
+            if "VJO_VOCR_TIER3_NAME" not in header:  # a tree that already names its shared model once: list it twice
+                header = header.replace("X(VJO_PAYLOAD_OCR VJO_VOCR_TIER2_NAME, VJO_PAYLOAD_COPY)",
+                                        "X(VJO_PAYLOAD_OCR VJO_VOCR_TIER2_NAME, VJO_PAYLOAD_COPY) "
+                                        "X(VJO_PAYLOAD_OCR VJO_VOCR_TIER3_NAME, VJO_PAYLOAD_COPY)", 1)
+            (root / "include/vjo_payload.h").write_text(header)
             sizes = (ROOT / "include/vjo_vocr_sizes.h").read_text()
             shared = re.sub(r"#define VJO_VOCR_TIER3_NAME \w+", "#define VJO_VOCR_TIER3_NAME VJO_VOCR4_W20_NAME",
                             re.sub(r"#define VJO_VOCR_TIER2_NAME \w+", "#define VJO_VOCR_TIER2_NAME VJO_VOCR4_W20_NAME", sizes))

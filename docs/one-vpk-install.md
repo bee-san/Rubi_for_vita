@@ -30,14 +30,15 @@ that its overlay is not the installed one, and its Install page offers **Update*
   (`plugin/kernel.c:60-73`); without them the app runs sandboxed and cannot write `ur0:tai`. The app
   detects it as VitaShell does (`sceIoDevctl("ux0:", 0x3001, NULL, 0, NULL, 0)` returns `0x80010030`,
   VitaShell 81af709 `init.c:353-355`) and says how to turn it on.
-- About 240 MB free on ux0, the VPK counted: VitaShell's step needs the 60.1 MB VPK plus its 168.7 MB
-  unpacked, and the app's Install 11.1 MB more while the VPK is still on the card (the models it
+- About 245 MB free on ux0, the VPK counted: VitaShell's step needs the 61.1 MB VPK plus its 169.9 MB
+  unpacked, and the app's Install 12.2 MB more while the VPK is still on the card (the models it
   copies and its 0.5 MiB margin, `settings/install.c`'s room check, which otherwise stops before
-  writing and says the `.vpk` can go) [estimate from the measured sizes: this PR's debug packages, and
-  #153's with Bee's Ultimate Dictionary, whose file is 13.9 MB larger].
+  writing and says the `.vpk` can go) [estimate from the measured sizes: #158's debug packages, #153's
+  with Bee's Ultimate Dictionary, whose file is 13.9 MB larger, and #167's with VOCR5's three models and
+  their `MODEL-ATTRIBUTION.md`, 1.1 MB more than the three before them: 243.2 MB in all].
   VitaShell's own check lets an install start with up to 40 MiB less (below), so the README asks for
   the room itself. After the install, and once the VPK is deleted,
-  the overlay takes about 179.5 MB: 168.1 MB of data, the 0.5 MB app and the 10.8 MB of plugins and
+  the overlay takes about 181.6 MB: 169.2 MB of data, the 0.5 MB app and the 11.9 MB of plugins and
   models the app keeps for Repair [estimate].
 
 `install-vita.sh` (the release zip) stays as the advanced and developer path.
@@ -54,10 +55,10 @@ that its overlay is not the installed one, and its Install page offers **Update*
 The two builds are #141's (`docs/release-variants.md`): the same models, dictionary and config
 template; the debug build has the full log and the self-test. Both VPKs are the same app (title ID
 `VJOSET001`), so either installs over the other, and each carries its own build's plugins. A release
-is about 4 × 55 MB of assets.
+is about 4 × 61 MB of assets.
 
 The zips keep today's layout and their own `JPOverlaySettings.vpk`, which carries no overlay files
-(the "no payload" state below), so a zip is not 55 MB larger.
+(the "no payload" state below), so a zip is not 61 MB larger.
 
 ## Inside the VPK
 
@@ -76,7 +77,8 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 | `payload/manifest.txt` | read by the app | small |
 | `licenses/` (`LICENSE`, the GPL; `docs/plaintext-attribution.txt`; `docs/JMdict-LICENSE.html`; `third_party/README.md` and `third_party/licenses/`), at their zip paths | stays in the app, `ux0:app/VJOSET001/licenses/` | 79,336 (this PR's 0.8.0 packages) |
 
-The dictionary is 94% of the 168,114,408 B the payload installs (the debug package, #153's); the app itself is 0.5 MB.
+The dictionary is 93% of the 169,225,358 B the payload installs (the debug package with VOCR5's models; 168,114,408 B
+with #153's before them); the app itself is 0.5 MB.
 
 `payload/manifest.txt` is written by `tools/package_vpk.py`, one item per line:
 
@@ -129,7 +131,7 @@ From VitaShell 81af709 (`package_installer.c` `install_thread`):
 - `checkMemoryCardFreeSpace` (`utils.c:91-125`) refuses only when the unpacked size is at least ux0's
   free space plus 40 MiB, so it lets an install start with up to 40 MiB less room than it needs; the
   extraction then fails on a full card and VitaShell deletes `ux0:data/pkg`
-  (`package_installer.c:538-539`). Hence the README's 240 MB.
+  (`package_installer.c:538-539`). Hence the README's 245 MB.
 - It extracts everything into `ux0:data/pkg`, writes `sce_sys/package/head.bin`, and calls
   `scePromoterUtilityPromotePkgWithRif`, which has SceShell move the files into `ux0:app/VJOSET001`
   and add the bubble (henkaku wiki, ScePromoterUtil and Packages). The `.vpk` can be deleted after.
@@ -203,7 +205,7 @@ The page shows what the action will do before anything happens, with the exact l
 ```
 Update the overlay from v0.8.0 to v0.8.1
 1. Copy the 3 plugins and their RCO to ur0:tai and ur0:data/VitaJPOverlay, and the OCR models
-   (10.6 MB) to ux0:data/VitaJPOverlay/ocr; a file that already matches is not written again.
+   (11.7 MB) to ux0:data/VitaJPOverlay/ocr; a file that already matches is not written again.
    The dictionary is already installed: once it is checked, this app's copy is deleted (157 MB freed).
 2. Back up ux0:tai/config.txt and ur0:tai/config.txt as config.txt.vjo-20261016-071503.bak in each
    folder (kept).
@@ -724,7 +726,7 @@ test.4.
 
 ## Unmeasured until a console run
 
-- VitaShell's install time for the 60 MB VPK, and the app's Install time: about 169 MB read and
+- VitaShell's install time for the 61 MB VPK, and the app's Install time: about 170 MB read and
   hashed, 256 KiB per call on a thread on CPU3 (the app is a system application), whose CPU3 cost is
   unmeasured (AGENTS.md rule 8).
 - That a system application may unmount its `app0:`, that `sceIoRename` then moves the dictionary out

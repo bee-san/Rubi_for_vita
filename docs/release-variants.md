@@ -249,7 +249,7 @@ gh release create v0.8.0 -R bee-san/vita-jp-overlay --title "Vita JP Overlay 0.8
 
 The release notes give the three steps of README "Install" (download the `.vpk`; copy it to the Vita
 and install it in VitaShell; open Overlay, choose Install, restart), the requirements (Enable Unsafe
-Homebrew; about 240 MB free on ux0, the VPK counted), and the recovery (README "Memory and
+Homebrew; about 245 MB free on ux0, the VPK counted), and the recovery (README "Memory and
 troubleshooting"). A test build is packaged the same way, `package_variants.py --version 0.8.0-test.N
 --set anki_mining=on` on the two artifacts of the `main` commit it is cut from, and ships its debug VPK
 first.

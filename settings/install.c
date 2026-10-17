@@ -1650,7 +1650,7 @@ static int run_install(Run *x, VjoInstallScan *s)
             snprintf(what, sizeof(what), "%s has %.1f MB free and the install needs %.1f MB", d ? "ur0" : "ux0", mb((uint64_t)room),
                      mb(need[d]));
             lock(0);
-            /* ux0 also holds the .vpk the user copied: after VitaShell's install it can go (60 MB) */
+            /* ux0 also holds the .vpk the user copied: after VitaShell's install it can go (61 MB) */
             return stop(x, d ? "%s." : "%s. Delete what you no longer need on ux0 (the .vpk this app was installed from "
                         "can go), then choose Install again.", what);
         }
