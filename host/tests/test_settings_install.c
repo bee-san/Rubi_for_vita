@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 #include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
@@ -634,7 +635,8 @@ static int ini_listed(const VjoInstallScan *s, const char *line)
 /* A line that only goes is named by its setting: an API key's by the key's name alone, whatever follows it
  * (removed_secret drops a line that starts with the name), never by a value; a changed setting is listed
  * once, by its new line; a second copy of a setting is named as one. The scan's whole list, each on a card
- * small enough that none is only counted; and no value on the page either (log.txt has the same lines). */
+ * small enough that none is only counted; and no value on the page either (log.txt gets none of these lines: the
+ * install logs only config.ini's size, settings/install.c). */
 static void a_line_that_goes_is_named_by_its_setting_never_its_value(void)
 {
     /* three of the app's own lines, which its save writes when they are missing (the cards stay under 12 changes) */
@@ -674,6 +676,148 @@ static void a_line_that_goes_is_named_by_its_setting_never_its_value(void)
         }
     }
 #undef OWNED
+}
+
+/* audit-pr177 N1: the patches keep a UTF-8 BOM at offset 0, whatever line follows it. When the first line goes, the
+ * BOM ends up in front of the next one: it is no part of either line, so the line that goes is named and the next
+ * one, which stays, is not (before: "<BOM>japanese_only_selection = on" listed, and named as gone). */
+static void a_bom_is_no_part_of_a_line(void)
+{
+    fresh_card(1);
+    put_text(VJO_PREFERENCES_PATH_TEST, "\xEF\xBB\xBF" "ocr_backend = vocr\njapanese_only_selection = on\nhighlight_mode = word\n"
+             "local_dictionary_results = 1\n");
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.config_ini == 1 && s.config_change_more == 0, "config_ini %d, %d more", s.config_ini, s.config_change_more);
+    for (int i = 0; i < s.config_change_count; i++) TEST_MSG("%s", s.config_changes[i]);
+    TEST_CHECK(ini_listed(&s, "ocr_backend: a removed setting, goes"));
+    TEST_CHECK(!ini_listed(&s, "japanese_only_selection: a removed setting, goes"));
+    for (int i = 0; i < s.config_change_count; i++)
+        TEST_CHECK_(!strstr(s.config_changes[i], "\xEF\xBB\xBF") && !strstr(s.config_changes[i], "japanese_only_selection"),
+                    "[%s]", s.config_changes[i]);
+    VjoInstallResult r;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    char *ini = slurp(VJO_PREFERENCES_PATH_TEST, NULL);
+    TEST_ASSERT(ini != NULL);
+    TEST_CHECK(!strncmp(ini, "\xEF\xBB\xBF" "japanese_only_selection = on\n", 32) && !strstr(ini, "ocr_backend"));
+}
+
+/* audit-pr180 B1: a BOM the new text starts with but the old one does not is a later line's own (every line before
+ * it went). It stays part of that line on both sides, so the unchanged line is not listed, and never its value. */
+static void a_later_lines_bom_stays_part_of_it(void)
+{
+    fresh_card(1);
+    put_text(VJO_PREFERENCES_PATH_TEST, "ocr_backend = vocr\n" "\xEF\xBB\xBF" "hachidori_host = 192.168.1.5\n"
+             "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 1\n");
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.config_ini == 1, "config_ini %d", s.config_ini);
+    for (int i = 0; i < s.config_change_count; i++) TEST_MSG("%s", s.config_changes[i]);
+    TEST_CHECK(ini_listed(&s, "ocr_backend: a removed setting, goes"));
+    char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    for (int i = 0; i < n + s.config_change_count; i++) {
+        const char *l = i < n ? plan[i] : s.config_changes[i - n];
+        TEST_CHECK_(!strstr(l, "192.168") && !strstr(l, "hachidori_host ="), "[%s]", l);
+    }
+}
+
+/* The engine's own eight lines as it writes them: a card with them all adds no line of its own. */
+#define COMPLETE "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 1\nvocr_tier = normal\n" \
+    "local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\nocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"      \
+    "text_source = ocr\nlog_file = on\n"
+
+/* audit-pr180 N1, A4: the bits of one scan never reach the next. The first scan marks its new line 0 as a line the
+ * old text has; the second's new line 0 is a changed one, which a stale bit would call kept (a false "repeated"). */
+static void each_scan_marks_its_own_lines(void)
+{
+    fresh_card(1);
+    put_text(VJO_PREFERENCES_PATH_TEST, "anki_mining = on\nocr_backend = vocr\n" COMPLETE);
+    VjoInstallScan first = scan_now();
+    TEST_CHECK_(first.config_ini == 1 && ini_listed(&first, "ocr_backend: a removed setting, goes"), "first: %d",
+                first.config_ini);
+    fresh_card(1);
+    put_text(VJO_PREFERENCES_PATH_TEST, "dictionary = jpdb\n" COMPLETE);
+    VjoInstallScan s = scan_now();
+    for (int i = 0; i < s.config_change_count; i++) TEST_MSG("%s", s.config_changes[i]);
+    TEST_CHECK_(s.config_ini == 1 && s.config_change_count == 1 && ini_listed(&s, "dictionary = local"),
+                "config_ini %d, %d lines", s.config_ini, s.config_change_count);
+    TEST_CHECK(!ini_listed(&s, "dictionary: a repeated line goes"));
+}
+
+/* audit-pr180 N1, A5: a line that goes is "repeated" only when no same-named new line changed, whichever comes
+ * last (an OR over them, as #177's): dictionary = jpdb becomes dictionary = local, a changed line, though
+ * dictionary = mine stays. */
+static void any_changed_same_named_line_makes_it_a_change(void)
+{
+    fresh_card(1);
+    put_text(VJO_PREFERENCES_PATH_TEST, "dictionary = jpdb\ndictionary = mine\n" COMPLETE);
+    VjoInstallScan s = scan_now();
+    for (int i = 0; i < s.config_change_count; i++) TEST_MSG("%s", s.config_changes[i]);
+    TEST_CHECK_(s.config_ini == 1 && s.config_change_count == 1 && ini_listed(&s, "dictionary = local"),
+                "config_ini %d, %d lines", s.config_ini, s.config_change_count);
+    TEST_CHECK(!ini_listed(&s, "dictionary: a repeated line goes"));
+}
+#undef COMPLETE
+
+/* audit-pr177 N3 and N6: an API key's name in capitals glued to its value is named by the key alone; a setting in
+ * capitals that the app's save writes in lower case is listed once, by its new line, never also as gone; a CRLF
+ * line that stays makes its same-named copy "repeated"; a key line after a CR is named too (removed_secret skips
+ * CR, core/config.c is_space). */
+static void a_line_that_goes_is_named_whatever_its_case_or_line_ends(void)
+{
+    fresh_card(1);
+    put_text(VJO_PREFERENCES_PATH_TEST, "JITEN_API_KEYSECRET4\nVOCR_TIER = large\ndictionary = local\r\ndictionary = jpdb\r\n"
+             "\rjpdb_api_key = SECRET5\njapanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 1\n");
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.config_ini == 1 && s.config_change_more == 0, "config_ini %d, %d more", s.config_ini, s.config_change_more);
+    for (int i = 0; i < s.config_change_count; i++) TEST_MSG("%s", s.config_changes[i]);
+    TEST_CHECK(ini_listed(&s, "jiten_api_key: a removed setting, goes"));
+    TEST_CHECK(ini_listed(&s, "jpdb_api_key: a removed setting, goes"));
+    TEST_CHECK(ini_listed(&s, "vocr_tier = large") && !ini_listed(&s, "VOCR_TIER: a removed setting, goes"));
+    TEST_CHECK(ini_listed(&s, "dictionary: a repeated line goes"));
+    char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    for (int i = 0; i < n + s.config_change_count; i++) {
+        const char *l = i < n ? plan[i] : s.config_changes[i - n];
+        TEST_CHECK_(!strstr(l, "SECRET") && !strstr(l, "VOCR_TIER") && !strchr(l, '\r'), "[%s]", l);
+    }
+}
+
+/* audit-pr177 N2: many lines that go, sharing a name with many lines that stay, made the second pass cubic (a
+ * scan of the old text for each same-named new line): audit-pr177 measured 14.8 s on its host for a crafted
+ * 23,291 B file, which would be minutes on the console (est.). Each case below is a hand-made file of the kind;
+ * its scan must take well under half a second here (host times: main took 6.6 s and 2.5 s for these two, this
+ * engine milliseconds). */
+static double scan_seconds(VjoInstallScan *out)
+{
+    struct timespec a, b;
+    clock_gettime(CLOCK_MONOTONIC, &a);
+    *out = scan_now();
+    clock_gettime(CLOCK_MONOTONIC, &b);
+    return (double)(b.tv_sec - a.tv_sec) + (double)(b.tv_nsec - a.tv_nsec) / 1e9;
+}
+
+static void a_crafted_config_ini_is_scanned_in_bounded_time(void)
+{
+    static char text[VJO_CONFIG_TEXT_MAX + 1];
+    static const struct { const char *goes, *stays; int n_goes, n_stays; const char *listed; } cases[] = {
+        {"dictionary = jpdb\n", NULL, 1000, 0, "dictionary = local"},             /* each replaced by the same line */
+        {"ocr_backend = vocr\n", "ocr_backend:x\n", 645, 863, "ocr_backend: a repeated line goes"}, /* names shared */
+    };
+    for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        size_t used = 0;
+        used += (size_t)snprintf(text + used, sizeof(text) - used,
+                                 "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 1\n");
+        for (int i = 0; i < cases[c].n_goes; i++) used += (size_t)snprintf(text + used, sizeof(text) - used, "%s", cases[c].goes);
+        for (int i = 0; i < cases[c].n_stays; i++) used += (size_t)snprintf(text + used, sizeof(text) - used, "%s", cases[c].stays);
+        TEST_ASSERT_(used < VJO_CONFIG_TEXT_MAX, "case %u: %zu B", c, used);
+        fresh_card(1);
+        put_text(VJO_PREFERENCES_PATH_TEST, text);
+        VjoInstallScan s;
+        double took = scan_seconds(&s);
+        TEST_CHECK_(took < 0.5, "case %u (%zu B): the scan took %.3f s", c, used, took);
+        TEST_MSG("case %u (%zu B): %.3f s, %d listed + %d counted", c, used, took, s.config_change_count, s.config_change_more);
+        TEST_CHECK_(s.config_ini == 1 && ini_listed(&s, cases[c].listed), "case %u: config_ini %d", c, s.config_ini);
+    }
 }
 
 /* A config.ini whose new text differs but sets every setting as before (CRLF line ends: the app's own save
@@ -2063,6 +2207,12 @@ TEST_LIST = {
     {"the_plan_names_each_config_ini_line_that_goes", the_plan_names_each_config_ini_line_that_goes},
     {"a_line_that_goes_is_named_by_its_setting_never_its_value", a_line_that_goes_is_named_by_its_setting_never_its_value},
     {"a_rewrite_that_changes_no_setting_says_so", a_rewrite_that_changes_no_setting_says_so},
+    {"a_bom_is_no_part_of_a_line", a_bom_is_no_part_of_a_line},
+    {"a_later_lines_bom_stays_part_of_it", a_later_lines_bom_stays_part_of_it},
+    {"each_scan_marks_its_own_lines", each_scan_marks_its_own_lines},
+    {"any_changed_same_named_line_makes_it_a_change", any_changed_same_named_line_makes_it_a_change},
+    {"a_line_that_goes_is_named_whatever_its_case_or_line_ends", a_line_that_goes_is_named_whatever_its_case_or_line_ends},
+    {"a_crafted_config_ini_is_scanned_in_bounded_time", a_crafted_config_ini_is_scanned_in_bounded_time},
     {"the_dictionary_already_installed_is_not_moved_again", the_dictionary_already_installed_is_not_moved_again},
     {"a_move_that_cannot_happen_copies", a_move_that_cannot_happen_copies},
     {"cannot_states", cannot_states},
