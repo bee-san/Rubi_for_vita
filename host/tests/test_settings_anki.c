@@ -621,21 +621,20 @@ static void touch_chooses_and_acts_on_each_row(void)
         TEST_CHECK_(focused() == 1 && renames == 0 && threads_created == 0, "a touch at %d,%d acted", miss[i][0],
                     miss[i][1]);
     }
-    /* the export rows: a touch starts that export */
-    touch(0, 480, row_top[2]);
-    TEST_CHECK(focused() == 2 && vjo_anki_page_busy() && threads_created == 1);
-    run_worker();
-    frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && strstr(drawn.footer, "Exported 1 card (") &&
-               strstr(drawn.footer, "to 2026-10-12_093005-1card.apkg."));
-    TEST_MSG("%s", drawn.footer);
-    touch(0, 935, row_top[3] + row_height[3] - 1);
-    TEST_CHECK(focused() == 3 && vjo_anki_page_busy() && threads_created == 2);
-    run_worker();
-    frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && strstr(drawn.footer, "to 2026-10-12_093005-all-1card.apkg."));
-    TEST_MSG("%s", drawn.footer);
-    TEST_CHECK(threads_deleted == 2);
+    /* the export rows: a touch at each one's top and bottom edges starts that export */
+    for (int k = 0; k < 4; k++) {
+        static const char *const result[4] = {"to 2026-10-12_093005-1card.apkg.", "No cards queued",
+                                              "to 2026-10-12_093005-all-1card.apkg.",
+                                              "to 2026-10-12_093005-all-1card-2.apkg."};
+        int r = 2 + k / 2, y = k % 2 ? row_top[r] + row_height[r] - 1 : row_top[r];
+        touch(0, k % 2 ? 935 : 480, y);
+        TEST_CHECK_(focused() == r && vjo_anki_page_busy() && threads_created == k + 1,
+                    "a touch at y %d did not start row %d's export", y, r);
+        run_worker();
+        frame(0);
+        TEST_CHECK_(!vjo_anki_page_busy() && strstr(drawn.footer, result[k]), "row %d at y %d: %s", r, y, drawn.footer);
+    }
+    TEST_CHECK(threads_deleted == 4);
 }
 
 /* Enter on an export row runs the export on the page's worker thread (64 KiB, the system core):
@@ -656,8 +655,10 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     TEST_CHECK(vjo_anki_page_busy() && threads_created == 1 && thread_stack == 64 * 1024 &&
                thread_affinity == SCE_KERNEL_CPU_MASK_SYSTEM && thread_priority == 0x10000100);
     frame(0);
-    TEST_CHECK(!strcmp(badge(2)->label, "Exporting…") && badge(2)->active && !strcmp(badge(3)->label, "Export all"));
-    TEST_CHECK(text_starting("Reading the cards…") && !strcmp(drawn.controls, "○: stop   Select: page"));
+    TEST_CHECK(!strcmp(badge(2)->label, "Exporting…") && badge(2)->active && !strcmp(badge(3)->label, "Export all") &&
+               !badge(3)->active);
+    TEST_CHECK(text_starting("Reading the cards…") && text_starting("Every card again") &&
+               !strcmp(drawn.controls, "○: stop   Select: page"));
     /* busy: no save, no second export, from Enter, Left/Right or a touch */
     TEST_ASSERT(save_now(0, 1) == 0);
     TEST_ASSERT(read_file(VJO_PREFERENCES_PATH, before, sizeof(before)) > 0);
@@ -691,7 +692,11 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     TEST_CHECK(focused() == 3);
     frame(SCE_CTRL_CROSS);
     frame(0);
-    TEST_CHECK(!strcmp(badge(3)->label, "Exporting…") && badge(3)->active && !strcmp(badge(2)->label, "Export"));
+    TEST_CHECK(!strcmp(badge(3)->label, "Exporting…") && badge(3)->active && !strcmp(badge(2)->label, "Export") &&
+               !badge(2)->active);
+    /* the progress on its own row only; the last export's result is not the footer while this one runs */
+    TEST_CHECK(text_starting("Reading the cards…") && text_starting("Writes a new .apkg"));
+    TEST_CHECK_(!strstr(drawn.footer, "Exported") && strstr(drawn.footer, "Copy the .apkg from"), "busy: %s", drawn.footer);
     run_worker();
     frame(0);
     TEST_CHECK(strstr(drawn.footer, "Exported 2 cards (") && strstr(drawn.footer, "to 2026-10-12_093005-all-2cards.apkg."));
@@ -749,7 +754,8 @@ static void failures_are_shown_and_change_nothing(void)
     fail_open = "config.ini";
     show();
     frame(0);
-    TEST_CHECK(!strcmp(badge(0)->label, "--") && !badge(0)->active && !strcmp(badge(1)->label, "--"));
+    TEST_CHECK(!strcmp(badge(0)->label, "--") && !badge(0)->active && !strcmp(badge(1)->label, "--") &&
+               !badge(1)->active);
     writes_opened = renames = 0;
     frame(SCE_CTRL_CROSS);
     TEST_CHECK(!strcmp(drawn.footer, "Cannot read config.ini. Choices have not been changed.") && drawn.footer_error);

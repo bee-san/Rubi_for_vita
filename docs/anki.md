@@ -182,7 +182,8 @@ and changes nothing; a Cancel while the queue is cleared stops between two
 cards, and a stop there leaves the rest queued, which the next export takes
 again (the same notes). An interrupted export's `.tmp` file is removed by the
 next, and an export that verified its package removes the queue's screenshots
-no card names ([below](#the-queue-on-the-memory-card)). A record already
+no card names, unless a Cancel stopped its clearing
+([below](#the-queue-on-the-memory-card)). A record already
 archived is kept only when it is that card's (its
 checksum is its name); a damaged one there is replaced by the queued copy.
 `host/tests/test_anki_restart.py` stops a real export in a fresh process at each
@@ -213,11 +214,13 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
   record names (no `<id>.json` there or in `exported/`, and no
   `<id>.duplicate.json`) and every `.jpg.tmp`, each once its file time is 10
   minutes older than the package's (`log.txt`: `anki export: …: no card names
-  it, removed`). A
-  younger one, or one dated after the package (a clock set back), stays for a
-  later export: a save still finishing has its record within seconds of its
+  it, removed`). A younger one, one dated after the package (a clock set back)
+  or not dated at all, and one whose records the memory card cannot say are
+  absent (a check that fails other than "not found") stay for a later export:
+  a save still finishing has its record within seconds of its
   JPEG (its screenshot job ends within 15 s), and the kernel removes a stopped
-  screenshot's `.jpg.tmp` itself. `exported/` is never swept: an export
+  screenshot's `.jpg.tmp` itself. A removal that fails is logged and tried
+  again by the next export. `exported/` is never swept: an export
   stopped between moving a card's JPEG and its record leaves the JPEG there
   ahead of its record, and the next export takes it from there.
 - `exported/<id>.json`: a card an export has put in a package (and

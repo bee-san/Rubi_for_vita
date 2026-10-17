@@ -73,6 +73,7 @@ static struct {
     int fail_json_read_at, json_reads; /* the Nth opening of a record for reading fails */
     const char *fail_stat;   /* a getstat whose path contains this fails, not as missing (EIO) */
     const char *fail_remove; /* a remove whose path contains this fails */
+    time_t package_time;     /* nonzero: every .apkg's st_mtime (the calendar cases; 32-bit on the ARM lane) */
     int fd;                  /* the package's (the last one opened for writing) */
     int syncs;
 } io;
@@ -158,9 +159,14 @@ static int file_stat(const char *p, SceIoStat *st)
 }
 int sceIoGetstat(const char *p, SceIoStat *st)
 {
+    size_t n = strlen(p);
+    int rc;
     if (io.fail_stat && strstr(p, io.fail_stat))
         return (int)0x80010005u; /* EIO: a file that cannot be checked */
-    return file_stat(p, st);
+    rc = file_stat(p, st);
+    if (!rc && io.package_time && n > 5 && !strcmp(p + n - 5, ".apkg"))
+        date_of(io.package_time, &st->st_mtime); /* the package's time, as the calendar cases set it */
+    return rc;
 }
 int sceIoRename(const char *from, const char *to)
 {
@@ -1231,10 +1237,11 @@ static void test_screenshots_no_card_names_go_after_a_verified_package(void)
         TEST_CHECK_(there(kept[i]), "%s was removed", kept[i]);
     /* the cards' own: exported, still queued (damaged), and a copy whose record is exported */
     TEST_CHECK(there(cat_jpg) && there(bad_jpg) && there(copy_jpg));
-    TEST_CHECK_(orphans_logged() == 4, "%d removals logged:\n%s", orphans_logged(), logs);
+    TEST_CHECK_(orphans_logged() == 4 && r.swept == 4, "%d removals logged, %d counted:\n%s", orphans_logged(), r.swept,
+                logs);
     /* the next package finds none left */
     logs[0] = '\0';
-    TEST_CHECK(run(1, &r, msg) == VJO_OK && r.cards == 3 && orphans_logged() == 0);
+    TEST_CHECK(run(1, &r, msg) == VJO_OK && r.cards == 3 && orphans_logged() == 0 && r.swept == 0);
     TEST_MSG("%s\n%s", msg, logs);
     for (unsigned i = 0; i < sizeof(kept) / sizeof(kept[0]); i++)
         TEST_CHECK_(there(kept[i]), "%s was removed by the second export", kept[i]);
@@ -1269,12 +1276,12 @@ static void test_only_a_verified_package_removes_them(void)
                     "case %d: rc %d, %d cards, %d stopped: %s", k, rc, r.cards, r.stopped, msg);
         for (int i = 0; i < 2; i++)
             TEST_CHECK_(there(orphans[i]), "case %d: %s removed without a verified package", k, orphans[i]);
-        TEST_CHECK(orphans_logged() == 0);
+        TEST_CHECK(orphans_logged() == 0 && r.swept == 0);
         /* then a complete export removes them */
         stop_at_status = -1;
         io.write_after = -1;
         queue_card(&cat, 0);
-        TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards >= 1);
+        TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards >= 1 && r.swept == 2);
         for (int i = 0; i < 2; i++)
             TEST_CHECK_(!there(orphans[i]), "case %d: %s left by the next export", k, orphans[i]);
         TEST_MSG("%s\n%s", msg, logs);
@@ -1295,7 +1302,7 @@ static void test_an_uncheckable_record_keeps_its_picture(void)
     io.fail_stat = "/exported/0123456789abcdef0123456789abcd01.json";
     io.fail_remove = "0123456789abcdef0123456789abcd02.jpg";
     TEST_ASSERT(run(0, &r, msg) == VJO_OK);
-    TEST_CHECK(r.cards == 1 && r.moved == 1 && strstr(msg, "Exported 1 card") && !strstr(msg, "stay"));
+    TEST_CHECK(r.cards == 1 && r.moved == 1 && r.swept == 1 && strstr(msg, "Exported 1 card") && !strstr(msg, "stay"));
     TEST_MSG("%s\n%s", msg, logs);
     TEST_CHECK(there(Q "0123456789abcdef0123456789abcd01.jpg")); /* its record unknown: kept */
     TEST_CHECK(there(Q "0123456789abcdef0123456789abcd02.jpg")); /* the removal failed */
@@ -1303,8 +1310,50 @@ static void test_an_uncheckable_record_keeps_its_picture(void)
     TEST_CHECK(strstr(logs, "anki export: remove " Q "0123456789abcdef0123456789abcd02.jpg failed 0x80010005") != NULL);
     io.fail_stat = io.fail_remove = NULL;
     queue_card(&dog, 0);
-    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK && r.swept == 2);
     TEST_CHECK(!there(Q "0123456789abcdef0123456789abcd01.jpg") && !there(Q "0123456789abcdef0123456789abcd02.jpg"));
+}
+
+/* The age is measured between two dates (st_mtime is a SceDateTime): exact to the second, across a UTC
+ * midnight, a month's end, a leap day and a year's end (audit-overlay-anki-followups N2). The stub gives
+ * the package a fixed time (io.package_time) and each picture a time that many seconds before it, so
+ * the case does not depend on when the test runs. */
+static void test_the_age_bound_is_exact_across_dates(void)
+{
+    static const struct {
+        time_t package;
+        const char *when;
+        long age[4];
+        int removed[4];
+    } cases[] = {
+        /* the day after a leap day: exactly 10 minutes goes, a second less stays;
+         * 2028-02-29 23:50 goes, 23:58 stays */
+        {1835481900, "2028-03-01 00:05", {600, 599, MINUTES(15), MINUTES(7)}, {1, 0, 1, 0}},
+        /* a new year: 2028-12-31 23:48 goes, 23:56 stays, a day and a second before goes, a second stays */
+        {1861920180, "2029-01-01 00:03", {MINUTES(15), MINUTES(7), HOURS(24) + 1, 1}, {1, 0, 1, 0}},
+    };
+    VjoExportResult r;
+    char msg[300], path[4][300];
+    for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+        reset();
+        queue_card(&cat, 0);
+        for (int i = 0; i < 4; i++) {
+            struct timespec t[2];
+            snprintf(path[i], sizeof(path[i]), Q "0123456789abcdef0123456789abcd%02d.jpg", 30 + i);
+            put_aged(path[i], 0);
+            t[0].tv_sec = cases[k].package - (time_t)cases[k].age[i];
+            t[0].tv_nsec = 0;
+            t[1] = t[0];
+            TEST_ASSERT(utimensat(AT_FDCWD, path[i], t, 0) == 0);
+        }
+        io.package_time = cases[k].package;
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK && r.cards == 1);
+        TEST_MSG("%s\n%s", msg, logs);
+        for (int i = 0; i < 4; i++)
+            TEST_CHECK_(there(path[i]) == !cases[k].removed[i], "a package at %s UTC: a picture %ld s older %s",
+                        cases[k].when, cases[k].age[i], there(path[i]) ? "stayed" : "went");
+        TEST_CHECK(r.swept == 2 && orphans_logged() == 2);
+    }
 }
 
 /* Many cards: interior B-tree pages, notes on overflow pages, more than one level. */
@@ -1450,6 +1499,7 @@ TEST_LIST = {
     {"screenshots_no_card_names_go_after_a_verified_package", test_screenshots_no_card_names_go_after_a_verified_package},
     {"only_a_verified_package_removes_them", test_only_a_verified_package_removes_them},
     {"an_uncheckable_record_keeps_its_picture", test_an_uncheckable_record_keeps_its_picture},
+    {"the_age_bound_is_exact_across_dates", test_the_age_bound_is_exact_across_dates},
     {"large_queue", test_large_queue},
     {NULL, NULL},
 };
