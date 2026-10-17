@@ -74,12 +74,14 @@ class _Handler(socketserver.StreamRequestHandler):
         self.pasv.listen(1)
         return self.pasv.getsockname()[1]
 
-    @staticmethod
-    def list_line(p):
+    def list_line(self, p):
+        """libftpvita's gen_list_format: `%c%s 1 vita vita %u %s %-2d %s %s`, the file's time by the Vita's clock (UTC
+        here), with the hour and minute when its year is the clock's current one (the server's clock), else the year."""
         st = p.stat()
-        mode = "drwxrwxrwx" if p.is_dir() else "-rw-rw-rw-"
-        stamp = time.strftime("%b %d %H:%M", time.gmtime(st.st_mtime))
-        return f"{mode}   1 root  root  {st.st_size:>10} {stamp} {p.name}"
+        mode = "drwxr-xr-x" if p.is_dir() else "-rw-r--r--"
+        t, now = time.gmtime(st.st_mtime), time.gmtime(self.server.clock())
+        tail = time.strftime("%H:%M", t) if t.tm_year == now.tm_year else str(t.tm_year)
+        return f"{mode} 1 vita vita {st.st_size} {time.strftime('%b', t)} {t.tm_mday:<2d} {tail} {p.name}"
 
     def handle(self):
         server = self.server
@@ -99,6 +101,9 @@ class _Handler(socketserver.StreamRequestHandler):
                 return  # the connection closes with no reply: a transfer error, not a refusal
             if server.fail and cmd in server.fail and server.fail[cmd](arg):
                 self.reply("550 injected failure")
+                continue
+            if server.pretend and cmd in server.pretend and server.pretend[cmd](arg):
+                self.reply("226 Done.")  # answered as done, and nothing done
                 continue
             if cmd in ("USER", "PASS"):
                 self.reply("331 Password required" if cmd == "USER" else "230 User logged in")
@@ -188,6 +193,8 @@ class _Handler(socketserver.StreamRequestHandler):
                 if local and local.is_file():
                     local.unlink()
                     server.stored.append("DELE " + str(local.relative_to(server.root)))
+                    if server.drop_after and cmd in server.drop_after and server.drop_after[cmd](arg):
+                        return  # done, and the connection closes before the reply: the answer is lost
                     self.reply("226 File deleted.")  # VitaShell's code, which ftplib calls an error_reply
                 else:
                     self.reply("550 Could not delete the file.")
@@ -228,9 +235,13 @@ class _Server(socketserver.ThreadingTCPServer):
 class FtpMock:
     """A VitaShell-like FTP server over ROOT/ux0, ROOT/ur0 on 127.0.0.1 (port 0: any free port).
     fail: {COMMAND: predicate(arg)} makes matching commands answer 550 (an unreadable file); drop: the same, but the
-    server closes the connection without a reply (a broken transfer)."""
+    server closes the connection without a reply (a broken transfer).
+    clock: the Vita's clock, a function giving its Unix time (LIST shows a file of another year with its year).
+    pretend: {COMMAND: predicate(arg)} answers matching commands 226 and does nothing (a DELE that left the file).
+    drop_after: {"DELE": predicate(arg)} does the DELE, then closes the connection with no reply (its answer lost)."""
 
-    def __init__(self, root, devices=("ux0", "ur0"), fail=None, drop=None):
+    def __init__(self, root, devices=("ux0", "ur0"), fail=None, drop=None, clock=time.time, pretend=None,
+                 drop_after=None):
         self.server = _Server(("127.0.0.1", 0), _Handler)
         self.server.root = Path(root)
         self.server.devices = devices
@@ -239,6 +250,9 @@ class FtpMock:
         self.server.stored = []
         self.server.fail = fail or {}
         self.server.drop = drop or {}
+        self.server.clock = clock
+        self.server.pretend = pretend or {}
+        self.server.drop_after = drop_after or {}
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
 

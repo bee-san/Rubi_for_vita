@@ -51,6 +51,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -419,10 +420,23 @@ class E2E:
             "job 1 done rc=0 in 2400 ms, arena peak 65536\n"
             "anki: queue 1 card(s)\nanki: save 猫 rc=0, 0-byte screenshot, 41 ms\n"
             "overlay app: anki: export (queued) rc=0: 2 cards, 2 moved\n", encoding="utf-8")
-        (d / "kernel.txt").write_text(f"Vita JP Overlay kernel {api} started (normal mode)\n"
-                                      "ocr worker registered: game pid 0x20000 module 0x30000\n")
+        # the boot the collect dates its crash dump against (docs/self-test.md#crash-dumps): it began an hour ago, after
+        # the previous boot's last kernel.txt write; its ok mark came 70 s in; kernel.txt's last line, 50 minutes in,
+        # carries the uptime, which checks the Vita's clock
+        (d / "kernel.txt").write_text("boot guard: empty record (reset by the installer): first boot\n"
+                                      "boot guard: boot 1 normal (previous: none, stage none, failures 0) write "
+                                      "0x00000000\n"
+                                      f"Vita JP Overlay kernel {api} started (normal mode)\n"
+                                      "shell registered: pid 0x118FF (was 0x0)\n"
+                                      "ocr worker registered: game pid 0x20000 module 0x30000\n"
+                                      "foreground 0x20000 -> 0x0 (suspend) t=3000000 ms\ngame exit\n")
+        (d / "kernel.prev.txt").write_text(f"Vita JP Overlay kernel {api} started (normal mode)\n")
         (dev / "ur0/data/VitaJPOverlay/boot.txt").write_text(
             f"vjoboot1 seq=1 mode=0 stage=4 inert=0 fault=0 failures=0 api={api} prev=0/0/0/0\n")
+        start = time.time() - 3600
+        for path, at in ((d / "kernel.prev.txt", start - 30), (dev / "ur0/data/VitaJPOverlay/boot.txt", start + 70),
+                         (d / "kernel.txt", start + 3000)):
+            os.utime(path, (at, at))
         (d / "anki_queue").mkdir()
         (d / "anki_queue/0123456789abcdef0123456789abcdef.json").write_text('{"version":3,"spelling":"猫"}\n',
                                                                             encoding="utf-8")
@@ -468,7 +482,12 @@ class E2E:
         install_text = ("one-VPK install (installed.txt): " if (self.pkg / "payload-manifest.txt").is_file()
                         else "one-VPK install: no installed.txt (")
         for want_text in (worker_text, install_text, "PASS: every stage completed", "memory headroom per stage",
-                          "recommendation:", "not decided here", "crash dumps: psp2core",
+                          "recommendation:", "not decided here",
+                          # the dump (2025-10-09 by its name) is placed before this boot (#138)
+                          "crash dumps: 1 on the card, none from this boot, 1 from before it;",
+                          "before this boot 2025-10-09 08:53:20  an app or game (eboot.bin) pid 0x1234, 2,048 B: "
+                          "psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp",
+                          "To archive them off the Vita: bash tools/install_ftp.sh --archive-dumps 127.0.0.1",
                           "model sizes that did not fit (log only, never shown): large in PCSG00415 x1",
                           "Overlay app: the plugins' (vjoapp1 "):
             check(want_text in a, f"A analysis says: {want_text}")

@@ -72,13 +72,17 @@ overlay app: anki: export (queued) rc=0: 3 cards, 3 moved, 0 kept, 0 unreadable,
 thread VjoAnki refused 0x80024302: 69632 B; SceShell free 28672 (0x00000000), held 389120
 anki: count not started 0x80024302
 """.replace("{SECRET2}", SECRET2)
-KERNEL = """Vita JP Overlay kernel 19 started (normal mode)
+# this boot's whole log (#138: its first line the boot guard's, boot 3 as boot.txt's seq=3), and its last line, a minute
+# into the boot, carries the uptime: setUp writes every file at once, so the clock is checked (docs/self-test.md)
+KERNEL = """boot guard: boot 3 normal (previous: normal, stage ok, failures 0) write 0x00000000
+Vita JP Overlay kernel 19 started (normal mode)
 hooks: display 0, input 0, procevent 0, worker loader 0 (0 = ok)
 shell registered: pid 0x10000 (was 0x0)
 worker for PCSG00415 (pid 0x20000): ON in games.ini: ur0:tai/VitaJPOverlay_OCR.suprx 0x00030000, start 0
 game pid 0x20000 active
 ocr worker registered: game pid 0x20000 module 0x30000
 ocr job 1: 917x125 at 22,400 of 960x544, capture 1, flags 0x0, VOCR3_H15_w8.vocr / VOCR3_FL10_w8.vocr
+foreground 0x20000 -> 0x0 (suspend) t=60000 ms
 """
 CONFIG = (f"\ufeff; settings\r\nocr_backend = vocr\r\nvocr_model = VOCR3_H15_w8.vocr\r\nvocr_fallback_model = VOCR3_FL10_w8.vocr\r\n"
           f"ocr_mode = auto\r\nlog_file = on\r\nanki_mining = on\r\nanki_host =\r\njpdb_api_key = {SECRET}\r\njiten_api_key =\r\n"
@@ -220,6 +224,8 @@ class Collect(unittest.TestCase):
         self.assertTrue(zpath.is_file())
         self.assertRegex(folder.name, r"^vjo-collect-\d{8}-\d{6}Z$")
         self.assertIn(f"Send this one file: {zpath}", result.stdout)
+        # the dump from before this boot: no terminal here, so no question, only the command (#138)
+        self.assertIn("To archive them off the Vita: bash tools/install_ftp.sh --archive-dumps 127.0.0.1", result.stdout)
         with zipfile.ZipFile(zpath) as z:
             names = set(z.namelist())
             blob = b"".join(z.read(n) for n in names)
@@ -334,14 +340,18 @@ class Collect(unittest.TestCase):
                      "  VjoNet stack: at least 6,144 of 16,384 B used (37%)\n",
                      "anki_queue on the card: 2 card(s), 0 duplicate(s), 0 picture(s), 1 temp file(s); 1 exported card(s), "
                      "1 .apkg package(s) in anki/",
-                     "crash dumps: psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp (4,096 B)",
+                     # #138: dated by its name (2025-10-09) before the boot the records date (now, by the mock's clock)
+                     "crash dumps: 1 on the card, none from this boot, 1 from before it; this boot began between ",
+                     "    before this boot 2025-10-09 08:53:20  an app or game (eboot.bin) pid 0x1234, 4,096 B: "
+                     "psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp (dated before this boot began)",
                      "free game USER before the self-test's first block (selftest-report.txt): 91,226,112 B",
                      "recommendation: Large (the largest tier",
                      "free game USER the lowest any job in log.txt saw",
                      "recommendation: none: not even Small fits",
                      "recommendation for this game: none (not even Small fits) (the most conservative",
                      "PASS: every stage completed",
-                     "a crash dump is on the card",
+                     "  - 1 crash dump on the card is from earlier boots (above): install_ftp.sh --collect offers to "
+                     "archive them off the Vita",
                      "log.txt rotated"):
             self.assertIn(text, analysis)
         # the lowest free USER any job saw (5,000,000 B, a refused job) is under Small's 4 MiB reserve +
@@ -744,8 +754,8 @@ class Collect(unittest.TestCase):
             self.assertTrue(collect_vita.safe_name(ok), ok)
         entries = collect_vita.Collector.parse_list(["-rw-rw-rw- 1 vita vita 12 Oct 5  10:00 a  b.json\r",
                                                      "drwxrwxrwx 1 vita vita 0 Oct 14 10:00 anki_queue"])
-        self.assertEqual(entries, [{"name": "a  b.json", "bytes": 12, "dir": False},
-                                   {"name": "anki_queue", "bytes": 0, "dir": True}])
+        self.assertEqual(entries, [{"name": "a  b.json", "bytes": 12, "dir": False, "date": "Oct 5 10:00"},
+                                   {"name": "anki_queue", "bytes": 0, "dir": True, "date": "Oct 14 10:00"}])
         text, keys = collect_vita.redact("\ufeffjpdb_api_key = abc\r\njpdb_api_key: d e\r\nlens_api_keyx = keep\r\n")
         self.assertEqual(text, "\ufeffjpdb_api_key = <redacted: 3 characters>\r\njpdb_api_key: <redacted: 3 characters>\r\n"
                                "lens_api_keyx = keep\r\n")

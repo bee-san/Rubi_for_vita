@@ -1,0 +1,73 @@
+{
+  "collected_at": "2026-10-16T07:17:43Z",
+  "host": "192.0.2.1:1337",
+  "tool": "tools/collect_vita.py",
+  "note": "test.3's collect (#138), reduced to its crash dumps' records: the dumps themselves are not in the fixture",
+  "files": {
+    "ux0:/data/VitaJPOverlay/kernel.prev.txt": {
+      "local": "ux0/data/VitaJPOverlay/kernel.prev.txt",
+      "bytes": 520,
+      "sha256": "538d1119a09b40a726473cf54c5ca59b0a4cf14b60ffa85b81a9459a713718c9"
+    },
+    "ur0:/data/VitaJPOverlay/boot.txt": {
+      "local": "ur0/data/VitaJPOverlay/boot.txt",
+      "bytes": 77,
+      "sha256": "c0863609526ea3558d8dc1a193534868cfcbf445600e90d4b5c447e34086d8bc"
+    },
+    "ux0:/data/psp2core-1791614280-0x0000011905-shell.self.psp2dmp": {
+      "local": "ux0/data/psp2core-1791614280-0x0000011905-shell.self.psp2dmp",
+      "bytes": 1327440,
+      "sha256": "fa09866e23f2211aed29f8ff14eca6054df4d6952c9d40592a6fb1f6d1a1287a"
+    },
+    "ux0:/data/psp2core-1791615816-0x0000011a47-shell.self.psp2dmp": {
+      "local": "ux0/data/psp2core-1791615816-0x0000011a47-shell.self.psp2dmp",
+      "bytes": 1293792,
+      "sha256": "25848553bcf00d568dbc1237a7fcbfb9d84ee326ce3786a60603ec3f5f324a17"
+    },
+    "ux0:/data/psp2core-1791627225-0x0000011903-shell.self.psp2dmp": {
+      "local": "ux0/data/psp2core-1791627225-0x0000011903-shell.self.psp2dmp",
+      "bytes": 1457024,
+      "sha256": "3d08140de5c0d4c91da8b9c513eba64b39b64e6dc35dfd5ebaf0d95efb354b7b"
+    },
+    "ux0:/data/psp2core-1791727037-0x0000072fc5-eboot.bin.psp2dmp": {
+      "local": "ux0/data/psp2core-1791727037-0x0000072fc5-eboot.bin.psp2dmp",
+      "bytes": 1438768,
+      "sha256": "b6464798e611b397a558cc316f18e25f4f144499fae25f5853ff69face5a77e5"
+    },
+    "ux0:/data/psp2core-1791727184-0x0000122b87-eboot.bin.psp2dmp": {
+      "local": "ux0/data/psp2core-1791727184-0x0000122b87-eboot.bin.psp2dmp",
+      "bytes": 90096,
+      "sha256": "8019ab73ca390adc7fd117a97869072f666ad07fd8e82e4fedf91bca33477f7c"
+    },
+    "ux0:/data/psp2core-1791727902-0x00000118e5-shell.self.psp2dmp": {
+      "local": "ux0/data/psp2core-1791727902-0x00000118e5-shell.self.psp2dmp",
+      "bytes": 1809728,
+      "sha256": "6a2c1fc8fbe6e8b72264ad1b90a64e721de4867e66a65a1a8a52ebf27d724cbf"
+    },
+    "ux0:/data/psp2core-1791732858-0x00000118db-shell.self.psp2dmp": {
+      "local": "ux0/data/psp2core-1791732858-0x00000118db-shell.self.psp2dmp",
+      "bytes": 2063440,
+      "sha256": "f65b6a9e2e0c00091ed12ccccbd3ef4ae154fe2146397892e4198cafb9de39c0"
+    },
+    "ux0:/data/psp2core-1791868846-0x00000118e5-shell.self.psp2dmp": {
+      "local": "ux0/data/psp2core-1791868846-0x00000118e5-shell.self.psp2dmp",
+      "bytes": 1830176,
+      "sha256": "14ecaabaeb62ae74e482e984777ae76850aa6292117887c57d645587ad0cfaf9"
+    },
+    "ux0:/data/psp2core-1791868991-0x00000118dd-shell.self.psp2dmp": {
+      "local": "ux0/data/psp2core-1791868991-0x00000118dd-shell.self.psp2dmp",
+      "bytes": 1109040,
+      "sha256": "9d51555bda6f965309b11d60cc5dac3d184a5fe1fd0957cd3c89dff50331a3be"
+    },
+    "ux0:/data/psp2core-1791900588-0x00000118db-shell.self.psp2dmp": {
+      "local": "ux0/data/psp2core-1791900588-0x00000118db-shell.self.psp2dmp",
+      "bytes": 1302256,
+      "sha256": "d32966e757b2d757a2538ef1a1734b1feda13c860733942bee54da2c5dd9df54"
+    }
+  },
+  "missing": [],
+  "errors": [],
+  "listings": {},
+  "hashed": {},
+  "redacted_keys": []
+}

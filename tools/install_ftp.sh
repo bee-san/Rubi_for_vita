@@ -42,7 +42,11 @@
 #      the self-test report, status/kernel/boot records, config.ini with its API keys and audio
 #      source URL redacted, both
 #      taiHEN configs, the Anki queue, crash dumps and the installed files' hashes, into one
-#      timestamped folder and zip under build/device/collect/, then analyse_selftest.py --collect on it)
+#      timestamped folder and zip under build/device/collect/, then analyse_selftest.py --collect on it,
+#      which dates each crash dump against the boot; in a terminal it then offers to archive the ones
+#      from before the boot off the Vita, docs/self-test.md#crash-dumps)
+#   tools/install_ftp.sh --archive-dumps 192.168.1.50 (the newest collect's crash dumps from before its
+#      boot: each checked against that collect's copy, then deleted from ux0:data; nothing else on the Vita is written)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -53,6 +57,7 @@ DUMPS=0
 SELFTEST=0
 COLLECT=0
 CHECKAPP=0
+ARCHIVE=0
 SETS=()
 EXTRA_K=()
 VOCR_MODELS=()
@@ -67,6 +72,7 @@ while [ $# -gt 1 ]; do
     --self-test) SELFTEST=1 ;;
     --collect) COLLECT=1 ;;
     --check-app) CHECKAPP=1 ;;
+    --archive-dumps) ARCHIVE=1 ;;
     --set) SETS+=("$2"); shift ;;
     --title) TITLES+=("$2"); shift ;;
     --add-kernel-plugin) EXTRA_K+=("$2"); shift ;;
@@ -76,7 +82,7 @@ while [ $# -gt 1 ]; do
   esac
   shift
 done
-HOST=${1:?usage: tools/install_ftp.sh [--title TITLEID]... [--set key=value]... [--uninstall|--status|--collect|--check-app|--dumps|--self-test] VITA_IP[:PORT]}
+HOST=${1:?usage: tools/install_ftp.sh [--title TITLEID]... [--set key=value]... [--uninstall|--status|--collect|--archive-dumps|--check-app|--dumps|--self-test] VITA_IP[:PORT]}
 [[ $HOST == *:* ]] || HOST=$HOST:1337
 # Where the game OCR worker comes from (above): the package's manifest says; a source tree's
 # include/vjo_api.h. Anything else is the per-title rules.
@@ -88,13 +94,16 @@ elif grep -qE '^#define VJO_KERNEL_LOADS_WORKER 1( |$)' include/vjo_api.h 2>/dev
   WORKER=kernel
 fi
 case $WORKER in kernel|lines) ;; *) echo "unknown worker mode in the package manifest: $WORKER"; exit 1 ;; esac
+# The Vita as the user names it in a command to run later: its address, and the port when it is not VitaShell's 1337
+VITA=${HOST%%:*}
+[ "${HOST##*:}" = 1337 ] || VITA=$HOST
 # How to install from here: the release package has install-vita.sh at its root.
 INSTALL_CMD="bash tools/install_ftp.sh"
 [ -f install-vita.sh ] && INSTALL_CMD="bash install-vita.sh"
 if [ -n "${TITLES[*]+x}" ] && [ $WORKER = kernel ]; then
   echo "Note: --title is not needed: the kernel plugin loads the OCR worker into every game turned ON in the Overlay app."
   TITLES=()
-elif [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST + COLLECT + CHECKAPP)) -gt 0 ]; then
+elif [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST + COLLECT + CHECKAPP + ARCHIVE)) -gt 0 ]; then
   echo "Note: --title takes effect when installing ($INSTALL_CMD --title ${TITLES[0]} ${HOST%%:*});"
   echo "this command does not change which games the OCR worker is registered for."
 fi
@@ -212,7 +221,8 @@ fi
 
 if [ $COLLECT = 1 ]; then
   # Read-only: tools/collect_vita.py sends only CWD, LIST, SIZE and RETR. One timestamped folder
-  # (device paths kept: ux0/data/VitaJPOverlay/log.txt, ...), its analysis, and one zip of both.
+  # (device paths kept: ux0/data/VitaJPOverlay/log.txt, ...), its analysis, and one zip of both. After it, and
+  # only on a yes, the crash dumps from before this boot can be archived off the Vita (below).
   OUT=build/device/collect/vjo-collect-$(date -u +%Y%m%d-%H%M%SZ)
   MANIFEST=()
   [ -f package-manifest.json ] && MANIFEST=(--manifest package-manifest.json)
@@ -235,7 +245,37 @@ PY
   echo
   echo "analysis exit $verdict (0: the self-test passed or did not run, 1: it failed, read no text in your region or stopped part way)"
   echo "Send this one file: $(pwd)/$OUT.zip"
+  # The crash dumps the analysis placed before this boot (docs/self-test.md#crash-dumps): in a terminal, an offer to
+  # archive them off the Vita, each checked against this collect's copy first. The collect itself wrote nothing there.
+  echo
+  if python3 tools/collect_vita.py "${HOST%%:*}" "${HOST##*:}" "$OUT" --archive-dumps --plan; then
+    if [ -t 0 ] && [ -t 1 ] && [ -z "${VJO_NO_PROMPT:-}" ]; then
+      read -r -p "Archive them off the Vita? This deletes them from ux0:data; this collect keeps them. [y/N] " answer \
+        || answer=
+      case $answer in
+        [yY] | [yY][eE][sS]) python3 tools/collect_vita.py "${HOST%%:*}" "${HOST##*:}" "$OUT" --archive-dumps || true ;;
+        *) echo "Left on the Vita. To archive them later: bash tools/install_ftp.sh --archive-dumps $VITA" ;;
+      esac
+    else
+      echo "To archive them off the Vita: bash tools/install_ftp.sh --archive-dumps $VITA"
+    fi
+  fi
   exit 0
+fi
+
+if [ $ARCHIVE = 1 ]; then
+  # The newest collect's crash dumps from before its boot, each checked against that collect's copy, then deleted
+  # from ux0:data (tools/collect_vita.py --archive-dumps; docs/self-test.md#crash-dumps). Nothing else on the Vita is
+  # written.
+  last=$(ls -d build/device/collect/vjo-collect-*/ 2>/dev/null | LC_ALL=C sort | tail -n 1 || true)
+  if [ -z "$last" ]; then
+    echo "No collect to archive from: run bash tools/install_ftp.sh --collect $VITA first (it keeps a copy of each crash dump)."
+    exit 1
+  fi
+  echo "from ${last%/}"
+  archive_rc=0
+  python3 tools/collect_vita.py "${HOST%%:*}" "${HOST##*:}" "${last%/}" --archive-dumps || archive_rc=$?
+  exit $archive_rc
 fi
 
 if [ $DUMPS = 1 ]; then

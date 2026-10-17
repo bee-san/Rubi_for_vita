@@ -785,7 +785,8 @@ holds up to 256 KB per boot (the previous boot's is
 it read-only into one timestamped folder and zip, with its audio source URL and
 any API key an older build left in `config.ini` redacted, both taiHEN configurations, the Anki queue, crash dumps and the
 installed files' hashes, and prints its analysis
-([self-test](docs/self-test.md#collecting-everything---collect)); `--status VITA_IP`
+([self-test](docs/self-test.md#collecting-everything---collect)), which dates each crash dump against the boot and,
+in a terminal, offers to archive the older ones off the Vita ([crash dumps](docs/self-test.md#crash-dumps)); `--status VITA_IP`
 fetches just the bootstrap logs. Recognition timings and memory attempts are in
 `log.txt`. For a decisive console test,
 arm the **self-test** with `bash tools/install_ftp.sh --self-test VITA_IP`, reboot,
