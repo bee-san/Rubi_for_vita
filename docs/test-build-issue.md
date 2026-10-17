@@ -29,19 +29,20 @@ Its first console run: rule 7 of AGENTS.md applies (the Install page's plan show
 - [ ] Copy `{VPK}` (the debug VPK, SHA-256 `{VPK_SHA256}`) to the Vita with VitaShell's FTP or USB, and
   install it in VitaShell: Yes to "Do you want to install this package?" and to the extended-permissions
   notice. Note the time it takes.
-- [ ] Open **Overlay** from its LiveArea **with no game running** (close any game first: hold PS, or
-  close it from its LiveArea page): it opens on its **Install** page. If it does not open, or shows only
-  its start-up picture for 10 s and closes, say so: the `overlay app: graphics:` lines in `log.txt` say
-  why (docs/vita-memory.md, "Starting with no game running"). A plan longer than its box has a bar at its
+- [ ] Open **Overlay** from its LiveArea: it opens on its **Install** page (VitaShell stays suspended behind
+  it, as a game would: an ordinary application). A plan longer than its box has a bar at its
   right: R shows the next box of it, L the one before, Up/Down a line; it must end with the restart and the
   two recovery lines, then, when a folder has a backup from before the overlay, a "(… is the configuration
   from before the overlay.)" line for each. The hints row at the bottom must end in `○: exit` (`×: exit` on a
   Japanese console), not `...`. Photograph each box of the plan (it lists the files, the backups' names and
   every `config.txt` change), then choose **Install**. Note the time it takes and what the done screen
   says.
-- [ ] Restart the Vita yourself (the app never does). It must start normally; then a game, L + R.
-- [ ] Open **Overlay** again, this time beside the game (PS, then its bubble): its title must say `The
-  overlay is installed (v…)`, and **Check and repair** must say that nothing needed writing.
+- [ ] Restart the Vita yourself (the app never does). It must start normally.
+- [ ] Then, **before opening any game or VitaShell** (no application running), open **Overlay** from its
+  LiveArea: it must open, its title must say `The overlay is installed (v…)`, and **Check and repair** must
+  say that nothing needed writing. If it does not open, or shows only its start-up picture and closes after
+  about 10 s, say so: `log.txt`'s `overlay app: graphics:` lines say why (docs/vita-memory.md, "Starting with
+  no game running"); then open it beside VitaShell or a game instead. Then a game, L + R.
 - [ ] Arm the self-test: `bash tools/install_ftp.sh --self-test VITA_IP` from the zip's folder (the
   advanced path; or skip it). Reboot the Vita.
 
