@@ -5,10 +5,13 @@ The overlay's header is the game worker's text: what VOCR reads in the player's 
 (core/textnorm.c). The film writes the line it typed there, so that has to be what the recognizer reads. For each
 frame of the mock game the film types (promo-assets' vn/<scene>/<scene>-m<n>-frame.png, the whole message on
 screen), this crops the region a player would draw (x 54..906, y 402..506 of the 960 x 544 screen: the textbox's
-text, not the name plate or the menu), runs the checkout's host OCR tool, vjo-ocr, with the defaults (Normal:
-VOCR3_H15_w8; ocr_lm 1000k; Normal's cascade, VOCR4_W20_w8), normalises both texts with the checkout's
-vjo-textnorm, and writes the table to OUT.md. Exit 1 on a difference. A host run, not a console one.
+text, not the name plate or the menu), runs the checkout's host OCR tool, vjo-ocr, with the checkout's defaults
+(the Normal size's model and, as its confidence cascade, the next size up: tools/model_tiers.json; the default
+ocr_lm of docs/config.example.ini), normalises both texts with the checkout's vjo-textnorm, and writes the table to
+OUT.md. Exit 1 on a difference. A host run, not a console one.
 (from promo-assets' src/ocr_check.py)"""
+import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -25,6 +28,13 @@ LINES = [  # (frame, the line as the film types it: src/script.mjs VN)
     ("s3/s3-m1-frame.png", "「キラキラ……。\n子供の頃みたい。」"),
 ]
 tool = checkout / "build" / "host"
+tiers = json.loads((checkout / "tools" / "model_tiers.json").read_text())
+names = [t["id"] for t in tiers["tiers"]]
+normal = names.index(tiers["default"])
+MODEL = tiers["tiers"][normal]["model"]
+CASCADE = tiers["tiers"][normal + 1]["model"] if normal + 1 < len(names) else None
+lm = re.search(r"^ocr_lm = (\S+)", (checkout / "docs" / "config.example.ini").read_text(), re.M).group(1)
+LM = f"vocr_lm_o3_{lm}.vlm"
 
 
 def norm(text):
@@ -41,17 +51,17 @@ for frame, line in LINES:
     with tempfile.NamedTemporaryFile(suffix=".rgba") as f:
         f.write(im.tobytes())
         f.flush()
-        r = subprocess.run([str(tool / "vjo-ocr"), "--backend", "vocr", "--lm", "vocr_lm_o3_1000k.vlm", "--cascade",
-                            "VOCR4_W20_w8.vocr", models, str(im.width), str(im.height), f.name],
+        r = subprocess.run([str(tool / "vjo-ocr"), "--backend", "vocr", "--model", MODEL, "--lm", LM,
+                            *(["--cascade", CASCADE] if CASCADE else []), models, str(im.width), str(im.height), f.name],
                            capture_output=True, text=True, timeout=600)
     got, want = norm(r.stdout.rstrip("\n")), norm(line)
     ok = got == want
     bad += not ok
     rows.append(f"| `vn/{frame}` | {want.replace(chr(10), ' / ')} | {got.replace(chr(10), ' / ')} | {'same' if ok else 'DIFFERENT'} |")
 md = ["# What the recognizer reads from each line the film types", "",
-      f"Host vjo-ocr of vita-jp-overlay {commit} (its OCR files and pinned vita-vn-ocr runtime), VOCR3_H15_w8 + "
-      "vocr_lm_o3_1000k + cascade VOCR4_W20_w8 (the defaults), on the region x 54..906, y 402..506; both texts "
-      "normalised by its vjo-textnorm, as the game worker normalises. A host run, not a console one.", "",
+      f"Host vjo-ocr of vita-jp-overlay {commit} (its OCR files and pinned vita-vn-ocr runtime), {MODEL} + {LM} + "
+      f"cascade {CASCADE} (its defaults), on the region x 54..906, y 402..506; both texts normalised by its "
+      "vjo-textnorm, as the game worker normalises. A host run, not a console one.", "",
       "| frame (promo-assets) | the film's line | recognized | |", "| --- | --- | --- | --- |", *rows, ""]
 out.write_text("\n".join(md), encoding="utf-8")
 print("\n".join(rows))

@@ -1271,6 +1271,7 @@
       .cap .w {
         display: inline-block;
         white-space: pre;
+        opacity: 0; /* until it rises in (src/promo.js caption()): no frame of the whole line first */
       }
       .cap .sub {
         margin-top: 10px;
@@ -2172,6 +2173,7 @@
               screen3: { x: 0, y: 22, s: 0.97, rx: 2, ry: 2, rz: 0 },
               koZoom: { x: -90, y: -110, s: 1.08, rx: 1, ry: -2, rz: 0 },
               app8: { x: 0, y: 22, s: 0.9, rx: 5, ry: -8, rz: 0 },
+              app8B: { x: 0, y: 30, s: 0.9, rx: 3, ry: -5, rz: 0 }, // the Games page's right column in the frame
               out: { x: 0, y: 40, s: 0.3, rx: 12, ry: -40, rz: -4 },
             }
           : {
@@ -2206,6 +2208,7 @@
               screen3: { x: 0, y: -28, s: 1.24, rx: 2, ry: 2, rz: 0 },
               koZoom: { x: -70, y: -110, s: 1.6, rx: 1, ry: -2, rz: 0 },
               app8: { x: 0, y: 0, s: 0.94, rx: 6, ry: -8, rz: 0 },
+              app8B: { x: 40, y: -24, s: 1.26, rx: 3, ry: -5, rz: 0 },
               out: { x: 0, y: 40, s: 0.42, rx: 12, ry: -40, rz: -4 },
             };
         let cam = null;
@@ -2660,8 +2663,9 @@
         // the Vita starts again: the home screen
         tl.set("#bub-app", { opacity: 1 }, C.boot);
         off("#scr-la-app", C.boot);
-        tl.fromTo("#scr-home", { opacity: 0, scale: 1 }, { opacity: 1, scale: 1, duration: 0.3, immediateRender: false }, C.boot);
-        off("#scr-black", C.boot + 0.3);
+        // the cut: at the whip's fastest (C.boot) the home screen replaces the dark one in one frame
+        tl.fromTo("#scr-home", { opacity: 0, scale: 1 }, { opacity: 1, scale: 1, duration: 0.01, immediateRender: false }, C.boot);
+        off("#scr-black", C.boot);
         off("#scr-shell", C.boot);
         glow(C.boot, "blue", 0.5);
         whip(C.boot - 0.3, "home", 0.6); // a cut: the Vita on again
@@ -2696,8 +2700,8 @@
         tl.fromTo("#scr-ov", { y: 110 }, { y: 0, duration: 0.22, ease: "power3.out", immediateRender: false }, C.ovOpen2);
         on("#ov-b1", C.ovOpen2);
         camTo(C.ovOpen2 + 0.1, "screen3", 0.9, "power3.inOut");
-        // a tap on 子, the first letter of the header's second row (Right would stay on its first row,
-        // where キラキラ is the only word: shell/overlay.cpp follows the displayed rows)
+        // a tap on 子, the first letter of the header's second row (shell/overlay.cpp input_header_touch: the
+        // tapped letter is the cursor; on 68fc2d9 Right stays on キラキラ's row, after #173 it crosses rows)
         tap(C.tapKo, KO[0], KO[1], 0.4);
         swap("#ov-b1", "#ov-b1a", C.tapKo + 0.05, 0.02);
         swap("#ov-b1a", "#ov-b2", C.tapKo + 0.35, 0.02);
@@ -2752,7 +2756,7 @@
         press(C.toggle, "btn-cross");
         swap("#games-3", "#games-4", C.toggle + 0.05, 0.02);
         camTo(C.ps2, "screen3", 1.4, "power2.inOut");
-        camTo(C.tapStartApp2 - 0.1, "screenB", C.toggle - (C.tapStartApp2 - 0.1), "sine.inOut");
+        camTo(C.tapStartApp2 - 0.1, "app8B", C.toggle - (C.tapStartApp2 - 0.1), "sine.inOut");
         camTo(C.toggle + 0.05, "offZoom", 0.9, "power2.inOut"); // in on OFF and the app's line
 
         // ============================================================ end card

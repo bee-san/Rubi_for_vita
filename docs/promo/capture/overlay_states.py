@@ -106,6 +106,8 @@ def main():
     if s3["rows"] != 2:
         sys.exit(f"overlay_states.py: {s3['sentence']!r} is not two rows: the tap point moves")
     tap = next(t for t in s3["taps"] if t["cursor_cp"] == 9)
+    if tap.get("spelling") != "子供の頃":
+        sys.exit(f"overlay_states.py: a tap on 子 looks up {tap.get('spelling')!r} now, not 子供の頃")
     b = [whole(s3["walk"][0]["lookup"], s3), whole(tap, s3)]
 
     def state(o, step, hl, **kw):

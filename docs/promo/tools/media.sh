@@ -27,8 +27,8 @@ norm renders/promo-1920x1080.mp4 media/promo-1920x1080.mp4
 norm renders/promo-1080x1920.mp4 media/promo-1080x1920.mp4
 # the poster: the overlay on 一緒に (scene 2)
 "$FFMPEG" -hide_banner -loglevel error -y -ss 7.8 -i media/promo-1920x1080.mp4 -frames:v 1 -q:v 3 media/poster.jpg
-# the README loop: L + R, the lookup, the mining (4.6-12.1 s), one 128-colour palette
-"$FFMPEG" -hide_banner -loglevel error -y -ss 4.6 -t 7.5 -i media/promo-1920x1080.mp4 \
+# the README loop: L + R, the lookup, the first card mined (4.6-11.7 s), one 128-colour palette
+"$FFMPEG" -hide_banner -loglevel error -y -ss 4.6 -t 7.1 -i media/promo-1920x1080.mp4 \
   -vf "fps=10,scale=540:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle" \
   -loop 0 media/promo.gif
 size=$(stat -c %s media/promo.gif)

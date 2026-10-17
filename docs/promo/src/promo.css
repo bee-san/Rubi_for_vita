@@ -1241,6 +1241,7 @@
       .cap .w {
         display: inline-block;
         white-space: pre;
+        opacity: 0; /* until it rises in (src/promo.js caption()): no frame of the whole line first */
       }
       .cap .sub {
         margin-top: 10px;
