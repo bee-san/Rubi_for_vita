@@ -25,9 +25,9 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 69 ctest suites with
-the release models (`VJO_VOCR_MODEL_DIR`), 68 in the normal build, which has no self-test memory
-routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 68 and 67,
+failed joins, cancelled jobs and crashes between steps are injected there. 71 ctest tests with
+the release models (`VJO_VOCR_MODEL_DIR`), 70 in the normal build, which has no self-test memory
+routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 70 and 69,
 without `vocr_model`
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
 word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out) (the Hachidori relay's contract
@@ -41,6 +41,15 @@ its media):
 the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-anki.txt`, in a
 venv of its own (`VJO_ANKI_PYTHON`; `VJO_REQUIRE_ANKI=1` makes a missing one fail, not skip).
 AnkiDroid and AnkiMobile have not imported one.
+
+Two of those tests are the run's temporary files: every test runs with `TMPDIR` set to a directory
+of the build's own (`vjo-ctest-<hash of the build directory>` in the system's temporary directory),
+which `tmp_leak_setup` makes empty before the first test and `tmp_leak_check` counts after the last.
+The check fails on every entry a test left there, named with its files and its suite's source, and
+on a test source that names `/tmp` instead of `TMPDIR` (its files would go around the count); then
+it removes the directory. Each suite keeps its files in one directory that its own process makes
+before acutest forks the tests and removes, with whatever the tests left in it, when it ends
+(`host/tests/test_tmpdir.h`).
 
 Both builds run (docs/release-variants.md): the `host` and `vita` jobs are a matrix of the debug
 build (`VJO_DEBUG=ON`, the test builds') and the normal one (`OFF`), the ARM lane included
@@ -137,6 +146,10 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | taicfg | 6 | the one-VPK install's `config.txt` editor (`core/taicfg.c`, #158) on its fixtures and a seeded corpus, each result checked with taiHEN's own parser, on the Vita's word size |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
+
+The suites run with `TMPDIR` set to a directory of the lane's own, which must be empty again at the
+end (`arm TMPDIR: nothing left in it`); the lane fails on whatever a suite left there, named, and
+removes the directory either way.
 
 Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 265 cases of the
 debug build pass (257 of the normal build, which has no `kernel_meminfo` and fewer log cases;

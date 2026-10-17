@@ -23,7 +23,10 @@
  *    fewer helpers when the workspace holds fewer; the busy hook.
  * The cancellation, failed-job, capacity and failed-join cases follow
  * audit-ocr-speed-2's .refs/probe/test_audit_extra.c. */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include "platform_posix.h"
 #include "vocr.h"
 #include "vocr_lm.h"
@@ -230,8 +233,7 @@ static void setup_files(void)
     vocr_opts o;
     size_t n;
     if (done) return;
-    snprintf(model_dir, sizeof model_dir, "/tmp/vjo-par-%d", (int)getpid());
-    mkdir(model_dir, 0700);
+    TEST_ASSERT(vjo_test_tmpdir_new(model_dir, sizeof model_dir) != NULL);
     for (unsigned i = 0; i < 2; i++) {
         n = build_blob(seeds[i]);
         TEST_ASSERT(vocr_load(&m, blob, n) == VOCR_OK);
@@ -1052,3 +1054,9 @@ TEST_LIST = {
     {"sizes_and_fewer_helpers", test_sizes_and_fewer_helpers},
     {NULL, NULL},
 };
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("vocr-parallel")) return 2; /* each test's model files in it, all removed at the end */
+    return acutest_main(argc, argv);
+}

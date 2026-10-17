@@ -10,7 +10,10 @@
  * VJO_VOCR_MODEL_INFO_TEST naming a later package's table, where generation
  * VOCR6 is pinned for two sizes and VOCR5 kept for the third: the app then names
  * each size's model unchanged. */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
@@ -296,8 +299,10 @@ static void remove_model(const char *name)
     unlink(path);
 }
 /* The temporary memory card of this test's process, removed when it ends (the
- * app's own forked processes leave with _exit, so only the test removes it). */
-static char card_dir[64];
+ * app's own forked processes leave with _exit, so only the test removes it), in
+ * the suite's directory, which goes with whatever is left in it when the suite
+ * ends (test_tmpdir.h). */
+static char card_dir[PATH_MAX];
 static void remove_tree(const char *path)
 {
     struct stat st;
@@ -323,11 +328,9 @@ static void card(const char *config)
 {
     static int initialized;
     if (!initialized) {
-        char dir[] = "/tmp/vjo-settings-app-XXXXXX";
-        TEST_ASSERT(mkdtemp(dir) != NULL);
-        snprintf(card_dir, sizeof(card_dir), "%s", dir);
+        TEST_ASSERT(vjo_test_tmpdir_new(card_dir, sizeof(card_dir)) != NULL);
         atexit(remove_card);
-        TEST_ASSERT(chdir(dir) == 0);
+        TEST_ASSERT(chdir(card_dir) == 0);
         initialized = 1;
     }
     mkdir("ux0:data", 0777);
@@ -1455,3 +1458,9 @@ TEST_LIST = {
     {NULL, NULL}
 };
 #endif
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("settings-app")) return 2; /* each test's card in it, all removed at the end */
+    return acutest_main(argc, argv);
+}

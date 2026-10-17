@@ -5,7 +5,10 @@
  * directory under the console's own paths. The policy is the Shell's own code
  * (core/games.c), and the kernel's games.ini reader is checked against the
  * Shell's and the Overlay app's (vita/games_storage.c) on the same files. */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -239,8 +242,8 @@ static void reset(void)
 {
     static int initialized;
     if (!initialized) {
-        char dir[] = "/tmp/vjo-loader-XXXXXX";
-        TEST_ASSERT(mkdtemp(dir) != NULL);
+        char dir[PATH_MAX];
+        TEST_ASSERT(vjo_test_tmpdir_new(dir, sizeof(dir)) != NULL);
         TEST_ASSERT(chdir(dir) == 0);
         mkdir("ux0:data", 0777);
         mkdir(VJO_GAMES_DIR, 0777);
@@ -619,3 +622,9 @@ TEST_LIST = {
     {"the kernel worker answers each question once", test_worker_answers_each_question_once},
     {"failures are logged and leave nothing", test_failures_are_logged_and_harmless},
     {NULL, NULL}};
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("kernel-loader")) return 2; /* each test's card in it, all removed at the end */
+    return acutest_main(argc, argv);
+}

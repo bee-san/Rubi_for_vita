@@ -9,7 +9,10 @@
  *
  * Host runs only: the console's file system, its free-space answers, app0:'s unmount and the Unsafe
  * Homebrew probe are stubbed; docs/one-vpk-install.md lists what a console run must show. */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -51,7 +54,7 @@
 static const VjoInstallBuild build = {VJO_API_VERSION, "0.8.0", VJO_VARIANT, VJO_TAI_WORKER_KERNEL};
 
 /* ---------------- the card ---------------- */
-static char card[256];
+static char card[PATH_MAX];
 static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
 
 /* faults: the nth matching call fails (0: none); the counters count matching calls */
@@ -313,8 +316,7 @@ static void fresh_card(int with_ux0)
     static int registered;
     if (!registered) registered = atexit(remove_last_card) == 0;
     if (card[0]) { if (chdir("/") == 0) remove_tree(card); }
-    snprintf(card, sizeof(card), "/tmp/vjo-install-XXXXXX");
-    TEST_ASSERT(mkdtemp(card) != NULL);
+    TEST_ASSERT(vjo_test_tmpdir_new(card, sizeof(card)) != NULL);
     TEST_ASSERT(chdir(card) == 0);
     memset(&fault, 0, sizeof(fault));
     unsafe_off = umount_rc = app_readonly = locked = lock_calls = 0;
@@ -2358,3 +2360,9 @@ TEST_LIST = {
     {"package_settings_are_applied", package_settings_are_applied},
     {"the_page_shows_the_plan_and_runs_it", the_page_shows_the_plan_and_runs_it},
     {NULL, NULL}};
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("settings-install")) return 2; /* every card in it, all removed at the end */
+    return acutest_main(argc, argv);
+}

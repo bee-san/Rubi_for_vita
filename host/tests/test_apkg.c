@@ -24,6 +24,7 @@
 #define main acutest_main
 #include "acutest.h"
 #undef main
+#include "test_tmpdir.h"
 #include "anki_queue.h"
 #include "apkg.h"
 #include "jpegsw.h"
@@ -1384,7 +1385,7 @@ static void test_large_queue(void)
 /* Over VJO_APKG_MAX_CARDS: the oldest go now, the rest stay for the next export. */
 /* ---------------- packages for host/tests/test_apkg.py ---------------- */
 
-/* The package, copied out of the test's directory (in /tmp) and removed there:
+/* The package, copied out of the test's directory (in TMPDIR) and removed there:
  * a rename() would fail when DIR is on another file system (EXDEV). */
 static int take_package(const char *from, const char *to)
 {
@@ -1629,33 +1630,19 @@ static int restart_step(int argc, char **argv)
     return 2;
 }
 
-static char test_dir[128];
-static pid_t test_dir_owner;
-static void remove_test_dir(void)
-{
-    char cmd[200];
-    if (getpid() != test_dir_owner) /* (acutest runs each test in a child) */
-        return;
-    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", test_dir);
-    if (system(cmd) != 0)
-        fprintf(stderr, "could not remove %s\n", test_dir);
-}
-
 int main(int argc, char **argv)
 {
     char out[PATH_MAX] = ""; /* (realpath's buffer: glibc's _FORTIFY_SOURCE requires PATH_MAX) */
+    const char *dir;
     if (argc >= 2 && !strcmp(argv[1], "--restart-step"))
         return restart_step(argc, argv);
     if (argc == 3 && !strcmp(argv[1], "--write") && !realpath(argv[2], out))
         return 2;
     if (argc == 3 && !strcmp(argv[1], "--sqlw"))
         return write_sqlw_shapes(argv[2]);
-    snprintf(test_dir, sizeof(test_dir), "/tmp/vjo-apkg-tests-XXXXXX");
-    if (!mkdtemp(test_dir))
-        return 2;
-    test_dir_owner = getpid();
-    atexit(remove_test_dir);
-    if (chdir(test_dir) < 0 || mkdir("ux0:data", 0777) < 0 || mkdir("ux0:data/VitaJPOverlay", 0777) < 0)
+    /* the memory card, removed when the suite ends (acutest runs each test in a child: test_tmpdir.h) */
+    dir = vjo_test_tmpdir("apkg");
+    if (!dir || chdir(dir) < 0 || mkdir("ux0:data", 0777) < 0 || mkdir("ux0:data/VitaJPOverlay", 0777) < 0)
         return 2;
     if (out[0])
         return write_packages(out);

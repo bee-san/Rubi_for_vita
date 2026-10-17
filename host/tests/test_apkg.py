@@ -231,7 +231,7 @@ from anki.collection import Collection, ImportAnkiPackageRequest, ImportAnkiPack
 from anki.import_export_pb2 import ImportAnkiPackageUpdateCondition as Cond
 out = pathlib.Path(sys.argv[1]); expected = json.loads((out / "expected.json").read_text())
 def new_col():
-    d = tempfile.mkdtemp()
+    d = tempfile.mkdtemp(dir=out)  # in the packages' directory, which the test removes
     return Collection(os.path.join(d, "collection.anki2"))
 def imp(col, path):
     # Anki's defaults: no merging, notes and note types updated only if newer
@@ -278,7 +278,7 @@ col.close()
 # A profile that has Lapis from its own package, restyled since (newer): a
 # package of that note type alone (first.apkg's, without notes, its styling
 # and time changed) is imported first, then ours.
-tmp = pathlib.Path(tempfile.mkdtemp())
+tmp = pathlib.Path(tempfile.mkdtemp(dir=out))
 with zipfile.ZipFile(out / "first.apkg") as z:
     (tmp / "collection.anki2").write_bytes(z.read("collection.anki2"))
 db = sqlite3.connect(tmp / "collection.anki2")

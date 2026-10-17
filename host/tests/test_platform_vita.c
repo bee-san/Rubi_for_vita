@@ -9,7 +9,10 @@
 #include <string.h>
 #include <unistd.h>
 
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
@@ -46,7 +49,7 @@ SceOff sceIoLseek(int fd, SceOff off, int whence)
 
 #include "../../shell/platform_vita.c"
 
-static char path[64];
+static char path[PATH_MAX];
 static const char contents[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 
 static void reset(void)
@@ -54,7 +57,7 @@ static void reset(void)
     clock_now = 0;
     fail_open = fail_seek = fail_seek_set = open_fds = max_read = reads = eof_reads = 0;
     vjo_dict_reads = vjo_dict_read_bytes = 0;
-    snprintf(path, sizeof(path), "/tmp/vjo-platform-vita-%d.bin", (int)getpid());
+    TEST_ASSERT(snprintf(path, sizeof(path), "%s/%d.bin", vjo_test_tmpdir_path, (int)getpid()) < (int)sizeof(path));
     FILE *f = fopen(path, "wb");
     TEST_ASSERT(f != NULL);
     TEST_ASSERT(fwrite(contents, 1, sizeof(contents) - 1, f) == sizeof(contents) - 1);
@@ -111,7 +114,9 @@ static void test_a_failed_open_or_seek_opens_nothing(void)
     reset();
     vjo_platform_vita(&p);
     memset(&f, 0, sizeof(f));
-    TEST_CHECK(p.file_open(p.ud, "/tmp/vjo-platform-vita-missing/none.vjdict", &f) == -1);
+    char missing[PATH_MAX + 32];
+    snprintf(missing, sizeof(missing), "%s/missing/none.vjdict", vjo_test_tmpdir_path);
+    TEST_CHECK(p.file_open(p.ud, missing, &f) == -1);
     fail_open = 1;
     TEST_CHECK(p.file_open(p.ud, path, &f) == -1 && open_fds == 0);
     fail_open = 0;
@@ -127,3 +132,9 @@ TEST_LIST = {
     {"a_failed_open_or_seek_opens_nothing", test_a_failed_open_or_seek_opens_nothing},
     {NULL, NULL},
 };
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("platform-vita")) return 2; /* the test files in it, removed at the end */
+    return acutest_main(argc, argv);
+}

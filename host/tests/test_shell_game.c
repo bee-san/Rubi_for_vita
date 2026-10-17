@@ -4,7 +4,10 @@
  * boot.inf, the Overlay app's description) and games.ini. Each case also
  * counts the Shell's file calls: a launch reads at most one boot.bin and one
  * description and lists no directory. */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -129,10 +132,9 @@ static void described(const char *id, const char *disc, const char *title, const
 }
 static void card(void)
 {
-    static char dir[64];
+    static char dir[PATH_MAX];
     if (!dir[0]) {
-        snprintf(dir, sizeof(dir), "/tmp/vjo-shell-game-XXXXXX");
-        TEST_ASSERT(mkdtemp(dir) != NULL);
+        TEST_ASSERT(vjo_test_tmpdir_new(dir, sizeof(dir)) != NULL);
         TEST_ASSERT(chdir(dir) == 0);
         bubble("ULJS00378", "ux0:pspemu/ISO/Synthetic One.iso");
         described("ULJS00378", "ULJS00378", "合成ゲーム One", "ux0:pspemu/ISO/Synthetic One.iso");
@@ -398,3 +400,9 @@ TEST_LIST = {
     {"AppMgr names that are no game's", names_that_are_no_games},
     {NULL, NULL}
 };
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("shell-game")) return 2; /* each test's card in it, all removed at the end */
+    return acutest_main(argc, argv);
+}

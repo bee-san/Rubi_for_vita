@@ -22,6 +22,7 @@
 #define main acutest_main
 #include "acutest.h"
 #undef main
+#include "test_tmpdir.h"
 #include "anki.h"
 #include "json.h"
 #define VJO_TEST_MUTEX_STUBS 1
@@ -168,7 +169,7 @@ uint32_t vjo_shell_heap_free_size(void) { return 0; }
 /* ---------------- the memory card: real files ---------------- */
 
 static DIR *directory;
-static char directory_path[256], test_dir[128];
+static char directory_path[256];
 static int write_budget = -1, short_io, fail_rename, fail_sync, fail_close, fail_scan;
 static int fail_mount_sync, mount_sync_calls, write_fd = -1, dir_scans;
 static char write_path[256], last_rename[256];
@@ -1753,45 +1754,16 @@ static int restart_step(int argc, char **argv)
     return strncmp(g_view.anki_status, "Saved", 5) && strncmp(g_view.anki_status, "Already", 7);
 }
 
-static pid_t test_dir_owner;
-static void remove_tree(const char *path)
-{
-    char child[1024];
-    struct stat st;
-    struct dirent *e;
-    DIR *d;
-    if (lstat(path, &st) < 0)
-        return;
-    if (S_ISDIR(st.st_mode) && (d = opendir(path))) {
-        while ((e = readdir(d))) {
-            if (strcmp(e->d_name, ".") && strcmp(e->d_name, "..")) {
-                snprintf(child, sizeof(child), "%s/%s", path, e->d_name);
-                remove_tree(child);
-            }
-        }
-        closedir(d);
-    }
-    remove(path);
-}
-/* acutest runs each test in a child that also exits through atexit. */
-static void remove_test_dir(void)
-{
-    if (getpid() == test_dir_owner && chdir("/") == 0)
-        remove_tree(test_dir);
-}
-
 int main(int argc, char **argv)
 {
+    const char *dir;
     make_shot_jpeg();
     if (argc >= 2 && !strcmp(argv[1], "--restart-step"))
         return restart_step(argc, argv);
-    /* One storage directory for every test (reset empties the queue). */
-    snprintf(test_dir, sizeof(test_dir), "/tmp/vjo-anki-tests-XXXXXX");
-    if (!mkdtemp(test_dir))
-        return 2;
-    test_dir_owner = getpid();
-    atexit(remove_test_dir);
-    if (chdir(test_dir) < 0 || mkdir("ux0:data", 0777) < 0)
+    /* One storage directory for every test (reset empties the queue), removed when the suite ends
+     * (acutest runs each test in a child that also exits through atexit: test_tmpdir.h). */
+    dir = vjo_test_tmpdir("shell-anki");
+    if (!dir || chdir(dir) < 0 || mkdir("ux0:data", 0777) < 0)
         return 2;
     return acutest_main(argc, argv);
 }

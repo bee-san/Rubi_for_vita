@@ -16,7 +16,10 @@
  *   table written here, and orders the catalog so that each letter is one run.
  * Built for the host (ctest settings_layout) and, as a pure-C suite, for the
  * Vita's CPU under qemu-arm (tools/arm_host_tests.sh). */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include <psp2/io/fcntl.h>
 #include <errno.h>
 #include <stdio.h>
@@ -638,12 +641,11 @@ static void fixture_round_trip(void)
     }
 }
 
-static char dir[64];
+static char dir[PATH_MAX];
 static void in_temp_dir(void)
 {
     if (dir[0]) return;
-    snprintf(dir, sizeof(dir), "/tmp/vjo-settings-layout-XXXXXX");
-    TEST_ASSERT(mkdtemp(dir) != NULL);
+    TEST_ASSERT(vjo_test_tmpdir_new(dir, sizeof(dir)) != NULL);
     TEST_ASSERT(chdir(dir) == 0);
 }
 static void put_file(const char *path, const uint8_t *data, size_t n)
@@ -738,3 +740,9 @@ TEST_LIST = {
     {"icon_cache_lru", icon_cache_lru},
     {NULL, NULL}
 };
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("settings-layout")) return 2; /* the icon files' directory in it, removed at the end */
+    return acutest_main(argc, argv);
+}

@@ -27,6 +27,10 @@
 # SHA-256 only) runs here too, and the packages it writes (--write) must be
 # the same bytes on ARM as natively (HOST_CC).
 #
+# Every suite runs with TMPDIR set to a private directory of the lane's own (host/tests/test_tmpdir.h),
+# which must be empty again at the end: the lane fails on whatever a suite left there (named), and
+# removes it either way.
+#
 # Ubuntu: apt-get install gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
 # qemu-user-static (the cross gcc alone has no ARM libc headers or static
 # libc). The defaults below are those package names; the fleet box sets both
@@ -53,6 +57,10 @@ QEMU_ARGS=(-cpu cortex-a9)
 # everything here is static.
 "$ARM_CC" --version | head -1
 "$QEMU" --version | head -1
+TMP_BASE=${TMPDIR:-/tmp}
+TMPDIR=$(mktemp -d "$TMP_BASE/vjo-arm-tests-XXXXXX")
+export TMPDIR
+trap 'rm -rf "$TMPDIR"' EXIT
 
 build() { # build NAME SOURCES...
   local name=$1; shift
@@ -158,4 +166,12 @@ for t in "${TESTS[@]}"; do
 done
 # The record the kernel writes must be the same bytes on ARM and on the host.
 "$QEMU" "${QEMU_ARGS[@]}" "$OUT/boot_guard" record_format_and_parse_round_trip > /dev/null
+left=$(ls -A "$TMPDIR")
+if [ -z "$left" ]; then
+  echo "arm TMPDIR: nothing left in it"
+else
+  echo "arm TMPDIR: FAILED, the suites left $(printf '%s\n' "$left" | wc -l) entries in it:"
+  for e in $left; do echo "  $e: $(find "$TMPDIR/$e" | wc -l) files and directories"; done
+  fail=1
+fi
 exit $fail
