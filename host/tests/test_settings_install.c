@@ -1271,6 +1271,33 @@ static void titles_name_the_versions(void)
     TEST_CHECK(vjo_version_compare("0.10.0", "0.9.9") > 0 && vjo_version_compare("1.0.0+build", "1.0.0") == 0);
 }
 
+/* A respin of a test build (0.8.0-test.4.1: test.4 with fixes, #194; tools/package_variants.py release_of) is a
+ * version the manifest takes, after its test build and before the next and the release: over test.4 it is an
+ * update, and test.4 over it goes back. */
+static void a_respin_is_after_its_test_build(void)
+{
+    TEST_CHECK(vjo_version_compare("0.8.0-test.4.1", "0.8.0-test.4") > 0 && vjo_version_compare("0.8.0-test.4.1", "0.8.0-test.5") < 0);
+    TEST_CHECK(vjo_version_compare("0.8.0-test.4.2", "0.8.0-test.4.1") > 0 && vjo_version_compare("0.8.0-test.4.10", "0.8.0-test.4.9") > 0);
+    TEST_CHECK(vjo_version_compare("0.8.0", "0.8.0-test.4.1") > 0 && vjo_version_compare("0.8.0-test.4.1", "0.8.0-test.4.1") == 0);
+    fresh_card(1);
+    install_app(2, "0.8.0-test.4", NULL);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    install_app(3, "0.8.0-test.4.1", NULL);
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_UPDATE && !strcmp(s.title, "Update the overlay from v0.8.0-test.4 to v0.8.0-test.4.1"),
+                "state %d: %s", s.state, s.title);
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+    install_app(4, "0.8.0-test.4", NULL);
+    s = scan_now();
+    TEST_CHECK_(!strcmp(s.title, "Go back from v0.8.0-test.4.1 to this app's v0.8.0-test.4"), "%s", s.title);
+    install_app(5, "0.8.0-test.5", NULL);
+    s = scan_now();
+    TEST_CHECK_(!strcmp(s.title, "Update the overlay from v0.8.0-test.4.1 to v0.8.0-test.5"), "%s", s.title);
+}
+
 /* The manifest parser's rules (core/payload.c), one damaged line at a time. */
 static void the_manifest_is_exactly_the_builds(void)
 {
@@ -2344,6 +2371,7 @@ TEST_LIST = {
     {"uninstall_keeps_files_and_backups", uninstall_keeps_files_and_backups},
     {"the_plan_must_still_be_the_cards", the_plan_must_still_be_the_cards},
     {"titles_name_the_versions", titles_name_the_versions},
+    {"a_respin_is_after_its_test_build", a_respin_is_after_its_test_build},
     {"the_manifest_is_exactly_the_builds", the_manifest_is_exactly_the_builds},
     {"package_settings_are_applied", package_settings_are_applied},
     {"the_page_shows_the_plan_and_runs_it", the_page_shows_the_plan_and_runs_it},

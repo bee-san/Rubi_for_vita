@@ -450,12 +450,40 @@ class PackageVariants(unittest.TestCase):
                          ["Rubi-0.8.0-test.4.vpk", "Rubi-0.8.0-test.4-debug.vpk",
                           "Rubi-0.8.0-test.4.zip", "Rubi-0.8.0-test.4-debug.zip"])
         for version in ("0.8.1-test.1", "0.7.12-test.4", "0.8.0-test", "0.8.0-test.0", "0.8.0-test.4x", "0.8.0-rc.1",
-                        "0.8.0.1", "x0.8.0-test.4", "0x8x0-test.1", "0.8.0-test.10000"):
+                        "0.8.0.1", "x0.8.0-test.4", "0x8x0-test.1", "0.8.0-test.10000",
+                        # a respin's malformed forms (0.8.0-test.N.M is one, below)
+                        "0.8.0-test.4.", "0.8.0-test.4.0", "0.8.0-test.0.1", "0.8.0-test.4.1.1", "0.8.0-test.4.10000",
+                        "0.8.0-test.4.1x", "0.8.0-test.4-1", "0.8.0-test..1", "0.8.1-test.4.1"):
             with self.subTest(version=version), self.assertRaises(SystemExit) as caught:
                 self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
                               "--version", version, "-o", self.root / "out-bad")
             self.assertIn(f"the Rubi app is v0.8.0, the release v{version}", str(caught.exception))
             self.assertFalse((self.root / "out-bad").exists())
+
+    def test_a_respin_of_a_test_build(self):
+        """A respin of a test build (v0.8.0-test.N.M: test.4 with fixes, #194) packages as a test build does: the
+        file names, the manifests' version and the payload's version line are the respin's, the app's own version
+        stays (app_version); release_of takes N.M with the same bounds as N."""
+        out = self.root / "out-respin"
+        self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
+                      "--version", "0.8.0-test.4.1", "-o", out, "--set", "anki_mining=on")
+        import package_vpk
+        names = ["Rubi-0.8.0-test.4.1.vpk", "Rubi-0.8.0-test.4.1-debug.vpk", "Rubi-0.8.0-test.4.1.zip",
+                 "Rubi-0.8.0-test.4.1-debug.zip"]
+        self.assertEqual([line.split("  ")[1] for line in (out / "SHA256SUMS").read_text().splitlines()], names)
+        for name, build in zip(names[:2], ("normal", "debug")):
+            self.assertEqual(package_vpk.verify(out / name), [], name)
+            text = zipfile.ZipFile(out / name).read("payload/manifest.txt").decode()
+            self.assertIn("\nversion 0.8.0-test.4.1\napp_version 0.8.0\n", text)
+            self.assertIn(f"\nvariant {build}\n", text)
+        for name in names[2:]:
+            m = json.loads(zipfile.ZipFile(out / name).read("package-manifest.json"))
+            self.assertEqual((m["version"], m["app_version"]), ("0.8.0-test.4.1", "0.8.0"), name)
+        for version in ("0.8.0-test.1.1", "0.8.0-test.4.1", "0.8.0-test.4.12", "0.8.0-test.9999.9999"):
+            self.assertTrue(package_variants.release_of("0.8.0", version), version)
+        for version in ("0.8.0-test.4.1", "0.8.0-test.1.1"):
+            self.assertFalse(package_variants.release_of(None, version), version)
+            self.assertFalse(package_variants.release_of("0.8.1", version), version)
 
     def test_a_base_with_no_app_version_names_none(self):
         """A base from before the two builds has no app version (package_release.base_variant gives None): it is

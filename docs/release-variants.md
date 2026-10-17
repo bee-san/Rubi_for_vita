@@ -315,13 +315,15 @@ builds add `--set anki_mining=on`.
 The Rubi app's version is the tree's `VJO_VERSION` (0.8.0 now): a test package
 (`Rubi-0.8.0-test.N.zip`, `package_variants.py` or `package_release.py --version 0.8.0-test.N`)
 shows `Rubi v0.8.0` (`Rubi v0.8.0 debug` for the -debug build), the build its binaries are; its
-manifests record `version 0.8.0-test.N` beside `app_version 0.8.0`.
+manifests record `version 0.8.0-test.N` beside `app_version 0.8.0`. A respin of a test build with
+fixes is `0.8.0-test.N.M` (`0.8.0-test.4.1`): the app's Install page orders it after test.N and before
+test.N+1 (`core/payload.c` `vjo_version_compare`).
 
 `tools/package_variants.py` refuses bases that are not the builds they are given as (with `--sources`,
 a checkout of their commit, each module is checked as the Vita build checks it, the worker included; a
 `--sources` that is not a checkout, with no `shell/`, `kernel/`, `game_ocr/` and `settings/`, is refused
 before anything is read, as it would check nothing), a Rubi app of another version than `--version`
-or than the `V` of a test build's `V-test.N` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's
+or than the `V` of a test build's `V-test.N` or `V-test.N.M` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's
 version before that run), and bases that differ in anything but the build's own files (the
 plugins, the app's VPK and its stamp). It packages both with `tools/package_release.py` (which
 records `variant` and `app_version` in each manifest), verifies both, checks they differ only
