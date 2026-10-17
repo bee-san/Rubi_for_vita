@@ -215,6 +215,9 @@ int vjo_anki_configure(const VjoConfig *cfg);
 /* The running game's title ID and name for its cards ("" = none; control
  * thread), and whether it is a PSP game (the card's platform). */
 void vjo_anki_set_game(const char *tid, const char *name, int psp);
+/* Snapshot the existing game facts for offline OCR history (network thread).
+ * Caller owns these fixed-size copies; no mailbox pointer survives the lock. */
+const char *vjo_anki_get_game(char name[128], char tid[12]);
 /* The OCR model of the last recognition, recorded on its cards (network thread). */
 void vjo_anki_set_ocr_model(const char *model);
 /* Saves entry `entry` of list list_seq to the queue (overlay, enter

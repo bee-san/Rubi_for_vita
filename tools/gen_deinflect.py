@@ -29,7 +29,7 @@ def generate():
                 len(source.encode()), len(target.encode()), *flags))
             count += 1
     offsets.append(count)
-    lines.extend(["};", "static const uint16_t deinflect_offsets[257] = {"])
+    lines.extend(["};", "static const uint16_t deinflect_offsets[257] VJO_DATA_TABLE(deinflect_offsets) = {"])
     for i in range(0, len(offsets), 16):
         lines.append("    " + ", ".join(map(str, offsets[i:i + 16])) + ",")
     return "\n".join([*lines, "};", ""])

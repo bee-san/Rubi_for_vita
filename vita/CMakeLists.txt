@@ -202,6 +202,7 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/game.c
   ${ROOT}/shell/anki.c
   ${ROOT}/shell/anki_queue.c
+  ${ROOT}/shell/history.c
   ${ROOT}/vita/games_storage.c
   ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/log_vita.c
@@ -232,7 +233,7 @@ set_source_files_properties(${ROOT}/shell/boot.c ${ROOT}/shell/guard.c ${ROOT}/s
 set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${ROOT}/shell/anki.c
   ${ROOT}/shell/files.c ${ROOT}/shell/game.c ${ROOT}/shell/worker.c
   ${ROOT}/shell/strip_view.c ${ROOT}/shell/game_ocr_client.c
-  ${ROOT}/shell/anki_queue.c ${ROOT}/shell/platform_vita.c
+  ${ROOT}/shell/anki_queue.c ${ROOT}/shell/history.c ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/strip.cpp ${ROOT}/core/text_rows.c ${ROOT}/core/arena.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)

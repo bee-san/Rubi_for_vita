@@ -563,6 +563,20 @@ void vjo_anki_set_ocr_model(const char *model)
     sceKernelUnlockMutex(box_lock, 1);
 }
 
+const char *vjo_anki_get_game(char name[128], char tid[12])
+{
+    const char *platform;
+    name[0] = tid[0] = '\0';
+    if (box_lock < 0)
+        return "vita";
+    sceKernelLockMutex(box_lock, 1, NULL);
+    sceClibMemcpy(name, game_name, sizeof(game_name));
+    sceClibMemcpy(tid, game_tid, sizeof(game_tid));
+    platform = game_psp ? "psp" : "vita";
+    sceKernelUnlockMutex(box_lock, 1);
+    return platform;
+}
+
 int vjo_anki_configure(const VjoConfig *cfg)
 {
     int on;

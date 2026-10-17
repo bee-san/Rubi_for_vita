@@ -6,6 +6,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
+#include <psp2/rtc.h>
 #if !VJO_DEBUG
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -15,6 +16,7 @@
 #include "../core/app_stamp.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/regions.h"
+#include "../core/port.h"
 #include "../core/anki.h"
 #include "../core/local_dict.h"
 #include "../core/textfilter.h"
@@ -23,6 +25,7 @@
 #ifdef VJO_WITH_VOCR
 #include "../core/local_ocr.h"
 #include "game_ocr_client.h"
+#include "history.h"
 #include "../include/vjo_vocr_sizes.h"
 #endif
 #include "shell.h"
@@ -581,17 +584,17 @@ static void view_show_cache(void)
 
 /* Out-of-memory advice, by where the memory ran out (#53). Each fits the
  * status line after "Text recognition failed: not enough memory. ". */
-#define OOM_TEXT_BUFFER "The recognized text did not fit the overlay's text buffer. Select a tighter " \
-    "dialogue region with Square."
-#define OOM_GAME_REGION "The game has too little free memory for OCR of this region. Select a tighter " \
-    "dialogue region with Square."
-#define OOM_GAME_NONE "The game has too little free memory for any OCR right now (it keeps a " \
-    "reserve for the game). Try again later in the game, or restart it."
-#define OOM_GAME_SMALLEST "The game has too little free memory for the OCR model's weights. Select " \
-    "a tighter dialogue region with Square, or try again later."
-#define OOM_GAME_ALLOCATION "The game's memory could not be allocated although the memory check " \
-    "passed. Try again."
-#define OOM_GAME_UNKNOWN "The game's free memory could not be checked (see log.txt), so OCR did not start."
+static const char OOM_TEXT_BUFFER[] VJO_DATA_TABLE(OOM_TEXT_BUFFER) = "The recognized text did not fit the overlay's text buffer. Select a tighter "
+    "dialogue region with Square.";
+static const char OOM_GAME_REGION[] VJO_DATA_TABLE(OOM_GAME_REGION) = "The game has too little free memory for OCR of this region. Select a tighter "
+    "dialogue region with Square.";
+static const char OOM_GAME_NONE[] VJO_DATA_TABLE(OOM_GAME_NONE) = "The game has too little free memory for any OCR right now (it keeps a "
+    "reserve for the game). Try again later in the game, or restart it.";
+static const char OOM_GAME_SMALLEST[] VJO_DATA_TABLE(OOM_GAME_SMALLEST) = "The game has too little free memory for the OCR model's weights. Select "
+    "a tighter dialogue region with Square, or try again later.";
+static const char OOM_GAME_ALLOCATION[] VJO_DATA_TABLE(OOM_GAME_ALLOCATION) = "The game's memory could not be allocated although the memory check "
+    "passed. Try again.";
+static const char OOM_GAME_UNKNOWN[] VJO_DATA_TABLE(OOM_GAME_UNKNOWN) = "The game's free memory could not be checked (see log.txt), so OCR did not start.";
 
 #ifdef VJO_WITH_VOCR
 /* Which part of the game worker's memory check failed: no OCR can fit
@@ -1135,16 +1138,19 @@ static int run_selftest_stages(VjoGameOcrResult *result, unsigned tiers, unsigne
 }
 #endif
 
+/* The existing transport result, also read by history after job_done is
+ * published. Only VjoNet replaces it, on its next OCR job: no second text copy. */
+static VjoGameOcrResult vocr_result;
+
 static int run_vocr(VjoOverlayData *out)
 {
-    static VjoGameOcrResult result;
     unsigned tiers = vocr_tiers(), ran = vocr_top_tier(tiers);
-    sceClibMemset(&result, 0, sizeof(result));
+    sceClibMemset(&vocr_result, 0, sizeof(vocr_result));
 #if VJO_DEBUG
     if (job_selftest) /* its records are its result: nothing is shown */
-        return out->err.rc = run_selftest_stages(&result, tiers, &ran);
+        return out->err.rc = run_selftest_stages(&vocr_result, tiers, &ran);
 #endif
-    out->err.rc = vocr_run_one(&result, 0, tiers, &ran, -1);
+    out->err.rc = vocr_run_one(&vocr_result, 0, tiers, &ran, -1);
     /* A tier's model failed to open or verify: keep OCR working with the next
      * smaller tier for this job. Only a file that is absent, the wrong length or
      * fails its hash (io 0: rejected after reading) leaves the tier out for this
@@ -1152,11 +1158,11 @@ static int run_vocr(VjoOverlayData *out)
      * file is left out with it (vocr_same_file). Log only. */
     while (out->err.rc == VJO_E_OCR_MODEL && ran >= VJO_VOCR_TIER_SMALL && ran <= VJO_VOCR_TIERS &&
            !vocr_cancelled(NULL)) {
-        int file_bad = !result.io_error || result.io_error == VJO_ERR_FORMAT ||
-                       (uint32_t)result.io_error == 0x80010002u; /* ENOENT */
+        int file_bad = !vocr_result.io_error || vocr_result.io_error == VJO_ERR_FORMAT ||
+                       (uint32_t)vocr_result.io_error == 0x80010002u; /* ENOENT */
         unsigned failed = ran, same = vocr_same_file(failed), below = tiers & ((1u << (failed - 1u)) - 1u) & ~same;
         vjo_log("game vocr: %s is unusable here (io=0x%08X), using %s%s", vjo_vocr_tier_model((int)failed),
-                (unsigned)result.io_error, below ? vjo_vocr_tier_model((int)vocr_top_tier(below)) : "none",
+                (unsigned)vocr_result.io_error, below ? vjo_vocr_tier_model((int)vocr_top_tier(below)) : "none",
                 file_bad ? " for this game" : " for this job");
         if (file_bad) {
             if (vocr_unusable_generation != job_generation) vocr_unusable = 0;
@@ -1165,24 +1171,24 @@ static int run_vocr(VjoOverlayData *out)
         }
         if (!below) break;
         tiers = below;
-        sceClibMemset(&result, 0, sizeof(result));
-        out->err.rc = vocr_run_one(&result, 0, tiers, &ran, -1);
+        sceClibMemset(&vocr_result, 0, sizeof(vocr_result));
+        out->err.rc = vocr_run_one(&vocr_result, 0, tiers, &ran, -1);
     }
     /* The self-test's job runs on the screen of the last job that read text in the region
      * (a failed job's text is empty: the worker and the exchange clear it). */
-    text_generation = result.text[0] ? job_generation : 0;
+    text_generation = vocr_result.text[0] ? job_generation : 0;
     text_scene = job_capture_scene;
     text_seq = job_capture_seq;
     if (out->err.rc != VJO_OK) {
         if (out->err.rc == VJO_E_OCR_MODEL) {
             /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
-            if ((uint32_t)result.io_error == 0x80010013u)
+            if ((uint32_t)vocr_result.io_error == 0x80010013u)
                 out->err.detail = "The local OCR model storage is unavailable to this game. See log.txt for details.";
-            else if ((uint32_t)result.io_error == 0x8001000Du)
+            else if ((uint32_t)vocr_result.io_error == 0x8001000Du)
                 out->err.detail = "Access to the local OCR model was denied. See log.txt for details.";
         }
         if (out->err.rc == VJO_E_OOM)
-            out->err.detail = game_oom_detail(&result);
+            out->err.detail = game_oom_detail(&vocr_result);
         if (out->err.rc == VJO_E_SOURCE)
             out->err.detail = "The game's screen could not be read (see log.txt).";
         return out->err.rc;
@@ -1191,25 +1197,25 @@ static int run_vocr(VjoOverlayData *out)
      * mark, ー or 一 by context); the recognizer's own text goes to the log
      * (the debug build's: the normal build logs no recognized text). */
 #if VJO_DEBUG
-    log_text_lines(result.text, sizeof(result.text));
+    log_text_lines(vocr_result.text, sizeof(vocr_result.text));
 #endif
     /* The model on this text's Anki cards: the tier's that ran. A constant string. */
     const char *read_by = vjo_vocr_tier_model((int)ran);
     if (!read_by) read_by = vjo_vocr_tier_model(VJO_VOCR_TIER_DEFAULT);
+    refresh_model = read_by; /* this result's constant model name, also for history */
     if (job_refresh) {
         /* The open overlay shows local_text, its lookup and Anki card: this
          * job changes none of them. The control thread compares its text
          * with the shown one once it is done (on_refresh_done), and gives
          * the cards this model only if the text replaces the shown one. */
-        out->ocr_text = result.text;
-        refresh_model = read_by;
+        out->ocr_text = vocr_result.text;
         return VJO_OK;
     }
     vjo_anki_set_ocr_model(read_by);
     VjoArena text_arena;
     vjo_arena_init(&text_arena, local_text, sizeof(local_text));
-    out->ocr_text = result.text;
-    out->filtered = vjo_filter_lines(&text_arena, result.text, job_cfg.non_japanese_filter);
+    out->ocr_text = vocr_result.text;
+    out->filtered = vjo_filter_lines(&text_arena, vocr_result.text, job_cfg.non_japanese_filter);
     /* Filtering only removes bytes, so one complete worker text fits. */
     out->sentence = out->filtered ? vjo_java_trim((char *)out->filtered) : NULL;
     if (!out->sentence) {
@@ -1337,6 +1343,10 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
 static void net_job(void)
 {
     int idx = job_idx;
+#ifdef VJO_WITH_VOCR
+    VjoHistoryRecord history;
+    int save_history = 0;
+#endif
 #if VJO_DEBUG
     int64_t t0 = now_us();
     uint32_t appends0, appends1, log_us0 = vjo_log_io(&appends0), log_us1;
@@ -1344,6 +1354,33 @@ static void net_job(void)
 #endif
     job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx])
                              : run_job(&results[idx], &cache_data[idx]);
+#ifdef VJO_WITH_VOCR
+    /* Snapshot mutable job/game facts before publishing job_done: the control
+     * thread may immediately switch game or post another job after that. The
+     * network thread owns vocr_result until its next recognition, so history
+     * needs no retained text, allocation, queue or additional thread. */
+    if (!job_cursor_only && !job_selftest && job_cfg.ocr_mode == VJO_OCR_AUTO &&
+        !job_cancelled && job_generation == game_generation && vocr_result.rc == VJO_OK) {
+        SceRtcTick tick;
+        uint64_t elapsed = (uint64_t)(now_us() - job_started_us);
+        const uint64_t epoch = 62135596800000000ull;
+        if (sceRtcGetCurrentTick(&tick) >= 0 && tick.tick > epoch + elapsed) {
+            history.platform = vjo_anki_get_game(history.name, history.title_id);
+            if (!history.title_id[0])
+                sceClibSnprintf(history.title_id, sizeof(history.title_id), "%s", job_title);
+            if (!history.name[0])
+                sceClibSnprintf(history.name, sizeof(history.name), "%s", history.title_id);
+            history.result = &vocr_result;
+            history.model = refresh_model;
+            history.time_us = tick.tick - epoch - elapsed; /* UTC at job start, not import time */
+            history.monotonic_us = (uint64_t)job_started_us;
+            history.elapsed_us = elapsed > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed;
+            history.scene = job_capture_scene;
+            history.region_seq = job_capture_seq;
+            save_history = !job_cancelled && job_generation == game_generation;
+        }
+    }
+#endif
 #if VJO_DEBUG
     log_us1 = vjo_log_io(&appends1);
     vjo_log("job %d done rc=%d in %d ms, arena peak %u, dictionary page %d/%d, game %u ms, log %u ms in %u "
@@ -1354,6 +1391,14 @@ static void net_job(void)
 #endif
     __sync_synchronize(); /* results are visible before job_done */
     job_done = 1;
+#ifdef VJO_WITH_VOCR
+    /* Display/input never wait on storage. Only this thread can overwrite the
+     * OCR result, and it cannot execute the next job until append returns. */
+    if (save_history) {
+        int rc = vjo_history_append(&history);
+        if (rc < 0) vjo_dlog("history: append failed 0x%08X", (unsigned)rc);
+    }
+#endif
 }
 
 /* VjoNet's stack use, measured on the console: at its start the thread fills its
