@@ -123,7 +123,10 @@ Nothing is downloaded on the Vita: the VPK holds the plugins, the models and the
 default and needs no step of its own: the kernel plugin loads the OCR worker into each game that is
 ON as it starts ([worker loading](worker-loading.md)), never into SceShell, a system app,
 VitaShell or the Rubi app, and never while L is held at the game's start. Close the Rubi app
-before installing a VPK over it. These steps are not yet verified on a console: the next test build's
+before installing a VPK over it (on its LiveArea page, pull the top-right corner), also when it is only
+suspended behind VitaShell: in test.4's console run VitaShell stopped with error `0x80101114` while the
+old app was open, and installed after a restart ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)).
+These steps are not yet verified on a console: the next test build's
 run checks them.
 
 **What Install does.** It copies the three plugins to `ur0:tai` and the models to

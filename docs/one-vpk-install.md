@@ -137,8 +137,10 @@ From VitaShell 81af709 (`package_installer.c` `install_thread`):
   and add the bubble (henkaku wiki, ScePromoterUtil and Packages). The `.vpk` can be deleted after.
 - Nothing in it limits an app's size or its number of files (the release zip has 67 entries). The
   promoter's own limits are documented nowhere we could read.
-- The README says to close the Rubi app before installing a VPK over it: what the promoter does to
-  a running system application is unmeasured.
+- The README says to close the Rubi app before installing a VPK over it. In test.4's console run
+  VitaShell's install stopped with `0x80101114` while test.3's app was suspended behind it, and the
+  same VPK installed after a restart (#194); what the promoter does to a running system application is
+  otherwise unmeasured.
 
 ## The dictionary is moved, not copied
 
@@ -152,17 +154,25 @@ after its OK and before its first move or delete in the app folder, unmounts `ap
 from then on reads the payload and the app's stamp through `ux0:app/VJOSET001/` only
 (`settings/app_check.c:77-80` already falls back to that path for the stamp). Nothing else of the app
 reads `app0:` while it runs. Whether a system application may unmount its `app0:` is unmeasured. If
-the unmount, or the rename after it, fails, the app copies the dictionary instead when ux0 has room,
-and says the app folder then keeps its copy too (274 MiB in all); without room it stops before
-anything is written.
+the unmount, or the rename after it, fails, the app copies the dictionary instead when ux0 has room;
+once the copy is checked and in place, the app folder's copy is deleted when the folder can be written
+(the probe moved a file out of it), and otherwise the app says the folder keeps its copy too (274 MiB
+in all). Without room it stops before anything is written.
 
 - After the move the app folder no longer has the dictionary. A **Repair** of a missing or damaged
   dictionary therefore needs the VPK installed again first; the app says so when it is the case.
-- An update brings the dictionary again (VitaShell installs the whole VPK). When the installed
-  dictionary already has the manifest's SHA-256 (the dictionary is frozen, so usually it does), the
-  app deletes the app folder's copy and frees 136.8 MiB; only the installed one is hashed. Otherwise
-  it replaces it: the old file to `plaintext.vjdict.vjo-old`, the new one moved in and hashed, the old
-  one deleted (renamed back when the hash fails).
+- An update brings the dictionary again (VitaShell installs the whole VPK), and so does the same VPK
+  installed again. When the installed dictionary already has the manifest's SHA-256 (the dictionary is
+  frozen, so usually it does), the app deletes the app folder's copy and frees 136.8 MiB; only the
+  installed one is hashed. Otherwise it replaces it: the old file to `plaintext.vjdict.vjo-old`, the new
+  one moved in and hashed, the old one deleted (renamed back when the hash fails).
+- Whichever way the installed dictionary got its SHA-256 (moved, copied, an earlier run's
+  `.vjo-new`, or already there), the app folder's copy goes in the same run, and the done screen and
+  `log.txt` say what became of it: `install: this app's copy of the dictionary deleted (N B freed)`, or
+  `kept (N B)` with the reason. A **Check and repair** that writes no file of the overlay but deletes
+  that copy says both (#194: test.4's owner had the overlay's files from FTP beside the VPK's payload,
+  157 MB twice, and its done screen said only "nothing needed writing"). `log.txt` also says whether the
+  dictionary was moved or copied out of the app.
 - Plugins, the RCO and the models (11.9 MB) are copied: the app keeps them for a Repair without the
   VPK.
 - An 0.7.12 install's `dictionaries/jmdict.vjdict` is no longer used (`local_dictionaries` names

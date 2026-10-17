@@ -1010,6 +1010,8 @@ static void a_move_that_cannot_happen_copies(void)
     VjoInstallResult r;
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
     TEST_CHECK(has_line(r.lines, r.count, "The dictionary was copied (it could not be moved): this app keeps its copy too"));
+    TEST_CHECK_(strstr(log_text, "install: this app's copy of the dictionary kept (614417 B): this app's folder cannot be written\n")
+                != NULL, "%s", log_text);
     TEST_CHECK(installed_files(1));
     char src[256];
     vjo_payload_source(s.dict_index, src, sizeof(src));
@@ -1040,6 +1042,9 @@ static void check_and_repair_says_what_became_of_the_apps_dictionary_copy(void)
     VjoInstallResult r;
     TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
     TEST_ASSERT(vjo_payload_source(s.dict_index, src, sizeof(src)) == 0 && !there(src)); /* moved */
+    /* a collect tells a move from a copy */
+    TEST_CHECK_(strstr(log_text, "install: " VJO_PAYLOAD_DATA "dictionaries/plaintext.vjdict moved out of this app (614417 B)\n")
+                != NULL, "%s", log_text);
     install_app(1, "0.8.0", NULL); /* the same VPK in VitaShell again: its payload, the dictionary with it */
     TEST_ASSERT(there(src));
     s = scan_now();
@@ -1117,6 +1122,8 @@ static void a_copied_dictionary_leaves_no_copy_in_the_app_when_it_can_go(void)
     TEST_CHECK(!there(src));
     TEST_CHECK(has_line(r.lines, r.count, "The dictionary was copied (it could not be moved), then this app's copy was deleted (1 MB freed)."));
     TEST_CHECK(!has_line(r.lines, r.count, "this app keeps its copy too"));
+    TEST_CHECK_(strstr(log_text, "install: " VJO_PAYLOAD_DATA "dictionaries/plaintext.vjdict copied out of this app (614417 B): it "
+                "could not be moved\n") != NULL, "%s", log_text);
     TEST_CHECK_(strstr(log_text, "install: this app's copy of the dictionary deleted (614417 B freed)\n") != NULL, "%s", log_text);
     TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
 }
