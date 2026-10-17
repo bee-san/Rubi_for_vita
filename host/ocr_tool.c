@@ -222,7 +222,7 @@ int main(int argc, char **argv)
         if (lines_path || blank || lm_name || cascade_name || refine) {
             /* The game worker's form: resident weights, the job policy, the LM. */
             VjoVocrPolicy policy = {.blank = blank, .line = lines_path ? print_line : NULL,
-                                    .refine = refine ? VJO_VOCR_REFINE_ALL : 0u};
+                                    .refine = refine ? VJO_VOCR_REFINE_ALL : 0u, .short_lines = 1};
             VjoVocrResident res = {resident_alloc, resident_release, NULL, NULL, NULL, 0, 0, 0};
             VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, NULL, NULL, 0, 0, 0};
             FILE *lf = lines_path ? fopen(lines_path, "w") : NULL;

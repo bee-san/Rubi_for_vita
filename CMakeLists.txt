@@ -396,7 +396,8 @@ if(VJO_WITH_VOCR)
   target_include_directories(vjo-vocr-policy-tests PRIVATE third_party/acutest/include)
   target_link_libraries(vjo-vocr-policy-tests vjo_vocr vjo_host)
   target_compile_options(vjo-vocr-policy-tests PRIVATE -Wall -Wextra)
-  target_compile_definitions(vjo-vocr-policy-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
+  target_compile_definitions(vjo-vocr-policy-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}"
+    VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
   # The tests time, empty or fail the runtime's calls through these (test_vocr_policy.c, wrap).
   target_link_options(vjo-vocr-policy-tests PRIVATE "LINKER:--wrap=vocr_run" "LINKER:--wrap=vocr_lm_decode"
     "LINKER:--wrap=vocr_lm_init")

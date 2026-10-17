@@ -468,6 +468,8 @@ typedef struct {
     uint32_t cascade_us;
     unsigned cascade_conf;
     unsigned refine;
+    int short_lines;          /* #194: also read a box's short last line no finder mode keeps (core/vocr_ocr.c
+                                 probe_short_lines); the overlay's jobs, not the finder-only tests */
     /* API 22 (ocr-speed) */
     const VjoVocrPool *pool;
     VjoVocrCache *cache;

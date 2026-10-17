@@ -1658,6 +1658,84 @@ static void test_capture_block_sizes(void)
     TEST_MSG("largest capture block %zu B; 960x544 keeps %u states", most, vjo_vocr_state_slots(960, 544));
 }
 
+/* #194: a dialogue box's short last line, two glyphs below a full-width line (CLANNAD's
+ * "…気づい" / "た。"), which no finder mode keeps (host/fixtures/short_line). With short_lines
+ * the job reads it too, at the line above's left edge; the box's page arrow at the right is
+ * never a line, and a box with nothing below its line gets no line added. */
+#define SL_W 852u
+#define SL_H 135u
+static unsigned char sl_grey[SL_W * SL_H], sl_rgba[SL_W * SL_H * 4];
+static unsigned sl_n;
+static VocrLine sl_got[VJO_VOCR_MAX_LINES];
+static void sl_record(void *ud, const VjoVocrLineInfo *info)
+{
+    (void)ud;
+    if (sl_n < VJO_VOCR_MAX_LINES) sl_got[sl_n] = (VocrLine){info->x, info->y, info->w, info->h, info->dark};
+    sl_n++;
+}
+static void sl_load(void)
+{
+    char head[32];
+    FILE *f = fopen(VJO_SOURCE_DIR "/host/fixtures/short_line/textbox.pgm", "rb");
+    TEST_ASSERT(f != NULL);
+    TEST_ASSERT(fread(head, 1, 15, f) == 15 && !memcmp(head, "P5\n852 135\n255\n", 15));
+    TEST_ASSERT(fread(sl_grey, 1, sizeof(sl_grey), f) == sizeof(sl_grey));
+    fclose(f);
+}
+/* the box as loaded, without the rows from y down (y >= SL_H: none), its arrow kept or not */
+static void sl_frame(unsigned erase_from, int arrow)
+{
+    unsigned char bg = sl_grey[0];
+    for (unsigned y = 0; y < SL_H; y++)
+        for (unsigned x = 0; x < SL_W; x++) {
+            unsigned char v = sl_grey[y * SL_W + x];
+            if ((y >= erase_from && (x < 800 || !arrow)) || (!arrow && x >= 800)) v = bg;
+            unsigned char *q = sl_rgba + ((size_t)y * SL_W + x) * 4;
+            q[0] = q[1] = q[2] = v;
+            q[3] = 255;
+        }
+}
+static unsigned sl_job(int short_lines)
+{
+    VjoRgbaImage rgba = {sl_rgba, SL_W, SL_H, (size_t)SL_W * 4};
+    VjoGreySource src;
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    VjoVocrStats st = {0};
+    VjoVocrPolicy pol = {.blank = 1, .blank_edges = 20000, .line = sl_record, .short_lines = short_lines};
+    size_t job = vjo_vocr_job_bytes("FL10_w8.vocr", SL_W, SL_H);
+    unsigned char *ws = NULL;
+    char text[64];
+    vjo_grey_source_rgba(&rgba, &src);
+    src.line_buffer = refine_line_buffer;
+    p.file_open = no_file;
+    p.now_us = now;
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, job) == 0);
+    sl_n = 0;
+    TEST_CHECK(vjo_vocr_ocr_policy(&p, "missing", "FL10_w8.vocr", &src, &res, ws, job, capture,
+                                   vjo_vocr_capture_bytes(SL_W, SL_H), &pol, text, sizeof(text), &st) == VJO_OK);
+    free(ws);
+    TEST_CHECK_(st.lines == sl_n, "%u lines found, %u read", st.lines, sl_n);
+    return st.lines;
+}
+static void test_a_short_last_line_is_read(void)
+{
+    sl_load();
+    sl_frame(SL_H, 1);
+    unsigned without = sl_job(0);
+    TEST_CHECK_(without == 1, "the finder alone: %u lines", without); /* what the console showed */
+    TEST_CHECK(sl_job(1) == 2);
+    /* "た。": at the line above's left edge, two glyphs wide, a line's height below it */
+    TEST_CHECK_(sl_n == 2 && sl_got[1].x <= 14 && sl_got[1].x + sl_got[1].w >= 40 && sl_got[1].x + sl_got[1].w < 120 &&
+                sl_got[1].y >= sl_got[0].y + sl_got[0].h - 3 && sl_got[1].h >= 20 && sl_got[1].h <= 40,
+                "line 2 at %u,%u %ux%u", sl_got[1].x, sl_got[1].y, sl_got[1].w, sl_got[1].h);
+    /* nothing below the line but the page arrow, which is not a line; and without it */
+    sl_frame(54, 1);
+    TEST_CHECK(sl_job(1) == 1);
+    sl_frame(54, 0);
+    TEST_CHECK(sl_job(1) == 1);
+}
+
 TEST_LIST = {
     {"the_capture_block_stays_within_64_KiB_at_every_size", test_capture_block_sizes},
     {"a_zero_policy_reads_exactly_as_api19", test_zero_policy_is_api19},
@@ -1684,6 +1762,7 @@ TEST_LIST = {
     {"the_cascade_ceiling_counts_the_time_spent_the_reread_and_the_rest", test_the_cascade_ceiling_counts_spent_reread_and_rest},
     {"the_lm_decodes_rereads_skips_empty_lines_and_keeps_greedy_on_failure", test_the_lm_paths},
     {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},
+    {"a_short_last_line_is_read", test_a_short_last_line_is_read},
     {"refinement_without_room_reads_the_boxes_as_found", test_refinement_without_room_reads_the_boxes_as_found},
     {"the_refinement_arena_comes_before_the_lm_extras", test_the_refinement_arena_comes_before_the_lm_extras},
     {"refined_lines_are_read_and_decoded_in_place", test_refined_lines_are_read_and_decoded_in_place},

@@ -1486,6 +1486,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         policy.cascade_conf = VJO_GAME_CASCADE_CONF;
     }
     policy.refine = refine;
+    policy.short_lines = 1; /* #194: a box's short last line */
     /* The cache's entries are those of jobs with this LM (bits 0-2), cascade (bit 3),
      * cascade ceiling (ms, bits 4-15: at most 3,750), cascade model (since API 21 the
      * next tier up of the job's, so a Small job's is Normal's model and a Normal one's Large's: its

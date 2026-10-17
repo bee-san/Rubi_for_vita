@@ -806,6 +806,106 @@ static int run_error(int rc)
     }
 }
 
+/* #194: a dialogue box's last line can be too short for any finder mode to keep (CLANNAD's
+ * "…気づい" / "た。": two glyphs beside a full-width line, on the console). Below the lowest
+ * line found, one line's pitch down, ink that starts at that line's left edge (a dialogue
+ * line's continuation; the box's page arrow at the right never does) and is a glyph's
+ * height is read as a line too, as often as lines fit. Ink is GRAD's own test: a pixel
+ * whose 3x3 max - min is at least 2/5 of the 99th percentile of the line above's (40 at
+ * least). It only adds lines: every box the finder made stays as it is. 0, or -1 when a
+ * read failed (s->err). */
+#define PROBE_PAD 3u /* the finder's padding (vocr_lines.c PAD) */
+static unsigned probe_contrast(const unsigned char *r, size_t stride, unsigned x)
+{
+    unsigned lo = 255, hi = 0;
+    for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++) {
+            unsigned v = r[(ptrdiff_t)dy * (ptrdiff_t)stride + (ptrdiff_t)x + dx];
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+        }
+    return hi - lo;
+}
+
+static __attribute__((noinline)) int probe_short_lines(Stream *s, VocrLineSet *set)
+{
+    uint16_t hist[256];
+    uint8_t cols[VJO_OCR_MAX_WIDTH];
+    uint16_t rowc[64];
+    while (set->count && set->count < VOCR_LINES_MAX) {
+        const VocrLine *prev = &set->lines[0];
+        for (unsigned i = 1; i < set->count; i++)
+            if (set->lines[i].y + set->lines[i].h > prev->y + prev->h) prev = &set->lines[i];
+        unsigned lh = prev->h, ys = prev->y + prev->h, ye, threshold, total = 0, seen = 0;
+        if (lh < 4u * PROBE_PAD || ys + lh * 45u / 100u >= s->h || s->w < 3) break;
+        ye = ys + lh + lh / 2u;
+        if (ye > s->h - 1u) ye = s->h - 1u;
+        /* the threshold, from the line above's own text */
+        if (stream_fetch(s, prev->y) < 0) return -1;
+        memset(hist, 0, sizeof(hist));
+        for (unsigned y = prev->y + 1u; y + 1u < prev->y + prev->h && y + 1u < s->y0 + s->rows; y++) {
+            if (y < s->y0 + 1u) continue;
+            const unsigned char *r = s->strip + (size_t)(y - s->y0) * s->w;
+            for (unsigned x = prev->x + 1u; x + 1u < prev->x + prev->w && x + 1u < s->w; x++)
+{
+                unsigned c = probe_contrast(r, s->w, x);
+                if (hist[c] < 0xFFFFu) { hist[c]++; total++; }
+            }
+        }
+        if (!total) break;
+        threshold = 255;
+        for (unsigned v = 0; v < 256; v++) {
+            seen += hist[v];
+            if (seen * 100u >= total * 99u) { threshold = v; break; }
+        }
+        threshold = threshold * 2u / 5u;
+        if (threshold < 40u) threshold = 40u;
+        /* the ink below it: rows from ys (with one above for the 3x3), as many as a strip holds */
+        if (stream_fetch(s, ys - 1u) < 0) return -1;
+        if (ye > s->y0 + s->rows - 1u) ye = s->y0 + s->rows - 1u;
+        if (ye <= ys || ys < s->y0 + 1u || ye - ys > sizeof(rowc) / sizeof(rowc[0])) break;
+        unsigned xa = prev->x > lh ? prev->x - lh : 1u, top = 0, bot = 0, inked = 0, x1 = 0, x2 = 0;
+        if (xa < 1u) xa = 1u;
+        memset(cols, 0, sizeof(cols));
+        for (unsigned y = ys; y < ye; y++) {
+            const unsigned char *r = s->strip + (size_t)(y - s->y0) * s->w;
+            unsigned n = 0;
+            for (unsigned x = xa; x + 1u < s->w; x++)
+                if (probe_contrast(r, s->w, x) >= threshold) {
+                    n++;
+                    if (cols[x] < 255u) cols[x]++;
+                }
+            rowc[y - ys] = (uint16_t)(n > 0xFFFFu ? 0xFFFFu : n);
+            if (n >= 2u) {
+                if (!inked) top = y;
+                bot = y;
+                inked = 1;
+            }
+        }
+        if (!inked) break;
+        unsigned gh = bot - top + 1u, glyph = lh - 2u * PROBE_PAD;
+        if (gh * 100u < glyph * 45u || gh * 10u > lh * 13u) break; /* not a line's height */
+        for (x1 = xa; x1 + 1u < s->w && cols[x1] < 2u; x1++) {}
+        if (x1 + 1u >= s->w || x1 > prev->x + lh * 3u / 2u) break; /* not where the line above starts */
+        x2 = x1;
+        for (unsigned x = x1, gap = 0; x + 1u < s->w; x++) {
+            if (cols[x] >= 2u) { x2 = x; gap = 0; }
+            else if (++gap > lh) break; /* past a glyph's width of nothing: the line ends */
+        }
+        if ((x2 - x1 + 1u) * 2u < glyph) break; /* not a glyph's width */
+        VocrLine *ln = &set->lines[set->count];
+        ln->x = x1 > PROBE_PAD ? x1 - PROBE_PAD : 0;
+        ln->y = top > ys + PROBE_PAD ? top - PROBE_PAD : ys;
+        ln->w = x2 + 1u + PROBE_PAD - ln->x;
+        if (ln->x + ln->w > s->w) ln->w = s->w - ln->x;
+        ln->h = bot + 1u + PROBE_PAD - ln->y;
+        if (ln->y + ln->h > s->h) ln->h = s->h - ln->y;
+        ln->dark = prev->dark;
+        set->count++;
+    }
+    return 0;
+}
+
 /* Line ln's grey pixels and their stride: from the strip (stride s->w), read
  * again from its top row if the strip does not hold the whole line; a line
  * taller than a strip goes through the strip a strip at a time (each row checked
@@ -1577,6 +1677,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
      * that changed while it was read is seen (the strips of a taller region are
      * all read twice by the finder's two passes already). */
     if (s->strip_rows >= im->height && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
+    if (pol->short_lines && !set.truncated && probe_short_lines(s, &set) < 0) return stream_error(s, VJO_E_SOURCE);
     st->find_us = clock_us(p) - t0;
     st->lines = set.count;
     st->truncated = set.truncated;
