@@ -56,9 +56,18 @@ edit("vita/CMakeLists.txt",
 
 h = "tools/vita3k_settings_smoke.c"
 s = (root / h).read_text(encoding="utf-8")
-a, b = s.find("static const Step script[] = {"), s.find("};\n", s.find("static const Step script[] = {"))
-if a < 0 or b < 0 or s.count("static const Step script[] = {") != 1:
-    sys.exit(f"app_capture_patch.py: {h}: no single script[]")
+# the ordinary smoke's script: the only one, or (since #181) the #else branch beside the system-application start's
+anchor = "static const Step script[] = {"
+n = s.count(anchor)
+if n == 2 and "#if VJO_SMOKE_SYSAPP" in s[:s.find(anchor)] and "#else\n" + anchor in s:
+    a = s.find("#else\n" + anchor) + len("#else\n")
+elif n == 1:
+    a = s.find(anchor)
+else:
+    sys.exit(f"app_capture_patch.py: {h}: {n} script[] arrays, not the ones this patch knows")
+b = s.find("};\n", a)
+if b < 0:
+    sys.exit(f"app_capture_patch.py: {h}: the script[] has no end")
 scripts = r'''#define WAIT 0xFFFFu  /* frames: hold no button until the Install page's run has ended */
 /* promo capture: the card before the install (the app opens on its Install page) */
 static const Step script_install[] = {
