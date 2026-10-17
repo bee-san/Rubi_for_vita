@@ -463,17 +463,18 @@ y = 112 (146 with the engine row), and the cards below move up with it
 (`settings/main.c` `OCR_Y`, `OCR_H`, `SELECTION_Y`). The row has its title, with
 "estimated" below it, and three 220-pixel buttons, 54 pixels tall and 13 apart
 (from x = 232), Small, Normal and Large, each with a second line, its estimated
-time for a 3-line textbox and the game memory a job of it takes (`0.7 s, 0.9 MB`,
-`1.3 s, 1.4 MB`, `1.7 s, 1.9 MB`, from `core/vocr_models.c`). The chosen size is
+time for a 3-line textbox and the game memory a job of it takes (`0.6 s, 1.0 MB`,
+`0.9 s, 1.4 MB`, `2.1 s, 2.8 MB`, from `core/vocr_models.c`). The chosen size is
 filled in the accent colour. The card's last line names the chosen size and its
-model (`Normal: default, balanced. VOCR3-H15 found.`), or that file missing.
+model (`Normal: default, balanced. VOCR5-N found.`), or that file missing.
 Up/Down select the size row and the three cards (four rows); on the size row
 Left/Right choose the next smaller or larger size and Enter goes round them; a
 touch on a size chooses it, the row's title, the gaps and the status line only
 focus it. The focus bar at the card's left edge is beside the selected row only.
 The status line names the chosen size's model from its pinned metadata (`settings/engine.c`:
-`Large: most accurate. VOCR4-W20 found.`, or `VOCR4-W20 missing. Reinstall the package.`), so the
-generation shown follows the size: VOCR3 for Small and Normal, VOCR4 for Large. When a game's free memory
+`Large: most accurate. VOCR5-L found.`, or `VOCR5-L missing. Reinstall the package.`), so the
+generation shown follows the size: VOCR5 for each of this package's (a size that keeps an earlier
+generation's model shows that one's). When a game's free memory
 has no room for the chosen size a job runs a smaller one; nothing in the app says
 so (owner 2026-10-15 04:54Z), only `log.txt`. `host/tests/test_settings_app.c`
 drives it: every size's edges and gaps by touch, Down/Left/Right/Enter/Up, the

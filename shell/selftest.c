@@ -10,7 +10,7 @@
  * v2 (API 19): once a job of the game has read text in the user's region, a
  * background job of its own (shell/worker.c selftest_job_due) runs every stage
  * in turn on that screen, with the overlay closed: the user's region with the
- * fallback model forced (FL10 read from the card), the user's region with the
+ * fallback model forced (the smallest size's read from the card), the user's region with the
  * configured model, the full screen through the strips (weights kept), the
  * capture probe (each capture path and memory type, one strip each), and the
  * user's region again (the warm time). It shows nothing: the user's text and
@@ -236,8 +236,8 @@ static const struct {
      * (STAGE_SERIAL) reads textbox's screen again serially, with the weights
      * resident, so the pair compares the configured helpers (ocr_threads) with
      * one thread (vjo_selftest_stage_speed). */
-    {"fallback", VJO_GAME_OCR_F_FORCE_FALLBACK}, /* the user's region with the fallback model (FL10 read) */
-    {"textbox", 0},                           /* the user's region; the configured model's weights read (H15) */
+    {"fallback", VJO_GAME_OCR_F_FORCE_FALLBACK}, /* the user's region with the fallback model (the smallest size's read) */
+    {"textbox", 0},                           /* the user's region; the configured size's weights read */
     {"fullscreen", VJO_GAME_OCR_F_FULL},      /* the whole frame, through the strips; the weights kept */
     {"probe", VJO_GAME_OCR_F_PROBE},          /* each capture path and memory type, one strip each */
     {"textbox2", 0},                          /* the user's region again, serially: the warm time; the job's text */

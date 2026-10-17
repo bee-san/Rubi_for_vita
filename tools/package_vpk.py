@@ -9,8 +9,8 @@ The VPK is the zip's JPOverlaySettings.vpk (the Overlay app, entry for entry, it
 payload/: the files the app installs (include/vjo_payload.h, the same bytes as the zip's ur0/ and ux0/)
 and payload/manifest.txt (core/payload.h's format), then licenses/: the zip's licence and attribution
 files at their zip paths (LICENSE, third_party/, docs/plaintext-attribution.txt, docs/JMdict-LICENSE.html),
-which stay in the app's folder (ux0:app/VJOSET001/licenses/; the models' LM-ATTRIBUTION.md is a payload
-file, installed beside them). The manifest's app_version, variant, api and build
+which stay in the app's folder (ux0:app/VJOSET001/licenses/; the LMs' LM-ATTRIBUTION.md and the model
+sizes' MODEL-ATTRIBUTION.md are payload files, installed beside them). The manifest's app_version, variant, api and build
 come from the app itself (its eboot.bin's start line, check_variant.py; its stamp, core/app_stamp.h),
 and its worker mode from the eboot's vjoworker= mark (settings/install_page.c VJO_WORKER_MARK), never
 from the checkout that packages it; the app accepts the payload only when they are its own.
@@ -76,6 +76,12 @@ def payload_files():
             dest += part[1:-1] if part.startswith('"') else strings.get(part, names.get(part, "?" + part))
         if "?" in dest:
             raise ValueError("include/vjo_payload.h: cannot read " + args)
+        # The app refuses a manifest that names a file twice (core/payload.c): so does the packaging, rather
+        # than ship a VPK the app cannot install. Two model sizes with one model (a size that kept the model
+        # of the size below it) name that file twice here: the payload list has to name it once first.
+        if any(dest == d for d, _ in out):
+            raise ValueError(f"include/vjo_payload.h names {dest} twice (two model sizes with one model?): "
+                             "the Overlay app refuses such a payload")
         out.append((dest, kind.lower()))
     return out
 

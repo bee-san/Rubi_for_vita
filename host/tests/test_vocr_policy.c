@@ -966,22 +966,24 @@ static unsigned newlines(const char *s)
 
 /* The cascade's time ceiling, on the fake clock (frozen: only the wrapped runs
  * move it). Three equal lines, each read in 100 ms by the job's model (FL10) and
- * in 250 ms by VOCR4-W20 (the shapes' cost ratio, 235/94 = 2.5); every line is
- * doubtful. Before re-reading a line the job counts the time spent, the re-read
- * (this line's time x the ratio) and the lines still to read (the time per length
- * so far): at line 0, 100 + 250 + 200 = 550 ms. A ceiling of 550 ms re-reads line
- * 0 and no other (line 1: 450 + 250 + 100 = 800 ms); 549.999 ms, none. A re-read
- * that takes 500 ms raises the ratio to 5, so under 1,100 ms line 1 is left
- * (700 + 500 + 100 ms), which the shapes' ratio (1,050 ms) would re-read. The
- * job's own times leave the re-reads out (recognize_us and each line's us: its
- * frames are the job's model's); they are counted apart, with W20's frames. */
+ * in 250 ms by VOCR4-W20; every line is doubtful. Before re-reading a line the job
+ * counts the time spent, the re-read (this line's time x the ratio, before any
+ * re-read the models' weights': 1,558,016 / 657,664 B, 606/256, so 236.718 ms) and
+ * the lines still to read (the time per length so far): at line 0, 100 + 236.718 +
+ * 200 = 536.718 ms. A ceiling of 536.718 ms re-reads line 0 and no other (line 1,
+ * the ratio raised to the re-read's measured 2.5: 450 + 250 + 100 = 800 ms);
+ * 536.717 ms, none. A re-read that takes 500 ms raises the ratio to 5, so under
+ * 1,100 ms line 1 is left (700 + 500 + 100 ms), which the weights' ratio (1,036.7 ms)
+ * would re-read. The job's own times leave the re-reads out (recognize_us and each
+ * line's us: its frames are the job's model's); they are counted apart, with W20's
+ * frames. */
 static void test_the_cascade_ceiling_counts_spent_reread_and_rest(void)
 {
     static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME};
     static const struct {
         uint32_t ceiling, cascade_run_us;
         unsigned lines, skipped;
-    } cases[] = {{549999u, 250000u, 0, 3}, {550000u, 250000u, 1, 2}, {1100000u, 500000u, 1, 2}};
+    } cases[] = {{536717u, 250000u, 0, 3}, {536718u, 250000u, 1, 2}, {1100000u, 500000u, 1, 2}};
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
     VjoPlatform p;

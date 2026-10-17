@@ -120,7 +120,7 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | kernel_capture | 6 | the job's crop of the region (a box, a small frame, the whole frame, the 32 px minimum); the OCR grey rows in every pixel format; a shot's colour rows (API 23) in every format, into the worker's memory and a kernel strip; the first pass's region signature in every format, strip height and 400 random regions (the A1B5G5R5 one-pass rows never skip a sampled row); every box the region selector can save is cropped as drawn. API 24 removed the full-frame capture's tests with it |
 | kernel_input | 14 | the trigger state machine |
 | kernel_lifecycle | 5 | the process event hook (`kernel/lifecycle.c`, #104): a foreground change releases the game's input block in the hook's own call, an `__atomic_exchange_n` (LDREX/STREX) |
-| kernel_game_ocr | 50 (49 normal) | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine; the job hand-off's bounded waits (take and read wake on submit and complete); a request by model sizes opens only its sizes' models by size (API 21); the frame-pacing step's 32-bit sums (API 22) |
+| kernel_game_ocr | 51 (50 normal) | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine; the job hand-off's bounded waits (take and read wake on submit and complete); a request by model sizes opens only its sizes' models by size (API 21); the frame-pacing step's 32-bit sums (API 22) |
 | kernel_loader | 12 | the worker loader's question to the kernel worker (`kernel/loader.c`, #138): its 32-bit seqlock and tagged answer, and the Shell's `games.ini` rules on the Vita's word size |
 | kernel_meminfo | 6 | the three kernel memory routes with the firmware's objects at 32-bit kernel-range, upper-kernel and user-range addresses (the user-half ones unreadable, at 0x5... and 0x8...), and the guard at each of its edges |
 | touch_hold | 6 | the overlay page's hold on SceShell's front touch region (`shell/touch_hold.h`, #104) against a model of the region |
@@ -136,8 +136,8 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 248 cases of the
-debug build pass (240 of the normal build, which has no `kernel_meminfo` and fewer log cases;
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 249 cases of the
+debug build pass (241 of the normal build, which has no `kernel_meminfo` and fewer log cases;
 API 24 took `kernel_capture` from 11 cases to 6, #161 added 4 to `apkg`) [measured: the preflights' ARM logs, both builds],
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-14-arm-linux-gnueabihf`, `qemu-user-static`; the
@@ -226,9 +226,10 @@ functions Vita3K does not implement likely will not work." The page's own note o
 So Vita3K can run none of the three plugins as they are, and it would say nothing about boot
 or memory if it could: no `ScePhyMemPartShell`, no `ScePhyMemPartKD`, no `0x80024302`
 [expert; AGENTS.md rule 5]. It is not wired into CI. `tools/vita3k_smoke.sh` (#74 preflight)
-builds `tools/vita3k_smoke/` as a homebrew app: the real game worker's five self-test jobs and
-the two other pixel formats in a Vita user process, on a 32 KiB thread stack, with the release
-weights and an in-process stand-in for the kernel's syscalls. It passes when every job returns
+builds `tools/vita3k_smoke/` as a homebrew app: the real game worker's five self-test jobs, a
+full-screen job with each model size's own recognizer (the Large size's 2,473,984 B weights block
+the largest it holds) and the two other pixel formats in a Vita user process, on a 32 KiB thread
+stack, with the release weights and an in-process stand-in for the kernel's syscalls. It passes when every job returns
 and the app and the emulator exit 0: it catches crashes in that code, and is not evidence of
 anything on a console. vita-vn-ocr uses qemu-arm, not Vita3K,
 for the recognizer's ARM parity and cycle estimates, for the same reason.

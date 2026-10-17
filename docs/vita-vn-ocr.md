@@ -17,47 +17,56 @@ measured on a PC. On-console memory, speed and stability are what the
 The Overlay app's OCR page offers, under the local engine, its **Model size**:
 **Small** (fastest), **Normal** (the default, balanced) and **Large** (most
 accurate); `config.ini` keeps it as `vocr_tier = small | normal | large`. Each size
-is one pinned recognizer: this package's Small is VOCR3-FL10, its Normal VOCR3-H15
-and its Large VOCR4-W20 (the confidence cascade's model before sizes). A later
-generation's three blobs replace them through the pins, with no change to the app.
+is one pinned recognizer: this package's Small is VOCR5-S, its Normal VOCR5-N and
+its Large VOCR5-L, vita-vn-ocr's VOCR5 round (`eval/vocr5_protocol.json` there: one
+shape per size, selected on its fixed development sample, published as the v0.3.0
+release). A later generation's blobs replace them through the pins, with no change
+to the app; a size whose new candidate does not beat its model keeps that model,
+which is a pin edit too (`include/vjo_vocr_sizes.h` VJO_VOCR_TIERn and
+`tools/model_tiers.json`, the model pinned where every model is), unless it gives
+two sizes one model: then the one-VPK payload list must also name that file once,
+with `VJO_PAYLOAD_KERNEL_INDEX` one less (**Two sizes, one model**, below).
 `tools/model_tiers.json` is the one table of the sizes (their ceilings, reserves,
 models and estimates); the self-test analyser reads it, and
 `tools/tests/test_model_tiers.py` checks every C copy against it
 (`include/vjo_vocr_sizes.h`, `include/vjo_ledger_budget.h`, `core/config.c`,
 `core/vocr_models.c`).
 
-| size | model | int8 weights | est. time per 3-line textbox | game memory a job takes | its reserve | needs free |
-|---|---|---:|---:|---:|---:|---:|
-| Small | VOCR3-FL10 | 657,664 B | 0.74 s | 856,064 B | 4 MiB | 5,050,368 B |
-| Normal (default) | VOCR3-H15 | 1,155,968 B | 1.25 s | 1,413,120 B | 8 MiB | 9,801,728 B |
-| Large | VOCR4-W20 | 1,558,016 B | 1.72 s | 1,871,872 B | 16 MiB | 18,649,088 B |
+| size | model | shape | int8 weights | W8I arena | est. time per 3-line textbox | game memory a job takes | its reserve | needs free |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| Small | VOCR5-S | FL10's topology, 4,987 classes | 819,792 B | 124,832 B | 0.63 s | 1,019,904 B | 4 MiB | 5,214,208 B |
+| Normal (default) | VOCR5-N | H15's topology, 5,631 classes | 1,185,632 B | 182,944 B | 0.92 s | 1,441,792 B | 8 MiB | 9,830,400 B |
+| Large | VOCR5-L | late-wide (channels 64/128/256/480/576), 5,631 classes | 2,473,696 B | 261,024 B | 2.08 s | 2,805,760 B | 16 MiB | 19,582,976 B |
 
-The times are estimates: vita-vn-ocr `docs/ctc-lm-decode.md`'s `vita/a9_cycles.py`
-figures for a greedy box of 3 lines of about 640 px (main 57b6622, high bound),
-calibrated so that VOCR3-H15 costs its measured 5.0-5.2 ms per CTC frame (the
-v0.8.0-test.1 console logs: 1,027 frames over 11 jobs). v0.8.0-test.2's logs (API 20;
-the installed files' SHA-256 are the pins) have VOCR3-FL10 recognizing at 3.0-3.7 ms per
-frame (the self-test's fallback stage: five jobs of one line, 37-77 frames each) and
-VOCR4-W20 re-reading lines as the confidence cascade at 7.4-7.8 ms per frame (five
-lines), near the estimates' 2.8-3.1 and 7.1-7.2 ms (all three read 32-px lines at
-stride 8, so a 640-px line is 80 frames); VOCR3-H15 there ran at 5.21 ms per frame
-pooled over 47 speed lines (3,134 frames; median 5.17 ms). VOCR4-W20 has not run as
-the chosen size on a console; v0.2.0's FL10
-(Small's shape) recognized lines in older builds, without frame counts. "Game memory a
-job takes" is a job's page-rounded weights, workspace and capture block at the full
-screen (the game worker's memory check), without the character LM, the cascade's
-model or the PSP refinement, which a job leaves out first when memory is short, and
-without the helper threads of `ocr_threads` (API 22), which a job takes only when the
-game also has room for them beside the same reserve, and never runs a smaller size for.
-Both columns describe one recognizer thread on the code of v0.8.0-test.1: with
-vita-vn-ocr #85's kernels (the pin since API 22) the same box is estimated at 0.56-0.59
-times those times on one core at the same clock (greedy: FL10 0.56, H15 0.57, W20 0.59; 0.64-0.70 without
-credit for #85's weight prefetch), less again at 444 MHz (`ocr_boost_clock`) and
-with free cores ([OCR speed](ocr-speed.md)), so the buttons' times are upper estimates
-until test.3's logs recalibrate them. The app's buttons show the time and that memory
-(`1.3 s, 1.4 MB`). Each size is within
-the owner's ceilings of 2026-10-14 (weights Small < 1 MB, Normal <= 1.6 MB, Large
-<= 2.5 MB; box time Small < 1 s, Normal < 2 s, Large < 3 s).
+The sizes and arenas are exact (vita-vn-ocr `train/export.py`; `host/tests/test_vocr.c`
+checks the arenas against the files). The times are estimates from
+`eval/vocr5_protocol.json`'s "estimates" table: `vita/a9_layers.py` on the exact shapes
+with vita-vn-ocr #85's runtime (the pin since API 22) and no credit for its weight
+prefetch, one core at 333 MHz, 240 CTC frames (3 lines of about 640 px) and 0.1 s for the
+line finder, every phase's high bound calibrated so that VOCR3-H15 costs its measured
+4,941.7 us per frame on v0.8.0-test.1's console. At 444 MHz (`ocr_boost_clock`, the
+default since API 22) the same estimates are 0.50, 0.72 and 1.63 s; with credit for the
+prefetch 0.57, 0.81 and 1.47 s at 333 MHz; parallel lines (`ocr_threads`) take less again
+([OCR speed](ocr-speed.md)). No console has run a VOCR5 model yet: the buttons' times are
+estimates until a test build's logs measure them. Each size is within the owner's
+weights ceilings of 2026-10-14 (Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB) and its
+box time (Small < 1 s, Normal < 2 s, Large < 3 s), and Normal near the 1 s box at 333 MHz
+the owner set for the default (2026-10-15). "Game memory a job takes" is a job's
+page-rounded weights, workspace and capture block at the full screen (the game worker's
+memory check), without the character LM, the cascade's model or the PSP refinement, which
+a job leaves out first when memory is short, and without the helper threads of
+`ocr_threads` (API 22), which a job takes only when the game also has room for them beside
+the same reserve, and never runs a smaller size for. The app's buttons show the time and
+that memory (`0.9 s, 1.4 MB`).
+
+**The class counts.** VOCR5's models have 4,987 (Small) and 5,631 (Normal, Large) classes,
+VOCR3's 3,501 and 5,355. Nothing in the overlay is sized by a class count: the top-K keeps
+16-bit class numbers (`VJO_VOCR_LM_TOPK` of them a frame), a line's greedy text is sized at
+4 bytes a frame (every class is one code point of at most 3 UTF-8 bytes in every pinned
+model), and the LM decoder maps each model's classes to its tokens by code point when it
+is planned; its workspace grows with the classes (41,632 B for 5,631 against 40,816 B for
+5,355 on the host) and stays within `VJO_VOCR_LM_WS_BYTES` (49,152 B), which
+`host/tests/test_vocr.c` checks for every pinned model and LM it finds.
 
 **The ladder.** The Shell asks for the chosen size and every smaller one
 (`VjoGameOcrRequest.tiers`); the game worker tries them largest first and runs the
@@ -73,7 +82,7 @@ passed, what it needed). Nothing on screen says that a smaller size ran (owner
 2026-10-15 04:54Z): the Shell writes it to `log.txt`, e.g.
 
 ```
-tier large did not fit in PCSG00415 (need 18649088, free 12000000); using normal
+tier large did not fit in PCSG00415 (need 19582976, free 12000000); using normal
 ```
 
 with need = the size's workspace, weights and reserve, and free = the game's free
@@ -82,17 +91,34 @@ per size and game (`model sizes that did not fit (log only, never shown)`). Only
 when no size fits does a job fail with the usual out-of-memory message.
 
 **The cascade** (#89) reads the lines a job doubts again with the next size up,
-when its model fits too: Small's is VOCR3-H15, Normal's VOCR4-W20, Large has none.
+when its model fits too: Small's is VOCR5-N, Normal's VOCR5-L, Large has none.
 The kernel broker opens a size's model only by its size
 (`VJO_GAME_OCR_OPEN_TIER`): one of the request's sizes, or with a cascade ceiling
 the size above its largest; never a name or a path.
 
+**Two sizes, one model.** vita-vn-ocr's VOCR5 protocol lets a size keep an earlier
+model (`eval/vocr5_protocol.json`, amendment 3: Normal is the better of VOCR5-N and
+VOCR4-W20, and Large keeps VOCR4-W20 unless VOCR5-L beats it), so Normal and Large
+can be one file. The worker then gives Normal no cascade (`cascade_of` takes only a
+larger next size up: the same model would read a doubtful line the same again),
+so a Normal job keeps Normal's 8 MiB reserve; Small's cascade is that model,
+opened as Normal's. A job opens the file as its own size, the one its request
+allows (a Large-only request as Large's), and the weights stay resident when the
+other size runs them. A bad file leaves out both of its sizes at once. The release
+zip ships the file once; its manifest entry names both sizes (`"tier": "normal"`,
+`"tiers": ["normal", "large"]`). The one-VPK install's payload list
+(`include/vjo_payload.h`) still names one file per size, and the Overlay app refuses a
+payload that names a file twice, so `tools/package_vpk.py` refuses such a list: a pin
+edit that gives two sizes one model has to name that file once there first. Host tests run this with Normal and Large both
+VOCR4-W20 (`game_vocr_shared_tiers`, `shell_worker_shared_tiers`,
+`host/tests/test_shared_tiers.h`).
+
 **A missing or damaged file** of a size (`VJO_E_OCR_MODEL` from the worker) leaves
 that size out for the rest of the game's session, and the job is repeated with the
 next smaller one; a timeout or unavailable storage repeats it for that job only.
-Only `log.txt` says so (`game vocr: VOCR3_H15_w8.vocr is unusable here
-(io=0x80010002), using VOCR3_FL10_w8.vocr for this game`). The Overlay app's
-status line names the chosen size's file missing (`VOCR3-H15 missing. Reinstall
+Only `log.txt` says so (`game vocr: VOCR5_N_w8.vocr is unusable here
+(io=0x80010002), using VOCR5_S_w8.vocr for this game`). The Overlay app's
+status line names the chosen size's file missing (`VOCR5-N missing. Reinstall
 the package.`), a broken install rather than a memory fallback.
 
 **Older settings.** `vocr_model` (API 20 and before) sets the size by its file's
@@ -100,18 +126,22 @@ shape, the FL10 family (`FL10_w8.vocr`, `VOCR3_FL10_w8.vocr`, the VOCR2 trial's)
 Small, H15 Normal, F20 and W20 Large, unless a `vocr_tier` line says otherwise;
 `vocr_fallback_model` is no longer read. The app's next save writes `vocr_tier`
 and drops both lines; `tools/migrate_config.py` (the installer) does the same.
-`install-vita.sh` sets no size, so an update keeps the user's choice. v0.2.0's
-`H15_w8.vocr`, `FL10_w8.vocr` and `F20_w8.vocr` stay pinned for the host tools
-but are no longer shipped.
+`install-vita.sh` sets no size, so an update keeps the user's choice, and its
+size's file is now VOCR5's (VOCR5 has no file names of the older shapes, so a
+`vocr_model` never names one). VOCR3's `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr`,
+VOCR4's `VOCR4_W20_w8.vocr` and v0.2.0's `H15_w8.vocr`, `FL10_w8.vocr` and
+`F20_w8.vocr` stay pinned for the host tools (a request by name) but are no longer
+shipped; an update leaves the files of an earlier package on the card, unused, and
+they can be deleted.
 
 ## The engine's name: the model generation
 
 The Overlay app has no engine button since Google Lens's removal: the OCR card's
 last line names the chosen size and its model, and the model's name carries its
-generation (`Normal: default, balanced. VOCR3-H15 found.`): **VOCR3** for this
-package's Small and Normal, **VOCR4** for its Large. When the chosen size's file
-is not there at its release size the line says so (`VOCR4-W20 missing. Reinstall
-the package.`) and names no other model, though a job then runs the largest
+generation (`Normal: default, balanced. VOCR5-N found.`): **VOCR5** for each of
+this package's sizes (VOCR3 for Small and Normal and VOCR4 for Large before it). When
+the chosen size's file is not there at its release size the line says so (`VOCR5-L
+missing. Reinstall the package.`) and names no other model, though a job then runs the largest
 smaller size whose file is there (a job leaves a missing size out; with no file at
 or below the chosen size nothing runs). "Found" means the file is there at its
 release size: the app reads no weights, so a damaged file of the right size shows
@@ -127,7 +157,8 @@ A `.vocr` blob has no generation in it: its 64-byte header holds the layout, a
 CRC and the first 16 bytes of the checkpoint's SHA-256 (vita-vn-ocr
 `train/export.py`). The generation therefore comes with the pin, from the
 vita-vn-ocr release that published the file (VOCR1: v0.2.0; VOCR3:
-v0.2.5-vocr3.1), and is kept in three places that the tests compare:
+v0.2.5-vocr3.1; VOCR4: v0.2.5-vocr4.1; VOCR5: v0.3.0), and is kept in three places
+that the tests compare:
 
 - `core/vocr_models.c`, per file: generation, shape and size. The Overlay app
   reads it; the game worker's pins (`core/vocr_ocr.c`: SHA-256, arena) and the
@@ -141,8 +172,12 @@ pinned (`core/vocr_ocr.c`: SHA-256 and arena; `kernel/game_ocr.c`: size;
 `core/vocr_models.c`: generation, shape and estimates; `tools/prepare_ocr.py`: the
 release assets and `VOCR_GENERATION`; the tests fail while one of them is
 missing), make them the sizes (`include/vjo_vocr_sizes.h` VJO_VOCR_TIERn_NAME and
-`tools/model_tiers.json` "model"), and the app shows its name, for example
-**VOCR5** (`host/tests/test_settings_app.c` builds the app against such a table).
+`tools/model_tiers.json` "model"), and the app shows its name, as it shows VOCR5's
+(`host/tests/test_settings_app.c` also builds the app against a made-up VOCR6 table
+whose Large keeps VOCR5's model). The weights blocks hold the Large size's model
+(`VJO_VOCR_MAX_BYTES`, the ledger's weights and cascade budgets page-rounded): a
+larger Large raises those, which the memory ledger's check and `host/tests/test_ledger.c`
+hold to the owner's 2.5 MB ceiling (`VJO_LIMIT_GAME_WEIGHTS`).
 
 The VOCR2 trial (`ocr_backend = vocr2`, a separately trained FL10-sized
 `VOCR2_FL10_w8.vocr` with the native textbox finder, opt-in in 0.7.12 to
@@ -249,11 +284,12 @@ reads in at most 32 KiB calls and check cancellation between calls. Each call
 waits up to 50 ms in the kernel for the worker thread's result; only a slower
 read returns BUSY, which the game repeats after a 1 ms yield. The kernel
 allows only these names under the exact directory above:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
-the recognizers `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3, release
-v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release
-v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the character
-LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
-`vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->,
+the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
+(VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
+release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
+release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
+character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
+`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->,
 each with its pinned file length; it does not accept a caller-supplied file
 path. Each async Open,
 Read or Close is tied to the claimed job's PID and sequence. Reads also require
@@ -583,25 +619,35 @@ same pixels by a larger recognizer, VOCR4-W20 (vita-vn-ocr #78,
 1,558,016 B, 241,056 B arena), and decoded with the same LM. Its reading is the one shown. On the
 lines measured that is better than keeping whichever reading is more confident (0.717 % against
 0.753 % with the 4 MB LM). VOCR4-W20 does not qualify as a default under vita-vn-ocr's gates; it only reads again
-the lines the default doubts. Since API 21 it is the Large model size, and the cascade reads
-with the next size up of the job's: VOCR4-W20 for Normal, VOCR3-H15 for Small, none for Large
-([model sizes](#model-sizes-small-normal-large-api-21)).
+the lines the default doubts. Since API 21 the cascade reads with the next size up of the
+job's: with VOCR5 VOCR5-L for Normal, VOCR5-N for Small, none for Large (VOCR4-W20 for
+Normal and VOCR3-H15 for Small before it); a request by name, the host tools', still reads
+with VOCR4-W20 ([model sizes](#model-sizes-small-normal-large-api-21)). The measurements
+below are VOCR3's and VOCR4-W20's.
 
 - **Time ceiling.** A doubtful line is read again only while the job's recognition (every line's
   run and decode, the re-reads, and an estimate for the lines still to read; not the weights'
   loads) stays within `ocr_cascade_ms`. The estimate is the line's own time on this console times
-  W20's cost over the job's model (vita-vn-ocr's A9 figures: 235 / 166 ms per 640-px line, 1.42x),
-  then what the re-reads measured. Past the ceiling the line is counted and left. The ceiling is per
+  the cascade's model's weights over the job's model's, until a re-read measures more (the weights
+  follow vita-vn-ocr's A9 estimates within 6 % for FL10, H15 and W20, and within 16 % for VOCR5's
+  three: VOCR5-L over VOCR5-N is 2.09x, against an estimated 1.94-2.48x; VOCR4-W20 over VOCR3-H15
+  1.35x, against 235 / 166 ms per 640-px line, 1.42x). Before VOCR5 it was a size class's cost (94,
+  166 or 235 ms by FL10's, H15's or F20's bytes and up), which would count a 2.47 MB Large's re-read
+  at 1.42x Normal's line, 57-73 % of its estimate. Past the ceiling the line is counted and left. The ceiling is per
   capture attempt: a job read again after the screen changed starts it again. 2 s is the Normal
   tier's 3-line-box ceiling (vita-vn-ocr `docs/model-tiers.md`, an estimate at 444 MHz). In #81's
   CLANNAD log H15 took 5.0-5.2 ms per CTC frame, about 0.4 s for a full line, so a 3-line box
-  leaves room for about one re-read and a 1- or 2-line box for more (estimates).
-- **Memory.** W20's weights are a resident `USER_RW` block (`VjoGameVocrCascade`, 1,560,576 B),
+  leaves room for about one re-read and a 1- or 2-line box for more (estimates). With VOCR5 the
+  same holds: VOCR5-N's box is an estimated 0.92 s and VOCR5-L's re-read of a 640-px line 0.66 s
+  (80 frames at 8.24 ms, one core at 333 MHz, no prefetch credit; `eval/vocr5_protocol.json`).
+- **Memory.** The cascade's weights are a resident `USER_RW` block (`VjoGameVocrCascade`, at
+  most the Large size's 2,473,984 B; VOCR4-W20's was 1,560,576 B),
   read and SHA-256 checked at the first doubtful line, or (test.3 on) by the first job that finds no
   line when its memory check takes the cascade, before any line is doubted: from then on the block is
   held whether or not a line is ever doubted (299-307 ms through the broker in test.2, once a game
   process), and kept like the job's weights. The job's workspace grows by
-  W20's arena and decoder (296,192 B). The memory check takes, in order: the cascade with the
+  the cascade's arena and decoder (VOCR5-L's 316,160 B beside VOCR5-N, VOCR5-N's 238,080 B beside
+  VOCR5-S; W20's was 296,192 B). The memory check takes, in order: the cascade with the
   largest LM tier that fits, the LM alone, the cascade alone, neither. A resident block the job
   would give back counts as free. The block is given back when `ocr_cascade_ms = 0`, when the check
   leaves the cascade out, when memory is refused, and when the game has not been the active one for
@@ -755,42 +801,57 @@ strips read are the same with and without the refinement.
 
 ## Models
 
-**The default size, Normal, is VOCR3-H15 (`VOCR3_H15_w8.vocr`); Small is VOCR3-FL10
-(`VOCR3_FL10_w8.vocr`) and Large VOCR4-W20 (`VOCR4_W20_w8.vocr`).** The first two are
-vita-vn-ocr #67's recognizers, published as the
-[v0.2.5-vocr3.1 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.5-vocr3.1):
-H15's and FL10's shapes retrained, so the same sizes, arenas and line finder, and a job needs
-exactly the memory it needed with v0.2.0's H15 and FL10 (`host/tests/test_vocr.c` checks the
-sizes, arenas and job bytes are equal; the Vita build's memory ledger is unchanged).
+**The default size, Normal, is VOCR5-N (`VOCR5_N_w8.vocr`); Small is VOCR5-S
+(`VOCR5_S_w8.vocr`) and Large VOCR5-L (`VOCR5_L_w8.vocr`).** They are vita-vn-ocr's VOCR5
+recognizers (`eval/vocr5_protocol.json` and `docs/vocr5.md` there), one shape per size,
+published as the [v0.3.0 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.0).
+VOCR5-S keeps FL10's topology and arena with a 4,987-class head, VOCR5-N H15's with a
+5,631-class head, and VOCR5-L is a late-wide shape (channels 64, 128, 256, 480, 576) with
+5,631 classes. A first full-screen job of Small takes 163,840 B more than one of VOCR3-FL10
+(1,019,904 against 856,064 B: the larger head's weights), Normal 28,672 B more than VOCR3-H15
+(1,441,792 against 1,413,120 B) and Large 933,888 B more than VOCR4-W20 (2,805,760 against
+1,871,872 B), for which the memory ledger's weights and cascade budgets are raised
+(`include/vjo_ledger_budget.h`).
 
 | file | bytes | sha256 | W8I arena | release |
 |---|---|---|---|---|
-| `VOCR3_H15_w8.vocr` (Normal, the default) | 1,155,968 | `cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c` | 182,944 | v0.2.5-vocr3.1 |
-| `VOCR3_FL10_w8.vocr` (Small) | 657,664 | `87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154` | 124,832 | v0.2.5-vocr3.1 |
-| `VOCR4_W20_w8.vocr` (Large) | 1,558,016 | `2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e` | 241,056 | v0.2.5-vocr4.1 |
+| `VOCR5_N_w8.vocr` (Normal, the default) | 1,185,632 | `20be179def8033171435ba62388657b3d3c932b365093737948c636e025e3bdc` | 182,944 | v0.3.0 |
+| `VOCR5_S_w8.vocr` (Small) | 819,792 | `f175bfcb8cec65d69e85dd5f2cf707c9a711ada7203c0d1099cd2d0142978b8d` | 124,832 | v0.3.0 |
+| `VOCR5_L_w8.vocr` (Large) | 2,473,696 | `50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3` | 261,024 | v0.3.0 |
+| `VOCR3_H15_w8.vocr` | 1,155,968 | `cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c` | 182,944 | v0.2.5-vocr3.1 |
+| `VOCR3_FL10_w8.vocr` | 657,664 | `87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154` | 124,832 | v0.2.5-vocr3.1 |
+| `VOCR4_W20_w8.vocr` | 1,558,016 | `2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e` | 241,056 | v0.2.5-vocr4.1 |
 | `H15_w8.vocr` | 1,155,968 | `316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd` | 182,944 | v0.2.0 |
 | `FL10_w8.vocr` | 657,664 | `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84` | 124,832 | v0.2.0 |
 
-vita-vn-ocr's locked report (host, plain-C W8I runtime, `docs/vocr3.md` there) gives pooled
+VOCR5's scores are in vita-vn-ocr's `docs/vocr5.md` (its locked report). No console has run
+a VOCR5 model yet.
+
+**Their attribution and terms.** v0.3.0 ships an `ATTRIBUTION.md` (in its `SHA256SUMS`), which
+the package ships beside the weights as `ocr/MODEL-ATTRIBUTION.md` (`tools/prepare_ocr.py`
+pins it; the one-VPK install copies it with the models). It names what the recognizers were
+trained on. Pretraining used line crops of the Japanese subset of NVIDIA's
+OCR-Synthetic-Multilingual-v1 (CC BY 4.0, modified; not redistributed). The vocabularies are
+ordered by Jiten's frequency lists (CC BY-SA 4.0). The synthetic dialogue boxes include fonts and
+text pools that are free for non-commercial use only, so the file says to **use these weights for
+non-commercial purposes only**. VOCR3's and VOCR4's releases had no such file. Before VOCR5 the sizes were VOCR3-FL10, VOCR3-H15 and VOCR4-W20:
+vita-vn-ocr's VOCR3 report (host, plain-C W8I runtime, `docs/vocr3.md` there) gives pooled
 vita-test + psp-test fixed-line CER 1.73% for VOCR3-H15 against 2.21% for v0.2.0 H15, and 2.13%
-for VOCR3-FL10 against 3.82% for v0.2.0 FL10. None of the three VOCR3 models passed that
-repository's promotion gate (each regresses some titles on its whole-dialogue guard; on whole
-dialogue VOCR3-H15 is slightly behind v0.2.0 H15, +0.30 points, VN-cluster CI −0.49 to +1.06),
-and on the console VOCR3-H15 has run as the default (v0.8.0-test.1 and test.2), VOCR3-FL10 in
-test.2's self-test fallback stage and VOCR4-W20 there as the confidence cascade
-([model sizes](#model-sizes-small-normal-large-api-21)): they are the sizes of the test builds by the owner's
-choice (2026-10-14, Normal the default 2026-10-15). VOCR4-W20 (vita-vn-ocr #78, F20's shape) did
-not qualify as a default under that repository's gates either; it is the Large size and Normal's
-confidence cascade. The v0.2.0 models are no longer shipped or selectable (no size names them),
-but the game worker and the kernel's model broker still accept them by name, for the host tools:
+for VOCR3-FL10 against 3.82% for v0.2.0 FL10; none of the three VOCR3 models passed that
+repository's promotion gate, and VOCR4-W20 (vita-vn-ocr #78, F20's shape) did not qualify as a
+default either. On the console VOCR3-H15 has run as the default (v0.8.0-test.1 and test.2),
+VOCR3-FL10 in test.2's self-test fallback stage and VOCR4-W20 there as the confidence cascade.
+The earlier models are no longer shipped or selectable (no size names them), but the game
+worker and the kernel's model broker still accept them by name, for the host tools:
 they accept exactly these files, each at its pinned size and SHA-256:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
-the recognizers `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3, release
-v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release
-v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the character
-LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
-`vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
-`core/vocr_models.c` gives each recognizer its generation (VOCR3, VOCR4, or VOCR1 for v0.2.0's),
-the name of the local engine in the Overlay app.
+the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
+(VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
+release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
+release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
+character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
+`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
+`core/vocr_models.c` gives each recognizer its generation (VOCR5, VOCR3, VOCR4, or VOCR1 for
+v0.2.0's), the name of the local engine in the Overlay app.
 
 The v0.2.0 weights are the int8 assets of the vita-vn-ocr
 [v0.2.1 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.1)
@@ -849,21 +910,21 @@ steps below cover a source build or adding another model.
 2. Download and check the weights on a computer:
 
    ```sh
-   python3 tools/prepare_ocr.py --backend vocr --output ocr          # VOCR3_H15_w8.vocr
-   python3 tools/prepare_ocr.py --backend vocr --model VOCR3_FL10_w8.vocr --output ocr
-   python3 tools/prepare_ocr.py --backend vocr --model H15_w8.vocr --output ocr   # v0.2.0
-   python3 tools/prepare_ocr.py --backend vocr --model VOCR4_W20_w8.vocr --output ocr   # the cascade's
+   python3 tools/prepare_ocr.py --backend vocr-tiers --output ocr    # the 3 sizes' models and MODEL-ATTRIBUTION.md
    python3 tools/prepare_ocr.py --backend vocr-lm --output ocr       # the 4 LMs and ATTRIBUTION.md
+   python3 tools/prepare_ocr.py --backend vocr --model VOCR4_W20_w8.vocr --output ocr   # by name: the host tools' cascade
+   python3 tools/prepare_ocr.py --backend vocr --model VOCR3_H15_w8.vocr --output ocr   # by name: an earlier one
    ```
 
    The downloads need no GitHub account: vita-vn-ocr's releases are public, and the
    GitHub CLI (`gh auth login`) is only tried when a public download fails (a draft
    release). `--from FILE` checks a copy downloaded another way.
-   `tools/package_release.py --models ocr` needs every one of these files (it
-   ships the LMs with their attribution as `ocr/LM-ATTRIBUTION.md`, CC BY-SA 4.0).
-3. Copy the files to `ux0:data/VitaJPOverlay/ocr/` (`tools/prepare_ocr.py --backend
-   vocr-tiers --output ocr` fetches the three sizes' models), or let the FTP installer do
-   it: `tools/install_ftp.sh --vocr-model ocr/VOCR3_H15_w8.vocr --set vocr_tier=normal VITA_IP`.
+   `tools/package_release.py --models ocr` needs the first two lines' files: it ships
+   the LMs with their attribution as `ocr/LM-ATTRIBUTION.md` (CC BY-SA 4.0), and the
+   sizes' models with theirs, v0.3.0's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
+   (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`).
+3. Copy the files to `ux0:data/VitaJPOverlay/ocr/`, the attributions included, or let the
+   FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8.vocr --set vocr_tier=normal VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:
 
    ```ini

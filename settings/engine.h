@@ -4,7 +4,7 @@
  * vocr_tier), each with its estimated time per textbox and the game memory it
  * needs, from the models' pinned metadata (core/vocr_models.h); the card's last
  * line names the chosen size's model, whose name carries its generation
- * ("VOCR3-H15", and the next generation's once its models are pinned). When a
+ * ("VOCR5-N", and the next generation's once its models are pinned). When a
  * game has too little free memory for the chosen size a job runs a smaller
  * one: the game worker decides per job, the Shell logs it, and the app says
  * nothing of it (owner 2026-10-15 04:54Z); the card only reports a missing file. */

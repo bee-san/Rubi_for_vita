@@ -846,13 +846,14 @@ class Collect(unittest.TestCase):
         ocr, dev_ocr = "ux0/data/VitaJPOverlay/ocr/", "ux0:/data/VitaJPOverlay/ocr/"
         manifest = json.loads((self.package / "package-manifest.json").read_text())
         for name, body in (("vocr_lm_o3_1000k.vlm", b"lm 1000k"), ("vocr_lm_o3_4000k.vlm", b"lm 4000k"),
-                           ("LM-ATTRIBUTION.md", b"# attribution"), ("VOCR4_W20_w8.vocr", b"w20 weights")):
+                           ("LM-ATTRIBUTION.md", b"# attribution"), ("MODEL-ATTRIBUTION.md", b"# the models'"),
+                           ("VOCR4_W20_w8.vocr", b"w20 weights")):
             (self.device / (ocr + name)).write_bytes(body)
             manifest["files"][ocr + name] = {"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()}
         manifest["files"][ocr + "vocr_lm_o3_500k.vlm"] = {"bytes": 2, "sha256": hashlib.sha256(b"lm").hexdigest()}
         (self.package / "package-manifest.json").write_text(json.dumps(manifest))
         # names the package never ships there: neither hashed nor read
-        others = ("LM-ATTRIBUTION.md.bak", "LM-notes.txt", "meiki-stream-int8.mnn", "old.vlm.txt",
+        others = ("LM-ATTRIBUTION.md.bak", "MODEL-ATTRIBUTION.md.old", "LM-notes.txt", "meiki-stream-int8.mnn", "old.vlm.txt",
                   "VOCR3_H15_w8.vocr.part")
         for name in others:
             (self.device / (ocr + name)).write_bytes(b"not the package's")
@@ -862,7 +863,8 @@ class Collect(unittest.TestCase):
         folder = next(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
         record = json.loads((folder / "COLLECT.json").read_text())
         check = record["package_check"]
-        for name in ("vocr_lm_o3_1000k.vlm", "vocr_lm_o3_4000k.vlm", "LM-ATTRIBUTION.md", "VOCR4_W20_w8.vocr"):
+        for name in ("vocr_lm_o3_1000k.vlm", "vocr_lm_o3_4000k.vlm", "LM-ATTRIBUTION.md", "MODEL-ATTRIBUTION.md",
+                     "VOCR4_W20_w8.vocr"):
             self.assertIn(dev_ocr + name, record["hashed"])
             self.assertTrue(check[dev_ocr + name]["match"], name)
         for name in others:
@@ -870,9 +872,9 @@ class Collect(unittest.TestCase):
         self.assertFalse(check[dev_ocr + "vocr_lm_o3_500k.vlm"]["match"])
         self.assertTrue(check[dev_ocr + "vocr_lm_o3_500k.vlm"].get("absent"))
         with zipfile.ZipFile(Path(str(folder) + ".zip")) as z:
-            self.assertEqual([n for n in z.namelist() if n.endswith((".vocr", ".vlm", "LM-ATTRIBUTION.md"))], [])
-        # setUp's 8 package files (VOCR3-FL10's differs) and these 5; VOCR2 is not in the package
-        self.assertIn("installed files: 11 of 13 match the package; DIFFER or absent: "
+            self.assertEqual([n for n in z.namelist() if n.endswith((".vocr", ".vlm", "-ATTRIBUTION.md"))], [])
+        # setUp's 8 package files (VOCR3-FL10's differs) and these 6; VOCR2 is not in the package
+        self.assertIn("installed files: 12 of 14 match the package; DIFFER or absent: "
                       "ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr, ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_500k.vlm; "
                       "not in this package: ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr",
                       (folder / "analysis.txt").read_text())

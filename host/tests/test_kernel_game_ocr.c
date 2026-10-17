@@ -7,6 +7,7 @@ int taiGetModuleInfoForKernel(SceUID, const char *, tai_module_info_t *);
 #include "../../kernel/game_ocr.c"
 #include "../../kernel/buffers.c"
 #include "../../kernel/capture.c"
+#include "test_tier_pins.h"
 
 VjoKernelState g;
 unsigned syscall_depth;
@@ -1738,10 +1739,16 @@ static void model_tiers_open_by_tier_only(void)
     static const struct { const char *name; uint32_t bytes; } pins[] = {
         {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER1_BYTES}, {VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER2_BYTES},
         {VJO_VOCR_TIER3_NAME, VJO_VOCR_TIER3_BYTES}};
-    TEST_CHECK(!strcmp(pins[0].name, "VOCR3_FL10_w8.vocr") && !strcmp(pins[1].name, "VOCR3_H15_w8.vocr") &&
-               !strcmp(pins[2].name, "VOCR4_W20_w8.vocr"));
-    TEST_CHECK(pins[0].bytes == VJO_VOCR_FL10_BYTES && pins[1].bytes == VJO_VOCR_H15_BYTES &&
-               pins[2].bytes == VJO_VOCR_F20_BYTES);
+    for (unsigned i = 0; i < 3; i++) /* each size's release file (test_tier_pins.h) */
+        TEST_CHECK_(!strcmp(pins[i].name, test_tier_pins[i].name) && pins[i].bytes == test_tier_pins[i].bytes, "%s",
+                    pins[i].name);
+    /* the broker's length for each, the one it opens the file at */
+    for (unsigned i = 0; i < 3; i++) TEST_CHECK_(model_size(pins[i].name) == pins[i].bytes, "%s", pins[i].name);
+    /* the earlier generations' files stay openable by name (the host tools) at their own lengths */
+    TEST_CHECK(model_size(VJO_VOCR3_H15_NAME) == VJO_VOCR_H15_BYTES && model_size(VJO_VOCR3_FL10_NAME) ==
+               VJO_VOCR_FL10_BYTES && model_size(VJO_VOCR4_W20_NAME) == VJO_VOCR_F20_BYTES);
+    TEST_CHECK(!model_size("VOCR5_X_w8.vocr") && !model_size(VJO_VOCR_TIER3_NAME ".bak") &&
+               !model_size("../" VJO_VOCR_TIER3_NAME));
     for (uint32_t tiers = 1; tiers <= VJO_VOCR_TIERS_ALL; tiers++)
         for (unsigned ceiling = 0; ceiling <= 1; ceiling++) {
             uint32_t top = 0;
@@ -1794,6 +1801,39 @@ static void model_tiers_open_by_tier_only(void)
     for (uint32_t bad = 8u; bad; bad <<= 1) {
         setup(); r = make_request(); r.tiers = 1u | bad;
         caller = 3; TEST_CHECK_(vjoOcrSubmit(&r) == VJO_ERR_ARG, "tiers 0x%X", r.tiers);
+    }
+}
+
+/* The Large size's file (test_tier_pins.h: VOCR5-L's 2,473,696 B), the largest pin: the broker opens it at
+ * exactly that length and reads it to its last byte in 32 KiB pieces; a file one byte
+ * longer (or shorter) is refused at the open, before any byte reaches the game. */
+static void the_large_size_opens_at_its_pinned_length_only(void)
+{
+    for (int extra = -1; extra <= 1; extra++) {
+        setup(); VjoGameOcrRequest r = make_request();
+        strcpy(r.model, VJO_VOCR_TIER3_NAME);
+        r.tiers = VJO_VOCR_TIERS_ALL;
+        caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+        expect_lm = VJO_VOCR_TIER3_NAME; expected_model_size = VJO_VOCR_TIER3_BYTES; bad_size = extra;
+        TEST_CHECK(VJO_VOCR_TIER3_BYTES == test_tier_pins[2].bytes && model_size(VJO_VOCR_TIER3_NAME) == test_tier_pins[2].bytes);
+        TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_TIER + 2u, NULL) == VJO_ERR_BUSY);
+        model_tick();
+        int rc = vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_TIER + 2u, NULL);
+        if (extra) {
+            TEST_CHECK_(rc == VJO_ERR_FORMAT, "a file of %d B more: rc %d", extra, rc);
+        } else {
+            unsigned char last[2] = {0xCC, 0xCC};
+            TEST_CHECK_(rc == (int)test_tier_pins[2].bytes, "rc %d", rc);
+            /* the last byte reads; one past the end is refused */
+            TEST_CHECK(vjoOcrModelRead(seq, VJO_VOCR_TIER3_BYTES - 1u, 2, last) == VJO_ERR_ARG);
+            TEST_CHECK(vjoOcrModelRead(seq, VJO_VOCR_TIER3_BYTES - 1u, 1, last) == VJO_ERR_BUSY);
+            model_tick();
+            TEST_CHECK(vjoOcrModelRead(seq, VJO_VOCR_TIER3_BYTES - 1u, 1, last) == 1 && last[1] == 0xCC);
+        }
+        bad_size = 0;
+        close_model((uint32_t)seq);
+        expect_lm = NULL;
+        TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
     }
 }
 
@@ -1862,6 +1902,7 @@ TEST_LIST = {
     {"an LM tier opens by its pinned name, up to the request's tier", lm_tiers_open_up_to_the_requested_tier},
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
+    {"the Large size's file opens at its pinned length only (VOCR5-L: 2,473,696 B)", the_large_size_opens_at_its_pinned_length_only},
     {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},
     {"exact_pin_keeps_canonical_path_and_final_chunk_bounds",exact_pin_keeps_canonical_path_and_final_chunk_bounds},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},

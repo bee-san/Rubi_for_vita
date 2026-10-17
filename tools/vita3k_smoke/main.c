@@ -25,6 +25,7 @@
 #include "../../game_ocr/main.h"
 #include "../../include/vjo_api.h"
 #include "../../include/vjo_game_ocr.h"
+#include "../../include/vjo_vocr_sizes.h"
 
 #define DIR "ux0:data/vjo_smoke"
 #define W 960u
@@ -185,6 +186,7 @@ static uint32_t fnv(const char *s)
 void vjo_game_ocr_cache_clear(void);
 static uint32_t stage_speed;     /* VjoGameOcrRequest.speed of the next stage (API 22: helpers, clock) */
 static uint32_t last_text_fnv;   /* the last stage's text */
+static uint32_t resident_after;  /* the last stage's resident weights block */
 
 static int stage(const char *name, uint32_t flags, const char *model, const char *fallback, int full)
 {
@@ -218,6 +220,7 @@ static int stage(const char *name, uint32_t flags, const char *model, const char
             (unsigned)r.tears, (unsigned)r.weights, (unsigned)r.resident_bytes, (unsigned)strlen(r.text),
             (unsigned)fnv(r.text), (unsigned)r.n_steps);
     last_text_fnv = fnv(r.text);
+    resident_after = r.resident_bytes;
     for (uint32_t i = 0; i < r.n_steps && i < VJO_GAME_OCR_STEPS; i++)
         fprintf(out, "  step %u kind=%u arg=%u rc=0x%08X bytes=%u main=%d cdram=%d\n", (unsigned)r.step[i].id,
                 (unsigned)r.step[i].kind, (unsigned)r.step[i].arg, (unsigned)r.step[i].rc, (unsigned)r.step[i].bytes,
@@ -262,6 +265,23 @@ static int run(SceSize args, void *argp)
         vjo_game_ocr_cache_clear();
     }
     failures += stage("textbox2", 0, "H15_w8.vocr", "FL10_w8.vocr", 0) != 0;
+    {
+        /* each model size's own recognizer (include/vjo_vocr_sizes.h), by name, at the full screen:
+         * its weights resident in one page-rounded block, the Large size's the largest the worker takes */
+        static const struct { const char *stage, *model; uint32_t bytes; } sizes[] = {
+            {"size-small", VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER1_BYTES},
+            {"size-normal", VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER2_BYTES},
+            {"size-large", VJO_VOCR_TIER3_NAME, VJO_VOCR_TIER3_BYTES}};
+        for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+            int rc = stage(sizes[i].stage, VJO_GAME_OCR_F_FULL, sizes[i].model, "", 1);
+            uint32_t block = (sizes[i].bytes + 4095u) & ~4095u;
+            if (rc != 0 || resident_after != block) {
+                fprintf(out, "%s: rc %d, resident %u B, want %u B\n", sizes[i].stage, rc, (unsigned)resident_after,
+                        (unsigned)block);
+                failures++;
+            }
+        }
+    }
     for (unsigned f = 1; f < 3; f++) {
         draw(fmts[f]);
         failures += stage("textbox-format", 0, "H15_w8.vocr", "FL10_w8.vocr", 0) != 0;

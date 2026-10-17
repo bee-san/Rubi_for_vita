@@ -782,6 +782,17 @@ static unsigned vocr_top_tier(unsigned tiers)
     return top;
 }
 
+/* The tiers whose model is tier t's file, t's own bit included: a size may keep
+ * the model of the size below it (two sizes, one file), and a file that failed
+ * for one of them fails for both. */
+static unsigned vocr_same_file(unsigned t)
+{
+    unsigned same = 0;
+    for (unsigned s = 1; s <= VJO_VOCR_TIERS; s++)
+        if (!sceClibStrcmp(vjo_vocr_tier_model((int)s), vjo_vocr_tier_model((int)t))) same |= 1u << (s - 1u);
+    return same;
+}
+
 /* The capture of the job in flight: the kernel publishes it (VjoState.done_seq
  * moves on, with capture_scene and region_seq) once the game has read its
  * first pass over the region. A try after the screen changed under the job
@@ -1124,18 +1135,19 @@ static int run_vocr(VjoOverlayData *out)
     /* A tier's model failed to open or verify: keep OCR working with the next
      * smaller tier for this job. Only a file that is absent, the wrong length or
      * fails its hash (io 0: rejected after reading) leaves the tier out for this
-     * game; a timeout or unavailable storage does not. Log only. */
+     * game; a timeout or unavailable storage does not. Every tier with the same
+     * file is left out with it (vocr_same_file). Log only. */
     while (out->err.rc == VJO_E_OCR_MODEL && ran >= VJO_VOCR_TIER_SMALL && ran <= VJO_VOCR_TIERS &&
            !vocr_cancelled(NULL)) {
         int file_bad = !result.io_error || result.io_error == VJO_ERR_FORMAT ||
                        (uint32_t)result.io_error == 0x80010002u; /* ENOENT */
-        unsigned failed = ran, below = tiers & ((1u << (failed - 1u)) - 1u);
+        unsigned failed = ran, same = vocr_same_file(failed), below = tiers & ((1u << (failed - 1u)) - 1u) & ~same;
         vjo_log("game vocr: %s is unusable here (io=0x%08X), using %s%s", vjo_vocr_tier_model((int)failed),
                 (unsigned)result.io_error, below ? vjo_vocr_tier_model((int)vocr_top_tier(below)) : "none",
                 file_bad ? " for this game" : " for this job");
         if (file_bad) {
             if (vocr_unusable_generation != job_generation) vocr_unusable = 0;
-            vocr_unusable |= 1u << (failed - 1u);
+            vocr_unusable |= same;
             vocr_unusable_generation = job_generation;
         }
         if (!below) break;

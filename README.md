@@ -15,7 +15,7 @@ mode, or an SD2Vita's card). Nothing is sent from the Vita; there is no
 AnkiConnect or AnkiWeb sync.
 
 Text is recognized on the Vita, offline, by the local engine, named after the
-generation of the model it runs (**VOCR3** in this package), automatically or
+generation of the model it runs (**VOCR5** in this package), automatically or
 when the overlay opens. In the **Overlay** app (press **Select** for the
 OCR & lookup page), **Model size** chooses its recognizer: **Small**
 (fastest), **Normal** (the default, balanced) or **Large** (most accurate), each
@@ -33,11 +33,12 @@ build with Google Lens is the tag `archive/online-last` (branch `archive/online`
 
 The engine's name comes from the pinned metadata of the model it runs
 (`core/vocr_models.c`, also written per model into the package's
-`package-manifest.json`), not from the app: VOCR3 for this package's Small and
-Normal, VOCR4 for its Large. A release that pins a new generation's three
-models as the sizes shows that generation's name, for example VOCR5, with no
-change to the app. A `.vocr` file itself carries no generation. v0.2.0's models
-are generation VOCR1.
+`package-manifest.json`), not from the app: VOCR5 for each of this package's
+three sizes (vita-vn-ocr's v0.3.0 release; before it VOCR3 for Small and Normal
+and VOCR4 for Large). A release that pins a new generation's models as the sizes
+shows that generation's name, with no change to the app; a size that keeps an
+earlier generation's model shows that one's. A `.vocr` file itself carries no
+generation. v0.2.0's models are generation VOCR1.
 
 The experimental VOCR2 trial (a separately trained FL10-sized model with a
 textbox finder, opt-in in 0.7.12 to v0.8.0-test.1; its promotion guard failed)
@@ -82,9 +83,9 @@ for the measured results and remaining hardware checks.
 ## Install
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 240 MB free on the memory card (ux0) before
-you copy the VPK to it: 60 MB for the VPK, 169 MB for VitaShell to unpack it and 11 MB for the models
-Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 60 MB back.
+HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card (ux0) before
+you copy the VPK to it: 61 MB for the VPK, 170 MB for VitaShell to unpack it and 12 MB for the models
+Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 61 MB back.
 
 1. Download `VitaJPOverlay-<version>.vpk` from the
    [latest release](https://github.com/bee-san/vita-jp-overlay/releases/latest).
@@ -290,10 +291,10 @@ ready when you press) or only once the overlay opens (**Only when I press L + R*
 `toggle_button`: nothing runs until you press, and the press waits for the reading); the Speed
 boost (`ocr_boost_clock`, ON by default) runs the ARM clock at 444 MHz only while text is read
 ([docs/auto-vs-press.md](docs/auto-vs-press.md)). Each size button shows its estimated time for a 3-line
-textbox and the game memory a job of it takes (`1.3 s, 1.4 MB` for Normal), from
+textbox and the game memory a job of it takes (`0.9 s, 1.4 MB` for Normal), from
 the models' pinned metadata. The
 card's last line names the size and its model file (`Normal: default, balanced.
-VOCR3-H15 found.`), or reports that file missing; it never says that a game ran a
+VOCR5-N found.`), or reports that file missing; it never says that a game ran a
 smaller size. Choices save automatically to `config.ini` and apply when the overlay next opens.
 Model files remain stored. Start reloads
 the saved preferences. Other config values, including dictionary priority,
@@ -415,20 +416,19 @@ log_file = on
 ```
 
 `vocr_tier` is the local engine's model size, the Overlay app's Model size:
-`small` runs VOCR3-FL10, `normal` (the default) VOCR3-H15 (vita-vn-ocr #67: H15's
-and FL10's shapes retrained) and `large` VOCR4-W20 (vita-vn-ocr #78, F20's shape).
-On vita-vn-ocr's hand-checked host test lines VOCR3-H15 has 1.73% CER against
-v0.2.0 H15's 2.21%, VOCR3-FL10 2.13% against v0.2.0 FL10's 3.82%; neither passed
-that repository's promotion gate ([models](docs/vita-vn-ocr.md#models)). Their
-estimated times for a 3-line textbox are 0.7 s (Small), 1.3 s (Normal) and
-1.7 s (Large), calibrated to VOCR3-H15's measured 5.0-5.2 ms per CTC frame on the
-console (v0.8.0-test.1): one recognizer thread on that build's code, so upper
-estimates now that the runtime has vita-vn-ocr #85's faster kernels and a job reads
-lines in parallel at 444 MHz ([OCR speed](docs/ocr-speed.md)). v0.8.0-test.2's logs have VOCR3-FL10 at 3.0-3.7 ms per
-frame (the self-test's fallback stage, five one-line jobs) and VOCR4-W20 at
-7.4-7.8 ms (five lines re-read as the confidence cascade), near the estimates'
-2.8-3.1 and 7.1-7.2 ms; VOCR4-W20 has not run as the chosen size on a console, and
-v0.2.0's FL10 (Small's shape) read lines in older builds, without frame counts.
+`small` runs VOCR5-S (819,792 B of int8 weights: FL10's topology with 4,987
+classes), `normal` (the default) VOCR5-N (1,185,632 B: H15's topology with 5,631
+classes) and `large` VOCR5-L (2,473,696 B: a late-wide shape, 5,631 classes), the
+three recognizers of vita-vn-ocr's VOCR5 round (its v0.3.0 release; selection and
+scores in that repository's `docs/vocr5.md`). Each is inside the owner's weights
+ceiling for its size (Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB). Their
+estimated times for a 3-line textbox are 0.6 s (Small), 0.9 s (Normal) and
+2.1 s (Large) on one core at 333 MHz with the pinned runtime (vita-vn-ocr #85's
+kernels, no credit for their weight prefetch), calibrated to VOCR3-H15's measured
+4.94 ms per CTC frame on the console (v0.8.0-test.1); at 444 MHz, the clock a job
+raises by default, 0.5, 0.7 and 1.6 s, and less again with lines read in parallel
+([OCR speed](docs/ocr-speed.md)). No console has run a VOCR5 model yet: these are
+estimates until a test build's logs measure them.
 A job runs the chosen size when the
 game's free memory has room for it beside that size's reserve (4, 8 or 16 MiB),
 else the next smaller size, silently: `log.txt` has a line `tier large did not
@@ -468,10 +468,11 @@ Each line is decoded with a beam search and a character language model
 (`ocr_lm = 1000k` by default; `4000k`, `2000k`, `500k` or `off`). The LM is
 vita-vn-ocr's, CC BY-SA 4.0. The game keeps the largest LM that fits its memory
 resident, and reads greedily when none does. A line read with low confidence
-is read again by the next model size up (VOCR4-W20 for Normal, VOCR3-H15 for
+is read again by the next model size up (VOCR5-L for Normal, VOCR5-N for
 Small; Large has none), when its model fits too, whose reading is shown, while the job
 stays within `ocr_cascade_ms` (2000; `0` turns it off). On the host's
-development dialogue lines the two bring VOCR3-H15 from 1.40 % to 0.73 % CER.
+development dialogue lines the two brought VOCR3-H15, the Normal size before
+VOCR5, from 1.40 % to 0.73 % CER (with VOCR4-W20 as its cascade).
 The greedy reading, each line's confidence and what the cascade read again are
 logged beside the shown text
 ([beam + LM decoding](docs/vita-vn-ocr.md#beam--lm-decoding-api-20),
@@ -652,8 +653,9 @@ gives OCR nothing. If the game's `USER_RW` refuses that block the worker tries
 CDRAM, then phycont, then a kernel strip of at most 64 KiB for one call, and
 logs each attempt ([docs/ingame-capture.md](docs/ingame-capture.md)). The
 worker frees each job's workspace before returning text. The verified weights stay in their own `USER_RW` block between jobs
-(657,664 B for VOCR3-FL10, 1,155,968 B for VOCR3-H15 and 1,558,016 B for
-VOCR4-W20, held as 659,456, 1,159,168 and 1,560,576 B page-rounded blocks) and are read and
+(819,792 B for VOCR5-S, 1,185,632 B for VOCR5-N and 2,473,696 B for VOCR5-L,
+held as 823,296, 1,187,840 and 2,473,984 B page-rounded blocks; the worker takes
+no larger one) and are read and
 SHA-256 checked again only when the model file's size or modification time
 changes, or the model changes. A job that finds no line (a title screen, a
 box between two lines) reads them, and the LM and the cascade's model, if they
@@ -673,11 +675,12 @@ concurrently.
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
 only these names in `ux0:data/VitaJPOverlay/ocr`:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
-the recognizers `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3, release
-v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release
-v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the character
-LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
-`vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
+the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
+(VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
+release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
+release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
+character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
+`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,
 when the request sets a cascade ceiling, the next size up, each by its size,
 never by a name or a path. A request by name (the host tools) opens only its own
@@ -960,4 +963,8 @@ CC BY-SA 4.0; its grammar summaries: written from Bee's Ultimate Grammar Diction
 sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0)
 ([attribution](docs/plaintext-attribution.txt)). The beam + LM decoder's character
 LMs (bee-san/vita-vn-ocr v0.2.6-ctclm.2): CC BY-SA 4.0, with their sources and changes in
-`ocr/LM-ATTRIBUTION.md`, which ships beside them.
+`ocr/LM-ATTRIBUTION.md`, which ships beside them. The model sizes' VOCR5 recognizers
+(bee-san/vita-vn-ocr v0.3.0) were trained in part on NVIDIA's OCR-Synthetic-Multilingual-v1
+(CC BY 4.0) and on non-commercial fonts and text: their attribution and terms, including that
+the weights are for non-commercial use only, are in `ocr/MODEL-ATTRIBUTION.md`, which ships
+beside them ([details](docs/vita-vn-ocr.md#models)).

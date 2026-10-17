@@ -170,7 +170,8 @@ fi
 sim=$BUILD/vjo-alloc-sim-tests
 if [ -x "$sim" ]; then
   "$sim" > "$log/alloc-sim.log" 2>&1; rc=$?
-  if [ $rc -eq 0 ] && grep -q "API 19 full screen 960x544, VOCR3-H15 .*rc=0 .*KD       0 B" "$log/alloc-sim.log"; then
+  if [ $rc -eq 0 ] && grep -q "API 19 full screen 960x544, Normal .*rc=0 .*KD       0 B" "$log/alloc-sim.log" \
+     && grep -q "API 19 full screen 960x544, Large .*rc=0 .*KD       0 B" "$log/alloc-sim.log"; then
     pass "allocation simulator" "API 18 full screen refused (0x80024302) as on the console; API 19 0 B of KD at every region and model, every ladder rung works"
     grep -o "alloc-sim: .*" "$log/alloc-sim.log" | sed 's/^alloc-sim: /           /'
   elif [ $rc -eq 0 ]; then

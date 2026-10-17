@@ -11,6 +11,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import zipfile
 from pathlib import Path
 
@@ -127,18 +128,46 @@ class BuildCheck(unittest.TestCase):
 class PayloadList(unittest.TestCase):
     def test_the_python_list_is_the_compiled_one(self):
         files = vpk.payload_files()
-        self.assertEqual(len(files), 14)
+        self.assertEqual(len(files), 15)
         header = (ROOT / "include/vjo_payload.h").read_text()
-        self.assertIn("#define VJO_PAYLOAD_KERNEL_INDEX 9", header)
-        self.assertEqual(files[9], ("ur0:tai/VitaJPOverlay_Kernel.skprx", "copy"))
-        self.assertEqual(files[8], ("ux0:data/VitaJPOverlay/dictionaries/plaintext.vjdict", "move"))
+        kernel = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX (\d+)", header).group(1))
+        self.assertEqual(files[kernel], ("ur0:tai/VitaJPOverlay_Kernel.skprx", "copy"))
+        self.assertEqual(files[kernel - 1], ("ux0:data/VitaJPOverlay/dictionaries/plaintext.vjdict", "move"))
+        self.assertEqual([d for d, _ in files[kernel:kernel + 4]],  # VJO_PAYLOAD_PLUGINS: the plugins and the RCO
+                         ["ur0:tai/VitaJPOverlay_Kernel.skprx", "ur0:tai/VitaJPOverlay_Shell.suprx",
+                          "ur0:tai/VitaJPOverlay_OCR.suprx", "ur0:data/VitaJPOverlay/vitajpoverlay.rco"])
         self.assertEqual(files[-1], ("ux0:data/VitaJPOverlay/config.ini", "template"))
         # the models are the package's shipped ones (package_release.py shipped_models), nothing else
         import package_release
-        shipped = {name for name, *_ in package_release.shipped_models()} | {"LM-ATTRIBUTION.md"}
+        shipped = {name for name, *_ in package_release.shipped_models()} | {"LM-ATTRIBUTION.md",
+                                                                            package_release.VOCR_MODEL_ATTRIBUTION}
         self.assertEqual({d.rsplit("/", 1)[1] for d, _ in files if "/ocr/" in d}, shipped)
         # the app's own record is never in the payload (the install writes it, core/app_stamp.h)
         self.assertNotIn("ux0:data/VitaJPOverlay/vjo_app.txt", [d for d, _ in files])
+
+    def test_a_file_named_twice_is_refused(self):
+        """core/payload.c refuses a manifest naming a file twice ("a file named twice"), so the packaging
+        refuses the list first: two model sizes pinned to one model (Normal and Large both VOCR4-W20, which
+        vita-vn-ocr's VOCR5 protocol allows) would otherwise make a VPK the app cannot install."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "include").mkdir()
+            header = (ROOT / "include/vjo_payload.h").read_text()
+            if "VJO_VOCR_TIER3_NAME" not in header:  # a tree that already names its shared model once: list it twice
+                header = header.replace("X(VJO_PAYLOAD_OCR VJO_VOCR_TIER2_NAME, VJO_PAYLOAD_COPY)",
+                                        "X(VJO_PAYLOAD_OCR VJO_VOCR_TIER2_NAME, VJO_PAYLOAD_COPY) "
+                                        "X(VJO_PAYLOAD_OCR VJO_VOCR_TIER3_NAME, VJO_PAYLOAD_COPY)", 1)
+            (root / "include/vjo_payload.h").write_text(header)
+            sizes = (ROOT / "include/vjo_vocr_sizes.h").read_text()
+            shared = re.sub(r"#define VJO_VOCR_TIER3_NAME \w+", "#define VJO_VOCR_TIER3_NAME VJO_VOCR4_W20_NAME",
+                            re.sub(r"#define VJO_VOCR_TIER2_NAME \w+", "#define VJO_VOCR_TIER2_NAME VJO_VOCR4_W20_NAME", sizes))
+            # Normal and Large one model, whatever this tree's pins (a tree that shares already reads the same)
+            for tier in (2, 3):
+                self.assertIn(f"#define VJO_VOCR_TIER{tier}_NAME VJO_VOCR4_W20_NAME", shared)
+            (root / "include/vjo_vocr_sizes.h").write_text(shared)
+            with unittest.mock.patch.object(vpk, "ROOT", root):
+                with self.assertRaisesRegex(ValueError, "VOCR4_W20_w8.vocr twice"):
+                    vpk.payload_files()
 
 
 class Package(unittest.TestCase):
@@ -166,7 +195,8 @@ class Package(unittest.TestCase):
                                      "worker kernel", "build " + lines[6].split()[1]])
         self.assertIn("set anki_mining on", lines)
         self.assertNotIn("set log_file on", lines)
-        self.assertTrue(re.fullmatch(r"file ur0:tai/VitaJPOverlay_Kernel\.skprx \d+ [0-9a-f]{64} copy", lines[7 + 9]))
+        kernel = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX (\d+)", (ROOT / "include/vjo_payload.h").read_text()).group(1))
+        self.assertTrue(re.fullmatch(r"file ur0:tai/VitaJPOverlay_Kernel\.skprx \d+ [0-9a-f]{64} copy", lines[7 + kernel]))
         record = vpk.installed_record(text)
         self.assertRegex(record, rf"^vjoinst1 version=0\.8\.0 variant=normal api={API} build=[0-9a-f]{{16}} manifest=[0-9a-f]{{64}}\n$")
         self.assertIn("manifest=" + hashlib.sha256(text.encode()).hexdigest(), record)

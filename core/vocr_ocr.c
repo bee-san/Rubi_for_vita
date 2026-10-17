@@ -18,16 +18,36 @@
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
 typedef char vjo_vocr_refine_matches_runtime[VJO_VOCR_REFINE_ALL == VOCR_REFINE_DEFAULT ? 1 : -1];
-/* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.2.5-vocr3.1
- * (VOCR3, the default and its fallback) and v0.2.0 (docs/vita-vn-ocr.md).
- * Arena bytes: vocr_arena_bytes() in W8I mode with the default 4-frame tiles
- * and 16-frame head batches, any line width. */
+/* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.3.0 (VOCR5, the
+ * three model tiers), v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0
+ * (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
+ * default 4-frame tiles and 16-frame head batches, any line width. */
+/* Every pinned size is within the weights block the game worker allows. */
+typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR_H15_BYTES <= VJO_VOCR_MAX_BYTES &&
+                               VJO_VOCR_F20_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR5_S_BYTES <= VJO_VOCR_MAX_BYTES &&
+                               VJO_VOCR5_N_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR5_L_BYTES <= VJO_VOCR_MAX_BYTES
+                               ? 1 : -1];
 #ifdef VJO_VOCR_TEST_MODELS
 /* Host lifecycle tests only (host/tests/test_game_resident.c): synthetic pins. */
 #include VJO_VOCR_TEST_MODELS
 #else
 static const VjoVocrModel models[] = {
-    /* VOCR3 (vita-vn-ocr #67): H15's and FL10's shapes retrained, the same sizes and arenas. */
+    /* VOCR5 (vita-vn-ocr eval/vocr5_protocol.json, v0.3.0): the Small, Normal (the
+     * default) and Large tiers, each its own shape. */
+    {VJO_VOCR5_S_NAME, VJO_VOCR5_S_BYTES,
+     {0xf1,0x75,0xbf,0xcb,0x8c,0xec,0x65,0xd6,0x9e,0x85,0xdd,0x5f,0x2c,0xf7,0x07,0xc9,
+      0xa7,0x11,0xad,0xa7,0x20,0x3c,0x0d,0x10,0x99,0xcd,0x2d,0x01,0x42,0x97,0x8b,0x8d},
+     124832, VOCR_LINES_GRAD},
+    {VJO_VOCR5_N_NAME, VJO_VOCR5_N_BYTES,
+     {0x20,0xbe,0x17,0x9d,0xef,0x80,0x33,0x17,0x14,0x35,0xba,0x62,0x38,0x86,0x57,0xb3,
+      0xd3,0xc9,0x32,0xb3,0x65,0x09,0x37,0x37,0x94,0x8c,0x63,0x6e,0x02,0x5e,0x3b,0xdc},
+     182944, VOCR_LINES_GRAD},
+    {VJO_VOCR5_L_NAME, VJO_VOCR5_L_BYTES,
+     {0x50,0x41,0x3b,0x37,0xdb,0xd8,0x5b,0x2a,0xcb,0x09,0x08,0x96,0x7b,0xde,0xaf,0x7c,
+      0xa6,0x78,0x03,0x85,0x0e,0x06,0x27,0xa7,0xb7,0xcc,0x3d,0x27,0x4e,0xdc,0x0b,0xa3},
+     261024, VOCR_LINES_GRAD},
+    /* VOCR3 (vita-vn-ocr #67): H15's and FL10's shapes retrained, the same sizes and
+     * arenas; the Normal and Small tiers before VOCR5, now accepted by name only. */
     {VJO_VOCR3_H15_NAME, VJO_VOCR_H15_BYTES,
      {0xcb,0x3c,0x61,0xa8,0xf9,0x1f,0x9a,0xee,0xb3,0xef,0xcc,0x0e,0x79,0x31,0x3f,0x66,
       0x41,0x12,0xf2,0x5c,0x4b,0xd5,0x58,0x65,0xba,0xe9,0xdf,0x52,0x52,0x2b,0x36,0x0c},
@@ -49,8 +69,9 @@ static const VjoVocrModel models[] = {
      {0xf8,0xc1,0xab,0xe4,0x74,0x3a,0x71,0xa7,0x42,0xe7,0x18,0x52,0x3f,0x42,0x06,0xf9,
       0x92,0xd3,0xbd,0x4f,0xb6,0x9d,0xe3,0x21,0x99,0x7b,0x2b,0xd6,0xf1,0x67,0x79,0xc0},
      241056, VOCR_LINES_GRAD},
-    /* VOCR4-W20 (vita-vn-ocr v0.2.5-vocr4.1, F20's shape): the confidence
-     * cascade's larger model; not qualified as a default (docs/vita-vn-ocr.md). */
+    /* VOCR4-W20 (vita-vn-ocr v0.2.5-vocr4.1, F20's shape): the Large tier before
+     * VOCR5, and the confidence cascade's larger model of a request by name (the
+     * host tools); not qualified as a default (docs/vita-vn-ocr.md). */
     {VJO_VOCR4_W20_NAME, VJO_VOCR_CASCADE_BYTES,
      {0x27,0x45,0xe6,0x96,0x99,0xad,0x7b,0x2a,0xba,0x30,0x92,0xf8,0x3e,0x5d,0xdc,0x19,
       0x12,0xf4,0x05,0xf5,0x4b,0x9d,0xf8,0xa2,0xe5,0x5b,0xe8,0x2c,0x38,0x5b,0x71,0x6e},
@@ -239,13 +260,27 @@ size_t vjo_vocr_cascade_job_bytes(const char *cascade)
     return x.total;
 }
 
-/* A shape's estimated recognition cost: ms for a 640-px line on the Cortex-A9
- * at 444 MHz, the low end of vita-vn-ocr's estimates (v0.2.5-vocr4.1 release
- * notes: FL10 94, H15 166, W20 235). Only their ratio is used: the cascade's
- * time per line from the job's own measured time per line. */
-static unsigned model_cost(const VjoVocrModel *m)
+/* The cascade's estimated time per line against the job's own model's, x 256:
+ * the ratio of their weights. A shape's recognition time grows with its weights:
+ * vita-vn-ocr's Cortex-A9 estimates for a 640-px line, v0.2.5-vocr4.1's FL10 94,
+ * H15 166 and W20 235 ms for 657,664 / 1,155,968 / 1,558,016 B, are within 6 % of
+ * it, and VOCR5's (eval/vocr5_protocol.json "estimates", 444 MHz: main's code,
+ * #85's, #85's without prefetch credit) S, N and L at 0.66-0.69, 1.02 and
+ * 1.97-2.52 times VOCR3-H15's time for 0.71, 1.03 and 2.14 times its bytes within
+ * 16 %. The size thresholds used before (94 / 166 / 235 from FL10's, H15's and
+ * F20's bytes up) put a Normal job's re-read with a 2.47 MB Large at 1.42 times
+ * its own line, 57-73 % of those estimates. A re-read that measures more raises it
+ * for the rest of the job (the line loop's casc_ratio); vjo_vocr_cascade_ratio
+ * reports the starting ratio for tools and tests. */
+static uint32_t cost_ratio(const VjoVocrModel *cascade, const VjoVocrModel *m)
 {
-    return m->bytes >= VJO_VOCR_F20_BYTES ? 235u : m->bytes >= VJO_VOCR_H15_BYTES ? 166u : 94u;
+    return (uint32_t)((uint64_t)cascade->bytes * 256u / m->bytes);
+}
+
+uint32_t vjo_vocr_cascade_ratio(const char *cascade, const char *model)
+{
+    const VjoVocrModel *c = vjo_vocr_model(cascade), *m = vjo_vocr_model(model);
+    return c && m ? cost_ratio(c, m) : 0;
 }
 
 size_t vjo_vocr_job_bytes(const char *model, unsigned width, unsigned height)
@@ -1563,8 +1598,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     L->casc_on = l->cascade;
     if (L->casc_on) {
         cascade_layout(pol->cascade, &L->cx);
-        /* its time per line from the job's own, by the shapes' cost (then by what it measured) */
-        L->casc_ratio = model_cost(pol->cascade) * 256u / model_cost(mi);
+        /* its time per line from the job's own, by the models' weights (then by what it measured) */
+        L->casc_ratio = cost_ratio(pol->cascade, mi);
     }
     L->want_lm = pol->lm != NULL;
     L->want_cascade = pol->cascade && pol->cascade_res && pol->cascade_us && pol->cascade != mi;

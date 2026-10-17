@@ -217,6 +217,9 @@ class E2EPackageEdges(unittest.TestCase):
         blob, attribution = b"a pinned model", b"the LMs' attribution"
         pins = {"m.vocr": ("https://fixture.invalid/m", len(blob), hashlib.sha256(blob).hexdigest())}
         att = {"ATTRIBUTION.md": ("https://fixture.invalid/a", len(attribution), hashlib.sha256(attribution).hexdigest())}
+        model_attribution = b"the model sizes' attribution"
+        model_att = {"MODEL-ATTRIBUTION.md": ("https://fixture.invalid/m", len(model_attribution),
+                                              hashlib.sha256(model_attribution).hexdigest())}
         release = e2e_package.release
         cases = (  # (what, fake_package's arguments, the ocr/ files, the failed checks in order: a part of each)
             ("the normal build", {}, {}, []),
@@ -240,16 +243,23 @@ class E2EPackageEdges(unittest.TestCase):
             ("the attribution altered (P4d)", {}, {"LM-ATTRIBUTION.md": b"the LMs' attributioN"},
              ["LM-ATTRIBUTION.md is the LMs' pinned attribution"]),
             ("the attribution missing", {}, {"LM-ATTRIBUTION.md": None}, ["LM-ATTRIBUTION.md is the LMs' pinned"]),
+            ("the model sizes' attribution altered", {}, {"MODEL-ATTRIBUTION.md": b"the model sizes' attributioN"},
+             ["MODEL-ATTRIBUTION.md is the model sizes' pinned attribution"]),
+            ("the model sizes' attribution missing", {}, {"MODEL-ATTRIBUTION.md": None},
+             ["MODEL-ATTRIBUTION.md is the model sizes' pinned attribution"]),
             ("an extra model, a name the broker accepts (P9)", {}, {"FL10_w8.vocr": blob},
-             ["ocr/ has nothing but the shipped models and LM-ATTRIBUTION.md (other files: FL10_w8.vocr)"]),
+             ["ocr/ has nothing but the shipped models and their attributions (other files: FL10_w8.vocr)"]),
             ("an extra LM and a file in a subdirectory", {}, {"x.vlm": b"lm", "old/m.vocr": blob},
              ["(other files: old/m.vocr, x.vlm)"]),
         )
         with mock.patch.object(release, "shipped_models", return_value=[("m.vocr", pins, "v0", "a size")]), \
                 mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
-                mock.patch.object(release, "VOCR_LM_ATTRIBUTION", "ATTRIBUTION.md"):
+                mock.patch.object(release, "VOCR_LM_ATTRIBUTION", "ATTRIBUTION.md"), \
+                mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
+                mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION", "MODEL-ATTRIBUTION.md"):
             for what, kwargs, files, want in cases:
-                ocr = {name: data for name, data in {"m.vocr": blob, "LM-ATTRIBUTION.md": attribution, **files}.items()
+                ocr = {name: data for name, data in {"m.vocr": blob, "LM-ATTRIBUTION.md": attribution,
+                                                     "MODEL-ATTRIBUTION.md": model_attribution, **files}.items()
                        if data is not None}
                 with self.subTest(what), tempfile.TemporaryDirectory() as tmp, \
                         contextlib.redirect_stdout(io.StringIO()):

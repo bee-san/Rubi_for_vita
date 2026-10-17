@@ -38,7 +38,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_mode = VJO_OCR_AUTO;
     c->text_source = VJO_SOURCE_OCR;
     vjo_snprintf(c->ocr_model_dir, sizeof(c->ocr_model_dir), "ux0:data/VitaJPOverlay/ocr");
-    /* Normal (VOCR3-H15) where the game's memory allows; a smaller tier otherwise. */
+    /* Normal (VOCR5-N) where the game's memory allows; a smaller tier otherwise. */
     c->vocr_tier = VJO_VOCR_TIER_DEFAULT;
     c->ocr_settle_ms = 150;
     c->ocr_settle_max_ms = 2000;
@@ -297,7 +297,8 @@ const char *vjo_vocr_tier_model(int tier)
 
 /* An older build's vocr_model by the shape its name carries: every release
  * named its recognizers by shape (FL10_w8.vocr, VOCR3_H15_w8.vocr, the VOCR2
- * trial's VOCR2_FL10_w8.vocr, F20_w8.vocr, VOCR4_W20_w8.vocr). */
+ * trial's VOCR2_FL10_w8.vocr, F20_w8.vocr, VOCR4_W20_w8.vocr). Builds since API 21
+ * write vocr_tier, never vocr_model, so no VOCR5 file name reaches this. */
 int vjo_vocr_tier_of_model(const char *name)
 {
     if (!name) return 0;

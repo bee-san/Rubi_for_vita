@@ -341,14 +341,18 @@ class PackageVariants(unittest.TestCase):
         att = {prepare.VOCR_LM_ATTRIBUTION: ("https://fixture.invalid/A", len(attribution),
                                              hashlib.sha256(attribution).hexdigest())}
         self.enterContext(mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att))
+        model_att = b"the model sizes' attribution fixture"
+        self.enterContext(mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", {prepare.VOCR_MODEL_ATTRIBUTION: (
+            "https://fixture.invalid/M", len(model_att), hashlib.sha256(model_att).hexdigest())}))
         for mod in (prepare, release):
-            for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR_LM_ASSETS"):
+            for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR_LM_ASSETS"):
                 pinned = {name: spec for name in getattr(mod, table)}
                 self.enterContext(mock.patch.object(mod, table, pinned))
-        for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR_LM_ASSETS"):
+        for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR_LM_ASSETS"):
             for name in getattr(prepare, table):
                 (self.models / name).write_bytes(blob)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution)
+        (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(model_att)
         self.dictionary = b"VJDICT2\0synthetic dictionary fixture"
         snapshot = {"bytes": len(self.dictionary), "sha256": hashlib.sha256(self.dictionary).hexdigest()}
         self.enterContext(mock.patch.object(release, "load_manifest", return_value=snapshot))

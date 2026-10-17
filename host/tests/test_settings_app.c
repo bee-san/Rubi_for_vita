@@ -8,7 +8,8 @@
  *
  * Built twice: with this build's model metadata (core/vocr_models.c), and with
  * VJO_VOCR_MODEL_INFO_TEST naming a later package's table, where generation
- * VOCR5 is pinned: the app then names the local engine VOCR5 unchanged. */
+ * VOCR6 is pinned for two sizes and VOCR5 kept for the third: the app then names
+ * each size's model unchanged. */
 #include "acutest.h"
 #include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
@@ -572,13 +573,15 @@ static void check_boost(int f, int y, const char *label, int on)
     TEST_CHECK_(filled == (on ? 1 : 2), "frame %d: the badge %s", f, on ? "is not filled" : "is filled");
 }
 
-static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR3-H15 found.";
-/* This package's estimates (core/vocr_models.c): VOCR3-FL10, VOCR3-H15, VOCR4-W20. */
-static const char *const DETAILS[3] = {"0.7 s, 0.9 MB", "1.3 s, 1.4 MB", "1.7 s, 1.9 MB"};
+static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR5-N found.";
+static const char *const SMALL_STATUS = "Small: fastest. VOCR5-S found.";
+static const char *const LARGE_STATUS = "Large: most accurate. VOCR5-L found.";
+/* This package's estimates (core/vocr_models.c): VOCR5-S, VOCR5-N, VOCR5-L. */
+static const char *const DETAILS[3] = {"0.6 s, 1.0 MB", "0.9 s, 1.4 MB", "2.1 s, 2.8 MB"};
 
 /* This package: one engine, VOCR; the OCR card is its Model size, Normal chosen,
  * each size with its estimates from the models' metadata, and the status line
- * naming the size's model (its generation in the name, VOCR3-H15). No engine
+ * naming the size's model (its generation in the name, VOCR5-N). No engine
  * choice and nothing of Google Lens: the overlay is offline (owner 2026-10-15). */
 static void test_one_engine_its_model_size_on_top(void)
 {
@@ -609,7 +612,7 @@ static void test_one_engine_its_model_size_on_top(void)
 /* API 21: the Model size. Touch a size to choose and save it (its edges and the
  * gaps between them only focus the row); the controller starts on it, Left and
  * Right step through the sizes, Enter (× here) goes round them, Down and Up leave
- * the row and come back. The status line names the size's model: VOCR4-W20 for
+ * the row and come back. The status line names the size's model: VOCR5-L for
  * Large. */
 static void test_model_size_touch_keys_and_save(void)
 {
@@ -645,8 +648,7 @@ static void test_model_size_touch_keys_and_save(void)
      * writes vocr_tier and drops the vocr_model and vocr_fallback_model lines */
     check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS);
     TEST_CHECK(!shown[1].tier[0] && shown[1].model_line);
-    static const char *const status[] = {"", "Small: fastest. VOCR3-FL10 found.", NORMAL_STATUS,
-                                         "Large: most accurate. VOCR4-W20 found."};
+    static const char *const status[] = {"", SMALL_STATUS, NORMAL_STATUS, LARGE_STATUS};
     for (int i = 0; i < N; i++) {
         int f = 2 + 2 * i, t = vjo_vocr_tier_parse(taps[i].tier);
         TEST_CHECK_(!strcmp(shown[f].tier, taps[i].tier), "tap %d at %d,%d: saved '%s', want %s", i, taps[i].x,
@@ -689,7 +691,7 @@ static void test_model_size_touch_keys_and_save(void)
     }
     TEST_CHECK(!strcmp(shown[2].backend, "")); /* nothing saved before the first step */
     check_sizes(7, VJO_VOCR_TIER_LARGE, SIZES, DETAILS);
-    check_status(7, "Large: most accurate. VOCR4-W20 found.", DIM);
+    check_status(7, LARGE_STATUS, DIM);
     check_sizes(21, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS);
     check_status(21, NORMAL_STATUS, DIM);
     /* the focus bar: beside the card while its row is selected, on the next card after Down */
@@ -760,12 +762,13 @@ static void test_status_follows_the_configured_models(void)
     /* an older build's vocr_model, in each family: its size */
     static const struct { const char *ini, *status; int tier; } older[] = {
         {"vocr_model = H15_w8.vocr\nvocr_fallback_model = FL10_w8.vocr\n", NORMAL_STATUS, 2},
-        {"vocr_model = FL10_w8.vocr\n", "Small: fastest. VOCR3-FL10 found.", 1},
-        {"vocr_model = VOCR3_FL10_w8.vocr\nvocr_fallback_model = none\n", "Small: fastest. VOCR3-FL10 found.", 1},
-        {"vocr_model = F20_w8.vocr\n", "Large: most accurate. VOCR4-W20 found.", 3},
-        {"vocr_model = VOCR4_W20_w8.vocr\n", "Large: most accurate. VOCR4-W20 found.", 3},
+        {"vocr_model = FL10_w8.vocr\n", SMALL_STATUS, 1},
+        {"vocr_model = VOCR3_FL10_w8.vocr\nvocr_fallback_model = none\n", SMALL_STATUS, 1},
+        {"vocr_model = VOCR3_H15_w8.vocr\n", NORMAL_STATUS, 2},
+        {"vocr_model = F20_w8.vocr\n", LARGE_STATUS, 3},
+        {"vocr_model = VOCR4_W20_w8.vocr\n", LARGE_STATUS, 3},
         {"vocr_model = VOCR9_X_w8.vocr\n", NORMAL_STATUS, 2}, /* not a known shape: the default */
-        {"vocr_tier = small\nvocr_model = VOCR4_W20_w8.vocr\n", "Small: fastest. VOCR3-FL10 found.", 1},
+        {"vocr_tier = small\nvocr_model = VOCR4_W20_w8.vocr\n", SMALL_STATUS, 1},
     };
     for (unsigned i = 0; i < sizeof(older) / sizeof(older[0]); i++) {
         card(older[i].ini);
@@ -774,35 +777,48 @@ static void test_status_follows_the_configured_models(void)
         check_sizes(1, older[i].tier, SIZES, DETAILS);
         TEST_MSG("%s", older[i].ini);
     }
-    /* the chosen size's file missing, or not its release size */
+    /* the chosen size's file missing, or not its release size (the Large blob a byte short) */
     card("vocr_tier = large\n");
-    remove_model(VJO_VOCR4_W20_NAME);
+    remove_model(VJO_VOCR_TIER3_NAME);
     run(in, 2);
-    check_status(1, "VOCR4-W20 missing. Reinstall the package.", OFF);
-    put_model(VJO_VOCR4_W20_NAME, VJO_VOCR_F20_BYTES - 1);
+    check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
+    put_model(VJO_VOCR_TIER3_NAME, VJO_VOCR_TIER3_BYTES - 1);
     run(in, 2);
-    check_status(1, "VOCR4-W20 missing. Reinstall the package.", OFF);
+    check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
     /* nothing at or below the chosen size: the chosen size's model, a red line */
-    remove_model(VJO_VOCR3_H15_NAME);
-    remove_model(VJO_VOCR3_FL10_NAME);
+    remove_model(VJO_VOCR_TIER2_NAME);
+    remove_model(VJO_VOCR_TIER1_NAME);
     run(in, 2);
-    check_status(1, "VOCR4-W20 missing. Reinstall the package.", OFF);
-    /* a larger size's file missing does not matter to a smaller choice */
+    check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
+    /* a larger size's file missing does not matter to a smaller choice, unless the smaller size has
+     * the same model (a size that kept the model of the size above it) */
     card("vocr_tier = normal\n");
-    remove_model(VJO_VOCR4_W20_NAME);
+    remove_model(VJO_VOCR_TIER3_NAME);
     run(in, 2);
-    check_status(1, NORMAL_STATUS, DIM);
+    if (strcmp(VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME)) check_status(1, NORMAL_STATUS, DIM);
+    else check_status(1, "VOCR5-N missing. Reinstall the package.", OFF);
     /* Normal's file missing: Normal named missing */
     card(NULL);
-    remove_model(VJO_VOCR3_H15_NAME);
+    remove_model(VJO_VOCR_TIER2_NAME);
     run(in, 2);
-    check_status(1, "VOCR3-H15 missing. Reinstall the package.", OFF);
+    check_status(1, "VOCR5-N missing. Reinstall the package.", OFF);
     /* a model file that cannot be closed again is not counted as found */
     card(NULL);
-    close_fails = VJO_VOCR3_H15_NAME;
+    close_fails = VJO_VOCR_TIER2_NAME;
     run(in, 2);
     close_fails = NULL;
-    check_status(1, "VOCR3-H15 missing. Reinstall the package.", OFF);
+    check_status(1, "VOCR5-N missing. Reinstall the package.", OFF);
+    /* the earlier generations' files that are no size's any more: their absence changes nothing */
+    card(NULL);
+    {
+        static const char *const earlier[] = {VJO_VOCR3_H15_NAME, VJO_VOCR3_FL10_NAME, VJO_VOCR4_W20_NAME};
+        for (unsigned i = 0; i < sizeof(earlier) / sizeof(earlier[0]); i++)
+            if (strcmp(earlier[i], VJO_VOCR_TIER1_NAME) && strcmp(earlier[i], VJO_VOCR_TIER2_NAME) &&
+                strcmp(earlier[i], VJO_VOCR_TIER3_NAME))
+                remove_model(earlier[i]);
+    }
+    run(in, 2);
+    check_status(1, NORMAL_STATUS, DIM);
     check_no_fallback_hint(2);
 }
 
@@ -1362,27 +1378,33 @@ TEST_LIST = {
     {NULL, NULL}
 };
 #else
-/* A later package (test table): VOCR5's three blobs pinned as its tiers. */
-static const char *const DETAILS5[3] = {"0.9 s, 1.1 MB", "1.0 s, 1.8 MB", "2.6 s, 2.9 MB"};
+/* A later package (test_vocr6_models.h): generation VOCR6's Small and Normal pinned as its
+ * tiers, its Large kept from VOCR5. The status line names each size's own model. */
+static const char *const DETAILS6[3] = {"0.9 s, 1.1 MB", "1.0 s, 1.8 MB", "2.6 s, 2.9 MB"};
 static void test_later_generation_is_named_from_its_metadata(void)
 {
     static const Input in[] = {OCR_PAGE};
     card(NULL);
     run(in, 2);
-    check_status(1, "Normal: default, balanced. VOCR5-N found.", DIM);
-    check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS5);
+    check_status(1, "Normal: default, balanced. VOCR6-N found.", DIM);
+    check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS6);
+    /* the Large size's model is the earlier generation's: the line names that one */
     card("vocr_tier = large\n");
     run(in, 2);
     check_status(1, "Large: most accurate. VOCR5-L found.", DIM);
+    check_sizes(1, VJO_VOCR_TIER_LARGE, SIZES, DETAILS6);
     remove_model("VOCR5_L_w8.vocr");
     run(in, 2);
     check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
-    check_no_fallback_hint(2); /* VOCR5-N would run: the card never says so */
+    check_no_fallback_hint(2); /* VOCR6-N would run: the card never says so */
     /* the same app with an older config.ini: its model's size, this package's model of it */
     card("vocr_model = VOCR3_H15_w8.vocr\nvocr_fallback_model = VOCR3_FL10_w8.vocr\n");
     run(in, 2);
-    check_status(1, "Normal: default, balanced. VOCR5-N found.", DIM);
-    check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS5);
+    check_status(1, "Normal: default, balanced. VOCR6-N found.", DIM);
+    check_sizes(1, VJO_VOCR_TIER_NORMAL, SIZES, DETAILS6);
+    card("vocr_model = VOCR4_W20_w8.vocr\n");
+    run(in, 2);
+    check_status(1, "Large: most accurate. VOCR5-L found.", DIM);
 }
 /* Nothing of the chosen size or below on the card (a partly uploaded package):
  * nothing runs; the chosen size's model is named missing, never another one. */
@@ -1390,23 +1412,30 @@ static void test_mixed_generations_name_the_model_that_loads(void)
 {
     static const Input in[] = {OCR_PAGE};
     card("vocr_tier = normal\n");
-    remove_model("VOCR5_N_w8.vocr");
+    remove_model("VOCR6_N_w8.vocr");
     run(in, 2);
-    check_status(1, "VOCR5-N missing. Reinstall the package.", OFF); /* VOCR5-S loads */
+    check_status(1, "VOCR6-N missing. Reinstall the package.", OFF); /* VOCR6-S loads */
     check_no_fallback_hint(2);
-    put_model("VOCR5_N_w8.vocr", 1500000 - 32768); /* one 32 KiB piece short */
-    remove_model("VOCR5_S_w8.vocr");
+    put_model("VOCR6_N_w8.vocr", 1500000 - 32768); /* one 32 KiB piece short */
+    remove_model("VOCR6_S_w8.vocr");
     run(in, 2);
-    check_status(1, "VOCR5-N missing. Reinstall the package.", OFF);
+    check_status(1, "VOCR6-N missing. Reinstall the package.", OFF);
     check_no_fallback_hint(2);
     /* its file back: it runs again */
-    put_model("VOCR5_N_w8.vocr", 1500000);
+    put_model("VOCR6_N_w8.vocr", 1500000);
     run(in, 2);
-    check_status(1, "Normal: default, balanced. VOCR5-N found.", DIM);
+    check_status(1, "Normal: default, balanced. VOCR6-N found.", DIM);
+    /* Large chosen, its VOCR5 file and Normal's missing: the chosen size's model named missing */
+    card("vocr_tier = large\n");
+    remove_model("VOCR5_L_w8.vocr");
+    remove_model("VOCR6_N_w8.vocr");
+    run(in, 2);
+    check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
+    check_no_fallback_hint(2);
 }
 TEST_LIST = {
-    {"a_later_generation_VOCR5_is_named_from_its_pinned_metadata_without_app_changes", test_later_generation_is_named_from_its_metadata},
-    {"VOCR5_missing_the_chosen_size_names_it_missing_and_never_another", test_mixed_generations_name_the_model_that_loads},
+    {"a_later_generation_VOCR6_is_named_from_its_pinned_metadata_without_app_changes", test_later_generation_is_named_from_its_metadata},
+    {"VOCR6_with_an_earlier_Large_names_the_size_s_model_missing_and_never_another", test_mixed_generations_name_the_model_that_loads},
     {NULL, NULL}
 };
 #endif

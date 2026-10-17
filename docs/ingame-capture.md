@@ -79,7 +79,7 @@ block, the native rc and the game's free memory after it):
 
 The workspace and a tall line's block take the same rungs 1-3; the verified weights stay in
 `USER_RW`. Before any of them the existing model fallback applies: the configured model → its
-fallback (VOCR3-H15 → VOCR3-FL10 by default) when the game's free memory cannot hold the
+fallback (since API 21 the next smaller model size, Normal → Small by default) when the game's free memory cannot hold the
 configured one, then a refusal that names the game's memory. A rows call that
 returns BUSY (a copy still running after 2 s) leaves the block allocated for the rest of the
 game's process rather than free memory the hook might write.
@@ -198,12 +198,12 @@ Off the console (`tools/preflight.sh` runs all of it and prints GO/NO-GO):
   procedural frames, `tools/preflight.sh` the eval crops through the same ARM build).
 - `host/tests/test_alloc_sim.c`: the real worker and kernel under #74's measured pools: API 18's
   full-screen buffer refused with `0x80024302`; API 19 at the full screen and a textbox,
-  VOCR3-H15 and VOCR3-FL10 (and v0.2.0's H15), with 0 B of the kernel pool, also when it refuses
+  the three model sizes (and, by name, VOCR3-H15 and v0.2.0's H15), with 0 B of the kernel pool, also when it refuses
   everything; each ladder rung.
 - `host/tests/test_kernel_game_ocr.c`, `test_game_model_broker.c`, `test_game_vocr.c`: the rows
   syscall, the hook path, every refusal, cancellation, process exit, the ladder and the probe.
-- `tools/vita3k_smoke.sh`: the real worker's five stage jobs and both other formats as a Vita
-  homebrew app in Vita3K, crash check only.
+- `tools/vita3k_smoke.sh`: the real worker's five stage jobs, one job per model size and both
+  other formats as a Vita homebrew app in Vita3K, crash check only.
 
 Known limitation (from the audit, not reachable in a normal run): the kernel worker tidies a
 rows call whose process exited once 10 s have passed, so a thread of an exited process still

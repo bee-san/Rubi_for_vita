@@ -945,22 +945,27 @@ static void cannot_states(void)
     /* the dictionary gone from both places */
     fresh_card(1);
     char src[256];
-    vjo_payload_source(8, src, sizeof(src));
+    vjo_payload_source(VJO_PAYLOAD_KERNEL_INDEX - 1, src, sizeof(src)); /* the dictionary, the last data file */
     unlink(src);
     s = scan_now();
     TEST_CHECK_(s.state == VJO_INSTALL_CANNOT && strstr(s.reason, "The dictionary is missing"), "%s", s.reason);
     (void)plan;
 }
 
-/* A fault at each step of an install: the card is then as the result says, and Install again finishes. */
+/* A fault at each step of an install: the card is then as the result says, and Install again finishes.
+ * A model's cases fault the Normal size's file, whatever the pins. `fires`: the update meets the case's
+ * fault, checked, so a pattern no file of the install has (a model the package no longer ships) fails
+ * instead of testing nothing. The six marked 0 do not meet theirs in this update, on main as here. */
 static void faults_leave_old_or_new_files(void)
 {
-    static const struct { const char *pattern; int open_write, write, rename, remove; } cases[] = {
-        {"VOCR3_H15", 1, 0, 0, 0}, {"VOCR3_H15", 0, 1, 0, 0}, {"VOCR3_H15", 0, 0, 1, 0}, {"VOCR3_H15", 0, 0, 2, 0},
-        {"plaintext.vjdict", 0, 0, 1, 0}, {"plaintext.vjdict", 0, 0, 2, 0}, {"VitaJPOverlay_Kernel", 0, 1, 0, 0},
-        {"VitaJPOverlay_Shell", 0, 0, 2, 0}, {"config.ini", 1, 0, 0, 0}, {"ux0:tai/config.txt", 0, 1, 0, 0},
-        {"ux0:tai/config.txt", 0, 0, 1, 0}, {"ur0:tai/config.txt", 0, 0, 1, 0}, {".bak", 1, 0, 0, 0},
-        {"vjo_app.txt", 1, 0, 0, 0}, {"installed.txt", 0, 0, 1, 0}, {".vjo-probe", 1, 0, 0, 0}};
+    static const struct { const char *pattern; int open_write, write, rename, remove, fires; } cases[] = {
+        {VJO_VOCR_TIER2_NAME, 1, 0, 0, 0, 1}, {VJO_VOCR_TIER2_NAME, 0, 1, 0, 0, 1},
+        {VJO_VOCR_TIER2_NAME, 0, 0, 1, 0, 1}, {VJO_VOCR_TIER2_NAME, 0, 0, 2, 0, 1},
+        {"plaintext.vjdict", 0, 0, 1, 0, 1}, {"plaintext.vjdict", 0, 0, 2, 0, 1},
+        {"VitaJPOverlay_Kernel", 0, 1, 0, 0, 1}, {"VitaJPOverlay_Shell", 0, 0, 2, 0, 1},
+        {"config.ini", 1, 0, 0, 0, 0}, {"ux0:tai/config.txt", 0, 1, 0, 0, 0}, {"ux0:tai/config.txt", 0, 0, 1, 0, 0},
+        {"ur0:tai/config.txt", 0, 0, 1, 0, 0}, {".bak", 1, 0, 0, 0, 0}, {"vjo_app.txt", 1, 0, 0, 0, 0},
+        {"installed.txt", 0, 0, 1, 0, 1}, {".vjo-probe", 1, 0, 0, 0, 1}};
     for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
         fresh_card(1);
         /* an older install of version 0 first, so that a stop leaves old and new files side by side */
@@ -977,7 +982,11 @@ static void faults_leave_old_or_new_files(void)
         fault.calls = 0;
         s = scan_now();
         int rc = run(&s, VJO_INSTALL_ACT_INSTALL, &r);
+        int calls = fault.calls, nth = cases[c].open_write + cases[c].write + cases[c].rename + cases[c].remove;
         memset(&fault, 0, sizeof(fault));
+        if (cases[c].fires)
+            TEST_CHECK_(calls >= nth, "case %u (%s): %d matching calls, the fault is the %dth", c, cases[c].pattern,
+                        calls, nth);
         TEST_CHECK_(every_file_old_or_new(0, 1), "case %u (%s)", c, cases[c].pattern);
         VjoInstallScan after = scan_now();
         if (rc < 0) {

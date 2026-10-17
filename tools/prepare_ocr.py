@@ -4,14 +4,16 @@
 No ONNX/Paddle/Python runtime is needed on the Vita. Run without --ncnn-source
 to prepare the model directory to copy to ux0:data/VitaJPOverlay/ocr.
 
---backend vocr fetches a vita-vn-ocr recognizer (default VOCR3_H15_w8.vocr, from
-the bee-san/vita-vn-ocr v0.2.5-vocr3.1 pre-release; H15_w8.vocr, FL10_w8.vocr and
-F20_w8.vocr from v0.2.0) instead; --backend vocr-tiers the three model sizes'
-(tools/model_tiers.json: VOCR3_FL10_w8.vocr, VOCR3_H15_w8.vocr, VOCR4_W20_w8.vocr), which
-a package ships. Each file comes from the release's public download; only when
-that fails (a draft release) is an authenticated GitHub CLI (`gh auth login`)
-tried. --from takes a copy downloaded by other means. Every file is checked
-against its pinned size and SHA-256.
+--backend vocr fetches a vita-vn-ocr recognizer (default VOCR5_N_w8.vocr, the Normal
+model size's, from the bee-san/vita-vn-ocr v0.3.0 release; VOCR3_H15_w8.vocr and
+VOCR3_FL10_w8.vocr from the v0.2.5-vocr3.1 pre-release, VOCR4_W20_w8.vocr from
+v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
+--backend vocr-tiers the three model sizes' (tools/model_tiers.json: VOCR5_S_w8.vocr,
+VOCR5_N_w8.vocr, VOCR5_L_w8.vocr) and their release's attribution, v0.3.0's ATTRIBUTION.md
+kept as MODEL-ATTRIBUTION.md, which a package ships. Each file comes from the
+release's public download; only when that fails (a draft release) is an authenticated
+GitHub CLI (`gh auth login`) tried. --from takes a copy downloaded by other means.
+Every file is checked against its pinned size and SHA-256.
 """
 import argparse
 import hashlib
@@ -44,7 +46,7 @@ VOCR_REPO = 'bee-san/vita-vn-ocr'
 VOCR_TAG = 'v0.2.0'
 VOCR_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_TAG}/'
 # VOCR3 (vita-vn-ocr #67): H15's and FL10's shapes retrained, the same sizes and
-# arenas; the Normal (default) and Small model sizes. Pre-release v0.2.5-vocr3.1, whose
+# arenas; the Normal and Small model sizes before VOCR5 (now the host tools'). Pre-release v0.2.5-vocr3.1, whose
 # SHA256SUMS and vocr3-assets.json list these hashes (also the VOCR3_H15 and
 # VOCR3_FL10 arms of vita-vn-ocr eval/vocr3_report_spec_20261013.json).
 VOCR3_TAG = 'v0.2.5-vocr3.1'
@@ -55,7 +57,6 @@ VOCR3_ASSETS = {
     'VOCR3_FL10_w8.vocr': (VOCR3_BASE + 'VOCR3_FL10_w8.vocr', 657664,
         '87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154'),
 }
-VOCR_DEFAULT_MODEL = 'VOCR3_H15_w8.vocr'  # the default model size's (Normal's), tools/model_tiers.json
 VOCR_ASSETS = {
     'H15_w8.vocr': (VOCR_BASE + 'H15_w8.vocr', 1155968,
         '316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd'),
@@ -84,9 +85,10 @@ VOCR_LM_ATTRIBUTION = 'ATTRIBUTION.md'
 VOCR_LM_ATTRIBUTION_PIN = {VOCR_LM_ATTRIBUTION: (VOCR_LM_BASE + VOCR_LM_ATTRIBUTION, 2538,
     '1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c')}
 
-# The Large model size: VOCR4-W20 (vita-vn-ocr #78, pre-release v0.2.5-vocr4.1, whose
-# SHA256SUMS lists this hash; F20's shape). It is also the confidence cascade's model of
-# Normal: it reads again the lines Normal reads with low confidence.
+# VOCR4-W20 (vita-vn-ocr #78, pre-release v0.2.5-vocr4.1, whose SHA256SUMS lists this hash;
+# F20's shape): the Large model size before VOCR5, and the confidence cascade's model of a
+# request by name (the host tools): it reads again the lines a smaller model reads with low
+# confidence.
 VOCR4_TAG = 'v0.2.5-vocr4.1'
 VOCR4_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR4_TAG}/'
 VOCR4_ASSETS = {
@@ -95,12 +97,36 @@ VOCR4_ASSETS = {
 }
 VOCR_CASCADE_MODEL = 'VOCR4_W20_w8.vocr'  # the cascade's model of a request by name (host tools)
 
+# VOCR5 (vita-vn-ocr eval/vocr5_protocol.json): the three model sizes, Small, Normal (the default)
+# and Large, each its own shape; release v0.3.0, whose SHA256SUMS lists these hashes.
+VOCR5_TAG = 'v0.3.0'
+VOCR5_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5_TAG}/'
+VOCR5_ASSETS = {
+    'VOCR5_S_w8.vocr': (VOCR5_BASE + 'VOCR5_S_w8.vocr', 819792,
+        'f175bfcb8cec65d69e85dd5f2cf707c9a711ada7203c0d1099cd2d0142978b8d'),
+    'VOCR5_N_w8.vocr': (VOCR5_BASE + 'VOCR5_N_w8.vocr', 1185632,
+        '20be179def8033171435ba62388657b3d3c932b365093737948c636e025e3bdc'),
+    'VOCR5_L_w8.vocr': (VOCR5_BASE + 'VOCR5_L_w8.vocr', 2473696,
+        '50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3'),
+}
+VOCR_DEFAULT_MODEL = 'VOCR5_N_w8.vocr'  # the default model size's (Normal's), tools/model_tiers.json
+# The model sizes' attribution: v0.3.0's ATTRIBUTION.md (in its SHA256SUMS), the licences of what the
+# VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
+# their terms (non-commercial use only). The package ships it beside the weights as
+# ocr/MODEL-ATTRIBUTION.md, and it is kept under that name in a models directory too: the LMs' release
+# names its own attribution ATTRIBUTION.md as well (VOCR_LM_ATTRIBUTION).
+VOCR_MODEL_ATTRIBUTION = 'MODEL-ATTRIBUTION.md'
+VOCR_MODEL_ATTRIBUTION_TAG = VOCR5_TAG
+VOCR_MODEL_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
+VOCR_MODEL_ATTRIBUTION_PIN = {VOCR_MODEL_ATTRIBUTION: (VOCR5_BASE + VOCR_MODEL_ATTRIBUTION_ASSET, 3158,
+    'db307ca08f4282a235173a77d0ef0f9c4c918dc43ac17fa289d27b831bf1c194')}
+
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so
 # the pins carry it: core/vocr_models.c per file (the Overlay app names the local OCR engine
 # after it) and package-manifest.json (package_release.py). The VOCR2 trial (v0.2.3-vocr2.1)
 # was removed from the overlay after v0.8.0-test.1.
-VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4'}
+VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5'}
 
 # The model sizes the Overlay app offers (config.ini vocr_tier), each a pinned recognizer above:
 # one table for the C pins' tests, the packager and the self-test analyser.
@@ -121,7 +147,8 @@ def model_tiers():
 
 def release_assets(name):
     """(asset table, release tag) of a pinned recognizer."""
-    for assets, tag in ((VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG), (VOCR_ASSETS, VOCR_TAG)):
+    for assets, tag in ((VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
+                        (VOCR_ASSETS, VOCR_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError(f'{name} is not a pinned recognizer')
@@ -150,10 +177,13 @@ def fetch(directory, name, assets=ASSETS):
     return store(path, data)
 
 
-def fetch_release_asset(directory, name, assets, tag, source=None):
+def fetch_release_asset(directory, name, assets, tag, source=None, asset=None):
     """A release asset: a local copy (--from), else the public download, else
-    `gh release download` (private repository or draft release)."""
+    `gh release download` (private repository or draft release). It is kept as `name`;
+    `asset` is its name in the release when that differs (MODEL-ATTRIBUTION.md is v0.3.0's
+    ATTRIBUTION.md), and a --from directory may hold it under either name."""
     url, size, sha = assets[name]
+    asset = asset or name
     path = directory / name
     def valid(data):
         return len(data) == size and hashlib.sha256(data).hexdigest() == sha
@@ -161,9 +191,16 @@ def fetch_release_asset(directory, name, assets, tag, source=None):
         return path
     if source:
         source = Path(source)
-        data = (source / name if source.is_dir() else source).read_bytes()
+        if not source.is_dir():
+            data = source.read_bytes()
+        else:
+            # its own name first; the release's name only when that copy is this one (the LMs'
+            # ATTRIBUTION.md has the same name as the models')
+            copies = [source / n for n in dict.fromkeys((name, asset)) if (source / n).is_file()]
+            data = next((d for d in (c.read_bytes() for c in copies) if valid(d)),
+                        copies[0].read_bytes() if copies else b'')
         if not valid(data):
-            raise RuntimeError(f'{source} is not the {tag} {name} (size or SHA-256 differs)')
+            raise RuntimeError(f'{source} is not the {tag} {asset} (size or SHA-256 differs)')
         return store(path, data)
     try:
         return fetch(directory, name, assets)
@@ -172,9 +209,9 @@ def fetch_release_asset(directory, name, assets, tag, source=None):
             raise RuntimeError(f'{url}: {public_error}. Check the network and retry, pass --from with a '
                                f'copy, or install the GitHub CLI (`gh auth login`) for a draft release.') from public_error
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(['gh', 'release', 'download', tag, '-R', VOCR_REPO, '-p', name, '-D', tmp],
+        subprocess.run(['gh', 'release', 'download', tag, '-R', VOCR_REPO, '-p', asset, '-D', tmp],
                        check=True, stdin=subprocess.DEVNULL, timeout=300)
-        data = (Path(tmp) / name).read_bytes()
+        data = (Path(tmp) / asset).read_bytes()
     if not valid(data):
         raise RuntimeError('Incorrect or incomplete download: ' + name)
     return store(path, data)
@@ -186,8 +223,13 @@ def fetch_vocr(directory, name, source=None):
 
 
 def fetch_tiers(directory, source=None):
-    """The three model sizes' recognizers (tools/model_tiers.json), each pinned: what a package ships."""
-    return [fetch_vocr(directory, tier['model'], source) for tier in model_tiers()['tiers']]
+    """The three model sizes' recognizers (tools/model_tiers.json), each pinned, and their release's
+    attribution (MODEL-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
+    names = dict.fromkeys(tier['model'] for tier in model_tiers()['tiers'])
+    paths = [fetch_vocr(directory, name, source) for name in names]
+    paths.append(fetch_release_asset(directory, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN,
+                                     VOCR_MODEL_ATTRIBUTION_TAG, source, VOCR_MODEL_ATTRIBUTION_ASSET))
+    return paths
 
 
 def fetch_lms(directory, source=None):
@@ -262,7 +304,7 @@ def main():
                     help="vocr-tiers: the three model sizes' recognizers (Small, Normal, Large); "
                          "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md")
     ap.add_argument('--ncnn-source', type=Path)
-    ap.add_argument('--model', choices=sorted({**VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS}),
+    ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS}),
                     help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
     args = ap.parse_args()
@@ -276,7 +318,8 @@ def main():
     if args.backend == 'vocr-tiers':
         for path in fetch_tiers(args.output, args.source):
             print('Verified', path.name)
-        print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/')
+        print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (keep',
+              VOCR_MODEL_ATTRIBUTION, 'beside them: their training data\'s licences and their terms)')
         return
     if args.backend == 'vocr':
         model = args.model or VOCR_DEFAULT_MODEL

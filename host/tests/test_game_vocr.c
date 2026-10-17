@@ -5,14 +5,20 @@
 #include <psp2/host_stubs.h>
 static unsigned test_cascade_conf; /* 0: the default; 1001: every line is doubtful */
 #define VJO_GAME_CASCADE_CONF test_cascade_conf
+#ifdef VJO_VOCR_TIERS_TEST
+/* Another package's tier map (host/tests/test_shared_tiers.h): this file's own
+ * tests for it only, its TEST_LIST at the end; the others are left unused. */
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 #include "../../game_ocr/main.c"
+#include "test_tier_pins.h"
 
 static unsigned char workspace[2*1024*1024] __attribute__((aligned(64)));
-static unsigned char weights_memory[VJO_VOCR_F20_BYTES + 4096] __attribute__((aligned(64)));
+static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static unsigned char capture_mem[1024*1024] __attribute__((aligned(64)));
 static unsigned char lm_memory[VJO_VOCR_LM_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static int lm_live; static unsigned lm_block, lm_allocations, lm_frees, lm_opens, last_which;
-static unsigned char cascade_memory[VJO_VOCR_CASCADE_BYTES + 4096] __attribute__((aligned(64)));
+static unsigned char cascade_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static int cascade_live; static unsigned cascade_block, cascade_allocations, cascade_frees, cascade_opens;
 static unsigned tier_opens[VJO_VOCR_TIERS + 1]; /* API 21: model opens by tier (VJO_GAME_OCR_OPEN_TIER) */
 static int drop_on_workspace; /* bytes the game takes when the job's workspace block is allocated */
@@ -1179,6 +1185,40 @@ static void cleanup_gives_back_unverified_blocks(void)
     TEST_CHECK(cascade_frees == 1 && lm_frees == 1 && !blocks_held);
 }
 
+/* The weights block and the cascade's block hold the largest pinned model, the Large
+ * size's (test_tier_pins.h: VOCR5-L, 2,473,696 B, 2,473,984 B page-rounded, the ledger's
+ * VJO_BUDGET_GAME_WEIGHTS and VJO_BUDGET_GAME_CASCADE), and refuse a byte more before
+ * asking the game for anything; each block keeps the job's reserve. Before VOCR5
+ * both stopped at F20's 1,558,016 B. */
+static void the_weights_blocks_hold_the_large_size_and_no_more(void)
+{
+    VjoGameOcrRequest r = setup();
+    const uint32_t block = PAGE_ROUND(test_tier_pins[2].bytes);
+    (void)r;
+    TEST_CHECK(VJO_VOCR_MAX_BYTES == test_tier_pins[2].bytes && VJO_VOCR_MAX_BYTES == VJO_VOCR_TIER3_BYTES);
+    TEST_CHECK(vjo_vocr_model(VJO_VOCR_TIER3_NAME)->bytes == VJO_VOCR_MAX_BYTES);
+    available = 64 * 1024 * 1024;
+    job_reserve = VJO_GAME_RESERVE_LARGE;
+    /* one byte more is refused, the game never asked */
+    TEST_CHECK(!weights_alloc(NULL, VJO_VOCR_MAX_BYTES + 1u) && !weights_live && weights_uid < 0);
+    TEST_CHECK(!cascade_alloc(NULL, VJO_VOCR_MAX_BYTES + 1u) && !cascade_live && cascade_uid < 0);
+    TEST_CHECK(!weight_allocations && !cascade_allocations);
+    /* the Large size's blob: one page-rounded USER block each */
+    TEST_ASSERT(weights_alloc(NULL, VJO_VOCR_MAX_BYTES) != NULL && weights_live && weights_block == block);
+    TEST_CHECK(weights_block == VJO_BUDGET_GAME_WEIGHTS && weights_bytes_held == block);
+    TEST_CHECK(!weights_alloc(NULL, VJO_VOCR_TIER1_BYTES) && weight_allocations == 1); /* never two blocks */
+    TEST_ASSERT(cascade_alloc(NULL, VJO_VOCR_MAX_BYTES) != NULL && cascade_live && cascade_block == block);
+    TEST_CHECK(cascade_block == VJO_BUDGET_GAME_CASCADE);
+    TEST_CHECK(!weights_release(NULL) && !cascade_release(NULL) && !weights_live && !cascade_live);
+    /* the reserve is kept: Large's block with exactly its 16 MiB left over fits, a page less does not */
+    available = (int)(VJO_GAME_RESERVE_LARGE + block);
+    TEST_ASSERT(weights_alloc(NULL, VJO_VOCR_MAX_BYTES) != NULL && weights_live);
+    TEST_CHECK(!weights_release(NULL));
+    available = (int)(VJO_GAME_RESERVE_LARGE + block - 4096u);
+    TEST_CHECK(!weights_alloc(NULL, VJO_VOCR_MAX_BYTES) && !weights_live && weight_allocations == 2); /* not asked */
+    job_reserve = GAME_RESERVE;
+}
+
 /* A game that is no longer the active one gets every resident block back from
  * the worker's loop, also when only the cascade's is left (the LM off, the
  * weights already gone: audit-overlay-dialogue-4 N2). */
@@ -1840,42 +1880,68 @@ static void tier_ladder_takes_the_largest_size_that_fits(void)
 static void tier_cascade_is_the_next_size_up(void)
 {
     VjoGameOcrRequest r = setup();
-    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR_TIER1_NAME), *h15 = vjo_vocr_model(VJO_VOCR_TIER2_NAME),
-                       *w20 = vjo_vocr_model(VJO_VOCR_TIER3_NAME);
-    Candidate s = {fl10, 1, VJO_GAME_OCR_OPEN_TIER, 0}, n = {h15, 2, VJO_GAME_OCR_OPEN_TIER + 1u, 0},
-              l = {w20, 3, VJO_GAME_OCR_OPEN_TIER + 2u, 0}, byname = {fl10, 0, VJO_GAME_OCR_OPEN_MODEL, 0};
-    TEST_ASSERT(fl10 && h15 && w20 && w20 == vjo_vocr_model(VJO_VOCR_CASCADE_NAME));
+    const VjoVocrModel *small = vjo_vocr_model(VJO_VOCR_TIER1_NAME), *normal = vjo_vocr_model(VJO_VOCR_TIER2_NAME),
+                       *large = vjo_vocr_model(VJO_VOCR_TIER3_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
+    Candidate s = {small, 1, VJO_GAME_OCR_OPEN_TIER, 0}, n = {normal, 2, VJO_GAME_OCR_OPEN_TIER + 1u, 0},
+              l = {large, 3, VJO_GAME_OCR_OPEN_TIER + 2u, 0}, byname = {small, 0, VJO_GAME_OCR_OPEN_MODEL, 0};
+    TEST_ASSERT(small && normal && large && w20);
+    /* Normal's cascade: Large's model, unless Normal kept it (one model for two sizes: no cascade,
+     * game_vocr_shared_tiers) */
+    const VjoVocrModel *above_n = normal != large ? large : NULL;
+    TEST_CHECK(small->bytes < normal->bytes && normal->bytes <= large->bytes && large->bytes == VJO_VOCR_MAX_BYTES);
     r.tiers = 7u;
-    TEST_CHECK(cascade_of(&s, &r, 3, 1) == h15 && cascade_of(&n, &r, 3, 1) == w20 && !cascade_of(&l, &r, 3, 1));
+    TEST_CHECK(cascade_of(&s, &r, 3, 1) == normal && cascade_of(&n, &r, 3, 1) == above_n && !cascade_of(&l, &r, 3, 1));
     TEST_CHECK(!cascade_of(&s, &r, 3, 0) && !cascade_of(&n, &r, 3, 0)); /* no ceiling: no cascade */
     r.tiers = 5u; /* Normal left out */
     TEST_CHECK(!cascade_of(&s, &r, 3, 1) && !cascade_of(&l, &r, 3, 1));
     r.tiers = 1u; /* Small chosen: Normal's model above it */
-    TEST_CHECK(cascade_of(&s, &r, 1, 1) == h15);
+    TEST_CHECK(cascade_of(&s, &r, 1, 1) == normal);
     r.tiers = 3u; /* Normal chosen: Large's model above it */
-    TEST_CHECK(cascade_of(&n, &r, 2, 1) == w20 && cascade_of(&s, &r, 2, 1) == h15);
+    TEST_CHECK(cascade_of(&n, &r, 2, 1) == above_n && cascade_of(&s, &r, 2, 1) == normal);
     r.tiers = 4u;
     TEST_CHECK(!cascade_of(&l, &r, 3, 1));
-    r.tiers = 0u;
+    r.tiers = 0u; /* by name: VOCR4-W20 beside a smaller model, none beside the same or a larger one */
     TEST_CHECK(cascade_of(&byname, &r, 0, 1) == w20);
     byname.m = w20;
     TEST_CHECK(!cascade_of(&byname, &r, 0, 1)); /* not larger than the job's own */
+    byname.m = large;
+    TEST_CHECK(!cascade_of(&byname, &r, 0, 1)); /* VOCR4-W20 is smaller than the Large size's */
     /* the reserve: the largest tier held */
-    TEST_CHECK(check_reserve(1, NULL) == VJO_GAME_RESERVE_SMALL && check_reserve(1, h15) == VJO_GAME_RESERVE_NORMAL &&
-               check_reserve(2, NULL) == VJO_GAME_RESERVE_NORMAL && check_reserve(2, w20) == VJO_GAME_RESERVE_LARGE &&
+    TEST_CHECK(check_reserve(1, NULL) == VJO_GAME_RESERVE_SMALL && check_reserve(1, normal) == VJO_GAME_RESERVE_NORMAL &&
+               check_reserve(2, NULL) == VJO_GAME_RESERVE_NORMAL && check_reserve(2, large) == VJO_GAME_RESERVE_LARGE &&
                check_reserve(3, NULL) == VJO_GAME_RESERVE_LARGE && check_reserve(0, w20) == GAME_RESERVE &&
                check_reserve(0, NULL) == GAME_RESERVE);
-    /* which file a path names: a request by tiers opens each model by its tier only */
+    /* which file a path names: a request by tiers opens each model by its tier only, the job's own */
     tiered = 1;
+    open_which = n.which;
     TEST_CHECK(which_file("ux0:data/VitaJPOverlay/ocr/" VJO_VOCR_TIER2_NAME) == VJO_GAME_OCR_OPEN_TIER + 1u);
+    open_which = l.which;
     TEST_CHECK(which_file(VJO_VOCR_TIER3_NAME) == VJO_GAME_OCR_OPEN_TIER + 2u && which_file(VJO_VOCR_TIER1_NAME) ==
                VJO_GAME_OCR_OPEN_TIER);
+    open_which = VJO_GAME_OCR_OPEN_MODEL;
     TEST_CHECK(which_file("dir/" VJO_VOCR_LM2_NAME) == VJO_GAME_OCR_OPEN_LM + 1u);
     TEST_CHECK(which_file("dir/H15_w8.vocr") == VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS); /* refused by the kernel */
     tiered = 0; open_cascade = 1; open_which = VJO_GAME_OCR_OPEN_FALLBACK;
     TEST_CHECK(which_file("d/" VJO_VOCR_CASCADE_NAME) == VJO_GAME_OCR_OPEN_CASCADE && which_file("d/x.vocr") ==
                VJO_GAME_OCR_OPEN_FALLBACK);
     open_cascade = 0; open_which = VJO_GAME_OCR_OPEN_MODEL;
+}
+
+/* Two sizes may have one model (a size that kept the model of the size below
+ * it): a job opens its model as its own tier, the one its request asks for; the
+ * cascade's (the next size up, a larger model) and a request's other files as
+ * the first tier with that name; no tier's name is no tier. Synthetic tables. */
+static void two_sizes_with_one_model_open_as_the_job_s_own_tier(void)
+{
+    static const char *const shared[VJO_VOCR_TIERS] = {"S.vocr", "W.vocr", "W.vocr"};
+    static const char *const apart[VJO_VOCR_TIERS] = {"S.vocr", "N.vocr", "L.vocr"};
+    TEST_CHECK(tier_of_file(shared, 3, "W.vocr") == 3 && tier_of_file(shared, 2, "W.vocr") == 2);
+    TEST_CHECK(tier_of_file(shared, 1, "W.vocr") == 2 && tier_of_file(shared, 0, "W.vocr") == 2); /* Small's cascade */
+    TEST_CHECK(tier_of_file(shared, 1, "S.vocr") == 1 && tier_of_file(shared, 3, "S.vocr") == 1);
+    TEST_CHECK(!tier_of_file(shared, 2, "N.vocr") && !tier_of_file(shared, 4, "X.vocr"));
+    for (unsigned own = 0; own <= VJO_VOCR_TIERS; own++)
+        for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++)
+            TEST_CHECK_(tier_of_file(apart, own, apart[t - 1u]) == t, "own %u, tier %u", own, t);
 }
 
 /* The self-test's fallback stage, by tiers: the largest tier's check for the
@@ -1933,9 +1999,11 @@ static void helpers_keep_the_tier_reserve(void)
     TEST_CHECK(!drop_resident());
     available = (int)(live_bytes + large + 4096u);
     int rc = vjo_game_ocr_run_request(&r, &out);
-    /* the job runs, serially: past the memory check it reads the model (without the release weights
-     * it stops there, VJO_E_OCR_MODEL; never VJO_E_OOM, a refusal) */
-    TEST_CHECK(VJO_VOCR_MODEL_DIR[0] ? rc == 0 && out.rc == VJO_OK && out.text[0] : out.rc == VJO_E_OCR_MODEL);
+    /* the job runs, serially: past the memory check it reads the model and recognizes the line, whatever
+     * it reads the test's dashes as (without the release weights it stops there, VJO_E_OCR_MODEL; never
+     * VJO_E_OOM, a refusal) */
+    TEST_CHECK(VJO_VOCR_MODEL_DIR[0] ? rc == 0 && out.rc == VJO_OK && out.recognized >= 1 && out.frames > 0
+                                     : out.rc == VJO_E_OCR_MODEL);
     TEST_MSG("rc %d, out.rc %d", rc, (int)out.rc);
     TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_LARGE && !out.fallback);
     TEST_CHECK(out.need_workspace + out.need_weights + out.reserve_bytes <= (uint32_t)large + 4096u);
@@ -1948,9 +2016,10 @@ static void helpers_keep_the_tier_reserve(void)
     TEST_CHECK(!drop_resident());
     available = (int)(live_bytes + large + two + 4096u);
     rc = vjo_game_ocr_run_request(&r, &out);
-    /* the job runs, with both helpers: past the memory check it reads the model (without the release weights
-     * it stops there, VJO_E_OCR_MODEL; never VJO_E_OOM, a refusal) */
-    TEST_CHECK(VJO_VOCR_MODEL_DIR[0] ? rc == 0 && out.rc == VJO_OK && out.text[0] : out.rc == VJO_E_OCR_MODEL);
+    /* the job runs, with both helpers: past the memory check it reads the model and recognizes the line
+     * (without the release weights it stops there, VJO_E_OCR_MODEL; never VJO_E_OOM, a refusal) */
+    TEST_CHECK(VJO_VOCR_MODEL_DIR[0] ? rc == 0 && out.rc == VJO_OK && out.recognized >= 1 && out.frames > 0
+                                     : out.rc == VJO_E_OCR_MODEL);
     TEST_MSG("rc %d, out.rc %d", rc, (int)out.rc);
     TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_LARGE && !out.fallback);
     TEST_CHECK(out.need_workspace + out.need_weights + out.reserve_bytes == (uint32_t)(large + two));
@@ -1970,6 +2039,8 @@ static void tier_jobs_open_their_models_by_tier(void)
         fclose(f);
     }
     const VjoVocrModel *h15 = vjo_vocr_model(VJO_VOCR_TIER2_NAME), *w20 = vjo_vocr_model(VJO_VOCR_TIER3_NAME);
+    /* Normal's cascade is Large's model, unless Normal kept that model (then none: game_vocr_shared_tiers) */
+    const unsigned apart = h15 != w20;
     /* Normal chosen (Normal, then Small), the cascade on: Normal reads, Large's model re-reads */
     line();
     available = 64 * 1024 * 1024;
@@ -1978,27 +2049,37 @@ static void tier_jobs_open_their_models_by_tier(void)
     snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
     r.flags = 8u << VJO_GAME_OCR_CASCADE_SHIFT;
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
-    TEST_CHECK(out.text[0] && !out.fallback && out.reserve_bytes == VJO_GAME_RESERVE_LARGE);
-    TEST_CHECK(tier_opens[2] == 1 && tier_opens[3] == 1 && !tier_opens[1] && !cascade_opens);
-    TEST_CHECK(resident.model == h15 && cascade_res.model == w20 && weights_live && cascade_live);
-    TEST_CHECK(out.recognized >= 1 && (out.line[0].flags & VJO_VOCR_LINE_CASCADE));
+    /* the line read, whatever the models read the test's dashes as */
+    TEST_CHECK(out.recognized >= 1 && out.frames > 0 && !out.fallback &&
+               out.reserve_bytes == (apart ? VJO_GAME_RESERVE_LARGE : VJO_GAME_RESERVE_NORMAL));
+    TEST_CHECK(tier_opens[2] == 1 && tier_opens[3] == apart && !tier_opens[1] && !cascade_opens);
+    TEST_CHECK(resident.model == h15 && weights_live && (apart ? cascade_res.model == w20 && cascade_live : !cascade_live));
+    TEST_CHECK(out.recognized >= 1 && !(out.line[0].flags & VJO_VOCR_LINE_CASCADE) == !apart);
     {
         const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
-        TEST_CHECK(check_steps(&out, s) == 1 && VJO_GCHECK_TIER(s[0]->kind) == 2 && (s[0]->kind & VJO_GCHECK_CASCADE));
+        TEST_CHECK(check_steps(&out, s) == 1 && VJO_GCHECK_TIER(s[0]->kind) == 2 &&
+                   !(s[0]->kind & VJO_GCHECK_CASCADE) == !apart);
     }
     TEST_MSG("text '%s'", out.text);
-    /* the next job, the same screen: its line comes from the line cache (API 22), so nothing is
-     * recognized; the job's model is opened for its stamp only, the cascade's is not needed */
+    /* The line is a known text now (the line cache, API 22) unless the cascade read it as nothing: a line
+     * the cascade changed is kept only with a text (core/vocr_ocr.c), and VOCR5-L reads the test's dashes
+     * as nothing where VOCR5-N reads something. */
+    unsigned cached = 0;
+    for (unsigned i = 0; i < VJO_VOCR_CACHE_LINES; i++) cached += line_cache.line[i].key != 0;
+    TEST_CHECK_(cached <= 1u && (cached || (apart && !out.text[0])), "%u cached, text '%s'", cached, out.text);
+    /* the next job, the same screen: from the cache nothing is recognized, the job's model is opened for
+     * its stamp only and the cascade's is not needed; else both read again, the blocks still resident */
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
-    TEST_CHECK(out.recognized == 1 && out.frames == 0 && tier_opens[2] == 2 && tier_opens[3] == 1 &&
-               weight_allocations == 1 && cascade_allocations == 1);
-    TEST_MSG("cached job: %u frames, opens %u/%u", (unsigned)out.frames, (unsigned)tier_opens[2], (unsigned)tier_opens[3]);
+    TEST_CHECK(out.recognized == 1 && (cached ? out.frames == 0 : out.frames > 0) && tier_opens[2] == 2 &&
+               tier_opens[3] == (cached ? 1u : 2u) * apart && weight_allocations == 1 && cascade_allocations == apart);
+    TEST_MSG("%s job: %u frames, opens %u/%u", cached ? "cached" : "uncached", (unsigned)out.frames,
+             (unsigned)tier_opens[2], (unsigned)tier_opens[3]);
     /* without the cache: both resident, opened again only for their stamps */
     r.speed = VJO_GAME_OCR_S_NOCACHE;
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     r.speed = 0;
-    TEST_CHECK(out.frames > 0 && tier_opens[2] == 3 && tier_opens[3] == 2 && weight_allocations == 1 &&
-               cascade_allocations == 1);
+    TEST_CHECK(out.frames > 0 && tier_opens[2] == 3 && tier_opens[3] == (cached ? 2u : 3u) * apart &&
+               weight_allocations == 1 && cascade_allocations == apart);
     /* Small chosen: Normal's model is its cascade */
     TEST_CHECK(!drop_resident() && !weights_live && !cascade_live); /* as when the game goes to the back */
     r.tiers = 1u;
@@ -2124,6 +2205,10 @@ static void tier_release_counts_other_sizes_as_free(void)
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     TEST_CHECK(out.fallback == 1 && resident.model == fl10);
     TEST_CHECK(check_steps(&out, s) == 2 && s[0]->rc == 1 && s[0]->sum == 0 && s[1]->rc == 0 && s[1]->sum == h15_block);
+    if (h15 == w20) { /* Normal kept Large's model: no cascade, no other size's block (game_vocr_shared_tiers) */
+        TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !cascade_live);
+        return;
+    }
     /* 4: Normal with the Large cascade, both resident; then Large at its exact edge: H15's weights
      * and the W20 cascade block both count as free, and both are released first */
     TEST_CHECK(!drop_resident());
@@ -2191,6 +2276,122 @@ static void another_sizes_weights_stay_beside_its_reserve(void)
     r.speed = 0;
 }
 
+#ifdef VJO_VOCR_TIERS_TEST
+/* ---- two sizes, one model (host/tests/test_shared_tiers.h: Small VOCR3-FL10,
+ * Normal and Large VOCR4-W20) ---- */
+
+/* Normal's next size up has Normal's own model: no cascade (the same model reads
+ * a doubtful line the same again), so a Normal job keeps Normal's reserve. Small's
+ * cascade is that model, opened as Normal's tier, the tier above a Small request's
+ * that the kernel allows it (kernel/game_ocr.c tier_allowed). Each size's job
+ * opens the model as its own tier. No files needed. */
+static void shared_model_no_cascade_and_the_job_s_own_tier(void)
+{
+    VjoGameOcrRequest r = setup();
+    const VjoVocrModel *small = vjo_vocr_model(VJO_VOCR_TIER1_NAME), *normal = vjo_vocr_model(VJO_VOCR_TIER2_NAME),
+                       *large = vjo_vocr_model(VJO_VOCR_TIER3_NAME);
+    Candidate s = {small, 1, VJO_GAME_OCR_OPEN_TIER, 0}, n = {normal, 2, VJO_GAME_OCR_OPEN_TIER + 1u, 0},
+              l = {large, 3, VJO_GAME_OCR_OPEN_TIER + 2u, 0};
+    TEST_ASSERT(small && normal && large);
+    TEST_ASSERT(normal == large && small->bytes < normal->bytes); /* the map under test */
+    TEST_CHECK(VJO_VOCR_MAX_BYTES == large->bytes);
+    r.tiers = 7u;
+    TEST_CHECK(!cascade_of(&n, &r, 3, 1) && !cascade_of(&l, &r, 3, 1) && cascade_of(&s, &r, 3, 1) == normal);
+    r.tiers = 3u; /* Normal chosen */
+    TEST_CHECK(!cascade_of(&n, &r, 2, 1) && cascade_of(&s, &r, 2, 1) == normal);
+    r.tiers = 1u; /* Small chosen */
+    TEST_CHECK(cascade_of(&s, &r, 1, 1) == normal);
+    TEST_CHECK(check_reserve(2, cascade_of(&n, &r, 2, 1)) == VJO_GAME_RESERVE_NORMAL &&
+               check_reserve(1, cascade_of(&s, &r, 1, 1)) == VJO_GAME_RESERVE_NORMAL &&
+               check_reserve(3, NULL) == VJO_GAME_RESERVE_LARGE);
+    tiered = 1;
+    open_which = l.which;
+    TEST_CHECK(which_file("ux0:data/VitaJPOverlay/ocr/" VJO_VOCR_TIER3_NAME) == l.which);
+    open_which = n.which;
+    TEST_CHECK(which_file("ux0:data/VitaJPOverlay/ocr/" VJO_VOCR_TIER2_NAME) == n.which);
+    open_which = s.which;
+    TEST_CHECK(which_file("d/" VJO_VOCR_TIER2_NAME) == n.which && which_file("d/" VJO_VOCR_TIER1_NAME) == s.which);
+    TEST_CHECK(which_file("d/H15_w8.vocr") == VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS);
+    tiered = 0; open_which = VJO_GAME_OCR_OPEN_MODEL;
+}
+
+/* With the release weights: Large alone opens the model as Large's (tier 3, the
+ * only one a Large-only request allows); Normal opens it as Normal's, with no
+ * cascade and Normal's reserve, the block still resident; Large chosen with room
+ * beside Normal's 8 MiB but not Large's 16 runs Normal, the same model; Small's
+ * cascade reads it as Normal's tier. */
+static void shared_model_jobs_run_as_their_own_tier(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
+    for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++) {
+        char path[600]; FILE *f;
+        snprintf(path, sizeof(path), "%s/%s", VJO_VOCR_MODEL_DIR, tier_names[t - 1u]);
+        if (!VJO_VOCR_MODEL_DIR[0] || !(f = fopen(path, "rb"))) { TEST_SKIP("no %s beside the release weights", tier_names[t - 1u]); return; }
+        fclose(f);
+    }
+    const VjoVocrModel *small = vjo_vocr_model(VJO_VOCR_TIER1_NAME), *shared = vjo_vocr_model(VJO_VOCR_TIER3_NAME);
+    line();
+    available = 64 * 1024 * 1024;
+    test_cascade_conf = 1001; /* every line doubtful: a cascade, if there is one, reads each again */
+    r.flags = 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+    r.tiers = 4u;
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.rc == VJO_OK && out.recognized >= 1 && out.frames > 0 && !out.fallback &&
+               out.reserve_bytes == VJO_GAME_RESERVE_LARGE);
+    TEST_CHECK(tier_opens[3] >= 1 && !tier_opens[2] && !tier_opens[1] && !cascade_opens && !cascade_live);
+    TEST_CHECK(resident.model == shared && weights_live && weight_allocations == 1);
+    TEST_MSG("opens %u/%u/%u, text '%s'", tier_opens[1], tier_opens[2], tier_opens[3], out.text);
+    /* Normal chosen: the same block, opened as Normal's for its stamp, no cascade */
+    memset(tier_opens, 0, sizeof(tier_opens));
+    r.tiers = 3u;
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+    r.speed = VJO_GAME_OCR_S_NOCACHE; /* recognized again, not from the line cache */
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.rc == VJO_OK && out.recognized >= 1 && out.frames > 0 && !out.fallback &&
+               out.reserve_bytes == VJO_GAME_RESERVE_NORMAL);
+    TEST_CHECK(tier_opens[2] >= 1 && !tier_opens[3] && !tier_opens[1] && !cascade_opens && !cascade_live);
+    TEST_CHECK(resident.model == shared && weight_allocations == 1); /* resident across the two sizes */
+    TEST_CHECK(out.recognized >= 1 && !(out.line[0].flags & VJO_VOCR_LINE_CASCADE));
+    TEST_CHECK(check_steps(&out, s) == 1 && VJO_GCHECK_TIER(s[0]->kind) == 2 && !(s[0]->kind & VJO_GCHECK_CASCADE));
+    /* Large chosen, room for the model beside Normal's 8 MiB, not beside Large's 16 MiB */
+    TEST_CHECK(!drop_resident());
+    memset(tier_opens, 0, sizeof(tier_opens));
+    r.tiers = 7u;
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
+    available = (int)tier_need(&r, 2, 0) + 4096;
+    TEST_ASSERT((uint32_t)available < tier_need(&r, 3, 0));
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.rc == VJO_OK && out.fallback == 1 && out.reserve_bytes == VJO_GAME_RESERVE_NORMAL);
+    TEST_CHECK(tier_opens[2] >= 1 && !tier_opens[3] && resident.model == shared);
+    TEST_CHECK(check_steps(&out, s) == 2 && VJO_GCHECK_TIER(s[0]->kind) == 3 && s[0]->rc &&
+               VJO_GCHECK_TIER(s[1]->kind) == 2 && !s[1]->rc);
+    /* Small chosen: its cascade is the shared model, opened as Normal's; Normal's reserve */
+    TEST_CHECK(!drop_resident());
+    memset(tier_opens, 0, sizeof(tier_opens));
+    available = 64 * 1024 * 1024;
+    r.tiers = 1u;
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER1_NAME);
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(out.rc == VJO_OK && !out.fallback && out.reserve_bytes == VJO_GAME_RESERVE_NORMAL);
+    TEST_CHECK(tier_opens[1] >= 1 && tier_opens[2] == 1 && !tier_opens[3] && !cascade_opens);
+    TEST_CHECK(resident.model == small && cascade_res.model == shared && cascade_live);
+    TEST_CHECK(out.recognized >= 1 && (out.line[0].flags & VJO_VOCR_LINE_CASCADE));
+    r.speed = 0;
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !cascade_live);
+    test_cascade_conf = 0;
+}
+
+TEST_LIST = {
+    {"two sizes, one model: no cascade for the smaller, each job opens it as its own tier",
+     shared_model_no_cascade_and_the_job_s_own_tier},
+    {"two sizes, one model: real jobs run it as their own tier, resident across both",
+     shared_model_jobs_run_as_their_own_tier},
+    {"model tiers: two sizes with one model open it as the job's own tier", two_sizes_with_one_model_open_as_the_job_s_own_tier},
+    {NULL, NULL}
+};
+#else
 TEST_LIST = {
     {"a job without lines reads the weights, the LM and the cascade (ocr-first)", a_job_without_lines_reads_the_weights_lm_and_cascade},
     {"the TEAR step says when the retry began", the_tear_step_says_when_the_retry_began},
@@ -2219,6 +2420,7 @@ TEST_LIST = {
     {"the memory check: the cascade and the LM, else the LM, else the cascade; a resident LM given back counts",
      memory_check_choices},
     {"cleanup gives back LM and cascade blocks never verified", cleanup_gives_back_unverified_blocks},
+    {"the weights and cascade blocks hold the Large size's model (VOCR5-L: 2,473,696 B), not a byte more", the_weights_blocks_hold_the_large_size_and_no_more},
     {"the cascade step carries its figures, each clamped to its field", the_cascade_step_carries_its_figures},
     {"the beam + LM decoder: read once, resident, a smaller tier when tight, given back when off", lm_jobs},
     {"the confidence cascade: doubtful lines read again, its model resident, given back, left when tight", cascade_jobs},
@@ -2231,6 +2433,7 @@ TEST_LIST = {
      tier_ladder_takes_the_largest_size_that_fits},
     {"model tiers: the cascade is the next size up, the reserve the largest held, files by tier",
      tier_cascade_is_the_next_size_up},
+    {"model tiers: two sizes with one model open it as the job's own tier", two_sizes_with_one_model_open_as_the_job_s_own_tier},
     {"model tiers: the self-test's fallback stage runs the smallest", forced_fallback_by_tiers_runs_the_smallest},
     {"model tiers: real jobs open each size and its cascade by tier; a failed file names its tier",
      tier_jobs_open_their_models_by_tier},
@@ -2248,3 +2451,4 @@ TEST_LIST = {
      helpers_with_the_lm_and_cascade_give_the_serial_text},
     {NULL, NULL}
 };
+#endif /* VJO_VOCR_TIERS_TEST */

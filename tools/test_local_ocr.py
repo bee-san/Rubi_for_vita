@@ -2,15 +2,19 @@
 """Run the real pinned model on existing synthetic Japanese dialogue fixtures.
 
 --backend ncnn (default): PP-OCRv5 mobile, model directory from prepare_ocr.py.
---backend vocr: vita-vn-ocr, a directory holding the default VOCR3_H15_w8.vocr
-(tools/prepare_ocr.py --backend vocr).
+--backend vocr: vita-vn-ocr, a directory holding the default model size's recognizer
+(tools/model_tiers.json's Normal: VOCR5_N_w8.vocr; tools/prepare_ocr.py --backend vocr).
 """
 import argparse
 from pathlib import Path
 import re
 import subprocess
 import tempfile
+import sys
 from PIL import Image, ImageOps
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from prepare_ocr import VOCR_DEFAULT_MODEL  # noqa: E402
 
 LINES = ('朝ごはん、もう冷めちゃったよ。', '早く起きないと学校に遅刻するってば')
 
@@ -25,7 +29,7 @@ def main():
     image = Image.open(root/'host/samples/vn_textbox.jpg').crop((45, 375, 920, 475)).convert('RGBA')
     # the file the CLI loads by default (host/ocr_tool.c: VJO_VOCR_DEFAULT_MODEL), so the
     # corruption below is the default model's own SHA-256 check, not a missing file
-    weights_name = 'PP_OCRv5_mobile_rec.ncnn.bin' if args.backend == 'ncnn' else 'VOCR3_H15_w8.vocr'
+    weights_name = 'PP_OCRv5_mobile_rec.ncnn.bin' if args.backend == 'ncnn' else VOCR_DEFAULT_MODEL
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         pixels = tmp/'input.rgba'

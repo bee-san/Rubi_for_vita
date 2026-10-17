@@ -372,7 +372,8 @@ static int have_models(void)
 {
     char path[1024];
     FILE *f;
-    static const char *const names[] = {"VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "H15_w8.vocr"};
+    static const char *const names[] = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME,
+                                        "VOCR3_H15_w8.vocr", "H15_w8.vocr"};
     if (!VJO_VOCR_MODEL_DIR[0]) return 0;
     for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
         snprintf(path, sizeof(path), "%s/%s", VJO_VOCR_MODEL_DIR, names[i]);
@@ -401,16 +402,20 @@ static void api18_kernel_capture_is_refused_at_the_full_screen(void)
 }
 
 /* API 19 under #74's pools: no kernel pool for OCR, at any region, any model. The
- * shipped default and fallback (VOCR3), read through the real kernel broker and checked
- * against their pins by the real worker, and v0.2.0's H15, the documented fallback. */
+ * shipped sizes (Normal the default, Small, and Large, the largest pin), read through
+ * the real kernel broker and checked against their pins by the real worker, and two
+ * earlier models the host tools still open by name (VOCR3-H15, v0.2.0's H15). */
 static void api19_runs_with_no_kernel_memory(void)
 {
     static const struct { const char *what, *model; uint32_t flags; uint16_t r[4]; } cases[] = {
-        {"API 19 full screen 960x544, VOCR3-H15", "VOCR3_H15_w8.vocr", VJO_GAME_OCR_F_FULL, {0, 0, 0, 0}},
-        {"API 19 textbox 917x125, VOCR3-H15", "VOCR3_H15_w8.vocr", 0, {1536, 48188, 62600, 15059}},
-        {"API 19 full screen 960x544, VOCR3-FL10", "VOCR3_FL10_w8.vocr", VJO_GAME_OCR_F_FULL, {0, 0, 0, 0}},
-        {"API 19 textbox 917x125, VOCR3-FL10", "VOCR3_FL10_w8.vocr", 0, {1536, 48188, 62600, 15059}},
-        {"API 19 textbox 917x125, v0.2.0 H15", "H15_w8.vocr", 0, {1536, 48188, 62600, 15059}},
+        {"API 19 full screen 960x544, Normal " VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER2_NAME, VJO_GAME_OCR_F_FULL, {0, 0, 0, 0}},
+        {"API 19 textbox 917x125, Normal " VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER2_NAME, 0, {1536, 48188, 62600, 15059}},
+        {"API 19 full screen 960x544, Small " VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER1_NAME, VJO_GAME_OCR_F_FULL, {0, 0, 0, 0}},
+        {"API 19 textbox 917x125, Small " VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER1_NAME, 0, {1536, 48188, 62600, 15059}},
+        {"API 19 full screen 960x544, Large " VJO_VOCR_TIER3_NAME, VJO_VOCR_TIER3_NAME, VJO_GAME_OCR_F_FULL, {0, 0, 0, 0}},
+        {"API 19 textbox 917x125, Large " VJO_VOCR_TIER3_NAME, VJO_VOCR_TIER3_NAME, 0, {1536, 48188, 62600, 15059}},
+        {"API 19 textbox 917x125, VOCR3-H15 (by name)", "VOCR3_H15_w8.vocr", 0, {1536, 48188, 62600, 15059}},
+        {"API 19 textbox 917x125, v0.2.0 H15 (by name)", "H15_w8.vocr", 0, {1536, 48188, 62600, 15059}},
     };
     if (!have_models()) { TEST_MSG("release weights absent (VJO_VOCR_MODEL_DIR): simulator skipped"); return; }
     make_frame();
@@ -440,27 +445,27 @@ static void api19_ladder_under_refusals(void)
     const uint16_t box[4] = {1536, 48188, 62600, 15059};
 
     refuse = 1; hook_copy_fails = 0;
-    Outcome o = run_case("VOCR3_H15_w8.vocr", 0, box[0], box[1], box[2], box[3]);
+    Outcome o = run_case(VJO_VOCR_TIER2_NAME, 0, box[0], box[1], box[2], box[3]);
     say("USER refuses the capture block -> CDRAM", &o);
     TEST_CHECK(o.rc == 0 && o.capture_memory == VJO_GAME_OCR_MEM_CDRAM && o.kd_peak == 0 && o.refused_steps == 1);
 
     refuse = 3;
-    o = run_case("VOCR3_H15_w8.vocr", 0, box[0], box[1], box[2], box[3]);
+    o = run_case(VJO_VOCR_TIER2_NAME, 0, box[0], box[1], box[2], box[3]);
     say("USER and CDRAM refuse it -> PHYCONT", &o);
     TEST_CHECK(o.rc == 0 && o.capture_memory == VJO_GAME_OCR_MEM_PHYCONT && o.kd_peak == 0 && o.refused_steps == 2);
 
     refuse = 0; hook_copy_fails = 1;
-    o = run_case("VOCR3_H15_w8.vocr", 0, box[0], box[1], box[2], box[3]);
+    o = run_case(VJO_VOCR_TIER2_NAME, 0, box[0], box[1], box[2], box[3]);
     say("the hook cannot write the game's memory -> kernel strip", &o);
     TEST_CHECK(o.rc == 0 && o.source == VJO_GAME_OCR_SRC_KSTRIP && o.kd_peak > 0 && o.kd_peak <= 64u * 1024u);
 
     kd_largest = 0;
-    o = run_case("VOCR3_H15_w8.vocr", 0, box[0], box[1], box[2], box[3]);
+    o = run_case(VJO_VOCR_TIER2_NAME, 0, box[0], box[1], box[2], box[3]);
     say("hook cannot write and KD refuses the strip", &o);
     TEST_CHECK(o.rc != 0 && o.kd_peak == 0);
 
     kd_largest = KD_GRANTED_74; hook_copy_fails = 0; refuse = 7;
-    o = run_case("VOCR3_H15_w8.vocr", 0, box[0], box[1], box[2], box[3]);
+    o = run_case(VJO_VOCR_TIER2_NAME, 0, box[0], box[1], box[2], box[3]);
     say("every rung refuses the capture block", &o);
     TEST_CHECK(o.rc == VJO_E_OOM && o.refused_steps == 3 && o.kd_peak == 0);
     refuse = 0;

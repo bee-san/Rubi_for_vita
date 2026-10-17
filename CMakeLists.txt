@@ -496,9 +496,9 @@ target_compile_definitions(vjo-preferences-tests PRIVATE VJO_SOURCE_DIR="${CMAKE
 add_test(NAME preferences COMMAND vjo-preferences-tests)
 # The Overlay app's actual input/draw loop (settings/main.c) with a scripted SDK
 # boundary: the OCR card's Model size, its status line naming the size's model;
-# then the same app with a later package's model table (generation VOCR5),
-# which it names unchanged.
-foreach(_vjo_variant IN ITEMS app vocr5)
+# then the same app with a later package's model table (generation VOCR6 for
+# two sizes, VOCR5 kept for Large), which it names unchanged.
+foreach(_vjo_variant IN ITEMS app vocr6)
   set(_vjo_target vjo-settings-${_vjo_variant}-tests)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
@@ -515,8 +515,8 @@ foreach(_vjo_variant IN ITEMS app vocr5)
 endforeach()
 set_source_files_properties(settings/main.c PROPERTIES COMPILE_DEFINITIONS main=vjo_settings_main)
 # The later package's metadata replaces this build's (core/vocr_models.c, compiled in).
-target_sources(vjo-settings-vocr5-tests PRIVATE core/vocr_models.c)
-target_compile_definitions(vjo-settings-vocr5-tests PRIVATE VJO_VOCR_MODEL_INFO_TEST="test_vocr5_models.h")
+target_sources(vjo-settings-vocr6-tests PRIVATE core/vocr_models.c)
+target_compile_definitions(vjo-settings-vocr6-tests PRIVATE VJO_VOCR_MODEL_INFO_TEST="test_vocr6_models.h")
 # The Overlay app's text layouts (settings/text_layout.c, against main.c's old
 # wrapped_text), its icon file check and cache (settings/icons.c) and the
 # titles' letters and order (settings/letter.c).
@@ -622,6 +622,24 @@ if(VJO_WITH_VOCR)
   target_compile_definitions(vjo-game-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   target_link_libraries(vjo-game-vocr-tests vjo_vocr)
   add_test(NAME game_vocr_worker COMMAND vjo-game-vocr-tests)
+  # The same game worker and the Shell's job with another package's tier map, Normal
+  # and Large one model (host/tests/test_shared_tiers.h): each file's own tests for it.
+  add_executable(vjo-game-vocr-shared-tests host/tests/test_game_vocr.c)
+  target_include_directories(vjo-game-vocr-shared-tests PRIVATE third_party/acutest/include host/tests/game_stubs
+    host/tests)
+  target_compile_options(vjo-game-vocr-shared-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-vocr-shared-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}"
+    VJO_VOCR_TIERS_TEST="test_shared_tiers.h")
+  target_link_libraries(vjo-game-vocr-shared-tests vjo_vocr)
+  add_test(NAME game_vocr_shared_tiers COMMAND vjo-game-vocr-shared-tests)
+  # the Shell's tier names come from core/config.c, compiled in with the same map
+  add_executable(vjo-shell-worker-shared-tests host/tests/test_shell_worker.c core/config.c core/vocr_models.c)
+  target_include_directories(vjo-shell-worker-shared-tests PRIVATE third_party/acutest/include host/tests/vita_stubs
+    host/tests)
+  target_compile_options(vjo-shell-worker-shared-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-shell-worker-shared-tests PRIVATE VJO_VOCR_TIERS_TEST="test_shared_tiers.h")
+  target_link_libraries(vjo-shell-worker-shared-tests vjo_host vjo_vocr)
+  add_test(NAME shell_worker_shared_tiers COMMAND vjo-shell-worker-shared-tests)
   # The actual game worker and core adapter with synthetic pinned weights and a
   # spy runtime: the resident-weights lifecycle runs without release files (CI).
   add_executable(vjo-game-resident-tests host/tests/test_game_resident.c core/vocr_ocr.c core/textnorm.c)
