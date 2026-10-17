@@ -6,10 +6,11 @@
  *
  * - CPU3 is one core with fixed priorities and no time slicing (SDK Kernel-Overview, "Thread
  *   Scheduling"). The app's main thread runs there at 96 (0x10000100 in a mini app: wiki
- *   SceKernelThreadMgr, "Thread Priority"), above SceShell's job threads there (96-120 in the
- *   SceShell dumps of test.3's collect), so SceShell gets CPU3 time only while the app's
- *   thread waits: here, only in sceKernelDelayThread; each other call the app makes takes
- *   SYSCALL_US of CPU3 from it.
+ *   SceKernelThreadMgr, "Thread Priority"), at or above most of SceShell's job threads there
+ *   (96-120 in the SceShell dumps in test.3's collect). The model takes the thread that hands
+ *   the framebuffer over to be one of them (not known), so SceShell gets CPU3 time only while
+ *   the app's thread waits: here, only in sceKernelDelayThread; each other call the app makes
+ *   takes SYSCALL_US of CPU3 from it.
  * - SceShell hands over the shared framebuffer's second buffer (index 2, fb_base2) once it
  *   has had shell_needs_us of CPU3. Before that, the framebuffer's render info is the world's
  *   first_index: 1 (buffer 1 handed over), or 0 (none yet: fb_base2 NULL, appmgr's

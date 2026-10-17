@@ -471,8 +471,12 @@ follows it), so a start that reaches `main()` leaves that line. test.3's collect
 (`log.txt` 11345, beside CLANNAD), followed by its frames line, and no start line without one:
 no start of that build with no game had reached `main()` by then, and the collect cannot show the
 owner's failure either way [measured: test.3's collect]. Whether the owner's opens with no game
-reach `main()` at all is not known: test.4's start line answers it. No crash dump is of the app
-since v0.7.7 (the ten on the card are older: `t3-crash-dumps`).
+reach `main()` at all is not known: test.4's start line answers it. None of the ten crash dumps
+on the card is from a test build (all ten were there at test.1's collect); the app's two are
+v0.7.7's, fixed in v0.7.8 (`t3-crash-dumps`). The lines are written once per start: an app that
+is only resumed writes none (test.3's was in front six times, `log.txt` 11344-12132, and wrote one
+`start:` line; `kernel.txt` has one process for it), so each check needs a new start, the app
+closed from its LiveArea page first.
 
 The app's own code waits on no game: the kernel's worker loader and input and display hooks pass
 it by (`kernel/loader.c` `vjo_game_is_candidate`, `kernel/input.c`, `kernel/display.c` act for
@@ -502,8 +506,9 @@ first frame, and a possible cause of the owner's report, not seen on a console, 
   app's main thread runs on CPU3 at 96 (`0x10000100` is 96 in a mini application [wiki:
   SceKernelThreadMgr, "Thread Priority"; source: psp2 `threadmgr/source/thread_create.c`]; that a
   system application is one is an inference, which the start line below measures). Of SceShell's
-  113 thread names in the eight SceShell dumps of test.3's collect (all on CPU3 but four with a
-  wider mask), 33 run above 96 (SceGxmDisplayQueue 64, SceShellMain 76, SceShellSvcServer 80,
+  113 thread names in the eight SceShell dumps in test.3's collect (builds of Oct 10-13; all on
+  CPU3, the Shell's default, but three that may run on any CPU and SceMtpUdcdMonitoring, at 96, on
+  CPUs 0-2 only), 33 run above 96 (SceGxmDisplayQueue 64, SceShellMain 76, SceShellSvcServer 80,
   ScePafTextThread0 86), 30 at 96 and 50 below (SceShellAppExecChk and ScePafJobDefault at 106)
   [measured], and the scheduler gives a CPU to the highest-priority ready thread, with no time
   slicing between equals [SDK: Kernel-Overview, "Thread Scheduling"]: while the loop spins,
@@ -512,9 +517,11 @@ first frame, and a possible cause of the owner's report, not seen on a console, 
   ends the loop with a NULL buffer to draw into. GrapheneCt's libvita2d_sys (6c3edf6,
   `vita2d.c:989-996`) pauses 40 us in the same loop.
 - **The frame** (the third, after the start): `vita2d_start_drawing` waits in
-  `sceSharedFbBegin` for SceShell's turn at every frame, with no bound and no log line. It blocks
-  in the kernel, so SceShell's threads run meanwhile; a start stopped there leaves the
-  hand-over's line below and, in the debug build, no `frames:` line.
+  `sceSharedFbBegin` for SceShell's turn at every frame, with no bound and no log line. It
+  blocks in the kernel, so SceShell's threads run meanwhile [inference: the reimplementation
+  leaves the user call a stub; its kernel side has an event flag that SceShell's update sets,
+  `sharedfb.c`]; a start stopped there leaves the hand-over's line below and, in the debug build,
+  no `frames:` line.
 
 Beside a game the start worked [measured: test.3's app drew its 60 logged frames]; how many reads
 its hand-over took was not logged, and which of these stops a start with no game, if any, is not
@@ -556,10 +563,11 @@ has not logged it yet. What a start with no game leaves in `log.txt`, and what e
 | --- | --- |
 | no `start:` line | before its first line: the launch, or reading `games.ini` and `config.ini` (a crash dump would say); not libvita2d or these wrappers |
 | `start:`, no `install page:` line | in the Install page's read of the card, before the graphics start |
-| `start:` and `install page:`, no `graphics:` line | in the GPU library's start or the framebuffer's first open (or a crash there: a dump would say) |
+| `start:` and `install page:`, no `graphics:` line | in the version check's reads (`settings/app_check.c`), the GPU library's start or the framebuffer's first open (or a crash there: a dump would say) |
 | `graphics: waiting for the display …`, then `graphics: no display from the system in 10 s …; closing` | no hand-over in 10 s: the line names the last read |
+| `graphics: waiting for the display …`, then nothing | closed, by the tester or the system, before its 10 s |
 | `graphics: the GPU library refused the app …; closing` | the shared and the app's own parameter buffer refused |
-| `graphics: system application; …`, then (debug build) no `frames:` line | after the hand-over: most likely at the first frame's `sceSharedFbBegin` |
+| `graphics: system application; …`, then (debug build) no `frames:` line | after the hand-over: most likely at the first frame's `sceSharedFbBegin`; else in the rest of libvita2d's start (its results unchecked), the font's load (which closes the app with no line, `settings/main.c`) or the Games list's scan. Whether the app closed by itself or stayed on its start-up picture helps tell them apart |
 | `graphics: system application; GPU library 0x0A: 0x00000000; display: buffer 2 at read 1 after 0 ms; …`, and the app opens | it opened, but neither wrapped dependency applied: the owner's failure is then neither reproduced nor explained |
 | `… then its own parameter buffer 0x03 …` or a large read count or time, and the app opens | the dependency these wrappers handle: the shared buffer missing, or the hand-over waiting on SceShell |
 

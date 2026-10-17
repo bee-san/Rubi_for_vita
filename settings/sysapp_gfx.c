@@ -12,11 +12,11 @@
  *   changes only when SceShell's thread that hands it over runs. The app's main thread runs on
  *   CPU3 at 96 (0x10000100 in a mini application, wiki SceKernelThreadMgr), and while the loop
  *   spins SceShell's threads at or below 96 on CPU3 do not run (most of its job threads: 96-120 in
- *   test.3's SceShell dumps; SceShellMain, at 76, does). A read before any hand-over (index 0, the
- *   second buffer NULL) ends the loop with a NULL buffer to draw into.
+ *   the SceShell dumps in test.3's collect; SceShellMain, at 76, does). A read before any hand-over
+ *   (index 0, the second buffer NULL) ends the loop with a NULL buffer to draw into.
  *
- * (The third wait, libvita2d's sceSharedFbBegin at each frame, vita2d.c:859-860, blocks in the
- * kernel, so SceShell's threads run meanwhile; it is not wrapped.) Beside a game (test.3's console
+ * (The third wait, libvita2d's sceSharedFbBegin at each frame, vita2d.c:859-860, most likely
+ * blocks in the kernel, so SceShell's threads run meanwhile: an inference; it is not wrapped.) Beside a game (test.3's console
  * run) the start worked; how many reads its hand-over took was not logged. With no game running
  * the app does not open (owner, 2026-10-16), and where it stops is not known: main.c's start
  * line and this file's line in log.txt will say (docs/vita-memory.md section 5.4, "Starting with
