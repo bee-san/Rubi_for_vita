@@ -53,6 +53,7 @@ typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage)
 static int shot_spare_ready, shot_spare_usable; /* file worker only */
 static SceUID shot_spare_fd = -1; /* retained across a failed close */
 static int shot_spare_busy; /* g.lock: do not unload while its file is owned */
+static int shot_spare_preparing; /* g.lock: no job may start behind reserve I/O */
 static uint64_t shot_spare_retry_us;
 
 
@@ -164,7 +165,7 @@ void game_ocr_init(void)
     worker_thread = refused_thread = 0;
     worker_epoch = request_epoch = sequence = 0;
     valid = pending = claimed = cancelled = completed = stopping = 0;
-    shot_spare_ready = shot_spare_usable = shot_spare_busy = 0;
+    shot_spare_ready = shot_spare_usable = shot_spare_busy = shot_spare_preparing = 0;
     shot_spare_fd = -1;
     shot_spare_retry_us = 0;
     waiters = 0;
@@ -178,7 +179,7 @@ void game_ocr_init(void)
 int game_ocr_capture_busy_locked(void)
 {
     sync_locked();
-    return pending || claimed || model_io.seq || rows.state != ROWS_IDLE;
+    return pending || claimed || model_io.seq || rows.state != ROWS_IDLE || shot_spare_preparing;
 }
 
 SceUID game_ocr_worker_pid_locked(void)
@@ -366,7 +367,7 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
     VJO_LOCK();
     sync_locked();
     if (!shell_caller(pid)) rc = VJO_ERR_PERM;
-    else if (pending || claimed || model_io.seq || rows.state != ROWS_IDLE) rc = VJO_ERR_BUSY;
+    else if (pending || claimed || model_io.seq || rows.state != ROWS_IDLE || shot_spare_preparing) rc = VJO_ERR_BUSY;
     else if (!registration_current(worker_pid)) rc = VJO_ERR_NO_GAME;
     else if (sequence == 0x7FFFFFFFu) rc = VJO_ERR_BUSY; /* Never recycle a sequence. */
     else {
@@ -1224,7 +1225,6 @@ void game_ocr_rows_tick(void)
 static void shot_spare_prepare(void)
 {
     uint64_t started = ksceKernelGetSystemTimeWide();
-    if (started < shot_spare_retry_us) return;
     shot_spare_retry_us = started + 1000000u;
     int rc = 0;
     if (shot_spare_fd < 0) {
@@ -1259,6 +1259,7 @@ static void shot_spare_prepare(void)
     }
     VJO_LOCK();
     shot_spare_busy = shot_spare_fd >= 0;
+    shot_spare_preparing = 0;
     VJO_UNLOCK();
     if (rc < 0 || ksceKernelGetSystemTimeWide() - started >= 100000u)
         klog("screenshot reserve: %u ms, rc 0x%08X",
@@ -1273,14 +1274,16 @@ void game_ocr_model_tick(void)
     uint64_t mtime = 0;
     char path[sizeof(model_io.path)], final[sizeof(model_io.path)];
     game_ocr_rows_tick();
-    if (shot_spare_fd >= 0) shot_spare_prepare(); /* retry an owned close, even during a job */
     VJO_LOCK();
     sync_locked();
     if (!model_io.seq || model_io.phase == MODEL_RUNNING) {
         int prepare = !model_io.seq && (!valid || completed) && !pending && !claimed &&
                       rows.state == ROWS_IDLE && g.shell_pid > 0 && !stopping &&
                       !shot_spare_ready && ksceKernelGetSystemTimeWide() >= shot_spare_retry_us;
-        if (prepare) shot_spare_busy = 1;
+        /* Preparation and retained-close retries both wait for an idle
+         * transport. A job arriving meanwhile stays unclaimed, so its model
+         * operation's two-second deadline cannot expire behind this I/O. */
+        if (prepare) shot_spare_busy = shot_spare_preparing = 1;
         VJO_UNLOCK();
         if (prepare) shot_spare_prepare();
         return;

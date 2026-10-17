@@ -2,13 +2,10 @@
 #include "../core/errors.h"
 #include <string.h>
 
-/* The kernel answers a submission BUSY while the worker still cleans up the
- * previous job (one cancelled a moment ago: a lookup went first, the screen
- * changed) or a raw capture is in flight. That passes in a few ms, so
- * the submission is repeated every SUBMIT_RETRY_US for SUBMIT_BUSY_US; only
- * then is the worker taken for unavailable. */
+/* Cleanup or idle screenshot-reserve preparation can make Submit BUSY.
+ * Retry within the exchange's existing deadline: slow storage must not start
+ * a job whose model open would time out while queued behind that preparation. */
 #define SUBMIT_RETRY_US 20000u
-#define SUBMIT_BUSY_US 2000000
 /* The result is asked for every READ_PERIOD_US. A kernel that waits for it
  * (kernel/game_ocr.c READ_WAIT_US) answers a pending read only after that long,
  * and the result as soon as the game completes it: then no sleep follows. One
@@ -31,10 +28,16 @@ int vjo_game_ocr_exchange(const VjoGameOcrClient *client,
     if (cancelled && cancelled(cancel_ud)) return VJO_E_CANCELLED;
     start = client->now_us(client->ud);
     if (start < 0) return VJO_E_SOURCE;
-    while ((seq = client->submit(client->ud, request)) == VJO_ERR_BUSY &&
-           client->now_us(client->ud) - start < SUBMIT_BUSY_US) {
+    for (;;) {
         if (cancelled && cancelled(cancel_ud)) return VJO_E_CANCELLED;
-        client->delay_us(client->ud, SUBMIT_RETRY_US);
+        int64_t now = client->now_us(client->ud);
+        if (now < start || now - start >= timeout_us) return VJO_E_OCR_UNAVAILABLE;
+        seq = client->submit(client->ud, request);
+        if (seq != VJO_ERR_BUSY) break;
+        now = client->now_us(client->ud);
+        if (now < start || now - start >= timeout_us) return VJO_E_OCR_UNAVAILABLE;
+        int64_t remaining = timeout_us - (now - start);
+        client->delay_us(client->ud, remaining < SUBMIT_RETRY_US ? (uint32_t)remaining : SUBMIT_RETRY_US);
     }
     if (seq <= 0) return VJO_E_OCR_UNAVAILABLE;
     for (;;) {

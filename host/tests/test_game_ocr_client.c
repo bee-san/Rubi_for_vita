@@ -8,7 +8,7 @@ typedef struct {
     int submits, reads, cancels, delays, ready_after, abort_after;
     int busy, cancel_when_busy; /* the first `busy` submissions answer BUSY */
     int read_wait_us; /* a pending read returns after this long (a kernel that waits for the result) */
-    int64_t time;
+    int64_t time, cancel_at;
     const char *text;
 } Fake;
 static int submit(void *ud, const VjoGameOcrRequest *req) {
@@ -42,13 +42,16 @@ static int cancel(void *ud, uint32_t seq) {
 static int64_t now(void *ud) { return ((Fake *)ud)->time; }
 static void delay(void *ud, uint32_t us) { Fake *f = ud; f->delays++; f->time += us; }
 static int cancelled(void *ud) {
-    Fake *f = ud; return f->cancelled || (f->abort_after && f->reads >= f->abort_after);
+    Fake *f = ud;
+    return f->cancelled || (f->abort_after && f->reads >= f->abort_after) ||
+           (f->cancel_at && f->time >= f->cancel_at);
 }
-static int exchange(Fake *f, VjoGameOcrResult *out) {
+static int exchange_with_timeout(Fake *f, VjoGameOcrResult *out, int64_t timeout) {
     VjoGameOcrRequest req = {.size = sizeof(req)};
     VjoGameOcrClient c = {f, submit, read_result, cancel, now, delay};
-    return vjo_game_ocr_exchange(&c, &req, out, cancelled, f, 150000);
+    return vjo_game_ocr_exchange(&c, &req, out, cancelled, f, timeout);
 }
+static int exchange(Fake *f, VjoGameOcrResult *out) { return exchange_with_timeout(f, out, 150000); }
 static void successful(void) {
     Fake f = {.submit_rc = 17, .ready_after = 2}; VjoGameOcrResult out;
     TEST_CHECK(exchange(&f, &out) == 0 && !strcmp(out.text, "test"));
@@ -89,10 +92,8 @@ static void refuses_unclean_or_failed_engine(void) {
     f = (Fake){.submit_rc = 9, .engine_rc = 1};
     TEST_CHECK(exchange(&f, &out) == VJO_E_OCR_INFERENCE && !out.text[0] && f.cancels == 1);
 }
-/* A BUSY kernel (the worker still drains a job cancelled a moment ago) is
- * asked again, 20 ms apart, for 2 s; the job then runs as usual. One that
- * stays BUSY is the unavailable worker it always was, and a cancellation
- * meanwhile ends the wait with nothing submitted. */
+/* BUSY retries share the exchange's total deadline with the job itself;
+ * before a job is accepted, cancellation must not cancel a nonexistent seq. */
 static void busy_submission_is_repeated_within_its_time(void) {
     Fake f = {.submit_rc = 17, .busy = 2}; VjoGameOcrResult out;
     TEST_CHECK(exchange(&f, &out) == 0 && !strcmp(out.text, "test"));
@@ -100,9 +101,24 @@ static void busy_submission_is_repeated_within_its_time(void) {
     f = (Fake){.submit_rc = 17, .busy = 1000};
     memset(&out, 0xA5, sizeof(out));
     TEST_CHECK(exchange(&f, &out) == VJO_E_OCR_UNAVAILABLE && !out.text[0]);
-    TEST_CHECK(!f.reads && !f.cancels && f.time == 2000000 && f.submits == 101 && f.delays == 100);
+    TEST_CHECK(!f.reads && !f.cancels && f.time == 150000 && f.submits == 8 && f.delays == 8);
     f = (Fake){.submit_rc = 17, .busy = 1000, .cancel_when_busy = 1};
     TEST_CHECK(exchange(&f, &out) == VJO_E_CANCELLED && f.submits == 1 && !f.reads && !f.cancels);
+}
+static void reserve_preparation_can_outlast_two_seconds(void) {
+    VjoGameOcrResult out;
+    Fake f = {.submit_rc = 17, .busy = 150}; /* three seconds of reserve I/O */
+    TEST_CHECK(exchange_with_timeout(&f, &out, 3500000) == 0 && !strcmp(out.text, "test"));
+    TEST_CHECK(f.time == 3000000 && f.submits == 151 && f.reads == 1 && !f.cancels);
+    f = (Fake){.submit_rc = 17, .busy = 120, .ready_after = 1000, .read_wait_us = 50000};
+    TEST_CHECK(exchange_with_timeout(&f, &out, 3000000) == VJO_E_OCR_INFERENCE && !out.text[0]);
+    TEST_CHECK(f.time == 3000000 && f.submits == 121 && f.reads == 12 && f.cancels == 1);
+    f = (Fake){.submit_rc = 17, .busy = 10000};
+    TEST_CHECK(exchange_with_timeout(&f, &out, 3010000) == VJO_E_OCR_UNAVAILABLE && !out.text[0]);
+    TEST_CHECK(f.time == 3010000 && !f.reads && !f.cancels); /* the last delay is clamped */
+    f = (Fake){.submit_rc = 17, .busy = 10000, .cancel_at = 3000000};
+    TEST_CHECK(exchange_with_timeout(&f, &out, 3500000) == VJO_E_CANCELLED && !out.text[0]);
+    TEST_CHECK(f.time == 3000000 && !f.reads && !f.cancels);
 }
 /* A kernel that waits for the result (kernel/game_ocr.c READ_WAIT_US) paces the
  * reads itself: no sleep follows its pending answers, and the timeout and a
@@ -146,5 +162,6 @@ TEST_LIST = {
     {"cancellation", cancellation}, {"stale and incomplete", rejects_stale_and_incomplete_results},
     {"cleanup and engine failure", refuses_unclean_or_failed_engine},
     {"busy submission repeated within its time", busy_submission_is_repeated_within_its_time},
+    {"slow reserve preparation shares the exchange deadline and stays cancellable", reserve_preparation_can_outlast_two_seconds},
  {NULL, NULL}
 };

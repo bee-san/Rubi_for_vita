@@ -357,12 +357,20 @@ truncating away its allocated space. Before publishing the JPEG, it trims the
 file to the complete image's length, closes it and renames it normally.
 The next idle period replenishes the spare; it also survives a restart.
 
-A cold screenshot with the reserved space took 0.79 s, including capture,
-encoding, writing and trimming; replenishing the spare took 48 ms [measured
-on the console]. The spare is disk space, not an image buffer in the kernel
-or Shell. Preparation uses one byte on the existing file worker's stack.
+A measurement build's cold screenshot with reserved space took 0.79 s,
+including capture, encoding, writing and trimming; replenishing the spare
+took 48 ms, and its screenshot runs took 523–905 ms [measured on the console,
+measurement build]. The final source's first ordinary capture after a
+restart has not been verified on the console. The spare is disk space, not an
+image buffer in the kernel or Shell. Preparation uses one byte on the
+existing file worker's stack.
 If preparation fails or the spare disappears, saving falls back to the
 bounded normal write path. A failed trim never publishes an oversized JPEG.
+An OCR or screenshot submitted while preparation is in progress waits before
+the game claims it, within the same total job deadline, and can still be
+cancelled. The model open's shorter deadline starts only after preparation
+finishes. Retrying a failed reserve close also waits for an idle transport;
+between retries it does not prevent OCR jobs from running.
 
 ### Size and quality
 

@@ -14,3 +14,13 @@
 #define vjoOcrShotWrite test_kernel_shot_write
 #define vjoOcrShotSave test_kernel_shot_save
 #include "../../kernel/game_ocr.c"
+
+/* The model-only and allocation harnesses never write a screenshot. They still
+ * link the whole broker; the screenshot harness overrides this with its real
+ * file truncation. Fail immediately if another harness unexpectedly reaches it. */
+#include <stdlib.h>
+__attribute__((weak)) int ksceIoChstatByFd(SceUID fd, SceIoStat *st, int bits)
+{
+    (void)fd; (void)st; (void)bits;
+    abort();
+}

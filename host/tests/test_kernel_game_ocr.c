@@ -171,6 +171,7 @@ static uint32_t shot_next_offset, shot_trim_size;
 static uint32_t shot_cancel_on_rename; /* the Shell cancels this job while its file is renamed */
 static unsigned shot_opens, shot_writes, shot_closes, shot_renames, shot_removes, shot_syncs, shot_trims;
 static unsigned shot_extensions, spare_opens, spare_stats, spare_writes, spare_closes, spare_trims;
+static void (*during_spare_write)(void); /* a submission while storage is blocked */
 static int shot_entry(const char *name)
 {
     for (int i = 0; i < SHOT_FS_SLOTS; i++)
@@ -257,6 +258,11 @@ int ksceIoPwrite(SceUID fd, const void *data, SceSize bytes, SceOff offset)
     if (!strcmp(shot_fs[i].name, SHOT_SPARE_PATH)) {
         TEST_CHECK(bytes == 1 && offset == VJO_GAME_OCR_SHOT_MAX - 1u && *(const unsigned char *)data == 0);
         spare_writes++;
+        if (during_spare_write) {
+            void (*fn)(void) = during_spare_write;
+            during_spare_write = NULL;
+            fn();
+        }
         if (spare_write_error) return spare_write_error;
         if (spare_zero_write) return 0;
         /* A file extended past EOF reads as zeroes in the intervening range. */
@@ -1316,6 +1322,7 @@ static void shot_fs_reset(void)
     shot_cancel_on_rename = 0;
     shot_opens = shot_writes = shot_closes = shot_renames = shot_removes = shot_syncs = 0;
     shot_trims = shot_extensions = spare_opens = spare_stats = spare_writes = spare_closes = spare_trims = 0;
+    during_spare_write = NULL;
     snprintf(shot_tmp, sizeof(shot_tmp), VJO_GAME_OCR_SHOT_DIR "/%s.jpg.tmp", SHOT_ID);
     snprintf(shot_jpg, sizeof(shot_jpg), VJO_GAME_OCR_SHOT_DIR "/%s.jpg", SHOT_ID);
 }
@@ -1528,6 +1535,39 @@ static void shot_spare_waits_for_shell_and_idle(void)
     TEST_CHECK(!spare_opens && shot_entry(SHOT_SPARE_PATH) < 0);
 }
 
+static void submit_during_slow_reserve_write(void)
+{
+    SceUID saved = caller;
+    VjoGameOcrRequest r = make_request();
+    TEST_ASSERT(shot_worker_context());
+    for (unsigned round = 0; round < 2; round++) {
+        caller = 3;
+        TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_BUSY && !pending && !claimed && !model_io.seq && !sequence);
+        VJO_LOCK();
+        TEST_CHECK(game_ocr_capture_busy_locked() && game_ocr_shutdown_locked() == VJO_ERR_BUSY && !stopping);
+        VJO_UNLOCK();
+        model_clock += 1500000u;
+    }
+    caller = saved;
+}
+
+static void shot_spare_slow_prepare_keeps_the_job_unclaimed(void)
+{
+    setup();
+    during_spare_write = submit_during_slow_reserve_write;
+    uint64_t before = model_clock;
+    model_tick();
+    TEST_CHECK(model_clock - before == 3000000u && shot_spare_ready && !shot_spare_preparing && !shot_spare_busy);
+    uint32_t seq = submit();
+    take(seq);
+    wait_runs_worker = 1;
+    /* The model operation's own deadline starts after preparation, not while
+     * its file worker is still blocked on the spare. */
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == (int)VJO_VOCR_FL10_BYTES);
+    TEST_CHECK(vjoOcrModelClose(seq) == 0 && !file_live);
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
 static void shot_spare_missing_or_unclaimable_falls_back(void)
 {
     for (unsigned how = 0; how < 2; how++) {
@@ -1618,6 +1658,26 @@ static void shot_spare_failed_close_is_owned_until_cleanup(void)
     TEST_CHECK(!shot_open && shot_spare_fd < 0 && !shot_spare_busy && shot_spare_ready);
     TEST_CHECK(spare_opens == 1 && spare_closes == 3 && spare_writes == 1);
     TEST_CHECK(game_ocr_stop() == 0 && stopping);
+}
+
+static void shot_spare_close_retry_waits_for_the_active_job(void)
+{
+    setup();
+    spare_close_error = (int)0x80010005u;
+    model_tick();
+    TEST_ASSERT(shot_spare_busy && !shot_spare_preparing && spare_closes == 1);
+    uint32_t seq = submit();
+    take(seq);
+    model_clock += 1000000u;
+    model_tick();
+    TEST_CHECK(spare_closes == 1); /* a retained close never starts ahead of a claimed job */
+    wait_runs_worker = 1;
+    TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_MODEL, NULL) == (int)VJO_VOCR_FL10_BYTES);
+    TEST_CHECK(vjoOcrModelClose(seq) == 0 && !file_live && spare_closes == 1);
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    spare_close_error = 0;
+    model_tick();
+    TEST_CHECK(spare_closes == 2 && !shot_open && !shot_spare_busy && shot_spare_ready);
 }
 
 static void shot_writes_are_checked(void)
@@ -2174,6 +2234,7 @@ TEST_LIST = {
     {"screenshot reserve: overwrite without truncation, trim the whole JPEG, refill while idle",
      shot_spare_overwrites_trims_and_refills},
     {"screenshot reserve: wait for Shell registration and an idle transport", shot_spare_waits_for_shell_and_idle},
+    {"screenshot reserve: a slow preparation keeps new OCR unclaimed", shot_spare_slow_prepare_keeps_the_job_unclaimed},
     {"screenshot reserve: a missing or unclaimable reserve falls back to a normal file",
      shot_spare_missing_or_unclaimable_falls_back},
     {"screenshot reserve: failed trim retains cleanup ownership and publishes no image",
@@ -2182,6 +2243,8 @@ TEST_LIST = {
      shot_spare_repairs_partial_files_and_retries_failures},
     {"screenshot reserve: a failed close retains the descriptor and refuses unload until cleanup",
      shot_spare_failed_close_is_owned_until_cleanup},
+    {"screenshot reserve: retained close retries never delay a claimed OCR job",
+     shot_spare_close_retry_waits_for_the_active_job},
 #if VJO_DEBUG
     {"API 22: the frame pacing of each job, one step the kernel adds", frame_pacing_step},
     {"API 22: the pacing windows follow the claim, a cancelled job ends one, the step is written under the lock",
