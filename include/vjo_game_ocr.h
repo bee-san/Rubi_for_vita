@@ -73,6 +73,10 @@
 #define VJO_GAME_OCR_SHOT_ID_BYTES 36u
 #define VJO_GAME_OCR_SHOT_MAX (192u * 1024u)
 #define VJO_GAME_OCR_SHOT_CHUNK 32768u /* the kernel's staging buffer (VJO_GAME_OCR_MODEL_CHUNK) */
+/* One deadline for the whole JPEG file, including every chunk and its close.
+ * Shell must leave time for capture/encoding before this deadline expires. */
+#define VJO_GAME_OCR_SHOT_FILE_US 30000000u
+#define VJO_GAME_OCR_SHOT_TIMEOUT_US 35000000u
 /* API 22 (ocr-speed), VjoGameOcrRequest.speed: bits 0-1 the helper threads that
  * recognize lines in parallel (0-2, VjoVocrPool: config ocr_threads minus one);
  * bit 2 the ARM clock at 444 MHz while the job recognizes (ocr_boost_clock, on
@@ -311,6 +315,9 @@ typedef struct {
      * encoded in, its block (page-rounded) and where it was (VJO_GAME_OCR_MEM_*), the encoding's
      * time (strips included) and the file's (the kernel's writes and its save). The rows' source,
      * strips, strip rows and waits are in source, captures, strip_rows and capture_us. */
+    /* On a pending Read (return 1), nonzero shot_bytes means the encoded
+     * screenshot is frozen: closing the overlay can no longer change it.
+     * It is a progress marker then, not a committed file size. */
     uint32_t shot_bytes, shot_quality, shot_tries, shot_block, shot_memory, shot_encode_us, shot_write_us;
     /* UTF-8 OCR text on success; every failed result carries empty text. API 20:
      * the text is normalised (core/textnorm.h) and the recognizer's own text

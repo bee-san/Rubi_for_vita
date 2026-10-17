@@ -433,7 +433,7 @@ static int file_read(void *ud, uint64_t off, void *dst, size_t bytes)
 /* API 23: the file the kernel holds is a shot's JPEG, whose save (a close and
  * a rename) may outlast a model operation's wait: its close waits SHOT_FILE_WAIT_US. */
 static int shot_file;
-#define SHOT_FILE_WAIT_US 30000000u
+#define SHOT_FILE_WAIT_US VJO_GAME_OCR_SHOT_FILE_US
 
 static void file_close(void *ud)
 {
@@ -950,11 +950,10 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 #define SHOT_TRIES 3                          /* 70, 50, 35: a JPEG over VJO_GAME_OCR_SHOT_MAX again, lower */
 #define SHOT_HOOK_ROWS VJO_GAME_OCR_ROWS_MAX  /* rows a frame through the hook: 9 frames for 544 */
 #define SHOT_KSTRIP_ROWS VJO_JPEG_BAND        /* through the kernel strip: 16 x 960 x 4 within its 64 KiB */
-/* The save (its close and a rename) on a slow card: the Shell's exchange gives up
- * first (shell/anki.c SHOT_TIMEOUT_US, 8 s) and cancels, which ends this wait; its file then goes. file_close
- * waits SHOT_FILE_WAIT_US for that, so a save that ends within 30 s of the cancel (at most 38 s after the
- * Shell's request) never leaves the worker blocked for the game's session; a slower one does, as any file
- * the kernel still holds: never acknowledge a leaked descriptor. */
+/* Every JPEG chunk and its close/rename share one 30 s file deadline. The
+ * Shell allows 35 s including capture/encoding, or cancels sooner when the
+ * overlay closes. Cleanup then waits up to 30 s for an outstanding file call;
+ * a slower one leaves the worker blocked: never acknowledge a leaked descriptor. */
 #define SHOT_SAVE_WAIT_US SHOT_FILE_WAIT_US
 /* The block: the encoder's state, one strip of colour rows and the JPEG (at most
  * VJO_GAME_OCR_SHOT_MAX), with the arena's alignment and the buffer's spare byte. */
@@ -1080,7 +1079,9 @@ static int run_shot(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     shot_file = 1;
     while (!rc && off < jpg.len) {
         uint32_t n = (uint32_t)jpg.len - off < VJO_GAME_OCR_SHOT_CHUNK ? (uint32_t)jpg.len - off : VJO_GAME_OCR_SHOT_CHUNK;
-        int got = shot_call(off, n, jpg.data + off, MODEL_WAIT_US);
+        uint64_t elapsed = now_wide() - t0;
+        int got = elapsed >= SHOT_FILE_WAIT_US ? VJO_ERR_TIMEOUT
+                    : shot_call(off, n, jpg.data + off, (uint32_t)(SHOT_FILE_WAIT_US - elapsed));
         if (got == (int)n) {
             off += n;
             chunks++;
@@ -1088,7 +1089,11 @@ static int run_shot(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
             rc = got < 0 ? got : VJO_E_LOCAL_IO;
         }
     }
-    if (!rc) rc = shot_call(0, (uint32_t)jpg.len, NULL, SHOT_SAVE_WAIT_US);
+    if (!rc) {
+        uint64_t elapsed = now_wide() - t0;
+        rc = elapsed >= SHOT_SAVE_WAIT_US ? VJO_ERR_TIMEOUT
+                 : shot_call(0, (uint32_t)jpg.len, NULL, (uint32_t)(SHOT_SAVE_WAIT_US - elapsed));
+    }
     out->shot_write_us = (uint32_t)(now_wide() - t0);
     step_add(VJO_GSTEP_SAVE, chunks, 0, rc, off, 0, out->shot_write_us + 1u, 0);
     if (!rc) {

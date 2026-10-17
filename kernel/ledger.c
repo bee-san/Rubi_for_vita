@@ -13,6 +13,7 @@ static const VjoLedgerItemDef defs[VJO_KL_COUNT] = {
     [VJO_KL_STACK] = {"VjoWorker stack", VJO_LEDGER_POOL_KERNEL},
     [VJO_KL_OCR_STRIP] = {"VjoOcrStrip", VJO_LEDGER_POOL_KERNEL},
     [VJO_KL_POLICY] = {"VjoPolicy", VJO_LEDGER_POOL_KERNEL},
+    [VJO_KL_IO_STACK] = {"VjoFile stack", VJO_LEDGER_POOL_KERNEL},
 };
 
 VjoLedger g_kernel_ledger;

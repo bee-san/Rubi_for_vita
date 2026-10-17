@@ -119,9 +119,29 @@ static void waiting_kernel_paces_the_reads(void) {
     f = (Fake){.submit_rc = 17, .ready_after = 2, .read_wait_us = 10000};
     TEST_CHECK(exchange(&f, &out) == 0 && f.delays == 2 && f.time == 2 * 50000);
 }
+static void screenshot_waits_for_the_file_but_still_cancels(void) {
+    VjoGameOcrRequest req = {.size = sizeof(req), .flags = VJO_GAME_OCR_F_SHOT};
+    VjoGameOcrResult out;
+    Fake f = {.submit_rc = 17, .ready_after = 200, .read_wait_us = 50000};
+    VjoGameOcrClient c = {&f, submit, read_result, cancel, now, delay};
+    /* A ten-second save used to be cancelled by Shell at eight seconds, even
+     * though the game worker was still within its thirty-second file wait. */
+    TEST_CHECK(vjo_game_ocr_exchange(&c, &req, &out, cancelled, &f,
+                                    VJO_GAME_OCR_SHOT_TIMEOUT_US) == 0);
+    TEST_CHECK(f.time == 10000000 && !f.cancels);
+    f = (Fake){.submit_rc = 17, .ready_after = 10000, .read_wait_us = 50000};
+    TEST_CHECK(vjo_game_ocr_exchange(&c, &req, &out, cancelled, &f,
+                                    VJO_GAME_OCR_SHOT_TIMEOUT_US) == VJO_E_OCR_INFERENCE);
+    TEST_CHECK(f.time == VJO_GAME_OCR_SHOT_TIMEOUT_US && f.cancels == 1);
+    f = (Fake){.submit_rc = 17, .ready_after = 10000, .read_wait_us = 50000, .abort_after = 2};
+    TEST_CHECK(vjo_game_ocr_exchange(&c, &req, &out, cancelled, &f,
+                                    VJO_GAME_OCR_SHOT_TIMEOUT_US) == VJO_E_CANCELLED);
+    TEST_CHECK(f.time == 100000 && f.cancels == 1);
+}
 TEST_LIST = {
     {"completed worker", successful}, {"missing worker", refuses_missing_worker},
     {"a waiting kernel paces the reads", waiting_kernel_paces_the_reads},
+    {"screenshot file deadline and cancellation", screenshot_waits_for_the_file_but_still_cancels},
     {"bounded timeout", timeout_keeps_worker_cleanup_separate},
     {"cancellation", cancellation}, {"stale and incomplete", rejects_stale_and_incomplete_results},
     {"cleanup and engine failure", refuses_unclean_or_failed_engine},

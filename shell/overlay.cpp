@@ -469,8 +469,6 @@ static void render(int new_content)
                        ? g_view.anki_mark[s_selected] : VJO_ANKI_MARK_NONE;
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
-            if (mark == VJO_ANKI_MARK_QUEUED)
-                vjo_styled_puts(&body, "Queued for Anki\n", VJO_RGB_DIM, en);
             /* The config warnings below keep their room, at their longest: a
              * long entry is clipped in its definition instead (vjo_styled_entry;
              * the fullest body with an entry of the bundle takes at most 66 of

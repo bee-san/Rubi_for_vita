@@ -27,8 +27,10 @@ void game_ocr_shell_changed_locked(void);
 void game_ocr_foreground_changed_locked(void);
 /* The registered game worker's process (0: none), for vjoMemInfo's caller check. */
 SceUID game_ocr_worker_pid_locked(void);
-/* Called only by the existing kernel worker; disk I/O runs without g.lock. */
+/* File worker only; disk I/O runs without g.lock. */
 void game_ocr_model_tick(void);
+/* Input worker too: rows must be tidied even while disk I/O stalls. */
+void game_ocr_rows_tick(void);
 /* Called with g.game_lock held; takes g.lock in this fixed order. */
 void game_ocr_process_gone(SceUID pid);
 /* Display hook (display.c on_frame, game context, no lock): copies an armed

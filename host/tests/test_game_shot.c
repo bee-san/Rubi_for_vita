@@ -53,7 +53,7 @@ static int64_t game_free = 64 * 1024 * 1024;
 static int file_fd = -1, open_error, write_error, kernel_files;
 /* a slow memory card: after the JPEG's last piece the kernel worker gets to the save only this much
  * later (its syscalls answer BUSY meanwhile), as when its close waits for the card */
-static uint64_t late_after_last_write_us, late_until;
+static uint64_t late_after_last_write_us, late_after_each_write_us, late_until;
 static unsigned file_opens, file_writes, renames, syncs, removes;
 
 int test_kernel_register(void);
@@ -200,6 +200,7 @@ int ksceIoPwrite(SceUID fd, const void *data, SceSize n, SceOff off)
     TEST_ASSERT(fd == 32 && file_fd >= 0);
     file_writes++;
     if (write_error) return write_error;
+    if (late_after_each_write_us) late_until = clock_us + late_after_each_write_us;
     if (late_after_last_write_us && n < VJO_GAME_OCR_SHOT_CHUNK) late_until = clock_us + late_after_last_write_us;
     return (int)pwrite(file_fd, data, n, (off_t)off);
 }
@@ -294,7 +295,7 @@ static void reset(void)
     block_live = refuse_user = refuse_all = 0; block_allocs = block_frees = live_bytes = peak_bytes = cdram_allocs = 0;
     game_free = 64 * 1024 * 1024;
     file_fd = -1; open_error = write_error = kernel_files = 0; file_opens = file_writes = renames = syncs = removes = 0;
-    late_after_last_write_us = late_until = 0;
+    late_after_last_write_us = late_after_each_write_us = late_until = 0;
     kstrip_live = 0; kstrip_allocs = 0;
     g.lock = g.ievf = 1; g.evf = 2; g.mevf = 5; g.shell_pid = 3; g.game_pid = 7; g.game_active = VJO_GAME; g.ocr_epoch = 1;
     g.fb_w = 960; g.fb_h = 544; g.done_seq = g.capture_seq = 11;
@@ -466,6 +467,10 @@ static void failures_leave_no_file(void)
 static void a_slow_card_is_waited_for_and_never_blocks_the_worker(void)
 {
     VjoGameOcrResult out;
+    reset(); procedural_frame();
+    late_after_each_write_us = 3000000;
+    TEST_CHECK(shot(&out) == VJO_OK && file_size(jpg_path) == (long)out.shot_bytes && !blocked);
+    TEST_CHECK(file_writes > 1 && out.shot_write_us >= 6000000u);
     reset(); procedural_frame();
     late_after_last_write_us = 10000000;
     TEST_CHECK(shot(&out) == VJO_OK && file_size(jpg_path) == (long)out.shot_bytes && !blocked);

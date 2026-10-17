@@ -311,16 +311,22 @@ static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
  * of it, only the request and the job's result, in this job's arena. The game
  * worker's one job slot is the network thread's OCR jobs' too: the exchange runs
  * under vjo_game_job_begin (worker.c), which has a quiet refresh in progress yield.
- * It stops when the overlay closes: the game then has its input back, and its
- * screen is no longer the card's. */
+ * Closing before capture cancels it. Once its JPEG is frozen, the file can
+ * finish in the background while the player has the game's input back. */
 #define SHOT_WAIT_US 4000000    /* for the slot: a refresh yields within a strip, a lookup's OCR runs on */
-#define SHOT_TIMEOUT_US 8000000  /* the job: 9 frames, the JPEG and its file, three tries at most (#194: 15 s left the overlay on "Saving card…") */
+#define SHOT_TIMEOUT_US VJO_GAME_OCR_SHOT_TIMEOUT_US /* includes the game's bounded file deadline */
 
 #ifdef VJO_WITH_VOCR
+typedef struct { VjoGameOcrResult *result; int frozen; unsigned seq; int64_t started; } ShotWait;
 static int shot_stopped(void *ud)
 {
-    (void)ud;
-    return stopping() || !__atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE);
+    ShotWait *wait = ud;
+    if (wait && !wait->frozen && wait->result->shot_bytes) {
+        wait->frozen = 1;
+        publish(wait->seq, "Saving in background; you can close the overlay", VJO_ANKI_STATUS_DIM, -1, 0);
+        vjo_log("anki: screenshot captured after %d ms; saving in background", (int)((now_us() - wait->started) / 1000));
+    }
+    return stopping() || ((!wait || !wait->frozen) && !__atomic_load_n(&g_view.open, __ATOMIC_ACQUIRE));
 }
 
 static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
@@ -330,22 +336,21 @@ static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
         VjoGameOcrRequest req;
         VjoGameOcrResult res;
     } *job = vjo_arena_zalloc(&arena, sizeof(*job));
-#if VJO_DEBUG
     int64_t t0 = now_us();
-#endif
     int rc = VJO_E_OOM;
     if (job) {
+        ShotWait wait = {&job->res, 0, add_seq, t0};
         job->req.size = sizeof(job->req);
         job->req.flags = VJO_GAME_OCR_F_SHOT;
         sceClibMemcpy(job->req.shot, id, VJO_QUEUE_ID_SIZE);
         rc = VJO_E_OCR_UNAVAILABLE; /* the slot stayed busy */
         if (!vjo_game_job_begin(shot_stopped, SHOT_WAIT_US)) {
-            rc = vjo_game_ocr_exchange(&vjo_game_client, &job->req, &job->res, shot_stopped, NULL, SHOT_TIMEOUT_US);
+            rc = vjo_game_ocr_exchange(&vjo_game_client, &job->req, &job->res, shot_stopped, &wait, SHOT_TIMEOUT_US);
             vjo_game_job_end();
         }
 #if VJO_DEBUG
-        /* Every screenshot, with its figures (the normal build: do_save logs a failed one's reason only,
-         * docs/release-variants.md, for the Shell's pages there), and a failed one's steps. */
+        /* Detailed screenshot figures and a failed one's steps. The normal
+         * build keeps phase timings and native I/O errors for save-time diagnosis. */
         const VjoGameOcrResult *res = &job->res;
         vjo_log("anki: screenshot rc=%d %ux%u q%u try %u: %u B; block %u B mem %u, free USER %d; %u strips src %u "
                 "%u ms, encode %u ms, write %u ms; %d ms", rc, res->width, res->height, res->shot_quality,
@@ -359,6 +364,15 @@ static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
                 vjo_log("%s", line);
         }
 #endif
+#if !VJO_DEBUG
+        vjo_log("anki: screenshot %d ms; capture/encode %u ms, write %u ms; io=0x%08X",
+                (int)((now_us() - t0) / 1000), job->res.shot_encode_us / 1000,
+                job->res.shot_write_us / 1000, (unsigned)job->res.io_error);
+#endif
+        if (rc)
+            vjo_log("anki: screenshot failed rc=%d io=0x%08X cleanup=%d; %u strips, encode %u ms, write %u ms",
+                    rc, (unsigned)job->res.io_error, job->res.cleanup_status, job->res.captures,
+                    job->res.shot_encode_us / 1000, job->res.shot_write_us / 1000);
     }
     vjo_arena_release(&arena, mark);
     return rc;

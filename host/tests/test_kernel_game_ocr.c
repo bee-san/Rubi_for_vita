@@ -66,7 +66,7 @@ int ksceKernelSetEventFlag(SceUID uid, unsigned bits)
     }
     if (uid == g.mevf && g.mevf > 0) { TEST_CHECK(bits == MEV_DONE); done_events++; done_pending = 1; return 0; }
     if (uid == g.evf && bits == VJO_EV_CAPTURE_DONE) { capture_events++; return 0; }
-    TEST_CHECK(uid == g.ievf && bits == IEV_MODEL); model_events++; return 0;
+    TEST_CHECK(uid == g.ioevf && bits == IEV_MODEL); model_events++; return 0;
 }
 int ksceKernelClearEventFlag(SceUID uid, unsigned bits)
 {
@@ -137,13 +137,6 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
     model_clock += *timeout; /* nothing finished in time */
     return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
 }
-int ksceIoGetstatByFd(SceUID fd, SceIoStat *out)
-{
-    TEST_ASSERT(caller == 0 && !locks && !syscall_depth && file_live && fd == 31);
-    stats++;
-    if (stat_error) return stat_error;
-    *out = file_stat; out->st_size = expected_model_size; return 0;
-}
 static void interrupt_io(void)
 {
     int action = during_io; during_io = 0;
@@ -163,51 +156,120 @@ static void interrupt_io(void)
  * creates, the .jpg the save renames it to. Only the kernel worker (caller 0,
  * no lock, no syscall) may touch it. ---- */
 #define SHOT_FD 32
+#define SHOT_FS_SLOTS 4
 static struct {
     char name[128];
     unsigned char data[VJO_GAME_OCR_SHOT_MAX];
     uint32_t len;
     int live;
-} shot_fs[2];
+} shot_fs[SHOT_FS_SLOTS];
 static int shot_open, shot_index, shot_open_error, shot_write_error, shot_close_error, shot_rename_error, shot_sync_error;
-static int shot_short_writes;
+static int shot_short_writes, shot_trim_error, shot_claim_error, shot_last_open_flags;
+static int spare_open_error, spare_stat_error, spare_write_error, spare_zero_write, spare_close_error;
+static int spare_last_open_flags, spare_stat_fail_at, spare_bad_verify;
+static uint32_t shot_next_offset, shot_trim_size;
 static uint32_t shot_cancel_on_rename; /* the Shell cancels this job while its file is renamed */
-static unsigned shot_opens, shot_writes, shot_closes, shot_renames, shot_removes, shot_syncs;
+static unsigned shot_opens, shot_writes, shot_closes, shot_renames, shot_removes, shot_syncs, shot_trims;
+static unsigned shot_extensions, spare_opens, spare_stats, spare_writes, spare_closes, spare_trims;
 static int shot_entry(const char *name)
 {
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < SHOT_FS_SLOTS; i++)
         if (shot_fs[i].live && !strcmp(shot_fs[i].name, name)) return i;
     return -1;
+}
+static int shot_seed(const char *name, uint32_t len, unsigned char fill)
+{
+    int i;
+    TEST_ASSERT(len <= VJO_GAME_OCR_SHOT_MAX && shot_entry(name) < 0);
+    for (i = 0; i < SHOT_FS_SLOTS && shot_fs[i].live; i++) {}
+    TEST_ASSERT(i < SHOT_FS_SLOTS);
+    memset(&shot_fs[i], 0, sizeof(shot_fs[i]));
+    snprintf(shot_fs[i].name, sizeof(shot_fs[i].name), "%s", name);
+    memset(shot_fs[i].data, fill, sizeof(shot_fs[i].data));
+    shot_fs[i].len = len;
+    shot_fs[i].live = 1;
+    return i;
 }
 static int shot_worker_context(void) { return caller == 0 && !locks && !syscall_depth; }
 static SceUID shot_file_open(const char *path, int flags)
 {
-    int i;
+    int i, spare = !strcmp(path, SHOT_SPARE_PATH);
     TEST_ASSERT(shot_worker_context() && !shot_open);
-    TEST_CHECK(flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC) && strlen(path) > 8 &&
-               !strcmp(path + strlen(path) - 8, ".jpg.tmp"));
-    shot_opens++;
-    if (shot_open_error) return shot_open_error;
-    if ((i = shot_entry(path)) < 0) {
-        i = shot_fs[0].live ? 1 : 0;
-        TEST_ASSERT(!shot_fs[i].live);
-        snprintf(shot_fs[i].name, sizeof(shot_fs[i].name), "%s", path);
-        shot_fs[i].live = 1;
+    if (spare) {
+        TEST_CHECK(flags == (SCE_O_WRONLY | SCE_O_CREAT));
+        spare_opens++;
+        spare_last_open_flags = flags;
+        if (spare_open_error) return spare_open_error;
+    } else {
+        TEST_CHECK((flags == SCE_O_WRONLY || flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC)) &&
+                   strlen(path) > 8 && !strcmp(path + strlen(path) - 8, ".jpg.tmp"));
+        shot_opens++;
+        shot_last_open_flags = flags;
+        if (shot_open_error) return shot_open_error;
     }
-    shot_fs[i].len = 0; /* O_TRUNC */
+    if ((i = shot_entry(path)) < 0) {
+        if (!(flags & SCE_O_CREAT)) return (int)0x80010002u;
+        i = shot_seed(path, 0, 0);
+    }
+    if (flags & SCE_O_TRUNC) shot_fs[i].len = 0;
     shot_open = 1;
     shot_index = i;
+    shot_next_offset = 0;
     return SHOT_FD;
+}
+int ksceIoGetstatByFd(SceUID fd, SceIoStat *out)
+{
+    if (fd == SHOT_FD) {
+        TEST_ASSERT(shot_worker_context() && shot_open);
+        spare_stats++;
+        if (spare_stat_error && (!spare_stat_fail_at || spare_stats == (unsigned)spare_stat_fail_at))
+            return spare_stat_error;
+        memset(out, 0, sizeof(*out));
+        out->st_size = shot_fs[shot_index].len;
+        if (spare_bad_verify && spare_stats == 2) out->st_size--;
+        return 0;
+    }
+    TEST_ASSERT(caller == 0 && !locks && !syscall_depth && file_live && fd == 31);
+    stats++;
+    if (stat_error) return stat_error;
+    *out = file_stat; out->st_size = expected_model_size; return 0;
+}
+int ksceIoChstatByFd(SceUID fd, SceIoStat *st, int bits)
+{
+    TEST_ASSERT(shot_worker_context() && fd == SHOT_FD && shot_open);
+    TEST_CHECK(bits == SCE_CST_SIZE);
+    TEST_ASSERT(st->st_size >= 0 && st->st_size <= shot_fs[shot_index].len);
+    if (!strcmp(shot_fs[shot_index].name, SHOT_SPARE_PATH)) {
+        spare_trims++;
+    } else {
+        shot_trims++;
+        shot_trim_size = (uint32_t)st->st_size;
+        if (shot_trim_error) return shot_trim_error;
+    }
+    shot_fs[shot_index].len = (uint32_t)st->st_size;
+    return 0;
 }
 int ksceIoPwrite(SceUID fd, const void *data, SceSize bytes, SceOff offset)
 {
     int i = shot_index;
     TEST_ASSERT(shot_worker_context() && fd == SHOT_FD && shot_open);
     TEST_ASSERT(shot_fs[i].live && offset >= 0 && (uint64_t)offset + bytes <= sizeof(shot_fs[i].data));
-    TEST_CHECK((uint32_t)offset == shot_fs[i].len); /* in order */
-    shot_writes++;
-    if (shot_write_error) return shot_write_error;
-    if (shot_short_writes && bytes > 1000) bytes = 1000;
+    if (!strcmp(shot_fs[i].name, SHOT_SPARE_PATH)) {
+        TEST_CHECK(bytes == 1 && offset == VJO_GAME_OCR_SHOT_MAX - 1u && *(const unsigned char *)data == 0);
+        spare_writes++;
+        if (spare_write_error) return spare_write_error;
+        if (spare_zero_write) return 0;
+        /* A file extended past EOF reads as zeroes in the intervening range. */
+        if ((uint32_t)offset > shot_fs[i].len)
+            memset(shot_fs[i].data + shot_fs[i].len, 0, (uint32_t)offset - shot_fs[i].len);
+    } else {
+        TEST_CHECK((uint32_t)offset == shot_next_offset); /* in order, including preallocated files */
+        shot_writes++;
+        if (shot_write_error) return shot_write_error;
+        if (shot_short_writes && bytes > 1000) bytes = 1000;
+        if ((uint32_t)offset + bytes > shot_fs[i].len) shot_extensions++;
+        shot_next_offset = (uint32_t)offset + bytes;
+    }
     memcpy(shot_fs[i].data + offset, data, bytes);
     if ((uint32_t)offset + bytes > shot_fs[i].len) shot_fs[i].len = (uint32_t)offset + bytes;
     return (int)bytes;
@@ -217,6 +279,7 @@ int ksceIoRename(const char *from, const char *to)
     int i;
     TEST_ASSERT(shot_worker_context() && !shot_open);
     shot_renames++;
+    if (!strcmp(from, SHOT_SPARE_PATH) && shot_claim_error) return shot_claim_error;
     if (shot_rename_error) return shot_rename_error;
     if (shot_cancel_on_rename) { /* the Shell's cancel, on another thread, while the kernel worker saves */
         uint32_t seq = shot_cancel_on_rename;
@@ -244,7 +307,8 @@ int ksceIoSync(const char *device, unsigned int unk) { (void)device; (void)unk; 
 int ksceIoSyncByFd(SceUID fd, int flag) { (void)fd; (void)flag; TEST_CHECK(0); shot_syncs++; return shot_sync_error; }
 SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
-    if (!strncmp(path, VJO_GAME_OCR_SHOT_DIR "/", sizeof(VJO_GAME_OCR_SHOT_DIR))) return shot_file_open(path, flags);
+    if (!strcmp(path, SHOT_SPARE_PATH) ||
+        !strncmp(path, VJO_GAME_OCR_SHOT_DIR "/", sizeof(VJO_GAME_OCR_SHOT_DIR))) return shot_file_open(path, flags);
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && !file_live);
     char expected[320]; snprintf(expected,sizeof(expected),"%s/%s",VJO_VOCR_MODEL_ROOT,
                                  expect_lm ? expect_lm : expect_fallback ? request.fallback : request.model);
@@ -270,8 +334,13 @@ int ksceIoClose(SceUID fd)
 {
     if (fd == SHOT_FD) {
         TEST_ASSERT(shot_worker_context() && shot_open);
-        shot_closes++;
-        if (shot_close_error) return shot_close_error;
+        if (!strcmp(shot_fs[shot_index].name, SHOT_SPARE_PATH)) {
+            spare_closes++;
+            if (spare_close_error) return spare_close_error;
+        } else {
+            shot_closes++;
+            if (shot_close_error) return shot_close_error;
+        }
         shot_open = 0;
         return 0;
     }
@@ -354,6 +423,7 @@ int ksceKernelFreeMemBlock(SceUID uid)
     return 0;
 }
 
+static void shot_fs_reset(void);
 static void setup(void)
 {
     memset(&g, 0, sizeof(g));
@@ -383,6 +453,7 @@ static void setup(void)
     record_unlocks = 0; unlock_count = lock_count = 0; klogs = delays = 0; last_klog = ""; before_lock = NULL;
     memset(&file_stat, 0, sizeof(file_stat));
     file_stat.st_mtime = (SceDateTime){2026, 10, 11, 9, 43, 58, 123456};
+    shot_fs_reset();
     TEST_ASSERT(vjoOcrRegister() == 0);
     caller = 3;
 }
@@ -1238,28 +1309,40 @@ static void shot_fs_reset(void)
     shot_open = shot_index = 0;
     shot_open_error = shot_write_error = shot_close_error = shot_rename_error = shot_sync_error = 0;
     shot_short_writes = 0;
+    shot_trim_error = shot_claim_error = shot_last_open_flags = 0;
+    spare_open_error = spare_stat_error = spare_write_error = spare_zero_write = spare_close_error = 0;
+    spare_last_open_flags = spare_stat_fail_at = spare_bad_verify = 0;
+    shot_next_offset = shot_trim_size = 0;
     shot_cancel_on_rename = 0;
     shot_opens = shot_writes = shot_closes = shot_renames = shot_removes = shot_syncs = 0;
+    shot_trims = shot_extensions = spare_opens = spare_stats = spare_writes = spare_closes = spare_trims = 0;
     snprintf(shot_tmp, sizeof(shot_tmp), VJO_GAME_OCR_SHOT_DIR "/%s.jpg.tmp", SHOT_ID);
     snprintf(shot_jpg, sizeof(shot_jpg), VJO_GAME_OCR_SHOT_DIR "/%s.jpg", SHOT_ID);
 }
 /* A shot submitted by the Shell and claimed by the worker. */
-static uint32_t shot_job(void)
+static uint32_t shot_job_keep_files(const char *id)
 {
     VjoGameOcrRequest r = shot_request(), got = {0};
     int seq;
-    shot_fs_reset();
+    memcpy(r.shot, id, sizeof(r.shot));
+    snprintf(shot_tmp, sizeof(shot_tmp), VJO_GAME_OCR_SHOT_DIR "/%s.jpg.tmp", id);
+    snprintf(shot_jpg, sizeof(shot_jpg), VJO_GAME_OCR_SHOT_DIR "/%s.jpg", id);
     caller = 3;
     TEST_ASSERT((seq = vjoOcrSubmit(&r)) > 0);
     caller = 7;
     TEST_ASSERT(vjoOcrTake(&got) == 0);
     /* the whole frame, whatever the region; the card it names, nothing else */
-    TEST_CHECK(got.seq == (uint32_t)seq && got.flags == VJO_GAME_OCR_F_SHOT && !strcmp(got.shot, SHOT_ID));
+    TEST_CHECK(got.seq == (uint32_t)seq && got.flags == VJO_GAME_OCR_F_SHOT && !strcmp(got.shot, id));
     TEST_CHECK(got.x == 0 && got.y == 0 && got.width == FB_W && got.height == FB_H && !got.region.w);
     memset(&message, 0, sizeof(message));
     message.size = sizeof(message);
     message.seq = (uint32_t)seq;
     return (uint32_t)seq;
+}
+static uint32_t shot_job(void)
+{
+    shot_fs_reset();
+    return shot_job_keep_files(SHOT_ID);
 }
 /* A JPEG-shaped payload: SOI and a marker first, EOI last. */
 static unsigned char shot_bytes[VJO_GAME_OCR_SHOT_MAX];
@@ -1352,6 +1435,10 @@ static void shot_jpeg_is_written_in_order_and_saved_under_its_name(void)
     while (off < len) {
         uint32_t n = len - off < VJO_GAME_OCR_SHOT_CHUNK ? len - off : VJO_GAME_OCR_SHOT_CHUNK;
         TEST_CHECK(shot_write(seq, off, n) == (int)n);
+        VjoGameOcrResult progress = {0};
+        caller = 3;
+        TEST_CHECK(vjoOcrRead(seq, &progress) == 1 && progress.size == sizeof(progress) &&
+                   progress.seq == seq && progress.shot_bytes && !progress.text[0]);
         off += n;
     }
     TEST_CHECK(shot_opens == 1 && shot_writes == 3 && shot_open && shot_entry(shot_tmp) >= 0 && shot_entry(shot_jpg) < 0);
@@ -1370,6 +1457,167 @@ static void shot_jpeg_is_written_in_order_and_saved_under_its_name(void)
     TEST_CHECK(shot_write(seq, 0, len) == (int)len && shot_writes == 5 && shot_save(seq, len) == 0);
     TEST_CHECK((i = shot_entry(shot_jpg)) >= 0 && shot_fs[i].len == len && !memcmp(shot_fs[i].data, shot_bytes, len));
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
+/* A persistent reservation is claimed without discarding its allocation. The
+ * final file ends at the complete JPEG's EOI, even across several chunks. */
+static void shot_spare_overwrites_trims_and_refills(void)
+{
+    static const char *const ids[] = {SHOT_ID, "fedcba9876543210fedcba9876543210"};
+    setup();
+    shot_seed(SHOT_SPARE_PATH, VJO_GAME_OCR_SHOT_MAX, 0xA5);
+    model_stage[0] = 0xBC; model_stage[sizeof(model_stage) - 1] = 0xCD;
+    model_tick();
+    TEST_CHECK(spare_opens == 1 && spare_closes == 1 && !spare_writes && !shot_open);
+    TEST_CHECK(!(spare_last_open_flags & SCE_O_TRUNC));
+    TEST_CHECK(model_stage[0] == 0xBC && model_stage[sizeof(model_stage) - 1] == 0xCD);
+    for (unsigned round = 0; round < 2; round++) {
+        uint32_t seq = shot_job_keep_files(ids[round]), len = make_jpeg(70001 + round * 1000), off = 0;
+        unsigned prepared = spare_opens;
+        wait_runs_worker = 1;
+        shot_short_writes = round != 0;
+        while (off < len) {
+            uint32_t n = len - off < VJO_GAME_OCR_SHOT_CHUNK ? len - off : VJO_GAME_OCR_SHOT_CHUNK;
+            TEST_ASSERT(shot_write(seq, off, n) == (int)n);
+            off += n;
+        }
+        int i = shot_entry(shot_tmp);
+        TEST_ASSERT(i >= 0);
+        TEST_CHECK(shot_last_open_flags == SCE_O_WRONLY && !shot_extensions);
+        TEST_CHECK(shot_fs[i].len == VJO_GAME_OCR_SHOT_MAX && !memcmp(shot_fs[i].data, shot_bytes, len));
+        TEST_CHECK(shot_fs[i].data[len] == (round ? 0 : 0xA5)); /* unwritten reservation remains */
+        model_tick();
+        TEST_CHECK(spare_opens == prepared && shot_entry(SHOT_SPARE_PATH) < 0); /* a claimed job pins the slot */
+        TEST_ASSERT(shot_save(seq, len) == 0);
+        i = shot_entry(shot_jpg);
+        TEST_ASSERT(i >= 0);
+        TEST_CHECK(shot_trim_size == len && shot_fs[i].len == len && !memcmp(shot_fs[i].data, shot_bytes, len));
+        TEST_CHECK(shot_fs[i].data[len - 2] == 0xFF && shot_fs[i].data[len - 1] == 0xD9);
+        TEST_CHECK(shot_entry(shot_tmp) < 0 && !shot_open && !model_io.seq && !shot_syncs);
+        caller = 7; TEST_ASSERT(vjoOcrComplete(&message) == 0);
+        VjoGameOcrResult got = {0}; caller = 3; TEST_ASSERT(vjoOcrRead(seq, &got) == 0);
+        model_clock += 1000000u;
+        model_tick();
+        i = shot_entry(SHOT_SPARE_PATH);
+        TEST_ASSERT(i >= 0);
+        TEST_CHECK(shot_fs[i].len == VJO_GAME_OCR_SHOT_MAX && spare_opens == prepared + 1 &&
+                   spare_writes == round + 1 && !shot_open && !allocations);
+        for (unsigned n = 0; n < 3; n++) model_tick();
+        TEST_CHECK(spare_opens == prepared + 1 && spare_writes == round + 1); /* ready: no repeated I/O */
+    }
+    TEST_CHECK(shot_trims == 2 && shot_renames == 4);
+}
+
+static void shot_spare_waits_for_shell_and_idle(void)
+{
+    setup();
+    g.shell_pid = 0;
+    model_tick();
+    TEST_CHECK(!spare_opens && shot_entry(SHOT_SPARE_PATH) < 0);
+    g.shell_pid = 3;
+    uint32_t seq = shot_job();
+    model_tick();
+    TEST_CHECK(!spare_opens); /* do not prepare while a game owns the request */
+    caller = 7; TEST_ASSERT(vjoOcrComplete(&message) == 0);
+    VjoGameOcrResult got = {0}; caller = 3; TEST_ASSERT(vjoOcrRead(seq, &got) == 0);
+    model_tick();
+    TEST_CHECK(spare_opens == 1 && spare_writes == 1 && !shot_open);
+    setup();
+    TEST_ASSERT(game_ocr_stop() == 0);
+    model_tick();
+    TEST_CHECK(!spare_opens && shot_entry(SHOT_SPARE_PATH) < 0);
+}
+
+static void shot_spare_missing_or_unclaimable_falls_back(void)
+{
+    for (unsigned how = 0; how < 2; how++) {
+        setup(); model_tick();
+        int spare = shot_entry(SHOT_SPARE_PATH);
+        TEST_ASSERT(spare >= 0);
+        if (!how) shot_fs[spare].live = 0; /* another tool removed the closed reservation */
+        else shot_claim_error = (int)0x80010005u;
+        uint32_t seq = shot_job_keep_files(SHOT_ID), len = make_jpeg(9000);
+        wait_runs_worker = 1;
+        TEST_ASSERT(shot_write(seq, 0, len) == (int)len);
+        TEST_CHECK(shot_last_open_flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC) && shot_extensions == 1);
+        TEST_ASSERT(shot_save(seq, len) == 0);
+        int i = shot_entry(shot_jpg);
+        TEST_ASSERT(i >= 0);
+        TEST_CHECK(shot_fs[i].len == len && !memcmp(shot_fs[i].data, shot_bytes, len));
+        TEST_CHECK(!shot_open && !model_io.seq && !shot_spare_ready);
+    }
+}
+
+static void shot_spare_failed_trim_never_publishes(void)
+{
+    setup(); model_tick();
+    uint32_t seq = shot_job_keep_files(SHOT_ID), len = make_jpeg(9000);
+    wait_runs_worker = 1;
+    TEST_ASSERT(shot_write(seq, 0, len) == (int)len);
+    unsigned renames = shot_renames, closes = shot_closes;
+    shot_trim_error = (int)0x80010005u;
+    TEST_CHECK(shot_save(seq, len) == shot_trim_error);
+    TEST_CHECK(shot_open && model_io.fd == SHOT_FD && shot_closes == closes && shot_renames == renames);
+    TEST_CHECK(shot_entry(shot_tmp) >= 0 && shot_entry(shot_jpg) < 0 && !model_io.saved);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_BUSY);
+    TEST_ASSERT(vjoOcrModelClose(seq) == 0);
+    TEST_CHECK(!shot_open && !model_io.seq && shot_entry(shot_tmp) < 0 && shot_entry(shot_jpg) < 0);
+    message.rc = -113;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+
+static void shot_spare_repairs_partial_files_and_retries_failures(void)
+{
+    for (unsigned how = 0; how < 6; how++) {
+        setup();
+        int i = shot_seed(SHOT_SPARE_PATH, 4096, 0xA5);
+        if (how == 0) spare_open_error = (int)0x80010013u;
+        if (how == 1 || how == 4) {
+            spare_stat_error = (int)0x80010005u;
+            spare_stat_fail_at = how == 4 ? 2 : 1;
+        }
+        if (how == 2) spare_write_error = (int)0x80010005u;
+        if (how == 3) spare_zero_write = 1;
+        if (how == 5) spare_bad_verify = 1;
+        model_tick();
+        TEST_CHECK_(!shot_spare_ready && !shot_open && !shot_spare_busy, "failure %u", how);
+        unsigned opens = spare_opens;
+        model_tick(); model_clock += 999999u; model_tick();
+        TEST_CHECK(spare_opens == opens); /* a persistent error does not spin every tick */
+        spare_open_error = spare_stat_error = spare_write_error = spare_zero_write = spare_bad_verify = 0;
+        model_clock++;
+        model_tick();
+        TEST_CHECK_(shot_spare_ready && !shot_open && spare_opens == opens + 1, "retry %u", how);
+        TEST_CHECK(shot_fs[i].len == VJO_GAME_OCR_SHOT_MAX && shot_fs[i].data[0] == 0xA5 &&
+                   shot_fs[i].data[VJO_GAME_OCR_SHOT_MAX - 1] == 0 && !allocations);
+    }
+    setup();
+    int i = shot_seed(SHOT_SPARE_PATH, VJO_GAME_OCR_SHOT_MAX, 0xA5);
+    shot_fs[i].len += 17; /* stale oversized file: repair its length without O_TRUNC */
+    model_tick();
+    TEST_CHECK(shot_spare_ready && shot_fs[i].len == VJO_GAME_OCR_SHOT_MAX && spare_trims == 1 &&
+               !spare_writes && shot_fs[i].data[0] == 0xA5 && !(spare_last_open_flags & SCE_O_TRUNC));
+}
+
+static void shot_spare_failed_close_is_owned_until_cleanup(void)
+{
+    setup();
+    spare_close_error = (int)0x80010005u;
+    model_tick();
+    TEST_CHECK(shot_open && shot_spare_fd == SHOT_FD && shot_spare_busy && !shot_spare_ready);
+    TEST_CHECK(spare_opens == 1 && spare_closes == 1 && spare_writes == 1);
+    TEST_CHECK(game_ocr_stop() == VJO_ERR_BUSY && !stopping);
+    model_tick();
+    TEST_CHECK(spare_closes == 1 && spare_opens == 1); /* retained close respects the backoff */
+    model_clock += 1000000u;
+    model_tick();
+    TEST_CHECK(spare_closes == 2 && spare_opens == 1 && shot_spare_busy && !shot_spare_ready);
+    spare_close_error = 0;
+    model_clock += 1000000u;
+    model_tick();
+    TEST_CHECK(!shot_open && shot_spare_fd < 0 && !shot_spare_busy && shot_spare_ready);
+    TEST_CHECK(spare_opens == 1 && spare_closes == 3 && spare_writes == 1);
+    TEST_CHECK(game_ocr_stop() == 0 && stopping);
 }
 
 static void shot_writes_are_checked(void)
@@ -1923,6 +2171,17 @@ TEST_LIST = {
     {"API 23: the shot's writes are checked: a JPEG's start, in order, bounded, saved only whole",
      shot_writes_are_checked},
     {"API 23: an abandoned or failed shot leaves no file", an_abandoned_shot_leaves_no_file},
+    {"screenshot reserve: overwrite without truncation, trim the whole JPEG, refill while idle",
+     shot_spare_overwrites_trims_and_refills},
+    {"screenshot reserve: wait for Shell registration and an idle transport", shot_spare_waits_for_shell_and_idle},
+    {"screenshot reserve: a missing or unclaimable reserve falls back to a normal file",
+     shot_spare_missing_or_unclaimable_falls_back},
+    {"screenshot reserve: failed trim retains cleanup ownership and publishes no image",
+     shot_spare_failed_trim_never_publishes},
+    {"screenshot reserve: partial files, preparation errors and bounded retries",
+     shot_spare_repairs_partial_files_and_retries_failures},
+    {"screenshot reserve: a failed close retains the descriptor and refuses unload until cleanup",
+     shot_spare_failed_close_is_owned_until_cleanup},
 #if VJO_DEBUG
     {"API 22: the frame pacing of each job, one step the kernel adds", frame_pacing_step},
     {"API 22: the pacing windows follow the claim, a cancelled job ends one, the step is written under the lock",

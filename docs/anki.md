@@ -28,9 +28,8 @@ directory.
    keeps a picture of the game's screen, about 60 KB. Turn it OFF for
    text-only cards.
 2. In a game, open the overlay, select a word and press Enter. The status line
-   shows `Saving card…`, then `Saved for Anki`, and the entry shows
-   `Queued for Anki` (on every occurrence of that word in the text). Enter
-   again on it says `Already queued`. In a local character lookup, Enter saves
+   shows `Saving card…`, then `Saved for Anki`. Enter again on the same
+   entry says `Already queued`. In a local character lookup, Enter saves
    the match at the cursor. A line above the entry counts the queue:
    `Anki queue: 3 · export in the Rubi app`.
 3. Back in the Rubi app (it opens beside the suspended game), **Export
@@ -219,7 +218,7 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
   or not dated at all, and one whose records the memory card cannot say are
   absent (a check that fails other than "not found") stay for a later export:
   a save still finishing has its record within seconds of its
-  JPEG (its screenshot job ends within 8 s), and the kernel removes a stopped
+  JPEG (its screenshot job ends within 35 s), and the kernel removes a stopped
   screenshot's `.jpg.tmp` itself. A removal that fails is logged and tried
   again by the next export. `exported/` is never swept: an export
   stopped between moving a card's JPEG and its record leaves the JPEG there
@@ -324,18 +323,46 @@ seam between two bands of rows.
 5. The Shell commits the record, with `"picture": true`, once `<id>.jpg` is
    there. Any failure on the way leaves no file and saves the card without one
    (`Saved for Anki, without a screenshot (log.txt)`). The Shell waits at most
-   8 s for the whole screenshot, then cancels it (sooner when the overlay
-   closes); that ends the game worker's wait for a slow memory card's save,
+   35 s for the whole screenshot, then cancels it. Before capture finishes,
+   closing the overlay cancels the screenshot too. Once the JPEG is frozen,
+   `Saving in background; you can close the overlay` means you can return to
+   the game while it finishes writing. `Saved for Anki` is shown only after
+   the image and record are committed. One card saves at a time. The kernel's
+   file worker handles storage and log writes separately from the 16 ms input
+   poll, so a slow write cannot freeze the controls. Its 16 KiB stack is counted
+   in the kernel memory ledger; Shell keeps no image and takes no new pages.
+   The game gives all JPEG chunks and their close/rename one shared
+   30 s file deadline. Previously, a chunk gave up after 2 s and the Shell
+   cancelled after 8 s, even though the game's save could still be waiting
+   within its 30 s limit. Cancellation ends that wait,
    and the worker then waits up to 30 s more for the file's close. A save that
-   ends within those 30 s, at most 45 s after the request, leaves the worker
+   ends within those 30 s, at most 65 s after the request, leaves the worker
    free for the next job, its file removed by the kernel's worker thread. One
    slower still leaves it refusing jobs until the game restarts, as any file
    the kernel holds for the game does (it never acknowledges a file it has not
    closed), and its `.tmp` until the kernel's close runs.
 
 SceShell holds no pixel and no byte of the JPEG, only the job's request and
-result (5,404 B) in the Anki job's arena. Closing the overlay stops a
-screenshot in progress.
+result (5,404 B) in the Anki job's arena. Closing the overlay cancels an
+unfinished capture; a frozen JPEG continues saving in the background.
+
+### Avoiding the first-write delay
+
+On the test console, extending a fresh 32 KiB file while a game ran took
+20.86 s; overwriting an existing file took 6 ms [measured]. The kernel keeps
+one 192 KiB `ux0:data/VitaJPOverlay/screenshot.reserve` file ready while the
+broker is idle, after Shell has registered and storage is mounted. A save
+renames that spare to its checked `<id>.jpg.tmp` and overwrites it without
+truncating away its allocated space. Before publishing the JPEG, it trims the
+file to the complete image's length, closes it and renames it normally.
+The next idle period replenishes the spare; it also survives a restart.
+
+A cold screenshot with the reserved space took 0.79 s, including capture,
+encoding, writing and trimming; replenishing the spare took 48 ms [measured
+on the console]. The spare is disk space, not an image buffer in the kernel
+or Shell. Preparation uses one byte on the existing file worker's stack.
+If preparation fails or the spare disappears, saving falls back to the
+bounded normal write path. A failed trim never publishes an oversized JPEG.
 
 ### Size and quality
 

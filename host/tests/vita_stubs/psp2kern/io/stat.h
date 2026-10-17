@@ -15,7 +15,11 @@ typedef struct {
     SceDateTime st_ctime, st_atime, st_mtime;
     unsigned int st_private[6];
 } SceIoStat;
+#ifndef SCE_CST_SIZE
+#define SCE_CST_SIZE 0x0004
+#endif
 int ksceIoGetstatByFd(SceUID fd, SceIoStat *stat);
+int ksceIoChstatByFd(SceUID fd, SceIoStat *stat, int bits);
 int ksceIoGetstat(const char *file, SceIoStat *stat);
 int ksceIoMkdir(const char *dir, unsigned mode);
 #endif
