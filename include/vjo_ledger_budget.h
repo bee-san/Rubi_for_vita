@@ -146,8 +146,12 @@
  * 14,208 -> 14,160 B (the request's model directory 256 -> 128 B), the normal build's 70,008 -> 75,688 B
  * and 14,208 -> 14,160 B [measured: the build log's module rows, main dcb7b31 and this change, both
  * builds], in the game's partition, never SceShell's: the screenshot is encoded where OCR runs
- * (AGENTS.md rule 1). */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 94208u
+ * (AGENTS.md rule 1).
+ * Raised from 94,208 B by one text page for #194, a dialogue box's short last line
+ * (core/vocr_ocr.c probe_short_lines): the debug build's text 77,196 -> 78,076 B, 252 B past
+ * the page, data/bss 14,160 B as before [measured: the build log's module rows, main 49310ed and
+ * its parent], in the game's partition, never SceShell's. */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game
