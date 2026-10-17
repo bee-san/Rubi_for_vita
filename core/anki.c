@@ -5,6 +5,7 @@
 #include "furigana.h"
 #include "pitch.h"
 #include "port.h"
+#include "textjoin.h"
 #include "utf.h"
 
 /* ---------------- field values ---------------- */
@@ -333,6 +334,22 @@ int vjo_anki_note_from_entry(VjoArena *a, const VjoEntryList *l, int entry, VjoA
     return 0;
 }
 
+/* A card's Sentence into b (not yet written): the sentence the recognized
+ * lines make (core/textjoin.h: a break the game's wrapping put inside it
+ * goes, the word's range follows; a name's line and a new sentence's keep
+ * theirs), joined in a copy before b's block. The queue keeps the text as
+ * recognized, so a card queued before the join comes joined too. -1 on OOM. */
+static int joined_sentence(VjoBuf *b, VjoArena *a, const char *text, int hl_start, int hl_end)
+{
+    int o[2] = {hl_start, hl_end};
+    char *t = vjo_arena_strndup(a, text, strlen(text));
+    if (!t)
+        return -1;
+    vjo_text_join(t, o, 2);
+    vjo_anki_sentence(b, t, o[0], o[1]);
+    return 0;
+}
+
 /* A finished buffer's text, its block (the arena's last allocation) cut to it. A VjoBuf grows by
  * doubling where it has room and to the exact size near the arena's end, so its capacity depends
  * on where it was built; cut to its text, a field value takes the same bytes wherever the export
@@ -375,7 +392,10 @@ char *vjo_anki_field_value(VjoArena *a, int field, const VjoAnkiNote *n)
             gloss_item(&b, n->more[k].dictionary, n->more[k].meanings, n->more[k].n_meanings);
         vjo_buf_puts(&b, GLOSSARY_CLOSE);
         break;
-    case VJO_LAPIS_SENTENCE: vjo_anki_sentence(&b, n->sentence, n->hl_start, n->hl_end); break;
+    case VJO_LAPIS_SENTENCE:
+        if (joined_sentence(&b, a, n->sentence, n->hl_start, n->hl_end))
+            return NULL;
+        break;
     case VJO_LAPIS_FREQ_SORT:
         /* {frequency-harmonic-rank}: Yomitan writes 9999999 for a word with
          * no frequency (default-anki-field-templates.handlebars), so sorting
@@ -386,8 +406,9 @@ char *vjo_anki_field_value(VjoArena *a, int field, const VjoAnkiNote *n)
         /* Lapis shows {{furigana:SentenceFurigana}}, else {{furigana:Sentence}}:
          * filled only when it has readings the sentence has not (Lapis's
          * README asks for it empty otherwise). */
-        if (n->sentence_furigana && strcmp(n->sentence_furigana, n->sentence))
-            vjo_anki_sentence(&b, n->sentence_furigana, n->sf_hl_start, n->sf_hl_end);
+        if (n->sentence_furigana && strcmp(n->sentence_furigana, n->sentence) &&
+            joined_sentence(&b, a, n->sentence_furigana, n->sf_hl_start, n->sf_hl_end))
+            return NULL;
         break;
     case VJO_LAPIS_PITCH_POSITION: vjo_anki_pitch_position(&b, n->pitch, n->n_pitch); break;
     case VJO_LAPIS_PITCH_CATEGORIES:

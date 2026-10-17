@@ -366,6 +366,21 @@ form (した → する); a short built-in list gives very frequent kanji their 
 reading (私 → わたし). Each lookup writes one `log.txt` line with the text at the
 cursor, the entry, its length, the dictionary, file reads and time
 ([word lookup on recognized text](docs/touch-lookup.md#word-lookup-on-recognized-text)).
+The recognized lines are one running text: where the game wrapped a word over
+two lines (食べ / るかな), the word is looked up whole from its first part and
+highlighted on both lines, Right skips it as one word, and an Anki card's
+Sentence has the lines joined there; a speaker's name line, a new sentence or a
+line the game broke short keeps its own line. In the real line sets about one
+line in six that has a next line in its box ends inside a word
+([words split over two lines](docs/touch-lookup.md#words-split-over-two-lines)).
+Where the overlay wraps text itself (the recognized text, the popup, the
+subtitle strip, the Overlay app's rows) it breaks a line between phrases, where
+kana gives way to kanji or katakana, at spaces and at punctuation, never inside a
+run of kanji, katakana or kana, and keeps Japanese line-breaking rules: no line
+starts with 、。」ー っ, none ends with 「. It is no dictionary walk, so a compound
+can still break at its seam (女の|子)
+([the overlay's own line breaks](docs/touch-lookup.md#the-overlays-own-line-breaks)).
+How these look on a console is not tested yet.
 [Touch selection details and validation](docs/touch-lookup.md).
 
 Disable games such as Uncharted when you need their normal L+R controls.
@@ -611,8 +626,9 @@ card; SceShell holds none of it ([the screenshot](docs/anki.md#the-screenshot)).
 The cards survive restarts and need no network. Each record (version 4) keeps everything known at the
 press: the word, its reading and furigana, the shown entry and its
 dictionary's name, the other dictionaries' entries, the whole recognized text
-with the word's offsets, the game, its title ID and platform, the time, and
-the OCR engine and model.
+with the word's offsets (as recognized; the exported Sentence joins the lines
+the game wrapped), the game, its title ID and platform, the time, and the OCR
+engine and model.
 
 The Overlay app's **Anki** page has card mining ON/OFF, **Screenshots**
 ON/OFF, **Export cards (N queued)** and **Export all cards**. An export writes the cards as

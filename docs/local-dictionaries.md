@@ -375,8 +375,9 @@ exact hit in a later dictionary still beats an inflected hit in an earlier
 one, and otherwise configured dictionary order decides. This is
 bounded matching, not a full Japanese morphological parser: longest match
 can still join a particle to the next word (頭がすっきり shows ガス for がす),
-and words never span a line break, because the first recognized line is often
-a speaker's name. On the 134 recognized development lines whose VNs the
+and a word spans a line break only where the text's lines join, a sentence the
+game wrapped (not after a short or bracketed speaker's name line or a sentence's end:
+[words split over two lines](touch-lookup.md#words-split-over-two-lines)). On the 134 recognized development lines whose VNs the
 fixture's filter allows (`tools/collect_word_lookup_lines.py`), stepping with
 Right, the ranking changed 375 of 1,376 shown entries (164 of 625 on the 50
 committed lines), and no matched span. An independent audit judged a random

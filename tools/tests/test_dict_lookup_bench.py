@@ -73,7 +73,8 @@ class DictLookupBench(unittest.TestCase):
     def test_exact_counts_of_known_lookups(self):
         """Every counter of the first-word lookups, by hand where it is countable by hand:
         今日は猫を見ました。 tries spans of 9..2 characters (8 spans) until 今日 matches;
-        猫舌なので... tries 13..2 (12 spans) until 猫舌. One file: one header read; one
+        猫舌なので... tries 14..2 (13 spans) until 猫舌: its line is full, so the break after it
+        joins the next line's 猫 (core/textjoin.h) and the longest span crosses it. One file: one header read; one
         key found, its bucket page, key group, the head ranking its one posting (another
         page: the filler sits between the payloads and the groups) and its payload."""
         self.build(ROWS + FILLER)
@@ -81,7 +82,7 @@ class DictLookupBench(unittest.TestCase):
         rows = bench.run(BENCH, self.dir, "main.vjdict", self.lines, "first", 1)
         self.assertEqual(len(rows), 2)
         one, two = rows
-        for q, spans in ((one, 8), (two, 12)):
+        for q, spans in ((one, 8), (two, 13)):
             self.assertEqual(q["spans"], spans)
             self.assertEqual((q["opens"], q["entries"], q["found"], q["ranked"]), (1, 1, 1, 1))
             self.assertEqual(q["reads_by"], {"header": 1, "index": 1, "group": 1, "head": 1, "payload": 1,
@@ -92,7 +93,7 @@ class DictLookupBench(unittest.TestCase):
             self.assertEqual(q["absent_reads"], 1)
             self.assertEqual(q["filtered"], 0)
         self.assertEqual((one["candidates"], one["probes"], one["hash_present"], one["miss_cached"]), (13, 13, 1, 1))
-        self.assertEqual((two["candidates"], two["probes"], two["hash_present"], two["miss_cached"]), (33, 33, 2, 5))
+        self.assertEqual((two["candidates"], two["probes"], two["hash_present"], two["miss_cached"]), (34, 34, 2, 5))
         summary = sets["sets"][str(self.lines)]["first"]["after"]
         self.assertEqual(summary["found"]["mean"], 1)
         self.assertEqual(summary["reads_by"]["head"], 1)

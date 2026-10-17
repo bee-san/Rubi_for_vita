@@ -1,16 +1,21 @@
 /* settings/main.c's fit_line and wrapped_text as they were before
  * settings/text_layout.c (main 7ed16d8), verbatim but for measuring with
- * ref_measure and "drawing" into ref_row[]: the reference that the cached
- * layouts are tested against (test_settings_layout.c, test_settings_games.c).
- * Host-only. */
+ * ref_measure, "drawing" into ref_row[] and, with ref_breaks (the default),
+ * ending a row that the text goes on after at its last space or, when later,
+ * where a line may break (core/linebreak.h, the owner's 2026-10-16 item 4):
+ * the reference that the cached layouts are tested against
+ * (test_settings_layout.c, test_settings_games.c). ref_breaks 0 is main's
+ * rule, which Latin text without such marks still gets. Host-only. */
 #ifndef VJO_TEST_SETTINGS_WRAP_REFERENCE_H
 #define VJO_TEST_SETTINGS_WRAP_REFERENCE_H
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "../../core/linebreak.h"
 #include "../../core/utf.h"
 
 static int (*ref_measure)(float pixels, const char *s);
+static int ref_breaks = 1;
 typedef struct { int x, y; char text[512]; } RefRow;
 static RefRow ref_row[16];
 static int ref_rows;
@@ -45,6 +50,11 @@ static size_t fit_line(const char *s, float pixels, int width, char out[512])
         if (text_width(pixels, out) > width) break;
         end = i;
         if (cp == ' ') space = begin;
+    }
+    if (ref_breaks && s[end] && s[end] != '\n') { /* the one change: or later, where a line may break */
+        size_t b = vjo_break_last8(s, len, 0, end);
+        if (b && s[b - 1] == ' ') b--;
+        if (b > space) space = b;
     }
     if (s[end] && s[end] != '\n' && space) end = space;
     memcpy(out, s, end);

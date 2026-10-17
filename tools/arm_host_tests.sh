@@ -78,12 +78,16 @@ build kernel_loader host/tests/test_kernel_loader.c host/tests/games_io_posix.c 
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
 # The overlay's arrow keys over the header's displayed rows (#81): pure C, float cell edges.
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
+# The recognized text's lines as one running text (core/textjoin.h): byte offsets, 32-bit size_t.
+build text_join host/tests/test_textjoin.c core/textjoin.c core/utf.c
+# Where the overlay's own wrapping may break a line (core/linebreak.h).
+build linebreak host/tests/test_linebreak.c core/linebreak.c core/utf.c
 # The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
 build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
 # The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
 build cursor_nav host/tests/test_cursor_nav.c core/text_rows.c core/utf.c
 # The Overlay app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
-build settings_layout host/tests/test_settings_layout.c settings/text_layout.c settings/icons.c settings/letter.c core/utf.c
+build settings_layout host/tests/test_settings_layout.c settings/text_layout.c core/linebreak.c settings/icons.c settings/letter.c core/utf.c
 # taiHEN's own parser (third_party/taihen-parser, built as taiHEN builds it), the config.txt editor's check
 TP=(-I third_party/taihen-parser/include third_party/taihen-parser/src/lexer.c third_party/taihen-parser/src/parser.c)
 build psp -DNO_CTYPE -DNO_STRING host/tests/test_psp.c core/pspbubble.c core/psptarget.c core/taicfg.c core/games.c core/sfo.c "${TP[@]}"
@@ -96,14 +100,14 @@ build taicfg -DNO_CTYPE -DNO_STRING -DVJO_SOURCE_DIR="\"$PWD\"" host/tests/test_
 # The Overlay app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets. Its
 # picture cards carry the game worker's JPEG (core/jpegsw.c), which must come out the same on the A9.
 BS=third_party/bearssl/src
-APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c core/anki.c core/anki_queue.c core/json.c
+APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c core/anki.c core/textjoin.c core/anki_queue.c core/json.c
       core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
+TESTS+=(touch_hold text_rows text_join linebreak stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c
@@ -131,7 +135,7 @@ else
   echo "arm apkg packages: FAILED"; cat "$OUT/apkg_write.log"; fail=1
 fi
 if [ -n "${VJO_PLAINTEXT_DIR:-}" ]; then
-  WL=(host/tests/word_lookup_parity.c core/local_dict.c core/utf.c core/arena.c)
+  WL=(host/tests/word_lookup_parity.c core/local_dict.c core/textjoin.c core/utf.c core/arena.c)
   WL_FLAGS=(-O2 -std=gnu99 -Wall -Wextra -Wno-unused-parameter -D_FILE_OFFSET_BITS=64 -I core -I include -DVJO_HOST=1)
   "$ARM_CC" -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity" "${WL[@]}"
   "${HOST_CC:-cc}" "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity_host" "${WL[@]}"

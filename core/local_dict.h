@@ -66,7 +66,10 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
  * be a decoder codepoint boundary; invalid offsets return VJO_E_PARSE.
  * Malformed bytes keep the existing one-byte replacement behavior. Searches
  * at most 32 characters, stopping at punctuation/whitespace, without scanning
- * later words. Longest source span wins. At that span, an entry written as
+ * later words; a line break stops it too unless the text's lines join there
+ * (core/textjoin.h: a word the game's wrapping split is matched whole, the
+ * break left out of the key and the written text, kept in the span).
+ * Longest source span wins. At that span, an entry written as
  * the text is (kana text: the kana word; inflected text: the dictionary form;
  * or a listed common reading) wins over a homograph, the text itself before
  * its inflections (fewer steps first), then dictionary order; a key's

@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include "port.h"
+#include "textjoin.h"
 #include "utf.h"
 
 #define HEADER_SIZE 64u
@@ -506,7 +507,7 @@ static uint32_t freq_key(uint32_t word)
 /* Key, then the reading (or, for kana keys, the spelling) its frequent sense
  * uses; checked to exist in the bundled dictionary (word_lookup's
  * preferred_readings_exist_in_the_bundle). Ends with an empty key. */
-static const char preferred_readings[] =
+static const char preferred_readings[] VJO_DATA_TABLE(preferred_readings) =
     "私\0わたし\0僕\0ぼく\0彼\0かれ\0何\0なに\0今日\0きょう\0一\0いち\0日\0ひ\0火\0ひ\0水\0みず\0"
     "上\0うえ\0下\0した\0中\0なか\0後\0あと\0間\0あいだ\0方\0ほう\0様\0さま\0次\0つぎ\0別\0べつ\0"
     "母\0はは\0兄\0あに\0弟\0おとうと\0大人\0おとな\0学生\0がくせい\0体\0からだ\0頭\0あたま\0腕\0うで\0"
@@ -532,7 +533,7 @@ static const char preferred_readings[] =
  * text's own entry (無くして, に依らず) still comes before its inflections'
  * (無くす, に依る), and a file without ranks reads as before. Checked like
  * preferred_readings (word_lookup's usual_spellings_win_in_the_bundle). */
-static const char usual_spellings[] =
+static const char usual_spellings[] VJO_DATA_TABLE(usual_spellings) =
     "なくなる\0無くなる\0いつか\0何時か\0による\0に依る\0いえいえ\0否々\0なくす\0無くす\0"
     "よそ\0余所\0いわば\0言わば\0ほうき\0箒\0いっぺん\0一遍\0身体\0からだ\0"
     "やめる\0止める\0おじさん\0小父さん\0おばさん\0小母さん\0おじちゃん\0小父ちゃん\0せい\0所為\0";
@@ -1060,11 +1061,12 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
                            const char *text, size_t cursor_byte, int limit,
                            VjoLocalPages *pages, VjoDictResult *res, VjoErr *err)
 {
-    size_t mark = vjo_arena_mark(a), len = strlen(text), off = 0, bytes = 0;
-    size_t lengths[MAX_SCAN_CHARS + 1], ends[MAX_SCAN_CHARS + 1];
+    size_t mark = vjo_arena_mark(a), len = strlen(text), off = 0, bytes = 0, raw_bytes = 0;
+    size_t lengths[MAX_SCAN_CHARS + 1];
+    uint8_t raws[MAX_SCAN_CHARS + 1];
     int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0, complete = 0;
     unsigned resolved = 0;
-    char key[VJO_LOCAL_MAX_KEY + 1];
+    char key[VJO_LOCAL_MAX_KEY + 1], raw[MAX_SCAN_CHARS * 4];
     Match fallback[VJO_LOCAL_MAX_DICTS], chosen[VJO_LOCAL_MAX_DICTS];
     VjoArena output;
     Workspace *w;
@@ -1088,17 +1090,28 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
     }
 
     /* Only inspect the prefix at the selected character. Source UTF-16
-     * lengths remain unchanged by kana/fullwidth search normalization. */
+     * lengths remain unchanged by kana/fullwidth search normalization. A line
+     * break the text's lines join at (core/textjoin.h: the game wrapped the
+     * sentence there) is crossed as if the lines were one: the key and the
+     * text as written (raw) leave it out, the source span and its UTF-16
+     * length keep it. So a lookup across it finds what it finds in the
+     * unbroken line (host test joined_lines_match_as_one_line). */
     while (off < len && count < MAX_SCAN_CHARS) {
+        size_t at = off;
         uint32_t cp = vjo_utf8_next(text, len, &off);
         char enc[4];
         int n;
+        if ((cp == '\n' || cp == '\r') && count && vjo_text_joins(text, len, at)) {
+            source_units++; /* '\r' and '\n' a unit each, as pos16 counts them */
+            continue;
+        }
         if (boundary(cp)) break;
         source_units += vjo_utf16_units(cp);
         n = vjo_utf8_encode(normalize(cp), enc);
         if (bytes + (size_t)n > VJO_LOCAL_MAX_KEY) break;
         memcpy(key + bytes, enc, (size_t)n); bytes += (size_t)n;
-        count++; lengths[count] = bytes; units[count] = source_units; ends[count] = off;
+        memcpy(raw + raw_bytes, text + at, off - at); raw_bytes += off - at;
+        count++; lengths[count] = bytes; units[count] = source_units; raws[count] = (uint8_t)raw_bytes;
     }
     if (!count) return VJO_OK; /* End/punctuation: no files or allocations. */
 
@@ -1145,7 +1158,7 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
                 q.strict = 1;
                 q.fallback = &fallback[d];
                 q.fell_back = (fell_back >> d) & 1;
-                if ((rc = find_matches(w, d, c, text + cursor_byte, ends[k] - cursor_byte, &q, before + 1)))
+                if ((rc = find_matches(w, d, c, raw, raws[k], &q, before + 1)))
                     goto done;
                 fell_back |= (unsigned)q.fell_back << d;
                 if (w->n_matches == before) continue;
