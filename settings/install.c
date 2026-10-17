@@ -624,7 +624,8 @@ static size_t ini_line_name(const char *line, size_t n, char *out, size_t cap)
 {
     static const char *const secrets[] = {"jpdb_api_key", "jiten_api_key", "api_key"}; /* removed_secret's */
     size_t b = 0, e;
-    while (b < n && (line[b] == ' ' || line[b] == '\t')) b++;
+    /* the spaces core/config.c is_space skips before a name (space, tab, CR), as removed_secret does */
+    while (b < n && (line[b] == ' ' || line[b] == '\t' || line[b] == '\r')) b++;
     for (size_t i = 0; i < sizeof(secrets) / sizeof(secrets[0]); i++) {
         size_t len = strlen(secrets[i]);
         if (n - b >= len && !strncasecmp(line + b, secrets[i], len)) {
@@ -655,6 +656,12 @@ static int ini_has_line(const char *text, size_t len, const char *line, size_t n
     }
     return 0;
 }
+
+/* One bit per line of ini_new (counted after a BOM): set when the old text has that line. The first pass sets
+ * them, the second reads them, so a line that goes costs one walk of the new text, not a scan of the old text
+ * for each same-named new line (audit-pr177 N2: that was cubic, 14.8 s on the host for a crafted 23 KB file). */
+static unsigned char ini_new_kept[(VJO_CONFIG_TEXT_MAX + 1) / 8 + 1];
+typedef char vjo_ini_new_kept_covers_ini_new[sizeof(ini_new_kept) * 8 >= sizeof(ini_new) ? 1 : -1]; /* a bit a line */
 
 /* config.ini's new text for an install (into ini_new): 2 written from the package's template (there is
  * neither config.ini nor its backup, which the app's load reads when config.ini is missing), 1 patched,
@@ -782,35 +789,48 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         ini_new_len = m;
     }
     if ((size_t)ini_new_len == bytes && !memcmp(ini_new, old, bytes)) return 0;
-    /* the changed lines: those of the new text that the old one does not have (no API key: they only go) */
-    for (int pos = 0; pos < ini_new_len;) {
+    /* both texts' lines after a UTF-8 BOM: the patches keep it at offset 0, in front of whatever line comes first
+     * (core/config.c, settings/preferences.c), so it is no part of a line here (audit-pr177 N1) */
+    size_t ob = bytes >= 3 && !memcmp(old, "\xEF\xBB\xBF", 3) ? 3 : 0;
+    int nb = ini_new_len >= 3 && !memcmp(ini_new, "\xEF\xBB\xBF", 3) ? 3 : 0;
+    const char *ot = old + ob;
+    size_t on = bytes - ob;
+    /* the changed lines: those of the new text that the old one does not have (no API key: they only go); the
+     * others are marked in ini_new_kept */
+    memset(ini_new_kept, 0, sizeof(ini_new_kept));
+    for (int pos = nb, line = 0; pos < ini_new_len; line++) {
         int e = pos;
         while (e < ini_new_len && ini_new[e] != '\n') e++;
         int len = e - pos;
         if (len && ini_new[e - 1] == '\r') len--; /* a CRLF line the patch kept: one line, as in the old text */
-        if (len > 0 && ini_new[pos] != ';' && ini_new[pos] != '#' && !ini_has_line(old, bytes, ini_new + pos, (size_t)len))
-            INI_CHANGE(s, "%.*s", len > 110 ? 110 : len, ini_new + pos);
+        if (len > 0 && ini_new[pos] != ';' && ini_new[pos] != '#') {
+            if (ini_has_line(ot, on, ini_new + pos, (size_t)len))
+                ini_new_kept[line >> 3] |= (unsigned char)(1u << (line & 7));
+            else
+                INI_CHANGE(s, "%.*s", len > 110 ? 110 : len, ini_new + pos);
+        }
         pos = e + 1;
     }
     /* the lines that only go (a removed setting, an API key, a second copy of a setting): each named by its
      * setting, never its value (test.4's dry run: the plan listed nothing while ocr_backend and log_host went).
-     * A setting the new text sets on a line of its own is changed, and that line is listed above. */
-    for (size_t q = 0; q < bytes;) {
+     * A setting the new text sets on a line of its own is changed, and that line is listed above. A named line
+     * of the new text is always one the first pass checked (it starts with a name, not ';' or '#'). */
+    for (size_t q = 0; q < on;) {
         size_t qe = q;
-        while (qe < bytes && old[qe] != '\n') qe++;
+        while (qe < on && ot[qe] != '\n') qe++;
         size_t ql = qe - q;
-        if (ql && old[qe - 1] == '\r') ql--;
+        if (ql && ot[qe - 1] == '\r') ql--;
         char name[48], other[48];
-        if (ini_line_name(old + q, ql, name, sizeof(name)) && !ini_has_line(ini_new, (size_t)ini_new_len, old + q, ql)) {
+        if (ini_line_name(ot + q, ql, name, sizeof(name)) &&
+            !ini_has_line(ini_new + nb, (size_t)(ini_new_len - nb), ot + q, ql)) {
             int kept = 0, changed = 0;
-            for (int pos = 0; pos < ini_new_len;) {
+            /* the first same-named new line the old text lacks decides it: the setting changed, listed above */
+            for (int pos = nb, line = 0; pos < ini_new_len && !changed; line++) {
                 int e = pos;
                 while (e < ini_new_len && ini_new[e] != '\n') e++;
-                int len = e - pos;
-                if (len && ini_new[e - 1] == '\r') len--;
-                if (ini_line_name(ini_new + pos, (size_t)len, other, sizeof(other)) && !strcasecmp(name, other)) {
+                if (ini_line_name(ini_new + pos, (size_t)(e - pos), other, sizeof(other)) && !strcasecmp(name, other)) {
                     kept = 1;
-                    changed |= !ini_has_line(old, bytes, ini_new + pos, (size_t)len);
+                    changed = !(ini_new_kept[line >> 3] & (1u << (line & 7)));
                 }
                 pos = e + 1;
             }
