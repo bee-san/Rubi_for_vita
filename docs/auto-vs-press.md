@@ -140,13 +140,15 @@ is not counted. A running job that failed or read no line, the self-test's job a
 press's wait. A job that read text and then failed its word's lookup is counted on its own line with
 its rc: the overlay showed its text and why the word is missing. The rc can be -113 or -114 (the
 dictionary file), -103 or -104 (the lookup's memory or its entry), or -103 when the Shell had no
-result memory. A stale job is counted as no text. It was cancelled while it ran (`job cancelled: the
-screen changed since its capture`, a line that can also follow its `done` line), or `on_job_text`
-passed over its text (cancelled, or another game's: no `subtitle text ready` line). One cancelled
-after it posted its text showed that text only until its retry's "Recognizing…", and never its
-word. So a cancelled job is never a press's text: a later job of the press's own brings it. A job
-cancelled by a change of `config.ini`'s OCR settings (`apply_config`) logs no line, so the analysis
-cannot see it. A press closed before its text came, or whose overlay could not open
+result memory. A stale job is counted as no text. It was cancelled while the overlay was open (`job
+cancelled: the screen changed since its capture`, a line that can also follow its `done` line), or
+`on_job_text` passed over its text (cancelled, or another game's: no `subtitle text ready` line).
+One cancelled after it posted its text showed that text only until its retry's "Recognizing…", or
+with no retry until the close, and never its word. So a stale job is never a press's text or wait:
+a later job of the press's own brings the text, or none does. A cancel after the press's close
+changed nothing it showed and is not counted. A job cancelled by a change of `config.ini`'s pipeline
+(the OCR, dictionary and selection settings: `apply_config`, `same_pipeline`) logs no line, so the
+analysis cannot see it. A press closed before its text came, or whose overlay could not open
 (no Paf memory for its text, or the page itself refused: `overlay page failed to open`), is not
 timed; one closed after its text but before its word is still timed, its word by its job's end,
 which the user did not wait for.

@@ -2618,6 +2618,49 @@ class PressesAndRereads(unittest.TestCase):
         mode = a.summarise_log(log)["presses"]["modes"]["auto"]
         self.assertEqual((mode["presses"], mode["read_text"], mode["at_once"]), (2, [900], 1))
 
+    def test_a_cancel_after_the_close_changes_nothing_the_press_showed(self):
+        """audit-sweep-overlay-b N1, N2, N4, N5. A cancel line after the press's close (cancel_outdated_job: a new
+        screen settled while the job still looked its word up) changed nothing the press showed: its text was shown
+        before the close, so the press is timed as before. A job running at the press and cancelled while the overlay
+        was open showed nothing at its end, so it is not the press's wait. `subtitle text ready` can follow its job's
+        done line (on_job_text, then on_job_done in one control_tick): it belongs to the job that ended last."""
+        cancel = "job cancelled: the screen changed since its capture\n"
+
+        def end(rc, ms=900):
+            return f"job 0 done rc={rc} in {ms} ms, arena peak 53744, dictionary page 1/1, game 450 ms, log 30 ms in 3 appends\n"
+        posted = "job start (overlay opened)\ngame vocr text 0: た\nsubtitle text ready in 700 ms\n"
+        log = (BOOT22 + START
+               # X1: text, the close, then the cancel, then its end
+               + press("no background result") + posted + CLOSE + cancel + end(0)
+               # X2: text, its end, the close, then R2's late cancel
+               + press("no background result") + posted + end(0) + CLOSE + cancel
+               # X1b: as X1 with a failed lookup: its text was shown, its word not
+               + press("no background result") + posted + CLOSE + cancel + end(-113)
+               # N4: its text posted after its done line, while the overlay was open
+               + press("no background result") + "job start (overlay opened)\ngame vocr text 0: ち\n" + end(0, 950)
+               + "subtitle text ready in 940 ms\n" + CLOSE)
+        mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["read_text"], mode["read_word"], mode["text_no_word"],
+                          mode["read_without_text"], mode["closed_before"]), (4, [700, 700, 940], [900, 900, 950], [-113],
+                                                                              0, 0))
+        # N2: a job running at the press, cancelled while the overlay was open, with no retry before the close
+        running = ("job start (auto: screen quiet)\n" + press("background job still running") + cancel
+                   + "game vocr text 0: つ\nsubtitle text ready in 1500 ms\n" + end(0, 1600))
+        mode = a.summarise_log(BOOT22 + START + running + CLOSE)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["waited"], mode["read_without_text"]), (1, [], 1))
+        # ... and closed before its end
+        mode = a.summarise_log(BOOT22 + START + "job start (auto: screen quiet)\n" + press("background job still running")
+                               + cancel + CLOSE + end(0, 1600))["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["waited"], mode["closed_before"]), (1, [], 1))
+        # ... and cancelled after the close: as before (closed before its word)
+        mode = a.summarise_log(BOOT22 + START + "job start (auto: screen quiet)\n" + press("background job still running")
+                               + CLOSE + cancel + end(0, 1600))["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["closed_before"]), (1, 1))
+        # N5: a cancel or text line with no job before it in its window (right after a game line) is no job's
+        log = BOOT22 + START + cancel + "subtitle text ready in 10 ms\n" + press("saved local word") + CLOSE
+        mode = a.summarise_log(log)["presses"]["modes"]["auto"]
+        self.assertEqual((mode["presses"], mode["at_once"]), (1, 1))
+
     def test_a_press_closed_before_its_text_or_never_opened_is_not_timed(self):
         """audit N2 and N6: a press closed before its text or word came is no latency sample, nor one whose overlay
         could not open (shell/overlay.cpp: no Paf memory for its text)."""
