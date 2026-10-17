@@ -566,6 +566,137 @@ static void config_ini_from_0712(void)
     TEST_CHECK(strstr(slurp(VJO_PREFERENCES_PATH_TEST, NULL), "vocr_tier = large\n") != NULL);
 }
 
+/* The plan's config.ini part, at the index of its "N. config.ini" line: -1 when it has none. */
+static int ini_part(const char plan[][VJO_INSTALL_LINE], int n)
+{
+    for (int i = 0; i < n; i++)
+        if (strstr(plan[i], ". config.ini")) return i;
+    return -1;
+}
+
+/* test.4's dry run: over the owner's test.3 install (its config.ini as test.3's collect had it, #138), the
+ * Update drops ocr_backend and log_host, two removed settings, and the plan listed no line under "these lines
+ * change". Each line that only goes is named by its setting now, never its value; the user's Large stays. */
+static void the_plan_names_each_config_ini_line_that_goes(void)
+{
+    static char owner[VJO_CONFIG_TEXT_MAX + 1];
+    static unsigned char bytes[1 << 20];
+    size_t on = 0;
+    char *fixture = slurp(VJO_SOURCE_DIR "/host/tests/fixtures/config-test3-owner.ini", &on);
+    TEST_ASSERT(fixture != NULL && on < sizeof(owner));
+    memcpy(owner, fixture, on + 1);
+    fresh_card(0);
+    char cfg[2048];
+    snprintf(cfg, sizeof(cfg), "*KERNEL\n%s\n*main\n%s\n*PCSG00415\n%s\n", K, S, W);
+    put_text("ur0:tai/config.txt", cfg);
+    for (int i = 0; i < VJO_PAYLOAD_COUNT; i++) { /* test.3's plugins and data, its record: an Update */
+        if (vjo_payload_kind(i) == VJO_PAYLOAD_TEMPLATE) continue;
+        size_t n = payload_bytes(i, 0, bytes, sizeof(bytes));
+        put(vjo_payload_dest(i), bytes, n);
+    }
+    put_text(VJO_APP_STAMP_PACKAGE, "vjoapp1 api=" VJO_STR(VJO_API_VERSION) " build=fedcba9876543210\n");
+    put_text(VJO_PREFERENCES_PATH_TEST, owner);
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_UPDATE && s.config_ini == 1, "state %d config_ini %d", s.state, s.config_ini);
+    char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
+    int at = ini_part((const char (*)[VJO_INSTALL_LINE])plan, n);
+    TEST_ASSERT(at >= 0 && at + 3 < n);
+    TEST_CHECK(strstr(plan[at], "config.ini: these lines change; every other setting stays") != NULL);
+    /* exactly the two lines that go, in the file's order, and nothing after them */
+    TEST_CHECK_(!strcmp(plan[at + 1], "   ocr_backend: a removed setting, goes"), "[%s]", plan[at + 1]);
+    TEST_CHECK_(!strcmp(plan[at + 2], "   log_host: a removed setting, goes"), "[%s]", plan[at + 2]);
+    TEST_CHECK_(strncmp(plan[at + 3], "   ", 3) != 0, "[%s]", plan[at + 3]);
+    TEST_CHECK(!has_line(plan, n, "vocr_tier")); /* the user's Large is not a change */
+    VjoInstallResult r;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    char *ini = slurp(VJO_PREFERENCES_PATH_TEST, NULL);
+    TEST_ASSERT(ini != NULL);
+    TEST_CHECK(strstr(ini, "vocr_tier = large\n") && !strstr(ini, "\nocr_backend") && !strstr(ini, "\nlog_host"));
+    TEST_CHECK(strstr(ini, "anki_mining = on\n") && strstr(ini, "log_file = on\n"));
+    /* Check and repair over it: config.ini is the user's, as it is */
+    VjoInstallScan again = scan_now();
+    TEST_CHECK_(again.state == VJO_INSTALL_INSTALLED && again.config_ini == 0, "state %d config_ini %d", again.state,
+                again.config_ini);
+    n = vjo_install_plan(&again, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    TEST_CHECK(has_line(plan, n, "config.ini: unchanged (your settings stay as they are)."));
+}
+
+/* Whether the scan's config.ini list has exactly this line. */
+static int ini_listed(const VjoInstallScan *s, const char *line)
+{
+    for (int i = 0; i < s->config_change_count; i++)
+        if (!strcmp(s->config_changes[i], line)) return 1;
+    return 0;
+}
+
+/* A line that only goes is named by its setting: an API key's by the key's name alone, whatever follows it
+ * (removed_secret drops a line that starts with the name), never by a value; a changed setting is listed
+ * once, by its new line; a second copy of a setting is named as one. The scan's whole list, each on a card
+ * small enough that none is only counted; and no value on the page either (log.txt has the same lines). */
+static void a_line_that_goes_is_named_by_its_setting_never_its_value(void)
+{
+    /* three of the app's own lines, which its save writes when they are missing (the cards stay under 12 changes) */
+#define OWNED "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 1\n"
+    static const struct {
+        const char *ini, *const goes[6], *const changed[2];
+    } cards[] = {
+        {OWNED "dictionary = jpdb\njpdb_api_key = secret-key\njiten_api_keySECRET2\nocr_backend = vocr2\n"
+         "vocr_model = FL10_w8.vocr\nanki_audio_url = https://example.invalid/a?key=SECRET3\n",
+         {"jpdb_api_key: a removed setting, goes", "jiten_api_key: a removed setting, goes",
+          "ocr_backend: a removed setting, goes", "vocr_model: a removed setting, goes",
+          "anki_audio_url: a removed setting, goes", NULL},
+         {"dictionary = local", "vocr_tier = small"}},
+        {OWNED "hachidori_host = 192.168.1.5\n  FREQUENCY_FILTER = 5\nhw_jpeg=1\nvocr_tier = large\nvocr_tier = small\n",
+         {"hachidori_host: a removed setting, goes", "FREQUENCY_FILTER: a removed setting, goes",
+          "hw_jpeg: a removed setting, goes", "vocr_tier: a repeated line goes", NULL},
+         {"text_source = ocr", NULL}},
+    };
+    for (unsigned c = 0; c < sizeof(cards) / sizeof(cards[0]); c++) {
+        fresh_card(1);
+        put_text(VJO_PREFERENCES_PATH_TEST, cards[c].ini);
+        VjoInstallScan s = scan_now();
+        TEST_CHECK_(s.config_ini == 1 && s.config_change_more == 0, "card %u: config_ini %d, %d more", c, s.config_ini,
+                    s.config_change_more);
+        for (int i = 0; i < s.config_change_count; i++) TEST_MSG("%s", s.config_changes[i]);
+        for (int i = 0; cards[c].goes[i]; i++) TEST_CHECK_(ini_listed(&s, cards[c].goes[i]), "card %u: %s", c, cards[c].goes[i]);
+        for (int i = 0; i < 2 && cards[c].changed[i]; i++)
+            TEST_CHECK_(ini_listed(&s, cards[c].changed[i]), "card %u: %s", c, cards[c].changed[i]);
+        TEST_CHECK(!ini_listed(&s, "dictionary: a removed setting, goes")); /* changed, so listed by its new line */
+        TEST_CHECK(!ini_listed(&s, "vocr_tier: a removed setting, goes"));
+        char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+        int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+        for (int i = 0; i < n + s.config_change_count; i++) {
+            const char *l = i < n ? plan[i] : s.config_changes[i - n];
+            TEST_CHECK_(!strstr(l, "SECRET") && !strstr(l, "secret-key") && !strstr(l, "192.168") &&
+                        !strstr(l, "example.invalid") && !strstr(l, "FL10_w8") && !strstr(l, "vocr2"), "[%s]", l);
+        }
+    }
+#undef OWNED
+}
+
+/* A config.ini whose new text differs but sets every setting as before (CRLF line ends: the app's own save
+ * writes its four lines with LF) gets no empty list: the plan says it is written again as it was. */
+static void a_rewrite_that_changes_no_setting_says_so(void)
+{
+    fresh_card(1);
+    put_text(VJO_PREFERENCES_PATH_TEST, "japanese_only_selection = on\r\nhighlight_mode = word\r\nlocal_dictionary_results = 1\r\n"
+             "vocr_tier = normal\r\nlocal_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\r\n"
+             "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\r\ntext_source = ocr\r\nlog_file = on\r\n");
+    VjoInstallScan s = scan_now();
+    char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
+    int at = ini_part((const char (*)[VJO_INSTALL_LINE])plan, n);
+    TEST_ASSERT(at >= 0);
+    TEST_CHECK_(s.config_ini == 1 && s.config_change_count == 0 && s.config_change_more == 0, "config_ini %d, %d lines",
+                s.config_ini, s.config_change_count);
+    TEST_CHECK_(strstr(plan[at], "config.ini: written again with every setting as it was; the old file is kept as "
+                       "config.ini.bak.") != NULL, "[%s]", plan[at]);
+    TEST_CHECK(at + 1 < n && strncmp(plan[at + 1], "   ", 3) != 0);
+}
+
 static void the_dictionary_already_installed_is_not_moved_again(void)
 {
     fresh_card(1);
@@ -1929,6 +2060,9 @@ TEST_LIST = {
     {"fresh_install_on_both_configurations", fresh_install_on_both_configurations},
     {"update_over_a_test3_install", update_over_a_test3_install},
     {"config_ini_from_0712", config_ini_from_0712},
+    {"the_plan_names_each_config_ini_line_that_goes", the_plan_names_each_config_ini_line_that_goes},
+    {"a_line_that_goes_is_named_by_its_setting_never_its_value", a_line_that_goes_is_named_by_its_setting_never_its_value},
+    {"a_rewrite_that_changes_no_setting_says_so", a_rewrite_that_changes_no_setting_says_so},
     {"the_dictionary_already_installed_is_not_moved_again", the_dictionary_already_installed_is_not_moved_again},
     {"a_move_that_cannot_happen_copies", a_move_that_cannot_happen_copies},
     {"cannot_states", cannot_states},

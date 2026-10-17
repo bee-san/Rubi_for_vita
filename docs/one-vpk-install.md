@@ -577,10 +577,12 @@ the app sets `log_file` only for the debug build and puts `plaintext.vjdict` int
 
 Every other setting is the user's and is kept: `vocr_tier`, `ocr_mode`, `ocr_boost_clock` (the OCR &
 lookup page's choices, overlay-ocr-mode-setting), `log_file`, `anki_mining` (unless the package sets
-it), the user's comments and order. The plan lists each changed line of `config.ini` (12 at most, fewer in
-a long plan, the rest counted), and each `config.txt` it changes with the exact lines it adds and removes
-(8 per file on the page, fewer in a long plan, every one in `log.txt`), as AGENTS.md rule 7 asks. The
-result is parsed with `vjo_config_parse` before the OK (step 0).
+it), the user's comments and order. The plan lists each changed line of `config.ini`, and names each line
+that only goes (a removed setting, an API key, a second copy of a setting) by its setting, never its value:
+`ocr_backend: a removed setting, goes` (12 lines at most, fewer in a long plan, the rest counted; a text that
+differs but sets every setting as before says so, never an empty list), and each `config.txt` it changes
+with the exact lines it adds and removes (8 per file on the page, fewer in a long plan, every one in
+`log.txt`), as AGENTS.md rule 7 asks. The result is parsed with `vjo_config_parse` before the OK (step 0).
 
 **The exact lines** (`vjo_install_diff`, `settings/install.c`) are a minimal line diff of the
 configuration and the editor's result, the same lines on the page and in `log.txt`: CR, LF and CRLF each
