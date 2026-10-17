@@ -520,19 +520,19 @@ allocation, no new static; the kernel and the worker are byte-identical to main'
 
 Words across a line break and the overlay's own line breaks (owner 2026-10-16, item 4;
 [touch-lookup.md](touch-lookup.md#words-split-over-two-lines)), on main `eece6c6` (#173): the Shell
-gets 1,806 B more code (the join rule,
+gets 1,822 B more code (the join rule,
 `core/textjoin.c`; the line-break rule, `core/linebreak.c`; the re-wrap, `shell/wrap_fix.h` and its
 callers in `overlay.cpp` and `strip.cpp`; `vjo_styled_insert`; the lookup's scan,
 `vjo_local_lookup_pages` +52 B) and 261 B of new tables, where the normal Shell's code segment had
 1,652 B of room. The read-only tables go to the data segment ("Tables in the data segment" below):
 the line-break rule's 217 B, the join rule's 44 B, and from main's `.rodata` the lookup's
-`preferred_readings` (924 B) and `usual_spellings` (310 B), so the code segment grows by 576 B. So:
+`preferred_readings` (924 B) and `usual_spellings` (310 B), so the code segment grows by 592 B. So:
 
 | | main `eece6c6` | this change | room left |
 |---|---:|---:|---:|
-| normal Shell, text | 88,460 B | 89,036 B (+576) | 1,076 B of 90,112 |
+| normal Shell, text | 88,460 B | 89,052 B (+592) | 1,060 B of 90,112 |
 | normal Shell, data/bss | 69,796 B | 71,508 B (+1,712) | 2,220 B of 73,728 |
-| debug Shell, text | 98,972 B | 99,580 B (+608) | 2,820 B of 102,400 |
+| debug Shell, text | 98,972 B | 99,612 B (+640) | 2,788 B of 102,400 |
 | debug Shell, data/bss | 69,860 B | 71,572 B (+1,712) | 2,156 B of 73,728 |
 
 The pages stay 163,840 B (exact) and 176,128 B; the data/bss growth is the 1,495 B of tables and
