@@ -15,7 +15,7 @@ Sources: HENkaku's own configurations (henkaku 784e483 bootstrap/bootstrap.c:46-
 header for ur0, and update_taihen_config's appended copy, :543-559); Adrenaline's kernel line
 (TheOfficialFloW/Adrenaline 7d382b7 readme.md:27-32); the overlay's earlier installers
 (v0.7.12's *ALL worker line, install-vita.sh --title's blank line + *TITLEID + worker, #124's note
-+ section, the README's manual install); and the cases of the design audit (bytes that are line
++ section, the guide's manual install); and the cases of the design audit (bytes that are line
 ends or spaces to Python's str but not to taiHEN, 255/256-byte lines, case and spacing of section
 names, *! sections, plugins in the wrong section, 4 KiB lengths, non-UTF-8 comments).
 """

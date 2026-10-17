@@ -38,15 +38,15 @@
 <!-- Stills (to come, with the promo): the popup over the promo's mock visual novel, the Anki card
      and the app's Games page. Never game art. -->
 
-- **Look up any word on screen.** L + R opens the overlay over the game: the dialogue at the top, a
-  word's dictionary entry under it, with its reading and how common the word is. Go word by word
-  with the d-pad or the left stick, or tap a word. An inflected word is looked up in its dictionary
-  form (した → する).
+- **Look up any word in the dialogue.** L + R opens the overlay over the game: the dialogue at the
+  top, a word's dictionary entry under it, with its reading and how common the word is. Go word by
+  word with the d-pad or the left stick, or tap a word. An inflected word is looked up in its
+  dictionary form (した → する).
 - **Fully offline.** Rubi reads the text with its own OCR on the Vita and looks it up in a
   dictionary on the memory card: no Wi-Fi, no computer, no account. It has no network code: the
   Vita build fails if any of its modules imports a network library.
 - **A big dictionary built in.** Bee's Ultimate Dictionary: 486,529 entries with English
-  definitions from Daijirin, Sankoku and JMdict, the meanings of each kanji in a word, a short
+  definitions from Daijirin, Sankoku and JMdict, the meanings of a word's kanji, a short
   English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. You can add your
   own Yomitan dictionaries too.
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
@@ -67,12 +67,14 @@
 > Not released yet. This one-VPK install is on `main` for the next release (0.8.0), and these steps
 > are not yet verified on a console: the next test build (test.4) checks them first. Until then, the
 > [releases page](https://github.com/bee-san/vita-jp-overlay/releases) has the older 0.7.12 and the
-> 0.8.0 test builds, which install from a computer instead
-> ([guide](docs/guide.md#advanced-install-from-a-computer)).
+> 0.8.0 test builds. They install from a computer
+> ([guide](docs/guide.md#advanced-install-from-a-computer); for 0.7.12, use the installer from `main`)
+> and predate much of this page: their release notes say what each one has.
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
 HENkaku Settings > Enable Unsafe Homebrew** on, and about 240 MB free on the memory card before you
-copy the VPK to it (60 MB of that is the VPK itself, which you can delete once it is installed).
+copy the VPK to it (estimated from the package's size; 60 MB of it is the VPK itself, which you can
+delete once it is installed).
 
 1. Download `VitaJPOverlay-<version>.vpk` from the
    [latest release](https://github.com/bee-san/vita-jp-overlay/releases/latest).
@@ -124,8 +126,8 @@ Battery use is not measured yet. With **Read text** on **Automatically** (the de
 each new screen of text in the background, at the lowest priority, with the CPU at 444 MHz while it
 recognizes (**Speed boost**, on by default). Choose **Only when I press L + R** and it reads nothing
 until you press (unless the subtitle strip, Select + R, is on); turn **Speed boost** off to keep the
-game's own clock. A game you turn OFF gets no OCR at all. Both settings are on the app's OCR & lookup
-page ([details](docs/auto-vs-press.md)).
+game's own clock. A game you turn OFF gets no OCR at all. Both settings are on the app's OCR &
+lookup page ([details](docs/auto-vs-press.md)).
 
 ### Will it slow my game down?
 
@@ -136,20 +138,21 @@ press L + R** that happens only when you press.
 
 ### Does it work with my game? Is there enough memory?
 
-Rubi's OCR runs inside the game, in the game's own memory, never in the Vita's system software.
-Before each reading it checks how much memory the game has free, leaves the game a reserve, and
-uses a smaller model when the chosen one doesn't fit; if even the smallest doesn't, it says so (a
-tighter text box helps). A game that is ON carries Rubi's OCR worker from its start: 128 KiB of its
-memory (92 KiB of module pages, 36 KiB of stack and TLS). If a game or homebrew app won't start
-with it, turn it OFF in the app, or hold L while you start it. The guide has every byte, in
+Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the emulator's), never in
+the home screen (SceShell) or another system app. Before each reading it checks how much memory the
+game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
+if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
+Rubi's OCR worker from its start: 128 KiB of its memory (92 KiB of module pages, 36 KiB of stack and
+TLS: the build's figures). If a game or homebrew app won't start with it, turn it OFF in the app, or
+hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).
 
 ### Can it break my Vita? How do I undo it?
 
-The app's Install page changes nothing until you choose Install, and it keeps a dated backup of
-each taiHEN `config.txt` it changes. If a start of the Vita doesn't finish, the next one is a safe
-boot: Rubi installs no hooks and unloads itself, so the Vita starts as if Rubi weren't there
-([safe boot](docs/boot-safety.md)).
+The app's Install page (the one-VPK install, which test.4 checks first) changes nothing until you
+choose Install, and it keeps a dated backup of each taiHEN `config.txt` it changes. If a start of
+the Vita doesn't finish, the next one is a safe boot: Rubi installs no hooks and unloads itself, so
+the Vita starts as if Rubi weren't there ([safe boot](docs/boot-safety.md)).
 
 If the Vita does not start: hold L while you turn it on (h-encore or h-encore2: open its menu,
 holding R as h-encore starts, and choose Exit while holding L), then in VitaShell put `#` before the
@@ -161,9 +164,10 @@ you start it. Uninstalling keeps your settings and cards.
 
 No. Rubi has no network code: the Vita build fails if any of its modules imports a network library.
 Recognition, lookups and cards all stay on the Vita; your cards leave it only when you copy the
-`.apkg` yourself. Rubi keeps a log on the memory card (`ux0:data/VitaJPOverlay/log.txt`;
-`log_file = off` in `config.ini` turns it off). The normal build, the release's main download, logs
-no recognized or looked-up text; the `-debug` build, made for bug reports, logs both.
+`.apkg` yourself. Rubi keeps its logs on the memory card, in `ux0:data/VitaJPOverlay/`
+(`log_file = off` in `config.ini` turns off the main one, `log.txt`). The normal build, the
+release's main download, logs no recognized or looked-up text; the `-debug` build, made for bug
+reports, logs both.
 
 ### How good is the OCR?
 
@@ -192,9 +196,10 @@ Bug reports, ideas and pull requests are welcome in
 [issues](https://github.com/bee-san/vita-jp-overlay/issues), and questions on
 [Discord](http://discord.skerritt.blog). With a bug, the logs help most: from a computer, with
 VitaShell's FTP on, `bash tools/install_ftp.sh --collect VITA_IP` gathers them into one zip
-([what it collects](docs/self-test.md#collecting-everything---collect)). To build and test Rubi, see
-the guide's [Build and validation](docs/guide.md#build-and-validation); [AGENTS.md](AGENTS.md) has
-the rules every change follows.
+([what it collects](docs/self-test.md#collecting-everything---collect)). A good first contribution:
+try Rubi on a Vita Slim, a PS TV or a game nobody has tested yet, and send that zip in an issue. To
+build and test Rubi, see the guide's [Build and validation](docs/guide.md#build-and-validation);
+[AGENTS.md](AGENTS.md) has the rules every change follows.
 
 <a href="https://github.com/bee-san/vita-jp-overlay/graphs/contributors"><img src="https://contrib.rocks/image?repo=bee-san/vita-jp-overlay" alt="Avatars of the people who have contributed to Rubi"></a>
 
@@ -237,6 +242,8 @@ game ([#109](https://github.com/bee-san/vita-jp-overlay/pull/109)).
 - The code is vibe coded: AI coding agents write it, under the rules in [AGENTS.md](AGENTS.md).
 - In the dictionary, Daijirin's and Sankoku's English is credited to GPT models, and the grammar
   notes were written by Claude agents ([attribution](docs/plaintext-attribution.txt)).
+- Part of the OCR's training labels, lines from real screenshots, were reviewed by Claude agents,
+  with Codex as a second vote ([vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/realplus.md)).
 - The mascot is drawn by a text-to-image model (above).
 
 ## License

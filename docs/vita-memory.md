@@ -164,10 +164,10 @@ SceShell is a user-mode system application spawned with the system-application b
 | | | model staging buffer (32 KiB), worker thread stack 16 KiB | KD | static | [`kernel/game_ocr.c`, `kernel/main.c`] |
 | `VitaJPOverlay_Shell.suprx` | `*main` | module pages: text 225,280 B + data/bss 180,224 B | Shell partition | 405,504 B permanent [measured] | [PR #60, `docs/issue-59-root-cause.md` section 3.1] |
 | | | `VjoNet` stack 16,384 B + 4,096 B TLS (65,536 B until #132); `VjoControl` 16,384 B + 4,096 B TLS | Shell partition | 40,960 B permanent, the ledger's (90,112 B until #132 [measured]) | same; [memory-ledger.md](memory-ledger.md) |
-| | | result arena 64 KiB (the local dictionary's; the network's 2 × 256 KiB and connection pool went with Google Lens), Anki save 128 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [README, 'Memory and troubleshooting'] |
+| | | result arena 64 KiB (the local dictionary's; the network's 2 × 256 KiB and connection pool went with Google Lens), Anki save 128 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [guide.md, 'Memory and troubleshooting'] |
 | | | Anki thread stack 16 KiB + TLS (64 KiB until the network went), only while an Anki job runs (with `anki_mining = on`: counting the queue on every overlay open, saving) | Shell partition | transient | [`shell/anki.c`] |
 | `VitaJPOverlay_OCR.suprx` | loaded by the kernel into each game ON in `games.ini` since #138 (`*TITLEID`, one section per game, before; `*ALL` up to the installer's `--title`) | module pages in each enabled game only. Under `*ALL` they were in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured]; not loaded outside the registered games since `--title` [source: taihen-parser `parser.c`], nor outside the enabled ones since #138 [source: `kernel/loader.c`] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
-| | in an enabled game | an Anki card's screenshot (API 23): one block of 450,560 B (`VjoGameShot`: the JPEG encoder, a strip of 64 colour rows, the JPEG) only while it runs, never beside an OCR job's blocks; worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 823,296 B (VOCR5-S: Small), 1,187,840 B (VOCR5-N: Normal) or 2,473,984 B (VOCR5-L: Large; 659,456, 1,159,168 and 1,560,576 B for VOCR3-FL10, VOCR3-H15 and VOCR4-W20 before VOCR5); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a reserve kept free before any block: 4 MiB, and since API 21 4, 8 or 16 MiB by the largest model size the job holds [estimate, vita-vn-ocr `docs/model-tiers.md`] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [README, 'Memory and troubleshooting'] |
+| | in an enabled game | an Anki card's screenshot (API 23): one block of 450,560 B (`VjoGameShot`: the JPEG encoder, a strip of 64 colour rows, the JPEG) only while it runs, never beside an OCR job's blocks; worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 823,296 B (VOCR5-S: Small), 1,187,840 B (VOCR5-N: Normal) or 2,473,984 B (VOCR5-L: Large; 659,456, 1,159,168 and 1,560,576 B for VOCR3-FL10, VOCR3-H15 and VOCR4-W20 before VOCR5); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a reserve kept free before any block: 4 MiB, and since API 21 4, 8 or 16 MiB by the largest model size the job holds [estimate, vita-vn-ocr `docs/model-tiers.md`] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [guide.md, 'Memory and troubleshooting'] |
 
 Permanent pages held in SceShell's partition: 540,672 B at API 16 against 503,808 B at API 13;
 the 36,864 B growth coincides with the build that stopped booting (#59) [measured: PR #60,
@@ -198,7 +198,7 @@ under `*PCSG00415`, kept the games registered by an earlier install, and comment
 (`tools/patch_tai_config.py`'s `lines` mode keeps those rules). taiHEN therefore loaded the worker only into
 those games, never into SceShell or a system app [source: taihen-parser `parser.c`,
 `taihen_config_parse`], which removes the load itself, not only its pages. `NO_RESIDENT` stays
-as the guard for a configuration edited by hand. For Adrenaline's PSP games the README names
+as the guard for a configuration edited by hand. For Adrenaline's PSP games the guide's Install names
 `PSPEMUCFW` and each bubble's own ID, the title IDs of the processes Adrenaline's kernel module
 and AdrBubbleBooter's patch [source: Adrenaline `kernel/main.c`, `ksceKernelStartPreloadedModulesPatched`;
 AdrBubbleBooter-oss `integration/adrenaline-v7/overlay/kernel/main.c:123-145`]; that taiHEN matches
@@ -334,7 +334,7 @@ Rules:
 - Resident data (the weights, the LM, the cascade's model) must be dropped once the game has not
   been the active one for 5 s of its running time (`game_ocr/main.c` `inactive_long`: another app in
   front of a running game, the title disabled, the Shell restarted), on any refused allocation and
-  at exit [README 'Memory and troubleshooting']. The 5 s are process time, which stops while the
+  at exit [guide.md, 'Memory and troubleshooting']. The 5 s are process time, which stops while the
   process is suspended [SDK: Kernel-Reference, `sceKernelGetProcessTimeWide`: "Process time stops
   during process suspension and system suspension periods"], so a suspend and resume keeps them,
   as a moment's change of foreground does; they stay in the game's own budget, which system apps
@@ -713,11 +713,11 @@ What the game's GPU memory costs (so nobody mistakes it for free memory):
 | `0x8001000C`, `0x80010013` | `ENOMEM`, `ENODEV` (errno facility) | `ENODEV` from a file open means the mount is not reachable from this process: games cannot see `ux0:`, hence the kernel model broker | [SDK: Error-Overview; wiki: Error_codes] |
 | `0x805B0002` | `SCE_GXM_ERROR_OUT_OF_MEMORY` | libgxm could not get memory (parameter buffer and friends) | [SDK: Error-Overview] |
 | `0x80102F02` | `SCE_SCREENSHOT_ERROR_NO_MEMORY` | the system screenshot library ran out of memory | [SDK: `SDK_doc__System__Screenshot-Reference_e.txt`] |
-| `0x8010113D` | — | not in the SDK 3.55 table nor the wiki; VSH facility (0x10), sub-facility 0x11 is unlisted. Seen when installing a VPK with RGBA LiveArea art (README) | [wiki: Error_codes, '0x8010XXXX']; [measured] |
+| `0x8010113D` | — | not in the SDK 3.55 table nor the wiki; VSH facility (0x10), sub-facility 0x11 is unlisted. Seen when installing a VPK with RGBA LiveArea art (guide.md, 'Build and validation') | [wiki: Error_codes, '0x8010XXXX']; [measured] |
 
 Error word layout: bit 31 error, bits 27-16 facility (0x001 errno, 0x002 kernel, 0x010 VSH,
 0x04F libheap), bits 15-0 the code [wiki: Error_codes, 'Format']. Our own API 13+ codes keep
-bit 30 clear because the console returned `-3` as `0xBFFFFFFD` (README, 'Memory and
+bit 30 clear because the console returned `-3` as `0xBFFFFFFD` (guide.md, 'Memory and
 troubleshooting').
 
 ## 10. Suspend and resume
@@ -740,7 +740,7 @@ troubleshooting').
   callbacks, but a game process only receives a reduced mask of them while system processes get
   the full set [wiki: SceSysmem, 'SysEvent'; wiki: ScePower, 'Power callbacks'].
 - For the overlay: a job is tied to its game, capture sequence and foreground generation, and
-  suspend invalidates old work (README). Resident weights, the LM and the cascade's model are
+  suspend invalidates old work (guide.md, 'Memory and troubleshooting'). Resident weights, the LM and the cascade's model are
   released once the game has not been the active one for 5 s of its running time (the rule in
   section 5.2; the time stops while the process is suspended, so a resume keeps them). Nothing may
   assume the frame it captured is still the one on screen after a resume.

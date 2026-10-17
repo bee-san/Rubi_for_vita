@@ -6788,7 +6788,7 @@ static void test_overlay_app_check_runs_for_psp_games(void)
 }
 
 /* Nothing to compare, or nothing installed, is no mismatch: an older package
- * brings no record, the README lets the app be deleted, and a file the Shell
+ * brings no record, docs/guide.md lets the app be deleted, and a file the Shell
  * cannot read says nothing about the app. */
 static void test_overlay_app_unknown_is_never_said(void)
 {

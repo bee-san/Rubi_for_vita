@@ -881,7 +881,7 @@ git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
 git -C /path/to/vita-vn-ocr checkout d214a05deeef503a5e1d1853fe9fa4c91eb60bc2  # #85's merge (after #83's and #82's): the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
-# The zip needs the frozen dictionary's checkout (README.md, "Build and validation").
+# The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
 cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_WITH_VOCR=ON \
   -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr -DVJO_PLAINTEXT_SOURCE=/path/to/plaintext-dicts
 cmake --build build/vita --target release
@@ -903,7 +903,7 @@ backend is missing (install a build made with `VJO_WITH_VOCR`).
 ## Install
 
 The complete v0.7.5 ZIP already includes both int8 models and the local
-configuration; use its `install-vita.sh` as described in the README. The
+configuration; use its `install-vita.sh` as described in that ZIP's README. The
 steps below cover a source build or adding another model.
 
 1. Install the vocr build's plugins as in the [guide](guide.md#install).
@@ -1071,4 +1071,4 @@ copied, and the settings above. Close other apps first.
 - Only the pinned files listed under [Models](#models) load. A new release needs its sizes, hashes
   and generation added (`core/vocr_ocr.c`, `core/vocr_models.c`, `kernel/game_ocr.c`,
   `tools/prepare_ocr.py`); `python3 tools/docs_model_names.py` then writes the new names into those
-  lists and the README's.
+  lists and the guide's.

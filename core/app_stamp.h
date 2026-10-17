@@ -47,7 +47,7 @@ enum {
  * when it is not there), installed its first line; app_present: the app's
  * eboot.bin is there; package_rc and package the same for the record. Texts
  * are NUL-terminated and only read when their rc is >= 0. An app without a
- * stamp is a mismatch; no app at all, or no record, is unknown: the README
+ * stamp is a mismatch; no app at all, or no record, is unknown: docs/guide.md
  * lets the app be deleted, and an older package brings no record. */
 int vjo_app_state(int installed_rc, const char *installed, int app_present, int package_rc, const char *package);
 
