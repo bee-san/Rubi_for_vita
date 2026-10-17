@@ -30,10 +30,10 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-CAP = Path(sys.argv[1]).resolve()
-CHECKOUT = Path(sys.argv[2]).resolve()
 if len(sys.argv) < 3 or (len(sys.argv) < 4 and not os.environ.get("PROMO_ASSETS")):
     sys.exit(__doc__)
+CAP = Path(sys.argv[1]).resolve()
+CHECKOUT = Path(sys.argv[2]).resolve()
 SRC = Path(sys.argv[3] if len(sys.argv) > 3 else os.environ["PROMO_ASSETS"])
 
 # The app's shots, by capture run and hold (capture/split_holds.py) or the Install page's run frame

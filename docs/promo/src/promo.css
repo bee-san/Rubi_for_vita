@@ -563,6 +563,57 @@
       #gate-continue {
         opacity: 0;
       }
+      /* the power-off screen (simplified, original: the guide's [Power Off] button on a dimmed screen) */
+      #scr-poweroff {
+        background: rgba(6, 8, 14, 0.62);
+      }
+      .po-box {
+        position: absolute;
+        left: 300px;
+        top: 200px;
+        width: 360px;
+        height: 144px;
+        border-radius: 18px;
+        background: rgba(30, 36, 52, 0.94);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+      }
+      #po-btn {
+        position: absolute;
+        left: 40px;
+        top: 38px;
+        width: 280px;
+        height: 68px;
+        border-radius: 34px;
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+        font-weight: 600;
+        font-size: 30px;
+        line-height: 68px;
+        text-align: center;
+      }
+      /* the hold ring around the power button (device units: the button's centre is at 514, 38) */
+      #hold-ring {
+        position: absolute;
+        left: 444px;
+        top: -32px;
+        opacity: 0;
+        overflow: visible;
+      }
+      #hold-ring circle {
+        fill: none;
+        stroke-width: 10;
+        transform: rotate(-90deg);
+        transform-origin: 70px 70px;
+      }
+      #hold-ring .track {
+        stroke: rgba(255, 255, 255, 0.35);
+      }
+      #hold-ring .fill {
+        stroke: var(--accent);
+        stroke-linecap: round;
+        stroke-dasharray: 377;
+        stroke-dashoffset: 377;
+      }
       .la-frame-shell {
         background: radial-gradient(120% 90% at 30% 20%, #2a3550 0%, #121a2c 55%, #0a0f1a 100%);
       }

@@ -13,12 +13,12 @@ import { readFileSync } from "node:fs";
 export const T = {
   s1: 0, //    Learn Japanese with your PS Vita for free
   s2: 4.5, //  Look up words from the games you play, entirely offline
-  s3: 10.0, // Create flashcards of words you don't know
-  s4: 14.5, // With screenshots
-  s5: 18.5, // It only reads text when it changes
-  s6: 23.5, // Easy install
-  s7: 31.75, // Now it's installed: go to your game and press L + R to look up words.
-  s8: 37.7, // Turn it off for specific games, so it doesn't get in the way
+  s3: 9.5, // Create flashcards of words you don't know
+  s4: 14.0, // With screenshots
+  s5: 17.6, // It only reads text when it changes
+  s6: 22.4, // Easy install
+  s7: 32.0, // Now it's installed: go to your game and press L + R to look up words.
+  s8: 37.75, // Turn it off for specific games, so it doesn't get in the way
   end: 43.05,
   total: 45.0,
 };
@@ -36,58 +36,62 @@ export const C = {
   right1: 6.75,
   // S3: × saves 一緒に (and its screenshot); Right, × saves 見に行く. "Saving card…" about 0.5 s
   // (shell/anki.c; an estimate, not measured on a console).
-  mine1: 10.7,
-  saved1: 11.2,
-  land1: 11.95,
-  right2: 12.45,
-  mine2: 13.2,
-  saved2: 13.7,
-  land2: 14.3,
+  mine1: 10.2,
+  saved1: 10.7,
+  land1: 11.45,
+  right2: 11.95,
+  mine2: 12.7,
+  saved2: 13.2,
+  land2: 13.8,
   // S4: the card in Anki.
-  whipA: 14.45,
-  cardOpen: 14.9,
-  whipB: 18.45,
+  whipA: 13.95,
+  cardOpen: 14.4,
+  whipB: 17.55,
   // S5: ○ closes the overlay, × shows a new line; the app's Read text.
-  pressO1: 19.25,
-  pressX2: 19.85,
-  typeC: 20.3,
-  appIn: 21.0,
-  right3: 21.95,
+  pressO1: 18.35,
+  pressX2: 18.95,
+  typeC: 19.4,
+  appIn: 20.1,
+  right3: 21.05,
   // S6: the install: the release, VitaShell, the app's Install page, the user's restart.
-  laptopIn: 23.45,
-  clickVpk: 23.85,
-  fileFly: 24.25,
-  shellIn: 24.8,
-  vsDown: 25.15, // VitaShell opens on "..": Down to the file
-  vsX1: 25.65,
-  vsX2: 26.2,
-  vsX3: 26.75,
-  vsDone: 27.35,
-  ps1: 27.6, // PS: VitaShell's LiveArea (it stays open: Continue)
-  flick1: 28.1, // a flick to the home screen, with the app's new bubble
-  tapBubbleApp: 28.65,
-  tapStartApp: 29.15,
-  installX: 29.7,
-  installDone: 30.3,
-  power: 30.85, // the user holds the power button: the Vita turns off (the app never restarts it)
-  dark: 31.15,
-  // S7: the Vita on again, the game, L + R, a tap on 子 in the header.
-  boot: 31.75,
-  tapBubbleGame: 32.35,
-  tapStartGame: 32.85,
-  typeD: 33.2,
-  lr2: 34.4,
-  ovOpen2: 34.5,
-  tapKo: 35.8,
+  laptopIn: 22.35,
+  clickVpk: 22.8,
+  fileFly: 23.2,
+  shellIn: 23.75,
+  vsDown: 24.1, // VitaShell opens on "..": Down to the file
+  vsX1: 24.6,
+  vsX2: 25.15,
+  vsX3: 25.7,
+  vsDone: 26.3,
+  ps1: 26.55, // PS: VitaShell's LiveArea (it stays open: Continue)
+  flick1: 27.05, // a flick to the home screen, with the app's new bubble
+  tapBubbleApp: 27.6,
+  tapStartApp: 28.1,
+  installX: 28.65,
+  installDone: 29.25,
+  // the user restarts the Vita (the app never does), as the console's guide says: hold the power button
+  // (two seconds; drawn shorter), select [Power Off] on the screen that appears; then the film cuts to it on
+  powerHold: 30.0,
+  powerScreen: 30.8,
+  tapPowerOff: 31.3,
+  dark: 31.4,
+  // S7: the Vita on again (a cut), the game, L + R, a tap on 子 in the header.
+  boot: 32.0,
+  tapBubbleGame: 32.6,
+  tapStartGame: 33.1,
+  typeD: 33.45,
+  lr2: 34.65,
+  ovOpen2: 34.75,
+  tapKo: 36.05,
   // S8: ○, PS, the home screen, the app, Games: Down, Down, × turns Ember Garden OFF.
-  pressO2: 37.7,
-  ps2: 38.25,
-  flick: 38.8,
-  tapBubbleApp2: 39.35,
-  tapStartApp2: 39.85,
-  down1: 40.4,
-  down2: 40.9,
-  toggle: 41.45,
+  pressO2: 37.75,
+  ps2: 38.3,
+  flick: 38.85,
+  tapBubbleApp2: 39.4,
+  tapStartApp2: 39.9,
+  down1: 40.45,
+  down2: 40.95,
+  toggle: 41.5,
 };
 
 // A western console: × enters, ○ cancels (core/buttons.h).
@@ -103,13 +107,13 @@ export const REPO = "bee-san/Rubi_for_vita";
 // Captions: the owner's script. <em> marks the accent words.
 export const CAPTIONS = {
   cap1: { h: "Learn Japanese with your PS&nbsp;Vita <em>for free</em>", in: 0.6, out: 4.3 },
-  cap2: { h: "Look up words from the games you play, <em>entirely offline</em>", in: 4.55, out: 9.8 },
-  cap3: { h: "Create flashcards of <em>words you don't know</em>", in: 10.05, out: 14.25 },
-  cap4: { h: "With <em>screenshots</em>", in: 14.6, out: 18.4 },
-  cap5: { h: "It only reads text <em>when it changes</em>", p: "or only when you press L&nbsp;+&nbsp;R", pIn: 20.75, in: 18.6, out: 23.3 },
-  cap6: { h: "<em>Easy install</em>", in: 23.6, out: 32.1 },
-  cap7: { h: "Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.", in: 32.4, out: 37.75 },
-  cap8: { h: "Turn it off for specific games, <em>so it doesn't get in the way</em>", in: 38.05, out: 42.95 },
+  cap2: { h: "Look up words from the games you play, <em>entirely offline</em>", in: 4.55, out: 9.3 },
+  cap3: { h: "Create flashcards of <em>words you don't know</em>", in: 9.6, out: 13.75 },
+  cap4: { h: "With <em>screenshots</em>", in: 14.1, out: 17.5 },
+  cap5: { h: "It only reads text <em>when it changes</em>", p: "or only when you press L&nbsp;+&nbsp;R", pIn: 19.85, in: 17.8, out: 22.2 },
+  cap6: { h: "<em>Easy install</em>", in: 22.5, out: 32.2 },
+  cap7: { h: "Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.", in: 32.5, out: 37.7 },
+  cap8: { h: "Turn it off for specific games, <em>so it doesn't get in the way</em>", in: 38.0, out: 42.95 },
 };
 
 // Scene 6's steps, shown under its caption (the one-VPK install: docs/one-vpk-install.md, the README's
@@ -211,7 +215,10 @@ export const SFX = [
   ["tap", C.tapStartApp, 0.55],
   ["click", C.installX, 0.5],
   ["chime", C.installDone, 0.35],
-  ["click", C.power, 0.5],
+  ["click", C.powerHold, 0.5],
+  ["pop", C.powerScreen, 0.3],
+  ["tap", C.tapPowerOff, 0.55],
+  ["whoosh", C.boot - 0.3, 0.35],
   ["tap", C.tapBubbleGame, 0.55],
   ["tap", C.tapStartGame, 0.55],
   ["lr", C.lr2, 0.6],

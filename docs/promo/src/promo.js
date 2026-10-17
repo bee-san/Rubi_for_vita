@@ -48,7 +48,7 @@
               shoulders: { x: 0, y: -330, s: 0.82, rx: 34, ry: 0, rz: 0 },
               screen: { x: 0, y: 22, s: 0.96, rx: 2, ry: -3, rz: 0 },
               screenIn: { x: -12, y: -24, s: 1.01, rx: 1.5, ry: -2.5, rz: 0 },
-              screenB: { x: 20, y: 30, s: 1.02, rx: 3, ry: -5, rz: 0 },
+              screenB: { x: -30, y: 30, s: 1.02, rx: 3, ry: -5, rz: 0 },
               popupZoom: { x: -30, y: -130, s: 1.1, rx: 1, ry: -2, rz: 0 },
               offZoom: { x: 72, y: 100, s: 0.8, rx: 2, ry: -3, rz: 0 }, // "Saved. ..." and OFF inside x 60-900
               mine: { x: 0, y: 330, s: 0.84, rx: 8, ry: 8, rz: 0 },
@@ -56,6 +56,7 @@
               readAppB: { x: 0, y: -60, s: 1.04, rx: 3, ry: 4, rz: 0 },
               installDevB: { x: 10, y: 30, s: 0.98, rx: 4, ry: -3, rz: 0 },
               power: { x: -150, y: -150, s: 0.9, rx: 20, ry: 6, rz: 0 },
+              powerB: { x: -170, y: -170, s: 0.99, rx: 22, ry: 7, rz: 0 },
               deck: { x: 0, y: 800, s: 0.9, rx: 0, ry: 0, rz: 0 },
               anki: { x: 0, y: 1840, s: 0.64, rx: 0, ry: 0, rz: 0 },
               ankiPic: { x: 320, y: 1560, s: 1.3, rx: 2, ry: -4, rz: 0 },
@@ -69,7 +70,7 @@
               home: { x: 0, y: 22, s: 0.94, rx: 6, ry: 8, rz: 0 },
               shoulders2: { x: 0, y: -330, s: 0.8, rx: 30, ry: 16, rz: 2 },
               screen3: { x: 0, y: 22, s: 0.97, rx: 2, ry: 2, rz: 0 },
-              koZoom: { x: -40, y: -110, s: 1.08, rx: 1, ry: -2, rz: 0 },
+              koZoom: { x: -90, y: -110, s: 1.08, rx: 1, ry: -2, rz: 0 },
               app8: { x: 0, y: 22, s: 0.9, rx: 5, ry: -8, rz: 0 },
               out: { x: 0, y: 40, s: 0.3, rx: 12, ry: -40, rz: -4 },
             }
@@ -89,6 +90,7 @@
               readAppB: { x: 30, y: -60, s: 1.7, rx: 3, ry: 5, rz: 0 },
               installDevB: { x: 20, y: 10, s: 0.98, rx: 4, ry: -3, rz: 0 },
               power: { x: -260, y: -170, s: 1.0, rx: 20, ry: 6, rz: 0 },
+              powerB: { x: -300, y: -195, s: 1.12, rx: 22, ry: 7, rz: 0 },
               deck: { x: 1330, y: 20, s: 1.0, rx: 0, ry: 0, rz: 0 },
               anki: { x: 2950, y: 40, s: 0.78, rx: 0, ry: 0, rz: 0 },
               ankiPic: { x: 3080, y: -170, s: 1.08, rx: 2, ry: -4, rz: 0 },
@@ -331,9 +333,9 @@
 
         // ============================================================ S3: × mines it, with its screenshot
         caption("cap3", K.cap3.in, K.cap3.out);
-        camTo(10.0, "mine", 0.75, "power3.inOut");
-        fade("#deck", 10.3, 0, 1, 0.35);
-        tl.fromTo("#deck", { x: 60 }, { x: 0, duration: 0.5, ease: "power3.out", immediateRender: false }, 10.3);
+        camTo(T.s3, "mine", 0.75, "power3.inOut");
+        fade("#deck", T.s3 + 0.3, 0, 1, 0.35);
+        tl.fromTo("#deck", { x: 60 }, { x: 0, duration: 0.5, ease: "power3.out", immediateRender: false }, T.s3 + 0.3);
         poke("t-r", C.mine1, B.X, -32, 0.42, 0.3);
         press(C.mine1, "btn-cross");
         swap("#ov-a3", "#ov-a4", C.mine1 + 0.05, 0.02);
@@ -366,7 +368,7 @@
         tl.fromTo("#shot-flash", { opacity: 0.5 }, { opacity: 0, duration: 0.3, immediateRender: false }, C.mine2 + 0.11);
         swap("#ov-a7", "#ov-a8", C.saved2, 0.02);
         flyCard("#fly2", C.saved2 - 0.1, C.land2, 2);
-        camTo(10.75, "mineB", C.whipA - 0.05 - 10.75, "sine.inOut");
+        camTo(T.s3 + 0.75, "mineB", C.whipA - 0.05 - (T.s3 + 0.75), "sine.inOut");
 
         // ============================================================ S4: with screenshots
         caption("cap4", K.cap4.in, K.cap4.out);
@@ -409,7 +411,7 @@
         on("#app-read-a", C.appIn);
         tl.fromTo("#scr-vn", { x: 0 }, { x: -120, duration: 0.3, ease: "power3.out", immediateRender: false }, C.appIn);
         camTo(C.appIn, "readApp", 0.6, "power3.inOut");
-        camTo(C.appIn + 0.6, "readAppB", 23.3 - (C.appIn + 0.6), "sine.inOut");
+        camTo(C.appIn + 0.6, "readAppB", T.s6 - 0.1 - (C.appIn + 0.6), "sine.inOut");
         poke("t-l", C.right3, B.DR, 32, 0.42, 0.3);
         press(C.right3, "dpad-right");
         swap("#app-read-a", "#app-read-b", C.right3 + 0.06, 0.03);
@@ -424,13 +426,13 @@
         function stepOut(id, t) {
           tl.fromTo(id, { opacity: 1, y: 0 }, { opacity: 0, y: -24, duration: 0.2, ease: "power2.in", immediateRender: false }, t);
         }
-        camTo(23.3, "installWide", 0.6, "power3.inOut");
-        swap("#scr-app", "#scr-shell", 23.35, 0.2);
-        on("#vs-list-e", 23.35);
-        off("#scr-vn", 23.6);
+        camTo(T.s6 - 0.1, "installWide", 0.6, "power3.inOut");
+        swap("#scr-app", "#scr-shell", T.s6 - 0.05, 0.2);
+        on("#vs-list-e", T.s6 - 0.05);
+        off("#scr-vn", T.s6 + 0.2);
         tl.fromTo("#laptop", { x: -400, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: "power3.out", immediateRender: false }, C.laptopIn);
-        stepIn("#step1", 23.75);
-        camTo(23.75, "laptop", 0.5, "power2.inOut");
+        stepIn("#step1", C.laptopIn + 0.3);
+        camTo(C.laptopIn + 0.3, "laptop", 0.5, "power2.inOut");
         // the mouse goes to the VPK and clicks it; it downloads
         const vpkY = 548 + 70 * GH_VPK_ROW; // the rows: 58 px and a 12 px gap (src/promo.css .gh-asset)
         tl.fromTo("#mouse", { x: 1300, y: 960, opacity: 0 }, { x: 610, y: vpkY, opacity: 1, duration: 0.42, ease: "power2.inOut", immediateRender: false }, C.clickVpk - 0.46);
@@ -525,17 +527,31 @@
         swap("#inst-4", "#inst-5", C.installX + 0.05 + 3 * run, 0.02);
         swap("#inst-5", "#inst-6", C.installDone, 0.02);
         camTo(C.tapStartApp, "installDev", 0.8, "power2.inOut");
-        camTo(C.tapStartApp + 0.8, "installDevB", C.power - 0.45 - (C.tapStartApp + 0.8), "sine.inOut");
-        // the user restarts the Vita (the app never does): a finger holds the power button, the screen goes dark
-        camTo(C.power - 0.45, "power", 0.5, "power2.inOut");
-        fingerIn("f-l", C.power - 0.4, B.PW, 180 - 8, 0.36);
-        fingerPress("f-l", C.power, 0.3);
-        tl.fromTo("#btn-power", { y: 0 }, { y: 8, duration: 0.08, ease: "power1.out", immediateRender: false }, C.power);
-        tl.fromTo("#btn-power", { y: 8 }, { y: 0, duration: 0.13, ease: "power1.out", immediateRender: false }, C.power + 0.4);
-        fade("#btn-power .glow", C.power, 0, 0.9, 0.06);
-        fade("#btn-power .glow", C.power + 0.4, 0.9, 0, 0.14);
-        fingerOut("f-l", C.power + 0.58);
+        camTo(C.tapStartApp + 0.8, "installDevB", C.powerHold - 0.5 - (C.tapStartApp + 0.8), "sine.inOut");
+        // the user restarts the Vita (the app never does), as the console's guide says: hold the power button
+        // (two seconds: drawn shorter, a ring fills as it is held) until a screen appears, select [Power Off] on
+        // it, and the Vita turns off; the film then cuts to it on again (scene 7)
+        camTo(C.powerHold - 0.5, "power", 0.5, "power2.inOut");
+        camTo(C.powerHold, "powerB", C.tapPowerOff - 0.25 - C.powerHold, "sine.inOut"); // in as it is held
+        const held = C.powerScreen + 0.1 - C.powerHold; // the press, until the screen has appeared
+        fingerIn("f-l", C.powerHold - 0.42, B.PW, 180 - 8, 0.36);
+        fingerPress("f-l", C.powerHold, held - 0.04);
+        tl.fromTo("#btn-power", { y: 0 }, { y: 8, duration: 0.08, ease: "power1.out", immediateRender: false }, C.powerHold);
+        tl.fromTo("#btn-power", { y: 8 }, { y: 0, duration: 0.13, ease: "power1.out", immediateRender: false }, C.powerHold + held);
+        fade("#btn-power .glow", C.powerHold, 0, 0.9, 0.06);
+        fade("#btn-power .glow", C.powerHold + held, 0.9, 0, 0.14);
+        on("#hold-ring", C.powerHold, 0.08);
+        tl.fromTo("#hold-ring circle.fill", { strokeDashoffset: 377 }, { strokeDashoffset: 0, duration: C.powerScreen - C.powerHold, ease: "none", immediateRender: false }, C.powerHold);
+        off("#hold-ring", C.powerHold + held, 0.12);
+        fingerOut("f-l", C.powerHold + held + 0.18);
+        // the screen that appears (simplified): [Power Off], tapped
+        tl.fromTo("#scr-poweroff", { opacity: 0 }, { opacity: 1, duration: 0.15, immediateRender: false }, C.powerScreen);
+        tl.fromTo("#scr-poweroff .po-box", { scale: 0.9 }, { scale: 1, duration: 0.2, ease: "power2.out", immediateRender: false }, C.powerScreen);
+        tap(C.tapPowerOff, 480, 272, 0.38);
+        tl.fromTo("#po-btn", { backgroundColor: "rgba(255,255,255,0.16)" }, { backgroundColor: "rgba(91,220,207,0.5)", duration: 0.06, immediateRender: false }, C.tapPowerOff);
+        // off: the screen goes dark
         swap("#scr-app", "#scr-black", C.dark, 0.25);
+        off("#scr-poweroff", C.dark + 0.05, 0.2);
         stepOut("#step3", C.dark);
         tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.dark + 0.2);
 
@@ -548,7 +564,7 @@
         off("#scr-black", C.boot + 0.3);
         off("#scr-shell", C.boot);
         glow(C.boot, "blue", 0.5);
-        camTo(C.boot - 0.2, "home", 0.7, "power2.inOut");
+        whip(C.boot - 0.3, "home", 0.6); // a cut: the Vita on again
         tapSeq([[C.tapBubbleGame, 164, 134], [C.tapStartGame, 260, 385]], 0.36);
         tl.fromTo("#scr-la-game", { opacity: 0, scale: 0.25, transformOrigin: "164px 134px" }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, C.tapBubbleGame + 0.06);
         off("#scr-home", C.tapBubbleGame + 0.3);

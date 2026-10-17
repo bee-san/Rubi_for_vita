@@ -179,11 +179,20 @@
                       </div></div></div>
                     </div>
 
+                    <!-- the screen holding the power button brings up (simplified): the guide's [Power Off] -->
+                    <div id="scr-poweroff" class="scr">
+                      <div class="po-box"><div id="po-btn" data-layout-allow-occlusion>Power Off</div></div>
+                    </div>
                     <div id="scr-black" class="scr"></div>
                     <!-- a touch: its ripple -->
                     <div id="ripple"></div>
                   </div>
                   <div id="screen-gloss"></div>
+                  <!-- the film's own mark: a ring that fills while the power button is held -->
+                  <svg id="hold-ring" viewBox="0 0 140 140" width="140" height="140" aria-hidden="true" data-layout-ignore>
+                    <circle class="track" cx="70" cy="70" r="60" />
+                    <circle class="fill" cx="70" cy="70" r="60" />
+                  </svg>
 
                   <!-- hands: fingertips over the buttons and the touchscreen (stylised, original) -->
                   <div id="hands">

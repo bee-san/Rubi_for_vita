@@ -9,6 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 FFMPEG=${FFMPEG:-ffmpeg}
 mkdir -p media/stills
+rm -f media/stills/*.jpg  # only this film's stills
 norm() { # in out
   local stats
   stats=$("$FFMPEG" -hide_banner -nostats -i "$1" -af loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json -f null - 2>&1 |
@@ -35,7 +36,7 @@ if [ "$size" -gt 5000000 ]; then echo "media/promo.gif is $size B, over 5 MB" >&
 # one still per beat: 1 2 3 4, 5 (and its setting), 6 (GitHub, VitaShell, its LiveArea, the Install page, the result,
 # the restart), 7 (the tap on 子) 8, the end card
 i=0
-for t in 2.6 7.8 11.6 16.6 20.8 22.6 24.0 25.95 27.95 29.5 30.7 31.0 36.6 42.0 44.0; do
+for t in 2.6 7.8 11.0 15.9 19.8 21.6 22.9 24.9 26.8 28.4 29.6 30.6 31.1 36.6 42.0 44.2; do
   i=$((i + 1))
   "$FFMPEG" -hide_banner -loglevel error -y -ss "$t" -i media/promo-1920x1080.mp4 -frames:v 1 -vf scale=1280:-1 -q:v 4 \
     "media/stills/$(printf '%02d' "$i")-$t.jpg"

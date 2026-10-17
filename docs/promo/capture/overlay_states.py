@@ -5,9 +5,9 @@
 
 LOOKUPS.jsonl is overlay_lookups' output (the checkout's own lookups, each entry's spans exactly as
 vjo_styled_entry draws them, Right as the overlay moves it along the header's displayed rows, and the lookup
-a tap on each character makes). The s1 beats press Right twice on a one-row header; the s3 header has two
-rows (a line break after 。), where Right from キラキラ stays (its row has no other word: checked here), so
-scene 7 taps 子 instead (the hint's "Tap"). This script lays out each beat's body in the order shell/overlay.cpp
+a tap on each character makes). The s1 beats press Right twice on a one-row header (checked here); on the s3
+header, two rows (a line break after 。), scene 7 taps 子 (the hint's "Tap"): on 68fc2d9 Right from キラキラ
+stays on its row, which has no other word. This script lays out each beat's body in the order shell/overlay.cpp
 render() writes it, with the strings read from the checkout's own sources (so a rename or a new string on
 main shows up here, and a string that is gone stops the build):
 
@@ -100,9 +100,11 @@ def main():
     if m2["rows"] != 1 or [w["result"] for w in m2["walk"][1:3]] != ["moved", "moved"]:
         sys.exit(f"overlay_states.py: Right, Right on {m2['sentence']!r} is not two moves: {m2['walk']}")
     a = [whole(w["lookup"], m2) for w in m2["walk"][:3]]
-    # s3: open; Right stays (two rows); a tap on 子 (code point 9) looks up 子供の頃
-    if s3["rows"] != 2 or s3["walk"][1]["result"] != "stay":
-        sys.exit(f"overlay_states.py: Right on {s3['sentence']!r} moves now ({s3['walk'][1]}): use it again")
+    # s3: open; a tap on 子 (code point 9, the second row's first letter) looks up 子供の頃 (shell/overlay.cpp
+    # input_header_touch). Right from キラキラ stays on 68fc2d9 (its row has no other word); from #173 it crosses
+    # the row: either way the film taps.
+    if s3["rows"] != 2:
+        sys.exit(f"overlay_states.py: {s3['sentence']!r} is not two rows: the tap point moves")
     tap = next(t for t in s3["taps"] if t["cursor_cp"] == 9)
     b = [whole(s3["walk"][0]["lookup"], s3), whole(tap, s3)]
 

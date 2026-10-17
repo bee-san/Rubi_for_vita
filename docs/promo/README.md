@@ -62,8 +62,9 @@ them (its `MANIFEST.md` has every file's licence, source and sha256).
   `vjo_styled_entry`, laid out in the order `shell/overlay.cpp` `render()` writes the body, with its strings
   read from `shell/overlay.cpp` and `shell/anki.c` (a string that is gone stops the run). Right moves as the
   overlay's arrows do (`vjo_text_row_key`, along the header's displayed rows, over the host tests' renderer
-  double), and a tap looks up at the tapped letter: scene 2's two Rights move on a one-row header, and on
-  scene 7's two-row header Right from キラキラ stays, so the film taps 子 (the run stops if that changes). `ocr_check.py`: the
+  double), and a tap looks up at the tapped letter: scene 2's two Rights move on a one-row header (the run
+  stops if they do not), and on scene 7's two-row header the film taps 子 (on 68fc2d9 Right from キラキラ
+  stays on its row; the tap is true either way). `ocr_check.py`: the
   checkout's recognizer reads each line the film types exactly as the film types it (`OUT/ocr-check.md`).
 - **The card** (`anki_card.c`, `anki_cards.py`, `render_cards.js`): the game's frame when × is pressed,
   encoded by the game worker's JPEG encoder at its quality (host `vjo-jpeg`, `core/jpegsw.c` at 70); the
@@ -87,13 +88,13 @@ them (its `MANIFEST.md` has every file's licence, source and sha256).
 | # | Time | Caption | On the console |
 | --- | --- | --- | --- |
 | 1 | 0–4.5 s | Learn Japanese with your PS&nbsp;Vita *for free* | The mock visual novel types its line; the camera pulls back to the Vita; × shows the next line. |
-| 2 | 4.5–10 s | Look up words from the games you play, *entirely offline* | L + R (two fingers on the shoulders) opens the overlay on また明日; Right goes to 一緒に. |
-| 3 | 10–14.5 s | Create flashcards of *words you don't know* | × saves 一緒に with its screenshot; Right, × saves 見に行く; the cards fly to the queue (0 → 1 → 2). |
-| 4 | 14.5–18.5 s | With *screenshots* | The card in Anki (Lapis): its front turns to its back, the game's screen in its Picture. |
-| 5 | 18.5–23.5 s | It only reads text *when it changes* / or only when you press L + R | ○, × shows a new scene and line; the app's Read text goes to "Only when I press L + R". |
-| 6 | 23.5–31.75 s | *Easy install* | GitHub Releases, the .vpk to the Vita; VitaShell: Down to it, × and its two questions; PS, a flick to the home screen; the app's Install page and its run; the user holds the power button; done. |
-| 7 | 31.75–37.7 s | Now it's installed: go to your game and press *L&nbsp;+&nbsp;R* to look up words. | The game starts from its bubble; L + R opens the overlay on キラキラ; a tap on 子 looks up 子供の頃. |
-| 8 | 37.7–43 s | Turn it off for specific games, *so it doesn't get in the way* | ○, PS (the game stays suspended), the home screen, the app: Down, Down, × turns Ember Garden OFF. |
+| 2 | 4.5–9.5 s | Look up words from the games you play, *entirely offline* | L + R (two fingers on the shoulders) opens the overlay on また明日; Right goes to 一緒に. |
+| 3 | 9.5–14 s | Create flashcards of *words you don't know* | × saves 一緒に with its screenshot; Right, × saves 見に行く; the cards fly to the queue (0 → 1 → 2). |
+| 4 | 14–17.6 s | With *screenshots* | The card in Anki (Lapis): its front turns to its back, the game's screen in its Picture. |
+| 5 | 17.6–22.4 s | It only reads text *when it changes* / or only when you press L + R | ○, × shows a new scene and line; the app's Read text goes to "Only when I press L + R". |
+| 6 | 22.4–32 s | *Easy install* | GitHub Releases, the .vpk to the Vita; VitaShell: Down to it, × and its two questions; PS, a flick to the home screen; the app's Install page and its run; the user holds the power button and selects Power Off; done. |
+| 7 | 32–37.75 s | Now it's installed: go to your game and press *L&nbsp;+&nbsp;R* to look up words. | (A cut: the Vita on again.) The game starts from its bubble; L + R opens the overlay on キラキラ; a tap on 子 looks up 子供の頃. |
+| 8 | 37.75–43 s | Turn it off for specific games, *so it doesn't get in the way* | ○, PS (the game stays suspended), the home screen, the app: Down, Down, × turns Ember Garden OFF. |
 | | 43–45 s | End card | Rubi for Vita: free, fully offline, open source; the project's address. |
 
 The owner's note on the first cut (#134, 2026-10-16 14:15Z: "the pressing is a little too fast, slow it
@@ -124,7 +125,7 @@ Checked against the checkout the captures are of (`assets/SOURCES.md` names it).
   release's VPK, copied to the Vita and installed in VitaShell (its own two questions), then the app's
   Install page, then a restart by the user (the app never restarts the Vita). Every game is ON by default
   and the kernel loads the OCR worker into each (#148), so no per-game step follows. Not yet verified on a
-  console: the owner's test.4 run checks it. The film says only "Easy install" and shows the steps.
+  console: the owner's test.4 run checks it, and the film is published as final only once it does.
 - **L + R**: the default `toggle_button` is `l+r`.
 - **Turn it off per game**: the app's Games page; the status line is the app's own.
 
@@ -134,12 +135,14 @@ line heights, 38 px for 27 px text and 30 px for 21 px, are estimates, not measu
 itself opens with no animation: its short rise is the film's). Drawn by the film itself: the console (with its
 power button on the top edge) and the hands; the home screen and the LiveArea pages (simplified: the game's,
 VitaShell's and the app's, with the app's own icon, name and LiveArea art; PS on an app shows its LiveArea,
-and a flick reaches the home screen, as the console's guide says);
-VitaShell's screens, from VitaShell 2.02's layout, Default theme and strings, with the release's file and its
-size as VitaShell writes it; the Releases page, with the release's files and sizes as GitHub lists and writes
-them (by name, then the two source archives); the restart, a finger holding the power button and the screen
-going dark (the console's guide: hold it for two seconds, then Power Off). The release is the one its checkout builds (version 0.8.0); the
-published release's sizes may differ by a few bytes.
+and a flick reaches the home screen, as the console's guide says); VitaShell's screens, from VitaShell 2.02's
+layout, Default theme and strings, with the release's file and its size as VitaShell writes it; the Releases
+page, with the release's files and sizes as GitHub lists and writes them (by name, then the two source
+archives); the restart: a finger holds the power button while a ring fills (the guide's two seconds, drawn
+shorter), selects [Power Off] on the screen that appears (drawn simplified), and the screen goes dark; the
+film then cuts to the Vita on again (the guide: hold the power button for two seconds to turn it on). The
+release is the one its checkout builds (version 0.8.0); the published release's sizes may differ by a few
+bytes.
 
 ## Licences
 
