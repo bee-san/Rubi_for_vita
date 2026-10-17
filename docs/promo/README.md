@@ -152,8 +152,9 @@ archives); the restart: a finger holds the power button while a ring fills (the 
 shorter), selects [Power Off] on the screen that appears (drawn simplified), and the screen goes dark; the
 film then cuts to the game on the Vita turned on again (the guide: hold the power button for two seconds to
 turn it on; starting the game is not shown). The
-release is the one its checkout builds (version 0.8.0); the published release's files may differ by a few KB
-(a later checkout ships other docs), enough to move the last digit of a size.
+release is the one its checkout builds (version 0.8.0), so the film's file sizes are those of a build from before
+the release: Rubi-0.8.0.vpk 58.3 MB on GitHub, 58.28 MB in VitaShell. The published Rubi 0.8.0 is larger: its
+Rubi-0.8.0.vpk is 59.5 MB on GitHub (59.49 MB in VitaShell).
 
 ## Licences
 
