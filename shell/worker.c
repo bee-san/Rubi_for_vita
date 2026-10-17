@@ -129,9 +129,10 @@ static int subtitles; /* written by set_subtitles only */
 /* The strip says "Recognizing…" for the lookup or refresh in progress, which
  * brings it nothing (subtitles turned on after the close that dropped it): its
  * end gives the strip the screen's sentence, or a job of its own (#95 item 3a;
- * strip_after_wait). Set by subtitles_show only while such a job runs, and by a
- * region change while any job but the self-test's runs (it cancels that job: it
- * read the old region; #182), so that job's end always clears it. */
+ * strip_after_wait). Set by subtitles_show only while such a job runs (or a
+ * cancelled one, but not the self-test's), and by a region change while any job
+ * but the self-test's runs (it cancels that job: it read the old region; #182),
+ * so that job's end always clears it. */
 static int strip_waiting;
 static int input_block_error;
 static int stable_pending;
@@ -2134,6 +2135,12 @@ static void on_job_done(void)
         if (d->err.rc == VJO_E_SCREEN_CHANGED && !job_cancelled) /* a game change cancels its jobs */
             note_screen_changed("job");
         cache_ok = 0;
+        /* A cancelled job's result goes, the text it published too: a region,
+         * game or pipeline change that cancelled it after the game's answer (the
+         * exchange's last cancel check) retired the text before run_vocr published
+         * the old one again (#186's audit N1). */
+        if (job_cancelled && local_text_valid && job_text_generation && job_text_generation == local_text_generation)
+            retire_local_text(1);
         job_cancelled = 0;
         stable_pending = game_active(); /* only the current game's next screen (Auto) */
         if (ov != OV_CLOSED && stable_pending) { /* the overlay waits for this screen's */
@@ -2278,9 +2285,13 @@ static void subtitles_show(const VjoState *st)
         return;
     }
     vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
-    /* A lookup or a refresh in progress brings the strip nothing: its end
-     * does (strip_after_wait). Another job brings its result (on_job_done). */
-    strip_waiting = job_running && (job_cursor_only || job_refresh);
+    /* A job in progress that brings the strip nothing: a lookup, a refresh, or
+     * one that was cancelled (a region, game or pipeline change; not the
+     * self-test's, whose end shows the strip's sentence itself): its end does
+     * (strip_after_wait). Another job brings its result (on_job_done). #186's
+     * audit N2: before, Select + R during a cancelled job left "Recognizing…" with
+     * no job after it, until the screen settled. */
+    strip_waiting = job_running && (job_cursor_only || job_refresh || (job_cancelled && !job_selftest));
     start_job("subtitles on", want_lookup()); /* if one runs, its result comes */
 }
 
