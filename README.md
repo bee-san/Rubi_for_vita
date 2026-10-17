@@ -1,9 +1,5 @@
-<!-- Hero video (to come): the promo's GIF, linked to its MP4, replaces the icon below, as in
-     Ciphey's README (<a href="MP4"><img src="GIF" alt="what the video shows"></a>), with
-     "▶ Watch the N-second tour (MP4)" under the links line. The promo shows its own mock visual
-     novel: never game art. -->
 <p align="center">
-  <img src="settings/assets/icon0.png" width="128" height="128" alt="Rubi's icon: a girl in round glasses reading a yellow book, beside a speech bubble with the kana あ">
+  <a href="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/promo-1920x1080.mp4"><img src="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/promo.gif" width="540" alt="Rubi on a PS Vita: L + R opens the overlay over a line of a visual novel, Right moves to the next word and shows its dictionary entry, and × saves the word as an Anki card."></a>
 </p>
 
 <h1 align="center">Rubi</h1>
@@ -28,6 +24,7 @@
   <a href="#faq">FAQ</a> ·
   <a href="docs/guide.md">Guide</a> ·
   <a href="http://discord.skerritt.blog">Discord</a> ⬅️
+  <br><sub>▶ <a href="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/promo-1920x1080.mp4">Watch the 42-second tour</a> (MP4, 42 s)</sub>
 </p>
 
 > Rubi is the new name of Vita JP Overlay ([what changed](docs/rename-rubi.md)). The app was called
@@ -36,8 +33,11 @@
 
 ## What it does
 
-<!-- Stills (to come, with the promo): the popup over the promo's mock visual novel, the Anki card
-     and the app's Games page. Never game art. -->
+<p align="center">
+  <img src="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/stills/02-7.8.jpg" width="32%" alt="The overlay over the promo's mock visual novel: the line 「また明日、一緒に見に行こう!」 with 一緒に highlighted, and its entry: いっしょに, frequency rank 125, together (with), and the meanings of its two kanji.">
+  <img src="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/stills/04-15.9.jpg" width="32%" alt="The Anki card Rubi made of 一緒に, a Lapis note: the word and its reading, the sentence, the definition from Bee's Ultimate Dictionary and the game's screenshot.">
+  <img src="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/stills/07-26.2.jpg" width="32%" alt="The Rubi app's Games page: Ember Garden turned OFF, with the app's line: Saved. It applies when the game next starts or resumes.">
+</p>
 
 - **Look up any word in the dialogue.** L + R opens the overlay over the game: the dialogue at the
   top, a word's dictionary entry under it, with its reading and how common the word is. Go word by
