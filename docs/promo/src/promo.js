@@ -51,6 +51,7 @@
               screenB: { x: -30, y: 30, s: 1.02, rx: 3, ry: -5, rz: 0 },
               popupZoom: { x: -30, y: -130, s: 1.1, rx: 1, ry: -2, rz: 0 },
               offZoom: { x: 72, y: 100, s: 0.8, rx: 2, ry: -3, rz: 0 }, // "Saved. ..." and OFF inside x 60-900
+              offZoomB: { x: 80, y: 135, s: 0.83, rx: 3.5, ry: -1.5, rz: 0 }, // a slow drift in, OFF still in frame
               mine: { x: 0, y: 330, s: 0.84, rx: 8, ry: 8, rz: 0 },
               mineB: { x: 0, y: 340, s: 0.86, rx: 6, ry: 4, rz: 0 },
               readAppB: { x: 0, y: -60, s: 1.04, rx: 3, ry: 4, rz: 0 },
@@ -69,9 +70,8 @@
               installDev: { x: 0, y: 22, s: 0.9, rx: 5, ry: -6, rz: 0 },
               home: { x: 0, y: 22, s: 0.94, rx: 6, ry: 8, rz: 0 },
               shoulders2: { x: 0, y: -330, s: 0.8, rx: 30, ry: 16, rz: 2 },
+              shoulders3: { x: 0, y: -280, s: 0.78, rx: 26, ry: 12, rz: 1.5 },
               screen3: { x: 0, y: 22, s: 0.97, rx: 2, ry: 2, rz: 0 },
-              koZoom: { x: -90, y: -110, s: 1.08, rx: 1, ry: -2, rz: 0 },
-              app8: { x: 0, y: 22, s: 0.9, rx: 5, ry: -8, rz: 0 },
               app8B: { x: 0, y: 30, s: 0.9, rx: 3, ry: -5, rz: 0 }, // the Games page's right column in the frame
               out: { x: 0, y: 40, s: 0.3, rx: 12, ry: -40, rz: -4 },
             }
@@ -86,6 +86,7 @@
               screenB: { x: 40, y: -24, s: 1.26, rx: 3, ry: -5, rz: 0 },
               popupZoom: { x: -60, y: -130, s: 1.75, rx: 1, ry: -2, rz: 0 },
               offZoom: { x: 60, y: 150, s: 1.6, rx: 2, ry: -3, rz: 0 },
+              offZoomB: { x: 40, y: 140, s: 1.7, rx: 2.5, ry: -2, rz: 0 },
               mine: { x: 380, y: -10, s: 0.74, rx: 8, ry: 12, rz: 0 },
               mineB: { x: 430, y: 0, s: 0.77, rx: 6, ry: 8, rz: 0 },
               readAppB: { x: 30, y: -60, s: 1.7, rx: 3, ry: 5, rz: 0 },
@@ -104,9 +105,8 @@
               installDev: { x: 0, y: 0, s: 0.92, rx: 6, ry: -6, rz: 0 },
               home: { x: 0, y: 0, s: 0.9, rx: 7, ry: 8, rz: 0 },
               shoulders2: { x: 0, y: -330, s: 1.0, rx: 30, ry: 16, rz: 2 },
+              shoulders3: { x: 0, y: -290, s: 0.96, rx: 26, ry: 12, rz: 1.5 },
               screen3: { x: 0, y: -28, s: 1.24, rx: 2, ry: 2, rz: 0 },
-              koZoom: { x: -70, y: -110, s: 1.6, rx: 1, ry: -2, rz: 0 },
-              app8: { x: 0, y: 0, s: 0.94, rx: 6, ry: -8, rz: 0 },
               app8B: { x: 40, y: -24, s: 1.26, rx: 3, ry: -5, rz: 0 },
               out: { x: 0, y: 40, s: 0.42, rx: 12, ry: -40, rz: -4 },
             };
@@ -200,9 +200,6 @@
         }
         // a tap on the touchscreen at screen pixel (sx, sy): the finger, and the touch's ripple
         const SCR = (sx, sy) => [357 + 1.1520833 * sx, 149 + 1.1520833 * sy];
-        // 子, the first letter of the overlay header's second row: the header's text box starts at (20, 12),
-        // its rows are 38 px, its letters 27 px (src/promo.css .ov-head, shell/rco/vitajpoverlay.xml)
-        const KO = [20 + 27 / 2, 12 + 38 + 38 / 2];
         function ripple(t, sx, sy) {
           tl.fromTo("#ripple", { x: sx, y: sy, scale: 0.4, opacity: 0.95 }, { scale: 1.7, opacity: 0, duration: 0.38, ease: "power2.out", immediateRender: false }, t);
         }
@@ -419,8 +416,31 @@
         swap("#app-read-a", "#app-read-b", C.right3 + 0.06, 0.03);
         glow(C.appIn, "teal", 0.5);
 
-        // ============================================================ S6: easy install (the one-VPK install)
+        // ============================================================ S6: turn it off for a game (in the app)
         caption("cap6", K.cap6.in, K.cap6.out);
+        // from Read text, the whole page comes into view; a tap on its Games tab (settings/main.c: TAB_X(0) 24,
+        // TAB_W 220, TAB_Y 52, TAB_H 48; a tab tap changes the page as Select does)
+        camTo(T.s6 - 0.1, "screen3", 0.6, "power3.inOut");
+        tap(C.tapGames, 134, 76, 0.38);
+        swap("#app-read-b", "#games-1", C.tapGames + 0.05, 0.02);
+        // the Games page (Vita3K captures of the app): Down, Down to Ember Garden, × turns it OFF
+        fingerIn("t-l", C.down1 - 0.4, B.DD, 30, 0.34);
+        fingerPress("t-l", C.down1);
+        press(C.down1, "dpad-down");
+        swap("#games-1", "#games-2", C.down1 + 0.05, 0.02);
+        fingerPress("t-l", C.down2);
+        press(C.down2, "dpad-down");
+        swap("#games-2", "#games-3", C.down2 + 0.05, 0.02);
+        fingerOut("t-l", C.down2 + 0.3);
+        poke("t-r", C.toggle, B.X, -32, 0.42, 0.28);
+        press(C.toggle, "btn-cross");
+        swap("#games-3", "#games-4", C.toggle + 0.05, 0.02);
+        camTo(C.tapGames + 0.3, "app8B", C.toggle - (C.tapGames + 0.3), "sine.inOut");
+        camTo(C.toggle + 0.05, "offZoom", 0.9, "power2.inOut"); // in on OFF and the app's line
+        camTo(C.toggle + 0.95, "offZoomB", T.s7 - 0.15 - (C.toggle + 0.95), "sine.inOut"); // a slow drift as it reads
+
+        // ============================================================ S7: easy install (the one-VPK install), last
+        caption("cap7", K.cap7.in, K.cap7.out);
         // the steps, one at a time under "Easy install", each as its action starts
         function stepIn(id, t) {
           tl.fromTo(id, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.3, ease: "power3.out", immediateRender: false }, t);
@@ -428,10 +448,10 @@
         function stepOut(id, t) {
           tl.fromTo(id, { opacity: 1, y: 0 }, { opacity: 0, y: -24, duration: 0.2, ease: "power2.in", immediateRender: false }, t);
         }
-        camTo(T.s6 - 0.1, "installWide", 0.6, "power3.inOut");
-        swap("#scr-app", "#scr-shell", T.s6 - 0.05, 0.2);
-        on("#vs-list-e", T.s6 - 0.05);
-        off("#scr-vn", T.s6 + 0.2);
+        camTo(T.s7 - 0.1, "installWide", 0.6, "power3.inOut");
+        swap("#scr-app", "#scr-shell", T.s7 - 0.05, 0.2);
+        on("#vs-list-e", T.s7 - 0.05);
+        off("#scr-vn", T.s7 + 0.2);
         tl.fromTo("#laptop", { x: -400, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: "power3.out", immediateRender: false }, C.laptopIn);
         stepIn("#step1", C.laptopIn + 0.3);
         camTo(C.laptopIn + 0.3, "laptop", 0.5, "power2.inOut");
@@ -517,7 +537,7 @@
         off("#scr-home", C.tapBubbleApp + 0.3);
         grow("#scr-app", C.tapStartApp + 0.08, 0.94, 0.2);
         on("#inst-1", C.tapStartApp + 0.08);
-        off("#app-read-b", C.tapStartApp + 0.08);
+        off("#games-4", C.tapStartApp + 0.08);
         off("#scr-la-app", C.tapStartApp + 0.3);
         poke("t-r", C.installX, B.X, -32, 0.4, 0.26);
         press(C.installX, "btn-cross");
@@ -532,7 +552,7 @@
         camTo(C.tapStartApp + 0.8, "installDevB", C.powerHold - 0.5 - (C.tapStartApp + 0.8), "sine.inOut");
         // the user restarts the Vita (the app never does), as the console's guide says: hold the power button
         // (two seconds: drawn shorter, a ring fills as it is held) until a screen appears, select [Power Off] on
-        // it, and the Vita turns off; the film then cuts to it on again (scene 7)
+        // it, and the Vita turns off; the film then cuts to it on again, in the game
         camTo(C.powerHold - 0.5, "power", 0.5, "power2.inOut");
         camTo(C.powerHold, "powerB", C.tapPowerOff - 0.25 - C.powerHold, "sine.inOut"); // in as it is held
         const held = C.powerScreen + 0.1 - C.powerHold; // the press, until the screen has appeared
@@ -554,109 +574,38 @@
         // off: the screen goes dark
         swap("#scr-app", "#scr-black", C.dark, 0.25);
         off("#scr-poweroff", C.dark + 0.05, 0.2);
+
+
+        // the Vita on again (a cut at the whip's fastest), in the game: L + R, and the overlay opens (no second
+        // lookup: the owner, 06:46Z). Right after the install card mining is off: no queue line, no × queue.
+        tl.set("#vn-m1", { opacity: 0 }, C.boot);
+        tl.set("#vn-m2", { opacity: 0 }, C.boot);
+        tl.set("#vn-m3", { opacity: 0 }, C.boot);
+        tl.set("#vn-next", { opacity: 0 }, C.boot);
+        tl.set("#bg-s1", { opacity: 0 }, C.boot);
+        tl.set("#bg-s2", { opacity: 0 }, C.boot);
+        tl.set("#bg-s3", { opacity: 1 }, C.boot);
+        tl.set("#scr-vn", { opacity: 1, x: 0 }, C.boot);
+        tl.set("#scr-ov", { opacity: 0 }, C.boot);
+        tl.set(".ov-state", { opacity: 0 }, C.boot);
+        off("#scr-black", C.boot); // VitaShell, the home screen and the app are off already
+        glow(C.boot, "violet", 0.5);
+        whip(C.boot - 0.3, "shoulders2", 0.6);
         stepOut("#step3", C.dark);
-        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.dark + 0.2);
-
-        // ============================================================ S7: in your game, L + R
-        caption("cap7", K.cap7.in, K.cap7.out);
-        // the Vita starts again: the home screen
-        tl.set("#bub-app", { opacity: 1 }, C.boot);
-        off("#scr-la-app", C.boot);
-        // the cut: at the whip's fastest (C.boot) the home screen replaces the dark one in one frame
-        tl.fromTo("#scr-home", { opacity: 0, scale: 1 }, { opacity: 1, scale: 1, duration: 0.01, immediateRender: false }, C.boot);
-        off("#scr-black", C.boot);
-        off("#scr-shell", C.boot);
-        glow(C.boot, "blue", 0.5);
-        whip(C.boot - 0.3, "home", 0.6); // a cut: the Vita on again
-        tapSeq([[C.tapBubbleGame, 164, 134], [C.tapStartGame, 260, 385]], 0.36);
-        tl.fromTo("#scr-la-game", { opacity: 0, scale: 0.25, transformOrigin: "164px 134px" }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, C.tapBubbleGame + 0.06);
-        off("#scr-home", C.tapBubbleGame + 0.3);
-        // the game: the hill under the stars (the heroine is happy), a new line types
-        tl.set("#vn-m3", { opacity: 0 }, C.tapStartGame);
-        tl.set("#vn-next", { opacity: 0 }, C.tapStartGame);
-        tl.set("#bg-s2", { opacity: 0 }, C.tapStartGame);
-        tl.set("#bg-s3", { opacity: 1 }, C.tapStartGame);
-        tl.set("#scr-vn", { opacity: 1, x: 0 }, C.tapStartGame);
-        tl.set("#scr-ov", { opacity: 0 }, C.tapStartGame);
-        tl.set(".ov-state", { opacity: 0 }, C.tapStartGame);
-        grow("#scr-vn", C.tapStartGame + 0.1, 0.94, 0.25);
-        off("#scr-la-game", C.tapStartGame + 0.36);
-        type("#vn-m4", C.typeD);
-        on("#vn-next", C.typeD + 0.8, 0.12);
-        glow(C.tapStartGame, "violet", 0.6);
-        camTo(C.typeD, "shoulders2", C.lr2 - 0.15 - C.typeD, "power2.inOut");
-        fingerIn("f-l", C.lr2 - 0.42, B.L, 180 - 14, 0.38);
-        fingerIn("f-r", C.lr2 - 0.42, B.R, 180 + 14, 0.38);
-        fingerPress("f-l", C.lr2, 0.14);
-        fingerPress("f-r", C.lr2, 0.14);
-        press(C.lr2, "btn-l");
-        press(C.lr2, "btn-r");
-        fingerOut("f-l", C.lr2 + 0.38);
-        fingerOut("f-r", C.lr2 + 0.38);
-        // right after the install card mining is off: no queue line, no × queue in the hint
-        off("#vn-next", C.ovOpen2);
-        on("#scr-ov", C.ovOpen2, 0.12);
-        tl.fromTo("#scr-ov", { y: 110 }, { y: 0, duration: 0.22, ease: "power3.out", immediateRender: false }, C.ovOpen2);
-        on("#ov-b1", C.ovOpen2);
-        camTo(C.ovOpen2 + 0.1, "screen3", 0.9, "power3.inOut");
-        // a tap on 子, the first letter of the header's second row (shell/overlay.cpp input_header_touch: the
-        // tapped letter is the cursor; on 68fc2d9 Right stays on キラキラ's row, after #173 it crosses rows)
-        tap(C.tapKo, KO[0], KO[1], 0.4);
-        swap("#ov-b1", "#ov-b1a", C.tapKo + 0.05, 0.02);
-        swap("#ov-b1a", "#ov-b2", C.tapKo + 0.35, 0.02);
-        camTo(C.ovOpen2 + 1.0, "screenB", C.tapKo + 0.3 - (C.ovOpen2 + 1.0), "sine.inOut");
-        camTo(C.tapKo + 0.3, "koZoom", T.s8 - 0.1 - (C.tapKo + 0.3), "power2.inOut"); // in on the word, its kanji lines
-
-        // ============================================================ S8: turn it off for a game
-        caption("cap8", K.cap8.in, K.cap8.out);
-        camTo(T.s8 - 0.05, "app8", 0.6, "power3.inOut");
-        poke("t-r", C.pressO2, B.O, -36, 0.4, 0.26);
-        press(C.pressO2, "btn-circle");
-        off("#scr-ov", C.pressO2 + 0.06, 0.05);
-        // PS: the game's LiveArea (it stays suspended: Continue)
-        poke("t-l", C.ps2, B.PS, 20, 0.36, 0.22);
-        press(C.ps2, "btn-ps");
-        tl.set("#gate-start", { opacity: 0 }, C.ps2);
-        tl.set("#gate-continue", { opacity: 1 }, C.ps2);
-        tl.set("#scr-la-game", { scale: 1 }, C.ps2);
-        tl.fromTo("#scr-la-game", { opacity: 0, scale: 1.08 }, { opacity: 1, scale: 1, duration: 0.22, ease: "power2.out", immediateRender: false }, C.ps2 + 0.06);
-        tl.fromTo("#scr-vn", { opacity: 1 }, { opacity: 0, duration: 0.1, immediateRender: false }, C.ps2 + 0.2);
-        // a flick to the home screen, then the app: its LiveArea, Start
-        tl.fromTo("#scr-la-game", { x: 0 }, { x: 960, duration: 0.34, ease: "power2.inOut", immediateRender: false }, C.flick);
-        tl.fromTo("#scr-home", { opacity: 1, x: -960, scale: 1 }, { opacity: 1, x: 0, duration: 0.34, ease: "power2.inOut", immediateRender: false }, C.flick);
-        fingerIn("f-tap", C.flick - 0.36, SCR(300, 280), -22, 0.32);
-        fingerMove("f-tap", C.flick, SCR(700, 280), 0.34);
-        fingerMove("f-tap", C.tapBubbleApp2 - 0.28, SCR(639, 350), 0.22);
-        fingerPress("f-tap", C.tapBubbleApp2);
-        ripple(C.tapBubbleApp2, 639, 350);
-        fingerMove("f-tap", C.tapStartApp2 - 0.27, SCR(480, 293), 0.2);
-        fingerPress("f-tap", C.tapStartApp2);
-        ripple(C.tapStartApp2, 480, 293);
-        fingerOut("f-tap", C.tapStartApp2 + 0.2);
-        tl.fromTo("#scr-la-app", { opacity: 0, scale: 0.25 }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, C.tapBubbleApp2 + 0.06);
-        off("#scr-home", C.tapBubbleApp2 + 0.3);
-        tl.set("#inst-6", { opacity: 0 }, C.tapStartApp2);
-        tl.set("#scr-black", { opacity: 0 }, C.tapStartApp2);
-        tl.set("#scr-app", { x: 0 }, C.tapStartApp2);
-        grow("#scr-app", C.tapStartApp2 + 0.08, 0.94, 0.2);
-        on("#games-1", C.tapStartApp2 + 0.08);
-        off("#scr-la-app", C.tapStartApp2 + 0.3);
-        glow(C.tapStartApp2, "teal", 0.5);
-        // the Games page (Vita3K captures of the app): Down, Down to Ember Garden, × turns it OFF
-        fingerIn("t-l", C.down1 - 0.4, B.DD, 30, 0.34);
-        fingerPress("t-l", C.down1);
-        press(C.down1, "dpad-down");
-        swap("#games-1", "#games-2", C.down1 + 0.05, 0.02);
-        fingerPress("t-l", C.down2);
-        press(C.down2, "dpad-down");
-        swap("#games-2", "#games-3", C.down2 + 0.05, 0.02);
-        fingerOut("t-l", C.down2 + 0.3);
-        poke("t-r", C.toggle, B.X, -32, 0.42, 0.28);
-        press(C.toggle, "btn-cross");
-        swap("#games-3", "#games-4", C.toggle + 0.05, 0.02);
-        camTo(C.ps2, "screen3", 1.4, "power2.inOut");
-        camTo(C.tapStartApp2 - 0.1, "app8B", C.toggle - (C.tapStartApp2 - 0.1), "sine.inOut");
-        camTo(C.toggle + 0.05, "offZoom", 0.9, "power2.inOut"); // in on OFF and the app's line
+        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.boot + 0.05);
+        tl.set("#vn-m4 .c", { opacity: 1 }, C.boot); // the game's line, already shown
+        fingerIn("f-l", C.lrEnd - 0.42, B.L, 180 - 14, 0.38);
+        fingerIn("f-r", C.lrEnd - 0.42, B.R, 180 + 14, 0.38);
+        fingerPress("f-l", C.lrEnd, 0.14);
+        fingerPress("f-r", C.lrEnd, 0.14);
+        press(C.lrEnd, "btn-l");
+        press(C.lrEnd, "btn-r");
+        fingerOut("f-l", C.lrEnd + 0.38);
+        fingerOut("f-r", C.lrEnd + 0.38);
+        on("#scr-ov", C.ovEnd, 0.12);
+        tl.fromTo("#scr-ov", { y: 110 }, { y: 0, duration: 0.22, ease: "power3.out", immediateRender: false }, C.ovEnd);
+        on("#ov-b1", C.ovEnd);
+        camTo(C.lrEnd + 0.15, "shoulders3", T.end - 0.4 - (C.lrEnd + 0.15), "sine.out"); // a little back, as it opens
 
         // ============================================================ end card
         camTo(T.end - 0.4, "out", 0.7, "power2.in");

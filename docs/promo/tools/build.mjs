@@ -60,9 +60,7 @@ const OV_STATES = [
   ["s1-m2-ov06-miniiku", "ov-a6"],
   ["s1-m2-ov06b-miniiku-saving", "ov-a7"],
   ["s1-m2-ov07-miniiku-saved", "ov-a8"],
-  ["s3-m1-ov03-open", "ov-b1"],
-  ["s3-m1-ov04a-tap-inflight", "ov-b1a"],
-  ["s3-m1-ov04-kodomonokoro", "ov-b2"],
+  ["s3-m1-ov03-open", "ov-b1"], // the last beat: L + R in the game, right after the install (card mining off)
 ];
 
 // ---------------------------------------------------------------- the game (夕凪ステップ)
@@ -120,12 +118,11 @@ function captions() {
   return Object.entries(S.CAPTIONS)
     .map(([id, c]) => {
       const p = c.p ? `<p class="sub" id="${id}-p">${c.p}</p>` : "";
-      // scene 6's steps: one at a time, as large as a caption line, under "Easy install"
-      const steps =
-        id === "cap6"
-          ? `<div class="steps">${S.STEPS.map((s, i) => `<div class="step" id="step${i + 1}"><b>${i + 1}</b><span>${s}</span></div>`).join("")}` +
-            `<div class="step" id="step-done"><b>✓</b><span>Done</span></div></div>`
-          : "";
+      // the install's steps: one at a time, as large as a caption line, under "Easy install"; then its last beat
+      const steps = c.steps
+        ? `<div class="steps">${S.STEPS.map((s, i) => `<div class="step" id="step${i + 1}"><b>${i + 1}</b><span>${s}</span></div>`).join("")}` +
+          `<div class="step" id="step-done"><b>✓</b><span>${S.LAST_STEP}</span></div></div>`
+        : "";
       return `<div class="cap" id="${id}"><h1>${words(c.h)}</h1>${p}${steps}</div>`;
     })
     .join("\n");
@@ -238,7 +235,6 @@ function build(layout, scale = 1) {
     VN_M3: vnText("vn-m3", S.VN.m3),
     VN_M4: vnText("vn-m4", S.VN.m4),
     VN_TITLE: esc(S.VN.title),
-    VN_TITLE_EN: esc(S.VN.titleEn),
     OVERLAY_STATES: OV_STATES.map(([k, id]) => overlayState(k, id)).join("\n"),
     VS_DATA_E: vsRows(VS_DATA.slice(0, 1), 0),
     VS_DATA_0: vsRows(VS_DATA, 0),

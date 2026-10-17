@@ -15,7 +15,7 @@ Writes:
   the game worker's JPEG (capture/run.sh);
 - assets/app/: the app's icon and LiveArea art, the checkout's settings/assets/;
 - assets/vn/, assets/audio/, assets/icons/: the mock game, the sound and the home screen's icons (promo-assets);
-  assets/audio/bed-45s.m4a: its 44 s music bed with one second more in the breakdown (tools/make_bed.py);
+  assets/audio/bed-42s.m4a: its music bed, synthesised by its own code one bar shorter (tools/make_bed.py);
 - src/release.json: the release's file names and sizes (capture/run.sh release/sizes.json);
 - assets/SOURCES.md: each output with the sha256 of its input and of itself.
 """
@@ -135,10 +135,11 @@ def main():
         copy(CHECKOUT / "settings" / "assets" / n, ROOT / "assets" / "app" / n)
     # the music and the sound effects (CC0, promo-assets: audio/README.md)
     audio = ROOT / "assets" / "audio"
-    (audio / "bed-44s.m4a").unlink(missing_ok=True)
-    subprocess.run([sys.executable, str(ROOT / "tools" / "make_bed.py"), str(SRC / "audio" / "music" / "bed-44s.wav"),
-                    str(audio / "bed-45s.m4a")], check=True)
-    note(SRC / "audio" / "music" / "bed-44s.wav", audio / "bed-45s.m4a", "tools/make_bed.py: 1.0 s more breakdown at 29.5 s, AAC")
+    for old in ("bed-44s.m4a", "bed-45s.m4a"):
+        (audio / old).unlink(missing_ok=True)
+    subprocess.run([sys.executable, str(ROOT / "tools" / "make_bed.py"), str(SRC / "src" / "make_audio.py"),
+                    str(audio / "bed-42s.m4a")], check=True)
+    note(SRC / "src" / "make_audio.py", audio / "bed-42s.m4a", "tools/make_bed.py: bed-44s's own code without its bar 13 (42 s), AAC")
     for n in ("click", "lr", "dpad", "whoosh-in", "whoosh-out", "swish", "pop", "chime", "confirm",
               "text-blip-1", "text-blip-2", "text-blip-3", "text-blip-4", "text-blip-5"):
         copy(SRC / "audio" / "sfx" / f"{n}.wav", audio / f"sfx-{n}.wav")

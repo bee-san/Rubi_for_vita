@@ -5,7 +5,7 @@
 # release in build/vita-normal and build/vita-debug (cmake --build ... --target release, VJO_DEBUG=OFF and ON).
 # OUT gets (tools/prep_assets.py copies them into assets/ and src/):
 #   overlay-states.json      the overlay at each beat: the checkout's lookups and render() (overlay_lookups.c, overlay_states.py)
-#   ocr-check.md             the checkout's recognizer reads each line the film types, as it types it (ocr_check.py)
+#   ocr-check.md             the checkout's recognizer reads each line the film shows, as it shows it (ocr_check.py)
 #   anki/                    the mined cards: the game worker's JPEG of the game's frame (vjo-jpeg), the Shell's records
 #                            and the app's export (anki_card.c), imported and rendered by Anki 26.09.3 (anki_cards.py,
 #                            render_cards.js)
@@ -39,7 +39,7 @@ printf '%s\n' '「ねえ、聞いて！明日の夜、丘の上で\n流れ星が
   '「ドキドキ、ワクワク……！」' '「キラキラ……。\n子供の頃みたい。」' > "$O/lines.txt"
 "$O/bin/overlay_lookups" "$DICT_DIR" plaintext.vjdict < "$O/lines.txt" > "$O/lookups.jsonl"
 python3 "$here/overlay_states.py" "$M" "$O/lookups.jsonl" "$dict_sha" > "$O/overlay-states.json"
-# the header is the recognizer's text: it must read each line as the film types it
+# the header is the recognizer's text: it must read each line as the film shows it
 python3 "$here/ocr_check.py" "$M" "$MODELS" "$A/vn" "$O/ocr-check.md"
 
 echo "== the card"

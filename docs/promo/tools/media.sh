@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Makes the films' media from the renders (run after `npm run render` and `npm run render:vertical`):
-#   media/promo-1920x1080.mp4, media/promo-1080x1920.mp4 (45 s): the renders with their sound brought to
+#   media/promo-1920x1080.mp4, media/promo-1080x1920.mp4 (42 s): the renders with their sound brought to
 #     -16 LUFS integrated, true peak -1.5 dBTP (ffmpeg loudnorm, two passes; the picture is copied);
 #   media/promo.gif: the L + R lookup and the mining, 540 px wide, 10 fps (at most 5 MB);
 #   media/poster.jpg and media/stills/: one still per scene, from the landscape film.
@@ -33,10 +33,10 @@ norm renders/promo-1080x1920.mp4 media/promo-1080x1920.mp4
   -loop 0 media/promo.gif
 size=$(stat -c %s media/promo.gif)
 if [ "$size" -gt 5000000 ]; then echo "media/promo.gif is $size B, over 5 MB" >&2; exit 1; fi
-# one still per beat: 1 2 3 4, 5 (and its setting), 6 (GitHub, VitaShell, its LiveArea, the Install page, the result,
-# the restart), 7 (the tap on 子) 8, the end card
+# one still per beat: 1 2 3 4, 5 (and its setting), 6 (OFF), 7 (GitHub, VitaShell, its LiveArea, the Install page,
+# the result, the restart, then L + R in the game), the end card
 i=0
-for t in 2.6 7.8 11.0 15.9 19.8 21.6 22.9 24.9 26.8 28.4 29.6 30.6 31.1 36.6 42.0 44.2; do
+for t in 2.6 7.8 11.0 15.9 19.8 21.6 26.2 28.15 30.15 32.05 33.65 34.85 35.85 36.35 38.3 41.4; do
   i=$((i + 1))
   "$FFMPEG" -hide_banner -loglevel error -y -ss "$t" -i media/promo-1920x1080.mp4 -frames:v 1 -vf scale=1280:-1 -q:v 4 \
     "media/stills/$(printf '%02d' "$i")-$t.jpg"

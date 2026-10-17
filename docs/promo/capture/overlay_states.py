@@ -5,9 +5,9 @@
 
 LOOKUPS.jsonl is overlay_lookups' output (the checkout's own lookups, each entry's spans exactly as
 vjo_styled_entry draws them, Right as the overlay moves it along the header's displayed rows, and the lookup
-a tap on each character makes). The s1 beats press Right twice on a one-row header (checked here); on the s3
-header, two rows (a line break after 。), scene 7 taps 子 (the hint's "Tap"): on 68fc2d9 Right from キラキラ
-stays on its row, which has no other word. This script lays out each beat's body in the order shell/overlay.cpp
+a tap on each character makes). The s1 beats press Right twice on a one-row header (checked here); the s3 line
+is only opened (the film's last beat: L + R in the game, right after the install). This script lays out each
+beat's body in the order shell/overlay.cpp
 render() writes it, with the strings read from the checkout's own sources (so a rename or a new string on
 main shows up here, and a string that is gone stops the build):
 
@@ -100,15 +100,8 @@ def main():
     if m2["rows"] != 1 or [w["result"] for w in m2["walk"][1:3]] != ["moved", "moved"]:
         sys.exit(f"overlay_states.py: Right, Right on {m2['sentence']!r} is not two moves: {m2['walk']}")
     a = [whole(w["lookup"], m2) for w in m2["walk"][:3]]
-    # s3: open; a tap on 子 (code point 9, the second row's first letter) looks up 子供の頃 (shell/overlay.cpp
-    # input_header_touch). Right from キラキラ stays on 68fc2d9 (its row has no other word); from #173 it crosses
-    # the row: either way the film taps.
-    if s3["rows"] != 2:
-        sys.exit(f"overlay_states.py: {s3['sentence']!r} is not two rows: the tap point moves")
-    tap = next(t for t in s3["taps"] if t["cursor_cp"] == 9)
-    if tap.get("spelling") != "子供の頃":
-        sys.exit(f"overlay_states.py: a tap on 子 looks up {tap.get('spelling')!r} now, not 子供の頃")
-    b = [whole(s3["walk"][0]["lookup"], s3), whole(tap, s3)]
+    # s3: open only (the first lookup the overlay makes on its own)
+    b = [whole(s3["walk"][0]["lookup"], s3)]
 
     def state(o, step, hl, **kw):
         mining = kw.get("mining", False)
@@ -128,10 +121,8 @@ def main():
         "s1-m2-ov06b-miniiku-saving": state(m2, a[2], a[2]["hl_cp"], mining=True, pending=1, anki_status="Saving card…"),
         "s1-m2-ov07-miniiku-saved": state(m2, a[2], a[2]["hl_cp"], mining=True, pending=2, anki_status="Saved for Anki",
                                           queued=True),
-        # s3-m1: 「キラキラ……。/子供の頃みたい。」 right after a first install: mining off; a tap on 子
+        # s3-m1: 「キラキラ……。/子供の頃みたい。」 right after a first install: mining off; opened
         "s3-m1-ov03-open": state(s3, b[0], b[0]["hl_cp"], mining=False, pending=0),
-        "s3-m1-ov04a-tap-inflight": state(s3, b[1], one(b[1]), mining=False, pending=0, in_flight=True),
-        "s3-m1-ov04-kodomonokoro": state(s3, b[1], b[1]["hl_cp"], mining=False, pending=0),
     }
     json.dump({"source": f"capture/overlay_states.py: vita-jp-overlay {commit}'s shell/overlay.cpp render() order and "
                          f"strings, its own lookups (capture/overlay_lookups.c) in the released plaintext.vjdict "

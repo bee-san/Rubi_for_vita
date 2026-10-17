@@ -7,7 +7,7 @@ file's licence and source).
 
 | output | input | input sha256 | output sha256 | how |
 | --- | --- | --- | --- | --- |
-| `src/overlay-states.json` | `capture: overlay-states.json` | `f8968b89b236d75c…` | `f8968b89b236d75c…` | copy |
+| `src/overlay-states.json` | `capture: overlay-states.json` | `9e790714946a32e1…` | `9e790714946a32e1…` | copy |
 | `assets/vn/bg-s1.jpg` | `promo-assets: vn/s1/bg@2x.png` | `2aeb413bec240e47…` | `6b69c21fe305ef8b…` | JPEG q90 4:4:4 |
 | `assets/vn/bg-s2.jpg` | `promo-assets: vn/s2/bg@2x.png` | `4e0a209a223e8716…` | `dc30783dfc06959a…` | JPEG q90 4:4:4 |
 | `assets/vn/bg-s3.jpg` | `promo-assets: vn/s3/bg@2x.png` | `a517433c1f074d0e…` | `f94d818c5d6ba76c…` | JPEG q90 4:4:4 |
@@ -32,7 +32,7 @@ file's licence and source).
 | `assets/app/icon0.png` | `checkout: settings/assets/icon0.png` | `63ac81a4dcd7a500…` | `63ac81a4dcd7a500…` | copy |
 | `assets/app/bg.png` | `checkout: settings/assets/bg.png` | `a8c702621b6284ed…` | `a8c702621b6284ed…` | copy |
 | `assets/app/startup.png` | `checkout: settings/assets/startup.png` | `c397e22b59deaca8…` | `c397e22b59deaca8…` | copy |
-| `assets/audio/bed-45s.m4a` | `promo-assets: audio/music/bed-44s.wav` | `fd1a20837b13b8e7…` | `19744aa13662554c…` | tools/make_bed.py: 1.0 s more breakdown at 29.5 s, AAC |
+| `assets/audio/bed-42s.m4a` | `promo-assets: src/make_audio.py` | `1d37fbf1d120e770…` | `78737dd4b04a20b2…` | tools/make_bed.py: bed-44s's own code without its bar 13 (42 s), AAC |
 | `assets/audio/sfx-click.wav` | `promo-assets: audio/sfx/click.wav` | `2f246507f900bfb9…` | `2f246507f900bfb9…` | copy |
 | `assets/audio/sfx-lr.wav` | `promo-assets: audio/sfx/lr.wav` | `7f4e65b7caea7adc…` | `7f4e65b7caea7adc…` | copy |
 | `assets/audio/sfx-dpad.wav` | `promo-assets: audio/sfx/dpad.wav` | `5e0e54b67e12e213…` | `5e0e54b67e12e213…` | copy |
