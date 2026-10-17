@@ -1,22 +1,26 @@
 /* The Overlay app's graphics start as a system application, with or without a game running.
  *
  * As a system application the app draws into SceShell's shared framebuffer, and libvita2d's
- * start (a8f15ab vita2d.c:233-262, the pinned libvita2d.a) depends on SceShell twice:
+ * start (a8f15ab vita2d.c:233-262, the pinned libvita2d.a) waits on SceShell twice before its
+ * first frame:
  *
  * - sceGxmVshInitialize(SHARED_SYNC | SHAREDPB_OPEN, 0x0A): the GPU library opens the parameter
  *   buffer another process made. libvita2d keeps no result: refused, the GPU library stays down
  *   and every later call of it fails (the rings, the render target, the shaders).
  * - its framebuffer loop: open the shared framebuffer, read it, close it and try again while its
  *   buffer index is 1, with no pause. The index is the buffer SceShell last handed over, which
- *   SceShell changes only when it runs; the app's main thread runs on CPU3 at 96 (0x10000100 in a
- *   system application, wiki SceKernelThreadMgr), above SceShell's job threads there (96-120 in
- *   test.3's SceShell dumps), so while it reads SceShell's jobs do not run. A read before any
- *   hand-over (index 0, the second buffer NULL) ends the loop with a NULL buffer to draw into.
+ *   changes only when SceShell's thread that hands it over runs. The app's main thread runs on
+ *   CPU3 at 96 (0x10000100 in a mini application, wiki SceKernelThreadMgr), and while the loop
+ *   spins SceShell's threads at or below 96 on CPU3 do not run (most of its job threads: 96-120 in
+ *   test.3's SceShell dumps; SceShellMain, at 76, does). A read before any hand-over (index 0, the
+ *   second buffer NULL) ends the loop with a NULL buffer to draw into.
  *
- * Beside a game (test.3's console run) SceShell had handed over by the first read and the
- * shared buffer was open. With no game running the app does not open (owner, 2026-10-16), and
- * nothing of it is logged: these are the two places that wait on SceShell. Which of them stops
- * it on a console is not known; this line in log.txt will say.
+ * (The third wait, libvita2d's sceSharedFbBegin at each frame, vita2d.c:859-860, blocks in the
+ * kernel, so SceShell's threads run meanwhile; it is not wrapped.) Beside a game (test.3's console
+ * run) the start worked; how many reads its hand-over took was not logged. With no game running
+ * the app does not open (owner, 2026-10-16), and where it stops is not known: main.c's start
+ * line and this file's line in log.txt will say (docs/vita-memory.md section 5.4, "Starting with
+ * no game running", has what each means).
  *
  * The link wraps libvita2d's two calls into the system (vita/CMakeLists.txt --wrap; the build
  * checks that libvita2d calls them, tools/check_settings_self.py):
@@ -28,11 +32,12 @@
  * - the framebuffer read: an answer libvita2d would take but cannot draw with (no framebuffer, a
  *   failed read, no second buffer: index 0 before SceShell's first hand-over), or one it retries
  *   (buffer 1 still the last one), is given to it as "buffer 1", on which libvita2d closes the
- *   framebuffer and opens it again, after a 1 ms pause in which SceShell runs. A wait over a
- *   second is logged; after 10 s the app closes with a log.txt line.
+ *   framebuffer and opens it again, after a 1 ms pause in which SceShell's threads at or below the
+ *   app's priority run. A wait over a second is logged; after 10 s the app closes with a log.txt
+ *   line (below appmgr's own 20 s for an app that does not end its frame).
  *
  * Every answer libvita2d takes and can draw with goes to it unchanged: beside a game nothing
- * changes. One log.txt line, in both builds, says how the start went. */
+ * changes but one log.txt append, the hand-over's line, in both builds. */
 #include "sysapp_gfx.h"
 #include "anki_page.h" /* vjo_log: log.txt */
 #include <psp2/gxm.h>

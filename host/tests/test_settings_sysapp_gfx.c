@@ -21,10 +21,12 @@
  *   src/os0/us/libgxm_es4/source/init.c and gpu_es4 client_render.c, a reimplementation
  *   from the firmware).
  *
- * "Beside a game" is what test.3's console run had: the hand-over there at the first read
- * and a shared parameter buffer (the app's main memory, 38,899,712 B free at its start and
- * 28,286,976 B 60 frames later, fits libvita2d's blocks without a 2 MiB buffer of its own:
- * an inference). Which of the no-game cases a console has is not known: each is a test. */
+ * "Beside a game" is the model's reading of test.3's console run, where the start worked: the
+ * hand-over there at the first read (test.3 logged no read count: an assumption) and a shared
+ * parameter buffer (the app's main memory, 38,899,712 B free at its start and 28,286,976 B 60
+ * frames later, fits libvita2d's blocks without a 2 MiB buffer of its own: an inference). Which
+ * of the no-game cases a console has, if any, is not known: each is a test. A start the model's
+ * clock runs past 30 s in ends as a failure (STUCK), never a hang. */
 #include "acutest.h"
 #include <psp2/gxm.h>
 #include <psp2/kernel/processmgr.h>
@@ -44,6 +46,7 @@ void vjo_model_vita2d_init(void *display[2]);
 
 #define SYSCALL_US 5u          /* CPU3 time each of the app's calls takes from SceShell */
 #define SPIN_LIMIT 2000000u    /* framebuffer reads in a row with no pause: SceShell never runs */
+#define STUCK_US (3 * (uint64_t)VJO_GFX_GIVE_UP_US) /* the model's clock past this: the start never ends */
 #define NEVER UINT64_MAX
 #define FB_OPEN_ERROR ((int)0x80200004) /* appmgr sharedfb.c: no such framebuffer */
 #define OUT_OF_MEMORY ((int)0x805B0002) /* SCE_GXM_ERROR_OUT_OF_MEMORY */
@@ -56,11 +59,13 @@ typedef struct {
     int first_index;          /* the render info before the hand-over: 0 none, 1 buffer 1, 2 buffer 2 */
     uint64_t shell_needs_us;  /* CPU3 time SceShell needs to hand over buffer 2 (NEVER: it does not) */
     int stale_base2;          /* index 0 with the second buffer set (an earlier hand-over's render info) */
+    int no_base;              /* before the hand-over, the first buffer NULL too (index 2, as if handed over) */
+    uint64_t start_at_us;     /* the process's clock when libvita2d starts (the app's start before it) */
 } World;
 
 /* What one start did, from its process (each runs in its own: the wrappers keep their state in statics). */
 typedef struct {
-    int ended;                /* 0 returned, 1 the process exited, 2 it spun (SPIN_LIMIT) */
+    int ended;                /* 0 returned, 1 the process exited, 2 it spun (SPIN_LIMIT), 3 stuck (STUCK_US) */
     int exit_status;
     uint64_t now, shell_cpu, delayed_us, exit_at;
     unsigned gxm_calls, flags[4], opens, reads, closes, delays;
@@ -126,7 +131,7 @@ int sceSharedFbGetInfo(SceUID fb_id, SceSharedFbInfo *info)
     if (++spin > SPIN_LIMIT) longjmp(process_end, 2);
     if (fb_id < 0) return FB_OPEN_ERROR; /* the caller's info as it was: libvita2d's zeros */
     int index = handed_over() ? 2 : world.first_index;
-    info->fb_base = buffers[0];
+    info->fb_base = world.no_base && !handed_over() ? NULL : buffers[0];
     info->fb_size = 0x400000;
     info->fb_base2 = index == 2 || (index == 0 && world.stale_base2) ? buffers[1] : index == 1 ? buffers[0] : NULL;
     info->stride = info->width = 960;
@@ -149,6 +154,7 @@ int sceKernelDelayThread(SceUInt us)
     res->delays++;
     res->delayed_us += us;
     spin = 0;
+    if (res->now > STUCK_US) longjmp(process_end, 3); /* a wait with no end: fail, never hang */
     return 0;
 }
 
@@ -205,6 +211,7 @@ static Result run(World w)
     if (!pid) {
         world = w;
         res = shared;
+        res->now = w.start_at_us;
         spin = 0;
         start();
         _exit(0);
@@ -227,14 +234,15 @@ static const char *log_with(const Result *r, const char *needle)
 static void started(const Result *r)
 {
     TEST_CHECK_(r->ended == 0, "the start %s after %u reads (%llu us)", r->ended == 2 ? "spun on CPU3: SceShell never ran"
-                : "ended the process", r->reads, (unsigned long long)r->now);
+                : r->ended == 3 ? "never ended (the model's clock passed 30 s)" : "ended the process", r->reads,
+                (unsigned long long)r->now);
     TEST_CHECK_(!r->gpu_used_down, "the GPU library was used before it started: %s", r->gpu_what);
     TEST_CHECK_(r->display_ok[0] && r->display_ok[1], "the display buffers are %s and %s", r->display_ok[0] ? "right" :
                 "wrong", r->display_ok[1] ? "right" : "wrong (NULL: drawn into address 0)");
 }
 
 /* ---- beside a game: what test.3's console run had ---- */
-static const World beside_a_game = {1, 1, 0, 0, 2, 0};
+static const World beside_a_game = {1, 1, 0, 0, 2, 0, 0, 0, 0};
 
 /* The working path is unchanged: libvita2d's flags once, one read, no pause. */
 static void beside_a_game_nothing_changes(void)
@@ -317,9 +325,57 @@ static void no_game_no_shared_parameter_buffer(void)
 /* All of it at once. */
 static void no_game_everything_late(void)
 {
-    World w = {1, 0, 0, 1, 0, 20000};
+    World w = {1, 0, 0, 1, 0, 20000, 0, 0, 0};
     Result r = run(w);
     started(&r);
+}
+
+/* A read that says buffer 2 with no first buffer: libvita2d would draw into NULL; it waits. */
+static void a_read_with_no_first_buffer_waits(void)
+{
+    World w = beside_a_game;
+    w.no_base = 1;
+    w.shell_needs_us = 5000;
+    Result r = run(w);
+    started(&r);
+    TEST_CHECK_(r.delays >= 5, "%u pauses", r.delays);
+}
+
+/* The wait's line comes after a second, once: a hand-over at 0.5 s logs none, one at 1.5 s
+ * logs it at its first read past the second. */
+static void a_wait_over_a_second_is_logged_once(void)
+{
+    World w = beside_a_game;
+    w.first_index = 1;
+    w.shell_needs_us = 500000;
+    Result r = run(w);
+    started(&r);
+    TEST_CHECK_(!log_with(&r, "waiting"), "half a second: %s", log_with(&r, "waiting"));
+    w.shell_needs_us = 1500000;
+    r = run(w);
+    started(&r);
+    const char *waiting = log_with(&r, "graphics: waiting for the display: nothing handed over in ");
+    unsigned ms = 0;
+    TEST_CHECK_(waiting && sscanf(waiting, "graphics: waiting for the display: nothing handed over in %u ms", &ms) == 1 &&
+                ms >= 1000 && ms < 1020 && strstr(waiting, "last: buffer index 1)"), "%s", waiting ? waiting : "-");
+    TEST_CHECK_(r.logs == 2, "%d lines: the wait's and the hand-over's", r.logs);
+}
+
+/* The 10 s count from libvita2d's first read, not the process's start: an app whose own start
+ * took 5 s still waits 10 s, and a hand-over 7 s after the first read is taken. */
+static void the_ten_seconds_count_from_the_first_read(void)
+{
+    World w = beside_a_game;
+    w.first_index = 1;
+    w.start_at_us = 5000000;
+    w.shell_needs_us = 7000000;
+    Result r = run(w);
+    started(&r);
+    w.shell_needs_us = NEVER;
+    r = run(w);
+    TEST_CHECK_(r.ended == 1 && r.exit_at >= w.start_at_us + VJO_GFX_GIVE_UP_US &&
+                r.exit_at <= w.start_at_us + VJO_GFX_GIVE_UP_US + 20000, "ended %d at %llu us", r.ended,
+                (unsigned long long)r.exit_at);
 }
 
 /* SceShell never hands over: the app closes within 10 s, says so in log.txt (once while it
@@ -330,7 +386,8 @@ static void a_display_never_handed_over_closes_the_app(void)
     w.first_index = 1;
     w.shell_needs_us = NEVER;
     Result r = run(w);
-    TEST_CHECK_(r.ended == 1, "the start %s", r.ended == 2 ? "spun on CPU3" : r.ended ? "?" : "returned");
+    TEST_CHECK_(r.ended == 1, "the start %s", r.ended == 2 ? "spun on CPU3" : r.ended == 3 ? "never closed (30 s)" :
+                r.ended ? "?" : "returned");
     TEST_CHECK_(r.exit_at >= VJO_GFX_GIVE_UP_US && r.exit_at <= VJO_GFX_GIVE_UP_US + 20000, "closed at %llu us",
                 (unsigned long long)r.exit_at);
     TEST_CHECK_(r.delays > 9000 && r.reads <= r.delays + 1, "%u reads, %u pauses", r.reads, r.delays);
@@ -402,6 +459,9 @@ TEST_LIST = {
     {"no game: the framebuffer does not open yet", no_game_the_framebuffer_does_not_open_yet},
     {"no game: no shared parameter buffer", no_game_no_shared_parameter_buffer},
     {"no game: everything late", no_game_everything_late},
+    {"a read with no first buffer waits", a_read_with_no_first_buffer_waits},
+    {"a wait over a second is logged once", a_wait_over_a_second_is_logged_once},
+    {"the ten seconds count from the first read", the_ten_seconds_count_from_the_first_read},
     {"a display never handed over closes the app", a_display_never_handed_over_closes_the_app},
     {"a GPU library refused twice closes the app", a_gpu_library_refused_twice_closes_the_app},
     {"the hand-over line says what the start did", the_hand_over_line_says_what_the_start_did},

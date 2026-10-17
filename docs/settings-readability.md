@@ -369,10 +369,10 @@ What the app does now:
   `vjo_games_disable_all` in `core/games_app.c`). Every `= enabled` rule is
   removed, including those of games not on the list and the shared PSP row's,
   so the Shell sees every game OFF. The `= disabled` rules stay. The status
-  names the games it turned OFF too (`Saved: every game is OFF; resume your game
-  to apply. Turned OFF too: …`). Default OFF -> ON turns on every game except
-  those turned OFF one by one, and names them (`Saved: every game is ON but 2; …
-  Still OFF: …`). A game turned ON after that is ON on its own, as before. Each
+  names the games it turned OFF too (`Saved: every game is OFF from its next start
+  or resume. Turned OFF too: …`). Default OFF -> ON turns on every game except
+  those turned OFF one by one, and names them (`Saved: every game but 2 is ON from
+  its next start or resume. Still OFF: …`). A game turned ON after that is ON on its own, as before. Each
   change is logged with the rules it removed or kept (`overlay app: games: Default
   OFF, 4 own ON choices removed: PCSG00415, …`).
 

@@ -455,7 +455,7 @@ static void toggle_default(void)
     else if (disable)
         snprintf(status, sizeof(status), "Saved: every game is OFF from its next start or resume. Turn ON the ones you want.");
     else if (n)
-        snprintf(status, sizeof(status), "Saved: every game is ON but %d from its next start or resume. Still OFF: %s.", n, names);
+        snprintf(status, sizeof(status), "Saved: every game but %d is ON from its next start or resume. Still OFF: %s.", n, names);
     else
         snprintf(status, sizeof(status), "Saved: every game is ON from its next start or resume.");
 }

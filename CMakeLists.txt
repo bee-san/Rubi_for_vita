@@ -216,6 +216,8 @@ target_compile_options(vjo-settings-sysapp-gfx-tests PRIVATE -Wall -Wextra)
 target_link_options(vjo-settings-sysapp-gfx-tests PRIVATE "LINKER:--wrap=sceGxmVshInitialize"
   "LINKER:--wrap=sceSharedFbGetInfo")
 add_test(NAME settings_sysapp_gfx COMMAND vjo-settings-sysapp-gfx-tests)
+# A start that never ends fails in the model (STUCK_US); this bounds anything else.
+set_tests_properties(settings_sysapp_gfx PROPERTIES TIMEOUT 60)
 
 # End-to-end word lookup on real VOCR output with the bundled dictionary
 # (#73's frozen plaintext.vjdict). VJO_PLAINTEXT_SOURCE: a plaintext-dicts
