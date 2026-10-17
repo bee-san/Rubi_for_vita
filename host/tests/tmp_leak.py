@@ -187,8 +187,8 @@ def check(d, tests):
     if not ours(d):
         print(f"{d} is not a directory of this user's: refused")
         return 1
+    make_removable(d)  # what a test left without permissions (DIR itself too) is listed and counted whole
     missing = [t for t in tests if not (d / t).is_dir() or (d / t).is_symlink()]
-    make_removable(d)  # what a test left without permissions is listed and counted whole
     left = leftovers(d, tests)
     print(f"TMPDIR {d}/TEST: 0 entries before the run, {len(left)} after, in the {len(tests)} tests' directories")
     for p, label in left:

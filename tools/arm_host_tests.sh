@@ -62,7 +62,7 @@ TMP_BASE=${TMPDIR:-/tmp}
 case $TMP_BASE in /*) ;; *) TMP_BASE=/tmp ;; esac
 TMP_ROOT=$(mktemp -d "$TMP_BASE/vjo-arm-tests-XXXXXX")
 # (chmod -R gives back the permissions a suite took from a directory of its own; it follows no link)
-trap 'chmod -R u+rwx "$TMP_ROOT" 2> /dev/null; rm -rf "$TMP_ROOT"' EXIT
+trap 'chmod -R u+rwx "$TMP_ROOT" 2> /dev/null || :; rm -rf "$TMP_ROOT"' EXIT
 tmp_of() { mkdir -p "$TMP_ROOT/$1" && printf '%s' "$TMP_ROOT/$1"; } # tmp_of NAME: that step's own TMPDIR
 TMPDIR=$(tmp_of lane)
 export TMPDIR
