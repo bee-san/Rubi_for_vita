@@ -150,8 +150,13 @@
  * Raised from 94,208 B by one text page for #194, a dialogue box's short last line
  * (core/vocr_ocr.c probe_short_lines): the debug build's text 77,196 -> 78,076 B, 252 B past
  * the page, data/bss 14,160 B as before [measured: the build log's module rows, main 49310ed and
- * its parent], in the game's partition, never SceShell's. */
+ * its parent], in the game's partition, never SceShell's. The normal build's text still fits the
+ * page it had: 94,208 B [CI's vita (normal) build log, main b622c18], so the budget is per build. */
+#if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
+#else
+#define VJO_BUDGET_WORKER_MODULE_PAGES 94208u
+#endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game

@@ -430,7 +430,7 @@ static int file_read(void *ud, uint64_t off, void *dst, size_t bytes)
     return 0;
 }
 
-/* API 23: the file the kernel holds is a shot's JPEG, whose save (the file's sync, a close and
+/* API 23: the file the kernel holds is a shot's JPEG, whose save (a close and
  * a rename) may outlast a model operation's wait: its close waits SHOT_FILE_WAIT_US. */
 static int shot_file;
 #define SHOT_FILE_WAIT_US 30000000u
@@ -950,7 +950,7 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 #define SHOT_TRIES 3                          /* 70, 50, 35: a JPEG over VJO_GAME_OCR_SHOT_MAX again, lower */
 #define SHOT_HOOK_ROWS VJO_GAME_OCR_ROWS_MAX  /* rows a frame through the hook: 9 frames for 544 */
 #define SHOT_KSTRIP_ROWS VJO_JPEG_BAND        /* through the kernel strip: 16 x 960 x 4 within its 64 KiB */
-/* The save (the file's sync, its close and a rename) on a slow card: the Shell's exchange gives up
+/* The save (its close and a rename) on a slow card: the Shell's exchange gives up
  * first (shell/anki.c SHOT_TIMEOUT_US, 8 s) and cancels, which ends this wait; its file then goes. file_close
  * waits SHOT_FILE_WAIT_US for that, so a save that ends within 30 s of the cancel (at most 38 s after the
  * Shell's request) never leaves the worker blocked for the game's session; a slower one does, as any file

@@ -362,8 +362,10 @@ static void real_models_cross_namespace(void)
         TEST_CHECK(out.source == VJO_GAME_OCR_SRC_HOOK && out.capture_memory == VJO_GAME_OCR_MEM_USER);
         TEST_CHECK(out.capture_bytes == capture_held() && out.capture_bytes < 64u * 1024u && capture_blocks == 1);
         TEST_CHECK(out.width == 200 && out.height == 60 && out.fb_width == 200 && out.fb_format == 0 && !out.tears);
-        /* 60 rows fit one strip: read once for the finder, once more to check it. */
-        TEST_CHECK(out.captures == hook_frames && hook_frames == 2 && out.strip_rows == 60 && g.done_seq == request.capture_seq);
+        /* 60 rows fit one strip: read once for the finder, once more to check it, then twice more by
+         * the short-line probe (#194, core/vocr_ocr.c probe_short_lines, both builds): the line above's
+         * rows for its threshold, then the rows below it, each a stream_fetch of the whole strip. */
+        TEST_CHECK(out.captures == hook_frames && hook_frames == 4 && out.strip_rows == 60 && g.done_seq == request.capture_seq);
         TEST_CHECK(out.n_steps > 4 && out.step[0].id == VJO_GSTEP_MEM);
         printf("  %s capture: %u strips of %u rows, %u B block, %u steps\n", names[i], out.captures,
                out.strip_rows, out.capture_bytes, out.n_steps);
