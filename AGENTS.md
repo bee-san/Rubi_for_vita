@@ -29,7 +29,7 @@ git switch -c sync/upstream origin/main
 git merge upstream/main
 ```
 
-Build and test instructions are in [README.md](README.md#build-and-validation).
+Build and test instructions are in [the guide](docs/guide.md#build-and-validation).
 
 ## Memory and process context (binding)
 

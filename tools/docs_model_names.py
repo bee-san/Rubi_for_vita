@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Writes the files the kernel's model broker opens, read from kernel/game_ocr.c, into the docs.
 
-    python3 tools/docs_model_names.py           # rewrite the names in README.md and docs/vita-vn-ocr.md
+    python3 tools/docs_model_names.py           # rewrite the names in docs/guide.md and docs/vita-vn-ocr.md
     python3 tools/docs_model_names.py --check   # exit 1 if a document's names are not the kernel's
 
 The names are kernel/game_ocr.c's own: model_size() compares every recognizer file the broker opens and
@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import prepare_ocr  # noqa: E402
 
-DOCS = ("README.md", "docs/vita-vn-ocr.md")
+DOCS = ("docs/guide.md", "docs/vita-vn-ocr.md")
 # Inline HTML comments: GitHub shows neither, and neither may contain two hyphens in a row.
 BEGIN = "<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->"
 END = "<!-- end of the names -->"

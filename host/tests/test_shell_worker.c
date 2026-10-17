@@ -4621,7 +4621,7 @@ static void test_a_refresh_takes_its_captures_seq(void)
 
 /* Found with item 2b's test: reopening on the screen a refresh read the same
  * text from shows the saved word at once, as reopening unchanged dialogue does
- * (README). The refresh keeps the text, its lookup and the cache
+ * (docs/guide.md). The refresh keeps the text, its lookup and the cache
  * (on_refresh_done), and leaves the lookup's text generation, which open_overlay
  * compares, as it is. Before, a refresh cleared it, so the reopen said "Looking
  * up words…" and read the dictionary again for the word it had. */
@@ -6788,7 +6788,7 @@ static void test_overlay_app_check_runs_for_psp_games(void)
 }
 
 /* Nothing to compare, or nothing installed, is no mismatch: an older package
- * brings no record, the README lets the app be deleted, and a file the Shell
+ * brings no record, docs/guide.md lets the app be deleted, and a file the Shell
  * cannot read says nothing about the app. */
 static void test_overlay_app_unknown_is_never_said(void)
 {

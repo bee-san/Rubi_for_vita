@@ -42,7 +42,7 @@ INSTALL, UNINSTALL = "install", "uninstall"
 WORKER_KERNEL, WORKER_LINES = "kernel", "lines"
 NO_TITLES = ("No game is registered for the OCR worker (VitaJPOverlay_OCR.suprx), and it is never "
              "registered under *ALL. Name each game with --title TITLEID, for example "
-             "--title PCSG00415 (CLANNAD); for Adrenaline's PSP games see README 'Install' (PSPEMUCFW, "
+             "--title PCSG00415 (CLANNAD); for Adrenaline's PSP games see docs/guide.md 'Install' (PSPEMUCFW, "
              "each bubble's ID).")
 
 O_NONE, O_KERNEL, O_SHELL, O_WORKER, O_TEXT = range(5)
@@ -229,7 +229,7 @@ def game_title(value):
                          "such as PCSG00415")
     if not is_game(title):
         raise TitleError(f"--title {title} is a system application, VitaShell or the settings app, "
-                         "where the OCR worker never runs (for Adrenaline see README 'Install')")
+                         "where the OCR worker never runs (for Adrenaline see docs/guide.md 'Install')")
     return title
 
 

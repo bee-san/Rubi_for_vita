@@ -1,5 +1,5 @@
 """The docs list exactly the files the kernel's model broker opens (audit-test-build-2 N3): the names
-README.md and docs/vita-vn-ocr.md give are tools/docs_model_names.py's, which reads them from
+docs/guide.md and docs/vita-vn-ocr.md give are tools/docs_model_names.py's, which reads them from
 kernel/game_ocr.c, and they are the same as the pin tables'."""
 import sys
 import tempfile
@@ -82,8 +82,8 @@ class DocsModelNames(unittest.TestCase):
 
     def test_no_document_states_an_older_accepted_set(self):
         """The broker's names live in the generated blocks only: none of the statements of an older
-        accepted set this PR replaced (README's, docs/vita-vn-ocr.md's four) is back in any project
-        document, however its lines are wrapped."""
+        accepted set this PR replaced (the README's, now docs/guide.md's, and docs/vita-vn-ocr.md's four) is
+        back in any project document, however its lines are wrapped."""
         stale = ("only the two VOCR3 model names and the three original VOCR model names",
                  "allows only the VOCR3 FL10/H15 and v0.2.0 FL10/H15/F20 models",
                  "accept exactly these names and F20",
@@ -103,12 +103,12 @@ class DocsModelNames(unittest.TestCase):
             for doc in names.DOCS:
                 (Path(d) / doc).parent.mkdir(parents=True, exist_ok=True)
                 (Path(d) / doc).write_text((ROOT / doc).read_text(encoding="utf-8"), encoding="utf-8")
-            readme = Path(d) / "README.md"
+            readme = Path(d) / "docs/guide.md"
             text = readme.read_text(encoding="utf-8")
             readme.write_text(text.replace("`F20_w8.vocr`", "`F21_w8.vocr`"), encoding="utf-8")
-            self.assertEqual(names.stale(d), ["README.md"])
+            self.assertEqual(names.stale(d), ["docs/guide.md"])
             readme.write_text(names.BLOCK.sub("the two VOCR3 model names", text), encoding="utf-8")
-            self.assertEqual(names.stale(d), ["README.md"])
+            self.assertEqual(names.stale(d), ["docs/guide.md"])
             with self.assertRaises(ValueError):
                 names.write(d)
 

@@ -34,7 +34,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | the on-device self-test: the marker, the five stages, the report, its memory samples | `shell/selftest.c`, `worker.c` `selftest_job_due`, `run_selftest_stages` | **drop**. An armed marker gives one line, `self-test: armed, but this is the normal build: install the -debug build to run it`, and stays for a debug build |
 | the game worker's step log, one `gstep` line per step | `worker.c` `log_vocr_steps` | **drop** |
 | each job's lines: result, capture, memory check, speed, per-line crops, frames and confidence | `worker.c` `vocr_run_one`, `log_vocr_measurements` | **reduced**: one line, `ocr rc=… MODEL: N lines, T ms`, for the first job of each activation of the game (a start or a resume: `game_generation`) that read its screen, for its first job that found a line (the first is often a title screen's, with none), and for every failed job, which also logs its refused memory check's numbers. A job's lines are written after the control thread has taken its result ([below](#no-log-append-on-the-result-path)) |
-| a model size that did not fit (`tier large did not fit in …; using normal`) | `worker.c` `log_tier_checks` | **reduced**: once per activation and again when what did not fit (or the size the job went on to) changes; the debug build logs it for every job (the README's "only `log.txt` says so" holds in both) |
+| a model size that did not fit (`tier large did not fit in …; using normal`) | `worker.c` `log_tier_checks` | **reduced**: once per activation and again when what did not fit (or the size the job went on to) changes; the debug build logs it for every job (the guide's "only `log.txt` says so" holds in both) |
 | a model file unusable (`game vocr: … is unusable here`) | `worker.c` `run_vocr` | **keep**, written after the job's result |
 | the 444 MHz boost: before, during, after | `worker.c` (the step log's clock step) | **reduced**: `clock: 333 -> 444 MHz while reading, 333 after` (or `left as it is`, `refused`), for each activation's first job that recognized a line not in the line cache (the game worker writes its clock step then, done or failed) and when it changes |
 | the recognized text, raw and as shown | `worker.c` `log_text_lines` | **drop** (the normal log has no recognized or looked-up text: the Anki save line names no word either) |
@@ -51,7 +51,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | Anki: the queue count, the arena peak, the record's bytes | `anki.c`, `anki_queue.c` | **drop**; each save is kept without its word (`anki: save rc=0, 12 ms`; the debug build's names it), and every error |
 | an Anki card's screenshot (API 23): its line (`anki: screenshot rc=…`: size, block, strips, times) and, for a failed one, the game worker's steps | `anki.c` `take_shot` | **reduced**: a failed screenshot's reason only, after the save's line (`anki: screenshot rc=-103`; rc -1: no file after it; the overlay points to log.txt), no figures and no step lines, for the Shell's pages; the screenshot itself is the same in both builds |
 | the title's parameter line | `game.c` | **drop** |
-| a PSP game's launch: its IDs, disc ID and the file it boots (`psp: …`, #124) | `game.c` | **keep** (the README's way to register a bubble: one line per launch) |
+| a PSP game's launch: its IDs, disc ID and the file it boots (`psp: …`, #124) | `game.c` | **keep** (the guide's way to register a bubble: one line per launch) |
 | the log's append timing (`vjo_log_io`) | `log_vita.c` | **drop** |
 | the bootstrap and boot guard lines, `status.txt` | `boot.c`, `guard.c`, `log_vita.c` | **keep** (recovery: `docs/boot-safety.md`) |
 | config warnings, the Rubi app check (#122), game start and exit, errors | `worker.c`, `files.c` | **keep** |
@@ -354,7 +354,7 @@ gh release create v0.8.0 -R bee-san/Rubi_for_vita --title "Rubi 0.8.0" --notes-f
 
 The release notes give the three steps of README "Install" (download the `.vpk`; copy it to the Vita
 and install it in VitaShell; open Rubi, choose Install, restart), the requirements (Enable Unsafe
-Homebrew; about 245 MB free on ux0, the VPK counted), and the recovery (README "Memory and
-troubleshooting"). A test build is packaged the same way, `package_variants.py --version 0.8.0-test.N
+Homebrew; about 245 MB free on ux0, the VPK counted), and the recovery (the README's FAQ "Can it break
+my Vita?" and the guide's "Memory and troubleshooting"). A test build is packaged the same way, `package_variants.py --version 0.8.0-test.N
 --set anki_mining=on` on the two artifacts of the `main` commit it is cut from, and ships its debug VPK
 first.

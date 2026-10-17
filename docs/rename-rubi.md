@@ -74,7 +74,7 @@ Nothing internal is renamed, so nothing needs a migration or a console test of o
    is installed, tells the user in its red banner to install that file. So `tools/install_ftp.sh`
    puts this build's app there as well, where the file exists (never creating it): the old banner then
    installs the new app, not the old one beside new plugins (#101; audit-rubi-rename B1). Once the Rubi
-   app is installed the file is no longer used and can be deleted (the README says so). The one-VPK
+   app is installed the file is no longer used and can be deleted (the guide says so). The one-VPK
    install needs nothing: VitaShell installs the new app itself.
 6. **Packages and CI.** `vita/CMakeLists.txt` (VPK target, zip names, build messages),
    `tools/package_release.py`, `tools/package_variants.py`, the one-VPK packager,
