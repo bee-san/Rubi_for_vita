@@ -1277,12 +1277,13 @@ void game_ocr_model_tick(void)
     VJO_LOCK();
     sync_locked();
     if (!model_io.seq || model_io.phase == MODEL_RUNNING) {
-        int prepare = !model_io.seq && (!valid || completed) && !pending && !claimed &&
+        int prepare = !model_io.seq && !pending && !claimed &&
                       rows.state == ROWS_IDLE && g.shell_pid > 0 && !stopping &&
                       !shot_spare_ready && ksceKernelGetSystemTimeWide() >= shot_spare_retry_us;
         /* Preparation and retained-close retries both wait for an idle
          * transport. A job arriving meanwhile stays unclaimed, so its model
-         * operation's two-second deadline cannot expire behind this I/O. */
+         * operation's two-second deadline cannot expire behind this I/O.
+         * A valid cancelled result owns nothing once its claim is drained. */
         if (prepare) shot_spare_busy = shot_spare_preparing = 1;
         VJO_UNLOCK();
         if (prepare) shot_spare_prepare();

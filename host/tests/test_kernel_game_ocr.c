@@ -1680,6 +1680,38 @@ static void shot_spare_close_retry_waits_for_the_active_job(void)
     TEST_CHECK(spare_closes == 2 && !shot_open && !shot_spare_busy && shot_spare_ready);
 }
 
+static void shot_spare_close_retry_survives_cancel_and_game_exit(void)
+{
+    for (unsigned how = 0; how < 4; how++) {
+        setup();
+        spare_close_error = (int)0x80010005u;
+        model_tick();
+        TEST_ASSERT(shot_spare_busy && spare_closes == 1);
+        uint32_t seq = submit();
+        if (how & 1u) take(seq);
+        if (how < 2) {
+            caller = 3;
+            TEST_ASSERT(vjoOcrCancel(seq) == 0);
+            if (how & 1u) {
+                caller = 7;
+                TEST_ASSERT(vjoOcrComplete(&message) == 0); /* the cancelled worker drained */
+            }
+        } else {
+            game_ocr_process_gone(7); /* either queued or claimed when the game exited */
+        }
+        /* A cancelled result can remain valid and unread without owning any
+         * transport resource. It must not pin an unrelated reserve handle. */
+        TEST_ASSERT(valid && cancelled && !completed && !pending && !claimed && !model_io.seq);
+        TEST_CHECK(game_ocr_stop() == VJO_ERR_BUSY && !stopping);
+        spare_close_error = 0;
+        model_clock += 1000000u;
+        model_tick();
+        TEST_CHECK_(spare_closes == 2 && !shot_open && !shot_spare_busy && shot_spare_ready,
+                    "cancel/exit case %u", how);
+        TEST_CHECK(game_ocr_stop() == 0 && stopping);
+    }
+}
+
 static void shot_writes_are_checked(void)
 {
     VjoGameOcrModelInfo mi;
@@ -2245,6 +2277,8 @@ TEST_LIST = {
      shot_spare_failed_close_is_owned_until_cleanup},
     {"screenshot reserve: retained close retries never delay a claimed OCR job",
      shot_spare_close_retry_waits_for_the_active_job},
+    {"screenshot reserve: cancelled and exited jobs do not pin a retained close",
+     shot_spare_close_retry_survives_cancel_and_game_exit},
 #if VJO_DEBUG
     {"API 22: the frame pacing of each job, one step the kernel adds", frame_pacing_step},
     {"API 22: the pacing windows follow the claim, a cancelled job ends one, the step is written under the lock",
