@@ -25,8 +25,8 @@ Contents:
 
 **Rubi** (Rubi for Vita) is the new name of Vita JP Overlay ([what changed](rename-rubi.md)).
 This [bee-san fork](https://github.com/bee-san/Rubi_for_vita) reads visual-novel
-text and shows Japanese dictionary entries over your game. **The v0.7.12 release defaults to
-on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
+text and shows Japanese dictionary entries over your game. **Rubi 0.8.0 reads the text on the Vita
+with its own OCR (VOCR5), automatically, and looks words up in the bundled Bee's Ultimate Dictionary.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
 The release includes **Rubi**, a standalone per-game settings app. Optional
 [Anki card mining](anki.md) is fully offline: Enter saves the shown word as
@@ -126,8 +126,10 @@ VitaShell or the Rubi app, and never while L is held at the game's start. Close 
 before installing a VPK over it (on its LiveArea page, pull the top-right corner), also when it is only
 suspended behind VitaShell: in test.4's console run VitaShell stopped with error `0x80101114` while the
 old app was open, and installed after a restart ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)).
-These steps are not yet verified on a console: the next test build's
-run checks them.
+If the Install page then says `Restart the Vita first`, the app cannot read its own folder yet, as
+right after VitaShell installs it: restart the Vita and open Rubi again (nothing has been written).
+On a console, the Install page's **Update** has run (the owner's v0.8.0-test.4.1 over test.4,
+[#194](https://github.com/bee-san/Rubi_for_vita/issues/194)); an install on a Vita without the overlay has not run on a console yet.
 
 **What Install does.** It copies the three plugins to `ur0:tai` and the models to
 `ux0:data/VitaJPOverlay/ocr`, moves the dictionary (157 MB) out of the app rather than copying it,
@@ -164,8 +166,10 @@ The Rubi app is a system application, like the Music or Video app: it
 opens beside a running game, which stays suspended behind it, so there is no
 need to close the game first. It should also open from its LiveArea with no game
 running. In v0.8.0-test.3, the first build whose app is a system application, it
-did not (the owner's report, 2026-10-16), and test.4 is the first build to check it
-on a console. A possible cause, found in its graphics library's source and not
+did not (the owner's report, 2026-10-16); in test.4's console run it did ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)).
+That start's log line (`GPU library 0x0A: 0x00000000; display: buffer 2 at read 1 after 0 ms`)
+shows that neither cause below applied there, so test.3's failure is still unexplained.
+A possible cause, found in its graphics library's source and not
 seen on a console: its start waited for SceShell to hand it the screen without
 letting SceShell's threads at or below its priority run, and used the system's
 shared GPU parameter buffer with no fallback. It now pauses for SceShell, falls
@@ -482,8 +486,10 @@ estimated times for a 3-line textbox are 0.6 s (Small), 0.9 s (Normal) and
 kernels, no credit for their weight prefetch), calibrated to VOCR3-H15's measured
 4.94 ms per CTC frame on the console (v0.8.0-test.1); at 444 MHz, the clock a job
 raises by default, 0.5, 0.7 and 1.6 s, and less again with lines read in parallel
-([OCR speed](ocr-speed.md)). No console has run a VOCR5 model yet: these are
-estimates until a test build's logs measure them.
+([OCR speed](ocr-speed.md)). On a console, test.4's logs measured VOCR5-N at 2.61 ms per CTC
+frame (10 jobs) and VOCR5-L at 4.98-5.10 ms (8 jobs), at 444 MHz, each a job's recognition time
+over its frames (`tools/analyse_selftest.py --collect`, [#191](https://github.com/bee-san/Rubi_for_vita/issues/191)); no console run has reported
+Small yet, and the box times above stay estimates.
 A job runs the chosen size when the
 game's free memory has room for it beside that size's reserve (4, 8 or 16 MiB),
 else the next smaller size, silently: `log.txt` has a line `tier large did not
@@ -538,8 +544,8 @@ every game, `off`). vita-vn-ocr #83 measured a dialogue gain with it on native
 480×272 PSP frames; on native Vita text it was level or worse, and worse on
 CLANNAD for five of six models. The overlay sees a PSP game as
 Adrenaline shows it, 2× through a bilinear filter, where its accuracy is
-untested and the host's box fit is level, so `psp` is the next test build's
-trial, which that build's logs decide. Refined lines are read wider: on the
+untested and the host's box fit is level, so `psp` is a trial that a console run's logs
+decide; none has reported it yet (test.3's PSP game got no OCR, and test.4 started none). Refined lines are read wider: on the
 host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 22-23 ms more per line found with VOCR3-H15 on the console
 ([finder refinement](vita-vn-ocr.md#finder-refinement-api-20)).
@@ -558,7 +564,7 @@ console run).
 The complete settings template is
 [docs/config.example.ini](config.example.ini).
 
-The next release bundles one frozen disk-backed `plaintext.vjdict`, **Bee's
+The release bundles one frozen disk-backed `plaintext.vjdict`, **Bee's
 Ultimate Dictionary**: word definitions from **Daijirin4 → Sankoku8 → JMdict** in
 that priority order, an English summary of each grammar point (は, に, ので,
 ～てしまう …), a line for each kanji with its most common meanings, and the
