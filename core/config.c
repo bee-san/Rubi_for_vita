@@ -168,6 +168,20 @@ static int is_space(char ch)
     return ch == ' ' || ch == '\t' || ch == '\r';
 }
 
+/* The name a warning gives a key as typed: up to its first space, at most VJO_CONFIG_WARN_KEY bytes. A known
+ * setting's name is shorter and has no space; an unknown key is whatever came before the '=' (a pasted token, a
+ * URL), so only that much of it is shown (audit-pr185 B1). */
+static const char *warn_name(char name[VJO_CONFIG_WARN_KEY + 1], const char *key)
+{
+    size_t k = 0;
+    while (key[k] && k < VJO_CONFIG_WARN_KEY && !is_space(key[k])) {
+        name[k] = key[k];
+        k++;
+    }
+    name[k] = '\0';
+    return name;
+}
+
 size_t vjo_config_line_start(const char *line, size_t n)
 {
     size_t s = 0;
@@ -583,15 +597,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         else
             warn(c, "%s: invalid value", key);
     } else {
-        /* the key up to its first space, at most VJO_CONFIG_WARN_KEY bytes: no value, nor a long pasted token */
         char name[VJO_CONFIG_WARN_KEY + 1];
-        size_t k = 0;
-        while (key[k] && k < VJO_CONFIG_WARN_KEY && !is_space(key[k])) {
-            name[k] = key[k];
-            k++;
-        }
-        name[k] = '\0';
-        warn(c, "unknown setting '%s'", name);
+        warn(c, "unknown setting '%s'", warn_name(name, key));
     }
 }
 
@@ -748,8 +755,10 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         while (e > s && is_space(line[e - 1]))
             e--;
         if (cut || e - s >= sizeof(val)) {
-            if (!removed_secret(key, strlen(key))) /* a removed setting stays silent */
-                warn(c, "%s: value too long", key);
+            if (!removed_secret(key, strlen(key))) { /* a removed setting stays silent */
+                char name[VJO_CONFIG_WARN_KEY + 1];
+                warn(c, "%s: value too long", warn_name(name, key));
+            }
             continue;
         }
         memcpy(val, line + s, e - s);

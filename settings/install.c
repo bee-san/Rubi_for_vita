@@ -751,8 +751,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
             int e = pos;
             while (e < ini_new_len && ini_new[e] != '\n') e++;
             if (e < ini_new_len) e++; /* the line with its end */
-            int b = pos;
-            while (b < e && (ini_new[b] == ' ' || ini_new[b] == '\t')) b++;
+            int b = pos + (int)vjo_config_line_start(ini_new + pos, (size_t)(e - pos)); /* as the parser reads a name */
             int drop = 0;
             for (unsigned g = 0; g < sizeof(gone) / sizeof(gone[0]) && !drop; g++) {
                 size_t len = strlen(gone[g]);

@@ -2201,13 +2201,33 @@ static void test_config_warnings_name_no_value(void)
           "ocr_settle_ms: invalid value (ms, out of range)", "vocr_model: not a model of this build; using vocr_tier",
           "unknown setting 'abcdefghijklmnopqrstuvwxyz012345'"}},
         {"local_dictionary_dir = ux0:data/SECRETj\nlocal_dictionary_dir =\n", {"local_dictionary_dir: empty (ignored)"}},
+        /* audit-pr185 B1: a value too long names its key cut as an unknown one is (the long values are added below) */
+        {NULL, {"abcdefghijklmnopqrstuvwxyz012345: value too long", "mystery: value too long",
+                "vocr_tier: value too long"}},
+        /* audit-pr185 N1, O1 and O2: comments and a blank line count as lines; a space before a BOM, then a name */
+        {"; c\n\n# c2\r\nbogus_SECRETo\n \xEF\xBB\xBF" "vocr_tier = large\n\t\xEF\xBB\xBF \xEF\xBB\xBF" "ocr_mode = on_press\n",
+         {"ignored line 4 (no '=')"}},
     };
+    /* card 3: values of 600 bytes and a line of 1,100, for the 'value too long' warnings */
+    static char longs[4096];
+    {
+        int k = 0;
+        k += snprintf(longs + k, sizeof(longs) - (size_t)k, "abcdefghijklmnopqrstuvwxyz0123456789SECRETh = ");
+        memset(longs + k, 'S', 600); k += 600;
+        k += snprintf(longs + k, sizeof(longs) - (size_t)k, "\nmystery key SECRETb = ");
+        memset(longs + k, 'S', 1100); k += 1100; /* a line longer than the parser reads */
+        k += snprintf(longs + k, sizeof(longs) - (size_t)k, "\nvocr_tier = ");
+        memset(longs + k, 'S', 600); k += 600;
+        longs[k++] = '\n';
+        longs[k] = '\0';
+    }
     for (unsigned k = 0; k < sizeof(cards) / sizeof(cards[0]); k++) {
         VjoConfig c;
         int want = 0;
+        const char *ini = cards[k].ini ? cards[k].ini : longs;
         while (want < VJO_CONFIG_MAX_WARNINGS && cards[k].want[want]) want++;
         vjo_config_defaults(&c);
-        vjo_config_parse(&c, cards[k].ini, strlen(cards[k].ini));
+        vjo_config_parse(&c, ini, strlen(ini));
         TEST_CHECK_(c.n_warnings == want, "card %u: %d warnings, want %d", k, c.n_warnings, want);
         for (int i = 0; i < c.n_warnings; i++) {
             TEST_MSG("card %u, %d: %s", k, i, c.warnings[i]);
@@ -2222,7 +2242,18 @@ static void test_config_warnings_name_no_value(void)
             TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_LARGE); /* line 4, behind its BOMs */
         if (k == 2)
             TEST_CHECK(!strcmp(c.local_dictionary_dir, "ux0:data/SECRETj")); /* the empty line kept the earlier value */
+        if (k == 4) /* behind a space and a BOM, and behind a tab, BOM, space, BOM: both read */
+            TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_LARGE && c.ocr_mode == VJO_OCR_ON_PRESS);
     }
+    /* where a line's name starts: spaces, tabs, CRs and BOMs in any order, never past the line's end */
+    TEST_CHECK(vjo_config_line_start("", 0) == 0);
+    TEST_CHECK(vjo_config_line_start("  ", 2) == 2);
+    TEST_CHECK(vjo_config_line_start("\xEF\xBB\xBF", 2) == 0); /* a BOM cut by the line's end is no BOM */
+    TEST_CHECK(vjo_config_line_start("\xEF\xBB", 2) == 0);
+    TEST_CHECK(vjo_config_line_start("\xEF\xBB\xBF", 3) == 3);
+    TEST_CHECK(vjo_config_line_start(" \xEF\xBB\xBF" "a", 5) == 4);
+    TEST_CHECK(vjo_config_line_start("\xEF\xBB\xBF \t\r\xEF\xBB\xBF" "x", 10) == 9);
+    TEST_CHECK(vjo_config_line_start("\xEF\xBB" "x", 3) == 0);
     /* every setting the template names, and a few it does not, with a value no setting accepts: its warning, if
      * any, never quotes it (one parse per key: a parse keeps four warnings) */
     static const char *const extra[] = {"vocr_model", "vocr_fallback_model", "ocr_backend", "dictionary", "toggle_button",

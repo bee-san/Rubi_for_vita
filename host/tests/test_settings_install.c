@@ -768,6 +768,8 @@ static void a_mid_file_bom_never_shows_a_value(void)
         {"; my jpdb_api_key = SECRETk3\n", "SECRETk3", 2},                   /* K3 */
         /* K4: the save drops a BOM-led API key too now (vjo_config_line_start), and the plan names it */
         {"\xEF\xBB\xBF" "jpdb_api_key = SECRETk4\n", "SECRETk4", 3},
+        /* audit-pr185 N1 (B2e): a space, then a BOM, then a removed setting: named as it goes, in either order */
+        {" \xEF\xBB\xBF" "hachidori_host = SECRETk5\n", "SECRETk5", 3},
     };
     char text[1024];
     for (unsigned c = 0; c < sizeof(cards) / sizeof(cards[0]); c++) {
@@ -781,7 +783,9 @@ static void a_mid_file_bom_never_shows_a_value(void)
         TEST_CHECK_(ini_listed(&s, "log_host: a removed setting, goes"), "card %u", c);
         TEST_CHECK_(s.config_change_count == cards[c].lines && s.config_change_more == 0, "card %u: %d lines", c,
                     s.config_change_count);
-        if (cards[c].lines == 3) TEST_CHECK_(ini_listed(&s, "jpdb_api_key: a removed setting, goes"), "card %u", c);
+        if (cards[c].lines == 3)
+            TEST_CHECK_(ini_listed(&s, c == 2 ? "jpdb_api_key: a removed setting, goes" :
+                                               "hachidori_host: a removed setting, goes"), "card %u", c);
         TEST_CHECK_(!ini_listed(&s, "unknown_setting: a removed setting, goes"), "card %u", c);
         char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
         int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);

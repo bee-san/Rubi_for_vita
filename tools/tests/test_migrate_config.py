@@ -21,6 +21,31 @@ class MigrateConfig(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             return out.read_text(encoding="utf-8"), result.stdout
 
+    def test_a_bom_led_copy_is_the_setting_the_installer_sets(self):
+        """audit-pr185 B2: core/config.c reads a line behind a mid-file BOM (a hand-joined file) as its setting, so the
+        installer does too: a BOM-led copy of a key it sets is that key, replaced, not kept as an extra line that the
+        plugins would read last; a BOM-led API key goes, by name."""
+        bom = "\ufeff"
+        cases = (
+            ("log_file = on\nanki_mining = on\n" + bom + "log_file = off\n", ("log_file=on",), "log_file", "on"),  # M1
+            ("local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n" + bom + "local_dictionary_dir = ux0:Other\n",
+             ("local_dictionary_dir=ux0:data/VitaJPOverlay/dictionaries",), "local_dictionary_dir",
+             "ux0:data/VitaJPOverlay/dictionaries"),  # M2
+            ("anki_mining = on\n" + bom + "ocr_model_dir = ux0:models\n", ("ocr_model_dir=ux0:data/VitaJPOverlay/ocr",),
+             "ocr_model_dir", "ux0:data/VitaJPOverlay/ocr"),  # M5
+            (" " + bom + "\tlog_file = off\n", ("log_file=on",), "log_file", "on"),  # a space before the BOM, a tab after
+        )
+        for old, sets, key, want in cases:
+            with self.subTest(key=key, old=old):
+                text, report = self.migrate(old, *sets)
+                self.assertNotIn(bom, text)
+                lines = [l for l in text.splitlines() if l.split("=")[0].strip() == key]
+                self.assertEqual(lines, [f"{key} = {want}"], text)
+        text, report = self.migrate("anki_mining = on\n" + bom + "jpdb_api_key = SECRETm4\n")  # M4
+        self.assertNotIn("SECRETm4", text + report)
+        self.assertNotIn("jpdb_api_key", text)
+        self.assertIn("config.ini: jpdb_api_key removed", report)
+
     def test_removed_meiki_backend_goes_and_keeps_other_values(self):
         text, report = self.migrate("ocr_backend = Meiki\nocr_mode = on_press\n"
                                     "vocr_model = H15_w8.vocr\njpdb_api_key = secret-key\n")
