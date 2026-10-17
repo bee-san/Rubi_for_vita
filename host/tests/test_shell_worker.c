@@ -461,6 +461,12 @@ void vjo_anki_reap(void) { anki_reaps++; }
 void vjo_anki_post_count(void) { anki_counts++; }
 static char anki_game[128], anki_tid[16], anki_model[64];
 static int anki_psp;
+const char *vjo_anki_get_game(char name[128], char tid[12])
+{
+    snprintf(name, 128, "%s", anki_game);
+    snprintf(tid, 12, "%s", anki_tid);
+    return anki_psp ? "psp" : "vita";
+}
 void vjo_anki_set_game(const char *tid, const char *name, int psp)
 {
     snprintf(anki_game, sizeof(anki_game), "%s", name);
@@ -492,6 +498,27 @@ int sceKernelDelayThread(unsigned us) { test_now += us; return 0; }
 #ifdef VJO_WITH_VOCR
 #include "../../core/vocr_ocr.h"
 #include "../../core/textnorm.h"
+static unsigned history_calls;
+static int history_rtc_fail, history_write_fail;
+static VjoHistoryRecord last_history;
+static char history_text[VJO_GAME_OCR_TEXT_BYTES];
+static void (*history_on_append)(void);
+int sceRtcGetCurrentTick(SceRtcTick *tick)
+{
+    tick->tick = 62135596800000000ull + 1792220400250000ull + test_now;
+    return history_rtc_fail ? -1 : 0;
+}
+int vjo_history_append(const VjoHistoryRecord *record)
+{
+    /* This is the first storage call: result publication must precede it,
+     * with no control/view lock held. Saving failure is independent of OCR. */
+    TEST_CHECK(job_done && !held_view && !held_cmd);
+    history_calls++;
+    last_history = *record;
+    snprintf(history_text, sizeof(history_text), "%s", record->result->text);
+    if (history_on_append) history_on_append();
+    return history_write_fail ? -1 : 1;
+}
 static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
@@ -774,6 +801,13 @@ static void reset(void)
     vocr_allocs = vocr_frees = vocr_paf_allocs = 0;
     fail_vocr_user = fail_vocr_paf = 0;
 #ifdef VJO_WITH_VOCR
+    history_calls = 0;
+    history_rtc_fail = history_write_fail = 0;
+    history_on_append = NULL;
+    memset(&last_history, 0, sizeof(last_history));
+    history_text[0] = '\0';
+    anki_game[0] = anki_tid[0] = '\0';
+    anki_psp = 0;
     fake_model_io_error = 0;
     fake_recognized_text = NULL;
     fake_lines = 2;
@@ -4633,6 +4667,93 @@ static void test_subtitles_on_during_an_ocr_job_leave_no_wait_behind(void)
     mem_free();
 }
 
+/* Storage follows publication; the control thread may consume the result and
+ * switch games before the writer returns. Only the snapshot is persisted. */
+static void history_consume_result(void)
+{
+    int was_thread = test_thread;
+    test_thread = CTL_THREAD;
+    on_job_done();
+    TEST_CHECK(!job_running && local_text_valid);
+    vjo_anki_set_game("OTHER", "Another game", 0);
+    strcpy(job_title, "OTHER");
+    job_cfg.ocr_mode = VJO_OCR_ON_PRESS;
+    test_thread = was_thread;
+}
+
+static void test_history_snapshots_auto_ocr_after_publication(void)
+{
+    cursor_setup();
+    vjo_anki_set_game("ULJM00001", "Japanese PSP title", 1);
+    history_on_append = history_consume_result;
+    fake_exchange_us = 123456;
+    start_job("history OCR only", 0);
+    uint64_t started_at = (uint64_t)job_started_us;
+    test_thread = NET_THREAD;
+    net_job();
+    test_thread = CTL_THREAD;
+    TEST_CHECK(history_calls == 1 && !job_running);
+    TEST_CHECK(!strcmp(last_history.name, "Japanese PSP title"));
+    TEST_CHECK(!strcmp(last_history.title_id, "ULJM00001") && !strcmp(last_history.platform, "psp"));
+    TEST_CHECK(!strcmp(history_text, "猫犬鳥") && last_history.result == &vocr_result);
+    TEST_CHECK(!strcmp(last_history.model, VJO_VOCR_TIER2_NAME));
+    TEST_CHECK(last_history.time_us == 1792220400250000ull + started_at);
+    TEST_CHECK(last_history.monotonic_us == started_at && last_history.elapsed_us >= 123456);
+    TEST_CHECK(last_history.scene == 2 && last_history.region_seq == 4);
+    mem_free();
+}
+
+static void test_history_ignores_storage_failure_and_dictionary_oom(void)
+{
+    cursor_setup();
+    fail_alloc = 1;
+    history_write_fail = 1;
+    start_job("history with no dictionary memory", 1);
+    finish_current_job();
+    TEST_CHECK(history_calls == 1 && !strcmp(history_text, "猫犬鳥"));
+    TEST_CHECK(local_text_valid && !strcmp(local_text, "猫犬鳥"));
+    TEST_CHECK(!has_result_memory());
+    mem_free();
+}
+
+static void test_history_records_refreshes_but_not_cursor_jobs(void)
+{
+    cursor_setup();
+    open_overlay(); finish_current_job();
+    TEST_ASSERT(history_calls == 1);
+    vjo_post_cursor(3, local_text_generation); on_command();
+    TEST_ASSERT(job_running && job_cursor_only);
+    finish_current_job();
+    TEST_CHECK(history_calls == 1);
+    next_scene(8);
+    fake_recognized_text = "犬猫";
+    test_now += REFRESH_GAP_US + REFRESH_IDLE_US;
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(history_calls == 2 && !strcmp(history_text, "犬猫"));
+    if (job_running) finish_current_job();
+    TEST_CHECK(history_calls == 2);
+    close_overlay(); mem_free();
+}
+
+static void test_history_excludes_disabled_failed_cancelled_and_invalid_clock(void)
+{
+    for (int kind = 0; kind < 5; kind++) {
+        cursor_setup();
+        if (kind == 0) cfg.ocr_mode = VJO_OCR_ON_PRESS;
+        if (kind == 1) fail_vocr_user = 1;
+        if (kind == 2) fake_cancel_on_read = 1;
+        if (kind == 3) history_rtc_fail = 1;
+        start_job("history exclusion", 0);
+        if (kind == 4) game_generation++;
+        finish_current_job();
+        TEST_CHECK_(history_calls == 0, "excluded case %d wrote %u records", kind, history_calls);
+        if (job_running) job_running = 0;
+        mem_free();
+    }
+}
+
 /* #179's audit, O2: a job of the previous game whose answer was already in
  * publishes that game's text after the switch retired it (run_vocr takes cmd_lock
  * after retire_local_text did). The text is valid but the previous game's, so
@@ -6372,6 +6493,10 @@ TEST_LIST = {
     {"no_Japanese_text_allocates_no_results_and_performs_no_dictionary_IO", test_no_japanese_selection_skips_dictionary_memory_and_io},
     {"character_open_reuses_background_OCR_without_dictionary_or_capture_work", test_character_open_reuses_background_text},
     {"word_Auto_prepares_first_match_and_reopen_reuses_only_current_cache", test_word_background_lookup_and_reopen_cache},
+    {"history_snapshots_auto_ocr_after_publication", test_history_snapshots_auto_ocr_after_publication},
+    {"history_ignores_storage_failure_and_dictionary_oom", test_history_ignores_storage_failure_and_dictionary_oom},
+    {"history_records_refreshes_but_not_cursor_jobs", test_history_records_refreshes_but_not_cursor_jobs},
+    {"history_excludes_disabled_failed_cancelled_and_invalid_clock", test_history_excludes_disabled_failed_cancelled_and_invalid_clock},
     {"word_lookup_with_the_bundled_dictionary_first_word_right_and_tap", test_word_lookup_with_the_bundled_dictionary},
 #if VJO_DEBUG
     {"lookup_log_line_fits_with_worst_case_fields", test_lookup_log_line_fits_with_worst_case_fields},

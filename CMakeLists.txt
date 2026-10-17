@@ -295,6 +295,12 @@ target_include_directories(vjo-shell-anki-tests PRIVATE third_party/acutest/incl
 target_compile_options(vjo-shell-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-anki-tests vjo_host)
 add_test(NAME shell_anki COMMAND vjo-shell-anki-tests)
+# The hidden auto-OCR CSV appender: real files, bounded writes and injected failures.
+add_executable(vjo-shell-history-tests host/tests/test_shell_history.c)
+target_include_directories(vjo-shell-history-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME shell_history COMMAND vjo-shell-history-tests)
 # The Overlay app's .apkg export (settings/anki_export.c, core/apkg.c and its SQLite, ZIP and Lapis
 # writers) on real files; host/tests/test_apkg.py opens its packages with Python's zipfile and sqlite3
 # and imports them into Anki itself (the `anki` package, tools/requirements-anki.txt) when it is there:

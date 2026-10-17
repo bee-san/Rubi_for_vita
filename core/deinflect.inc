@@ -571,7 +571,7 @@ static const DeinflectRule deinflect_rules[] = {
     {"み", "みる", 3, 6, 0, 1},
     {"み", "む", 3, 3, 0, 2},
 };
-static const uint16_t deinflect_offsets[257] = {
+static const uint16_t deinflect_offsets[257] VJO_DATA_TABLE(deinflect_offsets) = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
