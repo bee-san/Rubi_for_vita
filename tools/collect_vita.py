@@ -23,9 +23,9 @@ with curl as the installer does:
   ux0:data/                every *.psp2dmp crash dump
 The directories are listed (Python's ftplib, LIST as --dumps does) into listings/; the
 installed plugins, the RCO, the settings VPK, every OCR model, the beam + LM decoder's LMs,
-their LM-ATTRIBUTION.md and the model sizes' MODEL-ATTRIBUTION.md are hashed (downloaded to a temporary file and deleted again, never
-kept) and compared with package-manifest.json when given. Every file keeps its device path
-under OUT_DIR (ux0/data/VitaJPOverlay/log.txt, ...).
+their LM-ATTRIBUTION.md and the model sizes' MODEL-ATTRIBUTION.md are hashed (downloaded to a
+temporary file and deleted again, never kept) and compared with package-manifest.json when given.
+Every file keeps its device path under OUT_DIR (ux0/data/VitaJPOverlay/log.txt, ...).
 COLLECT.json lists what was fetched (bytes, sha256), what was missing and every error, and in
 "app" how each of the app's two files was read (collect_app).
 

@@ -24,8 +24,8 @@ release). A later generation's blobs replace them through the pins, with no chan
 to the app; a size whose new candidate does not beat its model keeps that model,
 which is a pin edit too (`include/vjo_vocr_sizes.h` VJO_VOCR_TIERn and
 `tools/model_tiers.json`, the model pinned where every model is), unless it gives
-two sizes one model: then the one-VPK payload list must also name that file once
-(**Two sizes, one model**, below).
+two sizes one model: then the one-VPK payload list must also name that file once,
+with `VJO_PAYLOAD_KERNEL_INDEX` one less (**Two sizes, one model**, below).
 `tools/model_tiers.json` is the one table of the sizes (their ceilings, reserves,
 models and estimates); the self-test analyser reads it, and
 `tools/tests/test_model_tiers.py` checks every C copy against it

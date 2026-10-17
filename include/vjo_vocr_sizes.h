@@ -60,8 +60,9 @@
  * tools/model_tiers.json, and a new release's attribution (tools/prepare_ocr.py
  * VOCR_MODEL_ATTRIBUTION_PIN). Two sizes with one model take one edit more: the
  * one-VPK payload (include/vjo_payload.h) names each size's file, and the
- * Overlay app refuses a payload that names a file twice, so it must name the
- * shared file once (tools/package_vpk.py refuses the list until it does). */
+ * Overlay app refuses a payload that names a file twice, so its list must name
+ * the shared file once, with VJO_PAYLOAD_KERNEL_INDEX and test_one_vpk.py's
+ * count one less (tools/package_vpk.py refuses the list until it does). */
 #define VJO_VOCR_TIERS 3u
 #define VJO_VOCR_TIER_SMALL 1u
 #define VJO_VOCR_TIER_NORMAL 2u
