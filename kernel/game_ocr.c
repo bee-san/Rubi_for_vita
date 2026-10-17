@@ -273,6 +273,9 @@ void game_ocr_process_gone(SceUID pid)
     VJO_UNLOCK();
 }
 
+/* #194: the t= of a shot's stage lines (the system clock in ms, as klog_ms) */
+static unsigned shot_ms(void) { return (unsigned)(ksceKernelGetSystemTimeWide() / 1000u); }
+
 /* API 23: a shot's card, 32 lowercase hex digits and a NUL (core/anki_queue.h
  * vjo_queue_valid_id): the file name the kernel makes, nothing that could name
  * another path. */
@@ -438,7 +441,12 @@ int vjoOcrTake(VjoGameOcrRequest *out)
         else if (!pending || !valid || cancelled) rc = 1;
         else if (!out || ksceKernelMemcpyKernelToUser(out, &request, sizeof(request)) < 0)
             rc = VJO_ERR_COPY;
-        else { pending = 0; claimed = 1; rc = 0; pace[1] = (Pace){0}; pace_job = 1; }
+        else {
+            pending = 0; claimed = 1; rc = 0; pace[1] = (Pace){0}; pace_job = 1;
+            /* #194: a shot's stages, with times, so a stalled one says where (its steps never reach the
+             * Shell once it gives up) */
+            if (request.flags & VJO_GAME_OCR_F_SHOT) klog_d("ocr job %u: shot taken t=%u ms", request.seq, shot_ms());
+        }
         /* Nothing queued: wait once. The bit is cleared under the lock, so a
          * vjoOcrSubmit after this point wakes the wait. */
         wait = rc == 1 && !waited && g.mevf > 0;
@@ -669,6 +677,9 @@ info_out:
     info.wait_us = (uint32_t)(ksceKernelGetSystemTimeWide() - rows.armed_us);
     info.copy_us = rows.copy_end_us > rows.copy_start_us ? (uint32_t)(rows.copy_end_us - rows.copy_start_us) : 0;
     info.kstrip_bytes = kalloc ? kbytes : 0;
+    if (rgba && rc > 0)
+        klog_d("ocr job %u: shot rows %u..%u (%s), waited %u us, copy %u us, t=%u ms", req.seq, req.y, req.y + req.n,
+               req.mode == VJO_GAME_OCR_SRC_KSTRIP ? "kernel strip" : "hook", info.wait_us, info.copy_us, shot_ms());
 out:
     info.rc = rc;
     info.armed = (uint32_t)armed;
@@ -718,6 +729,9 @@ int vjoOcrComplete(const VjoGameOcrResult *user_result)
              (incoming.rc > 0 || (!incoming.rc && incoming.cleanup_status) ||
               (incoming.rc && incoming.text[0]))) rc = VJO_ERR_ARG;
     else {
+        if (request.flags & VJO_GAME_OCR_F_SHOT)
+            klog_d("ocr job %u: shot result rc %d, %u B, %u steps%s t=%u ms", request.seq, incoming.rc,
+                   incoming.shot_bytes, incoming.n_steps, cancelled ? " (cancelled)" : "", shot_ms());
         if (!cancelled) {
             result = incoming;
             completed = 1;
@@ -792,7 +806,13 @@ int vjoOcrCancel(uint32_t seq)
     sync_locked();
     if (!shell_caller(pid)) rc = VJO_ERR_PERM;
     else if (!valid || seq != request.seq || request_shell != pid) rc = VJO_ERR_ARG;
-    else { invalidate_locked(); rc = 0; }
+    else {
+        if (request.flags & VJO_GAME_OCR_F_SHOT)
+            klog_d("ocr job %u: shot cancelled (%s) t=%u ms", seq, !claimed && pending ? "never taken"
+                   : completed ? "completed" : model_io.seq ? "its file in the kernel" : "taken, no result", shot_ms());
+        invalidate_locked();
+        rc = 0;
+    }
     VJO_UNLOCK();
     EXIT_SYSCALL(state);
     return rc;
@@ -1234,16 +1254,20 @@ void game_ocr_model_tick(void)
             else done += (uint32_t)n;
         }
         if (!rc) rc = (int)bytes;
+        klog_d("ocr shot write: %u B at %u -> %d t=%u ms", bytes, offset, rc, shot_ms());
     } else if (operation == SHOT_SAVE) {
-        /* closed, its bytes on the card, then its name, and that on the card too */
-        rc = ksceIoClose(fd);
-        if (rc >= 0) {
+        /* its bytes on the card, closed, then its name. #194: no whole-card ksceIoSync("ux0:") any more,
+         * which the game's own card reads (CLANNAD streams its audio) wait behind; the Shell's record
+         * that names this file is synced after it. */
+        uint64_t t0 = ksceKernelGetSystemTimeWide(), t1;
+        rc = ksceIoSyncByFd(fd, 0);
+        t1 = ksceKernelGetSystemTimeWide();
+        if (rc >= 0 && (rc = ksceIoClose(fd)) >= 0) {
             fd = -1;
-            if ((rc = ksceIoSync("ux0:", 0)) >= 0 && (rc = ksceIoRename(path, final)) >= 0 &&
-                (rc = ksceIoSync("ux0:", 0)) < 0)
-                ksceIoRemove(final); /* renamed, but not known to be on the card: the card goes without it */
-            if (rc < 0) ksceIoRemove(path); /* (gone already once it was renamed) */
-        }
+            if ((rc = ksceIoRename(path, final)) < 0) ksceIoRemove(path);
+        } /* else still open: the game's Close closes and removes it */
+        klog_d("ocr shot save: sync %u us, close and rename %u us -> 0x%08X t=%u ms", (uint32_t)(t1 - t0), (uint32_t)(ksceKernelGetSystemTimeWide() - t1), (unsigned)(rc < 0 ? rc : 0),
+               shot_ms());
         rc = rc < 0 ? rc : 0;
         saved = !rc;
     } else {

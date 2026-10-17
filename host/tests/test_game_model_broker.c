@@ -75,6 +75,7 @@ int ksceIoPwrite(SceUID fd, const void *p, SceSize n, SceOff off) { (void)fd; (v
 int ksceIoRemove(const char *path) { (void)path; TEST_CHECK(0); return -1; }
 int ksceIoRename(const char *a, const char *b) { (void)a; (void)b; TEST_CHECK(0); return -1; }
 int ksceIoSync(const char *dev, unsigned int unk) { (void)dev; (void)unk; TEST_CHECK(0); return -1; }
+int ksceIoSyncByFd(SceUID fd, int flag) { (void)fd; (void)flag; TEST_CHECK(0); return -1; }
 
 void klog(const char *format, ...) { (void)format; }
 SceUID ksceKernelGetProcessId(void) { return caller; }

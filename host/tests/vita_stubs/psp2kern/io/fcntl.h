@@ -20,4 +20,5 @@ int ksceIoPwrite(SceUID, const void *, SceSize, SceOff);
 int ksceIoRemove(const char *);
 int ksceIoRename(const char *, const char *);
 int ksceIoSync(const char *, unsigned int);
+int ksceIoSyncByFd(SceUID, int);
 #endif

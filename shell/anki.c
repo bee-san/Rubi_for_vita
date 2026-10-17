@@ -314,7 +314,7 @@ static void read_more(VjoAnkiNote *n, const VjoLocalPages *pages, int shown)
  * It stops when the overlay closes: the game then has its input back, and its
  * screen is no longer the card's. */
 #define SHOT_WAIT_US 4000000    /* for the slot: a refresh yields within a strip, a lookup's OCR runs on */
-#define SHOT_TIMEOUT_US 15000000 /* the job: 9 frames, the JPEG and its file, three tries at most */
+#define SHOT_TIMEOUT_US 8000000  /* the job: 9 frames, the JPEG and its file, three tries at most (#194: 15 s left the overlay on "Saving card…") */
 
 #ifdef VJO_WITH_VOCR
 static int shot_stopped(void *ud)

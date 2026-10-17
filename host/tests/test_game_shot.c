@@ -52,7 +52,7 @@ static int64_t game_free = 64 * 1024 * 1024;
 /* ---- the memory card (the kernel worker's files) ---- */
 static int file_fd = -1, open_error, write_error, kernel_files;
 /* a slow memory card: after the JPEG's last piece the kernel worker gets to the save only this much
- * later (its syscalls answer BUSY meanwhile), as when its two syncs wait for the card */
+ * later (its syscalls answer BUSY meanwhile), as when its sync waits for the card */
 static uint64_t late_after_last_write_us, late_until;
 static unsigned file_opens, file_writes, renames, syncs, removes;
 
@@ -213,7 +213,8 @@ int ksceIoClose(SceUID fd)
 }
 int ksceIoRename(const char *from, const char *to) { in_kernel_worker(); renames++; return rename(from, to) ? -1 : 0; }
 int ksceIoRemove(const char *path) { in_kernel_worker(); removes++; return unlink(path) ? (int)0x80010002u : 0; }
-int ksceIoSync(const char *device, unsigned int unk) { in_kernel_worker(); TEST_CHECK(!strcmp(device, "ux0:") && !unk); syncs++; return 0; }
+int ksceIoSync(const char *device, unsigned int unk) { (void)device; (void)unk; TEST_CHECK(0); return -1; }
+int ksceIoSyncByFd(SceUID fd, int flag) { in_kernel_worker(); TEST_CHECK(fd == 32 && file_fd >= 0 && !flag); syncs++; return 0; } /* #194: the file's, never the card's */
 
 /* ---- the game's platform ---- */
 SceUID sceKernelGetProcessId(void) { return 7; }
@@ -362,7 +363,7 @@ static void the_shot_is_the_whole_frame_written_beside_the_card(void)
     TEST_CHECK(out.shot_quality == 70 && out.shot_tries == 1 && out.shot_bytes > 1000 &&
                out.shot_bytes <= VJO_GAME_OCR_SHOT_MAX);
     TEST_CHECK(file_size(jpg_path) == (long)out.shot_bytes && file_size(tmp_path) < 0);
-    TEST_CHECK(kernel_files == 1 && renames == 1 && syncs == 2 && file_writes == (out.shot_bytes + 32767u) / 32768u);
+    TEST_CHECK(kernel_files == 1 && renames == 1 && syncs == 1 && file_writes == (out.shot_bytes + 32767u) / 32768u);
     /* its block: page-rounded, USER_RW, the ledger's budget at most; the game's peak is that block */
     TEST_CHECK(out.shot_block == SHOT_BLOCK_BYTES(960) && out.shot_block <= VJO_BUDGET_GAME_SHOT &&
                out.shot_memory == VJO_GAME_OCR_MEM_USER && peak_bytes == out.shot_block && block_frees == 1);
@@ -459,7 +460,7 @@ static void failures_leave_no_file(void)
     TEST_CHECK(shot(&out) == VJO_E_SOURCE && !kernel_files && file_size(jpg_path) < 0);
 }
 
-/* A slow memory card: the kernel worker saves the JPEG 10 s after its last piece (its two syncs): the
+/* A slow memory card: the kernel worker saves the JPEG 10 s after its last piece (its sync): the
  * worker waits for it, and the card has its screenshot; one 40 s late is given up, its file removed,
  * and the worker is not left blocked: the next screenshot works. */
 static void a_slow_card_is_waited_for_and_never_blocks_the_worker(void)

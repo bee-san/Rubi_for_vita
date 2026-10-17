@@ -219,7 +219,7 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
   or not dated at all, and one whose records the memory card cannot say are
   absent (a check that fails other than "not found") stay for a later export:
   a save still finishing has its record within seconds of its
-  JPEG (its screenshot job ends within 15 s), and the kernel removes a stopped
+  JPEG (its screenshot job ends within 8 s), and the kernel removes a stopped
   screenshot's `.jpg.tmp` itself. A removal that fails is logged and tried
   again by the next export. `exported/` is never swept: an export
   stopped between moving a card's JPEG and its record leaves the JPEG there
@@ -321,7 +321,7 @@ seam between two bands of rows.
 5. The Shell commits the record, with `"picture": true`, once `<id>.jpg` is
    there. Any failure on the way leaves no file and saves the card without one
    (`Saved for Anki, without a screenshot (log.txt)`). The Shell waits at most
-   15 s for the whole screenshot, then cancels it (sooner when the overlay
+   8 s for the whole screenshot, then cancels it (sooner when the overlay
    closes); that ends the game worker's wait for a slow memory card's save,
    and the worker then waits up to 30 s more for the file's close. A save that
    ends within those 30 s, at most 45 s after the request, leaves the worker

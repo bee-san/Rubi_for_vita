@@ -144,7 +144,7 @@ check that the note's Picture shows the game, and note the `anki: screenshot rc=
 `log.txt` (its strips, encoding and write times and the JPEG's size: the first console figures for
 them; only the debug build, the test builds' own, writes it: the normal build logs a failed
 screenshot's reason only). One edge case to watch: the kernel's one worker thread saves the JPEG
-(a close, two memory card syncs, a rename) and also reads `games.ini` for each game that starts
+(the file's sync, a close, a rename) and also reads `games.ini` for each game that starts
 (#138, at most 500 ms). A game started while a slow save still runs can start without OCR; its
 `worker for` line in `kernel.txt` then says `no answer from the kernel worker in 500 ms`, and a
 restart of the game loads the worker. See [anki.md](anki.md).

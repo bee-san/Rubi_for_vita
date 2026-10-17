@@ -239,10 +239,12 @@ int ksceIoRemove(const char *path)
     shot_fs[i].live = 0;
     return 0;
 }
-int ksceIoSync(const char *device, unsigned int unk)
+int ksceIoSync(const char *device, unsigned int unk) { (void)device; (void)unk; TEST_CHECK(0); return -1; }
+/* #194: a shot's save syncs its own file, never the whole card */
+int ksceIoSyncByFd(SceUID fd, int flag)
 {
-    TEST_ASSERT(shot_worker_context());
-    TEST_CHECK(!strcmp(device, "ux0:") && unk == 0);
+    TEST_ASSERT(shot_worker_context() && fd == SHOT_FD && shot_open);
+    TEST_CHECK(flag == 0);
     shot_syncs++;
     return shot_sync_error;
 }
@@ -1364,7 +1366,7 @@ static void shot_jpeg_is_written_in_order_and_saved_under_its_name(void)
     int i = shot_entry(shot_jpg);
     TEST_ASSERT(i >= 0);
     TEST_CHECK(shot_fs[i].len == len && !memcmp(shot_fs[i].data, shot_bytes, len) && shot_entry(shot_tmp) < 0);
-    TEST_CHECK(shot_closes == 1 && shot_renames == 1 && shot_syncs == 2 && !shot_open && !model_io.seq);
+    TEST_CHECK(shot_closes == 1 && shot_renames == 1 && shot_syncs == 1 && !shot_open && !model_io.seq);
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
     /* and the Shell reads the shot's result as any job's */
     VjoGameOcrResult got; caller = 3;
