@@ -168,6 +168,20 @@ static int is_space(char ch)
     return ch == ' ' || ch == '\t' || ch == '\r';
 }
 
+size_t vjo_config_line_start(const char *line, size_t n)
+{
+    size_t s = 0;
+    for (;;) {
+        if (s < n && is_space(line[s]))
+            s++;
+        else if (n - s >= 3 && (unsigned char)line[s] == 0xEF && (unsigned char)line[s + 1] == 0xBB &&
+                 (unsigned char)line[s + 2] == 0xBF)
+            s += 3;
+        else
+            return s;
+    }
+}
+
 static int parse_int(const char *s, int *out)
 {
     long v = 0;
@@ -213,9 +227,8 @@ static int removed_anki_name(const char *s, size_t n);
 
 int vjo_config_removed_line(const char *line, size_t n, const char **replacement)
 {
-    size_t b = 0, e, v;
+    size_t b = vjo_config_line_start(line, n), e, v;
     *replacement = NULL;
-    while (b < n && is_space(line[b])) b++;
     if (removed_secret(line + b, n - b))
         return VJO_LINE_DROP;
     e = b;
@@ -586,9 +599,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
 
 static int preference_key(const char *line, size_t n)
 {
-    size_t begin = 0, end;
+    size_t begin = vjo_config_line_start(line, n), end;
     char key[40];
-    while (begin < n && is_space(line[begin])) begin++;
     end = begin;
     while (end < n && line[end] != '=' && !is_space(line[end])) end++;
     size_t key_len = end - begin;
@@ -687,18 +699,7 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         i++;
         line[n] = '\0';
 
-        /* Spaces, and UTF-8 BOMs: Notepad's at the file's start, and one a hand-joined file leaves at a later
-         * line's start, which would hide its name (a removed API key's from removed_secret, audit-pr180-b N3). */
-        s = 0;
-        for (;;) {
-            if (s < n && is_space(line[s]))
-                s++;
-            else if (n - s >= 3 && (unsigned char)line[s] == 0xEF && (unsigned char)line[s + 1] == 0xBB &&
-                     (unsigned char)line[s + 2] == 0xBF)
-                s += 3;
-            else
-                break;
-        }
+        s = vjo_config_line_start(line, n);
         if (s == n || line[s] == ';' || line[s] == '#')
             continue;
         {

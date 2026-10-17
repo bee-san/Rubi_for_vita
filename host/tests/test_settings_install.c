@@ -701,8 +701,9 @@ static void a_bom_is_no_part_of_a_line(void)
     TEST_CHECK(!strncmp(ini, "\xEF\xBB\xBF" "japanese_only_selection = on\n", 32) && !strstr(ini, "ocr_backend"));
 }
 
-/* audit-pr180 B1: a BOM the new text starts with but the old one does not is a later line's own (every line before
- * it went). It stays part of that line on both sides, so the unchanged line is not listed, and never its value. */
+/* audit-pr180 B1: a BOM the new text starts with but the old one does not was a later line's (every line before it
+ * went). The comparisons skip it on both sides (ini_skip_bom), so the unchanged line is not listed, and never its
+ * value. */
 static void a_later_lines_bom_stays_part_of_it(void)
 {
     fresh_card(1);
@@ -762,10 +763,11 @@ static void any_changed_same_named_line_makes_it_a_change(void)
  * audit: the next line an unknown setting with a value, a comment holding a key, and a key behind a BOM. */
 static void a_mid_file_bom_never_shows_a_value(void)
 {
-    static const struct { const char *third, *never; } cards[] = {
-        {"unknown_setting = VALUEKEEP\n", "VALUEKEEP"},                    /* K1 */
-        {"; my jpdb_api_key = SECRETk3\n", "SECRETk3"},                   /* K3 */
-        {"\xEF\xBB\xBF" "jpdb_api_key = SECRETk4\n", "SECRETk4"},         /* K4 */
+    static const struct { const char *third, *never; int lines; } cards[] = {
+        {"unknown_setting = VALUEKEEP\n", "VALUEKEEP", 2},                    /* K1 */
+        {"; my jpdb_api_key = SECRETk3\n", "SECRETk3", 2},                   /* K3 */
+        /* K4: the save drops a BOM-led API key too now (vjo_config_line_start), and the plan names it */
+        {"\xEF\xBB\xBF" "jpdb_api_key = SECRETk4\n", "SECRETk4", 3},
     };
     char text[1024];
     for (unsigned c = 0; c < sizeof(cards) / sizeof(cards[0]); c++) {
@@ -777,7 +779,9 @@ static void a_mid_file_bom_never_shows_a_value(void)
         TEST_CHECK_(s.config_ini == 1, "card %u: config_ini %d", c, s.config_ini);
         TEST_CHECK_(ini_listed(&s, "ocr_backend: a removed setting, goes"), "card %u", c);
         TEST_CHECK_(ini_listed(&s, "log_host: a removed setting, goes"), "card %u", c);
-        TEST_CHECK_(s.config_change_count == 2 && s.config_change_more == 0, "card %u: %d lines", c, s.config_change_count);
+        TEST_CHECK_(s.config_change_count == cards[c].lines && s.config_change_more == 0, "card %u: %d lines", c,
+                    s.config_change_count);
+        if (cards[c].lines == 3) TEST_CHECK_(ini_listed(&s, "jpdb_api_key: a removed setting, goes"), "card %u", c);
         TEST_CHECK_(!ini_listed(&s, "unknown_setting: a removed setting, goes"), "card %u", c);
         char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
         int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
@@ -786,6 +790,57 @@ static void a_mid_file_bom_never_shows_a_value(void)
             TEST_CHECK_(!strstr(l, cards[c].never) && !strstr(l, "10.9.8.1") && !strstr(l, "\xEF\xBB\xBF"), "card %u: [%s]", c, l);
         }
     }
+}
+/* audit-pr183 N1: a BOM-led copy of a line the install writes is the same setting to the parser and to the engine
+ * now (core/config.c vjo_config_line_start), so "a repeated line goes" is true: what the plugins read does not
+ * change. Cards X1 and X6 of that audit; X6's log_file is the debug build's own install key. */
+static void a_bom_led_copy_is_the_same_setting_to_the_plugins(void)
+{
+    static const struct { const char *ini, *goes; int debug_only; } cards[] = {
+        {"local_dictionary_dir = ux0:Other\nanki_mining = on\n"
+         "\xEF\xBB\xBF" "local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n", "local_dictionary_dir: a repeated line goes", 0},
+        {"log_file = off\nanki_mining = on\n" "\xEF\xBB\xBF" "log_file = on\n", "log_file: a repeated line goes", 1},
+    };
+    for (unsigned c = 0; c < sizeof(cards) / sizeof(cards[0]); c++) {
+        if (cards[c].debug_only && !VJO_DEBUG) continue; /* the normal build sets no log_file */
+        char text[512];
+        snprintf(text, sizeof(text), "%sjapanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 1\n"
+                 "vocr_tier = normal\n", cards[c].ini);
+        VjoConfig before, after;
+        vjo_config_defaults(&before);
+        vjo_config_parse(&before, text, strlen(text));
+        fresh_card(1);
+        put_text(VJO_PREFERENCES_PATH_TEST, text);
+        VjoInstallScan s = scan_now();
+        for (int i = 0; i < s.config_change_count; i++) TEST_MSG("X%u: %s", c, s.config_changes[i]);
+        TEST_CHECK_(ini_listed(&s, cards[c].goes), "card %u: %s", c, cards[c].goes);
+        VjoInstallResult r;
+        TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+        char *ini = slurp(VJO_PREFERENCES_PATH_TEST, NULL);
+        TEST_ASSERT(ini != NULL);
+        vjo_config_defaults(&after);
+        vjo_config_parse(&after, ini, strlen(ini));
+        /* what the plugins read of that setting is the same before and after */
+        TEST_CHECK_(!strcmp(before.local_dictionary_dir, after.local_dictionary_dir) && before.log_file == after.log_file,
+                    "card %u: %s -> %s, log_file %d -> %d", c, before.local_dictionary_dir, after.local_dictionary_dir,
+                    before.log_file, after.log_file);
+        TEST_CHECK_(before.n_warnings == 0 && after.n_warnings == 0, "card %u: warnings %d, %d", c, before.n_warnings,
+                    after.n_warnings);
+    }
+}
+
+/* audit-pr183 N2: a BOM file whose first line changes lists that line without its BOM (the file's own BOM, which
+ * the patches keep at offset 0, is no part of a line: the ob/nb strip). */
+static void a_bom_files_changed_first_line_is_listed_without_its_bom(void)
+{
+    fresh_card(1);
+    put_text(VJO_PREFERENCES_PATH_TEST, "\xEF\xBB\xBF" "vocr_tier=large\n"
+             "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 1\n");
+    VjoInstallScan s = scan_now();
+    for (int i = 0; i < s.config_change_count; i++) TEST_MSG("%s", s.config_changes[i]);
+    TEST_CHECK(ini_listed(&s, "vocr_tier = large"));
+    for (int i = 0; i < s.config_change_count; i++)
+        TEST_CHECK_(!strstr(s.config_changes[i], "\xEF\xBB\xBF"), "[%s]", s.config_changes[i]);
 }
 #undef COMPLETE
 
@@ -2252,6 +2307,8 @@ TEST_LIST = {
     {"each_scan_marks_its_own_lines", each_scan_marks_its_own_lines},
     {"any_changed_same_named_line_makes_it_a_change", any_changed_same_named_line_makes_it_a_change},
     {"a_mid_file_bom_never_shows_a_value", a_mid_file_bom_never_shows_a_value},
+    {"a_bom_led_copy_is_the_same_setting_to_the_plugins", a_bom_led_copy_is_the_same_setting_to_the_plugins},
+    {"a_bom_files_changed_first_line_is_listed_without_its_bom", a_bom_files_changed_first_line_is_listed_without_its_bom},
     {"a_line_that_goes_is_named_whatever_its_case_or_line_ends", a_line_that_goes_is_named_whatever_its_case_or_line_ends},
     {"a_crafted_config_ini_is_scanned_in_bounded_time", a_crafted_config_ini_is_scanned_in_bounded_time},
     {"the_dictionary_already_installed_is_not_moved_again", the_dictionary_already_installed_is_not_moved_again},

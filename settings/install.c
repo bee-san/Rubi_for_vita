@@ -633,9 +633,7 @@ static size_t ini_skip_bom(const char *s, size_t n)
 static size_t ini_line_name(const char *line, size_t n, char *out, size_t cap)
 {
     static const char *const secrets[] = {"jpdb_api_key", "jiten_api_key", "api_key"}; /* removed_secret's */
-    size_t b = ini_skip_bom(line, n), e;
-    /* the spaces core/config.c is_space skips before a name (space, tab, CR), as removed_secret does */
-    while (b < n && (line[b] == ' ' || line[b] == '\t' || line[b] == '\r')) b++;
+    size_t b = vjo_config_line_start(line, n), e; /* where the parser reads a name: after spaces, CRs and BOMs */
     for (size_t i = 0; i < sizeof(secrets) / sizeof(secrets[0]); i++) {
         size_t len = strlen(secrets[i]);
         if (n - b >= len && !strncasecmp(line + b, secrets[i], len)) {

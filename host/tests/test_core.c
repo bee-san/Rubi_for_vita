@@ -2223,6 +2223,47 @@ static void test_config_warnings_name_no_value(void)
         if (k == 2)
             TEST_CHECK(!strcmp(c.local_dictionary_dir, "ux0:data/SECRETj")); /* the empty line kept the earlier value */
     }
+    /* every setting the template names, and a few it does not, with a value no setting accepts: its warning, if
+     * any, never quotes it (one parse per key: a parse keeps four warnings) */
+    static const char *const extra[] = {"vocr_model", "vocr_fallback_model", "ocr_backend", "dictionary", "toggle_button",
+                                        "subtitle_button", "frequency_badge", "ocr_threads", "stick_lookup_ms", NULL};
+    const char *tpl = vjo_config_default_text();
+    int keys = 0, warned = 0;
+    for (const char *l = tpl; *l;) {
+        const char *e = strchr(l, '\n');
+        size_t len = e ? (size_t)(e - l) : strlen(l);
+        const char *eq = memchr(l, '=', len);
+        char key[64];
+        size_t kn = eq ? (size_t)(eq - l) : 0;
+        while (kn && l[kn - 1] == ' ') kn--;
+        if (*l != ';' && eq && kn && kn < sizeof(key)) {
+            memcpy(key, l, kn);
+            key[kn] = '\0';
+            for (int pass = 0; pass < 2; pass++) {
+                char ini[160];
+                snprintf(ini, sizeof(ini), "%s = %s\n", key, pass ? "SECRETq q" : "SECRETq");
+                VjoConfig c;
+                vjo_config_defaults(&c);
+                vjo_config_parse(&c, ini, strlen(ini));
+                warned += c.n_warnings > 0;
+                for (int i = 0; i < c.n_warnings; i++)
+                    TEST_CHECK_(!strstr(c.warnings[i], "SECRET"), "%s: %s", key, c.warnings[i]);
+            }
+            keys++;
+        }
+        l += len + (e != NULL);
+    }
+    for (int x = 0; extra[x]; x++) {
+        char ini[160];
+        snprintf(ini, sizeof(ini), "%s = SECRETq\n", extra[x]);
+        VjoConfig c;
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, ini, strlen(ini));
+        warned += c.n_warnings > 0;
+        for (int i = 0; i < c.n_warnings; i++)
+            TEST_CHECK_(!strstr(c.warnings[i], "SECRET"), "%s: %s", extra[x], c.warnings[i]);
+    }
+    TEST_CHECK_(keys >= 20 && warned >= 20, "%d template keys, %d parses warned", keys, warned);
 }
 
 TEST_LIST = {
