@@ -129,8 +129,9 @@ static int subtitles; /* written by set_subtitles only */
 /* The strip says "Recognizing…" for the lookup or refresh in progress, which
  * brings it nothing (subtitles turned on after the close that dropped it): its
  * end gives the strip the screen's sentence, or a job of its own (#95 item 3a;
- * strip_after_wait). Set by subtitles_show only while such a job runs, so that
- * job's end always clears it. */
+ * strip_after_wait). Set by subtitles_show only while such a job runs, and by a
+ * region change while any job but the self-test's runs (it cancels that job: it
+ * read the old region; #182), so that job's end always clears it. */
 static int strip_waiting;
 static int input_block_error;
 static int stable_pending;
@@ -1889,7 +1890,8 @@ static void strip_show_result(const VjoOverlayData *d)
     vjo_arena_release(&scratch, mark);
 }
 
-/* The lookup or refresh that just ended was what the subtitle strip waited for
+/* The lookup or refresh that just ended (or the OCR job a region change
+ * cancelled: on_job_done) was what the subtitle strip waited for
  * (strip_waiting): it brought the strip nothing, so the strip gets the screen's
  * sentence now, or a job of its own (subtitles_show), as after the self-test's
  * job. An OCR job started at that end brings its own result (on_job_done). */
@@ -2143,6 +2145,7 @@ static void on_job_done(void)
         } else if (subtitles) {
             vjo_strip_set_busy(0);
         }
+        strip_after_wait(); /* a region drawn during it: the strip's job for the new region (#182) */
         return;
     }
     screen_changed_streak = 0; /* this job read its screen */
@@ -2252,11 +2255,14 @@ static void on_job_text(void)
  * the strip's that would retire it (audit-overlay-first-ocr-b RB1); else
  * "Recognizing…" and a job (a running one brings its result: on_job_done; a
  * lookup or a refresh brings none, so its end calls this again,
- * strip_after_wait: #95 item 3a; the self-test's job's end does too). */
+ * strip_after_wait: #95 item 3a; the self-test's job's end does too). The cached
+ * sentence is the shown text (run_vocr reads it into local_text), so it is the
+ * strip's only while that text is valid: a game switch, a region or a pipeline
+ * change retires both, before the kernel's scene number may move on (#182). */
 static void subtitles_show(const VjoState *st)
 {
     const VjoOverlayData *d = active >= 0 ? &cache_data[active] : NULL;
-    if (!job_running && d && d->sentence && shows_screen(cache_scene, cache_seq, st)) {
+    if (!job_running && d && d->sentence && local_text_valid && shows_screen(cache_scene, cache_seq, st)) {
         vjo_strip_show(d->sentence, VJO_STRIP_SENTENCE, 0);
         return;
     }
@@ -2350,8 +2356,22 @@ static void on_command(void)
         cache_ok = 0;
         retire_local_text(1);
         close_overlay();
-        if (subtitles)
-            start_job("region changed", want_lookup());
+        /* A job in progress read the old region (a lookup or a refresh, which the
+         * close dropped, or OCR): its result goes, as the text and the cache did;
+         * an OCR job's would publish the old region's text and lookup again (#182). */
+        if (job_running)
+            job_cancelled = 1;
+        if (subtitles) {
+            if (!job_running) {
+                start_job("region changed", want_lookup());
+            } else if (!job_selftest) { /* the self-test's end shows the strip's sentence itself */
+                /* The strip's job for the new region cannot start beside it: the
+                 * strip waits for its end (strip_after_wait). Before, it kept the
+                 * old region's sentence until a screen settled (#182 a). */
+                vjo_strip_show("Recognizing…", VJO_STRIP_STATUS, 1);
+                strip_waiting = 1;
+            }
+        }
         break;
     }
 }
