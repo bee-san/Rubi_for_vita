@@ -453,7 +453,10 @@ class PackageVariants(unittest.TestCase):
                         "0.8.0.1", "x0.8.0-test.4", "0x8x0-test.1", "0.8.0-test.10000",
                         # a respin's malformed forms (0.8.0-test.N.M is one, below)
                         "0.8.0-test.4.", "0.8.0-test.4.0", "0.8.0-test.0.1", "0.8.0-test.4.1.1", "0.8.0-test.4.10000",
-                        "0.8.0-test.4.1x", "0.8.0-test.4-1", "0.8.0-test..1", "0.8.1-test.4.1"):
+                        "0.8.0-test.4.1x", "0.8.0-test.4-1", "0.8.0-test..1", "0.8.1-test.4.1",
+                        # the case and the digits are ASCII, as core/payload.c's version rule (audit-pr196 N1)
+                        "0.8.0-TEST.4.1", "0.8.0-test.4\u0661", "0.8.0-test.4.1\u0661", "0.8.0-test.\u0664",
+                        "0.8.0-test.4.\u0661"):
             with self.subTest(version=version), self.assertRaises(SystemExit) as caught:
                 self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
                               "--version", version, "-o", self.root / "out-bad")
