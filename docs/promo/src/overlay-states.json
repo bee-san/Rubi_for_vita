@@ -1,0 +1,778 @@
+{
+ "source": "capture/overlay_states.py: Rubi 8e267fb's shell/overlay.cpp render() order and strings, its own lookups (capture/overlay_lookups.c) in the released plaintext.vjdict (sha256 1c563c86a2980126…), entries as vjo_styled_entry draws them",
+ "states": {
+  "s1-m2-ov01-open": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    1,
+    5
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 0 · export in the Rubi app",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "また明日",
+     "rgb": "#ffd24a",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": "またあした",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": " #3726",
+     "rgb": "#8a94a6",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "see you tomorrow",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "明",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=light, bright\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "日",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=day, counter for days, Japan, sun",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · × queue · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "また明日",
+    "spelling": "また明日",
+    "reading": "またあした",
+    "rank": 3726,
+    "badge": " #3726",
+    "cursor_cp": 1,
+    "hl_cp": [
+     1,
+     5
+    ]
+   }
+  },
+  "s1-m2-ov02-right-inflight": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    6,
+    7
+   ],
+   "body": [
+    {
+     "text": "Looking up words…",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "Anki queue: 0 · export in the Rubi app",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · × queue · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "一緒に",
+    "spelling": "一緒に",
+    "reading": "いっしょに",
+    "rank": 125,
+    "badge": " #125",
+    "cursor_cp": 6,
+    "hl_cp": [
+     6,
+     9
+    ]
+   }
+  },
+  "s1-m2-ov03-issho": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    6,
+    9
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 0 · export in the Rubi app",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "一緒に",
+     "rgb": "#ffd24a",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": "いっしょに",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": " #125",
+     "rgb": "#8a94a6",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "together (with); at the same time; in one lump | in the same category",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "一",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=one\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "緒",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=beginning, thong",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · × queue · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "一緒に",
+    "spelling": "一緒に",
+    "reading": "いっしょに",
+    "rank": 125,
+    "badge": " #125",
+    "cursor_cp": 6,
+    "hl_cp": [
+     6,
+     9
+    ]
+   }
+  },
+  "s1-m2-ov04-issho-saving": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    6,
+    9
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 0 · export in the Rubi app",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "Saving card…",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "一緒に",
+     "rgb": "#ffd24a",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": "いっしょに",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": " #125",
+     "rgb": "#8a94a6",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "together (with); at the same time; in one lump | in the same category",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "一",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=one\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "緒",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=beginning, thong",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · × queue · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "一緒に",
+    "spelling": "一緒に",
+    "reading": "いっしょに",
+    "rank": 125,
+    "badge": " #125",
+    "cursor_cp": 6,
+    "hl_cp": [
+     6,
+     9
+    ]
+   }
+  },
+  "s1-m2-ov05-issho-saved": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    6,
+    9
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 1 · export in the Rubi app",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "Saved for Anki",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "Queued for Anki\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "一緒に",
+     "rgb": "#ffd24a",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": "いっしょに",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": " #125",
+     "rgb": "#8a94a6",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "together (with); at the same time; in one lump | in the same category",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "一",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=one\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "緒",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=beginning, thong",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · × queue · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "一緒に",
+    "spelling": "一緒に",
+    "reading": "いっしょに",
+    "rank": 125,
+    "badge": " #125",
+    "cursor_cp": 6,
+    "hl_cp": [
+     6,
+     9
+    ]
+   }
+  },
+  "s1-m2-ov06-miniiku": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    9,
+    14
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 1 · export in the Rubi app",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "見に行く",
+     "rgb": "#ffd24a",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": "みにいく",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": " #2199",
+     "rgb": "#8a94a6",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "to go to see | to visit",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "見",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=look at, see, visible, opinion\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "行",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=going, conduct, act, carry out",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · × queue · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "見に行こう",
+    "spelling": "見に行く",
+    "reading": "みにいく",
+    "rank": 2199,
+    "badge": " #2199",
+    "cursor_cp": 9,
+    "hl_cp": [
+     9,
+     14
+    ]
+   }
+  },
+  "s1-m2-ov06b-miniiku-saving": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    9,
+    14
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 1 · export in the Rubi app",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "Saving card…",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "見に行く",
+     "rgb": "#ffd24a",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": "みにいく",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": " #2199",
+     "rgb": "#8a94a6",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "to go to see | to visit",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "見",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=look at, see, visible, opinion\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "行",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=going, conduct, act, carry out",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · × queue · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "見に行こう",
+    "spelling": "見に行く",
+    "reading": "みにいく",
+    "rank": 2199,
+    "badge": " #2199",
+    "cursor_cp": 9,
+    "hl_cp": [
+     9,
+     14
+    ]
+   }
+  },
+  "s1-m2-ov07-miniiku-saved": {
+   "header": "「また明日、一緒に見に行こう!」",
+   "hl": [
+    9,
+    14
+   ],
+   "body": [
+    {
+     "text": "Anki queue: 2 · export in the Rubi app",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "Saved for Anki",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "Queued for Anki\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "見に行く",
+     "rgb": "#ffd24a",
+     "px": 27
+    },
+    {
+     "text": " (",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": "みにいく",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": ")",
+     "rgb": "#9fd0ff",
+     "px": 27
+    },
+    {
+     "text": " #2199",
+     "rgb": "#8a94a6",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "to go to see | to visit",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "\n\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "見",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=look at, see, visible, opinion\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "行",
+     "rgb": "#ffffff",
+     "px": 27
+    },
+    {
+     "text": "=going, conduct, act, carry out",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · × queue · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "見に行こう",
+    "spelling": "見に行く",
+    "reading": "みにいく",
+    "rank": 2199,
+    "badge": " #2199",
+    "cursor_cp": 9,
+    "hl_cp": [
+     9,
+     14
+    ]
+   }
+  },
+  "s3-m1-ov03-open": {
+   "header": "「キラキラ……。\n子供の頃みたい。」",
+   "hl": [
+    1,
+    5
+   ],
+   "body": [
+    {
+     "text": "キラキラ",
+     "rgb": "#ffd24a",
+     "px": 27
+    },
+    {
+     "text": " #3383",
+     "rgb": "#8a94a6",
+     "px": 21
+    },
+    {
+     "text": "\n",
+     "rgb": "#b8c0cc",
+     "px": 21
+    },
+    {
+     "text": "glittering | sparkling | glistening | twinkling",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "キラキラ",
+    "spelling": "キラキラ",
+    "reading": "キラキラ",
+    "rank": 3383,
+    "badge": " #3383",
+    "cursor_cp": 1,
+    "hl_cp": [
+     1,
+     5
+    ]
+   }
+  }
+ }
+}

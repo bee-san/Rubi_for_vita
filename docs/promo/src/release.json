@@ -1,0 +1,30 @@
+{
+ "commit": "8e267fbb267979d2132c34c54f1f3f578593eb07",
+ "files": {
+  "Rubi-0.8.0-debug.vpk": {
+   "bytes": 61129309,
+   "github": "58.3 MB",
+   "vitashell": "58.30 MB"
+  },
+  "Rubi-0.8.0-debug.zip": {
+   "bytes": 61507535,
+   "github": "58.7 MB",
+   "vitashell": "58.66 MB"
+  },
+  "Rubi-0.8.0.vpk": {
+   "bytes": 61115822,
+   "github": "58.3 MB",
+   "vitashell": "58.28 MB"
+  },
+  "Rubi-0.8.0.zip": {
+   "bytes": 61494059,
+   "github": "58.6 MB",
+   "vitashell": "58.65 MB"
+  },
+  "SHA256SUMS": {
+   "bytes": 336,
+   "github": "336 Bytes",
+   "vitashell": "336 B"
+  }
+ }
+}
