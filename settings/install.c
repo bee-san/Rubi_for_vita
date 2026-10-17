@@ -145,6 +145,7 @@ typedef struct {
     uint64_t last_tick;
     int action;                /* VJO_INSTALL_ACT_*: what finishes the job after a stop */
     int backed_up;             /* dated backups written (new files: nothing else changed by them) */
+    int dropped;               /* the app's own copy of the dictionary deleted: a change, to no file of the overlay */
     char step[120];
 } Run;
 
@@ -1467,8 +1468,10 @@ static int stop(Run *x, const char *fmt, const char *arg)
         snprintf(path, sizeof(path), "%s.vjo-old", tai_path(c));
         left |= exists(path);
     }
-    say(x->r, !x->r->written ? x->backed_up ? "Nothing on the card was changed but the dated backups this run wrote (new files, kept)."
-                                            : "Nothing on the card was changed."
+    int changed = x->r->written || x->dropped; /* the app's dictionary copy deleted is a change too */
+    x->r->written = changed;
+    say(x->r, !changed ? x->backed_up ? "Nothing on the card was changed but the dated backups this run wrote (new files, kept)."
+                                      : "Nothing on the card was changed."
               : left || (x->action != VJO_INSTALL_ACT_INSTALL && x->action != VJO_INSTALL_ACT_UNINSTALL)
               ? "Every file on the card is the old one or the new one; the Install page shows what is left to do."
               : x->action == VJO_INSTALL_ACT_UNINSTALL ? "Every file on the card is the old one or the new one; Uninstall "
@@ -1564,6 +1567,30 @@ static int backups(Run *x, VjoInstallScan *s, int install, char names[2][PATH])
     return 0;
 }
 
+/* The dictionary at its destination has the payload's SHA-256 (it already had, or this run put it there): the
+ * app's own copy, when it is still there, is the second 157 MB copy. VitaShell installs the whole VPK, so an
+ * update or the same VPK again brings it back, and so does a copy made when the move failed. It is deleted when
+ * the app folder can be written (move_ok: the probe moved a file out of it), and log.txt says what became of it
+ * either way (#194: test.4's Check and repair left no line, and its result said "nothing needed writing").
+ * 1 deleted, 0 not there, -1 kept. */
+static int drop_app_copy(Run *x, const VjoPayloadFile *f, const char *src, int move_ok)
+{
+    if (!exists(src)) return 0;
+    int rc = move_ok ? sceIoRemove(src) : -1;
+    if (rc >= 0) {
+        x->dropped = 1;
+        vjo_log("install: this app's copy of the dictionary deleted (%llu B freed)", (unsigned long long)f->bytes);
+        return 1;
+    }
+    if (move_ok)
+        vjo_log("install: this app's copy of the dictionary kept (%llu B): delete 0x%08X", (unsigned long long)f->bytes,
+                (unsigned)rc);
+    else
+        vjo_log("install: this app's copy of the dictionary kept (%llu B): this app's folder cannot be written",
+                (unsigned long long)f->bytes);
+    return -1;
+}
+
 static int install_files(Run *x, VjoInstallScan *s, int move_ok, char *dict_note, size_t note_cap)
 {
     char src[PATH], fresh[PATH];
@@ -1590,10 +1617,12 @@ static int install_files(Run *x, VjoInstallScan *s, int move_ok, char *dict_note
             /* the overlay's own temporary files beside a file that is right: an earlier run's */
             if (exists(fresh) && sceIoRemove(fresh) >= 0) x->r->written = 1;
             if (exists(old) && sceIoRemove(old) >= 0) x->r->written = 1;
-            if (f->kind == VJO_PAYLOAD_MOVE && exists(src)) {
-                int gone = move_ok && sceIoRemove(src) >= 0;
-                snprintf(dict_note, note_cap, gone ? "The dictionary was already installed: this app's copy was deleted (%.0f MB freed)."
-                         : "The dictionary was already installed; this app's copy could not be deleted (%.0f MB).", mb(f->bytes));
+            if (f->kind == VJO_PAYLOAD_MOVE) {
+                int d = drop_app_copy(x, f, src, move_ok);
+                if (d)
+                    snprintf(dict_note, note_cap, d > 0 ? "The dictionary was already installed: this app's copy was deleted "
+                             "(%.0f MB freed)." : "The dictionary was already installed; this app's copy could not be deleted "
+                             "(%.0f MB).", mb(f->bytes));
             }
             continue;
         }
@@ -1612,8 +1641,14 @@ static int install_files(Run *x, VjoInstallScan *s, int move_ok, char *dict_note
             if (!ok) return stop(x, "%s could not be put in place (the old one is as it was).", f->dest);
             x->r->written = 1;
             if (exists(old)) sceIoRemove(old);
-            if (f->kind == VJO_PAYLOAD_MOVE && exists(src) && move_ok) sceIoRemove(src);
             vjo_log("install: %s put in place from an earlier run's %s", f->dest, ready == fresh ? ".vjo-new" : ".vjo-old");
+            if (f->kind == VJO_PAYLOAD_MOVE) {
+                int d = drop_app_copy(x, f, src, move_ok);
+                if (d)
+                    snprintf(dict_note, note_cap, d > 0 ? "The dictionary was put in place from an earlier run's copy: this "
+                             "app's copy was deleted (%.0f MB freed)." : "The dictionary was put in place from an earlier "
+                             "run's copy; this app's copy could not be deleted (%.0f MB).", mb(f->bytes));
+            }
             if (i == VJO_PAYLOAD_KERNEL_INDEX) reset_boot_record();
             continue;
         }
@@ -1623,12 +1658,13 @@ static int install_files(Run *x, VjoInstallScan *s, int move_ok, char *dict_note
                         "install the VPK again in VitaShell.", name);
         make_dirs(f->dest);
         sceIoRemove(fresh); /* an earlier run's copy without the payload's SHA-256 (an interrupted copy) */
+        int moved = 0;
         if (f->kind == VJO_PAYLOAD_MOVE) {
             step(x, "Checking this app's %s", name);
             if (hash_file(x, src, sha, f->bytes) != (int64_t)f->bytes || memcmp(sha, f->sha256, 32))
                 return stop(x, "this app's %s is damaged: install the VPK again in VitaShell.", name);
             step(x, "Moving %s", name);
-            if (move_ok && sceIoRename(src, fresh) >= 0) {
+            if ((moved = move_ok && sceIoRename(src, fresh) >= 0)) {
                 snprintf(dict_note, note_cap, "The dictionary (%.0f MB) was moved out of this app, not copied.", mb(f->bytes));
             } else {
                 int64_t room = free_bytes("ux0:");
@@ -1655,7 +1691,13 @@ static int install_files(Run *x, VjoInstallScan *s, int move_ok, char *dict_note
             if (f->kind == VJO_PAYLOAD_MOVE && !exists(src)) sceIoRename(fresh, src);
             return stop(x, "%s could not be put in place (the old one is as it was).", f->dest);
         }
-        vjo_log("install: %s written (%llu B)", f->dest, (unsigned long long)f->bytes);
+        vjo_log(moved ? "install: %s moved out of this app (%llu B)" : f->kind == VJO_PAYLOAD_MOVE
+                ? "install: %s copied out of this app (%llu B): it could not be moved" : "install: %s written (%llu B)",
+                f->dest, (unsigned long long)f->bytes);
+        /* a copy made because the move failed leaves the app's copy beside it: it goes too when it can */
+        if (f->kind == VJO_PAYLOAD_MOVE && drop_app_copy(x, f, src, move_ok) > 0)
+            snprintf(dict_note, note_cap, "The dictionary was copied (it could not be moved), then this app's copy was deleted "
+                     "(%.0f MB freed).", mb(f->bytes));
         if (i == VJO_PAYLOAD_KERNEL_INDEX) reset_boot_record(); /* a new build starts with a clean record */
     }
     return 0;
@@ -1756,9 +1798,12 @@ static int run_install(Run *x, VjoInstallScan *s)
     lock(0);
     /* what was done */
     r->rc = 0;
-    if (!r->written && s->state == VJO_INSTALL_INSTALLED) {
+    int overlay_written = r->written;
+    r->written |= x->dropped; /* the app's dictionary copy deleted: the card changed, though no file of the overlay */
+    if (!overlay_written && s->state == VJO_INSTALL_INSTALLED) {
         say(r, reset ? "Every file and line is in place: nothing needed writing (the boot guard's record is reset)."
                      : "Every file and line is in place: nothing needed writing.");
+        if (dict_note[0]) say(r, "%s", dict_note); /* what became of the app's copy (#194) */
         if (!reset)
             say(r, "The boot guard's record was left as it is (the Vita has run for under a minute): if it is in safe "
                 "mode, choose Check and repair again in a minute.");

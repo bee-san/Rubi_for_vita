@@ -355,7 +355,8 @@ gh release create v0.8.0 -R bee-san/Rubi_for_vita --title "Rubi 0.8.0" --notes-f
 ```
 
 The release notes give the three steps of README "Install" (download the `.vpk`; copy it to the Vita
-and install it in VitaShell; open Rubi, choose Install, restart), the requirements (Enable Unsafe
+and install it in VitaShell, after closing an older Rubi app that is open, whose install otherwise
+stopped with `0x80101114` in test.4's run (#194); open Rubi, choose Install, restart), the requirements (Enable Unsafe
 Homebrew; about 245 MB free on ux0, the VPK counted), and the recovery (the README's FAQ "Can it break
 my Vita?" and the guide's "Memory and troubleshooting"). A test build is packaged the same way, `package_variants.py --version 0.8.0-test.N
 --set anki_mining=on` on the two artifacts of the `main` commit it is cut from, and ships its debug VPK

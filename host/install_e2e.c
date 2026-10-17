@@ -3,10 +3,11 @@
  * the SDK's file calls over real files with the Vita's rename rule (an existing destination is
  * refused), app0:'s unmount and the locks answered, the clock past the boot record's first minute.
  *
- *   vjo-install-e2e CARD install|uninstall|finish|keep     prints the scan, the plan and the result */
+ *   vjo-install-e2e CARD install|uninstall|finish|keep     prints the scan, the plan, the result and the log.txt lines */
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -97,7 +98,16 @@ static uint64_t clock_us;
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_us += 1000; }
 uint64_t sceKernelGetSystemTimeWide(void) { return 3600ull * 1000000ull; }
 void vjo_log_enable(int on) { (void)on; }
-void vjo_log(const char *fmt, ...) { (void)fmt; }
+/* The lines the app writes to log.txt, as "log: ..." (what a console's collect would show). */
+void vjo_log(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    fputs("log: ", stdout);
+    vprintf(fmt, ap);
+    putchar('\n');
+    va_end(ap);
+}
 
 int main(int argc, char **argv)
 {

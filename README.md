@@ -72,7 +72,12 @@ delete once it is installed).
 1. Download `Rubi-<version>.vpk` from the
    [latest release](https://github.com/bee-san/Rubi_for_vita/releases/latest).
 2. Copy it to the Vita with VitaShell's USB or FTP connection, press Enter on it in VitaShell, and
-   answer Yes to installing it and Yes to its notice about extended permissions.
+   answer Yes to installing it and Yes to its notice about extended permissions. Close the app first
+   if an older version of it is open, even suspended behind VitaShell (Rubi, Overlay or JP Overlay
+   Settings): pull the top-right corner of its LiveArea page. In test.4's console run VitaShell stopped
+   with error `0x80101114` while the old app was open
+   ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)); if you see it, close the app or
+   restart the Vita, then install again.
 3. Open **Rubi** from LiveArea, choose **Install** on its Install page, and restart the Vita.
 
 That's all: nothing is downloaded on the Vita, and every game is ON. Start a game and press L + R.

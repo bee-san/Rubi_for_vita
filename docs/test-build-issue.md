@@ -29,6 +29,9 @@ ships); here the SHA-256 above checks the VPK.
 Its first console run: rule 7 of AGENTS.md applies (the Install page's plan shows the exact files and
 `config.txt` edits and the recovery before anything is written; it is this run's only change).
 - [ ] **Settings > HENkaku Settings > Enable Unsafe Homebrew** is on (the Install page says so if not).
+- [ ] Close the app if an older one is open, even suspended behind VitaShell (on its LiveArea page, pull the
+  page's top-right corner): with test.3's app open, VitaShell's install of test.4 stopped with `0x80101114`
+  (#194). If it does, close the app or restart the Vita and install again, and say so.
 - [ ] Copy `{VPK}` (the debug VPK, SHA-256 `{VPK_SHA256}`) to the Vita with VitaShell's FTP or USB, and
   install it in VitaShell: Yes to "Do you want to install this package?" and to the extended-permissions
   notice. Note the time it takes.
