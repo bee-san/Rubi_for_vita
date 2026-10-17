@@ -1,5 +1,9 @@
 # Dictionary lookup preparation
 
+This records the implementation committed as `0df7d88`. The subsequent
+[cache experiments](dictionary-cache-experiments.md) retain its session and
+lookahead behavior while reducing scratch usage and redundant payload reads.
+
 Auto with Whole word prepares upcoming selections while the worker is idle. A
 bounded cache keeps entry locations and misses, never full definitions. The first
 word is still published before any lookahead work. Prepared hits use one payload

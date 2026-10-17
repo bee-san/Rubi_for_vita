@@ -293,7 +293,7 @@ static void longest_and_first_posting(void)
         TEST_ASSERT(r.n_vocab == 1);
         TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "first long meaning"));
         TEST_CHECK(r.tokens[0].pos16 == 0 && r.tokens[0].len16 == 2);
-        TEST_CHECK(payload_reads == 1 && a.peak <= 64 * 1024);
+        TEST_CHECK(payload_reads == 0 && a.peak <= 64 * 1024); /* already in the key/head page */
     }
 }
 static void inflection_and_dictionary_priority(void)
@@ -380,7 +380,7 @@ static void punctuation_and_read_counts_do_not_scan_remainder(void)
         long_text[sizeof(long_text) - 1] = 0;
         vjo_arena_reset(&a); reads = payload_reads = 0;
         TEST_ASSERT(!lookup(&a, &p, &cfg, long_text, 0, &r, &e));
-        TEST_CHECK(reads == short_reads && payload_reads == 1);
+        TEST_CHECK(reads == short_reads && payload_reads == 0);
         TEST_CHECK(r.tokens[0].len16 == 1);
         vjo_arena_reset(&a);
         TEST_ASSERT(!lookup(&a, &p, &cfg, "猫\n犬", 0, &r, &e));
@@ -487,8 +487,11 @@ static void normalized_source_span_and_invalid_input(void)
 
 static void every_file_read_failure_closes_and_rolls_back(void)
 {
-    const Row row = {"猫", "猫", "ねこ", "cat", 0, 0};
-    for (int version = 1; version <= 3; version++) {
+    static char article[5001];
+    memset(article, 'x', sizeof(article) - 1);
+    for (int large = 0; large < 2; large++)
+      for (int version = 1; version <= 3; version++) {
+        const Row row = {"猫", "猫", "ねこ", large ? article : "cat", 0, 0};
         VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
         setup(&a, &p, &cfg); build(&fixtures[0], "main.vjdict", &row, 1, version);
         TEST_ASSERT(!vjo_overlay_ocr_text(&a, &cfg, "猫。", &out));
@@ -496,7 +499,7 @@ static void every_file_read_failure_closes_and_rolls_back(void)
         size_t mark = a.used;
         TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
         int total = reads;
-        TEST_CHECK(payload_reads == 1);
+        TEST_CHECK(payload_reads == large); /* spans pages, or wholly cached */
         for (int i = 1; i <= total; i++) {
             vjo_arena_release(&a, mark); reads = 0; fail_read = i;
             TEST_CHECK(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_E_LOCAL_IO);
@@ -710,7 +713,7 @@ static void pages_follow_best_match_then_priority(void)
         TEST_ASSERT(single.n_vocab == 1 && !strcmp(single.vocab[0].meanings[0], "d1 other"));
         vjo_arena_reset(&a); payload_reads = 0;
         TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫舌。", 0, 8, &pages, &r, &e));
-        TEST_CHECK(payload_reads == 1); /* only the shown entry is read */
+        TEST_CHECK(payload_reads <= 1); /* only the shown entry, unless already cached */
         TEST_ASSERT(pages.count == 3 && r.n_vocab == 1);
         TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "d1 other") && r.tokens[0].len16 == 2);
         TEST_CHECK(pages.page[0].dict == 1 && pages.page[0].len16 == 2);
@@ -859,7 +862,7 @@ static void single_result_reads_are_unchanged(void)
     TEST_CHECK(reads == single_reads && pages.count == 1 && a.peak == single_peak && a.used == single_used);
     vjo_arena_init(&a, arena_mem, sizeof(arena_mem)); reads = payload_reads = 0;
     TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫", 0, 2, &pages, &r, &e));
-    TEST_CHECK(pages.count == 2 && reads > single_reads && payload_reads == 1);
+    TEST_CHECK(pages.count == 2 && reads > single_reads && payload_reads == 0);
     TEST_CHECK(a.peak == single_peak && a.used == single_used); /* locators are the caller's */
     printf("  two dictionaries, limit 1: %d reads; limit 2: %d reads; peak %zu both\n",
            single_reads, reads, a.peak);
@@ -1025,7 +1028,7 @@ static void v3_rank_and_source_come_with_the_entry(void)
         TEST_ASSERT(!lookup(&a, &p, &cfg, "猫", 0, &r, &e) && r.n_vocab == 1);
         TEST_CHECK(r.vocab[0].rank == (version == 3 ? 1536 : VJO_NO_RANK));
         TEST_CHECK(!strcmp(r.vocab[0].spelling, "猫") && !strcmp(r.vocab[0].reading, "ねこ"));
-        TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "cat") && payload_reads == 1);
+        TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "cat") && payload_reads == 0);
         if (version == 2) {
             TEST_CHECK(!r.source);
             reads_v2 = reads; bytes_v2 = read_bytes;
@@ -1850,7 +1853,31 @@ static void preparation_oom_preserves_the_displayed_result(void)
     vjo_local_session_close(p.local_session);
 }
 
+static void candidate_growth_fails_without_truncating_a_lookup(void)
+{
+    const Row rows[] = {{"猫", "猫", "ねこ", "cat", 0, 0},
+                        {"食べる", "食べる", "たべる", "eat", 1, 0}};
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    VjoDictResult result; VjoErr err;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "main.vjdict", rows, 2, 3);
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "猫", 0, &result, &err) == VJO_OK);
+    size_t small_peak = a.peak;
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "食べさせられませんでした", 0, &result, &err) == VJO_OK);
+    TEST_ASSERT(result.n_vocab == 1 && !strcmp(result.vocab[0].meanings[0], "eat"));
+    size_t peak = a.peak;
+    TEST_ASSERT(peak > small_peak); /* the candidate vector grew beyond eight */
+    vjo_arena_init(&a, arena_mem, peak - 1);
+    TEST_CHECK(vjo_local_lookup_at(&a, &p, &cfg, "食べさせられませんでした", 0, &result, &err) == VJO_E_OOM);
+    TEST_CHECK(!result.n_vocab && !a.used && opened == closed);
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    TEST_ASSERT(vjo_local_lookup_at(&a, &p, &cfg, "食べさせられませんでした", 0, &result, &err) == VJO_OK);
+    TEST_CHECK(result.n_vocab == 1 && !strcmp(result.vocab[0].meanings[0], "eat"));
+}
+
 TEST_LIST = {
+    {"candidate_growth_fails_without_truncating_a_lookup", candidate_growth_fails_without_truncating_a_lookup},
     {"prepared_words_keep_output_and_read_only_the_selected_payload", prepared_words_keep_output_and_read_only_the_selected_payload},
     {"preparation_oom_preserves_the_displayed_result", preparation_oom_preserves_the_displayed_result},
     {"session_owns_all_eight_dictionaries_and_closes_a_failed_page", session_owns_all_eight_dictionaries_and_closes_a_failed_page},

@@ -288,6 +288,13 @@ are not words with no index read. Four shared 4 KiB page buffers and a small
 absent-hash cache reduce repeated reads; the filter's one block per lookup is
 read into the same buffers. These caches are shared across all enabled files
 and released after each request.
+When a cached page already contains the entire selected payload, showing it
+copies those bytes into the output instead of reading them again. Entries that
+cross pages keep the direct payload read. Candidate scratch starts at eight
+records and grows up to the same 128-record bound; failed growth reports OOM
+without returning a shortened candidate set. The allocation stays at 64 KiB.
+The [follow-up benchmark](../reports/dictionary-cache-experiments.md) records the
+read savings and the smaller scratch high-water mark.
 The Shell reuses open files and parsed headers between selections. The session also
 keeps one filter directory (up to 256 blocks; larger directories use the page cache)
 and 16 word-location records, including misses. Together these occupy 6,784 bytes

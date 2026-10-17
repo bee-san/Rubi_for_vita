@@ -151,7 +151,9 @@ typedef struct {
     Page pages[CACHE_PAGES];
     struct { uint64_t hash; unsigned dict; } misses[MISS_SLOTS];
     uint32_t clock;
-    Candidate candidates[MAX_CANDIDATES];
+    Candidate *candidates;
+    VjoArena *arena;
+    int candidate_cap;
     Match matches[VJO_LOCAL_MAX_MATCHES];
     uint64_t seen_off[VJO_LOCAL_MAX_RESULTS];
     int seen_dict[VJO_LOCAL_MAX_RESULTS];
@@ -159,8 +161,19 @@ typedef struct {
     VjoLocalSession *session;
 } Workspace;
 
-typedef char WorkspaceFits[(sizeof(Workspace) <= VJO_LOCAL_SCRATCH_BUDGET) ? 1 : -1];
+typedef char WorkspaceFits[(sizeof(Workspace) + MAX_CANDIDATES * sizeof(Candidate) + 7u <= VJO_LOCAL_SCRATCH_BUDGET) ? 1 : -1];
+typedef char SessionLookupFits[(sizeof(VjoLocalSession) + sizeof(Workspace) + MAX_CANDIDATES * sizeof(Candidate) +
+    VJO_LOCAL_SELECTED_BUDGET + sizeof(VjoLocalPages) + 14u <= VJO_LOCAL_RESULT_BUDGET) ? 1 : -1];
 typedef char MatchKeepsItsSize[(sizeof(Match) == 8 + sizeof(Record)) ? 1 : -1];
+
+static Workspace *workspace(VjoArena *a)
+{
+    Workspace *w = vjo_arena_zalloc(a, sizeof(*w));
+    if (w) {
+        w->arena = a;
+    }
+    return w;
+}
 
 static uint16_t u16(const uint8_t *p) { return (uint16_t)(p[0] | (uint16_t)p[1] << 8); }
 static uint32_t u32(const uint8_t *p) { return (uint32_t)u16(p) | (uint32_t)u16(p + 2) << 16; }
@@ -918,10 +931,18 @@ static int find_matches(Workspace *w, int di, int c, const char *raw, size_t raw
     return w->dicts[di].version >= 2 ? find_matches_v2(w, di, cand, q, limit) : find_matches_v1(w, di, cand, q, limit);
 }
 
-static int deinflect(Candidate *c, const char *key)
+static int deinflect(Workspace *w, const char *key)
 {
     int count = 1;
     size_t len = strlen(key);
+    /* The candidate vector stays last in the parent arena. File pages are in
+     * the workspace and selected definitions use a separate output arena. */
+    if (!w->candidates) {
+        w->candidates = vjo_arena_alloc(w->arena, 8 * sizeof(Candidate));
+        if (!w->candidates) return VJO_E_OOM;
+        w->candidate_cap = 8;
+    }
+    Candidate *c = w->candidates;
     memcpy(c[0].key, key, len + 1); c[0].len = (uint16_t)len; c[0].rules = 0; c[0].depth = 0;
     for (int i = 0; i < count; i++) {
         unsigned suffix = (uint8_t)c[i].key[c[i].len - 1];
@@ -940,6 +961,12 @@ static int deinflect(Candidate *c, const char *key)
                 if (c[j].rules == rule->rules_out && !strcmp(next, c[j].key)) duplicate = 1;
             if (duplicate) continue;
             if (count >= MAX_CANDIDATES) return count;
+            if (count == w->candidate_cap) {
+                int cap = w->candidate_cap * 2;
+                if (vjo_arena_extend_last(w->arena, c, w->candidate_cap * sizeof(*c), cap * sizeof(*c)))
+                    return VJO_E_OOM;
+                w->candidate_cap = cap;
+            }
             memcpy(c[count].key, next, n + 1);
             c[count].depth = (uint8_t)(c[i].depth + 1);
             c[count].rules = rule->rules_out; c[count++].len = (uint16_t)n;
@@ -960,16 +987,31 @@ static int boundary(uint32_t cp)
  * gives the rank. The definition is displayed verbatim. The file's title, its
  * dictionary's name, is copied after it (v is zeroed by the caller: NULL when
  * the file has none; the popup never shows it, Anki cards and the log name it). */
-static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t len, VjoVocab *v)
+static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t len, VjoVocab *v,
+                       const Page *pages)
 {
     char *payload = vjo_arena_alloc(out, len), *reading, *meaning;
     size_t left;
     int rank = VJO_NO_RANK;
     if (!payload) return VJO_E_TOO_LARGE;
     if (len < min_entry(d)) return VJO_E_LOCAL_FORMAT;
+    /* A key or ranking-head read may already hold the whole entry. Copy it
+     * into the owned output, then apply the same payload validation below. */
+    const uint8_t *cached = NULL;
+    for (int i = 0; pages && i < CACHE_PAGES; i++) {
+        const Page *page = &pages[i];
+        if (page->dict == d && off >= page->off && off - page->off <= page->len &&
+            len <= page->len - (size_t)(off - page->off)) {
+            cached = page->bytes + (size_t)(off - page->off);
+            break;
+        }
+    }
     READ_KIND(VJO_READ_PAYLOAD);
-    STAT_READ(len);
-    if (d->file.read(d->file.ctx, off, payload, len)) return VJO_E_LOCAL_IO;
+    if (cached) memcpy(payload, cached, len);
+    else {
+        STAT_READ(len);
+        if (d->file.read(d->file.ctx, off, payload, len)) return VJO_E_LOCAL_IO;
+    }
     if (d->prefix) {
         rank = (int)(u32((const uint8_t *)payload) & FREQ_RANK_MASK);
         payload += d->prefix;
@@ -1019,7 +1061,8 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
         }
     }
     if (n >= VJO_LOCAL_MAX_RESULTS || res->n_tokens >= VJO_LOCAL_MAX_RESULTS) return VJO_E_TOO_LARGE;
-    if ((rc = read_entry(a, &w->dicts[m->dict], m->record.entry_off, m->record.entry_len, &res->vocab[n])) ||
+    if ((rc = read_entry(a, &w->dicts[m->dict], m->record.entry_off, m->record.entry_len, &res->vocab[n],
+                         w->pages)) ||
         (rc = set_source(a, &w->dicts[m->dict], res)))
         return rc;
     w->seen_dict[n] = m->dict; w->seen_off[n] = m->record.entry_off;
@@ -1039,7 +1082,7 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     memset(res, 0, sizeof(*res));
     if (len > VJO_LOCAL_MAX_TEXT) return err->rc = VJO_E_TOO_LARGE;
     outmem = vjo_arena_alloc(a, VJO_LOCAL_RESULT_BUDGET);
-    w = vjo_arena_zalloc(a, sizeof(*w));
+    w = workspace(a);
     if (!outmem || !w) { vjo_arena_release(a, mark); return err->rc = VJO_E_OOM; }
     vjo_arena_init(&output, outmem, VJO_LOCAL_RESULT_BUDGET);
     res->vocab = vjo_arena_zalloc(&output, VJO_LOCAL_MAX_RESULTS * sizeof(VjoVocab));
@@ -1065,7 +1108,8 @@ int vjo_local_lookup(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
             int candidates;
             Query q = {0};
             key[lengths[k]] = 0;
-            candidates = deinflect(w->candidates, key);
+            candidates = deinflect(w, key);
+            if (candidates < 0) { rc = candidates; goto done; }
             STAT(spans);
             STAT_ADD(candidates, candidates);
             w->n_matches = 0;
@@ -1199,7 +1243,7 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     if (!count) return VJO_OK; /* End/punctuation: no files or allocations. */
 
     if (load) outmem = vjo_arena_alloc(a, VJO_LOCAL_SELECTED_BUDGET);
-    w = vjo_arena_zalloc(a, sizeof(*w));
+    w = workspace(a);
     if ((load && !outmem) || !w) {
         vjo_arena_release(a, mark);
         return err->rc = VJO_E_OOM;
@@ -1225,7 +1269,8 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         int candidates;
         unsigned fell_back = 0, found = 0, exact = 0;
         key[lengths[k]] = 0;
-        candidates = deinflect(w->candidates, key);
+        candidates = deinflect(w, key);
+        if (candidates < 0) { rc = candidates; goto done; }
         STAT(spans);
         STAT_ADD(candidates, candidates);
         /* Phase 0: the text itself in each dictionary; phase 1: its inflections.
@@ -1377,7 +1422,7 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     if (!rc && (pg->entry_off < d.data || pg->entry_len < min_entry(&d) || pg->entry_len > VJO_LOCAL_MAX_ENTRY ||
                 !range_ok(&d, pg->entry_off, pg->entry_len)))
         rc = VJO_E_LOCAL_FORMAT;
-    if (!rc) rc = read_entry(&output, &d, pg->entry_off, pg->entry_len, &res->vocab[0]);
+    if (!rc) rc = read_entry(&output, &d, pg->entry_off, pg->entry_len, &res->vocab[0], NULL);
     if (!rc) rc = set_source(&output, &d, res);
     if (opened && d.file.close) d.file.close(d.file.ctx);
     if (rc) {

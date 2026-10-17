@@ -75,8 +75,9 @@ class DictLookupBench(unittest.TestCase):
         今日は猫を見ました。 tries spans of 9..2 characters (8 spans) until 今日 matches;
         猫舌なので... tries 14..2 (13 spans) until 猫舌: its line is full, so the break after it
         joins the next line's 猫 (core/textjoin.h) and the longest span crosses it. One file: one header read; one
-        key found, its bucket page, key group, the head ranking its one posting (another
-        page: the filler sits between the payloads and the groups) and its payload."""
+        key found, its bucket page, key group and the head ranking its one posting
+        (another page: filler separates payloads from groups). That head page also
+        contains the whole short payload, so showing it needs no further read."""
         self.build(ROWS + FILLER)
         sets = self.run_bench("--modes", "first", "--rounds", "1")
         rows = bench.run(BENCH, self.dir, "main.vjdict", self.lines, "first", 1)
@@ -85,9 +86,9 @@ class DictLookupBench(unittest.TestCase):
         for q, spans in ((one, 8), (two, 13)):
             self.assertEqual(q["spans"], spans)
             self.assertEqual((q["opens"], q["entries"], q["found"], q["ranked"]), (1, 1, 1, 1))
-            self.assertEqual(q["reads_by"], {"header": 1, "index": 1, "group": 1, "head": 1, "payload": 1,
+            self.assertEqual(q["reads_by"], {"header": 1, "index": 1, "group": 1, "head": 1, "payload": 0,
                                              "filter": 0})
-            self.assertEqual(q["reads"], 5)
+            self.assertEqual(q["reads"], 4)
             # Every probe but the one found is absent; the first absent one reads the
             # bucket page (one bucket), the others find it cached.
             self.assertEqual(q["absent_reads"], 1)
