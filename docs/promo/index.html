@@ -593,6 +593,10 @@
       #gate-continue {
         opacity: 0;
       }
+      .la-frame-shell {
+        background: radial-gradient(120% 90% at 30% 20%, #2a3550 0%, #121a2c 55%, #0a0f1a 100%);
+      }
+
 
       /* ------------------------------------------------------------ the Overlay app */
       .app-shot {
@@ -1364,7 +1368,7 @@
       data-layout="landscape"
       data-composition-id="main"
       data-start="0"
-      data-duration="44"
+      data-duration="45"
       data-width="1920"
       data-height="1080"
     >
@@ -1500,6 +1504,12 @@
     <path d="M80,128 C124,72 205,47 330,46 H426" fill="none" stroke="#9ea4ad" stroke-width="5" stroke-opacity="0.55"/>
     <path d="M110,90 C160,45 220,24 330,23.5 H408" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-opacity="0.8" stroke-linecap="round"/>
     <path class="glow" d="M430,62 V40 Q430,20 410,20 H330 C180,20 95,85 64.4,150.1 L90,160 C122,95 200,62 330,62 Z" fill="#5bdccf" opacity="0"/>
+  </g>
+  <!-- the power button, on the top edge at the left (the PCH-1000's part A, inboard of L) -->
+  <g id="btn-power">
+    <rect x="474" y="29" width="80" height="19" rx="9.5" fill="url(#g-shoulder)" stroke="#c3c8cf" stroke-width="1.5"/>
+    <rect x="484" y="32" width="60" height="3.5" rx="1.75" fill="#ffffff" opacity="0.75"/>
+    <rect class="glow" x="474" y="29" width="80" height="19" rx="9.5" fill="#5bdccf" opacity="0"/>
   </g>
   <g id="btn-r">
     <path d="M1390,62 V40 Q1390,20 1410,20 H1490 C1640,20 1725,85 1755.6,150.1 L1730,160 C1698,95 1620,62 1490,62 Z" fill="url(#g-shoulder)" stroke="#c3c8cf" stroke-width="1.5"/>
@@ -1750,6 +1760,8 @@
 <div class="ov-state" id="ov-b1" data-layout-allow-overlap data-layout-allow-occlusion><div class="ov-head" style="height:76px">「<span class="hl">キ</span><span class="hl">ラ</span><span class="hl">キ</span><span class="hl">ラ</span>……。
 子供の頃みたい。」</div><div class="ov-band" style="top:90px;height:34px"></div><div class="ov-sep" style="top:106px"></div><div class="ov-body" style="top:124px;height:372px"><span class="ja" style="color:#ffd24a">キラキラ</span><span class="en" style="color:#8a94a6"> #3383</span><span class="en" style="color:#b8c0cc">
 </span><span class="en" style="color:#b8c0cc">glittering | sparkling | glistening | twinkling</span></div><div class="ov-hint">Tap / ◀▶▲▼ / stick word · R stick scroll · □ region · ○ close</div></div>
+<div class="ov-state" id="ov-b1a" data-layout-allow-overlap data-layout-allow-occlusion><div class="ov-head" style="height:76px">「キラキラ……。
+<span class="hl">子</span>供の頃みたい。」</div><div class="ov-band" style="top:90px;height:34px"></div><div class="ov-sep" style="top:106px"></div><div class="ov-body" style="top:124px;height:372px"><span class="en" style="color:#b8c0cc">Looking up words…</span></div><div class="ov-hint">Tap / ◀▶▲▼ / stick word · R stick scroll · □ region · ○ close</div></div>
 <div class="ov-state" id="ov-b2" data-layout-allow-overlap data-layout-allow-occlusion><div class="ov-head" style="height:76px">「キラキラ……。
 <span class="hl">子</span><span class="hl">供</span><span class="hl">の</span><span class="hl">頃</span>みたい。」</div><div class="ov-band" style="top:90px;height:34px"></div><div class="ov-sep" style="top:106px"></div><div class="ov-body" style="top:124px;height:372px"><span class="ja" style="color:#ffd24a">子供の頃</span><span class="ja" style="color:#9fd0ff"> (</span><span class="ja" style="color:#9fd0ff">こどものころ</span><span class="ja" style="color:#9fd0ff">)</span><span class="en" style="color:#8a94a6"> #3356</span><span class="en" style="color:#b8c0cc">
 </span><span class="en" style="color:#b8c0cc">(time of) one's childhood | when one was a child</span><span class="en" style="color:#b8c0cc">
@@ -1779,6 +1791,11 @@
                       <div class="la-title"><img src="assets/icons/PROMO0001.png" alt="" /><span>夕凪ステップ</span></div>
                       <div class="la-logo">夕凪ステップ<small>Yuunagi Step</small></div>
                       <div class="la-gate la-gate-game"><span id="gate-start">Start</span><span id="gate-continue">Continue</span></div>
+                    </div>
+                    <div id="scr-la-shell" class="scr la">
+                      <div class="la-frame la-frame-shell"></div>
+                      <div class="la-title"><img src="assets/icons/vitashell.svg" alt="" /><span>VitaShell</span></div>
+                      <div class="la-gate la-gate-game"><span>Continue</span></div>
                     </div>
                     <div id="scr-la-app" class="scr la">
                       <div class="la-frame"><img src="assets/app/bg.png" alt="" /></div>
@@ -1882,13 +1899,15 @@
                     <div class="gh-tabs"><span>Code</span><span>Issues</span><span>Pull requests</span><span class="on">Releases</span></div>
                     <div class="gh-rel">
                       <div class="gh-rel-head"><b>v0.8.0</b><span class="gh-latest">Latest</span></div>
-                      <div class="gh-notes">Install: download <b>Rubi-0.8.0.vpk</b>, install it in VitaShell, then open Rubi and choose Install.</div>
-                      <div class="gh-assets-title">Assets <span>5</span></div>
-                      <div class="gh-asset" id="gh-vpk"><i class="pk"></i><span class="gh-name">Rubi-0.8.0.vpk</span><span class="gh-size">57.3 MB</span></div>
+                      <div class="gh-notes">Install: download <b>Rubi-0.8.0.vpk</b>, install it in VitaShell, open Rubi, choose Install, then restart the Vita.</div>
+                      <div class="gh-assets-title">Assets <span>7</span></div>
                       <div class="gh-asset"><i class="pk"></i><span class="gh-name">Rubi-0.8.0-debug.vpk</span><span class="gh-size">57.3 MB</span></div>
-                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">Rubi-0.8.0.zip</span><span class="gh-size">57.7 MB</span></div>
                       <div class="gh-asset"><i class="pk"></i><span class="gh-name">Rubi-0.8.0-debug.zip</span><span class="gh-size">57.7 MB</span></div>
+                      <div class="gh-asset" id="gh-vpk"><i class="pk"></i><span class="gh-name">Rubi-0.8.0.vpk</span><span class="gh-size">57.3 MB</span></div>
+                      <div class="gh-asset"><i class="pk"></i><span class="gh-name">Rubi-0.8.0.zip</span><span class="gh-size">57.7 MB</span></div>
                       <div class="gh-asset"><i class="pk"></i><span class="gh-name">SHA256SUMS</span><span class="gh-size">372 Bytes</span></div>
+                      <div class="gh-asset"><i class="pk zip"></i><span class="gh-name">Source code (zip)</span><span class="gh-size"></span></div>
+                      <div class="gh-asset"><i class="pk zip"></i><span class="gh-name">Source code (tar.gz)</span><span class="gh-size"></span></div>
                     </div>
                     <div class="dl-chip" id="dl-chip"><i class="pk"></i><span>Rubi-0.8.0.vpk</span><div class="dl-bar"><div id="dl-fill"></div></div></div>
                   </div>
@@ -1926,91 +1945,94 @@
       <div id="fade" data-layout-ignore></div>
 
       <!-- ============================================================ sound -->
-      <!-- the bed's breakdown (23.5-31 s, the install) is lifted about 4 dB so the music does not seem to stop -->
-      <audio id="music" src="assets/audio/bed-44s.m4a" data-start="0" data-duration="44" data-track-index="10" data-volume="1"
-        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":23.3,"v":1},{"t":23.9,"v":1.6},{"t":30.7,"v":1.6},{"t":31.05,"v":1}]}]}'></audio>
+      <!-- the bed's breakdown (23.5-32 s, the install) is lifted about 4 dB so the music does not seem to stop -->
+      <audio id="music" src="assets/audio/bed-45s.m4a" data-start="0" data-duration="45" data-track-index="10" data-volume="1"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":23.3,"v":1},{"t":23.9,"v":1.6},{"t":31.7,"v":1.6},{"t":32.05,"v":1}]}]}'></audio>
       <audio id="sfx-0" src="assets/audio/sfx-click.wav" data-start="3.450" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
-      <audio id="sfx-1" src="assets/audio/sfx-lr.wav" data-start="5.000" data-duration="0.151" data-track-index="12" data-volume="0.6"></audio>
-      <audio id="sfx-2" src="assets/audio/sfx-dpad.wav" data-start="6.750" data-duration="0.075" data-track-index="13" data-volume="0.45"></audio>
-      <audio id="sfx-3" src="assets/audio/sfx-click.wav" data-start="10.700" data-duration="0.115" data-track-index="14" data-volume="0.5"></audio>
-      <audio id="sfx-4" src="assets/audio/sfx-confirm.wav" data-start="11.200" data-duration="0.925" data-track-index="15" data-volume="0.4"></audio>
-      <audio id="sfx-5" src="assets/audio/sfx-pop.wav" data-start="11.950" data-duration="0.185" data-track-index="16" data-volume="0.45"></audio>
+      <audio id="sfx-1" src="assets/audio/sfx-lr.wav" data-start="5.000" data-duration="0.151" data-track-index="11" data-volume="0.6"></audio>
+      <audio id="sfx-2" src="assets/audio/sfx-dpad.wav" data-start="6.750" data-duration="0.075" data-track-index="11" data-volume="0.45"></audio>
+      <audio id="sfx-3" src="assets/audio/sfx-click.wav" data-start="10.700" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-4" src="assets/audio/sfx-confirm.wav" data-start="11.200" data-duration="0.925" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="sfx-5" src="assets/audio/sfx-pop.wav" data-start="11.950" data-duration="0.185" data-track-index="12" data-volume="0.45"></audio>
       <audio id="sfx-6" src="assets/audio/sfx-dpad.wav" data-start="12.450" data-duration="0.075" data-track-index="11" data-volume="0.45"></audio>
-      <audio id="sfx-7" src="assets/audio/sfx-click.wav" data-start="13.250" data-duration="0.115" data-track-index="12" data-volume="0.5"></audio>
-      <audio id="sfx-8" src="assets/audio/sfx-confirm.wav" data-start="13.750" data-duration="0.925" data-track-index="13" data-volume="0.4"></audio>
-      <audio id="sfx-9" src="assets/audio/sfx-pop.wav" data-start="14.400" data-duration="0.185" data-track-index="14" data-volume="0.45"></audio>
-      <audio id="sfx-10" src="assets/audio/sfx-whoosh-in.wav" data-start="14.500" data-duration="0.445" data-track-index="15" data-volume="0.4"></audio>
-      <audio id="sfx-11" src="assets/audio/sfx-chime.wav" data-start="15.200" data-duration="1.625" data-track-index="16" data-volume="0.35"></audio>
-      <audio id="sfx-12" src="assets/audio/sfx-whoosh-out.wav" data-start="18.650" data-duration="0.445" data-track-index="11" data-volume="0.4"></audio>
-      <audio id="sfx-13" src="assets/audio/sfx-click.wav" data-start="19.550" data-duration="0.115" data-track-index="12" data-volume="0.5"></audio>
-      <audio id="sfx-14" src="assets/audio/sfx-click.wav" data-start="20.150" data-duration="0.115" data-track-index="13" data-volume="0.5"></audio>
-      <audio id="sfx-15" src="assets/audio/sfx-swish.wav" data-start="21.400" data-duration="0.675" data-track-index="14" data-volume="0.35"></audio>
-      <audio id="sfx-16" src="assets/audio/sfx-dpad.wav" data-start="22.350" data-duration="0.075" data-track-index="15" data-volume="0.45"></audio>
-      <audio id="sfx-17" src="assets/audio/sfx-whoosh-in.wav" data-start="23.350" data-duration="0.445" data-track-index="16" data-volume="0.35"></audio>
-      <audio id="sfx-18" src="assets/audio/sfx-click.wav" data-start="24.050" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
-      <audio id="sfx-19" src="assets/audio/sfx-whoosh-in.wav" data-start="24.450" data-duration="0.445" data-track-index="12" data-volume="0.3"></audio>
-      <audio id="sfx-20" src="assets/audio/sfx-click.wav" data-start="25.450" data-duration="0.115" data-track-index="13" data-volume="0.5"></audio>
-      <audio id="sfx-21" src="assets/audio/sfx-click.wav" data-start="26.050" data-duration="0.115" data-track-index="14" data-volume="0.5"></audio>
-      <audio id="sfx-22" src="assets/audio/sfx-click.wav" data-start="26.650" data-duration="0.115" data-track-index="15" data-volume="0.5"></audio>
-      <audio id="sfx-23" src="assets/audio/sfx-chime.wav" data-start="27.300" data-duration="1.625" data-track-index="16" data-volume="0.3"></audio>
-      <audio id="sfx-24" src="assets/audio/sfx-click.wav" data-start="27.600" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
-      <audio id="sfx-25" src="assets/audio/sfx-click.wav" data-start="28.100" data-duration="0.115" data-track-index="12" data-volume="0.55"></audio>
-      <audio id="sfx-26" src="assets/audio/sfx-click.wav" data-start="28.600" data-duration="0.115" data-track-index="13" data-volume="0.55"></audio>
-      <audio id="sfx-27" src="assets/audio/sfx-click.wav" data-start="29.350" data-duration="0.115" data-track-index="14" data-volume="0.5"></audio>
-      <audio id="sfx-28" src="assets/audio/sfx-chime.wav" data-start="30.000" data-duration="1.625" data-track-index="15" data-volume="0.35"></audio>
-      <audio id="sfx-29" src="assets/audio/sfx-click.wav" data-start="31.700" data-duration="0.115" data-track-index="16" data-volume="0.55"></audio>
-      <audio id="sfx-30" src="assets/audio/sfx-click.wav" data-start="32.200" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
-      <audio id="sfx-31" src="assets/audio/sfx-lr.wav" data-start="33.900" data-duration="0.151" data-track-index="12" data-volume="0.6"></audio>
-      <audio id="sfx-32" src="assets/audio/sfx-dpad.wav" data-start="35.200" data-duration="0.075" data-track-index="13" data-volume="0.45"></audio>
-      <audio id="sfx-33" src="assets/audio/sfx-click.wav" data-start="36.650" data-duration="0.115" data-track-index="14" data-volume="0.5"></audio>
-      <audio id="sfx-34" src="assets/audio/sfx-click.wav" data-start="37.200" data-duration="0.115" data-track-index="15" data-volume="0.5"></audio>
-      <audio id="sfx-35" src="assets/audio/sfx-swish.wav" data-start="37.750" data-duration="0.675" data-track-index="16" data-volume="0.3"></audio>
-      <audio id="sfx-36" src="assets/audio/sfx-click.wav" data-start="38.300" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
-      <audio id="sfx-37" src="assets/audio/sfx-click.wav" data-start="38.800" data-duration="0.115" data-track-index="12" data-volume="0.55"></audio>
-      <audio id="sfx-38" src="assets/audio/sfx-dpad.wav" data-start="39.400" data-duration="0.075" data-track-index="13" data-volume="0.45"></audio>
-      <audio id="sfx-39" src="assets/audio/sfx-dpad.wav" data-start="39.900" data-duration="0.075" data-track-index="14" data-volume="0.45"></audio>
-      <audio id="sfx-40" src="assets/audio/sfx-click.wav" data-start="40.450" data-duration="0.115" data-track-index="15" data-volume="0.5"></audio>
-      <audio id="sfx-41" src="assets/audio/sfx-pop.wav" data-start="40.500" data-duration="0.185" data-track-index="16" data-volume="0.3"></audio>
-      <audio id="sfx-42" src="assets/audio/sfx-whoosh-out.wav" data-start="41.500" data-duration="0.445" data-track-index="11" data-volume="0.35"></audio>
-      <audio id="sfx-43" src="assets/audio/sfx-text-blip-1.wav" data-start="0.350" data-duration="0.07" data-track-index="12" data-volume="0.22"></audio>
-      <audio id="sfx-44" src="assets/audio/sfx-text-blip-2.wav" data-start="0.440" data-duration="0.07" data-track-index="13" data-volume="0.22"></audio>
-      <audio id="sfx-45" src="assets/audio/sfx-text-blip-3.wav" data-start="0.530" data-duration="0.07" data-track-index="14" data-volume="0.22"></audio>
-      <audio id="sfx-46" src="assets/audio/sfx-text-blip-4.wav" data-start="0.620" data-duration="0.07" data-track-index="15" data-volume="0.22"></audio>
-      <audio id="sfx-47" src="assets/audio/sfx-text-blip-5.wav" data-start="0.710" data-duration="0.07" data-track-index="16" data-volume="0.22"></audio>
-      <audio id="sfx-48" src="assets/audio/sfx-text-blip-1.wav" data-start="0.800" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
-      <audio id="sfx-49" src="assets/audio/sfx-text-blip-2.wav" data-start="0.890" data-duration="0.07" data-track-index="12" data-volume="0.22"></audio>
-      <audio id="sfx-50" src="assets/audio/sfx-text-blip-3.wav" data-start="0.980" data-duration="0.07" data-track-index="13" data-volume="0.22"></audio>
-      <audio id="sfx-51" src="assets/audio/sfx-text-blip-4.wav" data-start="1.070" data-duration="0.07" data-track-index="14" data-volume="0.22"></audio>
-      <audio id="sfx-52" src="assets/audio/sfx-text-blip-5.wav" data-start="1.160" data-duration="0.07" data-track-index="15" data-volume="0.22"></audio>
-      <audio id="sfx-53" src="assets/audio/sfx-text-blip-1.wav" data-start="1.250" data-duration="0.07" data-track-index="16" data-volume="0.22"></audio>
-      <audio id="sfx-54" src="assets/audio/sfx-text-blip-2.wav" data-start="1.340" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
-      <audio id="sfx-55" src="assets/audio/sfx-text-blip-3.wav" data-start="1.430" data-duration="0.07" data-track-index="12" data-volume="0.22"></audio>
-      <audio id="sfx-56" src="assets/audio/sfx-text-blip-4.wav" data-start="1.520" data-duration="0.07" data-track-index="13" data-volume="0.22"></audio>
-      <audio id="sfx-57" src="assets/audio/sfx-text-blip-5.wav" data-start="1.610" data-duration="0.07" data-track-index="14" data-volume="0.22"></audio>
-      <audio id="sfx-58" src="assets/audio/sfx-text-blip-1.wav" data-start="3.600" data-duration="0.07" data-track-index="15" data-volume="0.22"></audio>
-      <audio id="sfx-59" src="assets/audio/sfx-text-blip-2.wav" data-start="3.690" data-duration="0.07" data-track-index="16" data-volume="0.22"></audio>
-      <audio id="sfx-60" src="assets/audio/sfx-text-blip-3.wav" data-start="3.780" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
-      <audio id="sfx-61" src="assets/audio/sfx-text-blip-4.wav" data-start="3.870" data-duration="0.07" data-track-index="12" data-volume="0.22"></audio>
-      <audio id="sfx-62" src="assets/audio/sfx-text-blip-5.wav" data-start="3.960" data-duration="0.07" data-track-index="13" data-volume="0.22"></audio>
-      <audio id="sfx-63" src="assets/audio/sfx-text-blip-1.wav" data-start="4.050" data-duration="0.07" data-track-index="14" data-volume="0.22"></audio>
-      <audio id="sfx-64" src="assets/audio/sfx-text-blip-2.wav" data-start="4.140" data-duration="0.07" data-track-index="15" data-volume="0.22"></audio>
-      <audio id="sfx-65" src="assets/audio/sfx-text-blip-3.wav" data-start="4.230" data-duration="0.07" data-track-index="16" data-volume="0.22"></audio>
-      <audio id="sfx-66" src="assets/audio/sfx-text-blip-1.wav" data-start="20.600" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
-      <audio id="sfx-67" src="assets/audio/sfx-text-blip-2.wav" data-start="20.700" data-duration="0.07" data-track-index="12" data-volume="0.22"></audio>
-      <audio id="sfx-68" src="assets/audio/sfx-text-blip-3.wav" data-start="20.800" data-duration="0.07" data-track-index="13" data-volume="0.22"></audio>
-      <audio id="sfx-69" src="assets/audio/sfx-text-blip-4.wav" data-start="20.900" data-duration="0.07" data-track-index="14" data-volume="0.22"></audio>
-      <audio id="sfx-70" src="assets/audio/sfx-text-blip-5.wav" data-start="21.000" data-duration="0.07" data-track-index="15" data-volume="0.22"></audio>
-      <audio id="sfx-71" src="assets/audio/sfx-text-blip-1.wav" data-start="21.100" data-duration="0.07" data-track-index="16" data-volume="0.22"></audio>
-      <audio id="sfx-72" src="assets/audio/sfx-text-blip-2.wav" data-start="21.200" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
-      <audio id="sfx-73" src="assets/audio/sfx-text-blip-1.wav" data-start="32.550" data-duration="0.07" data-track-index="12" data-volume="0.22"></audio>
-      <audio id="sfx-74" src="assets/audio/sfx-text-blip-2.wav" data-start="32.640" data-duration="0.07" data-track-index="13" data-volume="0.22"></audio>
-      <audio id="sfx-75" src="assets/audio/sfx-text-blip-3.wav" data-start="32.730" data-duration="0.07" data-track-index="14" data-volume="0.22"></audio>
-      <audio id="sfx-76" src="assets/audio/sfx-text-blip-4.wav" data-start="32.820" data-duration="0.07" data-track-index="15" data-volume="0.22"></audio>
-      <audio id="sfx-77" src="assets/audio/sfx-text-blip-5.wav" data-start="32.910" data-duration="0.07" data-track-index="16" data-volume="0.22"></audio>
-      <audio id="sfx-78" src="assets/audio/sfx-text-blip-1.wav" data-start="33.000" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
-      <audio id="sfx-79" src="assets/audio/sfx-text-blip-2.wav" data-start="33.090" data-duration="0.07" data-track-index="12" data-volume="0.22"></audio>
-      <audio id="sfx-80" src="assets/audio/sfx-text-blip-3.wav" data-start="33.180" data-duration="0.07" data-track-index="13" data-volume="0.22"></audio>
-      <audio id="sfx-81" src="assets/audio/sfx-text-blip-4.wav" data-start="33.270" data-duration="0.07" data-track-index="14" data-volume="0.22"></audio>
+      <audio id="sfx-7" src="assets/audio/sfx-click.wav" data-start="13.200" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-8" src="assets/audio/sfx-confirm.wav" data-start="13.700" data-duration="0.925" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="sfx-9" src="assets/audio/sfx-pop.wav" data-start="14.300" data-duration="0.185" data-track-index="12" data-volume="0.45"></audio>
+      <audio id="sfx-10" src="assets/audio/sfx-whoosh-in.wav" data-start="14.350" data-duration="0.445" data-track-index="13" data-volume="0.4"></audio>
+      <audio id="sfx-11" src="assets/audio/sfx-chime.wav" data-start="15.000" data-duration="1.625" data-track-index="11" data-volume="0.35"></audio>
+      <audio id="sfx-12" src="assets/audio/sfx-whoosh-out.wav" data-start="18.350" data-duration="0.445" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="sfx-13" src="assets/audio/sfx-click.wav" data-start="19.250" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-14" src="assets/audio/sfx-click.wav" data-start="19.850" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-15" src="assets/audio/sfx-swish.wav" data-start="20.950" data-duration="0.675" data-track-index="12" data-volume="0.35"></audio>
+      <audio id="sfx-16" src="assets/audio/sfx-dpad.wav" data-start="21.950" data-duration="0.075" data-track-index="11" data-volume="0.45"></audio>
+      <audio id="sfx-17" src="assets/audio/sfx-whoosh-in.wav" data-start="23.350" data-duration="0.445" data-track-index="11" data-volume="0.35"></audio>
+      <audio id="sfx-18" src="assets/audio/sfx-click.wav" data-start="23.850" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
+      <audio id="sfx-19" src="assets/audio/sfx-whoosh-in.wav" data-start="24.250" data-duration="0.445" data-track-index="11" data-volume="0.3"></audio>
+      <audio id="sfx-20" src="assets/audio/sfx-dpad.wav" data-start="25.150" data-duration="0.075" data-track-index="11" data-volume="0.45"></audio>
+      <audio id="sfx-21" src="assets/audio/sfx-click.wav" data-start="25.650" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-22" src="assets/audio/sfx-click.wav" data-start="26.200" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-23" src="assets/audio/sfx-click.wav" data-start="26.750" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-24" src="assets/audio/sfx-chime.wav" data-start="27.350" data-duration="1.625" data-track-index="11" data-volume="0.3"></audio>
+      <audio id="sfx-25" src="assets/audio/sfx-click.wav" data-start="27.600" data-duration="0.115" data-track-index="12" data-volume="0.5"></audio>
+      <audio id="sfx-26" src="assets/audio/sfx-swish.wav" data-start="28.100" data-duration="0.675" data-track-index="12" data-volume="0.3"></audio>
+      <audio id="sfx-27" src="assets/audio/sfx-click.wav" data-start="28.650" data-duration="0.115" data-track-index="13" data-volume="0.55"></audio>
+      <audio id="sfx-28" src="assets/audio/sfx-click.wav" data-start="29.150" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
+      <audio id="sfx-29" src="assets/audio/sfx-click.wav" data-start="29.700" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-30" src="assets/audio/sfx-chime.wav" data-start="30.300" data-duration="1.625" data-track-index="11" data-volume="0.35"></audio>
+      <audio id="sfx-31" src="assets/audio/sfx-click.wav" data-start="30.850" data-duration="0.115" data-track-index="12" data-volume="0.5"></audio>
+      <audio id="sfx-32" src="assets/audio/sfx-click.wav" data-start="32.350" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
+      <audio id="sfx-33" src="assets/audio/sfx-click.wav" data-start="32.850" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
+      <audio id="sfx-34" src="assets/audio/sfx-lr.wav" data-start="34.400" data-duration="0.151" data-track-index="11" data-volume="0.6"></audio>
+      <audio id="sfx-35" src="assets/audio/sfx-click.wav" data-start="35.800" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
+      <audio id="sfx-36" src="assets/audio/sfx-click.wav" data-start="37.700" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-37" src="assets/audio/sfx-click.wav" data-start="38.250" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-38" src="assets/audio/sfx-swish.wav" data-start="38.800" data-duration="0.675" data-track-index="11" data-volume="0.3"></audio>
+      <audio id="sfx-39" src="assets/audio/sfx-click.wav" data-start="39.350" data-duration="0.115" data-track-index="12" data-volume="0.55"></audio>
+      <audio id="sfx-40" src="assets/audio/sfx-click.wav" data-start="39.850" data-duration="0.115" data-track-index="11" data-volume="0.55"></audio>
+      <audio id="sfx-41" src="assets/audio/sfx-dpad.wav" data-start="40.400" data-duration="0.075" data-track-index="11" data-volume="0.45"></audio>
+      <audio id="sfx-42" src="assets/audio/sfx-dpad.wav" data-start="40.900" data-duration="0.075" data-track-index="11" data-volume="0.45"></audio>
+      <audio id="sfx-43" src="assets/audio/sfx-click.wav" data-start="41.450" data-duration="0.115" data-track-index="11" data-volume="0.5"></audio>
+      <audio id="sfx-44" src="assets/audio/sfx-pop.wav" data-start="41.500" data-duration="0.185" data-track-index="12" data-volume="0.3"></audio>
+      <audio id="sfx-45" src="assets/audio/sfx-whoosh-out.wav" data-start="42.850" data-duration="0.445" data-track-index="11" data-volume="0.35"></audio>
+      <audio id="sfx-46" src="assets/audio/sfx-text-blip-1.wav" data-start="0.350" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-47" src="assets/audio/sfx-text-blip-2.wav" data-start="0.440" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-48" src="assets/audio/sfx-text-blip-3.wav" data-start="0.530" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-49" src="assets/audio/sfx-text-blip-4.wav" data-start="0.620" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-50" src="assets/audio/sfx-text-blip-5.wav" data-start="0.710" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-51" src="assets/audio/sfx-text-blip-1.wav" data-start="0.800" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-52" src="assets/audio/sfx-text-blip-2.wav" data-start="0.890" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-53" src="assets/audio/sfx-text-blip-3.wav" data-start="0.980" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-54" src="assets/audio/sfx-text-blip-4.wav" data-start="1.070" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-55" src="assets/audio/sfx-text-blip-5.wav" data-start="1.160" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-56" src="assets/audio/sfx-text-blip-1.wav" data-start="1.250" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-57" src="assets/audio/sfx-text-blip-2.wav" data-start="1.340" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-58" src="assets/audio/sfx-text-blip-3.wav" data-start="1.430" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-59" src="assets/audio/sfx-text-blip-4.wav" data-start="1.520" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-60" src="assets/audio/sfx-text-blip-5.wav" data-start="1.610" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-61" src="assets/audio/sfx-text-blip-1.wav" data-start="3.600" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-62" src="assets/audio/sfx-text-blip-2.wav" data-start="3.690" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-63" src="assets/audio/sfx-text-blip-3.wav" data-start="3.780" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-64" src="assets/audio/sfx-text-blip-4.wav" data-start="3.870" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-65" src="assets/audio/sfx-text-blip-5.wav" data-start="3.960" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-66" src="assets/audio/sfx-text-blip-1.wav" data-start="4.050" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-67" src="assets/audio/sfx-text-blip-2.wav" data-start="4.140" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-68" src="assets/audio/sfx-text-blip-3.wav" data-start="4.230" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-69" src="assets/audio/sfx-text-blip-1.wav" data-start="20.300" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-70" src="assets/audio/sfx-text-blip-2.wav" data-start="20.400" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-71" src="assets/audio/sfx-text-blip-3.wav" data-start="20.500" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-72" src="assets/audio/sfx-text-blip-4.wav" data-start="20.600" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-73" src="assets/audio/sfx-text-blip-5.wav" data-start="20.700" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-74" src="assets/audio/sfx-text-blip-1.wav" data-start="20.800" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-75" src="assets/audio/sfx-text-blip-2.wav" data-start="20.900" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-76" src="assets/audio/sfx-text-blip-1.wav" data-start="33.200" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-77" src="assets/audio/sfx-text-blip-2.wav" data-start="33.290" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-78" src="assets/audio/sfx-text-blip-3.wav" data-start="33.380" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-79" src="assets/audio/sfx-text-blip-4.wav" data-start="33.470" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-80" src="assets/audio/sfx-text-blip-5.wav" data-start="33.560" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-81" src="assets/audio/sfx-text-blip-1.wav" data-start="33.650" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-82" src="assets/audio/sfx-text-blip-2.wav" data-start="33.740" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-83" src="assets/audio/sfx-text-blip-3.wav" data-start="33.830" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
+      <audio id="sfx-84" src="assets/audio/sfx-text-blip-4.wav" data-start="33.920" data-duration="0.07" data-track-index="11" data-volume="0.22"></audio>
     </div>
     <script>
       // The promo's one paused GSAP timeline (HyperFrames seeks it frame by frame). It is built
@@ -2020,9 +2042,10 @@
         const root = document.getElementById("root");
         const P = root.dataset.layout === "portrait";
         const tl = gsap.timeline({ paused: true });
-        const T = {"s1":0,"s2":4.5,"s3":10,"s4":14.6,"s5":19,"s6":23.5,"s7":31,"s8":36.5,"end":41.7,"total":44}; // scene starts (src/script.mjs)
-        const C = {"typeA":0.35,"pressX1":3.45,"typeB":3.6,"lr1":5,"ovOpen1":5.1,"right1":6.75,"mine1":10.7,"saved1":11.2,"land1":11.95,"right2":12.45,"mine2":13.25,"saved2":13.75,"land2":14.4,"whipA":14.6,"cardOpen":15.1,"whipB":18.75,"pressO1":19.55,"pressX2":20.15,"typeC":20.6,"appIn":21.45,"right3":22.35,"laptopIn":23.45,"clickVpk":24.05,"fileFly":24.45,"shellIn":25.05,"vsX1":25.45,"vsX2":26.05,"vsX3":26.65,"vsDone":27.3,"ps1":27.6,"tapBubbleApp":28.1,"tapStartApp":28.6,"installX":29.35,"installDone":30,"restart":30.45,"boot":31.1,"tapBubbleGame":31.7,"tapStartGame":32.2,"typeD":32.55,"lr2":33.9,"ovOpen2":34,"right4":35.2,"pressO2":36.65,"ps2":37.2,"flick":37.75,"tapBubbleApp2":38.3,"tapStartApp2":38.8,"down1":39.4,"down2":39.9,"toggle":40.45}; // the cue sheet: every press, tap and change
-        const K = {"cap1":{"h":"Learn Japanese with your PS&nbsp;Vita <em>for free</em>","in":0.6,"out":4.3},"cap2":{"h":"Look up words from the games you play, <em>entirely offline</em>","in":4.55,"out":9.8},"cap3":{"h":"Create flashcards of <em>words you don't know</em>","in":10.05,"out":14.4},"cap4":{"h":"With <em>screenshots</em>","in":14.7,"out":18.75},"cap5":{"h":"It only reads text <em>when it changes</em>","p":"or only when you press L&nbsp;+&nbsp;R","pIn":21.85,"in":19.1,"out":23.3},"cap6":{"h":"<em>Easy install</em>","in":23.6,"out":31.25},"cap7":{"h":"Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.","in":31.55,"out":36.45},"cap8":{"h":"Turn it off for specific games, <em>so it doesn't get in the way</em>","in":36.75,"out":41.5}}; // the captions' times (src/script.mjs CAPTIONS)
+        const T = {"s1":0,"s2":4.5,"s3":10,"s4":14.5,"s5":18.5,"s6":23.5,"s7":31.75,"s8":37.7,"end":43.05,"total":45}; // scene starts (src/script.mjs)
+        const C = {"typeA":0.35,"pressX1":3.45,"typeB":3.6,"lr1":5,"ovOpen1":5.1,"right1":6.75,"mine1":10.7,"saved1":11.2,"land1":11.95,"right2":12.45,"mine2":13.2,"saved2":13.7,"land2":14.3,"whipA":14.45,"cardOpen":14.9,"whipB":18.45,"pressO1":19.25,"pressX2":19.85,"typeC":20.3,"appIn":21,"right3":21.95,"laptopIn":23.45,"clickVpk":23.85,"fileFly":24.25,"shellIn":24.8,"vsDown":25.15,"vsX1":25.65,"vsX2":26.2,"vsX3":26.75,"vsDone":27.35,"ps1":27.6,"flick1":28.1,"tapBubbleApp":28.65,"tapStartApp":29.15,"installX":29.7,"installDone":30.3,"power":30.85,"dark":31.15,"boot":31.75,"tapBubbleGame":32.35,"tapStartGame":32.85,"typeD":33.2,"lr2":34.4,"ovOpen2":34.5,"tapKo":35.8,"pressO2":37.7,"ps2":38.25,"flick":38.8,"tapBubbleApp2":39.35,"tapStartApp2":39.85,"down1":40.4,"down2":40.9,"toggle":41.45}; // the cue sheet: every press, tap and change
+        const K = {"cap1":{"h":"Learn Japanese with your PS&nbsp;Vita <em>for free</em>","in":0.6,"out":4.3},"cap2":{"h":"Look up words from the games you play, <em>entirely offline</em>","in":4.55,"out":9.8},"cap3":{"h":"Create flashcards of <em>words you don't know</em>","in":10.05,"out":14.25},"cap4":{"h":"With <em>screenshots</em>","in":14.6,"out":18.4},"cap5":{"h":"It only reads text <em>when it changes</em>","p":"or only when you press L&nbsp;+&nbsp;R","pIn":20.75,"in":18.6,"out":23.3},"cap6":{"h":"<em>Easy install</em>","in":23.6,"out":32.1},"cap7":{"h":"Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.","in":32.4,"out":37.75},"cap8":{"h":"Turn it off for specific games, <em>so it doesn't get in the way</em>","in":38.05,"out":42.95}}; // the captions' times (src/script.mjs CAPTIONS)
+        const GH_VPK_ROW = 2; // the main download's row on the Releases page (GitHub's order)
 
         // ------------------------------------------------------------ helpers
         function fade(sel, t, from, to, dur = 0.2, ease = "power1.out") {
@@ -2064,11 +2087,12 @@
               screenIn: { x: -12, y: -24, s: 1.01, rx: 1.5, ry: -2.5, rz: 0 },
               screenB: { x: 20, y: 30, s: 1.02, rx: 3, ry: -5, rz: 0 },
               popupZoom: { x: -30, y: -130, s: 1.1, rx: 1, ry: -2, rz: 0 },
-              offZoom: { x: 70, y: 160, s: 1.12, rx: 2, ry: -3, rz: 0 },
+              offZoom: { x: 72, y: 100, s: 0.8, rx: 2, ry: -3, rz: 0 }, // "Saved. ..." and OFF inside x 60-900
               mine: { x: 0, y: 330, s: 0.84, rx: 8, ry: 8, rz: 0 },
               mineB: { x: 0, y: 340, s: 0.86, rx: 6, ry: 4, rz: 0 },
               readAppB: { x: 0, y: -60, s: 1.04, rx: 3, ry: 4, rz: 0 },
               installDevB: { x: 10, y: 30, s: 0.98, rx: 4, ry: -3, rz: 0 },
+              power: { x: -150, y: -150, s: 0.9, rx: 20, ry: 6, rz: 0 },
               deck: { x: 0, y: 800, s: 0.9, rx: 0, ry: 0, rz: 0 },
               anki: { x: 0, y: 1840, s: 0.64, rx: 0, ry: 0, rz: 0 },
               ankiPic: { x: 320, y: 1560, s: 1.3, rx: 2, ry: -4, rz: 0 },
@@ -2082,6 +2106,7 @@
               home: { x: 0, y: 22, s: 0.94, rx: 6, ry: 8, rz: 0 },
               shoulders2: { x: 0, y: -330, s: 0.8, rx: 30, ry: 16, rz: 2 },
               screen3: { x: 0, y: 22, s: 0.97, rx: 2, ry: 2, rz: 0 },
+              koZoom: { x: -40, y: -110, s: 1.08, rx: 1, ry: -2, rz: 0 },
               app8: { x: 0, y: 22, s: 0.9, rx: 5, ry: -8, rz: 0 },
               out: { x: 0, y: 40, s: 0.3, rx: 12, ry: -40, rz: -4 },
             }
@@ -2100,6 +2125,7 @@
               mineB: { x: 430, y: 0, s: 0.77, rx: 6, ry: 8, rz: 0 },
               readAppB: { x: 30, y: -60, s: 1.7, rx: 3, ry: 5, rz: 0 },
               installDevB: { x: 20, y: 10, s: 0.98, rx: 4, ry: -3, rz: 0 },
+              power: { x: -260, y: -170, s: 1.0, rx: 20, ry: 6, rz: 0 },
               deck: { x: 1330, y: 20, s: 1.0, rx: 0, ry: 0, rz: 0 },
               anki: { x: 2950, y: 40, s: 0.78, rx: 0, ry: 0, rz: 0 },
               ankiPic: { x: 3080, y: -170, s: 1.08, rx: 2, ry: -4, rz: 0 },
@@ -2113,6 +2139,7 @@
               home: { x: 0, y: 0, s: 0.9, rx: 7, ry: 8, rz: 0 },
               shoulders2: { x: 0, y: -330, s: 1.0, rx: 30, ry: 16, rz: 2 },
               screen3: { x: 0, y: -28, s: 1.24, rx: 2, ry: 2, rz: 0 },
+              koZoom: { x: -70, y: -110, s: 1.6, rx: 1, ry: -2, rz: 0 },
               app8: { x: 0, y: 0, s: 0.94, rx: 6, ry: -8, rz: 0 },
               out: { x: 0, y: 40, s: 0.42, rx: 12, ry: -40, rz: -4 },
             };
@@ -2144,14 +2171,14 @@
         // Device coordinates (assets/device/vita-white.svg, 0.1 mm units) of what is pressed.
         const B = {
           L: [292, 44], R: [1528, 44], X: [1650, 410], O: [1745, 315], SQ: [1555, 315],
-          DR: [265, 315], DD: [185, 395], PS: [150, 745],
+          DR: [265, 315], DD: [185, 395], PS: [150, 745], PW: [514, 34],
         };
         // a button press: it sinks a little, holds and glows, and comes back up: done within 0.3 s,
         // so two presses of one button 0.45 s or more apart never overlap (the owner, 14:15Z: "the
         // pressing is a little too fast, slow it down a tad": v2's took 0.2 s)
         function press(t, id, sink = 0.9) {
           const el = "#" + id;
-          if (id === "btn-l" || id === "btn-r") {
+          if (id === "btn-l" || id === "btn-r" || id === "btn-power") {
             tl.fromTo(el, { y: 0 }, { y: 10, duration: 0.08, ease: "power1.out", immediateRender: false }, t);
             tl.fromTo(el, { y: 10 }, { y: 0, duration: 0.13, ease: "power1.out", immediateRender: false }, t + 0.16);
           } else {
@@ -2206,6 +2233,9 @@
         }
         // a tap on the touchscreen at screen pixel (sx, sy): the finger, and the touch's ripple
         const SCR = (sx, sy) => [357 + 1.1520833 * sx, 149 + 1.1520833 * sy];
+        // 子, the first letter of the overlay header's second row: the header's text box starts at (20, 12),
+        // its rows are 38 px, its letters 27 px (src/promo.css .ov-head, shell/rco/vitajpoverlay.xml)
+        const KO = [20 + 27 / 2, 12 + 38 + 38 / 2];
         function ripple(t, sx, sy) {
           tl.fromTo("#ripple", { x: sx, y: sy, scale: 0.4, opacity: 0.95 }, { scale: 1.7, opacity: 0, duration: 0.38, ease: "power2.out", immediateRender: false }, t);
         }
@@ -2223,7 +2253,8 @@
           const el = document.getElementById(id);
           const words = el.querySelectorAll("h1 .w");
           on(el, tin);
-          tl.fromTo(words, { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out", stagger: 0.04, immediateRender: false }, tin);
+          // the words rise in quickly (a 14-word line is whole after 0.77 s), so it is up long enough to read
+          tl.fromTo(words, { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.38, ease: "power3.out", stagger: 0.03, immediateRender: false }, tin);
           tl.fromTo(el, { opacity: 1, y: 0 }, { opacity: 0, y: -16, duration: 0.28, ease: "power2.in", immediateRender: false }, tout);
         }
 
@@ -2380,14 +2411,14 @@
         grow("#anki", C.cardOpen - 0.05, 0.86, 0.35);
         tl.fromTo("#anki", { rotationY: -24 }, { rotationY: 0, duration: 0.45, ease: "power3.out", immediateRender: false }, C.cardOpen - 0.05);
         // the card's front (the word), flipped to its back: the game's screen is on it
-        const flip = C.cardOpen + 0.55;
+        const flip = C.cardOpen + 0.5;
         tl.fromTo("#anki", { rotationY: 0 }, { rotationY: 90, duration: 0.22, ease: "power2.in", immediateRender: false }, flip);
         swap("#anki-front", "#anki-card", flip + 0.22, 0.01);
         tl.fromTo("#anki", { rotationY: -90 }, { rotationY: 0, duration: 0.3, ease: "power2.out", immediateRender: false }, flip + 0.23);
-        camTo(flip + 0.35, "ankiPic", 1.1, "power2.inOut");
-        tl.fromTo("#pic-ring", { opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)", immediateRender: false }, flip + 0.6);
-        tl.fromTo("#pic-ring", { opacity: 1 }, { opacity: 0.45, duration: 0.45, yoyo: true, repeat: 3, ease: "sine.inOut", immediateRender: false }, flip + 0.9);
-        camTo(flip + 1.5, "ankiAll", C.whipB - (flip + 1.5), "power2.inOut");
+        camTo(flip + 0.35, "ankiPic", 1.0, "power2.inOut");
+        tl.fromTo("#pic-ring", { opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)", immediateRender: false }, flip + 0.55);
+        tl.fromTo("#pic-ring", { opacity: 1 }, { opacity: 0.45, duration: 0.42, yoyo: true, repeat: 3, ease: "sine.inOut", immediateRender: false }, flip + 0.85);
+        camTo(flip + 1.4, "ankiAll", C.whipB - (flip + 1.4), "power2.inOut");
         off("#pic-ring", C.whipB - 0.3, 0.2);
         fade("#deck, #fly1, #fly2", C.whipA + 0.55, 1, 0, 0.3);
         glow(C.whipA, "cream", 0.5);
@@ -2438,7 +2469,8 @@
         stepIn("#step1", 23.75);
         camTo(23.75, "laptop", 0.5, "power2.inOut");
         // the mouse goes to the VPK and clicks it; it downloads
-        tl.fromTo("#mouse", { x: 1300, y: 900, opacity: 0 }, { x: 610, y: 548, opacity: 1, duration: 0.42, ease: "power2.inOut", immediateRender: false }, C.clickVpk - 0.46);
+        const vpkY = 548 + 70 * GH_VPK_ROW; // the rows: 58 px and a 12 px gap (src/promo.css .gh-asset)
+        tl.fromTo("#mouse", { x: 1300, y: 960, opacity: 0 }, { x: 610, y: vpkY, opacity: 1, duration: 0.42, ease: "power2.inOut", immediateRender: false }, C.clickVpk - 0.46);
         tl.fromTo("#mouse", { scale: 1 }, { scale: 0.85, duration: 0.07, yoyo: true, repeat: 1, immediateRender: false }, C.clickVpk - 0.02);
         tl.fromTo("#gh-vpk", { backgroundColor: "rgba(56,139,253,0)" }, { backgroundColor: "rgba(56,139,253,0.22)", duration: 0.12, immediateRender: false }, C.clickVpk);
         tl.fromTo("#dl-chip", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.25, ease: "power3.out", immediateRender: false }, C.clickVpk + 0.05);
@@ -2456,7 +2488,10 @@
         // VitaShell: the VPK is there; × on it, Yes, the extended-permissions notice, Yes, Installing...
         swap("#vs-list-e", "#vs-list-0", C.shellIn, 0.02);
         tl.fromTo("#vs-list-0 .vs-row:nth-child(2)", { x: 30, opacity: 0 }, { x: 0, opacity: 1, duration: 0.25, ease: "power3.out", immediateRender: false }, C.shellIn);
-        swap("#vs-list-0", "#vs-list-1", C.shellIn + 0.3, 0.02);
+        // VitaShell opens on "..": Down to the file
+        poke("t-l", C.vsDown, B.DD, 30, 0.38, 0.24);
+        press(C.vsDown, "dpad-down");
+        swap("#vs-list-0", "#vs-list-1", C.vsDown + 0.05, 0.02);
         camTo(C.shellIn, "installDev", 0.6, "power3.inOut");
         camTo(C.shellIn + 0.6, "installDevB", C.ps1 - (C.shellIn + 0.6), "sine.inOut");
         glow(C.shellIn, "green", 0.4);
@@ -2489,17 +2524,28 @@
         swap("#vs-pct50", "#vs-pct100", C.vsDone - 0.1, 0.01);
         vsClose("#vs-prog", C.vsDone);
         fingerOut("t-r", C.vsX3 + 0.3);
-        // PS: the home screen, with the app's new bubble
+        // PS: VitaShell's LiveArea (it stays open: Continue); a flick to the home screen, with the app's new bubble
         poke("t-l", C.ps1, B.PS, 20, 0.34, 0.22);
         press(C.ps1, "btn-ps");
-        grow("#scr-home", C.ps1 + 0.06, 1.08, 0.2);
+        tl.fromTo("#scr-la-shell", { opacity: 0, scale: 1.08 }, { opacity: 1, scale: 1, duration: 0.22, ease: "power2.out", immediateRender: false }, C.ps1 + 0.06);
         off("#scr-shell", C.ps1 + 0.25);
-        tl.fromTo("#bub-app", { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.ps1 + 0.15);
+        fingerIn("f-tap", C.flick1 - 0.36, SCR(300, 280), -22, 0.32);
+        fingerMove("f-tap", C.flick1, SCR(700, 280), 0.34);
+        tl.fromTo("#scr-la-shell", { x: 0 }, { x: 960, duration: 0.34, ease: "power2.inOut", immediateRender: false }, C.flick1);
+        tl.fromTo("#scr-home", { opacity: 1, x: -960, scale: 1 }, { opacity: 1, x: 0, duration: 0.34, ease: "power2.inOut", immediateRender: false }, C.flick1);
+        off("#scr-la-shell", C.flick1 + 0.36);
+        tl.fromTo("#bub-app", { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.flick1 + 0.3);
         stepOut("#step2", C.ps1 - 0.1);
         stepIn("#step3", C.ps1 + 0.1);
         camTo(C.ps1, "home", 0.5, "power2.inOut");
         // open the app: its LiveArea, Start; it opens on its Install page
-        tapSeq([[C.tapBubbleApp, 639, 350], [C.tapStartApp, 480, 293]], 0.34, 0.32, 0.22); // off the Install page quickly
+        fingerMove("f-tap", C.tapBubbleApp - 0.28, SCR(639, 350), 0.22);
+        fingerPress("f-tap", C.tapBubbleApp);
+        ripple(C.tapBubbleApp, 639, 350);
+        fingerMove("f-tap", C.tapStartApp - 0.27, SCR(480, 293), 0.2);
+        fingerPress("f-tap", C.tapStartApp);
+        ripple(C.tapStartApp, 480, 293);
+        fingerOut("f-tap", C.tapStartApp + 0.32, 0.22); // off the Install page quickly
         tl.fromTo("#scr-la-app", { opacity: 0, scale: 0.25, transformOrigin: "639px 350px" }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, C.tapBubbleApp + 0.06);
         off("#scr-home", C.tapBubbleApp + 0.3);
         grow("#scr-app", C.tapStartApp + 0.08, 0.94, 0.2);
@@ -2516,11 +2562,19 @@
         swap("#inst-4", "#inst-5", C.installX + 0.05 + 3 * run, 0.02);
         swap("#inst-5", "#inst-6", C.installDone, 0.02);
         camTo(C.tapStartApp, "installDev", 0.8, "power2.inOut");
-        camTo(C.tapStartApp + 0.8, "installDevB", 30.9 - C.tapStartApp - 0.8, "sine.inOut");
-        // the user restarts the Vita (the app never does): the screen goes dark; done
-        swap("#scr-app", "#scr-black", C.restart, 0.2);
-        stepOut("#step3", C.restart);
-        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.restart + 0.22);
+        camTo(C.tapStartApp + 0.8, "installDevB", C.power - 0.45 - (C.tapStartApp + 0.8), "sine.inOut");
+        // the user restarts the Vita (the app never does): a finger holds the power button, the screen goes dark
+        camTo(C.power - 0.45, "power", 0.5, "power2.inOut");
+        fingerIn("f-l", C.power - 0.4, B.PW, 180 - 8, 0.36);
+        fingerPress("f-l", C.power, 0.3);
+        tl.fromTo("#btn-power", { y: 0 }, { y: 8, duration: 0.08, ease: "power1.out", immediateRender: false }, C.power);
+        tl.fromTo("#btn-power", { y: 8 }, { y: 0, duration: 0.13, ease: "power1.out", immediateRender: false }, C.power + 0.4);
+        fade("#btn-power .glow", C.power, 0, 0.9, 0.06);
+        fade("#btn-power .glow", C.power + 0.4, 0.9, 0, 0.14);
+        fingerOut("f-l", C.power + 0.58);
+        swap("#scr-app", "#scr-black", C.dark, 0.25);
+        stepOut("#step3", C.dark);
+        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.dark + 0.2);
 
         // ============================================================ S7: in your game, L + R
         caption("cap7", K.cap7.in, K.cap7.out);
@@ -2531,7 +2585,7 @@
         off("#scr-black", C.boot + 0.3);
         off("#scr-shell", C.boot);
         glow(C.boot, "blue", 0.5);
-        camTo(30.9, "home", 0.7, "power2.inOut");
+        camTo(C.boot - 0.2, "home", 0.7, "power2.inOut");
         tapSeq([[C.tapBubbleGame, 164, 134], [C.tapStartGame, 260, 385]], 0.36);
         tl.fromTo("#scr-la-game", { opacity: 0, scale: 0.25, transformOrigin: "164px 134px" }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, C.tapBubbleGame + 0.06);
         off("#scr-home", C.tapBubbleGame + 0.3);
@@ -2563,10 +2617,13 @@
         tl.fromTo("#scr-ov", { y: 110 }, { y: 0, duration: 0.22, ease: "power3.out", immediateRender: false }, C.ovOpen2);
         on("#ov-b1", C.ovOpen2);
         camTo(C.ovOpen2 + 0.1, "screen3", 0.9, "power3.inOut");
-        poke("t-l", C.right4, B.DR, 32, 0.42, 0.28);
-        press(C.right4, "dpad-right");
-        swap("#ov-b1", "#ov-b2", C.right4 + 0.06, 0.02);
-        camTo(C.ovOpen2 + 1.0, "screenB", T.s8 - 0.05 - (C.ovOpen2 + 1.0), "sine.inOut");
+        // a tap on 子, the first letter of the header's second row (Right would stay on its first row,
+        // where キラキラ is the only word: shell/overlay.cpp follows the displayed rows)
+        tap(C.tapKo, KO[0], KO[1], 0.4);
+        swap("#ov-b1", "#ov-b1a", C.tapKo + 0.05, 0.02);
+        swap("#ov-b1a", "#ov-b2", C.tapKo + 0.35, 0.02);
+        camTo(C.ovOpen2 + 1.0, "screenB", C.tapKo + 0.3 - (C.ovOpen2 + 1.0), "sine.inOut");
+        camTo(C.tapKo + 0.3, "koZoom", T.s8 - 0.1 - (C.tapKo + 0.3), "power2.inOut"); // in on the word, its kanji lines
 
         // ============================================================ S8: turn it off for a game
         caption("cap8", K.cap8.in, K.cap8.out);

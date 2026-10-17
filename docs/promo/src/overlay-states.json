@@ -774,6 +774,33 @@
     ]
    }
   },
+  "s3-m1-ov04a-tap-inflight": {
+   "header": "「キラキラ……。\n子供の頃みたい。」",
+   "hl": [
+    9,
+    10
+   ],
+   "body": [
+    {
+     "text": "Looking up words…",
+     "rgb": "#b8c0cc",
+     "px": 21
+    }
+   ],
+   "hint": "Tap / ◀▶▲▼ / stick word · R stick scroll · □ region · ○ close",
+   "lookup": {
+    "matched": "子供の頃",
+    "spelling": "子供の頃",
+    "reading": "こどものころ",
+    "rank": 3356,
+    "badge": " #3356",
+    "cursor_cp": 9,
+    "hl_cp": [
+     9,
+     13
+    ]
+   }
+  },
   "s3-m1-ov04-kodomonokoro": {
    "header": "「キラキラ……。\n子供の頃みたい。」",
    "hl": [

@@ -61,6 +61,7 @@ const OV_STATES = [
   ["s1-m2-ov06b-miniiku-saving", "ov-a7"],
   ["s1-m2-ov07-miniiku-saved", "ov-a8"],
   ["s3-m1-ov03-open", "ov-b1"],
+  ["s3-m1-ov04a-tap-inflight", "ov-b1a"],
   ["s3-m1-ov04-kodomonokoro", "ov-b2"],
 ];
 
@@ -103,9 +104,10 @@ const VS_DATA = [
 // The Releases page's assets: the release's files, their sizes as GitHub shows them.
 const ghAssets = () =>
   S.RELEASE.assets
-    .map((a, i) => `<div class="gh-asset"${i ? "" : ' id="gh-vpk"'}><i class="pk"></i><span class="gh-name">${esc(a.name)}</span>` +
-      `<span class="gh-size">${esc(a.github)}</span></div>`)
+    .map((a) => `<div class="gh-asset"${a.name === S.RELEASE.vpk.name ? ' id="gh-vpk"' : ""}><i class="${a.name.startsWith("Source code") ? "pk zip" : "pk"}"></i>` +
+      `<span class="gh-name">${esc(a.name)}</span><span class="gh-size">${esc(a.github)}</span></div>`)
     .join("\n                      ");
+const ghVpkRow = S.RELEASE.assets.findIndex((a) => a.name === S.RELEASE.vpk.name);
 
 // ---------------------------------------------------------------- captions
 const words = (html) =>
@@ -152,14 +154,21 @@ function blips() {
 }
 function sfx() {
   const cues = S.SFX.map(([name, at, vol]) => [SFX_FILE[name], at, vol]).concat(blips());
+  // each sound on the first track that is free by its start (tracks 11 and up; 10 is the music)
+  const ends = [];
+  const track = new Map();
+  [...cues.keys()].sort((a, b) => cues[a][1] - cues[b][1]).forEach((i) => {
+    const [f, at] = cues[i];
+    if (!(f in SFX_SECONDS)) throw new Error(`no sound ${f}`);
+    let k = ends.findIndex((e) => e <= at);
+    if (k < 0) k = ends.push(0) - 1;
+    ends[k] = at + SFX_SECONDS[f];
+    track.set(i, 11 + k);
+  });
   return cues
-    .map(([f, at, vol], i) => {
-      if (!(f in SFX_SECONDS)) throw new Error(`no sound ${f}`);
-      return (
-        `      <audio id="sfx-${i}" src="assets/audio/sfx-${f}.wav" data-start="${at.toFixed(3)}" ` +
-        `data-duration="${SFX_SECONDS[f]}" data-track-index="${11 + (i % 6)}" data-volume="${vol}"></audio>`
-      );
-    })
+    .map(([f, at, vol], i) =>
+      `      <audio id="sfx-${i}" src="assets/audio/sfx-${f}.wav" data-start="${at.toFixed(3)}" ` +
+      `data-duration="${SFX_SECONDS[f]}" data-track-index="${track.get(i)}" data-volume="${vol}"></audio>`)
     .join("\n");
 }
 
@@ -219,7 +228,8 @@ function build(layout, scale = 1) {
     JS: read("src/promo.js")
       .replace("/*{{TIMES}}*/ null", JSON.stringify(S.T))
       .replace("/*{{CUES}}*/ null", JSON.stringify(S.C))
-      .replace("/*{{CAPS}}*/ null", JSON.stringify(S.CAPTIONS)),
+      .replace("/*{{CAPS}}*/ null", JSON.stringify(S.CAPTIONS))
+      .replace("/*{{GHROW}}*/ 0", String(ghVpkRow)),
     DEVICE_SVG: device(),
     CAPTIONS: captions(),
     VN_NAME: esc(S.VN.name),

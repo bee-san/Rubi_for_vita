@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Copy the promo's art and captures into docs/promo/assets (and the overlay's states into src/).
 
-    python3 tools/prep_assets.py CAPTURE_DIR CHECKOUT [SHARED_ASSETS_DIR]
+    python3 tools/prep_assets.py CAPTURE_DIR CHECKOUT PROMO_ASSETS
 
 CAPTURE_DIR is capture/run.sh's output for CHECKOUT, the vita-jp-overlay checkout the film shows (its commit is
-CAPTURE_DIR/commit.txt); SHARED_ASSETS_DIR is promo-assets' folder (the original mock game's art, the sound;
-its MANIFEST.md has each file's licence, source and sha256; default: the fleet's shared path). Needs Pillow.
+CAPTURE_DIR/commit.txt); PROMO_ASSETS (or $PROMO_ASSETS) is promo-assets' folder: the original mock game's art and
+the sound, made for the promo by the fleet's promo-assets agent (its MANIFEST.md has each file's licence, source and
+sha256; its src/ the tools that made them). Needs Pillow, numpy and ffmpeg (FFMPEG).
 Writes:
 - src/overlay-states.json: the overlay at each beat (capture/overlay_states.py);
 - assets/shots/: the Overlay app in Vita3K (capture/capture_app.sh): its Install page, the run and its result,
@@ -14,11 +15,13 @@ Writes:
   the game worker's JPEG (capture/run.sh);
 - assets/app/: the app's icon and LiveArea art, the checkout's settings/assets/;
 - assets/vn/, assets/audio/, assets/icons/: the mock game, the sound and the home screen's icons (promo-assets);
+  assets/audio/bed-45s.m4a: its 44 s music bed with one second more in the breakdown (tools/make_bed.py);
 - src/release.json: the release's file names and sizes (capture/run.sh release/sizes.json);
 - assets/SOURCES.md: each output with the sha256 of its input and of itself.
 """
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -29,7 +32,9 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 CAP = Path(sys.argv[1]).resolve()
 CHECKOUT = Path(sys.argv[2]).resolve()
-SRC = Path(sys.argv[3]) if len(sys.argv) > 3 else Path("/local/home/skerraut/herd-vita-ocr/shared/artifacts/promo-v2/assets")
+if len(sys.argv) < 3 or (len(sys.argv) < 4 and not os.environ.get("PROMO_ASSETS")):
+    sys.exit(__doc__)
+SRC = Path(sys.argv[3] if len(sys.argv) > 3 else os.environ["PROMO_ASSETS"])
 
 # The app's shots, by capture run and hold (capture/split_holds.py) or the Install page's run frame
 # (CAPTURE_DIR/app/run/progress/f-NNN.png), as the run's contact sheets show them (holds-*/contact.png):
@@ -130,7 +135,10 @@ def main():
         copy(CHECKOUT / "settings" / "assets" / n, ROOT / "assets" / "app" / n)
     # the music and the sound effects (CC0, promo-assets: audio/README.md)
     audio = ROOT / "assets" / "audio"
-    copy(SRC / "audio" / "music" / "bed-44s.m4a", audio / "bed-44s.m4a")
+    (audio / "bed-44s.m4a").unlink(missing_ok=True)
+    subprocess.run([sys.executable, str(ROOT / "tools" / "make_bed.py"), str(SRC / "audio" / "music" / "bed-44s.wav"),
+                    str(audio / "bed-45s.m4a")], check=True)
+    note(SRC / "audio" / "music" / "bed-44s.wav", audio / "bed-45s.m4a", "tools/make_bed.py: 1.0 s more breakdown at 29.5 s, AAC")
     for n in ("click", "lr", "dpad", "whoosh-in", "whoosh-out", "swish", "pop", "chime", "confirm",
               "text-blip-1", "text-blip-2", "text-blip-3", "text-blip-4", "text-blip-5"):
         copy(SRC / "audio" / "sfx" / f"{n}.wav", audio / f"sfx-{n}.wav")
@@ -141,6 +149,13 @@ def main():
     sizes = json.loads((CAP / "release" / "sizes.json").read_text())
     (ROOT / "src" / "release.json").write_text(json.dumps({"commit": commit, "files": sizes}, indent=1) + "\n")
     note(CAP / "release" / "sizes.json", ROOT / "src" / "release.json", "the sizes of capture/run.sh's package_variants.py release")
+    # drawn for the film and committed as they are (not made by this script)
+    for path, what in (("assets/device/vita-white.svg", "the console: an original drawing from its published "
+                        "dimensions, no photo traced, no logos (#134's; its power button added for the final cut); CC0-1.0"),
+                       ("assets/icons/vitashell.svg", "VitaShell's bubble on the home screen: a generic file-manager icon, "
+                        "original, drawn for promo v2; GPL-3.0-only")):
+        out = ROOT / path
+        rows.append((path, "committed", sha(out), sha(out), what))
     lines = [
         "# Where the composition's art comes from",
         "",

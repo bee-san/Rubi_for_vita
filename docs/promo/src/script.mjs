@@ -2,10 +2,11 @@
 // src/promo.js and places the sound effects). Everything on the console's screen is a capture of the
 // code or is laid out from it; README.md says which and from where.
 //
-// 44.0 s at 120 BPM: a beat is 0.5 s, a bar 2 s (the music is 22 bars). The owner's note on the
-// first cut (#134, 14:15Z: "the pressing is a little too fast, slow it down a tad"): every press is
-// slower (tools: press() and the fingers in src/promo.js) and no two presses come closer than 0.5 s,
-// the busiest scenes (the install, turning a game off) given time from the quieter ones.
+// 45.0 s at 120 BPM: a beat is 0.5 s, a bar 2 s (the music, tools/make_bed.py: promo-assets' 22-bar
+// bed with one second more in its breakdown, so its second lift is on 32.0 s and its last chord on
+// 42.5 s). The owner's note on the first cut (#134, 14:15Z: "the pressing is a little too fast, slow
+// it down a tad"): every press is slower (press() and the fingers in src/promo.js) and no two presses
+// come closer than 0.5 s; the install, the game and turning a game off have more time.
 import { readFileSync } from "node:fs";
 
 // Scene starts (the owner's script, in his order; his line 9 was dropped on 2026-10-15).
@@ -13,13 +14,13 @@ export const T = {
   s1: 0, //    Learn Japanese with your PS Vita for free
   s2: 4.5, //  Look up words from the games you play, entirely offline
   s3: 10.0, // Create flashcards of words you don't know
-  s4: 14.6, // With screenshots
-  s5: 19.0, // It only reads text when it changes
+  s4: 14.5, // With screenshots
+  s5: 18.5, // It only reads text when it changes
   s6: 23.5, // Easy install
-  s7: 31.0, // Now it's installed: go to your game and press L + R to look up words.
-  s8: 36.5, // Turn it off for specific games, so it doesn't get in the way
-  end: 41.7,
-  total: 44.0,
+  s7: 31.75, // Now it's installed: go to your game and press L + R to look up words.
+  s8: 37.7, // Turn it off for specific games, so it doesn't get in the way
+  end: 43.05,
+  total: 45.0,
 };
 
 // The cue sheet: the moment of every press, tap and change (seconds). promo.js times the pictures
@@ -39,51 +40,54 @@ export const C = {
   saved1: 11.2,
   land1: 11.95,
   right2: 12.45,
-  mine2: 13.25,
-  saved2: 13.75,
-  land2: 14.4,
+  mine2: 13.2,
+  saved2: 13.7,
+  land2: 14.3,
   // S4: the card in Anki.
-  whipA: 14.6,
-  cardOpen: 15.1,
-  whipB: 18.75,
-  // S5: ○ closes the overlay, × shows a new line; the Overlay app's Read text.
-  pressO1: 19.55,
-  pressX2: 20.15,
-  typeC: 20.6,
-  appIn: 21.45,
-  right3: 22.35,
-  // S6: the install: the release, VitaShell, the app's Install page, a restart.
+  whipA: 14.45,
+  cardOpen: 14.9,
+  whipB: 18.45,
+  // S5: ○ closes the overlay, × shows a new line; the app's Read text.
+  pressO1: 19.25,
+  pressX2: 19.85,
+  typeC: 20.3,
+  appIn: 21.0,
+  right3: 21.95,
+  // S6: the install: the release, VitaShell, the app's Install page, the user's restart.
   laptopIn: 23.45,
-  clickVpk: 24.05,
-  fileFly: 24.45,
-  shellIn: 25.05,
-  vsX1: 25.45,
-  vsX2: 26.05,
-  vsX3: 26.65,
-  vsDone: 27.3,
-  ps1: 27.6,
-  tapBubbleApp: 28.1,
-  tapStartApp: 28.6,
-  installX: 29.35,
-  installDone: 30.0,
-  restart: 30.45,
-  // S7: the game, L + R, Right.
-  boot: 31.1,
-  tapBubbleGame: 31.7,
-  tapStartGame: 32.2,
-  typeD: 32.55,
-  lr2: 33.9,
-  ovOpen2: 34.0,
-  right4: 35.2,
+  clickVpk: 23.85,
+  fileFly: 24.25,
+  shellIn: 24.8,
+  vsDown: 25.15, // VitaShell opens on "..": Down to the file
+  vsX1: 25.65,
+  vsX2: 26.2,
+  vsX3: 26.75,
+  vsDone: 27.35,
+  ps1: 27.6, // PS: VitaShell's LiveArea (it stays open: Continue)
+  flick1: 28.1, // a flick to the home screen, with the app's new bubble
+  tapBubbleApp: 28.65,
+  tapStartApp: 29.15,
+  installX: 29.7,
+  installDone: 30.3,
+  power: 30.85, // the user holds the power button: the Vita turns off (the app never restarts it)
+  dark: 31.15,
+  // S7: the Vita on again, the game, L + R, a tap on 子 in the header.
+  boot: 31.75,
+  tapBubbleGame: 32.35,
+  tapStartGame: 32.85,
+  typeD: 33.2,
+  lr2: 34.4,
+  ovOpen2: 34.5,
+  tapKo: 35.8,
   // S8: ○, PS, the home screen, the app, Games: Down, Down, × turns Ember Garden OFF.
-  pressO2: 36.65,
-  ps2: 37.2,
-  flick: 37.75,
-  tapBubbleApp2: 38.3,
-  tapStartApp2: 38.8,
-  down1: 39.4,
-  down2: 39.9,
-  toggle: 40.45,
+  pressO2: 37.7,
+  ps2: 38.25,
+  flick: 38.8,
+  tapBubbleApp2: 39.35,
+  tapStartApp2: 39.85,
+  down1: 40.4,
+  down2: 40.9,
+  toggle: 41.45,
 };
 
 // A western console: × enters, ○ cancels (core/buttons.h).
@@ -100,12 +104,12 @@ export const REPO = "bee-san/Rubi_for_vita";
 export const CAPTIONS = {
   cap1: { h: "Learn Japanese with your PS&nbsp;Vita <em>for free</em>", in: 0.6, out: 4.3 },
   cap2: { h: "Look up words from the games you play, <em>entirely offline</em>", in: 4.55, out: 9.8 },
-  cap3: { h: "Create flashcards of <em>words you don't know</em>", in: 10.05, out: 14.4 },
-  cap4: { h: "With <em>screenshots</em>", in: 14.7, out: 18.75 },
-  cap5: { h: "It only reads text <em>when it changes</em>", p: "or only when you press L&nbsp;+&nbsp;R", pIn: 21.85, in: 19.1, out: 23.3 },
-  cap6: { h: "<em>Easy install</em>", in: 23.6, out: 31.25 },
-  cap7: { h: "Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.", in: 31.55, out: 36.45 },
-  cap8: { h: "Turn it off for specific games, <em>so it doesn't get in the way</em>", in: 36.75, out: 41.5 },
+  cap3: { h: "Create flashcards of <em>words you don't know</em>", in: 10.05, out: 14.25 },
+  cap4: { h: "With <em>screenshots</em>", in: 14.6, out: 18.4 },
+  cap5: { h: "It only reads text <em>when it changes</em>", p: "or only when you press L&nbsp;+&nbsp;R", pIn: 20.75, in: 18.6, out: 23.3 },
+  cap6: { h: "<em>Easy install</em>", in: 23.6, out: 32.1 },
+  cap7: { h: "Now it's installed: go to your game and press <em>L&nbsp;+&nbsp;R</em> to look up words.", in: 32.4, out: 37.75 },
+  cap8: { h: "Turn it off for specific games, <em>so it doesn't get in the way</em>", in: 38.05, out: 42.95 },
 };
 
 // Scene 6's steps, shown under its caption (the one-VPK install: docs/one-vpk-install.md, the README's
@@ -149,12 +153,17 @@ const relName = (suffix) => {
   if (!k) throw new Error(`release.json has no *${suffix}`);
   return { name: k.replace(/^VitaJPOverlay-/, `${NAME}-`), ...REL[k] };
 };
+const FILES = [relName("0.8.0.vpk"), relName("0.8.0-debug.vpk"), relName("0.8.0.zip"), relName("0.8.0-debug.zip"),
+  { name: "SHA256SUMS", ...REL.SHA256SUMS }];
 export const RELEASE = {
   version: "0.8.0",
-  assets: [relName("0.8.0.vpk"), relName("0.8.0-debug.vpk"), relName("0.8.0.zip"), relName("0.8.0-debug.zip"),
-    { name: "SHA256SUMS", ...REL.SHA256SUMS }],
+  vpk: FILES[0], // the main download (the README's Install)
+  // the Releases page as GitHub lists a release's assets: its files by name (case-insensitive), then the
+  // two source archives it adds (no size shown)
+  assets: [...FILES]
+    .sort((a, b) => (a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1))
+    .concat([{ name: "Source code (zip)", github: "" }, { name: "Source code (tar.gz)", github: "" }]),
 };
-RELEASE.vpk = RELEASE.assets[0];
 
 export const ENDCARD_FINE =
   "Not affiliated with or endorsed by Sony Interactive Entertainment. The game shown is an original mock-up made for this video. " +
@@ -191,19 +200,22 @@ export const SFX = [
   ["whoosh", C.laptopIn - 0.1, 0.35],
   ["tap", C.clickVpk, 0.55],
   ["whoosh", C.fileFly, 0.3],
+  ["dpad", C.vsDown, 0.45],
   ["click", C.vsX1, 0.5],
   ["click", C.vsX2, 0.5],
   ["click", C.vsX3, 0.5],
   ["chime", C.vsDone, 0.3],
   ["click", C.ps1, 0.5],
+  ["swish", C.flick1, 0.3],
   ["tap", C.tapBubbleApp, 0.55],
   ["tap", C.tapStartApp, 0.55],
   ["click", C.installX, 0.5],
   ["chime", C.installDone, 0.35],
+  ["click", C.power, 0.5],
   ["tap", C.tapBubbleGame, 0.55],
   ["tap", C.tapStartGame, 0.55],
   ["lr", C.lr2, 0.6],
-  ["dpad", C.right4, 0.45],
+  ["tap", C.tapKo, 0.55],
   ["click", C.pressO2, 0.5],
   ["click", C.ps2, 0.5],
   ["swish", C.flick, 0.3],

@@ -119,6 +119,11 @@
                       <div class="la-logo">{{VN_TITLE}}<small>{{VN_TITLE_EN}}</small></div>
                       <div class="la-gate la-gate-game"><span id="gate-start">Start</span><span id="gate-continue">Continue</span></div>
                     </div>
+                    <div id="scr-la-shell" class="scr la">
+                      <div class="la-frame la-frame-shell"></div>
+                      <div class="la-title"><img src="assets/icons/vitashell.svg" alt="" /><span>VitaShell</span></div>
+                      <div class="la-gate la-gate-game"><span>Continue</span></div>
+                    </div>
                     <div id="scr-la-app" class="scr la">
                       <div class="la-frame"><img src="assets/app/bg.png" alt="" /></div>
                       <div class="la-title"><img src="assets/app/icon0.png" alt="" /><span>{{NAME}}</span></div>
@@ -221,7 +226,7 @@
                     <div class="gh-tabs"><span>Code</span><span>Issues</span><span>Pull requests</span><span class="on">Releases</span></div>
                     <div class="gh-rel">
                       <div class="gh-rel-head"><b>v{{VERSION}}</b><span class="gh-latest">Latest</span></div>
-                      <div class="gh-notes">Install: download <b>{{VPK}}</b>, install it in VitaShell, then open {{NAME}} and choose Install.</div>
+                      <div class="gh-notes">Install: download <b>{{VPK}}</b>, install it in VitaShell, open {{NAME}}, choose Install, then restart the Vita.</div>
                       <div class="gh-assets-title">Assets <span>{{GH_COUNT}}</span></div>
                       {{GH_ASSETS}}
                     </div>
@@ -254,9 +259,9 @@
       <div id="fade" data-layout-ignore></div>
 
       <!-- ============================================================ sound -->
-      <!-- the bed's breakdown (23.5-31 s, the install) is lifted about 4 dB so the music does not seem to stop -->
-      <audio id="music" src="assets/audio/bed-44s.m4a" data-start="0" data-duration="{{DURATION}}" data-track-index="10" data-volume="1"
-        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":23.3,"v":1},{"t":23.9,"v":1.6},{"t":30.7,"v":1.6},{"t":31.05,"v":1}]}]}'></audio>
+      <!-- the bed's breakdown (23.5-32 s, the install) is lifted about 4 dB so the music does not seem to stop -->
+      <audio id="music" src="assets/audio/bed-45s.m4a" data-start="0" data-duration="{{DURATION}}" data-track-index="10" data-volume="1"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":23.3,"v":1},{"t":23.9,"v":1.6},{"t":31.7,"v":1.6},{"t":32.05,"v":1}]}]}'></audio>
 {{SFX}}
     </div>
     <script>

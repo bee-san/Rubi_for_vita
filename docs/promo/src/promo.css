@@ -563,6 +563,10 @@
       #gate-continue {
         opacity: 0;
       }
+      .la-frame-shell {
+        background: radial-gradient(120% 90% at 30% 20%, #2a3550 0%, #121a2c 55%, #0a0f1a 100%);
+      }
+
 
       /* ------------------------------------------------------------ the Overlay app */
       .app-shot {

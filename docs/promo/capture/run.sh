@@ -33,7 +33,7 @@ INC=(-I "$M/core" -I "$M/host" -I "$M/include")
 LIBS=("$M/core/textnorm.c" "$HOST/libvjo_host.a" "$HOST/libvjo_core.a" "$HOST/libbearssl.a" -lm)
 
 echo "== the overlay"
-gcc -O1 -DVJO_HOST=1 "${INC[@]}" "$here/overlay_lookups.c" "${LIBS[@]}" -o "$O/bin/overlay_lookups"
+gcc -O1 -DVJO_HOST=1 "${INC[@]}" -I "$M/host/tests" "$here/overlay_lookups.c" "${LIBS[@]}" -o "$O/bin/overlay_lookups"
 printf '%s\n' '「ねえ、聞いて！明日の夜、丘の上で\n流れ星が見えるんだって！」' '「また明日、一緒に見に行こう！」' \
   '「ドキドキ、ワクワク……！」' '「キラキラ……。\n子供の頃みたい。」' > "$O/lines.txt"
 "$O/bin/overlay_lookups" "$DICT_DIR" plaintext.vjdict < "$O/lines.txt" > "$O/lookups.jsonl"

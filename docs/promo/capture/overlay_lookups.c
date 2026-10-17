@@ -6,24 +6,31 @@
  *   vjo_overlay_ocr_text          recognized text -> filtered text and the header's sentence
  *   vjo_utf8_japanese_cursor_step the overlay's first cursor (Japanese-only selection, the default)
  *   vjo_overlay_lookup_at         the lookup at a cursor (an arrow key or a tap)
- *   vjo_word_step(+1)             Right in Whole word mode (the default): skip the matched word
+ *   vjo_text_row_key(dx = +1)     Right as the overlay's arrows move (shell/overlay.cpp): along the
+ *                                 header's displayed row, wrapping at its ends (#87), over the rows
+ *                                 of main's own renderer double (host/tests/layout_double.h: a
+ *                                 920 px header, 27 px Japanese cells, a line per '\n')
  *   vjo_styled_entry              the popup's entry exactly as the body draws it: its text, colour and
  *                                 size per span (the default font sizes and frequency badge)
- * and prints the sentence and the Right walk from the first cursor ("walk": one lookup per step).
+ * and prints the sentence, "rows" (the header's displayed rows), "walk": Right from the first cursor,
+ * one step per press (its VJO_ROW_* result; a lookup at each new cursor; it stops when Right stays or
+ * comes back to a cursor it has been at), and "taps": the lookup at each Japanese character, as a tap
+ * on it looks up (shell/overlay.cpp input_header_touch: the tapped character is the cursor).
  * Offsets are given in bytes, code points and UTF-16 units.
  *
  *   overlay_lookups DICT_DIR DICT_FILES < lines.txt > lookups.jsonl
  *
  * Built against a vita-jp-overlay checkout's host libraries (capture/run.sh):
- *   cc -O1 -DVJO_HOST=1 -I core -I host -I include overlay_lookups.c build/host/libvjo_host.a \
- *      build/host/libvjo_core.a -lm -o overlay_lookups
- * (from promo-assets' src/promo_lookup.c, for main after #153's kanji lines and #156's hint) */
+ *   cc -O1 -DVJO_HOST=1 -I core -I host -I host/tests -I include overlay_lookups.c core/textnorm.c \
+ *      build/host/libvjo_host.a build/host/libvjo_core.a -lm -o overlay_lookups
+ * (from promo-assets' src/promo_lookup.c, for main after #153's kanji lines, #156's hint and #87's rows) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "client.h"
 #include "config.h"
+#include "layout_double.h"
 #include "entries.h"
 #include "platform_posix.h"
 #include "styled.h"
@@ -176,7 +183,6 @@ int main(int argc, char **argv)
         size_t n = strcspn(line, "\r\n"), j = 0;
         VjoArena a;
         VjoOverlayData d;
-        VjoWordNavigation hist;
         const char *s;
         size_t len, cursor;
         line[n] = 0;
@@ -205,19 +211,53 @@ int main(int argc, char **argv)
         json_str(text);
         printf(",\"sentence\":");
         json_str(s);
-        printf(",\"font_px\":[%d,%d],\"frequency_badge\":%d,\"walk\":[", vjo_font_px(cfg.font_size_ja),
-               vjo_font_px(cfg.font_size_en), cfg.frequency_badge);
-        memset(&hist, 0, sizeof(hist));
-        cursor = vjo_utf8_japanese_cursor_step(s, len, 0, 0);
-        for (int k = 0; cursor < len && k < 64; k++) {
-            size_t end, next;
-            if (k)
-                putchar(',');
-            end = lookup(&a, &p, &cfg, &d, cursor);
-            next = vjo_word_step(&hist, s, len, cursor, end, +1, cfg.japanese_only_selection, NULL, NULL);
-            if (next <= cursor)
-                break; /* Right wrapped to the row's start */
-            cursor = next;
+        {
+            static Layout lay;
+            int ja = vjo_font_px(cfg.font_size_ja);
+            VjoTextRows rows;
+            VjoRowNav nav;
+            size_t seen[64];
+            int n_seen = 0, result = VJO_ROW_MOVED;
+            layout_text(&lay, s, 920.0f, (float)ja, ja / 2.0f); /* shell/overlay.cpp BOX_W; the header's size */
+            rows = layout_rows(&lay);
+            printf(",\"font_px\":[%d,%d],\"frequency_badge\":%d,\"rows\":%u,\"walk\":[", ja,
+                   vjo_font_px(cfg.font_size_en), cfg.frequency_badge, (unsigned)lay.lines);
+            memset(&nav, 0, sizeof(nav));
+            cursor = vjo_utf8_japanese_cursor_step(s, len, 0, 0);
+            for (int k = 0; cursor < len && k < 64; k++) {
+                size_t end, next = cursor;
+                int again = 0;
+                for (int i = 0; i < n_seen; i++)
+                    again |= seen[i] == cursor;
+                if (k)
+                    printf(",");
+                printf("{\"key\":\"%s\",\"result\":\"%s\",\"lookup\":", k ? "Right" : "open",
+                       !k ? "open" : result == VJO_ROW_MOVED ? "moved" : result == VJO_ROW_WRAPPED ? "wrapped"
+                       : result == VJO_ROW_STAY ? "stay" : "unavailable");
+                if (k && (result == VJO_ROW_STAY || again)) { /* the cursor stays, or comes back: no new lookup */
+                    printf("null}");
+                    break;
+                }
+                seen[n_seen++] = cursor;
+                end = lookup(&a, &p, &cfg, &d, cursor);
+                printf("}");
+                result = vjo_text_row_key(&nav, s, len, &rows, cursor, end, +1, 0, cfg.japanese_only_selection, &next);
+                cursor = next;
+            }
+        }
+        printf("],\"taps\":[");
+        {
+            size_t i = 0;
+            int first = 1;
+            while (i < len) {
+                size_t at = i;
+                uint32_t cp = vjo_utf8_next(s, len, &i);
+                if (!vjo_is_japanese_letter(cp))
+                    continue;
+                printf("%s", first ? "" : ",");
+                first = 0;
+                lookup(&a, &p, &cfg, &d, at);
+            }
         }
         printf("]}\n");
         fflush(stdout);

@@ -110,6 +110,12 @@
     <path d="M110,90 C160,45 220,24 330,23.5 H408" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-opacity="0.8" stroke-linecap="round"/>
     <path class="glow" d="M430,62 V40 Q430,20 410,20 H330 C180,20 95,85 64.4,150.1 L90,160 C122,95 200,62 330,62 Z" fill="#5bdccf" opacity="0"/>
   </g>
+  <!-- the power button, on the top edge at the left (the PCH-1000's part A, inboard of L) -->
+  <g id="btn-power">
+    <rect x="474" y="29" width="80" height="19" rx="9.5" fill="url(#g-shoulder)" stroke="#c3c8cf" stroke-width="1.5"/>
+    <rect x="484" y="32" width="60" height="3.5" rx="1.75" fill="#ffffff" opacity="0.75"/>
+    <rect class="glow" x="474" y="29" width="80" height="19" rx="9.5" fill="#5bdccf" opacity="0"/>
+  </g>
   <g id="btn-r">
     <path d="M1390,62 V40 Q1390,20 1410,20 H1490 C1640,20 1725,85 1755.6,150.1 L1730,160 C1698,95 1620,62 1490,62 Z" fill="url(#g-shoulder)" stroke="#c3c8cf" stroke-width="1.5"/>
     <path d="M1740,128 C1696,72 1615,47 1490,46 H1394" fill="none" stroke="#9ea4ad" stroke-width="5" stroke-opacity="0.55"/>

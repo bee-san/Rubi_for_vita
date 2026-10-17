@@ -8,6 +8,7 @@
         const T = /*{{TIMES}}*/ null; // scene starts (src/script.mjs)
         const C = /*{{CUES}}*/ null; // the cue sheet: every press, tap and change
         const K = /*{{CAPS}}*/ null; // the captions' times (src/script.mjs CAPTIONS)
+        const GH_VPK_ROW = /*{{GHROW}}*/ 0; // the main download's row on the Releases page (GitHub's order)
 
         // ------------------------------------------------------------ helpers
         function fade(sel, t, from, to, dur = 0.2, ease = "power1.out") {
@@ -49,11 +50,12 @@
               screenIn: { x: -12, y: -24, s: 1.01, rx: 1.5, ry: -2.5, rz: 0 },
               screenB: { x: 20, y: 30, s: 1.02, rx: 3, ry: -5, rz: 0 },
               popupZoom: { x: -30, y: -130, s: 1.1, rx: 1, ry: -2, rz: 0 },
-              offZoom: { x: 70, y: 160, s: 1.12, rx: 2, ry: -3, rz: 0 },
+              offZoom: { x: 72, y: 100, s: 0.8, rx: 2, ry: -3, rz: 0 }, // "Saved. ..." and OFF inside x 60-900
               mine: { x: 0, y: 330, s: 0.84, rx: 8, ry: 8, rz: 0 },
               mineB: { x: 0, y: 340, s: 0.86, rx: 6, ry: 4, rz: 0 },
               readAppB: { x: 0, y: -60, s: 1.04, rx: 3, ry: 4, rz: 0 },
               installDevB: { x: 10, y: 30, s: 0.98, rx: 4, ry: -3, rz: 0 },
+              power: { x: -150, y: -150, s: 0.9, rx: 20, ry: 6, rz: 0 },
               deck: { x: 0, y: 800, s: 0.9, rx: 0, ry: 0, rz: 0 },
               anki: { x: 0, y: 1840, s: 0.64, rx: 0, ry: 0, rz: 0 },
               ankiPic: { x: 320, y: 1560, s: 1.3, rx: 2, ry: -4, rz: 0 },
@@ -67,6 +69,7 @@
               home: { x: 0, y: 22, s: 0.94, rx: 6, ry: 8, rz: 0 },
               shoulders2: { x: 0, y: -330, s: 0.8, rx: 30, ry: 16, rz: 2 },
               screen3: { x: 0, y: 22, s: 0.97, rx: 2, ry: 2, rz: 0 },
+              koZoom: { x: -40, y: -110, s: 1.08, rx: 1, ry: -2, rz: 0 },
               app8: { x: 0, y: 22, s: 0.9, rx: 5, ry: -8, rz: 0 },
               out: { x: 0, y: 40, s: 0.3, rx: 12, ry: -40, rz: -4 },
             }
@@ -85,6 +88,7 @@
               mineB: { x: 430, y: 0, s: 0.77, rx: 6, ry: 8, rz: 0 },
               readAppB: { x: 30, y: -60, s: 1.7, rx: 3, ry: 5, rz: 0 },
               installDevB: { x: 20, y: 10, s: 0.98, rx: 4, ry: -3, rz: 0 },
+              power: { x: -260, y: -170, s: 1.0, rx: 20, ry: 6, rz: 0 },
               deck: { x: 1330, y: 20, s: 1.0, rx: 0, ry: 0, rz: 0 },
               anki: { x: 2950, y: 40, s: 0.78, rx: 0, ry: 0, rz: 0 },
               ankiPic: { x: 3080, y: -170, s: 1.08, rx: 2, ry: -4, rz: 0 },
@@ -98,6 +102,7 @@
               home: { x: 0, y: 0, s: 0.9, rx: 7, ry: 8, rz: 0 },
               shoulders2: { x: 0, y: -330, s: 1.0, rx: 30, ry: 16, rz: 2 },
               screen3: { x: 0, y: -28, s: 1.24, rx: 2, ry: 2, rz: 0 },
+              koZoom: { x: -70, y: -110, s: 1.6, rx: 1, ry: -2, rz: 0 },
               app8: { x: 0, y: 0, s: 0.94, rx: 6, ry: -8, rz: 0 },
               out: { x: 0, y: 40, s: 0.42, rx: 12, ry: -40, rz: -4 },
             };
@@ -129,14 +134,14 @@
         // Device coordinates (assets/device/vita-white.svg, 0.1 mm units) of what is pressed.
         const B = {
           L: [292, 44], R: [1528, 44], X: [1650, 410], O: [1745, 315], SQ: [1555, 315],
-          DR: [265, 315], DD: [185, 395], PS: [150, 745],
+          DR: [265, 315], DD: [185, 395], PS: [150, 745], PW: [514, 34],
         };
         // a button press: it sinks a little, holds and glows, and comes back up: done within 0.3 s,
         // so two presses of one button 0.45 s or more apart never overlap (the owner, 14:15Z: "the
         // pressing is a little too fast, slow it down a tad": v2's took 0.2 s)
         function press(t, id, sink = 0.9) {
           const el = "#" + id;
-          if (id === "btn-l" || id === "btn-r") {
+          if (id === "btn-l" || id === "btn-r" || id === "btn-power") {
             tl.fromTo(el, { y: 0 }, { y: 10, duration: 0.08, ease: "power1.out", immediateRender: false }, t);
             tl.fromTo(el, { y: 10 }, { y: 0, duration: 0.13, ease: "power1.out", immediateRender: false }, t + 0.16);
           } else {
@@ -191,6 +196,9 @@
         }
         // a tap on the touchscreen at screen pixel (sx, sy): the finger, and the touch's ripple
         const SCR = (sx, sy) => [357 + 1.1520833 * sx, 149 + 1.1520833 * sy];
+        // 子, the first letter of the overlay header's second row: the header's text box starts at (20, 12),
+        // its rows are 38 px, its letters 27 px (src/promo.css .ov-head, shell/rco/vitajpoverlay.xml)
+        const KO = [20 + 27 / 2, 12 + 38 + 38 / 2];
         function ripple(t, sx, sy) {
           tl.fromTo("#ripple", { x: sx, y: sy, scale: 0.4, opacity: 0.95 }, { scale: 1.7, opacity: 0, duration: 0.38, ease: "power2.out", immediateRender: false }, t);
         }
@@ -208,7 +216,8 @@
           const el = document.getElementById(id);
           const words = el.querySelectorAll("h1 .w");
           on(el, tin);
-          tl.fromTo(words, { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out", stagger: 0.04, immediateRender: false }, tin);
+          // the words rise in quickly (a 14-word line is whole after 0.77 s), so it is up long enough to read
+          tl.fromTo(words, { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.38, ease: "power3.out", stagger: 0.03, immediateRender: false }, tin);
           tl.fromTo(el, { opacity: 1, y: 0 }, { opacity: 0, y: -16, duration: 0.28, ease: "power2.in", immediateRender: false }, tout);
         }
 
@@ -365,14 +374,14 @@
         grow("#anki", C.cardOpen - 0.05, 0.86, 0.35);
         tl.fromTo("#anki", { rotationY: -24 }, { rotationY: 0, duration: 0.45, ease: "power3.out", immediateRender: false }, C.cardOpen - 0.05);
         // the card's front (the word), flipped to its back: the game's screen is on it
-        const flip = C.cardOpen + 0.55;
+        const flip = C.cardOpen + 0.5;
         tl.fromTo("#anki", { rotationY: 0 }, { rotationY: 90, duration: 0.22, ease: "power2.in", immediateRender: false }, flip);
         swap("#anki-front", "#anki-card", flip + 0.22, 0.01);
         tl.fromTo("#anki", { rotationY: -90 }, { rotationY: 0, duration: 0.3, ease: "power2.out", immediateRender: false }, flip + 0.23);
-        camTo(flip + 0.35, "ankiPic", 1.1, "power2.inOut");
-        tl.fromTo("#pic-ring", { opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)", immediateRender: false }, flip + 0.6);
-        tl.fromTo("#pic-ring", { opacity: 1 }, { opacity: 0.45, duration: 0.45, yoyo: true, repeat: 3, ease: "sine.inOut", immediateRender: false }, flip + 0.9);
-        camTo(flip + 1.5, "ankiAll", C.whipB - (flip + 1.5), "power2.inOut");
+        camTo(flip + 0.35, "ankiPic", 1.0, "power2.inOut");
+        tl.fromTo("#pic-ring", { opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)", immediateRender: false }, flip + 0.55);
+        tl.fromTo("#pic-ring", { opacity: 1 }, { opacity: 0.45, duration: 0.42, yoyo: true, repeat: 3, ease: "sine.inOut", immediateRender: false }, flip + 0.85);
+        camTo(flip + 1.4, "ankiAll", C.whipB - (flip + 1.4), "power2.inOut");
         off("#pic-ring", C.whipB - 0.3, 0.2);
         fade("#deck, #fly1, #fly2", C.whipA + 0.55, 1, 0, 0.3);
         glow(C.whipA, "cream", 0.5);
@@ -423,7 +432,8 @@
         stepIn("#step1", 23.75);
         camTo(23.75, "laptop", 0.5, "power2.inOut");
         // the mouse goes to the VPK and clicks it; it downloads
-        tl.fromTo("#mouse", { x: 1300, y: 900, opacity: 0 }, { x: 610, y: 548, opacity: 1, duration: 0.42, ease: "power2.inOut", immediateRender: false }, C.clickVpk - 0.46);
+        const vpkY = 548 + 70 * GH_VPK_ROW; // the rows: 58 px and a 12 px gap (src/promo.css .gh-asset)
+        tl.fromTo("#mouse", { x: 1300, y: 960, opacity: 0 }, { x: 610, y: vpkY, opacity: 1, duration: 0.42, ease: "power2.inOut", immediateRender: false }, C.clickVpk - 0.46);
         tl.fromTo("#mouse", { scale: 1 }, { scale: 0.85, duration: 0.07, yoyo: true, repeat: 1, immediateRender: false }, C.clickVpk - 0.02);
         tl.fromTo("#gh-vpk", { backgroundColor: "rgba(56,139,253,0)" }, { backgroundColor: "rgba(56,139,253,0.22)", duration: 0.12, immediateRender: false }, C.clickVpk);
         tl.fromTo("#dl-chip", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.25, ease: "power3.out", immediateRender: false }, C.clickVpk + 0.05);
@@ -441,7 +451,10 @@
         // VitaShell: the VPK is there; × on it, Yes, the extended-permissions notice, Yes, Installing...
         swap("#vs-list-e", "#vs-list-0", C.shellIn, 0.02);
         tl.fromTo("#vs-list-0 .vs-row:nth-child(2)", { x: 30, opacity: 0 }, { x: 0, opacity: 1, duration: 0.25, ease: "power3.out", immediateRender: false }, C.shellIn);
-        swap("#vs-list-0", "#vs-list-1", C.shellIn + 0.3, 0.02);
+        // VitaShell opens on "..": Down to the file
+        poke("t-l", C.vsDown, B.DD, 30, 0.38, 0.24);
+        press(C.vsDown, "dpad-down");
+        swap("#vs-list-0", "#vs-list-1", C.vsDown + 0.05, 0.02);
         camTo(C.shellIn, "installDev", 0.6, "power3.inOut");
         camTo(C.shellIn + 0.6, "installDevB", C.ps1 - (C.shellIn + 0.6), "sine.inOut");
         glow(C.shellIn, "green", 0.4);
@@ -474,17 +487,28 @@
         swap("#vs-pct50", "#vs-pct100", C.vsDone - 0.1, 0.01);
         vsClose("#vs-prog", C.vsDone);
         fingerOut("t-r", C.vsX3 + 0.3);
-        // PS: the home screen, with the app's new bubble
+        // PS: VitaShell's LiveArea (it stays open: Continue); a flick to the home screen, with the app's new bubble
         poke("t-l", C.ps1, B.PS, 20, 0.34, 0.22);
         press(C.ps1, "btn-ps");
-        grow("#scr-home", C.ps1 + 0.06, 1.08, 0.2);
+        tl.fromTo("#scr-la-shell", { opacity: 0, scale: 1.08 }, { opacity: 1, scale: 1, duration: 0.22, ease: "power2.out", immediateRender: false }, C.ps1 + 0.06);
         off("#scr-shell", C.ps1 + 0.25);
-        tl.fromTo("#bub-app", { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.ps1 + 0.15);
+        fingerIn("f-tap", C.flick1 - 0.36, SCR(300, 280), -22, 0.32);
+        fingerMove("f-tap", C.flick1, SCR(700, 280), 0.34);
+        tl.fromTo("#scr-la-shell", { x: 0 }, { x: 960, duration: 0.34, ease: "power2.inOut", immediateRender: false }, C.flick1);
+        tl.fromTo("#scr-home", { opacity: 1, x: -960, scale: 1 }, { opacity: 1, x: 0, duration: 0.34, ease: "power2.inOut", immediateRender: false }, C.flick1);
+        off("#scr-la-shell", C.flick1 + 0.36);
+        tl.fromTo("#bub-app", { opacity: 0, scale: 0.3 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.flick1 + 0.3);
         stepOut("#step2", C.ps1 - 0.1);
         stepIn("#step3", C.ps1 + 0.1);
         camTo(C.ps1, "home", 0.5, "power2.inOut");
         // open the app: its LiveArea, Start; it opens on its Install page
-        tapSeq([[C.tapBubbleApp, 639, 350], [C.tapStartApp, 480, 293]], 0.34, 0.32, 0.22); // off the Install page quickly
+        fingerMove("f-tap", C.tapBubbleApp - 0.28, SCR(639, 350), 0.22);
+        fingerPress("f-tap", C.tapBubbleApp);
+        ripple(C.tapBubbleApp, 639, 350);
+        fingerMove("f-tap", C.tapStartApp - 0.27, SCR(480, 293), 0.2);
+        fingerPress("f-tap", C.tapStartApp);
+        ripple(C.tapStartApp, 480, 293);
+        fingerOut("f-tap", C.tapStartApp + 0.32, 0.22); // off the Install page quickly
         tl.fromTo("#scr-la-app", { opacity: 0, scale: 0.25, transformOrigin: "639px 350px" }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, C.tapBubbleApp + 0.06);
         off("#scr-home", C.tapBubbleApp + 0.3);
         grow("#scr-app", C.tapStartApp + 0.08, 0.94, 0.2);
@@ -501,11 +525,19 @@
         swap("#inst-4", "#inst-5", C.installX + 0.05 + 3 * run, 0.02);
         swap("#inst-5", "#inst-6", C.installDone, 0.02);
         camTo(C.tapStartApp, "installDev", 0.8, "power2.inOut");
-        camTo(C.tapStartApp + 0.8, "installDevB", 30.9 - C.tapStartApp - 0.8, "sine.inOut");
-        // the user restarts the Vita (the app never does): the screen goes dark; done
-        swap("#scr-app", "#scr-black", C.restart, 0.2);
-        stepOut("#step3", C.restart);
-        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.restart + 0.22);
+        camTo(C.tapStartApp + 0.8, "installDevB", C.power - 0.45 - (C.tapStartApp + 0.8), "sine.inOut");
+        // the user restarts the Vita (the app never does): a finger holds the power button, the screen goes dark
+        camTo(C.power - 0.45, "power", 0.5, "power2.inOut");
+        fingerIn("f-l", C.power - 0.4, B.PW, 180 - 8, 0.36);
+        fingerPress("f-l", C.power, 0.3);
+        tl.fromTo("#btn-power", { y: 0 }, { y: 8, duration: 0.08, ease: "power1.out", immediateRender: false }, C.power);
+        tl.fromTo("#btn-power", { y: 8 }, { y: 0, duration: 0.13, ease: "power1.out", immediateRender: false }, C.power + 0.4);
+        fade("#btn-power .glow", C.power, 0, 0.9, 0.06);
+        fade("#btn-power .glow", C.power + 0.4, 0.9, 0, 0.14);
+        fingerOut("f-l", C.power + 0.58);
+        swap("#scr-app", "#scr-black", C.dark, 0.25);
+        stepOut("#step3", C.dark);
+        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.dark + 0.2);
 
         // ============================================================ S7: in your game, L + R
         caption("cap7", K.cap7.in, K.cap7.out);
@@ -516,7 +548,7 @@
         off("#scr-black", C.boot + 0.3);
         off("#scr-shell", C.boot);
         glow(C.boot, "blue", 0.5);
-        camTo(30.9, "home", 0.7, "power2.inOut");
+        camTo(C.boot - 0.2, "home", 0.7, "power2.inOut");
         tapSeq([[C.tapBubbleGame, 164, 134], [C.tapStartGame, 260, 385]], 0.36);
         tl.fromTo("#scr-la-game", { opacity: 0, scale: 0.25, transformOrigin: "164px 134px" }, { opacity: 1, scale: 1, duration: 0.25, ease: "power2.out", immediateRender: false }, C.tapBubbleGame + 0.06);
         off("#scr-home", C.tapBubbleGame + 0.3);
@@ -548,10 +580,13 @@
         tl.fromTo("#scr-ov", { y: 110 }, { y: 0, duration: 0.22, ease: "power3.out", immediateRender: false }, C.ovOpen2);
         on("#ov-b1", C.ovOpen2);
         camTo(C.ovOpen2 + 0.1, "screen3", 0.9, "power3.inOut");
-        poke("t-l", C.right4, B.DR, 32, 0.42, 0.28);
-        press(C.right4, "dpad-right");
-        swap("#ov-b1", "#ov-b2", C.right4 + 0.06, 0.02);
-        camTo(C.ovOpen2 + 1.0, "screenB", T.s8 - 0.05 - (C.ovOpen2 + 1.0), "sine.inOut");
+        // a tap on 子, the first letter of the header's second row (Right would stay on its first row,
+        // where キラキラ is the only word: shell/overlay.cpp follows the displayed rows)
+        tap(C.tapKo, KO[0], KO[1], 0.4);
+        swap("#ov-b1", "#ov-b1a", C.tapKo + 0.05, 0.02);
+        swap("#ov-b1a", "#ov-b2", C.tapKo + 0.35, 0.02);
+        camTo(C.ovOpen2 + 1.0, "screenB", C.tapKo + 0.3 - (C.ovOpen2 + 1.0), "sine.inOut");
+        camTo(C.tapKo + 0.3, "koZoom", T.s8 - 0.1 - (C.tapKo + 0.3), "power2.inOut"); // in on the word, its kanji lines
 
         // ============================================================ S8: turn it off for a game
         caption("cap8", K.cap8.in, K.cap8.out);
