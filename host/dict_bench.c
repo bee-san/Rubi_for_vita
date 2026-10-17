@@ -23,7 +23,12 @@
  * page bookkeeping) and fail if one shows something else; the printed time is
  * its median. One JSON line per lookup, then one summary line.
  * VJO_DICT_BENCH_CHANGE_ROUND=N (tests only) alters round N's result, which
- * that check must catch. */
+ * that check must catch. VJO_DICT_BENCH_SESSION=1 reserves handle/header
+ * metadata inside the same 64 KiB block and reuses it within each line (one
+ * overlay session). VJO_DICT_BENCH_PREPARE=1 also supplies immutable text
+ * generations and prepares each subsequent selection before its timed lookup.
+ * Preparation reads are reported separately and included in total-work analysis;
+ * this models enough idle time, not the actual console scheduler. */
 #define _POSIX_C_SOURCE 200809L
 #include <inttypes.h>
 #include <stdio.h>
@@ -173,6 +178,8 @@ typedef struct {
     size_t cursor, end;
     int rc, entries;
     uint64_t digest, opens, reads, bytes, excess, pages, seeks, arena_peak;
+    uint64_t prepare_reads, prepare_opens, prepare_bytes;
+    int prepare_rc;
     VjoLocalStats stats;
     double *us;
 } Query;
@@ -215,6 +222,8 @@ int main(int argc, char **argv)
     PosixPlatform pp = {0};
     VjoPlatform p;
     int n_lines, mode, rounds;
+    int prepare = getenv("VJO_DICT_BENCH_PREPARE") != NULL;
+    size_t session_bytes = (prepare || getenv("VJO_DICT_BENCH_SESSION")) ? vjo_local_session_size() : 0;
     char **sentences;
     if (argc != 6 || (rounds = atoi(argv[5])) < 1 || rounds > 1000) {
         fprintf(stderr, "usage: vjo-dict-bench DIR FILES LINES first|words|letters ROUNDS\n");
@@ -259,6 +268,12 @@ int main(int argc, char **argv)
         const char *s = sentences[i];
         size_t len = strlen(s), cursor = vjo_utf8_japanese_cursor_step(s, len, 0, 0);
         VjoWordNavigation nav;
+        size_t shown_bytes = 0;
+        p.local_text_generation = prepare ? (uint32_t)i + 1 : 0;
+        if (session_bytes) {
+            memset(arena_mem, 0, session_bytes);
+            p.local_session = (VjoLocalSession *)arena_mem;
+        }
         memset(&nav, 0, sizeof(nav));
         for (int guard = 0; cursor < len && guard < 4096; guard++) {
             Query *q = new_query();
@@ -268,7 +283,17 @@ int main(int argc, char **argv)
             int row = VJO_ROW_STAY;
             memset(&d, 0, sizeof(d));
             d.ocr_text = d.filtered = d.sentence = s;
-            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            vjo_arena_init(&a, arena_mem + session_bytes, sizeof(arena_mem) - session_bytes);
+            if (prepare && guard) {
+                size_t end;
+                a.used = shown_bytes; /* preserve the preceding displayed result during preparation */
+                n_reads = n_bytes = n_opens = 0;
+                q->prepare_rc = vjo_local_prepare_at(&a, &p, &cfg, s, cursor, &end);
+                q->prepare_reads = n_reads;
+                q->prepare_opens = n_opens;
+                q->prepare_bytes = n_bytes;
+                vjo_arena_reset(&a);
+            }
             n_reads = n_bytes = n_seeks = n_opens = n_closes = n_excess = 0;
             n_pages = pages_overflow = 0;
             memset(&vjo_local_stats, 0, sizeof(vjo_local_stats));
@@ -276,7 +301,7 @@ int main(int argc, char **argv)
             q->cursor = cursor;
             trace_query = n_queries - 1;
             q->rc = vjo_overlay_lookup_at(&a, &p, &cfg, cursor, &d);
-            if (n_opens != n_closes) {
+            if (!session_bytes && n_opens != n_closes) {
                 fprintf(stderr, "%s at %zu: %" PRIu64 " opens, %" PRIu64 " closes\n", lines[i].id, cursor, n_opens,
                         n_closes);
                 return 1;
@@ -290,8 +315,9 @@ int main(int argc, char **argv)
             q->excess = n_excess;
             q->pages = n_pages + pages_overflow;
             q->seeks = n_seeks;
-            q->arena_peak = a.peak;
+            q->arena_peak = a.peak + session_bytes;
             q->stats = vjo_local_stats;
+            shown_bytes = a.used;
             if (mode == 0) break;
             if (mode == 1) {
                 next = vjo_word_step(&nav, s, len, cursor, q->end, 1, cfg.japanese_only_selection, NULL, 1, &row);
@@ -302,6 +328,9 @@ int main(int argc, char **argv)
             if (next <= cursor) break; /* the last word: Right stops there (one line: wraps to the first) */
             cursor = next;
         }
+        vjo_local_session_close(p.local_session);
+        for (int j = 0; j < VJO_LOCAL_MAX_DICTS; j++)
+            if (files[j].active) { fprintf(stderr, "a session leaked a dictionary handle\n"); return 1; }
     }
 
     /* Rounds 1..: the same lookups, timed. */
@@ -312,24 +341,42 @@ int main(int argc, char **argv)
     track_pages = 0;
     for (int r = 1; r < rounds; r++) {
         const char *change = getenv("VJO_DICT_BENCH_CHANGE_ROUND");
+        int last_line = -1;
+        size_t shown_bytes = 0;
         for (size_t k = 0; k < n_queries; k++) {
             Query *q = &queries[k];
             VjoArena a;
             VjoOverlayData d;
             uint64_t t0;
             int rc;
+            if (session_bytes && last_line != q->line) {
+                vjo_local_session_close(p.local_session);
+                memset(arena_mem, 0, session_bytes);
+                p.local_session = (VjoLocalSession *)arena_mem;
+                last_line = q->line;
+                shown_bytes = 0;
+            }
             memset(&d, 0, sizeof(d));
             d.ocr_text = d.filtered = d.sentence = sentences[q->line];
-            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            vjo_arena_init(&a, arena_mem + session_bytes, sizeof(arena_mem) - session_bytes);
+            p.local_text_generation = prepare ? (uint32_t)q->line + 1 : 0;
+            if (prepare && k && queries[k - 1].line == q->line) {
+                size_t end;
+                a.used = shown_bytes;
+                (void)vjo_local_prepare_at(&a, &p, &cfg, d.sentence, q->cursor, &end);
+                vjo_arena_reset(&a);
+            }
             t0 = now_ns();
             rc = vjo_overlay_lookup_at(&a, &p, &cfg, q->cursor, &d);
             q->us[r - 1] = (double)(now_ns() - t0) / 1000.0;
+            shown_bytes = a.used;
             if (change && atoi(change) == r && k == 0) rc ^= 1; /* the check below must catch this */
             if (digest(rc, &d) != q->digest) {
                 fprintf(stderr, "%s at %zu: result changed between rounds\n", lines[q->line].id, q->cursor);
                 return 1;
             }
         }
+        vjo_local_session_close(p.local_session);
     }
 
     for (size_t k = 0; k < n_queries; k++) {
@@ -349,14 +396,16 @@ int main(int argc, char **argv)
                ",\"reads_by\":{\"header\":%" PRIu64 ",\"index\":%" PRIu64 ",\"group\":%" PRIu64 ",\"head\":%" PRIu64
                ",\"payload\":%" PRIu64 ",\"filter\":%" PRIu64 "},\"bytes_by\":{\"header\":%" PRIu64
                ",\"index\":%" PRIu64 ",\"group\":%" PRIu64 ",\"head\":%" PRIu64 ",\"payload\":%" PRIu64
-               ",\"filter\":%" PRIu64 "}}\n",
+               ",\"filter\":%" PRIu64 "},\"prepare\":{\"rc\":%d,\"reads\":%" PRIu64
+               ",\"opens\":%" PRIu64 ",\"bytes\":%" PRIu64 "}}\n",
                q->line, lines[q->line].id, lines[q->line].model, k, q->cursor, q->rc, q->entries, q->end, q->digest,
                us, q->opens, q->reads, q->bytes, q->excess, q->pages, q->seeks, q->arena_peak, st->spans, st->candidates,
                st->probes, st->filtered, st->miss_cached, st->hash_present, st->found, st->ranked, st->hinted, st->absent_reads,
                st->reads[VJO_READ_HEADER], st->reads[VJO_READ_INDEX], st->reads[VJO_READ_GROUP],
                st->reads[VJO_READ_HEAD], st->reads[VJO_READ_PAYLOAD], st->reads[VJO_READ_FILTER],
                st->bytes[VJO_READ_HEADER], st->bytes[VJO_READ_INDEX], st->bytes[VJO_READ_GROUP],
-               st->bytes[VJO_READ_HEAD], st->bytes[VJO_READ_PAYLOAD], st->bytes[VJO_READ_FILTER]);
+               st->bytes[VJO_READ_HEAD], st->bytes[VJO_READ_PAYLOAD], st->bytes[VJO_READ_FILTER],
+               q->prepare_rc, q->prepare_reads, q->prepare_opens, q->prepare_bytes);
     }
     printf("{\"summary\":{\"lines\":%d,\"lookups\":%zu,\"mode\":\"%s\",\"rounds\":%d,\"arena_bytes\":%u}}\n", n_lines,
            n_queries, argv[4], rounds, ARENA_BYTES);

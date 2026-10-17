@@ -126,6 +126,29 @@ class DictLookupBench(unittest.TestCase):
         self.assertEqual(bad.returncode, 1)
         self.assertIn("result changed between rounds", bad.stderr)
 
+    def test_preparation_counts_background_work_and_preserves_every_result(self):
+        self.build(ROWS + FILLER)
+        argv = [BENCH, str(self.dir), "main.vjdict", str(self.lines), "words", "3"]
+        variants = []
+        for flags in ({}, {"VJO_DICT_BENCH_SESSION": "1"}, {"VJO_DICT_BENCH_PREPARE": "1"}):
+            run = subprocess.run(argv, capture_output=True, text=True, timeout=60,
+                                 env={**os.environ, **flags})
+            self.assertEqual(run.returncode, 0, run.stderr)
+            variants.append([q for line in run.stdout.splitlines() if "summary" not in (q := json.loads(line))])
+        identity = lambda rows: [(q["cursor"], q["rc"], q["entries"], q["end"], q["digest"]) for q in rows]
+        self.assertEqual(identity(variants[0]), identity(variants[1]))
+        self.assertEqual(identity(variants[0]), identity(variants[2]))
+        for q in variants[2]:
+            self.assertEqual(q["prepare"]["rc"], 0)
+            self.assertLessEqual(q["arena_peak"], 65536)
+        self.assertTrue(any(q["prepare"]["reads"] for q in variants[2]))
+        self.assertLess(sum(q["reads"] for q in variants[2]), sum(q["reads"] for q in variants[1]))
+        # Preparation is outside foreground timing, but the round-equivalence guard still runs.
+        bad = subprocess.run(argv, capture_output=True, text=True, timeout=60,
+                             env={**os.environ, "VJO_DICT_BENCH_PREPARE": "1", "VJO_DICT_BENCH_CHANGE_ROUND": "1"})
+        self.assertEqual(bad.returncode, 1)
+        self.assertIn("result changed between rounds", bad.stderr)
+
     def test_golden_round_trip_and_a_changed_entry_fails(self):
         self.build(ROWS)
         golden = self.dir / "golden.tsv"

@@ -11,6 +11,19 @@
 #define VJO_LOCAL_MAX_MATCHES 8
 #define VJO_LOCAL_RESULT_BUDGET (64u * 1024u)
 #define VJO_LOCAL_SCRATCH_BUDGET (48u * 1024u)
+/* Handles, a filter directory and bounded text locators; no definitions. Reserve this
+ * inside the existing result allocation, separately from the resettable
+ * lookup arena. Use naturally aligned storage, zero it before first use;
+ * close is idempotent.
+ * Config/platform changes and file errors close the old handles. Files must
+ * not be modified during a session; close/reopen after replacing them. */
+size_t vjo_local_session_size(void);
+void vjo_local_session_close(VjoLocalSession *session);
+/* Locate a word without loading its definition; the optional session remembers
+ * it for local_text_generation. Scratch is released, preserving displayed output.
+ * matched_end is the source byte end, or cursor_byte for a miss. */
+int vjo_local_prepare_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
+                         const char *text, size_t cursor_byte, size_t *matched_end);
 /* One maximum-size payload plus its vocabulary, token, meaning pointer, the
  * frequency list's name and the dictionary's title (64 bytes each at most)
  * and alignment: 232 of the 256 bytes on a 64-bit host, 208 on the Vita
@@ -107,8 +120,8 @@ int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *c
                            const char *text, size_t cursor_byte, int limit,
                            VjoLocalPages *pages, VjoDictResult *res, VjoErr *err);
 
-/* Reads one located page's entry into `a` (one vocabulary, one token), opening
- * only that dictionary and checking its header and size again. Uses no page
+/* Reads one located page's entry into `a` (one vocabulary, one token), borrowing
+ * a live session or opening only its dictionary and checking its header/size. Uses no page
  * cache or deinflection scratch: at most VJO_LOCAL_SELECTED_BUDGET bytes. */
 int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                         const VjoLocalPages *pages, int page,

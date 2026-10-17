@@ -22,6 +22,7 @@
 #include "../core/textfilter.h"
 #include "../core/textnorm.h"
 #include "../core/utf.h"
+#include "../core/text_rows.h"
 #ifdef VJO_WITH_VOCR
 #include "../core/local_ocr.h"
 #include "game_ocr_client.h"
@@ -88,6 +89,10 @@ static uint32_t local_text_scene, local_text_capture_seq;
 static uint32_t local_cursor_byte, local_cursor_seq;
 static int cursor_waiting;
 static int job_cursor_only;
+static int job_prepare;
+static uint32_t prepared_seq, prepare_cursor;
+static int prepare_left;
+static size_t prepared_end;
 static uint32_t job_cursor_byte, job_cursor_seq, job_text_generation;
 /* Dictionary paging at the cursor (local_dictionary_results > 1): the
  * requested page shares the cursor sequence. Page locators live at the start
@@ -101,6 +106,7 @@ static VjoConfig cfg;      /* control thread */
 static VjoConfig job_cfg;  /* snapshot used by the network thread */
 static int anki_on;        /* vjo_anki_configure(&cfg): enter saves cards to the queue */
 static VjoPlatform plat;
+static int dict_close_pending; /* control thread: close after an in-flight lookup */
 static char title_id[12];   /* set while a game is active ("" otherwise) */
 static char job_title[12];  /* the job's game (title_id when the job started), for its log lines */
 /* Scene IDs survive kernel resets. A foreground boundary must also reject
@@ -287,6 +293,7 @@ void vjo_post_command(int cmd, const VjoRect *rect)
     if (rect)
         pending_rect = *rect;
     sceKernelUnlockMutex(cmd_lock, 1);
+    vjoNotifyShell();
 }
 
 /* Under cmd_lock and the view lock: queues the cursor job for the current
@@ -339,6 +346,7 @@ void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation)
     post_local_lookup(text_generation);
     vjo_view_unlock();
     sceKernelUnlockMutex(cmd_lock, 1);
+    vjoNotifyShell();
 }
 
 int vjo_post_page(int page, uint32_t text_generation)
@@ -359,6 +367,7 @@ int vjo_post_page(int page, uint32_t text_generation)
         vjo_view_unlock();
     }
     sceKernelUnlockMutex(cmd_lock, 1);
+    if (accepted) vjoNotifyShell();
     return accepted;
 }
 
@@ -495,7 +504,12 @@ static int mem_alloc(void)
         return mem_uid;
     mem_bytes = bytes;
 #endif
-    vjo_arena_init(&results[0], (uint8_t *)base, bytes);
+    /* Session metadata shares the 64 KiB allocation; resetting a lookup
+     * never overwrites it. No new heap allocation or static file cache. */
+    size_t session_bytes = vjo_local_session_size();
+    plat.local_session = base;
+    sceClibMemset(base, 0, session_bytes);
+    vjo_arena_init(&results[0], (uint8_t *)base + session_bytes, bytes - session_bytes);
     vjo_arena_init(&results[1], NULL, 0);
     vjo_dlog("local dictionary workspace: %u bytes", (unsigned)bytes);
     active = -1;
@@ -506,6 +520,8 @@ static int mem_alloc(void)
 /* Called by the idle control thread or by the network thread owning its job. */
 static void mem_free(void)
 {
+    vjo_local_session_close(plat.local_session);
+    plat.local_session = NULL;
     if (has_result_memory()) {
         vjo_view_lock();
         g_view.list = NULL;
@@ -1282,9 +1298,11 @@ static int run_job(VjoArena *a, VjoOverlayData *out)
         return VJO_OK;
     __sync_synchronize(); /* the sentence is visible before job_text_ready */
     job_text_ready = 1;
+    vjoNotifyShell();
     if (!job_lookup || job_cursor_byte >= sceClibStrnlen(local_text, sizeof(local_text))) return VJO_OK;
     int64_t t0 = now_us();
     vjo_dict_reads = vjo_dict_read_bytes = 0;
+    plat.local_text_generation = job_text_generation;
     int rc = vjo_overlay_lookup_at(a, &plat, &job_cfg, job_cursor_byte, out);
     note_pages(rc, out);
     log_lookup(job_prepares ? "first word" : "on open", out, job_cursor_byte, rc, t0);
@@ -1303,6 +1321,7 @@ static void note_pages(int rc, const VjoOverlayData *out)
  * into the same arena, after the locators (no probing, no new allocation). */
 static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
 {
+    plat.local_text_generation = job_text_generation;
     const VjoLocalPages *pages = out->pages;
     int64_t t0 = now_us();
     int rc;
@@ -1344,6 +1363,14 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
  * the Shell's own and the lookup (docs/first-ocr.md; tools/analyse_timeline.py reads it). */
 static void net_job(void)
 {
+    if (job_prepare) {
+        plat.local_text_generation = job_text_generation;
+        job_rc = vjo_local_prepare_at(&results[0], &plat, &job_cfg, local_text, job_cursor_byte, &prepared_end);
+        __sync_synchronize();
+        job_done = 1;
+        vjoNotifyShell();
+        return;
+    }
     int idx = job_idx;
 #ifdef VJO_WITH_VOCR
     VjoHistoryRecord history;
@@ -1393,6 +1420,7 @@ static void net_job(void)
 #endif
     __sync_synchronize(); /* results are visible before job_done */
     job_done = 1;
+    vjoNotifyShell();
 #ifdef VJO_WITH_VOCR
     /* Display/input never wait on storage. Only this thread can overwrite the
      * OCR result, and it cannot execute the next job until append returns. */
@@ -1540,6 +1568,7 @@ static void start_job_kind(const char *why, int lookup, int refresh)
 {
     if (job_running)
         return;
+    job_prepare = 0;
     if (!refresh) {
         /* Retire the previous lookup before OCR, then recreate result arenas
          * after all capture/model/inference allocations have been freed. */
@@ -1609,6 +1638,7 @@ static void start_cursor_job(void)
     }
     sceKernelLockMutex(cmd_lock, 1, NULL);
     job_cursor_only = 1;
+    job_prepare = 0;
     job_refresh = 0;
     cache_ok = 0; /* this job will overwrite the single result arena */
     job_lookup = 1;
@@ -1660,6 +1690,7 @@ static void apply_config(void)
         if (job_running && !same_pipeline(&job_cfg, &cfg))
             job_cancelled = 1;
     } else if (previous.local_dictionary_results != cfg.local_dictionary_results) {
+        prepared_seq = 0;
         /* A presentation of the same recognized text: look the word up again
          * (from its best match) without recapturing or rerunning OCR. */
         cache_ok = 0;
@@ -1743,6 +1774,7 @@ static void clear_input_block_error(void)
 
 static void open_overlay(void)
 {
+    prepared_seq = 0;
     VjoState st;
     int block_rc = vjoSetInputBlock(1);
     vjo_dlog("input block on rc=%d (%08X) t=%u ms", block_rc, block_rc, vjo_log_ms());
@@ -1778,7 +1810,7 @@ static void open_overlay(void)
         /* Reopening a completed lookup must not replace its word with the
          * pending character and repeat disk I/O. Cursor/text generations
          * exclude a result superseded before its next job has started. */
-        if ((!job_running || job_selftest) && !cursor_waiting && job_cursor_seq == local_cursor_seq &&
+        if ((!job_running || job_selftest || job_prepare) && !cursor_waiting && job_cursor_seq == local_cursor_seq &&
             job_text_generation == local_text_generation && claim_cache_for(&st)) {
             vjo_dlog("open: saved local word");
             view_show_cache();
@@ -1821,6 +1853,8 @@ enum { CLOSE_IN_GAME = 0, CLOSE_GAME_LEFT, CLOSE_FOREGROUND };
 
 static void close_overlay_for(int why)
 {
+    prepared_seq = local_cursor_seq;
+    prepare_left = 0;
     static const char *const names[] = {"in game", "game left", "foreground changed"};
     int rc;
     if (ov == OV_CLOSED) {
@@ -1834,6 +1868,8 @@ static void close_overlay_for(int why)
         return;
     }
     ov = OV_CLOSED;
+    if (net_busy()) dict_close_pending = 1;
+    else vjo_local_session_close(plat.local_session);
     idle_since_us = now_us();
     cursor_waiting = 0;
     refresh_pending = open_retry = 0;
@@ -2115,7 +2151,30 @@ static void on_selftest_done(void)
 
 static void on_job_done(void)
 {
+    /* The network thread has published completion: no file read can race
+     * this close, even if the overlay was reopened while the job finished. */
+    __sync_synchronize();
+    if ((ov == OV_CLOSED && job_cfg.ocr_mode != VJO_OCR_AUTO) || dict_close_pending || job_cancelled)
+        vjo_local_session_close(plat.local_session);
+    dict_close_pending = 0;
     idle_since_us = now_us();
+    if (job_prepare) {
+        job_running = job_done = job_prepare = 0;
+        if (job_rc || job_cancelled || job_text_generation != local_text_generation) prepare_left = 0;
+        else {
+            VjoWordNavigation nav = {0};
+            int row;
+            size_t next = vjo_word_step(&nav, local_text, sceClibStrnlen(local_text, sizeof(local_text)),
+                                      job_cursor_byte, prepared_end, 1, job_cfg.japanese_only_selection, NULL, 0, &row);
+            prepare_cursor = (uint32_t)next;
+            if (next <= job_cursor_byte) prepare_left = 0;
+        }
+        job_cancelled = 0;
+        if (restart_old_job(0)) return;
+        if (cursor_waiting && ov != OV_CLOSED) start_cursor_job();
+        strip_after_wait();
+        return;
+    }
     if (job_cursor_only) { on_cursor_done(); return; }
     if (job_refresh) { on_refresh_done(); return; }
 #if VJO_DEBUG
@@ -2654,7 +2713,7 @@ static void selftest_job_due(void)
     claim_cache_for(&st);
     vjo_log("job start (self-test)");
     job_selftest = job_prepares = 1;
-    job_refresh = job_lookup = job_cursor_only = job_cancelled = 0;
+    job_refresh = job_lookup = job_cursor_only = job_cancelled = job_prepare = 0;
     job_idx = 1; /* results[1], always empty (one arena since the network pipeline went): never the shown result's */
     job_cfg = cfg;
     job_generation = game_generation;
@@ -2696,11 +2755,39 @@ static void boot_guard_ok(void)
     }
 }
 
-/* One wakeup of the control thread with the kernel's event bits. The order of
- * the handlers within one wakeup is part of the policy (e.g. a trigger and a
- * game start in the same wakeup). */
+/* One bounded location-only lookup per idle job, at most eight positions from
+ * the current selection. Existing scratch follows the displayed entry; OOM merely
+ * stops preparation. The normal cursor job always wins the next worker slot. */
+static void prepare_words(void)
+{
+    if (job_running || pending_cmd != VJO_CMD_NONE || now_us() - idle_since_us < 100000 ||
+        !cache_ok || !local_text_valid || local_text_game_generation != game_generation ||
+        refresh_pending || subtitles || shot_waiting() || vjo_selftest_stages() ||
+        !has_result_memory() || !game_active() || cfg.ocr_mode != VJO_OCR_AUTO ||
+        cfg.highlight_mode != VJO_HIGHLIGHT_WORD) return;
+    if (prepared_seq != local_cursor_seq) {
+        prepared_seq = local_cursor_seq;
+        prepare_cursor = local_cursor_byte;
+        prepare_left = 8;
+    }
+    if (!prepare_left || prepare_cursor >= sceClibStrnlen(local_text, sizeof(local_text))) return;
+    prepare_left--;
+    job_prepare = 1;
+    job_cursor_only = job_refresh = job_cancelled = job_done = job_text_ready = 0;
+    job_cfg = cfg;
+    job_generation = game_generation;
+    job_text_generation = local_text_generation;
+    job_cursor_byte = prepare_cursor;
+    job_running = 1;
+    __sync_synchronize();
+    sceKernelSetEventFlag(net_evf, NET_EV_JOB);
+}
+
+/* Kernel and local wakeups share the existing event. Handler order gives
+ * input, refreshed text and foreground work priority over preparation. */
 static void control_tick(uint32_t bits)
 {
+    int defer_prepare = bits || refresh_pending;
     boot_guard_ok();
     if (job_running) sceKernelPowerTick(0);
     if (bits & VJO_EV_GAME_EXIT)
@@ -2735,6 +2822,7 @@ static void control_tick(uint32_t bits)
 #if VJO_DEBUG
     selftest_job_due();
 #endif
+    if (!defer_prepare) prepare_words();
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
         mem_free();
@@ -2749,7 +2837,7 @@ static int ctl_main(SceSize args, void *argp)
     while (running) {
         uint32_t bits = 0;
         vjoWaitEvent(VJO_EV_TRIGGER | VJO_EV_SUBTITLE | VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET |
-                         VJO_EV_GAME_START | VJO_EV_GAME_EXIT,
+                         VJO_EV_GAME_START | VJO_EV_GAME_EXIT | VJO_EV_SHELL,
                      &bits, POLL_TIMEOUT_US);
         control_tick(bits);
     }

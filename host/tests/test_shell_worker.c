@@ -5,6 +5,7 @@
 #include "client.h"
 #include "platform_posix.h"
 #include "textfilter.h"
+
 #ifdef VJO_VOCR_TIERS_TEST
 /* Another package's tier map (host/tests/test_shared_tiers.h): this file's own
  * tests for it only, its TEST_LIST at the end; the others are left unused. */
@@ -104,6 +105,8 @@ int vjoSetInputBlock(int on)
 int vjoGetVersion(void) { return VJO_API_VERSION; }
 int vjoRegisterShell(void) { return 0; }
 int vjoWaitEvent(uint32_t mask, uint32_t *out, uint32_t timeout) { *out = 0; return -1; }
+static unsigned shell_notifications;
+int vjoNotifyShell(void) { shell_notifications++; return 0; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opt)
 {
     TEST_CHECK(strcmp(name, "VjoVocr") && strcmp(name, "VjoGameVocr"));
@@ -789,6 +792,10 @@ static void reset(void)
     held_cmd = held_view = retirement_checks = 0;
     local_text[0] = 0;
     local_text_valid = cursor_waiting = job_cursor_only = 0;
+    job_prepare = 0;
+    prepared_seq = prepare_cursor = 0;
+    prepare_left = 0;
+    shell_notifications = 0;
     local_text_generation = local_text_game_generation = 0;
     local_cursor_seq = local_cursor_byte = 0;
     job_cursor_byte = job_cursor_seq = job_text_generation = 0;
@@ -798,6 +805,7 @@ static void reset(void)
     pending_cursor_byte = pending_cursor_generation = 0;
     memset(&state, 0, sizeof(state));
     memset(&plat, 0, sizeof(plat));
+    dict_close_pending = 0;
     vjo_config_defaults(&loaded);
     loaded.dictionary = VJO_DICT_LOCAL;
     cfg = loaded;
@@ -901,7 +909,7 @@ static void test_local_open(void)
      * (in the network thread). */
     TEST_CHECK(!has_result_memory() && !user_allocs && !heap_allocs);
     TEST_ASSERT(mem_alloc() == 0); /* the job's lookup arena */
-    TEST_CHECK(results[0].size == LOCAL_RESULT_ARENA_SIZE && !results[1].size);
+    TEST_CHECK(results[0].size + vjo_local_session_size() == LOCAL_RESULT_ARENA_SIZE && !results[1].size);
     job_running = 0;
     mem_free();
     TEST_CHECK(!has_result_memory());
@@ -1016,7 +1024,7 @@ static void test_alloc_failure(void)
     fail_alloc = 1;
     TEST_CHECK(mem_alloc() < 0 && !has_result_memory());
     fail_alloc = 0;
-    TEST_CHECK(mem_alloc() == 0 && has_result_memory() && results[0].size == LOCAL_RESULT_ARENA_SIZE);
+    TEST_CHECK(mem_alloc() == 0 && has_result_memory() && results[0].size + vjo_local_session_size() == LOCAL_RESULT_ARENA_SIZE);
     mem_free();
 #ifndef VJO_PAF_ALLOC
     fail_base = 1;
@@ -2336,7 +2344,7 @@ static void check_current_definition(const char *meaning, uint32_t cursor)
     TEST_ASSERT(g_view.list->n_entries == 1);
     TEST_CHECK(strstr(g_view.list->entries[0].text, meaning) != NULL);
     TEST_CHECK(g_view.list->entries[0].hl_start == (int)cursor);
-    TEST_CHECK(cursor_opens == cursor_closes && !cursor_handle_live);
+    TEST_CHECK(cursor_opens == cursor_closes + cursor_handle_live && cursor_handle_live <= 1);
     TEST_CHECK(!held_cmd && !held_view);
 }
 static void test_japanese_only_selection_and_config_reload(void)
@@ -2580,7 +2588,7 @@ static void test_character_open_reuses_background_text(void)
     finish_current_job();
     check_current_definition("cat", 0);
     TEST_CHECK(local_text_generation == generation && vocr_allocs == 1);
-    TEST_CHECK(results[0].size == 64 * 1024 && !results[1].size);
+    TEST_CHECK(results[0].size + vjo_local_session_size() == 64 * 1024 && !results[1].size);
 
     /* Opening between recognition and completion starts only point lookup.
      * The real mutex stubs reject recursively reacquiring cmd_lock. */
@@ -2603,7 +2611,7 @@ static void test_word_background_lookup_and_reopen_cache(void)
     TEST_ASSERT(job_running && job_lookup && !job_cursor_only && ov == OV_CLOSED);
     finish_current_job();
     TEST_CHECK(cache_ok && active == 0 && !g_view.open && !g_view.list);
-    TEST_CHECK(results[0].size == 64 * 1024 && !results[1].size);
+    TEST_CHECK(results[0].size + vjo_local_session_size() == 64 * 1024 && !results[1].size);
     unsigned reads_before = cursor_reads, inferences = vocr_allocs;
     uint32_t generation = local_text_generation;
     open_overlay();
@@ -2708,7 +2716,7 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     uint32_t generation = local_text_generation;
     vjo_post_cursor((uint32_t)strlen("伊佐"), generation); on_command(); finish_current_job();
     TEST_ASSERT(g_view.list && g_view.list->n_entries == 1);
-    TEST_CHECK(g_view.cursor_byte == strlen("伊佐") && real_opens == 2);
+    TEST_CHECK(g_view.cursor_byte == strlen("伊佐") && real_opens == 1); /* Auto retains its text's session */
 #if VJO_DEBUG
     TEST_CHECK(lookup_line("cursor at 6: 1 chars, dictionary 1/1"));
     /* The bundle lists its one 那 article (Daijirin4's) under な and だ; Jiten
@@ -2985,7 +2993,8 @@ static void check_page(const char *meaning, uint32_t cursor, int page, int pages
     TEST_CHECK(g_view.local_cursor_mode && g_view.cursor_byte == cursor);
     TEST_CHECK(g_view.dict_page == page && g_view.dict_pages == pages);
     TEST_MSG("page %d/%d, expected %d/%d", g_view.dict_page, g_view.dict_pages, page, pages);
-    TEST_CHECK(!paged_live && !held_cmd && !held_view && !job_running);
+    TEST_CHECK(!held_cmd && !held_view && !job_running);
+    TEST_CHECK(ov != OV_CLOSED || !paged_live);
 }
 static unsigned paged_total_opens(void) { return paged_opens[0] + paged_opens[1] + paged_opens[2]; }
 
@@ -2995,11 +3004,11 @@ static void test_dictionary_pages_read_one_entry_each(void)
     open_overlay(); finish_current_job();
     check_page("main. cat", 0, 0, 3);
     TEST_CHECK(paged_opens[0] == 1 && paged_opens[1] == 1 && paged_opens[2] == 1);
-    TEST_CHECK(results[0].size == 64 * 1024 && !results[1].size && vocr_allocs == 1);
+    TEST_CHECK(results[0].size + vjo_local_session_size() == 64 * 1024 && !results[1].size && vocr_allocs == 1);
     unsigned arenas = user_allocs + heap_allocs;
     size_t first_peak = results[0].peak;
     uint32_t generation = local_text_generation;
-    /* Down: only extra.vjdict is opened, at its located payload. */
+    /* Down: reuse extra.vjdict's handle at its located payload. */
     TEST_CHECK(vjo_post_page(1, generation));
     TEST_CHECK(pending_cmd == VJO_CMD_CURSOR && g_view.list == &local_header);
     TEST_CHECK(g_view.dict_page == 1 && g_view.dict_pages == 3 && !strcmp(g_view.status, "Looking up words…"));
@@ -3007,8 +3016,8 @@ static void test_dictionary_pages_read_one_entry_each(void)
     unsigned reads_before = paged_reads;
     finish_current_job();
     check_page("extra cat", 0, 1, 3);
-    TEST_CHECK(paged_opens[0] == 1 && paged_opens[1] == 2 && paged_opens[2] == 1);
-    TEST_CHECK(paged_reads - reads_before == 2); /* its header, then one payload */
+    TEST_CHECK(paged_opens[0] == 1 && paged_opens[1] == 1 && paged_opens[2] == 1);
+    TEST_CHECK(paged_reads - reads_before == 1); /* the session already validated its header */
     /* Ignored: the current page, out of range, a stale text. */
     TEST_CHECK(!vjo_post_page(1, generation) && !vjo_post_page(3, generation));
     TEST_CHECK(!vjo_post_page(-1, generation) && !vjo_post_page(2, generation + 1));
@@ -3031,7 +3040,7 @@ static void test_dictionary_pages_read_one_entry_each(void)
     check_page("extra cat", 0, 1, 3);
     /* Paging never reallocates, recaptures, or needs lookup scratch. */
     TEST_CHECK(user_allocs + heap_allocs == arenas && vocr_allocs == 1);
-    TEST_CHECK(results[0].peak <= first_peak && results[0].size == 64 * 1024 && !results[1].size);
+    TEST_CHECK(results[0].peak <= first_peak && results[0].size + vjo_local_session_size() == 64 * 1024 && !results[1].size);
     TEST_CHECK(local_text_generation == generation);
 
     /* A new character starts at its best match; pages come with its result. */
@@ -3042,7 +3051,9 @@ static void test_dictionary_pages_read_one_entry_each(void)
     TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
     check_page("extra dog", 3, 1, 2);
     /* Reopening unchanged dialogue shows the same page without reads. */
-    close_overlay(); reads_before = paged_reads; unsigned opens_before = paged_total_opens();
+    close_overlay();
+    TEST_CHECK(!paged_live); /* the shown entry can stay cached; its files cannot */
+    reads_before = paged_reads; unsigned opens_before = paged_total_opens();
     open_overlay();
     TEST_CHECK(!job_running && paged_reads == reads_before && paged_total_opens() == opens_before);
     check_page("extra dog", 3, 1, 2);
@@ -3050,7 +3061,7 @@ static void test_dictionary_pages_read_one_entry_each(void)
     TEST_CHECK(vjo_post_page(0, generation)); on_command();
     TEST_ASSERT(job_running); close_overlay(); TEST_CHECK(job_cancelled);
     job_rc = run_cursor_job(&results[0], &cache_data[0]); job_done = 1; on_job_done();
-    TEST_CHECK(!job_running && !g_view.list);
+    TEST_CHECK(!job_running && !g_view.list && !paged_live);
     open_overlay(); TEST_ASSERT(job_running && job_cursor_only && job_page == 0);
     finish_current_job(); check_page("main. dog", 3, 0, 2);
     TEST_CHECK(vocr_allocs == 1 && user_allocs + heap_allocs == arenas);
@@ -3115,7 +3126,9 @@ static void test_dictionary_page_after_replaced_file_locates_again(void)
     open_overlay(); finish_current_job();
     check_page("main. cat", 0, 0, 3);
     uint32_t generation = local_text_generation;
-    /* extra.vjdict is replaced by a file of another size between pages. */
+    /* End the session before replacing a dictionary (installation requires
+     * closed games). Cached page locators must still reject its new size. */
+    vjo_local_session_close(plat.local_session);
     paged_size[1] += 1; cursor_u64(paged_dict[1] + 40, paged_size[1]);
     TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
     TEST_ASSERT(g_view.list && !g_view.list->n_entries && !strcmp(g_view.list->header, "猫犬鳥"));
@@ -3124,7 +3137,7 @@ static void test_dictionary_page_after_replaced_file_locates_again(void)
     /* The next page locates every dictionary again instead of trusting old offsets. */
     unsigned opens = paged_total_opens();
     TEST_CHECK(vjo_post_page(2, generation)); on_command(); finish_current_job();
-    TEST_CHECK(paged_total_opens() - opens == 4); /* three to locate, then the page */
+    TEST_CHECK(paged_total_opens() - opens == 3); /* three to locate; the page borrows its handle */
     check_page("third cat", 0, 2, 3);
     TEST_CHECK(vjo_post_page(1, generation)); on_command(); finish_current_job();
     check_page("extra cat", 0, 1, 3);
@@ -3246,7 +3259,7 @@ static void test_local_lookup_single_arena(void)
     start_job("local lookup", 1);
     TEST_CHECK(job_idx == 0 && !g_view.list);
     TEST_CHECK(run_job(&results[job_idx], &cache_data[job_idx]) == VJO_OK);
-    TEST_CHECK(has_result_memory() && results[0].size == 64 * 1024);
+    TEST_CHECK(has_result_memory() && results[0].size + vjo_local_session_size() == 64 * 1024);
     TEST_CHECK(!results[1].base && !results[1].size);
     on_job_done();
     TEST_CHECK(cache_ok && active == 0 && g_view.list == &cache_data[0].list);
@@ -3278,7 +3291,7 @@ static void test_audit_exit_during_lookup_frees_the_arena_after_the_job(void)
     TEST_CHECK(!has_result_memory()); /* opening takes no memory */
     /* the network thread: OCR in the game, then the lookup's arena */
     job_rc = run_job(&results[job_idx], &cache_data[job_idx]);
-    TEST_CHECK(job_rc == VJO_OK && has_result_memory() && results[0].size == LOCAL_RESULT_ARENA_SIZE);
+    TEST_CHECK(job_rc == VJO_OK && has_result_memory() && results[0].size + vjo_local_session_size() == LOCAL_RESULT_ARENA_SIZE);
     on_game_exit(); /* before the control thread saw job_done */
     TEST_CHECK(has_result_memory() && audit_live() == 1); /* still the job's */
     job_done = 1;
@@ -4143,6 +4156,7 @@ static void test_refresh_replacement_resets_dictionary_pages(void)
 static void finish_by_tick(void)
 {
     TEST_ASSERT(job_running);
+    if (job_prepare) { net_job(); control_tick(0); return; }
     int idx = job_idx;
     job_rc = job_cursor_only ? run_cursor_job(&results[idx], &cache_data[idx]) : run_job(&results[idx], &cache_data[idx]);
     job_done = 1;
@@ -6824,6 +6838,101 @@ static void test_overlay_app_unknown_is_never_said(void)
     TEST_CHECK(vjo_app_stamp_api("vjoapp1 api=21x build=0") == -1 && vjo_app_stamp_api("") == -1);
 }
 
+#ifdef VJO_WITH_VOCR
+static void test_auto_prepares_words_without_replacing_the_shown_entry(void)
+{
+    cursor_setup();
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running && !job_prepare);
+    finish_current_job();
+    TEST_ASSERT(cache_ok && local_text_valid && cursor_handle_live);
+    const VjoEntryList *shown = &cache_data[0].list;
+    const char *definition = shown->entries[0].text;
+    char saved[256]; snprintf(saved, sizeof(saved), "%s", definition);
+    unsigned inferences = vocr_allocs, allocations = heap_allocs + user_allocs, notifications = shell_notifications;
+    int jobs = 0;
+    for (int i = 0; i < 12; i++) {
+        test_now += 100001;
+        control_tick(0);
+        if (job_running) {
+            TEST_ASSERT(job_prepare);
+            finish_current_job();
+            jobs++;
+        }
+        TEST_CHECK(!strcmp(saved, definition) && cache_ok && !g_view.open);
+    }
+    TEST_CHECK(jobs > 1 && jobs <= 8 && vocr_allocs == inferences);
+    TEST_CHECK(heap_allocs + user_allocs == allocations && shell_notifications > notifications);
+    open_overlay();
+    TEST_CHECK(!job_running && g_view.list == shown && g_view.cursor_byte == 0);
+    int before = cursor_reads;
+    notifications = shell_notifications;
+    vjo_post_cursor(3, local_text_generation);
+    TEST_CHECK(shell_notifications == notifications + 1);
+    control_tick(VJO_EV_SHELL);
+    TEST_ASSERT(job_running && job_cursor_only && !job_prepare);
+    finish_current_job();
+    TEST_CHECK(cursor_reads == before + 1 && g_view.list->n_entries == 1);
+    TEST_CHECK(strstr(g_view.list->entries[0].text, "dog") && g_view.cursor_byte == 3);
+    TEST_CHECK(vocr_allocs == inferences && heap_allocs + user_allocs == allocations);
+    close_overlay();
+    TEST_CHECK(!cursor_handle_live && cursor_opens == cursor_closes);
+    test_now += 200000; control_tick(0);
+    TEST_CHECK(!job_running); /* closing does not immediately reopen the files */
+    mem_free();
+}
+
+static void test_opening_during_preparation_keeps_the_current_screen(void)
+{
+    for (int moved = 0; moved < 2; moved++) {
+        cursor_setup(); stable_pending = 1; control_tick(0); finish_current_job();
+        test_now += 100001; control_tick(0);
+        TEST_ASSERT(job_running && job_prepare);
+        if (moved) { next_scene(8); fake_recognized_text = "犬"; }
+        open_overlay();
+        if (!moved) TEST_CHECK(g_view.list && g_view.list->n_entries == 1 && strstr(g_view.list->entries[0].text, "cat"));
+        else TEST_CHECK(ov == OV_OPEN_OLD_JOB && view_waiting);
+        finish_current_job();
+        if (moved) {
+            TEST_ASSERT(job_running && !job_prepare && !job_cursor_only);
+            finish_current_job();
+        }
+        TEST_CHECK(ov == OV_OPEN && !view_waiting && g_view.list && g_view.list->n_entries == 1);
+        TEST_CHECK(strstr(g_view.list->entries[0].text, moved ? "dog" : "cat"));
+        close_overlay(); mem_free();
+    }
+}
+
+static void test_input_wins_the_worker_slot_after_one_prepared_word(void)
+{
+    cursor_setup(); open_overlay(); finish_current_job();
+    test_now += 100001; control_tick(0);
+    TEST_ASSERT(job_running && job_prepare);
+    finish_current_job(); /* the already selected first word */
+    test_now += 100001; control_tick(0);
+    TEST_ASSERT(job_running && job_prepare && job_cursor_byte == 3);
+    const char *shown = g_view.list->entries[0].text;
+    TEST_CHECK(strstr(shown, "cat"));
+    vjo_post_cursor(6, local_text_generation); control_tick(VJO_EV_SHELL);
+    TEST_CHECK(job_prepare && cursor_waiting);
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only && !job_prepare && job_cursor_byte == 6);
+    finish_current_job();
+    TEST_CHECK(g_view.cursor_byte == 6 && strstr(g_view.list->entries[0].text, "bird"));
+    close_overlay(); mem_free();
+    /* Manual recognition and Character mode leave the worker idle. */
+    for (int mode = 0; mode < 2; mode++) {
+        cursor_setup();
+        if (!mode) cfg.ocr_mode = loaded.ocr_mode = VJO_OCR_ON_PRESS;
+        else cfg.highlight_mode = loaded.highlight_mode = VJO_HIGHLIGHT_CHARACTER;
+        open_overlay(); finish_current_job();
+        test_now += 100001; control_tick(0);
+        TEST_CHECK(!job_running);
+        close_overlay(); mem_free();
+    }
+}
+#endif
+
 #ifdef VJO_VOCR_TIERS_TEST
 /* Two sizes, one model (host/tests/test_shared_tiers.h: Normal and Large
  * VOCR4-W20): a bad file leaves out both of its sizes at once, and the job goes on
@@ -6883,6 +6992,9 @@ TEST_LIST = {
     {"normal_build_refused_begin_then_the_next_job_holds", test_normal_build_refused_begin_then_the_next_job_holds},
 #endif
 #ifdef VJO_WITH_VOCR
+    {"auto_prepares_words_without_replacing_the_shown_entry", test_auto_prepares_words_without_replacing_the_shown_entry},
+    {"opening_during_preparation_keeps_the_current_screen", test_opening_during_preparation_keeps_the_current_screen},
+    {"input_wins_the_worker_slot_after_one_prepared_word", test_input_wins_the_worker_slot_after_one_prepared_word},
     {"session_log_appends", test_session_log_appends},
     {"every_job_post_finds_job_running", test_every_job_post_finds_job_running},
 #endif

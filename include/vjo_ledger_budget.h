@@ -209,6 +209,8 @@
 /* One result arena, the local dictionary's lookup (worker.c LOCAL_RESULT_ARENA_SIZE): the only result
  * memory since the network paths, Google Lens and the Hachidori relay, were removed (they took
  * 2 x 262,144 B arenas and a connection pool: 571,888 B with two slots, 548,096 B with one). */
+/* Includes the dictionary session, filter directory and bounded word locators
+ * (at most 7 KiB, compile-time checked), ahead of the resettable lookup arena. */
 #define VJO_BUDGET_PAF_RESULTS_LOCAL 65536u
 /* An Anki job (anki.c ANKI_TEXT_MEM): saving a card to the queue. The Shell takes no screenshot
  * itself: that branch (the kernel's 2,088,960 B full-frame capture, which #74's console refused,

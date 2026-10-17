@@ -220,6 +220,16 @@ int vjoWaitEvent(uint32_t mask, uint32_t *out, SceUInt32 timeout_us)
     return ret;
 }
 
+int vjoNotifyShell(void)
+{
+    uint32_t state;
+    if (!caller_ok()) return VJO_ERR_PERM;
+    ENTER_SYSCALL(state);
+    int ret = ksceKernelSetEventFlag(g.evf, VJO_EV_SHELL);
+    EXIT_SYSCALL(state);
+    return ret;
+}
+
 int vjoGetState(VjoState *out)
 {
     uint32_t state;

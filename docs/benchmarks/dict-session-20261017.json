@@ -1,0 +1,81 @@
+{
+  "baseline_commit": "1f113ad6f29f452cb9ab7a81df6d8d2af5d31b8b",
+  "dictionary_sha256": "1c563c86a29801267c37fdf1def42650b02c69657f4144f09bd26d61b80d79b5",
+  "dictionary_bytes": 157298688,
+  "rounds": 11,
+  "scope": "Host file operations and result equivalence; no console latency measurement. One line per session.",
+  "cases": [
+    {
+      "mode": "first",
+      "variants": {
+        "stateless": {
+          "lookups": 50,
+          "opens": 50,
+          "reads": 312,
+          "header_reads": 50,
+          "mean_reads": 6.24,
+          "peak_bytes": 54928,
+          "warm_host_median_us": 6.3115000000000006
+        },
+        "session": {
+          "lookups": 50,
+          "opens": 50,
+          "reads": 312,
+          "header_reads": 50,
+          "mean_reads": 6.24,
+          "peak_bytes": 57416,
+          "warm_host_median_us": 6.497
+        }
+      },
+      "all_outputs_identical": true
+    },
+    {
+      "mode": "words",
+      "variants": {
+        "stateless": {
+          "lookups": 616,
+          "opens": 616,
+          "reads": 3416,
+          "header_reads": 616,
+          "mean_reads": 5.545454545454546,
+          "peak_bytes": 54928,
+          "warm_host_median_us": 10.924
+        },
+        "session": {
+          "lookups": 616,
+          "opens": 50,
+          "reads": 3349,
+          "header_reads": 549,
+          "mean_reads": 5.436688311688312,
+          "peak_bytes": 57416,
+          "warm_host_median_us": 9.9605
+        }
+      },
+      "all_outputs_identical": true
+    },
+    {
+      "mode": "letters",
+      "variants": {
+        "stateless": {
+          "lookups": 1321,
+          "opens": 1321,
+          "reads": 7335,
+          "header_reads": 1321,
+          "mean_reads": 5.552611657834974,
+          "peak_bytes": 54928,
+          "warm_host_median_us": 9.671
+        },
+        "session": {
+          "lookups": 1321,
+          "opens": 50,
+          "reads": 7169,
+          "header_reads": 1155,
+          "mean_reads": 5.426949280847842,
+          "peak_bytes": 57416,
+          "warm_host_median_us": 8.353
+        }
+      },
+      "all_outputs_identical": true
+    }
+  ]
+}
