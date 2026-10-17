@@ -3,8 +3,8 @@
 The owner renamed the project on 2026-10-16 (13:04Z): it is **Rubi**, long form **Rubi for
 Vita**, and the repository is `bee-san/Rubi_for_vita` (renamed 2026-10-17, 07:3xZ; GitHub redirects the old
 name). This page is the plan, approved by the conductor (2026-10-16 14:27Z), and the record of what
-the rename pull request did on main `8421e8d` (GO RENAME came on `caad0e5`; #188 merged before the pull
-request opened), after every pull request on the conductor's list had merged.
+the rename pull request did on main `ad4e837` (GO RENAME came on `caad0e5`; #188, #186 and #184, which name
+nothing, merged while it was open), after every pull request on the conductor's list had merged.
 
 The rule: every name a user sees changes; every internal identifier that installs, paths,
 taiHEN lines or saved data depend on keeps its old value, so an update is an ordinary update:
@@ -97,24 +97,24 @@ Nothing internal is renamed, so nothing needs a migration or a console test of o
 ## Inventory, before and after
 
 `shared/artifacts/rubi-rename/inventory.py` counts each form in the tracked text files, leaving out this page,
-on main `8421e8d` and on the pull request's head. What is left of a renamed form is history (dated records,
+on main `ad4e837` and on the pull request's head. What is left of a renamed form is history (dated records,
 old logs as test fixtures), the readers' patterns and tests for an earlier build's lines and files, and the
 notes that say what an old name was; `name_sweep.py` lists each such line with its reason.
 
-| Form | `8421e8d` | Head | Becomes |
+| Form | `ad4e837` | Head | Becomes |
 | --- | ---: | ---: | --- |
 | `Vita JP Overlay` | 59 in 31 files | 45 in 19 | Rubi; left: the Anki deck, old-build logs |
-| `JP Overlay Settings` | 5 in 5 | 5 in 5 | history notes only |
+| `JP Overlay Settings` | 5 in 5 | 6 in 6 | history notes; a value the param.sfo check refuses (its test) |
 | `JP Overlay` (other) | 15 in 7 | 6 in 3 | Rubi; left: old-build logs, the readers' patterns |
 | `Overlay app` | 548 in 147 | 17 in 8 | Rubi app; left: the taiHEN note, old-build logs |
 | `**Overlay**` in docs | 15 in 6 | 2 in 2 | **Rubi**; left: history notes |
-| `"Overlay"` literals | 7 in 5 | 1 in 1 | `"Rubi"`; left: the wordmark's history note |
+| `"Overlay"` literals | 7 in 5 | 2 in 2 | `"Rubi"`; left: the wordmark's history note, a value the param.sfo check refuses (its test) |
 | GitHub URLs to this repository | 30 in 12 | 0 | `bee-san/Rubi_for_vita` |
 | `bee-san/vita-jp-overlay` outside a URL | 9 in 4 | 2 in 2 | `bee-san/Rubi_for_vita`; left: AGENTS.md's note |
 | `VitaJPOverlay-<version>` file names | 79 in 16 | 6 in 4 | `Rubi-<version>`; left: published releases', the readers |
 | `JPOverlaySettings.vpk` | 103 in 33 | 30 in 10 | `Rubi.vpk`; left: an earlier install's copy, refreshed and read |
 | CI artifact names | 10 in 4 | 3 in 3 | `Rubi`, `Rubi-normal`; left: notes |
-| kept: data paths, module files, title IDs, RCO, export library, deck constant | 448, 618, 115, 37, 3, 4 | 449, 618, 115, 37, 3, 4 | unchanged (the one more data path is a test's fixture line) |
+| kept: data paths, module files, title IDs, RCO, export library, deck constant | 447, 618, 115, 37, 3, 4 | 448, 618, 121, 37, 3, 4 | unchanged (the one more data path is a test's fixture line; the six more title IDs are the param.sfo check and its tests) |
 
 ## The repository rename
 
@@ -184,7 +184,10 @@ Off the console, on the pull request's tree (the pull request lists the commands
 - The readers: a test feeds the same log with the old and the new names to `tools/analyse_selftest.py`
   and gets the same summary, and checks that today's sources write the new names
   (`tools/tests/test_analyse_selftest.py` `RenamedLines`, `test_analyse_timeline.py`: dropping either name
-  from a reader's pattern fails a test); `--collect` hashes an earlier install's
+  from a pattern of `tools/analyse_selftest.py`, `tools/analyse_timeline.py` or `tools/collect_vita.py` fails a
+  test; `tools/package_vpk.py --verify`'s old file name and `tools/ci_container_build.sh --compare`'s old VPK
+  name were checked by hand, without a test: no `VitaJPOverlay-<v>.vpk` was ever published, and the latter
+  needs docker); `--collect` hashes an earlier install's
   `ux0:data/JPOverlaySettings.vpk` and lists it as not in the package (`tools/tests/test_collect.py`).
 - Every distinct `github.com/bee-san/Rubi_for_vita` link in the tree answers 200 (24 URLs).
 - CI's checkout path: measured before the change (above), the built files do not depend on it.
