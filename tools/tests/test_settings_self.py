@@ -239,9 +239,9 @@ class SettingsSelf(unittest.TestCase):
                 symbols = {k: v for k, v in gfx_symbols().items() if k != "__wrap_" + name}
                 relocations = [r for r in gfx_relocations() if r[1] not in (name, "__wrap_" + name)]
                 relocations.append((place, name, 10))
-                elf = make_elf(gfx=False, symbols={**symbols, **{
-                    "__wrap_sceKernelCreateThread": (WRAP | 1, WRAP_SIZE, ".text"),
-                    "sceKernelCreateThread": (STUB, 16, ".text"), check.HEAP_SYMBOL: (DATA + 0x24, 4, ".data")}},
+                elf = make_elf(gfx=False, symbols={
+                    **symbols, "__wrap_sceKernelCreateThread": (WRAP | 1, WRAP_SIZE, ".text"),
+                    "sceKernelCreateThread": (STUB, 16, ".text"), check.HEAP_SYMBOL: (DATA + 0x24, 4, ".data")},
                     relocations=relocations + [(WRAP + 0x18, "sceKernelCreateThread", 30)])
                 self.fails(f"nothing calls __wrap_{name}", elf_bytes=elf)
                 # the wrapper there, and a second call of the import outside it
