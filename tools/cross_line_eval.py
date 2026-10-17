@@ -29,7 +29,6 @@ vita-vn-ocr's public manifests).
 import argparse
 import collections
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -51,9 +50,10 @@ def chars_for_units(s, units):
 def manifest_boxes(path, kind):
     """vita-test / psp-test: [(box_id, [(text, is_name, ok)])] by screenshot and region, top to bottom."""
     groups = collections.defaultdict(list)
-    for line in open(path, encoding="utf-8"):
-        r = json.loads(line)
-        groups[(r["sha256"], tuple(r["region"]))].append(r)
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            r = json.loads(line)
+            groups[(r["sha256"], tuple(r["region"]))].append(r)
     out = []
     for (sha, region), rows in groups.items():
         rows.sort(key=lambda r: (r["box"][1], r["box"][0]))
@@ -64,9 +64,10 @@ def manifest_boxes(path, kind):
 
 def clannad_boxes(path):
     pages = collections.defaultdict(list)
-    for line in open(path, encoding="utf-8"):
-        r = json.loads(line)
-        pages[r["page"]].append(r)
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            r = json.loads(line)
+            pages[r["page"]].append(r)
     out = []
     for page, rows in pages.items():
         rows.sort(key=lambda r: int(r["id"].rsplit("-", 1)[1]))
@@ -81,12 +82,13 @@ def clannad_boxes(path):
 
 def realplus_boxes(path):
     shots = collections.defaultdict(list)
-    for line in open(path, encoding="utf-8"):
-        r = json.loads(line)
-        box = r.get("crops", {}).get("vita_ink")
-        if not box or not r.get("label"):
-            continue
-        shots[r["shot"]].append((int(r["id"].rsplit("_", 1)[1]), box, r["label"], bool(r.get("name"))))
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            r = json.loads(line)
+            box = r.get("crops", {}).get("vita_ink")
+            if not box or not r.get("label"):
+                continue
+            shots[r["shot"]].append((int(r["id"].rsplit("_", 1)[1]), box, r["label"], bool(r.get("name"))))
     out = []
     for shot, rows in shots.items():
         rows.sort()
@@ -250,8 +252,7 @@ def main():
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     if args.examples:
         with open(args.examples, "w", encoding="utf-8") as f:
-            for row in examples:
-                f.write("\t".join(row) + "\n")
+            f.writelines("\t".join(row) + "\n" for row in examples)
     print(json.dumps(report["all"]), file=sys.stderr)
 
 

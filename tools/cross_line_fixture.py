@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import cross_line_eval as cle  # noqa: E402
+import cross_line_eval as cle
 
 
 def main():
@@ -34,9 +34,11 @@ def main():
     ap.add_argument("-o", "--out", required=True)
     args = ap.parse_args()
 
-    reserved = json.load(open(args.reserved, encoding="utf-8"))
-    banned = set(reserved.get("test", {})) | set(reserved.get("dev_sample", {}))
-    banned |= set(json.load(open(args.test_games, encoding="utf-8"))["all"])
+    with open(args.reserved, encoding="utf-8") as f:
+        reserved = json.load(f)
+    with open(args.test_games, encoding="utf-8") as f:
+        test_games = json.load(f)
+    banned = set(reserved.get("test", {})) | set(reserved.get("dev_sample", {})) | set(test_games["all"])
     boxes = []
     for box_id, lines in cle.realplus_boxes(args.pool):
         vn = box_id.split(":")[1].split("_")[0]
@@ -60,8 +62,7 @@ def main():
             break
     with open(args.out, "w", encoding="utf-8") as f:
         f.write("# id\tvn\ttext\tstart\tend\tspan (| the break)\n")
-        for r in out:
-            f.write("\t".join(str(x) for x in r) + "\n")
+        f.writelines("\t".join(str(x) for x in r) + "\n" for r in out)
     print(f"{len(out)} candidates from {len(boxes)} boxes ({len(banned)} VNs excluded)", file=sys.stderr)
 
 
