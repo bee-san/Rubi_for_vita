@@ -19,8 +19,11 @@ It is `main` at `{MAIN_SHORT}` (API {API}), built by [Release run {RUN}]({RUN_UR
 ```sh
 sha256sum {VPK} {ZIP}    # macOS: shasum -a 256 ...; must print the SHA-256s above
 unzip -q {ZIP} -d vjo && cd vjo
-python3 tools/package_release.py --verify . && python3 tools/package_vpk.py --verify ../{VPK}
+python3 tools/package_release.py --verify .
 ```
+It must print `Verified {N_FILES} package files`. The VPK's own check, `tools/package_vpk.py --verify`,
+needs a checkout of the repository (it reads the payload list from `include/`, which no release zip
+ships); here the SHA-256 above checks the VPK.
 
 ## 2. Install: the one-VPK install (docs/one-vpk-install.md)
 Its first console run: rule 7 of AGENTS.md applies (the Install page's plan shows the exact files and
