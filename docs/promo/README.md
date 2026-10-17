@@ -126,7 +126,9 @@ Checked against the checkout the captures are of (`assets/SOURCES.md` names it).
   release's VPK, copied to the Vita and installed in VitaShell (its own two questions), then the app's
   Install page, then a restart by the user (the app never restarts the Vita). Every game is ON by default
   and the kernel loads the OCR worker into each (#148), so no per-game step follows. Not yet verified on a
-  console: test.4 ([#191](https://github.com/bee-san/Rubi_for_vita/issues/191)) checks it.
+  console: test.4's run found the Install page refusing it after a VitaShell install until a restart
+  ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194) §3), and this film opens the app before
+  restarting; test.5 checks the fix.
 - **L + R**: the default `toggle_button` is `l+r`.
 - **Turn it off per game**: the app's Games page, reached by a tap on its tab (the tabs take a tap as Select
   changes pages, `settings/main.c`); the status line is the app's own.
