@@ -77,8 +77,8 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 | `payload/manifest.txt` | read by the app | small |
 | `licenses/` (`LICENSE`, the GPL; `docs/plaintext-attribution.txt`; `docs/JMdict-LICENSE.html`; `third_party/README.md` and `third_party/licenses/`), at their zip paths | stays in the app, `ux0:app/VJOSET001/licenses/` | 79,336 (this PR's 0.8.0 packages) |
 
-The dictionary is 93% of the 169,223,410 B the payload installs (the debug package with VOCR5's models, on main
-`e4df62c`; 168,112,556 B there before them); the app itself is 0.5 MB.
+The dictionary is 93% of the 169,223,170 B the payload installs (the debug package with VOCR5's models, on main
+`eece6c6`; 168,112,360 B there before them); the app itself is 0.5 MB.
 
 `payload/manifest.txt` is written by `tools/package_vpk.py`, one item per line:
 
