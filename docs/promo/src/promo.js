@@ -592,7 +592,7 @@
         glow(C.boot, "violet", 0.5);
         whip(C.boot - 0.3, "shoulders2", 0.6);
         stepOut("#step3", C.dark);
-        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.boot + 0.05);
+        tl.fromTo("#step-done", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.35, ease: "back.out(2.2)", immediateRender: false }, C.dark + 0.2);
         tl.set("#vn-m4 .c", { opacity: 1 }, C.boot); // the game's line, already shown
         fingerIn("f-l", C.lrEnd - 0.42, B.L, 180 - 14, 0.38);
         fingerIn("f-r", C.lrEnd - 0.42, B.R, 180 + 14, 0.38);

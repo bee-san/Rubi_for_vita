@@ -262,9 +262,10 @@
       <div id="fade" data-layout-ignore></div>
 
       <!-- ============================================================ sound -->
-      <!-- the bed's breakdown (23.5-32 s, the install) is lifted about 4 dB so the music does not seem to stop -->
+      <!-- the bed's breakdown (23.5-29 s, turning a game off) is lifted about 4 dB so the music does not seem to stop;
+           back to 1 as the riser ends, by the second lift (29.0 s, tools/make_bed.py) -->
       <audio id="music" src="assets/audio/bed-42s.m4a" data-start="0" data-duration="{{DURATION}}" data-track-index="10" data-volume="1"
-        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":23.3,"v":1},{"t":23.9,"v":1.6},{"t":31.7,"v":1.6},{"t":32.05,"v":1}]}]}'></audio>
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":23.3,"v":1},{"t":23.9,"v":1.6},{"t":28.7,"v":1.6},{"t":29.05,"v":1}]}]}'></audio>
 {{SFX}}
     </div>
     <script>
