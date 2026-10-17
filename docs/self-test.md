@@ -384,9 +384,12 @@ only when nothing points the other way, because those dumps can be archived off 
     (`kernel.prev.txt`) is only noted, because pids repeat across boots.
 - **What the clock check cannot see.** A set-back after `kernel.txt`'s last write, or one put right
   again before it, leaves no trace in these times. Should the uptime stop in standby, a standby
-  during the boot would also offset a set-back of about its own length. A crash after such a
-  set-back, of a process whose pid `kernel.txt` does not name, is then dated, and placed, before
-  this boot. The kernel
+  during the boot would also offset a set-back of about its own length. The rule for a final
+  `game exit` also takes `kernel.txt` to hold every line the kernel logged: the kernel reads up to
+  512 B of its log before it opens the file, so a write that fails loses them (`kernel/main.c`
+  `kernel_file_flush`), and were a raced `game exit` among them, a later lone one would count as
+  its line's own. No collect so far shows a lost line. A crash after such a set-back, of a process
+  whose pid `kernel.txt` does not name, is then dated, and placed, before this boot. The kernel
   names no pid for the Overlay app, VitaShell or a system app, nor for a game started after its
   last write. An archived dump stays in the collect's folder and zip
   ([below](#archiving-older-dumps-off-the-vita)).
