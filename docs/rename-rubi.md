@@ -3,7 +3,8 @@
 The owner renamed the project on 2026-10-16 (13:04Z): it is **Rubi**, long form **Rubi for
 Vita**, and the repository is `bee-san/Rubi_for_vita` (renamed 2026-10-17, 07:3xZ; GitHub redirects the old
 name). This page is the plan, approved by the conductor (2026-10-16 14:27Z), and the record of what
-the rename pull request did on main `caad0e5`, after every pull request on the conductor's list had merged.
+the rename pull request did on main `8421e8d` (GO RENAME came on `caad0e5`; #188 merged before the pull
+request opened), after every pull request on the conductor's list had merged.
 
 The rule: every name a user sees changes; every internal identifier that installs, paths,
 taiHEN lines or saved data depend on keeps its old value, so an update is an ordinary update:
@@ -29,7 +30,7 @@ no reinstall, no second bubble, no moved data, no second Anki deck.
 | Kept | Value | Why |
 | --- | --- | --- |
 | Title ID | `VJOSET001` | Another ID is another app: a second bubble, a reinstall, the old app's files orphaned. With this one the new VPK installs over the old app as an update. |
-| Data folders | `ux0:data/VitaJPOverlay/`, `ur0:data/VitaJPOverlay/` | They hold `config.ini`, `games.ini`, the regions, the Anki queue and exports, the models, the 137 MiB dictionary, the logs and the boot record. Moving them means a migration on the console for a name only VitaShell shows. |
+| Data folders | `ux0:data/VitaJPOverlay/`, `ur0:data/VitaJPOverlay/` | They hold `config.ini`, `games.ini`, the regions, the Anki queue and exports, the models, the 150 MiB dictionary (157,298,688 B in both zips), the logs and the boot record. Moving them means a migration on the console for a name only VitaShell shows. |
 | Plugin files, module names | `VitaJPOverlay_Kernel.skprx`, `VitaJPOverlay_Shell.suprx`, `VitaJPOverlay_OCR.suprx` | The taiHEN lines name the files; the kernel loader loads the worker by its path (`include/vjo_api.h`); the Shell finds the kernel module by its name (`shell/boot.c`); the app's Install page finds its own taiHEN lines by them (`settings/install.c`, #158, #166); the installers, `--uninstall`, `--collect` and the analyser find earlier installs by these names. |
 | taiHEN lines and the app's note | `# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)` | The app (`core/taicfg.c`) and `tools/patch_tai_config.py` find and remove their own lines by this exact text. |
 | Kernel export library | `VitaJPOverlayForUser` | Its NIDs come from the name; the Shell and the worker import them (`tools/check_vita_syscall_abi.py`). |
@@ -68,9 +69,13 @@ Nothing internal is renamed, so nothing needs a migration or a console test of o
    `tools/install_dictionary.py` messages. The readers of earlier installs accept both names:
    `tools/analyse_selftest.py`, `tools/analyse_timeline.py` (the old start lines, prefixes and
    the disabled line) and `tools/collect_vita.py` (hashes `ux0:data/Rubi.vpk` and an earlier
-   install's `ux0:data/JPOverlaySettings.vpk`). An earlier install's
-   `ux0:data/JPOverlaySettings.vpk` is no longer used and can be deleted (the README says so,
-   as for the VOCR2 and Meiki files).
+   install's `ux0:data/JPOverlaySettings.vpk`). Every install before the rename uploaded the app
+   to `ux0:data/JPOverlaySettings.vpk`, and that build's app, still the installed one until the new VPK
+   is installed, tells the user in its red banner to install that file. So `tools/install_ftp.sh`
+   puts this build's app there as well, where the file exists (never creating it): the old banner then
+   installs the new app, not the old one beside new plugins (#101; audit-rubi-rename B1). Once the Rubi
+   app is installed the file is no longer used and can be deleted (the README says so). The one-VPK
+   install needs nothing: VitaShell installs the new app itself.
 6. **Packages and CI.** `vita/CMakeLists.txt` (VPK target, zip names, build messages),
    `tools/package_release.py`, `tools/package_variants.py`, the one-VPK packager,
    `tools/e2e_package.py`, `tools/preflight.sh`, `.github/workflows/release.yml` (artifact
@@ -91,25 +96,25 @@ Nothing internal is renamed, so nothing needs a migration or a console test of o
 
 ## Inventory, before and after
 
-`shared/artifacts/rubi-rename/inventory.py` counts each form in the tracked text files, on main `caad0e5`
-and after the rename. What is left of a renamed form is history (dated records, old logs as test
-fixtures), the readers' patterns for an earlier build's lines, and the notes that say what an old name
-was; `name_sweep.py` lists each such line with its reason (the pull request has the list).
+`shared/artifacts/rubi-rename/inventory.py` counts each form in the tracked text files, leaving out this page,
+on main `8421e8d` and on the pull request's head. What is left of a renamed form is history (dated records,
+old logs as test fixtures), the readers' patterns and tests for an earlier build's lines and files, and the
+notes that say what an old name was; `name_sweep.py` lists each such line with its reason.
 
-| Form | `caad0e5` | After | Becomes |
+| Form | `8421e8d` | Head | Becomes |
 | --- | ---: | ---: | --- |
-| `Vita JP Overlay` | 64 in 32 files | 47 in 19 | Rubi; the Anki deck, old-build logs |
-| `JP Overlay Settings` | 8 in 6 | 8 in 6 | history notes only |
-| `JP Overlay` (other) | 18 in 8 | 9 in 4 | Rubi; old-build logs |
-| `Overlay app` | 553 in 148 | 22 in 9 | Rubi app; the taiHEN note |
-| `**Overlay**` in docs | 17 in 7 | 3 in 2 | **Rubi**; history notes |
-| `"Overlay"` literals | 11 in 6 | 5 in 2 | `"Rubi"`; history notes |
-| GitHub URLs to this repository | 31 in 13 | 1 in 1 | `bee-san/Rubi_for_vita`; AGENTS.md's note |
-| `bee-san/vita-jp-overlay` outside a URL | 16 in 5 | 9 in 3 | `bee-san/Rubi_for_vita`; this page |
-| `VitaJPOverlay-<version>` file names | 84 in 17 | 11 in 5 | `Rubi-<version>`; published releases' |
-| `JPOverlaySettings.vpk` | 108 in 34 | 23 in 8 | `Rubi.vpk`; the readers of earlier installs |
-| CI artifact names | 12 in 5 | 5 in 4 | `Rubi`, `Rubi-normal`; notes |
-| kept: data paths, module files, title IDs, RCO, export library, deck constant | 451, 621, 118, 39, 4, 4 | 452, 621, 118, 39, 4, 4 | unchanged |
+| `Vita JP Overlay` | 59 in 31 files | 45 in 19 | Rubi; left: the Anki deck, old-build logs |
+| `JP Overlay Settings` | 5 in 5 | 5 in 5 | history notes only |
+| `JP Overlay` (other) | 15 in 7 | 6 in 3 | Rubi; left: old-build logs, the readers' patterns |
+| `Overlay app` | 548 in 147 | 17 in 8 | Rubi app; left: the taiHEN note, old-build logs |
+| `**Overlay**` in docs | 15 in 6 | 2 in 2 | **Rubi**; left: history notes |
+| `"Overlay"` literals | 7 in 5 | 1 in 1 | `"Rubi"`; left: the wordmark's history note |
+| GitHub URLs to this repository | 30 in 12 | 0 | `bee-san/Rubi_for_vita` |
+| `bee-san/vita-jp-overlay` outside a URL | 9 in 4 | 2 in 2 | `bee-san/Rubi_for_vita`; left: AGENTS.md's note |
+| `VitaJPOverlay-<version>` file names | 79 in 16 | 6 in 4 | `Rubi-<version>`; left: published releases', the readers |
+| `JPOverlaySettings.vpk` | 103 in 33 | 30 in 10 | `Rubi.vpk`; left: an earlier install's copy, refreshed and read |
+| CI artifact names | 10 in 4 | 3 in 3 | `Rubi`, `Rubi-normal`; left: notes |
+| kept: data paths, module files, title IDs, RCO, export library, deck constant | 448, 618, 115, 37, 3, 4 | 449, 618, 115, 37, 3, 4 | unchanged (the one more data path is a test's fixture line) |
 
 ## The repository rename
 
@@ -139,8 +144,8 @@ was; `name_sweep.py` lists each such line with its reason (the pull request has 
 
 | Repository (commit) | What names the overlay | Change |
 | --- | --- | --- |
-| bee-san/vita-vn-ocr (`b3b136d`) | 128 GitHub URLs in 22 files (127 in Markdown, 1 in `ports/meiki/dependencies.json`); 271 mentions in all | One pull request: the URLs, and the README's two mentions of the project. Protocols, result JSON and code comments are records and stay. Merged by its rules (CI green, the evidence in the body). |
-| bee-san/plaintext-dicts (`f3b228b`, private) | no URL; the README names the overlay three times | One pull request for the README. `ux0:data/VitaJPOverlay/dictionaries/` in `tools/convert_dictionary.py` is a kept path. The overlay's pin (`6f841ce`) does not move: the dictionary does not change. Merged by the rules, but only after ultimate-v1 is released, so that it does not collide with its PR #3 (conductor, 14:27Z). |
+| bee-san/vita-vn-ocr (`b3b136d`; `378e354` when changed) | 129 GitHub URLs in 22 files (128 in Markdown, 1 in `ports/meiki/dependencies.json`) | #95, merged as `8a9ff96`: the URLs, the README's five mentions of the project and `notes/10`'s remote. Protocols, result JSON, code comments and the other notes' prose are records and stay. CI (pytest, ruff) green, and run locally first (1826 passed). |
+| bee-san/plaintext-dicts (`f3b228b`; `e9b6e76` when changed, private) | no URL; the README names the overlay three times | #4, merged as `bda2d89`: the README. `ux0:data/VitaJPOverlay/dictionaries/` in `tools/convert_dictionary.py` is a kept path. The overlay's pin (`e9b6e76`, ultimate-v1) does not move: the dictionary does not change. Merged only after ultimate-v1 was released (19:48Z), so that it did not collide with its #3 (conductor, 14:27Z). No CI there; Markdown only. |
 | bee-san/hachidori (`dfc5e0c`), bee-san/hoshidicts (`20019e4`) | nothing (0 matches for any form; GitHub code search over bee-san finds only the two above) | none |
 
 ## Promo, README rewrite and the fleet
@@ -165,22 +170,25 @@ Off the console, on the pull request's tree (the pull request lists the commands
 - Host build and every ctest suite: debug 70 of 70, normal 69 of 69 (`apkg_packages`' Anki import
   runs in CI: the pinned `anki` wheel needs glibc 2.35, the fleet box has 2.34).
 - Vita build, both builds, Release: every check of the build (kernel instructions, syscall ABI, memory
-  ledger: pass, the app's PNG ABI, SELF and artwork). The VPK's param.sfo: `TITLE` = `STITLE` = `Rubi`,
-  `TITLE_ID` = `VJOSET001`. The base zips `Rubi-0.8.0.zip` and `Rubi-0.8.0-debug.zip` hold `Rubi.vpk` and
+  ledger: pass, the app's PNG ABI, SELF and artwork, and since audit-rubi-rename's note N3 the VPK's
+  param.sfo: `TITLE` = `STITLE` = `Rubi`, `TITLE_ID` = `VJOSET001`, `tools/check_settings_assets.py`). The base zips `Rubi-0.8.0.zip` and `Rubi-0.8.0-debug.zip` hold `Rubi.vpk` and
   every kept path (`ur0/tai/VitaJPOverlay_*.s?prx`, `ur0/data/VitaJPOverlay/vitajpoverlay.rco`, ...).
 - `tools/package_variants.py` with the pinned VOCR5 models and LMs: `Rubi-0.8.0.vpk`, `-debug.vpk`,
   `.zip`, `-debug.zip` and `SHA256SUMS`; `tools/package_vpk.py --verify` on both VPKs; `tools/e2e_package.py`
-  on both zips: 149 of 149 checks each.
-- `tools/preflight.sh` with every optional input, both builds.
+  on both zips: 151 of 151 checks each, with the update over test.2's state refreshing its
+  `ux0:data/JPOverlaySettings.vpk` and a fresh install making none (audit-rubi-rename B1).
+- `tools/preflight.sh` with every optional input: GO for both builds, 0 checks skipped.
 - The art: `tools/make_settings_assets.py` with the pinned Pillow writes `startup.png`, `bg.png` and
   `pic0.png` byte for byte as the reviewed prototype; `icon0.png` is unchanged; `tools/check_settings_assets.py`
   passes.
 - The readers: a test feeds the same log with the old and the new names to `tools/analyse_selftest.py`
   and gets the same summary, and checks that today's sources write the new names
-  (`tools/tests/test_analyse_selftest.py` `RenamedLines`); `--collect` hashes an earlier install's
+  (`tools/tests/test_analyse_selftest.py` `RenamedLines`, `test_analyse_timeline.py`: dropping either name
+  from a reader's pattern fails a test); `--collect` hashes an earlier install's
   `ux0:data/JPOverlaySettings.vpk` and lists it as not in the package (`tools/tests/test_collect.py`).
 - Every distinct `github.com/bee-san/Rubi_for_vita` link in the tree answers 200 (24 URLs).
 - CI's checkout path: measured before the change (above), the built files do not depend on it.
+- The Anki deck's name and ID are pinned by a test (`host/tests/test_apkg.py`).
 
 Console: not needed to merge. Nothing is added to the boot path (no page, thread or allocation), and
 every changed string in a plugin is shorter than the one it replaces. The next test build shows the new

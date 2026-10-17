@@ -247,6 +247,23 @@ elif '-o' in a:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Rubi app: up to date", result.stdout.split("Installed. Reboot the Vita", 1)[1])
 
+    def test_the_app_vpk_of_an_install_before_the_rename_is_this_builds_app_too(self):
+        """Installs before the Rubi rename uploaded the app as ux0:data/JPOverlaySettings.vpk, and their app's red
+        banner (settings/app_check.c, v0.8.0-test.3 and older) says to install that file. Until the user installs
+        the new VPK that app is the installed one, so the file must hold this build's app (else #101: the old app
+        beside new plugins); where there is none, none is made."""
+        self.stamped_package()
+        old = self.device / "ux0/data/JPOverlaySettings.vpk"
+        result = self.install("install-vita.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(old.exists(), "an install where there was no old copy makes none")
+        old.write_bytes(b"test.3's VPK")
+        result = self.install("install-vita.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(old.read_bytes(), (self.package / "Rubi.vpk").read_bytes())
+        self.assertEqual((self.device / "ux0/data/Rubi.vpk").read_bytes(), (self.package / "Rubi.vpk").read_bytes())
+        self.assertIn("ux0:data/JPOverlaySettings.vpk (an earlier install's copy of the app", result.stdout)
+
     def test_the_prompt_waits_only_in_a_terminal(self):
         """In a terminal, a missing app makes the installer wait for Enter and check again; without one
         (stdin or stdout not a tty, as in CI and every other test here) or with VJO_NO_PROMPT it never waits."""

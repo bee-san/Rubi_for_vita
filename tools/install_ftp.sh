@@ -461,7 +461,7 @@ for CFG in "${CFGS[@]}"; do
         echo "Nothing was changed on the Vita. Run again with --title for each game that should have OCR, for example:"
       fi
       echo "  $INSTALL_CMD --title PCSG00415 ${HOST%%:*}"
-      echo "The Rubi app (JP Overlay Settings in older builds) shows each game's title ID; VitaShell shows them as the folder names in ux0:app (gro0:app for a game card)."
+      echo "The Rubi app (Overlay or JP Overlay Settings in older builds) shows each game's title ID; VitaShell shows them as the folder names in ux0:app (gro0:app for a game card)."
     fi
     exit "$patch_status"
   fi
@@ -497,7 +497,17 @@ fi
 # the record of it the Shell plugin compares the installed app with. Without a stamp (a source build whose VPK
 # was not built) the record is emptied, as boot.txt is: "no record" is unknown to the plugins, never another
 # build's app.
-if [ -f "$APP_VPK" ]; then put "$APP_VPK" "ux0:/data/Rubi.vpk"; fi
+if [ -f "$APP_VPK" ]; then
+  put "$APP_VPK" "ux0:/data/Rubi.vpk"
+  # Every install before the Rubi rename uploaded the app as ux0:data/JPOverlaySettings.vpk, and that build's
+  # app, the installed one until this VPK is installed, tells the user to install that file (its red banner,
+  # settings/app_check.c). So where it is, it gets this build's app too: the old banner then leads to the new
+  # app, never back to the old one beside new plugins (#101). Nothing creates it where there is none.
+  if exists "ux0:/data/JPOverlaySettings.vpk"; then
+    put "$APP_VPK" "ux0:/data/JPOverlaySettings.vpk"
+    echo "ux0:data/JPOverlaySettings.vpk (an earlier install's copy of the app, which its banner names) is this build's app too"
+  fi
+fi
 if [ -f "$APP_STAMP" ]; then
   put "$APP_STAMP" "ux0:/data/VitaJPOverlay/vjo_app.txt"
 else

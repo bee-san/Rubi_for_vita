@@ -161,6 +161,9 @@ class TestPackages(unittest.TestCase):
             self.assertEqual(lapis["css"], (LAPIS / "styling.css").read_text().rstrip("\n"))
             decks = json.loads(p.db.execute("select decks from col").fetchone()[0])
             self.assertEqual(decks[str(self.expected["deck_id"])]["name"], self.expected["deck"])
+            # Kept through the Rubi rename (docs/rename-rubi.md): Anki finds a deck by its name, so another name
+            # would put new cards in a second deck beside the one the owner's collection already has.
+            self.assertEqual((self.expected["deck"], self.expected["deck_id"]), ("Vita JP Overlay", 1760534400000))
             self.assertEqual(p.db.execute("select count(*) from revlog").fetchone()[0], 0)
             self.assertEqual(p.db.execute("select count(*) from graves").fetchone()[0], 0)
 

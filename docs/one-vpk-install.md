@@ -653,7 +653,7 @@ The app's pages and the README say the same, in this order:
   line with the five assets in order (the normal VPK first) and the release notes' text: the three
   steps, the requirements, the recovery.
 - A test build ships both VPKs too; its issue's step 1 becomes "install the VPK in VitaShell, open
-  Overlay, Install, restart", and its checklist adds the console checks below.
+  Rubi, Install, restart", and its checklist adds the console checks below.
 - README's Install section becomes the three steps and the requirements; `install-vita.sh` moves under
   "Advanced: install from a computer".
 - `install-vita.sh` keeps parity: the same patcher and rules, the same dated on-Vita backup name

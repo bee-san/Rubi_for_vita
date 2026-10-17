@@ -203,6 +203,19 @@ class TimelineTest(unittest.TestCase):
         self.assertEqual(res["distributions"]["user_result_path_appends"], [])
         self.assertIn("the normal build's short log", at.render(res))
 
+    def test_the_shell_start_line_is_read_with_either_name(self):
+        """Since the Rubi rename the Shell writes "Rubi shell started"; builds before it "Vita JP Overlay shell
+        started". Both begin a session and are where last_boot cuts the log."""
+        body = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+        old = "Vita JP Overlay shell started (kernel API 22)\n" + body
+        new = "Rubi shell started (kernel API 24)\n" + body
+        self.assertEqual(at.last_boot(old + new), new)
+        self.assertEqual(at.last_boot(new + old), old)
+        self.assertEqual(at.last_boot("x\n" + new), new)
+        self.assertIn("Rubi shell started", at.SHELL_STARTED)
+        worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
+        self.assertIn('vjo_log("Rubi shell started (kernel API %d)", ver);', worker)
+
     def test_render_and_the_command_line(self):
         res = at.analyse(LOG)
         text = at.render(res, show_jobs=True)

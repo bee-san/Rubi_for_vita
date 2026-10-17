@@ -1038,7 +1038,7 @@ class Archive(unittest.TestCase):
         self.assertIn("archived: 0 deleted from the Vita, 2 left on it;", result.stdout)
 
     def test_delta_audit_b2_end_to_end(self):
-        # the delta audit's B2 over the FTP mock: this boot's Overlay-app dump, dated before the boot by a clock set back
+        # the delta audit's B2 over the FTP mock: this boot's Rubi-app dump, dated before the boot by a clock set back
         # during it, and kernel.txt ending with a raced game exit and a lone one: nothing is offered or deleted
         self.put("ux0/data/VitaJPOverlay/kernel.txt", KERNEL_HEAD + "game exit\ngame exit\n"
                  "foreground 0x20000 -> 0x0 (suspend) t=1800000 ms\ngame exit\n", "2026-10-20 12:30:20")

@@ -3254,7 +3254,7 @@ def summarise_collect(folder):
     kt = _read(folder, data + "kernel.txt")
     out["kernel"] = summarise_kernel(kt, (folder / (data + "kernel.txt")).stat().st_size) if kt is not None else None
     st = _read(folder, data + "status.txt")
-    out["status_head"] = [l for l in (st or "").splitlines() if l.startswith(("bootstrap:", "BOOT GUARD", *NAMES,
+    out["status_head"] = [l for l in (st or "").splitlines() if l.startswith(("bootstrap:", "BOOT GUARD", *(n + " shell started" for n in NAMES),
                                                                                 "worker start", "boot guard"))][:12]
     sp = _read(folder, data + "status.prev.txt")
     out["status_prev_head"] = [l for l in (sp or "").splitlines() if l.startswith(("BOOT GUARD", "boot guard"))][:6]

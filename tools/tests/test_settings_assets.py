@@ -13,6 +13,25 @@ sys.path.insert(0, str(ROOT / "tools"))
 import check_settings_assets as assets
 
 
+def make_sfo(values):
+    """A PSF file (param.sfo) with string values, as vita-mksfoex writes them (UTF-8, NUL-padded to 4 bytes)."""
+    keys = sorted(values)
+    key_table = b"".join(k.encode() + b"\0" for k in keys)
+    key_table += b"\0" * (-len(key_table) % 4)
+    data_table, entries, key_at = b"", b"", 0
+    for k in keys:
+        v = values[k].encode() + b"\0"
+        size = len(v) + (-len(v) % 4)
+        entries += struct.pack("<HHIII", key_at, 0x0204, len(v), size, len(data_table))
+        data_table += v + b"\0" * (size - len(v))
+        key_at += len(k) + 1
+    header = struct.pack("<4sIIII", b"\0PSF", 0x101, 20 + len(entries), 20 + len(entries) + len(key_table), len(keys))
+    return header + entries + key_table + data_table
+
+
+SFO = make_sfo({"TITLE_ID": "VJOSET001", "TITLE": "Rubi", "STITLE": "Rubi", "APP_VER": "01.00"})
+
+
 class SettingsAssets(unittest.TestCase):
     def test_committed_and_packaged_assets_meet_native_constraints(self):
         directory = ROOT / "settings/assets"
@@ -20,6 +39,7 @@ class SettingsAssets(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             vpk = Path(temporary) / "settings.vpk"
             with zipfile.ZipFile(vpk, "w") as archive:
+                archive.writestr("sce_sys/param.sfo", SFO)
                 for name in assets.ASSETS:
                     archive.write(directory / Path(name).name, name)
             self.assertEqual(assets.check(vpk), assets.check(directory))
@@ -29,6 +49,7 @@ class SettingsAssets(unittest.TestCase):
             for duplicate in (False, True):
                 vpk = Path(temporary) / "settings.vpk"
                 with zipfile.ZipFile(vpk, "w") as archive:
+                    archive.writestr("sce_sys/param.sfo", SFO)
                     for name in assets.ASSETS:
                         if name.endswith("icon0.png") and not duplicate:
                             continue
@@ -39,6 +60,29 @@ class SettingsAssets(unittest.TestCase):
                                 archive.writestr(name, data)
                 with self.assertRaisesRegex(ValueError, "exactly one"):
                     assets.check(vpk)
+
+    def test_the_param_sfo_keeps_the_title_id_and_names_rubi(self):
+        """The VPK's param.sfo: TITLE_ID VJOSET001, every earlier build's (another ID installs a second app beside
+        the old one), and the LiveArea title Rubi (docs/rename-rubi.md)."""
+        self.assertEqual(assets.check_sfo(SFO), {"TITLE_ID": "VJOSET001", "TITLE": "Rubi", "STITLE": "Rubi"})
+        for key, value in (("TITLE_ID", "VJOSET002"), ("TITLE", "Overlay"), ("STITLE", "JP Overlay Settings")):
+            values = {"TITLE_ID": "VJOSET001", "TITLE": "Rubi", "STITLE": "Rubi", key: value}
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, key):
+                    assets.check_sfo(make_sfo(values))
+        with tempfile.TemporaryDirectory() as temporary:
+            vpk = Path(temporary) / "settings.vpk"
+            with zipfile.ZipFile(vpk, "w") as archive:
+                archive.writestr("sce_sys/param.sfo", make_sfo({"TITLE_ID": "VJOSET002", "TITLE": "Rubi", "STITLE": "Rubi"}))
+                for name in assets.ASSETS:
+                    archive.write(ROOT / "settings/assets" / Path(name).name, name)
+            with self.assertRaisesRegex(ValueError, "TITLE_ID"):
+                assets.check(vpk)
+            with zipfile.ZipFile(vpk, "w") as archive:
+                for name in assets.ASSETS:
+                    archive.write(ROOT / "settings/assets" / Path(name).name, name)
+            with self.assertRaisesRegex(ValueError, "param.sfo"):
+                assets.check(vpk)
 
     def test_reject_rgba_wrong_size_low_bit_depth_and_interlacing(self):
         original = (ROOT / "settings/assets/icon0.png").read_bytes()
@@ -82,6 +126,7 @@ class SettingsAssets(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as temporary:
                     vpk = Path(temporary) / "settings.vpk"
                     with zipfile.ZipFile(vpk, "w") as archive:
+                        archive.writestr("sce_sys/param.sfo", SFO)
                         for other in assets.ASSETS:
                             data = (ROOT / "settings/assets" / Path(other).name).read_bytes()
                             archive.writestr(other, padded if other == name else data)
@@ -124,6 +169,7 @@ class SettingsAssets(unittest.TestCase):
         directory = Path(temporary) / "assets"
         directory.mkdir(exist_ok=True)
         with zipfile.ZipFile(vpk, "w") as archive:
+            archive.writestr("sce_sys/param.sfo", SFO)
             for other in assets.ASSETS:
                 art = data if other == name else (ROOT / "settings/assets" / Path(other).name).read_bytes()
                 archive.writestr(other, art)

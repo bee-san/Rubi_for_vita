@@ -1101,7 +1101,8 @@ class OverlayCloseLines(unittest.TestCase):
 
 
 def export_line(what="queued", rc=0, cards=2, moved=2, kept=0, unreadable=0, too_large=0, left=0, stopped=0, swept=None):
-    """settings/anki_page.c worker_main's line, as the Rubi app writes it into log.txt (with swept: since #161)."""
+    """settings/anki_page.c worker_main's line in log.txt (with swept: since #161), with the prefix of the builds
+    before the Rubi rename (\"overlay app: \"); RenamedLines reads today's, \"Rubi app: \", the same way."""
     return (f"overlay app: anki: export ({what}) rc={rc}: {cards} cards, {moved} moved, {kept} kept, {unreadable} "
             f"unreadable, {too_large} too large, {left} left, {stopped} stopped, "
             f"{'' if swept is None else f'{swept} swept, '}{cards * 20480} bytes, arena peak 98304\n")
@@ -2231,6 +2232,9 @@ class RenamedLines(unittest.TestCase):
         self.assertEqual(len(old["boot"]), 1)
         self.assertTrue(a.APP_CHECK.match(self.NEW.splitlines()[3]))
         self.assertTrue(a.APP_CHECK.match(self.old(self.NEW).splitlines()[3]))
+        # the Shell's app check (APP_LINE) is read from either name, the same way
+        self.assertEqual([c["state"] for c in new["app_checks"]], ["ok"])
+        self.assertEqual(new["app_checks"], old["app_checks"])
         k_new = a.summarise_kernel(self.KERNEL_NEW, len(self.KERNEL_NEW))
         k_old = a.summarise_kernel(self.old(self.KERNEL_NEW), len(self.KERNEL_NEW))
         self.assertEqual(len(k_new["started"]), 1)

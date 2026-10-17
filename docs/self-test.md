@@ -69,7 +69,7 @@ part way (a crash, the power) leaves the marker: the next boot runs the test aga
 shows the stage that began and never wrote its record, and `status.txt` keeps the previous boot's
 copy as `status.prev.txt`.
 
-If the game is disabled in the **Rubi** app (**JP Overlay Settings** in older builds), the
+If the game is disabled in the **Rubi** app (**Overlay** or **JP Overlay Settings** in older builds), the
 report says so and no OCR runs. If the boot is a safe one (the previous boot did not complete),
 the report has the boot sample only and says so; reboot once more.
 

@@ -9,6 +9,10 @@ needed for display: an image editor's other information "may cause an error"
 when the package is made. The artwork may therefore carry no text chunk
 (tEXt, iTXt, zTXt: a tool's name, a comment), in any of the four images.
 Pass the assets directory to check committed artwork before a Vita build.
+
+A VPK's sce_sys/param.sfo is checked too: its TITLE_ID must stay VJOSET001, the ID every earlier build's
+app has, or the VPK installs as a second app beside the old one instead of updating it
+(docs/rename-rubi.md), and its LiveArea title (TITLE, STITLE) is the app's name, Rubi.
 """
 import argparse
 import binascii
@@ -26,6 +30,8 @@ ASSETS = {
 }
 MAX_BYTES = {"sce_sys/icon0.png": 32 * 1024, "sce_sys/pic0.png": 600 * 1024}
 TEXT_CHUNKS = (b"tEXt", b"iTXt", b"zTXt")
+# The app's param.sfo (vita/CMakeLists.txt vita_create_vpk): its ID is every build's, its title the app's name.
+PARAM_SFO = {"TITLE_ID": "VJOSET001", "TITLE": "Rubi", "STITLE": "Rubi"}
 
 
 def check_png(data, name, dimensions, max_bytes=None):
@@ -75,6 +81,29 @@ def check_png(data, name, dimensions, max_bytes=None):
             "color_type": color, "interlaced": False, "opaque": True, "bytes": len(data)}
 
 
+def sfo_values(data):
+    """The string and integer values of a PSF (param.sfo) file: {key: value}."""
+    if len(data) < 20 or data[:4] != b"\0PSF":
+        raise ValueError("sce_sys/param.sfo: not a PSF file")
+    _, _, keys, values, count = struct.unpack_from("<4sIIII", data, 0)
+    out = {}
+    for i in range(count):
+        key_at, kind, length, _, value_at = struct.unpack_from("<HHIII", data, 20 + 16 * i)
+        key = data[keys + key_at:data.index(b"\0", keys + key_at)].decode("ascii")
+        value = data[values + value_at:values + value_at + length]
+        out[key] = (value.rstrip(b"\0").decode("utf-8") if kind in (0x0004, 0x0204)
+                    else struct.unpack("<I", value[:4])[0])
+    return out
+
+
+def check_sfo(data):
+    values = sfo_values(data)
+    for key, want in PARAM_SFO.items():
+        if values.get(key) != want:
+            raise ValueError(f"sce_sys/param.sfo: {key} is {values.get(key)!r}, want {want!r}")
+    return {key: values[key] for key in PARAM_SFO}
+
+
 def check(source):
     if source.is_dir():
         return {name: check_png((source / Path(name).name).read_bytes(), name, size, MAX_BYTES.get(name))
@@ -84,6 +113,9 @@ def check(source):
         for name in ASSETS:
             if names.count(name) != 1:
                 raise ValueError(f"{name}: expected exactly one asset in settings VPK")
+        if names.count("sce_sys/param.sfo") != 1:
+            raise ValueError("sce_sys/param.sfo: expected exactly one in settings VPK")
+        check_sfo(archive.read("sce_sys/param.sfo"))
         return {name: check_png(archive.read(name), name, size, MAX_BYTES.get(name))
                 for name, size in ASSETS.items()}
 

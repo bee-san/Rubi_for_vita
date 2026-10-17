@@ -128,8 +128,9 @@ the other and the settings carry over ([release-variants](docs/release-variants.
 Open **Rubi** from LiveArea to enable or disable individual games. Older builds call it **Overlay**
 (the 0.8.0 test builds) or **JP Overlay Settings** (0.7.12 and older); the title ID (`VJOSET001`) is
 unchanged, so the new VPK installs over it, and the app keeps its settings, games and Anki cards. An
-earlier install's `ux0:data/JPOverlaySettings.vpk` (the app's VPK under its old name) is no longer
-used and can be deleted. The settings app itself is always excluded from the overlay. Each
+earlier PC install left the app's VPK under its old name, `ux0:data/JPOverlaySettings.vpk`, which the
+older app's red banner names: `install-vita.sh` puts the new app there too, so either file installs the
+Rubi app. Once the Rubi app is installed, that file is no longer used and can be deleted. The settings app itself is always excluded from the overlay. Each
 build's app carries a version stamp (`vjo_app.txt`) and the plugins a record of the app they came
 with (`ux0:data/VitaJPOverlay/vjo_app.txt`); when the two differ, the Shell plugin says so once, in
 red under the recognized text of the first overlay opened in a game (`Rubi app and plugins are
@@ -854,7 +855,7 @@ color with no text chunks (`tEXt`, `iTXt`, `zTXt`), the bubble icon may be at mo
 with `0x8010113D`. It also checks that the app's `eboot.bin` is the system
 application it is built as (`tools/check_settings_self.py`: the SELF's attribute
 and 50 MiB budget, the main thread's CPU3 and priority, the heap, every thread
-created on CPU3). The Overlay mascot was drawn by a pinned, Apache-2.0
+created on CPU3). The Rubi app's mascot was drawn by a pinned, Apache-2.0
 text-to-image model; [settings/assets/ICON-SOURCE.md](settings/assets/ICON-SOURCE.md)
 records the model, checksums, prompt and seed. To recreate the committed artwork
 from that image, install `tools/requirements-assets.txt` and run

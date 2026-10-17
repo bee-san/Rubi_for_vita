@@ -322,7 +322,8 @@ class E2E:
             shutil.copyfile(pkg / "ux0/data/VitaJPOverlay/ocr" / name, ocr_dir / name)
         for name in ("H15_w8.vocr", "FL10_w8.vocr"):
             (ocr_dir / name).write_bytes(b"\2" * 4096)
-        (dev / "ux0/data/Rubi.vpk").write_bytes(b"test.2's VPK")
+        # where test.2's installer put its app (every install before the Rubi rename): its banner names that file
+        (dev / "ux0/data/JPOverlaySettings.vpk").write_bytes(b"test.2's VPK")
         (dev / "ur0/data/VitaJPOverlay/boot.txt").write_text(
             "vjoboot1 seq=1 mode=0 stage=4 inert=0 fault=0 failures=0 api=20 prev=0/0/0/0\n")
         before = {"ur0": tai_a}
@@ -343,6 +344,8 @@ class E2E:
             self.vpk_loud(r.stdout, "A install")
             check(not (dev / "ux0/tai/config.txt").exists(), "A no ux0:tai/config.txt is created where there was none")
             self.installed_right(dev, run_pkg, ["ur0"], before, "A")
+            check((dev / "ux0/data/JPOverlaySettings.vpk").read_bytes() == (pkg / "Rubi.vpk").read_bytes(),
+                  "A ux0:data/JPOverlaySettings.vpk, the pre-rename app's, is this build's app too (its old banner names it)")
             check((dev / "ux0/data/VitaJPOverlay/vjo_app.txt").read_bytes()
                   == (pkg / "ux0/data/VitaJPOverlay/vjo_app.txt").read_bytes(),
                   "A uploaded: ux0:data/VitaJPOverlay/vjo_app.txt (the plugins' record of their app)")
@@ -512,6 +515,8 @@ class E2E:
                   f"B install-vita.sh --title PCSG00415: rc {r.returncode}")
             self.vpk_loud(r.stdout, "B install")
             self.installed_right(dev, run_pkg, ["ur0", "ux0"], {"ur0": tai_b, "ux0": tai_b}, "B")
+            check(not (dev / "ux0/data/JPOverlaySettings.vpk").exists(),
+                  "B no ux0:data/JPOverlaySettings.vpk is created where there was none (the name before the rename)")
             for part in ("ur0", "ux0"):
                 t = (dev / part / "tai/config.txt").read_bytes()
                 if self.worker == "kernel":
