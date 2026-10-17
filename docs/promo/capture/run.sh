@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# capture/run.sh CHECKOUT OUT: every real picture and string the promo shows, made from one vita-jp-overlay checkout.
+# capture/run.sh CHECKOUT OUT: every real picture and string the promo shows, made from one Rubi checkout.
 #
 # CHECKOUT is built first, as the README's "Build and validation" says: the host tree in build/host and the Vita
 # release in build/vita-normal and build/vita-debug (cmake --build ... --target release, VJO_DEBUG=OFF and ON).
@@ -11,7 +11,7 @@
 #                            render_cards.js)
 #   release/                 the release as package_variants.py makes it (both zips and VPKs, SHA256SUMS): the names
 #                            and sizes on the Releases page and in VitaShell (sizes.json)
-#   app/                     the Overlay app in Vita3K: the one-VPK install of a capture build of the app (its own code,
+#   app/                     the Rubi app in Vita3K: the one-VPK install of a capture build of the app (its own code,
 #                            app_capture_patch.py's pad scripts), the Install page, its run, Games, OCR & lookup
 #                            (capture_app.sh, split_holds.py; holds-1/, holds-2/, progress/)
 # env: A (promo-assets' shared folder: vn/ art, fonts/), MODELS, DICT_DIR (the released plaintext.vjdict), VITASDK,

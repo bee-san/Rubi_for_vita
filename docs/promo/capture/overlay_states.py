@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""overlay_states.py: the overlay at each beat of the promo, as a vita-jp-overlay checkout draws it.
+"""overlay_states.py: the overlay at each beat of the promo, as a Rubi checkout draws it.
 
     overlay_states.py CHECKOUT LOOKUPS.jsonl DICT_SHA256 > src/overlay-states.json
 
@@ -124,7 +124,7 @@ def main():
         # s3-m1: 「キラキラ……。/子供の頃みたい。」 right after a first install: mining off; opened
         "s3-m1-ov03-open": state(s3, b[0], b[0]["hl_cp"], mining=False, pending=0),
     }
-    json.dump({"source": f"capture/overlay_states.py: vita-jp-overlay {commit}'s shell/overlay.cpp render() order and "
+    json.dump({"source": f"capture/overlay_states.py: Rubi {commit}'s shell/overlay.cpp render() order and "
                          f"strings, its own lookups (capture/overlay_lookups.c) in the released plaintext.vjdict "
                          f"(sha256 {dict_sha[:16]}…), entries as vjo_styled_entry draws them",
                "states": states}, sys.stdout, ensure_ascii=False, indent=1)

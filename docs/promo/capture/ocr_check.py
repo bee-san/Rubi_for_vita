@@ -59,7 +59,7 @@ for frame, line in LINES:
     bad += not ok
     rows.append(f"| `vn/{frame}` | {want.replace(chr(10), ' / ')} | {got.replace(chr(10), ' / ')} | {'same' if ok else 'DIFFERENT'} |")
 md = ["# What the recognizer reads from each line the film shows", "",
-      f"Host vjo-ocr of vita-jp-overlay {commit} (its OCR files and pinned vita-vn-ocr runtime), {MODEL} + {LM} + "
+      f"Host vjo-ocr of Rubi {commit} (its OCR files and pinned vita-vn-ocr runtime), {MODEL} + {LM} + "
       f"cascade {CASCADE} (its defaults), on the region x 54..906, y 402..506; both texts normalised by its "
       "vjo-textnorm, as the game worker normalises. A host run, not a console one.", "",
       "| frame (promo-assets) | the film's line | recognized | |", "| --- | --- | --- | --- |", *rows, ""]

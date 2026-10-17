@@ -20,7 +20,7 @@
  *
  *   overlay_lookups DICT_DIR DICT_FILES < lines.txt > lookups.jsonl
  *
- * Built against a vita-jp-overlay checkout's host libraries (capture/run.sh):
+ * Built against a Rubi checkout's host libraries (capture/run.sh):
  *   cc -O1 -DVJO_HOST=1 -I core -I host -I host/tests -I include overlay_lookups.c core/textnorm.c \
  *      build/host/libvjo_host.a build/host/libvjo_core.a -lm -o overlay_lookups
  * (from promo-assets' src/promo_lookup.c, for main after #153's kanji lines, #156's hint and #87's rows) */

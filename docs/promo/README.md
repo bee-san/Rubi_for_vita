@@ -50,7 +50,7 @@ render it with `-f 15` for a quick look. The npm scripts set `HYPERFRAMES_NO_TEL
 
 ## The captures (`capture/run.sh`)
 
-`capture/run.sh CHECKOUT OUT` makes every real picture from one vita-jp-overlay checkout, built as the
+`capture/run.sh CHECKOUT OUT` makes every real picture from one Rubi checkout, built as the
 repository's README says (the host tree in `build/host`, the Vita release in `build/vita-normal` and
 `build/vita-debug`); the film shows the commit in `OUT/commit.txt`. Its environment is listed at its top
 (VitaSDK, the pinned vita-vn-ocr runtime and models, the released dictionary, Vita3K and the official

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""capture_package.py: the release, with the promo's capture app in place of its Overlay app.
+"""capture_package.py: the release, with the promo's capture app in place of its Rubi app.
 
     capture_package.py CHECKOUT BASE.zip CAPTURE.self OUT_BASE.zip
 
-CHECKOUT is the vita-jp-overlay checkout both were built from; BASE.zip its Vita build's base zip (cmake --build
+CHECKOUT is the Rubi checkout both were built from; BASE.zip its Vita build's base zip (cmake --build
 --target release); CAPTURE.self the capture app's eboot (the smoke target with app_capture_patch.py's scripts).
 OUT_BASE.zip is BASE.zip with its app VPK's eboot.bin replaced by CAPTURE.self and its stamp (vjo_app.txt, made by
 the checkout's own tools/app_stamp.py) and the release's record of the app (ux0/data/VitaJPOverlay/vjo_app.txt) made

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# capture_app.sh ONE_VPK OUT_DIR: the promo's Overlay app shots, as Vita3K draws the app's own code.
+# capture_app.sh ONE_VPK OUT_DIR: the promo's Rubi app shots, as Vita3K draws the app's own code.
 # ONE_VPK is the one-VPK release made around the capture app (capture/run.sh: app_capture_patch.py's scripts,
 # capture_package.py, the checkout's package_release.py and package_vpk.py). One sandboxed Vita3K card, headless
 # under Xvfb (as tools/vita3k_settings_smoke.sh runs it), with the official firmware and its fonts, two runs:

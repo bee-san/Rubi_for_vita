@@ -8,7 +8,7 @@
 // What is drawn here, and from where:
 // - the overlay: src/overlay-states.json (the checkout's own render order, strings and lookups:
 //   capture/overlay_states.py), laid out as shell/rco/vitajpoverlay.xml and shell/overlay.cpp place it;
-// - nothing of the Overlay app: its pages are Vita3K captures (assets/shots/, capture/capture_app.sh);
+// - nothing of the Rubi app: its pages are Vita3K captures (assets/shots/, capture/capture_app.sh);
 // - VitaShell's screens: VitaShell 81af709's layout, Default theme and strings, with the release's file;
 // - the Releases page: the release's file names and sizes (src/release.json).
 import { readFileSync, writeFileSync } from "node:fs";

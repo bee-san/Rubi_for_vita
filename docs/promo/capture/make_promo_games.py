@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""make_promo_games.py UX0_DIR VN_ART_DIR FONT_DIR: the installed games the promo's Overlay app capture lists.
+"""make_promo_games.py UX0_DIR VN_ART_DIR FONT_DIR: the installed games the promo's Rubi app capture lists.
 Original titles (no real games) and original icons: ux0/app/<TITLEID>/sce_sys/param.sfo (TITLE, as
 tools/make_settings_smoke_games.py writes it) and icon0.png (128x128, 8-bit palette, no text chunks). The
 promo's own VN, 夕凪ステップ (PROMO0001), gets an icon cut from its art (vn/src/bg-s1.png and the heroine).

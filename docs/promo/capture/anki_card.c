@@ -1,4 +1,4 @@
-/* anki_card: the promo's mined cards through a vita-jp-overlay checkout's own code, into a real .apkg.
+/* anki_card: the promo's mined cards through a Rubi checkout's own code, into a real .apkg.
  *
  * For each card (a sentence and the cursor of its word, in code points):
  *   vjo_text_normalize, vjo_overlay_ocr_text, vjo_overlay_lookup_at   the overlay's lookup (as overlay_lookups.c)
@@ -8,7 +8,7 @@
  *                                                                     the engine and the Normal size's model)
  *   vjo_queue_encode(picture) + its ID, and <id>.jpg beside it        the Shell's record with its screenshot, as
  *                                                                     vjo_queue_save commits it (shell/anki_queue.c)
- * then the Overlay app's export, vjo_export_run (settings/anki_export.c, core/apkg.c, core/lapis.c), on real
+ * then the Rubi app's export, vjo_export_run (settings/anki_export.c, core/apkg.c, core/lapis.c), on real
  * files: the Vita file API mapped onto POSIX by host/tests/test_apkg.c (included, its main renamed), the
  * memory card being WORKDIR/ux0:data/... . The screenshot is the game worker's JPEG of the game's frame
  * (host vjo-jpeg: core/jpegsw.c at the worker's quality, 70; capture/run.sh makes it).

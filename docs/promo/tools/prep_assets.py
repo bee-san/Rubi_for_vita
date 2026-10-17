@@ -3,13 +3,13 @@
 
     python3 tools/prep_assets.py CAPTURE_DIR CHECKOUT PROMO_ASSETS
 
-CAPTURE_DIR is capture/run.sh's output for CHECKOUT, the vita-jp-overlay checkout the film shows (its commit is
+CAPTURE_DIR is capture/run.sh's output for CHECKOUT, the Rubi checkout the film shows (its commit is
 CAPTURE_DIR/commit.txt); PROMO_ASSETS (or $PROMO_ASSETS) is promo-assets' folder: the original mock game's art and
 the sound, made for the promo by the fleet's promo-assets agent (its MANIFEST.md has each file's licence, source and
 sha256; its src/ the tools that made them). Needs Pillow, numpy and ffmpeg (FFMPEG).
 Writes:
 - src/overlay-states.json: the overlay at each beat (capture/overlay_states.py);
-- assets/shots/: the Overlay app in Vita3K (capture/capture_app.sh): its Install page, the run and its result,
+- assets/shots/: the Rubi app in Vita3K (capture/capture_app.sh): its Install page, the run and its result,
   Games and OCR & lookup, each checked against settings/main.c's accent colour;
 - assets/anki/: the mined card's front and back as Anki renders it; assets/vn/shot-s1-m2.jpg: its screenshot,
   the game worker's JPEG (capture/run.sh);
@@ -88,7 +88,7 @@ ACCENT = (91, 220, 207)  # settings/main.c ACCENT: the 4 px bar along the top of
 
 
 def app_shot(src, out):
-    """A Vita3K capture of the Overlay app, checked against settings/main.c's colours (the Xvfb path swaps red and
+    """A Vita3K capture of the Rubi app, checked against settings/main.c's colours (the Xvfb path swaps red and
     blue; capture/split_holds.py swaps them back)."""
     im = Image.open(src).convert("RGB")
     if im.size != (960, 544):
@@ -160,7 +160,7 @@ def main():
     lines = [
         "# Where the composition's art comes from",
         "",
-        f"Written by `tools/prep_assets.py` from `capture/run.sh`'s output for vita-jp-overlay `{commit[:7]}` (the real",
+        f"Written by `tools/prep_assets.py` from `capture/run.sh`'s output for Rubi `{commit[:7]}` (the real",
         "captures: the overlay's states, the card, the app in Vita3K, the release's sizes), that checkout's",
         "`settings/assets/`, and promo-assets' shared folder (the original mock game, the sound; its MANIFEST.md has each",
         "file's licence and source).",

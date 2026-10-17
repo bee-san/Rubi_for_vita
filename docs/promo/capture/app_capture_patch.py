@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""app_capture_patch.py CHECKOUT: turns a vita-jp-overlay checkout's Vita3K smoke app into the promo's capture app.
+"""app_capture_patch.py CHECKOUT: turns a Rubi checkout's Vita3K smoke app into the promo's capture app.
 
 Only for the capture (never committed to that checkout, never in a release). The app's own sources are unchanged
 except for two Vita3K workarounds under VJO_SMOKE_PAD (the smoke build's own define):
