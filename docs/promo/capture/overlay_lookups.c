@@ -241,7 +241,11 @@ int main(int argc, char **argv)
                 seen[n_seen++] = cursor;
                 end = lookup(&a, &p, &cfg, &d, cursor);
                 printf("}");
+#ifdef VJO_ROW_KEY_STICK /* #173 added the left stick's flag: 0, the d-pad's Right (capture/run.sh sets it) */
+                result = vjo_text_row_key(&nav, s, len, &rows, cursor, end, +1, 0, cfg.japanese_only_selection, 0, &next);
+#else
                 result = vjo_text_row_key(&nav, s, len, &rows, cursor, end, +1, 0, cfg.japanese_only_selection, &next);
+#endif
                 cursor = next;
             }
         }
