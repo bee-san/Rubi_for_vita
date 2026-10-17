@@ -107,8 +107,8 @@
  * main 10c8011 and 74f8de8 and #138]. The cursor across rows with the stick on the arrows' path makes
  * it 88,636 -> 88,460 + 69,796 on main a7abad7, 1,652 B of text room [measured: the build log's module
  * rows, main a7abad7 and this change]. The held log lines of a job (t3-log-path, shell/worker.c
- * net_main) make it 88,836 + 69,868 on main 438e373 (88,724 + 69,796), the same pages, 1,276 B of text
- * room [measured: the same rows, main 438e373 and t3-log-path]. Its check is
+ * net_main) make it 88,556 + 69,868 on main eece6c6 (88,460 + 69,796), the same pages, 1,556 B of text
+ * room [measured: the same rows, main eece6c6 and t3-log-path]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
@@ -165,7 +165,7 @@
  * of this build, on main 3aa08a6 with #132 and the network's removal; 5,624 B with the UDP send;
  * the SDK's own code and the indirect-call sites are not counted]. The normal build's is 4,720 B:
  * net_main 2,144 (the 2 KiB log buffer that holds a job's lines until its result is taken, shell/worker.c
- * net_main), then a lookup down to the dictionary's page cache [measured the same way, on main 438e373
+ * net_main), then a lookup down to the dictionary's page cache [measured the same way, on main eece6c6
  * with t3-log-path]. The thread paints its
  * unused stack and logs, at each game exit, the most it has used (shell/worker.c net_stack_check),
  * so a console run measures it. */

@@ -220,13 +220,13 @@ unchanged (its three plugins and RCO are main's bytes, sha256).
 - Within the normal Shell's exact budget: on main `836259e` (#150) its last text page had 100 B left,
   and an earlier form of this change (a hold in the logger, `vjo_log_hold`) needed 448 B [measured:
   audit-t3-log-path-c's Vita builds of main `836259e` and of that form, `8cc1c3b`, rebased onto it]. This
-  one adds 112 B of text and 72 B of data/bss: on main `438e373` (#153), 88,724 → 88,836 B and 69,796 →
-  69,868 B, the same 163,840 B of pages, 1,276 B of text room left [measured: the Vita builds of main
-  `438e373` and this branch]. No new allocation or thread. The VjoNet thread's deepest chain in the
+  one adds 96 B of text and 72 B of data/bss: on main `eece6c6` (#173), 88,460 → 88,556 B and 69,796 →
+  69,868 B, the same 163,840 B of pages, 1,556 B of text room left [measured: the Vita builds of main
+  `eece6c6` and this branch]. No new allocation or thread. The VjoNet thread's deepest chain in the
   normal build goes from 2,664 to 4,720 B (`net_main`'s frame 88 → 2,144 B), under the debug build's
-  unchanged 5,504 B, in its 16 KiB stack (#132) [measured: `arm-vita-eabi-gcc -fstack-usage
+  unchanged 5,488 B, in its 16 KiB stack (#132) [measured: `arm-vita-eabi-gcc -fstack-usage
   -fcallgraph-info=su` of the Shell's and `vjo_core_vita`'s C sources with each object's flags from the
-  Vita build, on main `438e373`; a lower bound, without the SDK's own frames].
+  Vita build, on main `eece6c6`; a lower bound, without the SDK's own frames].
 
 The host session (`session_log_appends`, the same in both builds: 3 games × 3 activations × 90 steps
 through the real worker, with failures, changed screens, cancelled jobs, size misses, the clock, and the
