@@ -4,7 +4,10 @@
  * read, and every refusal before or while the model loads. With
  * VJO_VOCR_MODEL_DIR set, the pinned table is also checked against the real
  * release files. */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include "platform_posix.h"
 #include "vocr.h"
 #include "vocr_lm.h"
@@ -333,11 +336,11 @@ static void test_wrong_or_corrupt_weights(void)
     VjoPlatform p;
     PosixPlatform pp = {0};
     VjoVocrStats st;
-    char dir[] = "/tmp/vjo-vocr-XXXXXX", path[128], text[64];
+    char dir[PATH_MAX], path[PATH_MAX + 64], text[64];
     size_t bytes;
     void *ws = workspace(VJO_VOCR_DEFAULT_MODEL, &bytes);
     posix_platform_init(&pp, &p);
-    TEST_ASSERT(mkdtemp(dir) != NULL);
+    TEST_ASSERT(vjo_test_tmpdir_new(dir, sizeof(dir)) != NULL);
     snprintf(path, sizeof(path), "%s/%s", dir, VJO_VOCR_DEFAULT_MODEL);
     fill(20);
     line_of_strokes(30, 54, 235);
@@ -639,3 +642,9 @@ TEST_LIST = {
     {"pinned_table_matches_release_files", test_release_files},
     {NULL, NULL}
 };
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("vocr")) return 2; /* the model files' directory in it, removed at the end */
+    return acutest_main(argc, argv);
+}

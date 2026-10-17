@@ -23,7 +23,10 @@
  *    fewer helpers when the workspace holds fewer; the busy hook.
  * The cancellation, failed-job, capacity and failed-join cases follow
  * audit-ocr-speed-2's .refs/probe/test_audit_extra.c. */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include "platform_posix.h"
 #include "vocr.h"
 #include "vocr_lm.h"
@@ -201,7 +204,7 @@ static size_t build_lm(void)
     return lpos;
 }
 
-static char model_dir[256];
+static char model_dir[256]; /* the product joins it and a name in 256 bytes (core/vocr_ocr.c join_path) */
 
 static void write_file(const char *name, const void *data, size_t n, unsigned char sha[32])
 {
@@ -230,8 +233,11 @@ static void setup_files(void)
     vocr_opts o;
     size_t n;
     if (done) return;
-    snprintf(model_dir, sizeof model_dir, "/tmp/vjo-par-%d", (int)getpid());
-    mkdir(model_dir, 0700);
+    /* The product opens DIR/NAME in 256 bytes (core/vocr_ocr.c join_path): a long TMPDIR is refused here. */
+    TEST_ASSERT_(vjo_test_tmpdir_new(model_dir, sizeof model_dir) != NULL &&
+                     strlen(model_dir) + 1 + sizeof(M2) - 1 < 256,
+                 "no models' directory in %s with room for %s in the product's 256-byte model path "
+                 "(core/vocr_ocr.c join_path): is TMPDIR too long?", vjo_test_tmpdir_path, M2);
     for (unsigned i = 0; i < 2; i++) {
         n = build_blob(seeds[i]);
         TEST_ASSERT(vocr_load(&m, blob, n) == VOCR_OK);
@@ -1052,3 +1058,9 @@ TEST_LIST = {
     {"sizes_and_fewer_helpers", test_sizes_and_fewer_helpers},
     {NULL, NULL},
 };
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("vocr-parallel")) return 2; /* each test's model files in it, all removed at the end */
+    return acutest_main(argc, argv);
+}

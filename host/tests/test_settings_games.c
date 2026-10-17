@@ -25,13 +25,16 @@
  * per 18-unit em), not the firmware's PVF fonts; host times are this
  * machine's, not the Vita's. */
 #ifndef VJO_SETTINGS_BENCH
+#define main acutest_main
 #include "acutest.h"
+#undef main
 #define TEST_ONLY
 #else
 /* Evaluated in every build (assert would vanish with NDEBUG). */
 #define TEST_ASSERT(c) do { if (!(c)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #c); _exit(2); } } while (0)
 #define TEST_ONLY __attribute__((unused)) /* the tests' helpers, unused by the benchmark */
 #endif
+#include "test_tmpdir.h"
 #include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/display.h>
@@ -568,23 +571,9 @@ static void make_title(int i, char *out, size_t cap)
     }
     }
 }
-static char card_dir[64];
-static void remove_tree(const char *path)
-{
-    struct stat st;
-    if (lstat(path, &st)) return;
-    if (S_ISDIR(st.st_mode)) {
-        DIR *d = opendir(path);
-        struct dirent *e;
-        while (d && (e = readdir(d))) {
-            char child[512];
-            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-            if (snprintf(child, sizeof(child), "%s/%s", path, e->d_name) < (int)sizeof(child)) remove_tree(child);
-        }
-        if (d) closedir(d);
-        rmdir(path);
-    } else unlink(path);
-}
+static char card_dir[PATH_MAX];
+/* (test_tmpdir.h's: no link followed, no truncated path walked) */
+static void remove_tree(const char *path) { vjo_test_remove_tree(path); }
 static void remove_card(void) { if (card_dir[0] && chdir("/") == 0) remove_tree(card_dir); }
 static void put_file(const char *path, const void *data, size_t n)
 {
@@ -637,9 +626,7 @@ static void install(const Game *g, int seed) { install_in("ux0:app", g, seed); }
 static void card(int n, int (*kind)(int))
 {
     if (!card_dir[0]) {
-        char d[] = "/tmp/vjo-settings-games-XXXXXX";
-        TEST_ASSERT(mkdtemp(d) != NULL);
-        snprintf(card_dir, sizeof(card_dir), "%s", d);
+        TEST_ASSERT(vjo_test_tmpdir_new(card_dir, sizeof(card_dir)) != NULL);
         atexit(remove_card);
     }
     TEST_ASSERT(chdir("/") == 0);
@@ -2997,6 +2984,12 @@ TEST_LIST = {
     {NULL, NULL}
 };
 
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("settings-games")) return 2; /* each test's card in it, all removed at the end */
+    return acutest_main(argc, argv);
+}
+
 #else /* VJO_SETTINGS_BENCH */
 static int cmp_long(const void *a, const void *b)
 {
@@ -3059,6 +3052,7 @@ int main(int argc, char **argv)
     double startup = 0;
     if (repeats < 1) repeats = 1;
     if (repeats > 15) repeats = 15;
+    if (!vjo_test_tmpdir("settings-games")) return 2;
     card(games_n, NULL);
     printf("%d games + Adrenaline's entry; icons 128x128 8-bit palette, %s; frames after the first %s; "
            "the run with the median mean of %d\n\n", games_n,

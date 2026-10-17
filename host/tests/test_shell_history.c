@@ -1,5 +1,8 @@
 /* The real CSV appender, over real temporary files and fault-injected Vita I/O. */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -10,7 +13,7 @@
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 
-static char directory[128], path[160];
+static char directory[PATH_MAX], path[PATH_MAX + 16];
 static unsigned opens, writes, short_bytes;
 static int open_error, write_error_after, sync_error, close_error, rollback_error;
 static SceOff last_size;
@@ -59,9 +62,8 @@ static void reset(void)
 {
     if (path[0]) unlink(path);
     if (!directory[0]) {
-        strcpy(directory, "/tmp/vjo-history-XXXXXX");
-        TEST_ASSERT(mkdtemp(directory));
-        snprintf(path, sizeof(path), "%s/history.csv", directory);
+        TEST_ASSERT(vjo_test_tmpdir_new(directory, sizeof(directory)) != NULL);
+        TEST_ASSERT(snprintf(path, sizeof(path), "%s/history.csv", directory) < (int)sizeof(path));
     }
     vjo_history_reset();
     opens = writes = short_bytes = 0;
@@ -297,3 +299,9 @@ TEST_LIST = {
     {"blank and invalid records do not touch disk", test_empty_and_invalid},
     {NULL, NULL}
 };
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("shell-history")) return 2; /* each test's history.csv in it, all removed at the end */
+    return acutest_main(argc, argv);
+}

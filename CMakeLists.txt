@@ -746,3 +746,28 @@ if(VJO_WITH_VOCR)
       ENVIRONMENT "VJO_PLAINTEXT_DIR=${_vjo_plaintext_dir}")
   endif()
 endif()
+
+# Every test runs with a TMPDIR of its own, which must be empty again when the run ends
+# (host/tests/test_tmpdir.h, host/tests/tmp_leak.py): <this build's directory>/TEST, the build's
+# directory in the system's temporary directory (outside the source tree, as /tmp is).
+# tmp_leak_setup makes each test's directory, empty, before the first test; tmp_leak_check fails on
+# whatever a test left in its own, naming the test, or on a test source that names /tmp instead, and
+# removes them. Keep this last: it covers the tests added above it.
+set(_vjo_tmp_base "$ENV{TMPDIR}")
+if(NOT IS_ABSOLUTE "${_vjo_tmp_base}" OR _vjo_tmp_base MATCHES ";")
+  set(_vjo_tmp_base /tmp)
+endif()
+string(SHA1 _vjo_tmp_id "${CMAKE_BINARY_DIR}")
+string(SUBSTRING "${_vjo_tmp_id}" 0 12 _vjo_tmp_id)
+set(VJO_TEST_TMPDIR "${_vjo_tmp_base}/vjo-ctest-${_vjo_tmp_id}")
+get_property(_vjo_tests DIRECTORY PROPERTY TESTS)
+foreach(_vjo_test IN LISTS _vjo_tests)
+  set_property(TEST ${_vjo_test} APPEND PROPERTY ENVIRONMENT "TMPDIR=${VJO_TEST_TMPDIR}/${_vjo_test}")
+  set_property(TEST ${_vjo_test} APPEND PROPERTY FIXTURES_REQUIRED tmp_leak)
+endforeach()
+add_test(NAME tmp_leak_setup COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/tmp_leak.py
+  setup ${VJO_TEST_TMPDIR} ${_vjo_tests})
+add_test(NAME tmp_leak_check COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/tmp_leak.py
+  check ${VJO_TEST_TMPDIR} ${_vjo_tests})
+set_tests_properties(tmp_leak_setup PROPERTIES FIXTURES_SETUP tmp_leak)
+set_tests_properties(tmp_leak_check PROPERTIES FIXTURES_CLEANUP tmp_leak)

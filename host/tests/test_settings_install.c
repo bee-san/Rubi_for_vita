@@ -9,7 +9,10 @@
  *
  * Host runs only: the console's file system, its free-space answers, app0:'s unmount and the Unsafe
  * Homebrew probe are stubbed; docs/one-vpk-install.md lists what a console run must show. */
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -51,7 +54,7 @@
 static const VjoInstallBuild build = {VJO_API_VERSION, "0.8.0", VJO_VARIANT, VJO_TAI_WORKER_KERNEL};
 
 /* ---------------- the card ---------------- */
-static char card[256];
+static char card[PATH_MAX];
 static int native(int n) { return n < 0 ? (int)(0x80010000u | (unsigned)errno) : n; }
 
 /* faults: the nth matching call fails (0: none); the counters count matching calls */
@@ -82,10 +85,10 @@ int sceIoRead(int fd, void *b, size_t n) { return native((int)read(fd, b, n)); }
 static char fd_path[1024][64];
 int sceIoWrite(int fd, const void *b, size_t n)
 {
-    char link[64], path[512];
+    char link[64], path[PATH_MAX]; /* the card is in TMPDIR: its files' paths are as long as it is */
     snprintf(link, sizeof(link), "/proc/self/fd/%d", fd);
     ssize_t m = readlink(link, path, sizeof(path) - 1);
-    if (m > 0) {
+    if (m > 0 && m < (ssize_t)sizeof(path) - 1) {
         path[m] = '\0';
         if (fault.pattern && strstr(path, fault.pattern) && hit(fault.write)) return (int)(0x80010000u | ENOSPC);
     }
@@ -217,20 +220,8 @@ static char *slurp(const char *path, size_t *n)
     return b;
 }
 static int there(const char *path) { struct stat st; return !stat(path, &st); }
-static void remove_tree(const char *path)
-{
-    DIR *d = opendir(path);
-    struct dirent *e;
-    if (!d) { unlink(path); return; }
-    while ((e = readdir(d))) {
-        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-        char sub[1024];
-        snprintf(sub, sizeof(sub), "%s/%s", path, e->d_name);
-        remove_tree(sub);
-    }
-    closedir(d);
-    rmdir(path);
-}
+/* (test_tmpdir.h's: no link followed, no truncated path walked) */
+static void remove_tree(const char *path) { vjo_test_remove_tree(path); }
 static int count_files(const char *dir, const char *prefix)
 {
     DIR *d = opendir(dir);
@@ -313,8 +304,7 @@ static void fresh_card(int with_ux0)
     static int registered;
     if (!registered) registered = atexit(remove_last_card) == 0;
     if (card[0]) { if (chdir("/") == 0) remove_tree(card); }
-    snprintf(card, sizeof(card), "/tmp/vjo-install-XXXXXX");
-    TEST_ASSERT(mkdtemp(card) != NULL);
+    TEST_ASSERT(vjo_test_tmpdir_new(card, sizeof(card)) != NULL);
     TEST_ASSERT(chdir(card) == 0);
     memset(&fault, 0, sizeof(fault));
     unsafe_off = umount_rc = app_readonly = locked = lock_calls = 0;
@@ -2358,3 +2348,9 @@ TEST_LIST = {
     {"package_settings_are_applied", package_settings_are_applied},
     {"the_page_shows_the_plan_and_runs_it", the_page_shows_the_plan_and_runs_it},
     {NULL, NULL}};
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("settings-install")) return 2; /* every card in it, all removed at the end */
+    return acutest_main(argc, argv);
+}

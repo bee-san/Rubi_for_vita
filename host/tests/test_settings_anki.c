@@ -13,6 +13,7 @@
 #define main acutest_main
 #include "acutest.h"
 #undef main
+#include "test_tmpdir.h"
 #include <psp2/ctrl.h>
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
@@ -305,7 +306,6 @@ static int width_of(const char *s, float px)
 
 /* ---------------- the card's files ---------------- */
 
-static char test_dir[128];
 static int there(const char *path)
 {
     struct stat st;
@@ -344,9 +344,12 @@ static int files_in(const char *dir, const char *suffix)
 }
 static void reset(int assign)
 {
-    char cmd[600];
-    snprintf(cmd, sizeof(cmd), "rm -rf '%s/ux0:data' && mkdir -p '%s/ux0:data/VitaJPOverlay'", test_dir, test_dir);
-    TEST_ASSERT(system(cmd) == 0);
+    /* an empty ux0:data/VitaJPOverlay in the suite's directory, removed and made in-process (no shell) */
+    char data[PATH_MAX], overlay[PATH_MAX];
+    TEST_ASSERT(snprintf(data, sizeof(data), "%s/ux0:data", vjo_test_tmpdir_path) < (int)sizeof(data));
+    TEST_ASSERT(snprintf(overlay, sizeof(overlay), "%s/VitaJPOverlay", data) < (int)sizeof(overlay));
+    TEST_ASSERT(vjo_test_remove_tree(data) == 0);
+    TEST_ASSERT(mkdir(data, 0777) == 0 && mkdir(overlay, 0777) == 0);
     fail_open = fail_dopen = NULL;
     fail_rename = fail_create = renames = writes_opened = 0;
     logs[0] = '\0';
@@ -806,23 +809,11 @@ TEST_LIST = {
     {NULL, NULL},
 };
 
-static pid_t test_dir_owner;
-static void remove_test_dir(void)
-{
-    char cmd[200];
-    if (getpid() != test_dir_owner) /* (acutest runs each test in a child) */
-        return;
-    snprintf(cmd, sizeof(cmd), "rm -rf '%s'", test_dir);
-    if (system(cmd) != 0)
-        fprintf(stderr, "could not remove %s\n", test_dir);
-}
-
 int main(int argc, char **argv)
 {
-    snprintf(test_dir, sizeof(test_dir), "/tmp/vjo-anki-page-tests-XXXXXX");
-    if (!mkdtemp(test_dir) || chdir(test_dir) < 0)
+    /* the memory card, removed when the suite ends (acutest runs each test in a child: test_tmpdir.h) */
+    const char *dir = vjo_test_tmpdir("settings-anki");
+    if (!dir || chdir(dir) < 0)
         return 2;
-    test_dir_owner = getpid();
-    atexit(remove_test_dir);
     return acutest_main(argc, argv);
 }

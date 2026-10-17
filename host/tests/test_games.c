@@ -1,4 +1,7 @@
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include "games.h"
 #include "sfo.h"
 #include "../../vita/games_storage.h"
@@ -43,8 +46,8 @@ static void reset_files(void)
 {
     static int initialized;
     if (!initialized) {
-        char dir[] = "/tmp/vjo-games-XXXXXX";
-        TEST_ASSERT(mkdtemp(dir));
+        char dir[PATH_MAX];
+        TEST_ASSERT(vjo_test_tmpdir_new(dir, sizeof(dir)) != NULL);
         TEST_ASSERT(chdir(dir) == 0);
         mkdir("ux0:data", 0777);
         mkdir("ux0:data/VitaJPOverlay", 0777);
@@ -349,3 +352,9 @@ TEST_LIST = {
     {"Japanese SFO titles and malicious offsets", test_sfo_bounds},
     {NULL, NULL}
 };
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("games")) return 2; /* each test's card in it, all removed at the end */
+    return acutest_main(argc, argv);
+}

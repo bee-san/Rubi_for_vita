@@ -1,4 +1,7 @@
+#define main acutest_main
 #include "acutest.h"
+#undef main
+#include "test_tmpdir.h"
 #include "../../settings/preferences.h"
 #include "../../shell/shell.h"
 #include "../../include/vjo_vocr_sizes.h"
@@ -68,8 +71,8 @@ static void reset(void)
     static int initialized;
     expected_results = 2;
     if (!initialized) {
-        char dir[] = "/tmp/vjo-preferences-XXXXXX";
-        TEST_ASSERT(mkdtemp(dir)); TEST_ASSERT(chdir(dir) == 0);
+        char dir[PATH_MAX];
+        TEST_ASSERT(vjo_test_tmpdir_new(dir, sizeof(dir)) != NULL); TEST_ASSERT(chdir(dir) == 0);
         mkdir("ux0:data", 0777); mkdir("ux0:data/VitaJPOverlay", 0777); initialized = 1;
     }
     unlink(VJO_PREFERENCES_PATH); unlink(VJO_PREFERENCES_PATH ".bak"); unlink(VJO_PREFERENCES_PATH ".tmp");
@@ -1212,3 +1215,9 @@ TEST_LIST = {
     {"shell_reads_a_stamp_file_s_first_line_whole", test_file_line_and_exists},
     {NULL, NULL}
 };
+
+int main(int argc, char **argv)
+{
+    if (!vjo_test_tmpdir("preferences")) return 2; /* each test's card in it, all removed at the end */
+    return acutest_main(argc, argv);
+}
