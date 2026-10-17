@@ -233,8 +233,10 @@ across the 920 px box). Undocumented `LineInfo.frame` fields and paf's
 `GetNextUpHit`/`GetNextDownHit` are not used (pressing ▼ with ScrollView
 `DoSnap` and `GetNextDownHit` crashed the console). Left/Right walk the header's
 text (at most 4,095 bytes) from its start to the character they move to and ask
-paf nothing; only a press at the text's end, which could go round, asks for the
-rows of its first and last selectable characters (two queries). Up/Down walk it
+paf for no character's position (only its line count, `GetLineCount`, as every
+key and stick step over the header does); only a press at the text's end, which
+could go round, asks for the rows of its first and last selectable characters
+(two `GetCharInfo` queries). Up/Down walk it
 to the row after the cursor's and ask for the cursor's character, the
 selectable characters and, where a cell's end is needed, the character after
 one (at most 2N + 2 queries for N characters). Neither allocates or takes a
@@ -314,7 +316,10 @@ way:
   so a stick rolled round changes direction once. The one difference: the stick
   stops at the text's first and last character even on a text on one row, which
   the d-pad goes round, as the app's lists stop at their ends while their
-  Up/Down wrap, so a held stick never circles a short line.
+  Up/Down wrap, so a held stick never circles a short line. Its Left still
+  undoes a d-pad Right that went round there (Right at the last character to
+  the first, then the stick left: back to the last), because any Left retraces
+  the Rights before it; the stick itself never goes round.
 - **The deferred lookup.** While the stick moves the cursor, the body says
   "Looking up words…" and the header highlights the character. The word at the
   cursor is looked up once, when the cursor has rested there for

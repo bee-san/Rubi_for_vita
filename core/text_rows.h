@@ -80,12 +80,13 @@ size_t vjo_word_step(VjoWordNavigation *history, const char *text, size_t len, s
 
 /* The overlay's cursor keys over the header, the d-pad's arrows and the left
  * stick's four directions alike: Left/Right (dx) by vjo_word_step, which
- * drops Up/Down's column, else Up/Down (dy) by vjo_text_row_vertical; a row
- * change forgets Right's history, so Left retraces the new row's words only.
- * One history and one column for both. `stick`: the left stick's step (#138,
- * core/stick_cursor.h), which never goes round a one-row text's ends, as a
- * held stick stops at the ends of the Overlay app's lists, and is not counted:
- * the counts are the arrows', for the overlay's close log. Returns the
+ * drops Up/Down's column, else Up/Down (dy) by vjo_text_row_vertical; Up/Down
+ * forget Right's history, so Left then retraces only the Rights made since
+ * (across rows). One history and one column for both. `stick`: the left
+ * stick's step (#138, core/stick_cursor.h), which never goes round a one-row
+ * text's ends itself, as a held stick stops at the ends of the Overlay app's
+ * lists (its Left still retraces a d-pad Right that went round), and is not
+ * counted: the counts are the arrows', for the overlay's close log. Returns the
  * VJO_ROW_* result; *out is the new cursor (the old one if it stays). */
 typedef struct {
     VjoWordNavigation words;

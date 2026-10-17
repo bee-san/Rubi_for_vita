@@ -16,7 +16,8 @@
  * shown word skipped, Right's history shared, across rows, stopping at the
  * text's ends) and up/down go a displayed row keeping the arrows' column. The
  * one difference: a one-row text's ends, which the d-pad goes round, stop the
- * stick, as a held stick stops at the lists' ends. The
+ * stick, as a held stick stops at the lists' ends (its Left still retraces a
+ * d-pad Right that went round, as any Left retraces a Right). The
  * axis pushed farther counts (a diagonal is its dominant axis's arrow), and the
  * one held keeps counting until it is let back inside the threshold, so a
  * stick rolled round from one axis to the other changes once.

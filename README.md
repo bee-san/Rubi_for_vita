@@ -201,7 +201,7 @@ app when it starts.
 | Left / Right | Move through the text in reading order, across its rows: skip matched words in Whole word mode, one character in Character mode; Right from a row's last word goes to the next row's first, Left from a row's first to the row above's last, and the text's first and last stop the cursor. A text on one row goes round its ends (Right from the last to the first, Left from the first to the last) |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position |
-| Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right as Left/Right (the shown word skipped, then a character a step; Left retraces), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too. The word is looked up once the cursor rests for `stick_lookup_ms` (200 ms), not at each step ([left stick](docs/touch-lookup.md#the-left-stick-138)) |
+| Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right as Left/Right (the shown word skipped, then a character a step; Left retraces), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too (its left still undoes a d-pad Right that went round, as any Left retraces a Right). The word is looked up once the cursor rests for `stick_lookup_ms` (200 ms), not at each step ([left stick](docs/touch-lookup.md#the-left-stick-138)) |
 | Right stick | Scroll a long definition |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
@@ -338,7 +338,8 @@ reading order across rows (or a row up or down), one step at once, the next
 after a sixth of a second as in the Overlay app's lists, then each sooner, up
 to 20 steps a second (the cap, chosen so the cursor does not overshoot: an
 estimate, untested on a console); it stops at the text's first and
-last character, a one-row text's too, instead of going round. Nothing is looked up while it moves: the
+last character, a one-row text's too, instead of going round (its left still
+undoes a d-pad Right that went round, as any Left retraces a Right). Nothing is looked up while it moves: the
 word at the cursor is looked up once the cursor has rested there for
 `stick_lookup_ms` (`config.ini`, 200 ms by default, 0-1000), or has been held
 against the text's end that long; back on the word shown before that, nothing

@@ -85,8 +85,8 @@
  * stick_lookup_ms, the close's check) and core/local_dict.c built for size (vita/CMakeLists.txt) make
  * it 100,364 -> 98,684 text and 69,828 -> 69,860 data/bss, the same pages [measured: the build log's
  * module rows, main 74f8de8 and #138]. The cursor across rows with the stick on the arrows' path
- * (owner, 2026-10-16) makes it 99,276 -> 99,052 text, the same data and pages [measured: the build log's
- * module rows, main 438e373 and this change]. */
+ * (owner, 2026-10-16) makes it 99,196 -> 98,972 text on main a7abad7, the same data and pages
+ * [measured: the build log's module rows, main a7abad7 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -105,8 +105,8 @@
  * Cortex-A9 instructions, vita/CMakeLists.txt) it is 88,132 + 69,796 on main 74f8de8 (89,892 + 69,756),
  * the same pages, 1,980 B of text room [measured: the build log's module rows, the normal builds of
  * main 10c8011 and 74f8de8 and #138]. The cursor across rows with the stick on the arrows' path makes
- * it 88,724 -> 88,532 + 69,796, 1,580 B of text room [measured: the build log's module rows, main
- * 438e373 and this change]. Its check is
+ * it 88,636 -> 88,460 + 69,796 on main a7abad7, 1,652 B of text room [measured: the build log's module
+ * rows, main a7abad7 and this change]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
