@@ -789,10 +789,13 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         ini_new_len = m;
     }
     if ((size_t)ini_new_len == bytes && !memcmp(ini_new, old, bytes)) return 0;
-    /* both texts' lines after a UTF-8 BOM: the patches keep it at offset 0, in front of whatever line comes first
-     * (core/config.c, settings/preferences.c), so it is no part of a line here (audit-pr177 N1) */
+    /* both texts' lines after the old text's UTF-8 BOM: the patches keep it at offset 0, in front of whatever line
+     * comes first (core/config.c, settings/preferences.c), so it is no part of a line here (audit-pr177 N1). A BOM
+     * the new text starts with and the old one does not is a later line's own (every line before it went): it stays
+     * part of that line in both texts (audit-pr180 B1: stripped from one side only, the unchanged line was listed
+     * with its value). */
     size_t ob = bytes >= 3 && !memcmp(old, "\xEF\xBB\xBF", 3) ? 3 : 0;
-    int nb = ini_new_len >= 3 && !memcmp(ini_new, "\xEF\xBB\xBF", 3) ? 3 : 0;
+    int nb = ob && ini_new_len >= 3 && !memcmp(ini_new, "\xEF\xBB\xBF", 3) ? 3 : 0;
     const char *ot = old + ob;
     size_t on = bytes - ob;
     /* the changed lines: those of the new text that the old one does not have (no API key: they only go); the
@@ -824,13 +827,14 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         if (ini_line_name(ot + q, ql, name, sizeof(name)) &&
             !ini_has_line(ini_new + nb, (size_t)(ini_new_len - nb), ot + q, ql)) {
             int kept = 0, changed = 0;
-            /* the first same-named new line the old text lacks decides it: the setting changed, listed above */
+            /* any same-named new line the old text lacks decides it: the setting changed, listed above (an OR, as
+             * #177's; the stop at the first is a speed-up only) */
             for (int pos = nb, line = 0; pos < ini_new_len && !changed; line++) {
                 int e = pos;
                 while (e < ini_new_len && ini_new[e] != '\n') e++;
                 if (ini_line_name(ini_new + pos, (size_t)(e - pos), other, sizeof(other)) && !strcasecmp(name, other)) {
                     kept = 1;
-                    changed = !(ini_new_kept[line >> 3] & (1u << (line & 7)));
+                    changed |= !(ini_new_kept[line >> 3] & (1u << (line & 7)));
                 }
                 pos = e + 1;
             }
