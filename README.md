@@ -113,7 +113,7 @@ Every control, setting and file is in the [guide](docs/guide.md#use-in-a-game).
 | PS Vita Slim (PCH-2000), PS TV | Not tested yet. |
 | Firmware | 3.60–3.74 with taiHEN: HENkaku (Ensō) or h-encore. Tested on 3.65. |
 | Vita games | Any game that is ON. On a console, Rubi's OCR has run in CLANNAD in every test build. In test.4 the kernel plugin loaded the OCR worker into CLANNAD with no taiHEN line for it ([#191](https://github.com/bee-san/Rubi_for_vita/issues/191), [#194](https://github.com/bee-san/Rubi_for_vita/issues/194)); AIR got none in test.3, which loaded the worker only into a game with such a line. Other games are untested. A game that uses L + R itself: turn it OFF. |
-| PSP games (Adrenaline) | Built in, not yet confirmed on a console. Adrenaline and each Adrenaline Bubble Manager bubble are listed in the app, a bubble under its game's title, and get OCR like a Vita game. The test.3 build's tester got no OCR in Adrenaline; its likely cause, the OCR worker never being loaded into it, is fixed since [#148](https://github.com/bee-san/Rubi_for_vita/pull/148), and no console run has started a PSP game since (test.4 did not run that step, [#191](https://github.com/bee-san/Rubi_for_vita/issues/191)). |
+| PSP games (Adrenaline) | Boku no Natsuyasumi 4 launched on the owner's console on 2026-10-17 after replacing Adrenaline's oversized Shell bridge with the [small compatibility bridge](compat/adrenaline_vsh/README.md). The kernel loaded Rubi's worker into the bubble's PSP emulator process (`PSPEMU004`). PSP OCR recognition is still unverified. Adrenaline and each Adrenaline Bubble Manager bubble are listed in the app, a bubble under its game's title. |
 | A PSP | No: Rubi runs on a PS Vita. |
 
 ## FAQ

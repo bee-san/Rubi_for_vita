@@ -28,6 +28,7 @@ set(VJO_SELF_FLAGS "${VITA_MAKE_FSELF_FLAGS}")
 
 set(ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(VJO_ROOT ${ROOT})
+add_subdirectory(${ROOT}/compat/adrenaline_vsh ${CMAKE_CURRENT_BINARY_DIR}/adrenaline_compat)
 set(VJO_BUILD_VITA ON)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
@@ -569,6 +570,11 @@ add_custom_target(release
   ${VJO_WORKER_RELEASE_COPY}
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.rco ${STAGE}/ur0/data/VitaJPOverlay/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/README.md ${ROOT}/LICENSE ${STAGE}/
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/compat
+  COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/compat/adrenaline_vsh ${STAGE}/compat/adrenaline_vsh
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/adrenaline_compat/adrenaline_vsh.suprx ${STAGE}/compat/
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/check_adrenaline_vsh.py ${STAGE}/tools/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/third_party
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
@@ -584,9 +590,9 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/jsmn/LICENSE ${STAGE}/third_party/licenses/jsmn-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/taihen-parser/LICENSE ${STAGE}/third_party/licenses/taihen-parser-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/Rubi.vpk ${STAGE}/
-  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party Rubi.vpk
+  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party compat Rubi.vpk
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant vjo_one_vpk
-    vjo_offline_imports # a zip is never packaged from modules that import a network library
+    vjo_offline_imports adrenaline_vsh_budget # a zip is never packaged from modules that import a network library
   COMMENT "Packaging Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip (the ${VJO_VARIANT} build)")
 
 # ---------------- the release's two zips: the normal build and the debug build ----------------

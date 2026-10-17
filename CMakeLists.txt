@@ -92,6 +92,10 @@ endif()
 
 
 enable_testing()
+add_executable(vjo-adrenaline-vsh-tests host/tests/test_adrenaline_vsh.c)
+target_include_directories(vjo-adrenaline-vsh-tests PRIVATE third_party/acutest/include host/tests/adrenaline_stubs)
+target_compile_options(vjo-adrenaline-vsh-tests PRIVATE -Wall -Wextra)
+add_test(NAME adrenaline_vsh COMMAND vjo-adrenaline-vsh-tests)
 add_executable(vjo-kernel-capture-tests host/tests/test_kernel_capture.c kernel/scene.c core/region_select.c)
 target_include_directories(vjo-kernel-capture-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-kernel-capture-tests PRIVATE VJO_HOST=1)

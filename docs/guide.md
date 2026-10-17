@@ -187,9 +187,9 @@ again.`); preferences apply when the overlay next opens. A
 game that uses extended memory (`ATTRIBUTE2` in its `param.sfo`) may still have
 to close first, as for other system applications.
 
-PSP games run in Sony's PSP emulator. That process most likely has the title ID
-of the app that started it, as Adrenaline's and AdrBubbleBooter's own plugins key
-on it (from their sources; not yet seen on a console): `PSPEMUCFW` for Adrenaline
+PSP games run in Sony's PSP emulator. That process has the title ID
+of the app that started it (`PSPEMU004` observed on a console on 2026-10-17),
+as Adrenaline's and AdrBubbleBooter's own plugins key on it: `PSPEMUCFW` for Adrenaline
 itself, and the bubble's own ID for a game started from its own LiveArea bubble
 ([Adrenaline Bubble Manager](https://github.com/ONElua/AdrenalineBubbleManager)
 bubbles, booted by [AdrBubbleBooter](https://github.com/shoui520/AdrBubbleBooter-oss)), such as
@@ -691,6 +691,12 @@ and memory.
 
 ## Memory and troubleshooting
 
+If Adrenaline or a PSP bubble immediately returns to LiveArea, its Shell
+bridge may have failed to fit in SceShell's memory. The release ZIP includes
+an optional [small Adrenaline bridge](../compat/adrenaline_vsh/README.md), with
+backup, replacement and recovery instructions. It restored a tested bubble's
+startup on a console on 2026-10-17; it does not require a taiHEN config edit.
+
 The game OCR worker runs the local OCR engine in the enabled game's process, allocating its
 region-sized workspace from that game's `USER_RW`. The kernel plugin loads it into each game
 that is ON in `games.ini` as the game starts, at the point where taiHEN loads a game's own
@@ -706,7 +712,7 @@ start, homebrew included (ON by the default): an app that fails to start with th
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
 started from its own bubble runs in a PSP emulator process of its own, under the
-bubble's ID (inferred from AdrBubbleBooter's source). The worker is also loaded
+bubble's ID (observed for `PSPEMU004` on 2026-10-17). The worker is also loaded
 into the bubble's own small starter app (an ordinary app under that ID) when that runs,
 where it stays idle until the app exits.
 
