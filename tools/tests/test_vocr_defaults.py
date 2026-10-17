@@ -97,7 +97,9 @@ def c_table(source=None):
     sizes = macros()
     body = array_body(source, "#else\nstatic const VjoVocrModel models[]")
     pins = []
-    for m in re.finditer(r'\{"?([\w.]+)"?, ' + SIZE + r',\s*\{([^}]*)\},\s*' + SIZE + r', VOCR_LINES_\w+\}', body):
+    # the finder: a runtime mode, or core/vocr_ocr.c's VJO_VOCR_FINDER (#194: every pinned model's)
+    for m in re.finditer(r'\{"?([\w.]+)"?, ' + SIZE + r',\s*\{([^}]*)\},\s*' + SIZE + r', (?:VOCR_LINES_\w+|VJO_VOCR_FINDER)\}',
+                         body):
         name = sizes.get(m.group(1), m.group(1))  # a name macro (VJO_VOCR3_H15_NAME) or a literal
         digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
         pins.append((name, (number(m.group(2), sizes), digest, number(m.group(4), sizes))))
@@ -358,7 +360,7 @@ class VocrDefaults(unittest.TestCase):
                 kernel_names(add(kernel, f20, line))
         worker = (ROOT / "core/vocr_ocr.c").read_text()
         end = ("      0x12,0xf4,0x05,0xf5,0x4b,0x9d,0xf8,0xa2,0xe5,0x5b,0xe8,0x2c,0x38,0x5b,0x71,0x6e},\n"
-               "     241056, VOCR_LINES_GRAD},\n")  # VOCR4-W20's, the release table's last entry
+               "     241056, VJO_VOCR_FINDER},\n")  # VOCR4-W20's, the release table's last entry
         sha = "{" + ",".join(["0x00"] * 32) + "}"
         literal = c_table(add(worker, end, f'    {{"VOCR6_N_w8.vocr", 1155968u, {sha}, 182944u, VOCR_LINES_GRAD}},\n'))
         self.assertEqual(literal["VOCR6_N_w8.vocr"], (1155968, "00" * 32, 182944))
