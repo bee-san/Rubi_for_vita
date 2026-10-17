@@ -10,8 +10,8 @@ OUT_DIR/Rubi-V-debug.vpk, OUT_DIR/Rubi-V.zip and OUT_DIR/Rubi-V-debug.zip
 packages of one tree with the same pinned models, frozen dictionary, config template and --set
 settings, so a config.ini from either works in the other. Before it writes anything it checks the
 bases: each is the build it is given as (tools/check_variant.py, from the modules themselves), the
-Rubi app of each names version V (for a test build, V-test.N or a respin V-test.N.M, the V of its tree), and the two differ
-only in the build's own files (the plugins, the Rubi app's VPK and its stamp). After, it verifies both
+Rubi app of each names version V (for a test build, V-test.N or a respin V-test.N.M, the V of its tree), and
+the two differ only in the build's own files (the plugins, the Rubi app's VPK and its stamp). After, it verifies both
 packages (package_release.py --verify on each, unpacked) and that they differ in exactly those files and
 the manifests' variant.
 """
@@ -98,8 +98,8 @@ def check_bases(normal, debug, version, sources=None):
             problems.append(f"{path.name}: the Rubi app names no version (a base from before the two builds)")
         elif not release_of(app, version):
             problems.append(f"{path.name}: the Rubi app is v{app}, the release v{version}: give v{app} or a "
-                            f"test build of it, v{app}-test.N or v{app}-test.N.M (or set VJO_VERSION in vita/CMakeLists.txt and "
-                            "build again)")
+                            f"test build of it, v{app}-test.N or v{app}-test.N.M (or set VJO_VERSION in "
+                            "vita/CMakeLists.txt and build again)")
     if problems:
         return problems  # a base that is not a zip, or not a build: nothing more to compare
     a, b = contents(normal), contents(debug)
