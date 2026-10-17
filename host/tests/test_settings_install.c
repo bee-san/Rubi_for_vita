@@ -1128,6 +1128,36 @@ static void a_copied_dictionary_leaves_no_copy_in_the_app_when_it_can_go(void)
     TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
 }
 
+/* A run that stops after the app's copy of the dictionary went (the dictionary is checked first): the card
+ * changed, and the result says so (it said "Nothing on the card was changed"). */
+static void a_stop_after_the_apps_copy_went_says_the_card_changed(void)
+{
+    char src[256];
+    fresh_card(1);
+    VjoInstallScan s = scan_now();
+    VjoInstallResult r;
+    TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    install_app(1, "0.8.0", NULL); /* the app's copy is back */
+    size_t n;
+    char *k = slurp("ur0:tai/VitaJPOverlay_Kernel.skprx", &n);
+    TEST_ASSERT(k != NULL && n > 10);
+    k[5] ^= 1; /* a damaged plugin: a Repair, which copies it after the dictionary's check */
+    put("ur0:tai/VitaJPOverlay_Kernel.skprx", k, n);
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_REPAIR && s.dict_in_app, "state %d: %s", s.state, s.title);
+    fault.pattern = "VitaJPOverlay_Kernel";
+    fault.open_write = 1;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) < 0);
+    TEST_CHECK(fault.calls >= 1);
+    memset(&fault, 0, sizeof(fault));
+    TEST_ASSERT(vjo_payload_source(s.dict_index, src, sizeof(src)) == 0);
+    TEST_CHECK(!there(src) && r.written);
+    TEST_CHECK(!has_line(r.lines, r.count, "Nothing on the card was changed"));
+    TEST_CHECK(has_line(r.lines, r.count, "Every file on the card is the old one or the new one; Install again finishes the job."));
+    s = scan_now();
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && installed_files(1));
+}
+
 static void cannot_states(void)
 {
     char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
@@ -2493,6 +2523,7 @@ TEST_LIST = {
     {"check_and_repair_says_what_became_of_the_apps_dictionary_copy", check_and_repair_says_what_became_of_the_apps_dictionary_copy},
     {"an_earlier_runs_dictionary_put_in_place_says_the_apps_copy_went", an_earlier_runs_dictionary_put_in_place_says_the_apps_copy_went},
     {"a_copied_dictionary_leaves_no_copy_in_the_app_when_it_can_go", a_copied_dictionary_leaves_no_copy_in_the_app_when_it_can_go},
+    {"a_stop_after_the_apps_copy_went_says_the_card_changed", a_stop_after_the_apps_copy_went_says_the_card_changed},
     {"cannot_states", cannot_states},
     {"faults_leave_old_or_new_files", faults_leave_old_or_new_files},
     {"an_interrupted_swap_is_finished", an_interrupted_swap_is_finished},
