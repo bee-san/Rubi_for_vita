@@ -88,7 +88,7 @@ static int regions_set, last_region_full;
 int vjoSetRegion(const VjoRect *r) { regions_set++; last_region_full = r == NULL; return 0; }
 int vjoSetTriggers(int a, int b) { return 0; }
 /* The order of a game start's steps, one letter each: A vjoSetGameActive (a game), C a config load, S a
- * stamp read (the Overlay app check). */
+ * stamp read (the Rubi app check). */
 static char start_order[64];
 static void start_step(char c) { size_t n = strlen(start_order); if (n + 1 < sizeof(start_order)) start_order[n] = c, start_order[n + 1] = 0; }
 static int active_mode = -1; /* the last vjoSetGameActive's */
@@ -194,7 +194,7 @@ void vjo_log_configure(const VjoConfig *c) { configure_stub(c); }
 /* The last log lines, for the game OCR measurement tests. */
 static char log_lines[32][256];
 static unsigned log_count;
-/* Every config warning line (the last 16) and the Overlay app check's lines, counted since reset. */
+/* Every config warning line (the last 16) and the Rubi app check's lines, counted since reset. */
 static char warning_logs[16][128], last_app_log[256];
 static unsigned config_warning_logs, app_logs;
 static unsigned warnings_logged(const char *text)
@@ -278,7 +278,7 @@ void vjo_log(const char *fmt, ...)
     va_end(ap);
     if (!strncmp(log_lines[log_count % 32], "config warning: ", 16))
         snprintf(warning_logs[config_warning_logs++ % 16], sizeof(warning_logs[0]), "%s", log_lines[log_count % 32] + 16);
-    if (!strncmp(log_lines[log_count % 32], "overlay app ", 12)) {
+    if (!strncmp(log_lines[log_count % 32], "Rubi app ", 9)) {
         app_logs++;
         snprintf(last_app_log, sizeof(last_app_log), "%s", log_lines[log_count % 32]);
     }
@@ -381,7 +381,7 @@ static const char *logged(const char *needle)
 #endif
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { if (!saved_region.w) return 0; *out = saved_region; return VJO_REGION_GAME; }
 int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
-/* The Overlay app's stamps and its eboot.bin (shell/files.c), scripted (core/app_stamp.h). */
+/* The Rubi app's stamps and its eboot.bin (shell/files.c), scripted (core/app_stamp.h). */
 static char app_installed[64], app_record[64];
 static int app_installed_rc, app_record_rc, app_eboot;
 int vjo_file_line(const char *path, char *buf, int cap)
@@ -6262,7 +6262,7 @@ static void test_normal_build_open_in_the_pause_writes_nothing(void)
         TEST_CHECK(!job_running && cache_ok && held_lines() == 2);
         mark = appends_recorded;
         configure_writes = 0;
-        if (change) loaded.log_file = 0; /* turned off in the Overlay app meanwhile */
+        if (change) loaded.log_file = 0; /* turned off in the Rubi app meanwhile */
         open_overlay();      /* L + R now */
         TEST_CHECK(ov == OV_OPEN && g_view.open && g_view.list != NULL && !job_running); /* the saved result */
         if (!change) {
@@ -6652,7 +6652,7 @@ static void next_game(void)
     activate(state.game_pid, "PCSG00415", VJO_GAME);
 }
 
-/* The installed Overlay app is checked against the plugins' record at each
+/* The installed Rubi app is checked against the plugins' record at each
  * enabled game's start: logged when the answer changes, and a mismatch is
  * said once, in the body of the next overlay that draws its page (core/app_stamp.h). */
 static void test_overlay_app_mismatch_is_logged_and_said_once(void)
@@ -6662,7 +6662,7 @@ static void test_overlay_app_mismatch_is_logged_and_said_once(void)
     app_files(NOENT, "", 1, 37, STAMP_21);
     activate(state.game_pid, "PCSG00415", VJO_GAME);
     TEST_CHECK(app_logs == 1);
-    TEST_CHECK_(strstr(last_app_log, "overlay app MISMATCH: installed '' (0x80010002, app 1), plugins' '"
+    TEST_CHECK_(strstr(last_app_log, "Rubi app MISMATCH: installed '' (0x80010002, app 1), plugins' '"
                        STAMP_21 "' (0x00000025)") != NULL, "%s", last_app_log);
     TEST_CHECK(!g_view.open && !g_view.strip_text[0]); /* nothing is drawn over the game */
     open_overlay();
@@ -6681,14 +6681,14 @@ static void test_overlay_app_mismatch_is_logged_and_said_once(void)
     /* the VPK installed meanwhile (VitaShell beside the running plugins): ok, logged once, no notice */
     app_files(37, STAMP_21, 1, 37, STAMP_21);
     next_game();
-    TEST_CHECK(app_logs == 2 && strstr(last_app_log, "overlay app ok: installed '" STAMP_21 "'"));
+    TEST_CHECK(app_logs == 2 && strstr(last_app_log, "Rubi app ok: installed '" STAMP_21 "'"));
     open_overlay();
     TEST_CHECK(!overlay_draws());
     close_overlay();
     /* an older app installed again: a mismatch again, said again */
     app_files(37, STAMP_20, 1, 37, STAMP_21);
     next_game();
-    TEST_CHECK(app_logs == 3 && strstr(last_app_log, "overlay app MISMATCH: installed '" STAMP_20 "'"));
+    TEST_CHECK(app_logs == 3 && strstr(last_app_log, "Rubi app MISMATCH: installed '" STAMP_20 "'"));
     open_overlay();
     TEST_CHECK(notice_is(overlay_draws(), VJO_APP_NOTICE));
     close_overlay();
@@ -6776,7 +6776,7 @@ static void test_overlay_app_check_runs_for_psp_games(void)
         TEST_CHECK_(pending_pid == 0 && active_mode == VJO_GAME_STATIC_FB && !strcmp(title_id, keys[i]), "%s",
                     keys[i]);
         TEST_CHECK_(!strcmp(start_order, "CASS"), "%s: order %s", keys[i], start_order);
-        TEST_CHECK_(app_logs == 1 && strstr(last_app_log, "overlay app MISMATCH: installed ''"), "%s: %s", keys[i],
+        TEST_CHECK_(app_logs == 1 && strstr(last_app_log, "Rubi app MISMATCH: installed ''"), "%s: %s", keys[i],
                     last_app_log);
         open_overlay();
         TEST_CHECK_(notice_is(overlay_draws(), VJO_APP_NOTICE), "%s", keys[i]);
@@ -6811,9 +6811,9 @@ static void test_overlay_app_unknown_is_never_said(void)
         TEST_CHECK_(vjo_app_state(cases[i].irc, cases[i].installed, cases[i].eboot, cases[i].prc, cases[i].record) ==
                     cases[i].state, "case %u", i);
         activate(state.game_pid, "PCSG00415", VJO_GAME);
-        TEST_CHECK_(app_logs == 1 && strstr(last_app_log, cases[i].state == VJO_APP_OK ? "overlay app ok: " :
-                                            cases[i].state == VJO_APP_MISMATCH ? "overlay app MISMATCH: " :
-                                            "overlay app unknown: "), "case %u: %s", i, last_app_log);
+        TEST_CHECK_(app_logs == 1 && strstr(last_app_log, cases[i].state == VJO_APP_OK ? "Rubi app ok: " :
+                                            cases[i].state == VJO_APP_MISMATCH ? "Rubi app MISMATCH: " :
+                                            "Rubi app unknown: "), "case %u: %s", i, last_app_log);
         open_overlay();
         TEST_CHECK_(!overlay_draws() == (cases[i].state != VJO_APP_MISMATCH), "case %u", i);
         close_overlay();

@@ -1,4 +1,4 @@
-/* The Overlay app's Games page through its actual input and draw loop
+/* The Rubi app's Games page through its actual input and draw loop
  * (settings/main.c) and its actual catalog (settings/catalog.c), on the host,
  * over synthetic installed games on a temporary memory card: ux0:app/ID/
  * sce_sys/param.sfo with a TITLE and an icon0.png each (generated titles and
@@ -1288,7 +1288,7 @@ static int log_lines(char lines[][256], int cap)
     if (!f) return -1;
     while (n < cap && fgets(line, sizeof(line), f)) {
         line[strcspn(line, "\n")] = '\0';
-        if (strncmp(line, "overlay app: games: ", 20)) snprintf(lines[n++], 256, "%.255s", line);
+        if (strncmp(line, "Rubi app: games: ", 17)) snprintf(lines[n++], 256, "%.255s", line);
     }
     fclose(f);
     return n;
@@ -1315,7 +1315,7 @@ static void the_start_line_names_the_budget_and_the_heap(void)
     TEST_CHECK_(session->budget_size == 0x88 && session->budget_calls == 1, "info->size %d, %d calls",
                 session->budget_size, session->budget_calls);
     TEST_CHECK(log_lines(lines, 8) == 1);
-    TEST_CHECK_(!strcmp(lines[0], "overlay app: start: " APP_VERSION_WORDS "; budget mode 2: main memory 28311552 "
+    TEST_CHECK_(!strcmp(lines[0], "Rubi app: start: " APP_VERSION_WORDS "; budget mode 2: main memory 28311552 "
                                   "of 52428800 B free, phycont 0 of 0 B, CDRAM 0 of 0 B; heap 8388608 B"), "%s", lines[0]);
     card(5, NULL);
     budget_rc = (int)0x80800001;
@@ -1323,10 +1323,10 @@ static void the_start_line_names_the_budget_and_the_heap(void)
     hold(0, 70);
     TEST_CHECK(run(at) == at);
     TEST_CHECK(log_lines(lines, 8) == (VJO_DEBUG ? 2 : 1)); /* the frame interval: the debug build's only */
-    TEST_CHECK_(!strcmp(lines[0], "overlay app: start: " APP_VERSION_WORDS "; no system-application budget "
+    TEST_CHECK_(!strcmp(lines[0], "Rubi app: start: " APP_VERSION_WORDS "; no system-application budget "
                                   "(sceAppMgrGetBudgetInfo 0x80800001); heap 8388608 B"), "%s", lines[0]);
 #if VJO_DEBUG
-    TEST_CHECK_(!strcmp(lines[1], "overlay app: frames: 60 in 1000020 us, 16667 us a frame (shortest 16667, "
+    TEST_CHECK_(!strcmp(lines[1], "Rubi app: frames: 60 in 1000020 us, 16667 us a frame (shortest 16667, "
                                   "longest 16667)"), "%s", lines[1]);
 #endif
     card(5, NULL);
@@ -1351,7 +1351,7 @@ static void the_frame_interval_is_logged_once(void)
         hold(0, 200);
         TEST_CHECK(run(at) == at);
         TEST_CHECK(log_lines(lines, 8) == 2);
-        snprintf(want, sizeof(want), "overlay app: frames: 60 in %u us, %u us a frame (shortest %u, longest %u); "
+        snprintf(want, sizeof(want), "Rubi app: frames: 60 in %u us, %u us a frame (shortest %u, longest %u); "
                  "budget mode 2: main memory 28065792 of 52428800 B free, phycont 0 of 0 B, CDRAM 0 of 0 B",
                  60 * rates[i], rates[i], rates[i], rates[i]);
         TEST_CHECK_(!strcmp(lines[1], want), "%u us frames: %s", rates[i], lines[1]);
@@ -1984,7 +1984,7 @@ static void bubble_card(void)
     spec_list();
 }
 /* The app's lines in the card's log.txt (the Anki page stub's vjo_log, as
- * settings/anki_page.c writes them: "overlay app: " and the text). */
+ * settings/anki_page.c writes them: "Rubi app: " and the text). */
 #define APP_LOG "ux0:data/VitaJPOverlay/log.txt"
 static const char *app_logged(const char *needle)
 {
@@ -2265,7 +2265,7 @@ static void stale_descriptions_are_removed(void)
 
 /* ---- the catalog's log, a game card, and titles in no folder (#138) ---- */
 
-/* The log line, without "overlay app: " and its line break, that starts with
+/* The log line, without "Rubi app: " and its line break, that starts with
  * prefix (the first such), or NULL. */
 static const char *logged_line(const char *prefix)
 {
@@ -2275,19 +2275,19 @@ static const char *logged_line(const char *prefix)
     size_t n = strlen(prefix);
     while (f && !found && fgets(line, sizeof(line), f)) {
         line[strcspn(line, "\n")] = '\0';
-        if (!strncmp(line, "overlay app: ", 13) && !strncmp(line + 13, prefix, n)) found = line + 13;
+        if (!strncmp(line, "Rubi app: ", 10) && !strncmp(line + 10, prefix, n)) found = line + 10;
     }
     if (f) fclose(f);
     return found;
 }
-/* How many log lines start with "overlay app: " and prefix. */
+/* How many log lines start with "Rubi app: " and prefix. */
 static int logged_lines(const char *prefix)
 {
     char line[1024];
     FILE *f = fopen(APP_LOG, "r");
     int n = 0;
     while (f && fgets(line, sizeof(line), f))
-        n += !strncmp(line, "overlay app: ", 13) && !strncmp(line + 13, prefix, strlen(prefix));
+        n += !strncmp(line, "Rubi app: ", 10) && !strncmp(line + 10, prefix, strlen(prefix));
     if (f) fclose(f);
     return n;
 }
@@ -2347,7 +2347,7 @@ static void a_cartridge_only_title_is_listed(void)
  * saved and its row stays; a rule that is not a game's (NPXS10001) gets none. */
 static void titles_with_a_choice_but_in_no_folder_are_listed(void)
 {
-    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\nPCSG00415 = enabled\nPCSB00792 = disabled\n"
+    static const char ini[] = "# Rubi per-game settings\ndefault = enabled\nPCSG00415 = enabled\nPCSB00792 = disabled\n"
                               "NPXS10001 = enabled\nVJOT00002 = disabled\n";
     card(5, NULL);
     dir_fails = "gro0:app";
@@ -2394,7 +2394,7 @@ static void titles_with_a_choice_but_in_no_folder_are_listed(void)
 }
 
 /* What a root holds that is no game's is skipped, and its line says why:
- * VitaShell, the system's and the Overlay app's own, names that are not title
+ * VitaShell, the system's and the Rubi app's own, names that are not title
  * IDs, taiHEN's name for SceShell, files. Names past 24 bytes are cut; past the
  * line's room the rest are counted, and the line fits one vjo_log line. A game
  * whose param.sfo gives no title is listed by its ID, and the line names it. */
@@ -2438,7 +2438,7 @@ static void skipped_folders_are_logged_with_why(void)
     char tail[48];
     snprintf(tail, sizeof(tail), " and %d more", 40 - named);
     TEST_CHECK_(named >= 3 && named < 40 && strlen(line) >= strlen(tail) && !strcmp(line + strlen(line) - strlen(tail), tail) &&
-                strlen(line) + 13 < 300, "%d named, %zu B: %s", named, strlen(line), line);
+                strlen("Rubi app: ") + strlen(line) + 1 <= 300, "%d named, %zu B: %s", named, strlen(line), line);
     /* no TITLE in its param.sfo: listed by its ID, and named */
     card(3, NULL);
     put_file("ux0:app/VJOT00002/sce_sys/param.sfo", "not an SFO", 10);
@@ -2607,7 +2607,7 @@ static void the_log_batch_keeps_order_and_threads_apart(void)
     vjo_app_log_batch_end();
     TEST_CHECK_(log_appends == 2, "%d appends", log_appends);
     const char *text = slurp(APP_LOG, NULL);
-    TEST_CHECK_(text && !strcmp(text, "overlay app: worker\noverlay app: first\noverlay app: second\n"), "%s", text ? text : "");
+    TEST_CHECK_(text && !strcmp(text, "Rubi app: worker\nRubi app: first\nRubi app: second\n"), "%s", text ? text : "");
     /* 30 lines of 200 B: more than the batch holds */
     unlink(APP_LOG);
     log_appends = 0;
@@ -2617,7 +2617,7 @@ static void the_log_batch_keeps_order_and_threads_apart(void)
         memset(body, 'a' + i % 26, sizeof(body) - 1);
         body[sizeof(body) - 1] = '\0';
         vjo_log("%02d %s", i, body);
-        used += (size_t)snprintf(want + used, sizeof(want) - used, "overlay app: %02d %s\n", i, body);
+        used += (size_t)snprintf(want + used, sizeof(want) - used, "Rubi app: %02d %s\n", i, body);
     }
     vjo_app_log_batch_end();
     size_t n;
@@ -2642,7 +2642,7 @@ static int shell_sees(const char *path, const char *id, int psp);
  * show OFF, and both carry the PSP tag (the audit's A5, with the tag). */
 static void missing_psp_rows_follow_the_shared_row(void)
 {
-    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\nNPXS10028 = disabled\nPSPEMUCFW = enabled\n"
+    static const char ini[] = "# Rubi per-game settings\ndefault = enabled\nNPXS10028 = disabled\nPSPEMUCFW = enabled\n"
                               "ULJS00378 = enabled\n";
     card(3, NULL);
     put_file("ux0:data/VitaJPOverlay/games.ini", ini, sizeof(ini) - 1);
@@ -2665,7 +2665,7 @@ static void missing_psp_rows_follow_the_shared_row(void)
     check_rules();
     TEST_CHECK(check_cards(frames, NULL) == 0);
     const char *now = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
-    TEST_CHECK_(now && !strcmp(now, "# JP Overlay per-game settings\ndefault = enabled\nNPXS10028 = disabled\n"), "%s",
+    TEST_CHECK_(now && !strcmp(now, "# Rubi per-game settings\ndefault = enabled\nNPXS10028 = disabled\n"), "%s",
                 now ? now : "");
     TEST_CHECK(!shell_sees("ux0:data/VitaJPOverlay/games.ini", "PSPEMUCFW", 1) &&
                !shell_sees("ux0:data/VitaJPOverlay/games.ini", "ULJS00378", 1));
@@ -2726,7 +2726,7 @@ static void the_log_cap_keeps_whole_lines_as_before(void)
         TEST_CHECK_(n <= 1024 * 1024 && n == pre + want_n && got == want_n + 1 && tail[0] == '\n' &&
                     !memcmp(tail + 1, want, want_n), "room %zu: %zu B, want %zu", room[k], n, pre + want_n);
     }
-    /* Batches written directly (the audit's A6 cases): lines of exact sizes, "overlay app: "
+    /* Batches written directly (the audit's A6 cases): lines of exact sizes, "Rubi app: "
      * and the line break included. */
     static const struct { size_t room, len[4]; int n; const char *keep; } cases[] = {
         {100, {280}, 1, ""},                 /* one line longer than the room: nothing */
@@ -2749,7 +2749,7 @@ static void the_log_cap_keeps_whole_lines_as_before(void)
             body[i][cases[c].len[i] - 14] = '\0';
             vjo_log("%s", body[i]);
             if (cases[c].keep[i] == '1')
-                want_n += (size_t)snprintf(want + want_n, sizeof(want) - want_n, "overlay app: %s\n", body[i]);
+                want_n += (size_t)snprintf(want + want_n, sizeof(want) - want_n, "Rubi app: %s\n", body[i]);
         }
         vjo_app_log_batch_end();
         struct stat st;
@@ -2811,7 +2811,7 @@ static void snap_games_ini(int f)
  * those turned OFF, and the status names them. */
 static void disable_all_turns_off_the_games_on_by_their_own_choice(void)
 {
-    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\nVJOT00001 = enabled\nVJOT00002 = disabled\n"
+    static const char ini[] = "# Rubi per-game settings\ndefault = enabled\nVJOT00001 = enabled\nVJOT00002 = disabled\n"
                               "PCSG00415 = enabled\nNPXS10028 = enabled\nPSPEMUCFW = enabled\n";
     static const char *const vita[] = {"VJOT00000", "VJOT00001", "VJOT00002", "VJOT00003", "VJOT00004", "VJOT00005",
                                        "PCSG00415", "PCSB00792"};
@@ -2852,7 +2852,7 @@ static void disable_all_turns_off_the_games_on_by_their_own_choice(void)
     TEST_CHECK_(strstr(both, games[1].title) != NULL || strstr(both, "...") != NULL, "%s", both);
     /* the file: no "= enabled" rule, the "= disabled" one kept, the default OFF */
     const char *snap = slurp("games.snap0", NULL);
-    TEST_CHECK_(snap && !strcmp(snap, "# JP Overlay per-game settings\ndefault = disabled\nVJOT00002 = disabled\n"), "%s",
+    TEST_CHECK_(snap && !strcmp(snap, "# Rubi per-game settings\ndefault = disabled\nVJOT00002 = disabled\n"), "%s",
                 snap ? snap : "(none)");
     for (unsigned i = 0; i < sizeof(vita) / sizeof(vita[0]); i++)
         TEST_CHECK_(!shell_sees("games.snap0", vita[i], 0), "%s ON", vita[i]);
@@ -2863,12 +2863,12 @@ static void disable_all_turns_off_the_games_on_by_their_own_choice(void)
     int r = card_of(picked, "PCSG00415");
     TEST_CHECK_(r >= 0 && !strcmp(session->shown[picked].badge[r], "ON"), "card %d", r);
     snap = slurp("games.snap1", NULL);
-    TEST_CHECK_(snap && !strcmp(snap, "# JP Overlay per-game settings\ndefault = disabled\nVJOT00002 = disabled\n"
+    TEST_CHECK_(snap && !strcmp(snap, "# Rubi per-game settings\ndefault = disabled\nVJOT00002 = disabled\n"
                                       "PCSG00415 = enabled\n"), "%s", snap ? snap : "(none)");
     TEST_CHECK(shell_sees("games.snap1", "PCSG00415", 0) && !shell_sees("games.snap1", "VJOT00001", 0));
     /* Default ON again: every game ON but VJOT00002, which the status names */
     const char *now = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
-    TEST_CHECK_(now && !strcmp(now, "# JP Overlay per-game settings\ndefault = enabled\nVJOT00002 = disabled\n"
+    TEST_CHECK_(now && !strcmp(now, "# Rubi per-game settings\ndefault = enabled\nVJOT00002 = disabled\n"
                                     "PCSG00415 = enabled\n"), "%s", now ? now : "(none)");
     for (unsigned i = 0; i < sizeof(vita) / sizeof(vita[0]); i++)
         TEST_CHECK_(shell_sees("ux0:data/VitaJPOverlay/games.ini", vita[i], 0) == !!strcmp(vita[i], "VJOT00002"), "%s", vita[i]);
@@ -2889,7 +2889,7 @@ static void disable_all_turns_off_the_games_on_by_their_own_choice(void)
  * with or without a game running. */
 static void default_changes_say_when_they_apply(void)
 {
-    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\n";
+    static const char ini[] = "# Rubi per-game settings\ndefault = enabled\n";
     char both[300];
     card(3, NULL);
     put_file("ux0:data/VitaJPOverlay/games.ini", ini, sizeof(ini) - 1);
@@ -2915,7 +2915,7 @@ static void default_changes_say_when_they_apply(void)
  * in games.ini stay, and the status says so (save()'s message). */
 static void a_failed_disable_all_changes_nothing(void)
 {
-    static const char ini[] = "# JP Overlay per-game settings\ndefault = enabled\nVJOT00001 = enabled\n";
+    static const char ini[] = "# Rubi per-game settings\ndefault = enabled\nVJOT00001 = enabled\n";
     card(4, NULL);
     put_file("ux0:data/VitaJPOverlay/games.ini", ini, sizeof(ini) - 1);
     mkdir("ux0:data/VitaJPOverlay/games.ini.tmp", 0777); /* the save's temporary file cannot be written */

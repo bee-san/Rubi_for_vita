@@ -14,7 +14,7 @@ measured on a PC. On-console memory, speed and stability are what the
 
 ## Model sizes: Small, Normal, Large (API 21)
 
-The Overlay app's OCR page offers, under the local engine, its **Model size**:
+The Rubi app's OCR page offers, under the local engine, its **Model size**:
 **Small** (fastest), **Normal** (the default, balanced) and **Large** (most
 accurate); `config.ini` keeps it as `vocr_tier = small | normal | large`. Each size
 is one pinned recognizer: this package's Small is VOCR5-S, its Normal VOCR5-N and
@@ -107,7 +107,7 @@ allows (a Large-only request as Large's), and the weights stay resident when the
 other size runs them. A bad file leaves out both of its sizes at once. The release
 zip ships the file once; its manifest entry names both sizes (`"tier": "normal"`,
 `"tiers": ["normal", "large"]`). The one-VPK install's payload list
-(`include/vjo_payload.h`) still names one file per size, and the Overlay app refuses a
+(`include/vjo_payload.h`) still names one file per size, and the Rubi app refuses a
 payload that names a file twice, so `tools/package_vpk.py` refuses such a list: a pin
 edit that gives two sizes one model has to name that file once there first. Host tests run this with Normal and Large both
 VOCR4-W20 (`game_vocr_shared_tiers`, `shell_worker_shared_tiers`,
@@ -117,7 +117,7 @@ VOCR4-W20 (`game_vocr_shared_tiers`, `shell_worker_shared_tiers`,
 that size out for the rest of the game's session, and the job is repeated with the
 next smaller one; a timeout or unavailable storage repeats it for that job only.
 Only `log.txt` says so (`game vocr: VOCR5_N_w8.vocr is unusable here
-(io=0x80010002), using VOCR5_S_w8.vocr for this game`). The Overlay app's
+(io=0x80010002), using VOCR5_S_w8.vocr for this game`). The Rubi app's
 status line names the chosen size's file missing (`VOCR5-N missing. Reinstall
 the package.`), a broken install rather than a memory fallback.
 
@@ -136,7 +136,7 @@ they can be deleted.
 
 ## The engine's name: the model generation
 
-The Overlay app has no engine button since Google Lens's removal: the OCR card's
+The Rubi app has no engine button since Google Lens's removal: the OCR card's
 last line names the chosen size and its model, and the model's name carries its
 generation (`Normal: default, balanced. VOCR5-N found.`): **VOCR5** for each of
 this package's sizes (VOCR3 for Small and Normal and VOCR4 for Large before it). When
@@ -160,7 +160,7 @@ vita-vn-ocr release that published the file (VOCR1: v0.2.0; VOCR3:
 v0.2.5-vocr3.1; VOCR4: v0.2.5-vocr4.1; VOCR5: v0.3.0), and is kept in three places
 that the tests compare:
 
-- `core/vocr_models.c`, per file: generation, shape and size. The Overlay app
+- `core/vocr_models.c`, per file: generation, shape and size. The Rubi app
   reads it; the game worker's pins (`core/vocr_ocr.c`: SHA-256, arena) and the
   kernel broker's (`kernel/game_ocr.c`: size) name exactly the same files.
 - `tools/prepare_ocr.py` `VOCR_GENERATION`, per release tag.
@@ -851,7 +851,7 @@ release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
 character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
 `vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
 `core/vocr_models.c` gives each recognizer its generation (VOCR5, VOCR3, VOCR4, or VOCR1 for
-v0.2.0's), the name of the local engine in the Overlay app.
+v0.2.0's), the name of the local engine in the Rubi app.
 
 The v0.2.0 weights are the int8 assets of the vita-vn-ocr
 [v0.2.1 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.1)
@@ -880,7 +880,7 @@ pinned commit and point the build at it:
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
 git -C /path/to/vita-vn-ocr checkout d214a05deeef503a5e1d1853fe9fa4c91eb60bc2  # #85's merge (after #83's and #82's): the faster kernels, the refinement, the beam + LM decoder
 
-# Vita plugins and release zip (build/vita/VitaJPOverlay-VERSION.zip), Release as in CI.
+# Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (README.md, "Build and validation").
 cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_WITH_VOCR=ON \
   -DVJO_VOCR_SOURCE_DIR=/path/to/vita-vn-ocr -DVJO_PLAINTEXT_SOURCE=/path/to/plaintext-dicts
@@ -934,7 +934,7 @@ steps below cover a source build or adding another model.
    log_file = on
    ```
 
-   `auto`, the default (the Overlay app's Read text, Automatically), reads each
+   `auto`, the default (the Rubi app's Read text, Automatically), reads each
    settled dialogue screen in the background, a recognition per screen; `on_press`
    (Only when I press L + R) reads only when the overlay opens
    ([auto-vs-press.md](auto-vs-press.md)).

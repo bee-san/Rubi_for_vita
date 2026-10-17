@@ -1024,7 +1024,7 @@ static size_t read_fixture(const char *name, char *out, size_t cap)
     return n;
 }
 
-/* #101: test.1's Overlay app saved its four preferences over test.2's
+/* #101: test.1's Rubi app saved its four preferences over test.2's
  * config.ini (host/tests/fixtures/config-old-app-test2.ini: ocr_backend =
  * vocr2). Today's Shell and app read it as the local engine with one warning
  * and no unknown setting (its vocr_model gives the Normal size), and the app's
@@ -1117,7 +1117,7 @@ static void test_shell_runs_on_the_defaults_without_writing_config_ini(void)
     TEST_CHECK(written == 0 && renames == 0 && handles == 0 && shell.used == 0);
     TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) != 0 && access(VJO_PREFERENCES_PATH ".tmp", F_OK) != 0);
     TEST_CHECK(access(VJO_PREFERENCES_PATH ".bak", F_OK) != 0);
-    /* what creates it: the Overlay app's first save publishes the commented template with the choice */
+    /* what creates it: the Rubi app's first save publishes the commented template with the choice */
     TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
     static char saved[VJO_CONFIG_TEXT_MAX + 1];
     int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
@@ -1130,7 +1130,7 @@ static void test_shell_runs_on_the_defaults_without_writing_config_ini(void)
     TEST_CHECK(!cfg.japanese_only_selection && cfg.n_warnings == 0 && shell.used == 0);
 }
 
-/* The Shell's reads of the Overlay app's stamps (shell/files.c): the first
+/* The Shell's reads of the Rubi app's stamps (shell/files.c): the first
  * line, whole, through short reads; cut to the buffer; the SDK's error. */
 static void test_file_line_and_exists(void)
 {

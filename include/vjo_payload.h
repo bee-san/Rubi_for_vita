@@ -1,4 +1,4 @@
-/* The one-VPK install's payload (docs/one-vpk-install.md, "Inside the VPK"): the files the Overlay
+/* The one-VPK install's payload (docs/one-vpk-install.md, "Inside the VPK"): the files the Rubi
  * app installs from its own folder, compiled in. The app accepts a payload manifest only when its
  * file set is exactly this list (core/payload.c), so a damaged or edited manifest cannot name any
  * other file (games.ini, boot.txt, config.txt, another plugin). tools/package_release.py writes the

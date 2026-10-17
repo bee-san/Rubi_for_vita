@@ -209,8 +209,8 @@ static void header(void)
         vita2d_draw_rectangle(0, BANNER_Y, 960, BANNER_H, OFF);
         wrapped_text(24, BANNER_TEXT_Y, 912, BG, 20, BANNER_LINE_H, 2, app_banner);
     } else {
-        wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "Overlay");
-        if (!version_x) version_x = 24 + text_width(32, "Overlay") + 14;
+        wrapped_text(24, 35, 690, WHITE, 32, 34, 1, "Rubi");
+        if (!version_x) version_x = 24 + text_width(32, "Rubi") + 14;
         text(version_x, 34, DIM, 22, VJO_APP_VERSION);
         text(744, 34, DIM, 24, "Select: page");
     }

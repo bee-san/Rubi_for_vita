@@ -1,7 +1,7 @@
 /* The Shell's foreground classification (shell/game.c, the code SceShell runs)
  * on the host: AppMgr and the process's title ID are scripted per case, the
  * memory card is a temporary directory with synthetic bubbles (boot.bin,
- * boot.inf, the Overlay app's description) and games.ini. Each case also
+ * boot.inf, the Rubi app's description) and games.ini. Each case also
  * counts the Shell's file calls: a launch reads at most one boot.bin and one
  * description and lists no directory. */
 #define main acutest_main
@@ -219,7 +219,7 @@ static void test_bubble_by_its_own_id(void)
     TEST_CHECK(!strcmp(g.key, "PSPEMU005") && g.psp && g.mode == VJO_GAME);
     TEST_CHECK(!strcmp(g.disc, "ULJS00385") && !strcmp(g.name, "Synthetic Two"));
     TEST_CHECK(logged(" PSPEMU005 PSPEMU005 -> PSPEMU005; disc ULJS00385; boots ux0:pspemu/ISO/TWO.CSO; \"Synthetic Two\"") != NULL);
-    /* Any ID the Overlay app described (it found the bubble by its files). */
+    /* Any ID the Rubi app described (it found the bubble by its files). */
     described("ABCD12345", "", "Synthetic Three", "ux0:pspemu/ISO/THREE.ISO");
     process("ABCD12345", "ABCD12345", "ABCD12345");
     g = identify();
@@ -375,7 +375,7 @@ static void an_unreadable_description(void)
 }
 
 /* AppMgr names that are no game's key the emulator's NPXS10028: SceShell's,
- * a system app's, VitaShell's, the Overlay app's, 12+ characters (AppMgr's
+ * a system app's, VitaShell's, the Rubi app's, 12+ characters (AppMgr's
  * name has 32 bytes), a path. An 11-character ID is a game's. */
 static void names_that_are_no_games(void)
 {

@@ -1,4 +1,4 @@
-/* The Overlay app's install engine (settings/install.h; docs/one-vpk-install.md). */
+/* The Rubi app's install engine (settings/install.h; docs/one-vpk-install.md). */
 #include "install.h"
 #include "../include/vjo_build.h"
 #include "anki_page.h" /* vjo_log: log.txt */
@@ -1047,11 +1047,11 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
             size_t used = strlen(s->reason);
             if (g->interrupted && g->finish_ok)
                 snprintf(s->reason + used, sizeof(s->reason) - used, " This app cannot write ur0:tai now (Enable Unsafe "
-                         "Homebrew is off): turn it on and open Overlay again, or in VitaShell rename %s.%s to config.txt.",
+                         "Homebrew is off): turn it on and open Rubi again, or in VitaShell rename %s.%s to config.txt.",
                          g->path, g->use_new ? "vjo-new" : "vjo-old");
             else
                 snprintf(s->reason + used, sizeof(s->reason) - used, " This app cannot write ur0:tai now (Enable Unsafe "
-                         "Homebrew is off): turn it on and open Overlay again.");
+                         "Homebrew is off): turn it on and open Rubi again.");
             s->actions = 0;
         }
         return;
@@ -1060,7 +1060,7 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
         s->state = VJO_INSTALL_CANNOT;
         snprintf(s->title, sizeof(s->title), "Cannot install the overlay yet");
         snprintf(s->reason, sizeof(s->reason), "Turn on Settings > HENkaku Settings > Enable Unsafe Homebrew, then open "
-                 "Overlay again: without it this app cannot write ur0:tai.");
+                 "Rubi again: without it this app cannot write ur0:tai.");
         return;
     }
     int can_uninstall = (s->cfg[0].uninstall_changes || s->cfg[1].uninstall_changes) ? VJO_INSTALL_ACT_UNINSTALL : 0;
@@ -1075,8 +1075,8 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
         s->state = VJO_INSTALL_NO_PAYLOAD;
         s->actions = can_uninstall;
         snprintf(s->title, sizeof(s->title), "This app carries no overlay");
-        snprintf(s->reason, sizeof(s->reason), "This is the release zip's Overlay app: install-vita.sh installs its "
-                 "plugins. To install from the Vita alone, install VitaJPOverlay-<version>.vpk from the release.");
+        snprintf(s->reason, sizeof(s->reason), "This is the release zip's Rubi app: install-vita.sh installs its "
+                 "plugins. To install from the Vita alone, install Rubi-<version>.vpk from the release.");
         return;
     }
     if (damaged || refused || s->config_ini < 0) {
@@ -1103,7 +1103,7 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
         s->actions = can_uninstall;
         snprintf(s->title, sizeof(s->title), "Cannot install the overlay");
         snprintf(s->reason, sizeof(s->reason), "The dictionary is missing, and this app no longer has its copy (an "
-                 "earlier install moved it): install the VPK again in VitaShell, then open Overlay.");
+                 "earlier install moved it): install the VPK again in VitaShell, then open Rubi.");
         return;
     }
     s->actions = VJO_INSTALL_ACT_INSTALL | can_uninstall;
@@ -1489,7 +1489,7 @@ static int swap_config(Run *x, int c, const char *text, int len)
         int back = sceIoRename(old, path) >= 0;
         x->r->written = 1;
         return stop(x, back ? "%s.vjo-new could not be renamed: config.txt is back as it was."
-                            : "%s is missing: open Overlay again to finish (its Install page has the old and the new copy).",
+                            : "%s is missing: open Rubi again to finish (its Install page has the old and the new copy).",
                     path);
     }
     sync_path(path);

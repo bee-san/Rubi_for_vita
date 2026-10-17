@@ -1,4 +1,4 @@
-/* The Overlay app's version stamp: which app the overlay plugins came with,
+/* The Rubi app's version stamp: which app the overlay plugins came with,
  * and which app is installed (#101: test.1's app ran beside test.2's plugins).
  *
  * One line, written at build time by tools/app_stamp.py from the app's
@@ -12,7 +12,7 @@
  * app's own app0:vjo_app.txt) and into the release as
  * ux0:data/VitaJPOverlay/vjo_app.txt, which the installer uploads with the
  * plugins: the record of the app those plugins came with. The installer
- * uploads that app's VPK to ux0:data/JPOverlaySettings.vpk at the same time,
+ * uploads that app's VPK to ux0:data/Rubi.vpk at the same time,
  * so installing that VPK always makes the two match.
  *
  * Nothing here allocates; the Shell reads both files into stack buffers at a
@@ -33,7 +33,7 @@
  * the Shell cannot tell which side is newer when both have one API. Shorter than
  * the two it replaces (82 and 89 characters), so SceShell's pages do not grow
  * (AGENTS.md rule 1); the linker merges the two equal literals. */
-#define VJO_APP_NOTICE "Overlay app and plugins are different builds: open the Overlay app."
+#define VJO_APP_NOTICE "Rubi app and plugins are different builds: open the Rubi app."
 #define VJO_APP_NOTICE_NEWER VJO_APP_NOTICE
 
 enum {

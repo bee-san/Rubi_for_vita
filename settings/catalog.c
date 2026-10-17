@@ -50,7 +50,8 @@ static int read_title(const char *path, char *out, size_t cap)
 /* ---- log.txt: one line per root and one for the rows, each one vjo_log line ---- */
 
 /* A line built in pieces, cut at what one vjo_log line holds (settings/applog.c:
- * 300 bytes with "overlay app: " and the line break). */
+ * 300 bytes with its prefix and the line break). 286 was exact with the prefix "overlay app: " the
+ * app had before the Rubi rename; "Rubi app: " is 3 bytes shorter, so the lines still fit. */
 typedef struct { char text[286]; size_t used; } Line;
 static void add(Line *l, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 static void add(Line *l, const char *fmt, ...)

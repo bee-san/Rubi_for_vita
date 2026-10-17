@@ -54,6 +54,8 @@ import sys
 from pathlib import Path
 
 DATA = "ux0/data/VitaJPOverlay/"
+# The Shell's start line: "Rubi shell started" since the rename, "Vita JP Overlay shell started" before it.
+SHELL_STARTED = ("Rubi shell started", "Vita JP Overlay shell started")
 
 GSTEP = re.compile(r"^gstep (\S+) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
                    r"main=(-?\d+) cdram=(-?\d+) phycont=(-?\d+) us=(\d+)")
@@ -277,14 +279,14 @@ def parse_log(text):
             continue
         if job is not None:
             job.lines += 1
-        if line.startswith("Vita JP Overlay shell started"):
+        if line.startswith(SHELL_STARTED):
             session = None
             normal += "the normal build" in line
             status = 0
         n_bytes = len(raw.encode("utf-8")) + 1
         if status + n_bytes <= STATUS_CAP:
             status += n_bytes
-        if line.startswith("Vita JP Overlay shell started"):
+        if line.startswith(SHELL_STARTED):
             continue
         if not (JOB_START.match(line) or JOB_DONE.match(line)):
             if job is not None:
@@ -557,7 +559,7 @@ def render(res, show_jobs=False):
 
 def last_boot(text):
     """The log from the last Shell start on (a collect's log.txt keeps earlier builds' runs)."""
-    i = text.rfind("Vita JP Overlay shell started")
+    i = max(text.rfind(start) for start in SHELL_STARTED)
     return text[i:] if i >= 0 else text
 
 

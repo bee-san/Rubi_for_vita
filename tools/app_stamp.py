@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Overlay app's version stamp (core/app_stamp.h): which app the plugins came with, and which is installed.
+"""The Rubi app's version stamp (core/app_stamp.h): which app the plugins came with, and which is installed.
 
     vjoapp1 api=21 build=0123456789abcdef
 
@@ -12,7 +12,7 @@ the running plugin, and install_ftp.sh (at the end of an install, and with --che
 app with the package's.
 
     app_stamp.py make --eboot build/vita/eboot.bin --api-header include/vjo_api.h -o build/vita/vjo_app.txt
-    app_stamp.py check --package STAMP [--vpk JPOverlaySettings.vpk] --installed FILE [--installed-eboot FILE]
+    app_stamp.py check --package STAMP [--vpk Rubi.vpk] --installed FILE [--installed-eboot FILE]
                        [--host VITA_IP] [--after-install]
 
 check prints a box with the verdict and what to do, and exits 0 when the Vita's app is the package's, 1 when it
@@ -31,7 +31,7 @@ MAGIC = "vjoapp1"
 STAMP = re.compile(r"^vjoapp1 api=(\d{1,6}) build=([0-9a-f]{16})$")
 API = re.compile(r"^#define\s+VJO_API_VERSION\s+(\d+)\s*$", re.MULTILINE)
 TITLE_ID = "VJOSET001"
-VPK = "JPOverlaySettings.vpk"
+VPK = "Rubi.vpk"
 
 
 def api_version(header):
@@ -77,7 +77,7 @@ def verdict(package, installed_text, installed_eboot=None, package_eboot_sha256=
     (None: not there), package_eboot_sha256 the package VPK's eboot.bin, when known."""
     pkg = parse(package)
     if not pkg:
-        return "unknown", ["This package has no Overlay app stamp to compare with (built before the stamps)."]
+        return "unknown", ["This package has no Rubi app stamp to compare with (built before the stamps)."]
     inst = parse(installed_text)
     eboot_sha = hashlib.sha256(installed_eboot).hexdigest() if installed_eboot is not None else None
     eboot_note = []
@@ -88,17 +88,17 @@ def verdict(package, installed_text, installed_eboot=None, package_eboot_sha256=
         # The stamp decides. Whether VitaShell installs eboot.bin byte for byte is not measured on a console yet.
         if eboot_note and eboot_sha != package_eboot_sha256:
             eboot_note = ["Its eboot.bin is not byte-identical to the VPK's (the stamp decides; send --collect's zip)."]
-        return "ok", [f"The Overlay app on the Vita is this package's ({pkg['line']})."] + eboot_note
+        return "ok", [f"The Rubi app on the Vita is this package's ({pkg['line']})."] + eboot_note
     if installed_text is None and installed_eboot is None:
-        why = [f"No Overlay app is installed on the Vita (ux0:app/{TITLE_ID})."]
+        why = [f"No Rubi app is installed on the Vita (ux0:app/{TITLE_ID})."]
     elif installed_text is None:
-        why = [("The Overlay app on the Vita has no version stamp: it is from an older build "
+        why = [("The Rubi app on the Vita has no version stamp: it is from an older build "
                 "(v0.8.0-test.2 or earlier).")]
     elif not inst:
-        why = [f"The Overlay app's stamp on the Vita is not readable: {installed_text.strip()[:60]!r}."]
+        why = [f"The Rubi app's stamp on the Vita is not readable: {installed_text.strip()[:60]!r}."]
     else:
         older = "an older" if inst["api"] < pkg["api"] else "a newer" if inst["api"] > pkg["api"] else "another"
-        why = [f"The Overlay app on the Vita is {older} build ({inst['line']}); this package's is {pkg['line']}."]
+        why = [f"The Rubi app on the Vita is {older} build ({inst['line']}); this package's is {pkg['line']}."]
     return "mismatch", why + eboot_note
 
 
@@ -111,7 +111,7 @@ WHY_NEWER = ("A newer app saves settings these plugins do not know yet. Installi
 def steps(command, after_install=False, newer=False):
     first = "Do it now, before you reboot: in VitaShell" if after_install else "In VitaShell"
     return [(f"{first}, press OK on the FTP dialog to keep FTP running, open ux0:data/, select "
-             "JPOverlaySettings.vpk, press the confirm button (x on most consoles, o on Japanese ones) and confirm "
+             "Rubi.vpk, press the confirm button (x on most consoles, o on Japanese ones) and confirm "
              "the install."),
             f"Then check it from here, with VitaShell's FTP still running: {command}"
             + (", then reboot." if after_install else ""),
@@ -132,12 +132,12 @@ def box(title, paragraphs, width=78):
 
 def report(state, lines, command, after_install, newer=False):
     if state == "ok":
-        return box("Overlay app: up to date", lines)
+        return box("Rubi app: up to date", lines)
     if state == "unknown":
-        return box("Overlay app: not checked", [*lines, ("Install ux0:data/JPOverlaySettings.vpk in VitaShell to "
+        return box("Rubi app: not checked", [*lines, ("Install ux0:data/Rubi.vpk in VitaShell to "
                                                          "be sure it is this package's.")])
-    title = "ONE MORE STEP: install the Overlay app (JPOverlaySettings.vpk)" if after_install else \
-        "Overlay app: NOT this package's"
+    title = "ONE MORE STEP: install the Rubi app (Rubi.vpk)" if after_install else \
+        "Rubi app: NOT this package's"
     return box(title, lines + steps(command, after_install, newer))
 
 
@@ -157,7 +157,7 @@ def main():
     m.add_argument("-o", "--output", required=True, type=Path)
     c = sub.add_parser("check", help="the Vita's app against the package's")
     c.add_argument("--package", required=True, type=Path, help="the package's vjo_app.txt")
-    c.add_argument("--vpk", type=Path, help="the package's JPOverlaySettings.vpk (its eboot.bin is compared too)")
+    c.add_argument("--vpk", type=Path, help="the package's Rubi.vpk (its eboot.bin is compared too)")
     c.add_argument("--installed", type=Path, help="the Vita's ux0:app/VJOSET001/vjo_app.txt, fetched (missing: none)")
     c.add_argument("--installed-eboot", type=Path, help="the Vita's ux0:app/VJOSET001/eboot.bin, fetched")
     c.add_argument("--command", default="bash tools/install_ftp.sh --check-app VITA_IP",

@@ -20,7 +20,7 @@ int vjo_preferences_save(int vocr_tier, int japanese_only, int highlight_mode,
 /* The Anki page's settings, saved the same way: anki_mining and anki_screenshot on/off. */
 int vjo_preferences_save_anki(int mining, int screenshot, VjoArena *scratch);
 /* The OCR page's reading settings, saved the same way: ocr_mode (VJO_OCR_AUTO
- * auto, VJO_OCR_ON_PRESS on_press: the Overlay app's Read text) and
+ * auto, VJO_OCR_ON_PRESS on_press: the Rubi app's Read text) and
  * ocr_boost_clock (1 on, 0 off: its Speed boost while reading). Any other
  * value is refused (-1) before anything is read or written. */
 int vjo_preferences_save_reading(int ocr_mode, int boost_clock, VjoArena *scratch);

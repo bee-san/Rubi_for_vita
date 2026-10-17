@@ -568,7 +568,7 @@ static void joined_lines_are_one_text(void)
         field = vjo_anki_field_value(&a, VJO_LAPIS_SENTENCE, &note);
         TEST_CHECK(field && !strcmp(field, "あいうえおかきくけこ<b>食べる</b>かな？"));
         TEST_MSG("%s", field ? field : "(null)");
-        /* and so after the queue's round trip, as the Overlay app exports it */
+        /* and so after the queue's round trip, as the Rubi app exports it */
         {
             VjoAnkiNote back;
             int picture;
@@ -1379,7 +1379,7 @@ static void dictionary_title_names_its_entries(void)
             TEST_CHECK(lookup(&a, &p, &cfg, "木", 0, &r, &e) == VJO_E_LOCAL_FORMAT && !r.n_vocab);
             TEST_CHECK(opened == closed && a.used == 0);
         }
-    /* vjo_local_title (the Overlay app's card): page 0 of 256 bytes or more, a v2/v3
+    /* vjo_local_title (the Rubi app's card): page 0 of 256 bytes or more, a v2/v3
      * magic and its own version, else no name */
     {
         VjoArena a; VjoPlatform p; VjoConfig cfg;

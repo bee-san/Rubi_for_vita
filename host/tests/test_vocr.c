@@ -172,7 +172,7 @@ static void test_models_and_sizes(void)
 }
 
 /* core/vocr_models.c names exactly the models the worker pins, at the same
- * sizes, each with a generation (the local engine's name in the Overlay app)
+ * sizes, each with a generation (the local engine's name in the Rubi app)
  * and a shape; the default is the Normal size's (test_tier_pins.h). */
 static void test_model_metadata_matches_the_pins(void)
 {
@@ -195,7 +195,7 @@ static void test_model_metadata_matches_the_pins(void)
     for (unsigned i = 0; i < infos; i++) TEST_CHECK_(vjo_vocr_model(info[i].name) != NULL, "%s", info[i].name);
     const VjoVocrModelInfo *def = vjo_vocr_model_info(VJO_VOCR_DEFAULT_MODEL);
     TEST_ASSERT(def != NULL);
-    for (unsigned i = 0; i < 3; i++) { /* each size's label, generation-shape, as the Overlay app shows it */
+    for (unsigned i = 0; i < 3; i++) { /* each size's label, generation-shape, as the Rubi app shows it */
         const VjoVocrModelInfo *m = vjo_vocr_model_info(test_tier_pins[i].name);
         TEST_CHECK_(m && !strcmp(m->generation, test_tier_pins[i].generation) &&
                     vjo_vocr_model_label(m, label, sizeof(label)) == (int)strlen(test_tier_pins[i].label) &&
@@ -217,7 +217,7 @@ static void test_model_metadata_matches_the_pins(void)
 }
 
 /* API 21: each model tier's pinned model is one the runtime runs, smaller to
- * larger, and the estimates the Overlay app shows for it come from the runtime
+ * larger, and the estimates the Rubi app shows for it come from the runtime
  * itself: its job bytes are the game worker's check at a full screen (page-rounded
  * weights, workspace and capture block, without the LM, cascade or refinement),
  * its need adds the tier's reserve; the time grows with the size. The three

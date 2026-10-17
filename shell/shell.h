@@ -1,4 +1,4 @@
-/* Vita JP Overlay SceShell plugin: state shared between the control thread
+/* Rubi SceShell plugin: state shared between the control thread
  * (worker.c), the network thread and the ScePaf overlay (overlay.cpp). */
 #ifndef VJO_SHELL_H
 #define VJO_SHELL_H
@@ -24,7 +24,7 @@ extern "C" {
 #define VJO_LOG_OLD_PATH VJO_DATA_DIR "/log.old.txt"
 #define VJO_STATUS_PATH VJO_DATA_DIR "/status.txt"
 #define VJO_ANKI_QUEUE_DIR VJO_DATA_DIR "/anki_queue"     /* offline cards, see anki_queue.h */
-#define VJO_ANKI_EXPORTED_DIR VJO_ANKI_QUEUE_DIR "/exported" /* the cards the Overlay app exported */
+#define VJO_ANKI_EXPORTED_DIR VJO_ANKI_QUEUE_DIR "/exported" /* the cards the Rubi app exported */
 #define VJO_RCO_PATH    "ur0:data/VitaJPOverlay/vitajpoverlay.rco"
 
 #define VJO_MAX_ENTRIES 512 /* entries the overlay navigates */
@@ -56,7 +56,7 @@ typedef struct {
     int dict_pages;           /* local: dictionaries with an entry there; 0 = unknown */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;
-    /* The Overlay app does not match the plugins (core/app_stamp.h): said in
+    /* The Rubi app does not match the plugins (core/app_stamp.h): said in
      * the body of the next overlay that draws its page, NULL otherwise (worker.c
      * check_app); notice_shown: an overlay drew it, so closing it drops it */
     const char *notice;
@@ -90,7 +90,7 @@ void vjo_view_unlock(void);
 /* Under the view lock: the shown local result's dictionary page locators and
  * the page shown, or NULL (worker.c; anki.c saves every dictionary's entry). */
 const VjoLocalPages *vjo_view_pages(int *page);
-/* Under the view lock: the Overlay app notice the open overlay's body says, or
+/* Under the view lock: the Rubi app notice the open overlay's body says, or
  * NULL, marked as drawn, so closing that overlay drops it (worker.c check_app). */
 const char *vjo_view_notice(void);
 
@@ -188,7 +188,7 @@ void vjo_strip_set_busy(int busy);
 typedef struct {
     char key[VJO_TITLE_ID_SIZE];  /* games.ini's, region.ini's and title_id's ID: a bubble's own for its game */
     char disc[VJO_TITLE_ID_SIZE]; /* a PSP game's disc ID, "" when unknown */
-    char name[128];               /* a PSP game's title from the Overlay app's description, "" when none */
+    char name[128];               /* a PSP game's title from the Rubi app's description, "" when none */
     int mode;                     /* vjoSetGameActive's (enum VjoGameMode): STATIC_FB for the emulator's process only */
     int psp;                      /* a PSP game (the emulator's process, or described): the PSP policy fallback,
                                      Anki's platform and name */

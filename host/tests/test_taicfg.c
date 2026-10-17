@@ -180,7 +180,7 @@ static void test_refusals(void)
 {
     static char big[VJO_TAI_TEXT_MAX + 2];
     VjoTaiReport r;
-    /* not a title ID, or one the worker never serves (a system app, VitaShell, the Overlay app) */
+    /* not a title ID, or one the worker never serves (a system app, VitaShell, the Rubi app) */
     const char *bad_titles[] = {"ALL", "main", "NPXS10015", "VITASHELL", "VJOSET001", "PCSG0041", "PCSG 0415"};
     memset(big, '#', sizeof(big) - 1);
     big[sizeof(big) - 1] = '\0';

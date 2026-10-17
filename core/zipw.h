@@ -1,4 +1,4 @@
-/* A minimal ZIP writer and reader for the Overlay app's .apkg export
+/* A minimal ZIP writer and reader for the Rubi app's .apkg export
  * (core/apkg.c): stored entries only (method 0, what genanki writes and
  * every Anki importer reads), no ZIP64 (an export stays far below 2 GiB),
  * no encryption, no comments. The writer streams an entry's bytes through

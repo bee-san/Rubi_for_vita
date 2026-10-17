@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Rebuild the Overlay app's LiveArea art (settings/assets/{icon0,startup,bg,pic0}.png).
+"""Rebuild the Rubi app's LiveArea art (settings/assets/{icon0,startup,bg,pic0}.png).
 
 Needs tools/requirements-assets.txt. The mascot is settings/assets/icon-source.png,
 a FLUX.1 [schnell] image whose model, licence, checksums, prompt and seed are
 recorded in settings/assets/ICON-SOURCE.md. The model drew an unreadable glyph in
 her speech bubble, so this script paints the bubble clean and draws a hiragana
-あ from hand-made strokes. The "Overlay" wordmark is drawn the same way, so no
+あ from hand-made strokes. The "Rubi" wordmark is drawn the same way, so no
 font is needed and the output depends only on the source image and Pillow.
 The Vita promoter rejects RGBA artwork (0x8010113D); every image is written as an
 opaque, non-interlaced, 8-bit palette PNG with at most 256 colours.
@@ -61,19 +61,20 @@ def kana_paths(cx, cy, height):
 
 
 def wordmark_paths(x, baseline, xh):
-    """'Overlay' as round monoline strokes: x-height `xh` px, from `x` on `baseline`.
+    """'Rubi' as round monoline strokes: x-height `xh` px, from `x` on `baseline`.
 
-    Returns (paths, width). Letters are designed in x-height units with y up.
+    Returns (paths, width). Letters are designed in x-height units with y up; the cap height (1.40)
+    and the ascender (1.45) are those of the 'Overlay' wordmark the app had before the rename.
     """
     gap = 0.44
     letters = [
-        (1.28, [arc(0.66, 0.70, 0.62, 0.70, 0, 360)]),                                   # O
-        (0.84, [[(0, 1), (0.42, 0), (0.84, 1)]]),                                         # v
-        (0.98, [[(0.02, 0.5), (0.98, 0.5)] + arc(0.5, 0.5, 0.48, 0.48, 0, 315)]),        # e
-        (0.56, [[(0, 0), (0, 1)], bezier((0, 0.55), (0.02, 0.92), (0.28, 1.02), (0.56, 0.96))]),  # r
-        (0.00, [[(0, 0), (0, 1.45)]]),                                                    # l
-        (0.96, [arc(0.48, 0.5, 0.48, 0.5, 0, 360), [(0.96, 1), (0.96, 0)]]),            # a
-        (0.84, [[(0, 1), (0.42, 0.05)], [(0.84, 1), (0.20, -0.45)]]),                    # y
+        (0.86, [[(0, 0), (0, 1.40)],                                                      # R: stem,
+                [(0, 1.40), (0.40, 1.40)] + arc(0.40, 1.04, 0.38, 0.36, 90, -90) + [(0.40, 0.68), (0, 0.68)],
+                [(0.40, 0.68), (0.86, 0)]]),                                              #    bowl, leg
+        (0.84, [[(0, 1), (0, 0.42)] + arc(0.42, 0.42, 0.42, 0.42, 180, 360) + [(0.84, 1)],  # u
+                [(0.84, 1), (0.84, 0)]]),
+        (0.96, [[(0, 0), (0, 1.45)], arc(0.48, 0.5, 0.48, 0.5, 0, 360)]),               # b
+        (0.00, [[(0, 0), (0, 1)], [(0, 1.40), (0, 1.40)]]),                               # i and its dot
     ]
     paths, origin = [], 0.0
     for advance, strokes in letters:
@@ -214,8 +215,9 @@ def main():
     for cx, cy, r in ((258, 22, 6), (150, 30, 4), (266, 118, 4.5)):
         sparkle(startup, cx, cy, r, PAPER)
     place(startup, sprite, mask, 150, 4, 6)
-    paths, _ = wordmark_paths(148, 80, 15)
-    sticker_text(startup, paths, 4, 2)
+    _, width = wordmark_paths(0, 0, 22)
+    paths, _ = wordmark_paths(214 - width / 2, 88, 22)   # centred in the space right of the mascot
+    sticker_text(startup, paths, 6, 2)
     save_indexed(startup, "startup.png")
 
     # LiveArea background; the gate sits in the middle of its upper part.
@@ -226,9 +228,9 @@ def main():
                       (380, 452, 7), (34, 60, 8), (120, 120, 6), (806, 470, 6)):
         sparkle(bg, cx, cy, r, PAPER)
     place(bg, sprite, mask, 300, 24, 192)
-    _, width = wordmark_paths(0, 0, 34)
-    paths, _ = wordmark_paths(816 - width, 428, 34)   # right-aligned at x 816
-    sticker_text(bg, paths, 8, 4)
+    _, width = wordmark_paths(0, 0, 46)
+    paths, _ = wordmark_paths(816 - width, 428, 46)   # right-aligned at x 816
+    sticker_text(bg, paths, 11, 5)
     save_indexed(bg, "bg.png")
     save_indexed(splash(bg), "pic0.png")
 

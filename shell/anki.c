@@ -1,7 +1,7 @@
 /* Anki card mining with an offline file queue (the design of #5). Enter
  * saves the shown dictionary entry as a card in
  * ux0:data/VitaJPOverlay/anki_queue/ (anki_queue.c): a readable JSON record,
- * written the same way with Wi-Fi off and no computer anywhere. The Overlay
+ * written the same way with Wi-Fi off and no computer anywhere. The Rubi
  * app exports the queue as Lapis notes in an .apkg file for Anki
  * (settings/anki_export.c); SceShell never sends anything, and nothing here
  * opens a socket. Nothing runs and nothing is allocated while anki_mining is

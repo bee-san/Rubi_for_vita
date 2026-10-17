@@ -5,7 +5,7 @@
  * them. DAX and other formats are refused. Every read is bounded: the PBP
  * header, the ISO's volume descriptor, two directories of at most
  * VJO_PSP_DIR_MAX bytes and the SFO, through at most one compressed block at a
- * time. For the Overlay app (never SceShell) and the host tests. */
+ * time. For the Rubi app (never SceShell) and the host tests. */
 #ifndef VJO_PSPTARGET_H
 #define VJO_PSPTARGET_H
 #include <stddef.h>

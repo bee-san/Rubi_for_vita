@@ -1,4 +1,4 @@
-/* Result codes shared by the core, the Shell and the Overlay app. Numbers are
+/* Result codes shared by the core, the Shell and the Rubi app. Numbers are
  * never reused, so an older build's log still reads unambiguously
  * (tools/analyse_selftest.py RC_NAMES keeps their old names). */
 #ifndef VJO_ERRORS_H

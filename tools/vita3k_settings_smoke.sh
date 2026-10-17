@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Vita3K smoke of the Overlay app: settings/main.c and the sources the settings VPK ships,
+# Vita3K smoke of the Rubi app: settings/main.c and the sources the settings VPK ships,
 # unchanged, with a scripted controller (tools/vita3k_settings_smoke.c, vita/CMakeLists.txt
 # VJO_SETTINGS_SMOKE), over synthetic installed games (tools/make_settings_smoke_games.py).
 # The script scrolls the Games list down and back, pages with L/R (pressed and held), jumps
@@ -20,7 +20,7 @@
 #                            with the firmware's PVF library and fonts, which this Vita3K does not
 #                            emulate (scePvfNewLib is unimplemented); --firmware installs both
 #   env GAMES                synthetic games to install (default 120), TIMEOUT seconds (default 900)
-#   env RELEASE_VPK          optional: the release JPOverlaySettings.vpk, then booted over the same
+#   env RELEASE_VPK          optional: the release Rubi.vpk, then booted over the same
 #                            games with no input; it must still be running after 30 s
 #   env SYSAPP               0 leaves out the system-application starts: the same app built to start
 #                            as a system application (VJO_SETTINGS_SMOKE_SYSAPP), which Vita3K never
@@ -196,7 +196,7 @@ if [ "${SYSAPP:-1}" != 0 ]; then
     [ "$src" -eq 124 ] && fail "(the system-application start ($mode) hung: timeout ended it after ${SYSAPP_TIMEOUT:-300}s; $out/sysapp-$name.stdout)"
     [ "$src" -le 128 ] || fail "(the system-application start ($mode): Vita3K exit $src; $out/sysapp-$name.stdout)"
     sr=$(cat "$ux0/data/vjo_settings_smoke.txt" 2>/dev/null)
-    gfx=$(grep -h "overlay app: graphics: " "$out/sysapp-$name.log.txt" | tr '\n' '|')
+    gfx=$(grep -h "Rubi app: graphics: " "$out/sysapp-$name.log.txt" | tr '\n' '|')
     case $mode in
       never)
         case $sr in exit-error*frames=0\ *) ;; *) fail "(no hand-over: the app did not close before its first frame: '$sr'; $out/sysapp-$name.stdout)" ;; esac

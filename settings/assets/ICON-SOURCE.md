@@ -1,4 +1,4 @@
-# Where the Overlay app's art comes from
+# Where the Rubi app's art comes from
 
 The mascot in `icon0.png`, `startup.png` and `bg.png` is an original character made
 for this project: a chibi girl with a peach-pink bob, a star hair clip and round
@@ -58,8 +58,9 @@ may not give the same bytes; `icon-source.png` is the reference.
 The model drew an unreadable glyph in the speech bubble. `make_settings_assets.py`
 paints the bubble's inside white and draws あ from hand-made Bezier strokes in the
 outline colour. It writes `icon0.png` (the whole picture, 128 x 128), `startup.png`
-(the mascot cut out of her background, with an "Overlay" wordmark drawn from round
-strokes, no font) and `bg.png` (a soft gradient with faint あ bubbles, sparkles, the
+(the mascot cut out of her background, with a "Rubi" wordmark drawn from round
+strokes, no font; it said "Overlay" before the rename) and `bg.png` (a soft gradient with
+faint あ bubbles, sparkles, the
 mascot and the wordmark; `pic0.png`, the 960 x 544 launch splash, is the same
 picture scaled to the full height with its plain edges extended), each quantized to at most 256 colours as an opaque 8-bit
 palette PNG.

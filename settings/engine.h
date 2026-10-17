@@ -1,4 +1,4 @@
-/* The Overlay app's OCR card: the local engine's Model size. VOCR is the only
+/* The Rubi app's OCR card: the local engine's Model size. VOCR is the only
  * engine since the overlay went offline (owner 2026-10-15 15:27Z: Google Lens
  * removed). The row offers the three tiers (Small, Normal, Large; config.ini
  * vocr_tier), each with its estimated time per textbox and the game memory it

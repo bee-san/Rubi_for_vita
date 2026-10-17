@@ -255,7 +255,7 @@ static void test_psp_shared_row(void)
                !vjo_games_enabled_as(&g, "VJOSET001", 1));
 }
 
-/* The Overlay app's catalog logs why it skips a folder (core/games_app.c): a
+/* The Rubi app's catalog logs why it skips a folder (core/games_app.c): a
  * reason exactly when vjo_game_is_candidate refuses the ID, never otherwise,
  * over IDs of every shape the candidate rule looks at. */
 static void test_reject_reasons(void)
@@ -306,7 +306,7 @@ static void test_disable_all(void)
     for (int i = g.count; i < VJO_GAMES_MAX; i++)
         TEST_CHECK_(!g.rules[i].title_id[0] && !g.rules[i].enabled, "rule %d left behind", i);
     int n = vjo_games_format(&g, text, sizeof(text));
-    TEST_CHECK(n > 0 && !strcmp(text, "# JP Overlay per-game settings\ndefault = disabled\nPCSF00001 = disabled\n"
+    TEST_CHECK(n > 0 && !strcmp(text, "# Rubi per-game settings\ndefault = disabled\nPCSF00001 = disabled\n"
                                       "PCSG00402 = disabled\n"));
     TEST_ASSERT(vjo_games_parse(&back, text, (size_t)n) == 0);
     static const char *const ids[] = {"PCSG00940", "PCSB00792", "PCSF00001", "PSPEMUCFW", "PCSG00415", "PCSG00402",

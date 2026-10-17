@@ -286,7 +286,7 @@ class MigrateConfig(unittest.TestCase):
         self.assertIn("\nvocr_tier = large\n", text)
 
     def test_release_installer_keeps_the_chosen_model_size(self):
-        # The Overlay app's Model size is the user's: the installer sets no size and no model, so an
+        # The Rubi app's Model size is the user's: the installer sets no size and no model, so an
         # update keeps the choice; a first install gets the template's Normal.
         script = (ROOT / "tools/install-vita.sh").read_text()
         self.assertNotIn("vocr_model", script)
@@ -295,13 +295,13 @@ class MigrateConfig(unittest.TestCase):
         self.assertIn("--set log_file=on", script)
 
     def test_ankiconnect_settings_are_removed_and_mining_is_kept(self):
-        # AnkiConnect is gone (the Overlay app exports .apkg files): its address and the word
+        # AnkiConnect is gone (the Rubi app exports .apkg files): its address and the word
         # audio source go, each with a line saying why; anki_mining stays as it was.
         text, out = self.migrate("anki_host = 192.168.1.23\nanki_audio_url = http://h/?t={term};k\n")
         self.assertIn("anki_mining = off\n", text)
         self.assertNotIn("anki_host", text)
         self.assertNotIn("anki_audio_url", text)
-        self.assertIn("config.ini: anki_host removed (AnkiConnect was removed: the Overlay app exports the cards "
+        self.assertIn("config.ini: anki_host removed (AnkiConnect was removed: the Rubi app exports the cards "
                       "as an .apkg)", out)
         self.assertIn("config.ini: anki_audio_url removed (AnkiConnect was removed", out)
         text, out = self.migrate("anki_mining = on\nANKI_HOST = auto\n")

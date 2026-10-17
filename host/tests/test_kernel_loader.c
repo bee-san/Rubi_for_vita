@@ -4,7 +4,7 @@
  * kernel worker's memory block, and its files as real files in a temporary
  * directory under the console's own paths. The policy is the Shell's own code
  * (core/games.c), and the kernel's games.ini reader is checked against the
- * Shell's and the Overlay app's (vita/games_storage.c) on the same files. */
+ * Shell's and the Rubi app's (vita/games_storage.c) on the same files. */
 #define main acutest_main
 #include "acutest.h"
 #undef main
@@ -328,7 +328,7 @@ static void test_hook_install_and_release(void)
     loader_hook_release();
 }
 
-/* SceShell, the system apps, VitaShell, the Overlay app, an unreadable title, and
+/* SceShell, the system apps, VitaShell, the Rubi app, an unreadable title, and
  * every process before the Shell plugin registers: nothing asked, read, loaded
  * or logged, and the original call's result comes back. */
 static void test_never_into_shell_or_system_apps(void)
@@ -357,7 +357,7 @@ static void test_on_by_default_loads_the_worker(void)
     TEST_CHECK(load_calls == 1 && load_pid == GAME_PID && !strcmp(load_path, "ur0:tai/VitaJPOverlay_OCR.suprx"));
     TEST_CHECK_(!strcmp(last_line(), "worker for PCSG00940 (pid 0x72ED3): ON (no games.ini): "
                                      "ur0:tai/VitaJPOverlay_OCR.suprx 0x40010129, start 0"), "%s", last_line());
-    put(VJO_GAMES_PATH, "# JP Overlay per-game settings\ndefault = enabled\nPCSG00415 = enabled\nPCSF00001 = disabled\n");
+    put(VJO_GAMES_PATH, "# Rubi per-game settings\ndefault = enabled\nPCSG00415 = enabled\nPCSF00001 = disabled\n");
     TEST_CHECK(start(GAME_PID, "PCSG00940") == CONTINUE_RC && load_calls == 1);
     TEST_CHECK(strstr(last_line(), ": ON in games.ini: ur0:tai/") != NULL);
     /* The block is taken for the read and given back before the answer. */
@@ -434,7 +434,7 @@ static void test_corrupt_policy_fails_closed(void)
     TEST_CHECK(!live_blocks && vjo_ledger_current(&g_kernel_ledger, VJO_KL_POLICY) == 0);
 }
 
-/* The kernel reads games.ini as the Shell and the Overlay app do
+/* The kernel reads games.ini as the Shell and the Rubi app do
  * (vjo_games_file_load), on the same files: the same rows, the same fallback to
  * the backup, the same failure. */
 static void test_reader_matches_the_shells(void)
@@ -611,7 +611,7 @@ static void test_release_drains_starts_inside(void)
 TEST_LIST = {
     {"module_stop waits for a start inside the hook, bounded", test_release_drains_starts_inside},
     {"hook install: 3.60 then 3.63+ NIDs, off without its functions", test_hook_install_and_release},
-    {"never into SceShell, system apps, VitaShell, the Overlay app", test_never_into_shell_or_system_apps},
+    {"never into SceShell, system apps, VitaShell, the Rubi app", test_never_into_shell_or_system_apps},
     {"a game without a taiHEN line, ON by the default, gets the worker", test_on_by_default_loads_the_worker},
     {"a title's own row, then the default", test_rows_and_default},
     {"Adrenaline: PSPEMUCFW, bubbles, NPXS10028 and the shared PSP row", test_adrenaline_ids},

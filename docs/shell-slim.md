@@ -109,7 +109,7 @@ Expected pages before → after; **[estimate]** until the step's PR measures it.
 
 ### 4.2 Step 1: the network, all of it (this series, after the PRs above)
 
-In two PRs. **PR-A, Google Lens** [measured]: the engine, the engine choice in the Overlay app
+In two PRs. **PR-A, Google Lens** [measured]: the engine, the engine choice in the Rubi app
 (VOCR is the only engine; the model-size picker stays), `ocr_backend` (a saved line loads as VOCR,
 a removed engine's with one config warning; the app's save and the installer drop the line, the
 installer saying so once), `core/lens.c`, `core/pb.c`, the worker's capture → JPEG → Lens job and
@@ -135,7 +135,7 @@ rest of this step, done; the Shell keeps its 176,128 B of pages (text 101,488 �
   `third_party/roots`, BearSSL but its SHA-256 and SHA-1 (the queue's IDs, the models' hashes,
   the `.apkg`'s checksums), the sockets, resolver and cancellation in `shell/platform_vita.c`, the
   UDP log (`log_host`, `tools/udp_log_listener.py`), the SceNet and SceNetCtl imports of the Shell
-  (the worker had none; nothing imported SceHttp or SceSsl since Lens) and of the Overlay app. The
+  (the worker had none; nothing imported SceHttp or SceSsl since Lens) and of the Rubi app. The
   app's three were newlib's: VitaSDK's `libc.a` calls `sceNetRecv` and `sceNetSend` in `_read_r` and
   `_write_r` (`syscalls.o`) and `sceNetSocketClose` in `__vita_fd_drop` (`io.o`, which crt0's
   `_init_vita_io` pulls in) for a socket descriptor, which the app can never hold, as newlib's

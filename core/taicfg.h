@@ -25,7 +25,7 @@
 #define VJO_TAI_TEXT_MAX (64 * 1024)  /* the largest configuration the editor takes */
 /* The prefix a line of ours gets when it is commented out (as every earlier installer wrote it). */
 #define VJO_TAI_DISABLED "# Mainline OCR: "
-/* The line before a section the editor adds; and #124's, before a section the Overlay app added for
+/* The line before a section the editor adds; and #124's, before a section the Rubi app added for
  * an Adrenaline bubble. Either lets a later edit remove the section it marks. */
 #define VJO_TAI_NOTE "# VitaJPOverlay (added by its installer)"
 #define VJO_TAI_APP_NOTE "# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)"

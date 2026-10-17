@@ -1,4 +1,4 @@
-/* vjo-cli: runs the Vita JP Overlay's lookup pipeline on the Mac, on text (the
+/* vjo-cli: runs Rubi's lookup pipeline on the Mac, on text (the
  * game worker recognizes the Vita's screen; on a computer vjo-ocr does).
  *
  *   vjo-cli --text "日本語" [--dict local] [--config config.ini]

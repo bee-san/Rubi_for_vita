@@ -35,7 +35,7 @@ test went with the relay client, Google Lens's JPEG encoder and its first `test_
 transport test, `vjo-http-transport-tests`, with the network stack, whose `platform_vita` suite now
 tests what is left of the Shell's platform: its files and its clock; API 23's Anki screenshot brought a smaller encoder back into the game worker,
 with `jpeg_encoder`, every JPEG of it decoded by Pillow, and `game_shot`, a screenshot through the actual
-worker and kernel transport into real files). The Overlay app's `.apkg` packages are imported there by Anki
+worker and kernel transport into real files). The Rubi app's `.apkg` packages are imported there by Anki
 itself, and a card's screenshot is checked as Anki shows it (the `<img>` of its rendered answer, the file in
 its media):
 the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-anki.txt`, in a
@@ -60,8 +60,8 @@ followed, no path it could not spell whole).
 
 Both builds run (docs/release-variants.md): the `host` and `vita` jobs are a matrix of the debug
 build (`VJO_DEBUG=ON`, the test builds') and the normal one (`OFF`), the ARM lane included
-(`VJO_DEBUG=0` for `tools/arm_host_tests.sh`). The debug build's zip is the `VitaJPOverlay`
-artifact as before; the normal build's is `VitaJPOverlay-normal`. The `package` job makes the
+(`VJO_DEBUG=0` for `tools/arm_host_tests.sh`). The debug build's zip is the `Rubi`
+artifact (`VitaJPOverlay` before the rename); the normal build's is `Rubi-normal`. The `package` job makes the
 release's two zips of them as the final release does (`tools/package_variants.py`, with the models
 and LMs `tools/prepare_ocr.py` downloads from vita-vn-ocr's public releases and checks against their
 pins) and runs `tools/e2e_package.py` on each. `tools/preflight.sh` checks
@@ -71,7 +71,7 @@ either (`VJO_DEBUG=0` for the normal one), and the Vita3K smokes build each in i
 
 The `vita` job builds in the `vitasdk/vitasdk:2026.08` container. The plugins link only libgcc
 and the SDK's import stubs (`-nostdlib`), and their segments come out the same from another
-VitaSDK. The Overlay app's `eboot.bin` links the SDK's libraries, which differ, so it does not:
+VitaSDK. The Rubi app's `eboot.bin` links the SDK's libraries, which differ, so it does not:
 for the same commit, v0.8.0-test.2's audit measured `6ee23974…` (segment 0 of 477,804 B) from the
 fleet's VitaSDK, also GCC 15.2.0, against CI's `b60205c6…` (473,004 B). `tools/ci_container_build.sh`
 builds a commit the way the job does, so its eboot can be compared with a release's:
@@ -82,7 +82,7 @@ bash tools/ci_container_build.sh --vocr-source /path/to/vita-vn-ocr --compare Vi
 ```
 
 `--variant normal` builds the normal build (`VJO_DEBUG=OFF`), to compare with the release's main
-zip or CI's `VitaJPOverlay-normal` artifact; the default is the debug build.
+zip or CI's `Rubi-normal` artifact; the default is the debug build.
 
 - **The image, by digest.** `vitasdk/vitasdk@sha256:fd82d88ff456d118eef16533ebf9a3a6ae0e292684fb8a3a35f15f0707b4692d`,
   the tag's multi-platform index as CI pulled it for v0.8.0-test.2 (Release run 38689391878, job
@@ -91,7 +91,7 @@ zip or CI's `VitaJPOverlay-normal` artifact; the default is the debug build.
   (GCC 15.2.0). The workflow names the tag: if the tag moves, that step's digest changes, and
   `VJO_CI_IMAGE` runs the script with the new one.
 - **The job's steps.** The commit's tree (`git archive`, what `actions/checkout` gives; uncommitted
-  changes are not built) is unpacked at CI's path, `/__w/vita-jp-overlay/vita-jp-overlay`. For a
+  changes are not built) is unpacked at CI's path, `/__w/Rubi_for_vita/Rubi_for_vita`. For a
   pull request CI builds its merge with the base, not its head: to compare with a pull request's
   artifact, `git fetch origin pull/N/merge` and pass `--rev FETCH_HEAD` (the head alone gives the
   same files only while the pull request is on its base's tip). Then the
@@ -100,14 +100,15 @@ zip or CI's `VitaJPOverlay-normal` artifact; the default is the debug build.
   psp2cxml-tool) and `cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release`. With
   `--vocr-source` (a vita-vn-ocr clone holding the commit `cmake/VocrOCR.cmake` pins) its runtime
   goes to `.refs/vita-vn-ocr` and the build is the job's `cmake --build build/vita`; the `release`
-  target, which needs the private dictionary, is not run. Without it only the Overlay app's VPK is
+  target, which needs the private dictionary, is not run. Without it only the Rubi app's VPK is
   built, with `VJO_WITH_VOCR=OFF`, which the app does not use.
 - **Nothing of the host goes in.** The source goes in on standard input and the built files come out
   on standard output; nothing is mounted. The container needs the network, as CI's does: apt and
   GitHub (clones, release downloads, codeload.github.com). It runs with an init process and a name,
   and is removed whenever the script ends, so a `timeout` or Ctrl-C leaves no build running.
 - **The comparison.** `--compare` takes an `eboot.bin`, a VPK, or a zip holding
-  `JPOverlaySettings.vpk` (a release, or CI's `VitaJPOverlay` artifact). The VPK's files are compared,
+  `Rubi.vpk` (a release, or CI's `Rubi` artifact; `JPOverlaySettings.vpk` in a package from before the
+  rename). The VPK's files are compared,
   not its zip bytes: `vita-pack-vpk` records each file's time, so two builds never give the same
   VPK file. A package's plugins and RCO are compared as well when they were built. The script prints
   the built files' sha256 and exits 0 when they are identical, 1 on any difference, 2 before building
@@ -115,7 +116,7 @@ zip or CI's `VitaJPOverlay-normal` artifact; the default is the debug build.
   podman) and 3 when the build itself fails, its log in `--out`.
 
 Measured on the fleet box with docker 25.0 (podman is supported by the script but was not run),
-the image already pulled: building main `4ac02ac` (v0.8.0-test.2's commit), the Overlay app alone
+the image already pulled: building main `4ac02ac` (v0.8.0-test.2's commit), the Rubi app alone
 took 66 s. Its `eboot.bin` is `b60205c61ed20c62c276ebb357aaac7c03134202fb17e681016011d13e9cc725`
 (371,393 B), byte-identical to the one in `VitaJPOverlay-0.8.0-test.2.zip`'s VPK, and so are the
 VPK's other five files. The whole build (with vita-vn-ocr `a540027`, 79 s) also gives the release's
@@ -146,9 +147,9 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | linebreak | 6 | where the overlay's own wrapping may break a line (`core/linebreak.c`): its UTF-16 and UTF-8 walks agree on the Vita's word size |
 | stick_cursor | 26 | the overlay's left stick (`core/stick_cursor.h`, #138): its 32-bit microsecond differences across the clock's wrap and its credit by the clock at 20-60 Hz, the cap, the deferred lookup, and the step along the text (the arrows' Left/Right without the wrap) with 32-bit offsets |
 | cursor_nav | 13 | the cursor over several lines (the owner, 2026-10-16): the d-pad's Left/Right across rows to the text's ends, and the stick's four directions against the d-pad's from every character of nine layouts, with 32-bit offsets and float cells |
-| settings_layout | 14 | the Overlay app's text layouts (rows that end between phrases since 2026-10-16), icon PNG check and title letters (`settings/text_layout.c`, `settings/icons.c`, `settings/letter.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it, each check against an unmapped page |
+| settings_layout | 14 | the Rubi app's text layouts (rows that end between phrases since 2026-10-16), icon PNG check and title letters (`settings/text_layout.c`, `settings/icons.c`, `settings/letter.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it, each check against an unmapped page |
 | shell_log | 15 (14 normal) | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
-| apkg | 23 | the Overlay app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure, the sweep of screenshots no card names (#161) with its 64-bit file-time arithmetic on a 32-bit CPU; the four packages it writes (`--write`) are byte-identical to the host build's |
+| apkg | 23 | the Rubi app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure, the sweep of screenshots no card names (#161) with its 64-bit file-time arithmetic on a 32-bit CPU; the four packages it writes (`--write`) are byte-identical to the host build's |
 | psp | 10 | Adrenaline bubbles (`core/pspbubble.c`), PSP images (`core/psptarget.c`: EBOOT.PBP, ISO 9660, CSO and ZSO with LZ4; deflate only where zlib is, so not here) and the title IDs a bubble's row may carry (`core/taicfg.c` `vjo_tai_title_ok`) on synthetic files: 32-bit offsets into images, ARM's unsigned `char`, the damaged-image fuzz against reads outside the file |
 | taicfg | 6 | the one-VPK install's `config.txt` editor (`core/taicfg.c`, #158) on its fixtures and a seeded corpus, each result checked with taiHEN's own parser, on the Vita's word size |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
@@ -257,7 +258,7 @@ and the app and the emulator exit 0: it catches crashes in that code, and is not
 anything on a console. vita-vn-ocr uses qemu-arm, not Vita3K,
 for the recognizer's ARM parity and cycle estimates, for the same reason.
 
-The Overlay app ships as a system application (SELF attribute 0x0E, 50 MiB, since #109). The
+The Rubi app ships as a system application (SELF attribute 0x0E, 50 MiB, since #109). The
 Vita build checks the eboot it packages for that (`tools/check_settings_self.py`: the SELF's
 control info and process parameters, the ELF's heap and thread calls; `tools/tests/test_settings_self.py`
 on synthetic files), which is a check of the file, not of what a console does with it. The
@@ -282,7 +283,7 @@ libvita2d's stencil), the other pages, Cancel. Toggles and the exit use the ente
 reads from the console's setting (#106; Vita3K's registry has ○ enter, and the script's old
 × exited the app at its first toggle). It fails on a crash, a hang, an icon texture freed after a
 draw with no GPU wait in between, or one left alive. Given `RELEASE_VPK`, the release
-`JPOverlaySettings.vpk` must also keep running for 30 s over the same games. Then (unless
+`Rubi.vpk` must also keep running for 30 s over the same games. Then (unless
 `SYSAPP=0`) the same sources are built a second time with `VJO_SETTINGS_SMOKE_SYSAPP`, where the
 smoke answers `sceAppMgrGetBudgetInfo` as a system application, so libvita2d takes its
 system-application start under Vita3K, and stands in for the two things that start waits on with

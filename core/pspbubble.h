@@ -1,7 +1,7 @@
 /* Adrenaline's PSP launches: the files of an AdrBubbleBooter bubble (made by
  * Adrenaline Bubble Manager), PSP disc IDs, and the small description of a
- * bubble's game that the Overlay app writes for the Shell. Pure functions over
- * bounded buffers; the Shell, the Overlay app and the host tests share them.
+ * bubble's game that the Rubi app writes for the Shell. Pure functions over
+ * bounded buffers; the Shell, the Rubi app and the host tests share them.
  *
  * A bubble is the app ux0:app/<ID>. AdrBubbleBooter's kernel and SceShell
  * plugins treat an app as a PSP-emulator app when its ID starts with PSPEMU, its
@@ -34,7 +34,7 @@ int vjo_abb_boot_bin(const void *data, size_t len, char *out, size_t cap);
  * 192-211). 0, or -1 with no usable PATH line. */
 int vjo_abb_boot_inf(const char *text, size_t len, char *out, size_t cap);
 
-/* ux0:data/VitaJPOverlay/psp/<bubble ID>.txt, written by the Overlay app for
+/* ux0:data/VitaJPOverlay/psp/<bubble ID>.txt, written by the Rubi app for
  * the Shell: line 1 the game's disc ID ("" when unknown), line 2 its title,
  * line 3 the target's path (for people; the Shell does not read it). */
 #define VJO_PSP_INFO_DIR "ux0:data/VitaJPOverlay/psp"

@@ -1,14 +1,15 @@
 
 
-# Vita JP Overlay — local Japanese OCR
+# Rubi — local Japanese OCR
 
-This [bee-san fork](https://github.com/bee-san/vita-jp-overlay) reads visual-novel
+**Rubi** (Rubi for Vita) is the new name of Vita JP Overlay ([what changed](docs/rename-rubi.md)).
+This [bee-san fork](https://github.com/bee-san/Rubi_for_vita) reads visual-novel
 text and shows Japanese dictionary entries over your game. **The v0.7.12 release defaults to
 on-console vita-vn-ocr, automatic OCR, and bundled plain-English JMdict.**
 Recognition and dictionary lookup work without Wi-Fi or a running computer.
-The release includes **Overlay**, a standalone per-game settings app. Optional
+The release includes **Rubi**, a standalone per-game settings app. Optional
 [Anki card mining](docs/anki.md) is fully offline: Enter saves the shown word as
-a card in a queue on the memory card, and the Overlay app's Anki page, where it
+a card in a queue on the memory card, and the Rubi app's Anki page, where it
 is also switched on, exports the queue as [Lapis](https://github.com/donkuri/lapis)
 notes into an `.apkg` file that you copy to Anki yourself (FTP, VitaShell's USB
 mode, or an SD2Vita's card). Nothing is sent from the Vita; there is no
@@ -16,7 +17,7 @@ AnkiConnect or AnkiWeb sync.
 
 Text is recognized on the Vita, offline, by the local engine, named after the
 generation of the model it runs (**VOCR5** in this package), automatically or
-when the overlay opens. In the **Overlay** app (press **Select** for the
+when the overlay opens. In the **Rubi** app (press **Select** for the
 OCR & lookup page), **Model size** chooses its recognizer: **Small**
 (fastest), **Normal** (the default, balanced) or **Large** (most accurate), each
 shown with its estimated time per textbox and the game memory it takes
@@ -28,7 +29,7 @@ sizes' models; a choice applies when you next open the overlay.
 Google Lens, the [upstream's](https://github.com/Dartv/vita-jp-overlay) online
 engine, has been removed: recognition never uses the network. A saved
 `ocr_backend` line is ignored (`lens` with a config warning in `log.txt` and the
-overlay), and the Overlay app's next save and the installer delete it. The last
+overlay), and the Rubi app's next save and the installer delete it. The last
 build with Google Lens is the tag `archive/online-last` (branch `archive/online`).
 
 The engine's name comes from the pinned metadata of the model it runs
@@ -46,7 +47,7 @@ has been removed. A saved `ocr_backend = vocr2` now loads as the local engine
 with a config warning, and the app's next save and the installer delete the
 line; so does `ncnn`, which only the host tools run. The no-longer-used
 `ux0:data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr` can be deleted. The
-[`0.7.12` release](https://github.com/bee-san/vita-jp-overlay/releases/tag/v0.7.12)
+[`0.7.12` release](https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.7.12)
 contains the three plugins, Settings, FL10/H15/VOCR2 and JMdict; it also
 carried the optional Meiki engine. Earlier releases remain available.
 
@@ -70,7 +71,7 @@ The header also explicitly refreshes its highlight, with bounded layout retries.
 Host tests cover these paths; the physical Vita result remains unverified.
 This release does not include
 the experimental local-dictionary memory reservation from
-[issue #42](https://github.com/bee-san/vita-jp-overlay/issues/42).
+[issue #42](https://github.com/bee-san/Rubi_for_vita/issues/42).
 
 All six published v0.7.9 assets match the audited bundle. That version's installed
 Shell/Settings bytes and native Settings registration/launch are verified, and
@@ -87,20 +88,20 @@ HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the mem
 you copy the VPK to it: 61 MB for the VPK, 170 MB for VitaShell to unpack it and 12 MB for the models
 Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 61 MB back.
 
-1. Download `VitaJPOverlay-<version>.vpk` from the
-   [latest release](https://github.com/bee-san/vita-jp-overlay/releases/latest).
+1. Download `Rubi-<version>.vpk` from the
+   [latest release](https://github.com/bee-san/Rubi_for_vita/releases/latest).
 2. Copy it to the Vita with VitaShell's USB or FTP connection (Select in VitaShell starts the one
    chosen under **SELECT button** in its settings, Start; a Vita's default is USB) and install it in
    VitaShell: press Enter on the file, then Yes to "Do you want to install this package?" and to its
    notice that the package requests extended permissions.
-3. Open **Overlay** from LiveArea. It opens on its **Install** page, which lists exactly what it will
+3. Open **Rubi** from LiveArea. It opens on its **Install** page, which lists exactly what it will
    do; choose **Install**, then restart the Vita.
 
 Nothing is downloaded on the Vita: the VPK holds the plugins, the models and the dictionary
 ([how it works](docs/one-vpk-install.md)). Then start a game and press L + R. Every game is ON by
 default and needs no step of its own: the kernel plugin loads the OCR worker into each game that is
 ON as it starts ([worker loading](docs/worker-loading.md)), never into SceShell, a system app,
-VitaShell or the Overlay app, and never while L is held at the game's start. Close the Overlay app
+VitaShell or the Rubi app, and never while L is held at the game's start. Close the Rubi app
 before installing a VPK over it. These steps are not yet verified on a console: the next test build's
 run checks them.
 
@@ -120,19 +121,22 @@ configuration). Over the same build, Check and repair leaves your `config.ini` a
 another build's and its Install page offers **Update**. **Uninstall** is on the same page: it removes
 the overlay's lines (with a dated backup first) and keeps the files and your settings and cards.
 
-The release also has `VitaJPOverlay-<version>-debug.vpk`, the test builds' own build with every log
+The release also has `Rubi-<version>-debug.vpk`, the test builds' own build with every log
 line, the self-test and the timings. Install it only when asked for a full log; either installs over
 the other and the settings carry over ([release-variants](docs/release-variants.md)).
 
-Open **Overlay** from LiveArea to enable or disable individual games. Older builds, including
-0.7.12, call it **JP Overlay Settings**; the title ID (`VJOSET001`) and VPK file name are unchanged,
-so the new VPK installs over it. The settings app itself is always excluded from the overlay. Each
+Open **Rubi** from LiveArea to enable or disable individual games. Older builds call it **Overlay**
+(the 0.8.0 test builds) or **JP Overlay Settings** (0.7.12 and older); the title ID (`VJOSET001`) is
+unchanged, so the new VPK installs over it, and the app keeps its settings, games and Anki cards. An
+earlier PC install left the app's VPK under its old name, `ux0:data/JPOverlaySettings.vpk`, which the
+older app's red banner names: `install-vita.sh` puts the new app there too, so either file installs the
+Rubi app. Once the Rubi app is installed, that file is no longer used and can be deleted. The settings app itself is always excluded from the overlay. Each
 build's app carries a version stamp (`vjo_app.txt`) and the plugins a record of the app they came
 with (`ux0:data/VitaJPOverlay/vjo_app.txt`); when the two differ, the Shell plugin says so once, in
-red under the recognized text of the first overlay opened in a game (`Overlay app and plugins are
-different builds: open the Overlay app.`), and the app's Install page says which way it is.
+red under the recognized text of the first overlay opened in a game (`Rubi app and plugins are
+different builds: open the Rubi app.`), and the app's Install page says which way it is.
 
-The Overlay app is a system application, like the Music or Video app: it
+The Rubi app is a system application, like the Music or Video app: it
 opens beside a running game, which stays suspended behind it, so there is no
 need to close the game first. It should also open from its LiveArea with no game
 running. In v0.8.0-test.3, the first build whose app is a system application, it
@@ -142,7 +146,7 @@ seen on a console: its start waited for SceShell to hand it the screen without
 letting SceShell's threads at or below its priority run, and used the system's
 shared GPU parameter buffer with no fallback. It now pauses for SceShell, falls
 back to a buffer of its own, closes itself after 10 s if the system never hands it
-the screen, and says how its start went in `log.txt` (`overlay app: graphics: ...`;
+the screen, and says how its start went in `log.txt` (`Rubi app: graphics: ...`;
 [no game running](docs/vita-memory.md#starting-with-no-game-running), with what each
 line means). Games turned ON or OFF there take effect when the
 game next starts or resumes, except that a game turned ON while it runs gets
@@ -159,7 +163,7 @@ itself, and the bubble's own ID for a game started from its own LiveArea bubble
 ([Adrenaline Bubble Manager](https://github.com/ONElua/AdrenalineBubbleManager)
 bubbles, booted by [AdrBubbleBooter](https://github.com/shoui520/AdrBubbleBooter-oss)), such as
 `PSPEMU005` or `ULJS00378`. The kernel plugin loads the worker into these processes
-like any game: by the ID's own row in the Overlay app, else the shared PSP row,
+like any game: by the ID's own row in the Rubi app, else the shared PSP row,
 else the default. `NPXS10028`, the emulator's own ID, is treated the same should
 the kernel see it. With `log_file = on` (the default), `log.txt` has a `psp:`
 line for each PSP game as it starts, naming its IDs, its disc ID and the file it
@@ -167,7 +171,7 @@ boots.
 
 ### Advanced: install from a computer
 
-Each release also has `VitaJPOverlay-<version>.zip` (and `-debug.zip`) for the computer-side
+Each release also has `Rubi-<version>.zip` (and `-debug.zip`) for the computer-side
 installer, the developers' path. It needs Python 3.9+, bash and curl. Close games, open VitaShell,
 set **SELECT button** to **FTP** in its settings (Start; once: a Vita's default is USB, #136), press
 Select to start FTP, and run from the extracted folder:
@@ -179,17 +183,17 @@ bash install-vita.sh VITA_IP:1337
 It checks the package manifest, backs up both taiHEN configurations in `build/device/backup/` of the
 extracted folder, and on the Vita each one it changes (as `config.txt.vjo-bak` and a dated
 `config.txt.vjo-<date-time>.bak`), and your overlay settings, uploads and checksum-reads back each file, and edits the
-configurations with the same rules as the Overlay app (`tools/patch_tai_config.py`, the app's
+configurations with the same rules as the Rubi app (`tools/patch_tai_config.py`, the app's
 `core/taicfg.c` in Python; both are tested on one set of fixtures). `--title` is no longer needed and
-is ignored with a note. It ends with a box that says whether the Vita's Overlay app is this
-package's: install `ux0:data/JPOverlaySettings.vpk` in VitaShell afterwards (this zip's app carries no
+is ignored with a note. It ends with a box that says whether the Vita's Rubi app is this
+package's: install `ux0:data/Rubi.vpk` in VitaShell afterwards (this zip's app carries no
 overlay files of its own, so its Install page names this installer);
 `bash install-vita.sh --check-app VITA_IP` asks again, read-only. The 0.7.12 archive's own
 `install-vita.sh` predates all of this and registers the worker under `*ALL`; use the installer from
 `main` or a later release.
 
 For a manual installation, copy `ur0/` and `ux0/` of the zip to their matching Vita partitions and
-install `JPOverlaySettings.vpk`. Back up your old overlay `config.ini` before copying the included
+install `Rubi.vpk`. Back up your old overlay `config.ini` before copying the included
 one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL` and `ur0:tai/VitaJPOverlay_Shell.suprx`
 under `*main` in the active taiHEN config (`ux0:tai/config.txt` if it exists, else
 `ur0:tai/config.txt`). `ur0:tai/VitaJPOverlay_OCR.suprx` needs no line: the kernel plugin loads it
@@ -201,7 +205,7 @@ lines, then reboot. Keep unrelated plugins and configuration intact.
 
 **Enter** and **Cancel** are the Vita's own: × enters and ○ cancels on most
 consoles, the other way round on Japanese ones, and HENkaku can swap them on
-any console. The overlay, its hints and the Overlay app follow that setting
+any console. The overlay, its hints and the Rubi app follow that setting
 (`/CONFIG/SYSTEM/button_assign`): the overlay reads it each time it opens, the
 app when it starts.
 
@@ -236,13 +240,13 @@ open, its text stays usable for lookups and Anki whatever the screen does, with 
 "dialogue changed" message: in Auto mode a newly settled screen is recognized in the
 background and replaces the text quietly only when it reads a different one
 ([touch lookup](docs/touch-lookup.md)). A job that read a screen changing under it
-shows nothing and is retried quietly. The Overlay app's **Read text** chooses this, **Automatically
+shows nothing and is retried quietly. The Rubi app's **Read text** chooses this, **Automatically
 (when it changes)**, the default, or **Only when I press L + R** (`ocr_mode = on_press`), which recognizes
 only when the overlay opens: nothing runs before, and the press then waits for the reading
 ([what each costs, and test.3's times](docs/auto-vs-press.md)). With card mining on, Enter saves the shown word,
 its sentence and every dictionary's entry for it to the card queue on the
 memory card, with a JPEG of the game's screen (about 60 KB, made in the game's
-own process: [screenshots](docs/anki.md#the-screenshot)); the Overlay app exports
+own process: [screenshots](docs/anki.md#the-screenshot)); the Rubi app exports
 the queue as an `.apkg`, the screenshot in each note's Picture.
 
 ### Drawing the region
@@ -262,7 +266,7 @@ not tested yet.
 
 ## Per-game settings
 
-The **Overlay** app shows three large game cards at a time, with wrapped
+The **Rubi** app shows three large game cards at a time, with wrapped
 titles, visible IDs and clear ON/OFF badges. Games are listed by letter (#,
 A–Z, kana by row, then other characters), alphabetically within it, capital
 and small letters together. Tap the **Games**, **OCR & lookup**
@@ -346,7 +350,7 @@ word up at once: 35-112 ms a step in the test.3 console run (median 56 ms, its
 once that word's lookup is shown. The stick moves in the arrows' four
 directions, by the arrows' own rules: held, it steps through the text in
 reading order across rows (or a row up or down), one step at once, the next
-after a sixth of a second as in the Overlay app's lists, then each sooner, up
+after a sixth of a second as in the Rubi app's lists, then each sooner, up
 to 20 steps a second (the cap, chosen so the cursor does not overshoot: an
 estimate, untested on a console); it stops at the text's first and
 last character, a one-row text's too, instead of going round (its left still
@@ -374,7 +378,7 @@ line the game broke short keeps its own line. In the real line sets about one
 line in six that has a next line in its box ends inside a word
 ([words split over two lines](docs/touch-lookup.md#words-split-over-two-lines)).
 Where the overlay wraps text itself (the recognized text, the popup, the
-subtitle strip, the Overlay app's rows) it breaks a line between phrases, where
+subtitle strip, the Rubi app's rows) it breaks a line between phrases, where
 kana gives way to kanji or katakana, at spaces and at punctuation, never inside a
 run of kanji, katakana or kana, and keeps Japanese line-breaking rules: no line
 starts with 、。」ー っ, none ends with 「. It is no dictionary walk, so a compound
@@ -425,7 +429,7 @@ a line without `=` by its number, and never quotes a value, which can be a key o
 an address. A removed engine
 (`ocr_backend = lens`, `vocr2`, `meiki`, `ncnn`) runs the local engine with a
 config warning, and the app's next save and the installer delete the line (any
-`ocr_backend` line: VOCR is the only engine). The installer, the package's own copy and the Overlay
+`ocr_backend` line: VOCR is the only engine). The installer, the package's own copy and the Rubi
 app write the file; the Shell plugin never does, and with no file it runs on
 these defaults:
 
@@ -442,7 +446,7 @@ japanese_only_selection = on
 log_file = on
 ```
 
-`vocr_tier` is the local engine's model size, the Overlay app's Model size:
+`vocr_tier` is the local engine's model size, the Rubi app's Model size:
 `small` runs VOCR5-S (819,792 B of int8 weights: FL10's topology with 4,987
 classes), `normal` (the default) VOCR5-N (1,185,632 B: H15's topology with 5,631
 classes) and `large` VOCR5-L (2,473,696 B: a late-wide shape, 5,631 classes), the
@@ -521,7 +525,7 @@ decode, the cascade's re-read and its place in the text still follow line order 
 thread, so the text is the serial job's (except where the cascade's time ceiling decides: a job that
 recognizes its lines sooner may read more doubtful ones again). A line whose pixels are unchanged
 since an earlier job gets that job's text without being recognized again. `ocr_boost_clock = on`
-(the default, the Overlay app's **Speed boost while reading**; `off` keeps the game's clock) raises the ARM clock to 444 MHz while a job recognizes and
+(the default, the Rubi app's **Speed boost while reading**; `off` keeps the game's clock) raises the ARM clock to 444 MHz while a job recognizes and
 puts it back after; a clock already at 444 MHz or more, such as PSVshell's 500, is left as it is, and
 the bus and GPU clocks are never changed. The
 log shows each job's helpers, its lines' share of a core, the clock, and the game's frame pacing
@@ -556,7 +560,7 @@ The language used by the Japanese people since ancient times …
 
 No entry names a source: there are no `[Daijirin4 Plain]`-style labels. The
 dictionary names itself in its file, and that name, `Bee's Ultimate Dictionary`,
-is what Anki cards and `log.txt` record and what the Overlay app's
+is what Anki cards and `log.txt` record and what the Rubi app's
 **Dictionaries shown** card shows. A function word's summary replaces its
 definition (は is "Topic particle, pronounced "wa" …"); a content word with a
 grammatical use (上, こと, 無くなる) keeps its definition, with the summary on the
@@ -589,7 +593,7 @@ travels inside each entry on disk: no table of ranks is held in memory.
 
 You can add your own Yomitan dictionaries with
 [the converter and installation guide](docs/local-dictionaries.md).
-Up to eight dictionary files can be enabled in priority order. The Overlay
+Up to eight dictionary files can be enabled in priority order. The Rubi
 app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages
 through files for the selected word. The combined bundle is one file, so
 it displays the preferred source; add separate dictionaries to page through
@@ -603,7 +607,7 @@ The online dictionaries jpdb.io and jiten.moe, which needed an API key, have
 been removed (the local Jitendex and every other Yomitan dictionary still
 work, converted as above). A saved `dictionary = jpdb` or `jiten` now loads
 as `local` with a config warning in `log.txt` and the overlay; the installer
-(`tools/migrate_config.py`) and the Overlay app's next save write `local` and
+(`tools/migrate_config.py`) and the Rubi app's next save write `local` and
 delete the `jpdb_api_key`, `jiten_api_key` and older `api_key` lines (the
 app's save leaves none in `config.ini.bak` either; the installer names each
 removed key, never its value). The subtitle strip's furigana, which only
@@ -613,7 +617,7 @@ The Hachidori relay, which looked words up in the Hachidori app on a computer
 on your local network (`dictionary = hachidori`, `hachidori_host`), has been
 removed from the overlay too; the Hachidori app itself is unaffected. A saved
 `dictionary = hachidori` now loads as `local` with one config warning, and the
-Overlay app's next save and the installer write `local`; `hachidori_host` is
+Rubi app's next save and the installer write `local`; `hachidori_host` is
 ignored, and the installer drops it.
 
 ### Anki
@@ -632,10 +636,11 @@ with the word's offsets (as recognized; the exported Sentence joins the lines
 the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
-The Overlay app's **Anki** page has card mining ON/OFF, **Screenshots**
+The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
 ON/OFF, **Export cards (N queued)** and **Export all cards**. An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
-templates bundled unchanged), in the deck **Vita JP Overlay**, into
+templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
+kept so that Anki adds the cards to the same deck as before, not to a second one), into
 `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`; the page shows the
 file's name. Copy it to a computer, by VitaShell's FTP or USB connection
 (Select in VitaShell starts the one set in its settings) or, with an SD2Vita as
@@ -654,7 +659,7 @@ and memory.
 The game OCR worker runs the local OCR engine in the enabled game's process, allocating its
 region-sized workspace from that game's `USER_RW`. The kernel plugin loads it into each game
 that is ON in `games.ini` as the game starts, at the point where taiHEN loads a game's own
-plugins, never into SceShell, a system app, VitaShell or the Overlay app, and a game keeps one
+plugins, never into SceShell, a system app, VitaShell or the Rubi app, and a game keeps one
 copy ([worker loading](docs/worker-loading.md)). It still checks the title at startup and
 unloads itself at once (`SCE_KERNEL_START_NO_RESIDENT`) in SceShell, VitaShell, the settings
 app and other system titles, should a configuration line load it there.
@@ -663,7 +668,7 @@ game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
 holds the worker's 94,208 B of module pages and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
-in the Overlay app, or starts with L held.
+in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
 started from its own bubble runs in a PSP emulator process of its own, under the
 bubble's ID (inferred from AdrBubbleBooter's source). The worker is also loaded
@@ -759,7 +764,7 @@ result, and no kernel capture) and a 16 KiB thread stack; both
 are released when the job is done. Counting the queue when the
 overlay opens takes only the thread's stack. Anki failures, storage errors
 and refused memory never touch the recognized text. Nothing in SceShell or
-the Overlay app uses the network for Anki.
+the Rubi app uses the network for Anki.
 The kernel startup instruction and all three plugins' syscall imports are audited.
 
 These are bounded allocations and host checks, not a measured physical Vita
@@ -816,14 +821,14 @@ record) or delete `ur0:data/VitaJPOverlay/boot.txt`. See
 hold L while turning it on (with h-encore or h-encore2: open its menu, holding R as
 h-encore starts, and choose Exit while holding L), so that taiHEN loads no plugin; then
 in VitaShell put `#` before the two `VitaJPOverlay` lines of `ur0:tai/config.txt` (and
-`ux0:tai/config.txt`), or open the Overlay app and choose **Uninstall** on its Install
+`ux0:tai/config.txt`), or open the Rubi app and choose **Uninstall** on its Install
 page, or from a computer run `bash tools/install_ftp.sh --uninstall VITA_IP`. Restart
 normally. Uninstalling preserves data. A `config.txt.vjo-<date-time>.bak` is the
 configuration from before that install, not before the overlay: an update replaces the
-plugin files its lines name. If one game does not start, turn it OFF in the Overlay app,
+plugin files its lines name. If one game does not start, turn it OFF in the Rubi app,
 or hold L while starting it ([recovery](docs/one-vpk-install.md#recovery-r1)).
 
-The Overlay app is not a plugin and never starts by itself, so it cannot stop
+The Rubi app is not a plugin and never starts by itself, so it cannot stop
 the Vita from starting, and its Install page writes nothing until you choose an
 action. If it misbehaves, close it from its LiveArea page. To go back to an older
 build, install that release's VPK and choose Install on its Install page (it names the
@@ -834,7 +839,7 @@ overlay opened.
 
 ## Build and validation
 
-The Vita build stamps the Overlay app: `tools/app_stamp.py` writes `vjo_app.txt`
+The Vita build stamps the Rubi app: `tools/app_stamp.py` writes `vjo_app.txt`
 (`vjoapp1 api=API build=` the first 16 hex digits of its eboot.bin's SHA-256)
 into the VPK and, the same bytes, into the release's `ux0/data/VitaJPOverlay/`
 as the record of the app these plugins come with ([core/app_stamp.h](core/app_stamp.h)).
@@ -843,14 +848,14 @@ stamp and the eboot's SHA-256 into the manifest (`app`). `--check-app` compares 
 Vita's app with the package's stamp file and its VPK's `eboot.bin`, `--collect`'s
 analysis with the record and the manifest's `app`.
 
-The Vita build checks the artwork inside `JPOverlaySettings.vpk` before it can
+The Vita build checks the artwork inside `Rubi.vpk` before it can
 ship. Bubble and LiveArea PNGs must use opaque, non-interlaced, 8-bit indexed
 color with no text chunks (`tEXt`, `iTXt`, `zTXt`), the bubble icon may be at most
 32 KiB and the start-up image at most 600 KiB; RGBA PNGs can fail installation
 with `0x8010113D`. It also checks that the app's `eboot.bin` is the system
 application it is built as (`tools/check_settings_self.py`: the SELF's attribute
 and 50 MiB budget, the main thread's CPU3 and priority, the heap, every thread
-created on CPU3). The Overlay mascot was drawn by a pinned, Apache-2.0
+created on CPU3). The Rubi app's mascot was drawn by a pinned, Apache-2.0
 text-to-image model; [settings/assets/ICON-SOURCE.md](settings/assets/ICON-SOURCE.md)
 records the model, checksums, prompt and seed. To recreate the committed artwork
 from that image, install `tools/requirements-assets.txt` and run
@@ -873,7 +878,7 @@ cmake --build build/vita --target release
 
 The Vita build is Release, as in CI; `vita/` uses Release when no build type (or
 an empty one) is given. A `Debug` build compiles libpng without optimisation, which fails the
-Overlay app's [PNG ABI check](docs/settings-png-runtime.md), so the app does not
+Rubi app's [PNG ABI check](docs/settings-png-runtime.md), so the app does not
 build.
 
 `-DVJO_DEBUG=OFF` builds the normal build, the release's main download, without
@@ -881,7 +886,7 @@ the debug build's log lines, self-test, timings and traces (12 KiB of SceShell
 pages fewer on main `c08db18`); `ON`, the default, is the debug build, which the test builds are. The
 `release_variants` target builds the other one too and, with
 `-DVJO_RELEASE_MODELS=/path/to/models`, packages both as
-`VitaJPOverlay-<version>.zip` and `-debug.zip` with their `SHA256SUMS`; CI builds
+`Rubi-<version>.zip` and `-debug.zip` with their `SHA256SUMS`; CI builds
 and tests both on every pull request ([release-variants](docs/release-variants.md)).
 
 Check out the exact `plaintext-dicts` commit recorded in
@@ -895,7 +900,7 @@ GitHub CLI access can fetch the pinned archive. Both the archive and unpacked
 file must match their committed checksums.
 
 CI builds the Vita targets in the `vitasdk/vitasdk:2026.08` container, and the
-Overlay app's `eboot.bin` depends on the SDK's libraries: another VitaSDK gives
+Rubi app's `eboot.bin` depends on the SDK's libraries: another VitaSDK gives
 it other bytes. `bash tools/ci_container_build.sh --compare RELEASE.zip`
 rebuilds a commit in that container, pinned by the digest CI pulled, under
 docker or podman, and compares the result with a release
@@ -926,7 +931,7 @@ allocation/free cycles, bounded model reads and stale-job isolation. The Shell
 Anki miner is tested with its offline queue on real files: saves, restarts,
 Japanese text and escaping, failed and short writes, temp and damaged files,
 every record version, other dictionaries' entries, duplicates, refused memory,
-cancellation and 50 card lifetimes. The Overlay app's `.apkg` export runs on
+cancellation and 50 card lifetimes. The Rubi app's `.apkg` export runs on
 the same queue storage, with failures injected at every write, flush, rename,
 sync and read-back, and its packages are opened with Python's `zipfile` and
 `sqlite3` and imported by Anki itself (the pinned `anki` package); crash/restart

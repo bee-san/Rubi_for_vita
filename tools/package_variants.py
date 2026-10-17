@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """The release's packages from the two builds' base zips (docs/release-variants.md, docs/one-vpk-install.md).
 
-    package_variants.py --normal VitaJPOverlay-V.zip --debug VitaJPOverlay-V-debug.zip --models DIR \\
+    package_variants.py --normal Rubi-V.zip --debug Rubi-V-debug.zip --models DIR \\
         --version V -o OUT_DIR [--source-revision SHA] [--set KEY=VALUE ...]
 
-writes OUT_DIR/VitaJPOverlay-V.vpk (the normal build's one-VPK install, the main download),
-OUT_DIR/VitaJPOverlay-V-debug.vpk, OUT_DIR/VitaJPOverlay-V.zip and OUT_DIR/VitaJPOverlay-V-debug.zip
+writes OUT_DIR/Rubi-V.vpk (the normal build's one-VPK install, the main download),
+OUT_DIR/Rubi-V-debug.vpk, OUT_DIR/Rubi-V.zip and OUT_DIR/Rubi-V-debug.zip
 (install-vita.sh, the advanced path) and OUT_DIR/SHA256SUMS, the normal VPK first. Both are tools/package_release.py's
 packages of one tree with the same pinned models, frozen dictionary, config template and --set
 settings, so a config.ini from either works in the other. Before it writes anything it checks the
 bases: each is the build it is given as (tools/check_variant.py, from the modules themselves), the
-Overlay app of each names version V (for a test build, V-test.N, the V of its tree), and the two differ
-only in the build's own files (the plugins, the Overlay app's VPK and its stamp). After, it verifies both
+Rubi app of each names version V (for a test build, V-test.N, the V of its tree), and the two differ
+only in the build's own files (the plugins, the Rubi app's VPK and its stamp). After, it verifies both
 packages (package_release.py --verify on each, unpacked) and that they differ in exactly those files and
 the manifests' variant.
 """
@@ -30,14 +30,14 @@ import package_vpk
 
 # The files a build makes for itself: everything else of the two packages is the same bytes.
 BUILD_FILES = {"ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
-               "ur0/tai/VitaJPOverlay_OCR.suprx", "JPOverlaySettings.vpk",
+               "ur0/tai/VitaJPOverlay_OCR.suprx", "Rubi.vpk",
                "ux0/data/VitaJPOverlay/vjo_app.txt",  # the app's stamp: its eboot's hash (core/app_stamp.h)
                "payload-manifest.txt"}  # the one-VPK payload's: the build's plugins and app (tools/package_vpk.py)
 MANIFEST = "package-manifest.json"
 
 
 def release_of(app, version):
-    """Whether `version` is a release of the Overlay app's own version `app`: that version, or a test build of it,
+    """Whether `version` is a release of the Rubi app's own version `app`: that version, or a test build of it,
     `<app>-test.N` (a test package's binaries are the tree's VJO_VERSION build: docs/release-variants.md, and the
     payload manifest's `version 0.8.0-test.4` beside `app_version 0.8.0`, docs/one-vpk-install.md)."""
     test_build = re.escape(app or "") + r"-test\.[1-9][0-9]{0,3}"
@@ -45,11 +45,11 @@ def release_of(app, version):
 
 
 def zip_name(version, variant):
-    return f"VitaJPOverlay-{version}{'-debug' if variant == 'debug' else ''}.zip"
+    return f"Rubi-{version}{'-debug' if variant == 'debug' else ''}.zip"
 
 
 def vpk_name(version, variant):
-    return f"VitaJPOverlay-{version}{'-debug' if variant == 'debug' else ''}.vpk"
+    return f"Rubi-{version}{'-debug' if variant == 'debug' else ''}.vpk"
 
 
 def contents(path):
@@ -70,7 +70,7 @@ def module_problems(base, variant, sources):
         for part, name in names.items():
             (Path(tmp) / part).write_bytes(base.read(name))
             blobs[part] = variants.segments(Path(tmp) / part)
-        with zipfile.ZipFile(io.BytesIO(base.read("JPOverlaySettings.vpk"))) as vpk:
+        with zipfile.ZipFile(io.BytesIO(base.read("Rubi.vpk"))) as vpk:
             (Path(tmp) / "eboot.bin").write_bytes(vpk.read("eboot.bin"))
             blobs["app"] = variants.segments(Path(tmp) / "eboot.bin")
     return variants.check(variant, blobs, sources=sources)
@@ -93,9 +93,9 @@ def check_bases(normal, debug, version, sources=None):
             problems.append(f"{path.name}: the {got} build, given as the {want} one")
         problems += [f"{path.name}: {p}" for p in checked]
         if app is None:  # a base from before the two builds (package_release.base_variant)
-            problems.append(f"{path.name}: the Overlay app names no version (a base from before the two builds)")
+            problems.append(f"{path.name}: the Rubi app names no version (a base from before the two builds)")
         elif not release_of(app, version):
-            problems.append(f"{path.name}: the Overlay app is v{app}, the release v{version}: give v{app} or a "
+            problems.append(f"{path.name}: the Rubi app is v{app}, the release v{version}: give v{app} or a "
                             f"test build of it, v{app}-test.N (or set VJO_VERSION in vita/CMakeLists.txt and "
                             "build again)")
     if problems:
@@ -137,7 +137,7 @@ def check_packages(normal_zip, debug_zip):
     if (ma.get("variant"), mb.get("variant")) != ("normal", "debug"):
         problems.append(f"manifest variants {ma.get('variant')} / {mb.get('variant')}")
     for key in sorted(set(ma) | set(mb)):
-        if key in ("variant", "files", "app"):  # app: the build's own Overlay app (its stamp and eboot)
+        if key in ("variant", "files", "app"):  # app: the build's own Rubi app (its stamp and eboot)
             continue
         if ma.get(key) != mb.get(key):
             problems.append(f"manifest {key} differs between the packages")

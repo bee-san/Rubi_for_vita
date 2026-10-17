@@ -106,7 +106,7 @@ def enable(ftp, names):
     old = io.BytesIO()
     # Refuse to overwrite an unreadable config (including a missing config).
     # The overlay's installer creates it (install-vita.sh, tools/install_ftp.sh), and so does any
-    # save in the Overlay app; the Shell plugin never writes it.
+    # save in the Rubi app; the Shell plugin never writes it.
     ftp.retrbinary("RETR " + DATA_DIR + "/config.ini", old.write)
     raw = old.getvalue()
     text = raw.decode("utf-8-sig")
@@ -161,7 +161,7 @@ def main():
                 print("Set dictionary = local and local_dictionaries = " + ",".join(names))
     except (OSError, ValueError, *ftplib.all_errors) as exc:
         parser.exit(1, f"Install failed: {exc}\nIf config.ini is missing, run the overlay's installer (install-vita.sh) or "
-                        "change any setting in the Overlay app to create it, then retry.\n")
+                        "change any setting in the Rubi app to create it, then retry.\n")
     print("Close VitaShell and reopen the overlay to load the dictionaries.")
 
 

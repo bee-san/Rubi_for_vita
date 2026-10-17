@@ -123,12 +123,12 @@ VOCR_MODEL_ATTRIBUTION_PIN = {VOCR_MODEL_ATTRIBUTION: (VOCR5_BASE + VOCR_MODEL_A
 
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so
-# the pins carry it: core/vocr_models.c per file (the Overlay app names the local OCR engine
+# the pins carry it: core/vocr_models.c per file (the Rubi app names the local OCR engine
 # after it) and package-manifest.json (package_release.py). The VOCR2 trial (v0.2.3-vocr2.1)
 # was removed from the overlay after v0.8.0-test.1.
 VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5'}
 
-# The model sizes the Overlay app offers (config.ini vocr_tier), each a pinned recognizer above:
+# The model sizes the Rubi app offers (config.ini vocr_tier), each a pinned recognizer above:
 # one table for the C pins' tests, the packager and the self-test analyser.
 MODEL_TIERS = Path(__file__).resolve().parent / 'model_tiers.json'
 
@@ -169,7 +169,7 @@ def fetch(directory, name, assets=ASSETS):
         return len(data) == size and hashlib.sha256(data).hexdigest() == sha
     if path.exists() and valid(path.read_bytes()):
         return path
-    request = urllib.request.Request(url, headers={'User-Agent': 'VitaJPOverlay-model-setup'})
+    request = urllib.request.Request(url, headers={'User-Agent': 'Rubi-model-setup'})
     with urllib.request.urlopen(request, timeout=90) as response:
         data = response.read(size + 1)
     if not valid(data):

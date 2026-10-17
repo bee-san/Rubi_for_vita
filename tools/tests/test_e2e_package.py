@@ -27,7 +27,7 @@ OCR = "ux0/data/VitaJPOverlay/ocr/"
 def segments(part, build, version="0.8.0"):
     """A module's loaded bytes as this tree's Vita build checks them (check_variant.check with ROOT's sources): the
     debug build has the fixed markers and its sources' debug-only strings, the normal build its own marker and
-    none of them; the Overlay app's start line names its version and build."""
+    none of them; the Rubi app's start line names its version and build."""
     if build == "debug":
         strings = [*check_variant.DEBUG_MARKERS.get(part, ()), *check_variant.debug_only_strings(ROOT, part)]
     else:
@@ -57,7 +57,7 @@ def fake_package(path, variant="normal", build=None, worker=None, app_version="0
         z.writestr("ux0/data/VitaJPOverlay/vjo_app.txt", "vjoapp1 api=22 build=0123456789abcdef\n")
         for part, name in PLUGINS.items():
             z.writestr(name, fake_self(segments(part, (worker or build) if part == "worker" else build)))
-        z.writestr("JPOverlaySettings.vpk", vpk.getvalue())
+        z.writestr("Rubi.vpk", vpk.getvalue())
         for name, blob in (ocr or {}).items():
             z.writestr(OCR + name, blob)
     return path
@@ -87,7 +87,7 @@ def run(*args):
 class E2EPackageEdges(unittest.TestCase):
     def test_a_base_zip_or_a_file_that_is_not_a_zip_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp) / "VitaJPOverlay-0.8.0-debug.zip"  # a Vita build's own zip: no manifest, no models
+            base = Path(tmp) / "Rubi-0.8.0-debug.zip"  # a Vita build's own zip: no manifest, no models
             with zipfile.ZipFile(base, "w") as z:
                 z.writestr("ur0/tai/VitaJPOverlay_Kernel.skprx", b"SCE\0")
             junk = Path(tmp) / "junk.zip"
@@ -107,7 +107,7 @@ class E2EPackageEdges(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "out"
             out.mkdir()
-            package = out / "VitaJPOverlay-0.8.0.zip"
+            package = out / "Rubi-0.8.0.zip"
             with zipfile.ZipFile(package, "w") as z:  # a manifest but no package around it
                 z.writestr("package-manifest.json", "{}")
             (out / "SHA256SUMS").write_text("sums\n")
@@ -117,7 +117,7 @@ class E2EPackageEdges(unittest.TestCase):
                 self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
                 self.assertIn("is not a release package", r.stderr)
                 self.assertEqual(sorted(p.name for p in out.iterdir()),
-                                 [".e2e_package", "SHA256SUMS", "VitaJPOverlay-0.8.0.zip", "notes.txt", "pkg"])
+                                 [".e2e_package", "Rubi-0.8.0.zip", "SHA256SUMS", "notes.txt", "pkg"])
                 self.assertEqual((out / "notes.txt").read_text(), "the owner's notes\n")
                 self.assertTrue(zipfile.is_zipfile(package))
 
@@ -233,7 +233,7 @@ class E2EPackageEdges(unittest.TestCase):
             ("a normal app that still logs its frames (its start line says normal)",
              {"app_extra": check_variant.debug_only_strings(ROOT, "app")[0] + b"\0"}, {},
              ["app: the normal build carries 1 of its sources' 1 debug-only strings"]),
-            ("another app version (P3d)", {"app_version": "0.7.12"}, {}, ["the Overlay app is v0.8.0, as the manifest"]),
+            ("another app version (P3d)", {"app_version": "0.7.12"}, {}, ["the Rubi app is v0.8.0, as the manifest"]),
             ("no app_version (P3e)", {"app_version": None}, {}, ["the manifest has no app_version"]),
             ("no variant, the debug build: a package from before the two builds", {"variant": None, "build": "debug"},
              {}, []),
@@ -300,7 +300,7 @@ class E2EPackageEdges(unittest.TestCase):
                 self.assertEqual(ok, says == (variant == "normal"), label)
 
     def test_the_collect_zip_lists_the_apkg_packages_and_the_analysis_counts_them(self):
-        """audit-overlay-release-variants-e note 4 (Q8): --collect lists the Overlay app's .apkg packages without
+        """audit-overlay-release-variants-e note 4 (Q8): --collect lists the Rubi app's .apkg packages without
         copying them, and its analysis counts them; a zip with one, or an analysis without the count, fails."""
         count = "2 exported card(s), 1 .apkg package(s) in anki/"
         for members, analysis, want in (([], count, True), ([], "no count", False),

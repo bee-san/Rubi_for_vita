@@ -1,32 +1,32 @@
 # Console test of a test build on a PS Vita: one zip, one run, about 20 minutes
 
 A test build is a GitHub **pre-release** of this fork (tag `v0.8.0-test.N`, never "Latest") with the
-one-VPK install, `VitaJPOverlay-TAG-debug.vpk` (the **Overlay** app with the three plugins, the OCR models
+one-VPK install, `Rubi-TAG-debug.vpk` (the **Rubi** app with the three plugins, the OCR models
 of the three model sizes, VOCR5-S, VOCR5-N and VOCR5-L, and the frozen dictionary inside it;
 [one-vpk-install.md](one-vpk-install.md)), and the zip of the same build with the installer and the
 analyser (`--collect`). Its install issue names the tag and gives both SHA-256s. Since #138 the kernel
-plugin loads the OCR worker into every game that is ON in the Overlay app, so no game is named
+plugin loads the OCR worker into every game that is ON in the Rubi app, so no game is named
 anywhere. "est." marks an estimate; nothing of a test build has run on a console before the owner's
 run. The install issue follows [test-build-issue.md](test-build-issue.md).
 
 ## What you need
 - A PCH-1000/1001 on 3.60–3.74 with HENkaku/Ensō or h-encore, and VitaShell.
-- CLANNAD (PCSG00415), ON in the Overlay app → Games.
+- CLANNAD (PCSG00415), ON in the Rubi app → Games.
 - A PC on the same Wi-Fi with bash, Python 3.9+ and curl.
 
 ## 1. Download and check
-Download `VitaJPOverlay-TAG.zip` from the pre-release, check it and extract it:
+Download `Rubi-TAG.zip` from the pre-release, check it and extract it:
 ```sh
-sha256sum VitaJPOverlay-TAG.zip        # macOS: shasum -a 256; must equal the issue's SHA-256
-unzip -q VitaJPOverlay-TAG.zip -d vjo && cd vjo
+sha256sum Rubi-TAG.zip        # macOS: shasum -a 256; must equal the issue's SHA-256
+unzip -q Rubi-TAG.zip -d vjo && cd vjo
 python3 tools/package_release.py --verify .
 ```
 The last line must say `Verified N package files`. `checksum failed` means a bad download: delete it
 and download again.
 
 ## 2. Install
-The one-VPK install: copy `VitaJPOverlay-TAG-debug.vpk` to the Vita, install it in VitaShell, open
-**Overlay**, choose **Install** on its Install page and restart the Vita (test-build-issue.md section 2 has
+The one-VPK install: copy `Rubi-TAG-debug.vpk` to the Vita, install it in VitaShell, open
+**Rubi**, choose **Install** on its Install page and restart the Vita (test-build-issue.md section 2 has
 the checklist; README "Install" the steps). The steps below are the advanced path, from a PC.
 
 On the Vita, close any game, open VitaShell and press **Select** to start FTP (Select starts FTP once
@@ -34,15 +34,15 @@ On the Vita, close any game, open VitaShell and press **Select** to start FTP (S
 ```sh
 bash install-vita.sh VITA_IP:1337
 ```
-- [ ] **Step 1, every time: install the Overlay app again.** In VitaShell (press OK on its FTP dialog to
-  keep FTP running) open `ux0:data/`, install `JPOverlaySettings.vpk`, then on the PC check it:
+- [ ] **Step 1, every time: install the Rubi app again.** In VitaShell (press OK on its FTP dialog to
+  keep FTP running) open `ux0:data/`, install `Rubi.vpk`, then on the PC check it:
   ```sh
-  bash install-vita.sh --check-app VITA_IP     # must print "Overlay app: up to date"
+  bash install-vita.sh --check-app VITA_IP     # must print "Rubi app: up to date"
   ```
   The installer ends with a box saying the same. In #101 the app was not reinstalled, so test.1's app ran
   beside test.2's plugins: it still showed VOCR2, had no Anki page and wrote `ocr_backend = vocr2`.
   The plugins notice an app of another build at the next game start, and the first overlay opened then
-  says `Overlay app and plugins are different builds: open the Overlay app.` once (`core/app_stamp.h`).
+  says `Rubi app and plugins are different builds: open the Rubi app.` once (`core/app_stamp.h`).
 - [ ] Arm the self-test: `bash tools/install_ftp.sh --self-test VITA_IP`.
 - The installer first backs up both taiHEN configurations on the PC, in `build/device/backup/`. On the
   Vita it backs up each configuration it changes, next to its `config.txt`, as `config.txt.vjo-bak` and as
@@ -53,15 +53,15 @@ bash install-vita.sh VITA_IP:1337
   worker's lines older installs left (the kernel loads the worker now), and prints each change.
 - It prints `package settings: ...` for the test build's own settings (`anki_mining=on`).
 - Keep the screen on until it prints `Installed. Reboot the Vita, then leave it on for a minute. …`
-  and the Overlay app's box after it; `Nothing was changed on the Vita` names the configuration it
+  and the Rubi app's box after it; `Nothing was changed on the Vita` names the configuration it
   could not edit safely and why.
-- It uploads the Overlay app's VPK to `ux0:data/JPOverlaySettings.vpk` and its record to
+- It uploads the Rubi app's VPK to `ux0:data/Rubi.vpk` and its record to
   `ux0:data/VitaJPOverlay/vjo_app.txt` with the plugins; installing the VPK is the step above.
 
 Manual install without the install script (VitaShell's file manager, over USB or FTP): first copy
 `ur0:tai/config.txt` to `ur0:tai/config.txt.bak` and your `ux0:data/VitaJPOverlay/config.ini` aside
 (the zip's replaces it), copy the zip's `ur0/` and `ux0/` folders onto the Vita's `ur0:` and `ux0:`,
-copy the zip's `JPOverlaySettings.vpk` (at its top level) to `ux0:data/` and install it with VitaShell,
+copy the zip's `Rubi.vpk` (at its top level) to `ux0:data/` and install it with VitaShell,
 delete `ur0:data/VitaJPOverlay/boot.txt` if it exists (the installer resets it, so a safe mode left by
 an earlier build ends), then add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL` and
 `ur0:tai/VitaJPOverlay_Shell.suprx` under `*main` (and the same in `ux0:tai/config.txt` if that
@@ -92,11 +92,11 @@ bash tools/install_ftp.sh --collect VITA_IP
 ```
 It reads everything the overlay wrote (logs, the self-test report, status/kernel/boot records,
 `config.ini` with its API keys and audio source URL redacted, both taiHEN configurations and their backups, the
-Overlay app's install record `installed.txt`, the Anki queue, crash dumps, the installed files' hashes) into one
+Rubi app's install record `installed.txt`, the Anki queue, crash dumps, the installed files' hashes) into one
 folder and zip under `build/device/collect/`, writes nothing on the
-Vita, and prints the analysis. Leave the Overlay app open in the background if it is: test.3's collect
-could not enter its folder, most likely because it was open ([#138](https://github.com/bee-san/vita-jp-overlay/issues/138)).
-The collect now also reads its two files by their full paths, and the analysis's `Overlay app:` line
+Vita, and prints the analysis. Leave the Rubi app open in the background if it is: test.3's collect
+could not enter its folder, most likely because it was open ([#138](https://github.com/bee-san/Rubi_for_vita/issues/138)).
+The collect now also reads its two files by their full paths, and the analysis's `Rubi app:` line
 says which way read them; whether VitaShell opens them that way is what this run shows (not yet seen on a
 console). Send the zip it names (`Send this one file: ...`) and one line per step
 saying what you saw ("overlay showed", "no OCR", "crash at step 3"...). Send it privately, not on a
@@ -128,14 +128,14 @@ the memory routes) are measurements to send back, not failures.
 - Run it **once**. Don't keep rebooting to retry; send what you have.
 
 ## Models
-The Overlay app's OCR page has the **Model size**: Small (VOCR5-S), Normal (VOCR5-N, the
+The Rubi app's OCR page has the **Model size**: Small (VOCR5-S), Normal (VOCR5-N, the
 default) and Large (VOCR5-L). When the game has too little free memory for the chosen size a job
 runs the next smaller one; the screen does not say so, `log.txt` does (`tier large did not fit in
 PCSG00415 (need N, free F); using normal`). It applies when the overlay next opens.
 
 ## Anki (optional)
 `anki_mining = on` in the test build: Enter in the overlay saves the shown word and its sentence as a card
-in `ux0:data/VitaJPOverlay/anki_queue/`; nothing uses the network. In the Overlay app's Anki page,
+in `ux0:data/VitaJPOverlay/anki_queue/`; nothing uses the network. In the Rubi app's Anki page,
 **Export cards** writes them into `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`: note the
 time the page shows it took and the file's size, copy the file to your computer (VitaShell's FTP or USB
 mode, or the SD2Vita card) and open it in Anki. Each card keeps a JPEG of the game's screen

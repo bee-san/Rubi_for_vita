@@ -19,7 +19,7 @@ int vjo_game_id_valid(const char *id);
 /* Adrenaline is allowed: its PSP games share NPXS10028. */
 int vjo_game_is_candidate(const char *id);
 /* The PSP emulator's own title ID: the Shell's name for the emulator process
- * (a console log showed it for every Adrenaline launch) and the Overlay app's
+ * (a console log showed it for every Adrenaline launch) and the Rubi app's
  * shared row for PSP games without a row of their own. */
 #define VJO_PSP_EMULATOR "NPXS10028"
 /* A PSP game's disc or PSN ID (a NUL-terminated string): U[CL] and two
@@ -42,7 +42,7 @@ int vjo_games_set(VjoGames *games, const char *id, int enabled);
 int vjo_games_parse(VjoGames *games, const char *text, size_t len);
 int vjo_games_format(const VjoGames *games, char *out, size_t cap);
 
-/* ---- the Overlay app's only (core/games_app.c, linked into the app and the
+/* ---- the Rubi app's only (core/games_app.c, linked into the app and the
  * host tests, never into a plugin: a plugin linked without --gc-sections, as
  * the kernel's is, would take every function of the file it links) ---- */
 /* Why vjo_game_is_candidate rejects id ("not a title ID", "a system app",

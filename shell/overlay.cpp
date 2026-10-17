@@ -432,7 +432,7 @@ static void render(int new_content)
     if (vjo_styled_init(&body, &s_ui, BODY_UNITS, MAX_SPANS) == 0) {
         have_body = 1;
         vjo_styled_dict_page(&body, s_dict_page, s_dict_pages, en);
-        if (const char *notice = vjo_view_notice()) { /* the Overlay app is not the plugins' (once) */
+        if (const char *notice = vjo_view_notice()) { /* the Rubi app is not the plugins' (once) */
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_ERROR, en);
             vjo_styled_puts(&body, notice, VJO_RGB_ERROR, en);
@@ -444,14 +444,14 @@ static void render(int new_content)
         else if (g_view.status[0])
             vjo_styled_puts(&body, g_view.status, g_view.status_is_error ? VJO_RGB_ERROR : VJO_RGB_DIM, en);
         if (s_anki_enabled) {
-            /* the offline queue: what the Overlay app exports */
+            /* the offline queue: what the Rubi app exports */
             char queue[80];
             if (g_view.anki_pending == -1)
                 sceClibSnprintf(queue, sizeof(queue), "Anki queue unavailable: check ux0 storage");
             else if (g_view.anki_pending < 0)
-                sceClibSnprintf(queue, sizeof(queue), "Anki queue · export in the Overlay app");
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue · export in the Rubi app");
             else
-                sceClibSnprintf(queue, sizeof(queue), "Anki queue: %d · export in the Overlay app",
+                sceClibSnprintf(queue, sizeof(queue), "Anki queue: %d · export in the Rubi app",
                                 g_view.anki_pending);
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
@@ -1025,7 +1025,7 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
     if (dy <= -STICK_DEADZONE || dy >= STICK_DEADZONE)
         pane_scroll_to(&s_body, s_body.scroll + (float)dy * STICK_SCROLL_PX);
     /* Enter saves the shown word (in a character lookup, the match at the
-     * cursor) to the offline queue; the Overlay app exports it. */
+     * cursor) to the offline queue; the Rubi app exports it. */
     if ((pressed & s_btn.enter) && s_anki_enabled && s_selected < s_n_entries)
         vjo_anki_post_add(s_list_seq, s_selected);
     if (pressed & s_btn.cancel)

@@ -1,4 +1,4 @@
-/* The Overlay app's graphics start as a system application (settings/sysapp_gfx.c): what the
+/* The Rubi app's graphics start as a system application (settings/sysapp_gfx.c): what the
  * link's wrappers of libvita2d's two calls into the system saw, for log.txt and the tests. */
 #ifndef VJO_SETTINGS_SYSAPP_GFX_H
 #define VJO_SETTINGS_SYSAPP_GFX_H

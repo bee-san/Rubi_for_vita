@@ -1,4 +1,4 @@
-/* The Overlay app's Vita3K smoke (tools/vita3k_settings_smoke.sh). settings/main.c and
+/* The Rubi app's Vita3K smoke (tools/vita3k_settings_smoke.sh). settings/main.c and
  * the sources it ships with are linked unchanged with these wrappers (-Wl,--wrap,
  * vita/CMakeLists.txt VJO_SETTINGS_SMOKE): the controller follows a script by frame,
  * and the icon textures, their draws and the GPU waits are counted. A texture freed

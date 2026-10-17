@@ -4,7 +4,7 @@
  * as it crosses, then, held, nothing for VJO_STICK_HOLD_US and then a row
  * every VJO_STICK_ROW_US while it stays out. VitaShell counts frames ("hold2":
  * nine quiet frames, then a row every frame); at its 60 Hz that is 166.7 ms,
- * then 60 rows a second. The Overlay app likely draws at 30 Hz as a system
+ * then 60 rows a second. The Rubi app likely draws at 30 Hz as a system
  * application (libvita2d's vita2d_end_drawing waits for a vblank there and the
  * loop for another: an inference, not measured; the app logs its frame
  * interval once at start), so the stick goes by the clock instead of the

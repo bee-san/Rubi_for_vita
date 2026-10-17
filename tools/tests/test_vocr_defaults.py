@@ -105,7 +105,7 @@ def c_table(source=None):
 
 
 def metadata_table(source=None, estimates=False):
-    """name -> (generation, shape, bytes) from core/vocr_models.c, the Overlay app's model metadata;
+    """name -> (generation, shape, bytes) from core/vocr_models.c, the Rubi app's model metadata;
     with estimates, name -> (generation, shape, bytes, box ms, job bytes)."""
     if source is None:
         source = (ROOT / "core/vocr_models.c").read_text()
@@ -376,7 +376,7 @@ class VocrDefaults(unittest.TestCase):
                 metadata_table(add(meta, f20, line))
 
     def test_each_model_generation_is_its_releases(self):
-        """The generation the Overlay app names the local engine after: the same in the C metadata
+        """The generation the Rubi app names the local engine after: the same in the C metadata
         and in the packager's pins (each release's), VOCR3 for the default, and the VOCRn of a file
         named VOCRn_...; the removed VOCR2 trial is pinned nowhere."""
         meta = metadata_table()

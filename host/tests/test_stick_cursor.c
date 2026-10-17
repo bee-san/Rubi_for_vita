@@ -111,7 +111,7 @@ static void held_it_accelerates_to_the_cap(void)
     TEST_CHECK_(first == 13, "%d steps in the first second", first);
     TEST_CHECK_(n == 193, "%d steps in 10 s", n);
     /* the clock's rounding: ten frames of exactly 1/60 s read 166,666 us; the
-     * slack makes the tenth the first repeat, as in the Overlay app's lists */
+     * slack makes the tenth the first repeat, as in the Rubi app's lists */
     Stick e = stick();
     uint64_t start = e.now;
     vjo_stick_cursor(&e.s, RIGHT, MID, start);

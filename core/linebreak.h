@@ -3,7 +3,7 @@
  * between phrases, and by Japanese line-breaking rules (kinsoku). Used where
  * text is wrapped for the screen: the Shell's paf texts (the recognized text,
  * the popup, the subtitle strip: shell/wrap_fix.h moves a break paf put where
- * this forbids it back to the last place allowed here) and the Overlay app's
+ * this forbids it back to the last place allowed here) and the Rubi app's
  * rows (settings/text_layout.c).
  *
  * A line may break before a character, after the one before it, when:

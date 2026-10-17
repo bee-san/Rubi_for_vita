@@ -157,8 +157,8 @@ smooth on the console has not been checked.
 
 ### Memory
 
-The Overlay app is a system application
-([vita-memory.md §5.4](vita-memory.md#54-the-overlay-app-a-system-application)), and
+The Rubi app is a system application
+([vita-memory.md §5.4](vita-memory.md#54-the-rubi-app-a-system-application)), and
 libvita2d then allocates every texture as its own `USER_RW` block in the app's
 50 MiB budget, rounded up to 4 KiB (pinned libvita2d a8f15ab: `vita2d.c` sets the
 texture type to `SCE_KERNEL_MEMBLOCK_TYPE_USER_RW` in system-app mode;
@@ -278,7 +278,7 @@ that app predated #109, it was an ordinary application, which ran with the game
 closed [inference].
 
 **CLANNAD is on the memory card, in `ux0:app`** (found by the PR's audit). The
-zip has ten crash dumps: eight of SceShell (`shell.self`) and two of the Overlay
+zip has ten crash dumps: eight of SceShell (`shell.self`) and two of the Rubi
 app itself (`eboot.bin`, naming `ux0:app/VJOSET001/eboot.bin`). They are from
 earlier sessions: this boot is the first since the install (`boot.txt`
 `seq=1`, no failed boot), with one kernel start and one Shell registration in
@@ -323,7 +323,7 @@ The causes that fit, none confirmed:
 
 The candidate rule could not have dropped CLANNAD: it accepts `PCSG00415`. A
 full list is very unlikely [inference]: `log.txt` names 20 distinct title IDs,
-and the dumps name six `ux0:app` folders by path (CLANNAD's, the Overlay app's,
+and the dumps name six `ux0:app` folders by path (CLANNAD's, the Rubi app's,
 VitaShell's, Adrenaline's and two homebrews'), against 512 rows; a full list
 says `Showing the first 512 installed titles.` (`settings/main.c:480`), which
 was not reported. The SceShell dumps also hold a catalogue of 1,138 homebrew
@@ -341,9 +341,9 @@ What the app does now:
   cannot be opened gets its error and whether the device is there at all:
 
   ```text
-  overlay app: games: ux0:app: 23 entries: 21 listed, 0 already listed, 2 skipped; skipped: VITASHELL (VitaShell), VJOSET001 (this app)
-  overlay app: games: gro0:app: not opened: 0x80010013 (ENODEV); gro0: is there
-  overlay app: games: 23 rows (the list holds 512): 21 from the folders, the shared PSP row, 1 only in games.ini; safe mode no (ux0: devctl 0x80010016); only in games.ini: PCSG00415 = enabled
+  Rubi app: games: ux0:app: 23 entries: 21 listed, 0 already listed, 2 skipped; skipped: VITASHELL (VitaShell), VJOSET001 (this app)
+  Rubi app: games: gro0:app: not opened: 0x80010013 (ENODEV); gro0: is there
+  Rubi app: games: 23 rows (the list holds 512): 21 from the folders, the shared PSP row, 1 only in games.ini; safe mode no (ux0: devctl 0x80010016); only in games.ini: PCSG00415 = enabled
   ```
 
   These lines are the format from the host tests; no console has logged them
@@ -373,7 +373,7 @@ What the app does now:
   or resume. Turned OFF too: …`). Default OFF -> ON turns on every game except
   those turned OFF one by one, and names them (`Saved: every game but 2 is ON from
   its next start or resume. Still OFF: …`). A game turned ON after that is ON on its own, as before. Each
-  change is logged with the rules it removed or kept (`overlay app: games: Default
+  change is logged with the rules it removed or kept (`Rubi app: games: Default
   OFF, 4 own ON choices removed: PCSG00415, …`).
 
 `core/games.c`, which the plugins link, is unchanged: the two new helpers are in
@@ -504,7 +504,7 @@ buffer during icon loading, rather than a PVF measurement failure. The
 [PNG runtime repair](settings-png-runtime.md) keeps the readable layout and icons.
 
 The v0.7.8 repair passed exact-head host/Vita CI and merged through
-[PR #36](https://github.com/bee-san/vita-jp-overlay/pull/36). Full readback of
+[PR #36](https://github.com/bee-san/Rubi_for_vita/pull/36). Full readback of
 the installed 277,212-byte executable matched the repaired candidate. Promotion
 status had become uncertain after a disconnect; installed registry/readback and
 subsequent native execution reconciled the outcome. No terminal promoter

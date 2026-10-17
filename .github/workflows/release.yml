@@ -10,8 +10,8 @@ name: Release
 #
 # Two builds (docs/release-variants.md): the host and vita jobs run once for each, VJO_DEBUG=ON (the
 # debug build, the test builds' own) and OFF (the normal build, the release's main download). The
-# debug build's zip is the artifact `VitaJPOverlay`, as before (exactly one zip in it); the normal
-# build's is `VitaJPOverlay-normal`. tools/package_variants.py makes the release's two zips of them;
+# debug build's zip is the artifact `Rubi` (exactly one zip in it; `VitaJPOverlay` before the rename); the normal
+# build's is `Rubi-normal`. tools/package_variants.py makes the release's two zips of them;
 # the `package` job does so on every run and checks each with tools/e2e_package.py.
 on:
   push:
@@ -124,7 +124,7 @@ jobs:
           sparse-checkout: processed
       - run: sudo apt-get update && sudo apt-get install -y ninja-build python3-pil
       - run: cmake -S . -B build/host -G Ninja -DVJO_DEBUG=${{ matrix.debug }} -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/host -j4
-      # Anki itself imports the Overlay app's .apkg packages (host/tests/test_apkg.py): the anki
+      # Anki itself imports the Rubi app's .apkg packages (host/tests/test_apkg.py): the anki
       # package (Anki 26.09.3), hash-pinned for Python 3.12, in a venv of its own. This Python is
       # not put on PATH, so CMake's Python and the image tests' Pillow stay the system's.
       - name: Python 3.12 for the Anki import (not on PATH)
@@ -183,10 +183,10 @@ jobs:
         include:
           - variant: debug
             debug: 'ON'
-            artifact: VitaJPOverlay
+            artifact: Rubi
           - variant: normal
             debug: 'OFF'
-            artifact: VitaJPOverlay-normal
+            artifact: Rubi-normal
     steps:
       - uses: actions/checkout@v4
       - run: apt-get update && apt-get install -y --no-install-recommends g++ patch python3 openssh-client
@@ -210,7 +210,7 @@ jobs:
           path: .refs/plaintext-dicts
           sparse-checkout: processed
       - run: WORK=$PWD/.refs/toolchain bash tools/setup_toolchain.sh
-      # The build runs every check (kernel instructions, syscall ABI, memory ledger, the Overlay
+      # The build runs every check (kernel instructions, syscall ABI, memory ledger, the Rubi
       # app's PNG ABI and artwork); only the release zip needs the dictionary.
       - run: |
           export PATH=$PWD/.refs/toolchain/psp2cxml-tool/mbuild:$PATH
@@ -229,14 +229,14 @@ jobs:
             echo '```'
             python3 tools/check_memory_ledger.py --variant ${{ matrix.variant }} --kernel build/vita/VitaJPOverlay_Kernel.skprx \
               --shell build/vita/VitaJPOverlay_Shell.suprx --worker build/vita/VitaJPOverlay_OCR.suprx | grep -E 'VitaJPOverlay_|memory ledger'
-            ls -l build/vita/*.skprx build/vita/*.suprx build/vita/eboot.bin build/vita/JPOverlaySettings.vpk | awk '{print $5, $NF}'
+            ls -l build/vita/*.skprx build/vita/*.suprx build/vita/eboot.bin build/vita/Rubi.vpk | awk '{print $5, $NF}'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: ${{ needs.changes.outputs.dicts != 'false' }}
         with:
           name: ${{ matrix.artifact }}
-          path: build/vita/VitaJPOverlay-*.zip
+          path: build/vita/Rubi-*.zip
           # A pull request's build is only needed while it is reviewed and audited (7 days); a
           # build of main, a tag or a manual run is what test packages are made from (30 days).
           # Published releases keep their own assets. The default would be 90 days, and a build
@@ -259,11 +259,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: VitaJPOverlay
+          name: Rubi
           path: ci/debug
       - uses: actions/download-artifact@v4
         with:
-          name: VitaJPOverlay-normal
+          name: Rubi-normal
           path: ci/normal
       # A cached copy is used only after prepare_ocr.py checks it against the pins (a wrong or partial file
       # is fetched again), and the key changes with the pins and the model sizes. A run's conclusion
@@ -289,19 +289,19 @@ jobs:
       - name: The release's two zips (tools/package_variants.py)
         shell: bash
         run: |
-          normal=(ci/normal/VitaJPOverlay-*.zip)
-          debug=(ci/debug/VitaJPOverlay-*-debug.zip)
+          normal=(ci/normal/Rubi-*.zip)
+          debug=(ci/debug/Rubi-*-debug.zip)
           [ ${#normal[@]} = 1 ] && [ -f "${normal[0]}" ] && [ ${#debug[@]} = 1 ] && [ -f "${debug[0]}" ] \
             || { echo "::error::want one zip in each artifact: ${normal[*]} / ${debug[*]}"; exit 1; }
           version=$(basename "${normal[0]}" .zip)
-          version=${version#VitaJPOverlay-}
+          version=${version#Rubi-}
           python3 tools/package_variants.py --normal "${normal[0]}" --debug "${debug[0]}" --models ci/models \
             --version "$version" --source-revision "$(git rev-parse HEAD)" --sources . -o ci/release
       - name: tools/e2e_package.py on each zip
         shell: bash
         run: |
           rc=0
-          for zip in ci/release/VitaJPOverlay-*.zip; do
+          for zip in ci/release/Rubi-*.zip; do
             echo "::group::$(basename "$zip")"
             python3 tools/e2e_package.py "$zip" || rc=1
             echo "::endgroup::"
@@ -319,6 +319,6 @@ jobs:
 
 # A release is published explicitly after these gates. tools/package_variants.py (tools/package_release.py
 # for each build) combines the two builds' binaries with checksum-pinned models and the frozen
-# bundled dictionary (Bee's Ultimate Dictionary): VitaJPOverlay-<version>.zip (normal) and -debug.zip, and each
-# build's one-VPK install, VitaJPOverlay-<version>.vpk and -debug.vpk (tools/package_vpk.py,
+# bundled dictionary (Bee's Ultimate Dictionary): Rubi-<version>.zip (normal) and -debug.zip, and each
+# build's one-VPK install, Rubi-<version>.vpk and -debug.vpk (tools/package_vpk.py,
 # docs/one-vpk-install.md). CI never publishes an incomplete archive lacking local OCR/dictionary data.

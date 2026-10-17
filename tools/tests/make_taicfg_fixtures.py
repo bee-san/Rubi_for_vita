@@ -79,7 +79,7 @@ def fixtures():
     f["installed-test3"] = ("*KERNEL\n" + K + "\nux0:app/PSPEMUCFW/sce_module/adrenaline_kernel.skprx\n*main\n" + S +
                             "\nur0:tai/henkaku.suprx\n*ALL\nur0:tai/Every.suprx\n# Mainline OCR: " + W +
                             "\n\n*PCSG00415\n" + W + "\n\n*PSPEMUCFW\n" + W + "\n")
-    # #124: the Overlay app appended a bubble's section (in place, after a .vjo-app-bak)
+    # #124: the Rubi app appended a bubble's section (in place, after a .vjo-app-bak)
     f["app-bubble"] = (STOCK_UX0.replace("*KERNEL\n", "*KERNEL\n" + K + "\n").replace("*main\n", "*main\n" + S + "\n")
                        + APP_NOTE + "\n*ULJS00378\n" + W + "\n" + APP_NOTE + "\n*PSPEMU005\n" + W + "\nux0:tai/other.suprx\n")
     f["text-plugin"] = ("*KERNEL\n" + K + "\n*main\n" + S + "\n*ALL\n" + T + "\n*PCSG00415\n" + T + "\n" + W + "\n")

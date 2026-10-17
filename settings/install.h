@@ -1,4 +1,4 @@
-/* The Overlay app's install engine (docs/one-vpk-install.md): the overlay's files from the app's own
+/* The Rubi app's install engine (docs/one-vpk-install.md): the overlay's files from the app's own
  * folder (its payload), the taiHEN configurations (core/taicfg.c), config.ini, and the records. The
  * scan reads only; a run writes, in the design's order, and stops at the first failure with the
  * card as the result says (every file old or new; a configuration missing only between the two

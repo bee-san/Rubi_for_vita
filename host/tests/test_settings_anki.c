@@ -1,4 +1,4 @@
-/* The Overlay app's Anki page itself (settings/anki_page.c; #163 c3), on the host. The page draws
+/* The Rubi app's Anki page itself (settings/anki_page.c; #163 c3), on the host. The page draws
  * through main.c's helpers (VjoAnkiUi), recorded here; its four rows are checked for their layout,
  * Up/Down and the left stick, Left/Right, Enter and touch on each, each settings row's save into a
  * real config.ini (settings/preferences.c, read back by the app and by the Shell's own loader,

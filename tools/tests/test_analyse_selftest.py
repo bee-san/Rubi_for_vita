@@ -587,7 +587,7 @@ def collect_folder(root):
 
 class SharedTierTable(unittest.TestCase):
     """tools/model_tiers.json is the only copy of the tiers (audit-test-build-2 N2): the analyser prices
-    its tiers and nothing of its own, it holds today's ceilings and box time limits, the Overlay app's
+    its tiers and nothing of its own, it holds today's ceilings and box time limits, the Rubi app's
     extra keys change nothing here, and the release ships it beside the analyser."""
 
     def table(self):
@@ -685,7 +685,7 @@ class SharedTierTable(unittest.TestCase):
                 path.write_text(json.dumps(t), encoding="utf-8")
                 return a.load_tiers(path)
 
-            # the keys the Overlay app's tier choice adds (overlay-ux-tiers) change nothing here
+            # the keys the Rubi app's tier choice adds (overlay-ux-tiers) change nothing here
             extra = json.loads(json.dumps(table))
             extra["est_box_basis"] = "the shipped model at the console's measured ms per CTC frame"
             for t, model in zip(extra["tiers"], ("VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_W20_w8.vocr")):
@@ -1101,14 +1101,15 @@ class OverlayCloseLines(unittest.TestCase):
 
 
 def export_line(what="queued", rc=0, cards=2, moved=2, kept=0, unreadable=0, too_large=0, left=0, stopped=0, swept=None):
-    """settings/anki_page.c worker_main's line, as the Overlay app writes it into log.txt (with swept: since #161)."""
+    """settings/anki_page.c worker_main's line in log.txt (with swept: since #161), with the prefix of the builds
+    before the Rubi rename (\"overlay app: \"); RenamedLines reads today's, \"Rubi app: \", the same way."""
     return (f"overlay app: anki: export ({what}) rc={rc}: {cards} cards, {moved} moved, {kept} kept, {unreadable} "
             f"unreadable, {too_large} too large, {left} left, {stopped} stopped, "
             f"{'' if swept is None else f'{swept} swept, '}{cards * 20480} bytes, arena peak 98304\n")
 
 
 class AnkiExportLines(unittest.TestCase):
-    """The Overlay app's .apkg export in log.txt (settings/anki_page.c logs each export's result and counts,
+    """The Rubi app's .apkg export in log.txt (settings/anki_page.c logs each export's result and counts,
     settings/anki_export.c its steps). A successful export is reported as one and is not a problem line
     (audit-test-build-3 N1: TROUBLE's "unreadable" and "too large" matched its zero counts); a failed export, or one
     that left cards queued for a problem, is one, as the app itself shows it (its result_error)."""
@@ -1123,7 +1124,7 @@ class AnkiExportLines(unittest.TestCase):
         self.assertEqual(lg["trouble"], {})
         an = lg["anki"]
         self.assertEqual((an["exports"], an["export_ok"], an["export_fail"], an["exported"]), (1, 1, 0, 2))
-        self.assertEqual(a.export_summary(an), ["  Anki exports (the Overlay app): 1 export(s): 1 succeeded (a package "
+        self.assertEqual(a.export_summary(an), ["  Anki exports (the Rubi app): 1 export(s): 1 succeeded (a package "
                                                 "written and checked), 0 failed; 2 card(s) in the packages"])
 
     def test_a_failed_export_and_its_reason_are_problems(self):
@@ -1134,7 +1135,7 @@ class AnkiExportLines(unittest.TestCase):
             "overlay app: anki: export (all) rc=-N: N cards, N moved, N kept, N unreadable, N too large, N left, N "
             "stopped, N bytes, arena peak N")])
         self.assertEqual(a.export_summary(lg["anki"]), [
-            "  Anki exports (the Overlay app): 1 export(s): 0 succeeded (a package written and checked), 1 FAILED "
+            "  Anki exports (the Rubi app): 1 export(s): 0 succeeded (a package written and checked), 1 FAILED "
             "(no package); 0 card(s) in the packages",
             "    all: local format (rc -114): no package, the queue unchanged"])
 
@@ -1142,7 +1143,7 @@ class AnkiExportLines(unittest.TestCase):
         lg = a.summarise_log(export_line(cards=5, moved=3, kept=1, unreadable=2))
         self.assertEqual(len(lg["trouble"]), 1)
         self.assertEqual(a.export_summary(lg["anki"]), [
-            "  Anki exports (the Overlay app): 1 export(s): 0 succeeded (a package written and checked), 1 wrote its "
+            "  Anki exports (the Rubi app): 1 export(s): 0 succeeded (a package written and checked), 1 wrote its "
             "package and left cards queued by a problem, 0 failed; 5 card(s) in the packages",
             "    queued: 5 card(s) in its package; still queued by a problem: 1 kept (in the package; a move failed), "
             "2 unreadable, 0 too large"])
@@ -1156,7 +1157,7 @@ class AnkiExportLines(unittest.TestCase):
         lg = a.summarise_log(export_line(cards=4, moved=1, left=3, stopped=3) + export_line(cards=0, moved=0))
         self.assertEqual(lg["trouble"], {})
         self.assertEqual(a.export_summary(lg["anki"]), [
-            "  Anki exports (the Overlay app): 2 export(s): 1 succeeded (a package written and checked), 1 had no card "
+            "  Anki exports (the Rubi app): 2 export(s): 1 succeeded (a package written and checked), 1 had no card "
             "to export, 0 failed; 4 card(s) in the packages; still queued for the next export, not a problem: 3 a "
             "stop left, 3 over a package's cap"])
 
@@ -1170,7 +1171,7 @@ class AnkiExportLines(unittest.TestCase):
         self.assertEqual(lg["trouble"], {})
         an = lg["anki"]
         self.assertEqual((an["exports"], an["export_ok"], an["exported"], an["export_swept"]), (3, 3, 4, 2))
-        self.assertEqual(a.export_summary(an), ["  Anki exports (the Overlay app): 3 export(s): 3 succeeded (a package "
+        self.assertEqual(a.export_summary(an), ["  Anki exports (the Rubi app): 3 export(s): 3 succeeded (a package "
                                                 "written and checked), 0 failed; 4 card(s) in the packages; removed "
                                                 "from the queue: 2 screenshots no card named"])
         # a removal that failed is a problem line; a later export removes it
@@ -1201,7 +1202,7 @@ class AnkiExportLines(unittest.TestCase):
 
     def test_no_export_and_an_older_line_without_its_stop_count(self):
         self.assertEqual(a.export_summary(a.summarise_log("anki: queue 1 card(s)\n")["anki"]),
-                         ["  Anki exports (the Overlay app): none in the log"])
+                         ["  Anki exports (the Rubi app): none in the log"])
         old = ("overlay app: anki: export (queued) rc=0: 3 cards, 3 moved, 0 kept, 0 unreadable, 0 too large, 0 left, "
                "40960 bytes, arena peak 1000\n")
         lg = a.summarise_log(old)
@@ -1224,9 +1225,12 @@ class AnkiExportLines(unittest.TestCase):
         page = (ROOT / "settings/anki_page.c").read_text(encoding="utf-8")
         fmt = re.search(r'vjo_log\("(anki: export \(%s\) rc=%d: [^"]*)"\s*"([^"]*)"', page)
         self.assertIsNotNone(fmt, "settings/anki_page.c's export line moved: update LOG['anki_export']")
-        line = "overlay app: " + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000)
-        m = a.LOG["anki_export"].match(line)
-        self.assertEqual([m.group(g) for g in range(1, 11)], ["queued", "-113", "5", "3", "1", "2", "4", "6", "7", "8"])
+        # the app's prefix (settings/applog.c), and an earlier build's, "overlay app: " (before the Rubi rename)
+        self.assertIn('snprintf(line, sizeof(line), "Rubi app: ")', (ROOT / "settings/applog.c").read_text(encoding="utf-8"))
+        for prefix in ("Rubi app: ", "overlay app: "):
+            line = prefix + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000)
+            m = a.LOG["anki_export"].match(line)
+            self.assertEqual([m.group(g) for g in range(1, 11)], ["queued", "-113", "5", "3", "1", "2", "4", "6", "7", "8"])
         # the app's own idea of an error, which export_result follows
         self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large;", page)
         export = (ROOT / "settings/anki_export.c").read_text(encoding="utf-8")
@@ -1236,8 +1240,9 @@ class AnkiExportLines(unittest.TestCase):
                       '"anki export: %s: %d cards, %d screenshots, %u bytes, verified"',
                       '"anki export: %s: no card names it, removed"'):  # (#161: no problem line)
             self.assertIn(words, export)
-        self.assertTrue(a.EXPORT_TROUBLE.search(
-            "overlay app: anki export: ux0:data/VitaJPOverlay/anki: 99 packages are named for this second already"))
+        for prefix in ("Rubi app: ", "overlay app: "):
+            self.assertTrue(a.EXPORT_TROUBLE.search(
+                prefix + "anki export: ux0:data/VitaJPOverlay/anki: 99 packages are named for this second already"))
         self.assertIsNone(a.EXPORT_TROUBLE.search("overlay app: " + self.VERIFIED.strip()))
 
 
@@ -1475,7 +1480,7 @@ class ClockWindows(unittest.TestCase):
 
     def test_the_test3_style_fixture_reads_its_boost_off_window_plainly(self):
         # tools/tests/fixtures/log-test3-style.txt: synthetic (no console, no game), test.3's checklist in order:
-        # boxes with the boost on and one from the cache, two cards and the Overlay app's export, the game resumed,
+        # boxes with the boost on and one from the cache, two cards and the Rubi app's export, the game resumed,
         # step 6's restart with ocr_boost_clock = off and 3 boxes, a restart with it on
         lg = a.summarise_log((FIXTURES / "log-test3-style.txt").read_text(encoding="utf-8"))
         self.assertEqual([(r["window"], r["state"], r["jobs"], r["recognizing"], r["clock_lines"])
@@ -2193,6 +2198,60 @@ def flat(text):
 
 
 
+class RenamedLines(unittest.TestCase):
+    """The Rubi rename (docs/rename-rubi.md): the plugins' and the app's lines start with "Rubi", where the
+    builds before it wrote "Vita JP Overlay", "JP Overlay disabled" and "overlay app". A log of either reads
+    the same, and today's sources write the new names (so the old ones are only an earlier build's)."""
+    STAMP = "vjoapp1 api=24 build=0123456789abcdef"
+    NEW = ("Rubi shell started (kernel API 24)\n"
+           "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+           "PCSF00001: Rubi disabled; game input passes through\n"
+           f"Rubi app ok: installed '{STAMP}' (0x00000026, app 1), plugins' '{STAMP}' (0x00000026)\n"
+           "Rubi app: anki: export (queued) rc=0: 2 cards, 2 moved, 0 kept, 0 unreadable, 0 too large, 0 left, "
+           "0 stopped, 0 swept, 40960 bytes, arena peak 1000\n"
+           "Rubi app: anki export: ux0:data/VitaJPOverlay/anki: 99 packages are named for this second already\n")
+    KERNEL_NEW = "Rubi kernel 24 started (normal mode)\nhooks: display 0, input 0, procevent 0 (0 = ok)\n"
+
+    @staticmethod
+    def old(text):
+        return (text.replace("Rubi shell started", "Vita JP Overlay shell started")
+                .replace("Rubi kernel", "Vita JP Overlay kernel").replace(": Rubi disabled", ": JP Overlay disabled")
+                .replace("Rubi app", "overlay app"))
+
+    def test_the_old_and_the_new_names_read_alike(self):
+        new, old = a.summarise_log(self.NEW), a.summarise_log(self.old(self.NEW))
+        self.assertEqual(new["shell_starts"], 1)
+        self.assertEqual(list(new["disabled"]), ["PCSF00001"])
+        self.assertEqual(new["anki"]["exports"], 1)
+        self.assertEqual([k for k in new["trouble"] if "packages are named" in k],
+                         ["Rubi app: anki export: uxN:data/VitaJPOverlay/anki: N packages are named for this second already"])
+        self.assertEqual(len(old["trouble"]), len(new["trouble"]))
+        for key in ("shell_starts", "disabled", "games", "anki"):
+            self.assertEqual(new[key], old[key], key)
+        self.assertEqual(len(new["boot"]), 1)
+        self.assertEqual(len(old["boot"]), 1)
+        self.assertTrue(a.APP_CHECK.match(self.NEW.splitlines()[3]))
+        self.assertTrue(a.APP_CHECK.match(self.old(self.NEW).splitlines()[3]))
+        # the Shell's app check (APP_LINE) is read from either name, the same way
+        self.assertEqual([c["state"] for c in new["app_checks"]], ["ok"])
+        self.assertEqual(new["app_checks"], old["app_checks"])
+        k_new = a.summarise_kernel(self.KERNEL_NEW, len(self.KERNEL_NEW))
+        k_old = a.summarise_kernel(self.old(self.KERNEL_NEW), len(self.KERNEL_NEW))
+        self.assertEqual(len(k_new["started"]), 1)
+        self.assertEqual(len(k_old["started"]), 1)
+
+    def test_todays_sources_write_the_new_names(self):
+        sources = {f: (ROOT / f).read_text(encoding="utf-8") for f in
+                   ("shell/worker.c", "kernel/main.c", "settings/applog.c")}
+        self.assertIn('vjo_log("Rubi shell started (kernel API %d)", ver);', sources["shell/worker.c"])
+        self.assertIn('vjo_log("%s: Rubi disabled; game input passes through", tid);', sources["shell/worker.c"])
+        self.assertIn('klog("Rubi kernel %d started (%s mode)"', sources["kernel/main.c"])
+        self.assertIn('snprintf(line, sizeof(line), "Rubi app: ")', sources["settings/applog.c"])
+        for f, text in sources.items():
+            for name in ("Vita JP Overlay", "JP Overlay disabled", '"overlay app'):
+                self.assertNotIn(name, text, f)
+
+
 class WorkerLoaderLines(unittest.TestCase):
     """#138: kernel/loader.c logs one `worker for` line per game start it decided on; the collect
     analysis says where the worker was loaded, where not and why, and counts refused second copies.
@@ -2235,7 +2294,7 @@ class WorkerLoaderLines(unittest.TestCase):
 
 
 class OverlayAppSummary(unittest.TestCase):
-    """summarise_app and render_app (#138): the collect's own reading of the installed Overlay app decides when it
+    """summarise_app and render_app (#138): the collect's own reading of the installed Rubi app decides when it
     read a file; when it read neither, what it found of the folder decides "not installed", and otherwise the Shell's
     check at a game start of the log's last boot answers for it. test.3's collect said "not installed" for an app the
     Shell had read at the same boot's game starts."""
@@ -2269,7 +2328,7 @@ class OverlayAppSummary(unittest.TestCase):
     def test_what_the_collect_read_decides(self):
         s, line = self.summary(self.app(stamp=self.READ), installed=self.STAMP)
         self.assertEqual((s["state"], s["source"]), ("ok", "collect"))
-        self.assertEqual(line, f"  Overlay app: the plugins' ({self.STAMP})")
+        self.assertEqual(line, f"  Rubi app: the plugins' ({self.STAMP})")
         # read by its full path: said, with the first way's exit
         s, line = self.summary(self.app(stamp=self.BY_PATH), BOOT22 + START + self.PRE, installed=self.STAMP)
         self.assertEqual((s["state"], s["source"], s["by_path"]), ("ok", "collect", {"vjo_app.txt": [9, 0]}))
@@ -2278,7 +2337,7 @@ class OverlayAppSummary(unittest.TestCase):
         # an older stamp read now outweighs any check of the Shell's, and says how it was read
         s, line = self.summary(self.app(stamp=self.BY_PATH), BOOT22 + START + self.OK, installed=self.OLDER)
         self.assertEqual((s["state"], s["source"]), ("MISMATCH", "collect"))
-        self.assertTrue(line.startswith(f"  Overlay app: NOT the plugins' (installed: {self.OLDER}; the plugins came "
+        self.assertTrue(line.startswith(f"  Rubi app: NOT the plugins' (installed: {self.OLDER}; the plugins came "
                                         f"with {self.STAMP}): "), line)
         self.assertTrue(line.endswith("in VitaShell; read by its full path, no CWD, after the way through its folder was "
                                       "answered 'not there': vjo_app.txt (curl exit 9)"), line)
@@ -2296,7 +2355,7 @@ class OverlayAppSummary(unittest.TestCase):
             with self.subTest(why=why):
                 s, line = self.summary(app)
                 self.assertEqual(s["state"], "not installed")
-                self.assertEqual(line, f"  Overlay app: not installed ({why})")
+                self.assertEqual(line, f"  Rubi app: not installed ({why})")
         # a check of this boot that found it: both facts are said
         s, line = self.summary(self.app(folder="missing", apps="ok", in_apps=False), BOOT22 + START + self.OK)
         self.assertEqual(s["state"], "not installed")
@@ -2305,7 +2364,7 @@ class OverlayAppSummary(unittest.TestCase):
         # the Shell found neither file, against the same record, and nothing in the collect shows the folder
         s, line = self.summary({"listed": False, "eboot": None}, BOOT22 + START + self.NONE)
         self.assertEqual((s["state"], s["source"]), ("not installed", "shell"))
-        self.assertEqual(line, "  Overlay app: not installed: the Shell's check at a game start of this boot found "
+        self.assertEqual(line, "  Rubi app: not installed: the Shell's check at a game start of this boot found "
                                "neither its vjo_app.txt nor its eboot.bin (log.txt:3); this collect could not read it "
                                "over FTP: its folder could not be entered, and this older collect_vita.py read the app "
                                "only through it (#138)")
@@ -2331,10 +2390,10 @@ class OverlayAppSummary(unittest.TestCase):
             with self.subTest(why=why):
                 s, line = self.summary(app, "API 20 boot\n" + BOOT22 + START + self.OK)
                 self.assertEqual((s["state"], s["source"], s["shell"]["where"]), ("ok", "shell", "log.txt:4"))
-                self.assertEqual(line, f"  Overlay app: the plugins' ({self.STAMP}), by the Shell's check at a game start "
+                self.assertEqual(line, f"  Rubi app: the plugins' ({self.STAMP}), by the Shell's check at a game start "
                                        f"of this boot (log.txt:4); this collect could not read it over FTP: {why} (#138)")
                 # no answer: never "not installed", and the line says what the Shell's last check was
-                start = f"  Overlay app: not checked: this collect could not read it over FTP ({why}), and "
+                start = f"  Rubi app: not checked: this collect could not read it over FTP ({why}), and "
                 for log, shell in (
                         ("", "the Shell logged no check of it in this boot"),
                         (BOOT22 + START + self.OK + BOOT22, "the Shell logged no check of it in this boot"),
@@ -2345,7 +2404,7 @@ class OverlayAppSummary(unittest.TestCase):
                                                            "its eboot.bin: there)")):
                     s, line = self.summary(app, log)
                     self.assertEqual((s["state"], s["source"]), ("not read", "collect"), log)
-                    self.assertTrue(line.startswith(start + shell + "; if the Overlay app is open beside VitaShell, "
+                    self.assertTrue(line.startswith(start + shell + "; if the Rubi app is open beside VitaShell, "
                                                     "close it from its LiveArea page"), line)
                 # the Shell found neither file: "not installed", unless the collect saw the folder
                 s, line = self.summary(app, BOOT22 + START + self.NONE)
@@ -2358,7 +2417,7 @@ class OverlayAppSummary(unittest.TestCase):
         # the Shell found an app without a stamp (#101): its mismatch, in its words
         s, line = self.summary(present, BOOT22 + START + self.PRE)
         self.assertEqual((s["state"], s["source"]), ("MISMATCH", "shell"))
-        self.assertTrue(line.startswith("  Overlay app: NOT the plugins' (installed: an app from before the version "
+        self.assertTrue(line.startswith("  Rubi app: NOT the plugins' (installed: an app from before the version "
                                         f"stamps; the plugins came with {self.STAMP}), by the Shell's check"), line)
         # the boot's last line is its answer (the Shell logs only a change): ok after a mismatch in one boot is ok
         s, _ = self.summary(present, BOOT22 + START + self.PRE + START + self.OK)
@@ -2387,8 +2446,11 @@ class OverlayAppSummary(unittest.TestCase):
 
     def test_the_line_the_shell_writes_is_read_whole(self):
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
-        fmt = "overlay app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)"
+        fmt = "Rubi app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)"
         self.assertIn(f'vjo_log("{fmt}",', worker, "shell/worker.c check_app's line changed: update APP_CHECK")
+        # an earlier build's line (before the Rubi rename) reads the same
+        old = fmt.replace("Rubi app", "overlay app", 1) % ("MISMATCH", "", 0x80010002, 1, self.STAMP, 0x26)
+        self.assertEqual(a.APP_CHECK.match(old).group(1, 2, 3), ("MISMATCH", "", "0x80010002"))
         m = a.APP_CHECK.match(fmt % ("ok", self.STAMP, 0x26, 1, self.STAMP, 0x26))
         self.assertEqual(m.groups(), ("ok", self.STAMP, "0x00000026", "1", self.STAMP, "0x00000026"))
         m = a.APP_CHECK.match(fmt % ("MISMATCH", "", 0x80010002, 1, self.STAMP, 0x26))
@@ -2427,7 +2489,7 @@ ON_PRESS = START.replace("ocr_mode auto", "ocr_mode on_press")
 
 
 class PressesAndRereads(unittest.TestCase):
-    """The presses by ocr_mode (the Overlay app's Read text) and the jobs read before their text had finished
+    """The presses by ocr_mode (the Rubi app's Read text) and the jobs read before their text had finished
     (docs/auto-vs-press.md): what each overlay open found, how long its text and word took, and each job whose text
     the next job's in the window went on from. The log's text is never printed."""
 
@@ -2819,7 +2881,7 @@ class PressesAndRereads(unittest.TestCase):
                     '"screen changed since the background result"', '"job start (%s)%s"',
                     '"subtitle text ready in %d ms"', '"game vocr text %u: %s"', '"game vocr text %u shown: %s"',
                     '", refresh"', '"overlay opened"', '"job start (self-test)"',
-                    '"Vita JP Overlay shell started (kernel API %d, the normal build: a short log)"'):
+                    '"Rubi shell started (kernel API %d, the normal build: a short log)"'):
             self.assertIn(fmt, worker)
         self.assertTrue(a.JOB_END.match("job 7 done rc=-120 in 2393 ms, arena peak 0, dictionary page 1/0, game 2343 "
                                         "ms, log 49 ms in 2 appends"))

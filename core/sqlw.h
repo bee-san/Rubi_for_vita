@@ -1,5 +1,5 @@
 /* A minimal SQLite 3 database writer: tables bulk-loaded once, each in
- * increasing rowid order, into a new file, as the Overlay app's .apkg export
+ * increasing rowid order, into a new file, as the Rubi app's .apkg export
  * needs (core/apkg.c). It writes the documented file format
  * (https://www.sqlite.org/fileformat2.html) and nothing else: 4096-byte
  * pages, UTF-8, schema format 4, rollback-journal mode, no free pages, no

@@ -1,7 +1,7 @@
 # Lapis note type (vendored)
 
 [Lapis](https://github.com/donkuri/lapis) by Ruri, kuri, itokatsu and
-contributors: the Anki note type the Overlay app's `.apkg` export uses
+contributors: the Anki note type the Rubi app's `.apkg` export uses
 (docs/anki.md). GPL-3.0, the same licence as this project: [LICENSE](LICENSE)
 is Lapis's own copy.
 

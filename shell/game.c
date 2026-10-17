@@ -46,7 +46,7 @@ static int title_id(SceUID pid, char *tid, int size)
  * Adrenaline's PSPEMUCFW (AdrBubbleBooter-oss src/vita/adrbubblebooter/
  * main.c:62 reads it the same way). A PSP game is the emulator's process (the
  * Shell saw NPXS10028 for every Adrenaline launch on a console) or a game the
- * Overlay app described (a bubble it found by its files: settings/psp.c); its
+ * Rubi app described (a bubble it found by its files: settings/psp.c); its
  * policy, platform and name are a PSP game's. ID shapes (PSPEMU*, disc IDs)
  * are not used here: under its own title ID a bubble's ID is its booter's, an
  * ordinary app that exits. One description of at most VJO_PSP_INFO_MAX bytes

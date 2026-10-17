@@ -153,8 +153,10 @@ class Collect(unittest.TestCase):
                           ("ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict", b"dictionary bytes")):
             (self.device / rel).write_bytes(body)
             files[rel] = {"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest()}
-        files["JPOverlaySettings.vpk"] = {"bytes": 3, "sha256": hashlib.sha256(b"vpk").hexdigest()}
-        (self.device / "ux0/data/JPOverlaySettings.vpk").write_bytes(b"vpk")
+        files["Rubi.vpk"] = {"bytes": 3, "sha256": hashlib.sha256(b"vpk").hexdigest()}
+        (self.device / "ux0/data/Rubi.vpk").write_bytes(b"vpk")
+        # an install from before the Rubi rename uploaded its app as JPOverlaySettings.vpk: hashed, compared with nothing
+        (self.device / "ux0/data/JPOverlaySettings.vpk").write_bytes(b"old vpk")
         files["ux0/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr"]["sha256"] = "0" * 64  # the device's differs
         # a removed engine's model left on the card (VOCR2, 0.7.12 to v0.8.0-test.1): not in the package
         (self.device / "ux0/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr").write_bytes(b"vocr2 weights")
@@ -167,7 +169,7 @@ class Collect(unittest.TestCase):
         return subprocess.run(["bash", str(self.package / "tools/install_ftp.sh"), "--collect", f"127.0.0.1:{ftp.port}"],
                               capture_output=True, text=True, timeout=180, cwd=self.root)
 
-    # ---- the installed Overlay app (core/app_stamp.h): --collect reads it as --check-app does (#138) ----
+    # ---- the installed Rubi app (core/app_stamp.h): --collect reads it as --check-app does (#138) ----
     EBOOT = b"SCE\0 the package's eboot.bin"
     STAMP = f"vjoapp1 api=21 build={hashlib.sha256(EBOOT).hexdigest()[:16]}"
 
@@ -184,7 +186,7 @@ class Collect(unittest.TestCase):
         with zipfile.ZipFile(buf, "w") as z:
             z.writestr("eboot.bin", self.EBOOT)
             z.writestr("vjo_app.txt", self.STAMP + "\n")
-        (self.package / "JPOverlaySettings.vpk").write_bytes(buf.getvalue())
+        (self.package / "Rubi.vpk").write_bytes(buf.getvalue())
         (self.device / "ux0/data/VitaJPOverlay/vjo_app.txt").write_text(self.STAMP + "\n")
 
     def device_app(self, eboot=None, stamp=None, folder=True):
@@ -275,11 +277,13 @@ class Collect(unittest.TestCase):
         self.assertFalse(check["ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr"]["match"])
         self.assertIsNone(check["ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr"]["match"])
         self.assertTrue(check["ux0:/data/VitaJPOverlay/dictionaries/plaintext.vjdict"]["match"])
-        self.assertTrue(check["ux0:/data/JPOverlaySettings.vpk"]["match"])
+        self.assertTrue(check["ux0:/data/Rubi.vpk"]["match"])
+        self.assertEqual(record["hashed"]["ux0:/data/JPOverlaySettings.vpk"]["sha256"], hashlib.sha256(b"old vpk").hexdigest())
+        self.assertIsNone(check["ux0:/data/JPOverlaySettings.vpk"]["match"])
         # the analysis: the self-test, the logs, the tiers, and what it cannot decide
         analysis = (folder / "analysis.txt").read_text()
         for text in ("installed files: 7 of 8 match the package; DIFFER or absent: ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr"
-                     "; not in this package: ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr",
+                     "; not in this package: ux0:/data/JPOverlaySettings.vpk, ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr",
                      "API keys redacted: jpdb_api_key, jiten_api_key, jpdb_api_key, lens_api_key",
                      # the engine choice went with Google Lens: even ocr_backend = vocr is a line to delete
                      "    ocr_backend=vocr: no longer a setting (VOCR is the only engine); today's app or installer "
@@ -288,14 +292,14 @@ class Collect(unittest.TestCase):
                      "Shell jobs (OCR + dictionary): 1 (rc ok (rc 0) x1)",
                      "SceShell refused memory 2 time(s)",
                      "ur0:tai/config.txt: kernel under ['KERNEL'], shell under ['main'], OCR worker under ['PCSG00415'] "
-                     "(an older install's line: the kernel loads the worker since #138; the Overlay app's Install removes it)",
+                     "(an older install's line: the kernel loads the worker since #138; the Rubi app's Install removes it)",
                      # the one-VPK install: its record against the package, the backups and a leftover
                      "one-VPK install (installed.txt): v0.8.0-test.1, the debug build, API 22, app build 0123456789abcdef; "
                      "this package's payload",
                      "taiHEN backups: ur0:tai/config.txt.vjo-20261016-120000.bak, ur0:tai/config.txt.vjo-bak, "
                      "ux0:tai/config.txt.vjo-20261016-120000-old.bak, "
                      "ux0:tai/config.txt.vjo-bad; an interrupted swap's leftovers: "
-                     "ux0:tai/config.txt.vjo-new (the Overlay app's Install page finishes the swap or puts it back)",
+                     "ux0:tai/config.txt.vjo-new (the Rubi app's Install page finishes the swap or puts it back)",
                      "boot.txt: vjoboot1 seq=3 mode=0 stage=4",
                      "worker registrations 1, OCR jobs submitted 1",
                      "    worker loader: loaded into PCSG00415",  # #138: the kernel's own load
@@ -335,7 +339,7 @@ class Collect(unittest.TestCase):
                      "overlay opened 1x, slowest frame 33 ms",
                      "Anki: 2 save(s) (0 failed), queue 1, Picture off in this build",
                      # a successful export is reported as one (audit-test-build-3 N1), and is no problem line below
-                     "Anki exports (the Overlay app): 1 export(s): 1 succeeded (a package written and checked), "
+                     "Anki exports (the Rubi app): 1 export(s): 1 succeeded (a package written and checked), "
                      "0 failed; 3 card(s) in the packages",
                      "  VjoNet stack: at least 6,144 of 16,384 B used (37%)\n",
                      "anki_queue on the card: 2 card(s), 0 duplicate(s), 0 picture(s), 1 temp file(s); 1 exported card(s), "
@@ -377,7 +381,7 @@ class Collect(unittest.TestCase):
         self.assertEqual(summary["selftest"]["tiers"]["rows"][2]["need"], 1_720_320)
 
     def test_the_overlay_app_is_collected_read_only_and_compared(self):
-        # The installed Overlay app (core/app_stamp.h): its stamp is fetched, its eboot.bin hashed and never kept,
+        # The installed Rubi app (core/app_stamp.h): its stamp is fetched, its eboot.bin hashed and never kept,
         # and both are compared with the plugins' record and the package (#101). --check-app reads the same two
         # files the same way and gives the same answer (#138: test.3's --collect said "not installed" where
         # --check-app had said "up to date").
@@ -385,20 +389,20 @@ class Collect(unittest.TestCase):
         eboot, other, stamp = self.EBOOT, b"SCE\0 test.2's eboot.bin", self.STAMP
         (self.device / "ux0/data/VitaJPOverlay/config.ini").write_text("ocr_backend = vocr2\n")
         (self.device / "ux0/app/PCSG00415").mkdir(parents=True)  # a game: never named by the collect
-        cases = ((dict(eboot=other), ("Overlay app: NOT the plugins' (installed: an app from before the version stamps, "
+        cases = ((dict(eboot=other), ("Rubi app: NOT the plugins' (installed: an app from before the version stamps, "
                                       f"eboot.bin {hashlib.sha256(other).hexdigest()[:16]}; the plugins came with {stamp})"),
                   1, "no version stamp"),
-                 (dict(eboot=eboot, stamp=stamp), f"Overlay app: the plugins' ({stamp}); its eboot.bin is the package's",
-                  0, "Overlay app: up to date"),
+                 (dict(eboot=eboot, stamp=stamp), f"Rubi app: the plugins' ({stamp}); its eboot.bin is the package's",
+                  0, "Rubi app: up to date"),
                  # a folder without the app's files: the collect lists it to say so
-                 (dict(), "Overlay app: not installed (ux0:app/VJOSET001 has no eboot.bin)", 1,
-                  "No Overlay app is installed"),
+                 (dict(), "Rubi app: not installed (ux0:app/VJOSET001 has no eboot.bin)", 1,
+                  "No Rubi app is installed"),
                  # no folder: it cannot be entered, so ux0:app is listed, for VJOSET001 alone
-                 (dict(folder=False), "Overlay app: not installed (ux0:app has no VJOSET001)", 1,
-                  "No Overlay app is installed"),
+                 (dict(folder=False), "Rubi app: not installed (ux0:app has no VJOSET001)", 1,
+                  "No Rubi app is installed"),
                  # a file of that name is no app's folder
-                 (dict(folder=False, file=True), "Overlay app: not installed (ux0:app has no VJOSET001)", 1,
-                  "No Overlay app is installed"))
+                 (dict(folder=False, file=True), "Rubi app: not installed (ux0:app has no VJOSET001)", 1,
+                  "No Rubi app is installed"))
         for files, text, code, check_text in cases:
             with self.subTest(text=text, files=sorted(files)):
                 self.device_app(**{k: v for k, v in files.items() if k != "file"})
@@ -423,7 +427,7 @@ class Collect(unittest.TestCase):
                 for name, there in (("vjo_app.txt", "stamp" in files), ("eboot.bin", body is not None)):
                     self.assertEqual(record["app"]["reads"][name]["state"], "read" if there else "absent", name)
                     self.assertEqual(record["app"]["reads"][name]["method"], "cwd" if there else None, name)
-                # the app's own paths are the Overlay app line's, not "not on the Vita" (#138)
+                # the app's own paths are the Rubi app line's, not "not on the Vita" (#138)
                 self.assertFalse([m for m in record["missing"] if m.startswith("ux0:/app/")], record["missing"])
                 self.assertNotIn("not on the Vita: ux0:/app", analysis)
                 # ux0:app is listed only to find VJOSET001: no other title is kept anywhere
@@ -433,7 +437,7 @@ class Collect(unittest.TestCase):
                 with zipfile.ZipFile(Path(str(folder) + ".zip")) as z:
                     self.assertFalse(any(n.endswith("eboot.bin") for n in z.namelist()))
                 self.assertIn(text, analysis)
-                self.assertIn("ocr_backend=vocr2: a removed engine, which an older Overlay app writes; the plugins run "
+                self.assertIn("ocr_backend=vocr2: a removed engine, which an older Rubi app writes; the plugins run "
                               "vocr, and today's app or installer deletes the line", analysis)
                 self.assertNotIn("not in this package: ux0:/app", analysis)
                 # --check-app, on the same Vita: the same answer
@@ -443,7 +447,7 @@ class Collect(unittest.TestCase):
                 Path(str(folder) + ".zip").unlink()
 
     def test_the_app_is_read_by_its_full_path_when_its_folder_cannot_be_entered(self):
-        """#138: test.3's --collect said "Overlay app: not installed" and listed ux0:/app/VJOSET001/ as not on the
+        """#138: test.3's --collect said "Rubi app: not installed" and listed ux0:/app/VJOSET001/ as not on the
         Vita: every CWD into that folder was refused (curl's for the stamp, ftplib's three spellings for its
         listing), while --check-app had read it after the install and the Shell read its stamp at the game starts
         of the same boot. Both tools now read each file through the folder and then by its full path, which
@@ -467,14 +471,14 @@ class Collect(unittest.TestCase):
         self.assertEqual(record["app"]["eboot"]["sha256"], hashlib.sha256(self.EBOOT).hexdigest())
         self.assertEqual(record["files"]["ux0:/app/VJOSET001/vjo_app.txt"]["bytes"], len(self.STAMP) + 1)
         self.assertNotIn("folder", record["app"])  # a file was read: no folder is listed for it
-        self.assertIn(f"Overlay app: the plugins' ({self.STAMP}); its eboot.bin is the package's; read by its full "
+        self.assertIn(f"Rubi app: the plugins' ({self.STAMP}); its eboot.bin is the package's; read by its full "
                       "path, no CWD, after the way through its folder was answered 'not there': eboot.bin (curl exit 9), "
                       "vjo_app.txt (curl exit 9)", analysis)
         self.assertNotIn("not on the Vita: ux0:/app", analysis)
         # --check-app on the same Vita: the same answer
         self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
         flat = " ".join(check.stdout.replace("|", " ").split())
-        self.assertIn("Overlay app: up to date", flat)
+        self.assertIn("Rubi app: up to date", flat)
         self.assertIn("Its eboot.bin is the package VPK's.", flat)
 
     def test_an_app_that_cannot_be_read_is_never_called_not_installed(self):
@@ -492,14 +496,14 @@ class Collect(unittest.TestCase):
         start = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
         log = (data / "log.txt").read_text()
         cases = ((log + boot + start + check_line,
-                  f"Overlay app: the plugins' ({self.STAMP}), by the Shell's check at a game start of this boot "
+                  f"Rubi app: the plugins' ({self.STAMP}), by the Shell's check at a game start of this boot "
                   f"(log.txt:{log.count(chr(10)) + 3}); this collect could not read it over FTP: ux0:app lists VJOSET001, "
                   "but its folder could not be entered and neither its vjo_app.txt nor its eboot.bin could be read by "
                   "its full path (#138)"),
                  (log + check_line + boot,
-                  "Overlay app: not checked: this collect could not read it over FTP (ux0:app lists VJOSET001, but its "
+                  "Rubi app: not checked: this collect could not read it over FTP (ux0:app lists VJOSET001, but its "
                   "folder could not be entered and neither its vjo_app.txt nor its eboot.bin could be read by its full "
-                  "path), and the Shell logged no check of it in this boot; if the Overlay app is open beside VitaShell, "
+                  "path), and the Shell logged no check of it in this boot; if the Rubi app is open beside VitaShell, "
                   "close it from its LiveArea page and collect again"))
         for text_log, text in cases:
             with self.subTest(text=text):
@@ -518,7 +522,7 @@ class Collect(unittest.TestCase):
                 self.assertNotIn("ux0:/app", record["listings"])
                 self.assertNotIn(b"PCSG00415", (folder / "COLLECT.json").read_bytes())  # only VJOSET001 is kept
                 self.assertIn(text, analysis)
-                self.assertNotIn("not installed", analysis.split("Overlay app:", 1)[1].split("\n", 1)[0])
+                self.assertNotIn("not installed", analysis.split("Rubi app:", 1)[1].split("\n", 1)[0])
                 shutil.rmtree(folder)
                 Path(str(folder) + ".zip").unlink()
 
@@ -544,13 +548,13 @@ class Collect(unittest.TestCase):
                         record["errors"])
         self.assertTrue(any(e.startswith("ux0:/app/VJOSET001/eboot.bin: not hashed, curl exit ") for e in record["errors"]),
                         record["errors"])
-        line = next(row for row in analysis.splitlines() if row.startswith("  Overlay app:"))
-        self.assertTrue(line.startswith("  Overlay app: not checked: this collect could not read it over FTP (reading it "
+        line = next(row for row in analysis.splitlines() if row.startswith("  Rubi app:"))
+        self.assertTrue(line.startswith("  Rubi app: not checked: this collect could not read it over FTP (reading it "
                                         "failed: vjo_app.txt, curl exit "), line)
         self.assertIn("), and the Shell logged no check of it in this boot", line)
         self.assertEqual(check.returncode, 2, check.stdout + check.stderr)
         self.assertIn("Cannot read ux0:app/VJOSET001/vjo_app.txt from 127.0.0.1:", check.stdout)
-        self.assertNotIn("No Overlay app is installed", check.stdout)
+        self.assertNotIn("No Rubi app is installed", check.stdout)
 
     def test_read_app_tries_the_full_path_only_after_not_there(self):
         """collect_vita.py read_app, as install_ftp.sh's app_check: the second way (no CWD) only when the first is
@@ -581,7 +585,7 @@ class Collect(unittest.TestCase):
 
     def test_test3s_collect_names_the_app_the_shell_checked(self):
         """The owner's test.3 collect (#138, vjo-collect-20261016-071743Z.zip, SHA-256 289ec0f9...): its COLLECT.json's
-        app record, missing list and package app, the plugins' record, and its log.txt's boot, game start, Overlay app
+        app record, missing list and package app, the plugins' record, and its log.txt's boot, game start, Rubi app
         check and app start lines, verbatim (tools/tests/fixtures/collect-test3-app/; no game text, the host replaced by
         the docs' example address). Its collect_vita.py could not enter ux0:/app/VJOSET001; the Shell's check at this
         boot's first game start had read the stamp. The analysis gives the Shell's answer, not "not installed", and
@@ -596,11 +600,11 @@ class Collect(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("  not on the Vita: ux0:/data/VitaJPOverlay/log.old.txt, ux0:/data/VitaJPOverlay/selftest.txt, "
                       "ux0:/tai/config.txt, ux0:/tai/config.txt.vjo-bak\n", r.stdout)
-        self.assertIn("  Overlay app: the plugins' (vjoapp1 api=22 build=c3e781ad58a5ebe3), by the Shell's check at a "
+        self.assertIn("  Rubi app: the plugins' (vjoapp1 api=22 build=c3e781ad58a5ebe3), by the Shell's check at a "
                       "game start of this boot (log.txt:5); this collect could not read it over FTP: its folder could "
                       "not be entered, and this older collect_vita.py read the app only through it (#138)\n", r.stdout)
         self.assertNotIn("not installed", r.stdout)
-        self.assertIn("the Shell's Overlay app check: ok x1", r.stdout)
+        self.assertIn("the Shell's Rubi app check: ok x1", r.stdout)
         app = json.loads(j.stdout)["app"]
         self.assertEqual((app["state"], app["source"], app["shell"]["where"]), ("ok", "shell", "log.txt:5"))
 
@@ -619,7 +623,7 @@ class Collect(unittest.TestCase):
         analysis = (folder / "analysis.txt").read_text()
         self.assertIn("config warnings: 6 line(s), 4 distinct: unknown setting 'ocr_backend' x3; ", analysis)
         self.assertIn("    logged by builds of API 19: 5, 20: 1\n", analysis)
-        self.assertIn("the Shell's Overlay app check: MISMATCH x1", analysis)
+        self.assertIn("the Shell's Rubi app check: MISMATCH x1", analysis)
 
     def test_a_normal_build_package_is_named_and_its_self_test_note(self):
         """docs/release-variants.md: the analysis names the package's build; --self-test from the normal
@@ -886,7 +890,7 @@ class Collect(unittest.TestCase):
         # setUp's 8 package files (VOCR3-FL10's differs) and these 6; VOCR2 is not in the package
         self.assertIn("installed files: 12 of 14 match the package; DIFFER or absent: "
                       "ux0:/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr, ux0:/data/VitaJPOverlay/ocr/vocr_lm_o3_500k.vlm; "
-                      "not in this package: ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr",
+                      "not in this package: ux0:/data/JPOverlaySettings.vpk, ux0:/data/VitaJPOverlay/ocr/VOCR2_FL10_w8.vocr",
                       (folder / "analysis.txt").read_text())
 
 
@@ -903,7 +907,7 @@ class InstallRecord(unittest.TestCase):
             self.assertEqual(a.render_install(a.summarise_install(folder, {})), [])
             self.assertEqual(a.render_install(a.summarise_install(
                 folder, {"missing": ["ux0:/data/VitaJPOverlay/installed.txt"]})),
-                ["  one-VPK install: no installed.txt (neither the Overlay app's Install page nor this install-vita.sh "
+                ["  one-VPK install: no installed.txt (neither the Rubi app's Install page nor this install-vita.sh "
                  "has installed this Vita's overlay: an older installer did, or none)"])
             (folder / "ux0/data/VitaJPOverlay").mkdir(parents=True)
             record = folder / "ux0/data/VitaJPOverlay/installed.txt"

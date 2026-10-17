@@ -32,7 +32,7 @@ names its source: the definitions carry no `[Daijirin4 Plain]`-style first line
 and the attribution is in `plaintext-attribution.txt` and the metadata. The
 file names itself instead, `Bee's Ultimate Dictionary` in page 0
 ([format](#binary-format-version-3-with-frequency-ranks)), and that is the
-dictionary's name on Anki cards, in `log.txt` and on the Overlay app's
+dictionary's name on Anki cards, in `log.txt` and on the Rubi app's
 Dictionaries shown card. A grammar point's summary replaces a function word's
 definition (は, に, ので, てしまう) and comes before a content word's on a line of
 its own (上, こと, 無くなる); a point no word entry had is an entry of its own, and
@@ -91,7 +91,7 @@ file already holds and changes no entry.
    changes. The updated plugin binaries themselves require the usual reboot.
 
 Alternatively, once `config.ini` exists (the overlay's installer, `install-vita.sh`, creates it, and so
-does any change in the Overlay app; the Shell plugin never writes it), start VitaShell's FTP server and
+does any change in the Rubi app; the Shell plugin never writes it), start VitaShell's FTP server and
 run:
 
 ```sh
@@ -202,7 +202,7 @@ kanji lines stay whole, and so does a grammar summary, which the bundle puts fir
 scrolls with the right stick.
 `every_bundled_entry_fits_the_popup` (host/tests/test_word_lookup.cpp) renders
 every entry of the bundle with the body's longest lines before it (the dictionary page, the
-Overlay app's notice, a status, the Anki lines) and four warnings after it: none is truncated or
+Rubi app's notice, a status, the Anki lines) and four warnings after it: none is truncated or
 loses a kanji line; 46 are clipped with nothing else in the body, 103 in that worst case, and that
 fullest body takes at most 66 of the 96 spans. The layout itself (line wrapping at the
 default font sizes, the scroll) is laid out by the console's text widget and
@@ -239,7 +239,7 @@ the previous dictionary.
 ### Dictionaries shown
 
 By default the overlay shows only the best match at the selected character.
-Overlay app → OCR & lookup → **Dictionaries shown** (or `local_dictionary_results`
+Rubi app → OCR & lookup → **Dictionaries shown** (or `local_dictionary_results`
 in `config.ini`, 1–8, default 1) shows the other enabled dictionaries' entries
 for the same word, one page at a time:
 
@@ -346,7 +346,7 @@ Longer phrases take precedence. Katakana and hiragana readings share a search
 key; full-width ASCII is folded to ASCII. Yomichan's Japanese suffix rules handle
 inflections such as `食べました`, `行った`, `高くなかった`, and `来ました`.
 The matched original text length is retained in the entry, while the UI
-highlights the complete match by default. Overlay app → OCR & lookup → Highlight
+highlights the complete match by default. Rubi app → OCR & lookup → Highlight
 can instead highlight the selected character. Tapping the recognized header
 selects a character and uses the same bounded lookup as the arrows. Neither
 option introduces sentence tokenization. With card mining on, Enter saves

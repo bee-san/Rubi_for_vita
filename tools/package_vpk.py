@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""The one-VPK install's package (docs/one-vpk-install.md): VitaJPOverlay-<version>.vpk from a release zip.
+"""The one-VPK install's package (docs/one-vpk-install.md): Rubi-<version>.vpk from a release zip.
 
-    package_vpk.py RELEASE.zip -o VitaJPOverlay-V.vpk        the VPK of a package_release.py zip
-    package_vpk.py --verify VitaJPOverlay-V.vpk              its checks again (exit 1 with what is wrong)
+    package_vpk.py RELEASE.zip -o Rubi-V.vpk        the VPK of a package_release.py zip
+    package_vpk.py --verify Rubi-V.vpk              its checks again (exit 1 with what is wrong)
     package_vpk.py --manifest RELEASE.zip                    the payload manifest the VPK would carry
 
-The VPK is the zip's JPOverlaySettings.vpk (the Overlay app, entry for entry, its order kept) followed by
+The VPK is the zip's Rubi.vpk (the Rubi app, entry for entry, its order kept) followed by
 payload/: the files the app installs (include/vjo_payload.h, the same bytes as the zip's ur0/ and ux0/)
 and payload/manifest.txt (core/payload.h's format), then licenses/: the zip's licence and attribution
 files at their zip paths (LICENSE, third_party/, docs/plaintext-attribution.txt, docs/JMdict-LICENSE.html),
@@ -21,7 +21,7 @@ Checks, before anything is written and again by --verify:
     attribution and JMdict's licence are there and nothing else is under licenses/ (the release's
     SHA256SUMS is the outside reference for the VPK's bytes as a whole);
   - the manifest is exactly the one this tool makes of the VPK's own app and payload files: every
-    line, kind and order, with only its version (named by the file, VitaJPOverlay-<version>.vpk) and
+    line, kind and order, with only its version (named by the file, Rubi-<version>.vpk) and
     its set lines (the app's keys, on or off) from the package;
   - the app's eboot.bin stays VitaShell's second entry, after sce_sys/param.sfo, so VitaShell's scan
     (archive.c archiveCheckFilesForUnsafeFself, which returns at the first unsafe SELF) stops there with
@@ -44,7 +44,7 @@ import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-APP_VPK = "JPOverlaySettings.vpk"
+APP_VPK = "Rubi.vpk"
 MANIFEST = "payload/manifest.txt"
 LICENSES = "licenses/"
 # The zip's licence and attribution files the VPK carries (licenses/<zip path>); the first three must be there.
@@ -81,7 +81,7 @@ def payload_files():
         # of the size below it) name that file twice here: the payload list has to name it once first.
         if any(dest == d for d, _ in out):
             raise ValueError(f"include/vjo_payload.h names {dest} twice (two model sizes with one model?): "
-                             "the Overlay app refuses such a payload")
+                             "the Rubi app refuses such a payload")
         out.append((dest, kind.lower()))
     return out
 
@@ -169,16 +169,16 @@ def eboot_facts(eboot):
     version, variant = app_version(blob)
     marks = set(WORKER_MARK.findall(blob))
     if version is None:
-        raise ValueError("the Overlay app's eboot.bin names no version (its start line)")
+        raise ValueError("the Rubi app's eboot.bin names no version (its start line)")
     if len(marks) != 1:
-        raise ValueError("the Overlay app's eboot.bin has no single vjoworker= mark (settings/install_page.c)")
+        raise ValueError("the Rubi app's eboot.bin has no single vjoworker= mark (settings/install_page.c)")
     return version, variant, marks.pop().decode()
 
 
 # ---------------- the manifest ----------------
 
 def app_facts(app_vpk):
-    """The Overlay app's (app_version, variant, worker, api, build) from its VPK's bytes: its eboot.bin's
+    """The Rubi app's (app_version, variant, worker, api, build) from its VPK's bytes: its eboot.bin's
     start line and vjoworker= mark, and its stamp (which must be its eboot's). ValueError for a VPK that
     is not a stamped app of this tree (an older base, a test's placeholder)."""
     try:
@@ -186,14 +186,14 @@ def app_facts(app_vpk):
             eboot = vpk.read("eboot.bin")
             stamp = vpk.read("vjo_app.txt").decode("ascii").strip()
     except (zipfile.BadZipFile, KeyError) as e:
-        raise ValueError(f"{APP_VPK} is not a stamped Overlay app ({e})")
+        raise ValueError(f"{APP_VPK} is not a stamped Rubi app ({e})")
     try:
         app_version, variant, worker = eboot_facts(eboot)
     except (struct.error, zlib.error, IndexError) as e:
-        raise ValueError(f"the Overlay app's eboot.bin is not a Vita SELF ({e})")
+        raise ValueError(f"the Rubi app's eboot.bin is not a Vita SELF ({e})")
     m = re.fullmatch(r"vjoapp1 api=(\d+) build=([0-9a-f]{16})", stamp)
     if not m or m.group(2) != sha256(eboot)[:16]:
-        raise ValueError("the Overlay app's stamp is not its eboot.bin's")
+        raise ValueError("the Rubi app's stamp is not its eboot.bin's")
     return app_version, variant, worker, int(m.group(1)), m.group(2)
 
 
@@ -402,8 +402,9 @@ def manifest_problems(vpk, text, file_name):
         diff = [l for l in text.splitlines() if l not in rebuilt.splitlines()] + \
                [f"(want) {l}" for l in rebuilt.splitlines() if l not in text.splitlines()]
         problems.append("the manifest is not the one this VPK's own app and files make: " + "; ".join(diff[:4]))
-    # the release names its VPKs VitaJPOverlay-<version>.vpk and -<version>-debug.vpk (package_variants.vpk_name)
-    m = re.fullmatch(r"VitaJPOverlay-(.+?)(-debug)?\.vpk", file_name)
+    # the release names its VPKs Rubi-<version>.vpk and -<version>-debug.vpk (package_variants.vpk_name;
+    # VitaJPOverlay-<version>.vpk before the Rubi rename)
+    m = re.fullmatch(r"(?:Rubi|VitaJPOverlay)-(.+?)(-debug)?\.vpk", file_name)
     if m and version is not None and m.group(1) != version:
         problems.append(f"the file is named for version {m.group(1)}, the manifest says {version}")
     return problems

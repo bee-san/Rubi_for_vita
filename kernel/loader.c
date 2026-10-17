@@ -12,7 +12,7 @@
  * default), it loads VJO_GAME_OCR_PATH_UR0 into the process (VJO_GAME_OCR_PATH_UX0
  * only when ur0:tai has none), so the worker needs no taiHEN line. It loads
  * nothing into SceShell, a system app (NPXS*, but the PSP emulator's NPXS10028),
- * VitaShell or the Overlay app (vjo_game_is_candidate), nothing while L is held
+ * VitaShell or the Rubi app (vjo_game_is_candidate), nothing while L is held
  * at the start (taiHEN's own escape, hen.c:368-373) and nothing before the Shell
  * plugin has registered. The original call's result is returned whatever happens.
  *
@@ -91,7 +91,7 @@ static struct {
 
 /* ---- the kernel worker's side ---- */
 
-/* As vita/games_storage.c read_policy, which the Shell and the Overlay app use,
+/* As vita/games_storage.c read_policy, which the Shell and the Rubi app use,
  * with the kernel's file calls. */
 static int read_policy(const char *path, VjoGames *g, char *text)
 {
@@ -241,7 +241,7 @@ static void worker_for(SceUID pid)
     memset(title, 0, sizeof(title));
     if (get_title(pid, title, sizeof(title)) < 0) return;
     title[sizeof(title) - 1] = '\0';
-    /* SceShell, the system apps, VitaShell, the Overlay app: before any file or log line. */
+    /* SceShell, the system apps, VitaShell, the Rubi app: before any file or log line. */
     if (!vjo_game_is_candidate(title)) return;
     psp = vjo_game_is_psp(title) || (is_pspemu && is_pspemu(pid) > 0);
     memset(&pad, 0, sizeof(pad));

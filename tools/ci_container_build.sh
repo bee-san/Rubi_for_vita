@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds a commit's Vita targets the way CI's `vita` job builds them (.github/workflows/release.yml):
 # in the vitasdk/vitasdk:2026.08 container, pinned here by the digest CI pulled, at CI's checkout path,
-# with the job's own commands. The Overlay app's eboot.bin depends on the SDK's libraries, so a build
+# with the job's own commands. The Rubi app's eboot.bin depends on the SDK's libraries, so a build
 # with another VitaSDK gives other bytes; this one is CI's (docs/offline-testing.md, "CI's Vita build
 # in its container").
 #
@@ -13,11 +13,12 @@
 #   --out DIR          where the built files and build.log go (default build/ci-container/<commit>)
 #   --vocr-source DIR  a clone of bee-san/vita-vn-ocr holding cmake/VocrOCR.cmake's pinned commit:
 #                      also builds the three plugins and the RCO, all of CI's `cmake --build`.
-#                      Without it only the Overlay app is built, which does not use the OCR runtime.
-#   --variant V        the build: debug (the default, CI's VitaJPOverlay artifact and the -debug zip) or
-#                      normal (VitaJPOverlay-normal and the release's main zip; docs/release-variants.md)
-#   --compare FILE     an eboot.bin, a VPK, or a zip holding JPOverlaySettings.vpk (a release, or
-#                      CI's VitaJPOverlay artifact): exit 1 unless its eboot.bin and the VPK's other
+#                      Without it only the Rubi app is built, which does not use the OCR runtime.
+#   --variant V        the build: debug (the default, CI's Rubi artifact and the -debug zip) or
+#                      normal (Rubi-normal and the release's main zip; docs/release-variants.md)
+#   --compare FILE     an eboot.bin, a VPK, or a zip holding Rubi.vpk (a release, or CI's Rubi
+#                      artifact; JPOverlaySettings.vpk in one from before the Rubi rename, or CI's
+#                      VitaJPOverlay artifact then): exit 1 unless its eboot.bin and the VPK's other
 #                      files, and a package's plugins and RCO when built, are byte-identical
 #
 # Exit status: 0 built (and identical, with --compare), 1 DIFFERENT, 2 nothing built (an option, a
@@ -55,7 +56,7 @@ commit=$(git -C "$ROOT" rev-parse --verify --quiet "$REV^{commit}") || die "not 
 if [ -n "$COMPARE" ]; then
   [ -f "$COMPARE" ] || die "no such file: $COMPARE"
   # before building: a reference that holds no eboot.bin is not one
-  python3 - "$COMPARE" <<'PY' || die "$COMPARE is neither an eboot.bin nor a VPK nor a zip holding JPOverlaySettings.vpk"
+  python3 - "$COMPARE" <<'PY' || die "$COMPARE is neither an eboot.bin nor a VPK nor a zip holding Rubi.vpk (or JPOverlaySettings.vpk)"
 import io, sys, zipfile
 data = open(sys.argv[1], "rb").read()
 if data[:4] == b"SCE\0":
@@ -63,8 +64,9 @@ if data[:4] == b"SCE\0":
 try:
     z = zipfile.ZipFile(io.BytesIO(data))
     names = set(z.namelist())
-    if "JPOverlaySettings.vpk" in names and "eboot.bin" not in names:
-        names = set(zipfile.ZipFile(io.BytesIO(z.read("JPOverlaySettings.vpk"))).namelist())
+    vpk = next((v for v in ("Rubi.vpk", "JPOverlaySettings.vpk") if v in names), None)  # the latter: before the rename
+    if vpk and "eboot.bin" not in names:
+        names = set(zipfile.ZipFile(io.BytesIO(z.read(vpk))).namelist())
 except (zipfile.BadZipFile, KeyError, OSError):
     sys.exit(1)
 sys.exit(0 if "eboot.bin" in names else 1)
@@ -87,7 +89,7 @@ if [ -z "$engine" ]; then
 fi
 
 # What the build gives (the comparison reads these names only, whatever else --out holds).
-FILES="eboot.bin JPOverlaySettings.vpk VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_OCR.suprx vitajpoverlay.rco"
+FILES="eboot.bin Rubi.vpk VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_OCR.suprx vitajpoverlay.rco"
 OUT=${OUT:-$ROOT/build/ci-container/${commit:0:12}$([ "$VARIANT" = normal ] && echo -normal)}
 [ ! -e "$OUT" ] || [ -d "$OUT" ] || die "--out is not a directory: $OUT"
 mkdir -p "$OUT" || die "cannot make --out: $OUT"
@@ -112,7 +114,7 @@ fi
 DBG=$([ "$VARIANT" = normal ] && echo OFF || echo ON)
 INNER='set -euo pipefail
 exec 3>&1 1>&2
-W=/__w/vita-jp-overlay/vita-jp-overlay
+W=/__w/Rubi_for_vita/Rubi_for_vita
 mkdir -p "$W" && cd "$W" && tar -x -i
 apt-get update && apt-get install -y --no-install-recommends g++ patch python3 openssh-client
 WORK=$PWD/.refs/toolchain bash tools/setup_toolchain.sh
@@ -120,11 +122,11 @@ export PATH=$PWD/.refs/toolchain/psp2cxml-tool/mbuild:$PATH
 if [ -d .refs/vita-vn-ocr/runtime ]; then
   cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG='"$DBG"' -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr
   cmake --build build/vita -j4
-  files="eboot.bin JPOverlaySettings.vpk VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_OCR.suprx vitajpoverlay.rco"
+  files="eboot.bin Rubi.vpk VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_OCR.suprx vitajpoverlay.rco"
 else
   cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG='"$DBG"' -DVJO_WITH_VOCR=OFF
   cmake --build build/vita -j4 --target vjo_settings_assets
-  files="eboot.bin JPOverlaySettings.vpk"
+  files="eboot.bin Rubi.vpk"
 fi
 tar -c -C build/vita $files >&3'
 
@@ -154,7 +156,7 @@ import hashlib, io, sys, zipfile
 from pathlib import Path
 
 out, commit, image, compare = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
-# Where a package (a release zip, or CI's VitaJPOverlay artifact) holds each built file.
+# Where a package (a release zip, or CI's Rubi artifact) holds each built file.
 PACKAGE = {"VitaJPOverlay_Kernel.skprx": "ur0/tai/VitaJPOverlay_Kernel.skprx",
            "VitaJPOverlay_Shell.suprx": "ur0/tai/VitaJPOverlay_Shell.suprx",
            "VitaJPOverlay_OCR.suprx": "ur0/tai/VitaJPOverlay_OCR.suprx",
@@ -172,16 +174,16 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-KNOWN = ("eboot.bin", "JPOverlaySettings.vpk", "VitaJPOverlay_Kernel.skprx", "VitaJPOverlay_Shell.suprx",
+KNOWN = ("eboot.bin", "Rubi.vpk", "VitaJPOverlay_Kernel.skprx", "VitaJPOverlay_Shell.suprx",
          "VitaJPOverlay_OCR.suprx", "vitajpoverlay.rco")
 built = {n: (out / n).read_bytes() for n in KNOWN if (out / n).is_file()}
-if "eboot.bin" not in built or "JPOverlaySettings.vpk" not in built:
+if "eboot.bin" not in built or "Rubi.vpk" not in built:
     print(f"ci_container_build: the build gave no eboot.bin or VPK in {out}", file=sys.stderr)
     sys.exit(3)
 print(f"built {commit} in {image}:")
 for name, data in built.items():
     print(f"  {sha(data)}  {len(data):>9,} B  {name}")
-mine = vpk_files(built["JPOverlaySettings.vpk"])
+mine = vpk_files(built["Rubi.vpk"])
 if mine.get("eboot.bin") != built["eboot.bin"]:
     sys.exit("ci_container_build: the VPK's eboot.bin is not the built eboot.bin")
 if compare:
@@ -195,10 +197,11 @@ if compare:
         names = set(z.namelist())
         if "eboot.bin" in names:
             ref, where = vpk_files(data), ""
-        elif "JPOverlaySettings.vpk" in names:
-            ref, where = vpk_files(z.read("JPOverlaySettings.vpk")), "JPOverlaySettings.vpk:"
+        elif "Rubi.vpk" in names or "JPOverlaySettings.vpk" in names:  # the latter: a package from before the rename
+            vpk = "Rubi.vpk" if "Rubi.vpk" in names else "JPOverlaySettings.vpk"
+            ref, where = vpk_files(z.read(vpk)), vpk + ":"
         else:
-            print(f"ci_container_build: {compare} holds neither eboot.bin nor JPOverlaySettings.vpk",
+            print(f"ci_container_build: {compare} holds neither eboot.bin nor Rubi.vpk (or JPOverlaySettings.vpk)",
                   file=sys.stderr)
             sys.exit(2)
         pairs += [(where + n, ref.get(n), mine.get(n)) for n in sorted(set(ref) | set(mine))]

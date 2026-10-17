@@ -2,7 +2,7 @@
  * metadata of the bee-san/vita-vn-ocr release that published each: its exact
  * size, its shape and the model generation it belongs to (VOCR1 for v0.2.0's
  * models, VOCR3 for v0.2.5-vocr3.1's, VOCR4 for v0.2.5-vocr4.1's, VOCR5 for
- * v0.3.0's), and the two estimates the Overlay app shows for a model size: its
+ * v0.3.0's), and the two estimates the Rubi app shows for a model size: its
  * time per textbox and the game memory a job of it needs. A .vocr blob carries no
  * generation of its own (its 64-byte header is all layout, CRC and checkpoint
  * hash), so the pin carries it. The game worker pins the same names with their
@@ -12,7 +12,7 @@
  * and host/tests/test_vocr.c check that they agree.
  *
  * The model tiers (API 21, include/vjo_vocr_sizes.h): Small, Normal and Large,
- * each a pinned model; tools/model_tiers.json is the same table. The Overlay
+ * each a pinned model; tools/model_tiers.json is the same table. The Rubi
  * app offers them as its Model size and names the local OCR engine after the
  * generation of the model that runs (settings/engine.c): "VOCR5" for this
  * package's three, and a new generation's name as soon as its models are pinned
@@ -48,7 +48,7 @@ typedef struct {
 
 typedef struct {
     const char *id;          /* "small": config.ini vocr_tier */
-    const char *name;        /* "Small": the Overlay app's button */
+    const char *name;        /* "Small": the Rubi app's button */
     const char *tagline;     /* "fastest" */
     const char *model;       /* the tier's pinned model file (include/vjo_vocr_sizes.h VJO_VOCR_TIERn_NAME) */
     uint32_t reserve;        /* the game memory a job of the tier leaves free (VJO_GAME_RESERVE_*) */

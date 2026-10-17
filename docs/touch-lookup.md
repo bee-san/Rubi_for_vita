@@ -1,6 +1,6 @@
 # Touch selection and highlighting
 
-Overlay app → OCR & lookup → Highlight chooses **Whole word** (default) or
+Rubi app → OCR & lookup → Highlight chooses **Whole word** (default) or
 **Character**. Local dictionaries show one entry at a time; with
 **Dictionaries shown** above 1, an L or R tap pages to other dictionaries'
 entries at the same character ([details](local-dictionaries.md#dictionaries-shown)).
@@ -33,7 +33,7 @@ it, and nothing says the dialogue changed. The region's scene can change while
 the dialogue does not: in the test build's console log one open overlay saw ten
 new scene numbers with the game's input blocked and one cell masked as
 animated (an icon whose mask comes and goes is enough).
-In Auto mode (not with `ocr_mode = on_press`, the Overlay app's Read text **Only when I press**, which
+In Auto mode (not with `ocr_mode = on_press`, the Rubi app's Read text **Only when I press**, which
 recognizes only when the overlay opens: [auto-vs-press.md](auto-vs-press.md)), a screen that settles and is not the one the text was read from
 is recognized in the background, a refresh, which leaves the text, its entry and the result
 arena alone: the same text changes nothing, no text (a box between lines)
@@ -187,7 +187,7 @@ game is what deactivates the region then), is for the console run.
 ## Rows and arrow keys
 
 The arrows move by the header as it is drawn, not by the text's line breaks
-([#81](https://github.com/bee-san/vita-jp-overlay/issues/81), requests 1 and 2;
+([#81](https://github.com/bee-san/Rubi_for_vita/issues/81), requests 1 and 2;
 the owner's rule of 2026-10-16 for Left/Right). A recognized line longer than
 the 920 px box wraps onto a second displayed row; each row is its own row for
 the arrows.
@@ -293,7 +293,7 @@ cursor lookups took 35-112 ms each (median 56 ms; the `lookup cursor` and
 slow. The left stick now moves the cursor without looking anything up on the
 way:
 
-- **Speed, by the clock** (`core/stick_cursor.h`), as the Overlay app's lists
+- **Speed, by the clock** (`core/stick_cursor.h`), as the Rubi app's lists
   since #107, #113 and #129 (`core/stick_scroll.h`): pushed more than half way
   (64 of its 128 counts), the stick moves the cursor one step at once; held, the
   next step comes after the lists' 166.7 ms, then after 125 ms, each later one
@@ -469,7 +469,7 @@ A game wraps its dialogue where a line is full, often inside a word: どうし�
 - **The cursor**: in Whole word mode Right skips the joined word, as any matched word, to the first
   character after its end on the next line, and Left retraces it ([rows and arrow keys](#rows-and-arrow-keys)).
 - **Anki**: the card's Sentence is the text with its joining breaks removed, the word in it
-  (`core/anki.c`, at export in the Overlay app); the queue's record keeps the text as recognized,
+  (`core/anki.c`, at export in the Rubi app); the queue's record keeps the text as recognized,
   so a card queued before this build exports joined too. A name's line keeps its own `<br>`.
 - The header, the strip and the log show the lines as recognized, breaks and all.
 
@@ -536,7 +536,7 @@ and between kanji and the kana that inflects it (食べ|る), it never breaks.
   breaks are mapped back to the recognized text's own characters for the cursor, taps, arrows and
   the highlight. The popup's definitions, mostly English, already break at spaces; its Japanese
   (headwords, examples, kanji lines) is what this changes.
-- **The Overlay app**'s rows (`settings/text_layout.c`) end at the last space that fits, as before,
+- **The Rubi app**'s rows (`settings/text_layout.c`) end at the last space that fits, as before,
   or later where a line may break: a Japanese game title no longer breaks inside a run of kanji or
   kana, and Latin text breaks as before at its spaces (host test `latin_text_breaks_as_before`),
   except that an ASCII `!` or `?` is a closing mark now, so a title may also break after one inside
@@ -556,13 +556,13 @@ for a long definition; the debug build's close line logs the slowest frame].
 
 After the v0.7.9 checkpoint, the user reported that Whole word still showed one
 highlighted character while a definition was displayed
-([issue #41](https://github.com/bee-san/vita-jp-overlay/issues/41)). They later
+([issue #41](https://github.com/bee-san/Rubi_for_vita/issues/41)). They later
 clarified that the word appears when lookup finishes and requested word jumps.
 The v0.7.10 changes prepare/reuse the first result and navigate matched spans;
 they have not been deployed to or visually
 verified on the physical Vita.
 
-[PR #38](https://github.com/bee-san/vita-jp-overlay/pull/38) merged after checks
+[PR #38](https://github.com/bee-san/Rubi_for_vita/pull/38) merged after checks
 at `ee796f1ea683d84a668bbc52961bf146a9f9986c`: 22 host suites, native build/gates
 and a separate ASan/UBSan run of the actual `text_hit` helper's three scenarios.
 The audited v0.7.9 release bundle has 60 manifested payloads plus one manifest.

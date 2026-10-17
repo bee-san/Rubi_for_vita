@@ -660,7 +660,7 @@ int vjo_tai_edit(const char *text, size_t len, int op, int mode, const char *con
             id[n] = '\0';
             if (v[n] || !vjo_tai_title_ok(id) || !is_game(id, 9))
                 return refuse(r, VJO_TAI_E_TITLE, 0, "A title the OCR worker cannot serve: a game's title ID has 9 "
-                              "capital letters and digits (PCSG00415), and is no system app, VitaShell or Overlay.");
+                              "capital letters and digits (PCSG00415), and is no system app, VitaShell or Rubi.");
             if (games_add(&games, id, 9) < 0) return refuse(r, VJO_TAI_E_SPACE, 0, "More than 512 games.");
         }
     if ((rc = analyse(&x, r))) return rc;

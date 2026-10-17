@@ -1,4 +1,4 @@
-"""tools/patch_tai_config.py, the PC installer's copy of the Overlay app's config.txt editor
+"""tools/patch_tai_config.py, the PC installer's copy of the Rubi app's config.txt editor
 (core/taicfg.c): the same expected bytes on tools/tests/fixtures/taicfg/, its command line, and,
 when ctest gives it the C build (VJO_TAICFG: host/taicfg_tool.c), the two editors and the two copies
 of taiHEN's parser compared on every fixture and on a generated corpus."""

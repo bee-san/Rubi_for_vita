@@ -10,11 +10,11 @@ fleet's reports) asked for changes R1-R7; they are folded in, and the last secti
 
 ## The user's steps
 
-1. Download `VitaJPOverlay-<version>.vpk` from the latest GitHub release.
+1. Download `Rubi-<version>.vpk` from the latest GitHub release.
 2. Copy it to the Vita with VitaShell's USB or FTP connection (Select starts the one chosen under
    **SELECT button** in VitaShell's settings, Start; a Vita's default is USB), then install it in VitaShell
    (Enter on the file; answer Yes to VitaShell's "This package requests extended permissions").
-3. Open **Overlay** from LiveArea. It opens on its **Install** page, which lists exactly what it will
+3. Open **Rubi** from LiveArea. It opens on its **Install** page, which lists exactly what it will
    do; choose **Install**, then restart the Vita.
 
 Nothing is downloaded on the Vita: the VPK holds the plugins, the models and the dictionary. A game
@@ -47,9 +47,9 @@ that its overlay is not the installed one, and its Install page offers **Update*
 
 | asset | build | for |
 |---|---|---|
-| `VitaJPOverlay-<version>.vpk` | normal | everyone: the main download |
-| `VitaJPOverlay-<version>-debug.vpk` | debug (the test builds') | console tests, a full log |
-| `VitaJPOverlay-<version>.zip`, `VitaJPOverlay-<version>-debug.zip` | normal, debug | `install-vita.sh`, a manual install, the tools |
+| `Rubi-<version>.vpk` | normal | everyone: the main download |
+| `Rubi-<version>-debug.vpk` | debug (the test builds') | console tests, a full log |
+| `Rubi-<version>.zip`, `Rubi-<version>-debug.zip` | normal, debug | `install-vita.sh`, a manual install, the tools |
 | `SHA256SUMS` | | all four, the normal VPK first |
 
 The two builds are #141's (`docs/release-variants.md`): the same models, dictionary and config
@@ -57,12 +57,12 @@ template; the debug build has the full log and the self-test. Both VPKs are the 
 `VJOSET001`), so either installs over the other, and each carries its own build's plugins. A release
 is about 4 × 61 MB of assets.
 
-The zips keep today's layout and their own `JPOverlaySettings.vpk`, which carries no overlay files
+The zips keep today's layout and their own `Rubi.vpk`, which carries no overlay files
 (the "no payload" state below), so a zip is not 61 MB larger.
 
 ## Inside the VPK
 
-The Overlay app as today (`eboot.bin`, `sce_sys/`, the #122 stamp `vjo_app.txt`), plus `payload/`,
+The Rubi app as today (`eboot.bin`, `sce_sys/`, the #122 stamp `vjo_app.txt`), plus `payload/`,
 which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26]:
 
 | in the VPK | installed to | bytes |
@@ -137,7 +137,7 @@ From VitaShell 81af709 (`package_installer.c` `install_thread`):
   and add the bubble (henkaku wiki, ScePromoterUtil and Packages). The `.vpk` can be deleted after.
 - Nothing in it limits an app's size or its number of files (the release zip has 67 entries). The
   promoter's own limits are documented nowhere we could read.
-- The README says to close the Overlay app before installing a VPK over it: what the promoter does to
+- The README says to close the Rubi app before installing a VPK over it: what the promoter does to
   a running system application is unmeasured.
 
 ## The dictionary is moved, not copied
@@ -182,7 +182,7 @@ A fourth tab: **Games | OCR & lookup | Anki | Install**. At start the app reads 
 |---|---|---|
 | interrupted | a `config.txt.vjo-new` or `config.txt.vjo-old` left by a stopped swap (step 5), beside a missing `config.txt`, or beside one that came back (h-encore and h-encore2 write their stock text into both configurations when both are missing, h-encore-2 c59a248 `bootstrap/bootstrap.c:372-379,574-581`) or never left (a stop while `.vjo-new` was written) | Install, offering to put a whole file back and to keep the current one (step 5) |
 | cannot | Unsafe Homebrew is off; or the package is damaged (R4); or a configuration the editor refuses (below) | Install, with the reason and what to do |
-| no payload | the zip's `JPOverlaySettings.vpk`, or a source build: the app carries no overlay | Games; Install offers Uninstall (when a configuration has the overlay's lines) and says `install-vita.sh` installs this build; no Check: without a manifest there is nothing to check the files against |
+| no payload | the zip's `Rubi.vpk`, or a source build: the app carries no overlay | Games; Install offers Uninstall (when a configuration has the overlay's lines) and says `install-vita.sh` installs this build; no Check: without a manifest there is nothing to check the files against |
 | not installed | no configuration loads the overlay's kernel and Shell plugins | Install |
 | update | `installed.txt` (below) names another build, or there is none | Install |
 | repair | this build (`installed.txt`), but a plugin file is not the payload's (size and SHA-256), the plugins' record (`ux0:data/VitaJPOverlay/vjo_app.txt`, #122) is missing or another app build's, a data file is missing or has the wrong size, or a configuration does not load both plugins (config.ini is not part of it: over this build it is the user's, below) | Install |
@@ -497,7 +497,7 @@ So this installer, and `install-vita.sh` with it, in **`kernel` mode**:
 - writes no worker line, and removes the ones older installs left (above);
 - needs no game list: `install-vita.sh --title` is accepted and ignored with a note, and the patcher's
   refusal of an install with no game (`NO_TITLES`, and `install_ftp.sh`'s exit-3 handling) goes;
-- the Overlay app's Games page no longer edits config.txt: turning a PSP bubble or Adrenaline ON
+- the Rubi app's Games page no longer edits config.txt: turning a PSP bubble or Adrenaline ON
   registers nothing (#124's `vjo_psp_register`, its dim "not registered" PSP tag and its status line
   go). Turning any game ON or OFF takes effect at its next start.
 
@@ -511,7 +511,7 @@ no user loses working lines:
   code fails to build without it (`#error`), which enforces the merge order;
 - at run time by the manifests' `worker kernel` or `worker lines` (the VPK's `payload/manifest.txt`
   and the zip's `package-manifest.json`). They come from the built base zip, never from the checkout
-  that packages it: the Overlay app's eboot carries a `vjoworker=kernel` (or `lines`) mark compiled
+  that packages it: the Rubi app's eboot carries a `vjoworker=kernel` (or `lines`) mark compiled
   from the header (`settings/install_page.c`), which the Vita build checks against the header
   (`tools/package_vpk.py --check-build`), `package_release.py` reads from the base zip's app into both
   manifests (an app without it is `lines`), and `install-vita.sh` passes to the patcher. The app accepts a
@@ -534,7 +534,7 @@ also need it back for PSP rows. The fixtures run both modes.
   another build's, opens on Install with **Update the overlay to 0.8.1**, and lists the plan. An older
   VPK, or the other variant, is named as such (R7).
 - The Shell's in-game notice becomes one neutral line, since the Shell cannot tell which side is newer
-  when both have one API: `Overlay app and plugins are different builds: open the Overlay app.` The
+  when both have one API: `Rubi app and plugins are different builds: open the Rubi app.` The
   app says which way it is and what to do. It replaces both of today's notices (`VJO_APP_NOTICE`,
   `VJO_APP_NOTICE_NEWER` in `core/app_stamp.h`, 82 and 89 characters) with one of 67, so SceShell's
   pages do not grow (AGENTS.md rule 1; the ledger's page check shows it). Nothing else of the Shell,
@@ -622,7 +622,7 @@ The app's pages and the README say the same, in this order:
    the L trigger while exiting the h-encore bootstrap menu", `README.md:64`): taiHEN then reads no
    configuration (`taihen.c:346-357`). Then either open VitaShell and
    put `#` before the two `VitaJPOverlay` lines of `ur0:tai/config.txt` (and `ux0:tai/config.txt`), or
-   open the Overlay app and choose Uninstall: homebrew still runs after an L start, since taiHEN installs
+   open the Rubi app and choose Uninstall: homebrew still runs after an L start, since taiHEN installs
    its patches before the L test (`taihen.c:341-348`), and the app keeps its extended permissions: Ensō
    loads `taihen.skprx` and `henkaku.skprx` from `boot_config.txt` (enso `installer/src/kernel.c:521`;
    h-encore loads both itself, `payload.c:555-581`), and henkaku's `module_start` installs the permission
@@ -638,7 +638,7 @@ The app's pages and the README say the same, in this order:
 ## The release process
 
 - `tools/package_vpk.py RELEASE.zip -o OUT.vpk` writes the VPK of a `package_release.py` zip: the zip's
-  `JPOverlaySettings.vpk`, entry for entry, then `payload/` (the files the zip installs, the same bytes,
+  `Rubi.vpk`, entry for entry, then `payload/` (the files the zip installs, the same bytes,
   deflated) and `payload/manifest.txt`. It takes the app's facts from the app itself (its start line,
   its `vjoworker=` mark, its stamp), checks that the payload's hashes are the zip manifest's, the entry
   order and the SELF scan (above); `--verify` checks a VPK again, `--check-build` is the Vita build's
@@ -649,11 +649,11 @@ The app's pages and the README say the same, in this order:
   VPK and zip `set log_file on`.
 - CI keeps building the base zips (the models are added at packaging, as for the zips today), and a
   pytest builds a VPK from a fixture base zip.
-- `docs/release-variants.md`'s recipe gets the exact `gh release create -R bee-san/vita-jp-overlay ...`
+- `docs/release-variants.md`'s recipe gets the exact `gh release create -R bee-san/Rubi_for_vita ...`
   line with the five assets in order (the normal VPK first) and the release notes' text: the three
   steps, the requirements, the recovery.
 - A test build ships both VPKs too; its issue's step 1 becomes "install the VPK in VitaShell, open
-  Overlay, Install, restart", and its checklist adds the console checks below.
+  Rubi, Install, restart", and its checklist adds the console checks below.
 - README's Install section becomes the three steps and the requirements; `install-vita.sh` moves under
   "Advanced: install from a computer".
 - `install-vita.sh` keeps parity: the same patcher and rules, the same dated on-Vita backup name

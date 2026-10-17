@@ -2,7 +2,7 @@
  * holds <id>.json per card (a record, core/anki_queue.h) and, for a card saved
  * with its screenshot (API 23), <id>.jpg beside it, which the game worker wrote
  * through the kernel (include/vjo_game_ocr.h VJO_GAME_OCR_F_SHOT); SceShell never
- * holds its bytes. The Overlay app exports the queue as an .apkg and moves the
+ * holds its bytes. The Rubi app exports the queue as an .apkg and moves the
  * cards it holds, screenshots first, into anki_queue/exported/
  * (settings/anki_export.c); cards of earlier builds may also have
  * <id>.duplicate.json (a card AnkiConnect already had). All calls are made by

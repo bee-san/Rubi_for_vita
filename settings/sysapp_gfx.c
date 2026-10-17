@@ -1,4 +1,4 @@
-/* The Overlay app's graphics start as a system application, with or without a game running.
+/* The Rubi app's graphics start as a system application, with or without a game running.
  *
  * As a system application the app draws into SceShell's shared framebuffer, and libvita2d's
  * start (a8f15ab vita2d.c:233-262, the pinned libvita2d.a) waits on SceShell twice before its

@@ -1,4 +1,4 @@
-/* vjo-install-e2e: the Overlay app's install engine (settings/install.c) on a memory card folder, for
+/* vjo-install-e2e: the Rubi app's install engine (settings/install.c) on a memory card folder, for
  * the one-VPK e2e (a real VPK extracted as VitaShell installs it; docs/one-vpk-install.md). Host only:
  * the SDK's file calls over real files with the Vita's rename rule (an existing destination is
  * refused), app0:'s unmount and the locks answered, the clock past the boot record's first minute.

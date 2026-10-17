@@ -1,4 +1,4 @@
-/* The Overlay app against the overlay plugins (core/app_stamp.h): the red
+/* The Rubi app against the overlay plugins (core/app_stamp.h): the red
  * banner under the app's header when they do not match (#101: test.1's app
  * ran beside test.2's plugins, showed VOCR2, had no Anki page and wrote
  * ocr_backend = vocr2). */

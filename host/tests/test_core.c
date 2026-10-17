@@ -609,7 +609,7 @@ static void test_config(void)
         /* The ID the self-test reports (config dictionary=) does not move. */
         TEST_CHECK(VJO_DICT_LOCAL == 3);
     }
-    /* The lines the Overlay app's saves rewrite (core/config.h vjo_config_removed_line). */
+    /* The lines the Rubi app's saves rewrite (core/config.h vjo_config_removed_line). */
     {
         static const char *const drop[] = {"jpdb_api_key = x\n", "  JITEN_API_KEY=x", "api_key = x\r\n",
                                            "jiten_api_key x\n", "jpdb_api_key: x\n", "jpdb_api_key =\n",
@@ -849,7 +849,7 @@ static void test_config(void)
         TEST_CHECK(c.n_warnings == 0 && c.font_size_ja == 18 && c.dictionary == VJO_DICT_LOCAL);
     }
 
-    /* docs/config.example.ini is the default file (the Overlay app's first save) */
+    /* docs/config.example.ini is the default file (the Rubi app's first save) */
     {
         size_t len;
         const char *t = vjo_config_default_text();

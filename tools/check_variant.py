@@ -5,7 +5,7 @@
 
 Reads each SELF's loadable segments (decompressed) and checks them for the markers below: the debug
 build's own format strings must all be in the debug build and none of them in the normal one, which
-carries its own marker instead; the Overlay app names its version and, in the debug build, "debug".
+carries its own marker instead; the Rubi app names its version and, in the debug build, "debug".
 With --sources (the tree's root; the Vita build passes it), each module is also checked against the
 literals of 12 bytes or more its sources compile only into the debug build (`#if VJO_DEBUG` branches,
 vjo_dlog() and klog_d() calls, shell/selftest.c, kernel/meminfo.c) and kept code does not use too: none
@@ -55,7 +55,7 @@ NORMAL_MARKERS = {
     "shell": (b"the normal build: a short log",),
     "kernel": (b"the normal build: a short log",),
 }
-# The Overlay app's start line names its version and its build (settings/main.c VJO_APP_VERSION).
+# The Rubi app's start line names its version and its build (settings/main.c VJO_APP_VERSION).
 APP_START = re.compile(rb"start: v([0-9A-Za-z.+~-]+)( debug)?; ")
 
 
@@ -81,7 +81,7 @@ def segments(path):
 
 
 def app_version(blob):
-    """(version, variant) the Overlay app's start line names, or (None, None)."""
+    """(version, variant) the Rubi app's start line names, or (None, None)."""
     m = APP_START.search(blob)
     if not m:
         return None, None
@@ -344,7 +344,7 @@ def check(variant, blobs, version=None, sources=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--variant", required=True, choices=("debug", "normal"))
-    parser.add_argument("--version", help="The Overlay app's version (VJO_VERSION)")
+    parser.add_argument("--version", help="The Rubi app's version (VJO_VERSION)")
     parser.add_argument("--sources", type=Path, help="The tree's root: each module is also checked against its sources' "
                                                      "debug-only literals (debug_only_strings): none in the normal "
                                                      "build, at least one in the debug build")

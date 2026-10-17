@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The overlay's lines in a taiHEN configuration (config.txt), edited the way taiHEN reads it.
 
-The PC installer's copy of core/taicfg.c, the Overlay app's editor (docs/one-vpk-install.md, "The
+The PC installer's copy of core/taicfg.c, the Rubi app's editor (docs/one-vpk-install.md, "The
 config.txt editor"): both write the same bytes (tools/tests/test_tai_config.py and
 host/tests/test_taicfg.c run them on tools/tests/fixtures/taicfg/). It works on bytes with taiHEN's
 own rules (taiHEN 309b380 builds DaveeFTW/taihen-parser 6d817fd): a line ends at CR or LF only, only
@@ -32,7 +32,7 @@ OCR = "ur0:tai/VitaJPOverlay_OCR.suprx"
 TEXT = "ur0:tai/VitaJPOverlay_Text.suprx"
 DISABLED = "# Mainline OCR: "
 NOTE = "# VitaJPOverlay (added by its installer)"
-# The line the Overlay app wrote before a section it added for an Adrenaline bubble (#124).
+# The line the Rubi app wrote before a section it added for an Adrenaline bubble (#124).
 APP_NOTE = "# VitaJPOverlay: the OCR worker in this Adrenaline bubble's PSP game (Overlay app)"
 LINE_MAX = 256           # taihen-parser lexer.h CONFIG_MAX_LINE_LENGTH
 TEXT_MAX = 64 * 1024     # core/taicfg.h VJO_TAI_TEXT_MAX

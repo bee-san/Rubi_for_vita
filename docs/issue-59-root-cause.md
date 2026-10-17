@@ -1,6 +1,6 @@
 # Issue #59: why SceShell died in `SceLiveAreaDailyCronJob` with `0x80024302`
 
-Written 2026-10-13 for [issue #59](https://github.com/bee-san/vita-jp-overlay/issues/59).
+Written 2026-10-13 for [issue #59](https://github.com/bee-san/Rubi_for_vita/issues/59).
 Every number below was measured on the host from the two builds involved, or is quoted from an
 earlier console log; the two kinds are kept apart. The console was a PCH-1001 on firmware 3.65.
 

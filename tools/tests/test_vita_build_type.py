@@ -1,6 +1,6 @@
 """The Vita build is Release (audit-test3-smoke-dep's note 2). Without optimisation libpng compares
 its jump-buffer limit in a register tools/check_settings_png_abi.py does not recognise, so the
-Overlay app does not build. Every documented configure of a VitaSDK project (vita/,
+Rubi app does not build. Every documented configure of a VitaSDK project (vita/,
 tools/vita3k_smoke/) passes -DCMAKE_BUILD_TYPE=Release, and vita/ uses Release when none is given.
 
 A documented command is code in the project's Markdown (what git tracks or would: a clone inside
@@ -260,7 +260,7 @@ class VitaBuildType(unittest.TestCase):
             "inline, -B first, Debug": "Run `cmake -B b -S tools/vita3k_smoke -DCMAKE_BUILD_TYPE=Debug` first.\n",
             "<code>": "Configure with <code>cmake -S vita -B build/vita</code>.\n",
             "-S ./vita": "```sh\ncmake -S ./vita -B build/vita\n```\n",
-            "an absolute path": "```sh\ncmake -S /home/me/vita-jp-overlay/vita -B build/vita\n```\n",
+            "an absolute path": "```sh\ncmake -S /home/me/Rubi_for_vita/vita -B build/vita\n```\n",
             '"$root"/vita': '```sh\ncmake -S "$root"/vita -B "$build"\n```\n',
             "$(pwd)/vita": "```sh\ncmake -S $(pwd)/vita -B build/vita\n```\n",
             "-Svita": "```sh\ncmake -Svita -Bbuild/vita\n```\n",
