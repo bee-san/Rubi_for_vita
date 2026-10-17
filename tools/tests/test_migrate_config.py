@@ -34,6 +34,10 @@ class MigrateConfig(unittest.TestCase):
             ("anki_mining = on\n" + bom + "ocr_model_dir = ux0:models\n", ("ocr_model_dir=ux0:data/VitaJPOverlay/ocr",),
              "ocr_model_dir", "ux0:data/VitaJPOverlay/ocr"),  # M5
             (" " + bom + "\tlog_file = off\n", ("log_file=on",), "log_file", "on"),  # a space before the BOM, a tab after
+            # audit-pr185-b N1 (P3, P4): spaces and BOMs in any order, and several BOMs
+            (" " + bom + " " + bom + "ocr_model_dir = ux0:models\n", ("ocr_model_dir=ux0:data/VitaJPOverlay/ocr",),
+             "ocr_model_dir", "ux0:data/VitaJPOverlay/ocr"),  # S3
+            (bom + bom + "log_file = off\n", ("log_file=on",), "log_file", "on"),  # S4
         )
         for old, sets, key, want in cases:
             with self.subTest(key=key, old=old):

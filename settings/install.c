@@ -761,6 +761,8 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
                 drop = v < e && ini_new[v] == '=';
             }
             if (!drop) { memmove(ini_new + w, ini_new + pos, (size_t)(e - pos)); w += e - pos; }
+            /* the file's own BOM (offset 0, which the patches keep) stays when its line goes (audit-pr185-b N2) */
+            else if (!pos && e >= 3 && !memcmp(ini_new, "\xEF\xBB\xBF", 3)) w = 3;
             pos = e;
         }
         ini_new_len = w;

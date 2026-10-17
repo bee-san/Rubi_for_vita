@@ -833,6 +833,29 @@ static void a_bom_led_copy_is_the_same_setting_to_the_plugins(void)
     }
 }
 
+/* audit-pr185-b N1 (R7) and N2: the Install page's removed-settings filter reads a line's name as the parser does
+ * (a CR before it is skipped too), and a removed setting on the file's first line goes without the file's own BOM,
+ * which the patches keep at offset 0. */
+static void removed_settings_go_however_their_line_starts(void)
+{
+    fresh_card(1);
+    put_text(VJO_PREFERENCES_PATH_TEST, "\xEF\xBB\xBF" "frequency_filter = 3\nanki_mining = on\n\rhw_jpeg = 1\n"
+             " \xEF\xBB\xBF" "combo_delay_ms = 10\n" "japanese_only_selection = on\nhighlight_mode = word\n"
+             "local_dictionary_results = 1\n");
+    VjoInstallScan s = scan_now();
+    for (int i = 0; i < s.config_change_count; i++) TEST_MSG("%s", s.config_changes[i]);
+    TEST_CHECK(ini_listed(&s, "frequency_filter: a removed setting, goes") && ini_listed(&s, "hw_jpeg: a removed setting, goes") &&
+               ini_listed(&s, "combo_delay_ms: a removed setting, goes"));
+    VjoInstallResult r;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    char *ini = slurp(VJO_PREFERENCES_PATH_TEST, NULL);
+    TEST_ASSERT(ini != NULL);
+    TEST_MSG("%s", ini);
+    TEST_CHECK(!strstr(ini, "frequency_filter") && !strstr(ini, "hw_jpeg") && !strstr(ini, "combo_delay_ms"));
+    TEST_CHECK(!strncmp(ini, "\xEF\xBB\xBF" "anki_mining = on\n", 20)); /* the file's own BOM stays, at offset 0 */
+    TEST_CHECK(strstr(ini + 3, "\xEF\xBB\xBF") == NULL);
+}
+
 /* audit-pr183 N2: a BOM file whose first line changes lists that line without its BOM (the file's own BOM, which
  * the patches keep at offset 0, is no part of a line: the ob/nb strip). */
 static void a_bom_files_changed_first_line_is_listed_without_its_bom(void)
@@ -2313,6 +2336,7 @@ TEST_LIST = {
     {"a_mid_file_bom_never_shows_a_value", a_mid_file_bom_never_shows_a_value},
     {"a_bom_led_copy_is_the_same_setting_to_the_plugins", a_bom_led_copy_is_the_same_setting_to_the_plugins},
     {"a_bom_files_changed_first_line_is_listed_without_its_bom", a_bom_files_changed_first_line_is_listed_without_its_bom},
+    {"removed_settings_go_however_their_line_starts", removed_settings_go_however_their_line_starts},
     {"a_line_that_goes_is_named_whatever_its_case_or_line_ends", a_line_that_goes_is_named_whatever_its_case_or_line_ends},
     {"a_crafted_config_ini_is_scanned_in_bounded_time", a_crafted_config_ini_is_scanned_in_bounded_time},
     {"the_dictionary_already_installed_is_not_moved_again", the_dictionary_already_installed_is_not_moved_again},
