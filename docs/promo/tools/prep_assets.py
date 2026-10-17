@@ -41,10 +41,10 @@ SRC = Path(sys.argv[3] if len(sys.argv) > 3 else os.environ["PROMO_ASSETS"])
 # the capture script's beats (capture/app_capture_patch.py) are one hold each. Checked by eye for each capture.
 APP_SHOTS = {
     "install-1-plan": ("holds-1", 4),          # Install the overlay (v0.8.0): the plan, [Install]
-    "install-2-checking": ("progress", 10),    # Installing...: Checking this app's plaintext.vjdict, 33.8 of 157.3 MB
-    "install-3-checking": ("progress", 27),    # ... 115.1 of 157.3 MB
-    "install-4-copying": ("progress", 37),     # Copying VOCR4_W20_w8.vocr
-    "install-5-copying": ("progress", 40),     # Copying vocr_lm_o3_4000k.vlm
+    "install-2-checking": ("progress", 10),    # Installing...: Checking this app's plaintext.vjdict, 35.9 of 157.3 MB
+    "install-3-checking": ("progress", 27),    # ... 117.7 of 157.3 MB
+    "install-4-copying": ("progress", 37),     # Copying VOCR5_L_w8.vocr, 2.5 of 4.9 MB
+    "install-5-copying": ("progress", 40),     # Copying vocr_lm_o3_4000k.vlm, 3.8 of 7.6 MB
     "install-6-done": ("holds-1", 5),          # The overlay is installed: Installed ... Restart the Vita now
     "games-1-top": ("holds-2", 3),             # Games, as the app opens once it is installed
     "games-2-down": ("holds-2", 4),            # Down: Courier Run

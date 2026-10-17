@@ -1,5 +1,5 @@
 {
- "source": "capture/overlay_states.py: vita-jp-overlay 68fc2d9's shell/overlay.cpp render() order and strings, its own lookups (capture/overlay_lookups.c) in the released plaintext.vjdict (sha256 1c563c86a2980126…), entries as vjo_styled_entry draws them",
+ "source": "capture/overlay_states.py: Rubi 8e267fb's shell/overlay.cpp render() order and strings, its own lookups (capture/overlay_lookups.c) in the released plaintext.vjdict (sha256 1c563c86a2980126…), entries as vjo_styled_entry draws them",
  "states": {
   "s1-m2-ov01-open": {
    "header": "「また明日、一緒に見に行こう!」",
@@ -9,7 +9,7 @@
    ],
    "body": [
     {
-     "text": "Anki queue: 0 · export in the Overlay app",
+     "text": "Anki queue: 0 · export in the Rubi app",
      "rgb": "#b8c0cc",
      "px": 21
     },
@@ -111,7 +111,7 @@
      "px": 21
     },
     {
-     "text": "Anki queue: 0 · export in the Overlay app",
+     "text": "Anki queue: 0 · export in the Rubi app",
      "rgb": "#b8c0cc",
      "px": 21
     }
@@ -138,7 +138,7 @@
    ],
    "body": [
     {
-     "text": "Anki queue: 0 · export in the Overlay app",
+     "text": "Anki queue: 0 · export in the Rubi app",
      "rgb": "#b8c0cc",
      "px": 21
     },
@@ -230,7 +230,7 @@
    ],
    "body": [
     {
-     "text": "Anki queue: 0 · export in the Overlay app",
+     "text": "Anki queue: 0 · export in the Rubi app",
      "rgb": "#b8c0cc",
      "px": 21
     },
@@ -332,7 +332,7 @@
    ],
    "body": [
     {
-     "text": "Anki queue: 1 · export in the Overlay app",
+     "text": "Anki queue: 1 · export in the Rubi app",
      "rgb": "#b8c0cc",
      "px": 21
     },
@@ -439,7 +439,7 @@
    ],
    "body": [
     {
-     "text": "Anki queue: 1 · export in the Overlay app",
+     "text": "Anki queue: 1 · export in the Rubi app",
      "rgb": "#b8c0cc",
      "px": 21
     },
@@ -531,7 +531,7 @@
    ],
    "body": [
     {
-     "text": "Anki queue: 1 · export in the Overlay app",
+     "text": "Anki queue: 1 · export in the Rubi app",
      "rgb": "#b8c0cc",
      "px": 21
     },
@@ -633,7 +633,7 @@
    ],
    "body": [
     {
-     "text": "Anki queue: 2 · export in the Overlay app",
+     "text": "Anki queue: 2 · export in the Rubi app",
      "rgb": "#b8c0cc",
      "px": 21
     },

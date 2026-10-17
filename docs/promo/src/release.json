@@ -1,30 +1,30 @@
 {
- "commit": "68fc2d94aa78d0d4cc99df0aac1a04f54f316880",
+ "commit": "8e267fbb267979d2132c34c54f1f3f578593eb07",
  "files": {
+  "Rubi-0.8.0-debug.vpk": {
+   "bytes": 61129309,
+   "github": "58.3 MB",
+   "vitashell": "58.30 MB"
+  },
+  "Rubi-0.8.0-debug.zip": {
+   "bytes": 61507535,
+   "github": "58.7 MB",
+   "vitashell": "58.66 MB"
+  },
+  "Rubi-0.8.0.vpk": {
+   "bytes": 61115822,
+   "github": "58.3 MB",
+   "vitashell": "58.28 MB"
+  },
+  "Rubi-0.8.0.zip": {
+   "bytes": 61494059,
+   "github": "58.6 MB",
+   "vitashell": "58.65 MB"
+  },
   "SHA256SUMS": {
-   "bytes": 372,
-   "github": "372 Bytes",
-   "vitashell": "372 B"
-  },
-  "VitaJPOverlay-0.8.0-debug.vpk": {
-   "bytes": 60131074,
-   "github": "57.3 MB",
-   "vitashell": "57.35 MB"
-  },
-  "VitaJPOverlay-0.8.0-debug.zip": {
-   "bytes": 60479067,
-   "github": "57.7 MB",
-   "vitashell": "57.68 MB"
-  },
-  "VitaJPOverlay-0.8.0.vpk": {
-   "bytes": 60117509,
-   "github": "57.3 MB",
-   "vitashell": "57.33 MB"
-  },
-  "VitaJPOverlay-0.8.0.zip": {
-   "bytes": 60465569,
-   "github": "57.7 MB",
-   "vitashell": "57.66 MB"
+   "bytes": 336,
+   "github": "336 Bytes",
+   "vitashell": "336 B"
   }
  }
 }
