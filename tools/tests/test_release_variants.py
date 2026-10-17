@@ -310,7 +310,7 @@ class DerivedStrings(unittest.TestCase):
 
 class ConfigIsTheSame(unittest.TestCase):
     def test_both_builds_read_and_write_config_ini_with_the_same_code(self):
-        """A config.ini from either build works in the other: the parser, the Overlay app's writer, the
+        """A config.ini from either build works in the other: the parser, the Rubi app's writer, the
         installer's migration and the template have no build-specific code."""
         for rel in ("core/config.c", "core/config.h", "settings/preferences.c", "tools/migrate_config.py",
                     "docs/config.example.ini", "tools/install-vita.sh"):
@@ -377,7 +377,7 @@ class PackageVariants(unittest.TestCase):
             z.writestr("ur0/tai/VitaJPOverlay_OCR.suprx",
                        fake_self(MODULE_INFO + b"\0worker\0" + (b"VjoGameVocrProbe\0" if worker == "debug" else b"")))
             z.writestr("ur0/data/VitaJPOverlay/vitajpoverlay.rco", b"RCOF fixture")
-            z.writestr("JPOverlaySettings.vpk", vpk.getvalue())
+            z.writestr("Rubi.vpk", vpk.getvalue())
             z.writestr(release.APP_RECORD, stamp)
             z.writestr("ux0/data/VitaJPOverlay/dictionaries/" + release.FILENAME, self.dictionary)
             z.writestr("README.md", readme)
@@ -397,8 +397,8 @@ class PackageVariants(unittest.TestCase):
         printed = self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
                                 "--version", "0.8.0", "-o", out, "--source-revision", "a" * 40,
                                 "--set", "anki_mining=on")
-        normal, debug = out / "VitaJPOverlay-0.8.0.zip", out / "VitaJPOverlay-0.8.0-debug.zip"
-        vpk, debug_vpk = out / "VitaJPOverlay-0.8.0.vpk", out / "VitaJPOverlay-0.8.0-debug.vpk"
+        normal, debug = out / "Rubi-0.8.0.zip", out / "Rubi-0.8.0-debug.zip"
+        vpk, debug_vpk = out / "Rubi-0.8.0.vpk", out / "Rubi-0.8.0-debug.vpk"
         self.assertTrue(normal.is_file() and debug.is_file() and vpk.is_file() and debug_vpk.is_file())
         sums = (out / "SHA256SUMS").read_text()
         # the normal VPK first: the main download (docs/one-vpk-install.md, "What a release ships")
@@ -437,24 +437,24 @@ class PackageVariants(unittest.TestCase):
         self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
                       "--version", "0.8.0-test.4", "-o", out, "--set", "anki_mining=on")
         import package_vpk
-        for name, build in (("VitaJPOverlay-0.8.0-test.4.vpk", "normal"),
-                            ("VitaJPOverlay-0.8.0-test.4-debug.vpk", "debug")):
+        for name, build in (("Rubi-0.8.0-test.4.vpk", "normal"),
+                            ("Rubi-0.8.0-test.4-debug.vpk", "debug")):
             self.assertEqual(package_vpk.verify(out / name), [], name)
             text = zipfile.ZipFile(out / name).read("payload/manifest.txt").decode()
             self.assertIn("\nversion 0.8.0-test.4\napp_version 0.8.0\n", text)
             self.assertIn(f"\nvariant {build}\n", text)
-        for name in ("VitaJPOverlay-0.8.0-test.4.zip", "VitaJPOverlay-0.8.0-test.4-debug.zip"):
+        for name in ("Rubi-0.8.0-test.4.zip", "Rubi-0.8.0-test.4-debug.zip"):
             m = json.loads(zipfile.ZipFile(out / name).read("package-manifest.json"))
             self.assertEqual((m["version"], m["app_version"]), ("0.8.0-test.4", "0.8.0"), name)
         self.assertEqual([line.split("  ")[1] for line in (out / "SHA256SUMS").read_text().splitlines()],
-                         ["VitaJPOverlay-0.8.0-test.4.vpk", "VitaJPOverlay-0.8.0-test.4-debug.vpk",
-                          "VitaJPOverlay-0.8.0-test.4.zip", "VitaJPOverlay-0.8.0-test.4-debug.zip"])
+                         ["Rubi-0.8.0-test.4.vpk", "Rubi-0.8.0-test.4-debug.vpk",
+                          "Rubi-0.8.0-test.4.zip", "Rubi-0.8.0-test.4-debug.zip"])
         for version in ("0.8.1-test.1", "0.7.12-test.4", "0.8.0-test", "0.8.0-test.0", "0.8.0-test.4x", "0.8.0-rc.1",
                         "0.8.0.1", "x0.8.0-test.4", "0x8x0-test.1", "0.8.0-test.10000"):
             with self.subTest(version=version), self.assertRaises(SystemExit) as caught:
                 self.run_main("--normal", self.base("normal"), "--debug", self.base("debug"), "--models", self.models,
                               "--version", version, "-o", self.root / "out-bad")
-            self.assertIn(f"the Overlay app is v0.8.0, the release v{version}", str(caught.exception))
+            self.assertIn(f"the Rubi app is v0.8.0, the release v{version}", str(caught.exception))
             self.assertFalse((self.root / "out-bad").exists())
 
     def test_a_base_with_no_app_version_names_none(self):
@@ -468,7 +468,7 @@ class PackageVariants(unittest.TestCase):
             problems = package_variants.check_bases(self.base("normal"), self.base("debug"), "0.8.0")
         self.assertEqual(len(problems), 2, problems)
         for p in problems:
-            self.assertIn("the Overlay app names no version (a base from before the two builds)", p)
+            self.assertIn("the Rubi app names no version (a base from before the two builds)", p)
             self.assertNotIn("vNone", p)
 
     def test_a_build_whose_worker_needs_lines_gets_no_vpk(self):
@@ -479,14 +479,14 @@ class PackageVariants(unittest.TestCase):
             self.run_main("--normal", self.base("normal", worker_mode="lines"), "--debug",
                           self.base("debug", worker_mode="lines"), "--models", self.models, "--version", "0.8.0", "-o", out)
         self.assertIn("the build's worker mode is lines, not kernel", str(caught.exception))
-        self.assertEqual(sorted(p.name for p in out.iterdir()), ["VitaJPOverlay-0.8.0-debug.zip", "VitaJPOverlay-0.8.0.zip"])
+        self.assertEqual(sorted(p.name for p in out.iterdir()), ["Rubi-0.8.0-debug.zip", "Rubi-0.8.0.zip"])
         self.assertFalse(list(out.glob("*.vpk")) or list(out.glob("*.vpk.tmp")) or (out / "SHA256SUMS").exists())
 
     def test_bases_that_are_not_the_builds_they_are_given_as_are_refused(self):
         out = self.root / "out"
         for normal, debug, why in ((self.base("debug"), self.base("normal"), "the debug build, given as the normal one"),
                                    (self.base("normal"), self.base("normal"), "the normal build, given as the debug one"),
-                                   (self.base("normal", "0.7.12"), self.base("debug", "0.7.12"), "the Overlay app is v0.7.12"),
+                                   (self.base("normal", "0.7.12"), self.base("debug", "0.7.12"), "the Rubi app is v0.7.12"),
                                    (self.base("normal", readme=b"other\n"), self.base("debug"), "README.md differs")):
             with self.subTest(why=why), self.assertRaises(SystemExit) as caught:
                 self.run_main("--normal", normal, "--debug", debug, "--models", self.models, "--version", "0.8.0",

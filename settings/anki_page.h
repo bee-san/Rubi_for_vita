@@ -1,4 +1,4 @@
-/* The Overlay app's Anki page: card mining on/off, the cards' screenshots
+/* The Rubi app's Anki page: card mining on/off, the cards' screenshots
  * on/off (anki_screenshot, API 23), and the export of the queued cards (or all
  * of them) as Lapis notes in a new .apkg file under
  * ux0:data/VitaJPOverlay/anki/ (settings/anki_export.h), which Anki imports
@@ -38,7 +38,7 @@ void vjo_anki_page_stick(int move);
 int vjo_anki_page_busy(void);
 /* Leaving the app: cancels and joins a running export (the queue is left as it was). */
 void vjo_anki_page_quit(void);
-/* The app's lines in log.txt, "overlay app: " and the text (settings/applog.c,
+/* The app's lines in log.txt, "Rubi app: " and the text (settings/applog.c,
  * below the Shell's 1 MiB rotation): written while config.ini's log_file is
  * on, which main.c sets at start and the page again when it is shown. Between
  * vjo_app_log_batch_begin and _end, in one function of one thread, that

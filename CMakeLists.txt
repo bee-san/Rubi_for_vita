@@ -186,7 +186,7 @@ target_include_directories(vjo-region-select-tests PRIVATE third_party/acutest/i
 target_link_libraries(vjo-region-select-tests vjo_host)
 target_compile_options(vjo-region-select-tests PRIVATE -Wall -Wextra)
 add_test(NAME region_select COMMAND vjo-region-select-tests)
-# The Overlay app's left-stick list scrolling (core/stick_scroll.h), against VitaShell's readPad.
+# The Rubi app's left-stick list scrolling (core/stick_scroll.h), against VitaShell's readPad.
 add_executable(vjo-stick-scroll-tests host/tests/test_stick_scroll.c)
 target_include_directories(vjo-stick-scroll-tests PRIVATE third_party/acutest/include core)
 target_compile_options(vjo-stick-scroll-tests PRIVATE -Wall -Wextra)
@@ -198,7 +198,7 @@ target_include_directories(vjo-stick-cursor-tests PRIVATE third_party/acutest/in
 target_link_libraries(vjo-stick-cursor-tests vjo_host)
 target_compile_options(vjo-stick-cursor-tests PRIVATE -Wall -Wextra)
 add_test(NAME stick_cursor COMMAND vjo-stick-cursor-tests)
-# The Overlay app's system-application values and its thread wrapper (settings/sysapp.c);
+# The Rubi app's system-application values and its thread wrapper (settings/sysapp.c);
 # tools/check_settings_self.py checks the Vita build's eboot.bin and ELF for them.
 add_executable(vjo-settings-sysapp-tests host/tests/test_settings_sysapp.c)
 target_include_directories(vjo-settings-sysapp-tests PRIVATE third_party/acutest/include host/tests/sysapp_stubs)
@@ -301,7 +301,7 @@ target_include_directories(vjo-shell-history-tests PRIVATE third_party/acutest/i
 target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME shell_history COMMAND vjo-shell-history-tests)
-# The Overlay app's .apkg export (settings/anki_export.c, core/apkg.c and its SQLite, ZIP and Lapis
+# The Rubi app's .apkg export (settings/anki_export.c, core/apkg.c and its SQLite, ZIP and Lapis
 # writers) on real files; host/tests/test_apkg.py opens its packages with Python's zipfile and sqlite3
 # and imports them into Anki itself (the `anki` package, tools/requirements-anki.txt) when it is there:
 # VJO_ANKI_PYTHON names a Python that has it, VJO_REQUIRE_ANKI=1 makes its absence a failure (CI).
@@ -360,7 +360,7 @@ endif()
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 # The memory ledger's CI check: allocation sites and worst cases (docs/memory-ledger.md).
 add_test(NAME memory_ledger COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_memory_ledger.py)
-# Each step is a fresh process: the overlay's saves and the Overlay app's exports, stopped at each
+# Each step is a fresh process: the overlay's saves and the Rubi app's exports, stopped at each
 # storage boundary, never lose a card.
 add_test(NAME anki_restart COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py
   $<TARGET_FILE:vjo-shell-anki-tests> $<TARGET_FILE:vjo-apkg-tests>)
@@ -539,7 +539,7 @@ target_link_libraries(vjo-preferences-tests vjo_host)
 target_compile_options(vjo-preferences-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_compile_definitions(vjo-preferences-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME preferences COMMAND vjo-preferences-tests)
-# The Overlay app's actual input/draw loop (settings/main.c) with a scripted SDK
+# The Rubi app's actual input/draw loop (settings/main.c) with a scripted SDK
 # boundary: the OCR card's Model size, its status line naming the size's model;
 # then the same app with a later package's model table (generation VOCR6 for
 # two sizes, VOCR5 kept for Large), which it names unchanged.
@@ -562,7 +562,7 @@ set_source_files_properties(settings/main.c PROPERTIES COMPILE_DEFINITIONS main=
 # The later package's metadata replaces this build's (core/vocr_models.c, compiled in).
 target_sources(vjo-settings-vocr6-tests PRIVATE core/vocr_models.c)
 target_compile_definitions(vjo-settings-vocr6-tests PRIVATE VJO_VOCR_MODEL_INFO_TEST="test_vocr6_models.h")
-# The Overlay app's text layouts (settings/text_layout.c, against main.c's old
+# The Rubi app's text layouts (settings/text_layout.c, against main.c's old
 # wrapped_text), its icon file check and cache (settings/icons.c) and the
 # titles' letters and order (settings/letter.c).
 add_executable(vjo-settings-layout-tests host/tests/test_settings_layout.c settings/text_layout.c core/linebreak.c settings/icons.c
@@ -623,7 +623,7 @@ target_compile_definitions(vjo-settings-install-tests PRIVATE VJO_SOURCE_DIR="${
 target_compile_options(vjo-settings-install-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-settings-install-tests vjo_host)
 add_test(NAME settings_install COMMAND vjo-settings-install-tests)
-# The Overlay app's Anki page itself (settings/anki_page.c, #163 c3): its rows' layout, Up/Down, the
+# The Rubi app's Anki page itself (settings/anki_page.c, #163 c3): its rows' layout, Up/Down, the
 # stick, Left/Right, Enter and touch on each row, each row's save into a real config.ini (read back by the
 # Shell's own loader, shell/files.c), and its export (the real settings/anki_export.c) on a temporary
 # memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep

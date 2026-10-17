@@ -48,7 +48,7 @@
  * ID, 196 B, less 12 B of alignment), so the module is 206,192 text + 71,020 data/bss [measured:
  * the build log's module rows, main a5d79f2 and this change], one text page fewer: 208,896 +
  * 73,728 B of pages. Lowered again by the removal of AnkiConnect (the Shell's sender and its
- * requests, the screenshot branch, the Kiku note, the audio URL; the Overlay app exports the cards):
+ * requests, the screenshot branch, the Kiku note, the audio URL; the Rubi app exports the cards):
  * 18,192 B of text and 972 B of data/bss, so the module is 188,472 text + 70,104 data/bss [measured:
  * the build log's module rows, main 5e68ecd (#116, #111: 206,664 + 71,076, the same 282,624 B of
  * pages) and this change], four text pages fewer: 192,512 + 73,728 B of pages. (On main c4a6ade,
@@ -149,7 +149,7 @@
  * (AGENTS.md rule 1). */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 94208u
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
- * never SceShell, a system app, VitaShell or the Overlay app); a *TITLEID line an
+ * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game
  * only, and none writes *ALL, so taiHEN does not load it into SceShell. Were it loaded
  * there (an older install's *ALL line, a hand edit), its module_start returns

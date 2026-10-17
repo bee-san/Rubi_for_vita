@@ -241,7 +241,7 @@ uint32_t units_of_entry(const VjoVocab *v)
 }
 
 /* The body as overlay.cpp builds it with every line before the entry at its
- * longest (the dictionary page, the Overlay app's notice, a status, the Anki
+ * longest (the dictionary page, the Rubi app's notice, a status, the Anki
  * queue and status, the queued line) and four config warnings of the longest
  * kind after it, kept by the reserve: what an entry can count on. */
 void worst_case_body(VjoStyled *st, VjoArena *a, const VjoEntryList *l, int ja, int en)

@@ -1,4 +1,4 @@
-/* The Overlay app's OCR card, its Model size row (API 21), through its
+/* The Rubi app's OCR card, its Model size row (API 21), through its
  * actual input and draw loop (settings/main.c), on the host. The SDK boundary (vita2d, controller, touch
  * screen, display) is scripted and records what each frame draws; config.ini,
  * games.ini and the model files are real files in a temporary directory, read
@@ -1156,7 +1156,7 @@ static void test_exit_ends_the_process_without_vita2d_fini(void)
     font_fails = 0;
 }
 
-/* ---- the Overlay app against the overlay plugins (settings/app_check.c) ---- */
+/* ---- the Rubi app against the overlay plugins (settings/app_check.c) ---- */
 #define BANNER_RED OFF
 static void stamp(char *out, size_t cap, int api, const char *build)
 {
@@ -1200,20 +1200,20 @@ static void test_banner_text_says_which_side_is_older(void)
     TEST_CHECK(!vjo_app_banner_text(api, NULL, other, st_same, out, sizeof(out))); /* no stamp of its own: the API decides */
     /* the plugins installed came with another app */
     TEST_CHECK(vjo_app_banner_text(api, own, newer, st_same, out, sizeof(out)));
-    TEST_CHECK(!strcmp(out, "This Overlay app is older than the installed overlay: install "
-                            "ux0:data/JPOverlaySettings.vpk in VitaShell."));
+    TEST_CHECK(!strcmp(out, "This Rubi app is older than the installed overlay: install "
+                            "ux0:data/Rubi.vpk in VitaShell."));
     TEST_CHECK(vjo_app_banner_text(api, own, older, st_older, out, sizeof(out)));
     TEST_CHECK(!strcmp(out, "The installed overlay is older than this app: run install-vita.sh from this app's "
                             "package, then reboot."));
     TEST_CHECK(vjo_app_banner_text(api, own, other, st_same, out, sizeof(out)));
-    TEST_CHECK(!strcmp(out, "This Overlay app is not the installed overlay's: install ux0:data/JPOverlaySettings.vpk "
+    TEST_CHECK(!strcmp(out, "This Rubi app is not the installed overlay's: install ux0:data/Rubi.vpk "
                             "in VitaShell."));
     TEST_CHECK(vjo_app_banner_text(api, NULL, newer, NULL, out, sizeof(out)) && strstr(out, "is older than the installed"));
     /* the Shell plugin that last started (status.txt) is another API's */
     TEST_CHECK(vjo_app_banner_text(api, own, NULL, st_newer, out, sizeof(out)));
     char want[192];
-    snprintf(want, sizeof(want), "This Overlay app (API %d) is older than the overlay that last started (API %d): install "
-             "ux0:data/JPOverlaySettings.vpk in VitaShell.", api, api + 1);
+    snprintf(want, sizeof(want), "This Rubi app (API %d) is older than the overlay that last started (API %d): install "
+             "ux0:data/Rubi.vpk in VitaShell.", api, api + 1);
     TEST_CHECK(!strcmp(out, want));
     TEST_CHECK(vjo_app_banner_text(api, own, own, st_older, out, sizeof(out)));
     snprintf(want, sizeof(want), "The overlay that last started (API %d) is older than this app: reboot the Vita to load the "
@@ -1257,7 +1257,7 @@ static void test_banner_is_drawn_on_every_page(void)
         banner_drawn(f, text, sizeof(text));
         TEST_CHECK_(!text[0], "frame %d: banner '%s'", f, text);
         const Text *title = text_at(f, 35, 0, 700);
-        TEST_CHECK(title && !strcmp(title->text, "Overlay"));
+        TEST_CHECK(title && !strcmp(title->text, "Rubi"));
     }
     /* app0: not readable: the installed copy of its stamp (ux0:app/VJOSET001) is the same file */
     char other[64];
@@ -1268,7 +1268,7 @@ static void test_banner_is_drawn_on_every_page(void)
     put_file(VJO_APP_STAMP_INSTALLED, other);
     TEST_ASSERT(run(in, 2) == 2);
     banner_drawn(1, text, sizeof(text));
-    TEST_CHECK_(!strcmp(text, "This Overlay app is not the installed overlay's: install ux0:data/JPOverlaySettings.vpk "
+    TEST_CHECK_(!strcmp(text, "This Rubi app is not the installed overlay's: install ux0:data/Rubi.vpk "
                               "in VitaShell."), "banner '%s'", text);
     put_file(VJO_APP_STAMP_INSTALLED, own);
     TEST_ASSERT(run(in, 2) == 2);

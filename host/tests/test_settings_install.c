@@ -1,4 +1,4 @@
-/* The Overlay app's one-VPK install (settings/install.c, settings/install_page.c, core/payload.c) on
+/* The Rubi app's one-VPK install (settings/install.c, settings/install_page.c, core/payload.c) on
  * a temporary memory card: real files under ux0:, ur0: (folders of those names), the app's own
  * folder ux0:app/VJOSET001 with a payload (synthetic plugin and model bytes; the repository's config
  * template), and the SDK's file calls over them with the Vita's rename rule (a rename onto an

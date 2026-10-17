@@ -1847,7 +1847,7 @@ static void close_overlay_for(int why)
     /* #104: with SceShell itself in front (the game suspended by PS, or gone)
      * its LiveArea owns the region; the page must not deactivate it then. */
     g_view.touch_handback = why == CLOSE_GAME_LEFT ? VJO_TOUCH_LEAVE : VJO_TOUCH_RELEASE;
-    if (g_view.notice_shown) /* the Overlay app's notice is said once (check_app) */
+    if (g_view.notice_shown) /* the Rubi app's notice is said once (check_app) */
         g_view.notice = NULL;
     /* The next job may reuse the shown arena; an open republishes it. */
     g_view.list = NULL;
@@ -2395,7 +2395,7 @@ static void on_command(void)
 static SceUID pending_pid;
 static int64_t pending_since;
 
-/* The installed Overlay app against the one the plugins came with
+/* The installed Rubi app against the one the plugins came with
  * (core/app_stamp.h), at each enabled game's start (the app can be
  * reinstalled while SceShell runs): logged when the answer changes, and a
  * mismatch is said once, in the body of the next overlay that draws its
@@ -2424,7 +2424,7 @@ static void check_app(void)
                     : vjo_app_stamp_api(installed) > vjo_app_stamp_api(package) ? VJO_APP_NOTICE_NEWER : VJO_APP_NOTICE;
     g_view.notice_shown = 0;
     vjo_view_unlock();
-    vjo_log("overlay app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)",
+    vjo_log("Rubi app %s: installed '%s' (0x%08X, app %d), plugins' '%s' (0x%08X)",
             s == VJO_APP_OK ? "ok" : s == VJO_APP_MISMATCH ? "MISMATCH" : "unknown", installed, irc, app, package,
             prc);
 }
@@ -2436,7 +2436,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
     if (!vjo_game_enabled(tid, id->psp, &scratch)) {
         title_id[0] = '\0';
         vjoSetGameActive(pid, VJO_GAME_NONE);
-        vjo_log("%s: JP Overlay disabled; game input passes through", tid);
+        vjo_log("%s: Rubi disabled; game input passes through", tid);
         vjo_selftest_game(tid, 0, mode, NULL);
         return;
     }
@@ -2444,7 +2444,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
     {
         char name[128];
         vjo_title_name(pid, tid, name, sizeof(name)); /* "" for an unreadable title */
-        /* recorded on Anki cards: a PSP game's disc ID and title when the Overlay app described it */
+        /* recorded on Anki cards: a PSP game's disc ID and title when the Rubi app described it */
         vjo_anki_set_game(id->disc[0] ? id->disc : tid, id->name[0] ? id->name : name, id->psp);
     }
     apply_config();
@@ -2794,9 +2794,9 @@ int vjo_worker_start(void)
     if (vjo_selftest_armed())
         apply_config(); /* the self-test's forced settings */
 #if VJO_DEBUG
-    vjo_log("Vita JP Overlay shell started (kernel API %d)", ver);
+    vjo_log("Rubi shell started (kernel API %d)", ver);
 #else
-    vjo_log("Vita JP Overlay shell started (kernel API %d, the normal build: a short log)", ver);
+    vjo_log("Rubi shell started (kernel API %d, the normal build: a short log)", ver);
 #endif
 
     net_thread = vjo_shell_thread_create(VJO_SL_NET_STACK, "VjoNet", net_main, VJO_STACK_SHELL_NET);

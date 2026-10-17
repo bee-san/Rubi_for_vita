@@ -1,4 +1,4 @@
-/* Vita JP Overlay kernel module: module entry, worker thread and the
+/* Rubi kernel module: module entry, worker thread and the
  * syscalls used by the SceShell plugin (see include/vjo_api.h). */
 #include <psp2kern/kernel/cpu.h>
 #include <psp2kern/kernel/iofilemgr.h>
@@ -501,9 +501,9 @@ int module_start(SceSize argc, const void *args)
         return SCE_KERNEL_START_FAILED;
     }
 #if VJO_DEBUG
-    klog("Vita JP Overlay kernel %d started (%s mode)", VJO_API_VERSION, vjo_boot_mode_name(boot_mode()));
+    klog("Rubi kernel %d started (%s mode)", VJO_API_VERSION, vjo_boot_mode_name(boot_mode()));
 #else
-    klog("Vita JP Overlay kernel %d started (%s mode, the normal build: a short log)", VJO_API_VERSION,
+    klog("Rubi kernel %d started (%s mode, the normal build: a short log)", VJO_API_VERSION,
          vjo_boot_mode_name(boot_mode()));
 #endif
     kledger_log("start");

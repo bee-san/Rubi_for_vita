@@ -1,4 +1,4 @@
-/* The Overlay app against the overlay plugins (app_check.h). */
+/* The Rubi app against the overlay plugins (app_check.h). */
 #include "app_check.h"
 
 #include <psp2/io/fcntl.h>
@@ -41,14 +41,14 @@ int vjo_app_banner_text_for(int app_api, const char *own, const char *package, c
             return 1;
         }
         if (p > app_api)
-            snprintf(out, cap, "This Overlay app is older than the installed overlay: install "
-                     "ux0:data/JPOverlaySettings.vpk in VitaShell.");
+            snprintf(out, cap, "This Rubi app is older than the installed overlay: install "
+                     "ux0:data/Rubi.vpk in VitaShell.");
         else if (p < app_api)
             snprintf(out, cap, "The installed overlay is older than this app: run install-vita.sh from "
                      "this app's package, then reboot.");
         else
-            snprintf(out, cap, "This Overlay app is not the installed overlay's: install "
-                     "ux0:data/JPOverlaySettings.vpk in VitaShell.");
+            snprintf(out, cap, "This Rubi app is not the installed overlay's: install "
+                     "ux0:data/Rubi.vpk in VitaShell.");
         return 1;
     }
     /* The Shell plugin that last started (status.txt, rewritten at each boot that loads it) is another API's. */
@@ -59,8 +59,8 @@ int vjo_app_banner_text_for(int app_api, const char *own, const char *package, c
             return 1;
         }
         if (r > app_api)
-            snprintf(out, cap, "This Overlay app (API %d) is older than the overlay that last started (API %d): "
-                     "install ux0:data/JPOverlaySettings.vpk in VitaShell.", app_api, r);
+            snprintf(out, cap, "This Rubi app (API %d) is older than the overlay that last started (API %d): "
+                     "install ux0:data/Rubi.vpk in VitaShell.", app_api, r);
         else if (mine && p == app_api)
             snprintf(out, cap, "The overlay that last started (API %d) is older than this app: reboot the Vita "
                      "to load the one installed with it.", r);

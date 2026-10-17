@@ -1,4 +1,4 @@
-/* The Overlay app's lines in log.txt (settings/anki_page.h): "overlay app: "
+/* The Rubi app's lines in log.txt (settings/anki_page.h): "Rubi app: "
  * and the text, written while config.ini's log_file is on, and only below the
  * Shell's 1 MiB rotation. Each line is one append, opened and closed at once,
  * so a crash keeps every line before it; a batch (vjo_app_log_batch_begin/end)
@@ -15,7 +15,7 @@
 
 #define LOG_PATH "ux0:data/VitaJPOverlay/log.txt"
 #define LOG_CAP (1024 * 1024) /* the Shell rotates log.txt; the app only appends below this */
-#define LINE_MAX 300          /* a line, "overlay app: " and the line break included */
+#define LINE_MAX 300          /* a line, "Rubi app: " and the line break included */
 #define BATCH_MAX 2048        /* a batch: about seven lines of the most a line holds */
 
 static int log_on;
@@ -81,7 +81,7 @@ void vjo_log(const char *fmt, ...)
 {
     char line[LINE_MAX];
     va_list ap;
-    int n = snprintf(line, sizeof(line), "overlay app: ");
+    int n = snprintf(line, sizeof(line), "Rubi app: ");
     if (!log_on || n < 0)
         return;
     va_start(ap, fmt);

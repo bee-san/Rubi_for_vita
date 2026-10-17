@@ -1,4 +1,4 @@
-/* Kernel <-> SceShell interface of Vita JP Overlay. Shared by kernel/,
+/* Kernel <-> SceShell interface of Rubi. Shared by kernel/,
  * shell/ and core/ (for the plain data types). */
 #ifndef VJO_API_H
 #define VJO_API_H

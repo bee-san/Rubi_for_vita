@@ -1,7 +1,7 @@
 /* Host tests: the model sizes' pins as their release publishes them, the one place a C test
  * states them (tools/tests/test_vocr_defaults.py TIER_PINS is the same table for the Python
  * tests; a pin update edits both). Per size, smallest first: its file, exact bytes, W8I arena,
- * generation and the label the Overlay app shows. VOCR5's are vita-vn-ocr
+ * generation and the label the Rubi app shows. VOCR5's are vita-vn-ocr
  * eval/vocr5_protocol.json's "tiers" (release v0.3.0); a size whose VOCR5 candidate did not beat
  * its incumbent keeps that VOCR4 model (v0.2.5-vocr4.1). The C pins themselves
  * (include/vjo_vocr_sizes.h, core/vocr_ocr.c, core/vocr_models.c, kernel/game_ocr.c) are checked

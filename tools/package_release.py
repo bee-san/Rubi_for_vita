@@ -29,19 +29,19 @@ NUMBERS = ("local_dictionary_results", "stick_lookup_ms", "font_size_ja", "font_
 # the owner sends. install-vita.sh takes a set one's value from the package's config.ini, which holds it.
 # tools/install-vita.sh, migrate_config.py, collect_vita.py and analyse_selftest.py use the same pattern.
 SECRET = re.compile(r"api_key$|^anki_audio_url$")
-APP_RECORD = DATA + "vjo_app.txt"  # the record of the Overlay app these plugins come with (core/app_stamp.h)
+APP_RECORD = DATA + "vjo_app.txt"  # the record of the Rubi app these plugins come with (core/app_stamp.h)
 APP_STAMP = re.compile(r"vjoapp1 api=\d{1,6} build=[0-9a-f]{16}")
 
 
 def app_info(original):
-    """The base zip's Overlay app: {"stamp", "title_id", "eboot_bytes", "eboot_sha256"} from JPOverlaySettings.vpk's
+    """The base zip's Rubi app: {"stamp", "title_id", "eboot_bytes", "eboot_sha256"} from Rubi.vpk's
     vjo_app.txt and eboot.bin, which must equal the base's ux0/data/VitaJPOverlay/vjo_app.txt (the Vita build writes
     both from one file); None for a base from before the stamps, which has neither."""
     names = set(original.namelist())
     record = original.read(APP_RECORD).decode("utf-8", "replace") if APP_RECORD in names else None
     stamp = eboot = None
     try:
-        with zipfile.ZipFile(io.BytesIO(original.read("JPOverlaySettings.vpk"))) as vpk:
+        with zipfile.ZipFile(io.BytesIO(original.read("Rubi.vpk"))) as vpk:
             vpk_names = set(vpk.namelist())
             stamp = vpk.read("vjo_app.txt").decode("utf-8", "replace") if "vjo_app.txt" in vpk_names else None
             eboot = vpk.read("eboot.bin") if "eboot.bin" in vpk_names else None
@@ -50,10 +50,10 @@ def app_info(original):
     if record is None and stamp is None:
         return None
     if record is None or stamp is None or record != stamp or not APP_STAMP.fullmatch(stamp.strip()):
-        raise ValueError("The Overlay app's stamp: " + APP_RECORD + " and JPOverlaySettings.vpk's vjo_app.txt must be "
+        raise ValueError("The Rubi app's stamp: " + APP_RECORD + " and Rubi.vpk's vjo_app.txt must be "
                          "one stamp line (vita/CMakeLists.txt writes both)")
     if eboot is None or hashlib.sha256(eboot).hexdigest()[:16] != stamp.split("build=")[1].strip():
-        raise ValueError("The Overlay app's stamp is not its VPK's eboot.bin's")
+        raise ValueError("The Rubi app's stamp is not its VPK's eboot.bin's")
     return {"stamp": stamp.strip(), "title_id": "VJOSET001", "eboot_bytes": len(eboot),
             "eboot_sha256": hashlib.sha256(eboot).hexdigest()}
 
@@ -63,7 +63,7 @@ VARIANTS = ("debug", "normal")  # docs/release-variants.md: the debug build (the
 
 def base_variant(original):
     """(variant, app version) of a base zip's modules (tools/check_variant.py): "debug" or "normal",
-    from the Shell's and the kernel's strings and the Overlay app's start line; ("debug", None) for a
+    from the Shell's and the kernel's strings and the Rubi app's start line; ("debug", None) for a
     base from before the two builds, which are all the debug build; (None, None) when its plugins are
     not Vita SELFs (the tests' placeholders). Raises when the modules disagree."""
     from check_variant import app_version, classify, segments  # packaging only: --verify needs neither
@@ -78,7 +78,7 @@ def base_variant(original):
         except ValueError:
             return None, None
         try:
-            with zipfile.ZipFile(io.BytesIO(original.read("JPOverlaySettings.vpk"))) as vpk:
+            with zipfile.ZipFile(io.BytesIO(original.read("Rubi.vpk"))) as vpk:
                 path = Path(tmp) / "eboot.bin"
                 path.write_bytes(vpk.read("eboot.bin"))
                 blobs["app"] = segments(path)
@@ -163,7 +163,7 @@ def manifest_defaults(text, shipped):
     """The manifest's defaults: every setting of the package's config template (its --set settings
     applied), the on | off switches as true/false, the numbers as integers and a credential only as
     "set" or ""; then ocr_engine, the generation of its vocr_tier's model (tools/model_tiers.json; the
-    table's default size when the template names none): the local engine's name in the Overlay app;
+    table's default size when the template names none): the local engine's name in the Rubi app;
     and anki, anki_mining's value under its earlier name."""
     defaults = {}
     for key, value in template_settings(text).items():
@@ -263,7 +263,7 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         if path.stat().st_size != size or digest(path) != sha:
             raise ValueError("OCR model checksum failed: " + name)
         assets[DATA + "ocr/" + name] = path
-        # The generation the Overlay app names the local engine after (core/vocr_models.c): a
+        # The generation the Rubi app names the local engine after (core/vocr_models.c): a
         # recognizer's only; an LM is not an engine. A model size's recognizer also names its tier,
         # the smallest of its sizes, and in tiers every size it is the model of.
         shipped[name] = {"release": "bee-san/vita-vn-ocr " + tag,
@@ -304,7 +304,7 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         if original.testzip() is not None:
             raise ValueError("Base archive is corrupt")
         required = {"ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
-                    "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "JPOverlaySettings.vpk",
+                    "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "Rubi.vpk",
                     "ur0/tai/VitaJPOverlay_OCR.suprx"}
         if not required.issubset(original.namelist()):
             raise ValueError("Base archive is missing plugins, RCO or settings VPK")
@@ -319,18 +319,18 @@ def write_package(base, output, models, assets, conversion, version, source_revi
             manifest["variant"] = found or variant
         if app_version is not None:
             manifest["app_version"] = app_version
-        # Where the game OCR worker comes from (docs/one-vpk-install.md): the Overlay app's own vjoworker=
+        # Where the game OCR worker comes from (docs/one-vpk-install.md): the Rubi app's own vjoworker=
         # mark, never this checkout's header. install-vita.sh passes it to the patcher; an older base
         # without the mark is the per-title rules'.
         import package_vpk  # packaging only: --verify (install-vita.sh) needs it not
-        app_vpk = original.read("JPOverlaySettings.vpk")
+        app_vpk = original.read("Rubi.vpk")
         try:
             facts = package_vpk.app_facts(app_vpk)
         except ValueError:
             facts = None  # an app from before the one-VPK install (or a test's placeholder)
         manifest["worker"] = facts[2] if facts else "lines"
         if facts:
-            package_vpk.payload_files()  # a payload list the Overlay app would refuse stops here (a file named twice)
+            package_vpk.payload_files()  # a payload list the Rubi app would refuse stops here (a file named twice)
     output.parent.mkdir(parents=True, exist_ok=True)
     try:
         write_archive(base, output, assets, manifest, facts, app_vpk, version)
@@ -360,7 +360,7 @@ def write_archive(base, output, assets, manifest, facts, app_vpk, version):
             manifest["files"][name] = {"bytes": path.stat().st_size, "sha256": digest(path)}
         if facts:
             # The one-VPK install's payload manifest of these same files (tools/package_vpk.py): the line
-            # install-vita.sh records as installed.txt is then the one the Overlay app writes.
+            # install-vita.sh records as installed.txt is then the one the Rubi app writes.
             entries = {n: (f["bytes"], f["sha256"]) for n, f in manifest["files"].items()}
             text = package_vpk.build_manifest(version, app_vpk, entries, manifest.get("install_settings"))
             info = zipfile.ZipInfo("payload-manifest.txt", (1980, 1, 1, 0, 0, 0))

@@ -37,7 +37,7 @@ class ReleaseInstall(unittest.TestCase):
         for name in ("config.ini", "ux0/data/VitaJPOverlay/config.ini"):
             shutil.copyfile(ROOT / "docs/config.example.ini", self.package / name)
         for name in ("ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
-                     "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "JPOverlaySettings.vpk",
+                     "ur0/data/VitaJPOverlay/vitajpoverlay.rco", "Rubi.vpk",
                      "ur0/tai/VitaJPOverlay_OCR.suprx",
                      "ux0/data/VitaJPOverlay/ocr/VOCR3_H15_w8.vocr", "ux0/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr",
                      "ux0/data/VitaJPOverlay/ocr/vocr_lm_o3_4000k.vlm", "ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md",
@@ -181,7 +181,7 @@ elif '-o' in a:
         self.assertNotIn("achidori", config)
         self.assertEqual((self.data / "games.ini").read_text(), "keep existing choices")
         self.assertEqual((self.data / "region.ini").read_text(), "keep existing region")
-        self.assertTrue((self.device / "ux0/data/JPOverlaySettings.vpk").is_file())
+        self.assertTrue((self.device / "ux0/data/Rubi.vpk").is_file())
         self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
                          (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
         for name in ("dictionaries/plaintext.vjdict",
@@ -190,7 +190,7 @@ elif '-o' in a:
             self.assertEqual((self.data / name).read_bytes(),
                              (self.package / "ux0/data/VitaJPOverlay" / name).read_bytes())
 
-    # ---- the Overlay app (core/app_stamp.h): staged with the plugins, checked at the end, loudly ----
+    # ---- the Rubi app (core/app_stamp.h): staged with the plugins, checked at the end, loudly ----
     def stamped_package(self):
         """The package with a real app VPK (an eboot.bin and its stamp) and the record beside the plugins."""
         eboot = b"SCE\0 this package's eboot.bin"
@@ -199,7 +199,7 @@ elif '-o' in a:
         with zipfile.ZipFile(buf, "w") as z:
             z.writestr("eboot.bin", eboot)
             z.writestr("vjo_app.txt", stamp)
-        (self.package / "JPOverlaySettings.vpk").write_bytes(buf.getvalue())
+        (self.package / "Rubi.vpk").write_bytes(buf.getvalue())
         (self.package / "ux0/data/VitaJPOverlay/vjo_app.txt").write_text(stamp)
         self.write_manifest()
         return eboot, stamp
@@ -222,15 +222,15 @@ elif '-o' in a:
         result = self.install("install-vita.sh", "--title", "PCSG00415")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # the VPK and the record go up with the plugins
-        self.assertEqual((self.device / "ux0/data/JPOverlaySettings.vpk").read_bytes(),
-                         (self.package / "JPOverlaySettings.vpk").read_bytes())
+        self.assertEqual((self.device / "ux0/data/Rubi.vpk").read_bytes(),
+                         (self.package / "Rubi.vpk").read_bytes())
         self.assertEqual((self.device / "ux0/data/VitaJPOverlay/vjo_app.txt").read_text(), stamp)
         # the last words, after "Installed.": a box, the app's state and what to do
         tail = result.stdout.split("Installed. Reboot the Vita", 1)[1]
         box = [l for l in tail.splitlines() if l.startswith(("+", "|"))]
         self.assertTrue(box and all(len(l) == 78 for l in box), box)
         flat = " ".join(" ".join(l.strip("|+- ").split()) for l in box)
-        self.assertIn("ONE MORE STEP: install the Overlay app (JPOverlaySettings.vpk)", flat)
+        self.assertIn("ONE MORE STEP: install the Rubi app (Rubi.vpk)", flat)
         self.assertIn("no version stamp: it is from an older build (v0.8.0-test.2 or earlier)", flat)
         self.assertIn("bash install-vita.sh --check-app 127.0.0.1", flat)
         self.assertEqual(result.stdout.rstrip().splitlines()[-1], box[-1])  # nothing can scroll it away
@@ -239,13 +239,13 @@ elif '-o' in a:
         before = self.device_files()
         check = self.install("install-vita.sh", "--check-app")
         self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
-        self.assertIn("Overlay app: up to date", check.stdout)
+        self.assertIn("Rubi app: up to date", check.stdout)
         self.assertIn("Its eboot.bin is the package VPK's.", check.stdout)
         self.assertEqual(self.device_files(), before)
         # and an install over an up-to-date app says so in the same place
         result = self.install("install-vita.sh")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("Overlay app: up to date", result.stdout.split("Installed. Reboot the Vita", 1)[1])
+        self.assertIn("Rubi app: up to date", result.stdout.split("Installed. Reboot the Vita", 1)[1])
 
     def test_the_prompt_waits_only_in_a_terminal(self):
         """In a terminal, a missing app makes the installer wait for Enter and check again; without one
@@ -258,7 +258,7 @@ elif '-o' in a:
         self.assertNotIn("Press Enter", plain.stdout)
         # without a terminal the check runs once: no prompt, so no second check after it
         self.assertEqual(plain.stdout.count("ONE MORE STEP"), 1, plain.stdout)
-        self.assertNotIn("Overlay app: NOT this package's", plain.stdout)
+        self.assertNotIn("Rubi app: NOT this package's", plain.stdout)
 
         def in_pty(extra_env, then_install):
             pid, fd = pty.fork()
@@ -288,7 +288,7 @@ elif '-o' in a:
         out, rc = in_pty({}, lambda: self.device_app(eboot, stamp))
         self.assertEqual(rc, 0, out)
         self.assertIn("Press Enter once the app is installed", out)
-        self.assertIn("Overlay app: up to date", out.split("Press Enter once the app is installed", 1)[1])
+        self.assertIn("Rubi app: up to date", out.split("Press Enter once the app is installed", 1)[1])
         self.device_app(b"test.2's eboot.bin")
         out, rc = in_pty({"VJO_NO_PROMPT": "1"}, None)
         self.assertEqual(rc, 0, out)
@@ -297,10 +297,10 @@ elif '-o' in a:
 
     def test_check_app_answers_for_each_app_and_never_writes(self):
         eboot, stamp = self.stamped_package()
-        cases = ((None, None, 1, "No Overlay app is installed on the Vita"),
+        cases = ((None, None, 1, "No Rubi app is installed on the Vita"),
                  (b"old eboot", None, 1, "no version stamp"),
                  (b"other eboot", stamp.replace("api=21", "api=20"), 1, "an older build"),
-                 (eboot, stamp, 0, "Overlay app: up to date"))
+                 (eboot, stamp, 0, "Rubi app: up to date"))
         for app_eboot, app_stamp_text, code, text in cases:
             with self.subTest(text=text):
                 self.device_app(app_eboot, app_stamp_text)
@@ -320,7 +320,7 @@ elif '-o' in a:
         self.assertIn("Cannot read ux0:app/VJOSET001/vjo_app.txt from 127.0.0.1", result.stdout)
         self.assertIn("(curl exit 7)", result.stdout)
         self.assertIn("bash install-vita.sh --check-app 127.0.0.1", result.stdout)
-        self.assertNotIn("No Overlay app is installed", result.stdout)
+        self.assertNotIn("No Rubi app is installed", result.stdout)
         # nothing listening at all (VitaShell's FTP not started, a wrong address): cannot tell either
         closed = socket.socket()
         closed.bind(("127.0.0.1", 0))
@@ -337,7 +337,7 @@ elif '-o' in a:
         (self.package / "ux0/data/VitaJPOverlay/vjo_app.txt").unlink()
         result = self.install("install-vita.sh", "--check-app")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-        self.assertIn("Overlay app: not checked", result.stdout)
+        self.assertIn("Rubi app: not checked", result.stdout)
 
     def test_package_settings_from_the_manifest_are_applied_after_the_defaults(self):
         # A test build's own settings (package_release.py --set): anki_mining = on wins over
@@ -359,7 +359,7 @@ elif '-o' in a:
         self.assertIn("config.ini: jiten_api_key removed", result.stdout)
 
     def test_an_update_keeps_the_chosen_model_size(self):
-        # API 21: the Overlay app's Model size is the user's; the installer sets no size or model.
+        # API 21: the Rubi app's Model size is the user's; the installer sets no size or model.
         for chosen in ("small", "large"):
             (self.data / "config.ini").write_text("ocr_backend = vocr\nvocr_tier = %s\nfont_size_ja = 24\n" % chosen)
             result = self.install("install-vita.sh", "--title", "PCSG00415")
@@ -371,7 +371,7 @@ elif '-o' in a:
             self.assertNotIn("config.ini: vocr_tier", result.stdout)
 
     def test_an_update_keeps_read_text_and_the_speed_boost(self):
-        # The Overlay app's Read text (ocr_mode) and Speed boost while reading (ocr_boost_clock) are the
+        # The Rubi app's Read text (ocr_mode) and Speed boost while reading (ocr_boost_clock) are the
         # user's: an update keeps them as the app saved them; a first install gets the template's auto, on.
         for mode, boost in (("on_press", "off"), ("auto", "off"), ("on_press", "on")):
             (self.data / "config.ini").write_text("ocr_mode = %s\nocr_boost_clock = %s\nfont_size_ja = 24\n" % (mode, boost))
@@ -468,7 +468,7 @@ elif '-o' in a:
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # the record is emptied, never left describing another build's app; the box cannot tell
         self.assertEqual((self.data / "vjo_app.txt").read_bytes(), b"")
-        self.assertIn("Overlay app: not checked", result.stdout)
+        self.assertIn("Rubi app: not checked", result.stdout)
         config = (self.data / "config.ini").read_text()
         for setting in ("vocr_tier = normal", "font_size_ja = 24"):
             self.assertIn(setting, config)

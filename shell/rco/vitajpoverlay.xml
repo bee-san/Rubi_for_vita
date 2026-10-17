@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Vita JP Overlay resources. Build: psp2cxml-tool vitajpoverlay.xml -->
+<!-- Rubi resources. Build: psp2cxml-tool vitajpoverlay.xml -->
 <resource version="0.1" type="normal" id="vitajpoverlay_plugin">
   <pagetable>
     <page id="vjo_page_overlay">

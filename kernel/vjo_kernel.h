@@ -1,4 +1,4 @@
-/* Vita JP Overlay kernel module: shared state between the hooks, the worker
+/* Rubi kernel module: shared state between the hooks, the worker
  * thread and the syscall exports. */
 #ifndef VJO_KERNEL_H
 #define VJO_KERNEL_H

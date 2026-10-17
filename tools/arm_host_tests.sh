@@ -22,7 +22,7 @@
 # host/fixtures/word_lookup on ARM and natively (HOST_CC, default cc), and the
 # two outputs must be identical (host/tests/word_lookup_parity.c).
 #
-# The Overlay app's .apkg export (host/tests/test_apkg.c: the SQLite and ZIP
+# The Rubi app's .apkg export (host/tests/test_apkg.c: the SQLite and ZIP
 # writers, the Lapis notes and every storage step, with BearSSL's SHA-1 and
 # SHA-256 only) runs here too, and the packages it writes (--write) must be
 # the same bytes on ARM as natively (HOST_CC).
@@ -99,7 +99,7 @@ build linebreak host/tests/test_linebreak.c core/linebreak.c core/utf.c
 build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
 # The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
 build cursor_nav host/tests/test_cursor_nav.c core/text_rows.c core/utf.c
-# The Overlay app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
+# The Rubi app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
 build settings_layout host/tests/test_settings_layout.c settings/text_layout.c core/linebreak.c settings/icons.c settings/letter.c core/utf.c
 # taiHEN's own parser (third_party/taihen-parser, built as taiHEN builds it), the config.txt editor's check
 TP=(-I third_party/taihen-parser/include third_party/taihen-parser/src/lexer.c third_party/taihen-parser/src/parser.c)
@@ -110,7 +110,7 @@ build taicfg -DNO_CTYPE -DNO_STRING -DVJO_SOURCE_DIR="\"$PWD\"" host/tests/test_
 # Its stubs come before vita_stubs (both have psp2/io/fcntl.h).
 "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
 
-# The Overlay app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets. Its
+# The Rubi app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets. Its
 # picture cards carry the game worker's JPEG (core/jpegsw.c), which must come out the same on the A9.
 BS=third_party/bearssl/src
 APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c core/anki.c core/textjoin.c core/anki_queue.c core/json.c

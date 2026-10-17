@@ -79,7 +79,7 @@ class PackageModels(unittest.TestCase):
 
     def package_fixture(self, settings=None, write_models=True, vpk=b"synthetic package fixture", record=None):
         """The release package of a synthetic base archive and the fixture models (written first
-        unless write_models is False); returns its path. vpk: the base's JPOverlaySettings.vpk, record: its
+        unless write_models is False); returns its path. vpk: the base's Rubi.vpk, record: its
         ux0/data/VitaJPOverlay/vjo_app.txt (None: none, as before the stamps)."""
         if write_models:
             self.write_models()
@@ -93,7 +93,7 @@ class PackageModels(unittest.TestCase):
             for name in ("ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
                          "ur0/tai/VitaJPOverlay_OCR.suprx", "ur0/data/VitaJPOverlay/vitajpoverlay.rco"):
                 archive.writestr(name, b"synthetic package fixture")
-            archive.writestr("JPOverlaySettings.vpk", vpk)
+            archive.writestr("Rubi.vpk", vpk)
             if record is not None:
                 archive.writestr(release.APP_RECORD, record)
             archive.writestr("config.ini", b"; the build's own template copy\n")
@@ -237,7 +237,7 @@ class PackageModels(unittest.TestCase):
 
     def test_a_payload_list_the_app_refuses_leaves_no_package(self):
         """The one-VPK payload list is checked before the output is opened, and a refusal while writing
-        removes what was written: a list the Overlay app would refuse (a file named twice,
+        removes what was written: a list the Rubi app would refuse (a file named twice,
         package_vpk.payload_files) stops the packaging with no partial zip behind."""
         import package_vpk  # noqa: PLC0415
         facts = ("0.8.0", "normal", "kernel", 23, "0123456789abcdef")
@@ -296,7 +296,7 @@ class PackageModels(unittest.TestCase):
             self.package_fixture({"vocr_tier": "huge"})
 
     def test_manifest_names_each_model_generation_and_the_local_engine(self):
-        """The bundled metadata the Overlay app's label comes from: each model's generation (by its
+        """The bundled metadata the Rubi app's label comes from: each model's generation (by its
         release), and the local engine's name for the package's default size, VOCR5."""
         package = self.package_fixture()
         with zipfile.ZipFile(package) as archive:

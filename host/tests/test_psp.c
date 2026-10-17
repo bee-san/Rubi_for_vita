@@ -1,6 +1,6 @@
 /* Adrenaline's PSP games on synthetic data only: AdrBubbleBooter bubble files
  * (core/pspbubble.c), the PARAM.SFO of a bubble's target in every format the
- * Overlay app reads (core/psptarget.c: EBOOT.PBP, ISO 9660, CSO v1/v2, ZSO,
+ * Rubi app reads (core/psptarget.c: EBOOT.PBP, ISO 9660, CSO v1/v2, ZSO,
  * built here), and the title IDs a row may carry (core/taicfg.c; the config.txt
  * editor itself is host/tests/test_taicfg.c's). No game data: titles, IDs and images are made up. With
  * zlib (VJO_TEST_ZLIB) the CSO images' deflate blocks are made and read too. */

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic installed games for the Overlay app's Vita3K smoke
+"""Synthetic installed games for the Rubi app's Vita3K smoke
 (tools/vita3k_settings_smoke.sh): UX0/app/VJOTnnnnn/sce_sys/param.sfo (TITLE) and
 icon0.png for N games, with generated titles (Latin, lower case, kana, kanji,
 digits; short and long; the letters' edges as host/tests/test_settings_games.c

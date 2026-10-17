@@ -1,6 +1,6 @@
 # Read text: automatically, or only when you press L + R
 
-The Overlay app's **OCR & lookup** page has two settings for how the overlay reads the screen. Both are
+The Rubi app's **OCR & lookup** page has two settings for how the overlay reads the screen. Both are
 saved to `ux0:data/VitaJPOverlay/config.ini` (`settings/preferences.c` `vjo_preferences_save_reading`):
 
 | In the app | `config.ini` | Choices |

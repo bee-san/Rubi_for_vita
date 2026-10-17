@@ -5,7 +5,7 @@ The overlay's only OCR engine is the
 inside each enabled game through the game OCR worker, which the kernel plugin
 loads into each game ON in `games.ini` as it starts ([worker-loading.md](worker-loading.md));
 the `*main` plugin owns
-the UI and dictionary lookup. The Overlay app's Model size chooses the
+the UI and dictionary lookup. The Rubi app's Model size chooses the
 recognizer: Small (VOCR5-S), Normal (VOCR5-N, the default) or Large
 (VOCR5-L); a job runs the next smaller size when the game has too little free
 memory ([model sizes](vita-vn-ocr.md#model-sizes-small-normal-large-api-21)). With the bundled local JMdict, the whole
@@ -14,9 +14,9 @@ host measurements, memory bounds and the physical-console validation limits.
 
 Google Lens, the upstream's online engine, was removed (2026-10-15): the overlay
 is offline, and no image ever leaves the Vita. A saved `ocr_backend` line is
-ignored (`lens` with a config warning) and the Overlay app's next save and the
+ignored (`lens` with a config warning) and the Rubi app's next save and the
 installer delete it; the last build with Google Lens is the tag
-`archive/online-last`. The Overlay app names the engine after its model's
+`archive/online-last`. The Rubi app names the engine after its model's
 generation, VOCR5 ([the engine's name](vita-vn-ocr.md#the-engines-name-the-model-generation)).
 
 The earlier CPU-only ncnn adapter is available for host experiments with

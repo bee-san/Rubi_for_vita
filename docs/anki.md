@@ -7,7 +7,7 @@ With card mining on, Enter in the open overlay saves the shown dictionary entry
 as a card in a queue on the memory card, with a JPEG of the game's screen
 ([the screenshot](#the-screenshot)). Nothing is sent anywhere: saving
 needs no network, and the queue survives restarts. When you want the cards in
-Anki, the **Overlay** app's Anki page writes them into one file,
+Anki, the **Rubi** app's Anki page writes them into one file,
 `ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>-<N>cards.apkg`, as notes of
 the [Lapis](https://github.com/donkuri/lapis) note type (`N` is the number of
 notes in it). Copy that file to a computer and open it in Anki (AnkiDroid and
@@ -21,7 +21,7 @@ directory.
 
 ## Setup and use
 
-1. In the **Overlay** app's **Anki** page (Select, or tap the tab), turn
+1. In the **Rubi** app's **Anki** page (Select, or tap the tab), turn
    **Card mining** ON (Enter, or Left/Right). This is `anki_mining` in
    `ux0:data/VitaJPOverlay/config.ini`; the overlay reads it when it next opens.
    **Screenshots**, below it, is ON by default (`anki_screenshot`): each card
@@ -32,8 +32,8 @@ directory.
    `Queued for Anki` (on every occurrence of that word in the text). Enter
    again on it says `Already queued`. In a local character lookup, Enter saves
    the match at the cursor. A line above the entry counts the queue:
-   `Anki queue: 3 · export in the Overlay app`.
-3. Back in the Overlay app (it opens beside the suspended game), **Export
+   `Anki queue: 3 · export in the Rubi app`.
+3. Back in the Rubi app (it opens beside the suspended game), **Export
    cards (N queued)** writes the package. Its progress is shown;
    Cancel stops it, and then nothing has changed. When it is done the page says
    where the file is: `Exported 12 cards (34 KB) to 2026-10-15_143000-12cards.apkg`.
@@ -46,8 +46,9 @@ directory.
      `ux0:` (VitaShell `81af709`: `browser.c`, `settings.c`, `vitashell_config.h`).
    - With an SD2Vita as `ux0:`, the microSD card itself, in a card reader.
 5. Open it in Anki (File > Import on a computer, or open the file on a phone).
-   The notes go into the deck **Vita JP Overlay**; move them to your mining
-   deck in Anki's browser (Change Deck) if you like.
+   The notes go into the deck **Vita JP Overlay** (its name from before the Rubi rename: Anki finds a
+   deck by its name, so a new name would put new cards in a second deck beside the old one); move them
+   to your mining deck in Anki's browser (Change Deck) if you like.
 
 **Export all cards** writes every card again, the ones exported before as
 well: for a new device, or a package that was lost. Anki adds only the notes
@@ -64,7 +65,7 @@ collection that has the earlier ones adds nothing twice.
 | `Card not saved: over 32 KiB of text` | The card's text exceeds a record's limit |
 | `Anki: not enough memory, card not saved` | The Shell's memory reserve refused the job; nothing changed |
 
-| Result (Overlay app) | Meaning |
+| Result (Rubi app) | Meaning |
 | --- | --- |
 | `Exported 12 cards (34 KB) to ….apkg.` | Written, read back and checked; those cards left the queue |
 | `… 2 unreadable or too large stay queued.` | A damaged or edited record, one whose screenshot is missing, or (rare) one too large to make into a note: they stay, see log.txt |
@@ -77,7 +78,7 @@ collection that has the earlier ones adds nothing twice.
 
 With `log_file = on` the app writes every storage call that fails, with its
 error code, and each export's counts to `log.txt` (lines starting
-`overlay app:`).
+`Rubi app:`).
 
 ## The Lapis note
 
@@ -254,7 +255,7 @@ card can be made into a note later, by any version that reads the record:
 | `sentence_furigana`, `sf_hl_start`, `sf_hl_end` | The text with readings and the word's offsets in it, or `null` |
 | `picture` | Whether `<id>.jpg`, its screenshot, goes with it. The ID is the record's checksum, so a card with a screenshot has another ID than the same card without one; saving a card checks both, so the same card is never queued twice whatever the setting |
 | `misc` | MiscInfo: `CLANNAD (2026-10-14 17:12)` |
-| `game`, `title_id`, `platform` | The game's name, its title ID, and `vita` or `psp`. A PSP game started from an Adrenaline bubble is recorded with the title and disc ID the Overlay app read from the file it boots (`ux0:data/VitaJPOverlay/psp/<bubble ID>.txt`), else with the bubble's own; games started from inside Adrenaline are recorded as `PSPEMUCFW`, under the name AppMgr gives that process (not checked on a console), or as `NPXS10028`, named `PSP`, when the Shell cannot tell which app started the emulator |
+| `game`, `title_id`, `platform` | The game's name, its title ID, and `vita` or `psp`. A PSP game started from an Adrenaline bubble is recorded with the title and disc ID the Rubi app read from the file it boots (`ux0:data/VitaJPOverlay/psp/<bubble ID>.txt`), else with the bubble's own; games started from inside Adrenaline are recorded as `PSPEMUCFW`, under the name AppMgr gives that process (not checked on a console), or as `NPXS10028`, named `PSP`, when the Shell cannot tell which app started the emulator |
 | `ocr_engine`, `ocr_model` | The engine, `vocr` (a record of a build before Google Lens's removal may say `lens`), and the model of the last recognition (`VOCR5_N_w8.vocr`, the Normal size's, or the smaller size's when that ran) |
 | `ocr_confidence` | `null`: the recognizer reports no confidence yet; the key is there for when it does |
 | `time` | When Enter was pressed, to the minute, as MiscInfo: seconds since 1970 (UTC); the note's creation and modification time |
@@ -414,7 +415,7 @@ has not run it yet.
 `anki_host` (AnkiConnect's address) and `anki_audio_url` (a word audio source)
 went with AnkiConnect: the overlay and the app ignore them without a warning,
 the installer removes them from `config.ini` and says so
-(`config.ini: anki_host removed (AnkiConnect was removed: …)`), the Overlay
+(`config.ini: anki_host removed (AnkiConnect was removed: …)`), the Rubi
 app's next save drops their lines (and, once it completes, keeps none in `config.ini.bak`: an
 audio source's URL can carry a key), and
 `anki_host.txt` (where the app's network search kept AnkiConnect's address) is
@@ -459,7 +460,7 @@ In SceShell (the overlay, `shell/anki.c`):
   are the game's ([above](#the-screenshot)).
 - SceShell sends nothing and opens no socket for Anki.
 
-The Overlay app is its own process (a system application with a 50 MiB
+The Rubi app is its own process (a system application with a 50 MiB
 budget), not one of the plugins, so it is not in the plugins' [memory
 ledger](memory-ledger.md). Its Anki page holds a static 2 MiB arena for an
 export (`VJO_EXPORT_MEM`: the list of cards, 32 B each for up to 20,000, the

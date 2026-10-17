@@ -1,4 +1,4 @@
-/* The Overlay app's Anki export (settings/anki_export.c) with its package
+/* The Rubi app's Anki export (settings/anki_export.c) with its package
  * writer (core/apkg.c, core/sqlw.c, core/zipw.c, core/lapis.c) on real files
  * in a temporary directory, through the Vita file API mapped onto POSIX, with
  * failed writes, flushes, closes, renames, syncs and reads injected. The

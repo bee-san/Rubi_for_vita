@@ -1,4 +1,4 @@
-/* The Overlay app's Anki export (settings/anki_page.c runs it on its worker
+/* The Rubi app's Anki export (settings/anki_page.c runs it on its worker
  * thread): the queue's cards (ux0:data/VitaJPOverlay/anki_queue/<id>.json,
  * saved by the overlay's Enter, shell/anki_queue.c) as Lapis notes in a new
  * package ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>-<N>cards.apkg

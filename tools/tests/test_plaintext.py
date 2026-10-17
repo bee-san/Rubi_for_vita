@@ -109,7 +109,7 @@ class FrozenPlaintext(unittest.TestCase):
         stage = self.root / "stage"
         prepare.stage(stage, self.archive)
         for name in ("ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
-                     "ur0/tai/VitaJPOverlay_OCR.suprx", "JPOverlaySettings.vpk",
+                     "ur0/tai/VitaJPOverlay_OCR.suprx", "Rubi.vpk",
                      "ur0/data/VitaJPOverlay/vitajpoverlay.rco"):
             path = stage / name
             path.parent.mkdir(parents=True, exist_ok=True)

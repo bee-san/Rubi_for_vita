@@ -1,4 +1,4 @@
-/* The Overlay app's Install page (docs/one-vpk-install.md, "The app: an Install page"): the state of
+/* The Rubi app's Install page (docs/one-vpk-install.md, "The app: an Install page"): the state of
  * the overlay on the card, the plan of the chosen action with its exact edits and the recovery text,
  * then, on Enter, the action on its own thread with a progress bar, and what it did. It never
  * restarts the Vita and never repeats anything by itself (settings/install.c). */

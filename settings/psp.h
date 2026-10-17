@@ -1,4 +1,4 @@
-/* The Overlay app's PSP rows: Adrenaline bubbles and Adrenaline itself among
+/* The Rubi app's PSP rows: Adrenaline bubbles and Adrenaline itself among
  * the installed apps, the game each bubble boots, and the description the
  * Shell reads at launch (core/pspbubble.h). The app, not SceShell, reads the
  * targets. Turning a row ON edits no taiHEN configuration: the kernel plugin

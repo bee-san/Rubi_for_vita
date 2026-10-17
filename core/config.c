@@ -56,7 +56,7 @@ void vjo_config_defaults(VjoConfig *c)
 
 const char *vjo_config_default_text(void)
 {
-    return "; Vita JP Overlay settings. Changes apply the next time the overlay opens.\n"
+    return "; Rubi settings. Changes apply the next time the overlay opens.\n"
            "\n"
            "; Dictionary used for word lookups: local (the files below)\n"
            "dictionary = local\n"
@@ -109,7 +109,7 @@ const char *vjo_config_default_text(void)
            "\n"
            "; OCR: vita-vn-ocr, offline on the Vita (docs/vita-vn-ocr.md)\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
-           "; vocr model size (the Overlay app's Model size): small (fastest) | normal\n"
+           "; vocr model size (the Rubi app's Model size): small (fastest) | normal\n"
            "; (the default, balanced) | large (most accurate)\n"
            "vocr_tier = normal\n"
            "; vocr: read text once still this long (ms, 0 = off), waiting at most the max,\n"
@@ -126,12 +126,12 @@ const char *vjo_config_default_text(void)
            "ocr_cascade_ms = 2000\n"
            "; vocr: refine lines: psp | on | off\n"
            "ocr_refine_lines = psp\n"
-           "; vocr: lines read at once (1-3), 444 MHz while reading (on | off: the Overlay\n"
+           "; vocr: lines read at once (1-3), 444 MHz while reading (on | off: the Rubi\n"
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
            "ocr_boost_clock = on\n"
            "\n"
-           "; The Overlay app's Read text. auto: recognize text in the background when the\n"
+           "; The Rubi app's Read text. auto: recognize text in the background when the\n"
            "; region settles, so the popup is ready when you press; on_press: recognize only\n"
            "; when the overlay is opened (docs/auto-vs-press.md)\n"
            "ocr_mode = auto\n"
@@ -139,9 +139,9 @@ const char *vjo_config_default_text(void)
            "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 1 MB + one rotated file): on | off\n"
            "log_file = on\n"
            "\n"
-           "; ---- Anki (optional): the Overlay app's Anki page turns it on and exports the cards ----\n"
+           "; ---- Anki (optional): the Rubi app's Anki page turns it on and exports the cards ----\n"
            "; on: enter (× or ○, as the Vita's settings assign it) in the overlay saves the\n"
-           "; shown word as a card in a queue on the memory card; the Overlay app exports the\n"
+           "; shown word as a card in a queue on the memory card; the Rubi app exports the\n"
            "; queue as a Lapis .apkg file for Anki (docs/anki.md). off: enter does nothing.\n"
            "anki_mining = off\n"
            "; on: each card keeps a JPEG of the game's screen (about 60 KB) in its Picture\n"
@@ -212,7 +212,7 @@ static int parse_int(const char *s, int *out)
 
 /* A dictionary value of a removed service: its name, for the config
  * warning, or NULL: jpdb.io and jiten.moe, the online dictionaries, and the
- * Hachidori relay on a computer. Such a file loads as local; the Overlay
+ * Hachidori relay on a computer. Such a file loads as local; the Rubi
  * app's next save (vjo_config_removed_line) and the installer
  * (tools/migrate_config.py REPLACED_VALUES) write local. */
 static const char *removed_dictionary(const char *v)
@@ -226,7 +226,7 @@ static const char *removed_dictionary(const char *v)
  * it, whose text may hold the key (whatever follows the name: "=", ":", a
  * space, the key itself). No setting's name starts with one of them. Such a
  * line is ignored without a warning, so no secret is ever shown or logged;
- * the Overlay app's next save and the installer (tools/migrate_config.py
+ * the Rubi app's next save and the installer (tools/migrate_config.py
  * SECRETS) delete it. */
 static int removed_secret(const char *s, size_t n)
 {
@@ -276,7 +276,7 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
 
 /* An ocr_backend value of a removed engine: why it no longer runs (the config
  * warning), or NULL. The setting itself is gone (VOCR is the only engine): the
- * Overlay app's next save and the installer (tools/migrate_config.py) drop the line. */
+ * Rubi app's next save and the installer (tools/migrate_config.py) drop the line. */
 static const char *removed_engine(const char *v)
 {
     static const char *const removed[][2] = {
@@ -376,9 +376,9 @@ static const StrSetting *find_str_setting(const char *key)
 /* Removed Anki settings (any case), ignored without a warning: the field
  * mapping a fixed note type replaced (anki_deck, anki_note_type, anki_tags,
  * anki_field_*), and AnkiConnect's address and the word audio source
- * (anki_host, anki_audio_url), gone with AnkiConnect: the Overlay app exports
+ * (anki_host, anki_audio_url), gone with AnkiConnect: the Rubi app exports
  * the cards as an .apkg. The installer (tools/migrate_config.py) removes them
- * from config.ini and says so, and the Overlay app's next save drops their
+ * from config.ini and says so, and the Rubi app's next save drops their
  * lines (vjo_config_removed_line). The n bytes at s are the name: a line's
  * first word. */
 static int removed_anki_name(const char *s, size_t n)

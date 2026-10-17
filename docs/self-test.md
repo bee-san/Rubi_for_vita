@@ -9,7 +9,7 @@ smallest model size (the fallback stage, API 21), the configured size, the full 
 second recognition, each stage with its own record whether it passed or not
 ([ingame-capture.md](ingame-capture.md)).
 
-The self-test is the debug build's (`VitaJPOverlay-<version>-debug.zip`, and every test build): the
+The self-test is the debug build's (`Rubi-<version>-debug.zip`, and every test build): the
 normal build, the release's main download, has none (docs/release-variants.md). Armed under the
 normal build, the Shell says so once in `log.txt` and leaves the marker for a debug build;
 `install_ftp.sh --self-test` from the normal package says so too.
@@ -35,7 +35,7 @@ normal build, the Shell says so once in `log.txt` and leaves the marker for a de
    found no text. OCR runs automatically while the test is armed, whatever `ocr_mode` says; the
    region is
    **yours** (draw it with Square first if you have not; with none, the full screen). The game
-   needs the OCR worker, which the kernel loads into it at its start when it is ON in the Overlay
+   needs the OCR worker, which the kernel loads into it at its start when it is ON in the Rubi
    app (since #138; before, a `--title` line); a game without it (turned ON while it ran, started
    with L held) reports `rc=-117` (`ocr unavailable`) in every stage, and `kernel.txt`'s `worker
    for` line says why.
@@ -69,7 +69,7 @@ part way (a crash, the power) leaves the marker: the next boot runs the test aga
 shows the stage that began and never wrote its record, and `status.txt` keeps the previous boot's
 copy as `status.prev.txt`.
 
-If the game is disabled in the **Overlay** app (**JP Overlay Settings** in older builds), the
+If the game is disabled in the **Rubi** app (**JP Overlay Settings** in older builds), the
 report says so and no OCR runs. If the boot is a safe one (the previous boot did not complete),
 the report has the boot sample only and says so; reboot once more.
 
@@ -210,7 +210,7 @@ negative headroom is a refused job. The Shell's `game vocr memory:` log line car
 for every OCR job, not only the self-test's.
 
 Then a **model tier** table: the Small / Normal / Large recognizer tiers of
-[`tools/model_tiers.json`](../tools/model_tiers.json), the one table the Overlay app's tier choice
+[`tools/model_tiers.json`](../tools/model_tiers.json), the one table the Rubi app's tier choice
 reads as well, so the analyser and the app cannot price different tiers. Each tier is priced at its
 ceilings, an estimate, with vita-vn-ocr's formula (`docs/model-tiers.md` there, section 1.5):
 page(weights) + page(max(the line finder's 83,323 B arena, the tier's W8I arena) + 3,760 B of
@@ -252,15 +252,15 @@ only on a yes: [below](#archiving-older-dumps-off-the-vita)), into one timestamp
   starts with a removed online dictionary's key name, `jpdb_api_keyKEY`, and a key line without `=`;
   the text after either name in the logs' config warnings is masked too), `games.ini`, `region.ini`,
   the whole `anki_queue/` with its `exported/` cards, and the listing (names and sizes only) of
-  `anki/`, the Overlay app's `.apkg` packages, `vjo_app.txt`, the record of the Overlay app the plugins came
+  `anki/`, the Rubi app's `.apkg` packages, `vjo_app.txt`, the record of the Rubi app the plugins came
   with, and `installed.txt`, the one-VPK install's record ([one-vpk-install.md](one-vpk-install.md)), which
   the analysis compares with the package's `payload-manifest.txt`;
-- `ux0:app/VJOSET001/vjo_app.txt`, the installed Overlay app's version stamp, and the SHA-256 of its
+- `ux0:app/VJOSET001/vjo_app.txt`, the installed Rubi app's version stamp, and the SHA-256 of its
   `eboot.bin` (hashed, never kept; [core/app_stamp.h](../core/app_stamp.h)). Both are read as `--check-app`
   reads them: through the folder (curl's CWD into each folder on the way), then, when that is answered "not
   there", by the file's full path without entering the folder (`SIZE` and `RETR` of
-  `ux0:/app/VJOSET001/<file>`). test.3's collect could not enter that folder, most likely because the Overlay
-  app was open beside VitaShell, while the Shell read the stamp in it ([#138](https://github.com/bee-san/vita-jp-overlay/issues/138));
+  `ux0:/app/VJOSET001/<file>`). test.3's collect could not enter that folder, most likely because the Rubi
+  app was open beside VitaShell, while the Shell read the stamp in it ([#138](https://github.com/bee-san/Rubi_for_vita/issues/138));
   `COLLECT.json`'s `app` says which way read each file. When neither can be read, the app's folder is
   listed, and, when it cannot be entered, `ux0:app`, of which only whether it lists `VJOSET001` is kept;
 - `ur0:data/VitaJPOverlay/boot.txt`; `ur0:tai/config.txt` and `ux0:tai/config.txt` with the
@@ -280,7 +280,7 @@ package's version, defaults and install settings, with each API key and the audi
 `set` or empty. Then
 `analyse_selftest.py --collect` writes `analysis.txt` and `analysis.json` into the folder and prints
 the summary: whether the installed files match the package (a file it does not ship, such as a
-removed engine's model, is listed as not in this package), whether the installed Overlay app is the
+removed engine's model, is listed as not in this package), whether the installed Rubi app is the
 one the plugins came with (an app from before the stamps, v0.8.0-test.2 and older, is recognised by its
 eboot.bin without one; "not installed" only when a listing shows the folder or its `eboot.bin` is not
 there, or the Shell's check found neither; when the collect could not read the app, the Shell's own check
@@ -297,7 +297,7 @@ with `ocr_boost_clock` off against raised, over all jobs and like for like, by w
 slowest frame, Anki saves and each export's result (a failed export, or one that left cards queued for a
 problem, is also among the problem lines; a successful one is not), the config warnings counted once
 each, the Shell's own checks of the
-Overlay app at game starts, the lines that report a problem, the Anki queue, the crash dumps, each dated
+Rubi app at game starts, the lines that report a problem, the Anki queue, the crash dumps, each dated
 against the boot ([below](#crash-dumps)), the
 model tier from each free-memory sample, the full self-test analysis when a report is there, and what
 it cannot decide, with where in the zip the data to decide it is. The zip is the one file to send.
@@ -346,7 +346,7 @@ only when nothing points the other way, because those dumps can be archived off 
   878,340 ms, puts its start at 07:00:21–07:01:21, inside its window.
   - A final `game exit` may follow a game's exit or suspend line, as the worker's own line for
     that event. A `game exit` alone, though, comes from any app that exits without a line of its own
-    (the Overlay app closed, VitaShell), at any later time. And the hook raises the worker's flag
+    (the Rubi app closed, VitaShell), at any later time. And the hook raises the worker's flag
     before it logs its own line (`kernel/lifecycle.c` `fg_store`), so the event's `game exit` can
     come first: test.3's `kernel.txt` has that order at lines 104–105.
   - The kernel logs every foreground line, and every `game pid … active` and `pid … gone` or
@@ -390,7 +390,7 @@ only when nothing points the other way, because those dumps can be archived off 
   `kernel_file_flush`), and were a raced `game exit` among them, a later lone one would count as
   its line's own. No collect so far shows a lost line. A crash after such a set-back, of a process
   whose pid `kernel.txt` does not name, is then dated, and placed, before this boot. The kernel
-  names no pid for the Overlay app, VitaShell or a system app, nor for a game started after its
+  names no pid for the Rubi app, VitaShell or a system app, nor for a game started after its
   last write. An archived dump stays in the collect's folder and zip
   ([below](#archiving-older-dumps-off-the-vita)).
 - **Notes the analysis adds.** A game's pid is named with the game. A dump dated after this boot's
@@ -413,7 +413,7 @@ crashed module, which `cmake --build build/vita` leaves as `build/vita/VitaJPOve
 
 The decode of test.3's ten dumps, posted on #138:
 
-- two are v0.7.7's Overlay app, crashing in libpng's jump buffer while it loads an icon (fixed in
+- two are v0.7.7's Rubi app, crashing in libpng's jump buffer while it loads an icon (fixed in
   v0.7.8, [settings-png-runtime.md](settings-png-runtime.md));
 - six are SceShell out of physical pages, `ScePaf` aborting with `0x80024302` in firmware threads,
   #59's pattern;

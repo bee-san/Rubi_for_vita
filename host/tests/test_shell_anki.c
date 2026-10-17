@@ -5,7 +5,7 @@
  * short writes, flushes, renames and directory reads injected. A started
  * job thread runs to completion inside sceKernelStartThread (or later, with
  * defer_start), as the real thread does before the control thread joins it.
- * Nothing here has a network: the Shell sends nothing (the Overlay app
+ * Nothing here has a network: the Shell sends nothing (the Rubi app
  * exports the queue, host/tests/test_apkg.c). Lines starting "measure:" are
  * the arena peaks quoted in docs/anki.md.
  *
@@ -651,7 +651,7 @@ static void enter(int entry)
     vjo_anki_reap();
 }
 
-/* A card in the exported archive, as the Overlay app's export leaves it. */
+/* A card in the exported archive, as the Rubi app's export leaves it. */
 static void export_card(const char *id)
 {
     char from[256], to[256];
@@ -759,7 +759,7 @@ static void test_enter_saves_offline(void)
     finish();
 }
 
-/* A card the Overlay app has exported is not queued again: "Already
+/* A card the Rubi app has exported is not queued again: "Already
  * exported", and the √ on the word; so is one AnkiConnect had (an earlier
  * build's .duplicate.json). */
 static void test_a_card_exported_before_says_so(void)
@@ -798,7 +798,7 @@ static void test_a_card_exported_before_says_so(void)
 
 /* A PSP game's card says so, whatever its ID: the Shell says it is one
  * (shell/game.c: Adrenaline's NPXS10028, a bubble by its files, a disc ID),
- * and the card records the game's disc ID when the Overlay app found it. */
+ * and the card records the game's disc ID when the Rubi app found it. */
 static void test_a_psp_games_card_says_psp(void)
 {
     static const struct { const char *id; int psp; } games[] = {

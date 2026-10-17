@@ -1,4 +1,4 @@
-/* The Overlay app's OCR card (engine.h). */
+/* The Rubi app's OCR card (engine.h). */
 #include "engine.h"
 
 #include <psp2/io/fcntl.h>

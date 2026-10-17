@@ -1,4 +1,4 @@
-/* vjo-taicfg: the Overlay app's config.txt editor (core/taicfg.c) and taiHEN's own parser
+/* vjo-taicfg: the Rubi app's config.txt editor (core/taicfg.c) and taiHEN's own parser
  * (third_party/taihen-parser) on the host, for tools/tests/test_tai_config.py's differential tests
  * and for writing the fixtures' expected results (tools/tests/fixtures/taicfg/).
  *

@@ -70,7 +70,7 @@ in this order:
    so does any process started before ux0 is final) and the process is not SceShell.
 2. Its title ID (`ksceKernelSysrootGetProcessTitleId`). Nothing for a title that
    `vjo_game_is_candidate` refuses: SceShell (`main`), every `NPXS` system app but the PSP
-   emulator's `NPXS10028`, VitaShell and the Overlay app (`VJOSET001`). These need no file and
+   emulator's `NPXS10028`, VitaShell and the Rubi app (`VJOSET001`). These need no file and
    no log line.
 3. Whether it is a PSP game: Sony's PSP emulator (`ksceSblACMgrIsPspEmu`) or a PSP ID's shape
    (`vjo_game_is_psp`: `NPXS10028`, `PSPEMU*`, a disc ID).
@@ -93,7 +93,7 @@ The process's start is never changed: the hook returns the original call's resul
 happens.
 
 **One worker per process.** A per-title line stays harmless: the installers remove the ones older
-installs left (the Overlay app's Install page and `install-vita.sh`, [one-vpk-install.md](one-vpk-install.md)),
+installs left (the Rubi app's Install page and `install-vita.sh`, [one-vpk-install.md](one-vpk-install.md)),
 and one a hand install keeps loads a second copy that gives itself up. taiHEN loads it right after the kernel's copy (the chain order
 above), so a process can get two. The worker's `module_start` keeps only the oldest copy: it looks
 its module up by name (`taiGetModuleInfo`, which finds the oldest of that name) and returns
@@ -114,7 +114,7 @@ that stayed.
 |---|---|
 | a title ON in `games.ini` starts (by its own row, the PSP row or the default) | the kernel loads the worker into it; the worker's `module_start` checks its title and the boot mode as before, starts one idle thread at the lowest user priority, and registers once the Shell confirms the game (`vjoSetGameActive`) |
 | a title OFF starts | nothing is loaded; the Shell leaves it alone as before |
-| a system app, SceShell, VitaShell, the Overlay app | nothing, before any file is read |
+| a system app, SceShell, VitaShell, the Rubi app | nothing, before any file is read |
 | L held at the start | nothing (one line); the app runs without our worker |
 | `games.ini` unreadable or corrupt | nothing (one line); the Shell disables the game too |
 | the kernel's worker does not answer within 500 ms, or the 24 KiB read block is refused | nothing (one line); the game starts without the worker |
@@ -123,7 +123,7 @@ that stayed.
 | resume | the hook does not run; the Shell reads `games.ini` again and confirms the game, the worker registers again |
 | the title turned OFF while it runs | its worker stays loaded (nothing unloads a module from a running game), idle: the Shell disables the game at its next resume, the worker gives its weights back 5 s later; at the next start nothing is loaded |
 | the title turned ON while it runs (it started OFF) | no worker until the game starts again: the overlay says so in plain words: "OCR is not running in this game. Close the game and start it again." |
-| the Overlay app beside the game (a system app) | not a candidate: nothing is loaded into it; what it saves takes effect at the next start (the worker) or resume (the Shell) |
+| the Rubi app beside the game (a system app) | not a candidate: nothing is loaded into it; what it saves takes effect at the next start (the worker) or resume (the Shell) |
 | exit | the process's modules go with it, ours included, exactly as a module taiHEN loaded; the kernel's OCR transport forgets the process (`game_ocr_process_gone`). The loader keeps nothing per process |
 | crash | as exit. A crash in the worker's own `module_start` ends that game's start, as with a `*TITLEID` line today; the next start of the same title loads it again (turn the title OFF, or hold L, to start it without) |
 | Adrenaline | the emulator's process: `PSPEMUCFW` (Adrenaline's kernel keys `adrenaline_user.suprx` on it) or, from a bubble, the bubble's ID (AdrBubbleBooter); `NPXS10028` if the kernel sees the emulator's own ID. Each is a candidate and a PSP game: its own row, then the PSP row, then the default. A bubble's starter app (an ordinary process under the bubble's ID) also gets an idle worker while it runs, as its `*ID` line gave it |
@@ -139,7 +139,7 @@ a bubble OFF by its own row would get an idle worker (the Shell still keeps the 
 one ON by its own row with the shared row OFF would get none. The `kernel.txt` line names the title
 the kernel saw, so test.4 settles it.
 
-Turning the default OFF (Triangle in the Overlay app: selected games only) keeps the worker out of
+Turning the default OFF (Triangle in the Rubi app: selected games only) keeps the worker out of
 every title without a row of its own.
 
 ## Memory
@@ -148,13 +148,13 @@ every title without a row of its own.
   thread (32,768 B stack + 4,096 B TLS) until a job, then the jobs' blocks as before
   ([memory-ledger.md](memory-ledger.md)). What changes is where: every title ON in `games.ini`,
   not only those with a line. With `default = enabled`, the installer's default, that is every
-  app but SceShell, the system apps, VitaShell and the Overlay app: homebrew too. The expert's
+  app but SceShell, the system apps, VitaShell and the Rubi app: homebrew too. The expert's
   warning applies: homebrew often takes nearly all the memory it may (VitaSDK's newlib heap is a
   fixed 128 MiB unless the app sets `_newlib_heap_size_user` [measured: vitasdk 2026.08
   `libc.a`, `_init_vita_heap`]), so an app with a fixed heap near its limit may fail to start
-  with these 126,976 B taken first. Such an app is turned OFF in the Overlay app (nothing is
+  with these 126,976 B taken first. Such an app is turned OFF in the Rubi app (nothing is
   loaded at its next start) or started with L held. A default for retail titles only (by the
-  `param.sfo` CONTENT_ID) was considered and not taken: the Overlay app shows such a title ON,
+  `param.sfo` CONTENT_ID) was considered and not taken: the Rubi app shows such a title ON,
   and an ON title without OCR is what test.3 reported; it would also add a `param.sfo` read to
   every start, on a heuristic. It is the owner's call if a homebrew fails.
 - **SceShell and the system apps.** 0 B: the kernel never loads the worker there (the candidate
@@ -179,7 +179,7 @@ start. CPU3: unmeasured (AGENTS.md rule 8).
 ## Recovery
 
 Nothing here runs at boot before SceShell, and nothing runs in a safe boot. A game that will not
-start with the worker: turn it OFF in the Overlay app, or hold L while starting it. If the Vita
+start with the worker: turn it OFF in the Rubi app, or hold L while starting it. If the Vita
 does not boot: hold L at power-on (taiHEN loads no plugins, our kernel included), as before
 ([boot-safety.md](boot-safety.md)).
 

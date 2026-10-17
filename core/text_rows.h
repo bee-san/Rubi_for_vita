@@ -84,7 +84,7 @@ size_t vjo_word_step(VjoWordNavigation *history, const char *text, size_t len, s
  * forget Right's history, so Left then retraces only the Rights made since
  * (across rows). One history and one column for both. `stick`: the left
  * stick's step (#138, core/stick_cursor.h), which never goes round a one-row
- * text's ends itself, as a held stick stops at the ends of the Overlay app's
+ * text's ends itself, as a held stick stops at the ends of the Rubi app's
  * lists (its Left still retraces a d-pad Right that went round), and is not
  * counted: the counts are the arrows', for the overlay's close log. Returns the
  * VJO_ROW_* result; *out is the new cursor (the old one if it stays). */

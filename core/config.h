@@ -11,7 +11,7 @@ enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
  * (VJO_WITH_VOCR). The overlay is offline only (owner 2026-10-15): Google Lens
  * was removed, and with it the ocr_backend setting. A config.ini line naming an
  * engine (ocr_backend = vocr, lens, or a removed trial: vocr2, meiki, ncnn) is
- * ignored, Lens and the trials with a config warning; the Overlay app's next
+ * ignored, Lens and the trials with a config warning; the Rubi app's next
  * save and the installer (tools/migrate_config.py) drop the line
  * (vjo_config_removed_line). The self-test still reports backend=2, the old
  * VOCR id, so its reports keep their form. log_host, the UDP log's computer,
@@ -26,7 +26,7 @@ enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
  * and 1 jpdb.io and jiten.moe, the online dictionaries with an API key
  * (removed after v0.8.0-test.2), 2 the Hachidori relay on a computer
  * (hachidori_host, removed after them). A config.ini naming one loads as
- * local with a warning; the Overlay app's next save and the installer write
+ * local with a warning; the Rubi app's next save and the installer write
  * local, and drop the API keys (vjo_config_removed_line, tools/
  * migrate_config.py); hachidori_host is ignored, and the installer drops it. */
 enum { VJO_DICT_LOCAL = 3 };
@@ -75,7 +75,7 @@ typedef struct {
     int ocr_cascade_ms;       /* 0 (off) or 250..3750: the cascade's time ceiling per recognition */
     int ocr_refine_lines;     /* 0 off, 1 on, 2 PSP games only (VJO_GAME_OCR_REFINE_*) */
     int log_file;             /* 0/1 */
-    /* Anki (docs/anki.md): the Overlay app exports the queue as Lapis notes; nothing else to set. */
+    /* Anki (docs/anki.md): the Rubi app exports the queue as Lapis notes; nothing else to set. */
     int anki_mining;          /* 0/1: enter saves the shown word to the offline queue */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;
@@ -107,7 +107,7 @@ void vjo_config_defaults(VjoConfig *c);
  * add a warning. */
 void vjo_config_parse(VjoConfig *c, const char *text, size_t len);
 /* The commented default file: docs/config.example.ini, the installer's and the
- * package's template, and what the Overlay app's first save publishes when
+ * package's template, and what the Rubi app's first save publishes when
  * there is no config.ini (settings/preferences.c). SceShell never writes it:
  * without a file the Shell plugin runs on vjo_config_defaults, the same values. */
 const char *vjo_config_default_text(void);
@@ -141,7 +141,7 @@ int vjo_vocr_tier_of_model(const char *name);
 size_t vjo_config_line_start(const char *line, size_t n);
 
 /* A config.ini line (n bytes, its newline included or not) of a removed
- * feature, which the Overlay app's saves rewrite as they patch the file:
+ * feature, which the Rubi app's saves rewrite as they patch the file:
  * VJO_LINE_DROP for the API keys of the removed online dictionaries (a line
  * whose first word starts with jpdb_api_key, jiten_api_key or api_key, jpdb's
  * older name, in any case, with or without '=') and for the removed Anki
@@ -158,7 +158,7 @@ const char *vjo_trigger_name(int trigger);
 
 /* A removed Anki setting (anki_host, anki_audio_url, the old field mapping):
  * 1 when key is one, which loads without a warning on every path (a line
- * without '=', a value too long). The installer and the Overlay app's next
+ * without '=', a value too long). The installer and the Rubi app's next
  * save (vjo_config_removed_line) remove it from config.ini. */
 int vjo_config_removed_anki_key(const char *key);
 

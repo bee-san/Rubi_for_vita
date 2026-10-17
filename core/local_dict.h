@@ -48,7 +48,7 @@ extern void (*vjo_local_trace)(int dict, int cand, int depth, const char *key, i
 
 /* A dictionary's own name, in page 0 of a version 2 or 3 file at bytes
  * 192..255 (bee-san/plaintext-dicts writes "Bee's Ultimate Dictionary"): the
- * entries' dictionary on Anki cards and in the log, and the Overlay app's
+ * entries' dictionary on Anki cards and in the log, and the Rubi app's
  * Dictionaries shown card. vjo_local_title copies it from page0 (its first n
  * bytes) into out: 1 when there is one, 0 (out "") when the bytes are no
  * version 2/3 header, the field is empty or it is malformed. */

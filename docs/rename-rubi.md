@@ -1,13 +1,9 @@
 # Renaming the overlay to Rubi
 
 The owner renamed the project on 2026-10-16 (13:04Z): it is **Rubi**, long form **Rubi for
-Vita**, and the repository becomes `bee-san/Rubi_for_vita`. This page is the plan (agent
-rubi-rename, written against main `ed9fbe7`; approved as written by the conductor, 14:27Z).
-The changes start when the conductor sends GO RENAME, once the open overlay pull requests on its
-list have merged (#146, #149, #150, #153, #154, #155, #156, #158 the one-VPK install, #160,
-#162, #165, #166, #167, and the owner's fixes from overlay-cursor-nav, overlay-app-standalone and
-overlay-cross-line-lookup; conductor, 14:27Z to 21:36Z), and the inventory is taken again on the
-main of that moment. A pull request still open then rebases onto the rename.
+Vita**, and the repository is `bee-san/Rubi_for_vita` (renamed 2026-10-17, 07:3xZ; GitHub redirects the old
+name). This page is the plan, approved by the conductor (2026-10-16 14:27Z), and the record of what
+the rename pull request did on main `caad0e5`, after every pull request on the conductor's list had merged.
 
 The rule: every name a user sees changes; every internal identifier that installs, paths,
 taiHEN lines or saved data depend on keeps its old value, so an update is an ordinary update:
@@ -93,36 +89,38 @@ Nothing internal is renamed, so nothing needs a migration or a console test of o
 9. **Comments.** "the Overlay app" in code comments becomes "the Rubi app" (no effect on any
    built file), so that a search for the old names finds only history and the kept identifiers.
 
-## Inventory at `ed9fbe7`
+## Inventory, before and after
 
-`shared/artifacts/rubi-rename/inventory.py` counts each form in the tracked text files
-(per file: `inventory-ed9fbe7.txt` there).
+`shared/artifacts/rubi-rename/inventory.py` counts each form in the tracked text files, on main `caad0e5`
+and after the rename. What is left of a renamed form is history (dated records, old logs as test
+fixtures), the readers' patterns for an earlier build's lines, and the notes that say what an old name
+was; `name_sweep.py` lists each such line with its reason (the pull request has the list).
 
-| Form | Hits | Files | Becomes |
+| Form | `caad0e5` | After | Becomes |
 | --- | ---: | ---: | --- |
-| `Vita JP Overlay` | 47 | 26 | Rubi / Rubi for Vita; the Anki deck stays |
-| `JP Overlay Settings` | 5 | 5 | history notes only |
-| `JP Overlay` (other) | 5 | 5 | Rubi |
-| `Overlay app` | 424 | 114 | Rubi app |
-| `**Overlay**` in docs | 8 | 4 | **Rubi** |
-| `"Overlay"` literals | 7 | 5 | `"Rubi"` (param.sfo, the app's header, its test, the wordmark notes) |
-| GitHub URLs to this repository | 31 | 12 | `bee-san/Rubi_for_vita` |
-| `bee-san/vita-jp-overlay` outside a URL | 7 | 3 | `bee-san/Rubi_for_vita` |
-| `VitaJPOverlay-<version>` file names | 43 | 12 | `Rubi-<version>` (except published releases') |
-| `JPOverlaySettings.vpk` | 98 | 28 | `Rubi.vpk` (readers accept both) |
-| CI artifact names | 10 | 4 | `Rubi`, `Rubi-normal` |
-| kept: data paths | 294 | 78 | unchanged |
-| kept: module file names | 317 | 52 | unchanged |
-| kept: title IDs | 49 | 26 | unchanged |
-| kept: RCO, export library, deck constant | 33, 3, 4 | 14, 3, 3 | unchanged |
+| `Vita JP Overlay` | 64 in 32 files | 47 in 19 | Rubi; the Anki deck, old-build logs |
+| `JP Overlay Settings` | 8 in 6 | 8 in 6 | history notes only |
+| `JP Overlay` (other) | 18 in 8 | 9 in 4 | Rubi; old-build logs |
+| `Overlay app` | 553 in 148 | 22 in 9 | Rubi app; the taiHEN note |
+| `**Overlay**` in docs | 17 in 7 | 3 in 2 | **Rubi**; history notes |
+| `"Overlay"` literals | 11 in 6 | 5 in 2 | `"Rubi"`; history notes |
+| GitHub URLs to this repository | 31 in 13 | 1 in 1 | `bee-san/Rubi_for_vita`; AGENTS.md's note |
+| `bee-san/vita-jp-overlay` outside a URL | 16 in 5 | 9 in 3 | `bee-san/Rubi_for_vita`; this page |
+| `VitaJPOverlay-<version>` file names | 84 in 17 | 11 in 5 | `Rubi-<version>`; published releases' |
+| `JPOverlaySettings.vpk` | 108 in 34 | 23 in 8 | `Rubi.vpk`; the readers of earlier installs |
+| CI artifact names | 12 in 5 | 5 in 4 | `Rubi`, `Rubi-normal`; notes |
+| kept: data paths, module files, title IDs, RCO, export library, deck constant | 451, 621, 118, 39, 4, 4 | 452, 621, 118, 39, 4, 4 | unchanged |
 
 ## The repository rename
 
-1. `gh repo rename Rubi_for_vita -R bee-san/vita-jp-overlay --yes`, first, so that the
-   pull request's new links resolve as soon as it merges.
+1. Done first (`gh repo rename Rubi_for_vita`, 2026-10-17 07:3xZ), so that the pull request's new
+   links resolve as soon as it merges. Its description is the README's pitch: "Learn Japanese with
+   your PS Vita: look up words from the games you play. Fully offline."
 2. GitHub redirects the old name's web pages, API, git fetch and push, and release downloads.
-   `gh` follows the redirect over REST and GraphQL (checked with `twitter/bootstrap`, which
-   answers as `twbs/bootstrap`), so the fleet's `gh -R bee-san/vita-jp-overlay` keeps working.
+   Checked after the rename: the old web URL lands on the new one (200), the API answers
+   `bee-san/Rubi_for_vita`, `gh pr list -R bee-san/vita-jp-overlay` lists the open pull requests,
+   a v0.7.1 release asset downloads (206 for a range) and `git ls-remote` over the old SSH URL
+   gives main. So the fleet's `gh -R bee-san/vita-jp-overlay` and old clones keep working.
    A new repository named `bee-san/vita-jp-overlay` would end the redirects: never create one.
 3. Secrets (`VOCR_SOURCE_KEY`, `PLAINTEXT_DICTS_SOURCE_KEY`), branch protection, issues, pull
    requests and releases stay with the repository. The deploy keys belong to vita-vn-ocr and
@@ -162,19 +160,34 @@ Nothing internal is renamed, so nothing needs a migration or a console test of o
 
 ## Verification
 
-- The host build and every ctest suite, both builds; the Vita build, both builds (memory
-  ledger: no module grows; syscall ABI; the app's SELF and artwork checks); the VPK's param.sfo
-  says `TITLE` = `STITLE` = `Rubi`, `TITLE_ID` = `VJOSET001`; `tools/e2e_package.py` on both
-  zips; `tools/preflight.sh` GO for both builds; CI green on both builds.
-- A name sweep with an allowlist (the kept identifiers and the history files): no old display
-  name left, the result in the pull request.
-- Every distinct `github.com/bee-san/Rubi_for_vita/...` link answers.
-- Console: not needed to merge. Nothing is added to the boot path (no page, thread or
-  allocation; strings only shrink). The next test build shows the new title and art; the
-  owner's check there: the bubble says Rubi, the app opens with its saved settings, games still
-  get OCR, and an Anki export lands in the existing deck.
+Off the console, on the pull request's tree (the pull request lists the commands and their output):
 
-## Order after GO RENAME
+- Host build and every ctest suite: debug 70 of 70, normal 69 of 69 (`apkg_packages`' Anki import
+  runs in CI: the pinned `anki` wheel needs glibc 2.35, the fleet box has 2.34).
+- Vita build, both builds, Release: every check of the build (kernel instructions, syscall ABI, memory
+  ledger: pass, the app's PNG ABI, SELF and artwork). The VPK's param.sfo: `TITLE` = `STITLE` = `Rubi`,
+  `TITLE_ID` = `VJOSET001`. The base zips `Rubi-0.8.0.zip` and `Rubi-0.8.0-debug.zip` hold `Rubi.vpk` and
+  every kept path (`ur0/tai/VitaJPOverlay_*.s?prx`, `ur0/data/VitaJPOverlay/vitajpoverlay.rco`, ...).
+- `tools/package_variants.py` with the pinned VOCR5 models and LMs: `Rubi-0.8.0.vpk`, `-debug.vpk`,
+  `.zip`, `-debug.zip` and `SHA256SUMS`; `tools/package_vpk.py --verify` on both VPKs; `tools/e2e_package.py`
+  on both zips: 149 of 149 checks each.
+- `tools/preflight.sh` with every optional input, both builds.
+- The art: `tools/make_settings_assets.py` with the pinned Pillow writes `startup.png`, `bg.png` and
+  `pic0.png` byte for byte as the reviewed prototype; `icon0.png` is unchanged; `tools/check_settings_assets.py`
+  passes.
+- The readers: a test feeds the same log with the old and the new names to `tools/analyse_selftest.py`
+  and gets the same summary, and checks that today's sources write the new names
+  (`tools/tests/test_analyse_selftest.py` `RenamedLines`); `--collect` hashes an earlier install's
+  `ux0:data/JPOverlaySettings.vpk` and lists it as not in the package (`tools/tests/test_collect.py`).
+- Every distinct `github.com/bee-san/Rubi_for_vita` link in the tree answers 200 (24 URLs).
+- CI's checkout path: measured before the change (above), the built files do not depend on it.
+
+Console: not needed to merge. Nothing is added to the boot path (no page, thread or allocation), and
+every changed string in a plugin is shorter than the one it replaces. The next test build shows the new
+title and art; the owner's check there: the bubble says Rubi, the app opens with its saved settings,
+games still get OCR, and an Anki export lands in the existing deck.
+
+## Order after GO RENAME (as done)
 
 1. Take the inventory again on the main of that moment.
 2. Rename the repository and this clone's remote.

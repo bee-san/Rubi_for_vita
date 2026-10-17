@@ -15,7 +15,7 @@ endif()
 
 project(VitaJPOverlay C CXX ASM)
 # Release, as CI builds it, when no build type is given: libpng without optimisation (no build
-# type, or Debug) fails the Overlay app's PNG ABI check (tools/check_settings_png_abi.py).
+# type, or Debug) fails the Rubi app's PNG ABI check (tools/check_settings_png_abi.py).
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Release (CI's); Debug fails the PNG ABI check" FORCE)
 endif()
@@ -31,14 +31,14 @@ set(VJO_ROOT ${ROOT})
 set(VJO_BUILD_VITA ON)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
-# The release's version: the base zips' names and the Overlay app's version (beside its title). The
+# The release's version: the base zips' names and the Rubi app's version (beside its title). The
 # test builds are v0.8.0-test.N packages of these binaries; the final release sets it to its own
 # version first (docs/release-variants.md), and tools/package_variants.py checks the two agree.
 set(VJO_VERSION "0.8.0" CACHE STRING "Release archive version")
 # The build variant (docs/release-variants.md). ON, the default, is the debug build, the test
 # builds' own: every log line, the self-test, the timing and trace lines, the game worker's step
 # log. OFF is the normal build, the release's main download: errors, warnings and a short log;
-# the rest is compiled out of all three plugins and the Overlay app, format strings included.
+# the rest is compiled out of all three plugins and the Rubi app, format strings included.
 # Both read the same config.ini; the release ships both (target release_variants).
 option(VJO_DEBUG "Build the debug variant (the test builds'); OFF: the normal release build" ON)
 if(VJO_DEBUG)
@@ -50,7 +50,7 @@ else()
   set(VJO_VARIANT normal)
   set(VJO_VARIANT_SUFFIX "")
 endif()
-message(STATUS "Vita JP Overlay ${VJO_VERSION}: the ${VJO_VARIANT} build (VJO_DEBUG=${VJO_DEBUG})")
+message(STATUS "Rubi ${VJO_VERSION}: the ${VJO_VARIANT} build (VJO_DEBUG=${VJO_DEBUG})")
 
 
 # ---------------- kernel ----------------
@@ -165,7 +165,7 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
 # 124,590 a lookup, counted under qemu-arm: tools/bench_stages.py a9 on both
 # normal builds), which vita-vn-ocr's A9 cost model puts at most 2.1 us more at
 # 333 MHz (1.6 us at 444) [estimate], against a console lookup's 70-81 ms of
-# mostly file reads (docs/performance.md); the Overlay app's copy is -Os too.
+# mostly file reads (docs/performance.md); the Rubi app's copy is -Os too.
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c
   ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
@@ -422,7 +422,7 @@ add_custom_target(vjo_settings_self ALL
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_settings_self.py
     --elf $<TARGET_FILE:VitaJPOverlay_Settings> ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin
   DEPENDS eboot.bin-self ${ROOT}/tools/check_settings_self.py
-  COMMENT "Checking the Overlay app's eboot.bin is the system application it is built as")
+  COMMENT "Checking the Rubi app's eboot.bin is the system application it is built as")
 # The app's version stamp (core/app_stamp.h): VJO_API_VERSION and the first 16 hex digits of the
 # eboot's SHA-256. In the VPK it is app0:vjo_app.txt (installed as ux0:app/VJOSET001/vjo_app.txt); the
 # release carries the same bytes as ux0:data/VitaJPOverlay/vjo_app.txt, the record of the app these
@@ -431,11 +431,12 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/app_stamp.py make --eboot ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin
     --api-header ${ROOT}/include/vjo_api.h -o ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt
   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/eboot.bin ${ROOT}/tools/app_stamp.py ${ROOT}/include/vjo_api.h
-  COMMENT "Stamping the Overlay app (vjo_app.txt)")
-# LiveArea title (param.sfo TITLE/STITLE) is "Overlay". The title ID, the VPK file name and every
-# plugin, path and config name keep their old names, so installing over JP Overlay Settings is an update.
-vita_create_vpk(JPOverlaySettings.vpk VJOSET001 eboot.bin
-  VERSION "01.00" NAME "Overlay"
+  COMMENT "Stamping the Rubi app (vjo_app.txt)")
+# LiveArea title (param.sfo TITLE/STITLE) is "Rubi" (docs/rename-rubi.md). The title ID and every plugin,
+# path and config name keep their old names, so installing it over the app of an earlier build (Overlay in
+# the 0.8.0 test builds, JP Overlay Settings in 0.7.12 and older) is an update.
+vita_create_vpk(Rubi.vpk VJOSET001 eboot.bin
+  VERSION "01.00" NAME "Rubi"
   FILE ${ROOT}/settings/assets/icon0.png sce_sys/icon0.png
        ${ROOT}/settings/assets/pic0.png sce_sys/pic0.png
        ${ROOT}/settings/assets/bg.png sce_sys/livearea/contents/bg.png
@@ -460,12 +461,12 @@ add_custom_target(vjo_one_vpk ALL
   COMMENT "Checking the one-VPK install's modules (tools/package_vpk.py --check-build)")
 add_custom_target(vjo_settings_assets ALL
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_settings_assets.py
-    ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk
-  DEPENDS JPOverlaySettings.vpk-vpk)
-# The Overlay app's Vita3K crash check (tools/vita3k_settings_smoke.sh): the same sources
+    ${CMAKE_CURRENT_BINARY_DIR}/Rubi.vpk
+  DEPENDS Rubi.vpk-vpk)
+# The Rubi app's Vita3K crash check (tools/vita3k_settings_smoke.sh): the same sources
 # with a scripted controller and counted textures (tools/vita3k_settings_smoke.c, linked in
 # by -Wl,--wrap). Off by default, never in the release, and not evidence about the console.
-option(VJO_SETTINGS_SMOKE "Build the Overlay app's Vita3K smoke VPK (vjo_settings_smoke.vpk)" OFF)
+option(VJO_SETTINGS_SMOKE "Build the Rubi app's Vita3K smoke VPK (vjo_settings_smoke.vpk)" OFF)
 if(VJO_SETTINGS_SMOKE)
   # vita-elf-create needs a few KiB after the code segment for its SCE data; a code segment
   # that ends just below the data segment fails ("segment 1 overlaps"). The smoke script then
@@ -501,7 +502,7 @@ if(VJO_SETTINGS_SMOKE)
   set(VITA_PACK_VPK_FLAGS "")
   # Its list of the VPK's files (resources, its VPK command's DEPENDS) too: since #122 the Settings
   # VPK's holds the generated vjo_app.txt, made from the app's eboot.bin, so this VPK would build the
-  # Overlay app itself, and fail with it in a build without optimisation (#135: libpng at -O0, which
+  # Rubi app itself, and fail with it in a build without optimisation (#135: libpng at -O0, which
   # check_settings_png_abi.py refuses).
   set(resources "")
   vita_create_vpk(vjo_settings_smoke.vpk ${VJO_SETTINGS_SMOKE_TITLE} vjo_settings_smoke.self
@@ -513,7 +514,7 @@ endif()
 # The modules are the build they say (tools/check_variant.py, docs/release-variants.md): the normal
 # build's carry none of the debug build's own format strings (the self-test, the step log, the
 # recognized text, the timings and traces) and its own short-log marker; the debug build's carry
-# them all; the Overlay app names VJO_VERSION and, in the debug build, "debug".
+# them all; the Rubi app names VJO_VERSION and, in the debug build, "debug".
 set(VJO_VARIANT_WORKER_ARGS)
 set(VJO_VARIANT_WORKER_DEPS)
 if(VJO_WITH_VOCR)
@@ -582,16 +583,16 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/bearssl/LICENSE.txt ${STAGE}/third_party/licenses/BearSSL-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/jsmn/LICENSE ${STAGE}/third_party/licenses/jsmn-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/taihen-parser/LICENSE ${STAGE}/third_party/licenses/taihen-parser-MIT.txt
-  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/JPOverlaySettings.vpk ${STAGE}/
-  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party JPOverlaySettings.vpk
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/Rubi.vpk ${STAGE}/
+  COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party Rubi.vpk
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant vjo_one_vpk
     vjo_offline_imports # a zip is never packaged from modules that import a network library
-  COMMENT "Packaging VitaJPOverlay-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip (the ${VJO_VARIANT} build)")
+  COMMENT "Packaging Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip (the ${VJO_VARIANT} build)")
 
 # ---------------- the release's two zips: the normal build and the debug build ----------------
 # The final release ships both builds of one tree (docs/release-variants.md): the normal build as
-# VitaJPOverlay-<version>.zip, the main download, and the debug build, the test builds' own, as
-# VitaJPOverlay-<version>-debug.zip, with the same models, dictionary and config template. This
+# Rubi-<version>.zip, the main download, and the debug build, the test builds' own, as
+# Rubi-<version>-debug.zip, with the same models, dictionary and config template. This
 # target makes this build's base zip (release) and the other build's, in variant-<other>/ configured
 # from this cache (toolchain, runtime, dictionary, version; the app's PNG sources not fetched
 # again); with VJO_RELEASE_MODELS (the pinned models and LMs, as tools/package_release.py --models
@@ -609,13 +610,13 @@ else()
   set(VJO_OTHER_VARIANT debug)
 endif()
 set(VJO_OTHER_DIR ${CMAKE_CURRENT_BINARY_DIR}/variant-${VJO_OTHER_VARIANT})
-set(VJO_THIS_ZIP ${CMAKE_CURRENT_BINARY_DIR}/VitaJPOverlay-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip)
+set(VJO_THIS_ZIP ${CMAKE_CURRENT_BINARY_DIR}/Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip)
 if(VJO_DEBUG)
-  set(VJO_NORMAL_ZIP ${VJO_OTHER_DIR}/VitaJPOverlay-${VJO_VERSION}.zip)
+  set(VJO_NORMAL_ZIP ${VJO_OTHER_DIR}/Rubi-${VJO_VERSION}.zip)
   set(VJO_DEBUG_ZIP ${VJO_THIS_ZIP})
 else()
   set(VJO_NORMAL_ZIP ${VJO_THIS_ZIP})
-  set(VJO_DEBUG_ZIP ${VJO_OTHER_DIR}/VitaJPOverlay-${VJO_VERSION}-debug.zip)
+  set(VJO_DEBUG_ZIP ${VJO_OTHER_DIR}/Rubi-${VJO_VERSION}-debug.zip)
 endif()
 set(VJO_PACKAGE_VARIANTS)
 if(VJO_RELEASE_MODELS)

@@ -1,5 +1,5 @@
 /* The one-VPK install's payload manifest and the installed build's record (docs/one-vpk-install.md):
- * pure functions over bounded texts, shared by the Overlay app (settings/install.c) and the host
+ * pure functions over bounded texts, shared by the Rubi app (settings/install.c) and the host
  * tests; tools/package_release.py writes the manifest and tools/install_ftp.sh the record with the
  * same rules (tools/tests/test_one_vpk.py runs both).
  *
@@ -7,11 +7,11 @@
  *
  *     vjopayload 1
  *     version 0.8.0              the package's (a test build's: 0.8.0-test.4)
- *     app_version 0.8.0          the Overlay app's own (vita/CMakeLists.txt VJO_VERSION)
+ *     app_version 0.8.0          the Rubi app's own (vita/CMakeLists.txt VJO_VERSION)
  *     variant normal             normal | debug (docs/release-variants.md)
  *     api 24                     VJO_API_VERSION
  *     worker kernel              kernel | lines (where the game OCR worker comes from)
- *     build 0123456789abcdef     the Overlay app's eboot.bin stamp (core/app_stamp.h)
+ *     build 0123456789abcdef     the Rubi app's eboot.bin stamp (core/app_stamp.h)
  *     file DEST BYTES SHA256 copy|move
  *     template ux0:data/VitaJPOverlay/config.ini BYTES SHA256
  *     set anki_mining on

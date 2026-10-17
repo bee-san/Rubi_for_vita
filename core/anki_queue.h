@@ -1,7 +1,7 @@
 /* The offline Anki queue's records: one readable UTF-8 JSON object per card
  * (a card of an earlier build may have a screenshot, a separate JPEG; see
  * shell/anki_queue.c). A record keeps the card's content; its Lapis note
- * (core/anki.h, core/lapis.h) is made from it when the Overlay app exports
+ * (core/anki.h, core/lapis.h) is made from it when the Rubi app exports
  * the queue (settings/anki_export.c), and the record's ID is the note's GUID's
  * source, so a card is the same note in every package that has it.
  *

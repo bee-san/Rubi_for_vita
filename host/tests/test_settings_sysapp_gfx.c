@@ -1,5 +1,5 @@
-/* The Overlay app's start as a system application with no game running, on the host
- * (settings/sysapp_gfx.c, owner 2026-10-16: "I can't open the Overlay app first. First I have
+/* The Rubi app's start as a system application with no game running, on the host
+ * (settings/sysapp_gfx.c, owner 2026-10-16: "I can't open the Rubi app first. First I have
  * to open a game ..."). libvita2d's own start (host/tests/sysapp_gfx_model.c, a copy of the
  * pinned libvita2d's) runs against a model of the system, through the link's --wrap as on
  * the Vita (CMakeLists.txt). The model:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check that the Overlay app's eboot.bin is the system application vita/CMakeLists.txt builds.
+"""Check that the Rubi app's eboot.bin is the system application vita/CMakeLists.txt builds.
 
 Since #109 the app runs beside a suspended game as a system application, and nothing else in
 the build notices when a change undoes part of it: each of audit-pr109's mutants M1-M7 (no
@@ -255,7 +255,7 @@ def check(self_path, elf_path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("self", type=Path, help="the Overlay app's eboot.bin")
+    parser.add_argument("self", type=Path, help="the Rubi app's eboot.bin")
     parser.add_argument("--elf", type=Path, required=True, help="its linked ELF (VitaJPOverlay_Settings)")
     args = parser.parse_args()
     try:

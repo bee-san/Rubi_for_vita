@@ -17,7 +17,7 @@
 #define VJO_DEBUG 1
 #endif
 
-/* The variant's name in log lines and the Overlay app's version. */
+/* The variant's name in log lines and the Rubi app's version. */
 #if VJO_DEBUG
 #define VJO_VARIANT "debug"
 #else

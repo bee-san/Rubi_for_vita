@@ -3,7 +3,7 @@
  * cursor is looked up only once the cursor rests there.
  *
  * Pushed more than VJO_STICK_THRESHOLD from its centre (core/stick_scroll.h:
- * the Overlay app's lists, #107/#113/#129), the stick moves the cursor one
+ * the Rubi app's lists, #107/#113/#129), the stick moves the cursor one
  * step at once; held, the next step comes after VJO_STICK_HOLD_US (the lists'
  * 166.7 ms), then after VJO_STICK_CURSOR_FIRST_US, each later one
  * VJO_STICK_CURSOR_ACCEL_US sooner than the one before (the acceleration),

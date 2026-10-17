@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs Vita JP Overlay over VitaShell's FTP server (VitaShell: SELECT button
+# Installs Rubi over VitaShell's FTP server (VitaShell: SELECT button
 # set to FTP in its settings, then SELECT). Backs up both taiHEN configs locally
 # first, and on the Vita each one it changes (as config.txt.vjo-bak and a dated
 # config.txt.vjo-<date-time>.bak, kept), and adds plugin entries once. config.ini is created on the
@@ -9,7 +9,7 @@
 #
 # The game OCR worker: in a package whose manifest says "worker": "kernel" (and in a source tree whose
 # include/vjo_api.h defines VJO_KERNEL_LOADS_WORKER 1), the kernel plugin loads it into every game
-# turned ON in the Overlay app (#138, Agent A): no config line names it, --title is not needed, and
+# turned ON in the Rubi app (#138, Agent A): no config line names it, --title is not needed, and
 # the worker lines older installs left are removed (docs/one-vpk-install.md). Otherwise ("lines") it
 # is registered per game, one *TITLEID section each, never under *ALL: name each game with --title;
 # games registered by an earlier install are kept, an *ALL worker line is commented out, and with no
@@ -35,7 +35,7 @@
 #   tools/install_ftp.sh --self-test 192.168.1.50 (arms the on-device self-test for the next
 #      boot and game start; docs/self-test.md)
 #   tools/install_ftp.sh --dumps 192.168.1.50    (downloads system crash dumps)
-#   tools/install_ftp.sh --check-app 192.168.1.50 (read-only: is the Vita's Overlay app this package's?
+#   tools/install_ftp.sh --check-app 192.168.1.50 (read-only: is the Vita's Rubi app this package's?
 #      Compares ux0:app/VJOSET001/vjo_app.txt and eboot.bin with the package's stamp and VPK; exit 0 yes,
 #      1 no, 2 cannot tell. An install ends with the same check, in a box.)
 #   tools/install_ftp.sh --collect 192.168.1.50  (everything the overlay wrote, read-only: the logs,
@@ -101,7 +101,7 @@ VITA=${HOST%%:*}
 INSTALL_CMD="bash tools/install_ftp.sh"
 [ -f install-vita.sh ] && INSTALL_CMD="bash install-vita.sh"
 if [ -n "${TITLES[*]+x}" ] && [ $WORKER = kernel ]; then
-  echo "Note: --title is not needed: the kernel plugin loads the OCR worker into every game turned ON in the Overlay app."
+  echo "Note: --title is not needed: the kernel plugin loads the OCR worker into every game turned ON in the Rubi app."
   TITLES=()
 elif [ -n "${TITLES[*]+x}" ] && [ $((UNINSTALL + STATUS + DUMPS + SELFTEST + COLLECT + CHECKAPP + ARCHIVE)) -gt 0 ]; then
   echo "Note: --title takes effect when installing ($INSTALL_CMD --title ${TITLES[0]} ${HOST%%:*});"
@@ -122,17 +122,17 @@ if [ -n "$PACKAGE_DIR" ]; then
     [ -f "$model" ] && VOCR_MODELS+=("$model")
   done
 fi
-# The Overlay app this install brings (core/app_stamp.h): its stamp, also the plugins' record on the Vita,
+# The Rubi app this install brings (core/app_stamp.h): its stamp, also the plugins' record on the Vita,
 # and its VPK. A package has them at ux0/data/VitaJPOverlay/vjo_app.txt and at its root (this script also runs
 # from an extracted package's root, e.g. for --check-app); a source build in build/vita.
 APP_STAMP=build/vita/vjo_app.txt
-APP_VPK=build/vita/JPOverlaySettings.vpk
+APP_VPK=build/vita/Rubi.vpk
 if [ -n "$PACKAGE_DIR" ]; then
   APP_STAMP=$PACKAGE_DIR/ux0/data/VitaJPOverlay/vjo_app.txt
-  APP_VPK=$PACKAGE_DIR/JPOverlaySettings.vpk
+  APP_VPK=$PACKAGE_DIR/Rubi.vpk
 elif [ -f ux0/data/VitaJPOverlay/vjo_app.txt ]; then
   APP_STAMP=ux0/data/VitaJPOverlay/vjo_app.txt
-  APP_VPK=JPOverlaySettings.vpk
+  APP_VPK=Rubi.vpk
 fi
 PATCH_ARGS=(--worker "$WORKER")
 for title in ${TITLES[@]+"${TITLES[@]}"}; do PATCH_ARGS+=(--title "$title"); done
@@ -160,7 +160,7 @@ PY
 }
 
 # A configuration's copy on the Vita before it changes: config.txt.vjo-bak (the latest, as every earlier
-# installer wrote it) and config.txt.vjo-YYYYMMDD-HHMMSS.bak, never reused or deleted (the Overlay app's
+# installer wrote it) and config.txt.vjo-YYYYMMDD-HHMMSS.bak, never reused or deleted (the Rubi app's
 # name, docs/one-vpk-install.md). $1: the local copy, $2: the configuration's path on the Vita.
 STAMP=$(date +%Y%m%d-%H%M%S)
 backup_config() {
@@ -177,7 +177,7 @@ reset_boot_record() {
   put "$TMP/boot.empty" "ur0:/data/VitaJPOverlay/boot.txt"
 }
 
-# Read-only: is the Vita's Overlay app (ux0:app/VJOSET001) the one this install brings? Prints a box with the
+# Read-only: is the Vita's Rubi app (ux0:app/VJOSET001) the one this install brings? Prints a box with the
 # answer and what to do; returns 0 yes, 1 no, 2 cannot tell (tools/app_stamp.py check). $1: --after-install
 # for the installer's own last words. Each file is read as tools/collect_vita.py's read_app reads it: curl's
 # own way, a CWD into each folder on the way; when that is answered "not there", once more by its full path with
@@ -198,7 +198,7 @@ app_check() {
       0) ;;
       9|19|78) rm -f "$dst" ;;  # not there either way: CWD, SIZE or RETR refused (as tools/collect_vita.py reads them)
       *)  # cannot connect, timed out, a broken transfer: not a Vita without the app
-        echo "Cannot read ${src/:\//:} from $HOST (curl exit $rc) to check the Overlay app. Start VitaShell's FTP (SELECT, with SELECT button set to FTP in its settings) and run: $INSTALL_CMD --check-app ${HOST%%:*}"
+        echo "Cannot read ${src/:\//:} from $HOST (curl exit $rc) to check the Rubi app. Start VitaShell's FTP (SELECT, with SELECT button set to FTP in its settings) and run: $INSTALL_CMD --check-app ${HOST%%:*}"
         return 2 ;;
     esac
   done
@@ -315,7 +315,7 @@ if [ $SELFTEST = 1 ]; then
   manifest=${PACKAGE_DIR:-.}/package-manifest.json
   if [ -f "$manifest" ] && grep -q '"variant": "normal"' "$manifest"; then
     echo "Note: this package is the normal build, which has no self-test. Install the -debug zip of the same"
-    echo "release (VitaJPOverlay-<version>-debug.zip) to run it; the marker is armed for that build."
+    echo "release (Rubi-<version>-debug.zip) to run it; the marker is armed for that build."
   fi
   : > "$TMP/selftest.txt"
   put "$TMP/selftest.txt" "ux0:/data/VitaJPOverlay/selftest.txt"
@@ -461,7 +461,7 @@ for CFG in "${CFGS[@]}"; do
         echo "Nothing was changed on the Vita. Run again with --title for each game that should have OCR, for example:"
       fi
       echo "  $INSTALL_CMD --title PCSG00415 ${HOST%%:*}"
-      echo "The Overlay app (JP Overlay Settings in older builds) shows each game's title ID; VitaShell shows them as the folder names in ux0:app (gro0:app for a game card)."
+      echo "The Rubi app (JP Overlay Settings in older builds) shows each game's title ID; VitaShell shows them as the folder names in ux0:app (gro0:app for a game card)."
     fi
     exit "$patch_status"
   fi
@@ -493,11 +493,11 @@ if [ -n "$PACKAGE_DIR" ]; then
     put "$f" "ux0:/data/VitaJPOverlay/dictionaries/$(basename "$f")"
   done
 fi
-# The Overlay app: its VPK, installed in VitaShell (the box at the end says whether it still has to be), and
+# The Rubi app: its VPK, installed in VitaShell (the box at the end says whether it still has to be), and
 # the record of it the Shell plugin compares the installed app with. Without a stamp (a source build whose VPK
 # was not built) the record is emptied, as boot.txt is: "no record" is unknown to the plugins, never another
 # build's app.
-if [ -f "$APP_VPK" ]; then put "$APP_VPK" "ux0:/data/JPOverlaySettings.vpk"; fi
+if [ -f "$APP_VPK" ]; then put "$APP_VPK" "ux0:/data/Rubi.vpk"; fi
 if [ -f "$APP_STAMP" ]; then
   put "$APP_STAMP" "ux0:/data/VitaJPOverlay/vjo_app.txt"
 else
@@ -545,7 +545,7 @@ for name in VitaJPOverlay_Kernel.skprx VitaJPOverlay_Shell.suprx VitaJPOverlay_O
   fi
 done
 # The record of the build installed (docs/one-vpk-install.md, "installed.txt"): the package's, the same
-# line the Overlay app writes; a source build's is "no record".
+# line the Rubi app writes; a source build's is "no record".
 if [ -n "$PACKAGE_DIR" ] && [ -f "$PACKAGE_DIR/payload-manifest.txt" ]; then
   python3 tools/package_vpk.py --installed-record "$PACKAGE_DIR" > "$TMP/installed.txt"
 else
@@ -553,7 +553,7 @@ else
 fi
 put "$TMP/installed.txt" "ux0:/data/VitaJPOverlay/installed.txt"
 echo "Installed. Reboot the Vita, then leave it on for a minute. A boot that does not complete makes the next one a safe boot (no hooks, no overlay; see ux0:data/VitaJPOverlay/status.txt). If it fails to boot at all, hold L while powering on, then in VitaShell put # before the two VitaJPOverlay lines of ur0:tai/config.txt (and ux0:tai/config.txt), or run: tools/install_ftp.sh --uninstall ${HOST%%:*}"
-# Last, so it cannot scroll away: the Overlay app (#101: test.1's app ran beside test.2's plugins). A failed
+# Last, so it cannot scroll away: the Rubi app (#101: test.1's app ran beside test.2's plugins). A failed
 # check changes nothing of the install.
 echo
 app_rc=0

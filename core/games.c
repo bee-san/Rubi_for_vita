@@ -115,7 +115,7 @@ int vjo_games_parse(VjoGames *g, const char *text, size_t len)
 int vjo_games_format(const VjoGames *g, char *out, size_t cap)
 {
     if (!out || !cap || g->count < 0 || g->count > VJO_GAMES_MAX) return -1;
-    int n = vjo_snprintf(out, cap, "# JP Overlay per-game settings\ndefault = %s\n",
+    int n = vjo_snprintf(out, cap, "# Rubi per-game settings\ndefault = %s\n",
                          g->default_enabled ? "enabled" : "disabled");
     if (n < 0 || (size_t)n >= cap) return -1;
     size_t used = (size_t)n;

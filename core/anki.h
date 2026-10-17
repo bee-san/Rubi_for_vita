@@ -2,7 +2,7 @@
  * (VjoAnkiNote, saved in the offline queue, core/anki_queue.h) and the HTML
  * a card puts in each field of its note, a Lapis note
  * (github.com/donkuri/lapis 1.7.0; core/lapis.h has the note type) in the
- * .apkg the Overlay app exports (core/apkg.h). The values are those Yomitan
+ * .apkg the Rubi app exports (core/apkg.h). The values are those Yomitan
  * writes for the fields Lapis's README lists. */
 #ifndef VJO_ANKI_H
 #define VJO_ANKI_H

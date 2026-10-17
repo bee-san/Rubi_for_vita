@@ -49,7 +49,7 @@ static const VjoVocrModelInfo infos[] = {
      * cascade's model of a request by name (the host tools). */
     {VJO_VOCR4_W20_NAME, "VOCR4", "W20", VJO_VOCR_CASCADE_BYTES, W20_BOX_MS, W20_JOB_BYTES},
 };
-/* The Overlay app's Model size choices, smallest first (include/vjo_vocr_sizes.h,
+/* The Rubi app's Model size choices, smallest first (include/vjo_vocr_sizes.h,
  * tools/model_tiers.json). */
 static const VjoVocrTierInfo tiers[VJO_VOCR_TIERS] = {
     {"small", "Small", "fastest", VJO_VOCR_TIER1_NAME, VJO_GAME_RESERVE_SMALL},

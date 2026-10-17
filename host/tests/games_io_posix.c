@@ -1,4 +1,4 @@
-/* The Shell's and the Overlay app's file calls (vita/games_storage.c) over real
+/* The Shell's and the Rubi app's file calls (vita/games_storage.c) over real
  * files, for host/tests/test_kernel_loader.c's parity check: the kernel's
  * games.ini reader against the Shell's own on the same files. Reads come back
  * 13 bytes at a time, as test_games.c's, so every short-read loop runs. */

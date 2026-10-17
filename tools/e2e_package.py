@@ -4,7 +4,7 @@
     python3 tools/e2e_package.py RELEASE.zip [--work DIR] [--keep]
 
 RELEASE.zip is a package of tools/package_release.py or tools/package_variants.py (the plugins, the
-Overlay app, the models, the LMs, the dictionary and package-manifest.json), of either build. A base
+Rubi app, the models, the LMs, the dictionary and package-manifest.json), of either build. A base
 zip (the Vita build's own, CI's artifacts) has no models: package it first. The zip is unpacked into
 DIR/pkg (default build/e2e-package/<the zip's name>), and each scenario runs a copy of it, the
 package's own install-vita.sh and tools/install_ftp.sh, against a fake Vita's partitions
@@ -17,7 +17,7 @@ one of those names without the marker, a DIR that is a file, and a package that 
 of its entries. After the run it checks that DIR's top-level names are its own entries and the files
 that were there before (what changes inside its entries is its own).
 
-Scenario A, the owner's case (#101): a Vita with v0.8.0-test.2 installed and test.1's Overlay app
+Scenario A, the owner's case (#101): a Vita with v0.8.0-test.2 installed and test.1's Rubi app
 still on it: test.2's taiHEN lines (*KERNEL, *main, *PCSG00415, the commented *ALL, Meiki and Text
 lines), its model files, its VPK in ux0:data, and the config.ini the old app left (ocr_backend =
 vocr2, vocr_model/vocr_fallback_model, jpdb/jiten API keys, Anki on with an address).
@@ -25,7 +25,7 @@ install-vita.sh --title PCSG00415 (a package whose worker mode is kernel, the ma
 --title with a note and removes the worker's lines: the kernel plugin loads it, docs/one-vpk-install.md;
 lines mode registers it under *PCSG00415); --check-app with no app, test.2's app and this package's;
 --self-test; a console session simulated in the plugins' log formats (a model size that did not
-fit, an Anki save, the Overlay app's export); --collect (read-only: one zip and its analysis);
+fit, an Anki save, the Rubi app's export); --collect (read-only: one zip and its analysis);
 --uninstall.
 Scenario B, a fresh henkaku Vita with an *ALL worker line in both ur0 and ux0: install-vita.sh --title
 (kernel mode removes the *ALL worker line, lines mode comments it out).
@@ -34,7 +34,7 @@ dictionary = jpdb becomes local, and the registered game's line goes with its se
 is kept without --title (lines mode).
 Before them, the package itself: its manifest names the build its modules are (tools/check_variant.py's
 markers, read as tools/package_release.py reads a base, and all four modules, the worker too, checked as
-the Vita build checks them, against this tree's sources) and the Overlay app's version (a manifest without
+the Vita build checks them, against this tree's sources) and the Rubi app's version (a manifest without
 app_version fails: tools/package_release.py records it with the variant), its models and LMs are this
 tree's pinned files (tools/prepare_ocr.py), and ocr/ holds nothing else (the installer uploads every .vocr
 and .vlm there): run the e2e from a checkout of the package's own commit.
@@ -201,17 +201,17 @@ class E2E:
             check(dated and re.fullmatch(r"config\.txt\.vjo-\d{8}-\d{6}(-\d+)?\.bak", dated[0].name)
                   and dated[0].read_bytes() == before[part], f"{label} {part}: a dated backup of the original, kept")
         payload = pkg / "payload-manifest.txt"
-        if payload.is_file():  # the one-VPK install's record, the line the Overlay app writes (core/payload.h)
+        if payload.is_file():  # the one-VPK install's record, the line the Rubi app writes (core/payload.h)
             sys.path.insert(0, str(ROOT / "tools"))
             import package_vpk
             record = dev / "ux0/data/VitaJPOverlay/installed.txt"
             check(record.is_file() and record.read_text() == package_vpk.installed_record(payload.read_text()),
                   f"{label} installed.txt is this package's record")
         for rel in self.device_files:
-            dst = dev / ("ux0/data/JPOverlaySettings.vpk" if rel == "JPOverlaySettings.vpk" else rel)
+            dst = dev / ("ux0/data/Rubi.vpk" if rel == "Rubi.vpk" else rel)
             check(dst.is_file() and dst.read_bytes() == (pkg / rel).read_bytes(), f"{label} uploaded and identical: {rel}")
-        check((dev / "ux0/data/JPOverlaySettings.vpk").read_bytes() == (pkg / "JPOverlaySettings.vpk").read_bytes(),
-              f"{label} uploaded: ux0:data/JPOverlaySettings.vpk (this build's app)")
+        check((dev / "ux0/data/Rubi.vpk").read_bytes() == (pkg / "Rubi.vpk").read_bytes(),
+              f"{label} uploaded: ux0:data/Rubi.vpk (this build's app)")
         check((dev / "ur0/data/VitaJPOverlay/boot.txt").read_bytes() == b"", f"{label} boot record reset")
         backups = sorted((run_pkg / "build/device/backup").glob("*"))
         check(backups and (backups[-1] / "ur0-config.txt").read_bytes() == before["ur0"],
@@ -220,9 +220,9 @@ class E2E:
     def vpk_loud(self, stdout, label):
         """The VPK step is named after 'Installed.' (#101: test.2's run used the old app), in a box (#122)."""
         tail = stdout[stdout.rfind("Installed."):] if "Installed." in stdout else ""
-        self.check("JPOverlaySettings.vpk" in tail, f"{label}: the install's last lines name JPOverlaySettings.vpk")
-        self.check("ONE MORE STEP: install the Overlay app (JPOverlaySettings.vpk)" in tail and "+---" in tail,
-                   f"{label}: the install ends with the box 'ONE MORE STEP: install the Overlay app'")
+        self.check("Rubi.vpk" in tail, f"{label}: the install's last lines name Rubi.vpk")
+        self.check("ONE MORE STEP: install the Rubi app (Rubi.vpk)" in tail and "+---" in tail,
+                   f"{label}: the install ends with the box 'ONE MORE STEP: install the Rubi app'")
         return tail
 
     def install_app(self, dev, eboot=None, stamp=None):
@@ -230,7 +230,7 @@ class E2E:
         app = dev / "ux0/app/VJOSET001"
         shutil.rmtree(app, ignore_errors=True)
         app.mkdir(parents=True)
-        with zipfile.ZipFile(self.pkg / "JPOverlaySettings.vpk") as vpk:
+        with zipfile.ZipFile(self.pkg / "Rubi.vpk") as vpk:
             (app / "eboot.bin").write_bytes(eboot if eboot is not None else vpk.read("eboot.bin"))
             if stamp is None:
                 stamp = vpk.read("vjo_app.txt")
@@ -268,8 +268,8 @@ class E2E:
               "this tree's sources, the worker too)" + (": " + "; ".join(problems) if problems else ""))
         recorded = m.get("app_version")  # tools/package_release.py records it with the variant (-e note 3)
         check(recorded is not None and app_version == recorded,
-              f"the Overlay app is v{app_version}, as the manifest's app_version v{recorded}" if recorded is not None
-              else f"the Overlay app is v{app_version}, but the manifest has no app_version (tools/package_release.py "
+              f"the Rubi app is v{app_version}, as the manifest's app_version v{recorded}" if recorded is not None
+              else f"the Rubi app is v{app_version}, but the manifest has no app_version (tools/package_release.py "
               "records it)")
         ocr = self.pkg / "ux0/data/VitaJPOverlay/ocr"
         models = release.shipped_models()
@@ -322,7 +322,7 @@ class E2E:
             shutil.copyfile(pkg / "ux0/data/VitaJPOverlay/ocr" / name, ocr_dir / name)
         for name in ("H15_w8.vocr", "FL10_w8.vocr"):
             (ocr_dir / name).write_bytes(b"\2" * 4096)
-        (dev / "ux0/data/JPOverlaySettings.vpk").write_bytes(b"test.2's VPK")
+        (dev / "ux0/data/Rubi.vpk").write_bytes(b"test.2's VPK")
         (dev / "ur0/data/VitaJPOverlay/boot.txt").write_text(
             "vjoboot1 seq=1 mode=0 stage=4 inert=0 fault=0 failures=0 api=20 prev=0/0/0/0\n")
         before = {"ur0": tai_a}
@@ -346,11 +346,11 @@ class E2E:
             check((dev / "ux0/data/VitaJPOverlay/vjo_app.txt").read_bytes()
                   == (pkg / "ux0/data/VitaJPOverlay/vjo_app.txt").read_bytes(),
                   "A uploaded: ux0:data/VitaJPOverlay/vjo_app.txt (the plugins' record of their app)")
-            self.check_app(run_pkg, host, 1, "No Overlay app is installed on the Vita", "A no app yet")
+            self.check_app(run_pkg, host, 1, "No Rubi app is installed on the Vita", "A no app yet")
             self.install_app(dev, eboot=b"test.2's eboot.bin", stamp=b"")  # test.2's app: no stamp
             self.check_app(run_pkg, host, 1, "from an older build (v0.8.0-test.2 or earlier)", "A test.2's app")
             self.install_app(dev)  # this build's VPK installed
-            self.check_app(run_pkg, host, 0, "Overlay app: up to date", "A this build's app")
+            self.check_app(run_pkg, host, 0, "Rubi app: up to date", "A this build's app")
             cfg = config_values((dev / "ux0/data/VitaJPOverlay/config.ini").read_text())
             want = {"vocr_tier": "normal", "log_file": "on", "ocr_mode": "auto", "dictionary": "local",
                     "font_size_ja": "20", "ocr_lm": template["ocr_lm"], "ocr_cascade_ms": template["ocr_cascade_ms"],
@@ -408,7 +408,7 @@ class E2E:
         shutil.copyfile(FIXTURE, d / "selftest-report.txt")
         (d / "selftest.txt").unlink()
         (d / "log.txt").write_text(
-            f"bootstrap: shell API {api} entered\nVita JP Overlay shell started (kernel API {api})\nbootstrap: worker started\n"
+            f"bootstrap: shell API {api} entered\nRubi shell started (kernel API {api})\nbootstrap: worker started\n"
             "game PCSG00415 started: dictionary local (key MISSING), trigger l+r, subtitles select+r, ocr_mode auto\n"
             "tier large did not fit in PCSG00415 (need 18649088, free 12000000); using normal\n"
             "game vocr rc=0 VOCR3_H15_w8.vocr: 917x125 at 22,400 of 960x544 fmt 0x00000000, lines=3 USER workspace=188416 "
@@ -419,18 +419,18 @@ class E2E:
             "game vocr speed: 330 frames in 1683000 us, 5100 us per frame\n"
             "job 1 done rc=0 in 2400 ms, arena peak 65536\n"
             "anki: queue 1 card(s)\nanki: save 猫 rc=0, 0-byte screenshot, 41 ms\n"
-            "overlay app: anki: export (queued) rc=0: 2 cards, 2 moved\n", encoding="utf-8")
+            "Rubi app: anki: export (queued) rc=0: 2 cards, 2 moved\n", encoding="utf-8")
         # the boot the collect dates its crash dump against (docs/self-test.md#crash-dumps): it began an hour ago, after
         # the previous boot's last kernel.txt write; its ok mark came 70 s in; kernel.txt's last line, 50 minutes in,
         # carries the uptime, which checks the Vita's clock
         (d / "kernel.txt").write_text("boot guard: empty record (reset by the installer): first boot\n"
                                       "boot guard: boot 1 normal (previous: none, stage none, failures 0) write "
                                       "0x00000000\n"
-                                      f"Vita JP Overlay kernel {api} started (normal mode)\n"
+                                      f"Rubi kernel {api} started (normal mode)\n"
                                       "shell registered: pid 0x118FF (was 0x0)\n"
                                       "ocr worker registered: game pid 0x20000 module 0x30000\n"
                                       "foreground 0x20000 -> 0x0 (suspend) t=3000000 ms\ngame exit\n")
-        (d / "kernel.prev.txt").write_text(f"Vita JP Overlay kernel {api} started (normal mode)\n")
+        (d / "kernel.prev.txt").write_text(f"Rubi kernel {api} started (normal mode)\n")
         (dev / "ur0/data/VitaJPOverlay/boot.txt").write_text(
             f"vjoboot1 seq=1 mode=0 stage=4 inert=0 fault=0 failures=0 api={api} prev=0/0/0/0\n")
         start = time.time() - 3600
@@ -489,11 +489,11 @@ class E2E:
                           "psp2core-1760000000-0x0000001234-eboot.bin.psp2dmp",
                           "To archive them off the Vita: bash tools/install_ftp.sh --archive-dumps 127.0.0.1",
                           "model sizes that did not fit (log only, never shown): large in PCSG00415 x1",
-                          "Overlay app: the plugins' (vjoapp1 "):
+                          "Rubi app: the plugins' (vjoapp1 "):
             check(want_text in a, f"A analysis says: {want_text}")
         m = re.search(r"Anki: (\d+) save\(s\)[^\n]*", a)
         check(m and m.group(1) == "1", f"A analysis: {m.group(0) if m else 'no Anki line'}")
-        check("Anki exports (the Overlay app): 1 export(s): 1 succeeded (a package written and checked), 0 failed; "
+        check("Anki exports (the Rubi app): 1 export(s): 1 succeeded (a package written and checked), 0 failed; "
               "2 card(s) in the packages" in a, "A analysis: the .apkg export counted (#125, #142)")
 
     # ---------------- scenario B: a fresh henkaku Vita with an *ALL worker line ----------------

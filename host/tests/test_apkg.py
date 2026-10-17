@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Overlay app's .apkg packages, opened as Anki would open them.
+"""The Rubi app's .apkg packages, opened as Anki would open them.
 
     python3 host/tests/test_apkg.py BUILD/vjo-apkg-tests
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate core/lapis_notetype.inc: the Lapis note type (third_party/lapis,
-release 1.7.0, GPL-3.0) as the schema-11 JSON object the Overlay app's .apkg
+release 1.7.0, GPL-3.0) as the schema-11 JSON object the Rubi app's .apkg
 export puts into its collection's `col.models` (core/apkg.c).
 
 The note type keeps Lapis's own ID, name, fields and template name, so Anki

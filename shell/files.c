@@ -99,7 +99,7 @@ void vjo_config_load(VjoConfig *cfg, VjoArena *scratch)
     /* An interrupted settings publication may leave only the backup: it is
      * read, never altered. With neither file the defaults apply. SceShell
      * never writes config.ini: the installer, the package (its copy in
-     * ux0/data/VitaJPOverlay) and the Overlay app do, so the commented
+     * ux0/data/VitaJPOverlay) and the Rubi app do, so the commented
      * template (docs/memory-ledger.md) is not in the module. */
     if (!text && sceIoGetstat(VJO_CONFIG_PATH, &st) == (int)0x80010002u) {
         vjo_arena_release(scratch, mark);

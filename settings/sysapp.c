@@ -1,4 +1,4 @@
-/* The Overlay app runs as a system application, beside a suspended game
+/* The Rubi app runs as a system application, beside a suspended game
  * (vita/CMakeLists.txt: SELF attribute 0x0E, a 50 MiB budget). Its process
  * settings live here, apart from main.c, which the host tests compile.
  *

@@ -1,6 +1,6 @@
 # PS Vita memory: the reference for this overlay
 
-Written 2026-10-13. This is the permanent memory reference for vita-jp-overlay: a kernel plugin
+Written 2026-10-13. This is the permanent memory reference for Rubi: a kernel plugin
 (`*KERNEL`), a SceShell UI plugin (`*main`) and an in-game OCR worker. It distills the Sony SDK
 documentation (Runtime Library Release 3.55), the henkaku wiki, the taiHEN sources, the console
 measurements this project has made, and the guidance of a PS Vita plugin developer (2026-10-11,
@@ -17,7 +17,7 @@ Every statement carries one of these tags:
 - **[source]** a public source file (taiHEN, PSVshell).
 - **[estimate]** or **[inference]**: not measured, not stated by a source. Treat as a hypothesis.
 
-Companion documents: [issue #59's root cause](https://github.com/bee-san/vita-jp-overlay/pull/60)
+Companion documents: [issue #59's root cause](https://github.com/bee-san/Rubi_for_vita/pull/60)
 (`docs/issue-59-root-cause.md`, PR #60: the measured SceShell footprint), [the OCR
 architecture](vita-vn-ocr.md), the budget doc in vita-vn-ocr
 ([`docs/vita-memory-budget.md`](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vita-memory-budget.md))
@@ -204,24 +204,24 @@ and AdrBubbleBooter's patch [source: Adrenaline `kernel/main.c`, `ksceKernelStar
 AdrBubbleBooter-oss `integration/adrenaline-v7/overlay/kernel/main.c:123-145`]; that taiHEN matches
 them is inferred from those sources, not measured. A bubble's `*TITLEID` also loads the worker into the
 bubble's own starter app (AdrBubbleBooter's eboot, an ordinary process under that ID) when it runs,
-where the worker stays idle until it exits [inference]. The Overlay app appended such a `*TITLEID` section
+where the worker stays idle until it exits [inference]. The Rubi app appended such a `*TITLEID` section
 for a bubble the user turned ON (#124), never `*ALL`. A game added later needed `--title` (or the app)
 and a reboot.
 
 **Since #138 the kernel loads the worker.** test.3's Adrenaline run, and AIR without a line of its
-own, got `rc=-117`: a game the user had turned ON in the Overlay app had no OCR until a line named
+own, got `rc=-117`: a game the user had turned ON in the Rubi app had no OCR until a line named
 it. The owner's decision (2026-10-16) replaces the per-title rule: the kernel plugin hooks
 `ksceKernelStartPreloadingModules`, the function taiHEN loads a process's sections from, and loads
 the worker into a starting process whose title is ON in `games.ini` by the Shell's own rules (its
 row, a PSP game's shared `NPXS10028` row, the default), with the call taiHEN uses for a config line
 [source: taiHEN `hen.c:360-388`, `plugin.c:165-175`; Adrenaline `kernel/main.c:123-136` loads its user
 module into the PSP emulator the same way]. It never loads it into SceShell, a system app
-(`NPXS*` but `NPXS10028`), VitaShell or the Overlay app, nor while L is held at the start, so the
+(`NPXS*` but `NPXS10028`), VitaShell or the Rubi app, nor while L is held at the start, so the
 worker's pages go only where they did with the lines, and into games without one. A game that a
 line still names keeps one copy (the worker checks for an older copy of itself); the installers write
 no worker line and remove the ones older installs left ([one-vpk-install.md](one-vpk-install.md)). The prior art, the
 lifecycle (start, suspend and resume, exit, crash, a title turned OFF or ON while it runs, the
-Overlay app beside the game) and the memory are in [worker-loading.md](worker-loading.md).
+Rubi app beside the game) and the memory are in [worker-loading.md](worker-loading.md).
 With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 94,208 B of
 pages and 36,864 B of stack and TLS, from the game's own budget); one that cannot start with them is
 turned OFF or started with L held.
@@ -393,9 +393,9 @@ Rules:
   source: PSVshell `src/perf.c`]. The self-test (vita-memory-deep item 5) is where that sample
   belongs.
 
-### 5.4 The Overlay app: a system application
+### 5.4 The Rubi app: a system application
 
-The Overlay app (`settings/`, `VJOSET001`) is its own process, not a plugin. Its SELF is a system
+The Rubi app (`settings/`, `VJOSET001`) is its own process, not a plugin. Its SELF is a system
 application (`vita-make-fself -at 0x0E -m 0xC800`, `vita/CMakeLists.txt`), as
 [VitaShell-sysapp](https://github.com/shoui520/VitaShell-sysapp),
 [jmdict-vita](https://github.com/shoui520/jmdict-vita) and
@@ -463,9 +463,9 @@ parameter buffer was not checked; for a game it must be CDRAM (§8).
 
 #### Starting with no game running
 
-The owner (2026-10-16 21:33Z): "I can't open the Overlay app first. First I have to open a game,
-run the overlay, and then open the Overlay app." test.3 (v0.8.0-test.3) is the first test build
-whose app is a system application. Its app writes `overlay app: start: …` at the top of `main()`,
+The owner (2026-10-16 21:33Z): "I can't open the Rubi app first. First I have to open a game,
+run the overlay, and then open the Rubi app." test.3 (v0.8.0-test.3) is the first test build
+whose app is a system application. Its app writes `Rubi app: start: …` at the top of `main()`,
 before its graphics start (`settings/main.c`, then and now; since #158 the Install page's line
 follows it), so a start that reaches `main()` leaves that line. test.3's collect (07:17Z, 14 h before the report) has one start line in its boot
 (`log.txt` 11345, beside CLANNAD), followed by its frames line, and no start line without one:
@@ -553,13 +553,13 @@ That line, in both builds, says how the start went, with the main thread's prior
 as the console reports them:
 
 ```text
-overlay app: graphics: system application; GPU library 0x0A: 0x00000000; display: buffer 2 at read 1 after 0 ms; main thread priority 96, CPU mask 0x00080000
+Rubi app: graphics: system application; GPU library 0x0A: 0x00000000; display: buffer 2 at read 1 after 0 ms; main thread priority 96, CPU mask 0x00080000
 ```
 
 That is the host model's line beside a game (`host/tests/test_settings_sysapp_gfx.c`); a console
 has not logged it yet. What a start with no game leaves in `log.txt`, and what each says:
 
-| `overlay app:` lines of the open | Where it stopped |
+| `Rubi app:` lines of the open | Where it stopped |
 | --- | --- |
 | no `start:` line | before its first line: the launch, or reading `games.ini` and `config.ini` (a crash dump would say); not libvita2d or these wrappers |
 | `start:`, no `install page:` line | in the Install page's read of the card, before the graphics start |

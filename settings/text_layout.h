@@ -1,4 +1,4 @@
-/* Wrapped text for the Overlay app (settings/main.c's wrapped_text), laid
+/* Wrapped text for the Rubi app (settings/main.c's wrapped_text), laid
  * out once and drawn many times. A layout is where each drawn row starts in
  * the source string, how many bytes it takes and whether it ends in "...";
  * it is computed by the app's own measurement rule (fit_line: the widest

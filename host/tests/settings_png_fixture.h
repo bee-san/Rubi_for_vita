@@ -1,4 +1,4 @@
-/* Synthetic PNG icons for the Overlay app's host tests (test_settings_layout.c,
+/* Synthetic PNG icons for the Rubi app's host tests (test_settings_layout.c,
  * test_settings_games.c): 8-bit palette or RGBA images with a pattern, and a
  * tEXt chunk naming the game they belong to. The image data is compressed
  * with zlib when the test has it (VJO_TEST_ZLIB) and is otherwise written as

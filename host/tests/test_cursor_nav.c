@@ -17,7 +17,7 @@
  *   steps, the shown word skipped and Rights retraced; a diagonal by its
  *   dominant axis; the word looked up only once the cursor rests (#156). At a
  *   one-row text's ends it stops instead of wrapping, as a held stick stops at
- *   the ends of the Overlay app's lists.
+ *   the ends of the Rubi app's lists.
  *
  * shell/overlay.cpp input_overlay is paf code no host target builds: nav_frame
  * restates its calls around the real helpers (core/text_rows.c,

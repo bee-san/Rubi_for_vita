@@ -1,6 +1,6 @@
 /* The left stick's list scrolling (core/stick_scroll.h) against VitaShell's
  * readPad, by the clock: at 60 Hz the push's row, nine quiet frames, then a row
- * every frame, as VitaShell counts them; at 30 Hz (the Overlay app's likely
+ * every frame, as VitaShell counts them; at 30 Hz (the Rubi app's likely
  * rate as a system application) the same 166.7 ms pause and 60 rows a second,
  * two rows a frame; and the same at 20, 40 and 50 Hz. */
 #include "acutest.h"

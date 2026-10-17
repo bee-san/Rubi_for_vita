@@ -1,4 +1,4 @@
-/* The Overlay app's .apkg export: queued cards as Lapis notes
+/* The Rubi app's .apkg export: queued cards as Lapis notes
  * (core/lapis.h) in an Anki package that every current Anki imports (Anki
  * 2.1 to 26.x on a computer, AnkiDroid and AnkiMobile): the legacy layout,
  * a ZIP of `collection.anki2` (an SQLite database of schema 11), the

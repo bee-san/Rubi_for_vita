@@ -1,4 +1,4 @@
-/* The Overlay app's own games.ini helpers (core/games.h). Not in games.c,
+/* The Rubi app's own games.ini helpers (core/games.h). Not in games.c,
  * which the plugins link: one linked without --gc-sections (the kernel's)
  * would take every function of games.c, and the plugins keep their bytes. */
 #include "games.h"

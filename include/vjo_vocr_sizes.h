@@ -45,7 +45,7 @@
 #define VJO_VOCR5_N_BYTES 1185632u
 #define VJO_VOCR5_L_NAME "VOCR5_L_w8.vocr"
 #define VJO_VOCR5_L_BYTES 2473696u
-/* API 21: the three model tiers the Overlay app offers (config.ini vocr_tier),
+/* API 21: the three model tiers the Rubi app offers (config.ini vocr_tier),
  * smallest first; tools/model_tiers.json is the same table (its "tiers", in
  * this order), and tools/tests/test_vocr_defaults.py checks the two agree. A
  * tier is a pinned blob: this package's Small is VOCR5-S, its Normal (the
@@ -60,7 +60,7 @@
  * tools/model_tiers.json, and a new release's attribution (tools/prepare_ocr.py
  * VOCR_MODEL_ATTRIBUTION_PIN). Two sizes with one model take one edit more: the
  * one-VPK payload (include/vjo_payload.h) names each size's file, and the
- * Overlay app refuses a payload that names a file twice, so its list must name
+ * Rubi app refuses a payload that names a file twice, so its list must name
  * the shared file once, with VJO_PAYLOAD_KERNEL_INDEX and test_one_vpk.py's
  * count one less (tools/package_vpk.py refuses the list until it does). */
 #define VJO_VOCR_TIERS 3u

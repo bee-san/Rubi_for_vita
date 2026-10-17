@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Installs this release over VitaShell's FTP: the advanced path beside the one-VPK install (README
 # 'Install', docs/one-vpk-install.md). The package's manifest says where the game OCR worker comes
-# from: "kernel", the kernel plugin loads it into every game turned ON in the Overlay app, so no game is
+# from: "kernel", the kernel plugin loads it into every game turned ON in the Rubi app, so no game is
 # named and --title is ignored with a note; "lines" (an older build), one *TITLEID section per game named
 # with --title (repeatable) and per game registered before, never under *ALL. --check-app only checks,
-# read-only, that the Vita's Overlay app is this package's (the install ends with the same check).
+# read-only, that the Vita's Rubi app is this package's (the install ends with the same check).
 set -euo pipefail
 PACKAGE=$(cd "$(dirname "$0")" && pwd)
 TITLES=()
@@ -64,7 +64,7 @@ for k, v in json.load(open(sys.argv[1], encoding="utf-8")).get("install_settings
         print(k + "=" + v + "\t" + k + "=" + ((("set" if v else "empty") if secret.search(k) else v)))
 ' "$PACKAGE/package-manifest.json" "$PACKAGE/config.ini")
 [ -z "$SHOWN" ] || echo "package settings:$SHOWN"
-# No model and no model size is set: the Overlay app's Model size (vocr_tier) is the user's, and
+# No model and no model size is set: the Rubi app's Model size (vocr_tier) is the user's, and
 # an update keeps it; a first install gets the template's Normal, and an older build's model
 # choice becomes its size (tools/migrate_config.py). The same for its Read text (ocr_mode) and
 # Speed boost while reading (ocr_boost_clock): kept, or the template's auto and on.

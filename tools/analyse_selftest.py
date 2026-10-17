@@ -34,7 +34,7 @@ same table for their steps (boot, ok, game, ocr, done).
 After the diagnostics come each stage's memory headroom (free USER, plus another
 model's weights it released, minus the reserve and what the job needed) and the
 recognizer tier (Small / Normal / Large at today's ceilings and box time limits,
-from tools/model_tiers.json, which the Overlay app's tier choice reads too) that
+from tools/model_tiers.json, which the Rubi app's tier choice reads too) that
 the game's measured free memory allows.
 
 --collect DIR reads a folder written by `install_ftp.sh --collect` (tools/collect_vita.py):
@@ -75,7 +75,7 @@ DIAGNOSTIC_ROWS = ("probe", "capture<64KiB", "kernel-pool", "tearing", "kernel-m
 ROUTES = (("user", "user API (sceKernelGetFreeMemorySize)"), ("block kernel", "kernel block route, KD"),
           ("block shell", "kernel block route, SceShell"), ("cas", "address-space route (PSVshell)"),
           ("as", "kernel process route (faps-coredump)"))
-# The recognizer tiers, Small / Normal / Large: tools/model_tiers.json, the one table the Overlay app's
+# The recognizer tiers, Small / Normal / Large: tools/model_tiers.json, the one table the Rubi app's
 # tier choice reads too, so the two cannot drift apart (audit-test-build-2 N2). The free game USER a
 # first job of a tier needs is page(weights) + page(max(the line finder's arena at 960x544, the tier's
 # W8I arena) + the runtime's structs) + the capture block + the line-block ceiling (vita-vn-ocr
@@ -98,7 +98,7 @@ def page(n):
 def load_tiers(path=TIERS_FILE):
     """The shared tier table: its tiers largest first (the order a fit is tried in), each with its id,
     name, ceilings, reserve and 3-line-box time limit, then the default tier's id and what a box is.
-    Keys this tool does not use (the Overlay app's) are ignored. A table it cannot use raises
+    Keys this tool does not use (the Rubi app's) are ignored. A table it cannot use raises
     ValueError, one it cannot read OSError."""
     name = Path(path).name
     try:
@@ -152,7 +152,7 @@ except Exception as e:  # noqa: BLE001
 
 
 def load_tier_models(path=TIERS_FILE):
-    """Each tier's model file in the shared tier table (its "model", which the Overlay app's tier choice shows):
+    """Each tier's model file in the shared tier table (its "model", which the Rubi app's tier choice shows):
     {model: (id, name)}; empty when the table cannot be read (TIERS_ERROR says why)."""
     try:
         tiers = json.loads(Path(path).read_text(encoding="utf-8")).get("tiers")
@@ -732,8 +732,8 @@ def analyse_v1(records):
         row("game", None, "not reached")
     elif g.get("enabled") == 0:
         row("game", "FAIL", f"{g.get('title')} is disabled in games.ini: no OCR ran")
-        findings.append(f"The game {g.get('title')} is disabled in games.ini: no OCR ran. Enable it in the Overlay app "
-                        f"(JP Overlay Settings in older builds) and run again.")
+        findings.append(f"The game {g.get('title')} is disabled in games.ini: no OCR ran. Enable it in the Rubi app "
+                        f"(Overlay or JP Overlay Settings in older builds) and run again.")
     else:
         row("game", "PASS", f"{g.get('title')} enabled, region {g.get('region')}")
 
@@ -937,9 +937,10 @@ LOG = {
     # dictionaries' removal add its API key's state, "(key set|MISSING)"
     "game": re.compile(r"^game (\S+) started: dictionary (.+?)(?: \(key (\S+)\))?, trigger (\S+), subtitles (\S+), "
                        r"ocr_mode (\S+)"),
-    "disabled": re.compile(r"^(\S+): JP Overlay disabled"),
+    # ("JP Overlay disabled" in builds before the Rubi rename)
+    "disabled": re.compile(r"^(\S+): (?:Rubi|JP Overlay) disabled"),
     # shell/game.c vjo_game_identify: a PSP game's start (the process's title ID, AppMgr's app name, the
-    # key games.ini and region.ini use; the disc ID, title and target from the Overlay app's description)
+    # key games.ini and region.ini use; the disc ID, title and target from the Rubi app's description)
     # (the title last and in quotes; a line the Shell cut at 254 B may lose its end)
     "psp": re.compile(r'^psp: (\S*) (\S*) -> (\S+); disc (\S*); boots (.*?)(?:; "(.*?)"?)?$'),
     "done": re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms, arena peak (\d+)"),
@@ -957,7 +958,7 @@ LOG = {
     "anki_save": re.compile(r"^anki: save (?:(.+) )?rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
     # settings/anki_page.c worker_main: each export's result and counts (export_result); the first builds with the
     # export had no stop count, and builds before #161 no count of the screenshots no card named that it removed
-    "anki_export": re.compile(r"^overlay app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
+    "anki_export": re.compile(r"^(?:Rubi|overlay) app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
                               r"(?:, (\d+) kept, (\d+) unreadable, (\d+) too large, (\d+) left(?:, (\d+) stopped)?"
                               r"(?:, (\d+) swept)?)?"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
@@ -1002,7 +1003,7 @@ TROUBLE = re.compile(r"fail|refused|error|unusable|timed out|cannot|not loaded|S
 # shell/memory.cpp: a PAF request the reserve guard or Paf refused; shell/ledger.c: a refused thread
 SHELL_REFUSAL = re.compile(r"Paf reserve guard|Paf allocation: .*success=0|^thread \S+ refused|^anki: \w+ not started")
 # settings/anki_export.c: the export's failures that TROUBLE's words miss (its result line after them has the rc)
-EXPORT_TROUBLE = re.compile(r"^overlay app: anki export: .*(?:did not verify|packages are named for this second|"
+EXPORT_TROUBLE = re.compile(r"^(?:Rubi|overlay) app: anki export: .*(?:did not verify|packages are named for this second|"
                             r"is missing or not a JPEG)")
 # A game window (clock_windows): from a "game TITLE started" line, a start or a resume, to the next. shell/worker.c
 # activate_game reads config.ini again just before it logs the line, so ocr_boost_clock, which VitaShell changes
@@ -1052,7 +1053,10 @@ def masked(settings):
 
 # shell/worker.c vjo_worker_start: each boot's Shell names its API ("kernel API 20" is the kernel's, which the
 # Shell starts only with when it is its own); the normal build says its log is the short one
-SHELL_STARTED = re.compile(r"^Vita JP Overlay shell started \(kernel API (\d+)(, the normal build: a short log)?\)")
+# The product's name at the start of the plugins' and the app's log lines: "Rubi" since the rename, "Vita JP Overlay"
+# (the plugins) and "overlay app" (the app) before it; every reader here takes both, so an earlier build's logs read alike.
+NAMES = ("Rubi", "Vita JP Overlay")
+SHELL_STARTED = re.compile(r"^(?:Rubi|Vita JP Overlay) shell started \(kernel API (\d+)(, the normal build: a short log)?\)")
 # The normal build's short log (docs/release-variants.md; the debug build logs the job lines LOG parses instead):
 # shell/worker.c vocr_run_one's line for each activation's (a start or a resume) first OCR job that read its screen,
 # its first that found a line, and every failed one (not a cancelled job or one whose screen changed under it: those
@@ -1067,15 +1071,16 @@ SHORT_CLOCK = (("set", re.compile(r"^clock: (\d+) -> (\d+) MHz while reading, (\
                ("unreadable", re.compile(r"^clock: unreadable, left as it is while reading$")))
 SHORT_REFUSAL = re.compile(r"Paf allocation refused: ")
 SELFTEST_NORMAL = "self-test: armed, but this is the normal build"
-# shell/worker.c check_app: "overlay app MISMATCH: installed '...' (0x..., app 1), plugins' '...' (0x...)"
-APP_LINE = re.compile(r"^overlay app (ok|MISMATCH|unknown): ")
-# the installed Overlay app's folder as COLLECT.json names it (collect_vita.py APP)
+# shell/worker.c check_app: "Rubi app MISMATCH: installed '...' (0x..., app 1), plugins' '...' (0x...)" ("overlay app" before
+# the rename)
+APP_LINE = re.compile(r"^(?:Rubi|overlay) app (ok|MISMATCH|unknown): ")
+# the installed Rubi app's folder as COLLECT.json names it (collect_vita.py APP)
 APP_FOLDER = "ux0:/app/VJOSET001"
 # the whole line: the installed app's stamp ('' when it could not be read), that read's rc, whether its eboot.bin is
 # there (vjo_file_exists) and the plugins' record
-APP_CHECK = re.compile(r"^overlay app (ok|MISMATCH|unknown): installed '(.*?)' \((0x[0-9A-Fa-f]{8}), app (-?\d+)\), "
+APP_CHECK = re.compile(r"^(?:Rubi|overlay) app (ok|MISMATCH|unknown): installed '(.*?)' \((0x[0-9A-Fa-f]{8}), app (-?\d+)\), "
                        r"plugins' '(.*?)' \((0x[0-9A-Fa-f]{8})\)$")
-# ocr_backend values of removed engines, which an older Overlay app can still write (#101: test.1's app wrote
+# ocr_backend values of removed engines, which an older Rubi app can still write (#101: test.1's app wrote
 # vocr2 beside test.2's plugins); the plugins load them as vocr (core/config.c removed_engine). Since Google
 # Lens's removal VOCR is the only engine and ocr_backend no setting: today's app and installer delete any line.
 REMOVED_ENGINES = ("lens", "vocr2", "meiki", "ncnn")
@@ -1138,7 +1143,7 @@ def shell_app_answer(check, want):
 
 
 def summarise_app(folder, record, log=None, old_lines=0):
-    """The installed Overlay app against the one the plugins came with (core/app_stamp.h): its stamp
+    """The installed Rubi app against the one the plugins came with (core/app_stamp.h): its stamp
     (ux0/app/VJOSET001/vjo_app.txt), the plugins' record (ux0/data/VitaJPOverlay/vjo_app.txt), the package's
     (package-manifest.json "app") and the installed eboot.bin's hash, as collect_vita.py read them (the way
     install_ftp.sh --check-app reads them; the eboot.bin never kept). When the collect could not read the stamp, what
@@ -1192,21 +1197,21 @@ def render_app(a):
     by_path = ("; read by its full path, no CWD, after the way through its folder was answered 'not there': "
                + ", ".join(f"{n} (curl exit {rc[0]})" for n, rc in sorted(a["by_path"].items()))) if a.get("by_path") else ""
     if a["state"] == "ok":
-        return (f"  Overlay app: the plugins' ({installed})"
+        return (f"  Rubi app: the plugins' ({installed})"
                 + ("; its eboot.bin is the package's" if a["eboot_match"] else
                    "; its eboot.bin is not byte-identical to the package's (the stamp decides; whether VitaShell "
                    "installs it byte for byte is unmeasured)" if a["eboot_match"] is False else "") + via + by_path)
     if a["state"] == "MISMATCH":
         have = installed or ("an app from before the version stamps"
                              + (f", eboot.bin {a['eboot_sha256'][:16]}" if a["eboot_sha256"] else ""))
-        return (f"  Overlay app: NOT the plugins' (installed: {have}; the plugins came with {plugins}){via}: what the "
+        return (f"  Rubi app: NOT the plugins' (installed: {have}; the plugins came with {plugins}){via}: what the "
                 "app showed and saved (its engine card, Anki page, config.ini values) was another build's; install "
-                "ux0:data/JPOverlaySettings.vpk in VitaShell" + by_path)
+                "ux0:data/Rubi.vpk in VitaShell" + by_path)
     if a["state"] == "not installed" and a.get("source") == "shell":
-        return (f"  Overlay app: not installed: the Shell's check at a game start of this boot found neither its "
+        return (f"  Rubi app: not installed: the Shell's check at a game start of this boot found neither its "
                 f"vjo_app.txt nor its eboot.bin ({s['where']}); {unread}")
     if a["state"] == "not installed":
-        return (f"  Overlay app: not installed ({a['unread']})"
+        return (f"  Rubi app: not installed ({a['unread']})"
                 + (f"; the Shell's check at a game start of this boot found one ({s['installed'] or 'without a stamp'}, "
                    f"{s['where']}): deleted since, or the listing left it out"
                    if s and s["state"] in ("ok", "MISMATCH") else ""))
@@ -1222,10 +1227,10 @@ def render_app(a):
             stamp = ("not there" if s["installed_rc"].upper() == "0X80010002" else "unreadable") + f", {s['installed_rc']}"
             shell = (f"the Shell's last check in this boot ({s['where']}) does not decide it either (its vjo_app.txt: "
                      f"{stamp}; its eboot.bin: {'there' if s.get('app') == 1 else 'not there'})")
-        return (f"  Overlay app: not checked: this collect could not read it over FTP ({a['unread']}), and {shell}; if "
-                "the Overlay app is open beside VitaShell, close it from its LiveArea page and collect again (test.3's "
+        return (f"  Rubi app: not checked: this collect could not read it over FTP ({a['unread']}), and {shell}; if "
+                "the Rubi app is open beside VitaShell, close it from its LiveArea page and collect again (test.3's "
                 "collect could not enter its folder, most likely while it was open, #138)")
-    return "  Overlay app: not checked (no version stamp to compare: the plugins or this collect predate them)"
+    return "  Rubi app: not checked (no version stamp to compare: the plugins or this collect predate them)"
 
 
 # the one-VPK install's record (core/payload.c vjo_installed_format) and the names settings/install.c gives
@@ -1236,7 +1241,7 @@ TAI_LEFTOVER = re.compile(r"^config\.txt\.vjo-(new|old)$")
 
 
 def summarise_install(folder, record):
-    """The Overlay app's install (docs/one-vpk-install.md): installed.txt against the package's payload
+    """The Rubi app's install (docs/one-vpk-install.md): installed.txt against the package's payload
     manifest (its SHA-256, collect_vita.py), and the dated backups and leftovers beside each config.txt."""
     out = {"record": None, "fields": None, "this_package": None, "backups": [], "leftovers": [],
            # a collect from before installed.txt was fetched neither has it nor lists it as missing
@@ -1262,7 +1267,7 @@ def render_install(i):
     f, L = i["fields"], []
     if i["record"] is None:
         if i["asked"]:
-            L.append("  one-VPK install: no installed.txt (neither the Overlay app's Install page nor this "
+            L.append("  one-VPK install: no installed.txt (neither the Rubi app's Install page nor this "
                      "install-vita.sh has installed this Vita's overlay: an older installer did, or none)")
     elif f is None:
         L.append(f"  one-VPK install: installed.txt is not a record ({i['record'][:80]!r})")
@@ -1274,7 +1279,7 @@ def render_install(i):
                  f"app build {f['build']}; {which}")
     if i["backups"] or i["leftovers"]:
         L.append("  taiHEN backups: " + (", ".join(i["backups"]) or "none")
-                 + (f"; an interrupted swap's leftovers: {', '.join(i['leftovers'])} (the Overlay app's Install page "
+                 + (f"; an interrupted swap's leftovers: {', '.join(i['leftovers'])} (the Rubi app's Install page "
                     "finishes the swap or puts it back)" if i["leftovers"] else ""))
     return L
 
@@ -1308,7 +1313,7 @@ def _n(count, word, plural=None):
     return f"{count} {word if count == 1 else plural or word + 's'}"
 
 
-# ---- the Overlay app's .apkg exports (settings/anki_page.c, settings/anki_export.c)
+# ---- the Rubi app's .apkg exports (settings/anki_page.c, settings/anki_export.c)
 
 def export_result(m):
     """One export's result line (LOG["anki_export"]) in the app's own terms, its result_error (rc, kept, unreadable,
@@ -1326,14 +1331,14 @@ def export_summary(a):
     """The exports in the log (summarise_log's "anki"), in plain words: each one's result, a problem's own line."""
     n = a.get("exports", 0)
     if not n:
-        return ["  Anki exports (the Overlay app): none in the log"]
+        return ["  Anki exports (the Rubi app): none in the log"]
     parts = [f"{a['export_ok']} succeeded (a package written and checked)"]
     if a.get("export_partial"):
         parts.append(f"{a['export_partial']} wrote its package and left cards queued by a problem")
     if a.get("export_empty"):
         parts.append(f"{a['export_empty']} had no card to export")
     parts.append(f"{a['export_fail']} FAILED (no package)" if a["export_fail"] else "0 failed")
-    t = f"  Anki exports (the Overlay app): {n} export(s): " + ", ".join(parts) + f"; {a['exported']} card(s) in the packages"
+    t = f"  Anki exports (the Rubi app): {n} export(s): " + ", ".join(parts) + f"; {a['exported']} card(s) in the packages"
     later = ([f"{a['export_stopped']} a stop left"] if a.get("export_stopped") else []) + \
             ([f"{a['export_left']} over a package's cap"] if a.get("export_left") else [])
     if later:
@@ -1894,7 +1899,7 @@ def render_clock_windows(lg, tai=None, configured=None):
     return L
 
 
-# ---- presses and re-reads by ocr_mode (the Overlay app's Read text; docs/auto-vs-press.md)
+# ---- presses and re-reads by ocr_mode (the Rubi app's Read text; docs/auto-vs-press.md)
 
 # shell/worker.c: open_overlay logs the press's input block, then what the open found (no such line: the shown text was
 # kept and only its word is looked up); start_job_kind a job's start; on_job_text its text posted, ms after its start
@@ -2283,7 +2288,7 @@ def summarise_log(text):
             continue
         s["lines"] += 1
         blank_step, in_blank = in_blank, False
-        if line.startswith(("bootstrap:", "Vita JP Overlay shell started", "BOOT GUARD", "boot guard:", "worker start",
+        if line.startswith(("bootstrap:", *(n + " shell started" for n in NAMES), "BOOT GUARD", "boot guard:", "worker start",
                             "kernel plugin not loaded", "kernel API version", "RCO missing")):
             if len(s["boot"]) < 40:
                 s["boot"].append(line)
@@ -2333,7 +2338,7 @@ def summarise_log(text):
         else:
             boot_run = 0
         m = APP_LINE.match(line)
-        if m:  # the Shell's check of the installed Overlay app at a game start (shell/worker.c check_app)
+        if m:  # the Shell's check of the installed Rubi app at a game start (shell/worker.c check_app)
             s.setdefault("app", []).append(m.group(1))
             d = APP_CHECK.match(line)
             s.setdefault("app_checks", []).append({"state": m.group(1), "line": n, "boot": s["shell_starts"],
@@ -2640,7 +2645,7 @@ def summarise_kernel(text, size):
          "jobs": 0, "rows_fail": {}, "alloc_fail": [], "other": [], "loaded": [], "not_loaded": {}, "second": 0}
     for raw in text.splitlines():
         line = raw.strip()
-        if line.startswith("Vita JP Overlay kernel"):
+        if line.startswith(tuple(n + " kernel" for n in NAMES)):
             s["started"].append(line)
             # the normal build (docs/release-variants.md) logs no OCR job's line: its count says nothing
             s["normal"] = "the normal build" in line
@@ -2985,7 +2990,7 @@ def kernel_facts(folder, year):
     # The uptime of kernel.txt's last write: its last line's t=, as the worker writes each line within a tick of its
     # klog (kernel/main.c kernel_file_flush). The one exception: a "game exit" right after a game's exit or suspend line
     # can be that event's, logged by the worker as it wakes (kernel/main.c worker), and so within a tick of the line.
-    # But a "game exit" alone comes from any app that exits without a line (one never confirmed as a game: the Overlay
+    # But a "game exit" alone comes from any app that exits without a line (one never confirmed as a game: the Rubi
     # app closed, VitaShell), at any later time; and the hook raises the worker's flag before it logs its own line
     # (kernel/lifecycle.c fg_store), so the event's "game exit" can come first, as test.3's kernel.txt has it (lines
     # 104-105). Every exit or suspend line, and every other line of KERNEL_LOCKED, is logged with g.game_lock held, and
@@ -3242,14 +3247,14 @@ def summarise_collect(folder):
             w["where"] = where(w["line"])
         for e in out["log"]["presses"]["early"]:
             e["where"], e["next_where"] = where(e["line"]), where(e["next_line"])
-    # the installed Overlay app; the Shell's check in the log answers for it when the collect could not read it
+    # the installed Rubi app; the Shell's check in the log answers for it when the collect could not read it
     out["app"] = summarise_app(folder, record, out["log"], k)
     out["install"] = summarise_install(folder, record)
     out["log_rotated"] = (folder / (data + "log.old.txt")).is_file()
     kt = _read(folder, data + "kernel.txt")
     out["kernel"] = summarise_kernel(kt, (folder / (data + "kernel.txt")).stat().st_size) if kt is not None else None
     st = _read(folder, data + "status.txt")
-    out["status_head"] = [l for l in (st or "").splitlines() if l.startswith(("bootstrap:", "BOOT GUARD", "Vita JP Overlay",
+    out["status_head"] = [l for l in (st or "").splitlines() if l.startswith(("bootstrap:", "BOOT GUARD", *NAMES,
                                                                                 "worker start", "boot guard"))][:12]
     sp = _read(folder, data + "status.prev.txt")
     out["status_prev_head"] = [l for l in (sp or "").splitlines() if l.startswith(("BOOT GUARD", "boot guard"))][:6]
@@ -3361,7 +3366,7 @@ def backend_line(value):
     if value is None:
         return None
     if value.lower() in REMOVED_ENGINES:
-        return (f"    ocr_backend={value}: a removed engine, which an older Overlay app writes; the plugins "
+        return (f"    ocr_backend={value}: a removed engine, which an older Rubi app writes; the plugins "
                 "run vocr, and today's app or installer deletes the line")
     return (f"    ocr_backend={value}: no longer a setting (VOCR is the only engine); today's app or "
             "installer deletes the line")
@@ -3382,7 +3387,7 @@ def render_collect(c):
         L.append(f"  installed files: {len(pc['match'])} of {pc['checked'] - len(pc['unknown'])} match the package"
                  + (f"; DIFFER or absent: {', '.join(pc['mismatch'])}" if pc["mismatch"] else "")
                  + (f"; not in this package: {', '.join(pc['unknown'])}" if pc["unknown"] else ""))
-    # the app's own files and folder are the Overlay app line's (an older collect_vita.py listed them here when
+    # the app's own files and folder are the Rubi app line's (an older collect_vita.py listed them here when
     # it could not enter the folder: test.3's, #138, while the Shell read the stamp in it)
     missing = [m for m in c["record"].get("missing") or [] if not m.startswith(APP_FOLDER + "/")]
     if missing:
@@ -3403,7 +3408,7 @@ def render_collect(c):
     for name, t in c["tai"].items():
         # since #138 the kernel loads the worker: a line for it is an older install's (harmless; Install removes it)
         worker = (f"OCR worker under {t['worker']} (an older install's line: the kernel loads the worker since #138; "
-                  "the Overlay app's Install removes it)" if t["worker"] else "no OCR worker line (the kernel loads it)")
+                  "the Rubi app's Install removes it)" if t["worker"] else "no OCR worker line (the kernel loads it)")
         L.append(f"  {name}: kernel under {t['kernel'] or 'NOTHING'}, shell under {t['shell'] or 'NOTHING'}, "
                  + worker + (" and *ALL (WRONG: SceShell loads it)" if t["worker_all"] else "")
                  + f"; {t['commented']} commented line(s)")
@@ -3580,7 +3585,7 @@ def render_collect(c):
             seen = {}
             for state in lg["app"]:
                 seen[state] = seen.get(state, 0) + 1
-            L.append("  the Shell's Overlay app check: " + ", ".join(f"{k} x{n}" for k, n in seen.items()))
+            L.append("  the Shell's Rubi app check: " + ", ".join(f"{k} x{n}" for k, n in seen.items()))
         if lg["trouble"]:
             L.append("  lines reporting a problem (digits as N; count):")
             for t, n in sorted(lg["trouble"].items(), key=lambda kv: -kv[1])[:20]:

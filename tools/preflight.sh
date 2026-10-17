@@ -13,7 +13,7 @@
 #   VITASDK              the Vita build: module pages, memory ledger, syscall ABI, kernel FPU check
 #   ARM_CC, QEMU         the ARMv7 lane under qemu-arm
 #   VITA3K               the Vita3K smoke (tools/vita3k_smoke.sh); with VITA3K_FIRMWARE and
-#                        VITA3K_FONTS (Sony's PUPs) also the Overlay app's (tools/vita3k_settings_smoke.sh)
+#                        VITA3K_FONTS (Sony's PUPs) also the Rubi app's (tools/vita3k_settings_smoke.sh)
 #   BUILD                host build directory (default build/preflight)
 #   VJO_DEBUG            1 (the default): the debug build, the test builds'; 0: the normal build
 #                        (docs/release-variants.md). Every build here is made as that build, and a
@@ -131,20 +131,20 @@ print(min(s["headroom"] for s in anki), r["peak_pages"], r["peak_paf"])' 2>/dev/
 else
   fail "Anki offline queue (Shell)" "$log/anki-build.log $log/anki-restart.log"
 fi
-# 2c. the Overlay app's .apkg export (settings/anki_export.c, core/apkg.c): Lapis notes in a package
+# 2c. the Rubi app's .apkg export (settings/anki_export.c, core/apkg.c): Lapis notes in a package
 # written, flushed, renamed, read back and verified before the queue is cleared; the packages opened
 # with Python's zipfile and sqlite3, and imported by Anki itself where the anki package is
 # installed (VJO_ANKI_PYTHON, tools/requirements-anki.txt)
 if [ -x "$ae" ] && "$ae" > "$log/apkg.log" 2>&1 && "$PY" host/tests/test_apkg.py "$ae" > "$log/apkg-py.log" 2>&1; then
   if grep -q "skipped 'the anki package" "$log/apkg-py.log"; then imported="not imported (no anki package)"; else
     imported="imported by $(grep -o 'anki [0-9][0-9.]*' "$log/apkg-py.log" | head -1)"; fi
-  pass "Anki export (Overlay app)" "$(grep -c '\[ OK \]' "$log/apkg.log") cases (no clear on any failed write); packages: $(grep -o 'Ran [0-9]* tests' "$log/apkg-py.log"), $imported"
+  pass "Anki export (Rubi app)" "$(grep -c '\[ OK \]' "$log/apkg.log") cases (no clear on any failed write); packages: $(grep -o 'Ran [0-9]* tests' "$log/apkg-py.log"), $imported"
 else
-  fail "Anki export (Overlay app)" "$ae ($log/apkg.log $log/apkg-py.log)"
+  fail "Anki export (Rubi app)" "$ae ($log/apkg.log $log/apkg-py.log)"
 fi
 
 # 2d. the one-VPK install (docs/one-vpk-install.md): the config.txt editor against taiHEN's own parser on
-# the fixtures and a corpus, the PC installer's copy of it compared with the C build, the Overlay app's
+# the fixtures and a corpus, the PC installer's copy of it compared with the C build, the Rubi app's
 # install engine and page on a temporary memory card (faults at every write and rename, the interrupted
 # swap, h-encore's rewrite), and the VPK's packaging rules (VitaShell's install scan, the app's own facts)
 ti=$BUILD/vjo-settings-install-tests
@@ -269,7 +269,7 @@ else
   skip "Vita3K smoke (not evidence)" "VITA3K unset"
 fi
 if [ -n "${VITA3K:-}" ] && [ -n "${VITA3K_FIRMWARE:-}" ] && [ -n "${VITA3K_FONTS:-}" ]; then
-  vpk=; [ -f "$BUILD-vita/JPOverlaySettings.vpk" ] && vpk=$root/$BUILD-vita/JPOverlaySettings.vpk
+  vpk=; [ -f "$BUILD-vita/Rubi.vpk" ] && vpk=$root/$BUILD-vita/Rubi.vpk
   v3=$(VJO_VOCR_SOURCE_DIR=$VJO_VOCR_SOURCE_DIR RELEASE_VPK=$vpk bash tools/vita3k_settings_smoke.sh \
        "$BUILD-vita3k-settings" 2>&1 | tail -1)
   case $v3 in
@@ -326,7 +326,7 @@ cat <<'EOF'
     ux0:data/VitaJPOverlay/anki_queue accepts the kernel's writes are unmeasured; a failure saves
     the card without one and log.txt's "anki: screenshot rc=" line and its gstep lines say why.
   - taiHEN binding of the new exports vjoOcrShotWrite and vjoOcrShotSave: packaged metadata only.
-  - The Overlay app's .apkg export (its 2 MiB arena, sceIoPwrite/sceIoPread on ux0:, the
+  - The Rubi app's .apkg export (its 2 MiB arena, sceIoPwrite/sceIoPread on ux0:, the
     memory card's speed for a large queue) has run on the host only; its packages were imported
     by Anki 26.09.3 on a computer (tools/requirements-anki.txt), not yet by AnkiDroid or
     AnkiMobile, and no console has written one.

@@ -1,4 +1,4 @@
-/* The Overlay app's text layouts and icon helpers, on their own:
+/* The Rubi app's text layouts and icon helpers, on their own:
  * - settings/text_layout.c lays rows out exactly as main.c's wrapped_text
  *   drew them before it (the reference below is that code, verbatim but for
  *   drawing into a list and, since 2026-10-16, ending a row where a line may

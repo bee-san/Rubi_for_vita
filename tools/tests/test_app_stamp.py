@@ -1,4 +1,4 @@
-"""The Overlay app's version stamp (core/app_stamp.h, tools/app_stamp.py): its format, the installer's verdict
+"""The Rubi app's version stamp (core/app_stamp.h, tools/app_stamp.py): its format, the installer's verdict
 and box, and that the C, shell and Python sides name the same files (#101: test.1's app ran beside test.2's
 plugins, showed VOCR2, had no Anki page and wrote ocr_backend = vocr2)."""
 import hashlib
@@ -52,7 +52,7 @@ class AppStamp(unittest.TestCase):
     def test_the_vpk_and_the_record_are_one_file(self):
         line = app_stamp.make(EBOOT, API)
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "JPOverlaySettings.vpk"
+            path = Path(tmp) / "Rubi.vpk"
             path.write_bytes(vpk(stamp=line))
             info = app_stamp.vpk_info(path)
             self.assertEqual(info["stamp"]["line"], line.strip())
@@ -81,7 +81,7 @@ class AppStamp(unittest.TestCase):
         self.assertIn("Its eboot.bin differs from the package VPK's.", lines)
         state, lines = app_stamp.verdict(line, None, None)
         self.assertEqual(state, "mismatch")
-        self.assertIn("No Overlay app is installed", lines[0])
+        self.assertIn("No Rubi app is installed", lines[0])
         older = app_stamp.make(b"older", API - 1)
         self.assertIn("an older build", app_stamp.verdict(line, older)[1][0])
         self.assertIn("a newer build", app_stamp.verdict(older, line)[1][0])
@@ -97,18 +97,18 @@ class AppStamp(unittest.TestCase):
         rows = out.splitlines()
         self.assertTrue(all(len(r) == 78 for r in rows), [len(r) for r in rows])
         self.assertTrue(rows[0].startswith("+---") and rows[-1].startswith("+---"))
-        self.assertIn("ONE MORE STEP: install the Overlay app (JPOverlaySettings.vpk)", rows[1])
+        self.assertIn("ONE MORE STEP: install the Rubi app (Rubi.vpk)", rows[1])
         flat = " ".join(r.strip("| ") for r in rows)
         self.assertIn("press OK on the FTP dialog to keep FTP running", flat)
-        self.assertIn("JPOverlaySettings.vpk", flat)
+        self.assertIn("Rubi.vpk", flat)
         self.assertIn(command, flat)
-        self.assertIn("Overlay app: NOT this package's", app_stamp.report("mismatch", ["x"], command, False))
+        self.assertIn("Rubi app: NOT this package's", app_stamp.report("mismatch", ["x"], command, False))
         # an app newer than the package: the advice is not "an older app"
         newer = " ".join(app_stamp.report("mismatch", ["x"], command, True, newer=True).replace("|", " ").split())
         self.assertIn("A newer app saves settings these plugins do not know yet", newer)
         self.assertNotIn("An older app", newer)
-        self.assertIn("Overlay app: up to date", app_stamp.report("ok", ["x"], command, True))
-        self.assertIn("Overlay app: not checked", app_stamp.report("unknown", ["x"], command, True))
+        self.assertIn("Rubi app: up to date", app_stamp.report("ok", ["x"], command, True))
+        self.assertIn("Rubi app: not checked", app_stamp.report("unknown", ["x"], command, True))
 
     def test_the_command_line_exit_codes(self):
         line = app_stamp.make(EBOOT, API)
@@ -120,30 +120,30 @@ class AppStamp(unittest.TestCase):
                                    str(tmp / "vjo_app.txt")], capture_output=True, text=True, timeout=30, check=False)
             self.assertEqual(made.returncode, 0, made.stderr)
             self.assertEqual((tmp / "vjo_app.txt").read_text(), line)
-            (tmp / "JPOverlaySettings.vpk").write_bytes(vpk(stamp=line))
+            (tmp / "Rubi.vpk").write_bytes(vpk(stamp=line))
 
             def check(*extra):
                 return subprocess.run([sys.executable, str(ROOT / "tools/app_stamp.py"), "check", "--package",
-                                       str(tmp / "vjo_app.txt"), "--vpk", str(tmp / "JPOverlaySettings.vpk"), *extra],
+                                       str(tmp / "vjo_app.txt"), "--vpk", str(tmp / "Rubi.vpk"), *extra],
                                       capture_output=True, text=True, timeout=30, check=False)
             (tmp / "device.txt").write_text(line)
             (tmp / "device.eboot").write_bytes(EBOOT)
             r = check("--installed", str(tmp / "device.txt"), "--installed-eboot", str(tmp / "device.eboot"))
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertIn("Overlay app: up to date", r.stdout)
+            self.assertIn("Rubi app: up to date", r.stdout)
             r = check("--installed", str(tmp / "absent.txt"), "--installed-eboot", str(tmp / "device.eboot"))
             self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
             r = check("--installed", str(tmp / "absent.txt"), "--after-install")
             self.assertEqual(r.returncode, 1)
             self.assertIn("ONE MORE STEP", r.stdout)
-            self.assertIn("No Overlay app is installed", " ".join(r.stdout.split()))
+            self.assertIn("No Rubi app is installed", " ".join(r.stdout.split()))
             r = subprocess.run([sys.executable, str(ROOT / "tools/app_stamp.py"), "check", "--package",
                                 str(tmp / "absent.txt"), "--installed", str(tmp / "device.txt")],
                                capture_output=True, text=True, timeout=30, check=False)
             self.assertEqual(r.returncode, 2)
-            self.assertIn("Overlay app: not checked", r.stdout)
+            self.assertIn("Rubi app: not checked", r.stdout)
             # the package's record and its VPK disagree: no verdict
-            (tmp / "JPOverlaySettings.vpk").write_bytes(vpk(stamp=app_stamp.make(b"other", API)))
+            (tmp / "Rubi.vpk").write_bytes(vpk(stamp=app_stamp.make(b"other", API)))
             r = check("--installed", str(tmp / "device.txt"))
             self.assertEqual(r.returncode, 2)
             self.assertIn("differ", r.stderr)
@@ -154,7 +154,7 @@ class AppStamp(unittest.TestCase):
         self.assertEqual(m["VJO_APP_EBOOT_INSTALLED"], "ux0:app/VJOSET001/eboot.bin")
         self.assertEqual(m["VJO_APP_STAMP_PACKAGE"], "ux0:data/VitaJPOverlay/vjo_app.txt")
         self.assertEqual(m["VJO_APP_STAMP_OWN"], "app0:vjo_app.txt")
-        self.assertEqual("Overlay app and plugins are different builds: open the Overlay app.", m["VJO_APP_NOTICE"])
+        self.assertEqual("Rubi app and plugins are different builds: open the Rubi app.", m["VJO_APP_NOTICE"])
         ftp = (ROOT / "tools/install_ftp.sh").read_text()
         for path in (m["VJO_APP_STAMP_INSTALLED"], m["VJO_APP_EBOOT_INSTALLED"], m["VJO_APP_STAMP_PACKAGE"]):
             self.assertIn(path.replace(":", ":/", 1), ftp)

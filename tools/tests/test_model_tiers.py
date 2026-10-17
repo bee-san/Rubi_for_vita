@@ -68,7 +68,7 @@ class ModelTiers(unittest.TestCase):
             got = int(re.search(rf"#define VJO_GAME_RESERVE_{reserve_macro} \((\d+)u \* 1024u \* 1024u\)",
                                 ledger).group(1)) * 1024 * 1024
             self.assertEqual(got, tier["reserve_bytes"], tier["id"])
-            # the Overlay app's estimates are the model's metadata
+            # the Rubi app's estimates are the model's metadata
             _, _, _, box_ms, job_bytes = meta[tier["model"]]
             self.assertEqual((box_ms, job_bytes), (tier["est_box_ms"], tier["job_bytes"]), tier["id"])
             self.assertEqual(tier["need_bytes"], tier["job_bytes"] + tier["reserve_bytes"], tier["id"])

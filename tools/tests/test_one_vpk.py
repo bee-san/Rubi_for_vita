@@ -101,7 +101,7 @@ def release_zip(path, eboot=None, kernel_imports=(), shell_imports=(), variant="
     if settings:
         manifest["install_settings"] = settings
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("JPOverlaySettings.vpk", app)
+        z.writestr("Rubi.vpk", app)
         z.writestr("ux0/data/VitaJPOverlay/vjo_app.txt", stamp)
         for name, data in list(files.items()) + list(licences.items()):
             written = b"damaged" if name == corrupt else data
@@ -178,7 +178,7 @@ class Package(unittest.TestCase):
 
     def test_a_vpk_of_a_release_zip(self):
         release = release_zip(self.root / "r.zip", settings={"anki_mining": "on"})
-        out = self.root / "VitaJPOverlay-0.8.0.vpk"
+        out = self.root / "Rubi-0.8.0.vpk"
         text = vpk.write_vpk(release, out)
         self.assertEqual(vpk.verify(out), [])
         with zipfile.ZipFile(out) as z:
@@ -259,7 +259,7 @@ class Package(unittest.TestCase):
     def test_verify_is_as_strict_as_the_app(self):
         """--verify refuses what core/payload.c refuses: another kind, an unknown or reordered line, a setting
         the app does not set; and a version the file name does not have (code audit note 4)."""
-        good = self.root / "VitaJPOverlay-0.8.0.vpk"
+        good = self.root / "Rubi-0.8.0.vpk"
         vpk.write_vpk(release_zip(self.root / "g.zip"), good)
         self.assertEqual(vpk.verify(good), [])
         text = zipfile.ZipFile(good).read("payload/manifest.txt").decode()
@@ -279,11 +279,11 @@ class Package(unittest.TestCase):
                   "the file is named for version 0.8.0, the manifest says 9.9.9")]
         for what, changed, why in cases:
             with self.subTest(what=what):
-                out = self.root / "VitaJPOverlay-0.8.0.vpk.bad"
+                out = self.root / "Rubi-0.8.0.vpk.bad"
                 with zipfile.ZipFile(good) as src, zipfile.ZipFile(out, "w") as z:
                     for info in src.infolist():
                         z.writestr(info, changed if info.filename == "payload/manifest.txt" else src.read(info))
-                named = out.with_name("VitaJPOverlay-0.8.0.vpk")
+                named = out.with_name("Rubi-0.8.0.vpk")
                 good.rename(self.root / "keep.vpk")
                 out.rename(named)
                 try:

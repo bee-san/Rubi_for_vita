@@ -335,7 +335,7 @@ class Placement(unittest.TestCase):
     # ---- the clock (audit B1): "before" from a date only with the clock checked for this boot
 
     def test_audit_case_2_a_set_back_of_minutes_during_the_boot(self):
-        # set back 20 minutes 10 minutes into the boot, never put right; the Overlay app (whose pid the kernel never logs)
+        # set back 20 minutes 10 minutes into the boot, never put right; the Rubi app (whose pid the kernel never logs)
         # crashes after it, dated 11:52; kernel.txt's last write at 13:30 true is dated 13:10
         f = self.folder()
         f.times["ux0:/data/VitaJPOverlay"]["kernel.txt"] = unix("2026-10-20 13:10:40")
@@ -438,9 +438,9 @@ class Placement(unittest.TestCase):
         self.assertEqual(self.placed(f)[app], ("before", "dated before this boot began"))
 
     def test_delta_audit_b2_a_raced_game_exit_and_a_lone_one(self):
-        # the clock set back 1 hour 5 minutes into the boot, after status.txt's last write; the Overlay app (whose pid the
+        # the clock set back 1 hour 5 minutes into the boot, after status.txt's last write; the Rubi app (whose pid the
         # kernel never names) crashes at 12:10 true, dated 11:10. The game's suspend at 30 minutes has its game exit
-        # logged first, and the Overlay app's exit at 13:30 true, dated 12:30, ends kernel.txt with a lone game exit
+        # logged first, and the Rubi app's exit at 13:30 true, dated 12:30, ends kernel.txt with a lone game exit
         f = self.folder(kernel=KERNEL_HEAD + "game exit\ngame exit\nforeground 0x20000 -> 0x0 (suspend) t=1800000 ms\n"
                                              "game exit\n")
         f.times["ux0:/data/VitaJPOverlay"]["kernel.txt"] = unix("2026-10-20 12:30:20")
@@ -892,7 +892,7 @@ class Archive(unittest.TestCase):
         self.put("ux0/data/VitaJPOverlay/kernel.txt", KERNEL, "2026-10-20 13:30:40")
         self.put("ux0/data/VitaJPOverlay/status.txt", "bootstrap: shell API 22 entered\n", "2026-10-20 12:40:00")
         self.put("ur0/data/VitaJPOverlay/boot.txt", BOOT_OK, "2026-10-20 12:01:10")
-        self.put("ux0/data/JPOverlaySettings.vpk", "vpk", "2026-10-19 09:00:00")
+        self.put("ux0/data/Rubi.vpk", "vpk", "2026-10-19 09:00:00")
         self.old = [self.put_dump("2026-10-11 13:57:17", 0x72FC5, "eboot.bin", 5000),
                     self.put_dump("2026-10-13 14:09:48", 0x118DB, "shell.self", 7000)]
         self.new = self.put_dump("2026-10-20 12:30:00", 0x20000, "eboot.bin", 3000)

@@ -2,7 +2,8 @@
 
 ## This fork stands on its own
 
-`bee-san/vita-jp-overlay` is bee-san's personal software, forked from
+`bee-san/Rubi_for_vita` (named `bee-san/vita-jp-overlay` before 2026-10-17; GitHub redirects the old
+name) is bee-san's personal software, forked from
 [Dartv/vita-jp-overlay](https://github.com/Dartv/vita-jp-overlay). It is not
 maintained as a contribution to that project.
 
@@ -10,11 +11,11 @@ maintained as a contribution to that project.
   other way round.
 - Never open pull requests, issues or discussions on `Dartv/vita-jp-overlay`,
   never comment there, and never push branches or tags to it.
-- All work lands in `bee-san/vita-jp-overlay`, through pull requests against
+- All work lands in `bee-san/Rubi_for_vita`, through pull requests against
   its `main`.
 - In a fork, `gh` defaults to the upstream parent. Always pass
-  `-R bee-san/vita-jp-overlay`, for example
-  `gh pr create -R bee-san/vita-jp-overlay --base main`.
+  `-R bee-san/Rubi_for_vita`, for example
+  `gh pr create -R bee-san/Rubi_for_vita --base main`.
 
 To pull in upstream changes, merge `upstream/main` into a branch of this fork,
 keep this fork's behaviour wherever the two differ, and open a pull request
@@ -48,9 +49,9 @@ thread, static buffer or taiHEN registration.
    plugin loads the game OCR worker into each game that is ON in `games.ini` as the game starts
    (owner's decision, 2026-10-16, #138; this replaces "register one `*TITLEID` section per enabled
    game"): never into SceShell, a system app (the PSP emulator's `NPXS10028` and Adrenaline's
-   `PSPEMUCFW` are games), VitaShell or the Overlay app, and nothing while L is held at the start
+   `PSPEMUCFW` are games), VitaShell or the Rubi app, and nothing while L is held at the start
    ([docs/worker-loading.md](docs/worker-loading.md)). Installers write no worker line and remove
-   the ones older installs left (the Overlay app's Install page and `install-vita.sh` share one
+   the ones older installs left (the Rubi app's Install page and `install-vita.sh` share one
    editor, `core/taicfg.c`, checked with taiHEN's own parser: [docs/one-vpk-install.md](docs/one-vpk-install.md));
    a leftover line is harmless, as the worker keeps one copy per process. `*ALL` loads
    a module into SceShell and every system app as well, where its pages are permanent: never use

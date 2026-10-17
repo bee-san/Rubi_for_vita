@@ -7,18 +7,18 @@ One tree builds both, chosen at compile time with `-DVJO_DEBUG=ON|OFF` (`include
 
 | zip | build | `VJO_DEBUG` | for | CI artifact |
 |---|---|---|---|---|
-| `VitaJPOverlay-<version>.zip` | normal | `OFF` | everyone: the main download | `VitaJPOverlay-normal` |
-| `VitaJPOverlay-<version>-debug.zip` | debug | `ON` (the default) | console tests, and anyone asked for a full log | `VitaJPOverlay` |
+| `Rubi-<version>.zip` | normal | `OFF` | everyone: the main download | `Rubi-normal` |
+| `Rubi-<version>-debug.zip` | debug | `ON` (the default) | console tests, and anyone asked for a full log | `Rubi` |
 
 The debug build is the test builds' own: its three plugins and RCO are byte-identical to main's
-(`3805a13`, measured: the same SHA-256s; also on `6020c0b`, `9f92bc6`, `ac905b1` and `e53d9fb`). Its Overlay app differs in one string: the version beside
-its title, `Overlay v0.8.0 debug` (the normal app shows `Overlay v0.8.0`). Test builds stay debug:
+(`3805a13`, measured: the same SHA-256s; also on `6020c0b`, `9f92bc6`, `ac905b1` and `e53d9fb`). Its Rubi app differs in one string: the version beside
+its title, `Rubi v0.8.0 debug` (the normal app shows `Rubi v0.8.0`). Test builds stay debug:
 `VJO_DEBUG` defaults to `ON` in every CMake project, a file compiled without it is the debug build,
-and CI's `VitaJPOverlay` artifact is the debug build as before.
+and CI's `Rubi` artifact (`VitaJPOverlay` before the rename) is the debug build as before.
 
 Both zips have the same models, dictionary, config template, installer and tools
 (`tools/package_variants.py` refuses two bases that differ anywhere else). Both builds read and
-write `config.ini` with the same code: no `VJO_DEBUG` in the parser, the Overlay app's writer, the
+write `config.ini` with the same code: no `VJO_DEBUG` in the parser, the Rubi app's writer, the
 installer's migration or the template (`tools/tests/test_release_variants.py`), so a `config.ini`
 from either works in the other, `log_file = on` included: the normal build then writes its short log.
 
@@ -54,7 +54,7 @@ keep: anything a user-facing feature or a recovery needs stays.
 | a PSP game's launch: its IDs, disc ID and the file it boots (`psp: …`, #124) | `game.c` | **keep** (the README's way to register a bubble: one line per launch) |
 | the log's append timing (`vjo_log_io`) | `log_vita.c` | **drop** |
 | the bootstrap and boot guard lines, `status.txt` | `boot.c`, `guard.c`, `log_vita.c` | **keep** (recovery: `docs/boot-safety.md`) |
-| config warnings, the Overlay app check (#122), game start and exit, errors | `worker.c`, `files.c` | **keep** |
+| config warnings, the Rubi app check (#122), game start and exit, errors | `worker.c`, `files.c` | **keep** |
 | `log.txt` (`log_file`, 1 MB + one rotation) | `log_vita.c` | **keep**, the short log; the network thread's lines of a job go out in one append per file once the control thread has taken its result ([below](#no-log-append-on-the-result-path)) |
 | the UDP log (`log_host`) | `log_vita.c` | gone from both builds with the network stack (#145); `log_host` is a removed setting, a set one gives one config warning in both |
 | the network code's lines (sockets, resolver) | `platform_vita.c`, `core/` | gone from both builds: Google Lens and its capture with #130, the sockets, resolver and TLS with #145 |
@@ -81,13 +81,13 @@ keep: anything a user-facing feature or a recovery needs stays.
 | the step log in the job's result | `game_ocr/main.c` `step_add` | **keep**: the result's fixed array (no strings); its tier checks and clock step feed the normal log |
 | the forced-fallback flag and the no-cache flag (only the self-test sets them) | `game_ocr/main.c` | **keep** (part of API 22's request; no strings) |
 
-### Overlay app (`JPOverlaySettings.vpk`)
+### Rubi app (`Rubi.vpk`)
 
 | feature | where | normal |
 |---|---|---|
 | the frame interval line (the first 60 frames) | `settings/main.c` | **drop** |
 | the start line (budget, heap) | `settings/main.c` | **keep**, now with the version: `start: v0.8.0 debug; …` or `start: v0.8.0; …` |
-| the version beside the title | `settings/main.c` | `Overlay v<version>` in the normal build, `Overlay v<version> debug` in the debug one |
+| the version beside the title | `settings/main.c` | `Rubi v<version>` in the normal build, `Rubi v<version> debug` in the debug one |
 | the Anki export's lines (its storage errors, each export) | `settings/anki_export.c`, `anki_page.c` | **keep** |
 | the Adrenaline bubbles found and the taiHEN sections the app adds (#124) | `settings/` | **keep** (a few lines per start; a config.txt the app changed must be traceable) |
 | each scan of the Games list (one line per root, one for the rows) and each Default change (#138) | `settings/catalog.c`, `settings/main.c` | **keep** (four lines a scan in one append, at start and on Start; they are what tells a missing game's cause) |
@@ -117,7 +117,7 @@ to 4 KiB) [measured: `build/rv`, the `release_variants` target]:
 | `VitaJPOverlay_Kernel.skprx` (the kernel pool) | 36,640 + 77,768 | 114,688 B | 32,332 + 76,080 | 110,592 B | 4,096 B (1 page) |
 | the same after #138's worker loader | 40,648 + 77,824 | 118,784 B | 36,444 + 76,136 | 114,688 B | 4,096 B (1 page) |
 | `VitaJPOverlay_OCR.suprx` (each registered game) | 71,072 + 14,208 | 90,112 B | 69,708 + 14,208 | 90,112 B | 0 (1,364 B of text) |
-| `eboot.bin` (the Overlay app, 50 MiB system-app budget) | 485,988 + 3,213,728 | 3,702,784 B | 485,516 + 3,213,696 | 3,702,784 B | 0 |
+| `eboot.bin` (the Rubi app, 50 MiB system-app budget) | 485,988 + 3,213,728 | 3,702,784 B | 485,516 + 3,213,696 | 3,702,784 B | 0 |
 
 With API 23's Anki screenshot (both builds of main `c6e0a4d` and that change, the build log's module
 rows): the Shell 100,484 + 69,828 and 90,012 + 69,756 (the same pages, 176,128 and 163,840 B; the normal
@@ -135,7 +135,7 @@ stack's removal (#145: 176,128 against 163,840 B [measured: both builds of main 
 and #145]). Its budget is checked exactly
 (`--exact`: a normal budget above its pages fails the build too), so whoever changes either build's
 pages re-measures it; the check names the value to set. The game worker's saving (1,364 B of text) no
-longer frees a page since #124, so both builds share its budget. The Overlay app's text differs by
+longer frees a page since #124, so both builds share its budget. The Rubi app's text differs by
 472 B and its pages not at all with the local SDK; with CI's container SDK, which builds the
 release, its pages are the same in main, debug and normal [measured: audit-overlay-release-variants
 on `b79ecf9`]: it is not SceShell memory either way.
@@ -256,7 +256,7 @@ console run of the normal build.
 
 ```sh
 cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG=OFF ...   # the normal build; ON (the default): debug
-cmake --build build/vita --target release         # VitaJPOverlay-<version>.zip, or -debug.zip
+cmake --build build/vita --target release         # Rubi-<version>.zip, or -debug.zip
 ```
 
 Every Vita build checks it is the build it says (`tools/check_variant.py`: the normal modules carry
@@ -283,7 +283,7 @@ directories behind an FTP mock), over a v0.8.0-test.2 install, a fresh one and a
 ## The release's packages
 
 A release has five assets (docs/one-vpk-install.md, "What a release ships"): each build's one-VPK
-install, `VitaJPOverlay-<version>.vpk` (normal, the main download) and `-debug.vpk`, each build's zip
+install, `Rubi-<version>.vpk` (normal, the main download) and `-debug.vpk`, each build's zip
 for `install-vita.sh` (the advanced path), and `SHA256SUMS`, the normal VPK first.
 
 From source, one target builds both and packages them (the other build in `variant-<other>/` of the
@@ -293,16 +293,16 @@ same build directory):
 cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_VERSION=0.8.0 -DVJO_RELEASE_MODELS=/path/to/models \
   -DVJO_RELEASE_SOURCE_REVISION=$(git rev-parse HEAD) ...
 cmake --build build/vita --target release_variants
-# build/vita/release-variants/VitaJPOverlay-0.8.0.vpk, -debug.vpk, VitaJPOverlay-0.8.0.zip, -debug.zip, SHA256SUMS
+# build/vita/release-variants/Rubi-0.8.0.vpk, -debug.vpk, Rubi-0.8.0.zip, -debug.zip, SHA256SUMS
 ```
 
 From CI (the final release's way: the push to `main` it is cut from), with that run's two artifacts:
 
 ```sh
-gh run download RUN -R bee-san/vita-jp-overlay -n VitaJPOverlay -D ci/debug
-gh run download RUN -R bee-san/vita-jp-overlay -n VitaJPOverlay-normal -D ci/normal
-python3 tools/package_variants.py --normal ci/normal/VitaJPOverlay-0.8.0.zip \
-  --debug ci/debug/VitaJPOverlay-0.8.0-debug.zip --models /path/to/models --version 0.8.0 \
+gh run download RUN -R bee-san/Rubi_for_vita -n Rubi -D ci/debug
+gh run download RUN -R bee-san/Rubi_for_vita -n Rubi-normal -D ci/normal
+python3 tools/package_variants.py --normal ci/normal/Rubi-0.8.0.zip \
+  --debug ci/debug/Rubi-0.8.0-debug.zip --models /path/to/models --version 0.8.0 \
   --source-revision SHA --sources . -o out/
 ```
 
@@ -312,15 +312,15 @@ those pins, as the test builds' packaging fetches them. The final release passes
 config template is the repository's (`anki_mining = off`), unless the owner decides otherwise; the test
 builds add `--set anki_mining=on`.
 
-The Overlay app's version is the tree's `VJO_VERSION` (0.8.0 now): a test package
-(`VitaJPOverlay-0.8.0-test.N.zip`, `package_variants.py` or `package_release.py --version 0.8.0-test.N`)
-shows `Overlay v0.8.0` (`Overlay v0.8.0 debug` for the -debug build), the build its binaries are; its
+The Rubi app's version is the tree's `VJO_VERSION` (0.8.0 now): a test package
+(`Rubi-0.8.0-test.N.zip`, `package_variants.py` or `package_release.py --version 0.8.0-test.N`)
+shows `Rubi v0.8.0` (`Rubi v0.8.0 debug` for the -debug build), the build its binaries are; its
 manifests record `version 0.8.0-test.N` beside `app_version 0.8.0`.
 
 `tools/package_variants.py` refuses bases that are not the builds they are given as (with `--sources`,
 a checkout of their commit, each module is checked as the Vita build checks it, the worker included; a
 `--sources` that is not a checkout, with no `shell/`, `kernel/`, `game_ocr/` and `settings/`, is refused
-before anything is read, as it would check nothing), an Overlay app of another version than `--version`
+before anything is read, as it would check nothing), a Rubi app of another version than `--version`
 or than the `V` of a test build's `V-test.N` (set `VJO_VERSION` in `vita/CMakeLists.txt` to the release's
 version before that run), and bases that differ in anything but the build's own files (the
 plugins, the app's VPK and its stamp). It packages both with `tools/package_release.py` (which
@@ -333,8 +333,8 @@ checks a VPK again. Then run the package check on each zip, as CI does on every 
 that changes more than Markdown, from a checkout of the zips' own commit:
 
 ```sh
-python3 tools/e2e_package.py out/VitaJPOverlay-0.8.0.zip
-python3 tools/e2e_package.py out/VitaJPOverlay-0.8.0-debug.zip
+python3 tools/e2e_package.py out/Rubi-0.8.0.zip
+python3 tools/e2e_package.py out/Rubi-0.8.0-debug.zip
 ```
 
 Before its scenarios it checks the package itself: the manifest's `variant` against all four modules
@@ -347,13 +347,13 @@ uploads every `.vocr` and `.vlm` there).
 Publish the five in one release, in this order (the normal VPK first: it is the main download):
 
 ```sh
-gh release create v0.8.0 -R bee-san/vita-jp-overlay --title "Vita JP Overlay 0.8.0" --notes-file NOTES.md \
-  out/VitaJPOverlay-0.8.0.vpk out/VitaJPOverlay-0.8.0-debug.vpk \
-  out/VitaJPOverlay-0.8.0.zip out/VitaJPOverlay-0.8.0-debug.zip out/SHA256SUMS
+gh release create v0.8.0 -R bee-san/Rubi_for_vita --title "Rubi 0.8.0" --notes-file NOTES.md \
+  out/Rubi-0.8.0.vpk out/Rubi-0.8.0-debug.vpk \
+  out/Rubi-0.8.0.zip out/Rubi-0.8.0-debug.zip out/SHA256SUMS
 ```
 
 The release notes give the three steps of README "Install" (download the `.vpk`; copy it to the Vita
-and install it in VitaShell; open Overlay, choose Install, restart), the requirements (Enable Unsafe
+and install it in VitaShell; open Rubi, choose Install, restart), the requirements (Enable Unsafe
 Homebrew; about 245 MB free on ux0, the VPK counted), and the recovery (README "Memory and
 troubleshooting"). A test build is packaged the same way, `package_variants.py --version 0.8.0-test.N
 --set anki_mining=on` on the two artifacts of the `main` commit it is cut from, and ships its debug VPK

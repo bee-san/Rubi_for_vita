@@ -10,12 +10,12 @@ with curl as the installer does:
                            status.prev.txt kernel.txt kernel.prev.txt config.ini (API keys and
                            the audio source URL redacted before anything is written) games.ini
                            region.ini anki_queue/* (every card, screenshot, temp and duplicate file)
-                           and anki_queue/exported/* (the cards the Overlay app exported); anki/ (its
+                           and anki_queue/exported/* (the cards the Rubi app exported); anki/ (its
                            .apkg packages) is listed only
-                           vjo_app.txt (the record of the Overlay app the plugins came with)
+                           vjo_app.txt (the record of the Rubi app the plugins came with)
                            installed.txt (the one-VPK install's record, core/payload.h)
   ur0:data/VitaJPOverlay/  boot.txt
-  ux0:app/VJOSET001/       vjo_app.txt (the installed Overlay app's stamp, core/app_stamp.h); its eboot.bin
+  ux0:app/VJOSET001/       vjo_app.txt (the installed Rubi app's stamp, core/app_stamp.h); its eboot.bin
                            is hashed, never kept. Both are read as install_ftp.sh --check-app reads them
                            (read_app): through the folder, then by the file's full path (#138)
   ur0:tai/, ux0:tai/       config.txt, the installer's config.txt.vjo-bak, every dated backup
@@ -57,7 +57,7 @@ from pathlib import Path
 
 DATA = "ux0:/data/VitaJPOverlay"
 APPS = "ux0:/app"
-APP = f"{APPS}/VJOSET001"  # the Overlay app (JPOverlaySettings.vpk)
+APP = f"{APPS}/VJOSET001"  # the Rubi app (Rubi.vpk; JPOverlaySettings.vpk before the rename)
 # The installed app's stamp (kept, as FILES are) and its eboot.bin (hashed, never kept), the two files
 # install_ftp.sh --check-app reads; collect_app reads them its way (read_app), not as FILES
 APP_STAMP, APP_EBOOT = f"{APP}/vjo_app.txt", f"{APP}/eboot.bin"
@@ -84,14 +84,16 @@ DIRS = [(f"{DATA}/anki_queue", "keep", None), (f"{DATA}/anki_queue/exported", "k
         (f"{DATA}/ocr", "hash", re.compile(r"\.(vocr|vlm)$|^(LM|MODEL)-ATTRIBUTION\.md$")),
         (f"{DATA}/dictionaries", None, None), ("ux0:/data", "keep", re.compile(r"\.psp2dmp$", re.I)),
         ("ur0:/tai", "hash", re.compile(r"^VitaJPOverlay_.*\.(skprx|suprx)$")),
-        ("ur0:/data/VitaJPOverlay", "hash", re.compile(r"\.rco$")), ("ux0:/data", "hash", re.compile(r"^JPOverlaySettings\.vpk$"))]
+        ("ur0:/data/VitaJPOverlay", "hash", re.compile(r"\.rco$")), ("ux0:/data", "hash", re.compile(r"^(Rubi|JPOverlaySettings)\.vpk$"))]
 # the taiHEN configurations' backups (both installers: dated, kept) and an interrupted swap's leftovers
-# (the Overlay app's: settings/install.c), beside each config.txt
+# (the Rubi app's: settings/install.c), beside each config.txt
 TAI_BACKUPS = re.compile(r"^config\.txt\.vjo-.+$")  # dated, -old/-new, .vjo-bad, .vjo-new/.vjo-old (settings/install.c)
 DIRS += [("ur0:/tai", "keep", TAI_BACKUPS), ("ux0:/tai", "keep", TAI_BACKUPS)]
 # Device paths of the hashed files -> their package path (package-manifest.json "files")
 PACKAGE_PATHS = {"ur0:/tai/": "ur0/tai/", "ur0:/data/VitaJPOverlay/": "ur0/data/VitaJPOverlay/",
-                 f"{DATA}/ocr/": "ux0/data/VitaJPOverlay/ocr/", "ux0:/data/JPOverlaySettings.vpk": "JPOverlaySettings.vpk"}
+                 f"{DATA}/ocr/": "ux0/data/VitaJPOverlay/ocr/", "ux0:/data/Rubi.vpk": "Rubi.vpk"}
+# (an install from before the Rubi rename left ux0:data/JPOverlaySettings.vpk: hashed, and listed, but no package
+# of today names it, so it is compared with nothing)
 # The settings that can hold a credential: an API key, and the audio source's URL, which can carry one
 # (package_release.py SECRET). anki_audio_url was removed with AnkiConnect, but a config.ini the
 # installer has not rewritten can still hold it, so it stays redacted.
@@ -312,7 +314,7 @@ class Collector:
         return {"state": "absent", "method": None, "rc": rcs}
 
     def collect_app(self):
-        """The installed Overlay app (core/app_stamp.h), its two files read as --check-app reads them (read_app),
+        """The installed Rubi app (core/app_stamp.h), its two files read as --check-app reads them (read_app),
         never through a listing of its folder: its stamp, kept as FILES are, and its eboot.bin, hashed and never
         kept (apart from "hashed", whose files the package lists one by one). When neither can be read, the
         folders say why, for the analysis: its own, listed when it can be entered (its files are then not in it),
@@ -391,7 +393,7 @@ class Collector:
         """Each hashed device file against the package it should come from."""
         manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         files = manifest.get("files", {})
-        self.record["package_app"] = manifest.get("app")  # the package's Overlay app (package_release.py)
+        self.record["package_app"] = manifest.get("app")  # the package's Rubi app (package_release.py)
         payload = Path(manifest_path).with_name("payload-manifest.txt")
         if payload.is_file():  # the one-VPK install's manifest: installed.txt names its SHA-256 (core/payload.h)
             self.record["package_payload_manifest"] = hashlib.sha256(payload.read_bytes()).hexdigest()

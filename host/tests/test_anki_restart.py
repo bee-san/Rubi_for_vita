@@ -3,7 +3,7 @@ in a fresh OS process.
 
 The overlay's saves (the real Shell Anki thread and queue storage,
 vjo-shell-anki-tests --restart-step) stop at each storage boundary of a
-save; the Overlay app's exports (settings/anki_export.c and its package
+save; the Rubi app's exports (settings/anki_export.c and its package
 writer, vjo-apkg-tests --restart-step) stop at each boundary of writing,
 verifying and clearing. After every stop a fresh process finds every card
 either still queued or in a complete package (and archived), never lost,
@@ -166,7 +166,7 @@ class ScreenshotSaveRestartTests(Storage):
 
 
 class ExportRestartTests(Storage):
-    """The Overlay app's export: a stop anywhere loses no card and leaves no broken package."""
+    """The Rubi app's export: a stop anywhere loses no card and leaves no broken package."""
 
     # in their order: written in part, flushed, checked (still under its temporary name), given its
     # name, the directory synced and the first card about to move, a JPEG moved, a record moved, later moves

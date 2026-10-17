@@ -1,4 +1,4 @@
-/* The Overlay app opens no socket: the overlay is offline. VitaSDK's newlib still
+/* The Rubi app opens no socket: the overlay is offline. VitaSDK's newlib still
  * calls three SceNet functions for a socket descriptor (_read_r and _write_r in
  * syscalls.o, __vita_fd_drop in io.o, which crt0's _init_vita_io pulls in), so
  * without these the app would import SceNet for code that never runs: no socket
