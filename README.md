@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bee-san/vita-jp-overlay/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/bee-san/vita-jp-overlay?label=release"></a>
-  <a href="https://github.com/bee-san/vita-jp-overlay/actions/workflows/release.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/bee-san/vita-jp-overlay/release.yml?branch=main&label=CI"></a>
+  <a href="https://github.com/bee-san/Rubi_for_vita/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/bee-san/Rubi_for_vita?label=release"></a>
+  <a href="https://github.com/bee-san/Rubi_for_vita/actions/workflows/release.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/bee-san/Rubi_for_vita/release.yml?branch=main&label=CI"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a>
   <a href="http://discord.skerritt.blog"><img alt="Discord" src="https://img.shields.io/discord/754001738184392704?label=discord"></a>
 </p>
@@ -30,8 +30,9 @@
   <a href="http://discord.skerritt.blog">Discord</a> ⬅️
 </p>
 
-> Rubi is the new name of Vita JP Overlay. Until the rename lands, the app on the Vita is called
-> **Overlay** and the files keep their old names (`VitaJPOverlay-<version>.vpk`).
+> Rubi is the new name of Vita JP Overlay ([what changed](docs/rename-rubi.md)). The app was called
+> **Overlay** in the 0.8.0 test builds and **JP Overlay Settings** before; the new VPK installs over
+> either and keeps your settings, games and Anki cards.
 
 ## What it does
 
@@ -66,7 +67,7 @@
 > [!IMPORTANT]
 > Not released yet. This one-VPK install is on `main` for the next release (0.8.0), and these steps
 > are not yet verified on a console: the next test build (test.4) checks them first. Until then, the
-> [releases page](https://github.com/bee-san/vita-jp-overlay/releases) has the older 0.7.12 and the
+> [releases page](https://github.com/bee-san/Rubi_for_vita/releases) has the older 0.7.12 and the
 > 0.8.0 test builds. They install from a computer
 > ([guide](docs/guide.md#advanced-install-from-a-computer); for 0.7.12, use the installer from `main`)
 > and predate much of this page: their release notes say what each one has.
@@ -76,11 +77,11 @@ HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the mem
 copy the VPK to it (estimated from the package's size; 61 MB of it is the VPK itself, which you can
 delete once it is installed).
 
-1. Download `VitaJPOverlay-<version>.vpk` from the
-   [latest release](https://github.com/bee-san/vita-jp-overlay/releases/latest).
+1. Download `Rubi-<version>.vpk` from the
+   [latest release](https://github.com/bee-san/Rubi_for_vita/releases/latest).
 2. Copy it to the Vita with VitaShell's USB or FTP connection, press Enter on it in VitaShell, and
    answer Yes to installing it and Yes to its notice about extended permissions.
-3. Open **Overlay** from LiveArea, choose **Install** on its Install page, and restart the Vita.
+3. Open **Rubi** from LiveArea, choose **Install** on its Install page, and restart the Vita.
 
 That's all: nothing is downloaded on the Vita, and every game is ON. Start a game and press L + R.
 To update, close the app and do the same with the new VPK (the Install page then offers
@@ -167,7 +168,10 @@ Recognition, lookups and cards all stay on the Vita; your cards leave it only wh
 `.apkg` yourself. Rubi keeps its logs on the memory card, in `ux0:data/VitaJPOverlay/`
 (`log_file = off` in `config.ini` turns off the main one, `log.txt`). The normal build, the
 release's main download, logs no recognized or looked-up text; the `-debug` build, made for bug
-reports, logs both.
+reports, logs both. With **Read text** on **Automatically**, both builds also keep the dialogue they
+read, with its game and time, in `ux0:data/VitaJPOverlay/history.csv`, for reading statistics (the
+CSV that GameSentenceMiner imports; [details](docs/ocr-history.md)). It stays on the Vita too, grows
+as you read and is never deleted by itself; **Only when I press L + R** saves none.
 
 ### How good is the OCR?
 
@@ -193,7 +197,7 @@ and copy them to the memory card; up to eight are used, in your order
 ## Contributing
 
 Bug reports, ideas and pull requests are welcome in
-[issues](https://github.com/bee-san/vita-jp-overlay/issues), and questions on
+[issues](https://github.com/bee-san/Rubi_for_vita/issues), and questions on
 [Discord](http://discord.skerritt.blog). With a bug, the logs help most: from a computer, with
 VitaShell's FTP on, `bash tools/install_ftp.sh --collect VITA_IP` gathers them into one zip
 ([what it collects](docs/self-test.md#collecting-everything---collect)). A good first contribution:
@@ -201,7 +205,7 @@ try Rubi on a Vita Slim, a PS TV or a game nobody has tested yet, and send that 
 build and test Rubi, see the guide's [Build and validation](docs/guide.md#build-and-validation);
 [AGENTS.md](AGENTS.md) has the rules every change follows.
 
-<a href="https://github.com/bee-san/vita-jp-overlay/graphs/contributors"><img src="https://contrib.rocks/image?repo=bee-san/vita-jp-overlay" alt="Avatars of the people who have contributed to Rubi"></a>
+<a href="https://github.com/bee-san/Rubi_for_vita/graphs/contributors"><img src="https://contrib.rocks/image?repo=bee-san/Rubi_for_vita" alt="Avatars of the people who have contributed to Rubi"></a>
 
 ## Credits
 
@@ -209,7 +213,7 @@ This was made heavily with the help of [Shoui](https://github.com/shoui520). Sho
 smartest people I know, an expert in Windows and PS Vita lowlevels. She advised the design of the
 program and helped debug issues, while I simply vibe coded what she suggested. This project would
 not be possible without her. She also made the app a system app, so it opens beside a suspended
-game ([#109](https://github.com/bee-san/vita-jp-overlay/pull/109)).
+game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
 
 - Based on [Dartv/vita-jp-overlay](https://github.com/Dartv/vita-jp-overlay).
 - **OCR:** VOCR, from [bee-san/vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr) (GPL-3.0). Its

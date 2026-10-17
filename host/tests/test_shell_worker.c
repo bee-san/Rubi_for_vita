@@ -4621,7 +4621,7 @@ static void test_a_refresh_takes_its_captures_seq(void)
 
 /* Found with item 2b's test: reopening on the screen a refresh read the same
  * text from shows the saved word at once, as reopening unchanged dialogue does
- * (README). The refresh keeps the text, its lookup and the cache
+ * (docs/guide.md). The refresh keeps the text, its lookup and the cache
  * (on_refresh_done), and leaves the lookup's text generation, which open_overlay
  * compares, as it is. Before, a refresh cleared it, so the reopen said "Looking
  * up words…" and read the dictionary again for the word it had. */
