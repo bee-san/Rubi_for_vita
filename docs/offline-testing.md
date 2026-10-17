@@ -25,9 +25,9 @@ partition, and taiHEN loading our modules into firmware processes
 The host suites compile the plugin sources themselves (`#include "../../shell/worker.c"`,
 `kernel/boot.c`, `game_ocr/main.c`), not copies, and replace only the SDK boundary: memory
 blocks, threads, mutexes, files, the clock, and the kernel syscalls. Allocation failures,
-failed joins, cancelled jobs and crashes between steps are injected there. 68 ctest suites with
-the release models (`VJO_VOCR_MODEL_DIR`), 67 in the normal build, which has no self-test memory
-routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 67 and 66,
+failed joins, cancelled jobs and crashes between steps are injected there. 69 ctest suites with
+the release models (`VJO_VOCR_MODEL_DIR`), 68 in the normal build, which has no self-test memory
+routes to test (`kernel_meminfo`); the `host` job sets no model directory, so it runs 68 and 67,
 without `vocr_model`
 plus the Python tool suites run in the `host` job (with the frozen dictionary checked out, the
 word lookup on real recognized lines and the step that unpacks the dictionary for it, which a pull request from a fork, without secrets, leaves out) (the Hachidori relay's contract
