@@ -65,12 +65,12 @@
 ## Install
 
 > [!IMPORTANT]
-> Not released yet. This one-VPK install is on `main` for the next release (0.8.0), and these steps
-> are not yet verified on a console: the next test build (test.4) checks them first. Until then, the
-> [releases page](https://github.com/bee-san/Rubi_for_vita/releases) has the older 0.7.12 and the
-> 0.8.0 test builds. They install from a computer
-> ([guide](docs/guide.md#advanced-install-from-a-computer); for 0.7.12, use the installer from `main`)
-> and predate much of this page: their release notes say what each one has.
+> Not released yet: this one-VPK install comes with the next release (0.8.0). Its test build,
+> [0.8.0-test.4](https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.8.0-test.4), has it under
+> the old names (`VitaJPOverlay-0.8.0-test.4-debug.vpk`, the app **Overlay**), and its console run is
+> the first to check these steps. The latest release, 0.7.12, and the older test builds install from
+> a computer ([guide](docs/guide.md#advanced-install-from-a-computer); for 0.7.12, use the installer
+> from `main`) and predate much of this page: their release notes say what each one has.
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
 HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card before you
