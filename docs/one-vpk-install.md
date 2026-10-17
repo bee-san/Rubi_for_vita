@@ -742,7 +742,9 @@ test.4.
 - That a system application may unmount its `app0:`, that `sceIoRename` then moves the dictionary out
   of `ux0:app/VJOSET001`, and that the Unsafe Homebrew probe means for a system application what it
   means for VitaShell.
-- What the promoter does with a previous version's files on an update, and to a running app.
+- What the promoter does with a previous version's files on an update, and to a running app (one
+  observation: test.4's install stopped with `0x80101114` while test.3's app was suspended, and went
+  through after a restart, #194; the code's meaning is undocumented in the sources we read).
 - That the app's writes to `ur0:tai` work while a game is suspended behind it.
 - `sceShellUtilLock` and `sceKernelPowerTick` in a system application; the app's permissions after an
   L start.
