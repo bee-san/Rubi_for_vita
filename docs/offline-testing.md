@@ -131,16 +131,16 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | stick_cursor | 26 | the overlay's left stick (`core/stick_cursor.h`, #138): its 32-bit microsecond differences across the clock's wrap and its credit by the clock at 20-60 Hz, the cap, the deferred lookup, and the step along the text (the arrows' Left/Right without the wrap) with 32-bit offsets |
 | cursor_nav | 13 | the cursor over several lines (the owner, 2026-10-16): the d-pad's Left/Right across rows to the text's ends, and the stick's four directions against the d-pad's from every character of nine layouts, with 32-bit offsets and float cells |
 | settings_layout | 14 | the Overlay app's text layouts (rows that end between words since 2026-10-16), icon PNG check and title letters (`settings/text_layout.c`, `settings/icons.c`, `settings/letter.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it, each check against an unmapped page |
-| shell_log | 13 (12 normal) | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
+| shell_log | 15 (14 normal) | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
 | apkg | 23 | the Overlay app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure, the sweep of screenshots no card names (#161) with its 64-bit file-time arithmetic on a 32-bit CPU; the four packages it writes (`--write`) are byte-identical to the host build's |
 | psp | 10 | Adrenaline bubbles (`core/pspbubble.c`), PSP images (`core/psptarget.c`: EBOOT.PBP, ISO 9660, CSO and ZSO with LZ4; deflate only where zlib is, so not here) and the title IDs a bubble's row may carry (`core/taicfg.c` `vjo_tai_title_ok`) on synthetic files: 32-bit offsets into images, ARM's unsigned `char`, the damaged-image fuzz against reads outside the file |
 | taicfg | 6 | the one-VPK install's `config.txt` editor (`core/taicfg.c`, #158) on its fixtures and a seeded corpus, each result checked with taiHEN's own parser, on the Vita's word size |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
-Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 262 cases of the
-debug build pass (254 of the normal build, which has no `kernel_meminfo` and fewer log cases;
-API 24 took `kernel_capture` from 11 cases to 6, #161 added 4 to `apkg`) [measured: the preflights' ARM logs, both builds],
+Measured on the fleet box (Arm GNU Toolchain 14.2.Rel1, qemu-arm 10.0.13): all 264 cases of the
+debug build pass (256 of the normal build, which has no `kernel_meminfo` and fewer log cases;
+API 24 took `kernel_capture` from 11 cases to 6, #161 added 4 to `apkg`, #154 2 to `shell_log`) [measured: the preflights' ARM logs, both builds],
 and the eval-crop parity (372 regions × 3 formats) has no difference there either.
 In CI it is the `arm` step of the host job (`gcc-14-arm-linux-gnueabihf`, `qemu-user-static`; the
 pinned runtime's NEON kernels need GCC 14 or later, and Ubuntu 24.04's default cross gcc is 13). It
