@@ -1099,10 +1099,11 @@ class OverlayCloseLines(unittest.TestCase):
                          {"closes": 1, "moves": 8, "deferred_lookups": 9, "rest_ms": [200]})
 
 
-def export_line(what="queued", rc=0, cards=2, moved=2, kept=0, unreadable=0, too_large=0, left=0, stopped=0):
-    """settings/anki_page.c worker_main's line, as the Overlay app writes it into log.txt."""
+def export_line(what="queued", rc=0, cards=2, moved=2, kept=0, unreadable=0, too_large=0, left=0, stopped=0, swept=None):
+    """settings/anki_page.c worker_main's line, as the Overlay app writes it into log.txt (with swept: since #161)."""
     return (f"overlay app: anki: export ({what}) rc={rc}: {cards} cards, {moved} moved, {kept} kept, {unreadable} "
-            f"unreadable, {too_large} too large, {left} left, {stopped} stopped, {cards * 20480} bytes, arena peak 98304\n")
+            f"unreadable, {too_large} too large, {left} left, {stopped} stopped, "
+            f"{'' if swept is None else f'{swept} swept, '}{cards * 20480} bytes, arena peak 98304\n")
 
 
 class AnkiExportLines(unittest.TestCase):
@@ -1158,6 +1159,25 @@ class AnkiExportLines(unittest.TestCase):
             "to export, 0 failed; 4 card(s) in the packages; still queued for the next export, not a problem: 3 a "
             "stop left, 3 over a package's cap"])
 
+    def test_the_screenshots_no_card_named_that_an_export_removed_are_counted(self):
+        # #161: after a verified package, the queue's screenshots no record names (a stop between a card's JPEG and
+        # its record) are removed, one log line each and their count in the export's line: no problem
+        removed = ("overlay app: anki export: ux0:data/VitaJPOverlay/anki_queue/0123456789abcdef0123456789abcdef.jpg: "
+                   "no card names it, removed\n")
+        lg = a.summarise_log(self.VERIFIED + removed * 2 + export_line(swept=2) + export_line(cards=1, moved=1, swept=0)
+                             + export_line(cards=1, moved=1))  # (and a line of a build before it)
+        self.assertEqual(lg["trouble"], {})
+        an = lg["anki"]
+        self.assertEqual((an["exports"], an["export_ok"], an["exported"], an["export_swept"]), (3, 3, 4, 2))
+        self.assertEqual(a.export_summary(an), ["  Anki exports (the Overlay app): 3 export(s): 3 succeeded (a package "
+                                                "written and checked), 0 failed; 4 card(s) in the packages; removed "
+                                                "from the queue: 2 screenshots no card named"])
+        # a removal that failed is a problem line; a later export removes it
+        lg = a.summarise_log("overlay app: anki export: remove ux0:data/VitaJPOverlay/anki_queue/"
+                             "0123456789abcdef0123456789abcdef.jpg failed 0x80010005\n" + export_line(swept=1))
+        self.assertEqual(len(lg["trouble"]), 1)
+        self.assertIn("; removed from the queue: 1 screenshot no card named", a.export_summary(lg["anki"])[0])
+
     def test_the_cards_screenshots_are_counted(self):
         # API 23, shell/anki.c take_shot: one line per card saved with screenshots on
         def shot(rc, b, enc, whole):
@@ -1203,16 +1223,17 @@ class AnkiExportLines(unittest.TestCase):
         page = (ROOT / "settings/anki_page.c").read_text(encoding="utf-8")
         fmt = re.search(r'vjo_log\("(anki: export \(%s\) rc=%d: [^"]*)"\s*"([^"]*)"', page)
         self.assertIsNotNone(fmt, "settings/anki_page.c's export line moved: update LOG['anki_export']")
-        line = "overlay app: " + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 1000, 2000)
+        line = "overlay app: " + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000)
         m = a.LOG["anki_export"].match(line)
-        self.assertEqual([m.group(g) for g in range(1, 10)], ["queued", "-113", "5", "3", "1", "2", "4", "6", "7"])
+        self.assertEqual([m.group(g) for g in range(1, 11)], ["queued", "-113", "5", "3", "1", "2", "4", "6", "7", "8"])
         # the app's own idea of an error, which export_result follows
         self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large;", page)
         export = (ROOT / "settings/anki_export.c").read_text(encoding="utf-8")
         for words in ('"anki export: %s did not verify (%d): removed, nothing cleared"',
                       '"anki export: %s: 99 packages are named for this second already"',
                       '"anki export: %s: its screenshot %s.jpg is missing or not a JPEG"',
-                      '"anki export: %s: %d cards, %d screenshots, %u bytes, verified"'):
+                      '"anki export: %s: %d cards, %d screenshots, %u bytes, verified"',
+                      '"anki export: %s: no card names it, removed"'):  # (#161: no problem line)
             self.assertIn(words, export)
         self.assertTrue(a.EXPORT_TROUBLE.search(
             "overlay app: anki export: ux0:data/VitaJPOverlay/anki: 99 packages are named for this second already"))

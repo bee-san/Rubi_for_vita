@@ -14,10 +14,12 @@ Vita/SD2Vita hardware.
     python3 host/tests/test_anki_restart.py BUILD/vjo-shell-anki-tests BUILD/vjo-apkg-tests
 """
 import json
+import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -79,6 +81,22 @@ class Storage(unittest.TestCase):
             conn.close()
             db.unlink()
         return guids
+
+    def check_nothing_lost(self, ids):
+        queued, archived = set(self.records(self.queue)), set(self.records(self.archive))
+        self.assertEqual(queued | archived, set(ids))  # every card is somewhere
+        self.assertFalse(queued & archived)
+        exported = set(self.package_guids())
+        # a card leaves the queue only when a complete package has it
+        for card in archived:
+            self.assertIn(guid_of(card), exported)
+        # a card with a screenshot keeps it, beside its record or (a move cut short) in the other place
+        for card in ids:
+            record = self.queue / f"{card}.json"
+            if not record.exists():
+                record = self.archive / f"{card}.json"
+            if json.loads(record.read_text("utf-8"))["picture"]:
+                self.assertTrue((self.queue / f"{card}.jpg").exists() or (self.archive / f"{card}.jpg").exists())
 
 
 class SaveRestartTests(Storage):
@@ -154,22 +172,6 @@ class ExportRestartTests(Storage):
     # name, the directory synced and the first card about to move, a JPEG moved, a record moved, later moves
     POINTS = ("apkg_partial", "apkg_flushed", "checked", "apkg_renamed", "verified", "moved_jpg", "moved_json", "moving")
 
-    def check_nothing_lost(self, ids):
-        queued, archived = set(self.records(self.queue)), set(self.records(self.archive))
-        self.assertEqual(queued | archived, set(ids))  # every card is somewhere
-        self.assertFalse(queued & archived)
-        exported = set(self.package_guids())
-        # a card leaves the queue only when a complete package has it
-        for card in archived:
-            self.assertIn(guid_of(card), exported)
-        # a card with a screenshot keeps it, beside its record or (a move cut short) in the other place
-        for card in ids:
-            record = self.queue / f"{card}.json"
-            if not record.exists():
-                record = self.archive / f"{card}.json"
-            if json.loads(record.read_text("utf-8"))["picture"]:
-                self.assertTrue((self.queue / f"{card}.jpg").exists() or (self.archive / f"{card}.jpg").exists())
-
     def test_every_stop_point(self):
         for point in self.POINTS:
             with self.subTest(checkpoint=point):
@@ -196,6 +198,93 @@ class ExportRestartTests(Storage):
                 # and all of them again, with the same GUIDs
                 everything = self.run_step(APP, "export-all")
                 self.assertEqual((everything["rc"], everything["cards"], everything["moved"]), (0, 5, 0))
+
+
+class OrphanScreenshotRestartTests(Storage):
+    """#161: a save stopped during its JPEG's write (its .jpg.tmp) or between the JPEG and its record
+    leaves a picture no card names. The next export that writes a package removes it from anki_queue/
+    once it is old enough that no save of it can still be running (10 minutes older than the package),
+    and never a card's own picture: beside its record, in exported/, or ahead of its record after an
+    export stopped between a card's two moves."""
+
+    OLD = 2 * 3600
+
+    def age(self, paths, seconds=OLD):
+        t = time.time() - seconds
+        for p in paths:
+            os.utime(p, (t, t))
+
+    def age_all(self):
+        """Every file of the queue and the archive made old: nothing is spared for its age."""
+        for d in (self.queue, self.archive):
+            if d.exists():
+                self.age([p for p in d.iterdir() if p.is_file()])
+
+    def loose(self):
+        """anki_queue/'s pictures (.jpg, .jpg.tmp) that no record names."""
+        names = {p.name for p in self.queue.iterdir() if p.is_file()}
+        archived = set(self.records(self.archive))
+        return sorted(n for n in names if n.endswith((".jpg", ".jpg.tmp"))
+                      and n[:32] + ".json" not in names and n[:32] not in archived)
+
+    def test_each_orphan_kind_goes_with_the_next_package(self):
+        for point, suffix in (("jpeg_tmp", ".jpg.tmp"), ("jpeg_saved", ".jpg")):
+            with self.subTest(checkpoint=point):
+                self.use(Path(self.temp.name) / ("orphan-" + point))
+                self.run_step(SHELL, "save-shot-other", crash=point)  # 好き: its JPEG, no record
+                orphans = self.loose()
+                self.assertEqual([n[32:] for n in orphans], [suffix])
+                self.assertEqual(self.records(self.queue), [])
+                self.assertEqual(self.run_step(SHELL, "save-shot")["status"], "Saved for Anki")  # 猫: a card
+                card = self.records(self.queue)
+                self.assertEqual(len(card), 1)
+                # just left: an export keeps it (a save of it might still be running)
+                done = self.run_step(APP, "export")
+                self.assertEqual((done["rc"], done["cards"]), (0, 1), done)
+                self.assertEqual(self.loose(), orphans)
+                # old: the next export that writes a package removes it, and nothing else
+                self.age_all()
+                everything = self.run_step(APP, "export-all")
+                self.assertEqual((everything["rc"], everything["cards"]), (0, 1), everything)
+                self.assertFalse([p.name for p in self.queue.iterdir() if p.is_file()])
+                self.assertTrue((self.archive / f"{card[0]}.jpg").exists())
+                self.assertEqual(set(self.package_guids()), {guid_of(card[0])})
+
+    def test_a_card_moved_half_way_keeps_its_picture(self):
+        for point in ("moved_jpg", "moved_json", "moving"):
+            with self.subTest(checkpoint=point):
+                self.use(Path(self.temp.name) / ("half-" + point))
+                ids = self.run_step(APP, "queue")["ids"]
+                self.run_step(APP, "export", crash=point)
+                self.age_all()  # the sweep armed for every file
+                done = self.run_step(APP, "export")
+                self.assertEqual(done["rc"], 0, done)
+                self.check_nothing_lost(ids)
+                self.assertEqual(self.records(self.queue), [])
+                pictures = [i for i in ids if json.loads((self.archive / f"{i}.json").read_text("utf-8"))["picture"]]
+                self.assertEqual(len(pictures), 2)
+                for card in pictures:  # in exported/ now, beside its record
+                    self.assertTrue((self.archive / f"{card}.jpg").exists(), card)
+                everything = self.run_step(APP, "export-all")
+                self.assertEqual((everything["rc"], everything["cards"]), (0, 5))
+
+    def test_a_stop_while_removing_loses_nothing(self):
+        self.run_step(SHELL, "save-shot-other", crash="jpeg_saved")
+        self.run_step(SHELL, "save-shot", crash="jpeg_tmp")
+        self.assertEqual(len(self.loose()), 2)
+        ids = self.run_step(APP, "queue")["ids"]
+        self.age_all()
+        self.run_step(APP, "export", crash="swept")  # after the first removal
+        self.check_nothing_lost(ids)
+        self.assertEqual(len(self.loose()), 1)
+        self.assertEqual(self.run_step(APP, "inspect")["queued"], 0)
+        # nothing queued: no package, so nothing is removed until the next one
+        self.assertEqual(self.run_step(APP, "export")["cards"], 0)
+        self.assertEqual(len(self.loose()), 1)
+        everything = self.run_step(APP, "export-all")
+        self.assertEqual((everything["rc"], everything["cards"]), (0, 5))
+        self.assertEqual(self.loose(), [])
+        self.check_nothing_lost(ids)
 
 
 if __name__ == "__main__":

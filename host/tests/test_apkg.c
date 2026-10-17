@@ -18,6 +18,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #define main acutest_main
@@ -70,6 +71,9 @@ static struct {
     int corrupt_read;        /* the package's reads give one changed byte (a bad memory card) */
     int short_reads;         /* each read gives at most 1000 bytes */
     int fail_json_read_at, json_reads; /* the Nth opening of a record for reading fails */
+    const char *fail_stat;   /* a getstat whose path contains this fails, not as missing (EIO) */
+    const char *fail_remove; /* a remove whose path contains this fails */
+    time_t package_time;     /* nonzero: every .apkg's st_mtime (the calendar cases; 32-bit on the ARM lane) */
     int fd;                  /* the package's (the last one opened for writing) */
     int syncs;
 } io;
@@ -133,12 +137,35 @@ int sceIoPread(int fd, void *p, size_t n, SceOff off)
 }
 SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
 int sceIoMkdir(const char *p, unsigned mode) { return mkdir(p, mode); }
-int sceIoGetstat(const char *p, SceIoStat *st)
+/* A file's time as the Vita gives it (UTC: VitaShell converts st_mtime to local time to show it). */
+static void date_of(time_t t, SceDateTime *d)
+{
+    struct tm tm;
+    gmtime_r(&t, &tm);
+    *d = (SceDateTime){(unsigned short)(tm.tm_year + 1900), (unsigned short)(tm.tm_mon + 1), (unsigned short)tm.tm_mday,
+                       (unsigned short)tm.tm_hour, (unsigned short)tm.tm_min, (unsigned short)tm.tm_sec, 0};
+}
+static int file_stat(const char *p, SceIoStat *st)
 {
     struct stat s;
-    int rc = stat(p, &s);
-    if (!rc)
-        st->st_mode = s.st_mode;
+    if (stat(p, &s))
+        return errno == ENOENT ? (int)0x80010002u : -1;
+    st->st_mode = s.st_mode;
+    st->st_size = s.st_size;
+    date_of(s.st_ctim.tv_sec, &st->st_ctime);
+    date_of(s.st_atim.tv_sec, &st->st_atime);
+    date_of(s.st_mtim.tv_sec, &st->st_mtime);
+    return 0;
+}
+int sceIoGetstat(const char *p, SceIoStat *st)
+{
+    size_t n = strlen(p);
+    int rc;
+    if (io.fail_stat && strstr(p, io.fail_stat))
+        return (int)0x80010005u; /* EIO: a file that cannot be checked */
+    rc = file_stat(p, st);
+    if (!rc && io.package_time && n > 5 && !strcmp(p + n - 5, ".apkg"))
+        date_of(io.package_time, &st->st_mtime); /* the package's time, as the calendar cases set it */
     return rc;
 }
 int sceIoRename(const char *from, const char *to)
@@ -159,7 +186,19 @@ int sceIoRename(const char *from, const char *to)
     }
     return rc;
 }
-int sceIoRemove(const char *p) { return unlink(p); }
+int sceIoRemove(const char *p)
+{
+    size_t n = strlen(p);
+    int rc;
+    if (io.fail_remove && strstr(p, io.fail_remove))
+        return (int)0x80010005u;
+    rc = unlink(p);
+    /* a screenshot removed from the queue itself (never exported/): after the first, a stop */
+    if (!rc && !strstr(p, "/exported/") && strstr(p, VJO_QUEUE_DIR "/") &&
+        ((n > 4 && !strcmp(p + n - 4, ".jpg")) || (n > 8 && !strcmp(p + n - 8, ".jpg.tmp"))))
+        crash_at("swept");
+    return rc < 0 ? (errno == ENOENT ? (int)0x80010002u : -1) : 0;
+}
 int sceIoSyncByFd(int fd, int flag)
 {
     int rc;
@@ -196,7 +235,7 @@ int sceIoDread(int fd, SceIoDirent *ent)
         return 0;
     snprintf(ent->d_name, sizeof(ent->d_name), "%s", e->d_name);
     snprintf(path, sizeof(path), "%s/%s", dir_paths[fd - 100], e->d_name);
-    TEST_ASSERT(sceIoGetstat(path, &ent->d_stat) == 0);
+    TEST_ASSERT(file_stat(path, &ent->d_stat) == 0); /* (the entry's own: io.fail_stat is for getstat calls) */
     return 1;
 }
 int sceIoDclose(int fd)
@@ -1072,6 +1111,251 @@ static void test_a_failed_move_keeps_the_card_queued(void)
     TEST_CHECK(c.queued == 0 && c.exported == 2);
 }
 
+/* ---------------- #161: screenshots no card names ---------------- */
+
+/* A card's JPEG is committed before the record that names it (shell/anki_queue.c), so a stop between
+ * the two, or during the JPEG's own write (its .jpg.tmp), leaves a picture no card names. Once a
+ * package is verified, the export removes these from anki_queue/ (never exported/): a .jpg no record
+ * names, queued, exported or an earlier build's .duplicate.json, and every .jpg.tmp; each only when it
+ * is at least 10 minutes older than that package (VJO_EXPORT_ORPHAN_AGE_S): a save still finishing
+ * has its record within seconds of its JPEG. */
+#define Q VJO_EXPORT_QUEUE_DIR "/"
+#define X VJO_EXPORT_ARCHIVE_DIR "/"
+#define HOURS(n) ((n) * 3600L)
+#define MINUTES(n) ((n) * 60L)
+
+static int there(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+/* A file's time set to age seconds ago (negative: ahead). */
+static void age_file(const char *path, long age)
+{
+    struct timespec t[2];
+    TEST_ASSERT(clock_gettime(CLOCK_REALTIME, &t[0]) == 0);
+    t[0].tv_sec -= age;
+    t[0].tv_nsec = 0;
+    t[1] = t[0];
+    TEST_ASSERT(utimensat(AT_FDCWD, path, t, 0) == 0);
+}
+
+/* A screenshot-like file of that age. */
+static void put_aged(const char *path, long age)
+{
+    uint8_t pic[300];
+    put_file(path, pic, jpeg(pic, 3, sizeof(pic)));
+    age_file(path, age);
+}
+
+/* log.txt's lines for removed orphans. */
+static int orphans_logged(void)
+{
+    int n = 0;
+    for (const char *p = logs; (p = strstr(p, ": no card names it, removed")); p++)
+        n++;
+    return n;
+}
+
+static void test_screenshots_no_card_names_go_after_a_verified_package(void)
+{
+    static const char *const gone[] = {
+        Q "0123456789abcdef0123456789abcd01.jpg",     /* a save stopped between its JPEG and its record */
+        Q "0123456789abcdef0123456789abcd02.jpg.tmp", /* a JPEG's write that stopped */
+        Q "0123456789abcdef0123456789abcd03.jpg",     /* 11 minutes old */
+    };
+    static const long gone_age[] = {HOURS(2), HOURS(2), MINUTES(11)};
+    static const char *const kept[] = {
+        Q "0123456789abcdef0123456789abcd11.jpg",     /* an earlier build's card AnkiConnect had: kept */
+        X "0123456789abcdef0123456789abcd12.jpg",     /* exported/ is never swept (a move stopped half way) */
+        Q "0123456789abcdef0123456789abcd13.jpg",     /* a minute old: its record may still come */
+        Q "0123456789abcdef0123456789abcd14.jpg",     /* 9 minutes */
+        Q "0123456789abcdef0123456789abcd15.jpg.tmp", /* a minute: a JPEG still being written */
+        Q "0123456789abcdef0123456789abcd16.jpg",     /* a day ahead (the clock set back since) */
+        Q "0123456789abcdef0123456789abcd17.jpg",     /* 1970: no time */
+        Q "notes.jpg",                                /* not a card's name */
+        Q "0123456789abcdef0123456789abcd1.jpg",
+        Q "0123456789ABCDEF0123456789ABCD18.jpg",
+        Q "0123456789abcdef0123456789abcd19.JPG",
+        Q "0123456789abcdef0123456789abcd20.jpg.bak",
+        Q "0123456789abcdef0123456789abcd21.jpeg",
+        Q "0123456789abcdef0123456789abcd22.jpg.tmp.old",
+        Q "0123456789abcdef0123456789abcd23.jpg/0123456789abcdef0123456789abcd24.jpg", /* in a directory */
+    };
+    static const long kept_age[] = {HOURS(2), HOURS(2), MINUTES(1), MINUTES(9), MINUTES(1), -HOURS(24), 0,
+                                    HOURS(2), HOURS(2), HOURS(2), HOURS(2), HOURS(2), HOURS(2), HOURS(2),
+                                    HOURS(2)};
+    VjoExportResult r;
+    char msg[300], path[300], cat_jpg[300], bad_jpg[300], bad_tmp[300], copy_jpg[300];
+    const char *id;
+    Card pic = cat, bad = eat, archived = dog;
+    reset();
+    TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+    /* the queue's cards: one with its screenshot, one without, one damaged with its screenshot */
+    pic.picture = 4;
+    id = queue_card(&pic, 0);
+    snprintf(cat_jpg, sizeof(cat_jpg), X "%s.jpg", id);
+    queue_card(&dog, 0);
+    bad.picture = 6;
+    id = queue_card(&bad, 0);
+    snprintf(path, sizeof(path), Q "%s.json", id);
+    {
+        FILE *f = fopen(path, "r+b"); /* edited: its checksum no longer its name, so it stays queued */
+        TEST_ASSERT(f != NULL);
+        fseek(f, 30, SEEK_SET);
+        fputc('Y', f);
+        fclose(f);
+    }
+    age_file(path, HOURS(2));
+    snprintf(bad_jpg, sizeof(bad_jpg), Q "%s.jpg", id);
+    age_file(bad_jpg, HOURS(2));
+    snprintf(bad_tmp, sizeof(bad_tmp), Q "%s.jpg.tmp", id); /* beside its card's record: never a picture */
+    put_aged(bad_tmp, HOURS(2));
+    /* an exported card whose JPEG copy stayed beside the queue (its record is in exported/) */
+    archived.spelling = "犬小屋";
+    id = queue_card(&archived, 1);
+    snprintf(copy_jpg, sizeof(copy_jpg), Q "%s.jpg", id);
+    put_aged(copy_jpg, HOURS(2));
+    put_file(Q "0123456789abcdef0123456789abcd11.duplicate.json", v1, strlen(v1));
+    TEST_ASSERT(mkdir(Q "0123456789abcdef0123456789abcd23.jpg", 0777) == 0); /* a directory of that name */
+    for (unsigned i = 0; i < sizeof(gone) / sizeof(gone[0]); i++)
+        put_aged(gone[i], gone_age[i]);
+    for (unsigned i = 0; i < sizeof(kept) / sizeof(kept[0]); i++)
+        put_aged(kept[i], kept_age[i]);
+    {
+        struct timespec t[2] = {{0, 0}, {0, 0}}; /* 1970-01-01 */
+        TEST_ASSERT(utimensat(AT_FDCWD, kept[6], t, 0) == 0);
+    }
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_MSG("%s\n%s", msg, logs);
+    TEST_CHECK(r.cards == 2 && r.moved == 2 && r.unreadable == 1);
+    for (unsigned i = 0; i < sizeof(gone) / sizeof(gone[0]); i++)
+        TEST_CHECK_(!there(gone[i]), "%s is still there", gone[i]);
+    TEST_CHECK_(!there(bad_tmp), "%s is still there", bad_tmp);
+    for (unsigned i = 0; i < sizeof(kept) / sizeof(kept[0]); i++)
+        TEST_CHECK_(there(kept[i]), "%s was removed", kept[i]);
+    /* the cards' own: exported, still queued (damaged), and a copy whose record is exported */
+    TEST_CHECK(there(cat_jpg) && there(bad_jpg) && there(copy_jpg));
+    TEST_CHECK_(orphans_logged() == 4 && r.swept == 4, "%d removals logged, %d counted:\n%s", orphans_logged(), r.swept,
+                logs);
+    /* the next package finds none left */
+    logs[0] = '\0';
+    TEST_CHECK(run(1, &r, msg) == VJO_OK && r.cards == 3 && orphans_logged() == 0 && r.swept == 0);
+    TEST_MSG("%s\n%s", msg, logs);
+    for (unsigned i = 0; i < sizeof(kept) / sizeof(kept[0]); i++)
+        TEST_CHECK_(there(kept[i]), "%s was removed by the second export", kept[i]);
+    TEST_CHECK(there(cat_jpg) && there(bad_jpg) && there(copy_jpg));
+}
+
+/* No verified package, nothing removed: no card to export, a failed write, a Cancel, a Cancel while
+ * the queue is cleared. The next export that makes one removes them. */
+static void test_only_a_verified_package_removes_them(void)
+{
+    static const char *const orphans[] = {Q "0123456789abcdef0123456789abcd01.jpg",
+                                          Q "0123456789abcdef0123456789abcd02.jpg.tmp"};
+    VjoExportResult r;
+    char msg[300];
+    int clearing;
+    /* a Cancel at the clearing's second status stops it between two cards */
+    reset();
+    queue_thirty();
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    clearing = statuses - 2;
+    for (int k = 0; k < 4; k++) {
+        int rc;
+        reset();
+        if (k)
+            queue_thirty();
+        for (int i = 0; i < 2; i++)
+            put_aged(orphans[i], HOURS(2));
+        io.write_after = k == 1 ? 4096 : -1;              /* the memory card full */
+        stop_at_status = k == 2 ? 1 : k == 3 ? clearing : -1; /* a Cancel while reading, while clearing */
+        rc = run(0, &r, msg);
+        TEST_CHECK_(k == 0 ? rc == VJO_OK && !r.cards : k == 3 ? rc == VJO_OK && r.stopped > 0 : rc != VJO_OK,
+                    "case %d: rc %d, %d cards, %d stopped: %s", k, rc, r.cards, r.stopped, msg);
+        for (int i = 0; i < 2; i++)
+            TEST_CHECK_(there(orphans[i]), "case %d: %s removed without a verified package", k, orphans[i]);
+        TEST_CHECK(orphans_logged() == 0 && r.swept == 0);
+        /* then a complete export removes them */
+        stop_at_status = -1;
+        io.write_after = -1;
+        queue_card(&cat, 0);
+        TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards >= 1 && r.swept == 2);
+        for (int i = 0; i < 2; i++)
+            TEST_CHECK_(!there(orphans[i]), "case %d: %s left by the next export", k, orphans[i]);
+        TEST_MSG("%s\n%s", msg, logs);
+    }
+}
+
+/* A record that cannot be checked (a getstat that fails other than "missing") keeps its picture; a
+ * removal that fails is logged, changes nothing else, and the next package's export removes it. */
+static void test_an_uncheckable_record_keeps_its_picture(void)
+{
+    VjoExportResult r;
+    char msg[300];
+    reset();
+    queue_card(&cat, 0);
+    put_aged(Q "0123456789abcdef0123456789abcd01.jpg", HOURS(2));
+    put_aged(Q "0123456789abcdef0123456789abcd02.jpg", HOURS(2));
+    put_aged(Q "0123456789abcdef0123456789abcd03.jpg", HOURS(2));
+    io.fail_stat = "/exported/0123456789abcdef0123456789abcd01.json";
+    io.fail_remove = "0123456789abcdef0123456789abcd02.jpg";
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 1 && r.moved == 1 && r.swept == 1 && strstr(msg, "Exported 1 card") && !strstr(msg, "stay"));
+    TEST_MSG("%s\n%s", msg, logs);
+    TEST_CHECK(there(Q "0123456789abcdef0123456789abcd01.jpg")); /* its record unknown: kept */
+    TEST_CHECK(there(Q "0123456789abcdef0123456789abcd02.jpg")); /* the removal failed */
+    TEST_CHECK(!there(Q "0123456789abcdef0123456789abcd03.jpg"));
+    TEST_CHECK(strstr(logs, "anki export: remove " Q "0123456789abcdef0123456789abcd02.jpg failed 0x80010005") != NULL);
+    io.fail_stat = io.fail_remove = NULL;
+    queue_card(&dog, 0);
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK && r.swept == 2);
+    TEST_CHECK(!there(Q "0123456789abcdef0123456789abcd01.jpg") && !there(Q "0123456789abcdef0123456789abcd02.jpg"));
+}
+
+/* The age is measured between two dates (st_mtime is a SceDateTime): exact to the second, across a UTC
+ * midnight, a month's end, a leap day and a year's end (audit-overlay-anki-followups N2). The stub gives
+ * the package a fixed time (io.package_time) and each picture a time that many seconds before it, so
+ * the case does not depend on when the test runs. */
+static void test_the_age_bound_is_exact_across_dates(void)
+{
+    static const struct {
+        time_t package;
+        const char *when;
+        long age[4];
+        int removed[4];
+    } cases[] = {
+        /* the day after a leap day: exactly 10 minutes goes, a second less stays;
+         * 2028-02-29 23:50 goes, 23:58 stays */
+        {1835481900, "2028-03-01 00:05", {600, 599, MINUTES(15), MINUTES(7)}, {1, 0, 1, 0}},
+        /* a new year: 2028-12-31 23:48 goes, 23:56 stays, a day and a second before goes, a second stays */
+        {1861920180, "2029-01-01 00:03", {MINUTES(15), MINUTES(7), HOURS(24) + 1, 1}, {1, 0, 1, 0}},
+    };
+    VjoExportResult r;
+    char msg[300], path[4][300];
+    for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+        reset();
+        queue_card(&cat, 0);
+        for (int i = 0; i < 4; i++) {
+            struct timespec t[2];
+            snprintf(path[i], sizeof(path[i]), Q "0123456789abcdef0123456789abcd%02d.jpg", 30 + i);
+            put_aged(path[i], 0);
+            t[0].tv_sec = cases[k].package - (time_t)cases[k].age[i];
+            t[0].tv_nsec = 0;
+            t[1] = t[0];
+            TEST_ASSERT(utimensat(AT_FDCWD, path[i], t, 0) == 0);
+        }
+        io.package_time = cases[k].package;
+        TEST_ASSERT(run(0, &r, msg) == VJO_OK && r.cards == 1);
+        TEST_MSG("%s\n%s", msg, logs);
+        for (int i = 0; i < 4; i++)
+            TEST_CHECK_(there(path[i]) == !cases[k].removed[i], "a package at %s UTC: a picture %ld s older %s",
+                        cases[k].when, cases[k].age[i], there(path[i]) ? "stayed" : "went");
+        TEST_CHECK(r.swept == 2 && orphans_logged() == 2);
+    }
+}
+
 /* Many cards: interior B-tree pages, notes on overflow pages, more than one level. */
 static void test_large_queue(void)
 {
@@ -1212,6 +1496,10 @@ TEST_LIST = {
     {"damaged_cards_stay_and_the_rest_are_exported", test_damaged_cards_stay_and_the_rest_are_exported},
     {"screenshots_are_one_file_each", test_screenshots_are_one_file_each},
     {"a_failed_move_keeps_the_card_queued", test_a_failed_move_keeps_the_card_queued},
+    {"screenshots_no_card_names_go_after_a_verified_package", test_screenshots_no_card_names_go_after_a_verified_package},
+    {"only_a_verified_package_removes_them", test_only_a_verified_package_removes_them},
+    {"an_uncheckable_record_keeps_its_picture", test_an_uncheckable_record_keeps_its_picture},
+    {"the_age_bound_is_exact_across_dates", test_the_age_bound_is_exact_across_dates},
     {"large_queue", test_large_queue},
     {NULL, NULL},
 };

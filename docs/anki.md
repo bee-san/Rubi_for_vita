@@ -181,11 +181,19 @@ name is always a checked one. A failure or Cancel before that removes the file
 and changes nothing; a Cancel while the queue is cleared stops between two
 cards, and a stop there leaves the rest queued, which the next export takes
 again (the same notes). An interrupted export's `.tmp` file is removed by the
-next. A record already archived is kept only when it is that card's (its
+next, and an export that verified its package removes the queue's screenshots
+no card names, unless a Cancel stopped its clearing
+([below](#the-queue-on-the-memory-card)). A record already
+archived is kept only when it is that card's (its
 checksum is its name); a damaged one there is replaced by the queued copy.
 `host/tests/test_anki_restart.py` stops a real export in a fresh process at each
 of these steps and checks that no card is lost; `host/tests/test_apkg.py`
 imports the packages with Anki 26.09.3 itself in CI.
+`host/tests/test_settings_anki.c` drives the Anki page itself
+(`settings/anki_page.c`): its rows' layout, Up/Down, the left stick, Left/Right,
+Enter and touch on each row, each row's save into `config.ini` as the overlay
+then reads it, and an export on its worker thread, with Cancel and the app's
+exit during one.
 
 ## The queue on the memory card
 
@@ -200,12 +208,21 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
   it is ignored and never exported. The next save of that card in the same
   minute (the same ID) removes it first; a later save is another card, with
   another ID, so a JPEG left by a power loss or a crash between the two writes
-  (or a `<id>.jpg.tmp` left by one during the JPEG's write) stays, about 56 KiB,
-  until it is deleted by hand: in `anki_queue/`, a `.jpg` or `.jpg.tmp` with no
-  `.json` of the same name beside it is safe to delete (not in `exported/`,
-  where an export stopped between moving a card's JPEG and its record leaves
-  the JPEG ahead of its record until the next export). An export that sweeps
-  them is #161.
+  (or a `<id>.jpg.tmp` left by one during the JPEG's write), about 56 KiB,
+  stays until the next export that writes a package (#161). Once that package
+  is verified, the export removes from `anki_queue/` every `.jpg` that no
+  record names (no `<id>.json` there or in `exported/`, and no
+  `<id>.duplicate.json`) and every `.jpg.tmp`, each once its file time is 10
+  minutes older than the package's (`log.txt`: `anki export: …: no card names
+  it, removed`). A younger one, one dated after the package (a clock set back)
+  or not dated at all, and one whose records the memory card cannot say are
+  absent (a check that fails other than "not found") stay for a later export:
+  a save still finishing has its record within seconds of its
+  JPEG (its screenshot job ends within 15 s), and the kernel removes a stopped
+  screenshot's `.jpg.tmp` itself. A removal that fails is logged and tried
+  again by the next export. `exported/` is never swept: an export
+  stopped between moving a card's JPEG and its record leaves the JPEG there
+  ahead of its record, and the next export takes it from there.
 - `exported/<id>.json`: a card an export has put in a package (and
   `exported/<id>.jpg`, its screenshot). **Export all cards** reads these too.
 - `<id>.duplicate.json`: a card an earlier build's AnkiConnect send found in
@@ -367,15 +384,16 @@ staging buffer it already has, and on the last rung a kernel strip of at most
 
 ### Export
 
-The export (`settings/anki_export.c`, unchanged since #125) reads `<id>.jpg`
+The export (`settings/anki_export.c`) reads `<id>.jpg`
 beside its record, names it in the package by its own SHA-256
 (`vitajp_<32 hex digits>.jpg`, so the same picture is one file), adds it to the
 `media` map and writes `<img src="…">` into `Picture`. Once the package is
 written, read back and checked it moves the JPEG into `anki_queue/exported/`
 before its record, never earlier, and **Export all cards** reads it there
-again. Nothing deletes a screenshot: an exported card's stays in `exported/` so
+again. Nothing deletes a card's screenshot: an exported card's stays in `exported/` so
 that **Export all** can include it; delete `exported/<id>.jpg` and its record
-to free the space.
+to free the space. The only pictures an export removes are the queue's that
+no card names ([above](#the-queue-on-the-memory-card), #161).
 
 What the host checks: every encoder output decoded by Pillow
 (`host/tests/test_jpegsw.py`); a screenshot through the actual game worker and
@@ -383,7 +401,10 @@ kernel transport in each pixel format a game submits, decoded too
 (`host/tests/test_game_shot.c`, `test_game_shot.py`); the kernel's rules
 (`test_kernel_game_ocr.c`); the Shell's saves with one and without
 (`test_shell_anki.c`); a save stopped at each of its writes in a fresh process
-(`test_anki_restart.py`); and Anki 26.09.3 importing a package whose card shows
+(`test_anki_restart.py`); the screenshots such a stop leaves without a card,
+removed by the next export that verifies a package and no other picture
+(`test_apkg.c`, and `test_anki_restart.py` with real stopped saves and
+exports); and Anki 26.09.3 importing a package whose card shows
 its screenshot (`test_apkg.py`: the `<img>` in the rendered answer, the file in
 the collection's media with the same bytes, a JPEG that decodes). The console
 has not run it yet.

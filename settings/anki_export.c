@@ -461,6 +461,97 @@ static void remove_stale_temps(void)
     sceIoDclose(d);
 }
 
+/* ---------------- screenshots no card names (#161) ---------------- */
+
+/* A file time in seconds from a fixed day (only differences are used), or -1 for none (a time
+ * before 1980, FAT's first, or out of range). */
+static int64_t file_seconds(const SceDateTime *t)
+{
+    int64_t y = t->year, m = t->month, era, yoe, doy, doe;
+    if (y < 1980 || m < 1 || m > 12 || t->day < 1 || t->day > 31 || t->hour > 23 || t->minute > 59 || t->second > 60)
+        return -1;
+    /* days from the civil date (H. Hinnant's days_from_civil, for years from 1980) */
+    y -= m <= 2;
+    era = y / 400;
+    yoe = y - era * 400;
+    doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + t->day - 1;
+    doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return ((era * 146097 + doe) * 24 + t->hour) * 3600 + t->minute * 60 + t->second;
+}
+
+/* 1: the file is there, 0: it is not, -1: not known (a failed getstat that is not "missing"). */
+static int present(const char *path)
+{
+    SceIoStat st;
+    int rc;
+    memset(&st, 0, sizeof(st));
+    rc = sceIoGetstat(path, &st);
+    return rc >= 0 ? 1 : rc == MISSING ? 0 : -1;
+}
+
+/* Some record may name this ID: queued, exported (a card's JPEG copy can stay beside its archived
+ * record; read_jpeg reads either directory), or an earlier build's <id>.duplicate.json, which is kept;
+ * or one of them cannot be checked. */
+static int named(const char *hex)
+{
+    char path[VJO_EXPORT_PATH_MAX];
+    card_path(path, 0, hex, "json");
+    if (present(path))
+        return 1;
+    card_path(path, 1, hex, "json");
+    if (present(path))
+        return 1;
+    card_path(path, 0, hex, "duplicate.json");
+    return present(path) != 0;
+}
+
+/* After a verified package (made: its file time), anki_queue/'s pictures no card names go: every
+ * <id>.jpg no record names, and every <id>.jpg.tmp (a record follows its JPEG's rename, so a .tmp is
+ * never a card's picture), each only when its file time is VJO_EXPORT_ORPHAN_AGE_S older than the
+ * package's. A save still finishing beside the app (the Shell's Anki thread runs on) commits its
+ * record within seconds of its JPEG: its screenshot job ends within 15 s (shell/anki.c
+ * SHOT_TIMEOUT_US), and the kernel removes a stopped job's .tmp itself. A file of unknown time, or
+ * dated after the package (a clock set back), stays. exported/ is never swept: an export stopped
+ * between a card's two moves leaves the JPEG there ahead of its record. Returns how many went; a
+ * removal that fails is logged and left for the next export. */
+static int remove_orphans(const SceDateTime *made)
+{
+    SceUID d;
+    SceIoDirent ent;
+    char hex[VJO_QUEUE_ID_SIZE], path[VJO_EXPORT_PATH_MAX];
+    int64_t now = file_seconds(made), then;
+    int n = 0, rc;
+    if (now < 0 || !is_dir(VJO_EXPORT_QUEUE_DIR) || (d = sceIoDopen(VJO_EXPORT_QUEUE_DIR)) < 0)
+        return 0;
+    for (;;) {
+        size_t len;
+        int tmp;
+        memset(&ent, 0, sizeof(ent));
+        if (sceIoDread(d, &ent) <= 0)
+            break;
+        len = strlen(ent.d_name);
+        tmp = len == 40 && !strcmp(ent.d_name + 32, ".jpg.tmp");
+        if (!SCE_S_ISREG(ent.d_stat.st_mode) || (!tmp && (len != 36 || strcmp(ent.d_name + 32, ".jpg"))))
+            continue;
+        memcpy(hex, ent.d_name, 32);
+        hex[32] = '\0';
+        if (!vjo_queue_valid_id(hex) || (!tmp && named(hex)))
+            continue;
+        then = file_seconds(&ent.d_stat.st_mtime);
+        if (then < 0 || now - then < VJO_EXPORT_ORPHAN_AGE_S)
+            continue;
+        snprintf(path, sizeof(path), "%s/%s", VJO_EXPORT_QUEUE_DIR, ent.d_name);
+        if ((rc = sceIoRemove(path)) < 0) {
+            io_fail("remove", path, rc);
+            continue;
+        }
+        vjo_log("anki export: %s: no card names it, removed", path);
+        n++;
+    }
+    sceIoDclose(d);
+    return n;
+}
+
 int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult *r, char *msg, size_t cap)
 {
     List l;
@@ -641,6 +732,16 @@ int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult 
             else
                 r->moved++;
         }
+    }
+    /* 6. the queue's pictures no card names (#161), unless the clearing was stopped */
+    if (!r->stopped && !(ui->stopped && ui->stopped(ui->ud))) {
+        SceIoStat st;
+        int k;
+        memset(&st, 0, sizeof(st));
+        if ((k = sceIoGetstat(r->path, &st)) < 0)
+            io_fail("getstat", r->path, k);
+        else
+            r->swept = remove_orphans(&st.st_mtime);
     }
     if (sceIoSync("ux0:", 0) < 0)
         vjo_log("anki export: the final sync failed; the queue is checked again on the next export");

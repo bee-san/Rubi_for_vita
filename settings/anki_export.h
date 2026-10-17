@@ -8,7 +8,9 @@
  * anki_queue/exported/, and the queue is empty of them. A failure at any step
  * before that leaves the queue exactly as it was and no package. "All cards"
  * also takes the exported ones again: their notes have the same GUIDs, so
- * Anki adds only what it does not have.
+ * Anki adds only what it does not have. After a verified package, the queue's
+ * screenshots no card names (a save stopped between its JPEG and its record,
+ * or during the JPEG's write) are removed (#161; anki_export.c remove_orphans).
  *
  * Every storage call that fails is logged (vjo_log, log.txt) with its error
  * code. All calls are made by one thread at a time. */
@@ -27,6 +29,9 @@
 #define VJO_EXPORT_PATH_MAX 128
 /* The export's memory: the card list (32 B a card) and one card's work. */
 #define VJO_EXPORT_MEM (2u * 1024u * 1024u)
+/* A screenshot no card names is removed only when its file time is this much older than the
+ * package's: a save still finishing has its record within seconds of its JPEG (anki_export.c). */
+#define VJO_EXPORT_ORPHAN_AGE_S (10 * 60)
 
 typedef struct {
     int queued;   /* cards in the queue (-1: unreadable) */
@@ -51,6 +56,7 @@ typedef struct {
     int unreadable;  /* left in the queue: damaged, edited, or a screenshot missing (log.txt) */
     int too_large;   /* left in the queue: no room in memory to make their note */
     int left;        /* over VJO_APKG_MAX_CARDS: the newest, left for the next export */
+    int swept;       /* screenshots no card names, removed from the queue (#161) */
     int media;       /* screenshot files in it */
     uint32_t bytes;  /* its size */
     char path[VJO_EXPORT_PATH_MAX]; /* where it is */
