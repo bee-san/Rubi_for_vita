@@ -910,6 +910,32 @@ static void split_words_are_looked_up_whole(void)
         TEST_CHECK_(span.find('\n') != std::string::npos, "the span %s ends before the break", span.c_str());
         TEST_CHECK_(r[4] == e->vocab->spelling, "entry %s, expected %s", e->vocab->spelling, r[4].c_str());
         check_header_range(&d, (size_t)e->hl_start, (size_t)e->hl_end);
+        /* The arrows (#173's rule, the overlay's own key function): Right skips the joined word
+         * to the first Japanese letter after its tail, on the next line, and Left comes back; the
+         * same before the header is laid out and on a 920 px layout of its rows. */
+        {
+            static Layout lay;
+            size_t want = (size_t)e->hl_end, to = 0;
+            while (want < len) { /* the first letter the arrows select at or after the word's end */
+                size_t at = want;
+                uint32_t c = vjo_utf8_next(d.sentence, len, &want);
+                if (vjo_text_selectable(c, want - at, 1)) { want = at; break; }
+            }
+            layout_text(&lay, d.sentence, 920.0f, 27.0f, 13.5f);
+            VjoTextRows rows = layout_rows(&lay);
+            for (int laid = 0; laid < 2; laid++) {
+                VjoRowNav nav = VjoRowNav();
+                vjo_text_row_key(&nav, d.sentence, len, laid ? &rows : NULL, cursor, (size_t)e->hl_end, 1, 0, 1, 0, &to);
+                if (want >= len) {
+                    TEST_CHECK_(to == cursor, "Right at the text's end moved to %zu", to);
+                    continue;
+                }
+                TEST_CHECK_(to == want, "Right from %zu: %zu, expected %zu (layout %d)", cursor, to, want, laid);
+                TEST_CHECK(memchr(d.sentence + cursor, '\n', to - cursor) != NULL); /* onto the next line */
+                vjo_text_row_key(&nav, d.sentence, len, laid ? &rows : NULL, to, 0, -1, 0, 1, 0, &to);
+                TEST_CHECK_(to == cursor, "Left came back to %zu, not %zu (layout %d)", to, cursor, laid);
+            }
+        }
         n++;
     }
     TEST_CHECK(n == 56);
