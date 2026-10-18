@@ -1062,7 +1062,9 @@ copied, and the settings above. Close other apps first.
 
 - Horizontal text only; vertical text is not read.
 - Adjacent lines 1-2 px apart can merge on PSP-sized text, and decorated
-  frames can add a stray line; tight regions read best.
+  frames can add a stray line; tight regions read best. vita-vn-ocr's learned
+  text detector (its #97) aims at these and at text-free regions; Rubi does not
+  use it for now ([why, and what would change that](text-detector.md)).
 - Recognition runs on low-priority threads in the enabled game process. While
   a job recognizes, the ARM clock is 444 MHz (`ocr_boost_clock = on`, the
   default; a clock already at 444 MHz or more is left as it is) and is put
