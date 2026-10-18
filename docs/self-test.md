@@ -268,8 +268,9 @@ only on a yes: [below](#archiving-older-dumps-off-the-vita)), into one timestamp
   interrupted swap's `config.txt.vjo-new` / `.vjo-old`; every `ux0:data/*.psp2dmp` crash dump, with its
   LIST time ([crash dumps](#crash-dumps));
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
-  models, the beam + LM decoder's LMs (`*.vlm`), their `LM-ATTRIBUTION.md` and the model sizes'
-  `MODEL-ATTRIBUTION.md` (downloaded to a
+  models, the beam + LM decoder's LMs (`*.vlm`), their `LM-ATTRIBUTION.md`, the model sizes'
+  `MODEL-ATTRIBUTION.md`, and the text-presence gate's weights (`*.vtd`) and `GATE-ATTRIBUTION.md`
+  (downloaded to a
   temporary file and deleted, never kept), compared with the package's `package-manifest.json`; the
   dictionary is compared by size.
 

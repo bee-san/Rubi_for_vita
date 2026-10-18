@@ -1048,4 +1048,9 @@ LMs (bee-san/vita-vn-ocr v0.2.6-ctclm.2): CC BY-SA 4.0, with their sources and c
 (bee-san/vita-vn-ocr v0.3.0) were trained in part on NVIDIA's OCR-Synthetic-Multilingual-v1
 (CC BY 4.0) and on non-commercial fonts and text: their attribution and terms, including that
 the weights are for non-commercial use only, are in `ocr/MODEL-ATTRIBUTION.md`, which ships
-beside them ([details](vita-vn-ocr.md#models)).
+beside them ([details](vita-vn-ocr.md#models)). The text-presence gate's weights
+(`ocr/textgate_p8_c8_w8.vtd`, bee-san/vita-vn-ocr v0.3.2-textgate.1; every package ships them,
+whether `ocr_text_gate` is on or off) were trained on non-commercial fonts and text and on VNDB
+screenshots: they are for non-commercial use only too, and their attribution is in
+`ocr/GATE-ATTRIBUTION.md`, which ships beside them
+([details](vita-vn-ocr.md#text-presence-gate-api-26)).
