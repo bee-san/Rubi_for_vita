@@ -99,7 +99,8 @@ The app accepts a manifest only when it is exactly its own build's (R4); anythin
 "cannot: the package is damaged":
 
 - its file set equals a list compiled into the app (`include/vjo_payload.h`): the three plugins, the
-  RCO, the eight files of `ocr/` (the kernel broker's names, `tools/docs_model_names.py`), the
+  RCO, the files of `ocr/` (the models and LMs, by the kernel broker's names,
+  `tools/docs_model_names.py`; the text-presence gate's weights; their attributions), the
   dictionary, each with its kind (`copy`, or `move` for the dictionary only), and `template` for
   `config.ini` only; a test checks the list against `package_release.py`'s;
 - no destination twice; sizes parse as 64-bit decimals without overflow; hashes are 64 hex digits;
@@ -135,8 +136,8 @@ From VitaShell 81af709 (`package_installer.c` `install_thread`):
 - It extracts everything into `ux0:data/pkg`, writes `sce_sys/package/head.bin`, and calls
   `scePromoterUtilityPromotePkgWithRif`, which has SceShell move the files into `ux0:app/VJOSET001`
   and add the bubble (henkaku wiki, ScePromoterUtil and Packages). The `.vpk` can be deleted after.
-- Nothing in it limits an app's size or its number of files (the release zip has 67 entries). The
-  promoter's own limits are documented nowhere we could read.
+- Nothing in it limits an app's size or its number of files (v0.8.0's release zip has 72 entries; a
+  later release's differs). The promoter's own limits are documented nowhere we could read.
 - The README says to close the Rubi app before installing a VPK over it. In test.4's console run
   VitaShell's install stopped with `0x80101114` while test.3's app was suspended behind it, and the
   same VPK installed after a restart (#194); what the promoter does to a running system application is
