@@ -1299,6 +1299,13 @@ uint32_t vjo_vocr_test_len_left(void)
 {
     return lines.len_left;
 }
+/* Host tests: a box's length in the recognizer's terms, as a row (cols 0) or a column (the cascade's estimate). */
+uint32_t vjo_vocr_test_line_length(unsigned w, unsigned h, int cols);
+uint32_t vjo_vocr_test_line_length(unsigned w, unsigned h, int cols)
+{
+    const VocrLine ln = {0, 0, w, h, 0};
+    return line_length(&ln, cols);
+}
 #endif
 
 static void line_stat(Lines *L, const Pending *e, unsigned frames, uint16_t flags, uint32_t us, uint32_t cpu_us,

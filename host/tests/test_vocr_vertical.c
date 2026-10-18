@@ -39,6 +39,9 @@
 
 void test_pin_model(unsigned which, uint32_t bytes, const unsigned char sha256[32], uint32_t arena_bytes);
 void test_pin_lm(uint32_t bytes, const unsigned char sha256[32]);
+#ifndef VJO_TEST_OFF_ONLY
+uint32_t vjo_vocr_test_line_length(unsigned w, unsigned h, int cols);
+#endif
 
 #define M_ROWS "TINY_w8.vocr"
 #define M_COLS "TINYV_w8.vocr"
@@ -332,6 +335,18 @@ static void draw_rows(void)
     }
 }
 
+/* One row of tall strokes across a 960 x 170 region: a line of about 940 x 66 px, larger than a column's
+ * rotation buffer and taller than a strip (read through the line buffer): a row line no column bound may
+ * touch (audit-vertical-rubi M7). */
+static void draw_big_row(void)
+{
+    fill(960, 170, 20);
+    for (unsigned y = 50; y < 110; y++)
+        for (unsigned x = 15; x < 945; x += 6)
+            for (unsigned k = 0; k < 2 + (x / 7) % 2; k++)
+                dot(x + k, y, (unsigned char)(200 + 7 * ((x / 11 + y) % 5)));
+}
+
 #ifndef VJO_TEST_OFF_ONLY
 /* A column of `glyphs` glyph cells of `cell` px from (x0, y0) down, `pitch` apart: each cell holds
  * horizontal bars every few rows across most of it (so that every pixel column of the cell has ink a few
@@ -539,6 +554,7 @@ static const struct {
     {"5 lines lm, 2 helpers", 0xe5d5add21606ed7bull},
     {"short line greedy", 0x94ef9049dc5ba6c1ull},
     {"short line lm, refined, short lines", 0xbb7cd64c103607fbull},
+    {"one big row greedy", 0x6d6657eecf01de6dull},
 };
 
 static int load_pgm(const char *path)
@@ -567,7 +583,8 @@ static int load_pgm(const char *path)
 
 static void test_off_is_todays_job(void)
 {
-    static const JobOpts opts[] = {{0}, {.lm = 1}, {.lm = 1, .helpers = 2}, {0}, {.lm = 1, .refine = 1, .short_lines = 1}};
+    static const JobOpts opts[] = {{0}, {.lm = 1}, {.lm = 1, .helpers = 2}, {0}, {.lm = 1, .refine = 1, .short_lines = 1},
+                                   {0}};
     char text[VJO_OCR_TEXT_CAP], raw[VJO_OCR_TEXT_CAP];
     VjoVocrStats st;
     int bad = 0;
@@ -576,7 +593,8 @@ static void test_off_is_todays_job(void)
         int rc;
         uint64_t h;
         if (i < 3) draw_rows();
-        else TEST_ASSERT(load_pgm(VJO_SOURCE_DIR "/host/fixtures/short_line/textbox.pgm") == 0);
+        else if (i < 5) TEST_ASSERT(load_pgm(VJO_SOURCE_DIR "/host/fixtures/short_line/textbox.pgm") == 0);
+        else draw_big_row();
         raw[0] = '\0';
         rc = job(M_ROWS, &opts[i], text, sizeof text, opts[i].lm ? raw : NULL, sizeof raw, &st);
         h = job_hash(rc, text, opts[i].lm ? raw : NULL, &st);
@@ -586,6 +604,13 @@ static void test_off_is_todays_job(void)
         TEST_CHECK_(h == golden[i].hash, "%s: hash 0x%016llx, main's 0x%016llx", golden[i].what, (unsigned long long)h,
                     (unsigned long long)golden[i].hash);
         TEST_CHECK(!st.columns && !st.rotate_skipped && rc == VJO_OK && st.lines >= 1);
+        if (i == 5) { /* the case holds a row line larger than the rotation buffer, read whole */
+            unsigned big = 0;
+            for (unsigned k = 0; k < st.recognized && k < VJO_VOCR_MAX_LINES; k++)
+                big += (size_t)st.line[k].width * st.line[k].height > VJO_VOCR_ROTATE_BYTES;
+            TEST_CHECK_(big >= 1 && st.tall >= 1 && !st.tall_skipped, "%u lines over %u B, %u tall", big,
+                        (unsigned)VJO_VOCR_ROTATE_BYTES, st.tall);
+        }
 #endif
         bad += rc != VJO_OK;
     }
@@ -845,6 +870,15 @@ static void test_row_steps_do_not_run(void)
     }
 }
 
+/* The cascade's time estimate counts a line's length in the recognizer's terms: a row's width at a height of 32
+ * (main's formula, unchanged), a column's height at a width of 32, as it is read turned (audit-vertical-rubi M8). */
+static void test_line_lengths(void)
+{
+    TEST_CHECK(vjo_vocr_test_line_length(640, 32, 0) == 641u && vjo_vocr_test_line_length(320, 40, 0) == 257u);
+    TEST_CHECK(vjo_vocr_test_line_length(36, 290, 1) == 290u * 32u / 36u + 1u && vjo_vocr_test_line_length(32, 640, 1) == 641u);
+    TEST_CHECK(vjo_vocr_test_line_length(36, 290, 0) == 36u * 32u / 290u + 1u); /* the same box as a row */
+}
+
 /* A region without ink gives no column: the job reads nothing and opens no model file. */
 static void test_empty_region_opens_no_model(void)
 {
@@ -869,6 +903,7 @@ TEST_LIST = {
     {"columns: one larger than the rotation buffer is left out, never read, and counted", test_rotation_buffer_bound},
     {"columns: the steps for rows never run, whatever the policy asks", test_row_steps_do_not_run},
     {"columns: a region without ink gives no column and opens no model", test_empty_region_opens_no_model},
+    {"line lengths: a row's as before, a column's turned (the cascade's estimate)", test_line_lengths},
 #endif
     {NULL, NULL}
 };
