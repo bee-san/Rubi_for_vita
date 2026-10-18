@@ -13,6 +13,7 @@
 #include "../../include/vjo_vocr_sizes.h"
 #include "vocr_lines.h"
 #include "vocr_lines_refine.h"
+#include "vocr_textgate.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,7 +93,8 @@ static unsigned char pixel(unsigned x, unsigned y, unsigned frame)
     int text_on = frame >= scr.text_from && !(scr.clear_at && frame >= scr.clear_at) &&
                   !(scr.text_blink && frame / scr.text_blink % 2);
     if (scr.alt_row && y == scr.alt_row) return (frame >= scr.alt_from ? scr.row_b : scr.row_a)[x];
-    if (scr.stripes) return (unsigned char)((x + y) / 10u % 2u ? 40 : 200);
+    if (scr.stripes) /* they move by 5 px once the screen changes (change_frame) */
+        return (unsigned char)((x + y + (scr.change_frame && frame >= scr.change_frame ? 5u : 0u)) / 10u % 2u ? 40 : 200);
     int on_line = scr.three_lines || scr.two_lines
                   ? (y >= 6 && y < 30) || (y >= 37 && y < 61) || (scr.three_lines && y >= 68 && y < 92)
                   : y >= 30 && y < 54;
@@ -1739,60 +1741,182 @@ static void test_a_short_last_line_is_read(void)
 }
 
 
-/* API 26: the text-presence gate (vita-vn-ocr #100). Diagonal stripes are no text, though GRAD finds a
- * line in them: with the gate the job keeps no line and opens no weights; without it the line is read
- * (the model file is opened, and missing here). The synthetic line is text: the gate keeps it, and the
- * job reads as without the gate. The gate reads the first pass's rows (every row once) and no strip
- * of its own. Its scores are the C runtime's, which vita-vn-ocr's twin gives too (-109 and 127). */
-static void test_the_gate_stops_a_region_without_text(void)
+/* API 26: the text-presence gate (vita-vn-ocr #100). Its weights are the pinned file in VJO_VOCR_GATE_TEST_DIR
+ * (cmake/VocrGate.cmake); without it these tests say so and check nothing. Diagonal stripes are no text, though
+ * the finder finds a line in them: with the gate the job keeps no line and opens no weights; without it the line
+ * is read (the model file is opened, and missing here). The synthetic line is text: the gate keeps it. Its scores
+ * are the C runtime's, which vita-vn-ocr's twin gives too (-109 and 127 at 400 x 100). */
+#ifndef VJO_VOCR_GATE_TEST_DIR
+#define VJO_VOCR_GATE_TEST_DIR ""
+#endif
+static VjoVocrGateResident gate_res;
+static PosixPlatform gate_pp;
+static VjoPlatform gate_posix;
+static unsigned gate_opens;
+static int gate_open(void *ud, const char *path, VjoFile *out)
 {
-    VjoVocrPolicy off = {0}, on = {.gate = 1};
-    VjoVocrStats st;
-    unsigned strips_off;
-    reset();
-    scr.stripes = 1;
-    TEST_CHECK(run(&off, &st) == VJO_E_OCR_MODEL && st.lines == 1 && scr.opens == 1 && !st.gate_ran);
-    reset();
-    scr.stripes = 1;
-    TEST_CHECK(run(&on, &st) == VJO_OK && st.lines == 0 && !scr.opens && !st.recognized);
-    TEST_CHECK_(st.gate_ran == 1 && st.gate_stopped == 1 && st.gate_score == -109 && !st.gate_rc &&
-                st.gate_rows == H, "gate ran %u stopped %u score %d rc %d rows %u", st.gate_ran, st.gate_stopped,
-                st.gate_score, st.gate_rc, st.gate_rows);
-    /* the text line: kept, the job reads as without the gate */
-    reset();
-    TEST_CHECK(run(&off, &st) == VJO_E_OCR_MODEL && st.lines == 1);
-    strips_off = st.strips;
-    reset();
-    TEST_CHECK(run(&on, &st) == VJO_E_OCR_MODEL && st.lines == 1 && scr.opens == 1);
-    TEST_CHECK_(st.gate_ran == 1 && !st.gate_stopped && st.gate_score == 127 && st.gate_score >= VJO_VOCR_GATE_T &&
-                st.strips == strips_off, "score %d, %u strips against %u", st.gate_score, st.strips, strips_off);
+    const char *name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+    if (strcmp(name, VJO_VOCR_GATE_NAME)) return no_file(ud, path, out); /* the recognizer's: counted, missing */
+    gate_opens++;
+    return gate_posix.file_open ? gate_posix.file_open(gate_posix.ud, path, out) : -1;
+}
+static int gate_ready(void)
+{
+    if (!VJO_VOCR_GATE_TEST_DIR[0]) {
+        TEST_MSG("no text-presence gate weights (cmake/VocrGate.cmake could not get them): not checked");
+        return 0;
+    }
+    if (!gate_posix.file_open) posix_platform_init(&gate_pp, &gate_posix);
+    return 1;
+}
+/* A job on the first `height` rows of the screen (a region of one strip: 64 rows or fewer at 400 px). */
+static int run_gate(const VjoVocrPolicy *pol, VjoVocrStats *st, unsigned height, const char *dir)
+{
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    VjoGreySource g = im;
+    char text[128];
+    size_t job = vjo_vocr_job_bytes("FL10_w8.vocr", W, height);
+    TEST_ASSERT(job && job <= sizeof(ws_mem));
+    g.height = height;
+    p.file_open = gate_open;
+    p.now_us = now;
+    return vjo_vocr_ocr_policy(&p, dir, "FL10_w8.vocr", &g, &res, ws_mem, job, capture,
+                               vjo_vocr_capture_bytes(W, height), pol, text, sizeof(text), st);
 }
 
-/* The gate's arena takes the scratch the finder leaves free: for every pinned model, at every region
- * size, the finder's arena and the gate's fit in the larger of the finder's and the recognizer's, so
- * the job's workspace does not grow; and the pinned weights load. */
+static void test_the_gate_stops_a_region_without_text(void)
+{
+    VjoVocrPolicy off = {0}, on = {.gate = 1, .gate_res = &gate_res};
+    VjoVocrStats st;
+    unsigned strips_off;
+    if (!gate_ready()) return;
+    memset(&gate_res, 0, sizeof(gate_res));
+    reset();
+    scr.stripes = 1;
+    TEST_CHECK(run_gate(&off, &st, H, VJO_VOCR_GATE_TEST_DIR) == VJO_E_OCR_MODEL && st.lines == 1 && scr.opens == 1 &&
+               !st.gate_ran);
+    reset();
+    scr.stripes = 1;
+    gate_opens = 0;
+    TEST_CHECK(run_gate(&on, &st, H, VJO_VOCR_GATE_TEST_DIR) == VJO_OK && st.lines == 0 && !scr.opens && !st.recognized);
+    TEST_CHECK_(st.gate_ran == 1 && st.gate_stopped == 1 && st.gate_score == -109 && !st.gate_rc &&
+                st.gate_rows == H && st.gate_read == 1 && gate_opens == 1 && gate_res.verified,
+                "gate ran %u stopped %u score %d rc %d rows %u read %u", st.gate_ran, st.gate_stopped,
+                st.gate_score, st.gate_rc, st.gate_rows, st.gate_read);
+    /* the text line: kept, the job reads as without the gate; the weights are not read again */
+    reset();
+    TEST_CHECK(run_gate(&off, &st, H, VJO_VOCR_GATE_TEST_DIR) == VJO_E_OCR_MODEL && st.lines == 1);
+    strips_off = st.strips;
+    reset();
+    TEST_CHECK(run_gate(&on, &st, H, VJO_VOCR_GATE_TEST_DIR) == VJO_E_OCR_MODEL && st.lines == 1 && scr.opens == 1);
+    TEST_CHECK_(st.gate_ran == 1 && !st.gate_stopped && st.gate_score == 127 && st.gate_score >= VJO_VOCR_GATE_T &&
+                st.strips == strips_off && !st.gate_read && gate_opens == 2,
+                "score %d, %u strips against %u, read %u", st.gate_score, st.strips, strips_off, st.gate_read);
+}
+
+/* audit-textgate-rubi F1: a region of one strip that the job waits on first is held whole when the finder
+ * runs, so no strip is read during its first pass: the gate must still take every row (as the finder asks for
+ * it) and decide as it does without the wait, also on a retry after the screen changed. */
+static void test_the_gate_decides_after_a_wait_on_a_one_strip_region(void)
+{
+    VjoVocrPolicy nowait = {.gate = 1, .gate_res = &gate_res};
+    VjoVocrPolicy wait = {.gate = 1, .gate_res = &gate_res, .settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
+    VjoVocrPolicy retry = {.gate = 1, .gate_res = &gate_res, .settle_us = 150000, .sleep = sleep_us};
+    VjoVocrStats st;
+    int score;
+    const unsigned h = 60;
+    if (!gate_ready()) return;
+    TEST_ASSERT(vjo_vocr_strip_rows(W, h) >= h); /* one strip */
+    reset();
+    scr.stripes = 1;
+    TEST_CHECK(run_gate(&nowait, &st, h, VJO_VOCR_GATE_TEST_DIR) == VJO_OK);
+    TEST_CHECK(st.gate_ran == 1 && st.gate_stopped >= 1 && st.lines == 0 && st.gate_rows == h && !st.gate_rc);
+    score = st.gate_score;
+    reset();
+    scr.stripes = 1;
+    TEST_CHECK(run_gate(&wait, &st, h, VJO_VOCR_GATE_TEST_DIR) == VJO_OK);
+    TEST_CHECK_(st.settle_passes > 0 && st.gate_ran == 1 && st.gate_stopped >= 1 && st.lines == 0 && !st.gate_rc &&
+                st.gate_rows == h && st.gate_score == score,
+                "after a wait: settle passes %u, gate ran %u rc %d rows %u score %d (without the wait %d)",
+                st.settle_passes, st.gate_ran, st.gate_rc, st.gate_rows, st.gate_score, score);
+    /* the stripes move once the first capture is published: the job reads the region again after a wait */
+    reset();
+    scr.stripes = 1;
+    scr.change_after = 1;
+    TEST_CHECK(run_gate(&retry, &st, h, VJO_VOCR_GATE_TEST_DIR) == VJO_OK);
+    TEST_CHECK_(st.tries == 2 && st.gate_ran == 1 && st.gate_stopped >= 1 && st.lines == 0 && !st.gate_rc &&
+                st.gate_rows == h, "retry: tries %u, gate ran %u rc %d rows %u", st.tries, st.gate_ran, st.gate_rc,
+                st.gate_rows);
+}
+
+/* Without its weights (a package without the file, a bad copy) or when the finder finds no line, the gate
+ * does not decide, and the job reads exactly as without it. */
+static void test_the_gate_keeps_the_lines_without_its_weights(void)
+{
+    VjoVocrPolicy on = {.gate = 1, .gate_res = &gate_res};
+    VjoVocrStats st;
+    VjoVocrGateResident none = {{0}, 0, 0, 0};
+    VjoVocrPolicy no_res = {.gate = 1};
+    reset();
+    scr.stripes = 1;
+    memset(&gate_res, 0, sizeof(gate_res));
+    if (!gate_posix.file_open) posix_platform_init(&gate_pp, &gate_posix); /* a real open, of a missing file */
+    TEST_CHECK(run_gate(&on, &st, H, "missing") == VJO_E_OCR_MODEL && st.lines == 1 && scr.opens == 1);
+    TEST_CHECK(st.gate_rc == VJO_E_OCR_MODEL && !st.gate_ran && !st.gate_stopped && !gate_res.verified);
+    reset();
+    scr.stripes = 1;
+    TEST_CHECK(run_gate(&no_res, &st, H, "missing") == VJO_E_OCR_MODEL && st.lines == 1 &&
+               st.gate_rc == VJO_E_OCR_MODEL);
+    TEST_CHECK(vjo_vocr_gate_bytes(&none, W, H) == 0 && vjo_vocr_gate_bytes(NULL, W, H) == 0);
+    if (!gate_ready()) return;
+    /* a region the finder finds no line in (the box before its text) is not scored */
+    reset();
+    scr.text_from = 1000000;
+    TEST_CHECK(run_gate(&on, &st, H, VJO_VOCR_GATE_TEST_DIR) == VJO_OK && st.lines == 0);
+    TEST_CHECK(!st.gate_ran && !st.gate_rc && !st.gate_stopped);
+}
+
+/* The gate's arena takes the scratch the finder leaves free: for every pinned model and every region size the
+ * job takes, the finder's arena and the gate's fit in the larger of the finder's and the recognizer's, so the
+ * job's workspace does not grow. */
 static void test_the_gate_fits_beside_the_finder(void)
 {
     unsigned count = 0;
     const VjoVocrModel *all = vjo_vocr_models(&count);
-    size_t worst = 0;
+    VjoVocrStats st;
+    VjoVocrPolicy on = {.gate = 1, .gate_res = &gate_res};
+    vocr_textgate_model m;
+    size_t worst = 0, least = (size_t)-1;
+    if (!gate_ready()) return;
     TEST_ASSERT(all && count);
-    TEST_CHECK(vjo_vocr_gate_blob_bytes == VJO_VOCR_GATE_BYTES && vjo_vocr_gate_bytes(960, 544) > 0);
-    TEST_CHECK(vjo_vocr_gate_bytes(0, 10) == 0 && vjo_vocr_gate_bytes(961, 10) == 0);
-    for (unsigned w = 1; w <= 960; w += (w < 64 ? 1 : 7))
-        for (unsigned h = 1; h <= 544; h += (h < 64 ? 1 : 13)) {
-            size_t finder = vocr_lines_arena_bytes(w, h), gate = vjo_vocr_gate_bytes(w, h);
+    if (!gate_res.verified) { /* the weights through a job */
+        reset();
+        run_gate(&on, &st, H, VJO_VOCR_GATE_TEST_DIR);
+    }
+    TEST_ASSERT(gate_res.verified && vocr_textgate_load(&m, gate_res.data, VJO_VOCR_GATE_BYTES) == VOCR_LINES_OK);
+    TEST_CHECK(vjo_vocr_gate_bytes(&gate_res, 960, 544) == ((vocr_textgate_arena_bytes(&m, VJO_VOCR_GATE_MODE, 960, 544)
+                                                             + 15u) & ~(size_t)15u));
+    TEST_CHECK(vjo_vocr_gate_bytes(&gate_res, 0, 10) == 0 && vjo_vocr_gate_bytes(&gate_res, 961, 10) == 0);
+    for (unsigned w = 1; w <= 960; w++)
+        for (unsigned h = 1; h <= 544; h++) {
+            size_t finder = vocr_lines_arena_bytes(w, h);
+            size_t gate = (vocr_textgate_arena_bytes(&m, VJO_VOCR_GATE_MODE, w, h) + 15u) & ~(size_t)15u;
             size_t need = ((finder + 15u) & ~(size_t)15u) + gate;
-            TEST_CHECK_(gate > 0, "%ux%u", w, h);
-            for (unsigned m = 0; m < count; m++) {
-                size_t scratch = finder > all[m].arena_bytes ? finder : all[m].arena_bytes;
+            if (!gate) { TEST_CHECK_(0, "%ux%u: no arena", w, h); return; }
+            for (unsigned k = 0; k < count; k++) {
+                size_t scratch = finder > all[k].arena_bytes ? finder : all[k].arena_bytes;
                 scratch = (scratch + 15u) & ~(size_t)15u;
-                TEST_CHECK_(need <= scratch, "%s at %ux%u: finder %zu + gate %zu > %zu", all[m].name, w, h,
-                            finder, gate, scratch);
+                if (need > scratch) {
+                    TEST_CHECK_(0, "%s at %ux%u: finder %zu + gate %zu > %zu", all[k].name, w, h, finder, gate, scratch);
+                    return;
+                }
+                if (scratch - need < least) least = scratch - need;
             }
             if (gate > worst) worst = gate;
         }
-    TEST_MSG("the gate's largest arena: %zu B (960x544: %zu B)", worst, vjo_vocr_gate_bytes(960, 544));
+    TEST_MSG("the gate's largest arena: %zu B; the least scratch left: %zu B", worst, least);
 }
 
 TEST_LIST = {
@@ -1823,6 +1947,8 @@ TEST_LIST = {
     {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},
     {"a_short_last_line_is_read", test_a_short_last_line_is_read},
     {"the_gate_stops_a_region_without_text", test_the_gate_stops_a_region_without_text},
+    {"the_gate_decides_after_a_wait_on_a_one_strip_region", test_the_gate_decides_after_a_wait_on_a_one_strip_region},
+    {"the_gate_keeps_the_lines_without_its_weights", test_the_gate_keeps_the_lines_without_its_weights},
     {"the_gate_fits_beside_the_finder", test_the_gate_fits_beside_the_finder},
     {"refinement_without_room_reads_the_boxes_as_found", test_refinement_without_room_reads_the_boxes_as_found},
     {"the_refinement_arena_comes_before_the_lm_extras", test_the_refinement_arena_comes_before_the_lm_extras},

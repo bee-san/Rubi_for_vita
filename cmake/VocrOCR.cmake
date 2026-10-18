@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT e929f5732467462b91ba14f8c8e28da932795733)
+set(VJO_VOCR_COMMIT ac0d6b1d3da5e96cd771a48da7992b6cf25d6519)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -59,11 +59,10 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # platform computes the same bits; the Vita build adds the Cortex-A9 NEON flags.
 # Its few libc calls (memcpy, memset, the fabsf/signbit builtins) need no
 # newlib, which SceShell plugins link without.
-# vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its pinned weights come with it, built in
-# (cmake/VocrGate.cmake: vjo_vocr_gate_blob).
-include(${CMAKE_CURRENT_LIST_DIR}/VocrGate.cmake)
+# vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
+# (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c" "${VJO_VOCR_GATE_SOURCE}")
+  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)
@@ -72,10 +71,6 @@ if(VJO_BUILD_VITA)
 else()
   target_link_libraries(vjo_vocr_rt PUBLIC m)
 endif()
-
-# vocr_textgate.c (vita-vn-ocr #100), the text-presence gate: built for size (its protocol's size order measured
-# -Os), as the job's control code is below.
-set_source_files_properties("${_vocr_rt}/vocr_textgate.c" PROPERTIES COMPILE_OPTIONS "-Os")
 
 
 # core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h).

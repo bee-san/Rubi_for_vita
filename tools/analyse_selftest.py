@@ -988,7 +988,7 @@ LOG = {
     "refine": re.compile(r"^gstep job refine kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
                          r".*us=(\d+)"),
     # API 26: the text-presence gate (VJO_GSTEP_GATE): kind its mode, arg the lines it stopped, bytes its score + 129
-    # (and its threshold + 129 << 16), sum the rows it read
+    # (its threshold + 129 << 16, VJO_GLM_READ when the job read its weights from the card), sum the rows it took
     "gate": re.compile(r"^gstep job gate kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
                        r".*us=(\d+)"),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
@@ -2274,7 +2274,7 @@ def summarise_log(text):
                      "conf": [], "frames": 0, "blanked": 0},
          "refine": {"jobs": 0, "boxes": 0, "lines": 0, "split": 0, "capped": 0, "rows": 0, "us": [], "rcs": {},
                     "modes": {}},
-         "gate": {"jobs": 0, "stopped": 0, "lines_stopped": 0, "scores": [], "us": [], "rcs": {}},
+         "gate": {"jobs": 0, "stopped": 0, "lines_stopped": 0, "scores": [], "us": [], "rcs": {}, "reads": 0},
          "par": {"jobs": 0, "helpers": [], "on_helpers": 0, "cached": 0, "not_started": 0, "share_min": [], "share_mean": []},
          "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
          "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0},
@@ -2416,6 +2416,8 @@ def summarise_log(text):
         if m:
             gt, packed = s["gate"], int(m.group(4))
             gt["jobs"] += 1
+            gt["reads"] += packed >> 31  # VJO_GLM_READ: this job read the gate's weights from the card
+            packed &= 0x7FFFFFFF
             rc = s32(int(m.group(3), 16))
             if rc:
                 gt["rcs"][rc] = gt["rcs"].get(rc, 0) + 1
@@ -3544,7 +3546,7 @@ def render_collect(c):
             sc = sorted(gt["scores"])
             L.append(f"  text-presence gate: {gt['jobs']} job(s), {gt['stopped']} with no text ({gt['lines_stopped']} "
                      f"line(s) not read)" + (f"; scores {sc[0]} to {sc[-1]}, median {sc[len(sc) // 2]}" if sc else "")
-                     + f"; {_span(gt['us'])} us a job"
+                     + f"; {_span(gt['us'])} us a job; weights read {gt['reads']} time(s)"
                      + ("; undecided (lines kept) after " + ", ".join(f"rc {r} x{n}" for r, n in sorted(gt["rcs"].items()))
                         if gt["rcs"] else ""))
         nm = lg.get("norm") or {}

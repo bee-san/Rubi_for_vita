@@ -18,6 +18,11 @@ static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((al
 static unsigned char capture_mem[1024*1024] __attribute__((aligned(64)));
 static unsigned char lm_memory[VJO_VOCR_LM_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static int lm_live; static unsigned lm_block, lm_allocations, lm_frees, lm_opens, last_which;
+#ifndef VJO_VOCR_GATE_TEST_DIR
+#define VJO_VOCR_GATE_TEST_DIR ""
+#endif
+static unsigned gate_opens; /* API 26: opens of the gate's weights */
+static int open_gate_missing; /* API 26: the gate's file is not on the card */
 static unsigned char cascade_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static int cascade_live; static unsigned cascade_block, cascade_allocations, cascade_frees, cascade_opens;
 static unsigned tier_opens[VJO_VOCR_TIERS + 1]; /* API 21: model opens by tier (VJO_GAME_OCR_OPEN_TIER) */
@@ -263,7 +268,13 @@ int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
     if (open_failure) return -123;
     TEST_ASSERT(!model && seq == 12);
     last_which = which;
-    if (which >= VJO_GAME_OCR_OPEN_TIER) { /* API 21: a model size's pinned model, by its tier */
+    if (which == VJO_GAME_OCR_OPEN_GATE) { /* API 26: the text-presence gate's weights (cmake/VocrGate.cmake) */
+        char g_path[600];
+        gate_opens++;
+        if (!VJO_VOCR_GATE_TEST_DIR[0] || open_gate_missing) return -123;
+        snprintf(g_path, sizeof(g_path), "%s/%s", VJO_VOCR_GATE_TEST_DIR, VJO_VOCR_GATE_NAME);
+        model = fopen(g_path, "rb");
+    } else if (which >= VJO_GAME_OCR_OPEN_TIER) { /* API 21: a model size's pinned model, by its tier */
         char t_path[600];
         unsigned t = which - VJO_GAME_OCR_OPEN_TIER + 1u;
         TEST_ASSERT(t >= 1u && t <= VJO_VOCR_TIERS);
@@ -292,7 +303,7 @@ int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
     TEST_ASSERT(!fseek(model, 0, SEEK_END));
     int size = (int)ftell(model);
     if (lm_bad_size && which >= VJO_GAME_OCR_OPEN_LM && which < VJO_GAME_OCR_OPEN_CASCADE) size++;
-    if (cascade_bad_size && which >= VJO_GAME_OCR_OPEN_CASCADE) size++;
+    if (cascade_bad_size && which >= VJO_GAME_OCR_OPEN_CASCADE && which != VJO_GAME_OCR_OPEN_GATE) size++;
     if (info) *info = (VjoGameOcrModelInfo){sizeof(*info), (uint32_t)size, model_stat_error, 0,
                                             model_stat_error ? 0 : model_mtime};
     return size;
@@ -326,6 +337,7 @@ static VjoGameOcrRequest setup(void)
     resident.model = NULL; resident.data = NULL; resident.capacity = 0; resident.size = resident.stamp = 0;
     lm_res.lm = NULL; lm_res.data = NULL; lm_res.capacity = 0; lm_res.size = lm_res.stamp = 0; lm_uid = -1;
     lm_live = 0; lm_allocations = lm_frees = lm_opens = last_which = 0;
+    gate_opens = 0; memset(&gate_res, 0, sizeof(gate_res));
     cascade_res.model = NULL; cascade_res.data = NULL; cascade_res.capacity = 0; cascade_res.size = cascade_res.stamp = 0;
     cascade_uid = -1; cascade_live = 0; cascade_allocations = cascade_frees = cascade_opens = 0; test_cascade_conf = 0;
     memset(tier_opens, 0, sizeof(tier_opens)); tiered = 0; job_reserve = GAME_RESERVE; drop_on_workspace = 0;
@@ -359,6 +371,14 @@ static VjoGameOcrRequest setup(void)
     snprintf(r.model_dir, sizeof(r.model_dir), "%s",
              VJO_VOCR_MODEL_DIR[0] ? VJO_VOCR_MODEL_DIR : "unused-model-dir");
     snprintf(model_path, sizeof(model_path), "%s/%s", r.model_dir, r.model);
+    return r;
+}
+/* setup(), keeping the gate's resident weights (as the worker does between jobs) */
+static VjoGameOcrRequest setup_keeping_the_gate(void)
+{
+    VjoVocrGateResident keep = gate_res;
+    VjoGameOcrRequest r = setup();
+    gate_res = keep;
     return r;
 }
 static void line(void)
@@ -429,10 +449,9 @@ static void cancel_and_wire(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.width = 200; r.x = 1; /* past the frame's edge */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
-    r.x = 0; r.flags = 3u << VJO_GAME_OCR_REFINE_SHIFT; /* the refinement's mode 3 means nothing (API 26: every
-                                                         * flag bit is defined, bit 15 the gate) */
+    r.x = 0; r.flags = 0x8000; /* bit 15 means nothing yet (bit 14 is API 23's shot) */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
-    r.flags = 0; r.speed = 0x10; /* API 22: VJO_GAME_OCR_S_* bits 4-31 unknown */
+    r.flags = 0; r.speed = 0x20; /* VJO_GAME_OCR_S_* bits 5-31 unknown (API 26: bit 4 is the gate) */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.speed = 0;
     r.flags = 0; r.model[31] = 'x';
@@ -736,6 +755,79 @@ static void request_flags_become_the_policy(void)
     r.flags = 255u << VJO_GAME_OCR_SETTLE_SHIFT | 255u << VJO_GAME_OCR_SETTLE_MAX_SHIFT; /* the largest the bits hold */
     request_policy(&r, &p);
     TEST_CHECK(p.settle_us == 2550000u && p.settle_max_us == 12750000u && !p.settle_first);
+    TEST_CHECK(!p.gate && p.gate_res == &gate_res);
+    r.flags = 0; r.speed = VJO_GAME_OCR_S_GATE; /* API 26: the text-presence gate */
+    request_policy(&r, &p);
+    TEST_CHECK(p.gate == 1 && p.gate_res == &gate_res);
+}
+
+/* API 26: the text-presence gate through the worker. The weights' file opens by its pinned name
+ * (VJO_GAME_OCR_OPEN_GATE), is read once and kept; each job whose finder found a line logs a gate step:
+ * arg 1 when the gate stopped it (no line returned), 0 when it kept its lines, VJO_GLM_READ in the bytes when
+ * the job read the weights. This harness's 200 x 60 region is one strip, so a job that waits first holds it
+ * whole before the finder runs (audit-textgate-rubi F1): the gate still decides. */
+static const VjoGameOcrStep *gate_step(const VjoGameOcrResult *out)
+{
+    for (unsigned i = 0; i < out->n_steps; i++)
+        if (out->step[i].id == VJO_GSTEP_GATE) return &out->step[i];
+    return NULL;
+}
+static void stripes(void)
+{
+    for (unsigned y = 0; y < 60; y++)
+        for (unsigned x = 0; x < 200; x++) {
+            unsigned char v = (unsigned char)((x + y) / 10u % 2u ? 40 : 200);
+            pixels[(y * 200 + x) * 4] = pixels[(y * 200 + x) * 4 + 1] = pixels[(y * 200 + x) * 4 + 2] = v;
+        }
+}
+static void the_gate_runs_in_the_worker(void)
+{
+    const uint32_t wait = VJO_GAME_OCR_F_SETTLE_FIRST | 15u << VJO_GAME_OCR_SETTLE_SHIFT |
+                          40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    VjoGameOcrRequest r;
+    VjoGameOcrResult out;
+    const VjoGameOcrStep *g;
+    if (!VJO_VOCR_GATE_TEST_DIR[0]) { TEST_MSG("no gate weights (cmake/VocrGate.cmake): not checked"); return; }
+    for (unsigned waits = 0; waits <= 1; waits++) {
+        /* stripes: the finder finds a line, the gate stops the job */
+        r = setup(); stripes(); frame_us = 16667; r.speed = VJO_GAME_OCR_S_GATE; r.flags = waits ? wait : 0u;
+        TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !out.lines && !out.text[0]);
+        g = gate_step(&out);
+        TEST_ASSERT(g != NULL);
+        TEST_CHECK_(g->arg == 1 && !g->rc && g->kind == VJO_VOCR_GATE_MODE && (g->bytes & VJO_GLM_READ) &&
+                    (int)(g->bytes & 0xFFFFu) - 129 < VJO_VOCR_GATE_T && (int)((g->bytes >> 16) & 0x7FFFu) - 129 == VJO_VOCR_GATE_T &&
+                    g->sum == 60u && gate_opens == 1,
+                    "waits %u: arg %u rc %d score %d rows %u opens %u", waits, g->arg, (int)g->rc,
+                    (int)(g->bytes & 0xFFFFu) - 129, (unsigned)g->sum, gate_opens);
+        TEST_CHECK(gate_res.verified && gate_res.size == VJO_VOCR_GATE_BYTES && !model);
+        /* the same job again: the file is opened for its size and time only, the weights stay */
+        r = setup_keeping_the_gate(); stripes(); frame_us = 16667; r.speed = VJO_GAME_OCR_S_GATE; r.flags = waits ? wait : 0u;
+        TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !out.lines);
+        g = gate_step(&out);
+        TEST_CHECK_(g && g->arg == 1 && !(g->bytes & VJO_GLM_READ) && gate_opens == 1 && gate_res.verified,
+                    "again: arg %u bytes 0x%X opens %u", g ? g->arg : 99u, g ? (unsigned)g->bytes : 0u, gate_opens);
+        /* a text line: kept (the job then reads it, or fails on the missing model as without the gate) */
+        r = setup(); line(); frame_us = 16667; r.speed = VJO_GAME_OCR_S_GATE; r.flags = waits ? wait : 0u;
+        vjo_game_ocr_run_request(&r, &out);
+        g = gate_step(&out);
+        TEST_CHECK_(g && !g->arg && !g->rc && (int)(g->bytes & 0xFFFFu) - 129 >= VJO_VOCR_GATE_T,
+                    "waits %u: a line kept: arg %u rc %d", waits, g ? g->arg : 99u, g ? (int)g->rc : 0);
+        /* a blank region: the finder finds no line, the gate does not score, no step */
+        r = setup(); frame_us = 16667; r.speed = VJO_GAME_OCR_S_GATE; r.flags = waits ? wait : 0u;
+        TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !out.lines && !gate_step(&out));
+    }
+    /* without the bit, no gate: the stripes' line is read (and the model, missing or not, opened) */
+    r = setup(); stripes(); frame_us = 16667;
+    vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK(!gate_step(&out) && !gate_opens);
+    /* without its file, the gate does not decide: the job reads as without it and logs why */
+    r = setup(); stripes(); frame_us = 16667; r.speed = VJO_GAME_OCR_S_GATE; open_gate_missing = 1;
+    vjo_game_ocr_run_request(&r, &out);
+    g = gate_step(&out);
+    TEST_CHECK(g && !g->arg && g->rc == VJO_E_OCR_MODEL && !gate_res.verified && gate_opens == 1);
+    TEST_CHECK_(last_which != VJO_GAME_OCR_OPEN_GATE && !model_owned && !model,
+                "the job's model opens after the gate's failed open (last which %u)", last_which);
+    open_gate_missing = 0;
 }
 
 /* API 20: the job's policy rides in the request's flags. A wait of 150 ms
@@ -768,10 +860,7 @@ static void policy_in_the_flags(void)
              rows_calls, plain);
     TEST_CHECK(!blank && out.lines == 1 && rows_calls > plain && !memory_live && !capture_live);
     allocations = 0;
-    r.flags = 3u << VJO_GAME_OCR_REFINE_SHIFT; /* a mode that means nothing (every flag bit is defined: API 26) */
-    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
-    /* a shot carries no gate either */
-    r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_GATE;
+    r.flags = 0x8000u; /* bit 15 means nothing yet (bit 14 is API 23's shot) */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
     /* a shot carries no job policy: refused before anything is taken */
     r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_BLANK;
@@ -2418,6 +2507,7 @@ TEST_LIST = {
     {"the self-test fallback stage forces the fallback", forced_fallback_runs_the_fallback},
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
     {"the request's flags become the job's policy", request_flags_become_the_policy},
+    {"API 26: the text-presence gate in the worker: its file, its step, a wait first on one strip", the_gate_runs_in_the_worker},
     {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
     {"the returned text is normalised, the recognizer's own kept after it", returned_text_is_normalised_and_kept},
     {"a retry to an empty box returns nothing of the first try", a_retry_to_an_empty_box_returns_nothing},

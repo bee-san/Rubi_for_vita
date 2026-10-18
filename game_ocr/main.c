@@ -275,6 +275,9 @@ static void *cascade_alloc(void *ud, size_t bytes);
 static int cascade_release(void *ud);
 /* The confidence cascade's larger model, kept like the weights (API 20). */
 static VjoVocrResident cascade_res = {cascade_alloc, cascade_release, NULL, NULL, NULL, 0, 0, 0};
+/* API 26: the text-presence gate's weights (VJO_VOCR_GATE_BYTES), read from the card once and kept while its
+ * file is unchanged (core/vocr_ocr.h); in .bss, where the worker's data pages have room. */
+static VjoVocrGateResident gate_res;
 int sceKernelGetProcessTitleId(SceUID pid, char *titleid, SceSize len);
 
 static int cancelled(void *ud)
@@ -476,6 +479,7 @@ static uint32_t which_file(const char *path)
     const char *name = path;
     for (const char *p = path; *p; p++)
         if (*p == '/') name = p + 1;
+    if (!sceClibStrcmp(name, VJO_VOCR_GATE_NAME)) return VJO_GAME_OCR_OPEN_GATE; /* API 26: the gate's weights */
     for (unsigned t = 1; t <= VJO_VOCR_LM_TIERS; t++)
         if (!sceClibStrcmp(name, vjo_vocr_lm_tier(t)->name)) return VJO_GAME_OCR_OPEN_LM + t - 1u;
     if (tiered) {
@@ -511,7 +515,16 @@ static int file_open(void *ud, const char *path, VjoFile *out)
         if (sceKernelGetProcessTimeWide()-started >= MODEL_WAIT_US) { size = VJO_ERR_TIMEOUT; break; }
         sceKernelDelayThread(MODEL_POLL_US);
     } while (1);
-    if (size <= 0) { io_error = size; return -1; }
+    if (size <= 0) {
+        /* API 26: the gate's weights are optional: a job that cannot read them reads as without the gate (its
+         * step says why), so their failed open is drained at once rather than holding the job's own files. */
+        if (which == VJO_GAME_OCR_OPEN_GATE) {
+            file_close(NULL);
+            if (!model_owned) return -1;
+        }
+        io_error = size;
+        return -1;
+    }
     /* The kernel's view of the file version: resident weights are reused only
      * while it is known and unchanged (an unknown time means: read again). */
     stat_error = info.stat_rc;
@@ -1252,7 +1265,8 @@ static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
     p->settle_max_us = (r->flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT) * VJO_GAME_OCR_SETTLE_MAX_UNIT_US;
     p->settle_first = (r->flags & VJO_GAME_OCR_F_SETTLE_FIRST) != 0;
     p->blank = (r->flags & VJO_GAME_OCR_F_BLANK) != 0;
-    p->gate = (r->flags & VJO_GAME_OCR_F_GATE) != 0; /* API 26: the text-presence gate */
+    p->gate = (r->speed & VJO_GAME_OCR_S_GATE) != 0; /* API 26: the text-presence gate */
+    p->gate_res = &gate_res;
     p->sleep = policy_sleep;
     /* API 22: helpers, the line cache, the clock around the recognitions. */
     helper_pool = helper_pool_base;
@@ -1595,11 +1609,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                  stats.recognize_us ? stats.recognize_us : 1u, 0);
     }
     /* API 26: the text-presence gate, after every other step, so that a full log drops it first (a job it
-     * stopped has few steps): score + 129, threshold + 129 << 16. */
+     * stopped has few steps): score + 129, threshold + 129 << 16, VJO_GLM_READ when it read its weights. */
     if (policy.gate && (stats.gate_ran || stats.gate_rc))
         step_add(VJO_GSTEP_GATE, VJO_VOCR_GATE_MODE, stats.gate_stopped, stats.gate_rc,
-                 (uint32_t)(stats.gate_score + 129) | (uint32_t)(VJO_VOCR_GATE_T + 129) << 16, stats.gate_rows,
-                 stats.gate_us + 1u, 0);
+                 (uint32_t)(stats.gate_score + 129) | (uint32_t)(VJO_VOCR_GATE_T + 129) << 16 |
+                     (stats.gate_read ? VJO_GLM_READ : 0u), stats.gate_rows, stats.gate_us + 1u, 0);
     /* A helper that could not be joined may still run in the workspace: keep it,
      * and take no more jobs (core/vocr_ocr.h VjoVocrPool). */
     if (stats.stuck) { blocked = 1; hook_owns_workspace = 1; }

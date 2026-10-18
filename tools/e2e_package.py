@@ -286,7 +286,12 @@ class E2E:
         path = ocr / release.VOCR_MODEL_ATTRIBUTION
         check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
               f"{release.VOCR_MODEL_ATTRIBUTION} is the model sizes' pinned attribution ({release.VOCR_MODEL_ATTRIBUTION_TAG})")
-        expected = {name for name, *_ in models} | {"LM-ATTRIBUTION.md", release.VOCR_MODEL_ATTRIBUTION}
+        _, size, sha = release.VOCR_GATE_ATTRIBUTION_PIN[release.VOCR_GATE_ATTRIBUTION]
+        path = ocr / release.VOCR_GATE_ATTRIBUTION
+        check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
+              f"{release.VOCR_GATE_ATTRIBUTION} is the text-presence gate's pinned attribution ({release.VOCR_GATE_TAG})")
+        expected = {name for name, *_ in models} | {"LM-ATTRIBUTION.md", release.VOCR_MODEL_ATTRIBUTION,
+                                                    release.VOCR_GATE_ATTRIBUTION}
         other = sorted(rel for rel in (p.relative_to(ocr).as_posix() for p in (ocr.rglob("*") if ocr.is_dir() else ())
                                        if not p.is_dir()) if rel not in expected)
         check(not other, "ocr/ has nothing but the shipped models and their attributions"
@@ -475,7 +480,7 @@ class E2E:
         m = re.search(r"installed files: (\d+) of (\d+) match the package", a)
         # the hashed files (plugins, RCO, weights, LMs, the attributions), the VPK, and the dictionary by size
         n_hashed = sum(1 for x in self.device_files
-                       if x.endswith((".vocr", ".vlm", "-ATTRIBUTION.md", ".skprx", ".suprx", ".rco"))) + 2
+                       if x.endswith((".vocr", ".vlm", ".vtd", "-ATTRIBUTION.md", ".skprx", ".suprx", ".rco"))) + 2
         check(m and m.group(1) == m.group(2) and int(m.group(1)) == n_hashed,
               f"A analysis: {m.group(0) if m else 'no installed-files line'} (want {n_hashed} of {n_hashed})")
         check("installed files:" in a and not re.search(r"DIFFER|absent", a.split("installed files:")[1].split("\n\n")[0]),

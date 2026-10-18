@@ -88,4 +88,10 @@
  * this (core/vocr_ocr.c checks the macros it pins at compile time;
  * host/tests/test_ledger.c every entry of its table). */
 #define VJO_VOCR_MAX_BYTES VJO_VOCR_TIER3_BYTES
+/* API 26: the text-presence gate's int8 weights (vita-vn-ocr #100, pre-release v0.3.2-textgate.1, whose
+ * SHA256SUMS lists them; tools/prepare_ocr.py pins the file, core/vocr_ocr.c its SHA-256): a file beside the
+ * models, read through the kernel's broker (VJO_GAME_OCR_OPEN_GATE) by a job with VJO_GAME_OCR_S_GATE. */
+#define VJO_VOCR_GATE_NAME "textgate_p8_c8_w8.vtd"
+#define VJO_VOCR_GATE_BYTES 1540u
+
 #endif

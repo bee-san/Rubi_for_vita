@@ -140,7 +140,7 @@ Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the e
 the home screen (SceShell) or another system app. Before each reading it checks how much memory the
 game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
-Rubi's OCR worker from its start: 128 KiB of its memory (92 KiB of module pages, 36 KiB of stack and
+Rubi's OCR worker from its start: 132 KiB of its memory (96 KiB of module pages, 36 KiB of stack and
 TLS: the build's figures). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).
@@ -221,7 +221,10 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   OCR-Synthetic-Multilingual-v1 (CC BY 4.0) and on fonts and text that are free for non-commercial
   use only, so their weights are for non-commercial use only: their attribution and terms ship
   beside them as `ocr/MODEL-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#models)). Its character
-  language models are CC BY-SA 4.0.
+  language models are CC BY-SA 4.0. The optional text-presence gate's weights (`ocr_text_gate`, off by
+  default) were trained on the same kinds of data and are for non-commercial use only too: their
+  attribution ships beside them as `ocr/GATE-ATTRIBUTION.md`
+  ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)).
 - **Dictionary:** Bee's Ultimate Dictionary. English definitions from Daijirin4 and Sankoku8
   (© Sanseido) and [JMdict](https://www.edrdg.org/) (EDRDG, CC BY-SA 4.0); frequency ranks from
   [Jiten](https://jiten.moe) (CC BY-SA 4.0); kanji lines from Bee's Ultimate Kanji Dictionary
@@ -256,7 +259,8 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
 
 ## License
 
-Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The OCR's recognizer weights are for non-commercial
-use only (`ocr/MODEL-ATTRIBUTION.md`, [details](docs/vita-vn-ocr.md#models)). The dictionary data,
+Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The OCR's recognizer weights and the text-presence gate's
+are data files Rubi reads, not part of its code, and are for non-commercial use only
+(`ocr/MODEL-ATTRIBUTION.md`, `ocr/GATE-ATTRIBUTION.md`, [details](docs/vita-vn-ocr.md#models)). The dictionary data,
 the language models and the third-party code keep their own licences
 ([attribution](docs/plaintext-attribution.txt), [third_party/](third_party/README.md)).

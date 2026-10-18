@@ -778,6 +778,15 @@ static void test_config(void)
     refine = "ocr_refine_lines = off\nocr_refine_lines = sometimes\n";
     vjo_config_parse(&c, refine, strlen(refine));
     TEST_CHECK(c.ocr_refine_lines == 0 && c.n_warnings == 1);
+    /* API 26: the text-presence gate, off by default (docs/vita-vn-ocr.md "Text-presence gate") */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_text_gate == 0 && VJO_TEXT_GATE_DEFAULT == 0);
+    const char *gate = "ocr_text_gate = ON\n";
+    vjo_config_parse(&c, gate, strlen(gate));
+    TEST_CHECK(c.ocr_text_gate == 1 && c.n_warnings == 0);
+    gate = "ocr_text_gate = off\nocr_text_gate = maybe\n";
+    vjo_config_parse(&c, gate, strlen(gate));
+    TEST_CHECK(c.ocr_text_gate == 0 && c.n_warnings == 1);
     vjo_config_defaults(&c);
     const char *lm = "ocr_lm = 1000K\nocr_cascade_ms = 0\n";
     vjo_config_parse(&c, lm, strlen(lm));

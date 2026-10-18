@@ -10,7 +10,9 @@ import shutil
 import tempfile
 import zipfile
 
-from prepare_ocr import (VOCR_ASSETS, VOCR_GENERATION, VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN,
+from prepare_ocr import (VOCR_ASSETS, VOCR_GATE_ASSETS, VOCR_GATE_ATTRIBUTION, VOCR_GATE_ATTRIBUTION_PIN,
+                         VOCR_GATE_MODEL, VOCR_GATE_TAG, VOCR_GENERATION, VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION,
+                         VOCR_LM_ATTRIBUTION_PIN,
                          VOCR_LM_TAG, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN, VOCR_MODEL_ATTRIBUTION_TAG,
                          VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, VOCR5_ASSETS, VOCR5_TAG,
                          model_tiers)
@@ -115,6 +117,8 @@ def shipped_models():
     # the beam + LM decoder's LM tiers (ocr_lm, the largest that fits up to 1000k by default)
     for name in VOCR_LM_ASSETS:
         models.append((name, VOCR_LM_ASSETS, VOCR_LM_TAG, "character LM (beam + LM decoder)"))
+    # the text-presence gate's weights (ocr_text_gate, off by default; vita-vn-ocr #100)
+    models.append((VOCR_GATE_MODEL, VOCR_GATE_ASSETS, VOCR_GATE_TAG, "text-presence gate (ocr_text_gate)"))
     return models
 
 
@@ -289,6 +293,17 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         raise ValueError("The model sizes' " + VOCR_MODEL_ATTRIBUTION + " checksum failed: not release "
                          + VOCR_MODEL_ATTRIBUTION_TAG + "'s ATTRIBUTION.md")
     assets[DATA + "ocr/" + VOCR_MODEL_ATTRIBUTION] = attribution
+    # The text-presence gate's release names the licences of what it was trained on and its terms (non-commercial
+    # use only): that attribution ships beside its weights, as ocr/GATE-ATTRIBUTION.md.
+    attribution = models / VOCR_GATE_ATTRIBUTION
+    if not attribution.is_file():
+        raise ValueError("The text-presence gate's " + VOCR_GATE_ATTRIBUTION + " is missing (release " + VOCR_GATE_TAG
+                         + "'s ATTRIBUTION.md: tools/prepare_ocr.py --backend vocr-tiers)")
+    _, size, sha = VOCR_GATE_ATTRIBUTION_PIN[VOCR_GATE_ATTRIBUTION]
+    if attribution.stat().st_size != size or digest(attribution) != sha:
+        raise ValueError("The text-presence gate's " + VOCR_GATE_ATTRIBUTION + " checksum failed: not release "
+                         + VOCR_GATE_TAG + "'s ATTRIBUTION.md")
+    assets[DATA + "ocr/" + VOCR_GATE_ATTRIBUTION] = attribution
     # The defaults are the package's config template's (the same file as both config.ini copies).
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": manifest_defaults(assets["config.ini"].read_text(encoding="utf-8"), shipped),

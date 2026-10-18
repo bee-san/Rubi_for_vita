@@ -173,7 +173,7 @@ typedef struct {
     int cascade;          /* and after them the cascade's (cascade_layout) */
     size_t refine_off, refine_bytes; /* the refinement's arena, inside total (0 bytes: off) */
     size_t gate_off, gate_bytes;     /* the gate's arena, inside the scratch after the finder's (0 bytes: off) */
-    vocr_textgate_model gate;        /* its weights (vjo_vocr_gate_blob), loaded for the job */
+    vocr_textgate_model gate;        /* its weights (VjoVocrPolicy.gate_res), loaded for the job */
     unsigned helpers;     /* helpers laid out (VjoVocrPool), 0: none, and no line slots */
     size_t slots_off;     /* the line slots: the caller's (SLOT_BYTES), then each helper's (HELPER_BYTES) */
 } Layout;
@@ -267,11 +267,16 @@ size_t vjo_vocr_refine_bytes(unsigned width, unsigned height)
     return region_ok(width, height) ? ALIGN16(vocr_refine_arena_bytes(width, height)) : 0;
 }
 
-size_t vjo_vocr_gate_bytes(unsigned width, unsigned height)
+/* The gate's weights file, vita-vn-ocr v0.3.2-textgate.1's textgate_p8_c8_w8.vtd (tools/prepare_ocr.py pins it too). */
+static const unsigned char gate_sha256[32] = {
+    0xa4,0xe7,0x3a,0xd7,0x84,0x51,0xc7,0x5a,0x19,0xf8,0x8a,0x47,0x9f,0xc0,0x10,0x8d,
+    0xaa,0xc8,0x5b,0xea,0xa8,0x8d,0x87,0x5b,0x73,0x21,0x2e,0xd3,0xc0,0x9d,0x85,0xd1};
+
+size_t vjo_vocr_gate_bytes(const VjoVocrGateResident *res, unsigned width, unsigned height)
 {
     vocr_textgate_model m;
-    if (!region_ok(width, height) || vjo_vocr_gate_blob_bytes != VJO_VOCR_GATE_BYTES ||
-        vocr_textgate_load(&m, vjo_vocr_gate_blob, vjo_vocr_gate_blob_bytes) != VOCR_LINES_OK)
+    if (!res || !res->verified || !region_ok(width, height) ||
+        vocr_textgate_load(&m, res->data, VJO_VOCR_GATE_BYTES) != VOCR_LINES_OK)
         return 0;
     return ALIGN16(vocr_textgate_arena_bytes(&m, VJO_VOCR_GATE_MODE, width, height));
 }
@@ -425,7 +430,8 @@ typedef struct {
     uint32_t cover_from;    /* a re-read from row 0 in progress: its start, and its next row (0: none) */
     unsigned cover_next;
     uint32_t settle_left;   /* the job's waiting budget left */
-    vocr_textgate_state *gate; /* the gate reading this try's first pass, or NULL (VjoVocrPolicy.gate) */
+    vocr_textgate_state *gate; /* the gate reading this try's rows, or NULL (VjoVocrPolicy.gate) */
+    unsigned gate_next;     /* the next row it takes */
     int err;
 } Stream;
 
@@ -528,12 +534,6 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
         }
     }
     for (unsigned r = 0; r < n; r++) stream_check(s, y + r, dst + (size_t)r * s->w, first);
-    if (first && s->gate) { /* the gate reads the first pass's rows as they come: no read of its own */
-        uint32_t g0 = clock_us(s->p);
-        for (unsigned r = 0; r < n; r++) vocr_textgate_push(s->gate, dst + (size_t)r * s->w);
-        s->st->gate_rows += n;
-        s->st->gate_us += clock_us(s->p) - g0;
-    }
     if (!s->err && !first && s->cover_next >= s->h) {
         s->verified_from = s->cover_from;
         s->verified = 1;
@@ -641,13 +641,25 @@ static int settle_verify(Stream *s)
 static const unsigned char *stream_row(void *user, unsigned y)
 {
     Stream *s = (Stream *)user;
+    const unsigned char *row;
     if (s->err || y >= s->h) return NULL;
     if (!s->rows || y < s->y0 || y >= s->y0 + s->rows) {
         /* rows run in order within a pass: the strip starts at the row asked for,
          * except during the first pass, whose strips must follow each other */
         if (stream_fetch(s, y) < 0) return NULL;
     }
-    return s->strip + (size_t)(y - s->y0) * s->w;
+    row = s->strip + (size_t)(y - s->y0) * s->w;
+    if (s->gate && y == s->gate_next) {
+        /* API 26: the gate takes each row the first time the finder asks for it (its first pass asks for
+         * every row, in order), whether a strip read brought it or the strip already held it: no read of
+         * its own. */
+        uint32_t g0 = clock_us(s->p);
+        vocr_textgate_push(s->gate, row);
+        s->gate_next++;
+        s->st->gate_rows++;
+        s->st->gate_us += clock_us(s->p) - g0;
+    }
+    return row;
 }
 
 /* rc for a finder or row failure: the source's own error first. */
@@ -766,6 +778,38 @@ static int resident_lm(const VjoPlatform *p, const char *dir, const VjoVocrLm *l
     r->size = file.size;
     r->stamp = file.stamp;
     st->lm_loaded = 1;
+    return VJO_OK;
+}
+
+/* API 26: the text-presence gate's verified weights in r->data, as resident_weights does for the recognizer:
+ * the file is opened in every job that uses the gate, read and hashed again only when its size or stamp
+ * changed or nothing verified is held. */
+static int resident_gate(const VjoPlatform *p, const char *dir, VjoVocrGateResident *r, const VjoGreySource *im,
+                         VjoVocrStats *st)
+{
+    char path[256];
+    VjoFile file;
+    int rc;
+    if (join_path(path, sizeof(path), dir, VJO_VOCR_GATE_NAME) < 0) return VJO_E_OCR_MODEL;
+    memset(&file, 0, sizeof(file));
+    if (!p->file_open || p->file_open(p->ud, path, &file) < 0) return cancelled(im) ? VJO_E_CANCELLED : VJO_E_OCR_MODEL;
+    if (file.size != VJO_VOCR_GATE_BYTES || !file.read || !file.close) {
+        if (file.close) file.close(file.ctx);
+        r->verified = 0;
+        return VJO_E_OCR_MODEL;
+    }
+    if (r->verified && file.stamp && file.stamp == r->stamp && file.size == r->size) {
+        file.close(file.ctx);
+        return VJO_OK;
+    }
+    r->verified = 0;
+    rc = read_verified(&file, VJO_VOCR_GATE_BYTES, gate_sha256, r->data, im);
+    file.close(file.ctx);
+    if (rc) return rc;
+    r->verified = 1;
+    r->size = file.size;
+    r->stamp = file.stamp;
+    st->gate_read = 1;
     return VJO_OK;
 }
 
@@ -1697,11 +1741,15 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     st->gate_us = 0;
     if (l->gate_bytes) st->gate_rc = 0;
     t0 = clock_us(p);
-    if (l->gate_bytes) { /* API 26: the gate takes the rows of the finder's first pass as they come */
+    if (l->gate_bytes) { /* API 26: the gate takes the rows the finder reads (stream_row) */
         int grc = vocr_textgate_begin(&gate, &l->gate, VJO_VOCR_GATE_MODE, VJO_VOCR_GATE_K, w, im->height,
                                       ws + l->gate_off, l->gate_bytes);
-        if (grc) st->gate_rc = grc;
-        else s->gate = &gate;
+        if (grc) {
+            st->gate_rc = grc;
+        } else {
+            s->gate = &gate;
+            s->gate_next = 0;
+        }
     }
     rc = vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
     if (s->gate) {
@@ -1710,10 +1758,11 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         int score = 0, grc;
         uint32_t g0 = clock_us(p);
         s->gate = NULL;
-        grc = rc ? 0 : vocr_textgate_score(&gate, &set, &score);
+        /* a region the finder found no line in has nothing to stop: not scored */
+        grc = rc || !set.count ? 0 : vocr_textgate_score(&gate, &set, &score);
         st->gate_us += clock_us(p) - g0;
         if (grc) st->gate_rc = grc;
-        else if (!rc) {
+        else if (!rc && set.count) {
             st->gate_ran = 1;
             st->gate_score = score;
             if (score < VJO_VOCR_GATE_T) {
@@ -2061,20 +2110,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     front = one_shot ? ALIGN16(mi->bytes) : 0;
     strip_rows = vjo_vocr_strip_rows(image->width, image->height);
     need_capture = vjo_vocr_capture_bytes(image->width, image->height);
-    if (policy && policy->gate) {
-        /* API 26: the gate's arena takes the scratch the finder leaves free (the recognizer's arena is
-         * the larger part of it at every region size), so the workspace never grows for it; without
-         * that room the job reads as without the gate. */
-        size_t gb = vjo_vocr_gate_bytes(image->width, image->height), off = ALIGN16(l.finder);
-        if (!gb || vocr_textgate_load(&l.gate, vjo_vocr_gate_blob, vjo_vocr_gate_blob_bytes) != VOCR_LINES_OK)
-            stats->gate_rc = VJO_E_OCR_MODEL;
-        else if (off + gb > l.scratch)
-            stats->gate_rc = VJO_E_OOM;
-        else {
-            l.gate_off = l.scratch_off + off;
-            l.gate_bytes = gb;
-        }
-    }
+
     if (policy && policy->refine) {
         /* The refinement's arena ends the job's own workspace; without room the
          * boxes are read as found. */
@@ -2123,6 +2159,25 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     if (cancelled(image)) return VJO_E_CANCELLED;
     if (!workspace || ((uintptr_t)workspace & 15u) || workspace_size < front + l.total ||
         !capture || capture_size < need_capture) return VJO_E_OOM;
+    if (policy && policy->gate) {
+        /* API 26: the gate's weights (read once, then kept), and its arena in the scratch the finder leaves
+         * free (the recognizer's arena is the larger part of it at every region size), so the workspace never
+         * grows for it. Without either the job reads as without the gate (stats->gate_rc says why). */
+        int grc = policy->gate_res ? resident_gate(platform, model_dir, policy->gate_res, image, stats)
+                                   : VJO_E_OCR_MODEL;
+        size_t gb = 0, off = ALIGN16(l.finder);
+        if (grc == VJO_E_CANCELLED) return grc;
+        if (!grc && vocr_textgate_load(&l.gate, policy->gate_res->data, VJO_VOCR_GATE_BYTES) != VOCR_LINES_OK)
+            grc = VJO_E_OCR_MODEL;
+        if (!grc) gb = ALIGN16(vocr_textgate_arena_bytes(&l.gate, VJO_VOCR_GATE_MODE, image->width, image->height));
+        if (!grc && (!gb || off + gb > l.scratch)) grc = VJO_E_OOM;
+        if (grc) {
+            stats->gate_rc = grc;
+        } else {
+            l.gate_off = l.scratch_off + off;
+            l.gate_bytes = gb;
+        }
+    }
     memset(&st, 0, sizeof(st));
     st.src = image;
     st.p = platform;

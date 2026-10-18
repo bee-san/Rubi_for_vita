@@ -402,12 +402,14 @@ if(VJO_WITH_VOCR)
   add_test(NAME vocr_unit COMMAND vjo-vocr-tests)
   # The job policy (core/vocr_ocr.h VjoVocrPolicy): the stable-text wait and the
   # blank-line check, frame by frame on a simulated screen, without weights.
+  # The text-presence gate's weights for the tests that run it (cmake/VocrGate.cmake: VJO_VOCR_GATE_TEST_DIR).
+  include(cmake/VocrGate.cmake)
   add_executable(vjo-vocr-policy-tests host/tests/test_vocr_policy.c)
   target_include_directories(vjo-vocr-policy-tests PRIVATE third_party/acutest/include)
   target_link_libraries(vjo-vocr-policy-tests vjo_vocr vjo_host)
   target_compile_options(vjo-vocr-policy-tests PRIVATE -Wall -Wextra)
   target_compile_definitions(vjo-vocr-policy-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}"
-    VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" VJO_VOCR_GATE_TEST_DIR="${VJO_VOCR_GATE_TEST_DIR}")
   # The tests time, empty or fail the runtime's calls through these (test_vocr_policy.c, wrap).
   target_link_options(vjo-vocr-policy-tests PRIVATE "LINKER:--wrap=vocr_run" "LINKER:--wrap=vocr_lm_decode"
     "LINKER:--wrap=vocr_lm_init")
@@ -675,7 +677,8 @@ if(VJO_WITH_VOCR)
   add_executable(vjo-game-vocr-tests host/tests/test_game_vocr.c)
   target_include_directories(vjo-game-vocr-tests PRIVATE third_party/acutest/include host/tests/game_stubs)
   target_compile_options(vjo-game-vocr-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
-  target_compile_definitions(vjo-game-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
+  target_compile_definitions(vjo-game-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}"
+    VJO_VOCR_GATE_TEST_DIR="${VJO_VOCR_GATE_TEST_DIR}")
   target_link_libraries(vjo-game-vocr-tests vjo_vocr)
   add_test(NAME game_vocr_worker COMMAND vjo-game-vocr-tests)
   # The same game worker and the Shell's job with another package's tier map, Normal

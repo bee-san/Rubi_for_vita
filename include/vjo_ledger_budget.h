@@ -153,12 +153,15 @@
  * its parent], in the game's partition, never SceShell's. The normal build's text still fits the
  * page it had: 94,208 B [CI's vita (normal) build log, main b622c18], so the budget is per build.
  * Raised from 94,208 B in the normal build by one text page for API 26, the text-presence gate (vita-vn-ocr #100:
- * runtime/vocr_textgate.c at -Os, its 1,540 B of int8 weights built in, and core/vocr_ocr.c's use of it): 2,592 B
- * of text and 1,544 B of data in both builds, whether the gate is on or off, the weights in .data
- * (cmake/VocrGate.cmake). The debug build's text 78,156 -> 80,748 B and data/bss 14,160 -> 15,704 B fit the pages
- * it had, 98,304 B; the normal build's text 76,856 -> 79,448 B (968 B of room before it) takes one more, and its
- * data/bss 14,160 -> 15,704 B fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main
- * 1de7b67 and this change], in the game's partition, never SceShell's. Both builds now have the same budget. */
+ * runtime/vocr_textgate.c at the runtime's -O2, the code its time estimate is for, and core/vocr_ocr.c's use of
+ * it; its 1,540 B of int8 weights are a file the kernel broker opens, VJO_GAME_OCR_OPEN_GATE, kept in a static
+ * VjoVocrGateResident): 3,488 B of text and 1,560 B of .bss in both builds, whether the gate is on or off. The
+ * debug build's text 78,156 -> 81,644 B and data/bss 14,160 -> 15,720 B fit the pages it had, 98,304 B; the normal
+ * build's text 76,856 -> 80,344 B (968 B of room before it) takes one more, and its data/bss 14,160 -> 15,720 B
+ * fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main 1de7b67 and this change]. At
+ * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
+ * which would still need the page. In the game's partition, never SceShell's. Both builds now have the same
+ * budget. */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an

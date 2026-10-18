@@ -1005,7 +1005,6 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
      * counts fit their 8 bits (10 and 50 ms steps, rounded; a wait of 1-4 ms is
      * one step, not none); a screen not settled now is waited for first. */
     if (job_cfg.ocr_skip_blank_lines) request.flags |= VJO_GAME_OCR_F_BLANK;
-    if (job_cfg.ocr_text_gate) request.flags |= VJO_GAME_OCR_F_GATE; /* API 26 */
     request.flags |= (uint32_t)(job_cfg.ocr_lm & VJO_GAME_OCR_LM_MASK) << VJO_GAME_OCR_LM_SHIFT |
                      (uint32_t)(job_cfg.ocr_refine_lines & VJO_GAME_OCR_REFINE_MASK) << VJO_GAME_OCR_REFINE_SHIFT;
     if (job_cfg.ocr_cascade_ms > 0) { /* in 250 ms steps, at least one */
@@ -1026,6 +1025,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     }
     /* API 22 (ocr-speed): helper threads for parallel lines, the ARM clock. */
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
+    /* API 26: the text-presence gate, in the user's jobs (the self-test's stages read as before) */
+    if (job_cfg.ocr_text_gate && stage < 0) request.speed |= VJO_GAME_OCR_S_GATE;
     int64_t t0 = now_us();
     /* the slot: a screenshot's exchange may hold it (a cancellation ends the wait) */
     int locked = !game_job_lock(vocr_poll_cancelled, INT64_MAX / 2);

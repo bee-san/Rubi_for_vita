@@ -259,11 +259,24 @@ class VocrDefaults(unittest.TestCase):
             att_pin = {prepare_ocr.VOCR_MODEL_ATTRIBUTION: ("https://fixture.invalid/ATTRIBUTION.md", len(att),
                                                             hashlib.sha256(att).hexdigest())}
             (src / "ATTRIBUTION.md").write_bytes(att)  # the release's name, this copy
+            # API 26: the text-presence gate's weights and its release's attribution come with them (a --from
+            # directory holds that attribution as GATE-ATTRIBUTION.md: the release's name is the models')
+            gate, gate_att = b"gate fixture", b"the gate's attribution"
+            gate_pin = {prepare_ocr.VOCR_GATE_MODEL: ("https://fixture.invalid/g", len(gate), hashlib.sha256(gate).hexdigest())}
+            gate_att_pin = {prepare_ocr.VOCR_GATE_ATTRIBUTION: ("https://fixture.invalid/ga", len(gate_att),
+                                                                hashlib.sha256(gate_att).hexdigest())}
+            (src / prepare_ocr.VOCR_GATE_MODEL).write_bytes(gate)
+            (src / prepare_ocr.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
             with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_GATE_ASSETS", gate_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_GATE_ATTRIBUTION_PIN", gate_att_pin), \
                  mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
                 paths = prepare_ocr.fetch_tiers(out, src)
-                self.assertEqual(sorted(p.name for p in paths), sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md"]))
+                self.assertEqual(sorted(p.name for p in paths),
+                                 sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md", prepare_ocr.VOCR_GATE_MODEL,
+                                         "GATE-ATTRIBUTION.md"]))
+                self.assertEqual((out / "GATE-ATTRIBUTION.md").read_bytes(), gate_att)
                 self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
                 self.assertFalse((out / "ATTRIBUTION.md").exists())  # the LMs' name stays theirs
                 # the LMs' ATTRIBUTION.md under the release's name is not this file: refused
@@ -283,6 +296,30 @@ class VocrDefaults(unittest.TestCase):
         self.assertLessEqual({pin[4] for pin in TIER_PINS.values() if pin[5] == "VOCR5"}, {prepare_ocr.VOCR5_TAG})
         self.assertIn('X(VJO_PAYLOAD_OCR "MODEL-ATTRIBUTION.md", VJO_PAYLOAD_COPY)',
                       (ROOT / "include/vjo_payload.h").read_text())  # the one-VPK install copies it too
+
+    def test_the_gate_pins_agree_python_and_c(self):
+        """API 26: the text-presence gate's weights: one size and hash in tools/prepare_ocr.py, the plugin
+        (include/vjo_vocr_sizes.h, core/vocr_ocr.c), the host tests' download (cmake/VocrGate.cmake) and the
+        one-VPK payload, with v0.3.2-textgate.1's ATTRIBUTION.md beside them."""
+        import re  # noqa: PLC0415
+        url, size, sha = prepare_ocr.VOCR_GATE_ASSETS[prepare_ocr.VOCR_GATE_MODEL]
+        self.assertEqual((prepare_ocr.VOCR_GATE_MODEL, size, sha),
+                         ("textgate_p8_c8_w8.vtd", 1540, "a4e73ad78451c75a19f88a479fc0108daac85beaa88d875b73212ed3c09d85d1"))
+        self.assertTrue(url.endswith("/releases/download/v0.3.2-textgate.1/textgate_p8_c8_w8.vtd"))
+        sizes = (ROOT / "include/vjo_vocr_sizes.h").read_text()
+        self.assertIn('#define VJO_VOCR_GATE_NAME "textgate_p8_c8_w8.vtd"', sizes)
+        self.assertIn("#define VJO_VOCR_GATE_BYTES 1540u", sizes)
+        c = (ROOT / "core/vocr_ocr.c").read_text()
+        block = c[c.index("gate_sha256[32] = {"):]
+        block = block[:block.index("};")]
+        self.assertEqual("".join(f"{int(b, 16):02x}" for b in re.findall(r"0x([0-9a-fA-F]{2})", block)), sha)
+        self.assertIn(f"set(VJO_VOCR_GATE_SHA256 {sha})", (ROOT / "cmake/VocrGate.cmake").read_text())
+        payload = (ROOT / "include/vjo_payload.h").read_text()
+        self.assertIn("X(VJO_PAYLOAD_OCR VJO_VOCR_GATE_NAME, VJO_PAYLOAD_COPY)", payload)
+        self.assertIn('X(VJO_PAYLOAD_OCR "GATE-ATTRIBUTION.md", VJO_PAYLOAD_COPY)', payload)
+        url, size, sha = prepare_ocr.VOCR_GATE_ATTRIBUTION_PIN[prepare_ocr.VOCR_GATE_ATTRIBUTION]
+        self.assertTrue(url.endswith("/releases/download/v0.3.2-textgate.1/ATTRIBUTION.md"))
+        self.assertEqual((size, sha), (3706, "44a353c76e19c6bdabcb9dbd06d14867696dcb59ce0460db22d09749af687f6e"))
 
     def test_lm_pins_agree_c_kernel_python_and_the_ledger(self):
         table = c_lm_table()
@@ -444,7 +481,8 @@ class VocrDefaults(unittest.TestCase):
                      "VOCR4_FL10_w8.vocr", "VOCR4_H15_w8.vocr", "VOCR4_W20_w8.vocr"):
             if name not in TIER_FILES:
                 self.assertNotIn(name, shipped)
-        self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]}, set(prepare_ocr.VOCR_LM_ASSETS))
+        self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
+                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL})  # the LMs, the gate (API 26)
 
 if __name__ == "__main__":
     unittest.main()

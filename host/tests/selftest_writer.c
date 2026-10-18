@@ -295,10 +295,11 @@ int main(int argc, char **argv)
                                                {.id = VJO_GSTEP_RECOGNIZE, .kind = 0, .arg = 1, .us = 820000},
                                                {.id = VJO_GSTEP_REFINE, .kind = 2, .arg = 16, .bytes = 9u << 16 | 2u << 8 | 7u,
                                                 .sum = 410, .us = 1400},
-                                               /* API 26: the gate stopped 2 lines, score -60, threshold -8 */
+                                               /* API 26: the gate stopped 2 lines, score -60, threshold -8,
+                                                * its weights read in this job */
                                                {.id = VJO_GSTEP_GATE, .kind = 1, .arg = 2,
-                                                .bytes = (uint32_t)(-60 + 129) | (uint32_t)(-8 + 129) << 16, .sum = 112,
-                                                .us = 9001}};
+                                                .bytes = (uint32_t)(-60 + 129) | (uint32_t)(-8 + 129) << 16 | VJO_GLM_READ,
+                                                .sum = 112, .us = 9001}};
         char line[256];
         for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++)
             if (vjo_gstep_format(line, sizeof(line), "job", &steps[i]) > 0) puts(line);
