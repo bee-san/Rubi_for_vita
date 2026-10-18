@@ -65,8 +65,8 @@
 ## Install
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card before you
-copy the VPK to it (estimated from the package's size; 61 MB of it is the VPK itself, which you can
+HENkaku Settings > Enable Unsafe Homebrew** on, and about 246 MB free on the memory card before you
+copy the VPK to it (estimated from the package's size; 62 MB of it is the VPK itself, which you can
 delete once it is installed).
 
 1. Download `Rubi-<version>.vpk` from the

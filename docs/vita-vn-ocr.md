@@ -821,8 +821,9 @@ app has no switch for it; config.ini does.
 - **The columns.** vita-vn-ocr's column finder (`runtime/vocr_vertical.c`,
   `vocr_find_columns_rows`: GRAD run on the region's transpose, the same two passes over its rows;
   boxes wider than 5/4 of their height dropped, as horizontal text), in reading order: right to left,
-  columns sharing a right edge top to bottom. Its variant P0 (no flags), the default candidate of
-  vita-vn-ocr's `eval/vertical_protocol.json`. The finder's arena is the larger of the two finders':
+  columns sharing a right edge top to bottom. Its variant P1 (`VOCR_COLUMNS_VALLEYS`: a band split at
+  its columns of little ink, a column grown only over rows dense enough to be text), the finder
+  vita-vn-ocr #99 selected under `eval/vertical_protocol.json`'s finder rule. The finder's arena is the larger of the two finders':
   83,619 B at 960×544 (GRAD's 83,323 B), 26,467 B at 480×272 (25,355 B), under the model's
   124,832 B.
 - **Each column is a line.** It is fetched as a line is (from the strip, or, taller than a strip, as
@@ -848,10 +849,15 @@ reserve (the Small size's) and no smaller model to step down to, and opens it as
 model that fails to open fails the job; no size is left out of the game's ladder for it. Anki cards
 and the log name `VOCR5_V_w8.vocr` as the model that read the text.
 
-**The model.** VOCR5-V (`VOCR5_V_w8.vocr`, vita-vn-ocr #99): VOCR5-S's shape (819,792 B of int8
-weights, W8I arena 124,832 B, 4,987 classes, 967,392 MACs per CTC frame), trained from VOCR5-S's
-weights on columns turned 90° anticlockwise. Its release, SHA-256 and scores are vita-vn-ocr's
-(below, [Models](#models)).
+**The model.** VOCR5-V (`VOCR5_V_w8.vocr`, vita-vn-ocr #99, pre-release
+[v0.3.2-vertical.1](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.2-vertical.1)): VOCR5-S's
+shape (819,792 B of int8 weights, W8I arena 124,832 B, 4,987 classes, 967,392 MACs per CTC frame),
+fine-tuned from VOCR5-S on columns turned 90° anticlockwise. The package ships it beside the size models
+with its release's `ATTRIBUTION.md` as `ocr/VERTICAL-ATTRIBUTION.md` (VOCR5-S's training data and terms,
+non-commercial use only, and its vertical data), 2.5 MB more to install (the one-VPK install's figures).
+vita-vn-ocr #99 reports its scores, read once on its held-out vertical test set (host, C runtime): 7.17 %
+CER on fixed VN columns and 11.29 % end to end on VN regions (finder, columns joined right to left),
+0.86 % and 2.45 % on the manga pages (*Black Jack ni Yoroshiku*, vol. 13).
 
 **Memory** (`host/tests/test_ledger.c`, `test_vocr.c`). The job's own workspace is VOCR5-S's plus
 the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + 3,760 (the console's runtime
@@ -868,14 +874,14 @@ block take it as tall lines do (`VJO_BUDGET_GAME_LINE`).
 same shape). VOCR5-S's box estimate, 631 ms at 333 MHz and 499 ms at 444 MHz for 240 frames and
 0.1 s of finder (`tools/model_tiers.json`, calibrated to VOCR3-H15's measured 4.94 ms per frame),
 is about 2.2 ms a frame at 333 MHz and 1.8 ms at 444 MHz. The host sample below, a page of four
-columns of 6-10 characters, is 125 frames: about 0.28 s at 333 MHz, 0.22 s at 444 MHz, and the finder.
+columns of 6-10 characters, is 120 frames: about 0.26 s at 333 MHz, 0.21 s at 444 MHz, and the finder.
 The capture costs more than for rows, as a column spans every strip of the region: the sample's
-region (220 × 410, 64-row strips) took 52 strip reads on the host, 14 for the finder's two passes,
-19 for its dark flags (`vocr_line_dark_rows` reads each column's rows once more) and 19 for the
-columns themselves (each read again through the strip, a tall line's way). In the game a strip read
-waits for the game's next frame: about 0.9 s at 60 frames a second (an estimate from the strip
-count; the log's `game vocr capture:` line gives the console's). One pass for every column would take
-most of that away; it is not done here.
+region (220 × 410, 64-row strips) took 50 strip reads on the host: the finder's two passes, its dark
+flags (`vocr_line_dark_rows` reads each column's rows once more) and the columns themselves (each
+read again through the strip, a tall line's way). In the game a strip read waits for the game's next
+frame: about 0.8 s at 60 frames a second (an estimate from the strip count; the log's `game vocr
+capture:` line gives the console's). One pass for every column would take most of that away; it is
+not done here.
 
 **Off is today's job** (`host/tests/test_vocr_vertical.c`): jobs of rows on a 5-line region and on
 #194's box, greedy, with the LM, with two helpers, and refined, give the same text, greedy text,
@@ -885,11 +891,11 @@ hash; the stage benchmark's recorded job checksums are unchanged too. The Shell 
 **Measured on the host.** `test_vocr_vertical.c` runs vertical jobs with real `vocr_run` calls on
 tiny models it builds (light and dark text, columns inside a strip and taller ones, greedy and with
 the LM, P0 and P1, helpers, the line cache, the rotation buffer's bound): the job's lines are the
-column finder's columns right to left, each read from its turned crop, exactly. With an intermediate
-checkpoint of VOCR5-V (not the release; exported only for this check) the `vjo-ocr` tool read the
-four columns of `host/samples/vertical.jpg`, right to left, as `吾輩は猫である。` / `名前はまだ無い` /
-`どこで生れたかとんと` / `見当がつかぬ` (the sample's `名前はまだ無い。` and `見当がつかぬ。` lost
-their 。).
+column finder's columns right to left, each read from its turned crop, exactly. With the released
+VOCR5-V and the 1 MB LM, the `vjo-ocr` tool reads the four columns of `host/samples/vertical.jpg`
+(the 220 × 410 region around them), right to left, as `吾輩は猫である` / `名前はまだ無い` /
+`どこで生れたかとんと` / `見当がつかぬ`: every character but the three final 。 of the sample's text.
+On the whole 960 × 544 frame its menu line `MENU SAVE LOAD` adds two one-character columns.
 
 **Limits.**
 
@@ -929,7 +935,7 @@ VOCR5-S keeps FL10's topology and arena with a 4,987-class head, VOCR5-N H15's w
 | `VOCR4_W20_w8.vocr` | 1,558,016 | `2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e` | 241,056 | v0.2.5-vocr4.1 |
 | `H15_w8.vocr` | 1,155,968 | `316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd` | 182,944 | v0.2.0 |
 | `FL10_w8.vocr` | 657,664 | `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84` | 124,832 | v0.2.0 |
-| `VOCR5_V_w8.vocr` (vertical text, `ocr_vertical`) | 819,792 | not released yet (vita-vn-ocr #99) | 124,832 | to come |
+| `VOCR5_V_w8.vocr` (vertical text, `ocr_vertical`) | 819,792 | `ccd20c63bb2620f054538b456904bdf19b74d483d3da8de865009e282bb04172` | 124,832 | v0.3.2-vertical.1 |
 
 VOCR5's scores are in vita-vn-ocr's `docs/vocr5.md` (its locked report). No console has run
 a VOCR5 model yet.
