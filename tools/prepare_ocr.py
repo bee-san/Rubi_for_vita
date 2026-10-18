@@ -10,7 +10,8 @@ VOCR3_FL10_w8.vocr from the v0.2.5-vocr3.1 pre-release, VOCR4_W20_w8.vocr from
 v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 --backend vocr-tiers the three model sizes' (tools/model_tiers.json: VOCR5_S_w8.vocr,
 VOCR5_N_w8.vocr, VOCR5_L_w8.vocr) and their release's attribution, v0.3.0's ATTRIBUTION.md
-kept as MODEL-ATTRIBUTION.md, which a package ships. Each file comes from the
+kept as MODEL-ATTRIBUTION.md, and the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
+with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which a package ships. Each file comes from the
 release's public download; only when that fails (a draft release) is an authenticated
 GitHub CLI (`gh auth login`) tried. --from takes a copy downloaded by other means.
 Every file is checked against its pinned size and SHA-256.
@@ -121,6 +122,23 @@ VOCR_MODEL_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
 VOCR_MODEL_ATTRIBUTION_PIN = {VOCR_MODEL_ATTRIBUTION: (VOCR5_BASE + VOCR_MODEL_ATTRIBUTION_ASSET, 3158,
     'db307ca08f4282a235173a77d0ef0f9c4c918dc43ac17fa289d27b831bf1c194')}
 
+# The text-presence gate (vita-vn-ocr #100, docs/textgate.md): 1,540 B of int8 weights in front of the
+# line finder (ocr_text_gate, off by default), pre-release v0.3.2-textgate.1, whose SHA256SUMS lists these
+# hashes; the plugin pins the same size and hash (include/vjo_vocr_sizes.h, core/vocr_ocr.c). Its release's
+# ATTRIBUTION.md (its training data's licences; the weights are for non-commercial use only) ships beside it
+# as ocr/GATE-ATTRIBUTION.md.
+VOCR_GATE_TAG = 'v0.3.2-textgate.1'
+VOCR_GATE_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_GATE_TAG}/'
+VOCR_GATE_MODEL = 'textgate_p8_c8_w8.vtd'
+VOCR_GATE_ASSETS = {
+    VOCR_GATE_MODEL: (VOCR_GATE_BASE + VOCR_GATE_MODEL, 1540,
+        'a4e73ad78451c75a19f88a479fc0108daac85beaa88d875b73212ed3c09d85d1'),
+}
+VOCR_GATE_ATTRIBUTION = 'GATE-ATTRIBUTION.md'
+VOCR_GATE_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
+VOCR_GATE_ATTRIBUTION_PIN = {VOCR_GATE_ATTRIBUTION: (VOCR_GATE_BASE + VOCR_GATE_ATTRIBUTION_ASSET, 3706,
+    '44a353c76e19c6bdabcb9dbd06d14867696dcb59ce0460db22d09749af687f6e')}
+
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so
 # the pins carry it: core/vocr_models.c per file (the Rubi app names the local OCR engine
@@ -224,12 +242,21 @@ def fetch_vocr(directory, name, source=None):
 
 def fetch_tiers(directory, source=None):
     """The three model sizes' recognizers (tools/model_tiers.json), each pinned, and their release's
-    attribution (MODEL-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
+    attribution (MODEL-ATTRIBUTION.md), with the text-presence gate's weights and attribution
+    (GATE-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
     names = dict.fromkeys(tier['model'] for tier in model_tiers()['tiers'])
     paths = [fetch_vocr(directory, name, source) for name in names]
     paths.append(fetch_release_asset(directory, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN,
                                      VOCR_MODEL_ATTRIBUTION_TAG, source, VOCR_MODEL_ATTRIBUTION_ASSET))
+    paths += fetch_gate(directory, source)
     return paths
+
+
+def fetch_gate(directory, source=None):
+    """The text-presence gate's weights (VOCR_GATE_MODEL) and their attribution (GATE-ATTRIBUTION.md), pinned."""
+    return [fetch_release_asset(directory, VOCR_GATE_MODEL, VOCR_GATE_ASSETS, VOCR_GATE_TAG, source),
+            fetch_release_asset(directory, VOCR_GATE_ATTRIBUTION, VOCR_GATE_ATTRIBUTION_PIN, VOCR_GATE_TAG, source,
+                                VOCR_GATE_ATTRIBUTION_ASSET)]
 
 
 def fetch_lms(directory, source=None):
@@ -319,7 +346,8 @@ def main():
         for path in fetch_tiers(args.output, args.source):
             print('Verified', path.name)
         print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (keep',
-              VOCR_MODEL_ATTRIBUTION, 'beside them: their training data\'s licences and their terms)')
+              VOCR_MODEL_ATTRIBUTION, 'and', VOCR_GATE_ATTRIBUTION,
+              'beside them: their training data\'s licences and their terms)')
         return
     if args.backend == 'vocr':
         model = args.model or VOCR_DEFAULT_MODEL

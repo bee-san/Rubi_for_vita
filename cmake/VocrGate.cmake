@@ -1,0 +1,38 @@
+# The text-presence gate's weights (vita-vn-ocr #100) for the host tests that run it: the pinned release asset
+# (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME; tools/prepare_ocr.py and core/vocr_ocr.c pin the same SHA-256),
+# from -DVJO_VOCR_GATE_BLOB=FILE or downloaded once into the build directory (a public pre-release: no token),
+# and checked. Sets VJO_VOCR_GATE_TEST_DIR to the directory holding it, or "" (with a warning) when it cannot
+# be had: those tests then say so and skip. The plugins read the file at run time; nothing here is built in.
+include_guard(GLOBAL)
+set(VJO_VOCR_GATE_NAME textgate_p8_c8_w8.vtd)
+set(VJO_VOCR_GATE_SHA256 a4e73ad78451c75a19f88a479fc0108daac85beaa88d875b73212ed3c09d85d1)
+set(VJO_VOCR_GATE_URL "https://github.com/bee-san/vita-vn-ocr/releases/download/v0.3.2-textgate.1/${VJO_VOCR_GATE_NAME}")
+set(VJO_VOCR_GATE_BLOB "" CACHE FILEPATH "A local copy of vita-vn-ocr's ${VJO_VOCR_GATE_NAME} for the gate's host tests")
+set(VJO_VOCR_GATE_TEST_DIR "")
+set(_gate_dir "${CMAKE_BINARY_DIR}/vita-vn-ocr")
+set(_gate_file "${_gate_dir}/${VJO_VOCR_GATE_NAME}")
+if(VJO_VOCR_GATE_BLOB)
+  file(SHA256 "${VJO_VOCR_GATE_BLOB}" _gate_got)
+  if(NOT _gate_got STREQUAL VJO_VOCR_GATE_SHA256)
+    message(FATAL_ERROR "vita-vn-ocr: ${VJO_VOCR_GATE_BLOB} has sha256 ${_gate_got}, expected ${VJO_VOCR_GATE_SHA256}")
+  endif()
+  configure_file("${VJO_VOCR_GATE_BLOB}" "${_gate_file}" COPYONLY)
+elseif(NOT EXISTS "${_gate_file}")
+  # No EXPECTED_HASH: with it, a failed download is a CMake error. The file is hashed below, and refused.
+  file(DOWNLOAD "${VJO_VOCR_GATE_URL}" "${_gate_file}" STATUS _gate_dl)
+  list(GET _gate_dl 0 _gate_dl_rc)
+  if(NOT _gate_dl_rc EQUAL 0)
+    file(REMOVE "${_gate_file}")
+    message(WARNING "vita-vn-ocr: cannot download ${VJO_VOCR_GATE_URL} (${_gate_dl}): the gate's host tests skip. "
+      "Pass -DVJO_VOCR_GATE_BLOB=/path/to/${VJO_VOCR_GATE_NAME} to run them.")
+  endif()
+endif()
+if(EXISTS "${_gate_file}")
+  file(SHA256 "${_gate_file}" _gate_got)
+  if(NOT _gate_got STREQUAL VJO_VOCR_GATE_SHA256)
+    file(REMOVE "${_gate_file}") # not kept: the next configure downloads it again
+    message(FATAL_ERROR "vita-vn-ocr: ${_gate_file} has sha256 ${_gate_got}, expected ${VJO_VOCR_GATE_SHA256}")
+  endif()
+  set(VJO_VOCR_GATE_TEST_DIR "${_gate_dir}")
+  message(STATUS "vita-vn-ocr text-presence gate (host tests): ${_gate_file}")
+endif()

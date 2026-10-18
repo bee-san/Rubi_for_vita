@@ -81,12 +81,18 @@
  * recognize lines in parallel (0-2, VjoVocrPool: config ocr_threads minus one);
  * bit 2 the ARM clock at 444 MHz while the job recognizes (ocr_boost_clock, on
  * by default; never lowered); bit 3 the line cache neither read nor filled, and emptied (the
- * self-test's stages: each recognizes what it reads). Other bits are refused, as
- * unknown flags are. */
+ * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below). Other bits
+ * are refused, as unknown flags are. */
 #define VJO_GAME_OCR_S_HELPERS_MASK 0x3u
 #define VJO_GAME_OCR_S_BOOST 0x4u
 #define VJO_GAME_OCR_S_NOCACHE 0x8u
-#define VJO_GAME_OCR_S_ALL 0xFu
+/* API 26, bit 4: the text-presence gate (vita-vn-ocr #100, runtime/vocr_textgate.c; core/vocr_ocr.h
+ * VjoVocrPolicy.gate, config ocr_text_gate). A region the gate says holds no text returns no line: nothing is
+ * recognized. It reads the rows the finder reads, no strip of its own, and its weights from the pinned file
+ * VJO_VOCR_GATE_NAME beside the models (VJO_GAME_OCR_OPEN_GATE). It is in `speed` because the flags have one
+ * bit left. */
+#define VJO_GAME_OCR_S_GATE 0x10u
+#define VJO_GAME_OCR_S_ALL 0x1Fu
 #define VJO_PACE_SLOW_US 25000 /* a frame gap over 25 ms: a dropped frame at 60 fps */
 
 typedef struct {
@@ -131,6 +137,9 @@ typedef struct {
 #define VJO_GAME_OCR_OPEN_LM 2u
 #define VJO_GAME_OCR_OPEN_CASCADE 8u
 #define VJO_GAME_OCR_OPEN_TIER 9u
+/* API 26: the text-presence gate's weights (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME), for a request with
+ * VJO_GAME_OCR_S_GATE only. */
+#define VJO_GAME_OCR_OPEN_GATE 17u
 
 /* VjoGameOcrResult.weights: how this job had verified weights. */
 #define VJO_GAME_OCR_WEIGHTS_NONE 0u     /* no line found, or the job failed first */
@@ -221,6 +230,13 @@ enum {
                             encodes a lower quality), bytes the JPEG's, sum the strips read, us the try */
     VJO_GSTEP_SAVE,      /* API 23, a shot's file: kind the chunks written, rc 0 or the kernel's error,
                             bytes written, us the writes and the save */
+    VJO_GSTEP_GATE,      /* API 26, the text-presence gate (VJO_GAME_OCR_S_GATE), once per job (its last try)
+                            whose finder found a line, or whose gate could not run: kind its mode (0 region, 1
+                            the finder's boxes), arg the lines it stopped (0: it saw text and kept them), rc 0 or
+                            why it could not decide (VJO_E_*, VOCR_LINES_E_*: the lines are kept), bytes its
+                            score + 129 (0..256) | its threshold + 129 << 16 | VJO_GLM_READ (its weights were
+                            read from the card in this job), sum the rows it read, us its time (its share of the
+                            finder's pass and its decision) */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */

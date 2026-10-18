@@ -958,7 +958,11 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
                              ? which - VJO_GAME_OCR_OPEN_LM + 1u : 0u;
     uint32_t model_tier = which >= VJO_GAME_OCR_OPEN_TIER && which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS
                           ? which - VJO_GAME_OCR_OPEN_TIER + 1u : 0u;
-    if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
+    int gate = which == VJO_GAME_OCR_OPEN_GATE; /* API 26: the text-presence gate's weights, for its request only */
+    if (gate) {
+        if (!(request.speed & VJO_GAME_OCR_S_GATE)) return VJO_ERR_ARG;
+        name = VJO_VOCR_GATE_NAME;
+    } else if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
         lm_tier <= ((request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK)) name = lm_name(lm_tier);
     else if (model_tier && tier_allowed(&request, model_tier)) name = tier_name(model_tier);
     else if (request.tiers) return VJO_ERR_ARG; /* a request by tiers names no model of its own */
@@ -967,7 +971,7 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     else if (which == VJO_GAME_OCR_OPEN_CASCADE &&
              ((request.flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK)) name = VJO_VOCR_CASCADE_NAME;
     else return VJO_ERR_ARG;
-    size = lm_tier ? lm_size(lm_tier) : model_size(name);
+    size = gate ? VJO_VOCR_GATE_BYTES : lm_tier ? lm_size(lm_tier) : model_size(name);
     if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
     model_io.seq = seq;
     model_io.pid = pid;

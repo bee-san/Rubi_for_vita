@@ -288,13 +288,18 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes|diagnostics|waited|notext|waiting|gstep\n", argv[0]);
         return 2;
     }
-    if (!strcmp(argv[2], "gstep")) { /* the step formatter alone, on stdout: API 20's check, lm, cascade, refine kinds */
+    if (!strcmp(argv[2], "gstep")) { /* the step formatter alone, on stdout: API 20's check, lm, cascade, refine kinds; API 26's gate */
         static const VjoGameOcrStep steps[] = {{.id = VJO_GSTEP_CHECK, .kind = 2 | 8, .bytes = 4096},
                                                {.id = VJO_GSTEP_LM, .kind = 2, .arg = 1, .us = 2100},
                                                {.id = VJO_GSTEP_CASCADE, .kind = 1, .arg = 1, .us = 550001},
                                                {.id = VJO_GSTEP_RECOGNIZE, .kind = 0, .arg = 1, .us = 820000},
                                                {.id = VJO_GSTEP_REFINE, .kind = 2, .arg = 16, .bytes = 9u << 16 | 2u << 8 | 7u,
-                                                .sum = 410, .us = 1400}};
+                                                .sum = 410, .us = 1400},
+                                               /* API 26: the gate stopped 2 lines, score -60, threshold -8,
+                                                * its weights read in this job */
+                                               {.id = VJO_GSTEP_GATE, .kind = 1, .arg = 2,
+                                                .bytes = (uint32_t)(-60 + 129) | (uint32_t)(-8 + 129) << 16 | VJO_GLM_READ,
+                                                .sum = 112, .us = 9001}};
         char line[256];
         for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++)
             if (vjo_gstep_format(line, sizeof(line), "job", &steps[i]) > 0) puts(line);

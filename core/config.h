@@ -100,7 +100,15 @@ typedef struct {
      * (0: as soon as the stick stops); the d-pad and taps look up at once.
      * Last, as above. */
     int stick_lookup_ms;      /* 0..1000 */
+    /* Local OCR (vocr, API 26): the text-presence gate in front of the line finder
+     * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
+     * text (a hidden text box, a CG screen) returns no line. Last, as above. */
+    int ocr_text_gate;        /* 0/1 */
 } VjoConfig;
+
+/* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
+#define VJO_TEXT_GATE_DEFAULT 0
+#define VJO_TEXT_GATE_DEFAULT_TEXT "off"
 
 void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and

@@ -46,8 +46,11 @@
  * buffer, VJO_CAPTURE_*, VJO_ALLOC_*, and VjoState's alloc_status, capture_result and
  * raw_stride (VjoMemInfo's capture_bytes). VjoState's capture fields are an OCR job's.
  * 25: vjoNotifyShell wakes the registered Shell's event wait after local input
- * or job completion; no new thread, event object or buffer. */
-#define VJO_API_VERSION 25
+ * or job completion; no new thread, event object or buffer.
+ * 26: the text-presence gate: VjoGameOcrRequest.speed bit 4 (VJO_GAME_OCR_S_GATE), its weights' file
+ * (VJO_GAME_OCR_OPEN_GATE, VJO_VOCR_GATE_NAME) in the kernel's broker for such a request, and a new step kind
+ * (gate). Sizes are unchanged. */
+#define VJO_API_VERSION 26
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from

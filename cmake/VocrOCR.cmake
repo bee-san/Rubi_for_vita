@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT d214a05deeef503a5e1d1853fe9fa4c91eb60bc2)
+set(VJO_VOCR_COMMIT ac0d6b1d3da5e96cd771a48da7992b6cf25d6519)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -35,7 +35,9 @@ set(_vocr_pins
   vocr_lm.c 89e0494caf22090cab52131b8b9d489a26085300b61e59855cb9a0d4074dbd05
   vocr_lm.h 6d314c7fbc74c240b4e6d70c0dc0a9e1c98fcb196ecd6bc1aa2ccf5c8fb9fb86
   vocr_lines_refine.c f4fb08aa995379c5ee9cb746307ed2c2d357574d71e5556f2b40d8ce1584e797
-  vocr_lines_refine.h 66fe3b716193d835e9ab1d614d71ad8e19de70db5ac8ec0f09b8e027b260dc6b)
+  vocr_lines_refine.h 66fe3b716193d835e9ab1d614d71ad8e19de70db5ac8ec0f09b8e027b260dc6b
+  vocr_textgate.c da772dd316b69ac79dc0d6ffbae14da428df429657d089fd99ba8cd74c43266e
+  vocr_textgate.h aeb8c5bdb810e8ab82bfaa37aadc1d564ec0dec2a80b1e2f80323819853d7258)
 while(_vocr_pins)
   list(POP_FRONT _vocr_pins _file _want)
   if(NOT EXISTS "${_vocr_rt}/${_file}")
@@ -57,8 +59,10 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # platform computes the same bits; the Vita build adds the Cortex-A9 NEON flags.
 # Its few libc calls (memcpy, memset, the fabsf/signbit builtins) need no
 # newlib, which SceShell plugins link without.
+# vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
+# (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c")
+  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)
@@ -67,6 +71,7 @@ if(VJO_BUILD_VITA)
 else()
   target_link_libraries(vjo_vocr_rt PUBLIC m)
 endif()
+
 
 # core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h).
 add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c")

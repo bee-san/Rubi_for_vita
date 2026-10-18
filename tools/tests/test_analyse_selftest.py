@@ -441,6 +441,24 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual({k: rf[k] for k in ("jobs", "modes", "boxes", "lines", "split", "capped", "rows", "us")},
                          {"jobs": 1, "modes": {"psp": 1}, "boxes": 9, "lines": 16, "split": 7, "capped": 2,
                           "rows": 410, "us": [1400]})
+        # API 26: the text-presence gate's step (its mode as the kind; the score and threshold packed + 129, the
+        # read bit when the job read the weights)
+        self.assertTrue(any(line.startswith("gstep job gate kind=1 arg=2 ") for line in lines), lines)
+        gt = a.summarise_log("\n".join(lines) + "\n")["gate"]
+        self.assertEqual(gt, {"jobs": 1, "stopped": 1, "lines_stopped": 2, "scores": [-60], "us": [9001], "rcs": {},
+                              "reads": 1})
+
+    def test_the_gate_step_reads_its_score_beside_the_read_bit(self):
+        # API 26 (VJO_GSTEP_GATE): bytes = score + 129 | (threshold + 129) << 16 | VJO_GLM_READ; arg 0 kept the
+        # lines, a nonzero rc means the gate could not decide (the lines were kept)
+        def step(arg, rc, score, read):
+            packed = (score + 129) | (-8 + 129) << 16 | (0x80000000 if read else 0)
+            return (f"gstep job gate kind=1 arg={arg} rc=0x{rc & 0xFFFFFFFF:08X} bytes={packed} sum=0x0000003C "
+                    f"main=0 cdram=0 phycont=0 us=120\n")
+        gt = a.summarise_log(step(1, 0, -109, True) + step(1, 0, -100, False) + step(0, 0, 127, False)
+                             + step(0, -2, 0, False))["gate"]
+        self.assertEqual(gt, {"jobs": 4, "stopped": 2, "lines_stopped": 2, "scores": [-109, -100, 127],
+                              "us": [120, 120, 120, 120], "rcs": {-2: 1}, "reads": 1})
 
     def test_the_vjonet_stack_line_keeps_the_largest_and_warns_near_the_top(self):
         # shell/worker.c net_stack_check: logged at a game exit when it grew; the summary keeps the largest

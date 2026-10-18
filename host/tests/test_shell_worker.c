@@ -1858,6 +1858,18 @@ static void test_vocr_request_carries_the_job_policy(void)
                !(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST));
     TEST_MSG("blank on, wait off: flags 0x%08X", (unsigned)fake_game_request.flags);
     mem_free();
+    /* API 26: the text-presence gate rides in the speed word, only with ocr_text_gate = on (off by default) */
+    reset();
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & VJO_GAME_OCR_S_GATE));
+    mem_free();
+    reset();
+    cfg.ocr_text_gate = 1;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_GATE) &&
+               !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+    TEST_MSG("gate on: speed 0x%08X", (unsigned)fake_game_request.speed);
+    mem_free();
     /* the refinement's mode: psp by default, on, off */
     static const unsigned modes[] = {VJO_GAME_OCR_REFINE_PSP, VJO_GAME_OCR_REFINE_ON, 0};
     for (unsigned i = 0; i < 3; i++) {
