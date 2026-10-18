@@ -105,7 +105,8 @@ a difference past a line's 60th character, the most a line's log entry keeps. It
 text and the job lines in `log.txt`, which the debug build (the test builds') logs; the normal build's
 short log has neither ([release-variants.md](release-variants.md)), and for its boots the analysis says
 so instead. In test.3 (Automatically, CLANNAD) it found none: 0 of 18 pairs, and 2 jobs that read the
-same text again.
+same text again. Over all of test.2's, test.3's and test.4's logs it is 1 of 299 pairs, a settings menu
+and no dialogue: [text-stability.md](text-stability.md) has the counts and why no fix or model is needed.
 
 ## From the press to the popup
 

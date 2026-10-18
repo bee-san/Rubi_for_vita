@@ -222,7 +222,7 @@ line still names keeps one copy (the worker checks for an older copy of itself);
 no worker line and remove the ones older installs left ([one-vpk-install.md](one-vpk-install.md)). The prior art, the
 lifecycle (start, suspend and resume, exit, crash, a title turned OFF or ON while it runs, the
 Rubi app beside the game) and the memory are in [worker-loading.md](worker-loading.md).
-With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 94,208 B of
+With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 98,304 B of
 pages and 36,864 B of stack and TLS, from the game's own budget); one that cannot start with them is
 turned OFF or started with L held.
 

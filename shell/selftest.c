@@ -300,7 +300,8 @@ int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
 
 static const char *const step_names[] = {
     "none", "mem", "check", "alloc", "free", "pass", "tear", "sig", "find", "load", "recognize", "fallback",
-    "fb", "probe", "settle", "blank", "norm", "lm", "cascade", "refine", "par", "clock", "pace", "shot", "save"};
+    "fb", "probe", "settle", "blank", "norm", "lm", "cascade", "refine", "par", "clock", "pace", "shot", "save",
+    "gate"};
 static const char *const mem_names[] = {"-", "user", "cdram", "phycont", "kernel"};
 static const char *const src_names[] = {"-", "hook", "kstrip", "user"};
 static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe", "line", "lm", "cascade",
@@ -328,9 +329,10 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
         arg = argbuf;
     } else {
         if (s->id == VJO_GSTEP_CHECK || s->id == VJO_GSTEP_LM || s->id == VJO_GSTEP_CASCADE ||
-            s->id == VJO_GSTEP_REFINE || s->id == VJO_GSTEP_SHOT || s->id == VJO_GSTEP_SAVE) {
+            s->id == VJO_GSTEP_REFINE || s->id == VJO_GSTEP_SHOT || s->id == VJO_GSTEP_SAVE ||
+            s->id == VJO_GSTEP_GATE) {
             /* API 20: the LM tier (check: | 8 with the cascade), the refinement's mode; API 23: the
-             * shot's JPEG quality, the save's chunks */
+             * shot's JPEG quality, the save's chunks; API 26: the gate's mode */
             sceClibSnprintf(kindbuf, sizeof(kindbuf), "%u", (unsigned)s->kind);
             kind = kindbuf;
         }

@@ -1044,8 +1044,8 @@ static void invalid_capture_and_wire(void)
      * carries it no more than any other (vertical_model_opens_only_for_a_vertical_job) */
     TEST_CHECK(VJO_GAME_OCR_F_ALL == 0xFFFFFFFFu && VJO_GAME_OCR_F_VERTICAL == 0x8000u);
     r.flags = 0;
-    r.speed = 0x10; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 22: VJO_GAME_OCR_S_* bits 4-31 unknown */
-    r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache: known */
+    r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* VJO_GAME_OCR_S_* bits 5-31 unknown (API 26: 4) */
+    r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate: known */
     uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;
@@ -1385,6 +1385,7 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     r = shot_request(); r.flags |= VJO_GAME_OCR_F_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.tiers = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 26 */
     /* an OCR job names no card; without models it is refused as before */
     r = make_request(); memcpy(r.shot, SHOT_ID, sizeof(SHOT_ID)); TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     TEST_CHECK(!valid && !pending);
@@ -2066,7 +2067,7 @@ static void cascade_model_opens_only_with_a_ceiling(void)
     }
 }
 
-/* API 26: the vertical model is a pinned name the kernel knows (its length the pin's), opened as
+/* API 27: the vertical model is a pinned name the kernel knows (its length the pin's), opened as
  * VJO_GAME_OCR_OPEN_VERTICAL by a job whose request has VJO_GAME_OCR_F_VERTICAL, by tiers (the Shell's)
  * or by name, and by no other job; a shot cannot carry the flag. */
 static void vertical_model_opens_only_for_a_vertical_job(void)
@@ -2112,6 +2113,32 @@ static void vertical_model_opens_only_for_a_vertical_job(void)
     caller = 3; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG && !game_ocr_capture_busy_locked());
     r.flags &= ~VJO_GAME_OCR_F_VERTICAL;
     TEST_CHECK(vjoOcrSubmit(&r) > 0);
+}
+
+/* API 26: the text-presence gate's weights are a pinned name the kernel knows, at their pinned size; the game
+ * may open them only when the request asks for the gate (VJO_GAME_OCR_S_GATE), by tiers or by name. */
+static void gate_weights_open_only_with_the_gate(void)
+{
+    for (unsigned gate = 0; gate <= 1; gate++)
+        for (unsigned tiers = 0; tiers <= 1; tiers++) {
+            setup(); VjoGameOcrRequest r = make_request();
+            r.speed = gate ? VJO_GAME_OCR_S_GATE : 0u;
+            if (tiers) { strcpy(r.model, VJO_VOCR_TIER1_NAME); r.tiers = 1u; }
+            caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+            if (!gate) {
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_GATE, NULL) == VJO_ERR_ARG && !model_opens);
+            } else {
+                expect_lm = VJO_VOCR_GATE_NAME; expected_model_size = VJO_VOCR_GATE_BYTES;
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_GATE, NULL) == VJO_ERR_BUSY);
+                model_tick();
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_GATE, NULL) == (int)VJO_VOCR_GATE_BYTES &&
+                           model_opens == 1);
+                close_model(seq);
+                expect_lm = NULL;
+            }
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_GATE + 1u, NULL) == VJO_ERR_ARG);
+            TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+        }
 }
 
 /* API 21: a request by tiers names the model sizes its job may run (bit t - 1);
@@ -2287,8 +2314,9 @@ TEST_LIST = {
     {"the fallback is one of the submitted pinned names; Open picks which", fallback_is_one_of_the_submitted_pinned_names},
     {"an LM tier opens by its pinned name, up to the request's tier", lm_tiers_open_up_to_the_requested_tier},
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
+    {"API 26: the gate's weights open by their pinned name, only with the gate", gate_weights_open_only_with_the_gate},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
-    {"API 26: the vertical model opens only for a vertical job, by tiers or by name; never a shot's", vertical_model_opens_only_for_a_vertical_job},
+    {"API 27: the vertical model opens only for a vertical job, by tiers or by name; never a shot's", vertical_model_opens_only_for_a_vertical_job},
     {"the Large size's file opens at its pinned length only (VOCR5-L: 2,473,696 B)", the_large_size_opens_at_its_pinned_length_only},
     {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},
     {"exact_pin_keeps_canonical_path_and_final_chunk_bounds",exact_pin_keeps_canonical_path_and_final_chunk_bounds},

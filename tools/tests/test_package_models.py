@@ -2,6 +2,7 @@
 network or device access."""
 import contextlib
 import hashlib
+import re
 import io
 import json
 from pathlib import Path
@@ -49,6 +50,13 @@ class PackageModels(unittest.TestCase):
         model_att = {prepare.VOCR_MODEL_ATTRIBUTION: ("https://fixture.invalid/M", len(self.model_attribution),
                                                       hashlib.sha256(self.model_attribution).hexdigest())}
         self.enterContext(mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att))
+        # the text-presence gate's weights and attribution (ocr_text_gate)
+        self.gate = b"tiny gate fixture, not gate weights"
+        self.gate_attribution = b"the gate's attribution fixture"
+        self.enterContext(mock.patch.object(release, "VOCR_GATE_ASSETS", {prepare.VOCR_GATE_MODEL: (
+            "https://fixture.invalid/G", len(self.gate), hashlib.sha256(self.gate).hexdigest())}))
+        self.enterContext(mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", {prepare.VOCR_GATE_ATTRIBUTION: (
+            "https://fixture.invalid/GA", len(self.gate_attribution), hashlib.sha256(self.gate_attribution).hexdigest())}))
         self.vertical_attribution = b"the vertical model's attribution fixture"
         self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
             "https://fixture.invalid/V", len(self.vertical_attribution), hashlib.sha256(self.vertical_attribution).hexdigest())}))
@@ -87,6 +95,8 @@ class PackageModels(unittest.TestCase):
             (self.models / name).write_bytes(self.vertical)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution or self.attribution)
         (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(self.model_attribution)
+        (self.models / prepare.VOCR_GATE_MODEL).write_bytes(self.gate)
+        (self.models / prepare.VOCR_GATE_ATTRIBUTION).write_bytes(self.gate_attribution)
         (self.models / prepare.VOCR_VERTICAL_ATTRIBUTION).write_bytes(self.vertical_attribution)
 
     def package_fixture(self, settings=None, write_models=True, vpk=b"synthetic package fixture", record=None):
@@ -162,8 +172,16 @@ class PackageModels(unittest.TestCase):
                 self.assertIn(release.DATA + "ocr/" + name, manifest["files"])
                 self.assertIn(name, manifest["models"])
                 self.assertEqual(archive.read(release.DATA + "ocr/" + name), self.fixture_of(name))
-            self.assertEqual(sorted(manifest["models"]),
-                             sorted({*sizes, prepare.VOCR_VERTICAL_MODEL, *prepare.VOCR_LM_ASSETS}))
+            self.assertEqual(sorted(manifest["models"]), sorted({*sizes, *prepare.VOCR_LM_ASSETS, prepare.VOCR_GATE_MODEL,
+                                                           prepare.VOCR_VERTICAL_MODEL}))
+            # API 26: the text-presence gate's weights and their release's attribution ship beside the models
+            gate = manifest["models"][prepare.VOCR_GATE_MODEL]
+            self.assertEqual((gate["release"], gate["bytes"], gate["role"]),
+                             ("bee-san/vita-vn-ocr " + prepare.VOCR_GATE_TAG, len(self.gate),
+                              "text-presence gate (ocr_text_gate)"))
+            self.assertNotIn("generation", gate)
+            self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_GATE_MODEL), self.gate)
+            self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_GATE_ATTRIBUTION), self.gate_attribution)
             # the vertical model (#99): no size's, its own release, its role
             vertical = manifest["models"][prepare.VOCR_VERTICAL_MODEL]
             self.assertEqual((vertical["release"], vertical["role"], "tier" in vertical),
@@ -251,6 +269,21 @@ class PackageModels(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "MODEL-ATTRIBUTION.md checksum failed"):
             self.package_fixture(write_models=False)
         self.assertFalse((self.root / "package.zip").exists())
+
+    def test_the_gates_weights_and_attribution_are_required_and_pinned(self):
+        """API 26: the text-presence gate's weights (v0.3.2-textgate.1's textgate_p8_c8_w8.vtd, read at run time
+        when ocr_text_gate = on) and that release's ATTRIBUTION.md (its training data's licences, the weights'
+        non-commercial terms) ship as ocr/GATE-ATTRIBUTION.md: a package without either, or with another file
+        under its name, is refused."""
+        for name, other in ((prepare.VOCR_GATE_MODEL, b"another gate"), (prepare.VOCR_GATE_ATTRIBUTION, self.attribution)):
+            self.write_models()
+            (self.models / name).unlink()
+            with self.assertRaisesRegex(ValueError, re.escape(name) + ".* missing|missing: " + re.escape(name)):
+                self.package_fixture(write_models=False)
+            (self.models / name).write_bytes(other)
+            with self.assertRaisesRegex(ValueError, "checksum failed"):
+                self.package_fixture(write_models=False)
+            self.assertFalse((self.root / "package.zip").exists())
 
     def test_a_payload_list_the_app_refuses_leaves_no_package(self):
         """The one-VPK payload list is checked before the output is opened, and a refusal while writing

@@ -706,7 +706,8 @@ static const char nondefault_config[] =
     "ocr_vertical = on\n"
     "log_file = off\n"
     "anki_mining = on\n"
-    "anki_screenshot = off\n";
+    "anki_screenshot = off\n"
+    "ocr_text_gate = on\n";
 
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {

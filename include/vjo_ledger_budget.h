@@ -152,18 +152,29 @@
  * the page, data/bss 14,160 B as before [measured: the build log's module rows, main 49310ed and
  * its parent], in the game's partition, never SceShell's. The normal build's text still fits the
  * page it had: 94,208 B [CI's vita (normal) build log, main b622c18], so the budget is per build.
- * Raised by one text page in both builds for vertical text (vita-vn-ocr #99, config.ini ocr_vertical):
- * vita-vn-ocr's column finder and rotation (runtime/vocr_vertical.c, built for size: 3,220 B; its dark
- * flags link vocr_lines.c's vocr_line_dark and vocr_line_dark_rows, 1,170 B), the job's column path
- * (core/vocr_ocr.c, 528 B, the columns' dark flags on their fetched pixels included) and the vertical
- * request (game_ocr/main.c, 52 B): text 78,156 -> 82,972 B debug and 76,856 -> 81,672 B normal (+4,816 B
- * each; 248 B of text room left in the normal build's page), data/bss 14,160 B as before [measured: the
- * module rows of both builds of main 1de7b67 and of this change, CI's VitaSDK container], in the game's
- * partition, never SceShell's. It is in every game that is ON, ocr_vertical on or off. */
+ * Raised from 94,208 B in the normal build by one text page for API 26, the text-presence gate (vita-vn-ocr #100:
+ * runtime/vocr_textgate.c at the runtime's -O2, the code its time estimate is for, and core/vocr_ocr.c's use of
+ * it; its 1,540 B of int8 weights are a file the kernel broker opens, VJO_GAME_OCR_OPEN_GATE, kept in a static
+ * VjoVocrGateResident): 3,488 B of text and 1,560 B of .bss in both builds, whether the gate is on or off. The
+ * debug build's text 78,156 -> 81,644 B and data/bss 14,160 -> 15,720 B fit the pages it had, 98,304 B; the normal
+ * build's text 76,856 -> 80,344 B (968 B of room before it) takes one more, and its data/bss 14,160 -> 15,720 B
+ * fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main 1de7b67 and this change]. At
+ * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
+ * which would still need the page. In the game's partition, never SceShell's.
+ * Raised again for API 27, vertical text (vita-vn-ocr #99, config.ini ocr_vertical): vita-vn-ocr's column finder
+ * and rotation (runtime/vocr_vertical.c, built for size: 3,220 B; its dark flags link vocr_lines.c's
+ * vocr_line_dark and vocr_line_dark_rows, 1,170 B), the job's column path (core/vocr_ocr.c, 528 B, the columns'
+ * dark flags on their fetched pixels included) and the vertical request (game_ocr/main.c, 52 B): +4,816 B of
+ * text in each build on main 1de7b67 (78,156 -> 82,972 B debug, 76,856 -> 81,672 B normal) [measured: the module
+ * rows of both builds of main 1de7b67 and of #213]. With the gate, on main 5ee0904: text 81,644 -> 86,476 B debug
+ * (data/bss 15,720 B as before; 98,304 -> 106,496 B of pages) and 80,344 -> 85,176 B normal (98,304 -> 102,400 B;
+ * 840 B of text room left) [measured: the module rows of both builds of main 5ee0904 and of this change, CI's
+ * VitaSDK container]. In the game's partition,
+ * never SceShell's; in every game that is ON, ocr_vertical and the gate on or off. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 102400u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 106496u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 102400u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an

@@ -39,6 +39,8 @@ set(_vocr_pins
   vocr_lm.h 6d314c7fbc74c240b4e6d70c0dc0a9e1c98fcb196ecd6bc1aa2ccf5c8fb9fb86
   vocr_lines_refine.c f4fb08aa995379c5ee9cb746307ed2c2d357574d71e5556f2b40d8ce1584e797
   vocr_lines_refine.h 66fe3b716193d835e9ab1d614d71ad8e19de70db5ac8ec0f09b8e027b260dc6b
+  vocr_textgate.c da772dd316b69ac79dc0d6ffbae14da428df429657d089fd99ba8cd74c43266e
+  vocr_textgate.h aeb8c5bdb810e8ab82bfaa37aadc1d564ec0dec2a80b1e2f80323819853d7258
   vocr_vertical.c 7e11ef75cd5308daac4323e58961f62ae2df537f6170004c2cc387f341788b54
   vocr_vertical.h ccc2a658a34b42e16071898aaa560765b4033fcecc5e1d4740defdc641b6c96e)
 while(_vocr_pins)
@@ -62,8 +64,10 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # platform computes the same bits; the Vita build adds the Cortex-A9 NEON flags.
 # Its few libc calls (memcpy, memset, the fabsf/signbit builtins) need no
 # newlib, which SceShell plugins link without.
+# vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
+# (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_vertical.c")
+  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c" "${_vocr_rt}/vocr_vertical.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)
@@ -76,6 +80,7 @@ if(VJO_BUILD_VITA)
 else()
   target_link_libraries(vjo_vocr_rt PUBLIC m)
 endif()
+
 
 # core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h).
 add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c")

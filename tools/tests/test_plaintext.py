@@ -137,12 +137,17 @@ class FrozenPlaintext(unittest.TestCase):
         att = {"ATTRIBUTION.md": ("fixture", 20, hashlib.sha256(b"CC BY-SA 4.0 fixture").hexdigest())}
         (models / "MODEL-ATTRIBUTION.md").write_text("CC BY 4.0 fixture")
         model_att = {"MODEL-ATTRIBUTION.md": ("fixture", 17, hashlib.sha256(b"CC BY 4.0 fixture").hexdigest())}
+        (models / release.VOCR_GATE_MODEL).write_bytes(payload)  # API 26: the text-presence gate's
+        gate = {release.VOCR_GATE_MODEL: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())}
+        (models / "GATE-ATTRIBUTION.md").write_text("gate fixture")
+        gate_att = {"GATE-ATTRIBUTION.md": ("fixture", 12, hashlib.sha256(b"gate fixture").hexdigest())}
         (models / "VERTICAL-ATTRIBUTION.md").write_text("vertical fixture")
         vertical_att = {"VERTICAL-ATTRIBUTION.md": ("fixture", 16, hashlib.sha256(b"vertical fixture").hexdigest())}
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \
              mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
              mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
+             mock.patch.object(release, "VOCR_GATE_ASSETS", gate), mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
              mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", vertical_att), \
              mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \
              mock.patch.object(release, "VOCR5_ASSETS", vocr5), mock.patch.object(release, "VOCR5V_ASSETS", vocr5v), \

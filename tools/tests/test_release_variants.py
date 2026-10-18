@@ -344,15 +344,20 @@ class PackageVariants(unittest.TestCase):
         model_att = b"the model sizes' attribution fixture"
         self.enterContext(mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", {prepare.VOCR_MODEL_ATTRIBUTION: (
             "https://fixture.invalid/M", len(model_att), hashlib.sha256(model_att).hexdigest())}))
+        gate_att = b"the gate's attribution fixture"  # API 26: the text-presence gate's
+        self.enterContext(mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", {prepare.VOCR_GATE_ATTRIBUTION: (
+            "https://fixture.invalid/G", len(gate_att), hashlib.sha256(gate_att).hexdigest())}))
+        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR_LM_ASSETS", "VOCR_GATE_ASSETS")
         for mod in (prepare, release):
-            for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR_LM_ASSETS"):
+            for table in tables:
                 pinned = {name: spec for name in getattr(mod, table)}
                 self.enterContext(mock.patch.object(mod, table, pinned))
-        for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR_LM_ASSETS"):
+        for table in tables:
             for name in getattr(prepare, table):
                 (self.models / name).write_bytes(blob)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution)
         (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(model_att)
+        (self.models / prepare.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
         vertical_att = b"the vertical model's attribution fixture"
         self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
             "https://fixture.invalid/V", len(vertical_att), hashlib.sha256(vertical_att).hexdigest())}))

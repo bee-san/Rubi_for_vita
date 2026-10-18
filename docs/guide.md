@@ -519,7 +519,8 @@ Text that types out is read once it is whole: a job recognizes nothing until
 every row of the region has held still for `ocr_settle_ms` (150 ms by default,
 `0` turns it off), waiting at most `ocr_settle_max_ms` (2000) per recognition,
 or `ocr_settle_press_ms` (1000; `0`: the same limit) when the open overlay waits
-for it ([first-ocr.md](first-ocr.md)), and a blinking "next" icon does not hold it up. `ocr_skip_blank_lines = on`
+for it ([first-ocr.md](first-ocr.md)), and a blinking "next" icon does not hold it up; on the console
+it has read no dialogue line early ([text stability](text-stability.md)). `ocr_skip_blank_lines = on`
 skips found lines with no text-like ink; it is off by default, because once it
 keeps soft text (a PSP game shown 2x, an upscaled render) it finds next to
 nothing to skip in the test screenshots. Both are logged per job; see
@@ -554,6 +555,11 @@ Refined lines are read wider: on the
 host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 22-23 ms more per line found with VOCR3-H15 on the console
 ([finder refinement](vita-vn-ocr.md#finder-refinement-api-20)).
+`ocr_text_gate = on` puts vita-vn-ocr #100's text-presence gate in front of the finder: a region it says holds
+no text (the game hid its text box, a CG screen) returns no line, so no junk is read off the picture. On
+vita-vn-ocr's test sets and CLANNAD it changed no text read; it costs an estimated 0.1 s per job, so it is off
+until a console run shows how often it helps
+([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)).
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
 decode, the cascade's re-read and its place in the text still follow line order on the job's own
@@ -714,7 +720,7 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 98,304 B of module pages (the debug build's 102,400 B) and its 36,864 B thread stack and TLS from its
+holds the worker's 102,400 B of module pages (the debug build's 106,496 B) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
