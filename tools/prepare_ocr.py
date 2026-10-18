@@ -368,7 +368,7 @@ def main():
         for path in fetch_tiers(args.output, args.source):
             print('Verified', path.name)
         print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (keep',
-              VOCR_MODEL_ATTRIBUTION, 'and', VOCR_GATE_ATTRIBUTION,
+              f'{VOCR_MODEL_ATTRIBUTION}, {VOCR_GATE_ATTRIBUTION} and {VOCR_VERTICAL_ATTRIBUTION}',
               'beside them: their training data\'s licences and their terms)')
         return
     if args.backend == 'vocr':
