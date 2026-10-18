@@ -1065,7 +1065,7 @@ screenshots: they are for non-commercial use only too, and their attribution is 
 `ocr/GATE-ATTRIBUTION.md`, which ships beside them
 ([details](vita-vn-ocr.md#text-presence-gate-api-26)). The vertical model's weights
 (`ocr/VOCR5_V_w8.vocr`, bee-san/vita-vn-ocr v0.3.2-vertical.1; every package ships them, whether
-`ocr_vertical` is on or off) are VOCR5-S fine-tuned on synthetic columns, with VOCR5-S's training data and
-terms: they are for non-commercial use only too, and their attribution is in
-`ocr/VERTICAL-ATTRIBUTION.md`, which ships beside them
+`ocr_vertical` is on or off) are VOCR5-S fine-tuned on synthetic columns and on columns of text from
+training-side VNDB screenshots, with VOCR5-S's training data and terms: they are for non-commercial use only
+too, and their attribution is in `ocr/VERTICAL-ATTRIBUTION.md`, which ships beside them
 ([details](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
