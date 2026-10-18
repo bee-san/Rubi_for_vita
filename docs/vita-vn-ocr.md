@@ -902,6 +902,8 @@ their 。).
   median column's width), and read with the column when it merges into it.
 - The capture cost above, and a console's speed and accuracy, are unmeasured until a console run
   (the PR's console steps).
+- The self-test's stages (the debug build, [self-test](self-test.md)) are made for rows and the model
+  sizes: with `on` its smallest-size stage runs the vertical model too. Run it with `ocr_vertical = off`.
 
 ## Models
 
