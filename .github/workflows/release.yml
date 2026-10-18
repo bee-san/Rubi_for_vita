@@ -106,7 +106,7 @@ jobs:
         with:
           repository: bee-san/vita-vn-ocr
           # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #99's column finder and rotation, on #85's kernels)
-          ref: 4fb6458a356845f2ca52dbbb0e81f5b642fae040
+          ref: 2b6cbbcb55938071a17b1c93f5f0e7ee1e3beb9d
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
@@ -195,7 +195,7 @@ jobs:
         with:
           repository: bee-san/vita-vn-ocr
           # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #99's column finder and rotation, on #85's kernels)
-          ref: 4fb6458a356845f2ca52dbbb0e81f5b642fae040
+          ref: 2b6cbbcb55938071a17b1c93f5f0e7ee1e3beb9d
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr

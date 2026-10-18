@@ -155,8 +155,9 @@
  * Raised by one text page in both builds for vertical text (vita-vn-ocr #99, config.ini ocr_vertical):
  * vita-vn-ocr's column finder and rotation (runtime/vocr_vertical.c, built for size: 3,220 B; its dark
  * flags link vocr_lines.c's vocr_line_dark and vocr_line_dark_rows, 1,170 B), the job's column path
- * (core/vocr_ocr.c, 432 B) and the vertical request (game_ocr/main.c, 52 B): text 78,156 -> 82,876 B
- * debug and 76,856 -> 81,576 B normal (+4,720 B each), data/bss 14,160 B as before [measured: the
+ * (core/vocr_ocr.c, 528 B, the columns' dark flags on their fetched pixels included) and the vertical
+ * request (game_ocr/main.c, 52 B): text 78,156 -> 82,972 B debug and 76,856 -> 81,672 B normal (+4,816 B
+ * each; 248 B of text room left in the normal build's page), data/bss 14,160 B as before [measured: the
  * module rows of both builds of main 1de7b67 and of this change, CI's VitaSDK container], in the game's
  * partition, never SceShell's. It is in every game that is ON, ocr_vertical on or off. */
 #if VJO_DEBUG

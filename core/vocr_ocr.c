@@ -44,9 +44,11 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 /* The vertical model's finder (include/vjo_vocr_sizes.h VJO_VOCR_VERTICAL_NAME): vita-vn-ocr's column
  * finder with these flags (vocr_vertical.h): its variant P1 (VOCR_COLUMNS_VALLEYS: bands split at their
  * columns of little ink, columns grown only over dense rows), the finder vita-vn-ocr #99 selected under
- * eval/vertical_protocol.json's finder rule. */
+ * eval/vertical_protocol.json's finder rule, and VOCR_COLUMNS_NO_DARK: the finder reads no column's rows
+ * for its dark flag (each column spans the region's strips, so through the row callback that would read
+ * every strip again); the job computes the same flag on the pixels it fetches for the column (recognize). */
 #ifndef VJO_VOCR_COLUMN_FLAGS
-#define VJO_VOCR_COLUMN_FLAGS VOCR_COLUMNS_VALLEYS
+#define VJO_VOCR_COLUMN_FLAGS (VOCR_COLUMNS_VALLEYS | VOCR_COLUMNS_NO_DARK)
 #endif
 #define VJO_VOCR_COLUMNS (VJO_VOCR_FINDER_COLUMNS | VJO_VOCR_COLUMN_FLAGS)
 
@@ -1817,6 +1819,15 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         parts.count = 1;
         parts.truncated = 0;
         parts.lines[0] = *box;
+        if (cols && (mi->finder_mode & VOCR_COLUMNS_NO_DARK)) {
+            /* The finder left the column's dark flag to the job: vocr_line_dark on the column's own pixels,
+             * which it reads only inside the box (the same flag, bit for bit), before they are turned. */
+            const VocrLinesImage cim = {box_pixels, box->w, box->h, box_stride, VOCR_LINES_GREY};
+            int dark = vocr_line_dark(&cim, 0, 0, box->w, box->h);
+            if (dark < 0) { rc = VJO_E_OCR_REGION; goto fail; }
+            parts.lines[0].dark = (unsigned)dark;
+            st->dark += (unsigned)dark;
+        }
         if (l->refine_bytes) {
             /* The box refined on the pixels the job holds for it: its strip (the
              * box made strip-relative), or a tall line's own block. Its lines may

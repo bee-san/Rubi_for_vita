@@ -114,11 +114,12 @@ static void test_models_and_sizes(void)
     }
     TEST_CHECK_(n == expected && all != NULL, "%u pinned models, %u expected", n, expected);
     for (unsigned k = 0; k < 6; k++) TEST_CHECK_(vjo_vocr_model(by_name[k]) != NULL, "%s", by_name[k]);
-    /* every model of rows has #194's finder; the vertical one, last, the column finder's P1 (VALLEYS) */
+    /* every model of rows has #194's finder; the vertical one, last, the column finder's P1 (VALLEYS) with
+     * its dark flags left to the job (NO_DARK) */
     for (unsigned i = 0; i < n; i++)
         TEST_CHECK_(all[i].finder_mode == (strcmp(all[i].name, VJO_VOCR_VERTICAL_NAME)
                                                ? VOCR_LINES_TEXTBOX_RECOVERY
-                                               : (VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_VALLEYS)),
+                                               : (VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_VALLEYS | VOCR_COLUMNS_NO_DARK)),
                     "%s: finder 0x%x", all[i].name, all[i].finder_mode);
     TEST_CHECK(!strcmp(all[n - 1].name, VJO_VOCR_VERTICAL_NAME) && all[n - 1].bytes == VJO_VOCR_VERTICAL_BYTES);
     /* the three sizes' models (test_tier_pins.h: their releases' exact sizes and W8I arenas) */
@@ -649,7 +650,7 @@ static void test_vertical_model(void)
     char label[24];
     TEST_ASSERT(v && s && vi && si);
     TEST_CHECK(v->bytes == VJO_VOCR_VERTICAL_BYTES && v->arena_bytes == s->arena_bytes &&
-               v->finder_mode == (VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_VALLEYS) &&
+               v->finder_mode == (VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_VALLEYS | VOCR_COLUMNS_NO_DARK) &&
                s->finder_mode == VOCR_LINES_TEXTBOX_RECOVERY);
     /* the finders' arenas (vocr_vertical.h's figures) */
     TEST_CHECK(vocr_columns_arena_bytes(960, 544) == 83619u && vocr_columns_arena_bytes(480, 272) == 26467u);

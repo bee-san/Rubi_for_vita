@@ -260,7 +260,8 @@ typedef struct {
     uint32_t region_sum;     /* FNV-1a of the region's grey rows, first pass of the last try */
     uint32_t capture_us;     /* time inside strip() */
     unsigned lines;          /* lines found */
-    unsigned dark;           /* of those, dark text (inverted before recognition) */
+    unsigned dark;           /* of those, dark text (inverted before recognition); a model of columns whose
+                              * finder leaves the flag to the job (VOCR_COLUMNS_NO_DARK): of the columns read */
     unsigned truncated;      /* more lines than the finder returns (16) */
     unsigned frames;         /* CTC frames recognized, all lines */
     unsigned model_loaded;   /* 1: the weights were read and verified in this job */

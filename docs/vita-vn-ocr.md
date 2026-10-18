@@ -823,7 +823,10 @@ app has no switch for it; config.ini does.
   boxes wider than 5/4 of their height dropped, as horizontal text), in reading order: right to left,
   columns sharing a right edge top to bottom. Its variant P1 (`VOCR_COLUMNS_VALLEYS`: a band split at
   its columns of little ink, a column grown only over rows dense enough to be text), the finder
-  vita-vn-ocr #99 selected under `eval/vertical_protocol.json`'s finder rule. The finder's arena is the larger of the two finders':
+  vita-vn-ocr #99 selected under `eval/vertical_protocol.json`'s finder rule, with `VOCR_COLUMNS_NO_DARK`:
+  the finder reads no column's rows for its dark flag (a column spans every strip of the region), and
+  the job computes the same flag (`vocr_line_dark`, which reads only inside the box) on the pixels it
+  fetches for the column, before turning them. The finder's arena is the larger of the two finders':
   83,619 B at 960×544 (GRAD's 83,323 B), 26,467 B at 480×272 (25,355 B), under the model's
   124,832 B.
 - **Each column is a line.** It is fetched as a line is (from the strip, or, taller than a strip, as
@@ -876,12 +879,12 @@ same shape). VOCR5-S's box estimate, 631 ms at 333 MHz and 499 ms at 444 MHz for
 is about 2.2 ms a frame at 333 MHz and 1.8 ms at 444 MHz. The host sample below, a page of four
 columns of 6-10 characters, is 120 frames: about 0.26 s at 333 MHz, 0.21 s at 444 MHz, and the finder.
 The capture costs more than for rows, as a column spans every strip of the region: the sample's
-region (220 × 410, 64-row strips) took 50 strip reads on the host: the finder's two passes, its dark
-flags (`vocr_line_dark_rows` reads each column's rows once more) and the columns themselves (each
-read again through the strip, a tall line's way). In the game a strip read waits for the game's next
-frame: about 0.8 s at 60 frames a second (an estimate from the strip count; the log's `game vocr
-capture:` line gives the console's). One pass for every column would take most of that away; it is
-not done here.
+region (220 × 410, 64-row strips) took 32 strip reads on the host, the finder's two passes and the
+columns themselves (each read again through the strip, a tall line's way); with the finder's own dark
+flags (without `VOCR_COLUMNS_NO_DARK`, which reads every column's rows once more) it took 50. In the
+game a strip read waits for the game's next frame: about 0.5 s at 60 frames a second (an estimate from
+the strip count; the log's `game vocr capture:` line gives the console's). One pass for every column
+would take most of that away; it is not done here.
 
 **Off is today's job** (`host/tests/test_vocr_vertical.c`): jobs of rows on a 5-line region and on
 #194's box, greedy, with the LM, with two helpers, and refined, give the same text, greedy text,
@@ -992,7 +995,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 4fb6458a356845f2ca52dbbb0e81f5b642fae040  # #99's column finder and rotation, on #85's kernels, #83's refinement and #82's decoder
+git -C /path/to/vita-vn-ocr checkout 2b6cbbcb55938071a17b1c93f5f0e7ee1e3beb9d  # #99's column finder and rotation, on #85's kernels, #83's refinement and #82's decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").

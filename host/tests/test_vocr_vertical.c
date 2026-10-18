@@ -43,6 +43,7 @@ void test_pin_lm(uint32_t bytes, const unsigned char sha256[32]);
 #define M_ROWS "TINY_w8.vocr"
 #define M_COLS "TINYV_w8.vocr"
 #define M_COLS1 "TINYV1_w8.vocr"
+#define M_COLSD "TINYVD_w8.vocr" /* P1 with the finder's own dark flags (no VOCR_COLUMNS_NO_DARK) */
 
 /* ------------------------------------------------------------ the tiny blobs
  * (vita-vn-ocr runtime/tests/test_vocr.c's builder: height 8, stride 4) */
@@ -253,6 +254,8 @@ static void setup_files(void)
             test_pin_model(1, (uint32_t)n, sha, (uint32_t)vocr_arena_bytes(&m, &o));
             write_file(M_COLS1, blob, n, sha);
             test_pin_model(2, (uint32_t)n, sha, (uint32_t)vocr_arena_bytes(&m, &o));
+            write_file(M_COLSD, blob, n, sha);
+            test_pin_model(3, (uint32_t)n, sha, (uint32_t)vocr_arena_bytes(&m, &o));
         }
 #endif
     }
@@ -693,23 +696,25 @@ static void test_columns_read_right_to_left(void)
 {
     static const unsigned glyphs[4] = {6, 4, 7, 3}, short_glyphs[4] = {2, 1, 2, 2};
     static const struct { unsigned char bg, ink; } pol[2] = {{20, 225}, {235, 25}}; /* light text, dark text */
-    char text[VJO_OCR_TEXT_CAP], raw[VJO_OCR_TEXT_CAP];
+    static const char *const models_of[3] = {M_COLS, M_COLS1, M_COLSD};
+    char text[VJO_OCR_TEXT_CAP], raw[VJO_OCR_TEXT_CAP], own_dark[VJO_OCR_TEXT_CAP] = "";
     VjoVocrStats st;
     Ref ref;
-    unsigned distinct = 0;
+    unsigned distinct = 0, strips_no_dark = 0;
     setup_files();
     for (unsigned p = 0; p < 2; p++)
         for (unsigned tall = 0; tall <= 1; tall++)
             for (unsigned lm = 0; lm <= 1; lm++)
-                for (unsigned variant = 0; variant <= 1; variant++) {
-                    const char *model = variant ? M_COLS1 : M_COLS;
+                for (unsigned variant = 0; variant <= 2; variant++) { /* P0, P1 (NO_DARK); P1, the finder's dark */
+                    const char *model = models_of[variant];
                     JobOpts o = {.lm = (int)lm, .line = 1};
                     char what[96];
-                    snprintf(what, sizeof what, "%s text, %s columns, %s, P%u", p ? "dark" : "light",
-                             tall ? "tall" : "short", lm ? "LM" : "greedy", variant);
+                    snprintf(what, sizeof what, "%s text, %s columns, %s, P%u%s", p ? "dark" : "light",
+                             tall ? "tall" : "short", lm ? "LM" : "greedy", variant ? 1u : 0u,
+                             variant == 2 ? " (finder's dark)" : "");
                     if (tall) draw_columns(RW, RH, 4, glyphs, 20, 26, pol[p].bg, pol[p].ink);
                     else draw_columns(200, 60, 4, short_glyphs, 20, 26, pol[p].bg, pol[p].ink);
-                    reference(variant ? VOCR_COLUMNS_VALLEYS : 0u, (int)lm, &ref);
+                    reference(variant ? VOCR_COLUMNS_VALLEYS : 0u, (int)lm, &ref); /* the finder's own dark flags */
                     TEST_ASSERT_(ref.set.count == 4, "%s: the finder found %u columns, 4 drawn", what, ref.set.count);
                     for (unsigned i = 0; i < 4; i++) TEST_CHECK(ref.set.lines[i].dark == p);
                     seen_ph = 1;
@@ -717,6 +722,20 @@ static void test_columns_read_right_to_left(void)
                     check_columns(&ref, text, &st, what);
                     /* the columns taller than a strip went through the line buffer, the short ones not */
                     TEST_CHECK_(tall ? st.tall == 4 && !st.tall_skipped : !st.tall, "%s: %u tall", what, st.tall);
+                    /* the dark text's columns counted: by the finder, or by the job on the pixels it fetched */
+                    TEST_CHECK_(st.dark == 4u * p, "%s: %u dark", what, st.dark);
+                    /* NO_DARK: the same columns and text from fewer strip reads (the finder read no column's
+                     * rows for its dark flag; each column spans every strip of a tall region) */
+                    if (variant == 1) {
+                        strips_no_dark = st.strips;
+                        snprintf(own_dark, sizeof own_dark, "%s", text);
+                    } else if (variant == 2) {
+                        TEST_CHECK_(!strcmp(text, own_dark), "%s: \"%s\" against NO_DARK's \"%s\"", what, text, own_dark);
+                        TEST_CHECK_(tall ? strips_no_dark < st.strips : strips_no_dark <= st.strips,
+                                    "%s: %u strips, %u with NO_DARK", what, st.strips, strips_no_dark);
+                        if (tall && !lm) printf("strips read: %u with NO_DARK, %u with the finder's dark flags\n",
+                                                strips_no_dark, st.strips);
+                    }
                     for (unsigned i = 1; i < 4; i++) distinct += strcmp(ref.text[i], ref.text[i - 1]) != 0;
                     printf("%-40s \"%s\"\n", what, text);
                 }

@@ -103,9 +103,9 @@ static void test_each_model_dispatches_without_extra_capture_or_workspace(void)
         TEST_CHECK(vjo_vocr_ocr(&platform, "absent", models[i].name, &image, workspace, size, capture, cap,
                                 text, sizeof(text), &stats) == VJO_OK);
         /* the model's own finder (every pinned model of rows uses textbox recovery, 3; the vertical
-         * model the column finder, P1: VOCR_COLUMNS_VALLEYS) */
+         * model the column finder, P1 with the dark flags left to the job: VALLEYS | NO_DARK) */
         int expected = (int)models[i].finder_mode, cols = !strcmp(models[i].name, VJO_VOCR_VERTICAL_NAME);
-        TEST_CHECK_(expected == (cols ? (int)(VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_VALLEYS)
+        TEST_CHECK_(expected == (cols ? (int)(VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_VALLEYS | VOCR_COLUMNS_NO_DARK)
                                       : VOCR_LINES_TEXTBOX_RECOVERY) &&
                     finder_calls == (unsigned)!cols && column_calls == (unsigned)cols && selected_mode == expected &&
                     !model_opens && stats.columns == (unsigned)cols, "%s", models[i].name);
