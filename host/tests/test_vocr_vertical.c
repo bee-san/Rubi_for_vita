@@ -436,7 +436,7 @@ static void on_line(void *ud, const VjoVocrLineInfo *info)
 }
 
 typedef struct {
-    int lm, line, helpers, cache, refine, short_lines, cascade;
+    int lm, line, helpers, cache, refine, short_lines, cascade, gate;
 } JobOpts;
 
 /* A pool of real threads (VjoVocrPool): one per line a helper runs, joined. */
@@ -498,6 +498,14 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
     }
     pol.refine = o->refine ? VJO_VOCR_REFINE_ALL : 0u;
     pol.short_lines = o->short_lines;
+#ifndef VJO_TEST_OFF_ONLY
+    static VjoVocrGateResident gate_res; /* no gate file in the models' directory: the gate cannot decide */
+    if (o->gate) {
+        memset(&gate_res, 0, sizeof gate_res);
+        pol.gate = 1;
+        pol.gate_res = &gate_res;
+    }
+#endif
     if (o->cascade) { /* the model of rows reads doubtful lines again: never a model of columns' */
         pol.cascade = vjo_vocr_model(M_ROWS);
         pol.cascade_res = &cres;
@@ -879,6 +887,27 @@ static void test_line_lengths(void)
     TEST_CHECK(vjo_vocr_test_line_length(36, 290, 0) == 36u * 32u / 290u + 1u); /* the same box as a row */
 }
 
+/* The text-presence gate (API 26) scores row boxes: a job of rows with it on tries it (here its weights file is
+ * missing, so it cannot decide: VJO_E_OCR_MODEL, the lines kept), a job of columns never does, whatever the policy
+ * asks, and reads exactly as with it off (audit-vertical-rubi). */
+static void test_gate_never_runs_on_columns(void)
+{
+    static const unsigned glyphs[4] = {6, 4, 7, 3};
+    char text[VJO_OCR_TEXT_CAP], plain[VJO_OCR_TEXT_CAP];
+    VjoVocrStats st;
+    JobOpts off = {0}, on = {.gate = 1};
+    setup_files();
+    draw_rows();
+    TEST_CHECK(job(M_ROWS, &on, text, sizeof text, NULL, 0, &st) == VJO_OK && st.gate_rc == VJO_E_OCR_MODEL &&
+               !st.gate_ran && st.lines == LINES);
+    draw_columns(RW, RH, 4, glyphs, 20, 26, 20, 225);
+    TEST_ASSERT(job(M_COLS, &off, plain, sizeof plain, NULL, 0, &st) == VJO_OK && st.lines == 4);
+    TEST_CHECK(job(M_COLS, &on, text, sizeof text, NULL, 0, &st) == VJO_OK);
+    TEST_CHECK_(!strcmp(text, plain) && st.lines == 4 && !st.gate_rc && !st.gate_ran && !st.gate_read &&
+                !st.gate_stopped && !st.gate_rows, "\"%s\" against \"%s\", gate rc %d ran %u", text, plain, st.gate_rc,
+                st.gate_ran);
+}
+
 /* A region without ink gives no column: the job reads nothing and opens no model file. */
 static void test_empty_region_opens_no_model(void)
 {
@@ -904,6 +933,7 @@ TEST_LIST = {
     {"columns: the steps for rows never run, whatever the policy asks", test_row_steps_do_not_run},
     {"columns: a region without ink gives no column and opens no model", test_empty_region_opens_no_model},
     {"line lengths: a row's as before, a column's turned (the cascade's estimate)", test_line_lengths},
+    {"the text-presence gate never runs on columns, whatever the policy asks", test_gate_never_runs_on_columns},
 #endif
     {NULL, NULL}
 };

@@ -161,12 +161,15 @@
  * fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main 1de7b67 and this change]. At
  * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
  * which would still need the page. In the game's partition, never SceShell's.
- * Raised again for API 27, vertical text (vita-vn-ocr #99, config.ini ocr_vertical): vita-vn-ocr's column finder
- * and rotation (runtime/vocr_vertical.c, built for size: 3,220 B; its dark flags link vocr_lines.c's
- * vocr_line_dark and vocr_line_dark_rows, 1,170 B), the job's column path (core/vocr_ocr.c, 528 B, the columns'
- * dark flags on their fetched pixels included) and the vertical request (game_ocr/main.c, 52 B): +4,816 B of
- * text in each build on main 1de7b67 (78,156 -> 82,972 B debug, 76,856 -> 81,672 B normal) [measured: the module
- * rows of both builds of main 1de7b67 and of #213]. With the gate, on main 5ee0904: text 81,644 -> 86,476 B debug
+ * Raised again for API 27, vertical text (vita-vn-ocr #99, config.ini ocr_vertical): +4,816 B of text in each
+ * build on main 1de7b67 (78,156 -> 82,972 B debug, 76,856 -> 81,672 B normal) [measured: the module rows of both
+ * builds of main 1de7b67 and of #213], +4,832 B on main 5ee0904. Against 5ee0904's worker, as linked (debug; the
+ * normal build's in brackets where it differs): vita-vn-ocr's column finder and rotation (runtime/vocr_vertical.c,
+ * built for size) 2,570 B; the dark flag the job computes on a column's pixels (vocr_lines.c's vocr_line_dark and
+ * vocr_line_dark_rows) 1,170 B, and the contrast helpers they share with the row finder, no longer inlined, 526 B;
+ * the job's column path and VOCR5-V's model entry (core/vocr_ocr.c) 510 B; the vertical request (game_ocr/main.c)
+ * 52 B [48 B]; alignment 12 B [8 B] [measured: the symbols and sections of both builds' worker ELFs, main 5ee0904
+ * and this change]. With the gate, on main 5ee0904: text 81,644 -> 86,476 B debug
  * (data/bss 15,720 B as before; 98,304 -> 106,496 B of pages) and 80,344 -> 85,176 B normal (98,304 -> 102,400 B;
  * 840 B of text room left) [measured: the module rows of both builds of main 5ee0904 and of this change, CI's
  * VitaSDK container]. In the game's partition,

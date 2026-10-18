@@ -2043,6 +2043,9 @@ static void vertical_job_runs_the_vertical_model_alone(void)
         else
             TEST_CHECK_(rc == VJO_E_OCR_MODEL && out.io_error == -123 && out.lines == 4 && !out.recognized && !out.text[0],
                         "columns, no model file: rc %d io %d, %u lines", rc, (int)out.io_error, out.lines);
+        for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) { /* API 27: no column left out */
+            if (out.step[i].id == VJO_GSTEP_FIND) TEST_CHECK(out.step[i].arg == out.lines && !out.step[i].bytes);
+        }
         TEST_CHECK(!memory_live && !capture_live);
     }
     /* too little memory: refused, with nothing smaller to try and no file opened */
