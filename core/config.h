@@ -100,6 +100,10 @@ typedef struct {
      * (0: as soon as the stick stops); the d-pad and taps look up at once.
      * Last, as above. */
     int stick_lookup_ms;      /* 0..1000 */
+    /* Vertical text (vita-vn-ocr #99): 1 reads the region's columns, right to left, with the vertical
+     * model instead of its rows (VJO_GAME_OCR_F_VERTICAL), in every game; 0 (the default) every job as
+     * before. Last, as above. */
+    int ocr_vertical;         /* 0/1 */
 } VjoConfig;
 
 void vjo_config_defaults(VjoConfig *c);

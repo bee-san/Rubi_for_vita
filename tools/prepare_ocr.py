@@ -110,6 +110,16 @@ VOCR5_ASSETS = {
         '50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3'),
 }
 VOCR_DEFAULT_MODEL = 'VOCR5_N_w8.vocr'  # the default model size's (Normal's), tools/model_tiers.json
+# VOCR5-V (vita-vn-ocr #99): vertical text in VOCR5-S's shape, reading a column turned 90 degrees
+# anticlockwise. No model size runs it: a job does when config.ini says ocr_vertical = on.
+# PROVISIONAL until vita-vn-ocr publishes it: the tag and the SHA-256 are placeholders (no file has
+# this hash), and no package ships it yet.
+VOCR5V_TAG = 'v0.3.1-vertical.1'
+VOCR5V_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5V_TAG}/'
+VOCR5V_ASSETS = {
+    'VOCR5_V_w8.vocr': (VOCR5V_BASE + 'VOCR5_V_w8.vocr', 819792, '0' * 64),
+}
+VOCR_VERTICAL_MODEL = 'VOCR5_V_w8.vocr'
 # The model sizes' attribution: v0.3.0's ATTRIBUTION.md (in its SHA256SUMS), the licences of what the
 # VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
 # their terms (non-commercial use only). The package ships it beside the weights as
@@ -126,7 +136,7 @@ VOCR_MODEL_ATTRIBUTION_PIN = {VOCR_MODEL_ATTRIBUTION: (VOCR5_BASE + VOCR_MODEL_A
 # the pins carry it: core/vocr_models.c per file (the Rubi app names the local OCR engine
 # after it) and package-manifest.json (package_release.py). The VOCR2 trial (v0.2.3-vocr2.1)
 # was removed from the overlay after v0.8.0-test.1.
-VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5'}
+VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5', VOCR5V_TAG: 'VOCR5'}
 
 # The model sizes the Rubi app offers (config.ini vocr_tier), each a pinned recognizer above:
 # one table for the C pins' tests, the packager and the self-test analyser.
@@ -148,7 +158,7 @@ def model_tiers():
 def release_assets(name):
     """(asset table, release tag) of a pinned recognizer."""
     for assets, tag in ((VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
-                        (VOCR_ASSETS, VOCR_TAG)):
+                        (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError(f'{name} is not a pinned recognizer')
@@ -304,7 +314,8 @@ def main():
                     help="vocr-tiers: the three model sizes' recognizers (Small, Normal, Large); "
                          "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md")
     ap.add_argument('--ncnn-source', type=Path)
-    ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS}),
+    ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS,
+                                               **VOCR5V_ASSETS}),
                     help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
     args = ap.parse_args()

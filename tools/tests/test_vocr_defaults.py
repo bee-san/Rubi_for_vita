@@ -97,8 +97,10 @@ def c_table(source=None):
     sizes = macros()
     body = array_body(source, "#else\nstatic const VjoVocrModel models[]")
     pins = []
-    # the finder: a runtime mode, or core/vocr_ocr.c's VJO_VOCR_FINDER (#194: every pinned model's)
-    for m in re.finditer(r'\{"?([\w.]+)"?, ' + SIZE + r',\s*\{([^}]*)\},\s*' + SIZE + r', (?:VOCR_LINES_\w+|VJO_VOCR_FINDER)\}',
+    # the finder: a runtime mode, or core/vocr_ocr.c's VJO_VOCR_FINDER (#194: every pinned model's of rows),
+    # or its VJO_VOCR_COLUMNS (#99: the vertical model's column finder)
+    for m in re.finditer(r'\{"?([\w.]+)"?, ' + SIZE + r',\s*\{([^}]*)\},\s*' + SIZE +
+                         r', (?:VOCR_LINES_\w+|VJO_VOCR_FINDER|VJO_VOCR_COLUMNS)\}',
                          body):
         name = sizes.get(m.group(1), m.group(1))  # a name macro (VJO_VOCR3_H15_NAME) or a literal
         digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
@@ -140,11 +142,11 @@ def kernel_names(source=None):
 
 def python_pins():
     """name -> (url, bytes, sha256, release tag) of every release's asset table in tools/prepare_ocr.py:
-    VOCR_ASSETS (VOCR_TAG), VOCR3_ASSETS (VOCR3_TAG) and any later VOCRn_ASSETS (VOCRn_TAG), each name in
-    one table only."""
+    VOCR_ASSETS (VOCR_TAG), VOCR3_ASSETS (VOCR3_TAG) and any later VOCRn_ASSETS (VOCRn_TAG), the vertical
+    model's VOCR5V_ASSETS (VOCR5V_TAG) too, each name in one table only."""
     out = {}
     for key, assets in sorted(vars(prepare_ocr).items()):
-        release = re.fullmatch(r"(VOCR\d*)_ASSETS", key)
+        release = re.fullmatch(r"(VOCR\d*V?)_ASSETS", key)
         if not release:
             continue
         tag = getattr(prepare_ocr, release.group(1) + "_TAG")
@@ -385,7 +387,7 @@ class VocrDefaults(unittest.TestCase):
         python = python_pins()
         by_name = {"VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "H15_w8.vocr", "FL10_w8.vocr", "F20_w8.vocr",
                    "VOCR4_W20_w8.vocr"}  # the host tools' models; the sizes' own besides them
-        self.assertEqual(set(meta), by_name | set(TIER_FILES))
+        self.assertEqual(set(meta), by_name | set(TIER_FILES) | {prepare_ocr.VOCR_VERTICAL_MODEL})
         for name, (generation, shape, _) in meta.items():
             self.assertIn(name, python)
             self.assertEqual(generation, prepare_ocr.VOCR_GENERATION[python[name][3]], name)
@@ -393,7 +395,8 @@ class VocrDefaults(unittest.TestCase):
                 self.assertTrue(name.startswith(generation + "_"), name)
             self.assertIn(shape, name, name)
         self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3",
-                                                       "v0.2.5-vocr4.1": "VOCR4", "v0.3.0": "VOCR5"})
+                                                       "v0.2.5-vocr4.1": "VOCR4", "v0.3.0": "VOCR5",
+                                                       prepare_ocr.VOCR5V_TAG: "VOCR5"})
         self.assertEqual(meta[prepare_ocr.VOCR_DEFAULT_MODEL][0], TIER_PINS["normal"][5])
         tiers = prepare_ocr.model_tiers()["tiers"]
         self.assertEqual([meta[t["model"]][0] for t in tiers], [TIER_PINS[t["id"]][5] for t in tiers])

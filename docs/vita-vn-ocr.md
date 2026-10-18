@@ -287,9 +287,10 @@ allows only these names under the exact directory above:<!-- names from kernel/g
 the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
 (VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
 release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
-release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
-character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
-`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->,
+release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1);
+`VOCR5_V_w8.vocr` (VOCR5, release v0.3.1-vertical.1); and the character LMs
+`vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
+`vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->,
 each with its pinned file length; it does not accept a caller-supplied file
 path. Each async Open,
 Read or Close is tied to the claimed job's PID and sequence. Reads also require
@@ -847,9 +848,10 @@ they accept exactly these files, each at its pinned size and SHA-256:<!-- names 
 the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
 (VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
 release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
-release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
-character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
-`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
+release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1);
+`VOCR5_V_w8.vocr` (VOCR5, release v0.3.1-vertical.1); and the character LMs
+`vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
+`vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
 `core/vocr_models.c` gives each recognizer its generation (VOCR5, VOCR3, VOCR4, or VOCR1 for
 v0.2.0's), the name of the local engine in the Rubi app.
 

@@ -105,8 +105,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (the faster W8I kernels' merge, vita-vn-ocr #85, after #83 and #82)
-          ref: d214a05deeef503a5e1d1853fe9fa4c91eb60bc2
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #99's column finder and rotation, on #85's kernels)
+          ref: dcf67696bccd3424552d551e040c0e6bd6ce6d82
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
@@ -194,8 +194,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (the faster W8I kernels' merge, vita-vn-ocr #85, after #83 and #82)
-          ref: d214a05deeef503a5e1d1853fe9fa4c91eb60bc2
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #99's column finder and rotation, on #85's kernels)
+          ref: dcf67696bccd3424552d551e040c0e6bd6ce6d82
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr

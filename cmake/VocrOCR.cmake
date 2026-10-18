@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT d214a05deeef503a5e1d1853fe9fa4c91eb60bc2)
+set(VJO_VOCR_COMMIT dcf67696bccd3424552d551e040c0e6bd6ce6d82)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -25,6 +25,9 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # vocr_run()'s per-frame top-K, which also reports each line's confidence.
 # vocr_lines_refine.c (vita-vn-ocr #83) refines the finder's boxes (tightens,
 # drops frame rows and cursors, splits boxes holding several text rows).
+# vocr_vertical.c (vita-vn-ocr #99) finds the columns of vertical text (GRAD on the
+# region's transpose, right to left) and turns a column 90 degrees anticlockwise for
+# the vertical recognizer (config.ini ocr_vertical, docs/vita-vn-ocr.md "Vertical text").
 set(_vocr_pins
   vocr.c 3e1756138b2e1d9aff15abdda95b02e0c015a5ba0af99678bdd678377b73f559
   vocr.h 30bb32693e634a4c4b4cd5cd3a4da8d33f6882bf00348d0e1d8264ba08376271
@@ -35,7 +38,9 @@ set(_vocr_pins
   vocr_lm.c 89e0494caf22090cab52131b8b9d489a26085300b61e59855cb9a0d4074dbd05
   vocr_lm.h 6d314c7fbc74c240b4e6d70c0dc0a9e1c98fcb196ecd6bc1aa2ccf5c8fb9fb86
   vocr_lines_refine.c f4fb08aa995379c5ee9cb746307ed2c2d357574d71e5556f2b40d8ce1584e797
-  vocr_lines_refine.h 66fe3b716193d835e9ab1d614d71ad8e19de70db5ac8ec0f09b8e027b260dc6b)
+  vocr_lines_refine.h 66fe3b716193d835e9ab1d614d71ad8e19de70db5ac8ec0f09b8e027b260dc6b
+  vocr_vertical.c 2e938246e95d478f9b3e18387e81d397e5a18c0d7f5fe6ee528b834036ce9cb6
+  vocr_vertical.h 6292e06392199d3e2632e10b4d4bae81acda53f84117cd4210a5da0cfd9fca6b)
 while(_vocr_pins)
   list(POP_FRONT _vocr_pins _file _want)
   if(NOT EXISTS "${_vocr_rt}/${_file}")
@@ -58,7 +63,7 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # Its few libc calls (memcpy, memset, the fabsf/signbit builtins) need no
 # newlib, which SceShell plugins link without.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c")
+  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_vertical.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)

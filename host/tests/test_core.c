@@ -802,6 +802,24 @@ static void test_config(void)
     vjo_config_parse(&c, speed, strlen(speed));
     TEST_CHECK(c.ocr_helpers == 1 && c.ocr_boost_clock == 1 && c.n_warnings == 4); /* one warning each, kept 2 */
     TEST_MSG("helpers %d clock %d, %u warnings", c.ocr_helpers, c.ocr_boost_clock, c.n_warnings);
+    /* vita-vn-ocr #99: vertical text, off by default; on | off in any case; anything else keeps the value
+     * with a warning that names the setting, not the value */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_vertical == 0);
+    const char *vertical = "ocr_vertical = ON\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == 1 && c.n_warnings == 0);
+    vertical = "ocr_vertical = yes\nOCR_Vertical = 1\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == 1 && c.n_warnings == 2 && strstr(c.warnings[0], "ocr_vertical: invalid value") &&
+               !strstr(c.warnings[0], "yes") && strstr(c.warnings[1], "OCR_Vertical"));
+    vertical = "ocr_vertical = off\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == 0 && c.n_warnings == 2);
+    vjo_config_defaults(&c);
+    vertical = "ocr_vertical = on\nocr_boost_clock = off\n"; /* the two share a table, not a field */
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == 1 && c.ocr_boost_clock == 0 && !c.n_warnings);
 
     /* the default file parses cleanly to the defaults */
     {
@@ -824,6 +842,7 @@ static void test_config(void)
         TEST_CHECK(d.ocr_lm == 2 && d.ocr_cascade_ms == 2000 && strstr(t, "\nocr_lm = 1000k\n") &&
                    strstr(t, "\nocr_cascade_ms = 2000\n"));
         TEST_CHECK(d.stick_lookup_ms == 200 && strstr(t, "\nstick_lookup_ms = 200\n"));
+        TEST_CHECK(d.ocr_vertical == 0 && strstr(t, "\nocr_vertical = off\n"));
     }
 
     /* the same button for both: the toggle keeps it */

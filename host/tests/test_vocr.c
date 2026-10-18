@@ -14,6 +14,7 @@
 #include "vocr_ocr.h"
 #include "vocr_models.h"
 #include "vocr_lines.h"
+#include "vocr_vertical.h"
 #include "../../core/fbgrey.h"
 #include "../../core/config.h"
 #include "../../include/vjo_ledger_budget.h"
@@ -101,10 +102,11 @@ static void test_models_and_sizes(void)
 {
     unsigned n = 0;
     const VjoVocrModel *all = vjo_vocr_models(&n);
-    /* the models accepted by name (the host tools) and each size's own (test_tier_pins.h), each once */
+    /* the models accepted by name (the host tools), each size's own (test_tier_pins.h) and the vertical
+     * model (#99), each once */
     static const char *const by_name[] = {VJO_VOCR3_H15_NAME, VJO_VOCR3_FL10_NAME, "H15_w8.vocr", "FL10_w8.vocr",
                                           "F20_w8.vocr", VJO_VOCR4_W20_NAME};
-    unsigned expected = 6;
+    unsigned expected = 6 + 1;
     for (unsigned i = 0; i < 3; i++) {
         unsigned known = 0;
         for (unsigned k = 0; k < 6; k++) known |= !strcmp(test_tier_pins[i].name, by_name[k]);
@@ -112,7 +114,12 @@ static void test_models_and_sizes(void)
     }
     TEST_CHECK_(n == expected && all != NULL, "%u pinned models, %u expected", n, expected);
     for (unsigned k = 0; k < 6; k++) TEST_CHECK_(vjo_vocr_model(by_name[k]) != NULL, "%s", by_name[k]);
-    for (unsigned i = 0; i < n; i++) TEST_CHECK(all[i].finder_mode == VOCR_LINES_TEXTBOX_RECOVERY);
+    /* every model of rows has #194's finder; the vertical one, last, the column finder (P0: no flags) */
+    for (unsigned i = 0; i < n; i++)
+        TEST_CHECK_(all[i].finder_mode == (strcmp(all[i].name, VJO_VOCR_VERTICAL_NAME) ? VOCR_LINES_TEXTBOX_RECOVERY
+                                                                                        : VJO_VOCR_FINDER_COLUMNS),
+                    "%s: finder 0x%x", all[i].name, all[i].finder_mode);
+    TEST_CHECK(!strcmp(all[n - 1].name, VJO_VOCR_VERTICAL_NAME) && all[n - 1].bytes == VJO_VOCR_VERTICAL_BYTES);
     /* the three sizes' models (test_tier_pins.h: their releases' exact sizes and W8I arenas) */
     for (unsigned i = 0; i < 3; i++) {
         const VjoVocrModel *m = vjo_vocr_model(test_tier_pins[i].name);
@@ -627,12 +634,54 @@ static void test_cascade_ratio_follows_the_weights(void)
     TEST_CHECK(!vjo_vocr_cascade_ratio("other.vocr", s) && !vjo_vocr_cascade_ratio(nn, NULL));
 }
 
+/* #99: the vertical model, VOCR5-S's shape. Its job is VOCR5-S's plus the rotation buffer at every region
+ * size (the column finder's arena, like GRAD's, stays under the shape's arena), and its metadata's job figure
+ * is the game worker's check at the full screen with a 32-bit console's structs, as a size's is. The rotation
+ * buffer holds a full-height column of 105 px, not of 106. */
+static void test_vertical_model(void)
+{
+#define PAGE(x) (((size_t)(x) + 4095u) & ~(size_t)4095u)
+#define A16(x) (((size_t)(x) + 15u) & ~(size_t)15u)
+    static const unsigned sizes[][2] = {{960, 544}, {917, 125}, {480, 272}, {200, 300}, {64, 544}, {1, 1}};
+    const VjoVocrModel *v = vjo_vocr_model(VJO_VOCR_VERTICAL_NAME), *s = vjo_vocr_model(VJO_VOCR5_S_NAME);
+    const VjoVocrModelInfo *vi = vjo_vocr_model_info(VJO_VOCR_VERTICAL_NAME), *si = vjo_vocr_model_info(VJO_VOCR5_S_NAME);
+    char label[24];
+    TEST_ASSERT(v && s && vi && si);
+    TEST_CHECK(v->bytes == VJO_VOCR_VERTICAL_BYTES && v->arena_bytes == s->arena_bytes &&
+               v->finder_mode == VJO_VOCR_FINDER_COLUMNS && s->finder_mode == VOCR_LINES_TEXTBOX_RECOVERY);
+    /* the finders' arenas (vocr_vertical.h's figures) */
+    TEST_CHECK(vocr_columns_arena_bytes(960, 544) == 83619u && vocr_columns_arena_bytes(480, 272) == 26467u);
+    TEST_MSG("arenas at 960x544: GRAD %zu, columns %zu; at 480x272: %zu, %zu", vocr_lines_arena_bytes(960, 544),
+             vocr_columns_arena_bytes(960, 544), vocr_lines_arena_bytes(480, 272), vocr_columns_arena_bytes(480, 272));
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        unsigned w = sizes[i][0], h = sizes[i][1];
+        TEST_CHECK(vocr_columns_arena_bytes(w, h) <= v->arena_bytes && vocr_lines_arena_bytes(w, h) <= v->arena_bytes);
+        TEST_CHECK_(vjo_vocr_job_bytes(v->name, w, h) == vjo_vocr_job_bytes(s->name, w, h) + A16(VJO_VOCR_ROTATE_BYTES) &&
+                    vjo_vocr_workspace_bytes(v->name, w, h) == vjo_vocr_job_bytes(v->name, w, h) + A16(v->bytes),
+                    "%ux%u: vertical %zu B, Small %zu B", w, h, vjo_vocr_job_bytes(v->name, w, h),
+                    vjo_vocr_job_bytes(s->name, w, h));
+    }
+    TEST_CHECK(105u * 544u <= VJO_VOCR_ROTATE_BYTES && 106u * 544u > VJO_VOCR_ROTATE_BYTES);
+    TEST_CHECK(VJO_VOCR_ROTATE_BYTES == VJO_VOCR_STRIP_BYTES);
+    /* the metadata: the shape's estimate, and the worker's check at 960x544 on the console (3,760 B of structs) */
+    TEST_CHECK(vi->box_ms == si->box_ms && vi->bytes == v->bytes && !strcmp(vi->generation, "VOCR5") &&
+               vjo_vocr_model_label(vi, label, sizeof(label)) == 7 && !strcmp(label, "VOCR5-V"));
+    size_t job = PAGE(v->bytes) + PAGE(A16(v->arena_bytes) + 3760u + A16(VJO_VOCR_ROTATE_BYTES)) +
+                 PAGE(vjo_vocr_capture_bytes(960, 544));
+    TEST_CHECK_(vi->job_bytes == job, "metadata %u B, the worker's check %zu B", vi->job_bytes, job);
+    /* no model size runs it */
+    for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++) TEST_CHECK(strcmp(vjo_vocr_tier_model((int)t), v->name));
+#undef A16
+#undef PAGE
+}
+
 TEST_LIST = {
     {"default_is_vocr5_n_each_size_within_its_ceiling_vocr3_and_v020_kept", test_default_model_and_ceiling},
     {"the_cascade_ratio_follows_the_weights", test_cascade_ratio_follows_the_weights},
     {"models_and_workspace_sizes", test_models_and_sizes},
     {"model_metadata_names_every_pinned_model_with_its_generation", test_model_metadata_matches_the_pins},
     {"model_tiers_pin_runtime_models_and_their_estimates_come_from_the_runtime", test_tier_metadata_matches_the_runtime},
+    {"the_vertical_model_is_small_s_shape_plus_the_rotation_buffer", test_vertical_model},
     {"empty_region_reads_strips_and_no_model", test_empty_region_reads_no_model},
     {"finds_light_and_dark_text_lines", test_lines_both_polarities},
     {"wrong_size_or_hash_is_refused", test_wrong_or_corrupt_weights},
