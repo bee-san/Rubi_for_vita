@@ -99,7 +99,8 @@ The app accepts a manifest only when it is exactly its own build's (R4); anythin
 "cannot: the package is damaged":
 
 - its file set equals a list compiled into the app (`include/vjo_payload.h`): the three plugins, the
-  RCO, the eight files of `ocr/` (the kernel broker's names, `tools/docs_model_names.py`), the
+  RCO, the files of `ocr/` (the models and LMs by the kernel broker's names,
+  `tools/docs_model_names.py`, the text-presence gate's weights, and their attributions), the
   dictionary, each with its kind (`copy`, or `move` for the dictionary only), and `template` for
   `config.ini` only; a test checks the list against `package_release.py`'s;
 - no destination twice; sizes parse as 64-bit decimals without overflow; hashes are 64 hex digits;
