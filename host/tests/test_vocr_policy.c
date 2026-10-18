@@ -1742,10 +1742,11 @@ static void test_a_short_last_line_is_read(void)
 
 
 /* API 26: the text-presence gate (vita-vn-ocr #100). Its weights are the pinned file in VJO_VOCR_GATE_TEST_DIR
- * (cmake/VocrGate.cmake); without it these tests say so and check nothing. Diagonal stripes are no text, though
- * the finder finds a line in them: with the gate the job keeps no line and opens no weights; without it the line
- * is read (the model file is opened, and missing here). The synthetic line is text: the gate keeps it. Its scores
- * are the C runtime's, which vita-vn-ocr's twin gives too (-109 and 127 at 400 x 100). */
+ * (cmake/VocrGate.cmake); without it the tests that need them are skipped (TEST_SKIP, before any check).
+ * Diagonal stripes are no text, though the finder finds a line in them: with the gate the job keeps no line and
+ * opens no weights; without it the line is read (the model file is opened, and missing here). The synthetic line
+ * is text: the gate keeps it. Its scores are the C runtime's, which vita-vn-ocr's twin gives too (-109 and 127 at
+ * 400 x 100). */
 #ifndef VJO_VOCR_GATE_TEST_DIR
 #define VJO_VOCR_GATE_TEST_DIR ""
 #endif
@@ -1764,7 +1765,7 @@ static int gate_open(void *ud, const char *path, VjoFile *out)
 static int gate_ready(void)
 {
     if (!VJO_VOCR_GATE_TEST_DIR[0]) {
-        TEST_MSG("no text-presence gate weights (cmake/VocrGate.cmake could not get them): not checked");
+        TEST_SKIP("no text-presence gate weights (cmake/VocrGate.cmake could not get them)");
         return 0;
     }
     if (!gate_posix.file_open) posix_platform_init(&gate_pp, &gate_posix);
@@ -1851,8 +1852,8 @@ static void test_the_gate_decides_after_a_wait_on_a_one_strip_region(void)
                 st.gate_rows);
 }
 
-/* Without its weights (a package without the file, a bad copy) or when the finder finds no line, the gate
- * does not decide, and the job reads exactly as without it. */
+/* Without its weights (a package without the file, a bad copy) the gate does not decide, and the job reads
+ * exactly as without it. */
 static void test_the_gate_keeps_the_lines_without_its_weights(void)
 {
     VjoVocrPolicy on = {.gate = 1, .gate_res = &gate_res};
@@ -1870,8 +1871,14 @@ static void test_the_gate_keeps_the_lines_without_its_weights(void)
     TEST_CHECK(run_gate(&no_res, &st, H, "missing") == VJO_E_OCR_MODEL && st.lines == 1 &&
                st.gate_rc == VJO_E_OCR_MODEL);
     TEST_CHECK(vjo_vocr_gate_bytes(&none, W, H) == 0 && vjo_vocr_gate_bytes(NULL, W, H) == 0);
+}
+
+/* A region the finder finds no line in (the box before its text) has nothing to stop: it is not scored. */
+static void test_the_gate_scores_no_region_without_a_line(void)
+{
+    VjoVocrPolicy on = {.gate = 1, .gate_res = &gate_res};
+    VjoVocrStats st;
     if (!gate_ready()) return;
-    /* a region the finder finds no line in (the box before its text) is not scored */
     reset();
     scr.text_from = 1000000;
     TEST_CHECK(run_gate(&on, &st, H, VJO_VOCR_GATE_TEST_DIR) == VJO_OK && st.lines == 0);
@@ -1949,6 +1956,7 @@ TEST_LIST = {
     {"the_gate_stops_a_region_without_text", test_the_gate_stops_a_region_without_text},
     {"the_gate_decides_after_a_wait_on_a_one_strip_region", test_the_gate_decides_after_a_wait_on_a_one_strip_region},
     {"the_gate_keeps_the_lines_without_its_weights", test_the_gate_keeps_the_lines_without_its_weights},
+    {"the_gate_scores_no_region_without_a_line", test_the_gate_scores_no_region_without_a_line},
     {"the_gate_fits_beside_the_finder", test_the_gate_fits_beside_the_finder},
     {"refinement_without_room_reads_the_boxes_as_found", test_refinement_without_room_reads_the_boxes_as_found},
     {"the_refinement_arena_comes_before_the_lm_extras", test_the_refinement_arena_comes_before_the_lm_extras},

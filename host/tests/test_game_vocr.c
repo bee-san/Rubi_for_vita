@@ -787,7 +787,7 @@ static void the_gate_runs_in_the_worker(void)
     VjoGameOcrRequest r;
     VjoGameOcrResult out;
     const VjoGameOcrStep *g;
-    if (!VJO_VOCR_GATE_TEST_DIR[0]) { TEST_MSG("no gate weights (cmake/VocrGate.cmake): not checked"); return; }
+    if (!VJO_VOCR_GATE_TEST_DIR[0]) { TEST_SKIP("no gate weights (cmake/VocrGate.cmake)"); return; }
     for (unsigned waits = 0; waits <= 1; waits++) {
         /* stripes: the finder finds a line, the gate stops the job */
         r = setup(); stripes(); frame_us = 16667; r.speed = VJO_GAME_OCR_S_GATE; r.flags = waits ? wait : 0u;

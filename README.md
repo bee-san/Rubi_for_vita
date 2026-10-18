@@ -222,9 +222,9 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   use only, so their weights are for non-commercial use only: their attribution and terms ship
   beside them as `ocr/MODEL-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#models)). Its character
   language models are CC BY-SA 4.0. The optional text-presence gate's weights (`ocr_text_gate`, off by
-  default) were trained on the same kinds of data and are for non-commercial use only too: their
-  attribution ships beside them as `ocr/GATE-ATTRIBUTION.md`
-  ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)).
+  default) were trained on synthetic text in fonts and text pools free for non-commercial use only and on
+  VNDB screenshots, so they are for non-commercial use only too: their attribution ships beside them as
+  `ocr/GATE-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)).
 - **Dictionary:** Bee's Ultimate Dictionary. English definitions from Daijirin4 and Sankoku8
   (© Sanseido) and [JMdict](https://www.edrdg.org/) (EDRDG, CC BY-SA 4.0); frequency ranks from
   [Jiten](https://jiten.moe) (CC BY-SA 4.0); kanji lines from Bee's Ultimate Kanji Dictionary
