@@ -1040,7 +1040,7 @@ static void invalid_capture_and_wire(void)
     r.model_dir[sizeof(r.model_dir) - 1] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.model_dir[sizeof(r.model_dir) - 1] = 0;
     r.flags = 0x4000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 23: a shot names no model */
-    /* API 26: bit 15 (vertical text) is the last flag bit defined: none is unknown now, and a shot
+    /* API 27: bit 15 (vertical text) is the last flag bit defined: none is unknown now, and a shot
      * carries it no more than any other (vertical_model_opens_only_for_a_vertical_job) */
     TEST_CHECK(VJO_GAME_OCR_F_ALL == 0xFFFFFFFFu && VJO_GAME_OCR_F_VERTICAL == 0x8000u);
     r.flags = 0;

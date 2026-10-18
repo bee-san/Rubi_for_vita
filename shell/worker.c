@@ -818,7 +818,7 @@ static unsigned vocr_top_tier(unsigned tiers)
 
 /* The model a job that ran tier `ran` read with, a constant string: the vertical
  * model when the job read columns (ocr_vertical: the worker runs it whatever the
- * tier, API 26), else the tier's. */
+ * tier, API 27), else the tier's. */
 static const char *job_model(unsigned ran)
 {
     return job_cfg.ocr_vertical ? VJO_VOCR_VERTICAL_NAME : vjo_vocr_tier_model((int)ran);
@@ -1014,7 +1014,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
      * counts fit their 8 bits (10 and 50 ms steps, rounded; a wait of 1-4 ms is
      * one step, not none); a screen not settled now is waited for first. */
     if (job_cfg.ocr_skip_blank_lines) request.flags |= VJO_GAME_OCR_F_BLANK;
-    if (job_cfg.ocr_vertical) request.flags |= VJO_GAME_OCR_F_VERTICAL; /* API 26: columns, the vertical model */
+    if (job_cfg.ocr_vertical) request.flags |= VJO_GAME_OCR_F_VERTICAL; /* API 27: columns, the vertical model */
     request.flags |= (uint32_t)(job_cfg.ocr_lm & VJO_GAME_OCR_LM_MASK) << VJO_GAME_OCR_LM_SHIFT |
                      (uint32_t)(job_cfg.ocr_refine_lines & VJO_GAME_OCR_REFINE_MASK) << VJO_GAME_OCR_REFINE_SHIFT;
     if (job_cfg.ocr_cascade_ms > 0) { /* in 250 ms steps, at least one */

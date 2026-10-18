@@ -671,7 +671,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         }
     } else if (fake_memory_fallback && top > 1u) ran = top - 1u;
     const char *ran_model = top ? vjo_vocr_tier_model((int)ran) : fake_game_request.model;
-    /* API 26: a vertical job runs the vertical model, whatever its tiers (game_ocr/main.c) */
+    /* API 27: a vertical job runs the vertical model, whatever its tiers (game_ocr/main.c) */
     if (fake_game_request.flags & VJO_GAME_OCR_F_VERTICAL) ran_model = VJO_VOCR_VERTICAL_NAME;
     if (fake_missing_model && !strcmp(ran_model, fake_missing_model)) {
         fake_model_misses++;
@@ -1483,7 +1483,7 @@ static void test_vocr_model_change_invalidates_cache(void)
     TEST_CHECK(cache_ok);
 }
 
-/* API 26: config.ini ocr_vertical = on sets VJO_GAME_OCR_F_VERTICAL in every job's request, which keeps its
+/* API 27: config.ini ocr_vertical = on sets VJO_GAME_OCR_F_VERTICAL in every job's request, which keeps its
  * tiers and the rest of its flags and names the vertical model (the kernel's log); the text's Anki cards and
  * the job's log line name the vertical model, which read it. Off (the default) sends no such bit and names
  * the size's model, as before. A vertical model that fails to open leaves no size out of the game's ladder

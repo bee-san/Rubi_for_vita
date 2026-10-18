@@ -224,7 +224,10 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   language models are CC BY-SA 4.0. The optional text-presence gate's weights (`ocr_text_gate`, off by
   default) were trained on synthetic text in fonts and text pools free for non-commercial use only and on
   VNDB screenshots, so they are for non-commercial use only too: their attribution ships beside them as
-  `ocr/GATE-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)).
+  `ocr/GATE-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)). The vertical model for
+  text in columns (`ocr_vertical`, off by default), VOCR5-V, is VOCR5-S fine-tuned on synthetic columns, so it
+  carries VOCR5-S's training data and terms and is for non-commercial use only too: its attribution ships beside it
+  as `ocr/VERTICAL-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
 - **Dictionary:** Bee's Ultimate Dictionary. English definitions from Daijirin4 and Sankoku8
   (© Sanseido) and [JMdict](https://www.edrdg.org/) (EDRDG, CC BY-SA 4.0); frequency ranks from
   [Jiten](https://jiten.moe) (CC BY-SA 4.0); kanji lines from Bee's Ultimate Kanji Dictionary
@@ -261,6 +264,7 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
 
 Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The OCR's recognizer weights and the text-presence gate's
 are data files Rubi reads, not part of its code, and are for non-commercial use only
-(`ocr/MODEL-ATTRIBUTION.md`, `ocr/GATE-ATTRIBUTION.md`, [details](docs/vita-vn-ocr.md#models)). The dictionary data,
+(`ocr/MODEL-ATTRIBUTION.md`, `ocr/GATE-ATTRIBUTION.md`, `ocr/VERTICAL-ATTRIBUTION.md`,
+[details](docs/vita-vn-ocr.md#models)). The dictionary data,
 the language models and the third-party code keep their own licences
 ([attribution](docs/plaintext-attribution.txt), [third_party/](third_party/README.md)).
