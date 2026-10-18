@@ -2095,6 +2095,17 @@ static void vertical_model_opens_only_for_a_vertical_job(void)
             TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_VERTICAL + 1u, NULL) == VJO_ERR_ARG && !model_opens);
             TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
         }
+    /* never by a request's name: as its model or fallback, with the flag or without (audit-vertical-rubi) */
+    for (unsigned vertical = 0; vertical <= 1; vertical++)
+        for (uint32_t which = VJO_GAME_OCR_OPEN_MODEL; which <= VJO_GAME_OCR_OPEN_FALLBACK; which++) {
+            setup(); VjoGameOcrRequest r = make_request();
+            strcpy(which == VJO_GAME_OCR_OPEN_MODEL ? r.model : r.fallback, VJO_VOCR_VERTICAL_NAME);
+            r.flags = vertical ? VJO_GAME_OCR_F_VERTICAL : 0u;
+            caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+            TEST_CHECK_(vjoOcrModelOpen(seq, which, NULL) == VJO_ERR_ARG && !model_opens, "flag %u, which %u", vertical,
+                        (unsigned)which);
+            TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+        }
     /* a shot with the flag is refused at Submit; the same shot without it is taken */
     setup(); VjoGameOcrRequest r = shot_request();
     r.flags |= VJO_GAME_OCR_F_VERTICAL;

@@ -971,6 +971,9 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     else if (which == VJO_GAME_OCR_OPEN_CASCADE &&
              ((request.flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK)) name = VJO_VOCR_CASCADE_NAME;
     else return VJO_ERR_ARG;
+    /* API 26: the vertical model opens by its own open only (a request with F_VERTICAL), never by the name a
+     * request gives as its model or fallback */
+    if (which != VJO_GAME_OCR_OPEN_VERTICAL && !strcmp(name, VJO_VOCR_VERTICAL_NAME)) return VJO_ERR_ARG;
     size = lm_tier ? lm_size(lm_tier) : model_size(name);
     if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
     model_io.seq = seq;

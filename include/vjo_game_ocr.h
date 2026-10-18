@@ -133,7 +133,8 @@ typedef struct {
  * the request's tiers, or with a cascade ceiling the tier above its largest
  * (the cascade's model). A request by tiers opens no MODEL, FALLBACK or CASCADE;
  * one by name opens no TIER. API 26: a request with VJO_GAME_OCR_F_VERTICAL may
- * open the vertical model (VJO_GAME_OCR_OPEN_VERTICAL), by tiers or by name. */
+ * open the vertical model (VJO_GAME_OCR_OPEN_VERTICAL), by tiers or by name; the
+ * vertical model opens no other way (not as a request's MODEL or FALLBACK). */
 #define VJO_GAME_OCR_OPEN_MODEL 0u
 #define VJO_GAME_OCR_OPEN_FALLBACK 1u
 #define VJO_GAME_OCR_OPEN_LM 2u
