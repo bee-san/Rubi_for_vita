@@ -921,8 +921,9 @@ app has no switch for it; config.ini does.
   (`core/textjoin.c`: a full column joins the next one as a full row does, so a word across the
   break is looked up whole; a balloon's short columns keep their breaks, as short rows do) and the
   touch lookup work on it unchanged: they read the text, never the geometry.
-- **Not for columns:** the refinement (`ocr_refine_lines`), the short-line probe (#194) and the
-  confidence cascade (no larger model reads columns). The LM (`ocr_lm`), the threads (`ocr_threads`),
+- **Not for columns:** the refinement (`ocr_refine_lines`), the short-line probe (#194), the
+  confidence cascade (no larger model reads columns) and the text-presence gate (`ocr_text_gate`, API 26: it
+  scores the row finder's boxes; a vertical job neither reads its file nor logs its step). The LM (`ocr_lm`), the threads (`ocr_threads`),
   the line cache and the stable-text wait apply as they do to rows.
 
 **The request (API 27).** The Shell sets `VJO_GAME_OCR_F_VERTICAL` (the flags' bit 15, the last
@@ -951,21 +952,27 @@ console's 32-bit structs a little less), within the workspace budget the Large s
 (`VJO_BUDGET_GAME_WORKSPACE`, 1,212,416 B), so `include/vjo_ledger_budget.h` is unchanged. The
 weights block is 823,296 B, under the weights budget. A column whose crop holds more than the
 rotation buffer (wider than 105 px at the full 544-px height) is left out, never read, and counted
-(`VjoVocrStats.rotate_skipped`); the columns beside it are read. Columns read through the tall-line
-block take it as tall lines do (`VJO_BUDGET_GAME_LINE`).
+(`VjoVocrStats.rotate_skipped`, the bytes of the log's `find` step); the columns beside it are read.
+Columns read through the tall-line block take it as tall lines do (`VJO_BUDGET_GAME_LINE`).
 
 **Time (estimates; nothing ran on a console).** Per CTC frame VOCR5-V costs what VOCR5-S does (the
 same shape). VOCR5-S's box estimate, 631 ms at 333 MHz and 499 ms at 444 MHz for 240 frames and
-0.1 s of finder (`tools/model_tiers.json`, calibrated to VOCR3-H15's measured 4.94 ms per frame),
-is about 2.2 ms a frame at 333 MHz and 1.8 ms at 444 MHz. The host sample below, a page of four
-columns of 6-10 characters, is 120 frames: about 0.26 s at 333 MHz, 0.21 s at 444 MHz, and the finder.
+0.1 s of finder (`tools/model_tiers.json`, calibrated to VOCR3-H15's 4.94 ms per frame in v0.8.0-test.1's
+logs), is about 2.2 ms a frame at 333 MHz and 1.7 ms at 444 MHz (the finder runs before the boost). The
+console has also measured VOCR3-H15 at up to 5.22 ms a frame (#81, above), which would make these about 6 %
+more. The host sample below, a page of four columns of 6-10 characters, is 120 frames: about 0.27 s at
+333 MHz, 0.20 s at 444 MHz, and the finder.
 The capture costs more than for rows, as a column spans every strip of the region: the sample's
 region (220 × 410, 64-row strips) took 32 strip reads on the host, the finder's two passes and the
 columns themselves (each read again through the strip, a tall line's way); with the finder's own dark
 flags (without `VOCR_COLUMNS_NO_DARK`, which reads every column's rows once more) it took 50. In the
 game a strip read waits for the game's next frame: about 0.5 s at 60 frames a second (an estimate from
-the strip count; the log's `game vocr capture:` line gives the console's). One pass for every column
-would take most of that away; it is not done here.
+the strip count; the log's `game vocr capture:` line gives the console's). The worst case is a whole
+960 × 544 screen of columns: on a page of 16 full-height columns (17 characters each, rendered on the host)
+the job took 164 strip reads (59-row strips: the finder's two passes, 20, and 9 for each column, whose
+511 rows span 9 of the 10), about 2.7 s at 60 frames a second and 5.5 s at 30 (estimates), against
+969 CTC frames of recognition (about 2.1 s at 333 MHz, 1.6 s at 444 MHz). One pass for every column
+would take most of the capture away; it is not done here. Draw the text box around the text you read.
 
 **Off is today's job** (`host/tests/test_vocr_vertical.c`): jobs of rows on a 5-line region and on
 #194's box, greedy, with the LM, with two helpers, and refined, give the same text, greedy text,

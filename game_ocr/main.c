@@ -246,7 +246,7 @@ static int psp_title;
 static uint32_t open_which;
 static int open_cascade;
 /* API 21: the job is a request by tiers (its models open by their tier; not a
- * vertical job's, API 26, whose model opens as VJO_GAME_OCR_OPEN_VERTICAL), and the
+ * vertical job's, API 27, whose model opens as VJO_GAME_OCR_OPEN_VERTICAL), and the
  * reserve its memory check kept (include/vjo_ledger_budget.h VJO_GAME_RESERVE_*),
  * which its resident blocks' allocations keep too. */
 static int tiered;
@@ -1315,7 +1315,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
     /* API 23: a shot carries no model, tiers, speed or other flag but F_FULL */
     int shot = (r->flags & VJO_GAME_OCR_F_SHOT) != 0;
-    /* API 26: vertical text, the vertical model on the region's columns (config.ini ocr_vertical) */
+    /* API 27: vertical text, the vertical model on the region's columns (config.ini ocr_vertical) */
     int vertical = (r->flags & VJO_GAME_OCR_F_VERTICAL) != 0;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
         refine_mode > VJO_GAME_OCR_REFINE_PSP || (r->tiers & ~VJO_VOCR_TIERS_ALL) ||
@@ -1337,7 +1337,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 #else
     if (r->flags & VJO_GAME_OCR_F_PROBE) goto done; /* no probe in the normal build: VJO_E_SOURCE */
 #endif
-    /* The finder's boxes refined (API 20): the mode, here or in a PSP game; never columns (API 26). */
+    /* The finder's boxes refined (API 20): the mode, here or in a PSP game; never columns (API 27). */
     unsigned refine = !vertical && (refine_mode == VJO_GAME_OCR_REFINE_ON ||
                                     (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title))
                       ? VJO_VOCR_REFINE_ALL : 0u;
@@ -1346,7 +1346,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     /* The models this job may run, in the order it tries them (API 21): a request
      * by tiers names its tiers, the largest first; one by name its model, then its
      * fallback, used only if it is another pinned model needing less memory. A
-     * vertical job (API 26) runs the vertical model alone, whatever its tiers, with
+     * vertical job (API 27) runs the vertical model alone, whatever its tiers, with
      * a request by name's reserve (VOCR5-S's shape: the Small size's 4 MiB). */
     Candidate cand[CANDIDATES];
     unsigned n = 0, top = 0;
@@ -1553,7 +1553,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                  stats.tries > 1 ? stats.retry_at - (uint32_t)job_started_us : 0u, 0, 0, 0);
     if (capture.failed) step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
                                  capture.last.fb_format, capture.pass_us, 0);
-    step_add(VJO_GSTEP_FIND, 0, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, 0, stats.dark, stats.find_us, 0);
+    step_add(VJO_GSTEP_FIND, 0, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, stats.rotate_skipped, stats.dark,
+             stats.find_us, 0);
     if (policy.settle_us)
         step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes,
                  stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,

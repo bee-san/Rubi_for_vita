@@ -436,7 +436,7 @@ if(VJO_WITH_VOCR)
     third_party/bearssl/inc)
   target_compile_options(vjo-vocr-vertical-tests PRIVATE -Wall -Wextra)
   target_compile_definitions(vjo-vocr-vertical-tests PRIVATE VJO_VOCR_TEST_MODELS="test_vertical_models.h"
-    VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}" VJO_VOCR_GATE_TEST_DIR="${VJO_VOCR_GATE_TEST_DIR}")
   target_link_libraries(vjo-vocr-vertical-tests vjo_vocr_rt vjo_host bearssl Threads::Threads)
   add_test(NAME vocr_vertical COMMAND vjo-vocr-vertical-tests)
   # ocr-speed: serial against helpers (and the cache) on real regions with real weights (host only).

@@ -26,7 +26,7 @@ static int open_gate_missing; /* API 26: the gate's file is not on the card */
 static unsigned char cascade_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static int cascade_live; static unsigned cascade_block, cascade_allocations, cascade_frees, cascade_opens;
 static unsigned tier_opens[VJO_VOCR_TIERS + 1]; /* API 21: model opens by tier (VJO_GAME_OCR_OPEN_TIER) */
-static unsigned vertical_opens; /* API 26: the vertical model's (VJO_GAME_OCR_OPEN_VERTICAL) */
+static unsigned vertical_opens; /* API 27: the vertical model's (VJO_GAME_OCR_OPEN_VERTICAL) */
 static int drop_on_workspace; /* bytes the game takes when the job's workspace block is allocated */
 static unsigned char pixels[200*272*4]; /* 200 x frame_h */
 static unsigned frame_h = 60; /* rows of the fake frame (over 64: two strips) */
@@ -455,7 +455,7 @@ static void cancel_and_wire(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.width = 200; r.x = 1; /* past the frame's edge */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
-    r.x = 0; r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_VERTICAL; /* API 26's bit 15: no shot's */
+    r.x = 0; r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_VERTICAL; /* API 27's bit 15: no shot's */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.flags = 0; r.speed = 0x20; /* VJO_GAME_OCR_S_* bits 5-31 unknown (API 26: bit 4 is the gate) */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
@@ -866,7 +866,7 @@ static void policy_in_the_flags(void)
              rows_calls, plain);
     TEST_CHECK(!blank && out.lines == 1 && rows_calls > plain && !memory_live && !capture_live);
     allocations = 0;
-    r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_VERTICAL; /* API 26's vertical text: no shot's */
+    r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_VERTICAL; /* API 27's vertical text: no shot's */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
     /* a shot carries no job policy: refused before anything is taken */
     r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_BLANK;
@@ -1970,7 +1970,7 @@ static void tier_ladder_takes_the_largest_size_that_fits(void)
     }
 }
 
-/* API 26: a frame of four short columns of glyph-like cells (test_vocr_vertical.c's), light on dark: the
+/* API 27: a frame of four short columns of glyph-like cells (test_vocr_vertical.c's), light on dark: the
  * column finder finds four. */
 static void columns_frame(void)
 {
@@ -2043,6 +2043,9 @@ static void vertical_job_runs_the_vertical_model_alone(void)
         else
             TEST_CHECK_(rc == VJO_E_OCR_MODEL && out.io_error == -123 && out.lines == 4 && !out.recognized && !out.text[0],
                         "columns, no model file: rc %d io %d, %u lines", rc, (int)out.io_error, out.lines);
+        for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) { /* API 27: no column left out */
+            if (out.step[i].id == VJO_GSTEP_FIND) TEST_CHECK(out.step[i].arg == out.lines && !out.step[i].bytes);
+        }
         TEST_CHECK(!memory_live && !capture_live);
     }
     /* too little memory: refused, with nothing smaller to try and no file opened */
