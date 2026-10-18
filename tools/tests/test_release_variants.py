@@ -345,14 +345,18 @@ class PackageVariants(unittest.TestCase):
         self.enterContext(mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", {prepare.VOCR_MODEL_ATTRIBUTION: (
             "https://fixture.invalid/M", len(model_att), hashlib.sha256(model_att).hexdigest())}))
         for mod in (prepare, release):
-            for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR_LM_ASSETS"):
+            for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR_LM_ASSETS"):
                 pinned = {name: spec for name in getattr(mod, table)}
                 self.enterContext(mock.patch.object(mod, table, pinned))
-        for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR_LM_ASSETS"):
+        for table in ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR_LM_ASSETS"):
             for name in getattr(prepare, table):
                 (self.models / name).write_bytes(blob)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution)
         (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(model_att)
+        vertical_att = b"the vertical model's attribution fixture"
+        self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
+            "https://fixture.invalid/V", len(vertical_att), hashlib.sha256(vertical_att).hexdigest())}))
+        (self.models / prepare.VOCR_VERTICAL_ATTRIBUTION).write_bytes(vertical_att)
         self.dictionary = b"VJDICT2\0synthetic dictionary fixture"
         snapshot = {"bytes": len(self.dictionary), "sha256": hashlib.sha256(self.dictionary).hexdigest()}
         self.enterContext(mock.patch.object(release, "load_manifest", return_value=snapshot))

@@ -13,7 +13,8 @@ import zipfile
 from prepare_ocr import (VOCR_ASSETS, VOCR_GENERATION, VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION, VOCR_LM_ATTRIBUTION_PIN,
                          VOCR_LM_TAG, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN, VOCR_MODEL_ATTRIBUTION_TAG,
                          VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, VOCR5_ASSETS, VOCR5_TAG,
-                         model_tiers)
+                         VOCR5V_ASSETS, VOCR5V_TAG, VOCR_VERTICAL_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION_PIN,
+                         VOCR_VERTICAL_MODEL, model_tiers)
 from prepare_plaintext import FILENAME, load_manifest, validate
 
 DATA = "ux0/data/VitaJPOverlay/"
@@ -91,9 +92,10 @@ def base_variant(original):
 
 
 def tier_release(name):
-    """(asset table, release tag) of a model size's recognizer, by the tables this module sees."""
+    """(asset table, release tag) of a model size's recognizer (or the vertical model), by the tables this
+    module sees."""
     for assets, tag in ((VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
-                        (VOCR_ASSETS, VOCR_TAG)):
+                        (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError("Not a pinned recognizer: " + name)
@@ -112,6 +114,8 @@ def shipped_models():
         roles.setdefault(tier["model"], []).append(
             tier["name"] + " model size" + (" (default)" if tier["id"] == tiers["default"] else ""))
     models = [(name, *tier_release(name), " and ".join(role)) for name, role in roles.items()]
+    # the vertical model (vita-vn-ocr #99): no size's; a job runs it when config.ini says ocr_vertical = on
+    models.append((VOCR_VERTICAL_MODEL, *tier_release(VOCR_VERTICAL_MODEL), "vertical text (ocr_vertical)"))
     # the beam + LM decoder's LM tiers (ocr_lm, the largest that fits up to 1000k by default)
     for name in VOCR_LM_ASSETS:
         models.append((name, VOCR_LM_ASSETS, VOCR_LM_TAG, "character LM (beam + LM decoder)"))
@@ -289,6 +293,14 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         raise ValueError("The model sizes' " + VOCR_MODEL_ATTRIBUTION + " checksum failed: not release "
                          + VOCR_MODEL_ATTRIBUTION_TAG + "'s ATTRIBUTION.md")
     assets[DATA + "ocr/" + VOCR_MODEL_ATTRIBUTION] = attribution
+    # The vertical model's release names what it carries (VOCR5-S's training data and terms, and its own
+    # vertical data): its ATTRIBUTION.md ships beside it as ocr/VERTICAL-ATTRIBUTION.md.
+    attribution = models / VOCR_VERTICAL_ATTRIBUTION
+    _, size, sha = VOCR_VERTICAL_ATTRIBUTION_PIN[VOCR_VERTICAL_ATTRIBUTION]
+    if not attribution.is_file() or attribution.stat().st_size != size or digest(attribution) != sha:
+        raise ValueError("The vertical model's " + VOCR_VERTICAL_ATTRIBUTION + " is missing or not release " + VOCR5V_TAG
+                         + "'s ATTRIBUTION.md (tools/prepare_ocr.py --backend vocr-tiers)")
+    assets[DATA + "ocr/" + VOCR_VERTICAL_ATTRIBUTION] = attribution
     # The defaults are the package's config template's (the same file as both config.ini copies).
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": manifest_defaults(assets["config.ini"].read_text(encoding="utf-8"), shipped),

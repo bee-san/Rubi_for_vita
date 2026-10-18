@@ -120,6 +120,12 @@ VOCR5V_ASSETS = {
         'ccd20c63bb2620f054538b456904bdf19b74d483d3da8de865009e282bb04172'),
 }
 VOCR_VERTICAL_MODEL = 'VOCR5_V_w8.vocr'
+# Its release's ATTRIBUTION.md (in its SHA256SUMS): VOCR5-S's training data and terms (non-commercial use only)
+# and the vertical training data. The package ships it beside the model as ocr/VERTICAL-ATTRIBUTION.md, the
+# other releases' attributions having the same name in their release.
+VOCR_VERTICAL_ATTRIBUTION = 'VERTICAL-ATTRIBUTION.md'
+VOCR_VERTICAL_ATTRIBUTION_PIN = {VOCR_VERTICAL_ATTRIBUTION: (VOCR5V_BASE + 'ATTRIBUTION.md', 3323,
+    '0f644c6dce8c24abb9ac56ecbb684ab7cd1f1950cad0aae15eafadba04bcbcd9')}
 # The model sizes' attribution: v0.3.0's ATTRIBUTION.md (in its SHA256SUMS), the licences of what the
 # VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
 # their terms (non-commercial use only). The package ships it beside the weights as
@@ -233,12 +239,15 @@ def fetch_vocr(directory, name, source=None):
 
 
 def fetch_tiers(directory, source=None):
-    """The three model sizes' recognizers (tools/model_tiers.json), each pinned, and their release's
-    attribution (MODEL-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
-    names = dict.fromkeys(tier['model'] for tier in model_tiers()['tiers'])
+    """The three model sizes' recognizers (tools/model_tiers.json), each pinned, the vertical model
+    (VOCR_VERTICAL_MODEL, config.ini ocr_vertical) and the sizes' release's attribution
+    (MODEL-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
+    names = dict.fromkeys([*(tier['model'] for tier in model_tiers()['tiers']), VOCR_VERTICAL_MODEL])
     paths = [fetch_vocr(directory, name, source) for name in names]
     paths.append(fetch_release_asset(directory, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN,
                                      VOCR_MODEL_ATTRIBUTION_TAG, source, VOCR_MODEL_ATTRIBUTION_ASSET))
+    paths.append(fetch_release_asset(directory, VOCR_VERTICAL_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION_PIN,
+                                     VOCR5V_TAG, source, 'ATTRIBUTION.md'))
     return paths
 
 

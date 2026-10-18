@@ -31,12 +31,14 @@ enum { VJO_PAYLOAD_COPY = 0, VJO_PAYLOAD_MOVE = 1, VJO_PAYLOAD_TEMPLATE = 2 };
     X(VJO_PAYLOAD_OCR VJO_VOCR_TIER1_NAME, VJO_PAYLOAD_COPY)                            \
     X(VJO_PAYLOAD_OCR VJO_VOCR_TIER2_NAME, VJO_PAYLOAD_COPY)                            \
     X(VJO_PAYLOAD_OCR VJO_VOCR_TIER3_NAME, VJO_PAYLOAD_COPY)                            \
+    X(VJO_PAYLOAD_OCR VJO_VOCR_VERTICAL_NAME, VJO_PAYLOAD_COPY)                         \
     X(VJO_PAYLOAD_OCR VJO_VOCR_LM1_NAME, VJO_PAYLOAD_COPY)                              \
     X(VJO_PAYLOAD_OCR VJO_VOCR_LM2_NAME, VJO_PAYLOAD_COPY)                              \
     X(VJO_PAYLOAD_OCR VJO_VOCR_LM3_NAME, VJO_PAYLOAD_COPY)                              \
     X(VJO_PAYLOAD_OCR VJO_VOCR_LM4_NAME, VJO_PAYLOAD_COPY)                              \
     X(VJO_PAYLOAD_OCR "LM-ATTRIBUTION.md", VJO_PAYLOAD_COPY)                            \
     X(VJO_PAYLOAD_OCR "MODEL-ATTRIBUTION.md", VJO_PAYLOAD_COPY)                         \
+    X(VJO_PAYLOAD_OCR "VERTICAL-ATTRIBUTION.md", VJO_PAYLOAD_COPY)                      \
     X(VJO_PAYLOAD_DATA "dictionaries/plaintext.vjdict", VJO_PAYLOAD_MOVE)               \
     X("ur0:tai/VitaJPOverlay_Kernel.skprx", VJO_PAYLOAD_COPY)                           \
     X("ur0:tai/VitaJPOverlay_Shell.suprx", VJO_PAYLOAD_COPY)                            \
@@ -46,7 +48,7 @@ enum { VJO_PAYLOAD_COPY = 0, VJO_PAYLOAD_MOVE = 1, VJO_PAYLOAD_TEMPLATE = 2 };
 
 #define VJO_PAYLOAD_COUNT_ONE(dest, kind) +1
 enum { VJO_PAYLOAD_COUNT = 0 VJO_PAYLOAD_FILE_LIST(VJO_PAYLOAD_COUNT_ONE) };
-#define VJO_PAYLOAD_KERNEL_INDEX 10 /* ur0:tai/VitaJPOverlay_Kernel.skprx: the first plugin */
+#define VJO_PAYLOAD_KERNEL_INDEX 12 /* ur0:tai/VitaJPOverlay_Kernel.skprx: the first plugin */
 #define VJO_PAYLOAD_PLUGINS 4      /* the three plugins and the RCO, hashed at every start */
 
 /* The package's own settings (package_release.py --set, a test build's anki_mining = on) a payload

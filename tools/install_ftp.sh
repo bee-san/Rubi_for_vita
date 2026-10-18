@@ -118,7 +118,8 @@ if [ -n "$PACKAGE_DIR" ]; then
   CONFIG_TEMPLATE=$PACKAGE_DIR/config.ini
   for model in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vocr "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vlm \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md \
-               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/MODEL-ATTRIBUTION.md; do
+               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/MODEL-ATTRIBUTION.md \
+               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/VERTICAL-ATTRIBUTION.md; do
     [ -f "$model" ] && VOCR_MODELS+=("$model")
   done
 fi

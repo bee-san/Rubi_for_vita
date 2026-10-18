@@ -1938,8 +1938,9 @@ static void vertical_job_runs_the_vertical_model_alone(void)
                     n ? s[0]->kind : 0u, n ? (unsigned)s[0]->bytes : 0u, (unsigned)(need_ws + need_w));
         TEST_CHECK(out.reserve_bytes == GAME_RESERVE && !out.fallback && out.need_workspace == need_ws &&
                    out.need_weights == need_w && !refine_steps);
-        TEST_CHECK_(vertical_opens >= 1 && last_which == VJO_GAME_OCR_OPEN_VERTICAL && !tier_opens[1] &&
-                    !tier_opens[2] && !tier_opens[3] && !cascade_opens && !cascade_allocations,
+        /* the vertical model by its own open (then, with the model there, its LM by the LM's), no size's */
+        TEST_CHECK_(vertical_opens >= 1 && (last_which == VJO_GAME_OCR_OPEN_VERTICAL || last_which == VJO_GAME_OCR_OPEN_LM) &&
+                    !tier_opens[1] && !tier_opens[2] && !tier_opens[3] && !cascade_opens && !cascade_allocations,
                     "columns %u: vertical %u, tiers %u/%u/%u, cascade %u", columns, vertical_opens, tier_opens[1],
                     tier_opens[2], tier_opens[3], cascade_opens);
         if (!columns)

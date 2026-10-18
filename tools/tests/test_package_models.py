@@ -38,6 +38,9 @@ class PackageModels(unittest.TestCase):
         self.vocr5 = b"tiny VOCR5 asset fixture, not OCR weights!!"
         vocr5_spec = ("https://fixture.invalid/VOCR5", len(self.vocr5), hashlib.sha256(self.vocr5).hexdigest())
         vocr5 = {name: vocr5_spec for name in prepare.VOCR5_ASSETS}
+        self.vertical = b"tiny VOCR5-V asset fixture, not OCR weights"
+        vocr5v = {name: ("https://fixture.invalid/VOCR5V", len(self.vertical), hashlib.sha256(self.vertical).hexdigest())
+                  for name in prepare.VOCR5V_ASSETS}
         self.attribution = b"CC BY-SA 4.0 fixture"
         att = {prepare.VOCR_LM_ATTRIBUTION: ("https://fixture.invalid/A", len(self.attribution),
                                              hashlib.sha256(self.attribution).hexdigest())}
@@ -46,12 +49,16 @@ class PackageModels(unittest.TestCase):
         model_att = {prepare.VOCR_MODEL_ATTRIBUTION: ("https://fixture.invalid/M", len(self.model_attribution),
                                                       hashlib.sha256(self.model_attribution).hexdigest())}
         self.enterContext(mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att))
+        self.vertical_attribution = b"the vertical model's attribution fixture"
+        self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
+            "https://fixture.invalid/V", len(self.vertical_attribution), hashlib.sha256(self.vertical_attribution).hexdigest())}))
         for module in (prepare, release):
             self.enterContext(mock.patch.object(module, "VOCR_ASSETS", old))
             self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
             self.enterContext(mock.patch.object(module, "VOCR_LM_ASSETS", lms))
             self.enterContext(mock.patch.object(module, "VOCR4_ASSETS", vocr4))
             self.enterContext(mock.patch.object(module, "VOCR5_ASSETS", vocr5))
+            self.enterContext(mock.patch.object(module, "VOCR5V_ASSETS", vocr5v))
         self.enterContext(mock.patch.object(prepare.urllib.request, "urlopen",
                                           side_effect=AssertionError("No test network access")))
 
@@ -59,6 +66,8 @@ class PackageModels(unittest.TestCase):
         """The fixture bytes setUp pins a recognizer's release table to (its asset's own)."""
         if name in prepare.VOCR5_ASSETS:
             return self.vocr5
+        if name in prepare.VOCR5V_ASSETS:
+            return self.vertical
         if name in prepare.VOCR3_ASSETS or name in prepare.VOCR4_ASSETS:
             return self.vocr3
         return self.legacy
@@ -74,8 +83,11 @@ class PackageModels(unittest.TestCase):
             (self.models / name).write_bytes(self.vocr3)
         for name in prepare.VOCR5_ASSETS:  # the model sizes'
             (self.models / name).write_bytes(self.vocr5)
+        for name in prepare.VOCR5V_ASSETS:  # the vertical model (ocr_vertical)
+            (self.models / name).write_bytes(self.vertical)
         (self.models / prepare.VOCR_LM_ATTRIBUTION).write_bytes(attribution or self.attribution)
         (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(self.model_attribution)
+        (self.models / prepare.VOCR_VERTICAL_ATTRIBUTION).write_bytes(self.vertical_attribution)
 
     def package_fixture(self, settings=None, write_models=True, vpk=b"synthetic package fixture", record=None):
         """The release package of a synthetic base archive and the fixture models (written first
@@ -150,7 +162,12 @@ class PackageModels(unittest.TestCase):
                 self.assertIn(release.DATA + "ocr/" + name, manifest["files"])
                 self.assertIn(name, manifest["models"])
                 self.assertEqual(archive.read(release.DATA + "ocr/" + name), self.fixture_of(name))
-            self.assertEqual(sorted(manifest["models"]), sorted({*sizes, *prepare.VOCR_LM_ASSETS}))
+            self.assertEqual(sorted(manifest["models"]),
+                             sorted({*sizes, prepare.VOCR_VERTICAL_MODEL, *prepare.VOCR_LM_ASSETS}))
+            # the vertical model (#99): no size's, its own release, its role
+            vertical = manifest["models"][prepare.VOCR_VERTICAL_MODEL]
+            self.assertEqual((vertical["release"], vertical["role"], "tier" in vertical),
+                             ("bee-san/vita-vn-ocr " + prepare.VOCR5V_TAG, "vertical text (ocr_vertical)", False))
             for name in ("FL10_w8.vocr", "H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_FL10_w8.vocr",
                          "VOCR4_H15_w8.vocr", "VOCR4_W20_w8.vocr"):
                 if name not in sizes:
@@ -303,8 +320,9 @@ class PackageModels(unittest.TestCase):
             manifest = json.loads(archive.read("package-manifest.json"))
         generation = {t["model"]: prepare.VOCR_GENERATION[prepare.release_assets(t["model"])[1]]
                       for t in prepare.model_tiers()["tiers"]}
+        vertical = {prepare.VOCR_VERTICAL_MODEL: prepare.VOCR_GENERATION[prepare.VOCR5V_TAG]}  # #99, no size's
         self.assertEqual({name: entry["generation"] for name, entry in manifest["models"].items() if "generation" in entry},
-                         generation)
+                         {**generation, **vertical})
         normal = prepare.model_tiers()["tiers"][1]["model"]
         for name in prepare.VOCR_LM_ASSETS:  # an LM is no recognizer: no generation
             self.assertNotIn("generation", manifest["models"][name])
@@ -323,6 +341,8 @@ class PackageModels(unittest.TestCase):
         self.assertEqual(manifest["defaults"]["ocr_engine"], moved.get(generation[normal], generation[normal]))
         for name, g in generation.items():
             self.assertEqual(manifest["models"][name]["generation"], moved.get(g, g), name)
+        for name, g in vertical.items():  # its own release's: v0.3.0's move does not reach it
+            self.assertEqual(manifest["models"][name]["generation"], g, name)
         self.assertNotIn("VOCR9", json.dumps(manifest))  # VOCR3's release ships nothing
 
     def test_removed_vocr2_is_neither_shipped_nor_claimed(self):

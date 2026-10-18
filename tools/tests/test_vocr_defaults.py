@@ -257,15 +257,25 @@ class VocrDefaults(unittest.TestCase):
                 blob = ("fixture " + name).encode()
                 pins[name] = ("https://fixture.invalid/" + name, len(blob), hashlib.sha256(blob).hexdigest())
                 (src / name).write_bytes(blob)
+            vblob = b"fixture " + prepare_ocr.VOCR_VERTICAL_MODEL.encode()  # #99: fetched with them
+            vpins = {prepare_ocr.VOCR_VERTICAL_MODEL: ("https://fixture.invalid/V", len(vblob), hashlib.sha256(vblob).hexdigest())}
+            (src / prepare_ocr.VOCR_VERTICAL_MODEL).write_bytes(vblob)
+            vatt = b"the vertical model's attribution fixture"  # its release's ATTRIBUTION.md, kept under its own name
+            vatt_pin = {prepare_ocr.VOCR_VERTICAL_ATTRIBUTION: ("https://fixture.invalid/VA", len(vatt),
+                                                                hashlib.sha256(vatt).hexdigest())}
+            (src / prepare_ocr.VOCR_VERTICAL_ATTRIBUTION).write_bytes(vatt)
             att, lm_att = b"VOCR5 attribution fixture", b"the LMs' attribution"
             att_pin = {prepare_ocr.VOCR_MODEL_ATTRIBUTION: ("https://fixture.invalid/ATTRIBUTION.md", len(att),
                                                             hashlib.sha256(att).hexdigest())}
             (src / "ATTRIBUTION.md").write_bytes(att)  # the release's name, this copy
-            with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), \
+            with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), mock.patch.dict(prepare_ocr.VOCR5V_ASSETS, vpins), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_VERTICAL_ATTRIBUTION_PIN", vatt_pin), \
                  mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
                 paths = prepare_ocr.fetch_tiers(out, src)
-                self.assertEqual(sorted(p.name for p in paths), sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md"]))
+                self.assertEqual(sorted(p.name for p in paths), sorted([*dict.fromkeys(TIER_FILES), prepare_ocr.VOCR_VERTICAL_MODEL,
+                                                                        "MODEL-ATTRIBUTION.md",
+                                                                        prepare_ocr.VOCR_VERTICAL_ATTRIBUTION]))
                 self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
                 self.assertFalse((out / "ATTRIBUTION.md").exists())  # the LMs' name stays theirs
                 # the LMs' ATTRIBUTION.md under the release's name is not this file: refused
@@ -447,7 +457,8 @@ class VocrDefaults(unittest.TestCase):
                      "VOCR4_FL10_w8.vocr", "VOCR4_H15_w8.vocr", "VOCR4_W20_w8.vocr"):
             if name not in TIER_FILES:
                 self.assertNotIn(name, shipped)
-        self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]}, set(prepare_ocr.VOCR_LM_ASSETS))
+        self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
+                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_VERTICAL_MODEL})  # #99: the vertical model too
 
 if __name__ == "__main__":
     unittest.main()
