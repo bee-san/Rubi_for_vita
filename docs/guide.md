@@ -566,6 +566,13 @@ the bus and GPU clocks are never changed. The
 log shows each job's helpers, its lines' share of a core, the clock, and the game's frame pacing
 during the job against the time before it ([OCR speed](ocr-speed.md); estimates until a
 console run).
+Vertical text, a manga's speech balloons in NOBORU or a game's vertical dialogue box, is read with
+`ocr_vertical = on` (`off` by default; config.ini only, the Rubi app has no switch for it): every job then
+finds the region's columns instead of its rows, reads each one turned 90° with the vertical model
+(VOCR5-V, VOCR5-S's size, whatever Model size says) and shows them right to left, one column a line, so
+the lookups work as on rows. It applies to every game: draw the text box around one balloon or the
+vertical box, and turn it off again for horizontal text, which it reads one character at a time
+([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
 The complete settings template is
 [docs/config.example.ini](config.example.ini).
 
@@ -707,7 +714,7 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 94,208 B of module pages and its 36,864 B thread stack and TLS from its
+holds the worker's 98,304 B of module pages (the debug build's 102,400 B) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

@@ -151,11 +151,18 @@
  * (core/vocr_ocr.c probe_short_lines): the debug build's text 77,196 -> 78,076 B, 252 B past
  * the page, data/bss 14,160 B as before [measured: the build log's module rows, main 49310ed and
  * its parent], in the game's partition, never SceShell's. The normal build's text still fits the
- * page it had: 94,208 B [CI's vita (normal) build log, main b622c18], so the budget is per build. */
+ * page it had: 94,208 B [CI's vita (normal) build log, main b622c18], so the budget is per build.
+ * Raised by one text page in both builds for vertical text (vita-vn-ocr #99, config.ini ocr_vertical):
+ * vita-vn-ocr's column finder and rotation (runtime/vocr_vertical.c, built for size: 3,220 B; its dark
+ * flags link vocr_lines.c's vocr_line_dark and vocr_line_dark_rows, 1,170 B), the job's column path
+ * (core/vocr_ocr.c, 432 B) and the vertical request (game_ocr/main.c, 52 B): text 78,156 -> 82,876 B
+ * debug and 76,856 -> 81,576 B normal (+4,720 B each), data/bss 14,160 B as before [measured: the
+ * module rows of both builds of main 1de7b67 and of this change, CI's VitaSDK container], in the game's
+ * partition, never SceShell's. It is in every game that is ON, ocr_vertical on or off. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 102400u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 94208u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an

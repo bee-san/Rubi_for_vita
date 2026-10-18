@@ -69,6 +69,10 @@ target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall 
   -ffunction-sections -fdata-sections)
 if(VJO_BUILD_VITA)
   target_compile_options(vjo_vocr_rt PRIVATE -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard)
+  # The column finder and rotation (vertical text, config.ini ocr_vertical; only its jobs run them): built
+  # for size, the worker's pages. Integer arithmetic only, so -Os computes the same columns: 3,220 B of
+  # code against 4,264 B at -O2 (arm-vita-eabi-gcc, the VitaSDK of CI's container).
+  set_source_files_properties("${_vocr_rt}/vocr_vertical.c" PROPERTIES COMPILE_OPTIONS "-Os")
 else()
   target_link_libraries(vjo_vocr_rt PUBLIC m)
 endif()
