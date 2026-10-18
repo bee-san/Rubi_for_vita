@@ -15,7 +15,8 @@ from prepare_ocr import (VOCR_ASSETS, VOCR_GATE_ASSETS, VOCR_GATE_ATTRIBUTION, V
                          VOCR_LM_ATTRIBUTION_PIN,
                          VOCR_LM_TAG, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN, VOCR_MODEL_ATTRIBUTION_TAG,
                          VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, VOCR5_ASSETS, VOCR5_TAG,
-                         model_tiers)
+                         VOCR5V_ASSETS, VOCR5V_TAG, VOCR_VERTICAL_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION_PIN,
+                         VOCR_VERTICAL_MODEL, model_tiers)
 from prepare_plaintext import FILENAME, load_manifest, validate
 
 DATA = "ux0/data/VitaJPOverlay/"
@@ -23,7 +24,7 @@ SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
 # The config template's on | off switches and its numbers, as core/config.c parses them: the manifest's
 # defaults give them as true/false and as integers, and every other setting as the template writes it.
 SWITCHES = ("japanese_only_selection", "frequency_badge", "ocr_skip_blank_lines", "ocr_boost_clock", "log_file",
-            "anki_mining", "anki_screenshot", "ocr_text_gate")
+            "anki_mining", "anki_screenshot", "ocr_text_gate", "ocr_vertical")
 NUMBERS = ("local_dictionary_results", "stick_lookup_ms", "font_size_ja", "font_size_en", "ocr_settle_ms",
            "ocr_settle_max_ms", "ocr_settle_press_ms", "ocr_cascade_ms", "ocr_threads")
 # Settings that can hold a credential (an audio source URL can carry one). The manifest gives them only as
@@ -93,9 +94,10 @@ def base_variant(original):
 
 
 def tier_release(name):
-    """(asset table, release tag) of a model size's recognizer, by the tables this module sees."""
+    """(asset table, release tag) of a model size's recognizer (or the vertical model), by the tables this
+    module sees."""
     for assets, tag in ((VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
-                        (VOCR_ASSETS, VOCR_TAG)):
+                        (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError("Not a pinned recognizer: " + name)
@@ -114,6 +116,8 @@ def shipped_models():
         roles.setdefault(tier["model"], []).append(
             tier["name"] + " model size" + (" (default)" if tier["id"] == tiers["default"] else ""))
     models = [(name, *tier_release(name), " and ".join(role)) for name, role in roles.items()]
+    # the vertical model (vita-vn-ocr #99): no size's; a job runs it when config.ini says ocr_vertical = on
+    models.append((VOCR_VERTICAL_MODEL, *tier_release(VOCR_VERTICAL_MODEL), "vertical text (ocr_vertical)"))
     # the beam + LM decoder's LM tiers (ocr_lm, the largest that fits up to 1000k by default)
     for name in VOCR_LM_ASSETS:
         models.append((name, VOCR_LM_ASSETS, VOCR_LM_TAG, "character LM (beam + LM decoder)"))
@@ -304,6 +308,14 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         raise ValueError("The text-presence gate's " + VOCR_GATE_ATTRIBUTION + " checksum failed: not release "
                          + VOCR_GATE_TAG + "'s ATTRIBUTION.md")
     assets[DATA + "ocr/" + VOCR_GATE_ATTRIBUTION] = attribution
+    # The vertical model's release names what it carries (VOCR5-S's training data and terms, and its own
+    # vertical data): its ATTRIBUTION.md ships beside it as ocr/VERTICAL-ATTRIBUTION.md.
+    attribution = models / VOCR_VERTICAL_ATTRIBUTION
+    _, size, sha = VOCR_VERTICAL_ATTRIBUTION_PIN[VOCR_VERTICAL_ATTRIBUTION]
+    if not attribution.is_file() or attribution.stat().st_size != size or digest(attribution) != sha:
+        raise ValueError("The vertical model's " + VOCR_VERTICAL_ATTRIBUTION + " is missing or not release " + VOCR5V_TAG
+                         + "'s ATTRIBUTION.md (tools/prepare_ocr.py --backend vocr-tiers)")
+    assets[DATA + "ocr/" + VOCR_VERTICAL_ATTRIBUTION] = attribution
     # The defaults are the package's config template's (the same file as both config.ini copies).
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": manifest_defaults(assets["config.ini"].read_text(encoding="utf-8"), shipped),

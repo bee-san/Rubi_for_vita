@@ -223,6 +223,9 @@ class E2EPackageEdges(unittest.TestCase):
         gate_attribution = b"the gate's attribution"
         gate_att = {"GATE-ATTRIBUTION.md": ("https://fixture.invalid/g", len(gate_attribution),
                                             hashlib.sha256(gate_attribution).hexdigest())}
+        vertical_attribution = b"the vertical model's attribution"
+        vertical_att = {"VERTICAL-ATTRIBUTION.md": ("https://fixture.invalid/v", len(vertical_attribution),
+                                                    hashlib.sha256(vertical_attribution).hexdigest())}
         release = e2e_package.release
         cases = (  # (what, fake_package's arguments, the ocr/ files, the failed checks in order: a part of each)
             ("the normal build", {}, {}, []),
@@ -252,6 +255,10 @@ class E2EPackageEdges(unittest.TestCase):
              ["MODEL-ATTRIBUTION.md is the model sizes' pinned attribution"]),
             ("the gate's attribution missing", {}, {"GATE-ATTRIBUTION.md": None},
              ["GATE-ATTRIBUTION.md is the text-presence gate's pinned attribution"]),
+            ("the vertical model's attribution altered", {}, {"VERTICAL-ATTRIBUTION.md": b"the vertical model's attributioN"},
+             ["VERTICAL-ATTRIBUTION.md is the vertical model's pinned attribution"]),
+            ("the vertical model's attribution missing", {}, {"VERTICAL-ATTRIBUTION.md": None},
+             ["VERTICAL-ATTRIBUTION.md is the vertical model's pinned attribution"]),
             ("an extra model, a name the broker accepts (P9)", {}, {"FL10_w8.vocr": blob},
              ["ocr/ has nothing but the shipped models and their attributions (other files: FL10_w8.vocr)"]),
             ("an extra LM and a file in a subdirectory", {}, {"x.vlm": b"lm", "old/m.vocr": blob},
@@ -263,11 +270,14 @@ class E2EPackageEdges(unittest.TestCase):
                 mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
                 mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION", "MODEL-ATTRIBUTION.md"), \
                 mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
-                mock.patch.object(release, "VOCR_GATE_ATTRIBUTION", "GATE-ATTRIBUTION.md"):
+                mock.patch.object(release, "VOCR_GATE_ATTRIBUTION", "GATE-ATTRIBUTION.md"), \
+                mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", vertical_att), \
+                mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION", "VERTICAL-ATTRIBUTION.md"):
             for what, kwargs, files, want in cases:
                 ocr = {name: data for name, data in {"m.vocr": blob, "LM-ATTRIBUTION.md": attribution,
                                                      "MODEL-ATTRIBUTION.md": model_attribution,
-                                                     "GATE-ATTRIBUTION.md": gate_attribution, **files}.items()
+                                                     "GATE-ATTRIBUTION.md": gate_attribution,
+                                                     "VERTICAL-ATTRIBUTION.md": vertical_attribution, **files}.items()
                        if data is not None}
                 with self.subTest(what), tempfile.TemporaryDirectory() as tmp, \
                         contextlib.redirect_stdout(io.StringIO()):
