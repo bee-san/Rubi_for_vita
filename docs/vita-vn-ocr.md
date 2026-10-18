@@ -815,8 +815,10 @@ weights may still be read ahead by the session's warm-up, as after any job that 
 - **What it reads.** The rows of the finder's first pass, as they arrive (`vocr_textgate_push`): no strip is read
   for it. Once the finder is done it scores the region from the cells under the finder's boxes (vita-vn-ocr's
   `boxes` mode: the 4th largest text logit, text iff at least -8) and either keeps the lines or drops them all.
-  Rubi's finder keeps every GRAD box (the textbox recovery adds rows), so its score is never lower than the one
-  vita-vn-ocr measured on GRAD's boxes: no region that measurement kept is stopped here.
+  vita-vn-ocr measured it on GRAD's boxes; Rubi's finder is the textbox recovery, whose boxes differ in a few
+  regions: on 13,074 training-side Vita regions they gave a lower score in 49 (5 dialogue, 44 empty), and at the
+  threshold 2 empty regions went from kept to stopped and 48 (47 dialogue) from stopped to kept, so no dialogue region
+  GRAD's boxes kept was stopped (vita-vn-ocr's audit, `docs/textgate.md` "Limits").
 - **The weights** (`textgate_p8_c8_w8.vtd`, 1,540 B, sha256 `a4e73ad78451c75a19f88a479fc0108daac85beaa88d875b73212ed3c09d85d1`,
   [v0.3.2-textgate.1](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.2-textgate.1)) are built into the
   worker (`cmake/VocrGate.cmake` downloads the release asset at configure time and checks it, or takes
