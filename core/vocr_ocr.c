@@ -42,10 +42,11 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #define VJO_VOCR_FINDER VOCR_LINES_TEXTBOX_RECOVERY
 #endif
 /* The vertical model's finder (include/vjo_vocr_sizes.h VJO_VOCR_VERTICAL_NAME): vita-vn-ocr's column
- * finder with these flags (vocr_vertical.h). 0 is its variant P0, GRAD on the region's transpose exactly,
- * the default candidate of vita-vn-ocr eval/vertical_protocol.json's finder rule. */
+ * finder with these flags (vocr_vertical.h): its variant P1 (VOCR_COLUMNS_VALLEYS: bands split at their
+ * columns of little ink, columns grown only over dense rows), the finder vita-vn-ocr #99 selected under
+ * eval/vertical_protocol.json's finder rule. */
 #ifndef VJO_VOCR_COLUMN_FLAGS
-#define VJO_VOCR_COLUMN_FLAGS 0u
+#define VJO_VOCR_COLUMN_FLAGS VOCR_COLUMNS_VALLEYS
 #endif
 #define VJO_VOCR_COLUMNS (VJO_VOCR_FINDER_COLUMNS | VJO_VOCR_COLUMN_FLAGS)
 
@@ -98,12 +99,12 @@ static const VjoVocrModel models[] = {
      {0x27,0x45,0xe6,0x96,0x99,0xad,0x7b,0x2a,0xba,0x30,0x92,0xf8,0x3e,0x5d,0xdc,0x19,
       0x12,0xf4,0x05,0xf5,0x4b,0x9d,0xf8,0xa2,0xe5,0x5b,0xe8,0x2c,0x38,0x5b,0x71,0x6e},
      241056, VJO_VOCR_FINDER},
-    /* VOCR5-V (vita-vn-ocr #99): vertical text in VOCR5-S's shape, reading columns turned 90 degrees
-     * anticlockwise (config.ini ocr_vertical). Last, so that no other model's index moves.
-     * PROVISIONAL until vita-vn-ocr releases it: the SHA-256 is a placeholder no file has. */
+    /* VOCR5-V (vita-vn-ocr #99, pre-release v0.3.2-vertical.1): vertical text in VOCR5-S's shape, reading
+     * columns turned 90 degrees anticlockwise (config.ini ocr_vertical). Last, so that no other model's
+     * index moves. */
     {VJO_VOCR5_V_NAME, VJO_VOCR5_V_BYTES,
-     {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-      0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
+     {0xcc,0xd2,0x0c,0x63,0xbb,0x26,0x20,0xf0,0x54,0x53,0x8b,0x45,0x69,0x04,0xbd,0xf1,
+      0x9b,0x74,0xd4,0x83,0xd3,0xda,0x8d,0xe8,0x65,0x00,0x9e,0x28,0x2b,0xb0,0x41,0x72},
      124832, VJO_VOCR_COLUMNS},
 };
 #endif /* VJO_VOCR_TEST_MODELS */

@@ -111,13 +111,13 @@ VOCR5_ASSETS = {
 }
 VOCR_DEFAULT_MODEL = 'VOCR5_N_w8.vocr'  # the default model size's (Normal's), tools/model_tiers.json
 # VOCR5-V (vita-vn-ocr #99): vertical text in VOCR5-S's shape, reading a column turned 90 degrees
-# anticlockwise. No model size runs it: a job does when config.ini says ocr_vertical = on.
-# PROVISIONAL until vita-vn-ocr publishes it: the tag and the SHA-256 are placeholders (no file has
-# this hash), and no package ships it yet.
-VOCR5V_TAG = 'v0.3.1-vertical.1'
+# anticlockwise. No model size runs it: a job does when config.ini says ocr_vertical = on. Pre-release
+# v0.3.2-vertical.1, whose SHA256SUMS lists this hash.
+VOCR5V_TAG = 'v0.3.2-vertical.1'
 VOCR5V_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5V_TAG}/'
 VOCR5V_ASSETS = {
-    'VOCR5_V_w8.vocr': (VOCR5V_BASE + 'VOCR5_V_w8.vocr', 819792, '0' * 64),
+    'VOCR5_V_w8.vocr': (VOCR5V_BASE + 'VOCR5_V_w8.vocr', 819792,
+        'ccd20c63bb2620f054538b456904bdf19b74d483d3da8de865009e282bb04172'),
 }
 VOCR_VERTICAL_MODEL = 'VOCR5_V_w8.vocr'
 # The model sizes' attribution: v0.3.0's ATTRIBUTION.md (in its SHA256SUMS), the licences of what the

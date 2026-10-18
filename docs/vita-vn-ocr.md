@@ -986,7 +986,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout dcf67696bccd3424552d551e040c0e6bd6ce6d82  # #99's column finder and rotation, on #85's kernels, #83's refinement and #82's decoder
+git -C /path/to/vita-vn-ocr checkout 4fb6458a356845f2ca52dbbb0e81f5b642fae040  # #99's column finder and rotation, on #85's kernels, #83's refinement and #82's decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
