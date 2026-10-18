@@ -222,9 +222,9 @@ line still names keeps one copy (the worker checks for an older copy of itself);
 no worker line and remove the ones older installs left ([one-vpk-install.md](one-vpk-install.md)). The prior art, the
 lifecycle (start, suspend and resume, exit, crash, a title turned OFF or ON while it runs, the
 Rubi app beside the game) and the memory are in [worker-loading.md](worker-loading.md).
-With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 98,304 B of
-pages and 36,864 B of stack and TLS, from the game's own budget); one that cannot start with them is
-turned OFF or started with L held.
+With `default = enabled` homebrew gets the worker too (an estimate of the cost: its 102,400 B of
+pages, 106,496 B in the debug build, and 36,864 B of stack and TLS, from the game's own budget); one that
+cannot start with them is turned OFF or started with L held.
 
 Permanent pages in SceShell's partition after the fix: 389,120 B (Shell module 299,008 B, the two
 thread stacks with TLS 90,112 B, worker 0 B), against 540,672 B at `e759187` and 462,848 B at
