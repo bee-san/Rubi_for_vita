@@ -65,8 +65,8 @@
 ## Install
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card before you
-copy the VPK to it (estimated from the package's size; 61 MB of it is the VPK itself, which you can
+HENkaku Settings > Enable Unsafe Homebrew** on, and about 246 MB free on the memory card before you
+copy the VPK to it (estimated from the package's size; 62 MB of it is the VPK itself, which you can
 delete once it is installed).
 
 1. Download `Rubi-<version>.vpk` from the
@@ -140,7 +140,7 @@ Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the e
 the home screen (SceShell) or another system app. Before each reading it checks how much memory the
 game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
-Rubi's OCR worker from its start: 132 KiB of its memory (96 KiB of module pages, 36 KiB of stack and
+Rubi's OCR worker from its start: 136 KiB of its memory (100 KiB of module pages, 36 KiB of stack and
 TLS: the build's figures). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).

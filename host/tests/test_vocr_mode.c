@@ -1,18 +1,20 @@
 /* The actual core adapter with a finder spy, no weights and no inference: each
- * model selects its finder mode, the region arrives in grey strips through the
- * source (no copy of the whole region), and the workspace and capture block
- * are the sizes the job reports. */
+ * model selects its finder mode (the vertical model, #99, the column finder and
+ * its flags), the region arrives in grey strips through the source (no copy of
+ * the whole region), and the workspace and capture block are the sizes the job
+ * reports. */
 #include "acutest.h"
 #include "vocr_ocr.h"
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"
+#include "vocr_vertical.h"
 #include "../../include/vjo_vocr_sizes.h"
 #include <stdlib.h>
 #include <string.h>
 
 #define WIDTH 40u
 #define HEIGHT 12u
-static unsigned row_reads[HEIGHT], strips, finder_calls, model_opens, first_flags, last_flags;
+static unsigned row_reads[HEIGHT], strips, finder_calls, column_calls, model_opens, first_flags, last_flags;
 static int selected_mode, emit_line;
 static const char *selected_model;
 static const unsigned char grey = (unsigned char)((77u * 30 + 150u * 100 + 29u * 150) >> 8);
@@ -31,9 +33,25 @@ static int strip(void *user, unsigned y, unsigned n, unsigned char *dst, size_t 
     return (int)n;
 }
 
+static int spy_finder(const VocrLinesRows *src, void *arena, size_t bytes, VocrLineSet *out);
+
 int vjo_test_find_lines_rows(const VocrLinesRows *src, int finder, void *arena, size_t bytes, VocrLineSet *out)
 {
     finder_calls++; selected_mode = finder;
+    return spy_finder(src, arena, bytes, out);
+}
+
+/* The vertical model's (vocr_vertical.h): its flags are the model's finder_mode's low byte; the
+ * arena holds both finders'. */
+int vjo_test_find_columns_rows(const VocrLinesRows *src, unsigned flags, void *arena, size_t bytes, VocrLineSet *out)
+{
+    column_calls++; selected_mode = (int)(VJO_VOCR_FINDER_COLUMNS | flags);
+    TEST_CHECK(bytes >= vocr_columns_arena_bytes(WIDTH, HEIGHT));
+    return spy_finder(src, arena, bytes, out);
+}
+
+static int spy_finder(const VocrLinesRows *src, void *arena, size_t bytes, VocrLineSet *out)
+{
     TEST_CHECK(src->width == WIDTH && src->height == HEIGHT && src->bpp == VOCR_LINES_GREY);
     TEST_CHECK(arena && bytes >= vocr_lines_arena_bytes(WIDTH, HEIGHT));
     /* the finder reads the region through the row callback, two passes */
@@ -62,7 +80,8 @@ static int absent_model(void *user, const char *path, VjoFile *out)
 static void reset(int line)
 {
     memset(row_reads, 0, sizeof(row_reads));
-    strips = finder_calls = model_opens = first_flags = last_flags = 0; selected_mode = -1; emit_line = line;
+    strips = finder_calls = column_calls = model_opens = first_flags = last_flags = 0; selected_mode = -1;
+    emit_line = line;
 }
 
 static void test_each_model_dispatches_without_extra_capture_or_workspace(void)
@@ -83,9 +102,13 @@ static void test_each_model_dispatches_without_extra_capture_or_workspace(void)
         reset(0);
         TEST_CHECK(vjo_vocr_ocr(&platform, "absent", models[i].name, &image, workspace, size, capture, cap,
                                 text, sizeof(text), &stats) == VJO_OK);
-        /* the model's own finder (every pinned model uses textbox recovery, 3) */
-        int expected = (int)models[i].finder_mode;
-        TEST_CHECK(expected == VOCR_LINES_TEXTBOX_RECOVERY && finder_calls == 1 && selected_mode == expected && !model_opens);
+        /* the model's own finder (every pinned model of rows uses textbox recovery, 3; the vertical
+         * model the column finder, P1 with the dark flags left to the job: VALLEYS | NO_DARK) */
+        int expected = (int)models[i].finder_mode, cols = !strcmp(models[i].name, VJO_VOCR_VERTICAL_NAME);
+        TEST_CHECK_(expected == (cols ? (int)(VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_VALLEYS | VOCR_COLUMNS_NO_DARK)
+                                      : VOCR_LINES_TEXTBOX_RECOVERY) &&
+                    finder_calls == (unsigned)!cols && column_calls == (unsigned)cols && selected_mode == expected &&
+                    !model_opens && stats.columns == (unsigned)cols, "%s", models[i].name);
         TEST_CHECK(stats.workspace == size && stats.capture == cap && !stats.model_loaded && !text[0]);
         /* One strip holds the region: read once (the first pass, whole: FIRST and LAST),
          * then once more to see that it did not change; the finder's passes hit the strip. */
@@ -97,7 +120,7 @@ static void test_each_model_dispatches_without_extra_capture_or_workspace(void)
         strcpy(text, "old");
         TEST_CHECK(vjo_vocr_ocr(&platform, "absent", models[i].name, &image, workspace, size, capture, cap,
                                 text, sizeof(text), &stats) == VJO_E_OCR_MODEL);
-        TEST_CHECK(finder_calls == 1 && selected_mode == expected && model_opens == 1);
+        TEST_CHECK(finder_calls + column_calls == 1 && selected_mode == expected && model_opens == 1);
         TEST_CHECK(stats.workspace == size && !stats.model_loaded && !text[0]);
         /* Too small a capture block is refused before anything is read. */
         reset(0);

@@ -105,9 +105,9 @@ for the measured results and remaining hardware checks.
 ## Install
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card (ux0) before
-you copy the VPK to it: 61 MB for the VPK, 170 MB for VitaShell to unpack it and 12 MB for the models
-Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 61 MB back.
+HENkaku Settings > Enable Unsafe Homebrew** on, and about 246 MB free on the memory card (ux0) before
+you copy the VPK to it: 62 MB for the VPK, 171 MB for VitaShell to unpack it and 13 MB for the models
+Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 62 MB back.
 
 1. Download `Rubi-<version>.vpk` from the
    [latest release](https://github.com/bee-san/Rubi_for_vita/releases/latest).
@@ -572,6 +572,13 @@ the bus and GPU clocks are never changed. The
 log shows each job's helpers, its lines' share of a core, the clock, and the game's frame pacing
 during the job against the time before it ([OCR speed](ocr-speed.md); estimates until a
 console run).
+Vertical text, a manga's speech balloons in NOBORU or a game's vertical dialogue box, is read with
+`ocr_vertical = on` (`off` by default; config.ini only, the Rubi app has no switch for it): every job then
+finds the region's columns instead of its rows, reads each one turned 90° with the vertical model
+(VOCR5-V, VOCR5-S's size, whatever Model size says) and shows them right to left, one column a line, so
+the lookups work as on rows. It applies to every game: draw the text box around one balloon or the
+vertical box, and turn it off again for horizontal text, which it reads one character at a time
+([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
 The complete settings template is
 [docs/config.example.ini](config.example.ini).
 
@@ -713,7 +720,7 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 98,304 B of module pages and its 36,864 B thread stack and TLS from its
+holds the worker's 102,400 B of module pages (the debug build's 106,496 B) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
@@ -758,9 +765,10 @@ only these names in `ux0:data/VitaJPOverlay/ocr`:<!-- names from kernel/game_ocr
 the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
 (VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
 release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
-release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
-character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
-`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
+release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1);
+`VOCR5_V_w8.vocr` (VOCR5, release v0.3.2-vertical.1); and the character LMs
+`vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
+`vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,
 when the request sets a cascade ceiling, the next size up, each by its size,
 never by a name or a path. A request by name (the host tools) opens only its own

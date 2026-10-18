@@ -35,16 +35,17 @@ class DocsModelNames(unittest.TestCase):
         self.assertEqual(set(models), set(pins.c_table()))   # the game worker's pins
         self.assertEqual(lms, sorted(pins.c_lm_table(), key=lambda n: pins.c_lm_table()[n][2]))
         self.assertEqual(set(lms), set(prepare_ocr.VOCR_LM_ASSETS))
-        # the three sizes' models, and by name (the host tools) VOCR3, the originals and VOCR4-W20, and the
-        # four LMs (the audit's list)
+        # the three sizes' models, and by name (the host tools) VOCR3, the originals and VOCR4-W20, the
+        # vertical model (#99, by its own open), and the four LMs (the audit's list)
         by_name = ["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "FL10_w8.vocr", "H15_w8.vocr", "F20_w8.vocr",
-                   "VOCR4_W20_w8.vocr"]
+                   "VOCR4_W20_w8.vocr", prepare_ocr.VOCR_VERTICAL_MODEL]
         self.assertEqual(sorted(models), sorted({*pins.TIER_FILES, *by_name}))
         self.assertEqual(lms, ["vocr_lm_o3_500k.vlm", "vocr_lm_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm",
                                "vocr_lm_o3_4000k.vlm"])
         text = names.names_text(models, lms)
         releases = {(p[5], p[4]) for p in pins.TIER_PINS.values()}
-        releases |= {("VOCR3", "v0.2.5-vocr3.1"), ("VOCR1", "v0.2.0"), ("VOCR4", "v0.2.5-vocr4.1")}
+        releases |= {("VOCR3", "v0.2.5-vocr3.1"), ("VOCR1", "v0.2.0"), ("VOCR4", "v0.2.5-vocr4.1"),
+                     ("VOCR5", prepare_ocr.VOCR5V_TAG)}
         for generation, tag in sorted(releases):
             self.assertIn(f"({generation}, release {tag})", text)
         self.assertIn("(release v0.2.6-ctclm.2)", text)

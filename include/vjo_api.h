@@ -49,8 +49,11 @@
  * or job completion; no new thread, event object or buffer.
  * 26: the text-presence gate: VjoGameOcrRequest.speed bit 4 (VJO_GAME_OCR_S_GATE), its weights' file
  * (VJO_GAME_OCR_OPEN_GATE, VJO_VOCR_GATE_NAME) in the kernel's broker for such a request, and a new step kind
- * (gate). Sizes are unchanged. */
-#define VJO_API_VERSION 26
+ * (gate). Sizes are unchanged.
+ * 27: vertical text (config.ini ocr_vertical): VjoGameOcrRequest.flags bit 15,
+ * VJO_GAME_OCR_F_VERTICAL, has the job run the vertical model on the region's
+ * columns, which Open opens as VJO_GAME_OCR_OPEN_VERTICAL. Sizes are unchanged. */
+#define VJO_API_VERSION 27
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from
