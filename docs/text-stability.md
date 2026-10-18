@@ -79,14 +79,15 @@ typewriter pause longer than the window passes as settled.
 | **read early**: the next read's text begins with this one's and goes on | 0 | 1 | 0 | **1** (0.33 %) |
 | near: the next read's start within max(1, 10 %) edits of this one, 2 or more characters longer (the same at 20 and 30 %) | 0 | 1\* | 0 | 1\* |
 | early by #211's rule (the two rows above) | 0 | 2 (0.84 %) | 0 | **2** (0.67 %) |
-| a read 2-3 jobs later that extends one, other text between | 0 | 0 | 0 | 0 |
+| a read 2-3 jobs later that extends one, other text between | 0 | 1\* | 0 | 1\* |
 | jobs that spent the wait's whole budget | 9 | 9 | 3 | 21 |
 | of those, a text the next read extended | 0 | 0 | 0 | **0** |
 | the same text read again by the next text job | 6 | 28 | 2 | 36 (12.0 %) |
 | of those, with the capture's checksum changed | 2 | 4 | 1 | **7** (2.3 %) |
 
-\* A 1-character misread (a 267 × 95 box read at low confidence), then a 31-character sentence that
-does not begin with it: with max(1, 10 %) edits, any longer text is "near" a read of one character.
+\* The same 1-character misread (a 267 × 95 box read at low confidence) in both rows. The next read
+is a 31-character sentence that does not begin with it, and the one after that has 8 characters.
+With max(1, 10 %) edits, any text 2 or more characters longer is "near" a read of one character.
 
 **The committed analyser agrees.** `tools/analyse_selftest.py --collect` on the same collect gives
 the read-early row for test.3 and test.4: `read before finished: 1 of 254 pairs`, and `30 read the
@@ -109,9 +110,9 @@ two-sided 95 % interval's upper end is 1.54 % (one-sided: 1.25 %).
 
 **The wait's limit.** 21 jobs spent the wait's whole budget: 19 background jobs and 2 presses.
 - **How the step logs it.** The step logs `limit` only when no try's wait held: `stats.settled` is
-  the job's, set by any try (`core/vocr_ocr.c` `settle_wait`). So 12 say `limit` and 9 say `held`.
-  Those 9 held in one try, were torn, and spent the rest of the budget on their other tries (2 or 3
-  tries in all).
+  the job's, set by any try's wait (`core/vocr_ocr.c` `settle_wait` or `settle_verify`). So 12 say
+  `limit` and 9 say `held`. Those 9 held in at least one try, were torn, and spent the rest of the
+  budget on their other tries (2 or 3 tries in all).
 - **None showed a partial line:**
   - **15 read no text.** All 3 tries were torn, with 19-192 rows changing. A later job read text in
     each; the next job did in 14.
@@ -128,8 +129,8 @@ two-sided 95 % interval's upper end is 1.54 % (one-sided: 1.25 %).
     (inferred).
   - 15 of the 29 had the overlay opened between the two jobs: 6 presses that found the screen
     changed since the background result, 5 refreshes of the open overlay, 3 jobs the open overlay
-    started again (2 for a result of an earlier screen, 1 after a torn job), and 1 Automatically job
-    after it closed.
+    started again (2 for a result of an earlier screen, 1 after a job cancelled for a newer screen),
+    and 1 Automatically job after it closed.
 - **Presses.** 7 of the 36 were presses.
   - 6 found `open: screen changed since the background result`: the kernel's tracker had seen a
     change since the last result, and the job read the same pixels again.
