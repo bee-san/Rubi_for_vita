@@ -34,8 +34,9 @@ set(RT ${VJO_VOCR_SOURCE_DIR}/runtime)
 set(ARCH -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard)
 
 # runtime/README.md "Porting notes": C99, -O2, no FP contraction, so every platform computes the same bits
+include(${ROOT}/cmake/VocrGate.cmake) # the text-presence gate's pinned weights (VJO_VOCR_GATE_SOURCE)
 add_library(smoke_vocr_rt STATIC ${RT}/vocr.c ${RT}/vocr_lm.c ${RT}/vocr_lines.c ${RT}/vocr_lines_rows.c
-  ${RT}/vocr_lines_refine.c)
+  ${RT}/vocr_lines_refine.c ${RT}/vocr_textgate.c ${VJO_VOCR_GATE_SOURCE})
 target_compile_options(smoke_vocr_rt PRIVATE ${ARCH} -std=c99 -O2 -ffp-contract=off)
 add_library(smoke_bearssl STATIC ${ROOT}/third_party/bearssl/src/hash/sha2small.c
   ${ROOT}/third_party/bearssl/src/codec/dec32be.c ${ROOT}/third_party/bearssl/src/codec/enc32be.c)

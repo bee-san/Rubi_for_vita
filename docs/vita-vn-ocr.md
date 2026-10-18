@@ -799,6 +799,61 @@ marked lines covered); shown 2×, as the overlay captures them, and on Vita regi
 (−0.004 to −0.008 and −0.0003; +0 to +1.3 points covered), as #83 found for the text on Vita. The
 strips read are the same with and without the refinement.
 
+## Text-presence gate (API 26)
+
+```ini
+ocr_text_gate = off   ; on: no lines where the gate sees no text
+```
+
+When the selected region holds no text (the game hid its text box, a CG screen, a menu without dialogue) the
+line finder still finds "lines" in the picture, and the recognizer reads junk from them. vita-vn-ocr #100 / #101
+(`docs/textgate.md` there) is a tiny int8 network that answers one question per region: does it hold text? With
+`ocr_text_gate = on`, a region it says holds none returns no line: nothing is recognized and no text is shown (the
+weights may still be read ahead by the session's warm-up, as after any job that finds no line:
+[first-ocr.md](first-ocr.md)). Otherwise the finder's lines are read exactly as without it.
+
+- **What it reads.** The rows of the finder's first pass, as they arrive (`vocr_textgate_push`): no strip is read
+  for it. Once the finder is done it scores the region from the cells under the finder's boxes (vita-vn-ocr's
+  `boxes` mode: the 4th largest text logit, text iff at least -8) and either keeps the lines or drops them all.
+  Rubi's finder keeps every GRAD box (the textbox recovery adds rows), so its score is never lower than the one
+  vita-vn-ocr measured on GRAD's boxes: no region that measurement kept is stopped here.
+- **The weights** (`textgate_p8_c8_w8.vtd`, 1,540 B, sha256 `a4e73ad78451c75a19f88a479fc0108daac85beaa88d875b73212ed3c09d85d1`,
+  [v0.3.2-textgate.1](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.2-textgate.1)) are built into the
+  worker (`cmake/VocrGate.cmake` downloads the release asset at configure time and checks it, or takes
+  `-DVJO_VOCR_GATE_BLOB`), so no file is read on the console; `vocr_textgate_load` checks their CRC-32 in every
+  job that uses them. Their licence is that release's `ATTRIBUTION.md`: non-commercial use only, as for the
+  recognizers.
+- **Memory.** Its arena (35,529 B at 960×544) takes scratch the finder leaves free, which the recognizer's arena
+  holds anyway at every region size (`test_vocr_policy.c` checks every pinned model at every size): no job's
+  workspace grows. Module pages, measured on both builds (VitaSDK gcc 15.2.0): the worker gains 2,592 B of text and
+  1,544 B of data/bss, on or off; the debug worker keeps its 98,304 B and the normal one takes one text page more,
+  94,208 → 98,304 B, in the game's memory. SceShell and the kernel keep their pages
+  ([memory-ledger.md](memory-ledger.md)).
+- **Time (estimate, nothing of the gate has run on a console):** about 67-135 ms per 900×150 text box on one core at
+  333 MHz, 18-36 ms per 450×80 box, 256-517 ms for a whole 960×544 screen (vita-vn-ocr's cycle model on the Vita
+  compiler's code, scalar). It runs during the finder's pass, before the 444 MHz boost (which starts with the first
+  recognized line), in every job while it is on; on an empty region it saves the recognition.
+
+**What it does, measured in vita-vn-ocr (host, GRAD + refine behind it):**
+
+| data | without the gate | with it |
+|---|---|---|
+| 66 development text-free regions with no line | 5 | 59 |
+| development whole dialogue, VOCR5-S / N / L | 5.21 / 4.78 / 4.46% | 5.28 / 4.84 / 4.53% (not resolved worse) |
+| vita-test + psp-test whole dialogue, read once | 9.51 / 9.16 / 8.35% | unchanged |
+| CLANNAD dialogue (2,052 lines), read once | 1.43 / 0.92 / 0.63% | unchanged |
+| CLANNAD pages without reference text (133) | 162 lines | 114 lines |
+
+**Why it is off by default.** On the text Rubi reads it changes nothing measured, and on empty regions it
+stops most junk; but it costs an estimated 0.1 s per job, at the game's clock, in every job, and how often a
+player's region is empty (and how much junk that shows) is unmeasured. A console A/B decides: the same screens
+with the key on and off (a backlog, a reloaded save, a CG with the text box hidden).
+
+**Logs.** `gstep job gate` per job that ran it: kind its mode (1: boxes), arg the lines it stopped (0: the region
+holds text), rc 0 or why it could not decide (the lines then kept), bytes its score + 129 and, from bit 16, its
+threshold + 129, sum the rows it read, us its time. A job it stopped logs `find` with arg 0 and no `recognize`
+step; `tools/analyse_selftest.py --collect` counts the gate's jobs, those it stopped and their scores.
+
 ## Models
 
 **The default size, Normal, is VOCR5-N (`VOCR5_N_w8.vocr`); Small is VOCR5-S
@@ -878,7 +933,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout d214a05deeef503a5e1d1853fe9fa4c91eb60bc2  # #85's merge (after #83's and #82's): the faster kernels, the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout e929f5732467462b91ba14f8c8e28da932795733  # #101's merge (after #85's, #83's and #82's): the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
@@ -892,9 +947,11 @@ cmake -S . -B build/host -G Ninja -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path
 cmake --build build/host && ctest --test-dir build/host --output-on-failure
 ```
 
-`cmake/VocrOCR.cmake` checks the ten runtime files (`runtime/vocr.c`, `vocr.h`,
+`cmake/VocrOCR.cmake` checks the twelve runtime files (`runtime/vocr.c`, `vocr.h`,
 `vocr_lines.c`, `vocr_lines.h`, `vocr_lines_rows.c`, `vocr_lines_rows.h`, `vocr_lm.c`,
-`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`) against their SHA-256 at that commit
+`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`) against their
+SHA-256 at that commit, and `cmake/VocrGate.cmake` the gate's weights (downloaded from the release at configure
+time, or `-DVJO_VOCR_GATE_BLOB=FILE`),
 and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. Copying those files to
 `third_party/vita-vn-ocr/runtime/` works too and needs no source directory.
 Without `VJO_WITH_VOCR` the Shell has no OCR engine: a job reports that the

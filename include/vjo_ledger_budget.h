@@ -151,12 +151,15 @@
  * (core/vocr_ocr.c probe_short_lines): the debug build's text 77,196 -> 78,076 B, 252 B past
  * the page, data/bss 14,160 B as before [measured: the build log's module rows, main 49310ed and
  * its parent], in the game's partition, never SceShell's. The normal build's text still fits the
- * page it had: 94,208 B [CI's vita (normal) build log, main b622c18], so the budget is per build. */
-#if VJO_DEBUG
+ * page it had: 94,208 B [CI's vita (normal) build log, main b622c18], so the budget is per build.
+ * Raised from 94,208 B in the normal build by one text page for API 26, the text-presence gate (vita-vn-ocr #100:
+ * runtime/vocr_textgate.c at -Os, its 1,540 B of int8 weights built in, and core/vocr_ocr.c's use of it): 2,592 B
+ * of text and 1,544 B of data in both builds, whether the gate is on or off, the weights in .data
+ * (cmake/VocrGate.cmake). The debug build's text 78,156 -> 80,748 B and data/bss 14,160 -> 15,704 B fit the pages
+ * it had, 98,304 B; the normal build's text 76,856 -> 79,448 B (968 B of room before it) takes one more, and its
+ * data/bss 14,160 -> 15,704 B fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main
+ * 1de7b67 and this change], in the game's partition, never SceShell's. Both builds now have the same budget. */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
-#else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 94208u
-#endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game

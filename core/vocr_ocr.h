@@ -301,6 +301,13 @@ typedef struct {
     /* ocr-first (docs/first-ocr.md). */
     uint32_t retry_at;       /* VjoPlatform.now_us when the last capture attempt began (tries > 1) */
     unsigned warmed;         /* 1: vjo_vocr_warm read what the job had not (its loaded/load_us fields) */
+    /* The text-presence gate (VjoVocrPolicy.gate, API 26), of the last try. */
+    unsigned gate_ran;       /* 1: it decided on this try's region (its score is in gate_score) */
+    unsigned gate_stopped;   /* the finder's lines it stopped (0: the region holds text, or it did not decide) */
+    int gate_score;          /* its score (-129..127): text iff >= VJO_VOCR_GATE_T */
+    int gate_rc;             /* 0, or why it could not decide (VJO_E_*, VOCR_LINES_E_*: the lines were kept) */
+    unsigned gate_rows;      /* rows it read (the finder's first pass) */
+    uint32_t gate_us;        /* its time: its share of the first pass, and its decision */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
@@ -480,6 +487,14 @@ typedef struct {
      * between, when the job asks for it (ocr_boost_clock). */
     void (*busy)(void *ud, int on);
     void *busy_ud;
+    /* API 26: the text-presence gate (vita-vn-ocr #100, runtime/vocr_textgate.c, its pinned weights
+     * vjo_vocr_gate_blob built in: VJO_VOCR_GATE_*). It reads the rows of the finder's first pass as
+     * they arrive (no read of its own) and, once the finder is done, scores the region from the cells
+     * under the finder's boxes; under VJO_VOCR_GATE_T the job keeps no line (nothing recognized, no
+     * model file opened). Its arena takes the scratch the finder leaves free (the recognizer's arena
+     * is larger at every region size), so the workspace does not grow; without that room, or if it
+     * cannot decide, it keeps the lines and says why in stats->gate_rc. 0: off, exactly as before. */
+    int gate;
 } VjoVocrPolicy;
 #define VJO_VOCR_SETTLE_MAX_US 2000000u
 /* VjoVocrPolicy.refine: every step of vita-vn-ocr's refinement
@@ -489,6 +504,19 @@ typedef struct {
 /* The confidence under which the cascade reads a line again (vita-vn-ocr #82:
  * under 0.7 flags about 1 line in 5 and 3 of 4 misread lines). */
 #define VJO_VOCR_CASCADE_CONF 700u
+
+/* The text-presence gate's pinned weights and operating point (vita-vn-ocr #100: the release asset
+ * cmake/VocrGate.cmake pins and builds into the module as vjo_vocr_gate_blob, in .data where the worker's
+ * pages have room; never written, their CRC-32 checked by every job that uses them):
+ * eval/textgate_protocol.json's winner, `p8_c8_seed1` in boxes mode, k 4, t -8. */
+extern unsigned char vjo_vocr_gate_blob[];
+extern const size_t vjo_vocr_gate_blob_bytes;
+#define VJO_VOCR_GATE_BYTES 1540u
+#define VJO_VOCR_GATE_MODE 1 /* VOCR_TEXTGATE_BOXES */
+#define VJO_VOCR_GATE_K 4u
+#define VJO_VOCR_GATE_T (-8)
+/* The gate's arena for a width x height region (VjoVocrPolicy.gate), 0 when its weights do not load. */
+size_t vjo_vocr_gate_bytes(unsigned width, unsigned height);
 
 /* The ink of a w x h crop of grey rows, stride apart (either polarity).
  * Returns 1 when it holds no text-like ink (vjo_vocr_blank), else 0. */

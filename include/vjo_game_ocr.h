@@ -65,7 +65,12 @@
  * card's screenshot, beside its record. A shot recognizes nothing, opens no model and
  * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed. */
 #define VJO_GAME_OCR_F_SHOT 0x4000u
-#define VJO_GAME_OCR_F_ALL 0xFFFF7FFFu
+/* API 26, bit 15: the text-presence gate (vita-vn-ocr #100, runtime/vocr_textgate.c, its pinned int8 weights
+ * built into the worker: core/vocr_ocr.h VjoVocrPolicy.gate). A region the gate says holds no text returns
+ * no line: nothing is recognized and the model file is not opened. The gate reads the rows the finder's
+ * first pass reads, so it adds no strip read. */
+#define VJO_GAME_OCR_F_GATE 0x8000u
+#define VJO_GAME_OCR_F_ALL 0xFFFFFFFFu
 /* The shot's file: the Anki queue (core/anki_queue.h VJO_QUEUE_DIR; a host test checks the
  * two agree), named by the card's queue ID (32 lowercase hex digits), at most
  * VJO_GAME_OCR_SHOT_MAX bytes (core/anki.h VJO_ANKI_PICTURE_MAX, what an export reads). */
@@ -221,6 +226,12 @@ enum {
                             encodes a lower quality), bytes the JPEG's, sum the strips read, us the try */
     VJO_GSTEP_SAVE,      /* API 23, a shot's file: kind the chunks written, rc 0 or the kernel's error,
                             bytes written, us the writes and the save */
+    VJO_GSTEP_GATE,      /* API 26, the text-presence gate (VJO_GAME_OCR_F_GATE), one per try that found a
+                            line: kind its mode (0 region, 1 the finder's boxes), arg the lines it stopped
+                            (0: the region holds text), rc 0 or why it could not decide (VJO_E_* or
+                            VOCR_LINES_E_*: the lines are kept), bytes its score + 129 (0..256; its
+                            threshold + 129 << 16), sum the rows it read, us its time (its rows' share of
+                            the finder's pass and its decision) */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */

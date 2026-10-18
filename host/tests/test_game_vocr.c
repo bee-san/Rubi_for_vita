@@ -429,7 +429,8 @@ static void cancel_and_wire(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.width = 200; r.x = 1; /* past the frame's edge */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
-    r.x = 0; r.flags = 0x8000; /* bit 15 means nothing yet (bit 14 is API 23's shot) */
+    r.x = 0; r.flags = 3u << VJO_GAME_OCR_REFINE_SHIFT; /* the refinement's mode 3 means nothing (API 26: every
+                                                         * flag bit is defined, bit 15 the gate) */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.flags = 0; r.speed = 0x10; /* API 22: VJO_GAME_OCR_S_* bits 4-31 unknown */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
@@ -767,7 +768,10 @@ static void policy_in_the_flags(void)
              rows_calls, plain);
     TEST_CHECK(!blank && out.lines == 1 && rows_calls > plain && !memory_live && !capture_live);
     allocations = 0;
-    r.flags = 0x8000u; /* bit 15 means nothing yet (bit 14 is API 23's shot) */
+    r.flags = 3u << VJO_GAME_OCR_REFINE_SHIFT; /* a mode that means nothing (every flag bit is defined: API 26) */
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
+    /* a shot carries no gate either */
+    r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_GATE;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);
     /* a shot carries no job policy: refused before anything is taken */
     r.flags = VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_BLANK;

@@ -1252,6 +1252,7 @@ static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
     p->settle_max_us = (r->flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT) * VJO_GAME_OCR_SETTLE_MAX_UNIT_US;
     p->settle_first = (r->flags & VJO_GAME_OCR_F_SETTLE_FIRST) != 0;
     p->blank = (r->flags & VJO_GAME_OCR_F_BLANK) != 0;
+    p->gate = (r->flags & VJO_GAME_OCR_F_GATE) != 0; /* API 26: the text-presence gate */
     p->sleep = policy_sleep;
     /* API 22: helpers, the line cache, the clock around the recognitions. */
     helper_pool = helper_pool_base;
@@ -1593,6 +1594,12 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                  (stats.cached > 0xFFu ? 0xFFu : stats.cached) << 16 | (n ? lo : 0u) << 8 | (n ? sum / n : 0u),
                  stats.recognize_us ? stats.recognize_us : 1u, 0);
     }
+    /* API 26: the text-presence gate, after every other step, so that a full log drops it first (a job it
+     * stopped has few steps): score + 129, threshold + 129 << 16. */
+    if (policy.gate && (stats.gate_ran || stats.gate_rc))
+        step_add(VJO_GSTEP_GATE, VJO_VOCR_GATE_MODE, stats.gate_stopped, stats.gate_rc,
+                 (uint32_t)(stats.gate_score + 129) | (uint32_t)(VJO_VOCR_GATE_T + 129) << 16, stats.gate_rows,
+                 stats.gate_us + 1u, 0);
     /* A helper that could not be joined may still run in the workspace: keep it,
      * and take no more jobs (core/vocr_ocr.h VjoVocrPool). */
     if (stats.stuck) { blocked = 1; hook_owns_workspace = 1; }

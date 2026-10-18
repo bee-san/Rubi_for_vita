@@ -15,9 +15,12 @@
 #include "vocr_lines_rows.h"
 #include "vocr_lines_refine.h"
 #include "vocr_lm.h"
+#include "vocr_textgate.h"
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
 typedef char vjo_vocr_refine_matches_runtime[VJO_VOCR_REFINE_ALL == VOCR_REFINE_DEFAULT ? 1 : -1];
+typedef char vjo_vocr_gate_mode_matches_runtime[VJO_VOCR_GATE_MODE == VOCR_TEXTGATE_BOXES &&
+                                                VJO_VOCR_GATE_K <= VOCR_TEXTGATE_MAX_K ? 1 : -1];
 /* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.3.0 (VOCR5, the
  * three model tiers), v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0
  * (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
@@ -169,6 +172,8 @@ typedef struct {
     int lm;               /* the LM extras (top-K, decoder) follow at total (lm_layout) */
     int cascade;          /* and after them the cascade's (cascade_layout) */
     size_t refine_off, refine_bytes; /* the refinement's arena, inside total (0 bytes: off) */
+    size_t gate_off, gate_bytes;     /* the gate's arena, inside the scratch after the finder's (0 bytes: off) */
+    vocr_textgate_model gate;        /* its weights (vjo_vocr_gate_blob), loaded for the job */
     unsigned helpers;     /* helpers laid out (VjoVocrPool), 0: none, and no line slots */
     size_t slots_off;     /* the line slots: the caller's (SLOT_BYTES), then each helper's (HELPER_BYTES) */
 } Layout;
@@ -202,6 +207,7 @@ static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
     l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
     l->lm = l->cascade = 0;
     l->refine_off = l->refine_bytes = 0;
+    l->gate_off = l->gate_bytes = 0;
     l->helpers = 0;
     l->slots_off = 0;
     return 0;
@@ -259,6 +265,15 @@ static void cascade_layout(const VjoVocrModel *c, CascadeLayout *x)
 size_t vjo_vocr_refine_bytes(unsigned width, unsigned height)
 {
     return region_ok(width, height) ? ALIGN16(vocr_refine_arena_bytes(width, height)) : 0;
+}
+
+size_t vjo_vocr_gate_bytes(unsigned width, unsigned height)
+{
+    vocr_textgate_model m;
+    if (!region_ok(width, height) || vjo_vocr_gate_blob_bytes != VJO_VOCR_GATE_BYTES ||
+        vocr_textgate_load(&m, vjo_vocr_gate_blob, vjo_vocr_gate_blob_bytes) != VOCR_LINES_OK)
+        return 0;
+    return ALIGN16(vocr_textgate_arena_bytes(&m, VJO_VOCR_GATE_MODE, width, height));
 }
 
 size_t vjo_vocr_cascade_job_bytes(const char *cascade)
@@ -410,6 +425,7 @@ typedef struct {
     uint32_t cover_from;    /* a re-read from row 0 in progress: its start, and its next row (0: none) */
     unsigned cover_next;
     uint32_t settle_left;   /* the job's waiting budget left */
+    vocr_textgate_state *gate; /* the gate reading this try's first pass, or NULL (VjoVocrPolicy.gate) */
     int err;
 } Stream;
 
@@ -512,6 +528,12 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
         }
     }
     for (unsigned r = 0; r < n; r++) stream_check(s, y + r, dst + (size_t)r * s->w, first);
+    if (first && s->gate) { /* the gate reads the first pass's rows as they come: no read of its own */
+        uint32_t g0 = clock_us(s->p);
+        for (unsigned r = 0; r < n; r++) vocr_textgate_push(s->gate, dst + (size_t)r * s->w);
+        s->st->gate_rows += n;
+        s->st->gate_us += clock_us(s->p) - g0;
+    }
     if (!s->err && !first && s->cover_next >= s->h) {
         s->verified_from = s->cover_from;
         s->verified = 1;
@@ -1637,6 +1659,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     const VjoVocrPool *pool = pol->pool;
     VocrLinesRows region = {w, im->height, VOCR_LINES_GREY, stream_row, s};
     VocrLineSet set;
+    vocr_textgate_state gate;
     vocr_model *model = (vocr_model *)(void *)(ws + l->structs_off);
     vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
     unsigned char *x0 = ws + l->total; /* the LM extras (l->lm) */
@@ -1669,8 +1692,37 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         st->cascade_rc = 0;
     }
     st->cached = st->dispatched = st->run_failures = 0;
+    st->gate_ran = st->gate_stopped = st->gate_rows = 0;
+    st->gate_score = 0;
+    st->gate_us = 0;
+    if (l->gate_bytes) st->gate_rc = 0;
     t0 = clock_us(p);
+    if (l->gate_bytes) { /* API 26: the gate takes the rows of the finder's first pass as they come */
+        int grc = vocr_textgate_begin(&gate, &l->gate, VJO_VOCR_GATE_MODE, VJO_VOCR_GATE_K, w, im->height,
+                                      ws + l->gate_off, l->gate_bytes);
+        if (grc) st->gate_rc = grc;
+        else s->gate = &gate;
+    }
     rc = vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
+    if (s->gate) {
+        /* Scored on the finder's boxes; under the threshold the region holds no text: no line is read
+         * (a hidden text box, a CG screen). Any error keeps the lines (the job reads as without it). */
+        int score = 0, grc;
+        uint32_t g0 = clock_us(p);
+        s->gate = NULL;
+        grc = rc ? 0 : vocr_textgate_score(&gate, &set, &score);
+        st->gate_us += clock_us(p) - g0;
+        if (grc) st->gate_rc = grc;
+        else if (!rc) {
+            st->gate_ran = 1;
+            st->gate_score = score;
+            if (score < VJO_VOCR_GATE_T) {
+                st->gate_stopped = set.count;
+                set.count = 0;
+                set.truncated = 0;
+            }
+        }
+    }
     if (rc == VOCR_LINES_E_SOURCE) return stream_error(s, VJO_E_SOURCE);
     if (rc) return rc == VOCR_LINES_E_ARENA ? VJO_E_OOM : VJO_E_OCR_REGION;
     /* A region inside one strip was read once: read it again, so that a screen
@@ -2009,6 +2061,20 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     front = one_shot ? ALIGN16(mi->bytes) : 0;
     strip_rows = vjo_vocr_strip_rows(image->width, image->height);
     need_capture = vjo_vocr_capture_bytes(image->width, image->height);
+    if (policy && policy->gate) {
+        /* API 26: the gate's arena takes the scratch the finder leaves free (the recognizer's arena is
+         * the larger part of it at every region size), so the workspace never grows for it; without
+         * that room the job reads as without the gate. */
+        size_t gb = vjo_vocr_gate_bytes(image->width, image->height), off = ALIGN16(l.finder);
+        if (!gb || vocr_textgate_load(&l.gate, vjo_vocr_gate_blob, vjo_vocr_gate_blob_bytes) != VOCR_LINES_OK)
+            stats->gate_rc = VJO_E_OCR_MODEL;
+        else if (off + gb > l.scratch)
+            stats->gate_rc = VJO_E_OOM;
+        else {
+            l.gate_off = l.scratch_off + off;
+            l.gate_bytes = gb;
+        }
+    }
     if (policy && policy->refine) {
         /* The refinement's arena ends the job's own workspace; without room the
          * boxes are read as found. */

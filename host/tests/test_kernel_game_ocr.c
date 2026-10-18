@@ -1039,8 +1039,9 @@ static void invalid_capture_and_wire(void)
     r.model[31] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); r.model[31] = 0;
     r.model_dir[sizeof(r.model_dir) - 1] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.model_dir[sizeof(r.model_dir) - 1] = 0;
-    r.flags = 0x4000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 20: bits 14-15 are still unknown */
-    r.flags = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.flags = 0x4000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 23: a shot names no model */
+    /* API 26: bit 15 is the text-presence gate, the last flag bit: every flag bit is now defined */
+    TEST_CHECK(VJO_GAME_OCR_F_GATE == 0x8000u && VJO_GAME_OCR_F_ALL == 0xFFFFFFFFu);
     r.flags = 0;
     r.speed = 0x10; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 22: VJO_GAME_OCR_S_* bits 4-31 unknown */
     r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache: known */

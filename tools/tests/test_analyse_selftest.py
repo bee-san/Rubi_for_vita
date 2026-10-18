@@ -441,6 +441,10 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual({k: rf[k] for k in ("jobs", "modes", "boxes", "lines", "split", "capped", "rows", "us")},
                          {"jobs": 1, "modes": {"psp": 1}, "boxes": 9, "lines": 16, "split": 7, "capped": 2,
                           "rows": 410, "us": [1400]})
+        # API 26: the text-presence gate's step (its mode as the kind; the score and threshold packed + 129)
+        self.assertTrue(any(line.startswith("gstep job gate kind=1 arg=2 ") for line in lines), lines)
+        gt = a.summarise_log("\n".join(lines) + "\n")["gate"]
+        self.assertEqual(gt, {"jobs": 1, "stopped": 1, "lines_stopped": 2, "scores": [-60], "us": [9001], "rcs": {}})
 
     def test_the_vjonet_stack_line_keeps_the_largest_and_warns_near_the_top(self):
         # shell/worker.c net_stack_check: logged at a game exit when it grew; the summary keeps the largest

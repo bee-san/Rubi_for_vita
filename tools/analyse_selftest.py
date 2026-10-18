@@ -987,6 +987,10 @@ LOG = {
     # API 20: the finder's boxes refined (VJO_GSTEP_REFINE)
     "refine": re.compile(r"^gstep job refine kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
                          r".*us=(\d+)"),
+    # API 26: the text-presence gate (VJO_GSTEP_GATE): kind its mode, arg the lines it stopped, bytes its score + 129
+    # (and its threshold + 129 << 16), sum the rows it read
+    "gate": re.compile(r"^gstep job gate kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
+                       r".*us=(\d+)"),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
     "conf": re.compile(r"ms c(\d+)(\*?)(\^?)"),
     # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM)
@@ -2270,6 +2274,7 @@ def summarise_log(text):
                      "conf": [], "frames": 0, "blanked": 0},
          "refine": {"jobs": 0, "boxes": 0, "lines": 0, "split": 0, "capped": 0, "rows": 0, "us": [], "rcs": {},
                     "modes": {}},
+         "gate": {"jobs": 0, "stopped": 0, "lines_stopped": 0, "scores": [], "us": [], "rcs": {}},
          "par": {"jobs": 0, "helpers": [], "on_helpers": 0, "cached": 0, "not_started": 0, "share_min": [], "share_mean": []},
          "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
          "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0},
@@ -2406,6 +2411,19 @@ def summarise_log(text):
             if rc:
                 rf["rcs"][rc] = rf["rcs"].get(rc, 0) + 1
             rf["us"].append(int(m.group(6)))
+            continue
+        m = LOG["gate"].match(line)
+        if m:
+            gt, packed = s["gate"], int(m.group(4))
+            gt["jobs"] += 1
+            rc = s32(int(m.group(3), 16))
+            if rc:
+                gt["rcs"][rc] = gt["rcs"].get(rc, 0) + 1
+            else:
+                gt["scores"].append((packed & 0xFFFF) - 129)  # its score; (packed >> 16) - 129 its threshold
+                gt["stopped"] += int(m.group(2)) > 0
+                gt["lines_stopped"] += int(m.group(2))
+            gt["us"].append(int(m.group(6)))
             continue
         m = LOG["norm"].match(line)
         if m:
@@ -3521,6 +3539,14 @@ def render_collect(c):
                      + f"), {rf['rows']:,} rows read from memory; {_span(rf['us'])} us a job"
                      + ("; kept as found after " + ", ".join(f"rc {r} x{n}" for r, n in sorted(rf["rcs"].items()))
                         if rf["rcs"] else ""))
+        gt = lg.get("gate") or {}
+        if gt.get("jobs"):
+            sc = sorted(gt["scores"])
+            L.append(f"  text-presence gate: {gt['jobs']} job(s), {gt['stopped']} with no text ({gt['lines_stopped']} "
+                     f"line(s) not read)" + (f"; scores {sc[0]} to {sc[-1]}, median {sc[len(sc) // 2]}" if sc else "")
+                     + f"; {_span(gt['us'])} us a job"
+                     + ("; undecided (lines kept) after " + ", ".join(f"rc {r} x{n}" for r, n in sorted(gt["rcs"].items()))
+                        if gt["rcs"] else ""))
         nm = lg.get("norm") or {}
         if nm.get("jobs"):
             L.append(f"  text normalised: {nm['changed']} of {nm['jobs']} job(s) changed: {nm['width']} full-width "
