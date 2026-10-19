@@ -912,7 +912,12 @@ color with no text chunks (`tEXt`, `iTXt`, `zTXt`), the bubble icon may be at mo
 with `0x8010113D`. It also checks that the app's `eboot.bin` is the system
 application it is built as (`tools/check_settings_self.py`: the SELF's attribute
 and 50 MiB budget, the main thread's CPU3 and priority, the heap, every thread
-created on CPU3). The Rubi app's mascot was drawn by a pinned, Apache-2.0
+created on CPU3). The plugins stay offline: `tools/check_offline_imports.py`
+(the target `vjo_offline_imports`, which the release needs) fails the build when the
+kernel plugin, the Shell plugin, the game OCR worker or the Adrenaline bridge imports a
+SceNet, SceHttp or SceSsl library, or links network, TLS, HTTP or sync code (it reads each
+linked ELF's import stubs and symbol table), and when the Rubi app imports a network
+library its Anki sync does not use ([AGENTS.md](../AGENTS.md) rule 11). The Rubi app's mascot was drawn by a pinned, Apache-2.0
 text-to-image model; [settings/assets/ICON-SOURCE.md](../settings/assets/ICON-SOURCE.md)
 records the model, checksums, prompt and seed. To recreate the committed artwork
 from that image, install `tools/requirements-assets.txt` and run

@@ -533,20 +533,24 @@ add_custom_target(vjo_variant ALL
     ${ROOT}/tools/check_variant.py
   COMMENT "Checking the modules are the ${VJO_VARIANT} build")
 
-# ---------------- no network imports ----------------
-# The overlay is offline (owner, 2026-10-15): no module imports SceNet*, SceHttp* or SceSsl*
-# (tools/check_offline_imports.py reads each ELF's import stub sections).
+# ---------------- no network in the plugins ----------------
+# The plugins are offline (owner, 2026-10-15; AGENTS.md rule 11): the kernel plugin, the Shell
+# plugin, the game OCR worker and the Adrenaline bridge import no SceNet*, SceHttp* or SceSsl*
+# library and link no network, TLS, HTTP or sync code (tools/check_offline_imports.py reads each
+# ELF's import stub sections and its symbol table). The Rubi app (--app) may import only the
+# network libraries its Anki sync uses (#220; none until it lands), never SceHttp or SceSsl.
 set(VJO_OFFLINE_MODULES $<TARGET_FILE:VitaJPOverlay_Kernel> $<TARGET_FILE:VitaJPOverlay_Shell>
-  $<TARGET_FILE:VitaJPOverlay_Settings>)
-set(VJO_OFFLINE_DEPS VitaJPOverlay_Kernel VitaJPOverlay_Shell VitaJPOverlay_Settings)
+  $<TARGET_FILE:adrenaline_vsh>)
+set(VJO_OFFLINE_DEPS VitaJPOverlay_Kernel VitaJPOverlay_Shell adrenaline_vsh VitaJPOverlay_Settings)
 if(VJO_WITH_VOCR)
   list(APPEND VJO_OFFLINE_MODULES $<TARGET_FILE:VitaJPOverlay_OCR>)
   list(APPEND VJO_OFFLINE_DEPS VitaJPOverlay_OCR)
 endif()
 add_custom_target(vjo_offline_imports ALL
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_offline_imports.py ${VJO_OFFLINE_MODULES}
+    --app $<TARGET_FILE:VitaJPOverlay_Settings>
   DEPENDS ${VJO_OFFLINE_DEPS} ${ROOT}/tools/check_offline_imports.py
-  COMMENT "Checking that no module imports a network library")
+  COMMENT "Checking that no plugin has network imports or code, and the Rubi app only its sync's")
 
 # ---------------- release zip ----------------
 set(VJO_WORKER_RELEASE_COPY)
@@ -593,7 +597,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/Rubi.vpk ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party compat Rubi.vpk
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant vjo_one_vpk
-    vjo_offline_imports adrenaline_vsh_budget # a zip is never packaged from modules that import a network library
+    vjo_offline_imports adrenaline_vsh_budget # a zip is never packaged from a plugin with network imports or code
   COMMENT "Packaging Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip (the ${VJO_VARIANT} build)")
 
 # ---------------- the release's two zips: the normal build and the debug build ----------------

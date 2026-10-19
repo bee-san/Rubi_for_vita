@@ -93,3 +93,13 @@ thread, static buffer or taiHEN registration.
    with its worst case added to `include/vjo_ledger_budget.h`; `tools/check_memory_ledger.py`
    fails CI otherwise, and when a pool's worst case exceeds its limit or a packaged module has
    more pages than declared. Raising a budget number is a deliberate act that the PR must justify.
+11. **Network only in the Rubi app's Anki sync.** The overlay went offline on 2026-10-15; the
+   owner lifted that on 2026-10-19 for one feature in one process: the Rubi app's Anki sync
+   (#220). The kernel plugin, the Shell plugin, the game OCR worker and the Adrenaline bridge
+   stay network-free: no SceNet/SceHttp/SceSsl import and no network, TLS, HTTP or sync code
+   linked into them. The Vita build checks both in each linked ELF (import stubs and symbol
+   table: `tools/check_offline_imports.py`, the target `vjo_offline_imports` that the release
+   needs). In the app the network is the sync's alone: SceNet and SceNetCtl, never SceHttp or
+   SceSsl (its TLS is its own, with pinned roots and hostname checks); sync runs only from the
+   app's page, never during gameplay; no password is stored and no credential, host key, card
+   text or vocabulary is logged.
