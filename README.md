@@ -45,14 +45,15 @@
   dictionary form (した → する).
 - **Fully offline.** Rubi reads the text with its own OCR on the Vita and looks it up in a
   dictionary on the memory card: no Wi-Fi, no computer, no account. It has no network code: the
-  Vita build fails if any of its modules imports a network library.
+  Vita build fails if any of its modules imports a network library or links network code.
 - **A big dictionary built in.** Bee's Ultimate Dictionary: 486,529 entries with English
   definitions from Daijirin, Sankoku and JMdict, the meanings of a word's kanji, a short
   English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. You can add your
   own Yomitan dictionaries too.
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
   sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
-  [Lapis](https://github.com/donkuri/lapis) notes for Anki.
+  [Lapis](https://github.com/donkuri/lapis) notes for Anki, or hands them to the separate
+  [Anki for Vita](docs/anki.md#anki-for-vita) app (in development), which syncs them with Anki.
 - **Small, Normal or Large.** Choose how fast or how accurate the OCR is. When a game is short of
   memory, Rubi uses the next smaller model by itself.
 - **Reads when the text changes, or only when you ask.** By default Rubi reads each new screen of
@@ -163,9 +164,11 @@ you start it. Uninstalling keeps your settings and cards.
 
 ### Does it send anything over the internet?
 
-No. Rubi has no network code: the Vita build fails if any of its modules imports a network library.
-Recognition, lookups and cards all stay on the Vita; your cards leave it only when you copy the
-`.apkg` yourself. Rubi keeps its logs on the memory card, in `ux0:data/VitaJPOverlay/`
+No. Rubi has no network code: the Vita build fails if any of its modules imports a network library
+or links network code. Recognition, lookups and cards all stay on the Vita; your cards leave it only
+when you copy the `.apkg` yourself, or when you hand them to the separate
+[Anki for Vita](docs/anki.md#anki-for-vita) app, which syncs them with Anki when you sync in it (Rubi
+only writes and reads that app's files). Rubi keeps its logs on the memory card, in `ux0:data/VitaJPOverlay/`
 (`log_file = off` in `config.ini` turns off the main one, `log.txt`). The normal build, the
 release's main download, logs no recognized or looked-up text; the `-debug` build, made for bug
 reports, logs both. With **Read text** on **Automatically**, both builds also keep the dialogue they

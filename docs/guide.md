@@ -33,8 +33,10 @@ The release includes **Rubi**, a standalone per-game settings app. Optional
 a card in a queue on the memory card, and the Rubi app's Anki page, where it
 is also switched on, exports the queue as [Lapis](https://github.com/donkuri/lapis)
 notes into an `.apkg` file that you copy to Anki yourself (FTP, VitaShell's USB
-mode, or an SD2Vita's card). Nothing is sent from the Vita; there is no
-AnkiConnect or AnkiWeb sync.
+mode, or an SD2Vita's card), or hands them to the separate
+[Anki for Vita](anki.md#anki-for-vita) app, which syncs them with Anki. Rubi
+sends nothing from the Vita: it has no network code, no AnkiConnect and no
+AnkiWeb sync of its own.
 
 Text is recognized on the Vita, offline, by the local engine, named after the
 generation of the model it runs (**VOCR5** in this package), automatically or
@@ -680,7 +682,10 @@ the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
 The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
-ON/OFF, **Export cards (N queued)** and **Export all cards**. An export writes the cards as
+ON/OFF, **Export cards (N queued)**, **Export all cards** and, with the separate
+Anki for Vita app installed, **Send to Anki for Vita**, which hands the queued
+cards to its inbox and moves them out of the queue once it reports them in Anki
+([Anki for Vita](anki.md#anki-for-vita)). An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into
@@ -904,7 +909,16 @@ color with no text chunks (`tEXt`, `iTXt`, `zTXt`), the bubble icon may be at mo
 with `0x8010113D`. It also checks that the app's `eboot.bin` is the system
 application it is built as (`tools/check_settings_self.py`: the SELF's attribute
 and 50 MiB budget, the main thread's CPU3 and priority, the heap, every thread
-created on CPU3). The Rubi app's mascot was drawn by a pinned, Apache-2.0
+created on CPU3). Rubi has no network code ([AGENTS.md](../AGENTS.md) rule 11):
+`tools/check_offline_imports.py` (the target `vjo_offline_imports`, which the release
+needs) reads each linked module, the kernel plugin, the Shell plugin, the game OCR worker,
+the Adrenaline bridge and the Rubi app, and fails the build when one imports a network
+library (SceNet*, SceHttp*, SceSsl*, ScePspnet*, SceNpWebApi*, SceWlan*), has a symbol of
+network, TLS, HTTP or sync code by the library and prefix names the script lists, or holds
+a network module's name in its loaded sections (a run-time load or resolution by NID); the
+app's only such names are newlib's three socket calls, which `settings/no_net.c` defines
+to fail. A module it cannot check (stripped, no import stubs, no entry point) fails it too.
+The Rubi app's mascot was drawn by a pinned, Apache-2.0
 text-to-image model; [settings/assets/ICON-SOURCE.md](../settings/assets/ICON-SOURCE.md)
 records the model, checksums, prompt and seed. To recreate the committed artwork
 from that image, install `tools/requirements-assets.txt` and run
