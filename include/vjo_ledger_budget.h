@@ -108,8 +108,11 @@
  * it 88,636 -> 88,460 + 69,796 on main a7abad7, 1,652 B of text room [measured: the build log's module
  * rows, main a7abad7 and this change]. The held log lines of a job (t3-log-path, shell/worker.c
  * net_main) make it 88,556 + 69,868 on main eece6c6 (88,460 + 69,796), the same pages, 1,556 B of text
- * room [measured: the same rows, main eece6c6 and t3-log-path]. Its check is
- * exact (--exact): this must equal its pages. */
+ * room [measured: the same rows, main eece6c6 and t3-log-path]. Reading Anki for Vita's duplicate
+ * index on Enter (#220, core/anki_index_find.c -Os, shell/anki.c, anki_duplicate_check) makes it
+ * 88,348 -> 89,772 + 73,280 -> 73,288 on main 24c0219, the same pages, 340 B of text room [measured:
+ * the build log's module rows, main 24c0219 and #220; the debug build 98,732 -> 100,204 + 73,272 ->
+ * 73,288, the same 176,128 B]. Its check is exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B

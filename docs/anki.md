@@ -60,6 +60,7 @@ collection that has the earlier ones adds nothing twice.
 | `Saved for Anki, without a screenshot (log.txt)` | The card is saved, but its screenshot could not be taken (the game's memory, the game worker busy or not registered for this game, a write that failed, the overlay closed meanwhile); `log.txt` says which, in an `anki: screenshot rc=` line |
 | `Already queued` | The same card is queued already |
 | `Already exported (in an .apkg)` | This exact card was exported before (the √ on the word) |
+| `Already in Anki` | The word is in your Anki collection already, by the Anki for Vita app's index ([below](#already-in-anki-anki-for-vitas-duplicate-index)); nothing was saved (the √ on the word) |
 | `Card not saved: cannot write …anki_queue (space?)` | The memory card refused the write; the card was not saved |
 | `Card not saved: over 32 KiB of text` | The card's text exceeds a record's limit |
 | `Anki: not enough memory, card not saved` | The Shell's memory reserve refused the job; nothing changed |
@@ -520,9 +521,65 @@ the 2 MiB; one of 700 cards, some with 9 KB definitions, peaked at 187,111 B and
 wrote a 606,426 B package. These are host measurements; a physical Vita has not
 run this code yet.
 
+## Already in Anki: Anki for Vita's duplicate index
+
+Rubi itself never talks to Anki. **Anki for Vita**, a separate Vita app (in development), keeps a
+copy of your Anki collection on the Vita and syncs it with a sync server; after each sync it writes,
+for each app that asks, a small index of the collection's words. With it, Enter on a word that is
+already in your collection says `Already in Anki`, marks it with the √ and saves nothing; every
+other word is saved as before. Without Anki for Vita, or before its first sync, nothing changes.
+
+- **The setting.** `anki_duplicate_check = on` in `config.ini` (the default); `off` saves every
+  word. `anki_duplicate_field` and `anki_duplicate_reading_field` (Lapis's `Expression` and
+  `ExpressionReading` by default; `none` for no reading field) name the fields Anki for Vita indexes,
+  in every note type that has the first; another note type's own names (JPMN's `Word` and
+  `WordReading`, for instance) make its notes count.
+- **What matches.** A word matches a note that has its dictionary form in the first field and its
+  reading in the second, or its form and an empty reading. Both are compared as Anki shows them:
+  HTML, `&nbsp;` and other entities, sound tags and `漢字[かんじ]` furigana removed, full-width ASCII
+  folded, spaces collapsed, and the reading's katakana read as hiragana. A note with the same form
+  and another reading is another word.
+- **The request.** At its start the Rubi app writes
+  `ux0:data/Anki_for_vita/index/rubi.request.json` (`settings/anki_index_request.c`) when Anki for
+  Vita is installed (its `ux0:data/Anki_for_vita/interface.json` lists interface version 1), the
+  setting is on and the file is missing or names other fields; `log.txt` says
+  `Rubi app: Anki for Vita: duplicate index requested (Expression, ExpressionReading)`. Anki for
+  Vita then writes `index/rubi.idx` after its next sync. So: open the Rubi app once after installing
+  Anki for Vita, and sync in Anki for Vita.
+- **In the overlay.** Enter computes the word's two keys (SHA-256, under the view lock) and looks
+  them up in `rubi.idx`, or in `rubi.idx.old` when there is none (a publish Anki for Vita was
+  stopped in leaves it so), before the queue's own checks and before any memory is taken
+  (`shell/anki.c` `in_anki`, `core/anki_index_find.c`). A lookup is one open (two without
+  `rubi.idx`), three reads (the 128-byte header, two 4-byte directory words, the word's bucket of at
+  most 64 keys, 512 B) and a close, on the Anki thread; it allocates nothing, and its buffer is 512 B
+  of the thread's stack. Rubi never writes the index. `log.txt` says when its state changes:
+  `anki: Anki for Vita's duplicate index read` (or `absent`, or `not used (damaged, another
+  version)`). A missing, damaged or other-version index means "not known to be in Anki": the card is
+  saved. Rubi does not check the index's request hash (its fields are a setting, and an index made
+  for an earlier request still answers for your notes).
+- **The format** is Anki for Vita's `AFVINDEX` version 1 (its `docs/duplicate-index.md`): a
+  128-byte header, a directory of buckets and the sorted 64-bit keys of the notes' normalised
+  fields. `host/tests/test_anki_index.c` checks this reader against that document's worked example
+  byte for byte, and that every damaged file (cut, every header byte, every bit of the directory and
+  keys, random bytes) gives "not known" without a read beyond the file or the 648 bytes a lookup
+  reads; `host/tests/test_shell_anki.c` drives Enter with an index present, absent, damaged, only
+  its `.old`, and the setting off.
+- **Cost** in SceShell [measured: the Vita builds' module rows and `arm-vita-eabi-gcc -Os
+  -fstack-usage`, [memory ledger](memory-ledger.md)]: no page, thread or allocation more. The Shell's
+  text grows 1,472 B (debug) and 1,424 B (normal) and its data and `.bss` 16 and 8 B, within its pages
+  (the normal build has 340 B of text room left); the lookup's frame is 744 B of the Anki thread's 16
+  KiB stack (its chain 1,840 B). On the console a lookup's file I/O is about 15 ms for the open and
+  the header plus about 4 ms a read [estimate, from [performance.md](performance.md)'s 15.3 ms + 3.82
+  ms a read of a dictionary lookup], once per Enter, before the save's own file calls and sync.
+- **To test on a console** (hardware is paused): with an index Anki for Vita wrote, Enter on a word in
+  the collection says `Already in Anki`, on another saves it; `log.txt` has the `read` line once; with
+  `anki_duplicate_check = off`, every word is saved; without Anki for Vita, `absent` once and every
+  word saved.
+
 ## Not included
 
-No AnkiConnect, AnkiWeb or self-hosted sync and no login: the package is the
-only way cards leave the Vita, and you copy it yourself. A package is not
+No AnkiConnect, AnkiWeb or self-hosted sync and no login in Rubi: the package is the
+only way Rubi's cards leave the Vita, and you copy it yourself. (The separate Anki
+for Vita app syncs a collection; Rubi only reads its duplicate index, above.) A package is not
 compressed (a deflated one would be smaller over FTP; the app has zlib, a
 possible follow-up). Cards have no audio.

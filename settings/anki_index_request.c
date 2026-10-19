@@ -156,9 +156,7 @@ static int exists(const char *path)
     return rc >= 0 ? 1 : rc == (int)0x80010002 ? 0 : rc;
 }
 
-/* Anki for Vita is installed and speaks interface version 1: its interface.json is an object whose
- * "interfaces" array holds the integer 1. */
-static int app_speaks_1(VjoArena *a)
+int vjo_afv_speaks_1(VjoArena *a)
 {
     size_t mark = vjo_arena_mark(a), len = 0;
     char *text = NULL;
@@ -196,7 +194,7 @@ int vjo_anki_index_request(VjoArena *a, char *msg, size_t cap)
         snprintf(msg, cap, "Anki for Vita: duplicate check off");
         return VJO_ANKI_REQUEST_OFF;
     }
-    if (!app_speaks_1(a)) {
+    if (!vjo_afv_speaks_1(a)) {
         snprintf(msg, cap, "Anki for Vita: not installed (or no interface version 1)");
         return VJO_ANKI_REQUEST_NO_APP;
     }

@@ -37,6 +37,10 @@ typedef struct {
 } VjoAnkiRequestConfig;
 void vjo_anki_request_config(VjoAnkiRequestConfig *c, const char *text, size_t len);
 
+/* Anki for Vita is installed and speaks interface version 1: its interface.json (at most 64 KiB) is
+ * an object whose "interfaces" array holds the number 1, written so. 1 or 0; scratch is given back. */
+int vjo_afv_speaks_1(VjoArena *scratch);
+
 enum {
     VJO_ANKI_REQUEST_FAILED = -1, /* a file could not be read or written (msg says which) */
     VJO_ANKI_REQUEST_OFF = 0,     /* anki_duplicate_check = off: nothing done */
