@@ -237,8 +237,12 @@ Cards are files in `ux0:data/VitaJPOverlay/anki_queue/`:
   ahead of its record, and the next export takes it from there.
 - `exported/<id>.json`: a card an export has put in a package (and
   `exported/<id>.jpg`, its screenshot). **Export all cards** reads these too.
-- `<id>.duplicate.json`: a card an earlier build's AnkiConnect send found in
-  Anki already; it is kept, not exported.
+- `<id>.duplicate.json`: a card Anki for Vita found in your collection already
+  (its `duplicate` result, [below](#anki-for-vita)), or one an earlier build's
+  AnkiConnect send found in Anki; it is kept, not exported or handed over.
+  Mined again, that card gets `Already exported (in an .apkg)` from the overlay,
+  as an exported one does, unless Anki for Vita's duplicate index has the word
+  (`Already in Anki`, which the overlay checks first).
 
 A card is written to a temp file, flushed and renamed, and the memory card's
 directory is synced before Enter reports it; an interrupted save leaves no
@@ -558,6 +562,13 @@ Vita and sync.**
    your collection at its next sync.` (A hand-over that finds nothing new says nothing.) **The cards
    stay in the queue**, so **Export cards** still has them, until Anki for Vita says they are in Anki.
 4. Open Anki for Vita and sync. It is an ordinary app: close the game first.
+   **Turn Anki for Vita OFF on the Rubi app's Games page, once** (L + R there searches by title or
+   ID, `ANKV00001`). Rubi lists it as it lists a game, and every title is ON to start with: while it
+   is ON, the kernel loads Rubi's OCR worker into it as into a game (132 KiB of its memory, the
+   build's figures in the [README](../README.md#does-it-work-with-my-game-is-there-enough-memory)), L + R
+   opens the overlay over it, and with **Read text** on **Automatically** Rubi reads its screens in
+   the background, during a sync too. Rubi does not leave it out by itself yet (a later change:
+   `core/games.c` `vjo_game_is_candidate`).
 5. The next time the Rubi app's Anki page is shown, it reads Anki for Vita's results, on its worker
    (the settings rows work meanwhile, and Cancel leaves the app as usual), and moves the cards on
    (the table below).
@@ -581,9 +592,10 @@ The Anki page's fifth row is **Send to Anki for Vita**:
 | --- | --- | --- |
 | `added` or `exists`, synced | the card leaves the queue for `anki_queue/exported/`, as an export moves it (its screenshot too); **Export all cards** still has it | `Anki for Vita: 12 cards are in Anki now (out of the queue).` |
 | `added` or `exists`, not synced yet | nothing: the next sync sends it | (the status line's `waiting`) |
-| `duplicate` | the card becomes `anki_queue/<id>.duplicate.json`, the queue's "found in Anki" state, which no export takes | `2 cards were in your collection already (another note): not added.` |
+| `duplicate` | the card becomes `anki_queue/<id>.duplicate.json`, the queue's "found in Anki" state, which no export or hand-over takes | `2 cards were in your collection already (another note): not added.` |
 | `rejected` | the card stays queued, for an `.apkg`; Rubi never hands it in again under its ID (Anki for Vita takes an ID whose result is final as done) | `1 refused, still queued: <the rule it broke>` (a later hand-over: `1 refused by Anki for Vita stays queued (<the rule>): export it as an .apkg.`) |
-| a file that is not a version-1 result for its card | nothing; `log.txt` says so | `1 unreadable result (see log.txt).` |
+| a result of another version (`"v"` other than 1) | nothing: to Rubi it is absent, as the interface asks; `log.txt` says `another version's result, left alone` | nothing |
+| a file that is not a result for its card (malformed, too large, another card's `id`) | nothing; `log.txt` says `not a version-1 result for its card, ignored` | `1 unreadable result (see log.txt).` |
 
 A result Rubi has applied is removed (the interface lets a client remove a final result), and so
 are Rubi's own inbox files that no note needs any more: its screenshots that no note left in the
@@ -662,8 +674,12 @@ escaped lone surrogate, no key twice in any object, at most 64 levels deep: `set
 whose `id` is the file's own. Any other name, a directory, a larger or malformed file is never acted
 on; a result of another version (`"v"` other than 1) is absent to Rubi, and an `interface.json` of
 another version is an app Rubi cannot use. Any homebrew app can write in
-`ux0:data/`, so Rubi treats every file it reads there as untrusted; the most a bad result can do is
-move a queued card to the archive (where **Export all cards** still has it) or keep it queued. The
+`ux0:data/`, so Rubi treats every file it reads there as untrusted, but the outbox is not a privilege
+boundary (the interface says so): whoever writes `outbox/rubi/<id>.json` for a queued card decides
+what becomes of that card. The most a bad result can do is move a queued card to the archive (where
+**Export all cards** still has it), keep it queued but out of every later hand-over (`rejected`), or
+mark it a duplicate (`duplicate`: it becomes `anki_queue/<id>.duplicate.json`, which no export and no
+hand-over takes, and which no page of the Rubi app lists; the record stays on the memory card). The
 page shows a result's message only after replacing its control characters.
 
 ### Memory and tests
@@ -740,9 +756,11 @@ other word is saved as before. Without Anki for Vita, or before its first sync, 
   new request and Anki for Vita has synced: until then every word is saved.
 - **No wait in the overlay.** Anki for Vita's interface asks a reader that finds neither `rubi.idx` nor
   `rubi.idx.old` to look again 3 times, 100 ms apart, because a writer may be between its renames.
-  The overlay does not: Anki for Vita is a normal application that runs only when no game does, so it
-  never writes the index while the overlay is open, and a wait would delay every Enter by 300 ms for
-  everyone without it. The Rubi app does follow it for Anki for Vita's `interface.json` (and its
+  The overlay does not: Anki for Vita is a normal application, so it runs only when no game does,
+  and the overlay over a game never meets it between its renames. (Over Anki for Vita itself, which
+  Rubi takes for a game until it is turned OFF on the Games page, [above](#use), it could; the reader
+  then finds no index, and the card is saved, as without the app.) A wait would delay every Enter by
+  300 ms for everyone without it. The Rubi app does follow it for Anki for Vita's `interface.json` (and its
   `.old`), but only when `ux0:data/Anki_for_vita` is there.
 - **The format** is Anki for Vita's `AFVINDEX` version 1 (its `docs/duplicate-index.md`): a
   128-byte header, a directory of buckets and the sorted 64-bit keys of the notes' normalised
@@ -756,7 +774,7 @@ other word is saved as before. Without Anki for Vita, or before its first sync, 
   text grows 1,792 B (debug) and 1,720 B (normal), with `core/textfilter.c` and `vita/buttons_vita.c`
   built for size to pay 87 B of it, and its data and `.bss` 40 and 32 B, within its pages (the normal
   build has 44 B of text room left); the lookup's frame is 744 B of the Anki thread's 16 KiB stack (its
-  chain 1,752 B), and the config load's parse frame grows 136 B (the request's field names). On the console a lookup's file I/O is about 15 ms for the open and
+  chain 1,832 B: `job_main` 24, `do_save` 608, the lookup 744 and SHA-256's digest 456), and the config load's parse frame grows 136 B (the request's field names). On the console a lookup's file I/O is about 15 ms for the open and
   the header plus about 4 ms a read [estimate, from [performance.md](performance.md)'s 15.3 ms + 3.82
   ms a read of a dictionary lookup], once per Enter, before the save's own file calls and sync.
 - **To test on a console** (hardware is paused): with an index Anki for Vita wrote, Enter on a word in

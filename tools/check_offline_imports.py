@@ -33,6 +33,12 @@ stub (a stub is defined in a .vitalink section) and never undefined.
 
 Every module given is checked and reported. Exit status 0 = every module passes, 1 = one has
 network imports or code, 2 = one cannot be read or checked (or a usage error).
+
+What it cannot see: a load of a network module by its number, which names nothing
+(sceSysmoduleLoadModule(SCE_SYSMODULE_NET), 0x0001, through SceSysmodule, which the Rubi app imports
+for its own modules): rule 11 forbids that load as well, and a review has to catch it. Using such a
+module after the load still needs SceNet's import stubs or a resolution of its exports by name, and
+both fail this check (audit-anki-sync-rubi N1).
 """
 import struct
 import sys

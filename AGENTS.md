@@ -98,8 +98,10 @@ thread, static buffer or taiHEN registration.
    own app, [bee-san/Anki_for_vita](https://github.com/bee-san/Anki_for_vita). No module of Rubi (the
    kernel plugin, the Shell plugin, the game OCR worker, the Adrenaline bridge, the Rubi app) imports
    a network library (SceNet*, SceHttp*, SceSsl*, ScePspnet*, ...), links network, TLS, HTTP or sync
-   code, or names a network module to load or resolve at run time. The Vita build checks each linked
-   ELF (`tools/check_offline_imports.py`, the target `vjo_offline_imports`, which the release needs);
+   code, or loads or resolves a network module at run time, by its name or by its number. The Vita
+   build checks each linked ELF (`tools/check_offline_imports.py`, the target `vjo_offline_imports`,
+   which the release needs; it sees names, not a load by number such as
+   `sceSysmoduleLoadModule(SCE_SYSMODULE_NET)`, which a review has to catch);
    the app's only network names are newlib's three socket calls, which `settings/no_net.c` defines to
    fail. Rubi reaches Anki for Vita only through the files of its interface in
    `ux0:data/Anki_for_vita/`: the inbox it writes, the outbox and `status.json` it reads, the

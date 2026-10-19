@@ -104,8 +104,10 @@ static int commit(const char *path, const void *data, size_t len)
     return mount_sync();
 }
 
-/* The card under this ID already: queued, exported, or found in Anki by an
- * earlier build's AnkiConnect send. A previous rename may be visible even though
+/* The card under this ID already: queued, exported, or <id>.duplicate.json
+ * (Anki for Vita's duplicate result, or an earlier build's AnkiConnect send
+ * found it; the overlay then says "Already exported", as for an exported one).
+ * A previous rename may be visible even though
  * its final mount sync failed: never acknowledge a retry until the directory is
  * durable. 0 when there is none. */
 static int find(const char *id)

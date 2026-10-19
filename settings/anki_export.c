@@ -534,8 +534,8 @@ static int present(const char *path)
 }
 
 /* Some record may name this ID: queued, exported (a card's JPEG copy can stay beside its archived
- * record; read_jpeg reads either directory), or an earlier build's <id>.duplicate.json, which is kept;
- * or one of them cannot be checked. */
+ * record; read_jpeg reads either directory), or <id>.duplicate.json (Anki for Vita's duplicate
+ * result, or an earlier build's AnkiConnect send), which is kept; or one of them cannot be checked. */
 static int named(const char *hex)
 {
     char path[VJO_EXPORT_PATH_MAX];
