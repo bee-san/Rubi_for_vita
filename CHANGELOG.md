@@ -23,6 +23,10 @@ On `main` since 0.8.0; the next release brings it.
   text-free returns no line. On the host it did so for 59 of 66 text-free regions, against 5 without
   it ([#214]).
 - The Rubi app's Games page shows five games a page and searches by title or title ID ([#219]).
+- An opt-in scan screen (`ocr_scan_screen`, off by default; API 30): □ starts on the text boxes that
+  vita-vn-ocr's text spotter finds on the whole screen, in the game's process, with the likely dialogue
+  highlighted; the arrows or a tap pick one, and Enter saves it as the game's region and reads it at
+  once. Cancel draws the box by hand, as before. Not run on a console yet ([#228]).
 
 ### Changed
 
@@ -34,7 +38,9 @@ On `main` since 0.8.0; the next release brings it.
 - A queued card whose screenshot is missing or damaged is exported without it, and the export says
   so; before, it stayed in the queue ([#218]).
 - The plugins' API is 28: API 26's interface again, after vertical text was merged as API 27
-  ([#213], [#216], [#217]) and taken out again ([#222]).
+  ([#213], [#216], [#217]) and taken out again ([#222]); scan screen makes it 30 ([#228]).
+- The OCR worker in each game that is ON has three text pages more, 110,592 B (the text spotter's
+  code, on or off), measured in both builds; SceShell's pages are unchanged ([#228]).
 - The README shows the promo film ([#206]) and says what the console runs showed ([#204]); its build
   history is now this changelog ([#224]).
 
@@ -536,3 +542,4 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#219]: https://github.com/bee-san/Rubi_for_vita/pull/219
 [#222]: https://github.com/bee-san/Rubi_for_vita/pull/222
 [#224]: https://github.com/bee-san/Rubi_for_vita/pull/224
+[#228]: https://github.com/bee-san/Rubi_for_vita/pull/228
