@@ -225,10 +225,9 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   default) were trained on synthetic text in fonts and text pools free for non-commercial use only and on
   VNDB screenshots, so they are for non-commercial use only too: their attribution ships beside them as
   `ocr/GATE-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)). The vertical model for
-  text in columns (`ocr_vertical`, off by default), VOCR5-V, is VOCR5-S fine-tuned on synthetic columns and on
-  columns of text from training-side VNDB screenshots, so it carries VOCR5-S's training data and terms and is for
-  non-commercial use only too: its attribution ships beside it as `ocr/VERTICAL-ATTRIBUTION.md`
-  ([details](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
+  text in columns (`ocr_vertical`, off by default), VOCR5-V, is VOCR5-S fine-tuned on synthetic columns, so it
+  carries VOCR5-S's training data and terms and is for non-commercial use only too: its attribution ships beside it
+  as `ocr/VERTICAL-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
 - **Dictionary:** Bee's Ultimate Dictionary. English definitions from Daijirin4 and Sankoku8
   (© Sanseido) and [JMdict](https://www.edrdg.org/) (EDRDG, CC BY-SA 4.0); frequency ranks from
   [Jiten](https://jiten.moe) (CC BY-SA 4.0); kanji lines from Bee's Ultimate Kanji Dictionary

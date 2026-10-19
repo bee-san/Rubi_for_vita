@@ -506,8 +506,7 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
     pol.refine = o->refine ? VJO_VOCR_REFINE_ALL : 0u;
     pol.short_lines = o->short_lines;
 #ifndef VJO_TEST_OFF_ONLY
-    static VjoVocrGateResident gate_res; /* its weights: from the models' directory when a gate test put them there
-                                           * (put_gate_file); without them the gate cannot decide */
+    static VjoVocrGateResident gate_res; /* no gate file in the models' directory: the gate cannot decide */
     if (o->gate) {
         memset(&gate_res, 0, sizeof gate_res);
         pol.gate = 1;

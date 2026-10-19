@@ -1119,8 +1119,7 @@ steps below cover a source build or adding another model.
 2. Download and check the weights on a computer:
 
    ```sh
-   python3 tools/prepare_ocr.py --backend vocr-tiers --output ocr    # the 3 sizes' models, MODEL-ATTRIBUTION.md,
-                                                                     # the gate's 2 files, VOCR5_V_w8.vocr, VERTICAL-ATTRIBUTION.md
+   python3 tools/prepare_ocr.py --backend vocr-tiers --output ocr    # the 3 sizes' models, MODEL-ATTRIBUTION.md, the gate's 2 files
    python3 tools/prepare_ocr.py --backend vocr-lm --output ocr       # the 4 LMs and ATTRIBUTION.md
    python3 tools/prepare_ocr.py --backend vocr --model VOCR4_W20_w8.vocr --output ocr   # by name: the host tools' cascade
    python3 tools/prepare_ocr.py --backend vocr --model VOCR3_H15_w8.vocr --output ocr   # by name: an earlier one
@@ -1132,10 +1131,8 @@ steps below cover a source build or adding another model.
    `tools/package_release.py --models ocr` needs the first two lines' files: it ships
    the LMs with their attribution as `ocr/LM-ATTRIBUTION.md` (CC BY-SA 4.0), and the
    sizes' models with theirs, v0.3.0's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
-   (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), the text-presence
-   gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`,
-   and the vertical model `VOCR5_V_w8.vocr` with v0.3.2-vertical.1's `ATTRIBUTION.md` as
-   `ocr/VERTICAL-ATTRIBUTION.md`.
+   (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), and the text-presence
+   gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`.
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/`, the attributions included, or let the
    FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8.vocr --set vocr_tier=normal VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:
