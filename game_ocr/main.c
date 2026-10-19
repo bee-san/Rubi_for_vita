@@ -1548,7 +1548,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                                  capture.last.fb_format, capture.pass_us, 0);
     step_add(VJO_GSTEP_FIND, 0, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, 0, stats.dark, stats.find_us, 0);
     if (policy.settle_us)
-        step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes,
+        step_add(VJO_GSTEP_SETTLE, stats.settle_naps > 0xFFu ? 0xFFu : stats.settle_naps, stats.settle_passes,
                  stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,
                  stats.settle_changes, (stats.cycling_rows > 0xFFFFu ? 0xFFFFu : stats.cycling_rows) << 16 |
                  (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles), stats.settle_us ? stats.settle_us : 1u, 0);

@@ -85,7 +85,6 @@ static void on_frame(const GameFb *fb)
 static int display_hook(int head, int index, const SceDisplayFrameBuf *p, int sync)
 {
     GameFb fb;
-    int ret;
     if (index != 0 || !p || !p->base || g.game_pid <= 0)
         goto out;
     if (head != ksceDisplayGetPrimaryHead())
@@ -104,15 +103,7 @@ static int display_hook(int head, int index, const SceDisplayFrameBuf *p, int sy
     game_ocr_frame(fb.us); /* the job's frame pacing: the debug build's PACE step */
 #endif
     fb_publish(&fb);
-    /* API 29 (docs/stutter.md): the game's frame is set first and read after, so the
-     * time a strip's copy takes is not between the game and its next vblank: a frame
-     * the game set in time is shown in time. Its pixels are the same either way (only
-     * read, and the game draws into another buffer while this one is shown); one the
-     * call refused is not on the screen and is not read. */
-    ret = TAI_CONTINUE(int, hook_ref, head, index, p, sync);
-    if (ret >= 0)
-        on_frame(&fb);
-    return ret;
+    on_frame(&fb);
 out:
     return TAI_CONTINUE(int, hook_ref, head, index, p, sync);
 }

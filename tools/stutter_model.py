@@ -15,9 +15,11 @@ What is measured, what is replayed and what is estimated:
   until a pass is due) is kept as measured, and so is every job the pace does not apply to: a press's (the overlay
   waits for it: shell/worker.c paces Automatically's, the subtitle strip's and the open overlay's refreshes only) and
   the self-test's;
-- estimated: the late frames at the replayed strips, at each job's own measured late frames a strip. What setting the
-  frame before the copy and the balanced strips change (each strip's cost) is not modelled: the estimate counts only
-  the strips the pace leaves out.
+- estimated: the late frames at the replayed strips, at each job's own measured late frames a strip, which treats
+  every strip of a job as costing the same. The wait's strips cost less each than the job's other strips (a fit over
+  the test.3 + test.4 jobs: 0.126 late frames a wait strip, 95% interval 0.093-0.163, against 0.372 for the others,
+  docs/stutter.md), so `--wait-strip-cost 0.126` gives the second estimate: the measured late frames less that cost
+  for each wait strip the pace leaves out. What the balanced strips change (each strip's cost) is not modelled.
 Counts only: no text leaves the log."""
 import argparse
 import json
@@ -113,7 +115,7 @@ def rolling_max(per, key_slow, key_frames, n=WINDOW):
     return best
 
 
-def summary(per, checks, pace_ms):
+def summary(per, checks, pace_ms, wait_strip_cost=None):
     def tot(key):
         return sum(p[key] for p in per)
     rep = [p for p in per if p["replayed"]]
@@ -136,6 +138,9 @@ def summary(per, checks, pace_ms):
         "slow": tot("slow"), "slow_paced": round(tot("slow_paced")),
         "wait_ms_change": {"median": statistics.median(dms) if dms else None, "min": dms[0] if dms else None,
                            "max": dms[-1] if dms else None},
+        "slow_at_wait_cost": (round(tot("slow") - wait_strip_cost * (tot("strips") - tot("strips_paced")))
+                              if wait_strip_cost is not None else None),
+        "wait_strip_cost": wait_strip_cost,
         "window_max_share": rolling_max(per, "slow", "frames"),
         "window_max_share_paced": rolling_max(per, "slow_paced", "frames_paced"),
         "kinds": kinds,
@@ -153,12 +158,16 @@ def render(s):
            f"({pct(s['strips_paced'] - s['strips'], s['strips'])})",
            f"late frames during the jobs: {s['slow']} of {s['frames']} ({pct(s['slow'], s['frames'])}) measured; "
            f"est. {s['slow_paced']} of {s['frames_paced']} ({pct(s['slow_paced'], s['frames_paced'])}) paced",
+           (f"  at {s['wait_strip_cost']} late frames a wait strip left out: est. {s['slow_at_wait_cost']} of "
+            f"{s['frames_paced']} ({pct(s['slow_at_wait_cost'], s['frames_paced'])})"
+            if s.get("slow_at_wait_cost") is not None else None),
            f"the wait's time a replayed job: median {s['wait_ms_change']['median']:+} ms "
            f"(from {s['wait_ms_change']['min']:+} to {s['wait_ms_change']['max']:+})"
            if s["wait_ms_change"]["median"] is not None else "the wait's time: no replayed job",
            f"the worst {WINDOW} jobs in a row: {s['window_max_share']:.1f}% late measured, est. "
            f"{s['window_max_share_paced']:.1f}% paced" if s["window_max_share"] is not None else
            f"fewer than {WINDOW} jobs: no rolling window"]
+    out = [x for x in out if x is not None]
     for k, v in s["kinds"].items():
         out.append(f"  {k}: {v['jobs']} jobs, {v['slow']} of {v['frames']} late ({pct(v['slow'], v['frames'])}) measured, "
                    f"est. {round(v['slow_paced'])} of {v['frames_paced']} ({pct(v['slow_paced'], v['frames_paced'])}); "
@@ -171,6 +180,8 @@ def main():
     ap.add_argument("--collect", action="append", required=True, help="a collect's folder (repeatable)")
     ap.add_argument("--bench", default=str(ROOT / "build/host/vjo-settle-bench"))
     ap.add_argument("--pace", type=int, default=150, help="ocr_settle_pace_ms to model (default 150)")
+    ap.add_argument("--wait-strip-cost", type=float, default=None,
+                    help="also estimate at this many late frames for each wait strip the pace leaves out (a fit's)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
     if not Path(args.bench).exists():
@@ -181,7 +192,7 @@ def main():
     if not rows:
         raise SystemExit("stutter_model: no job with frame pacing (a debug build of API 22 or later) in the logs")
     per, checks = model(rows, args.bench, args.pace)
-    s = summary(per, checks, args.pace)
+    s = summary(per, checks, args.pace, args.wait_strip_cost)
     print(json.dumps(s, indent=1) if args.json else render(s))
     return 0
 

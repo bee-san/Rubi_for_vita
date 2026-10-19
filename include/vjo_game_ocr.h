@@ -199,7 +199,9 @@ enum {
                             rows' checksum, bytes copied */
     VJO_GSTEP_SETTLE,    /* API 20, the stable-text wait: rc VJO_GSETTLE_*, arg passes read waiting, bytes row
                             changes to a new state seen (text typing out), sum = distinct rows that went back
-                            to their previous state (an icon) << 16 | such returns (at most 0xFFFF), us the wait */
+                            to their previous state (an icon) << 16 | such returns (at most 0xFFFF), us the wait;
+                            API 29, kind the sleeps between its passes (VjoVocrPolicy.settle_pace_us, at most
+                            255; 0 back to back) */
     VJO_GSTEP_BLANK,     /* API 20, a found line skipped as blank: arg its index, rc the job's skipped lines,
                             bytes = width << 16 | height, sum = contrast (98th - 2nd percentile grey) << 16 |
                             sharp edges per 10,000 pixels (core/vocr_ocr.h VjoVocrInk), us the job's time

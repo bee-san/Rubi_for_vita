@@ -56,8 +56,8 @@
  * bit 15 is unknown again and no Open is VJO_GAME_OCR_OPEN_VERTICAL. A new number, not 26: builds of
  * 27 exist, and a number names one interface only. Sizes are unchanged.
  * 29: the stable-text wait's pace (docs/stutter.md): VjoGameOcrRequest.speed bits 8-15
- * (VJO_GAME_OCR_S_PACE_*, config.ini ocr_settle_pace_ms). The display hook copies an OCR job's rows
- * after the game's frame is set, not before. Sizes are unchanged. */
+ * (VJO_GAME_OCR_S_PACE_*, config.ini ocr_settle_pace_ms); the settle step's kind counts the wait's
+ * sleeps. Sizes are unchanged. */
 #define VJO_API_VERSION 29
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON

@@ -16,7 +16,7 @@ import stutter_model  # noqa: E402
 
 
 def job_lines(trigger, h, strips, passes, wait_us, frames, slow, before_frames=100, before_slow=0, refresh=False,
-              rc=1, sum_us=None):
+              rc=1, sum_us=None, naps=0):
     """One job's lines as shell/worker.c logs them (the parts the analysis reads)."""
     sum_us = sum_us if sum_us is not None else frames * 16667
     return [f"job start ({trigger}){', refresh' if refresh else ''}",
@@ -25,7 +25,7 @@ def job_lines(trigger, h, strips, passes, wait_us, frames, slow, before_frames=1
             "cleanup=0",
             f"game vocr capture: hook into USER, 61440 B block, 64-row strips, {strips} strips in 300 ms, 0 rows changed, "
             "sum 0x00000001",
-            f"gstep job settle kind=- arg={passes} rc=0x{rc:08X} bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 "
+            f"gstep job settle kind={naps or '-'} arg={passes} rc=0x{rc:08X} bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 "
             f"us={wait_us}",
             f"gstep job pace kind=- arg={frames} rc=0x00008000 bytes={sum_us} sum=0x{slow:08X} main={before_frames * 16667} "
             f"cdram=17000 phycont={before_slow} us={before_frames}",
@@ -56,6 +56,7 @@ class StutterSummary(unittest.TestCase):
                          {"auto": (1, 40, 6, 30), "overlay": (1, 25, 5, 20), "refresh": (1, 15, 1, 12)})
         self.assertEqual([r["kind"] for r in su["jobs_rows"]], ["auto", "overlay", "refresh"])
         self.assertEqual(su["jobs_rows"][0]["ms"], 40 * 16667 // 1000)
+        self.assertEqual((su["paced"], su["naps"]), (0, 0))
         lines = analyse_selftest.stutter_lines({"stutter": su})
         self.assertEqual(lines[0],
                          "  late frames during OCR jobs (docs/stutter.md): 12 of 80 (15.0%) in 3 job(s), against 1 of 300 "
@@ -65,6 +66,17 @@ class StutterSummary(unittest.TestCase):
         self.assertEqual(lines[1], "    by what started the job: Automatically's 6 of 40 (15.0%) in 1, 30 strips; the "
                                    "overlay's (presses) 5 of 25 (20.0%) in 1, 20 strips; refreshes 1 of 15 (6.7%) in 1, 12 "
                                    "strips")
+
+    def test_paced_jobs_are_counted(self):
+        """API 29: the settle step's kind is the wait's sleeps; a "-" (back to back, an earlier build) is none."""
+        text = log(job_lines("auto: screen settled", 135, 30, 9, 500000, 40, 6, naps=4),
+                   job_lines("overlay opened", 135, 20, 6, 400000, 25, 5),
+                   job_lines("auto: screen settled", 135, 12, 3, 160000, 15, 1, naps=1))
+        su = analyse_selftest.summarise_log(text)["stutter"]
+        self.assertEqual((su["paced"], su["naps"]), (2, 5))
+        self.assertIn("; 2 job(s) paced (5 sleeps between the wait's passes)", analyse_selftest.stutter_lines({"stutter": su})[0])
+        # the settle summary still reads the step (its regex takes any kind)
+        self.assertEqual(analyse_selftest.summarise_log(text)["settle"]["jobs"], 3)
 
     def test_no_pace_step_no_summary(self):
         """A normal build's log (no pace step) or an API 21 one: nothing to attribute, no line."""
@@ -133,6 +145,11 @@ class StutterModel(unittest.TestCase):
         s = stutter_model.summary(per, checks, 150)
         self.assertEqual((s["strips"], s["strips_paced"], s["replayed"]), (120, 87, 1))
         self.assertEqual(s["replay_check"]["median_error"], 0)
+        self.assertIsNone(s["slow_at_wait_cost"])
+        # the second estimate: the measured late frames less a fixed cost for each wait strip left out
+        s = stutter_model.summary(per, checks, 150, 0.125)
+        self.assertEqual(s["slow_at_wait_cost"], round(20 - 0.125 * (120 - 87)))
+        self.assertIn("at 0.125 late frames a wait strip left out", stutter_model.render(s))
 
 
 @unittest.skipUnless(Path(os.environ.get("VJO_SETTLE_BENCH", ROOT / "build/host/vjo-settle-bench")).exists(),

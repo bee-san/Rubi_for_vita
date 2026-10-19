@@ -129,13 +129,10 @@ lookup page ([details](docs/auto-vs-press.md)).
 
 ### Will it slow my game down?
 
-The game can stutter while Rubi reads: in the test.3 build's console logs, 291 of 1,609 frames during a
-reading came late (more than 25 ms after the one before), against 52 of 26,941 frames in the time
-before each reading. The late frames came with Rubi's copies of the text box from the game's frames,
-mostly while it waited for the text to hold still. Since this change a background reading looks at the box
-less often while it waits (`ocr_settle_pace_ms`, [details](docs/stutter.md)): est. 45% fewer copies and
-about 7% late frames instead of 12.5% on the same jobs, a host replay not yet run on a console. With
-**Only when I press L + R** nothing is read until you press.
+Reading a screen takes CPU time from the game, so the game can stutter while Rubi reads: in the
+test.3 build's console logs, 291 of 1,609 frames during a reading came late (more than 25 ms after
+the one before), against 52 of 26,941 frames in the time before each reading. With **Only when I
+press L + R** that happens only when you press.
 
 ### Does it work with my game? Is there enough memory?
 

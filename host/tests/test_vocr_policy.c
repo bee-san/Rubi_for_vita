@@ -2067,9 +2067,117 @@ static void test_a_paced_wait_holds_where_back_to_back_holds(void)
     TEST_MSG("%u budgets held, %u reached the limit", held, limited);
 }
 
+/* The same screen in a region twice as tall (rows 100-199 empty box): 4 strips a pass of 50 rows. */
+#define TALL_H 200
+static int strip_tall(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
+{
+    uint64_t t0 = scr.clock;
+    (void)ud;
+    if (y + n > TALL_H) return VJO_E_SOURCE;
+    if (!scr.frozen) scr.clock += FRAME_US;
+    scr.frame++;
+    if (scr.n_log < LOG_MAX) scr.log[scr.n_log++] = (Read){y, n, flags, scr.frame, t0};
+    for (unsigned r = 0; r < n; r++)
+        for (unsigned x = 0; x < W; x++) dst[(size_t)r * stride + x] = pixel(x, y + r, scr.frame);
+    return (int)n;
+}
+
+static int run_tall(const VjoVocrPolicy *pol, VjoVocrStats *st)
+{
+    static const VjoGreySource tall = {NULL, W, TALL_H, strip_tall, NULL, NULL};
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    char text[128];
+    size_t job = vjo_vocr_job_bytes("FL10_w8.vocr", W, TALL_H);
+    TEST_ASSERT(job && job <= sizeof(ws_mem) && vjo_vocr_capture_bytes(W, TALL_H) <= sizeof(capture));
+    p.file_open = no_file;
+    p.now_us = now;
+    return vjo_vocr_ocr_policy(&p, "missing", "FL10_w8.vocr", &tall, &res, ws_mem, job, capture,
+                               vjo_vocr_capture_bytes(W, TALL_H), pol, text, sizeof(text), st);
+}
+
+/* audit-stutter S2: the budget rule counts a pass's time too. A 4-strip region (a pass of 66,668 us, which
+ * divides neither the pace nor settle_us), text typing until 1.25 s, budgets from 1.45 to 1.70 s in 1 ms steps:
+ * wherever back to back holds within its budget, the paced wait holds too. With the rule as settle_us + pace
+ * alone it reached its limit at budgets where back to back held (1,567-1,600 ms). */
+static void test_a_paced_wait_holds_on_a_tall_region(void)
+{
+    VjoVocrPolicy back = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
+    unsigned held = 0, limited = 0, broken = 0;
+    TEST_ASSERT(vjo_vocr_strip_rows(W, TALL_H) == 64 && vjo_vocr_pass_rows(W, TALL_H) == 50);
+    for (uint32_t max = 1450000; max <= 1700000; max += 1000) {
+        VjoVocrPolicy paced = back;
+        VjoVocrStats a, b;
+        back.settle_max_us = paced.settle_max_us = max;
+        paced.settle_pace_us = 150000;
+        reset();
+        scr.type_every = 3;
+        (void)run_tall(&back, &a);
+        reset();
+        scr.type_every = 3;
+        (void)run_tall(&paced, &b);
+        if (!a.settled) {
+            limited++;
+            continue;
+        }
+        held++;
+        if (!b.settled || b.settle_timeout) {
+            if (!broken) TEST_MSG("budget %u us: back to back held, the paced wait reached its limit", (unsigned)max);
+            broken++;
+        }
+    }
+    TEST_CHECK(broken == 0 && held > 0 && limited > 0);
+    TEST_MSG("%u budgets held back to back, %u reached the limit; the paced wait did not hold at %u", held, limited,
+             broken);
+}
+
+/* audit-stutter S1: what the pace does to an icon. A row that changes and goes back between two paced reads
+ * is not seen changing, so an icon faster than the pace can end the paced wait sooner: on this screen 3 of
+ * 160 cases, an icon blinking every 5 frames (12 changes a second) and one going through 3 states every 6 or
+ * 7 frames (10 and 8.6 a second), each asked before it settled; the console's icons returned a median 2.2
+ * times a row a second (at most 9.9; docs/stutter.md). The blinking one then tears in the finder's pass and
+ * the job reads again. The lines found and the characters published are the same in every case; at 8
+ * frames a state or slower the paced wait never ends sooner. */
+static void test_a_fast_icon_reads_the_same_lines(void)
+{
+    VjoVocrPolicy back = {.settle_us = 150000, .sleep = sleep_us};
+    unsigned sooner = 0, cases = 0;
+    for (int first = 0; first <= 1; first++)
+        for (unsigned states = 0; states <= 3; states += 3)
+            for (unsigned b = 1; b <= 40; b++) {
+                VjoVocrPolicy a_pol = back, b_pol = back;
+                VjoVocrStats a, s;
+                unsigned at_a = 0, at_b = 0;
+                a_pol.settle_first = b_pol.settle_first = first;
+                b_pol.settle_pace_us = 150000;
+                reset();
+                scr.blink_every = b;
+                scr.icon_states = states;
+                int rc_a = run(&a_pol, &a);
+                TEST_ASSERT(published_at(&at_a) >= 0);
+                reset();
+                scr.blink_every = b;
+                scr.icon_states = states;
+                int rc_b = run(&b_pol, &s);
+                TEST_ASSERT(published_at(&at_b) >= 0);
+                cases++;
+                TEST_CHECK(rc_b == rc_a && s.lines == a.lines && shown(at_b) == shown(at_a) &&
+                           s.tries <= VJO_VOCR_TRIES);
+                if (at_b < at_a) {
+                    sooner++;
+                    TEST_CHECK_(b < 8, "an icon at 8 frames a state or slower ends the paced wait sooner");
+                    TEST_MSG("icon %s every %u frames, %s: first pass at frame %u paced, %u back to back (%u, %u tries)",
+                             states ? "of 3 states" : "blinking", b, first ? "not settled" : "settled", at_b, at_a,
+                             s.tries, a.tries);
+                }
+            }
+    TEST_CHECK(cases == 160 && sooner <= 3);
+    TEST_MSG("%u of %u icon cases end the paced wait sooner", sooner, cases);
+}
+
 /* A pace of 0 is no pace (API 28's passes back to back): the same reads, in the same order, with the same
  * flags. */
-static void test_a_pace_of_zero_is_the_api28_wait(void)
+static void test_a_pace_of_zero_is_no_pace(void)
 {
     VjoVocrPolicy with = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us, .settle_pace_us = 0};
     VjoVocrPolicy without = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
@@ -2221,7 +2329,9 @@ TEST_LIST = {
     {"api29_a_paced_wait_reads_fewer_passes", test_a_paced_wait_reads_fewer_passes},
     {"api29_a_paced_wait_never_ends_sooner", test_a_paced_wait_never_ends_sooner},
     {"api29_a_paced_wait_holds_where_back_to_back_holds", test_a_paced_wait_holds_where_back_to_back_holds},
-    {"api29_a_pace_of_zero_is_the_api28_wait", test_a_pace_of_zero_is_the_api28_wait},
+    {"api29_a_paced_wait_holds_on_a_tall_region", test_a_paced_wait_holds_on_a_tall_region},
+    {"api29_a_fast_icon_reads_the_same_lines", test_a_fast_icon_reads_the_same_lines},
+    {"api29_a_pace_of_zero_is_no_pace", test_a_pace_of_zero_is_no_pace},
     {"api29_a_pace_without_a_sleep_reads_back_to_back", test_a_pace_without_a_sleep_reads_back_to_back},
     {"api29_a_paced_wait_keeps_its_budget", test_a_paced_wait_keeps_its_budget},
     {"api29_a_paced_wait_ends_when_cancelled_asleep", test_a_paced_wait_ends_when_cancelled_asleep},

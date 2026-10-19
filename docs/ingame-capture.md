@@ -39,10 +39,7 @@ reVita 524,288 B, udcd-uvc 786,432 B). The game's own partition had 91,226,112 B
    thread) converts those rows to grey, `(77 R + 150 G + 29 B) >> 8` after expanding the
    format to 8 bits per channel (`core/fbgrey.h`, shared with the JPEG capture), and writes them
    into `dst` with `ksceKernelMemcpyKernelToUser`: the kernel writes the current process's user
-   memory from this hook, as PSVshell and reVita do [1][3]. The call returns the rows. Since API 29
-   the hook first lets the game's `sceDisplaySetFrameBuf` set the frame, then reads it (a frame the
-   call refuses is not read): the copy no longer comes between the game and the frame it set. The
-   frames that carried a copy were the late ones on the console ([stutter.md](stutter.md)).
+   memory from this hook, as PSVshell and reVita do [1][3]. The call returns the rows.
 5. The first pass over the region (`VJO_ROWS_SIG`, from row 0, in order) builds the region's scene
    signature; its last strip (`VJO_ROWS_LAST`) publishes the capture to the Shell as a region
    capture did (`done_seq`, `region_seq`, `capture_scene`). Full-frame and probe passes are not

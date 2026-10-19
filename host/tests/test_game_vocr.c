@@ -881,9 +881,26 @@ static void policy_in_the_flags(void)
     }
     TEST_ASSERT(settle != NULL);
     TEST_CHECK(settle->rc == VJO_GSETTLE_HELD && settle->arg >= 2 && settle->bytes == 0 && settle->us >= 150000);
+    TEST_CHECK(settle->kind == 0); /* API 29: no pace, no sleep between the wait's passes */
     TEST_MSG("waited %u us in %u passes; %u rows calls against %u without", (unsigned)settle->us, settle->arg,
              rows_calls, plain);
     TEST_CHECK(!blank && out.lines == 1 && rows_calls > plain && !memory_live && !capture_live);
+    {
+        /* API 29: the same job paced at 50 ms (in the speed word) sleeps between its wait's passes, and the
+         * settle step's kind counts the sleeps (docs/stutter.md). */
+        unsigned paced_rows;
+        rows_calls = 0;
+        r.speed = 5u << VJO_GAME_OCR_S_PACE_SHIFT;
+        TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) || out.rc == VJO_E_OCR_MODEL || !VJO_VOCR_MODEL_DIR[0]);
+        paced_rows = rows_calls;
+        settle = NULL;
+        for (unsigned i = 0; i < out.n_steps; i++)
+            if (out.step[i].id == VJO_GSTEP_SETTLE) settle = &out.step[i];
+        TEST_ASSERT(settle != NULL);
+        TEST_CHECK(settle->rc == VJO_GSETTLE_HELD && settle->kind > 0 && out.lines == 1 && !memory_live);
+        TEST_MSG("paced: %u sleeps, %u passes, %u rows calls", settle->kind, settle->arg, paced_rows);
+        r.speed = 0;
+    }
     allocations = 0;
     r.flags = 0x8000u; /* bit 15 means nothing yet (bit 14 is API 23's shot) */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations && !out.n_steps);

@@ -474,11 +474,14 @@ typedef struct {
 typedef struct {
     uint32_t settle_us, settle_max_us;
     int settle_first;
-    /* API 29 (docs/stutter.md): the shortest time from the start of one of the stable-text wait's
-     * passes to the start of the next; the job sleeps in between (needs sleep). Every strip of a pass
-     * is copied from a frame inside the game's display call, and in the owner's console logs the late
-     * frames during jobs came with those copies (docs/stutter.md), so a wait that looks less often
-     * costs the game fewer frames. 0: passes back to back, as in API 28. */
+    /* API 29 (docs/stutter.md): of the passes the stable-text wait would read back to back, it reads the first
+     * at least this long after the one before, or the first that could end the wait if that comes sooner (so
+     * no gap is longer than about settle_us), sleeping in between (needs sleep); in the budget's last
+     * settle_us + this + a pass it reads back to back again. Every strip of a pass is copied from a frame
+     * inside the game's display call, and in the owner's console logs the late frames during jobs came with
+     * those copies, so a wait that looks less often costs the game fewer frames. The rule is unchanged: on
+     * rows that only move on to new states (text typing out) the wait ends no sooner than back to back. 0:
+     * passes back to back, as in API 28. */
     uint32_t settle_pace_us;
     int blank;
     unsigned blank_edges;

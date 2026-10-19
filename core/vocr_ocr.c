@@ -627,7 +627,8 @@ static void settle_spend(Stream *s, uint32_t us, int over)
  * (docs/stutter.md): of the passes back to back would read, it reads the first one at
  * least settle_pace_us after the one before, or the first that could end the wait if that
  * comes sooner. The rule is the same (two whole reads settle_us apart that agree, every
- * row), and the wait never ends sooner than back to back: it only reads less often. */
+ * row), and for rows that only move on to new states (text typing out) the wait ends no
+ * sooner than back to back: it only reads less often. */
 static int settle_wait(Stream *s)
 {
     uint32_t t0 = clock_us(s->p), stable_since = t0;
@@ -644,15 +645,21 @@ static int settle_wait(Stream *s)
         if (s->changed) stable_since = ps;
         else if (ps - stable_since >= s->pol->settle_us) done = 1;
         if (!done && pace) {
-            /* Back to back, the next passes would start took, 2 took, ... after this one's start.
-             * The wait reads the first of them at least pace after it, or, if sooner, the first
-             * that could end the wait (settle_us after stable_since): the passes it leaves out
-             * could only have seen a change, never ended the wait, so it never ends sooner than
-             * back to back would (a typewriter's pause gets no shorter window). In the budget's
-             * last settle_us + pace it reads back to back again: a change it noticed up to a pace
-             * late can still hold within the budget where back to back would hold. */
+            /* Back to back, the next passes would start took, 2 took, ... after this one's start
+             * (the last pass's time stands for the next ones'). The wait reads the first of them at
+             * least pace after it, or, if sooner, the first that could end the wait (settle_us after
+             * stable_since). The rule is kept exactly: a pass starting settle_us after the last pass
+             * that saw a change, seeing none. A change is seen by any later pass, as the rows keep
+             * their checksums, so rows that only move on to new states (text typing out) end the wait
+             * no sooner than back to back: a typewriter's pause gets no shorter window. Only a row
+             * that changes and goes back between two reads is not seen (the pixels read are the
+             * same). In the budget's last settle_us + pace + one pass it reads back to back again
+             * (the grid's rounding: a pace and settle_us that the pass time does not divide add up to
+             * a pass more): a change it noticed up to a pace late can still hold within the budget
+             * where back to back would. */
             uint32_t now = clock_us(s->p), used = now - t0, took = now - ps;
-            if (took && used < s->settle_left && s->settle_left - used > s->pol->settle_us + pace) {
+            if (took && used < s->settle_left &&
+                s->settle_left - used > s->pol->settle_us + pace + took) {
                 uint32_t since = ps - stable_since, k = (pace + took - 1u) / took, due;
                 uint32_t need = s->pol->settle_us > since ? s->pol->settle_us - since : 0u;
                 due = need ? (need + took - 1u) / took : 1u;
