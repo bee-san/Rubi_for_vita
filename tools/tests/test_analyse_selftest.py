@@ -1246,15 +1246,17 @@ class AnkiExportLines(unittest.TestCase):
         # the app's prefix (settings/applog.c), and an earlier build's, "overlay app: " (before the Rubi rename)
         self.assertIn('snprintf(line, sizeof(line), "Rubi app: ")', (ROOT / "settings/applog.c").read_text(encoding="utf-8"))
         for prefix in ("Rubi app: ", "overlay app: "):
-            line = prefix + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000)
+            line = prefix + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000, 9)
             m = a.LOG["anki_export"].match(line)
             self.assertEqual([m.group(g) for g in range(1, 11)], ["queued", "-113", "5", "3", "1", "2", "4", "6", "7", "8"])
+            self.assertEqual(m.group(11), "9")
         # the app's own idea of an error, which export_result follows
-        self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large;", page)
+        self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture;", page)
         export = (ROOT / "settings/anki_export.c").read_text(encoding="utf-8")
         for words in ('"anki export: %s did not verify (%d): removed, nothing cleared"',
                       '"anki export: %s: 99 packages are named for this second already"',
-                      '"anki export: %s: its screenshot %s.jpg is missing or not a JPEG"',
+                      '"anki export: %s: screenshot %s"',
+                      '"missing or damaged; exporting text without it"',
                       '"anki export: %s: %d cards, %d screenshots, %u bytes, verified"',
                       '"anki export: %s: no card names it, removed"'):  # (#161: no problem line)
             self.assertIn(words, export)
@@ -1262,6 +1264,14 @@ class AnkiExportLines(unittest.TestCase):
             self.assertTrue(a.EXPORT_TROUBLE.search(
                 prefix + "anki export: ux0:data/VitaJPOverlay/anki: 99 packages are named for this second already"))
         self.assertIsNone(a.EXPORT_TROUBLE.search("overlay app: " + self.VERIFIED.strip()))
+
+    def test_recovered_text_is_reported_without_claiming_cards_stayed_queued(self):
+        line = export_line(swept=0).rstrip() + ", 2 without screenshots\n"
+        lg = a.summarise_log(line)
+        self.assertEqual(lg["anki"]["export_missing_picture"], 2)
+        self.assertEqual(lg["anki"]["export_ok"], 1)
+        self.assertIn("exported without screenshots: 2 card(s) (original records preserved)", a.export_summary(lg["anki"])[0])
+        self.assertEqual(lg["trouble"], {})
 
 
 def game_job(lines, clock=None, model="VOCR3_H15_w8.vocr", late=True, why=None, helpers=None, share=0):
