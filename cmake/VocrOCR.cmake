@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT 1a804722ea78e88ba45e5aaa4124395d67e6e5d8)
+set(VJO_VOCR_COMMIT ac0d6b1d3da5e96cd771a48da7992b6cf25d6519)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -25,9 +25,6 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # vocr_run()'s per-frame top-K, which also reports each line's confidence.
 # vocr_lines_refine.c (vita-vn-ocr #83) refines the finder's boxes (tightens,
 # drops frame rows and cursors, splits boxes holding several text rows).
-# vocr_vertical.c (vita-vn-ocr #99) finds the columns of vertical text (GRAD on the
-# region's transpose, right to left) and turns a column 90 degrees anticlockwise for
-# the vertical recognizer (config.ini ocr_vertical, docs/vita-vn-ocr.md "Vertical text").
 set(_vocr_pins
   vocr.c 3e1756138b2e1d9aff15abdda95b02e0c015a5ba0af99678bdd678377b73f559
   vocr.h 30bb32693e634a4c4b4cd5cd3a4da8d33f6882bf00348d0e1d8264ba08376271
@@ -40,9 +37,7 @@ set(_vocr_pins
   vocr_lines_refine.c f4fb08aa995379c5ee9cb746307ed2c2d357574d71e5556f2b40d8ce1584e797
   vocr_lines_refine.h 66fe3b716193d835e9ab1d614d71ad8e19de70db5ac8ec0f09b8e027b260dc6b
   vocr_textgate.c da772dd316b69ac79dc0d6ffbae14da428df429657d089fd99ba8cd74c43266e
-  vocr_textgate.h aeb8c5bdb810e8ab82bfaa37aadc1d564ec0dec2a80b1e2f80323819853d7258
-  vocr_vertical.c 7e11ef75cd5308daac4323e58961f62ae2df537f6170004c2cc387f341788b54
-  vocr_vertical.h ccc2a658a34b42e16071898aaa560765b4033fcecc5e1d4740defdc641b6c96e)
+  vocr_textgate.h aeb8c5bdb810e8ab82bfaa37aadc1d564ec0dec2a80b1e2f80323819853d7258)
 while(_vocr_pins)
   list(POP_FRONT _vocr_pins _file _want)
   if(NOT EXISTS "${_vocr_rt}/${_file}")
@@ -67,16 +62,12 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
 # (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c" "${_vocr_rt}/vocr_vertical.c")
+  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)
 if(VJO_BUILD_VITA)
   target_compile_options(vjo_vocr_rt PRIVATE -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard)
-  # The column finder and rotation (vertical text, config.ini ocr_vertical; only its jobs run them): built
-  # for size, the worker's pages. Integer arithmetic only, so -Os computes the same columns: 3,220 B of
-  # code against 4,264 B at -O2 (arm-vita-eabi-gcc, the VitaSDK of CI's container).
-  set_source_files_properties("${_vocr_rt}/vocr_vertical.c" PROPERTIES COMPILE_OPTIONS "-Os")
 else()
   target_link_libraries(vjo_vocr_rt PUBLIC m)
 endif()

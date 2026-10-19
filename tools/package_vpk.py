@@ -65,7 +65,7 @@ def payload_files():
     header = (ROOT / "include/vjo_payload.h").read_text()
     sizes = (ROOT / "include/vjo_vocr_sizes.h").read_text()
     names = dict(re.findall(r'^#define (VJO_\w+_NAME) "([^"]+)"', sizes, re.M))
-    for alias, target in re.findall(r"^#define (VJO_VOCR_(?:TIER\d|VERTICAL)_NAME) (VJO_\w+_NAME)$", sizes, re.M):
+    for alias, target in re.findall(r"^#define (VJO_VOCR_TIER\d_NAME) (VJO_\w+_NAME)$", sizes, re.M):
         names[alias] = names[target]
     strings = {"VJO_PAYLOAD_DATA": "ux0:data/VitaJPOverlay/", "VJO_PAYLOAD_OCR": "ux0:data/VitaJPOverlay/ocr/"}
     block = header[header.index("#define VJO_PAYLOAD_FILE_LIST(X)"):header.index("#define VJO_PAYLOAD_COUNT_ONE")]

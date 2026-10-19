@@ -28,11 +28,6 @@
 #define VOCR5_S_JOB_BYTES 1019904u  /* 823,296 + 131,072 + 65,536 */
 #define VOCR5_N_JOB_BYTES 1441792u  /* 1,187,840 + 188,416 + 65,536 */
 #define VOCR5_L_JOB_BYTES 2805760u  /* 2,473,984 + 266,240 + 65,536 */
-/* VOCR5-V (vita-vn-ocr #99), the vertical model: VOCR5-S's shape, so S's estimate for the same CTC
- * frames; its workspace adds the rotation buffer (core/vocr_ocr.h VJO_VOCR_ROTATE_BYTES, 57,344 B). No
- * model size runs it, so the Rubi app shows neither figure. */
-#define VOCR5_V_BOX_MS 631u
-#define VOCR5_V_JOB_BYTES 1077248u  /* 823,296 + 188,416 + 65,536 */
 
 #ifdef VJO_VOCR_MODEL_INFO_TEST
 /* Host tests only: another package's tables (a later generation's tiers). */
@@ -53,8 +48,6 @@ static const VjoVocrModelInfo infos[] = {
     /* v0.2.5-vocr4.1 (vita-vn-ocr #78): the Large tier before VOCR5, the confidence
      * cascade's model of a request by name (the host tools). */
     {VJO_VOCR4_W20_NAME, "VOCR4", "W20", VJO_VOCR_CASCADE_BYTES, W20_BOX_MS, W20_JOB_BYTES},
-    /* vita-vn-ocr #99: the vertical model (config.ini ocr_vertical), no model size's. */
-    {VJO_VOCR5_V_NAME, "VOCR5", "V", VJO_VOCR5_V_BYTES, VOCR5_V_BOX_MS, VOCR5_V_JOB_BYTES},
 };
 /* The Rubi app's Model size choices, smallest first (include/vjo_vocr_sizes.h,
  * tools/model_tiers.json). */

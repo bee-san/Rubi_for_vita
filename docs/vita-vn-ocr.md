@@ -287,10 +287,9 @@ allows only these names under the exact directory above:<!-- names from kernel/g
 the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
 (VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
 release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
-release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1);
-`VOCR5_V_w8.vocr` (VOCR5, release v0.3.2-vertical.1); and the character LMs
-`vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
-`vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->,
+release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
+character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
+`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->,
 each with its pinned file length; it does not accept a caller-supplied file
 path. Each async Open,
 Read or Close is tied to the claimed job's PID and sequence. Reads also require
@@ -881,127 +880,6 @@ above never read.
 A job it stopped logs `find` with arg 0 and no `recognize` step. A job whose finder found no line logs no gate step.
 `tools/analyse_selftest.py --collect` counts the gate's jobs, those it stopped, their scores and the weights' reads.
 
-## Vertical text (vita-vn-ocr #99)
-
-```ini
-ocr_vertical = off   ; on: read the region's columns, right to left, with the vertical model
-```
-
-**What it reads.** Japanese set in columns: a manga's speech balloons in
-[NOBORU](https://github.com/Creckeryop/NOBORU) (a PS Vita manga reader), a game's vertical dialogue
-box or NVL page (the Harukanaru Toki no Naka de titles on PSP, Yunohana SpRING! on Vita, among the
-consoles' VNs vita-vn-ocr #99 counted). With `on`, every job of every game reads columns: draw the
-text box (□) around one balloon or the vertical box, and turn it `off` again for horizontal text,
-whose characters the column finder takes for columns of one character each. `off`, the default,
-changes nothing: the same request, finder, model and text as before, bit for bit (below). The Rubi
-app has no switch for it; config.ini does.
-
-**How a job reads columns** (`core/vocr_ocr.c`; a model whose `finder_mode` has
-`VJO_VOCR_FINDER_COLUMNS`):
-
-- **The columns.** vita-vn-ocr's column finder (`runtime/vocr_vertical.c`,
-  `vocr_find_columns_rows`: GRAD run on the region's transpose, the same two passes over its rows;
-  boxes wider than 5/4 of their height dropped, as horizontal text), in reading order: right to left,
-  columns sharing a right edge top to bottom. Its variant P1 (`VOCR_COLUMNS_VALLEYS`: a band split at
-  its columns of little ink, a column grown only over rows dense enough to be text), the finder
-  vita-vn-ocr #99 selected under `eval/vertical_protocol.json`'s finder rule, with `VOCR_COLUMNS_NO_DARK`:
-  the finder reads no column's rows for its dark flag (a column spans every strip of the region), and
-  the job computes the same flag (`vocr_line_dark`, which reads only inside the box) on the pixels it
-  fetches for the column, before turning them. The finder's arena is the larger of the two finders':
-  83,619 B at 960×544 (GRAD's 83,323 B), 26,467 B at 480×272 (25,355 B), under the model's
-  124,832 B.
-- **Each column is a line.** It is fetched as a line is (from the strip, or, taller than a strip, as
-  most columns are, through the tall-line block), turned 90° anticlockwise (`vocr_column_rotate`,
-  the column's top to the left) into the job's rotation buffer, and from there it is the line: the
-  blank-line check, the line cache, the helpers' copies, `vocr_run` (grey, inverted for dark text) and
-  the LM decoder take the turned strip. The column's box on the screen stays the line's geometry: the
-  log's `game vocr lines:` gives each column's width × height, CTC frames and time.
-- **The text** is the columns' readings right to left, one per line (`\n` between them), as rows are
-  top to bottom. The popup shows one column a line, and the word lookup, the cross-line join
-  (`core/textjoin.c`: a full column joins the next one as a full row does, so a word across the
-  break is looked up whole; a balloon's short columns keep their breaks, as short rows do) and the
-  touch lookup work on it unchanged: they read the text, never the geometry.
-- **Not for columns:** the refinement (`ocr_refine_lines`), the short-line probe (#194), the
-  confidence cascade (no larger model reads columns) and the text-presence gate (`ocr_text_gate`, API 26: it
-  scores the row finder's boxes; a vertical job neither reads its file nor logs its step). The LM (`ocr_lm`), the threads (`ocr_threads`),
-  the line cache and the stable-text wait apply as they do to rows.
-
-**The request (API 27).** The Shell sets `VJO_GAME_OCR_F_VERTICAL` (the flags' bit 15, the last
-free one) in every job's request when the key is on, keeping its tiers and its other bits. The game
-worker then runs the vertical model alone, whatever the tiers, with a request by name's 4 MiB
-reserve (the Small size's) and no smaller model to step down to, and opens it as
-`VJO_GAME_OCR_OPEN_VERTICAL`, which the kernel's broker allows for such a request only. A vertical
-model that fails to open fails the job; no size is left out of the game's ladder for it. Anki cards
-and the log name `VOCR5_V_w8.vocr` as the model that read the text.
-
-**The model.** VOCR5-V (`VOCR5_V_w8.vocr`, vita-vn-ocr #99, pre-release
-[v0.3.2-vertical.1](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.2-vertical.1)): VOCR5-S's
-shape (819,792 B of int8 weights, W8I arena 124,832 B, 4,987 classes, 967,392 MACs per CTC frame),
-fine-tuned from VOCR5-S on columns turned 90° anticlockwise. The package ships it beside the size models
-with its release's `ATTRIBUTION.md` as `ocr/VERTICAL-ATTRIBUTION.md` (VOCR5-S's training data and terms,
-non-commercial use only, and its vertical data), 2.5 MB more to install (the one-VPK install's figures).
-vita-vn-ocr #99 reports its scores, read once on its held-out vertical test set (host, C runtime): 7.17 %
-CER on fixed VN columns and 11.29 % end to end on VN regions (finder, columns joined right to left),
-0.86 % and 2.45 % on the manga pages (*Black Jack ni Yoroshiku*, vol. 13).
-
-**Memory** (`host/tests/test_ledger.c`, `test_vocr.c`). The job's own workspace is VOCR5-S's plus
-the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + 3,760 (the console's runtime
-structs) + 57,344 = 185,936 B at 960×544; with the LM extras (56,928 B on the host build), the 4 KiB
-greedy text and both helpers' line slots, 706,096 B on the host build (708,608 B in pages, the
-console's 32-bit structs a little less), within the workspace budget the Large size's job sets
-(`VJO_BUDGET_GAME_WORKSPACE`, 1,212,416 B), so `include/vjo_ledger_budget.h` is unchanged. The
-weights block is 823,296 B, under the weights budget. A column whose crop holds more than the
-rotation buffer (wider than 105 px at the full 544-px height) is left out, never read, and counted
-(`VjoVocrStats.rotate_skipped`, the bytes of the log's `find` step); the columns beside it are read.
-Columns read through the tall-line block take it as tall lines do (`VJO_BUDGET_GAME_LINE`).
-
-**Time (estimates; nothing ran on a console).** Per CTC frame VOCR5-V costs what VOCR5-S does (the
-same shape). VOCR5-S's box estimate, 631 ms at 333 MHz and 499 ms at 444 MHz for 240 frames and
-0.1 s of finder (`tools/model_tiers.json`, calibrated to VOCR3-H15's 4.94 ms per frame in v0.8.0-test.1's
-logs), is about 2.2 ms a frame at 333 MHz and 1.7 ms at 444 MHz (the finder runs before the boost). The
-console has also measured VOCR3-H15 at up to 5.22 ms a frame (#81, above), which would make these about 6 %
-more. The host sample below, a page of four columns of 6-10 characters, is 120 frames: about 0.27 s at
-333 MHz, 0.20 s at 444 MHz, and the finder.
-The capture costs more than for rows, as a column spans every strip of the region: the sample's
-region (220 × 410, 64-row strips) took 32 strip reads on the host, the finder's two passes and the
-columns themselves (each read again through the strip, a tall line's way); with the finder's own dark
-flags (without `VOCR_COLUMNS_NO_DARK`, which reads every column's rows once more) it took 50. In the
-game a strip read waits for the game's next frame: about 0.5 s at 60 frames a second (an estimate from
-the strip count; the log's `game vocr capture:` line gives the console's). The worst case is a whole
-960 × 544 screen of columns: on a page of 16 full-height columns (17 characters each, rendered on the host)
-the job took 164 strip reads (59-row strips: the finder's two passes, 20, and 9 for each column, whose
-511 rows span 9 of the 10), about 2.7 s at 60 frames a second and 5.5 s at 30 (estimates), against
-969 CTC frames of recognition (about 2.1 s at 333 MHz, 1.6 s at 444 MHz). One pass for every column
-would take most of the capture away; it is not done here. Draw the text box around the text you read.
-
-**Off is today's job** (`host/tests/test_vocr_vertical.c`): jobs of rows on a 5-line region and on
-#194's box, greedy, with the LM, with two helpers, and refined, give the same text, greedy text,
-frames, line stats, workspace and strips as main `1de7b67` (before vertical text) gave, hash for
-hash; the stage benchmark's recorded job checksums are unchanged too. The Shell sends no new bit.
-
-**Measured on the host.** `test_vocr_vertical.c` runs vertical jobs with real `vocr_run` calls on
-tiny models it builds (light and dark text, columns inside a strip and taller ones, greedy and with
-the LM, P0 and P1, helpers, the line cache, the rotation buffer's bound): the job's lines are the
-column finder's columns right to left, each read from its turned crop, exactly. With the released
-VOCR5-V and the 1 MB LM, the `vjo-ocr` tool reads the four columns of `host/samples/vertical.jpg`
-(the 220 × 410 region around them), right to left, as `吾輩は猫である` / `名前はまだ無い` /
-`どこで生れたかとんと` / `見当がつかぬ`: every character but the three final 。 of the sample's text.
-On the whole 960 × 544 frame its menu line `MENU SAVE LOAD` adds two one-character columns.
-
-**Limits.**
-
-- NOBORU's portrait mode, which turns the whole page on the screen (the Vita held upright), is not
-  read: its columns reach the frame as rows of turned characters. Read in NOBORU's landscape view
-  (fit to width).
-- Horizontal text in the text box (a speaker's name box, a menu) is read as columns of one character:
-  draw the box around the vertical text only.
-- Furigana beside a column is dropped when the finder takes it for a narrow column (under 55 % of the
-  median column's width), and read with the column when it merges into it.
-- The capture cost above, and a console's speed and accuracy, are unmeasured until a console run
-  (the PR's console steps).
-- The self-test's stages (the debug build, [self-test](self-test.md)) are made for rows and the model
-  sizes: with `on` its smallest-size stage runs the vertical model too. Run it with `ocr_vertical = off`.
-
 ## Models
 
 **The default size, Normal, is VOCR5-N (`VOCR5_N_w8.vocr`); Small is VOCR5-S
@@ -1026,7 +904,6 @@ VOCR5-S keeps FL10's topology and arena with a 4,987-class head, VOCR5-N H15's w
 | `VOCR4_W20_w8.vocr` | 1,558,016 | `2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e` | 241,056 | v0.2.5-vocr4.1 |
 | `H15_w8.vocr` | 1,155,968 | `316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd` | 182,944 | v0.2.0 |
 | `FL10_w8.vocr` | 657,664 | `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84` | 124,832 | v0.2.0 |
-| `VOCR5_V_w8.vocr` (vertical text, `ocr_vertical`) | 819,792 | `ccd20c63bb2620f054538b456904bdf19b74d483d3da8de865009e282bb04172` | 124,832 | v0.3.2-vertical.1 |
 
 VOCR5's scores are in vita-vn-ocr's `docs/vocr5.md` (its locked report). No console has run
 a VOCR5 model yet.
@@ -1051,10 +928,9 @@ they accept exactly these files, each at its pinned size and SHA-256:<!-- names 
 the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
 (VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
 release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
-release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1);
-`VOCR5_V_w8.vocr` (VOCR5, release v0.3.2-vertical.1); and the character LMs
-`vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and
-`vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
+release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
+character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
+`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
 `core/vocr_models.c` gives each recognizer its generation (VOCR5, VOCR3, VOCR4, or VOCR1 for
 v0.2.0's), the name of the local engine in the Rubi app.
 
@@ -1083,7 +959,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 1a804722ea78e88ba45e5aaa4124395d67e6e5d8  # #103's merge (#99's column finder and rotation), after #101's gate, #85's kernels, #83's refinement and #82's decoder
+git -C /path/to/vita-vn-ocr checkout ac0d6b1d3da5e96cd771a48da7992b6cf25d6519  # #101's merge (after #85's, #83's and #82's): the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
@@ -1097,10 +973,9 @@ cmake -S . -B build/host -G Ninja -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path
 cmake --build build/host && ctest --test-dir build/host --output-on-failure
 ```
 
-`cmake/VocrOCR.cmake` checks the fourteen runtime files (`runtime/vocr.c`, `vocr.h`,
+`cmake/VocrOCR.cmake` checks the twelve runtime files (`runtime/vocr.c`, `vocr.h`,
 `vocr_lines.c`, `vocr_lines.h`, `vocr_lines_rows.c`, `vocr_lines_rows.h`, `vocr_lm.c`,
-`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`, `vocr_vertical.c`,
-`vocr_vertical.h`) against their
+`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`) against their
 SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. For the host tests that run
 the text-presence gate, `cmake/VocrGate.cmake` downloads its pinned weights from the release at configure time and
 checks them (or takes `-DVJO_VOCR_GATE_BLOB=FILE`; without either, those tests skip); the plugins read the file
@@ -1119,8 +994,7 @@ steps below cover a source build or adding another model.
 2. Download and check the weights on a computer:
 
    ```sh
-   python3 tools/prepare_ocr.py --backend vocr-tiers --output ocr    # the 3 sizes' models, MODEL-ATTRIBUTION.md,
-                                                                     # the gate's 2 files, VOCR5_V_w8.vocr, VERTICAL-ATTRIBUTION.md
+   python3 tools/prepare_ocr.py --backend vocr-tiers --output ocr    # the 3 sizes' models, MODEL-ATTRIBUTION.md, the gate's 2 files
    python3 tools/prepare_ocr.py --backend vocr-lm --output ocr       # the 4 LMs and ATTRIBUTION.md
    python3 tools/prepare_ocr.py --backend vocr --model VOCR4_W20_w8.vocr --output ocr   # by name: the host tools' cascade
    python3 tools/prepare_ocr.py --backend vocr --model VOCR3_H15_w8.vocr --output ocr   # by name: an earlier one
@@ -1132,10 +1006,8 @@ steps below cover a source build or adding another model.
    `tools/package_release.py --models ocr` needs the first two lines' files: it ships
    the LMs with their attribution as `ocr/LM-ATTRIBUTION.md` (CC BY-SA 4.0), and the
    sizes' models with theirs, v0.3.0's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
-   (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), the text-presence
-   gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`,
-   and the vertical model `VOCR5_V_w8.vocr` with v0.3.2-vertical.1's `ATTRIBUTION.md` as
-   `ocr/VERTICAL-ATTRIBUTION.md`.
+   (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), and the text-presence
+   gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`.
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/`, the attributions included, or let the
    FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8.vocr --set vocr_tier=normal VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:
@@ -1273,8 +1145,7 @@ copied, and the settings above. Close other apps first.
 
 ## Limits
 
-- Horizontal text only, unless `ocr_vertical = on`, which reads columns only
-  ([vertical text](#vertical-text-vita-vn-ocr-99)).
+- Horizontal text only; vertical text is not read.
 - Adjacent lines 1-2 px apart can merge on PSP-sized text, and decorated
   frames can add a stray line; tight regions read best.
 - Recognition runs on low-priority threads in the enabled game process. While
