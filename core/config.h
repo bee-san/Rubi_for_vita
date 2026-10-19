@@ -104,6 +104,10 @@ typedef struct {
      * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
      * text (a hidden text box, a CG screen) returns no line. Last, as above. */
     int ocr_text_gate;        /* 0/1 */
+    /* Vertical text (vita-vn-ocr #99, API 29): 1 reads the region's columns, right to left, with the
+     * vertical model instead of its rows (VJO_GAME_OCR_F_VERTICAL), in every game; 0 (the default) every job
+     * as before. Last, as above. */
+    int ocr_vertical;         /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

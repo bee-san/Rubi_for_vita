@@ -45,6 +45,15 @@
 #define VJO_VOCR5_N_BYTES 1185632u
 #define VJO_VOCR5_L_NAME "VOCR5_L_w8.vocr"
 #define VJO_VOCR5_L_BYTES 2473696u
+/* VOCR5-V (bee-san/vita-vn-ocr #99): vertical text, VOCR5-S's shape (4,987 classes), trained on
+ * columns turned 90 degrees anticlockwise. It is no model size: a job runs it, whatever the size,
+ * when config.ini says ocr_vertical = on (VjoGameOcrRequest.flags VJO_GAME_OCR_F_VERTICAL), and
+ * opens it as VJO_GAME_OCR_OPEN_VERTICAL. Pinned where every model is (core/vocr_ocr.c,
+ * core/vocr_models.c, kernel/game_ocr.c, tools/prepare_ocr.py). */
+#define VJO_VOCR5_V_NAME "VOCR5_V_w8.vocr"
+#define VJO_VOCR5_V_BYTES 819792u
+#define VJO_VOCR_VERTICAL_NAME VJO_VOCR5_V_NAME
+#define VJO_VOCR_VERTICAL_BYTES VJO_VOCR5_V_BYTES
 /* API 21: the three model tiers the Rubi app offers (config.ini vocr_tier),
  * smallest first; tools/model_tiers.json is the same table (its "tiers", in
  * this order), and tools/tests/test_vocr_defaults.py checks the two agree. A

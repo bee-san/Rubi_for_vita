@@ -97,8 +97,10 @@ def c_table(source=None):
     sizes = macros()
     body = array_body(source, "#else\nstatic const VjoVocrModel models[]")
     pins = []
-    # the finder: a runtime mode, or core/vocr_ocr.c's VJO_VOCR_FINDER (#194: every pinned model's)
-    for m in re.finditer(r'\{"?([\w.]+)"?, ' + SIZE + r',\s*\{([^}]*)\},\s*' + SIZE + r', (?:VOCR_LINES_\w+|VJO_VOCR_FINDER)\}',
+    # the finder: a runtime mode, or core/vocr_ocr.c's VJO_VOCR_FINDER (#194: every pinned model's of rows),
+    # or its VJO_VOCR_COLUMNS (#99: the vertical model's column finder)
+    for m in re.finditer(r'\{"?([\w.]+)"?, ' + SIZE + r',\s*\{([^}]*)\},\s*' + SIZE +
+                         r', (?:VOCR_LINES_\w+|VJO_VOCR_FINDER|VJO_VOCR_COLUMNS)\}',
                          body):
         name = sizes.get(m.group(1), m.group(1))  # a name macro (VJO_VOCR3_H15_NAME) or a literal
         digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
@@ -140,11 +142,11 @@ def kernel_names(source=None):
 
 def python_pins():
     """name -> (url, bytes, sha256, release tag) of every release's asset table in tools/prepare_ocr.py:
-    VOCR_ASSETS (VOCR_TAG), VOCR3_ASSETS (VOCR3_TAG) and any later VOCRn_ASSETS (VOCRn_TAG), each name in
-    one table only."""
+    VOCR_ASSETS (VOCR_TAG), VOCR3_ASSETS (VOCR3_TAG) and any later VOCRn_ASSETS (VOCRn_TAG), the vertical
+    model's VOCR5V_ASSETS (VOCR5V_TAG) too, each name in one table only."""
     out = {}
     for key, assets in sorted(vars(prepare_ocr).items()):
-        release = re.fullmatch(r"(VOCR\d*)_ASSETS", key)
+        release = re.fullmatch(r"(VOCR\d*V?)_ASSETS", key)
         if not release:
             continue
         tag = getattr(prepare_ocr, release.group(1) + "_TAG")
@@ -255,6 +257,13 @@ class VocrDefaults(unittest.TestCase):
                 blob = ("fixture " + name).encode()
                 pins[name] = ("https://fixture.invalid/" + name, len(blob), hashlib.sha256(blob).hexdigest())
                 (src / name).write_bytes(blob)
+            vblob = b"fixture " + prepare_ocr.VOCR_VERTICAL_MODEL.encode()  # #99: fetched with them
+            vpins = {prepare_ocr.VOCR_VERTICAL_MODEL: ("https://fixture.invalid/V", len(vblob), hashlib.sha256(vblob).hexdigest())}
+            (src / prepare_ocr.VOCR_VERTICAL_MODEL).write_bytes(vblob)
+            vatt = b"the vertical model's attribution fixture"  # its release's ATTRIBUTION.md, kept under its own name
+            vatt_pin = {prepare_ocr.VOCR_VERTICAL_ATTRIBUTION: ("https://fixture.invalid/VA", len(vatt),
+                                                                hashlib.sha256(vatt).hexdigest())}
+            (src / prepare_ocr.VOCR_VERTICAL_ATTRIBUTION).write_bytes(vatt)
             att, lm_att = b"VOCR5 attribution fixture", b"the LMs' attribution"
             att_pin = {prepare_ocr.VOCR_MODEL_ATTRIBUTION: ("https://fixture.invalid/ATTRIBUTION.md", len(att),
                                                             hashlib.sha256(att).hexdigest())}
@@ -267,15 +276,17 @@ class VocrDefaults(unittest.TestCase):
                                                                 hashlib.sha256(gate_att).hexdigest())}
             (src / prepare_ocr.VOCR_GATE_MODEL).write_bytes(gate)
             (src / prepare_ocr.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
-            with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), \
+            with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), mock.patch.dict(prepare_ocr.VOCR5V_ASSETS, vpins), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_VERTICAL_ATTRIBUTION_PIN", vatt_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ASSETS", gate_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ATTRIBUTION_PIN", gate_att_pin), \
                  mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
                 paths = prepare_ocr.fetch_tiers(out, src)
                 self.assertEqual(sorted(p.name for p in paths),
                                  sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md", prepare_ocr.VOCR_GATE_MODEL,
-                                         "GATE-ATTRIBUTION.md"]))
+                                         "GATE-ATTRIBUTION.md", prepare_ocr.VOCR_VERTICAL_MODEL,
+                                         prepare_ocr.VOCR_VERTICAL_ATTRIBUTION]))
                 self.assertEqual((out / "GATE-ATTRIBUTION.md").read_bytes(), gate_att)
                 self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
                 self.assertFalse((out / "ATTRIBUTION.md").exists())  # the LMs' name stays theirs
@@ -422,7 +433,7 @@ class VocrDefaults(unittest.TestCase):
         python = python_pins()
         by_name = {"VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "H15_w8.vocr", "FL10_w8.vocr", "F20_w8.vocr",
                    "VOCR4_W20_w8.vocr"}  # the host tools' models; the sizes' own besides them
-        self.assertEqual(set(meta), by_name | set(TIER_FILES))
+        self.assertEqual(set(meta), by_name | set(TIER_FILES) | {prepare_ocr.VOCR_VERTICAL_MODEL})
         for name, (generation, shape, _) in meta.items():
             self.assertIn(name, python)
             self.assertEqual(generation, prepare_ocr.VOCR_GENERATION[python[name][3]], name)
@@ -430,7 +441,8 @@ class VocrDefaults(unittest.TestCase):
                 self.assertTrue(name.startswith(generation + "_"), name)
             self.assertIn(shape, name, name)
         self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3",
-                                                       "v0.2.5-vocr4.1": "VOCR4", "v0.3.0": "VOCR5"})
+                                                       "v0.2.5-vocr4.1": "VOCR4", "v0.3.0": "VOCR5",
+                                                       prepare_ocr.VOCR5V_TAG: "VOCR5"})
         self.assertEqual(meta[prepare_ocr.VOCR_DEFAULT_MODEL][0], TIER_PINS["normal"][5])
         tiers = prepare_ocr.model_tiers()["tiers"]
         self.assertEqual([meta[t["model"]][0] for t in tiers], [TIER_PINS[t["id"]][5] for t in tiers])
@@ -482,7 +494,8 @@ class VocrDefaults(unittest.TestCase):
             if name not in TIER_FILES:
                 self.assertNotIn(name, shipped)
         self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
-                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL})  # the LMs, the gate (API 26)
+                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL,
+                          prepare_ocr.VOCR_VERTICAL_MODEL})  # the LMs, the gate (API 26), VOCR5-V (API 29)
 
 if __name__ == "__main__":
     unittest.main()
