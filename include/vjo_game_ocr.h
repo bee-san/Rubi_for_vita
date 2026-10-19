@@ -192,8 +192,7 @@ enum {
                             try began (us since the job started; 0 with one try), us when it was logged,
                             after the tries */
     VJO_GSTEP_SIG,       /* the first pass is in: rc of vjoOcrCaptureRows' publication */
-    VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's; API 27: bytes the columns left out, larger
-                            than the rotation buffer (core/vocr_ocr.h VJO_VOCR_ROTATE_BYTES; 0 for rows) */
+    VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's */
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes; arg 1: read by a job that found no
                             line (core/vocr_ocr.h vjo_vocr_warm) */
     VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc */

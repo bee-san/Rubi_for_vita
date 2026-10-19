@@ -1,7 +1,6 @@
 /* core/vocr_ocr.c's model and LM tables for test_vocr_vertical.c only: a model of rows (today's
  * finder, #194's) and three of columns (vita-vn-ocr #99's column finder: P0 and P1 with the dark flags
- * left to the job, VOCR_COLUMNS_NO_DARK, as the product's VOCR5-V; and P1 with the finder's own; and P0 again
- * with room for the text-presence gate's arena), and one
+ * left to the job, VOCR_COLUMNS_NO_DARK, as the product's VOCR5-V; and P1 with the finder's own), and one
  * LM, whose sizes, SHA-256 and arenas the test pins at run time (test_pin_model, test_pin_lm) for tiny
  * valid weights blobs and a tiny LM it builds itself, so vertical jobs run real vocr_run and
  * vocr_lm_decode calls where the release files are absent (CI). VJO_TEST_OFF_ONLY: the model of rows
@@ -12,8 +11,6 @@ static VjoVocrModel models[] = {
     {"TINYV_w8.vocr", 0, {0}, 0, VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_NO_DARK},
     {"TINYV1_w8.vocr", 0, {0}, 0, VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_VALLEYS | VOCR_COLUMNS_NO_DARK},
     {"TINYVD_w8.vocr", 0, {0}, 0, VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_VALLEYS},
-    /* TINYV's flags with a larger pinned arena: scratch room for the text-presence gate's arena (the gate test) */
-    {"TINYVG_w8.vocr", 0, {0}, 0, VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_NO_DARK},
 #endif
 };
 void test_pin_model(unsigned which, uint32_t bytes, const unsigned char sha256[32], uint32_t arena_bytes);

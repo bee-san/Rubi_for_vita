@@ -41,17 +41,12 @@ void test_pin_model(unsigned which, uint32_t bytes, const unsigned char sha256[3
 void test_pin_lm(uint32_t bytes, const unsigned char sha256[32]);
 #ifndef VJO_TEST_OFF_ONLY
 uint32_t vjo_vocr_test_line_length(unsigned w, unsigned h, int cols);
-void vjo_vocr_test_gate_columns(int on);
-#endif
-#ifndef VJO_VOCR_GATE_TEST_DIR
-#define VJO_VOCR_GATE_TEST_DIR "" /* the text-presence gate's weights (cmake/VocrGate.cmake), "" without them */
 #endif
 
 #define M_ROWS "TINY_w8.vocr"
 #define M_COLS "TINYV_w8.vocr"
 #define M_COLS1 "TINYV1_w8.vocr"
 #define M_COLSD "TINYVD_w8.vocr" /* P1 with the finder's own dark flags (no VOCR_COLUMNS_NO_DARK) */
-#define M_COLSG "TINYVG_w8.vocr" /* M_COLS with scratch room for the text-presence gate's arena */
 
 /* ------------------------------------------------------------ the tiny blobs
  * (vita-vn-ocr runtime/tests/test_vocr.c's builder: height 8, stride 4) */
@@ -264,8 +259,6 @@ static void setup_files(void)
             test_pin_model(2, (uint32_t)n, sha, (uint32_t)vocr_arena_bytes(&m, &o));
             write_file(M_COLSD, blob, n, sha);
             test_pin_model(3, (uint32_t)n, sha, (uint32_t)vocr_arena_bytes(&m, &o));
-            write_file(M_COLSG, blob, n, sha); /* 256 KiB more arena: the gate's fits beside the finder's */
-            test_pin_model(4, (uint32_t)n, sha, (uint32_t)vocr_arena_bytes(&m, &o) + 262144u);
         }
 #endif
     }
@@ -443,7 +436,7 @@ static void on_line(void *ud, const VjoVocrLineInfo *info)
 }
 
 typedef struct {
-    int lm, line, helpers, cache, refine, short_lines, cascade, gate;
+    int lm, line, helpers, cache, refine, short_lines, cascade;
 } JobOpts;
 
 /* A pool of real threads (VjoVocrPool): one per line a helper runs, joined. */
@@ -505,14 +498,6 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
     }
     pol.refine = o->refine ? VJO_VOCR_REFINE_ALL : 0u;
     pol.short_lines = o->short_lines;
-#ifndef VJO_TEST_OFF_ONLY
-    static VjoVocrGateResident gate_res; /* no gate file in the models' directory: the gate cannot decide */
-    if (o->gate) {
-        memset(&gate_res, 0, sizeof gate_res);
-        pol.gate = 1;
-        pol.gate_res = &gate_res;
-    }
-#endif
     if (o->cascade) { /* the model of rows reads doubtful lines again: never a model of columns' */
         pol.cascade = vjo_vocr_model(M_ROWS);
         pol.cascade_res = &cres;
@@ -894,87 +879,6 @@ static void test_line_lengths(void)
     TEST_CHECK(vjo_vocr_test_line_length(36, 290, 0) == 36u * 32u / 290u + 1u); /* the same box as a row */
 }
 
-/* The text-presence gate (API 26) scores row boxes, and two guards keep it off columns (API 27): run_job sets it
- * up only for a model of rows (its weights read, its arena placed), and recognize begins it only on rows. Each test
- * below fails when its guard is gone (audit-vertical-rubi S2). Both put the gate's weights in the models' directory
- * when cmake/VocrGate.cmake got them, and run columns on M_COLSG, whose arena has room for the gate's. */
-static int put_gate_file(void)
-{
-    char path[512];
-    static unsigned char gate[VJO_VOCR_GATE_BYTES + 1];
-    unsigned char sha[32];
-    size_t n;
-    FILE *f;
-    if (!VJO_VOCR_GATE_TEST_DIR[0]) return 0;
-    snprintf(path, sizeof path, "%s/%s", VJO_VOCR_GATE_TEST_DIR, VJO_VOCR_GATE_NAME);
-    TEST_ASSERT_((f = fopen(path, "rb")) != NULL, "%s", path);
-    n = fread(gate, 1, sizeof gate, f);
-    fclose(f);
-    TEST_ASSERT(n == VJO_VOCR_GATE_BYTES);
-    write_file(VJO_VOCR_GATE_NAME, gate, n, sha);
-    return 1;
-}
-
-static void drop_gate_file(void)
-{
-    char path[512];
-    snprintf(path, sizeof path, "%s/%s", model_dir, VJO_VOCR_GATE_NAME);
-    remove(path);
-}
-
-/* run_job's guard: a job of columns with the gate asked for never reads its weights or places its arena, with
- * the file present or not, and reads as with the gate off. Rows with the same policy try it. */
-static void test_gate_never_set_up_for_columns(void)
-{
-    static const unsigned glyphs[4] = {6, 4, 7, 3};
-    char text[VJO_OCR_TEXT_CAP], plain[VJO_OCR_TEXT_CAP];
-    VjoVocrStats st;
-    JobOpts off = {0}, on = {.gate = 1};
-    setup_files();
-    for (int with_file = 0; with_file < 2; with_file++) {
-        if (with_file && !put_gate_file()) break; /* without the weights the file-less pass covers the guard */
-        draw_rows();
-        TEST_CHECK(job(M_ROWS, &on, text, sizeof text, NULL, 0, &st) == VJO_OK && st.lines == LINES);
-        TEST_CHECK_(with_file ? st.gate_read == 1 : st.gate_rc == VJO_E_OCR_MODEL && !st.gate_read,
-                    "rows: gate read %u rc %d", st.gate_read, st.gate_rc); /* the policy reaches the gate for rows */
-        draw_columns(RW, RH, 4, glyphs, 20, 26, 20, 225);
-        TEST_ASSERT(job(M_COLSG, &off, plain, sizeof plain, NULL, 0, &st) == VJO_OK && st.lines == 4);
-        TEST_CHECK(job(M_COLSG, &on, text, sizeof text, NULL, 0, &st) == VJO_OK);
-        TEST_CHECK_(!strcmp(text, plain) && st.lines == 4 && !st.gate_read && !st.gate_rc && !st.gate_ran &&
-                    !st.gate_rows && !st.gate_stopped, "file %d: \"%s\" against \"%s\", gate read %u rc %d ran %u",
-                    with_file, text, plain, st.gate_read, st.gate_rc, st.gate_ran);
-    }
-    drop_gate_file();
-}
-
-/* recognize's guard: with the gate set up for a job of columns (vjo_vocr_test_gate_columns: as without
- * run_job's guard) and its real weights, the job still never begins it on the columns. */
-static void test_gate_never_runs_on_columns(void)
-{
-    static const unsigned glyphs[4] = {6, 4, 7, 3};
-    char text[VJO_OCR_TEXT_CAP], plain[VJO_OCR_TEXT_CAP];
-    VjoVocrStats st;
-    JobOpts off = {0}, on = {.gate = 1};
-    int rc;
-    setup_files();
-    if (!put_gate_file()) {
-        TEST_SKIP("no text-presence gate weights (cmake/VocrGate.cmake could not get them)");
-        return;
-    }
-    draw_columns(RW, RH, 4, glyphs, 20, 26, 20, 225);
-    TEST_ASSERT(job(M_COLSG, &off, plain, sizeof plain, NULL, 0, &st) == VJO_OK && st.lines == 4);
-    vjo_vocr_test_gate_columns(1);
-    rc = job(M_COLSG, &on, text, sizeof text, NULL, 0, &st);
-    vjo_vocr_test_gate_columns(0);
-    drop_gate_file();
-    /* set up: its weights read and verified, its arena placed (gate_rc 0); never begun: no row, no score */
-    TEST_CHECK_(rc == VJO_OK && st.gate_read == 1 && !st.gate_rc, "rc %d, gate read %u rc %d", rc, st.gate_read,
-                st.gate_rc);
-    TEST_CHECK_(!strcmp(text, plain) && st.lines == 4 && !st.gate_ran && !st.gate_rows && !st.gate_stopped,
-                "\"%s\" against \"%s\", gate ran %u rows %u stopped %u", text, plain, st.gate_ran, st.gate_rows,
-                st.gate_stopped);
-}
-
 /* A region without ink gives no column: the job reads nothing and opens no model file. */
 static void test_empty_region_opens_no_model(void)
 {
@@ -1000,8 +904,6 @@ TEST_LIST = {
     {"columns: the steps for rows never run, whatever the policy asks", test_row_steps_do_not_run},
     {"columns: a region without ink gives no column and opens no model", test_empty_region_opens_no_model},
     {"line lengths: a row's as before, a column's turned (the cascade's estimate)", test_line_lengths},
-    {"the text-presence gate is never set up for columns (run_job's guard)", test_gate_never_set_up_for_columns},
-    {"the text-presence gate never runs on columns (recognize's guard)", test_gate_never_runs_on_columns},
 #endif
     {NULL, NULL}
 };
