@@ -431,19 +431,20 @@ static const Seen *seen_find(const Seen *s, int n, const uint8_t id[ID_BYTES])
 
 /* The IDs of Rubi's cards that dir has files of: <32 lowercase hex digits>.json, and (with_old, the
  * outbox) <id>.json.old, regular files only; every other name (a hostile one too) is skipped, and no
- * file is opened. At most cap of them, sorted, each once (the rest: *more). 0, 1 (no such directory),
- * or -1 (it cannot be read; logged). */
+ * file is opened. At most cap of them, sorted, each once (the rest: *more); the list takes the arena
+ * as it grows (nothing else is allocated meanwhile). 0, 1 (no such directory), or -1 (it cannot be
+ * read, or no memory for a list; logged). */
 static int list_ids(VjoArena *a, const char *dir, int with_old, Seen **out, int *n, int cap, int *more)
 {
     SceUID d;
     SceIoDirent ent;
     Seen *s;
-    int k = 0, rc, closed;
+    int k = 0, room = 64, rc, closed;
     *out = NULL;
     *n = *more = 0;
     if (!is_dir(dir))
         return 1;
-    if (!(s = (Seen *)vjo_arena_alloc(a, sizeof(Seen) * (size_t)cap))) {
+    if (!(s = (Seen *)vjo_arena_alloc(a, sizeof(Seen) * (size_t)room))) {
         vjo_log("anki for vita: out of memory for the list of %s", dir);
         return -1;
     }
@@ -462,13 +463,20 @@ static int list_ids(VjoArena *a, const char *dir, int with_old, Seen **out, int 
         ent.d_name[32] = '\0';
         if (!vjo_queue_valid_id(ent.d_name))
             continue;
-        if (k == cap) {
+        if (k == room && room < cap) { /* (in place: the list is the arena's last block) */
+            int more_room = room * 2 < cap ? room * 2 : cap;
+            if (!vjo_arena_extend_last(a, s, sizeof(Seen) * (size_t)room, sizeof(Seen) * (size_t)more_room))
+                room = more_room;
+        }
+        if (k == room) {
             (*more)++;
             continue;
         }
         memset(&s[k], 0, sizeof(s[k]));
         from_hex(ent.d_name, s[k++].id);
     }
+    if (*more && room < cap)
+        vjo_log("anki for vita: no memory to list more than %d names of %s", room, dir);
     if (rc < 0)
         io_fail("dread", dir, rc);
     if ((closed = sceIoDclose(d)) < 0)
@@ -649,6 +657,9 @@ static int results(VjoArena *a, const VjoExportUi *ui, VjoAfvResults *r, Seen **
         return VJO_OK; /* no outbox yet */
     if (listed < 0)
         return VJO_E_LOCAL_IO;
+    if (r->more)
+        vjo_log("anki for vita: over %d result files in the outbox: %d are read once fewer are left",
+                VJO_AFV_RESULTS_MAX, r->more);
     for (int i = 0; i < *n_seen; i++) {
         if (stopped(ui))
             return VJO_E_CANCELLED;
@@ -677,6 +688,8 @@ void vjo_afv_results_text(const VjoAfvResults *r, char *out, size_t cap)
 {
     size_t n = 0;
 #define ADD(...) (n < cap ? (void)(n += (size_t)snprintf(out + n, cap - n, __VA_ARGS__)) : (void)0)
+    if (!cap)
+        return;
     out[0] = '\0';
     if (r->in_anki)
         ADD("Anki for Vita: %d card%s in Anki now (out of the queue).", r->in_anki, r->in_anki == 1 ? " is" : "s are");

@@ -157,7 +157,8 @@ class Plugins(unittest.TestCase):
         # "SceNetPs", ...)), or a module loading a network module's file, passed the import and symbol rules
         for text in (b"SceNetPs", b"SceNet", b"SceNetCtl", b"SceHttp", b"SceSsl", b"ScePspnet", b"SceNpWebApi",
                      b"SceWlan", b"vs0:sys/external/libnet.suprx", b"vs0:sys/external/libnetctl.suprx",
-                     b"vs0:sys/external/libhttp.suprx", b"vs0:sys/external/libssl.suprx"):
+                     b"vs0:sys/external/libhttp.suprx", b"vs0:sys/external/libssl.suprx",
+                     b"vs0:sys/external/libpspnet_adhoc.suprx"):
             for section in (".rodata", ".data", ".text"):
                 with self.subTest(text=text, section=section):
                     r = check(elf(STUBS + [".data"], HASHES, {section: b"\x01\x02" + text + b"\0xyz"}))

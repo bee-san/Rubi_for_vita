@@ -877,7 +877,8 @@ static void damaged_cards_stay_queued(void)
 
 static void result(const char *id, const char *suffix, const char *fmt, ...)
 {
-    char path[256], text[8192];
+    static char text[80 * 1024];
+    char path[256];
     va_list ap;
     mkdir(ROOT "/outbox", 0777);
     mkdir(OUTBOX, 0777);
@@ -1138,7 +1139,7 @@ static void malformed_results_are_ignored(void)
         "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true} {}",
         "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true",
         "{\"v\":1,\"id\":\"%s\\u0000\",\"status\":\"added\",\"synced\":true}",
-        "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"pad\":\"%4200s\"}",
+        "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"pad\":\"%65500s\"}", /* over 64 KiB */
         /* the interface's rules for every JSON file: a key twice in a nested object, an escaped lone
          * surrogate (high, low), a NUL escaped in a key, objects nested 65 deep */
         "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"x\":{\"a\":1,\"a\":2}}",
@@ -1161,6 +1162,16 @@ static void malformed_results_are_ignored(void)
                     bad[k]);
         TEST_CHECK_(queued(id) && has_result(id), "result %u changed something", k);
         TEST_CHECK(strstr(logs, "not a version-1 result for its card, ignored") != NULL);
+    }
+    /* a result of over 4 KiB within the interface's 64 KiB (a later version's keys): read */
+    {
+        VjoAfvResults r;
+        reset();
+        installed("{\"v\":1,\"interfaces\":[1]}");
+        queue_card(&cat, id);
+        result(id, "", "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"later\":\"%60000s\"}", id, "");
+        TEST_ASSERT(results_now(&r) == VJO_OK);
+        TEST_CHECK_(r.in_anki == 1 && !r.malformed && archived(id), "%d %d", r.in_anki, r.malformed);
     }
     /* a surrogate pair, keys of other objects alike, 64 levels: all as the interface has them */
     {
@@ -1371,7 +1382,7 @@ static void measure_a_send(void)
     if (A.peak > peak)
         peak = A.peak;
     TEST_CHECK(peak < sizeof(mem) / 2);
-    /* the most results a pass reads: one each, not synced yet */
+    /* the most results a pass lists, and one more: one each, not synced yet */
     {
         DIR *d = opendir(VJO_QUEUE_DIR);
         struct dirent *e;
@@ -1387,9 +1398,14 @@ static void measure_a_send(void)
             }
         closedir(d);
         TEST_ASSERT(n == VJO_AFV_RESULTS_MAX);
+        OK_RESULT("0123456789abcdef0123456789abcdef", "added", "false"); /* (no card: listed, never read) */
     }
     TEST_ASSERT(results_now(&res) == VJO_OK);
-    TEST_CHECK(res.waiting == VJO_AFV_RESULTS_MAX);
+    /* (20,001 names, 20,000 listed: the one left is the card-less one or a card's, whichever the
+     * directory gives last) */
+    TEST_CHECK_(res.more == 1 && (res.waiting == VJO_AFV_RESULTS_MAX || res.waiting == VJO_AFV_RESULTS_MAX - 1),
+                "%d waiting, %d more", res.waiting, res.more);
+    TEST_CHECK(strstr(logs, "result files in the outbox: 1 are read once fewer are left") != NULL);
     printf("measure: a results pass of %d results: arena peak %u B\n", res.waiting, (unsigned)A.peak);
     /* the largest card: a record near 32 KiB, a screenshot of 192 KiB */
     reset();

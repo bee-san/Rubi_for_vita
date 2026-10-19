@@ -59,12 +59,14 @@
 #define VJO_AFV_WHERE "github.com/bee-san/Anki_for_vita"
 /* The interface's limit for a note's file; a card whose note is larger stays queued. */
 #define VJO_AFV_NOTE_MAX (64u * 1024u)
-/* A result's and status.json's read: Anki for Vita writes them in a few hundred bytes. */
-#define VJO_AFV_RESULT_MAX 4096u
-/* The cards one send hands over, the results one pass reads (the rest: the next one), the inbox
- * notes a sweep of Rubi's inbox media reads (more: the media stay until they are fewer). */
+/* A result's and status.json's read: the interface's limit for a JSON file (Anki for Vita writes them
+ * in a few hundred bytes; a later version may add keys). One is read at a time. */
+#define VJO_AFV_RESULT_MAX (64u * 1024u)
+/* The cards one send hands over, the result files one pass lists (as many: a result is a card handed
+ * over; more are logged and read once fewer are left), the inbox notes a sweep of Rubi's inbox media
+ * reads (more: the media stay until they are fewer). */
 #define VJO_AFV_SEND_MAX VJO_APKG_MAX_CARDS
-#define VJO_AFV_RESULTS_MAX 4096
+#define VJO_AFV_RESULTS_MAX VJO_APKG_MAX_CARDS
 #define VJO_AFV_SWEEP_NOTES 256
 #define VJO_AFV_MESSAGE_MAX 160
 

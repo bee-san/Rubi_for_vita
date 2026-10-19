@@ -641,7 +641,7 @@ interrupted send left is removed by the next one.
 
 Rubi reads only the outbox results of its own cards (`<32 lowercase hex digits>.json` whose card is
 queued, archived or found in Anki before, and its `.old` when the app was stopped between the two
-renames of a replace; neither there: three more tries 100 ms apart), regular files of at most 4 KiB
+renames of a replace; neither there: three more tries 100 ms apart), regular files of at most 64 KiB
 that keep the interface's rules for every JSON file (valid UTF-8, no NUL written or escaped, no
 escaped lone surrogate, no key twice in any object, at most 64 levels deep: `settings/afv_json.c`),
 whose `id` is the file's own. Any other name, a directory, a larger or malformed file is never acted
@@ -657,7 +657,8 @@ The hand-over and the results run on the Anki page's worker, in the 2 MiB arena 
 job at a time. Measured on the host (`vjo-afv-tests`, its `measure:` lines): a send of 20,000 cards
 (the most one send hands over; the rest wait for the next) peaked at 324,481 B, and at 761,695 B when
 all of them were in the inbox already (its list then, and the note type's file read back); a results
-pass of 4,096 results (the most one pass reads) at 78,368 B; the largest card's send (a record near
+pass of 20,000 results (the most one pass lists; more are logged and read once fewer are left)
+at 380,544 B; the largest card's send (a record near
 32 KiB and a 192 KiB screenshot) at 295,841 B. These are host measurements of this code's arena; the
 console has not run it. A card whose note would need more of the arena than is left (a record of
 32 KiB of text that HTML escaping multiplies) is left queued, as one over 64 KiB is, for an `.apkg`.

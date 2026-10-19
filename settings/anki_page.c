@@ -104,13 +104,15 @@ static void run_results(VjoArena *arena, const VjoExportUi *ui)
     int rc = vjo_afv_results(arena, ui, &r);
     read_status(arena);
     vjo_afv_results_text(&r, msg, sizeof(msg));
+    if (rc == VJO_E_LOCAL_IO && !msg[0])
+        snprintf(msg, sizeof(msg), "Cannot read Anki for Vita's results (see log.txt).");
     vjo_log("anki for vita: results rc=%d: %d in Anki, %d duplicates, %d refused, %d waiting, %d unreadable, "
             "%d failed, %d removed, %d swept, %d more, arena peak %u", rc, r.in_anki, r.duplicate, r.rejected,
             r.waiting, r.malformed, r.failed, r.removed, r.swept, r.more, (unsigned)arena->peak);
     sceKernelLockMutex(lock, 1, NULL);
     if (msg[0]) { /* (else the last result stays) */
         snprintf(result, sizeof(result), "%s", msg);
-        result_error = r.rejected || r.failed || r.malformed;
+        result_error = rc == VJO_E_LOCAL_IO || r.rejected || r.failed || r.malformed;
     }
     sceKernelUnlockMutex(lock, 1);
 }
@@ -275,8 +277,9 @@ void vjo_anki_page_show(VjoArena *scratch)
         vjo_export_count(&counts);
         read_afv(scratch);
         /* Anki for Vita's duplicate index for the overlay: Rubi's request, rewritten only when it would
-         * say something else (anki_index_request.h; also at the app's start) */
-        request = vjo_anki_index_request(scratch, line, sizeof(line));
+         * say something else (anki_index_request.h; also at the app's start); without the app, nothing
+         * (and no second wait for its interface.json) */
+        request = afv_installed ? vjo_anki_index_request(scratch, line, sizeof(line)) : VJO_ANKI_REQUEST_NO_APP;
         if (request == VJO_ANKI_REQUEST_WRITTEN || request == VJO_ANKI_REQUEST_FAILED)
             vjo_log("%s", line);
         /* its results: the cards it has taken leave the queue (on the worker: many files) */

@@ -19,7 +19,8 @@ Rubi app (--app), is read as its linked ELF (before vita-elf-create) and fails w
 - one of its allocated sections holds the name of a network module or its file, as a module that
   resolves an export at run time by NID would need (module_get_export_func(..., "SceNetPs", ...),
   taiGetModuleExportFunc, sceKernelLoadStartModule("vs0:sys/external/libnet.suprx", ...)):
-  SceNet, SceHttp, SceSsl, ScePspnet, SceNpWebApi, SceWlan, libnet, libhttp, libssl, libnetctl;
+  SceNet, SceHttp, SceSsl, ScePspnet, SceNpWebApi, SceWlan, libnet, libhttp, libssl, libnetctl,
+  libpspnet;
 - it has no import stub section at all (not a linked module: the .velf or the SELF instead of the
   ELF, or a toolchain that names its stubs otherwise), no symbol table (a stripped module cannot be
   checked) or no entry point in it (module_start; the app's main): exit 2.
@@ -51,7 +52,7 @@ NETWORK_SYMBOL_PREFIXES = (
 NETWORK_SYMBOL_PARTS = ("rustls", "reqwest", "tokio")
 # The names a module would hold to load a network module or resolve its exports at run time.
 NETWORK_MODULE_NAMES = (b"SceNet", b"SceHttp", b"SceSsl", b"ScePspnet", b"SceNpWebApi", b"SceWlan",
-                        b"libnet", b"libhttp", b"libssl", b"libnetctl")
+                        b"libnet", b"libhttp", b"libssl", b"libnetctl", b"libpspnet")
 # settings/no_net.c: newlib's three socket calls, defined in the app to fail (docs/shell-slim.md).
 APP_DEFINED = ("sceNetRecv", "sceNetSend", "sceNetSocketClose")
 SHT_SYMTAB, SHT_NOBITS, SHF_ALLOC, STT_FUNC = 2, 8, 2, 2
