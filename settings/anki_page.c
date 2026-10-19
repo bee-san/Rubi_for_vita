@@ -5,6 +5,7 @@
 #include <psp2/io/stat.h>
 #include <psp2/kernel/cpu.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/rtc.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
