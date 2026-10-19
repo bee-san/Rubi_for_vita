@@ -1,12 +1,11 @@
 #include "config.h"
 
-#include "bearssl.h"
-
 #include <stddef.h>
 #include <string.h>
 
 #include "../include/vjo_vocr_sizes.h"
 #include "port.h"
+#include "anki_index.h"
 #include "local_dict.h"
 #include "textfilter.h"
 #include "utf.h"
@@ -711,8 +710,8 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
 {
     size_t i = 0;
     unsigned line_no = 0; /* a line without '=' is named by its number: its text could be a key */
-    /* the request's two fields as this text names them (defaults for one it does not) */
-    char dup[2][VJO_ANKI_FIELD_MAX + 1] = {VJO_ANKI_FIELD_DEFAULT, VJO_ANKI_READING_DEFAULT};
+    /* the request's two fields as this text names them (bit k of dup_seen: dup[k] holds one) */
+    char dup[2][VJO_ANKI_FIELD_MAX + 1];
     int dup_seen = 0;
     while (i < len) {
         char line[1024], key[64], val[sizeof(((VjoConfig *)0)->local_dictionaries)]; /* the longest value */
@@ -791,34 +790,24 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
             size_t k = 0, vn = e - s; /* the value's bytes (a NUL in it is a control character too) */
             while (k < vn && (unsigned char)val[k] >= 0x20 && val[k] != 0x7F)
                 k++;
-            dup_seen = 1;
             if (r && (!vn || (vn == 4 && vjo_ieq(val, "none"))))
-                dup[1][0] = '\0';
-            else if (k != vn || !k || k > VJO_ANKI_FIELD_MAX)
+                k = 0; /* no reading field */
+            else if (k != vn || !k || k > VJO_ANKI_FIELD_MAX) {
                 warn(c, "%s: invalid value", key);
-            else
-                memcpy(dup[r], val, k + 1);
+                continue;
+            }
+            memcpy(dup[r], val, k);
+            dup[r][k] = '\0';
+            dup_seen |= 1 << r;
             continue;
         }
         set_kv(c, key, val);
     }
-    if (dup_seen) { /* the request's hash: BE64(SHA-256(0x03 || lower(field) || 0x1F || lower(reading))) */
-        br_sha256_context h;
-        uint8_t d[32];
-        br_sha256_init(&h);
-        br_sha256_update(&h, "\x03", 1);
-        for (int k = 0; k < 2; k++) {
-            for (char *p = dup[k]; *p; p++)
-                if (*p >= 'A' && *p <= 'Z')
-                    *p += 32;
-            if (k)
-                br_sha256_update(&h, "\x1f", 1);
-            br_sha256_update(&h, dup[k], strlen(dup[k]));
-        }
-        br_sha256_out(&h, d);
-        for (int k = 0; k < 2; k++)
-            c->anki_duplicate_request[k] = (uint32_t)d[4 * k] << 24 | (uint32_t)d[4 * k + 1] << 16 |
-                                           (uint32_t)d[4 * k + 2] << 8 | d[4 * k + 3];
+    if (dup_seen) { /* the request's hash (core/anki_index.h), a default for a field the text does not name */
+        uint64_t h = vjo_anki_index_request_hash(dup_seen & 1 ? dup[0] : VJO_ANKI_FIELD_DEFAULT,
+                                            dup_seen & 2 ? dup[1] : VJO_ANKI_READING_DEFAULT);
+        c->anki_duplicate_request[0] = (uint32_t)(h >> 32);
+        c->anki_duplicate_request[1] = (uint32_t)h;
     }
     /* The toggle keeps its button (it was there first). */
     if (c->toggle_button == c->subtitle_button) {

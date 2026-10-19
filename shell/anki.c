@@ -401,9 +401,8 @@ static int in_anki(uint64_t request, const VjoAnkiIndexKeys *k)
         state = rc < 0 ? rc : 0;
     if (state != index_state) {
         index_state = state;
-        vjo_log("anki: Anki for Vita's duplicate index %s", !state ? "read" : state == VJO_ANKI_INDEX_MISSING ? "absent"
-                : state == VJO_ANKI_INDEX_OTHER ? "for other fields (open the Rubi app, then sync)"
-                : "not used (damaged, another version)");
+        vjo_log("anki: duplicate index %s", !state ? "read" : state == VJO_ANKI_INDEX_MISSING ? "absent"
+                : state == VJO_ANKI_INDEX_OTHER ? "of other fields" : "damaged");
     }
     return rc > 0;
 }

@@ -553,10 +553,21 @@ other word is saved as before. Without Anki for Vita, or before its first sync, 
   `rubi.idx`), three reads (the 128-byte header, two 4-byte directory words, the word's bucket of at
   most 64 keys, 512 B) and a close, on the Anki thread; it allocates nothing, and its buffer is 512 B
   of the thread's stack. Rubi never writes the index. `log.txt` says when its state changes:
-  `anki: Anki for Vita's duplicate index read` (or `absent`, or `not used (damaged, another
-  version)`). A missing, damaged or other-version index means "not known to be in Anki": the card is
-  saved. Rubi does not check the index's request hash (its fields are a setting, and an index made
-  for an earlier request still answers for your notes).
+  `anki: duplicate index read` (or `absent`, `of other fields` (open the Rubi app, then sync in Anki
+  for Vita), or `damaged`: another version, a cut or changed file). A missing, damaged or other-version index
+  means "not known to be in Anki": the card is saved.
+- **Only Rubi's own index.** Anki for Vita writes the hash of the request an index was made for into
+  its header, and Rubi trusts an index only when that hash is the hash of its own request: the one
+  the two field settings above give (`core/config.c` computes it when it reads `config.ini`, by the
+  same rules as the Rubi app's request writer: `host/tests/test_settings_anki_index.c` checks the two
+  agree). After the fields are changed, the old index is not used until the Rubi app has written the
+  new request and Anki for Vita has synced: until then every word is saved.
+- **No wait in the overlay.** Anki for Vita's interface asks a reader that finds neither `rubi.idx` nor
+  `rubi.idx.old` to look again 3 times, 100 ms apart, because a writer may be between its renames.
+  The overlay does not: Anki for Vita is a normal application that runs only when no game does, so it
+  never writes the index while the overlay is open, and a wait would delay every Enter by 300 ms for
+  everyone without it. The Rubi app does follow it for Anki for Vita's `interface.json` (and its
+  `.old`), but only when `ux0:data/Anki_for_vita` is there.
 - **The format** is Anki for Vita's `AFVINDEX` version 1 (its `docs/duplicate-index.md`): a
   128-byte header, a directory of buckets and the sorted 64-bit keys of the notes' normalised
   fields. `host/tests/test_anki_index.c` checks this reader against that document's worked example

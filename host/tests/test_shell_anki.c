@@ -1770,7 +1770,7 @@ static void test_a_word_in_anki_is_not_saved(void)
     TEST_CHECK(heap_attempts == 0 && files_ending(".json") == 0 && mount_sync_calls == 0);
     TEST_CHECK(index_opens == 1 && index_failed_opens == 0 && index_closes == 1 && index_reads == 3 &&
                index_read_bytes <= 128 + 8 + 512);
-    TEST_CHECK(times_logged("anki: Anki for Vita's duplicate index read") == 1);
+    TEST_CHECK(times_logged("anki: duplicate index read") == 1);
     /* Enter again: the mark says it, without reading the index again */
     enter(2);
     TEST_CHECK(!strcmp(g_view.anki_status, "Already in Anki") && index_opens == 1 && heap_attempts == 0);
@@ -1779,7 +1779,7 @@ static void test_a_word_in_anki_is_not_saved(void)
     TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && files_ending(".json") == 1);
     TEST_CHECK(index_opens == 2 && heap_allocs == 1 && g_view.anki_mark[1] == VJO_ANKI_MARK_QUEUED);
     TEST_CHECK(!VJO_ANKI_MARK_TICKED(VJO_ANKI_MARK_QUEUED) && VJO_ANKI_MARK_TICKED(VJO_ANKI_MARK_ADDED));
-    TEST_CHECK(times_logged("anki: Anki for Vita's duplicate index") == 1); /* its state did not change */
+    TEST_CHECK(times_logged("anki: duplicate index") == 1); /* its state did not change */
     finish();
 }
 
@@ -1811,7 +1811,7 @@ static void test_no_or_a_bad_index_saves_as_before(void)
     reset();
     enter(0); /* no index: rubi.idx and rubi.idx.old tried */
     TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && index_failed_opens == 2 && index_reads == 0);
-    TEST_CHECK(times_logged("anki: Anki for Vita's duplicate index absent") == 1);
+    TEST_CHECK(times_logged("anki: duplicate index absent") == 1);
     clear_dir(VJO_ANKI_QUEUE_DIR);
     memset(g_view.anki_mark, 0, sizeof(g_view.anki_mark));
     enter(0);
@@ -1836,7 +1836,7 @@ static void test_no_or_a_bad_index_saves_as_before(void)
         enter(0);
         TEST_CHECK_(!strcmp(g_view.anki_status, "Saved for Anki"), "damage %d: %s", k, g_view.anki_status);
     }
-    TEST_CHECK(times_logged("anki: Anki for Vita's duplicate index not used (damaged, another version)") == 1);
+    TEST_CHECK(times_logged("anki: duplicate index damaged") == 1);
     /* only the previous index (an Anki for Vita publish stopped between its renames): it is read */
     unlink(VJO_ANKI_INDEX_PATH);
     write_index_at(VJO_ANKI_INDEX_OLD_PATH, notes, 1);
@@ -1861,7 +1861,7 @@ static void test_only_rubis_own_request(void)
     free(data);
     enter(0);
     TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && index_opens == 1 && index_reads == 1);
-    TEST_CHECK(times_logged("anki: Anki for Vita's duplicate index for other fields (open the Rubi app, then sync)") == 1);
+    TEST_CHECK(times_logged("anki: duplicate index of other fields") == 1);
     {
         const char *text = "anki_duplicate_field = word\nanki_duplicate_reading_field = WORDREADING\n";
         vjo_config_defaults(&cfg);

@@ -100,6 +100,22 @@ int vjo_anki_index_keys(const char *form, const char *reading, VjoAnkiIndexKeys 
     return 0;
 }
 
+uint64_t vjo_anki_index_request_hash(const char *field, const char *reading)
+{
+    const char *s[2] = {field, reading};
+    br_sha256_context c;
+    start(&c, 3);
+    for (int k = 0; k < 2; k++) {
+        if (k)
+            br_sha256_update(&c, "\x1f", 1);
+        for (const char *p = s[k]; *p; p++) { /* ASCII folded to lower case, a byte at a time */
+            uint8_t x = (uint8_t)(*p >= 'A' && *p <= 'Z' ? *p + 32 : *p);
+            br_sha256_update(&c, &x, 1);
+        }
+    }
+    return digest(&c);
+}
+
 /* A key's bucket: its top `bits` bits (bits 0..16; none, bucket 0, for 0). */
 static uint32_t bucket_of(uint64_t key, uint32_t bits)
 {

@@ -177,6 +177,11 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
   ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c
   ${ROOT}/core/anki_index_find.c # Anki for Vita's duplicate index: one lookup per Enter
+  # Paying for the index's request check (#220) in the normal Shell's text pages: the non-Japanese line
+  # filter (once per recognized text; its time is core/utf.c's decoding, built for size already) and the
+  # enter button's registry read (once per overlay open), 48 + 39 B fewer [measured: arm-vita-eabi-size
+  # of the two objects at -O2 and -Os].
+  ${ROOT}/core/textfilter.c ${ROOT}/vita/buttons_vita.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
@@ -357,6 +362,7 @@ include(${ROOT}/cmake/SettingsPNG.cmake)
 # made from the queue's records (core/anki_queue.c) with core/anki.c's fields. No network.
 set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c ${ROOT}/settings/anki_index_request.c
+  ${ROOT}/core/anki_index_find.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 set(VJO_SETTINGS_SRC

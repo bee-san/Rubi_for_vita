@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include "../core/json.h"
-#include "bearssl.h"
 #include "preferences.h"
 
 #define JSON_MAX (64u * 1024u) /* the interface's limit for a JSON file */
@@ -122,26 +121,7 @@ void vjo_anki_request_config(VjoAnkiRequestConfig *c, const char *text, size_t l
 
 uint64_t vjo_anki_request_hash(const VjoAnkiRequestConfig *c)
 {
-    const char *names[2] = {c->field, c->reading};
-    br_sha256_context h;
-    uint8_t d[32], x = 3;
-    uint64_t v = 0;
-    br_sha256_init(&h);
-    br_sha256_update(&h, &x, 1);
-    for (int i = 0; i < 2; i++) {
-        if (i) {
-            x = 0x1F;
-            br_sha256_update(&h, &x, 1);
-        }
-        for (const char *p = names[i]; *p; p++) {
-            x = (uint8_t)lower((unsigned char)*p);
-            br_sha256_update(&h, &x, 1);
-        }
-    }
-    br_sha256_out(&h, d);
-    for (int i = 0; i < 8; i++)
-        v = v << 8 | d[i];
-    return v;
+    return vjo_anki_index_request_hash(c->field, c->reading);
 }
 
 /* ---------------- files ---------------- */

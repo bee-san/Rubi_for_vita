@@ -62,6 +62,12 @@ typedef struct {
  * holding one is read as furigana or a sound tag); a reading that is empty or holds one gives no pair
  * key. No allocation; two SHA-256 runs. */
 int vjo_anki_index_keys(const char *form, const char *reading, VjoAnkiIndexKeys *k);
+/* The hash of Rubi's request {"v": 1, "notetypes": [], "key": field, "reading": reading} ("" for no
+ * reading field), as Anki for Vita writes it into the index's header (its docs/duplicate-index.md):
+ * BE64(SHA-256(0x03 || lower(field) || 0x1F || lower(reading))), lower() folding ASCII A-Z. The Shell
+ * (core/config.c, VjoConfig anki_duplicate_request) and the Rubi app (settings/anki_index_request.c)
+ * both compute it here. */
+uint64_t vjo_anki_index_request_hash(const char *field, const char *reading);
 /* Looks the keys up in the index at path, else at old_path, opened with p->file_open: the header
  * (128 B), two directory words and the word's bucket (at most 512 B) read, then closed. The header's
  * request hash must be request (else VJO_ANKI_INDEX_OTHER, after the header only). A bucket is
