@@ -63,9 +63,10 @@ prepared lookups; everything else new since 0.7.12 came in the test builds below
 ### Changed
 
 - Renamed to **Rubi** (Rubi for Vita; [#189], [what changed](docs/rename-rubi.md)). The app was
-  **Overlay** in the 0.8.0 test builds and **JP Overlay Settings** before (0.7.12 and older). Its
-  title ID (`VJOSET001`) stays, so the new VPK installs over either and keeps your settings, games
-  and Anki cards. The data folders, the plugin files and the Anki deck keep their old names.
+  **Overlay** in the published 0.8.0 test builds and **JP Overlay Settings** before (0.7.12 and
+  older). Its title ID (`VJOSET001`) stays, so the new VPK installs over either and keeps your
+  settings, games and Anki cards. The data folders, the plugin files and the Anki deck keep their old
+  names.
 - The main download is the normal build, `Rubi-0.8.0.vpk`; `Rubi-0.8.0-debug.vpk` is the test
   builds' build, with the full log and the self-test. Each is also a zip, for the computer installer.
 - The README became a short front page, and the old README is now the guide, `docs/guide.md`
@@ -83,7 +84,8 @@ prepared lookups; everything else new since 0.7.12 came in the test builds below
 ### On the console
 
 - Its release notes say its lookup changes ([#203]) were not installed or timed on a console. Its
-  fixes ran in test.4.1–4.3 (below).
+  fixes ran in test.4.1–4.3 (below), except the Install page's `Restart the Vita first`, whose case no
+  console run has hit yet ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)).
 
 ## 0.8.0-test.5 - cancelled
 
@@ -96,7 +98,8 @@ as steps of their own. It was cancelled when 0.8.0 shipped, and no test.5 was pu
 ## 0.8.0-test.4.3 - 2026-10-17
 
 Not published: `main` at `b622c18`, installed on the owner's Vita
-([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)).
+([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)). Its app is already named **Rubi**
+([#189]).
 
 ### Fixed
 
@@ -142,7 +145,7 @@ stages traced in `kernel.txt`, and a give-up after 8 s (`7f40e7f`).
 
 ## [0.8.0-test.4] - 2026-10-17
 
-The last test build before the release, and the first made to be installed as one VPK
+The last published test build before the release, and the first made to be installed as one VPK
 (`VitaJPOverlay-0.8.0-test.4-debug.vpk`): `main` at `3ce0f47`, API 24. It still has the old names:
 the app is **Overlay**. Install steps:
 [#191](https://github.com/bee-san/Rubi_for_vita/issues/191); the owner's report:
@@ -156,8 +159,8 @@ list.
   updates, checks and repairs, and uninstalls ([#158] and the PRs after it).
 - VOCR5 as the three model sizes, Small, Normal (the default) and Large, with the 1 MB character
   language model ([#167]).
-- Bee's Ultimate Dictionary ([#153]), with Jiten's frequency rank on every entry ([#127]) and faster
-  lookups ([#140], [#143]).
+- Bee's Ultimate Dictionary ([#153]), with Jiten's frequency ranks (53.52% of its entries are ranked;
+  the rest show `unranked`) ([#127]), and fewer file reads per lookup ([#140]; host).
 - Anki cards keep a screenshot of the game, made in the game's own process ([#150], [#164], [#174]).
 - **Read text** (Automatically, or Only when I press L + R) and **Speed boost while reading
   (444 MHz)** in the app ([#146]).
@@ -183,7 +186,8 @@ list.
 
 ### Fixed
 
-- The app opens with no game running ([#181]).
+- Two possible causes of test.3's app not opening with no game running are handled, and the app logs
+  how its start went ([#181]).
 - No `Recognizing…` left on screen after a cancelled lookup ([#95], [#179]); config warnings never quote
   a value ([#185]); the subtitle strip after a new region or a game switch ([#182], [#186]).
 
@@ -197,8 +201,9 @@ The owner's PCH-1001 with CLANNAD, 2026-10-17:
   an Uninstall did not change that; the lead, unconfirmed, is that it could not read its own folder
   until a restart. The install was finished by hand over FTP (since test.4.1 the page says `Restart
   the Vita first` in that case).
-- After the restart the app opened from LiveArea with no game running, and Check and repair wrote
-  nothing.
+- After the restart the app opened from LiveArea with no game running, though neither case [#181]
+  handles came up, so why test.3's app did not open is still unexplained
+  ([#191](https://github.com/bee-san/Rubi_for_vita/issues/191)); Check and repair wrote nothing.
 - The kernel plugin loaded the OCR worker into CLANNAD with no taiHEN line for it.
 - VOCR5 Normal took 2.61 ms per CTC frame and Large 4.98–5.10 ms, both at 444 MHz (over the
   analyser's 10 and 8 jobs; Normal ran 15 jobs, Large 11). Large never fell back to a smaller size:
@@ -487,7 +492,6 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#133]: https://github.com/bee-san/Rubi_for_vita/pull/133
 [#140]: https://github.com/bee-san/Rubi_for_vita/pull/140
 [#141]: https://github.com/bee-san/Rubi_for_vita/pull/141
-[#143]: https://github.com/bee-san/Rubi_for_vita/pull/143
 [#145]: https://github.com/bee-san/Rubi_for_vita/pull/145
 [#146]: https://github.com/bee-san/Rubi_for_vita/pull/146
 [#147]: https://github.com/bee-san/Rubi_for_vita/pull/147
