@@ -607,6 +607,10 @@ static void an_old_or_damaged_interface_writes_nothing(void)
         "{\"v\":1,\"interfaces\":[1]",
         "",
         "not json at all",
+        "{\"v\":2,\"interfaces\":[1]}",          /* another version's: an app Rubi cannot use */
+        "{\"interfaces\":[1]}",                    /* no version */
+        "{\"v\":1,\"interfaces\":[1],\"v\":1}",   /* a key twice */
+        "{\"v\":1,\"interfaces\":[1],\"app\":\"\\ud800\"}", /* a lone surrogate */
     };
     VjoAfvSendResult r;
     char msg[400], id[VJO_QUEUE_ID_SIZE];
@@ -1135,6 +1139,15 @@ static void malformed_results_are_ignored(void)
         "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true",
         "{\"v\":1,\"id\":\"%s\\u0000\",\"status\":\"added\",\"synced\":true}",
         "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"pad\":\"%4200s\"}",
+        /* the interface's rules for every JSON file: a key twice in a nested object, an escaped lone
+         * surrogate (high, low), a NUL escaped in a key, objects nested 65 deep */
+        "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"x\":{\"a\":1,\"a\":2}}",
+        "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"message\":\"\\ud83d\"}",
+        "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"message\":\"\\ude00x\"}",
+        "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"k\\u0000\":1}",
+        "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"d\":"
+        "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+        "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"st\\u0061tus\":\"rejected\"}",
     };
     char id[VJO_QUEUE_ID_SIZE];
     for (unsigned k = 0; k < sizeof(bad) / sizeof(bad[0]); k++) {
@@ -1148,6 +1161,20 @@ static void malformed_results_are_ignored(void)
                     bad[k]);
         TEST_CHECK_(queued(id) && has_result(id), "result %u changed something", k);
         TEST_CHECK(strstr(logs, "not a version-1 result for its card, ignored") != NULL);
+    }
+    /* a surrogate pair, keys of other objects alike, 64 levels: all as the interface has them */
+    {
+        VjoAfvResults r;
+        reset();
+        installed("{\"v\":1,\"interfaces\":[1]}");
+        queue_card(&cat, id);
+        result(id, "", "{\"v\":1,\"id\":\"%s\",\"status\":\"rejected\",\"synced\":false,\"message\":\"\\ud83d\\ude00 "
+                       "x\",\"a\":{\"v\":1,\"id\":2},\"b\":[{\"a\":1},{\"a\":1}],\"d\":"
+                       "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+               id);
+        TEST_ASSERT(results_now(&r) == VJO_OK);
+        TEST_CHECK_(r.rejected == 1 && !r.malformed && !strcmp(r.message, "\xF0\x9F\x98\x80 x"), "%d %d '%s'", r.rejected,
+                    r.malformed, r.message);
     }
     /* another version's: absent (left alone, not counted) */
     {

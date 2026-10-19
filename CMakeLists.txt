@@ -337,7 +337,8 @@ target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused
 add_test(NAME shell_history COMMAND vjo-shell-history-tests)
 # The Rubi app's request for Anki for Vita's duplicate index (settings/anki_index_request.c): what it
 # writes and when, a rename that refuses an existing name, every call failing in turn.
-add_executable(vjo-settings-anki-index-tests host/tests/test_settings_anki_index.c settings/anki_index_request.c)
+add_executable(vjo-settings-anki-index-tests host/tests/test_settings_anki_index.c settings/anki_index_request.c
+  settings/afv_json.c)
 target_include_directories(vjo-settings-anki-index-tests PRIVATE third_party/acutest/include host/tests/vita_stubs host/tests)
 target_compile_options(vjo-settings-anki-index-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-settings-anki-index-tests vjo_core)
@@ -681,7 +682,7 @@ add_test(NAME settings_install COMMAND vjo-settings-install-tests)
 # Anki for Vita (the real settings/anki_afv.c, #220) on a temporary memory card, on its worker thread, run
 # when the test says. The harnesses that drive main.c keep settings_stubs/anki_page_stub.c.
 add_executable(vjo-settings-anki-tests host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
-  settings/anki_afv.c settings/anki_index_request.c settings/preferences.c shell/files.c)
+  settings/anki_afv.c settings/afv_json.c settings/anki_index_request.c settings/preferences.c shell/files.c)
 target_include_directories(vjo-settings-anki-tests PRIVATE third_party/acutest/include host/tests/settings_stubs
   host/tests/install_stubs host/tests/vita_stubs)
 target_compile_definitions(vjo-settings-anki-tests PRIVATE VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS)
@@ -693,7 +694,7 @@ add_test(NAME settings_anki COMMAND vjo-settings-anki-tests)
 # Vita's does and failures injected at every write, flush, close, rename and sync; `--write DIR` writes
 # the queue's cards both as a package and into an inbox for host/tests/test_afv.py, which compares
 # every note's GUID, fields, tags, media and note type with the package's.
-add_executable(vjo-afv-tests host/tests/test_afv.c settings/anki_afv.c settings/anki_export.c
+add_executable(vjo-afv-tests host/tests/test_afv.c settings/anki_afv.c settings/afv_json.c settings/anki_export.c
   settings/anki_index_request.c)
 target_include_directories(vjo-afv-tests PRIVATE third_party/acutest/include host/tests/vita_stubs host/tests)
 target_compile_options(vjo-afv-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)

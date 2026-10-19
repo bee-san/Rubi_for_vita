@@ -365,7 +365,7 @@ include(${ROOT}/cmake/SettingsPNG.cmake)
 # network.
 set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c ${ROOT}/settings/anki_index_request.c
-  ${ROOT}/settings/anki_afv.c ${ROOT}/core/anki_index_find.c
+  ${ROOT}/settings/anki_afv.c ${ROOT}/settings/afv_json.c ${ROOT}/core/anki_index_find.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 set(VJO_SETTINGS_SRC

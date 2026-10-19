@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "../core/json.h"
+#include "afv_json.h"
 #include "preferences.h"
 
 #define JSON_MAX (64u * 1024u) /* the interface's limit for a JSON file */
@@ -172,6 +173,7 @@ int vjo_afv_speaks_1(VjoArena *a)
     size_t mark = vjo_arena_mark(a), len = 0;
     char *text = NULL;
     VjoJson j;
+    int64_t v = 0;
     int rc, r, ok = 0, arr;
     /* interface.json, else the .old a writer stopped between its renames leaves (docs/interface.md);
      * neither: retried 3 times 100 ms apart, as the interface asks, but only when Anki for Vita's
@@ -184,7 +186,9 @@ int vjo_afv_speaks_1(VjoArena *a)
             break;
         sceKernelDelayThread(100 * 1000);
     }
-    if (r == 0 && vjo_json_parse(a, text, len, &j) == 0 && j.n > 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
+    /* (the interface's rules for a JSON file, and its "v" 1: one of another version is an app Rubi
+     * cannot use, docs/interface.md "Versions") */
+    if (r == 0 && vjo_afv_json_strict(a, text, len, JSON_MAX, &j) == 0 && vjo_afv_json_version(&j, &v) == 0 && v == 1 &&
         (arr = vjo_json_obj_get(&j, 0, "interfaces")) >= 0 && vjo_json_is_type(&j, arr, JSMN_ARRAY)) {
         for (int k = 0, e; !ok && (e = vjo_json_arr_get(&j, arr, k)) >= 0; k++) /* the number 1, as written */
             ok = vjo_json_is_type(&j, e, JSMN_PRIMITIVE) && j.t[e].end - j.t[e].start == 1 && j.js[j.t[e].start] == '1';

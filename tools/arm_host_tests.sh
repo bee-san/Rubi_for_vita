@@ -120,7 +120,7 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 # The Rubi app's hand-over to Anki for Vita (settings/anki_afv.c, #220): its notes, the 64-bit times
 # and 32-bit sizes on the Vita's CPU, and the export's own steps it reuses (settings/anki_export.c).
-AFV=(host/tests/test_afv.c settings/anki_afv.c settings/anki_export.c settings/anki_index_request.c
+AFV=(host/tests/test_afv.c settings/anki_afv.c settings/afv_json.c settings/anki_export.c settings/anki_index_request.c
      core/anki_index_find.c "${APKG[@]:1}")
 build afv -I third_party/bearssl/inc -I "$BS" -I host/tests "${AFV[@]}"
 # Anki for Vita's duplicate index as the overlay reads it (core/anki_index_find.c): 32-bit offsets and the

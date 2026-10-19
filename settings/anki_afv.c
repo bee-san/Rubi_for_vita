@@ -15,6 +15,7 @@
 #include "../core/errors.h"
 #include "../core/json.h"
 #include "../core/lapis.h"
+#include "afv_json.h"
 #include "anki_index_request.h" /* vjo_afv_speaks_1: interface.json lists version 1 */
 
 void vjo_log(const char *fmt, ...); /* the app's log.txt lines (settings/applog.c) */
@@ -218,90 +219,11 @@ static int digits(const VjoJson *j, int t, int64_t *out)
     return 0;
 }
 
-/* Valid UTF-8 (RFC 3629: no overlong form, no surrogate, nothing above U+10FFFF), the interface's
- * rule for every file. */
-static int utf8_valid(const char *p, size_t n)
-{
-    const unsigned char *s = (const unsigned char *)p;
-    size_t i = 0;
-    while (i < n) {
-        unsigned c = s[i], need, min, cp;
-        if (c < 0x80) {
-            i++;
-            continue;
-        }
-        if (c >= 0xC2 && c <= 0xDF)
-            need = 1, min = 0x80, cp = c & 0x1F;
-        else if (c >= 0xE0 && c <= 0xEF)
-            need = 2, min = 0x800, cp = c & 0x0F;
-        else if (c >= 0xF0 && c <= 0xF4)
-            need = 3, min = 0x10000, cp = c & 0x07;
-        else
-            return 0;
-        if (n - i <= need)
-            return 0;
-        for (unsigned k = 1; k <= need; k++) {
-            if ((s[i + k] & 0xC0) != 0x80)
-                return 0;
-            cp = cp << 6 | (s[i + k] & 0x3F);
-        }
-        if (cp < min || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
-            return 0;
-        i += need + 1;
-    }
-    return 1;
-}
-
-/* A key given twice in object obj (the interface: such a file is malformed); compared as written. */
-static int duplicate_keys(const VjoJson *j, int obj)
-{
-    int k = obj + 1;
-    for (int a = 0; a < j->t[obj].size; a++, k = vjo_json_skip(j, k + 1)) {
-        int m = vjo_json_skip(j, k + 1), na, nb;
-        const char *sa = token_text(j, k, &na);
-        for (int b = a + 1; b < j->t[obj].size; b++, m = vjo_json_skip(j, m + 1)) {
-            const char *sb = token_text(j, m, &nb);
-            if (na == nb && !memcmp(sa, sb, (size_t)na))
-                return 1;
-        }
-    }
-    return 0;
-}
-
-/* A string token (a key or a value) that holds U+0000, escaped (the interface: a file that holds a
- * NUL anywhere is malformed; written as such it is refused before the parse). */
-static int escaped_nul(const VjoJson *j)
-{
-    for (int t = 0; t < j->n; t++) {
-        int n;
-        const char *s;
-        if (j->t[t].type != JSMN_STRING)
-            continue;
-        s = token_text(j, t, &n);
-        for (int i = 0; i + 1 < n; i++)
-            if (s[i] == '\\') {
-                if (s[i + 1] == 'u' && i + 5 < n && !memcmp(s + i + 2, "0000", 4))
-                    return 1;
-                i++; /* (the escaped character) */
-            }
-    }
-    return 0;
-}
-
-/* The top level an object (and nothing after it) whose "v" is the number 1, written so; valid UTF-8,
- * no NUL, no key given twice. */
+/* A JSON file of the interface (afv_json.h's rules) whose "v" is 1. */
 static int version_1(VjoArena *a, const char *json, size_t len, size_t max, VjoJson *j)
 {
-    int t, n;
-    const char *s;
-    if (!len || len > max || memchr(json, 0, len) || !utf8_valid(json, len) || vjo_json_parse(a, json, len, j) < 0 ||
-        j->n < 1 || !vjo_json_is_type(j, 0, JSMN_OBJECT) || vjo_json_skip(j, 0) != j->n || duplicate_keys(j, 0) ||
-        escaped_nul(j))
-        return 0;
-    if ((t = vjo_json_obj_get(j, 0, "v")) < 0 || !vjo_json_is_type(j, t, JSMN_PRIMITIVE))
-        return 0;
-    s = token_text(j, t, &n);
-    return n == 1 && s[0] == '1';
+    int64_t v;
+    return !vjo_afv_json_strict(a, json, len, max, j) && !vjo_afv_json_version(j, &v) && v == 1;
 }
 
 /* A string value of object 0, unescaped into a (NULL: absent or not a string). */
@@ -422,16 +344,14 @@ void vjo_afv_status_text(const VjoAfvStatus *s, int64_t now, char *out, size_t c
 
 /* ---------------- results ---------------- */
 
-/* A file whose "v" is an integer other than 1: another version of the interface's, which a client
+/* A file of the interface whose "v" is an integer other than 1: another version's, which a client
  * treats as absent (its docs/interface.md, "Versions"). */
 static int other_version(VjoArena *a, const char *json, size_t len)
 {
     size_t mark = vjo_arena_mark(a);
     VjoJson j;
     int64_t v = 1;
-    int other = len <= VJO_AFV_RESULT_MAX && !memchr(json, 0, len) && utf8_valid(json, len) &&
-                vjo_json_parse(a, json, len, &j) == 0 && j.n > 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
-                !digits(&j, vjo_json_obj_get(&j, 0, "v"), &v) && v != 1;
+    int other = !vjo_afv_json_strict(a, json, len, VJO_AFV_RESULT_MAX, &j) && !vjo_afv_json_version(&j, &v) && v != 1;
     vjo_arena_release(a, mark);
     return other;
 }
@@ -1080,18 +1000,25 @@ static int stage_card(void *ud, const char *hex)
         }
     }
     json = vjo_afv_note_json(s->a, hex, &note, jpeg ? media : NULL, vjo_afv_created(note.unix_time), &json_len);
-    if (json && !utf8_valid(json, json_len)) { /* (a record's text that is not UTF-8: the interface refuses it) */
-        vjo_log("anki for vita: %s: its text is not valid UTF-8: not handed over", hex);
-        r->unreadable++;
-        vjo_arena_release(s->a, mark);
-        return 0;
-    }
     if (!json || json_len > VJO_AFV_NOTE_MAX) {
         vjo_log("anki for vita: %s: its note is over %u KiB (or out of memory): not handed over", hex,
                 VJO_AFV_NOTE_MAX >> 10);
         r->too_large++;
         vjo_arena_release(s->a, mark);
         return 0;
+    }
+    {
+        /* the note as the app reads it: a record's text that is not valid UTF-8 never goes */
+        size_t after = vjo_arena_mark(s->a);
+        VjoJson j;
+        int bad = vjo_afv_json_strict(s->a, json, json_len, VJO_AFV_NOTE_MAX, &j) < 0;
+        vjo_arena_release(s->a, after);
+        if (bad) {
+            vjo_log("anki for vita: %s: its note is not a valid interface file (its text?): not handed over", hex);
+            r->unreadable++;
+            vjo_arena_release(s->a, mark);
+            return 0;
+        }
     }
     note_path(path, hex, 0);
     rc = write_new(path, json, json_len, 0);
