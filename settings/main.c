@@ -18,6 +18,7 @@
 #include "letter.h"
 #include "preferences.h"
 #include "psp.h"
+#include "search.h"
 #include "text_layout.h"
 #include "../core/local_dict.h"
 #include "../core/utf.h"
@@ -28,14 +29,16 @@
  * display buffer libvita2d never set (the end of main). A call fails to build. */
 #pragma GCC poison vita2d_fini
 
-#define ROWS 3
+#define ROWS 5
 #define TAB_Y 52
 #define TAB_H 48
 #define DEFAULT_Y 112
 #define DEFAULT_H 54
 #define GAMES_Y 174
-#define GAME_H 80
-#define GAME_PITCH 88
+#define GAME_H 40
+#define GAME_PITCH 44
+#define GAME_NAV_Y 398
+#define GAME_NAV_H 36
 #define OCR_Y 112
 #define OCR_H 94
 /* The OCR card: the local engine's Model size, three buttons (settings/engine.h),
@@ -103,10 +106,9 @@ static vita2d_pvf *font;
 /* Calibrated from full-width glyph advances, not PVF's nominal line height.
  * This is an em target; firmware glyph bearings/bitmap bounds can differ. */
 static float font_em = 18.0f;
-/* Icons are kept by title ID for the window: the visible rows, a page below
- * and a page above. A frame loads at most one (settings/icons.c); a game
+/* Icons are kept for the current five-game page only. A frame loads at most one; a game
  * whose icon cannot be loaded shows the placeholder until the next scan. */
-#define ICON_WINDOW (3 * ROWS)
+#define ICON_WINDOW ROWS
 typedef char icon_window_fits_the_cache[ICON_WINDOW <= VJO_ICON_SLOTS ? 1 : -1];
 static VjoIconCache icon_cache;
 static unsigned char icon_failed[VJO_GAMES_MAX];
@@ -117,7 +119,8 @@ static VjoTextLayout title_layout[VJO_GAMES_MAX];
 static unsigned char title_ready[VJO_GAMES_MAX];
 static VjoTextMemo text_memo;
 static int visible[VJO_GAMES_MAX], total, count, selected, offset, filter, truncated;
-static int scroll_direction = 1, writable = 1; /* the way the list last moved: 1 down, -1 up */
+static int writable = 1;
+static char game_query[VJO_SEARCH_BYTES];
 static char status[256];
 static VjoConfig preferences;
 static int page, preference_selected, preferences_writable;
@@ -292,50 +295,39 @@ static vita2d_texture *load_icon(const char *path)
     return texture;
 }
 
-/* Each game's title in two rows of 620 pixels, laid out on first use. */
+/* Compact cards: one title line; the ID has its own line below it. */
 static const VjoTextLayout *title_rows(int game)
 {
     if (!title_ready[game]) {
-        vjo_text_layout(library[game].title, 620, 26, 2, text_width, &title_layout[game]);
+        vjo_text_layout(library[game].title, 650, 22, 1, text_width, &title_layout[game]);
         title_ready[game] = 1;
     }
     return &title_layout[game];
 }
 
-/* The window's library entries, most wanted first: the visible rows, then
- * the page the list last moved towards, then the other, nearest row first. */
+/* The current page only: no off-page icon reads or title layout. */
 static int icon_window(int out[ICON_WINDOW])
 {
     int n = 0;
     for (int r = 0; r < ROWS && offset + r < count; r++) out[n++] = visible[offset + r];
-    for (int side = 0; side < 2; side++) {
-        int down = (side == 0) == (scroll_direction > 0);
-        for (int r = 0; r < ROWS; r++) {
-            int i = down ? offset + ROWS + r : offset - 1 - r;
-            if (i >= 0 && i < count) out[n++] = visible[i];
-        }
-    }
     return n;
 }
 
-/* A Games frame's work before it draws: at most one icon load, for the first
- * window entry without one. When the cache is full, the least recently used
- * icon outside the window is freed first, after the GPU has finished with
- * it. With no icon to load, one title of the window is laid out instead. */
+/* Release off-page icons after the GPU is done, then load at most one visible icon.
+ * Only the current page has textures or title-layout work. */
 static void prepare_window(void)
 {
     int window[ICON_WINDOW], n = icon_window(window);
     const char *keep[ICON_WINDOW];
     for (int i = 0; i < n; i++) keep[i] = library[window[i]].id;
+    void *old = vjo_icon_cache_evict(&icon_cache, keep, n);
+    if (old) {
+        vita2d_wait_rendering_done();
+        do { vita2d_free_texture(old); } while ((old = vjo_icon_cache_evict(&icon_cache, keep, n)));
+    }
     for (int i = 0; i < n; i++) {
         const VjoInstalledGame *g = &library[window[i]];
         if (icon_failed[window[i]] || vjo_icon_cache_get(&icon_cache, g->id)) continue;
-        if (vjo_icon_cache_count(&icon_cache) == VJO_ICON_SLOTS) {
-            void *old = vjo_icon_cache_evict(&icon_cache, keep, n);
-            if (!old) return; /* not reached: the window fits the cache */
-            vita2d_wait_rendering_done();
-            vita2d_free_texture(old);
-        }
         vita2d_texture *texture = load_icon(g->icon);
         if (!texture) icon_failed[window[i]] = 1;
         else if (vjo_icon_cache_put(&icon_cache, g->id, texture) < 0)
@@ -364,12 +356,11 @@ static void rebuild(void)
     count = 0;
     for (int i = 0; i < total; i++) {
         int on = row_on(&library[i]);
-        if (!filter || (filter == 1 && on) || (filter == 2 && !on)) visible[count++] = i;
+        if ((!filter || (filter == 1 && on) || (filter == 2 && !on)) &&
+            vjo_search_matches(library[i].title, library[i].id, game_query)) visible[count++] = i;
     }
     if (selected >= count) selected = count ? count - 1 : 0;
-    if (selected < offset) offset = selected;
-    if (selected >= offset + ROWS) offset = selected - ROWS + 1;
-    if (!count) offset = 0;
+    offset = selected / ROWS * ROWS;
 }
 
 static void save(void)
@@ -464,7 +455,6 @@ static void change_filter(void)
 {
     filter = (filter + 1) % 3;
     selected = offset = 0;
-    scroll_direction = 1;
     rebuild();
 }
 
@@ -486,27 +476,23 @@ static void move(int delta)
     selected += delta;
     if (selected < 0) selected = 0;
     if (selected >= count) selected = count - 1;
-    if (selected < offset) offset = selected;
-    if (selected >= offset + ROWS) offset = selected - ROWS + 1;
-    scroll_direction = delta < 0 ? -1 : 1;
+    offset = selected / ROWS * ROWS;
 }
 
-/* L/R: the view moves a page and the selection keeps its row. Where the view
- * cannot move further, the selection goes to the first or last game. */
+/* L/R: non-overlapping five-game pages, keeping the selected row when it exists.
+ * At a boundary, select the first/last game. The final page can have fewer than five. */
 static void page_jump(int direction)
 {
     if (!count) return;
-    int last = count > ROWS ? count - ROWS : 0, top = offset + direction * ROWS;
+    int last = (count - 1) / ROWS * ROWS, top = offset + direction * ROWS;
     if (top > last) top = last;
     if (top < 0) top = 0;
-    scroll_direction = direction;
     if (direction > 0 ? top <= offset : top >= offset) {
         selected = direction > 0 ? count - 1 : 0;
-        if (selected < offset) offset = selected;
-        if (selected >= offset + ROWS) offset = selected - ROWS + 1;
         return;
     }
     selected += top - offset;
+    if (selected >= count) selected = count - 1;
     offset = top;
 }
 
@@ -514,14 +500,14 @@ static void page_jump(int direction)
 static uint32_t initial_at(int index) { return vjo_title_letter(library[visible[index]].title); }
 
 /* Left/Right: the first game of the previous or next letter (the catalog
- * lists each letter's games together, settings/letter.c), shown at the top.
+ * lists each letter's games together, settings/letter.c), in its five-game page.
  * Left inside a letter goes to that letter's first game; Right in the last
  * letter goes to the last game. */
 static void letter_jump(int direction)
 {
     if (!count) return;
     uint32_t letter = initial_at(selected);
-    int i = selected, last = count > ROWS ? count - ROWS : 0;
+    int i = selected;
     if (direction > 0) {
         while (i < count && initial_at(i) == letter) i++;
         if (i == count) i = count - 1;
@@ -532,9 +518,8 @@ static void letter_jump(int direction)
             while (i > 0 && initial_at(i - 1) == letter) i--;
         }
     }
-    scroll_direction = direction;
     selected = i;
-    offset = selected < last ? selected : last;
+    offset = selected / ROWS * ROWS;
 }
 
 /* A list key just pressed, or held long enough to repeat: one move a frame. */
@@ -963,6 +948,12 @@ static void touch_preference(int x, int y)
 /* The room kept at the right of the Games page's hints for "512/512". */
 #define COUNTER_W 140
 
+static void game_nav_button(int x, int width, const char *label, int active)
+{
+    vita2d_draw_rectangle(x, GAME_NAV_Y, width, GAME_NAV_H, CARD);
+    centered_text(x, GAME_NAV_Y + 24, width, active ? WHITE : DIM, 20, label);
+}
+
 static void draw(void)
 {
     const char *filters[] = {"All games", "Enabled", "Disabled"};
@@ -984,25 +975,35 @@ static void draw(void)
         int on = row_on(g);
         vita2d_texture *icon = vjo_icon_cache_get(&icon_cache, g->id);
         focus_card(y, GAME_H, index == selected);
-        if (icon) vita2d_draw_texture_scale(icon, 38, y + 8,
-            64.0f / vita2d_texture_get_width(icon), 64.0f / vita2d_texture_get_height(icon));
+        if (icon) vita2d_draw_texture_scale(icon, 38, y + 4,
+            32.0f / vita2d_texture_get_width(icon), 32.0f / vita2d_texture_get_height(icon));
         else {
-            vita2d_draw_rectangle(38, y + 8, 64, 64, SELECTED);
-            centered_text(38, y + 47, 64, ACCENT, 26, "JP");
+            vita2d_draw_rectangle(38, y + 4, 32, 32, SELECTED);
+            centered_text(38, y + 25, 32, ACCENT, 18, "JP");
         }
         /* Titles and IDs have separate columns, including on two-line titles. */
         vita2d_enable_clipping();
-        vita2d_set_clip_rectangle(120, y + 4, 748, y + GAME_H - 4);
-        draw_rows(120, y + 30, WHITE, 26, 32, g->title, title_rows(visible[index]));
+        vita2d_set_clip_rectangle(90, y + 2, 748, y + GAME_H - 2);
+        draw_rows(90, y + 21, WHITE, 22, 24, g->title, title_rows(visible[index]));
         vita2d_disable_clipping();
-        badge(788, y + 7, 128, 38, !writable ? "--" : on ? "ON" : "OFF", writable && on);
+        badge(788, y + 5, 128, 30, !writable ? "--" : on ? "ON" : "OFF", writable && on);
         /* PSP games: the tag. */
         if (psp_row(g))
-            text(920 - text_width(24, g->id) - 12 - text_width(24, "PSP"), y + 70, ACCENT, 24, "PSP");
-        text(920 - text_width(24, g->id), y + 70, DIM, 24, g->id);
+            text(260, y + 36, ACCENT, 16, "PSP");
+        text(90, y + 36, DIM, 16, g->id);
     }
     if (!count) wrapped_text(42, GAMES_Y + 42, 870, WHITE, 28, 34, 2,
-                             "No games in this filter. Press Square to change it.");
+                             game_query[0] ? "No matching games. Change or clear the search below."
+                                           : "No games in this filter. Press Square to change it.");
+    vita2d_draw_rectangle(24, GAME_NAV_Y, 420, GAME_NAV_H, CARD);
+    wrapped_text(36, GAME_NAV_Y + 24, 396, WHITE, 20, 24, 1,
+                 game_query[0] ? game_query : "L+R: search by title or ID");
+    if (game_query[0]) game_nav_button(452, 92, "Clear", 1);
+    game_nav_button(556, 112, "L: Prev", offset > 0);
+    char pages[32];
+    snprintf(pages, sizeof(pages), "Page %d/%d", count ? offset / ROWS + 1 : 0, (count + ROWS - 1) / ROWS);
+    centered_text(676, GAME_NAV_Y + 24, 124, DIM, 18, pages);
+    game_nav_button(808, 128, "R: Next", offset + ROWS < count);
     if (count) {
         /* The counter changes on every move; drawn apart, the hints' layout is kept. */
         char counter[16];
@@ -1013,6 +1014,39 @@ static void draw(void)
     } else footer(status, status_error, games_empty_hints);
     vita2d_end_drawing();
     vita2d_swap_buffers();
+}
+
+/* The native keyboard owns input until it closes: no list toggles, tab changes or app exit.
+ * The IME's buffers are bounded stack memory in this app; icons stay unloaded during entry. */
+static void draw_search(void)
+{
+    vita2d_start_drawing();
+    vita2d_clear_screen();
+    header();
+    text(42, 148, WHITE, 24, "Search games by title or title ID");
+    text(42, 184, DIM, 22, "Leave the search empty to show all games.");
+    vita2d_end_drawing();
+    vita2d_common_dialog_update();
+    vita2d_swap_buffers();
+    sceDisplayWaitVblankStart();
+}
+
+static void search_games(VjoStickScroll *stick, uint32_t *previous, int *touched, uint64_t *repeat_at)
+{
+    int rc = vjo_search_dialog(game_query, draw_search);
+    if (rc > 0) {
+        selected = offset = 0;
+        rebuild();
+    } else if (rc < 0) {
+        status_error = 1;
+        snprintf(status, sizeof(status), "Could not open search (0x%08X). Your search is unchanged.", (unsigned)rc);
+        vjo_log("games: search failed 0x%08X", (unsigned)rc);
+    }
+    /* Consume the keyboard's closing button/touch, including Japanese enter/cancel assignments. */
+    *previous = UINT32_MAX; /* first sample after the dialog cannot be a fresh press */
+    *touched = 1;
+    *repeat_at = sceKernelGetProcessTimeWide() + 350000;
+    vjo_stick_latch(stick);
 }
 
 /* ---- what the app ran with, in log.txt (log_file = on, the default) ---- */
@@ -1118,6 +1152,7 @@ int main(void)
     uint32_t previous = 0;
     uint64_t repeat_at = 0;
     int touched = 0;
+    int search_held = 0;
     VjoStickScroll stick_state;
     memset(&stick_state, 0, sizeof(stick_state));
     for (;;) {
@@ -1140,6 +1175,15 @@ int main(void)
                                             SCE_CTRL_RTRIGGER | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
         /* An install runs: the app neither leaves nor changes page (install_page.h). */
         int installing = vjo_install_page_busy();
+        uint32_t triggers = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER;
+        if (!page && (pad.buttons & triggers) == triggers) {
+            direction = 0; /* L+R opens search once, never a page jump or a repeated dialog. */
+            if (!search_held) {
+                search_held = 1;
+                search_games(&stick_state, &previous, &touched, &repeat_at);
+                continue;
+            }
+        } else search_held = 0;
         if ((pressed & buttons.cancel) && !(page == 2 && vjo_anki_page_busy()) && !installing) break;
         if ((pressed & SCE_CTRL_SELECT) && !installing) {
             page = (page + 1) % PAGES;
@@ -1197,6 +1241,18 @@ int main(void)
             else if (page == 1 && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
                 touch_preference(x, y); /* the OCR & lookup page's cards */
             else if (page) { /* no game actions on the OCR page */ }
+            else if (y >= GAME_NAV_Y && y < GAME_NAV_Y + GAME_NAV_H) {
+                if (x >= 24 && x < 444) {
+                    search_games(&stick_state, &previous, &touched, &repeat_at);
+                    search_held = 1;
+                    continue;
+                } else if (x >= 452 && x < 544 && game_query[0]) {
+                    game_query[0] = 0;
+                    selected = offset = 0;
+                    rebuild();
+                } else if (x >= 556 && x < 668) page_jump(-1);
+                else if (x >= 808 && x < 936) page_jump(1);
+            }
             else if (x >= 24 && x < 560 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) toggle_default();
             else if (x >= 572 && x < 936 && y >= DEFAULT_Y && y < DEFAULT_Y + DEFAULT_H) change_filter();
             else if (x >= 24 && x < 936 && y >= GAMES_Y && y < GAMES_Y + ROWS * GAME_PITCH) {

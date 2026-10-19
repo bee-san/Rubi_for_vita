@@ -46,10 +46,10 @@ GRAPHICS_IMPORTS = ("sceGxmVshInitialize", "sceSharedFbGetInfo")
 MODULE_INFO_SIZE = 0x5C       # sce_module_info_raw (src/sce-elf-defs.h)
 # What the app holds besides its heap and its segments, by source (docs/vita-memory.md section
 # 5.4; estimates, not measured on a console): libvita2d a8f15ab's GXM rings, depth and stencil,
-# shader patcher, index and clear buffers, parameter buffer and pool; at most 9 icon textures of
+# shader patcher, index and clear buffers, parameter buffer and pool; at most 5 icon textures of
 # 256 KiB (settings/icons.h); the 512 x 512 glyph atlas; the main thread's default 256 KiB stack
 # and the Anki worker's 128 KiB (settings/anki_page.c).
-FIXED = {"libvita2d": 10_424_320, "icons": 9 * 256 * 1024, "glyph_atlas": 512 * 512,
+FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024, "glyph_atlas": 512 * 512,
          "stacks": 256 * 1024 + 128 * 1024}
 
 

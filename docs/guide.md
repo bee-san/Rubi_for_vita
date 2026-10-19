@@ -297,14 +297,14 @@ not tested yet.
 
 ## Per-game settings
 
-The **Rubi** app shows three large game cards at a time, with wrapped
-titles, visible IDs and clear ON/OFF badges. Games are listed by letter (#,
+The **Rubi** app shows five games per page, with compact titles, visible
+IDs and ON/OFF badges. The last page may have fewer games. Games are listed by letter (#,
 A–Z, kana by row, then other characters), alphabetically within it, capital
 and small letters together. Tap the **Games**, **OCR & lookup**
 or **Anki** tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
-Icons load one per frame, the cards on screen first, and stay loaded for those
-cards and a page either side, so scrolling back does not reload them; a card
+Icons load one per frame for the current page only, with at most five textures
+kept. Changing pages releases the previous page's icons; a card
 shows **JP** until its icon is loaded, or for good when the icon is missing or
 unreadable ([details and memory](settings-readability.md#the-games-list)).
 
@@ -313,6 +313,8 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Up / Down | Select a game (held: repeats) |
 | Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, after a sixth of a second 60 rows a second, at whatever rate the app draws; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup and Anki pages, where it stops at the first and last card while Up / Down wrap round |
 | L / R | Page up / page down; the selection keeps its row (held: repeats) |
+| L + R together, or touch the search field | Open the Vita keyboard and search all indexed games by title or title ID. Latin matching ignores case; Japanese text is matched as entered. The Enabled/Disabled filter still applies. Cancel keeps the current search; accept an empty query or touch Clear to show all games again |
+| Touch Prev / Next | Change the five-game page; the page number is shown between them |
 | Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
 | Enter or touch a game | Toggle OCR and overlay input for that game |
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |

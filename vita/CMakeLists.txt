@@ -360,7 +360,7 @@ set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 set(VJO_SETTINGS_SRC
   ${ROOT}/settings/no_net.c ${ROOT}/settings/main.c ${ROOT}/settings/catalog.c ${ROOT}/settings/psp.c ${ROOT}/settings/preferences.c ${ROOT}/settings/engine.c
-  ${ROOT}/settings/icons.c ${ROOT}/settings/text_layout.c ${ROOT}/core/linebreak.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
+  ${ROOT}/settings/icons.c ${ROOT}/settings/search.c ${ROOT}/settings/text_layout.c ${ROOT}/core/linebreak.c ${ROOT}/settings/letter.c ${ROOT}/settings/app_check.c
   ${ROOT}/settings/applog.c
   ${ROOT}/core/games.c ${ROOT}/core/games_app.c ${ROOT}/core/sfo.c ${ROOT}/core/arena.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c
   ${ROOT}/core/taicfg.c ${ROOT}/core/payload.c ${ROOT}/settings/install.c ${ROOT}/settings/install_page.c
@@ -378,7 +378,7 @@ set_source_files_properties(${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT
 # hold it); SceProcessmgr: its auto-suspend hold (sceKernelPowerTick). Both only while an install runs.
 set(VJO_SETTINGS_LIBS
   vita2d png_static jpeg z m SceGxm_stub SceDisplay_stub SceCtrl_stub SceTouch_stub
-  ScePvf_stub ScePgf_stub SceCommonDialog_stub SceSysmodule_stub SceIofilemgr_stub
+  ScePvf_stub ScePgf_stub SceIme_stub SceCommonDialog_stub SceSysmodule_stub SceIofilemgr_stub
   SceAppMgr_stub SceAppUtil_stub SceRtc_stub SceRegistryMgr_stub SceShellSvc_stub SceProcessmgr_stub vjo_bearssl)
 add_executable(VitaJPOverlay_Settings ${VJO_SETTINGS_SRC})
 # Its version, beside its title (settings/main.c): this VJO_VERSION, and "debug" in the debug build.
