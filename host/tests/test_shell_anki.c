@@ -23,7 +23,9 @@
 #include "acutest.h"
 #undef main
 #include "test_tmpdir.h"
+#include "afv_index_writer.h"
 #include "anki.h"
+#include "anki_index.h"
 #include "json.h"
 #define VJO_TEST_MUTEX_STUBS 1
 #define VJO_TEST_THREAD_STUBS 1
@@ -371,11 +373,43 @@ static int dict_open(void *ud, const char *path, VjoFile *out)
     return -1;
 }
 
+/* Anki for Vita's duplicate index (core/anki_index.h): real files at VJO_ANKI_INDEX_PATH and its .old,
+ * opened as the Vita's local_open opens a file (shell/platform_vita.c), their opens and reads counted. */
+static int index_opens, index_failed_opens, index_reads, index_closes;
+static size_t index_read_bytes;
+static int index_read(void *ctx, uint64_t off, void *dst, size_t n)
+{
+    index_reads++;
+    index_read_bytes += n;
+    return pread((int)(intptr_t)ctx, dst, n, (off_t)off) == (ssize_t)n ? 0 : -1;
+}
+static void index_close(void *ctx)
+{
+    index_closes++;
+    close((int)(intptr_t)ctx);
+}
+static int any_open(void *ud, const char *path, VjoFile *out)
+{
+    struct stat st;
+    int fd;
+    if (strcmp(path, VJO_ANKI_INDEX_PATH) && strcmp(path, VJO_ANKI_INDEX_OLD_PATH))
+        return dict_open(ud, path, out);
+    if ((fd = open(path, O_RDONLY)) < 0 || fstat(fd, &st) < 0) {
+        if (fd >= 0)
+            close(fd);
+        index_failed_opens++;
+        return -1;
+    }
+    index_opens++;
+    *out = (VjoFile){(void *)(intptr_t)fd, (uint64_t)st.st_size, index_read, index_close, 0};
+    return 0;
+}
+
 /* The Shell's platform, for its file reads (it has nothing else: the overlay is offline). */
 void vjo_platform_vita(VjoPlatform *p)
 {
     memset(p, 0, sizeof(*p));
-    p->file_open = dict_open;
+    p->file_open = any_open;
 }
 
 #include "../../core/anki_queue.h"
@@ -625,6 +659,12 @@ static void reset(void)
     write_path[0] = last_rename[0] = '\0';
     rtc_unix_us = 1791158400007000ull;
     shot_reset();
+    mkdir(VJO_AFV_DIR, 0777);
+    mkdir(VJO_AFV_DIR "/index", 0777);
+    unlink(VJO_ANKI_INDEX_PATH);
+    unlink(VJO_ANKI_INDEX_OLD_PATH);
+    index_opens = index_failed_opens = index_reads = index_closes = 0;
+    index_read_bytes = 0;
     /* the Shell starts the mailbox before its first config load */
     TEST_ASSERT(vjo_anki_start() == 0);
     fixture();
@@ -1700,6 +1740,126 @@ static void test_no_screenshot_is_asked_for_when_off_or_without_a_game(void)
 }
 #endif
 
+/* ---------------- Anki for Vita's duplicate index (core/anki_index.h) ---------------- */
+
+/* An index of these notes at path, as Anki for Vita writes one (host/tests/afv_index_writer.h). */
+static void write_index_at(const char *path, const AfvWord *notes, int n)
+{
+    size_t size = 0;
+    uint8_t *data = afv_write(notes, n, AFV_RUBI_REQUEST_HASH, 1791158400000ull, 1791158460000ull, &size);
+    FILE *f;
+    TEST_ASSERT(data != NULL);
+    TEST_ASSERT((f = fopen(path, "wb")) != NULL);
+    TEST_ASSERT(fwrite(data, 1, size, f) == size && fclose(f) == 0);
+    free(data);
+}
+static void write_index(const AfvWord *notes, int n) { write_index_at(VJO_ANKI_INDEX_PATH, notes, n); }
+
+/* Enter on a word the index has: "Already in Anki" and the √, nothing saved, no memory, one open and
+ * three reads; a word it lacks is saved as before; the √ stays for the next Enter. */
+static void test_a_word_in_anki_is_not_saved(void)
+{
+    static const AfvWord notes[] = {{"猫", "ネコ"}, {"犬", "いぬ"}}; /* 猫's reading in katakana in the note */
+    reset();
+    write_index(notes, 2);
+    enter(0); /* 猫 (ねこ) */
+    TEST_CHECK(!strcmp(g_view.anki_status, "Already in Anki") && g_view.anki_status_kind == VJO_ANKI_STATUS_DIM);
+    TEST_MSG("%s", g_view.anki_status);
+    TEST_CHECK(g_view.anki_marks_seq == 5 && g_view.anki_mark[0] == VJO_ANKI_MARK_IN_ANKI &&
+               g_view.anki_mark[2] == VJO_ANKI_MARK_IN_ANKI && VJO_ANKI_MARK_TICKED(g_view.anki_mark[0]));
+    TEST_CHECK(heap_attempts == 0 && files_ending(".json") == 0 && mount_sync_calls == 0);
+    TEST_CHECK(index_opens == 1 && index_failed_opens == 0 && index_closes == 1 && index_reads == 3 &&
+               index_read_bytes <= 128 + 8 + 512);
+    TEST_CHECK(times_logged("anki: Anki for Vita's duplicate index read") == 1);
+    /* Enter again: the mark says it, without reading the index again */
+    enter(2);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Already in Anki") && index_opens == 1 && heap_attempts == 0);
+    /* a word the index lacks: saved, as without one */
+    enter(1); /* 好き (すき) */
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && files_ending(".json") == 1);
+    TEST_CHECK(index_opens == 2 && heap_allocs == 1 && g_view.anki_mark[1] == VJO_ANKI_MARK_QUEUED);
+    TEST_CHECK(!VJO_ANKI_MARK_TICKED(VJO_ANKI_MARK_QUEUED) && VJO_ANKI_MARK_TICKED(VJO_ANKI_MARK_ADDED));
+    TEST_CHECK(times_logged("anki: Anki for Vita's duplicate index") == 1); /* its state did not change */
+    finish();
+}
+
+/* The same form with another reading is another word; a note without a reading matches the form. */
+static void test_the_reading_decides(void)
+{
+    static const AfvWord other_reading[] = {{"猫", "びょう"}};
+    static const AfvWord no_reading[] = {{"猫", ""}};
+    reset();
+    write_index(other_reading, 1);
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && files_ending(".json") == 1);
+    finish();
+    reset();
+    write_index(no_reading, 1);
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Already in Anki") && files_ending(".json") == 0 && heap_attempts == 0);
+    finish();
+}
+
+/* No index, a damaged one, one of another version: every card saved as before, the index's state logged
+ * once (and again only when it changes); the previous index (.old) when there is no rubi.idx. */
+static void test_no_or_a_bad_index_saves_as_before(void)
+{
+    static const AfvWord notes[] = {{"猫", "ねこ"}};
+    uint8_t data[4096];
+    ssize_t n = 0;
+    int fd;
+    reset();
+    enter(0); /* no index: rubi.idx and rubi.idx.old tried */
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && index_failed_opens == 2 && index_reads == 0);
+    TEST_CHECK(times_logged("anki: Anki for Vita's duplicate index absent") == 1);
+    clear_dir(VJO_ANKI_QUEUE_DIR);
+    memset(g_view.anki_mark, 0, sizeof(g_view.anki_mark));
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && times_logged("duplicate index absent") == 1);
+    /* damaged: the magic, another version, a cut file, a byte too many */
+    write_index(notes, 1);
+    fd = open(VJO_ANKI_INDEX_PATH, O_RDONLY);
+    TEST_ASSERT(fd >= 0 && (n = read(fd, data, sizeof(data))) > 128);
+    close(fd);
+    for (int k = 0; k < 4; k++) {
+        uint8_t bad[4096];
+        size_t len = (size_t)n;
+        memcpy(bad, data, (size_t)n);
+        if (k == 0) bad[3] ^= 1;
+        if (k == 1) bad[8] = 2;
+        if (k == 2) len = (size_t)n - 1;
+        if (k == 3) bad[len++] = 0;
+        fd = open(VJO_ANKI_INDEX_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        TEST_ASSERT(fd >= 0 && write(fd, bad, len) == (ssize_t)len && close(fd) == 0);
+        clear_dir(VJO_ANKI_QUEUE_DIR);
+        memset(g_view.anki_mark, 0, sizeof(g_view.anki_mark));
+        enter(0);
+        TEST_CHECK_(!strcmp(g_view.anki_status, "Saved for Anki"), "damage %d: %s", k, g_view.anki_status);
+    }
+    TEST_CHECK(times_logged("anki: Anki for Vita's duplicate index not used (damaged, another version)") == 1);
+    /* only the previous index (an Anki for Vita publish stopped between its renames): it is read */
+    unlink(VJO_ANKI_INDEX_PATH);
+    write_index_at(VJO_ANKI_INDEX_OLD_PATH, notes, 1);
+    memset(g_view.anki_mark, 0, sizeof(g_view.anki_mark));
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Already in Anki") && times_logged("duplicate index read") == 1);
+    finish();
+}
+
+/* anki_duplicate_check = off: the index is never opened, every card saved. */
+static void test_off_reads_no_index(void)
+{
+    static const AfvWord notes[] = {{"猫", "ねこ"}};
+    reset();
+    write_index(notes, 1);
+    cfg.anki_duplicate_check = 0;
+    reconfigure();
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && index_opens == 0 && index_failed_opens == 0);
+    TEST_CHECK(!logged("duplicate index"));
+    finish();
+}
+
 TEST_LIST = {
     {"anki_off_by_default_starts_no_thread_and_allocates_nothing", test_off_by_default_allocates_nothing},
     {"enter_saves_offline_and_the_queue_survives_restart", test_enter_saves_offline},
@@ -1724,6 +1884,10 @@ TEST_LIST = {
     {"api23_a_captured_shot_finishes_after_overlay_closes", test_a_captured_shot_finishes_after_overlay_closes},
     {"api23_an_interrupted_saves_jpeg_is_replaced", test_an_interrupted_saves_jpeg_is_replaced},
     {"api23_no_screenshot_is_asked_for_when_off_or_without_a_game", test_no_screenshot_is_asked_for_when_off_or_without_a_game},
+    {"a_word_in_anki_is_not_saved", test_a_word_in_anki_is_not_saved},
+    {"the_reading_decides_a_word_in_anki", test_the_reading_decides},
+    {"no_or_a_bad_index_saves_as_before", test_no_or_a_bad_index_saves_as_before},
+    {"duplicate_check_off_reads_no_index", test_off_reads_no_index},
 #endif
     {NULL, NULL}
 };

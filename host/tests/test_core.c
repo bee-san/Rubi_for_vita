@@ -675,6 +675,16 @@ static void test_config(void)
     mining = "anki_mining = yes\n";
     vjo_config_parse(&c, mining, strlen(mining));
     TEST_CHECK(!c.anki_mining && c.n_warnings == 1);
+    /* Anki for Vita's duplicate index (#220): on by default; the Rubi app's two field names are no
+     * setting of the overlay's and give no warning */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.anki_duplicate_check == 1);
+    mining = "anki_duplicate_check = OFF\nanki_duplicate_field = Word\nanki_duplicate_reading_field = none\n";
+    vjo_config_parse(&c, mining, strlen(mining));
+    TEST_CHECK(c.anki_duplicate_check == 0 && c.n_warnings == 0);
+    mining = "anki_duplicate_check = sometimes\nanki_duplicate_checks = on\n";
+    vjo_config_parse(&c, mining, strlen(mining));
+    TEST_CHECK(c.anki_duplicate_check == 0 && c.n_warnings == 2);
     /* One engine, vocr: the engine choice is gone (core/config.h). A saved vocr
      * says nothing; a removed engine (Google Lens, the VOCR2 and Meiki trials,
      * ncnn of the host tools) says so, in any case; anything else is invalid.
@@ -823,6 +833,8 @@ static void test_config(void)
                    d.font_size_ja == 18 && d.font_size_en == 14 &&
                    d.toggle_button == VJO_TRIGGER_L_R && d.subtitle_button == VJO_TRIGGER_SELECT_R);
         TEST_CHECK(!d.anki_mining && strstr(t, "\nanki_mining = off\n") && !strstr(t, "anki_host"));
+        TEST_CHECK(d.anki_duplicate_check == 1 && strstr(t, "\nanki_duplicate_check = on\n") &&
+                   strstr(t, "\nanki_duplicate_field = Expression\nanki_duplicate_reading_field = ExpressionReading\n"));
         /* no trace of the removed online dictionaries (jpdb.io, jiten.moe) or their keys, or of
          * the removed Hachidori relay (hachidori_host, its port) */
         TEST_CHECK(!strstr(t, "jpdb") && !strstr(t, "jiten") && !strstr(t, "api_key") && !strstr(t, "furigana"));

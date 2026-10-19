@@ -104,6 +104,12 @@ typedef struct {
      * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
      * text (a hidden text box, a CG screen) returns no line. Last, as above. */
     int ocr_text_gate;        /* 0/1 */
+    /* Anki (#220): enter on a word already in the user's Anki collection says so and saves
+     * nothing, by the duplicate index the separate Anki for Vita app writes for Rubi
+     * (core/anki_index.h; on by default; without that app nothing changes). Its fields'
+     * names (anki_duplicate_field, anki_duplicate_reading_field) are the Rubi app's own
+     * (settings/anki_index_request.c), not in this struct. Last, as above. */
+    int anki_duplicate_check; /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

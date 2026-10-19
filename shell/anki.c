@@ -23,7 +23,13 @@
  * worker's: a job of its one slot (take_shot) has it read the game's frame,
  * encode the JPEG in the game's memory and write it beside the card through the
  * kernel. Here it is only a request and a result in the job's arena; no pixel
- * and no JPEG byte is ever in SceShell (AGENTS.md rule 1). */
+ * and no JPEG byte is ever in SceShell (AGENTS.md rule 1).
+ *
+ * A word already in the user's Anki collection is not saved again (anki_duplicate_check, on by
+ * default): Enter looks its dictionary form and reading up in the duplicate index that the separate
+ * Anki for Vita app writes for Rubi after each sync (core/anki_index.h, in_anki below), before any
+ * memory is taken. SceShell only reads that file: one open, three reads, no allocation. Without one
+ * (no Anki for Vita, no sync yet, a damaged file) every card is saved as before. */
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
@@ -31,6 +37,7 @@
 #include <string.h> /* strlen: shell/libc_shim.c */
 
 #include "../core/anki.h"
+#include "../core/anki_index.h"
 #include "../core/games.h"
 #include "../core/local_dict.h"
 #include "../include/vjo_ledger_budget.h"
@@ -381,26 +388,59 @@ static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
 #define take_shot NULL /* no game worker in this build: cards without a screenshot */
 #endif
 
+/* ---------------- the duplicate index (Anki for Vita's) ---------------- */
+
+/* Is the word (its keys) in the user's Anki collection, by Anki for Vita's index? A missing, damaged
+ * or other-version file is "no": the card is saved as before. The file's state is logged when it
+ * changes (the first lookup's, then absent, read or unusable). Job thread only. */
+static int index_state = 1; /* the last lookup's: VJO_ANKI_INDEX_MISSING, _BAD, or 0 (read) */
+
+static int in_anki(const VjoAnkiIndexKeys *k)
+{
+    int rc = vjo_anki_index_lookup(&plat, VJO_ANKI_INDEX_PATH, VJO_ANKI_INDEX_OLD_PATH, k), state = rc < 0 ? rc : 0;
+    if (state != index_state) {
+        index_state = state;
+        vjo_log("anki: Anki for Vita's duplicate index %s", !state ? "read" : state == VJO_ANKI_INDEX_MISSING
+                                                                   ? "absent" : "not used (damaged, another version)");
+    }
+    return rc > 0;
+}
+
 static void do_save(unsigned seq, int entry)
 {
     VjoAnkiNote note;
+    VjoAnkiIndexKeys keys;
     VjoLocalPages *pages = NULL;
     VjoQueueShot shot = {take_shot, 0};
     char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)];
-    int shown, mark_value = 0, ok = 0, rc, page = 0;
+    int shown, mark_value = 0, ok = 0, rc, page = 0, keyed;
     int64_t t0 = now_us();
 
+    sceKernelLockMutex(box_lock, 1, NULL);
+    keyed = next_cfg.anki_duplicate_check; /* (never the view lock inside this one, or the reverse) */
+    sceKernelUnlockMutex(box_lock, 1);
     /* The √ or the queued mark already says it: no memory for that. */
     vjo_view_lock();
     shown = g_view.open && g_view.list_seq == seq && g_view.list && entry >= 0 && entry < g_view.list->n_entries;
     if (shown && entry < VJO_MAX_ENTRIES && g_view.anki_marks_seq == seq)
         mark_value = g_view.anki_mark[entry];
+    if (shown && !mark_value && keyed) { /* the word's index keys: its strings are the result memory's */
+        const VjoVocab *v = g_view.list->entries[entry].vocab;
+        keyed = !vjo_anki_index_keys(v->spelling, v->reading, &keys);
+    }
     vjo_view_unlock();
     if (!shown) /* another word is shown by now */
         return;
     if (mark_value) {
-        publish(seq, mark_value == VJO_ANKI_MARK_ADDED ? "Already exported (in an .apkg)" : "Already queued",
+        publish(seq, mark_value == VJO_ANKI_MARK_ADDED ? "Already exported (in an .apkg)"
+                     : mark_value == VJO_ANKI_MARK_IN_ANKI ? "Already in Anki" : "Already queued",
                 VJO_ANKI_STATUS_DIM, -1, 0);
+        return;
+    }
+    /* In the user's Anki already (Anki for Vita's index): nothing saved, no memory taken. */
+    if (keyed && in_anki(&keys)) {
+        vjo_dlog("anki: in Anki, not saved, %d ms", (int)((now_us() - t0) / 1000));
+        publish(seq, "Already in Anki", VJO_ANKI_STATUS_DIM, entry, VJO_ANKI_MARK_IN_ANKI);
         return;
     }
     if (mem_with_settings() < 0) {

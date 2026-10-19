@@ -142,7 +142,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/textfilter.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/entries.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c
   ${ROOT}/core/client.c ${ROOT}/core/styled.c
-  ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
+  ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/anki_index_find.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
@@ -176,6 +176,7 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/app_stamp.c
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
   ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c
+  ${ROOT}/core/anki_index_find.c # Anki for Vita's duplicate index: one lookup per Enter
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
@@ -355,7 +356,7 @@ include(${ROOT}/cmake/SettingsPNG.cmake)
 # notes in an .apkg (core/apkg.c: SQLite, ZIP and the Lapis note type, core/sqlw.c, zipw.c, lapis.c),
 # made from the queue's records (core/anki_queue.c) with core/anki.c's fields. No network.
 set(VJO_SETTINGS_ANKI_SRC
-  ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
+  ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c ${ROOT}/settings/anki_index_request.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 set(VJO_SETTINGS_SRC

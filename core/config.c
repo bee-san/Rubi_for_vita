@@ -53,6 +53,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->log_file = 1; /* log.txt is on unless log_file = off */
     c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
     c->ocr_text_gate = VJO_TEXT_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Text-presence gate" */
+    c->anki_duplicate_check = 1; /* Anki for Vita's duplicate index, read when it is there (docs/anki.md) */
 }
 
 const char *vjo_config_default_text(void)
@@ -149,7 +150,13 @@ const char *vjo_config_default_text(void)
            "; queue as a Lapis .apkg file for Anki (docs/anki.md). off: enter does nothing.\n"
            "anki_mining = off\n"
            "; on: each card keeps a JPEG of the game's screen (about 60 KB) in its Picture\n"
-           "anki_screenshot = on\n";
+           "anki_screenshot = on\n"
+           "; on: with the Anki for Vita app, enter on a word already in your Anki collection\n"
+           "; says so and saves nothing (docs/anki.md); the Rubi app asks Anki for Vita to\n"
+           "; index these fields of your notes (Lapis's). off: every word is saved.\n"
+           "anki_duplicate_check = on\n"
+           "anki_duplicate_field = Expression\n"
+           "anki_duplicate_reading_field = ExpressionReading\n";
 }
 
 /* A warning names a setting (its key as typed, at most VJO_CONFIG_WARN_KEY bytes of it for an unknown one) or a
@@ -595,14 +602,18 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->log_file = 0;
         else
             warn(c, "%s: invalid value", key);
-    } else if (vjo_ieq(key, "anki_mining") || vjo_ieq(key, "anki_screenshot")) {
-        int *dst = vjo_ieq(key, "anki_mining") ? &c->anki_mining : &c->anki_screenshot;
+    } else if (vjo_ieq(key, "anki_mining") || vjo_ieq(key, "anki_screenshot") ||
+               vjo_ieq(key, "anki_duplicate_check")) {
+        int *dst = vjo_ieq(key, "anki_mining") ? &c->anki_mining
+                 : vjo_ieq(key, "anki_screenshot") ? &c->anki_screenshot : &c->anki_duplicate_check;
         if (vjo_ieq(val, "on"))
             *dst = 1;
         else if (vjo_ieq(val, "off"))
             *dst = 0;
         else
             warn(c, "%s: invalid value", key);
+    } else if (vjo_ieq(key, "anki_duplicate_field") || vjo_ieq(key, "anki_duplicate_reading_field")) {
+        /* the Rubi app's (settings/anki_index_request.c): its request to Anki for Vita */
     } else {
         char name[VJO_CONFIG_WARN_KEY + 1];
         warn(c, "unknown setting '%s'", warn_name(name, key));
