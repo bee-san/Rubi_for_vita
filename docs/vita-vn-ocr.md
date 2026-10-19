@@ -899,7 +899,8 @@ No key is remapped and no button changes meaning. Press by press:
 3. **◀ ▶ ▲ ▼**, or a push of the left stick, moves the highlight to the nearest box that way; a **tap on a box**
    picks it.
 4. **Enter** (or that tap) reads it: the box becomes this game's region, saved as a box drawn by hand is
-   (`region.ini`), and the overlay reads it at once, the same job L + R starts (the finder, its refinement, the
+   (`region.ini`; a box under 32 px either way is widened to 32 by the capture, as any region is), and the overlay
+   reads it at once, the same job L + R starts (the finder, its refinement, the
    chosen model size, the LM, the cascade), so the text and its lookup go to the popup as always. (A box drawn by
    hand is saved and the overlay closes, as before.)
 5. **Cancel**, a tap outside every box (it starts the drag there), and a scan that found no box or failed all go

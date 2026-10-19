@@ -596,6 +596,31 @@ static void scans_leave_the_slot_as_they_found_it(void)
     TEST_CHECK(allocs == frees && !live_bytes && !game_ocr_capture_busy_locked() && g.done_seq == 11);
 }
 
+/* The core's own refusals (core/vocr_ocr.c vjo_vocr_spot), before any file or row: a workspace or strip one byte
+ * short, a misaligned workspace or result, a region past 960 x 544; each leaves the set empty (pick -1). */
+static int no_open(void *ud, const char *path, VjoFile *out) { (void)ud; (void)path; (void)out; TEST_CHECK(0); return -1; }
+static int no_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
+{ (void)ud; (void)y; (void)n; (void)dst; (void)stride; (void)flags; TEST_CHECK(0); return -1; }
+static void the_core_refuses_short_or_misaligned_blocks(void)
+{
+    static unsigned char ws[96 * 1024] __attribute__((aligned(16))), strip[64 * 960];
+    static uint32_t text[sizeof(VjoSpotResult) / 4 + 1];
+    VjoPlatform p = {.file_open = no_open};
+    VjoGreySource im = {NULL, 960, 544, no_strip, NULL, NULL};
+    VjoVocrStats st;
+    VjoSpotResult *out = (VjoSpotResult *)(void *)text;
+    const size_t need = vjo_vocr_spot_bytes();
+    TEST_ASSERT(need <= sizeof(ws) && vjo_vocr_spot_strip_bytes(960) == sizeof(strip) && !vjo_vocr_spot_strip_bytes(961));
+    TEST_CHECK(vjo_vocr_spot(&p, "d", &im, ws, need - 1, strip, sizeof(strip), out, &st) == VJO_E_OOM && out->pick == -1);
+    TEST_CHECK(vjo_vocr_spot(&p, "d", &im, ws, need, strip, sizeof(strip) - 1, out, &st) == VJO_E_OOM);
+    TEST_CHECK(vjo_vocr_spot(&p, "d", &im, ws + 8, need, strip, sizeof(strip), out, &st) == VJO_E_OOM);
+    TEST_CHECK(vjo_vocr_spot(&p, "d", &im, ws, need, strip, sizeof(strip),
+                             (VjoSpotResult *)(void *)((unsigned char *)text + 2), &st) == VJO_E_OOM);
+    im.width = 961;
+    TEST_CHECK(vjo_vocr_spot(&p, "d", &im, ws, need, strip, sizeof(strip), out, &st) == VJO_E_OCR_REGION);
+    TEST_CHECK(!out->count && !out->block_count && out->pick == -1 && !out->truncated);
+}
+
 /* --spot FRAME.rgba W H: one scan of the given picture; prints its set, map and figures as JSON. */
 static int spot_step(int argc, char **argv)
 {
@@ -658,6 +683,8 @@ TEST_LIST = {
      the_kernel_and_the_worker_take_only_a_scan},
     {"API 30: a PSP game's 480x272 frame is read as it is and mapped to the screen", a_psp_frame_is_mapped_to_the_screen},
     {"API 30: scans leave the slot, the kernel and the game as they found them", scans_leave_the_slot_as_they_found_it},
+    {"API 30: the core refuses a short or misaligned block, or a region past the screen, before any read",
+     the_core_refuses_short_or_misaligned_blocks},
     {NULL, NULL}
 };
 
