@@ -405,9 +405,9 @@
 #define VJO_BUDGET_GAME_SHOT 450560u
 /* API 30, a scan (scan screen, game_ocr/main.c run_spot): a job of the one slot too, under the OCR jobs' own items:
  * its strip (64 grey rows, at most 61,440 B) is a VjoGameVocrCapture block within VJO_BUDGET_GAME_CAPTURE, and the
- * spotter's weights, model and arena (core/vocr_ocr.h vjo_vocr_spot_bytes, 88,176 B with the pinned weights, a
- * 90,112 B block) a VjoGameVocr block within VJO_BUDGET_GAME_WORKSPACE (game_ocr/main.c and test_game_spot.c check
- * both). It keeps the resident weights, LM and cascade model, as a shot does, and holds less than an OCR job's
+ * spotter's weights, model and arena (core/vocr_ocr.h vjo_vocr_spot_bytes, 87,520 B with the pinned weights on the
+ * Vita, a 90,112 B block) a VjoGameVocr block within VJO_BUDGET_GAME_WORKSPACE (game_ocr/main.c and
+ * test_game_spot.c check both). It keeps the resident weights, LM and cascade model, as a shot does, and holds less than an OCR job's
  * transient blocks: it adds nothing to VJO_WORST_GAME_JOB. Its memory check keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \

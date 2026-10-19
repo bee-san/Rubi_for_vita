@@ -1739,6 +1739,7 @@ static void start_scan(void)
     job_scan = 1;
     job_prepare = job_refresh = job_cursor_only = job_lookup = 0;
     job_cancelled = job_done = job_text_ready = 0;
+    job_captured = 0; /* a scan holds no capture of the region: a new screen never makes it outdated */
     job_cfg = cfg;
     job_generation = game_generation;
     job_running = 1;

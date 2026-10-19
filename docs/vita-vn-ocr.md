@@ -934,7 +934,7 @@ no request is ever a scan.
   shape. The flags' one free bit stays vertical text's.
 - **Memory** (the game's, during a scan only): a strip block of 61,440 B (64 rows of 960 px, within
   `VjoGameVocrCapture`'s budget) and a workspace block of 90,112 B (the weights, the loaded model and the arena,
-  88,176 B, `vjo_vocr_spot_bytes`; the arena is `VJO_VOCR_SPOT_ARENA` = 80,799 B, `vocr_textspot_arena_bytes` for
+  87,520 B on the Vita, `vjo_vocr_spot_bytes`; the arena is `VJO_VOCR_SPOT_ARENA` = 80,799 B, `vocr_textspot_arena_bytes` for
   every frame up to 960×544 with these weights; within `VjoGameVocr`'s budget). Its memory check keeps the 4 MiB
   reserve beside both; the resident weights, LM and cascade model stay. No new ledger item, and the job's worst
   case is unchanged ([memory-ledger.md](memory-ledger.md)).

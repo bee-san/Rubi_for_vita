@@ -35,7 +35,8 @@ test went with the relay client, Google Lens's JPEG encoder and its first `test_
 transport test, `vjo-http-transport-tests`, with the network stack, whose `platform_vita` suite now
 tests what is left of the Shell's platform: its files and its clock; API 23's Anki screenshot brought a smaller encoder back into the game worker,
 with `jpeg_encoder`, every JPEG of it decoded by Pillow, and `game_shot`, a screenshot through the actual
-worker and kernel transport into real files). The Rubi app's `.apkg` packages are imported there by Anki
+worker and kernel transport into real files; API 30's scan screen `game_spot`, a scan through the same, and
+`game_spot_twin`, its boxes against vita-vn-ocr's Python twin on frames made from the repo's own sample). The Rubi app's `.apkg` packages are imported there by Anki
 itself, and a card's screenshot is checked as Anki shows it (the `<img>` of its rendered answer, the file in
 its media):
 the `anki` package (Anki 26.09.3's backend), hash-pinned in `tools/requirements-anki.txt`, in a
@@ -137,11 +138,12 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | kernel_capture | 6 | the job's crop of the region (a box, a small frame, the whole frame, the 32 px minimum); the OCR grey rows in every pixel format; a shot's colour rows (API 23) in every format, into the worker's memory and a kernel strip; the first pass's region signature in every format, strip height and 400 random regions (the A1B5G5R5 one-pass rows never skip a sampled row); every box the region selector can save is cropped as drawn. API 24 removed the full-frame capture's tests with it |
 | kernel_input | 14 | the trigger state machine |
 | kernel_lifecycle | 5 | the process event hook (`kernel/lifecycle.c`, #104): a foreground change releases the game's input block in the hook's own call, an `__atomic_exchange_n` (LDREX/STREX) |
-| kernel_game_ocr | 51 (50 normal) | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine; the job hand-off's bounded waits (take and read wake on submit and complete); a request by model sizes opens only its sizes' models by size (API 21); the frame-pacing step's 32-bit sums (API 22) |
+| kernel_game_ocr | 62 (61 normal) | the broker's 32-bit offsets and `SceOff` (64-bit on a 32-bit CPU); the rows syscall and its state machine; the job hand-off's bounded waits (take and read wake on submit and complete); a request by model sizes opens only its sizes' models by size (API 21); the frame-pacing step's 32-bit sums (API 22); a scan's shape and its file's Open (API 30) |
 | kernel_loader | 12 | the worker loader's question to the kernel worker (`kernel/loader.c`, #138): its 32-bit seqlock and tagged answer, and the Shell's `games.ini` rules on the Vita's word size |
 | kernel_meminfo | 6 | the three kernel memory routes with the firmware's objects at 32-bit kernel-range, upper-kernel and user-range addresses (the user-half ones unreadable, at 0x5... and 0x8...), and the guard at each of its edges |
 | touch_hold | 6 | the overlay page's hold on SceShell's front touch region (`shell/touch_hold.h`, #104) against a model of the region |
 | region_select | 15 | the region selector's stick cursor (`core/region_select.c`): its 1/256-pixel position, speed and timer arithmetic in 32 bits |
+| spot_pick | 5 | scan screen's map (`core/spot_pick.c`, API 30), which the game worker makes on the A9: a frame's blocks scaled to the screen with 32-bit products, the margin and clipping, the start, the nearest block per direction and the touch hits |
 | text_rows | 12 | the overlay arrows' row walk (`core/text_rows.c`, #81; across rows since the owner's 2026-10-16 rule): float cell edges and 32-bit offsets on the Vita's FPU |
 | text_join | 6 | which line breaks of the recognized text join its lines (`core/textjoin.c`), and the join's byte offsets, with 32-bit `size_t` |
 | linebreak | 6 | where the overlay's own wrapping may break a line (`core/linebreak.c`): its UTF-16 and UTF-8 walks agree on the Vita's word size |

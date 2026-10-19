@@ -3094,6 +3094,32 @@ static void test_scan_screen_failures_and_closes(void)
     TEST_CHECK(!job_scan && scans == 1); /* the scan the close cancelled never reached the game either */
 }
 
+/* A screen that settles while the scan runs (the game moved on, or the region's icon blinked) does not cancel it:
+ * a scan holds no capture of the region (a stale one of the job before must not stand in for it), and the overlay
+ * waits for the scan's result, which nothing else would end (it waited until Cancel). */
+static void test_scan_screen_a_screen_settling_during_the_scan_keeps_it(void)
+{
+    uint32_t seq;
+    reset();
+    loaded.ocr_scan_screen = 1;
+    cfg = loaded;
+    fake_scan_screen();
+    open_overlay();
+    finish_current_job();
+    TEST_ASSERT(job_captured); /* the OCR job's capture, of scene 2 */
+    seq = g_view.spot.seq;
+    vjo_post_command(VJO_CMD_SCAN, NULL);
+    on_command();
+    control_tick(0);
+    TEST_ASSERT(job_running && job_scan);
+    state.scene = state.capture_scene = state.region_scene = 3; /* another screen, settled */
+    state.region_seq = 5;
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(job_scan && !job_cancelled);
+    finish_current_job();
+    TEST_CHECK(scans == 1 && g_view.spot.seq == seq + 1 && g_view.spot.map.count == 2);
+}
+
 /* Closed and opened again while a scan runs: the reopened overlay gets what it waits for once the scan ends, as
  * after a prepared word: on the same screen the shown text's lookup, on another one its own read
  * (OV_OPEN_OLD_JOB); never nothing ("Looking up words…" or "Recognizing…" stayed: a scan has nothing to show). */
@@ -7408,6 +7434,7 @@ TEST_LIST = {
     {"scan_screen_pick_waits_for_a_running_job", test_scan_screen_pick_waits_for_a_running_job},
     {"scan_screen_failures_and_closes", test_scan_screen_failures_and_closes},
     {"scan_screen_reopen_during_a_scan_gets_its_read", test_scan_screen_reopen_during_a_scan_gets_its_read},
+    {"scan_screen_a_screen_settling_during_the_scan_keeps_it", test_scan_screen_a_screen_settling_during_the_scan_keeps_it},
 #endif
     {NULL, NULL}
 };
