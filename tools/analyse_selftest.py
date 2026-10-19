@@ -960,7 +960,7 @@ LOG = {
     # export had no stop count, and builds before #161 no count of the screenshots no card named that it removed
     "anki_export": re.compile(r"^(?:Rubi|overlay) app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
                               r"(?:, (\d+) kept, (\d+) unreadable, (\d+) too large, (\d+) left(?:, (\d+) stopped)?"
-                              r"(?:, (\d+) swept)?)?"),
+                              r"(?:, (\d+) swept)?)?(?:, \d+ bytes, arena peak \d+(?:, (\d+) without screenshots)?)?"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     # API 23, shell/anki.c take_shot: a card's screenshot, made by the game worker (rc, the JPEG's quality, bytes,
     # the block, free USER, strips, source, the strips' ms, encoding ms, write ms, the whole)
@@ -1349,6 +1349,8 @@ def export_summary(a):
         t += "; still queued for the next export, not a problem: " + ", ".join(later)
     if a.get("export_swept"):  # #161: a stop between a card's JPEG and its record left them
         t += f"; removed from the queue: {_n(a['export_swept'], 'screenshot')} no card named"
+    if a.get("export_missing_picture"):
+        t += f"; exported without screenshots: {a['export_missing_picture']} card(s) (original records preserved)"
     lines = [t]
     for p in a.get("export_problems", []):
         if p["rc"]:
@@ -2599,6 +2601,8 @@ def summarise_log(text):
                 an["export_left"] += int(m.group(8) or 0)
                 an["export_stopped"] += int(m.group(9) or 0)
                 an["export_swept"] += int(m.group(10) or 0)
+                if int(m.group(11) or 0):
+                    an["export_missing_picture"] = an.get("export_missing_picture", 0) + int(m.group(11))
                 if result in ("fail", "partial") and len(an["export_problems"]) < 10:
                     an["export_problems"].append({"what": m.group(1), "rc": int(m.group(2)), "cards": int(m.group(3)),
                                                   "kept": int(m.group(5) or 0), "unreadable": int(m.group(6) or 0),

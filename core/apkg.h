@@ -39,8 +39,9 @@ typedef struct {
     uint8_t id[16];   /* the queue ID (vjo_queue_id), as bytes */
     int64_t time;     /* the record's time, seconds UTC; VJO_APKG_NO_TIME without one */
     uint8_t exported; /* in the exported archive (an earlier package had it) */
-    uint8_t picture;  /* the record has a screenshot */
+    uint8_t picture;  /* include the record's screenshot in this package */
     uint8_t skipped;  /* set by vjo_apkg_write: it could not be read again or its note made (no room) */
+    uint8_t missing_picture; /* intact record, unavailable JPEG: export text, preserve record and GUID */
 } VjoApkgCard;
 
 typedef struct {

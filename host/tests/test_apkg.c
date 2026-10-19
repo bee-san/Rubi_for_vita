@@ -67,7 +67,7 @@ static struct {
     long write_after;       /* bytes written before every later write fails (-1: never) */
     long written;
     int short_writes;       /* each write takes at most 1000 bytes */
-    int fail_flush, fail_close, fail_sync, fail_open_read;
+    int fail_flush, fail_close, fail_sync, fail_open_read, fail_jpeg_open;
     const char *fail_rename; /* a rename whose source contains this fails */
     int corrupt_read;        /* the package's reads give one changed byte (a bad memory card) */
     int short_reads;         /* each read gives at most 1000 bytes */
@@ -84,6 +84,8 @@ int sceIoOpen(const char *p, int flags, unsigned mode)
     int fd;
     if (io.fail_open_read && flags == SCE_O_RDONLY && strstr(p, ".apkg"))
         return -1;
+    if (io.fail_jpeg_open && flags == SCE_O_RDONLY && strstr(p, ".jpg"))
+        return (int)0x80010005u;
     if (flags == SCE_O_RDONLY && strstr(p, ".json") && io.fail_json_read_at &&
         ++io.json_reads == io.fail_json_read_at)
         return -1;
@@ -924,7 +926,7 @@ static void test_a_card_left_out_of_the_package_stays_queued(void)
         archived += card_in(VJO_EXPORT_ARCHIVE_DIR, ids[i], "json");
     }
     TEST_CHECK(r.cards == 2 && r.too_large == 1 && r.moved == 2 && queued == 1 && archived == 2);
-    TEST_CHECK(!strcmp(r.name, "2026-10-12_093005-2cards.apkg") && strstr(msg, "1 unreadable or too large stay"));
+    TEST_CHECK(!strcmp(r.name, "2026-10-12_093005-2cards.apkg") && strstr(msg, "1 stay queued; see log.txt"));
     TEST_MSG("%s: %s", r.name, msg);
     /* the next export takes it */
     io.fail_json_read_at = 0;
@@ -1050,14 +1052,14 @@ static void test_damaged_cards_stay_and_the_rest_are_exported(void)
     put_file(VJO_EXPORT_QUEUE_DIR "/0123456789abcdef0123456789abcdef.duplicate.json", v1, strlen(v1));
     put_file(VJO_EXPORT_QUEUE_DIR "/notes.json", v1, strlen(v1));
     TEST_ASSERT(run(0, &r, msg) == VJO_OK);
-    TEST_CHECK(r.cards == 1 && r.moved == 1 && r.unreadable == 2);
-    TEST_CHECK(strstr(msg, "2 unreadable or too large stay queued.") != NULL);
+    TEST_CHECK(r.cards == 2 && r.moved == 2 && r.unreadable == 1 && r.missing_picture == 1);
+    TEST_CHECK(strstr(msg, "1 exported without a screenshot") && strstr(msg, "1 stay queued; see log.txt"));
     TEST_MSG("%s", msg);
-    TEST_CHECK(strstr(logs, "checksum or format mismatch") && strstr(logs, "is missing or not a JPEG"));
+    TEST_CHECK(strstr(logs, "checksum mismatch") && strstr(logs, "missing or damaged; exporting text without it"));
     vjo_export_count(&c);
-    TEST_CHECK(c.queued == 2 && c.exported == 1); /* the two damaged ones */
+    TEST_CHECK(c.queued == 1 && c.exported == 2); /* only the damaged record stays */
     /* only damaged ones: nothing made */
-    TEST_CHECK(run(0, &r, msg) == VJO_E_PARSE && strstr(msg, "2 cards could not be read"));
+    TEST_CHECK(run(0, &r, msg) == VJO_E_PARSE && strstr(msg, "1 card could not be read"));
     TEST_CHECK(count_dir(VJO_EXPORT_DIR, ".apkg") == 1);
 }
 
@@ -1082,6 +1084,116 @@ static void test_screenshots_are_one_file_each(void)
     TEST_CHECK(count_dir(VJO_EXPORT_QUEUE_DIR, ".jpg") == 0 && count_dir(VJO_EXPORT_ARCHIVE_DIR, ".jpg") == 3);
     /* all cards: their screenshots from the archive */
     TEST_CHECK(run(1, &r, msg) == VJO_OK && r.cards == 3 && r.media == 2);
+}
+
+/* A lost screenshot must not strand an intact word, sentence and definition. The original
+ * record and its ID stay unchanged, and any damaged image is kept for recovery. */
+static void test_missing_or_damaged_screenshots_export_the_text(void)
+{
+    VjoExportResult r;
+    VjoZipEntry e[4];
+    char msg[300], id[VJO_QUEUE_ID_SIZE], path[256], actual[VJO_QUEUE_ID_SIZE];
+    Card c = cat;
+    c.picture = 7;
+    for (int bad = 0; bad < 5; bad++) {
+        FILE *f;
+        size_t len;
+        uint8_t pic[300];
+        reset();
+        snprintf(id, sizeof(id), "%s", queue_card(&c, 0));
+        snprintf(path, sizeof(path), VJO_EXPORT_QUEUE_DIR "/%s.jpg", id);
+        if (bad == 0)
+            TEST_ASSERT(unlink(path) == 0);
+        else if (bad == 1)
+            put_file(path, "", 0);
+        else if (bad == 2)
+            put_file(path, "not a JPEG", 10);
+        else if (bad == 3)
+            put_file(path, pic, jpeg(pic, 7, sizeof(pic)) - 2); /* truncated before its end marker */
+        else {
+            TEST_ASSERT((f = fopen(path, "r+b")) != NULL);
+            TEST_ASSERT(ftruncate(fileno(f), VJO_QUEUE_PICTURE_MAX + 1) == 0);
+            fclose(f);
+        }
+        TEST_ASSERT_(run(0, &r, msg) == VJO_OK, "case %d: %s\n%s", bad, msg, logs);
+        TEST_CHECK(r.cards == 1 && r.media == 0 && r.moved == 1 && r.missing_picture == 1 &&
+                   !r.unreadable && !r.too_large);
+        TEST_CHECK(strstr(msg, "1 exported without a screenshot") != NULL);
+        TEST_CHECK(read_pkg(r.path, e, 4) == 2); /* collection and empty media map */
+        TEST_CHECK(!card_in(VJO_EXPORT_QUEUE_DIR, id, "json") && card_in(VJO_EXPORT_ARCHIVE_DIR, id, "json"));
+        TEST_CHECK(card_in(VJO_EXPORT_QUEUE_DIR, id, "jpg") == (bad != 0));
+        vjo_arena_init(&A, mem, sizeof(mem));
+        snprintf(path, sizeof(path), VJO_EXPORT_ARCHIVE_DIR "/%s.json", id);
+        const char *json = read_file(&A, path, VJO_QUEUE_TEXT_MAX, &len, 0, NULL);
+        TEST_ASSERT(json != NULL);
+        vjo_queue_id(json, len, actual);
+        TEST_CHECK(!strcmp(id, actual) && strstr(json, "\"picture\":true"));
+        /* Export all retries the original record with the same GUID, without duplicating it. */
+        TEST_CHECK(run(1, &r, msg) == VJO_OK && r.cards == 1 && r.media == 0 && r.moved == 0);
+    }
+}
+
+/* A move interrupted between its two files can leave either copy damaged. Always try the
+ * other, and never erase the good queued image just because an archived one exists. */
+static void test_good_screenshot_copy_survives_a_damaged_copy(void)
+{
+    VjoExportResult r;
+    char msg[300], id[VJO_QUEUE_ID_SIZE], queued[256], archived[256];
+    uint8_t pic[300];
+    Card c = cat;
+    c.picture = 7;
+    for (int bad_archive = 0; bad_archive < 2; bad_archive++) {
+        reset();
+        snprintf(id, sizeof(id), "%s", queue_card(&c, 0));
+        TEST_ASSERT(mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777) == 0);
+        snprintf(queued, sizeof(queued), VJO_EXPORT_QUEUE_DIR "/%s.jpg", id);
+        snprintf(archived, sizeof(archived), VJO_EXPORT_ARCHIVE_DIR "/%s.jpg", id);
+        put_file(archived, pic, jpeg(pic, 7, sizeof(pic)));
+        put_file(bad_archive ? archived : queued, "damaged", 7);
+        TEST_ASSERT_(run(0, &r, msg) == VJO_OK, "%s\n%s", msg, logs);
+        TEST_CHECK(r.cards == 1 && r.media == 1 && r.moved == 1 && !r.unreadable);
+        TEST_ASSERT_(run(1, &r, msg) == VJO_OK, "%s\n%s", msg, logs);
+        TEST_CHECK(r.cards == 1 && r.media == 1 && !r.unreadable);
+    }
+}
+
+/* Uncertain reads must be retried with their image, not mistaken for permanent damage. */
+static void test_screenshot_io_and_memory_failures_keep_the_card(void)
+{
+    VjoExportResult r;
+    char msg[300], id[VJO_QUEUE_ID_SIZE], path[256], before[65536];
+    Card c = cat;
+    c.picture = 7;
+    reset();
+    snprintf(id, sizeof(id), "%s", queue_card(&c, 0));
+    snprintf(before, sizeof(before), "%s", snapshot());
+    io.fail_jpeg_open = 1;
+    TEST_CHECK(run(0, &r, msg) != VJO_OK);
+    TEST_CHECK(r.unreadable == 1 && !r.missing_picture && !strcmp(before, snapshot()));
+    TEST_CHECK(strstr(logs, "failed 0x80010005") && strstr(logs, "could not be read; retry later"));
+    io.fail_jpeg_open = 0;
+    TEST_CHECK(run(0, &r, msg) == VJO_OK && r.media == 1 && !r.missing_picture);
+
+    reset();
+    snprintf(id, sizeof(id), "%s", queue_card(&c, 0));
+    snprintf(path, sizeof(path), VJO_EXPORT_QUEUE_DIR "/%s.jpg", id);
+    put_file(path, mem, jpeg(mem, 7, 16000));
+    snprintf(before, sizeof(before), "%s", snapshot());
+    vjo_arena_init(&A, mem, 8192); /* enough for the text; not the JPEG */
+    TEST_CHECK(vjo_export_run(&A, 0, &ui, &r, msg, sizeof(msg)) != VJO_OK);
+    TEST_CHECK(r.unreadable == 1 && !r.missing_picture && !strcmp(before, snapshot()));
+    TEST_CHECK(strstr(logs, "out of memory reading 16000 bytes") != NULL);
+    TEST_CHECK(run(0, &r, msg) == VJO_OK && r.media == 1 && !r.missing_picture);
+
+    /* Even a recoverable card stays byte-for-byte queued until a complete package verifies. */
+    reset();
+    snprintf(id, sizeof(id), "%s", queue_card(&c, 0));
+    snprintf(path, sizeof(path), VJO_EXPORT_QUEUE_DIR "/%s.jpg", id);
+    TEST_ASSERT(unlink(path) == 0);
+    snprintf(before, sizeof(before), "%s", snapshot());
+    io.write_after = 0;
+    TEST_CHECK(run(0, &r, msg) != VJO_OK && !strcmp(before, snapshot()));
+    TEST_CHECK(count_dir(VJO_EXPORT_ARCHIVE_DIR, ".json") == 0 && count_dir(VJO_EXPORT_DIR, ".apkg") == 0);
 }
 
 /* A move that fails leaves the card queued; the next package has it again (the same GUID). */
@@ -1496,6 +1608,9 @@ TEST_LIST = {
     {"an_archived_copy_is_kept_only_when_it_is_the_card", test_an_archived_copy_is_kept_only_when_it_is_the_card},
     {"damaged_cards_stay_and_the_rest_are_exported", test_damaged_cards_stay_and_the_rest_are_exported},
     {"screenshots_are_one_file_each", test_screenshots_are_one_file_each},
+    {"missing_or_damaged_screenshots_export_the_text", test_missing_or_damaged_screenshots_export_the_text},
+    {"good_screenshot_copy_survives_a_damaged_copy", test_good_screenshot_copy_survives_a_damaged_copy},
+    {"screenshot_io_and_memory_failures_keep_the_card", test_screenshot_io_and_memory_failures_keep_the_card},
     {"a_failed_move_keeps_the_card_queued", test_a_failed_move_keeps_the_card_queued},
     {"screenshots_no_card_names_go_after_a_verified_package", test_screenshots_no_card_names_go_after_a_verified_package},
     {"only_a_verified_package_removes_them", test_only_a_verified_package_removes_them},
@@ -1606,8 +1721,8 @@ static int restart_step(int argc, char **argv)
     }
     if (!strcmp(what, "export") || !strcmp(what, "export-all")) {
         int rc = run(!strcmp(what, "export-all"), &r, msg);
-        printf("{\"rc\":%d,\"cards\":%d,\"moved\":%d,\"kept\":%d,\"name\":\"%s\"}\n", rc, r.cards, r.moved,
-               r.kept, r.name);
+        printf("{\"rc\":%d,\"cards\":%d,\"moved\":%d,\"kept\":%d,\"missing_picture\":%d,\"name\":\"%s\"}\n",
+               rc, r.cards, r.moved, r.kept, r.missing_picture, r.name);
         return 0;
     }
     if (!strcmp(what, "inspect")) {
