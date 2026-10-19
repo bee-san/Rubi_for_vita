@@ -177,10 +177,12 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
   ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c
   ${ROOT}/core/anki_index_find.c # Anki for Vita's duplicate index: one lookup per Enter
-  # Paying for the index's request check (#220) in the normal Shell's text pages: the non-Japanese line
-  # filter (once per recognized text; its time is core/utf.c's decoding, built for size already) and the
-  # enter button's registry read (once per overlay open), 48 + 39 B fewer [measured: arm-vita-eabi-size
-  # of the two objects at -O2 and -Os].
+  # Paying for the index's request check (#220) in the normal Shell's text pages, 48 + 39 B: the
+  # non-Japanese line filter, once per recognized text (vjo_filter_lines and vjo_strip_newlines: 2,363 ->
+  # 2,535 Cortex-A9 instructions a text on the postproc bench's 50 VOCR texts, +172, about 0.4 us at
+  # 444 MHz [estimate]), and the enter button's registry read, once per overlay open (26 -> 21-22
+  # instructions) [measured: arm-vita-eabi-size of the objects; qemu-arm -cpu cortex-a9 with the Vita
+  # compiler's objects, and their disassembly].
   ${ROOT}/core/textfilter.c ${ROOT}/vita/buttons_vita.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
