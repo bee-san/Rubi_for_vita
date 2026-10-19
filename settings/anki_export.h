@@ -53,8 +53,9 @@ typedef struct {
     int moved;       /* queued cards it took out of the queue */
     int kept;        /* exported, but still queued: a move failed (the next export has them again, harmlessly) */
     int stopped;     /* exported, but still queued: the user stopped the clearing (the same) */
-    int unreadable;  /* left in the queue: damaged, edited, or a screenshot missing (log.txt) */
+    int unreadable;  /* left in the queue: damaged/edited record, or an I/O failure (log.txt) */
     int too_large;   /* left in the queue: no room in memory to make their note */
+    int missing_picture; /* exported without an absent/damaged screenshot; original record preserved */
     int left;        /* over VJO_APKG_MAX_CARDS: the newest, left for the next export */
     int swept;       /* screenshots no card names, removed from the queue (#161) */
     int media;       /* screenshot files in it */

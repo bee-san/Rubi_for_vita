@@ -67,7 +67,8 @@ collection that has the earlier ones adds nothing twice.
 | Result (Rubi app) | Meaning |
 | --- | --- |
 | `Exported 12 cards (34 KB) to ….apkg.` | Written, read back and checked; those cards left the queue |
-| `… 2 unreadable or too large stay queued.` | A damaged or edited record, one whose screenshot is missing, or (rare) one too large to make into a note: they stay, see log.txt |
+| `… 2 exported without screenshots.` | The text was intact but the screenshots were missing or damaged. The cards exported with their original IDs; their original records and any damaged image files are preserved |
+| `… 2 stay queued; see log.txt.` | A damaged, edited or unsupported record, a read failure, or a note that could not fit in memory: retry after checking `log.txt` |
 | `… 1 stay queued (see log.txt).` | The package has the card, but moving it out of the queue failed; the next export has it again, harmlessly |
 | `… Stopped while clearing: 40 stay queued, for the next export too.` | Cancel after the package was made: it has every card, and those 40 are in the next one too (Anki adds no note twice) |
 | `… 5 newer stay queued: export again.` | A package holds 20,000 cards at most: the oldest went, the newest wait (**Export all cards**: `5 newer are not in it`) |
@@ -186,6 +187,14 @@ no card names, unless a Cancel stopped its clearing
 ([below](#the-queue-on-the-memory-card)). A record already
 archived is kept only when it is that card's (its
 checksum is its name); a damaged one there is replaced by the queued copy.
+When an intact record's screenshot is missing, empty, too large or lacks its JPEG start/end
+markers, the app tries the other directory first, then exports the text without the picture
+and reports how many cards did so. It never rewrites the original record or changes its ID;
+damaged image files are kept. If both directories have an image, the queued copy is kept too,
+so a damaged archived image cannot erase the good copy. A storage read error or lack of memory
+keeps the card queued for a later attempt instead. If the image is later restored, **Export all
+cards** includes it; Anki's default import keeps an existing note, so updating that note's picture
+requires choosing to update existing notes on import.
 `host/tests/test_anki_restart.py` stops a real export in a fresh process at each
 of these steps and checks that no card is lost; `host/tests/test_apkg.py`
 imports the packages with Anki 26.09.3 itself in CI.

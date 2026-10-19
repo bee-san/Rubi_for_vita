@@ -200,6 +200,45 @@ class ExportRestartTests(Storage):
                 self.assertEqual((everything["rc"], everything["cards"], everything["moved"]), (0, 5, 0))
 
 
+class ScreenshotRecoveryTests(Storage):
+    """Read recovered packages with SQLite, across fresh processes and repeated exports."""
+
+    def test_lost_images_keep_the_text_original_records_and_guids(self):
+        ids = self.run_step(APP, "queue")["ids"]
+        originals = self.snapshot(self.queue)
+        records = {i: json.loads(originals[f"{i}.json"]) for i in ids}
+        pictures = [i for i in ids if records[i]["picture"]]
+        self.assertEqual(len(pictures), 2)
+        (self.queue / f"{pictures[0]}.jpg").unlink()
+        damaged = self.queue / f"{pictures[1]}.jpg"
+        damaged.write_bytes(b"damaged screenshot")
+        for action in ("export", "export-all"):
+            done = self.run_step(APP, action)
+            self.assertEqual((done["rc"], done["cards"], done["missing_picture"]), (0, 5, 2), done)
+            self.assertEqual(self.records(self.queue), [])
+            self.assertEqual(damaged.read_bytes(), b"damaged screenshot")
+            for i in ids:
+                self.assertEqual((self.archive / f"{i}.json").read_bytes(), originals[f"{i}.json"])
+            with zipfile.ZipFile(self.exports / done["name"]) as z:
+                self.assertIsNone(z.testzip())
+                self.assertEqual(json.loads(z.read("media")), {})
+                db = self.root / "recovered.anki2"
+                db.write_bytes(z.read("collection.anki2"))
+            with sqlite3.connect(db) as conn:
+                self.assertEqual(conn.execute("pragma integrity_check").fetchone(), ("ok",))
+                notes = dict(conn.execute("select guid, flds from notes"))
+            self.assertEqual(set(notes), {guid_of(i) for i in ids})
+            for i, record in records.items():
+                fields = notes[guid_of(i)].split("\x1f")
+                self.assertEqual(len(fields), 22)
+                self.assertEqual(fields[0], record["spelling"])
+                self.assertEqual(fields[2], record["reading"])
+                self.assertIn(record["meanings"][0].split(" <")[0], fields[5])
+                self.assertTrue(fields[7])  # sentence, with the original word highlighted
+                self.assertEqual(fields[10], "")  # no broken image reference
+                self.assertEqual(fields[21], record["misc"])
+
+
 class OrphanScreenshotRestartTests(Storage):
     """#161: a save stopped during its JPEG's write (its .jpg.tmp) or between the JPEG and its record
     leaves a picture no card names. The next export that writes a package removes it from anki_queue/

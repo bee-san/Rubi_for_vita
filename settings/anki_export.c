@@ -100,23 +100,46 @@ void vjo_export_count(VjoExportCounts *c)
     c->exported = scan(VJO_EXPORT_ARCHIVE_DIR, NULL, NULL);
 }
 
-/* A whole file of at most max bytes into a (NUL-terminated), or NULL. */
-static char *read_file(VjoArena *a, const char *path, size_t max, size_t *len, int quiet_missing)
+/* A whole file of at most max bytes into a (NUL-terminated), or NULL. error distinguishes an
+ * absent/damaged image, whose card can export without it, from I/O or memory trouble to retry. */
+static char *read_file(VjoArena *a, const char *path, size_t max, size_t *len, int quiet_missing, int *error)
 {
     SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
     SceOff size;
     char *data = NULL;
     size_t off = 0;
     int n;
+    if (error)
+        *error = VJO_E_LOCAL_IO;
     if (fd < 0) {
+        if (error && fd == MISSING)
+            *error = MISSING;
         if (!(quiet_missing && fd == MISSING))
             io_fail("open", path, fd);
         return NULL;
     }
     size = sceIoLseek(fd, 0, SCE_SEEK_END);
-    if (size <= 0 || (uint64_t)size > max || sceIoLseek(fd, 0, SCE_SEEK_SET) < 0 ||
-        !(data = (char *)vjo_arena_alloc(a, (size_t)size + 1))) {
-        vjo_log("anki export: %s: size %d (limit %u) or out of memory", path, (int)size, (unsigned)max);
+    if (size < 0) {
+        io_fail("seek", path, (int)size);
+        sceIoClose(fd);
+        return NULL;
+    }
+    if (!size || (uint64_t)size > max) {
+        vjo_log("anki export: %s: size %d (limit %u)", path, (int)size, (unsigned)max);
+        if (error)
+            *error = VJO_E_PARSE;
+        sceIoClose(fd);
+        return NULL;
+    }
+    if (sceIoLseek(fd, 0, SCE_SEEK_SET) < 0) {
+        vjo_log("anki export: %s: cannot seek to the start", path);
+        sceIoClose(fd);
+        return NULL;
+    }
+    if (!(data = (char *)vjo_arena_alloc(a, (size_t)size + 1))) {
+        vjo_log("anki export: %s: out of memory reading %u bytes", path, (unsigned)size);
+        if (error)
+            *error = VJO_E_OOM;
         sceIoClose(fd);
         return NULL;
     }
@@ -135,25 +158,40 @@ static char *read_file(VjoArena *a, const char *path, size_t max, size_t *len, i
     }
     data[off] = '\0';
     *len = off;
+    if (error)
+        *error = 0;
     return data;
 }
 
-/* A card's screenshot: <id>.jpg beside its record, else in the other
- * directory (a move between the two that stopped after the JPEG). */
-static const uint8_t *read_jpeg(VjoArena *a, int archive, const char *hex, size_t *len)
+/* A card's screenshot, trying both directories even when the first copy is damaged. Failed
+ * reads release their scratch before the next try. unavailable is true only when neither copy
+ * exists or is a bounded, complete JPEG; I/O failures and OOM keep the card queued for retry. */
+static const uint8_t *read_jpeg(VjoArena *a, int archive, const char *hex, size_t *len, int *unavailable)
 {
     char path[VJO_EXPORT_PATH_MAX];
     const uint8_t *p;
-    card_path(path, archive, hex, "jpg");
-    if (!(p = (const uint8_t *)read_file(a, path, VJO_QUEUE_PICTURE_MAX, len, 1))) {
-        card_path(path, !archive, hex, "jpg");
-        p = (const uint8_t *)read_file(a, path, VJO_QUEUE_PICTURE_MAX, len, 1);
+    size_t mark = vjo_arena_mark(a);
+    int retry = 0;
+    if (unavailable)
+        *unavailable = 0;
+    for (int k = 0; k < 2; k++) {
+        int error;
+        card_path(path, k ? !archive : archive, hex, "jpg");
+        p = (const uint8_t *)read_file(a, path, VJO_QUEUE_PICTURE_MAX, len, 1, &error);
+        if (p && *len >= 6 && !memcmp(p, JPEG_MAGIC, 3) && p[*len - 2] == 0xFF && p[*len - 1] == 0xD9)
+            return p;
+        if (p)
+            vjo_log("anki export: %s: missing JPEG start or end marker", path);
+        else if (error != MISSING && error != VJO_E_PARSE)
+            retry = 1;
+        vjo_arena_release(a, mark);
     }
-    if (!p || *len < 4 || memcmp(p, JPEG_MAGIC, 3)) {
-        vjo_log("anki export: %s: its screenshot %s.jpg is missing or not a JPEG", hex, hex);
-        return NULL;
-    }
-    return p;
+    *len = 0;
+    if (unavailable)
+        *unavailable = !retry;
+    vjo_log("anki export: %s: screenshot %s", hex,
+            retry ? "could not be read; retry later" : "missing or damaged; exporting text without it");
+    return NULL;
 }
 
 /* A card's record, checked against its name (the ID is its checksum) and
@@ -163,11 +201,15 @@ static int read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *not
     char path[VJO_EXPORT_PATH_MAX], actual[VJO_QUEUE_ID_SIZE], *json;
     size_t len;
     card_path(path, archive, hex, "json");
-    if (!(json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0)))
+    if (!(json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, NULL)))
         return -1;
     vjo_queue_id(json, len, actual);
-    if (strcmp(actual, hex) || vjo_queue_decode(a, json, len, note, picture) < 0) {
-        vjo_log("anki export: %s: checksum or format mismatch (edited or damaged)", path);
+    if (strcmp(actual, hex)) {
+        vjo_log("anki export: %s: checksum mismatch (edited or damaged)", path);
+        return -1;
+    }
+    if (vjo_queue_decode(a, json, len, note, picture) < 0) {
+        vjo_log("anki export: %s: invalid or unsupported card format", path);
         return -1;
     }
     return 0;
@@ -236,10 +278,15 @@ static int list_card(void *ud, const char *hex)
     }
     if (picture) {
         size_t len;
-        if (!read_jpeg(l->a, l->archive, hex, &len)) { /* never a card that silently lost its screenshot */
-            l->unreadable++;
-            vjo_arena_release(l->a, mark);
-            return 0;
+        int unavailable;
+        if (!read_jpeg(l->a, l->archive, hex, &len, &unavailable)) {
+            if (!unavailable) {
+                l->unreadable++;
+                vjo_arena_release(l->a, mark);
+                return 0;
+            }
+            c.missing_picture = 1; /* original record and GUID kept; the result reports the omission */
+            picture = 0;
         }
     }
     vjo_arena_release(l->a, mark);
@@ -323,9 +370,10 @@ static int load(void *ud, VjoArena *a, const VjoApkgCard *c, VjoAnkiNote *note, 
     to_hex(c->id, hex);
     *jpeg = NULL;
     *len = 0;
-    if (note && (read_card(a, c->exported, hex, note, &picture) < 0 || !picture != !c->picture))
+    if (note && (read_card(a, c->exported, hex, note, &picture) < 0 ||
+                 !!picture != !!(c->picture || c->missing_picture)))
         return -1;
-    if (c->picture && !(*jpeg = read_jpeg(a, c->exported, hex, len)))
+    if (c->picture && !(*jpeg = read_jpeg(a, c->exported, hex, len, NULL)))
         return -1;
     return 0;
 }
@@ -379,7 +427,7 @@ static int archived_copy_good(VjoArena *a, const char *hex)
     char *json;
     int good;
     card_path(path, 1, hex, "json");
-    json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0);
+    json = read_file(a, path, VJO_QUEUE_TEXT_MAX, &len, 0, NULL);
     if (json)
         vjo_queue_id(json, len, actual);
     good = json && !strcmp(actual, hex);
@@ -409,7 +457,7 @@ static int archive_card(VjoArena *a, const VjoApkgCard *c)
         if (archived_copy_good(a, hex)) {
             if ((rc = sceIoRemove(from)) < 0)
                 return io_fail("remove", from, rc);
-            goto picture;
+            return 0;
         }
         vjo_log("anki export: %s: the archived copy is damaged: replaced by the queued one", to);
         if ((rc = sceIoRemove(to)) < 0)
@@ -417,12 +465,8 @@ static int archive_card(VjoArena *a, const VjoApkgCard *c)
     }
     if ((rc = sceIoRename(from, to)) < 0)
         return io_fail("rename", from, rc);
-picture:
-    if (c->picture) { /* a copy left beside an archived one */
-        card_path(from, 0, hex, "jpg");
-        if (sceIoGetstat(from, &st) >= 0)
-            sceIoRemove(from);
-    }
+    /* When both JPEGs exist, keep the queued copy too: the archived one may be damaged.
+     * read_jpeg tries both and named() protects this copy from the orphan sweep. */
     return 0;
 }
 
@@ -717,8 +761,11 @@ int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult 
         for (int i = 0; i < l.n; i++) {
             if (l.cards[i].skipped)
                 r->too_large++;
-            else if (!l.cards[i].exported)
-                to_move++;
+            else {
+                r->missing_picture += l.cards[i].missing_picture;
+                if (!l.cards[i].exported)
+                    to_move++;
+            }
         }
         for (int i = 0; i < l.n; i++) {
             if (l.cards[i].skipped || l.cards[i].exported)
@@ -755,8 +802,11 @@ int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult 
         if (r->kept)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d stay queued (see log.txt).",
                      r->kept);
+        if (r->missing_picture)
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d exported without %s.",
+                     r->missing_picture, r->missing_picture == 1 ? "a screenshot" : "screenshots");
         if (r->unreadable + r->too_large)
-            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d unreadable or too large stay queued.",
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d stay queued; see log.txt.",
                      r->unreadable + r->too_large);
         if (r->left)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),

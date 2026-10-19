@@ -750,6 +750,23 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
 
 /* An unreadable config.ini is never written: its rows show "--" and say why; a save that does not
  * complete says so; a queue that cannot be read is shown as such; a thread that cannot start says so. */
+static void a_missing_screenshot_is_reported_after_export(void)
+{
+    char path[256];
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", queue_card("猫", 1));
+    TEST_ASSERT(unlink(path) == 0);
+    show();
+    touch(0, 480, row_top[2] + 10);
+    run_worker();
+    frame(0);
+    TEST_CHECK(!vjo_anki_page_busy() && text_starting("Export cards (0 queued)"));
+    TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") &&
+               strstr(drawn.footer, "1 exported without a screenshot") && drawn.footer_error);
+    TEST_MSG("%s", drawn.footer);
+    TEST_CHECK(strstr(logs, "1 without screenshots") != NULL);
+}
+
 static void failures_are_shown_and_change_nothing(void)
 {
     reset(VJO_BUTTON_ASSIGN_CROSS);
@@ -805,6 +822,7 @@ TEST_LIST = {
     {"enter_and_left_right_save_each_row_s_key", enter_and_left_right_save_each_row_s_key},
     {"touch_chooses_and_acts_on_each_row", touch_chooses_and_acts_on_each_row},
     {"an_export_runs_on_the_worker_and_the_page_follows_it", an_export_runs_on_the_worker_and_the_page_follows_it},
+    {"a_missing_screenshot_is_reported_after_export", a_missing_screenshot_is_reported_after_export},
     {"failures_are_shown_and_change_nothing", failures_are_shown_and_change_nothing},
     {NULL, NULL},
 };
