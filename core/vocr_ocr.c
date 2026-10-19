@@ -16,15 +16,11 @@
 #include "vocr_lines_refine.h"
 #include "vocr_lm.h"
 #include "vocr_textgate.h"
-#include "vocr_vertical.h"
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
 typedef char vjo_vocr_refine_matches_runtime[VJO_VOCR_REFINE_ALL == VOCR_REFINE_DEFAULT ? 1 : -1];
 typedef char vjo_vocr_gate_mode_matches_runtime[VJO_VOCR_GATE_MODE == VOCR_TEXTGATE_BOXES &&
                                                 VJO_VOCR_GATE_K <= VOCR_TEXTGATE_MAX_K ? 1 : -1];
-/* A model of columns keeps the column finder's flags in finder_mode's low byte. */
-typedef char vjo_vocr_column_flags_fit[(VOCR_COLUMNS_FLAGS & ~0xFFu) == 0 && (VJO_VOCR_FINDER_COLUMNS & 0xFFu) == 0
-                                       ? 1 : -1];
 /* The int8 assets of github.com/bee-san/vita-vn-ocr releases v0.3.0 (VOCR5, the
  * three model tiers), v0.2.5-vocr3.1 (VOCR3), v0.2.5-vocr4.1 (VOCR4-W20) and v0.2.0
  * (docs/vita-vn-ocr.md). Arena bytes: vocr_arena_bytes() in W8I mode with the
@@ -32,8 +28,7 @@ typedef char vjo_vocr_column_flags_fit[(VOCR_COLUMNS_FLAGS & ~0xFFu) == 0 && (VJ
 /* Every pinned size is within the weights block the game worker allows. */
 typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR_H15_BYTES <= VJO_VOCR_MAX_BYTES &&
                                VJO_VOCR_F20_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR5_S_BYTES <= VJO_VOCR_MAX_BYTES &&
-                               VJO_VOCR5_N_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR5_L_BYTES <= VJO_VOCR_MAX_BYTES &&
-                               VJO_VOCR5_V_BYTES <= VJO_VOCR_MAX_BYTES
+                               VJO_VOCR5_N_BYTES <= VJO_VOCR_MAX_BYTES && VJO_VOCR5_L_BYTES <= VJO_VOCR_MAX_BYTES
                                ? 1 : -1];
 /* The line finder every pinned model uses: GRAD's rows, plus the textbox rows it
  * missed (vita-vn-ocr docs/native-textbox-recovery.md). GRAD alone drops a dialogue
@@ -44,16 +39,6 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #ifndef VJO_VOCR_FINDER
 #define VJO_VOCR_FINDER VOCR_LINES_TEXTBOX_RECOVERY
 #endif
-/* The vertical model's finder (include/vjo_vocr_sizes.h VJO_VOCR_VERTICAL_NAME): vita-vn-ocr's column
- * finder with these flags (vocr_vertical.h): its variant P1 (VOCR_COLUMNS_VALLEYS: bands split at their
- * columns of little ink, columns grown only over dense rows), the finder vita-vn-ocr #99 selected under
- * eval/vertical_protocol.json's finder rule, and VOCR_COLUMNS_NO_DARK: the finder reads no column's rows
- * for its dark flag (each column spans the region's strips, so through the row callback that would read
- * every strip again); the job computes the same flag on the pixels it fetches for the column (recognize). */
-#ifndef VJO_VOCR_COLUMN_FLAGS
-#define VJO_VOCR_COLUMN_FLAGS (VOCR_COLUMNS_VALLEYS | VOCR_COLUMNS_NO_DARK)
-#endif
-#define VJO_VOCR_COLUMNS (VJO_VOCR_FINDER_COLUMNS | VJO_VOCR_COLUMN_FLAGS)
 
 #ifdef VJO_VOCR_TEST_MODELS
 /* Host lifecycle tests only (host/tests/test_game_resident.c): synthetic pins. */
@@ -104,13 +89,6 @@ static const VjoVocrModel models[] = {
      {0x27,0x45,0xe6,0x96,0x99,0xad,0x7b,0x2a,0xba,0x30,0x92,0xf8,0x3e,0x5d,0xdc,0x19,
       0x12,0xf4,0x05,0xf5,0x4b,0x9d,0xf8,0xa2,0xe5,0x5b,0xe8,0x2c,0x38,0x5b,0x71,0x6e},
      241056, VJO_VOCR_FINDER},
-    /* VOCR5-V (vita-vn-ocr #99, pre-release v0.3.2-vertical.1): vertical text in VOCR5-S's shape, reading
-     * columns turned 90 degrees anticlockwise (config.ini ocr_vertical). Last, so that no other model's
-     * index moves. */
-    {VJO_VOCR5_V_NAME, VJO_VOCR5_V_BYTES,
-     {0xcc,0xd2,0x0c,0x63,0xbb,0x26,0x20,0xf0,0x54,0x53,0x8b,0x45,0x69,0x04,0xbd,0xf1,
-      0x9b,0x74,0xd4,0x83,0xd3,0xda,0x8d,0xe8,0x65,0x00,0x9e,0x28,0x2b,0xb0,0x41,0x72},
-     124832, VJO_VOCR_COLUMNS},
 };
 #endif /* VJO_VOCR_TEST_MODELS */
 #define N_MODELS (sizeof(models) / sizeof(models[0]))
@@ -182,16 +160,15 @@ const VjoVocrModel *vjo_vocr_model(const char *name)
     return NULL;
 }
 
-/* Job workspace: [finder, then recognizer arena | vocr_model, vocr_ctx], a
- * model of columns' rotation buffer, then the refinement's arena, the LM
- * extras and the cascade's (each when the job has them), and last the line
- * slots of parallel lines (API 22: the caller's own and one per helper). The
- * one-shot form puts the weights in front of it. The region's pixels are not
- * in it: they live one strip at a time in the capture block. */
+/* Job workspace: [finder, then recognizer arena | vocr_model, vocr_ctx], then
+ * the refinement's arena, the LM extras and the cascade's (each when the job has
+ * them), and last the line slots of parallel lines (API 22: the caller's own and
+ * one per helper). The one-shot form puts the weights in front of it. The
+ * region's pixels are not in it: they live one strip at a time in the capture
+ * block. */
 typedef struct {
     size_t scratch_off, structs_off, total;
     size_t scratch, finder;
-    size_t rot_off;       /* a model of columns: its rotation buffer (VJO_VOCR_ROTATE_BYTES), inside total; else 0 */
     int lm;               /* the LM extras (top-K, decoder) follow at total (lm_layout) */
     int cascade;          /* and after them the cascade's (cascade_layout) */
     size_t refine_off, refine_bytes; /* the refinement's arena, inside total (0 bytes: off) */
@@ -220,27 +197,14 @@ static int region_ok(unsigned w, unsigned h)
     return w && h && w <= VJO_OCR_MAX_WIDTH && h <= VJO_OCR_MAX_HEIGHT;
 }
 
-/* A model of vertical text: its jobs read columns (core/vocr_ocr.h VJO_VOCR_FINDER_COLUMNS). */
-static int columns_of(const VjoVocrModel *m)
-{
-    return (m->finder_mode & VJO_VOCR_FINDER_COLUMNS) != 0;
-}
-
 static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
 {
     if (!m || !region_ok(w, h)) return -1;
     l->finder = vocr_lines_arena_bytes(w, h);
-    if (columns_of(m) && vocr_columns_arena_bytes(w, h) > l->finder)
-        l->finder = vocr_columns_arena_bytes(w, h); /* the larger of the two finders' (83,619 B at 960x544) */
     l->scratch = ALIGN16(l->finder > m->arena_bytes ? l->finder : m->arena_bytes);
     l->scratch_off = 0;
     l->structs_off = l->scratch;
     l->total = l->structs_off + ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx));
-    l->rot_off = 0;
-    if (columns_of(m)) { /* a column turned 90 degrees, the line the recognizer reads */
-        l->rot_off = l->total;
-        l->total += ALIGN16((size_t)VJO_VOCR_ROTATE_BYTES);
-    }
     l->lm = l->cascade = 0;
     l->refine_off = l->refine_bytes = 0;
     l->gate_off = l->gate_bytes = 0;
@@ -1167,12 +1131,10 @@ static uint16_t line_conf(const vocr_extra *e, const char *greedy)
 }
 
 /* A line's length in the recognizer's terms: its width at the input height of
- * 32 pixels, which its CTC frames (and so its time) follow; a column's is its
- * height at a width of 32 (it is read turned). */
-static uint32_t line_length(const VocrLine *ln, int cols)
+ * 32 pixels, which its CTC frames (and so its time) follow. */
+static uint32_t line_length(const VocrLine *ln)
 {
-    const unsigned w = cols ? ln->h : ln->w, h = cols ? ln->w : ln->h;
-    return (uint32_t)w * 32u / (h ? h : 1u) + 1u;
+    return (uint32_t)ln->w * 32u / (ln->h ? ln->h : 1u) + 1u;
 }
 
 /* ---- API 22: the line cache ---- */
@@ -1364,13 +1326,6 @@ uint32_t vjo_vocr_test_len_left(void);
 uint32_t vjo_vocr_test_len_left(void)
 {
     return lines.len_left;
-}
-/* Host tests: a box's length in the recognizer's terms, as a row (cols 0) or a column (the cascade's estimate). */
-uint32_t vjo_vocr_test_line_length(unsigned w, unsigned h, int cols);
-uint32_t vjo_vocr_test_line_length(unsigned w, unsigned h, int cols)
-{
-    const VocrLine ln = {0, 0, w, h, 0};
-    return line_length(&ln, cols);
 }
 #endif
 
@@ -1727,16 +1682,15 @@ static void line_extra(vocr_extra *ex, int (*cancel)(void *), void *user, int to
     }
 }
 
-/* A slot's copy of a line: its w x h pixels out of the strip (or a column's
- * rotation buffer), and its image. */
-static void slot_line(Slot *sl, const unsigned char *pixels, size_t stride, unsigned w, unsigned h, unsigned dark)
+/* A slot's copy of a line: its rows out of the strip, and its image. */
+static void slot_line(Slot *sl, const unsigned char *pixels, size_t stride, const VocrLine *ln)
 {
-    for (unsigned r = 0; r < h; r++) memcpy(sl->pixels + (size_t)r * w, pixels + (size_t)r * stride, w);
+    for (unsigned r = 0; r < ln->h; r++) memcpy(sl->pixels + (size_t)r * ln->w, pixels + (size_t)r * stride, ln->w);
     sl->img.pixels = sl->pixels;
-    sl->img.width = w;
-    sl->img.height = h;
-    sl->img.stride = w;
-    sl->img.format = VOCR_GREY8 | (dark ? VOCR_INVERT : 0);
+    sl->img.width = ln->w;
+    sl->img.height = ln->h;
+    sl->img.stride = ln->w;
+    sl->img.format = VOCR_GREY8 | (ln->dark ? VOCR_INVERT : 0);
 }
 
 /* One capture of the region: lines, then (weights) each line recognized. */
@@ -1757,7 +1711,6 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     Lines *L = &lines;
     uint32_t t0, len_left = 0;
     int rc, loaded = 0, busy_on = 0;
-    const int cols = columns_of(mi); /* a model of columns: vertical text, each column read turned */
 
     if (L->stuck) { /* an earlier job's helper may still run in its workspace */
         st->stuck = 1;
@@ -1782,15 +1735,13 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         st->cascade = NULL;
         st->cascade_rc = 0;
     }
-    st->cached = st->dispatched = st->run_failures = st->rotate_skipped = 0;
+    st->cached = st->dispatched = st->run_failures = 0;
     st->gate_ran = st->gate_stopped = st->gate_rows = 0;
     st->gate_score = 0;
     st->gate_us = 0;
     if (l->gate_bytes) st->gate_rc = 0;
     t0 = clock_us(p);
-    /* API 26: the gate takes the rows the finder reads (stream_row). It scores row boxes: a model of columns
-     * (vertical text, API 27) reads without it. */
-    if (l->gate_bytes && !cols) {
+    if (l->gate_bytes) { /* API 26: the gate takes the rows the finder reads (stream_row) */
         int grc = vocr_textgate_begin(&gate, &l->gate, VJO_VOCR_GATE_MODE, VJO_VOCR_GATE_K, w, im->height,
                                       ws + l->gate_off, l->gate_bytes);
         if (grc) {
@@ -1800,9 +1751,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             s->gate_next = 0;
         }
     }
-    /* The finder: rows, or a model of columns' columns, right to left (vocr_vertical.h) */
-    rc = cols ? vocr_find_columns_rows(&region, mi->finder_mode & 0xFFu, ws + l->scratch_off, l->finder, &set)
-              : vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
+    rc = vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
     if (s->gate) {
         /* Scored on the finder's boxes; under the threshold the region holds no text: no line is read
          * (a hidden text box, a CG screen). Any error keeps the lines (the job reads as without it). */
@@ -1829,14 +1778,13 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
      * that changed while it was read is seen (the strips of a taller region are
      * all read twice by the finder's two passes already). */
     if (s->strip_rows >= im->height && stream_fetch(s, 0) < 0) return stream_error(s, VJO_E_SOURCE);
-    if (pol->short_lines && !cols && !set.truncated && probe_short_lines(s, &set) < 0)
-        return stream_error(s, VJO_E_SOURCE);
+    if (pol->short_lines && !set.truncated && probe_short_lines(s, &set) < 0) return stream_error(s, VJO_E_SOURCE);
     st->find_us = clock_us(p) - t0;
     st->lines = set.count;
     st->truncated = set.truncated;
     for (unsigned i = 0; i < set.count; i++) {
         st->dark += set.lines[i].dark ? 1u : 0u;
-        len_left += line_length(&set.lines[i], cols);
+        len_left += line_length(&set.lines[i]);
     }
     if (!set.count) return VJO_OK; /* nothing to read: the model file is not opened */
     if (cancelled(im)) return VJO_E_CANCELLED;
@@ -1866,7 +1814,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         L->casc_ratio = cost_ratio(pol->cascade, mi);
     }
     L->want_lm = pol->lm != NULL;
-    L->want_cascade = pol->cascade && pol->cascade_res && pol->cascade_us && pol->cascade != mi && !cols;
+    L->want_cascade = pol->cascade && pol->cascade_res && pol->cascade_us && pol->cascade != mi;
     /* Helpers only without a per-line callback (it reads the strip in line order)
      * and for a text the slots can hold. */
     L->helpers = pool && pool->run && pool->join && !pol->line && cap <= VJO_OCR_TEXT_CAP
@@ -1917,27 +1865,14 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         const unsigned char *box_pixels;
         size_t box_stride = w;
         VocrLineSet parts;
-        L->len_left -= line_length(box, cols);
+        L->len_left -= line_length(box);
         if (cancelled(im)) { rc = VJO_E_CANCELLED; goto fail; }
-        if (cols && (size_t)box->w * box->h > VJO_VOCR_ROTATE_BYTES) {
-            st->rotate_skipped++; /* a column larger than the rotation buffer: left out, never read */
-            continue;
-        }
         box_pixels = line_pixels(s, box, &box_stride);
         if (s->err) { rc = s->err; goto fail; }
         if (!box_pixels) continue; /* taller than a strip and no line buffer: left out */
         parts.count = 1;
         parts.truncated = 0;
         parts.lines[0] = *box;
-        if (cols && (mi->finder_mode & VOCR_COLUMNS_NO_DARK)) {
-            /* The finder left the column's dark flag to the job: vocr_line_dark on the column's own pixels,
-             * which it reads only inside the box (the same flag, bit for bit), before they are turned. */
-            const VocrLinesImage cim = {box_pixels, box->w, box->h, box_stride, VOCR_LINES_GREY};
-            int dark = vocr_line_dark(&cim, 0, 0, box->w, box->h);
-            if (dark < 0) { rc = VJO_E_OCR_REGION; goto fail; }
-            parts.lines[0].dark = (unsigned)dark;
-            st->dark += (unsigned)dark;
-        }
         if (l->refine_bytes) {
             /* The box refined on the pixels the job holds for it: its strip (the
              * box made strip-relative), or a tall line's own block. Its lines may
@@ -1979,12 +1914,11 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             st->refine_us += clock_us(p) - r0;
         }
         /* the box's estimate of the time still to read, now by its parts */
-        for (unsigned k = 0; k < parts.count; k++) L->len_left += line_length(&parts.lines[k], cols);
+        for (unsigned k = 0; k < parts.count; k++) L->len_left += line_length(&parts.lines[k]);
         for (unsigned k = 0; k < parts.count; k++, li++) {
             const VocrLine *ln = &parts.lines[k];
             const unsigned char *pixels = box_pixels + (size_t)(ln->y - box->y) * box_stride + (ln->x - box->x);
-            size_t stride = box_stride;
-            unsigned pw = ln->w, ph = ln->h; /* the pixels the line is read from: its crop, or a column turned */
+            const size_t stride = box_stride;
             const int last = i + 1 == set.count && k + 1 == parts.count;
             VjoVocrInk ink = {0, 0, 0, 0, 0, 0};
             Pending cur;
@@ -1995,22 +1929,9 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             if (L->qt >= VJO_VOCR_MAX_LINES && (rc = drain(L, 1)) != VJO_OK) goto fail;
             /* With nothing queued, the text so far is final: the serial job's check. */
             if (L->qh == L->qt && (L->used ? L->used + 1 : 0) + 1 >= cap) { rc = VJO_E_TOO_LARGE; goto fail; }
-            if (cols) {
-                /* The column turned 90 degrees anticlockwise into the rotation buffer (its top to the
-                 * left): ln->w rows of ln->h bytes, the line from here on; its box stays the screen's. */
-                unsigned char *rot = ws + l->rot_off;
-                if (vocr_column_rotate(pixels, stride, VOCR_LINES_GREY, ln->w, ln->h, rot, ln->h) != VOCR_LINES_OK) {
-                    rc = VJO_E_OCR_REGION;
-                    goto fail;
-                }
-                pixels = rot;
-                stride = ln->h;
-                pw = ln->h;
-                ph = ln->w;
-            }
             if (pol->blank || pol->line) {
                 uint32_t b0 = clock_us(p);
-                blank = vjo_vocr_ink(pixels, stride, pw, ph, &ink);
+                blank = vjo_vocr_ink(pixels, stride, ln->w, ln->h, &ink);
                 if (pol->blank_edges) blank = ink.edges < pol->blank_edges;
                 blank = blank && pol->blank;
                 st->blank_us += clock_us(p) - b0;
@@ -2022,7 +1943,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             cur.w = (uint16_t)ln->w;
             cur.h = (uint16_t)ln->h;
             cur.dark = (uint8_t)(ln->dark != 0);
-            cur.len = line_length(ln, cols);
+            cur.len = line_length(ln);
             cur.pixels = pixels;
             cur.stride = stride;
             cur.ink = ink;
@@ -2044,10 +1965,10 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 }
                 L->t0 += clock_us(p) - r0; /* recognize_us leaves the load out */
             }
-            if (L->cache && (cols || ln->h <= s->strip_rows)) { /* a turned column fits a strip's bytes */
+            if (L->cache && ln->h <= s->strip_rows) {
                 uint32_t k0 = clock_us(p);
                 VjoVocrCacheLine *hit;
-                cur.key = line_key(pixels, stride, pw, ph, ln->dark, pol->cache_variant);
+                cur.key = line_key(pixels, stride, ln->w, ln->h, ln->dark, pol->cache_variant);
                 st->key_us += clock_us(p) - k0;
                 hit = cache_find(L->cache, mi, cur.key);
                 if (hit) {
@@ -2077,7 +1998,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             if (sl) {
                 const unsigned k2 = (unsigned)(sl - L->slot);
                 if ((rc = slot_init(sl, model, S_ARENA(mi))) != VJO_OK) goto fail;
-                slot_line(sl, pixels, stride, pw, ph, ln->dark);
+                slot_line(sl, pixels, stride, ln);
                 line_extra(&sl->extra, slot_cancel, sl, l->lm, sl->topk_logit, sl->topk_class, sl->blank);
                 sl->busy = 1;
                 __atomic_store_n(&sl->done, 0, __ATOMIC_RELEASE);
@@ -2108,8 +2029,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 uint64_t c0t = pool && pool->thread_us ? pool->thread_us(pool->ud) : 0;
                 if (start + 1 >= cap) { rc = VJO_E_TOO_LARGE; goto fail; } /* the serial job's check */
                 img.pixels = pixels;
-                img.width = pw;
-                img.height = ph;
+                img.width = ln->w;
+                img.height = ln->h;
                 img.stride = stride;
                 img.format = VOCR_GREY8 | (ln->dark ? VOCR_INVERT : 0);
                 line_extra(&extra, run_cancel, (void *)im, l->lm, (float *)(void *)(x0 + L->x.topk_logit),
@@ -2128,7 +2049,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                 uint32_t r0;
                 uint64_t c0t = pool->thread_us ? pool->thread_us(pool->ud) : 0;
                 sl = &L->slot[0];
-                slot_line(sl, pixels, stride, pw, ph, ln->dark);
+                slot_line(sl, pixels, stride, ln);
                 line_extra(&sl->extra, run_cancel, (void *)im, l->lm, sl->topk_logit, sl->topk_class, sl->blank);
                 r0 = clock_us(p);
                 sl->rc = vocr_run(ctx, &sl->img, sl->text, VJO_OCR_TEXT_CAP, &sl->extra);
@@ -2190,9 +2111,9 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     strip_rows = vjo_vocr_strip_rows(image->width, image->height);
     need_capture = vjo_vocr_capture_bytes(image->width, image->height);
 
-    if (policy && policy->refine && !columns_of(mi)) {
+    if (policy && policy->refine) {
         /* The refinement's arena ends the job's own workspace; without room the
-         * boxes are read as found. A model of columns has none (its boxes are columns). */
+         * boxes are read as found. */
         size_t rb = vjo_vocr_refine_bytes(image->width, image->height);
         if (workspace && rb && workspace_size >= front + l.total + rb) {
             l.refine_off = l.total;
@@ -2208,7 +2129,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
          * room the job reads greedily, or without the cascade. */
         int want_lm = policy && policy->lm && policy->lm_res;
         int want_cascade = policy && policy->cascade && policy->cascade_res && policy->cascade_us &&
-                           policy->cascade != mi && !columns_of(mi); /* a column's model has no larger one */
+                           policy->cascade != mi;
         size_t with_lm = front + l.total + vjo_vocr_lm_job_bytes(model);
         size_t with_cascade = with_lm + (want_cascade ? vjo_vocr_cascade_job_bytes(policy->cascade->name) : 0);
         if ((want_lm || want_cascade) && workspace && workspace_size >= with_lm) l.lm = 1;
@@ -2230,7 +2151,6 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
         stats->workspace = end + vjo_vocr_helpers_bytes(model, l.helpers);
     }
     stats->capture = need_capture;
-    stats->columns = (unsigned)columns_of(mi);
     stats->model_bytes = mi->bytes;
     stats->scratch_bytes = l.scratch;
     stats->width = image->width;
@@ -2239,7 +2159,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     if (cancelled(image)) return VJO_E_CANCELLED;
     if (!workspace || ((uintptr_t)workspace & 15u) || workspace_size < front + l.total ||
         !capture || capture_size < need_capture) return VJO_E_OOM;
-    if (policy && policy->gate && !columns_of(mi)) { /* it scores row boxes: a model of columns (API 27) reads without */
+    if (policy && policy->gate) {
         /* API 26: the gate's weights (read once, then kept), and its arena in the scratch the finder leaves
          * free (the recognizer's arena is the larger part of it at every region size), so the workspace never
          * grows for it. Without either the job reads as without the gate (stats->gate_rc says why). */
@@ -2468,7 +2388,7 @@ int vjo_vocr_warm(const VjoPlatform *p, const char *dir, const char *model, cons
             return st->lm_rc = rc;
         st->lm = pol->lm;
     }
-    if (pol->cascade && pol->cascade_res && pol->cascade_us && pol->cascade != mi && !columns_of(mi) &&
+    if (pol->cascade && pol->cascade_res && pol->cascade_us && pol->cascade != mi &&
         (pol->cascade_res->model != pol->cascade || !pol->cascade_res->data)) {
         st->warmed = 1;
         t0 = clock_us(p);

@@ -245,8 +245,7 @@ static int psp_title;
  * and whether the cascade's model is the job's to open by its name. */
 static uint32_t open_which;
 static int open_cascade;
-/* API 21: the job is a request by tiers (its models open by their tier; not a
- * vertical job's, API 26, whose model opens as VJO_GAME_OCR_OPEN_VERTICAL), and the
+/* API 21: the job is a request by tiers (its models open by their tier), and the
  * reserve its memory check kept (include/vjo_ledger_budget.h VJO_GAME_RESERVE_*),
  * which its resident blocks' allocations keep too. */
 static int tiered;
@@ -1315,8 +1314,6 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
     /* API 23: a shot carries no model, tiers, speed or other flag but F_FULL */
     int shot = (r->flags & VJO_GAME_OCR_F_SHOT) != 0;
-    /* API 26: vertical text, the vertical model on the region's columns (config.ini ocr_vertical) */
-    int vertical = (r->flags & VJO_GAME_OCR_F_VERTICAL) != 0;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
         refine_mode > VJO_GAME_OCR_REFINE_PSP || (r->tiers & ~VJO_VOCR_TIERS_ALL) ||
         (r->speed & ~VJO_GAME_OCR_S_ALL) ||
@@ -1337,23 +1334,18 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 #else
     if (r->flags & VJO_GAME_OCR_F_PROBE) goto done; /* no probe in the normal build: VJO_E_SOURCE */
 #endif
-    /* The finder's boxes refined (API 20): the mode, here or in a PSP game; never columns (API 26). */
-    unsigned refine = !vertical && (refine_mode == VJO_GAME_OCR_REFINE_ON ||
-                                    (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title))
+    /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
+    unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
                       ? VJO_VOCR_REFINE_ALL : 0u;
     size_t refine_bytes = refine ? vjo_vocr_refine_bytes(r->width, r->height) : 0;
     size_t capture_bytes = vjo_vocr_capture_bytes(r->width, r->height);
     /* The models this job may run, in the order it tries them (API 21): a request
      * by tiers names its tiers, the largest first; one by name its model, then its
-     * fallback, used only if it is another pinned model needing less memory. A
-     * vertical job (API 26) runs the vertical model alone, whatever its tiers, with
-     * a request by name's reserve (VOCR5-S's shape: the Small size's 4 MiB). */
+     * fallback, used only if it is another pinned model needing less memory. */
     Candidate cand[CANDIDATES];
     unsigned n = 0, top = 0;
-    tiered = r->tiers != 0 && !vertical;
-    if (vertical) {
-        cand[n++] = (Candidate){vjo_vocr_model(VJO_VOCR_VERTICAL_NAME), 0, VJO_GAME_OCR_OPEN_VERTICAL, 0};
-    } else if (tiered) {
+    tiered = r->tiers != 0;
+    if (tiered) {
         for (unsigned t = VJO_VOCR_TIERS; t >= 1u; t--)
             if (r->tiers & (1u << (t - 1u))) {
                 if (!top) top = t;
@@ -1390,9 +1382,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (!lm_max && (lm_res.data || lm_uid >= 0) && drop_lm()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     /* The confidence cascade (API 20): the request's time ceiling, and a larger
      * model beside the job's (cascade_of); none asked for, and a resident one goes. */
-    uint32_t casc_us = vertical ? 0u /* no larger model reads columns */
-                                : ((r->flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK) *
-                                      VJO_GAME_OCR_CASCADE_UNIT_US;
+    uint32_t casc_us = ((r->flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK) *
+                       VJO_GAME_OCR_CASCADE_UNIT_US;
     const VjoVocrModel *casc = NULL;
     if (!casc_us && (cascade_res.data || cascade_uid >= 0) && drop_cascade()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     /* Reported also when refused: each title's real free memory. Each model is

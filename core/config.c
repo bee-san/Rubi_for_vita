@@ -134,9 +134,6 @@ const char *vjo_config_default_text(void)
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
            "ocr_boost_clock = on\n"
-           "; vocr: vertical text (manga, vertical dialogue): on reads the region's columns,\n"
-           "; right to left, with the vertical model, in every game; off reads rows\n"
-           "ocr_vertical = off\n"
            "\n"
            "; The Rubi app's Read text. auto: recognize text in the background when the\n"
            "; region settles, so the popup is ready when you press; on_press: recognize only\n"
@@ -571,9 +568,9 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_threads")) {
         static const char *const threads[] = {"1", "2", "3", NULL}; /* stored as the helpers: 0-2 */
         set_choice(c, key, val, &c->ocr_helpers, threads);
-    } else if (vjo_ieq(key, "ocr_boost_clock") || vjo_ieq(key, "ocr_vertical")) {
+    } else if (vjo_ieq(key, "ocr_boost_clock")) {
         static const char *const off_on[] = {"off", "on", NULL};
-        set_choice(c, key, val, vjo_ieq(key, "ocr_vertical") ? &c->ocr_vertical : &c->ocr_boost_clock, off_on);
+        set_choice(c, key, val, &c->ocr_boost_clock, off_on);
     } else if (vjo_ieq(key, "ocr_mode")) {
         if (vjo_ieq(val, "auto"))
             c->ocr_mode = VJO_OCR_AUTO;

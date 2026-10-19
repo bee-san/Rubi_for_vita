@@ -703,7 +703,6 @@ static const char nondefault_config[] =
     "ocr_skip_blank_lines = on\n"
     "ocr_threads = 1\n"
     "ocr_boost_clock = on\n"
-    "ocr_vertical = on\n"
     "log_file = off\n"
     "anki_mining = on\n"
     "anki_screenshot = off\n"

@@ -147,30 +147,6 @@ static void join_removes_the_breaks_and_moves_offsets(void)
     }
 }
 
-/* Vertical text (vita-vn-ocr #99, config.ini ocr_vertical): the game worker returns a region's columns
- * right to left, one per line, so the rule reads them as it reads rows. A vertical box wraps its columns at
- * one height, so a full column joins the next as a full row does (a word across the break is looked up
- * whole); short columns (a manga balloon's, under VJO_JOIN_MIN_CHARS) keep their breaks, as short rows do. */
-static int break_joins(const char *text, const char *mark) /* the break that ends `mark` */
-{
-    const char *at = strstr(text, mark);
-    TEST_ASSERT(at != NULL && mark[0] && mark[strlen(mark) - 1] == '\n');
-    return vjo_text_joins(text, strlen(text), (size_t)(at - text) + strlen(mark) - 1);
-}
-
-static void columns_join_as_lines_do(void)
-{
-    char t[256] = "神子殿、この京の都には今\nも多くの怨霊がさまよって\nいるのです。\nしかし";
-    int offs[1] = {0};
-    TEST_CHECK(break_joins(t, "今\n") && break_joins(t, "て\n") && !break_joins(t, "。\n"));
-    offs[0] = (int)(strstr(t, "今") - t);
-    TEST_CHECK(vjo_text_join(t, offs, 1) == strlen(t) &&
-               !strcmp(t, "神子殿、この京の都には今も多くの怨霊がさまよっているのです。\nしかし") &&
-               !strncmp(t + offs[0], "今も", strlen("今も")));
-    /* a balloon's short columns */
-    TEST_CHECK(!break_joins("そんな\nバカな\nことが…", "そんな\n") && !break_joins("そんな\nバカな\nことが…", "カな\n"));
-}
-
 TEST_LIST = {
     {"full_line_joins_the_next", full_line_joins_the_next},
     {"short_lines_keep_their_break", short_lines_keep_their_break},
@@ -178,6 +154,5 @@ TEST_LIST = {
     {"spaces_ends_and_empty_lines", spaces_ends_and_empty_lines},
     {"half_width_characters_count_half", half_width_characters_count_half},
     {"join_removes_the_breaks_and_moves_offsets", join_removes_the_breaks_and_moves_offsets},
-    {"columns_join_as_lines_do", columns_join_as_lines_do},
     {NULL, NULL},
 };

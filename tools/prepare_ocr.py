@@ -111,22 +111,6 @@ VOCR5_ASSETS = {
         '50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3'),
 }
 VOCR_DEFAULT_MODEL = 'VOCR5_N_w8.vocr'  # the default model size's (Normal's), tools/model_tiers.json
-# VOCR5-V (vita-vn-ocr #99): vertical text in VOCR5-S's shape, reading a column turned 90 degrees
-# anticlockwise. No model size runs it: a job does when config.ini says ocr_vertical = on. Pre-release
-# v0.3.2-vertical.1, whose SHA256SUMS lists this hash.
-VOCR5V_TAG = 'v0.3.2-vertical.1'
-VOCR5V_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5V_TAG}/'
-VOCR5V_ASSETS = {
-    'VOCR5_V_w8.vocr': (VOCR5V_BASE + 'VOCR5_V_w8.vocr', 819792,
-        'ccd20c63bb2620f054538b456904bdf19b74d483d3da8de865009e282bb04172'),
-}
-VOCR_VERTICAL_MODEL = 'VOCR5_V_w8.vocr'
-# Its release's ATTRIBUTION.md (in its SHA256SUMS): VOCR5-S's training data and terms (non-commercial use only)
-# and the vertical training data. The package ships it beside the model as ocr/VERTICAL-ATTRIBUTION.md, the
-# other releases' attributions having the same name in their release.
-VOCR_VERTICAL_ATTRIBUTION = 'VERTICAL-ATTRIBUTION.md'
-VOCR_VERTICAL_ATTRIBUTION_PIN = {VOCR_VERTICAL_ATTRIBUTION: (VOCR5V_BASE + 'ATTRIBUTION.md', 3323,
-    '0f644c6dce8c24abb9ac56ecbb684ab7cd1f1950cad0aae15eafadba04bcbcd9')}
 # The model sizes' attribution: v0.3.0's ATTRIBUTION.md (in its SHA256SUMS), the licences of what the
 # VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
 # their terms (non-commercial use only). The package ships it beside the weights as
@@ -160,7 +144,7 @@ VOCR_GATE_ATTRIBUTION_PIN = {VOCR_GATE_ATTRIBUTION: (VOCR_GATE_BASE + VOCR_GATE_
 # the pins carry it: core/vocr_models.c per file (the Rubi app names the local OCR engine
 # after it) and package-manifest.json (package_release.py). The VOCR2 trial (v0.2.3-vocr2.1)
 # was removed from the overlay after v0.8.0-test.1.
-VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5', VOCR5V_TAG: 'VOCR5'}
+VOCR_GENERATION = {VOCR_TAG: 'VOCR1', VOCR3_TAG: 'VOCR3', VOCR4_TAG: 'VOCR4', VOCR5_TAG: 'VOCR5'}
 
 # The model sizes the Rubi app offers (config.ini vocr_tier), each a pinned recognizer above:
 # one table for the C pins' tests, the packager and the self-test analyser.
@@ -182,7 +166,7 @@ def model_tiers():
 def release_assets(name):
     """(asset table, release tag) of a pinned recognizer."""
     for assets, tag in ((VOCR5_ASSETS, VOCR5_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR4_ASSETS, VOCR4_TAG),
-                        (VOCR_ASSETS, VOCR_TAG), (VOCR5V_ASSETS, VOCR5V_TAG)):
+                        (VOCR_ASSETS, VOCR_TAG)):
         if name in assets:
             return assets, tag
     raise ValueError(f'{name} is not a pinned recognizer')
@@ -259,17 +243,12 @@ def fetch_vocr(directory, name, source=None):
 def fetch_tiers(directory, source=None):
     """The three model sizes' recognizers (tools/model_tiers.json), each pinned, and their release's
     attribution (MODEL-ATTRIBUTION.md), with the text-presence gate's weights and attribution
-    (GATE-ATTRIBUTION.md), and the vertical model (VOCR_VERTICAL_MODEL, config.ini ocr_vertical) and its
-    release's attribution (VERTICAL-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched
-    once."""
+    (GATE-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
     names = dict.fromkeys(tier['model'] for tier in model_tiers()['tiers'])
     paths = [fetch_vocr(directory, name, source) for name in names]
     paths.append(fetch_release_asset(directory, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN,
                                      VOCR_MODEL_ATTRIBUTION_TAG, source, VOCR_MODEL_ATTRIBUTION_ASSET))
     paths += fetch_gate(directory, source)
-    paths.append(fetch_vocr(directory, VOCR_VERTICAL_MODEL, source))
-    paths.append(fetch_release_asset(directory, VOCR_VERTICAL_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION_PIN,
-                                     VOCR5V_TAG, source, 'ATTRIBUTION.md'))
     return paths
 
 
@@ -352,8 +331,7 @@ def main():
                     help="vocr-tiers: the three model sizes' recognizers (Small, Normal, Large); "
                          "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md")
     ap.add_argument('--ncnn-source', type=Path)
-    ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS,
-                                               **VOCR5V_ASSETS}),
+    ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS}),
                     help=f'vocr: which recognizer (default: {VOCR_DEFAULT_MODEL})')
     ap.add_argument('--from', dest='source', help='vocr: an already downloaded asset (file or directory)')
     args = ap.parse_args()

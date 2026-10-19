@@ -428,17 +428,6 @@ if(VJO_WITH_VOCR)
   find_package(Threads REQUIRED)
   target_link_libraries(vjo-vocr-parallel-tests vjo_vocr_rt vjo_host bearssl Threads::Threads)
   add_test(NAME vocr_parallel COMMAND vjo-vocr-parallel-tests)
-  # vita-vn-ocr #99: vertical text (a model of columns) through the actual core adapter, with real
-  # vocr_run calls on tiny weights blobs the test builds and pins itself (no release files), and the
-  # job of rows today's exactly (main 1de7b67's figures).
-  add_executable(vjo-vocr-vertical-tests host/tests/test_vocr_vertical.c core/vocr_ocr.c)
-  target_include_directories(vjo-vocr-vertical-tests PRIVATE third_party/acutest/include host/tests core include
-    third_party/bearssl/inc)
-  target_compile_options(vjo-vocr-vertical-tests PRIVATE -Wall -Wextra)
-  target_compile_definitions(vjo-vocr-vertical-tests PRIVATE VJO_VOCR_TEST_MODELS="test_vertical_models.h"
-    VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-  target_link_libraries(vjo-vocr-vertical-tests vjo_vocr_rt vjo_host bearssl Threads::Threads)
-  add_test(NAME vocr_vertical COMMAND vjo-vocr-vertical-tests)
   # ocr-speed: serial against helpers (and the cache) on real regions with real weights (host only).
   add_executable(vjo-vocr-parallel-bench host/vocr_parallel_bench.c)
   target_link_libraries(vjo-vocr-parallel-bench vjo_vocr vjo_host Threads::Threads)
@@ -460,8 +449,7 @@ if(VJO_WITH_VOCR)
   # This verifies dispatch and capture ownership without weights or inference.
   add_executable(vjo-vocr-mode-tests host/tests/test_vocr_mode.c core/vocr_ocr.c)
   target_include_directories(vjo-vocr-mode-tests PRIVATE third_party/acutest/include)
-  target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines_rows=vjo_test_find_lines_rows
-    vocr_find_columns_rows=vjo_test_find_columns_rows)
+  target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines_rows=vjo_test_find_lines_rows)
   target_link_libraries(vjo-vocr-mode-tests vjo_vocr_rt vjo_host)
   target_compile_options(vjo-vocr-mode-tests PRIVATE -Wall -Wextra)
   add_test(NAME vocr_finder_dispatch COMMAND vjo-vocr-mode-tests)

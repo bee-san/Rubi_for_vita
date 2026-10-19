@@ -65,14 +65,7 @@
  * card's screenshot, beside its record. A shot recognizes nothing, opens no model and
  * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed. */
 #define VJO_GAME_OCR_F_SHOT 0x4000u
-/* API 27, bit 15: vertical text (config.ini ocr_vertical, vita-vn-ocr #99). The job runs the vertical
- * model (include/vjo_vocr_sizes.h VJO_VOCR_VERTICAL_NAME), whatever its tiers name, and opens it as
- * VJO_GAME_OCR_OPEN_VERTICAL: it finds the region's columns and reads each turned 90 degrees, right
- * to left (core/vocr_ocr.h VJO_VOCR_FINDER_COLUMNS), with the LM bits as for any job; no cascade, no
- * refinement and no smaller model to step down to (the reserve is a request by name's). Every flag
- * bit is now defined. */
-#define VJO_GAME_OCR_F_VERTICAL 0x8000u
-#define VJO_GAME_OCR_F_ALL 0xFFFFFFFFu
+#define VJO_GAME_OCR_F_ALL 0xFFFF7FFFu
 /* The shot's file: the Anki queue (core/anki_queue.h VJO_QUEUE_DIR; a host test checks the
  * two agree), named by the card's queue ID (32 lowercase hex digits), at most
  * VJO_GAME_OCR_SHOT_MAX bytes (core/anki.h VJO_ANKI_PICTURE_MAX, what an export reads). */
@@ -138,15 +131,12 @@ typedef struct {
  * a request by tiers) the model of tier which - VJO_GAME_OCR_OPEN_TIER + 1: one of
  * the request's tiers, or with a cascade ceiling the tier above its largest
  * (the cascade's model). A request by tiers opens no MODEL, FALLBACK or CASCADE;
- * one by name opens no TIER. API 27: a request with VJO_GAME_OCR_F_VERTICAL may
- * open the vertical model (VJO_GAME_OCR_OPEN_VERTICAL), by tiers or by name; the
- * vertical model opens no other way (not as a request's MODEL or FALLBACK). */
+ * one by name opens no TIER. */
 #define VJO_GAME_OCR_OPEN_MODEL 0u
 #define VJO_GAME_OCR_OPEN_FALLBACK 1u
 #define VJO_GAME_OCR_OPEN_LM 2u
 #define VJO_GAME_OCR_OPEN_CASCADE 8u
 #define VJO_GAME_OCR_OPEN_TIER 9u
-#define VJO_GAME_OCR_OPEN_VERTICAL 16u
 /* API 26: the text-presence gate's weights (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME), for a request with
  * VJO_GAME_OCR_S_GATE only. */
 #define VJO_GAME_OCR_OPEN_GATE 17u

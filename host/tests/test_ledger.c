@@ -159,32 +159,6 @@ static void test_game_workspace_budget_matches_the_layout(void)
     TEST_MSG("largest full-screen job %zu B: %s with the cascade %s", largest, which, which_casc);
 }
 
-/* vita-vn-ocr #99: the vertical job (config.ini ocr_vertical) at the full screen, as game_ocr/main.c sizes
- * it: the vertical model's own job (the larger of the two finders' arenas, the rotation buffer), the LM
- * extras and the greedy text kept for the log, the most helpers' line slots; never the refinement or a
- * cascade. It stays within the workspace budget the Large size's jobs set, with room to spare, and so does
- * the loop above's larger count (a request by name's VOCR4-W20 cascade and the refinement beside it). */
-static void test_vertical_job_fits_the_workspace_budget(void)
-{
-    const char *v = VJO_VOCR_VERTICAL_NAME, *s = VJO_VOCR5_S_NAME;
-    size_t own = vjo_vocr_job_bytes(v, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT);
-    size_t job = own + vjo_vocr_lm_job_bytes(v) + VJO_GAME_OCR_TEXT_BYTES + vjo_vocr_helpers_bytes(v, VJO_VOCR_HELPERS_MAX);
-    size_t page = (job + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE;
-    TEST_ASSERT(vjo_vocr_model(v) && own);
-    /* its own job: VOCR5-S's plus the rotation buffer (the shapes' arena is the larger than either finder's) */
-    TEST_CHECK(own == vjo_vocr_job_bytes(s, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT) +
-                          ((VJO_VOCR_ROTATE_BYTES + 15u) & ~(size_t)15u));
-    TEST_CHECK_(page <= VJO_BUDGET_GAME_WORKSPACE && page + 4u * 65536u < VJO_BUDGET_GAME_WORKSPACE,
-                "the vertical job %zu B (%zu B in pages) against the budget %u B", job, page,
-                (unsigned)VJO_BUDGET_GAME_WORKSPACE);
-    TEST_CHECK(full_job(v, VJO_VOCR_CASCADE_NAME) <= VJO_BUDGET_GAME_WORKSPACE);
-    TEST_MSG("the vertical job at 960x544: %zu B (own %zu, LM %zu, text %u, helpers %zu), %zu B in pages, budget %u B",
-             job, own, vjo_vocr_lm_job_bytes(v), (unsigned)VJO_GAME_OCR_TEXT_BYTES,
-             vjo_vocr_helpers_bytes(v, VJO_VOCR_HELPERS_MAX), page, (unsigned)VJO_BUDGET_GAME_WORKSPACE);
-    /* its weights block, within the weights budget (the Large size's), and the job's peak within the limit */
-    TEST_CHECK((VJO_VOCR_VERTICAL_BYTES + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE <= VJO_BUDGET_GAME_WEIGHTS);
-}
-
 #endif
 
 TEST_LIST = {
@@ -192,7 +166,6 @@ TEST_LIST = {
     {"budget_table_is_consistent", test_budget_table_is_consistent},
 #ifdef VJO_WITH_VOCR
     {"game_workspace_budget_matches_the_layout", test_game_workspace_budget_matches_the_layout},
-    {"the_vertical_job_fits_the_workspace_budget", test_vertical_job_fits_the_workspace_budget},
 #endif
     {NULL, NULL}
 };

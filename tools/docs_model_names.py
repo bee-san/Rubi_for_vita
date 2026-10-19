@@ -64,10 +64,9 @@ def kernel_names(source=None, header=None):
 
 
 def release(name):
-    """The release tag of a pinned recognizer: the VOCRn_TAG of the one VOCRn_ASSETS table holding it (the
-    vertical model's: VOCR5V_TAG, VOCR5V_ASSETS)."""
+    """The release tag of a pinned recognizer: the VOCRn_TAG of the one VOCRn_ASSETS table holding it."""
     tags = [getattr(prepare_ocr, key[:-len("ASSETS")] + "TAG") for key in sorted(vars(prepare_ocr))
-            if re.fullmatch(r"VOCR\d*V?_ASSETS", key) and name in getattr(prepare_ocr, key)]
+            if re.fullmatch(r"VOCR\d*_ASSETS", key) and name in getattr(prepare_ocr, key)]
     if len(tags) != 1:
         raise ValueError(f"{name}: the kernel opens it, and tools/prepare_ocr.py pins it in {len(tags)} releases")
     return tags[0]

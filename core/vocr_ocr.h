@@ -26,12 +26,7 @@
  * wait recognizes nothing until every row of the region has held still for
  * settle_us (text that types out character by character is read once it is
  * whole, never half-typed), and the blank-line check skips a found line whose
- * crop holds no text-like ink (vjo_vocr_ink) instead of recognizing it.
- *
- * Vertical text (vita-vn-ocr #99, docs/vita-vn-ocr.md "Vertical text"): a job on
- * a model of columns (VJO_VOCR_FINDER_COLUMNS, the vertical recognizer) finds
- * the region's columns instead of its rows and reads each one turned 90 degrees,
- * right to left. Every other model's job is the same as before, bit for bit. */
+ * crop holds no text-like ink (vjo_vocr_ink) instead of recognizing it. */
 #ifndef VJO_VOCR_OCR_H
 #define VJO_VOCR_OCR_H
 
@@ -111,23 +106,8 @@ typedef struct {
     uint32_t bytes;
     unsigned char sha256[32];
     uint32_t arena_bytes;
-    unsigned finder_mode;     /* vocr_lines.h: VOCR_LINES_TEXTBOX_RECOVERY for every pinned model of rows;
-                               * VJO_VOCR_FINDER_COLUMNS | VOCR_COLUMNS_* flags for the model of columns */
+    unsigned finder_mode;     /* vocr_lines.h: VOCR_LINES_TEXTBOX_RECOVERY for every pinned model */
 } VjoVocrModel;
-
-/* A model of vertical text (VjoVocrModel.finder_mode; include/vjo_vocr_sizes.h VJO_VOCR_VERTICAL_NAME):
- * its jobs find the region's columns with vita-vn-ocr's column finder (vocr_vertical.h
- * vocr_find_columns_rows, the low byte its VOCR_COLUMNS_* flags), right to left, turn each column 90
- * degrees anticlockwise (vocr_column_rotate) into the job's rotation buffer, and read that strip as the
- * line: the blank-line check, the line cache, the helpers' copies, vocr_run and the LM take it; the
- * column's box on the screen stays the line's geometry (VjoVocrLineStat, VjoVocrLineInfo). The text is
- * the columns' right to left, '\n' between them, as rows are top to bottom. The steps for rows do not
- * run: the refinement, the short-line probe (VjoVocrPolicy.short_lines) and the cascade. */
-#define VJO_VOCR_FINDER_COLUMNS 0x100u
-/* The rotation buffer, in the workspace of a job of columns: a column whose crop holds more bytes
- * (width x height) is left out, never read, and counted (VjoVocrStats.rotate_skipped): one wider than
- * 105 px at the full 544-px height. */
-#define VJO_VOCR_ROTATE_BYTES VJO_VOCR_STRIP_BYTES
 
 /* The model named `name` (a file name in ocr_model_dir), or NULL. */
 const VjoVocrModel *vjo_vocr_model(const char *name);
@@ -271,8 +251,7 @@ typedef struct {
     uint32_t region_sum;     /* FNV-1a of the region's grey rows, first pass of the last try */
     uint32_t capture_us;     /* time inside strip() */
     unsigned lines;          /* lines found */
-    unsigned dark;           /* of those, dark text (inverted before recognition); a model of columns whose
-                              * finder leaves the flag to the job (VOCR_COLUMNS_NO_DARK): of the columns read */
+    unsigned dark;           /* of those, dark text (inverted before recognition) */
     unsigned truncated;      /* more lines than the finder returns (16) */
     unsigned frames;         /* CTC frames recognized, all lines */
     unsigned model_loaded;   /* 1: the weights were read and verified in this job */
@@ -341,13 +320,9 @@ typedef struct {
     int gate_rc;             /* 0, or why it could not decide (VJO_E_*, VOCR_LINES_E_*: the lines were kept) */
     unsigned gate_rows;      /* rows it took (each the first time the finder asked for it) */
     uint32_t gate_us;        /* its time: its share of the first pass, and its decision */
-    /* Vertical text (a model of columns, VJO_VOCR_FINDER_COLUMNS). */
-    unsigned columns;        /* 1: the lines were columns, each read turned 90 degrees */
-    unsigned rotate_skipped; /* columns left out: more than VJO_VOCR_ROTATE_BYTES */
 } VjoVocrStats;
 
-/* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. A column (a model of
- * columns): x, y, w, h its box on the screen, pixels its turned crop, w rows of h bytes. */
+/* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
 typedef struct {
     unsigned index, x, y, w, h, dark;
     const unsigned char *pixels;  /* the crop's grey rows, stride apart */
@@ -568,9 +543,7 @@ int vjo_vocr_resident_drop(VjoVocrResident *resident);
 /* Exact workspace bytes for a job on a width x height region with `model`:
  * vjo_vocr_job_bytes() without the weights (resident form), or
  * vjo_vocr_workspace_bytes() with them (one-shot form); 0 for an unsupported
- * model or region. Neither includes the capture block. A model of columns
- * (VJO_VOCR_FINDER_COLUMNS): the larger of the two finders' arenas, and its
- * rotation buffer (VJO_VOCR_ROTATE_BYTES) after the runtime's structs. */
+ * model or region. Neither includes the capture block. */
 size_t vjo_vocr_job_bytes(const char *model, unsigned width, unsigned height);
 size_t vjo_vocr_workspace_bytes(const char *model, unsigned width, unsigned height);
 /* Parallel lines (VjoVocrPool): what one helper takes with `model` (its
