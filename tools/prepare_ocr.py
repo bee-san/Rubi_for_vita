@@ -145,19 +145,19 @@ VOCR_GATE_ATTRIBUTION_PIN = {VOCR_GATE_ATTRIBUTION: (VOCR_GATE_BASE + VOCR_GATE_
 # (config.ini ocr_scan_screen, off by default), the release whose SHA256SUMS lists these hashes; the plugin pins
 # the same name, size and hash (include/vjo_vocr_sizes.h, core/vocr_ocr.c, cmake/VocrSpot.cmake). Its release's
 # ATTRIBUTION.md (its training data's licences and the weights' terms) ships beside it as
-# ocr/TEXTSPOT-ATTRIBUTION.md. PROVISIONAL until vita-vn-ocr #104 selects its model and publishes it: the weights
-# are a family B development run's, h2_s4_c24n4_seed2, the attribution a placeholder.
-VOCR_SPOT_TAG = 'textspot-provisional'
+# ocr/TEXTSPOT-ATTRIBUTION.md. The model vita-vn-ocr #104's pre-registered rule selected, B_h2_s4_c24n4_seed2_detref
+# (its v0.3.3-textspot.1 pre-release; a scan runs its detector, the read of the picked block Rubi's own finder).
+VOCR_SPOT_TAG = 'v0.3.3-textspot.1'
 VOCR_SPOT_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_SPOT_TAG}/'
-VOCR_SPOT_MODEL = 'textspot_h2_s4_c24n4_w8.vtsp'
+VOCR_SPOT_MODEL = 'textspot_s4_c24n4_w8.vtsp'
 VOCR_SPOT_ASSETS = {
     VOCR_SPOT_MODEL: (VOCR_SPOT_BASE + VOCR_SPOT_MODEL, 5732,
         '852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf'),
 }
 VOCR_SPOT_ATTRIBUTION = 'TEXTSPOT-ATTRIBUTION.md'
 VOCR_SPOT_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
-VOCR_SPOT_ATTRIBUTION_PIN = {VOCR_SPOT_ATTRIBUTION: (VOCR_SPOT_BASE + VOCR_SPOT_ATTRIBUTION_ASSET, 0,
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')}
+VOCR_SPOT_ATTRIBUTION_PIN = {VOCR_SPOT_ATTRIBUTION: (VOCR_SPOT_BASE + VOCR_SPOT_ATTRIBUTION_ASSET, 3345,
+    '0226b181342d2ff93b836b8e0a8a01f7d5736b75cb93bda11a3a0bbe59fae5f7')}
 
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so

@@ -278,8 +278,10 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   default) were trained on synthetic text in fonts and text pools free for non-commercial use only and on
   VNDB screenshots, so they are for non-commercial use only too: their attribution ships beside them as
   `ocr/GATE-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)). The optional scan
-  screen's text spotter weights (`ocr_scan_screen`, off by default) come from vita-vn-ocr #104's release, with
-  their terms beside them as `ocr/TEXTSPOT-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#scan-screen-api-30)).
+  screen's text spotter weights (`ocr_scan_screen`, off by default) were trained on synthetic screens in fonts and
+  text pools free for non-commercial use only and on VNDB screenshots, so they are for non-commercial use only
+  too: their attribution ships beside them as `ocr/TEXTSPOT-ATTRIBUTION.md`
+  ([details](docs/vita-vn-ocr.md#scan-screen-api-30)).
 - **Dictionary:** Bee's Ultimate Dictionary. English definitions from Daijirin4 and Sankoku8
   (© Sanseido) and [JMdict](https://www.edrdg.org/) (EDRDG, CC BY-SA 4.0); frequency ranks from
   [Jiten](https://jiten.moe) (CC BY-SA 4.0); kanji lines from Bee's Ultimate Kanji Dictionary
@@ -314,8 +316,9 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
 
 ## License
 
-Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The OCR's recognizer weights and the text-presence gate's
-are data files Rubi reads, not part of its code, and are for non-commercial use only
-(`ocr/MODEL-ATTRIBUTION.md`, `ocr/GATE-ATTRIBUTION.md`, [details](docs/vita-vn-ocr.md#models)). The dictionary data,
+Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The OCR's recognizer weights, the text-presence gate's and scan
+screen's text spotter's are data files Rubi reads, not part of its code, and are for non-commercial use only
+(`ocr/MODEL-ATTRIBUTION.md`, `ocr/GATE-ATTRIBUTION.md`, `ocr/TEXTSPOT-ATTRIBUTION.md`,
+[details](docs/vita-vn-ocr.md#models)). The dictionary data,
 the language models and the third-party code keep their own licences
 ([attribution](docs/plaintext-attribution.txt), [third_party/](third_party/README.md)).

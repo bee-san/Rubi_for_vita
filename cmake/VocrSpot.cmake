@@ -5,10 +5,10 @@
 # or "" (with a warning) when it cannot be had: those tests then say so and skip. The plugins read the file at run
 # time; nothing here is built in.
 include_guard(GLOBAL)
-set(VJO_VOCR_SPOT_NAME textspot_h2_s4_c24n4_w8.vtsp)
+set(VJO_VOCR_SPOT_NAME textspot_s4_c24n4_w8.vtsp)
 set(VJO_VOCR_SPOT_SHA256 852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf)
-# Provisional until vita-vn-ocr #104 selects its model and publishes it (then the release's asset URL).
-set(VJO_VOCR_SPOT_URL "https://github.com/bee-san/vita-vn-ocr/releases/download/textspot-provisional/${VJO_VOCR_SPOT_NAME}")
+# vita-vn-ocr #104's selected model (B_h2_s4_c24n4_seed2_detref), its v0.3.3-textspot.1 pre-release.
+set(VJO_VOCR_SPOT_URL "https://github.com/bee-san/vita-vn-ocr/releases/download/v0.3.3-textspot.1/${VJO_VOCR_SPOT_NAME}")
 set(VJO_VOCR_SPOT_BLOB "" CACHE FILEPATH "A local copy of vita-vn-ocr's ${VJO_VOCR_SPOT_NAME} for scan screen's host tests")
 set(VJO_VOCR_SPOT_TEST_DIR "")
 set(_spot_dir "${CMAKE_BINARY_DIR}/vita-vn-ocr")

@@ -99,7 +99,7 @@
  * ocr_scan_screen). VJO_VOCR_SPOT_ARENA is the runtime's vocr_textspot_arena_bytes(m, 960, 544) for these
  * weights, exact for every frame the kernel gives (at most 960 x 544): the scan's arena
  * (host/tests/test_game_spot.c checks it on the pinned file). */
-#define VJO_VOCR_SPOT_NAME "textspot_h2_s4_c24n4_w8.vtsp"
+#define VJO_VOCR_SPOT_NAME "textspot_s4_c24n4_w8.vtsp"
 #define VJO_VOCR_SPOT_BYTES 5732u
 #define VJO_VOCR_SPOT_ARENA 80799u
 

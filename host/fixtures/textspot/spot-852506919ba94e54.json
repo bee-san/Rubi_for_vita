@@ -1,6 +1,6 @@
 {
  "kind": "rubi-spot-fixture",
- "weights": "textspot_h2_s4_c24n4_w8.vtsp",
+ "weights": "textspot_s4_c24n4_w8.vtsp",
  "weights_sha256": "852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf",
  "vita_vn_ocr": "eb5fce95f2a87c5d3719af0ae1eafa7500052c96",
  "twin_sha256": "0f694dc09bf3aa7ede83fd771bca81ae89e05ed716d8d1fb2e7a42eee91723fc",

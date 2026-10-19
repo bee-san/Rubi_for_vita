@@ -1069,6 +1069,8 @@ beside them ([details](vita-vn-ocr.md#models)). The text-presence gate's weights
 whether `ocr_text_gate` is on or off) were trained on non-commercial fonts and text and on VNDB
 screenshots: they are for non-commercial use only too, and their attribution is in
 `ocr/GATE-ATTRIBUTION.md`, which ships beside them
-([details](vita-vn-ocr.md#text-presence-gate-api-26)). Scan screen's text spotter weights (`ocr/*.vtsp`, from
-vita-vn-ocr #104's release; every package ships them, whether `ocr_scan_screen` is on or off) carry their own
-terms in `ocr/TEXTSPOT-ATTRIBUTION.md`, which ships beside them ([details](vita-vn-ocr.md#scan-screen-api-30)).
+([details](vita-vn-ocr.md#text-presence-gate-api-26)). Scan screen's text spotter weights
+(`ocr/textspot_s4_c24n4_w8.vtsp`, bee-san/vita-vn-ocr v0.3.3-textspot.1; every package ships them, whether
+`ocr_scan_screen` is on or off) were trained on non-commercial fonts and text and on VNDB screenshots: they are
+for non-commercial use only too, and their attribution is in `ocr/TEXTSPOT-ATTRIBUTION.md`, which ships beside
+them ([details](vita-vn-ocr.md#scan-screen-api-30)).

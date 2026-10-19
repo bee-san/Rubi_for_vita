@@ -927,10 +927,13 @@ no request is ever a scan.
   196 B only when every index in them is one of their blocks (`vjo_spot_map_ok`; the result comes from the game's
   process), copies them and looks things up in them: nothing of the spotter runs in SceShell, which holds no more
   than that map (AGENTS.md rule 1).
-- **The weights** are a file beside the models: `ocr/textspot_h2_s4_c24n4_w8.vtsp`, 5,732 B, sha256
-  `852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf`, **provisional**: a development run of
-  vita-vn-ocr #104 (family B `h2_s4_c24n4_seed2`) until #104 selects its model and publishes it with an
-  `ATTRIBUTION.md`, which then ships beside it as `ocr/TEXTSPOT-ATTRIBUTION.md` (`tools/prepare_ocr.py` pins both).
+- **The weights** are a file beside the models: `ocr/textspot_s4_c24n4_w8.vtsp`, 5,732 B, sha256
+  `852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf`, the model vita-vn-ocr #104's pre-registered
+  rule selected (`B_h2_s4_c24n4_seed2_detref`; its header halves a frame wider than 600 px and keeps every
+  confidence from 1), from its `v0.3.3-textspot.1` pre-release, whose `ATTRIBUTION.md` ships beside it as
+  `ocr/TEXTSPOT-ATTRIBUTION.md` (`tools/prepare_ocr.py` pins both). The rule's arm is detection plus refinement:
+  the boxes a scan draws are the spotter's own (the detector), and the read of the picked block is Rubi's usual job,
+  whose finder and refinement run on the saved region, so the refinement is the read's, not the scan's.
   The kernel's broker opens the file only for a scan (`VJO_GAME_OCR_OPEN_SPOT`), at its pinned size; the worker
   reads it and checks its SHA-256 in every scan (5,732 B: no resident copy and no data page). Without it (an `ocr`
   folder from an older package) a scan fails with `rc=-115` and the overlay draws by hand.
@@ -943,13 +946,13 @@ no request is ever a scan.
   every frame up to 960×544 with these weights; within `VjoGameVocr`'s budget). Its memory check keeps the 4 MiB
   reserve beside both; the resident weights, LM and cascade model stay. No new ledger item, and the job's worst
   case is unchanged ([memory-ledger.md](memory-ledger.md)).
-- **Module pages** (measured, both builds, VitaSDK gcc 15.2.0): the worker gains 11,464 B of text in the debug
-  build and 11,480 B in the normal one, on or off (the spotter's code at `-Os` with NEON, 9,402 B; its dark pass,
+- **Module pages** (measured, both builds, VitaSDK gcc 15.2.0): the worker gains 11,464 B of text in both builds,
+  on or off (the spotter's code at `-Os` with NEON, 9,402 B; its dark pass,
   which a scan never reaches, is linked to a refusing stub, `cmake/VocrOCR.cmake`; the scan and the map, about
   2.0 KB): 98,304 → 110,592 B, three text pages more in every enabled game's memory, never SceShell's. SceShell keeps
-  its pages: the Shell's text grows by 2,144 B (debug) and 1,664 B (normal; 100 B of text room left in its pages),
-  its data and bss by 232 B; Enter's read at once is 80 B and 48 B of that. The kernel's text grows by 92 B, the same
-  pages. The RCO grows from 6,000 to 7,152 B (16 planes and a style), in the PAF heap: the 8,192 B estimate for it and
+  its pages: the Shell's text grows by 2,144 B (debug) and 1,656 B (normal; 108 B of text room left in its pages),
+  its data and bss by 232 B; Enter's read at once is 64 B and 32 B of that. The kernel's text grows by 88 B (debug) and 92 B
+  (normal), the same pages. The RCO grows from 6,000 to 7,152 B (16 planes and a style), in the PAF heap: the 8,192 B estimate for it and
   the Paf plugin object is kept. The 16 planes' widgets add to the open page's PAF use, unmeasured.
 - **Time (estimate, nothing of it has run on a console):** the spotter's own work is about 127 ms on one core at
   333 MHz (vita-vn-ocr's Cortex-A9 cycle model for this shape, `eval/textspot_a9_20261019.json`: 122.5 ms at
@@ -1014,7 +1017,10 @@ trained on. Pretraining used line crops of the Japanese subset of NVIDIA's
 OCR-Synthetic-Multilingual-v1 (CC BY 4.0, modified; not redistributed). The vocabularies are
 ordered by Jiten's frequency lists (CC BY-SA 4.0). The synthetic dialogue boxes include fonts and
 text pools that are free for non-commercial use only, so the file says to **use these weights for
-non-commercial purposes only**. VOCR3's and VOCR4's releases had no such file. Before VOCR5 the sizes were VOCR3-FL10, VOCR3-H15 and VOCR4-W20:
+non-commercial purposes only**. The same holds for the text-presence gate's weights (`ocr/GATE-ATTRIBUTION.md`,
+[above](#text-presence-gate-api-26)) and scan screen's text spotter's (`ocr/TEXTSPOT-ATTRIBUTION.md`,
+[above](#scan-screen-api-30)): each release's `ATTRIBUTION.md` ships beside its weights. VOCR3's and VOCR4's
+releases had no such file. Before VOCR5 the sizes were VOCR3-FL10, VOCR3-H15 and VOCR4-W20:
 vita-vn-ocr's VOCR3 report (host, plain-C W8I runtime, `docs/vocr3.md` there) gives pooled
 vita-test + psp-test fixed-line CER 1.73% for VOCR3-H15 against 2.21% for v0.2.0 H15, and 2.13%
 for VOCR3-FL10 against 3.82% for v0.2.0 FL10; none of the three VOCR3 models passed that

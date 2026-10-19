@@ -356,8 +356,12 @@ class VocrDefaults(unittest.TestCase):
         payload = (ROOT / "include/vjo_payload.h").read_text()
         self.assertIn("X(VJO_PAYLOAD_OCR VJO_VOCR_SPOT_NAME, VJO_PAYLOAD_COPY)", payload)
         self.assertIn('X(VJO_PAYLOAD_OCR "TEXTSPOT-ATTRIBUTION.md", VJO_PAYLOAD_COPY)', payload)
-        url, _, _ = prepare_ocr.VOCR_SPOT_ATTRIBUTION_PIN[prepare_ocr.VOCR_SPOT_ATTRIBUTION]
+        self.assertEqual((name, size, sha), ("textspot_s4_c24n4_w8.vtsp", 5732,
+                                             "852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf"))
+        self.assertEqual(prepare_ocr.VOCR_SPOT_TAG, "v0.3.3-textspot.1")
+        url, size, sha = prepare_ocr.VOCR_SPOT_ATTRIBUTION_PIN[prepare_ocr.VOCR_SPOT_ATTRIBUTION]
         self.assertEqual(url, prepare_ocr.VOCR_SPOT_BASE + "ATTRIBUTION.md")
+        self.assertEqual((size, sha), (3345, "0226b181342d2ff93b836b8e0a8a01f7d5736b75cb93bda11a3a0bbe59fae5f7"))
 
     def test_lm_pins_agree_c_kernel_python_and_the_ledger(self):
         table = c_lm_table()
