@@ -1157,6 +1157,8 @@ int main(void)
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     scan();
     if (open_install) page = PAGE_INSTALL;
+    /* Anki for Vita: the queued cards to its inbox by themselves, in the background (anki_page.h) */
+    vjo_anki_page_start(&scratch);
     uint32_t previous = 0;
     uint64_t repeat_at = 0;
     int touched = 0;

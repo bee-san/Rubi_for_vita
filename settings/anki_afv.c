@@ -121,20 +121,12 @@ static int read_replaced(VjoArena *a, const char *path, size_t max, char **out, 
     }
 }
 
-/* A new file of the interface: path.tmp written, flushed and closed, then (commit) renamed to path,
- * which the Vita's rename refuses when path is there: a file is never replaced. 0 (written), 1 (path
- * was there already: left alone, nothing written), or -1 (logged; no .tmp left). Without commit only
- * path.tmp is written (the notes' second step renames it). */
-static int write_new(const char *path, const void *data, size_t len, int commit)
+/* tmp written, flushed and closed: 0, or -1 (logged; tmp removed). */
+static int write_tmp(const char *tmp, const void *data, size_t len)
 {
-    char tmp[PATH_CAP];
     SceUID fd;
     size_t off = 0;
-    int rc = 0, n, there = present(path);
-    if (there)
-        return there > 0 ? 1 : io_fail("getstat", path, there);
-    if (snprintf(tmp, sizeof(tmp), "%s.tmp", path) >= (int)sizeof(tmp))
-        return -1;
+    int rc = 0, n;
     if ((fd = sceIoOpen(tmp, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0)
         return io_fail("open", tmp, fd);
     while (!rc && off < len) {
@@ -147,13 +139,31 @@ static int write_new(const char *path, const void *data, size_t len, int commit)
         rc = io_fail("flush", tmp, n);
     if ((n = sceIoClose(fd)) < 0 && !rc)
         rc = io_fail("close", tmp, n);
-    if (!rc && commit && (n = sceIoRename(tmp, path)) < 0) {
-        /* refused: another writer's file is there by now (it stays), or the card failed */
-        rc = present(path) > 0 ? 1 : io_fail("rename", tmp, n);
-    }
     if (rc)
         sceIoRemove(tmp);
     return rc;
+}
+
+/* A new file of the interface: path.tmp written, flushed and closed, then (commit) renamed to path,
+ * which the Vita's rename refuses when path is there: a file is never replaced. 0 (written), 1 (path
+ * was there already: left alone, nothing written), or -1 (logged; no .tmp left). Without commit only
+ * path.tmp is written (the notes' second step renames it). */
+static int write_new(const char *path, const void *data, size_t len, int commit)
+{
+    char tmp[PATH_CAP];
+    int n, there = present(path);
+    if (there)
+        return there > 0 ? 1 : io_fail("getstat", path, there);
+    if (snprintf(tmp, sizeof(tmp), "%s.tmp", path) >= (int)sizeof(tmp))
+        return -1;
+    if (write_tmp(tmp, data, len) < 0)
+        return -1;
+    if (commit && (n = sceIoRename(tmp, path)) < 0) {
+        /* refused: another writer's file is there by now (it stays), or the card failed */
+        sceIoRemove(tmp);
+        return present(path) > 0 ? 1 : io_fail("rename", tmp, n);
+    }
+    return 0;
 }
 
 /* The file at path holds exactly data (len bytes): 1, 0 (other bytes or another size), or -1 (it
@@ -255,6 +265,61 @@ static void ellipsize(char *out, size_t cap)
         return;
     for (p = cap - 4; p && ((unsigned char)out[p] & 0xC0) == 0x80; p--) {}
     memcpy(out + p, "...", 4);
+}
+
+/* ---------------- Rubi's setting ---------------- */
+
+int vjo_afv_auto(VjoArena *a)
+{
+    size_t mark = vjo_arena_mark(a), len = 0;
+    char *text = NULL;
+    int r = read_small(a, VJO_AFV_SETTING_PATH, 256, &text, &len), on = 1;
+    if (r == 1) /* (no retry: no file is the default) */
+        r = read_small(a, VJO_AFV_SETTING_PATH ".old", 256, &text, &len);
+    if (r == 0) {
+        const char *v = strchr(text, '=');
+        v = v ? v + 1 : text;
+        while (*v == ' ' || *v == '\t')
+            v++;
+        on = strncmp(v, "off", 3) || (v[3] && v[3] != '\n' && v[3] != '\r' && v[3] != ' ');
+    }
+    vjo_arena_release(a, mark);
+    return on;
+}
+
+int vjo_afv_set_auto(int on)
+{
+    static const char path[] = VJO_AFV_SETTING_PATH, tmp[] = VJO_AFV_SETTING_PATH ".tmp",
+                      old[] = VJO_AFV_SETTING_PATH ".old";
+    const char *text = on ? "anki_for_vita = auto\n" : "anki_for_vita = off\n";
+    int rc, have;
+    if ((have = present(path)) < 0)
+        return io_fail("getstat", path, have);
+    if (!have && present(old) > 0 && (rc = sceIoRename(old, path)) >= 0) /* (a stopped replace's: undone) */
+        have = 1;
+    if (write_tmp(tmp, text, strlen(text)) < 0)
+        return -1;
+    if (have > 0) {
+        if ((rc = sceIoRemove(old)) < 0 && rc != MISSING) {
+            sceIoRemove(tmp);
+            return io_fail("remove", old, rc);
+        }
+        if ((rc = sceIoRename(path, old)) < 0) {
+            sceIoRemove(tmp);
+            return io_fail("rename", path, rc);
+        }
+    }
+    if ((rc = sceIoRename(tmp, path)) < 0) {
+        if (have > 0)
+            sceIoRename(old, path); /* (back) */
+        sceIoRemove(tmp);
+        return io_fail("rename", tmp, rc);
+    }
+    if ((rc = sceIoSync("ux0:", 0)) < 0)
+        io_fail("sync", "ux0:", rc);
+    if (have > 0 && (rc = sceIoRemove(old)) < 0)
+        io_fail("remove", old, rc); /* (the new one is in place; the next write removes it) */
+    return 0;
 }
 
 /* ---------------- status.json ---------------- */
@@ -1164,25 +1229,26 @@ int vjo_afv_send(VjoArena *a, const VjoExportUi *ui, VjoAfvSendResult *r, char *
         size_t n = 0;
         char done[VJO_AFV_MESSAGE_MAX * 2];
 #define ADD(...) (n < cap ? (void)(n += (size_t)snprintf(msg + n, cap - n, __VA_ARGS__)) : (void)0)
+        /* (each part after the first begins with a space) */
+#define SEP (n ? " " : "")
         if (r->sent)
             ADD("Handed %d card%s to Anki for Vita: it adds them to your collection at its next sync.", r->sent,
                 r->sent == 1 ? "" : "s");
-        else if (!r->stopped)
-            ADD("No new cards to hand over.");
-        if (r->refused)
-            ADD(" %d refused by Anki for Vita before stay%s queued: export %s as an .apkg.", r->refused,
-                r->refused == 1 ? "s" : "", r->refused == 1 ? "it" : "them");
         if (r->stopped)
-            ADD("%sStopped: %d stay queued, not handed over.", n ? " " : "", r->stopped);
+            ADD("%sStopped: %d stay queued, not handed over.", SEP, r->stopped);
+        if (r->refused)
+            ADD("%s%d refused by Anki for Vita stay%s queued (%s): export %s as an .apkg.", SEP, r->refused,
+                r->refused == 1 ? "s" : "", r->results.message[0] ? r->results.message : "see log.txt",
+                r->refused == 1 ? "it" : "them");
         if (r->already)
-            ADD(" %d %s in its inbox already.", r->already, r->already == 1 ? "was" : "were");
+            ADD("%s%d %s in its inbox already.", SEP, r->already, r->already == 1 ? "was" : "were");
         if (r->missing_picture)
-            ADD(" %d handed over without %s.", r->missing_picture,
+            ADD("%s%d handed over without %s.", SEP, r->missing_picture,
                 r->missing_picture == 1 ? "its screenshot" : "their screenshots");
         if (r->unreadable + r->too_large + r->failed)
-            ADD(" %d stay queued; see log.txt.", r->unreadable + r->too_large + r->failed);
+            ADD("%s%d stay queued; see log.txt.", SEP, r->unreadable + r->too_large + r->failed);
         if (r->left)
-            ADD(" %d more: send again.", r->left);
+            ADD("%s%d more: send again.", SEP, r->left);
         {
             VjoAfvResults shown = r->results; /* (the refused ones are said above) */
             if (r->refused)
@@ -1190,7 +1256,10 @@ int vjo_afv_send(VjoArena *a, const VjoExportUi *ui, VjoAfvSendResult *r, char *
             vjo_afv_results_text(&shown, done, sizeof(done));
         }
         if (done[0])
-            ADD(" %s", done);
+            ADD("%s%s", SEP, done);
+        if (!n)
+            ADD("No new cards to hand over.");
+#undef SEP
 #undef ADD
         if (n >= cap)
             ellipsize(msg, cap);

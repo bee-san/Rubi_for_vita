@@ -39,7 +39,11 @@
 #define ROWS 5
 #define AFV_ROW 4
 
-enum { JOB_EXPORT, JOB_EXPORT_ALL, JOB_SEND, JOB_RESULTS };
+/* JOB_AUTO: the hand-over the app makes by itself (when it starts, when the page is shown), quiet
+ * when there was nothing to do; JOB_RESULTS: only Anki for Vita's results (forwarding off). Neither is
+ * a job the user started: Cancel leaves the app meanwhile (vjo_anki_page_busy). */
+enum { JOB_EXPORT, JOB_EXPORT_ALL, JOB_SEND, JOB_RESULTS, JOB_AUTO };
+#define BACKGROUND(j) ((j) == JOB_RESULTS || (j) == JOB_AUTO)
 
 static VjoConfig cfg;           /* the settings shown (main thread) */
 static int writable, selected;
@@ -50,7 +54,7 @@ static int note_error;
 
 /* Anki for Vita (anki_afv.h): installed (its interface.json, read when the page is shown), and its
  * status.json, which the worker reads (a reader may wait for a file being replaced: 3 x 100 ms). */
-static int afv_installed;
+static int afv_installed, afv_auto = 1; /* afv_auto: Rubi's own setting, anki_for_vita.txt */
 static VjoAfvStatus afv_status;
 
 /* The worker (lock): one job at a time, an export, a hand-over or the reading of Anki for Vita's
@@ -60,7 +64,7 @@ static int job, running, finished, cancelled;
 static char progress[160], result[480];
 static int result_error;
 static VjoAfvStatus job_status; /* status.json as the last Anki for Vita job read it (job_status_read) */
-static int job_status_read;
+static int job_status_read, result_new; /* result_new: the worker wrote a result since the last join */
 static unsigned char export_mem[VJO_EXPORT_MEM] __attribute__((aligned(16)));
 
 /* log.txt: settings/applog.c (settings/anki_export.c logs its storage errors there too). */
@@ -113,25 +117,33 @@ static void run_results(VjoArena *arena, const VjoExportUi *ui)
     if (msg[0]) { /* (else the last result stays) */
         snprintf(result, sizeof(result), "%s", msg);
         result_error = rc == VJO_E_LOCAL_IO || r.rejected || r.failed || r.malformed;
+        result_new = 1;
     }
     sceKernelUnlockMutex(lock, 1);
 }
 
-static void run_send(VjoArena *arena, const VjoExportUi *ui)
+static void run_send(VjoArena *arena, const VjoExportUi *ui, int automatic)
 {
     VjoAfvSendResult r;
     char msg[440];
     vjo_afv_send(arena, ui, &r, msg, sizeof(msg));
     if (r.installed)
         read_status(arena);
+    if (automatic && r.rc == VJO_OK && !r.sent && !r.unreadable && !r.too_large && !r.failed && !r.stopped &&
+        !r.results.in_anki && !r.results.duplicate && !r.results.rejected && !r.results.failed &&
+        !r.results.malformed) {
+        vjo_log("anki for vita: automatic hand-over: nothing new");
+        return; /* (nothing to say: the page keeps its last result) */
+    }
     vjo_log("anki for vita: send rc=%d: %d handed over, %d already, %d refused before, %d unreadable, %d too "
             "large, %d failed, %d without screenshots, %d left, %d stopped, arena peak %u", r.rc, r.sent, r.already,
             r.refused, r.unreadable, r.too_large, r.failed, r.missing_picture, r.left, r.stopped,
             (unsigned)arena->peak);
     sceKernelLockMutex(lock, 1, NULL);
-    snprintf(result, sizeof(result), "%s", msg);
+    snprintf(result, sizeof(result), "%s%s", automatic && r.sent ? "By itself: " : "", msg);
     result_error = r.rc != 0 || r.unreadable || r.too_large || r.failed || r.stopped || r.missing_picture ||
                    r.results.rejected || r.results.failed || r.results.malformed;
+    result_new = 1;
     sceKernelUnlockMutex(lock, 1);
 }
 
@@ -149,11 +161,11 @@ static int worker_main(SceSize args, void *argp)
     what = job;
     sceKernelUnlockMutex(lock, 1);
     vjo_arena_init(&arena, export_mem, sizeof(export_mem));
-    if (what == JOB_SEND || what == JOB_RESULTS) {
-        if (what == JOB_SEND)
-            run_send(&arena, &ui);
-        else
+    if (what == JOB_SEND || what == JOB_AUTO || what == JOB_RESULTS) {
+        if (what == JOB_RESULTS)
             run_results(&arena, &ui);
+        else
+            run_send(&arena, &ui, what == JOB_AUTO);
         sceKernelLockMutex(lock, 1, NULL);
         progress[0] = '\0';
         finished = 1;
@@ -171,6 +183,7 @@ static int worker_main(SceSize args, void *argp)
         snprintf(result + n, sizeof(result) - n, " Copy it from %s/ by VitaShell's FTP or USB (or the SD2Vita "
                  "card, when it is ux0:) and open it in Anki.", VJO_EXPORT_DIR);
     result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture;
+    result_new = 1;
     progress[0] = '\0';
     finished = 1;
     sceKernelUnlockMutex(lock, 1);
@@ -187,7 +200,7 @@ static void start(int what)
     job = what;
     finished = cancelled = 0;
     snprintf(progress, sizeof(progress), "%s",
-             what == JOB_RESULTS ? "Reading Anki for Vita's results…" : "Reading the cards…");
+             BACKGROUND(what) ? "Reading Anki for Vita's results…" : "Reading the cards…");
     /* CPU3 at a system priority, as the main thread (settings/sysapp.c). */
     worker = sceKernelCreateThread("VjoAnkiExport", worker_main, 0x10000100, WORKER_STACK, 0,
                                    SCE_KERNEL_CPU_MASK_SYSTEM, NULL);
@@ -197,22 +210,40 @@ static void start(int what)
             sceKernelDeleteThread(worker);
         worker = -1;
         snprintf(note, sizeof(note), "Could not start %s (0x%08X).",
-                 what == JOB_SEND ? "the hand-over" : what == JOB_RESULTS ? "reading the results" : "the export",
+                 what == JOB_SEND || what == JOB_AUTO ? "the hand-over"
+                 : what == JOB_RESULTS               ? "reading the results"
+                                                     : "the export",
                  (unsigned)rc);
         note_error = 1;
         return;
     }
     running = 1;
-    if (what != JOB_RESULTS) /* (a page's own note stays while the results are read) */
+    if (!BACKGROUND(what)) /* (a page's own note stays while the app works by itself) */
         note[0] = '\0';
 }
 
-/* Is Anki for Vita there: its interface.json lists version 1. Its status comes from the worker. */
+/* Is Anki for Vita there (its interface.json lists version 1), and is the hand-over automatic. Its
+ * status comes from the worker. */
 static void read_afv(VjoArena *scratch)
 {
     afv_installed = vjo_afv_speaks_1(scratch);
+    afv_auto = vjo_afv_auto(scratch);
     if (!afv_installed)
         memset(&afv_status, 0, sizeof(afv_status));
+}
+
+/* With the app there: the hand-over by itself (forwarding on), else its results only. */
+static void start_background(void)
+{
+    if (afv_installed)
+        start(afv_auto ? JOB_AUTO : JOB_RESULTS);
+}
+
+void vjo_anki_page_start(VjoArena *scratch)
+{
+    read_afv(scratch);
+    if (afv_installed && afv_auto) /* (the results only when the page is shown) */
+        start(JOB_AUTO);
 }
 
 /* The worker is done: join it, count the cards again and take Anki for Vita's status it read. */
@@ -234,7 +265,9 @@ static void reap(void)
     sceKernelLockMutex(lock, 1, NULL);
     if (job_status_read)
         afv_status = job_status;
-    job_status_read = 0;
+    if (result_new) /* (the page's own note gives way to what the job found) */
+        note[0] = '\0';
+    job_status_read = result_new = 0;
     sceKernelUnlockMutex(lock, 1);
 }
 
@@ -266,6 +299,7 @@ static void save(int mining, int screenshot, VjoArena *scratch)
 
 void vjo_anki_page_show(VjoArena *scratch)
 {
+    reap(); /* (a job the app started by itself and that has ended: joined) */
     /* (the log switch is the worker's too: it changes only while no export runs) */
     if (!running)
         vjo_log_enable(0);
@@ -282,9 +316,9 @@ void vjo_anki_page_show(VjoArena *scratch)
         request = afv_installed ? vjo_anki_index_request(scratch, line, sizeof(line)) : VJO_ANKI_REQUEST_NO_APP;
         if (request == VJO_ANKI_REQUEST_WRITTEN || request == VJO_ANKI_REQUEST_FAILED)
             vjo_log("%s", line);
-        /* its results: the cards it has taken leave the queue (on the worker: many files) */
-        if (afv_installed)
-            start(JOB_RESULTS);
+        /* the queued cards to its inbox by themselves, and its results: the cards it has taken leave
+         * the queue (on the worker: many files) */
+        start_background();
     }
 }
 
@@ -292,17 +326,34 @@ void vjo_anki_page_show(VjoArena *scratch)
 
 int vjo_anki_page_busy(void)
 {
-    /* Reading the results is not a job the user started: Cancel leaves the app meanwhile, and
-     * vjo_anki_page_quit stops it at the next file. */
-    return running && job != JOB_RESULTS;
+    /* The app's own hand-over and results are not jobs the user started: Cancel leaves the app
+     * meanwhile, and vjo_anki_page_quit stops them at the next file. */
+    return running && !BACKGROUND(job);
+}
+
+/* Rubi's own setting: the hand-over by itself on (1) or off (0), saved in anki_for_vita.txt. */
+static void set_auto(int on)
+{
+    int rc = vjo_afv_set_auto(on);
+    if (!rc)
+        afv_auto = on;
+    note_error = rc < 0;
+    snprintf(note, sizeof(note), "%s", rc < 0 ? "Not saved (see log.txt). The choice shown is the one in use."
+                                       : on ? "Saved: Rubi hands the queued cards to Anki for Vita by itself."
+                                            : "Saved: Rubi hands nothing over by itself; Send sends now.");
 }
 
 static void activate(int row, VjoArena *scratch)
 {
-    /* The settings rows also while Anki for Vita's results are read (the worker never touches
-     * config.ini); the jobs' rows once the worker is free. */
-    if (running && (job != JOB_RESULTS || row >= 2))
+    /* The settings rows also while the app works by itself (the worker never touches config.ini);
+     * the jobs' rows once the worker is free. */
+    if (running && (!BACKGROUND(job) || row >= 2)) {
+        if (BACKGROUND(job) && row >= 2) {
+            snprintf(note, sizeof(note), "Busy with Anki for Vita's files; a moment.");
+            note_error = 0;
+        }
         return;
+    }
     if (row == 0)
         save(!cfg.anki_mining, cfg.anki_screenshot, scratch);
     else if (row == 1)
@@ -353,10 +404,13 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
         selected = vjo_stick_step(selected, ROWS, stick);
     if (pressed & ui->buttons->enter)
         activate(selected, scratch);
-    /* Left/Right: OFF/ON on the two settings' rows */
-    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < 2 && !(busy && what != JOB_RESULTS) &&
+    /* Left/Right: OFF/ON on the two settings' rows, OFF/AUTO on Anki for Vita's */
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < 2 && !(busy && !BACKGROUND(what)) &&
         !!(pressed & SCE_CTRL_RIGHT) != (selected ? cfg.anki_screenshot : cfg.anki_mining))
         activate(selected, scratch);
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == AFV_ROW && afv_installed &&
+        !!(pressed & SCE_CTRL_RIGHT) != afv_auto)
+        set_auto(!!(pressed & SCE_CTRL_RIGHT));
     /* Cancel stops a job (Anki for Vita's results too, though Cancel then leaves the app as well) */
     if ((pressed & ui->buttons->cancel) && busy)
         cancel();
@@ -411,7 +465,7 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     /* The queued cards to the Anki for Vita app (#220): offered only when it is installed */
     if (!afv_installed)
         snprintf(help, sizeof(help), "Not installed (or too old): get it at %s", VJO_AFV_WHERE);
-    else if (busy && (what == JOB_SEND || what == JOB_RESULTS))
+    else if (busy && (what == JOB_SEND || BACKGROUND(what)))
         snprintf(help, sizeof(help), "%s", busy_text);
     else {
         SceRtcTick tick;
@@ -421,17 +475,24 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
         vjo_afv_status_text(&afv_status, now, help, sizeof(help));
     }
     row(ui, AFV_Y, selected == AFV_ROW, afv_installed ? ui->white : ui->off, "Send to Anki for Vita", help);
-    ui->badge(760, AFV_Y + BADGE_DY, 160, BADGE_H, !afv_installed ? "--" : busy && what == JOB_SEND ? "Sending…" : "Send",
-              busy && what == JOB_SEND);
+    ui->badge(760, AFV_Y + BADGE_DY, 160, BADGE_H,
+              !afv_installed                                  ? "--"
+              : busy && (what == JOB_SEND || what == JOB_AUTO) ? "Sending…"
+              : afv_auto                                       ? "AUTO"
+                                                               : "OFF",
+              afv_installed && (afv_auto || (busy && what == JOB_SEND)));
     /* The last result, else how to get the file to Anki */
-    if (busy && what != JOB_RESULTS)
+    if (busy && !BACKGROUND(what))
         snprintf(controls, sizeof(controls), "%s: stop   Select: page", ui->buttons->cancel_glyph);
+    else if (selected == AFV_ROW && afv_installed)
+        snprintf(controls, sizeof(controls), "Left/Right: by itself OFF/AUTO   %s: send now   %s: exit",
+                 ui->buttons->enter_glyph, ui->buttons->cancel_glyph);
     else
         snprintf(controls, sizeof(controls), "Up/Down: choose   %s: select   Select: page   %s: exit",
                  ui->buttons->enter_glyph, ui->buttons->cancel_glyph);
     if (note[0])
         ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 26, 3, note, note_error, controls);
-    else if (last[0] && (!busy || what == JOB_RESULTS))
+    else if (last[0] && (!busy || BACKGROUND(what)))
         ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 26, 3, last, err, controls);
     else
         ui->footer(FOOTER_Y, FOOTER_H, FOOTER_Y + 26, 3,

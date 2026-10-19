@@ -1001,7 +1001,8 @@ static void a_refused_card_stays_queued(void)
     TEST_CHECK(r.rejected == 1 && !strcmp(r.message, "a media file is missing"));
     TEST_ASSERT(send_now(&s, msg, sizeof(msg)) == VJO_OK);
     TEST_CHECK_(s.sent == 0 && s.refused == 1 && s.results.rejected == 1, "%s", msg);
-    TEST_CHECK_(strstr(msg, "1 refused by Anki for Vita before stays queued: export it as an .apkg") != NULL, "%s", msg);
+    TEST_CHECK_(strstr(msg, "1 refused by Anki for Vita stays queued (a media file is missing): export it as an .apkg") !=
+                    NULL, "%s", msg);
     snprintf(path, sizeof(path), INBOX "/%s.json", id);
     TEST_CHECK(!there(path) && has_result(id) && queued(id));
     /* an .apkg export takes it; its result goes then */
@@ -1348,6 +1349,49 @@ static void the_status_is_read_and_said(void)
     }
 }
 
+/* ---------------- Rubi's setting ---------------- */
+
+/* anki_for_vita.txt: auto without it, off only when it says so; written by the replace rule (a
+ * rename that refuses an existing name), every failure leaving the old choice or its .old. */
+static void the_setting_is_rubis_own_file(void)
+{
+    static char text[64];
+    reset();
+    vjo_arena_init(&A, mem, sizeof(mem));
+    TEST_CHECK(vjo_afv_auto(&A) == 1 && !there(VJO_AFV_SETTING_PATH));
+    TEST_CHECK(io.delays == 0); /* (no wait: no file is the default) */
+    TEST_ASSERT(vjo_afv_set_auto(0) == 0);
+    TEST_CHECK(get_file(VJO_AFV_SETTING_PATH, text, sizeof(text)) > 0 && !strcmp(text, "anki_for_vita = off\n"));
+    TEST_CHECK(vjo_afv_auto(&A) == 0);
+    TEST_ASSERT(vjo_afv_set_auto(1) == 0); /* (over an existing file: the .old dance, not a refused rename) */
+    TEST_CHECK(io.refused == 0 && vjo_afv_auto(&A) == 1 && !there(VJO_AFV_SETTING_PATH ".old") &&
+               !there(VJO_AFV_SETTING_PATH ".tmp"));
+    static const struct { const char *text; int on; } cases[] = {
+        {"anki_for_vita = off\n", 0}, {"off", 0}, {"anki_for_vita=off\r\n", 0}, {"anki_for_vita = auto\n", 1},
+        {"anki_for_vita = offline\n", 1}, {"", 1}, {"garbage", 1},
+    };
+    for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+        put_text(VJO_AFV_SETTING_PATH, cases[k].text);
+        TEST_CHECK_(vjo_afv_auto(&A) == cases[k].on, "'%s'", cases[k].text);
+    }
+    /* a replace stopped between its renames: the .old is the choice, and the next write undoes it */
+    put_text(VJO_AFV_SETTING_PATH ".old", "anki_for_vita = off\n");
+    unlink(VJO_AFV_SETTING_PATH);
+    TEST_CHECK(vjo_afv_auto(&A) == 0);
+    TEST_ASSERT(vjo_afv_set_auto(1) == 0);
+    TEST_CHECK(vjo_afv_auto(&A) == 1 && !there(VJO_AFV_SETTING_PATH ".old"));
+    /* every storage call of a write failing in turn: the old choice (or its .old) stays */
+    for (int k = 1; k <= 12; k++) {
+        TEST_ASSERT(vjo_afv_set_auto(1) == 0);
+        io.calls = 0;
+        io.fail_at = k;
+        vjo_afv_set_auto(0);
+        io.fail_at = 0;
+        TEST_CHECK_(there(VJO_AFV_SETTING_PATH) || there(VJO_AFV_SETTING_PATH ".old"), "call %d: no choice left", k);
+        TEST_CHECK_(!there(VJO_AFV_SETTING_PATH ".tmp"), "call %d: a .tmp left", k);
+    }
+}
+
 /* ---------------- memory ---------------- */
 
 /* The send's arena (the page's 2 MiB VJO_EXPORT_MEM, shared with the export): its peak for a send of
@@ -1496,6 +1540,7 @@ TEST_LIST = {
     {"malformed_results_are_ignored", malformed_results_are_ignored},
     {"hostile_names_in_the_outbox_are_never_read", hostile_names_in_the_outbox_are_never_read},
     {"the_status_is_read_and_said", the_status_is_read_and_said},
+    {"the_setting_is_rubis_own_file", the_setting_is_rubis_own_file},
     {"measure_a_send", measure_a_send},
     {NULL, NULL},
 };

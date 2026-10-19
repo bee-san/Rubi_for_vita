@@ -28,9 +28,14 @@ typedef struct {
     const VjoButtons *buttons; /* the console's enter and cancel buttons */
 } VjoAnkiUi;
 
+/* The app has started (main.c, once its graphics run): with Anki for Vita installed and Rubi's
+ * hand-over automatic (anki_for_vita.txt, on unless turned OFF on the page), the queued cards go to
+ * its inbox by themselves, on the page's worker; the page says how many when it is shown. */
+void vjo_anki_page_start(VjoArena *scratch);
 /* The page is shown (Select or its tab): reloads the settings and counts the cards; with Anki for
- * Vita installed, reads its status, writes Rubi's duplicate index request when it would differ
- * (settings/anki_index_request.h) and starts reading its results on the worker. */
+ * Vita installed, writes Rubi's duplicate index request when it would differ
+ * (settings/anki_index_request.h) and, on the worker, hands the queued cards over by themselves
+ * (automatic) and reads its results and status. */
 void vjo_anki_page_show(VjoArena *scratch);
 /* One frame of the page: the buttons pressed and a new touch (x, y; -1 when
  * none), then drawing. */

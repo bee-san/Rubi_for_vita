@@ -858,13 +858,16 @@ static void afv_installed(void)
                                                  "\"interfaces\": [1]}");
 }
 
-/* Installed: the page reads its results on the worker when it is shown (Cancel still leaves the app),
- * says how its last sync went, and asks for the duplicate index; Send hands the queued cards over
- * on the worker, which they stay in the queue for; once the app's results say a card is in Anki,
- * the next show moves it out of the queue. */
+static int inbox_notes(void) { return files_in(VJO_AFV_INBOX_DIR, ".json"); }
+
+/* Installed, the hand-over automatic (the default): when the app starts and when the page is shown,
+ * the queued cards go to the inbox by themselves, on the worker (Cancel still leaves the app), and the
+ * page says how many; it asks for the duplicate index and shows the app's status. OFF (Left on the
+ * row, saved in anki_for_vita.txt): nothing goes by itself, its results are still read, Enter sends
+ * now. Once the app's results say a card is in Anki, the next show moves it out of the queue. */
 static void cards_go_to_anki_for_vita_through_its_inbox(void)
 {
-    char ids[2][VJO_QUEUE_ID_SIZE], path[256];
+    char ids[3][VJO_QUEUE_ID_SIZE], path[256], text[300];
     reset(VJO_BUTTON_ASSIGN_CROSS);
     afv_installed();
     /* (the app's status, written 5 minutes before the console's clock) */
@@ -872,87 +875,111 @@ static void cards_go_to_anki_for_vita_through_its_inbox(void)
                                               "\"last_sync\":1791789905,\"last_result\":\"ok\",\"pending\":0}");
     snprintf(ids[0], sizeof(ids[0]), "%s", queue_card("猫", 1));
     snprintf(ids[1], sizeof(ids[1]), "%s", queue_card("犬", 0));
+    /* the app starts: the two cards go by themselves, in the background */
+    vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
+    vjo_anki_page_start(&scratch);
+    TEST_CHECK(threads_created == 1 && !vjo_anki_page_busy() && inbox_notes() == 0);
+    run_worker();
+    TEST_CHECK(inbox_notes() == 2 && files_in(VJO_AFV_MEDIA_DIR, ".jpg") == 1 &&
+               there(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json"));
+    TEST_CHECK(strstr(logs, "anki for vita: send rc=0: 2 handed over") != NULL);
+    /* the page, shown: the start's job joined, the request written, the hand-over by itself again
+     * (nothing new: quiet); it says what the start did; the cards are still queued (the .apkg export
+     * keeps working) */
     show();
-    TEST_CHECK(threads_created == 1 && !vjo_anki_page_busy()); /* the results, not a job of the user's */
+    TEST_CHECK(threads_deleted == 1 && threads_created == 2 && !vjo_anki_page_busy());
+    TEST_CHECK(there(VJO_AFV_DIR "/index/rubi.request.json"));
     frame(0);
-    TEST_CHECK(text_starting("Reading Anki for Vita's results") && !strcmp(drawn.controls,
-               "Up/Down: choose   ×: select   Select: page   ○: exit"));
+    TEST_CHECK(!strcmp(badge(4)->label, "Sending…") && text_starting("Reading Anki for Vita's results"));
+    TEST_CHECK(!strcmp(drawn.controls, "Up/Down: choose   ×: select   Select: page   ○: exit"));
+    TEST_CHECK_(strstr(drawn.footer, "By itself: Handed 2 cards to Anki for Vita") && !drawn.footer_error, "%s",
+                drawn.footer);
     run_worker();
     frame(0);
-    TEST_CHECK(!vjo_anki_page_busy() && threads_deleted == 1);
-    {
-        const Text *afv = text_starting("Send to Anki for Vita");
-        TEST_CHECK(afv && afv->color == WHITE && !strcmp(badge(4)->label, "Send") && !badge(4)->active);
-        TEST_CHECK_(text_starting("anki.example.org: last sync 5 min ago, ok.") != NULL, "status line missing");
-    }
-    /* Rubi's duplicate index request, written when the page was shown */
-    TEST_CHECK(there(VJO_AFV_DIR "/index/rubi.request.json"));
-    /* Send: on the worker, as an export */
+    TEST_CHECK_(strstr(drawn.footer, "By itself: Handed 2 cards") != NULL, "%s", drawn.footer);
+    TEST_CHECK(strstr(logs, "automatic hand-over: nothing new") != NULL && inbox_notes() == 2);
+    TEST_CHECK(text_starting("Export cards (2 queued)") && !strcmp(badge(4)->label, "AUTO") && badge(4)->active);
+    TEST_CHECK(text_starting("anki.example.org: last sync 5 min ago, ok."));
+    /* the row: Left turns the hand-over OFF (saved), the controls name it, Right turns it back */
     vjo_anki_page_stick(4);
     frame(0);
     TEST_CHECK(focused() == 4);
+    TEST_CHECK_(!strcmp(drawn.controls, "Left/Right: by itself OFF/AUTO   ×: send now   ○: exit"), "%s",
+                drawn.controls);
+    frame(SCE_CTRL_LEFT);
+    TEST_CHECK(read_file(VJO_AFV_SETTING_PATH, text, sizeof(text)) > 0 && !strcmp(text, "anki_for_vita = off\n"));
+    TEST_CHECK_(strstr(drawn.footer, "Saved: Rubi hands nothing over by itself") != NULL, "%s", drawn.footer);
+    frame(0);
+    TEST_CHECK(!strcmp(badge(4)->label, "OFF") && !badge(4)->active);
+    frame(SCE_CTRL_LEFT); /* OFF already: nothing */
+    /* OFF: a new card stays out of the inbox when the app starts or the page is shown */
+    snprintf(ids[2], sizeof(ids[2]), "%s", queue_card("鳥", 0));
+    vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
+    vjo_anki_page_start(&scratch);
+    TEST_CHECK(threads_created == 2);
+    show();
+    TEST_CHECK(threads_created == 3); /* its results only */
+    run_worker();
+    frame(0);
+    TEST_CHECK(inbox_notes() == 2);
+    /* Enter on the row: send now */
     frame(SCE_CTRL_CROSS);
-    TEST_CHECK(vjo_anki_page_busy() && threads_created == 2);
+    TEST_CHECK(vjo_anki_page_busy() && threads_created == 4);
     frame(0);
     TEST_CHECK(!strcmp(badge(4)->label, "Sending…") && badge(4)->active && !strcmp(drawn.controls, "○: stop   Select: page"));
     run_worker();
     frame(0);
-    TEST_CHECK(!vjo_anki_page_busy());
-    TEST_CHECK_(strstr(drawn.footer, "Handed 2 cards to Anki for Vita: it adds them to your collection at its next sync.") &&
-                    !drawn.footer_error, "%s", drawn.footer);
+    TEST_CHECK(!vjo_anki_page_busy() && inbox_notes() == 3);
+    TEST_CHECK_(strstr(drawn.footer, "Handed 1 card to Anki for Vita: it adds them to your collection at its next sync.") &&
+                    strstr(drawn.footer, "2 were in its inbox already") && !strstr(drawn.footer, "By itself"),
+                "%s", drawn.footer);
+    frame(SCE_CTRL_RIGHT); /* AUTO again */
+    TEST_CHECK(read_file(VJO_AFV_SETTING_PATH, text, sizeof(text)) > 0 && !strcmp(text, "anki_for_vita = auto\n"));
+    frame(0);
+    TEST_CHECK(!strcmp(badge(4)->label, "AUTO"));
+    /* Anki for Vita syncs: the first is in Anki, the second refused, the third waits */
     for (int i = 0; i < 2; i++) {
         snprintf(path, sizeof(path), VJO_AFV_INBOX_DIR "/%s.json", ids[i]);
-        TEST_CHECK(there(path));
+        TEST_ASSERT(unlink(path) == 0);
     }
-    TEST_CHECK(files_in(VJO_AFV_MEDIA_DIR, ".jpg") == 1 && there(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json"));
-    TEST_CHECK(text_starting("Export cards (2 queued)")); /* still queued: the .apkg export keeps working */
-    TEST_CHECK(strstr(logs, "anki for vita: send rc=0: 2 handed over") != NULL);
-    /* Anki for Vita syncs: the first is in Anki, the second refused */
-    snprintf(path, sizeof(path), VJO_AFV_INBOX_DIR "/%s.json", ids[0]);
-    TEST_ASSERT(unlink(path) == 0);
-    snprintf(path, sizeof(path), VJO_AFV_INBOX_DIR "/%s.json", ids[1]);
-    TEST_ASSERT(unlink(path) == 0);
     mkdir(VJO_AFV_DIR "/outbox", 0777);
     mkdir(VJO_AFV_OUTBOX_DIR, 0777);
-    {
-        char text[300];
-        snprintf(path, sizeof(path), VJO_AFV_OUTBOX_DIR "/%s.json", ids[0]);
-        snprintf(text, sizeof(text), "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"note_id\":1,"
-                                     "\"time\":1791790200,\"message\":\"\"}", ids[0]);
-        put_text_file(path, text);
-        snprintf(path, sizeof(path), VJO_AFV_OUTBOX_DIR "/%s.json", ids[1]);
-        snprintf(text, sizeof(text), "{\"v\":1,\"id\":\"%s\",\"status\":\"rejected\",\"synced\":false,\"note_id\":0,"
-                                     "\"time\":1791790200,\"message\":\"a field name is not the note type's\"}", ids[1]);
-        put_text_file(path, text);
-    }
+    snprintf(path, sizeof(path), VJO_AFV_OUTBOX_DIR "/%s.json", ids[0]);
+    snprintf(text, sizeof(text), "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"note_id\":1,"
+                                 "\"time\":1791790200,\"message\":\"\"}", ids[0]);
+    put_text_file(path, text);
+    snprintf(path, sizeof(path), VJO_AFV_OUTBOX_DIR "/%s.json", ids[1]);
+    snprintf(text, sizeof(text), "{\"v\":1,\"id\":\"%s\",\"status\":\"rejected\",\"synced\":false,\"note_id\":0,"
+                                 "\"time\":1791790200,\"message\":\"a field name is not the note type's\"}", ids[1]);
+    put_text_file(path, text);
+    snprintf(path, sizeof(path), VJO_AFV_OUTBOX_DIR "/%s.json", ids[2]);
+    snprintf(text, sizeof(text), "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":false,\"note_id\":3,"
+                                 "\"time\":1791790200,\"message\":\"\"}", ids[2]);
+    put_text_file(path, text);
     put_text_file(VJO_AFV_DIR "/status.json", "{\"v\":1,\"signed_in\":true,\"server\":\"anki.example.org\","
-                                              "\"last_sync\":1791790175,\"last_result\":\"ok\",\"pending\":0}");
+                                              "\"last_sync\":1791790175,\"last_result\":\"ok\",\"pending\":1}");
     show();
-    TEST_CHECK(threads_created == 3);
+    TEST_CHECK(threads_created == 5);
     run_worker();
     frame(0);
     TEST_CHECK_(strstr(drawn.footer, "Anki for Vita: 1 card is in Anki now (out of the queue).") &&
-                    strstr(drawn.footer, "1 refused, still queued: a field name is not the note type's") &&
-                    drawn.footer_error, "%s", drawn.footer);
-    TEST_CHECK(text_starting("Export cards (1 queued)") && text_starting("2 cards in all"));
-    TEST_CHECK(text_starting("anki.example.org: last sync under a minute ago, ok."));
+                    strstr(drawn.footer, "1 refused by Anki for Vita stays queued (a field name is not the note "
+                                         "type's): export it as an .apkg.") &&
+                    !strstr(drawn.footer, "No new cards") && drawn.footer_error,
+                "%s", drawn.footer);
+    TEST_CHECK(text_starting("Export cards (2 queued)") && text_starting("3 cards in all"));
+    TEST_CHECK(text_starting("anki.example.org: last sync under a minute ago, ok; 1 waiting."));
     snprintf(path, sizeof(path), VJO_QUEUE_EXPORTED_DIR "/%s.json", ids[0]);
     TEST_CHECK(there(path));
-    /* its media file, which no note in the inbox names now, and the note type's, removed */
-    TEST_CHECK(files_in(VJO_AFV_MEDIA_DIR, ".jpg") == 0 && !there(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json"));
-    /* the refused card is not handed in again; the .apkg export takes it */
-    frame(SCE_CTRL_CROSS);
-    run_worker();
-    frame(0);
-    TEST_CHECK_(strstr(drawn.footer, "1 refused by Anki for Vita before stays queued: export it as an .apkg") != NULL,
-                "%s", drawn.footer);
     snprintf(path, sizeof(path), VJO_AFV_INBOX_DIR "/%s.json", ids[1]);
-    TEST_CHECK(!there(path));
-    /* leaving the app while the results are read: it stops at the next file and is joined */
+    TEST_CHECK(!there(path)); /* (refused: not handed in again) */
+    /* the first's screenshot, which no note in the inbox names now, removed; the third's note keeps the note type */
+    TEST_CHECK(files_in(VJO_AFV_MEDIA_DIR, ".jpg") == 0 && there(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json"));
+    /* leaving the app while the app works by itself: it stops at the next file and is joined */
     show();
-    TEST_CHECK(threads_created == 5 && !vjo_anki_page_busy());
+    TEST_CHECK(threads_created == 6 && !vjo_anki_page_busy());
     vjo_anki_page_quit();
-    TEST_CHECK(!vjo_anki_page_busy() && threads_deleted == 5);
+    TEST_CHECK(!vjo_anki_page_busy() && threads_deleted == 6);
 }
 
 /* Anki for Vita too old (no interface 1): its row is not offered, and nothing is written there. */

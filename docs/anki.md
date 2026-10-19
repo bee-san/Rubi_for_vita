@@ -546,29 +546,43 @@ permission.
 
 ### Use
 
+The flow: **mine in a game → open the Rubi app (it hands the cards over by itself) → open Anki for
+Vita and sync.**
+
 1. Install Anki for Vita, start it once (it writes `interface.json`, which tells Rubi it is there),
    sign in and sync there.
-2. In the **Rubi** app's **Anki** page, the fifth row is **Send to Anki for Vita**. It is offered
-   only when `ux0:data/Anki_for_vita/interface.json` lists interface version 1. Otherwise its badge
-   is `--` and it says `Not installed (or too old): get it at github.com/bee-san/Anki_for_vita`;
-   Enter on it says the same. Below its title, the app's own status (`status.json`): signed in or
-   not, the last sync, how it ended, the notes it has not finished yet
-   (`anki.example.org: last sync 5 min ago, ok; 3 waiting.`).
-3. **Send** hands every queued card over, on the page's worker, with Cancel: `Handed 12 cards to
-   Anki for Vita: it adds them to your collection at its next sync.` A card that is in its inbox
-   already is left alone (`3 were in its inbox already`). **The cards stay in the queue**, so
-   **Export cards** still has them, until Anki for Vita says they are in Anki.
-4. Sync in Anki for Vita. It is an ordinary app: close the game first.
-5. Open the Rubi app's Anki page again. When it is shown it reads Anki for Vita's results, on its
-   worker (the settings rows work meanwhile, and Cancel leaves the app as usual), and moves the cards
-   on:
+2. Mine as usual: Enter in the overlay saves a card in the queue.
+3. Open the **Rubi** app. With Anki for Vita there, it hands every queued card that is not in Anki
+   for Vita's inbox yet over by itself, in the background, when it starts and whenever its **Anki**
+   page is shown. The Anki page says so: `By itself: Handed 12 cards to Anki for Vita: it adds them to
+   your collection at its next sync.` (A hand-over that finds nothing new says nothing.) **The cards
+   stay in the queue**, so **Export cards** still has them, until Anki for Vita says they are in Anki.
+4. Open Anki for Vita and sync. It is an ordinary app: close the game first.
+5. The next time the Rubi app's Anki page is shown, it reads Anki for Vita's results, on its worker
+   (the settings rows work meanwhile, and Cancel leaves the app as usual), and moves the cards on
+   (the table below).
+
+The Anki page's fifth row is **Send to Anki for Vita**:
+
+- It is offered only when `ux0:data/Anki_for_vita/interface.json` lists interface version 1.
+  Otherwise its badge is `--` and it says `Not installed (or too old): get it at
+  github.com/bee-san/Anki_for_vita`; Enter on it says the same.
+- Its badge is **AUTO** (the default) or **OFF**: Left and Right choose (`Left/Right: by itself
+  OFF/AUTO`). With OFF, Rubi hands nothing over by itself; it still reads the results of the cards it
+  handed over before. The choice is Rubi's own file, `ux0:data/VitaJPOverlay/anki_for_vita.txt`
+  (`anki_for_vita = auto` or `off`; no file is AUTO), not `config.ini`: the overlay, which reads
+  `config.ini`, has no use for it.
+- **Enter sends now**, AUTO or OFF, on the page's worker, with Cancel: `Handed 12 cards to Anki for
+  Vita: …`; a card in its inbox already is left alone (`3 were in its inbox already`).
+- Below its title, the app's own status (`status.json`): signed in or not, the last sync, how it
+  ended, the notes it has not finished yet (`anki.example.org: last sync 5 min ago, ok; 3 waiting.`).
 
 | Result (Anki for Vita's) | What Rubi does | The page says |
 | --- | --- | --- |
 | `added` or `exists`, synced | the card leaves the queue for `anki_queue/exported/`, as an export moves it (its screenshot too); **Export all cards** still has it | `Anki for Vita: 12 cards are in Anki now (out of the queue).` |
 | `added` or `exists`, not synced yet | nothing: the next sync sends it | (the status line's `waiting`) |
 | `duplicate` | the card becomes `anki_queue/<id>.duplicate.json`, the queue's "found in Anki" state, which no export takes | `2 cards were in your collection already (another note): not added.` |
-| `rejected` | the card stays queued, for an `.apkg`; Rubi never hands it in again under its ID (Anki for Vita takes an ID whose result is final as done) | `1 refused, still queued: <the rule it broke>` |
+| `rejected` | the card stays queued, for an `.apkg`; Rubi never hands it in again under its ID (Anki for Vita takes an ID whose result is final as done) | `1 refused, still queued: <the rule it broke>` (a later hand-over: `1 refused by Anki for Vita stays queued (<the rule>): export it as an .apkg.`) |
 | a file that is not a version-1 result for its card | nothing; `log.txt` says so | `1 unreadable result (see log.txt).` |
 
 A result Rubi has applied is removed (the interface lets a client remove a final result), and so
@@ -627,6 +641,7 @@ collection has the package's note.
 | `index/rubi.request.json` | writes it when it would say something else ([below](#already-in-anki-anki-for-vitas-duplicate-index)) |
 | `index/rubi.idx` | the overlay reads it on Enter |
 | `private/` | never reads or writes it |
+| (Rubi's own) `ux0:data/VitaJPOverlay/anki_for_vita.txt` | AUTO or OFF, the row's choice, written by the interface's replace rule |
 
 Every file Rubi writes is new: written to `<name>.tmp`, flushed, closed, then renamed. The Vita's
 rename refuses an existing name, so an inbox file is never replaced. A screenshot whose file is there
@@ -670,13 +685,17 @@ an older one; a stop before each of a send's storage calls, in a fresh process, 
 each, then the next send; no inbox file replaced (a rename that refuses an existing name, as the
 Vita's); Cancel; damaged records, a missing screenshot, a note over the interface's 64 KiB; each
 result, malformed ones, another version's, hostile names in the outbox (never opened), refused
-cards, the removal of Rubi's media; `status.json` and the readers' retries; the page's row without
-the app, with an old one and with one, a send and the results on its worker.
+cards, the removal of Rubi's media; `status.json` and the readers' retries; Rubi's AUTO/OFF file
+(every storage call of its write failing in turn); the page's row without the app, with an old one
+and with one: the hand-over by itself at the app's start and at the page's show (quiet when there
+is nothing new), OFF (results only), Enter sending now, the results on its worker.
 
 **To test on a console** (hardware is paused): with Anki for Vita installed and signed in to a
-self-hosted server, Send hands the queue over and says how many; a sync in Anki for Vita adds them;
-the Anki page then moves them out of the queue; a card Anki has already comes out `exists`; the
-row's status line matches Anki for Vita's own screen; without the app the row says where to get it.
+self-hosted server, mine a few cards, open the Rubi app: its Anki page says it handed them over by
+itself; a sync in Anki for Vita adds them; the Anki page then moves them out of the queue; with OFF
+nothing goes until Enter on the row; a card Anki has already comes out `exists`; the row's status
+line matches Anki for Vita's own screen; without the app the row says where to get it; the app's
+start is no slower with many cards queued (the hand-over runs on the page's worker).
 
 ## Already in Anki: Anki for Vita's duplicate index
 

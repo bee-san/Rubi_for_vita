@@ -1,5 +1,6 @@
-/* The Rubi app's side of Anki for Vita (#220): cards handed to it through files, their results read
- * back. Anki for Vita is a separate Vita app (bee-san/Anki_for_vita) that keeps a copy of the user's
+/* The Rubi app's side of Anki for Vita (#220): cards handed to it through files (by themselves when
+ * the app starts and when its Anki page is shown, unless Rubi's setting is off; or on Enter on the
+ * page's row), their results read back. Anki for Vita is a separate Vita app (bee-san/Anki_for_vita) that keeps a copy of the user's
  * Anki collection and syncs it with a sync server; other apps hand it notes through plain files under
  * ux0:data/Anki_for_vita/ (its docs/interface.md, version 1). Rubi has no network code: it only writes
  * and reads these files, as it writes .apkg files.
@@ -57,6 +58,11 @@
 #define VJO_AFV_NOTETYPE_FILE "lapis-1.7.0.json"
 /* Where to get the app (the page says so when it is not installed). */
 #define VJO_AFV_WHERE "github.com/bee-san/Anki_for_vita"
+/* Rubi's own choice whether the app hands its queued cards over by itself (the owner, 2026-10-19:
+ * "write directly to the anki sync app"): "anki_for_vita = auto" (the default, also when the file is
+ * not there) or "anki_for_vita = off". The Rubi app's alone, not in config.ini: the Shell, which reads
+ * config.ini, has no use for it and no text room for one more key (anki_page.h). */
+#define VJO_AFV_SETTING_PATH VJO_EXPORT_DATA_DIR "/anki_for_vita.txt"
 /* The interface's limit for a note's file; a card whose note is larger stays queued. */
 #define VJO_AFV_NOTE_MAX (64u * 1024u)
 /* A result's and status.json's read: the interface's limit for a JSON file (Anki for Vita writes them
@@ -69,6 +75,15 @@
 #define VJO_AFV_RESULTS_MAX VJO_APKG_MAX_CARDS
 #define VJO_AFV_SWEEP_NOTES 256
 #define VJO_AFV_MESSAGE_MAX 160
+
+/* ---------------- Rubi's setting ---------------- */
+
+/* VJO_AFV_SETTING_PATH (its .old when a replace was stopped): 1 auto (also without the file, or with a
+ * value it does not know), 0 off. a is given back. */
+int vjo_afv_auto(VjoArena *a);
+/* Writes it (auto 1, off 0) by the interface's replace rule (.tmp, the file to .old, the .tmp to its
+ * name, the card synced, the .old removed): 0, or -1 (logged; the file as it was, or its .old). */
+int vjo_afv_set_auto(int on);
 
 /* ---------------- status.json ---------------- */
 

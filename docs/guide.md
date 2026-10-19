@@ -683,9 +683,10 @@ engine and model.
 
 The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
 ON/OFF, **Export cards (N queued)**, **Export all cards** and, with the separate
-Anki for Vita app installed, **Send to Anki for Vita**, which hands the queued
-cards to its inbox and moves them out of the queue once it reports them in Anki
-([Anki for Vita](anki.md#anki-for-vita)). An export writes the cards as
+Anki for Vita app installed, **Send to Anki for Vita**: the app hands the queued
+cards to its inbox by itself (AUTO, the default; Left/Right: OFF) when it starts
+and when the page is shown, Enter sends now, and the cards leave the queue once
+Anki for Vita reports them in Anki ([Anki for Vita](anki.md#anki-for-vita)). An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into
