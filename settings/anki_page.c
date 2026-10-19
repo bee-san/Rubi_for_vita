@@ -296,7 +296,9 @@ int vjo_anki_page_busy(void)
 
 static void activate(int row, VjoArena *scratch)
 {
-    if (running)
+    /* The settings rows also while Anki for Vita's results are read (the worker never touches
+     * config.ini); the jobs' rows once the worker is free. */
+    if (running && (job != JOB_RESULTS || row >= 2))
         return;
     if (row == 0)
         save(!cfg.anki_mining, cfg.anki_screenshot, scratch);
@@ -349,7 +351,7 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     if (pressed & ui->buttons->enter)
         activate(selected, scratch);
     /* Left/Right: OFF/ON on the two settings' rows */
-    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < 2 && !busy &&
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < 2 && !(busy && what != JOB_RESULTS) &&
         !!(pressed & SCE_CTRL_RIGHT) != (selected ? cfg.anki_screenshot : cfg.anki_mining))
         activate(selected, scratch);
     /* Cancel stops a job (Anki for Vita's results too, though Cancel then leaves the app as well) */

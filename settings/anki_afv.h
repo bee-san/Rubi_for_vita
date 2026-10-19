@@ -15,15 +15,19 @@
  * note is in the inbox already is left alone. The cards stay queued, so the .apkg export keeps
  * working, until their result is final.
  *
- * Results (vjo_afv_results, when the page is shown, and before a send): outbox/rubi/<id>.json, for
- * the queue's own cards only (<id> a queue ID whose record is queued), each read whole up to
- * VJO_AFV_RESULT_MAX; a malformed one is ignored and logged.
+ * Results (vjo_afv_results, when the page is shown, and before a send): outbox/rubi/<id>.json (its
+ * .old when a replace was stopped; both missing: three more tries 100 ms apart), only names of 32
+ * lowercase hex digits, each read whole up to VJO_AFV_RESULT_MAX: valid UTF-8, no NUL, no key twice,
+ * "v" 1 (another version's is absent), its id its name's; a malformed one is ignored and logged.
  *   added or exists, synced: the card moves to anki_queue/exported/, as an export moves it;
  *   duplicate: it becomes anki_queue/<id>.duplicate.json, the queue's "found in Anki" state;
- *   rejected: it stays queued; the page shows why;
+ *   rejected: it stays queued, for an .apkg; the page shows why; a send never hands it in again (the
+ *     app takes an id whose result is final as done);
  *   added or exists, not synced yet: nothing changes.
- * A final result is removed once it is applied (the interface lets a client), and so is one whose
- * card is not queued but archived or a duplicate already; anything else is left alone.
+ * A final result is removed once it is applied (the interface lets a client), with a leftover .old,
+ * and so is one whose card is not queued but archived or a duplicate already; anything else is left
+ * alone. Then Rubi's own inbox files no note needs go (the interface: the client removes them): the
+ * media files no note left in the inbox names, the note type's file when no note is left.
  *
  * All calls are made by one thread at a time (the page's). Every storage call that fails is logged
  * (vjo_log, log.txt) with its error code; no card's text is logged. */
@@ -54,9 +58,11 @@
 #define VJO_AFV_NOTE_MAX (64u * 1024u)
 /* A result's and status.json's read: Anki for Vita writes them in a few hundred bytes. */
 #define VJO_AFV_RESULT_MAX 4096u
-/* The cards one send hands over, the results one pass reads (the rest: the next one). */
+/* The cards one send hands over, the results one pass reads (the rest: the next one), the inbox
+ * notes a sweep of Rubi's inbox media reads (more: the media stay until they are fewer). */
 #define VJO_AFV_SEND_MAX VJO_APKG_MAX_CARDS
 #define VJO_AFV_RESULTS_MAX 4096
+#define VJO_AFV_SWEEP_NOTES 256
 #define VJO_AFV_MESSAGE_MAX 160
 
 /* ---------------- status.json ---------------- */

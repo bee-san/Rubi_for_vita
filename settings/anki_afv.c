@@ -395,6 +395,20 @@ void vjo_afv_status_text(const VjoAfvStatus *s, int64_t now, char *out, size_t c
 
 /* ---------------- results ---------------- */
 
+/* A file whose "v" is an integer other than 1: another version of the interface's, which a client
+ * treats as absent (its docs/interface.md, "Versions"). */
+static int other_version(VjoArena *a, const char *json, size_t len)
+{
+    size_t mark = vjo_arena_mark(a);
+    VjoJson j;
+    int64_t v = 1;
+    int other = len <= VJO_AFV_RESULT_MAX && !memchr(json, 0, len) && utf8_valid(json, len) &&
+                vjo_json_parse(a, json, len, &j) == 0 && j.n > 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
+                !digits(&j, vjo_json_obj_get(&j, 0, "v"), &v) && v != 1;
+    vjo_arena_release(a, mark);
+    return other;
+}
+
 int vjo_afv_result_parse(VjoArena *a, const char *json, size_t len, const char *id, VjoAfvResult *r)
 {
     static const char *const names[] = {"", "added", "exists", "duplicate", "rejected"};
@@ -582,7 +596,9 @@ static void queue_path(char path[PATH_CAP], const char *dir, const char *hex, co
     snprintf(path, PATH_CAP, "%s/%s.%s", dir, hex, ext);
 }
 
-/* An applied result's file goes (the interface lets a client remove one it has read). */
+/* A final result's file goes once it is applied (the interface lets a client remove a final result),
+ * and with it a leftover <id>.json.old, an earlier version of it (a replace stopped before its last
+ * step: the app writes no more for a final result, so nothing else would remove it). */
 static void remove_result(const char *hex, int old, VjoAfvResults *r)
 {
     char path[PATH_CAP];
@@ -591,8 +607,13 @@ static void remove_result(const char *hex, int old, VjoAfvResults *r)
     if ((rc = sceIoRemove(path)) < 0 && rc != MISSING) {
         io_fail("remove", path, rc);
         r->failed++;
-    } else {
-        r->removed++;
+        return;
+    }
+    r->removed++;
+    if (!old) {
+        result_path(path, hex, 1);
+        if ((rc = sceIoRemove(path)) < 0 && rc != MISSING)
+            io_fail("remove", path, rc);
     }
 }
 
@@ -631,6 +652,11 @@ static void apply_one(VjoArena *a, Seen *e, VjoAfvResults *r)
     }
     if (got < 0) {
         r->failed++;
+        vjo_arena_release(a, mark);
+        return;
+    }
+    if (got == 0 && other_version(a, json, len)) { /* (absent, to a version-1 client) */
+        vjo_log("anki for vita: %s: another version's result, left alone", path);
         vjo_arena_release(a, mark);
         return;
     }
@@ -722,7 +748,7 @@ static int results(VjoArena *a, const VjoExportUi *ui, VjoAfvResults *r, Seen **
         say(ui, "Reading Anki for Vita's results", i + 1, *n_seen);
         apply_one(a, &(*seen)[i], r);
     }
-    if (r->in_anki || r->duplicate || r->removed) /* notes made final: their media may go now */
+    if (r->in_anki || r->duplicate || r->rejected || r->removed) /* final results: their media may go */
         r->swept = sweep_inbox(a);
     if (r->in_anki || r->duplicate || r->failed || r->swept)
         sceIoSync("ux0:", 0); /* the moves and removals */
@@ -919,19 +945,40 @@ static int sweep_inbox(VjoArena *a)
 {
     size_t mark = vjo_arena_mark(a);
     Seen *notes = NULL, *needed, *gone;
-    int n_notes = 0, n_needed = 0, n_gone = 0, cap, removed = 0, listed;
+    int n_notes = 0, n_needed = 0, n_gone = 0, cap, removed = 0, listed, notetype;
     SceUID d;
     SceIoDirent ent;
     if (!is_dir(VJO_AFV_INBOX_DIR))
         return 0;
-    if ((listed = list_inbox(a, &notes, &n_notes, VJO_AFV_RESULTS_MAX)) != 0) {
+    /* Rubi's media files first: with none (and no note type file) there is nothing to read */
+    if (!(gone = (Seen *)vjo_arena_alloc(a, sizeof(Seen) * VJO_AFV_RESULTS_MAX)))
+        return 0;
+    if (is_dir(VJO_AFV_MEDIA_DIR) && (d = sceIoDopen(VJO_AFV_MEDIA_DIR)) >= 0) {
+        for (;;) {
+            memset(&ent, 0, sizeof(ent));
+            if (sceIoDread(d, &ent) <= 0)
+                break;
+            if (SCE_S_ISREG(ent.d_stat.st_mode) && n_gone < VJO_AFV_RESULTS_MAX &&
+                !rubi_media(ent.d_name, strnlen(ent.d_name, sizeof(ent.d_name)), gone[n_gone].id))
+                n_gone++;
+        }
+        sceIoDclose(d);
+    }
+    notetype = present(VJO_AFV_NOTETYPES_DIR "/" VJO_AFV_NOTETYPE_FILE) > 0;
+    if (!n_gone && !notetype) {
+        vjo_arena_release(a, mark);
+        return 0;
+    }
+    /* then the notes still in the inbox (a few, once the app has synced: it removes the final ones) */
+    if ((listed = list_inbox(a, &notes, &n_notes, VJO_AFV_SWEEP_NOTES)) != 0) {
+        if (listed > 0)
+            vjo_log("anki for vita: over %d notes wait in the inbox: its media are removed once they are fewer",
+                    VJO_AFV_SWEEP_NOTES);
         vjo_arena_release(a, mark);
         return 0; /* (more notes than a sweep reads, or the inbox unreadable: everything stays) */
     }
     cap = 2 * n_notes + 64;
-    needed = (Seen *)vjo_arena_alloc(a, sizeof(Seen) * (size_t)cap);
-    gone = (Seen *)vjo_arena_alloc(a, sizeof(Seen) * VJO_AFV_RESULTS_MAX);
-    if (!needed || !gone) {
+    if (!(needed = (Seen *)vjo_arena_alloc(a, sizeof(Seen) * (size_t)cap))) {
         vjo_arena_release(a, mark);
         return 0;
     }
@@ -968,22 +1015,12 @@ static int sweep_inbox(VjoArena *a)
     for (int i = 0; i < n_needed; i++)
         needed[i].old = 0;
     seen_sort(needed, n_needed);
-    /* Rubi's media files none of them names */
-    if (is_dir(VJO_AFV_MEDIA_DIR) && (d = sceIoDopen(VJO_AFV_MEDIA_DIR)) >= 0) {
-        for (;;) {
-            memset(&ent, 0, sizeof(ent));
-            if (sceIoDread(d, &ent) <= 0)
-                break;
-            if (SCE_S_ISREG(ent.d_stat.st_mode) && n_gone < VJO_AFV_RESULTS_MAX &&
-                !rubi_media(ent.d_name, strnlen(ent.d_name, sizeof(ent.d_name)), gone[n_gone].id) &&
-                !seen_find(needed, n_needed, gone[n_gone].id))
-                n_gone++;
-        }
-        sceIoDclose(d);
-    }
+    /* Rubi's media files none of them names go */
     for (int i = 0; i < n_gone; i++) {
         char hex[VJO_QUEUE_ID_SIZE], path[PATH_CAP];
         int rc;
+        if (seen_find(needed, n_needed, gone[i].id))
+            continue;
         to_hex(gone[i].id, hex);
         snprintf(path, sizeof(path), "%s/vitajp_%s.jpg", VJO_AFV_MEDIA_DIR, hex);
         if ((rc = sceIoRemove(path)) < 0 && rc != MISSING)
@@ -991,7 +1028,7 @@ static int sweep_inbox(VjoArena *a)
         else
             removed++;
     }
-    if (!n_notes && present(VJO_AFV_NOTETYPES_DIR "/" VJO_AFV_NOTETYPE_FILE) > 0) {
+    if (!n_notes && notetype) {
         int rc = sceIoRemove(VJO_AFV_NOTETYPES_DIR "/" VJO_AFV_NOTETYPE_FILE);
         if (rc < 0)
             io_fail("remove", VJO_AFV_NOTETYPES_DIR "/" VJO_AFV_NOTETYPE_FILE, rc);
@@ -1184,8 +1221,6 @@ int vjo_afv_send(VjoArena *a, const VjoExportUi *ui, VjoAfvSendResult *r, char *
         vjo_arena_release(a, base);
         return r->rc = listed < 0 ? VJO_E_LOCAL_IO : VJO_E_OOM;
     }
-    if (!r->results.swept) /* (the media of notes made final since: before new ones are written) */
-        r->results.swept = sweep_inbox(a);
     mkdirs();
     remove_stale_temps(VJO_AFV_INBOX_DIR);
     remove_stale_temps(VJO_AFV_MEDIA_DIR);

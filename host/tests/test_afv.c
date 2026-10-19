@@ -173,7 +173,9 @@ int sceIoSyncByFd(int fd, int flag)
     (void)flag;
     if (change())
         return EIO_RC;
-    return native(fsync(fd));
+    /* (no fsync: a stopped process's writes stay in the page cache, so a stop's state is the same;
+     * the host's fsync would only slow the suite) */
+    return fcntl(fd, F_GETFD) < 0 ? EIO_RC : 0;
 }
 int sceIoSync(const char *device, unsigned flags)
 {
@@ -499,18 +501,18 @@ static void check_note(const char *id)
     /* the screenshot: named by its SHA-256, the queue's bytes */
     t = vjo_json_obj_get(&j, 0, "media");
     if (has_media) {
-        static char pic[VJO_QUEUE_PICTURE_MAX + 1];
+        static char pic[VJO_QUEUE_PICTURE_MAX + 1], file[VJO_QUEUE_PICTURE_MAX + 1];
         long a, b;
         TEST_CHECK(vjo_json_is_type(&j, t, JSMN_ARRAY) && j.t[t].size == 1 &&
                    !strcmp(vjo_json_str(&A, &j, t + 1), media));
         snprintf(path, sizeof(path), VJO_AFV_MEDIA_DIR "/%s", media);
-        a = get_file(path, other, sizeof(other));
+        a = get_file(path, file, sizeof(file));
         snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", id);
         if ((b = get_file(path, pic, sizeof(pic))) < 0) {
             snprintf(path, sizeof(path), VJO_QUEUE_EXPORTED_DIR "/%s.jpg", id);
             b = get_file(path, pic, sizeof(pic));
         }
-        TEST_CHECK_(a > 0 && a == b && !memcmp(other, pic, (size_t)a), "%s: its media file is not its screenshot", id);
+        TEST_CHECK_(a > 0 && a == b && !memcmp(file, pic, (size_t)a), "%s: its media file is not its screenshot", id);
     } else {
         TEST_CHECK_(t < 0, "%s: media without a screenshot", id);
     }
@@ -910,8 +912,20 @@ static void each_result_moves_its_card(void)
     TEST_CHECK(!queued(ids[5]) && archived(ids[5]));
     snprintf(path, sizeof(path), OUTBOX "/%s.json.old", ids[5]);
     TEST_CHECK(!there(path));
+    /* a leftover .old beside a final result goes with it */
+    {
+        VjoAfvResults again;
+        char old_path[256];
+        OK_RESULT(ids[2], "added", "true");
+        snprintf(old_path, sizeof(old_path), OUTBOX "/%s.json.old", ids[2]);
+        put_text(old_path, "{\"v\":1,\"status\":\"added\",\"synced\":false}");
+        TEST_ASSERT(results_now(&again) == VJO_OK);
+        TEST_CHECK(again.in_anki == 1 && !queued(ids[2]) && archived(ids[2]) && !has_result(ids[2]) &&
+                   !there(old_path));
+        OK_RESULT(ids[2], "added", "false"); /* (as it was, for the checks below; its card is archived) */
+    }
     /* not synced yet: queued, its result kept */
-    TEST_CHECK(queued(ids[2]) && has_result(ids[2]) && queued(ids[6]) && has_result(ids[6]));
+    TEST_CHECK(queued(ids[6]) && has_result(ids[6]));
     /* a duplicate: the queue's "found in Anki" state, which no export takes */
     snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.duplicate.json", ids[3]);
     TEST_CHECK(!queued(ids[3]) && there(path) && !has_result(ids[3]) && !archived(ids[3]));
@@ -928,11 +942,11 @@ static void each_result_moves_its_card(void)
     {
         VjoExportCounts c;
         vjo_export_count(&c);
-        TEST_CHECK(c.queued == 3 && c.exported == 3);
+        TEST_CHECK(c.queued == 2 && c.exported == 4);
     }
-    /* the same results again change nothing more */
+    /* the same results again change nothing more (ids[2]'s, not final, of an archived card: left) */
     TEST_ASSERT(results_now(&r) == VJO_OK);
-    TEST_CHECK(r.in_anki == 0 && r.duplicate == 0 && r.rejected == 1 && r.waiting == 2);
+    TEST_CHECK(r.in_anki == 0 && r.duplicate == 0 && r.rejected == 1 && r.waiting == 1 && has_result(ids[2]));
 }
 
 /* A refused card stays queued (for an .apkg) and is never handed in again under its id: the app
@@ -1078,7 +1092,6 @@ static void malformed_results_are_ignored(void)
         "",
         "not json",
         "[1]",
-        "{\"v\":2,\"id\":\"%s\",\"status\":\"added\",\"synced\":true}",
         "{\"v\":\"1\",\"id\":\"%s\",\"status\":\"added\",\"synced\":true}",
         "{\"v\":1.0,\"id\":\"%s\",\"status\":\"added\",\"synced\":true}",
         "{\"id\":\"%s\",\"status\":\"added\",\"synced\":true}",
@@ -1105,6 +1118,35 @@ static void malformed_results_are_ignored(void)
                     bad[k]);
         TEST_CHECK_(queued(id) && has_result(id), "result %u changed something", k);
         TEST_CHECK(strstr(logs, "not a version-1 result for its card, ignored") != NULL);
+    }
+    /* another version's: absent (left alone, not counted) */
+    {
+        VjoAfvResults r;
+        reset();
+        installed("{\"v\":1,\"interfaces\":[1]}");
+        queue_card(&cat, id);
+        result(id, "", "{\"v\":2,\"id\":\"%s\",\"status\":\"added\",\"synced\":true}", id);
+        TEST_ASSERT(results_now(&r) == VJO_OK);
+        TEST_CHECK(!r.malformed && !r.in_anki && queued(id) && has_result(id));
+        TEST_CHECK(strstr(logs, "another version's result, left alone") != NULL);
+    }
+    /* a duplicate key; invalid UTF-8 (an overlong '/', a surrogate, a lone continuation byte) */
+    {
+        static const char *const bad2[] = {
+            "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"status\":\"rejected\"}",
+            "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"message\":\"\xC0\xAF\"}",
+            "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"message\":\"\xED\xA0\x80\"}",
+            "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"message\":\"\x80\"}",
+        };
+        for (unsigned k = 0; k < sizeof(bad2) / sizeof(bad2[0]); k++) {
+            VjoAfvResults r;
+            reset();
+            installed("{\"v\":1,\"interfaces\":[1]}");
+            queue_card(&cat, id);
+            result(id, "", bad2[k], id);
+            TEST_ASSERT(results_now(&r) == VJO_OK);
+            TEST_CHECK_(r.malformed == 1 && !r.in_anki && queued(id), "result %u", k);
+        }
     }
     /* binary bytes, and a NUL inside */
     {
@@ -1237,6 +1279,86 @@ static void the_status_is_read_and_said(void)
     }
 }
 
+/* ---------------- memory ---------------- */
+
+/* The send's arena (the page's 2 MiB VJO_EXPORT_MEM, shared with the export): its peak for a send of
+ * VJO_AFV_SEND_MAX cards (its fixed lists at their largest) and for the largest card (a record of
+ * 32 KiB, a 192 KiB screenshot); "measure:" lines. */
+static void measure_a_send(void)
+{
+    VjoAfvSendResult r;
+    VjoAfvResults res;
+    char msg[400], id[VJO_QUEUE_ID_SIZE];
+    size_t peak;
+    reset();
+    installed("{\"v\":1,\"interfaces\":[1]}");
+    for (int i = 0; i < VJO_AFV_SEND_MAX; i++) {
+        Card c = eat;
+        char word[24];
+        snprintf(word, sizeof(word), "語%d", i);
+        c.spelling = word;
+        c.hl_start = 0;
+        c.hl_end = 3;
+        c.sentence = word;
+        vjo_arena_init(&A, mem, sizeof(mem));
+        queue_card(&c, id);
+    }
+    TEST_ASSERT(send_now(&r, msg, sizeof(msg)) == VJO_OK);
+    TEST_CHECK_(r.sent == VJO_AFV_SEND_MAX && !r.failed, "%s", msg);
+    peak = A.peak;
+    printf("measure: a send of %d cards: arena peak %u B of %u B\n", r.sent, (unsigned)peak, (unsigned)sizeof(mem));
+    /* again, all of them in the inbox: its list too */
+    TEST_ASSERT(send_now(&r, msg, sizeof(msg)) == VJO_OK);
+    TEST_CHECK_(r.sent == 0 && r.already == VJO_AFV_SEND_MAX, "%s", msg);
+    printf("measure: a send of none of them (all in the inbox): arena peak %u B\n", (unsigned)A.peak);
+    if (A.peak > peak)
+        peak = A.peak;
+    TEST_CHECK(peak < sizeof(mem) / 2);
+    /* the most results a pass reads: one each, not synced yet */
+    {
+        DIR *d = opendir(VJO_QUEUE_DIR);
+        struct dirent *e;
+        int n = 0;
+        TEST_ASSERT(d != NULL);
+        while ((e = readdir(d)) && n < VJO_AFV_RESULTS_MAX)
+            if (strlen(e->d_name) == 37 && !strcmp(e->d_name + 32, ".json")) {
+                char hex[33];
+                memcpy(hex, e->d_name, 32);
+                hex[32] = '\0';
+                OK_RESULT(hex, "added", "false");
+                n++;
+            }
+        closedir(d);
+        TEST_ASSERT(n == VJO_AFV_RESULTS_MAX);
+    }
+    TEST_ASSERT(results_now(&res) == VJO_OK);
+    TEST_CHECK(res.waiting == VJO_AFV_RESULTS_MAX);
+    printf("measure: a results pass of %d results: arena peak %u B\n", res.waiting, (unsigned)A.peak);
+    /* the largest card: a record near 32 KiB, a screenshot of 192 KiB */
+    reset();
+    installed("{\"v\":1,\"interfaces\":[1]}");
+    {
+        static char big[VJO_QUEUE_TEXT_MAX];
+        static uint8_t pic[VJO_QUEUE_PICTURE_MAX];
+        char path[256];
+        Card c = cat;
+        size_t n = 0;
+        while (n + 4 < 9000) /* kana, 3 bytes each, in two fields of the record */
+            memcpy(big + n, "あ", 3), n += 3;
+        big[n] = '\0';
+        c.meaning = big;
+        c.sentence = big;
+        c.hl_end = 3;
+        queue_card(&c, id);
+        snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", id);
+        put_file(path, pic, jpeg_of(pic, 5, sizeof(pic)));
+    }
+    TEST_ASSERT(send_now(&r, msg, sizeof(msg)) == VJO_OK);
+    TEST_CHECK_(r.sent == 1, "%s", msg);
+    printf("measure: the largest card's send: arena peak %u B\n", (unsigned)A.peak);
+    check_note(id);
+}
+
 /* ---------------- --write DIR: for test_afv.py ---------------- */
 
 static int write_inbox(const char *dir)
@@ -1300,6 +1422,7 @@ TEST_LIST = {
     {"malformed_results_are_ignored", malformed_results_are_ignored},
     {"hostile_names_in_the_outbox_are_never_read", hostile_names_in_the_outbox_are_never_read},
     {"the_status_is_read_and_said", the_status_is_read_and_said},
+    {"measure_a_send", measure_a_send},
     {NULL, NULL},
 };
 
