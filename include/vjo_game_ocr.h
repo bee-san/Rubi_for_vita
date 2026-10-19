@@ -65,7 +65,7 @@
  * card's screenshot, beside its record. A shot recognizes nothing, opens no model and
  * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed. */
 #define VJO_GAME_OCR_F_SHOT 0x4000u
-/* API 27, bit 15: vertical text (config.ini ocr_vertical, vita-vn-ocr #99). The job runs the vertical
+/* API 29, bit 15: vertical text (config.ini ocr_vertical, vita-vn-ocr #99). The job runs the vertical
  * model (include/vjo_vocr_sizes.h VJO_VOCR_VERTICAL_NAME), whatever its tiers name, and opens it as
  * VJO_GAME_OCR_OPEN_VERTICAL: it finds the region's columns and reads each turned 90 degrees, right
  * to left (core/vocr_ocr.h VJO_VOCR_FINDER_COLUMNS), with the LM bits as for any job; no cascade, no
@@ -138,7 +138,7 @@ typedef struct {
  * a request by tiers) the model of tier which - VJO_GAME_OCR_OPEN_TIER + 1: one of
  * the request's tiers, or with a cascade ceiling the tier above its largest
  * (the cascade's model). A request by tiers opens no MODEL, FALLBACK or CASCADE;
- * one by name opens no TIER. API 27: a request with VJO_GAME_OCR_F_VERTICAL may
+ * one by name opens no TIER. API 29: a request with VJO_GAME_OCR_F_VERTICAL may
  * open the vertical model (VJO_GAME_OCR_OPEN_VERTICAL), by tiers or by name; the
  * vertical model opens no other way (not as a request's MODEL or FALLBACK). */
 #define VJO_GAME_OCR_OPEN_MODEL 0u
@@ -192,7 +192,7 @@ enum {
                             try began (us since the job started; 0 with one try), us when it was logged,
                             after the tries */
     VJO_GSTEP_SIG,       /* the first pass is in: rc of vjoOcrCaptureRows' publication */
-    VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's; API 27: bytes the columns left out, larger
+    VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's; API 29: bytes the columns left out, larger
                             than the rotation buffer (core/vocr_ocr.h VJO_VOCR_ROTATE_BYTES; 0 for rows) */
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes; arg 1: read by a job that found no
                             line (core/vocr_ocr.h vjo_vocr_warm) */

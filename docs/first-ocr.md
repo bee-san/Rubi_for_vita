@@ -25,7 +25,7 @@ The game worker's steps (`gstep job ...`, `game_ocr/main.c` `step_add`) carry tw
 - a time since the job started, for the instant steps (`mem`, `check`, `alloc`, `free`, `sig`,
   `tear`, `clock`): `step_add` called with us 0 (`game_ocr/main.c:148` at `4ac02ac`).
 
-A vertical job's `find` (API 27, `ocr_vertical = on`) also gives `bytes=`: the columns it left out because
+A vertical job's `find` (API 29, `ocr_vertical = on`) also gives `bytes=`: the columns it left out because
 their crop (width × height) holds more than its rotation buffer, 57,344 B (`VJO_VOCR_ROTATE_BYTES`,
 `VjoVocrStats.rotate_skipped`; 0 for rows, so a job of rows logs as before). Those are never read, so at most
 `arg=` (the columns found) minus `bytes=` were read: blank columns (the blank-line check), tall ones without

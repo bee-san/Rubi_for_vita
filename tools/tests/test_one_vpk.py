@@ -128,7 +128,7 @@ class BuildCheck(unittest.TestCase):
 class PayloadList(unittest.TestCase):
     def test_the_python_list_is_the_compiled_one(self):
         files = vpk.payload_files()
-        self.assertEqual(len(files), 19)  # API 26: the gate's weights and GATE-ATTRIBUTION.md; API 27: VOCR5-V and VERTICAL-ATTRIBUTION.md
+        self.assertEqual(len(files), 19)  # API 26: the gate's weights and GATE-ATTRIBUTION.md; API 29: VOCR5-V and VERTICAL-ATTRIBUTION.md
         header = (ROOT / "include/vjo_payload.h").read_text()
         kernel = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX (\d+)", header).group(1))
         self.assertEqual(files[kernel], ("ur0:tai/VitaJPOverlay_Kernel.skprx", "copy"))

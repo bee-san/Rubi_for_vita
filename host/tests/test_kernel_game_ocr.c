@@ -1040,7 +1040,7 @@ static void invalid_capture_and_wire(void)
     r.model_dir[sizeof(r.model_dir) - 1] = 'x'; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.model_dir[sizeof(r.model_dir) - 1] = 0;
     r.flags = 0x4000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 23: a shot names no model */
-    /* API 27: bit 15 (vertical text) is the last flag bit defined: none is unknown now, and a shot
+    /* API 29: bit 15 (vertical text) is the last flag bit defined: none is unknown now, and a shot
      * carries it no more than any other (vertical_model_opens_only_for_a_vertical_job) */
     TEST_CHECK(VJO_GAME_OCR_F_ALL == 0xFFFFFFFFu && VJO_GAME_OCR_F_VERTICAL == 0x8000u);
     r.flags = 0;
@@ -2067,7 +2067,7 @@ static void cascade_model_opens_only_with_a_ceiling(void)
     }
 }
 
-/* API 27: the vertical model is a pinned name the kernel knows (its length the pin's), opened as
+/* API 29: the vertical model is a pinned name the kernel knows (its length the pin's), opened as
  * VJO_GAME_OCR_OPEN_VERTICAL by a job whose request has VJO_GAME_OCR_F_VERTICAL, by tiers (the Shell's)
  * or by name, and by no other job; a shot cannot carry the flag. */
 static void vertical_model_opens_only_for_a_vertical_job(void)
@@ -2316,7 +2316,7 @@ TEST_LIST = {
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
     {"API 26: the gate's weights open by their pinned name, only with the gate", gate_weights_open_only_with_the_gate},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
-    {"API 27: the vertical model opens only for a vertical job, by tiers or by name; never a shot's", vertical_model_opens_only_for_a_vertical_job},
+    {"API 29: the vertical model opens only for a vertical job, by tiers or by name; never a shot's", vertical_model_opens_only_for_a_vertical_job},
     {"the Large size's file opens at its pinned length only (VOCR5-L: 2,473,696 B)", the_large_size_opens_at_its_pinned_length_only},
     {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},
     {"exact_pin_keeps_canonical_path_and_final_chunk_bounds",exact_pin_keeps_canonical_path_and_final_chunk_bounds},

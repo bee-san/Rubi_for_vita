@@ -895,7 +895,7 @@ static void test_line_lengths(void)
     TEST_CHECK(vjo_vocr_test_line_length(36, 290, 0) == 36u * 32u / 290u + 1u); /* the same box as a row */
 }
 
-/* The text-presence gate (API 26) scores row boxes, and two guards keep it off columns (API 27): run_job sets it
+/* The text-presence gate (API 26) scores row boxes, and two guards keep it off columns (API 29): run_job sets it
  * up only for a model of rows (its weights read, its arena placed), and recognize begins it only on rows. Each test
  * below fails when its guard is gone (audit-vertical-rubi S2). Both put the gate's weights in the models' directory
  * when cmake/VocrGate.cmake got them, and run columns on M_COLSG, whose arena has room for the gate's. */

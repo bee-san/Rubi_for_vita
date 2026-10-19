@@ -495,7 +495,7 @@ class VocrDefaults(unittest.TestCase):
                 self.assertNotIn(name, shipped)
         self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
                          {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL,
-                          prepare_ocr.VOCR_VERTICAL_MODEL})  # the LMs, the gate (API 26), VOCR5-V (API 27)
+                          prepare_ocr.VOCR_VERTICAL_MODEL})  # the LMs, the gate (API 26), VOCR5-V (API 29)
 
 if __name__ == "__main__":
     unittest.main()

@@ -926,7 +926,7 @@ app has no switch for it; config.ini does.
   scores the row finder's boxes; a vertical job neither reads its file nor logs its step). The LM (`ocr_lm`), the threads (`ocr_threads`),
   the line cache and the stable-text wait apply as they do to rows.
 
-**The request (API 27).** The Shell sets `VJO_GAME_OCR_F_VERTICAL` (the flags' bit 15, the last
+**The request (API 29).** The Shell sets `VJO_GAME_OCR_F_VERTICAL` (the flags' bit 15, the last
 free one) in every job's request when the key is on, keeping its tiers and its other bits. The game
 worker then runs the vertical model alone, whatever the tiers, with a request by name's 4 MiB
 reserve (the Small size's) and no smaller model to step down to, and opens it as

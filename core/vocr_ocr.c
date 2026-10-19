@@ -1802,7 +1802,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     if (l->gate_bytes) st->gate_rc = 0;
     t0 = clock_us(p);
     /* API 26: the gate takes the rows the finder reads (stream_row). It scores row boxes: a model of columns
-     * (vertical text, API 27) reads without it. */
+     * (vertical text, API 29) reads without it. */
     if (l->gate_bytes && !cols) {
         int grc = vocr_textgate_begin(&gate, &l->gate, VJO_VOCR_GATE_MODE, VJO_VOCR_GATE_K, w, im->height,
                                       ws + l->gate_off, l->gate_bytes);
@@ -2253,7 +2253,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     if (!workspace || ((uintptr_t)workspace & 15u) || workspace_size < front + l.total ||
         !capture || capture_size < need_capture) return VJO_E_OOM;
     if (policy && policy->gate && (!columns_of(mi) || test_gate_columns)) { /* it scores row boxes: a model of
-                                                                              * columns (API 27) reads without */
+                                                                              * columns (API 29) reads without */
         /* API 26: the gate's weights (read once, then kept), and its arena in the scratch the finder leaves
          * free (the recognizer's arena is the larger part of it at every region size), so the workspace never
          * grows for it. Without either the job reads as without the gate (stats->gate_rc says why). */

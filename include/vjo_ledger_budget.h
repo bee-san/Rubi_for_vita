@@ -161,7 +161,8 @@
  * fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main 1de7b67 and this change]. At
  * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
  * which would still need the page. In the game's partition, never SceShell's.
- * Raised again for API 27, vertical text (vita-vn-ocr #99, config.ini ocr_vertical): +4,816 B of text in each
+ * Raised again for API 29, vertical text (vita-vn-ocr #99, config.ini ocr_vertical; API 27 when #213 merged it,
+ * reverted by #222, which made API 28): +4,816 B of text in each
  * build on main 1de7b67 (78,156 -> 82,972 B debug, 76,856 -> 81,672 B normal) [measured: the module rows of both
  * builds of main 1de7b67 and of #213], +4,832 B on main 5ee0904. Against 5ee0904's worker, as linked, its .text
  * and .rodata grow 4,840 B debug [4,832 B normal; the debug segment's padding between sections is 8 B less]:
@@ -175,7 +176,7 @@
  * 81,644 -> 86,476 B debug
  * (data/bss 15,720 B as before; 98,304 -> 106,496 B of pages) and 80,344 -> 85,176 B normal (98,304 -> 102,400 B;
  * 840 B of text room left) [measured: the module rows of both builds of main 5ee0904 and of this change, CI's
- * VitaSDK container]. In the game's partition,
+ * VitaSDK container; the same figures on #222's tree and the API 29 change]. In the game's partition,
  * never SceShell's; in every game that is ON, ocr_vertical and the gate on or off. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 106496u
