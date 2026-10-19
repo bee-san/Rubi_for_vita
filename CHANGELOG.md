@@ -200,9 +200,10 @@ The owner's PCH-1001 with CLANNAD, 2026-10-17:
 - After the restart the app opened from LiveArea with no game running, and Check and repair wrote
   nothing.
 - The kernel plugin loaded the OCR worker into CLANNAD with no taiHEN line for it.
-- VOCR5 Normal took 2.61 ms per CTC frame (10 jobs) and Large 4.98–5.10 ms (its 11 jobs, 9 with
-  rc 0), both at 444 MHz. Large never fell back to a smaller size: CLANNAD had 87.0–91.2 MB free.
-  Every job that recognized a line raised the clock 333 → 444 → 333 MHz.
+- VOCR5 Normal took 2.61 ms per CTC frame and Large 4.98–5.10 ms, both at 444 MHz (over the
+  analyser's 10 and 8 jobs; Normal ran 15 jobs, Large 11). Large never fell back to a smaller size:
+  CLANNAD had 87.0–91.2 MB free. Every job that recognized a line raised the clock
+  333 → 444 → 333 MHz.
 - The dictionary's popups, the left stick and the export of 20 cards worked.
 - Both cards' screenshots timed out after 15 s, while the game froze and its audio cut in and out;
   the saves took 17.6 and 23.7 s (fixed in test.4.3).
@@ -272,9 +273,10 @@ The owner's PCH-1001 with CLANNAD, 2026-10-16:
 
 ### Added
 
-- test.1's six requests: Up and Down by displayed rows, Left and Right wrapping at a row's ends
-  ([#87]); the OCR box drawn with the stick ([#86]); no dialogue-changed warning ([#92]); VOCR3 and
-  Google Lens as the two engines ([#85]); Anki set up in the app ([#90]).
+- test.1's six requests: Up and Down by displayed rows (so local dictionaries now page with an L or R
+  tap instead) and Left and Right wrapping at a row's ends ([#87]); the OCR box drawn with the stick
+  ([#86]); no dialogue-changed warning ([#92]); VOCR3 and Google Lens as the two engines ([#85]);
+  Anki set up in the app ([#90]).
 - Typing text is read once it is whole ([#84]), and each mark is shown and looked up in one form
   ([#88]).
 - Beam search with a 1 MB character language model, and a cascade that reads a doubtful line again
@@ -312,7 +314,7 @@ The owner's PCH-1001 with CLANNAD, 2026-10-15:
   ([#77]); Anki cards saved offline to the memory card, then sent to AnkiConnect on the local network
   ([#49], [#77]).
 - The frozen Daijirin4 → Sankoku8 → JMdict dictionary ([#73]), several local dictionaries paged with
-  L and R ([#51]), and ranked entries with one `log.txt` line per lookup ([#79]).
+  Up and Down ([#51]), and ranked entries with one `log.txt` line per lookup ([#79]).
 - The boot-safety guard: a boot that does not complete makes the next one a safe boot ([#63]).
 - The on-device self-test ([#66]), and `--collect` with the memory headroom of each stage ([#78]).
 - The memory ledger: every allocation named and budgeted, and checked in CI ([#64]).
@@ -375,7 +377,7 @@ A more readable settings app: larger text, three game cards a screen, ON/OFF bad
 
 VOCR (the default) and Meiki installed together and switched in the settings app; Japanese-only
 character selection, ON by default. The pre-releases 0.7.6-meiki.1 and .2 were Meiki's single-line
-trial. On the console: two CLANNAD lines took about 8 s each with Meiki.
+trial. On the console (0.7.6-meiki.2): two CLANNAD lines took about 8 s each with Meiki.
 
 ## [0.7.5] - 2026-10-11
 
