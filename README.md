@@ -60,10 +60,10 @@
 - **Fast or accurate, now or when you ask.** Choose a Small, Normal or Large model (a game short of
   memory gets the next smaller one by itself), and whether Rubi reads each new screen in the
   background, so the popup is ready when you press, or only when you press L + R.
-- **On or off for each game.** Every game is ON to start with, PSP games in Adrenaline too (each
-  bubble listed under its game's title); turn off the ones that need L + R themselves. The app
-  opens beside your game, which waits suspended behind it (a game that uses extended memory may
-  have to close first).
+- **On or off for each game.** Every game is ON to start with, PSP games in Adrenaline too
+  (Adrenaline and each bubble are listed, a bubble under its game's title); turn off the ones that
+  need L + R themselves. The app opens beside your game, which waits suspended behind it (a game
+  that uses extended memory may have to close first).
 
 ## Install
 
@@ -141,15 +141,18 @@ logging, is in `ux0:data/VitaJPOverlay/config.ini`
 | ❓ | Other firmware, 3.60–3.74 | untested |
 | ✅ | CLANNAD | OCR, lookups and Anki cards (OCR in every test build) |
 | ❓ | Other Vita games | Rubi's OCR has read no other game's text on a console yet |
-| ⚠️ | PSP games (Adrenaline) | with the [small Adrenaline bridge](compat/adrenaline_vsh/README.md) (on `main`, not in 0.8.0) in place of Adrenaline's own, one game started from its bubble and got Rubi's OCR worker; reading its text is untested |
-| ✅ | Updating, on the app's Install page | three times, each over the build before, the old app closed first |
+| ⚠️ | PSP games (Adrenaline) | one game started, with Rubi's OCR worker, using the [small bridge](compat/adrenaline_vsh/README.md) (on `main`, not in 0.8.0); reading its text is untested |
+| ✅ | Updating a one-VPK install, in the app | three times, the old app closed first |
+| ⚠️ | Updating an install made from a computer (0.7.12 or older) | refused in its one console run, and finished by hand; the cause is unconfirmed |
 | ❓ | A first install, on a Vita without Rubi | not run on a console yet |
 | ✅ | Model sizes Normal and Large | Large fitted in CLANNAD's free memory |
 | ❓ | Model size Small | 0.8.0's Small model has not run on a console |
 | ✅ | Read text: Automatically | the mode of every 0.8.0 test run |
 | ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
-| ⚠️ | Anki screenshots | a card saved with its picture in 851 ms; after a restart the first card can take about 21 s or be saved without it ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix is untested on a console) |
+| ❓ | Tapping a word in the game | not checked on a console yet |
+| ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
+| ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
 | ❓ | The normal build (the main download) | no console run reported; the test runs used the debug build |
 
 What each build changed, and what its console run showed: the [changelog](CHANGELOG.md).
@@ -200,8 +203,8 @@ hold L while you start it. The guide has every byte, in
 The app's Install page changes nothing until you choose Install, and it keeps a dated backup of
 each taiHEN `config.txt` it changes. If a start of the Vita doesn't finish, the next one is a safe
 boot: Rubi installs no hooks and unloads itself, so the Vita starts as if Rubi weren't there
-([safe boot](docs/boot-safety.md)). Updating has run on a console; a first install has not yet
-([Supported](#supported)).
+([safe boot](docs/boot-safety.md)). On a console, updating a one-VPK install has worked; updating a
+computer install was refused once, and a first install has not run yet ([Supported](#supported)).
 
 If the Vita does not start: hold L while you turn it on (h-encore or h-encore2: open its menu,
 holding R as h-encore starts, and choose Exit while holding L), then in VitaShell put `#` before the

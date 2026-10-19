@@ -19,29 +19,32 @@ On `main` since 0.8.0; the next release brings it.
   ([how to use it](compat/adrenaline_vsh/README.md)), for an Adrenaline or PSP bubble start that goes
   straight back to LiveArea: on the owner's console, Adrenaline's own bridge did not fit in
   SceShell's memory (`9e36b5e`).
-- An opt-in text-presence gate (`ocr_text_gate`, off by default; API 26): a region it finds no text
-  in returns no line, so nothing is read off a picture (#214).
-- The Rubi app's Games page shows five games a page and searches by title or title ID (#219).
+- An opt-in text-presence gate (`ocr_text_gate`, off by default; API 26): a region it scores as
+  text-free returns no line. On the host it did so for 59 of 66 text-free regions, against 5 without
+  it ([#214]).
+- The Rubi app's Games page shows five games a page and searches by title or title ID ([#219]).
 
 ### Changed
 
 - Every verified install deletes the app's own copy of the dictionary when the app's folder can be
-  written, and says so on the done screen and in `log.txt` (#200).
+  written, and says so on the done screen and in `log.txt` ([#200]).
 - A card's screenshot is written over a file set aside for it beforehand: on the owner's console,
   after a restart, the first write to a new file took about 21 s, so a card took that long or was
-  saved without its picture (#208; #207, #210).
+  saved without its picture ([#208]; [#207], [#210]).
 - A queued card whose screenshot is missing or damaged is exported without it, and the export says
-  so; before, it stayed in the queue (#218).
+  so; before, it stayed in the queue ([#218]).
 - The plugins' API is 28: API 26's interface again, after vertical text was merged as API 27
-  (#213, #216, #217) and taken out again (#222).
+  ([#213], [#216], [#217]) and taken out again ([#222]).
+- The README shows the promo film ([#206]) and says what the console runs showed ([#204]); its build
+  history is now this changelog ([#224]).
 
 ### On the console
 
 - 2026-10-17, with the small bridge: Boku no Natsuyasumi 4 started from its LiveArea bubble, and the
   kernel loaded Rubi's OCR worker into the bubble's PSP emulator process (`PSPEMU004`). Reading text
   in a PSP game is still untested.
-- A build made to measure the screenshot fix (#207): the first screenshot after a restart took
-  719 ms to capture and encode and 74 ms to write, and saving a card with its screenshot took
+- A build made to measure the screenshot fix ([#207]): the first screenshot after a restart took
+  719 ms to capture and encode and 74 ms of file work, and saving a card with its screenshot took
   523–905 ms. The finished fix has not run on a console yet.
 
 ## [0.8.0] - 2026-10-17
@@ -55,18 +58,18 @@ prepared lookups; everything else new since 0.7.12 came in the test builds below
 
 - Prepared lookups: with Read text on Automatically and Whole word highlighting, idle time prepares
   the lookups of up to eight upcoming words, and dictionary handles are kept for the current dialogue
-  (#203; measured as host operation counts, not timed on a console).
+  ([#203]; measured as host operation counts, not timed on a console).
 
 ### Changed
 
-- Renamed to **Rubi** (Rubi for Vita; #189, [what changed](docs/rename-rubi.md)). The app was
+- Renamed to **Rubi** (Rubi for Vita; [#189], [what changed](docs/rename-rubi.md)). The app was
   **Overlay** in the 0.8.0 test builds and **JP Overlay Settings** before (0.7.12 and older). Its
   title ID (`VJOSET001`) stays, so the new VPK installs over either and keeps your settings, games
   and Anki cards. The data folders, the plugin files and the Anki deck keep their old names.
 - The main download is the normal build, `Rubi-0.8.0.vpk`; `Rubi-0.8.0-debug.vpk` is the test
   builds' build, with the full log and the self-test. Each is also a zip, for the computer installer.
-- The README became a short front page, with the promo film (#193); the old README is now the guide,
-  `docs/guide.md` (#176).
+- The README became a short front page, and the old README is now the guide, `docs/guide.md`
+  ([#176]). The 42-second promo film is in `docs/promo` ([#193]).
 
 ### Fixed
 
@@ -75,18 +78,18 @@ prepared lookups; everything else new since 0.7.12 came in the test builds below
 - A card's screenshot is saved: the kernel's save syncs nothing (`b622c18`).
 - When the app cannot read its own folder yet, right after VitaShell installs it, the Install page
   says `Restart the Vita first`, and it logs every reason it shows (`b6755cf`).
-- The kernel changes the active game only under its lock (#190).
+- The kernel changes the active game only under its lock ([#190]).
 
 ### On the console
 
-- Its release notes say its lookup changes (#203) were not installed or timed on a console. Its
+- Its release notes say its lookup changes ([#203]) were not installed or timed on a console. Its
   fixes ran in test.4.1–4.3 (below).
 
 ## 0.8.0-test.5 - cancelled
 
 Planned after test.4 to check its fixes and run what test.4 had not: Small, Read text on a press,
 the boost off, the Games page's Default OFF, a PSP game, and the dictionary's grammar and kanji lines
-as steps of their own. It was cancelled when 0.8.0 shipped, and none was published
+as steps of their own. It was cancelled when 0.8.0 shipped, and no test.5 was published
 ([#191](https://github.com/bee-san/Rubi_for_vita/issues/191),
 [#194](https://github.com/bee-san/Rubi_for_vita/issues/194)).
 
@@ -150,39 +153,39 @@ list.
 ### Added
 
 - The one-VPK install: the VPK carries the whole install, and the app's Install page installs,
-  updates, checks and repairs, and uninstalls (#158 and the PRs after it).
+  updates, checks and repairs, and uninstalls ([#158] and the PRs after it).
 - VOCR5 as the three model sizes, Small, Normal (the default) and Large, with the 1 MB character
-  language model (#167).
-- Bee's Ultimate Dictionary (#153), with Jiten's frequency rank on every entry (#127) and faster
-  lookups (#140, #143).
-- Anki cards keep a screenshot of the game, made in the game's own process (#150, #164, #174).
+  language model ([#167]).
+- Bee's Ultimate Dictionary ([#153]), with Jiten's frequency rank on every entry ([#127]) and faster
+  lookups ([#140], [#143]).
+- Anki cards keep a screenshot of the game, made in the game's own process ([#150], [#164], [#174]).
 - **Read text** (Automatically, or Only when I press L + R) and **Speed boost while reading
-  (444 MHz)** in the app (#146).
-- Two builds: the normal build (short log, no self-test) and the debug build (#141, #147, #155).
-- Automatic reading keeps each new dialogue text in `history.csv` (#187).
-- Adrenaline Bubble Manager bubbles are listed as PSP games, under their game's title (#124, #170).
+  (444 MHz)** in the app ([#146]).
+- Two builds: the normal build (short log, no self-test) and the debug build ([#141], [#147], [#155]).
+- Automatic reading keeps each new dialogue text in `history.csv` ([#187]).
+- Adrenaline Bubble Manager bubbles are listed as PSP games, under their game's title ([#124], [#170]).
 
 ### Changed
 
 - The kernel plugin loads the OCR worker into every game that is ON, Adrenaline included: no
-  taiHEN line per game, no `--title` (#148).
+  taiHEN line per game, no `--title` ([#148]).
 - The app's Games list lists every title `games.ini` names, and Default OFF turns every game OFF
-  (#149).
-- The normal build makes no log append on the way to a result (#154).
-- The left stick moves the cursor fast and looks a word up once it rests (#156); Left and Right cross
-  lines and stop at the text's ends (#173).
+  ([#149]).
+- The normal build makes no log append on the way to a result ([#154]).
+- The left stick moves the cursor fast and looks a word up once it rests ([#156]); Left and Right cross
+  lines and stop at the text's ends ([#173]).
 - A word split over two lines is looked up whole, and the overlay breaks its own lines between
-  phrases (#178).
+  phrases ([#178]).
 
 ### Removed
 
-- Google Lens and the whole network stack: Rubi is offline only (#130, #132, #145, #157).
+- Google Lens and the whole network stack: Rubi is offline only ([#130], [#132], [#145], [#157]).
 
 ### Fixed
 
-- The app opens with no game running (#181).
-- No `Recognizing…` left on screen after a cancelled lookup (#95, #179); config warnings never quote
-  a value (#185); the subtitle strip after a new region or a game switch (#182, #186).
+- The app opens with no game running ([#181]).
+- No `Recognizing…` left on screen after a cancelled lookup ([#95], [#179]); config warnings never quote
+  a value ([#185]); the subtitle strip after a new region or a game switch ([#182], [#186]).
 
 ### On the console
 
@@ -197,13 +200,15 @@ The owner's PCH-1001 with CLANNAD, 2026-10-17:
 - After the restart the app opened from LiveArea with no game running, and Check and repair wrote
   nothing.
 - The kernel plugin loaded the OCR worker into CLANNAD with no taiHEN line for it.
-- VOCR5 Normal took 2.61 ms per CTC frame (10 jobs) and Large 4.98–5.10 ms (8 jobs), both at
-  444 MHz. Large never fell back to a smaller size: CLANNAD had 87.0–91.2 MB free. Every job that
-  recognized a line raised the clock 333 → 444 → 333 MHz.
+- VOCR5 Normal took 2.61 ms per CTC frame (10 jobs) and Large 4.98–5.10 ms (its 11 jobs, 9 with
+  rc 0), both at 444 MHz. Large never fell back to a smaller size: CLANNAD had 87.0–91.2 MB free.
+  Every job that recognized a line raised the clock 333 → 444 → 333 MHz.
 - The dictionary's popups, the left stick and the export of 20 cards worked.
 - Both cards' screenshots timed out after 15 s, while the game froze and its audio cut in and out;
   the saves took 17.6 and 23.7 s (fixed in test.4.3).
 - A box's short last line was dropped by the line finder, as in test.3 (fixed in test.4.1 and 4.2).
+- Two PS-button screenshots were not saved, and the game seemed frozen while they were taken; the
+  logs show no capture of Rubi's at that time ([#194]).
 - Not run: Small, Read text on a press, the boost off, Default OFF, a PSP game, and the dictionary
   steps.
 
@@ -216,23 +221,23 @@ Install steps and results: [#138](https://github.com/bee-san/Rubi_for_vita/issue
 ### Added
 
 - Model sizes in the app: Small (VOCR3-FL10), Normal (VOCR3-H15, the default) and Large (VOCR4-W20),
-  with a smaller one taken by itself when a game is short of memory (#108, #105).
-- Faster OCR: up to 3 lines at once, a cache of 8 lines, and 444 MHz while a job reads (#93).
+  with a smaller one taken by itself when a game is short of memory ([#108], [#105]).
+- Faster OCR: up to 3 lines at once, a cache of 8 lines, and 444 MHz while a job reads ([#93]).
 - A fast first scan: the self-test runs in a background job of its own, and each model file is read
-  once per game process (#116).
-- Anki: the app exports the queued cards as one `.apkg` of Lapis notes (#125, #133).
-- The app and the plugins check that they are one build (#122).
+  once per game process ([#116]).
+- Anki: the app exports the queued cards as one `.apkg` of Lapis notes ([#125], [#133]).
+- The app and the plugins check that they are one build ([#122]).
 
 ### Changed
 
-- The app is a system application: it opens beside a suspended game (#109, #112, #129).
-- Enter and Cancel follow the console's own setting (#106).
-- A key filter in the dictionary saves about 6 file reads per lookup (#123; host).
+- The app is a system application: it opens beside a suspended game ([#109], [#112], [#129]).
+- Enter and Cancel follow the console's own setting ([#106]).
+- A key filter in the dictionary saves about 6 file reads per lookup ([#123]; host).
 
 ### Removed
 
-- AnkiConnect (#125), the online dictionaries jpdb.io and jiten.moe, and the Hachidori relay (#117,
-  #126).
+- AnkiConnect ([#125]); the online dictionaries jpdb.io and jiten.moe, and with them the subtitle
+  strip's furigana, which only they gave ([#117]); and the Hachidori relay ([#126]).
 
 ### On the console
 
@@ -249,15 +254,15 @@ The owner's PCH-1001 with CLANNAD, 2026-10-16:
 - A cursor step's lookup took 35–112 ms (median 56 ms, 31 lookups).
 - 7 cards were saved, none failed, and exported as one `.apkg` of 7 Lapis notes (checked on a
   computer, not imported into Anki).
-- PS with the overlay open worked (#104). The app opened beside CLANNAD and closed cleanly, but not
+- PS with the overlay open worked ([#104]). The app opened beside CLANNAD and closed cleanly, but not
   from LiveArea with no game running (the owner's report; why is still unexplained).
 - AIR (`PCSG00940`) got no OCR: this build loaded the worker only into a game with its own taiHEN
-  line, and AIR had none; its jobs ended `rc=-117`. The tester reported the same in Adrenaline (#148
+  line, and AIR had none; its jobs ended `rc=-117`. The tester reported the same in Adrenaline ([#148]
   changed this in test.4).
-- CLANNAD was missing from the app's Games list, and Default OFF did not turn it off (#149 changed
+- CLANNAD was missing from the app's Games list, and Default OFF did not turn it off ([#149] changed
   this in test.4).
 - Log appends took up to 4.4 s of an 8.6 s job (since test.4 the normal build makes none on the way
-  to a result, #154).
+  to a result, [#154]).
 
 ## [0.8.0-test.2] - 2026-10-15
 
@@ -267,17 +272,20 @@ The owner's PCH-1001 with CLANNAD, 2026-10-16:
 
 ### Added
 
-- test.1's six requests: Up and Down by displayed rows, Left and Right wrapping at a row's ends (#87);
-  the OCR box drawn with the stick (#86); no dialogue-changed warning (#92); VOCR3 and Google Lens as
-  the two engines (#85); Anki set up in the app (#90).
-- Typing text is read once it is whole (#84), and each mark is shown and looked up in one form (#88).
+- test.1's six requests: Up and Down by displayed rows, Left and Right wrapping at a row's ends
+  ([#87]); the OCR box drawn with the stick ([#86]); no dialogue-changed warning ([#92]); VOCR3 and
+  Google Lens as the two engines ([#85]); Anki set up in the app ([#90]).
+- Typing text is read once it is whole ([#84]), and each mark is shown and looked up in one form
+  ([#88]).
 - Beam search with a 1 MB character language model, and a cascade that reads a doubtful line again
-  with a larger model (#89).
-- The line finder's boxes are refined in PSP games (#94).
+  with a larger model ([#89]).
+- The line finder's boxes are refined in PSP games ([#94]).
+- A smoother Games list in the app: icons cached, L and R jump a page, Left and Right jump to the
+  previous or next letter, and Start rescans ([#96], [#99]).
 
 ### Removed
 
-- VOCR2 (#85).
+- VOCR2 ([#85]).
 
 ### On the console
 
@@ -288,8 +296,8 @@ The owner's PCH-1001 with CLANNAD, 2026-10-15:
   warning was seen.
 - The run used test.1's app, so the engine choice and the Anki page were not tested fairly, and the
   old app wrote `ocr_backend = vocr2` into `config.ini` (since test.3 the app and the plugins check
-  that they are one build, #122).
-- The first scans took 9–15 s, because the self-test ran inside them (#116, in test.3, whose first
+  that they are one build, [#122]).
+- The first scans took 9–15 s, because the self-test ran inside them ([#116], in test.3, whose first
   scan took under 1 s); later scans were faster.
 
 ## [0.8.0-test.1] - 2026-10-14
@@ -300,15 +308,25 @@ The owner's PCH-1001 with CLANNAD, 2026-10-15:
 
 ### Added
 
-- VOCR3 as the default model (VOCR3-H15, falling back to VOCR3-FL10), logging on by default, and
-  offline Anki cards saved to the memory card (#77).
-- `--collect`, with the memory headroom of each stage (#78).
-- Ranked dictionary entries, with one `log.txt` line per lookup (#79).
+- VOCR3 as the default model (VOCR3-H15, falling back to VOCR3-FL10) and logging on by default
+  ([#77]); Anki cards saved offline to the memory card, then sent to AnkiConnect on the local network
+  ([#49], [#77]).
+- The frozen Daijirin4 → Sankoku8 → JMdict dictionary ([#73]), several local dictionaries paged with
+  L and R ([#51]), and ranked entries with one `log.txt` line per lookup ([#79]).
+- The boot-safety guard: a boot that does not complete makes the next one a safe boot ([#63]).
+- The on-device self-test ([#66]), and `--collect` with the memory headroom of each stage ([#78]).
+- The memory ledger: every allocation named and budgeted, and checked in CI ([#64]).
 
 ### Changed
 
-- The memory fixes since 0.7.12: SceShell's pages given back (#68), the OCR worker loaded per game
-  (#72), the screen read in the game in grey strips (#75), and the memory routes logged (#76).
+- The memory fixes since 0.7.12: SceShell's pages given back ([#68]), the OCR worker loaded per game
+  ([#72]), the screen read in the game in grey strips ([#75]), and the memory routes logged ([#76]).
+- The settings app is named **Overlay**, with a new icon ([#71]).
+- Upstream's 0.7 merged in: Anki note fields and the furigana strip ([#48]).
+
+### Removed
+
+- The Meiki engine ([#50]).
 
 ### On the console
 
@@ -357,7 +375,7 @@ A more readable settings app: larger text, three game cards a screen, ON/OFF bad
 
 VOCR (the default) and Meiki installed together and switched in the settings app; Japanese-only
 character selection, ON by default. The pre-releases 0.7.6-meiki.1 and .2 were Meiki's single-line
-trial: on the console, two CLANNAD lines took about 8 s each.
+trial. On the console: two CLANNAD lines took about 8 s each with Meiki.
 
 ## [0.7.5] - 2026-10-11
 
@@ -389,15 +407,15 @@ it was published.
 
 ## 0.7.0 - 2026-10-11
 
-This fork's first tag (no release): offline OCR, a bundled JMdict and per-game settings (#20).
+This fork's first tag (no release): offline OCR, a bundled JMdict and per-game settings ([#20]).
 
 ## 0.1–0.7: upstream
 
 [Dartv/vita-jp-overlay](https://github.com/Dartv/vita-jp-overlay)'s versions: Vita JP Overlay, with
 Google Lens OCR over Wi-Fi and definitions from jiten.moe or jpdb.io (0.1), the subtitle strip and
 per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic reading (0.6). This fork
-started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, was merged in after 0.7.12
-(#48).
+started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
+([#48]).
 
 [Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.8.0...HEAD
 [0.8.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.8.0
@@ -417,3 +435,98 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, was m
 [0.7.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.7.3
 [0.7.2]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.7.2
 [0.7.1]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.7.1
+[#20]: https://github.com/bee-san/Rubi_for_vita/pull/20
+[#48]: https://github.com/bee-san/Rubi_for_vita/pull/48
+[#49]: https://github.com/bee-san/Rubi_for_vita/pull/49
+[#50]: https://github.com/bee-san/Rubi_for_vita/pull/50
+[#51]: https://github.com/bee-san/Rubi_for_vita/pull/51
+[#63]: https://github.com/bee-san/Rubi_for_vita/pull/63
+[#64]: https://github.com/bee-san/Rubi_for_vita/pull/64
+[#66]: https://github.com/bee-san/Rubi_for_vita/pull/66
+[#68]: https://github.com/bee-san/Rubi_for_vita/pull/68
+[#71]: https://github.com/bee-san/Rubi_for_vita/pull/71
+[#72]: https://github.com/bee-san/Rubi_for_vita/pull/72
+[#73]: https://github.com/bee-san/Rubi_for_vita/pull/73
+[#75]: https://github.com/bee-san/Rubi_for_vita/pull/75
+[#76]: https://github.com/bee-san/Rubi_for_vita/pull/76
+[#77]: https://github.com/bee-san/Rubi_for_vita/pull/77
+[#78]: https://github.com/bee-san/Rubi_for_vita/pull/78
+[#79]: https://github.com/bee-san/Rubi_for_vita/pull/79
+[#84]: https://github.com/bee-san/Rubi_for_vita/pull/84
+[#85]: https://github.com/bee-san/Rubi_for_vita/pull/85
+[#86]: https://github.com/bee-san/Rubi_for_vita/pull/86
+[#87]: https://github.com/bee-san/Rubi_for_vita/pull/87
+[#88]: https://github.com/bee-san/Rubi_for_vita/pull/88
+[#89]: https://github.com/bee-san/Rubi_for_vita/pull/89
+[#90]: https://github.com/bee-san/Rubi_for_vita/pull/90
+[#92]: https://github.com/bee-san/Rubi_for_vita/pull/92
+[#93]: https://github.com/bee-san/Rubi_for_vita/pull/93
+[#94]: https://github.com/bee-san/Rubi_for_vita/pull/94
+[#95]: https://github.com/bee-san/Rubi_for_vita/issues/95
+[#96]: https://github.com/bee-san/Rubi_for_vita/pull/96
+[#99]: https://github.com/bee-san/Rubi_for_vita/pull/99
+[#104]: https://github.com/bee-san/Rubi_for_vita/issues/104
+[#105]: https://github.com/bee-san/Rubi_for_vita/pull/105
+[#106]: https://github.com/bee-san/Rubi_for_vita/pull/106
+[#108]: https://github.com/bee-san/Rubi_for_vita/pull/108
+[#109]: https://github.com/bee-san/Rubi_for_vita/pull/109
+[#112]: https://github.com/bee-san/Rubi_for_vita/pull/112
+[#116]: https://github.com/bee-san/Rubi_for_vita/pull/116
+[#117]: https://github.com/bee-san/Rubi_for_vita/pull/117
+[#122]: https://github.com/bee-san/Rubi_for_vita/pull/122
+[#123]: https://github.com/bee-san/Rubi_for_vita/pull/123
+[#124]: https://github.com/bee-san/Rubi_for_vita/pull/124
+[#125]: https://github.com/bee-san/Rubi_for_vita/pull/125
+[#126]: https://github.com/bee-san/Rubi_for_vita/pull/126
+[#127]: https://github.com/bee-san/Rubi_for_vita/pull/127
+[#129]: https://github.com/bee-san/Rubi_for_vita/pull/129
+[#130]: https://github.com/bee-san/Rubi_for_vita/pull/130
+[#132]: https://github.com/bee-san/Rubi_for_vita/pull/132
+[#133]: https://github.com/bee-san/Rubi_for_vita/pull/133
+[#140]: https://github.com/bee-san/Rubi_for_vita/pull/140
+[#141]: https://github.com/bee-san/Rubi_for_vita/pull/141
+[#143]: https://github.com/bee-san/Rubi_for_vita/pull/143
+[#145]: https://github.com/bee-san/Rubi_for_vita/pull/145
+[#146]: https://github.com/bee-san/Rubi_for_vita/pull/146
+[#147]: https://github.com/bee-san/Rubi_for_vita/pull/147
+[#148]: https://github.com/bee-san/Rubi_for_vita/pull/148
+[#149]: https://github.com/bee-san/Rubi_for_vita/pull/149
+[#150]: https://github.com/bee-san/Rubi_for_vita/pull/150
+[#153]: https://github.com/bee-san/Rubi_for_vita/pull/153
+[#154]: https://github.com/bee-san/Rubi_for_vita/pull/154
+[#155]: https://github.com/bee-san/Rubi_for_vita/pull/155
+[#156]: https://github.com/bee-san/Rubi_for_vita/pull/156
+[#157]: https://github.com/bee-san/Rubi_for_vita/pull/157
+[#158]: https://github.com/bee-san/Rubi_for_vita/pull/158
+[#164]: https://github.com/bee-san/Rubi_for_vita/pull/164
+[#167]: https://github.com/bee-san/Rubi_for_vita/pull/167
+[#170]: https://github.com/bee-san/Rubi_for_vita/pull/170
+[#173]: https://github.com/bee-san/Rubi_for_vita/pull/173
+[#174]: https://github.com/bee-san/Rubi_for_vita/pull/174
+[#176]: https://github.com/bee-san/Rubi_for_vita/pull/176
+[#178]: https://github.com/bee-san/Rubi_for_vita/pull/178
+[#179]: https://github.com/bee-san/Rubi_for_vita/pull/179
+[#181]: https://github.com/bee-san/Rubi_for_vita/pull/181
+[#182]: https://github.com/bee-san/Rubi_for_vita/issues/182
+[#185]: https://github.com/bee-san/Rubi_for_vita/pull/185
+[#186]: https://github.com/bee-san/Rubi_for_vita/pull/186
+[#187]: https://github.com/bee-san/Rubi_for_vita/pull/187
+[#189]: https://github.com/bee-san/Rubi_for_vita/pull/189
+[#190]: https://github.com/bee-san/Rubi_for_vita/pull/190
+[#193]: https://github.com/bee-san/Rubi_for_vita/pull/193
+[#194]: https://github.com/bee-san/Rubi_for_vita/issues/194
+[#200]: https://github.com/bee-san/Rubi_for_vita/pull/200
+[#203]: https://github.com/bee-san/Rubi_for_vita/pull/203
+[#204]: https://github.com/bee-san/Rubi_for_vita/pull/204
+[#206]: https://github.com/bee-san/Rubi_for_vita/pull/206
+[#207]: https://github.com/bee-san/Rubi_for_vita/issues/207
+[#208]: https://github.com/bee-san/Rubi_for_vita/pull/208
+[#210]: https://github.com/bee-san/Rubi_for_vita/issues/210
+[#213]: https://github.com/bee-san/Rubi_for_vita/pull/213
+[#214]: https://github.com/bee-san/Rubi_for_vita/pull/214
+[#216]: https://github.com/bee-san/Rubi_for_vita/pull/216
+[#217]: https://github.com/bee-san/Rubi_for_vita/pull/217
+[#218]: https://github.com/bee-san/Rubi_for_vita/pull/218
+[#219]: https://github.com/bee-san/Rubi_for_vita/pull/219
+[#222]: https://github.com/bee-san/Rubi_for_vita/pull/222
+[#224]: https://github.com/bee-san/Rubi_for_vita/pull/224
