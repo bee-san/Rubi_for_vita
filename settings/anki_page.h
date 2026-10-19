@@ -1,9 +1,12 @@
 /* The Rubi app's Anki page: card mining on/off, the cards' screenshots
- * on/off (anki_screenshot, API 23), and the export of the queued cards (or all
+ * on/off (anki_screenshot, API 23), the export of the queued cards (or all
  * of them) as Lapis notes in a new .apkg file under
  * ux0:data/VitaJPOverlay/anki/ (settings/anki_export.h), which Anki imports
- * on any computer or phone; a card's screenshot goes into its Picture field.
- * Nothing is sent anywhere: the app uses no network. */
+ * on any computer or phone (a card's screenshot goes into its Picture field),
+ * and, with the separate Anki for Vita app installed, the hand-over of the
+ * queued cards to it through its inbox, and their results read back from its
+ * outbox (settings/anki_afv.h, #220). Nothing is sent anywhere: the app uses
+ * no network; Anki for Vita is another app, reached only through files. */
 #ifndef VJO_SETTINGS_ANKI_PAGE_H
 #define VJO_SETTINGS_ANKI_PAGE_H
 #include <stddef.h>
@@ -25,7 +28,9 @@ typedef struct {
     const VjoButtons *buttons; /* the console's enter and cancel buttons */
 } VjoAnkiUi;
 
-/* The page is shown (Select or its tab): reloads the settings and counts the cards. */
+/* The page is shown (Select or its tab): reloads the settings and counts the cards; with Anki for
+ * Vita installed, reads its status, writes Rubi's duplicate index request when it would differ
+ * (settings/anki_index_request.h) and starts reading its results on the worker. */
 void vjo_anki_page_show(VjoArena *scratch);
 /* One frame of the page: the buttons pressed and a new touch (x, y; -1 when
  * none), then drawing. */
@@ -34,9 +39,11 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
  * 0 none; core/stick_scroll.h): it stops at the first and last row, where
  * Up/Down wrap round. */
 void vjo_anki_page_stick(int move);
-/* An export is running: cancel stops it instead of leaving the app. */
+/* An export or a hand-over is running: cancel stops it instead of leaving the app (the reading of
+ * Anki for Vita's results is not counted: Cancel leaves, and the quit stops it). */
 int vjo_anki_page_busy(void);
-/* Leaving the app: cancels and joins a running export (the queue is left as it was). */
+/* Leaving the app: cancels and joins a running job (the queue is left as it was, or as far as the
+ * results were applied). */
 void vjo_anki_page_quit(void);
 /* The app's lines in log.txt, "Rubi app: " and the text (settings/applog.c,
  * below the Shell's 1 MiB rotation): written while config.ini's log_file is

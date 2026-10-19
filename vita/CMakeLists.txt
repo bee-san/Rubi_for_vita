@@ -354,9 +354,13 @@ add_custom_target(vjo_rco ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.
 include(${ROOT}/cmake/SettingsPNG.cmake)
 # The Anki page (settings/anki_page.c): the export of the queue (settings/anki_export.c) as Lapis
 # notes in an .apkg (core/apkg.c: SQLite, ZIP and the Lapis note type, core/sqlw.c, zipw.c, lapis.c),
-# made from the queue's records (core/anki_queue.c) with core/anki.c's fields. No network.
+# made from the queue's records (core/anki_queue.c) with core/anki.c's fields; the same notes handed to
+# the separate Anki for Vita app through its inbox, and its results read back (settings/anki_afv.c,
+# #220), and Rubi's request for its duplicate index (settings/anki_index_request.c). Files only: no
+# network.
 set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c ${ROOT}/settings/anki_index_request.c
+  ${ROOT}/settings/anki_afv.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 set(VJO_SETTINGS_SRC

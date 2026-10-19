@@ -68,4 +68,21 @@ typedef struct {
  * two-sentence result for the screen in msg. Returns r->rc. */
 int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult *r, char *msg, size_t cap);
 
+/* The export's own steps, which the hand-over to Anki for Vita uses too (settings/anki_afv.c), so a
+ * card is read, checked and archived there as it is here. */
+/* fn for each <32 hex digits>.json card of the queue (archive 0) or the archive (1), until it
+ * returns < 0: the cards' count, or -1 (a directory that cannot be read; one that is not there has
+ * none). fn may be NULL (a count). */
+int vjo_export_scan(int archive, int (*fn)(void *ud, const char *hex), void *ud);
+/* A card's record, checked against its name (the ID is its checksum) and decoded into note (its
+ * strings in a): 0, or -1 (logged). */
+int vjo_export_read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *note, int *picture);
+/* Its screenshot, from either directory, a whole bounded JPEG (in a): NULL when neither copy is
+ * (*unavailable: none is there or both are damaged, so the card goes without it; else a read that
+ * failed or no memory, so it is tried again later). */
+const uint8_t *vjo_export_read_jpeg(VjoArena *a, int archive, const char *hex, size_t *len, int *unavailable);
+/* Moves a queued card into anki_queue/exported/ as an export does once its package is verified:
+ * its JPEG first (when the queue has one), then its record. 0, or -1 (it stays queued; logged). */
+int vjo_export_archive_card(VjoArena *a, const char *hex);
+
 #endif

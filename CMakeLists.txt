@@ -677,17 +677,30 @@ target_link_libraries(vjo-settings-install-tests vjo_host)
 add_test(NAME settings_install COMMAND vjo-settings-install-tests)
 # The Rubi app's Anki page itself (settings/anki_page.c, #163 c3): its rows' layout, Up/Down, the
 # stick, Left/Right, Enter and touch on each row, each row's save into a real config.ini (read back by the
-# Shell's own loader, shell/files.c), and its export (the real settings/anki_export.c) on a temporary
-# memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep
-# settings_stubs/anki_page_stub.c.
+# Shell's own loader, shell/files.c), its export (the real settings/anki_export.c) and its hand-over to
+# Anki for Vita (the real settings/anki_afv.c, #220) on a temporary memory card, on its worker thread, run
+# when the test says. The harnesses that drive main.c keep settings_stubs/anki_page_stub.c.
 add_executable(vjo-settings-anki-tests host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
-  settings/preferences.c shell/files.c)
+  settings/anki_afv.c settings/anki_index_request.c settings/preferences.c shell/files.c)
 target_include_directories(vjo-settings-anki-tests PRIVATE third_party/acutest/include host/tests/settings_stubs
   host/tests/install_stubs host/tests/vita_stubs)
 target_compile_definitions(vjo-settings-anki-tests PRIVATE VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS)
 target_compile_options(vjo-settings-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-settings-anki-tests vjo_host)
 add_test(NAME settings_anki COMMAND vjo-settings-anki-tests)
+# The Rubi app's side of Anki for Vita (settings/anki_afv.c, #220): the inbox writer and the outbox
+# reader on real files in a temporary memory card, with a rename that refuses an existing name as the
+# Vita's does and failures injected at every write, flush, close, rename and sync; `--write DIR` writes
+# the queue's cards both as a package and into an inbox for host/tests/test_afv.py, which compares
+# every note's GUID, fields, tags, media and note type with the package's.
+add_executable(vjo-afv-tests host/tests/test_afv.c settings/anki_afv.c settings/anki_export.c
+  settings/anki_index_request.c)
+target_include_directories(vjo-afv-tests PRIVATE third_party/acutest/include host/tests/vita_stubs host/tests)
+target_compile_options(vjo-afv-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-afv-tests vjo_host)
+add_test(NAME afv COMMAND vjo-afv-tests)
+add_test(NAME afv_packages COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_afv.py
+  $<TARGET_FILE:vjo-afv-tests>)
 # The same engine on a memory card folder, for the one-VPK e2e (a real VPK extracted as VitaShell installs it).
 add_executable(vjo-install-e2e host/install_e2e.c settings/install.c settings/preferences.c)
 target_include_directories(vjo-install-e2e PRIVATE host/tests/install_stubs host/tests/settings_stubs host/tests/vita_stubs

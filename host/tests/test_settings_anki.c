@@ -30,16 +30,19 @@
 #include <time.h>
 #include <unistd.h>
 #include "../../core/anki_queue.h"
+#include "../../settings/anki_afv.h"
 #include "../../settings/anki_export.h"
 #include "../../settings/anki_page.h"
 #include "../../settings/preferences.h"
 
 void vjo_config_load(VjoConfig *cfg, VjoArena *scratch); /* shell/files.c: what the overlay reads */
 
-/* settings/anki_page.c's layout: four rows, then the 3-line status box above main.c's controls line. */
-static const int row_top[4] = {112, 184, 256, 336}, row_height[4] = {68, 68, 76, 76};
-#define FOOTER_Y 416
-#define FOOTER_H 92
+/* settings/anki_page.c's layout: five rows (#220 added Send to Anki for Vita), then the 3-line status
+ * box above main.c's controls line. */
+#define ROWS 5
+static const int row_top[ROWS] = {104, 167, 230, 293, 356}, row_height[ROWS] = {59, 59, 59, 59, 59};
+#define FOOTER_Y 419
+#define FOOTER_H 88
 #define TABS_END 100       /* main.c: TAB_Y 52 + TAB_H 48 */
 #define CONTROLS_TOP 511   /* main.c draws the controls line's 24 px text at baseline 535 */
 #define CARD_X 24          /* main.c's focus_card: 24..936 */
@@ -173,6 +176,9 @@ static void run_worker(void)
 }
 int sceKernelWaitThreadEnd(SceUID u, int *s, void *t) { (void)u; (void)s; (void)t; run_worker(); return 0; }
 int sceKernelDeleteThread(SceUID u) { (void)u; threads_deleted++; return 0; }
+/* settings/anki_afv.c's readers wait for a file being replaced (3 x 100 ms): counted, not slept. */
+static int delays;
+int sceKernelDelayThread(unsigned us) { (void)us; delays++; return 0; }
 int sceKernelDeleteMutex(SceUID u) { (void)u; return 0; }
 
 /* ---------------- the app's log and its display ---------------- */
@@ -450,9 +456,9 @@ static void the_rows_and_the_footer_do_not_overlap(void)
     show();
     TEST_CHECK(log_enabled == 1); /* config.ini's log_file (on by default), set when the page is shown */
     frame(0);
-    TEST_ASSERT(drawn.cards == 4 && drawn.badges == 4 && drawn.headers == 1 && drawn.footers == 1);
+    TEST_ASSERT(drawn.cards == ROWS && drawn.badges == ROWS && drawn.headers == 1 && drawn.footers == 1);
     TEST_CHECK(frames_begun == 1 && frames_shown == 1);
-    for (int r = 0; r < 4; r++) {
+    for (int r = 0; r < ROWS; r++) {
         const Card *c = &drawn.card[r];
         TEST_CHECK_(c->y == row_top[r] && c->height == row_height[r], "row %d at %d+%d", r, c->y, c->height);
         TEST_CHECK_(r ? c->y >= drawn.card[r - 1].y + drawn.card[r - 1].height : c->y >= TABS_END,
@@ -467,7 +473,7 @@ static void the_rows_and_the_footer_do_not_overlap(void)
     for (int i = 0; i < drawn.texts; i++) {
         const Text *t = &drawn.text[i];
         int top = t->y - (int)(t->px * 0.8f), bottom = t->y + (int)(t->px * 0.25f), in = 0;
-        for (int r = 0; r < 4; r++)
+        for (int r = 0; r < ROWS; r++)
             in += top >= row_top[r] && bottom <= row_top[r] + row_height[r];
         TEST_CHECK_(in == 1 && t->x >= CARD_X + 4 && (!t->width || t->x + t->width <= CARD_END - 4),
                     "'%s' at %d,%d is not inside one row", t->s, t->x, t->y);
@@ -486,7 +492,8 @@ static void the_rows_and_the_footer_do_not_overlap(void)
     }
     /* the footer: below the last row, three 28 px lines inside it, above the controls line */
     TEST_CHECK(drawn.footer_y == FOOTER_Y && drawn.footer_h == FOOTER_H && drawn.footer_lines == 3);
-    TEST_CHECK(drawn.footer_y >= row_top[3] + row_height[3] && drawn.footer_y + drawn.footer_h <= CONTROLS_TOP);
+    TEST_CHECK(drawn.footer_y >= row_top[ROWS - 1] + row_height[ROWS - 1] &&
+               drawn.footer_y + drawn.footer_h <= CONTROLS_TOP);
     TEST_CHECK(drawn.footer_text_y - 24 >= drawn.footer_y + 2 &&
                drawn.footer_text_y + (drawn.footer_lines - 1) * 28 + 6 <= drawn.footer_y + drawn.footer_h);
     TEST_CHECK(!strcmp(drawn.controls, "Up/Down: choose   ×: select   Select: page   ○: exit"));
@@ -497,6 +504,17 @@ static void the_rows_and_the_footer_do_not_overlap(void)
     TEST_CHECK(text_starting("Export cards (1 queued)") && text_starting("1 card in all"));
     TEST_CHECK(!strcmp(badge(0)->label, "OFF") && !strcmp(badge(1)->label, "ON") && !strcmp(badge(2)->label, "Export") &&
                !strcmp(badge(3)->label, "Export all"));
+    /* Anki for Vita not installed: its row is not offered, and says where to get the app */
+    {
+        const Text *afv = text_starting("Send to Anki for Vita"), *help = text_starting("Not installed (or too old)");
+        TEST_CHECK(afv && afv->color == OFF && !strcmp(badge(4)->label, "--") && !badge(4)->active);
+        TEST_CHECK(help && strstr(help->s, VJO_AFV_WHERE) && width_of(help->s, help->px) <= help->width);
+    }
+    /* every help line fits its one line (stub metrics) */
+    for (int i = 0; i < drawn.texts; i++)
+        if (drawn.text[i].width)
+            TEST_CHECK_(width_of(drawn.text[i].s, drawn.text[i].px) <= drawn.text[i].width, "'%s' is cut",
+                        drawn.text[i].s);
     /* the widest counts still fit before their badges (both at x 760) */
     for (int k = 0; k < 2; k++) {
         const char *s = k ? "20000 cards in all" : "Export cards (20000 queued)";
@@ -516,10 +534,11 @@ static void the_rows_and_the_footer_do_not_overlap(void)
 static void up_down_and_the_stick_choose_a_row(void)
 {
     static const struct { uint32_t pressed; int stick, row; } steps[] = {
-        {SCE_CTRL_DOWN, 0, 1}, {SCE_CTRL_DOWN, 0, 2}, {SCE_CTRL_DOWN, 0, 3}, {SCE_CTRL_DOWN, 0, 0},
-        {SCE_CTRL_UP, 0, 3},   {SCE_CTRL_UP, 0, 2},   {0, 1, 3},             {0, 1, 3},
-        {0, -1, 2},            {0, -3, 0},            {0, -1, 0},            {SCE_CTRL_DOWN, 1, 1},
-        {SCE_CTRL_UP, 2, 0},   {0, 2, 2},             {SCE_CTRL_UP, -1, 1},  {0, 0, 1},
+        {SCE_CTRL_DOWN, 0, 1}, {SCE_CTRL_DOWN, 0, 2}, {SCE_CTRL_DOWN, 0, 3}, {SCE_CTRL_DOWN, 0, 4},
+        {SCE_CTRL_DOWN, 0, 0}, {SCE_CTRL_UP, 0, 4},   {SCE_CTRL_UP, 0, 3},   {0, 1, 4},
+        {0, 1, 4},             {0, -1, 3},            {0, -4, 0},            {0, -1, 0},
+        {SCE_CTRL_DOWN, 1, 1}, {SCE_CTRL_UP, 2, 0},   {0, 2, 2},             {SCE_CTRL_UP, -1, 1},
+        {0, 0, 1},
     };
     reset(VJO_BUTTON_ASSIGN_CROSS);
     show();
@@ -573,8 +592,8 @@ static void enter_and_left_right_save_each_row_s_key(void)
     frame(SCE_CTRL_RIGHT);
     check_saved(1, 0);
     check_shown(1, 0);
-    /* the export rows: Left/Right start nothing and save nothing */
-    for (int r = 2; r < 4; r++) {
+    /* the export rows and Anki for Vita's: Left/Right start nothing and save nothing */
+    for (int r = 2; r < ROWS; r++) {
         frame(SCE_CTRL_DOWN);
         frame(SCE_CTRL_DOWN * (r == 2));
         TEST_CHECK(focused() == r);
@@ -587,7 +606,7 @@ static void enter_and_left_right_save_each_row_s_key(void)
     /* with ○ as enter (a Japanese console), × is no Enter */
     reset(VJO_BUTTON_ASSIGN_CIRCLE);
     show();
-    frame(SCE_CTRL_DOWN); /* from row 3 round to row 0 */
+    frame(SCE_CTRL_DOWN); /* from the last row round to row 0 */
     TEST_CHECK(focused() == 0);
     frame(SCE_CTRL_CROSS);
     TEST_CHECK(!there(VJO_PREFERENCES_PATH));
@@ -615,9 +634,9 @@ static void touch_chooses_and_acts_on_each_row(void)
     touch(0, 480, row_top[1] + row_height[1] - 1);
     check_saved(0, 1);
     /* nothing: the gaps, the sides, above, the footer */
-    static const int miss[][2] = {{480, 180}, {480, 183}, {480, 252}, {480, 255}, {480, 332}, {480, 335},
-                                  {480, 412}, {480, 450}, {480, 111}, {480, 60}, {23, 140}, {936, 140},
-                                  {23, 300}, {936, 360}};
+    static const int miss[][2] = {{480, 163}, {480, 166}, {480, 226}, {480, 229}, {480, 289}, {480, 292},
+                                  {480, 352}, {480, 355}, {480, 415}, {480, 418}, {480, 450}, {480, 103},
+                                  {480, 60}, {23, 140}, {936, 140}, {23, 300}, {936, 360}};
     renames = 0;
     for (unsigned i = 0; i < sizeof(miss) / sizeof(miss[0]); i++) {
         touch(0, miss[i][0], miss[i][1]);
@@ -638,6 +657,11 @@ static void touch_chooses_and_acts_on_each_row(void)
         TEST_CHECK_(!vjo_anki_page_busy() && strstr(drawn.footer, result[k]), "row %d at y %d: %s", r, y, drawn.footer);
     }
     TEST_CHECK(threads_deleted == 4);
+    /* Anki for Vita's row, without the app: a touch says where to get it and starts nothing */
+    touch(0, 480, row_top[4] + 30);
+    TEST_CHECK(focused() == 4 && !vjo_anki_page_busy() && threads_created == 4);
+    TEST_CHECK_(strstr(drawn.footer, "not installed") && strstr(drawn.footer, VJO_AFV_WHERE) && !drawn.footer_error,
+                "%s", drawn.footer);
 }
 
 /* Enter on an export row runs the export on the page's worker thread (64 KiB, the system core):
@@ -689,9 +713,11 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     TEST_CHECK(strstr(logs, "anki: export (queued) rc=0: 2 cards, 2 moved, 0 kept, 0 unreadable, 0 too large, 0 left, "
                             "0 stopped, 0 swept, ") != NULL);
     TEST_MSG("%s", logs);
-    /* Export all cards: the two again (the last row, by the stick) */
+    /* Export all cards: the two again (the stick stops at the last row, Anki for Vita's; Up then) */
     vjo_anki_page_stick(3);
     frame(0);
+    TEST_CHECK(focused() == 4);
+    frame(SCE_CTRL_UP);
     TEST_CHECK(focused() == 3);
     frame(SCE_CTRL_CROSS);
     frame(0);
@@ -816,6 +842,136 @@ static void failures_are_shown_and_change_nothing(void)
     TEST_CHECK(files_in(VJO_QUEUE_DIR, ".json") == 1);
 }
 
+/* ---------------- Anki for Vita (#220) ---------------- */
+
+static void put_text_file(const char *path, const char *text)
+{
+    FILE *f = fopen(path, "wb");
+    TEST_ASSERT_(f != NULL, "%s", path);
+    TEST_ASSERT(fwrite(text, 1, strlen(text), f) == strlen(text));
+    fclose(f);
+}
+static void afv_installed(void)
+{
+    mkdir(VJO_AFV_DIR, 0777);
+    put_text_file(VJO_AFV_DIR "/interface.json", "{\"v\": 1, \"app\": \"Anki for Vita\", \"app_version\": \"0.1.0\", "
+                                                 "\"interfaces\": [1]}");
+}
+
+/* Installed: the page reads its results on the worker when it is shown (Cancel still leaves the app),
+ * says how its last sync went, and asks for the duplicate index; Send hands the queued cards over
+ * on the worker, which they stay in the queue for; once the app's results say a card is in Anki,
+ * the next show moves it out of the queue. */
+static void cards_go_to_anki_for_vita_through_its_inbox(void)
+{
+    char ids[2][VJO_QUEUE_ID_SIZE], path[256];
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    afv_installed();
+    /* (the app's status, written 5 minutes before the console's clock) */
+    put_text_file(VJO_AFV_DIR "/status.json", "{\"v\":1,\"signed_in\":true,\"server\":\"anki.example.org\","
+                                              "\"last_sync\":1791789905,\"last_result\":\"ok\",\"pending\":0}");
+    snprintf(ids[0], sizeof(ids[0]), "%s", queue_card("猫", 1));
+    snprintf(ids[1], sizeof(ids[1]), "%s", queue_card("犬", 0));
+    show();
+    TEST_CHECK(threads_created == 1 && !vjo_anki_page_busy()); /* the results, not a job of the user's */
+    frame(0);
+    TEST_CHECK(text_starting("Reading Anki for Vita's results") && !strcmp(drawn.controls,
+               "Up/Down: choose   ×: select   Select: page   ○: exit"));
+    run_worker();
+    frame(0);
+    TEST_CHECK(!vjo_anki_page_busy() && threads_deleted == 1);
+    {
+        const Text *afv = text_starting("Send to Anki for Vita");
+        TEST_CHECK(afv && afv->color == WHITE && !strcmp(badge(4)->label, "Send") && !badge(4)->active);
+        TEST_CHECK_(text_starting("anki.example.org: last sync 5 min ago, ok.") != NULL, "status line missing");
+    }
+    /* Rubi's duplicate index request, written when the page was shown */
+    TEST_CHECK(there(VJO_AFV_DIR "/index/rubi.request.json"));
+    /* Send: on the worker, as an export */
+    vjo_anki_page_stick(4);
+    frame(0);
+    TEST_CHECK(focused() == 4);
+    frame(SCE_CTRL_CROSS);
+    TEST_CHECK(vjo_anki_page_busy() && threads_created == 2);
+    frame(0);
+    TEST_CHECK(!strcmp(badge(4)->label, "Sending…") && badge(4)->active && !strcmp(drawn.controls, "○: stop   Select: page"));
+    run_worker();
+    frame(0);
+    TEST_CHECK(!vjo_anki_page_busy());
+    TEST_CHECK_(strstr(drawn.footer, "Handed 2 cards to Anki for Vita: it adds them to your collection at its next sync.") &&
+                    !drawn.footer_error, "%s", drawn.footer);
+    for (int i = 0; i < 2; i++) {
+        snprintf(path, sizeof(path), VJO_AFV_INBOX_DIR "/%s.json", ids[i]);
+        TEST_CHECK(there(path));
+    }
+    TEST_CHECK(files_in(VJO_AFV_MEDIA_DIR, ".jpg") == 1 && there(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json"));
+    TEST_CHECK(text_starting("Export cards (2 queued)")); /* still queued: the .apkg export keeps working */
+    TEST_CHECK(strstr(logs, "anki for vita: send rc=0: 2 handed over") != NULL);
+    /* Anki for Vita syncs: the first is in Anki, the second refused */
+    snprintf(path, sizeof(path), VJO_AFV_INBOX_DIR "/%s.json", ids[0]);
+    TEST_ASSERT(unlink(path) == 0);
+    snprintf(path, sizeof(path), VJO_AFV_INBOX_DIR "/%s.json", ids[1]);
+    TEST_ASSERT(unlink(path) == 0);
+    mkdir(VJO_AFV_DIR "/outbox", 0777);
+    mkdir(VJO_AFV_OUTBOX_DIR, 0777);
+    {
+        char text[300];
+        snprintf(path, sizeof(path), VJO_AFV_OUTBOX_DIR "/%s.json", ids[0]);
+        snprintf(text, sizeof(text), "{\"v\":1,\"id\":\"%s\",\"status\":\"added\",\"synced\":true,\"note_id\":1,"
+                                     "\"time\":1791790200,\"message\":\"\"}", ids[0]);
+        put_text_file(path, text);
+        snprintf(path, sizeof(path), VJO_AFV_OUTBOX_DIR "/%s.json", ids[1]);
+        snprintf(text, sizeof(text), "{\"v\":1,\"id\":\"%s\",\"status\":\"rejected\",\"synced\":false,\"note_id\":0,"
+                                     "\"time\":1791790200,\"message\":\"a field name is not the note type's\"}", ids[1]);
+        put_text_file(path, text);
+    }
+    put_text_file(VJO_AFV_DIR "/status.json", "{\"v\":1,\"signed_in\":true,\"server\":\"anki.example.org\","
+                                              "\"last_sync\":1791790175,\"last_result\":\"ok\",\"pending\":0}");
+    show();
+    TEST_CHECK(threads_created == 3);
+    run_worker();
+    frame(0);
+    TEST_CHECK_(strstr(drawn.footer, "Anki for Vita: 1 card is in Anki now (out of the queue).") &&
+                    strstr(drawn.footer, "1 refused, still queued: a field name is not the note type's") &&
+                    drawn.footer_error, "%s", drawn.footer);
+    TEST_CHECK(text_starting("Export cards (1 queued)") && text_starting("2 cards in all"));
+    TEST_CHECK(text_starting("anki.example.org: last sync under a minute ago, ok."));
+    snprintf(path, sizeof(path), VJO_QUEUE_EXPORTED_DIR "/%s.json", ids[0]);
+    TEST_CHECK(there(path));
+    /* its media file, which no note in the inbox names now, and the note type's, removed */
+    TEST_CHECK(files_in(VJO_AFV_MEDIA_DIR, ".jpg") == 0 && !there(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json"));
+    /* the refused card is not handed in again; the .apkg export takes it */
+    frame(SCE_CTRL_CROSS);
+    run_worker();
+    frame(0);
+    TEST_CHECK_(strstr(drawn.footer, "1 refused by Anki for Vita before stays queued: export it as an .apkg") != NULL,
+                "%s", drawn.footer);
+    snprintf(path, sizeof(path), VJO_AFV_INBOX_DIR "/%s.json", ids[1]);
+    TEST_CHECK(!there(path));
+    /* leaving the app while the results are read: it stops at the next file and is joined */
+    show();
+    TEST_CHECK(threads_created == 5 && !vjo_anki_page_busy());
+    vjo_anki_page_quit();
+    TEST_CHECK(!vjo_anki_page_busy() && threads_deleted == 5);
+}
+
+/* Anki for Vita too old (no interface 1): its row is not offered, and nothing is written there. */
+static void anki_for_vita_too_old_is_not_offered(void)
+{
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    mkdir(VJO_AFV_DIR, 0777);
+    put_text_file(VJO_AFV_DIR "/interface.json", "{\"v\": 1, \"app\": \"Anki for Vita\", \"interfaces\": [2]}");
+    queue_card("猫", 0);
+    show();
+    TEST_CHECK(threads_created == 0);
+    vjo_anki_page_stick(4);
+    frame(0);
+    frame(SCE_CTRL_CROSS);
+    TEST_CHECK(threads_created == 0 && !vjo_anki_page_busy());
+    TEST_CHECK_(strstr(drawn.footer, "not installed (or too old for Rubi)") != NULL, "%s", drawn.footer);
+    TEST_CHECK(!strcmp(badge(4)->label, "--") && !there(VJO_AFV_INBOX_DIR) && !there(VJO_AFV_DIR "/index"));
+}
+
 TEST_LIST = {
     {"the_rows_and_the_footer_do_not_overlap", the_rows_and_the_footer_do_not_overlap},
     {"up_down_and_the_stick_choose_a_row", up_down_and_the_stick_choose_a_row},
@@ -824,6 +980,8 @@ TEST_LIST = {
     {"an_export_runs_on_the_worker_and_the_page_follows_it", an_export_runs_on_the_worker_and_the_page_follows_it},
     {"a_missing_screenshot_is_reported_after_export", a_missing_screenshot_is_reported_after_export},
     {"failures_are_shown_and_change_nothing", failures_are_shown_and_change_nothing},
+    {"cards_go_to_anki_for_vita_through_its_inbox", cards_go_to_anki_for_vita_through_its_inbox},
+    {"anki_for_vita_too_old_is_not_offered", anki_for_vita_too_old_is_not_offered},
     {NULL, NULL},
 };
 

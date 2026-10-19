@@ -818,3 +818,32 @@ int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult 
     }
     return r->rc = VJO_OK;
 }
+
+/* ---------------- the export's steps, for the hand-over to Anki for Vita (anki_export.h) ---------------- */
+
+int vjo_export_scan(int archive, int (*fn)(void *ud, const char *hex), void *ud)
+{
+    return scan(archive ? VJO_EXPORT_ARCHIVE_DIR : VJO_EXPORT_QUEUE_DIR, fn, ud);
+}
+
+int vjo_export_read_card(VjoArena *a, int archive, const char *hex, VjoAnkiNote *note, int *picture)
+{
+    return read_card(a, archive, hex, note, picture);
+}
+
+const uint8_t *vjo_export_read_jpeg(VjoArena *a, int archive, const char *hex, size_t *len, int *unavailable)
+{
+    return read_jpeg(a, archive, hex, len, unavailable);
+}
+
+int vjo_export_archive_card(VjoArena *a, const char *hex)
+{
+    VjoApkgCard c;
+    memset(&c, 0, sizeof(c));
+    from_hex(hex, c.id);
+    /* Its JPEG, when the queue has one (only a card with a screenshot has <id>.jpg: the ID is the
+     * record's checksum, and the record says whether a picture goes with it). */
+    c.picture = 1;
+    sceIoMkdir(VJO_EXPORT_ARCHIVE_DIR, 0777); /* fails when it exists */
+    return archive_card(a, &c);
+}
