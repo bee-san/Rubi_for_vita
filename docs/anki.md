@@ -652,10 +652,12 @@ page shows a result's message only after replacing its control characters.
 
 The hand-over and the results run on the Anki page's worker, in the 2 MiB arena the export uses, one
 job at a time. Measured on the host (`vjo-afv-tests`, its `measure:` lines): a send of 20,000 cards
-(the most one send hands over; the rest wait for the next) peaked at 323,416 B, and at 716,384 B when
-all of them were in the inbox already (its list then); a results pass of 4,096 results (the most one
-pass reads) at 78,249 B; the largest card's send (a record near 32 KiB and a 192 KiB screenshot) at
-294,608 B. These are host measurements of this code's arena; the console has not run it.
+(the most one send hands over; the rest wait for the next) peaked at 323,416 B, and at 761,695 B when
+all of them were in the inbox already (its list then, and the note type's file read back); a results
+pass of 4,096 results (the most one pass reads) at 78,249 B; the largest card's send (a record near
+32 KiB and a 192 KiB screenshot) at 294,608 B. These are host measurements of this code's arena; the
+console has not run it. A card whose note would need more of the arena than is left (a record of
+32 KiB of text that HTML escaping multiplies) is left queued, as one over 64 KiB is, for an `.apkg`.
 
 What the host checks (`host/tests/test_afv.c`, `test_afv.py`, `test_settings_anki.c`): every key and
 field of the notes against the `.apkg` of the same cards (GUID, the 22 fields, tags, deck, time,

@@ -7,6 +7,7 @@
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/rtc.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../core/anki_queue.h"
@@ -155,42 +156,14 @@ static int write_new(const char *path, const void *data, size_t len, int commit)
 }
 
 /* The file at path holds exactly data (len bytes): 1, 0 (other bytes or another size), or -1 (it
- * cannot be read; logged). Read in pieces into the arena's free space (given back). */
+ * cannot be read; logged). The arena is given back. */
 static int same_bytes(VjoArena *a, const char *path, const void *data, size_t len)
 {
-    size_t mark = vjo_arena_mark(a), off = 0, piece = 16 * 1024;
-    uint8_t *buf = (uint8_t *)vjo_arena_alloc(a, piece);
-    SceUID fd;
-    SceOff size;
-    int same = 1;
-    if (!buf)
-        return -1;
-    if ((fd = sceIoOpen(path, SCE_O_RDONLY, 0)) < 0) {
-        vjo_arena_release(a, mark);
-        return io_fail("open", path, fd);
-    }
-    size = sceIoLseek(fd, 0, SCE_SEEK_END);
-    if (size < 0 || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0) {
-        sceIoClose(fd);
-        vjo_arena_release(a, mark);
-        return io_fail("seek", path, (int)size);
-    }
-    if ((uint64_t)size != len)
-        same = 0;
-    while (same && off < len) {
-        size_t want = len - off < piece ? len - off : piece;
-        int n = sceIoRead(fd, buf, (SceSize)want);
-        if (n <= 0) {
-            sceIoClose(fd);
-            vjo_arena_release(a, mark);
-            return io_fail("read", path, n);
-        }
-        same = !memcmp(buf, (const uint8_t *)data + off, (size_t)n);
-        off += (size_t)n;
-    }
-    sceIoClose(fd);
+    size_t mark = vjo_arena_mark(a), n = 0;
+    char *have = NULL;
+    int r = read_small(a, path, len, &have, &n), same = r == 0 && n == len && !memcmp(have, data, len);
     vjo_arena_release(a, mark);
-    return same;
+    return r == 0 || r == 2 ? same : -1;
 }
 
 /* A file of Rubi's in the inbox, written once (write_new) or there already with these bytes: 0, or
@@ -515,76 +488,32 @@ static void from_hex(const char *hex, uint8_t id[ID_BYTES])
     }
 }
 
-/* A result file the outbox lists: its card's ID, and whether the file is <id>.json.old (the
- * previous version, when a replace was stopped between its renames: read only without <id>.json). */
+/* A card's ID that a directory lists (the outbox's results, the inbox's notes), with what a results
+ * pass made of its result. */
 typedef struct {
     uint8_t id[ID_BYTES];
-    uint8_t old;
+    uint8_t old;      /* the result read was <id>.json.old (a replace stopped between its renames) */
     uint8_t status;   /* VJO_AFV_*, once read (0: none or malformed) */
     uint8_t final;
 } Seen;
 
-static int id_cmp(const uint8_t *x, const uint8_t *y)
+static int seen_cmp(const void *x, const void *y)
 {
-    return memcmp(x, y, ID_BYTES);
-}
-
-/* Sorts by ID, <id>.json before <id>.json.old (heapsort: in place, bounded). */
-static int seen_less(const Seen *x, const Seen *y)
-{
-    int c = id_cmp(x->id, y->id);
-    return c ? c < 0 : x->old < y->old;
-}
-
-static void seen_sift(Seen *s, int root, int n)
-{
-    for (;;) {
-        int child = 2 * root + 1;
-        Seen t;
-        if (child >= n)
-            return;
-        if (child + 1 < n && seen_less(&s[child], &s[child + 1]))
-            child++;
-        if (!seen_less(&s[root], &s[child]))
-            return;
-        t = s[root];
-        s[root] = s[child];
-        s[child] = t;
-        root = child;
-    }
-}
-
-static void seen_sort(Seen *s, int n)
-{
-    for (int i = n / 2 - 1; i >= 0; i--)
-        seen_sift(s, i, n);
-    for (int end = n - 1; end > 0; end--) {
-        Seen t = s[0];
-        s[0] = s[end];
-        s[end] = t;
-        seen_sift(s, 0, end);
-    }
+    return memcmp(((const Seen *)x)->id, ((const Seen *)y)->id, ID_BYTES);
 }
 
 static const Seen *seen_find(const Seen *s, int n, const uint8_t id[ID_BYTES])
 {
-    int lo = 0, hi = n;
-    while (lo < hi) {
-        int mid = lo + (hi - lo) / 2, c = id_cmp(s[mid].id, id);
-        if (!c)
-            return &s[mid];
-        if (c < 0)
-            lo = mid + 1;
-        else
-            hi = mid;
-    }
-    return NULL;
+    Seen key;
+    memcpy(key.id, id, ID_BYTES);
+    return n ? (const Seen *)bsearch(&key, s, (size_t)n, sizeof(Seen), seen_cmp) : NULL;
 }
 
-/* The outbox's result files of Rubi's cards: <32 lowercase hex>.json, and <id>.json.old where there
- * is no <id>.json, regular files only; every other name (a hostile one too) is never read. At most
- * cap of them (the rest: *more); sorted. 0, 1 (no outbox), or -1 (it cannot be read; logged). */
-static int list_outbox(VjoArena *a, Seen **out, int *n, int cap, int *more)
+/* The IDs of Rubi's cards that dir has files of: <32 lowercase hex digits>.json, and (with_old, the
+ * outbox) <id>.json.old, regular files only; every other name (a hostile one too) is skipped, and no
+ * file is opened. At most cap of them, sorted, each once (the rest: *more). 0, 1 (no such directory),
+ * or -1 (it cannot be read; logged). */
+static int list_ids(VjoArena *a, const char *dir, int with_old, Seen **out, int *n, int cap, int *more)
 {
     SceUID d;
     SceIoDirent ent;
@@ -592,23 +521,23 @@ static int list_outbox(VjoArena *a, Seen **out, int *n, int cap, int *more)
     int k = 0, rc, closed;
     *out = NULL;
     *n = *more = 0;
-    if (!is_dir(VJO_AFV_OUTBOX_DIR))
+    if (!is_dir(dir))
         return 1;
     if (!(s = (Seen *)vjo_arena_alloc(a, sizeof(Seen) * (size_t)cap))) {
-        vjo_log("anki for vita: out of memory for the outbox's list");
+        vjo_log("anki for vita: out of memory for the list of %s", dir);
         return -1;
     }
-    if ((d = sceIoDopen(VJO_AFV_OUTBOX_DIR)) < 0)
-        return io_fail("dopen", VJO_AFV_OUTBOX_DIR, d);
+    if ((d = sceIoDopen(dir)) < 0)
+        return io_fail("dopen", dir, d);
     for (;;) {
         size_t len;
-        int old;
         memset(&ent, 0, sizeof(ent));
         if ((rc = sceIoDread(d, &ent)) <= 0)
             break;
         len = strnlen(ent.d_name, sizeof(ent.d_name));
-        old = len == 41 && !memcmp(ent.d_name + 32, ".json.old", 10);
-        if (!SCE_S_ISREG(ent.d_stat.st_mode) || (!old && (len != 37 || memcmp(ent.d_name + 32, ".json", 6))))
+        if (!SCE_S_ISREG(ent.d_stat.st_mode) ||
+            !((len == 37 && !memcmp(ent.d_name + 32, ".json", 6)) ||
+              (with_old && len == 41 && !memcmp(ent.d_name + 32, ".json.old", 10))))
             continue;
         ent.d_name[32] = '\0';
         if (!vjo_queue_valid_id(ent.d_name))
@@ -618,20 +547,19 @@ static int list_outbox(VjoArena *a, Seen **out, int *n, int cap, int *more)
             continue;
         }
         memset(&s[k], 0, sizeof(s[k]));
-        from_hex(ent.d_name, s[k].id);
-        s[k++].old = (uint8_t)old;
+        from_hex(ent.d_name, s[k++].id);
     }
     if (rc < 0)
-        io_fail("dread", VJO_AFV_OUTBOX_DIR, rc);
+        io_fail("dread", dir, rc);
     if ((closed = sceIoDclose(d)) < 0)
-        io_fail("dclose", VJO_AFV_OUTBOX_DIR, closed);
+        io_fail("dclose", dir, closed);
     if (rc < 0)
         return -1;
-    seen_sort(s, k);
-    { /* an .old beside its <id>.json is not read: the file itself is there */
+    qsort(s, (size_t)k, sizeof(Seen), seen_cmp);
+    { /* an <id>.json and its .old: one card */
         int w = 0;
         for (int i = 0; i < k; i++)
-            if (!(s[i].old && w && !id_cmp(s[w - 1].id, s[i].id)))
+            if (!w || seen_cmp(&s[w - 1], &s[i]))
                 s[w++] = s[i];
         k = w;
     }
@@ -796,7 +724,7 @@ static int sweep_inbox(VjoArena *a);
 /* The results pass; seen (sorted, with each one's status) is left in a for the send. */
 static int results(VjoArena *a, const VjoExportUi *ui, VjoAfvResults *r, Seen **seen, int *n_seen)
 {
-    int listed = list_outbox(a, seen, n_seen, VJO_AFV_RESULTS_MAX, &r->more);
+    int listed = list_ids(a, VJO_AFV_OUTBOX_DIR, 1, seen, n_seen, VJO_AFV_RESULTS_MAX, &r->more);
     if (listed > 0)
         return VJO_OK; /* no outbox yet */
     if (listed < 0)
@@ -931,54 +859,6 @@ char *vjo_afv_note_json(VjoArena *a, const char id[VJO_QUEUE_ID_SIZE], const Vjo
 
 /* ---------------- send ---------------- */
 
-/* The IDs of Rubi's notes in the inbox (<32 hex>.json there), sorted: the cards a send leaves alone.
- * 0, 1 (more than cap: each card's file is checked by name instead), or -1 (the inbox cannot be read:
- * nothing is handed over, so nothing could be replaced). */
-static int list_inbox(VjoArena *a, Seen **out, int *n, int cap)
-{
-    SceUID d;
-    SceIoDirent ent;
-    Seen *ids;
-    int k = 0, rc, closed;
-    *out = NULL;
-    *n = 0;
-    if (!is_dir(VJO_AFV_INBOX_DIR))
-        return 0;
-    if (!(ids = (Seen *)vjo_arena_alloc(a, sizeof(Seen) * (size_t)cap)))
-        return -1;
-    if ((d = sceIoDopen(VJO_AFV_INBOX_DIR)) < 0)
-        return io_fail("dopen", VJO_AFV_INBOX_DIR, d);
-    for (;;) {
-        memset(&ent, 0, sizeof(ent));
-        if ((rc = sceIoDread(d, &ent)) <= 0)
-            break;
-        if (strnlen(ent.d_name, sizeof(ent.d_name)) != 37 || memcmp(ent.d_name + 32, ".json", 6))
-            continue; /* (its directories, our .tmp files, anything else) */
-        ent.d_name[32] = '\0';
-        if (!vjo_queue_valid_id(ent.d_name))
-            continue;
-        if (k == cap) {
-            k = -1;
-            rc = 0;
-            break;
-        }
-        memset(&ids[k], 0, sizeof(ids[k]));
-        from_hex(ent.d_name, ids[k++].id);
-    }
-    if (rc < 0)
-        io_fail("dread", VJO_AFV_INBOX_DIR, rc);
-    if ((closed = sceIoDclose(d)) < 0)
-        io_fail("dclose", VJO_AFV_INBOX_DIR, closed);
-    if (rc < 0)
-        return -1;
-    if (k < 0)
-        return 1;
-    seen_sort(ids, k);
-    *out = ids;
-    *n = k;
-    return 0;
-}
-
 /* A media name of Rubi's, vitajp_<32 lowercase hex>.jpg, as its 16 bytes (0), or -1. */
 static int rubi_media(const char *name, size_t n, uint8_t id[ID_BYTES])
 {
@@ -1004,7 +884,7 @@ static int sweep_inbox(VjoArena *a)
 {
     size_t mark = vjo_arena_mark(a);
     Seen *notes = NULL, *needed, *gone;
-    int n_notes = 0, n_needed = 0, n_gone = 0, cap, removed = 0, listed, notetype;
+    int n_notes = 0, n_needed = 0, n_gone = 0, cap, removed = 0, listed, notetype, more = 0;
     SceUID d;
     SceIoDirent ent;
     if (!is_dir(VJO_AFV_INBOX_DIR))
@@ -1029,8 +909,8 @@ static int sweep_inbox(VjoArena *a)
         return 0;
     }
     /* then the notes still in the inbox (a few, once the app has synced: it removes the final ones) */
-    if ((listed = list_inbox(a, &notes, &n_notes, VJO_AFV_SWEEP_NOTES)) != 0) {
-        if (listed > 0)
+    if ((listed = list_ids(a, VJO_AFV_INBOX_DIR, 0, &notes, &n_notes, VJO_AFV_SWEEP_NOTES, &more)) < 0 || more) {
+        if (more)
             vjo_log("anki for vita: over %d notes wait in the inbox: its media are removed once they are fewer",
                     VJO_AFV_SWEEP_NOTES);
         vjo_arena_release(a, mark);
@@ -1062,6 +942,7 @@ static int sweep_inbox(VjoArena *a)
             for (int k = 0, e = t + 1; k < j.t[t].size; k++, e = vjo_json_skip(&j, e)) {
                 int n;
                 const char *name = vjo_json_is_type(&j, e, JSMN_STRING) ? token_text(&j, e, &n) : NULL;
+                memset(&needed[n_needed], 0, sizeof(needed[n_needed]));
                 if (!name || rubi_media(name, (size_t)n, needed[n_needed].id) < 0)
                     continue;
                 if (++n_needed == cap) {
@@ -1071,9 +952,7 @@ static int sweep_inbox(VjoArena *a)
             }
         vjo_arena_release(a, note_mark);
     }
-    for (int i = 0; i < n_needed; i++)
-        needed[i].old = 0;
-    seen_sort(needed, n_needed);
+    qsort(needed, (size_t)n_needed, sizeof(Seen), seen_cmp);
     /* Rubi's media files none of them names go */
     for (int i = 0; i < n_gone; i++) {
         char hex[VJO_QUEUE_ID_SIZE], path[PATH_CAP];
@@ -1235,7 +1114,7 @@ int vjo_afv_send(VjoArena *a, const VjoExportUi *ui, VjoAfvSendResult *r, char *
     char path[PATH_CAP], tmp[PATH_CAP], hex[VJO_QUEUE_ID_SIZE];
     Seen *seen = NULL;
     Send s;
-    int queued, rc, listed, k;
+    int queued, rc, listed, k, more = 0;
     memset(r, 0, sizeof(*r));
     memset(&s, 0, sizeof(s));
     msg[0] = '\0';
@@ -1271,8 +1150,8 @@ int vjo_afv_send(VjoArena *a, const VjoExportUi *ui, VjoAfvSendResult *r, char *
     s.ui = ui;
     s.r = r;
     s.total = queued;
-    listed = list_inbox(a, &s.inbox, &s.n_inbox, VJO_AFV_SEND_MAX);
-    s.inbox_by_name = listed == 1;
+    listed = list_ids(a, VJO_AFV_INBOX_DIR, 0, &s.inbox, &s.n_inbox, VJO_AFV_SEND_MAX, &more);
+    s.inbox_by_name = more > 0; /* (more of Rubi's notes than a send hands over: each card checked by name) */
     s.cap_staged = queued < VJO_AFV_SEND_MAX ? queued : VJO_AFV_SEND_MAX;
     s.staged = (uint8_t(*)[ID_BYTES])vjo_arena_alloc(a, ID_BYTES * (size_t)s.cap_staged);
     if (listed < 0 || !s.staged) {

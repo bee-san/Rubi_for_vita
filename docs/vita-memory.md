@@ -455,7 +455,7 @@ measured on the console]:
 | GXM rings (VDM 128 KiB, vertex 2 MiB, fragment 512 KiB, fragment USSE 16 KiB), depth and stencil (2 x 2,088,960 B), shader patcher (3 x 64 KiB), index and clear buffers (132 KiB), parameter buffer (2 MiB), temporary pool (1 MiB): 10,424,320 B | about 9.9 MiB |
 | newlib heap (reserved whole) | 8 MiB |
 | Icon textures (five current-page icons, at most 256 KiB each, `settings/icons.h`) | at most 1.25 MiB |
-| Anki export arena (2 MiB, `settings/anki_export.h` `VJO_EXPORT_MEM`, which the hand-over to Anki for Vita uses too, one job at a time: `settings/anki_afv.c`, at most 716,384 B of it [measured, host]; the app has no SceNet pool since the AnkiConnect page was removed), config scratch, game list | about 2.2 MiB |
+| Anki export arena (2 MiB, `settings/anki_export.h` `VJO_EXPORT_MEM`, which the hand-over to Anki for Vita uses too, one job at a time: `settings/anki_afv.c`, 761,695 B of it at the most measured [measured, host]; the app has no SceNet pool since the AnkiConnect page was removed), config scratch, game list | about 2.2 MiB |
 | PSP rows (`settings/psp.c`): a bubble target's blocks and PARAM.SFO, two taiHEN configurations | 306,800 B |
 | Code, stacks, PVF atlas | about 2 MiB |
 | **Total** | **about 25 MiB of 50 MiB** |
