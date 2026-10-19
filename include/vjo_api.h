@@ -49,8 +49,13 @@
  * or job completion; no new thread, event object or buffer.
  * 26: the text-presence gate: VjoGameOcrRequest.speed bit 4 (VJO_GAME_OCR_S_GATE), its weights' file
  * (VJO_GAME_OCR_OPEN_GATE, VJO_VOCR_GATE_NAME) in the kernel's broker for such a request, and a new step kind
- * (gate). Sizes are unchanged. */
-#define VJO_API_VERSION 26
+ * (gate). Sizes are unchanged.
+ * 27: vertical text (config.ini ocr_vertical, #213): VjoGameOcrRequest.flags bit 15 and
+ * VJO_GAME_OCR_OPEN_VERTICAL. Reverted; main's builds from 4a7ddf8 to 297530c are API 27.
+ * 28: API 26's interface again (vertical text left main, to come back as its own pull request): flags
+ * bit 15 is unknown again and no Open is VJO_GAME_OCR_OPEN_VERTICAL. A new number, not 26: builds of
+ * 27 exist, and a number names one interface only. Sizes are unchanged. */
+#define VJO_API_VERSION 28
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from
