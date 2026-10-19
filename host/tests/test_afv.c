@@ -732,7 +732,8 @@ static void a_failure_anywhere_changes_nothing_else(void)
 }
 
 /* An inbox file is never rewritten: a note there is left alone, and so are a media file and the note
- * type's file, whatever they hold; a note that appears meanwhile is not replaced either. */
+ * type's file, whatever they hold. A card whose screenshot's name holds other bytes, and every card
+ * while the note type's file is not Rubi's and one of its notes is there, are not handed over. */
 static void nothing_in_the_inbox_is_replaced(void)
 {
     VjoAfvSendResult r;
@@ -755,8 +756,17 @@ static void nothing_in_the_inbox_is_replaced(void)
     snprintf(path, sizeof(path), VJO_AFV_MEDIA_DIR "/%s", media);
     put_text(path, "not the screenshot");
     put_text(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json", "{\"another\":\"note type\"}");
+    TEST_ASSERT(send_now(&r, msg, sizeof(msg)) != VJO_OK); /* the note type is not Rubi's, and a note is there */
+    TEST_CHECK_(r.sent == 0 && strstr(msg, "Nothing was handed over") && io.refused == 0, "%s", msg);
+    TEST_CHECK(strstr(logs, "lapis-1.7.0.json holds other bytes than Rubi's: left as it is") != NULL);
+    TEST_ASSERT(unlink(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json") == 0); /* (the user removes it) */
     TEST_ASSERT(send_now(&r, msg, sizeof(msg)) == VJO_OK);
-    TEST_CHECK_(r.sent == 1 && r.already == 1 && io.refused == 0, "%s", msg);
+    TEST_CHECK_(r.sent == 0 && r.already == 1 && r.failed == 1 && io.refused == 0, "%s", msg);
+    TEST_CHECK(strstr(logs, "holds other bytes than Rubi's: left as it is") != NULL);
+    snprintf(path, sizeof(path), INBOX "/%s.json", ids[1]);
+    TEST_CHECK(!there(path)); /* its screenshot's name holds other bytes: not handed over */
+    TEST_CHECK(get_file(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json", text, sizeof(text)) > 0 &&
+               (size_t)strlen(text) == strlen(vjo_lapis_notetype));
     snprintf(path, sizeof(path), INBOX "/%s.json", ids[0]);
     {
         char before[200];
@@ -765,10 +775,30 @@ static void nothing_in_the_inbox_is_replaced(void)
     }
     snprintf(path, sizeof(path), VJO_AFV_MEDIA_DIR "/%s", media);
     TEST_CHECK(get_file(path, text, sizeof(text)) > 0 && !strcmp(text, "not the screenshot"));
-    TEST_CHECK(get_file(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json", text, sizeof(text)) > 0 &&
-               !strcmp(text, "{\"another\":\"note type\"}"));
-    snprintf(path, sizeof(path), INBOX "/%s.json", ids[1]);
-    TEST_CHECK(there(path));
+    /* with no note of Rubi's in the inbox, a note type file that is not Rubi's is taken back */
+    reset();
+    installed("{\"v\":1,\"interfaces\":[1]}");
+    queue_card(&eat, ids[0]);
+    mkdir(ROOT "/inbox", 0777);
+    mkdir(INBOX, 0777);
+    mkdir(VJO_AFV_NOTETYPES_DIR, 0777);
+    put_text(VJO_AFV_NOTETYPES_DIR "/lapis-1.7.0.json", "{\"another\":\"note type\"}");
+    TEST_ASSERT(send_now(&r, msg, sizeof(msg)) == VJO_OK);
+    TEST_CHECK_(r.sent == 1 && strstr(logs, "was not Rubi's, and no note names it: written again"), "%s", msg);
+    check_note(ids[0]);
+    /* two cards with the same screenshot: one media file, checked, both handed over */
+    reset();
+    installed("{\"v\":1,\"interfaces\":[1]}");
+    {
+        Card twin = cat;
+        twin.spelling = "猫猫";
+        queue_card(&cat, ids[0]);
+        queue_card(&twin, ids[1]);
+    }
+    TEST_ASSERT(send_now(&r, msg, sizeof(msg)) == VJO_OK);
+    TEST_CHECK_(r.sent == 2 && !r.failed && files_in(VJO_AFV_MEDIA_DIR, ".jpg") == 1, "%s", msg);
+    check_note(ids[0]);
+    check_note(ids[1]);
 }
 
 /* Cancel between two cards: the ones staged are taken back (no .tmp left), every card stays queued,

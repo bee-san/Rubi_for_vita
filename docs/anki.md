@@ -629,7 +629,11 @@ collection has the package's note.
 | `private/` | never reads or writes it |
 
 Every file Rubi writes is new: written to `<name>.tmp`, flushed, closed, then renamed. The Vita's
-rename refuses an existing name, so an inbox file is never replaced. A note's screenshot and the
+rename refuses an existing name, so an inbox file is never replaced. A screenshot whose file is there
+already (another card's: the same picture has the same name) is checked to hold the same bytes; when
+it does not, that card is not handed over (`log.txt`). The note type's file is checked the same way:
+one of other content is taken back only while no note of Rubi's is in the inbox, else nothing is
+handed over. A note's screenshot and the
 note type's file come first and the memory card is synced, then the notes are renamed into place and
 synced again, so Anki for Vita never sees a note whose files are not all there. A stop anywhere
 (Cancel, a power cut) leaves only whole files, and the next send finishes the job; a `.tmp` an
@@ -648,7 +652,7 @@ page shows a result's message only after replacing its control characters.
 
 The hand-over and the results run on the Anki page's worker, in the 2 MiB arena the export uses, one
 job at a time. Measured on the host (`vjo-afv-tests`, its `measure:` lines): a send of 20,000 cards
-(the most one send hands over; the rest wait for the next) peaked at 323,416 B, and at 700,000 B when
+(the most one send hands over; the rest wait for the next) peaked at 323,416 B, and at 716,384 B when
 all of them were in the inbox already (its list then); a results pass of 4,096 results (the most one
 pass reads) at 78,249 B; the largest card's send (a record near 32 KiB and a 192 KiB screenshot) at
 294,608 B. These are host measurements of this code's arena; the console has not run it.

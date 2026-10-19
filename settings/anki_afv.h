@@ -12,8 +12,10 @@
  * new: written to <name>.tmp, flushed, closed, renamed (the Vita's rename refuses an existing name, so
  * no inbox file is ever replaced), and the memory card synced; the media and the note type first,
  * synced, then the notes (their .tmp files written meanwhile, renamed after that sync). A card whose
- * note is in the inbox already is left alone. The cards stay queued, so the .apkg export keeps
- * working, until their result is final.
+ * note is in the inbox already is left alone. A media or note type file that is there already must
+ * hold Rubi's bytes (else the card, or the send, stops; a note type file is taken back while no note
+ * of Rubi's is in the inbox). The cards stay queued, so the .apkg export keeps working, until their
+ * result is final.
  *
  * Results (vjo_afv_results, when the page is shown, and before a send): outbox/rubi/<id>.json (its
  * .old when a replace was stopped; both missing: three more tries 100 ms apart), only names of 32

@@ -154,6 +154,60 @@ static int write_new(const char *path, const void *data, size_t len, int commit)
     return rc;
 }
 
+/* The file at path holds exactly data (len bytes): 1, 0 (other bytes or another size), or -1 (it
+ * cannot be read; logged). Read in pieces into the arena's free space (given back). */
+static int same_bytes(VjoArena *a, const char *path, const void *data, size_t len)
+{
+    size_t mark = vjo_arena_mark(a), off = 0, piece = 16 * 1024;
+    uint8_t *buf = (uint8_t *)vjo_arena_alloc(a, piece);
+    SceUID fd;
+    SceOff size;
+    int same = 1;
+    if (!buf)
+        return -1;
+    if ((fd = sceIoOpen(path, SCE_O_RDONLY, 0)) < 0) {
+        vjo_arena_release(a, mark);
+        return io_fail("open", path, fd);
+    }
+    size = sceIoLseek(fd, 0, SCE_SEEK_END);
+    if (size < 0 || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0) {
+        sceIoClose(fd);
+        vjo_arena_release(a, mark);
+        return io_fail("seek", path, (int)size);
+    }
+    if ((uint64_t)size != len)
+        same = 0;
+    while (same && off < len) {
+        size_t want = len - off < piece ? len - off : piece;
+        int n = sceIoRead(fd, buf, (SceSize)want);
+        if (n <= 0) {
+            sceIoClose(fd);
+            vjo_arena_release(a, mark);
+            return io_fail("read", path, n);
+        }
+        same = !memcmp(buf, (const uint8_t *)data + off, (size_t)n);
+        off += (size_t)n;
+    }
+    sceIoClose(fd);
+    vjo_arena_release(a, mark);
+    return same;
+}
+
+/* A file of Rubi's in the inbox, written once (write_new) or there already with these bytes: 0, or
+ * -1 (it could not be written, or the name holds other bytes, which are left as they are: the client
+ * never rewrites an inbox file; logged). */
+static int put_once(VjoArena *a, const char *path, const void *data, size_t len)
+{
+    int rc = write_new(path, data, len, 1), same;
+    if (rc <= 0)
+        return rc;
+    if ((same = same_bytes(a, path, data, len)) > 0)
+        return 0;
+    if (!same)
+        vjo_log("anki for vita: %s holds other bytes than Rubi's: left as it is", path);
+    return -1;
+}
+
 static void mkdirs(void)
 {
     /* each fails when it is there */
@@ -1134,7 +1188,8 @@ static int stage_card(void *ud, const char *hex)
     if (jpeg) {
         vjo_apkg_media_name(jpeg, jpeg_len, media);
         snprintf(path, sizeof(path), "%s/%s", VJO_AFV_MEDIA_DIR, media);
-        if (write_new(path, jpeg, jpeg_len, 1) < 0) { /* there already (1): the same bytes, by its name */
+        /* there already (another card's, the same picture: its name is its hash): checked to be */
+        if (put_once(s->a, path, jpeg, jpeg_len) < 0) {
             r->failed++;
             vjo_arena_release(s->a, mark);
             return 0;
@@ -1225,13 +1280,23 @@ int vjo_afv_send(VjoArena *a, const VjoExportUi *ui, VjoAfvSendResult *r, char *
     remove_stale_temps(VJO_AFV_INBOX_DIR);
     remove_stale_temps(VJO_AFV_MEDIA_DIR);
     remove_stale_temps(VJO_AFV_NOTETYPES_DIR);
-    /* 3. the note type, then each card's screenshot and its note's .tmp */
-    if (write_new(VJO_AFV_NOTETYPES_DIR "/" VJO_AFV_NOTETYPE_FILE, vjo_lapis_notetype, strlen(vjo_lapis_notetype), 1) <
-        0) {
-        snprintf(msg, cap, "Cannot write in %s (memory card full? see log.txt). Nothing was handed over.",
-                 VJO_AFV_INBOX_DIR);
-        vjo_arena_release(a, base);
-        return r->rc = VJO_E_LOCAL_IO;
+    /* 3. the note type, then each card's screenshot and its note's .tmp. A note type file of another
+     * content is taken back only when no note of Rubi's is in the inbox (the client owns it, and
+     * removes it once no note names it); else nothing is handed over. */
+    {
+        static const char nt_path[] = VJO_AFV_NOTETYPES_DIR "/" VJO_AFV_NOTETYPE_FILE;
+        size_t nt_len = strlen(vjo_lapis_notetype);
+        int put = put_once(a, nt_path, vjo_lapis_notetype, nt_len);
+        if (put < 0 && !s.n_inbox && !s.inbox_by_name && same_bytes(a, nt_path, vjo_lapis_notetype, nt_len) == 0 &&
+            sceIoRemove(nt_path) >= 0) {
+            vjo_log("anki for vita: %s was not Rubi's, and no note names it: written again", nt_path);
+            put = put_once(a, nt_path, vjo_lapis_notetype, nt_len);
+        }
+        if (put < 0) {
+            snprintf(msg, cap, "Cannot write %s (memory card full? see log.txt). Nothing was handed over.", nt_path);
+            vjo_arena_release(a, base);
+            return r->rc = VJO_E_LOCAL_IO;
+        }
     }
     if (vjo_export_scan(0, stage_card, &s) < 0)
         vjo_log("anki for vita: the queue could not be read to its end; the rest is handed over next time");
