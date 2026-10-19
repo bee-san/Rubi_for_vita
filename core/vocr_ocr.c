@@ -16,8 +16,11 @@
 #include "vocr_lines_refine.h"
 #include "vocr_lm.h"
 #include "vocr_textgate.h"
+#include "vocr_textspot.h"
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
+/* API 30: a scan's result carries the spotter's whole set (include/vjo_spot.h). */
+typedef char vjo_spot_max_matches_runtime[VJO_SPOT_MAX == VOCR_TEXTSPOT_MAX_BOXES ? 1 : -1];
 typedef char vjo_vocr_refine_matches_runtime[VJO_VOCR_REFINE_ALL == VOCR_REFINE_DEFAULT ? 1 : -1];
 typedef char vjo_vocr_gate_mode_matches_runtime[VJO_VOCR_GATE_MODE == VOCR_TEXTGATE_BOXES &&
                                                 VJO_VOCR_GATE_K <= VOCR_TEXTGATE_MAX_K ? 1 : -1];
@@ -2399,4 +2402,154 @@ int vjo_vocr_warm(const VjoPlatform *p, const char *dir, const char *model, cons
         st->cascade = pol->cascade;
     }
     return VJO_OK;
+}
+
+/* ---- API 30: a scan, vita-vn-ocr #104's full-frame text spotter (scan screen) ---- */
+/* The spotter writes its set straight into the scan's result (include/vjo_spot.h): the same layout. */
+#define SPOT_SAME(a, b) (offsetof(VjoSpotResult, a) == offsetof(VocrTextspotSet, b))
+typedef char vjo_spot_set_layout[sizeof(VjoSpotResult) == sizeof(VocrTextspotSet) && SPOT_SAME(box, boxes) &&
+                                 SPOT_SAME(block, blocks) && SPOT_SAME(count, count) &&
+                                 SPOT_SAME(block_count, block_count) && SPOT_SAME(pick, pick) &&
+                                 SPOT_SAME(truncated, truncated) && sizeof(VjoSpotBox) == sizeof(VocrTextspotBox) &&
+                                 offsetof(VjoSpotBox, vertical) == offsetof(VocrTextspotBox, vertical) &&
+                                 offsetof(VjoSpotBox, block) == offsetof(VocrTextspotBox, block) &&
+                                 sizeof(VjoSpotBlock) == sizeof(VocrTextspotBlock) &&
+                                 offsetof(VjoSpotBlock, first) == offsetof(VocrTextspotBlock, first) ? 1 : -1];
+/* The spotter's dark pass, which a scan never reaches (VOCR_TEXTSPOT_NO_DARK returns before it): the build
+ * renames its two helpers to these (cmake/VocrOCR.cmake), which refuse, so that a call without the flag gives no
+ * box rather than linking vocr_lines.c's dark code into every game's worker. */
+int vjo_spot_no_dark(const VocrLinesImage *im, unsigned x, unsigned y, unsigned w, unsigned h);
+int vjo_spot_no_dark_rows(const VocrLinesRows *src, unsigned x, unsigned y, unsigned w, unsigned h);
+int vjo_spot_no_dark(const VocrLinesImage *im, unsigned x, unsigned y, unsigned w, unsigned h)
+{
+    (void)im, (void)x, (void)y, (void)w, (void)h;
+    return VOCR_LINES_E_ARG;
+}
+int vjo_spot_no_dark_rows(const VocrLinesRows *src, unsigned x, unsigned y, unsigned w, unsigned h)
+{
+    (void)src, (void)x, (void)y, (void)w, (void)h;
+    return VOCR_LINES_E_ARG;
+}
+/* The spotter's weights file (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_NAME; tools/prepare_ocr.py pins it too). */
+static const unsigned char spot_sha256[32] = {
+    0x85,0x25,0x06,0x91,0x9b,0xa9,0x4e,0x54,0xa4,0xef,0xc5,0x5e,0x36,0x95,0xf3,0x65,
+    0x62,0x6d,0x9d,0x4c,0xe6,0x34,0x7f,0x42,0x0c,0xbf,0x2a,0xfe,0x3e,0x83,0x60,0xcf};
+/* The workspace: [the weights | the loaded model | the arena], each 16-byte aligned. */
+#define SPOT_BLOB ALIGN16((size_t)VJO_VOCR_SPOT_BYTES)
+#define SPOT_MODEL ALIGN16(sizeof(vocr_textspot))
+
+size_t vjo_vocr_spot_bytes(void)
+{
+    return SPOT_BLOB + SPOT_MODEL + ALIGN16((size_t)VJO_VOCR_SPOT_ARENA);
+}
+
+size_t vjo_vocr_spot_strip_bytes(unsigned width)
+{
+    return width && width <= VJO_OCR_MAX_WIDTH ? (size_t)VJO_VOCR_SPOT_ROWS * width : 0;
+}
+
+/* The frame's rows for the spotter, a strip at a time: it asks for each row once, in increasing order
+ * (VOCR_TEXTSPOT_NO_DARK), so a strip is read when its first row is asked for. */
+typedef struct {
+    const VjoGreySource *im;
+    const VjoPlatform *p;
+    unsigned char *strip;
+    unsigned y0, n;    /* the rows the strip holds: [y0, y0 + n) */
+    int err;           /* why a row could not be given */
+    VjoVocrStats *st;
+} SpotRows;
+
+static const unsigned char *spot_row(void *user, unsigned y)
+{
+    SpotRows *s = (SpotRows *)user;
+    if (y - s->y0 >= s->n) {
+        unsigned n = s->im->height - y < VJO_VOCR_SPOT_ROWS ? s->im->height - y : VJO_VOCR_SPOT_ROWS;
+        uint32_t t0 = clock_us(s->p);
+        int got;
+        if (y != s->y0 + s->n || y >= s->im->height) {
+            s->err = VJO_E_SOURCE;
+            return NULL;
+        }
+        if (cancelled(s->im)) {
+            s->err = VJO_E_CANCELLED;
+            return NULL;
+        }
+        got = s->im->strip(s->im->ud, y, n, s->strip, s->im->width, 0);
+        s->st->capture_us += clock_us(s->p) - t0;
+        if (got != (int)n) {
+            s->err = got < 0 ? got : VJO_E_SOURCE;
+            return NULL;
+        }
+        s->st->strips++;
+        s->y0 = y;
+        s->n = n;
+    }
+    return s->strip + (size_t)(y - s->y0) * s->im->width;
+}
+
+int vjo_vocr_spot(const VjoPlatform *p, const char *dir, const VjoGreySource *im, void *ws, size_t ws_bytes,
+                  void *strip, size_t strip_bytes, VjoSpotResult *out, VjoVocrStats *st)
+{
+    unsigned char *base = (unsigned char *)ws;
+    vocr_textspot *m = (vocr_textspot *)(base + SPOT_BLOB);
+    char path[256];
+    VjoFile file;
+    VocrLinesRows rows;
+    SpotRows src;
+    size_t need;
+    uint32_t t0;
+    int rc;
+    if (!p || !dir || !im || !im->strip || !ws || !strip || !out || !st)
+        return VJO_E_SOURCE;
+    memset(out, 0, sizeof(*out));
+    out->pick = -1;
+    memset(st, 0, sizeof(*st));
+    st->width = im->width;
+    st->height = im->height;
+    if (!region_ok(im->width, im->height))
+        return VJO_E_OCR_REGION;
+    st->workspace = vjo_vocr_spot_bytes();
+    st->strip_rows = VJO_VOCR_SPOT_ROWS;
+    if (ws_bytes < st->workspace || ((uintptr_t)ws & 15u) || ((uintptr_t)out & 3u) ||
+        strip_bytes < vjo_vocr_spot_strip_bytes(im->width))
+        return VJO_E_OOM;
+    /* The weights: read and checked in every scan (a few KB), as the models are checked on their first read. */
+    if (join_path(path, sizeof(path), dir, VJO_VOCR_SPOT_NAME) < 0)
+        return VJO_E_OCR_MODEL;
+    memset(&file, 0, sizeof(file));
+    t0 = clock_us(p);
+    if (!p->file_open || p->file_open(p->ud, path, &file) < 0)
+        return cancelled(im) ? VJO_E_CANCELLED : VJO_E_OCR_MODEL;
+    rc = file.size != VJO_VOCR_SPOT_BYTES || !file.read ? VJO_E_OCR_MODEL
+         : read_verified(&file, VJO_VOCR_SPOT_BYTES, spot_sha256, base, im);
+    if (file.close)
+        file.close(file.ctx);
+    st->load_us = clock_us(p) - t0;
+    if (rc)
+        return rc;
+    st->model_loaded = 1;
+    need = vocr_textspot_load(m, base, VJO_VOCR_SPOT_BYTES) == VOCR_LINES_OK
+           ? vocr_textspot_frame_arena_bytes(m, im->width, im->height) : 0;
+    if (!need || need > VJO_VOCR_SPOT_ARENA)
+        return VJO_E_OCR_MODEL;
+    st->scratch_bytes = need;
+    memset(&src, 0, sizeof(src));
+    src.im = im;
+    src.p = p;
+    src.strip = (unsigned char *)strip;
+    src.st = st;
+    rows.width = im->width;
+    rows.height = im->height;
+    rows.bpp = VOCR_LINES_GREY;
+    rows.row = spot_row;
+    rows.user = &src;
+    t0 = clock_us(p);
+    rc = vocr_textspot_find_rows(m, &rows, VOCR_TEXTSPOT_NO_DARK, base + SPOT_BLOB + SPOT_MODEL, need,
+                                 (VocrTextspotSet *)(void *)out);
+    st->find_us = clock_us(p) - t0;
+    if (rc == VOCR_LINES_OK)
+        return VJO_OK;
+    memset(out, 0, sizeof(*out));
+    out->pick = -1;
+    return rc == VOCR_LINES_E_SOURCE ? (src.err ? src.err : VJO_E_SOURCE) : VJO_E_OCR_INFERENCE;
 }

@@ -168,6 +168,10 @@ static int s_refused[2];               /* the box size enter was refused for: to
 static int64_t s_hint_us;
 static int64_t s_square_down_us;
 static int s_square_clear_armed;
+/* Scan screen (API 30, ocr_scan_screen; core/spot_pick.h): region mode starts on the scan's blocks. s_spot.state:
+ * 1 waiting for them, 2 shown, 0 drawing by hand. */
+static VjoSpotUi s_spot;
+static unsigned s_spot_stick;   /* the left stick's direction (VJO_RSEL_*) last frame: a push moves once */
 
 /* The text-building arena, taken from the PAF heap while the overlay page is
  * open and given back when it closes, so no page of SceShell's partition is
@@ -588,6 +592,16 @@ static void header_fit(void)
     }
 }
 
+static void region_hint(int force);
+
+/* A plane over the screen pixels (x, y, w, h) (paf layout: origin at the screen centre, y up). */
+static void place_box(ui::Widget *p, int x, int y, int w, int h)
+{
+    p->SetSize((float)w, (float)h, 0.0f);
+    p->SetPos(x + w / 2.0f - SCREEN_W / 2, SCREEN_H / 2 - y - h / 2.0f, 0.0f);
+    p->Show();
+}
+
 /* The selector's cursor and box (paf layout: origin at the screen centre,
  * y up); paf is told only what changed. */
 static void show_region(void)
@@ -610,9 +624,46 @@ static void show_region(void)
         s_region_rect->Hide();
         return;
     }
-    s_region_rect->SetSize((float)c[4], (float)c[5], 0.0f);
-    s_region_rect->SetPos(c[2] + c[4] / 2.0f - SCREEN_W / 2, SCREEN_H / 2 - c[3] - c[5] / 2.0f, 0.0f);
-    s_region_rect->Show();
+    place_box(s_region_rect, c[2], c[3], c[4], c[5]);
+}
+
+/* Scan screen: the scan's blocks (the RCO's vjo_spot_N planes), each the region it is read as, and over the
+ * selected one the region rectangle; m NULL: none (waiting for the scan, or drawing by hand). The cursor shows
+ * only when drawing by hand. */
+static void scan_draw(const VjoSpotMap *m)
+{
+    char id[12];
+    for (int i = 0; i < VJO_SPOT_SHOWN; i++) {
+        ui::Widget *w;
+        sceClibSnprintf(id, sizeof(id), "vjo_spot_%d", i);
+        if (!(w = s_page->FindChild(id)))
+            continue;
+        if (m && i < m->count)
+            place_box(w, m->rect[i][0], m->rect[i][1], m->rect[i][2], m->rect[i][3]);
+        else
+            w->Hide();
+    }
+    if (s_region_cursor) {
+        if (s_spot.state)
+            s_region_cursor->Hide();
+        else
+            s_region_cursor->Show();
+    }
+    if (s_region_rect && m) {
+        const int16_t *r = m->rect[s_spot.sel];
+        place_box(s_region_rect, r[0], r[1], r[2], r[3]);
+    }
+}
+
+/* From the scan to drawing by hand, as the region mode starts without it. */
+static void scan_to_manual(void)
+{
+    s_spot.state = 0;
+    scan_draw(NULL);
+    vjo_rsel_begin(&s_rsel, sceKernelGetProcessTimeWide());
+    s_region_drawn[0] = -1; /* draw afresh */
+    show_region();
+    region_hint(1);
 }
 
 /* What enter and cancel do next, and the box's size: under the 32 x 32 a region
@@ -677,6 +728,22 @@ static void enter_region_mode(void)
         s_region_layer->Show();
     s_region_drawn[0] = -1; /* draw afresh */
     s_refused[0] = -1;
+    vjo_view_lock();
+    s_spot.state = g_view.spot.on;
+    s_spot.seq = g_view.spot.seq;
+    vjo_view_unlock();
+    scan_draw(NULL);
+    if (s_spot.state) { /* scan screen: the blocks come with the scan's result (input_scan) */
+        char hint[128]; /* 89 B with its 3-byte glyphs */
+        s_spot_stick = ~0u;
+        vjo_post_command(VJO_CMD_SCAN, NULL);
+        if (s_region_rect)
+            s_region_rect->Hide();
+        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffffff\">◀▶▲▼ or tap a box · %s read · %s draw by hand</font>",
+                        s_btn.enter_glyph, s_btn.cancel_glyph);
+        set_rich(s_region_hint, hint);
+        return;
+    }
     show_region();
     region_hint(1);
 }
@@ -684,6 +751,7 @@ static void enter_region_mode(void)
 static void leave_region_mode(void)
 {
     s_mode = MODE_OVERLAY;
+    s_spot.state = 0;
     vjo_stick_cursor_latch(&s_stick); /* a stick still drawing the box does not move the cursor */
     if (s_region_layer)
         s_region_layer->Hide();
@@ -713,6 +781,9 @@ static void open_page(void)
         return;
     }
     s_panel = s_page->FindChild("vjo_panel");
+    /* the open page's PAF use (its widgets, the scan's 16 planes among them) is unmeasured: a console run reads it
+     * as this against the self-test's paf_free with no page open */
+    vjo_dlog("overlay page open: paf free %u B", (unsigned)vjo_shell_heap_free_size());
     s_header.text = (ui::Text *)s_page->FindChild("vjo_header");
     s_body.text = (ui::Text *)s_page->FindChild("vjo_body");
     s_header.view = s_page->FindChild("vjo_header_view");
@@ -1032,11 +1103,57 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         enter_region_mode();
 }
 
+/* Scan screen's frame (core/spot_pick.h vjo_spot_frame): 1 when it took the frame, 0 when it hands it to drawing
+ * by hand (a touch outside every block starts the drag there). The d-pad and a push of the left stick go to the
+ * nearest block that way, a touch on a block or enter reads it, cancel draws by hand; a later scan's result is
+ * drawn afresh. */
+static int input_scan(const VjoInput *in, const VjoRselInput *ri, int new_touch)
+{
+    VjoSpotMap m;
+    uint32_t seq;
+    unsigned dir = ri->pressed & (VJO_RSEL_UP | VJO_RSEL_RIGHT | VJO_RSEL_DOWN | VJO_RSEL_LEFT), stick;
+    int hx = vjo_stick_axis(in->lx, 1), hy = vjo_stick_axis(in->ly, 1);
+    /* the stick's push (its left-right first), as the d-pad's arrow */
+    stick = hx ? (hx > 0 ? VJO_RSEL_RIGHT : VJO_RSEL_LEFT) : hy ? (hy > 0 ? VJO_RSEL_DOWN : VJO_RSEL_UP) : 0u;
+    if (stick != s_spot_stick && !dir && s_spot_stick != ~0u) /* (~0u: held since □, moves nothing until let go) */
+        dir = stick;
+    if (!stick || s_spot_stick != ~0u)
+        s_spot_stick = stick;
+    vjo_view_lock();
+    seq = g_view.spot.seq;
+    m = g_view.spot.map;
+    vjo_view_unlock();
+    switch (vjo_spot_frame(&s_spot, seq, &m, new_touch ? vjo_spot_hit(&m, ri->tx, ri->ty) : -2,
+                           ri->pressed & ri->enter, ri->pressed & ri->cancel, dir)) {
+    case VJO_SPOT_SHOW:
+        vjo_dlog("scan: %d blocks shown, the cursor on %d", m.count, s_spot.sel);
+        /* fall through */
+    case VJO_SPOT_MOVE:
+        scan_draw(&m);
+        break;
+    case VJO_SPOT_READ: {
+        const int16_t *b = m.rect[s_spot.sel];
+        VjoRect r = vjo_rsel_rect(b[0], b[1], b[2], b[3]);
+        vjo_dlog("scan: block %d read, %d,%d %dx%d", s_spot.sel, b[0], b[1], b[2], b[3]);
+        leave_region_mode();
+        vjo_post_command(VJO_CMD_SCAN_PICK, &r);
+        break;
+    }
+    case VJO_SPOT_MANUAL:
+        scan_to_manual();
+        break;
+    case VJO_SPOT_HAND:
+        scan_to_manual();
+        return 0;
+    }
+    return 1;
+}
+
 static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
 {
     const inputdevice::touchscreen::Data *pd = NULL;
     VjoRselInput ri;
-    int ev, x = 0, y = 0, w = 0, h = 0;
+    int ev, x = 0, y = 0, w = 0, h = 0, new_touch;
     sceClibMemset(&ri, 0, sizeof(ri));
     /* paf: screen pixels from the top left */
     inputdevice::touchscreen::GetData(inputdevice::touchscreen::PORT_FRONT, 0, &pd);
@@ -1048,6 +1165,7 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
         ri.tx = rc >= 0 ? (int)fx : pd->x;
         ri.ty = rc >= 0 ? (int)fy : pd->y;
     }
+    new_touch = ri.touch && !s_prev_touch;
     s_prev_touch = ri.touch;
     ri.held = held;
     ri.pressed = pressed;
@@ -1056,7 +1174,6 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
     ri.lx = in->lx;
     ri.ly = in->ly;
     ri.now_us = sceKernelGetProcessTimeWide();
-    ev = vjo_rsel_update(&s_rsel, &ri);
 
     /* hold □ (from entering region mode) for 1 s -> full screen */
     if (!(held & SCE_CTRL_SQUARE))
@@ -1071,6 +1188,9 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
         vjo_post_command(VJO_CMD_CLEAR_REGION, NULL);
         return;
     }
+    if (s_spot.state && input_scan(in, &ri, new_touch))
+        return;
+    ev = vjo_rsel_update(&s_rsel, &ri);
     vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     if (ev == VJO_RSEL_SAVE) {
         VjoRect r = vjo_rsel_rect(x, y, w, h);

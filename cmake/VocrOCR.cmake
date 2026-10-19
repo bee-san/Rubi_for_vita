@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT ac0d6b1d3da5e96cd771a48da7992b6cf25d6519)
+set(VJO_VOCR_COMMIT 7a6dce0e3e3630557f5729ba9eba17c92acf4c24)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -25,6 +25,8 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # vocr_run()'s per-frame top-K, which also reports each line's confidence.
 # vocr_lines_refine.c (vita-vn-ocr #83) refines the finder's boxes (tightens,
 # drops frame rows and cursors, splits boxes holding several text rows).
+# vocr_textspot.c (vita-vn-ocr #104) is the full-frame text spotter of scan screen (API 30); the twelve files
+# before it hash as at ac0d6b1 (#101's merge), the commit before.
 set(_vocr_pins
   vocr.c 3e1756138b2e1d9aff15abdda95b02e0c015a5ba0af99678bdd678377b73f559
   vocr.h 30bb32693e634a4c4b4cd5cd3a4da8d33f6882bf00348d0e1d8264ba08376271
@@ -37,7 +39,9 @@ set(_vocr_pins
   vocr_lines_refine.c f4fb08aa995379c5ee9cb746307ed2c2d357574d71e5556f2b40d8ce1584e797
   vocr_lines_refine.h 66fe3b716193d835e9ab1d614d71ad8e19de70db5ac8ec0f09b8e027b260dc6b
   vocr_textgate.c da772dd316b69ac79dc0d6ffbae14da428df429657d089fd99ba8cd74c43266e
-  vocr_textgate.h aeb8c5bdb810e8ab82bfaa37aadc1d564ec0dec2a80b1e2f80323819853d7258)
+  vocr_textgate.h aeb8c5bdb810e8ab82bfaa37aadc1d564ec0dec2a80b1e2f80323819853d7258
+  vocr_textspot.c d2054a2d5ccbda1a31c5aafec0079d4da65cf13bc1d5db991dc8cdda746df331
+  vocr_textspot.h a25ef000164af61610a6f5201fb9e345f8a67cf6525d2f16bae44afca712dd57)
 while(_vocr_pins)
   list(POP_FRONT _vocr_pins _file _want)
   if(NOT EXISTS "${_vocr_rt}/${_file}")
@@ -60,17 +64,28 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # Its few libc calls (memcpy, memset, the fabsf/signbit builtins) need no
 # newlib, which SceShell plugins link without.
 # vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
-# (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
+# (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time. vocr_textspot.c
+# (vita-vn-ocr #104) is scan screen's text spotter; its weights are a pinned file too (VJO_VOCR_SPOT_NAME).
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c")
+  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c"
+  "${_vocr_rt}/vocr_textspot.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)
+# The text spotter (scan screen) reads no box (VOCR_TEXTSPOT_NO_DARK: it returns before its dark pass), so its
+# two dark helpers are renamed to core/vocr_ocr.c's stubs, which refuse (a call without the flag fails closed:
+# no box), and vocr_lines.c's vocr_line_dark and vocr_line_dark_rows (1,170 B of the worker's text, which nothing
+# else calls) stay out of the link. The file itself is the pinned one.
+set(_vocr_spot_options "-Dvocr_line_dark=vjo_spot_no_dark" "-Dvocr_line_dark_rows=vjo_spot_no_dark_rows")
 if(VJO_BUILD_VITA)
   target_compile_options(vjo_vocr_rt PRIVATE -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard)
+  # Built for size: its code is in every enabled game's worker pages, used only when the player scans
+  # (vita-vn-ocr eval/textspot_a9_20261019.json: -Os NEON is 17% less code for 1-5% more time).
+  list(APPEND _vocr_spot_options "-Os")
 else()
   target_link_libraries(vjo_vocr_rt PUBLIC m)
 endif()
+set_source_files_properties("${_vocr_rt}/vocr_textspot.c" PROPERTIES COMPILE_OPTIONS "${_vocr_spot_options}")
 
 
 # core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h).

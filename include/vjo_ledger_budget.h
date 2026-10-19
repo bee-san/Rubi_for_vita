@@ -161,8 +161,17 @@
  * fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main 1de7b67 and this change]. At
  * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
  * which would still need the page. In the game's partition, never SceShell's. Both builds now have the same
- * budget. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
+ * budget.
+ * Raised from 98,304 B by three text pages for API 30, scan screen (config.ini ocr_scan_screen, off by default):
+ * vita-vn-ocr #104's text spotter (runtime/vocr_textspot.c at -Os, 9,402 B of the worker's text; its dark pass,
+ * which a scan never reaches, is linked to a refusing stub: cmake/VocrOCR.cmake) and the scan (game_ocr/main.c
+ * run_spot, core/vocr_ocr.c vjo_vocr_spot, core/spot_pick.c, the overlay's map made here so that SceShell's code
+ * for it is a table lookup: 2,390 B of symbols in the debug build, 2,398 B in the normal one), on or off. The debug
+ * build's text 81,644 -> 93,460 B, the normal build's 80,344 -> 92,160 B, data/bss 15,720 B in both; 98,304 ->
+ * 110,592 B [measured: the build log's module rows and arm-vita-eabi-nm, both builds, main 24c0219 and this
+ * change]. Its weights (a few KB) are a file read in each scan, never kept:
+ * no data page. In the game's partition, never SceShell's: the spotter runs where OCR runs (AGENTS.md rule 2). */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 110592u
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game
@@ -216,7 +225,10 @@
 #define VJO_PAF_HEAP 5242880u                      /* [measured, docs/meiki-ocr.md on experiment/meiki-ocr] */
 #define VJO_PAF_FREE_MEASURED 2557952u             /* 2,498 KiB free beside CLANNAD, 2026-10-10 [measured, same] */
 #define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/memory.cpp RESERVE */
-#define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,368 B file; 5,632 B before the region cursor) and the Paf Plugin object [estimate] */
+/* the RCO and the Paf Plugin object [estimate]: the RCO 6,000 B on main 24c0219 (5,632 B before the region cursor),
+ * 7,152 B with API 30's scan screen (its 16 planes and their style) [measured: the built vitajpoverlay.rco]; the
+ * estimate is kept, which leaves 1,040 B (was 2,192 B) for the Paf Plugin object, a size still unmeasured */
+#define VJO_BUDGET_PAF_PLUGIN 8192u
 /* One result arena, the local dictionary's lookup (worker.c LOCAL_RESULT_ARENA_SIZE): the only result
  * memory since the network paths, Google Lens and the Hachidori relay, were removed (they took
  * 2 x 262,144 B arenas and a connection pool: 571,888 B with two slots, 548,096 B with one). */
@@ -391,6 +403,12 @@
  * 10,567,680 B): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
+/* API 30, a scan (scan screen, game_ocr/main.c run_spot): a job of the one slot too, under the OCR jobs' own items:
+ * its strip (64 grey rows, at most 61,440 B) is a VjoGameVocrCapture block within VJO_BUDGET_GAME_CAPTURE, and the
+ * spotter's weights, model and arena (core/vocr_ocr.h vjo_vocr_spot_bytes, 87,520 B with the pinned weights on the
+ * Vita, a 90,112 B block) a VjoGameVocr block within VJO_BUDGET_GAME_WORKSPACE (game_ocr/main.c and
+ * test_game_spot.c check both). It keeps the resident weights, LM and cascade model, as a shot does, and holds less than an OCR job's
+ * transient blocks: it adds nothing to VJO_WORST_GAME_JOB. Its memory check keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
                             VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE + \

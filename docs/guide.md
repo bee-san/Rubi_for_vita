@@ -249,7 +249,7 @@ app when it starts.
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position |
 | Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right as Left/Right (the shown word skipped, then a character a step; Left retraces), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too (its left still undoes a d-pad Right that went round, as any Left retraces a Right). The word is looked up once the cursor rests for `stick_lookup_ms` (200 ms), not at each step ([left stick](touch-lookup.md#the-left-stick-138)) |
 | Right stick | Scroll a long definition |
-| Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
+| Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)); with `ocr_scan_screen = on`, pick one of the text boxes found on the screen first |
 | Hold Square | Restore the full-screen region |
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
@@ -294,6 +294,17 @@ lands, and after it lifts the stick or the d-pad can still move the opposite
 corner before Enter. Hold Square for one second for the full screen. The cursor
 and its acceleration are covered by host tests; how they feel on the console is
 not tested yet.
+
+With `ocr_scan_screen = on` (off by default), Square first scans the whole screen in the game: an estimated
+0.2-0.3 s later (after a read that is already running) every text box it found is drawn as a light rectangle, at
+most 16, and the cursor starts on the box the spotter takes for the dialogue (right on 61% of #104's development
+frames with dialogue). ◀ ▶ ▲ ▼ or a push of the left stick goes to the nearest box that way (every box can be
+reached: where no box lies that way, an arrow may lead to one the arrows could not reach otherwise), and Enter reads
+the highlighted one: it becomes this game's region, as a drawn box does, and the overlay reads it at once, so its
+text and the word's entry come up as after L + R. A tap on a box reads that box. Cancel, a tap outside every box
+(it starts drawing there) or a scan that found nothing goes back to drawing the box by hand as above. Boxes of
+vertical text are drawn but cannot be picked yet
+([scan screen](vita-vn-ocr.md#scan-screen-api-30)).
 
 ## Per-game settings
 
@@ -562,6 +573,11 @@ no text (the game hid its text box, a CG screen) returns no line, so no junk is 
 vita-vn-ocr's test sets and CLANNAD it changed no text read; it costs an estimated 0.1 s per job, so it is off
 until a console run shows how often it helps
 ([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)).
+`ocr_scan_screen = on` makes □ start on the text boxes the game worker finds on the whole screen (vita-vn-ocr
+#104's text spotter): the cursor starts on the box it takes for the dialogue (right on 61% of #104's development
+frames with dialogue), Enter reads the box it is on and makes it the game's
+region ([Drawing the region](#drawing-the-region)). It is off by default: nothing of it is measured on a console
+yet ([scan screen](vita-vn-ocr.md#scan-screen-api-30)).
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
 decode, the cascade's re-read and its place in the text still follow line order on the job's own
@@ -715,7 +731,8 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 98,304 B of module pages and its 36,864 B thread stack and TLS from its
+holds the worker's 110,592 B of module pages (98,304 B before API 30's scan screen, whose code is in
+them whether it is on or off) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
@@ -1055,4 +1072,8 @@ beside them ([details](vita-vn-ocr.md#models)). The text-presence gate's weights
 whether `ocr_text_gate` is on or off) were trained on non-commercial fonts and text and on VNDB
 screenshots: they are for non-commercial use only too, and their attribution is in
 `ocr/GATE-ATTRIBUTION.md`, which ships beside them
-([details](vita-vn-ocr.md#text-presence-gate-api-26)).
+([details](vita-vn-ocr.md#text-presence-gate-api-26)). Scan screen's text spotter weights
+(`ocr/textspot_s4_c24n4_w8.vtsp`, bee-san/vita-vn-ocr v0.3.3-textspot.1; every package ships them, whether
+`ocr_scan_screen` is on or off) were trained on non-commercial fonts and text and on VNDB screenshots: they are
+for non-commercial use only too, and their attribution is in `ocr/TEXTSPOT-ATTRIBUTION.md`, which ships beside
+them ([details](vita-vn-ocr.md#scan-screen-api-30)).

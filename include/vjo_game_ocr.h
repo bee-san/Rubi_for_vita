@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 #include "vjo_api.h" /* VjoRect */
+#include "vjo_spot.h" /* VjoSpotResult: a scan's result (API 30) */
 
 #define VJO_GAME_OCR_MODULE "VitaJPOverlay_OCR"
 /* The model directory (API 23: 128 B, from 256): the kernel accepts only VJO_VOCR_MODEL_ROOT
@@ -92,7 +93,15 @@
  * VJO_VOCR_GATE_NAME beside the models (VJO_GAME_OCR_OPEN_GATE). It is in `speed` because the flags have one
  * bit left. */
 #define VJO_GAME_OCR_S_GATE 0x10u
-#define VJO_GAME_OCR_S_ALL 0x1Fu
+/* API 30, bit 5: a scan (vita-vn-ocr #104's full-frame text spotter, runtime/vocr_textspot.c; config.ini
+ * ocr_scan_screen; docs/vita-vn-ocr.md "Scan screen"). The request is exactly VJO_GAME_OCR_F_FULL with this bit
+ * alone in `speed` (no tiers, no fallback, no other flag); its model names the spotter's file
+ * (VJO_VOCR_SPOT_NAME), which only VJO_GAME_OCR_OPEN_SPOT opens. The worker reads the whole frame's grey rows
+ * once, top to bottom, in strips of 64 (no VJO_ROWS_SIG: a scan publishes no capture), recognizes nothing and
+ * returns the spotter's boxes, blocks and pick as a VjoSpotResult in the result's text. In `speed` because the
+ * flags have one bit left, which vertical text claims (bee-san/Rubi_for_vita#223). */
+#define VJO_GAME_OCR_S_SPOT 0x20u
+#define VJO_GAME_OCR_S_ALL 0x3Fu
 #define VJO_PACE_SLOW_US 25000 /* a frame gap over 25 ms: a dropped frame at 60 fps */
 
 typedef struct {
@@ -140,6 +149,9 @@ typedef struct {
 /* API 26: the text-presence gate's weights (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME), for a request with
  * VJO_GAME_OCR_S_GATE only. */
 #define VJO_GAME_OCR_OPEN_GATE 17u
+/* API 30: the text spotter's weights (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_NAME), for a scan
+ * (VJO_GAME_OCR_S_SPOT) only. 16 stays vertical text's (bee-san/Rubi_for_vita#223). */
+#define VJO_GAME_OCR_OPEN_SPOT 18u
 
 /* VjoGameOcrResult.weights: how this job had verified weights. */
 #define VJO_GAME_OCR_WEIGHTS_NONE 0u     /* no line found, or the job failed first */
@@ -237,6 +249,9 @@ enum {
                             score + 129 (0..256) | its threshold + 129 << 16 | VJO_GLM_READ (its weights were
                             read from the card in this job), sum the rows it read, us its time (its share of the
                             finder's pass and its decision) */
+    VJO_GSTEP_SPOT,      /* API 30, a scan (VJO_GAME_OCR_S_SPOT), once: kind 1 when it read the frame whole, arg the
+                            boxes, rc 0 or why it stopped (VJO_E_*, VOCR_LINES_E_*), bytes = blocks << 16 | (pick + 1)
+                            << 8 | truncated, sum the arena's bytes, us the spotter's time (the strips' waits in it) */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */
@@ -340,6 +355,10 @@ typedef struct {
      * follows its NUL (vjo_text_raw), for the log. */
     char text[VJO_GAME_OCR_TEXT_BYTES];
 } VjoGameOcrResult;
+
+/* API 30: a scan's result (VjoSpotScan, include/vjo_spot.h: the set and the overlay's map) fits the text with
+ * its NUL. */
+typedef char vjo_spot_scan_fits[sizeof(VjoSpotScan) < VJO_GAME_OCR_TEXT_BYTES ? 1 : -1];
 
 /* Model Open's report of the file: its pinned length and the version the
  * game keys its resident weights on. */

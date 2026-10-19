@@ -989,6 +989,8 @@ LOG = {
                          r".*us=(\d+)"),
     # API 26: the text-presence gate (VJO_GSTEP_GATE): kind its mode, arg the lines it stopped, bytes its score + 129
     # (its threshold + 129 << 16, VJO_GLM_READ when the job read its weights from the card), sum the rows it took
+    # API 30, scan screen: one line a scan in both builds (shell/worker.c scan_run), the debug build's longer
+    "scan": re.compile(r"^scan rc=(-?\d+): (\d+) boxes, (\d+) blocks, pick (-?\d+)(, truncated)?, (\d+) ms"),
     "gate": re.compile(r"^gstep job gate kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
                        r".*us=(\d+)"),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
@@ -2277,6 +2279,7 @@ def summarise_log(text):
          "refine": {"jobs": 0, "boxes": 0, "lines": 0, "split": 0, "capped": 0, "rows": 0, "us": [], "rcs": {},
                     "modes": {}},
          "gate": {"jobs": 0, "stopped": 0, "lines_stopped": 0, "scores": [], "us": [], "rcs": {}, "reads": 0},
+         "scan": {"scans": 0, "boxes": [], "blocks": [], "none": 0, "truncated": 0, "ms": [], "rcs": {}},
          "par": {"jobs": 0, "helpers": [], "on_helpers": 0, "cached": 0, "not_started": 0, "share_min": [], "share_mean": []},
          "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
          "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0},
@@ -2413,6 +2416,20 @@ def summarise_log(text):
             if rc:
                 rf["rcs"][rc] = rf["rcs"].get(rc, 0) + 1
             rf["us"].append(int(m.group(6)))
+            continue
+        m = LOG["scan"].match(line)
+        if m:
+            sc = s["scan"]
+            sc["scans"] += 1
+            rc = int(m.group(1))
+            if rc:
+                sc["rcs"][rc] = sc["rcs"].get(rc, 0) + 1
+            else:
+                sc["boxes"].append(int(m.group(2)))
+                sc["blocks"].append(int(m.group(3)))
+                sc["none"] += int(m.group(2)) == 0
+                sc["truncated"] += bool(m.group(5))
+            sc["ms"].append(int(m.group(6)))
             continue
         m = LOG["gate"].match(line)
         if m:
@@ -3545,6 +3562,13 @@ def render_collect(c):
                      + f"), {rf['rows']:,} rows read from memory; {_span(rf['us'])} us a job"
                      + ("; kept as found after " + ", ".join(f"rc {r} x{n}" for r, n in sorted(rf["rcs"].items()))
                         if rf["rcs"] else ""))
+        sc = lg.get("scan") or {}
+        if sc.get("scans"):
+            L.append(f"  scan screen: {sc['scans']} scan(s), {len(sc['boxes'])} read the screen: "
+                     f"{_span(sc['boxes'])} box(es), {_span(sc['blocks'])} block(s) a scan, {sc['none']} with none, "
+                     f"{sc['truncated']} truncated; {_span(sc['ms'])} ms a scan"
+                     + ("; failed with " + ", ".join(f"rc {r} x{n}" for r, n in sorted(sc["rcs"].items()))
+                        if sc["rcs"] else ""))
         gt = lg.get("gate") or {}
         if gt.get("jobs"):
             sc = sorted(gt["scores"])

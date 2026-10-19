@@ -296,7 +296,9 @@ if(VJO_WITH_VOCR)
     ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c
     # API 23: the Anki screenshot's JPEG encoder, in the game's process only (never the Shell's),
     # and the arena it encodes into
-    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c)
+    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c
+    # API 30: scan screen's map for the overlay (core/spot_pick.h), made with the scan: the Shell looks it up
+    ${ROOT}/core/spot_pick.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
@@ -305,7 +307,7 @@ if(VJO_WITH_VOCR)
   # decoder are vita-vn-ocr's runtime and core/vocr_ocr.c, built apart. -Os pays for
   # the model tiers' ladder (API 21: +788 B of text at -O2) within the module's
   # pages (game_ocr/main.c's text 12,276 B at -O2 before it, 9,164 B at -Os with it).
-  set_source_files_properties(${ROOT}/game_ocr/main.c PROPERTIES COMPILE_OPTIONS "-Os")
+  set_source_files_properties(${ROOT}/game_ocr/main.c ${ROOT}/core/spot_pick.c PROPERTIES COMPILE_OPTIONS "-Os")
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
     -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)

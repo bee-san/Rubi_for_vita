@@ -12,7 +12,8 @@ import zipfile
 
 from prepare_ocr import (VOCR_ASSETS, VOCR_GATE_ASSETS, VOCR_GATE_ATTRIBUTION, VOCR_GATE_ATTRIBUTION_PIN,
                          VOCR_GATE_MODEL, VOCR_GATE_TAG, VOCR_GENERATION, VOCR_LM_ASSETS, VOCR_LM_ATTRIBUTION,
-                         VOCR_LM_ATTRIBUTION_PIN,
+                         VOCR_LM_ATTRIBUTION_PIN, VOCR_SPOT_ASSETS, VOCR_SPOT_ATTRIBUTION, VOCR_SPOT_ATTRIBUTION_PIN,
+                         VOCR_SPOT_MODEL, VOCR_SPOT_TAG,
                          VOCR_LM_TAG, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN, VOCR_MODEL_ATTRIBUTION_TAG,
                          VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, VOCR5_ASSETS, VOCR5_TAG,
                          model_tiers)
@@ -23,7 +24,7 @@ SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
 # The config template's on | off switches and its numbers, as core/config.c parses them: the manifest's
 # defaults give them as true/false and as integers, and every other setting as the template writes it.
 SWITCHES = ("japanese_only_selection", "frequency_badge", "ocr_skip_blank_lines", "ocr_boost_clock", "log_file",
-            "anki_mining", "anki_screenshot", "ocr_text_gate")
+            "anki_mining", "anki_screenshot", "ocr_text_gate", "ocr_scan_screen")
 NUMBERS = ("local_dictionary_results", "stick_lookup_ms", "font_size_ja", "font_size_en", "ocr_settle_ms",
            "ocr_settle_max_ms", "ocr_settle_press_ms", "ocr_cascade_ms", "ocr_threads")
 # Settings that can hold a credential (an audio source URL can carry one). The manifest gives them only as
@@ -119,6 +120,8 @@ def shipped_models():
         models.append((name, VOCR_LM_ASSETS, VOCR_LM_TAG, "character LM (beam + LM decoder)"))
     # the text-presence gate's weights (ocr_text_gate, off by default; vita-vn-ocr #100)
     models.append((VOCR_GATE_MODEL, VOCR_GATE_ASSETS, VOCR_GATE_TAG, "text-presence gate (ocr_text_gate)"))
+    # scan screen's text spotter weights (ocr_scan_screen, off by default; vita-vn-ocr #104)
+    models.append((VOCR_SPOT_MODEL, VOCR_SPOT_ASSETS, VOCR_SPOT_TAG, "text spotter (ocr_scan_screen)"))
     return models
 
 
@@ -304,6 +307,16 @@ def write_package(base, output, models, assets, conversion, version, source_revi
         raise ValueError("The text-presence gate's " + VOCR_GATE_ATTRIBUTION + " checksum failed: not release "
                          + VOCR_GATE_TAG + "'s ATTRIBUTION.md")
     assets[DATA + "ocr/" + VOCR_GATE_ATTRIBUTION] = attribution
+    # The same for scan screen's text spotter: its release's ATTRIBUTION.md ships as ocr/TEXTSPOT-ATTRIBUTION.md.
+    attribution = models / VOCR_SPOT_ATTRIBUTION
+    if not attribution.is_file():
+        raise ValueError("The text spotter's " + VOCR_SPOT_ATTRIBUTION + " is missing (release " + VOCR_SPOT_TAG
+                         + "'s ATTRIBUTION.md: tools/prepare_ocr.py --backend vocr-tiers)")
+    _, size, sha = VOCR_SPOT_ATTRIBUTION_PIN[VOCR_SPOT_ATTRIBUTION]
+    if attribution.stat().st_size != size or digest(attribution) != sha:
+        raise ValueError("The text spotter's " + VOCR_SPOT_ATTRIBUTION + " checksum failed: not release "
+                         + VOCR_SPOT_TAG + "'s ATTRIBUTION.md")
+    assets[DATA + "ocr/" + VOCR_SPOT_ATTRIBUTION] = attribution
     # The defaults are the package's config template's (the same file as both config.ini copies).
     manifest = {"version": version, "files": {}, "dictionary": conversion,
                 "defaults": manifest_defaults(assets["config.ini"].read_text(encoding="utf-8"), shipped),

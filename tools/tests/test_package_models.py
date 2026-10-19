@@ -54,6 +54,13 @@ class PackageModels(unittest.TestCase):
             "https://fixture.invalid/G", len(self.gate), hashlib.sha256(self.gate).hexdigest())}))
         self.enterContext(mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", {prepare.VOCR_GATE_ATTRIBUTION: (
             "https://fixture.invalid/GA", len(self.gate_attribution), hashlib.sha256(self.gate_attribution).hexdigest())}))
+        # API 30: scan screen's text spotter weights and attribution (ocr_scan_screen)
+        self.spot = b"tiny spotter fixture, not its weights"
+        self.spot_attribution = b"the text spotter's attribution fixture"
+        self.enterContext(mock.patch.object(release, "VOCR_SPOT_ASSETS", {prepare.VOCR_SPOT_MODEL: (
+            "https://fixture.invalid/S", len(self.spot), hashlib.sha256(self.spot).hexdigest())}))
+        self.enterContext(mock.patch.object(release, "VOCR_SPOT_ATTRIBUTION_PIN", {prepare.VOCR_SPOT_ATTRIBUTION: (
+            "https://fixture.invalid/SA", len(self.spot_attribution), hashlib.sha256(self.spot_attribution).hexdigest())}))
         for module in (prepare, release):
             self.enterContext(mock.patch.object(module, "VOCR_ASSETS", old))
             self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
@@ -86,6 +93,8 @@ class PackageModels(unittest.TestCase):
         (self.models / prepare.VOCR_MODEL_ATTRIBUTION).write_bytes(self.model_attribution)
         (self.models / prepare.VOCR_GATE_MODEL).write_bytes(self.gate)
         (self.models / prepare.VOCR_GATE_ATTRIBUTION).write_bytes(self.gate_attribution)
+        (self.models / prepare.VOCR_SPOT_MODEL).write_bytes(self.spot)
+        (self.models / prepare.VOCR_SPOT_ATTRIBUTION).write_bytes(self.spot_attribution)
 
     def package_fixture(self, settings=None, write_models=True, vpk=b"synthetic package fixture", record=None):
         """The release package of a synthetic base archive and the fixture models (written first
@@ -160,7 +169,8 @@ class PackageModels(unittest.TestCase):
                 self.assertIn(release.DATA + "ocr/" + name, manifest["files"])
                 self.assertIn(name, manifest["models"])
                 self.assertEqual(archive.read(release.DATA + "ocr/" + name), self.fixture_of(name))
-            self.assertEqual(sorted(manifest["models"]), sorted({*sizes, *prepare.VOCR_LM_ASSETS, prepare.VOCR_GATE_MODEL}))
+            self.assertEqual(sorted(manifest["models"]), sorted({*sizes, *prepare.VOCR_LM_ASSETS, prepare.VOCR_GATE_MODEL,
+                                                                 prepare.VOCR_SPOT_MODEL}))
             # API 26: the text-presence gate's weights and their release's attribution ship beside the models
             gate = manifest["models"][prepare.VOCR_GATE_MODEL]
             self.assertEqual((gate["release"], gate["bytes"], gate["role"]),
@@ -169,6 +179,14 @@ class PackageModels(unittest.TestCase):
             self.assertNotIn("generation", gate)
             self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_GATE_MODEL), self.gate)
             self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_GATE_ATTRIBUTION), self.gate_attribution)
+            # API 30: scan screen's text spotter weights and their release's attribution, the same way
+            spot = manifest["models"][prepare.VOCR_SPOT_MODEL]
+            self.assertEqual((spot["release"], spot["bytes"], spot["role"]),
+                             ("bee-san/vita-vn-ocr " + prepare.VOCR_SPOT_TAG, len(self.spot),
+                              "text spotter (ocr_scan_screen)"))
+            self.assertNotIn("generation", spot)
+            self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_SPOT_MODEL), self.spot)
+            self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_SPOT_ATTRIBUTION), self.spot_attribution)
             for name in ("FL10_w8.vocr", "H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR3_H15_w8.vocr", "VOCR4_FL10_w8.vocr",
                          "VOCR4_H15_w8.vocr", "VOCR4_W20_w8.vocr"):
                 if name not in sizes:
@@ -259,6 +277,20 @@ class PackageModels(unittest.TestCase):
         non-commercial terms) ship as ocr/GATE-ATTRIBUTION.md: a package without either, or with another file
         under its name, is refused."""
         for name, other in ((prepare.VOCR_GATE_MODEL, b"another gate"), (prepare.VOCR_GATE_ATTRIBUTION, self.attribution)):
+            self.write_models()
+            (self.models / name).unlink()
+            with self.assertRaisesRegex(ValueError, re.escape(name) + ".* missing|missing: " + re.escape(name)):
+                self.package_fixture(write_models=False)
+            (self.models / name).write_bytes(other)
+            with self.assertRaisesRegex(ValueError, "checksum failed"):
+                self.package_fixture(write_models=False)
+            self.assertFalse((self.root / "package.zip").exists())
+
+    def test_the_spotters_weights_and_attribution_are_required_and_pinned(self):
+        """API 30: scan screen's text spotter weights (vita-vn-ocr #104's VTSP blob, read at run time by a scan when
+        ocr_scan_screen = on) and its release's ATTRIBUTION.md ship as ocr/TEXTSPOT-ATTRIBUTION.md: a package
+        without either, or with another file under its name, is refused."""
+        for name, other in ((prepare.VOCR_SPOT_MODEL, b"another spotter"), (prepare.VOCR_SPOT_ATTRIBUTION, self.attribution)):
             self.write_models()
             (self.models / name).unlink()
             with self.assertRaisesRegex(ValueError, re.escape(name) + ".* missing|missing: " + re.escape(name)):

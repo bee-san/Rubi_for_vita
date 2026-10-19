@@ -53,6 +53,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->log_file = 1; /* log.txt is on unless log_file = off */
     c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
     c->ocr_text_gate = VJO_TEXT_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Text-presence gate" */
+    c->ocr_scan_screen = VJO_SCAN_SCREEN_DEFAULT; /* docs/vita-vn-ocr.md, "Scan screen" */
 }
 
 const char *vjo_config_default_text(void)
@@ -130,6 +131,9 @@ const char *vjo_config_default_text(void)
            "; vocr: no lines where a text-presence gate sees no text (a hidden text box,\n"
            "; a CG screen): on | off\n"
            "ocr_text_gate = " VJO_TEXT_GATE_DEFAULT_TEXT "\n"
+           "; vocr: □ starts on the text boxes found on the whole screen (pick one, or draw\n"
+           "; by hand with Cancel): on | off\n"
+           "ocr_scan_screen = " VJO_SCAN_SCREEN_DEFAULT_TEXT "\n"
            "; vocr: lines read at once (1-3), 444 MHz while reading (on | off: the Rubi\n"
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
@@ -558,9 +562,9 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_refine_lines")) {
         static const char *const modes[] = {"off", "on", "psp", NULL};
         set_choice(c, key, val, &c->ocr_refine_lines, modes);
-    } else if (vjo_ieq(key, "ocr_text_gate")) {
+    } else if (vjo_ieq(key, "ocr_text_gate") || vjo_ieq(key, "ocr_scan_screen")) {
         static const char *const off_on[] = {"off", "on", NULL};
-        set_choice(c, key, val, &c->ocr_text_gate, off_on);
+        set_choice(c, key, val, vjo_ieq(key, "ocr_text_gate") ? &c->ocr_text_gate : &c->ocr_scan_screen, off_on);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;

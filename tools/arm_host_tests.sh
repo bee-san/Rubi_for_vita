@@ -89,6 +89,8 @@ build kernel_loader host/tests/test_kernel_loader.c host/tests/games_io_posix.c 
 # the self-test's memory routes: the debug build's only
 [ "$VJO_DEBUG" = 0 ] || build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
+# API 30, scan screen's map (core/spot_pick.c, made by the game worker on the A9): its 32-bit scaling and the picks.
+build spot_pick host/tests/test_spot_pick.c core/spot_pick.c
 # The overlay's arrow keys over the header's displayed rows (#81): pure C, float cell edges.
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 # The recognized text's lines as one running text (core/textjoin.h): byte offsets, 32-bit size_t.
@@ -118,7 +120,8 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 
-TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
+TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select
+       spot_pick)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
 TESTS+=(touch_hold text_rows text_join linebreak stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
@@ -132,7 +135,7 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
     "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
     -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
     "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
-    "$RT/vocr_lines_rows.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" \
+    "$RT/vocr_lines_rows.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_textspot.c" \
     third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
     third_party/bearssl/src/codec/enc32be.c -lm
   TESTS+=(capture_parity)

@@ -383,7 +383,15 @@ static const char *logged(const char *needle)
 #define DLOGGED(needle) (logged(needle) == NULL)
 #endif
 int vjo_region_load(const char *id, VjoRect *out, VjoArena *a) { if (!saved_region.w) return 0; *out = saved_region; return VJO_REGION_GAME; }
-int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a) { return 0; }
+static int regions_saved;
+static VjoRect last_saved; /* the region a save wrote ({0}: the full screen) */
+int vjo_region_save(const char *id, const VjoRect *r, VjoArena *a)
+{
+    regions_saved++;
+    if (r) last_saved = *r;
+    else memset(&last_saved, 0, sizeof(last_saved));
+    return 0;
+}
 /* The Rubi app's stamps and its eboot.bin (shell/files.c), scripted (core/app_stamp.h). */
 static char app_installed[64], app_record[64];
 static int app_installed_rc, app_record_rc, app_eboot;
@@ -627,11 +635,43 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     if (rc == 0) net_phase = NET_RESULT; /* the result is the Shell's from here to job_done */
     return rc;
 }
+/* API 30, a scan (scan screen): the fake worker's set and its failure; its map is made as game_ocr/main.c
+ * run_spot makes it (core/spot_pick.c). */
+static VjoSpotResult fake_scan_set;
+static int fake_scan_rc;
+static int fake_scan_bad; /* 1..5: the scan's map is not vjo_spot_map's (an index out of its blocks) */
+static unsigned scans;
 static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
 {
     TEST_CHECK(seq == 12);
     test_now += fake_exchange_us;
     TEST_CHECK(exchange_batch_ok());
+    if (fake_game_request.speed & VJO_GAME_OCR_S_SPOT) {
+        VjoSpotScan *sc = (VjoSpotScan *)(void *)fake_game_result.text;
+        /* exactly the whole frame and the spotter's file, nothing else (the kernel refuses another shape) */
+        TEST_CHECK(fake_game_request.flags == VJO_GAME_OCR_F_FULL && fake_game_request.speed == VJO_GAME_OCR_S_SPOT &&
+                   !fake_game_request.tiers && !fake_game_request.fallback[0] &&
+                   !strcmp(fake_game_request.model, VJO_VOCR_SPOT_NAME) &&
+                   !strcmp(fake_game_request.model_dir, cfg.ocr_model_dir));
+        scans++;
+        fake_game_result.rc = fake_scan_rc;
+        fake_game_result.fb_width = 960;
+        fake_game_result.fb_height = 544;
+        fake_game_result.find_us = 123456;
+        if (!fake_scan_rc) {
+            sc->set = fake_scan_set;
+            vjo_spot_map(&sc->set, 960, 544, &sc->map);
+            switch (fake_scan_bad) { /* the map has 2 blocks */
+            case 1: sc->map.count = VJO_SPOT_SHOWN + 1; break;
+            case 2: sc->map.count = 255; break;
+            case 3: sc->map.start = 2; break;
+            case 4: sc->map.next[0][1] = 2; break;
+            case 5: sc->map.next[1][3] = 255; break;
+            }
+        }
+        *out = fake_game_result;
+        return 0;
+    }
     if (fake_republish && republish_reads < 2) {
         if (republish_reads++ == 0) state.region_seq = 0;
         else { captured_while_void = job_captured; state.capture_scene = state.scene = state.region_scene = 3; state.region_seq = 5; }
@@ -849,7 +889,14 @@ static void reset(void)
     log_count = 0;
     fake_screen_changes = 0;
     fake_cancel_on_read = 0;
+    scans = 0;
+    fake_scan_rc = 0;
+    memset(&fake_scan_set, 0, sizeof(fake_scan_set));
+    fake_scan_set.pick = -1;
 #endif
+    scan_waiting = job_scan = 0;
+    regions_saved = 0;
+    memset(&last_saved, 0, sizeof(last_saved));
     selftest_waits = 0;
     job_refresh = 0;
 #if VJO_DEBUG
@@ -2899,6 +2946,245 @@ static void test_character_scene_change_keeps_the_shown_text(void)
         job_running = 0;
     }
 }
+
+#ifdef VJO_WITH_VOCR
+/* ---- scan screen (API 30, ocr_scan_screen; core/spot_pick.h) ---- */
+/* The sample's scan (host/fixtures/textspot): a HUD line (0) and the name plate with the dialogue (1, the pick). */
+static void fake_scan_screen(void)
+{
+    memset(&fake_scan_set, 0, sizeof(fake_scan_set));
+    fake_scan_set.count = 3;
+    fake_scan_set.block_count = 2;
+    fake_scan_set.pick = 1;
+    fake_scan_set.box[0] = (VjoSpotBox){12, 10, 376, 28, 0, 83, 0, 0};
+    fake_scan_set.box[1] = (VjoSpotBox){43, 324, 74, 39, 0, 118, 0, 1};
+    fake_scan_set.box[2] = (VjoSpotBox){67, 380, 434, 79, 0, 124, 0, 1};
+    fake_scan_set.block[0] = (VjoSpotBlock){12, 10, 376, 28, 0, 0, 1, 0};
+    fake_scan_set.block[1] = (VjoSpotBlock){43, 324, 562, 135, 0, 1, 2, 0};
+}
+
+/* The overlay open on the game, its job done, and □ with ocr_scan_screen on: the scan runs once the network
+ * thread is free (the next control tick) and its map reaches the view. Returns the spot seq before it. */
+static uint32_t scan_from_the_open_overlay(void)
+{
+    uint32_t seq;
+    reset();
+    loaded.ocr_scan_screen = 1;
+    cfg = loaded;
+    fake_scan_screen();
+    open_overlay();
+    finish_current_job();
+    TEST_CHECK(g_view.spot.on == 1 && !scans);
+    seq = g_view.spot.seq;
+    vjo_post_command(VJO_CMD_SCAN, NULL);
+    on_command();
+    TEST_CHECK(scan_waiting && !job_scan);
+    control_tick(0);
+    TEST_CHECK(job_running && job_scan && !scan_waiting);
+    finish_current_job();
+    TEST_CHECK(scans == 1 && !job_running && !job_scan && g_view.spot.seq == seq + 1);
+    return seq;
+}
+
+/* Off, the default: the view says so, and nothing the overlay or the worker does sends a scan. */
+static void test_scan_screen_off_sends_no_scan(void)
+{
+    VjoRect r = {2, 4, 100, 50};
+    reset();
+    TEST_CHECK(!cfg.ocr_scan_screen && !loaded.ocr_scan_screen);
+    open_overlay();
+    finish_current_job();
+    TEST_CHECK(!g_view.spot.on && !g_view.spot.seq && !scans);
+    vjo_post_command(VJO_CMD_SET_REGION, &r);
+    on_command();
+    TEST_CHECK(ov == OV_CLOSED && !scans && !job_scan && !scan_waiting && regions_saved == 1);
+    open_overlay();
+    finish_current_job();
+    TEST_CHECK(!scans && !(fake_game_request.speed & VJO_GAME_OCR_S_SPOT));
+}
+
+/* On: the scan is the whole frame and the spotter's file only, and the view gets the worker's map of it. */
+static void test_scan_screen_publishes_the_scan_s_map(void)
+{
+    VjoSpotMap want;
+    unsigned shown;
+    scan_from_the_open_overlay();
+    vjo_spot_map(&fake_scan_set, 960, 544, &want);
+    TEST_CHECK(!memcmp(&g_view.spot.map, &want, sizeof(want)));
+    TEST_CHECK(g_view.spot.map.count == 2 && g_view.spot.map.start == 1);
+    /* a scan is no OCR job: the shown text, its lookup and the history stay as they were */
+    shown = (unsigned)history_calls;
+    TEST_CHECK(local_text_valid && g_view.list && history_calls == shown);
+    TEST_CHECK(logged("scan rc=0: 3 boxes, 2 blocks, pick 1") != NULL);
+}
+
+/* Enter (or a touch) on a block: it is the game's region, saved as a box drawn by hand is, and read at once
+ * with the overlay open for its text (owner's use case: pick one, read it, look it up). */
+static void test_scan_screen_pick_saves_the_region_and_reads_it(void)
+{
+    VjoRect r = {2048, 39000, 38000, 17000};
+    scan_from_the_open_overlay();
+    regions_set = 0;
+    vjo_post_command(VJO_CMD_SCAN_PICK, &r);
+    on_command();
+    TEST_CHECK(regions_saved == 1 && !memcmp(&last_saved, &r, sizeof(r)) && regions_set == 1);
+    TEST_CHECK(ov == OV_OPEN && job_running && job_lookup && !job_scan && !local_text_valid);
+    TEST_CHECK(!strcmp(g_view.status, "Recognizing…") && g_view.open);
+    TEST_CHECK(logged("region set for PCSG00415: 2048,39000,38000,17000 (scanned)") != NULL);
+    finish_current_job();
+    TEST_CHECK(local_text_valid && g_view.list && scans == 1 && !(fake_game_request.speed & VJO_GAME_OCR_S_SPOT));
+    /* a box drawn by hand still saves and closes, as before */
+    vjo_post_command(VJO_CMD_SET_REGION, &r);
+    on_command();
+    TEST_CHECK(ov == OV_CLOSED && regions_saved == 2);
+}
+
+/* A pick while another job runs (a refresh, say): that job is for the old region, so it is cancelled and a read
+ * of the new one follows it (OV_OPEN_OLD_JOB), as when the overlay opens over a running job. */
+static void test_scan_screen_pick_waits_for_a_running_job(void)
+{
+    VjoRect r = {2048, 39000, 38000, 17000};
+    scan_from_the_open_overlay();
+    start_job_kind("auto: screen settled", 0, 1); /* a refresh */
+    TEST_ASSERT(job_running && job_refresh);
+    vjo_post_command(VJO_CMD_SCAN_PICK, &r);
+    on_command();
+    TEST_CHECK(ov == OV_OPEN_OLD_JOB && job_cancelled && job_refresh);
+    finish_current_job(); /* the cancelled refresh: its end starts the read of the new region */
+    TEST_CHECK(job_running && !job_refresh && job_lookup);
+    finish_current_job();
+    TEST_CHECK(ov == OV_OPEN && local_text_valid && g_view.list);
+}
+
+/* A failed scan (no weights on the card, say) publishes no block: the overlay then draws by hand. A scan the
+ * overlay's close cancelled publishes nothing, and a scan asked for with the overlay closed never runs. */
+static void test_scan_screen_failures_and_closes(void)
+{
+    uint32_t seq;
+    reset();
+    loaded.ocr_scan_screen = 1;
+    cfg = loaded;
+    fake_scan_screen();
+    fake_scan_rc = VJO_E_OCR_MODEL;
+    open_overlay();
+    finish_current_job();
+    seq = g_view.spot.seq;
+    g_view.spot.map.count = 7; /* a stale map from an earlier scan */
+    vjo_post_command(VJO_CMD_SCAN, NULL);
+    on_command();
+    control_tick(0);
+    finish_current_job();
+    TEST_CHECK(scans == 1 && g_view.spot.seq == seq + 1 && !g_view.spot.map.count);
+    TEST_CHECK(logged("scan rc=-115: 0 boxes, 0 blocks, pick -1") != NULL);
+    /* closed while the scan runs: cancelled, nothing published */
+    fake_scan_rc = 0;
+    seq = g_view.spot.seq;
+    vjo_post_command(VJO_CMD_SCAN, NULL);
+    on_command();
+    control_tick(0);
+    TEST_ASSERT(job_running && job_scan);
+    close_overlay();
+    TEST_CHECK(job_cancelled && !scan_waiting);
+    finish_current_job();
+    TEST_CHECK(g_view.spot.seq == seq && !job_running && scans == 1); /* cancelled before its exchange */
+    /* asked for, then closed before the network thread was free: never runs */
+    open_overlay();
+    if (job_running) /* (a reopen on the same screen shows the saved word: no job) */
+        finish_current_job();
+    start_job_kind("auto: screen settled", 0, 1);
+    vjo_post_command(VJO_CMD_SCAN, NULL);
+    on_command();
+    TEST_CHECK(scan_waiting && job_cancelled); /* the refresh yields to it */
+    close_overlay();
+    TEST_CHECK(!scan_waiting);
+    finish_current_job();
+    control_tick(0);
+    TEST_CHECK(!job_scan && scans == 1); /* the scan the close cancelled never reached the game either */
+}
+
+/* A screen that settles while the scan runs (the game moved on, or the region's icon blinked) does not cancel it:
+ * a scan holds no capture of the region (a stale one of the job before must not stand in for it), and the overlay
+ * waits for the scan's result, which nothing else would end (it waited until Cancel). */
+static void test_scan_screen_a_screen_settling_during_the_scan_keeps_it(void)
+{
+    uint32_t seq;
+    reset();
+    loaded.ocr_scan_screen = 1;
+    cfg = loaded;
+    fake_scan_screen();
+    open_overlay();
+    finish_current_job();
+    TEST_ASSERT(job_captured); /* the OCR job's capture, of scene 2 */
+    seq = g_view.spot.seq;
+    vjo_post_command(VJO_CMD_SCAN, NULL);
+    on_command();
+    control_tick(0);
+    TEST_ASSERT(job_running && job_scan);
+    state.scene = state.capture_scene = state.region_scene = 3; /* another screen, settled */
+    state.region_seq = 5;
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(job_scan && !job_cancelled);
+    finish_current_job();
+    TEST_CHECK(scans == 1 && g_view.spot.seq == seq + 1 && g_view.spot.map.count == 2);
+}
+
+/* The map comes from the game's process: one whose count, start or a neighbour leaves its blocks (not
+ * vjo_spot_map's) is not published, so the overlay's lookups (vjo_spot_hit, vjo_spot_step, its rect[]) never
+ * index past the map; the overlay then draws by hand, as with a scan that found nothing. */
+static void test_scan_screen_a_map_out_of_its_blocks_is_not_used(void)
+{
+    for (int bad = 1; bad <= 5; bad++) {
+        uint32_t seq;
+        reset();
+        loaded.ocr_scan_screen = 1;
+        cfg = loaded;
+        fake_scan_screen();
+        open_overlay();
+        finish_current_job();
+        seq = g_view.spot.seq;
+        vjo_post_command(VJO_CMD_SCAN, NULL);
+        on_command();
+        control_tick(0);
+        TEST_ASSERT(job_running && job_scan);
+        fake_scan_bad = bad;
+        finish_current_job();
+        fake_scan_bad = 0;
+        TEST_CHECK(scans == 1 && g_view.spot.seq == seq + 1);
+        TEST_CHECK(g_view.spot.map.count == 0 && g_view.spot.map.start <= 0);
+        TEST_MSG("corruption %d: count %u start %d", bad, g_view.spot.map.count, g_view.spot.map.start);
+    }
+}
+
+/* Closed and opened again while a scan runs: the reopened overlay gets what it waits for once the scan ends, as
+ * after a prepared word: on the same screen the shown text's lookup, on another one its own read
+ * (OV_OPEN_OLD_JOB); never nothing ("Looking up words…" or "Recognizing…" stayed: a scan has nothing to show). */
+static void test_scan_screen_reopen_during_a_scan_gets_its_read(void)
+{
+    for (int other_screen = 0; other_screen <= 1; other_screen++) {
+        reset();
+        loaded.ocr_scan_screen = 1;
+        cfg = loaded;
+        fake_scan_screen();
+        open_overlay();
+        finish_current_job();
+        vjo_post_command(VJO_CMD_SCAN, NULL);
+        on_command();
+        control_tick(0);
+        TEST_ASSERT(job_running && job_scan);
+        close_overlay();
+        if (other_screen) { state.scene = state.capture_scene = state.region_scene = 3; state.region_seq = 5; }
+        open_overlay();
+        TEST_CHECK(other_screen ? ov == OV_OPEN_OLD_JOB : ov == OV_OPEN && cursor_waiting);
+        TEST_CHECK(job_scan && job_cancelled);
+        finish_current_job();
+        TEST_CHECK(ov == OV_OPEN && job_running && !job_scan && (other_screen ? !job_cursor_only : job_cursor_only));
+        finish_current_job();
+        TEST_CHECK(g_view.list != NULL && !job_running);
+        TEST_MSG("other screen %d: status \"%s\"", other_screen, g_view.status);
+    }
+}
+#endif
+
 static void test_character_command_priority_and_generation_boundaries(void)
 {
     cursor_saved_text(); open_overlay(); finish_current_job();
@@ -7176,6 +7462,16 @@ TEST_LIST = {
      test_ps_with_the_overlay_open_releases_input_and_leaves_touch_to_shell},
     {"foreground_switch_gives_the_touch_region_back", test_foreground_switch_gives_the_touch_region_back},
     {"close_just_before_ps_leaves_touch_to_shell", test_close_just_before_ps_leaves_touch_to_shell},
+#ifdef VJO_WITH_VOCR
+    {"scan_screen_off_sends_no_scan", test_scan_screen_off_sends_no_scan},
+    {"scan_screen_publishes_the_scan_s_map", test_scan_screen_publishes_the_scan_s_map},
+    {"scan_screen_pick_saves_the_region_and_reads_it", test_scan_screen_pick_saves_the_region_and_reads_it},
+    {"scan_screen_pick_waits_for_a_running_job", test_scan_screen_pick_waits_for_a_running_job},
+    {"scan_screen_failures_and_closes", test_scan_screen_failures_and_closes},
+    {"scan_screen_reopen_during_a_scan_gets_its_read", test_scan_screen_reopen_during_a_scan_gets_its_read},
+    {"scan_screen_a_screen_settling_during_the_scan_keeps_it", test_scan_screen_a_screen_settling_during_the_scan_keeps_it},
+    {"scan_screen_a_map_out_of_its_blocks_is_not_used", test_scan_screen_a_map_out_of_its_blocks_is_not_used},
+#endif
     {NULL, NULL}
 };
 #endif /* VJO_VOCR_TIERS_TEST */

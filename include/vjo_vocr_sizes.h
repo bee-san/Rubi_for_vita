@@ -93,5 +93,14 @@
  * models, read through the kernel's broker (VJO_GAME_OCR_OPEN_GATE) by a job with VJO_GAME_OCR_S_GATE. */
 #define VJO_VOCR_GATE_NAME "textgate_p8_c8_w8.vtd"
 #define VJO_VOCR_GATE_BYTES 1540u
+/* API 30: the full-frame text spotter's int8 weights (vita-vn-ocr #104, docs/textspot.md there: a VTSP blob,
+ * tools/prepare_ocr.py pins the file and its release, core/vocr_ocr.c its SHA-256): a file beside the models,
+ * read through the kernel's broker (VJO_GAME_OCR_OPEN_SPOT) by a scan only (VJO_GAME_OCR_S_SPOT, config.ini
+ * ocr_scan_screen). VJO_VOCR_SPOT_ARENA is the runtime's vocr_textspot_arena_bytes(m, 960, 544) for these
+ * weights, exact for every frame the kernel gives (at most 960 x 544): the scan's arena
+ * (host/tests/test_game_spot.c checks it on the pinned file). */
+#define VJO_VOCR_SPOT_NAME "textspot_s4_c24n4_w8.vtsp"
+#define VJO_VOCR_SPOT_BYTES 5732u
+#define VJO_VOCR_SPOT_ARENA 80799u
 
 #endif

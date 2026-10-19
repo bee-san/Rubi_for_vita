@@ -361,7 +361,10 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         (next.tiers & ~VJO_VOCR_TIERS_ALL) || (next.speed & ~VJO_GAME_OCR_S_ALL) ||
         (shot ? !shot_id_ok(next.shot) || (next.flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL)) ||
                     next.tiers || next.speed
-              : !next.model[0] || !next.model_dir[0] || next.shot[0])) {
+              : !next.model[0] || !next.model_dir[0] || next.shot[0]) ||
+        /* API 30: a scan is the whole frame and nothing else */
+        ((next.speed & VJO_GAME_OCR_S_SPOT) &&
+         (next.speed != VJO_GAME_OCR_S_SPOT || next.flags != VJO_GAME_OCR_F_FULL || next.tiers || next.fallback[0]))) {
         rc = VJO_ERR_ARG; goto out;
     }
     VJO_LOCK();
@@ -959,9 +962,13 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     uint32_t model_tier = which >= VJO_GAME_OCR_OPEN_TIER && which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS
                           ? which - VJO_GAME_OCR_OPEN_TIER + 1u : 0u;
     int gate = which == VJO_GAME_OCR_OPEN_GATE; /* API 26: the text-presence gate's weights, for its request only */
+    int spot = which == VJO_GAME_OCR_OPEN_SPOT; /* API 30: the text spotter's weights, for a scan only */
     if (gate) {
         if (!(request.speed & VJO_GAME_OCR_S_GATE)) return VJO_ERR_ARG;
         name = VJO_VOCR_GATE_NAME;
+    } else if (spot) {
+        if (!(request.speed & VJO_GAME_OCR_S_SPOT)) return VJO_ERR_ARG;
+        name = VJO_VOCR_SPOT_NAME;
     } else if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
         lm_tier <= ((request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK)) name = lm_name(lm_tier);
     else if (model_tier && tier_allowed(&request, model_tier)) name = tier_name(model_tier);
@@ -971,7 +978,7 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     else if (which == VJO_GAME_OCR_OPEN_CASCADE &&
              ((request.flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK)) name = VJO_VOCR_CASCADE_NAME;
     else return VJO_ERR_ARG;
-    size = gate ? VJO_VOCR_GATE_BYTES : lm_tier ? lm_size(lm_tier) : model_size(name);
+    size = gate ? VJO_VOCR_GATE_BYTES : spot ? VJO_VOCR_SPOT_BYTES : lm_tier ? lm_size(lm_tier) : model_size(name);
     if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
     model_io.seq = seq;
     model_io.pid = pid;

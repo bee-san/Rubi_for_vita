@@ -10,6 +10,7 @@
 #include "../core/config.h"
 #include "../core/games.h"
 #include "../core/ledger.h"
+#include "../core/spot_pick.h"
 #include "../core/styled.h"
 #include "../include/vjo_api.h"
 
@@ -82,6 +83,13 @@ typedef struct {
     char strip_text[VJO_STRIP_MAX]; /* "" = no strip drawn */
     int strip_kind;           /* VJO_STRIP_* */
     int strip_busy;           /* a recognition is running */
+    /* Scan screen (API 30, config.ini ocr_scan_screen): the last scan's map, the game worker's
+     * (core/spot_pick.h); seq bumps with each result (worker.c on_scan_done), on is the setting (view_publish) */
+    struct {
+        uint32_t seq;
+        int on;
+        VjoSpotMap map;
+    } spot;
 } VjoView;
 
 extern VjoView g_view;
@@ -101,6 +109,8 @@ enum {
     VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command) */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
     VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
+    VJO_CMD_SCAN,            /* □ with ocr_scan_screen: scan the screen for its text boxes (API 30) */
+    VJO_CMD_SCAN_PICK,       /* a scanned box picked: the game's region (rect), read at once */
 };
 void vjo_post_command(int cmd, const VjoRect *rect);
 /* Call without holding the view lock. Stale/closed requests are ignored. */

@@ -267,15 +267,25 @@ class VocrDefaults(unittest.TestCase):
                                                                 hashlib.sha256(gate_att).hexdigest())}
             (src / prepare_ocr.VOCR_GATE_MODEL).write_bytes(gate)
             (src / prepare_ocr.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
+            # API 30: scan screen's text spotter weights and attribution, the same way
+            spot, spot_att = b"spot fixture", b"the text spotter's attribution"
+            spot_pin = {prepare_ocr.VOCR_SPOT_MODEL: ("https://fixture.invalid/s", len(spot), hashlib.sha256(spot).hexdigest())}
+            spot_att_pin = {prepare_ocr.VOCR_SPOT_ATTRIBUTION: ("https://fixture.invalid/sa", len(spot_att),
+                                                                hashlib.sha256(spot_att).hexdigest())}
+            (src / prepare_ocr.VOCR_SPOT_MODEL).write_bytes(spot)
+            (src / prepare_ocr.VOCR_SPOT_ATTRIBUTION).write_bytes(spot_att)
             with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ASSETS", gate_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ATTRIBUTION_PIN", gate_att_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_SPOT_ASSETS", spot_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_SPOT_ATTRIBUTION_PIN", spot_att_pin), \
                  mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
                 paths = prepare_ocr.fetch_tiers(out, src)
                 self.assertEqual(sorted(p.name for p in paths),
                                  sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md", prepare_ocr.VOCR_GATE_MODEL,
-                                         "GATE-ATTRIBUTION.md"]))
+                                         "GATE-ATTRIBUTION.md", prepare_ocr.VOCR_SPOT_MODEL, "TEXTSPOT-ATTRIBUTION.md"]))
+                self.assertEqual((out / "TEXTSPOT-ATTRIBUTION.md").read_bytes(), spot_att)
                 self.assertEqual((out / "GATE-ATTRIBUTION.md").read_bytes(), gate_att)
                 self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
                 self.assertFalse((out / "ATTRIBUTION.md").exists())  # the LMs' name stays theirs
@@ -320,6 +330,38 @@ class VocrDefaults(unittest.TestCase):
         url, size, sha = prepare_ocr.VOCR_GATE_ATTRIBUTION_PIN[prepare_ocr.VOCR_GATE_ATTRIBUTION]
         self.assertTrue(url.endswith("/releases/download/v0.3.2-textgate.1/ATTRIBUTION.md"))
         self.assertEqual((size, sha), (3706, "44a353c76e19c6bdabcb9dbd06d14867696dcb59ce0460db22d09749af687f6e"))
+
+    def test_the_spotter_pins_agree_python_c_and_cmake(self):
+        """API 30: scan screen's text spotter weights: one name, size and hash in tools/prepare_ocr.py, the plugin
+        (include/vjo_vocr_sizes.h, core/vocr_ocr.c), the host tests' download (cmake/VocrSpot.cmake, whose name
+        and release must be these: a different one makes its tests skip, not fail) and the one-VPK payload, with
+        the same release's ATTRIBUTION.md beside them."""
+        import re  # noqa: PLC0415
+        name = prepare_ocr.VOCR_SPOT_MODEL
+        url, size, sha = prepare_ocr.VOCR_SPOT_ASSETS[name]
+        self.assertRegex(name, r"^textspot_[a-z0-9_]+_w8\.vtsp$")
+        self.assertEqual(url, prepare_ocr.VOCR_SPOT_BASE + name)
+        self.assertTrue(prepare_ocr.VOCR_SPOT_BASE.endswith(f"/releases/download/{prepare_ocr.VOCR_SPOT_TAG}/"))
+        sizes = (ROOT / "include/vjo_vocr_sizes.h").read_text()
+        self.assertIn(f'#define VJO_VOCR_SPOT_NAME "{name}"', sizes)
+        self.assertIn(f"#define VJO_VOCR_SPOT_BYTES {size}u", sizes)
+        c = (ROOT / "core/vocr_ocr.c").read_text()
+        block = c[c.index("spot_sha256[32] = {"):]
+        block = block[:block.index("};")]
+        self.assertEqual("".join(f"{int(b, 16):02x}" for b in re.findall(r"0x([0-9a-fA-F]{2})", block)), sha)
+        cmake = (ROOT / "cmake/VocrSpot.cmake").read_text()
+        self.assertIn(f"set(VJO_VOCR_SPOT_NAME {name})", cmake)
+        self.assertIn(f"set(VJO_VOCR_SPOT_SHA256 {sha})", cmake)
+        self.assertIn(f"/releases/download/{prepare_ocr.VOCR_SPOT_TAG}/${{VJO_VOCR_SPOT_NAME}}", cmake)
+        payload = (ROOT / "include/vjo_payload.h").read_text()
+        self.assertIn("X(VJO_PAYLOAD_OCR VJO_VOCR_SPOT_NAME, VJO_PAYLOAD_COPY)", payload)
+        self.assertIn('X(VJO_PAYLOAD_OCR "TEXTSPOT-ATTRIBUTION.md", VJO_PAYLOAD_COPY)', payload)
+        self.assertEqual((name, size, sha), ("textspot_s4_c24n4_w8.vtsp", 5732,
+                                             "852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf"))
+        self.assertEqual(prepare_ocr.VOCR_SPOT_TAG, "v0.3.3-textspot.1")
+        url, size, sha = prepare_ocr.VOCR_SPOT_ATTRIBUTION_PIN[prepare_ocr.VOCR_SPOT_ATTRIBUTION]
+        self.assertEqual(url, prepare_ocr.VOCR_SPOT_BASE + "ATTRIBUTION.md")
+        self.assertEqual((size, sha), (3345, "0226b181342d2ff93b836b8e0a8a01f7d5736b75cb93bda11a3a0bbe59fae5f7"))
 
     def test_lm_pins_agree_c_kernel_python_and_the_ledger(self):
         table = c_lm_table()
@@ -482,7 +524,8 @@ class VocrDefaults(unittest.TestCase):
             if name not in TIER_FILES:
                 self.assertNotIn(name, shipped)
         self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
-                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL})  # the LMs, the gate (API 26)
+                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL,  # the LMs, the gate (API 26)
+                          prepare_ocr.VOCR_SPOT_MODEL})  # scan screen's text spotter (API 30)
 
 if __name__ == "__main__":
     unittest.main()
