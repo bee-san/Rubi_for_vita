@@ -269,6 +269,7 @@ typedef struct {
     unsigned cycling_rows;   /* distinct such rows */
     unsigned settled;        /* 1: the rows held still for settle_us before the lines were read */
     unsigned settle_timeout; /* 1: settle_max_us ran out first, so the job went on without it */
+    unsigned settle_naps;    /* sleeps between the wait's passes (VjoVocrPolicy.settle_pace_us) */
     /* The blank-line check (VjoVocrPolicy.blank). */
     unsigned blank;          /* lines skipped: no text-like ink in their crop */
     uint32_t blank_us;       /* time spent checking */
@@ -473,6 +474,12 @@ typedef struct {
 typedef struct {
     uint32_t settle_us, settle_max_us;
     int settle_first;
+    /* API 29 (docs/stutter.md): the shortest time from the start of one of the stable-text wait's
+     * passes to the start of the next; the job sleeps in between (needs sleep). Every strip of a pass
+     * is copied from a frame inside the game's display call, and in the owner's console logs the late
+     * frames during jobs came with those copies (docs/stutter.md), so a wait that looks less often
+     * costs the game fewer frames. 0: passes back to back, as in API 28. */
+    uint32_t settle_pace_us;
     int blank;
     unsigned blank_edges;
     void (*line)(void *ud, const VjoVocrLineInfo *info);
@@ -565,6 +572,11 @@ void vjo_vocr_unstick(void);
  * bytes (0 for an unsupported region), never more than VJO_VOCR_CAPTURE_LIMIT;
  * the recent states it keeps per row. */
 unsigned vjo_vocr_strip_rows(unsigned width, unsigned height);
+/* API 29 (docs/stutter.md): rows a strip of a whole pass over the region reads (its first
+ * pass, the finder's passes, the stable-text wait's): the region's height shared out evenly
+ * between the ceil(height / strip rows) strips a pass takes, at most vjo_vocr_strip_rows;
+ * a line's strip is still a whole strip. 0 for an unsupported region. */
+unsigned vjo_vocr_pass_rows(unsigned width, unsigned height);
 size_t vjo_vocr_capture_bytes(unsigned width, unsigned height);
 unsigned vjo_vocr_state_slots(unsigned width, unsigned height);
 

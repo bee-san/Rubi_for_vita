@@ -54,8 +54,11 @@
  * VJO_GAME_OCR_OPEN_VERTICAL. Reverted; main's builds from 4a7ddf8 to 297530c are API 27.
  * 28: API 26's interface again (vertical text left main, to come back as its own pull request): flags
  * bit 15 is unknown again and no Open is VJO_GAME_OCR_OPEN_VERTICAL. A new number, not 26: builds of
- * 27 exist, and a number names one interface only. Sizes are unchanged. */
-#define VJO_API_VERSION 28
+ * 27 exist, and a number names one interface only. Sizes are unchanged.
+ * 29: the stable-text wait's pace (docs/stutter.md): VjoGameOcrRequest.speed bits 8-15
+ * (VJO_GAME_OCR_S_PACE_*, config.ini ocr_settle_pace_ms). The display hook copies an OCR job's rows
+ * after the game's frame is set, not before. Sizes are unchanged. */
+#define VJO_API_VERSION 29
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from

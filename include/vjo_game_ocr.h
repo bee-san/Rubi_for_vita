@@ -81,8 +81,8 @@
  * recognize lines in parallel (0-2, VjoVocrPool: config ocr_threads minus one);
  * bit 2 the ARM clock at 444 MHz while the job recognizes (ocr_boost_clock, on
  * by default; never lowered); bit 3 the line cache neither read nor filled, and emptied (the
- * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below). Other bits
- * are refused, as unknown flags are. */
+ * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below); API 29,
+ * bits 8-15 the stable-text wait's pace (below). Other bits are refused, as unknown flags are. */
 #define VJO_GAME_OCR_S_HELPERS_MASK 0x3u
 #define VJO_GAME_OCR_S_BOOST 0x4u
 #define VJO_GAME_OCR_S_NOCACHE 0x8u
@@ -92,7 +92,13 @@
  * VJO_VOCR_GATE_NAME beside the models (VJO_GAME_OCR_OPEN_GATE). It is in `speed` because the flags have one
  * bit left. */
 #define VJO_GAME_OCR_S_GATE 0x10u
-#define VJO_GAME_OCR_S_ALL 0x1Fu
+/* API 29, bits 8-15: the stable-text wait's pace (core/vocr_ocr.h VjoVocrPolicy.settle_pace_us, config
+ * ocr_settle_pace_ms), in 10 ms: a pass of the wait starts no sooner than this long after the one before
+ * started, the worker sleeping in between (docs/stutter.md); 0: passes back to back, as API 28. */
+#define VJO_GAME_OCR_S_PACE_SHIFT 8u
+#define VJO_GAME_OCR_S_PACE_MASK 0xFFu
+#define VJO_GAME_OCR_S_PACE_UNIT_US 10000u
+#define VJO_GAME_OCR_S_ALL (0x1Fu | (VJO_GAME_OCR_S_PACE_MASK << VJO_GAME_OCR_S_PACE_SHIFT))
 #define VJO_PACE_SLOW_US 25000 /* a frame gap over 25 ms: a dropped frame at 60 fps */
 
 typedef struct {

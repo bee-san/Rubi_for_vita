@@ -1264,6 +1264,8 @@ static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
     p->settle_us = ((r->flags >> VJO_GAME_OCR_SETTLE_SHIFT) & 0xFFu) * VJO_GAME_OCR_SETTLE_UNIT_US;
     p->settle_max_us = (r->flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT) * VJO_GAME_OCR_SETTLE_MAX_UNIT_US;
     p->settle_first = (r->flags & VJO_GAME_OCR_F_SETTLE_FIRST) != 0;
+    /* API 29: the wait's pace (docs/stutter.md); policy_sleep sleeps between its passes */
+    p->settle_pace_us = ((r->speed >> VJO_GAME_OCR_S_PACE_SHIFT) & VJO_GAME_OCR_S_PACE_MASK) * VJO_GAME_OCR_S_PACE_UNIT_US;
     p->blank = (r->flags & VJO_GAME_OCR_F_BLANK) != 0;
     p->gate = (r->speed & VJO_GAME_OCR_S_GATE) != 0; /* API 26: the text-presence gate */
     p->gate_res = &gate_res;

@@ -1926,7 +1926,262 @@ static void test_the_gate_fits_beside_the_finder(void)
     TEST_MSG("the gate's largest arena: %zu B; the least scratch left: %zu B", worst, least);
 }
 
+/* ---- API 29 (docs/stutter.md): the wait's pace, and the passes' strips ---- */
+
+/* A pass's strips share the region's height evenly, as many as before, never more rows than a
+ * strip: CLANNAD's 852 x 135 box (test.2-4) 45 a strip, not 64; test.4's 882 x 122 box 61; the
+ * full screen 55 (ten strips of 59 rows at most); a region inside one strip its own height. */
+static void test_pass_rows_share_the_height(void)
+{
+    static const struct { unsigned w, h, rows, strips; } cases[] = {
+        {852, 135, 45, 3}, {882, 122, 61, 2}, {960, 544, 55, 10}, {400, 100, 50, 2}, {917, 125, 42, 3},
+        {200, 60, 60, 1}, {896, 544, 61, 9}, {960, 32, 32, 1}, {640, 64, 64, 1}, {640, 65, 33, 2}};
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        unsigned strip = vjo_vocr_strip_rows(cases[i].w, cases[i].h), pass = vjo_vocr_pass_rows(cases[i].w, cases[i].h);
+        unsigned strips = (cases[i].h + strip - 1u) / strip;
+        TEST_CHECK(pass == cases[i].rows && pass <= strip && strips == cases[i].strips);
+        TEST_CHECK((cases[i].h + pass - 1u) / pass == strips); /* the same strips a pass */
+        TEST_MSG("%ux%u: strip %u rows, pass strips %u rows, %u a pass", cases[i].w, cases[i].h, strip, pass, strips);
+    }
+    TEST_CHECK(vjo_vocr_pass_rows(0, 100) == 0 && vjo_vocr_pass_rows(400, 0) == 0);
+}
+
+/* The wait's passes: the reads of row 0 before the first pass (FIRST), each a pass's start. */
+static unsigned wait_pass_starts(uint64_t *t0, unsigned cap)
+{
+    unsigned n = 0;
+    for (unsigned i = 0; i < scr.n_log && !(scr.log[i].flags & VJO_STRIP_FIRST); i++)
+        if (scr.log[i].y == 0 && n < cap) t0[n++] = scr.log[i].t0;
+    return n;
+}
+
+/* Text typing out, a job asked before it settled: paced at 150 ms the wait reads the same line
+ * whole, with fewer passes, each starting at least 150 ms after the one before, sleeping between;
+ * it ends within a pace and a pass of the unpaced one. */
+static void test_a_paced_wait_reads_fewer_passes(void)
+{
+    VjoVocrPolicy back = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
+    VjoVocrPolicy paced = back;
+    VjoVocrStats a, b;
+    uint64_t starts[64];
+    unsigned at_a = 0, at_b = 0, n, strips_a, sleeps_a;
+    paced.settle_pace_us = 150000;
+    reset();
+    scr.type_every = 3;
+    TEST_CHECK(run(&back, &a) == VJO_E_OCR_MODEL && a.settled && !a.settle_naps);
+    TEST_ASSERT(published_at(&at_a) >= 0);
+    TEST_CHECK(shown(at_a) == scr.chars); /* read whole */
+    strips_a = a.strips;
+    sleeps_a = scr.sleeps;
+    reset();
+    scr.type_every = 3;
+    TEST_CHECK(run(&paced, &b) == VJO_E_OCR_MODEL && b.settled && !b.settle_timeout && b.tries == 1 && !b.tears);
+    TEST_ASSERT(published_at(&at_b) >= 0);
+    TEST_CHECK(shown(at_b) == scr.chars && b.lines == 1);
+    TEST_CHECK(b.settle_passes < a.settle_passes && b.strips < strips_a && b.settle_naps > 0 && scr.sleeps > sleeps_a);
+    n = wait_pass_starts(starts, 64);
+    TEST_CHECK(n >= 2);
+    for (unsigned i = 1; i < n; i++) TEST_CHECK(starts[i] - starts[i - 1] >= 150000);
+    TEST_CHECK(at_b <= at_a + (150000 + 2u * 2u * FRAME_US) / FRAME_US + 1u);
+    TEST_MSG("back to back: %u passes, %u strips, first pass at frame %u; paced: %u passes, %u strips, %u naps, at %u",
+             a.settle_passes, strips_a, at_a, b.settle_passes, b.strips, b.settle_naps, at_b);
+}
+
+/* The paced wait reads only passes back to back would read, the first that could end it at the
+ * latest: it never ends sooner, so a typewriter's pause gets no shorter window, and what it reads
+ * is the same. Typing that stops at frame 3-45 (and goes on once the capture is published, when it
+ * does), an icon, a still box, each asked before it settled: the paced job's first pass starts no
+ * sooner and shows the same characters; it reads no more strips. */
+static void test_a_paced_wait_never_ends_sooner(void)
+{
+    VjoVocrPolicy back = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
+    VjoVocrPolicy paced = back;
+    unsigned cases = 0;
+    paced.settle_pace_us = 150000;
+    for (unsigned stop = 0; stop <= 45; stop += 3)
+        for (unsigned resume = 0; resume <= 9; resume += 9)
+            for (unsigned blink = 0; blink <= 8; blink += 8) {
+                VjoVocrStats a, b;
+                unsigned at_a = 0, at_b = 0, chars_a, chars_b, strips_a;
+                reset();
+                scr.type_every = stop ? 3 : 0;
+                scr.pause_at = stop;
+                scr.resume_for = resume;
+                scr.blink_every = blink;
+                (void)run(&back, &a);
+                TEST_ASSERT(published_at(&at_a) >= 0);
+                chars_a = shown(at_a);
+                strips_a = a.strips;
+                reset();
+                scr.type_every = stop ? 3 : 0;
+                scr.pause_at = stop;
+                scr.resume_for = resume;
+                scr.blink_every = blink;
+                (void)run(&paced, &b);
+                TEST_ASSERT(published_at(&at_b) >= 0);
+                chars_b = shown(at_b);
+                TEST_CHECK(at_b >= at_a && chars_b == chars_a && b.strips <= strips_a);
+                TEST_MSG("typing stops at %u, resumes for %u, blink %u: first pass at frame %u (%u chars, %u strips) "
+                         "back to back, %u (%u chars, %u strips) paced", stop, resume, blink, at_a, chars_a, strips_a,
+                         at_b, chars_b, b.strips);
+                cases++;
+            }
+    TEST_CHECK(cases == 64);
+}
+
+/* Near its budget the paced wait reads back to back again: text typing until 1.25 s, a budget of 1.30 to
+ * 1.70 s in frame steps; wherever the wait back to back holds still before its budget runs out, the paced
+ * one holds too, never later than a pace after it (the budget's last settle_us + pace are read back to back,
+ * so a change noticed up to a pace late can still hold). */
+static void test_a_paced_wait_holds_where_back_to_back_holds(void)
+{
+    VjoVocrPolicy back = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
+    unsigned held = 0, limited = 0;
+    for (uint32_t max = 1300000; max <= 1700000; max += FRAME_US) {
+        VjoVocrPolicy paced = back;
+        VjoVocrStats a, b;
+        uint64_t end_a, end_b;
+        back.settle_max_us = paced.settle_max_us = max;
+        paced.settle_pace_us = 150000;
+        reset();
+        scr.type_every = 3;
+        (void)run(&back, &a);
+        end_a = scr.clock;
+        reset();
+        scr.type_every = 3;
+        (void)run(&paced, &b);
+        end_b = scr.clock;
+        if (a.settled) {
+            held++;
+            TEST_CHECK(b.settled && !b.settle_timeout && b.tries == a.tries);
+            TEST_CHECK(end_b >= end_a && end_b - end_a <= 150000 + 3u * FRAME_US);
+        } else {
+            limited++;
+            TEST_CHECK(!b.settled && b.settle_timeout);
+        }
+        TEST_MSG("budget %u us: back to back %s after %llu us, paced %s after %llu us", (unsigned)max,
+                 a.settled ? "held" : "the limit", (unsigned long long)(end_a - 1000000),
+                 b.settled ? "held" : "the limit", (unsigned long long)(end_b - 1000000));
+    }
+    TEST_CHECK(held > 0 && limited > 0); /* the sweep crosses the edge */
+    TEST_MSG("%u budgets held, %u reached the limit", held, limited);
+}
+
+/* A pace of 0 is no pace (API 28's passes back to back): the same reads, in the same order, with the same
+ * flags. */
+static void test_a_pace_of_zero_is_the_api28_wait(void)
+{
+    VjoVocrPolicy with = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us, .settle_pace_us = 0};
+    VjoVocrPolicy without = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
+    VjoVocrStats a, b;
+    Read first[LOG_MAX];
+    unsigned n;
+    reset();
+    scr.type_every = 3;
+    scr.blink_every = 8;
+    (void)run(&without, &a);
+    memcpy(first, scr.log, sizeof(first));
+    n = scr.n_log;
+    reset();
+    scr.type_every = 3;
+    scr.blink_every = 8;
+    (void)run(&with, &b);
+    TEST_CHECK(scr.n_log == n && !memcmp(first, scr.log, n * sizeof(Read)) && !b.settle_naps);
+    TEST_CHECK(a.settle_passes == b.settle_passes && a.strips == b.strips && a.settle_us == b.settle_us);
+}
+
+/* A pace needs the sleep: without one the passes follow each other as before. */
+static void test_a_pace_without_a_sleep_reads_back_to_back(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1, .settle_pace_us = 150000};
+    VjoVocrPolicy none = {.settle_us = 150000, .settle_first = 1};
+    VjoVocrStats a, b;
+    reset();
+    scr.type_every = 3;
+    (void)run(&none, &a);
+    reset();
+    scr.type_every = 3;
+    (void)run(&pol, &b);
+    TEST_CHECK(!b.settle_naps && !scr.sleeps && b.settle_passes == a.settle_passes && b.strips == a.strips);
+}
+
+/* A region that never holds still: paced, the wait still gives up at its budget, never later than
+ * it would back to back (a nap never runs past what is left). */
+static void test_a_paced_wait_keeps_its_budget(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 400000, .settle_first = 1, .sleep = sleep_us,
+                         .settle_pace_us = 150000};
+    VjoVocrStats st;
+    reset();
+    scr.noise = 1;
+    TEST_CHECK(run(&pol, &st) == VJO_E_SCREEN_CHANGED);
+    TEST_CHECK(!st.settled && st.settle_timeout && st.tries == VJO_VOCR_TRIES && st.settle_naps > 0);
+    TEST_CHECK(st.settle_us >= 400000 && st.settle_us < 400000 + 3u * FRAME_US);
+    TEST_MSG("waited %u us in %u passes, %u naps", (unsigned)st.settle_us, st.settle_passes, st.settle_naps);
+}
+
+/* A job cancelled while its wait sleeps ends there: no more reads. */
+static int cancel_after_sleep;
+static int cancel_flag(void *ud)
+{
+    (void)ud;
+    return cancel_after_sleep && scr.sleeps >= (unsigned)cancel_after_sleep;
+}
+static void test_a_paced_wait_ends_when_cancelled_asleep(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us, .settle_pace_us = 150000};
+    VjoGreySource cim = {NULL, W, H, strip, cancel_flag, NULL};
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    VjoVocrStats st;
+    char text[128];
+    unsigned reads;
+    reset();
+    scr.type_every = 3;
+    cancel_after_sleep = 1;
+    p.file_open = no_file;
+    p.now_us = now;
+    TEST_CHECK(vjo_vocr_ocr_policy(&p, "missing", "FL10_w8.vocr", &cim, &res, ws_mem, vjo_vocr_job_bytes("FL10_w8.vocr", W, H),
+                                   capture, vjo_vocr_capture_bytes(W, H), &pol, text, sizeof(text), &st) == VJO_E_CANCELLED);
+    reads = scr.n_log;
+    cancel_after_sleep = 0;
+    TEST_CHECK(scr.sleeps == 1 && reads == st.strips && !scr.opens);
+    TEST_MSG("%u reads, %u sleeps", reads, scr.sleeps);
+}
+
+/* The stable-text wait's passes share the region's rows evenly between the strips they take: 100
+ * rows in two strips of 50 (API 28's wait: 64 and 64, the last moved up to row 36). Every other read
+ * is API 28's: the first pass from row 0 in whole strips (64, then the 36 left), the last flagged,
+ * and a line's strip a whole strip from the line's top row. */
+static void test_passes_share_their_rows_evenly(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us, .settle_pace_us = 150000};
+    VjoVocrStats st;
+    unsigned wait_reads = 0, firsts = 0, i = 0;
+    reset();
+    scr.type_every = 3;
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL && st.lines == 1 && st.tries == 1);
+    TEST_CHECK(vjo_vocr_strip_rows(W, H) == 64 && vjo_vocr_pass_rows(W, H) == 50);
+    for (; i < scr.n_log && !(scr.log[i].flags & VJO_STRIP_FIRST); i++, wait_reads++) {
+        const Read *r = &scr.log[i]; /* the wait's passes, before the first pass */
+        TEST_CHECK(r->n == 50 && (r->y == 0 || r->y == 50));
+        TEST_MSG("wait read %u: rows %u..%u", i, r->y, r->y + r->n);
+    }
+    TEST_CHECK(wait_reads >= 4 && wait_reads % 2 == 0 && st.settle_passes * 2u >= wait_reads);
+    for (; i < scr.n_log; i++) {
+        const Read *r = &scr.log[i];
+        if (!(r->flags & VJO_STRIP_FIRST)) continue;
+        TEST_CHECK(r->y == firsts * 64u && r->n == (firsts ? 36u : 64u));
+        TEST_CHECK(!!(r->flags & VJO_STRIP_LAST) == (r->y + r->n == H));
+        firsts++;
+    }
+    TEST_CHECK(firsts == 2);
+    for (i = 0; i < scr.n_log; i++) TEST_CHECK(scr.log[i].n <= vjo_vocr_strip_rows(W, H));
+    TEST_MSG("%u wait reads, %u first-pass reads, %u reads in all", wait_reads, firsts, scr.n_log);
+}
+
 TEST_LIST = {
+    {"api29_pass_rows_share_the_height", test_pass_rows_share_the_height},
     {"the_capture_block_stays_within_64_KiB_at_every_size", test_capture_block_sizes},
     {"a_zero_policy_reads_exactly_as_api19", test_zero_policy_is_api19},
     {"typing_text_is_read_once_whole", test_typing_is_read_once_whole},
@@ -1963,5 +2218,13 @@ TEST_LIST = {
     {"refined_lines_are_read_and_decoded_in_place", test_refined_lines_are_read_and_decoded_in_place},
     {"ink_statistics_and_the_blank_rule", test_ink_and_blank},
     {"blank_lines_are_skipped_and_open_no_weights", test_blank_lines_open_no_weights},
+    {"api29_a_paced_wait_reads_fewer_passes", test_a_paced_wait_reads_fewer_passes},
+    {"api29_a_paced_wait_never_ends_sooner", test_a_paced_wait_never_ends_sooner},
+    {"api29_a_paced_wait_holds_where_back_to_back_holds", test_a_paced_wait_holds_where_back_to_back_holds},
+    {"api29_a_pace_of_zero_is_the_api28_wait", test_a_pace_of_zero_is_the_api28_wait},
+    {"api29_a_pace_without_a_sleep_reads_back_to_back", test_a_pace_without_a_sleep_reads_back_to_back},
+    {"api29_a_paced_wait_keeps_its_budget", test_a_paced_wait_keeps_its_budget},
+    {"api29_a_paced_wait_ends_when_cancelled_asleep", test_a_paced_wait_ends_when_cancelled_asleep},
+    {"api29_passes_share_their_rows_evenly", test_passes_share_their_rows_evenly},
     {NULL, NULL}
 };

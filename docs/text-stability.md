@@ -51,6 +51,9 @@ when a job may recognize, in every job of both modes:
   (`VJO_VOCR_TRIES`), then fails with `VJO_E_SCREEN_CHANGED` and is retried later.
 - **The limit.** A job waits at most `ocr_settle_max_ms` = 2000 ms over all its tries, or
   `ocr_settle_press_ms` = 1000 ms for a press (since test.3). Then it reads anyway.
+- **The pace (API 29).** A job nobody waits for reads its wait's passes at most every
+  `ocr_settle_pace_ms` = 150 ms. It never ends the wait sooner than back to back, so the windows
+  below are unchanged (host bench, [stutter.md](stutter.md)).
 
 The gap this leaves is known ([auto-vs-press.md](auto-vs-press.md#what-settled-means)): a
 typewriter pause longer than the window passes as settled.

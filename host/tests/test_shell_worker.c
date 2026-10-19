@@ -1926,6 +1926,33 @@ static void test_vocr_request_carries_the_job_policy(void)
         job_refresh = 0;
         mem_free();
     }
+    /* API 29 (docs/stutter.md): ocr_settle_pace_ms in the speed word's bits 8-15, in 10 ms (rounded,
+     * at least one step, at most the field's 2.55 s), for every job nobody waits for (the overlay
+     * closed: Automatically's, the subtitle strip's; the open overlay's refresh) that waits; none for a
+     * press's job (the overlay waits for it), none without a wait or without a pace. 150 ms by default. */
+    {
+        VjoConfig d;
+        vjo_config_defaults(&d);
+        TEST_CHECK(d.ocr_settle_pace_ms == 150);
+    }
+    static const struct { int settle, pace, prepares, refresh; unsigned bits; } paces[] = {
+        {150, 150, 1, 0, 15}, {150, 150, 0, 1, 15}, {150, 150, 0, 0, 0}, {150, 0, 1, 0, 0}, {0, 150, 1, 0, 0},
+        {150, 3, 1, 0, 1}, {150, 14, 1, 0, 1}, {150, 15, 1, 0, 2}, {150, 1000, 1, 0, 100}};
+    for (unsigned i = 0; i < sizeof(paces) / sizeof(paces[0]); i++) {
+        reset();
+        cfg.ocr_settle_ms = paces[i].settle;
+        cfg.ocr_settle_pace_ms = paces[i].pace;
+        job_prepares = paces[i].prepares;
+        job_refresh = paces[i].refresh;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK);
+        TEST_CHECK((fake_game_request.speed >> VJO_GAME_OCR_S_PACE_SHIFT & VJO_GAME_OCR_S_PACE_MASK) == paces[i].bits);
+        TEST_CHECK(!(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+        TEST_MSG("settle %d ms, pace %d ms, prepares %d, refresh %d: speed 0x%08X", paces[i].settle, paces[i].pace,
+                 paces[i].prepares, paces[i].refresh, (unsigned)fake_game_request.speed);
+        job_refresh = 0;
+        mem_free();
+    }
 }
 
 /* The whole status line the user sees for an OCR-stage error. */

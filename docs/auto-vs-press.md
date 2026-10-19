@@ -14,7 +14,8 @@ the app applies from the next resume. The second Read text button names whatever
 (`toggle_button`: L + R unless changed, Select, Start, Select + L or R, or a double tap on the back).
 An update keeps both choices: `tools/install-vita.sh` no longer sets `ocr_mode = auto` (it did before
 this change), and `tools/migrate_config.py` keeps every value. The wait settings below stay in
-`config.ini` only: `ocr_settle_ms` (150), `ocr_settle_max_ms` (2000) and `ocr_settle_press_ms` (1000).
+`config.ini` only: `ocr_settle_ms` (150), `ocr_settle_max_ms` (2000), `ocr_settle_press_ms` (1000) and,
+since API 29, `ocr_settle_pace_ms` (150, [stutter.md](stutter.md)).
 
 ## What each mode does
 
@@ -71,6 +72,11 @@ job, of both modes. Nothing is recognized until every row of the region has read
   hook copies it from the next frame the game shows ([in-game capture](ingame-capture.md)). CLANNAD's
   852 × 135 region is three strips a pass; in test.3 a wait of several passes took 56-73 ms a pass
   (each wait's time over its passes, measured).
+- Since API 29 a job nobody waits for (Automatically's, the subtitle strip's, a refresh of the open
+  overlay) reads its wait's passes at most every `ocr_settle_pace_ms` = 150 ms, sleeping between them,
+  never ending the wait sooner than back to back; a press's job reads them back to back as before. The
+  wait's strips share the region's rows evenly (CLANNAD's: 3 of 45 rows). Each strip is a frame whose
+  display call copies rows, and those frames were the late ones ([stutter.md](stutter.md)).
 - A job whose screen the kernel already called settled reads its first pass and finds its lines, then
   reads the region again until a whole pass that started at least 150 ms after the rows were first
   read the same has matched (`settle_verify`). Otherwise it waits first (`settle_wait`): passes without
@@ -192,8 +198,11 @@ background result. The log does not say what changed, or why there was no result
 
 The background jobs' cost to the game: during test.3's 28 jobs that logged the game's frame pacing,
 291 of 1,609 frames came more than 25 ms after the last one, against 52 of 26,941 frames in the time
-before each job (measured; `game frames during OCR jobs` in the analysis, press jobs included). Battery
-and CPU3 use are unmeasured (AGENTS.md rule 8).
+before each job (measured; `game frames during OCR jobs` in the analysis, press jobs included). Those
+late frames came with the strip copies, 78% of them the stable-text wait's passes; recognition added
+none. API 29 paces a background job's wait: est. 12.5% → 7.2% late frames during the jobs of test.3's and
+test.4's logs, a host replay ([stutter.md](stutter.md); `late frames during OCR jobs` in the analysis).
+Battery and CPU3 use are unmeasured (AGENTS.md rule 8).
 
 **The speed boost's share.** test.3 raised the clock in 22 jobs (333 → 444 → 333 MHz, measured); the
 optional run with the boost off was not made, so what it saves is unmeasured. Of the 9 press jobs with

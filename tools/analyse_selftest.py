@@ -2364,6 +2364,8 @@ def summarise_log(text):
                 st["passes"].append(int(m.group(1)))
             st["changes"] += int(m.group(3))
             st["toggling_jobs"] += (int(m.group(4), 16) >> 16) > 0
+            if job is not None:  # docs/stutter.md: the wait's passes and time, per job
+                job["settle"] = {"passes": int(m.group(1)), "us": int(m.group(5)), "rc": rc}
             continue
         m = LOG["lm"].match(line)
         if m:
@@ -2489,6 +2491,9 @@ def summarise_log(text):
             pc["before_frames"] += int(m.group(8))
             pc["before_max_ms"].append(int(m.group(6)) // 1000)
             pc["before_slow"] += int(m.group(7))
+            if job is not None:  # docs/stutter.md: the job's frames, late ones, and the frames since the job before
+                job["pace"] = {"frames": int(m.group(1)), "slow": int(m.group(4), 16), "sum_us": int(m.group(3)),
+                               "before_frames": int(m.group(8)), "before_slow": int(m.group(7))}
             continue
         m = LOG["job"].match(line)
         if m:
@@ -2502,7 +2507,9 @@ def summarise_log(text):
                 windows.append(win)
             job = {"model": m.group(2), "frames": int(m.group(15)), "lines": [], "clock": None, "late": False,
                    "api22": False, "share": None, "stage": stage, "helpers": None, "after_par": False,
-                   "trigger": trigger(reason)}
+                   "trigger": trigger(reason), "region": (int(m.group(5)), int(m.group(6))), "strips": None,
+                   "strip_rows": None, "settle": None, "pace": None,
+                   "refresh": bool(reason and reason[1] == ", refresh")}
             stage = None  # one job a stage
             win["jobs"].append(job)
             continue
@@ -2516,6 +2523,8 @@ def summarise_log(text):
             if key == "capture":
                 k = f"{m.group(1)} into {m.group(2)}"
                 s["captures"][k] = s["captures"].get(k, 0) + 1
+                if job is not None and job.get("strips") is None:  # docs/stutter.md: frames whose display call copied
+                    job["strips"], job["strip_rows"] = int(m.group(5)), int(m.group(4))
             elif key == "net_stack":  # the largest figure of every boot in the log
                 used = (int(m.group(1)), int(m.group(2)))
                 if s["net_stack"] is None or used[0] > s["net_stack"][0]:
@@ -2638,7 +2647,84 @@ def summarise_log(text):
     s["clock_compare"], s["clock_like"] = boost_compare(samples)
     s["boost_verdicts"] = boost_verdicts(s["clock_windows"], s["clock_compare"], s["clock_like"])
     s["presses"] = presses_and_rereads(text)
+    s["stutter"] = stutter_summary(windows)
     return s
+
+
+# docs/stutter.md: what started a job, as its late frames are told apart (trigger(), and a refresh of the open
+# overlay apart from the overlay's own job)
+STUTTER_KINDS = (("auto", "Automatically's"), ("overlay", "the overlay's (presses)"), ("refresh", "refreshes"),
+                 ("subtitles", "the subtitle strip's"), ("self-test", "the self-test's"), (None, "unknown"))
+
+
+def stutter_summary(windows):
+    """The game's late frames during OCR jobs (the kernel's pace step, the debug build's, API 22 on), attributed
+    (docs/stutter.md): by what started the job; per strip, a game frame whose display call copied rows of the
+    region (the capture line's count, every try's); and the stable-text wait's share of those strips (its passes,
+    each ceil(height / strip rows) strips) and how often it read (passes a second of waiting: back to back about
+    17, paced by ocr_settle_pace_ms = 150 at most about 7). Counts only. None without a job with a pace step."""
+    kinds = {k: {"jobs": 0, "frames": 0, "slow": 0, "strips": 0} for k, _ in STUTTER_KINDS}
+    tot = {"jobs": 0, "frames": 0, "slow": 0, "strips": 0, "wait_strips": 0, "wait_passes": 0, "wait_us": 0,
+           "before_frames": 0, "before_slow": 0, "no_strips": 0}
+    # one row a job, counts only (tools/stutter_model.py replays them): what started it, its region's size and
+    # strip rows, its strips, its wait's passes, time and verdict (VJO_GSETTLE_*), its frames, late ones and ms
+    rows = []
+    for w in windows:
+        for j in w["jobs"]:
+            pc = j.get("pace")
+            if not pc:
+                continue
+            kind = j["trigger"]
+            if kind == "overlay" and j.get("refresh"):
+                kind = "refresh"
+            k = kinds.get(kind, kinds[None])
+            strips = j.get("strips")
+            for d in (k, tot):
+                d["jobs"] += 1
+                d["frames"] += pc["frames"]
+                d["slow"] += pc["slow"]
+                d["strips"] += strips or 0
+            tot["before_frames"] += pc["before_frames"]
+            tot["before_slow"] += pc["before_slow"]
+            if strips is None:
+                tot["no_strips"] += 1
+            st, srows = j.get("settle"), j.get("strip_rows")
+            if st and srows:
+                per_pass = -(-j["region"][1] // srows)
+                tot["wait_strips"] += min(st["passes"] * per_pass, strips or 0)  # never more than the job read
+                tot["wait_passes"] += st["passes"]
+                tot["wait_us"] += st["us"]
+            rows.append({"kind": kind, "w": j["region"][0], "h": j["region"][1], "strip_rows": srows, "strips": strips,
+                         "passes": st["passes"] if st else None, "wait_us": st["us"] if st else None,
+                         "wait_rc": st["rc"] if st else None, "frames": pc["frames"], "slow": pc["slow"],
+                         "ms": pc["sum_us"] // 1000})
+    if not tot["jobs"]:
+        return None
+    return {"kinds": {k: v for k, v in kinds.items() if v["jobs"]}, **tot, "jobs_rows": rows}
+
+
+def _share(a, b):
+    return f"{100 * a / b:.1f}%" if b else "-"
+
+
+def stutter_lines(lg):
+    """The rendering of stutter_summary: one line of totals, one of the job kinds."""
+    su = lg.get("stutter")
+    if not su:
+        return []
+    names = dict(STUTTER_KINDS)
+    per = (f"{su['slow'] / su['strips']:.2f} late frames a strip" if su["strips"] else "no strip counted")
+    wait = (f"; the stable-text wait read {su['wait_strips']} of the strips ({_share(su['wait_strips'], su['strips'])}),"
+            f" {su['wait_passes'] / (su['wait_us'] / 1e6):.1f} passes a second of waiting" if su["wait_us"] else "")
+    out = [f"  late frames during OCR jobs (docs/stutter.md): {su['slow']} of {su['frames']} ({_share(su['slow'], su['frames'])}) "
+           f"in {su['jobs']} job(s), against {su['before_slow']} of {su['before_frames']} "
+           f"({_share(su['before_slow'], su['before_frames'])}) between them; {su['strips']} strips, the frames whose "
+           f"display call copied rows of the region, {per}{wait}"
+           + (f"; {su['no_strips']} job(s) without a capture line" if su["no_strips"] else "")]
+    out.append("    by what started the job: " + "; ".join(
+        f"{names[k]} {v['slow']} of {v['frames']} ({_share(v['slow'], v['frames'])}) in {v['jobs']}, {v['strips']} strips"
+        for k, v in su["kinds"].items()))
+    return out
 
 
 def overlay_summary(lg):
@@ -3581,6 +3667,7 @@ def render_collect(c):
             L.append(f"  game frames during OCR jobs: {pc['frames']} in {pc['jobs']} job(s), longest gap "
                      f"{_span(pc['max_ms'])} ms, {pc['slow']} over 25 ms; between jobs {pc['before_frames']} frames, "
                      f"longest gap {_span(pc['before_max_ms'])} ms, {pc['before_slow']} over 25 ms")
+        L += stutter_lines(lg)
         if lg["memory"]:
             frees = [m["free"] for m in lg["memory"]]
             heads = [m["headroom"] for m in lg["memory"]]

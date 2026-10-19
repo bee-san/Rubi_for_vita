@@ -417,6 +417,7 @@ typedef struct {
     uint16_t *ring;         /* per region row, slots earlier states (folded), the latest first */
     unsigned char *seen, *cyc; /* 1 bit per region row each; cyc: it went back to an earlier state */
     unsigned w, h, strip_rows, y0, rows, slots;
+    unsigned pass_rows;     /* rows a strip of a whole pass holds (pass_rows_of): at most strip_rows */
     unsigned first_next;    /* the first pass's next row (h once it is in) */
     unsigned cycle_cap;     /* rows that may go back to an earlier state without being a change */
     int learn;              /* the stable-text wait is on: such rows are learned */
@@ -542,12 +543,12 @@ static int stream_read(Stream *s, unsigned y, unsigned n, unsigned char *dst)
     return s->err ? -1 : 0;
 }
 
-/* The strip from row y: during the first pass the strips follow each other
- * from row 0 (the kernel builds the capture's scene signature from them, and
- * the last one publishes it), otherwise it is moved up to stay inside the region. */
-static int stream_fetch(Stream *s, unsigned y)
+/* n rows from row y into the strip: during the first pass the strips follow each
+ * other from row 0 (the kernel builds the capture's scene signature from them, and
+ * the last one publishes it), otherwise the strip is moved up to stay inside the
+ * region. */
+static int stream_fetch_rows(Stream *s, unsigned y, unsigned n)
 {
-    unsigned n = s->strip_rows;
     if (y == s->first_next && s->first_next < s->h) {
         if (n > s->h - y) n = s->h - y;
     } else if (y + n > s->h) {
@@ -560,13 +561,45 @@ static int stream_fetch(Stream *s, unsigned y)
     return 0;
 }
 
-/* One whole pass over the region from row 0, a strip at a time, outside the
- * first pass: it re-reads (verifies) every row (stream_read records it). */
+/* A whole strip from row y: a line no taller than a strip is then inside it. */
+static int stream_fetch(Stream *s, unsigned y)
+{
+    return stream_fetch_rows(s, y, s->strip_rows);
+}
+
+/* The rows a strip of the stable-text wait's passes reads: the region's height shared out
+ * evenly between the strips a pass takes anyway (ceil(h / strip_rows) of them, one game
+ * frame each). Each strip is copied from the frame inside the game's own display call, so
+ * each of a pass's frames loses as little time as the pass allows: a box of 852 x 135
+ * (CLANNAD's) is three strips of 45 rows, where API 28's wait read 64, 64 and 64 (the last
+ * moved up to row 71). The same frames, every row: 30 % fewer bytes a pass and at most 45
+ * rows a frame (docs/stutter.md). Only the wait's passes, which only compare the rows'
+ * checksums: the first pass, the finder's and the check after it read as before. */
+static unsigned pass_rows_of(unsigned strip_rows, unsigned h)
+{
+    unsigned strips;
+    if (!strip_rows || strip_rows >= h) return strip_rows;
+    strips = (h + strip_rows - 1u) / strip_rows;
+    return (h + strips - 1u) / strips;
+}
+
+unsigned vjo_vocr_pass_rows(unsigned width, unsigned height)
+{
+    return pass_rows_of(vjo_vocr_strip_rows(width, height), height);
+}
+
+/* One whole pass over the region from row 0, n rows a strip, outside the first pass: it
+ * re-reads (verifies) every row (stream_read records it). */
+static int stream_pass_rows(Stream *s, unsigned n)
+{
+    for (unsigned y = 0; y < s->h; y += n)
+        if (stream_fetch_rows(s, y, n) < 0) return -1;
+    return 0;
+}
+
 static int stream_pass(Stream *s)
 {
-    for (unsigned y = 0; y < s->h; y += s->strip_rows)
-        if (stream_fetch(s, y) < 0) return -1;
-    return 0;
+    return stream_pass_rows(s, s->strip_rows);
 }
 
 static int settle_on(const Stream *s)
@@ -587,10 +620,18 @@ static void settle_spend(Stream *s, uint32_t us, int over)
  * one that saw no change started settle_us after the last pass that did (or the
  * wait's first). A job that already told the Shell of a capture first voids it
  * (retract), so the Shell does not take the screen it read before for this
- * job's. Settled, the rows have read the same since pass_from. */
+ * job's. Settled, the rows have read the same since pass_from.
+ *
+ * With settle_pace_us (and a sleep callback) the job sleeps between passes instead of
+ * reading the region again, and the game's frames meanwhile carry no strip copy
+ * (docs/stutter.md): of the passes back to back would read, it reads the first one at
+ * least settle_pace_us after the one before, or the first that could end the wait if that
+ * comes sooner. The rule is the same (two whole reads settle_us apart that agree, every
+ * row), and the wait never ends sooner than back to back: it only reads less often. */
 static int settle_wait(Stream *s)
 {
     uint32_t t0 = clock_us(s->p), stable_since = t0;
+    uint32_t pace = s->pol->sleep ? s->pol->settle_pace_us : 0u;
     int done = 0, over = 0;
     s->settling = 1;
     s->retract = s->published;
@@ -598,10 +639,32 @@ static int settle_wait(Stream *s)
         uint32_t ps = clock_us(s->p);
         if (ps - t0 >= s->settle_left || s->st->strips >= VJO_VOCR_SETTLE_READS) { over = 1; break; }
         s->changed = 0;
-        if (stream_pass(s) < 0) break;
+        if (stream_pass_rows(s, s->pass_rows) < 0) break;
         s->st->settle_passes++;
         if (s->changed) stable_since = ps;
         else if (ps - stable_since >= s->pol->settle_us) done = 1;
+        if (!done && pace) {
+            /* Back to back, the next passes would start took, 2 took, ... after this one's start.
+             * The wait reads the first of them at least pace after it, or, if sooner, the first
+             * that could end the wait (settle_us after stable_since): the passes it leaves out
+             * could only have seen a change, never ended the wait, so it never ends sooner than
+             * back to back would (a typewriter's pause gets no shorter window). In the budget's
+             * last settle_us + pace it reads back to back again: a change it noticed up to a pace
+             * late can still hold within the budget where back to back would hold. */
+            uint32_t now = clock_us(s->p), used = now - t0, took = now - ps;
+            if (took && used < s->settle_left && s->settle_left - used > s->pol->settle_us + pace) {
+                uint32_t since = ps - stable_since, k = (pace + took - 1u) / took, due;
+                uint32_t need = s->pol->settle_us > since ? s->pol->settle_us - since : 0u;
+                due = need ? (need + took - 1u) / took : 1u;
+                if (due < k) k = due;
+                if (k > 1u) {
+                    uint32_t nap = (k - 1u) * took, left = s->settle_left - used;
+                    s->pol->sleep(nap < left ? nap : left);
+                    s->st->settle_naps++;
+                    if (cancelled(s->src)) { s->err = VJO_E_CANCELLED; break; }
+                }
+            }
+        }
     }
     s->settling = 0;
     if (done) {
@@ -2186,6 +2249,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     st.w = image->width;
     st.h = image->height;
     st.strip_rows = strip_rows;
+    st.pass_rows = pass_rows_of(strip_rows, st.h);
     st.strip = (unsigned char *)capture;
     st.slots = vjo_vocr_state_slots(st.w, st.h);
     st.sums = (uint32_t *)(void *)((unsigned char *)capture + ALIGN4((size_t)strip_rows * st.w));

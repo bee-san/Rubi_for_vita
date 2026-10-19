@@ -752,6 +752,22 @@ static void test_config(void)
         TEST_MSG("ocr_settle_press_ms = %s: %d, %d warning(s)", press[i].val, c.ocr_settle_press_ms, c.n_warnings);
         if (press[i].warns) TEST_CHECK(strstr(c.warnings[0], "ocr_settle_press_ms") != NULL);
     }
+    /* API 29, the wait's pace (docs/stutter.md): 150 ms by default, 0 (passes back to back) to 1,000 ms;
+     * the template writes the default. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_settle_pace_ms == 150);
+    TEST_CHECK(strstr(vjo_config_default_text(), "\nocr_settle_pace_ms = 150\n") != NULL);
+    static const struct { const char *val; int want, warns; } pace[] = {
+        {"0", 0, 0}, {"1", 1, 0}, {"150", 150, 0}, {"1000", 1000, 0}, {"1001", 150, 1}, {"-1", 150, 1}, {"often", 150, 1}};
+    for (unsigned i = 0; i < sizeof(pace) / sizeof(pace[0]); i++) {
+        char line[64];
+        vjo_config_defaults(&c);
+        snprintf(line, sizeof(line), "ocr_settle_pace_ms = %s\n", pace[i].val);
+        vjo_config_parse(&c, line, strlen(line));
+        TEST_CHECK(c.ocr_settle_pace_ms == pace[i].want && c.n_warnings == pace[i].warns);
+        TEST_MSG("ocr_settle_pace_ms = %s: %d, %d warning(s)", pace[i].val, c.ocr_settle_pace_ms, c.n_warnings);
+        if (pace[i].warns) TEST_CHECK(strstr(c.warnings[0], "ocr_settle_pace_ms") != NULL);
+    }
     /* The left stick's lookup (#138, core/stick_cursor.h): once the cursor has rested
      * 200 ms by default; 0 (as soon as the stick stops) to 1,000 ms; else the default, warned. */
     vjo_config_defaults(&c);

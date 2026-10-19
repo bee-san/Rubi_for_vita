@@ -78,6 +78,8 @@ build ledger host/tests/test_ledger.c core/ledger.c
 build fbgrey host/tests/test_fbgrey.c
 build kernel_capture host/tests/test_kernel_capture.c kernel/scene.c core/region_select.c
 build kernel_input host/tests/test_kernel_input.c kernel/triggers.c
+# API 29 (docs/stutter.md): the display hook sets the game's frame before it copies a job's rows.
+build kernel_display host/tests/test_kernel_display.c
 # #104: the process event hook's input release (LDREX/STREX exchange) and the page's touch hold.
 build kernel_lifecycle host/tests/test_kernel_lifecycle.c kernel/foreground.c
 build touch_hold host/tests/test_touch_hold.c
@@ -118,7 +120,8 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 
-TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
+TESTS=(boot_guard ledger fbgrey kernel_capture kernel_display kernel_input kernel_lifecycle kernel_game_ocr kernel_loader
+       region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
 TESTS+=(touch_hold text_rows text_join linebreak stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then

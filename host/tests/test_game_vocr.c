@@ -759,6 +759,31 @@ static void request_flags_become_the_policy(void)
     r.flags = 0; r.speed = VJO_GAME_OCR_S_GATE; /* API 26: the text-presence gate */
     request_policy(&r, &p);
     TEST_CHECK(p.gate == 1 && p.gate_res == &gate_res);
+    TEST_CHECK(!p.settle_pace_us); /* API 29: no pace, passes back to back */
+    r.speed = 15u << VJO_GAME_OCR_S_PACE_SHIFT; /* API 29: the wait's pace, in 10 ms */
+    request_policy(&r, &p);
+    TEST_CHECK(p.settle_pace_us == 150000u && !p.gate && p.sleep == policy_sleep);
+    r.speed = VJO_GAME_OCR_S_PACE_MASK << VJO_GAME_OCR_S_PACE_SHIFT | VJO_GAME_OCR_S_GATE; /* the largest the bits hold */
+    request_policy(&r, &p);
+    TEST_CHECK(p.settle_pace_us == 2550000u && p.gate == 1);
+}
+
+/* API 29: the pace's bits are the speed word's; a bit above them is still refused, as any unknown one. */
+static void request_pace_bits_are_known_others_refused(void)
+{
+    VjoGameOcrRequest r = setup();
+    VjoGameOcrResult out;
+    unsigned before = allocations;
+    TEST_CHECK((VJO_GAME_OCR_S_ALL & (VJO_GAME_OCR_S_PACE_MASK << VJO_GAME_OCR_S_PACE_SHIFT)) ==
+               VJO_GAME_OCR_S_PACE_MASK << VJO_GAME_OCR_S_PACE_SHIFT);
+    TEST_CHECK(!(VJO_GAME_OCR_S_ALL & 0xFFFF00E0u)); /* bits 5-7 and 16-31 are unknown */
+    r.speed = 1u << 16;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE);
+    r.speed = 1u << 5;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE);
+    TEST_CHECK(allocations == before && !memory_live); /* refused before anything was allocated */
+    r.speed = 15u << VJO_GAME_OCR_S_PACE_SHIFT; /* a known pace: the job runs */
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !memory_live);
 }
 
 /* API 26: the text-presence gate through the worker. The weights' file opens by its pinned name
@@ -2507,6 +2532,7 @@ TEST_LIST = {
     {"the self-test fallback stage forces the fallback", forced_fallback_runs_the_fallback},
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
     {"the request's flags become the job's policy", request_flags_become_the_policy},
+    {"API 29: the pace's bits are known, the bits above them refused", request_pace_bits_are_known_others_refused},
     {"API 26: the text-presence gate in the worker: its file, its step, a wait first on one strip", the_gate_runs_in_the_worker},
     {"the step log logs a retried pass once and keeps the releases", step_log_keeps_the_releases},
     {"the returned text is normalised, the recognizer's own kept after it", returned_text_is_normalised_and_kept},

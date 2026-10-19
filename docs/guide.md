@@ -522,7 +522,9 @@ every row of the region has held still for `ocr_settle_ms` (150 ms by default,
 `0` turns it off), waiting at most `ocr_settle_max_ms` (2000) per recognition,
 or `ocr_settle_press_ms` (1000; `0`: the same limit) when the open overlay waits
 for it ([first-ocr.md](first-ocr.md)), and a blinking "next" icon does not hold it up; on the console
-it has read no dialogue line early ([text stability](text-stability.md)). `ocr_skip_blank_lines = on`
+it has read no dialogue line early ([text stability](text-stability.md)). While it waits, a job nobody
+waits for reads the region again at most every `ocr_settle_pace_ms` (150; `0`: at once): each read takes
+time from a frame of the game ([stutter](stutter.md)). `ocr_skip_blank_lines = on`
 skips found lines with no text-like ink; it is off by default, because once it
 keeps soft text (a PSP game shown 2x, an upscaled render) it finds next to
 nothing to skip in the test screenshots. Both are logged per job; see

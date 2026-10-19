@@ -49,6 +49,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_helpers = 2; /* ocr_threads = 3 */
     c->ocr_boost_clock = 1; /* 444 MHz while a job recognizes; never lowers a clock (game_ocr/main.c) */
     c->ocr_settle_press_ms = 1000; /* a job the open overlay waits for (docs/first-ocr.md) */
+    c->ocr_settle_pace_ms = 150; /* a pass of the wait at most every 150 ms (docs/stutter.md) */
     c->stick_lookup_ms = 200; /* core/stick_cursor.h VJO_STICK_CURSOR_REST_MS */
     c->log_file = 1; /* log.txt is on unless log_file = off */
     c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
@@ -118,6 +119,9 @@ const char *vjo_config_default_text(void)
            "ocr_settle_ms = 150\n"
            "ocr_settle_max_ms = 2000\n"
            "ocr_settle_press_ms = 1000\n"
+           "; vocr: while it waits, read the text region again at most every (ms, 0 = at once):\n"
+           "; each read takes time from a frame of the game (docs/stutter.md)\n"
+           "ocr_settle_pace_ms = 150\n"
            "; vocr: skip found lines with no ink (an even area, a smooth gradient): on | off\n"
            "; (off: it finds next to none at native resolution; see docs/vita-vn-ocr.md)\n"
            "ocr_skip_blank_lines = off\n"
@@ -541,6 +545,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         set_ms(c, key, val, &c->ocr_settle_ms, 0, 1000);
     } else if (vjo_ieq(key, "ocr_settle_max_ms")) {
         set_ms(c, key, val, &c->ocr_settle_max_ms, 100, 10000);
+    } else if (vjo_ieq(key, "ocr_settle_pace_ms")) {
+        set_ms(c, key, val, &c->ocr_settle_pace_ms, 0, 1000);
     } else if (vjo_ieq(key, "ocr_settle_press_ms")) {
         int keep = c->ocr_settle_press_ms; /* 0, or 100..10000: under 25 ms the request's 50 ms field is 0, the 2 s default */
         set_ms(c, key, val, &c->ocr_settle_press_ms, 0, 10000);

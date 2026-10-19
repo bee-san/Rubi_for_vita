@@ -1027,6 +1027,16 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
     /* API 26: the text-presence gate, in the user's jobs (the self-test's stages read as before) */
     if (job_cfg.ocr_text_gate && stage < 0) request.speed |= VJO_GAME_OCR_S_GATE;
+    /* API 29: the stable-text wait's pace, in 10 ms (rounded; a pace of 1-4 ms is one step, not none), for
+     * the jobs nobody waits for: Automatically's and the subtitle strip's (the overlay closed) and the open
+     * overlay's refresh (docs/stutter.md). A press's job waits back to back as before: its time and its window
+     * against a typewriter's pause stay what they were; the self-test's stages read as before (as for the gate). */
+    if (job_cfg.ocr_settle_ms > 0 && job_cfg.ocr_settle_pace_ms > 0 && stage < 0 && (job_prepares || job_refresh)) {
+        uint32_t pace = (uint32_t)(job_cfg.ocr_settle_pace_ms + 5) / 10u;
+        if (!pace) pace = 1u;
+        if (pace > VJO_GAME_OCR_S_PACE_MASK) pace = VJO_GAME_OCR_S_PACE_MASK;
+        request.speed |= pace << VJO_GAME_OCR_S_PACE_SHIFT;
+    }
     int64_t t0 = now_us();
     /* the slot: a screenshot's exchange may hold it (a cancellation ends the wait) */
     int locked = !game_job_lock(vocr_poll_cancelled, INT64_MAX / 2);
