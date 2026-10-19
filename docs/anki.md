@@ -639,9 +639,9 @@ synced again, so Anki for Vita never sees a note whose files are not all there. 
 (Cancel, a power cut) leaves only whole files, and the next send finishes the job; a `.tmp` an
 interrupted send left is removed by the next one.
 
-Rubi reads only the outbox names of its own cards (`<32 lowercase hex digits>.json`, and its `.old`
-when the app was stopped between the two renames of a replace; neither there: three more tries
-100 ms apart), regular files of at most 4 KiB, in valid UTF-8 with no NUL and no key twice, whose
+Rubi reads only the outbox results of its own cards (`<32 lowercase hex digits>.json` whose card is
+queued, archived or found in Anki before, and its `.old` when the app was stopped between the two
+renames of a replace; neither there: three more tries 100 ms apart), regular files of at most 4 KiB, in valid UTF-8 with no NUL and no key twice, whose
 `id` is the file's own. Any other name, a directory, a larger or malformed file is never acted on; a
 result of another version (`"v"` other than 1) is absent to Rubi. Any homebrew app can write in
 `ux0:data/`, so Rubi treats every file it reads there as untrusted; the most a bad result can do is

@@ -696,6 +696,20 @@ static void apply_one(VjoArena *a, Seen *e, VjoAfvResults *r)
     int got, queued;
     int old;
     to_hex(e->id, hex);
+    /* only one of Rubi's own cards' results is opened: queued, archived, or found in Anki before */
+    queue_path(path, VJO_QUEUE_DIR, hex, "json");
+    if ((queued = present(path)) < 0) {
+        io_fail("getstat", path, queued);
+        r->failed++;
+        return;
+    }
+    if (!queued) {
+        char archived[PATH_CAP], duplicate[PATH_CAP];
+        queue_path(archived, VJO_QUEUE_EXPORTED_DIR, hex, "json");
+        queue_path(duplicate, VJO_QUEUE_DIR, hex, "duplicate.json");
+        if (present(archived) <= 0 && present(duplicate) <= 0)
+            return; /* no card of Rubi's: never read */
+    }
     result_path(path, hex, 0);
     got = read_replaced(a, path, VJO_AFV_RESULT_MAX, &json, &len, &old);
     e->old = (uint8_t)old; /* (the file read: the one an applied result's removal takes) */
@@ -723,19 +737,10 @@ static void apply_one(VjoArena *a, Seen *e, VjoAfvResults *r)
     vjo_arena_release(a, mark);
     e->status = (uint8_t)res.status;
     e->final = (uint8_t)vjo_afv_result_final(&res);
-    queue_path(path, VJO_QUEUE_DIR, hex, "json");
-    if ((queued = present(path)) < 0) {
-        io_fail("getstat", path, queued);
-        r->failed++;
-        return;
-    }
     if (!queued) {
         /* not queued (any more): the final result of a card that is archived or marked goes too (an
-         * .apkg export took it meanwhile); any other is left alone */
-        char archived[PATH_CAP], duplicate[PATH_CAP];
-        queue_path(archived, VJO_QUEUE_EXPORTED_DIR, hex, "json");
-        queue_path(duplicate, VJO_QUEUE_DIR, hex, "duplicate.json");
-        if (e->final && (present(archived) > 0 || present(duplicate) > 0))
+         * .apkg export took it meanwhile, or an earlier pass); one not final yet is left alone */
+        if (e->final)
             remove_result(hex, e->old, r);
         return;
     }

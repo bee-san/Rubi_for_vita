@@ -19,7 +19,8 @@
  *
  * Results (vjo_afv_results, when the page is shown, and before a send): outbox/rubi/<id>.json (its
  * .old when a replace was stopped; both missing: three more tries 100 ms apart), only names of 32
- * lowercase hex digits, each read whole up to VJO_AFV_RESULT_MAX: valid UTF-8, no NUL, no key twice,
+ * lowercase hex digits that are Rubi's own cards (queued, archived, or found in Anki before: no other
+ * file is opened), each read whole up to VJO_AFV_RESULT_MAX: valid UTF-8, no NUL, no key twice,
  * "v" 1 (another version's is absent), its id its name's; a malformed one is ignored and logged.
  *   added or exists, synced: the card moves to anki_queue/exported/, as an export moves it;
  *   duplicate: it becomes anki_queue/<id>.duplicate.json, the queue's "found in Anki" state;

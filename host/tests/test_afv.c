@@ -1235,12 +1235,12 @@ static void hostile_names_in_the_outbox_are_never_read(void)
     TEST_CHECK_(r.in_anki == 0 && r.malformed == 0 && queued(id), "%d %d", r.in_anki, r.malformed);
     TEST_CHECK_(io.outbox_reads == 0, "%d outbox files opened, the first %s", io.outbox_reads, io.read_paths[0]);
     TEST_CHECK(files_in(OUTBOX, ".json") >= 3); /* (all still there) */
-    /* a well-formed result for a card that is not queued: read, then left alone */
+    /* a well-formed result whose id is no card of Rubi's: never read, left alone */
     strcpy(other, "0123456789abcdef0123456789abcdef");
     OK_RESULT(other, "added", "true");
     io.outbox_reads = 0;
     TEST_ASSERT(results_now(&r) == VJO_OK);
-    TEST_CHECK(io.outbox_reads == 1 && has_result(other) && r.in_anki == 0);
+    TEST_CHECK_(io.outbox_reads == 0 && has_result(other) && r.in_anki == 0, "%d reads", io.outbox_reads);
     /* once its card is archived (an .apkg export took it meanwhile), its final result goes */
     OK_RESULT(id, "added", "true");
     {
