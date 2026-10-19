@@ -63,9 +63,10 @@ prepared lookups; everything else new since 0.7.12 came in the test builds below
   **Overlay** in the 0.8.0 test builds and **JP Overlay Settings** before (0.7.12 and older). Its
   title ID (`VJOSET001`) stays, so the new VPK installs over either and keeps your settings, games
   and Anki cards. The data folders, the plugin files and the Anki deck keep their old names.
-- Two downloads: `Rubi-0.8.0.vpk`, the normal build (the main download), and
-  `Rubi-0.8.0-debug.vpk`, the test builds' build with the full log and the self-test, each also as a
-  zip for the computer installer.
+- The main download is the normal build, `Rubi-0.8.0.vpk`; `Rubi-0.8.0-debug.vpk` is the test
+  builds' build, with the full log and the self-test. Each is also a zip, for the computer installer.
+- The README became a short front page, with the promo film (#193); the old README is now the guide,
+  `docs/guide.md` (#176).
 
 ### Fixed
 
@@ -251,7 +252,7 @@ The owner's PCH-1001 with CLANNAD, 2026-10-16:
 - PS with the overlay open worked (#104). The app opened beside CLANNAD and closed cleanly, but not
   from LiveArea with no game running (the owner's report; why is still unexplained).
 - AIR (`PCSG00940`) got no OCR: this build loaded the worker only into a game with its own taiHEN
-  line, and AIR had none; its jobs ended `rc=-117`. The tester saw the same in Adrenaline (#148
+  line, and AIR had none; its jobs ended `rc=-117`. The tester reported the same in Adrenaline (#148
   changed this in test.4).
 - CLANNAD was missing from the app's Games list, and Default OFF did not turn it off (#149 changed
   this in test.4).

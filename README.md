@@ -140,13 +140,13 @@ logging, is in `ux0:data/VitaJPOverlay/config.ini`
 | ✅ | Firmware 3.65 | the owner's, with taiHEN |
 | ❓ | Other firmware, 3.60–3.74 | untested |
 | ✅ | CLANNAD | OCR, lookups and Anki cards (OCR in every test build) |
-| ❓ | Other Vita games | no other game's text has been read on a console yet |
+| ❓ | Other Vita games | Rubi's OCR has read no other game's text on a console yet |
 | ⚠️ | PSP games (Adrenaline) | with the [small Adrenaline bridge](compat/adrenaline_vsh/README.md) (on `main`, not in 0.8.0) in place of Adrenaline's own, one game started from its bubble and got Rubi's OCR worker; reading its text is untested |
 | ✅ | Updating, on the app's Install page | three times, each over the build before, the old app closed first |
 | ❓ | A first install, on a Vita without Rubi | not run on a console yet |
 | ✅ | Model sizes Normal and Large | Large fitted in CLANNAD's free memory |
 | ❓ | Model size Small | 0.8.0's Small model has not run on a console |
-| ✅ | Read text: Automatically | |
+| ✅ | Read text: Automatically | the mode of every 0.8.0 test run |
 | ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ⚠️ | Anki screenshots | a card saved with its picture in 851 ms; after a restart the first card can take about 21 s or be saved without it ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix is untested on a console) |
