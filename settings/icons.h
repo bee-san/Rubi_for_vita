@@ -48,7 +48,7 @@ long vjo_icon_read(const char *path, unsigned char *buf);
 int vjo_icon_png_check(const unsigned char *png, size_t size, unsigned *width, unsigned *height);
 
 /* Loaded icon textures by title ID; the least recently used goes first. */
-#define VJO_ICON_SLOTS 9
+#define VJO_ICON_SLOTS 5
 typedef struct {
     char id[VJO_TITLE_ID_SIZE];
     void *texture; /* NULL: a free slot */

@@ -5,9 +5,10 @@ PVF drawing scales, with dense hints and a narrow page-switch touch area.
 This change affects Settings only; the in-game overlay and OCR workers are
 unchanged.
 
-The 960 × 544 layout now shows three 80-pixel game cards. Game titles have two
-measured-width lines; their IDs occupy a separate right column below a clear
-ON/OFF badge. The page tabs have 48-pixel touch heights (the OCR card's
+The 960 × 544 Games layout shows five 40-pixel cards with 4-pixel gaps, followed by
+the search field and Prev/Next controls. Titles have one measured-width line with
+ellipsis for long names; IDs have a separate line and the ON/OFF badge stays at
+the right. The page tabs have 48-pixel touch heights (the OCR card's
 engine buttons went with Google Lens: [the OCR card](#native-installation-and-controls-checkpoint)). The focused card has a bright border. Save failures have a distinct
 error color, and status messages have two lines above the control hints.
 Icons are cached by title ID and loaded one per frame
@@ -105,14 +106,18 @@ Start; that is unchanged, and a host test counts the scans.
 
 What the page does now:
 
-- **An icon cache by title ID** (`settings/icons.c`): 9 slots, three times the
-  three cards. The window is the visible rows, a page below and a page above;
-  a frame loads at most one icon, the first of the window without one: the
-  visible rows, then the page the list last moved towards, then the other,
-  nearest row first. When the cache is full, the least recently used icon
-  outside the window is freed first, after `vita2d_wait_rendering_done`. A
+- **An icon cache by title ID** (`settings/icons.c`): five slots for the five
+  games on the current page. A frame loads at most one icon. Icons outside the
+  page are released after `vita2d_wait_rendering_done`; no following or previous
+  page is prefetched. A
   card shows **JP** until its icon is loaded. Toggles, Triangle and filters
-  keep the cache; Start frees it (after the GPU wait) with the new list.
+  keep matching icons; Start frees it (after the GPU wait) with the new list.
+- **Search across the indexed titles and IDs.** L+R together or the search field
+  opens the native Vita keyboard. Accepted text filters the list and starts on
+  the first result page; cancel leaves the current query and page alone. Empty
+  text or Clear restores the list. The enabled/disabled filter composes with the
+  search. Search does not rescan the card or load off-page icons. The index of
+  title/ID metadata remains bounded to 512 entries; only icon textures are paged.
 - **Icons are read whole and checked first.** `vjo_icon_read` reads the file in
   one bounded read into a 256 KiB buffer; `vjo_icon_png_check` requires the
   PNG signature, IHDR first, at most 256 × 256 pixels, every chunk inside the
@@ -134,7 +139,8 @@ What the page does now:
   the hints, right-aligned, so the hints keep their layout. The drawn strings
   are those of the old `wrapped_text`: a differential test compares them on
   168,000 generated layouts and on every card of every frame of the Games tests.
-- **L/R page.** The view moves three rows and the selection keeps its row; at
+- **L/R page.** The view moves five entries to a non-overlapping page and the selection keeps its row
+  when present (clamped on a partial last page); at
   the last or first page L/R selects the last or first game. Held, L/R repeat
   like Up/Down (350 ms, then every 90 ms).
 - **Left/Right jump between letters.** A title's letter is its first ASCII
@@ -149,11 +155,10 @@ What the page does now:
   `{|}~` after `z`, splitting their letters. Right goes to the first game of the
   next letter (the last game from the last letter), Left to the first game of
   the current letter, or of the previous one when already there; the game is
-  shown at the top.
+  selected in its five-game page.
 
-A pagination screen was not added: the per-frame work above no longer grows
-with the number of games, and L/R move a page. Whether the page now feels
-smooth on the console has not been checked.
+The current layout shows the page number and Prev/Next touch buttons, with five
+games per page. Its native keyboard and compact rows have not been checked on a console.
 
 ### Memory
 
@@ -165,7 +170,7 @@ texture type to `SCE_KERNEL_MEMBLOCK_TYPE_USER_RW` in system-app mode;
 [`utils.c`, `get_aligned_size`](https://github.com/xerpi/libvita2d/blob/a8f15ab09d5233f0a4e4ad0e8f6ade0da888cbed/libvita2d/source/utils.c)).
 An icon is drawn from 4 bytes per pixel, so a 128 × 128 icon's texture is 64 KiB
 and the largest accepted, 256 × 256, is 256 KiB: the cache holds at most
-9 × 256 KiB = 2,304 KiB (2.25 MiB), against 768 KiB for the old three icons. If
+5 × 256 KiB = 1,280 KiB (1.25 MiB), down from nine cached icons before pagination. If
 `USER_RW` refuses, libvita2d's `gpu_alloc` tries `USER_CDRAM_RW` (rounded to
 256 KiB) and then `USER_MAIN_PHYCONT_RW` (rounded to 1 MiB); a texture that gets
 neither is NULL and the card shows the placeholder. Before the app became a
@@ -176,12 +181,16 @@ figures are from the source; the app's free memory on the console, and whether
 either fallback is ever taken, have not been measured. In the
 app's own memory (`.bss`, Vita build): the file buffer 262,160 B, the title
 rows 18,432 B (512 games × 36 B), the layout memo 5,068 B, the PNG CRC table
-1,024 B, 1,024 B of failure and layout flags and 184 B for the cache's slots:
-the Settings ELF's `.bss` goes from 1,308,464 to 1,596,352 B and its text from
+1,024 B, 1,024 B of failure and layout flags and 104 B for the five cache slots
+[source: the Vita ABI and `VjoIconCache`]. The earlier nine-slot cache change measured
+the Settings ELF's `.bss` going from 1,308,464 to 1,596,352 B and its text from
 471,276 to 474,740 B (main `8cf4f3a`). The app runs in its own process; no
 plugin and no SceShell memory changes.
 
 ### Measurements (host)
+
+The following tables describe the earlier nine-icon implementation on main `8cf4f3a`,
+before the five-game pagination change; they are historical measurements.
 
 `vjo-settings-bench` runs the real `settings/main.c` and `settings/catalog.c`
 over synthetic installed games (generated titles and icons, 128 × 128 8-bit
@@ -225,24 +234,17 @@ With 512 games the after column is the same; before, an idle frame measured
   every title's letter for the ASCII and kana ranges against a gojuon chart
   written in the test; the catalog order (each letter one run, a total order,
   the case tie-break) over shuffled titles with every edge initial.
-- `settings_games`: the app over 1 to 520 synthetic games. Every card of every
-  frame shows its own game's ID, the old layout's rows and its own icon or
-  **JP**; at most one decode per frame; visible rows first, then the page in
-  the direction of travel; no icon reloaded while it stayed in the window;
-  scrolling back reloads nothing; after a move up (Up, L, Left) the page above
-  is loaded before the page below; L/R pages and their ends; Left/Right stop
-  at each letter, both ways, over titles with every edge initial; a held key
-  repeats after 350 ms, then every 90 ms, and a key pressed while another is
-  held acts at once; the list keys do nothing on the other pages; the hints
-  keep 140 px for the right-aligned counter, cut with "..." when Latin glyphs
-  are wider; the window's titles are laid out one a frame ahead, so a view move
-  lays out none; toggles and filters reload nothing; broken icons are tried
-  once; a game installed while the app runs appears only after Start, which
-  rescans exactly once; 512 games stay within 9 icons and 2.25 MiB. Each
-  texture follows libvita2d's rules: freed only outside drawing, after a GPU
-  wait since its last draw, with its two stray fields cleared. Built against
-  main `7ed16d8`'s `main.c`, 14 of its 16 cases fail; the other two (the
-  key repeat timing, the list keys' page gate) guard behaviour main already had.
+- `settings_games`: the real app over 1 to 520 synthetic games, five-entry page
+  boundaries, partial final pages, title/ID text and ON/OFF choices, touch and
+  controller paging, letter jumps and repeat timing. At most five icon textures
+  are resident, one decoded per frame, and no off-page icon is opened. Texture
+  frees still wait for the GPU and follow libvita2d's ownership rules. Search
+  covers an off-page ID, Japanese text, no results, cancel, clear and combined
+  enabled/disabled filtering, without rescanning the card. The SDK keyboard is
+  stubbed; the app's matching, UTF conversion and dialog lifecycle are real code.
+- `settings_search`: Unicode and surrogate-pair round trips, matching by title
+  or ID, an empty search, cancellation and SDK errors, and balanced IME module
+  loading. This is host coverage, not a console measurement.
 - `tools/vita3k_settings_smoke.sh`: the app's own code, unchanged, in Vita3K with
   a scripted controller over 120 synthetic games, as a crash check only
   ([offline testing](offline-testing.md#5-vita3k-precisely)).

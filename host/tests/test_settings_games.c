@@ -64,14 +64,16 @@
 #include "../../core/pspbubble.h"
 #include "settings_png_fixture.h"
 #include "settings_wrap_reference.h"
+#include "settings_stubs/search_dialog_stub.h"
+#include <psp2/ime_dialog.h>
 
 int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harness */
 
 /* settings/main.c's Games page layout. */
-#define ROWS 3
+#define ROWS 5
 #define GAMES_Y 174
-#define GAME_H 80
-#define GAME_PITCH 88
+#define GAME_H 40
+#define GAME_PITCH 44
 #define HINT_Y 535
 #define DEFAULT_BADGE_Y (112 + 8 + 38 / 2 + 9) /* badge(174, DEFAULT_Y + 8, 108, 38): its label's baseline */
 #define STATUS_Y 467
@@ -85,7 +87,7 @@ typedef struct {
     char title[ROWS][2][128], id[ROWS][16], icon[ROWS][16]; /* icon: the texture's game, "JP", or "" */
     unsigned tag[ROWS];                                      /* a PSP card's tag: its color, 0 for none */
     char badge[ROWS][4], default_badge[4];                   /* each card's ON/OFF/--, the Default row's */
-    char hints[128], counter[24], status[2][128];
+    char hints[128], counter[24], status[2][128], pages[32];
     int counter_x;                                           /* where the counter starts */
     char loaded[16];                                         /* the game whose icon this frame loaded (the last) */
     int focus;                                               /* the focused card, -1 */
@@ -96,7 +98,7 @@ typedef struct {
     long ns;
 } Frame;
 typedef struct {
-    int frames, exited, main_rc;
+    int frames, exited, main_rc, searches, search_terms;
     int budget_size, budget_calls; /* sceAppMgrGetBudgetInfo's info->size, and its calls */
     /* GPU rules broken, and other totals */
     int free_while_drawing, free_in_flight, stale_fields, drawn_after_free, double_free, pool_empty;
@@ -327,6 +329,8 @@ int sceTouchPeek(int port, SceTouchData *data, int count)
 }
 int sceDisplayWaitVblankStart(void)
 {
+    session->searches = vjo_test_ime_calls;
+    session->search_terms = vjo_test_ime_terms;
     cur.ns = since(&frame_start);
     cur.live = live_textures();
     cur.anki_rows = vjo_anki_stub_rows;
@@ -438,8 +442,8 @@ void vita2d_draw_texture_scale(const vita2d_texture *texture, float x, float y, 
     if (!t->live) session->drawn_after_free++;
     t->in_flight = 1;
     for (int r = 0; r < ROWS; r++)
-        if ((int)x == 38 && (int)y == GAMES_Y + r * GAME_PITCH + 8 &&
-            (int)(x_scale * t->width + 0.5f) == 64 && (int)(y_scale * t->height + 0.5f) == 64)
+        if ((int)x == 38 && (int)y == GAMES_Y + r * GAME_PITCH + 4 &&
+            (int)(x_scale * t->width + 0.5f) == 32 && (int)(y_scale * t->height + 0.5f) == 32)
             copy(cur.icon[r], sizeof(cur.icon[r]), t->id);
 }
 void vita2d_wait_rendering_done(void)
@@ -491,12 +495,12 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
     (void)font; (void)scale;
     for (int r = 0; r < ROWS; r++) {
         int top = GAMES_Y + r * GAME_PITCH;
-        if (x == 120 && y == top + 30) copy(cur.title[r][0], sizeof(cur.title[r][0]), text);
-        else if (x == 120 && y == top + 62) copy(cur.title[r][1], sizeof(cur.title[r][1]), text);
-        else if (y == top + 70 && x > 700 && !strcmp(text, "PSP")) cur.tag[r] = color;
-        else if (y == top + 70 && x > 700) copy(cur.id[r], sizeof(cur.id[r]), text);
-        else if (y == top + 47 && !strcmp(text, "JP")) copy(cur.icon[r], sizeof(cur.icon[r]), "JP");
-        else if (y == top + 35 && x > 788) copy(cur.badge[r], sizeof(cur.badge[r]), text); /* badge(788, top + 7, 128, 38) */
+        if (x == 90 && y == top + 21) copy(cur.title[r][0], sizeof(cur.title[r][0]), text);
+        else if (x == 90 && y == top + 45) copy(cur.title[r][1], sizeof(cur.title[r][1]), text);
+        else if (y == top + 36 && x == 260 && !strcmp(text, "PSP")) cur.tag[r] = color;
+        else if (y == top + 36 && x == 90) copy(cur.id[r], sizeof(cur.id[r]), text);
+        else if (y == top + 25 && !strcmp(text, "JP")) copy(cur.icon[r], sizeof(cur.icon[r]), "JP");
+        else if (y == top + 29 && x > 788) copy(cur.badge[r], sizeof(cur.badge[r]), text); /* badge(788, top + 7, 128, 38) */
     }
     if (y == DEFAULT_BADGE_Y && x > 174 && x < 282) copy(cur.default_badge, sizeof(cur.default_badge), text);
     if (y == HINT_Y) {
@@ -504,6 +508,7 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
         else { copy(cur.counter, sizeof(cur.counter), text); cur.counter_x = x; }
     }
     if (x == 40 && (y == STATUS_Y || y == STATUS_Y + 28)) copy(cur.status[(y - STATUS_Y) / 28], sizeof(cur.status[0]), text);
+    if (y == 422 && !strncmp(text, "Page ", 5)) copy(cur.pages, sizeof(cur.pages), text);
     if (x == 42 && cur.bar_y >= 0 && y == cur.bar_y + 30) copy(cur.bar_title, sizeof(cur.bar_title), text);
     return 0;
 }
@@ -791,7 +796,7 @@ static void check_rules(void)
                 session->free_while_drawing, session->free_in_flight, session->stale_fields,
                 session->drawn_after_free, session->double_free, session->pool_empty, session->decode_errors,
                 session->live_at_exit);
-    TEST_CHECK_(session->max_live <= 9 && session->max_cdram <= 9L * CDRAM_BLOCK, "at most 9 icons: %d, %ld B",
+    TEST_CHECK_(session->max_live <= 5 && session->max_cdram <= 5L * CDRAM_BLOCK, "at most 5 icons: %d, %ld B",
                 session->max_live, session->max_cdram);
 }
 /* Every card of every frame: its ID's game, its title rows as the old
@@ -806,7 +811,7 @@ static int check_cards(int frames, int *placeholders_out)
             if (!s->id[r][0]) continue;
             const Game *g = game_of(s->id[r]);
             if (!g) { if (bad++ < 5) TEST_MSG("frame %d card %d: unknown ID %s", f, r, s->id[r]); continue; }
-            ref_wrapped_text(120, GAMES_Y + r * GAME_PITCH + 30, 620, 26, 32, 2, g->title);
+            ref_wrapped_text(90, GAMES_Y + r * GAME_PITCH + 21, 650, 22, 24, 1, g->title);
             for (int k = 0; k < 2; k++) {
                 const char *want = k < ref_rows ? ref_row[k].text : "";
                 if (strcmp(s->title[r][k], want) && bad++ < 5)
@@ -842,11 +847,11 @@ static int selected_of(int f)
     return s->focus >= 0 && s->id[s->focus][0] ? list_index(s->id[s->focus]) : -1;
 }
 
-/* The window main.c keeps icons for: the visible rows and a page above and below. */
+/* The current page is the entire icon window. */
 static int in_window(int f, int index)
 {
     int top = top_of(f);
-    return top >= 0 && index >= top - ROWS && index < top + 2 * ROWS;
+    return top >= 0 && index >= top && index < top + ROWS;
 }
 /* No icon is loaded again unless it left the window in between. */
 static int window_never_reloaded(int frames)
@@ -865,16 +870,12 @@ static int window_never_reloaded(int frames)
     }
     return bad == 0;
 }
-/* The loads of frames [from, to] go in main.c's order for a list last moved
- * down (direction 1) or up: the visible rows, the page that way, then the
- * other page, nearest first; an icon that is cached or broken is skipped. */
+/* Current-page icons load in row order, skipping cached or failed images. */
 static int loads_in_order(int from, int to, int direction)
 {
-    int top = top_of(to), want[3 * ROWS], w = 0, last = -1, bad = 0;
+    (void)direction;
+    int top = top_of(to), want[ROWS], w = 0, last = -1, bad = 0;
     for (int r = 0; r < ROWS; r++) want[w++] = top + r;
-    for (int side = 0; side < 2; side++)
-        for (int r = 0; r < ROWS; r++)
-            want[w++] = (side == 0) == (direction > 0) ? top + ROWS + r : top - 1 - r;
     for (int f = from; f <= to; f++) {
         if (!session->shown[f].loaded[0]) continue;
         int index = list_index(session->shown[f].loaded), pos = -1;
@@ -912,10 +913,10 @@ static void idle_window_fills_then_costs_nothing(void)
     TEST_CHECK(frames == at);
     check_rules();
     TEST_CHECK(check_cards(frames, NULL) == 0);
-    /* The window: the three cards and the page below (nothing is above the top). */
-    TEST_CHECK(session->shown[0].scans == 1 && sum_loads(0, frames) <= 6 && max_loads(0, frames) <= 1);
-    /* The visible icons come first: one a frame, so from the third frame on every card has its icon. */
-    for (int f = 2; f < frames; f++)
+    /* Only the five cards on this page are loaded. */
+    TEST_CHECK(session->shown[0].scans == 1 && sum_loads(0, frames) <= ROWS && max_loads(0, frames) <= 1);
+    /* One load per frame: after five frames every loadable card has its icon. */
+    for (int f = ROWS - 1; f < frames; f++)
         for (int r = 0; r < ROWS; r++) TEST_CHECK_(strcmp(session->shown[f].icon[r], "JP") ||
             game_of(session->shown[f].id[r])->icon != ICON_OK, "frame %d card %d placeholder", f, r);
     /* Steady state: no loads, no reads, no layout; only short labels are measured. */
@@ -929,66 +930,66 @@ static void idle_window_fills_then_costs_nothing(void)
     TEST_MSG("idle frame: at most %d glyphs measured; %d icon loads in all", glyphs, sum_loads(0, frames));
 }
 
+static int current_page_loads_only(int frames)
+{
+    int bad = 0, stable = 0;
+    for (int f = 0; f < frames; f++) {
+        const Frame *shown = &session->shown[f];
+        stable = f && top_of(f) == top_of(f - 1) ? stable + 1 : 0;
+        if (shown->loaded[0]) {
+            int found = 0;
+            for (int r = 0; r < ROWS; r++) found |= !strcmp(shown->loaded, shown->id[r]);
+            bad += !found;
+        }
+        if (stable >= ROWS)
+            for (int r = 0; r < ROWS; r++) {
+                const Game *g = shown->id[r][0] ? game_of(shown->id[r]) : NULL;
+                if (g && (g->icon == ICON_OK || g->icon == ICON_RGBA || g->icon == ICON_SMALL))
+                    bad += strcmp(shown->icon[r], g->id) != 0;
+            }
+    }
+    return bad == 0;
+}
+
 static void scrolling_loads_one_icon_a_frame_and_never_reloads_the_window(void)
 {
     card(60, kind_mixed);
     spec_list();
     scenario_scroll();
-    int frames = run(at), placeholders = 0;
+    int frames = run(at), deepest = 0;
     check_rules();
     TEST_CHECK(check_cards(frames, NULL) == 0);
-    TEST_CHECK(max_loads(0, frames) <= 1);
-    /* Once filled, scrolling at the repeat rate never shows a placeholder for a loadable icon. */
-    for (int f = 20; f < frames; f++)
-        for (int r = 0; r < ROWS; r++) {
-            const Frame *s = &session->shown[f];
-            const Game *g = s->id[r][0] ? game_of(s->id[r]) : NULL;
-            if (g && !strcmp(s->icon[r], "JP") && (g->icon == ICON_OK || g->icon == ICON_RGBA || g->icon == ICON_SMALL))
-                placeholders++;
-        }
-    TEST_CHECK_(placeholders == 0, "%d placeholders while scrolling", placeholders);
-    /* It moved about 30 rows down and back to the top. */
-    int deepest = 0;
-    for (int f = 0; f < frames; f++) if (top_of(f) > deepest) deepest = top_of(f);
+    TEST_CHECK(max_loads(0, frames) <= 1 && current_page_loads_only(frames));
+    for (int f = 0; f < frames; f++) {
+        TEST_CHECK(top_of(f) % ROWS == 0);
+        if (top_of(f) > deepest) deepest = top_of(f);
+    }
     TEST_CHECK(deepest >= 25 && top_of(frames - 1) == 0 && selected_of(frames - 1) == 0);
-    /* Each step loads the one row entering the window: about one load a row each way. */
-    int loads = sum_loads(0, frames);
-    TEST_CHECK_(loads <= 2 * deepest + 3 * ROWS, "%d loads for %d rows down and back", loads, deepest);
     TEST_CHECK(window_never_reloaded(frames));
-    TEST_MSG("%d frames, %d rows deep, %d icon loads", frames, deepest, loads);
 }
 
-/* Scroll the view 3 rows down and back: the visible cards' icons are never loaded again. */
-static void scroll_back_keeps_visible_icons(void)
+/* Crossing a page boundary and coming back loads only those two pages. */
+static void returning_to_a_page_reloads_only_that_page(void)
 {
     card(60, NULL);
     spec_list();
     at = 0;
     hold(0, 15);
-    for (int i = 0; i < 12; i++) tap(DOWN, 8); /* selection 12 on the bottom card: the view's top is 10 */
+    for (int i = 0; i < 12; i++) tap(DOWN, 8);
     hold(0, 20);
-    int mark = at - 1; /* the last frame before the taps */
-    for (int i = 0; i < 3; i++) tap(DOWN, 8); /* the view to 13 */
-    for (int i = 0; i < 5; i++) tap(UP, 8);   /* the selection to 10, the view back to 10 */
+    int mark = at - 1;
+    for (int i = 0; i < 3; i++) tap(DOWN, 8);
+    for (int i = 0; i < 5; i++) tap(UP, 8);
     hold(0, 10);
     int frames = run(at);
     check_rules();
-    TEST_CHECK(check_cards(frames, NULL) == 0);
-    TEST_CHECK(top_of(mark) == top_of(frames - 1) && top_of(mark) > 3);
-    /* After the mark: only rows entering the window's far edges load, never a visible one,
-     * and no card shows the placeholder. */
-    int loads = sum_loads(mark, frames);
-    TEST_CHECK_(loads <= 6, "%d loads moving 3 rows and back", loads);
-    for (int f = mark; f < frames; f++) {
-        const Frame *s = &session->shown[f];
-        int index = s->loaded[0] ? list_index(s->loaded) : -1;
-        TEST_CHECK(index < 0 || index < top_of(f) || index >= top_of(f) + ROWS);
-        for (int r = 0; r < ROWS; r++) TEST_CHECK(strcmp(s->icon[r], "JP"));
-    }
+    TEST_CHECK(check_cards(frames, NULL) == 0 && current_page_loads_only(frames));
+    TEST_CHECK(top_of(mark) == top_of(frames - 1) && top_of(mark) > ROWS);
+    TEST_CHECK(sum_loads(mark, frames) == 2 * ROWS); /* one new page and the page revisited */
     TEST_CHECK(window_never_reloaded(frames));
 }
 
-static void page_jumps_keep_the_row_and_prefetch(void)
+static void page_jumps_keep_the_row_and_load_only_that_page(void)
 {
     card(60, NULL);
     spec_list();
@@ -997,21 +998,20 @@ static void page_jumps_keep_the_row_and_prefetch(void)
     check_rules();
     TEST_CHECK(check_cards(frames, NULL) == 0);
     TEST_CHECK(max_loads(0, frames) <= 1);
-    /* Each R moves the view a page, the selection keeps its row, and the new page was
-     * already loaded: no placeholder after the first fill. */
+    /* Each R advances five entries. The new page fills lazily, one image per frame. */
     int f = 20, top = top_of(19), row = selected_of(19) - top, placeholders = 0;
     TEST_CHECK(top == 0 && row == 0);
     for (int i = 0; i < 8; i++, f += 16) {
-        TEST_CHECK_(top_of(f) == top + 3 * (i + 1), "R %d: top %d", i, top_of(f));
+        TEST_CHECK_(top_of(f) == top + ROWS * (i + 1), "R %d: top %d", i, top_of(f));
         TEST_CHECK(selected_of(f) - top_of(f) == row);
     }
-    for (int i = 0; i < 8; i++, f += 16) TEST_CHECK_(top_of(f) == top + 3 * (7 - i), "L %d: top %d", i, top_of(f));
+    for (int i = 0; i < 8; i++, f += 16) TEST_CHECK_(top_of(f) == top + ROWS * (7 - i), "L %d: top %d", i, top_of(f));
     /* R held: pages repeat until the last page, then the last game is selected. */
-    TEST_CHECK(top_of(frames - 1) == list_count - ROWS && selected_of(frames - 1) == list_count - 1);
+    TEST_CHECK(top_of(frames - 1) == (list_count - 1) / ROWS * ROWS && selected_of(frames - 1) == list_count - 1);
     for (int g = 20; g < frames; g++)
         for (int r = 0; r < ROWS; r++) placeholders += !strcmp(session->shown[g].icon[r], "JP") &&
                                                        strcmp(session->shown[g].id[r], "NPXS10028");
-    TEST_CHECK_(placeholders == 0, "%d placeholders while paging", placeholders);
+    TEST_CHECK(placeholders > 0 && current_page_loads_only(frames));
     /* The hints name the new controls, and the counter is drawn apart. */
     TEST_CHECK(!strcmp(session->shown[25].hints, "×: toggle   L/R: page   Left/Right: letter   ○: exit"));
     char counter[24];
@@ -1039,10 +1039,10 @@ static void page_jumps_at_the_ends(void)
     int frames = run(at);
     check_rules();
     TEST_CHECK(frames == at);
-    TEST_CHECK_(top_of(a) == 3 && selected_of(a) == 4, "a: %d %d", top_of(a), selected_of(a));
-    TEST_CHECK_(top_of(b) == 5 && selected_of(b) == 6, "b: %d %d", top_of(b), selected_of(b));
+    TEST_CHECK_(top_of(a) == 5 && selected_of(a) == 6, "a: %d %d", top_of(a), selected_of(a));
+    TEST_CHECK_(top_of(b) == 5 && selected_of(b) == 7, "b: %d %d", top_of(b), selected_of(b));
     TEST_CHECK_(top_of(c) == 5 && selected_of(c) == 7, "c: %d %d", top_of(c), selected_of(c));
-    TEST_CHECK_(top_of(d) == 2 && selected_of(d) == 4, "d: %d %d", top_of(d), selected_of(d));
+    TEST_CHECK_(top_of(d) == 0 && selected_of(d) == 2, "d: %d %d", top_of(d), selected_of(d));
     TEST_CHECK_(top_of(e) == 0 && selected_of(e) == 0, "e: %d %d", top_of(e), selected_of(e));
     /* Fewer games than a page: L and R go to the first and last. */
     card(1, NULL);
@@ -1082,12 +1082,11 @@ static void letter_jumps_go_to_the_next_initial(void)
     for (int k = 0; k < n; k++) {
         TEST_CHECK_(selected_of(when[k]) == stops[k], "Right %d: %d, want %d", k, selected_of(when[k]), stops[k]);
         /* shown at the top, unless near the end */
-        int top = stops[k] < list_count - ROWS ? stops[k] : list_count - ROWS;
+        int top = stops[k] / ROWS * ROWS;
         TEST_CHECK(top_of(when[k]) == top);
     }
     TEST_CHECK(selected_of(when[n + 1]) == list_count - 1);
-    /* After a jump right, the loads go: the visible rows, the page below, the page
-     * above, nearest first, each as it is needed. */
+    /* A letter jump loads only its current page, in row order. */
     int order_ok = 1;
     for (int k = 0; k < n; k++) order_ok &= loads_in_order(when[k] - 8, when[k], 1);
     TEST_CHECK(order_ok);
@@ -1144,10 +1143,8 @@ static void letter_jumps_go_to_the_next_initial(void)
     TEST_CHECK_(runs == distinct, "%d runs, %d groups", runs, distinct);
 }
 
-/* After a move up (Up at the top card, L, Left) the list's direction of travel is
- * up: Start's reload, which finds no icon cached, goes visible rows, then the page
- * above, then the page below, nearest first. */
-static void moving_up_prefetches_the_page_above(void)
+/* Refresh loads only the current page, whichever direction led there. */
+static void refresh_loads_only_the_current_page(void)
 {
     static const unsigned keys[] = {UP, SCE_CTRL_LTRIGGER, SCE_CTRL_LEFT};
     static const char *const names[] = {"Up", "L", "Left"};
@@ -1156,18 +1153,18 @@ static void moving_up_prefetches_the_page_above(void)
         spec_list();
         at = 0;
         hold(0, 15);
-        for (int i = 0; i < 6; i++) tap(SCE_CTRL_RTRIGGER, 12); /* down 6 pages: the view's top is 18 */
+        for (int i = 0; i < 6; i++) tap(SCE_CTRL_RTRIGGER, 12); /* down six five-game pages */
         tap(keys[k], 12);                                        /* one move up */
         tap(SCE_CTRL_START, 14);                                 /* the reload */
         int start = at - 15, frames = run(at), top = top_of(start);
         check_rules();
         TEST_CHECK(frames == at);
-        TEST_CHECK_(top >= ROWS && top + 2 * ROWS <= list_count && top < 18, "%s: top %d", names[k], top);
-        TEST_CHECK_(sum_loads(start, start + 3 * ROWS) == 3 * ROWS, "%s: %d loads", names[k],
+        TEST_CHECK_(top >= ROWS && top + ROWS <= list_count && top < 6 * ROWS, "%s: top %d", names[k], top);
+        TEST_CHECK_(sum_loads(start, start + 3 * ROWS) == ROWS, "%s: %d loads", names[k],
                     sum_loads(start, start + 3 * ROWS));
         TEST_CHECK_(loads_in_order(start, start + 3 * ROWS - 1, -1), "%s", names[k]);
     }
-    /* and after a move down, the page below first (the same reload) */
+    /* The same bound holds after a move down. */
     card(60, NULL);
     spec_list();
     at = 0;
@@ -1176,7 +1173,7 @@ static void moving_up_prefetches_the_page_above(void)
     tap(SCE_CTRL_START, 14);
     int start = at - 15;
     run(at);
-    TEST_CHECK(loads_in_order(start, start + 3 * ROWS - 1, 1) && sum_loads(start, start + 3 * ROWS) == 3 * ROWS);
+    TEST_CHECK(loads_in_order(start, start + 3 * ROWS - 1, 1) && sum_loads(start, start + 3 * ROWS) == ROWS);
 }
 
 /* A held list key repeats 350 ms after its press, then every 90 ms (the process
@@ -1205,7 +1202,7 @@ static void held_keys_repeat_and_new_presses_act(void)
         if (selected_of(f) != sel && bad++ < 5) TEST_MSG("frame %d: selection %d, want %d", f - p, selected_of(f), sel);
     }
     TEST_CHECK(bad == 0);
-    TEST_CHECK_(selected_of(q - 1) == 5 && selected_of(q) == 8 && top_of(q) == top_of(q - 1) + ROWS,
+    TEST_CHECK_(selected_of(q - 1) == 5 && selected_of(q) == 5 + ROWS && top_of(q) == top_of(q - 1) + ROWS,
                 "Down held 40 frames: %d; then R: %d", selected_of(q - 1), selected_of(q));
 }
 
@@ -1611,46 +1608,34 @@ static void hints_leave_room_for_the_counter(void)
     ascii_units = 10;
 }
 
-/* Titles of the window beyond the visible rows are laid out one a frame, when no
- * icon is to be loaded; a view move then lays out no title while it draws. */
+/* Title layouts are paid once when their page is first shown, never for off-page titles. */
 TEST_ONLY static int kind_none(int i) { (void)i; return ICON_NONE; }
 static long layout_glyphs(const char *title)
 {
     counted = 0;
     ref_measure = counting_width;
-    ref_wrapped_text(120, 0, 620, 26, 32, 2, title);
+    ref_wrapped_text(90, 0, 650, 22, 24, 1, title);
     return counted;
 }
-static void titles_are_laid_out_ahead_one_a_frame(void)
+static void titles_are_laid_out_only_for_the_current_page(void)
 {
-    card(60, kind_none); /* no icons: each window entry's attempt takes one frame, then fails */
+    card(60, kind_none);
     spec_list();
     at = 0;
     hold(0, 30);
-    tap(DOWN, 10); tap(DOWN, 10); /* the selection to the third card: no view move */
-    tap(DOWN, 10);                /* the view moves one row */
-    int move = at - 11;
+    for (int i = 0; i < ROWS; i++) tap(DOWN, 10);
+    int change = at - 11;
+    hold(0, 10);
     int frames = run(at);
     TEST_CHECK(frames == at);
-    long idle = session->shown[25].glyphs, bad = 0;
-    /* frames 1-5: one icon attempt each (the visible titles were laid out by frame 0's draw) */
-    for (int f = 1; f < 2 * ROWS; f++)
-        if (session->shown[f].glyphs != idle && bad++ < 5) TEST_MSG("frame %d: %d glyphs, idle %ld", f, session->shown[f].glyphs, idle);
-    /* frames 6-8: the page below's three titles, one a frame */
-    for (int f = 2 * ROWS; f < 3 * ROWS; f++) {
-        long want = idle + layout_glyphs(list[ROWS + f - 2 * ROWS].title);
-        if (session->shown[f].glyphs != want && bad++ < 5) TEST_MSG("frame %d: %d glyphs, want %ld", f, session->shown[f].glyphs, want);
-    }
-    for (int f = 3 * ROWS; f < 30; f++)
-        if (session->shown[f].glyphs != idle && bad++ < 5) TEST_MSG("frame %d: %d glyphs, idle %ld", f, session->shown[f].glyphs, idle);
-    TEST_CHECK(bad == 0);
-    /* The move's frame: one icon attempt (the row entering the window), and no title
-     * layout (the counter's digits aside); the next frame lays out that row's title. */
-    TEST_CHECK_(top_of(move) == 1 && top_of(move - 1) == 0, "top %d", top_of(move));
-    long move_glyphs = session->shown[move].glyphs, next = session->shown[move + 1].glyphs;
-    TEST_CHECK_(move_glyphs <= idle + 2, "the move's frame measured %ld glyphs, idle %ld", move_glyphs, idle);
-    TEST_CHECK_(next - move_glyphs == layout_glyphs(list[2 * ROWS].title), "the next frame: %ld more glyphs, want %ld",
-                next - move_glyphs, layout_glyphs(list[2 * ROWS].title));
+    long idle = session->shown[25].glyphs;
+    for (int f = 1; f < 30; f++) TEST_CHECK(session->shown[f].glyphs == idle);
+    TEST_CHECK(top_of(change - 1) == 0 && top_of(change) == ROWS);
+    long work = 0;
+    for (int r = 0; r < ROWS; r++) work += layout_glyphs(list[ROWS + r].title);
+    TEST_CHECK(session->shown[change].glyphs >= idle + work - 4);
+    TEST_CHECK(session->shown[change + 1].glyphs <= idle + 4);
+    TEST_CHECK(current_page_loads_only(frames));
 }
 
 static void toggles_and_filters_keep_icons(void)
@@ -1674,7 +1659,7 @@ static void toggles_and_filters_keep_icons(void)
                && !session->shown[disabled].id[2][0]);
     TEST_CHECK(top_of(all) == 0);
     TEST_CHECK(max_loads(0, frames) <= 1 && visible_first(frames));
-    TEST_CHECK_(sum_loads(TOGGLE_FRAMES, frames) <= 2, "%d loads through the filters", sum_loads(TOGGLE_FRAMES, frames));
+    TEST_CHECK_(sum_loads(TOGGLE_FRAMES, frames) <= 2 * ROWS, "%d loads through the filters", sum_loads(TOGGLE_FRAMES, frames));
 }
 
 /* A console that enters with ○ (Japan's default): ○ toggles, × leaves, and the
@@ -1723,7 +1708,7 @@ static void broken_icons_show_the_placeholder_once_tried(void)
      * coming back). None beyond the window's reach was opened. */
     int deepest = 0;
     for (int f = 0; f < frames; f++) if (top_of(f) > deepest) deepest = top_of(f);
-    int reach = deepest + 2 * ROWS - 1, broken_tried = 0;
+    int reach = deepest + ROWS - 1, broken_tried = 0;
     for (int i = 0; i < game_count; i++) {
         int index = list_index(games[i].id), n = session->attempts[i];
         int broken = games[i].icon != ICON_OK && games[i].icon != ICON_RGBA && games[i].icon != ICON_SMALL;
@@ -1762,11 +1747,15 @@ static void rescan_only_on_start(void)
     snprintf(games[game_count].title, sizeof(games[0].title), VJO_CATALOG_PSP_TITLE);
     games[game_count].icon = ICON_NONE;
     spec_list();
+    int target = 0;
+    for (int i = ROWS; i < list_count - 1; i++)
+        if (!loadable_kind(before[i].icon) && loadable_kind(list[i].icon)) { target = i; break; }
+    TEST_ASSERT(target >= ROWS); /* pick a page that actually exercises the stale failure flag */
     frame_hook = install_new_game;
     at = 0;
     hold(0, 20);
-    hold(DOWN, 60);  /* 8 rows down: the window has a page above and below */
-    hold(0, 30);
+    for (int i = 0; i < target; i++) tap(DOWN, 1);
+    hold(0, at < NEW_GAME_FRAME + 15 ? NEW_GAME_FRAME + 15 - at : 15);
     tap(SCE_CTRL_START, 40);
     int start = at - 41;
     hold(0, 10);
@@ -1779,24 +1768,23 @@ static void rescan_only_on_start(void)
     /* Before Start the new game is not listed. */
     for (int f = 0; f < start; f++)
         for (int r = 0; r < ROWS; r++) TEST_CHECK(strcmp(session->shown[f].id[r], "VJOT09999"));
-    /* Start empties the cache after waiting for the GPU, then refills one a frame:
-     * the visible rows, then the page below (the list last moved down), then above. */
+    /* Start empties the cache after the GPU wait, then refills only this page, one per frame. */
     TEST_CHECK(session->shown[start].waits >= 1 && max_loads(0, frames) <= 1);
     int loadable = 0, top = top_of(start);
-    for (int i = top - ROWS; i < top + 2 * ROWS; i++)
+    for (int i = top; i < top + ROWS; i++)
         loadable += i >= 0 && i < list_count && (list[i].icon == ICON_OK || list[i].icon == ICON_RGBA ||
                                                  list[i].icon == ICON_SMALL);
     TEST_CHECK_(sum_loads(start, frames) == loadable, "%d loads after Start, %d loadable icons in the window",
                 sum_loads(start, frames), loadable);
-    TEST_CHECK(top > ROWS && loads_in_order(start, start + 3 * ROWS + 2, 1));
+    TEST_CHECK(top >= ROWS && loads_in_order(start, start + 3 * ROWS + 2, 1));
     /* The new game sorts first, so each later entry moved down one place. The case
      * that per-place state (failures, layouts) must not survive: a place in the
      * window whose old entry's icon was broken, and was tried, now holds a good one. */
     int moved = 0;
-    for (int i = top - ROWS; i < top + 2 * ROWS; i++)
+    for (int i = top; i < top + ROWS; i++)
         moved += i >= 1 && i < list_count && !strcmp(list[0].id, "VJOT09999") && !loadable_kind(before[i].icon) &&
                  loadable_kind(list[i].icon);
-    TEST_CHECK_(moved >= 1, "no window place went from a broken icon to a good one");
+    TEST_CHECK_(moved >= 1, "no window place went from a broken icon to a good one (top %d)", top);
     /* From the rescan on, every card shows its own game's rows and icon. */
     int bad = 0;
     ref_measure = stub_width;
@@ -1805,7 +1793,7 @@ static void rescan_only_on_start(void)
             const Frame *sh = &session->shown[f];
             const Game *g = sh->id[r][0] ? game_of(sh->id[r]) : NULL;
             if (!g) continue;
-            ref_wrapped_text(120, 0, 620, 26, 32, 2, g->title);
+            ref_wrapped_text(90, 0, 650, 22, 24, 1, g->title);
             if (strcmp(sh->title[r][0], ref_rows > 0 ? ref_row[0].text : "") ||
                 strcmp(sh->title[r][1], ref_rows > 1 ? ref_row[1].text : "")) bad++;
             int loadable = g->icon == ICON_OK || g->icon == ICON_RGBA || g->icon == ICON_SMALL;
@@ -1831,7 +1819,7 @@ static void many_games_bounded(void)
     TEST_CHECK(max_loads(0, frames) <= 1);
     int deepest = 0;
     for (int f = 0; f < frames; f++) if (top_of(f) > deepest) deepest = top_of(f);
-    TEST_CHECK(deepest == list_count - ROWS && top_of(frames - 1) == 0);
+    TEST_CHECK(deepest == (list_count - 1) / ROWS * ROWS && top_of(frames - 1) == 0);
     TEST_MSG("%d entries, %d loads, at most %d icons (%ld B of CDRAM)", list_count, session->loads,
              session->max_live, session->max_cdram);
     /* More than 512: the first 512, and the message. */
@@ -1848,7 +1836,7 @@ static void touch_toggles_the_touched_card(void)
     spec_list();
     at = 0;
     hold(0, 15);
-    script[at++] = (Input){0, 1, 400, GAMES_Y + GAME_PITCH + 40, 0}; /* the second card */
+    script[at++] = (Input){0, 1, 400, GAMES_Y + GAME_PITCH + 20, 0}; /* the second card */
     hold(0, 15);
     int frames = run(at);
     check_rules();
@@ -2166,7 +2154,7 @@ static void a_rescan_keeps_nothing_of_old_rows(void)
                 if (session->shown[f].tag[r]) tagged++;
             }
             if (!strcmp(id, "NPXS10028")) TEST_CHECK_(session->shown[f].tag[r] == ACCENT, "frame %d", f);
-            TEST_CHECK_(strcmp(id, "ULJS00378") && strcmp(id, "PSPEMUCFW"), "frame %d: %s still listed", f, id);
+            TEST_CHECK_(strcmp(id, "PSPEMUCFW"), "frame %d: %s still listed", f, id);
         }
     TEST_CHECK_(vita_cards > 9 && !tagged, "%d Vita cards, %d tagged", vita_cards, tagged);
     /* The status is no stale registration message, and the gone bubbles' descriptions went. */
@@ -2932,15 +2920,119 @@ static void a_failed_disable_all_changes_nothing(void)
     TEST_CHECK(!strcmp(slurp("ux0:data/VitaJPOverlay/games.ini", NULL), ini));
 }
 
+/* Search uses the real keyboard lifecycle and match code, with the SDK result supplied here. */
+static void reply_ascii(const char *query)
+{
+    memset(vjo_test_ime_reply, 0, sizeof(vjo_test_ime_reply));
+    for (int i = 0; query[i] && i < 64; i++) vjo_test_ime_reply[i] = (unsigned char)query[i];
+    vjo_test_ime_button = SCE_IME_DIALOG_BUTTON_ENTER;
+}
+
+static void search_finds_an_off_page_id_and_clear_restores_the_list(void)
+{
+    card(60, NULL);
+    spec_list();
+    reply_ascii("vjot00059");
+    at = 0;
+    hold(0, 15);
+    tap(SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER, 12);
+    int found = at - 1;
+    tap(ENTER, 8);
+    script[at++] = (Input){0, 1, 490, 416, 0}; /* Clear, then the first five games again */
+    hold(0, 10);
+    int frames = run(at), last = frames - 1;
+    check_rules();
+    TEST_CHECK(session->searches == 1 && session->search_terms == 1);
+    TEST_CHECK(!strcmp(session->shown[found].id[0], "VJOT00059") && !session->shown[found].id[1][0]);
+    TEST_CHECK(!strcmp(session->shown[found].counter, "1/1") && !strcmp(session->shown[found].pages, "Page 1/1"));
+    TEST_CHECK(top_of(last) == 0 && !strcmp(session->shown[last].pages, "Page 1/13"));
+    TEST_CHECK(strstr(slurp("ux0:data/VitaJPOverlay/games.ini", NULL), "VJOT00059 = disabled") != NULL);
+    int scans = 0;
+    for (int f = 0; f < frames; f++) scans += session->shown[f].scans;
+    TEST_CHECK(scans == 1); /* querying never rescans or reloads every icon */
+}
+
+static void search_matches_japanese_and_empty_results_remain_searchable(void)
+{
+    card(60, NULL);
+    spec_list();
+    memset(vjo_test_ime_reply, 0, sizeof(vjo_test_ime_reply));
+    vjo_test_ime_reply[0] = 0x30B2; vjo_test_ime_reply[1] = 0x30FC; vjo_test_ime_reply[2] = 0x30E0; /* ゲーム */
+    vjo_test_ime_button = SCE_IME_DIALOG_BUTTON_ENTER;
+    at = 0; hold(0, 12);
+    script[at++] = (Input){0, 1, 240, 416, 0}; /* touch the search field */
+    hold(0, 12);
+    int frames = run(at);
+    TEST_CHECK(session->searches == 1 && !strcmp(session->shown[frames - 1].id[0], "VJOT00059"));
+
+    card(60, NULL);
+    reply_ascii("game that does not exist");
+    at = 0; hold(0, 12);
+    tap(SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER, 12);
+    tap(ENTER, 8); /* no result: no setting is changed */
+    int empty = at - 1;
+    script[at++] = (Input){0, 1, 490, 416, 0}; /* Clear works with zero results */
+    hold(0, 10);
+    frames = run(at);
+    TEST_CHECK(!session->shown[empty].id[0][0] && !strcmp(session->shown[empty].pages, "Page 0/0"));
+    TEST_CHECK(!slurp("ux0:data/VitaJPOverlay/games.ini", NULL));
+    TEST_CHECK(top_of(frames - 1) == 0 && !strcmp(session->shown[frames - 1].pages, "Page 1/13"));
+}
+
+static void search_cancel_and_filtering_preserve_choices(void)
+{
+    card(60, NULL); spec_list();
+    vjo_test_ime_button = SCE_IME_DIALOG_BUTTON_CLOSE;
+    at = 0; hold(0, 15);
+    tap(SCE_CTRL_RTRIGGER, 10);
+    int before = at - 1;
+    tap(SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER, 12);
+    int frames = run(at);
+    TEST_CHECK(session->searches == 1 && top_of(frames - 1) == top_of(before) && selected_of(frames - 1) == selected_of(before));
+    TEST_CHECK(!slurp("ux0:data/VitaJPOverlay/games.ini", NULL));
+
+    card(60, NULL); spec_list(); reply_ascii("vjot00059");
+    at = 0; hold(0, 15);
+    tap(SCE_CTRL_SQUARE, 8); /* Enabled */
+    tap(SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER, 12);
+    int found = at - 1;
+    tap(ENTER, 8); /* OFF: leaves this result set, and clamps selection */
+    frames = run(at);
+    TEST_CHECK(!strcmp(session->shown[found].id[0], "VJOT00059"));
+    TEST_CHECK(!session->shown[frames - 1].id[0][0] && !strcmp(session->shown[frames - 1].pages, "Page 0/0"));
+    TEST_CHECK(strstr(slurp("ux0:data/VitaJPOverlay/games.ini", NULL), "VJOT00059 = disabled") != NULL);
+}
+
+static void touch_pages_have_five_entries_and_a_partial_last_page(void)
+{
+    card(7, NULL); spec_list();
+    at = 0; hold(0, 12);
+    script[at++] = (Input){0, 1, 860, 416, 0};
+    hold(0, 10);
+    int last_page = at - 1;
+    script[at++] = (Input){0, 1, 600, 416, 0};
+    hold(0, 10);
+    int frames = run(at);
+    TEST_CHECK(top_of(last_page) == ROWS && !strcmp(session->shown[last_page].pages, "Page 2/2"));
+    TEST_CHECK(session->shown[last_page].id[2][0] && !session->shown[last_page].id[3][0]);
+    TEST_CHECK(top_of(frames - 1) == 0 && session->shown[frames - 1].id[4][0]);
+    TEST_CHECK(current_page_loads_only(frames));
+    check_rules();
+}
+
 TEST_LIST = {
+    {"search_finds_an_off_page_id_and_clear_restores_the_list", search_finds_an_off_page_id_and_clear_restores_the_list},
+    {"search_matches_japanese_and_empty_results_remain_searchable", search_matches_japanese_and_empty_results_remain_searchable},
+    {"search_cancel_and_filtering_preserve_choices", search_cancel_and_filtering_preserve_choices},
+    {"touch_pages_have_five_entries_and_a_partial_last_page", touch_pages_have_five_entries_and_a_partial_last_page},
     {"idle_window_fills_then_costs_nothing", idle_window_fills_then_costs_nothing},
     {"scrolling_loads_one_icon_a_frame_and_never_reloads_the_window",
      scrolling_loads_one_icon_a_frame_and_never_reloads_the_window},
-    {"scroll_back_keeps_visible_icons", scroll_back_keeps_visible_icons},
-    {"page_jumps_keep_the_row_and_prefetch", page_jumps_keep_the_row_and_prefetch},
+    {"returning_to_a_page_reloads_only_that_page", returning_to_a_page_reloads_only_that_page},
+    {"page_jumps_keep_the_row_and_load_only_that_page", page_jumps_keep_the_row_and_load_only_that_page},
     {"page_jumps_at_the_ends", page_jumps_at_the_ends},
     {"letter_jumps_go_to_the_next_initial", letter_jumps_go_to_the_next_initial},
-    {"moving_up_prefetches_the_page_above", moving_up_prefetches_the_page_above},
+    {"refresh_loads_only_the_current_page", refresh_loads_only_the_current_page},
     {"held_keys_repeat_and_new_presses_act", held_keys_repeat_and_new_presses_act},
     {"list_keys_only_on_the_games_page", list_keys_only_on_the_games_page},
     {"stick_scrolls_like_vitashell", stick_scrolls_like_vitashell},
@@ -2956,7 +3048,7 @@ TEST_LIST = {
     {"the_dpad_acts_first_in_a_frame", the_dpad_acts_first_in_a_frame},
     {"a_failed_read_moves_nothing", a_failed_read_moves_nothing},
     {"hints_leave_room_for_the_counter", hints_leave_room_for_the_counter},
-    {"titles_are_laid_out_ahead_one_a_frame", titles_are_laid_out_ahead_one_a_frame},
+    {"titles_are_laid_out_only_for_the_current_page", titles_are_laid_out_only_for_the_current_page},
     {"toggles_and_filters_keep_icons", toggles_and_filters_keep_icons},
     {"circle_console_toggles_with_circle", circle_console_toggles_with_circle},
     {"broken_icons_show_the_placeholder_once_tried", broken_icons_show_the_placeholder_once_tried},

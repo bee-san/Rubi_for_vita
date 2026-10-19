@@ -705,9 +705,9 @@ static void icon_cache_lru(void)
     vjo_icon_cache_get(&cache, id[0]);
     TEST_CHECK(vjo_icon_cache_evict(&cache, NULL, 0) == &tex[1] && vjo_icon_cache_count(&cache) == VJO_ICON_SLOTS - 1);
     TEST_CHECK(vjo_icon_cache_get(&cache, id[1]) == NULL);
-    /* The window is never evicted: with 2..5 kept, 6 goes (0 was used after 6). */
-    const char *keep[] = {id[2], id[3], id[4], id[5]};
-    TEST_CHECK(vjo_icon_cache_evict(&cache, keep, 4) == &tex[6]);
+    /* Kept entries are never evicted: protect 2..4, leaving 0 as the only candidate. */
+    const char *keep[] = {id[2], id[3], id[4]};
+    TEST_CHECK(vjo_icon_cache_evict(&cache, keep, 3) == &tex[0]);
     /* Everything kept: nothing to evict. */
     const char *all[VJO_ICON_SLOTS];
     int n = 0;

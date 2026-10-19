@@ -572,7 +572,7 @@ foreach(_vjo_variant IN ITEMS app vocr6)
   set(_vjo_target vjo-settings-${_vjo_variant}-tests)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
-    settings/applog.c vita/games_storage.c
+    settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
     vita/buttons_vita.c
     host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
@@ -615,7 +615,7 @@ foreach(_vjo_games IN ITEMS tests bench)
   endif()
   add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/psp.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
-    settings/applog.c vita/games_storage.c
+    settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
     vita/buttons_vita.c
     host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
@@ -633,6 +633,12 @@ target_compile_definitions(vjo-settings-bench PRIVATE VJO_SETTINGS_BENCH=1)
 # A main.c from elsewhere finds its headers in settings/.
 target_include_directories(vjo-settings-bench PRIVATE settings)
 add_test(NAME settings_games COMMAND vjo-settings-games-tests)
+add_executable(vjo-settings-search-tests host/tests/test_settings_search.c settings/search.c
+  host/tests/settings_stubs/search_dialog_stub.c)
+target_include_directories(vjo-settings-search-tests PRIVATE third_party/acutest/include host/tests/settings_stubs)
+target_link_libraries(vjo-settings-search-tests vjo_host)
+target_compile_options(vjo-settings-search-tests PRIVATE -Wall -Wextra)
+add_test(NAME settings_search COMMAND vjo-settings-search-tests)
 # The one-VPK install (settings/install.c, install_page.c, core/payload.c, docs/one-vpk-install.md) on a
 # temporary memory card with a payload: fresh installs, updates, config.ini, faults at every write and
 # rename, the interrupted swap, uninstall, the manifest's rules, the page. The kernel loads the worker
