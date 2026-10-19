@@ -11,7 +11,8 @@
  *
  * `--write DIR` writes a queue, its inbox and its .apkg into DIR for host/tests/test_afv.py, which
  * compares each inbox note with the package's note (GUID, fields, tags, media, note type) with
- * Python's zipfile, sqlite3 and json, and checks the notes against Anki for Vita's interface rules. */
+ * Python's zipfile, sqlite3 and json, and checks the notes against Anki for Vita's interface rules;
+ * `--results DIR` then runs the results pass there (after Anki for Vita's own code took the inbox). */
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
@@ -1499,12 +1500,34 @@ TEST_LIST = {
     {NULL, NULL},
 };
 
+/* --results DIR: the results pass on what --write left in DIR (and Anki for Vita then did with it):
+ * one JSON line of what it did, the queue's counts, and the inbox's media files left. */
+static int results_in(const char *dir)
+{
+    VjoAfvResults r;
+    VjoExportCounts c;
+    if (chdir(dir) < 0)
+        return 2;
+    memset(&io, 0, sizeof(io));
+    vjo_arena_init(&A, mem, sizeof(mem));
+    if (vjo_afv_results(&A, &ui, &r) != VJO_OK)
+        return 1;
+    vjo_export_count(&c);
+    printf("{\"in_anki\":%d,\"duplicate\":%d,\"rejected\":%d,\"waiting\":%d,\"malformed\":%d,\"failed\":%d,"
+           "\"removed\":%d,\"swept\":%d,\"queued\":%d,\"exported\":%d,\"media_left\":%d}\n", r.in_anki, r.duplicate,
+           r.rejected, r.waiting, r.malformed, r.failed, r.removed, r.swept, c.queued, c.exported,
+           files_in(VJO_AFV_MEDIA_DIR, ".jpg"));
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     char out[PATH_MAX] = "";
     const char *dir;
     if (argc == 3 && !strcmp(argv[1], "--write"))
         return realpath(argv[2], out) ? write_inbox(out) : 2;
+    if (argc == 3 && !strcmp(argv[1], "--results"))
+        return realpath(argv[2], out) ? results_in(out) : 2;
     /* the memory card, removed when the suite ends (acutest runs each test in a child: test_tmpdir.h) */
     dir = vjo_test_tmpdir("afv");
     if (!dir || chdir(dir) < 0)
