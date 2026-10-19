@@ -267,15 +267,25 @@ class VocrDefaults(unittest.TestCase):
                                                                 hashlib.sha256(gate_att).hexdigest())}
             (src / prepare_ocr.VOCR_GATE_MODEL).write_bytes(gate)
             (src / prepare_ocr.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
+            # API 30: scan screen's text spotter weights and attribution, the same way
+            spot, spot_att = b"spot fixture", b"the text spotter's attribution"
+            spot_pin = {prepare_ocr.VOCR_SPOT_MODEL: ("https://fixture.invalid/s", len(spot), hashlib.sha256(spot).hexdigest())}
+            spot_att_pin = {prepare_ocr.VOCR_SPOT_ATTRIBUTION: ("https://fixture.invalid/sa", len(spot_att),
+                                                                hashlib.sha256(spot_att).hexdigest())}
+            (src / prepare_ocr.VOCR_SPOT_MODEL).write_bytes(spot)
+            (src / prepare_ocr.VOCR_SPOT_ATTRIBUTION).write_bytes(spot_att)
             with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ASSETS", gate_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ATTRIBUTION_PIN", gate_att_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_SPOT_ASSETS", spot_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_SPOT_ATTRIBUTION_PIN", spot_att_pin), \
                  mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
                 paths = prepare_ocr.fetch_tiers(out, src)
                 self.assertEqual(sorted(p.name for p in paths),
                                  sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md", prepare_ocr.VOCR_GATE_MODEL,
-                                         "GATE-ATTRIBUTION.md"]))
+                                         "GATE-ATTRIBUTION.md", prepare_ocr.VOCR_SPOT_MODEL, "TEXTSPOT-ATTRIBUTION.md"]))
+                self.assertEqual((out / "TEXTSPOT-ATTRIBUTION.md").read_bytes(), spot_att)
                 self.assertEqual((out / "GATE-ATTRIBUTION.md").read_bytes(), gate_att)
                 self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
                 self.assertFalse((out / "ATTRIBUTION.md").exists())  # the LMs' name stays theirs
@@ -482,7 +492,8 @@ class VocrDefaults(unittest.TestCase):
             if name not in TIER_FILES:
                 self.assertNotIn(name, shipped)
         self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
-                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL})  # the LMs, the gate (API 26)
+                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL,  # the LMs, the gate (API 26)
+                          prepare_ocr.VOCR_SPOT_MODEL})  # scan screen's text spotter (API 30)
 
 if __name__ == "__main__":
     unittest.main()

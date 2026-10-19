@@ -36,6 +36,7 @@
 #include "local_ocr.h" /* VJO_OCR_MAX_WIDTH/HEIGHT, VJO_OCR_TEXT_CAP */
 #include "platform.h"  /* VjoPlatform.file_open, now_us */
 #include "../include/vjo_vocr_sizes.h" /* VJO_VOCR_GATE_NAME, VJO_VOCR_GATE_BYTES */
+#include "../include/vjo_spot.h"       /* VjoSpotResult (API 30, a scan's result) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -619,6 +620,26 @@ int vjo_vocr_warm(const VjoPlatform *platform, const char *model_dir, const char
 int vjo_vocr_ocr(const VjoPlatform *platform, const char *model_dir, const char *model,
                  const VjoGreySource *image, void *workspace, size_t workspace_size,
                  void *capture, size_t capture_size, char *text, size_t text_cap, VjoVocrStats *stats);
+
+/* API 30, a scan (scan screen, config.ini ocr_scan_screen): vita-vn-ocr #104's full-frame text spotter
+ * (runtime/vocr_textspot.h) on the whole image, read once top to bottom in strips of VJO_VOCR_SPOT_ROWS rows
+ * (image->strip with flags 0: no capture is published), with VOCR_TEXTSPOT_NO_DARK: no box is read again and
+ * nothing is recognized. Its weights, the pinned file VJO_VOCR_SPOT_NAME in model_dir, are read and their
+ * SHA-256 checked in every scan into the front of workspace (they are a few KB: no resident copy); then the
+ * loaded model, the spotter's set and its arena (VJO_VOCR_SPOT_ARENA, exact for every frame up to 960 x 544).
+ * workspace: 16-byte aligned, at least vjo_vocr_spot_bytes(); strip: at least vjo_vocr_spot_strip_bytes(width).
+ * On VJO_OK *out holds the boxes, blocks and pick (count 0: no text); on an error it is empty (pick -1).
+ * Returns VJO_OK, VJO_E_OCR_MODEL (the file missing, short, the wrong size or hash, or refused by the runtime),
+ * VJO_E_OCR_REGION, VJO_E_OOM (workspace or strip too small), the source's error (VJO_E_SOURCE when it gave
+ * none), VJO_E_CANCELLED or VJO_E_OCR_INFERENCE. stats: workspace, scratch_bytes (the arena the frame took),
+ * strip_rows, strips, capture_us (inside strip()), load_us and model_loaded (the weights), find_us (the
+ * spotter, its strips' waits included). */
+#define VJO_VOCR_SPOT_ROWS 64u /* the kernel copies at most this many rows a call (VJO_GAME_OCR_ROWS_MAX) */
+size_t vjo_vocr_spot_bytes(void);
+size_t vjo_vocr_spot_strip_bytes(unsigned width);
+int vjo_vocr_spot(const VjoPlatform *platform, const char *model_dir, const VjoGreySource *image,
+                  void *workspace, size_t workspace_size, void *strip, size_t strip_size,
+                  VjoSpotResult *out, VjoVocrStats *stats);
 
 /* An RGBA image in memory (R, G, B, A bytes) as a VjoGreySource, for the host
  * tools and tests. */

@@ -460,6 +460,17 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual(gt, {"jobs": 4, "stopped": 2, "lines_stopped": 2, "scores": [-109, -100, 127],
                               "us": [120, 120, 120, 120], "rcs": {-2: 1}, "reads": 1})
 
+    def test_the_scan_line_counts_scans_in_both_builds(self):
+        # API 30, scan screen (shell/worker.c scan_run): the debug build's line and the normal build's shorter one
+        sc = a.summarise_log(
+            "scan rc=0: 4 boxes, 2 blocks, pick 1, 260 ms (weights read 6, spot 210), arena 67583, free USER 91226112\n"
+            "scan rc=0: 64 boxes, 20 blocks, pick 8, truncated, 300 ms (weights read 5, spot 250), arena 67583, "
+            "free USER 91226112\n"
+            "scan rc=0: 0 boxes, 0 blocks, pick -1, 180 ms\n"
+            "scan rc=-115: 0 boxes, 0 blocks, pick -1, 12 ms\n")["scan"]
+        self.assertEqual(sc, {"scans": 4, "boxes": [4, 64, 0], "blocks": [2, 20, 0], "none": 1, "truncated": 1,
+                              "ms": [260, 300, 180, 12], "rcs": {-115: 1}})
+
     def test_the_vjonet_stack_line_keeps_the_largest_and_warns_near_the_top(self):
         # shell/worker.c net_stack_check: logged at a game exit when it grew; the summary keeps the largest
         # (the figure is a lower bound, "at least"; the first wording, "at most", is still read)

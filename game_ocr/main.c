@@ -18,6 +18,7 @@
 #include "../core/jpegsw.h"
 #include "../core/textnorm.h"
 #include "../core/vocr_ocr.h"
+#include "../core/spot_pick.h"
 #include "../include/vjo_vocr_sizes.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/ledger.h"
@@ -1120,6 +1121,57 @@ static int run_shot(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     return rc == VJO_E_CANCELLED || rc == VJO_ERR_CANCELLED ? VJO_E_CANCELLED : VJO_E_LOCAL_IO;
 }
 
+/* ---- API 30: a scan (VJO_GAME_OCR_S_SPOT, scan screen) ----
+ * vita-vn-ocr #104's text spotter on the game's whole frame (core/vocr_ocr.c vjo_vocr_spot): its grey rows once,
+ * top to bottom, 64 a frame through the display hook (the OCR jobs' capture path, its kernel strip as the last
+ * rung), no row published as the region's capture. Two blocks of the game's memory while it runs, under the
+ * OCR jobs' own ledger items: the strip (VjoGameVocrCapture) and the weights, the spotter's model, its set and
+ * its arena (VjoGameVocr). It recognizes nothing; the resident weights, LM and cascade model stay. */
+typedef char vjo_spot_budget_check[VJO_VOCR_SPOT_ROWS * VJO_OCR_MAX_WIDTH <= VJO_BUDGET_GAME_CAPTURE &&
+                                   VJO_VOCR_SPOT_ROWS <= VJO_GAME_OCR_ROWS_MAX &&
+                                   __builtin_offsetof(VjoGameOcrResult, text) % 4u == 0 ? 1 : -1];
+
+static int run_spot(const VjoGameOcrRequest *r, VjoGameOcrResult *out, Capture *c, VjoVocrStats *st)
+{
+    const uint32_t ws = PAGE_ROUND(vjo_vocr_spot_bytes()), strip = PAGE_ROUND(vjo_vocr_spot_strip_bytes(r->width));
+    void *base = NULL, *strip_base = NULL;
+    SceUID leaked;
+    uint32_t held, mem;
+    int rc;
+    /* The memory check: both blocks beside the reserve the game always keeps. */
+    out->free_user = free_user();
+    out->reserve_bytes = GAME_RESERVE;
+    out->need_workspace = ws + strip;
+    rc = out->free_user < 0 || (int64_t)out->free_user - GAME_RESERVE < (int64_t)(ws + strip);
+    step_add(VJO_GSTEP_CHECK, 0, 0, rc, ws + strip, 0, 0, 0);
+    if (rc) return VJO_E_OOM;
+    capture_uid = game_memblock_alloc(GL_CAPTURE, VJO_GITEM_CAPTURE, "VjoGameVocrCapture", strip, LADDER_ALL,
+                                      &strip_base, &leaked, &held, &mem);
+    if (capture_uid < 0) { capture_uid = leaked; return VJO_E_OOM; }
+    capture_bytes_held = held;
+    capture_memory = mem;
+    workspace_uid = game_memblock_alloc(GL_WORKSPACE, VJO_GITEM_WORKSPACE, "VjoGameVocr", ws, LADDER_ALL, &base,
+                                        &leaked, &held, &mem);
+    if (workspace_uid < 0) { workspace_uid = leaked; return VJO_E_OOM; }
+    workspace_bytes_held = held;
+    workspace_memory = mem;
+    VjoPlatform platform = {.file_open = file_open, .now_us = now_us};
+    VjoGreySource image = {c, r->width, r->height, strip_source, cancelled, NULL};
+    VjoSpotScan *scan = (VjoSpotScan *)(void *)out->text; /* 4-aligned: every field before it is 4 bytes */
+    const VjoSpotResult *spot = &scan->set;
+    open_which = VJO_GAME_OCR_OPEN_SPOT;
+    rc = vjo_vocr_spot(&platform, r->model_dir, &image, base, held, strip_base, capture_bytes_held, &scan->set, st);
+    if (!rc) /* the overlay's map of it (core/spot_pick.h), made here: SceShell's code for it is a table lookup */
+        vjo_spot_map(&scan->set, r->width, r->height, &scan->map);
+    if (rc < -199) rc = VJO_E_SOURCE; /* a native capture error: its code is in the PASS step */
+    if (c->failed) step_add(VJO_GSTEP_PASS, c->mode, c->pass_strips, c->failed, c->pass_bytes, c->last.fb_format,
+                            c->pass_us, 0);
+    step_add(VJO_GSTEP_SPOT, st->strips * VJO_VOCR_SPOT_ROWS >= r->height, spot->count, rc,
+             (uint32_t)spot->block_count << 16 | (uint32_t)(spot->pick + 1) << 8 | spot->truncated,
+             (uint32_t)st->scratch_bytes, st->find_us + 1u, 0);
+    return rc;
+}
+
 /* ---- ocr-speed: helper threads for parallel lines (core/vocr_ocr.h VjoVocrPool) ----
  * A line handed to a helper runs on a thread of its own, created for that line
  * and deleted once its line is placed: no thread outlives a job, and no stack is
@@ -1322,6 +1374,9 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         r->x > r->fb_width - r->width || r->y > r->fb_height - r->height ||
         (shot ? r->tiers || r->speed || (r->flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL))
               : !r->model_dir[0] || !r->model[0]) ||
+        /* API 30: a scan is the whole frame and nothing else */
+        ((r->speed & VJO_GAME_OCR_S_SPOT) &&
+         (r->speed != VJO_GAME_OCR_S_SPOT || r->flags != VJO_GAME_OCR_F_FULL || r->tiers || r->fallback[0])) ||
         r->model_dir[sizeof(r->model_dir)-1] || r->model[sizeof(r->model)-1] ||
         r->fallback[sizeof(r->fallback)-1]) goto done;
     out->region_x = r->x; out->region_y = r->y; out->width = r->width; out->height = r->height;
@@ -1329,6 +1384,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (cancelled(NULL)) { rc = VJO_E_CANCELLED; goto done; }
     step_add(VJO_GSTEP_MEM, 0, 0, 0, 0, 0, 0, 1);
     if (shot) { rc = run_shot(r, out); goto done; } /* both builds: an Anki card's screenshot (API 23) */
+    if (r->speed & VJO_GAME_OCR_S_SPOT) { rc = run_spot(r, out, &capture, &stats); goto done; } /* API 30: a scan */
 #if VJO_DEBUG
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
 #else

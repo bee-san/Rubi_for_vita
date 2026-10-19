@@ -128,7 +128,9 @@ class BuildCheck(unittest.TestCase):
 class PayloadList(unittest.TestCase):
     def test_the_python_list_is_the_compiled_one(self):
         files = vpk.payload_files()
-        self.assertEqual(len(files), 17)  # API 26: the text-presence gate's weights and its GATE-ATTRIBUTION.md
+        # API 26: the text-presence gate's weights and its GATE-ATTRIBUTION.md; API 30: the text spotter's and its
+        # TEXTSPOT-ATTRIBUTION.md
+        self.assertEqual(len(files), 19)
         header = (ROOT / "include/vjo_payload.h").read_text()
         kernel = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX (\d+)", header).group(1))
         self.assertEqual(files[kernel], ("ur0:tai/VitaJPOverlay_Kernel.skprx", "copy"))
@@ -141,7 +143,8 @@ class PayloadList(unittest.TestCase):
         import package_release
         shipped = {name for name, *_ in package_release.shipped_models()} | {"LM-ATTRIBUTION.md",
                                                                             package_release.VOCR_MODEL_ATTRIBUTION,
-                                                                            package_release.VOCR_GATE_ATTRIBUTION}
+                                                                            package_release.VOCR_GATE_ATTRIBUTION,
+                                                                            package_release.VOCR_SPOT_ATTRIBUTION}
         self.assertEqual({d.rsplit("/", 1)[1] for d, _ in files if "/ocr/" in d}, shipped)
         # the app's own record is never in the payload (the install writes it, core/app_stamp.h)
         self.assertNotIn("ux0:data/VitaJPOverlay/vjo_app.txt", [d for d, _ in files])

@@ -10,8 +10,10 @@ VOCR3_FL10_w8.vocr from the v0.2.5-vocr3.1 pre-release, VOCR4_W20_w8.vocr from
 v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 --backend vocr-tiers the three model sizes' (tools/model_tiers.json: VOCR5_S_w8.vocr,
 VOCR5_N_w8.vocr, VOCR5_L_w8.vocr) and their release's attribution, v0.3.0's ATTRIBUTION.md
-kept as MODEL-ATTRIBUTION.md, and the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
-with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which a package ships. Each file comes from the
+kept as MODEL-ATTRIBUTION.md, the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
+with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, and scan screen's text spotter weights
+(VOCR_SPOT_MODEL, vita-vn-ocr #104) with their release's ATTRIBUTION.md kept as TEXTSPOT-ATTRIBUTION.md, which a
+package ships. Each file comes from the
 release's public download; only when that fails (a draft release) is an authenticated
 GitHub CLI (`gh auth login`) tried. --from takes a copy downloaded by other means.
 Every file is checked against its pinned size and SHA-256.
@@ -139,6 +141,24 @@ VOCR_GATE_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
 VOCR_GATE_ATTRIBUTION_PIN = {VOCR_GATE_ATTRIBUTION: (VOCR_GATE_BASE + VOCR_GATE_ATTRIBUTION_ASSET, 3706,
     '44a353c76e19c6bdabcb9dbd06d14867696dcb59ce0460db22d09749af687f6e')}
 
+# Scan screen's full-frame text spotter (vita-vn-ocr #104, docs/textspot.md there): a VTSP blob of int8 weights
+# (config.ini ocr_scan_screen, off by default), the release whose SHA256SUMS lists these hashes; the plugin pins
+# the same name, size and hash (include/vjo_vocr_sizes.h, core/vocr_ocr.c, cmake/VocrSpot.cmake). Its release's
+# ATTRIBUTION.md (its training data's licences and the weights' terms) ships beside it as
+# ocr/TEXTSPOT-ATTRIBUTION.md. PROVISIONAL until vita-vn-ocr #104 selects its model and publishes it: the weights
+# are a family B development run's, h2_s4_c24n4_seed2, the attribution a placeholder.
+VOCR_SPOT_TAG = 'textspot-provisional'
+VOCR_SPOT_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_SPOT_TAG}/'
+VOCR_SPOT_MODEL = 'textspot_h2_s4_c24n4_w8.vtsp'
+VOCR_SPOT_ASSETS = {
+    VOCR_SPOT_MODEL: (VOCR_SPOT_BASE + VOCR_SPOT_MODEL, 5732,
+        '852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf'),
+}
+VOCR_SPOT_ATTRIBUTION = 'TEXTSPOT-ATTRIBUTION.md'
+VOCR_SPOT_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
+VOCR_SPOT_ATTRIBUTION_PIN = {VOCR_SPOT_ATTRIBUTION: (VOCR_SPOT_BASE + VOCR_SPOT_ATTRIBUTION_ASSET, 0,
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')}
+
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so
 # the pins carry it: core/vocr_models.c per file (the Rubi app names the local OCR engine
@@ -243,12 +263,14 @@ def fetch_vocr(directory, name, source=None):
 def fetch_tiers(directory, source=None):
     """The three model sizes' recognizers (tools/model_tiers.json), each pinned, and their release's
     attribution (MODEL-ATTRIBUTION.md), with the text-presence gate's weights and attribution
-    (GATE-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
+    (GATE-ATTRIBUTION.md) and the text spotter's (TEXTSPOT-ATTRIBUTION.md): what a package ships. A model two
+    sizes share is fetched once."""
     names = dict.fromkeys(tier['model'] for tier in model_tiers()['tiers'])
     paths = [fetch_vocr(directory, name, source) for name in names]
     paths.append(fetch_release_asset(directory, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN,
                                      VOCR_MODEL_ATTRIBUTION_TAG, source, VOCR_MODEL_ATTRIBUTION_ASSET))
     paths += fetch_gate(directory, source)
+    paths += fetch_spot(directory, source)
     return paths
 
 
@@ -257,6 +279,13 @@ def fetch_gate(directory, source=None):
     return [fetch_release_asset(directory, VOCR_GATE_MODEL, VOCR_GATE_ASSETS, VOCR_GATE_TAG, source),
             fetch_release_asset(directory, VOCR_GATE_ATTRIBUTION, VOCR_GATE_ATTRIBUTION_PIN, VOCR_GATE_TAG, source,
                                 VOCR_GATE_ATTRIBUTION_ASSET)]
+
+
+def fetch_spot(directory, source=None):
+    """Scan screen's text spotter weights (VOCR_SPOT_MODEL) and their attribution (TEXTSPOT-ATTRIBUTION.md), pinned."""
+    return [fetch_release_asset(directory, VOCR_SPOT_MODEL, VOCR_SPOT_ASSETS, VOCR_SPOT_TAG, source),
+            fetch_release_asset(directory, VOCR_SPOT_ATTRIBUTION, VOCR_SPOT_ATTRIBUTION_PIN, VOCR_SPOT_TAG, source,
+                                VOCR_SPOT_ATTRIBUTION_ASSET)]
 
 
 def fetch_lms(directory, source=None):
@@ -346,7 +375,7 @@ def main():
         for path in fetch_tiers(args.output, args.source):
             print('Verified', path.name)
         print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (keep',
-              VOCR_MODEL_ATTRIBUTION, 'and', VOCR_GATE_ATTRIBUTION,
+              VOCR_MODEL_ATTRIBUTION + ',', VOCR_GATE_ATTRIBUTION, 'and', VOCR_SPOT_ATTRIBUTION,
               'beside them: their training data\'s licences and their terms)')
         return
     if args.backend == 'vocr':

@@ -140,11 +140,16 @@ class FrozenPlaintext(unittest.TestCase):
         gate = {release.VOCR_GATE_MODEL: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())}
         (models / "GATE-ATTRIBUTION.md").write_text("gate fixture")
         gate_att = {"GATE-ATTRIBUTION.md": ("fixture", 12, hashlib.sha256(b"gate fixture").hexdigest())}
+        (models / release.VOCR_SPOT_MODEL).write_bytes(payload)  # API 30: scan screen's text spotter's
+        spot = {release.VOCR_SPOT_MODEL: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())}
+        (models / "TEXTSPOT-ATTRIBUTION.md").write_text("spot fixture")
+        spot_att = {"TEXTSPOT-ATTRIBUTION.md": ("fixture", 12, hashlib.sha256(b"spot fixture").hexdigest())}
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \
              mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
              mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
              mock.patch.object(release, "VOCR_GATE_ASSETS", gate), mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
+             mock.patch.object(release, "VOCR_SPOT_ASSETS", spot), mock.patch.object(release, "VOCR_SPOT_ATTRIBUTION_PIN", spot_att), \
              mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \
              mock.patch.object(release, "VOCR5_ASSETS", vocr5), \
              mock.patch.object(prepare.subprocess, "run", side_effect=AssertionError("No packaging fetch")), \

@@ -47,7 +47,7 @@ set(CORE_SRC
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
-  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/payload.c)
+  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/payload.c core/spot_pick.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl vjo_taihen_parser)
@@ -191,6 +191,12 @@ target_compile_options(vjo-word-navigation-tests PRIVATE -Wall -Wextra)
 add_test(NAME word_navigation COMMAND vjo-word-navigation-tests)
 # The region selector's cursor, corners and touch drags (core/region_select.c,
 # drawn by shell/overlay.cpp); vjo_host for region.ini's parser.
+# Scan screen's picker (core/spot_pick.c): the map the game worker makes, the Shell's lookups in it.
+add_executable(vjo-spot-pick-tests host/tests/test_spot_pick.c core/spot_pick.c)
+target_include_directories(vjo-spot-pick-tests PRIVATE third_party/acutest/include core include)
+target_compile_options(vjo-spot-pick-tests PRIVATE -Wall -Wextra)
+target_compile_definitions(vjo-spot-pick-tests PRIVATE VJO_HOST=1)
+add_test(NAME spot_pick COMMAND vjo-spot-pick-tests)
 add_executable(vjo-region-select-tests host/tests/test_region_select.c core/region_select.c)
 target_include_directories(vjo-region-select-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-region-select-tests vjo_host)
@@ -748,6 +754,22 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-game-shot-tests vjo_vocr)
   add_test(NAME game_shot COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_game_shot.py
     $<TARGET_FILE:vjo-game-shot-tests>)
+  # API 30, scan screen: the scan through the actual worker and kernel transport, real files
+  # (host/tests/test_game_spot.c), and its sets against vita-vn-ocr's twin (host/tests/test_game_spot.py, the
+  # fixture host/fixtures/textspot/). The spotter's weights: cmake/VocrSpot.cmake (VJO_VOCR_SPOT_TEST_DIR).
+  include(cmake/VocrSpot.cmake)
+  add_executable(vjo-game-spot-tests host/tests/test_game_spot.c host/tests/kernel_model_broker_boundary.c
+    kernel/buffers.c kernel/capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
+  target_include_directories(vjo-game-spot-tests PRIVATE third_party/acutest/include host/tests/game_stubs
+    host/tests/vita_stubs)
+  target_compile_options(vjo-game-spot-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-spot-tests PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1
+    VJO_VOCR_SPOT_TEST_DIR="${VJO_VOCR_SPOT_TEST_DIR}")
+  target_link_libraries(vjo-game-spot-tests vjo_vocr)
+  add_test(NAME game_spot COMMAND vjo-game-spot-tests)
+  add_test(NAME game_spot_twin COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_game_spot.py
+    $<TARGET_FILE:vjo-game-spot-tests>)
+  set_tests_properties(game_spot_twin PROPERTIES SKIP_RETURN_CODE 77)
   # The stage benchmark (docs/performance.md): every stage of an OCR job and of the Shell's
   # lookups on the real sources. tools/bench_stages.py times it here and counts the Vita
   # compiler's instructions under qemu-arm from a Vita build; the smoke test checks that every

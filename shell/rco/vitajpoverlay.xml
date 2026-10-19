@@ -63,9 +63,27 @@
         </rich_text>
       </plane>
       <!-- region selector: dimmed game, translucent selection rectangle, the
-           cursor the stick and the d-pad move -->
+           cursor the stick and the d-pad move; with ocr_scan_screen, the text
+           boxes the scan found (core/spot_pick.h VJO_SPOT_SHOWN), placed by code,
+           under the selection rectangle -->
       <plane style="vjo_style_dim" id="vjo_region_layer">
         <layout_hint size="960, 544" />
+        <plane style="vjo_style_spot" id="vjo_spot_0" />
+        <plane style="vjo_style_spot" id="vjo_spot_1" />
+        <plane style="vjo_style_spot" id="vjo_spot_2" />
+        <plane style="vjo_style_spot" id="vjo_spot_3" />
+        <plane style="vjo_style_spot" id="vjo_spot_4" />
+        <plane style="vjo_style_spot" id="vjo_spot_5" />
+        <plane style="vjo_style_spot" id="vjo_spot_6" />
+        <plane style="vjo_style_spot" id="vjo_spot_7" />
+        <plane style="vjo_style_spot" id="vjo_spot_8" />
+        <plane style="vjo_style_spot" id="vjo_spot_9" />
+        <plane style="vjo_style_spot" id="vjo_spot_10" />
+        <plane style="vjo_style_spot" id="vjo_spot_11" />
+        <plane style="vjo_style_spot" id="vjo_spot_12" />
+        <plane style="vjo_style_spot" id="vjo_spot_13" />
+        <plane style="vjo_style_spot" id="vjo_spot_14" />
+        <plane style="vjo_style_spot" id="vjo_spot_15" />
         <plane style="vjo_style_region" id="vjo_region_rect">
           <layout_hint size="2, 2" />
         </plane>
@@ -136,6 +154,9 @@
     </style_plane>
     <style_plane color="1, 0.82, 0.29, 0.35" planeobj="vjo_region_obj" id="vjo_style_region">
       <planeobj id="vjo_region_obj" />
+    </style_plane>
+    <style_plane color="1, 1, 1, 0.22" planeobj="vjo_spot_obj" id="vjo_style_spot">
+      <planeobj id="vjo_spot_obj" />
     </style_plane>
     <style_plane color="1, 0.82, 0.29, 1" planeobj="vjo_cursor_obj" id="vjo_style_cursor">
       <planeobj id="vjo_cursor_obj" />

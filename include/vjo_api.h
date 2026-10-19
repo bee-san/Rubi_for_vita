@@ -54,8 +54,14 @@
  * VJO_GAME_OCR_OPEN_VERTICAL. Reverted; main's builds from 4a7ddf8 to 297530c are API 27.
  * 28: API 26's interface again (vertical text left main, to come back as its own pull request): flags
  * bit 15 is unknown again and no Open is VJO_GAME_OCR_OPEN_VERTICAL. A new number, not 26: builds of
- * 27 exist, and a number names one interface only. Sizes are unchanged. */
-#define VJO_API_VERSION 28
+ * 27 exist, and a number names one interface only. Sizes are unchanged.
+ * 30: scan screen (config.ini ocr_scan_screen; vita-vn-ocr #104's text spotter): VjoGameOcrRequest.speed bit 5
+ * (VJO_GAME_OCR_S_SPOT) with VJO_GAME_OCR_F_FULL alone, the spotter's weights' file (VJO_GAME_OCR_OPEN_SPOT,
+ * VJO_VOCR_SPOT_NAME) in the kernel's broker for such a request, its result (VjoSpotResult) in the result's
+ * text, and a new step kind (spot). Sizes are unchanged. 29 is the number the open drafts
+ * bee-san/Rubi_for_vita#223 (vertical text) and #226 (the wait's pace) take: whichever of them and this lands
+ * later renumbers, as a number names one interface only. */
+#define VJO_API_VERSION 30
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from

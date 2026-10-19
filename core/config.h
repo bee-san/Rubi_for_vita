@@ -104,11 +104,17 @@ typedef struct {
      * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
      * text (a hidden text box, a CG screen) returns no line. Last, as above. */
     int ocr_text_gate;        /* 0/1 */
+    /* Scan screen (API 30, vita-vn-ocr #104's text spotter, core/spot_pick.h): the overlay's □ starts on the
+     * text boxes the game worker finds on the whole screen instead of an empty one. Last, as above. */
+    int ocr_scan_screen;      /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
 #define VJO_TEXT_GATE_DEFAULT 0
 #define VJO_TEXT_GATE_DEFAULT_TEXT "off"
+/* ocr_scan_screen's default (docs/vita-vn-ocr.md, "Scan screen": why it is off). */
+#define VJO_SCAN_SCREEN_DEFAULT 0
+#define VJO_SCAN_SCREEN_DEFAULT_TEXT "off"
 
 void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and

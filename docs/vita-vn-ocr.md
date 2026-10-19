@@ -880,6 +880,98 @@ above never read.
 A job it stopped logs `find` with arg 0 and no `recognize` step. A job whose finder found no line logs no gate step.
 `tools/analyse_selftest.py --collect` counts the gate's jobs, those it stopped, their scores and the weights' reads.
 
+## Scan screen (API 30)
+
+```ini
+ocr_scan_screen = off   ; on: □ starts on the text boxes found on the whole screen
+```
+
+With `ocr_scan_screen = on`, the overlay's draw-a-region action (□) starts on the text boxes the game worker finds on
+the whole screen with vita-vn-ocr #104's full-frame text spotter (`docs/textspot.md` there), instead of an empty
+screen. It is a faster way to set the region: one press picks the dialogue box that the spotter found and reads it.
+No key is remapped and no button changes meaning. Press by press:
+
+1. **L + R** opens the overlay over the game, as always; **□** dims the game, as always. The hint line says
+   `◀▶▲▼ or tap a box · Enter read · Cancel draw by hand` (with the console's own Enter and Cancel glyphs).
+2. The game worker scans the screen (an estimated 0.2-0.3 s, below); then every box it found is drawn as a
+   translucent white rectangle (at most 16), each the region it would read, and the one it picked as the likely
+   dialogue is highlighted in yellow.
+3. **◀ ▶ ▲ ▼**, or a push of the left stick, moves the highlight to the nearest box that way; a **tap on a box**
+   picks it.
+4. **Enter** (or that tap) reads it: the box becomes this game's region, saved as a box drawn by hand is
+   (`region.ini`), and the overlay reads it at once, the same job L + R starts (the finder, its refinement, the
+   chosen model size, the LM, the cascade), so the text and its lookup go to the popup as always. (A box drawn by
+   hand is saved and the overlay closes, as before.)
+5. **Cancel**, a tap outside every box (it starts the drag there), and a scan that found no box or failed all go
+   back to drawing the box by hand, as today; holding **□** still restores the full screen.
+
+Vertical boxes (columns) are drawn but cannot be picked: Rubi reads horizontal text only until vertical text
+(bee-san/Rubi_for_vita#223) is in. With `ocr_scan_screen = off`, the default, □ draws by hand exactly as before and
+no request is ever a scan.
+
+- **What a scan reads.** The game's whole frame, its grey rows once top to bottom, 64 rows a game frame through
+  the display hook (9 frames at 960×544, 5 at 480×272): the OCR jobs' capture path, its kernel strip as the last
+  rung. It publishes no capture (the region's scene and Auto's state stay as they were) and recognizes nothing.
+- **The spotter.** vita-vn-ocr's `runtime/vocr_textspot.c` (pinned: [Build](#build)) with `VOCR_TEXTSPOT_NO_DARK`:
+  no box is read again (the read that follows works out its polarity itself). Its set, at most 64 boxes (x, y, w,
+  h, vertical, confidence, block) and 64 blocks in reading order, the pick and a truncated flag, is written in
+  place into the result's text (`include/vjo_spot.h` `VjoSpotResult`: the runtime's own layout, which
+  `core/vocr_ocr.c` checks field by field). The worker also makes the overlay's map of it (`core/spot_pick.c`):
+  the first 16 blocks on the 960×544 screen, each grown by 8 pixels and clipped (the region it is read as), the
+  block to start on, and from each block its nearest neighbour for each of the d-pad's directions (the least gap
+  that way plus twice the gap across). The Shell copies those 196 B and looks things up in them: nothing of the
+  spotter runs in SceShell, which holds no more than that map (AGENTS.md rule 1).
+- **The weights** are a file beside the models: `ocr/textspot_h2_s4_c24n4_w8.vtsp`, 5,732 B, sha256
+  `852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf`, **provisional**: a development run of
+  vita-vn-ocr #104 (family B `h2_s4_c24n4_seed2`) until #104 selects its model and publishes it with an
+  `ATTRIBUTION.md`, which then ships beside it as `ocr/TEXTSPOT-ATTRIBUTION.md` (`tools/prepare_ocr.py` pins both).
+  The kernel's broker opens the file only for a scan (`VJO_GAME_OCR_OPEN_SPOT`), at its pinned size; the worker
+  reads it and checks its SHA-256 in every scan (5,732 B: no resident copy and no data page). Without it (an `ocr`
+  folder from an older package) a scan fails with `rc=-115` and the overlay draws by hand.
+- **The request.** `VJO_GAME_OCR_S_SPOT`, bit 5 of the request's `speed` word, with `VJO_GAME_OCR_F_FULL` and
+  nothing else: no tiers, no fallback, no other flag or speed bit. The kernel and the worker each refuse another
+  shape. The flags' one free bit stays vertical text's.
+- **Memory** (the game's, during a scan only): a strip block of 61,440 B (64 rows of 960 px, within
+  `VjoGameVocrCapture`'s budget) and a workspace block of 90,112 B (the weights, the loaded model and the arena,
+  88,176 B, `vjo_vocr_spot_bytes`; the arena is `VJO_VOCR_SPOT_ARENA` = 80,799 B, `vocr_textspot_arena_bytes` for
+  every frame up to 960×544 with these weights; within `VjoGameVocr`'s budget). Its memory check keeps the 4 MiB
+  reserve beside both; the resident weights, LM and cascade model stay. No new ledger item, and the job's worst
+  case is unchanged ([memory-ledger.md](memory-ledger.md)).
+- **Module pages** (measured, both builds, VitaSDK gcc 15.2.0): the worker gains 11,352 B of text in the debug
+  build and 11,368 B in the normal one, on or off (the spotter's code at `-Os` with NEON, 9,402 B; its dark pass,
+  which a scan never reaches, is linked to a refusing stub, `cmake/VocrOCR.cmake`; the scan and the map, about
+  1.9 KB): 98,304 → 110,592 B, three text pages more in every enabled game's memory, never SceShell's. SceShell keeps
+  its pages: the Shell's text grows by 1,952 B (debug) and 1,552 B (normal; 212 B of text room left in its pages),
+  its data and bss by 240 B; Enter's read at once is 80 B and 48 B of that. The kernel's text grows by 92 B, the same
+  pages. The RCO grows from 6,000 to 7,152 B (16 planes and a style), in the PAF heap: the 8,192 B estimate for it and
+  the Paf plugin object is kept. The 16 planes' widgets add to the open page's PAF use, unmeasured.
+- **Time (estimate, nothing of it has run on a console):** the spotter's own work is about 127 ms on one core at
+  333 MHz (vita-vn-ocr's Cortex-A9 cycle model for this shape, `eval/textspot_a9_20261019.json`: 122.5 ms at
+  `-O2` without the dark pass, scaled by its default call's `-O2` → `-Os` ratio, 130.7 → 135.6 ms; at 444 MHz about
+  95 ms). It runs between the strips, whose reads wait a game frame each (as test.1's still-screen jobs read theirs,
+  above: about a frame a strip), so the boxes come about 0.17 s after □ at 60 frames a second and 0.32 s at 30.
+  The scan runs at the game's own clock (it does not raise it). Each strip is copied in the game's display call,
+  as an OCR job's are.
+- **Why it is off by default.** It is opt-in by the owner's rule for this round's features, and nothing of it is
+  measured on a console: how well the spotter's boxes fit the text boxes of real games' frames, the time, and how
+  the picker feels. vita-vn-ocr #104 measures the spotter on host development frames (its `docs/textspot.md`).
+
+**Logs.** One line a scan in both builds: `scan rc=R: N boxes, M blocks, pick P` and its time (the debug build adds
+`, truncated` when the spotter kept its 64 most confident boxes, `(weights read W, spot S)`, `arena A` and `free
+USER F`), and a picked box's `region set for <title>: x,y,w,h (scanned)`. The debug build also logs the scan's
+steps (`gstep scan ...`; its `spot` step: kind 1 when it read the frame whole, arg the boxes, rc, bytes = blocks
+<< 16 | (pick + 1) << 8 | truncated, sum the arena it took, us the spotter's time with the strips' waits) and, from
+the overlay, `scan: N blocks shown, the cursor on I` and `scan: block I read, x,y wxh`.
+
+**Limits.**
+- At most 16 blocks are drawn (the first in reading order); vita-vn-ocr's family B spotters gave more on 0.1% of
+  its 188 development frames (a design statistic, read from #104's `eval/famB/*/boxes.json`, not a score).
+- A screen that changes during the scan's frames can give a box that is half the old screen's, half the new
+  one's; the read that follows reads its region afresh.
+- Vertical text (columns, NOBORU's portrait text) is drawn but not read, until vertical text is in.
+- The region is where the box was: a menu or a text box that moves needs another scan, as a drawn region would.
+- The 8-pixel margin is not tuned: no measurement reads the spotter's blocks with it.
+
 ## Models
 
 **The default size, Normal, is VOCR5-N (`VOCR5_N_w8.vocr`); Small is VOCR5-S
@@ -959,7 +1051,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout ac0d6b1d3da5e96cd771a48da7992b6cf25d6519  # #101's merge (after #85's, #83's and #82's): the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout eb5fce95f2a87c5d3719af0ae1eafa7500052c96  # #104's feat/textspot (provisional): the text spotter, after #101's gate, #85's faster kernels, #83's refinement, #82's beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
@@ -973,13 +1065,17 @@ cmake -S . -B build/host -G Ninja -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path
 cmake --build build/host && ctest --test-dir build/host --output-on-failure
 ```
 
-`cmake/VocrOCR.cmake` checks the twelve runtime files (`runtime/vocr.c`, `vocr.h`,
+`cmake/VocrOCR.cmake` checks the fourteen runtime files (`runtime/vocr.c`, `vocr.h`,
 `vocr_lines.c`, `vocr_lines.h`, `vocr_lines_rows.c`, `vocr_lines_rows.h`, `vocr_lm.c`,
-`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`) against their
+`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`, `vocr_textspot.c`,
+`vocr_textspot.h`; the first twelve as at `ac0d6b1`, #101's merge) against their
 SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. For the host tests that run
 the text-presence gate, `cmake/VocrGate.cmake` downloads its pinned weights from the release at configure time and
-checks them (or takes `-DVJO_VOCR_GATE_BLOB=FILE`; without either, those tests skip); the plugins read the file
-from `ocr/` at run time. Copying those files to
+checks them (or takes `-DVJO_VOCR_GATE_BLOB=FILE`; without either, those tests skip); `cmake/VocrSpot.cmake` does
+the same for scan screen's text spotter (`-DVJO_VOCR_SPOT_BLOB=FILE`); the plugins read both files
+from `ocr/` at run time. The text spotter's `vocr_textspot.c` is built with its two dark-pass helpers renamed to
+refusing stubs (`core/vocr_ocr.c` `vjo_spot_no_dark`): a scan never reaches them (`VOCR_TEXTSPOT_NO_DARK`), and a
+call without that flag gives no box instead of linking `vocr_lines.c`'s 1,170 B of dark code into the worker. Copying those files to
 `third_party/vita-vn-ocr/runtime/` works too and needs no source directory.
 Without `VJO_WITH_VOCR` the Shell has no OCR engine: a job reports that the
 backend is missing (install a build made with `VJO_WITH_VOCR`).
@@ -994,7 +1090,7 @@ steps below cover a source build or adding another model.
 2. Download and check the weights on a computer:
 
    ```sh
-   python3 tools/prepare_ocr.py --backend vocr-tiers --output ocr    # the 3 sizes' models, MODEL-ATTRIBUTION.md, the gate's 2 files
+   python3 tools/prepare_ocr.py --backend vocr-tiers --output ocr    # the 3 sizes' models, MODEL-ATTRIBUTION.md, the gate's 2 files, the spotter's 2
    python3 tools/prepare_ocr.py --backend vocr-lm --output ocr       # the 4 LMs and ATTRIBUTION.md
    python3 tools/prepare_ocr.py --backend vocr --model VOCR4_W20_w8.vocr --output ocr   # by name: the host tools' cascade
    python3 tools/prepare_ocr.py --backend vocr --model VOCR3_H15_w8.vocr --output ocr   # by name: an earlier one
@@ -1006,8 +1102,9 @@ steps below cover a source build or adding another model.
    `tools/package_release.py --models ocr` needs the first two lines' files: it ships
    the LMs with their attribution as `ocr/LM-ATTRIBUTION.md` (CC BY-SA 4.0), and the
    sizes' models with theirs, v0.3.0's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
-   (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), and the text-presence
-   gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`.
+   (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), the text-presence
+   gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`, and scan
+   screen's text spotter weights with their release's `ATTRIBUTION.md` as `ocr/TEXTSPOT-ATTRIBUTION.md`.
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/`, the attributions included, or let the
    FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8.vocr --set vocr_tier=normal VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:

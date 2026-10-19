@@ -71,7 +71,7 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 | `payload/ur0/tai/VitaJPOverlay_Shell.suprx` | `ur0:tai/` | 75,904 (debug 83,908) |
 | `payload/ur0/tai/VitaJPOverlay_OCR.suprx` | `ur0:tai/` | 63,552 (debug 64,764) |
 | `payload/ur0/data/VitaJPOverlay/vitajpoverlay.rco` | `ur0:data/VitaJPOverlay/` | 6,000 |
-| `payload/ux0/data/VitaJPOverlay/ocr/` (3 recognizers, 4 LMs, `LM-ATTRIBUTION.md`, `MODEL-ATTRIBUTION.md`, the text-presence gate's `textgate_p8_c8_w8.vtd` and `GATE-ATTRIBUTION.md`) | `ux0:data/VitaJPOverlay/ocr/` | 11,730,126 (with API 26's gate, +5,246; VOCR5's 11,724,880; 10,614,250 before) |
+| `payload/ux0/data/VitaJPOverlay/ocr/` (3 recognizers, 4 LMs, `LM-ATTRIBUTION.md`, `MODEL-ATTRIBUTION.md`, the text-presence gate's `textgate_p8_c8_w8.vtd` and `GATE-ATTRIBUTION.md`, scan screen's text spotter weights `textspot_*.vtsp` and `TEXTSPOT-ATTRIBUTION.md`) | `ux0:data/VitaJPOverlay/ocr/` | 11,735,858 with API 30's spotter's provisional 5,732 B weights and before its release's attribution (+5,732 and that file's bytes; 11,730,126 with API 26's gate, +5,246; VOCR5's 11,724,880; 10,614,250 before) |
 | `payload/ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict` | moved to `ux0:data/VitaJPOverlay/dictionaries/` | 157,298,688 (Bee's Ultimate Dictionary, #153; 143,425,536 before) |
 | `payload/ux0/data/VitaJPOverlay/config.ini` | written only when there is none | 3,552 |
 | `payload/manifest.txt` | read by the app | small |

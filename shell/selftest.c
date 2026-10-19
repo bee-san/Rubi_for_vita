@@ -301,7 +301,7 @@ int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
 static const char *const step_names[] = {
     "none", "mem", "check", "alloc", "free", "pass", "tear", "sig", "find", "load", "recognize", "fallback",
     "fb", "probe", "settle", "blank", "norm", "lm", "cascade", "refine", "par", "clock", "pace", "shot", "save",
-    "gate"};
+    "gate", "spot"};
 static const char *const mem_names[] = {"-", "user", "cdram", "phycont", "kernel"};
 static const char *const src_names[] = {"-", "hook", "kstrip", "user"};
 static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe", "line", "lm", "cascade",

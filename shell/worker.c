@@ -211,6 +211,10 @@ static volatile uint32_t job_capture_scene, job_capture_seq;
 /* The job is for an earlier screen: its requests were aborted, its result
  * is dropped. */
 static volatile int job_cancelled;
+/* Scan screen (API 30, ocr_scan_screen): the job is a scan (scan_run), and the overlay asked for one that waits
+ * for the network thread (start_scan). */
+static volatile int job_scan;
+static int scan_waiting;
 /* cache_data[job_idx].sentence is ready (the lookup may still run): the
  * net thread only appends to the arena, so the control thread may read it */
 static volatile int job_text_ready;
@@ -566,6 +570,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.highlight_mode = cfg.highlight_mode;
     g_view.frequency_badge = cfg.frequency_badge;
     g_view.stick_lookup_ms = cfg.stick_lookup_ms;
+    g_view.spot.on = cfg.ocr_scan_screen;
     g_view.text_generation = local_text_generation;
     g_view.font_size_ja = cfg.font_size_ja;
     g_view.font_size_en = cfg.font_size_en;
@@ -1267,11 +1272,66 @@ static int run_vocr(VjoOverlayData *out)
     out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
     return out->err.rc = VJO_E_OOM;
 }
+
+/* Scan screen (API 30, ocr_scan_screen): the text spotter on the game's whole frame (game_ocr/main.c
+ * run_spot), a job of this thread; its blocks go to the overlay once the control thread takes it
+ * (on_scan_done). One line in either build's log, after the result is out; the debug build's steps too. */
+#define SCAN_TIMEOUT_US 10000000
+static void scan_run(void)
+{
+    VjoGameOcrRequest request = {.size = sizeof(request), .flags = VJO_GAME_OCR_F_FULL, .speed = VJO_GAME_OCR_S_SPOT};
+    const VjoSpotResult *spot = (const VjoSpotResult *)(const void *)vocr_result.text;
+    int64_t t0 = now_us();
+    int rc, locked;
+    sceClibMemcpy(request.model_dir, job_cfg.ocr_model_dir,
+                  sceClibStrnlen(job_cfg.ocr_model_dir, sizeof(request.model_dir) - 1));
+    sceClibMemcpy(request.model, VJO_VOCR_SPOT_NAME, sizeof(VJO_VOCR_SPOT_NAME)); /* the kernel's log names it */
+    locked = !game_job_lock(vocr_cancelled, INT64_MAX / 2); /* a screenshot may hold the slot */
+    rc = locked ? vjo_game_ocr_exchange(&vjo_game_client, &request, &vocr_result, vocr_cancelled, NULL,
+                                        SCAN_TIMEOUT_US)
+                : VJO_E_CANCELLED;
+    if (locked)
+        game_job_unlock();
+    job_rc = rc;
+    __sync_synchronize(); /* the result is visible before job_done */
+    job_done = 1;
+    vjoNotifyShell();
+    /* vocr_result stays this thread's until its next job: the control thread only reads it */
+#if VJO_DEBUG
+    VjoLogBatch batch;
+    char batch_buf[4096];
+    uint32_t arena = 0;
+    for (unsigned i = 0; i < vocr_result.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        if (vocr_result.step[i].id == VJO_GSTEP_SPOT)
+            arena = vocr_result.step[i].sum;
+    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
+    vjo_log("scan rc=%d: %u boxes, %u blocks, pick %d%s, %u ms (weights read %u, spot %u), arena %u, free USER %d",
+            rc, (unsigned)spot->count, (unsigned)spot->block_count, rc ? -1 : (int)spot->pick,
+            spot->truncated ? ", truncated" : "", (unsigned)((now_us() - t0) / 1000),
+            (unsigned)(vocr_result.load_us / 1000), (unsigned)(vocr_result.find_us / 1000), (unsigned)arena,
+            (int)vocr_result.free_user);
+    log_vocr_steps("scan", &vocr_result);
+    vjo_log_batch_end(&batch);
+#else
+    /* the normal build: the result, its counts and time (the weights are read in every scan, the arena is the
+     * pinned one: docs/vita-vn-ocr.md "Scan screen") */
+    vjo_log("scan rc=%d: %u boxes, %u blocks, pick %d, %u ms", rc, (unsigned)spot->count,
+            (unsigned)spot->block_count, rc ? -1 : (int)spot->pick, (unsigned)((now_us() - t0) / 1000));
+#endif
+}
+
 #else
 static int run_vocr(VjoOverlayData *out)
 {
     out->err.detail = "This build has no vita-vn-ocr backend. Install a build made with VJO_WITH_VOCR.";
     return out->err.rc = VJO_E_OCR_UNAVAILABLE;
+}
+static void scan_run(void)
+{
+    job_rc = VJO_E_OCR_UNAVAILABLE;
+    __sync_synchronize();
+    job_done = 1;
+    vjoNotifyShell();
 }
 static int shot_waiting(void) { return 0; } /* no game worker: no screenshot */
 #endif
@@ -1371,6 +1431,10 @@ static void net_job(void)
         __sync_synchronize();
         job_done = 1;
         vjoNotifyShell();
+        return;
+    }
+    if (job_scan) { /* scan screen: no OCR text, no history */
+        scan_run();
         return;
     }
     int idx = job_idx;
@@ -1665,6 +1729,24 @@ static void start_cursor_job(void)
     sceKernelUnlockMutex(cmd_lock, 1);
 }
 
+/* Scan screen (API 30): the scan the overlay asked for (VJO_CMD_SCAN), once nothing else runs. */
+static void start_scan(void)
+{
+    scan_waiting = 0;
+    if (ov == OV_CLOSED || !title_id[0]) /* the game is still in front */
+        return;
+    vjo_dlog("job start (scan)");
+    job_scan = 1;
+    job_prepare = job_refresh = job_cursor_only = job_lookup = 0;
+    job_cancelled = job_done = job_text_ready = 0;
+    job_cfg = cfg;
+    job_generation = game_generation;
+    job_running = 1;
+    job_started_us = now_us();
+    __sync_synchronize();
+    sceKernelSetEventFlag(net_evf, NET_EV_JOB);
+}
+
 /* ---------------- control thread ---------------- */
 
 static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
@@ -1878,7 +1960,8 @@ static void close_overlay_for(int why)
     refresh_pending = open_retry = 0;
     /* A lookup's or a refresh's result is for the open overlay only; with the
      * overlay closed, Auto recognizes settled screens itself. */
-    if (job_running && (job_cursor_only || job_refresh)) job_cancelled = 1;
+    if (job_running && (job_cursor_only || job_refresh || job_scan)) job_cancelled = 1;
+    scan_waiting = 0;
     view_waiting = view_job_text = 0;
     rc = vjoSetInputBlock(0); /* the kernel already dropped it if the foreground changed */
     vjo_view_lock();
@@ -2008,6 +2091,33 @@ static void on_cursor_done(void)
     /* Select + R after the close that dropped this lookup: the strip waited
      * for it (#95 item 3a: before, "Recognizing…" with no job until the next
      * settled screen). */
+    strip_after_wait();
+}
+
+/* Scan screen (API 30): the scan's blocks for the open overlay, which waits for spot.seq to move; none after
+ * a failure (the overlay then draws by hand). A scan the overlay's close cancelled publishes nothing; as after a
+ * prepared word, a reopen meanwhile gets its own job (OV_OPEN_OLD_JOB: a scan has nothing for it to show) or the
+ * lookup it waits for, and a strip waiting for the slot gets its job. */
+static void on_scan_done(void)
+{
+    job_running = job_done = job_scan = 0;
+    if (!job_cancelled && ov != OV_CLOSED && job_generation == game_generation) {
+        vjo_view_lock();
+#ifdef VJO_WITH_VOCR
+        /* a failed scan's text is all zero: no block */
+        sceClibMemcpy(&g_view.spot.map, &((const VjoSpotScan *)(const void *)vocr_result.text)->map,
+                      sizeof(g_view.spot.map));
+#else
+        sceClibMemset(&g_view.spot.map, 0, sizeof(g_view.spot.map));
+#endif
+        g_view.spot.seq++;
+        vjo_view_unlock();
+    }
+    job_cancelled = 0;
+    if (restart_old_job(0))
+        return;
+    if (cursor_waiting && ov != OV_CLOSED)
+        start_cursor_job();
     strip_after_wait();
 }
 
@@ -2178,6 +2288,7 @@ static void on_job_done(void)
         strip_after_wait();
         return;
     }
+    if (job_scan) { on_scan_done(); return; }
     if (job_cursor_only) { on_cursor_done(); return; }
     if (job_refresh) { on_refresh_done(); return; }
 #if VJO_DEBUG
@@ -2413,21 +2524,39 @@ static void on_command(void)
     case VJO_CMD_CLOSED:
         close_overlay();
         break;
+    case VJO_CMD_SCAN: /* start_scan runs it once the network thread is free (control_tick) */
+        scan_waiting = ov != OV_CLOSED;
+        job_cancelled |= job_running && job_refresh; /* a refresh yields to it, as to a lookup */
+        break;
     case VJO_CMD_SET_REGION:
     case VJO_CMD_CLEAR_REGION:
+    case VJO_CMD_SCAN_PICK:
         if (!game_active()) { /* the game exited meanwhile */
             close_overlay();
             break;
         }
-        if (cmd == VJO_CMD_SET_REGION)
-            vjo_log("region set for %s: %u,%u,%u,%u", title_id, r.x, r.y, r.w, r.h);
+        if (cmd != VJO_CMD_CLEAR_REGION)
+            vjo_log("region set for %s: %u,%u,%u,%u%s", title_id, r.x, r.y, r.w, r.h,
+                    cmd == VJO_CMD_SCAN_PICK ? " (scanned)" : "");
         else
             vjo_log("region for %s: full screen", title_id);
-        if (vjo_region_save(title_id, cmd == VJO_CMD_SET_REGION ? &r : NULL, &scratch) < 0)
+        if (vjo_region_save(title_id, cmd != VJO_CMD_CLEAR_REGION ? &r : NULL, &scratch) < 0)
             vjo_log("region.ini: write failed");
         push_region();
         cache_ok = 0;
         retire_local_text(1);
+        if (cmd == VJO_CMD_SCAN_PICK && ov != OV_CLOSED) {
+            /* scan screen: the picked box is read at once, the overlay open for its text (open_overlay's end) */
+            view_publish(1, NULL, "Recognizing…", 0);
+            view_waiting = 1;
+            if (job_running) {
+                ov = OV_OPEN_OLD_JOB; /* its job, for the old region, is followed by one for this one */
+                job_cancelled = 1;
+            } else {
+                start_job("scan: box picked", 1);
+            }
+            break;
+        }
         close_overlay();
         /* A job in progress read the old region (a lookup or a refresh, which the
          * close dropped, or OCR): its result goes, as the text and the cache did;
@@ -2820,6 +2949,8 @@ static void control_tick(uint32_t bits)
             cancel_outdated_job(&st);
         }
     }
+    if (scan_waiting && !job_running)
+        start_scan();
     auto_prefetch();
     background_open();
 #if VJO_DEBUG

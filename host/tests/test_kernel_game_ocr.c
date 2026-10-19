@@ -1042,8 +1042,9 @@ static void invalid_capture_and_wire(void)
     r.flags = 0x4000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 20: bits 14-15 are still unknown */
     r.flags = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.flags = 0;
-    r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* VJO_GAME_OCR_S_* bits 5-31 unknown (API 26: 4) */
-    r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate: known */
+    r.speed = 0x40; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* VJO_GAME_OCR_S_* bits 6-31 unknown (API 30: 5) */
+    r.speed = VJO_GAME_OCR_S_SPOT; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 30: a scan is F_FULL alone */
+    r.speed = VJO_GAME_OCR_S_ALL & ~VJO_GAME_OCR_S_SPOT; /* helpers, the clock, no line cache, the gate: known */
     uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;
@@ -1384,6 +1385,7 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     r = shot_request(); r.tiers = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 26 */
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_SPOT; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 30 */
     /* an OCR job names no card; without models it is refused as before */
     r = make_request(); memcpy(r.shot, SHOT_ID, sizeof(SHOT_ID)); TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     TEST_CHECK(!valid && !pending);
@@ -2091,6 +2093,49 @@ static void gate_weights_open_only_with_the_gate(void)
         }
 }
 
+/* API 30: a scan (scan screen) is VJO_GAME_OCR_F_FULL and VJO_GAME_OCR_S_SPOT and nothing else; its file, the
+ * text spotter's weights, is a pinned name the kernel knows at its pinned size, which it opens only for a scan, and
+ * a scan opens nothing else (no model, size, LM, cascade or gate). */
+static void a_scan_is_its_shape_and_opens_only_its_file(void)
+{
+    VjoGameOcrRequest r;
+    setup();
+    caller = 3;
+    r = make_request(); r.flags = VJO_GAME_OCR_F_FULL; r.speed = VJO_GAME_OCR_S_SPOT | VJO_GAME_OCR_S_BOOST;
+    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.speed = VJO_GAME_OCR_S_SPOT | VJO_GAME_OCR_S_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.speed = VJO_GAME_OCR_S_SPOT; r.flags = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_BLANK;
+    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.flags = VJO_GAME_OCR_F_FULL | VJO_GAME_OCR_F_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.flags = VJO_GAME_OCR_F_FULL; r.tiers = 2; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.tiers = 0; strcpy(r.fallback, "FL10_w8.vocr"); TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.fallback[0] = 0;
+    TEST_CHECK(!valid && !pending);
+    for (unsigned scan = 0; scan <= 1; scan++) {
+        setup(); r = make_request();
+        if (scan) { r.flags = VJO_GAME_OCR_F_FULL; r.speed = VJO_GAME_OCR_S_SPOT; strcpy(r.model, VJO_VOCR_SPOT_NAME); }
+        caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+        if (!scan) {
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == VJO_ERR_ARG && !model_opens);
+        } else {
+            /* the whole frame, whatever the user's region */
+            TEST_CHECK(request.width == request.fb_width && request.height == request.fb_height && !request.x && !request.y &&
+                       !request.region.w);
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_GATE, NULL) == VJO_ERR_ARG);
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_LM, NULL) == VJO_ERR_ARG);
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_CASCADE, NULL) == VJO_ERR_ARG && !model_opens);
+            expect_lm = VJO_VOCR_SPOT_NAME; expected_model_size = VJO_VOCR_SPOT_BYTES;
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == VJO_ERR_BUSY);
+            model_tick();
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == (int)VJO_VOCR_SPOT_BYTES && model_opens == 1);
+            close_model(seq);
+            expect_lm = NULL;
+        }
+        TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT + 1u, NULL) == VJO_ERR_ARG);
+        TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+    }
+}
+
 /* API 21: a request by tiers names the model sizes its job may run (bit t - 1);
  * the game opens a size's pinned model by its tier, never by a name: the kernel
  * opens exactly the request's tiers, and with a cascade ceiling the tier above
@@ -2265,6 +2310,7 @@ TEST_LIST = {
     {"an LM tier opens by its pinned name, up to the request's tier", lm_tiers_open_up_to_the_requested_tier},
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
     {"API 26: the gate's weights open by their pinned name, only with the gate", gate_weights_open_only_with_the_gate},
+    {"API 30: a scan is the whole frame alone, and opens its file only", a_scan_is_its_shape_and_opens_only_its_file},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
     {"the Large size's file opens at its pinned length only (VOCR5-L: 2,473,696 B)", the_large_size_opens_at_its_pinned_length_only},
     {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},

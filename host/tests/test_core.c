@@ -787,6 +787,17 @@ static void test_config(void)
     gate = "ocr_text_gate = off\nocr_text_gate = maybe\n";
     vjo_config_parse(&c, gate, strlen(gate));
     TEST_CHECK(c.ocr_text_gate == 0 && c.n_warnings == 1);
+    /* API 30: scan screen, off by default (docs/vita-vn-ocr.md "Scan screen"); its key is its own (the gate's
+     * shares its parse), in any case */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_scan_screen == 0 && VJO_SCAN_SCREEN_DEFAULT == 0);
+    const char *scan = "OCR_SCAN_SCREEN = On\n";
+    vjo_config_parse(&c, scan, strlen(scan));
+    TEST_CHECK(c.ocr_scan_screen == 1 && c.ocr_text_gate == 0 && c.n_warnings == 0);
+    scan = "ocr_scan_screen = off\nOCR_TEXT_GATE = on\nocr_scan_screen = yes\n";
+    vjo_config_parse(&c, scan, strlen(scan));
+    TEST_CHECK(c.ocr_scan_screen == 0 && c.ocr_text_gate == 1 && c.n_warnings == 1);
+    TEST_CHECK(strstr(vjo_config_default_text(), "\nocr_scan_screen = off\n") != NULL);
     vjo_config_defaults(&c);
     const char *lm = "ocr_lm = 1000K\nocr_cascade_ms = 0\n";
     vjo_config_parse(&c, lm, strlen(lm));
