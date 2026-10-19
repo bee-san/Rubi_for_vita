@@ -896,12 +896,12 @@ No key is remapped and no button changes meaning. Press by press:
    `◀▶▲▼ or tap a box · Enter read · Cancel draw by hand` (with the console's own Enter and Cancel glyphs).
 2. The game worker scans the screen (an estimated 0.2-0.3 s, below, after a read that is already running); then
    every box it found is drawn as a translucent white rectangle (at most 16), each the region it would read, and the
-   one it took for the dialogue is highlighted in yellow. (A □ pressed again while a scan still runs gets that scan's boxes and then its
-   own: each scan's boxes are drawn afresh when they come, the highlight on its pick.)
+   one it took for the dialogue is highlighted in yellow. (A □ pressed again while a scan still runs gets that
+   scan's boxes and then its own: each scan's boxes are drawn afresh when they come, the highlight on its pick.)
 3. **◀ ▶ ▲ ▼**, or a push of the left stick, moves the highlight to the nearest box that way: a box level with the
    highlighted one, or further that way than across, that reaches further that way than it (a line far up the screen
-   is not to the left of the dialogue; ▲ reaches it). Every box that can be picked can be reached with the arrows.
-   A **tap on a box** picks it.
+   is not to the left of the dialogue; ▲ reaches it). Every box that can be picked can be reached with the arrows:
+   where no box lies that way, an arrow may lead to one they could not reach otherwise. A **tap on a box** picks it.
 4. **Enter** (or that tap) reads it: the box becomes this game's region, saved as a box drawn by hand is
    (`region.ini`; a box under 32 px either way is widened to 32 by the capture, as any region is), and the overlay
    reads it at once, the same job L + R starts (the finder, its refinement, the
@@ -969,8 +969,8 @@ no request is ever a scan.
   95 ms). It runs between the strips, whose reads wait a game frame each (as test.1's still-screen jobs read theirs,
   above: about a frame a strip), so the boxes come about 0.17 s after □ at 60 frames a second and 0.32 s at 30.
   A scan waits for a read that is already running (L + R's own, or an Automatic one; only a refresh of the entry
-  yields to it): □ pressed during a read gets its boxes that much later (test.1's logs, above: a 5-line screen took
-  about 0.4 s to find and 1.8 s to recognize).
+  yields to it): □ pressed during a read gets its boxes that much later (on the owner's v0.8.0-test.1 logs a
+  5-line full screen took 1.84 s of recognition, before API 22 made recognition faster: [ocr-speed.md](ocr-speed.md)).
   The scan runs at the game's own clock (it does not raise it). Each strip is copied in the game's display call,
   as an OCR job's are.
 - **Why it is off by default.** It is opt-in by the owner's rule for this round's features, and nothing of it is

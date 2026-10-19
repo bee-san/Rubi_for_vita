@@ -299,8 +299,9 @@ With `ocr_scan_screen = on` (off by default), Square first scans the whole scree
 0.2-0.3 s later (after a read that is already running) every text box it found is drawn as a light rectangle, at
 most 16, and the cursor starts on the box the spotter takes for the dialogue (right on 61% of #104's development
 frames with dialogue). ◀ ▶ ▲ ▼ or a push of the left stick goes to the nearest box that way (every box can be
-reached), and Enter reads the highlighted one: it becomes this game's region, as a drawn box does, and the overlay
-reads it at once, so its text and the word's entry come up as after L + R. A tap on a box reads that box. Cancel, a tap outside every box
+reached: where no box lies that way, an arrow may lead to one the arrows could not reach otherwise), and Enter reads
+the highlighted one: it becomes this game's region, as a drawn box does, and the overlay reads it at once, so its
+text and the word's entry come up as after L + R. A tap on a box reads that box. Cancel, a tap outside every box
 (it starts drawing there) or a scan that found nothing goes back to drawing the box by hand as above. Boxes of
 vertical text are drawn but cannot be picked yet
 ([scan screen](vita-vn-ocr.md#scan-screen-api-30)).
