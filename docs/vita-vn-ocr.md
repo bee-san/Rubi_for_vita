@@ -888,18 +888,20 @@ ocr_scan_screen = off   ; on: □ starts on the text boxes found on the whole sc
 
 With `ocr_scan_screen = on`, the overlay's draw-a-region action (□) starts on the text boxes the game worker finds on
 the whole screen with vita-vn-ocr #104's full-frame text spotter (`docs/textspot.md` there), instead of an empty
-screen. It is a faster way to set the region: one press picks the dialogue box that the spotter found and reads it.
+screen. It is a faster way to set the region: the cursor starts on the box the spotter takes for the dialogue (right
+on 61% of #104's development frames with dialogue, below), and Enter reads it.
 No key is remapped and no button changes meaning. Press by press:
 
 1. **L + R** opens the overlay over the game, as always; **□** dims the game, as always. The hint line says
    `◀▶▲▼ or tap a box · Enter read · Cancel draw by hand` (with the console's own Enter and Cancel glyphs).
-2. The game worker scans the screen (an estimated 0.2-0.3 s, below); then every box it found is drawn as a
-   translucent white rectangle (at most 16), each the region it would read, and the one it picked as the likely
-   dialogue is highlighted in yellow. (A □ pressed again while a scan still runs gets that scan's boxes and then its
+2. The game worker scans the screen (an estimated 0.2-0.3 s, below, after a read that is already running); then
+   every box it found is drawn as a translucent white rectangle (at most 16), each the region it would read, and the
+   one it took for the dialogue is highlighted in yellow. (A □ pressed again while a scan still runs gets that scan's boxes and then its
    own: each scan's boxes are drawn afresh when they come, the highlight on its pick.)
 3. **◀ ▶ ▲ ▼**, or a push of the left stick, moves the highlight to the nearest box that way: a box level with the
-   highlighted one, or further that way than across (a line far up the screen is not to the left of the dialogue;
-   ▲ reaches it). A **tap on a box** picks it.
+   highlighted one, or further that way than across, that reaches further that way than it (a line far up the screen
+   is not to the left of the dialogue; ▲ reaches it). Every box that can be picked can be reached with the arrows.
+   A **tap on a box** picks it.
 4. **Enter** (or that tap) reads it: the box becomes this game's region, saved as a box drawn by hand is
    (`region.ini`; a box under 32 px either way is widened to 32 by the capture, as any region is), and the overlay
    reads it at once, the same job L + R starts (the finder, its refinement, the
@@ -922,8 +924,15 @@ no request is ever a scan.
   `core/vocr_ocr.c` checks field by field). The worker also makes the overlay's map of it (`core/spot_pick.c`):
   the first 16 blocks in reading order (the pick in the last place when it is not among them) on the 960×544
   screen, each grown by 8 pixels and clipped (the region it is read as), the block to start on, and from each
-  block its nearest neighbour for each of the d-pad's directions (of the blocks whose centre lies that way, level
-  with it or further along than across: the least gap that way plus twice the gap across). The Shell takes those
+  block its nearest neighbour for each of the d-pad's directions. The arrows' geometry is the blocks' own
+  rectangles, without the margin: of the blocks whose centre lies that way, level with the block or further along
+  than across, and that reach further that way than it, the least gap that way (where the two overlap, how much
+  further the other reaches) plus twice the gap across. Then every block that can be picked is made reachable from
+  the start: while one is not, the cheapest arrow of a reachable block towards it, a dead end first, is pointed at
+  it (an arrow in use is routed through it to its old block), so each step reaches one block more and loses none.
+  On #104's development detections of the selected run (geometry only, a design statistic, not a score) the
+  earlier rule, on the margin-grown regions, left 4 of the 495 blocks that can be picked unreachable, on 3 of the
+  109 frames with two or more; this one leaves none (none of 12,165 over all 22 family B detector arms either). The Shell takes those
   196 B only when every index in them is one of their blocks (`vjo_spot_map_ok`; the result comes from the game's
   process), copies them and looks things up in them: nothing of the spotter runs in SceShell, which holds no more
   than that map (AGENTS.md rule 1).
@@ -946,10 +955,10 @@ no request is ever a scan.
   every frame up to 960×544 with these weights; within `VjoGameVocr`'s budget). Its memory check keeps the 4 MiB
   reserve beside both; the resident weights, LM and cascade model stay. No new ledger item, and the job's worst
   case is unchanged ([memory-ledger.md](memory-ledger.md)).
-- **Module pages** (measured, both builds, VitaSDK gcc 15.2.0): the worker gains 11,464 B of text in both builds,
+- **Module pages** (measured, both builds, VitaSDK gcc 15.2.0): the worker gains 11,816 B of text in both builds,
   on or off (the spotter's code at `-Os` with NEON, 9,402 B; its dark pass,
   which a scan never reaches, is linked to a refusing stub, `cmake/VocrOCR.cmake`; the scan and the map, about
-  2.0 KB): 98,304 → 110,592 B, three text pages more in every enabled game's memory, never SceShell's. SceShell keeps
+  2.4 KB): 98,304 → 110,592 B, three text pages more in every enabled game's memory, never SceShell's. SceShell keeps
   its pages: the Shell's text grows by 2,144 B (debug) and 1,656 B (normal; 108 B of text room left in its pages),
   its data and bss by 232 B; Enter's read at once is 64 B and 32 B of that. The kernel's text grows by 88 B (debug) and 92 B
   (normal), the same pages. The RCO grows from 6,000 to 7,152 B (16 planes and a style), in the PAF heap: the 8,192 B estimate for it and
@@ -959,6 +968,9 @@ no request is ever a scan.
   `-O2` without the dark pass, scaled by its default call's `-O2` → `-Os` ratio, 130.7 → 135.6 ms; at 444 MHz about
   95 ms). It runs between the strips, whose reads wait a game frame each (as test.1's still-screen jobs read theirs,
   above: about a frame a strip), so the boxes come about 0.17 s after □ at 60 frames a second and 0.32 s at 30.
+  A scan waits for a read that is already running (L + R's own, or an Automatic one; only a refresh of the entry
+  yields to it): □ pressed during a read gets its boxes that much later (test.1's logs, above: a 5-line screen took
+  about 0.4 s to find and 1.8 s to recognize).
   The scan runs at the game's own clock (it does not raise it). Each strip is copied in the game's display call,
   as an OCR job's are.
 - **Why it is off by default.** It is opt-in by the owner's rule for this round's features, and nothing of it is
@@ -973,6 +985,12 @@ steps (`gstep scan ...`; its `spot` step: kind 1 when it read the frame whole, a
 the overlay, `scan: N blocks shown, the cursor on I` and `scan: block I read, x,y wxh`.
 
 **Limits.**
+- The highlight starts on the box the spotter takes for the dialogue, which is right on 77 of #104's 126
+  development frames with dialogue (61%; its detector, the boxes a scan draws, at vita-vn-ocr main `7a6dce0`, host).
+  #104's selected arm adds a refinement (det+refine: 86 of 126, 68%; on its protected test frames 97 of 157, 62%);
+  the test sets were not read with the detector alone, so no test figure exists for the scan's own pick.
+- A text-free screen can get a stray box: about 1 in 5 (5 of #104's 25 text-free development frames get at least one;
+  6 of 19 text-free test frames with det+refine).
 - At most 16 blocks are drawn (the first in reading order, the pick in the last place when it is not among them);
   vita-vn-ocr's h2 family B spotters gave more on 2 of their 2,632 results on its 188 development frames (0.08 %,
   at most 19; a design statistic, read from #104's `eval/famB/*_det/boxes.json`, not a score).

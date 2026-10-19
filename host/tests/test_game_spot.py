@@ -3,8 +3,9 @@
 (host/tests/test_game_spot.c --spot) gives vita-vn-ocr's twin's boxes, blocks, pick and truncated flag on the
 same frames (tools/spot_frames.py), as host/fixtures/textspot/spot-<the pinned weights' sha256>.json records
 them (tools/spot_fixture.py writes it). Then the overlay's map (core/spot_pick.h) of each: at most 16 blocks, each
-inside the screen, its neighbours' indices among them. Skips (exit 77) without the pinned weights
-(cmake/VocrSpot.cmake). Pillow decodes the sample; a frame whose bytes differ from the fixture's fails as such."""
+inside the screen, its neighbours' indices among them, every block that can be picked reachable from the start.
+Skips (exit 77) without the pinned weights (cmake/VocrSpot.cmake). Pillow decodes the sample; a frame whose bytes
+differ from the fixture's fails as such."""
 import json
 import re
 import subprocess
@@ -55,6 +56,15 @@ def main():
                          for x, y, w2, h2 in m["rect"])
             checks.append(("map inside the screen", inside, True))
             checks.append(("map neighbours", all(0 <= n < shown for row in m["next"] for n in row), True))
+            # every block that can be picked is reachable by the arrows from the start (#228's audit, N1)
+            seen, todo = ({m["start"]} if m["start"] >= 0 else set()), [m["start"]] if m["start"] >= 0 else []
+            while todo:
+                for n in m["next"][todo.pop()]:
+                    if n not in seen and 0 <= n < shown:
+                        seen.add(n)
+                        todo.append(n)
+            pickable = {i for i in range(m["count"]) if not m["vertical"] >> i & 1}
+            checks.append(("map: unreachable blocks", sorted(pickable - seen), []))
             for what, a, b in checks:
                 if a != b:
                     print(f"{name}: {what}: {a} != {b}")

@@ -296,10 +296,11 @@ and its acceleration are covered by host tests; how they feel on the console is
 not tested yet.
 
 With `ocr_scan_screen = on` (off by default), Square first scans the whole screen in the game: an estimated
-0.2-0.3 s later every text box it found is drawn as a light rectangle, at most 16, and the one it took for the
-dialogue is highlighted. ◀ ▶ ▲ ▼ or a push of the left stick goes to the nearest box that way, and Enter reads the
-highlighted one: it becomes this game's region, as a drawn box does, and the overlay reads it at once, so its
-text and the word's entry come up as after L + R. A tap on a box reads that box. Cancel, a tap outside every box
+0.2-0.3 s later (after a read that is already running) every text box it found is drawn as a light rectangle, at
+most 16, and the cursor starts on the box the spotter takes for the dialogue (right on 61% of #104's development
+frames with dialogue). ◀ ▶ ▲ ▼ or a push of the left stick goes to the nearest box that way (every box can be
+reached), and Enter reads the highlighted one: it becomes this game's region, as a drawn box does, and the overlay
+reads it at once, so its text and the word's entry come up as after L + R. A tap on a box reads that box. Cancel, a tap outside every box
 (it starts drawing there) or a scan that found nothing goes back to drawing the box by hand as above. Boxes of
 vertical text are drawn but cannot be picked yet
 ([scan screen](vita-vn-ocr.md#scan-screen-api-30)).
@@ -572,7 +573,8 @@ vita-vn-ocr's test sets and CLANNAD it changed no text read; it costs an estimat
 until a console run shows how often it helps
 ([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)).
 `ocr_scan_screen = on` makes □ start on the text boxes the game worker finds on the whole screen (vita-vn-ocr
-#104's text spotter): the cursor starts on the dialogue, Enter reads the box it is on and makes it the game's
+#104's text spotter): the cursor starts on the box it takes for the dialogue (right on 61% of #104's development
+frames with dialogue), Enter reads the box it is on and makes it the game's
 region ([Drawing the region](#drawing-the-region)). It is off by default: nothing of it is measured on a console
 yet ([scan screen](vita-vn-ocr.md#scan-screen-api-30)).
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line

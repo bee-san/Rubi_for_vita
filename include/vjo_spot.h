@@ -54,7 +54,8 @@ typedef struct {
     int16_t rect[VJO_SPOT_SHOWN][4]; /* x, y, w, h in screen pixels */
     uint8_t next[VJO_SPOT_SHOWN][4]; /* from block i, the nearest that can be picked up, right, down and left (the
                                         d-pad's VJO_RSEL_UP << d; core/spot_pick.h says which lie that way);
-                                        i itself where there is none */
+                                        i itself where there is none; every block that can be picked is
+                                        reachable from start through them */
 } VjoSpotMap;
 
 /* A scan's result text: the spotter's set, then the overlay's map. */

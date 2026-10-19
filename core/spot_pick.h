@@ -23,10 +23,12 @@ extern "C" {
  * VJO_SPOT_SHOWN blocks in reading order, the last place the spotter's pick's when it is not among them; each
  * scaled to the 960 x 544 screen (its edges rounded outward), grown by VJO_SPOT_MARGIN and clipped; the start;
  * and from each block, for each of the d-pad's four directions, the nearest block that can be picked that lies
- * that way: its centre beyond the block's centre on that axis, and either level with the block (their spans
- * across overlap) or at least as far along as across; the nearest by the least gap that way plus twice the gap
- * across (each 0 where the two overlap), the first in reading order on a tie, the block itself when there is
- * none. r NULL or a zero size: an empty map. */
+ * that way, on the blocks' own rectangles (without the margin): its centre beyond the block's centre on that
+ * axis, level with the block (their spans across overlap) or at least as far along as across, and reaching
+ * further that way than the block; the nearest by the least gap that way (where the two overlap that way, how
+ * much further it reaches) plus twice the gap across, the first in reading order on a tie, the block itself when
+ * there is none. Then every block that can be picked is made reachable from the start by the arrows
+ * (core/spot_pick.c arrows). r NULL or a zero size: an empty map. */
 void vjo_spot_map(const VjoSpotResult *r, unsigned fb_w, unsigned fb_h, VjoSpotMap *m);
 
 /* 1 when every index in m is one of its blocks (count at most VJO_SPOT_SHOWN, start below it, every neighbour
