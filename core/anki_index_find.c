@@ -106,7 +106,8 @@ static uint32_t bucket_of(uint64_t key, uint32_t bits)
     return ((uint32_t)(key >> 32) >> 1) >> (31 - bits);
 }
 
-int vjo_anki_index_lookup(const VjoPlatform *p, const char *path, const char *old_path, const VjoAnkiIndexKeys *k)
+int vjo_anki_index_lookup(const VjoPlatform *p, const char *path, const char *old_path, uint64_t request,
+                          const VjoAnkiIndexKeys *k)
 {
     union { /* the header, then the bucket */
         uint64_t q[VJO_ANKI_INDEX_MAX_BUCKET];
@@ -131,6 +132,10 @@ int vjo_anki_index_lookup(const VjoPlatform *p, const char *path, const char *ol
     keys_at = VJO_ANKI_INDEX_HEADER + 4 * ((1u << bits) + 1);
     if (f.size != keys_at + 8 * (uint64_t)n)
         goto out;
+    rc = VJO_ANKI_INDEX_OTHER;
+    if (u.q[8] != request) /* bytes 64-71: the request it was made for */
+        goto out;
+    rc = VJO_ANKI_INDEX_BAD;
     b = bucket_of(k->form, bits);
     if (f.read(f.ctx, VJO_ANKI_INDEX_HEADER + 4 * b, dir, sizeof(dir)) != 0 || dir[0] > dir[1] || dir[1] > n ||
         (n = dir[1] - dir[0]) > u.w[6])

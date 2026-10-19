@@ -76,11 +76,13 @@ static void use_index(const uint8_t *data, size_t size)
     counters_reset();
 }
 
+static uint64_t request = AFV_RUBI_REQUEST_HASH; /* Rubi's own, the lookups' */
+
 static int lookup(const char *form, const char *reading)
 {
     VjoAnkiIndexKeys k;
     int rc = vjo_anki_index_keys(form, reading, &k);
-    return rc ? rc : vjo_anki_index_lookup(&plat, VJO_ANKI_INDEX_PATH, VJO_ANKI_INDEX_OLD_PATH, &k);
+    return rc ? rc : vjo_anki_index_lookup(&plat, VJO_ANKI_INDEX_PATH, VJO_ANKI_INDEX_OLD_PATH, request, &k);
 }
 
 /* BE64(SHA-256(kind || a (|| 0x1F || b))) */
@@ -247,6 +249,27 @@ static void test_every_word_found_absent_ones_not(void)
     free(readings);
 }
 
+/* An index made for another request (other fields): not trusted, whatever it holds, after the header
+ * only. The hash the Rubi app's request has for other fields is the one the overlay compares
+ * (test_settings_anki_index.c checks the two agree). */
+static void test_only_rubis_own_request(void)
+{
+    static const AfvWord notes[] = {{"猫", "ねこ"}, {"犬", ""}};
+    size_t size;
+    uint8_t *other = afv_write(notes, 2, 0xa988b779e7d4118cull /* Word, WordReading */, 0, 0, &size);
+    TEST_ASSERT(other != NULL);
+    use_index(other, size);
+    TEST_CHECK(lookup("猫", "ねこ") == VJO_ANKI_INDEX_OTHER && reads == 1 && closes == 1);
+    TEST_CHECK(lookup("鳥", NULL) == VJO_ANKI_INDEX_OTHER);
+    request = 0xa988b779e7d4118cull; /* the overlay's request for those fields */
+    TEST_CHECK(lookup("猫", "ねこ") == VJO_ANKI_INDEX_PAIR && lookup("犬", "いぬ") == VJO_ANKI_INDEX_FORM);
+    use_index(worked_example, sizeof(worked_example)); /* Rubi's default request's index */
+    TEST_CHECK(lookup("猫", "ねこ") == VJO_ANKI_INDEX_OTHER);
+    request = AFV_RUBI_REQUEST_HASH;
+    TEST_CHECK(lookup("猫", "ねこ") == VJO_ANKI_INDEX_PAIR);
+    free(other);
+}
+
 /* No rubi.idx: rubi.idx.old (a publish stopped between its renames); neither: missing. A damaged
  * rubi.idx is not replaced by the .old (the file is there: it is the index). */
 static void test_the_previous_index(void)
@@ -279,9 +302,9 @@ static int safe(const uint8_t *data, size_t size, int *bad)
     for (unsigned i = 0; i < 300; i++) {
         int rc;
         counters_reset();
-        rc = vjo_anki_index_lookup(&plat, VJO_ANKI_INDEX_PATH, VJO_ANKI_INDEX_OLD_PATH, &words[i].keys);
-        ok &= rc == VJO_ANKI_INDEX_BAD || rc == VJO_ANKI_INDEX_NONE || rc == words[i].want;
-        *bad += rc == VJO_ANKI_INDEX_BAD;
+        rc = vjo_anki_index_lookup(&plat, VJO_ANKI_INDEX_PATH, VJO_ANKI_INDEX_OLD_PATH, request, &words[i].keys);
+        ok &= rc == VJO_ANKI_INDEX_BAD || rc == VJO_ANKI_INDEX_OTHER || rc == VJO_ANKI_INDEX_NONE || rc == words[i].want;
+        *bad += rc == VJO_ANKI_INDEX_BAD || rc == VJO_ANKI_INDEX_OTHER;
         ok &= reads <= 3 && read_bytes <= 648 && opens == 1 && closes == 1;
     }
     return ok;
@@ -360,6 +383,7 @@ TEST_LIST = {
     {"known_keys", test_known_keys},
     {"plain_words", test_plain_words},
     {"every_word_found_absent_ones_not", test_every_word_found_absent_ones_not},
+    {"only_rubis_own_request", test_only_rubis_own_request},
     {"the_previous_index_when_there_is_no_rubi_idx", test_the_previous_index},
     {"damaged_files_are_unknown_never_read_out_of_bounds", test_damaged_files},
     {NULL, NULL}};

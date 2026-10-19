@@ -393,15 +393,17 @@ static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
 /* Is the word (its keys) in the user's Anki collection, by Anki for Vita's index? A missing, damaged
  * or other-version file is "no": the card is saved as before. The file's state is logged when it
  * changes (the first lookup's, then absent, read or unusable). Job thread only. */
-static int index_state = 1; /* the last lookup's: VJO_ANKI_INDEX_MISSING, _BAD, or 0 (read) */
+static int index_state = 1; /* the last lookup's: VJO_ANKI_INDEX_MISSING, _BAD, _OTHER, or 0 (read) */
 
-static int in_anki(const VjoAnkiIndexKeys *k)
+static int in_anki(uint64_t request, const VjoAnkiIndexKeys *k)
 {
-    int rc = vjo_anki_index_lookup(&plat, VJO_ANKI_INDEX_PATH, VJO_ANKI_INDEX_OLD_PATH, k), state = rc < 0 ? rc : 0;
+    int rc = vjo_anki_index_lookup(&plat, VJO_ANKI_INDEX_PATH, VJO_ANKI_INDEX_OLD_PATH, request, k),
+        state = rc < 0 ? rc : 0;
     if (state != index_state) {
         index_state = state;
-        vjo_log("anki: Anki for Vita's duplicate index %s", !state ? "read" : state == VJO_ANKI_INDEX_MISSING
-                                                                   ? "absent" : "not used (damaged, another version)");
+        vjo_log("anki: Anki for Vita's duplicate index %s", !state ? "read" : state == VJO_ANKI_INDEX_MISSING ? "absent"
+                : state == VJO_ANKI_INDEX_OTHER ? "for other fields (open the Rubi app, then sync)"
+                : "not used (damaged, another version)");
     }
     return rc > 0;
 }
@@ -414,10 +416,12 @@ static void do_save(unsigned seq, int entry)
     VjoQueueShot shot = {take_shot, 0};
     char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)];
     int shown, mark_value = 0, ok = 0, rc, page = 0, keyed;
+    uint64_t request;
     int64_t t0 = now_us();
 
     sceKernelLockMutex(box_lock, 1, NULL);
     keyed = next_cfg.anki_duplicate_check; /* (never the view lock inside this one, or the reverse) */
+    request = (uint64_t)next_cfg.anki_duplicate_request[0] << 32 | next_cfg.anki_duplicate_request[1];
     sceKernelUnlockMutex(box_lock, 1);
     /* The √ or the queued mark already says it: no memory for that. */
     vjo_view_lock();
@@ -438,7 +442,7 @@ static void do_save(unsigned seq, int entry)
         return;
     }
     /* In the user's Anki already (Anki for Vita's index): nothing saved, no memory taken. */
-    if (keyed && in_anki(&keys)) {
+    if (keyed && in_anki(request, &keys)) {
         vjo_dlog("anki: in Anki, not saved, %d ms", (int)((now_us() - t0) / 1000));
         publish(seq, "Already in Anki", VJO_ANKI_STATUS_DIM, entry, VJO_ANKI_MARK_IN_ANKI);
         return;
