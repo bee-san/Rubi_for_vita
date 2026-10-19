@@ -23,11 +23,15 @@ static int nearest(const VjoSpotMap *m, int c, int d)
     const int16_t *a = m->rect[c];
     for (int i = 0; i < m->count; i++) {
         const int16_t *b = m->rect[i];
-        int cost;
-        /* its centre that way (doubled: no rounding); not c itself, whose centre is its own */
-        if (!pickable(m, i) || (2 * b[k] + b[k + 2] - 2 * a[k] - a[k + 2]) * s <= 0)
+        /* the centres' offsets along and across (doubled: no rounding), the gap across */
+        int along = (2 * b[k] + b[k + 2] - 2 * a[k] - a[k + 2]) * s;
+        int across = 2 * b[1 - k] + b[3 - k] - 2 * a[1 - k] - a[3 - k];
+        int ga = gap(a[1 - k], a[3 - k], b[1 - k], b[3 - k]), cost;
+        /* that way: its centre beyond c's (so not c itself), and level with c or at least as far along as across
+         * (a HUD line far up is not left of the dialogue, a name plate on the dialogue box is above it) */
+        if (!pickable(m, i) || along <= 0 || (ga && along < (across < 0 ? -across : across)))
             continue;
-        cost = gap(a[k], a[k + 2], b[k], b[k + 2]) + 2 * gap(a[1 - k], a[3 - k], b[1 - k], b[3 - k]);
+        cost = gap(a[k], a[k + 2], b[k], b[k + 2]) + 2 * ga;
         if (cost < best_cost) {
             best_cost = cost;
             best = i;
@@ -39,13 +43,16 @@ static int nearest(const VjoSpotMap *m, int c, int d)
 void vjo_spot_map(const VjoSpotResult *r, unsigned fb_w, unsigned fb_h, VjoSpotMap *m)
 {
     unsigned n = r && fb_w && fb_h ? r->block_count : 0;
+    /* the pick (a block of the set, or none) and its place among the shown */
+    int pick = n && r->pick >= 0 && (unsigned)r->pick < n && r->pick < (int)VJO_SPOT_MAX ? (int)r->pick : -1;
     memset(m, 0, sizeof(*m));
     m->start = -1;
     if (n > VJO_SPOT_SHOWN)
         n = VJO_SPOT_SHOWN;
     m->count = (uint8_t)n;
     for (unsigned i = 0; i < n; i++) {
-        const VjoSpotBlock *b = &r->block[i];
+        /* a pick past the shown blocks takes the last place: the dialogue is often the last in reading order */
+        const VjoSpotBlock *b = &r->block[i + 1 == n && pick >= (int)n ? (unsigned)pick : i];
         /* the frame's pixels on the screen's, edges outward, then the margin, clipped */
         int x0 = (int)((unsigned)b->x * VJO_RSEL_W / fb_w) - VJO_SPOT_MARGIN;
         int y0 = (int)((unsigned)b->y * VJO_RSEL_H / fb_h) - VJO_SPOT_MARGIN;
@@ -70,8 +77,10 @@ void vjo_spot_map(const VjoSpotResult *r, unsigned fb_w, unsigned fb_h, VjoSpotM
     for (int i = (int)n - 1; i >= 0; i--)
         if (pickable(m, i))
             m->start = (int8_t)i;
-    if (n && pickable(m, r->pick))
-        m->start = (int8_t)r->pick;
+    if (pick >= (int)n)
+        pick = (int)n - 1;
+    if (pickable(m, pick))
+        m->start = (int8_t)pick;
     for (unsigned i = 0; i < n; i++)
         for (int d = 0; d < 4; d++)
             m->next[i][d] = (uint8_t)nearest(m, (int)i, d);

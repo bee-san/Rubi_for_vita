@@ -38,10 +38,12 @@ typedef char vjo_spot_layout[sizeof(VjoSpotBox) == 12 && sizeof(VjoSpotBlock) ==
                              sizeof(VjoSpotResult) == 2 * 12 * VJO_SPOT_MAX + 16 ? 1 : -1];
 
 /* The overlay's map of a scan (core/spot_pick.c vjo_spot_map), which the game worker makes from the set so that
- * SceShell's code for it is a table lookup (AGENTS.md rule 1): the first VJO_SPOT_SHOWN blocks in reading order
- * (on vita-vn-ocr's 188 development frames its family B spotters gave more than 16 blocks on 0.1%), each as the
- * region it is read as: the block on the 960 x 544 screen, grown by VJO_SPOT_MARGIN pixels on every side and
- * clipped to the screen. */
+ * SceShell's code for it is a table lookup (AGENTS.md rule 1): the first VJO_SPOT_SHOWN blocks in reading order,
+ * the last place the pick's when it is not among them (vita-vn-ocr #104's h2 family B spotters gave more than 16
+ * blocks on 2 of their 2,632 results on its 188 development frames, at most 19: a design statistic, not a
+ * score), each as the region it is read as: the block on the 960 x 544 screen, grown by VJO_SPOT_MARGIN pixels on
+ * every side and clipped to the screen. The Shell uses a map only when every index in it is one of its blocks
+ * (core/spot_pick.h vjo_spot_map_ok). */
 #define VJO_SPOT_SHOWN 16
 #define VJO_SPOT_MARGIN 8
 typedef struct {
@@ -51,7 +53,8 @@ typedef struct {
     uint16_t vertical;  /* bit i: block i is vertical (drawn, not picked: no vertical text in this build) */
     int16_t rect[VJO_SPOT_SHOWN][4]; /* x, y, w, h in screen pixels */
     uint8_t next[VJO_SPOT_SHOWN][4]; /* from block i, the nearest that can be picked up, right, down and left (the
-                                        d-pad's VJO_RSEL_UP << d); i itself where there is none */
+                                        d-pad's VJO_RSEL_UP << d; core/spot_pick.h says which lie that way);
+                                        i itself where there is none */
 } VjoSpotMap;
 
 /* A scan's result text: the spotter's set, then the overlay's map. */

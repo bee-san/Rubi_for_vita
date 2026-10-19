@@ -28,8 +28,8 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   game                                147,456   10,567,680   10,567,680            0
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (40,576->40,960 + 77,636->77,824)
-      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (100,668->102,400 + 73,512->73,728)
-      VitaJPOverlay_OCR         110,592 B of    110,592 B declared (92,996->94,208 + 15,720->16,384)
+      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (100,876->102,400 + 73,504->73,728)
+      VitaJPOverlay_OCR         110,592 B of    110,592 B declared (93,108->94,208 + 15,720->16,384)
 ```
 
 Every Shell configuration is the shipped one since Google Lens and the Hachidori relay were
@@ -468,7 +468,7 @@ scan screen, both builds of main `24c0219` and that change]
 |---|---:|---:|---|
 | `VitaJPOverlay_Shell.suprx` | 176,128 B (100,484 + 69,828) | 163,840 B (90,012 + 69,756) | 3 SceShell pages fewer |
 | `VitaJPOverlay_Kernel.skprx` | 118,784 B (40,040 + 77,672) | 114,688 B (35,900 + 75,984) | 1 page of the kernel pool fewer |
-| `VitaJPOverlay_OCR.suprx` | 110,592 B (92,996 + 15,720) | 110,592 B (91,712 + 15,720) | the same pages (one budget for both since #124; raised for API 30's scan screen) |
+| `VitaJPOverlay_OCR.suprx` | 110,592 B (93,108 + 15,720) | 110,592 B (91,824 + 15,720) | the same pages (one budget for both since #124; raised for API 30's scan screen) |
 
 At main `3805a13` the normal Shell's text is 90,768 B in 94,208 B of pages (3,440 B of room); its
 data/bss has 3,740 B. On main `3aa08a6` it is 91,016 B of text (#140), and #132's VjoNet stack paint and check make it
@@ -520,25 +520,27 @@ VitaSDK gcc 15.2.0; main `b7fd816` changes docs only]. The gate's arena (35,529 
 finder leaves free: no job's workspace grows. The game's permanent figure is the ledger's own (135,168 B in the
 debug build's table then).
 API 30's scan screen ([vita-vn-ocr.md](vita-vn-ocr.md#scan-screen-api-30)), on main `24c0219`: the worker 81,644 →
-92,996 B (debug) and 80,344 → 91,712 B (normal) of text, three pages more in both builds, 98,304 → 110,592 B, in every
+93,108 B (debug) and 80,344 → 91,824 B (normal) of text, three pages more in both builds, 98,304 → 110,592 B, in every
 enabled game, whether `ocr_scan_screen` is on or off; its data/bss stays 15,720 B (the spotter's weights are a file
 read in each scan, never kept). The text is vita-vn-ocr's `runtime/vocr_textspot.c` at `-Os`, 9,402 B of symbols (at
-`-O2` the debug worker would take a fourth page; its dark pass, which a scan never reaches, is linked to a refusing
-stub instead of `vocr_lines.c`'s 1,170 B), and the scan: `vjo_vocr_spot` 524 B, the strip reader 164 B, the
-overlay's map (`vjo_spot_map` 632 B, made in the game so that SceShell's code for it is a table lookup) and
-`run_spot` (+520 B of `vjo_game_ocr_run_request`): 1,932 B of symbols in the debug build, 1,940 B in the normal
-one. The Shell 98,732 → 100,668 and 88,348 → 89,900 B of text (the scan's job and command, the overlay's picker, the
-config key; 80 and 48 B of it the picked box's read at once) and 73,272 → 73,512 and 73,280 → 73,520 B of data/bss
-(the view's copy of the map, 204 B), the same pages, with 212 B of text room left in the normal build's (`core/
-textfilter.c` is built `-Os` for 22 B of it); the kernel 40,484 → 40,576 and 35,632 → 35,724 B of text (the scan's
-shape and its file in the broker), the same pages [measured: the build log's module rows and `arm-vita-eabi-nm`,
-both builds of main `24c0219` and API 30, VitaSDK gcc 15.2.0]. The game's permanent figure is 147,456 B (the
-debug build's table above). A scan's own blocks, 151,552 B at most while it runs, are within the OCR jobs' items.
+`-O2` its object's text is 2,026 B larger, more than the debug worker's 1,100 B of room: a fourth page; its dark
+pass, which a scan never reaches, is linked to a refusing stub instead of `vocr_lines.c`'s 1,170 B), and the scan:
+`vjo_vocr_spot` 524 B, the strip reader 164 B, the overlay's map (`vjo_spot_map` 730 B and its 26 B helper, made in
+the game so that SceShell's code for it is a table lookup) and `run_spot` (+520 B of `vjo_game_ocr_run_request`, +528
+B in the normal build): 2,030 B of symbols in the debug build, 2,038 B in the normal one. The Shell 98,732 → 100,876
+and 88,348 → 90,012 B of text (the scan's job and command, its check of the map, the overlay's picker, the config
+key, a debug line with the open page's PAF heap; 80 and 48 B of it the picked box's read at once) and 73,272 → 73,504 and 73,280 → 73,512 B of data/bss (the
+view's copy of the map, 204 B), the same pages, with 100 B of text room left in the normal build's; the kernel 40,484
+→ 40,576 and 35,632 → 35,724 B of text (the scan's shape and its file in the broker), the same pages [measured: the
+build log's module rows and `arm-vita-eabi-nm`, both builds of main `24c0219` and API 30, VitaSDK gcc 15.2.0]. The
+game's permanent figure is 147,456 B (the debug build's table above). A scan's own blocks, 151,552 B at most while it
+runs, are within the OCR jobs' items.
 On the Paf main thread's stack the region mode's frame (`input_region`, with the picker inlined and its 196 B copy of
-the map) is 328 B and `frame` 280 B (224 B on main), so the overlay's deepest chain of its own frames goes from
-`frame` → `render` → `text_set`, 664 B, to `frame` → `input_region` → `region_hint`, 864 B, while the region mode
-is open [measured: `arm-vita-eabi-g++ -Os -fstack-usage` of `shell/overlay.cpp` with the Shell's flags, main and
-API 30; paf's own frames not counted].
+the map) is 328 B in both builds and `frame` 280 B (debug; 224 B on main) and 264 B (normal; 208 B), so the deepest
+chain of the overlay's own frames goes from `frame` → `render` → `text_set`, 664 B (debug) and 648 B (normal), to
+`frame` → `input_region` → `scan_to_manual` → `region_hint` → `set_rich`, 888 B and 872 B, while the region mode is
+open [measured: `-fstack-usage -fcallgraph-info=su` with `shell/overlay.cpp`'s own compile command, both builds of
+main and API 30; paf's own frames not counted].
 API 24 (the kernel's full-frame capture removed): the normal kernel 35,900 → 33,840 B of text and
 75,984 → 75,896 B of data/bss in its 114,688 B, the normal Shell 90,012 → 89,924 B of text in its
 163,840 B (188 B of room in its text pages), and the normal ledger's kernel worst case 221,184 B

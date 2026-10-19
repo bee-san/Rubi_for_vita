@@ -166,8 +166,8 @@
  * vita-vn-ocr #104's text spotter (runtime/vocr_textspot.c at -Os, 9,402 B of the worker's text; its dark pass,
  * which a scan never reaches, is linked to a refusing stub: cmake/VocrOCR.cmake) and the scan (game_ocr/main.c
  * run_spot, core/vocr_ocr.c vjo_vocr_spot, core/spot_pick.c, the overlay's map made here so that SceShell's code
- * for it is a table lookup: 1,932 B of symbols in the debug build, 1,940 B in the normal one), on or off. The debug
- * build's text 81,644 -> 92,996 B, the normal build's 80,344 -> 91,712 B, data/bss 15,720 B in both; 98,304 ->
+ * for it is a table lookup: 2,030 B of symbols in the debug build, 2,038 B in the normal one), on or off. The debug
+ * build's text 81,644 -> 93,108 B, the normal build's 80,344 -> 91,824 B, data/bss 15,720 B in both; 98,304 ->
  * 110,592 B [measured: the build log's module rows and arm-vita-eabi-nm, both builds, main 24c0219 and this
  * change]. Its weights (a few KB) are a file read in each scan, never kept:
  * no data page. In the game's partition, never SceShell's: the spotter runs where OCR runs (AGENTS.md rule 2). */

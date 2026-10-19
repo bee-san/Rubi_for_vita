@@ -895,9 +895,11 @@ No key is remapped and no button changes meaning. Press by press:
    `◀▶▲▼ or tap a box · Enter read · Cancel draw by hand` (with the console's own Enter and Cancel glyphs).
 2. The game worker scans the screen (an estimated 0.2-0.3 s, below); then every box it found is drawn as a
    translucent white rectangle (at most 16), each the region it would read, and the one it picked as the likely
-   dialogue is highlighted in yellow.
-3. **◀ ▶ ▲ ▼**, or a push of the left stick, moves the highlight to the nearest box that way; a **tap on a box**
-   picks it.
+   dialogue is highlighted in yellow. (A □ pressed again while a scan still runs gets that scan's boxes and then its
+   own: each scan's boxes are drawn afresh when they come, the highlight on its pick.)
+3. **◀ ▶ ▲ ▼**, or a push of the left stick, moves the highlight to the nearest box that way: a box level with the
+   highlighted one, or further that way than across (a line far up the screen is not to the left of the dialogue;
+   ▲ reaches it). A **tap on a box** picks it.
 4. **Enter** (or that tap) reads it: the box becomes this game's region, saved as a box drawn by hand is
    (`region.ini`; a box under 32 px either way is widened to 32 by the capture, as any region is), and the overlay
    reads it at once, the same job L + R starts (the finder, its refinement, the
@@ -918,10 +920,13 @@ no request is ever a scan.
   h, vertical, confidence, block) and 64 blocks in reading order, the pick and a truncated flag, is written in
   place into the result's text (`include/vjo_spot.h` `VjoSpotResult`: the runtime's own layout, which
   `core/vocr_ocr.c` checks field by field). The worker also makes the overlay's map of it (`core/spot_pick.c`):
-  the first 16 blocks on the 960×544 screen, each grown by 8 pixels and clipped (the region it is read as), the
-  block to start on, and from each block its nearest neighbour for each of the d-pad's directions (the least gap
-  that way plus twice the gap across). The Shell copies those 196 B and looks things up in them: nothing of the
-  spotter runs in SceShell, which holds no more than that map (AGENTS.md rule 1).
+  the first 16 blocks in reading order (the pick in the last place when it is not among them) on the 960×544
+  screen, each grown by 8 pixels and clipped (the region it is read as), the block to start on, and from each
+  block its nearest neighbour for each of the d-pad's directions (of the blocks whose centre lies that way, level
+  with it or further along than across: the least gap that way plus twice the gap across). The Shell takes those
+  196 B only when every index in them is one of their blocks (`vjo_spot_map_ok`; the result comes from the game's
+  process), copies them and looks things up in them: nothing of the spotter runs in SceShell, which holds no more
+  than that map (AGENTS.md rule 1).
 - **The weights** are a file beside the models: `ocr/textspot_h2_s4_c24n4_w8.vtsp`, 5,732 B, sha256
   `852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf`, **provisional**: a development run of
   vita-vn-ocr #104 (family B `h2_s4_c24n4_seed2`) until #104 selects its model and publishes it with an
@@ -938,12 +943,12 @@ no request is ever a scan.
   every frame up to 960×544 with these weights; within `VjoGameVocr`'s budget). Its memory check keeps the 4 MiB
   reserve beside both; the resident weights, LM and cascade model stay. No new ledger item, and the job's worst
   case is unchanged ([memory-ledger.md](memory-ledger.md)).
-- **Module pages** (measured, both builds, VitaSDK gcc 15.2.0): the worker gains 11,352 B of text in the debug
-  build and 11,368 B in the normal one, on or off (the spotter's code at `-Os` with NEON, 9,402 B; its dark pass,
+- **Module pages** (measured, both builds, VitaSDK gcc 15.2.0): the worker gains 11,464 B of text in the debug
+  build and 11,480 B in the normal one, on or off (the spotter's code at `-Os` with NEON, 9,402 B; its dark pass,
   which a scan never reaches, is linked to a refusing stub, `cmake/VocrOCR.cmake`; the scan and the map, about
-  1.9 KB): 98,304 → 110,592 B, three text pages more in every enabled game's memory, never SceShell's. SceShell keeps
-  its pages: the Shell's text grows by 1,936 B (debug) and 1,552 B (normal; 212 B of text room left in its pages),
-  its data and bss by 240 B; Enter's read at once is 80 B and 48 B of that. The kernel's text grows by 92 B, the same
+  2.0 KB): 98,304 → 110,592 B, three text pages more in every enabled game's memory, never SceShell's. SceShell keeps
+  its pages: the Shell's text grows by 2,144 B (debug) and 1,664 B (normal; 100 B of text room left in its pages),
+  its data and bss by 232 B; Enter's read at once is 80 B and 48 B of that. The kernel's text grows by 92 B, the same
   pages. The RCO grows from 6,000 to 7,152 B (16 planes and a style), in the PAF heap: the 8,192 B estimate for it and
   the Paf plugin object is kept. The 16 planes' widgets add to the open page's PAF use, unmeasured.
 - **Time (estimate, nothing of it has run on a console):** the spotter's own work is about 127 ms on one core at
@@ -965,8 +970,9 @@ steps (`gstep scan ...`; its `spot` step: kind 1 when it read the frame whole, a
 the overlay, `scan: N blocks shown, the cursor on I` and `scan: block I read, x,y wxh`.
 
 **Limits.**
-- At most 16 blocks are drawn (the first in reading order); vita-vn-ocr's family B spotters gave more on 0.1% of
-  its 188 development frames (a design statistic, read from #104's `eval/famB/*/boxes.json`, not a score).
+- At most 16 blocks are drawn (the first in reading order, the pick in the last place when it is not among them);
+  vita-vn-ocr's h2 family B spotters gave more on 2 of their 2,632 results on its 188 development frames (0.08 %,
+  at most 19; a design statistic, read from #104's `eval/famB/*_det/boxes.json`, not a score).
 - A screen that changes during the scan's frames can give a box that is half the old screen's, half the new
   one's; the read that follows reads its region afresh.
 - Vertical text (columns, NOBORU's portrait text) is drawn but not read, until vertical text is in.

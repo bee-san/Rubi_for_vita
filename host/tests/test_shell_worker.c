@@ -639,6 +639,7 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
  * run_spot makes it (core/spot_pick.c). */
 static VjoSpotResult fake_scan_set;
 static int fake_scan_rc;
+static int fake_scan_bad; /* 1..5: the scan's map is not vjo_spot_map's (an index out of its blocks) */
 static unsigned scans;
 static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
 {
@@ -660,6 +661,13 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         if (!fake_scan_rc) {
             sc->set = fake_scan_set;
             vjo_spot_map(&sc->set, 960, 544, &sc->map);
+            switch (fake_scan_bad) { /* the map has 2 blocks */
+            case 1: sc->map.count = VJO_SPOT_SHOWN + 1; break;
+            case 2: sc->map.count = 255; break;
+            case 3: sc->map.start = 2; break;
+            case 4: sc->map.next[0][1] = 2; break;
+            case 5: sc->map.next[1][3] = 255; break;
+            }
         }
         *out = fake_game_result;
         return 0;
@@ -3118,6 +3126,33 @@ static void test_scan_screen_a_screen_settling_during_the_scan_keeps_it(void)
     TEST_CHECK(job_scan && !job_cancelled);
     finish_current_job();
     TEST_CHECK(scans == 1 && g_view.spot.seq == seq + 1 && g_view.spot.map.count == 2);
+}
+
+/* The map comes from the game's process: one whose count, start or a neighbour leaves its blocks (not
+ * vjo_spot_map's) is not published, so the overlay's lookups (vjo_spot_hit, vjo_spot_step, its rect[]) never
+ * index past the map; the overlay then draws by hand, as with a scan that found nothing. */
+static void test_scan_screen_a_map_out_of_its_blocks_is_not_used(void)
+{
+    for (int bad = 1; bad <= 5; bad++) {
+        uint32_t seq;
+        reset();
+        loaded.ocr_scan_screen = 1;
+        cfg = loaded;
+        fake_scan_screen();
+        open_overlay();
+        finish_current_job();
+        seq = g_view.spot.seq;
+        vjo_post_command(VJO_CMD_SCAN, NULL);
+        on_command();
+        control_tick(0);
+        TEST_ASSERT(job_running && job_scan);
+        fake_scan_bad = bad;
+        finish_current_job();
+        fake_scan_bad = 0;
+        TEST_CHECK(scans == 1 && g_view.spot.seq == seq + 1);
+        TEST_CHECK(g_view.spot.map.count == 0 && g_view.spot.map.start <= 0);
+        TEST_MSG("corruption %d: count %u start %d", bad, g_view.spot.map.count, g_view.spot.map.start);
+    }
 }
 
 /* Closed and opened again while a scan runs: the reopened overlay gets what it waits for once the scan ends, as
@@ -7435,6 +7470,7 @@ TEST_LIST = {
     {"scan_screen_failures_and_closes", test_scan_screen_failures_and_closes},
     {"scan_screen_reopen_during_a_scan_gets_its_read", test_scan_screen_reopen_during_a_scan_gets_its_read},
     {"scan_screen_a_screen_settling_during_the_scan_keeps_it", test_scan_screen_a_screen_settling_during_the_scan_keeps_it},
+    {"scan_screen_a_map_out_of_its_blocks_is_not_used", test_scan_screen_a_map_out_of_its_blocks_is_not_used},
 #endif
     {NULL, NULL}
 };

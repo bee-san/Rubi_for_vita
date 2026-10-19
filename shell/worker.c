@@ -2104,12 +2104,13 @@ static void on_scan_done(void)
     job_running = job_done = job_scan = 0;
     if (!job_cancelled && ov != OV_CLOSED && job_generation == game_generation) {
         vjo_view_lock();
-#ifdef VJO_WITH_VOCR
-        /* a failed scan's text is all zero: no block */
-        sceClibMemcpy(&g_view.spot.map, &((const VjoSpotScan *)(const void *)vocr_result.text)->map,
-                      sizeof(g_view.spot.map));
-#else
         sceClibMemset(&g_view.spot.map, 0, sizeof(g_view.spot.map));
+#ifdef VJO_WITH_VOCR
+        /* a failed scan's text is all zero: no block; and the map, made in the game's process, is used only with
+         * every index in its blocks (the overlay looks them up unchecked) */
+        const VjoSpotMap *m = &((const VjoSpotScan *)(const void *)vocr_result.text)->map;
+        if (vjo_spot_map_ok(m))
+            sceClibMemcpy(&g_view.spot.map, m, sizeof(g_view.spot.map));
 #endif
         g_view.spot.seq++;
         vjo_view_unlock();

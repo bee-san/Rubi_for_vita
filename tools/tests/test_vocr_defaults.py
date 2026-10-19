@@ -331,6 +331,34 @@ class VocrDefaults(unittest.TestCase):
         self.assertTrue(url.endswith("/releases/download/v0.3.2-textgate.1/ATTRIBUTION.md"))
         self.assertEqual((size, sha), (3706, "44a353c76e19c6bdabcb9dbd06d14867696dcb59ce0460db22d09749af687f6e"))
 
+    def test_the_spotter_pins_agree_python_c_and_cmake(self):
+        """API 30: scan screen's text spotter weights: one name, size and hash in tools/prepare_ocr.py, the plugin
+        (include/vjo_vocr_sizes.h, core/vocr_ocr.c), the host tests' download (cmake/VocrSpot.cmake, whose name
+        and release must be these: a different one makes its tests skip, not fail) and the one-VPK payload, with
+        the same release's ATTRIBUTION.md beside them."""
+        import re  # noqa: PLC0415
+        name = prepare_ocr.VOCR_SPOT_MODEL
+        url, size, sha = prepare_ocr.VOCR_SPOT_ASSETS[name]
+        self.assertRegex(name, r"^textspot_[a-z0-9_]+_w8\.vtsp$")
+        self.assertEqual(url, prepare_ocr.VOCR_SPOT_BASE + name)
+        self.assertTrue(prepare_ocr.VOCR_SPOT_BASE.endswith(f"/releases/download/{prepare_ocr.VOCR_SPOT_TAG}/"))
+        sizes = (ROOT / "include/vjo_vocr_sizes.h").read_text()
+        self.assertIn(f'#define VJO_VOCR_SPOT_NAME "{name}"', sizes)
+        self.assertIn(f"#define VJO_VOCR_SPOT_BYTES {size}u", sizes)
+        c = (ROOT / "core/vocr_ocr.c").read_text()
+        block = c[c.index("spot_sha256[32] = {"):]
+        block = block[:block.index("};")]
+        self.assertEqual("".join(f"{int(b, 16):02x}" for b in re.findall(r"0x([0-9a-fA-F]{2})", block)), sha)
+        cmake = (ROOT / "cmake/VocrSpot.cmake").read_text()
+        self.assertIn(f"set(VJO_VOCR_SPOT_NAME {name})", cmake)
+        self.assertIn(f"set(VJO_VOCR_SPOT_SHA256 {sha})", cmake)
+        self.assertIn(f"/releases/download/{prepare_ocr.VOCR_SPOT_TAG}/${{VJO_VOCR_SPOT_NAME}}", cmake)
+        payload = (ROOT / "include/vjo_payload.h").read_text()
+        self.assertIn("X(VJO_PAYLOAD_OCR VJO_VOCR_SPOT_NAME, VJO_PAYLOAD_COPY)", payload)
+        self.assertIn('X(VJO_PAYLOAD_OCR "TEXTSPOT-ATTRIBUTION.md", VJO_PAYLOAD_COPY)', payload)
+        url, _, _ = prepare_ocr.VOCR_SPOT_ATTRIBUTION_PIN[prepare_ocr.VOCR_SPOT_ATTRIBUTION]
+        self.assertEqual(url, prepare_ocr.VOCR_SPOT_BASE + "ATTRIBUTION.md")
+
     def test_lm_pins_agree_c_kernel_python_and_the_ledger(self):
         table = c_lm_table()
         self.assertEqual(set(table), set(prepare_ocr.VOCR_LM_ASSETS))
