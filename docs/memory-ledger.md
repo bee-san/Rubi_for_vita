@@ -28,7 +28,7 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   game                                147,456   10,567,680   10,567,680            0
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (40,576->40,960 + 77,636->77,824)
-      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (100,684->102,400 + 73,512->73,728)
+      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (100,668->102,400 + 73,512->73,728)
       VitaJPOverlay_OCR         110,592 B of    110,592 B declared (92,996->94,208 + 15,720->16,384)
 ```
 
@@ -527,7 +527,7 @@ read in each scan, never kept). The text is vita-vn-ocr's `runtime/vocr_textspot
 stub instead of `vocr_lines.c`'s 1,170 B), and the scan: `vjo_vocr_spot` 524 B, the strip reader 164 B, the
 overlay's map (`vjo_spot_map` 632 B, made in the game so that SceShell's code for it is a table lookup) and
 `run_spot` (+520 B of `vjo_game_ocr_run_request`): 1,932 B of symbols in the debug build, 1,940 B in the normal
-one. The Shell 98,732 → 100,684 and 88,348 → 89,900 B of text (the scan's job and command, the overlay's picker, the
+one. The Shell 98,732 → 100,668 and 88,348 → 89,900 B of text (the scan's job and command, the overlay's picker, the
 config key; 80 and 48 B of it the picked box's read at once) and 73,272 → 73,512 and 73,280 → 73,520 B of data/bss
 (the view's copy of the map, 204 B), the same pages, with 212 B of text room left in the normal build's (`core/
 textfilter.c` is built `-Os` for 22 B of it); the kernel 40,484 → 40,576 and 35,632 → 35,724 B of text (the scan's

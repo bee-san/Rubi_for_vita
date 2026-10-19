@@ -941,7 +941,7 @@ no request is ever a scan.
   build and 11,368 B in the normal one, on or off (the spotter's code at `-Os` with NEON, 9,402 B; its dark pass,
   which a scan never reaches, is linked to a refusing stub, `cmake/VocrOCR.cmake`; the scan and the map, about
   1.9 KB): 98,304 → 110,592 B, three text pages more in every enabled game's memory, never SceShell's. SceShell keeps
-  its pages: the Shell's text grows by 1,952 B (debug) and 1,552 B (normal; 212 B of text room left in its pages),
+  its pages: the Shell's text grows by 1,936 B (debug) and 1,552 B (normal; 212 B of text room left in its pages),
   its data and bss by 240 B; Enter's read at once is 80 B and 48 B of that. The kernel's text grows by 92 B, the same
   pages. The RCO grows from 6,000 to 7,152 B (16 planes and a style), in the PAF heap: the 8,192 B estimate for it and
   the Paf plugin object is kept. The 16 planes' widgets add to the open page's PAF use, unmeasured.
