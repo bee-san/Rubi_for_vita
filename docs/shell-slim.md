@@ -142,8 +142,9 @@ rest of this step, done; the Shell keeps its 176,128 B of pages (text 101,488 â†
   `socket()` is not linked [measured: the app's link map, `--trace-symbol`].
   `settings/no_net.c` defines the three to fail as for a bad descriptor, so the app imports no
   SceNet, and the Vita build checks every module: `tools/check_offline_imports.py` fails it when
-  the kernel plugin, the Shell, the worker or the app imports a SceNet*, SceHttp* or SceSsl*
-  library.
+  the kernel plugin, the Shell, the worker, the Adrenaline bridge or the app imports a network
+  library, has network code's symbols or names a network module (#220; the app may define only
+  those three, as functions of its own code).
 - **The Shell worker's network pipeline**: the double-buffered 2 Ã— 256 KiB result arenas, the
   connection pool, the warm-up and its 50 ms timer path, the cached-sentence comparison; one 64 KiB
   arena remains, as the local pipeline always used.

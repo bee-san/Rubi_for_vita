@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "anki_page.h"
+#include "anki_index_request.h"
 #include "app_check.h"
 #include "catalog.h"
 #include "engine.h"
@@ -1125,6 +1126,13 @@ int main(void)
     load_preferences();
     vjo_log_enable(preferences.log_file);
     log_start();
+    {
+        /* Anki for Vita's duplicate index for the overlay: Rubi's request (anki_index_request.h) */
+        char line[160];
+        int request = vjo_anki_index_request(&scratch, line, sizeof(line));
+        if (request == VJO_ANKI_REQUEST_WRITTEN || request == VJO_ANKI_REQUEST_FAILED)
+            vjo_log("%s", line);
+    }
     /* The Install page (docs/one-vpk-install.md): the app opens on it when the overlay is not installed,
      * is another build's, is damaged or was interrupted, or cannot be installed yet. */
     int open_install = vjo_install_page_start();
@@ -1149,6 +1157,8 @@ int main(void)
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
     scan();
     if (open_install) page = PAGE_INSTALL;
+    /* Anki for Vita: the queued cards to its inbox by themselves, in the background (anki_page.h) */
+    vjo_anki_page_start(&scratch);
     uint32_t previous = 0;
     uint64_t repeat_at = 0;
     int touched = 0;

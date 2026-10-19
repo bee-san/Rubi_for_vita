@@ -142,7 +142,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/textfilter.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/entries.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c
   ${ROOT}/core/client.c ${ROOT}/core/styled.c
-  ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
+  ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/anki_index_find.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
@@ -176,6 +176,14 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/app_stamp.c
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
   ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c
+  ${ROOT}/core/anki_index_find.c # Anki for Vita's duplicate index: one lookup per Enter
+  # Paying for the index's request check (#220) in the normal Shell's text pages, 48 + 39 B: the
+  # non-Japanese line filter, once per recognized text (vjo_filter_lines and vjo_strip_newlines: 2,363 ->
+  # 2,535 Cortex-A9 instructions a text on the postproc bench's 50 VOCR texts, +172, about 0.4 us at
+  # 444 MHz [estimate]), and the enter button's registry read, once per overlay open (26 -> 21-22
+  # instructions) [measured: arm-vita-eabi-size of the objects; qemu-arm -cpu cortex-a9 with the Vita
+  # compiler's objects, and their disassembly].
+  ${ROOT}/core/textfilter.c ${ROOT}/vita/buttons_vita.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
@@ -353,9 +361,13 @@ add_custom_target(vjo_rco ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.
 include(${ROOT}/cmake/SettingsPNG.cmake)
 # The Anki page (settings/anki_page.c): the export of the queue (settings/anki_export.c) as Lapis
 # notes in an .apkg (core/apkg.c: SQLite, ZIP and the Lapis note type, core/sqlw.c, zipw.c, lapis.c),
-# made from the queue's records (core/anki_queue.c) with core/anki.c's fields. No network.
+# made from the queue's records (core/anki_queue.c) with core/anki.c's fields; the same notes handed to
+# the separate Anki for Vita app through its inbox, and its results read back (settings/anki_afv.c,
+# #220), and Rubi's request for its duplicate index (settings/anki_index_request.c). Files only: no
+# network.
 set(VJO_SETTINGS_ANKI_SRC
-  ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c
+  ${ROOT}/settings/anki_page.c ${ROOT}/settings/anki_export.c ${ROOT}/settings/anki_index_request.c
+  ${ROOT}/settings/anki_afv.c ${ROOT}/settings/afv_json.c ${ROOT}/core/anki_index_find.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c)
 set(VJO_SETTINGS_SRC
@@ -533,20 +545,26 @@ add_custom_target(vjo_variant ALL
     ${ROOT}/tools/check_variant.py
   COMMENT "Checking the modules are the ${VJO_VARIANT} build")
 
-# ---------------- no network imports ----------------
-# The overlay is offline (owner, 2026-10-15): no module imports SceNet*, SceHttp* or SceSsl*
-# (tools/check_offline_imports.py reads each ELF's import stub sections).
+# ---------------- no network anywhere in Rubi ----------------
+# Rubi has no network code (AGENTS.md rule 11; owner, 2026-10-15 and 2026-10-19: Anki sync is the
+# separate Anki for Vita app, reached only through files). tools/check_offline_imports.py reads each
+# linked ELF: its import stubs (no SceNet*, SceHttp*, SceSsl*, ...), its symbol table (no network,
+# TLS, HTTP or sync code) and its allocated sections (no network module's name, as a run-time
+# resolution by NID would need). Every module vita_create_self makes here and in compat/ is checked
+# but the Vita3K smoke app (tools/tests/test_offline_imports.py checks the list); the Rubi app
+# (--app) as a plugin, with settings/no_net.c's three newlib functions allowed as its own code.
 set(VJO_OFFLINE_MODULES $<TARGET_FILE:VitaJPOverlay_Kernel> $<TARGET_FILE:VitaJPOverlay_Shell>
-  $<TARGET_FILE:VitaJPOverlay_Settings>)
-set(VJO_OFFLINE_DEPS VitaJPOverlay_Kernel VitaJPOverlay_Shell VitaJPOverlay_Settings)
+  $<TARGET_FILE:adrenaline_vsh>)
+set(VJO_OFFLINE_DEPS VitaJPOverlay_Kernel VitaJPOverlay_Shell adrenaline_vsh VitaJPOverlay_Settings)
 if(VJO_WITH_VOCR)
   list(APPEND VJO_OFFLINE_MODULES $<TARGET_FILE:VitaJPOverlay_OCR>)
   list(APPEND VJO_OFFLINE_DEPS VitaJPOverlay_OCR)
 endif()
 add_custom_target(vjo_offline_imports ALL
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/check_offline_imports.py ${VJO_OFFLINE_MODULES}
+    --app $<TARGET_FILE:VitaJPOverlay_Settings>
   DEPENDS ${VJO_OFFLINE_DEPS} ${ROOT}/tools/check_offline_imports.py
-  COMMENT "Checking that no module imports a network library")
+  COMMENT "Checking that no module of Rubi has network imports, code or module names")
 
 # ---------------- release zip ----------------
 set(VJO_WORKER_RELEASE_COPY)
@@ -593,7 +611,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/Rubi.vpk ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party compat Rubi.vpk
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant vjo_one_vpk
-    vjo_offline_imports adrenaline_vsh_budget # a zip is never packaged from modules that import a network library
+    vjo_offline_imports adrenaline_vsh_budget # a zip is never packaged from a module with network imports or code
   COMMENT "Packaging Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip (the ${VJO_VARIANT} build)")
 
 # ---------------- the release's two zips: the normal build and the debug build ----------------

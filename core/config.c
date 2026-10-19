@@ -5,6 +5,7 @@
 
 #include "../include/vjo_vocr_sizes.h"
 #include "port.h"
+#include "anki_index.h"
 #include "local_dict.h"
 #include "textfilter.h"
 #include "utf.h"
@@ -53,6 +54,9 @@ void vjo_config_defaults(VjoConfig *c)
     c->log_file = 1; /* log.txt is on unless log_file = off */
     c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
     c->ocr_text_gate = VJO_TEXT_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Text-presence gate" */
+    c->anki_duplicate_check = 1; /* Anki for Vita's duplicate index, read when it is there (docs/anki.md) */
+    c->anki_duplicate_request[0] = VJO_ANKI_REQUEST_DEFAULT_HI;
+    c->anki_duplicate_request[1] = VJO_ANKI_REQUEST_DEFAULT_LO;
 }
 
 const char *vjo_config_default_text(void)
@@ -149,7 +153,13 @@ const char *vjo_config_default_text(void)
            "; queue as a Lapis .apkg file for Anki (docs/anki.md). off: enter does nothing.\n"
            "anki_mining = off\n"
            "; on: each card keeps a JPEG of the game's screen (about 60 KB) in its Picture\n"
-           "anki_screenshot = on\n";
+           "anki_screenshot = on\n"
+           "; on: with the Anki for Vita app, enter on a word already in your Anki collection\n"
+           "; says so and saves nothing (docs/anki.md); the Rubi app asks Anki for Vita to\n"
+           "; index these fields of your notes (Lapis's). off: every word is saved.\n"
+           "anki_duplicate_check = on\n"
+           "anki_duplicate_field = Expression\n"
+           "anki_duplicate_reading_field = ExpressionReading\n";
 }
 
 /* A warning names a setting (its key as typed, at most VJO_CONFIG_WARN_KEY bytes of it for an unknown one) or a
@@ -595,8 +605,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->log_file = 0;
         else
             warn(c, "%s: invalid value", key);
-    } else if (vjo_ieq(key, "anki_mining") || vjo_ieq(key, "anki_screenshot")) {
-        int *dst = vjo_ieq(key, "anki_mining") ? &c->anki_mining : &c->anki_screenshot;
+    } else if (vjo_ieq(key, "anki_mining") || vjo_ieq(key, "anki_screenshot") ||
+               vjo_ieq(key, "anki_duplicate_check")) {
+        int *dst = vjo_ieq(key, "anki_mining") ? &c->anki_mining
+                 : vjo_ieq(key, "anki_screenshot") ? &c->anki_screenshot : &c->anki_duplicate_check;
         if (vjo_ieq(val, "on"))
             *dst = 1;
         else if (vjo_ieq(val, "off"))
@@ -698,10 +710,13 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
 {
     size_t i = 0;
     unsigned line_no = 0; /* a line without '=' is named by its number: its text could be a key */
+    /* the request's two fields as this text names them (bit k of dup_seen: dup[k] holds one) */
+    char dup[2][VJO_ANKI_FIELD_MAX + 1];
+    int dup_seen = 0;
     while (i < len) {
         char line[1024], key[64], val[sizeof(((VjoConfig *)0)->local_dictionaries)]; /* the longest value */
         size_t n = 0, s, e, eq;
-        int cut = 0;
+        int cut = 0, r;
         line_no++;
         while (i < len && text[i] != '\n') {
             if (n < sizeof(line) - 1)
@@ -770,7 +785,29 @@ void vjo_config_parse(VjoConfig *c, const char *text, size_t len)
         }
         memcpy(val, line + s, e - s);
         val[e - s] = '\0';
+        if ((r = vjo_ieq(key, "anki_duplicate_reading_field")) || vjo_ieq(key, "anki_duplicate_field")) {
+            /* the request's fields (the Rubi app writes the request: settings/anki_index_request.c) */
+            size_t k = 0, vn = e - s; /* the value's bytes (a NUL in it is a control character too) */
+            while (k < vn && (unsigned char)val[k] >= 0x20 && val[k] != 0x7F)
+                k++;
+            if (r && (!vn || (vn == 4 && vjo_ieq(val, "none"))))
+                k = 0; /* no reading field */
+            else if (k != vn || !k || k > VJO_ANKI_FIELD_MAX) {
+                warn(c, "%s: invalid value", key);
+                continue;
+            }
+            memcpy(dup[r], val, k);
+            dup[r][k] = '\0';
+            dup_seen |= 1 << r;
+            continue;
+        }
         set_kv(c, key, val);
+    }
+    if (dup_seen) { /* the request's hash (core/anki_index.h), a default for a field the text does not name */
+        uint64_t h = vjo_anki_index_request_hash(dup_seen & 1 ? dup[0] : VJO_ANKI_FIELD_DEFAULT,
+                                            dup_seen & 2 ? dup[1] : VJO_ANKI_READING_DEFAULT);
+        c->anki_duplicate_request[0] = (uint32_t)(h >> 32);
+        c->anki_duplicate_request[1] = (uint32_t)h;
     }
     /* The toggle keeps its button (it was there first). */
     if (c->toggle_button == c->subtitle_button) {

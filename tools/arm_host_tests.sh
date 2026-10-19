@@ -25,7 +25,8 @@
 # The Rubi app's .apkg export (host/tests/test_apkg.c: the SQLite and ZIP
 # writers, the Lapis notes and every storage step, with BearSSL's SHA-1 and
 # SHA-256 only) runs here too, and the packages it writes (--write) must be
-# the same bytes on ARM as natively (HOST_CC).
+# the same bytes on ARM as natively (HOST_CC). So does the hand-over of the
+# same cards to Anki for Vita (host/tests/test_afv.c, settings/anki_afv.c).
 #
 # Every suite runs with a TMPDIR of its own (host/tests/test_tmpdir.h), and the lane's other steps
 # (the builds, the comparisons) with theirs, all in one directory of the lane's: each must be empty
@@ -117,10 +118,20 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
       core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
+# The Rubi app's hand-over to Anki for Vita (settings/anki_afv.c, #220): its notes, the 64-bit times
+# and 32-bit sizes on the Vita's CPU, and the export's own steps it reuses (settings/anki_export.c).
+AFV=(host/tests/test_afv.c settings/anki_afv.c settings/afv_json.c settings/anki_export.c settings/anki_index_request.c
+     core/anki_index_find.c "${APKG[@]:1}")
+build afv -I third_party/bearssl/inc -I "$BS" -I host/tests "${AFV[@]}"
+# Anki for Vita's duplicate index as the overlay reads it (core/anki_index_find.c): 32-bit offsets and the
+# little-endian words on the Vita's CPU.
+build anki_index -I third_party/bearssl/inc -I "$BS" -I host/tests host/tests/test_anki_index.c core/anki_index_find.c \
+  "$BS/hash/sha2small.c" "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
+TESTS+=(touch_hold text_rows text_join linebreak stick_cursor cursor_nav settings_layout shell_log apkg afv anki_index psp
+        taicfg)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c

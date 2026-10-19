@@ -475,7 +475,7 @@ static void render(int new_content)
              * the 96 spans, host test every_bundled_entry_fits_the_popup). */
             uint32_t room = (uint32_t)g_view.n_warnings * (1 + 12 + sizeof(g_view.warnings[0]));
             body.cap -= room;
-            vjo_styled_entry(&body, l, s_selected, ja, en, mark == VJO_ANKI_MARK_ADDED, g_view.frequency_badge);
+            vjo_styled_entry(&body, l, s_selected, ja, en, VJO_ANKI_MARK_TICKED(mark), g_view.frequency_badge);
             body.cap += room;
         } else if (l && !g_view.status[0] && cursor_matches) {
             vjo_styled_puts(&body, s_local_cursor_mode

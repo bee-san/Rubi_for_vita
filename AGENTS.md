@@ -93,3 +93,16 @@ thread, static buffer or taiHEN registration.
    with its worst case added to `include/vjo_ledger_budget.h`; `tools/check_memory_ledger.py`
    fails CI otherwise, and when a pool's worst case exceeds its limit or a packaged module has
    more pages than declared. Raising a budget number is a deliberate act that the PR must justify.
+11. **No network anywhere in Rubi; Anki sync is a separate app, Anki for Vita, reached only through
+   files.** Rubi went offline on 2026-10-15, and on 2026-10-19 the owner put the Anki sync into its
+   own app, [bee-san/Anki_for_vita](https://github.com/bee-san/Anki_for_vita). No module of Rubi (the
+   kernel plugin, the Shell plugin, the game OCR worker, the Adrenaline bridge, the Rubi app) imports
+   a network library (SceNet*, SceHttp*, SceSsl*, ScePspnet*, ...), links network, TLS, HTTP or sync
+   code, or loads or resolves a network module at run time, by its name or by its number. The Vita
+   build checks each linked ELF (`tools/check_offline_imports.py`, the target `vjo_offline_imports`,
+   which the release needs; it sees names, not a load by number such as
+   `sceSysmoduleLoadModule(SCE_SYSMODULE_NET)`, which a review has to catch);
+   the app's only network names are newlib's three socket calls, which `settings/no_net.c` defines to
+   fail. Rubi reaches Anki for Vita only through the files of its interface in
+   `ux0:data/Anki_for_vita/`: the inbox it writes, the outbox and `status.json` it reads, the
+   duplicate index the overlay reads ([docs/anki.md](docs/anki.md#anki-for-vita)).

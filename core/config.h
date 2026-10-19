@@ -104,7 +104,27 @@ typedef struct {
      * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
      * text (a hidden text box, a CG screen) returns no line. Last, as above. */
     int ocr_text_gate;        /* 0/1 */
+    /* Anki (#220): enter on a word already in the user's Anki collection says so and saves
+     * nothing, by the duplicate index the separate Anki for Vita app writes for Rubi
+     * (core/anki_index.h; on by default; without that app nothing changes). Its fields'
+     * names (anki_duplicate_field, anki_duplicate_reading_field) are the Rubi app's own
+     * (settings/anki_index_request.c), not in this struct. Last, as above. */
+    int anki_duplicate_check; /* 0/1 */
+    /* The hash of Rubi's request to Anki for Vita (settings/anki_index_request.h) for the fields
+     * anki_duplicate_field and anki_duplicate_reading_field name, as its header holds it (its
+     * docs/duplicate-index.md: BE64(SHA-256(0x03 || lower(field) || 0x1F || lower(reading)))), high
+     * word first: the overlay trusts an index only when its header has this hash. Last, as above. */
+    uint32_t anki_duplicate_request[2];
 } VjoConfig;
+
+/* The request's fields' names: 1..VJO_ANKI_FIELD_MAX bytes, no control character (else the default
+ * stays); the reading's "none" or "" is no reading field. Their defaults are Lapis's. */
+#define VJO_ANKI_FIELD_MAX 63
+#define VJO_ANKI_FIELD_DEFAULT "Expression"
+#define VJO_ANKI_READING_DEFAULT "ExpressionReading"
+/* The default request's hash ({"key": "Expression", "reading": "ExpressionReading"}, every note type). */
+#define VJO_ANKI_REQUEST_DEFAULT_HI 0x050ce210u
+#define VJO_ANKI_REQUEST_DEFAULT_LO 0x40448110u
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
 #define VJO_TEXT_GATE_DEFAULT 0

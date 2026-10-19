@@ -44,7 +44,7 @@ set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
   core/textfilter.c core/textjoin.c core/linebreak.c core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
-  core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
+  core/anki.c core/anki_queue.c core/anki_index_find.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
   core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/payload.c)
@@ -299,9 +299,33 @@ add_executable(vjo-anki-tests host/tests/test_anki.c)
 target_include_directories(vjo-anki-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-anki-tests vjo_host)
 add_test(NAME anki COMMAND vjo-anki-tests)
+# Anki for Vita's duplicate index as the overlay reads it (core/anki_index.h): the format document's
+# worked example, a large index, the previous index, every damaged file "unknown" within bounds; and the
+# same suite with AddressSanitizer and UndefinedBehaviorSanitizer where the compiler has them.
+add_executable(vjo-anki-index-tests host/tests/test_anki_index.c)
+target_include_directories(vjo-anki-index-tests PRIVATE third_party/acutest/include host/tests)
+target_compile_options(vjo-anki-index-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-anki-index-tests vjo_core)
+add_test(NAME anki_index COMMAND vjo-anki-index-tests)
+include(CheckCSourceCompiles)
+set(CMAKE_REQUIRED_FLAGS "-fsanitize=address,undefined")
+set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=address,undefined")
+check_c_source_compiles("int main(void) { return 0; }" VJO_HAVE_ASAN_UBSAN)
+unset(CMAKE_REQUIRED_FLAGS)
+unset(CMAKE_REQUIRED_LINK_OPTIONS)
+if(VJO_HAVE_ASAN_UBSAN)
+  add_executable(vjo-anki-index-asan-tests host/tests/test_anki_index.c core/anki_index_find.c ${BEARSSL_SRC})
+  target_include_directories(vjo-anki-index-asan-tests PRIVATE third_party/acutest/include host/tests core include
+    third_party/bearssl/inc third_party/bearssl/src)
+  target_compile_definitions(vjo-anki-index-asan-tests PRIVATE VJO_HOST=1)
+  target_compile_options(vjo-anki-index-asan-tests PRIVATE -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all
+    -fno-omit-frame-pointer)
+  target_link_options(vjo-anki-index-asan-tests PRIVATE -fsanitize=address,undefined)
+  add_test(NAME anki_index_asan COMMAND vjo-anki-index-asan-tests)
+endif()
 # The real Shell Anki miner and its offline file queue (real files); Vita SDK substituted.
 add_executable(vjo-shell-anki-tests host/tests/test_shell_anki.c)
-target_include_directories(vjo-shell-anki-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_include_directories(vjo-shell-anki-tests PRIVATE third_party/acutest/include host/tests/vita_stubs host/tests)
 target_compile_options(vjo-shell-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-anki-tests vjo_host)
 add_test(NAME shell_anki COMMAND vjo-shell-anki-tests)
@@ -311,6 +335,14 @@ target_include_directories(vjo-shell-history-tests PRIVATE third_party/acutest/i
 target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME shell_history COMMAND vjo-shell-history-tests)
+# The Rubi app's request for Anki for Vita's duplicate index (settings/anki_index_request.c): what it
+# writes and when, a rename that refuses an existing name, every call failing in turn.
+add_executable(vjo-settings-anki-index-tests host/tests/test_settings_anki_index.c settings/anki_index_request.c
+  settings/afv_json.c)
+target_include_directories(vjo-settings-anki-index-tests PRIVATE third_party/acutest/include host/tests/vita_stubs host/tests)
+target_compile_options(vjo-settings-anki-index-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-settings-anki-index-tests vjo_core)
+add_test(NAME settings_anki_index COMMAND vjo-settings-anki-index-tests)
 # The Rubi app's .apkg export (settings/anki_export.c, core/apkg.c and its SQLite, ZIP and Lapis
 # writers) on real files; host/tests/test_apkg.py opens its packages with Python's zipfile and sqlite3
 # and imports them into Anki itself (the `anki` package, tools/requirements-anki.txt) when it is there:
@@ -562,7 +594,8 @@ foreach(_vjo_variant IN ITEMS app vocr6)
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
     settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
     vita/buttons_vita.c
-    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
+    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
+    host/tests/settings_stubs/anki_index_request_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
   target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -605,7 +638,8 @@ foreach(_vjo_games IN ITEMS tests bench)
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
     settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
     vita/buttons_vita.c
-    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
+    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
+    host/tests/settings_stubs/anki_index_request_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
   target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -644,17 +678,30 @@ target_link_libraries(vjo-settings-install-tests vjo_host)
 add_test(NAME settings_install COMMAND vjo-settings-install-tests)
 # The Rubi app's Anki page itself (settings/anki_page.c, #163 c3): its rows' layout, Up/Down, the
 # stick, Left/Right, Enter and touch on each row, each row's save into a real config.ini (read back by the
-# Shell's own loader, shell/files.c), and its export (the real settings/anki_export.c) on a temporary
-# memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep
-# settings_stubs/anki_page_stub.c.
+# Shell's own loader, shell/files.c), its export (the real settings/anki_export.c) and its hand-over to
+# Anki for Vita (the real settings/anki_afv.c, #220) on a temporary memory card, on its worker thread, run
+# when the test says. The harnesses that drive main.c keep settings_stubs/anki_page_stub.c.
 add_executable(vjo-settings-anki-tests host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
-  settings/preferences.c shell/files.c)
+  settings/anki_afv.c settings/afv_json.c settings/anki_index_request.c settings/preferences.c shell/files.c)
 target_include_directories(vjo-settings-anki-tests PRIVATE third_party/acutest/include host/tests/settings_stubs
   host/tests/install_stubs host/tests/vita_stubs)
 target_compile_definitions(vjo-settings-anki-tests PRIVATE VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS)
 target_compile_options(vjo-settings-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-settings-anki-tests vjo_host)
 add_test(NAME settings_anki COMMAND vjo-settings-anki-tests)
+# The Rubi app's side of Anki for Vita (settings/anki_afv.c, #220): the inbox writer and the outbox
+# reader on real files in a temporary memory card, with a rename that refuses an existing name as the
+# Vita's does and failures injected at every write, flush, close, rename and sync; `--write DIR` writes
+# the queue's cards both as a package and into an inbox for host/tests/test_afv.py, which compares
+# every note's GUID, fields, tags, media and note type with the package's.
+add_executable(vjo-afv-tests host/tests/test_afv.c settings/anki_afv.c settings/afv_json.c settings/anki_export.c
+  settings/anki_index_request.c)
+target_include_directories(vjo-afv-tests PRIVATE third_party/acutest/include host/tests/vita_stubs host/tests)
+target_compile_options(vjo-afv-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-afv-tests vjo_host)
+add_test(NAME afv COMMAND vjo-afv-tests)
+add_test(NAME afv_packages COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_afv.py
+  $<TARGET_FILE:vjo-afv-tests>)
 # The same engine on a memory card folder, for the one-VPK e2e (a real VPK extracted as VitaShell installs it).
 add_executable(vjo-install-e2e host/install_e2e.c settings/install.c settings/preferences.c)
 target_include_directories(vjo-install-e2e PRIVATE host/tests/install_stubs host/tests/settings_stubs host/tests/vita_stubs

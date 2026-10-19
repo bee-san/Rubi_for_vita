@@ -30,8 +30,10 @@ extern "C" {
 #define VJO_MAX_ENTRIES 512 /* entries the overlay navigates */
 
 enum { VJO_ANKI_STATUS_DIM = 0, VJO_ANKI_STATUS_ERROR = 1 };
-/* VjoView.anki_mark: the word's card was exported before (√), or is in the offline queue */
-enum { VJO_ANKI_MARK_NONE = 0, VJO_ANKI_MARK_ADDED = 1, VJO_ANKI_MARK_QUEUED = 2 };
+/* VjoView.anki_mark: the word's card was exported before (√), is in the offline queue, or the word
+ * is in the user's Anki collection (√; Anki for Vita's duplicate index, core/anki_index.h) */
+enum { VJO_ANKI_MARK_NONE = 0, VJO_ANKI_MARK_ADDED = 1, VJO_ANKI_MARK_QUEUED = 2, VJO_ANKI_MARK_IN_ANKI = 3 };
+#define VJO_ANKI_MARK_TICKED(m) ((m) & 1) /* ADDED and IN_ANKI: the √ */
 /* VjoView.strip_kind */
 enum { VJO_STRIP_SENTENCE = 0, VJO_STRIP_STATUS = 1, VJO_STRIP_ERROR = 2 };
 #define VJO_STRIP_MAX 4096 /* bytes of UTF-8 */
