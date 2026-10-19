@@ -1,3 +1,6 @@
+<p align="center"><b>Beta:</b> tested on one PS Vita (PCH-1001, firmware 3.65) in CLANNAD.
+  <a href="#supported">What is tested</a></p>
+
 <p align="center">
   <a href="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/promo-1920x1080.mp4"><img src="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/promo.gif" width="540" alt="Rubi on a PS Vita: L + R opens the overlay over a line of a visual novel, Right moves to the next word and shows its dictionary entry, and × saves the word as an Anki card."></a>
 </p>
@@ -21,15 +24,16 @@
   ➡️ <a href="#install">Install</a> ·
   <a href="#use-in-a-game">Use it</a> ·
   <a href="#what-it-does">Features</a> ·
+  <a href="#supported">Supported</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="docs/guide.md">Guide</a> ·
+  <a href="CHANGELOG.md">Changelog</a> ·
   <a href="http://discord.skerritt.blog">Discord</a> ⬅️
   <br><sub>▶ <a href="https://cdn.jsdelivr.net/gh/bee-san/Rubi_for_vita@ea662f3ac20f3a8429eab193f40359abd0b23406/docs/promo/media/promo-1920x1080.mp4">Watch the 42-second tour</a> (MP4, 42 s)</sub>
 </p>
 
-> Rubi is the new name of Vita JP Overlay ([what changed](docs/rename-rubi.md)). The app was called
-> **Overlay** in the 0.8.0 test builds and **JP Overlay Settings** before; the new VPK installs over
-> either and keeps your settings, games and Anki cards.
+> Rubi is the new name of Vita JP Overlay ([what changed](docs/rename-rubi.md)): its VPK installs
+> over the old app and keeps your settings, games and Anki cards.
 
 ## What it does
 
@@ -44,8 +48,8 @@
   word with the d-pad or the left stick, or tap a word. An inflected word is looked up in its
   dictionary form (した → する).
 - **Fully offline.** Rubi reads the text with its own OCR on the Vita and looks it up in a
-  dictionary on the memory card: no Wi-Fi, no computer, no account. It has no network code: the
-  Vita build fails if any of its modules imports a network library or links network code.
+  dictionary on the memory card: no Wi-Fi, no computer, no account, and no network code
+  ([privacy](#does-it-send-anything-over-the-internet)).
 - **A big dictionary built in.** Bee's Ultimate Dictionary: 486,529 entries with English
   definitions from Daijirin, Sankoku and JMdict, the meanings of a word's kanji, a short
   English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. You can add your
@@ -54,31 +58,28 @@
   sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
   [Lapis](https://github.com/donkuri/lapis) notes for Anki, or hands them to the separate
   [Anki for Vita](docs/anki.md#anki-for-vita) app (in development), which syncs them with Anki.
-- **Small, Normal or Large.** Choose how fast or how accurate the OCR is. When a game is short of
-  memory, Rubi uses the next smaller model by itself.
-- **Reads when the text changes, or only when you ask.** By default Rubi reads each new screen of
-  text in the background, so the popup is ready when you press. Or set it to read only when you
-  press L + R.
-- **On or off for each game.** Every game is ON to start with; turn off the ones that need L + R
-  themselves. The app opens beside your game, which waits suspended behind it (a game that uses
-  extended memory may have to close first).
+- **Fast or accurate, now or when you ask.** Choose a Small, Normal or Large model (a game short of
+  memory gets the next smaller one by itself), and whether Rubi reads each new screen in the
+  background, so the popup is ready when you press, or only when you press L + R.
+- **On or off for each game.** Every game is ON to start with, PSP games in Adrenaline too
+  (Adrenaline and each bubble are listed, a bubble under its game's title); turn off the ones that
+  need L + R themselves. The app opens beside your game, which waits suspended behind it (a game
+  that uses extended memory may have to close first).
 
 ## Install
 
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
 HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card before you
-copy the VPK to it (estimated from the package's size; 61 MB of it is the VPK itself, which you can
-delete once it is installed).
+copy the VPK to it (an estimate from the package's size; it counts the VPK, which you can delete
+once it is installed).
 
 1. Download `Rubi-<version>.vpk` from the
    [latest release](https://github.com/bee-san/Rubi_for_vita/releases/latest).
-2. Copy it to the Vita with VitaShell's USB or FTP connection, press Enter on it in VitaShell, and
-   answer Yes to installing it and Yes to its notice about extended permissions. Close the app first
-   if an older version of it is open, even suspended behind VitaShell (Rubi, Overlay or JP Overlay
-   Settings): pull the top-right corner of its LiveArea page. In test.4's console run VitaShell stopped
-   with error `0x80101114` while the old app was open
-   ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)); if you see it, close the app or
-   restart the Vita, then install again.
+2. Close the app first if an older version of it is open, even suspended behind VitaShell (**Rubi**,
+   **Overlay** or **JP Overlay Settings**): pull the top-right corner of its LiveArea page. Copy the
+   VPK to the Vita with VitaShell's USB or FTP connection, press Enter on it in VitaShell, and answer
+   Yes to installing it and Yes to its notice about extended permissions. If VitaShell stops with
+   error `0x80101114`, close the old app or restart the Vita, then install again.
 3. Open **Rubi** from LiveArea, choose **Install** on its Install page, and restart the Vita.
 
 That's all: nothing is downloaded on the Vita, and every game is ON. Start a game and press L + R.
@@ -106,16 +107,68 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
 
 Every control, setting and file is in the [guide](docs/guide.md#use-in-a-game).
 
+## Settings
+
+In the Rubi app, Select or a tap on a tab changes the page. A choice is saved at once and applies
+when the overlay next opens; a game's ON or OFF applies when the game next starts or resumes.
+
+| Page | Setting | Default |
+| --- | --- | --- |
+| Games | Each game ON or OFF, and **Default** ON or OFF ([details](docs/guide.md#per-game-settings)) | ON |
+| OCR & lookup | **Model size**: Small (fastest), Normal or Large (most accurate) | Normal |
+| | **Read text**: Automatically (when it changes), or Only when I press L + R | Automatically |
+| | **Speed boost while reading (444 MHz)** | ON |
+| | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | ON |
+| | **Highlight**: Whole word or Character | Whole word |
+| | **Dictionaries shown**: how many dictionaries' entries an L or R tap pages through, 1–8 | 1 |
+| Anki | **Card mining**: Enter saves the word as a card | OFF |
+| | **Screenshots**: each card keeps a picture of the game's screen | ON |
+| | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
+| Install | **Install**, **Update** or **Check and repair**, and **Uninstall** | |
+
+Everything else, such as the button that opens the overlay (`toggle_button`), the OCR's timings and
+logging, is in `ux0:data/VitaJPOverlay/config.ini`
+([guide](docs/guide.md#settings-and-dictionaries), [template](docs/config.example.ini)).
+
 ## Supported
 
-| | Status |
-| --- | --- |
-| PS Vita (PCH-1000 series) | The test builds run on the owner's PCH-1001 on firmware 3.65. |
-| PS Vita Slim (PCH-2000), PS TV | Not tested yet. |
-| Firmware | 3.60–3.74 with taiHEN: HENkaku (Ensō) or h-encore. Tested on 3.65. |
-| Vita games | Any game that is ON. On a console, Rubi's OCR has run in CLANNAD in every test build. In test.4 the kernel plugin loaded the OCR worker into CLANNAD with no taiHEN line for it ([#191](https://github.com/bee-san/Rubi_for_vita/issues/191), [#194](https://github.com/bee-san/Rubi_for_vita/issues/194)); AIR got none in test.3, which loaded the worker only into a game with such a line. Other games are untested. A game that uses L + R itself: turn it OFF. |
-| PSP games (Adrenaline) | Boku no Natsuyasumi 4 launched on the owner's console on 2026-10-17 after replacing Adrenaline's oversized Shell bridge with the [small compatibility bridge](compat/adrenaline_vsh/README.md). The kernel loaded Rubi's worker into the bubble's PSP emulator process (`PSPEMU004`). PSP OCR recognition is still unverified. Adrenaline and each Adrenaline Bubble Manager bubble are listed in the app, a bubble under its game's title. |
-| A PSP | No: Rubi runs on a PS Vita. |
+✅ verified on a console · ⚠️ works with caveats, or partly verified · ❓ untested, or an estimate only
+
+| | What | On a console |
+| :-: | --- | --- |
+| ✅ | PS Vita (PCH-1000 series) | the owner's PCH-1001, in every test build |
+| ❓ | PS Vita Slim (PCH-2000), PS TV | untested |
+| ✅ | Firmware 3.65 | the owner's, with taiHEN |
+| ❓ | Other firmware, 3.60–3.74 | untested |
+| ✅ | CLANNAD | OCR, lookups and Anki cards (OCR in every test build) |
+| ❓ | Other Vita games | Rubi's OCR has read no other game's text on a console yet |
+| ⚠️ | PSP games (Adrenaline) | one game started, with Rubi's OCR worker, using the [small bridge](compat/adrenaline_vsh/README.md) (on `main`, not in 0.8.0); reading its text is untested |
+| ✅ | Updating a one-VPK install, in the app | three times, the old app closed first |
+| ⚠️ | Updating an install made from a computer (0.7.12 or older) | refused in its one console run, and finished by hand; the cause is unconfirmed |
+| ❓ | A first install, on a Vita without Rubi | not run on a console yet |
+| ✅ | Model sizes Normal and Large | Large fitted in CLANNAD's free memory |
+| ❓ | Model size Small | 0.8.0's Small model has not run on a console |
+| ✅ | Read text: Automatically | the mode of every 0.8.0 test run |
+| ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
+| ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
+| ❓ | Tapping a word in the game | not checked on a console yet |
+| ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
+| ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
+| ❓ | The normal build (the main download) | no console run reported; the test runs used the debug build |
+
+What each build changed, and what its console run showed: the [changelog](CHANGELOG.md).
+
+## Limits
+
+- Horizontal text only: vertical text is not read.
+- One console has tested Rubi ([Supported](#supported)). OCR accuracy, battery use and CPU3 load are
+  not measured on a console yet.
+- The game can stutter while Rubi reads ([FAQ](#will-it-slow-my-game-down)).
+- A big text box or model may not fit in a game's free memory: Rubi then uses a smaller model, or
+  says it can't read ([FAQ](#does-it-work-with-my-game-is-there-enough-memory)).
+- A game that uses L + R itself: turn Rubi OFF for it, or choose another button (`toggle_button`).
+- Cards reach Anki only as a file that you copy: there is no sync.
+- Rubi runs on a PS Vita, not on a PSP.
 
 ## FAQ
 
@@ -123,17 +176,17 @@ Every control, setting and file is in the [guide](docs/guide.md#use-in-a-game).
 
 Battery use is not measured yet. With **Read text** on **Automatically** (the default), Rubi reads
 each new screen of text in the background, at the lowest priority, with the CPU at 444 MHz while it
-recognizes (**Speed boost**, on by default). Choose **Only when I press L + R** and it reads nothing
-until you press (unless the subtitle strip, Select + R, is on); turn **Speed boost** off to keep the
-game's own clock. A game you turn OFF gets no OCR at all. Both settings are on the app's OCR &
-lookup page ([details](docs/auto-vs-press.md)).
+recognizes (**Speed boost**). For less work: **Only when I press L + R** reads nothing until you
+press (unless the subtitle strip, Select + R, is on), **Speed boost** OFF keeps the game's own
+clock, and a game turned OFF gets no OCR at all ([details](docs/auto-vs-press.md)).
 
 ### Will it slow my game down?
 
-Reading a screen takes CPU time from the game, so the game can stutter while Rubi reads: in the
-test.3 build's console logs, 291 of 1,609 frames during a reading came late (more than 25 ms after
-the one before), against 52 of 26,941 frames in the time before each reading. With **Only when I
-press L + R** that happens only when you press.
+Reading a screen takes CPU time from the game, so the game can stutter while Rubi reads. On the
+owner's console, with a 0.8.0 test build, 291 of 1,609 frames during readings came late (more than
+25 ms after the one before), against 52 of 26,941 frames in the time before each reading
+([how it was measured](docs/auto-vs-press.md)). With **Only when I press L + R** that happens only
+when you press.
 
 ### Does it work with my game? Is there enough memory?
 
@@ -149,12 +202,10 @@ hold L while you start it. The guide has every byte, in
 ### Can it break my Vita? How do I undo it?
 
 The app's Install page changes nothing until you choose Install, and it keeps a dated backup of
-each taiHEN `config.txt` it changes. On the owner's Vita its **Update** has run three times
-(test.4.1, 4.2 and 4.3, each over the build before it; the first wrote the three plugins, and Check
-and repair then reported it installed); an install on a Vita without the overlay has not run on a
-console yet ([#194](https://github.com/bee-san/Rubi_for_vita/issues/194)). If a start of the Vita
-doesn't finish, the next one is a safe boot: Rubi installs no hooks and unloads itself, so the Vita
-starts as if Rubi weren't there ([safe boot](docs/boot-safety.md)).
+each taiHEN `config.txt` it changes. If a start of the Vita doesn't finish, the next one is a safe
+boot: Rubi installs no hooks and unloads itself, so the Vita starts as if Rubi weren't there
+([safe boot](docs/boot-safety.md)). On a console, updating a one-VPK install has worked; updating a
+computer install was refused once, and a first install has not run yet ([Supported](#supported)).
 
 If the Vita does not start: hold L while you turn it on (h-encore or h-encore2: open its menu,
 holding R as h-encore starts, and choose Exit while holding L), then in VitaShell put `#` before the
@@ -194,6 +245,8 @@ and copy them to the memory card; up to eight are used, in your order
 
 - [The guide](docs/guide.md): every control and setting, the files and logs, the installer for a
   computer, memory, recovery, building and testing.
+- [The changelog](CHANGELOG.md): what each release and test build changed, and what its console run
+  showed.
 - [Anki cards](docs/anki.md) · [Your own dictionaries](docs/local-dictionaries.md) ·
   [Read text: automatically or on a press](docs/auto-vs-press.md) · [The OCR](docs/vita-vn-ocr.md) ·
   [The one-VPK install](docs/one-vpk-install.md) · [Safe boot](docs/boot-safety.md) ·
