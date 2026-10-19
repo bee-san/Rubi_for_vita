@@ -288,7 +288,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: %s OUT_DIR pass|fail|incomplete|routes|diagnostics|waited|notext|waiting|gstep\n", argv[0]);
         return 2;
     }
-    if (!strcmp(argv[2], "gstep")) { /* the step formatter alone, on stdout: API 20's check, lm, cascade, refine kinds; API 26's gate */
+    if (!strcmp(argv[2], "gstep")) { /* the step formatter alone, on stdout: API 20's check, lm, cascade, refine kinds; API 26's gate; API 29's settle */
         static const VjoGameOcrStep steps[] = {{.id = VJO_GSTEP_CHECK, .kind = 2 | 8, .bytes = 4096},
                                                {.id = VJO_GSTEP_LM, .kind = 2, .arg = 1, .us = 2100},
                                                {.id = VJO_GSTEP_CASCADE, .kind = 1, .arg = 1, .us = 550001},
@@ -299,7 +299,13 @@ int main(int argc, char **argv)
                                                 * its weights read in this job */
                                                {.id = VJO_GSTEP_GATE, .kind = 1, .arg = 2,
                                                 .bytes = (uint32_t)(-60 + 129) | (uint32_t)(-8 + 129) << 16 | VJO_GLM_READ,
-                                                .sum = 112, .us = 9001}};
+                                                .sum = 112, .us = 9001},
+                                               /* API 29: a paced wait's sleeps as the settle step's kind; a wait
+                                                * back to back keeps kind=- */
+                                               {.id = VJO_GSTEP_SETTLE, .kind = 4, .arg = 9, .rc = VJO_GSETTLE_HELD,
+                                                .us = 600000},
+                                               {.id = VJO_GSTEP_SETTLE, .kind = 0, .arg = 3, .rc = VJO_GSETTLE_HELD,
+                                                .us = 160000}};
         char line[256];
         for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++)
             if (vjo_gstep_format(line, sizeof(line), "job", &steps[i]) > 0) puts(line);

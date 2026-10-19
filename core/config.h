@@ -104,6 +104,12 @@ typedef struct {
      * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
      * text (a hidden text box, a CG screen) returns no line. Last, as above. */
     int ocr_text_gate;        /* 0/1 */
+    /* Local OCR (vocr, API 29): a background job's stable-text wait reads a pass of the region about
+     * this long after the one before (ms; 0: passes back to back, as before), sleeping in between,
+     * the gap never more than ocr_settle_ms: each strip of a pass is a game frame whose display call
+     * loses the time of its copy (docs/stutter.md; core/vocr_ocr.h VjoVocrPolicy.settle_pace_us).
+     * Last, as above. */
+    int ocr_settle_pace_ms;   /* 0..1000 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

@@ -697,6 +697,7 @@ static const char nondefault_config[] =
     "ocr_settle_ms = 0\n"
     "ocr_settle_max_ms = 500\n"
     "ocr_settle_press_ms = 300\n"
+    "ocr_settle_pace_ms = 40\n"
     "ocr_cascade_ms = 0\n"
     "ocr_lm = off\n"
     "ocr_refine_lines = on\n"

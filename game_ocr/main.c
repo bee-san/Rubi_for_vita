@@ -1264,6 +1264,8 @@ static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
     p->settle_us = ((r->flags >> VJO_GAME_OCR_SETTLE_SHIFT) & 0xFFu) * VJO_GAME_OCR_SETTLE_UNIT_US;
     p->settle_max_us = (r->flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT) * VJO_GAME_OCR_SETTLE_MAX_UNIT_US;
     p->settle_first = (r->flags & VJO_GAME_OCR_F_SETTLE_FIRST) != 0;
+    /* API 29: the wait's pace (docs/stutter.md); policy_sleep sleeps between its passes */
+    p->settle_pace_us = ((r->speed >> VJO_GAME_OCR_S_PACE_SHIFT) & VJO_GAME_OCR_S_PACE_MASK) * VJO_GAME_OCR_S_PACE_UNIT_US;
     p->blank = (r->flags & VJO_GAME_OCR_F_BLANK) != 0;
     p->gate = (r->speed & VJO_GAME_OCR_S_GATE) != 0; /* API 26: the text-presence gate */
     p->gate_res = &gate_res;
@@ -1546,7 +1548,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                                  capture.last.fb_format, capture.pass_us, 0);
     step_add(VJO_GSTEP_FIND, 0, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, 0, stats.dark, stats.find_us, 0);
     if (policy.settle_us)
-        step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes,
+        step_add(VJO_GSTEP_SETTLE, stats.settle_naps > 0xFFu ? 0xFFu : stats.settle_naps, stats.settle_passes,
                  stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,
                  stats.settle_changes, (stats.cycling_rows > 0xFFFFu ? 0xFFFFu : stats.cycling_rows) << 16 |
                  (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles), stats.settle_us ? stats.settle_us : 1u, 0);

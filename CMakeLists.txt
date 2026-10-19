@@ -107,6 +107,13 @@ target_include_directories(vjo-kernel-capture-tests PRIVATE third_party/acutest/
 target_compile_definitions(vjo-kernel-capture-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-capture-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_capture COMMAND vjo-kernel-capture-tests)
+# docs/stutter.md: the display hook reads the game's frame before it passes the call on, so a later
+# hook's drawing (PSVshell's FPS counter, reVita's menu) is never in Rubi's strips or signature.
+add_executable(vjo-kernel-display-tests host/tests/test_kernel_display.c)
+target_include_directories(vjo-kernel-display-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-kernel-display-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-kernel-display-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME kernel_display COMMAND vjo-kernel-display-tests)
 # core/fbgrey.h's word-at-a-time grey against the per-channel code it replaced, exhaustively.
 add_executable(vjo-fbgrey-tests host/tests/test_fbgrey.c)
 target_include_directories(vjo-fbgrey-tests PRIVATE third_party/acutest/include core)

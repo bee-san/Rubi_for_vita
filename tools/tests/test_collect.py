@@ -334,6 +334,13 @@ class Collect(unittest.TestCase):
                      "333-333",
                      "game frames during OCR jobs: 31 in 1 job(s), longest gap 50-50 ms, 1 over 25 ms; between jobs "
                      "180 frames, longest gap 17-17 ms, 0 over 25 ms",
+                     # docs/stutter.md: the late frames by strip and by what started the job; the wait's 4 passes of
+                     # 3 strips (ceil(125 / 62)) are more than this synthetic job's 9 strips: counted as its 9; its
+                     # 183 ms are 21.9 passes a second
+                     "late frames during OCR jobs (docs/stutter.md): 1 of 31 (3.2%) in 1 job(s), against 0 of 180 "
+                     "(0.0%) between them; 9 strips, the frames whose display call copied rows of the region, 0.11 late "
+                     "frames a strip; the stable-text wait read 9 of the strips (100.0%), 21.9 passes a second of waiting",
+                     "    by what started the job: Automatically's 1 of 31 (3.2%) in 1, 9 strips",
                      "game memory: free USER 5,000,000-91,226,112 B; headroom -99,520-85,622,784 B; refused 1 of 2",
                      "game worker steps that failed: alloc user/workspace 0x80024302",
                      "overlay opened 1x, slowest frame 33 ms",

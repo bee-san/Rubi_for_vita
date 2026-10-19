@@ -25,7 +25,7 @@ SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
 SWITCHES = ("japanese_only_selection", "frequency_badge", "ocr_skip_blank_lines", "ocr_boost_clock", "log_file",
             "anki_mining", "anki_screenshot", "ocr_text_gate")
 NUMBERS = ("local_dictionary_results", "stick_lookup_ms", "font_size_ja", "font_size_en", "ocr_settle_ms",
-           "ocr_settle_max_ms", "ocr_settle_press_ms", "ocr_cascade_ms", "ocr_threads")
+           "ocr_settle_max_ms", "ocr_settle_press_ms", "ocr_settle_pace_ms", "ocr_cascade_ms", "ocr_threads")
 # Settings that can hold a credential (an audio source URL can carry one). The manifest gives them only as
 # "set" or "", in its defaults and its install_settings: install_ftp.sh --collect copies both into the zip
 # the owner sends. install-vita.sh takes a set one's value from the package's config.ini, which holds it.

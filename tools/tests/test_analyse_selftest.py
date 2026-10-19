@@ -447,6 +447,14 @@ class AnalyseV2(unittest.TestCase):
         gt = a.summarise_log("\n".join(lines) + "\n")["gate"]
         self.assertEqual(gt, {"jobs": 1, "stopped": 1, "lines_stopped": 2, "scores": [-60], "us": [9001], "rcs": {},
                               "reads": 1})
+        # API 29 (docs/stutter.md): a paced wait's sleeps are the settle step's kind; a wait back to back keeps kind=-
+        self.assertIn("gstep job settle kind=4 arg=9 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 "
+                      "us=600000", lines)
+        self.assertIn("gstep job settle kind=- arg=3 rc=0x00000001 bytes=0 sum=0x00000000 main=0 cdram=0 phycont=0 "
+                      "us=160000", lines)
+        st = a.summarise_log("\n".join(lines) + "\n")["settle"]
+        self.assertEqual((st["jobs"], st["held"], st["passes"]), (2, 2, [9, 3]))
+        self.assertEqual([int(m.group(1)) for m in map(a.SETTLE_NAPS.match, lines) if m], [4])
 
     def test_the_gate_step_reads_its_score_beside_the_read_bit(self):
         # API 26 (VJO_GSTEP_GATE): bytes = score + 129 | (threshold + 129) << 16 | VJO_GLM_READ; arg 0 kept the

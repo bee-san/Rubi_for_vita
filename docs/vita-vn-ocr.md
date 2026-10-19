@@ -344,6 +344,7 @@ Two checks in the game worker (`core/vocr_ocr.h` `VjoVocrPolicy`), set in
 ```ini
 ocr_settle_ms = 150         ; 0-1000, 0 = off; sent in 10 ms steps (1-14 ms: 10 ms)
 ocr_settle_max_ms = 2000    ; 100-10000, in 50 ms steps; above ocr_settle_ms
+ocr_settle_pace_ms = 150    ; API 29, 0-1000: a background wait's passes this far apart (at most ocr_settle_ms; docs/stutter.md)
 ocr_skip_blank_lines = off  ; on | off
 ```
 
