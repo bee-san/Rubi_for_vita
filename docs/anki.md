@@ -577,9 +577,10 @@ other word is saved as before. Without Anki for Vita, or before its first sync, 
   its `.old`, and the setting off.
 - **Cost** in SceShell [measured: the Vita builds' module rows and `arm-vita-eabi-gcc -Os
   -fstack-usage`, [memory ledger](memory-ledger.md)]: no page, thread or allocation more. The Shell's
-  text grows 1,472 B (debug) and 1,424 B (normal) and its data and `.bss` 16 and 8 B, within its pages
-  (the normal build has 340 B of text room left); the lookup's frame is 744 B of the Anki thread's 16
-  KiB stack (its chain 1,840 B). On the console a lookup's file I/O is about 15 ms for the open and
+  text grows 1,792 B (debug) and 1,720 B (normal), with `core/textfilter.c` and `vita/buttons_vita.c`
+  built for size to pay 87 B of it, and its data and `.bss` 40 and 32 B, within its pages (the normal
+  build has 44 B of text room left); the lookup's frame is 744 B of the Anki thread's 16 KiB stack (its
+  chain 1,752 B), and the config load's parse frame grows 136 B (the request's field names). On the console a lookup's file I/O is about 15 ms for the open and
   the header plus about 4 ms a read [estimate, from [performance.md](performance.md)'s 15.3 ms + 3.82
   ms a read of a dictionary lookup], once per Enter, before the save's own file calls and sync.
 - **To test on a console** (hardware is paused): with an index Anki for Vita wrote, Enter on a word in
