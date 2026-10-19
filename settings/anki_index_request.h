@@ -19,26 +19,36 @@
 #define VJO_SETTINGS_ANKI_INDEX_REQUEST_H
 #include <stddef.h>
 
+#include <stdint.h>
+
 #include "../core/anki_index.h"
 #include "../core/arena.h"
+#include "../core/config.h"
 
 #define VJO_AFV_INTERFACE_PATH VJO_AFV_DIR "/interface.json"
 #define VJO_AFV_INDEX_DIR VJO_AFV_DIR "/index"
 #define VJO_ANKI_REQUEST_PATH VJO_AFV_INDEX_DIR "/rubi.request.json"
-#define VJO_ANKI_FIELD_MAX 63 /* bytes of a field's name */
 
-/* config.ini's settings for it, as core/config.c reads its lines (anki_duplicate_check on by
- * default; a name that is empty, too long or holds a control character keeps the default and
- * counts a warning). */
+/* config.ini's settings for it, as core/config.c reads its lines and names (anki_duplicate_check on by
+ * default; a name that is empty, over VJO_ANKI_FIELD_MAX bytes or holds a control character keeps the
+ * default and counts a warning; the reading's "none" or "" is no reading field): the overlay checks an
+ * index against the hash of these names, VjoConfig anki_duplicate_request, and the two must agree
+ * (host/tests/test_settings_anki_index.c). */
 typedef struct {
     int on;
     char field[VJO_ANKI_FIELD_MAX + 1], reading[VJO_ANKI_FIELD_MAX + 1];
     int warnings;
 } VjoAnkiRequestConfig;
 void vjo_anki_request_config(VjoAnkiRequestConfig *c, const char *text, size_t len);
+/* The request's hash, as Anki for Vita puts it in the index's header (its docs/duplicate-index.md, for a
+ * request of every note type): BE64(SHA-256(0x03 || lower(field) || 0x1F || lower(reading))). */
+uint64_t vjo_anki_request_hash(const VjoAnkiRequestConfig *c);
 
-/* Anki for Vita is installed and speaks interface version 1: its interface.json (at most 64 KiB) is
- * an object whose "interfaces" array holds the number 1, written so. 1 or 0; scratch is given back. */
+/* Anki for Vita is installed and speaks interface version 1: its interface.json (at most 64 KiB; its
+ * .old when it is not there) is an object whose "interfaces" array holds the number 1, written so.
+ * When neither file is there but ux0:data/Anki_for_vita is, it looks 3 times more, 100 ms apart (a
+ * writer may be between its renames: docs/interface.md); without the directory it does not wait.
+ * 1 or 0; scratch is given back. */
 int vjo_afv_speaks_1(VjoArena *scratch);
 
 enum {

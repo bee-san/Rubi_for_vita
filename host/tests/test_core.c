@@ -685,6 +685,24 @@ static void test_config(void)
     mining = "anki_duplicate_check = sometimes\nanki_duplicate_checks = on\n";
     vjo_config_parse(&c, mining, strlen(mining));
     TEST_CHECK(c.anki_duplicate_check == 0 && c.n_warnings == 2);
+    /* the request's hash, as Anki for Vita's reference has it (tools/afv_index.py): the defaults, other
+     * fields in any case, no reading field, a name that is not one (the default stays) */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.anki_duplicate_request[0] == 0x050ce210u && c.anki_duplicate_request[1] == 0x40448110u);
+    mining = "anki_duplicate_field = WORD\nanki_duplicate_reading_field = wordreading\n";
+    vjo_config_parse(&c, mining, strlen(mining));
+    TEST_CHECK(c.anki_duplicate_request[0] == 0xa988b779u && c.anki_duplicate_request[1] == 0xe7d4118cu &&
+               c.n_warnings == 0);
+    vjo_config_defaults(&c);
+    mining = "anki_duplicate_field = Word\nanki_duplicate_reading_field = None\n";
+    vjo_config_parse(&c, mining, strlen(mining));
+    TEST_CHECK(c.anki_duplicate_request[0] == 0x9c9ec0dcu && c.anki_duplicate_request[1] == 0xa460a6deu);
+    vjo_config_defaults(&c);
+    mining = "anki_duplicate_field = Expression\nanki_duplicate_reading_field = ExpressionReading\n"
+             "anki_duplicate_field = a\tb\nanki_duplicate_field =\n";
+    vjo_config_parse(&c, mining, strlen(mining));
+    TEST_CHECK(c.anki_duplicate_request[0] == 0x050ce210u && c.anki_duplicate_request[1] == 0x40448110u &&
+               c.n_warnings == 2);
     /* One engine, vocr: the engine choice is gone (core/config.h). A saved vocr
      * says nothing; a removed engine (Google Lens, the VOCR2 and Meiki trials,
      * ncnn of the host tools) says so, in any case; anything else is invalid.

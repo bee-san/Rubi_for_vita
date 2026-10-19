@@ -3,6 +3,7 @@
 
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
+#include <psp2/kernel/threadmgr.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -63,8 +64,8 @@ void vjo_anki_request_config(VjoAnkiRequestConfig *c, const char *text, size_t l
     size_t i = 0;
     memset(c, 0, sizeof(*c));
     c->on = 1;
-    memcpy(c->field, "Expression", sizeof("Expression"));
-    memcpy(c->reading, "ExpressionReading", sizeof("ExpressionReading"));
+    memcpy(c->field, VJO_ANKI_FIELD_DEFAULT, sizeof(VJO_ANKI_FIELD_DEFAULT));
+    memcpy(c->reading, VJO_ANKI_READING_DEFAULT, sizeof(VJO_ANKI_READING_DEFAULT));
     while (i < len) {
         const char *line = text + i, *eq;
         size_t n = 0, s, e, v;
@@ -89,10 +90,13 @@ void vjo_anki_request_config(VjoAnkiRequestConfig *c, const char *text, size_t l
         while (e > v && is_blank(line[e - 1]))
             e--;
         if (ieq(key, "anki_duplicate_check")) {
+            /* up to a NUL, as core/config.c compares a value */
+            const char *nul = memchr(line + v, '\0', e - v);
+            size_t vn = nul ? (size_t)(nul - (line + v)) : e - v;
             char val[4] = "";
-            if (e - v < sizeof(val)) {
-                memcpy(val, line + v, e - v);
-                val[e - v] = '\0';
+            if (vn < sizeof(val)) {
+                memcpy(val, line + v, vn);
+                val[vn] = '\0';
             }
             if (ieq(val, "on") || ieq(val, "off"))
                 c->on = ieq(val, "on");
@@ -101,7 +105,9 @@ void vjo_anki_request_config(VjoAnkiRequestConfig *c, const char *text, size_t l
         } else if (ieq(key, "anki_duplicate_field") || ieq(key, "anki_duplicate_reading_field")) {
             int reading = ieq(key, "anki_duplicate_reading_field");
             char *dst = reading ? c->reading : c->field;
-            if (reading && ((e - v == 4 && !strncmp(line + v, "none", 4)) || e == v)) {
+            int none = e == v || (e - v == 4 && lower(line[v]) == 'n' && lower(line[v + 1]) == 'o' &&
+                                  lower(line[v + 2]) == 'n' && lower(line[v + 3]) == 'e');
+            if (reading && none) {
                 c->reading[0] = '\0'; /* no reading field: every note gives its form's key */
             } else if (name_ok(line + v, e - v)) {
                 memcpy(dst, line + v, e - v);
@@ -111,6 +117,11 @@ void vjo_anki_request_config(VjoAnkiRequestConfig *c, const char *text, size_t l
             }
         }
     }
+}
+
+uint64_t vjo_anki_request_hash(const VjoAnkiRequestConfig *c)
+{
+    return vjo_anki_index_request_hash(c->field, c->reading);
 }
 
 /* ---------------- files ---------------- */
@@ -161,10 +172,20 @@ int vjo_afv_speaks_1(VjoArena *a)
     size_t mark = vjo_arena_mark(a), len = 0;
     char *text = NULL;
     VjoJson j;
-    int rc, ok = 0, arr;
-    if (read_file(a, VJO_AFV_INTERFACE_PATH, JSON_MAX, &text, &len, &rc) == 0 && vjo_json_parse(a, text, len, &j) == 0 &&
-        j.n > 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) && (arr = vjo_json_obj_get(&j, 0, "interfaces")) >= 0 &&
-        vjo_json_is_type(&j, arr, JSMN_ARRAY)) {
+    int rc, r, ok = 0, arr;
+    /* interface.json, else the .old a writer stopped between its renames leaves (docs/interface.md);
+     * neither: retried 3 times 100 ms apart, as the interface asks, but only when Anki for Vita's
+     * directory is there (without the app, no wait) */
+    for (int attempt = 0;; attempt++) {
+        r = read_file(a, VJO_AFV_INTERFACE_PATH, JSON_MAX, &text, &len, &rc);
+        if (r == 1)
+            r = read_file(a, VJO_AFV_INTERFACE_PATH ".old", JSON_MAX, &text, &len, &rc);
+        if (r != 1 || attempt == 3 || exists(VJO_AFV_DIR) != 1)
+            break;
+        sceKernelDelayThread(100 * 1000);
+    }
+    if (r == 0 && vjo_json_parse(a, text, len, &j) == 0 && j.n > 0 && vjo_json_is_type(&j, 0, JSMN_OBJECT) &&
+        (arr = vjo_json_obj_get(&j, 0, "interfaces")) >= 0 && vjo_json_is_type(&j, arr, JSMN_ARRAY)) {
         for (int k = 0, e; !ok && (e = vjo_json_arr_get(&j, arr, k)) >= 0; k++) /* the number 1, as written */
             ok = vjo_json_is_type(&j, e, JSMN_PRIMITIVE) && j.t[e].end - j.t[e].start == 1 && j.js[j.t[e].start] == '1';
     }

@@ -61,6 +61,8 @@ int sceIoRename(const char *a, const char *b)
 int sceIoRemove(const char *p) { return fail_now() ? (int)0x80010005u : native(unlink(p)); }
 int sceIoSync(const char *p, unsigned flags) { (void)p; (void)flags; return fail_now() ? (int)0x80010005u : 0; }
 int sceIoSyncByFd(int fd, int flag) { (void)flag; return fail_now() ? (int)0x80010005u : native(fsync(fd)); }
+static int delays;
+int sceKernelDelayThread(unsigned us) { (void)us; delays++; return 0; }
 
 /* ---------------- fixtures ---------------- */
 
@@ -108,6 +110,7 @@ static void reset(const char *interface)
     unlink(TMP);
     unlink(OLD);
     unlink(VJO_AFV_INTERFACE_PATH);
+    unlink(VJO_AFV_INTERFACE_PATH ".old");
     rmdir(VJO_AFV_INDEX_DIR);
     if (interface)
         put(VJO_AFV_INTERFACE_PATH, interface);
@@ -139,6 +142,23 @@ static void test_nothing_without_anki_for_vita(void)
     }
     reset("{\"v\": 1, \"interfaces\": [3, 2, 1]}");
     TEST_CHECK(request() == VJO_ANKI_REQUEST_WRITTEN);
+}
+
+/* interface.json's .old when it is not there; neither: three more looks 100 ms apart when Anki for Vita's
+ * directory is there, none without it. */
+static void test_interface_json_old_and_retry(void)
+{
+    reset(NULL);
+    put(VJO_AFV_INTERFACE_PATH ".old", INTERFACE_1);
+    delays = 0;
+    TEST_CHECK(vjo_afv_speaks_1(&arena) == 1 && delays == 0 && arena.used == 0);
+    unlink(VJO_AFV_INTERFACE_PATH ".old");
+    TEST_CHECK(vjo_afv_speaks_1(&arena) == 0 && delays == 3); /* the directory is there (main) */
+    TEST_ASSERT(rmdir(VJO_AFV_DIR) == 0);
+    delays = 0;
+    TEST_CHECK(vjo_afv_speaks_1(&arena) == 0 && delays == 0);
+    TEST_CHECK(request() == VJO_ANKI_REQUEST_NO_APP && delays == 0 && writes_opened == 0);
+    TEST_ASSERT(mkdir(VJO_AFV_DIR, 0777) == 0);
 }
 
 static void test_the_default_request_once(void)
@@ -249,8 +269,74 @@ static void test_every_failure_leaves_a_whole_request(void)
            k - 1, olds);
 }
 
+/* The overlay (core/config.c, VjoConfig anki_duplicate_request) and the Rubi app (vjo_anki_request_config,
+ * whose names it writes into the request) read the same fields out of every config.ini: random files of
+ * the two keys' lines with names, blanks, comments, BOMs, case, control bytes and NULs. And the hash is
+ * Anki for Vita's for the request the app writes (its reference: the default, Word/WordReading). */
+static uint64_t next_rand(void)
+{
+    static uint64_t x = 88172645463325252ull;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    return x;
+}
+
+static void test_the_overlay_and_the_app_agree(void)
+{
+    static const char *const keys[] = {"anki_duplicate_field", "anki_duplicate_reading_field", "ANKI_Duplicate_Field",
+                                       "anki_duplicate_reading_field ", " anki_duplicate_field", "anki_duplicate_check"};
+    static const char *const values[] = {"Expression", "Word", "ExpressionReading", "none", "NONE", "", " ", "a b",
+                                         "日本語", "x\ty", "x\x01", "x\x7f", "a ; comment", "a# not one", "a #comment",
+                                         "0123456789012345678901234567890123456789012345678901234567890123",
+                                         "012345678901234567890123456789012345678901234567890123456789012", "on", "off"};
+    VjoAnkiRequestConfig app;
+    VjoConfig shell;
+    int same = 0;
+    vjo_anki_request_config(&app, "", 0);
+    TEST_CHECK(vjo_anki_request_hash(&app) == 0x050ce21040448110ull);
+    {
+        static const char words[] = "anki_duplicate_field = Word\nanki_duplicate_reading_field = WordReading\n";
+        vjo_anki_request_config(&app, words, sizeof(words) - 1);
+    }
+    TEST_CHECK(vjo_anki_request_hash(&app) == 0xa988b779e7d4118cull);
+    for (int t = 0; t < 20000; t++) {
+        char text[1024];
+        size_t n = 0;
+        int lines = (int)(next_rand() % 5);
+        if (next_rand() % 8 == 0)
+            n += (size_t)snprintf(text + n, sizeof(text) - n, "\xEF\xBB\xBF");
+        for (int l = 0; l < lines && n + 200 < sizeof(text); l++) {
+            const char *k = keys[next_rand() % 6], *v = values[next_rand() % 19];
+            int how = (int)(next_rand() % 4);
+            n += (size_t)snprintf(text + n, sizeof(text) - n, "%s%s%s%s%s%s", how == 3 ? "; " : "", k,
+                                  how == 1 ? " = " : "=", v, how == 2 ? "\r" : "", "\n");
+            if (next_rand() % 20 == 0) /* a NUL in a line */
+                text[n - 2] = '\0';
+        }
+        vjo_anki_request_config(&app, text, n);
+        vjo_config_defaults(&shell);
+        vjo_config_parse(&shell, text, n);
+        if (!TEST_CHECK_(((uint64_t)shell.anki_duplicate_request[0] << 32 | shell.anki_duplicate_request[1]) ==
+                             vjo_anki_request_hash(&app) && shell.anki_duplicate_check == app.on,
+                         "case %d: app (%s, %s) on %d, shell on %d", t, app.field, app.reading, app.on,
+                         shell.anki_duplicate_check)) {
+            char hex[3200];
+            size_t h = 0;
+            for (size_t i = 0; i < n && h + 4 < sizeof(hex); i++)
+                h += (size_t)snprintf(hex + h, sizeof(hex) - h, (unsigned char)text[i] >= 0x20 && text[i] != 0x7F
+                                                                    ? "%c" : "\\x%02x", (unsigned char)text[i]);
+            TEST_MSG("text: %s", hex);
+        }
+        same += strcmp(app.field, "Expression") != 0;
+    }
+    TEST_CHECK(same > 1000); /* most files named other fields */
+}
+
 TEST_LIST = {
+    {"the_overlay_and_the_app_agree", test_the_overlay_and_the_app_agree},
     {"nothing_without_anki_for_vita", test_nothing_without_anki_for_vita},
+    {"interface_json_old_and_retry", test_interface_json_old_and_retry},
     {"the_default_request_once", test_the_default_request_once},
     {"the_fields_config_ini_names", test_the_fields_config_ini_names},
     {"the_config_lines", test_the_config_lines},

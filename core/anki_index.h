@@ -18,9 +18,10 @@
  * word is in the collection when its pair key is in the index (a note with that reading) or its form
  * key is (a note with that form and no reading).
  *
- * A missing, damaged or other-version file means "not known to be there": the card is saved as
- * before. Rubi does not check the header's request hash: its request's fields are a setting of the
- * Rubi app, and an index made for an earlier request still answers for the user's notes. */
+ * A missing, damaged or other-version file, or one made for another request, means "not known to be
+ * there": the card is saved as before. Rubi trusts an index only when its header's request hash
+ * (bytes 64-71) is that of Rubi's own request, the fields config.ini names (VjoConfig
+ * anki_duplicate_request, core/config.c: the hash the request the Rubi app writes has). */
 #ifndef VJO_ANKI_INDEX_H
 #define VJO_ANKI_INDEX_H
 
@@ -44,7 +45,8 @@ enum {
     VJO_ANKI_INDEX_NONE = 0,     /* not in the index */
     VJO_ANKI_INDEX_MISSING = -1, /* no index (neither file can be opened) */
     VJO_ANKI_INDEX_BAD = -2,     /* not an index of this version, damaged, or a read failed */
-    VJO_ANKI_INDEX_NOKEY = -3    /* the word gives no key (empty, or an ASCII '[': not plain text) */
+    VJO_ANKI_INDEX_NOKEY = -3,   /* the word gives no key (empty, or an ASCII '[': not plain text) */
+    VJO_ANKI_INDEX_OTHER = -4    /* an index made for another request (other fields) */
 };
 
 typedef struct {
@@ -60,10 +62,18 @@ typedef struct {
  * holding one is read as furigana or a sound tag); a reading that is empty or holds one gives no pair
  * key. No allocation; two SHA-256 runs. */
 int vjo_anki_index_keys(const char *form, const char *reading, VjoAnkiIndexKeys *k);
+/* The hash of Rubi's request {"v": 1, "notetypes": [], "key": field, "reading": reading} ("" for no
+ * reading field), as Anki for Vita writes it into the index's header (its docs/duplicate-index.md):
+ * BE64(SHA-256(0x03 || lower(field) || 0x1F || lower(reading))), lower() folding ASCII A-Z. The Shell
+ * (core/config.c, VjoConfig anki_duplicate_request) and the Rubi app (settings/anki_index_request.c)
+ * both compute it here. */
+uint64_t vjo_anki_index_request_hash(const char *field, const char *reading);
 /* Looks the keys up in the index at path, else at old_path, opened with p->file_open: the header
- * (128 B), two directory words and the word's bucket (at most 512 B) read, then closed. A bucket is
+ * (128 B), two directory words and the word's bucket (at most 512 B) read, then closed. The header's
+ * request hash must be request (else VJO_ANKI_INDEX_OTHER, after the header only). A bucket is
  * checked whole (every key in it, ascending) before it answers. VJO_ANKI_INDEX_PAIR, _FORM or _NONE,
- * or _MISSING or _BAD. No allocation; one 512-byte buffer on the stack. */
-int vjo_anki_index_lookup(const VjoPlatform *p, const char *path, const char *old_path, const VjoAnkiIndexKeys *k);
+ * or _MISSING, _BAD or _OTHER. No allocation; one 512-byte buffer on the stack. */
+int vjo_anki_index_lookup(const VjoPlatform *p, const char *path, const char *old_path, uint64_t request,
+                          const VjoAnkiIndexKeys *k);
 
 #endif
