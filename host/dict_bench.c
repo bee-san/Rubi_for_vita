@@ -237,7 +237,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "cannot read lines from %s\n", argv[3]);
         return 2;
     }
-    vjo_config_defaults(&cfg); /* the release defaults: Whole word, Japanese-only, one result */
+    vjo_config_defaults(&cfg); /* the release defaults: Whole word, one result */
+    /* Right through the text with Japanese characters only ON, the default until 2026-10-20: the walk
+     * tools/dict_lookup_golden.tsv and docs/lookup-performance.md's figures were recorded with (OFF, the
+     * default now, also stops on Latin letters, digits and punctuation) */
+    cfg.japanese_only_selection = 1;
     cfg.dictionary = VJO_DICT_LOCAL;
     if (strlen(argv[1]) >= sizeof(cfg.local_dictionary_dir) || strlen(argv[2]) >= sizeof(cfg.local_dictionaries))
         return 2;

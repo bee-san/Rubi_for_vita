@@ -36,6 +36,11 @@ On `main` since 0.8.0; the next release brings it.
 
 - An install or an update no longer writes `text_source = ocr` into `config.ini` (API 31: the setting
   is the user's again); a file that has it keeps it, so choose Automatic once to use native text hooks.
+- **Japanese characters only** (`japanese_only_selection`) is OFF by default, as the owner asked:
+  the cursor can select any character, Latin letters, digits and punctuation too, and starts at the
+  text's first character. A `config.ini` keeps its own line: from 0.7.6 the template wrote
+  `japanese_only_selection = on`, so an install updated from an earlier build stays ON until it is
+  turned OFF on the Rubi app's OCR & lookup page ([#231]).
 - Every verified install deletes the app's own copy of the dictionary when the app's folder can be
   written, and says so on the done screen and in `log.txt` ([#200]).
 - A card's screenshot is written over a file set aside for it beforehand: on the owner's console,
@@ -547,3 +552,4 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#222]: https://github.com/bee-san/Rubi_for_vita/pull/222
 [#224]: https://github.com/bee-san/Rubi_for_vita/pull/224
 [#230]: https://github.com/bee-san/Rubi_for_vita/issues/230
+[#231]: https://github.com/bee-san/Rubi_for_vita/pull/231

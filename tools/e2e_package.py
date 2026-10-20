@@ -362,7 +362,8 @@ class E2E:
             cfg = config_values((dev / "ux0/data/VitaJPOverlay/config.ini").read_text())
             want = {"vocr_tier": "normal", "log_file": "on", "ocr_mode": "auto", "dictionary": "local",
                     "font_size_ja": "20", "ocr_lm": template["ocr_lm"], "ocr_cascade_ms": template["ocr_cascade_ms"],
-                    **settings}
+                    # the old file's explicit choice stays, though the default is off since 2026-10-20
+                    "japanese_only_selection": "on", **settings}
             for k in ("ocr_boost_clock", "ocr_threads"):  # #93: new keys get the template's value
                 if k in template:
                     want[k] = template[k]
@@ -531,7 +532,7 @@ class E2E:
                     check(b"*ALL\r\n# Mainline OCR: ur0:tai/VitaJPOverlay_OCR.suprx" in t,
                           f"B {part}: the *ALL worker line is commented out")
             cfg = config_values((dev / "ux0/data/VitaJPOverlay/config.ini").read_text())
-            want = {"vocr_tier": "normal", "log_file": "on", **self.settings}
+            want = {"vocr_tier": "normal", "log_file": "on", "japanese_only_selection": "off", **self.settings}
             if "ocr_boost_clock" in self.template:
                 want["ocr_boost_clock"] = self.template["ocr_boost_clock"]
             check(all(cfg.get(k) == v for k, v in want.items()), f"B config.ini: {want}")

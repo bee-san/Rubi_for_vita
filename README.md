@@ -117,7 +117,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | OCR & lookup | **Model size**: Small (fastest), Normal or Large (most accurate) | Normal |
 | | **Read text**: Automatically (when it changes), or Only when I press L + R | Automatically |
 | | **Speed boost while reading (444 MHz)** | ON |
-| | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | ON |
+| | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries an L or R tap pages through, 1–8 | 1 |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |

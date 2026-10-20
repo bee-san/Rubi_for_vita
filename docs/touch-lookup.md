@@ -408,17 +408,20 @@ feel, and whether 20 steps a second overshoots, are the console run's.
 `host/tests/test_word_lookup.cpp` checks the whole path on real recognizer
 output: 50 VOCR lines of development screenshots
 ([fixtures](../host/fixtures/word_lookup/README.md)) go through the overlay's
-sentence filter, the first Japanese letter, the lookup at the cursor with the
+sentence filter, the first selectable character, the lookup at the cursor with the
 bundled `plaintext.vjdict`, the header range the overlay recolors, the popup
 entry, and the Shell's own Right/Left navigation and touch hit test. Every
 lookup gives one entry or none, the highlight starts at the cursor and ends on
-a character boundary, and Right always advances. With the bundled dictionary,
-1,319 of the 1,321 Japanese letters lie inside a matched word (614 entries in
+a character boundary, and Right always advances. With the bundled dictionary and
+Japanese characters only ON, 1,319 of the 1,321 Japanese letters lie inside a matched word (614 entries in
 616 lookups; 617 in 619 before a word could cross a line break the text joins:
 five do on these lines, 呼び / ましょう and 頑 / 張ろう among them, and 彼氏様 /
 だもんね's 様だ, as the unbroken line gives it;
 [words split over two lines](#words-split-over-two-lines)); a character
-without an entry stays highlighted and Right steps one character. The 56 cases of `expect.tsv` cover inflections
+without an entry stays highlighted and Right steps one character. With it OFF, the
+default since 2026-10-20, the walk starts at the text's first character and also stops
+on Latin letters, digits and punctuation: 620 entries in 798 lookups, the same 1,319
+letters inside a matched word. The 56 cases of `expect.tsv` cover inflections
 (会ってなかった → 会う, 殺されてしまう → 殺す, した → する), 静かな (静か; な is
 the next word, as in Yomitan), kana words (から, して, ありがとう), katakana loanwords,
 names, common readings (私 わたし, 先生 せんせい) and OCR errors (FL10's

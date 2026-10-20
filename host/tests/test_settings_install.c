@@ -452,6 +452,7 @@ static void fresh_install_on_both_configurations(void)
         TEST_CHECK(!there(fresh));
     }
     TEST_CHECK(!strcmp(slurp(VJO_PREFERENCES_PATH_TEST, NULL), template_text));
+    TEST_CHECK(strstr(template_text, "\njapanese_only_selection = off\n") != NULL); /* OFF for a new install (2026-10-20) */
     TEST_CHECK(!strcmp(slurp(VJO_APP_STAMP_PACKAGE, NULL), STAMP "\n"));
     VjoInstalled rec;
     char *it = slurp(VJO_INSTALLED_RECORD, NULL);
@@ -526,6 +527,8 @@ static void update_over_a_test3_install(void)
     TEST_CHECK(strstr(ini, "vocr_tier = large\n") && strstr(ini, "ocr_mode = on_press\n"));
     TEST_CHECK(strstr(ini, VJO_DEBUG ? "log_file = on\n" : "log_file = off\n") != NULL);
     TEST_CHECK(strstr(ini, "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n") != NULL);
+    /* a file that never set Japanese characters only gets the default, OFF since 2026-10-20 (the app's own lines) */
+    TEST_CHECK(strstr(ini, "japanese_only_selection = off\n") && !strstr(ini, "japanese_only_selection = on"));
     VjoConfig parsed;
     vjo_config_defaults(&parsed);
     vjo_config_parse(&parsed, ini, strlen(ini));
@@ -624,6 +627,9 @@ static void the_plan_names_each_config_ini_line_that_goes(void)
     TEST_ASSERT(ini != NULL);
     TEST_CHECK(strstr(ini, "vocr_tier = large\n") && !strstr(ini, "\nocr_backend") && !strstr(ini, "\nlog_host"));
     TEST_CHECK(strstr(ini, "anki_mining = on\n") && strstr(ini, "log_file = on\n"));
+    /* its japanese_only_selection = on, the template's line from 0.7.6 until 2026-10-20, stays: the default (OFF
+     * since then) is only for a file without the line */
+    TEST_CHECK(strstr(owner, "\njapanese_only_selection = on\n") && strstr(ini, "\njapanese_only_selection = on\n"));
     /* Check and repair over it: config.ini is the user's, as it is */
     VjoInstallScan again = scan_now();
     TEST_CHECK_(again.state == VJO_INSTALL_INSTALLED && again.config_ini == 0, "state %d config_ini %d", again.state,

@@ -4,7 +4,7 @@
  * Shell runs in local cursor mode, unchanged (shell/worker.c, shell/overlay.cpp):
  *   vjo_text_normalize            the game worker's normalisation of the recognized text
  *   vjo_overlay_ocr_text          recognized text -> filtered text and the header's sentence
- *   vjo_utf8_japanese_cursor_step the overlay's first cursor (Japanese-only selection, the default)
+ *   vjo_utf8_japanese_cursor_step the overlay's first cursor (Japanese-only selection, the film's setting)
  *   vjo_overlay_lookup_at         the lookup at a cursor (an arrow key or a tap)
  *   vjo_text_row_key(dx = +1)     Right as the overlay's arrows move (shell/overlay.cpp): along the
  *                                 header's displayed row, wrapping at its ends (#87), over the rows
@@ -176,6 +176,7 @@ int main(int argc, char **argv)
         return 2;
     }
     vjo_config_defaults(&cfg);
+    cfg.japanese_only_selection = 1; /* the film's: the default until 2026-10-20 (OFF now) */
     snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "%s", argv[1]);
     snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", argv[2]);
     posix_platform_init(&pp, &p);

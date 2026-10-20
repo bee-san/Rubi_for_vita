@@ -28,7 +28,7 @@ void vjo_config_defaults(VjoConfig *c)
     vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "plaintext.vjdict");
     c->local_dictionary_results = 1;
     c->non_japanese_filter = VJO_FILTER_LINES;
-    c->japanese_only_selection = 1;
+    c->japanese_only_selection = 0; /* OFF: the cursor can select any character (the owner, 2026-10-20; ON before) */
     c->highlight_mode = VJO_HIGHLIGHT_WORD;
     c->frequency_badge = 1;
     c->font_size_ja = 18;
@@ -75,7 +75,7 @@ const char *vjo_config_default_text(void)
            "\n"
            "; Left/right character lookup skips Latin text, numbers and punctuation: on | off.\n"
            "; Select Japanese kana and Han characters; this does not tokenize words.\n"
-           "japanese_only_selection = on\n"
+           "japanese_only_selection = off\n"
            "\n"
            "; Highlight the dictionary match or only the cursor character: word | character.\n"
            "; Word skips the matched source span; character steps one character.\n"
