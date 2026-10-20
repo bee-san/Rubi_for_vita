@@ -53,6 +53,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->log_file = 1; /* log.txt is on unless log_file = off */
     c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
     c->ocr_text_gate = VJO_TEXT_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Text-presence gate" */
+    c->hook_sites = 1; /* the table sites with the CALL source; off: the CALL source alone */
 }
 
 const char *vjo_config_default_text(void)
@@ -109,6 +110,9 @@ const char *vjo_config_default_text(void)
            "; auto (native text hooks in the games that have one, checked against OCR) |\n"
            "; hooks (as auto, and the game's own text copies in every game that is ON) | ocr\n"
            "text_source = auto\n"
+           "; Text hooks at table sites (Rubi's and Luna's entries): on | off (off: only\n"
+           "; the string-copy hooks, to tell the two apart in a test)\n"
+           "hook_sites = on\n"
            "\n"
            "; OCR: vita-vn-ocr, offline on the Vita (docs/vita-vn-ocr.md)\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
@@ -512,6 +516,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const sources[] = {"ocr", "auto", "hooks", NULL}; /* VJO_SOURCE_*'s order */
         c->text_source = VJO_SOURCE_AUTO; /* an unknown value: auto, with the warning */
         set_choice(c, key, val, &c->text_source, sources);
+    } else if (vjo_ieq(key, "hook_sites")) {
+        static const char *const off_on[] = {"off", "on", NULL};
+        c->hook_sites = 1; /* an unknown value: on, with the warning */
+        set_choice(c, key, val, &c->hook_sites, off_on);
     } else if (vjo_ieq(key, "ocr_backend")) {
         /* The removed engine choice (core/config.h): vocr is the only engine. */
         const char *removed = removed_engine(val);

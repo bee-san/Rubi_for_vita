@@ -15,19 +15,22 @@
 #include "../core/boot_guard.h"
 
 #define TEXT_SOURCE_PIDS 4
-static uint32_t text_source; /* VJO_TEXT_SOURCE_*: 0, VJO_TEXT_SOURCE_OCR, until the Shell sets one */
+static uint32_t text_source; /* the word, mode | flags: 0, VJO_TEXT_SOURCE_OCR, until the Shell sets one */
 static SceUID on_pid[TEXT_SOURCE_PIDS]; /* 0: free */
 static uint32_t on_next;                /* the slot the next ON start takes, modulo TEXT_SOURCE_PIDS */
 
-/* The registered Shell only (as vjoSetTriggers): a mode of VJO_TEXT_SOURCE_* or VJO_ERR_ARG. */
-int vjoSetTextSource(uint32_t mode)
+/* The registered Shell only (as vjoSetTriggers): the text source's word, a VJO_TEXT_SOURCE_* mode in its low
+ * byte (VJO_TEXT_SOURCE_MODE_MASK) and no other bit than VJO_TEXT_SOURCE_NO_SITES (config.ini hook_sites =
+ * off, audit-hooks F3), kept whole; any other word is VJO_ERR_ARG. */
+int vjoSetTextSource(uint32_t word)
 {
     if (g.shell_pid <= 0 || ksceKernelGetProcessId() != g.shell_pid)
         return VJO_ERR_PERM;
-    if (mode >= VJO_TEXT_SOURCE_COUNT)
+    if ((word & VJO_TEXT_SOURCE_MODE_MASK) >= VJO_TEXT_SOURCE_COUNT ||
+        (word & ~(VJO_TEXT_SOURCE_MODE_MASK | VJO_TEXT_SOURCE_NO_SITES)))
         return VJO_ERR_ARG;
-    if (__atomic_exchange_n(&text_source, mode, __ATOMIC_ACQ_REL) != mode)
-        klog("text source %u", (unsigned)mode); /* when it changes, not at every config read */
+    if (__atomic_exchange_n(&text_source, word, __ATOMIC_ACQ_REL) != word)
+        klog("text source %u", (unsigned)word); /* the word (256 + the mode with no sites), when it changes */
     return 0;
 }
 
@@ -47,8 +50,8 @@ void text_source_started(SceUID pid, int on)
                          __ATOMIC_RELEASE);
 }
 
-/* Any caller (the game worker in its module_start): VJO_TEXT_SOURCE_*, the Shell's in a process the loader
- * started the worker in as ON, else OCR. */
+/* Any caller (the game worker in its module_start): the Shell's word (its mode and VJO_TEXT_SOURCE_NO_SITES) in
+ * a process the loader started the worker in as ON, else VJO_TEXT_SOURCE_OCR. */
 int vjoGetTextSource(void)
 {
     SceUID pid = ksceKernelGetProcessId();

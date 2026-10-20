@@ -245,8 +245,11 @@ int vjoSetTriggers(int toggle, int subtitle); /* enum VjoTrigger each, not equal
 int vjoSetGameActive(int pid, int mode);  /* shell: enum VjoGameMode of the foreground process */
 int vjoSetInputBlock(int on);            /* block all game input (not the shell) */
 int vjoPollInput(VjoInput *out);         /* raw pad, unfiltered */
-int vjoSetTextSource(uint32_t mode);     /* API 31, registered Shell only: VJO_TEXT_SOURCE_*; 0 or < 0 */
-int vjoGetTextSource(void);              /* API 31, any caller: VJO_TEXT_SOURCE_* (OCR until the Shell set one) */
+/* API 31, the text source's word (a VJO_TEXT_SOURCE_* mode, | VJO_TEXT_SOURCE_NO_SITES): set by the registered
+ * Shell only (0 or < 0); read by any caller: OCR until the Shell set one, and in a process the kernel's loader
+ * did not start the worker in as ON (audit-hooks F1). */
+int vjoSetTextSource(uint32_t word);
+int vjoGetTextSource(void);
 #endif
 /* Boot-safety guard (core/boot_guard.h); declared for the host tests too. */
 #ifdef __cplusplus

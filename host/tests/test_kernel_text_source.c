@@ -1,7 +1,8 @@
 /* API 31: kernel/text_source.c's syscalls, linked from production: vjoSetTextSource only from the
- * registered Shell and only VJO_TEXT_SOURCE_*, vjoGetTextSource from anyone, OCR until the Shell set a
- * source and in a safe boot whatever it set, and (audit-hooks F1) OCR to every process the loader did not
- * start the worker in as ON (text_source_started). Only the SDK boundary is substituted. */
+ * registered Shell and only a word of a VJO_TEXT_SOURCE_* mode with no flag but VJO_TEXT_SOURCE_NO_SITES
+ * (audit-hooks F3), vjoGetTextSource from anyone, OCR until the Shell set a source and in a safe boot
+ * whatever it set, and (audit-hooks F1) OCR to every process the loader did not start the worker in as ON
+ * (text_source_started). Only the SDK boundary is substituted. */
 #include "acutest.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -97,7 +98,8 @@ static void test_shell_only(void)
     TEST_CHECK(read_as(GAME) == (int)VJO_TEXT_SOURCE_HOOKS);
 }
 
-/* Every mode under VJO_TEXT_SOURCE_COUNT, nothing else; a refused one leaves the value as it was. */
+/* Every mode under VJO_TEXT_SOURCE_COUNT, alone or with VJO_TEXT_SOURCE_NO_SITES (audit-hooks F3), kept and
+ * read back whole; any other word (a mode out of range, any other bit) is refused and leaves the value. */
 static void test_modes(void)
 {
     reset();
@@ -106,19 +108,24 @@ static void test_modes(void)
     for (uint32_t m = 0; m < VJO_TEXT_SOURCE_COUNT; m++) {
         TEST_CHECK(vjoSetTextSource(m) == 0);
         TEST_CHECK(read_as(GAME) == (int)m);
+        TEST_CHECK(vjoSetTextSource(m | VJO_TEXT_SOURCE_NO_SITES) == 0);
+        TEST_CHECK_(read_as(GAME) == (int)(m | VJO_TEXT_SOURCE_NO_SITES), "mode %u", (unsigned)m);
     }
-    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_AUTO) == 0);
-    const uint32_t bad[] = {VJO_TEXT_SOURCE_COUNT, 4u, 0xFFu, 0x80000000u, 0xFFFFFFFFu};
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES) == 0);
+    const uint32_t bad[] = {VJO_TEXT_SOURCE_COUNT, 4u, 0xFFu, 0x80000000u, 0xFFFFFFFFu,
+                            VJO_TEXT_SOURCE_COUNT | VJO_TEXT_SOURCE_NO_SITES, 0x1FFu, 0x200u, 0x201u, 0x301u,
+                            0x10001u, 0x80000101u, 0x501u, 0x180u};
     for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
         TEST_CHECK(vjoSetTextSource(bad[i]) == VJO_ERR_ARG);
-        TEST_MSG("mode 0x%X", bad[i]);
-        TEST_CHECK(read_as(GAME) == (int)VJO_TEXT_SOURCE_AUTO);
+        TEST_MSG("word 0x%X", bad[i]);
+        TEST_CHECK(read_as(GAME) == (int)(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES));
     }
     TEST_CHECK(VJO_TEXT_SOURCE_OCR == 0u && VJO_TEXT_SOURCE_AUTO == 1u && VJO_TEXT_SOURCE_HOOKS == 2u &&
-               VJO_TEXT_SOURCE_COUNT == 3u);
+               VJO_TEXT_SOURCE_COUNT == 3u && VJO_TEXT_SOURCE_MODE_MASK == 0xFFu && VJO_TEXT_SOURCE_NO_SITES == 0x100u);
 }
 
-/* A change is logged once; the Shell's every config read with the same value logs nothing. */
+/* A change is logged once, the whole word (256 + the mode with no table sites); the Shell's every config read
+ * with the same word logs nothing. */
 static void test_log_on_change(void)
 {
     reset();
@@ -133,6 +140,11 @@ static void test_log_on_change(void)
     TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_HOOKS) == 0);
     TEST_CHECK(log_calls == 2 && !strcmp(last_log, "text source 2"));
     TEST_CHECK(vjoSetTextSource(7u) == VJO_ERR_ARG && log_calls == 2);
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES) == 0);
+    TEST_CHECK_(log_calls == 3 && !strcmp(last_log, "text source 257"), "%s", last_log);
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES) == 0 && log_calls == 3);
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_AUTO) == 0); /* the flag alone changed: logged */
+    TEST_CHECK(log_calls == 4 && !strcmp(last_log, "text source 1"));
 }
 
 /* A safe boot: every reader gets OCR, so no worker installs a hook, whatever the Shell set. */
@@ -147,6 +159,12 @@ static void test_safe_boot_reads_ocr(void)
     TEST_CHECK(read_as(SHELL) == (int)VJO_TEXT_SOURCE_OCR);
     mode = VJO_BOOT_NORMAL;
     TEST_CHECK(read_as(GAME) == (int)VJO_TEXT_SOURCE_HOOKS);
+    /* the word with no table sites: plain OCR (no flag) in a safe boot, the whole word otherwise */
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_HOOKS | VJO_TEXT_SOURCE_NO_SITES) == 0);
+    mode = VJO_BOOT_SAFE;
+    TEST_CHECK(read_as(GAME) == (int)VJO_TEXT_SOURCE_OCR);
+    mode = VJO_BOOT_NORMAL;
+    TEST_CHECK(read_as(GAME) == (int)(VJO_TEXT_SOURCE_HOOKS | VJO_TEXT_SOURCE_NO_SITES));
 }
 
 /* audit-hooks F1: the Shell's value goes only to a process the loader started the worker in as ON. A

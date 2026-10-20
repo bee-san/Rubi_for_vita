@@ -680,6 +680,15 @@ static void test_text_source_only_where_started_on(void)
     TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_HOOKS) == 0);
     caller = 0;
     TEST_CHECK(start(0x72EE1, "PCSG00940") == CONTINUE_RC && load_calls == 1 && load_source == (int)VJO_TEXT_SOURCE_HOOKS);
+    /* hook_sites = off (audit-hooks F3): the whole word, NO_SITES included */
+    caller = SHELL_PID;
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES) == 0);
+    caller = 0;
+    TEST_CHECK(start(0x72EE1, "PCSG00940") == CONTINUE_RC && load_calls == 1 &&
+               load_source == (int)(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES));
+    caller = SHELL_PID;
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_HOOKS) == 0);
+    caller = 0;
     /* A safe boot: OCR for every worker, the ON game's too. */
     boot = VJO_BOOT_SAFE;
     TEST_CHECK(start(0x72EE3, "PCSG00940") == CONTINUE_RC && load_calls == 1 && load_source == (int)VJO_TEXT_SOURCE_OCR);
