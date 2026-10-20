@@ -129,6 +129,55 @@ copy only counts a hit; a new text takes the next value of a shared clock. Decod
 thread (`vjo_hooks_snap`, `vjo_hooks_text`), never in a hook. Which stream's text a job shows, and when,
 is `core/hook_select.c`'s (hooks-select).
 
+## Which text a job shows
+
+`core/hook_select.c`, called by the job path in `game_ocr/main.c`, in the worker's thread. With nothing
+hooked in the game (`vjo_hooks_counts`: no site and no CALL import) a job is OCR's exactly as before: no
+snapshot, no comparison. Otherwise a job begins with a snapshot of the streams: each stream that holds
+text is copied out and decoded into a static 2,048-byte pool, each text at most 768 bytes (512 raw bytes
+of double-byte CP932 whole); the stream the job's pick names (pinned or locked) first, then the newest
+texts, so a pool that fills cuts the oldest. Then, by the request's `hook_pick`:
+
+- **Pinned** (a stream ID, the Shell's △): that stream's text, without recognition; OCR when it has none.
+- **OCR only** (`VJO_HOOK_PICK_OCR`): OCR's text. The self-test's jobs (every line recognized, or the
+  fallback forced) are OCR only whatever their pick.
+- **Automatic** (`VJO_HOOK_PICK_AUTO`): OCR runs, and a stream whose text agrees with OCR's (similarity
+  at least 700 of 1000) replaces it. Two agreements in a row by one stream lock it; a locked stream with
+  new text since the last job shown (its seq) then answers a job without recognition, and one with
+  nothing new lets OCR read (the screen changed without it: a choice menu, a CG). Two disagreements in a
+  row unlock it. A job whose OCR text has fewer than 4 characters (an empty box) is no evidence: nothing
+  changes, and neither does a job that fails.
+
+A job a stream answers reads only the region's first capture pass (a strip at a time into one strip's
+block, under the job's reserve, as the probe reads), so the kernel publishes its capture (`capture_seq`,
+`done_seq`, the scene) as for an OCR job and the Shell's scene logic is unchanged; it opens no model and
+finds and recognizes nothing. The shown text is normalised as OCR's is (`core/textnorm.h`), with, after
+its NUL for the debug log, OCR's text (a stream replaced it) or the stream's own (no OCR ran).
+
+The similarity: both texts in a compared form (full-width ASCII as ASCII, capitals as small letters,
+half-width katakana as full-width with their voiced marks, 一 as ー; spaces, punctuation and symbols
+dropped), at most 256 characters each; then d, the edit distance of all of the stream's text h to the part
+of OCR's text o it matches best (o's characters before and after it free), and 1000 × (|h| − d) /
+max(|h|, |o|). OCR's text around the match (a speaker's name, another line) lowers it as much as it is
+long: a stream with one line of a two-line page, a backlog line or a line prepared ahead of the screen does
+not agree, and a name in the box agrees only beside a line about 2.3 times its length. Characters past
+the 256 compared count as unmatched, so a cut text never scores higher than it would whole. Fewer than 4
+characters in either text: 0. Equal scores: the stream of the current streak (two callers copying one text
+must not take turns), then a table site, then the newer text.
+
+Every result says where its text came from: `text_from` (0 OCR, else the stream's ID), `hook_flags`
+(`VJO_HOOK_R_*`), `hook_score` (the shown stream's similarity, else the best one's; 0 when nothing was
+compared), `hook_streams` (bit ID − 1 of each stream that held text as the job began) and `hook_mode`,
+`hook_installed`, `hook_refused` (`vjo_hooks_counts`), in failed results too (with `text_from` and
+`hook_flags` 0: a failed result has no text).
+
+Cost: `core/hook_select.c` is 1,708 B of code at `-Os`; its comparison's 2,562 B of arrays are on the
+worker's stack only while it compares (its frames 2,712 B, `-fstack-usage`); the job path's static
+snapshot is 3,064 B of `.bss`. The comparison's inner loop is 19 instructions a cell at `-Os`: a
+dialogue box of 60 characters against a few streams is about 10^4 cells, under a millisecond at 444 MHz,
+and the worst case, 20 streams of 256 characters against 256, 1.3 million cells, about 30-60 ms
+[estimate: the instructions of the `-Os` disassembly at 0.5-1 cycle each, not run on a console].
+
 ## Release
 
 `vjo_hooks_stop` stops taking hits, releases every hook newest first (CALL imports, then sites, in
@@ -148,18 +197,22 @@ game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
 | debug, before | 81,644 B | 15,752 B | 98,304 B |
 | debug, the engine alone | 88,904 B | 27,496 B | 118,784 B |
 | debug, with Luna's table linked | 99,016 B | 27,496 B | 131,072 B |
-| debug, with the [PSP probe](#psp-probe-debug-build) | 105,312 B | 27,504 B | 135,168 B |
 | normal, before | 80,344 B | 15,752 B | 98,304 B |
 | normal, with Luna's table linked | 96,524 B | 27,496 B | 126,976 B |
+| debug, with the job path (the decoder, Luna's filters, the selection) | 127,144 B | 30,560 B | 163,840 B |
+| normal, with the job path (the decoder, Luna's filters, the selection) | 124,668 B | 30,560 B | 159,744 B |
+| debug, with the job path and the [PSP probe](#psp-probe-debug-build) | 133,392 B | 30,568 B | 167,936 B |
 
 [measured: the build log's module rows on hooks/engine 8aa79eb (local CI), both builds, with
 origin/hooks/luna-port merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
-header's API 26 figure; the PSP probe's row: hooks/psp-probe against hooks/engine dca6d5f, whose normal build it
-leaves byte for byte as it was.] The data is the slots (20 x 548 B = 10,960 B) and the capture buffer (512 B);
+header's API 26 figure.] The data is the slots (20 x 548 B = 10,960 B) and the capture buffer (512 B);
 the text is the engine and what it links of Luna's table (its sites, version gate and capture). The
-SceShell and kernel modules do not change here. The job path's decoder (`core/hook_text.c` and its CP932
-table), Luna's filters (`core/hook_re.c`) and the selection add their own pages when the job path calls
-`vjo_hooks_text` (hooks-select).
+SceShell and kernel modules do not change here. The job path decodes the streams' texts
+(`vjo_hooks_text`), so it links the decoder (`core/hook_text.c` and its CP932 table) and Luna's filters
+(`core/hook_re.c`, at `-Os`), and adds the selection (`core/hook_select.c`, 1,708 B at `-Os`) and its 3,064 B
+static snapshot: the two job path rows [measured: the build log's module rows on hooks/select `4f9dca9` with
+hooks/engine `dca6d5f` merged, both builds]. The PSP probe's row: hooks/psp-probe with feat/native-hooks `960ac20`
+merged, against `960ac20`, whose normal build it leaves byte for byte as it was [measured, the build log's module rows].
 
 Stack: a site hit uses the observer's 328 bytes and the C frames below it on the game's thread, an
 estimate of under 1 KiB in all (not measured); a CALL hit, a few dozen bytes. CPU time per hit, and any
@@ -195,6 +248,16 @@ Hardware is paused; these are for the test issue (#230):
 4. A game outside the tables with `hooks`: only CALL imports in `hooks.log`; no slowdown that shows.
 5. A Luna-listed game with `auto`: every site's verdict in `hooks.log`; a hooked site's text.
 6. Quitting a game with hooks: the console returns to LiveArea, and the next game start works.
+7. CLANNAD with `auto`, Automatically: the first pages show the CALL stream's text with OCR's agreement
+   (the debug log's `hook_flags` AGREED and a `hook_score`), and from the third page on the stream answers
+   without recognition (NO_OCR: no model load or recognize step, and the overlay's text sooner); the
+   text matches the screen on every page, and the scene logic (a page's text cached, a new page read) works
+   as with OCR.
+8. A choice menu or a CG without text (the stream unchanged): OCR's text, or none, and the lock stays.
+9. With Only when I press L + R, and with the subtitle strip: the same pages, the same texts.
+10. A game where no stream follows the dialogue (or one that runs ahead of the screen): OCR's text on
+    every page, nothing locked.
+11. △ (hooks-api) pins a stream: its text, without OCR; OCR only: OCR's text, whatever agrees.
 
 ## PSP probe (debug build)
 
@@ -212,7 +275,9 @@ Adrenaline's), only when the text source is `auto` or `hooks`, and once per proc
 L + R; an Anki screenshot or a self-test job is not one). Adrenaline's XMB runs in the same process as the
 game started from it, and a reading there would use the probe up with no game's ID, so start the game
 from its own bubble, or set **Read text** to **Only when I press L + R** and press it first in the game. To
-probe again, close the emulator (or the bubble) and start it again.
+probe again, close the emulator (or the bubble) and start it again. Until the text source reaches the
+worker (the kernel's `vjoGetTextSource`, hooks-api; this tree's kernel does not export it, so
+`game_ocr/main.c` `text_source` answers `ocr`), the probe does nothing in any game.
 
 **What it does.** In the worker's thread, at its lowest priority:
 
@@ -239,8 +304,9 @@ together, of a view whose layout (SceCompat's CDRAM "with hole") no console run 
 Luna's PSP table is in the debug worker as `core/hook_luna_psp.inc`, generated by `tools/gen_luna_psp.py`
 from the vendored `third_party/LunaTranslator/ppsspp_1.cpp` (51884b6, the SHA-256 pin of
 `gen_luna_vita.py`): for each of its 415 entries only the address and the title IDs. That is 354 IDs and
-431 sites (an entry that names several IDs is a site of each), 5,265 bytes. Which register, encoding and
-filter a site has is in Luna's source, found by its address.
+431 sites (an entry that names several IDs is a site of each), 3,515 bytes: each ID packed in a word as
+its prefix's index (5 prefixes, `ULJM` ...) and its number. Which register, encoding and filter a site
+has is in Luna's source, found by its address.
 
 **Where.** Appended to `ux0:data/VitaJPOverlay/hooks.log`, which the worker rewrites at each game start
 when the text source is not `ocr` ([Logs](#logs)); `tools/install_ftp.sh --collect` does not fetch it
@@ -289,7 +355,9 @@ addresses can be patched as they are.
 
 `game_ocr/hooks.h` (the interface), `game_ocr/hooks.c`, `game_ocr/hooks_observer.S`,
 `core/hook_place.{h,c}`, `core/hook_stream.{h,c}`, `host/tests/test_hook_place.c`,
-`host/tests/test_hook_stream.c`, `tools/hook_place_forms.txt`, `tools/gen_hook_place_fixtures.sh`.
+`host/tests/test_hook_stream.c`, `tools/hook_place_forms.txt`, `tools/gen_hook_place_fixtures.sh`; the
+selection's `core/hook_select.{h,c}`, `host/tests/test_hook_select.c`, `host/tests/test_game_hooks.c` (the
+job path) and `host/tests/hooks_none.c` (nothing installed, for the worker's other host tests).
 The PSP probe: `game_ocr/psp_probe.{h,c}`, `core/psp_probe.{h,c}`, `core/hook_luna_psp.inc` (generated by
 `tools/gen_luna_psp.py`), `host/tests/test_psp_probe.c`, `tools/tests/test_gen_luna_psp.py`.
 History: PRs #7, #10, #12, #13, #16 and the code removed in c35ebf9.

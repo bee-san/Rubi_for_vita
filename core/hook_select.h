@@ -38,7 +38,7 @@ typedef struct {
 /* Similarity, 0..1000, of a stream's text h to OCR's text o, after normalising both (full-width forms
  * folded, whitespace and punctuation dropped): the best match of h within o (o may hold a speaker's
  * name or a second line that h lacks), scaled by how much of o h covers. Fewer than VJO_HOOK_MIN_CHARS
- * characters in h: 0. */
+ * characters in h (or in o): 0. */
 unsigned vjo_hook_similarity(const char *o, size_t on, const char *h, size_t hn);
 
 /* Before recognition: the stream this job may answer from WITHOUT OCR, or 0 (run OCR). A pinned pick
@@ -50,8 +50,11 @@ uint32_t vjo_hook_select_before(VjoHookSelect *st, uint32_t pick, const VjoHookC
                                 uint32_t *flags);
 
 /* After recognition, with OCR's text: the stream whose text replaces it (0: keep OCR's), its
- * similarity in *score (the best stream's, also when none agreed) and VJO_HOOK_R_* in *flags. Updates
- * the streak, the lock and the misses (AUTO only; a pinned or OCR-only pick never changes them). */
+ * similarity in *score (the best stream's, also when none agreed; the locked stream's when it agrees,
+ * which AUTO keeps even where another scores higher) and VJO_HOOK_R_* in *flags. Updates the streak,
+ * the lock and the misses (AUTO only; a pinned or OCR-only pick never changes them; nor does an OCR
+ * text of fewer than VJO_HOOK_MIN_CHARS characters, which is no evidence). Equal scores go to the
+ * streak's stream, then a site, then the newest seq. */
 uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr, size_t on,
                                const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags);
 

@@ -303,6 +303,13 @@ if(VJO_WITH_VOCR)
     ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
     ${ROOT}/core/sfo.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
+  # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
+  # For size, as the worker's control code is: 1,708 B of text and rodata at -Os (2,240 B at -O2).
+  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
+  set_source_files_properties(${ROOT}/core/hook_select.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
+  # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
+  set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): the debug build's worker only,
   # control code built for size, with Luna's PSP table (core/hook_luna_psp.inc) as its data.
   if(VJO_DEBUG)

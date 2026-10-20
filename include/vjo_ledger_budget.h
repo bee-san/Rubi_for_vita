@@ -176,17 +176,30 @@
  * a hook in a game thread never allocates. Not in these figures: the job path's decoder (core/hook_text.c,
  * its CP932 table), Luna's filters (core/hook_re.c) and the selection (core/hook_select.c), linked when the
  * job path calls vjo_hooks_text (hooks-select); they add their own pages then.
- * Raised in the debug build only, 131,072 -> 135,168 B, by one text page for the read-only PSP probe
+ * Raised again for API 31's job path (docs/native-hooks.md: which text a job shows, OCR's or a native hook
+ * stream's), which decodes the streams' texts (vjo_hooks_text) and so links the decoder and its CP932 table
+ * (core/hook_text.c, 12,958 B of text and rodata) and Luna's filters (their part of core/hook_luna.c, and
+ * core/hook_re.c, 3,407 B at -Os), and adds the selection (core/hook_select.c, 1,708 B at -Os, and the job
+ * path in game_ocr/main.c) [object sizes, arm-vita-eabi-gcc at the worker's flags]; its static snapshot of
+ * the streams (one stream's copy, 548 B, the texts as the job began, 2,048 B, and the candidates, 400 B) is
+ * 3,064 B more .bss, and the comparison's 2,562 B of arrays are on the worker's stack only while it compares.
+ * The debug build's text 99,016 -> 127,144 B, the normal build's 96,524 -> 124,668 B, both builds' data/bss
+ * 27,496 -> 30,560 B: debug 131,072 -> 163,840 B, normal 126,976 -> 159,744 B [measured: the build log's
+ * module rows, both builds, hooks/select 4f9dca9 with hooks/engine dca6d5f merged]. The selection alone,
+ * before the engine (a stand-in for game_ocr/hooks.c), took 98,304 -> 106,496 B in both builds: text 81,644
+ * -> 84,588 B debug, 80,344 -> 83,336 B normal, data/bss 15,752 -> 18,816 B [measured, hooks/select
+ * 7fd2cb8].
+ * Raised in the debug build only, 163,840 -> 167,936 B, by one text page for the read-only PSP probe
  * (docs/native-hooks.md "PSP probe (debug build)": game_ocr/psp_probe.c, 881 B of text, and core/psp_probe.c,
  * 5,345 B of text and rodata with Luna's PSP table's 3,515 B, both at -Os, and main.c's call): the debug build's
- * text 99,016 -> 105,312 B, 2,912 B past its page; its data/bss 27,496 -> 27,504 B (two words) fit the pages it
- * had [measured: the build log's module rows and arm-vita-eabi-size, debug build, hooks/psp-probe against its
- * parent hooks/engine dca6d5f]. No block, no thread. The normal build has none of it: its worker is byte for byte
- * its parent's. In the game's partition only. */
+ * text 127,144 -> 133,392 B, 2,320 B past its page; its data/bss 30,560 -> 30,568 B (two words) fit the pages it
+ * had [measured: the build log's module rows, debug build, hooks/psp-probe with feat/native-hooks 960ac20 merged
+ * against 960ac20; the objects' sizes: arm-vita-eabi-size]. No block, no thread. The normal build has none of
+ * it: its worker is byte for byte its parent's. In the game's partition only. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 135168u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 167936u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 126976u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 159744u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
