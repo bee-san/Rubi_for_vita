@@ -952,8 +952,8 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         if (direction || vertical) {
             /* The header's displayed rows (core/text_rows.h): Left/Right in
              * reading order across rows, stopping at the text's ends (a
-             * one-row text wraps for the arrows), Up/Down change rows,
-             * soft-wrapped ones included. */
+             * one-row text wraps for the arrows; the stick's a character a step),
+             * Up/Down change rows, soft-wrapped ones included. */
             VjoTextRows rows;
             size_t to;
 #if VJO_DEBUG

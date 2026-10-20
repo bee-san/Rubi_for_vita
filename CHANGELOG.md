@@ -42,6 +42,10 @@ On `main` since 0.8.0; the next release brings it.
   ([#213], [#216], [#217]) and taken out again ([#222]).
 - The README shows the promo film ([#206]) and says what the console runs showed ([#204]); its build
   history is now this changelog ([#224]).
+- The left stick goes a character at a time over the recognized text, in Whole word mode too, and
+  looks up the word that starts where it stops (on 昨日すき焼きを食べました, from 食べました to べ,
+  then ました); the d-pad still goes word by word. The stick's left no longer retraces the d-pad's
+  Rights, so it no longer undoes a d-pad Right that went round a one-row text ([#232]).
 
 ### On the console
 
@@ -542,3 +546,4 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#222]: https://github.com/bee-san/Rubi_for_vita/pull/222
 [#224]: https://github.com/bee-san/Rubi_for_vita/pull/224
 [#231]: https://github.com/bee-san/Rubi_for_vita/pull/231
+[#232]: https://github.com/bee-san/Rubi_for_vita/pull/232

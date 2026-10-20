@@ -244,10 +244,10 @@ app when it starts.
 | --- | --- |
 | L + R | Open or close the dictionary overlay |
 | Select + R | Toggle the subtitle strip |
-| Left / Right | Move through the text in reading order, across its rows: skip matched words in Whole word mode, one character in Character mode; Right from a row's last word goes to the next row's first, Left from a row's first to the row above's last, and the text's first and last stop the cursor. A text on one row goes round its ends (Right from the last to the first, Left from the first to the last) |
+| Left / Right | Move through the text in reading order, across its rows: skip matched words in Whole word mode, one character in Character mode (the left stick: one character in both); Right from a row's last word goes to the next row's first, Left from a row's first to the row above's last, and the text's first and last stop the cursor. A text on one row goes round its ends (Right from the last to the first, Left from the first to the last) |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position |
-| Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right as Left/Right (the shown word skipped, then a character a step; Left retraces), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too (its left still undoes a d-pad Right that went round, as any Left retraces a Right). The word is looked up once the cursor rests for `stick_lookup_ms` (200 ms), not at each step ([left stick](touch-lookup.md#the-left-stick-138)) |
+| Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right a character at a time in reading order across the rows, in Whole word mode too (the shown word is not skipped, and its left never retraces a Right), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too. With **Japanese characters only** ON it lands only on kana and kanji, OFF on every visible character, punctuation and Latin included. Once the cursor rests for `stick_lookup_ms` (200 ms), not at each step, the word starting at its character is looked up and, in Whole word mode, highlighted ([left stick](touch-lookup.md#the-left-stick-138)) |
 | Right stick | Scroll a long definition |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
@@ -368,6 +368,7 @@ keeps the character highlighted. In Whole word mode, Right advances past the
 matched source span and Left retraces up to 16 recent forward selections. With
 no match or previous selection, movement falls back to one character.
 Character mode always moves one character; Japanese-only applies to both modes.
+The left stick moves one character in both modes (below).
 The arrows follow the header as it is drawn: Left/Right go through the text in
 reading order, across its displayed rows (Right from a row's last word or
 character goes to the next row's first; Left from a row's first goes to the
@@ -381,21 +382,30 @@ the character nearest the same horizontal position, which repeated Up/Down
 keep across a shorter row. The rows and positions are the header's own
 laid-out lines and character starts, as for taps
 ([row navigation](touch-lookup.md#rows-and-arrow-keys)).
-The left stick crosses a long line faster (#138). Each arrow press looks its
+The left stick crosses a long line faster (#138), a character at a time where
+the d-pad goes a word at a time (the owner, 2026-10-20): on 昨日すき焼きを食べました,
+from 食べました the stick's right goes to べ, then to ま, whose lookup is ました,
+where the d-pad's Right goes past the whole word. Each arrow press looks its
 word up at once: 35-112 ms a step in the test.3 console run (median 56 ms, its
 31 cursor lookups in `log.txt`), and in Whole word mode Right skips a word only
 once that word's lookup is shown. The stick moves in the arrows' four
-directions, by the arrows' own rules: held, it steps through the text in
-reading order across rows (or a row up or down), one step at once, the next
-after a sixth of a second as in the Rubi app's lists, then each sooner, up
-to 20 steps a second (the cap, chosen so the cursor does not overshoot: an
-estimate, untested on a console); it stops at the text's first and
-last character, a one-row text's too, instead of going round (its left still
-undoes a d-pad Right that went round, as any Left retraces a Right). Nothing is looked up while it moves: the
-word at the cursor is looked up once the cursor has rested there for
+directions: held, it steps through the text in reading order across rows, a
+character a step whatever word is shown (or a row up or down, as Up/Down), one
+step at once, the next after a sixth of a second as in the Rubi app's lists,
+then each sooner, up to 20 steps a second (the cap, chosen so the cursor does
+not overshoot: an estimate, untested on a console); it stops at the text's
+first and last character, a one-row text's too, instead of going round. Its
+left steps a character back and never retraces a Right: the d-pad's Left
+retraces the d-pad's Rights and the stick's alike, and from inside a word the
+d-pad skipped it goes back to that word's start. Japanese-only applies to the
+stick as to the arrows and taps: ON, it lands only on kana and kanji; OFF, on
+every visible character, punctuation and Latin included, never a space or a
+line break. Nothing is looked up while it moves: once the cursor has rested for
 `stick_lookup_ms` (`config.ini`, 200 ms by default, 0-1000), or has been held
-against the text's end that long; back on the word shown before that, nothing
-is looked up again. The d-pad and taps still look up at once.
+against the text's end that long, the word starting at its character is looked
+up (the longest match there, as for a tap) and, in Whole word mode, highlighted
+as that match; back on the word shown before that, nothing is looked up again.
+The d-pad and taps still look up at once.
 The right stick scrolls a long definition (before, either stick did). Host
 tests cover the timing, the cap and the deferred lookup
 ([left stick](touch-lookup.md#the-left-stick-138)); how it feels on a

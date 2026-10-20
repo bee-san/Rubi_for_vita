@@ -559,6 +559,14 @@ its 17,952 B worst case (the header's shown text stays in it across the renders 
 render that rebuilds it holds it) [measured: the build log's module rows, both builds of main
 `50e8d4e` and this change; per-function sizes with `arm-vita-eabi-nm -S`].
 
+The left stick a character at a time (the owner, 2026-10-20; [touch-lookup.md](touch-lookup.md#the-left-stick-138)),
+on main `f482c21` (#231; `44d4e8d`'s Shell is the same): the stick's left and right take a branch of their own in `vjo_text_row_key`
+(`core/text_rows.c`, 146 → 214 B), the rest of the code unchanged. The Shell's text 98,732 → 98,812 B (debug)
+and 88,348 → 88,428 B (normal), +80 B each, data/bss unchanged (73,272 and 73,280 B), the same pages:
+176,128 and 163,840 B (exact), with 3,588 and 1,684 B of text room. No allocation, thread, static or PAF
+block; the kernel and the worker are byte-identical to main's in both builds [measured: the build log's
+module rows, both builds of main `f482c21` and `44d4e8d` and this change, VitaSDK 2026.08's gcc; `arm-vita-eabi-nm -S`].
+
 ### Tables in the data segment
 
 The normal Shell's code segment had 1,276 B of room and its data segment 3,844 B (main `50e8d4e`). A read-only table
