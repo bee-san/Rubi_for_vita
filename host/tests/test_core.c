@@ -530,7 +530,7 @@ static void test_config(void)
                       "bogus = 1\n";
     vjo_config_defaults(&c);
     TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && c.font_size_ja == 18 && c.font_size_en == 14 &&
-               c.toggle_button == VJO_TRIGGER_L_R && c.japanese_only_selection == 1);
+               c.toggle_button == VJO_TRIGGER_L_R && c.japanese_only_selection == 0); /* OFF since 2026-10-20 */
     vjo_config_parse(&c, ini, strlen(ini));
     TEST_CHECK(c.dictionary == VJO_DICT_LOCAL && !strcmp(VJO_DICT_NAME, "Local dictionaries"));
     TEST_CHECK(c.non_japanese_filter == VJO_FILTER_NONE);
@@ -658,8 +658,12 @@ static void test_config(void)
             TEST_MSG("%s", setting[i]);
         }
     }
+    /* Japanese characters only (OFF by default): on and off, in either letter case */
     vjo_config_defaults(&c);
-    const char *selection_off = "japanese_only_selection = OFF\nocr_backend = VOCR\n";
+    const char *selection_on = "japanese_only_selection = ON\nocr_backend = VOCR\n";
+    vjo_config_parse(&c, selection_on, strlen(selection_on));
+    TEST_CHECK(c.japanese_only_selection == 1 && c.n_warnings == 0);
+    const char *selection_off = "japanese_only_selection = Off\n";
     vjo_config_parse(&c, selection_off, strlen(selection_off));
     TEST_CHECK(!c.japanese_only_selection && c.n_warnings == 0);
     /* Anki mining is off unless anki_mining says on; an older file's anki_host
@@ -712,10 +716,15 @@ static void test_config(void)
         vjo_config_parse(&c, engines, strlen(engines));
         TEST_CHECK(!c.n_warnings && c.vocr_tier == VJO_VOCR_TIER_LARGE);
     }
+    /* an invalid value keeps what was there: the default (OFF), or a line's ON before it */
     vjo_config_defaults(&c);
     const char *invalid_selection = "japanese_only_selection = maybe\n";
     vjo_config_parse(&c, invalid_selection, strlen(invalid_selection));
-    TEST_CHECK(c.japanese_only_selection && c.n_warnings == 1);
+    TEST_CHECK(!c.japanese_only_selection && c.n_warnings == 1);
+    vjo_config_defaults(&c);
+    invalid_selection = "japanese_only_selection = on\njapanese_only_selection = maybe\n";
+    vjo_config_parse(&c, invalid_selection, strlen(invalid_selection));
+    TEST_CHECK(c.japanese_only_selection == 1 && c.n_warnings == 1);
     /* The stable-text wait (on by default) and the blank-line check (off by
      * default), each in its range. */
     vjo_config_defaults(&c);
@@ -833,6 +842,9 @@ static void test_config(void)
         TEST_CHECK(d.ocr_lm == 2 && d.ocr_cascade_ms == 2000 && strstr(t, "\nocr_lm = 1000k\n") &&
                    strstr(t, "\nocr_cascade_ms = 2000\n"));
         TEST_CHECK(d.stick_lookup_ms == 200 && strstr(t, "\nstick_lookup_ms = 200\n"));
+        /* Japanese characters only: OFF in both (the owner, 2026-10-20; ON before) */
+        TEST_CHECK(d.japanese_only_selection == 0 && strstr(t, "\njapanese_only_selection = off\n") &&
+                   !strstr(t, "japanese_only_selection = on"));
     }
 
     /* the same button for both: the toggle keeps it */
@@ -877,10 +889,10 @@ static void test_highlight_config(void)
     vjo_config_defaults(&c);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD);
     /* Existing saved configs gain word highlighting without changing choices. */
-    const char old[] = "ocr_backend = vocr\njapanese_only_selection = off\n";
+    const char old[] = "ocr_backend = vocr\njapanese_only_selection = on\n"; /* ON: not the default */
     vjo_config_parse(&c, old, sizeof(old) - 1);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_WORD && c.n_warnings == 0);
-    TEST_CHECK(!c.japanese_only_selection);
+    TEST_CHECK(c.japanese_only_selection == 1);
     const char character[] = "HIGHLIGHT_MODE = CHARACTER\n";
     vjo_config_parse(&c, character, sizeof(character) - 1);
     TEST_CHECK(c.highlight_mode == VJO_HIGHLIGHT_CHARACTER && c.n_warnings == 0);

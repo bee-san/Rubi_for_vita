@@ -350,12 +350,16 @@ rewritten (the [removed online dictionaries](#settings-and-dictionaries)'
 API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and the
 removed engine choice's `ocr_backend` line goes).
 
-Japanese-only selection is **ON by default**. The initial cursor and the
-arrows skip Latin text, digits, punctuation and Hangul while selecting kana
-and Han characters. It does not tokenize words or hide the recognized
-sentence. With it OFF, every visible character is selectable; the arrows skip
-spaces and line breaks. No Japanese characters means no character lookup or
-dictionary allocation.
+Japanese-only selection (**Japanese characters only**) is **OFF by default** (the
+owner's choice, 2026-10-20; ON before): every visible character is selectable, the
+initial cursor is the text's first character, and the arrows skip spaces and line
+breaks. With it ON, the initial cursor and the arrows skip Latin text, digits,
+punctuation and Hangul while selecting kana and Han characters; it does not
+tokenize words or hide the recognized sentence, and a text without Japanese
+characters means no character lookup or dictionary allocation. An update keeps
+`config.ini`'s own `japanese_only_selection` line, which the template wrote as
+`on` from 0.7.6: an install updated from an earlier build stays ON until it is
+turned OFF here.
 
 **Whole word** highlighting is the default. It highlights the actual dictionary
 match, including the original inflected text, when lookup finishes. **Character**
@@ -475,7 +479,7 @@ text_source = ocr
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
 vocr_tier = normal
 ocr_mode = auto
-japanese_only_selection = on
+japanese_only_selection = off
 log_file = on
 ```
 

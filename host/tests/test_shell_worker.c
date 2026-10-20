@@ -2362,6 +2362,8 @@ static void check_current_definition(const char *meaning, uint32_t cursor)
 static void test_japanese_only_selection_and_config_reload(void)
 {
     cursor_setup();
+    TEST_CHECK(!loaded.japanese_only_selection); /* the default, OFF since 2026-10-20: ON from config.ini here */
+    cfg.japanese_only_selection = loaded.japanese_only_selection = 1;
     fake_recognized_text = "ABC「猫」 123 한글。犬!";
     open_overlay(); finish_current_job();
     uint32_t first = (uint32_t)(strstr(local_text, "猫") - local_text);
@@ -2420,6 +2422,7 @@ static void test_japanese_only_selection_and_config_reload(void)
 static void test_no_japanese_selection_skips_dictionary_memory_and_io(void)
 {
     cursor_setup();
+    cfg.japanese_only_selection = loaded.japanese_only_selection = 1; /* ON: OFF, the default, selects any character */
     fake_recognized_text = "\xF0\x83\x81\x82" "ABC 123 한글・「」😀";
     open_overlay(); finish_current_job();
     TEST_CHECK(g_view.local_cursor_mode && g_view.japanese_only_selection);

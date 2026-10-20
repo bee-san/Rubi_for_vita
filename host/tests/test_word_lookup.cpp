@@ -122,7 +122,7 @@ void load(void)
 
 void setup(VjoConfig *cfg, VjoPlatform *p, PosixPlatform *pp)
 {
-    vjo_config_defaults(cfg); /* the release defaults: word highlight, Japanese-only, one result */
+    vjo_config_defaults(cfg); /* the release defaults: word highlight, Japanese characters only OFF, one result */
     cfg->dictionary = VJO_DICT_LOCAL;
     snprintf(cfg->local_dictionary_dir, sizeof(cfg->local_dictionary_dir), "%s", dict_dir);
     snprintf(cfg->local_dictionaries, sizeof(cfg->local_dictionaries), "plaintext.vjdict");
@@ -272,26 +272,25 @@ void worst_case_body(VjoStyled *st, VjoArena *a, const VjoEntryList *l, int ja, 
 } // namespace
 
 /* Every real line, word by word with Right as the Shell navigates before
- * the header is laid out (the whole text one row): one entry or none per
- * lookup, the highlight starting at the cursor and ending on a character
- * boundary, the popup naming the entry, Right advancing until it wraps from
- * the last word, nothing left allocated between lookups and every file
- * closed. */
-static void real_lines_walk_word_by_word(void)
+ * the header is laid out (the whole text one row), with cfg's Japanese
+ * characters only: one entry or none per lookup, the highlight starting at
+ * the cursor and ending on a character boundary, the popup naming the entry,
+ * Right advancing until it wraps from the last word, nothing left allocated
+ * between lookups and every file closed. */
+static void walk_word_by_word(VjoConfig &cfg, VjoPlatform &p)
 {
-    VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
+    const int japanese_only = cfg.japanese_only_selection;
     unsigned long lookups = 0, matched = 0, single = 0, none = 0, letters = 0, covered = 0, max_reads = 0;
     double total_us = 0, max_us = 0;
-    load(); setup(&cfg, &p, &pp);
-    TEST_CHECK(cfg.highlight_mode == VJO_HIGHLIGHT_WORD && cfg.japanese_only_selection && cfg.ocr_mode == VJO_OCR_AUTO);
     for (auto &line : lines) {
         VjoArena a; VjoOverlayData d;
         vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
         TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, line.text.c_str(), &d) == VJO_OK);
         const char *s = d.sentence;
         size_t len = strlen(s), mark = vjo_arena_mark(&a);
-        /* The Shell's first selection: the first Japanese letter (worker.c). */
-        size_t cursor = vjo_utf8_japanese_cursor_step(s, len, 0, 0);
+        /* The Shell's first selection (worker.c): the first Japanese letter, or with Japanese characters only
+         * OFF the text's start. */
+        size_t cursor = japanese_only ? vjo_utf8_japanese_cursor_step(s, len, 0, 0) : 0;
         VjoWordNavigation nav = VjoWordNavigation();
         for (size_t i = 0; i < len;) { size_t j = i; if (vjo_is_japanese_letter(vjo_utf8_next(s, len, &j))) letters++; i = j; }
         for (int guard = 0; cursor < len; guard++) {
@@ -331,11 +330,25 @@ static void real_lines_walk_word_by_word(void)
             cursor = next;
         }
     }
-    printf("\n  %zu real VOCR lines, %lu lookups: %lu entries (%lu one character), %lu without; "
-           "%lu of %lu Japanese letters inside a matched word (%.1f%%)\n"
+    printf("\n  Japanese characters only %s: %zu real VOCR lines, %lu lookups: %lu entries (%lu one character), "
+           "%lu without; %lu of %lu Japanese letters inside a matched word (%.1f%%)\n"
            "  host lookup %.1f us mean, %.1f us max; at most %lu file reads per lookup\n",
-           lines.size(), lookups, matched, single, none, covered, letters, 100.0 * covered / (letters ? letters : 1),
-           total_us / (lookups ? lookups : 1), max_us, max_reads);
+           japanese_only ? "ON" : "OFF", lines.size(), lookups, matched, single, none, covered, letters,
+           100.0 * covered / (letters ? letters : 1), total_us / (lookups ? lookups : 1), max_us, max_reads);
+}
+
+/* The walk with the release defaults (Whole word, Read text Automatically), once with Japanese characters
+ * only ON (the default until 2026-10-20, whose figures docs/touch-lookup.md gives) and once OFF, the
+ * default. */
+static void real_lines_walk_word_by_word(void)
+{
+    VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
+    load(); setup(&cfg, &p, &pp);
+    TEST_CHECK(cfg.highlight_mode == VJO_HIGHLIGHT_WORD && !cfg.japanese_only_selection && cfg.ocr_mode == VJO_OCR_AUTO);
+    cfg.japanese_only_selection = 1;
+    walk_word_by_word(cfg, p);
+    cfg.japanese_only_selection = 0;
+    walk_word_by_word(cfg, p);
 }
 
 /* The arrow keys over displayed rows of every real line (#81; the owner's rule
