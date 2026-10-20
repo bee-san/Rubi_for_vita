@@ -110,7 +110,11 @@ smaller. Nothing is read or kept at any other time; the file is never written by
 - The visit opens when Up is pressed, even while a lookup or a refresh runs (they only read the
   overlay's text, which only the control thread writes). A refresh dropped then may already have
   appended the screen's newer line: records newer than the current text's newest record are not
-  earlier lines, so that line is not shown as one (an older record of the same text still is).
+  earlier lines, so that line is not shown as one (an older record of the same text still is). The
+  rule's one cost: when the current text has no record of its own (an invalid clock or a failed append
+  wrote none, or Up came within the milliseconds before VjoNet's append of it landed) and an older
+  record has the same text (a short line said again, 「うん」), the lines between that record and now
+  are not shown; the ones before it are.
 - Within a visit no refresh runs (the shown line is not the screen's); a settled screen is
   recognized once the current text is back (the refresh waits, `refresh_pending`).
 

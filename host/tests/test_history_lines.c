@@ -140,6 +140,29 @@ static void test_lines_newer_than_the_current_text(void)
     check_lines(older, 1);
     for (int k = 2; k < VJO_HISTORY_LINES + 2; k++)
         TEST_CHECK_(h.line[k] == NULL, "line[%d] left behind", k);
+    /* A, a blank screen, A again: the writer keeps both A records (the blank reset its fingerprint), and
+     * with A the current text both are it: the newest is the current text, the older one the line after
+     * nothing kept yet, so a duplicate of it: neither is an earlier line */
+    {
+        static const char *const want[] = {"X"};
+        reset("A");
+        record(UUID, "X");
+        record(UUID, "A");
+        record(UUID, "A");
+        scan_all(VJO_FILTER_NONE);
+        check_lines(want, 1);
+    }
+    /* The rule's documented cost (docs/line-history.md): the current text with no record of its own
+     * and an older record of the same text: the lines after that record are taken for newer ones */
+    {
+        static const char *const want[] = {"X"};
+        reset("うん");
+        record(UUID, "X");
+        record(UUID, "うん");
+        record(UUID, "B"); /* the line before the current うん, which was not appended */
+        scan_all(VJO_FILTER_NONE);
+        check_lines(want, 1);
+    }
 }
 
 static void test_quotes_commas_and_wrapped_rows(void)
