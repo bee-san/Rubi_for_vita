@@ -224,15 +224,16 @@ class E2EPackageEdges(unittest.TestCase):
         gate_att = {"GATE-ATTRIBUTION.md": ("https://fixture.invalid/g", len(gate_attribution),
                                             hashlib.sha256(gate_attribution).hexdigest())}
         release = e2e_package.release
+        worker_dbg = len(check_variant.debug_only_strings(ROOT, "worker"))  # the worker's sources' debug-only strings
         cases = (  # (what, fake_package's arguments, the ocr/ files, the failed checks in order: a part of each)
             ("the normal build", {}, {}, []),
             ("the debug build", {"variant": "debug"}, {}, []),
             ("a normal package whose manifest says debug (P3a)", {"variant": "debug", "build": "normal"}, {},
              ["the debug build its manifest names (they read as normal)", "pass the debug build's own check"]),
             ("a normal package with the debug worker (P8)", {"worker": "debug"}, {},
-             ["worker: the normal build carries 1 of its sources' 1 debug-only strings"]),
+             ["worker: the normal build carries %d of its sources' %d debug-only strings" % (worker_dbg, worker_dbg)]),
             ("a debug package with the normal worker", {"variant": "debug", "worker": "normal"}, {},
-             ["worker: the debug build carries none of its sources' 1 debug-only strings"]),
+             ["worker: the debug build carries none of its sources' %d debug-only strings" % worker_dbg]),
             ("a normal app that still logs its frames (its start line says normal)",
              {"app_extra": check_variant.debug_only_strings(ROOT, "app")[0] + b"\0"}, {},
              ["app: the normal build carries 1 of its sources' 1 debug-only strings"]),
