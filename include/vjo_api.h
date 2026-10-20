@@ -69,6 +69,11 @@
 #define VJO_TEXT_SOURCE_AUTO 1u  /* hooks only in titles with a hook entry (Luna's table, Rubi's own) */
 #define VJO_TEXT_SOURCE_HOOKS 2u /* as AUTO, plus the CALL source in every game that is ON */
 #define VJO_TEXT_SOURCE_COUNT 3u
+/* The word vjoSetTextSource takes and vjoGetTextSource returns: a VJO_TEXT_SOURCE_* in its low byte, plus
+ * flags. VJO_TEXT_SOURCE_NO_SITES (config.ini hook_sites = off): install no table site, only the CALL
+ * source, so a console run can tell the two apart (audit-hooks F3). Every other bit is 0. */
+#define VJO_TEXT_SOURCE_MODE_MASK 0xFFu
+#define VJO_TEXT_SOURCE_NO_SITES 0x100u
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from

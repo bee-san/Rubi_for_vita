@@ -47,6 +47,14 @@ int vjo_hooks_stop(void);
  * imports hooked, sites refused. */
 void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused);
 
+/* Job time: stream id agreed with OCR, or the Shell pinned it: its CALL slot is never given to another
+ * caller (audit-hooks F2). No effect on a table site, or on an id that is not a stream. */
+void vjo_hooks_keep(uint32_t id);
+
+/* Job time: CALL callers that found every slot taken since the game started: dropped (no slot), replaced
+ * (they took the least recently written slot that was not kept). */
+void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced);
+
 /* Job time: stream id's latest text, copied out under its slot's try-lock. 1 when copied; 0 when the
  * stream is empty, unknown, or busy (a game thread is writing it: try again at the next job). */
 int vjo_hooks_snap(uint32_t id, VjoHookSnap *out);
