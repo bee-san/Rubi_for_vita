@@ -216,6 +216,34 @@ class Files(unittest.TestCase):
         self.assertEqual(([r.characters for r in report.records], report.incomplete), ([3], 1))
 
     @need_writer
+    def test_every_cut_and_a_record_after_it(self):
+        """A power loss can cut the last record at any byte; the next append starts right after it (the
+        writer adds no line break first). Every cut position: the cut record is skipped, every other
+        counted, and the record appended after it is read."""
+        path = self.dir / "history.csv"
+        write_history(path, RECORDS[:-1])
+        data = path.read_bytes()
+        last = data.rindex(b"\n", 0, len(data) - 1) + 1
+        (self.dir / "next.csv").unlink(missing_ok=True)
+        write_history(self.dir / "next.csv", [RECORDS[-1]])
+        after = (self.dir / "next.csv").read_bytes()
+        after = after[after.index(b"\n") + 1:]  # its record without the header
+        for cut in range(last + 1, len(data)):
+            (self.dir / "cut.csv").write_bytes(data[:cut] + after)
+            report = rs.read_history([self.dir / "cut.csv"])
+            got = ([r.characters for r in report.records], report.incomplete)
+            self.assertEqual(got, (COUNTS[:-2] + [COUNTS[-1]], 1), cut)
+
+    @need_writer
+    def test_name_like_an_identifier(self):
+        """A game's name that looks like a given_identifier does not split its record."""
+        path = self.dir / "history.csv"
+        records = [(("PROMO0002", "vjo-1-2"), 0, "名前が変", 4), (("PROMO0002", '"vita-X","vjo-1-2",'), 5, "続き", 2)]
+        write_history(path, records)
+        report = rs.read_history([path])
+        self.assertEqual(([r.characters for r in report.records], report.incomplete), ([4, 2], 0))
+
+    @need_writer
     def test_copies_count_once(self):
         a, b = self.dir / "a.csv", self.dir / "b.csv"
         write_history(a, RECORDS)

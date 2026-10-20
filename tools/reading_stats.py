@@ -33,6 +33,7 @@ import csv
 import datetime
 import io
 import math
+import re
 import sys
 import unicodedata
 from dataclasses import dataclass
@@ -122,64 +123,116 @@ class HistoryError(Exception):
     pass
 
 
-def read_rows(path: Path):
-    """The header and the complete data rows of one history file, and how many were cut short."""
+# Where a record starts: its uuid (the writer's platform, "vita" or "psp", and a title ID) and its
+# given_identifier, both quoted. Inside a quoted cell every quote is doubled, so this never matches
+# there, and only the record's first two cells can be these two (the third, the game's name, could
+# look like a given_identifier, never like a uuid as well).
+RECORD_START = re.compile(rb'"(?:vita|psp)-[^",\n]*","vjo-[0-9]+-[0-9]+",')
+
+
+def split_records(lines):
+    """Each record's bytes, from its start to the next one's: a record cut short by a power loss and
+    then followed by more appends (the writer appends after it) ends where the next one starts."""
+    current = bytearray()
+    for line in lines:
+        at = 0
+        for m in RECORD_START.finditer(line):
+            current += line[at:m.start()]
+            if current:
+                yield bytes(current)
+                current = bytearray()
+            at = m.start()
+        current += line[at:]
+    if current:
+        yield bytes(current)
+
+
+def parse_record(data: bytes, cells: int):
+    """One record's cells, or None when it is not a whole record (cut short: no final line break, or
+    fewer cells than Rubi writes)."""
+    if not data.endswith(b"\n"):
+        return None
     try:
-        data = path.read_bytes()
+        rows = list(csv.reader(io.StringIO(data.decode("utf-8", errors="replace"), newline="")))
+    except csv.Error:
+        return None
+    return rows[0] if len(rows) == 1 and len(rows[0]) >= cells else None
+
+
+def parse_chunk(data: bytes, cells: int):
+    """The whole records in what split_records gave (one, or none) and how many were cut short.
+    A record cut too short to show its start (a prefix of its first two cells: no line break) stays
+    at the end of the record before it; a quoted cell can hold a line break, but a record's last one
+    ends it, so the bytes up to the chunk's last line break are tried alone."""
+    row = parse_record(data, cells)
+    if row:
+        return [row], 0
+    nl = data.rfind(b"\n")
+    row = parse_record(data[:nl + 1], cells) if 0 <= nl < len(data) - 1 else None
+    return ([row] if row else []), 1
+
+
+def read_file(path: Path, report: Report, seen: set, names: dict) -> None:
+    """Adds one history file's records to report."""
+    try:
+        f = path.open("rb")
     except OSError as e:
         raise HistoryError(f"{path}: {e.strerror or e}") from e
-    text = data.decode("utf-8-sig", errors="replace")
-    rows = list(csv.reader(io.StringIO(text, newline="")))
-    if not rows:
-        raise HistoryError(f"{path}: empty file")
-    header = [h.strip() for h in rows[0]]
-    missing = [name for name in REQUIRED if name not in header]
-    if missing:
-        raise HistoryError(f"{path}: not a Rubi history.csv (no {', '.join(missing)} column)")
-    body = rows[1:]
-    cut = 0
-    if body and not text.endswith("\n"):  # the writer ends every record with a line break
-        body, cut = body[:-1], 1
-    need = min(len(header), len(HEADER_080))  # every cell Rubi writes up to line_metrics
-    complete = [row for row in body if len(row) >= need]
-    return header, complete, cut + len(body) - len(complete)
-
-
-def read_history(paths) -> Report:
-    report = Report(records=[])
-    seen = set()
-    for path in paths:
-        header, rows, cut = read_rows(Path(path))
+    with f:
+        first = f.readline()
+        if first.startswith(b"\xef\xbb\xbf"):
+            first = first[3:]
+        if not first.strip():
+            raise HistoryError(f"{path}: empty file")
+        header = [h.strip() for h in next(csv.reader([first.decode("utf-8", errors="replace").rstrip("\r\n")]))]
+        missing = [name for name in REQUIRED if name not in header]
+        if missing:
+            raise HistoryError(f"{path}: not a Rubi history.csv (no {', '.join(missing)} column)")
         report.files += 1
-        report.incomplete += cut
         col = {name: i for i, name in enumerate(header)}
-        # The count's cell: the header's `characters`, or the 42nd cell a newer Rubi appends to a
-        # row of a file that 0.8.0 began (its header names the first 41 only).
+        # The count's cell: the header's `characters`, or the 42nd cell a newer Rubi appends to a row of
+        # a file that 0.8.0 began (its header names the first 41 only).
         count_col = col.get("characters")
         if count_col is None and header[:len(HEADER_080)] == HEADER_080:
             count_col = len(HEADER_080)
-        for row in rows:
-            key = (row[col["uuid"]].strip(), row[col["given_identifier"]].strip())
-            try:
-                t = float(row[col["time"]])
-            except ValueError:
-                t = math.nan
-            if not key[0] or not key[1] or not math.isfinite(t) or t <= 0:
-                report.incomplete += 1
-                continue
-            if key in seen:
-                report.duplicates += 1
-                continue
-            seen.add(key)
-            line = row[col["line"]]
-            counted = characters(line)
-            cell = row[count_col].strip() if count_col is not None and count_col < len(row) else ""
-            stored = cell.isascii() and cell.isdigit()
-            if stored:
-                report.stored += 1
-                report.mismatched += int(cell) != counted
-            report.records.append(Record(game=key[0], name=row[col["name"]].strip() or key[0], time=t,
-                                         characters=int(cell) if stored else counted, stored=stored))
+        cells = min(len(header), len(HEADER_080))  # every cell Rubi writes up to line_metrics
+        for data in split_records(f):
+            rows, cut = parse_chunk(data, cells)
+            report.incomplete += cut
+            for row in rows:
+                add_row(report, seen, names, col, count_col, row)
+
+
+def add_row(report: Report, seen: set, names: dict, col: dict, count_col, row) -> None:
+    """Adds one whole record."""
+    try:
+        t = float(row[col["time"]])
+    except ValueError:
+        t = math.nan
+    key = (row[col["uuid"]].strip(), row[col["given_identifier"]].strip())
+    if not key[0] or not key[1] or not math.isfinite(t) or t <= 0:
+        report.incomplete += 1
+        return
+    if key in seen:
+        report.duplicates += 1
+        return
+    seen.add(key)
+    counted = characters(row[col["line"]])
+    cell = row[count_col].strip() if count_col is not None and count_col < len(row) else ""
+    stored = cell.isascii() and cell.isdigit()
+    if stored:
+        report.stored += 1
+        report.mismatched += int(cell) != counted
+    name = row[col["name"]].strip() or key[0]
+    # one string object per game and name, however many records: a long history stays small
+    report.records.append(Record(game=names.setdefault(key[0], key[0]), name=names.setdefault(name, name),
+                                 time=t, characters=int(cell) if stored else counted, stored=stored))
+
+
+def read_history(paths) -> Report:
+    report, seen, names = Report(records=[]), set(), {}
+    for path in paths:
+        read_file(Path(path), report, seen, names)
     report.records.sort(key=lambda r: r.time)
     return report
 
