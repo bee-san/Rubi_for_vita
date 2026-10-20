@@ -15,6 +15,7 @@
  * the job's step log, so one console run says which works. */
 #include "main.h"
 #include "hooks.h"
+#include "psp_probe.h"
 #include "../core/fbgrey.h"
 #include "../core/jpegsw.h"
 #include "../core/textnorm.h"
@@ -1508,6 +1509,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (shot) { rc = run_shot(r, out); goto done; } /* both builds: an Anki card's screenshot (API 23) */
 #if VJO_DEBUG
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
+    vjo_psp_probe_job(psp_title); /* the read-only PSP probe: once, at the first OCR job (game_ocr/psp_probe.h) */
 #else
     if (r->flags & VJO_GAME_OCR_F_PROBE) goto done; /* no probe in the normal build: VJO_E_SOURCE */
 #endif

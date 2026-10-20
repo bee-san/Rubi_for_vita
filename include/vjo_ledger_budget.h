@@ -188,9 +188,16 @@
  * module rows, both builds, hooks/select 4f9dca9 with hooks/engine dca6d5f merged]. The selection alone,
  * before the engine (a stand-in for game_ocr/hooks.c), took 98,304 -> 106,496 B in both builds: text 81,644
  * -> 84,588 B debug, 80,344 -> 83,336 B normal, data/bss 15,752 -> 18,816 B [measured, hooks/select
- * 7fd2cb8]. */
+ * 7fd2cb8].
+ * Raised in the debug build only, 163,840 -> 167,936 B, by one text page for the read-only PSP probe
+ * (docs/native-hooks.md "PSP probe (debug build)": game_ocr/psp_probe.c, 881 B of text, and core/psp_probe.c,
+ * 5,345 B of text and rodata with Luna's PSP table's 3,515 B, both at -Os, and main.c's call): the debug build's
+ * text 127,144 -> 133,392 B, 2,320 B past its page; its data/bss 30,560 -> 30,568 B (two words) fit the pages it
+ * had [measured: the build log's module rows, debug build, hooks/psp-probe with feat/native-hooks 960ac20 merged
+ * against 960ac20; the objects' sizes: arm-vita-eabi-size]. No block, no thread. The normal build has none of
+ * it: its worker is byte for byte its parent's. In the game's partition only. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 163840u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 167936u
 #else
 #define VJO_BUDGET_WORKER_MODULE_PAGES 159744u
 #endif

@@ -201,6 +201,7 @@ game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
 | normal, with Luna's table linked | 96,524 B | 27,496 B | 126,976 B |
 | debug, with the job path (the decoder, Luna's filters, the selection) | 127,144 B | 30,560 B | 163,840 B |
 | normal, with the job path (the decoder, Luna's filters, the selection) | 124,668 B | 30,560 B | 159,744 B |
+| debug, with the job path and the [PSP probe](#psp-probe-debug-build) | 133,392 B | 30,568 B | 167,936 B |
 
 [measured: the build log's module rows on hooks/engine 8aa79eb (local CI), both builds, with
 origin/hooks/luna-port merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
@@ -209,8 +210,9 @@ the text is the engine and what it links of Luna's table (its sites, version gat
 SceShell and kernel modules do not change here. The job path decodes the streams' texts
 (`vjo_hooks_text`), so it links the decoder (`core/hook_text.c` and its CP932 table) and Luna's filters
 (`core/hook_re.c`, at `-Os`), and adds the selection (`core/hook_select.c`, 1,708 B at `-Os`) and its 3,064 B
-static snapshot: the last two rows [measured: the build log's module rows on hooks/select `4f9dca9` with
-hooks/engine `dca6d5f` merged, both builds].
+static snapshot: the two job path rows [measured: the build log's module rows on hooks/select `4f9dca9` with
+hooks/engine `dca6d5f` merged, both builds]. The PSP probe's row: hooks/psp-probe with feat/native-hooks `960ac20`
+merged, against `960ac20`, whose normal build it leaves byte for byte as it was [measured, the build log's module rows].
 
 Stack: a site hit uses the observer's 328 bytes and the C frames below it on the game's thread, an
 estimate of under 1 KiB in all (not measured); a CALL hit, a few dozen bytes. CPU time per hit, and any
@@ -257,6 +259,98 @@ Hardware is paused; these are for the test issue (#230):
     every page, nothing locked.
 11. △ (hooks-api) pins a stream: its text, without OCR; OCR only: OCR's text, whatever agrees.
 
+## PSP probe (debug build)
+
+Status: built and host-tested; **not run on a console**. Nothing is hooked in a PSP game in this version.
+The probe only reads and logs, so that one console run can answer whether PSP hooks (a later round) can
+work: can the worker read PSP RAM, does the running game's ID come through, and do LunaTranslator's PSP
+addresses land on code on a console. It follows section 5 of the PSP feasibility report (hooks-psp, on
+[#230](https://github.com/bee-san/Rubi_for_vita/issues/230)); every address below comes from that
+report's sources, none has been seen on a console.
+
+**When it runs.** Only in the debug build (`game_ocr/psp_probe.c` is in no other build), only in the PSP
+emulator's process (the worker's `psp_title`: ScePspemu is loaded, or the title is the PSP emulator's or
+Adrenaline's), only when the text source is `auto` or `hooks`, and once per process: at the first OCR job
+(the first reading of the screen: in the background with **Read text: Automatically**, else at the first
+L + R; an Anki screenshot or a self-test job is not one). Adrenaline's XMB runs in the same process as the
+game started from it, and a reading there would use the probe up with no game's ID, so start the game
+from its own bubble, or set **Read text** to **Only when I press L + R** and press it first in the game. To
+probe again, close the emulator (or the bubble) and start it again. Until the text source reaches the
+worker (the kernel's `vjoGetTextSource`, hooks-api; this tree's kernel does not export it, so
+`game_ocr/main.c` `text_source` answers `ocr`), the probe does nothing in any game.
+
+**What it does.** In the worker's thread, at its lowest priority:
+
+1. `taiGetModuleInfo("ScePspemu")`: its return code and the module's NID, which tells the ScePspemu
+   build (3.60 `0x2714F07D`, 3.65-3.70 `0x3F75D4D3`, 3.71 `0xEA8C1AE2`, 3.72-3.74 `0x5459B715`, from the
+   report). Then, at each of three Vita addresses of Adrenaline's view of PSP RAM (`CONVERT_ADDRESS(a) =
+   0x68000000 + (a & 0x0FFFFFFF)`): `0x70000000` (PSP RAM's start), `0x70800000` (the user partition)
+   and `0x73CDE000` (`SceAdrenaline`, the struct Adrenaline's PSP side shares),
+   `sceKernelFindMemBlockByAddr` and `sceKernelGetMemBlockInfoByAddr`. It stops unless all three blocks
+   are found, hold their address and are readable.
+2. The 12 bytes of `SceAdrenaline.titleid` at `0x73CDE098`, read only when they lie inside a block found
+   in step 1.
+3. When Luna's PSP table lists that ID: at each of its sites (at most 16; 6 is the table's most), the four
+   32-bit words from target − 8 to target + 4, each read only when it lies inside a found block. The
+   target is Luna's PPSSPP address in the view, assuming the game's main module is where PPSSPP puts it,
+   at `0x08804000`.
+
+It never writes to the game's or the PSP's memory, makes no cache operation, calls nothing in ScePspemu,
+allocates nothing, starts no thread and does nothing at `module_start`. The report's fourth step, timing
+a 1 MiB read of the view, is left out: it matters only for a RAM scan (the report's design c), not for
+the hooks the next round builds (design a), and it would read 256 times the bytes of steps 2 and 3
+together, of a view whose layout (SceCompat's CDRAM "with hole") no console run has shown yet.
+
+Luna's PSP table is in the debug worker as `core/hook_luna_psp.inc`, generated by `tools/gen_luna_psp.py`
+from the vendored `third_party/LunaTranslator/ppsspp_1.cpp` (51884b6, the SHA-256 pin of
+`gen_luna_vita.py`): for each of its 415 entries only the address and the title IDs. That is 354 IDs and
+431 sites (an entry that names several IDs is a site of each), 3,515 bytes: each ID packed in a word as
+its prefix's index (5 prefixes, `ULJM` ...) and its number. Which register, encoding and filter a site
+has is in Luna's source, found by its address.
+
+**Where.** Appended to `ux0:data/VitaJPOverlay/hooks.log`, which the worker rewrites at each game start
+when the text source is not `ocr` ([Logs](#logs)); `tools/install_ftp.sh --collect` does not fetch it
+yet, so copy it with VitaShell (FTP or USB). Each line is written before the probe's next read, so if a
+read faulted the log would end at the step that caused it.
+
+**How to read it.** Every line starts `psp probe 1:` (the 1 is the format's version); every number is raw,
+in hex unless it counts something:
+
+| Line | What it says |
+| --- | --- |
+| `start: text source S` | the probe ran; S is the text source (1 `auto`, 2 `hooks`) |
+| `ScePspemu: rc R nid N` | `taiGetModuleInfo`'s answer and the module NID (above) |
+| `block A: uid U info I base B size Z memtype M access X type T ok` | the block at Vita address A: U the block's UID (negative: none found), I `sceKernelGetMemBlockInfoByAddr`'s answer, then its base and size, memory type (`0xD0` cached, `0x80` uncached), access (`0x4` readable) and block type; `ok` or `bad` (step 1's check). One UID on all three lines: one block holds all of PSP RAM |
+| `titleid A: <24 hex digits> "<text>"` | the 12 bytes at A and their printable part, up to the first NUL (other bytes as `.`); `outside the blocks`: not read |
+| `luna ID: T sites, R read` or `luna ID: not listed` | Luna's entries for the ID (empty when the bytes are not an ID) |
+| `site P at V: W0 W1 W2 W3` | Luna's site P (a PSP address), V its Vita address, and the words at V − 8, V − 4, V and V + 4 (MIPS instruction words, as loaded); `--------`: outside the blocks, not read |
+| `stop: <why>` or `done` | the probe ended early, or finished |
+
+Telling what the words are is left to a host script of a later round. For a first look: Luna's sites are
+block starts in PPSSPP, so W2 is often a function's first instruction, `addiu sp, sp, -N` (`27BDxxxx`),
+or the instruction after a call, which is then two words back in W0 (`jal`, `0Cxxxxxx`). Words like these
+at most sites say the `0x08804000` base holds on a console; data, zeros or the same words at every site
+say it does not, or that the view is not where the report expects.
+
+**To test on a console** (hardware is paused; for #230), with the debug build and `text_source = auto`:
+
+1. A PSP game Luna lists, under Adrenaline: ましろ色シンフォニー *mutsu-no-hana `ULJM05889` (one site,
+   `0x08868AB8`), started from its bubble (When it runs, above). Wait for text, press L + R once. The game
+   and the popup work as before; then copy `hooks.log`. Expected: `start`, the ScePspemu line, three `block` lines ending `ok`, `titleid ...
+   "ULJM05889"`, `luna ULJM05889: 1 sites, 1 read`, one `site 0x08868AB8 at 0x70868AB8:` line, `done`.
+   咎狗の血 True Blood Portable `ULJM05795` (one site, `0x08836918`) too, if at hand.
+2. A PSP game Luna does not list, e.g. MEMORIES OFF `ULJM05334` (Luna names it only in a comment): the
+   same up to `luna ULJM05334: not listed`, then `done`.
+3. L + R again, several times: no second probe in the same emulator process.
+4. With `text_source = ocr`: no `psp probe` line (no `hooks.log` at all).
+5. If a game stops at the first L + R: send `hooks.log` (its last line is the step) and the crash dump
+   (`--collect` fetches the dumps).
+
+The answers decide the next round: a `bad` block or a fault means the worker cannot read PSP RAM this way
+(the report's fallbacks: `ScePspemuConvertAddress`, or a small kernel syscall); a missing or wrong title ID
+means the disc ID must come another way; function entries and return points at the sites mean Luna's
+addresses can be patched as they are.
+
 ## Files
 
 `game_ocr/hooks.h` (the interface), `game_ocr/hooks.c`, `game_ocr/hooks_observer.S`,
@@ -264,4 +358,6 @@ Hardware is paused; these are for the test issue (#230):
 `host/tests/test_hook_stream.c`, `tools/hook_place_forms.txt`, `tools/gen_hook_place_fixtures.sh`; the
 selection's `core/hook_select.{h,c}`, `host/tests/test_hook_select.c`, `host/tests/test_game_hooks.c` (the
 job path) and `host/tests/hooks_none.c` (nothing installed, for the worker's other host tests).
+The PSP probe: `game_ocr/psp_probe.{h,c}`, `core/psp_probe.{h,c}`, `core/hook_luna_psp.inc` (generated by
+`tools/gen_luna_psp.py`), `host/tests/test_psp_probe.c`, `tools/tests/test_gen_luna_psp.py`.
 History: PRs #7, #10, #12, #13, #16 and the code removed in c35ebf9.

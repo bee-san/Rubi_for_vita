@@ -133,11 +133,13 @@ build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 build hook_text -I third_party/bearssl/inc -I "$BS" host/tests/test_hook_text.c core/hook_text.c "$BS/hash/sha2small.c" \
   "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
 build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c
+# The debug build's PSP probe (core/psp_probe.c): its reads' bounds in 32-bit arithmetic.
+build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
 TESTS+=(touch_hold text_rows text_join linebreak hook_select stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
-TESTS+=(hook_text hook_luna)
+TESTS+=(hook_text hook_luna psp_probe)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime

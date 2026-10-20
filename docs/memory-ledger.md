@@ -25,11 +25,11 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   shell pages                         217,088      237,568    1,048,576      811,008
   shell paf                             8,192      225,280      985,088      759,808
   kernel                              151,552      241,664      241,664            0
-  game                                167,936   10,567,680   10,567,680            0
+  game                                204,800   10,567,680   10,567,680            0
   packaged modules (loaded pages vs declared budget)
-      VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (40,484->40,960 + 77,636->77,824)
-      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (98,732->102,400 + 73,272->73,728)
-      VitaJPOverlay_OCR         131,072 B of    131,072 B declared (99,016->102,400 + 27,496->28,672)
+      VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (40,484->40,960 + 77,700->77,824)
+      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (98,748->102,400 + 73,304->73,728)
+      VitaJPOverlay_OCR         167,936 B of    167,936 B declared (133,392->135,168 + 30,568->32,768)
 ```
 
 Every Shell configuration is the shipped one since Google Lens and the Hachidori relay were
