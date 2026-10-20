@@ -284,7 +284,8 @@ static void site_hit(unsigned i, const uint32_t *regs)
         enc = si->ver->encoding;
         unit = enc == VJO_HOOK_ENC_UTF16LE ? 2u : 1u;
         n = read_game(NULL, regs[si->ver->reg] + (uint32_t)si->ver->padding, scratch, sizeof(scratch), unit);
-        if (n <= unit) n = 0; /* only the NUL: no text */
+        /* the text without its NUL unit, as vjo_luna_capture counts it */
+        if (n >= unit && !scratch[n - 1] && (unit == 1 || !scratch[n - 2])) n -= unit;
     } else if (si->luna) {
         n = vjo_luna_capture(si->luna, regs, read_game, NULL, scratch, sizeof(scratch), &enc);
         if (n > sizeof(scratch)) n = 0;

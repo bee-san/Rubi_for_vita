@@ -147,12 +147,12 @@ game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
 | --- | --- | --- | --- |
 | debug, before | 81,644 B | 15,752 B | 98,304 B |
 | debug, the engine alone | 88,904 B | 27,496 B | 118,784 B |
-| debug, with Luna's table linked | 98,984 B | 27,496 B | 131,072 B |
+| debug, with Luna's table linked | 99,016 B | 27,496 B | 131,072 B |
 | normal, before | 80,344 B | 15,752 B | 98,304 B |
-| normal, with Luna's table linked | 96,476 B | 27,496 B | 126,976 B |
+| normal, with Luna's table linked | 96,524 B | 27,496 B | 126,976 B |
 
-[measured: the build log's module rows on hooks/engine, both builds, with origin/hooks/luna-port 5434ab5
-merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
+[measured: the build log's module rows on hooks/engine 8aa79eb (local CI), both builds, with
+origin/hooks/luna-port merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
 header's API 26 figure.] The data is the slots (20 x 548 B = 10,960 B) and the capture buffer (512 B);
 the text is the engine and what it links of Luna's table (its sites, version gate and capture). The
 SceShell and kernel modules do not change here. The job path's decoder (`core/hook_text.c` and its CP932
