@@ -653,6 +653,9 @@ static const char OOM_GAME_UNKNOWN[] VJO_DATA_TABLE(OOM_GAME_UNKNOWN) = "The gam
  * segment as the others: line history's code took the normal Shell's text room (docs/line-history.md). */
 static const char OOM_SHELL_RESULTS[] VJO_DATA_TABLE(OOM_SHELL_RESULTS) = "Text was recognized, but Shell UI memory is too "
     "low for dictionary results. Restart the Vita and try again.";
+/* The model's storage unavailable to the game (ENODEV): run_vocr. */
+static const char MODEL_STORAGE[] VJO_DATA_TABLE(MODEL_STORAGE) = "The local OCR model storage is unavailable to this game. "
+    "See log.txt for details.";
 
 #ifdef VJO_WITH_VOCR
 /* Which part of the game worker's memory check failed: no OCR can fit
@@ -1243,7 +1246,7 @@ static int run_vocr(VjoOverlayData *out)
         if (out->err.rc == VJO_E_OCR_MODEL) {
             /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
             if ((uint32_t)vocr_result.io_error == 0x80010013u)
-                out->err.detail = "The local OCR model storage is unavailable to this game. See log.txt for details.";
+                out->err.detail = MODEL_STORAGE;
             else if ((uint32_t)vocr_result.io_error == 0x8001000Du)
                 out->err.detail = "Access to the local OCR model was denied. See log.txt for details.";
         }

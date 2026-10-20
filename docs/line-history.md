@@ -76,7 +76,7 @@ The task left two sources open: a bounded RAM ring of recent texts, or a bounded
 (Automatically only, which is what `history.csv` records), and the evidence settles the rest:
 
 - **The Shell's code pages were nearly full.** On main `f482c21` the normal Shell had 1,764 B of text
-  room in its 90,112 B of text pages, which `tools/check_memory_ledger.py` checks exactly
+  room in its 90,112 B of text pages (1,684 B since #232, `75041a0`), which `tools/check_memory_ledger.py` checks exactly
   [measured: the build log's module row]. AGENTS.md rule 1: its permanent footprint may only shrink.
 - **A RAM ring is permanent SceShell memory.** 32 lines kept for the moment Up is pressed would hold
   the texts in SceShell's `.bss` (or a permanent Paf block) for the whole session, beside a game; the
@@ -116,22 +116,22 @@ smaller. Nothing is read or kept at any other time; the file is never written by
 
 ## Memory and pages
 
-Every figure from the build log's module rows and ledger, both builds, main `f482c21` (the same modules as
-`44d4e8d`, this work's first base) and this change,
+Every figure from the build log's module rows and ledger, both builds, main `75041a0` (#232's left stick
+on `f482c21`) and this change,
 VitaSDK gcc 15.2.0 in `vitasdk/vitasdk:2026.08` [measured]:
 
-| | main `f482c21` | this change | room left |
+| | main `75041a0` | this change | room left |
 |---|---:|---:|---:|
-| normal Shell, text | 88,348 B | 90,044 B (+1,696) | 68 B of 90,112 |
-| normal Shell, data/bss | 73,280 B | 73,520 B (+240) | 208 B of 73,728 |
-| debug Shell, text | 98,732 B | 100,460 B (+1,728) | 1,940 B of 102,400 |
-| debug Shell, data/bss | 73,272 B | 73,512 B (+240) | 216 B of 73,728 |
+| normal Shell, text | 88,428 B | 90,028 B (+1,600) | 84 B of 90,112 |
+| normal Shell, data/bss | 73,280 B | 73,600 B (+320) | 128 B of 73,728 |
+| debug Shell, text | 98,812 B | 100,444 B (+1,632) | 1,956 B of 102,400 |
+| debug Shell, data/bss | 73,272 B | 73,592 B (+320) | 136 B of 73,728 |
 | kernel / OCR worker data/bss | | +8 B each | `VjoLedger`'s eleventh item |
 
 The pages stay 163,840 B (normal, exact) and 176,128 B (debug); the kernel and the worker keep theirs.
 The normal Shell's text pays for line history's code with `core/textfilter.c` built `-Os` (its object
-288 → 240 B) and three strings in the data segment (`VJO_DATA_TABLE`: line history's two and the
-dictionary's out-of-memory message, 108 B, moved out of `.rodata`); per function in
+288 → 240 B) and four strings in the data segment (`VJO_DATA_TABLE`: line history's two, and two of
+`shell/worker.c`'s cold error messages, 108 and 82 B, moved out of `.rodata`); per function in
 [memory-ledger.md](memory-ledger.md#tables-in-the-data-segment).
 
 - **Paf, `VJO_SL_PAF_HISTORY` (16,384 B)**: one block per visit, from the first Up past the top row to
@@ -148,7 +148,7 @@ dictionary's out-of-memory message, 108 B, moved out of `.rodata`); per function
   `vjo_buf_append` 16, `buf_reserve` 40, `vjo_arena_extend_last` 16; `history_show`'s 112 B, with its
   `VjoState`, is beside it), under the thread's config load
   (`apply_config` alone is 1,352 B) [measured: `arm-vita-eabi-gcc -Os -fstack-usage` with the Vita
-  build's flags, both builds the same, main `f482c21` and this change; the SDK's own calls not
+  build's flags, both builds the same, main `75041a0` and this change; the SDK's own calls not
   counted].
 - **The overlay's text arena** (`VJO_BUDGET_PAF_UI`, 20,480 B): the header's spans go from 1 to 5
   (`VJO_HEADER_SPANS`: the text and each neighbour's row and line break), so its need goes from
