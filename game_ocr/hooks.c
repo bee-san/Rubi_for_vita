@@ -304,13 +304,16 @@ uintptr_t vjo_hooks_observe(unsigned slot, uint32_t *frame)
     uintptr_t cont;
     enter();
     slot &= VJO_HOOK_SITE_STREAMS - 1u;
+    /* the continuation first: taiHEN's hook record is valid until the hook is released, and
+     * vjo_hooks_stop releases it only after clearing live; a thread counted in in_flight keeps the
+     * module (and this code) loaded */
+    cur = (const struct _tai_hook_user *)site_ref[slot];
+    next = (const struct _tai_hook_user *)cur->next;
+    cont = (uintptr_t)(next ? next->func : cur->old);
     if (live && slot < n_sites) {
         frame[15] = site_info[slot].addr;
         site_hit(slot, frame);
     }
-    cur = (const struct _tai_hook_user *)site_ref[slot];
-    next = (const struct _tai_hook_user *)cur->next;
-    cont = (uintptr_t)(next ? next->func : cur->old);
     leave();
     return cont;
 }
