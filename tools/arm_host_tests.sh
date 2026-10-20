@@ -109,6 +109,8 @@ build text_join host/tests/test_textjoin.c core/textjoin.c core/utf.c
 build linebreak host/tests/test_linebreak.c core/linebreak.c core/utf.c
 # Native hooks: which text a job shows (core/hook_select.h), as the game worker runs it on the A9.
 build hook_select host/tests/test_hook_select.c core/hook_select.c
+# Persisted learning has a fixed byte layout, independent of pointer/size_t width.
+build hook_cache host/tests/test_hook_cache.c core/hook_cache.c
 # Line history (docs/line-history.md): history.csv's records read back from a window, 32-bit size_t.
 build history_lines host/tests/test_history_lines.c core/history_lines.c core/textfilter.c core/utf.c core/arena.c
 # The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
@@ -148,12 +150,14 @@ build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
 # (taiHEN, modulemgr, io: host/tests/hooks_stubs, then game_stubs) instead of vita_stubs.
 "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu99 -Wall -Wextra -Wno-unused-parameter \
   -I third_party/acutest/include -I host/tests -I host/tests/hooks_stubs -I host/tests/game_stubs -DVJO_HOST=1 \
+  -I third_party/bearssl/inc -I "$BS" \
   -DVJO_DEBUG="$VJO_DEBUG" -o "$OUT/hooks_engine" host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c \
-  core/hook_luna.c core/hook_re.c core/hook_text.c core/sfo.c
+  core/hook_luna.c core/hook_re.c core/hook_text.c core/sfo.c "$BS/hash/sha2small.c" \
+  "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak history_lines hook_select stick_cursor cursor_nav settings_layout shell_log shell_history apkg psp taicfg shot_trim)
+TESTS+=(touch_hold text_rows text_join linebreak history_lines hook_select hook_cache stick_cursor cursor_nav settings_layout shell_log shell_history apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
