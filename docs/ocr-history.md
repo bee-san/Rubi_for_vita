@@ -111,7 +111,7 @@ numbers with all leave it out:
 
 | Tracker | What it counts | Where |
 | --- | --- | --- |
-| GameSentenceMiner (its statistics) | code points, once every Unicode punctuation mark, symbol and separator (`[\p{P}\p{S}\p{Z}]`) is removed from every line its statistics read | [`util/database/db.py`](https://github.com/bpwhelan/GameSentenceMiner/blob/7a46a00e8816f3cd39891cef2c9d01e5ac88fc78/GameSentenceMiner/util/database/db.py#L37) `PUNCTUATION_REGEX_PATTERN`, `clean_text_for_stats` |
+| GameSentenceMiner (its statistics) | code points, once every Unicode punctuation mark, symbol and separator (`[\p{P}\p{S}\p{Z}]`) is removed: the daily rollups behind its dashboard, charts and reading speed read lines that way (a few other views, such as its games list's totals, `/api/games-list`, take SQLite's `LENGTH` of the raw line) | [`util/database/db.py`](https://github.com/bpwhelan/GameSentenceMiner/blob/7a46a00e8816f3cd39891cef2c9d01e5ac88fc78/GameSentenceMiner/util/database/db.py#L37) `PUNCTUATION_REGEX_PATTERN`, `clean_text_for_stats` |
 | exSTATic | UTF-16 units, once a fixed list of brackets and marks (Japanese ones, and `( ) [ ] . , ' " ?`), spaces, tabs and line breaks is removed | [`src/calculations.ts`](https://github.com/KamWithK/exSTATic/blob/8543967fb9bdf70154f521e3c8c68aa18da1339f/src/calculations.ts#L4) `IGNORE`, `charsInLine` |
 | ッツ Ebook Reader (ttsu) | code points of 0-9 and A-Z (either case, either width), kana, ー, 々〆〇〻, ○◯, half-width katakana, CJK radicals and ideographs; nothing else | [`get-character-count.ts`](https://github.com/ttu-ttu/ebook-reader/blob/e7ec1d2680b5121b97102753d14a7a49a9003761/apps/web/src/lib/functions/get-character-count.ts#L13) `isNotJapaneseRegex` |
 
