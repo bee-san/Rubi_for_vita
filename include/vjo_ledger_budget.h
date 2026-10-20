@@ -164,8 +164,8 @@
  * budget.
  * Raised from 98,304 B by two text pages and three data pages for API 31, the native text hooks' engine
  * (docs/native-hooks.md: game_ocr/hooks.c and hooks_observer.S, core/hook_place.c, core/hook_stream.c,
- * core/sfo.c, at -Os), in both builds: the debug build's text 81,644 -> 88,584 B and data/bss 15,752 ->
- * 27,488 B, the normal build's text 80,344 -> 86,316 B and data/bss 15,752 -> 27,488 B: 98,304 -> 118,784 B
+ * core/sfo.c, at -Os), in both builds: the debug build's text 81,644 -> 88,680 B and data/bss 15,752 ->
+ * 27,496 B, the normal build's text 80,344 -> 86,396 B and data/bss 15,752 -> 27,496 B: 98,304 -> 118,784 B
  * [measured: the build log's module rows, both builds, hooks/engine; the debug "before" is the same tree with
  * the engine unreferenced (81,644 + 15,752, as main's), the normal "before" this header's API 26 figure]. The
  * data is the 20 stream slots' static storage (VJO_HOOK_STREAMS x 548 B = 10,960 B: a stream's 512 raw bytes
