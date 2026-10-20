@@ -251,7 +251,6 @@ app when it starts.
 | Right stick | Scroll a long definition |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
-| Triangle | The next text source for this game session: Automatic, each native text hook that holds text, OCR only, then Automatic again; the screen is read again with it. Nothing in a game where Rubi installed no hook ([native text hooks](#native-text-hooks)) |
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
 | Cancel | Close the overlay |
@@ -306,16 +305,10 @@ console yet: everything below is what the code does, checked on the host.
   screen with no new hook line is read by OCR again; a disagreement makes OCR read every page until
   the hook agrees again, and two in a row unlock it. So a locked hook that turns wrong (it runs ahead
   of the screen, or its latest line is a speaker's name or a menu's text) shows at most two wrong
-  pages; Triangle to **OCR only** stops it at once.
-- **Triangle** in the overlay cycles this game session's source: Automatic, each hook that holds
-  text (by number), **OCR only**, Automatic. A hook picked so is pinned: it answers without
-  recognition while the game runs, or OCR does when it has no text. The game never sees Triangle (its
-  controls are blocked while the overlay is open, and a button still held as it closes stays hidden
-  until released). Starting another game goes back to Automatic.
-- **The label**, on the body's first line (beside `L/R Dictionary 1 of 2` when that shows), says where
-  the text came from: `OCR`, `Hook 2/5` (the second of five hooks with text agreed with OCR),
-  `Hook 2/5 locked`, `Hook 2/5 pinned`, `OCR, Hook 2/5 empty` (pinned, no text: OCR's), `OCR only`, or
-  `Automatic` while a new pick is read. A game with no hook installed shows no label.
+  pages. To disable hooks, choose **OCR only** in the Rubi app and restart the game.
+- **The popup** shows the dialogue and dictionary entries. Source selection is automatic; there is
+  no hook number, source-status label or Triangle source picker. Technical source details remain in
+  the debug log.
 - **The Games page** tags a game with a hook entry: `Hook` for Rubi's own, `Luna hook` for a ported
   site in LunaTranslator's table (its entries are not checked by Rubi; the worker installs one only where
   the game's code there looks as the entry expects). The seven titles above, whose every site in the

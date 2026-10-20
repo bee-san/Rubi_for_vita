@@ -432,11 +432,6 @@ static void render(int new_content)
     if (vjo_styled_init(&body, &s_ui, BODY_UNITS, MAX_SPANS) == 0) {
         have_body = 1;
         vjo_styled_dict_page(&body, s_dict_page, s_dict_pages, en);
-        if (g_view.hook_label[0]) { /* API 31: where the text came from, on the page's line */
-            if (body.len)
-                vjo_styled_puts(&body, " · ", VJO_RGB_RANK, en);
-            vjo_styled_puts(&body, g_view.hook_label, VJO_RGB_RANK, en);
-        }
         if (const char *notice = vjo_view_notice()) { /* the Rubi app is not the plugins' (once) */
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_ERROR, en);
@@ -1035,8 +1030,6 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         vjo_post_command(VJO_CMD_CLOSED, NULL);
     if (pressed & SCE_CTRL_SQUARE)
         enter_region_mode();
-    if (pressed & SCE_CTRL_TRIANGLE) /* API 31: the next text source (the game never sees it: the block) */
-        vjo_post_command(VJO_CMD_HOOK_PICK, NULL);
 }
 
 static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)

@@ -92,8 +92,8 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
   caller claims a free CALL slot (9-20). When all 12 hold other callers, it takes the one written least
   recently (a slot that never had text first) that is not kept, under that slot's try-lock: the slot's
   key, hits and text become the new caller's, so a job's snapshot sees another key for that ID; a busy
-  slot, or every slot kept, drops the hit, never waiting. A stream that agreed with OCR, and a stream the
-  Shell pinned, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. An agreeing
+  slot, or every slot kept, drops the hit, never waiting. A stream that agreed with OCR, and a stream pinned by a
+  diagnostic request, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. An agreeing
   stream is kept only while its slot still holds the caller the job's snapshot saw (checked under the
   slot's lock), so a slot another caller took during the job is not kept for the new one. The job's
   result says `VJO_HOOK_R_CALLS_FULL` (0x40 in `hook_flags`, the debug log's `flags`) once a caller found
@@ -182,7 +182,7 @@ text is copied out and decoded into a static 2,048-byte pool, each text at most 
 of double-byte CP932 whole); the stream the job's pick names (pinned or locked) first, then the newest
 texts, so a pool that fills cuts the oldest. Then, by the request's `hook_pick`:
 
-- **Pinned** (a stream ID, the Shell's △): that stream's text, without recognition; OCR when it has none.
+- **Pinned** (a stream ID in a diagnostic request): that stream's text, without recognition; OCR when it has none.
 - **OCR only** (`VJO_HOOK_PICK_OCR`): OCR's text. The self-test's jobs (every line recognized, or the
   fallback forced) are OCR only whatever their pick.
 - **Automatic** (`VJO_HOOK_PICK_AUTO`): OCR runs, and a stream whose text agrees with OCR's (similarity
@@ -204,8 +204,12 @@ texts, so a pool that fills cuts the oldest. Then, by the request's `hook_pick`:
   `locked_name_alone` none for the audit's 2-character name then 4-character one, 2 for a 4-character
   name first, `locked_ui_string` 1 and 2, `locked_backlog_and_reread` 1 each, `locked_checked_by_ocr` none).
   The bound is on pages in a row: a stream that is wrong only on some pages and right at each check could
-  show a wrong page again after a check it passed. The way out in the game is △ to `OCR only`; for every
-  game, `text_source = ocr` from the next game start ([Recovery](#recovery)).
+  show a wrong page again after a check it passed. To disable hooks, set Text source to **OCR only**
+  in the Rubi app and restart the game ([Recovery](#recovery)).
+
+The Shell's normal jobs always request Automatic. The popup has no hook labels or source picker;
+source IDs, flags and scores stay in the debug log. The job protocol retains explicit stream and
+OCR-only requests for diagnostics and the self-test.
 
 A job a stream answers reads only the region's first capture pass (a strip at a time into one strip's
 block, under the job's reserve, as the probe reads), so the kernel publishes its capture (`capture_seq`,
@@ -343,8 +347,10 @@ Hardware is paused; these are for the test issue (#230):
     latest copy is a speaker's name or a UI string of 4 characters or more: at most 2 pages in a row show
     that text instead of the screen's (NO_OCR), then OCR's check misses, OCR's text is shown on every page,
     and the second miss unlocks it (UNLOCK in the debug log). A name of 2 or 3 characters (朋也) is never
-    shown alone. If it happens: △ to `OCR only` for the game, or `text_source = ocr` from the next game start.
-11. △ (hooks-api) pins a stream: its text, without OCR; OCR only: OCR's text, whatever agrees.
+    shown alone. If it happens, set `text_source = ocr` and restart the game.
+11. The popup shows text without hook numbers or source-status labels. Triangle does not change the
+    text source. Normal jobs keep `hook_pick = VJO_HOOK_PICK_AUTO`; diagnostic jobs can still request
+    a stream directly through the job protocol.
 
 ## PSP probe (debug build)
 

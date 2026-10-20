@@ -777,8 +777,7 @@ int vjoOcrCancel(uint32_t seq) { return 0; }
 static void reset(void)
 {
     /* API 31: no game session's hook state, no hook fields in the results */
-    hook_pid = 0; hook_pick = VJO_HOOK_PICK_AUTO; hook_installed = hook_result = 0;
-    hook_streams = hook_from = hook_flags = hook_logged[0] = 0;
+    hook_pid = 0; memset(hook_logged, 0, sizeof(hook_logged));
 #ifdef VJO_WITH_VOCR
     memset(fake_hook, 0, sizeof(fake_hook));
 #endif
@@ -1329,14 +1328,10 @@ static int run_vocr_job(void)
  * largest's model naming it; the tier it reports is the one the worker ran, whose
  * model name (the self-test's stage record and the Anki cards read it after the
  * job) is a constant, never the request's copy, a local of the call. */
-/* API 31, native text hooks, the Shell's side: config.ini's text_source reaches the kernel at every config
- * read, a game's exit included (its worker reads it as the next game starts, before the Shell sees that
- * game); each user job sends the session's hook pick (the self-test's stages OCR only); the results' hook
- * fields make the overlay's label and the log lines (counts in both builds, the source in the debug build);
- * △ cycles the pick and reads the screen again, and does nothing where the worker hooked nothing; a resume
- * keeps the pick, another game session is automatic again. */
+/* Normal reads always let the game select the source. Source metadata stays in diagnostic logs,
+ * including across resume and a new game session; self-test jobs still force OCR. */
 static void finish_current_job(void);
-static void test_native_hooks_pick_label_and_text_source(void)
+static void test_native_hooks_automatic_text_source_and_diagnostics(void)
 {
     VjoGameOcrResult result;
     unsigned ran = 0;
@@ -1344,79 +1339,44 @@ static void test_native_hooks_pick_label_and_text_source(void)
     fake_recognized_text = "猫";
     text_source_pushes = 0;
     activate(PS_GAME_PID, "PCSG00415", VJO_GAME);
-    TEST_CHECK(text_source_pushed == VJO_TEXT_SOURCE_AUTO && text_source_pushes == 1); /* the default, auto */
-    /* a game where nothing is hooked: automatic, no label, △ does nothing */
+    TEST_CHECK(text_source_pushed == VJO_TEXT_SOURCE_AUTO && text_source_pushes == 1);
     open_over_the_game();
     job_cfg = cfg; job_generation = game_generation;
-    snprintf(job_title, sizeof(job_title), "%s", title_id); /* as start_job does */
+    snprintf(job_title, sizeof(job_title), "%s", title_id);
     (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
-    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO && hook_result && !hook_installed);
+    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
     TEST_CHECK(DLOGGED("hooks in PCSG00415: text source ocr, 0 table sites and 0 string copies hooked, 0 sites refused"));
-    view_publish(1, NULL, "", 0);
-    TEST_CHECK(g_view.hook_label[0] == 0);
-    vjo_post_command(VJO_CMD_HOOK_PICK, NULL); on_command();
-    TEST_CHECK(hook_pick == VJO_HOOK_PICK_AUTO && !job_running);
-    /* the worker hooked a site and eight string copies: streams 1, 9 and 12 hold text; 9 agreed */
+
     const uint32_t streams = VJO_HOOK_STREAM_BIT(1) | VJO_HOOK_STREAM_BIT(9) | VJO_HOOK_STREAM_BIT(12);
     const uint32_t hooked[7] = {9, VJO_HOOK_R_AGREED, 820, streams, VJO_TEXT_SOURCE_AUTO, 1u << 16 | 8u, 2};
     memcpy(fake_hook, hooked, sizeof(fake_hook));
-    unsigned lines;
     (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
+    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO && result.text_from == 9);
     TEST_CHECK(logged("hooks in PCSG00415: text source auto, 1 table sites and 8 string copies hooked, 2 sites refused"));
     TEST_CHECK(DLOGGED("game vocr source: hook 9, flags 0x01, score 820, streams 0x00901, pick 0"));
-    view_publish(1, NULL, "", 0);
-    TEST_CHECK(!strcmp(g_view.hook_label, "Hook 2/3"));
-    lines = log_count;
-    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1); /* the same counts: not logged again */
+    unsigned lines = log_count;
+    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
     unsigned again = 0;
     TEST_ASSERT(log_count - lines <= 32u);
     for (unsigned i = lines; i < log_count; i++) again += strstr(log_lines[i % 32], "hooks in ") != NULL;
     TEST_CHECK(again == 0);
-    /* △: stream 1, pinned; the screen is read again with it (the overlay waits for that job) */
-    vjo_post_command(VJO_CMD_HOOK_PICK, NULL); on_command();
-    TEST_CHECK(hook_pick == 1 && job_running && !hook_result);
-    TEST_CHECK(!strcmp(g_view.hook_label, "Hook 1/3 pinned") && !strcmp(g_view.status, "Recognizing…"));
-    fake_hook[0] = 1; fake_hook[1] = VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE;
-    finish_current_job();
-    TEST_CHECK(fake_game_request.hook_pick == 1 && hook_result && hook_from == 1);
-    TEST_CHECK(!strcmp(g_view.hook_label, "Hook 1/3 pinned"));
-    /* △ during a job: it is cancelled, the next one runs with the new pick */
-    vjo_post_command(VJO_CMD_HOOK_PICK, NULL); on_command();
-    TEST_CHECK(hook_pick == 9 && job_running);
-    vjo_post_command(VJO_CMD_HOOK_PICK, NULL); on_command();
-    TEST_CHECK(hook_pick == 12 && job_running && job_cancelled && ov == OV_OPEN_OLD_JOB);
-    TEST_CHECK(!strcmp(g_view.hook_label, "Hook 3/3 pinned"));
-    fake_hook[0] = 0; fake_hook[1] = 0; /* its stream had no text: OCR answered */
-    finish_current_job(); /* the cancelled one */
-    TEST_CHECK(job_running); /* the new pick's */
-    finish_current_job();
-    TEST_CHECK(fake_game_request.hook_pick == 12 && !strcmp(g_view.hook_label, "OCR, Hook 3/3 empty"));
-    vjo_post_command(VJO_CMD_HOOK_PICK, NULL); on_command();
-    TEST_CHECK(hook_pick == VJO_HOOK_PICK_OCR && !strcmp(g_view.hook_label, "OCR only"));
-    finish_current_job();
-    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR && !strcmp(g_view.hook_label, "OCR only"));
-    vjo_post_command(VJO_CMD_HOOK_PICK, NULL); on_command();
-    TEST_CHECK(hook_pick == VJO_HOOK_PICK_AUTO && !strcmp(g_view.hook_label, "Automatic"));
-    finish_current_job();
-    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO && !strcmp(g_view.hook_label, "OCR"));
-    /* the self-test's stages read OCR only */
+
+    /* A locked source can answer without recognition; the next request remains automatic. */
+    fake_hook[1] = VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR;
+    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
+    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO && result.text_from == 9);
+    TEST_CHECK(DLOGGED("game vocr source: hook 9, flags 0x0A, score 820, streams 0x00901, pick 0"));
     (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, 0);
     TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
-    /* pinned, then the game resumes: still pinned; then the game exits: the config is read and pushed
-     * again, and the next session (another process) starts automatic, with no label */
-    vjo_post_command(VJO_CMD_HOOK_PICK, NULL); on_command();
-    TEST_CHECK(hook_pick == 1);
-    finish_current_job();
+    (void)vocr_run_one(&result, VJO_GAME_OCR_F_FULL, vocr_tiers(), &ran, -1);
+    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
+
     activate(PS_GAME_PID, "PCSG00415", VJO_GAME);
-    TEST_CHECK(hook_pick == 1);
     unsigned pushes = text_source_pushes;
     state.game_pid = 0;
     control_tick(VJO_EV_GAME_EXIT);
     TEST_CHECK(text_source_pushes == pushes + 1 && text_source_pushed == VJO_TEXT_SOURCE_AUTO);
     activate(PS_GAME_PID + 4, "PCSG00415", VJO_GAME);
-    TEST_CHECK(hook_pick == VJO_HOOK_PICK_AUTO && !hook_installed && !hook_result);
-    view_publish(0, NULL, "", 0);
-    TEST_CHECK(g_view.hook_label[0] == 0);
     /* hook_sites = off (audit-hooks F3): the worker applied the word with NO_SITES, so no table site; the
      * line says so in both builds, for each mode */
     job_cfg = cfg; job_generation = game_generation;
@@ -7399,7 +7359,7 @@ TEST_LIST = {
 #ifdef VJO_WITH_VOCR
     {"vocr_capture_follows_the_retry", test_vocr_capture_follows_the_retry},
     {"vocr_ran_names_outlive_the_job", test_vocr_ran_names_outlive_the_job},
-    {"native hooks: the pick, the label, the logs and the text source (API 31)", test_native_hooks_pick_label_and_text_source},
+    {"native hooks: automatic source and diagnostic logs (API 31)", test_native_hooks_automatic_text_source_and_diagnostics},
     {"vocr_text_is_logged_raw_and_shown_normalised", test_vocr_text_is_logged_raw_and_shown_normalised},
 #endif
     {"removed_engine_choice_VOCR2_or_ncnn_runs_the_local_model_with_its_fallback", test_removed_engine_choice_runs_the_local_engine},

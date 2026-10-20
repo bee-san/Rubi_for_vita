@@ -9,7 +9,6 @@
 #include "../core/client.h"
 #include "../core/config.h"
 #include "../core/games.h"
-#include "../core/hook_pick.h"
 #include "../core/ledger.h"
 #include "../core/styled.h"
 #include "../include/vjo_api.h"
@@ -55,7 +54,6 @@ typedef struct {
     uint32_t text_generation; /* changes for OCR text/foreground, not cursor moves */
     int dict_page;            /* local: dictionary page shown or requested at the cursor */
     int dict_pages;           /* local: dictionaries with an entry there; 0 = unknown */
-    char hook_label[VJO_HOOK_LABEL_BYTES]; /* API 31: where the text came from ("Hook 2/5"), "" in a game with no hook */
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;
     /* The Rubi app does not match the plugins (core/app_stamp.h): said in
@@ -103,7 +101,6 @@ enum {
     VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command) */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
     VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
-    VJO_CMD_HOOK_PICK,       /* API 31: △, the next text source of this game session (core/hook_pick.h) */
 };
 void vjo_post_command(int cmd, const VjoRect *rect);
 /* Call without holding the view lock. Stale/closed requests are ignored. */
