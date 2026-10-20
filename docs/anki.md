@@ -427,9 +427,12 @@ are its guess, which it encodes while it scans every row below, and every row ch
   when that band is black of more than one value: its rows are read again): 1,661 of the 1,727 Vita
   frames below (`test_game_shot.c`, `test_game_shot.py`).
 - A frame whose rows come to another picture than its guess is read again, at the same quality: a
-  second pass of 9 strips, and one more encoding. With the first pass's own 9 to 10 strips that is
-  19 at most (a top bar that ends at a strip's end, then a wrong guess; `test_game_shot.c`), and 4
-  tries when the JPEG is also too large. Side bars under no top bar whose black is not all one
+  second pass of the picture's rows only (9 strips at most), and one more encoding. The first pass
+  takes 9 to 12 strips: 9 when its picture starts in the strip in hand, 10 when the picture's first
+  rows are above that strip and read again, 11 or 12 when the guess is the whole frame under black
+  rows of more than one colour, read again from the top. So a shot reads 19 strips at most (a top
+  bar that ends at a strip's end, then a wrong guess: `test_game_shot.c`; a whole-frame guess read
+  again leaves a picture of 8 strips at most), and takes 4 tries when the JPEG is also too large. Side bars under no top bar whose black is not all one
   colour, mostly a dark picture's edges (an emulator's bars are one colour), are guessed as the
   whole frame, which is right for them.
 - A wrong guess is read again even when its JPEG already held every pixel that is not black (the

@@ -127,9 +127,9 @@ A card's screenshot ([docs/anki.md](anki.md#the-screenshot)) is a job of the sam
   frames is pictured partly before and partly after the change (a band at the seam); with the
   overlay open the game has no input and normally shows a still screen. With **Trim black bars**
   (API 32, on by default) the first pass reads the first rows before it encodes, and may read some
-  of them again: 9 to 10 strips, 12 under a black band that is not all one colour; a frame whose
-  rows come to another picture than its first rows' is read again, a second pass, so a shot reads
-  at most 19 strips (4 tries with a JPEG too large) ([black bars](anki.md#black-bars)). When the hook cannot write
+  of them again: 9 to 12 strips; a frame whose rows come to another picture than its first rows' is
+  read again, a second pass of the picture's rows, so a shot reads at most 19 strips (4 tries with a
+  JPEG too large) ([black bars](anki.md#black-bars)). When the hook cannot write
   the block, the rows come through the kernel strip, 16 rows a call (61,440 B, inside its 64 KiB).
 - **Its own block.** One block of 450,560 B (`VjoGameShot`: the encoder's state, the strip and the
   JPEG, page-rounded) on the same ladder (`USER_RW`, CDRAM, phycont), after a check that the game
