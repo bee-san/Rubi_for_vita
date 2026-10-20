@@ -5,11 +5,21 @@
  * exactly that size, so ASan sees any byte written past it). */
 #include "acutest.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "../../core/psp_probe.h"
 #include "../../core/hook_luna_psp.inc" /* this test's own copy, to walk every title */
+
+/* Packed title ID k of the table -> its 9 characters and a NUL. */
+static void unpack(unsigned k, char id[10])
+{
+    uint32_t v = vjo_luna_psp_ids[k], p = v >> VJO_LUNA_PSP_NUMBER_BITS, number = v & ((1u << VJO_LUNA_PSP_NUMBER_BITS) - 1u);
+    TEST_ASSERT(p < VJO_LUNA_PSP_PREFIXES && number <= 99999u);
+    memcpy(id, &vjo_luna_psp_prefix[p * 4u], 4);
+    snprintf(id + 4, 6, "%05u", (unsigned)number);
+}
 
 static void test_counts(void)
 {
@@ -24,7 +34,20 @@ static void test_counts(void)
         sum += vjo_luna_psp_count[i];
     }
     TEST_CHECK(sum == VJO_LUNA_PSP_SITES);
-    TEST_CHECK(strlen(vjo_luna_psp_ids) == VJO_LUNA_PSP_TITLES * 9u);
+    /* the prefixes the report counted (ULJM 235, NPJH 78, ULJS 39, UCJS 1, ULUS 1), as the packing names them */
+    TEST_CHECK(VJO_LUNA_PSP_PREFIXES == 5u && strlen(vjo_luna_psp_prefix) == 20u);
+    TEST_CHECK(!memcmp(&vjo_luna_psp_prefix[VJO_LUNA_PSP_NPJH * 4u], "NPJH", 4));
+    TEST_CHECK(!memcmp(&vjo_luna_psp_prefix[VJO_LUNA_PSP_UCJS * 4u], "UCJS", 4));
+    TEST_CHECK(!memcmp(&vjo_luna_psp_prefix[VJO_LUNA_PSP_ULJM * 4u], "ULJM", 4));
+    TEST_CHECK(!memcmp(&vjo_luna_psp_prefix[VJO_LUNA_PSP_ULJS * 4u], "ULJS", 4));
+    TEST_CHECK(!memcmp(&vjo_luna_psp_prefix[VJO_LUNA_PSP_ULUS * 4u], "ULUS", 4));
+    {
+        unsigned per[5] = {0};
+        for (unsigned i = 0; i < VJO_LUNA_PSP_TITLES; i++) per[vjo_luna_psp_ids[i] >> VJO_LUNA_PSP_NUMBER_BITS]++;
+        TEST_CHECK(per[VJO_LUNA_PSP_ULJM] == 235u && per[VJO_LUNA_PSP_NPJH] == 78u && per[VJO_LUNA_PSP_ULJS] == 39u &&
+                   per[VJO_LUNA_PSP_UCJS] == 1u && per[VJO_LUNA_PSP_ULUS] == 1u);
+    }
+    TEST_CHECK(VJO_LUNA_PSP_ID(ULJM, 5889) == (2u << 17 | 5889u)); /* ULJM05889 */
 }
 
 /* Every title, through the probe's lookup, gives its sites from the table, in order. */
@@ -32,12 +55,14 @@ static void test_every_title(void)
 {
     unsigned first = 0;
     for (unsigned i = 0; i < VJO_LUNA_PSP_TITLES; i++) {
-        char id[10];
+        char id[10], before[10];
         uint32_t got[VJO_PSP_SITES_MAX];
         unsigned total = 99, n;
-        memcpy(id, &vjo_luna_psp_ids[i * 9u], 9);
-        id[9] = 0;
-        if (i) TEST_CHECK(memcmp(&vjo_luna_psp_ids[(i - 1u) * 9u], id, 9) < 0); /* sorted, no repeat */
+        unpack(i, id);
+        if (i) {
+            unpack(i - 1u, before);
+            TEST_CHECK(vjo_luna_psp_ids[i - 1u] < vjo_luna_psp_ids[i] && strcmp(before, id) < 0); /* sorted, no repeat */
+        }
         n = vjo_psp_luna_sites(id, got, VJO_PSP_SITES_MAX, &total);
         TEST_CHECK(n == vjo_luna_psp_count[i] && total == n);
         TEST_MSG("%s: %u sites, total %u", id, n, total);

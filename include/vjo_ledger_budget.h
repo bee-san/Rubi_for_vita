@@ -175,9 +175,15 @@
  * 512 raw bytes and its header, include/vjo_game_ocr.h) and a site hit's 512-byte capture buffer: static, so
  * a hook in a game thread never allocates. Not in these figures: the job path's decoder (core/hook_text.c,
  * its CP932 table), Luna's filters (core/hook_re.c) and the selection (core/hook_select.c), linked when the
- * job path calls vjo_hooks_text (hooks-select); they add their own pages then. */
+ * job path calls vjo_hooks_text (hooks-select); they add their own pages then.
+ * Raised in the debug build only, 131,072 -> 135,168 B, by one text page for the read-only PSP probe
+ * (docs/native-hooks.md "PSP probe (debug build)": game_ocr/psp_probe.c, 881 B of text, and core/psp_probe.c,
+ * 5,345 B of text and rodata with Luna's PSP table's 3,515 B, both at -Os): the debug build's text 99,038 ->
+ * 105,264 B, 3,120 B past its page; its data/bss 27,496 -> 27,504 B (two words) fit the pages it had
+ * [measured: the build log's module rows and arm-vita-eabi-size, debug build, hooks/psp-probe and its parent].
+ * No block, no thread; the normal build has none of it and keeps its pages. In the game's partition only. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 131072u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 135168u
 #else
 #define VJO_BUDGET_WORKER_MODULE_PAGES 126976u
 #endif

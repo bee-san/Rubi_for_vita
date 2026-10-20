@@ -43,8 +43,11 @@ def inc_table():
         m = re.search(name + r"\[[^\]]*\]\s*=\s*(.*?);", text, re.S)
         return m.group(1)
 
-    ids = "".join(re.findall(r'"([A-Z0-9]*)"', block("vjo_luna_psp_ids")))
-    ids = [ids[k:k + 9] for k in range(0, len(ids), 9)]
+    ids = [f"{p}{int(n):05d}" for p, n in re.findall(r"VJO_LUNA_PSP_ID\(([A-Z]{4}), (\d+)\)", block("vjo_luna_psp_ids"))]
+    prefixes = re.search(r'vjo_luna_psp_prefix\[[^\]]*\] = "([A-Z]*)";', text).group(1)
+    enum = re.search(r"enum \{ (.*?) \};", text).group(1)
+    for k, (name, value) in enumerate(re.findall(r"VJO_LUNA_PSP_([A-Z]{4}) = (\d+)", enum)):
+        assert int(value) == k and prefixes[4 * k:4 * k + 4] == name, "the prefix enum and string disagree"
     counts = [int(x) for x in re.findall(r"\b(\d+)\b", block("vjo_luna_psp_count"))]
     addrs = [int(x, 16) for x in re.findall(r"0x([0-9A-F]{8})u", block("vjo_luna_psp_addr"))]
     out, k = collections.OrderedDict(), 0
@@ -66,7 +69,8 @@ class TestGenLunaPsp(unittest.TestCase):
         self.assertEqual(c["max_sites_per_title"], 6)
         self.assertEqual(c["titles_with_2_or_more"], 69)
         self.assertEqual((c["min_addr"], c["max_addr"]), (0x08804094, 0x08B0449C))
-        self.assertEqual(c["bytes"], 354 * 9 + 1 + 354 + 431 * 4)
+        self.assertEqual(c["prefixes"], 5)
+        self.assertEqual(c["bytes"], 5 * 4 + 1 + 354 * 4 + 354 + 431 * 4)  # 3,515
 
     def test_source_parsers_agree(self):
         pairs = source_pairs()

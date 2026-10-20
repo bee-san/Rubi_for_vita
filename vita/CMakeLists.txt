@@ -303,6 +303,12 @@ if(VJO_WITH_VOCR)
     ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
     ${ROOT}/core/sfo.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
+  # The read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): the debug build's worker only,
+  # control code built for size, with Luna's PSP table (core/hook_luna_psp.inc) as its data.
+  if(VJO_DEBUG)
+    target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/game_ocr/psp_probe.c ${ROOT}/core/psp_probe.c)
+    set_source_files_properties(${ROOT}/game_ocr/psp_probe.c ${ROOT}/core/psp_probe.c PROPERTIES COMPILE_OPTIONS "-Os")
+  endif()
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
   # The worker's control code (a job's request, memory checks and ladder, one call

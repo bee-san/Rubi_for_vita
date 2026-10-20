@@ -4,7 +4,7 @@
 
 #include "hook_luna_psp.inc"
 
-_Static_assert(sizeof(vjo_luna_psp_ids) == VJO_LUNA_PSP_TITLES * 9u + 1u, "9 characters per title ID");
+_Static_assert(sizeof(vjo_luna_psp_prefix) == VJO_LUNA_PSP_PREFIXES * 4u + 1u, "4 letters per prefix");
 _Static_assert(VJO_LUNA_PSP_SITES_PER_TITLE_MAX <= VJO_PSP_SITES_MAX, "every site of a title is read");
 
 int vjo_psp_block_ok(const VjoPspBlock *b)
@@ -43,27 +43,34 @@ int vjo_psp_title_id(const uint8_t raw[VJO_PSP_TITLEID_BYTES], char id[10])
     return 1;
 }
 
-/* <0, 0, >0 as the 9 characters at a compare with those at b */
-static int cmp9(const char *a, const char *b)
+/* A title ID (is_id) packed as core/hook_luna_psp.inc packs them; 0xFFFFFFFF when its prefix is none of
+ * the table's (no title has that value: a prefix index is below 8) */
+static uint32_t pack(const char *s)
 {
-    for (unsigned i = 0; i < 9; i++)
-        if (a[i] != b[i]) return (unsigned char)a[i] < (unsigned char)b[i] ? -1 : 1;
-    return 0;
+    uint32_t number = 0;
+    for (unsigned i = 4; i < 9; i++) number = number * 10u + (uint32_t)(s[i] - '0');
+    for (unsigned p = 0; p < VJO_LUNA_PSP_PREFIXES; p++) {
+        const char *q = &vjo_luna_psp_prefix[p * 4u];
+        if (q[0] == s[0] && q[1] == s[1] && q[2] == s[2] && q[3] == s[3])
+            return (uint32_t)p << VJO_LUNA_PSP_NUMBER_BITS | number;
+    }
+    return 0xFFFFFFFFu;
 }
 
 unsigned vjo_psp_luna_sites(const char *title_id, uint32_t *addr, unsigned cap, unsigned *total)
 {
     unsigned lo = 0, hi = VJO_LUNA_PSP_TITLES, first = 0, n, k = VJO_LUNA_PSP_TITLES;
+    uint32_t want;
     if (total) *total = 0;
     if (!title_id || !is_id(title_id)) return 0;
-    while (lo < hi) { /* the IDs are sorted */
+    want = pack(title_id);
+    while (lo < hi) { /* the packed IDs are sorted */
         unsigned mid = lo + (hi - lo) / 2u;
-        int c = cmp9(title_id, &vjo_luna_psp_ids[mid * 9u]);
-        if (!c) {
+        if (vjo_luna_psp_ids[mid] == want) {
             k = mid;
             break;
         }
-        if (c < 0) hi = mid;
+        if (want < vjo_luna_psp_ids[mid]) hi = mid;
         else lo = mid + 1u;
     }
     if (k == VJO_LUNA_PSP_TITLES) return 0; /* not listed */
