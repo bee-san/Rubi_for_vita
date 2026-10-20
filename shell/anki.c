@@ -33,6 +33,7 @@
 #include "../core/anki.h"
 #include "../core/games.h"
 #include "../core/local_dict.h"
+#include "../core/port.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/utf.h"
 #include "anki_queue.h"
@@ -381,13 +382,17 @@ static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
 #define take_shot NULL /* no game worker in this build: cards without a screenshot */
 #endif
 
+/* A card from an earlier line (line history): the screen shows another line now, and Rubi keeps no
+ * frame, so it has no screenshot. */
+static const char SAVED_EARLIER[] VJO_DATA_TABLE(anki_saved_earlier) = "Saved for Anki (an earlier line: no screenshot)";
+
 static void do_save(unsigned seq, int entry)
 {
     VjoAnkiNote note;
     VjoLocalPages *pages = NULL;
     VjoQueueShot shot = {take_shot, 0};
     char misc[sizeof(game_name) + 24], msg[sizeof(g_view.anki_status)];
-    int shown, mark_value = 0, ok = 0, rc, page = 0;
+    int shown, mark_value = 0, ok = 0, rc, page = 0, earlier = 0;
     int64_t t0 = now_us();
 
     /* The √ or the queued mark already says it: no memory for that. */
@@ -415,6 +420,7 @@ static void do_save(unsigned seq, int entry)
         ok = vjo_anki_note_from_entry(&arena, g_view.list, entry, &note) == 0;
         if (p && p->count > 1 && (pages = (VjoLocalPages *)vjo_arena_alloc(&arena, sizeof(*p))))
             *pages = *p; /* the other dictionaries' locators, in the result memory */
+        earlier = g_view.history != 0; /* line history: the sentence is an earlier line */
     }
     vjo_view_unlock();
     if (!shown)
@@ -427,8 +433,9 @@ static void do_save(unsigned seq, int entry)
     card_facts(&note, misc, sizeof(misc));
     read_more(&note, pages, page);
     /* The screenshot (anki_screenshot, on by default) of the game in front: the
-     * game worker's, never SceShell's (take_shot). */
-    rc = vjo_queue_save(&arena, &note, acfg->anki_screenshot && note.title_id ? &shot : NULL);
+     * game worker's, never SceShell's (take_shot). An earlier line (line history)
+     * has none: Rubi keeps no frame, and the screen shows another line now. */
+    rc = vjo_queue_save(&arena, &note, acfg->anki_screenshot && note.title_id && !earlier ? &shot : NULL);
 #if VJO_DEBUG
     vjo_log("anki: save %s rc=%d, %d ms", note.spelling, rc, (int)((now_us() - t0) / 1000));
 #else
@@ -453,7 +460,9 @@ static void do_save(unsigned seq, int entry)
         return;
     }
     publish(seq, rc == VJO_QUEUE_EXISTS ? "Already queued"
-                 : shot.rc ? "Saved for Anki, without a screenshot (log.txt)" : "Saved for Anki",
+                 : shot.rc ? "Saved for Anki, without a screenshot (log.txt)"
+                 : earlier && acfg->anki_screenshot ? SAVED_EARLIER
+                 : "Saved for Anki",
             VJO_ANKI_STATUS_DIM, entry, VJO_ANKI_MARK_QUEUED);
 }
 

@@ -140,6 +140,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/arena.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
   ${ROOT}/core/json.c
   ${ROOT}/core/textfilter.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/entries.c
+  ${ROOT}/core/history_lines.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c
   ${ROOT}/core/client.c ${ROOT}/core/styled.c
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
@@ -168,6 +169,10 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
 # normal builds), which vita-vn-ocr's A9 cost model puts at most 2.1 us more at
 # 333 MHz (1.6 us at 444) [estimate], against a console lookup's 70-81 ms of
 # mostly file reads (docs/performance.md); the Rubi app's copy is -Os too.
+# Line history's reader (core/history_lines.c) and the non-Japanese line filter
+# (core/textfilter.c, once per recognized text and per earlier line: 288 -> 240 B)
+# are built for size for the room line history's code takes in the normal Shell's
+# text pages (docs/line-history.md).
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c
   ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
@@ -176,6 +181,7 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/app_stamp.c
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
   ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c
+  ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)

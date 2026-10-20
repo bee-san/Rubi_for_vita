@@ -42,7 +42,7 @@ target_compile_options(vjo_taihen_parser PRIVATE -w)
 
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
-  core/textfilter.c core/textjoin.c core/linebreak.c core/entries.c core/config.c core/regions.c
+  core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
@@ -310,7 +310,15 @@ add_executable(vjo-shell-history-tests host/tests/test_shell_history.c)
 target_include_directories(vjo-shell-history-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-shell-history-tests vjo_core) # line history's reader: core/history_lines.c
 add_test(NAME shell_history COMMAND vjo-shell-history-tests)
+# Line history (docs/line-history.md): history.csv's records read back from a window of the file,
+# this game's lines newest first, filtered and deduplicated as the overlay shows them.
+add_executable(vjo-history-lines-tests host/tests/test_history_lines.c)
+target_include_directories(vjo-history-lines-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-history-lines-tests vjo_core)
+target_compile_options(vjo-history-lines-tests PRIVATE -Wall -Wextra)
+add_test(NAME history_lines COMMAND vjo-history-lines-tests)
 # The Rubi app's .apkg export (settings/anki_export.c, core/apkg.c and its SQLite, ZIP and Lapis
 # writers) on real files; host/tests/test_apkg.py opens its packages with Python's zipfile and sqlite3
 # and imports them into Anki itself (the `anki` package, tools/requirements-anki.txt) when it is there:

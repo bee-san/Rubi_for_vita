@@ -173,6 +173,11 @@ int sceKernelUnlockMutex(SceUID uid, int count)
 void *vjo_shell_heap_alloc(size_t size)
 { if (phases_checked) TEST_CHECK(!vocr_live && size == 64 * 1024);
   heap_allocs++; TEST_CHECK(size <= sizeof(storage)); return fail_alloc ? NULL : storage; }
+/* Line history's visit block (VJO_SL_PAF_HISTORY): one at a time, filled with a pattern when taken
+ * (nothing relies on zeroed memory) and when given back (a pointer the view kept into it shows). */
+static uint8_t history_storage[VJO_BUDGET_PAF_HISTORY] __attribute__((aligned(16)));
+static unsigned history_allocs, history_frees;
+static int fail_history_alloc;
 void *vjo_shell_heap_alloc_for(int item, size_t size)
 {
     if (item == VJO_SL_PAF_RESULTS) {
@@ -180,12 +185,28 @@ void *vjo_shell_heap_alloc_for(int item, size_t size)
         if (p) vjo_ledger_add(&g_shell_ledger, item, (uint32_t)size);
         return p;
     }
+    if (item == VJO_SL_PAF_HISTORY) {
+        TEST_CHECK(size == VJO_BUDGET_PAF_HISTORY && history_allocs == history_frees && !held_view && !held_cmd);
+        if (fail_history_alloc) return NULL;
+        history_allocs++;
+        memset(history_storage, 0xA5, sizeof(history_storage));
+        vjo_ledger_add(&g_shell_ledger, item, (uint32_t)size);
+        return history_storage;
+    }
     vocr_paf_allocs++;
     TEST_CHECK(0); /* game vocr must never borrow the Shell Paf heap */
     return NULL;
 }
 void vjo_shell_heap_free(int item, void *p, size_t bytes)
 {
+    if (p == history_storage) {
+        TEST_CHECK(item == VJO_SL_PAF_HISTORY && bytes == VJO_BUDGET_PAF_HISTORY && history_frees < history_allocs);
+        TEST_CHECK(!g_view.history_before && !g_view.history_after && !g_view.history); /* the view let it go */
+        history_frees++;
+        memset(history_storage, 0x5A, sizeof(history_storage));
+        vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
+        return;
+    }
     TEST_CHECK(p == storage || p == vocr_storage);
     if (p == vocr_storage) { vocr_frees++; vocr_live = 0; } else heap_frees++;
     vjo_ledger_sub(&g_shell_ledger, item, (uint32_t)bytes);
@@ -536,6 +557,47 @@ int vjo_history_append(const VjoHistoryRecord *record)
     if (history_on_append) history_on_append();
     return history_write_fail ? -1 : 1;
 }
+/* Line history: history.csv as the tests write it (history_csv), read by the real scanner
+ * (core/history_lines.c) in one window, as shell/history.c reads its windows, through the scratch it
+ * is given. history_loads counts the reads; history_load_rc < 0 is the file's error. */
+static char history_csv[16384];
+static unsigned history_loads;
+static int history_load_rc;
+static char history_uuid[24];
+int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filter, VjoArena *scratch)
+{
+    size_t mark = vjo_arena_mark(scratch), n = strlen(history_csv);
+    char *buf = vjo_arena_alloc(scratch, VJO_HISTORY_WINDOW + 1);
+    TEST_CHECK(!held_view && !held_cmd && !job_running); /* no lock held, no job reading local_text */
+    history_loads++;
+    snprintf(history_uuid, sizeof(history_uuid), "%s", uuid);
+    if (history_load_rc < 0 || !buf) {
+        vjo_arena_release(scratch, mark);
+        return history_load_rc < 0 ? history_load_rc : -1;
+    }
+    TEST_ASSERT(n <= VJO_HISTORY_WINDOW);
+    memcpy(buf, history_csv, n);
+    vjo_history_scan(h, lines, buf, n, 1, uuid, filter);
+    vjo_arena_release(scratch, mark);
+    return h->n;
+}
+/* A record of history.csv as shell/history.c writes it (its first four fields quoted, '"' doubled). */
+static void history_csv_add(const char *uuid, const char *line)
+{
+    size_t n = strlen(history_csv);
+    const char *f[4] = {uuid, "vjo-1-2", "CLANNAD", line};
+    for (int k = 0; k < 4; k++) {
+        history_csv[n++] = '"';
+        for (const char *s = f[k]; *s; s++) {
+            if (*s == '"') history_csv[n++] = '"';
+            history_csv[n++] = *s;
+        }
+        history_csv[n++] = '"';
+        history_csv[n++] = ',';
+    }
+    n += (size_t)snprintf(history_csv + n, sizeof(history_csv) - n, "1792220400.250123,\"vita\"\n");
+    TEST_ASSERT(n < sizeof(history_csv));
+}
 static VjoGameOcrRequest fake_game_request;
 static VjoGameOcrResult fake_game_result;
 static int32_t fake_model_io_error;
@@ -786,6 +848,20 @@ static void reset(void)
     thread_info_below_sp = 0;
     race_on_lock = 0;
     if (has_result_memory()) mem_free();
+    if (history) { /* a test that ended on an earlier line: its block goes as the worker frees it */
+        vjo_view_lock();
+        HistoryVisit *v = history_detach();
+        vjo_view_unlock();
+        history_free(v);
+    }
+    history_step = 0;
+    history_allocs = history_frees = 0;
+    fail_history_alloc = 0;
+#ifdef VJO_WITH_VOCR
+    history_csv[0] = history_uuid[0] = 0;
+    history_loads = 0;
+    history_load_rc = 0;
+#endif
     memset(&g_view, 0, sizeof(g_view));
     view_lock = 81;
     cmd_lock = 82;
@@ -4054,6 +4130,220 @@ static void check_shown(const char *text, const char *meaning, uint32_t cursor)
     check_quiet();
 }
 
+/* ---- line history (docs/line-history.md) ---- */
+
+/* The overlay on 猫犬鳥 (its first word looked up), this game's earlier lines in history.csv with
+ * another game's between them, and the current text appended already (as Auto appends it). */
+static void history_setup(void)
+{
+    cursor_setup();
+    vjo_ledger_shell_init(); /* the visit's block is counted (VJO_SL_PAF_HISTORY) */
+    history_csv_add("vita-PCSG00415", "鳥");
+    history_csv_add("vita-PCSG00002", "他のゲーム");
+    history_csv_add("vita-PCSG00415", "犬鳥");
+    history_csv_add("vita-PCSG00415", "猫犬鳥");
+    view_invariant = 1; view_invariant_checks = 0; invariant_generation = 0; invariant_seq = 0;
+    open_overlay(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+}
+
+/* The overlay's d-pad key past the text's rows (overlay.cpp input_overlay), and the control thread's tick. */
+static void history_key(int cmd)
+{
+    vjo_post_command(cmd, NULL);
+    control_tick(0);
+}
+
+static unsigned history_held(void) { return vjo_ledger_current(&g_shell_ledger, VJO_SL_PAF_HISTORY); }
+
+/* The owner's example (2026-10-20): on 昨日すき焼きを食べました, Up shows ４７７８万 between 昭和５２ and
+ * the current line, dimmed; here 猫犬鳥 is the current line. Up walks back, each earlier line shown
+ * between its neighbours and looked up as the current text is; Down walks forward and, past the newest,
+ * returns to the current text with its cursor, as read from its screen. */
+static void test_history_up_walks_back_and_down_returns(void)
+{
+    history_setup();
+    uint32_t scene = local_text_scene, seq = local_text_capture_seq;
+    vjo_post_cursor(3, local_text_generation); on_command(); finish_current_job();
+    check_shown("猫犬鳥", "dog", 3);
+    unsigned list_seq = g_view.list_seq;
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(history_loads == 1 && !strcmp(history_uuid, "vita-PCSG00415\",")); /* this game's lines only */
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
+    TEST_CHECK(g_view.history == 1 && !strcmp(g_view.history_before, "鳥") && !strcmp(g_view.history_after, "猫犬鳥"));
+    TEST_CHECK(g_view.list == &local_header && !g_view.list->n_entries && !strcmp(local_text, "犬鳥"));
+    TEST_CHECK(g_view.list_seq != list_seq && g_view.text_generation == local_text_generation && !g_view.dict_pages);
+    TEST_CHECK(local_text_scene == 0 && local_text_capture_seq == 0); /* no screen shows it now */
+    TEST_CHECK(history_held() == VJO_BUDGET_PAF_HISTORY && history_allocs == 1);
+    finish_current_job();
+    check_shown("犬鳥", "dog", 0);
+    TEST_CHECK(g_view.history == 1);
+    /* the arrows and lookups on the earlier line, as on the current text */
+    vjo_post_cursor(3, local_text_generation); on_command(); finish_current_job();
+    check_shown("犬鳥", "bird", 3);
+    history_key(VJO_CMD_EARLIER);
+    finish_current_job();
+    check_shown("鳥", "bird", 0);
+    TEST_CHECK(g_view.history == 2 && !g_view.history_before && !strcmp(g_view.history_after, "犬鳥"));
+    /* the oldest: Up does nothing, as at the text's top row before line history */
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(!job_running && g_view.history == 2 && history_loads == 1 && !g_view.status[0]);
+    check_shown("鳥", "bird", 0);
+    /* Down: the line after it, then the current text again with its cursor and its screen */
+    history_key(VJO_CMD_LATER);
+    finish_current_job();
+    check_shown("犬鳥", "dog", 0);
+    TEST_CHECK(g_view.history == 1 && !strcmp(g_view.history_before, "鳥"));
+    history_key(VJO_CMD_LATER);
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3);
+    TEST_CHECK(g_view.history == 0 && !g_view.history_before && !g_view.history_after && !history);
+    TEST_CHECK(history_allocs == 1 && history_frees == 1 && !history_held());
+    TEST_CHECK(local_text_scene == scene && local_text_capture_seq == seq);
+    finish_current_job();
+    check_shown("猫犬鳥", "dog", 3);
+    /* Down on the current text: nothing */
+    history_key(VJO_CMD_LATER);
+    TEST_CHECK(!job_running && history_loads == 1 && !history);
+    /* reopened on this screen, the current text's saved word is shown: no recognition, no lookup */
+    close_overlay(); control_tick(0);
+    unsigned reads = cursor_reads, inferences = vocr_allocs;
+    open_overlay();
+    TEST_CHECK(!job_running && cursor_reads == reads && vocr_allocs == inferences && DLOGGED("open: saved local word"));
+    check_shown("猫犬鳥", "dog", 3);
+    /* a second visit reads the file again, from the start */
+    history_key(VJO_CMD_EARLIER);
+    finish_current_job();
+    check_shown("犬鳥", "dog", 0);
+    TEST_CHECK(history_loads == 2 && history_allocs == 2 && history_frees == 1);
+    TEST_CHECK(view_invariant_checks > 0);
+    view_invariant = 0;
+}
+
+/* Only Read text: Automatically keeps lines (history.csv): in on_press mode Up does what it did. No
+ * earlier line, or no memory for a visit: nothing, and nothing kept. */
+static void test_history_needs_auto_lines_and_memory(void)
+{
+    history_setup();
+    cfg.ocr_mode = VJO_OCR_ON_PRESS;
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(!job_running && !history && !history_loads && !history_allocs && !g_view.history);
+    check_shown("猫犬鳥", "cat", 0);
+    cfg.ocr_mode = VJO_OCR_AUTO;
+    /* no Paf memory: no visit, no file read */
+    fail_history_alloc = 1;
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(!job_running && !history && !history_loads && !history_held());
+    fail_history_alloc = 0;
+    /* no history.csv yet, or none of this game's lines in it */
+    history_load_rc = (int)0x80010002;
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(!job_running && !history && history_loads == 1 && history_allocs == 1 && history_frees == 1);
+    history_load_rc = 0;
+    history_csv[0] = 0;
+    history_csv_add("vita-PCSG00002", "他のゲーム");
+    history_csv_add("vita-PCSG00415", "猫犬鳥"); /* the current text only */
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(!job_running && !history && history_loads == 2 && history_allocs == 2 && history_frees == 2);
+    TEST_CHECK(!history_held() && !g_view.history && !g_view.status[0]);
+    check_shown("猫犬鳥", "cat", 0);
+    /* a PSP game's lines are under its platform and its own disc ID, as net_job writes them */
+    vjo_anki_set_game("ULJM05000", "PSP", 1);
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(!strcmp(history_uuid, "psp-ULJM05000\","));
+}
+
+/* A job reads local_text: a step asked for meanwhile waits for its end, and the lookup, page or
+ * refresh of the line it leaves is dropped; no refresh runs while an earlier line is shown, and the
+ * one asked for runs once the current text is back. */
+static void test_history_waits_for_the_running_job(void)
+{
+    history_setup();
+    vjo_post_cursor(3, local_text_generation); on_command();
+    TEST_ASSERT(job_running && job_cursor_only);
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(job_cancelled && history_step == 1 && !history && !history_loads);
+    vjo_post_cursor(6, local_text_generation); /* a move of the line it leaves, while it waits */
+    control_tick(0);
+    TEST_CHECK(history_step == 1 && !history_loads);
+    finish_current_job(); /* the cancelled lookup: nothing shown, nothing started after it */
+    TEST_CHECK(!job_running);
+    control_tick(0);
+    TEST_ASSERT(job_running && job_cursor_only && history);
+    finish_current_job();
+    check_shown("犬鳥", "dog", 0);
+    /* a settled screen while an earlier line is shown: no refresh until the current text is back */
+    next_scene(8);
+    test_now += 10 * REFRESH_GAP_US;
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(!job_running && refresh_pending);
+    test_now += 10 * REFRESH_GAP_US;
+    control_tick(0);
+    TEST_CHECK(!job_running && refresh_pending);
+    history_key(VJO_CMD_LATER);
+    finish_current_job();
+    check_shown("猫犬鳥", "bird", 6); /* the cursor it had last: the move made while the step waited */
+    test_now += 10 * REFRESH_GAP_US;
+    control_tick(0);
+    TEST_ASSERT(job_running && job_refresh);
+    /* Up during that refresh: it yields (asked again), and the step follows its end */
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(job_cancelled && history_step == 1);
+    finish_current_job();
+    TEST_CHECK(!job_running && refresh_pending);
+    control_tick(0);
+    TEST_ASSERT(job_running && job_cursor_only && history);
+    finish_current_job();
+    check_shown("犬鳥", "dog", 0);
+}
+
+/* Closing on an earlier line: the current text comes back once no job reads local_text, so a reopen
+ * on its screen shows it; reopened while that job still ran, the screen is recognized. A game exit or
+ * a new region lets the visit go with the text. */
+static void test_history_close_exit_and_region(void)
+{
+    history_setup();
+    history_key(VJO_CMD_EARLIER);
+    TEST_ASSERT(job_running && job_cursor_only);
+    close_overlay();
+    TEST_CHECK(job_cancelled && !history_step);
+    control_tick(0);
+    TEST_CHECK(history && !strcmp(local_text, "犬鳥")); /* the lookup still reads it */
+    finish_current_job();
+    control_tick(0);
+    TEST_CHECK(!history && history_frees == 1 && !strcmp(local_text, "猫犬鳥") && local_text_valid && !g_view.history);
+    open_overlay();
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
+    finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    /* reopened before the earlier line's lookup ended: its screen is recognized afresh */
+    history_key(VJO_CMD_EARLIER);
+    TEST_ASSERT(job_running && job_cursor_only && history);
+    close_overlay(); open_overlay();
+    TEST_CHECK(ov == OV_OPEN_OLD_JOB && !g_view.list && !strcmp(g_view.status, "Recognizing…"));
+    finish_current_job(); /* the lookup, dropped: a recognition of the screen follows, and the visit goes */
+    TEST_ASSERT(job_running && !job_cursor_only && !history && history_frees == 2);
+    finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    /* a game exit on an earlier line: the visit goes with the text, nothing comes back */
+    history_key(VJO_CMD_EARLIER);
+    finish_current_job();
+    check_shown("犬鳥", "dog", 0);
+    control_tick(VJO_EV_GAME_EXIT);
+    TEST_CHECK(!history && history_frees == 3 && !local_text_valid && !g_view.history && !history_held());
+    /* a region drawn on an earlier line: the same */
+    activate(0x40010003, "PCSG00415", VJO_GAME);
+    history_csv[0] = 0;
+    history_csv_add("vita-PCSG00415", "犬鳥");
+    open_overlay(); finish_current_job();
+    history_key(VJO_CMD_EARLIER);
+    finish_current_job();
+    check_shown("犬鳥", "dog", 0);
+    VjoRect r = {10, 10, 300, 80};
+    vjo_post_command(VJO_CMD_SET_REGION, &r);
+    control_tick(0);
+    TEST_CHECK(!history && history_frees == 4 && ov == OV_CLOSED && !history_held());
+}
+
 /* #81 request 4, the open overlay: its text stays usable whatever the screen
  * does. A settled screen it was not read from is recognized in the
  * background (a refresh) while the entry, the arena and an Anki save keep
@@ -7116,6 +7406,10 @@ TEST_LIST = {
 #endif
     {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
     {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
+    {"history_up_walks_back_and_down_returns", test_history_up_walks_back_and_down_returns},
+    {"history_needs_auto_lines_and_memory", test_history_needs_auto_lines_and_memory},
+    {"history_waits_for_the_running_job", test_history_waits_for_the_running_job},
+    {"history_close_exit_and_region", test_history_close_exit_and_region},
     {"refresh_replacement_resets_dictionary_pages", test_refresh_replacement_resets_dictionary_pages},
     {"on_press_overlay_never_refreshes", test_on_press_overlay_never_refreshes},
     {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},

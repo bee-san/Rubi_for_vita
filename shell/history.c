@@ -164,3 +164,24 @@ int vjo_history_append(const VjoHistoryRecord *r)
     previous_length = (uint32_t)len;
     return 1;
 }
+
+int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filter, VjoArena *scratch)
+{
+    size_t mark = vjo_arena_mark(scratch), n = 0, got = 0;
+    /* the window and the byte before it, which says whether the window's first byte starts a record */
+    char *buf = vjo_arena_alloc(scratch, VJO_HISTORY_WINDOW + 1);
+    SceUID fd = buf ? sceIoOpen(HISTORY_PATH, SCE_O_RDONLY, 0) : -1;
+    SceOff end = fd < 0 ? fd : sceIoLseek(fd, 0, SCE_SEEK_END), from = end > VJO_HISTORY_WINDOW ? end - VJO_HISTORY_WINDOW - 1 : 0;
+    if (end > 0 && sceIoLseek(fd, from, SCE_SEEK_SET) == from)
+        for (n = (size_t)(end - from); got < n;) { /* a short read: the file shrank (an append rolled back) */
+            int r = sceIoRead(fd, buf + got, n - got);
+            if (r <= 0)
+                break;
+            got += (size_t)r;
+        }
+    if (fd >= 0)
+        sceIoClose(fd);
+    vjo_history_scan(h, lines, buf, got, !from, uuid, filter);
+    vjo_arena_release(scratch, mark);
+    return end < 0 ? (int)end : h->n;
+}

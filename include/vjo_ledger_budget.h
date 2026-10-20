@@ -236,11 +236,21 @@
  * on main dcb7b31) [measured, host, test_shell_anki.c]. anki.c checks its arena against this at compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
+/* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
+ * first Up past its text's top row until the return to the current text (or the overlay's close): the
+ * table (core/history_lines.h VjoHistory, 33 line pointers and two counts) and the worker's three words
+ * beside it, the current text (at most 4,095 B and its NUL), and as many of this game's earlier lines as
+ * fit, at most VJO_HISTORY_LINES (32). Typical lines (CLANNAD's, 20-60 characters of 3 B) are 60-180 B,
+ * so 32 take 2-6 KiB [estimate]. history.csv is read into the control thread's static scratch, 16,385 B a
+ * window, not here. Held beside an open overlay, its lookup and an Anki save (a card from an earlier
+ * line). */
+#define VJO_BUDGET_PAF_HISTORY 16384u
 #define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
 /* The only configuration (the overlay is offline): one 64 KiB arena, the
- * overlay open, an Anki card being saved. The opt-in network row went with
- * Google Lens and the Hachidori relay (707,840 B with one connection slot). */
-#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
+ * overlay open on an earlier line, an Anki card being saved. The opt-in network
+ * row went with Google Lens and the Hachidori relay (707,840 B with one connection slot). */
+#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI + \
+                             VJO_BUDGET_PAF_HISTORY)
 /* What the measured free heap leaves us once the reserve is kept: the
  * reserve is the headroom. Later sessions saw 355-441 KiB and 190 KiB free
  * [measured]; under those every allocation is refused, which the code

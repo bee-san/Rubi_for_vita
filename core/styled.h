@@ -31,6 +31,9 @@ typedef struct {
  * spans. The host tests render every bundled entry within them. */
 #define VJO_BODY_UNITS 4096
 #define VJO_BODY_SPANS 96
+/* The header's spans: one for the text; an earlier line (line history) adds its dimmed neighbours,
+ * two spans each (the row and the line break between). */
+#define VJO_HEADER_SPANS 5
 
 typedef struct {
     uint16_t *text;      /* UTF-16, NUL-terminated */

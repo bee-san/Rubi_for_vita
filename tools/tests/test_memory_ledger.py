@@ -63,7 +63,9 @@ class MemoryLedgerCheck(unittest.TestCase):
         self.assertEqual(as_json["warnings"], [])
         self.assertNotIn("WARNING", result.stderr)
         paf = next(p for p in as_json["pools"] if p["pool"] == "shell paf")
-        self.assertEqual(paf["worst"], 8192 + 65536 + 131072 + 20480)
+        # the Paf plugin, the result arena, an Anki save, the overlay's text and a line-history visit
+        self.assertEqual(paf["worst"], 8192 + 65536 + 131072 + 20480 + 16384)
+        self.assertEqual(paf["items"]["VJO_BUDGET_PAF_HISTORY"], 16384)
 
     def test_the_kernel_worst_case_is_its_items(self):
         # API 24: the module's pages, the worker's stack, one kernel strip and one games.ini read, both builds;
@@ -82,7 +84,8 @@ class MemoryLedgerCheck(unittest.TestCase):
 
     def test_a_picture_card_fits_the_only_configuration(self):
         # a 384 KiB Anki arena (the removed screenshot card's) put the network configuration over the
-        # limit by 8,688 B (a warning) while it existed; beside the one 64 KiB arena it fits: 487,424 B
+        # limit by 8,688 B (a warning) while it existed; beside the one 64 KiB arena it fits: 503,808 B
+        # with a line-history visit's 16 KiB (487,424 B before line history)
         tmp = self.copy_tree()
         budget = tmp / "include/vjo_ledger_budget.h"
         budget.write_text(re.sub(r"#define VJO_BUDGET_PAF_ANKI \d+u", "#define VJO_BUDGET_PAF_ANKI 393216u",
@@ -92,7 +95,7 @@ class MemoryLedgerCheck(unittest.TestCase):
         as_json = json.loads(result.stdout)
         self.assertEqual(as_json["warnings"], [])
         paf = next(p for p in as_json["pools"] if p["pool"] == "shell paf")
-        self.assertEqual(paf["worst"], 8192 + 65536 + 393216 + 20480)
+        self.assertEqual(paf["worst"], 8192 + 65536 + 393216 + 20480 + 16384)
 
     def test_an_unaccounted_allocation_fails(self):
         tmp = self.copy_tree()
@@ -137,7 +140,7 @@ class MemoryLedgerCheck(unittest.TestCase):
         budget.write_text(text)
         result = run("--root", str(tmp))
         self.assertEqual(result.returncode, 1)
-        self.assertRegex(result.stderr, r"pool shell paf: worst case 1,142,784 B exceeds its limit 985,088 B by 157,696 B")
+        self.assertRegex(result.stderr, r"pool shell paf: worst case 1,159,168 B exceeds its limit 985,088 B by 174,080 B")
         # a per-item limit too
         tmp = self.copy_tree()
         budget = tmp / "include/vjo_ledger_budget.h"
