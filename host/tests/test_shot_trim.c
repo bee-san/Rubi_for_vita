@@ -309,6 +309,43 @@ static void the_guess_and_other_frame_sizes(void)
     TEST_CHECK(decide(480, 272, &r) == VJO_TRIM_KEPT);
 }
 
+/* Frames shorter than 27 rows (no Vita frame is; the kernel reports what the game shows): 3/10 of the height
+ * is then under a bar's 8 rows, and a black band at the top that is over 3/10 but under 8 rows is no bar, as
+ * the rule says, not a tall band: the guess is the rule's decision (audit-blackbars). */
+static void tiny_frames_follow_the_rule(void)
+{
+    static const struct { uint32_t h, top, bottom, side; int kind; } cases[] = {
+        {8, 3, 3, 200, VJO_TRIM_TRIMMED},   /* a 3-row band, 3/10 of 8 is 2.4: no bar; the pillarbox trimmed */
+        {8, 0, 0, 200, VJO_TRIM_TRIMMED},
+        {20, 7, 7, 120, VJO_TRIM_TRIMMED},
+        {20, 7, 0, 0, VJO_TRIM_NONE},       /* bars under 8 rows only */
+        {26, 8, 8, 0, VJO_TRIM_KEPT},       /* 8 rows are a bar, over 3/10 of 26 */
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        VjoTrimRect g, r;
+        int exact;
+        uint32_t rows, h = cases[i].h;
+        fill(W, h, rgb(0, 0, 0));
+        picture(W, cases[i].side, cases[i].top, W - 2 * cases[i].side, h - cases[i].top - cases[i].bottom);
+        int kind = decide(W, h, &r), gk = guess(W, h, &g, &exact, &rows);
+        TEST_CHECK_(kind == cases[i].kind, "case %u: %d", i, kind);
+        /* the whole frame in its first strip: the guess is exact and is the decision */
+        TEST_CHECK_(rows == h && exact && gk == kind && g.x == r.x && g.y == r.y && g.w == r.w && g.h == r.h,
+                    "case %u: the guess %ux%u at %u,%u (exact %d, kind %d), the decision %ux%u at %u,%u", i, g.w, g.h, g.x,
+                    g.y, exact, gk, r.w, r.h, r.x, r.y);
+        /* read 4 rows at a time instead: the guess after the first content row is never an exact refusal of a band
+         * under 8 rows; exact only when it is the decision */
+        VjoTrimScan sc;
+        vjo_trim_begin(&sc, W, h);
+        while (!sc.content && sc.top * 10u <= h * 3u && sc.rows < h)
+            vjo_trim_rows(&sc, (const uint8_t *)(frame + (size_t)sc.rows * W), h - sc.rows < 4u ? h - sc.rows : 4u, W * 4u);
+        gk = vjo_trim_guess(&sc, &g, &exact);
+        TEST_CHECK_(!exact || (gk == kind && g.x == r.x && g.y == r.y && g.w == r.w && g.h == r.h),
+                    "case %u, 4-row strips: an exact guess %ux%u at %u,%u (kind %d) that is not the decision %ux%u at %u,%u", i,
+                    g.w, g.h, g.x, g.y, gk, r.w, r.h, r.x, r.y);
+    }
+}
+
 /* The scan's state is the rows', whatever strips they come in (the hook's 64, the kernel strip's 16, one
  * at a time), and rows past the frame's last are not read. */
 static void any_strips_give_the_same_scan(void)
@@ -387,5 +424,6 @@ TEST_LIST = {
     {"API 32: bars that frame no centred picture, and the limits", bars_that_frame_no_centred_picture},
     {"API 32: the guess from the first rows, and frames of another size", the_guess_and_other_frame_sizes},
     {"API 32: any strips give the same scan", any_strips_give_the_same_scan},
+    {"API 32: frames shorter than 27 rows follow the rule", tiny_frames_follow_the_rule},
     {"API 32: random frames never lose content", random_frames_never_lose_content},
     {NULL, NULL}};

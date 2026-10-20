@@ -153,7 +153,8 @@ should have the whole screen, as before; one from a PSP game shown smaller than 
 screen size under 2.0×) only the game's picture and 2 px of black around it. In the debug build's
 `log.txt`, each screenshot's `anki: screenshot bars K how H: picture W×H at X,Y of 960x544; scan N us`
 line says what it found (K 1 trimmed; H 2 read again) and the `anki: screenshot rc=0 ...` line before it
-the whole time: note both, for a Vita game and for a PSP game at 1× and 2× ([anki.md](anki.md#black-bars)).
+the whole time: note both, for a Vita game and for a PSP game at 1× and 2×, and the whole time of any
+`how 2` shot, which reads the frame twice ([anki.md](anki.md#black-bars)).
 
 ## What it tells us
 - **The capture in the game:** whether the display hook can write the game's own memory, per

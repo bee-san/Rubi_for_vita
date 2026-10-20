@@ -774,7 +774,7 @@ static void api32_the_kernel_strip_a_cancel_and_other_bits(void)
     TEST_CHECK(shot(&out) == VJO_E_CANCELLED && frames == 2 && !kernel_files && file_size(jpg_path) < 0);
     TEST_CHECK(!step_of(&out, VJO_GSTEP_TRIM, 0));
     /* the worker's own check: a claimed shot whose speed has another bit (past the kernel's check) */
-    static const uint32_t forged[] = {VJO_GAME_OCR_S_TRIM | VJO_GAME_OCR_S_BOOST, VJO_GAME_OCR_S_GATE, 0x40};
+    static const uint32_t forged[] = {VJO_GAME_OCR_S_TRIM | VJO_GAME_OCR_S_BOOST, VJO_GAME_OCR_S_GATE, 0x20, 0x80};
     for (unsigned i = 0; i < sizeof(forged) / sizeof(forged[0]); i++) {
         static VjoGameOcrRequest r, took;
         static VjoGameOcrResult res;
@@ -792,6 +792,81 @@ static void api32_the_kernel_strip_a_cancel_and_other_bits(void)
                     "speed 0x%X: rc %d", forged[i], res.rc);
         TEST_CHECK(!vjoOcrComplete(&res));
     }
+}
+
+/* A PSP game at 1x with one grey pixel in its left bar, at rows 186-249: the first strip read after the guess
+ * starts at the guess's last band (row 182) and scans from its 11th row (row 192, game_ocr/main.c shot_pass:
+ * band + (s->rows - have) * stride), so every one of those rows is scanned once: the frame is kept whole, the
+ * pixel in its JPEG (audit-blackbars F1; a scan of the strip's first rows instead lost it). */
+static void api32_a_bar_pixel_in_the_realigned_strip(void)
+{
+    VjoGameOcrResult out;
+    size_t len;
+    for (uint32_t row = 186; row < 250; row += 3) {
+        reset(); black_frame(); picture_at(240, 136, 480, 272);
+        frame32[row * 960 + 5] = 0xFF808080u;
+        len = reference(0, 0, 960, 544, 70); /* the whole frame, its pixel included */
+        shot_speed = VJO_GAME_OCR_S_TRIM;
+        TEST_CHECK_(shot(&out) == VJO_OK && jpeg_is_want(len), "the pixel at row %u: the JPEG is not the whole frame", row);
+        const VjoGameOcrStep *t = step_of(&out, VJO_GSTEP_TRIM, 0);
+        /* how 1: the pixel in the guess's own strip (rows 128-191) kept it whole; 2: below it, read again */
+        TEST_CHECK_(t && t->kind == VJO_TRIM_KEPT && t->arg == (row < 192 ? 1 : 2) && t->sum == (960u << 16 | 544u),
+                    "the pixel at row %u: kind %u how %u, %ux%u", row, t ? t->kind : 9, t ? t->arg : 9,
+                    t ? t->sum >> 16 : 0, t ? t->sum & 0xFFFF : 0);
+    }
+}
+
+/* A frame whose first rows reach its top edge and one side's, the other side a bar: decided by those rows
+ * (how 0, kept whole: one bar alone), in 9 strips; with both side edges reached as well (audit-blackbars N1). */
+static void api32_one_side_edge_decides_with_the_first_rows(void)
+{
+    static const struct { uint32_t x, w; } pictures[] = {{0, 900}, {60, 900}, {0, 960}};
+    for (unsigned i = 0; i < sizeof(pictures) / sizeof(pictures[0]); i++) {
+        VjoGameOcrResult out;
+        reset(); black_frame(); picture_at(pictures[i].x, 0, pictures[i].w, 544);
+        shot_speed = VJO_GAME_OCR_S_TRIM;
+        TEST_CHECK_(shot(&out) == VJO_OK && jpeg_is_want(reference(0, 0, 960, 544, 70)) && out.captures == 9,
+                    "picture %u: %u strips", i, out.captures);
+        check_trim_step(&out, pictures[i].w == 960 ? VJO_TRIM_NONE : VJO_TRIM_KEPT, 0, 0, 0, 960, 544);
+    }
+}
+
+/* A frame that changes size while a trimmed shot reads it (VJO_ERR_FORMAT from the hook): in its first rows,
+ * before the guess, no trim step (the pass never ended); in the second pass of a wrong guess, the first pass's
+ * step is there. Either way no file and nothing held (shot() checks); a cancel in the second pass too
+ * (audit-blackbars N2). */
+static void api32_a_resize_or_a_cancel_with_trim(void)
+{
+    VjoGameOcrResult out;
+    for (unsigned k = 0; k < 3; k++) {
+        reset(); black_frame(); picture_at(117, 0, 726, 544); picture_at(0, 300, 960, 40); /* the wrong guess */
+        shot_speed = VJO_GAME_OCR_S_TRIM;
+        if (k == 0) resize_after = 1;  /* the first strip in, the second resized */
+        if (k == 1) resize_after = 12; /* the second pass's 3rd strip */
+        if (k == 2) cancel_after = 13;
+        int rc = shot(&out);
+        TEST_CHECK_(rc == (k == 2 ? VJO_E_CANCELLED : VJO_E_SOURCE) && file_size(jpg_path) < 0 && !kernel_files,
+                    "case %u: rc %d", k, rc);
+        if (k == 0) TEST_CHECK(!step_of(&out, VJO_GSTEP_TRIM, 0));
+        if (k == 1) check_trim_step(&out, VJO_TRIM_NONE, 2, 0, 0, 960, 544); /* (a cancelled job returns no result) */
+    }
+}
+
+/* The most strips a shot reads without a JPEG too large, 19: a top bar ending at a strip's end (the picture's
+ * first row starts the 3rd strip, so its 2 px margin is read again from the strip before: 10 in the first
+ * pass), then a wrong guess (a pixel in the bottom bar) read again, 9 more (audit-blackbars N4). */
+static void api32_the_most_strips_a_shot_reads(void)
+{
+    VjoGameOcrResult out;
+    reset(); black_frame(); picture_at(0, 128, 960, 288);
+    frame32[500 * 960 + 480] = 0xFF101010u;
+    shot_speed = VJO_GAME_OCR_S_TRIM;
+    TEST_CHECK(shot(&out) == VJO_OK && jpeg_is_want(reference(0, 0, 960, 544, 70)));
+    const VjoGameOcrStep *s0 = step_of(&out, VJO_GSTEP_SHOT, 0), *s1 = step_of(&out, VJO_GSTEP_SHOT, 1);
+    TEST_ASSERT(s0 && s1);
+    TEST_CHECK_(out.captures == 19 && s0->sum == 10 && s1->sum == 9 && out.shot_tries == 2, "%u strips (%u + %u), %u tries",
+                out.captures, s0->sum, s1->sum, out.shot_tries);
+    check_trim_step(&out, VJO_TRIM_KEPT, 2, 0, 0, 960, 544);
 }
 
 /* --shot FRAME.rgba W H FORMAT DIR [trim]: one shot of the given picture, in the given pixel
@@ -850,6 +925,10 @@ TEST_LIST = {
     {"API 32: black frames are kept whole", api32_black_frames_are_kept_whole},
     {"API 32: too large after a trim", api32_too_large_after_a_trim},
     {"API 32: the kernel strip, a cancel, and other speed bits", api32_the_kernel_strip_a_cancel_and_other_bits},
+    {"API 32: a bar pixel in the strip read after the guess", api32_a_bar_pixel_in_the_realigned_strip},
+    {"API 32: the first rows decide with one side's edge", api32_one_side_edge_decides_with_the_first_rows},
+    {"API 32: a resize or a cancel while a trimmed shot reads", api32_a_resize_or_a_cancel_with_trim},
+    {"API 32: the most strips a shot reads", api32_the_most_strips_a_shot_reads},
     {NULL, NULL}
 };
 

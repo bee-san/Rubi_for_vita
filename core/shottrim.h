@@ -40,9 +40,10 @@ typedef struct {
 
 void vjo_trim_begin(VjoTrimScan *s, uint32_t w, uint32_t h);
 /* The next n rows of the frame (rows s->rows to s->rows + n - 1; no more than are left), as
- * A8B8G8R8 words, stride bytes apart. Each pixel is read at most once: a black row whole, a
- * content row from its left end to its first content pixel and from its right end no further than
- * the fewest black pixels a content row has ended with yet. */
+ * A8B8G8R8 words, stride bytes apart. A black row is read whole, once; a content row from its left
+ * end to its first content pixel and from its right end to its last content pixel, but no further
+ * than the fewest black pixels a content row has ended with yet (a row's only content pixel is read
+ * from both ends). */
 void vjo_trim_rows(VjoTrimScan *s, const uint8_t *rgba, uint32_t n, uint32_t stride);
 /* The picture once every row is scanned: VJO_TRIM_*, and *r the frame's sub-rectangle to encode
  * (the whole frame unless VJO_TRIM_TRIMMED). */
@@ -52,8 +53,9 @@ int vjo_trim_decide(const VjoTrimScan *s, VjoTrimRect *r);
  * outside it and, under a top bar, a bottom bar as wide; but side bars under no top bar whose black
  * pixels are not all one colour (a dark picture's edges, where an emulator's bars are one colour) are
  * guessed as the whole frame (VJO_TRIM_KEPT). *exact is 1 when no row below can change the picture:
- * no centred picture can have so tall a black band at the top (the frame is kept whole), or the first
- * rows reach the top edge and a side's (none is trimmed; the kind is the first rows'). */
+ * every row is scanned already (the guess is vjo_trim_decide's), or no centred picture can have so tall
+ * a black bar at the top (8 rows or more, over 3/10 of the frame: kept whole), or the first rows reach the
+ * top edge and a side's (none is trimmed; the kind is the first rows'). */
 int vjo_trim_guess(const VjoTrimScan *s, VjoTrimRect *r, int *exact);
 
 #endif

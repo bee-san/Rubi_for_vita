@@ -350,6 +350,12 @@ rewritten (the [removed online dictionaries](#settings-and-dictionaries)'
 API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and the
 removed engine choice's `ocr_backend` line goes).
 
+On the **Anki** page the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
+Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), then
+**Export cards** and **Export all cards**. Five rows are more than the room above the page's status
+box: they scroll a row at a time as the OCR page's cards do, a bar at the right shows where the view is,
+and a touch on the row cut at the bottom only scrolls it into view ([Anki](anki.md#setup-and-use)).
+
 Japanese-only selection (**Japanese characters only**) is **OFF by default** (the
 owner's choice, 2026-10-20; ON before): every visible character is selectable, the
 initial cursor is the text's first character, and the arrows skip spaces and line

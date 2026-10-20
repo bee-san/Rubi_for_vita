@@ -94,10 +94,11 @@
  * bit left. */
 #define VJO_GAME_OCR_S_GATE 0x10u
 #define VJO_GAME_OCR_S_ALL 0x1Fu
-/* API 32, bit 5, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
+/* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
- * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows. */
-#define VJO_GAME_OCR_S_TRIM 0x20u
+ * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
+ * Not bit 5: draft #228's scan screen (API 30) has it (VJO_GAME_OCR_S_SPOT), so the two can merge. */
+#define VJO_GAME_OCR_S_TRIM 0x40u
 #define VJO_GAME_OCR_S_SHOT_ALL VJO_GAME_OCR_S_TRIM
 #define VJO_PACE_SLOW_US 25000 /* a frame gap over 25 ms: a dropped frame at 60 fps */
 

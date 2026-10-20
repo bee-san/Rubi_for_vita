@@ -56,7 +56,7 @@
  * bit 15 is unknown again and no Open is VJO_GAME_OCR_OPEN_VERTICAL. A new number, not 26: builds of
  * 27 exist, and a number names one interface only. Sizes are unchanged.
  * 32: an Anki screenshot may trim the frame's black bars (config.ini anki_screenshot_trim_bars,
- * docs/anki.md): VjoGameOcrRequest.speed bit 5 (VJO_GAME_OCR_S_TRIM), a shot's only speed bit, and a new
+ * docs/anki.md): VjoGameOcrRequest.speed bit 6 (VJO_GAME_OCR_S_TRIM), a shot's only speed bit, and a new
  * step kind (trim). Sizes are unchanged. Not 29-31: open draft pull requests' builds use them. */
 #define VJO_API_VERSION 32
 

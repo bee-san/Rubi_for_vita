@@ -306,7 +306,7 @@ if(VJO_WITH_VOCR)
   # the model tiers' ladder (API 21: +788 B of text at -O2) within the module's
   # pages (game_ocr/main.c's text 12,276 B at -O2 before it, 9,164 B at -Os with it).
   set_source_files_properties(${ROOT}/game_ocr/main.c PROPERTIES COMPILE_OPTIONS "-Os")
-  # API 32: the screenshot's black bars, for size too (530 B of text against 696 B at -O2): the scan
+  # API 32: the screenshot's black bars, for size too (606 B of text against 812 B at -O2): the scan
   # reads only the bars' pixels, a small part of the frame, once a shot; the encoder stays at -O2.
   set_source_files_properties(${ROOT}/core/shottrim.c PROPERTIES COMPILE_OPTIONS "-Os")
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections

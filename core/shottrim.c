@@ -104,9 +104,13 @@ int vjo_trim_decide(const VjoTrimScan *s, VjoTrimRect *r)
 int vjo_trim_guess(const VjoTrimScan *s, VjoTrimRect *r, int *exact)
 {
     int kind;
-    /* a black band over 3/10 of the frame at its top (or no content row yet): kept, whatever is below */
+    /* every row scanned (a frame within one strip): the decision itself */
     *exact = 1;
-    if (!s->content || s->top * 10u > s->h * 3u) {
+    if (s->rows == s->h)
+        return vjo_trim_decide(s, r);
+    /* no content row yet (rows read until a black band over 3/10 of the frame), or a band over 3/10 that is a bar
+     * (8 rows or more; under 8 rows it is none, which only a frame under 27 rows can have): kept, whatever is below */
+    if (!s->content || (s->top >= VJO_TRIM_MIN_BAR && s->top * 10u > s->h * 3u)) {
         whole(s, r);
         return VJO_TRIM_KEPT;
     }

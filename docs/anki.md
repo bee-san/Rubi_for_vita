@@ -407,15 +407,17 @@ The rule (`core/shottrim.h`), on the frame as the worker reads it:
   at least 2/5 of each side. An axis whose two bars are both under 8 px has none.
 - Anything else frames no centred picture and the frame is kept whole: one bar alone (a dark
   sky, a dark side of a scene), two too unequal, one too wide (a small logo in the middle), and
-  an all-black frame. Every pixel that is not black is in the JPEG, whatever the frame.
+  an all-black frame. Every pixel that is not black is in the JPEG, whatever the frame, as long as the
+  frame holds still while it is read (over 9 of the game's frames, as for API 23's seam above): a picture
+  that changes meanwhile is trimmed by the rows as the scan saw them.
 
 So a PSP game at 1× (bars of 240 and 136 px) gives a 484 × 276 picture, at 1.5× 724 × 412, and
 at 2×, the whole screen, the whole frame as before; a game's own black areas count as bar only
 where they reach the frame's edge in every row (or column) of it.
 
 There is no copy of the frame and no second buffer: the worker finds the bars as the rows come
-(`vjo_trim_rows`, each pixel read at most once, a black row whole, a picture's row only up to its
-first pixel from each end) and encodes the picture's sub-rectangle of the strip it has. Its
+(`vjo_trim_rows`: a black row read whole, a picture's row only from each end up to its first pixel
+that is not black) and encodes the picture's sub-rectangle of the strip it has. Its
 first rows are read without being encoded until the picture's first row; the bars they show
 are its guess, which it encodes while it scans every row below, and every row checks it:
 
@@ -424,10 +426,17 @@ are its guess, which it encodes while it scans every row below, and every row ch
   whole), is read and encoded as without the option, to the same bytes, in the same 9 strips (12
   when that band is black of more than one value: its rows are read again): 1,661 of the 1,727 Vita
   frames below (`test_game_shot.c`, `test_game_shot.py`).
-- A frame whose rows come to another picture than its guess is read again, at the same quality:
-  9 strips more at most, and one more encoding. Side bars under no top bar whose black is not all
-  one colour, mostly a dark picture's edges (an emulator's bars are one colour), are guessed as
-  the whole frame, which is right for them.
+- A frame whose rows come to another picture than its guess is read again, at the same quality: a
+  second pass of 9 strips, and one more encoding. With the first pass's own 9 to 10 strips that is
+  19 at most (a top bar that ends at a strip's end, then a wrong guess; `test_game_shot.c`), and 4
+  tries when the JPEG is also too large. Side bars under no top bar whose black is not all one
+  colour, mostly a dark picture's edges (an emulator's bars are one colour), are guessed as the
+  whole frame, which is right for them.
+- A wrong guess is read again even when its JPEG already held every pixel that is not black (the
+  guess was the whole frame, and the rows below came to a trimmed picture: 22 of the 29 PSP frames
+  read again below, audit-blackbars): the card then gets the trimmed picture, at the price of the
+  second pass. When the guess cut the picture (the 1 Vita frame read again), the second pass is
+  needed.
 
 Measured on the host with the actual worker (`vjo-game-shot-tests --shot … trim`) on local copies
 of the owner's frames (not in the repository; aggregate counts only):
@@ -443,14 +452,17 @@ The PSP frames are a fixed random 300 of the owner's 2,628 PSP screens (480 × 2
 (bilinear) and centred in the black 960 × 544 frame as Adrenaline shows them. Trimmed, their JPEGs are smaller: median 24.3 KB against 28.2 KB whole at 1×, 38.1
 against 40.3 KB at 1.5×.
 
-What it costs on the Cortex-A9 (the Vita compiler's code, its instructions counted under
-qemu-arm's insn_mix plugin [measured]; times at 444 MHz are estimates, scaled as
-`docs/performance.md` scales them): the first strip of a frame without bars, about 4,000
+What it costs on the Cortex-A9 (the Vita compiler's code as the worker builds it, its
+instructions counted under qemu-arm's insn_mix plugin [measured]; times at 444 MHz are estimates,
+scaled as `docs/performance.md` scales them): the first strip of a frame without bars, about 4,000
 instructions; every row of a PSP game's 1× frame, its bars all read, 3.55 million (about 4 to
-9 ms); the encoding of its 484 × 276 picture 19.7 million against 72.7 million for the whole
+9 ms); the encoding of its 484 × 276 picture 19.9 million against 73.4 million for the whole
 frame of the same synthetic picture, so a trimmed shot takes less time than an untrimmed one.
-A frame read again takes up to 9 more of the game's frames (150 ms at 60 fps) and one more
-encoding. The scan needs no memory: the shot's block is 450,560 B as before. The worker's code
+A frame read again takes up to 10 more of the game's frames than one that is not (about 167 ms at
+60 fps) and one more encoding of the whole frame (69 to 149 ms at 444 MHz, below), so a card whose
+save took 523 to 905 ms on the console (#207) can take over a second then: on the host, 1 of the
+1,727 Vita frames and 11 of 300 PSP frames at 1×. The console-test checklist asks for those shots'
+time. The scan needs no memory: the shot's block is 450,560 B as before. The worker's code
 grows by 1,216 B of text in the debug build and 1,248 B in the normal one (`core/shottrim.c` at
 `-Os`, the passes in `game_ocr/main.c`): the debug build's worker takes one more page, 102,400 B,
 the normal build's keeps its 98,304 B ([memory ledger](memory-ledger.md)).

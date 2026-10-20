@@ -123,7 +123,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Dictionaries shown**: how many dictionaries' entries an L or R tap pages through, 1–8 | 1 |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
-| | **Trim black bars**: the picture leaves out the black borders around the game's (a PSP game shown smaller than the screen) | ON |
+| | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
 | | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
 | Install | **Install**, **Update** or **Check and repair**, and **Uninstall** | |
 
@@ -196,8 +196,8 @@ Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the e
 the home screen (SceShell) or another system app. Before each reading it checks how much memory the
 game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
-Rubi's OCR worker from its start: 132 KiB of its memory (96 KiB of module pages, 100 KiB in the
-`-debug` build, 36 KiB of stack and TLS: the build's figures). If a game or homebrew app won't start with it, turn it OFF in the app, or
+Rubi's OCR worker from its start: 132 KiB of its memory, 136 KiB in the `-debug` build (96 KiB of module
+pages, 100 KiB in the `-debug` build, and 36 KiB of stack and TLS: the build's figures). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).
 
