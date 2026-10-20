@@ -380,6 +380,7 @@ add_executable(vjo-history-writer host/tests/history_writer.c core/utf.c core/te
 target_include_directories(vjo-history-writer PRIVATE host/tests/vita_stubs)
 target_compile_definitions(vjo-history-writer PRIVATE VJO_HOST=1)
 target_compile_options(vjo-history-writer PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-history-writer PRIVATE vjo_core) # shell/history.c also contains the line-history reader
 # Line history (docs/line-history.md): history.csv's records read back from a window of the file,
 # this game's lines newest first, filtered and deduplicated as the overlay shows them.
 add_executable(vjo-history-lines-tests host/tests/test_history_lines.c)

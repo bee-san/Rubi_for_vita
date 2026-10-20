@@ -220,10 +220,11 @@
  * 3.55 million Cortex-A9 instructions, 5.11 million with the check and no such path, 2.75 million with neither (the
  * rule out) [measured: qemu-arm's insn_mix plugin, the Vita compiler's objects; the last by audit-blackbars]. In the
  * game's partition, never SceShell's. */
-/* Combined native hooks and black-bar trimming: retain PR #234's declared pages until the
- * combined modules are measured. The standalone PR #235 page counts above do not replace
- * these budgets; the packaged-module ledger must pass for both builds before release.
- * Trimming uses the existing VjoGameShot block and adds no transient allocation. */
+/* Combined enhancement build, API 33: native hooks and screenshot trimming retain the original
+ * native-hook page budgets. Move the immutable 1820-byte Luna title-ID table into existing data-page
+ * room (VJO_DATA_TABLE); no new allocation or per-pixel work. Measured with VitaSDK GCC 15.2.0:
+ * debug segments 134120+32576 B, normal 125172+32568 B; rounded 167936/159744 B
+ * (build/combined-{debug,normal}-ledger.json). Shell budgets and PAF reserve remain unchanged. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 167936u
 #else

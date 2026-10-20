@@ -1,4 +1,5 @@
 #include "utf.h"
+#include "port.h"
 
 #include <string.h>
 
@@ -110,7 +111,7 @@ int vjo_utf8_cursor_range(const char *s, size_t len, size_t offset, uint32_t *st
  * SHA256: 9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf
  *         ec2107e58825a1586acee8e0911ce18260394ac8b87e535ca325f1ccbeb06bc6
  *         2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c */
-static const struct { uint32_t first, last; } japanese_letters[] = {
+static const struct { uint32_t first, last; } japanese_letters[] VJO_DATA_TABLE(utf_japanese_letters) = {
     {0x3005u, 0x3007u},
     {0x3021u, 0x3029u},
     {0x3031u, 0x3035u},

@@ -29,6 +29,7 @@ int sceIoOpen(const char *file, int flags, unsigned mode)
     return native(open(path, flags, mode));
 }
 SceOff sceIoLseek(int fd, SceOff off, int whence) { return lseek(fd, off, whence); }
+int sceIoRead(int fd, void *p, size_t n) { return native((int)read(fd, p, n)); }
 int sceIoWrite(int fd, const void *p, size_t n) { return native((int)write(fd, p, n)); }
 int sceIoSyncByFd(int fd, int flags)
 {

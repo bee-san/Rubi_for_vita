@@ -127,7 +127,8 @@ build taicfg -DNO_CTYPE -DNO_STRING -DVJO_SOURCE_DIR="\"$PWD\"" host/tests/test_
 "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
 # The reading history's writer (shell/history.c) and its characters column (core/reading_chars.h) on
 # the Vita's word size: 32-bit size_t, the append offsets past 4 GiB.
-build shell_history host/tests/test_shell_history.c core/utf.c core/text_rows.c core/textnorm.c
+build shell_history host/tests/test_shell_history.c core/utf.c core/text_rows.c core/textnorm.c \
+  core/history_lines.c core/arena.c core/textfilter.c
 
 # The Rubi app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets. Its
 # picture cards carry the game worker's JPEG (core/jpegsw.c), which must come out the same on the A9.

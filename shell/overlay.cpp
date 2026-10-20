@@ -97,6 +97,8 @@ void operator delete(void *p, unsigned int)
 #define LAYOUT_RETRY_FRAMES 6 /* layout may land a frame or two after SetString */
 #define CLEAR_HOLD_US 1000000
 #define MAX_RANGES VJO_MAX_ENTRIES /* entries whose header highlight range is cached */
+static_assert(HEADER_UNITS <= UINT16_MAX && VJO_STRIP_MAX - 1 <= UINT16_MAX,
+              "visible header ranges and owned cursor text fit 16-bit offsets");
 
 enum { MODE_OVERLAY = 0, MODE_REGION = 1 };
 
@@ -125,7 +127,19 @@ static int s_selected;
  * the result memory (the control thread frees it when a game exits) and no
  * paf call runs while the lock is held. */
 static int s_n_entries;
-static uint32_t s_rng_start[MAX_RANGES], s_rng_len[MAX_RANGES]; /* len 0 = no highlight */
+/* The header has at most HEADER_UNITS UTF-16 units. Keep every entry's range,
+ * using half the static storage; len 0 still means no highlight. */
+static uint16_t s_rng_start[MAX_RANGES], s_rng_len[MAX_RANGES];
+
+static void cache_header_range(const VjoEntryList *list, int entry)
+{
+    uint32_t start, len;
+    s_rng_len[entry] = 0;
+    if (vjo_entry_header_range(list, entry, &start, &len) && start <= UINT16_MAX && len <= UINT16_MAX) {
+        s_rng_start[entry] = (uint16_t)start;
+        s_rng_len[entry] = (uint16_t)len;
+    }
+}
 /* Local lookups select a source character, including one with no entry.
  * This owned copy survives lookup-result arena resets and never borrows
  * a worker pointer outside the view lock. */
@@ -406,8 +420,10 @@ static void render(int new_content)
         s_selected = 0;
         /* Copy only the current result's range while its arena is locked.
          * An in-flight or unsuccessful lookup falls back to the character. */
-        if (!s_n_entries || !vjo_entry_header_range(l, 0, &s_rng_start[0], &s_rng_len[0]))
+        if (!s_n_entries)
             s_rng_len[0] = 0;
+        else
+            cache_header_range(l, 0);
         if (s_n_entries && l->entries[0].hl_start == (int)s_cursor_byte &&
             l->entries[0].hl_end > (int)s_cursor_byte &&
             l->entries[0].hl_end <= (int)s_cursor_text_len)
@@ -442,8 +458,7 @@ static void render(int new_content)
         s_hdr_mark = vjo_arena_mark(&s_ui);
         if (!s_local_cursor_mode)
             for (int i = 0; i < s_n_entries && i < MAX_RANGES; i++)
-                if (!vjo_entry_header_range(l, i, &s_rng_start[i], &s_rng_len[i]))
-                    s_rng_len[i] = 0;
+                cache_header_range(l, i);
     }
 
     /* body: page, the app notice, status, the selected entry (or "no entries"), config warnings */

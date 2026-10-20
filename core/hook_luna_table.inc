@@ -3,6 +3,8 @@
  * one site per (address, title ID), sorted by title ID. Do not edit: change the generator. */
 /* 307 entries, 182 title IDs, 306 sites, 294 ported; 2 entries left out (an earlier one has the same address and title). */
 
+#include "port.h"
+
 /* core/hook_luna.c's ports of Luna's hookfuncs (VjoLunaSite.func) and filterfuns (.filter) */
 enum {
     VJO_LH_NONE = 0,
@@ -120,7 +122,7 @@ enum {
 #define VJO_LUNA_TITLES 182u
 #define VJO_LUNA_SITES 306u
 
-static const char vjo_luna_ids[VJO_LUNA_TITLES][10] = {
+static const char vjo_luna_ids[VJO_LUNA_TITLES][10] VJO_DATA_TABLE(luna_title_ids) = {
     "PCSB00985", "PCSG00020", "PCSG00062", "PCSG00139", "PCSG00172", "PCSG00216",
     "PCSG00271", "PCSG00272", "PCSG00291", "PCSG00299", "PCSG00367", "PCSG00370",
     "PCSG00382", "PCSG00389", "PCSG00397", "PCSG00401", "PCSG00402", "PCSG00405",

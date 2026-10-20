@@ -22,6 +22,7 @@
  * sites, or text it decoded first) run on characters. docs/hook-titles.md lists
  * each filter's port and caveats. */
 #include "hook_luna.h"
+#include "port.h"
 
 #include <string.h>
 

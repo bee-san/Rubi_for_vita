@@ -5,6 +5,30 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Combined enhancement test build (local, API 33)
+
+The local combination of PRs #209, #233, #234, #235 and #236, with popup source controls removed, fits the
+same permanent module pages as test.7. These are **binary measurements**, not console heap measurements:
+VitaSDK GCC 15.2.0, both Release variants, `tools/check_memory_ledger.py` on the produced SELF files.
+
+| Module | Debug pages | Normal pages |
+|---|---:|---:|
+| Kernel | 118,784 B | 114,688 B |
+| Shell | 176,128 B | 163,840 B |
+| Game worker | 167,936 B | 159,744 B |
+
+The overlay's 512 highlight ranges use 16-bit starts and lengths, retaining every range and checking
+32-bit inputs before conversion. That reduces their static storage from 4,096 to 2,048 B. Existing immutable
+UTF/config/ledger tables use free space in the Shell's data pages; the Luna title-ID table uses free
+space in the game worker's data pages. No feature, model, thread or allocation is removed or added by
+these storage changes. The existing 1.5 MiB PAF reserve remains. Line history retains PR #236's 16 KiB
+transient PAF block during a history visit.
+
+Measured Shell text + data segments: debug 100,892 + 72,352 B, normal 90,044 + 72,368 B.
+Worker segments: debug 134,120 + 32,576 B, normal 125,172 + 32,568 B. Reports are saved in the
+local build directory as `combined-debug-ledger.json` and `combined-normal-ledger.json`.
+The standalone figures below describe their named revisions and are retained as history.
+
 ## The parts
 
 | Part | Where | What it does |
@@ -30,8 +54,8 @@ modules (`ctest -R memory_ledger` runs it locally):
   game                                204,800   10,567,680   10,567,680            0
 ```
 
-Historical packaged-module output retained from PR #234 before this integration (the combined
-module measurements are pending):
+Historical packaged-module output retained from PR #234 before this integration (current combined
+measurements are above):
 
 ```
   packaged modules (loaded pages vs declared budget)
@@ -44,11 +68,11 @@ The combined source includes native hooks from PR #234 (`891a8d9`), black-bar tr
 PR #235 (`de5f7e0`, based on main `75041a0`), character statistics from PR #233 (`8601141`) and
 line history from PR #236 (`6ed8f30`). Their standalone measurements below describe their own
 source trees. Line history adds the eleventh ledger item and a 16,384 B transient PAF visit block;
-its five header spans fit in the unchanged 20,480 B UI arena (18,016 B needed, host test). The declared worker pages remain PR #234's 167,936 B debug / 159,744 B normal
-until both combined modules are measured; these are provisional limits, not measured combined
-sizes. Shell page budgets and the PAF reserve are unchanged. Trimming still uses the existing
-450,560 B screenshot block and adds no transient allocation. Packaging requires the combined
-module checks, including the normal build's exact page check, to pass.
+its five header spans fit in the unchanged 20,480 B UI arena (18,016 B needed, host test). The measured
+combined worker retains PR #234's 167,936 B debug / 159,744 B normal pages. Shell page budgets and the
+PAF reserve are unchanged. Trimming still uses the existing 450,560 B screenshot block and adds no
+transient allocation. Both combined builds pass the module checks, including the normal build's
+exact page check.
 
 Every Shell configuration is the shipped one since Google Lens and the Hachidori relay were
 removed: the overlay is offline, a job's lookup takes one 64 KiB arena, and there is no opt-in

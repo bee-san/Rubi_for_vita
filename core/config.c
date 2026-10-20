@@ -9,7 +9,7 @@
 #include "textfilter.h"
 #include "utf.h"
 
-static const char *const trigger_names[VJO_TRIGGER_COUNT] = {
+static const char *const trigger_names[VJO_TRIGGER_COUNT] VJO_DATA_TABLE(config_trigger_names_1) = {
     "select", "start", "l+r", "select+l", "select+r", "rear_double_tap",
 };
 
@@ -244,7 +244,7 @@ static const char *removed_dictionary(const char *v)
  * SECRETS) delete it. */
 static int removed_secret(const char *s, size_t n)
 {
-    static const char *const keys[] = {"jpdb_api_key", "jiten_api_key", "api_key"};
+    static const char *const keys[] VJO_DATA_TABLE(config_keys_1) = {"jpdb_api_key", "jiten_api_key", "api_key"};
     for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
         if (n >= strlen(keys[i]) && vjo_ieq_prefix(s, keys[i]))
             return 1;
@@ -293,7 +293,7 @@ int vjo_config_removed_line(const char *line, size_t n, const char **replacement
  * Rubi app's next save and the installer (tools/migrate_config.py) drop the line. */
 static const char *removed_engine(const char *v)
 {
-    static const char *const removed[][2] = {
+    static const char *const removed[][2] VJO_DATA_TABLE(config_removed_1) = {
         {"lens", "Google Lens was removed (the overlay is offline)"}, /* the upstream's engine, removed 2026-10-15 */
         {"vocr2", "VOCR2 was removed"},  /* the experimental trial, v0.7.12 to v0.8.0-test.1 */
         {"meiki", "Meiki was removed"},  /* the manual single-line trial, v0.7.6 to v0.7.12 */
@@ -322,8 +322,8 @@ static int valid_vocr_model(const char *v)
 }
 
 /* ---- the model tiers (include/vjo_vocr_sizes.h) ---- */
-static const char *const tier_ids[VJO_VOCR_TIERS] = {"small", "normal", "large"};
-static const char *const tier_models[VJO_VOCR_TIERS] = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME,
+static const char *const tier_ids[VJO_VOCR_TIERS] VJO_DATA_TABLE(config_tier_ids_1) = {"small", "normal", "large"};
+static const char *const tier_models[VJO_VOCR_TIERS] VJO_DATA_TABLE(config_tier_models_1) = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME,
                                                         VJO_VOCR_TIER3_NAME};
 
 const char *vjo_vocr_tier_id(int tier)
@@ -372,7 +372,7 @@ typedef struct {
     {#name, offsetof(VjoConfig, name), sizeof(((VjoConfig *)0)->name), required, raw, NULL, NULL}
 #define CHECKED_SETTING(name, raw, valid, expected) \
     {#name, offsetof(VjoConfig, name), sizeof(((VjoConfig *)0)->name), 0, raw, valid, expected}
-static const StrSetting str_settings[] = {
+static const StrSetting str_settings[] VJO_DATA_TABLE(config_str_settings) = {
     STR_SETTING(local_dictionary_dir, 1, 1),
     STR_SETTING(ocr_model_dir, 1, 1),
     CHECKED_SETTING(local_dictionaries, 0, vjo_local_names_valid, "1-8 relative .vjdict filenames separated by commas"),
@@ -397,7 +397,7 @@ static const StrSetting *find_str_setting(const char *key)
  * first word. */
 static int removed_anki_name(const char *s, size_t n)
 {
-    static const char *const names[] = {"anki_deck", "anki_note_type", "anki_tags", "anki_host", "anki_audio_url"};
+    static const char *const names[] VJO_DATA_TABLE(config_names_1) = {"anki_deck", "anki_note_type", "anki_tags", "anki_host", "anki_audio_url"};
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
         if (n == strlen(names[i]) && vjo_ieq_prefix(s, names[i]))
             return 1;
@@ -517,11 +517,11 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "subtitle_button")) {
         set_trigger(c, key, val, &c->subtitle_button);
     } else if (vjo_ieq(key, "text_source")) {
-        static const char *const sources[] = {"ocr", "auto", "hooks", NULL}; /* VJO_SOURCE_*'s order */
+        static const char *const sources[] VJO_DATA_TABLE(config_sources_1) = {"ocr", "auto", "hooks", NULL}; /* VJO_SOURCE_*'s order */
         c->text_source = VJO_SOURCE_AUTO; /* an unknown value: auto, with the warning */
         set_choice(c, key, val, &c->text_source, sources);
     } else if (vjo_ieq(key, "hook_sites")) {
-        static const char *const off_on[] = {"off", "on", NULL};
+        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_1) = {"off", "on", NULL};
         c->hook_sites = 1; /* an unknown value: on, with the warning */
         set_choice(c, key, val, &c->hook_sites, off_on);
     } else if (vjo_ieq(key, "ocr_backend")) {
@@ -563,23 +563,23 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "stick_lookup_ms")) {
         set_ms(c, key, val, &c->stick_lookup_ms, 0, 1000);
     } else if (vjo_ieq(key, "ocr_lm")) {
-        static const char *const tiers[] = {"off", "500k", "1000k", "2000k", "4000k", NULL};
+        static const char *const tiers[] VJO_DATA_TABLE(config_tiers_1) = {"off", "500k", "1000k", "2000k", "4000k", NULL};
         set_choice(c, key, val, &c->ocr_lm, tiers);
     } else if (vjo_ieq(key, "ocr_refine_lines")) {
-        static const char *const modes[] = {"off", "on", "psp", NULL};
+        static const char *const modes[] VJO_DATA_TABLE(config_modes_1) = {"off", "on", "psp", NULL};
         set_choice(c, key, val, &c->ocr_refine_lines, modes);
     } else if (vjo_ieq(key, "ocr_text_gate")) {
-        static const char *const off_on[] = {"off", "on", NULL};
+        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_2) = {"off", "on", NULL};
         set_choice(c, key, val, &c->ocr_text_gate, off_on);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;
         else warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "ocr_threads")) {
-        static const char *const threads[] = {"1", "2", "3", NULL}; /* stored as the helpers: 0-2 */
+        static const char *const threads[] VJO_DATA_TABLE(config_threads_1) = {"1", "2", "3", NULL}; /* stored as the helpers: 0-2 */
         set_choice(c, key, val, &c->ocr_helpers, threads);
     } else if (vjo_ieq(key, "ocr_boost_clock")) {
-        static const char *const off_on[] = {"off", "on", NULL};
+        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_3) = {"off", "on", NULL};
         set_choice(c, key, val, &c->ocr_boost_clock, off_on);
     } else if (vjo_ieq(key, "ocr_mode")) {
         if (vjo_ieq(val, "auto"))

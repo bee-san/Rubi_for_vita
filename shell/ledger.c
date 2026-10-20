@@ -8,10 +8,11 @@
 #include <psp2/kernel/threadmgr.h>
 
 #include "../core/ledger.h"
+#include "../core/port.h"
 #include "../include/vjo_ledger_budget.h"
 #include "shell.h"
 
-static const VjoLedgerItemDef defs[VJO_SL_COUNT] = {
+static const VjoLedgerItemDef defs[VJO_SL_COUNT] VJO_DATA_TABLE(shell_ledger_defs) = {
     [VJO_SL_MODULE] = {"Shell pages", VJO_LEDGER_POOL_SHELL_PAGES},
     [VJO_SL_WORKER_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_SHELL_PAGES},
     [VJO_SL_NET_STACK] = {"VjoNet stack", VJO_LEDGER_POOL_SHELL_PAGES},

@@ -491,6 +491,8 @@ def render_inc():
         f"{sum(s['ported'] for s in sites)} ported; {len(dropped)} entries left out (an earlier one has the "
         "same address and title). */",
         "",
+        '#include "port.h"',  # this .inc is also included directly by host tests
+        "",
         "/* core/hook_luna.c's ports of Luna's hookfuncs (VjoLunaSite.func) and filterfuns (.filter) */",
         "enum {",
         "    VJO_LH_NONE = 0,",
@@ -500,7 +502,7 @@ def render_inc():
     out += ["    VJO_LF_%s," % n for n in lnames]
     out += ["    VJO_LF_COUNT", "};", ""]
     out += [f"#define VJO_LUNA_TITLES {len(titles)}u", f"#define VJO_LUNA_SITES {len(sites)}u", ""]
-    out.append("static const char vjo_luna_ids[VJO_LUNA_TITLES][10] = {")
+    out.append("static const char vjo_luna_ids[VJO_LUNA_TITLES][10] VJO_DATA_TABLE(luna_title_ids) = {")
     for i in range(0, len(titles), 6):
         out.append("    " + " ".join('"%s",' % t for t in titles[i:i + 6]))
     out.append("};")
