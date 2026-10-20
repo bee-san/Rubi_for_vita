@@ -12,6 +12,8 @@
  *     the site.
  * Hook time (a game thread) only copies bounded raw bytes into a static slot under its try-lock:
  * no allocation, no lock wait, and no syscall in the CALL path. Decoding happens at job time. */
+#include <stdarg.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/kernel/sysmem.h>
@@ -21,6 +23,7 @@
 #include "hooks.h"
 #include "../core/hook_place.h"
 #include "../core/hook_stream.h"
+#include "../core/sfo.h"
 #include "../include/vjo_api.h"
 #include "../include/vjo_import.h"
 
@@ -40,6 +43,65 @@ static volatile uint32_t live;      /* hits are taken only while 1 */
 static volatile uint32_t in_flight; /* game threads inside a hook of ours */
 static uint32_t applied_mode, n_sites, n_calls, n_refused;
 static uint32_t seg_base;           /* the main module's segment 0 */
+static int mem_info_ok;             /* sceKernelGetMemBlockInfoByAddr resolved */
+
+/* The table sites: slot i (stream i + 1) is observer i's. */
+typedef struct {
+    const VjoLunaSite *luna;     /* a Luna site, or NULL */
+    const VjoPlaceVerified *ver; /* Rubi's verified entry, or NULL */
+    uint32_t addr;               /* the site in the game (its Thumb bit clear): regs[15] */
+} SiteInfo;
+static SiteInfo site_info[VJO_HOOK_SITE_STREAMS];
+static tai_hook_ref_t site_ref[VJO_HOOK_SITE_STREAMS];
+static SceUID site_uid[VJO_HOOK_SITE_STREAMS];
+/* A site hit's capture buffer: one hit at a time captures (a hit on another thread meanwhile is
+ * dropped and counted), so the game's stack carries no text buffer. */
+static uint8_t scratch[VJO_HOOK_RAW_BYTES];
+static uint32_t scratch_lock;
+
+extern void vjo_hooks_observer_0(void), vjo_hooks_observer_1(void), vjo_hooks_observer_2(void),
+    vjo_hooks_observer_3(void), vjo_hooks_observer_4(void), vjo_hooks_observer_5(void),
+    vjo_hooks_observer_6(void), vjo_hooks_observer_7(void);
+static void (*const observers[VJO_HOOK_SITE_STREAMS])(void) = {
+    vjo_hooks_observer_0, vjo_hooks_observer_1, vjo_hooks_observer_2, vjo_hooks_observer_3,
+    vjo_hooks_observer_4, vjo_hooks_observer_5, vjo_hooks_observer_6, vjo_hooks_observer_7};
+_Static_assert(VJO_HOOK_SITE_STREAMS == 8, "one observer per site slot (hooks_observer.S)");
+
+#if VJO_DEBUG
+/* The debug build's record of what vjo_hooks_start did in this game (sites, reasons, their first
+ * bytes; never text): ux0:data/VitaJPOverlay/hooks.log, rewritten at each game start. */
+static SceUID dlog = -1;
+static void dlog_line(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+static void dlog_line(const char *fmt, ...)
+{
+    char line[160];
+    va_list ap;
+    int n;
+    if (dlog < 0) return;
+    va_start(ap, fmt);
+    n = sceClibVsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    if (n < 0) return;
+    if ((unsigned)n >= sizeof(line)) n = (int)sizeof(line) - 1;
+    sceIoWrite(dlog, line, (SceSize)n);
+}
+static void dlog_bytes(const uint8_t *code, uint32_t code_size, uint32_t off)
+{
+    char hex[16 * 2 + 1];
+    unsigned k = off < code_size ? (code_size - off < 16u ? code_size - off : 16u) : 0u;
+    for (unsigned i = 0; i < k; i++) {
+        static const char digits[] = "0123456789ABCDEF";
+        hex[2 * i] = digits[code[off + i] >> 4];
+        hex[2 * i + 1] = digits[code[off + i] & 15];
+    }
+    hex[2 * k] = 0;
+    dlog_line(" bytes %s\n", hex);
+}
+#define DLOG(...) dlog_line(__VA_ARGS__)
+#else
+#define DLOG(...) ((void)0)
+#define dlog_bytes(code, size, off) ((void)0)
+#endif
 
 static inline void enter(void) { __atomic_add_fetch(&in_flight, 1u, __ATOMIC_ACQUIRE); }
 static inline void leave(void) { __atomic_sub_fetch(&in_flight, 1u, __ATOMIC_RELEASE); }
@@ -155,6 +217,91 @@ static const struct {
     [CALL_CLIB_STRLCPY] = {NID_SCE_CLIB, 0x2CDFCD1Cu, (const void *)clib_strlcpy_hook},
 };
 
+/* ---- table sites (hook time) ---- */
+
+/* VjoHookRead: up to max bytes at the game's address addr, never past the end of the memory block
+ * that holds it, and only from a readable one. unit 1 or 2: stops after the first NUL unit (copied,
+ * counted); 0: exactly max or nothing. One syscall (the block's bounds). */
+static unsigned read_game(void *ud, uint32_t addr, void *dst, unsigned max, unsigned unit)
+{
+    SceKernelMemBlockInfo mb;
+    uint32_t base, end;
+    const volatile uint8_t *src;
+    uint8_t *d = dst;
+    unsigned n = 0;
+    (void)ud;
+    if (!addr || !max || !dst || !mem_info_ok) return 0;
+    sceClibMemset(&mb, 0, sizeof(mb));
+    mb.size = sizeof(mb);
+    if (sceKernelGetMemBlockInfoByAddr((void *)(uintptr_t)addr, &mb) < 0) return 0;
+    if (!(mb.access & SCE_KERNEL_MEMORY_ACCESS_R)) return 0;
+    base = (uint32_t)(uintptr_t)mb.mappedBase;
+    end = base + mb.mappedSize;
+    if (addr < base || end <= addr) return 0;
+    if (end - addr < max) {
+        if (!unit) return 0;
+        max = end - addr;
+    }
+    src = (const volatile uint8_t *)(uintptr_t)addr;
+    if (unit == 2) {
+        for (max &= ~1u; n < max; n += 2) {
+            d[n] = src[n];
+            d[n + 1] = src[n + 1];
+            if (!d[n] && !d[n + 1]) return n + 2;
+        }
+        return n;
+    }
+    for (; n < max; n++) {
+        d[n] = src[n];
+        if (unit == 1 && !d[n]) return n + 1;
+    }
+    return n;
+}
+
+static void site_hit(unsigned i, const uint32_t *regs)
+{
+    const SiteInfo *si = &site_info[i];
+    unsigned n = 0, enc = VJO_HOOK_ENC_CP932, unit;
+    uint32_t expected = 0;
+    if (!__atomic_compare_exchange_n(&scratch_lock, &expected, 1u, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        __atomic_add_fetch(&stream_clock.dropped, 1u, __ATOMIC_RELAXED);
+        return;
+    }
+    if (si->ver) {
+        enc = si->ver->encoding;
+        unit = enc == VJO_HOOK_ENC_UTF16LE ? 2u : 1u;
+        n = read_game(NULL, regs[si->ver->reg] + (uint32_t)si->ver->padding, scratch, sizeof(scratch), unit);
+        if (n <= unit) n = 0; /* only the NUL: no text */
+    } else if (si->luna) {
+        n = vjo_luna_capture(si->luna, regs, read_game, NULL, scratch, sizeof(scratch), &enc);
+        if (n > sizeof(scratch)) n = 0;
+    }
+    if (n) vjo_stream_offer(&slots[i], &stream_clock, scratch, n, enc);
+    __atomic_store_n(&scratch_lock, 0u, __ATOMIC_RELEASE);
+}
+
+/* Called by observer slot (hooks_observer.S) with its frame: r0-r12, SP, LR as they were at the
+ * site; frame[15] is free until it returns. Returns where the game continues: taiHEN's next hook,
+ * or the moved instructions' trampoline (what TAI_CONTINUE calls), without a C prototype on the
+ * game's live registers. */
+uintptr_t vjo_hooks_observe(unsigned slot, uint32_t *frame);
+uintptr_t vjo_hooks_observe(unsigned slot, uint32_t *frame)
+{
+    const struct _tai_hook_user *cur, *next;
+    uintptr_t cont;
+    enter();
+    slot &= VJO_HOOK_SITE_STREAMS - 1u;
+    if (live && slot < n_sites) {
+        frame[15] = site_info[slot].addr;
+        site_hit(slot, frame);
+    }
+    cur = (const struct _tai_hook_user *)site_ref[slot];
+    next = (const struct _tai_hook_user *)cur->next;
+    cont = (uintptr_t)(next ? next->func : cur->old);
+    leave();
+    return cont;
+}
+
 /* ---- start and stop (module_start / module_stop) ---- */
 
 /* The main module (the game's eboot.bin): taiHEN's TAI_MAIN_MODULE, checked by its path. */
@@ -178,12 +325,114 @@ static int main_module(tai_module_info_t *tai, SceKernelModuleInfo *mi)
 
 static void install_calls(const char *module_name)
 {
-    if (!VJO_IMPORT_READY(taiHookFunctionImport)) return;
+    if (!VJO_IMPORT_READY(taiHookFunctionImportForUser)) return; /* taiHookFunctionImport is its inline helper */
     for (unsigned i = 0; i < CALL_IMPORTS; i++) {
         /* a game that does not import the function: skipped, not an error */
         call_uid[i] = taiHookFunctionImport(&call_ref[i], module_name, call_imports[i].lib, call_imports[i].nid,
                                             call_imports[i].func);
         if (call_uid[i] >= 0) n_calls++;
+        DLOG("import %08X/%08X: %s\n", (unsigned)call_imports[i].lib, (unsigned)call_imports[i].nid,
+             call_uid[i] >= 0 ? "hooked" : "not hooked");
+    }
+}
+
+/* The game's version, APP_VER of its param.sfo ("01.10" -> 0x0110, as Luna's comments are coded;
+ * 0 when unreadable). Read once, before any hook exists, into the CALL slots' storage (zeroed again
+ * after): no allocation and no buffer of its own. */
+static uint16_t app_version(void)
+{
+    uint8_t *buf = (uint8_t *)&slots[VJO_HOOK_SITE_STREAMS];
+    const unsigned cap = sizeof(VjoStreamSlot) * VJO_HOOK_CALL_STREAMS;
+    char ver[16];
+    unsigned major = 0, minor = 0, i = 0, k;
+    int n;
+    SceUID fd;
+    if (!VJO_IMPORT_READY(sceIoOpen)) return 0;
+    fd = sceIoOpen("app0:sce_sys/param.sfo", SCE_O_RDONLY, 0);
+    if (fd < 0) return 0;
+    n = sceIoRead(fd, buf, cap);
+    sceIoClose(fd);
+    k = n > 0 && (unsigned)n < cap && vjo_sfo_string(buf, (size_t)n, "APP_VER", ver, sizeof(ver)) == 0;
+    sceClibMemset(buf, 0, cap);
+    if (!k) return 0;
+    for (k = 0; k < 2 && ver[i] >= '0' && ver[i] <= '9'; k++) major = major << 4 | (unsigned)(ver[i++] - '0');
+    if (!k || ver[i++] != '.') return 0;
+    for (k = 0; k < 2 && ver[i] >= '0' && ver[i] <= '9'; k++) minor = minor << 4 | (unsigned)(ver[i++] - '0');
+    if (k != 2 || ver[i]) return 0;
+    return (uint16_t)(major << 8 | minor);
+}
+
+/* Hooks the site at segment-0 offset off (its Thumb bit clear) in the next site slot. */
+static int hook_site(SceUID modid, uint32_t off, int thumb, const VjoLunaSite *luna, const VjoPlaceVerified *ver)
+{
+    unsigned i = n_sites;
+    SceUID uid;
+    for (unsigned k = 0; k < n_sites; k++)
+        if (site_info[k].addr == seg_base + off) return -1; /* already hooked: one stream per address */
+    if (i >= VJO_HOOK_SITE_STREAMS) return VJO_PLACE_FULL;
+    if (!VJO_IMPORT_READY(taiHookFunctionOffsetForUser)) return VJO_PLACE_TAI;
+    site_info[i].luna = luna;
+    site_info[i].ver = ver;
+    site_info[i].addr = seg_base + off;
+    slots[i].key = off + 1u;
+    slots[i].site = luna;
+    uid = taiHookFunctionOffset(&site_ref[i], modid, 0, off, thumb, (const void *)observers[i]);
+    if (uid < 0) {
+        slots[i].key = 0;
+        slots[i].site = NULL;
+        DLOG(" tai %08X\n", (unsigned)uid);
+        return VJO_PLACE_TAI;
+    }
+    site_uid[i] = uid;
+    n_sites++;
+    return VJO_PLACE_OK;
+}
+
+static void site_result(int r, uint32_t off, const uint8_t *code, uint32_t code_size)
+{
+    if (r == VJO_PLACE_OK) {
+        DLOG(" hooked, stream %u\n", (unsigned)n_sites);
+        return;
+    }
+    if (r < 0) {
+        DLOG(" skipped: the address is hooked already\n");
+        return;
+    }
+    n_refused++;
+    DLOG(" refused: %s\n", vjo_place_reason(r));
+    dlog_bytes(code, code_size, off);
+    (void)off; (void)code; (void)code_size;
+}
+
+static void install_sites(const char *title_id, const tai_module_info_t *tai, const SceKernelModuleInfo *mi)
+{
+    const uint8_t *code = (const uint8_t *)mi->segments[0].vaddr;
+    const uint32_t code_size = mi->segments[0].memsz;
+    const VjoPlaceVerified *ver;
+    const VjoLunaSite *sites;
+    unsigned nv = vjo_place_verified(title_id, &ver), nl = vjo_luna_sites(title_id, &sites);
+    uint16_t appv = nl ? app_version() : 0;
+    DLOG("main module %s NID %08X seg0 %08X+%X APP_VER %04X; %u verified, %u Luna sites\n", tai->name,
+         (unsigned)tai->module_nid, (unsigned)seg_base, (unsigned)code_size, (unsigned)appv, nv, nl);
+    for (unsigned i = 0; i < nv; i++) {
+        const VjoPlaceVerified *v = &ver[i];
+        int r = vjo_place_check_verified(v, code, code_size, seg_base, tai->module_nid);
+        DLOG("verified +%X %s r%u", (unsigned)v->off, v->thumb ? "thumb" : "arm", (unsigned)v->reg);
+        if (r == VJO_PLACE_OK) r = hook_site(tai->modid, v->off, v->thumb, NULL, v);
+        site_result(r, v->off, code, code_size);
+    }
+    for (unsigned i = 0; i < nl; i++) {
+        const VjoLunaSite *l = &sites[i];
+        uint32_t a = l->addr & ~1u, off = a - VJO_LUNA_SEG0;
+        int r = VJO_PLACE_OK, thumb = 0;
+        DLOG("luna %08X r%u", (unsigned)l->addr, (unsigned)l->reg);
+        if (!l->ported) r = VJO_PLACE_UNPORTED;
+        else if (!vjo_luna_version_ok(sites, nl, l, appv)) r = VJO_PLACE_VERSION;
+        else if (a < VJO_LUNA_SEG0 || off >= code_size) r = VJO_PLACE_RANGE;
+        else if ((thumb = vjo_place_isa(code + off, code_size - off, l->addr)) < 0) r = VJO_PLACE_ENTRY;
+        else r = vjo_place_check(code, code_size, seg_base, off, thumb);
+        if (r == VJO_PLACE_OK) r = hook_site(tai->modid, off, thumb, l, NULL);
+        site_result(r, off, code, code_size);
     }
 }
 
@@ -198,6 +447,7 @@ void vjo_hooks_start(const char *title_id, unsigned mode, int psp)
     tai_module_info_t tai;
     SceKernelModuleInfo mi;
     for (unsigned i = 0; i < CALL_IMPORTS; i++) call_uid[i] = -1;
+    for (unsigned i = 0; i < VJO_HOOK_SITE_STREAMS; i++) site_uid[i] = -1;
     for (unsigned i = 0; i < VJO_HOOK_STREAMS; i++)
         slots[i].kind = i < VJO_HOOK_SITE_STREAMS ? VJO_HOOK_KIND_SITE : VJO_HOOK_KIND_CALL;
     /* the mode the kernel gave (an unknown value is OCR), even when nothing applies to this game */
@@ -207,19 +457,38 @@ void vjo_hooks_start(const char *title_id, unsigned mode, int psp)
     if (mode == VJO_TEXT_SOURCE_AUTO && !title_listed(title_id)) return;
     if (main_module(&tai, &mi) < 0) return;
     seg_base = (uint32_t)(uintptr_t)mi.segments[0].vaddr;
+    mem_info_ok = VJO_IMPORT_READY(sceKernelGetMemBlockInfoByAddr);
+#if VJO_DEBUG
+    if (VJO_IMPORT_READY(sceIoOpen))
+        dlog = sceIoOpen("ux0:data/VitaJPOverlay/hooks.log", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    DLOG("%s: text source %u\n", title_id, (unsigned)mode);
+#endif
     live = 1;
+    install_sites(title_id, &tai, &mi);
     install_calls(tai.name);
+    DLOG("sites hooked %u, refused %u; CALL imports hooked %u of %u\n", (unsigned)n_sites, (unsigned)n_refused,
+         (unsigned)n_calls, (unsigned)CALL_IMPORTS);
+#if VJO_DEBUG
+    if (dlog >= 0) sceIoClose(dlog);
+    dlog = -1;
+#endif
 }
 
 int vjo_hooks_stop(void)
 {
     live = 0;
-    if (VJO_IMPORT_READY(taiHookRelease))
+    if (VJO_IMPORT_READY(taiHookRelease)) {
         for (unsigned i = CALL_IMPORTS; i-- > 0;)
             if (call_uid[i] >= 0) {
                 taiHookRelease(call_uid[i], call_ref[i]);
                 call_uid[i] = -1;
             }
+        for (unsigned i = n_sites; i-- > 0;)
+            if (site_uid[i] >= 0) {
+                taiHookRelease(site_uid[i], site_ref[i]);
+                site_uid[i] = -1;
+            }
+    }
     /* A thread that had entered a hook before its release may still be on its way out. */
     if (__atomic_load_n(&in_flight, __ATOMIC_ACQUIRE)) sceKernelDelayThread(2000);
     return __atomic_load_n(&in_flight, __ATOMIC_ACQUIRE) ? 1 : 0;
