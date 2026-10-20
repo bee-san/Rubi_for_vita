@@ -266,7 +266,8 @@ static unsigned cap_pcsg01011(uint32_t p, VjoHookRead rd, void *ud, uint8_t *raw
  * while the byte two before them is not a NUL (another string ends there), back
  * by two and again; then the strings from there up to an empty one, joined. The
  * walk runs on the bytes around p (cap / 2 before it); leaving them, or a step
- * that does not get further back (Luna would loop), ends it. */
+ * that does not get further back (a one-byte string, where Luna's loop never
+ * ends), gives no text. */
 static unsigned cap_pcsg00769(uint32_t p, VjoHookRead rd, void *ud, uint8_t *raw, unsigned cap)
 {
     unsigned back = before(p, rd, ud, raw, cap / 2), m, k = back, last = ~0u;
