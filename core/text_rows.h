@@ -87,8 +87,8 @@ size_t vjo_word_step(VjoWordNavigation *history, const char *text, size_t len, s
  * stick's step (#138, core/stick_cursor.h). Its left/right go one character
  * in reading order whatever the highlight (the owner, 2026-10-20): its right
  * never skips the shown word (matched_end is not used) and is recorded as any
- * Right, its left never retraces a Right (the one that started where it lands
- * leaves the history, so the d-pad's Left retraces the Rights before it); it
+ * Right, its left never retraces a Right (the newest, if it started where it
+ * lands or after, leaves the history: the d-pad's Left retraces the rest); it
  * never goes round a one-row text's ends, as a held stick stops at the ends
  * of the Rubi app's lists, and is not counted: the counts are the arrows', for
  * the overlay's close log. Returns the VJO_ROW_* result; *out is the new

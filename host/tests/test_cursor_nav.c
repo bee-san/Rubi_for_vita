@@ -20,6 +20,8 @@
  *   a diagonal by its dominant axis; the word starting at the cursor looked up
  *   only once the cursor rests (#156). At a one-row text's ends it stops instead
  *   of wrapping, as a held stick stops at the ends of the Rubi app's lists.
+ * - Taps go through the real hit test (core/text_hit.c), which with Japanese
+ *   characters only OFF can select an ideographic space no step lands on.
  *
  * shell/overlay.cpp input_overlay is paf code no host target builds: nav_frame
  * restates its calls around the real helpers (core/text_rows.c,
@@ -163,6 +165,27 @@ static void flick(Nav *n, uint8_t lx, uint8_t ly)
     hold(n, MID, MID, 20 * HZ60);
 }
 
+/* A tap on rendered character k of the laid-out text (just inside its cell's start), as
+ * shell/overlay.cpp input_header_touch takes it: the real hit test (core/text_hit.c) over the
+ * header's rows, here the double's, 30 px a row; a hit on another character than the cursor's
+ * moves the cursor there, starts a new path (no history) and is looked up at once. 1: a hit. */
+static int tap(Nav *n, unsigned k)
+{
+    VjoTextHitLayout hit = {0.0f, 0.0f, lay.width, 30.0f * (float)lay.lines, 30.0f * (float)lay.lines, 0.0f, JA,
+                            lay.lines, layout_position, &lay};
+    size_t byte = n->len;
+    if (!vjo_text_hit(n->s, n->len, &hit, lay.x[k] + 1.0f, 30.0f * (float)lay.line[k] + 15.0f, n->jp, &byte))
+        return 0;
+    if (byte != n->cursor) {
+        n->cursor = byte;
+        n->nav.words.count = 0; /* a tap starts a new navigation path */
+        n->st.due = 0;          /* post_cursor_now */
+        post(n);
+        n->immediate++;
+    }
+    return 1;
+}
+
 /* ---- the fixtures (byte offsets in the comments; jp: Japanese-only) ---- */
 
 /* 猫0 が3 好6 き9 で12 す15 。18 \n21 | 犬22 も25 好28 き31 で34 す37 。40, len 43 */
@@ -189,6 +212,8 @@ static const Span CROSS_WORDS[] = {{0, 9}, {9, 12}, {12, 22}, {22, 28}};
 /* one row: 猫0 が3 好6 き9 で12 す15 。18, len 21 */
 static const char ONE[] = "猫が好きです。";
 static const Span ONE_WORDS[] = {{0, 3}, {3, 6}, {6, 12}, {12, 18}};
+/* the same with です。 shown at で, to the text's end: the d-pad's Right from で goes round */
+static const Span ONE_TO_END[] = {{0, 3}, {3, 6}, {6, 12}, {12, 21}};
 /* a second line with no Japanese: 猫0 が3 好6 き9 で12 す15 \n18 | O19 K20, len 21 */
 static const char ONE_JP[] = "猫が好きです\nOK";
 /* the owner's example (2026-10-20), with the bundled dictionary's match at every character:
@@ -200,6 +225,11 @@ static const Span OWNER_WORDS[] = {{0, 6},   {3, 6},   {6, 18},  {9, 12},  {12, 
 static const char OWNER_P[] = "昨日、すき焼きを食べました。";
 static const Span OWNER_P_WORDS[] = {{0, 6},   {3, 6},   {9, 21},  {12, 15}, {15, 21}, {18, 21}, {21, 24},
                                      {24, 39}, {27, 30}, {30, 39}, {33, 39}, {36, 39}};
+/* an ideographic space (U+3000), which a tap may select but no arrow or stick step lands on, two rows:
+ * 昨0 日3 U+3000 6 す9 き12 焼15 き18 を21 食24 べ27 | ま30 し33 た36, len 39; no entry at the space */
+static const char SPACE[] = "昨日\xe3\x80\x80すき焼きを食べました";
+static const Span SPACE_WORDS[] = {{0, 6},   {3, 6},   {9, 21},  {12, 15}, {15, 21}, {18, 21}, {21, 24},
+                                   {24, 39}, {27, 30}, {30, 39}, {33, 39}, {36, 39}};
 
 #define WORDS(a) a, (int)(sizeof(a) / sizeof(a[0]))
 
@@ -689,6 +719,74 @@ static void the_owners_example_a_character_at_a_time(void)
         }
 }
 
+/* Right's history as the stick's left needs it on a text of several rows: increasing, all before the cursor. */
+static int history_in_order(const Nav *n)
+{
+    for (unsigned i = 0; i < n->nav.words.count; i++)
+        if (n->nav.words.previous[i] >= n->cursor || (i && n->nav.words.previous[i - 1] >= n->nav.words.previous[i]))
+            return 0;
+    return 1;
+}
+
+/* Three edges of the stick's left (audit-stick-chars F1, N2 and its mutant M10):
+ * - With Japanese characters only OFF, the default, a tap may select an ideographic space, where no
+ *   arrow or stick step lands (core/text_hit.c takes any character above U+0020, vjo_text_selectable
+ *   never U+3000). The d-pad's Right from it records it; the stick's left from す lands before it, on
+ *   日, and takes it out of the history as it is after where the stick lands, so the d-pad's Left goes
+ *   on back to 昨, never forward to the space. With ON the space takes no tap.
+ * - On a text on one row the d-pad's Right from its last word goes round to its first, which leaves
+ *   where it started after the cursor (the one case the history is not in order). The stick's right
+ *   and left there take out only the stick's own entry: the d-pad's Left still undoes the wrap, back to
+ *   で, rather than going round to the text's last character.
+ * - A stick's left that stays (at the text's first character) still takes Up/Down's column afresh, as
+ *   any Left/Right does: Down from 猫 goes by 猫's own cell, to あ, not by the column Up came with, い's. */
+static void the_sticks_left_at_the_edges(void)
+{
+    for (int jp = 0; jp <= 1; jp++) {
+        TEST_CASE_("a tapped space, Japanese-only %d", jp);
+        Nav n = nav_open(SPACE, W, WORDS(SPACE_WORDS), 0, jp, 1);
+        TEST_ASSERT(lay.lines == 2 && lay.cp[2] == 0x3000 && lay.begin[2] == 6);
+        if (jp) {
+            TEST_CHECK(!tap(&n, 2) && n.cursor == 0 && n.immediate == 0); /* ON: no hit on the space */
+        } else {
+            TEST_CHECK(tap(&n, 2) && n.cursor == 6 && n.shown == 6 && n.shown_end == 0);
+            press(&n, 1);
+            TEST_CHECK_(n.cursor == 9 && n.nav.words.count == 1 && n.nav.words.previous[0] == 6,
+                        "the d-pad's Right from the space: %zu, %u in the history", n.cursor, n.nav.words.count);
+            flick(&n, 0, MID);
+            TEST_CHECK_(n.cursor == 3 && n.nav.words.count == 0 && history_in_order(&n),
+                        "the stick's left from す: %zu with %u in the history, expected 日 (3) with none", n.cursor,
+                        n.nav.words.count);
+            press(&n, 0);
+            TEST_CHECK_(n.cursor == 0, "the d-pad's Left from 日: %zu, expected 昨 (0), never the space (6)", n.cursor);
+        }
+        TEST_CASE_("one row, Japanese-only %d", jp);
+        n = nav_open(ONE, W, WORDS(ONE_TO_END), 12, jp, 1); /* です。 shown at で, to the text's end */
+        TEST_ASSERT(lay.lines == 1);
+        press(&n, 1);
+        TEST_CHECK(n.cursor == 0 && n.nav.wraps == 1 && n.nav.words.count == 1 && n.nav.words.previous[0] == 12);
+        flick(&n, 255, MID);
+        TEST_CHECK(n.cursor == 3 && n.nav.words.count == 2);
+        flick(&n, 0, MID);
+        TEST_CHECK_(n.cursor == 0 && n.nav.words.count == 1 && n.nav.words.previous[0] == 12,
+                    "the stick's left back to 猫: %zu with %u in the history, expected [12]", n.cursor,
+                    n.nav.words.count);
+        press(&n, 0);
+        TEST_CHECK_(n.cursor == 12 && n.nav.wraps == 1,
+                    "the d-pad's Left: %zu, expected で (12), the wrap undone, not round to the last", n.cursor);
+        TEST_CASE_("the column, Japanese-only %d", jp);
+        n = nav_open("猫\nあいう", W, NULL, 0, 7, jp, 1); /* 猫0 \n3 | あ4 い7 う10 */
+        TEST_ASSERT(lay.lines == 2);
+        press(&n, 2);
+        TEST_CHECK(n.cursor == 0 && n.nav.goal.at == 1); /* Up from い: 猫, い's column kept */
+        flick(&n, 0, MID);
+        TEST_CHECK(n.cursor == 0 && n.st.moves == 0 && n.nav.goal.at == 0); /* stays, the column dropped */
+        press(&n, 3);
+        TEST_CHECK_(n.cursor == 4, "Down after the stick's left at the first: %zu, expected あ (4) by 猫's own cell",
+                    n.cursor);
+    }
+}
+
 /* The overlay's close line counts the arrows' row moves, wraps and presses
  * without a layout; the stick's moves are its own (#156's B2). */
 static void the_close_line_counts_are_the_arrows(void)
@@ -722,5 +820,6 @@ TEST_LIST = {
     {"diagonals_take_the_dominant_axis", diagonals_take_the_dominant_axis},
     {"the_stick_and_the_dpad_share_their_steps", the_stick_and_the_dpad_share_their_steps},
     {"the_owners_example_a_character_at_a_time", the_owners_example_a_character_at_a_time},
+    {"the_sticks_left_at_the_edges", the_sticks_left_at_the_edges},
     {"the_close_line_counts_are_the_arrows", the_close_line_counts_are_the_arrows},
     {NULL, NULL}};

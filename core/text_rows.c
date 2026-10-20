@@ -208,8 +208,8 @@ int vjo_text_row_key(VjoRowNav *nav, const char *s, size_t len, const VjoTextRow
         nav->goal.at = 0; /* Up/Down take their column afresh */
         if (stick && dx < 0) {
             /* The stick's left: the character before, never a Right retraced (the owner,
-             * 2026-10-20). The Right that started there, if one did, leaves the history; the
-             * Rights before it stay, for the d-pad's Left. */
+             * 2026-10-20). The newest Right, if it started there or after, leaves the history;
+             * the Rights before it stay, for the d-pad's Left. */
             rc = vjo_text_row_step(s, len, r, cursor, cursor, -1, japanese_only, 0, out);
             if (rc > 0 && h->count && h->previous[h->count - 1] >= *out)
                 h->count--;

@@ -327,11 +327,12 @@ way:
   character in reading order in both highlight modes. Its right never skips the
   shown word (`vjo_text_row_key` does not use the match's end for the stick) and
   is recorded in Right's history as any Right. Its left steps a character back
-  and never retraces a Right; the Right that started where it lands leaves the
-  history, so the d-pad's Left goes on retracing the ones before it (from inside
-  a word the d-pad skipped, back to that word's start). Where the cursor rests,
-  the word starting at its character is looked up, the longest match there as
-  for a tap, and in Whole word mode highlighted as that match: on that sentence,
+  and never retraces a Right; the newest Right, if it started where the stick
+  lands or after, leaves the history, so the d-pad's Left goes on retracing the
+  ones before it (from inside a word the d-pad skipped, back to that word's
+  start). Where the cursor rests, the word starting at its character is looked
+  up, the longest match there as for a tap, and in Whole word mode highlighted
+  as that match: on that sentence,
   from 食べました (食べる) the stick's right is べ (looked up: べ), then ま
   (ました), where the d-pad's Right goes past 食べました. With Japanese-only ON
   it lands only on kana and kanji; OFF, on every visible character, punctuation
@@ -404,7 +405,7 @@ and its frame, back on the shown word, new text, and the close after a refused
 post; and the stick's step along the text (a character a step, never past the
 shown word, without the wrap) from every character of 200 generated texts
 against the rule restated.
-`host/tests/test_cursor_nav.c` (14 cases, on the ARM lane too) compares the
+`host/tests/test_cursor_nav.c` (15 cases, on the ARM lane too) compares the
 stick's four directions and the d-pad's, each with its rule restated over the
 cells, from every selectable character of eleven multi-line and one-row layouts,
 the owner's sentence and a punctuated one among them with Japanese-only on and
@@ -413,7 +414,13 @@ left/right the d-pad's word or character, the stick's character; the d-pad's
 looked up at once, the stick's once it rests), and drives diagonals, the stick
 held across lines and rows to the text's ends, the history the two share, and
 the owner's example: the d-pad to 食べました, the stick's right to べ and to ま,
-each looked up once it rests, then on to the last character and back.
+each looked up once it rests, then on to the last character and back; and the
+stick's left at its edges: with Japanese-only OFF a tap through the real hit test
+on an ideographic space, which no step lands on, then the d-pad's Right from it and
+the stick's left past it, after which the d-pad's Left goes back, never forward to
+the space; the d-pad's wrap on one row, which the stick's right and left leave for
+the d-pad's Left to undo; and Up/Down's column, which a stick's left drops even
+where it stays.
 `host/tests/test_text_rows.c` checks the same key function on that sentence on
 one, two and three rows (the stick's characters, the d-pad's Left retracing
 them and then its words, a stick's left inside a word the d-pad skipped), and
@@ -421,8 +428,9 @@ the stick's left and right from every selectable character of 120 generated
 texts, with any match end, with and without a layout, against the rule and the
 history it must leave (17,892 steps), and 400 sessions of mixed keys (the d-pad,
 the stick, Up/Down, taps, Character mode: 120,000 keys) that keep Right's
-history in order before the cursor; nine mutants of the new step each fail a
-test. `host/tests/test_word_lookup.cpp` takes it to the bundled dictionary: from
+history in order before the cursor. Each of 14 mutants of the new step fails a
+test; two more are equivalent (the stick's left with another `from`, which a left
+does not use, or without the rows, which it never asks). `host/tests/test_word_lookup.cpp` takes it to the bundled dictionary: from
 食べました (食べる) the stick's right is べ, then ま, whose lookups are べ and
 ました, their header ranges starting at the cursor; and through every real VOCR
 line, Japanese-only on and off, the stick's right lands on every selectable
@@ -434,9 +442,10 @@ result memory) and the
 close with the real worker: the audit's B1 sequence (a flick, Cancel 183 ms
 later, the rest ending while the close waits: the reopened overlay shows the
 worker's word, and the stick goes on from there), the close before and after the
-rest, and `stick_lookup_ms` reaching the view. 44 mutants of `core/stick_cursor.h`
-and the step, and 4 of the close and the view's copy against the worker, each
-fail a test. `input_overlay` and `close_page` themselves are paf code no host
+rest, and `stick_lookup_ms` reaching the view. #156's 44 mutants of
+`core/stick_cursor.h` and of the step as it was then (rewritten since, with its
+own mutants above), and 4 of the close and the view's copy against the worker,
+each failed a test. `input_overlay` and `close_page` themselves are paf code no host
 target builds: the tests replay their calls around the real helpers.
 
 In test.3 the overlay drew at 59.5-59.9 Hz (the two sessions with arrow moves:

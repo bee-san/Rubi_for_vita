@@ -98,7 +98,7 @@ build linebreak host/tests/test_linebreak.c core/linebreak.c core/utf.c
 # The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
 build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
 # The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
-build cursor_nav host/tests/test_cursor_nav.c core/text_rows.c core/utf.c
+build cursor_nav host/tests/test_cursor_nav.c core/text_rows.c core/text_hit.c core/utf.c
 # The Rubi app's text layouts, icon file check and title letters: 32-bit size_t in the PNG chunk walk.
 build settings_layout host/tests/test_settings_layout.c settings/text_layout.c core/linebreak.c settings/icons.c settings/letter.c core/utf.c
 # taiHEN's own parser (third_party/taihen-parser, built as taiHEN builds it), the config.txt editor's check
