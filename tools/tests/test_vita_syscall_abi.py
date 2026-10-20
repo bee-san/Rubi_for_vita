@@ -34,14 +34,18 @@ class Fake:
         return b"\0" * size if self.exports else struct.pack("<4I", *abi.WEAK_STUB)[:size]
 
 
-SHELL = ("vjoGetVersion", "vjoRegisterShell", "vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel")
-WORKER = tuple(n for n in abi.GAME_FUNCTIONS if n not in ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel"))
-KERNEL = tuple(dict.fromkeys(SHELL + abi.GAME_FUNCTIONS))
+SHELL = ("vjoGetVersion", "vjoRegisterShell", "vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel", "vjoSetTextSource")
+WORKER = tuple(n for n in abi.GAME_FUNCTIONS if n not in ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel")) + \
+    ("vjoGetTextSource",)
+KERNEL = tuple(dict.fromkeys(SHELL + abi.GAME_FUNCTIONS + ("vjoGetTextSource",)))
 
 
-def audit(kernel=(), shell=(), worker=(), with_worker=True):
-    return abi.audit(Fake("VitaJPOverlay_Kernel", KERNEL + kernel, True), Fake("VitaJPOverlay_Shell", SHELL + shell, False),
-                     False, Fake("VitaJPOverlay_OCR", WORKER + worker, False) if with_worker else None)
+def audit(kernel=(), shell=(), worker=(), with_worker=True, drop=()):
+    def keep(names):
+        return tuple(n for n in names if n not in drop)
+    return abi.audit(Fake("VitaJPOverlay_Kernel", keep(KERNEL) + kernel, True),
+                     Fake("VitaJPOverlay_Shell", keep(SHELL) + shell, False),
+                     False, Fake("VitaJPOverlay_OCR", keep(WORKER) + worker, False) if with_worker else None)
 
 
 class RemovedSyscalls(unittest.TestCase):
@@ -59,6 +63,33 @@ class RemovedSyscalls(unittest.TestCase):
                     audit(**case)
                 self.assertEqual(str(e.exception), f"{name} was removed in API {api}")
         self.assertEqual(audit(with_worker=False)["result"], "pass")
+
+
+class TextSource(unittest.TestCase):
+    """API 31: the kernel exports vjoSetTextSource and vjoGetTextSource, the Shell imports Set (it pushes
+    config.ini's text_source), the worker imports Get (read as its game starts) and never Set."""
+
+    def test_the_kernel_exports_both(self):
+        for name in ("vjoSetTextSource", "vjoGetTextSource"):
+            with self.subTest(name=name), self.assertRaises(abi.InvalidABI) as e:
+                audit(drop=(name,), with_worker=False)
+            self.assertIn(name, str(e.exception))
+
+    def test_the_shell_imports_set(self):
+        with self.assertRaises(abi.InvalidABI) as e:
+            abi.audit(Fake("VitaJPOverlay_Kernel", KERNEL, True),
+                      Fake("VitaJPOverlay_Shell", tuple(n for n in SHELL if n != "vjoSetTextSource"), False),
+                      False, None)
+        self.assertEqual(str(e.exception), "Shell does not import vjoSetTextSource")
+
+    def test_the_worker_imports_get_and_never_set(self):
+        with self.assertRaises(abi.InvalidABI) as e:
+            abi.audit(Fake("VitaJPOverlay_Kernel", KERNEL, True), Fake("VitaJPOverlay_Shell", SHELL, False), False,
+                      Fake("VitaJPOverlay_OCR", tuple(n for n in WORKER if n != "vjoGetTextSource"), False))
+        self.assertEqual(str(e.exception), "Worker does not import vjoGetTextSource")
+        with self.assertRaises(abi.InvalidABI) as e:
+            audit(worker=("vjoSetTextSource",))
+        self.assertEqual(str(e.exception), "Worker imports Shell-only syscall vjoSetTextSource")
 
 
 if __name__ == "__main__":

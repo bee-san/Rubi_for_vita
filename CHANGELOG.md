@@ -23,9 +23,44 @@ On `main` since 0.8.0; the next release brings it.
   text-free returns no line. On the host it did so for 59 of 66 text-free regions, against 5 without
   it ([#214]).
 - The Rubi app's Games page shows five games a page and searches by title or title ID ([#219]).
+- Native text hooks (API 31; [the guide](docs/guide.md#native-text-hooks),
+  [the design](docs/native-hooks.md), [#230]): in a game that is ON, the game's worker can read the line
+  the game is about to draw instead of OCR's reading. Not run on a console.
+  - What is hooked: LunaTranslator's Vita table, 294 ported sites for 175 title IDs, each installed only
+    where the game's code at that address is a plain function entry that taiHEN can patch, and, where the
+    table names a game version, only in that version ([the games](docs/hook-titles.md)); Rubi's own entry
+    for CLANNAD (`PCSG00415`, one site, proven in Vita3K only); and the CALL source, the game's string copies (SceLibc's
+    and SceLibKernel's memcpy, strcpy and their kin) grouped by the caller. **Automatic** hooks only the
+    listed games; **Every game** adds the CALL source in every game that is ON. `hook_sites = off` in
+    `config.ini` installs no table site, only the CALL source, so a console run can tell the two apart.
+  - Which text is shown: OCR still reads every page at first; a hook's text replaces OCR's only when
+    the two agree (70 % or more, 4 characters at least). After two agreements in a row the hook is
+    locked: it then answers new lines of 4 characters or more without recognition, at most 2 pages in a
+    row, and OCR reads the next page, where the hook's text must agree. A disagreement makes OCR read
+    every page until the hook agrees again; two in a row unlock it, and so does a change of the caller
+    behind a CALL stream. So a hook that runs ahead of the screen, or turns to a name or a menu's text,
+    shows at most 2 wrong pages.
+  - The controls: `text_source = auto | hooks | ocr` (the Rubi app's **Text source**, Automatic by
+    default, applied when a game next starts), which the Shell hands the kernel and a game's worker
+    reads as the game starts; **Triangle** in the overlay cycles the game session's source (Automatic,
+    each hook with text, OCR only) and a short label says where the text came from (`Hook 2/5 locked`);
+    the Games page tags a game with a hook entry (`Hook`: CLANNAD, Rubi's own; `Luna hook`: a title with
+    a site Rubi has ported from LunaTranslator's table; the table's 7 titles without one, PCSB00985,
+    PCSG00291, PCSG00451, PCSG00595, PCSG00663, PCSG01081 and PCSG01152, get no tag and OCR only in
+    Automatic). `log.txt` says what each game's worker hooked (counts only in the normal build),
+    `history.csv`'s engine is `hook` for a hook's line.
+  - A game turned OFF gets no hooks, even when a `*TITLEID` line kept by hand in taiHEN's config still
+    loads the worker into it: the kernel gives the text source only to a game whose worker it loaded as
+    ON. Holding L as a game starts, `text_source = ocr` and a safe boot also install none.
+  - The cost: every game that is ON carries the bigger worker whatever the text source, even with
+    `text_source = ocr`: its module pages grow from 98,304 to 159,744 B (167,936 B in the debug build)
+    [measured: the build logs' module rows, `feat/native-hooks` 9fa24c5]. A hook's own CPU time is
+    unmeasured.
 
 ### Changed
 
+- An install or an update no longer writes `text_source = ocr` into `config.ini` (API 31: the setting
+  is the user's again); a file that has it keeps it, so choose Automatic once to use native text hooks.
 - **Japanese characters only** (`japanese_only_selection`) is OFF by default, as the owner asked:
   the cursor can select any character, Latin letters, digits and punctuation too, and starts at the
   text's first character. A `config.ini` keeps its own line: from 0.7.6 the template wrote
@@ -545,5 +580,6 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#219]: https://github.com/bee-san/Rubi_for_vita/pull/219
 [#222]: https://github.com/bee-san/Rubi_for_vita/pull/222
 [#224]: https://github.com/bee-san/Rubi_for_vita/pull/224
+[#230]: https://github.com/bee-san/Rubi_for_vita/issues/230
 [#231]: https://github.com/bee-san/Rubi_for_vita/pull/231
 [#232]: https://github.com/bee-san/Rubi_for_vita/pull/232

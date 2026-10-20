@@ -130,7 +130,8 @@ int vjo_history_append(const VjoHistoryRecord *r)
     literal(&w, text);
     field(&w, r->platform, 16);
     put(&w, ','); field(&w, r->title_id, sizeof(r->title_id));
-    literal(&w, ",\"vocr\","); field(&w, r->model, VJO_GAME_OCR_MODEL_BYTES);
+    literal(&w, o->text_from ? ",\"hook\"," : ",\"vocr\","); /* API 31: the line a native text hook read */
+    field(&w, r->model, VJO_GAME_OCR_MODEL_BYTES);
     put(&w, ','); field(&w, vjo_text_raw(o->text, sizeof(o->text)), sizeof(o->text) - len - 1);
     number(&w, r->scene); number(&w, r->region_seq);
     number(&w, r->monotonic_us); number(&w, r->elapsed_us);

@@ -89,12 +89,24 @@ build kernel_loader host/tests/test_kernel_loader.c host/tests/games_io_posix.c 
 # the self-test's memory routes: the debug build's only
 [ "$VJO_DEBUG" = 0 ] || build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
+# API 31: the kernel's text source (its word and the loader's process table, their atomics) and the Shell's
+# triangle cycle and label, the Rubi app's Games tag (Rubi's own entries; Luna's table where
+# hooks/luna-port's file is in the tree).
+build kernel_text_source host/tests/test_kernel_text_source.c
+build hook_pick host/tests/test_hook_pick.c core/hook_pick.c
+if [ -f core/hook_luna.c ]; then
+  build hook_titles -DVJO_HOOK_LUNA=1 host/tests/test_hook_titles.c core/hook_titles.c core/hook_luna.c core/hook_re.c core/hook_text.c
+else
+  build hook_titles host/tests/test_hook_titles.c core/hook_titles.c
+fi
 # The overlay's arrow keys over the header's displayed rows (#81): pure C, float cell edges.
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 # The recognized text's lines as one running text (core/textjoin.h): byte offsets, 32-bit size_t.
 build text_join host/tests/test_textjoin.c core/textjoin.c core/utf.c
 # Where the overlay's own wrapping may break a line (core/linebreak.h).
 build linebreak host/tests/test_linebreak.c core/linebreak.c core/utf.c
+# Native hooks: which text a job shows (core/hook_select.h), as the game worker runs it on the A9.
+build hook_select host/tests/test_hook_select.c core/hook_select.c
 # The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
 build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
 # The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
@@ -117,10 +129,25 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
       core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
+# The native hooks (core/hook_text.c, hook_re.c, hook_luna.c): the decoders, the regex VM's 16-bit
+# positions and 32-bit longs, LunaTranslator's table and its ports on the Vita's word size.
+build hook_text -I third_party/bearssl/inc -I "$BS" host/tests/test_hook_text.c core/hook_text.c "$BS/hash/sha2small.c" \
+  "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
+build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c
+# The debug build's PSP probe (core/psp_probe.c): its reads' bounds in 32-bit arithmetic.
+build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
+# The hook engine (game_ocr/hooks.c, audit-hooks F4): its game addresses are 32-bit, as here. Its own stubs
+# (taiHEN, modulemgr, io: host/tests/hooks_stubs, then game_stubs) instead of vita_stubs.
+"$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu99 -Wall -Wextra -Wno-unused-parameter \
+  -I third_party/acutest/include -I host/tests -I host/tests/hooks_stubs -I host/tests/game_stubs -DVJO_HOST=1 \
+  -DVJO_DEBUG="$VJO_DEBUG" -o "$OUT/hooks_engine" host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c \
+  core/hook_luna.c core/hook_re.c core/hook_text.c core/sfo.c
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
+TESTS+=(touch_hold text_rows text_join linebreak hook_select stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
+TESTS+=(hook_text hook_luna psp_probe hooks_engine)
+TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c

@@ -133,6 +133,10 @@ int loader_hook_install(void);  /* 0, or why the loader is off (the per-title li
 int loader_hook_release(void);  /* 0, or VJO_ERR_BUSY: a game start is still inside the hook */
 void loader_tick(void);         /* the kernel worker thread: answers a starting process's question */
 
+/* text_source.c (API 31): the loader's verdict on a process start, before its worker starts: only a
+ * process started as ON (on != 0) reads the Shell's text source (vjoGetTextSource), any other OCR. */
+void text_source_started(SceUID pid, int on);
+
 /* meminfo.c: the self-test's memory sample (vjoMemInfo), kernel context */
 void meminfo_fill(SceUID caller_pid, const void *caller_addr, VjoMemInfo *out);
 

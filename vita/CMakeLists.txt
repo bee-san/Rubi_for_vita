@@ -74,6 +74,7 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/scene.c
   ${ROOT}/kernel/triggers.c
   ${ROOT}/kernel/loader.c
+  ${ROOT}/kernel/text_source.c # API 31: the text source and the loader's ON processes (docs/native-hooks.md)
   ${ROOT}/core/games.c)
 target_compile_options(VitaJPOverlay_Kernel PRIVATE -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu99 -fno-builtin
   -mgeneral-regs-only)
@@ -99,7 +100,7 @@ target_compile_definitions(VitaJPOverlay_Kernel PRIVATE VJO_KERNEL=1)
 # (kernel/input.c, kernel/triggers.c) stay at -O2.
 set_source_files_properties(${ROOT}/kernel/game_ocr.c ${ROOT}/kernel/lifecycle.c ${ROOT}/kernel/foreground.c
   ${ROOT}/kernel/meminfo.c ${ROOT}/kernel/loader.c ${ROOT}/kernel/main.c ${ROOT}/kernel/io_worker.c ${ROOT}/kernel/boot.c
-  ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c
+  ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c ${ROOT}/kernel/text_source.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 
 target_link_options(VitaJPOverlay_Kernel PRIVATE -nostdlib -Wl,-q)
@@ -144,7 +145,8 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/client.c ${ROOT}/core/styled.c
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
-  ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c)
+  ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c
+  ${ROOT}/core/hook_pick.c) # API 31: the overlay's △ cycle and source label
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
@@ -175,7 +177,7 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/utf.c
   ${ROOT}/core/app_stamp.c
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
-  ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c
+  ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/hook_pick.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
@@ -296,8 +298,27 @@ if(VJO_WITH_VOCR)
     ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c
     # API 23: the Anki screenshot's JPEG encoder, in the game's process only (never the Shell's),
     # and the arena it encodes into
-    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c)
+    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c
+    # API 31: the native text hooks (docs/native-hooks.md), in the game's process only: the hook
+    # engine, the site check, the stream slots, Luna's table and the hook text decoder
+    ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S ${ROOT}/core/hook_place.c
+    ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
+    ${ROOT}/core/sfo.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
+  # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
+  # For size, as the worker's control code is: 1,992 B of text and rodata at -Os (2,640 B at -O2; measured,
+  # vitasdk 2026.08, with the lock's checks of audit-hooks-text F3).
+  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
+  set_source_files_properties(${ROOT}/core/hook_select.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
+  # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
+  set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # The read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): the debug build's worker only,
+  # control code built for size, with Luna's PSP table (core/hook_luna_psp.inc) as its data.
+  if(VJO_DEBUG)
+    target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/game_ocr/psp_probe.c ${ROOT}/core/psp_probe.c)
+    set_source_files_properties(${ROOT}/game_ocr/psp_probe.c ${ROOT}/core/psp_probe.c PROPERTIES COMPILE_OPTIONS "-Os")
+  endif()
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
   # The worker's control code (a job's request, memory checks and ladder, one call
@@ -306,6 +327,16 @@ if(VJO_WITH_VOCR)
   # the model tiers' ladder (API 21: +788 B of text at -O2) within the module's
   # pages (game_ocr/main.c's text 12,276 B at -O2 before it, 9,164 B at -Os with it).
   set_source_files_properties(${ROOT}/game_ocr/main.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # API 31: the native hooks' engine is control code too (install once, a few checks per hit), built
+  # for size: every page of it is in every game that is ON.
+  set_source_files_properties(${ROOT}/game_ocr/hooks.c ${ROOT}/core/hook_place.c ${ROOT}/core/hook_stream.c
+    ${ROOT}/core/sfo.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # API 31: the worker reads the text source (vjoGetTextSource) once the kernel exports it; until then
+  # its native hooks stay off (game_ocr/main.c text_source: OCR).
+  file(STRINGS ${ROOT}/kernel/exports.yml VJO_KERNEL_TEXT_SOURCE REGEX "vjoGetTextSource")
+  if(VJO_KERNEL_TEXT_SOURCE)
+    target_compile_definitions(VitaJPOverlay_OCR PRIVATE VJO_HAVE_TEXT_SOURCE_IMPORT=1)
+  endif()
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
     -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
@@ -368,6 +399,19 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
   ${VJO_SETTINGS_ANKI_SRC})
+# API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, and the games of Luna's
+# ported Vita table (core/hook_luna.c, from hooks/luna-port: of it only vjo_luna_title_ported, the title
+# list and the site table stay linked, --gc-sections drops the rest; audit-hooks-text N2: a title with a
+# ported site). Without that file only Rubi's own entries.
+list(APPEND VJO_SETTINGS_SRC ${ROOT}/core/hook_titles.c)
+if(EXISTS ${ROOT}/core/hook_luna.c)
+  foreach(_vjo_luna hook_luna.c hook_re.c hook_text.c)
+    if(EXISTS ${ROOT}/core/${_vjo_luna})
+      list(APPEND VJO_SETTINGS_SRC ${ROOT}/core/${_vjo_luna})
+    endif()
+  endforeach()
+  set_property(SOURCE ${ROOT}/core/hook_titles.c APPEND PROPERTY COMPILE_DEFINITIONS VJO_HOOK_LUNA=1)
+endif()
 # The one-VPK install's config.txt check is taiHEN's own parser (DaveeFTW/taihen-parser 6d817fd, MIT),
 # built as taiHEN 309b380 builds it: its inbuilt ctype and string functions (docs/one-vpk-install.md).
 set_source_files_properties(${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c

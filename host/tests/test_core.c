@@ -796,6 +796,20 @@ static void test_config(void)
     gate = "ocr_text_gate = off\nocr_text_gate = maybe\n";
     vjo_config_parse(&c, gate, strlen(gate));
     TEST_CHECK(c.ocr_text_gate == 0 && c.n_warnings == 1);
+    /* API 31, audit-hooks F3: the hooks' table sites, on by default; off makes the Shell send
+     * VJO_TEXT_SOURCE_NO_SITES (only the string copies hooked). Any case; an unknown value is on, warned. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.hook_sites == 1);
+    static const struct { const char *text; int sites, warnings; } sites[] = {
+        {"hook_sites = off\n", 0, 0}, {"Hook_Sites = OFF\n", 0, 0}, {"hook_sites = off\nhook_sites = On\n", 1, 0},
+        {"hook_sites = off ; the string copies alone\n", 0, 0}, {"hook_sites = off\nhook_sites = maybe\n", 1, 1},
+        {"hook_sites = off\nhook_sites =\n", 1, 1}, {"hook_sites = 0\n", 1, 1}, {"hook_sites = no\n", 1, 1}};
+    for (unsigned i = 0; i < sizeof(sites) / sizeof(sites[0]); i++) {
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, sites[i].text, strlen(sites[i].text));
+        TEST_CHECK_(c.hook_sites == sites[i].sites && c.n_warnings == sites[i].warnings, "%s", sites[i].text);
+        if (sites[i].warnings) TEST_CHECK(strstr(c.warnings[0], "hook_sites") != NULL); /* named, never the value */
+    }
     vjo_config_defaults(&c);
     const char *lm = "ocr_lm = 1000K\nocr_cascade_ms = 0\n";
     vjo_config_parse(&c, lm, strlen(lm));
@@ -842,6 +856,7 @@ static void test_config(void)
         TEST_CHECK(d.ocr_lm == 2 && d.ocr_cascade_ms == 2000 && strstr(t, "\nocr_lm = 1000k\n") &&
                    strstr(t, "\nocr_cascade_ms = 2000\n"));
         TEST_CHECK(d.stick_lookup_ms == 200 && strstr(t, "\nstick_lookup_ms = 200\n"));
+        TEST_CHECK(d.hook_sites == 1 && strstr(t, "\nhook_sites = on\n")); /* audit-hooks F3 */
         /* Japanese characters only: OFF in both (the owner, 2026-10-20; ON before) */
         TEST_CHECK(d.japanese_only_selection == 0 && strstr(t, "\njapanese_only_selection = off\n") &&
                    !strstr(t, "japanese_only_selection = on"));

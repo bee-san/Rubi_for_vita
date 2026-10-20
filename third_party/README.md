@@ -17,6 +17,12 @@ Vendored sources:
              c72e21ff3377ca5aba6afd8f78e301982dc1ea60416676cb8cce5426536dc5c8  include/taihen/parser.h
              6aed254d7872512f22c152f9edbf15529b27f5e041f5247dbe75c3352d5fe318  src/lexer.c
              5059be0048d4913657b1b9eb96be6242d4b88c1d83c8ee4828e07aaa54e89497  src/parser.c
+- LunaTranslator https://github.com/HIllya51/LunaTranslator 51884b6c88cba8c42e98ce3e43c4f408017082a1,
+           v12.1.2.12 (GPL-3.0): its PS Vita (Vita3K) hook table, read by tools/gen_luna_vita.py into
+           core/hook_luna_table.inc, and its hookfuncs and filters, ported to C in core/hook_luna.c
+           (native hooks, docs/hook-titles.md). vita3k_1.cpp, vita3k.cpp, ppsspp_1.cpp,
+           stringfilters.cpp and LICENSE, unchanged, none compiled; their SHA-256 are in
+           LunaTranslator/README.md and checked by the generator
 
 The standalone Settings app builds libpng 1.6.58 from
 https://codeload.github.com/pnggroup/libpng/tar.gz/refs/tags/v1.6.58,

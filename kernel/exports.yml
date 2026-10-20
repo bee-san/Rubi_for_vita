@@ -36,3 +36,5 @@ VitaJPOverlay_Kernel:
         - vjoBootInfo
         - vjoBootMark
         - vjoMemInfo
+        - vjoSetTextSource
+        - vjoGetTextSource

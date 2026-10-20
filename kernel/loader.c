@@ -30,7 +30,10 @@
  * chain (patches.c:389-418 hooks_add_hook), so it loads its section's lines
  * after this hook has returned. The worker keeps one copy per process
  * (game_ocr/main.c another_copy: the oldest by name stays) and the kernel one
- * registered worker thread (game_ocr.c vjoOcrRegister). */
+ * registered worker thread (game_ocr.c vjoOcrRegister). A worker that such a
+ * line loads into a process this hook did not start one in as ON (OFF, L held,
+ * an unreadable games.ini, the loader off) reads OCR as its text source
+ * (text_source.c, audit-hooks F1): it installs no native text hook. */
 #include <psp2kern/ctrl.h>
 #include <psp2kern/io/fcntl.h>
 #include <psp2kern/io/stat.h>
@@ -237,6 +240,7 @@ static void worker_for(SceUID pid)
     SceUID mod;
     int psp, status = 0;
     uint32_t v;
+    text_source_started(pid, 0); /* not ON (yet): no hooks from a worker another line loads (audit-hooks F1) */
     if (pid <= 0 || g.shell_pid <= 0 || pid == g.shell_pid) return;
     memset(title, 0, sizeof(title));
     if (get_title(pid, title, sizeof(title)) < 0) return;
@@ -260,6 +264,7 @@ static void worker_for(SceUID pid)
         return;
     }
     path = v & WL_UX0 ? VJO_GAME_OCR_PATH_UX0 : VJO_GAME_OCR_PATH_UR0;
+    text_source_started(pid, 1); /* ON: its worker's module_start, inside the load, reads the text source */
     mod = load_start(pid, path, 0, NULL, 0, NULL, &status);
     klog("worker for %s%s (pid 0x%X): ON%s: %s 0x%08X, start %d", title, psp ? " (PSP)" : "", pid,
          v & WL_BACKUP ? " in games.ini.bak" : v & WL_DEFAULTS ? " (no games.ini)" : " in games.ini", path,

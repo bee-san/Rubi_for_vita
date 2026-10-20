@@ -443,6 +443,40 @@ static void test_mixed_encoding_hold_replay_and_real_l2(void)
     TEST_CHECK(pad.buttons == SCE_CTRL_LTRIGGER && pad.lt == 137);
 }
 
+/* API 31: △ is the overlay's (it cycles the text source, shell/overlay.cpp). While the overlay is open
+ * every hooked read gives the game a neutral pad, △ included, whatever is held; a △ still held as the
+ * overlay closes stays hidden until it is released, as vjoSetInputBlock(0) (kernel/main.c) adds the raw
+ * buttons of that moment to suppress_mask (mirrored here); a fresh press then reaches the game. */
+static void test_triangle_stays_the_overlays(void)
+{
+    SceCtrlData pad;
+    setup();
+    physical.buttons = SCE_CTRL_TRIANGLE;
+    input_poll(); /* the Shell's vjoPollInput sees it: the overlay acts on it */
+    TEST_CHECK((g.last_input.buttons & SCE_CTRL_TRIANGLE) && g.raw_buttons == SCE_CTRL_TRIANGLE);
+    g.input_block = 1;
+    for (unsigned h = 0; h < sizeof(controller_cases) / sizeof(controller_cases[0]); h++) {
+        TEST_CASE(controller_cases[h].name);
+        TEST_ASSERT(controller_cases[h].call(0, &pad, 1) == 1);
+        check_neutral(&pad, 0, controller_cases[h].negative);
+    }
+    __sync_fetch_and_or(&g.suppress_mask, g.raw_buttons); /* vjoSetInputBlock(0) with △ held */
+    g.input_block = 0;
+    for (int i = 0; i < 3; i++) {
+        now += 16000;
+        input_poll(); /* still held */
+        TEST_ASSERT(read_pos_patched(0, &pad, 1) == 1);
+        TEST_CHECK(!(pad.buttons & SCE_CTRL_TRIANGLE));
+    }
+    physical.buttons = 0;
+    input_poll(); /* released: the latch goes */
+    TEST_CHECK(g.suppress_mask == 0);
+    physical.buttons = SCE_CTRL_TRIANGLE;
+    input_poll();
+    TEST_ASSERT(read_pos_patched(0, &pad, 1) == 1);
+    TEST_CHECK(pad.buttons & SCE_CTRL_TRIANGLE); /* the game's own △ again */
+}
+
 static void test_mapped_suppression_until_release(void)
 {
     SceCtrlData pad;
@@ -513,6 +547,7 @@ TEST_LIST = {
     { "all12 controller exports block64 SDK pressure samples safely", test_block_all_exports_and_batches },
     { "mixed controller encodings share chord and replay without consuming genuine L2 R2", test_mixed_encoding_hold_replay_and_real_l2 },
     { "mapped held suppression survives until the physical shoulder releases", test_mapped_suppression_until_release },
+    { "API 31: the overlay's triangle never reaches the game, held over a close included", test_triangle_stays_the_overlays },
     { "contended half chord is reserved then standalone tap replayed", test_contended_half_chord_is_reserved },
     { "native trigger and blocked output diagnostics stay bounded", test_containment_diagnostics_are_bounded },
     { NULL, NULL }

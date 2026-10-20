@@ -1,0 +1,123 @@
+/* Where a native text hook may be placed in a game's code (docs/native-hooks.md): the pure-C checks
+ * the game worker (game_ocr/hooks.c) runs on a site's bytes before taiHookFunctionOffset, and the
+ * CALL source's prefilter. No platform calls, no allocation: host tests feed them byte fixtures.
+ *
+ * taiHEN's offset hook (libsubstitute, taiHEN 309b380 substitute/lib/arm/jump-patch.h) overwrites
+ * jump_patch_size bytes at the site, 8, or 12 for a Thumb site at an address = 2 mod 4, and moves
+ * every instruction that starts in them into a trampoline. A moved instruction that reads the PC, a
+ * branch, an IT block or a branch target inside those bytes would run wrongly there. So a site is
+ * accepted only when
+ *   - it is a verified entry (Rubi's own list, vjo_place_verified: title, module NID and the bytes
+ *     at the site, at least the whole patch, exactly as recorded), or
+ *   - its first instruction is a function's entry that saves LR (Thumb PUSH {..., lr} or
+ *     PUSH.W {..., lr}, ARM STMFD sp!, {..., lr}), and every instruction that starts in the patch
+ *     is on a short allow-list of plain register and stack instructions (vjo_place_check).
+ * Everything else is refused, with its reason (VJO_PLACE_*), so a later build can add a verified
+ * signature for it. */
+#ifndef VJO_HOOK_PLACE_H
+#define VJO_HOOK_PLACE_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* taiHEN's FUNC_SAVE_SIZE (taihen_internal.h): the bytes it saves at a site to restore on release.
+ * They must all lie in the segment's code too. */
+#define VJO_PLACE_SAVE_BYTES 16u
+/* libsubstitute's MAX_JUMP_PATCH_SIZE */
+#define VJO_PLACE_PATCH_MAX 12u
+
+/* Results and refusal reasons */
+enum {
+    VJO_PLACE_OK = 0,
+    VJO_PLACE_RANGE = 1,     /* the site, or its saved bytes, is outside segment 0's code */
+    VJO_PLACE_ALIGN = 2,     /* misaligned for its instruction set (ARM: 4, Thumb: 2) */
+    VJO_PLACE_ENTRY = 3,     /* the first instruction is not a PUSH/STMFD that saves LR */
+    VJO_PLACE_WINDOW = 4,    /* an instruction in the patch is not on the allow-list */
+    VJO_PLACE_SIGNATURE = 5, /* a verified entry's bytes or module NID differ */
+    VJO_PLACE_UNPORTED = 6,  /* the table entry needs code that is not ported (Luna's ported == 0) */
+    VJO_PLACE_VERSION = 7,   /* the entry is for another version of the game */
+    VJO_PLACE_FULL = 8,      /* no stream slot left */
+    VJO_PLACE_TAI = 9,       /* taiHookFunctionOffset refused it */
+    VJO_PLACE_COUNT
+};
+
+/* A short name for a reason (the debug log). */
+const char *vjo_place_reason(int reason);
+
+/* libsubstitute's jump_patch_size for a site at address addr (the Thumb bit cleared): the bytes the
+ * hook overwrites. */
+static inline unsigned vjo_place_patch_bytes(uint32_t addr, int thumb)
+{
+    return thumb && (addr & 2u) ? 12u : 8u;
+}
+
+/* Thumb (1) or ARM (0) for a table site: an address with bit 0 or bit 1 set is Thumb (when its
+ * bytes are a Thumb entry); else the bytes decide (a Thumb PUSH/PUSH.W saving LR, or an ARM STMFD
+ * sp! saving LR; the two forms cannot be confused). -1 when neither entry form is there. p: avail
+ * bytes at the site (the address with bit 0 cleared). */
+int vjo_place_isa(const uint8_t *p, unsigned avail, uint32_t addr);
+
+/* The check for an unverified site at segment-0 offset off of a segment whose first code_size bytes
+ * are code (code points at them; seg_base is their address in the game): VJO_PLACE_OK or the reason
+ * it is refused. */
+int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, uint32_t off, int thumb);
+
+/* Rubi's own verified sites (emulator- or console-checked, docs/native-hooks.md). */
+typedef struct {
+    const char *title;     /* 9 characters */
+    uint32_t module_nid;   /* the main module's NID (taiGetModuleInfo) */
+    uint32_t off;          /* segment 0 offset */
+    uint8_t thumb;
+    uint8_t reg;           /* the register holding the text's address (0..12) */
+    uint8_t encoding;      /* VJO_HOOK_ENC_* */
+    uint8_t sig_len;       /* 8..16, at least the patch's bytes */
+    int32_t padding;       /* added to the register's value */
+    uint8_t sig[16];       /* the bytes at the site */
+} VjoPlaceVerified;
+
+/* The verified entries of title_id, contiguous; 0 and *out = NULL when none. */
+unsigned vjo_place_verified(const char *title_id, const VjoPlaceVerified **out);
+
+/* 1 when Rubi's own list has an entry for title_id (the Games page's tag), else 0. */
+int vjo_place_title_verified(const char *title_id);
+
+/* The check for a verified entry v in a module with NID module_nid: its bytes (sig_len at
+ * code + v->off, inside the code) and its NID exactly as recorded. VJO_PLACE_OK or the reason. */
+int vjo_place_check_verified(const VjoPlaceVerified *v, const uint8_t *code, uint32_t code_size,
+                             uint32_t seg_base, uint32_t module_nid);
+
+/* The CALL source's prefilter, in the hooked string function (a game thread): may the n bytes at p,
+ * which the game has just copied, be a line of Japanese text? Reads at most 16 bytes. 1 when the
+ * bytes before the first NUL (at least 4; at most 16 looked at) are all well-formed text in one
+ * encoding (printable ASCII, tab, CR, LF, and whole CP932 double-byte or whole UTF-8 characters; a
+ * character cut by the 16-byte limit counts as whole) with at least two Japanese characters (CP932:
+ * leads 0x82, 0x83 (kana), 0x88-0x9F, 0xE0-0xEA (kanji); 0x81's punctuation is text but does not
+ * count; half-width katakana is refused. UTF-8: three-byte characters with leads E3-E9), else 0. A
+ * binary struct of pointers (0x81xxxxxx little-endian) or small integers fails: its low bytes are
+ * control bytes or break the encoding. */
+int vjo_place_text_prefilter(const uint8_t *p, unsigned n);
+
+/* The CALL source's second test, for a copy the prefilter passed (audit-hooks F2): 1 when the n bytes at
+ * p, all readable, have a pointer array's shape: n % 4 == 0, n >= VJO_PLACE_POINTER_MIN, and every byte at
+ * index 3 mod 4 is 0x81..0x9F, the high byte of a little-endian user pointer (0x81000000-0x9FFFFFFF; such
+ * a byte is also a CP932 lead, and the next word's low byte often a valid trail, so a struct of them can
+ * pass the prefilter). Else 0. Reads n / 4 bytes at most, and stops at the first one out of that range. */
+int vjo_place_pointer_array(const uint8_t *p, unsigned n);
+
+/* The shortest copy vjo_place_pointer_array refuses: five words. With the conductor's 8 (two words), real
+ * Japanese was refused: 2 of the repo's 1,080 CP932 lines of 8 B or more copied exactly (ソラユメ, 逢魔が刻,
+ * 8 B each) and 120 of 64,136 substrings at character boundaries (106 of them 8 B, 12 at 12 B, 2 at 16 B);
+ * from 20 B on none, in CP932 or UTF-8, while it still refuses 98% of the pointer structs that pass the
+ * prefilter (2,868 of 2,930 uniform user pointers, 2-128 words) [measured, hooks-fix-engine's report and
+ * $HERD/shared/artifacts/hooks-fix-engine/shape_variants.txt]. */
+#define VJO_PLACE_POINTER_MIN 20u
+
+/* 32-bit FNV-1a of n bytes (the streams' change test). */
+static inline uint32_t vjo_place_hash(const uint8_t *p, unsigned n)
+{
+    uint32_t h = 2166136261u;
+    for (unsigned i = 0; i < n; i++) h = (h ^ p[i]) * 16777619u;
+    return h;
+}
+
+#endif
