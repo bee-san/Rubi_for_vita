@@ -298,6 +298,8 @@ if(VJO_WITH_VOCR)
     # and the arena it encodes into
     ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
+  # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time
+  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
   # The worker's control code (a job's request, memory checks and ladder, one call
