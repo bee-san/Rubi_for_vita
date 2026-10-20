@@ -42,8 +42,11 @@ static char *record_line(char *p, char *end, const char *uuid, size_t ulen)
 }
 
 /* Keeps line as h's next earlier line, as the overlay shows a text (filtered and trimmed), copied
- * into `lines` at its own length: -1 when `lines` is full. */
-static int keep(VjoHistory *h, VjoArena *lines, const char *line, int filter)
+ * into `lines` at its own length: -1 when `lines` is full. *top: where `lines` began, until the
+ * current text's newest record is read (then SEEN): a line newer than it (a refresh's that was
+ * dropped as the visit opened) is no earlier line, so the lines kept before it go. */
+#define SEEN ((size_t)-1)
+static int keep(VjoHistory *h, VjoArena *lines, const char *line, int filter, size_t *top)
 {
     size_t mark = vjo_arena_mark(lines), n;
     char *f = vjo_filter_lines(lines, line, filter), *kept;
@@ -51,6 +54,11 @@ static int keep(VjoHistory *h, VjoArena *lines, const char *line, int filter)
     vjo_arena_release(lines, mark); /* t is read, and moved down, before anything is written there */
     if (!t)
         return -1;
+    if (*top != SEEN && !strcmp(t, h->line[0])) {
+        vjo_arena_release(lines, *top);
+        *top = SEEN;
+        h->n = 0;
+    }
     if (!*t || !strcmp(t, h->line[h->n]))
         return 0; /* nothing shown, or the line after it again */
     n = strlen(t) + 1;
@@ -62,7 +70,7 @@ static int keep(VjoHistory *h, VjoArena *lines, const char *line, int filter)
 
 void vjo_history_scan(VjoHistory *h, VjoArena *lines, char *buf, size_t len, int whole, const char *uuid, int filter)
 {
-    size_t ulen = strlen(uuid), end = len, i = len, low = whole ? 0 : 1;
+    size_t ulen = strlen(uuid), end = len, i = len, low = whole ? 0 : 1, top = vjo_arena_mark(lines);
     while (h->n < VJO_HISTORY_LINES && i-- > low) {
         char *line;
         /* A record starts with '"' after a newline (or as the file starts), and the next byte is
@@ -73,7 +81,7 @@ void vjo_history_scan(VjoHistory *h, VjoArena *lines, char *buf, size_t len, int
             continue;
         line = record_line(buf + i, buf + end, uuid, ulen);
         end = i;
-        if (line && keep(h, lines, line, filter) < 0)
+        if (line && keep(h, lines, line, filter, &top) < 0)
             break;
     }
 }

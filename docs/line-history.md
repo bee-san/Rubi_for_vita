@@ -13,6 +13,13 @@ lines. The overlay will then display 3 lines." On 昨日すき焼きを食べま
 automatic": line history has the lines of **Read text: Automatically** only, the ones
 `history.csv` already records ([ocr-history.md](ocr-history.md)); nothing new records a line for it.
 
+<img src="img/line-history-host.png" width="480" alt="Three overlay states: the current line 昨日すき焼きを食べました with 昨日's entry; after Up, 4778万 in white between 昭和52 and 昨日すき焼きを食べました, both dimmed, with 万's entry and the line Earlier line -1; after Enter, the status Saved for Anki (an earlier line: no screenshot).">
+
+*A host rendering of the code's own spans (the header from `core/styled.c`'s `vjo_styled_history`,
+the body in `shell/overlay.cpp` `render()`'s order and strings, the bundled dictionary's real
+lookups), drawn in IPA P Gothic at the overlay's geometry: not a console capture. The game worker's
+normalisation stores full-width digits as ASCII (４７７８ → 4778), as `history.csv` keeps them.*
+
 ## What it does
 
 | Key, in the overlay | Action |
@@ -42,6 +49,9 @@ automatic": line history has the lines of **Read text: Automatically** only, the
   nothing (owner 09:22Z: "only work on automatic"); that mode records no line. Up does nothing either
   when there is no earlier line: no `history.csv` yet, none of this game's lines in its last 24 KiB,
   past the 32nd line, or no Paf memory for a visit (the log says which, in the debug build).
+- A step goes to its line once no job reads the overlay's text: a lookup or a refresh of the line it
+  leaves is dropped (a refresh is asked again once the current text is back), a word's preparation
+  ends first. Another Up or Down pressed while a step waits for that is dropped (press again).
 - Closing the overlay on an earlier line ends the visit: the current text comes back (once no
   lookup of the earlier line runs), so a reopen on the same screen shows its saved word. A game exit,
   a new region or another OCR pipeline ends it with the text, as they retire any shown text.
@@ -92,6 +102,10 @@ written by this code.
 - The record parser matches `history.csv`'s own quoting (`shell/history.c`: the first four fields
   quoted, `"` doubled): a record starts at a `"` after a newline whose next byte is neither `"` nor
   `,`, which no byte inside a quoted field can be.
+- The visit opens when Up is pressed, even while a lookup or a refresh runs (they only read the
+  overlay's text, which only the control thread writes). A refresh dropped then may already have
+  appended the screen's newer line: records newer than the current text's newest record are not
+  earlier lines, so that line is not shown as one (an older record of the same text still is).
 - Within a visit no refresh runs (the shown line is not the screen's); a settled screen is
   recognized once the current text is back (the refresh waits, `refresh_pending`).
 
@@ -102,9 +116,9 @@ VitaSDK gcc 15.2.0 in `vitasdk/vitasdk:2026.08` [measured]:
 
 | | main `44d4e8d` | this change | room left |
 |---|---:|---:|---:|
-| normal Shell, text | 88,348 B | 90,044 B (+1,696) | 68 B of 90,112 |
+| normal Shell, text | 88,348 B | 90,092 B (+1,744) | 20 B of 90,112 |
 | normal Shell, data/bss | 73,280 B | 73,416 B (+136) | 312 B of 73,728 |
-| debug Shell, text | 98,732 B | 100,476 B (+1,744) | 1,924 B of 102,400 |
+| debug Shell, text | 98,732 B | 100,524 B (+1,792) | 1,876 B of 102,400 |
 | debug Shell, data/bss | 73,272 B | 73,408 B (+136) | 320 B of 73,728 |
 | kernel / OCR worker data/bss | | +8 B each | `VjoLedger`'s eleventh item |
 
@@ -121,12 +135,13 @@ The normal Shell's text pays for line history's code with `core/textfilter.c` bu
   a line that does not fit ends the list there (the lines kept are the newest, without a gap).
   Typical lines (20-60 characters of 3 B) are 60-180 B, so 32 take 2-6 KiB [estimate]. A refused
   block means no visit: Up does nothing.
-- **VjoControl's stack** (16 KiB): `history_open` is inlined into `ctl_main`, whose frame goes from 256
-  to 304 B (+48 B under every chain of the thread); line history's own chain is 560 B (`ctl_main` 304,
-  `vjo_history_load` 80, `vjo_history_scan` 56, `vjo_filter_lines` 48, `vjo_buf_append` 16,
-  `buf_reserve` 40, `vjo_arena_extend_last` 16), under the thread's config load (`apply_config` alone
-  is 1,352 B) [measured: `arm-vita-eabi-gcc -Os -fstack-usage` with the Vita build's flags, both
-  builds the same, main `44d4e8d` and this change; the SDK's own calls not counted].
+- **VjoControl's stack** (16 KiB): `history_open` and `history_ask` are inlined into `ctl_main`, whose
+  frame goes from 256 to 312 B (+56 B under every chain of the thread); line history's own chain is
+  576 B (`ctl_main` 312, `vjo_history_load` 80, `vjo_history_scan` 64, `vjo_filter_lines` 48,
+  `vjo_buf_append` 16, `buf_reserve` 40, `vjo_arena_extend_last` 16), under the thread's config load
+  (`apply_config` alone is 1,352 B) [measured: `arm-vita-eabi-gcc -Os -fstack-usage` with the Vita
+  build's flags, both builds the same, main `44d4e8d` and this change; the SDK's own calls not
+  counted].
 - **The overlay's text arena** (`VJO_BUDGET_PAF_UI`, 20,480 B): the header's spans go from 1 to 5
   (`VJO_HEADER_SPANS`: the text and each neighbour's row and line break), so its need goes from
   17,952 to 18,016 B (`test_ledger.c`).

@@ -568,7 +568,7 @@ int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filte
 {
     size_t mark = vjo_arena_mark(scratch), n = strlen(history_csv);
     char *buf = vjo_arena_alloc(scratch, VJO_HISTORY_WINDOW + 1);
-    TEST_CHECK(!held_view && !held_cmd && !job_running); /* no lock held, no job reading local_text */
+    TEST_CHECK(!held_view && !held_cmd); /* no lock held (a job may run: it only reads local_text) */
     history_loads++;
     snprintf(history_uuid, sizeof(history_uuid), "%s", uuid);
     if (history_load_rc < 0 || !buf) {
@@ -4226,13 +4226,20 @@ static void test_history_needs_auto_lines_and_memory(void)
     history_setup();
     cfg.ocr_mode = VJO_OCR_ON_PRESS;
     history_key(VJO_CMD_EARLIER);
-    TEST_CHECK(!job_running && !history && !history_loads && !history_allocs && !g_view.history);
+    TEST_CHECK(!job_running && !history && !history_loads && !history_allocs && !g_view.history && !g_view.status[0]);
     check_shown("猫犬鳥", "cat", 0);
     cfg.ocr_mode = VJO_OCR_AUTO;
     /* no Paf memory: no visit, no file read */
     fail_history_alloc = 1;
     history_key(VJO_CMD_EARLIER);
     TEST_CHECK(!job_running && !history && !history_loads && !history_held());
+    /* ... and a lookup running then is not dropped: its word is shown (no "Looking up words…" left) */
+    vjo_post_cursor(3, local_text_generation); on_command();
+    TEST_ASSERT(job_running && job_cursor_only);
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(!job_cancelled && !history_step && !history);
+    finish_current_job();
+    check_shown("猫犬鳥", "dog", 3);
     fail_history_alloc = 0;
     /* no history.csv yet, or none of this game's lines in it */
     history_load_rc = (int)0x80010002;
@@ -4245,7 +4252,7 @@ static void test_history_needs_auto_lines_and_memory(void)
     history_key(VJO_CMD_EARLIER);
     TEST_CHECK(!job_running && !history && history_loads == 2 && history_allocs == 2 && history_frees == 2);
     TEST_CHECK(!history_held() && !g_view.history && !g_view.status[0]);
-    check_shown("猫犬鳥", "cat", 0);
+    check_shown("猫犬鳥", "dog", 3);
     /* a PSP game's lines are under its platform and its own disc ID, as net_job writes them */
     vjo_anki_set_game("ULJM05000", "PSP", 1);
     history_key(VJO_CMD_EARLIER);
@@ -4260,11 +4267,14 @@ static void test_history_waits_for_the_running_job(void)
     history_setup();
     vjo_post_cursor(3, local_text_generation); on_command();
     TEST_ASSERT(job_running && job_cursor_only);
-    history_key(VJO_CMD_EARLIER);
-    TEST_CHECK(job_cancelled && history_step == 1 && !history && !history_loads);
+    history_key(VJO_CMD_EARLIER); /* the visit opens at once (the job only reads local_text), the step waits */
+    TEST_CHECK(job_cancelled && history_step == 1 && history && history_loads == 1 && !history->h.at);
+    TEST_CHECK(!strcmp(local_text, "猫犬鳥") && !g_view.history);
+    history_key(VJO_CMD_EARLIER); /* another while one waits: dropped, not stacked */
+    TEST_CHECK(history_step == 1 && history_loads == 1);
     vjo_post_cursor(6, local_text_generation); /* a move of the line it leaves, while it waits */
     control_tick(0);
-    TEST_CHECK(history_step == 1 && !history_loads);
+    TEST_CHECK(history_step == 1 && history_loads == 1);
     finish_current_job(); /* the cancelled lookup: nothing shown, nothing started after it */
     TEST_CHECK(!job_running);
     control_tick(0);
@@ -4287,7 +4297,7 @@ static void test_history_waits_for_the_running_job(void)
     TEST_ASSERT(job_running && job_refresh);
     /* Up during that refresh: it yields (asked again), and the step follows its end */
     history_key(VJO_CMD_EARLIER);
-    TEST_CHECK(job_cancelled && history_step == 1);
+    TEST_CHECK(job_cancelled && history_step == 1 && history_loads == 2);
     finish_current_job();
     TEST_CHECK(!job_running && refresh_pending);
     control_tick(0);
@@ -4302,6 +4312,25 @@ static void test_history_waits_for_the_running_job(void)
 static void test_history_close_exit_and_region(void)
 {
     history_setup();
+    /* Up while a lookup runs (the visit open, its step waiting), then a close before the lookup ends:
+     * the step goes with the close, the visit once the lookup is done; the current text is unchanged */
+    vjo_post_cursor(3, local_text_generation); on_command();
+    history_key(VJO_CMD_EARLIER);
+    TEST_ASSERT(job_running && history && history_step == 1 && !history->h.at);
+    close_overlay();
+    TEST_CHECK(!history_step && history);
+    control_tick(0);
+    TEST_CHECK(history && job_running); /* the lookup still reads local_text */
+    finish_current_job();
+    control_tick(0);
+    TEST_CHECK(!history && history_frees == 1 && !strcmp(local_text, "猫犬鳥") && local_cursor_byte == 3 && !g_view.history);
+    open_overlay();
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3);
+    finish_current_job();
+    check_shown("猫犬鳥", "dog", 3);
+    vjo_post_cursor(0, local_text_generation); on_command(); finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    history_frees = history_allocs = 0;
     history_key(VJO_CMD_EARLIER);
     TEST_ASSERT(job_running && job_cursor_only);
     close_overlay();

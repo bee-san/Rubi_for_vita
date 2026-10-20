@@ -104,6 +104,32 @@ static void test_consecutive_duplicates_collapse_but_aba_stays(void)
     check_lines(want, 3);
 }
 
+/* A line newer than the current text's newest record (a refresh read it and was dropped as the visit
+ * opened, the overlay keeping the text it showed) is no earlier line; an older record of the current
+ * text is one, and with no record of the current text every line is kept. */
+static void test_lines_newer_than_the_current_text(void)
+{
+    static const char *const older[] = {"X"}, *const aba[] = {"B", "A"}, *const none[] = {"B", "X"};
+    reset("A");
+    record(UUID, "X");
+    record(UUID, "A");
+    record(UUID, "B"); /* newer than the text shown */
+    scan_all(VJO_FILTER_NONE);
+    check_lines(older, 1);
+    TEST_CHECK(lines.used <= 8); /* B's copy went with it */
+    reset("A");
+    record(UUID, "A");
+    record(UUID, "B");
+    record(UUID, "A"); /* the current text, newest: the older A is an earlier line */
+    scan_all(VJO_FILTER_NONE);
+    check_lines(aba, 2);
+    reset("A");
+    record(UUID, "X");
+    record(UUID, "B");
+    scan_all(VJO_FILTER_NONE);
+    check_lines(none, 2);
+}
+
 static void test_quotes_commas_and_wrapped_rows(void)
 {
     static const char *const want[] = {"「はい、\"そう\"です」\n次の行", "一行目\n二行目\n三行目"};
@@ -244,6 +270,7 @@ static void test_a_file_without_header_or_records(void)
 TEST_LIST = {
     {"this game's lines, newest first, the current text not again", test_this_games_lines_newest_first},
     {"consecutive duplicates collapse, A/B/A stays", test_consecutive_duplicates_collapse_but_aba_stays},
+    {"lines newer than the current text are no earlier lines", test_lines_newer_than_the_current_text},
     {"quotes, commas and a textbox's rows", test_quotes_commas_and_wrapped_rows},
     {"filtered and trimmed as the overlay shows a text", test_filter_and_trim_as_shown},
     {"records cut by the window or an append are skipped", test_records_cut_by_the_window_or_an_append},

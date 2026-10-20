@@ -31,7 +31,8 @@ typedef struct {
  * unescaped in place in buf), less its rows without Japanese when filter is VJO_FILTER_LINES
  * (core/textfilter.h, as the overlay shows a text) and trimmed, copied into `lines`. A line that is
  * empty then, or the same as the line after it (the one kept last), is not kept; an incomplete record
- * (one being appended, or cut by the window's start) is skipped. buf[0] is the byte before the window,
+ * (one being appended, or cut by the window's start) is skipped, and so are the records newer than the
+ * current text's newest one (h->line[0]; a refresh's line the visit's opening dropped). buf[0] is the byte before the window,
  * or the file's first byte when `whole` (the window is the whole file). Stops once h or `lines` is
  * full: the lines kept are always the newest, without a gap. */
 void vjo_history_scan(VjoHistory *h, VjoArena *lines, char *buf, size_t len, int whole, const char *uuid, int filter);

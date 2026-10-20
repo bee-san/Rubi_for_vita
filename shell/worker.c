@@ -106,8 +106,8 @@ static int pages_limit;
  * game's earlier lines as history.csv keeps them (Read text: Automatically's). While one is shown,
  * `history` is the visit's block (Paf, VJO_SL_PAF_HISTORY: history_open) and local_text is that line,
  * so its lookups, pages and cards are the current text's ways; the current text waits in it as line
- * 0. history_step: a step asked for while a job ran (it reads local_text), 1 earlier, -1 later, taken
- * once the job is done (control_tick). Control thread; the view's pointers under the view lock. */
+ * 0. history_step: a step asked for (history_ask), 1 earlier, -1 later, taken once no job runs (one
+ * reads local_text: control_tick). Control thread; the view's pointers under the view lock. */
 typedef struct {
     VjoHistory h;
     uint32_t cursor, scene, seq; /* the current text's cursor and capture, for the return to it */
@@ -323,8 +323,8 @@ void vjo_view_unlock(void)
 void vjo_post_command(int cmd, const VjoRect *rect)
 {
     sceKernelLockMutex(cmd_lock, 1, NULL);
-    /* a line-history step never takes the place of a close or a region not handled yet */
-    if (cmd < VJO_CMD_EARLIER || pending_cmd == VJO_CMD_NONE || pending_cmd == VJO_CMD_CURSOR)
+    /* a line-history step takes an empty slot only: never a close's, a region's or a lookup's */
+    if (cmd < VJO_CMD_EARLIER || pending_cmd == VJO_CMD_NONE)
         pending_cmd = cmd;
     if (rect)
         pending_rect = *rect;
@@ -1664,7 +1664,7 @@ static void start_job(const char *why, int lookup)
  * cancelled and asked again once the lookups pause. */
 static void start_cursor_job(void)
 {
-    if (history_step) { /* the step to another line goes first: its own lookup follows (history_go) */
+    if (history_step) { /* the step to another line goes first: its own lookup follows (history_show) */
         cursor_waiting = 0;
         return;
     }
@@ -1954,9 +1954,9 @@ typedef char history_window_fits_scratch[VJO_HISTORY_WINDOW + 1 <= SCRATCH_SIZE 
 /* A visit's block holds its table and, always, the current text. */
 typedef char history_visit_fits[sizeof(HistoryVisit) + VJO_STRIP_MAX + 8 <= VJO_BUDGET_PAF_HISTORY ? 1 : -1];
 
-/* The visit (no job runs): its block, the current text as its line 0 with its cursor and capture,
- * and this game's earlier lines from history.csv (history.csv's game: Anki's, as net_job writes it).
- * 0, or -1 with no visit. */
+/* The visit: its block, the current text as its line 0 and this game's earlier lines from
+ * history.csv (history.csv's game: Anki's, as net_job writes it). A job may run: it only reads
+ * local_text, which only this thread writes. 0, or -1 with no visit. */
 static int history_open(void)
 {
     char name[128], tid[12], uuid[24]; /* vita-PCSG00415", */
@@ -1970,9 +1970,6 @@ static int history_open(void)
     vjo_arena_init(&lines, v + 1, VJO_BUDGET_PAF_HISTORY - sizeof(*v));
     sceClibSnprintf(uuid, sizeof(uuid), "%s-%s\",", platform, tid[0] ? tid : title_id); /* the column and its end */
     v->h.line[0] = vjo_arena_strndup(&lines, local_text, sceClibStrnlen(local_text, sizeof(local_text) - 1));
-    v->cursor = local_cursor_byte;
-    v->scene = local_text_scene;
-    v->seq = local_text_capture_seq;
 #ifdef VJO_WITH_VOCR
     rc = vjo_history_load(&v->h, &lines, uuid, cfg.non_japanese_filter, &scratch);
 #endif
@@ -1999,6 +1996,11 @@ static void history_show(int at)
     int keep;
     sceKernelLockMutex(cmd_lock, 1, NULL);
     vjo_view_lock();
+    if (!v->h.at) { /* leaving the current text: its cursor and capture, for the return to it */
+        v->cursor = local_cursor_byte;
+        v->scene = local_text_scene;
+        v->seq = local_text_capture_seq;
+    }
     sceClibMemcpy(local_text, text, len);
     local_text[len] = '\0';
     g_view.text_generation = advance_generation(&local_text_generation);
@@ -2029,27 +2031,21 @@ static void history_show(int at)
         start_cursor_job();
 }
 
-/* A step (no job runs) history_ask took: d = 1 earlier, -1 later; the first opens the visit, the last
- * ends it. What it was asked for still holds: a close drops the step, and so does a retired text
- * (history_detach). With no earlier line (none of this game's in history.csv's last bytes, none
- * before the oldest a visit keeps, or no Paf memory for a visit, which the log says) Up does nothing,
- * as at the text's top row before line history. */
-static void history_go(int d)
-{
-    history_step = 0;
-    if ((history || !history_open()) && history->h.at + d <= history->h.n)
-        history_show(history->h.at + d);
-}
-
-/* The overlay's Up from its text's top row (d = 1) or Down from an earlier line's last row (d = -1).
- * Only Read text: Automatically keeps lines (docs/ocr-history.md): in on_press mode Up does what it
- * did before line history, nothing. A job running reads local_text: the step waits for its end
- * (control_tick), and a lookup, page or refresh of the line it leaves is dropped. */
+/* The overlay's Up from its text's top row (d = 1) or Down from an earlier line's last row (d = -1):
+ * the step to this game's line before or after the one shown, which control_tick takes once no job
+ * runs (one reads local_text). Up opens the visit first (history_open). Only Read text:
+ * Automatically keeps lines (docs/ocr-history.md): in on_press mode Up does what it did before line
+ * history, nothing; so it does with no earlier line (none of this game's in history.csv's last bytes,
+ * none before the oldest a visit keeps, no Paf memory for a visit: the log says which), and while a
+ * step waits. A step drops the lookup or refresh of the line it leaves (asked again after the visit),
+ * and nothing else: a step asked for is always taken, unless a close or a retired text drops it. */
 static void history_ask(int d)
 {
-    if (ov == OV_CLOSED || !local_text_valid || (!history && (d < 0 || cfg.ocr_mode != VJO_OCR_AUTO)))
+    if (ov == OV_CLOSED || !local_text_valid || history_step ||
+        (!history && (d < 0 || cfg.ocr_mode != VJO_OCR_AUTO || history_open() < 0)) ||
+        (unsigned)(history->h.at + d) > (unsigned)history->h.n)
         return;
-    history_step = d; /* (and a lookup waiting for this line's job is dropped: start_cursor_job) */
+    history_step = d;
     if (job_running && (job_cursor_only || job_refresh)) /* (a preparation is short: it ends first) */
         job_cancelled = 1;
 }
@@ -2964,10 +2960,13 @@ static void control_tick(uint32_t bits)
         on_job_done();
     /* line history, once no job reads local_text: a step asked for meanwhile, or the current text
      * again after the overlay closed on an earlier line */
-    if (!job_running && history_step)
-        history_go(history_step);
-    else if (!job_running && history && ov == OV_CLOSED)
+    if (!job_running && history_step) {
+        int d = history_step;
+        history_step = 0;
+        history_show(history->h.at + d);
+    } else if (!job_running && history && ov == OV_CLOSED) {
         history_show(0);
+    }
     if (bits & (VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET)) {
         stable_pending = 1;
         if (ov == OV_OPEN)
