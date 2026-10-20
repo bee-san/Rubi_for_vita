@@ -5,7 +5,6 @@
  * exactly that size, so ASan sees any byte written past it). */
 #include "acutest.h"
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -18,7 +17,11 @@ static void unpack(unsigned k, char id[10])
     uint32_t v = vjo_luna_psp_ids[k], p = v >> VJO_LUNA_PSP_NUMBER_BITS, number = v & ((1u << VJO_LUNA_PSP_NUMBER_BITS) - 1u);
     TEST_ASSERT(p < VJO_LUNA_PSP_PREFIXES && number <= 99999u);
     memcpy(id, &vjo_luna_psp_prefix[p * 4u], 4);
-    snprintf(id + 4, 6, "%05u", (unsigned)number);
+    for (int d = 8; d >= 4; d--) { /* 5 digits, leading zeros kept */
+        id[d] = (char)('0' + number % 10u);
+        number /= 10u;
+    }
+    id[9] = 0;
 }
 
 static void test_counts(void)
