@@ -22,8 +22,12 @@ hour divides the characters of the records that got a time by that time; the tot
 record.
 
 A record cut short (power lost while it was written: no line break at the file's end, or fewer
-cells than Rubi writes) is skipped and counted. The output holds numbers and game names only,
-never dialogue text. Exit status: 0, or 2 when a file cannot be read as a Rubi history.
+cells than Rubi writes), even when more records were appended after it, is skipped and counted;
+blank lines and repeated header lines (files joined together) are ignored. A file that is not the
+writer's own bytes, such as Rubi's re-saved by a spreadsheet or another tracker's ExStatic lines CSV
+(uuid, given_identifier, name, line, time), is read as plain CSV, each line counted by this tool.
+The output holds numbers and game names only, never dialogue text. Exit status: 0, or 2 when a
+file has no ExStatic columns.
 """
 from __future__ import annotations
 
@@ -32,6 +36,7 @@ import bisect
 import csv
 import datetime
 import io
+import itertools
 import math
 import re
 import sys
@@ -123,11 +128,15 @@ class HistoryError(Exception):
     pass
 
 
-# Where a record starts: its uuid (the writer's platform, "vita" or "psp", and a title ID) and its
-# given_identifier, both quoted. Inside a quoted cell every quote is doubled, so this never matches
-# there, and only the record's first two cells can be these two (the third, the game's name, could
-# look like a given_identifier, never like a uuid as well).
+# Where a record of Rubi's writer starts: its uuid (the writer's platform, "vita" or "psp", and a title
+# ID) and its given_identifier, both quoted. Inside a quoted cell every quote is doubled, so this never
+# matches there; among a record's cells only its first two can look like this pair (a game's name that
+# is "vita-..." followed by a line that is exactly "vjo-N-N" could, which no game has).
 RECORD_START = re.compile(rb'"(?:vita|psp)-[^",\n]*","vjo-[0-9]+-[0-9]+",')
+RUBI_ID = re.compile(r"vjo-[0-9]+-[0-9]+")
+# The longest record Rubi writes is under 10 KB (the text and the recognizer's text share 4,096 bytes,
+# and a quote is written twice): a record's end is looked for in the first 16 KiB after its start.
+RECORD_MAX = 16384
 
 
 def split_records(lines):
@@ -147,29 +156,78 @@ def split_records(lines):
         yield bytes(current)
 
 
-def parse_record(data: bytes, cells: int):
-    """One record's cells, or None when it is not a whole record (cut short: no final line break, or
-    fewer cells than Rubi writes)."""
-    if not data.endswith(b"\n"):
-        return None
+def csv_rows(data: bytes):
+    """The non-empty csv rows of data, or None when csv refuses it (a NUL before Python 3.11, a cell
+    over its field limit)."""
     try:
-        rows = list(csv.reader(io.StringIO(data.decode("utf-8", errors="replace"), newline="")))
+        return [r for r in csv.reader(io.StringIO(data.decode("utf-8", errors="replace"), newline="")) if r]
     except csv.Error:
         return None
-    return rows[0] if len(rows) == 1 and len(rows[0]) >= cells else None
+
+
+def whole_record(data: bytes, cells: int):
+    """data's cells when data is one whole record: one row of at least `cells` cells, ended by a line
+    break (the writer ends every record with one). None otherwise."""
+    if not data.endswith(b"\n"):
+        return None
+    rows = csv_rows(data)
+    return rows[0] if rows and len(rows) == 1 and len(rows[0]) >= cells else None
+
+
+def is_header(row) -> bool:
+    return bool(row) and row[0].strip().lstrip("\ufeff") == "uuid"
+
+
+def ignorable(data: bytes) -> bool:
+    """Blank lines, or header lines (a file appended to another): no record, and none cut short."""
+    data = data.strip()
+    if not data:
+        return True
+    if not data.lstrip(b"\xef\xbb\xbf").startswith(b"uuid"):
+        return False
+    rows = csv_rows(data + b"\n")
+    return bool(rows) and all(is_header(r) for r in rows)
 
 
 def parse_chunk(data: bytes, cells: int):
-    """The whole records in what split_records gave (one, or none) and how many were cut short.
-    A record cut too short to show its start (a prefix of its first two cells: no line break) stays
-    at the end of the record before it; a quoted cell can hold a line break, but a record's last one
-    ends it, so the bytes up to the chunk's last line break are tried alone."""
-    row = parse_record(data, cells)
+    """The whole record at the start of what split_records gave (none, or one) and how many records
+    were cut short in it. What follows the record's last line break and is not blank or a header is a
+    record cut short (one whose first two cells did not even make it into the file, or the remains of
+    one)."""
+    if ignorable(data):
+        return [], 0
+    row = whole_record(data, cells)
     if row:
         return [row], 0
-    nl = data.rfind(b"\n")
-    row = parse_record(data[:nl + 1], cells) if 0 <= nl < len(data) - 1 else None
-    return ([row] if row else []), 1
+    # A quoted cell can hold line breaks: the record ends at the first line break after which it is one
+    # whole record.
+    nl = data.find(b"\n")
+    while 0 <= nl < RECORD_MAX:
+        row = whole_record(data[:nl + 1], cells)
+        if row:
+            return [row], int(not ignorable(data[nl + 1:]))
+        nl = data.find(b"\n", nl + 1)
+    return [], 1
+
+
+def plain_rows(lines, cells: int, report: Report):
+    """The rows of a file that is not the writer's own bytes (another tracker's ExStatic lines CSV, or
+    Rubi's re-saved by a spreadsheet, without the writer's quotes): plain csv, one row a record."""
+    reader = csv.reader(line.decode("utf-8", errors="replace") for line in lines)
+    while True:
+        try:
+            row = next(reader)
+        except StopIteration:
+            return
+        except csv.Error:
+            report.incomplete += 1
+            continue
+        if not row or is_header(row):
+            continue
+        if len(row) < cells:
+            report.incomplete += 1
+            continue
+        yield row
 
 
 def read_file(path: Path, report: Report, seen: set, names: dict) -> None:
@@ -190,16 +248,26 @@ def read_file(path: Path, report: Report, seen: set, names: dict) -> None:
             raise HistoryError(f"{path}: not a Rubi history.csv (no {', '.join(missing)} column)")
         report.files += 1
         col = {name: i for i, name in enumerate(header)}
+        rubi = header[:len(HEADER_080)] == HEADER_080
         # The count's cell: the header's `characters`, or the 42nd cell a newer Rubi appends to a row of
         # a file that 0.8.0 began (its header names the first 41 only).
         count_col = col.get("characters")
-        if count_col is None and header[:len(HEADER_080)] == HEADER_080:
+        if count_col is None and rubi:
             count_col = len(HEADER_080)
-        cells = min(len(header), len(HEADER_080))  # every cell Rubi writes up to line_metrics
-        for data in split_records(f):
-            rows, cut = parse_chunk(data, cells)
-            report.incomplete += cut
-            for row in rows:
+        # every cell Rubi writes up to line_metrics, or the columns another file names
+        cells = len(HEADER_080) if rubi else max(col[name] for name in REQUIRED) + 1
+        data = f.readline()
+        while data and not data.strip():
+            data = f.readline()
+        lines = itertools.chain([data], f)
+        if rubi and RECORD_START.search(data):
+            for chunk in split_records(lines):
+                rows, cut = parse_chunk(chunk, cells)
+                report.incomplete += cut
+                for row in rows:
+                    add_row(report, seen, names, col, count_col, row)
+        else:
+            for row in plain_rows(lines, cells, report):
                 add_row(report, seen, names, col, count_col, row)
 
 
@@ -209,10 +277,13 @@ def add_row(report: Report, seen: set, names: dict, col: dict, count_col, row) -
         t = float(row[col["time"]])
     except ValueError:
         t = math.nan
-    key = (row[col["uuid"]].strip(), row[col["given_identifier"]].strip())
-    if not key[0] or not key[1] or not math.isfinite(t) or t <= 0:
+    uuid, ident = row[col["uuid"]].strip(), row[col["given_identifier"]].strip()
+    if not uuid or not ident or not math.isfinite(t) or t <= 0:
         report.incomplete += 1
         return
+    # Rubi's given_identifier names one record; another tracker's may name a game (exSTATic's does),
+    # so a record of theirs is also known by its time and text.
+    key = (uuid, ident) if RUBI_ID.fullmatch(ident) else (uuid, ident, row[col["time"]].strip(), row[col["line"]])
     if key in seen:
         report.duplicates += 1
         return
@@ -223,9 +294,9 @@ def add_row(report: Report, seen: set, names: dict, col: dict, count_col, row) -
     if stored:
         report.stored += 1
         report.mismatched += int(cell) != counted
-    name = row[col["name"]].strip() or key[0]
+    name = row[col["name"]].strip() or uuid
     # one string object per game and name, however many records: a long history stays small
-    report.records.append(Record(game=names.setdefault(key[0], key[0]), name=names.setdefault(name, name),
+    report.records.append(Record(game=names.setdefault(uuid, uuid), name=names.setdefault(name, name),
                                  time=t, characters=int(cell) if stored else counted, stored=stored))
 
 

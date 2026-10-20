@@ -109,7 +109,10 @@ class Counter(unittest.TestCase):
         items += [bytes(rnd.choice(alphabet) for _ in range(rnd.randrange(0, 40))) for _ in range(20000)]
         items += [rnd.choice(["あ", "漢", "ー", "・", "A", "1", "𠮟", "😀"]).encode() * rnd.randrange(1, 4)
                   + bytes(rnd.choice(alphabet) for _ in range(rnd.randrange(0, 6))) for _ in range(5000)]
-        self.assertEqual(c_counts(items), [py_count(i) for i in items])
+        got = c_counts(items)
+        self.assertEqual(len(got), len(items))
+        wrong = [(i, g, py_count(i)) for i, g in zip(items, got) if g != py_count(i)]
+        self.assertEqual(wrong[:5], [])  # the first ones only: a diff of two 25,012-item lists takes minutes
 
 
 def gsm_rows(path):
@@ -244,6 +247,93 @@ class Files(unittest.TestCase):
         self.assertEqual(([r.characters for r in report.records], report.incomplete), ([4, 2], 0))
 
     @need_writer
+    def test_names_and_lines_like_a_record_start(self):
+        """A name or a line that is "vita-..." or "psp-..." (one half of what a record starts with) does
+        not split its record."""
+        path = self.dir / "history.csv"
+        records = [(("PROMO0002", "vita-PROMO0002"), 0, "psp-PROMO0001", 12), (("PROMO0002", "psp-X"), 5, "vita-Y", 5),
+                   (("PROMO0002", "vita-Z"), 9, "続き", 2)]
+        write_history(path, records)
+        report = rs.read_history([path])
+        self.assertEqual(([r.characters for r in report.records], report.incomplete), ([12, 5, 2], 0))
+        self.assertEqual([r.name for r in report.records], ["vita-PROMO0002", "psp-X", "vita-Z"])
+
+    @need_writer
+    def test_blank_lines_and_joined_files(self):
+        """Blank lines (an edited copy) and the header lines of files joined with cat are no records and
+        no records cut short."""
+        a, b = self.dir / "a.csv", self.dir / "b.csv"
+        write_history(a, RECORDS[:5])
+        write_history(b, RECORDS[5:])
+        data = a.read_bytes()
+        first = data.index(b"\n") + 1
+        second = data.index(b"\n", data.index(b"vjo-", first) + 1) + 1  # after the first record
+        cases = {
+            "blank lines": data[:second] + b"\n\r\n" + data[second:] + b"\n\n",
+            "blank lines after the header": data[:first] + b"\n\n" + data[first:],
+            "two files joined": data + b.read_bytes(),
+            "two files joined, the second's BOM and CRLF header": data + b"\xef\xbb\xbf"
+            + b.read_bytes().replace(b"characters\n", b"characters\r\n", 1),
+        }
+        for name, content in cases.items():
+            path = self.dir / "edited.csv"
+            path.write_bytes(content)
+            report = rs.read_history([path])
+            want = COUNTS[:5] if name.startswith("blank") else COUNTS
+            self.assertEqual(([r.characters for r in report.records], report.incomplete), (want, 0), name)
+
+    @need_writer
+    def test_zeros_after_a_power_loss(self):
+        """A file system can leave zeros where a write was lost: 4 KiB, and 200 KB (more than csv's field
+        limit, 131,072), at the end and between two records. They are one record cut short each."""
+        path = self.dir / "history.csv"
+        write_history(path, RECORDS[:3])
+        more = self.dir / "more.csv"
+        write_history(more, RECORDS[3:5])
+        tail = more.read_bytes()
+        tail = tail[tail.index(b"\n") + 1:]
+        for zeros in (4096, 200000):
+            for name, content in (("at the end", path.read_bytes() + b"\0" * zeros),
+                                  ("in the middle", path.read_bytes() + b"\0" * zeros + tail),
+                                  ("with a line break", path.read_bytes() + b"\0" * zeros + b"\n" + tail)):
+                (self.dir / "zeros.csv").write_bytes(content)
+                report = rs.read_history([self.dir / "zeros.csv"])
+                want = COUNTS[:3] if name == "at the end" else COUNTS[:5]
+                self.assertEqual(([r.characters for r in report.records], report.incomplete), (want, 1),
+                                 f"{zeros} zeros {name}")
+
+    def test_other_trackers_files(self):
+        """An ExStatic lines CSV that Rubi did not write (exSTATic's own export: a BOM, CRLF, papaparse's
+        quoting only where needed, a given_identifier per game) is read as plain CSV, and counted here."""
+        path = self.dir / "exSTATic_lines.csv"
+        path.write_bytes("\ufeffuuid,given_identifier,name,line,time\r\n"
+                         "0f9d-11,Some VN,Some VN,今日は晴れ。,1792220400.5\r\n"
+                         "0f9d-11,Some VN,Some VN,\"「えっ、\r\n本当？」\",1792220410\r\n"
+                         "0f9d-11,Some VN,Some VN,今日は晴れ。,1792220400.5\r\n"   # the same line again
+                         "0f9d-11,Some VN,Some VN,時間がない,\r\n"                  # no time: skipped
+                         "0f9d-11,Some VN,Some VN,同じ文,1792220420\r\n"
+                         "0f9d-11,Some VN,Some VN,同じ文,1792220430\r\n".encode())  # the same text, later
+        report = rs.read_history([path])
+        self.assertEqual([r.characters for r in report.records], [5, 4, 3, 3])
+        self.assertEqual((report.duplicates, report.incomplete, report.stored), (1, 1, 0))
+        self.assertEqual({r.game for r in report.records}, {"0f9d-11"})
+
+    @need_writer
+    def test_resaved_by_a_spreadsheet(self):
+        """Rubi's file re-saved by a spreadsheet (its quotes only where needed, CRLF) is read as plain CSV:
+        the same records and counts."""
+        path = self.dir / "history.csv"
+        write_history(path, RECORDS)
+        rows = list(csv.reader(io.StringIO(path.read_text(encoding="utf-8"), newline="")))
+        out = io.StringIO(newline="")
+        csv.writer(out, lineterminator="\r\n").writerows(rows)
+        (self.dir / "resaved.csv").write_text(out.getvalue(), encoding="utf-8", newline="")
+        self.assertNotIn(b'"vita-', (self.dir / "resaved.csv").read_bytes())  # no longer the writer's quotes
+        report = rs.read_history([self.dir / "resaved.csv"])
+        self.assertEqual(([r.characters for r in report.records], report.stored, report.incomplete),
+                         (COUNTS, len(RECORDS), 0))
+
+    @need_writer
     def test_copies_count_once(self):
         a, b = self.dir / "a.csv", self.dir / "b.csv"
         write_history(a, RECORDS)
@@ -251,6 +341,16 @@ class Files(unittest.TestCase):
         write_history(b, [(B, 90000, "新しい行", 4)])
         report = rs.read_history([a, b])
         self.assertEqual((len(report.records), report.duplicates), (len(RECORDS) + 1, len(RECORDS)))
+
+    def test_the_release_ships_the_tool_and_its_doc(self):
+        """The README tells users to run tools/reading_stats.py: the release zip has it, with the doc
+        it points to (vita/CMakeLists.txt's release target)."""
+        cmake = (ROOT / "vita/CMakeLists.txt").read_text(encoding="utf-8")
+        for name, dest in (("tools/reading_stats.py", "${STAGE}/tools/"), ("docs/ocr-history.md", "${STAGE}/docs/")):
+            copy = [line for line in cmake.splitlines() if f" ${{ROOT}}/{name} " in line]
+            self.assertEqual(len(copy), 1, name)
+            self.assertTrue(copy[0].lstrip().startswith("COMMAND ${CMAKE_COMMAND} -E copy "), copy[0][:80])
+            self.assertTrue(copy[0].rstrip().endswith(f" {dest}"), copy[0][-80:])
 
     def test_not_a_history(self):
         bad = self.dir / "bad.csv"
@@ -268,6 +368,23 @@ class Time(unittest.TestCase):
         report = rs.read_history([FIXTURE])
         rs.credit_time(report.records, minutes * 60)
         return report
+
+    def test_break_boundary(self):
+        """A gap of exactly --break-minutes is reading time; a microsecond more is a break."""
+        records = [rs.Record(game="g", name="g", time=t, characters=1, stored=True) for t in (0.0, 300.0, 600.000001)]
+        rs.credit_time(records, 300.0)
+        self.assertEqual([r.seconds for r in records], [300.0, None, None])
+
+    def test_local_days(self):
+        """Days in this computer's time zone unless --utc: at UTC-10 (TZ=HST10, a POSIX zone that needs no
+        zoneinfo files) the fixture's two days are 10-16 and 10-17, in UTC 10-17 and 10-18."""
+        env = dict(os.environ, TZ="HST10")
+        out = subprocess.run([sys.executable, str(ROOT / "tools/reading_stats.py"), str(FIXTURE)], env=env,
+                             capture_output=True, text=True, check=True).stdout
+        self.assertRegex(out, r"By day \(local time\)\n.*\n2026-10-16 +8 +64 .*\n2026-10-17 +2 +11 ")
+        out = subprocess.run([sys.executable, str(ROOT / "tools/reading_stats.py"), "--utc", str(FIXTURE)], env=env,
+                             capture_output=True, text=True, check=True).stdout
+        self.assertRegex(out, r"By day \(UTC\)\n.*\n2026-10-17 +8 +64 .*\n2026-10-18 +2 +11 ")
 
     def test_breaks(self):
         seconds = [r.seconds for r in self.report().records]
