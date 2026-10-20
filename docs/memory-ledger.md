@@ -591,7 +591,7 @@ overlay's header, `vjo_styled_history` 54 B and `faded_row` 132 B, the position 
 the arrows' line step in `frame` +88 B (+56 B debug), the dimmed rows' recolour in `header_highlight`
 +44 B, an earlier line's card in `do_save` +32 B; the rest under 25 B each. The normal Shell's code segment had 1,684 B of room on main `75041a0`
 (1,764 B before #232's left stick): it pays with `core/textfilter.c` built `-Os` (`vjo_filter_lines`
-190 → 168 B), its two strings in the data segment (`VJO_DATA_TABLE`, 93 B) and two of `shell/worker.c`'s
+190 → 168 B), its two strings in the data segment (`VJO_DATA_TABLE`, 80 B) and two of `shell/worker.c`'s
 cold error messages moved there too (`OOM_SHELL_RESULTS`, 108 B, beside the `OOM_*` messages, and
 `MODEL_STORAGE`, 82 B), so the code segment grows by 1,616 B (1,680 B debug) and leaves 68 B of room, and
 the data segment 144 B. Data/bss grows by 304 B (the strings, `VjoView`'s three line-history fields, the

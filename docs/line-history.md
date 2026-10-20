@@ -59,7 +59,9 @@ earlier line opens with the cursor on 万; with today's default, OFF, it opens o
   file again (it keeps nothing to remember that there was none).
 - A step goes to its line once no job reads the overlay's text: a lookup or a refresh of the line it
   leaves is dropped (a refresh is asked again once the current text is back), a word's preparation
-  ends first. Another Up or Down pressed while a step waits for that is dropped (press again).
+  ends first. Another Up or Down pressed while a step waits for that is dropped (press again). A move,
+  a tap or an L/R page pressed before the control thread has taken an Up or Down drops that step
+  instead: the latest press wins, and nothing is left waiting.
 - Closing the overlay on an earlier line ends the visit: the current text comes back with its cursor
   and its screen (once no lookup of the earlier line runs), so a reopen on the same screen shows it,
   its word looked up again (the dictionary only: no recognition), and Auto, closed, does not read that
@@ -199,7 +201,8 @@ that merge].
   visit with lookups and moves on each line, the oldest line, the return with the cursor and the
   screen, a reopen showing the saved word, on_press, no memory (and a lookup running then still
   shown), no file, a PSP game's ID; a step while a lookup or a refresh runs, a second Up while it
-  waits; no refresh in a visit and the one asked for after it; Up during a lookup then a close and a
+  waits; a step waiting for an OCR job that a new screen cancels goes with the retired text (B-7); no
+  refresh in a visit and the one asked for after it; Up during a lookup then a close and a
   reopen on the same screen or another: the visit, never shown, goes and refreshes resume; a close on
   an earlier line (no re-read of the text's screen after it), a reopen during its lookup, a game exit
   and a new region; a move or a page posted over a pending step (F2) and a step never taking a close's
@@ -216,12 +219,13 @@ that merge].
   with the dimmed rows (the layout double): Up on the text's top row and Down on an earlier line's last
   row are the line steps, Up/Down between its own rows and Left/Right stay in the text.
 
-A mutation pass over the new code (27 one-line mutants: the parser's record rules and the time check, the
-newer-than-current reset, the dedupe and the limit, the step's wait, cancellations and slot rules, on_press,
-the return's cursor and screen, the visit's frees, the refresh guard, the cache's tag, the earlier card's
-screenshot and model, the header's lead and dimming, the reader's window and its byte before) is killed 27
-of 27 by these suites [measured: a scratch copy of the tree, each mutant built and every suite above run].
-The auditor's own tests of F1-F3 and the slot rule pass on this head too.
+A mutation pass over the new code (28 one-line mutants: the parser's record rules and the time check, the
+newer-than-current reset, the dedupe and the limit, the step's wait, cancellations and slot rules, a
+retired visit's step, on_press, the return's cursor and screen, the visit's frees, the refresh guard, the
+cache's tag, the earlier card's screenshot and model, the header's lead and dimming, the reader's window
+and its byte before) is killed 28 of 28 by these suites [measured: a scratch copy of the tree, each mutant
+built and every suite above run]. The auditors' own tests (F1-F3, the slot rule, B-7's path) and their
+mutant sets pass and are killed on this head too.
 
 Not tested off the console: how the dimmed rows look on the Vita's screen, the read's time on `ux0:`,
 and the Paf heap's free size during a visit. Vita3K is not evidence for any of them (AGENTS.md

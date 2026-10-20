@@ -180,7 +180,7 @@ static int s_square_clear_armed;
  * open and given back when it closes, so no page of SceShell's partition is
  * held for a page that is closed almost all the time (#59; it was a 96 KiB
  * static buffer). Its size is what render() allocates from it: two styled
- * texts of HEADER_UNITS/BODY_UNITS UTF-16 units plus their spans, 17,968 B,
+ * texts of HEADER_UNITS/BODY_UNITS UTF-16 units plus their spans, 18,016 B,
  * rounded up to 24 KiB (host test: test_overlay_ui_arena_fits). A refused
  * allocation means the page does not open this time (fail closed). */
 #define UI_MEM_BYTES VJO_BUDGET_PAF_UI

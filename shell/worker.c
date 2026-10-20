@@ -2062,7 +2062,8 @@ static void history_show(int at)
  * runs (one reads local_text). Up opens the visit first (history_open). Only Read text:
  * Automatically keeps lines (docs/ocr-history.md): in on_press mode Up does what it did before line
  * history, nothing; so it does with no earlier line (none of this game's in history.csv's last bytes,
- * none before the oldest a visit keeps, no Paf memory for a visit: the log says which), and while a
+ * none before the oldest a visit keeps, no Paf memory for a visit: the debug log has a line for a read, and
+ * both builds one for a refused block, the oldest line none), and while a
  * step waits. A step drops the lookup or refresh of the line it leaves (asked again after the visit),
  * and nothing else: a step asked for is always taken, unless a close or a retired text drops it. */
 static void history_ask(int d)

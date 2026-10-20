@@ -2323,6 +2323,7 @@ static void cursor_build_dict(void)
     }
     cursor_dict_size = off; cursor_u64(cursor_dict + 40, off);
 }
+static void next_scene(uint32_t scene);
 static int read_fail; /* the dictionary's reads fail (a lookup that fails: rc != 0) */
 static int cursor_file_read(void *ud, uint64_t off, void *dst, size_t n)
 {
@@ -2337,6 +2338,12 @@ static int cursor_file_read(void *ud, uint64_t off, void *dst, size_t n)
         if (action == 3) { close_overlay(); open_overlay(); }
         if (action == 4) invalidate_game_work();
         if (action == 5) { state.scene = state.region_scene = 8; state.region_seq++; }
+        if (action == 6) { /* line history: Up while an OCR job looks its text up, then a settled new screen */
+            control_tick(0); /* the job's text, published (on_job_text) */
+            vjo_post_command(VJO_CMD_EARLIER, NULL);
+            next_scene(21);
+            control_tick(VJO_EV_REGION_STABLE); /* the step (it waits for the job), and the job cancelled */
+        }
         test_thread = thread;
     }
     if (read_fail) return -1;
@@ -4326,9 +4333,6 @@ static void test_history_waits_for_the_running_job(void)
     finish_current_job();
 }
 
-/* Closing on an earlier line: the current text comes back once no job reads local_text, so a reopen
- * on its screen shows it; reopened while that job still ran, the screen is recognized. A game exit or
- * a new region lets the visit go with the text. */
 /* Up with nothing to go to (on_press, the oldest line kept, no earlier line) changes nothing, as on
  * the text's top row before line history: the overlay posts the step all the same (it cannot tell),
  * and a move (a Right, a tap, an L/R page) posted before the control thread takes it wins the slot,
@@ -4412,6 +4416,42 @@ static void test_history_the_strip_never_shows_an_earlier_line(void)
     }
 }
 
+/* An OCR job is not cancelled by a step (it is no lookup or refresh): Up while it looks its own text
+ * up opens the visit and waits for it. A settled new screen then cancels that job, and its end retires
+ * the text, the visit with it: the waiting step must go too, or every later lookup would wait for a
+ * step that never comes ("Looking up words…" until a close) and Up would stay dead
+ * (audit-line-history-b B-7). */
+static void test_history_a_step_waiting_for_a_cancelled_ocr_job(void)
+{
+    history_setup();
+    view_invariant = 0; /* (an OCR job's text is published as job_text_list, which that check does not model) */
+    close_overlay(); control_tick(0);
+    next_scene(20);
+    fake_recognized_text = "犬猫";
+    open_overlay(); /* another screen: recognized, then looked up */
+    TEST_ASSERT(job_running && !job_cursor_only && !job_refresh && job_lookup);
+    read_action = 6;
+    finish_current_job();
+    TEST_CHECK(history_loads == 1 && history_frees == history_allocs && !history && !history_held());
+    TEST_CHECK_(!history_step, "a step was left behind with no visit: %d", history_step);
+    while (job_running) /* the new screen's own recognition */
+        finish_current_job(), control_tick(0);
+    TEST_ASSERT(local_text_valid && !strcmp(local_text, "犬猫") && g_view.local_cursor_mode);
+    vjo_post_cursor(3, local_text_generation); on_command();
+    TEST_CHECK_(job_running && job_cursor_only, "the move was not looked up (job %d, step %d)", job_running,
+                history_step);
+    if (job_running)
+        finish_current_job();
+    TEST_CHECK(g_view.cursor_byte == 3 && strcmp(g_view.status, "Looking up words…") != 0);
+    history_key(VJO_CMD_EARLIER); /* and Up works again */
+    TEST_CHECK(history_loads == 2 && history != NULL);
+    while (job_running)
+        finish_current_job(), control_tick(0);
+}
+
+/* Closing on an earlier line: the current text comes back once no job reads local_text, so a reopen
+ * on its screen shows it; reopened while that job still ran, the screen is recognized. A game exit or
+ * a new region lets the visit go with the text. */
 static void test_history_close_exit_and_region(void)
 {
     history_setup();
@@ -7562,6 +7602,7 @@ TEST_LIST = {
     {"history_close_exit_and_region", test_history_close_exit_and_region},
     {"history_a_step_never_holds_a_move_or_a_close", test_history_a_step_never_holds_a_move_or_a_close},
     {"history_the_strip_never_shows_an_earlier_line", test_history_the_strip_never_shows_an_earlier_line},
+    {"history_a_step_waiting_for_a_cancelled_ocr_job", test_history_a_step_waiting_for_a_cancelled_ocr_job},
     {"refresh_replacement_resets_dictionary_pages", test_refresh_replacement_resets_dictionary_pages},
     {"on_press_overlay_never_refreshes", test_on_press_overlay_never_refreshes},
     {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},

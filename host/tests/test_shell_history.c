@@ -383,7 +383,7 @@ static void test_reader_reads_a_bounded_tail(void)
     struct stat st;
     reset();
     VjoHistoryRecord r = record("x");
-    /* What a record takes, as the writer writes it: a textbox's three rows of 35 characters (3 B each),
+    /* What a record takes, as the writer writes it: a textbox's three rows of 32 characters (3 B each),
      * the recognizer's raw text as long, three lines' metrics; what the window reaches back */
     {
         char line[400] = "", one[] = "昨日の夜は遅くまで台所で料理の本を読んでいたので今朝は眠かった。"; /* invented */

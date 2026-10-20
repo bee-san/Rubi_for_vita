@@ -240,7 +240,7 @@
  * A save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B
  * on main dcb7b31) [measured, host, test_shell_anki.c]. anki.c checks its arena against this at compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
-#define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
+#define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 18,016 B needed (overlay.cpp, test_ledger.c) */
 /* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
  * first Up past its text's top row until the return to the current text (or the overlay's close): the
  * table (core/history_lines.h VjoHistory, 34 line pointers and two counts) and the worker's three words
