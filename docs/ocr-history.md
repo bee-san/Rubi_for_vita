@@ -54,16 +54,16 @@ history read is added. A seek obtains the append offset even for a large file.
 The character count is one more pass over the text, in the writer and on its
 frame: 76 B more of `vjo_history_append`'s code, paid for by moving the writer's
 own strings (93 B: its path and formats) into the data segment with its header,
-whose new name adds 11 B. The Shell's code segment is 8 B smaller in the normal
-build and 16 B in the debug one, its data 104 B larger in both; the pages stay
-as they were [measured: the build log's module rows and `arm-vita-eabi-nm -S`,
-both builds of main `f482c21` (the same rows as `44d4e8d`) and this change]. The
-writer's frame stays 456 B with its saved registers (`-fstack-usage`), and the
-count's calls (`vjo_utf8_next`, 20 B; `vjo_text_selectable` and
-`vjo_is_japanese_letter`, 16 + 12 B) go no deeper than its calls that were there
-before (`number`, 40 B, and `sceClibSnprintf` under it) [measured:
-`-fstack-usage` with the Shell's flags]. The count runs 112 Cortex-A9
-instructions a code point, about 3,560 for a mean textbox of
+whose new name adds 11 B. The Shell's code segment is 24 B smaller in the normal
+build and 32 B in the debug one (8 and 16 B on main `f482c21`: the sections'
+alignment moves), its data 104 B larger in both; the pages stay as they were
+[measured: the build log's module rows and `arm-vita-eabi-nm -S`, both builds of
+main `75041a0` and this change]. The writer's frame stays 456 B with its saved
+registers (`-fstack-usage`), and the count's calls (`vjo_utf8_next`, 20 B;
+`vjo_text_selectable` and `vjo_is_japanese_letter`, 16 + 12 B) go no deeper than
+its calls that were there before (`number`, 40 B, and `sceClibSnprintf` under
+it) [measured: `-fstack-usage` with the Shell's flags]. The count runs 112
+Cortex-A9 instructions a code point, about 3,560 for a mean textbox of
 `host/fixtures/word_lookup`'s 50 real VOCR regions (32 code points on 2.8 lines,
 27 characters) [measured: the Vita compiler's code under `qemu-arm -cpu
 cortex-a9` with vita-vn-ocr's instruction-count plugin, each region one text
