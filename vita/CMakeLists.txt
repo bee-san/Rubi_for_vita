@@ -306,6 +306,10 @@ if(VJO_WITH_VOCR)
   # For size, as the worker's control code is: 1,708 B of text and rodata at -Os (2,240 B at -O2).
   target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
   set_source_files_properties(${ROOT}/core/hook_select.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
+  # regular expressions are core/hook_re.c's (core/hook_luna.c links it once anything calls the decoder).
+  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_re.c)
+  set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
   # The worker's control code (a job's request, memory checks and ladder, one call
