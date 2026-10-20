@@ -1,6 +1,6 @@
 /* The black bars around a game's picture (core/shottrim.h): a scan of the frame's rows as the game
  * worker reads them, and the picture between the bars. No allocation and no copy: a few words of
- * state, each pixel read at most once. */
+ * state; a black row read whole, a content row only from each end to its content. */
 #include "shottrim.h"
 
 #include <stddef.h>
@@ -108,14 +108,14 @@ int vjo_trim_guess(const VjoTrimScan *s, VjoTrimRect *r, int *exact)
     *exact = 1;
     if (s->rows == s->h)
         return vjo_trim_decide(s, r);
-    /* no content row yet (rows read until a black band over 3/10 of the frame), or a band over 3/10 that is a bar
-     * (8 rows or more; under 8 rows it is none, which only a frame under 27 rows can have): kept, whatever is below */
-    if (!s->content || (s->top >= VJO_TRIM_MIN_BAR && s->top * 10u > s->h * 3u)) {
+    /* a black band over 3/10 of the frame at its top that is a bar (8 rows or more; under 8 rows it is none, which
+     * only a frame under 27 rows can have), with a content row below it or none yet: kept, whatever is below */
+    if (s->top >= VJO_TRIM_MIN_BAR && (!s->content || s->top * 10u > s->h * 3u)) {
         whole(s, r);
         return VJO_TRIM_KEPT;
     }
-    /* the top and a side edge reached: neither axis can be a pair (none is trimmed), whatever is below */
-    *exact = s->top < VJO_TRIM_MIN_BAR && (s->left < VJO_TRIM_MIN_BAR || s->right < VJO_TRIM_MIN_BAR);
+    /* a content row reaching the top and a side edge: neither axis can be a pair (none is trimmed), whatever is below */
+    *exact = s->content && s->top < VJO_TRIM_MIN_BAR && (s->left < VJO_TRIM_MIN_BAR || s->right < VJO_TRIM_MIN_BAR);
     kind = decide(s, s->top < VJO_TRIM_MIN_BAR ? 0u : s->top, r);
     /* side bars under no top bar whose black is not all one colour are mostly a dark picture's edges (an
      * emulator's bars are one colour): guess the whole frame; the rows below decide, as for any guess */

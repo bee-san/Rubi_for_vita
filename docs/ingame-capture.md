@@ -121,7 +121,7 @@ A card's screenshot ([docs/anki.md](anki.md#the-screenshot)) is a job of the sam
   format expanded to 8 bits per channel exactly as for grey (`kernel/capture.c` `read_row`), 4 bytes
   a pixel, into the worker's block. Only a shot reads colour, and a shot reads nothing else; it
   publishes no capture and builds no signature (no `VJO_ROWS_SIG`).
-- **64 rows a frame, one pass.** The worker reads the frame once, top to bottom, 64 rows (a strip
+- **64 rows a frame, one pass** (API 23; with Trim black bars, below, more). The worker reads the frame once, top to bottom, 64 rows (a strip
   of 245,760 B at 960 px) a display frame, 9 frames for 544 rows, and encodes each band of 16 rows
   as it comes; there are no checksums and no second pass. A screen that changes during those 9
   frames is pictured partly before and partly after the change (a band at the seam); with the

@@ -50,12 +50,14 @@ void vjo_trim_rows(VjoTrimScan *s, const uint8_t *rgba, uint32_t n, uint32_t str
 int vjo_trim_decide(const VjoTrimScan *s, VjoTrimRect *r);
 /* The guess from the rows scanned so far, once a content row is among them or more than 3/10 of
  * the frame's rows are all black: the bars as decided above with the rows below holding nothing
- * outside it and, under a top bar, a bottom bar as wide; but side bars under no top bar whose black
+ * outside it and, under a top bar, a bottom bar as wide (the caller reads strips of any height: the
+ * worker's are 64 rows); but side bars under no top bar whose black
  * pixels are not all one colour (a dark picture's edges, where an emulator's bars are one colour) are
  * guessed as the whole frame (VJO_TRIM_KEPT). *exact is 1 when no row below can change the picture:
  * every row is scanned already (the guess is vjo_trim_decide's), or no centred picture can have so tall
  * a black bar at the top (8 rows or more, over 3/10 of the frame: kept whole), or the first rows reach the
- * top edge and a side's (none is trimmed; the kind is the first rows'). */
+ * top edge and a side's (no picture can be trimmed: the whole frame, and the kind is the first rows',
+ * VJO_TRIM_NONE or VJO_TRIM_KEPT, which the rows below could only change between those two). */
 int vjo_trim_guess(const VjoTrimScan *s, VjoTrimRect *r, int *exact);
 
 #endif

@@ -459,7 +459,7 @@ What it costs on the Cortex-A9 (the Vita compiler's code as the worker builds it
 instructions counted under qemu-arm's insn_mix plugin [measured]; times at 444 MHz are estimates,
 scaled as `docs/performance.md` scales them): the first strip of a frame without bars, about 4,000
 instructions; every row of a PSP game's 1× frame, its bars all read, 3.55 million (about 4 to
-9 ms); the encoding of its 484 × 276 picture 19.9 million against 73.4 million for the whole
+9 ms); the encoding of its 484 × 276 picture 20.0 million against 73.8 million for the whole
 frame of the same synthetic picture, so a trimmed shot takes less time than an untrimmed one.
 A frame read again takes up to 10 more of the game's frames than one that is not (about 167 ms at
 60 fps) and one more encoding of the whole frame (69 to 149 ms at 444 MHz, below), so a card whose
