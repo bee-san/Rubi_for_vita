@@ -641,8 +641,9 @@ def render_doc():
     out.append("| PCSG00415 | JP | CLANNAD | the CALL source (SceLibc `memcpy`/`strcpy`/`strncpy`/`memmove` imports "
                "of the game executable); the register site segment 0 + 0x2CA70 (Luna's space 0x80030A70), r6, "
                "module NID 0xC5187D60, 8-byte signature | CP932 (AUTO for the CALL source) | Rubi's own, not in "
-               "Luna's table: the CALL source proven on a console (2026-10-10, vita-vn-ocr notes 23); the register "
-               "site proven in Vita3K only (notes 22) |")
+               "Luna's table: an earlier build's CALL source (the code removed in c35ebf9) followed CLANNAD's "
+               "dialogue on a console (2026-10-10, vita-vn-ocr note 23); this one is new code, not run on a "
+               "console yet; the register site proven in Vita3K only (note 22) |")
     out.append("")
     out.append("## Hookfuncs and filters")
     out.append("")

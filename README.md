@@ -120,7 +120,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries an L or R tap pages through, 1–8 | 1 |
-| | **Text source**: Automatic (native text hooks in the games that have one, else OCR), Every game, or OCR only ([guide](docs/guide.md#native-text-hooks)) | Automatic |
+| | **Text source**: Automatic (native text hooks in the games that have one, else OCR), Every game, or OCR only, from a game's next start ([guide](docs/guide.md#native-text-hooks)) | Automatic |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Export cards** and **Export all cards**: write them into one `.apkg` file | |

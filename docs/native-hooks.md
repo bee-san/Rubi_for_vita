@@ -7,8 +7,9 @@ hook site must pass, what a hit does, and how it is undone. It changes nothing t
 copies bytes and lets the game's function run as before.
 
 Status: built and host-tested; **not run on a console** in this form. What has run on a console is the
-older CALL source of PR #16 in CLANNAD (vita-vn-ocr note 23, below). Every console step is in
-[To test on a console](#to-test-on-a-console).
+removed code's CALL source (the string-copy hooks of PRs #7 and #12, picked with #13's matching; #16 added
+the register profile) in CLANNAD (vita-vn-ocr note 23, below); this page's CALL source is new code (its
+prefilter, its slots). Every console step is in [To test on a console](#to-test-on-a-console).
 
 ## Where it runs
 
@@ -62,9 +63,12 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
 No syscall, no allocation and no waiting in this path: the slot's try-lock is taken or the hit is
 dropped (and counted). Our own worker's string calls are not hooked: only the main module's imports are.
 
-From the console run (note 23): in CLANNAD the text came from one memcpy caller at absolute LR
-0x8105910F, picked by hand; segment 0's base was not queried in that run, so its offset 0x5910F is
-unverified.
+From the console run (note 23): in CLANNAD the text came from one caller of the removed code's
+string-copy hooks ("CALL kind 2": any of its hooked memcpy, strcpy, strncpy and memmove imports and
+SceLibKernel's copies; which one the note does not say) at absolute LR 0x8105910F, picked by hand; segment
+0's base was not queried in that run, so its offset 0x5910F is unverified. Its texts were 24 → 6 → 18 →
+72 → 18 bytes, so a 2-character text can come through a dialogue caller. Only the earlier emulator run's
+caller 0x8102CA7F is named as a memcpy caller (note 23).
 
 ## Table sites
 
@@ -176,7 +180,12 @@ of OCR's text o it matches best (o's characters before and after it free), and 1
 max(|h|, |o|). OCR's text around the match (a speaker's name, another line) lowers it as much as it is
 long: a stream with one line of a two-line page, a backlog line or a line prepared ahead of the screen does
 not agree (so it never locks; once a stream is locked, its new text is checked as above), and a name in the
-box agrees only beside a line about 2.3 times its length. Characters past
+box agrees only beside a line about 2.3 times its length. The other side of the same rule: a stream that
+agrees matches at least 70 % of OCR's characters, so the text shown may lack up to 30 % of the box, and
+is then shown alone, after a lock without OCR too. A speaker's name beside the line is the intended case;
+a box that grows by clicks is another: `「えっ」` and then a 25-character segment, whose stream holds only
+the segment, scores 916, so the popup shows the segment without `えっ` (audit-hooks-text N3; 7 of 10
+characters score 700, 6 of 10 600) [measured: `vjo_hook_similarity` on the host]. Characters past
 the 256 compared count as unmatched, so a cut text never scores higher than it would whole. Fewer than 4
 characters in either text: 0. Equal scores: the stream of the current streak (two callers copying one text
 must not take turns), then a table site, then the newer text.

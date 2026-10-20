@@ -111,6 +111,12 @@ static void name_and_line(void)
     TEST_CHECK(s == 0); /* two characters: never */
     s = sim("佐々木健太郎\nそろそろ帰らないと母さんに怒られるよ", "佐々木健太郎");
     TEST_CHECK_(s == 250, "%u", s);
+    /* a stream that agrees may lack up to 30 % of the box (docs/native-hooks.md, audit-hooks-text N3): a
+       box that grows by clicks, whose stream holds its new segment, and the edge itself */
+    s = sim("「えっ」「それって、昨日の放課後に話していたあの件のこと？」", "「それって、昨日の放課後に話していたあの件のこと？」");
+    TEST_CHECK_(s == 916, "%u", s);
+    TEST_CHECK(sim("一二三四五六七八九十", "一二三四五六七") == VJO_HOOK_AGREE);
+    TEST_CHECK(sim("一二三四五六七八九十", "一二三四五六") == 600);
 }
 
 static void backlog_and_prefetch(void)

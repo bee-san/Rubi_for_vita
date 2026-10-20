@@ -296,7 +296,8 @@ console yet: everything below is what the code does, checked on the host.
   An install or an update keeps the file's value; installs before this one wrote `text_source =
   ocr`, so choose Automatic once to use hooks.
 - **What is shown.** With hooks, every job still reads the screen with OCR at first: a hook's line
-  replaces OCR's only when the two agree (70 % or more, four characters at least), and after two
+  replaces OCR's only when the two agree (70 % or more, four characters at least; so a hook's line
+  shown can lack up to 30 % of the box, such as the speaker's name), and after two
   agreements in a row that hook is locked and answers new lines of four characters or more without
   recognition, two pages at most: OCR reads the next one, and the hook's line must agree there. A
   screen with no new hook line is read by OCR again; a disagreement makes OCR read every page until
