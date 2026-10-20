@@ -123,7 +123,31 @@ typedef struct {
      * NUL; the kernel writes VJO_GAME_OCR_SHOT_DIR/<shot>.jpg, a name no caller supplies. Empty for
      * an OCR job. */
     char shot[VJO_GAME_OCR_SHOT_ID_BYTES];
+    /* API 31, native text hooks (docs/native-hooks.md): what this job may answer from.
+     * VJO_HOOK_PICK_AUTO: OCR, its text replaced by a hook stream's that agrees with it (the worker's
+     * automatic pick, which may lock a stream and then answer without recognition); a stream ID
+     * 1..VJO_HOOK_STREAMS: that stream's latest text, pinned, without recognition (OCR when it has none);
+     * VJO_HOOK_PICK_OCR: OCR only. The Shell's △ cycles it in the overlay. */
+    uint32_t hook_pick;
 } VjoGameOcrRequest;
+
+/* API 31: hook streams (game_ocr/hooks.h). IDs 1..VJO_HOOK_SITE_STREAMS are table sites (Luna's or
+ * Rubi's own), the rest CALL callers (the game's string copies, keyed by caller); an ID names the same
+ * stream for the whole game session. */
+#define VJO_HOOK_SITE_STREAMS 8u
+#define VJO_HOOK_CALL_STREAMS 12u
+#define VJO_HOOK_STREAMS (VJO_HOOK_SITE_STREAMS + VJO_HOOK_CALL_STREAMS)
+#define VJO_HOOK_PICK_AUTO 0u
+#define VJO_HOOK_PICK_OCR 0xFFu
+/* VjoGameOcrResult.text_from: 0 = OCR (or no text), else the stream ID whose text text[] holds. */
+#define VJO_TEXT_FROM_OCR 0u
+/* VjoGameOcrResult.hook_flags. */
+#define VJO_HOOK_R_AGREED 0x01u /* text_from's stream agreed with this job's OCR text (hook_score) */
+#define VJO_HOOK_R_LOCKED 0x02u /* text_from's stream is locked: two agreements in a row */
+#define VJO_HOOK_R_PINNED 0x04u /* the request pinned text_from's stream (hook_pick) */
+#define VJO_HOOK_R_NO_OCR 0x08u /* answered without recognition (the region's first capture pass only) */
+#define VJO_HOOK_R_SITE 0x10u   /* text_from is a table site (else a CALL caller) */
+#define VJO_HOOK_R_UNLOCK 0x20u /* this job unlocked the stream that was locked (two disagreements) */
 
 /* vjoOcrModelOpen's `which`: the request's model or its fallback, or (API 20)
  * the LM of tier which - VJO_GAME_OCR_OPEN_LM + 1, up to the request's LM tier,
@@ -335,6 +359,12 @@ typedef struct {
      * screenshot is frozen: closing the overlay can no longer change it.
      * It is a progress marker then, not a committed file size. */
     uint32_t shot_bytes, shot_quality, shot_tries, shot_block, shot_memory, shot_encode_us, shot_write_us;
+    /* API 31, native text hooks: where text[] came from (VJO_TEXT_FROM_OCR or a stream ID), how
+     * (VJO_HOOK_R_*), the best stream's similarity to this job's OCR text (0..1000; 0 when not compared),
+     * the streams holding text, and what the worker installed as its game started: the text source it
+     * applied (VJO_TEXT_SOURCE_*), table sites hooked << 16 | CALL imports hooked, and sites refused. */
+    uint32_t text_from, hook_flags, hook_score, hook_streams;
+    uint32_t hook_mode, hook_installed, hook_refused;
     /* UTF-8 OCR text on success; every failed result carries empty text. API 20:
      * the text is normalised (core/textnorm.h) and the recognizer's own text
      * follows its NUL (vjo_text_raw), for the log. */

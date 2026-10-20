@@ -54,8 +54,21 @@
  * VJO_GAME_OCR_OPEN_VERTICAL. Reverted; main's builds from 4a7ddf8 to 297530c are API 27.
  * 28: API 26's interface again (vertical text left main, to come back as its own pull request): flags
  * bit 15 is unknown again and no Open is VJO_GAME_OCR_OPEN_VERTICAL. A new number, not 26: builds of
- * 27 exist, and a number names one interface only. Sizes are unchanged. */
-#define VJO_API_VERSION 28
+ * 27 exist, and a number names one interface only. Sizes are unchanged.
+ * 31: native text hooks (docs/native-hooks.md). The Shell sets the text source from config.ini's
+ * text_source (vjoSetTextSource, VJO_TEXT_SOURCE_*); the game worker reads it as it starts
+ * (vjoGetTextSource) to decide which hooks it installs in its game. VjoGameOcrRequest.hook_pick (a new
+ * last field) lets a job answer from a hook stream or from OCR only, and VjoGameOcrResult says where its
+ * text came from (text_from and the hook_* fields, new, before text). Both structs grow. 29 and 30 are
+ * taken by open drafts (#223 and #226: 29; #228: 30), so this is 31. */
+#define VJO_API_VERSION 31
+
+/* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
+ * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
+#define VJO_TEXT_SOURCE_OCR 0u   /* no hooks anywhere: the kernel's value until the Shell sets one */
+#define VJO_TEXT_SOURCE_AUTO 1u  /* hooks only in titles with a hook entry (Luna's table, Rubi's own) */
+#define VJO_TEXT_SOURCE_HOOKS 2u /* as AUTO, plus the CALL source in every game that is ON */
+#define VJO_TEXT_SOURCE_COUNT 3u
 
 /* #138: the kernel plugin loads the game OCR worker into every game that is ON
  * in games.ini when it starts (kernel/loader.c, docs/worker-loading.md), from
@@ -227,6 +240,8 @@ int vjoSetTriggers(int toggle, int subtitle); /* enum VjoTrigger each, not equal
 int vjoSetGameActive(int pid, int mode);  /* shell: enum VjoGameMode of the foreground process */
 int vjoSetInputBlock(int on);            /* block all game input (not the shell) */
 int vjoPollInput(VjoInput *out);         /* raw pad, unfiltered */
+int vjoSetTextSource(uint32_t mode);     /* API 31, registered Shell only: VJO_TEXT_SOURCE_*; 0 or < 0 */
+int vjoGetTextSource(void);              /* API 31, any caller: VJO_TEXT_SOURCE_* (OCR until the Shell set one) */
 #endif
 /* Boot-safety guard (core/boot_guard.h); declared for the host tests too. */
 #ifdef __cplusplus

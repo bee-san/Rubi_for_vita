@@ -1,0 +1,58 @@
+/* The game worker's native text hooks (docs/native-hooks.md): what game_ocr/hooks.c offers the rest of
+ * the worker. Hooks exist only in a game's process, installed as the worker starts in that game (before
+ * the game's main thread runs) and released when it stops; never in a safe boot, never in SceShell.
+ *
+ * Hook time (a game thread, inside the game's function) only copies bounded raw bytes into a stream's
+ * static slot. Everything else (decoding, filters, comparing with OCR) happens at job time, in the
+ * worker's thread, through vjo_hooks_snap and vjo_hooks_text. */
+#ifndef VJO_GAME_OCR_HOOKS_H
+#define VJO_GAME_OCR_HOOKS_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include "../include/vjo_game_ocr.h"
+#include "../core/hook_luna.h"
+#include "../core/hook_text.h"
+
+#define VJO_HOOK_RAW_BYTES 512u /* a stream's raw text, at most (a hit copies no more) */
+
+/* VjoHookSnap.kind */
+#define VJO_HOOK_KIND_SITE 1u /* a table site (Luna's or Rubi's own) */
+#define VJO_HOOK_KIND_CALL 2u /* a CALL caller: the game's string copies from one return address */
+
+typedef struct {
+    uint32_t id;       /* 1..VJO_HOOK_STREAMS (vjo_game_ocr.h) */
+    uint32_t kind;     /* VJO_HOOK_KIND_* */
+    uint32_t seq;      /* changes at each new text (an identical copy does not change it) */
+    uint32_t hits;     /* hits so far, identical copies included */
+    uint32_t key;      /* a site's segment-0 offset; a caller's return address minus segment 0's base */
+    uint32_t encoding; /* VJO_HOOK_ENC_* of raw */
+    uint32_t n;        /* bytes in raw */
+    const VjoLunaSite *site; /* the site (its filter), NULL for a CALL caller or Rubi's own entry */
+    uint8_t raw[VJO_HOOK_RAW_BYTES];
+} VjoHookSnap;
+
+/* Called once from module_start, after the safe-boot, candidate and another-copy checks: installs what
+ * text source `mode` (VJO_TEXT_SOURCE_*) allows in this game (title_id, 9 characters; psp: the PSP
+ * emulator's process, where nothing is installed in this version). Never fails the module's start: a
+ * hook that cannot be installed is counted as refused and logged. */
+void vjo_hooks_start(const char *title_id, unsigned mode, int psp);
+
+/* Called from module_stop: releases every hook, newest first. 0 when none can still be running in a
+ * game thread (the module may unload); nonzero otherwise (module_stop then fails and the module stays). */
+int vjo_hooks_stop(void);
+
+/* What vjo_hooks_start did, for every job's result: the mode applied, sites hooked << 16 | CALL
+ * imports hooked, sites refused. */
+void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused);
+
+/* Job time: stream id's latest text, copied out under its slot's try-lock. 1 when copied; 0 when the
+ * stream is empty, unknown, or busy (a game thread is writing it: try again at the next job). */
+int vjo_hooks_snap(uint32_t id, VjoHookSnap *out);
+
+/* Job time: a snapshot's raw text as UTF-8, NUL-terminated, in out (cap bytes): vjo_luna_text for a
+ * Luna site (its filter), vjo_hook_decode otherwise. Returns the bytes before the NUL. */
+size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap);
+
+#endif
