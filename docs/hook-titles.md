@@ -458,7 +458,7 @@ Title IDs whose sites Luna's comments name more than one game for:
 | PCSG00451<0> | filter | 1 | not ported: keeps every second hit (a call counter): one hit cannot tell which half it is |
 | PCSG00451<1> | filter | 1 | not ported: as PCSG00451<0> |
 | PCSG00472 | filter | 4 | ported: ゞ ゝ (the game's !? !!) replaced, 　 and #n removed, #Cmd[n] removed |
-| PCSG00482 | filter | 2 | ported: ▼ and newlines removed |
+| PCSG00482 | filter | 2 | ported: ▼ + form feed (its page end) and newlines removed; a ▼ alone kept |
 | PCSG00530 | filter | 5 | ported: #n removed |
 | PCSG00535_1 | filter | 1 | ported: \f removed, \n becomes a newline; Luna's duplicate check and the copy it keeps for the other site dropped |
 | PCSG00535_2 | filter | 1 | ported: only a check against the other site's last text in Luna: dropped (each site is its own stream) |

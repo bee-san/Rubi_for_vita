@@ -200,7 +200,7 @@ FILTERS = {
                     "other site dropped"),
     "PCSG00787": ("BACKSLASH", True, "\\ removed"),
     "PCSG01114": ("PCSG01114", True, "@ and {...} removed"),
-    "PCSG00482": ("PCSG00482", True, "\u25bc and newlines removed"),
+    "PCSG00482": ("PCSG00482", True, "\u25bc + form feed (its page end) and newlines removed; a \u25bc alone kept"),
     "PCSG01249": ("PCSG01249", True, "[n] removed"),
     "PCSG00370": ("PCSG00370", True, "newline + \u3000, \u25bc, \uff1e and newlines removed"),
     "PCSG01289": ("PCSG01289", True,

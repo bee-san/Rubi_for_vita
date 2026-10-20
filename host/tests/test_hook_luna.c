@@ -661,7 +661,11 @@ static void filters_utf8(void)
     filters_to("PCSG00654", 0x80059946u, "一\\二$", "一二");
     filters_to("PCSG00787", 0x8001D862u, "一\\二", "一二");
     filters_to("PCSG01114", 0x80029E5Cu, "@一{注釈}二{x", "一二{x");
-    filters_to("PCSG00482", 0x80086798u, "一▼\n二", "一二");
+    /* PCSG00482: Luna's StringFilter(u8"▼\f") removes ▼ only before a form feed (bytes E2 96 BC 0C), then
+       CharFilter('\n') (audit-hooks-text F2: the port removed every ▼ and left the \f) */
+    filters_to("PCSG00482", 0x80086798u, "一▼\f二\n三▼\f", "一二三");
+    filters_to("PCSG00482", 0x80086798u, "一▼\n二", "一▼二");
+    filters_to("PCSG00482", 0x8005F0C4u, "▼一\f二▼", "▼一\f二▼"); /* ▼ and \f apart: both kept */
     filters_to("PCSG01314", 0x8031BFA2u, "@r漢@かん@字@wait1", "漢字");
     filters_to("PCSG00745", 0x8000C2D4u, "一\\n二", "一二"); /* PCSG01247 on UTF-8 */
     filters_to("PCSG01180", 0x8006808Eu, "一\\n二,注", "一 二 ");
