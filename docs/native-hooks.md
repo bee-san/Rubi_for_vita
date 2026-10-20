@@ -199,7 +199,10 @@ compared), `hook_streams` (bit ID − 1 of each stream that held text as the job
 Cost: `core/hook_select.c` is 1,992 B of code at `-Os` (1,708 B before the lock's checks of F3); its
 comparison's 2,562 B of arrays are on the worker's stack only while it compares (its frames at most
 2,772 B: `vjo_hook_select_after` 1,112 + `score_of` 1,600 + `cmp_form` 40 + `utf8_next` 20; `-fstack-usage`,
-vitasdk 2026.08, the worker's flags); the job path's static snapshot is 3,064 B of `.bss`. The comparison's inner loop is 19 instructions a cell at `-Os`: a
+vitasdk 2026.08, the worker's flags); the job path's static snapshot is 3,160 B of `.bss` (3,064 B before
+F3's key and counts: 20 candidates of 24 B and two states of 28 B, `arm-vita-eabi-nm`), and the worker's
+pages are unchanged by it [measured: hooks/fix-text c0ea49d's Vita jobs, debug 133,784 + 30,664 B and normal
+125,076 + 30,656 B in 167,936 and 159,744 B]. The comparison's inner loop is 19 instructions a cell at `-Os`: a
 dialogue box of 60 characters against a few streams is about 10^4 cells, under a millisecond at 444 MHz,
 and the worst case, 20 streams of 256 characters against 256, 1.3 million cells, about 30-60 ms
 [estimate: the instructions of the `-Os` disassembly at 0.5-1 cycle each, not run on a console].
