@@ -1365,7 +1365,7 @@ static void hooks_snapshot(uint32_t pick)
         if (room < 2u || !vjo_hooks_snap(id, &hk.snap)) continue;
         len = vjo_hooks_text(&hk.snap, hk.pool + used, room < HOOK_TEXT_CAP ? room : HOOK_TEXT_CAP);
         if (!len) continue;
-        hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, hk.snap.kind == VJO_HOOK_KIND_SITE, hk.pool + used, len};
+        hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, hk.snap.kind == VJO_HOOK_KIND_SITE, hk.pool + used, len, hk.snap.key};
         used += len + 1u;
     }
 }

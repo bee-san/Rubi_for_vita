@@ -28,7 +28,7 @@ static const char *spy_text = "猫"; /* what the spy recognizer reads on every l
 
 /* ---- the fake hook engine (game_ocr/hooks.h) ---- */
 typedef struct {
-    uint32_t kind, seq;
+    uint32_t kind, seq, key; /* key: VjoHookSnap.key (another caller's when its CALL slot was replaced) */
     const char *text; /* UTF-8, NULL: no text */
     int busy;         /* a game thread is writing it: the snapshot fails */
 } FakeStream;
@@ -72,6 +72,7 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
     out->id = id;
     out->kind = fs[id].kind;
     out->seq = fs[id].seq;
+    out->key = fs[id].key;
     out->hits = 1;
     out->encoding = VJO_HOOK_ENC_UTF8;
     out->n = (uint32_t)strlen(fs[id].text) < VJO_HOOK_RAW_BYTES ? (uint32_t)strlen(fs[id].text) : VJO_HOOK_RAW_BYTES;
@@ -365,6 +366,35 @@ static void locked_stream_answers_with_the_first_pass_only(void)
     TEST_CHECK(hk.sel.locked == 9 && hk.sel.misses == 0 && !out.hook_streams);
 }
 
+/* A locked CALL stream whose slot another caller took (audit-hooks F2: the slot's key is the new caller's,
+ * VjoHookSnap.key, which hooks_snapshot passes as VjoHookCand.key): the selection unlocks it at once, so the
+ * new caller's first text is checked by OCR, never shown without it (hooks-fix-text's F3(c)). */
+static void replaced_slot_unlocks(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    fs[9].key = 0x1230u; /* the caller's return address minus segment 0's base */
+    stream(9, VJO_HOOK_KIND_CALL, 5, LINE1);
+    spy_text = OCR1;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9);
+    stream(9, VJO_HOOK_KIND_CALL, 6, LINE2);
+    spy_text = OCR2;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && hk.sel.locked == 9 && hk.sel.locked_key == 0x1230u);
+    TEST_CHECK(hk.cand[0].id == 9 && hk.cand[0].key == 0x1230u);
+    /* the same key: the locked stream's new text answers without OCR */
+    stream(9, VJO_HOOK_KIND_CALL, 7, LINE3);
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9);
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR) && runs == 2);
+    /* another caller took slot 9: its key differs, its text is new; OCR reads the screen, no lock */
+    fs[9].key = 0x2340u;
+    stream(9, VJO_HOOK_KIND_CALL, 8, "「別の呼び出し元の文字列ですよね」");
+    spy_text = OCR1;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && runs == 3);
+    TEST_CHECK(hk.cand[0].key == 0x2340u);
+    TEST_CHECK_(!(out.hook_flags & (VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR)), "flags %08X", (unsigned)out.hook_flags);
+    TEST_CHECK(hk.sel.locked == 0 && !out.text_from && !strcmp(out.text, OCR1));
+}
+
 static void failed_answer_changes_nothing(void)
 {
     VjoGameOcrResult out;
@@ -557,6 +587,7 @@ TEST_LIST = {
     {"nothing installed: OCR as before, no snapshot", nothing_installed_is_ocr_as_before},
     {"an agreeing stream's text replaces OCR's", agreeing_stream_replaces_ocr_text},
     {"a locked stream with new text answers with the first pass only", locked_stream_answers_with_the_first_pass_only},
+    {"a locked CALL stream whose slot another caller took unlocks (VjoHookCand.key)", replaced_slot_unlocks},
     {"a job that fails changes nothing", failed_answer_changes_nothing},
     {"a pinned stream, OCR only, an unknown pick", pinned_and_ocr_only},
     {"the self-test's jobs are OCR's", self_test_jobs_are_ocr},
