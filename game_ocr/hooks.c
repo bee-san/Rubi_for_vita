@@ -525,6 +525,7 @@ void vjo_hooks_start(const char *title_id, unsigned word, int psp)
 
 int vjo_hooks_stop(void)
 {
+    const int had = n_calls || n_sites;
     live = 0;
     if (VJO_IMPORT_READY(taiHookRelease)) {
         for (unsigned i = CALL_IMPORTS; i-- > 0;)
@@ -538,8 +539,11 @@ int vjo_hooks_stop(void)
                 site_uid[i] = -1;
             }
     }
-    /* A thread that had entered a hook before its release may still be on its way out. */
-    if (__atomic_load_n(&in_flight, __ATOMIC_ACQUIRE)) sceKernelDelayThread(2000);
+    /* A thread that had entered a hook before its release may still be on its way out: one counted in
+     * in_flight, or one in the instructions the count does not cover (the observer's assembly around its C
+     * call, a CALL hook's prologue and epilogue: audit-hooks N8). So a short wait after the releases whenever
+     * a hook was installed, then the count. */
+    if (had || __atomic_load_n(&in_flight, __ATOMIC_ACQUIRE)) sceKernelDelayThread(2000);
     return __atomic_load_n(&in_flight, __ATOMIC_ACQUIRE) ? 1 : 0;
 }
 

@@ -207,10 +207,11 @@ and the worst case, 20 streams of 256 characters against 256, 1.3 million cells,
 ## Release
 
 `vjo_hooks_stop` stops taking hits, releases every hook newest first (CALL imports, then sites, in
-reverse order of installation), waits 2 ms if a game thread is still inside a hook of ours, and returns
-nonzero while one is: `module_stop` then fails and the module stays loaded, so no code a game thread
-may still run in is unloaded. A thread between a hook's entry and its in-flight count, a few
-instructions, is covered only by that wait.
+reverse order of installation), then, whenever a hook was installed, always waits 2 ms, and returns
+nonzero while a game thread is still counted inside a hook of ours: `module_stop` then fails and the
+module stays loaded, so no code a game thread may still run in is unloaded. The wait also covers the
+few instructions the in-flight count does not (the observer's assembly around its C call, a CALL
+hook's prologue and epilogue): a thread there when the hooks were released has left after it.
 
 ## Memory
 

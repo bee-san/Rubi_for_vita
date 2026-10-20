@@ -374,12 +374,13 @@ static void set_sfo(const char *app_ver)
 
 /* ---- threadmgr ---- */
 
-static unsigned delays, delay_us;
+static unsigned delays, delay_us, released_at_delay;
 static int leave_on_delay; /* the thread inside a hook leaves while vjo_hooks_stop waits */
 int sceKernelDelayThread(unsigned us)
 {
     delays++;
     delay_us = us;
+    released_at_delay = n_released;
     if (leave_on_delay) __atomic_store_n(&in_flight, 0u, __ATOMIC_RELEASE);
     return 0;
 }
@@ -453,7 +454,7 @@ static void reset(void)
     log_flags = 0;
     loglen = 0;
     logbuf[0] = 0;
-    delays = delay_us = 0;
+    delays = delay_us = released_at_delay = 0;
     leave_on_delay = 0;
 }
 
@@ -1239,8 +1240,9 @@ static void test_replacement_keep(void)
     }
 }
 
-/* vjo_hooks_stop: live off, every hook released newest first (CALL imports, then the sites), each once;
- * nonzero (module_stop's STOP_FAIL) while a thread is still inside a hook after the wait. */
+/* vjo_hooks_stop: live off, every hook released newest first (CALL imports, then the sites), each once; then
+ * always 2 ms (audit-hooks N8: a thread in the instructions in_flight does not count has left), whenever a hook
+ * was installed; nonzero (module_stop's STOP_FAIL) while a thread is still inside a hook after the wait. */
 static void test_stop(void)
 {
     VjoPlaceVerified v;
@@ -1261,6 +1263,7 @@ static void test_stop(void)
     TEST_ASSERT(n_imp == 8 && n_offs == 3 && live);
     TEST_CHECK(vjo_hooks_stop() == 0);
     TEST_CHECK(!live);
+    TEST_CHECK(delays == 1 && delay_us == 2000 && released_at_delay == 11); /* after every release */
     TEST_ASSERT(n_released == 11);
     for (unsigned k = 0; k < 8; k++) TEST_CHECK(released[k] == imp[7 - k].uid);
     for (unsigned k = 0; k < 3; k++) TEST_CHECK(released[8 + k] == offs[2 - k].uid);
@@ -1280,15 +1283,22 @@ static void test_stop(void)
     leave_on_delay = 1;
     TEST_CHECK(vjo_hooks_stop() == 0);
 
+    /* the CALL source alone: the same wait */
+    reset();
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    TEST_CHECK(vjo_hooks_stop() == 0 && n_released == 8 && delays == 1 && released_at_delay == 8);
     /* nothing to release when taiHookRelease did not resolve */
     reset();
     vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
     MISS(taiHookRelease);
     TEST_CHECK(vjo_hooks_stop() == 0 && n_released == 0 && !live);
-    /* OCR: nothing was installed, nothing is released */
+    /* OCR, or nothing installed: nothing released, no wait */
     reset();
     vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_OCR, 0);
-    TEST_CHECK(vjo_hooks_stop() == 0 && n_released == 0);
+    TEST_CHECK(vjo_hooks_stop() == 0 && n_released == 0 && delays == 0);
+    reset();
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_CHECK(vjo_hooks_stop() == 0 && n_released == 0 && delays == 0);
 }
 
 /* APP_VER: two digits, a dot, two digits ("01.10" -> 0x0110, a leading digit may be missing); anything else 0. */
