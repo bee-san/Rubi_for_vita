@@ -476,7 +476,7 @@ static const LunaOp f_PCSG00402[] = {
 static const LunaOp f_FPCSG00815[] = {SUB("\\s*(#n)*\\s*", ""), SUB("#\\w+(\\[.+?\\])?", ""), END};
 static const LunaOp f_PCSG01250_T[] = {
     PREFIX("<text"), CUT(6, 1), SUB("/ruby:(.*?)&(.*?)/", "$1"), SUB("#n", ""), END};
-static const LunaOp f_PCSG01250_N1[] = {PREFIX("<name"), CUT(7, 3), END}; /* PCSG01250_N<1> */
+static const LunaOp f_PCSG01250_N1[] = {PREFIX("<name"), CUT(7, 2), END}; /* PCSG01250_N<1>: substr(7, size - 9) */
 static const LunaOp f_PCSG01250_N0[] = {PREFIX("<name"), CUT(6, 1), END}; /* PCSG01250_N<0> */
 static const LunaOp f_PCSG01202[] = {SUB("/ruby:(.*?)&(.*?)/", "$1"), END};
 static const LunaOp f_PCSG01325[] = {SUB("@[_\\*\\d\\w]*", ""), END};

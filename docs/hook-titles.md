@@ -505,7 +505,7 @@ Title IDs whose sites Luna's comments name more than one game for:
 | PCSG01204 | filter | 1 | ported: newlines, @1r and @-1r removed |
 | PCSG01247 | filter | 3 | ported: \n removed |
 | PCSG01249 | filter | 2 | ported: [n] removed |
-| PCSG01250_N | filter | 1 | ported: only <name ...> kept, its first 7 and last 3 bytes cut (CP932 bytes) |
+| PCSG01250_N | filter | 1 | ported: only <name ...> kept, its first 7 and last 2 bytes cut (CP932 bytes) |
 | PCSG01250_N<0> | filter | 1 | ported: only <name ...> kept, its first 6 and last 1 bytes cut (CP932 bytes) |
 | PCSG01250_T | filter | 2 | ported: only <text ...> kept, its first 6 and last 1 bytes cut (CP932 bytes, as Luna counts them); /ruby:base&reading/ becomes base; #n removed |
 | PCSG01254 | filter | 2 | ported: half-width katakana to hiragana; @cmd removed |

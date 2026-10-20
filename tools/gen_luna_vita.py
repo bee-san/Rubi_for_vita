@@ -172,7 +172,7 @@ FILTERS = {
     "PCSG01250_T": ("PCSG01250_T", True,
                     "only <text ...> kept, its first 6 and last 1 bytes cut (CP932 bytes, as Luna counts them); "
                     "/ruby:base&reading/ becomes base; #n removed"),
-    "PCSG01250_N": ("PCSG01250_N1", True, "only <name ...> kept, its first 7 and last 3 bytes cut (CP932 bytes)"),
+    "PCSG01250_N": ("PCSG01250_N1", True, "only <name ...> kept, its first 7 and last 2 bytes cut (CP932 bytes)"),
     "PCSG01250_N<0>": ("PCSG01250_N0", True, "only <name ...> kept, its first 6 and last 1 bytes cut (CP932 bytes)"),
     "PCSG01202": ("PCSG01202", True, "/ruby:base&reading/ becomes base"),
     "PCSG01325": ("PCSG01325", True, "@cmd removed (UTF-8 bytes)"),

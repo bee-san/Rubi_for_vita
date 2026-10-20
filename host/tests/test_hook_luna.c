@@ -584,7 +584,12 @@ static void filters_cp932(void)
     filters_to("PCSG01250", 0x80013ED6u, "<text 本文#n/ruby:漢&かん/字>", "本文漢字");
     filters_to("PCSG01250", 0x80013ED6u, "台詞", "");
     filters_to("PCSG01250", 0x80013ED6u, "<text", ""); /* shorter than the cut: substr throws in Luna */
-    filters_to("PCSG01250", 0x80013EE6u, "<name x名前yz>", "名前");
+    /* PCSG01250_N (ex = 1): Luna's s.substr(7, s.size() - 9) keeps [7, size - 2) of the CP932 bytes
+       (audit-hooks-text F1: the port cut one byte more and lost the name's last character) */
+    filters_to("PCSG01250", 0x80013EE6u, "<name=\"名前\">", "名前");
+    filters_to("PCSG01250", 0x80013EE6u, "<name=\"ナナ\">", "ナナ");
+    filters_to("PCSG01250", 0x80013EE6u, "<name x名前yz>", "名前y");
+    filters_to("PCSG01250", 0x80013EE6u, "台詞", ""); /* no <name: cleared */
     filters_to("PCSG01318", 0x800154CCu, "<name 名前>", "名前");
     filters_to("PCSG01202", 0x80022C9Cu, "/ruby:漢&かん/字", "漢字");
     filters_to("PCSG00431", 0x80019DFAu, "一#n　二#n三", "一二三");
