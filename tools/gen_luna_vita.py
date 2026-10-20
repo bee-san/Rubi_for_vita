@@ -50,7 +50,7 @@ PINNED = {
     "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
 }
 SEG0 = 0x80004000  # core/hook_luna.h VJO_LUNA_SEG0
-BLOB = "https://github.com/HIllya51/LunaTranslator/blob/" + LUNA_COMMIT + "/src/NativeImpl/LunaHook/LunaHook/emulators/"
+BLOB = "../third_party/LunaTranslator/"  # the vendored copies (docs/hook-titles.md links into them)
 
 # Luna's hookfuncs (text_fun): name -> (C index name, ported, what the port does or why not).
 FUNCS = {
@@ -575,7 +575,9 @@ def render_doc():
     reason_count = collections.Counter()
     for s in sites:
         for r in s["reasons"]:
-            key = r.split(":")[0] if not r.startswith(("hookfunc", "filter")) else r.split(":")[0]
+            key = r.split(":")[0]
+            if key.startswith("filter "):
+                key = "filter " + FILTERS[key[7:]][0]
             reason_count[key] += 1
     titles_ported = sorted({s["id"] for s in ported})
     out = [DOC_MARK, ""]
@@ -667,13 +669,14 @@ def render_doc():
     out.append(f"{len(pe)} entries, {len(pids)} title IDs.")
     out.append("")
     out.append("| Title ID | Region | Game (Luna's comment) | Address | Version | Reg | Padding | Encoding | Flags | "
-               "Hookfunc | Filter | Luna's note |")
-    out.append("| --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- |")
+               "Hookfunc | Filter | Luna's note | Status |")
+    out.append("| --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- |")
     for e in pe:
         enc, flags = flags_of_psp(e["type"])
         v = version_of(e["comment"])
         for tid in dict.fromkeys(e["ids"]):
-            out.append("| %s | %s | %s | [0x%X](%sppsspp_1.cpp#L%d) | %s | %d | %s | %s | %s | %s | %s | %s |" % (
+            out.append("| %s | %s | %s | [0x%X](%sppsspp_1.cpp#L%d) | %s | %d | %s | %s | %s | %s | %s | %s | PSP: not "
+                       "native yet |" % (
                 tid, PSP_REGION.get(tid[:4], "?"), md(e["game"]), e["addr"], BLOB, e["line"], ver_text(v),
                 e["offset"], hex(e["padding"]) if e["padding"] else "0",
                 enc.replace("UTF16", "UTF-16LE").replace("UTF8", "UTF-8"), " ".join(flags),
@@ -702,6 +705,8 @@ def doc_text(current):
 
 
 def main():
+    for name in PINNED:  # every vendored file, read or not, is the pin's
+        read_pinned(name)
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="exit 1 if the .inc or the doc's generated part is stale")
     ap.add_argument("--doc", action="store_true", help="write docs/hook-titles.md's generated part")
