@@ -1011,8 +1011,11 @@ static void hook_note(const VjoGameOcrResult *r, uint32_t pick)
         hook_logged[0] = r->hook_mode + 1u; /* 0: none logged in this session */
         hook_logged[1] = r->hook_installed;
         hook_logged[2] = r->hook_refused;
-        vjo_log("hooks in %s: text source %s, %u table sites and %u string copies hooked, %u sites refused",
-                job_title[0] ? job_title : "this game", r->hook_mode < 3 ? modes[r->hook_mode] : "?",
+        /* hook_mode: the text source word the worker applied (its mode, and NO_SITES: hook_sites = off) */
+        vjo_log("hooks in %s: text source %s%s, %u table sites and %u string copies hooked, %u sites refused",
+                job_title[0] ? job_title : "this game",
+                (r->hook_mode & VJO_TEXT_SOURCE_MODE_MASK) < 3 ? modes[r->hook_mode & VJO_TEXT_SOURCE_MODE_MASK] : "?",
+                (r->hook_mode & VJO_TEXT_SOURCE_NO_SITES) ? ", sites off" : "",
                 (unsigned)(r->hook_installed >> 16), (unsigned)(r->hook_installed & 0xFFFFu), (unsigned)r->hook_refused);
     }
 #if VJO_DEBUG

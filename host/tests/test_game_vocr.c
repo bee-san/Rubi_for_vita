@@ -1812,16 +1812,30 @@ static void the_refine_step_carries_its_counts(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 
-/* API 31: the text source as module_start reads it for the hooks (text_source): the kernel's
- * VJO_TEXT_SOURCE_*, a value this build does not know as OCR (no hooks), and OCR without asking from
- * another API's kernel; and only in a game that keeps the worker: none of the processes module_start
- * unloads from asks. */
+/* API 31: the text source as module_start reads it for the hooks (text_source): the kernel's word, a
+ * VJO_TEXT_SOURCE_* in its low byte with or without VJO_TEXT_SOURCE_NO_SITES (hook_sites = off, audit-hooks
+ * F3), passed whole to vjo_hooks_start; a low byte this build does not know, or any other bit, as OCR (no
+ * hooks); OCR without asking from another API's kernel; and only in a game that keeps the worker: none of
+ * the processes module_start unloads from asks. */
 static void module_start_reads_the_text_source(void)
 {
+    const unsigned no_sites = VJO_TEXT_SOURCE_NO_SITES;
     static const struct { int kernel; unsigned seen; } cases[] = {
         {(int)VJO_TEXT_SOURCE_OCR, VJO_TEXT_SOURCE_OCR}, {(int)VJO_TEXT_SOURCE_AUTO, VJO_TEXT_SOURCE_AUTO},
         {(int)VJO_TEXT_SOURCE_HOOKS, VJO_TEXT_SOURCE_HOOKS}, {(int)VJO_TEXT_SOURCE_COUNT, VJO_TEXT_SOURCE_OCR},
-        {0x7FFFFFFF, VJO_TEXT_SOURCE_OCR}, {VJO_ERR_PERM, VJO_TEXT_SOURCE_OCR}};
+        {0x7FFFFFFF, VJO_TEXT_SOURCE_OCR}, {VJO_ERR_PERM, VJO_TEXT_SOURCE_OCR},
+        /* the word with hook_sites = off: kept whole */
+        {(int)(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES), VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES},
+        {(int)(VJO_TEXT_SOURCE_HOOKS | VJO_TEXT_SOURCE_NO_SITES), VJO_TEXT_SOURCE_HOOKS | VJO_TEXT_SOURCE_NO_SITES},
+        {(int)(VJO_TEXT_SOURCE_OCR | VJO_TEXT_SOURCE_NO_SITES), VJO_TEXT_SOURCE_OCR | VJO_TEXT_SOURCE_NO_SITES},
+        /* a low byte out of range, with the flag or above it; any other bit: OCR */
+        {(int)(VJO_TEXT_SOURCE_COUNT | VJO_TEXT_SOURCE_NO_SITES), VJO_TEXT_SOURCE_OCR},
+        {(int)(0xFFu | VJO_TEXT_SOURCE_NO_SITES), VJO_TEXT_SOURCE_OCR},
+        {(int)(VJO_TEXT_SOURCE_AUTO | 0x200u), VJO_TEXT_SOURCE_OCR},
+        {(int)(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES | 0x200u), VJO_TEXT_SOURCE_OCR},
+        {(int)(VJO_TEXT_SOURCE_HOOKS | 0x10000u), VJO_TEXT_SOURCE_OCR},
+        {(int)(VJO_TEXT_SOURCE_AUTO | 0x40000000u), VJO_TEXT_SOURCE_OCR},
+        {(int)(VJO_TEXT_SOURCE_AUTO | 0x80000000u), VJO_TEXT_SOURCE_OCR}};
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         vjo_test_text_source = cases[i].kernel;
         vjo_test_text_source_calls = 0;
@@ -1833,13 +1847,24 @@ static void module_start_reads_the_text_source(void)
     vjo_test_text_source_calls = 0;
     TEST_CHECK(text_source() == VJO_TEXT_SOURCE_OCR && !vjo_test_text_source_calls);
     text_source_api = VJO_API_VERSION;
-    /* module_start: a candidate game asks, the processes it unloads from never do */
+    /* module_start: a candidate game asks, and passes the whole word to vjo_hooks_start */
     setup();
     strcpy(own_title, "PCSG00415");
+    vjo_test_text_source = (int)(VJO_TEXT_SOURCE_AUTO | no_sites);
+    vjo_test_hooks_starts = 0;
+    vjo_test_hooks_word = 0;
     TEST_CHECK(!module_start(0, NULL) && thread_creates == 1 && vjo_test_text_source_calls >= 1);
+    TEST_CHECK(vjo_test_hooks_starts == 1 && vjo_test_hooks_word == (VJO_TEXT_SOURCE_AUTO | no_sites));
     TEST_CHECK(!module_stop(0, NULL));
     setup();
+    vjo_test_text_source = (int)(VJO_TEXT_SOURCE_HOOKS | 0x200u); /* an unknown flag: OCR */
+    vjo_test_hooks_starts = 0;
+    TEST_CHECK(!module_start(0, NULL) && vjo_test_hooks_starts == 1 && vjo_test_hooks_word == VJO_TEXT_SOURCE_OCR);
+    TEST_CHECK(!module_stop(0, NULL));
+    vjo_test_text_source = (int)VJO_TEXT_SOURCE_AUTO;
+    setup();
     vjo_test_text_source_calls = 0;
+    vjo_test_hooks_starts = 0;
     strcpy(own_title, "NPXS10015"); /* a system app */
     TEST_CHECK(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && !vjo_test_text_source_calls);
     safe_boot_mode = VJO_BOOT_SAFE; /* a safe boot: before any title is read */
@@ -1848,6 +1873,7 @@ static void module_start_reads_the_text_source(void)
     safe_boot_mode = VJO_BOOT_NORMAL;
     vjo_test_another = 1; /* another copy runs in this game */
     TEST_CHECK(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && !vjo_test_text_source_calls);
+    TEST_CHECK(!vjo_test_hooks_starts); /* none of them installs anything */
     vjo_test_another = 0;
     vjo_test_text_source = 0;
 }

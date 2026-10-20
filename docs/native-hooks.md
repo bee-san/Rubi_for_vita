@@ -36,6 +36,14 @@ What is installed depends on the text source (API 31, `VJO_TEXT_SOURCE_*`, read 
 Nothing is installed in the PSP emulator's process in this version. The worker reports what it did in
 every job's result (`hook_mode`; `hook_installed` = sites << 16 | CALL imports; `hook_refused`).
 
+`hook_sites = off` in `config.ini` (the kernel's text source word then carries `VJO_TEXT_SOURCE_NO_SITES`,
+include/vjo_api.h) installs no table site, neither Rubi's verified entries nor Luna's: only the CALL source,
+in the games the mode gives it to (`auto`: the titles with an entry; `hooks`: every game that is ON), so a
+console run can tell the CALL source from the sites (audit-hooks F3). `hook_mode` is then the mode with that
+flag, `log.txt`'s line says so (`hooks in PCSG00415: text source auto, sites off, 0 table sites and 8 string
+copies hooked, 0 sites refused`), and the debug build's `hooks.log` says `sites off`. The worker takes the
+word only when its low byte is a mode it knows and no other bit is set; anything else is `ocr`.
+
 ## The CALL source
 
 `taiHookFunctionImport` on the main module's (the game's `eboot.bin`, checked by its path) imports of

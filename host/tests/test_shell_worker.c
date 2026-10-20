@@ -1383,6 +1383,18 @@ static void test_native_hooks_pick_label_and_text_source(void)
     TEST_CHECK(hook_pick == VJO_HOOK_PICK_AUTO && !hook_installed && !hook_result);
     view_publish(0, NULL, "", 0);
     TEST_CHECK(g_view.hook_label[0] == 0);
+    /* hook_sites = off (audit-hooks F3): the worker applied the word with NO_SITES, so no table site; the
+     * line says so in both builds, for each mode */
+    job_cfg = cfg; job_generation = game_generation;
+    snprintf(job_title, sizeof(job_title), "%s", title_id);
+    const uint32_t calls_only[7] = {9, VJO_HOOK_R_AGREED, 820, VJO_HOOK_STREAM_BIT(9),
+                                    VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES, 0u << 16 | 8u, 0};
+    memcpy(fake_hook, calls_only, sizeof(fake_hook));
+    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
+    TEST_CHECK(logged("hooks in PCSG00415: text source auto, sites off, 0 table sites and 8 string copies hooked, 0 sites refused"));
+    fake_hook[4] = VJO_TEXT_SOURCE_HOOKS | VJO_TEXT_SOURCE_NO_SITES;
+    (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
+    TEST_CHECK(logged("hooks in PCSG00415: text source hooks, sites off, 0 table sites and 8 string copies hooked, 0 sites refused"));
     memset(fake_hook, 0, sizeof(fake_hook));
     mem_free();
 }

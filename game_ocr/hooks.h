@@ -34,17 +34,20 @@ typedef struct {
 } VjoHookSnap;
 
 /* Called once from module_start, after the safe-boot, candidate and another-copy checks: installs what
- * text source `mode` (VJO_TEXT_SOURCE_*) allows in this game (title_id, 9 characters; psp: the PSP
- * emulator's process, where nothing is installed in this version). Never fails the module's start: a
- * hook that cannot be installed is counted as refused and logged. */
+ * the text source word `mode` allows in this game (vjoGetTextSource's: a VJO_TEXT_SOURCE_* in its low
+ * byte; with VJO_TEXT_SOURCE_NO_SITES no table site, only the CALL source as the mode says; an unknown
+ * mode or flag is OCR) (title_id, 9 characters; psp: the PSP emulator's process, where nothing is
+ * installed in this version). Never fails the module's start: a hook that cannot be installed is counted
+ * as refused and logged. */
 void vjo_hooks_start(const char *title_id, unsigned mode, int psp);
 
 /* Called from module_stop: releases every hook, newest first. 0 when none can still be running in a
  * game thread (the module may unload); nonzero otherwise (module_stop then fails and the module stays). */
 int vjo_hooks_stop(void);
 
-/* What vjo_hooks_start did, for every job's result: the mode applied, sites hooked << 16 | CALL
- * imports hooked, sites refused. */
+/* What vjo_hooks_start did, for every job's result: the text source word applied (its mode, with
+ * VJO_TEXT_SOURCE_NO_SITES when it applied; OCR carries no flag), sites hooked << 16 | CALL imports
+ * hooked, sites refused. */
 void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused);
 
 /* Job time: stream id agreed with OCR, or the Shell pinned it: its CALL slot is never given to another

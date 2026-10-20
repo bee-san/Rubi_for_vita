@@ -369,8 +369,9 @@ typedef struct {
     /* API 31, native text hooks: where text[] came from (VJO_TEXT_FROM_OCR or a stream ID), how
      * (VJO_HOOK_R_*), the best stream's similarity to this job's OCR text (0..1000; 0 when not compared;
      * text_from's own when that stream replaced OCR's text), the streams holding text as the job began
-     * (bit ID - 1 of each), and what the worker installed as its game started: the text source it
-     * applied (VJO_TEXT_SOURCE_*), table sites hooked << 16 | CALL imports hooked, and sites refused. A
+     * (bit ID - 1 of each), and what the worker installed as its game started: the text source word it
+     * applied (a VJO_TEXT_SOURCE_* in the low byte, with VJO_TEXT_SOURCE_NO_SITES when no table site was
+     * tried because of it), table sites hooked << 16 | CALL imports hooked, and sites refused. A
      * failed result carries them too, with text_from and hook_flags 0 (it has no text). */
     uint32_t text_from, hook_flags, hook_score, hook_streams;
     uint32_t hook_mode, hook_installed, hook_refused;
