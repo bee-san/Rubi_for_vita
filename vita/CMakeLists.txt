@@ -370,6 +370,18 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
   ${VJO_SETTINGS_ANKI_SRC})
+# API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, and the games of Luna's
+# ported Vita table (core/hook_luna.c, from hooks/luna-port: of it only vjo_luna_title_known and the
+# title list stay linked, --gc-sections drops the rest). Without that file only Rubi's own entries.
+list(APPEND VJO_SETTINGS_SRC ${ROOT}/core/hook_titles.c)
+if(EXISTS ${ROOT}/core/hook_luna.c)
+  foreach(_vjo_luna hook_luna.c hook_re.c hook_text.c)
+    if(EXISTS ${ROOT}/core/${_vjo_luna})
+      list(APPEND VJO_SETTINGS_SRC ${ROOT}/core/${_vjo_luna})
+    endif()
+  endforeach()
+  set_property(SOURCE ${ROOT}/core/hook_titles.c APPEND PROPERTY COMPILE_DEFINITIONS VJO_HOOK_LUNA=1)
+endif()
 # The one-VPK install's config.txt check is taiHEN's own parser (DaveeFTW/taihen-parser 6d817fd, MIT),
 # built as taiHEN 309b380 builds it: its inbuilt ctype and string functions (docs/one-vpk-install.md).
 set_source_files_properties(${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c

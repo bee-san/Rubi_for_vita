@@ -251,6 +251,7 @@ app when it starts.
 | Right stick | Scroll a long definition |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
+| Triangle | The next text source for this game session: Automatic, each native text hook that holds text, OCR only, then Automatic again; the screen is read again with it. Nothing in a game where Rubi installed no hook ([native text hooks](#native-text-hooks)) |
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
 | Cancel | Close the overlay |
@@ -279,6 +280,47 @@ its sentence and every dictionary's entry for it to the card queue on the
 memory card, with a JPEG of the game's screen (about 60 KB, made in the game's
 own process: [screenshots](anki.md#the-screenshot)); the Rubi app exports
 the queue as an `.apkg`, the screenshot in each note's Picture.
+
+### Native text hooks
+
+A native text hook reads the line a game is about to draw, so the popup gets the game's own text
+instead of OCR's reading of the screen, as Textractor and LunaTranslator do for PC games. Rubi's
+hooks run in the game's own process, installed as the game starts; how, and why a site is
+installed or refused, is in [docs/native-hooks.md](native-hooks.md). Nothing of them has run on a
+console yet: everything below is what the code does, checked on the host.
+
+- **Text source** (the Rubi app's OCR & lookup page, `text_source` in `config.ini`) applies when a
+  game next starts: **Automatic** (`auto`, the default) installs hooks only in the games that have a
+  hook entry, Rubi's own (CLANNAD, PCSG00415) or LunaTranslator's table; **Every game** (`hooks`)
+  adds the game's own string copies in every game that is ON; **OCR only** (`ocr`) installs none.
+  An install or an update keeps the file's value; installs before this one wrote `text_source =
+  ocr`, so choose Automatic once to use hooks.
+- **What is shown.** With hooks, every job still reads the screen with OCR at first: a hook's line
+  replaces OCR's only when the two agree (70 % or more, four characters at least), and after two
+  agreements in a row that hook is locked and answers new lines without recognition. A screen with
+  no new hook line is read by OCR again; two disagreements unlock it.
+- **Triangle** in the overlay cycles this game session's source: Automatic, each hook that holds
+  text (by number), **OCR only**, Automatic. A hook picked so is pinned: it answers without
+  recognition while the game runs, or OCR does when it has no text. The game never sees Triangle (its
+  controls are blocked while the overlay is open, and a button still held as it closes stays hidden
+  until released). Starting another game goes back to Automatic.
+- **The label**, on the body's first line (beside `L/R Dictionary 1 of 2` when that shows), says where
+  the text came from: `OCR`, `Hook 2/5` (the second of five hooks with text agreed with OCR),
+  `Hook 2/5 locked`, `Hook 2/5 pinned`, `OCR, Hook 2/5 empty` (pinned, no text: OCR's), `OCR only`, or
+  `Automatic` while a new pick is read. A game with no hook installed shows no label.
+- **The Games page** tags a game with a hook entry: `Hook` for Rubi's own, `Luna hook` for
+  LunaTranslator's table (its entries are not checked by Rubi; the worker installs one only where the
+  game's code there looks as the entry expects).
+- **Logs.** `log.txt` has one line per game session with what the worker installed (`hooks in
+  PCSG00415: text source auto, 1 table sites and 8 string copies hooked, 0 sites refused`; the normal
+  build only where something was hooked or refused); the debug build adds each job's source, flags,
+  agreement score, the streams with text and the pick (`game vocr source: hook 9, flags 0x03, score
+  1000, streams 0x00901, pick 0`) and logs the shown text, a hook's too. The normal build logs no
+  hook text, as it logs no OCR text. `history.csv` gets the text shown, with `hook` instead of `vocr`
+  as its engine for a hook's line; `kernel.txt` has `text source N` when the setting changes.
+- **If a game misbehaves with hooks**, hold L while starting it (no Rubi in it at all), turn it OFF
+  on the Games page, or set Text source to OCR only (`text_source = ocr`): each applies at the
+  game's next start. A safe boot ([boot safety](boot-safety.md)) installs no hook anywhere.
 
 ### Drawing the region
 
@@ -325,11 +367,14 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 
 On the **OCR & lookup** page, select a row with Up/Down. Enter
 or touch a row changes its choice: the Model size, **Read text**, the **Speed boost while
-reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, or how many
-dictionaries are shown. Touch a size, a Read text choice or a number to choose it directly;
+reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, how many
+dictionaries are shown, or the **Text source** (the last card: [native text hooks](#native-text-hooks)).
+Touch a size, a Read text choice, a number or a Text source choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
 Automatically/Only when I press on Read text, OFF/ON on the Speed boost and selection cards,
-Whole word/Character on the Highlight card, or 1–8 on Dictionaries shown. The page is taller
+Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, or Automatic/Every
+game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
+as a game's worker reads it then). The page is taller
 than the screen: it scrolls a card at a time to keep the selected one whole, the next card shows
 at the bottom, a bar at the right shows where the view is, and a touch on a card cut at the
 bottom only scrolls it into view. Read text (`ocr_mode`, [Use in a game](#use-in-a-game)) reads
@@ -431,7 +476,8 @@ corrupt policy fails closed and reports the problem rather than enabling every
 game. A game turned ON gets OCR at its next start: the kernel plugin loads the
 OCR worker into it as it starts ([Install](#install)).
 
-PSP games have a `PSP` tag. Each Adrenaline bubble is listed under its game's
+PSP games have a `PSP` tag; a Vita game with a native text hook entry has `Hook` (Rubi's own) or
+`Luna hook` (LunaTranslator's table: [native text hooks](#native-text-hooks)). Each Adrenaline bubble is listed under its game's
 title, which the app reads from the `PARAM.SFO` of the ISO, CSO, ZSO or EBOOT.PBP
 it boots. Its icon is the bubble's, which Adrenaline Bubble Manager made from
 the game's. A bubble without its own choice follows the shared row
@@ -471,7 +517,7 @@ dictionary = local
 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 local_dictionaries = plaintext.vjdict
 local_dictionary_results = 1
-text_source = ocr
+text_source = auto
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
 vocr_tier = normal
 ocr_mode = auto
@@ -875,7 +921,8 @@ page, or from a computer run `bash tools/install_ftp.sh --uninstall VITA_IP`. Re
 normally. Uninstalling preserves data. A `config.txt.vjo-<date-time>.bak` is the
 configuration from before that install, not before the overlay: an update replaces the
 plugin files its lines name. If one game does not start, turn it OFF in the Rubi app,
-or hold L while starting it ([recovery](one-vpk-install.md#recovery-r1)).
+or hold L while starting it ([recovery](one-vpk-install.md#recovery-r1)); if it starts but misbehaves
+since its native text hooks, set Text source to OCR only ([native text hooks](#native-text-hooks)).
 
 The Rubi app is not a plugin and never starts by itself, so it cannot stop
 the Vita from starting, and its Install page writes nothing until you choose an

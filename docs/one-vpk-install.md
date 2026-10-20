@@ -575,8 +575,9 @@ as the app's own saves patch it
 
 - an older build's `vocr_model` becomes its `vocr_tier` unless the file already names a valid one, and
   `vocr_model` and `vocr_fallback_model` go, as `tools/migrate_config.py` does (`:115-123`);
-- `local_dictionary_dir`, `ocr_model_dir` and `text_source` are set to the paths the overlay installs
-  to (`install-vita.sh` sets them too);
+- `local_dictionary_dir` and `ocr_model_dir` are set to the paths the overlay installs to
+  (`install-vita.sh` sets them too); `text_source` is the user's since API 31 (the Rubi app's Text
+  source): an update keeps it, a first install gets the template's `auto`;
 - `plaintext.vjdict` is put in `local_dictionaries` when it is not listed: in place of 0.7.12's
   `jmdict.vjdict`, else first. A list that would then hold more than 8 names (`core/config.c` turns an
   invalid list off, `:308,531-540`) is left as it was, with a note in the plan;

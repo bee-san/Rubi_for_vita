@@ -243,6 +243,16 @@ int vjo_preferences_save_reading(int ocr_mode, int boost_clock, VjoArena *a)
     return save_keys(keys, values, 2, a);
 }
 
+int vjo_preferences_save_text_source(int source, VjoArena *a)
+{
+    static const char *const keys[] = {"text_source"};
+    const char *values[1];
+    if (source != VJO_SOURCE_AUTO && source != VJO_SOURCE_HOOKS && source != VJO_SOURCE_OCR)
+        return -1;
+    values[0] = source == VJO_SOURCE_HOOKS ? "hooks" : source == VJO_SOURCE_OCR ? "ocr" : "auto"; /* core/config.c's */
+    return save_keys(keys, values, 1, a);
+}
+
 int vjo_preferences_text(VjoArena *a, char **out, size_t *bytes)
 {
     int rc = read_text(VJO_PREFERENCES_PATH, a, out, bytes);

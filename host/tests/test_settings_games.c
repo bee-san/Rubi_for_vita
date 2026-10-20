@@ -86,6 +86,7 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 typedef struct {
     char title[ROWS][2][128], id[ROWS][16], icon[ROWS][16]; /* icon: the texture's game, "JP", or "" */
     unsigned tag[ROWS];                                      /* a PSP card's tag: its color, 0 for none */
+    char hook[ROWS][16];                                     /* API 31: a hook entry's tag ("Hook", "Luna hook") */
     char badge[ROWS][4], default_badge[4];                   /* each card's ON/OFF/--, the Default row's */
     char hints[128], counter[24], status[2][128], pages[32];
     int counter_x;                                           /* where the counter starts */
@@ -498,6 +499,8 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
         if (x == 90 && y == top + 21) copy(cur.title[r][0], sizeof(cur.title[r][0]), text);
         else if (x == 90 && y == top + 45) copy(cur.title[r][1], sizeof(cur.title[r][1]), text);
         else if (y == top + 36 && x == 260 && !strcmp(text, "PSP")) cur.tag[r] = color;
+        else if (y == top + 36 && x == 260 && (!strcmp(text, "Hook") || !strcmp(text, "Luna hook")))
+            copy(cur.hook[r], sizeof(cur.hook[r]), text);
         else if (y == top + 36 && x == 90) copy(cur.id[r], sizeof(cur.id[r]), text);
         else if (y == top + 25 && !strcmp(text, "JP")) copy(cur.icon[r], sizeof(cur.icon[r]), "JP");
         else if (y == top + 29 && x > 788) copy(cur.badge[r], sizeof(cur.badge[r]), text); /* badge(788, top + 7, 128, 38) */
@@ -1395,11 +1398,12 @@ static void list_keys_only_on_the_games_page(void)
  * first. The d-pad still wraps round there. */
 /* The OCR & lookup page's focused card in frame f: its place among the page's
  * cards (settings/main.c PREF_*), by its title, or -1. */
-#define OCR_CARDS 6
+#define OCR_CARDS 7
 static int ocr_card(const Frame *f)
 {
     static const char *const titles[OCR_CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
-                                                  "Japanese characters only", "Highlight", "Dictionaries shown"};
+                                                  "Japanese characters only", "Highlight", "Dictionaries shown",
+                                                  "Text source"}; /* API 31 */
     for (int i = 0; i < OCR_CARDS; i++)
         if (!strcmp(f->bar_title, titles[i])) return i;
     return -1;
@@ -2318,6 +2322,14 @@ static void a_cartridge_only_title_is_listed(void)
         for (int q = 0; q < ROWS; q++) seen += !strcmp(session->shown[k].id[q], games[1].id);
         TEST_CHECK_(seen <= 1, "frame %d: %s on %d cards", k, games[1].id, seen);
     }
+    /* API 31: CLANNAD's row has Rubi's own hook entry; no other row a hook tag, the PSP row none either */
+    for (int k = 0; k < frames; k++)
+        for (int q = 0; q < ROWS; q++) {
+            const char *id = session->shown[k].id[q];
+            if (!id[0]) continue;
+            TEST_CHECK_(!strcmp(session->shown[k].hook[q], !strcmp(id, "PCSG00415") ? "Hook" : ""),
+                        "frame %d %s: hook tag '%s'", k, id, session->shown[k].hook[q]);
+        }
     CHECK_LINE("games: ux0:app", "games: ux0:app: 6 entries: 6 listed, 0 already listed, 0 skipped");
     CHECK_LINE("games: ur0:app", "games: ur0:app: not opened: 0x80010002 (ENOENT); ur0: 0x80010013 (ENODEV)");
     CHECK_LINE("games: gro0:app", "games: gro0:app: 3 entries: 1 listed, 1 already listed, 1 skipped; skipped: "

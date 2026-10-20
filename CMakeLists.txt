@@ -135,12 +135,31 @@ target_compile_options(vjo-kernel-text-source-tests PRIVATE -Wall -Wextra)
 add_test(NAME kernel_text_source COMMAND vjo-kernel-text-source-tests)
 # API 31: the Shell's triangle cycle and the overlay's source label (core/hook_pick.c), in the host core
 # too (the Shell's worker tests link it).
-target_sources(vjo_core PRIVATE core/hook_pick.c)
+target_sources(vjo_core PRIVATE core/hook_pick.c core/hook_titles.c)
+# The Rubi app's Games tag (core/hook_titles.c) knows Luna's games once core/hook_luna.c is there
+# (hooks/luna-port), as the Vita app's build does (vita/CMakeLists.txt).
+if(EXISTS ${CMAKE_SOURCE_DIR}/core/hook_luna.c)
+  foreach(_vjo_luna hook_luna.c hook_re.c hook_text.c)
+    if(EXISTS ${CMAKE_SOURCE_DIR}/core/${_vjo_luna})
+      target_sources(vjo_core PRIVATE core/${_vjo_luna})
+    endif()
+  endforeach()
+  set_property(SOURCE core/hook_titles.c APPEND PROPERTY COMPILE_DEFINITIONS VJO_HOOK_LUNA=1)
+endif()
 add_executable(vjo-hook-pick-tests host/tests/test_hook_pick.c core/hook_pick.c)
 target_include_directories(vjo-hook-pick-tests PRIVATE third_party/acutest/include)
 target_compile_definitions(vjo-hook-pick-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-hook-pick-tests PRIVATE -Wall -Wextra)
 add_test(NAME hook_pick COMMAND vjo-hook-pick-tests)
+# API 31: the Rubi app's Games tag (core/hook_titles.c), through the host core.
+add_executable(vjo-hook-titles-tests host/tests/test_hook_titles.c)
+target_include_directories(vjo-hook-titles-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-hook-titles-tests PRIVATE -Wall -Wextra)
+target_link_libraries(vjo-hook-titles-tests vjo_core)
+if(EXISTS ${CMAKE_SOURCE_DIR}/core/hook_luna.c)
+  target_compile_definitions(vjo-hook-titles-tests PRIVATE VJO_HOOK_LUNA=1)
+endif()
+add_test(NAME hook_titles COMMAND vjo-hook-titles-tests)
 # #104: the process event hook releases the game's input block in the same event
 # (kernel/lifecycle.c with the real foreground state machine).
 add_executable(vjo-kernel-lifecycle-tests host/tests/test_kernel_lifecycle.c kernel/foreground.c)

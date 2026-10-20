@@ -23,9 +23,19 @@ On `main` since 0.8.0; the next release brings it.
   text-free returns no line. On the host it did so for 59 of 66 text-free regions, against 5 without
   it ([#214]).
 - The Rubi app's Games page shows five games a page and searches by title or title ID ([#219]).
+- Native text hooks, the plumbing and the controls (API 31; [the guide](docs/guide.md#native-text-hooks),
+  [#230]): `text_source = auto | hooks | ocr` (the Rubi app's **Text source**, Automatic by default,
+  applied when a game next starts), which the Shell hands the kernel and a game's worker reads as the
+  game starts; **Triangle** in the overlay cycles the game session's source (Automatic, each hook with
+  text, OCR only) and a short label says where the text came from (`Hook 2/5 locked`); the Games page
+  tags a game with a hook entry (`Hook`: CLANNAD, Rubi's own; `Luna hook`: LunaTranslator's table).
+  `log.txt` says what each game's worker hooked (counts only in the normal build), `history.csv`'s engine
+  is `hook` for a hook's line. Not run on a console.
 
 ### Changed
 
+- An install or an update no longer writes `text_source = ocr` into `config.ini` (API 31: the setting
+  is the user's again); a file that has it keeps it, so choose Automatic once to use native text hooks.
 - Every verified install deletes the app's own copy of the dictionary when the app's folder can be
   written, and says so on the done screen and in `log.txt` ([#200]).
 - A card's screenshot is written over a file set aside for it beforehand: on the owner's console,
@@ -536,3 +546,4 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#219]: https://github.com/bee-san/Rubi_for_vita/pull/219
 [#222]: https://github.com/bee-san/Rubi_for_vita/pull/222
 [#224]: https://github.com/bee-san/Rubi_for_vita/pull/224
+[#230]: https://github.com/bee-san/Rubi_for_vita/issues/230

@@ -661,7 +661,7 @@ static void a_line_that_goes_is_named_by_its_setting_never_its_value(void)
         {OWNED "hachidori_host = 192.168.1.5\n  FREQUENCY_FILTER = 5\nhw_jpeg=1\nvocr_tier = large\nvocr_tier = small\n",
          {"hachidori_host: a removed setting, goes", "FREQUENCY_FILTER: a removed setting, goes",
           "hw_jpeg: a removed setting, goes", "vocr_tier: a repeated line goes", NULL},
-         {"text_source = ocr", NULL}},
+         {NULL, NULL}}, /* API 31: text_source is the user's, never written by an install */
     };
     for (unsigned c = 0; c < sizeof(cards) / sizeof(cards[0]); c++) {
         fresh_card(1);
@@ -675,6 +675,7 @@ static void a_line_that_goes_is_named_by_its_setting_never_its_value(void)
             TEST_CHECK_(ini_listed(&s, cards[c].changed[i]), "card %u: %s", c, cards[c].changed[i]);
         TEST_CHECK(!ini_listed(&s, "dictionary: a removed setting, goes")); /* changed, so listed by its new line */
         TEST_CHECK(!ini_listed(&s, "vocr_tier: a removed setting, goes"));
+        TEST_CHECK(!ini_listed(&s, "text_source = ocr") && !ini_listed(&s, "text_source = auto"));
         char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
         int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
         for (int i = 0; i < n + s.config_change_count; i++) {
