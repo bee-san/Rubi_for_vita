@@ -74,7 +74,7 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/scene.c
   ${ROOT}/kernel/triggers.c
   ${ROOT}/kernel/loader.c
-  ${ROOT}/kernel/text_source.c # API 31: the text source, one word (docs/native-hooks.md)
+  ${ROOT}/kernel/text_source.c # API 31: the text source and the loader's ON processes (docs/native-hooks.md)
   ${ROOT}/core/games.c)
 target_compile_options(VitaJPOverlay_Kernel PRIVATE -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu99 -fno-builtin
   -mgeneral-regs-only)

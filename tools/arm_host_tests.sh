@@ -89,8 +89,9 @@ build kernel_loader host/tests/test_kernel_loader.c host/tests/games_io_posix.c 
 # the self-test's memory routes: the debug build's only
 [ "$VJO_DEBUG" = 0 ] || build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
-# API 31: the kernel's text source (one word, its atomics) and the Shell's triangle cycle and label, the
-# Rubi app's Games tag (Rubi's own entries; Luna's table where hooks/luna-port's file is in the tree).
+# API 31: the kernel's text source (its word and the loader's process table, their atomics) and the Shell's
+# triangle cycle and label, the Rubi app's Games tag (Rubi's own entries; Luna's table where
+# hooks/luna-port's file is in the tree).
 build kernel_text_source host/tests/test_kernel_text_source.c
 build hook_pick host/tests/test_hook_pick.c core/hook_pick.c
 if [ -f core/hook_luna.c ]; then
