@@ -27,7 +27,7 @@ On `main` since 0.8.0; the next release brings it.
   without punctuation, brackets, symbols, spaces or line breaks (reading trackers such as
   GameSentenceMiner and ッツ Ebook Reader leave punctuation out too). `tools/reading_stats.py` gives
   the characters read and per hour, in all, per game and per day, from new and 0.8.0 files
-  ([docs/ocr-history.md](docs/ocr-history.md)).
+  ([#233]; [docs/ocr-history.md](docs/ocr-history.md)).
 
 ### Changed
 
@@ -552,3 +552,4 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#224]: https://github.com/bee-san/Rubi_for_vita/pull/224
 [#231]: https://github.com/bee-san/Rubi_for_vita/pull/231
 [#232]: https://github.com/bee-san/Rubi_for_vita/pull/232
+[#233]: https://github.com/bee-san/Rubi_for_vita/pull/233
