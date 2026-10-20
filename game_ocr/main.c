@@ -14,6 +14,7 @@
  * read through a small kernel strip instead: each rung's native result is in
  * the job's step log, so one console run says which works. */
 #include "main.h"
+#include "hooks.h"
 #include "../core/fbgrey.h"
 #include "../core/jpegsw.h"
 #include "../core/textnorm.h"
@@ -1861,6 +1862,28 @@ static int another_copy(void)
 }
 #endif
 
+#ifdef VJO_HOST
+/* The host tests that include this file run no game: no hooks (game_ocr/hooks.c is the Vita's). */
+#define vjo_hooks_start(title, mode, psp) ((void)(title), (void)(mode), (void)(psp))
+#define vjo_hooks_stop() 0
+#endif
+
+/* API 31's text source (VJO_TEXT_SOURCE_*, docs/native-hooks.md), as the Shell gave it to the kernel:
+ * which native hooks vjo_hooks_start installs in this game. OCR (no hooks) when the kernel's import is
+ * not resolved (an older kernel), when it answers out of range, and in a build whose kernel stubs do
+ * not have vjoGetTextSource yet (vita/CMakeLists.txt sets VJO_HAVE_TEXT_SOURCE_IMPORT from
+ * kernel/exports.yml). */
+static unsigned text_source(void)
+{
+#if VJO_HAVE_TEXT_SOURCE_IMPORT
+    if (IMPORT_READY(vjoGetTextSource)) {
+        int mode = vjoGetTextSource();
+        if (mode >= 0 && (unsigned)mode < VJO_TEXT_SOURCE_COUNT) return (unsigned)mode;
+    }
+#endif
+    return VJO_TEXT_SOURCE_OCR;
+}
+
 int _start(SceSize args, void *argp) __attribute__((weak, alias("module_start")));
 int module_start(SceSize args, void *argp)
 {
@@ -1882,6 +1905,9 @@ int module_start(SceSize args, void *argp)
      * policy; one per process (another_copy). */
     if (rc < 0 || !vjo_game_is_candidate(title) || another_copy()) return SCE_KERNEL_START_NO_RESIDENT;
     psp_title = pspemu_process() || vjo_game_is_psp(title);
+    /* The native text hooks, before the game's main thread runs: none in a safe boot (above), none
+     * unless the text source allows them here (game_ocr/hooks.c); never fails the start. */
+    vjo_hooks_start(title, text_source(), psp_title);
     vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects
      * keep the module loaded until module_stop can safely delete them. */
@@ -1889,7 +1915,12 @@ int module_start(SceSize args, void *argp)
 }
 int module_stop(SceSize args, void *argp)
 {
+    int busy;
     (void)args; (void)argp;
-    return vjo_game_ocr_worker_stop() ? SCE_KERNEL_STOP_FAIL : SCE_KERNEL_STOP_SUCCESS;
+    /* The hooks first (newest first), so no game thread enters our code again; a thread still in it
+     * keeps the module (STOP_FAIL), as the worker's thread does. */
+    busy = vjo_hooks_stop();
+    if (vjo_game_ocr_worker_stop()) busy = 1;
+    return busy ? SCE_KERNEL_STOP_FAIL : SCE_KERNEL_STOP_SUCCESS;
 }
 #endif

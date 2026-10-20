@@ -310,6 +310,16 @@ if(VJO_WITH_VOCR)
   # the model tiers' ladder (API 21: +788 B of text at -O2) within the module's
   # pages (game_ocr/main.c's text 12,276 B at -O2 before it, 9,164 B at -Os with it).
   set_source_files_properties(${ROOT}/game_ocr/main.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # API 31: the native hooks' engine is control code too (install once, a few checks per hit), built
+  # for size: every page of it is in every game that is ON.
+  set_source_files_properties(${ROOT}/game_ocr/hooks.c ${ROOT}/core/hook_place.c ${ROOT}/core/hook_stream.c
+    ${ROOT}/core/sfo.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # API 31: the worker reads the text source (vjoGetTextSource) once the kernel exports it; until then
+  # its native hooks stay off (game_ocr/main.c text_source: OCR).
+  file(STRINGS ${ROOT}/kernel/exports.yml VJO_KERNEL_TEXT_SOURCE REGEX "vjoGetTextSource")
+  if(VJO_KERNEL_TEXT_SOURCE)
+    target_compile_definitions(VitaJPOverlay_OCR PRIVATE VJO_HAVE_TEXT_SOURCE_IMPORT=1)
+  endif()
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
     -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)

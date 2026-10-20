@@ -4,7 +4,7 @@
  * candidate and another-copy checks, and module_stop calls vjo_hooks_stop. Two sources:
  *   - the CALL source: taiHookFunctionImport on the main module's (eboot's) string copies
  *     (SceLibc memcpy, strcpy, strncpy, memmove; SceLibKernel's sceClibMemcpy, sceClibStrncpy,
- *     sceClibStrlcpy), as the removed text/main.c had them (c35ebf9^, the source a console run
+ *     sceClibStrlcpy, and sceClibStrnlen, a string the game measures), as the removed text/main.c had them (c35ebf9^, the source a console run
  *     showed working in CLANNAD: vita-vn-ocr note 23). Each hook calls the game's function
  *     first (TAI_CONTINUE), then offers the copied bytes to its caller's stream;
  *   - table sites (Rubi's verified entries and Luna's table): taiHookFunctionOffset into segment 0
@@ -29,9 +29,10 @@
 
 _Static_assert(VJO_STREAM_RAW == VJO_HOOK_RAW_BYTES, "stream slots hold a stream's raw text");
 
-/* The CALL source's imports: library NID, function NID (the old text/main.c's, and VitaSDK's db). */
+/* The CALL source's imports: library NID, function NID (the old text/main.c's; each checked against
+ * vita-headers e66ebe9 db/360/SceLibc.yml and SceLibKernel.yml). */
 enum { CALL_MEMCPY, CALL_STRCPY, CALL_STRNCPY, CALL_MEMMOVE, CALL_CLIB_MEMCPY, CALL_CLIB_STRNCPY,
-       CALL_CLIB_STRLCPY, CALL_IMPORTS };
+       CALL_CLIB_STRLCPY, CALL_CLIB_STRNLEN, CALL_IMPORTS };
 #define NID_SCE_LIBC 0xBE43BB07u
 #define NID_SCE_CLIB 0xCAE9ACE6u
 
@@ -204,6 +205,17 @@ static SceSize clib_strlcpy_hook(char *dst, const char *src, SceSize cap)
     return r;
 }
 
+static SceSize clib_strnlen_hook(const char *s, SceSize max)
+{
+    enter();
+    SceSize r = TAI_CONTINUE(SceSize, call_ref[CALL_CLIB_STRNLEN], s, max);
+    /* the game measured a string: r bytes of it (and its NUL when r < max) are there now */
+    call_hit((const uint8_t *)s, r < max ? (r + 1u > 0xFFFFu ? 0xFFFFu : (unsigned)r + 1u)
+                                         : (r > 0xFFFFu ? 0xFFFFu : (unsigned)r), 0, CALLER());
+    leave();
+    return r;
+}
+
 static const struct {
     uint32_t lib, nid;
     const void *func;
@@ -215,6 +227,7 @@ static const struct {
     [CALL_CLIB_MEMCPY] = {NID_SCE_CLIB, 0x14E9DBD7u, (const void *)clib_memcpy_hook},
     [CALL_CLIB_STRNCPY] = {NID_SCE_CLIB, 0xC458D60Au, (const void *)clib_strncpy_hook},
     [CALL_CLIB_STRLCPY] = {NID_SCE_CLIB, 0x2CDFCD1Cu, (const void *)clib_strlcpy_hook},
+    [CALL_CLIB_STRNLEN] = {NID_SCE_CLIB, 0xAC595E68u, (const void *)clib_strnlen_hook},
 };
 
 /* ---- table sites (hook time) ---- */
