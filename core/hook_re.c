@@ -556,7 +556,8 @@ int vjo_re_sub(const char *pat, unsigned flags, const char *in, size_t n, const 
     if (!out || !cap) return VJO_RE_EPATTERN;
     out[0] = 0;
     if (!budget) budget = &own;
-    if (!in) n = 0;
+    if (!in) in = "", n = 0;
+    s = (const unsigned char *)in;
     if (g < 0 || n >= RE_NOPOS || compile(&r, pat, flags, (unsigned)g)) return VJO_RE_EPATTERN;
     for (;;) {
         uint16_t m[4];
@@ -575,14 +576,17 @@ int vjo_re_sub(const char *pat, unsigned flags, const char *in, size_t n, const 
         }
         if (!found) break;
         ok = put(out, cap, &w, in + pos, m[0] - pos);
-        for (const char *q = rep; ok && q && *q; q++) {
+        for (const char *q = rep; ok && q && *q;) {
             if (q[0] == '$' && (q[1] == '$' || q[1] == '&' || (q[1] >= '1' && q[1] <= '9'))) {
-                q++;
-                if (*q == '$') ok = put(out, cap, &w, "$", 1);
-                else if (*q == '&') ok = put(out, cap, &w, in + m[0], (size_t)(m[1] - m[0]));
+                if (q[1] == '$') ok = put(out, cap, &w, "$", 1);
+                else if (q[1] == '&') ok = put(out, cap, &w, in + m[0], (size_t)(m[1] - m[0]));
                 else if (m[2] != RE_NOPOS && m[3] != RE_NOPOS) ok = put(out, cap, &w, in + m[2], (size_t)(m[3] - m[2]));
-            } else {
-                ok = put(out, cap, &w, q, 1);
+                q += 2;
+            } else { /* the literal run up to the next $, whole: put cuts it at a character */
+                const char *e = q + 1;
+                while (*e && *e != '$') e++;
+                ok = put(out, cap, &w, q, (size_t)(e - q));
+                q = e;
             }
         }
         if (!ok) break;
@@ -603,7 +607,7 @@ int vjo_re_search(const char *pat, unsigned flags, const char *in, size_t n, uns
     int found;
     m[0] = m[1] = m[2] = m[3] = -1;
     if (!budget) budget = &own;
-    if (!in) n = 0;
+    if (!in) in = "", n = 0;
     if (g > 9 || n >= RE_NOPOS || compile(&r, pat, flags, g)) return VJO_RE_EPATTERN;
     found = run(&r, (const unsigned char *)in, n, 0, 0, b, budget);
     if (found <= 0) return found;
