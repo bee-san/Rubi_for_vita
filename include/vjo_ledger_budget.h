@@ -168,9 +168,9 @@
  * budget.
  * API 32, the Anki screenshot's black bars (core/shottrim.c at -Os, 606 B of text, and game_ocr/main.c shot_pass,
  * the passes that guess, check and read again) take the debug build's text 81,644 -> 82,860 B, 940 B past the 81,920 B
- * of its text pages, and the normal build's 80,344 -> 81,592 B, which still fits (328 B left); data/bss 15,720 B as
- * before in both [measured: the build log's module rows, both builds, main f482c21 (the same on 44d4e8d) and this
- * change, CI's container; the final source is a few bytes larger, its rows in the head's build log]. So the debug
+ * of its text pages, and the normal build's 80,344 -> 81,608 B, which still fits (312 B left); data/bss 15,720 B as
+ * before in both [measured: the build log's module rows, both builds, main 75041a0 (the worker's the same on f482c21
+ * and 44d4e8d) and this change, CI's container]. So the debug
  * build, the test builds' own and the -debug download, takes one more text page in each game that is ON, 98,304 ->
  * 102,400 B, and the normal build, the main download, keeps 98,304 B. Already cut to get there: the scan at -Os
  * (812 B at -O2) and no row buffer for black rows above the strip. Kept: the one-colour rule, which keeps a dark Vita

@@ -463,7 +463,7 @@ A frame read again takes up to 10 more of the game's frames than one that is not
 save took 523 to 905 ms on the console (#207) can take over a second then: on the host, 1 of the
 1,727 Vita frames and 11 of 300 PSP frames at 1×. The console-test checklist asks for those shots'
 time. The scan needs no memory: the shot's block is 450,560 B as before. The worker's code
-grows by 1,216 B of text in the debug build and 1,248 B in the normal one (`core/shottrim.c` at
+grows by 1,216 B of text in the debug build and 1,264 B in the normal one (`core/shottrim.c` at
 `-Os`, the passes in `game_ocr/main.c`): the debug build's worker takes one more page, 102,400 B,
 the normal build's keeps its 98,304 B ([memory ledger](memory-ledger.md)).
 
