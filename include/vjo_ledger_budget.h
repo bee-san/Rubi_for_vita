@@ -174,9 +174,22 @@
  * AGENTS.md rules 1-2), and in every game that is ON, whatever its text source. The job path's decoder,
  * Luna's table and the selection (hooks-select, hooks-luna-port) are not in these figures: they add their
  * own pages when they are linked.
- * Raised from 118,784 B for API 31's text selection (docs/native-hooks.md: which text a job shows, OCR's or a
- * native hook stream's) and what it links of the engine: MEASURE. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 126976u
+ * Raised from 118,784 B by nine text pages and one data page for API 31's job path (docs/native-hooks.md: which
+ * text a job shows, OCR's or a native hook stream's), which decodes the streams' texts and so links what the
+ * figures above leave out: the hook text decoder and its CP932 table (core/hook_text.c, 12,958 B of text and
+ * rodata), Luna's table, captures and filters (core/hook_luna.c, 18,814 B) and their regular expressions
+ * (core/hook_re.c, 3,407 B at -Os), and the selection (core/hook_select.c, 1,708 B at -Os, and the job path
+ * in game_ocr/main.c) [object sizes, arm-vita-eabi-gcc at the worker's flags; the linker drops what nothing
+ * calls]; its static snapshot of the streams (one stream's copy, 548 B, the texts as the job began, 2,048 B,
+ * and the candidates, 400 B) is the 3,064 B more .bss, and the comparison's 2,562 B of arrays are on the
+ * worker's stack only while it compares. The debug build's text 88,680 -> 126,840 B and data/bss 27,496 ->
+ * 30,560 B, the normal build's text 86,396 -> 124,588 B and data/bss 27,496 -> 30,560 B: 118,784 -> 159,744 B
+ * in both [measured: the build log's module rows, both builds, hooks/select 40e439a with hooks/engine 0d05e00
+ * and hooks/luna-port 5434ab5 merged; the "before" is hooks/engine's figure above, built with a stand-in
+ * core/hook_luna.c]. Without the engine (a stand-in for game_ocr/hooks.c), the selection alone took 98,304 ->
+ * 106,496 B: text 81,644 -> 84,588 B debug, 80,344 -> 83,336 B normal, data/bss 15,752 -> 18,816 B [measured,
+ * hooks/select 7fd2cb8]. In the game's partition only, in every game that is ON. */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 159744u
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game
