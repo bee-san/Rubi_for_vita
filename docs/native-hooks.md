@@ -142,11 +142,26 @@ texts, so a pool that fills cuts the oldest. Then, by the request's `hook_pick`:
 - **OCR only** (`VJO_HOOK_PICK_OCR`): OCR's text. The self-test's jobs (every line recognized, or the
   fallback forced) are OCR only whatever their pick.
 - **Automatic** (`VJO_HOOK_PICK_AUTO`): OCR runs, and a stream whose text agrees with OCR's (similarity
-  at least 700 of 1000) replaces it. Two agreements in a row by one stream lock it; a locked stream with
-  new text since the last job shown (its seq) then answers a job without recognition, and one with
-  nothing new lets OCR read (the screen changed without it: a choice menu, a CG). Two disagreements in a
-  row unlock it. A job whose OCR text has fewer than 4 characters (an empty box) is no evidence: nothing
-  changes, and neither does a job that fails.
+  at least 700 of 1000) replaces it. Two agreements in a row by one stream lock it. A locked stream then
+  answers a job without recognition only when it has new text since the last job shown (its seq), of at
+  least 4 compared characters (`VJO_HOOK_MIN_CHARS`: a name of 2 or 3 characters never answers), and for
+  at most 2 jobs in a row (`VJO_HOOK_UNCHECKED_MAX`): the next job runs OCR, and the locked stream must
+  agree with it there. Every other job runs OCR: nothing new (the screen changed without the stream: a
+  choice menu, a CG), a text too short, or that check. A locked stream that disagrees (a miss) makes every
+  job run OCR until it agrees again, and two misses in a row unlock it. A locked stream whose key changed
+  (its CALL slot went to another caller) unlocks at once. A job whose OCR text has fewer than 4
+  characters (an empty box) is no evidence: nothing changes, and neither does a job that fails.
+
+  So once a stream is locked, OCR still reads at least one page in three. A locked stream that turns
+  wrong, because it runs ahead of the screen (the game copies the next line before it draws it) or its
+  caller's latest copy is a speaker's name or a UI string of 4 characters or more, shows at most 2 wrong
+  pages before OCR's check catches it; then OCR reads every page until the stream agrees again or unlocks
+  (audit-hooks-text F3; `host/tests/test_hook_select.c`: `locked_runs_ahead` 2 wrong pages,
+  `locked_name_alone` none for the audit's 2-character name then 4-character one, 2 for a 4-character
+  name first, `locked_ui_string` 1 and 2, `locked_backlog_and_reread` 1 each, `locked_checked_by_ocr` none).
+  The bound is on pages in a row: a stream that is wrong only on some pages and right at each check could
+  show a wrong page again after a check it passed. The way out in the game is △ to `OCR only`; for every
+  game, `text_source = ocr` from the next game start ([Recovery](#recovery)).
 
 A job a stream answers reads only the region's first capture pass (a strip at a time into one strip's
 block, under the job's reserve, as the probe reads), so the kernel publishes its capture (`capture_seq`,
@@ -160,7 +175,8 @@ dropped), at most 256 characters each; then d, the edit distance of all of the s
 of OCR's text o it matches best (o's characters before and after it free), and 1000 × (|h| − d) /
 max(|h|, |o|). OCR's text around the match (a speaker's name, another line) lowers it as much as it is
 long: a stream with one line of a two-line page, a backlog line or a line prepared ahead of the screen does
-not agree, and a name in the box agrees only beside a line about 2.3 times its length. Characters past
+not agree (so it never locks; once a stream is locked, its new text is checked as above), and a name in the
+box agrees only beside a line about 2.3 times its length. Characters past
 the 256 compared count as unmatched, so a cut text never scores higher than it would whole. Fewer than 4
 characters in either text: 0. Equal scores: the stream of the current streak (two callers copying one text
 must not take turns), then a table site, then the newer text.
@@ -171,9 +187,10 @@ compared), `hook_streams` (bit ID − 1 of each stream that held text as the job
 `hook_installed`, `hook_refused` (`vjo_hooks_counts`), in failed results too (with `text_from` and
 `hook_flags` 0: a failed result has no text).
 
-Cost: `core/hook_select.c` is 1,708 B of code at `-Os`; its comparison's 2,562 B of arrays are on the
-worker's stack only while it compares (its frames 2,712 B, `-fstack-usage`); the job path's static
-snapshot is 3,064 B of `.bss`. The comparison's inner loop is 19 instructions a cell at `-Os`: a
+Cost: `core/hook_select.c` is 1,992 B of code at `-Os` (1,708 B before the lock's checks of F3); its
+comparison's 2,562 B of arrays are on the worker's stack only while it compares (its frames at most
+2,772 B: `vjo_hook_select_after` 1,112 + `score_of` 1,600 + `cmp_form` 40 + `utf8_next` 20; `-fstack-usage`,
+vitasdk 2026.08, the worker's flags); the job path's static snapshot is 3,064 B of `.bss`. The comparison's inner loop is 19 instructions a cell at `-Os`: a
 dialogue box of 60 characters against a few streams is about 10^4 cells, under a millisecond at 444 MHz,
 and the worst case, 20 streams of 256 characters against 256, 1.3 million cells, about 30-60 ms
 [estimate: the instructions of the `-Os` disassembly at 0.5-1 cycle each, not run on a console].
@@ -250,13 +267,17 @@ Hardware is paused; these are for the test issue (#230):
 6. Quitting a game with hooks: the console returns to LiveArea, and the next game start works.
 7. CLANNAD with `auto`, Automatically: the first pages show the CALL stream's text with OCR's agreement
    (the debug log's `hook_flags` AGREED and a `hook_score`), and from the third page on the stream answers
-   without recognition (NO_OCR: no model load or recognize step, and the overlay's text sooner); the
-   text matches the screen on every page, and the scene logic (a page's text cached, a new page read) works
-   as with OCR.
+   two pages of every three without recognition (NO_OCR: no model load or recognize step, and the overlay's
+   text sooner) while OCR reads the third and agrees (AGREED and LOCKED); the text matches the screen on
+   every page, and the scene logic (a page's text cached, a new page read) works as with OCR.
 8. A choice menu or a CG without text (the stream unchanged): OCR's text, or none, and the lock stays.
 9. With Only when I press L + R, and with the subtitle strip: the same pages, the same texts.
-10. A game where no stream follows the dialogue (or one that runs ahead of the screen): OCR's text on
-    every page, nothing locked.
+10. A game where no stream follows the dialogue (or one that runs ahead of the screen from the start): OCR's
+    text on every page, nothing locked. A stream that locked and then runs ahead (the next line), or whose
+    latest copy is a speaker's name or a UI string of 4 characters or more: at most 2 pages in a row show
+    that text instead of the screen's (NO_OCR), then OCR's check misses, OCR's text is shown on every page,
+    and the second miss unlocks it (UNLOCK in the debug log). A name of 2 or 3 characters (朋也) is never
+    shown alone. If it happens: △ to `OCR only` for the game, or `text_source = ocr` from the next game start.
 11. △ (hooks-api) pins a stream: its text, without OCR; OCR only: OCR's text, whatever agrees.
 
 ## PSP probe (debug build)

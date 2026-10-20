@@ -355,7 +355,7 @@ static void failed_answer_changes_nothing(void)
 {
     VjoGameOcrResult out;
     reset();
-    hk.sel = (VjoHookSelect){9, 5, 9, 2, 0};
+    hk.sel = (VjoHookSelect){.locked = 9, .locked_seq = 5, .streak_id = 9, .streak = 2};
     stream(9, VJO_HOOK_KIND_CALL, 6, LINE1);
     rows_error = VJO_ERR_ARG; /* every rows call refused: the pass cannot be read */
     TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_SOURCE);
@@ -415,7 +415,7 @@ static void self_test_jobs_are_ocr(void)
     VjoGameOcrResult out;
     VjoGameOcrRequest r;
     reset();
-    hk.sel = (VjoHookSelect){9, 5, 9, 2, 0};
+    hk.sel = (VjoHookSelect){.locked = 9, .locked_seq = 5, .streak_id = 9, .streak = 2};
     stream(9, VJO_HOOK_KIND_CALL, 6, LINE1);
     spy_text = OCR1;
     r = request(9); /* even pinned */
@@ -483,7 +483,7 @@ static void full_pool_keeps_the_pick_and_the_newest(void)
         stream(id, id <= VJO_HOOK_SITE_STREAMS ? VJO_HOOK_KIND_SITE : VJO_HOOK_KIND_CALL, 100 + id, texts_of[id]);
     }
     fs[15].seq = 1;
-    hk.sel = (VjoHookSelect){15, 1, 15, 2, 0};
+    hk.sel = (VjoHookSelect){.locked = 15, .locked_seq = 1, .streak_id = 15, .streak = 2};
     fs[15].seq = 2; /* new text: it answers */
     TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 15);
     TEST_CHECK(out.hook_flags == (VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));

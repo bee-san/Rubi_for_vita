@@ -306,7 +306,8 @@ if(VJO_WITH_VOCR)
     ${ROOT}/core/sfo.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
-  # For size, as the worker's control code is: 1,708 B of text and rodata at -Os (2,240 B at -O2).
+  # For size, as the worker's control code is: 1,992 B of text and rodata at -Os (2,640 B at -O2; measured,
+  # vitasdk 2026.08, with the lock's checks of audit-hooks-text F3).
   target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
   set_source_files_properties(${ROOT}/core/hook_select.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
