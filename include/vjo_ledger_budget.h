@@ -162,19 +162,25 @@
  * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
  * which would still need the page. In the game's partition, never SceShell's. Both builds now have the same
  * budget.
- * Raised from 98,304 B by two text pages and three data pages for API 31, the native text hooks' engine
- * (docs/native-hooks.md: game_ocr/hooks.c and hooks_observer.S, core/hook_place.c, core/hook_stream.c,
- * core/sfo.c, at -Os), in both builds: the debug build's text 81,644 -> 88,680 B and data/bss 15,752 ->
- * 27,496 B, the normal build's text 80,344 -> 86,396 B and data/bss 15,752 -> 27,496 B: 98,304 -> 118,784 B
- * [measured: the build log's module rows, both builds, hooks/engine; the debug "before" is the same tree with
- * the engine unreferenced (81,644 + 15,752, as main's), the normal "before" this header's API 26 figure]. The
- * data is the 20 stream slots' static storage (VJO_HOOK_STREAMS x 548 B = 10,960 B: a stream's 512 raw bytes
- * and its header, include/vjo_game_ocr.h) and a site hit's 512-byte capture buffer: static, so a hook in a
- * game thread never allocates. In the game's partition only (the worker never loads into SceShell,
- * AGENTS.md rules 1-2), and in every game that is ON, whatever its text source. The job path's decoder,
- * Luna's table and the selection (hooks-select, hooks-luna-port) are not in these figures: they add their
- * own pages when they are linked. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 118784u
+ * Raised for API 31, the native text hooks (docs/native-hooks.md), in the game's partition only (the worker
+ * never loads into SceShell, AGENTS.md rules 1-2), in every game that is ON whatever its text source, and now
+ * per build again: the engine (game_ocr/hooks.c and hooks_observer.S, core/hook_place.c, core/hook_stream.c,
+ * core/sfo.c, at -Os) and what it links of Luna's ported table (core/hook_luna.c and its table: the sites, the
+ * version gate and the capture's hookfuncs) take the debug build's text 81,644 -> 98,984 B and the normal
+ * build's 80,344 -> 96,476 B, and both builds' data/bss 15,752 -> 27,496 B: debug 98,304 -> 131,072 B, normal
+ * 98,304 -> 126,976 B [measured: the build log's module rows, both builds, hooks/engine with origin/hooks/
+ * luna-port 5434ab5 merged; the engine alone was 88,904 / 86,396 B of text; the debug "before" is the same
+ * tree with the engine unreferenced (81,644 + 15,752, as main's), the normal "before" this header's API 26
+ * figure]. The data is the 20 stream slots' static storage (VJO_HOOK_STREAMS x 548 B = 10,960 B: a stream's
+ * 512 raw bytes and its header, include/vjo_game_ocr.h) and a site hit's 512-byte capture buffer: static, so
+ * a hook in a game thread never allocates. Not in these figures: the job path's decoder (core/hook_text.c,
+ * its CP932 table), Luna's filters (core/hook_re.c) and the selection (core/hook_select.c), linked when the
+ * job path calls vjo_hooks_text (hooks-select); they add their own pages then. */
+#if VJO_DEBUG
+#define VJO_BUDGET_WORKER_MODULE_PAGES 131072u
+#else
+#define VJO_BUDGET_WORKER_MODULE_PAGES 126976u
+#endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game

@@ -146,14 +146,18 @@ game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
 | Build | Text segment | Data segment | Module pages |
 | --- | --- | --- | --- |
 | debug, before | 81,644 B | 15,752 B | 98,304 B |
-| debug, with the engine | 88,680 B | 27,496 B | 118,784 B |
+| debug, the engine alone | 88,904 B | 27,496 B | 118,784 B |
+| debug, with Luna's table linked | 98,984 B | 27,496 B | 131,072 B |
 | normal, before | 80,344 B | 15,752 B | 98,304 B |
-| normal, with the engine | 86,396 B | 27,496 B | 118,784 B |
+| normal, with Luna's table linked | 96,476 B | 27,496 B | 126,976 B |
 
-[measured: the build log's module rows on hooks/engine, both builds; the debug "before" is the same tree
-with the engine unreferenced, the normal "before" the budget header's API 26 figure.] The data is the slots (20 x 548 B = 10,960 B) and the capture buffer (512 B). The
-SceShell and kernel modules do not change here. Luna's table, the CP932 decoder and the selection add
-their own pages when the job path links them.
+[measured: the build log's module rows on hooks/engine, both builds, with origin/hooks/luna-port 5434ab5
+merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
+header's API 26 figure.] The data is the slots (20 x 548 B = 10,960 B) and the capture buffer (512 B);
+the text is the engine and what it links of Luna's table (its sites, version gate and capture). The
+SceShell and kernel modules do not change here. The job path's decoder (`core/hook_text.c` and its CP932
+table), Luna's filters (`core/hook_re.c`) and the selection add their own pages when the job path calls
+`vjo_hooks_text` (hooks-select).
 
 Stack: a site hit uses the observer's 328 bytes and the C frames below it on the game's thread, an
 estimate of under 1 KiB in all (not measured); a CALL hit, a few dozen bytes. CPU time per hit, and any
