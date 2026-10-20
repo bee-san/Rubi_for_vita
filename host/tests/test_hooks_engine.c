@@ -1007,9 +1007,10 @@ static void test_auto_listed(void)
  * this firmware may not resolve. */
 static void test_main_module(void)
 {
-    static const char *const bad_paths[] = {"app0:xeboot.bin", "eboot.bin", "app0:eboot.bin2", "app0:sce_module/x.suprx"};
+    static const char *const bad_paths[] = {"app0:xeboot.bin", "eboot.bin", "app0:eboot.bin2", "app0:sce_module/x.suprx",
+                                            "app0:/eboot.bix", "app0:/aboot.bin"};
     static const char *const good_paths[] = {"app0:eboot.bin", "ux0:app/PCSG00415/eboot.bin"};
-    for (unsigned k = 0; k < 4; k++) {
+    for (unsigned k = 0; k < sizeof(bad_paths) / sizeof(bad_paths[0]); k++) {
         reset();
         snprintf(mod.path, sizeof(mod.path), "%s", bad_paths[k]);
         vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
@@ -1127,9 +1128,28 @@ static void test_site_hits(void)
     TEST_ASSERT(vjo_hooks_snap(2, &s));
     TEST_CHECK(s.key == 0x200 && s.site == &l[0] && s.n == 20 && !memcmp(s.raw, L_HELLO, 20));
     TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) > 0 && !strcmp(text, "こんにちは、朋也くん"));
+    /* a Luna site's text goes through its filter (DEL "^" here); a CALL caller's or Rubi's entry's does not */
+    {
+        const VjoLunaSite *real;
+        unsigned nr = vjo_luna_sites("PCSG00420", &real), k = 0;
+        while (k < nr && real[k].addr != 0x8004630Au) k++;
+        TEST_ASSERT_(k < nr, "PCSG00420's site 0x8004630A (its filter deletes ^)");
+        l[0].filter = real[k].filter;
+    }
+    memcpy(data + 0x80, "\x82\xA0^\x82\xA2^", 7);
+    TEST_CHECK(vjo_hooks_observe(1, frame) == (uintptr_t)CONT(1));
+    TEST_ASSERT(vjo_hooks_snap(2, &s));
+    TEST_CHECK(s.n == 6 && vjo_hooks_text(&s, text, sizeof(text)) == 6 && !strcmp(text, "あい"));
+    s.site = NULL;
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) == 8 && !strcmp(text, "あ^い^"));
+    l[0].filter = VJO_LUNA_NONE;
+    memcpy(data + 0x80, L_HELLO, 21);
+    TEST_CHECK(vjo_hooks_observe(1, frame) == (uintptr_t)CONT(1));
+    TEST_CHECK(vjo_hooks_snap(2, &s) && s.n == 20);
+    seq = s.seq;
     /* the slot number is masked to the 8 observers: 9 is observer 1; the same text is a hit, not a new seq */
     TEST_CHECK(vjo_hooks_observe(9, frame) == (uintptr_t)CONT(1));
-    TEST_CHECK(vjo_hooks_snap(2, &s) && s.hits == 2 && s.seq == seq + 1);
+    TEST_CHECK(vjo_hooks_snap(2, &s) && s.hits == 4 && s.seq == seq);
 
     /* taiHEN's next hook at the same site runs after ours */
     next.next = 0;
