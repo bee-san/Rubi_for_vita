@@ -100,6 +100,10 @@ size_t vjo_luna_text(const VjoLunaSite *s, const uint8_t *raw, unsigned n, unsig
  * sites vjo_luna_capture and vjo_luna_text serve; 0 otherwise. */
 int vjo_luna_ported(const VjoLunaSite *s);
 
+/* vjo_luna_capture: cap must be at least 4 (0 otherwise); its return counts the
+ * text's bytes up to the first NUL unit (not the NUL); a site that is not ported
+ * gives 0. */
+
 /* What the flags change (texthook.cc, LunaHost's textthread.cpp at the pin):
  * FULL_STRING changes no read; LunaHost ends each such hit's text with a newline
  * and flushes the hits that come within its flush delay (100 ms by default) as
