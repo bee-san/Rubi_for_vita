@@ -69,7 +69,9 @@ Cortex-A9 instructions a code point, about 3,560 for a mean textbox of
 cortex-a9` with vita-vn-ocr's instruction-count plugin, each region one text
 with its line breaks]: about 8 µs at 444 MHz, and about 0.34 ms for the longest
 text a result holds (1,365 kana) [estimates: one instruction a cycle]. It runs
-after the result is published and before the record's file writes.
+after the result is published, while the record is written: the writer sends its
+192-byte buffer to the file each time it fills, and the count comes before the
+last of those writes, the sync and the close.
 Both module-page budgets and thread-stack budgets remain enforced by the ledger.
 
 Consecutive identical normalized text within a game is suppressed, including
@@ -145,7 +147,8 @@ GameSentenceMiner's by its pinned `regex` 2026.7.19):
   half-width ｰ (U+FF70).
 - GameSentenceMiner counts every code point that is not punctuation, a symbol or
   a separator, and Rubi's characters are among them. It also counts the letters
-  and numbers of other scripts (é Я 한 ① Ⅳ ²), every combining mark (so ❤️, a
+  of other scripts (é Я 한), every number that is not a digit 0-9 (① Ⅳ ² ㊀,
+  Han ones too), every combining mark (so ❤️, a
   symbol and a variation selector, is 1), the control and format characters
   inside a line (its line breaks, `\t`, a CRLF's `\r`, a zero-width joiner)
   and the private-use and unassigned code points.
@@ -174,13 +177,19 @@ first. A gap of more than `--break-minutes` (5 by default) or a change of game
 is a break: it is not reading time, and the record before it gets none, since
 how long it was read is unknown. Characters per hour counts only the records
 that got a time; the totals count them all. A record in more than one copy
-counts once (by `uuid` and `given_identifier`, as GameSentenceMiner's import
-does). A record cut short by a power loss is skipped and counted, also when
-more records were appended after it; blank lines and the header lines of files
-joined together are ignored. A file that is not the writer's own bytes (Rubi's
-re-saved by a spreadsheet, or another tracker's ExStatic lines CSV) is read as
-plain CSV, and its lines are counted by the tool. 100,000 records (a 42 MB
-file) take about 2 s and 60 MB [measured on the host].
+counts once: by `uuid` and `given_identifier`, as GameSentenceMiner's import
+does, and another tracker's record (whose `given_identifier` can name just its
+game, as exSTATic's does) by those, its time and its line. A record cut short
+by a power loss is skipped and counted, also when more records were appended
+after it; blank lines and the header lines of files joined together are
+ignored. A file that is not the writer's own bytes (Rubi's re-saved by a
+spreadsheet, or another tracker's ExStatic lines CSV) is read as plain CSV: its
+`characters` cells are used where it has them, and the tool counts the other
+lines. A record whose time is not Unix seconds between 1970 and 3000 (another
+tracker's milliseconds, say) is skipped and counted, as GameSentenceMiner's
+import refuses it. A file that is not CSV, or has none of the five ExStatic
+columns, makes the tool stop with exit status 2 and say why. 100,000 records
+(a 42 MB file) take about 2 s and 60 MB [measured on the host].
 
 The totals count what was recorded: a line that types out slowly can be
 recorded twice, once part-way and once whole (see the duplicate text above), and
@@ -213,3 +222,17 @@ header has names stops at the first longer row (pandas' `read_csv` does, by
 default): add `,characters` to the end of the file's first line (on Linux,
 `sed -i '1s/$/,characters/' history.csv`), or move the file away on the Vita so
 that Rubi starts a new one with the new header.
+
+A power loss in a new file's very first append can cut its header short. The
+writer writes the header only into an empty file, so the next record then
+follows the cut on the first line. GameSentenceMiner's import then refuses the
+file, when the cut left less than `uuid,given_identifier,name,line,time,` (its
+first 37 bytes), or leaves out the record on the first line [checked: its
+import's header check and `DictReader` at `7a46a00`, every cut of the header];
+`tools/reading_stats.py` reads every record with Rubi's columns and says so. To
+import it whole, replace what comes before the first record (`"vita-` or
+`"psp-`) with this header line and a line break:
+
+```
+uuid,given_identifier,name,line,time,platform,title_id,engine,model,raw_line,scene,region_seq,monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,fb_width,fb_height,fb_pitch,fb_format,lines,recognized,frames,find_us,load_us,recognize_us,capture_us,captures,tears,region_sum,source,capture_memory,capture_bytes,strip_rows,workspace_bytes,resident_bytes,fallback,line_metrics,characters
+```

@@ -268,12 +268,14 @@ class Files(unittest.TestCase):
         data = a.read_bytes()
         first = data.index(b"\n") + 1
         second = data.index(b"\n", data.index(b"vjo-", first) + 1) + 1  # after the first record
+        header_only = b.read_bytes()[:b.read_bytes().index(b"\n") + 1]
         cases = {
             "blank lines": data[:second] + b"\n\r\n" + data[second:] + b"\n\n",
             "blank lines after the header": data[:first] + b"\n\n" + data[first:],
             "two files joined": data + b.read_bytes(),
             "two files joined, the second's BOM and CRLF header": data + b"\xef\xbb\xbf"
             + b.read_bytes().replace(b"characters\n", b"characters\r\n", 1),
+            "a header-only file and a blank line joined between them": data + header_only + b"\n" + b.read_bytes(),
         }
         for name, content in cases.items():
             path = self.dir / "edited.csv"
@@ -281,6 +283,12 @@ class Files(unittest.TestCase):
             report = rs.read_history([path])
             want = COUNTS[:5] if name.startswith("blank") else COUNTS
             self.assertEqual(([r.characters for r in report.records], report.incomplete), (want, 0), name)
+        # blank lines after the header, then a record cut short and the next append after it: the file is
+        # still read as the writer's bytes (as plain CSV, the cut record's open quote would take the next)
+        cut = data[:data.index(b"\n", data.index("待ってる".encode())) - 3]
+        path.write_bytes(cut[:first] + b"\n\n" + cut[first:] + b.read_bytes()[len(header_only):])
+        report = rs.read_history([path])
+        self.assertEqual(([r.characters for r in report.records], report.incomplete), (COUNTS[:2] + COUNTS[5:], 1))
 
     @need_writer
     def test_zeros_after_a_power_loss(self):
@@ -318,6 +326,94 @@ class Files(unittest.TestCase):
         self.assertEqual((report.duplicates, report.incomplete, report.stored), (1, 1, 0))
         self.assertEqual({r.game for r in report.records}, {"0f9d-11"})
 
+    def test_other_trackers_odd_rows(self):
+        """Plain CSV's own troubles: a row without the five columns, a cell csv refuses (over its field limit,
+        131,072 characters) and the rows after them; two lines at the same time; a column the rows leave out."""
+        path = self.dir / "lines.csv"
+        path.write_bytes(("uuid,given_identifier,name,line,time\n"
+                          "g1,Some VN,Some VN,一つ目,1792220400\n"
+                          "g1,Some VN,Some VN\n"                                       # short: incomplete
+                          "g1,Some VN,Some VN," + "長" * 200000 + ",1792220405\n"       # csv refuses it
+                          "g1,Some VN,Some VN,二つ目,1792220410\n"
+                          "g1,Some VN,Some VN,同時の文,1792220420\n"                    # same time, another line
+                          "g1,Some VN,Some VN,同時の別の文,1792220420\n").encode())
+        report = rs.read_history([path])
+        self.assertEqual([r.characters for r in report.records], [3, 3, 4, 6])
+        self.assertEqual((report.incomplete, report.duplicates), (2, 0))
+        # a header naming a column after the five that the rows leave out: they are whole all the same
+        path.write_bytes("uuid,given_identifier,name,line,time,note\ng2,VN,VN,最後,1792220400\n".encode())
+        report = rs.read_history([path])
+        self.assertEqual(([r.characters for r in report.records], report.incomplete), ([2], 0))
+
+    def test_times_that_are_not_unix_seconds(self):
+        """Milliseconds (another tracker's), a time past the year 3000, zero, a negative one, words, NaN and inf:
+        each record is skipped and counted, none stops the report."""
+        path = self.dir / "lines.csv"
+        times = ["1792220400500", "32503680000", "0", "-5", "soon", "nan", "inf"]
+        path.write_bytes(("uuid,given_identifier,name,line,time\n" + "".join(
+            f"g1,VN,VN,文{i},{t}\n" for i, t in enumerate(times)) + "g1,VN,VN,よし,1792220400\n").encode())
+        report = rs.read_history([path])
+        self.assertEqual(([r.characters for r in report.records], report.bad_times, report.incomplete), ([2], 7, 0))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(rs.main(["--utc", str(path)]), 0)
+        self.assertIn("1 file, 1 records (7 with a time that is not Unix seconds skipped)\n", out.getvalue())
+
+    @need_writer
+    def test_stored_counts_are_the_files(self):
+        """The file's count is the record's, also when this tool would count otherwise (it says how many
+        differ); a cell that cannot be a line's count (5,000 digits) is not one, and the line is counted."""
+        path = self.dir / "history.csv"
+        write_history(path, RECORDS[:3])
+        lines = path.read_bytes().split(b"\n")
+        lines[1] = lines[1][:lines[1].rindex(b",") + 1] + b"99"
+        lines[2] = lines[2][:lines[2].rindex(b",") + 1] + b"9" * 5000
+        path.write_bytes(b"\n".join(lines))
+        report = rs.read_history([path])
+        self.assertEqual([r.characters for r in report.records], [99] + COUNTS[1:3])
+        self.assertEqual((report.stored, report.mismatched), (2, 1))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(rs.main([str(path)]), 0)
+        self.assertIn("Characters: 2 records carry their count, 1 counted here; 1 stored counts differ", out.getvalue())
+
+    @need_writer
+    def test_records_at_the_same_time(self):
+        """Two of Rubi's records with one time (their given_identifiers differ) are two records."""
+        path = self.dir / "history.csv"
+        write_history(path, [(A, 0, "同じ時の文", 5), (A, 0, "もう一つ", 4)])
+        report = rs.read_history([path])
+        self.assertEqual(([r.characters for r in report.records], report.duplicates), ([5, 4], 0))
+
+    @need_writer
+    def test_a_cut_header(self):
+        """A power loss can cut a new file's first append in its header; the writer writes the header only into
+        an empty file, so the next record follows the cut on the same line. At every cut, that record and the
+        ones after it are read, with Rubi's columns; and the same for a file 0.8.0 began, with its records."""
+        whole = self.dir / "whole.csv"
+        write_history(whole, RECORDS[:1])
+        header = whole.read_bytes()[:whole.read_bytes().index(b"\n") + 1]
+        self.assertEqual(header, rs.HEADER_LINE)
+        path = self.dir / "history.csv"
+        for cut in range(1, len(header)):
+            path.write_bytes(header[:cut])
+            write_history(path, RECORDS[1:3])
+            report = rs.read_history([path])
+            got = ([r.characters for r in report.records], report.stored, report.incomplete, report.cut_headers)
+            self.assertEqual(got, (COUNTS[1:3], 2, 0, 1), cut)
+        old = FIXTURE.read_bytes()
+        old_header, old_records = old[:old.index(b"\n") + 1], old[old.index(b"\n") + 1:]
+        for cut in range(1, len(old_header)):
+            path.write_bytes(old_header[:cut] + old_records)
+            report = rs.read_history([path])
+            got = ([r.characters for r in report.records], report.stored, report.incomplete, report.cut_headers)
+            self.assertEqual(got, (COUNTS, 0, 0, 1), cut)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(rs.main([str(path)]), 0)
+        self.assertIn("\nA header cut short (a power loss in a new file's first append) in 1 file: read with Rubi's "
+                      "columns", out.getvalue())
+
     @need_writer
     def test_resaved_by_a_spreadsheet(self):
         """Rubi's file re-saved by a spreadsheet (its quotes only where needed, CRLF) is read as plain CSV:
@@ -327,7 +423,7 @@ class Files(unittest.TestCase):
         rows = list(csv.reader(io.StringIO(path.read_text(encoding="utf-8"), newline="")))
         out = io.StringIO(newline="")
         csv.writer(out, lineterminator="\r\n").writerows(rows)
-        (self.dir / "resaved.csv").write_text(out.getvalue(), encoding="utf-8", newline="")
+        (self.dir / "resaved.csv").write_bytes(out.getvalue().encode("utf-8"))  # as is: CRLF (3.9 has no newline=)
         self.assertNotIn(b'"vita-', (self.dir / "resaved.csv").read_bytes())  # no longer the writer's quotes
         report = rs.read_history([self.dir / "resaved.csv"])
         self.assertEqual(([r.characters for r in report.records], report.stored, report.incomplete),
@@ -360,7 +456,36 @@ class Files(unittest.TestCase):
             bad.write_bytes(b"")
             self.assertEqual(rs.main([str(bad)]), 2)
             self.assertEqual(rs.main([str(self.dir / "missing.csv")]), 2)
+            self.assertEqual(rs.main([str(self.dir)]), 2)  # a directory
         self.assertIn("not a Rubi history.csv (no uuid, given_identifier, name, line, time column)", err.getvalue())
+
+    def test_binary_files(self):
+        """A picture, a zip, random bytes (a NUL, a lone CR) and a file with no line break exit 2 with a message,
+        never a traceback."""
+        rnd = random.Random(233)
+        files = {"a.jpg": (ROOT / "docs/promo/media/stills/02-7.8.jpg").read_bytes(),
+                 "a.png": (ROOT / "docs/img/overlay-icon-candidates.png").read_bytes(),
+                 "a.zip": b"PK\x03\x04" + bytes(rnd.randrange(256) for _ in range(4000)),
+                 "nul.csv": b"uuid,given_identifier,name,line,time\0\n",
+                 "cr.csv": b"uu\rid,x\n",
+                 "long.csv": b"x" * 300000}
+        for seed in range(20):
+            files[f"random{seed}.bin"] = bytes(rnd.randrange(256) for _ in range(rnd.randrange(1, 3000)))
+        for name, content in files.items():
+            (self.dir / name).write_bytes(content)
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(rs.main([str(self.dir / name)]), 2, name)
+            self.assertRegex(err.getvalue(), r"^reading_stats: .*: (not a Rubi history\.csv|empty file)", name)
+
+    @need_writer
+    def test_old_mac_line_endings(self):
+        """A copy whose lines end in CR alone (an old Mac format) is refused with a message that says so."""
+        path = self.dir / "history.csv"
+        write_history(path, RECORDS[:3])
+        (self.dir / "cr.csv").write_bytes(path.read_bytes().replace(b"\n", b"\r"))
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(rs.main([str(self.dir / "cr.csv")]), 2)
+        self.assertIn("its lines end in a carriage return alone", err.getvalue())
 
 
 class Time(unittest.TestCase):

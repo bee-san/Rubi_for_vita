@@ -259,6 +259,7 @@ static void test_characters_column(void)
     }
     TEST_CHECK(vjo_reading_characters("", 0) == 0);
     TEST_CHECK(vjo_reading_characters("あい", 3) == 1); /* only len bytes: い is cut */
+    TEST_CHECK(vjo_reading_characters("あ\0い", 7) == 2); /* len bytes, not a string: a NUL counts nothing */
     /* The line is the game worker's normalised text, in which the full-width
      * forms are ASCII (core/textnorm.h): they count as the letters they are. */
     char fw[64] = "ＯＫ！１２３ＡＢｃ";

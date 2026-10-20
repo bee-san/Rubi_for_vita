@@ -23,11 +23,14 @@ record.
 
 A record cut short (power lost while it was written: no line break at the file's end, or fewer
 cells than Rubi writes), even when more records were appended after it, is skipped and counted;
-blank lines and repeated header lines (files joined together) are ignored. A file that is not the
-writer's own bytes, such as Rubi's re-saved by a spreadsheet or another tracker's ExStatic lines CSV
-(uuid, given_identifier, name, line, time), is read as plain CSV, each line counted by this tool.
+blank lines and repeated header lines (files joined together) are ignored. A file whose first
+append was cut short in its header (the next record follows the cut) is read with Rubi's columns.
+A file that is not the writer's own bytes, such as Rubi's re-saved by a spreadsheet or another
+tracker's ExStatic lines CSV (uuid, given_identifier, name, line, time), is read as plain CSV: the
+characters cells it has are used, and this tool counts the other lines. A record whose time is not
+Unix seconds between 1970 and 3000 (another tracker's milliseconds, say) is skipped and counted.
 The output holds numbers and game names only, never dialogue text. Exit status: 0, or 2 when a
-file has no ExStatic columns.
+file cannot be read as an ExStatic lines CSV (no such columns, or a first line that is not CSV).
 """
 from __future__ import annotations
 
@@ -53,6 +56,17 @@ HEADER_080 = (
     "region_sum,source,capture_memory,capture_bytes,strip_rows,workspace_bytes,resident_bytes,"
     "fallback,line_metrics").split(",")
 REQUIRED = ("uuid", "given_identifier", "name", "line", "time")
+# The header this writer writes (0.8.0's columns, then `characters`): what a file whose first append was
+# cut short in its header is read with.
+HEADER = HEADER_080 + ["characters"]
+HEADER_LINE = (",".join(HEADER) + "\n").encode()
+# A time is Unix seconds from 1970 to before 3000 (Rubi's are this century): datetime places those on a
+# day on every system, and another tracker's milliseconds are not taken for seconds (as in
+# GameSentenceMiner's import, which refuses them too).
+TIME_MAX = 32503680000.0  # 3000-01-01T00:00:00Z
+# The most of a file's first line read as its header: Rubi's is 396 bytes, and after a cut header the next
+# record's first line follows it (under 10 KB). A file with no line break is not read whole for it.
+HEADER_READ = 1 << 20
 
 # core/utf.c's japanese_letters: Unicode 17.0's Han, Hiragana and Katakana letters (and the
 # combining dakuten), first and last code point. tools/tests/test_reading_stats.py checks that the
@@ -122,6 +136,8 @@ class Report:
     incomplete: int = 0
     stored: int = 0        # rows whose count came from the file
     mismatched: int = 0    # of those, counts this tool's count disagrees with
+    bad_times: int = 0     # records skipped for a time that is not Unix seconds
+    cut_headers: int = 0   # files whose header a power loss cut short
 
 
 class HistoryError(Exception):
@@ -237,12 +253,27 @@ def read_file(path: Path, report: Report, seen: set, names: dict) -> None:
     except OSError as e:
         raise HistoryError(f"{path}: {e.strerror or e}") from e
     with f:
-        first = f.readline()
+        first = f.readline(HEADER_READ)
         if first.startswith(b"\xef\xbb\xbf"):
             first = first[3:]
         if not first.strip():
             raise HistoryError(f"{path}: empty file")
-        header = [h.strip() for h in next(csv.reader([first.decode("utf-8", errors="replace").rstrip("\r\n")]))]
+        data = None
+        start = RECORD_START.search(first)
+        if start and start.start() and HEADER_LINE.startswith(first[:start.start()]):
+            # A power loss cut the file's first append short in its header, and the writer, which writes the
+            # header only into an empty file, appended the next record right after the cut.
+            header, data = HEADER, first[start.start():]
+            report.cut_headers += 1
+        else:
+            text = first.decode("utf-8", errors="replace").rstrip("\r\n")
+            try:
+                header = [h.strip() for h in next(csv.reader([text]))]
+            except csv.Error as e:
+                if "\r" in text and all(name in text.split("\r", 1)[0] for name in REQUIRED):
+                    raise HistoryError(f"{path}: its lines end in a carriage return alone (an old Mac format): "
+                                       "save it with LF or CRLF line endings") from e
+                raise HistoryError(f"{path}: not a Rubi history.csv (its first line is not CSV: {e})") from e
         missing = [name for name in REQUIRED if name not in header]
         if missing:
             raise HistoryError(f"{path}: not a Rubi history.csv (no {', '.join(missing)} column)")
@@ -256,9 +287,10 @@ def read_file(path: Path, report: Report, seen: set, names: dict) -> None:
             count_col = len(HEADER_080)
         # every cell Rubi writes up to line_metrics, or the columns another file names
         cells = len(HEADER_080) if rubi else max(col[name] for name in REQUIRED) + 1
-        data = f.readline()
-        while data and not data.strip():
+        if data is None:
             data = f.readline()
+            while data and not data.strip():
+                data = f.readline()
         lines = itertools.chain([data], f)
         if rubi and RECORD_START.search(data):
             for chunk in split_records(lines):
@@ -273,24 +305,27 @@ def read_file(path: Path, report: Report, seen: set, names: dict) -> None:
 
 def add_row(report: Report, seen: set, names: dict, col: dict, count_col, row) -> None:
     """Adds one whole record."""
+    uuid, ident, when = row[col["uuid"]].strip(), row[col["given_identifier"]].strip(), row[col["time"]].strip()
+    if not uuid or not ident or not when:
+        report.incomplete += 1
+        return
     try:
-        t = float(row[col["time"]])
+        t = float(when)
     except ValueError:
         t = math.nan
-    uuid, ident = row[col["uuid"]].strip(), row[col["given_identifier"]].strip()
-    if not uuid or not ident or not math.isfinite(t) or t <= 0:
-        report.incomplete += 1
+    if not 0 < t < TIME_MAX:  # NaN too
+        report.bad_times += 1
         return
     # Rubi's given_identifier names one record; another tracker's may name a game (exSTATic's does),
     # so a record of theirs is also known by its time and text.
-    key = (uuid, ident) if RUBI_ID.fullmatch(ident) else (uuid, ident, row[col["time"]].strip(), row[col["line"]])
+    key = (uuid, ident) if RUBI_ID.fullmatch(ident) else (uuid, ident, when, row[col["line"]])
     if key in seen:
         report.duplicates += 1
         return
     seen.add(key)
     counted = characters(row[col["line"]])
     cell = row[count_col].strip() if count_col is not None and count_col < len(row) else ""
-    stored = cell.isascii() and cell.isdigit()
+    stored = cell.isascii() and cell.isdigit() and len(cell) <= 9  # a line holds at most 4,095 characters
     if stored:
         report.stored += 1
         report.mismatched += int(cell) != counted
@@ -360,12 +395,17 @@ def render(report: Report, break_minutes: float, utc: bool) -> str:
         skipped.append(f"{report.duplicates:,} in more than one file counted once")
     if report.incomplete:
         skipped.append(f"{report.incomplete:,} incomplete skipped")
+    if report.bad_times:
+        skipped.append(f"{report.bad_times:,} with a time that is not Unix seconds skipped")
     out = [f"{report.files} file{'s' if report.files != 1 else ''}, {total.lines:,} records"
-           + (f" ({'; '.join(skipped)})" if skipped else ""),
-           f"Characters: {report.stored:,} records carry their count, {total.lines - report.stored:,} counted here"
-           + (f"; {report.mismatched:,} stored counts differ from this tool's" if report.mismatched else ""),
-           f"Reading time: a gap of more than {break_minutes:g} minutes between two records, or a change of game,"
-           " is a break", ""]
+           + (f" ({'; '.join(skipped)})" if skipped else "")]
+    if report.cut_headers:
+        out.append(f"A header cut short (a power loss in a new file's first append) in {report.cut_headers:,} "
+                   f"file{'s' if report.cut_headers != 1 else ''}: read with Rubi's columns (docs/ocr-history.md)")
+    out += [f"Characters: {report.stored:,} records carry their count, {total.lines - report.stored:,} counted here"
+            + (f"; {report.mismatched:,} stored counts differ from this tool's" if report.mismatched else ""),
+            f"Reading time: a gap of more than {break_minutes:g} minutes between two records, or a change of game,"
+            " is a break", ""]
     out += table([("All games", total)])
     out += ["", "By game"]
     out += table([(f"{names[g]} ({g})", t) for g, t in sorted(games.items(), key=lambda kv: -kv[1].characters)])
@@ -389,6 +429,8 @@ def main(argv=None) -> int:
         print(f"reading_stats: {e}", file=sys.stderr)
         return 2
     credit_time(report.records, args.break_minutes * 60.0)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")  # a console that cannot show a game's name shows "?"
     sys.stdout.write(render(report, args.break_minutes, args.utc))
     return 0
 
