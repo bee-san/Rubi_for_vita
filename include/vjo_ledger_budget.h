@@ -161,8 +161,17 @@
  * fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main 1de7b67 and this change]. At
  * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
  * which would still need the page. In the game's partition, never SceShell's. Both builds now have the same
- * budget. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
+ * budget.
+ * Raised from 98,304 B by one text and one data page for API 31's text selection (docs/native-hooks.md: which
+ * text a job shows, OCR's or a native hook stream's): core/hook_select.c (1,714 B of text and rodata at -Os;
+ * its comparison's 2,562 B of arrays are on the worker's stack only while it compares) and the job path in
+ * game_ocr/main.c, whose static snapshot of the streams (one stream's copy, 548 B, the texts as the job
+ * began, 2,048 B, the candidates, 400 B, and the selection's state) is 3,064 B of .bss. Text 81,644 -> 85,100
+ * B debug and 80,344 -> 83,848 B normal at -O2 for hook_select.c, data/bss 15,752 -> 18,816 B both [measured:
+ * the build log's module rows, feat/native-hooks a8fb6cf and hooks/select with host/tests/hooks_none.c as the
+ * engine: the engine (game_ocr/hooks.c, its stream slots) is not counted here and raises it again]. In the
+ * game's partition, never SceShell's. */
+#define VJO_BUDGET_WORKER_MODULE_PAGES 106496u
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game

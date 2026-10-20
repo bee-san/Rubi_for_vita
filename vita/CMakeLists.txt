@@ -298,8 +298,10 @@ if(VJO_WITH_VOCR)
     # and the arena it encodes into
     ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
-  # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time
+  # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
+  # For size, as the worker's control code is: 1,714 B of text and rodata at -Os, 2,240 B at -O2.
   target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
+  set_source_files_properties(${ROOT}/core/hook_select.c PROPERTIES COMPILE_OPTIONS "-Os")
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
   # The worker's control code (a job's request, memory checks and ladder, one call
