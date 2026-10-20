@@ -47,7 +47,7 @@ set(CORE_SRC
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
-  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/payload.c)
+  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/payload.c core/hook_select.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl vjo_taihen_parser)
@@ -283,6 +283,13 @@ target_include_directories(vjo-text-join-tests PRIVATE third_party/acutest/inclu
 target_link_libraries(vjo-text-join-tests vjo_host)
 target_compile_options(vjo-text-join-tests PRIVATE -Wall -Wextra)
 add_test(NAME text_join COMMAND vjo-text-join-tests)
+# Native hooks (docs/native-hooks.md): which text a job shows, OCR's or a hook stream's (core/hook_select.h):
+# the similarity of a stream's text within OCR's, against a brute-force reference, and the lock job by job.
+add_executable(vjo-hook-select-tests host/tests/test_hook_select.c)
+target_include_directories(vjo-hook-select-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-hook-select-tests vjo_host)
+target_compile_options(vjo-hook-select-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_select COMMAND vjo-hook-select-tests)
 add_executable(vjo-text-rows-tests host/tests/test_text_rows.c)
 target_include_directories(vjo-text-rows-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-text-rows-tests vjo_host)
