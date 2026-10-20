@@ -403,6 +403,7 @@ static void make_shot_jpeg(void)
 }
 static int shot_jobs, shot_rc, shot_submit_rc, shot_no_file, slot_busy, slot_begins, slot_ends, shot_close_overlay;
 static int shot_reads, shot_job_rc;
+static uint32_t shot_speed; /* API 32: the last shot's speed word (VJO_GAME_OCR_S_TRIM or 0) */
 static uint32_t shot_seq;
 static char shot_id[VJO_QUEUE_ID_SIZE];
 int vjo_game_job_begin(int (*stop)(void *), int64_t wait_us)
@@ -430,8 +431,9 @@ int vjoOcrSubmit(const VjoGameOcrRequest *r)
     char path[256];
     FILE *f;
     TEST_CHECK(slot_begins == slot_ends + 1); /* in the game worker's slot */
-    TEST_CHECK(r->size == sizeof(*r) && r->flags == VJO_GAME_OCR_F_SHOT && !r->tiers && !r->speed && !r->model[0] &&
-               !r->model_dir[0] && strlen(r->shot) == 32 && vjo_queue_valid_id(r->shot));
+    TEST_CHECK(r->size == sizeof(*r) && r->flags == VJO_GAME_OCR_F_SHOT && !r->tiers && !(r->speed & ~VJO_GAME_OCR_S_TRIM) &&
+               !r->model[0] && !r->model_dir[0] && strlen(r->shot) == 32 && vjo_queue_valid_id(r->shot));
+    shot_speed = r->speed;
     if (shot_submit_rc)
         return shot_submit_rc;
     memcpy(shot_id, r->shot, sizeof(shot_id));
@@ -480,6 +482,11 @@ int vjoOcrRead(uint32_t seq, VjoGameOcrResult *out)
     out->n_steps = 1;
     out->step[0].id = VJO_GSTEP_SHOT;
     out->step[0].rc = shot_job_rc;
+    if (shot_speed & VJO_GAME_OCR_S_TRIM) { /* API 32: a PSP game's frame shown 1x, its bars trimmed */
+        out->n_steps = 2;
+        out->step[1] = (VjoGameOcrStep){.id = VJO_GSTEP_TRIM, .kind = 1, .arg = 1, .bytes = 238u << 16 | 134u,
+                                        .sum = 484u << 16 | 276u, .us = 2100};
+    }
     if (shot_close_overlay == 2 && shot_reads == 1) {
         __atomic_store_n(&g_view.open, 0, __ATOMIC_RELEASE);
         return 1; /* JPEG frozen; file still being written */
@@ -493,6 +500,7 @@ static void shot_reset(void)
 {
     shot_jobs = shot_rc = shot_submit_rc = shot_no_file = slot_busy = slot_begins = slot_ends = 0;
     shot_close_overlay = shot_reads = shot_job_rc = jpg_opens = 0;
+    shot_speed = 0;
     shot_id[0] = '\0';
 }
 
@@ -1535,6 +1543,7 @@ static void test_enter_saves_the_screenshot_beside_the_card(void)
     VjoConfig d;
     vjo_config_defaults(&d);
     TEST_CHECK(d.anki_screenshot == 1); /* on unless anki_screenshot = off */
+    TEST_CHECK(d.anki_screenshot_trim_bars == 1); /* API 32: on unless anki_screenshot_trim_bars = off */
     /* the same card without its screenshot first: the arena peak a screenshot may add to is this one's */
     reset();
     enter(0);
@@ -1552,6 +1561,7 @@ static void test_enter_saves_the_screenshot_beside_the_card(void)
     TEST_CHECK((json = queue_file(id, "json", &len)) && strstr(json, "\"picture\":true"));
     TEST_CHECK((jpg = queue_file(id, "jpg", &len)) && len == sizeof(shot_jpeg) && !memcmp(jpg, shot_jpeg, len));
     TEST_CHECK(shot_jobs == 1 && shot_reads == 1 && slot_begins == 1 && slot_ends == 1);
+    TEST_CHECK(shot_speed == VJO_GAME_OCR_S_TRIM); /* API 32: its black bars trimmed (the default) */
     TEST_CHECK(!heap_live && heap_allocs == 1 && heap_frees == 1 && heap_last == ANKI_TEXT_MEM);
     printf("measure: save with a screenshot: arena peak %u of %u (%u without it)\n", (unsigned)last_peak,
            (unsigned)ANKI_TEXT_MEM, (unsigned)text_peak);
@@ -1564,6 +1574,7 @@ static void test_enter_saves_the_screenshot_beside_the_card(void)
      * build includes the detailed screenshot and record metadata too. */
 #if VJO_DEBUG
     TEST_CHECK(logged("anki: screenshot rc=0 960x544 q70 try 1: 56934 B; block 450560 B") && logged(" + .jpg\n"));
+    TEST_CHECK(logged("anki: screenshot bars 1 how 1: picture 484x276 at 238,134 of 960x544; scan 2100 us\n"));
 #else
     TEST_CHECK(logged("capture/encode 0 ms, write 0 ms; io=0x00000000") &&
                !logged(" + .jpg\n") && logged("anki: save rc=0, "));
@@ -1579,6 +1590,16 @@ static void test_enter_saves_the_screenshot_beside_the_card(void)
     g_view.list_seq = 7;
     enter(0);
     TEST_CHECK(!strcmp(g_view.anki_status, "Already queued") && files_ending(".json") == 1 && shot_jobs == 1);
+    finish();
+    /* API 32: with anki_screenshot_trim_bars = off the shot asks for the whole frame (no speed bit), and the
+     * debug build's log has no bars line */
+    reset();
+    screenshots_on();
+    cfg.anki_screenshot_trim_bars = 0;
+    reconfigure();
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && shot_jobs == 1 && shot_speed == 0);
+    TEST_CHECK(!logged("anki: screenshot bars "));
     finish();
 }
 

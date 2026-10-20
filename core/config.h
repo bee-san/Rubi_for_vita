@@ -104,6 +104,10 @@ typedef struct {
      * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
      * text (a hidden text box, a CG screen) returns no line. Last, as above. */
     int ocr_text_gate;        /* 0/1 */
+    /* Anki (API 32): a card's screenshot is of the picture between the frame's black bars, a
+     * letterbox or pillarbox the game worker finds as it reads the frame (on by default;
+     * core/shottrim.h, docs/anki.md "Black bars"). Last, as above. */
+    int anki_screenshot_trim_bars; /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

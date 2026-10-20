@@ -148,6 +148,12 @@ screenshot's reason only). One edge case to watch: the kernel's one worker threa
 (#138, at most 500 ms). A game started while a slow save still runs can start without OCR; its
 `worker for` line in `kernel.txt` then says `no answer from the kernel worker in 500 ms`, and a
 restart of the game loads the worker. See [anki.md](anki.md).
+**Trim black bars** (`anki_screenshot_trim_bars = on`, the default; API 32): a card from a Vita game
+should have the whole screen, as before; one from a PSP game shown smaller than the screen (Adrenaline's
+screen size under 2.0×) only the game's picture and 2 px of black around it. In the debug build's
+`log.txt`, each screenshot's `anki: screenshot bars K how H: picture W×H at X,Y of 960x544; scan N us`
+line says what it found (K 1 trimmed; H 2 read again) and the `anki: screenshot rc=0 ...` line before it
+the whole time: note both, for a Vita game and for a PSP game at 1× and 2× ([anki.md](anki.md#black-bars)).
 
 ## What it tells us
 - **The capture in the game:** whether the display hook can write the game's own memory, per

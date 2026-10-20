@@ -1,5 +1,6 @@
 /* The Rubi app's Anki page: card mining on/off, the cards' screenshots
- * on/off (anki_screenshot, API 23), and the export of the queued cards (or all
+ * on/off (anki_screenshot, API 23) and their black bars trimmed or kept
+ * (anki_screenshot_trim_bars, API 32), and the export of the queued cards (or all
  * of them) as Lapis notes in a new .apkg file under
  * ux0:data/VitaJPOverlay/anki/ (settings/anki_export.h), which Anki imports
  * on any computer or phone; a card's screenshot goes into its Picture field.
@@ -22,6 +23,7 @@ typedef struct {
     void (*footer)(int y, int height, int text_y, int lines, const char *message, int error, const char *controls);
     void (*header)(void);
     unsigned white, dim, accent, off;
+    unsigned track; /* the scroll bar's track, a card's colour (API 32: the five rows scroll) */
     const VjoButtons *buttons; /* the console's enter and cancel buttons */
 } VjoAnkiUi;
 

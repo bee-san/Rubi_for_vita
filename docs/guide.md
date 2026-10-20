@@ -685,7 +685,11 @@ with a JPEG of the game's screen beside it (`anki_screenshot = on`, the default:
 960 × 544 at quality 70, 55.6 KB for the median of 294 Vita screens, 46.6 KB of
 304 PSP ones). The game worker reads the frame and encodes it in the game's
 memory (a 450,560 B block while it runs), and the kernel writes it to the memory
-card; SceShell holds none of it ([the screenshot](anki.md#the-screenshot)).
+card; SceShell holds none of it ([the screenshot](anki.md#the-screenshot)). With
+`anki_screenshot_trim_bars = on`, the default, the JPEG leaves out the frame's black
+letterbox or pillarbox bars (a PSP game shown smaller than the screen: at 1× a 484 × 276
+picture), found as the rows are read, with no copy of the frame
+([black bars](anki.md#black-bars)).
 The cards survive restarts and need no network. Each record (version 4) keeps everything known at the
 press: the word, its reading and furigana, the shown entry and its
 dictionary's name, the other dictionaries' entries, the whole recognized text
@@ -694,7 +698,8 @@ the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
 The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
-ON/OFF, **Export cards (N queued)** and **Export all cards**. An export writes the cards as
+ON/OFF, **Trim black bars** ON/OFF, **Export cards (N queued)** and **Export all cards**
+(five rows, which scroll a row at a time). An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into
@@ -729,8 +734,9 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 98,304 B of module pages and its 36,864 B thread stack and TLS from its
-start, homebrew included (ON by the default): an app that fails to start with them turns OFF
+holds the worker's 98,304 B of module pages (102,400 B in the debug build since API 32's
+black bars) and its 36,864 B thread stack and TLS from its start, homebrew included (ON by the
+default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
 started from its own bubble runs in a PSP emulator process of its own, under the

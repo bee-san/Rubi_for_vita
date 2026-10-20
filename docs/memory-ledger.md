@@ -25,11 +25,11 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   shell pages                         217,088      237,568    1,048,576      811,008
   shell paf                             8,192      225,280      985,088      759,808
   kernel                              151,552      241,664      241,664            0
-  game                                135,168   10,567,680   10,567,680            0
+  game                                139,264   10,567,680   10,567,680            0
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (40,484->40,960 + 77,636->77,824)
-      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (98,732->102,400 + 73,272->73,728)
-      VitaJPOverlay_OCR          98,304 B of     98,304 B declared (81,644->81,920 + 15,720->16,384)
+      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (99,004->102,400 + 73,288->73,728)
+      VitaJPOverlay_OCR         102,400 B of    102,400 B declared (82,860->86,016 + 15,720->16,384)
 ```
 
 Every Shell configuration is the shipped one since Google Lens and the Hachidori relay were
@@ -466,7 +466,7 @@ text-presence gate, both builds of main `1de7b67` and that change]
 |---|---:|---:|---|
 | `VitaJPOverlay_Shell.suprx` | 176,128 B (100,484 + 69,828) | 163,840 B (90,012 + 69,756) | 3 SceShell pages fewer |
 | `VitaJPOverlay_Kernel.skprx` | 118,784 B (40,040 + 77,672) | 114,688 B (35,900 + 75,984) | 1 page of the kernel pool fewer |
-| `VitaJPOverlay_OCR.suprx` | 98,304 B (81,644 + 15,720) | 98,304 B (80,344 + 15,720) | the same pages (one budget for both since #124; the normal build's raised for API 26's gate) |
+| `VitaJPOverlay_OCR.suprx` | 102,400 B (82,860 + 15,720) | 98,304 B (81,592 + 15,720) | 1 page of the game's partition fewer (the same pages from #124 until API 32's black bars) |
 
 At main `3805a13` the normal Shell's text is 90,768 B in 94,208 B of pages (3,440 B of room); its
 data/bss has 3,740 B. On main `3aa08a6` it is 91,016 B of text (#140), and #132's VjoNet stack paint and check make it
@@ -516,7 +516,18 @@ weights are a file in `ocr/`, not built in. The debug worker keeps its 98,304 B 
 broker's gate file), the same pages [measured: the build log's module rows, both builds of main `1de7b67` and API 26,
 VitaSDK gcc 15.2.0; main `b7fd816` changes docs only]. The gate's arena (35,529 B at 960×544) takes scratch the
 finder leaves free: no job's workspace grows. The game's permanent figure is the ledger's own (135,168 B in the
-debug build's table above).
+debug build's table until API 32).
+API 32, the Anki screenshot's black bars ([anki.md](anki.md#black-bars)), on main `44d4e8d`: the worker's text
+81,644 → 82,860 B (debug) and 80,344 → 81,592 B (normal), data/bss 15,720 B in both: `core/shottrim.c` (the scan,
+at `-Os`: 592 B) and `game_ocr/main.c`'s passes (`shot_pass`: the first rows read for the guess, the picture's
+sub-rectangle encoded from the strip, the rows below scanned, a frame read again when its rows come to another
+picture). The debug worker takes one more text page, 98,304 → 102,400 B; the normal one keeps its pages, with 328 B
+of text room. So the game's permanent figure is 139,264 B in the debug build and 135,168 B in the normal one, and no
+pool's worst case moves: the screenshot's block is still 450,560 B (the trimmed picture is a sub-rectangle of the
+strip, nothing copied). The Shell 98,732 → 99,004 and 88,348 → 88,436 B of text (the request's bit, the debug
+log's bars line, `anki_screenshot_trim_bars` in the config parser) and 73,272 → 73,288 and 73,280 → 73,288 B of
+data/bss (`VjoConfig`'s field in its copies), the same pages; the kernel the same bytes of text and data
+[measured: the build log's module rows, both builds of main `44d4e8d` and of this change, CI's container].
 API 24 (the kernel's full-frame capture removed): the normal kernel 35,900 → 33,840 B of text and
 75,984 → 75,896 B of data/bss in its 114,688 B, the normal Shell 90,012 → 89,924 B of text in its
 163,840 B (188 B of room in its text pages), and the normal ledger's kernel worst case 221,184 B

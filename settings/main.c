@@ -262,7 +262,7 @@ static void read_buttons(void)
 }
 
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
-                                  WHITE, DIM, ACCENT, OFF, &buttons};
+                                  WHITE, DIM, ACCENT, OFF, CARD, &buttons};
 
 static void rect(int x, int y, int width, int height, unsigned color) { vita2d_draw_rectangle(x, y, width, height, color); }
 static void hints_row(const char *controls) { wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls); }

@@ -63,7 +63,8 @@
  * (core/jpegsw.h) and has the kernel's worker thread write it, a VJO_GAME_OCR_SHOT_CHUNK
  * at a time, to VJO_GAME_OCR_SHOT_DIR/<shot>.jpg (vjoOcrShotWrite, vjoOcrShotSave): the
  * card's screenshot, beside its record. A shot recognizes nothing, opens no model and
- * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed. */
+ * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed but
+ * (API 32) VJO_GAME_OCR_S_TRIM. */
 #define VJO_GAME_OCR_F_SHOT 0x4000u
 #define VJO_GAME_OCR_F_ALL 0xFFFF7FFFu
 /* The shot's file: the Anki queue (core/anki_queue.h VJO_QUEUE_DIR; a host test checks the
@@ -93,6 +94,11 @@
  * bit left. */
 #define VJO_GAME_OCR_S_GATE 0x10u
 #define VJO_GAME_OCR_S_ALL 0x1Fu
+/* API 32, bit 5, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
+ * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
+ * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows. */
+#define VJO_GAME_OCR_S_TRIM 0x20u
+#define VJO_GAME_OCR_S_SHOT_ALL VJO_GAME_OCR_S_TRIM
 #define VJO_PACE_SLOW_US 25000 /* a frame gap over 25 ms: a dropped frame at 60 fps */
 
 typedef struct {
@@ -225,9 +231,10 @@ enum {
                             rc the longest gap (us), bytes their sum (us), sum the gaps over
                             VJO_PACE_SLOW_US; and since the job before: us how many frames, main their
                             sum, cdram the longest gap, phycont the gaps over VJO_PACE_SLOW_US */
-    VJO_GSTEP_SHOT,      /* API 23, a shot's encoding, one per try: kind the JPEG quality, arg the try (1-3),
-                            rc 0 or why it stopped (VJO_E_TOO_LARGE: over VJO_GAME_OCR_SHOT_MAX, the next try
-                            encodes a lower quality), bytes the JPEG's, sum the strips read, us the try */
+    VJO_GSTEP_SHOT,      /* API 23, a shot's encoding, one per try: kind the JPEG quality, arg the try (1-3; API 32:
+                            1-4, a frame whose bars came to another picture than its first rows' read again), rc 0
+                            or why it stopped (VJO_E_TOO_LARGE: over VJO_GAME_OCR_SHOT_MAX, the next try encodes a
+                            lower quality), bytes the JPEG's, sum the strips read, us the try */
     VJO_GSTEP_SAVE,      /* API 23, a shot's file: kind the chunks written, rc 0 or the kernel's error,
                             bytes written, us the writes and the save */
     VJO_GSTEP_GATE,      /* API 26, the text-presence gate (VJO_GAME_OCR_S_GATE), once per job (its last try)
@@ -237,6 +244,12 @@ enum {
                             score + 129 (0..256) | its threshold + 129 << 16 | VJO_GLM_READ (its weights were
                             read from the card in this job), sum the rows it read, us its time (its share of the
                             finder's pass and its decision) */
+    VJO_GSTEP_TRIM,      /* API 32, a shot's black bars (VJO_GAME_OCR_S_TRIM), once: kind VJO_TRIM_* of
+                            core/shottrim.h (0 no bars, 1 trimmed, 2 kept whole: bars that frame no centred
+                            picture, or a black band over 3/10 of the frame at its top), arg how (0 decided by the
+                            first rows, 1 the first rows' guess, every row checked, 2 every row came to another
+                            picture: read again), bytes = the picture's x << 16 | y, sum = its width << 16 | height
+                            (the JPEG's), us the scan's time */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */

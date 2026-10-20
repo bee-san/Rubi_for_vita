@@ -52,6 +52,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->stick_lookup_ms = 200; /* core/stick_cursor.h VJO_STICK_CURSOR_REST_MS */
     c->log_file = 1; /* log.txt is on unless log_file = off */
     c->anki_screenshot = 1; /* a card keeps a JPEG of the game's screen unless anki_screenshot = off */
+    c->anki_screenshot_trim_bars = 1; /* its black bars trimmed unless anki_screenshot_trim_bars = off (docs/anki.md) */
     c->ocr_text_gate = VJO_TEXT_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Text-presence gate" */
 }
 
@@ -149,7 +150,10 @@ const char *vjo_config_default_text(void)
            "; queue as a Lapis .apkg file for Anki (docs/anki.md). off: enter does nothing.\n"
            "anki_mining = off\n"
            "; on: each card keeps a JPEG of the game's screen (about 60 KB) in its Picture\n"
-           "anki_screenshot = on\n";
+           "anki_screenshot = on\n"
+           "; on: without the black bars around the game's picture (a PSP game shown smaller\n"
+           "; than the screen, a 4:3 picture): on | off\n"
+           "anki_screenshot_trim_bars = on\n";
 }
 
 /* A warning names a setting (its key as typed, at most VJO_CONFIG_WARN_KEY bytes of it for an unknown one) or a
@@ -595,8 +599,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
             c->log_file = 0;
         else
             warn(c, "%s: invalid value", key);
-    } else if (vjo_ieq(key, "anki_mining") || vjo_ieq(key, "anki_screenshot")) {
-        int *dst = vjo_ieq(key, "anki_mining") ? &c->anki_mining : &c->anki_screenshot;
+    } else if (vjo_ieq(key, "anki_mining") || vjo_ieq(key, "anki_screenshot") ||
+               vjo_ieq(key, "anki_screenshot_trim_bars")) {
+        int *dst = vjo_ieq(key, "anki_mining") ? &c->anki_mining
+                   : vjo_ieq(key, "anki_screenshot") ? &c->anki_screenshot : &c->anki_screenshot_trim_bars;
         if (vjo_ieq(val, "on"))
             *dst = 1;
         else if (vjo_ieq(val, "off"))

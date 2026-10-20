@@ -1043,6 +1043,8 @@ static void invalid_capture_and_wire(void)
     r.flags = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.flags = 0;
     r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* VJO_GAME_OCR_S_* bits 5-31 unknown (API 26: 4) */
+    r.speed = VJO_GAME_OCR_S_TRIM; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 32: bit 5, a shot's only */
+    r.speed = 0x40; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate: known */
     uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
@@ -1378,15 +1380,25 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     }
     r = shot_request(); r.shot[32] = '0'; /* not ended where the 32 digits end */
     TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
-    /* a shot carries no job policy, no tiers and no speed */
+    /* a shot carries no job policy, no tiers and no speed but (API 32) VJO_GAME_OCR_S_TRIM */
     r = shot_request(); r.flags |= VJO_GAME_OCR_F_BLANK; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.flags |= VJO_GAME_OCR_F_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.tiers = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 26 */
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM | VJO_GAME_OCR_S_BOOST; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM << 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    TEST_CHECK(VJO_GAME_OCR_S_SHOT_ALL == VJO_GAME_OCR_S_TRIM && !(VJO_GAME_OCR_S_TRIM & VJO_GAME_OCR_S_ALL));
     /* an OCR job names no card; without models it is refused as before */
     r = make_request(); memcpy(r.shot, SHOT_ID, sizeof(SHOT_ID)); TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     TEST_CHECK(!valid && !pending);
+    /* API 32: a shot that trims its black bars is accepted, the bit given to the worker as it was asked */
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM;
+    TEST_CHECK(vjoOcrSubmit(&r) > 0 && request.speed == VJO_GAME_OCR_S_TRIM);
+    caller = 7; TEST_CHECK(vjoOcrTake(&r) == 0 && r.speed == VJO_GAME_OCR_S_TRIM && r.flags == VJO_GAME_OCR_F_SHOT);
+    message.size = sizeof(message); message.seq = r.seq; message.text[0] = 0;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3;
     /* F_FULL is a shot's anyway; without a model, which a shot never opens */
     r = shot_request(); r.flags |= VJO_GAME_OCR_F_FULL;
     TEST_CHECK(vjoOcrSubmit(&r) > 0 && request.width == FB_W && request.height == FB_H && !request.x && !request.y);

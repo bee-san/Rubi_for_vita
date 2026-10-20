@@ -165,8 +165,23 @@
  * fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main 1de7b67 and this change]. At
  * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
  * which would still need the page. In the game's partition, never SceShell's. Both builds now have the same
- * budget. */
+ * budget.
+ * API 32, the Anki screenshot's black bars (core/shottrim.c at -Os, 592 B of text, and game_ocr/main.c shot_pass,
+ * the passes that guess, check and read again) take the debug build's text 81,644 -> 82,860 B, 940 B past the 81,920 B
+ * of its text pages, and the normal build's 80,344 -> 81,592 B, which still fits (328 B left); data/bss 15,720 B as
+ * before in both [measured: the build log's module rows, both builds, main 44d4e8d and this change, CI's container].
+ * So the debug build, the test builds' own and the -debug download, takes one more text page in each game that is ON,
+ * 98,304 -> 102,400 B, and the normal build, the main download, keeps 98,304 B. Already cut to get there: the scan at
+ * -Os (696 B at -O2) and no row buffer for black rows above the strip. Kept: the one-colour rule, which keeps a dark
+ * Vita picture's edges from being guessed as bars and read twice (24 of 1,727 frames without it, 1 with it [measured,
+ * host, on local copies of the owner's frames, docs/anki.md "Black bars"]), and the black runs' one-compare path
+ * (a PSP game's 1x frame scanned in 3.55 against 5.11 million Cortex-A9 instructions [measured: qemu-arm's insn_mix
+ * plugin, the Vita compiler's objects]). In the game's partition, never SceShell's. */
+#if VJO_DEBUG
+#define VJO_BUDGET_WORKER_MODULE_PAGES 102400u
+#else
 #define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
+#endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game

@@ -16,6 +16,7 @@
 #include "main.h"
 #include "../core/fbgrey.h"
 #include "../core/jpegsw.h"
+#include "../core/shottrim.h"
 #include "../core/textnorm.h"
 #include "../core/vocr_ocr.h"
 #include "../include/vjo_vocr_sizes.h"
@@ -958,7 +959,15 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
  * the JPEG written through the kernel's worker thread beside the card in the Anki queue
  * (vjoOcrShotWrite, vjoOcrShotSave; the game itself may have no ux0:). The block holds a
  * strip, the encoder and the JPEG, only while the shot runs; nothing of it reaches
- * SceShell, which learns the JPEG's size from the result. */
+ * SceShell, which learns the JPEG's size from the result.
+ *
+ * API 32 (VJO_GAME_OCR_S_TRIM): the frame's black bars (core/shottrim.h) are found as its
+ * rows come, and the JPEG is of the picture between them, the same rows' sub-rectangle: no
+ * copy of the frame. The first pass reads from row 0 without encoding until the picture's
+ * first row, encodes the guess from there and scans every row below; a frame whose bars come
+ * to another picture is read again (one more pass), as a JPEG too large is. A frame whose
+ * first rows reach its top edge and a side's is read and encoded as without the option, the
+ * same bytes (docs/anki.md, "Black bars"). */
 #define SHOT_QUALITY 70                       /* the first try: docs/anki.md has the sizes it gives */
 #define SHOT_TRIES 3                          /* 70, 50, 35: a JPEG over VJO_GAME_OCR_SHOT_MAX again, lower */
 #define SHOT_HOOK_ROWS VJO_GAME_OCR_ROWS_MAX  /* rows a frame through the hook: 9 frames for 544 */
@@ -969,7 +978,8 @@ static int run_probe(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
  * a slower one leaves the worker blocked: never acknowledge a leaked descriptor. */
 #define SHOT_SAVE_WAIT_US SHOT_FILE_WAIT_US
 /* The block: the encoder's state, one strip of colour rows and the JPEG (at most
- * VJO_GAME_OCR_SHOT_MAX), with the arena's alignment and the buffer's spare byte. */
+ * VJO_GAME_OCR_SHOT_MAX), with the arena's alignment and the buffer's spare byte. API 32's
+ * trimmed picture is a sub-rectangle of the strip's rows: nothing more. */
 #define SHOT_BLOCK_BYTES(width) \
     PAGE_ROUND(VJO_JPEG_STATE_BYTES + 16u + SHOT_HOOK_ROWS * (width) * 4u + VJO_GAME_OCR_SHOT_MAX + 16u)
 typedef char vjo_shot_budget_check[SHOT_BLOCK_BYTES(VJO_OCR_MAX_WIDTH) <= VJO_BUDGET_GAME_SHOT ? 1 : -1];
@@ -1013,16 +1023,87 @@ static int shot_call(uint32_t offset, uint32_t bytes, const void *src, uint32_t 
     }
 }
 
+/* API 32: rows of the frame through the bars' scan, its time counted. */
+static void trim_scan(VjoTrimScan *s, const uint8_t *rows, uint32_t n, uint32_t stride, uint32_t *us)
+{
+    uint64_t t = now_wide();
+    vjo_trim_rows(s, rows, n, stride);
+    *us += (uint32_t)(now_wide() - t);
+}
+
+/* One pass over the frame: the picture *pic (rows from pic->y, columns from pic->x) encoded at
+ * quality in the block, a band of 16 rows at a time from the strip the rows came in. With s (API
+ * 32, the first pass of a shot that trims) the rows are scanned from row 0: none is encoded until
+ * the picture's first row, *pic is then the guess (*kind its VJO_TRIM_*) and, unless that is exact
+ * (*exact), every row is scanned, a pass too large for the block reading on to the last row for it.
+ * Rows of the picture above the strip the guess came in are read again, unless they are black rows
+ * all of the strip's first row's colour (a whole frame kept under a tall black band, an all-black
+ * frame): the bands of that row then stand for them (stride 0), the same pixels. */
+static int shot_pass(Capture *c, void *base, uint32_t held, int quality, VjoTrimScan *s, VjoTrimRect *pic,
+                     int *exact, int *kind, VjoBuf *jpg, uint32_t *scan_us)
+{
+    const uint32_t w = c->r->width, h = c->r->height, stride = w * 4u;
+    VjoArena a;
+    VjoJpeg *e;
+    uint8_t *band;
+    uint32_t have = 0, n = 0, next, end; /* the strip holds rows [have, have + n) */
+    int rc = VJO_OK, got, scan = 0;
+    vjo_arena_init(&a, base, held);
+    if (!(band = (uint8_t *)vjo_arena_alloc(&a, (size_t)SHOT_HOOK_ROWS * stride))) return VJO_E_OOM;
+    if (s) {
+        vjo_trim_begin(s, w, h);
+        while (!s->content && s->top * 10u <= h * 3u && have + n < h) {
+            have += n;
+            n = h - have < SHOT_HOOK_ROWS ? h - have : SHOT_HOOK_ROWS;
+            if ((got = shot_rows(c, have, n, band, stride)) != (int)n) return got;
+            trim_scan(s, band, n, stride, scan_us);
+        }
+        *kind = vjo_trim_guess(s, pic, exact);
+        scan = !*exact;
+    }
+    if (!(e = vjo_jpeg_begin(&a, pic->w, pic->h, quality, jpg))) return VJO_E_OOM;
+    next = pic->y;
+    end = pic->y + pic->h;
+    /* black rows of the picture above the strip, all one colour, as the strip's first row is: that row's bands */
+    if (s && next < have && s->above && s->top > have && !((have - next) % VJO_JPEG_BAND))
+        for (; next < have && !rc; next += VJO_JPEG_BAND)
+            if (vjo_jpeg_rows(e, band + (size_t)pic->x * 4u, VJO_JPEG_BAND, 0) < 0 || jpg->len > VJO_GAME_OCR_SHOT_MAX)
+                rc = VJO_E_TOO_LARGE;
+    for (;;) {
+        /* the strip's rows of the picture, a band at a time (the picture's last may be shorter) */
+        while (!rc && next < end && next >= have) {
+            uint32_t k = end - next < VJO_JPEG_BAND ? end - next : VJO_JPEG_BAND;
+            if (next + k > have + n) break;
+            if (vjo_jpeg_rows(e, band + (size_t)(next - have) * stride + (size_t)pic->x * 4u, k, stride) < 0 ||
+                jpg->len > VJO_GAME_OCR_SHOT_MAX)
+                rc = VJO_E_TOO_LARGE;
+            next += k;
+        }
+        /* next: the picture's rows not encoded yet, else the rows not scanned yet */
+        have = !rc && next < end ? next : scan && s->rows < h ? s->rows : h;
+        if (have >= h) break;
+        n = h - have < SHOT_HOOK_ROWS ? h - have : SHOT_HOOK_ROWS;
+        if ((got = shot_rows(c, have, n, band, stride)) != (int)n) return got;
+        if (scan && s->rows < have + n)
+            trim_scan(s, band + (size_t)(s->rows - have) * stride, have + n - s->rows, stride, scan_us);
+    }
+    if (!rc && (vjo_jpeg_end(e) < 0 || jpg->len > VJO_GAME_OCR_SHOT_MAX)) rc = VJO_E_TOO_LARGE;
+    return rc;
+}
+
 static int run_shot(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
-    const uint32_t w = r->width, h = r->height, stride = w * 4u, need = SHOT_BLOCK_BYTES(w);
+    const uint32_t w = r->width, h = r->height, need = SHOT_BLOCK_BYTES(w);
     Capture c = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 1, 0, 1}; /* fixed: shot_rows picks the rung */
-    VjoArena a;
     VjoBuf jpg = {0};
+    VjoTrimScan scan;
+    VjoTrimRect pic = {0, 0, w, h};
     void *base = NULL;
     SceUID leaked;
-    uint32_t held, mem, off = 0, chunks = 0;
-    int rc, quality = SHOT_QUALITY;
+    uint32_t held, mem, off = 0, chunks = 0, scan_us = 0;
+    int rc, quality = SHOT_QUALITY, exact = 1, kind = VJO_TRIM_NONE, how = 0;
+    /* API 32: the bars are guessed in the first pass (none without the option) */
+    int guessing = (r->speed & VJO_GAME_OCR_S_TRIM) != 0;
     uint64_t t0;
     if (!IMPORT_READY(vjoOcrShotWrite) || !IMPORT_READY(vjoOcrShotSave)) return VJO_E_OCR_UNAVAILABLE;
     /* The memory check: the block beside the reserve the game always keeps (the
@@ -1042,38 +1123,30 @@ static int run_shot(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     shot_bytes_held = out->shot_block = held;
     out->shot_memory = mem;
     t0 = now_wide();
-    for (unsigned t = 1; t <= SHOT_TRIES; t++) {
+    for (unsigned t = 1; t <= SHOT_TRIES + 1u; t++) {
         uint64_t t1 = now_wide();
         uint32_t strips = c.pass_strips;
-        uint8_t *band;
-        VjoJpeg *e = NULL;
-        vjo_arena_init(&a, base, held);
-        rc = VJO_E_OOM;
-        if ((band = (uint8_t *)vjo_arena_alloc(&a, (size_t)SHOT_HOOK_ROWS * stride)) &&
-            (e = vjo_jpeg_begin(&a, w, h, quality, &jpg)))
-            rc = VJO_OK;
-        for (uint32_t y = 0; !rc && y < h;) {
-            uint32_t n = h - y < SHOT_HOOK_ROWS ? h - y : SHOT_HOOK_ROWS;
-            int got = shot_rows(&c, y, n, band, stride);
-            if (got != (int)n) {
-                rc = got;
-                break;
-            }
-            for (uint32_t k = 0; !rc && k < n; k += VJO_JPEG_BAND)
-                if (vjo_jpeg_rows(e, band + (size_t)k * stride, n - k < VJO_JPEG_BAND ? n - k : VJO_JPEG_BAND,
-                                  stride) < 0 || jpg.len > VJO_GAME_OCR_SHOT_MAX)
-                    rc = VJO_E_TOO_LARGE;
-            y += n;
-        }
-        if (!rc && (vjo_jpeg_end(e) < 0 || jpg.len > VJO_GAME_OCR_SHOT_MAX)) rc = VJO_E_TOO_LARGE;
+        VjoTrimRect guess;
+        rc = shot_pass(&c, base, held, quality, guessing ? &scan : NULL, &pic, &exact, &kind, &jpg, &scan_us);
         step_add(VJO_GSTEP_SHOT, (unsigned)quality, t, rc, (uint32_t)jpg.len, c.pass_strips - strips,
                  (uint32_t)(now_wide() - t1), 0);
         out->shot_quality = (uint32_t)quality;
         out->shot_tries = t;
-        if (rc != VJO_E_TOO_LARGE) break;
+        if (guessing && (rc == VJO_OK || rc == VJO_E_TOO_LARGE)) {
+            /* API 32: the guess, or the picture every row of the pass came to (the next pass's) */
+            guessing = 0;
+            guess = pic;
+            if (!exact) kind = vjo_trim_decide(&scan, &pic);
+            how = exact ? 0 : guess.x == pic.x && guess.y == pic.y && guess.w == pic.w && guess.h == pic.h ? 1 : 2;
+            if (how == 2) continue; /* read again, at this quality: another picture than the one too large, if it was */
+        }
+        if (rc != VJO_E_TOO_LARGE || quality <= 35) break;
         quality = quality > 50 ? 50 : 35;
     }
     out->shot_encode_us = (uint32_t)(now_wide() - t0);
+    if ((r->speed & VJO_GAME_OCR_S_TRIM) && !guessing)
+        step_add(VJO_GSTEP_TRIM, (unsigned)kind, (unsigned)how, 0, pic.x << 16 | pic.y, pic.w << 16 | pic.h,
+                 scan_us + 1u, 0);
     if (rc < -199) rc = VJO_E_SOURCE; /* a native capture error: its code is in the PASS step */
     out->source = c.pass_strips ? c.mode : VJO_GAME_OCR_SRC_NONE;
     out->captures = c.pass_strips;
@@ -1312,15 +1385,15 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     }
     /* The refinement's mode (bits 12-13): 3 is refused here, as unknown bits are. */
     unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
-    /* API 23: a shot carries no model, tiers, speed or other flag but F_FULL */
+    /* API 23: a shot carries no model, tiers or other flag but F_FULL, and (API 32) no speed but S_TRIM */
     int shot = (r->flags & VJO_GAME_OCR_F_SHOT) != 0;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
         refine_mode > VJO_GAME_OCR_REFINE_PSP || (r->tiers & ~VJO_VOCR_TIERS_ALL) ||
-        (r->speed & ~VJO_GAME_OCR_S_ALL) ||
+        (r->speed & ~(shot ? VJO_GAME_OCR_S_SHOT_ALL : VJO_GAME_OCR_S_ALL)) ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
         !r->fb_width || r->fb_width > VJO_OCR_MAX_WIDTH || !r->fb_height || r->fb_height > VJO_OCR_MAX_HEIGHT ||
         r->x > r->fb_width - r->width || r->y > r->fb_height - r->height ||
-        (shot ? r->tiers || r->speed || (r->flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL))
+        (shot ? r->tiers || (r->flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL))
               : !r->model_dir[0] || !r->model[0]) ||
         r->model_dir[sizeof(r->model_dir)-1] || r->model[sizeof(r->model)-1] ||
         r->fallback[sizeof(r->fallback)-1]) goto done;
