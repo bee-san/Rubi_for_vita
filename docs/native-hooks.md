@@ -275,9 +275,9 @@ Adrenaline's), only when the text source is `auto` or `hooks`, and once per proc
 L + R; an Anki screenshot or a self-test job is not one). Adrenaline's XMB runs in the same process as the
 game started from it, and a reading there would use the probe up with no game's ID, so start the game
 from its own bubble, or set **Read text** to **Only when I press L + R** and press it first in the game. To
-probe again, close the emulator (or the bubble) and start it again. Until the text source reaches the
-worker (the kernel's `vjoGetTextSource`, hooks-api; this tree's kernel does not export it, so
-`game_ocr/main.c` `text_source` answers `ocr`), the probe does nothing in any game.
+probe again, close the emulator (or the bubble) and start it again. The worker learns the text source
+from the kernel as it starts (`vjoGetTextSource`; `ocr` with an older kernel), and `auto` is the
+default, so a debug build probes every PSP game it reads unless the text source is `ocr`.
 
 **What it does.** In the worker's thread, at its lowest priority:
 
@@ -332,7 +332,8 @@ or the instruction after a call, which is then two words back in W0 (`jal`, `0Cx
 at most sites say the `0x08804000` base holds on a console; data, zeros or the same words at every site
 say it does not, or that the view is not where the report expects.
 
-**To test on a console** (hardware is paused; for #230), with the debug build and `text_source = auto`:
+**To test on a console** (hardware is paused; for #230), with the debug build and `text_source = auto`
+(the default):
 
 1. A PSP game Luna lists, under Adrenaline: ましろ色シンフォニー *mutsu-no-hana `ULJM05889` (one site,
    `0x08868AB8`), started from its bubble (When it runs, above). Wait for text, press L + R once. The game
@@ -342,7 +343,8 @@ say it does not, or that the view is not where the report expects.
 2. A PSP game Luna does not list, e.g. MEMORIES OFF `ULJM05334` (Luna names it only in a comment): the
    same up to `luna ULJM05334: not listed`, then `done`.
 3. L + R again, several times: no second probe in the same emulator process.
-4. With `text_source = ocr`: no `psp probe` line (no `hooks.log` at all).
+4. With `text_source = ocr`: no `psp probe` line. The worker leaves `hooks.log` alone then, so delete the
+   old one first.
 5. If a game stops at the first L + R: send `hooks.log` (its last line is the step) and the crash dump
    (`--collect` fetches the dumps).
 
