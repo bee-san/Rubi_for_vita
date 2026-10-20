@@ -354,9 +354,11 @@ static void post_local_lookup(uint32_t text_generation)
 void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation)
 {
     /* This order is also used by cursor completion: a newer request cannot
-     * race past the stale-result check and republish the old definition. */
+     * race past the stale-result check and republish the old definition.
+     * A line-history step not taken yet gives the slot up: the latest press wins,
+     * and an Up with nothing to go to never holds a move (audit-line-history F2). */
     sceKernelLockMutex(cmd_lock, 1, NULL);
-    if (pending_cmd != VJO_CMD_NONE && pending_cmd != VJO_CMD_CURSOR) {
+    if (pending_cmd != VJO_CMD_NONE && pending_cmd < VJO_CMD_CURSOR) {
         sceKernelUnlockMutex(cmd_lock, 1);
         return;
     }
@@ -389,7 +391,7 @@ int vjo_post_page(int page, uint32_t text_generation)
 {
     int accepted = 0;
     sceKernelLockMutex(cmd_lock, 1, NULL);
-    if (pending_cmd == VJO_CMD_NONE || pending_cmd == VJO_CMD_CURSOR) {
+    if (pending_cmd == VJO_CMD_NONE || pending_cmd >= VJO_CMD_CURSOR) { /* (a step gives it up, as for a move) */
         vjo_view_lock();
         /* Only pages of the published (or already pending) result for this
          * text and cursor; dict_pages is reset whenever either changes. */
@@ -2019,7 +2021,11 @@ static void history_show(int at)
                            : v->cursor;
     local_text_scene = at ? 0 : v->scene;
     local_text_capture_seq = at ? 0 : v->seq;
-    cache_ok = 0; /* the result arena's entry is the line before's */
+    /* the result arena's entry is the line before's, and its screen tag no longer the text's: a cached
+     * sentence is local_text, which no screen shows now (the subtitle strip's first branch reads the tag
+     * without cache_ok: audit-line-history F3) */
+    cache_ok = 0;
+    cache_scene = cache_seq = 0;
     v->h.at = at;
     if (at) {
         g_view.history = at;

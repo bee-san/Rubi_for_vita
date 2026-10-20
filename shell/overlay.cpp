@@ -450,9 +450,10 @@ static void render(int new_content)
     if (vjo_styled_init(&body, &s_ui, BODY_UNITS, MAX_SPANS) == 0) {
         have_body = 1;
         if (s_history) { /* where the text is in this game's line history */
-            static const char where[] VJO_DATA_TABLE(history_where) = "Earlier line -%d · ▲ earlier · ▼ later";
+            /* (▲ only when there is a line before it: the oldest kept has none) */
+            static const char where[] VJO_DATA_TABLE(history_where) = "Earlier line -%d%s · ▼ later";
             char at[64];
-            sceClibSnprintf(at, sizeof(at), where, s_history);
+            sceClibSnprintf(at, sizeof(at), where, s_history, g_view.history_before ? " · ▲ earlier" : "");
             vjo_styled_puts(&body, at, VJO_RGB_RANK, en);
             if (s_dict_pages > 1)
                 vjo_styled_puts(&body, "\n", VJO_RGB_RANK, en);

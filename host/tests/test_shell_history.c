@@ -386,7 +386,7 @@ static void test_reader_reads_a_bounded_tail(void)
     /* What a record takes, as the writer writes it: a textbox's three rows of 35 characters (3 B each),
      * the recognizer's raw text as long, three lines' metrics; what the window reaches back */
     {
-        char line[400] = "", one[] = "それでも僕たちは、あの坂の下で待ち合わせることにしていた。いつも";
+        char line[400] = "", one[] = "昨日の夜は遅くまで台所で料理の本を読んでいたので今朝は眠かった。"; /* invented */
         size_t n = 0;
         for (int row = 0; row < 3; row++) {
             n += (size_t)snprintf(line + n, sizeof(line) - n, "%s%s", row ? "\n" : "", one);
@@ -462,6 +462,51 @@ static void test_reader_failures(void)
                visit.n == 0 && scratch.used == 0 && !read_opens);
 }
 
+/* The window's edge: a record that starts exactly at the window's first byte (the file's size less
+ * VJO_HISTORY_WINDOW) is read, as the byte before the window, a newline, says it starts a record; one
+ * starting a byte later is read too, and one starting a byte earlier is cut by the window and skipped. */
+static void lines_of_a_kilobyte(VjoHistoryRecord *r, int n)
+{
+    char pad[3 * 250 + 1];
+    for (int k = 0; k < 250; k++)
+        memcpy(pad + 3 * k, "あ", 3);
+    pad[sizeof(pad) - 1] = 0;
+    for (int i = 0; i < n; i++) { /* a short line and a long raw text after it: about 1 KB a record */
+        memset(result.text, 0, sizeof(result.text));
+        int len = snprintf(result.text, sizeof(result.text), "%d行目", i);
+        memcpy(result.text + len + 1, pad, sizeof(pad) - 1);
+        r->time_us += 1000000;
+        TEST_ASSERT(vjo_history_append(r) == 1);
+    }
+}
+
+static void test_reader_the_windows_first_byte(void)
+{
+    static char csv[160 * 1024];
+    char want[64];
+    for (int shift = -1; shift <= 1; shift++) {
+        reset();
+        VjoHistoryRecord r = record("x");
+        lines_of_a_kilobyte(&r, 80); /* about 23 records in the window: fewer than a visit's 32 */
+        size_t size = read_history(csv, sizeof(csv));
+        int n = 30, oldest = -1;
+        snprintf(want, sizeof(want), "\"%d行目", n);
+        const char *line = strstr(csv, want);
+        TEST_ASSERT(line != NULL);
+        size_t start = (size_t)(line - csv);
+        while (start && csv[start - 1] != '\n')
+            start--; /* the record's first byte, after the newline the record before it ends with */
+        TEST_ASSERT(start > 0 && csv[start] == '"' && start + VJO_HISTORY_WINDOW + 1 < size);
+        /* the file ends VJO_HISTORY_WINDOW bytes after that start (less shift): its last record is cut */
+        TEST_ASSERT(truncate(path, (off_t)(start + VJO_HISTORY_WINDOW - (size_t)shift)) == 0);
+        int got = load("", "vita-PCSG00415");
+        TEST_ASSERT(got > 0 && got < VJO_HISTORY_LINES);
+        sscanf(visit.line[got], "%d", &oldest);
+        /* shift 0: the record starts at the window's first byte; 1: a byte inside it; -1: before it */
+        TEST_CHECK_(oldest == (shift < 0 ? n + 1 : n), "shift %d: the oldest line read is %d", shift, oldest);
+    }
+}
+
 /* The reader beside the writer's own records: its maximum text with quotes, and a record cut by a
  * power loss (the file's last bytes) */
 static void test_reader_maximum_and_cut_records(void)
@@ -482,12 +527,14 @@ static void test_reader_maximum_and_cut_records(void)
     strcpy(result.text, "最後");
     TEST_CHECK(vjo_history_append(&r) == 1);
     TEST_CHECK(load("最後", "vita-PCSG00415") == 2 && !strcmp(visit.line[1], longest) && !strcmp(visit.line[2], "最初"));
-    /* the last record cut after its line's field and the comma after it: the line is read; cut before
-     * that comma, it is not */
+    /* the last record cut after its line's field, the comma and the time's first digit: the line is read;
+     * cut before that digit, it is not (a record run into the next append has a '"' there) */
     size = read_history(csv, sizeof(csv));
     line = (size_t)(strstr(csv, "\"最後\",") - csv) + strlen("\"最後\",");
-    TEST_ASSERT(truncate(path, (off_t)line) == 0);
+    TEST_ASSERT(truncate(path, (off_t)line + 1) == 0);
     TEST_CHECK(load("", "vita-PCSG00415") == 3 && !strcmp(visit.line[1], "最後"));
+    TEST_ASSERT(truncate(path, (off_t)line) == 0);
+    TEST_CHECK(load("", "vita-PCSG00415") == 2 && !strcmp(visit.line[1], longest));
     TEST_ASSERT(truncate(path, (off_t)line - 1) == 0);
     TEST_CHECK(load("", "vita-PCSG00415") == 2 && !strcmp(visit.line[1], longest));
     TEST_CHECK(size > line);
@@ -499,6 +546,7 @@ TEST_LIST = {
     {"line history: a bounded tail of the file", test_reader_reads_a_bounded_tail},
     {"line history: no file, read errors, no scratch", test_reader_failures},
     {"line history: the writer's maximum text and cut records", test_reader_maximum_and_cut_records},
+    {"line history: a record at the window's first byte", test_reader_the_windows_first_byte},
     {"adjacent rescans dedup but A/B/A and other games remain", test_adjacent_dedup_and_header},
     {"maximum text streams through bounded short writes", test_maximum_text_and_short_writes},
     {"I/O failures restore file and allow retry", test_failures_roll_back_and_retry},

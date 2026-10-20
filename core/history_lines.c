@@ -6,9 +6,10 @@
 #include "utf.h"
 
 /* The line of the record that starts at p (its '"') and ends before end, when the record is game
- * uuid's (its first field, the closing quote and comma included): its fourth field, unescaped in place and NUL-terminated; NULL otherwise, and when the
- * record is cut before the field after that one. shell/history.c quotes each of the first four
- * fields and doubles a '"' inside one. */
+ * uuid's (its first field, the closing quote and comma included): its fourth field, unescaped in
+ * place and NUL-terminated; NULL otherwise, and when the record is cut before the time that follows
+ * that field (its first digit). shell/history.c quotes each of the first four fields, doubles a '"'
+ * inside one and writes the time, unquoted, after them. */
 static char *record_line(char *p, char *end, const char *uuid, size_t ulen)
 {
     if ((size_t)(end - p) < ulen + 2 || memcmp(p + 1, uuid, ulen))
@@ -34,6 +35,10 @@ static char *record_line(char *p, char *end, const char *uuid, size_t ulen)
         if (q + 1 >= end || q[1] != ',')
             return NULL; /* each of these fields has another after it */
         if (field == 4) {
+            /* and the line's field the time: a record a power loss cut, run into the next boot's
+             * append, has another field's '"' there (audit-line-history F1) */
+            if (q + 2 >= end || q[2] < '0' || q[2] > '9')
+                return NULL;
             *o = '\0';
             return p + 1;
         }

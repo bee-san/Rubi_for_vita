@@ -1720,6 +1720,9 @@ static void test_an_earlier_lines_card_has_no_screenshot(void)
     TEST_CHECK(!slot_begins && !shot_jobs && files_ending(".json") == 1 && files_ending(".jpg") == 0);
     only_id(id);
     TEST_CHECK((json = queue_file(id, "json", &len)) && strstr(json, "\"picture\":false") && strstr(json, "前の猫が好き猫"));
+    /* no OCR model named: the last recognition's (VOCR3_H15 here) may not be the one that read that line */
+    TEST_CHECK(json && strstr(json, "\"ocr_model\":null") && strstr(json, "\"ocr_engine\":\"vocr\""));
+    TEST_MSG("%s", json ? json : "(none)");
     TEST_CHECK(!heap_live && heap_allocs == heap_frees);
     finish();
     /* screenshots off: as any card */
@@ -1734,6 +1737,8 @@ static void test_an_earlier_lines_card_has_no_screenshot(void)
     g_view.history = 0;
     enter(0);
     TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && shot_jobs == 1 && files_ending(".jpg") == 1);
+    only_id(id);
+    TEST_CHECK((json = queue_file(id, "json", &len)) && strstr(json, "\"ocr_model\":\"VOCR3_H15_w8.vocr\""));
     finish();
 }
 #endif

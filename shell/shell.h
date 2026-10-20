@@ -106,6 +106,7 @@ enum {
     VJO_CMD_SET_REGION,      /* region selected (rect passed to vjo_post_command) */
     VJO_CMD_CLEAR_REGION,    /* hold □ */
     VJO_CMD_CURSOR,          /* dictionary-only lookup at a recognized character */
+    /* (after CURSOR: a cursor move or a page takes their slot, worker.c vjo_post_cursor) */
     VJO_CMD_EARLIER,         /* Up from the text's top row: this game's earlier line (line history) */
     VJO_CMD_LATER,           /* Down from an earlier line's last row: the line after it */
 };

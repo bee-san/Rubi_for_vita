@@ -4329,6 +4329,89 @@ static void test_history_waits_for_the_running_job(void)
 /* Closing on an earlier line: the current text comes back once no job reads local_text, so a reopen
  * on its screen shows it; reopened while that job still ran, the screen is recognized. A game exit or
  * a new region lets the visit go with the text. */
+/* Up with nothing to go to (on_press, the oldest line kept, no earlier line) changes nothing, as on
+ * the text's top row before line history: the overlay posts the step all the same (it cannot tell),
+ * and a move (a Right, a tap, an L/R page) posted before the control thread takes it wins the slot,
+ * so the overlay and the worker never disagree on the cursor ("Looking up words…" left behind:
+ * audit-line-history F2). A step never takes a close's or a region's slot (M4). */
+static void test_history_a_step_never_holds_a_move_or_a_close(void)
+{
+    history_setup();
+    for (int c = 0; c < 2; c++) {
+        cfg.ocr_mode = c ? VJO_OCR_AUTO : VJO_OCR_ON_PRESS;
+        if (c) { /* Auto, on the oldest line kept: nothing earlier */
+            history_key(VJO_CMD_EARLIER); finish_current_job();
+            history_key(VJO_CMD_EARLIER); finish_current_job();
+            check_shown("鳥", "bird", 0);
+        }
+        vjo_post_command(VJO_CMD_EARLIER, NULL); /* the overlay's Up, the control thread busy */
+        vjo_post_cursor(c ? 0 : 3, local_text_generation); /* the next frame's move */
+        TEST_CHECK_(pending_cmd == VJO_CMD_CURSOR, "case %d: the move was refused (slot %d)", c, pending_cmd);
+        control_tick(0);
+        TEST_ASSERT(job_running && job_cursor_only);
+        finish_current_job();
+        if (c)
+            check_shown("鳥", "bird", 0);
+        else
+            check_shown("猫犬鳥", "dog", 3);
+        TEST_CHECK(g_view.history == 2 * c && history_loads == (unsigned)c);
+    }
+    /* a page posted over a pending step wins too (a second dictionary's entry) */
+    vjo_post_command(VJO_CMD_EARLIER, NULL);
+    g_view.dict_pages = 2;
+    TEST_CHECK(vjo_post_page(1, local_text_generation) && pending_cmd == VJO_CMD_CURSOR);
+    control_tick(0);
+    finish_current_job();
+    /* a step never takes a close: Cancel, then Up in the next frame */
+    vjo_post_command(VJO_CMD_CLOSED, NULL);
+    vjo_post_command(VJO_CMD_EARLIER, NULL);
+    TEST_CHECK(pending_cmd == VJO_CMD_CLOSED);
+    control_tick(0);
+    while (job_running)
+        finish_current_job(), control_tick(0);
+    TEST_CHECK_(ov == OV_CLOSED && !g_view.open, "the close was lost: ov %d, open %d", ov, g_view.open);
+    TEST_CHECK(!history && !g_view.history && !history_held());
+    /* nor a region's */
+    open_overlay();
+    while (job_running)
+        finish_current_job(), control_tick(0);
+    VjoRect r = {10, 10, 300, 80};
+    vjo_post_command(VJO_CMD_SET_REGION, &r);
+    vjo_post_command(VJO_CMD_EARLIER, NULL);
+    TEST_CHECK(pending_cmd == VJO_CMD_SET_REGION);
+    control_tick(0);
+    TEST_CHECK(ov == OV_CLOSED && !history);
+}
+
+/* The overlay closed on an earlier line while its lookup runs, then Select + R before that lookup ends,
+ * or in the tick of its end: the subtitle strip shows the screen's line or "Recognizing…" and a job,
+ * never the earlier line the overlay's text still is (audit-line-history F3). */
+static void test_history_the_strip_never_shows_an_earlier_line(void)
+{
+    for (int same_tick = 0; same_tick < 2; same_tick++) {
+        history_setup();
+        history_key(VJO_CMD_EARLIER); /* 犬鳥 shown, its first word's lookup runs */
+        TEST_ASSERT(job_running && job_cursor_only && !strcmp(local_text, "犬鳥"));
+        close_overlay();
+        if (same_tick) { /* the lookup's end and Select + R in one wakeup */
+            test_thread = NET_THREAD;
+            net_job();
+            test_thread = CTL_THREAD;
+        }
+        control_tick(VJO_EV_SUBTITLE);
+        TEST_CHECK(subtitles);
+        while (job_running) {
+            TEST_CHECK_(strcmp(g_view.strip_text, "犬鳥") != 0, "case %d: the strip shows the earlier line", same_tick);
+            finish_current_job();
+            control_tick(0);
+        }
+        TEST_CHECK_(strcmp(g_view.strip_text, "犬鳥") != 0 && g_view.strip_kind == VJO_STRIP_SENTENCE,
+                    "case %d: the strip shows '%s' (kind %d)", same_tick, g_view.strip_text, g_view.strip_kind);
+        TEST_CHECK(!history && !history_held());
+        set_subtitles(0);
+    }
+}
+
 static void test_history_close_exit_and_region(void)
 {
     history_setup();
@@ -7477,6 +7560,8 @@ TEST_LIST = {
     {"history_needs_auto_lines_and_memory", test_history_needs_auto_lines_and_memory},
     {"history_waits_for_the_running_job", test_history_waits_for_the_running_job},
     {"history_close_exit_and_region", test_history_close_exit_and_region},
+    {"history_a_step_never_holds_a_move_or_a_close", test_history_a_step_never_holds_a_move_or_a_close},
+    {"history_the_strip_never_shows_an_earlier_line", test_history_the_strip_never_shows_an_earlier_line},
     {"refresh_replacement_resets_dictionary_pages", test_refresh_replacement_resets_dictionary_pages},
     {"on_press_overlay_never_refreshes", test_on_press_overlay_never_refreshes},
     {"refresh_updates_the_subtitle_strip", test_refresh_updates_the_subtitle_strip},

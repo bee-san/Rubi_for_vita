@@ -232,8 +232,8 @@ static void test_records_cut_by_the_window_or_an_append(void)
             strcpy(csv, saved);
             csv[last + keep] = 0; /* the file ends there */
             scan_all(VJO_FILTER_NONE);
-            const char *line = strstr(saved + last, "三つ目\",1"); /* the line's field and the comma after it */
-            int complete = line && (size_t)(line - saved) + strlen("三つ目\",") <= last + keep;
+            const char *line = strstr(saved + last, "三つ目\",1"); /* the line's field, the comma, the time's digit */
+            int complete = line && (size_t)(line - saved) + strlen("三つ目\",1") <= last + keep;
             TEST_CHECK_(h.n == (complete ? 3 : 2), "cut after %zu bytes: %d lines", keep, h.n);
             TEST_CHECK(!strcmp(h.line[1], complete ? "三つ目" : "二つ目"));
             if (complete && !kept_from)
@@ -246,6 +246,60 @@ static void test_records_cut_by_the_window_or_an_append(void)
     strcpy(csv, saved);
     vjo_history_scan(&h, &lines, csv + 3, 20, 0, MATCH, VJO_FILTER_NONE);
     TEST_CHECK(h.n == 0);
+}
+
+/* A power loss (or a crash) cuts a record anywhere, and the next boot's append follows right after
+ * the cut, with no newline between (docs/ocr-history.md: an incomplete final record). Whatever the
+ * cut, only real lines are shown, newest first, and the line before the damage is kept: never another
+ * field's text (the game's name) or bytes of the two records run together (audit-line-history F1). */
+static void test_a_cut_record_and_the_next_append(void)
+{
+    static const char *const real[] = {"三つ目", "二つ目\"です\",ね", "一つ目"}; /* C, B, A: newest first */
+    char b[2048];
+    size_t a_end, b_len, cases = 0, c_kept = 0;
+    reset("");
+    record(UUID, "一つ目");
+    a_end = strlen(csv);
+    record(UUID, real[1]);
+    b_len = strlen(csv) - a_end;
+    TEST_ASSERT(b_len < sizeof(b));
+    memcpy(b, csv + a_end, b_len);
+    for (size_t k = 0; k < b_len; k++, cases++) {
+        int last = -1;
+        reset("今");
+        record(UUID, "一つ目");
+        memcpy(csv + a_end, b, k); /* B cut after k bytes */
+        csv[a_end + k] = 0;
+        record(UUID, real[0]); /* C, appended at the cut */
+        scan_all(VJO_FILTER_NONE);
+        TEST_CHECK_(h.n >= 1 && !strcmp(h.line[h.n], "一つ目"), "cut at %zu: %d lines, the oldest '%s'", k, h.n,
+                    h.n ? h.line[h.n] : "");
+        for (int n = 1; n <= h.n; n++) {
+            int which = -1;
+            for (int w = 0; w < 3; w++)
+                if (!strcmp(h.line[n], real[w]))
+                    which = w;
+            TEST_CHECK_(which > last, "cut at %zu: line -%d '%s' is no real line, or out of order", k, n, h.line[n]);
+            last = which;
+        }
+        c_kept += h.n && !strcmp(h.line[1], real[0]);
+    }
+    TEST_MSG("%zu cuts, the next append's line kept after %zu of them", cases, c_kept);
+    TEST_CHECK(cases > 100 && c_kept >= 1); /* (kept when the cut ends after a newline inside a field) */
+    /* another damage than a cut (a byte of the medium): a separator that is no comma makes the record
+     * one to skip, as a reader cannot tell which field it stood for */
+    reset("今");
+    record(UUID, "一つ目");
+    a_end = strlen(csv);
+    record(UUID, "壊れた");
+    {
+        char *sep = strstr(csv + a_end, "\",\"CLANNAD");
+        TEST_ASSERT(sep != NULL);
+        sep[1] = 'X'; /* the comma between the id and the name */
+    }
+    record(UUID, "三つ目");
+    scan_all(VJO_FILTER_NONE);
+    TEST_CHECK(h.n == 2 && !strcmp(h.line[1], "三つ目") && !strcmp(h.line[2], "一つ目"));
 }
 
 static void test_bounds_lines_and_memory(void)
@@ -325,6 +379,7 @@ TEST_LIST = {
     {"quotes, commas and a textbox's rows", test_quotes_commas_and_wrapped_rows},
     {"filtered and trimmed as the overlay shows a text", test_filter_and_trim_as_shown},
     {"records cut by the window or an append are skipped", test_records_cut_by_the_window_or_an_append},
+    {"a record cut by a power loss and the next append: no garbage", test_a_cut_record_and_the_next_append},
     {"at most VJO_HISTORY_LINES, and only what fits", test_bounds_lines_and_memory},
     {"a file with no header, or no record", test_a_file_without_header_or_records},
     {NULL, NULL}

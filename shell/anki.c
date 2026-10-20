@@ -431,6 +431,8 @@ static void do_save(unsigned seq, int entry)
     }
     publish(seq, "Saving card…", VJO_ANKI_STATUS_DIM, -1, 0);
     card_facts(&note, misc, sizeof(misc));
+    if (earlier) /* the last recognition's model may not be the one that read that line: none named */
+        note.ocr_model = NULL;
     read_more(&note, pages, page);
     /* The screenshot (anki_screenshot, on by default) of the game in front: the
      * game worker's, never SceShell's (take_shot). An earlier line (line history)
