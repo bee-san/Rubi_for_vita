@@ -419,7 +419,9 @@ one, two and three rows (the stick's characters, the d-pad's Left retracing
 them and then its words, a stick's left inside a word the d-pad skipped), and
 the stick's left and right from every selectable character of 120 generated
 texts, with any match end, with and without a layout, against the rule and the
-history it must leave (17,892 steps); eight mutants of the new step each fail a
+history it must leave (17,892 steps), and 400 sessions of mixed keys (the d-pad,
+the stick, Up/Down, taps, Character mode: 120,000 keys) that keep Right's
+history in order before the cursor; nine mutants of the new step each fail a
 test. `host/tests/test_word_lookup.cpp` takes it to the bundled dictionary: from
 食べました (食べる) the stick's right is べ, then ま, whose lookups are べ and
 ました, their header ranges starting at the cursor; and through every real VOCR

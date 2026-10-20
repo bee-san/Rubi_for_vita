@@ -749,6 +749,97 @@ static void the_sticks_steps_in_generated_texts(void)
            checks, pushed, popped, kept);
 }
 
+/* Sessions of mixed keys over generated multi-row texts, as the overlay's paths take them: the
+ * d-pad's Left/Right with a shown word's end (any of the text's character boundaries after the
+ * cursor), the stick's left/right, Up/Down, a tap (render's s_nav.words.count = 0) and Character
+ * mode (the same, and no match end). After every key Right's history is strictly increasing and
+ * all of it lies before the cursor (on a text of several rows nothing goes round, so the stick's
+ * left only ever takes out entries at or after where it lands, the newest); the stick's every step
+ * is the next or previous selectable character; the d-pad's Left lands on the history's newest
+ * entry when there is one. */
+static void mixed_sessions_keep_the_history_in_order(void)
+{
+    static const char *const pieces[] = {"あ", "猫", "犬", "、", "。", "ー", "っ", "A", "7", " ", "\n", "𠮷", "語", "き"};
+    static char text[2048];
+    unsigned sessions = 0, keys = 0, stick_keys = 0, retraced = 0;
+    seed = 777;
+    for (int t = 0; t < 200; t++) {
+        size_t n = 0, pieces_n = 20 + lcg() % 60;
+        for (size_t q = 0; q < pieces_n; q++) {
+            const char *piece = pieces[lcg() % (sizeof(pieces) / sizeof(pieces[0]))];
+            size_t k = strlen(piece);
+            if (n + k >= sizeof(text)) break;
+            memcpy(text + n, piece, k);
+            n += k;
+        }
+        text[n] = 0;
+        layout_text(&lay, text, t % 2 ? 120.0f : W, JA, NARROW);
+        VjoTextRows r = layout_rows(&lay);
+        for (int jp = 0; jp <= 1; jp++) {
+            unsigned sel[LAYOUT_MAX], ns = 0;
+            for (unsigned k = 0; k < lay.n; k++)
+                if (layout_selectable(&lay, k, jp))
+                    sel[ns++] = k;
+            if (ns < 2 || lay.line[sel[0]] == lay.line[sel[ns - 1]])
+                continue; /* a one-row text goes round with the d-pad: its history is not in order */
+            VjoRowNav nav;
+            memset(&nav, 0, sizeof(nav));
+            size_t c = lay.begin[sel[0]];
+            int word = 1;
+            sessions++;
+            for (int step = 0; step < 300; step++) {
+                uint32_t pick = lcg() % 20;
+                size_t out = c, end = 0;
+                int wrapped;
+                if (pick < 6) { /* the d-pad's Right, with a shown word's end */
+                    if (word && lcg() % 4) {
+                        size_t e = c;
+                        for (int k = 1 + (int)(lcg() % 4); k-- > 0 && e < n;)
+                            vjo_utf8_next(text, n, &e);
+                        end = e;
+                    }
+                    vjo_text_row_key(&nav, text, n, &r, c, end, 1, 0, jp, 0, &out);
+                } else if (pick < 9) { /* the d-pad's Left */
+                    unsigned before = nav.words.count;
+                    size_t want = before && nav.words.previous[before - 1] != c ? nav.words.previous[before - 1] : 0;
+                    vjo_text_row_key(&nav, text, n, &r, c, 0, -1, 0, jp, 0, &out);
+                    if (before) {
+                        TEST_CHECK_(out == want, "text %d jp %d: the d-pad's Left from %zu: %zu, the history's %zu", t,
+                                    jp, c, out, want);
+                        retraced++;
+                    }
+                } else if (pick < 15) { /* the stick's right or left */
+                    int d = pick < 12 ? 1 : -1;
+                    size_t want = ref_read_step(&lay, c, c + 1, d, jp, 0, &wrapped);
+                    vjo_text_row_key(&nav, text, n, &r, c, word ? n : 0, d, 0, jp, 1, &out);
+                    TEST_CHECK_(out == want, "text %d jp %d: the stick's %+d from %zu: %zu, expected %zu", t, jp, d, c,
+                                out, want);
+                    stick_keys++;
+                } else if (pick < 18) { /* Up/Down */
+                    vjo_text_row_key(&nav, text, n, &r, c, 0, 0, pick < 17 ? -1 : 1, jp, lcg() % 2, &out);
+                } else if (pick < 19) { /* a tap on a selectable character */
+                    out = lay.begin[sel[lcg() % ns]];
+                    nav.words.count = 0;
+                } else { /* Character mode and back (render clears the history) */
+                    word = !word;
+                    nav.words.count = 0;
+                }
+                c = out;
+                keys++;
+                for (unsigned i = 0; i < nav.words.count; i++)
+                    TEST_CHECK_(nav.words.previous[i] < c && (!i || nav.words.previous[i - 1] < nav.words.previous[i]),
+                                "text %d jp %d step %d: history[%u] = %u, cursor %zu", t, jp, step, i,
+                                nav.words.previous[i], c);
+                TEST_CHECK(layout_selectable(&lay, (unsigned)layout_at(&lay, c), jp));
+            }
+            TEST_CHECK(!nav.wraps && lay.bad_queries == 0);
+        }
+    }
+    TEST_CHECK(sessions > 200 && retraced > 5000);
+    printf("\n  %u mixed sessions, %u keys (%u the stick's, %u Lefts retracing): the history stays in order\n",
+           sessions, keys, stick_keys, retraced);
+}
+
 TEST_LIST = {
     {"wrapped_line_rows_and_their_ends", wrapped_line_rows_and_their_ends},
     {"a_cell_never_ends_on_the_next_row", a_cell_never_ends_on_the_next_row},
@@ -764,4 +855,5 @@ TEST_LIST = {
     {"generated_texts_follow_the_rules", generated_texts_follow_the_rules},
     {"the_stick_steps_a_character_at_a_time", the_stick_steps_a_character_at_a_time},
     {"the_sticks_steps_in_generated_texts", the_sticks_steps_in_generated_texts},
+    {"mixed_sessions_keep_the_history_in_order", mixed_sessions_keep_the_history_in_order},
     {NULL, NULL}};

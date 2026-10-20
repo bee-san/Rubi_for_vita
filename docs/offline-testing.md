@@ -142,7 +142,7 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | kernel_meminfo | 6 | the three kernel memory routes with the firmware's objects at 32-bit kernel-range, upper-kernel and user-range addresses (the user-half ones unreadable, at 0x5... and 0x8...), and the guard at each of its edges |
 | touch_hold | 6 | the overlay page's hold on SceShell's front touch region (`shell/touch_hold.h`, #104) against a model of the region |
 | region_select | 15 | the region selector's stick cursor (`core/region_select.c`): its 1/256-pixel position, speed and timer arithmetic in 32 bits |
-| text_rows | 14 | the overlay arrows' row walk (`core/text_rows.c`, #81; across rows since the owner's 2026-10-16 rule) and the left stick's character steps (the owner, 2026-10-20): float cell edges and 32-bit offsets on the Vita's FPU |
+| text_rows | 15 | the overlay arrows' row walk (`core/text_rows.c`, #81; across rows since the owner's 2026-10-16 rule) and the left stick's character steps (the owner, 2026-10-20): float cell edges and 32-bit offsets on the Vita's FPU |
 | text_join | 6 | which line breaks of the recognized text join its lines (`core/textjoin.c`), and the join's byte offsets, with 32-bit `size_t` |
 | linebreak | 6 | where the overlay's own wrapping may break a line (`core/linebreak.c`): its UTF-16 and UTF-8 walks agree on the Vita's word size |
 | stick_cursor | 26 | the overlay's left stick (`core/stick_cursor.h`, #138): its 32-bit microsecond differences across the clock's wrap and its credit by the clock at 20-60 Hz, the cap, the deferred lookup, and the step along the text (a character a step, never past the shown word, without the wrap) with 32-bit offsets |
