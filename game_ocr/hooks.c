@@ -455,32 +455,52 @@ static int title_listed(const char *title_id)
     return vjo_place_title_verified(title_id) || vjo_luna_title_known(title_id);
 }
 
-void vjo_hooks_start(const char *title_id, unsigned mode, int psp)
+static void set_kinds(void)
+{
+    for (unsigned i = 0; i < VJO_HOOK_STREAMS; i++)
+        slots[i].kind = i < VJO_HOOK_SITE_STREAMS ? VJO_HOOK_KIND_SITE : VJO_HOOK_KIND_CALL;
+}
+
+static void start(const char *title_id, unsigned mode, int psp)
 {
     tai_module_info_t tai;
     SceKernelModuleInfo mi;
-    for (unsigned i = 0; i < CALL_IMPORTS; i++) call_uid[i] = -1;
-    for (unsigned i = 0; i < VJO_HOOK_SITE_STREAMS; i++) site_uid[i] = -1;
-    for (unsigned i = 0; i < VJO_HOOK_STREAMS; i++)
-        slots[i].kind = i < VJO_HOOK_SITE_STREAMS ? VJO_HOOK_KIND_SITE : VJO_HOOK_KIND_CALL;
-    /* the mode the kernel gave (an unknown value is OCR), even when nothing applies to this game */
-    applied_mode = mode == VJO_TEXT_SOURCE_AUTO || mode == VJO_TEXT_SOURCE_HOOKS ? mode : VJO_TEXT_SOURCE_OCR;
-    if (applied_mode == VJO_TEXT_SOURCE_OCR) return;
-    if (psp || !title_id || !title_id[0]) return; /* nothing in the PSP emulator in this version */
-    if (mode == VJO_TEXT_SOURCE_AUTO && !title_listed(title_id)) return;
-    if (main_module(&tai, &mi) < 0) return;
+    if (psp || !title_id || !title_id[0]) {
+        DLOG("nothing: %s\n", psp ? "the PSP emulator's process" : "no title ID");
+        return; /* nothing in the PSP emulator in this version */
+    }
+    if (mode == VJO_TEXT_SOURCE_AUTO && !title_listed(title_id)) {
+        DLOG("nothing: %s has no hook entry (text source auto)\n", title_id);
+        return;
+    }
+    if (main_module(&tai, &mi) < 0) {
+        DLOG("nothing: no main module (eboot.bin) with a segment 0\n");
+        return;
+    }
     seg_base = (uint32_t)(uintptr_t)mi.segments[0].vaddr;
     mem_info_ok = VJO_IMPORT_READY(sceKernelGetMemBlockInfoByAddr);
-#if VJO_DEBUG
-    if (VJO_IMPORT_READY(sceIoOpen))
-        dlog = sceIoOpen("ux0:data/VitaJPOverlay/hooks.log", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
-    DLOG("%s: text source %u\n", title_id, (unsigned)mode);
-#endif
     live = 1;
     install_sites(title_id, &tai, &mi);
+    set_kinds(); /* app_version may have used the CALL slots' storage */
     install_calls(tai.name);
     DLOG("sites hooked %u, refused %u; CALL imports hooked %u of %u\n", (unsigned)n_sites, (unsigned)n_refused,
          (unsigned)n_calls, (unsigned)CALL_IMPORTS);
+}
+
+void vjo_hooks_start(const char *title_id, unsigned mode, int psp)
+{
+    for (unsigned i = 0; i < CALL_IMPORTS; i++) call_uid[i] = -1;
+    for (unsigned i = 0; i < VJO_HOOK_SITE_STREAMS; i++) site_uid[i] = -1;
+    set_kinds();
+    /* the mode the kernel gave (an unknown value is OCR), even when nothing applies to this game */
+    applied_mode = mode == VJO_TEXT_SOURCE_AUTO || mode == VJO_TEXT_SOURCE_HOOKS ? mode : VJO_TEXT_SOURCE_OCR;
+    if (applied_mode == VJO_TEXT_SOURCE_OCR) return;
+#if VJO_DEBUG
+    if (VJO_IMPORT_READY(sceIoOpen))
+        dlog = sceIoOpen("ux0:data/VitaJPOverlay/hooks.log", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    DLOG("%.9s: text source %u\n", title_id ? title_id : "", (unsigned)mode);
+#endif
+    start(title_id, applied_mode, psp);
 #if VJO_DEBUG
     if (dlog >= 0) sceIoClose(dlog);
     dlog = -1;
