@@ -10,6 +10,7 @@
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"
 #include "test_resident_weights.h"
+#define VJO_TEST_HOOK_CACHE 1
 #include "../../game_ocr/main.c"
 
 #define W 200u
@@ -25,6 +26,37 @@ static uint64_t clock_value;
 static int file_open_now, cancel_now, rows_error;
 static unsigned opens, finds, runs;
 static const char *spy_text = "猫"; /* what the spy recognizer reads on every line */
+
+static uint8_t saved_cache[VJO_HOOK_CACHE_BYTES], fake_build[32];
+static unsigned cache_loads, cache_saves, build_reads;
+static int saved_cache_size, cache_load_error, cache_save_error, build_error;
+static unsigned cache_busy, cache_closes;
+static int cache_pending, cache_cancel, fail_capture_free;
+int vjo_hooks_build_id(uint8_t out[32])
+{
+    build_reads++;
+    memcpy(out, fake_build, sizeof(fake_build));
+    return !build_error;
+}
+int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data)
+{
+    TEST_CHECK(seq == 12 && !file_open_now);
+    cache_pending = 1;
+    if (cache_cancel) cancel_now = 1;
+    if (cache_busy) { cache_busy--; return VJO_ERR_BUSY; }
+    if (operation == VJO_GAME_OCR_HOOK_CACHE_LOAD) {
+        cache_loads++;
+        if (cache_load_error) return cache_load_error;
+        if (saved_cache_size > 0) memcpy(data, saved_cache, sizeof(saved_cache));
+        return saved_cache_size;
+    }
+    TEST_CHECK(operation == VJO_GAME_OCR_HOOK_CACHE_SAVE);
+    cache_saves++;
+    if (cache_save_error) return cache_save_error;
+    memcpy(saved_cache, data, sizeof(saved_cache));
+    saved_cache_size = sizeof(saved_cache);
+    return 0;
+}
 
 /* ---- the fake hook engine (game_ocr/hooks.h) ---- */
 typedef struct {
@@ -133,7 +165,11 @@ int sceKernelGetMemBlockBase(SceUID uid, void **base)
 }
 int sceKernelFreeMemBlock(SceUID uid)
 {
-    if (uid == 11) { TEST_CHECK(capture_live); capture_live = 0; live_bytes -= capture_block; return 0; }
+    if (uid == 11) {
+        TEST_CHECK(capture_live);
+        if (fail_capture_free) { fail_capture_free--; return -1; }
+        capture_live = 0; live_bytes -= capture_block; return 0;
+    }
     if (uid == 10) { TEST_CHECK(weights_live); weights_live = 0; live_bytes -= weights_block; return 0; }
     TEST_CHECK(uid == 9 && job_live); job_live = 0; live_bytes -= job_block; return 0;
 }
@@ -193,7 +229,13 @@ int vjoOcrModelRead(uint32_t seq, uint32_t off, uint32_t n, void *dst)
     for (uint32_t i = 0; i < n; i++) ((unsigned char *)dst)[i] = test_weight_byte(off + i, TEST_FL10_SEED);
     return (int)n;
 }
-int vjoOcrModelClose(uint32_t seq) { TEST_CHECK(seq == 12); file_open_now = 0; return 0; }
+int vjoOcrModelClose(uint32_t seq)
+{
+    TEST_CHECK(seq == 12);
+    if (cache_pending) { cache_closes++; cache_pending = 0; }
+    file_open_now = 0;
+    return 0;
+}
 
 /* ---- the runtime: spies ---- */
 int vocr_find_lines_rows(const VocrLinesRows *src, int mode, void *arena, size_t bytes, VocrLineSet *out)
@@ -245,6 +287,11 @@ static void reset(void)
     file_open_now = cancel_now = rows_error = 0;
     opens = finds = runs = 0; rows_calls = 0;
     spy_text = "猫";
+    cache_loads = cache_saves = build_reads = 0;
+    saved_cache_size = cache_load_error = cache_save_error = build_error = 0;
+    cache_busy = cache_closes = 0; cache_pending = cache_cancel = fail_capture_free = 0;
+    memset(saved_cache, 0, sizeof(saved_cache));
+    memset(fake_build, 0xa7, sizeof(fake_build));
     memset(pixels, 0, sizeof(pixels));
 }
 /* One job; between jobs the line cache is emptied so the spy's text is read again. */
@@ -403,7 +450,8 @@ static void failed_answer_changes_nothing(void)
 {
     VjoGameOcrResult out;
     reset();
-    hk.sel = (VjoHookSelect){.locked = 9, .locked_seq = 5, .streak_id = 9, .streak = 2};
+    hk.sel = (VjoHookSelect){.locked = 9, .locked_seq = 5, .streak_id = 9, .streak = 2,
+                               .interval = 8, .locked_encoding = VJO_HOOK_ENC_UTF8};
     stream(9, VJO_HOOK_KIND_CALL, 6, LINE1);
     rows_error = VJO_ERR_ARG; /* every rows call refused: the pass cannot be read */
     TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_SOURCE);
@@ -463,7 +511,8 @@ static void self_test_jobs_are_ocr(void)
     VjoGameOcrResult out;
     VjoGameOcrRequest r;
     reset();
-    hk.sel = (VjoHookSelect){.locked = 9, .locked_seq = 5, .streak_id = 9, .streak = 2};
+    hk.sel = (VjoHookSelect){.locked = 9, .locked_seq = 5, .streak_id = 9, .streak = 2,
+                               .interval = 8, .locked_encoding = VJO_HOOK_ENC_UTF8};
     stream(9, VJO_HOOK_KIND_CALL, 6, LINE1);
     spy_text = OCR1;
     r = request(9); /* even pinned */
@@ -529,9 +578,11 @@ static void full_pool_keeps_the_pick_and_the_newest(void)
         }
         texts_of[id][399] = '\0';
         stream(id, id <= VJO_HOOK_SITE_STREAMS ? VJO_HOOK_KIND_SITE : VJO_HOOK_KIND_CALL, 100 + id, texts_of[id]);
+        fs[id].key = id * 0x100u; /* each fake caller/site has its own stable source identity */
     }
     fs[15].seq = 1;
-    hk.sel = (VjoHookSelect){.locked = 15, .locked_seq = 1, .streak_id = 15, .streak = 2};
+    hk.sel = (VjoHookSelect){.locked = 15, .locked_seq = 1, .streak_id = 15, .streak = 2, .locked_key = 0xf00u,
+                               .interval = 8, .locked_encoding = VJO_HOOK_ENC_UTF8};
     fs[15].seq = 2; /* new text: it answers */
     TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 15);
     TEST_CHECK(out.hook_flags == (VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
@@ -588,7 +639,120 @@ static void keep_and_calls_full(void)
     TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !out.hook_flags && !keeps);
 }
 
+static void prime_hook_cache(uint32_t interval)
+{
+    VjoHookLearned learned = {0, 0x1234u, VJO_HOOK_ENC_UTF8, interval};
+    VjoHookCacheKey key = {0};
+    memcpy(key.title, "PCSG00415", 10);
+    memcpy(hk.cache_key.title, key.title, sizeof(key.title));
+    memcpy(key.build, fake_build, sizeof(key.build));
+    TEST_ASSERT(hook_revision(key.definition));
+    key.mode = fake_mode;
+    TEST_ASSERT(vjo_hook_cache_put(saved_cache, 0, &key, &learned) == 1);
+    saved_cache_size = sizeof(saved_cache);
+}
+
+static void restart_hook_selection(void)
+{
+    memset(&hk.sel, 0, sizeof(hk.sel));
+    memset(&hk.cached, 0, sizeof(hk.cached));
+    hk.cache_attempted = hk.cache_ready = hk.build_known = 0;
+}
+
+static void remembered_hook_worker_cadence(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    prime_hook_cache(32);
+    /* A stable caller is slot15 this launch; the saved record contains no temporary stream ID. */
+    fs[15].key = 0x1234;
+    stream(15, VJO_HOOK_KIND_CALL, 1, LINE1); spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && runs == 1 && out.text_from == 15);
+    TEST_CHECK(hk.sel.interval == 32 && !hk.sel.unchecked && !hk.sel.confirm);
+    TEST_CHECK(build_reads == 1 && cache_loads == 1 && !cache_saves);
+    for (unsigned i = 1; i <= 32; i++) {
+        const char *line = i & 1u ? LINE2 : LINE3;
+        stream(15, VJO_HOOK_KIND_CALL, i + 1, line); spy_text = line;
+        TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+        TEST_CHECK_(runs == (i == 32 ? 2u : 1u), "reading %u, runs %u", i, runs);
+    }
+    TEST_CHECK(hk.sel.interval == 32 && !hk.sel.unchecked && !cache_saves && cache_loads == 1);
+    /* Reopening unchanged dialogue takes OCR's ordinary path, without advancing the learned counter. */
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && runs == 3 && !hk.sel.unchecked);
+    TEST_CHECK(!cache_saves && cache_loads == 1);
+    /* Restart: one bad OCR result retains the source; the next fresh agreement resets to8 and saves once. */
+    restart_hook_selection();
+    stream(15, VJO_HOOK_KIND_CALL, 34, LINE1); spy_text = "ここには全く違った文章が表示されています";
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !out.text_from);
+    TEST_CHECK(hk.sel.interval == 32 && hk.sel.misses == 1 && !cache_saves);
+    stream(15, VJO_HOOK_KIND_CALL, 35, LINE2); spy_text = OCR2;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 15);
+    TEST_CHECK(hk.sel.interval == 8 && !hk.sel.misses && cache_saves == 1);
+}
+
+static void hook_cache_worker_failures(void)
+{
+    VjoGameOcrResult out;
+    reset(); prime_hook_cache(32);
+    fs[9].key = 0x1234; stream(9, VJO_HOOK_KIND_CALL, 1, LINE1); spy_text = OCR1;
+    rows_error = VJO_ERR_CANCELLED;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) != 0);
+    TEST_CHECK(hk.sel.interval == 32 && hk.sel.confirm && !cache_saves);
+    rows_error = 0;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && hk.sel.interval == 32 && !hk.sel.confirm);
+    TEST_CHECK(!cache_saves); /* failed startup consumed neither comparison nor persistence */
+    /* The complete executable changed, with the same title ID: no reuse of the learned32 interval. */
+    restart_hook_selection(); fake_build[31] ^= 1;
+    stream(9, VJO_HOOK_KIND_CALL, 2, LINE2); spy_text = OCR2;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !hk.sel.interval && hk.sel.streak == 1);
+    stream(9, VJO_HOOK_KIND_CALL, 3, LINE3); spy_text = OCR3;
+    cache_save_error = -1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && hk.sel.interval == 8 && cache_saves == 1);
+    stream(9, VJO_HOOK_KIND_CALL, 4, LINE1);
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && cache_saves == 1); /* no write per reading on failure */
+    /* A cache read IO error is ignored, and never overwrites other games' data. */
+    reset(); prime_hook_cache(32); cache_load_error = -1;
+    fs[9].key = 0x1234; stream(9, VJO_HOOK_KIND_CALL, 1, LINE1); spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !hk.sel.interval);
+    stream(9, VJO_HOOK_KIND_CALL, 2, LINE2); spy_text = OCR2;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && hk.sel.interval == 8 && !cache_saves);
+}
+
+static void hook_cache_cleanup_ownership(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset(); prime_hook_cache(32); cache_busy = 2;
+    fs[9].key = 0x1234; stream(9, VJO_HOOK_KIND_CALL, 1, LINE1); spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && hk.sel.interval == 32);
+    TEST_CHECK(cache_closes == 1 && !cache_pending && !model_owned);
+    /* A completed read whose user copy failed can still own staged broker data; ModelClose drains it. */
+    restart_hook_selection(); cache_load_error = VJO_ERR_COPY;
+    stream(9, VJO_HOOK_KIND_CALL, 2, LINE2); spy_text = OCR2;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !hk.sel.interval);
+    TEST_CHECK(cache_closes == 2 && !cache_pending && !model_owned && !cache_saves);
+    /* Cancel during a BUSY cache operation: no leak, no consumed startup comparison, no persistence. */
+    restart_hook_selection(); cache_load_error = 0; cache_busy = 1; cache_cancel = 1;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_CANCELLED);
+    TEST_CHECK(!cache_pending && !model_owned && !cache_saves);
+    /* A failed primary capture cleanup rolls back learning and never starts a cache write. */
+    reset(); prime_hook_cache(32);
+    fs[9].key = 0x1234; stream(9, VJO_HOOK_KIND_CALL, 1, LINE1); spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+    stream(9, VJO_HOOK_KIND_CALL, 2, LINE2); spy_text = "この画面は異なる文章を表示しています";
+    hk.sel.confirm = 1; /* force a comparable disagreement check */
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && hk.sel.misses == 1);
+    stream(9, VJO_HOOK_KIND_CALL, 3, LINE3); spy_text = OCR3; fail_capture_free = 1;
+    r = request(VJO_HOOK_PICK_AUTO); vjo_game_ocr_cache_clear();
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OCR_UNAVAILABLE);
+    TEST_CHECK(out.cleanup_status && blocked && !cache_saves && hk.sel.interval == 32 && hk.sel.misses == 1);
+    TEST_CHECK(!cleanup()); /* fixture releases the retained block before the next reset */
+}
+
 TEST_LIST = {
+    {"hook cache cleanup: BUSY, copy failure, cancellation, failed primary free", hook_cache_cleanup_ownership},
+    {"remembered hook: startup confirmation, exact32 cadence, recovery", remembered_hook_worker_cadence},
+    {"hook cache worker: failed job, exact build invalidation, IO failures", hook_cache_worker_failures},
     {"nothing installed: OCR as before, no snapshot", nothing_installed_is_ocr_as_before},
     {"an agreeing stream's text replaces OCR's", agreeing_stream_replaces_ocr_text},
     {"a locked stream with new text answers with the first pass only", locked_stream_answers_with_the_first_pass_only},

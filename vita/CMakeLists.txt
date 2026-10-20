@@ -28,6 +28,8 @@ set(VJO_SELF_FLAGS "${VITA_MAKE_FSELF_FLAGS}")
 
 set(ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(VJO_ROOT ${ROOT})
+include(${ROOT}/cmake/HookRevision.cmake)
+vjo_hook_revision(${ROOT})
 add_subdirectory(${ROOT}/compat/adrenaline_vsh ${CMAKE_CURRENT_BINARY_DIR}/adrenaline_compat)
 set(VJO_BUILD_VITA ON)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
@@ -314,8 +316,8 @@ if(VJO_WITH_VOCR)
   # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
   # For size, as the worker's control code is: 1,992 B of text and rodata at -Os (2,640 B at -O2; measured,
   # vitasdk 2026.08, with the lock's checks of audit-hooks-text F3).
-  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
-  set_source_files_properties(${ROOT}/core/hook_select.c PROPERTIES COMPILE_OPTIONS "-Os")
+  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c ${ROOT}/core/hook_cache.c)
+  set_source_files_properties(${ROOT}/core/hook_select.c ${ROOT}/core/hook_cache.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
   # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
   set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")

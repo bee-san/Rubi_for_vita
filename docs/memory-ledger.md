@@ -5,6 +5,35 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Remembered hooks (API 34, issue #241)
+
+Measured with VitaSDK GCC 15.2.0, Release, on the packaged SELF files in both variants:
+
+| Module | Debug pages | Normal pages | Increase |
+|---|---:|---:|---:|
+| Kernel | 122,880 B | 118,784 B | 4,096 B |
+| Game worker | 176,128 B | 167,936 B | 8,192 B |
+
+The kernel segments are 41,740 + 77,732 B (debug) and 36,904 + 76,044 B (normal). The cache broker
+adds one code page, reusing the existing model staging buffer, ownership state and file thread; its
+BSS is unchanged. The worker segments are 137,088 + 32,888 B (debug) and 128,220 + 32,880 B (normal).
+Its adaptive selector, executable hashing and cache handling add one text page; the stable source
+identity and rollback state cross the next data-page boundary. These increases are deliberate in
+`include/vjo_ledger_budget.h`; the game ceiling grows by the same 8,192 B. No new allocation site,
+thread, Shell storage or PAF allocation is added.
+
+The temporary cache blob is exactly 3,088 B by format, held on the existing worker stack only during
+cache operations. The exact executable is hashed with a 1,024-byte streaming buffer on that stack.
+The broker's file-worker frame remains 408 B, and its syscall frame is 56 B (measured compiler
+`-fstack-usage`, both variants). Local reports are `build/vita-minimal/measure-ledger.json` and
+`build/vita-minimal-normal/measure-ledger.json`. These are binary/compiler measurements; console
+boot, available memory, OCR invocation counts and CPU cost have not been measured for this change.
+
+Host validation covers the selector's distinct-line validation, 8→16→32 cadence, unchanged dialogue,
+restart confirmation and recovery; exact executable hashing; bounded/corrupt cache data; and broker
+and worker I/O, cancellation and cleanup failures. Console validation remains the procedure in
+[Native hooks](native-hooks.md#release).
+
 ## Combined enhancement test build (local, API 33)
 
 The local combination of PRs #209, #233, #234, #235 and #236, with popup source controls removed, fits the

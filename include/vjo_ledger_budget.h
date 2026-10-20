@@ -225,10 +225,16 @@
  * room (VJO_DATA_TABLE); no new allocation or per-pixel work. Measured with VitaSDK GCC 15.2.0:
  * debug segments 134120+32576 B, normal 125172+32568 B; rounded 167936/159744 B
  * (build/combined-{debug,normal}-ledger.json). Shell budgets and PAF reserve remain unchanged. */
+/* API 34, remembered hooks: one extra text page for adaptive selection/cache/build hashing and one
+ * data page for stable source identity and rollback state. No new block or thread; the cache blob
+ * uses the existing worker stack. Measured packaged SELF, VitaSDK GCC 15.2.0 Release:
+ * debug segments 137088+32888 B ->176128 B, normal 128220+32880 B ->167936 B,
+ * local build/vita-minimal and build/vita-minimal-normal measure-ledger.json reports.
+ * These are binary measurements, not console pool or boot measurements. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 167936u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 176128u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 159744u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 167936u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
@@ -342,14 +348,19 @@
  * display hook's copy, the worker's completion and timeout, two syscalls): 40,040 -> 37,964 B of
  * text and 77,672 -> 77,584 B of data/bss, the normal build 35,900 -> 33,840 and 75,984 -> 75,896 B,
  * the same pages [measured: the build log's module rows, both builds of main 836259e (#150) and API 24]. */
+/* API 34, remembered hooks: the authenticated cache operation reuses model_stage/model_io and the
+ * existing file thread. It adds one code page, with no buffer/thread/heap growth: packaged SELF
+ * segments 41740+77732 B (debug), 36904+76044 B (normal), rounded 122880/118784 B.
+ * Measured with VitaSDK GCC 15.2.0, Release, local minimal-build kernel-measure-ledger.json reports;
+ * binary sizes only, console boot/free-pool impact unverified. */
 #if VJO_DEBUG
-#define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
+#define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
 #else
 /* The normal build: the self-test's memory routes (kernel/meminfo.c), the frame pacing, and the
  * per-screen, per-job and input traces compiled out: 36,444 + 76,136 against the debug build's
  * 40,648 + 77,824, one text page fewer; 32,332 + 76,080 before #138, which adds one text page
  * [measured: the build log's module rows, both builds, main 3aa08a6 and #138]. */
-#define VJO_BUDGET_KERNEL_MODULE_PAGES 114688u
+#define VJO_BUDGET_KERNEL_MODULE_PAGES 118784u
 #endif
 #define VJO_STACK_KERNEL 16384u                    /* VjoWorker */
 #define VJO_BUDGET_KERNEL_STACK VJO_STACK_KERNEL
@@ -488,6 +499,7 @@
  * tier (game_ocr/main.c), never a smaller tier for the helpers. */
 #define VJO_LIMIT_GAME_WEIGHTS 2502656u
 #define VJO_LIMIT_GAME_WORKSPACE 1212416u
-#define VJO_LIMIT_GAME_JOB 10567680u
+/* API 34 adds the measured 8192 B of worker module pages to the prior ceiling. */
+#define VJO_LIMIT_GAME_JOB 10575872u
 
 #endif

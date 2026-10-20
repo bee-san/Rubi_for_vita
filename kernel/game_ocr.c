@@ -26,7 +26,11 @@ static int waiters;
 
 enum { MODEL_IDLE, MODEL_QUEUED, MODEL_RUNNING, MODEL_DONE };
 /* SHOT_WRITE, SHOT_SAVE (API 23): a shot's JPEG, the other way through the same broker. */
-enum { MODEL_OPEN = 1, MODEL_READ, MODEL_CLOSE, SHOT_WRITE, SHOT_SAVE };
+enum { MODEL_OPEN = 1, MODEL_READ, MODEL_CLOSE, SHOT_WRITE, SHOT_SAVE, HOOK_CACHE_LOAD, HOOK_CACHE_SAVE };
+#define HOOK_CACHE_WHICH 0xFFFFFFFFu
+#define HOOK_CACHE_PATH "ux0:data/VitaJPOverlay/hooks.cache"
+#define HOOK_CACHE_TEMP HOOK_CACHE_PATH ".tmp"
+#define HOOK_CACHE_BACKUP HOOK_CACHE_PATH ".bak"
 static struct {
     uint32_t seq, offset, bytes, size;
     uint32_t which;    /* VJO_GAME_OCR_OPEN_*: the request's model or its fallback */
@@ -45,6 +49,7 @@ static struct {
 /* One kernel staging buffer; weights and inference remain in game USER_RW. A
  * shot's JPEG crosses it too, a chunk at a time (API 23). */
 static unsigned char model_stage[VJO_GAME_OCR_MODEL_CHUNK];
+typedef char vjo_hook_cache_stage_check[VJO_GAME_OCR_HOOK_CACHE_BYTES <= sizeof(model_stage) ? 1 : -1];
 typedef char vjo_shot_chunk_check[VJO_GAME_OCR_SHOT_CHUNK == sizeof(model_stage) ? 1 : -1];
 /* exFAT's first file extension while a game ran took 20.9 s on the console;
  * overwriting reserved space took 6 ms. Keep one maximum-sized spare on disk,
@@ -1088,6 +1093,104 @@ int vjoOcrModelClose(uint32_t seq)
     return rc;
 }
 
+static int hook_cache_locked(SceUID pid, uint32_t seq, uint32_t operation, void *data)
+{
+    int rc = model_caller_locked(pid, seq, 0);
+    if (rc) return rc;
+    if (!data || operation > VJO_GAME_OCR_HOOK_CACHE_SAVE ||
+        (request.flags & (VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_PROBE))) return VJO_ERR_ARG;
+    if (model_io.seq) {
+        if (model_io.seq != seq || model_io.pid != pid || model_io.which != HOOK_CACHE_WHICH ||
+            model_io.operation != (operation ? HOOK_CACHE_SAVE : HOOK_CACHE_LOAD)) return VJO_ERR_ARG;
+        if (model_io.closing) return VJO_ERR_CANCELLED;
+        if (model_io.phase != MODEL_DONE) return VJO_ERR_BUSY;
+        rc = model_io.rc;
+        if (!operation && rc > 0 && ksceKernelMemcpyKernelToUser(data, model_stage, (SceSize)rc) < 0)
+            return VJO_ERR_COPY; /* the completed read stays retryable */
+        if (model_io.fd < 0) model_reset_locked();
+        else model_io.phase = MODEL_IDLE; /* failed close: ModelClose still owns it */
+        return rc;
+    }
+    if (operation && ksceKernelMemcpyUserToKernel(model_stage, data, VJO_GAME_OCR_HOOK_CACHE_BYTES) < 0)
+        return VJO_ERR_COPY;
+    model_reset_locked();
+    model_io.seq = seq;
+    model_io.pid = pid;
+    model_io.which = HOOK_CACHE_WHICH;
+    model_io.operation = operation ? HOOK_CACHE_SAVE : HOOK_CACHE_LOAD;
+    model_io.phase = MODEL_QUEUED;
+    model_wake_locked();
+    return VJO_ERR_BUSY;
+}
+
+int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data)
+{
+    uint32_t state;
+    SceUID pid = ksceKernelGetProcessId();
+    uint64_t deadline;
+    int rc;
+    ENTER_SYSCALL(state);
+    deadline = (uint64_t)ksceKernelGetSystemTimeWide() + MODEL_SYSCALL_WAIT_US;
+    do {
+        VJO_LOCK();
+        rc = hook_cache_locked(pid, seq, operation, data);
+        VJO_UNLOCK();
+    } while (rc == VJO_ERR_BUSY && model_wait(deadline));
+    EXIT_SYSCALL(state);
+    return rc;
+}
+
+/* File-worker only. Reuse the model staging buffer, without a kernel heap, thread or user pointer.
+ * Vita rename does not replace a destination: retain the previous file under .bak until the next save.
+ * There is deliberately no device sync here (#194); interrupted or corrupt data means fresh learning. */
+static int hook_cache_file(int operation, SceUID *fd)
+{
+    const int save = operation == HOOK_CACHE_SAVE;
+    int rc, n, moved = 0;
+    uint32_t done = 0;
+    *fd = ksceIoOpen(save ? HOOK_CACHE_TEMP : HOOK_CACHE_PATH,
+                     save ? SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC : SCE_O_RDONLY, 0666);
+    if (*fd < 0 && !save && *fd == (int)0x80010002u)
+        *fd = ksceIoOpen(HOOK_CACHE_BACKUP, SCE_O_RDONLY, 0);
+    if (*fd < 0) return !save && *fd == (int)0x80010002u ? 0 : *fd;
+    rc = 0;
+    if (!save) {
+        SceOff size = ksceIoLseek(*fd, 0, SCE_SEEK_END);
+        if (size != VJO_GAME_OCR_HOOK_CACHE_BYTES) rc = size < 0 ? (int)size : VJO_ERR_FORMAT;
+    }
+    while (!rc && done < VJO_GAME_OCR_HOOK_CACHE_BYTES) {
+        uint32_t left = VJO_GAME_OCR_HOOK_CACHE_BYTES - done;
+        n = save ? ksceIoPwrite(*fd, model_stage + done, left, done)
+                 : ksceIoPread(*fd, model_stage + done, left, done);
+        if (n <= 0 || (uint32_t)n > left) rc = n < 0 ? n : VJO_ERR_FORMAT;
+        else done += (uint32_t)n;
+    }
+    n = ksceIoClose(*fd);
+    if (n >= 0) *fd = -1;
+    else if (!rc) rc = n;
+    if (save && *fd < 0) {
+        if (!rc) {
+            /* A recovered backup may be the only committed copy. Probe the main name before removing
+             * that backup; a failed publication must preserve it when the main name was absent. */
+            *fd = ksceIoOpen(HOOK_CACHE_PATH, SCE_O_RDONLY, 0);
+            if (*fd >= 0) {
+                n = ksceIoClose(*fd);
+                if (n >= 0) {
+                    *fd = -1;
+                    ksceIoRemove(HOOK_CACHE_BACKUP);
+                    n = ksceIoRename(HOOK_CACHE_PATH, HOOK_CACHE_BACKUP);
+                    if (n >= 0) moved = 1;
+                    else rc = n;
+                } else rc = n;
+            } else if (*fd != (int)0x80010002u) rc = *fd;
+            if (!rc) rc = ksceIoRename(HOOK_CACHE_TEMP, HOOK_CACHE_PATH);
+            if (rc < 0 && moved) ksceIoRename(HOOK_CACHE_BACKUP, HOOK_CACHE_PATH);
+        }
+        if (rc < 0 && *fd < 0) ksceIoRemove(HOOK_CACHE_TEMP);
+    }
+    return rc < 0 ? rc : save ? 0 : (int)done;
+}
+
 /* ---- API 23: a shot's JPEG, written by the kernel worker thread ----
  * The game worker hands its JPEG over in order, a staging buffer at a time; the
  * kernel worker writes each piece to the queue's <shot>.jpg.tmp (the first
@@ -1273,7 +1376,7 @@ static void shot_spare_prepare(void)
 
 void game_ocr_model_tick(void)
 {
-    int operation, rc, stat_rc = 0, shot, saved;
+    int operation, rc, stat_rc = 0, shot, saved, hook_cache;
     SceUID fd;
     uint32_t offset, bytes, size, written;
     uint64_t mtime = 0;
@@ -1310,6 +1413,7 @@ void game_ocr_model_tick(void)
     written = model_io.written;
     shot = model_io.shot;
     saved = model_io.saved;
+    hook_cache = model_io.which == HOOK_CACHE_WHICH;
     memcpy(path, model_io.path, sizeof(path));
     model_io.phase = MODEL_RUNNING;
     VJO_UNLOCK();
@@ -1321,7 +1425,9 @@ void game_ocr_model_tick(void)
 
     /* Only the persistent kernel worker executes these calls. Calling them
      * directly in a game's syscall would retain its unavailable ux0 namespace. */
-    if (operation == MODEL_OPEN) {
+    if (operation == HOOK_CACHE_LOAD || operation == HOOK_CACHE_SAVE) {
+        rc = hook_cache_file(operation, &fd);
+    } else if (operation == MODEL_OPEN) {
         fd = ksceIoOpen(path, SCE_O_RDONLY, 0);
         rc = fd;
         if (fd >= 0) {
@@ -1400,6 +1506,7 @@ void game_ocr_model_tick(void)
          * game's exit, the Shell's restart (they set closing); the Shell then saves the card without
          * a screenshot, so no record names this file. */
         if (rc >= 0 && shot) ksceIoRemove(saved ? final : path);
+        if (rc >= 0 && hook_cache) ksceIoRemove(HOOK_CACHE_TEMP);
     }
 
     VJO_LOCK();

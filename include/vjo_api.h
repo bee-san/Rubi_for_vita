@@ -66,8 +66,10 @@
  * step kind (trim). Sizes are unchanged from API 28; drafts 29-31 have their own interfaces.
  * 33: combined test interface: API 31's enlarged hook request/result structs and text-source syscalls
  * with API 32's shot-trimming speed bit and step. A new number keeps existing API 31 and 32 builds from
- * exchanging requests with an interface that differs from theirs. */
-#define VJO_API_VERSION 33
+ * exchanging requests with an interface that differs from theirs.
+ * 34: optional worker-only bounded hook-learning cache through the existing file broker
+ * (vjoOcrHookCache). Request/result layouts are unchanged; unavailable storage means fresh learning. */
+#define VJO_API_VERSION 34
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
