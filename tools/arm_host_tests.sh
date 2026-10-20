@@ -89,6 +89,15 @@ build kernel_loader host/tests/test_kernel_loader.c host/tests/games_io_posix.c 
 # the self-test's memory routes: the debug build's only
 [ "$VJO_DEBUG" = 0 ] || build kernel_meminfo host/tests/test_kernel_meminfo.c core/ledger.c
 build region_select host/tests/test_region_select.c core/region_select.c core/regions.c core/arena.c
+# API 31: the kernel's text source (one word, its atomics) and the Shell's triangle cycle and label, the
+# Rubi app's Games tag (Rubi's own entries; Luna's table where hooks/luna-port's file is in the tree).
+build kernel_text_source host/tests/test_kernel_text_source.c
+build hook_pick host/tests/test_hook_pick.c core/hook_pick.c
+if [ -f core/hook_luna.c ]; then
+  build hook_titles -DVJO_HOOK_LUNA=1 host/tests/test_hook_titles.c core/hook_titles.c core/hook_luna.c core/hook_re.c core/hook_text.c
+else
+  build hook_titles host/tests/test_hook_titles.c core/hook_titles.c
+fi
 # The overlay's arrow keys over the header's displayed rows (#81): pure C, float cell edges.
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 # The recognized text's lines as one running text (core/textjoin.h): byte offsets, 32-bit size_t.
@@ -121,6 +130,7 @@ build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
 TESTS+=(touch_hold text_rows text_join linebreak stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
+TESTS+=(kernel_text_source hook_pick hook_titles) # API 31
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c

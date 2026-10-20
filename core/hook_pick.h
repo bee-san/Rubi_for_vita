@@ -13,6 +13,10 @@
 
 #define VJO_HOOK_LABEL_BYTES 28u /* the longest label, "OCR, Hook 20/20 empty", and its NUL fit */
 
+#ifdef __cplusplus
+extern "C" { /* shell/shell.h, which overlay.cpp includes, includes it */
+#endif
+
 /* △'s next pick: automatic -> each stream that holds text, by ID -> OCR only -> automatic. A pinned
  * stream goes on to the next one with text after it (OCR only after the last); with no stream holding
  * text automatic goes to OCR only. An unknown pick goes back to automatic. */
@@ -27,5 +31,9 @@ uint32_t vjo_hook_pick_next(uint32_t pick, uint32_t streams);
  * before the NUL; out always ends with one (cap > 0). */
 size_t vjo_hook_label(char *out, size_t cap, uint32_t pick, int installed, int have_result, uint32_t text_from,
                       uint32_t flags, uint32_t streams);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
