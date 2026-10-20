@@ -38,7 +38,7 @@ typedef struct {
 /* Similarity, 0..1000, of a stream's text h to OCR's text o, after normalising both (full-width forms
  * folded, whitespace and punctuation dropped): the best match of h within o (o may hold a speaker's
  * name or a second line that h lacks), scaled by how much of o h covers. Fewer than VJO_HOOK_MIN_CHARS
- * characters in h: 0. */
+ * characters in h (or in o): 0. */
 unsigned vjo_hook_similarity(const char *o, size_t on, const char *h, size_t hn);
 
 /* Before recognition: the stream this job may answer from WITHOUT OCR, or 0 (run OCR). A pinned pick
