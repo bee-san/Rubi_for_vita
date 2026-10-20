@@ -504,17 +504,20 @@ qemu-arm, both normal builds], which vita-vn-ocr's Cortex-A9 cost model puts at 
 1.6 µs at 444 MHz [estimate], against a console lookup's 70-81 ms, nearly all file reads
 ([performance.md](performance.md)) [measured: both builds' module rows, main `10c8011` and #138]. The kernel and
 the worker are byte-identical to main's in both builds.
-API 31's plumbing for native text hooks ([guide](guide.md#native-text-hooks)), on `feat/native-hooks` `a8fb6cf`
-(whose interface commit already grew the request by 4 B and the result by 28 B: the kernel's three static copies
-60 B of `.bss`, by `sizeof`): the kernel 40,484 → 40,660 B (debug) and 35,632 → 35,808 B (normal) of text and
-77,700 → 77,704 and 76,012 → 76,016 B of data/bss (the text source's one word), the same pages; the Shell 98,748 →
-99,836 and 88,348 → 89,292 B of text (the config key and its push, the session's hook pick, Triangle's cycle and the
-label, `core/hook_pick.c`, the logs) and 73,304 → 73,368 and 73,312 → 73,376 B of data/bss, the same pages (2,564
-and 820 B of text room); the worker 81,644 → 81,700 and 80,344 → 80,400 B of text (`hooks_text_source` and its
-import), the same pages; no budget changes. The Rubi app's loaded segments 4,835,200 → 4,836,592 B (debug) and
-4,834,640 → 4,835,952 B (normal, `tools/check_settings_self.py`), without Luna's title list, which
-`hooks/luna-port`'s `core/hook_luna.c` adds [measured: the build log's module rows and `check_settings_self.py`,
-both builds of `a8fb6cf` and `hooks/api`, VitaSDK gcc 15.2.0].
+API 31's plumbing for native text hooks ([guide](guide.md#native-text-hooks): the kernel's text source, the
+Shell's `text_source`, hook pick, Triangle and label, the Rubi app's Text source and Games tag), merged with
+`feat/native-hooks` `960ac20` (the engine, Luna's table, the selection), against `960ac20`: the kernel 40,484 →
+40,660 B (debug) and 35,632 → 35,808 B (normal) of text and 77,700 → 77,704 and 76,012 → 76,016 B of data/bss (the
+text source's one word), the same pages; the Shell 98,748 → 99,836 and 88,348 → 89,292 B of text (the config key and
+its push, the session's hook pick, Triangle's cycle and the label, `core/hook_pick.c`, the logs) and 73,304 → 73,368
+and 73,312 → 73,376 B of data/bss, the same pages (2,564 and 820 B of text room); the worker 127,144 → 127,216 and
+124,668 → 124,740 B of text (its `vjoGetTextSource` import, which turns on the engine's `text_source()`, and the
+kernel API check), the same 163,840 and 159,744 B (3,856 and 2,236 B of text room); no budget changes. The Rubi app's
+loaded segments 4,835,200 → 4,838,528 B (debug) and 4,834,640 → 4,837,904 B (normal, `tools/check_settings_self.py`),
+1,820 B of it Luna's title list (`vjo_luna_ids`, 182 IDs; `--gc-sections` drops the rest of `core/hook_luna.c` and
+the filters) [measured: the build log's module rows and `check_settings_self.py`, both builds of `960ac20` and the
+merge, VitaSDK gcc 15.2.0]. The interface (`a8fb6cf`) had already grown the request by 4 B and the result by 28 B:
+the kernel's three static copies by 60 B of `.bss`, by `sizeof`.
 API 26's text-presence gate ([vita-vn-ocr.md](vita-vn-ocr.md#text-presence-gate-api-26)), on main `1de7b67`: the
 worker 78,156 → 81,644 B (debug) and 76,856 → 80,344 B (normal) of text and 14,160 → 15,720 B of data/bss in both.
 The text is vita-vn-ocr's `runtime/vocr_textgate.c`, at the runtime's `-O2` (at `-Os` it is 564 B smaller and the
