@@ -44,9 +44,14 @@ On `main` since 0.8.0; the next release brings it.
     default, applied when a game next starts), which the Shell hands the kernel and a game's worker
     reads as the game starts; **Triangle** in the overlay cycles the game session's source (Automatic,
     each hook with text, OCR only) and a short label says where the text came from (`Hook 2/5 locked`);
-    the Games page tags a game with a hook entry (`Hook`: CLANNAD, Rubi's own; `Luna hook`:
-    LunaTranslator's table). `log.txt` says what each game's worker hooked (counts only in the normal
-    build), `history.csv`'s engine is `hook` for a hook's line.
+    the Games page tags a game with a hook entry (`Hook`: CLANNAD, Rubi's own; `Luna hook`: a title with
+    a site Rubi has ported from LunaTranslator's table; the table's 7 titles without one, PCSB00985,
+    PCSG00291, PCSG00451, PCSG00595, PCSG00663, PCSG01081 and PCSG01152, get no tag and OCR only in
+    Automatic). `log.txt` says what each game's worker hooked (counts only in the normal build),
+    `history.csv`'s engine is `hook` for a hook's line.
+  - A game turned OFF gets no hooks, even when a `*TITLEID` line kept by hand in taiHEN's config still
+    loads the worker into it: the kernel gives the text source only to a game whose worker it loaded as
+    ON. Holding L as a game starts, `text_source = ocr` and a safe boot also install none.
   - The cost: every game that is ON carries the bigger worker whatever the text source, even with
     `text_source = ocr`: its module pages grow from 98,304 to 159,744 B (167,936 B in the debug build)
     [measured: the build logs' module rows, `feat/native-hooks` 9fa24c5]. A hook's own CPU time is
