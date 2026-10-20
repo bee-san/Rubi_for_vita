@@ -164,6 +164,18 @@ target_include_directories(vjo-boot-guard-tests PRIVATE third_party/acutest/incl
 target_compile_definitions(vjo-boot-guard-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-boot-guard-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME boot_guard COMMAND vjo-boot-guard-tests)
+# Native hooks (docs/native-hooks.md): the site check on the VitaSDK assembler's byte fixtures
+# (tools/gen_hook_place_fixtures.sh), Rubi's verified entry and the CALL prefilter; the stream slots.
+add_executable(vjo-hook-place-tests host/tests/test_hook_place.c core/hook_place.c)
+target_include_directories(vjo-hook-place-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-hook-place-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_place COMMAND vjo-hook-place-tests)
+find_package(Threads REQUIRED)
+add_executable(vjo-hook-stream-tests host/tests/test_hook_stream.c core/hook_stream.c core/hook_place.c)
+target_include_directories(vjo-hook-stream-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-hook-stream-tests PRIVATE -Wall -Wextra)
+target_link_libraries(vjo-hook-stream-tests Threads::Threads)
+add_test(NAME hook_stream COMMAND vjo-hook-stream-tests)
 # kernel/foreground.c, scene.c, triggers.c: kernel logic without psp2kern.
 add_executable(vjo-tests host/tests/test_core.c kernel/foreground.c kernel/scene.c kernel/triggers.c)
 

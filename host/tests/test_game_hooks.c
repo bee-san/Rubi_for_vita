@@ -40,8 +40,7 @@ static unsigned bump_at;
 static uint32_t bump_id;
 static const char *bump_text;
 
-void vjo_hooks_start(const char *title_id, unsigned mode, int psp) { (void)title_id; (void)mode; (void)psp; }
-int vjo_hooks_stop(void) { return 0; }
+/* vjo_hooks_start and vjo_hooks_stop: game_ocr/main.c's host macros (no game, no hooks installed). */
 void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
 {
     *mode = fake_mode;
