@@ -24,13 +24,15 @@ record.
 A record cut short (power lost while it was written: no line break at the file's end, or fewer
 cells than Rubi writes), even when more records were appended after it, is skipped and counted;
 blank lines and repeated header lines (files joined together) are ignored. A file whose first
-append was cut short in its header (the next record follows the cut) is read with Rubi's columns.
+append was cut short in its header (the next record follows the cut, maybe after zeros) is read with
+Rubi's columns, the record that append held counted as cut short.
 A file that is not the writer's own bytes, such as Rubi's re-saved by a spreadsheet or another
 tracker's ExStatic lines CSV (uuid, given_identifier, name, line, time), is read as plain CSV: the
-characters cells it has are used, and this tool counts the other lines. A record whose time is not
-Unix seconds between 1970 and 3000 (another tracker's milliseconds, say) is skipped and counted.
-The output holds numbers and game names only, never dialogue text. Exit status: 0, or 2 when a
-file cannot be read as an ExStatic lines CSV (no such columns, or a first line that is not CSV).
+characters cells it has are used, and this tool counts the other lines. A record whose time is a
+number but not Unix seconds between 1970 and 3000 (another tracker's milliseconds, say), or one this
+computer cannot place on a day, is skipped and counted. The output holds numbers and game names
+only, never dialogue text. Exit status: 0, or 2 when a file cannot be read (or read as an ExStatic
+lines CSV: a missing column, or a first line that is not CSV).
 """
 from __future__ import annotations
 
@@ -60,9 +62,10 @@ REQUIRED = ("uuid", "given_identifier", "name", "line", "time")
 # cut short in its header is read with.
 HEADER = HEADER_080 + ["characters"]
 HEADER_LINE = (",".join(HEADER) + "\n").encode()
-# A time is Unix seconds from 1970 to before 3000 (Rubi's are this century): datetime places those on a
-# day on every system, and another tracker's milliseconds are not taken for seconds (as in
-# GameSentenceMiner's import, which refuses them too).
+# A time is Unix seconds from 1970 to before 3000 (Rubi's are this century), so another tracker's
+# milliseconds are not taken for seconds (GameSentenceMiner's import refuses them too). datetime places
+# those on a day where time_t has 64 bits; where it has 32, it cannot after 2038, and such a time is
+# skipped too (add_row).
 TIME_MAX = 32503680000.0  # 3000-01-01T00:00:00Z
 # The most of a file's first line read as its header: Rubi's is 396 bytes, and after a cut header the next
 # record's first line follows it (under 10 KB). A file with no line break is not read whole for it.
@@ -150,9 +153,16 @@ class HistoryError(Exception):
 # is "vita-..." followed by a line that is exactly "vjo-N-N" could, which no game has).
 RECORD_START = re.compile(rb'"(?:vita|psp)-[^",\n]*","vjo-[0-9]+-[0-9]+",')
 RUBI_ID = re.compile(r"vjo-[0-9]+-[0-9]+")
+BOM = b"\xef\xbb\xbf"
 # The longest record Rubi writes is under 10 KB (the text and the recognizer's text share 4,096 bytes,
 # and a quote is written twice): a record's end is looked for in the first 16 KiB after its start.
 RECORD_MAX = 16384
+
+
+def starts_a_record(data: bytes) -> bool:
+    """Whether data begins with the start of a record of Rubi's writer (its quoted "vita-" or "psp-" uuid),
+    whole or cut short."""
+    return any(data.startswith(p) or p.startswith(data) for p in (b'"vita-', b'"psp-'))
 
 
 def split_records(lines):
@@ -195,13 +205,13 @@ def is_header(row) -> bool:
 
 
 def ignorable(data: bytes) -> bool:
-    """Blank lines, or header lines (a file appended to another): no record, and none cut short."""
-    data = data.strip()
-    if not data:
+    """Blank lines, or whole header lines (a file appended to another): no record, and none cut short. A
+    header cut short (a joined file's own first append, cut) is not: the record that append held is lost."""
+    if not data.strip():
         return True
-    if not data.lstrip(b"\xef\xbb\xbf").startswith(b"uuid"):
+    if not data.rstrip(b" \t").endswith(b"\n") or not data.strip().lstrip(BOM).startswith(b"uuid"):
         return False
-    rows = csv_rows(data + b"\n")
+    rows = csv_rows(data)
     return bool(rows) and all(is_header(r) for r in rows)
 
 
@@ -249,58 +259,90 @@ def plain_rows(lines, cells: int, report: Report):
 def read_file(path: Path, report: Report, seen: set, names: dict) -> None:
     """Adds one history file's records to report."""
     try:
-        f = path.open("rb")
-    except OSError as e:
+        with path.open("rb") as f:
+            read_lines(path, f, report, seen, names)
+    except OSError as e:  # the open, or a read (a failing memory card or reader)
         raise HistoryError(f"{path}: {e.strerror or e}") from e
-    with f:
+
+
+def read_lines(path: Path, f, report: Report, seen: set, names: dict) -> None:
+    """read_file's work on the open file f."""
+    first = f.readline(HEADER_READ)
+    while True:  # blank lines (or a BOM alone) before the header
+        if first.startswith(BOM):
+            first = first[len(BOM):]
+        if not first or first.strip():
+            break
         first = f.readline(HEADER_READ)
-        if first.startswith(b"\xef\xbb\xbf"):
-            first = first[3:]
-        if not first.strip():
-            raise HistoryError(f"{path}: empty file")
-        data = None
-        start = RECORD_START.search(first)
-        if start and start.start() and HEADER_LINE.startswith(first[:start.start()]):
-            # A power loss cut the file's first append short in its header, and the writer, which writes the
-            # header only into an empty file, appended the next record right after the cut.
-            header, data = HEADER, first[start.start():]
+    if not first.strip():
+        raise HistoryError(f"{path}: empty file")
+    data, writers = None, False
+    # A power loss cut the file's first append short in its header, and the writer, which writes the
+    # header only into an empty file, appended the next record right after the cut: before the first
+    # line's first quote (Rubi's header has none) a part of the header, then maybe the zeros a lost write
+    # leaves, and at the quote a record (cut short too, maybe).
+    quote = first.find(b'"')
+    part = first[:quote] if quote > 0 and (starts_a_record(first[quote:]) or RECORD_START.search(first, quote)) else b""
+    if part and HEADER_LINE.startswith(part.rstrip(b"\0")):
+        header, data, writers = HEADER, first[quote:], True
+        report.cut_headers += 1
+        report.incomplete += 1  # the record that append held, lost with the header's end
+    else:
+        # A cut header with a whole one after it on the same line (a file whose first append was cut in its
+        # header and held nothing more, joined to another by cat): the whole one is the header.
+        glued = first.rfind(b"uuid,given_identifier,name,line,time")
+        before = first[:glued]
+        before = (before[:-len(BOM)] if before.endswith(BOM) else before).rstrip(b"\0")
+        if glued > 0 and before and HEADER_LINE.startswith(before):
+            first = first[glued:]
             report.cut_headers += 1
-        else:
-            text = first.decode("utf-8", errors="replace").rstrip("\r\n")
-            try:
-                header = [h.strip() for h in next(csv.reader([text]))]
-            except csv.Error as e:
-                if "\r" in text and all(name in text.split("\r", 1)[0] for name in REQUIRED):
-                    raise HistoryError(f"{path}: its lines end in a carriage return alone (an old Mac format): "
-                                       "save it with LF or CRLF line endings") from e
-                raise HistoryError(f"{path}: not a Rubi history.csv (its first line is not CSV: {e})") from e
-        missing = [name for name in REQUIRED if name not in header]
-        if missing:
-            raise HistoryError(f"{path}: not a Rubi history.csv (no {', '.join(missing)} column)")
-        report.files += 1
-        col = {name: i for i, name in enumerate(header)}
-        rubi = header[:len(HEADER_080)] == HEADER_080
-        # The count's cell: the header's `characters`, or the 42nd cell a newer Rubi appends to a row of
-        # a file that 0.8.0 began (its header names the first 41 only).
-        count_col = col.get("characters")
-        if count_col is None and rubi:
-            count_col = len(HEADER_080)
-        # every cell Rubi writes up to line_metrics, or the columns another file names
-        cells = len(HEADER_080) if rubi else max(col[name] for name in REQUIRED) + 1
-        if data is None:
+            report.incomplete += 1
+        text = first.decode("utf-8", errors="replace").rstrip("\r\n")
+        try:
+            header = [h.strip() for h in next(csv.reader([text]))]
+        except csv.Error as e:
+            if "\r" in text and all(name in text.split("\r", 1)[0] for name in REQUIRED):
+                raise HistoryError(f"{path}: its lines end in a carriage return alone (an old Mac format): "
+                                   "save it with LF or CRLF line endings") from e
+            raise HistoryError(f"{path}: not a Rubi history.csv (its first line is not CSV: {e})") from e
+    missing = [name for name in REQUIRED if name not in header]
+    if missing:
+        raise HistoryError(f"{path}: not a Rubi history.csv (no {', '.join(missing)} column)")
+    report.files += 1
+    col = {}
+    for i, name in enumerate(header):
+        col.setdefault(name, i)  # a name twice (a cut header with another file's after it): its first
+    rubi = header[:len(HEADER_080)] == HEADER_080
+    # The count's cell: in Rubi's rows always the 42nd (also in a file that 0.8.0 began, whose header names
+    # the first 41 only), else the header's `characters`.
+    count_col = len(HEADER_080) if rubi else col.get("characters")
+    # every cell Rubi writes up to line_metrics, or the columns another file names
+    cells = len(HEADER_080) if rubi else max(col[name] for name in REQUIRED) + 1
+    if data is None:
+        data = f.readline()
+        while data and not data.strip():
             data = f.readline()
-            while data and not data.strip():
-                data = f.readline()
-        lines = itertools.chain([data], f)
-        if rubi and RECORD_START.search(data):
-            for chunk in split_records(lines):
-                rows, cut = parse_chunk(chunk, cells)
-                report.incomplete += cut
-                for row in rows:
-                    add_row(report, seen, names, col, count_col, row)
-        else:
-            for row in plain_rows(lines, cells, report):
+    lines = itertools.chain([data], f)
+    if writers or rubi and RECORD_START.search(data):
+        for chunk in split_records(lines):
+            rows, cut = parse_chunk(chunk, cells)
+            report.incomplete += cut
+            for row in rows:
                 add_row(report, seen, names, col, count_col, row)
+    else:
+        for row in plain_rows(lines, cells, report):
+            add_row(report, seen, names, col, count_col, row)
+
+
+def placeable(t: float) -> bool:
+    """Whether datetime can place the Unix time t on a day, in this computer's time zone and in UTC (not
+    after 2038 where time_t has 32 bits)."""
+    try:
+        datetime.datetime.fromtimestamp(t)
+        datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return False
+    return True
 
 
 def add_row(report: Report, seen: set, names: dict, col: dict, count_col, row) -> None:
@@ -313,7 +355,10 @@ def add_row(report: Report, seen: set, names: dict, col: dict, count_col, row) -
         t = float(when)
     except ValueError:
         t = math.nan
-    if not 0 < t < TIME_MAX:  # NaN too
+    if not math.isfinite(t):  # not a number (a damaged record, often): unreadable
+        report.incomplete += 1
+        return
+    if not 0 < t < TIME_MAX or not placeable(t):
         report.bad_times += 1
         return
     # Rubi's given_identifier names one record; another tracker's may name a game (exSTATic's does),
