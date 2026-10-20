@@ -205,7 +205,7 @@ static unsigned cap_counted(uint32_t p, uint32_t count, uint32_t text, unsigned 
     unsigned want, m, o = 0;
     if (rd(ud, p + count, w, 4, 0) != 4) return 0;
     units = le32(w);
-    want = units > cap / unit ? cap / unit * unit : (unsigned)units * unit;
+    want = unit == 2 ? (units > cap >> 1 ? cap & ~1u : (unsigned)units << 1) : (units > cap ? cap : (unsigned)units);
     m = mirror(rd, ud, p + text, raw, want, unit);
     if (unit == 2) {
         m &= ~1u;
