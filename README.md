@@ -153,7 +153,7 @@ logging, is in `ux0:data/VitaJPOverlay/config.ini`
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
-| ❓ | Native text hooks (CLANNAD's entry, LunaTranslator's Vita table) | not run on a console by this code; an earlier hook build followed CLANNAD's dialogue on the owner's console in 2026-10 ([#230](https://github.com/bee-san/Rubi_for_vita/issues/230)) |
+| ❓ | Native text hooks (CLANNAD's entry, [LunaTranslator's Vita table](docs/hook-titles.md)) | not run on a console by this code; an earlier hook build followed CLANNAD's dialogue on the owner's console in 2026-10 ([#230](https://github.com/bee-san/Rubi_for_vita/issues/230)) |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
 | ❓ | The normal build (the main download) | no console run reported; the test runs used the debug build |
 
@@ -287,6 +287,11 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   Dictionary, whose sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0). Every
   source keeps its own licence: the [attribution](docs/plaintext-attribution.txt) has them all.
 - **Anki:** the [Lapis](https://github.com/donkuri/lapis) note type by donkuri (GPL-3.0).
+- **Native text hooks:** [LunaTranslator](https://github.com/HIllya51/LunaTranslator) by HIllya51 and
+  contributors (GPL-3.0): its PS Vita hook table, and its text clean-up for each game ported to C, from
+  release v12.1.2.12 (commit 51884b6), whose source files Rubi keeps in
+  [third_party/LunaTranslator/](third_party/LunaTranslator/README.md)
+  ([the games](docs/hook-titles.md)).
 - **Lookups:** Yomichan's deinflection rules. The dictionary's key filter is modelled on the Bloom
   filter of [hoshidicts](https://github.com/Manhhao/hoshidicts), Manhhao's dictionary library, which
   bee-san's [Hachidori](https://github.com/bee-san/hachidori) app is built on; Rubi has no code of

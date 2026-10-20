@@ -237,7 +237,9 @@ CPU3 load, are unmeasured.
 
 ## Logs
 
-The normal build writes no hook text anywhere. The debug build writes
+The normal build logs no hook text, as it logs no OCR text; with **Read text** on **Automatically**, both
+builds keep the shown line in `ux0:data/VitaJPOverlay/history.csv`, a hook's as OCR's (engine `hook`
+instead of `vocr`: `shell/history.c`; [ocr-history.md](ocr-history.md)). The debug build writes
 `ux0:data/VitaJPOverlay/hooks.log` at each game start (rewritten): the title, the text source, the main
 module's name, NID and segment 0, `APP_VER`, each site with its verdict, reason and first 16 bytes, and
 each CALL import hooked or not. No text is in it. Job results carry the counts; the Shell's debug log
@@ -293,12 +295,15 @@ report's sources, none has been seen on a console.
 emulator's process (the worker's `psp_title`: ScePspemu is loaded, or the title is the PSP emulator's or
 Adrenaline's), only when the text source is `auto` or `hooks`, and once per process: at the first OCR job
 (the first reading of the screen: in the background with **Read text: Automatically**, else at the first
-L + R; an Anki screenshot or a self-test job is not one). Adrenaline's XMB runs in the same process as the
+L + R; the self-test's OCR stages are OCR jobs too, while an Anki screenshot and the self-test's capture
+probe are not). Adrenaline's XMB runs in the same process as the
 game started from it, and a reading there would use the probe up with no game's ID, so start the game
 from its own bubble, or set **Read text** to **Only when I press L + R** and press it first in the game. To
-probe again, close the emulator (or the bubble) and start it again. Until the text source reaches the
-worker (the kernel's `vjoGetTextSource`, hooks-api; this tree's kernel does not export it, so
-`game_ocr/main.c` `text_source` answers `ocr`), the probe does nothing in any game.
+probe again, close the emulator (or the bubble) and start it again. The text source reaches the worker
+through the kernel's `vjoGetTextSource` (`kernel/exports.yml` exports it, and the worker imports it:
+`VJO_HAVE_TEXT_SOURCE_IMPORT` in `vita/CMakeLists.txt`), so the debug build's probe runs as described
+here; it does nothing with `text_source = ocr`, or with a kernel of another API version, which the worker
+reads as OCR.
 
 **What it does.** In the worker's thread, at its lowest priority:
 
