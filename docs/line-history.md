@@ -116,15 +116,16 @@ VitaSDK gcc 15.2.0 in `vitasdk/vitasdk:2026.08` [measured]:
 
 | | main `44d4e8d` | this change | room left |
 |---|---:|---:|---:|
-| normal Shell, text | 88,348 B | 90,092 B (+1,744) | 20 B of 90,112 |
-| normal Shell, data/bss | 73,280 B | 73,416 B (+136) | 312 B of 73,728 |
-| debug Shell, text | 98,732 B | 100,524 B (+1,792) | 1,876 B of 102,400 |
-| debug Shell, data/bss | 73,272 B | 73,408 B (+136) | 320 B of 73,728 |
+| normal Shell, text | 88,348 B | 89,980 B (+1,632) | 132 B of 90,112 |
+| normal Shell, data/bss | 73,280 B | 73,520 B (+240) | 208 B of 73,728 |
+| debug Shell, text | 98,732 B | 100,412 B (+1,680) | 1,988 B of 102,400 |
+| debug Shell, data/bss | 73,272 B | 73,512 B (+240) | 216 B of 73,728 |
 | kernel / OCR worker data/bss | | +8 B each | `VjoLedger`'s eleventh item |
 
 The pages stay 163,840 B (normal, exact) and 176,128 B (debug); the kernel and the worker keep theirs.
 The normal Shell's text pays for line history's code with `core/textfilter.c` built `-Os` (its object
-288 → 240 B) and two strings in the data segment (`VJO_DATA_TABLE`); per function in
+288 → 240 B) and three strings in the data segment (`VJO_DATA_TABLE`: line history's two and the
+dictionary's out-of-memory message, 106 B, moved out of `.rodata`); per function in
 [memory-ledger.md](memory-ledger.md#tables-in-the-data-segment).
 
 - **Paf, `VJO_SL_PAF_HISTORY` (16,384 B)**: one block per visit, from the first Up past the top row to

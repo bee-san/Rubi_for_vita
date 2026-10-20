@@ -649,6 +649,10 @@ static const char OOM_GAME_SMALLEST[] VJO_DATA_TABLE(OOM_GAME_SMALLEST) = "The g
 static const char OOM_GAME_ALLOCATION[] VJO_DATA_TABLE(OOM_GAME_ALLOCATION) = "The game's memory could not be allocated although the memory check "
     "passed. Try again.";
 static const char OOM_GAME_UNKNOWN[] VJO_DATA_TABLE(OOM_GAME_UNKNOWN) = "The game's free memory could not be checked (see log.txt), so OCR did not start.";
+/* The dictionary's result arena refused (mem_alloc), after OCR or for a cursor's lookup. In the data
+ * segment as the others: line history's code took the normal Shell's text room (docs/line-history.md). */
+static const char OOM_SHELL_RESULTS[] VJO_DATA_TABLE(OOM_SHELL_RESULTS) = "Text was recognized, but Shell UI memory is too "
+    "low for dictionary results. Restart the Vita and try again.";
 
 #ifdef VJO_WITH_VOCR
 /* Which part of the game worker's memory check failed: no OCR can fit
@@ -1300,7 +1304,7 @@ static int run_vocr(VjoOverlayData *out)
         return VJO_OK;
     out->failed_stage = VJO_STAGE_DICT;
     out->err.dict = VJO_DICT_LOCAL;
-    out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
+    out->err.detail = OOM_SHELL_RESULTS;
     return out->err.rc = VJO_E_OOM;
 }
 #else
@@ -1381,7 +1385,7 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     if (mem_alloc() < 0) {
         out->failed_stage = VJO_STAGE_DICT;
         out->err.dict = VJO_DICT_LOCAL;
-        out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
+        out->err.detail = OOM_SHELL_RESULTS;
         return out->err.rc = VJO_E_OOM;
     }
     vjo_view_lock(); /* the published list is the static header, never old entries */
