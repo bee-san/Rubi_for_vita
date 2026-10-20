@@ -178,10 +178,11 @@
  * job path calls vjo_hooks_text (hooks-select); they add their own pages then.
  * Raised in the debug build only, 131,072 -> 135,168 B, by one text page for the read-only PSP probe
  * (docs/native-hooks.md "PSP probe (debug build)": game_ocr/psp_probe.c, 881 B of text, and core/psp_probe.c,
- * 5,345 B of text and rodata with Luna's PSP table's 3,515 B, both at -Os): the debug build's text 99,038 ->
- * 105,264 B, 3,120 B past its page; its data/bss 27,496 -> 27,504 B (two words) fit the pages it had
- * [measured: the build log's module rows and arm-vita-eabi-size, debug build, hooks/psp-probe and its parent].
- * No block, no thread; the normal build has none of it and keeps its pages. In the game's partition only. */
+ * 5,345 B of text and rodata with Luna's PSP table's 3,515 B, both at -Os, and main.c's call): the debug build's
+ * text 99,016 -> 105,312 B, 2,912 B past its page; its data/bss 27,496 -> 27,504 B (two words) fit the pages it
+ * had [measured: the build log's module rows and arm-vita-eabi-size, debug build, hooks/psp-probe against its
+ * parent hooks/engine dca6d5f]. No block, no thread. The normal build has none of it: its worker is byte for byte
+ * its parent's. In the game's partition only. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 135168u
 #else

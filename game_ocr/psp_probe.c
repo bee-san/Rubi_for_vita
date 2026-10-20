@@ -27,7 +27,7 @@
 #include "../include/vjo_import.h"
 
 #if !VJO_DEBUG
-#error "game_ocr/psp_probe.c is the debug build's only (vita/CMakeLists.txt)"
+#error "the PSP probe belongs to the debug build only (vita/CMakeLists.txt)"
 #endif
 
 _Static_assert(SCE_KERNEL_MEMORY_ACCESS_R == VJO_PSP_ACCESS_R, "the readable bit core/psp_probe.c checks");
