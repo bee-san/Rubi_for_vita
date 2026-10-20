@@ -332,6 +332,10 @@ console yet: everything below is what the code does, checked on the host.
 - **If a game misbehaves with hooks**, hold L while starting it (no Rubi in it at all), turn it OFF
   on the Games page, or set Text source to OCR only (`text_source = ocr`): each applies at the
   game's next start. A safe boot ([boot safety](boot-safety.md)) installs no hook anywhere.
+- **Table sites off, for a test**: `hook_sites = off` in `config.ini` (no setting in the app; `on` by
+  default) installs no table site in any game, only the string copies, from a game's next start, so a
+  console run can tell the two apart; `kernel.txt`'s `text source N` is then 256 more than the mode
+  (257 for `auto`).
 
 ### Drawing the region
 

@@ -107,6 +107,10 @@ typedef struct {
      * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
      * text (a hidden text box, a CG screen) returns no line. Last, as above. */
     int ocr_text_gate;        /* 0/1 */
+    /* Native text hooks (API 31, audit-hooks F3): 0 (config.ini hook_sites = off) installs no table site in
+     * any game, only the CALL source (the string copies), so a console run can tell the two apart; the
+     * Shell sends it as VJO_TEXT_SOURCE_NO_SITES in the text source's word. Last, as above. */
+    int hook_sites;           /* 0/1, on by default */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

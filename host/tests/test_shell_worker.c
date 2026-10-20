@@ -1075,6 +1075,40 @@ static void test_ocr_config_migration(void)
                VJO_SOURCE_HOOKS == (int)VJO_TEXT_SOURCE_HOOKS);
 }
 
+/* audit-hooks F3: config.ini's hook_sites reaches the kernel in the text source's word, at each config read
+ * (the same call and moments as text_source): off adds VJO_TEXT_SOURCE_NO_SITES to the mode, on (the
+ * default) sends the mode alone. */
+static void test_hook_sites_word(void)
+{
+    static const struct { int source, sites; uint32_t word; } cases[] = {
+        {VJO_SOURCE_AUTO, 1, VJO_TEXT_SOURCE_AUTO},
+        {VJO_SOURCE_AUTO, 0, VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES},
+        {VJO_SOURCE_HOOKS, 0, VJO_TEXT_SOURCE_HOOKS | VJO_TEXT_SOURCE_NO_SITES},
+        {VJO_SOURCE_HOOKS, 1, VJO_TEXT_SOURCE_HOOKS},
+        {VJO_SOURCE_OCR, 0, VJO_TEXT_SOURCE_OCR | VJO_TEXT_SOURCE_NO_SITES},
+        {VJO_SOURCE_OCR, 1, VJO_TEXT_SOURCE_OCR},
+    };
+    reset();
+    TEST_CHECK(loaded.hook_sites == 1); /* the default: on */
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        unsigned pushes = text_source_pushes;
+        loaded.text_source = cases[i].source;
+        loaded.hook_sites = cases[i].sites;
+        apply_config();
+        TEST_CHECK_(text_source_pushes == pushes + 1 && text_source_pushed == cases[i].word, "case %u: 0x%X", i,
+                    (unsigned)text_source_pushed);
+    }
+    /* a game's exit reads the config and pushes the word again (its worker reads it at the next start) */
+    loaded.text_source = VJO_SOURCE_AUTO;
+    loaded.hook_sites = 0;
+    unsigned pushes = text_source_pushes;
+    state.game_pid = 0;
+    control_tick(VJO_EV_GAME_EXIT);
+    TEST_CHECK(text_source_pushes == pushes + 1 &&
+               text_source_pushed == (VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES));
+    mem_free();
+}
+
 static void test_changed_dictionary_drops_running_result(void)
 {
     reset();
@@ -7308,6 +7342,7 @@ TEST_LIST = {
     {"local_dictionary_background_prefetch", test_background_local},
     {"allocation_failure_recovers_and_releases", test_alloc_failure},
     {"text_source and a removed engine (API 31)", test_ocr_config_migration},
+    {"hook_sites = off: the text source's word with NO_SITES (audit-hooks F3)", test_hook_sites_word},
     {"changed_dictionary_drops_inflight_cached_result", test_changed_dictionary_drops_running_result},
     {"game_exit_drains_previous_job_without_reviving_cache", test_game_exit_drains_previous_job},
     {"game_start_rejects_previous_generation_and_restarts", test_game_start_rejects_previous_generation},

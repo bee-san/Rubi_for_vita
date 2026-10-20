@@ -28,6 +28,7 @@ int taiHookReleaseForKernel(SceUID uid, tai_hook_ref_t ref);
 
 #include "../../kernel/vjo_kernel.h"
 #include "../../kernel/loader.c"
+#include "../../kernel/text_source.c" /* audit-hooks F1: the loader's verdicts decide who reads the text source */
 #include "../../vita/games_storage.h"
 
 VjoKernelState g;
@@ -38,6 +39,12 @@ unsigned syscall_depth;
 #define GAME_PID 0x72ED3
 #define MOD_ID 0x40010129
 #define CONTINUE_RC 0x1234
+
+static SceUID caller; /* the process a syscall comes from */
+SceUID ksceKernelGetProcessId(void) { return caller; }
+static int boot = VJO_BOOT_NORMAL;
+int boot_mode(void) { return boot; }
+static int load_source; /* what the loaded worker's module_start read (vjoGetTextSource), -1: no load */
 
 static int continue_calls, hook_installs, hook_releases, fail_360, fail_363;
 static int (*hooked)(SceUID);
@@ -103,10 +110,14 @@ static int fake_title(SceUID pid, char *title, SceSize len)
 static int fake_pspemu(SceUID pid) { return pid == pspemu_pid; }
 static SceUID fake_load(SceUID pid, const char *path, SceSize args, void *argp, int flags, void *option, int *status)
 {
+    SceUID keep = caller;
     TEST_CHECK(!args && !argp && !flags && !option && status);
     load_calls++;
     load_pid = pid;
     snprintf(load_path, sizeof(load_path), "%s", path);
+    caller = pid; /* the worker's module_start, in the game's process, inside the load */
+    load_source = vjoGetTextSource();
+    caller = keep;
     *status = load_status;
     return load_rc;
 }
@@ -282,6 +293,12 @@ static void reset(void)
     pspemu_pid = 0;
     opens = 0;
     n_lines = 0;
+    text_source = 0; /* text_source.c's .bss as the module loads */
+    memset(on_pid, 0, sizeof(on_pid));
+    on_next = 0;
+    caller = 0;
+    boot = VJO_BOOT_NORMAL;
+    load_source = -1;
     kledger_init();
     TEST_ASSERT(loader_hook_install() == 0 && hooked);
 }
@@ -608,6 +625,81 @@ static void test_release_drains_starts_inside(void)
     TEST_CHECK(loader_hook_release() == 0 && delays == 1 && mutex_deleted == 1);
 }
 
+/* audit-hooks F1: the worker a start ON loads reads the Shell's text source (the start is recorded before
+ * the load, whose module_start reads it); a worker that a leftover *TITLEID line loads after this hook
+ * (taiHEN's own hook heads the chain) reads OCR in every start this hook did not judge ON, so a game that
+ * is OFF gets no native text hook. */
+static int read_as(SceUID pid)
+{
+    SceUID keep = caller;
+    int v;
+    caller = pid;
+    v = vjoGetTextSource();
+    caller = keep;
+    return v;
+}
+
+static void test_text_source_only_where_started_on(void)
+{
+    reset();
+    caller = SHELL_PID; /* the Shell's config read */
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_AUTO) == 0);
+    caller = 0;
+    TEST_CHECK(start(GAME_PID, "PCSG00415") == CONTINUE_RC && load_calls == 1); /* no games.ini: ON */
+    TEST_CHECK_(load_source == (int)VJO_TEXT_SOURCE_AUTO, "%d", load_source);
+    TEST_CHECK(read_as(GAME_PID) == (int)VJO_TEXT_SOURCE_AUTO); /* a second copy in the ON game: as the first */
+    /* OFF in games.ini: no worker of ours; a leftover line's worker reads OCR. */
+    put(VJO_GAMES_PATH, "default = enabled\nPCSG00415 = disabled\n");
+    TEST_CHECK(start(0x72ED5, "PCSG00415") == CONTINUE_RC && !load_calls);
+    TEST_CHECK(read_as(0x72ED5) == (int)VJO_TEXT_SOURCE_OCR);
+    TEST_CHECK(read_as(GAME_PID) == (int)VJO_TEXT_SOURCE_AUTO); /* another process's start leaves it */
+    /* The same process ID at a later start that is OFF (the game turned OFF, an ID used again): OCR. */
+    TEST_CHECK(start(GAME_PID, "PCSG00415") == CONTINUE_RC && !load_calls);
+    TEST_CHECK(read_as(GAME_PID) == (int)VJO_TEXT_SOURCE_OCR);
+    /* L held at the start, not a game, the Shell itself, an unreadable title, no answer: OCR. */
+    put(VJO_GAMES_PATH, "default = enabled\n");
+    TEST_CHECK(start(0x72ED7, "PCSG00940") == CONTINUE_RC && load_calls == 1 && load_source == (int)VJO_TEXT_SOURCE_AUTO);
+    pad_buttons = SCE_CTRL_LTRIGGER;
+    TEST_CHECK(start(0x72ED7, "PCSG00940") == CONTINUE_RC && !load_calls);
+    TEST_CHECK(read_as(0x72ED7) == (int)VJO_TEXT_SOURCE_OCR);
+    pad_buttons = 0;
+    TEST_CHECK(start(0x72ED9, "VITASHELL") == CONTINUE_RC && !load_calls);
+    TEST_CHECK(read_as(0x72ED9) == (int)VJO_TEXT_SOURCE_OCR);
+    TEST_CHECK(start(SHELL_PID, "main") == CONTINUE_RC && read_as(SHELL_PID) == (int)VJO_TEXT_SOURCE_OCR);
+    title_rc = (int)0x80020003;
+    TEST_CHECK(start(0x72EDB, "PCSG00940") == CONTINUE_RC && !load_calls && read_as(0x72EDB) == (int)VJO_TEXT_SOURCE_OCR);
+    title_rc = 0;
+    put(VJO_GAMES_PATH, "default = garbage\n");
+    TEST_CHECK(start(0x72EDD, "PCSG00940") == CONTINUE_RC && !load_calls && read_as(0x72EDD) == (int)VJO_TEXT_SOURCE_OCR);
+    unlink(VJO_GAMES_PATH);
+    answer_mode = 2; /* the kernel worker never answers */
+    TEST_CHECK(start(0x72EDF, "PCSG00940") == CONTINUE_RC && !load_calls && read_as(0x72EDF) == (int)VJO_TEXT_SOURCE_OCR);
+    answer_mode = 0;
+    /* ON: what the Shell sets later reaches the next start's worker. */
+    caller = SHELL_PID;
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_HOOKS) == 0);
+    caller = 0;
+    TEST_CHECK(start(0x72EE1, "PCSG00940") == CONTINUE_RC && load_calls == 1 && load_source == (int)VJO_TEXT_SOURCE_HOOKS);
+    /* hook_sites = off (audit-hooks F3): the whole word, NO_SITES included */
+    caller = SHELL_PID;
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES) == 0);
+    caller = 0;
+    TEST_CHECK(start(0x72EE1, "PCSG00940") == CONTINUE_RC && load_calls == 1 &&
+               load_source == (int)(VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES));
+    caller = SHELL_PID;
+    TEST_CHECK(vjoSetTextSource(VJO_TEXT_SOURCE_HOOKS) == 0);
+    caller = 0;
+    /* A safe boot: OCR for every worker, the ON game's too. */
+    boot = VJO_BOOT_SAFE;
+    TEST_CHECK(start(0x72EE3, "PCSG00940") == CONTINUE_RC && load_calls == 1 && load_source == (int)VJO_TEXT_SOURCE_OCR);
+    boot = VJO_BOOT_NORMAL;
+    /* The loader off (its hook not installed): no start is recorded, every worker reads OCR. */
+    loader_hook_release();
+    fail_360 = fail_363 = 1;
+    TEST_CHECK(loader_hook_install() < 0 && !hooked);
+    TEST_CHECK(read_as(0x72EE5) == (int)VJO_TEXT_SOURCE_OCR);
+}
+
 TEST_LIST = {
     {"module_stop waits for a start inside the hook, bounded", test_release_drains_starts_inside},
     {"hook install: 3.60 then 3.63+ NIDs, off without its functions", test_hook_install_and_release},
@@ -621,6 +713,7 @@ TEST_LIST = {
     {"the wait for the kernel worker is bounded and ignores old answers", test_the_wait_is_bounded},
     {"the kernel worker answers each question once", test_worker_answers_each_question_once},
     {"failures are logged and leave nothing", test_failures_are_logged_and_harmless},
+    {"the text source only for a process started ON (audit-hooks F1)", test_text_source_only_where_started_on},
     {NULL, NULL}};
 
 int main(int argc, char **argv)

@@ -41,6 +41,11 @@ PCSG01081, PCSG01152): with `auto` they get nothing, OCR only, and the Games pag
 same rule, core/hook_titles.c); with `hooks` they get the CALL source and their sites are refused
 (`unported`).
 
+The kernel answers `vjoGetTextSource` with the Shell's value only in a process its loader started the
+worker in as ON (it records the process as it decides, before the worker's `module_start` runs); every
+other process reads `ocr`, so a worker that a leftover `*TITLEID` line loads into a game that is OFF
+installs nothing (audit-hooks F1, [worker-loading.md](worker-loading.md)).
+
 Nothing is installed in the PSP emulator's process in this version. The worker reports what it did in
 every job's result (`hook_mode`; `hook_installed` = sites << 16 | CALL imports; `hook_refused`).
 
@@ -306,7 +311,10 @@ shows them (hooks-api).
 If a game misbehaves with hooks:
 
 1. Hold L while the game starts: the kernel loads no worker, so no hooks.
-2. Turn the game OFF on the Rubi app's Games page.
+2. Turn the game OFF on the Rubi app's Games page. This also holds for a worker that a `*TITLEID` line kept
+   in taiHEN's config by hand loads into the game: the kernel gives the text source only to a process
+   whose worker its own loader started as ON, and answers every other process OCR, so that worker
+   installs no hook (audit-hooks F1; `kernel/text_source.c`).
 3. Set the text source to OCR only (`text_source = ocr` in `ux0:data/VitaJPOverlay/config.ini`, or the
    app's setting): no hooks in any game, from the next game start.
 4. A boot that did not finish makes the next one a safe boot: no hooks anywhere

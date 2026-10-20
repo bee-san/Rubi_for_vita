@@ -1762,8 +1762,9 @@ static void apply_config(void)
     anki_on = vjo_anki_configure(&cfg);
     if (vjoSetTriggers(cfg.toggle_button, cfg.subtitle_button) < 0)
         vjo_log("kernel refused the buttons: keeping the previous ones");
-    /* API 31: the text source, for each game that starts from now on (its worker reads it then) */
-    if (vjoSetTextSource((uint32_t)cfg.text_source) < 0)
+    /* API 31: the text source, for each game that starts from now on (its worker reads it then): the mode,
+     * with VJO_TEXT_SOURCE_NO_SITES when hook_sites = off (no table site, the CALL source alone: audit-hooks F3) */
+    if (vjoSetTextSource((uint32_t)cfg.text_source | (cfg.hook_sites ? 0u : VJO_TEXT_SOURCE_NO_SITES)) < 0)
         vjo_log("kernel refused the text source");
     /* Logged when they change, not at every load (each overlay open, game
      * start, subtitles on): test.2's log.txt had one line per load and key
