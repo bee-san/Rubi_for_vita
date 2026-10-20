@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 
-#define RE_PROG 40
+#define RE_PROG 32
 #define RE_CLASSES 4
 #define RE_RANGES 12
 #define RE_NOPOS 0xFFFFu
@@ -316,9 +316,13 @@ static int parse_atom(Re *r)
     case '\\':
         r->p++;
         u = escape(r, &sh);
-        if (sh) {
-            unsigned ci = new_class(r);
-            if (!r->err) r->cls[ci].sh = (uint8_t)sh;
+        if (sh) { /* \d \w \s ...: one class each, shared by its repeats */
+            unsigned ci = 0;
+            while (ci < r->nc && (r->cls[ci].n || r->cls[ci].neg || r->cls[ci].sh != sh)) ci++;
+            if (ci == r->nc) {
+                ci = new_class(r);
+                if (!r->err) r->cls[ci].sh = (uint8_t)sh;
+            }
             emit(r, I_CLASS, 0);
             if (!r->err) r->prog[r->np - 1].k = (uint8_t)ci;
         } else {

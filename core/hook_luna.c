@@ -205,7 +205,7 @@ static unsigned cap_counted(uint32_t p, uint32_t count, uint32_t text, unsigned 
     unsigned want, m, o = 0;
     if (rd(ud, p + count, w, 4, 0) != 4) return 0;
     units = le32(w);
-    want = units > cap / unit ? cap / unit * unit : (unsigned)units * unit;
+    want = unit == 2 ? (units > cap >> 1 ? cap & ~1u : (unsigned)units << 1) : (units > cap ? cap : (unsigned)units);
     m = mirror(rd, ud, p + text, raw, want, unit);
     if (unit == 2) {
         m &= ~1u;
@@ -266,7 +266,8 @@ static unsigned cap_pcsg01011(uint32_t p, VjoHookRead rd, void *ud, uint8_t *raw
  * while the byte two before them is not a NUL (another string ends there), back
  * by two and again; then the strings from there up to an empty one, joined. The
  * walk runs on the bytes around p (cap / 2 before it); leaving them, or a step
- * that does not get further back (Luna would loop), ends it. */
+ * that does not get further back (a one-byte string, where Luna's loop never
+ * ends), gives no text. */
 static unsigned cap_pcsg00769(uint32_t p, VjoHookRead rd, void *ud, uint8_t *raw, unsigned cap)
 {
     unsigned back = before(p, rd, ud, raw, cap / 2), m, k = back, last = ~0u;

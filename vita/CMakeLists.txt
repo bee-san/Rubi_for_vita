@@ -300,15 +300,15 @@ if(VJO_WITH_VOCR)
     # API 31: the native text hooks (docs/native-hooks.md), in the game's process only: the hook
     # engine, the site check, the stream slots, Luna's table and the hook text decoder
     ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S ${ROOT}/core/hook_place.c
-    ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_text.c ${ROOT}/core/sfo.c)
+    ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
+    ${ROOT}/core/sfo.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
   # For size, as the worker's control code is: 1,708 B of text and rodata at -Os (2,240 B at -O2).
   target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
   set_source_files_properties(${ROOT}/core/hook_select.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
-  # regular expressions are core/hook_re.c's (core/hook_luna.c links it once anything calls the decoder).
-  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_re.c)
+  # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
   set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
