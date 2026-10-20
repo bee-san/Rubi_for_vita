@@ -270,6 +270,22 @@ static void test_a_file_without_header_or_records(void)
     record(UUID, "最初"); /* at the file's first byte */
     scan_all(VJO_FILTER_NONE);
     TEST_CHECK(h.n == 1);
+    /* a record with more columns after the ones read (a later writer's, e.g. a characters count at the
+     * end): the same line, as only the first four columns are read (the scan unescapes in place: a
+     * file of its own) */
+    {
+        size_t n;
+        reset("");
+        record(UUID, "最初");
+        n = strlen(csv);
+        TEST_ASSERT(n > 4 && csv[n - 1] == '\n');
+        strcpy(csv + n - 1, ",4,\"x\"\n");
+        record(UUID, "次");
+        n = strlen(csv);
+        strcpy(csv + n - 1, ",1\n");
+        scan_all(VJO_FILTER_NONE);
+        TEST_CHECK(h.n == 2 && !strcmp(h.line[1], "次") && !strcmp(h.line[2], "最初"));
+    }
     reset("");
     strcpy(csv, HEADER);
     scan_all(VJO_FILTER_NONE);
