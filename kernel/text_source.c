@@ -33,14 +33,15 @@ int vjoSetTextSource(uint32_t mode)
 
 /* The loader, at each process start (kernel/loader.c worker_for): the process ID's old entry goes (should an
  * ID come again, it is not taken for the old process), and with on the process is recorded, before its
- * worker starts. pid <= 0 is never recorded. */
+ * worker starts. pid <= 0 is never recorded. Plain word loads and stores (a CAS loop, unrolled, was 164 B
+ * of the kernel's text): two starts at once could at worst lose an entry, so that game's worker reads OCR
+ * (no hooks), never give one to a process that was not ON. */
 void text_source_started(SceUID pid, int on)
 {
     if (pid <= 0) return;
-    for (unsigned i = 0; i < TEXT_SOURCE_PIDS; i++) {
-        SceUID old = pid;
-        __atomic_compare_exchange_n(&on_pid[i], &old, 0, 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
-    }
+    for (unsigned i = 0; i < TEXT_SOURCE_PIDS; i++)
+        if (__atomic_load_n(&on_pid[i], __ATOMIC_RELAXED) == pid)
+            __atomic_store_n(&on_pid[i], 0, __ATOMIC_RELAXED);
     if (on)
         __atomic_store_n(&on_pid[__atomic_fetch_add(&on_next, 1u, __ATOMIC_RELAXED) % TEXT_SOURCE_PIDS], pid,
                          __ATOMIC_RELEASE);
