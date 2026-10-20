@@ -687,7 +687,7 @@ static int stage_lookup(const BenchIn *in, unsigned iters, BenchOut *out)
  * checksum (audit-overlay-perf-1b N2). */
 static const char nondefault_config[] =
     "local_dictionary_results = 3\n"
-    "japanese_only_selection = off\n"
+    "japanese_only_selection = on\n"
     "highlight_mode = character\n"
     "stick_lookup_ms = 350\n"
     "font_size_ja = 30\n"

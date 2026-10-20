@@ -164,6 +164,18 @@ class MigrateConfig(unittest.TestCase):
             self.assertIn("\nocr_boost_clock = %s\n" % value, text)
             self.assertEqual(text.count("ocr_boost_clock ="), 1)
 
+    def test_japanese_characters_only_is_off_unless_set_on(self):
+        # japanese_only_selection = off is the default (the owner, 2026-10-20; on before): a config that never set it
+        # gains off; an explicit on (the template's line from 0.7.6 until then) or off is kept as it is.
+        text, report = self.migrate("ocr_backend = vocr\nhighlight_mode = character\n")
+        self.assertIn("\njapanese_only_selection = off\n", text)
+        self.assertIn("config.ini: japanese_only_selection = off", report)
+        for value in ("on", "off"):
+            text, report = self.migrate("ocr_backend = vocr\njapanese_only_selection = %s\n" % value)
+            self.assertIn("\njapanese_only_selection = %s\n" % value, text)
+            self.assertEqual(text.count("japanese_only_selection ="), 1)
+            self.assertNotIn("japanese_only_selection", report)  # unchanged, so not reported
+
     def test_the_press_wait_cap_is_added_and_kept(self):
         # ocr_settle_press_ms (docs/first-ocr.md): a config from before it gains the default, a value is kept.
         text, report = self.migrate("ocr_backend = vocr\nocr_settle_max_ms = 3000\n")

@@ -254,7 +254,7 @@ static void test_save_switch_reload_retains_other_settings(void)
 {
     reset(); VjoConfig cfg;
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && cfg.japanese_only_selection == 1);
+    TEST_CHECK(cfg.vocr_tier == VJO_VOCR_TIER_NORMAL && cfg.japanese_only_selection == 0); /* the defaults */
     TEST_CHECK(cfg.highlight_mode == VJO_HIGHLIGHT_WORD);
     put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
     TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, expected_results, &arena) == 0);
@@ -1117,17 +1117,19 @@ static void test_shell_runs_on_the_defaults_without_writing_config_ini(void)
     TEST_CHECK(written == 0 && renames == 0 && handles == 0 && shell.used == 0);
     TEST_CHECK(access(VJO_PREFERENCES_PATH, F_OK) != 0 && access(VJO_PREFERENCES_PATH ".tmp", F_OK) != 0);
     TEST_CHECK(access(VJO_PREFERENCES_PATH ".bak", F_OK) != 0);
-    /* what creates it: the Rubi app's first save publishes the commented template with the choice */
-    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 0, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
+    /* what creates it: the Rubi app's first save publishes the commented template with the choice (ON here:
+     * the template's own line is off) */
+    TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_NORMAL, 1, VJO_HIGHLIGHT_WORD, 1, &arena) == 0);
     static char saved[VJO_CONFIG_TEXT_MAX + 1];
     int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
     TEST_ASSERT(fd >= 0);
     ssize_t n = read(fd, saved, sizeof(saved) - 1); close(fd);
     TEST_ASSERT(n > 0); saved[n] = 0;
-    TEST_CHECK(!strncmp(saved, vjo_config_default_text(), 40) && strstr(saved, "\njapanese_only_selection = off\n"));
+    TEST_CHECK(!strncmp(saved, vjo_config_default_text(), 40) && strstr(saved, "\njapanese_only_selection = on\n") &&
+               !strstr(saved, "japanese_only_selection = off"));
     TEST_CHECK(!strstr(saved, "ocr_backend")); /* no engine choice: VOCR is the only engine */
     vjo_config_load(&cfg, &shell);
-    TEST_CHECK(!cfg.japanese_only_selection && cfg.n_warnings == 0 && shell.used == 0);
+    TEST_CHECK(cfg.japanese_only_selection == 1 && cfg.n_warnings == 0 && shell.used == 0);
 }
 
 /* The Shell's reads of the Rubi app's stamps (shell/files.c): the first
