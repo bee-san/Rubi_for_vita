@@ -54,9 +54,11 @@ normalisation stores full-width digits as ASCII (４７７８ → 4778), as `his
   ends first. Another Up or Down pressed while a step waits for that is dropped (press again).
 - Closing the overlay on an earlier line ends the visit: the current text comes back with its cursor
   and its screen (once no lookup of the earlier line runs), so a reopen on the same screen shows it,
-  its word looked up again (the dictionary only: no recognition). Reopened before that lookup ended,
-  the overlay recognizes the screen, as after any lookup a close dropped. A game exit, a new region or
-  another OCR pipeline ends the visit with the text, as they retire any shown text.
+  its word looked up again (the dictionary only: no recognition), and Auto, closed, does not read that
+  screen again for a settled event the overlay saw (its lookup left the cache with the earlier line's).
+  Reopened before that lookup ended, the overlay recognizes the screen, as after any lookup a close
+  dropped. A game exit, a new region or another OCR pipeline ends the visit with the text, as they
+  retire any shown text.
 
 ## Cards from an earlier line
 
@@ -120,9 +122,9 @@ VitaSDK gcc 15.2.0 in `vitasdk/vitasdk:2026.08` [measured]:
 
 | | main `f482c21` | this change | room left |
 |---|---:|---:|---:|
-| normal Shell, text | 88,348 B | 90,012 B (+1,664) | 100 B of 90,112 |
+| normal Shell, text | 88,348 B | 90,044 B (+1,696) | 68 B of 90,112 |
 | normal Shell, data/bss | 73,280 B | 73,520 B (+240) | 208 B of 73,728 |
-| debug Shell, text | 98,732 B | 100,444 B (+1,712) | 1,956 B of 102,400 |
+| debug Shell, text | 98,732 B | 100,460 B (+1,728) | 1,940 B of 102,400 |
 | debug Shell, data/bss | 73,272 B | 73,512 B (+240) | 216 B of 73,728 |
 | kernel / OCR worker data/bss | | +8 B each | `VjoLedger`'s eleventh item |
 
@@ -141,9 +143,10 @@ dictionary's out-of-memory message, 108 B, moved out of `.rodata`); per function
   Typical lines (20-60 characters of 3 B) are 60-180 B, so 32 take 2-6 KiB [estimate]. A refused
   block means no visit: Up does nothing.
 - **VjoControl's stack** (16 KiB): `history_open` and `history_ask` are inlined into `ctl_main`, whose
-  frame goes from 256 to 312 B (+56 B under every chain of the thread); line history's own chain is
+  frame goes from 256 to 312 B (+56 B under every chain of the thread); line history's deepest chain is
   576 B (`ctl_main` 312, `vjo_history_load` 80, `vjo_history_scan` 64, `vjo_filter_lines` 48,
-  `vjo_buf_append` 16, `buf_reserve` 40, `vjo_arena_extend_last` 16), under the thread's config load
+  `vjo_buf_append` 16, `buf_reserve` 40, `vjo_arena_extend_last` 16; `history_show`'s 112 B, with its
+  `VjoState`, is beside it), under the thread's config load
   (`apply_config` alone is 1,352 B) [measured: `arm-vita-eabi-gcc -Os -fstack-usage` with the Vita
   build's flags, both builds the same, main `f482c21` and this change; the SDK's own calls not
   counted].
@@ -169,10 +172,11 @@ dictionary's out-of-memory message, 108 B, moved out of `.rodata`); per function
   visit with lookups and moves on each line, the oldest line, the return with the cursor and the
   screen, a reopen showing the saved word, on_press, no memory (and a lookup running then still
   shown), no file, a PSP game's ID; a step while a lookup or a refresh runs, a second Up while it
-  waits; no refresh in a visit and the one asked for after it; Up during a lookup then a close (and a
-  reopen): the visit, never shown, goes and refreshes resume; a close on an earlier line, a reopen
-  during its lookup, a game exit and a new region; the Paf block's ledger item and its release (filled
-  with a pattern when taken and freed, so a pointer kept into it shows).
+  waits; no refresh in a visit and the one asked for after it; Up during a lookup then a close and a
+  reopen on the same screen or another: the visit, never shown, goes and refreshes resume; a close on
+  an earlier line (no re-read of the text's screen after it), a reopen during its lookup, a game exit
+  and a new region; the Paf block's ledger item and its release (filled with a pattern when taken and
+  freed, so a pointer kept into it shows).
 - `host/tests/test_shell_anki.c`: a card from an earlier line has that line as its sentence and no
   screenshot, says so, and asks the game for none; the current line's card still has its screenshot.
 - `host/tests/test_core.c` (`styled_history_header`): the header's composition and dimming: the
@@ -181,6 +185,12 @@ dictionary's out-of-memory message, 108 B, moved out of `.rodata`); per function
 - `host/tests/test_cursor_nav.c` (`up_and_down_past_an_earlier_lines_rows`): the arrows over a header
   with the dimmed rows (the layout double): Up on the text's top row and Down on an earlier line's last
   row are the line steps, Up/Down between its own rows and Left/Right stay in the text.
+
+A mutation pass over the new code (20 one-line mutants: the parser's record rules, the newer-than-current
+reset, the dedupe and the limit, the step's wait and cancellations, on_press, the return's cursor and
+screen, the visit's frees, the refresh guard, the earlier card's screenshot, the header's lead and dimming,
+the reader's window) is killed 20 of 20 by these suites [measured: a scratch copy of the tree, each mutant
+built and every suite above run].
 
 Not tested off the console: how the dimmed rows look on the Vita's screen, the read's time on `ux0:`,
 and the Paf heap's free size during a visit. Vita3K is not evidence for any of them (AGENTS.md

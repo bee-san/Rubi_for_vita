@@ -4350,6 +4350,24 @@ static void test_history_close_exit_and_region(void)
     check_shown("猫犬鳥", "dog", 3);
     vjo_post_cursor(0, local_text_generation); on_command(); finish_current_job();
     check_shown("猫犬鳥", "cat", 0);
+    /* ... and reopened on the same screen while that lookup still runs: the text is shown and looked up
+     * again; the visit, never shown, goes once no job runs (no close would end it now), and a settled
+     * screen's refresh is not held back by it */
+    vjo_post_cursor(3, local_text_generation); on_command();
+    history_key(VJO_CMD_EARLIER);
+    TEST_ASSERT(job_running && history && history_step == 1 && !history->h.at);
+    close_overlay(); open_overlay();
+    TEST_CHECK(ov == OV_OPEN && !history_step && history && g_view.list == &local_header);
+    while (job_running) /* the cancelled lookup, then the reopen's own */
+        finish_current_job(), control_tick(0);
+    TEST_CHECK(!history && history_frees == 2 && !history_held() && !g_view.history);
+    check_shown("猫犬鳥", "dog", 3);
+    next_scene(30);
+    test_now += 10 * REFRESH_GAP_US;
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(job_running && job_refresh);
+    finish_current_job();
+    vjo_post_cursor(0, local_text_generation); on_command(); finish_current_job();
     history_frees = history_allocs = 0;
     history_key(VJO_CMD_EARLIER);
     TEST_ASSERT(job_running && job_cursor_only);

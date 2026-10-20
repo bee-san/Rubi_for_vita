@@ -430,9 +430,8 @@ static void render(int new_content)
         if (vjo_styled_init(&hdr, &s_ui, HEADER_UNITS, VJO_HEADER_SPANS) == 0) {
             /* an earlier line (line history) between its neighbours, dimmed (the owner, 2026-10-20:
              * "we can dim [them], so it shows focus on the current line") */
-            if (s_local_cursor_mode)
-                s_hdr_lead = vjo_styled_history(&hdr, s_history ? g_view.history_before : NULL, s_cursor_text,
-                                                s_history ? g_view.history_after : NULL, ja);
+            if (s_local_cursor_mode) /* (the neighbours are NULL but in a visit: worker.c history_detach) */
+                s_hdr_lead = vjo_styled_history(&hdr, g_view.history_before, s_cursor_text, g_view.history_after, ja);
             else
                 vjo_styled_header(&hdr, l, ja);
             have_hdr = 1;
@@ -998,7 +997,8 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
 #endif
             cursor = (uint32_t)to;
             /* Line history (worker.c history_ask): Up with no row above the text, and Down with none
-             * below an earlier line, go to this game's line before or after it. The d-pad's only: a
+             * below an earlier line, go to this game's line before or after it (Down on the current text
+             * posts nothing: no command holds the slot a cursor move takes next). The d-pad's only: a
              * held stick stops at the text's ends, as it does at a one-row text's. */
             if (rc == VJO_ROW_STAY && !direction && !stick && (vertical < 0 || s_history))
                 vjo_post_command(vertical < 0 ? VJO_CMD_EARLIER : VJO_CMD_LATER, NULL);

@@ -74,10 +74,11 @@ void vjo_history_scan(VjoHistory *h, VjoArena *lines, char *buf, size_t len, int
     size_t ulen = strlen(uuid), end = len, i = len, low = whole ? 0 : 1, top = vjo_arena_mark(lines);
     while (h->n < VJO_HISTORY_LINES && i-- > low) {
         char *line;
-        /* A record starts with '"' after a newline (or as the file starts), and the next byte is
-         * neither '"' nor ',': inside a field every '"' is doubled, and a field's closing '"' is
-         * followed by ',' or a newline (the header line starts with "uuid,"). */
-        if (buf[i] != '"' || (i ? buf[i - 1] != '\n' : !whole) || i + 1 >= len || buf[i + 1] == '"' ||
+        /* A record starts with '"' after a newline (or as the file starts: buf[0] is read only when the
+         * window is the whole file, `low`), and the next byte is neither '"' nor ',': inside a field
+         * every '"' is doubled, and a field's closing '"' is followed by ',' or a newline (the header line
+         * starts with "uuid,"). */
+        if (buf[i] != '"' || (i && buf[i - 1] != '\n') || i + 1 >= len || buf[i + 1] == '"' ||
             buf[i + 1] == ',')
             continue;
         line = record_line(buf + i, buf + end, uuid, ulen);

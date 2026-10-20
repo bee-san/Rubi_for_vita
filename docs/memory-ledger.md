@@ -28,7 +28,7 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
   game                                135,168   10,567,680   10,567,680            0
   packaged modules (loaded pages vs declared budget)
       VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (40,484->40,960 + 77,644->77,824)
-      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (100,444->102,400 + 73,512->73,728)
+      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (100,460->102,400 + 73,512->73,728)
       VitaJPOverlay_OCR          98,304 B of     98,304 B declared (81,644->81,920 + 15,728->16,384)
 ```
 
@@ -583,30 +583,30 @@ Only tables of the Shell's own core code are so marked (`core/local_dict.c`, `co
 
 Line history ([line-history.md](line-history.md), owner 2026-10-20): Up on the overlay's top row shows
 this game's earlier lines from `history.csv`. Its code in the normal Shell: the reader,
-`vjo_history_scan` 380 B at `-Os` and `vjo_history_load` 244 B; the control thread's visit,
-`history_show` 296 B and its other steps inlined into `ctl_main` +264 B (+312 B in the debug build); the
-overlay's header, `vjo_styled_history` 54 B and `faded_row` 132 B, the position line in `render` +148 B,
+`vjo_history_scan` 372 B at `-Os` and `vjo_history_load` 244 B; the control thread's visit,
+`history_show` 336 B and its other steps inlined into `ctl_main` +264 B (+312 B in the debug build); the
+overlay's header, `vjo_styled_history` 54 B and `faded_row` 132 B, the position line in `render` +140 B,
 the arrows' line step in `frame` +88 B (+56 B debug), the dimmed rows' recolour in `header_highlight`
 +44 B; the rest under 25 B each. The normal Shell's code segment had 1,764 B of room: it pays with
 `core/textfilter.c` built `-Os` (`vjo_filter_lines` 190 → 168 B), its two strings in the data segment
 (`VJO_DATA_TABLE`, 93 B) and `shell/worker.c`'s dictionary out-of-memory message moved there too
-(`OOM_SHELL_RESULTS`, 108 B, beside the `OOM_*` messages), so the code segment grows by 1,664 B
-(1,712 B debug) and leaves 100 B of room for the next change. Data/bss
+(`OOM_SHELL_RESULTS`, 108 B, beside the `OOM_*` messages), so the code segment grows by 1,696 B
+(1,728 B debug) and leaves 68 B of room for the next change. Data/bss
 grows by 240 B (the strings, `VjoView`'s three line-history fields, the visit's pointer and step, the
 overlay's two words, the Shell ledger's eleventh item):
 
 | | main `f482c21` | this change | room left |
 |---|---:|---:|---:|
-| normal Shell, text | 88,348 B | 90,012 B (+1,664) | 100 B of 90,112 |
+| normal Shell, text | 88,348 B | 90,044 B (+1,696) | 68 B of 90,112 |
 | normal Shell, data/bss | 73,280 B | 73,520 B (+240) | 208 B of 73,728 |
-| debug Shell, text | 98,732 B | 100,444 B (+1,712) | 1,956 B of 102,400 |
+| debug Shell, text | 98,732 B | 100,460 B (+1,728) | 1,940 B of 102,400 |
 | debug Shell, data/bss | 73,272 B | 73,512 B (+240) | 216 B of 73,728 |
 
 The pages stay 163,840 B (exact) and 176,128 B. `VJO_LEDGER_MAX_ITEMS` goes from 10 to 11 for the
 Shell's new item, so every module's `VjoLedger` has 8 B more `.bss`: the kernel 77,636 → 77,644 and
 75,948 → 75,956 B, the worker 15,720 → 15,728 B (both builds), the same pages [measured: the build log's
 module rows, both builds of main `f482c21` and this change; per function, `arm-vita-eabi-nm -S`]. The
-next change that adds more than 100 B of code to the normal Shell makes room first.
+next change that adds more than 68 B of code to the normal Shell makes room first.
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would

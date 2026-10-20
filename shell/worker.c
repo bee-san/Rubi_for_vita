@@ -2034,8 +2034,18 @@ static void history_show(int at)
     vjo_view_unlock();
     sceKernelUnlockMutex(cmd_lock, 1);
     history_free(done);
-    if (ov != OV_CLOSED)
+    if (ov != OV_CLOSED) {
         start_cursor_job();
+    } else { /* the return after a close (a step needs the overlay open): */
+        /* it leaves no lookup in the cache (the arena's is the earlier line's), so Auto, asked by a screen
+         * that settled while the overlay was open (stable_pending), would read the screen the text was
+         * read from again: one that still shows the text has nothing new (as claim_cache_for would say
+         * with the text's lookup there) */
+        VjoState st;
+        st.size = sizeof(st);
+        if (vjoGetState(&st) >= 0 && shows_screen(local_text_scene, local_text_capture_seq, &st))
+            stable_pending = 0;
+    }
 }
 
 /* The overlay's Up from its text's top row (d = 1) or Down from an earlier line's last row (d = -1):
@@ -2968,16 +2978,18 @@ static void control_tick(uint32_t bits)
     /* line history, once no job reads local_text: a step asked for meanwhile (only with a visit);
      * else a visit that shows no earlier line (Up during a job, then a close: never shown, so the view
      * holds nothing of it) goes, so it holds no block and stops no refresh; else the current text
-     * again after the overlay closed on an earlier line */
+     * again after the overlay closed on an earlier line (history_show) */
     if (!job_running && history) {
         int d = history_step;
         history_step = 0;
-        if (d)
+        if (d) {
             history_show(history->h.at + d);
-        else if (!history->h.at)
-            history_free(history), history = NULL;
-        else if (ov == OV_CLOSED)
+        } else if (!history->h.at) {
+            history_free(history);
+            history = NULL;
+        } else if (ov == OV_CLOSED) {
             history_show(0);
+        }
     }
     if (bits & (VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET)) {
         stable_pending = 1;
