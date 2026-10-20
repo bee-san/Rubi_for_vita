@@ -143,24 +143,25 @@ int sceKernelGetModuleInfo(SceUID modid, SceKernelModuleInfo *info)
     TEST_CHECK(modid == mod.modid);
     TEST_CHECK(info->size == sizeof(*info));
     if (mod.mi_rc < 0) return mod.mi_rc;
-    snprintf(info->path, sizeof(info->path), "%s", mod.path);
+    memcpy(info->path, mod.path, sizeof(info->path));
     info->segments[0].vaddr = mod.seg0;
     info->segments[0].memsz = mod.seg0_size;
     return 0;
 }
 
 /* the game's own string functions, under the hooks */
-static unsigned reals;
-static void *real_memcpy(void *d, const void *s, size_t n) { reals++; return memcpy(d, s, n); }
-static char *real_strcpy(char *d, const char *s) { reals++; return strcpy(d, s); }
-static char *real_strncpy(char *d, const char *s, size_t n) { reals++; return strncpy(d, s, n); }
-static void *real_memmove(void *d, const void *s, size_t n) { reals++; return memmove(d, s, n); }
-static void *real_clib_memcpy(void *d, const void *s, SceSize n) { reals++; return memcpy(d, s, n); }
-static char *real_clib_strncpy(char *d, const char *s, SceSize n) { reals++; return strncpy(d, s, n); }
+static unsigned reals, real_runs[CALL_IMPORTS]; /* all, and each function's */
+#define RAN(k) (reals++, real_runs[k]++)
+static void *real_memcpy(void *d, const void *s, size_t n) { RAN(CALL_MEMCPY); return memcpy(d, s, n); }
+static char *real_strcpy(char *d, const char *s) { RAN(CALL_STRCPY); return strcpy(d, s); }
+static char *real_strncpy(char *d, const char *s, size_t n) { RAN(CALL_STRNCPY); return strncpy(d, s, n); }
+static void *real_memmove(void *d, const void *s, size_t n) { RAN(CALL_MEMMOVE); return memmove(d, s, n); }
+static void *real_clib_memcpy(void *d, const void *s, SceSize n) { RAN(CALL_CLIB_MEMCPY); return memcpy(d, s, n); }
+static char *real_clib_strncpy(char *d, const char *s, SceSize n) { RAN(CALL_CLIB_STRNCPY); return strncpy(d, s, n); }
 static SceSize real_clib_strlcpy(char *d, const char *s, SceSize cap)
 {
     size_t n = strlen(s), k;
-    reals++;
+    RAN(CALL_CLIB_STRLCPY);
     if (cap) {
         k = n < cap - 1u ? n : cap - 1u;
         memcpy(d, s, k);
@@ -168,7 +169,9 @@ static SceSize real_clib_strlcpy(char *d, const char *s, SceSize cap)
     }
     return (SceSize)n;
 }
-static SceSize real_clib_strnlen(const char *s, SceSize max) { reals++; return (SceSize)strnlen(s, max); }
+static SceSize real_clib_strnlen(const char *s, SceSize max) { RAN(CALL_CLIB_STRNLEN); return (SceSize)strnlen(s, max); }
+static unsigned chained_runs;
+static void *chained_memcpy(void *d, const void *s, size_t n) { chained_runs++; return memcpy(d, s, n); }
 
 static const struct {
     uint32_t lib, nid;
@@ -434,7 +437,8 @@ static void reset(void)
     snprintf(mod.path, sizeof(mod.path), "app0:eboot.bin");
     mod.seg0 = code;
     mod.seg0_size = CODE_SIZE;
-    reals = 0;
+    reals = chained_runs = 0;
+    memset(real_runs, 0, sizeof(real_runs));
     memset(imp, 0, sizeof(imp));
     n_imp = n_not_imported = 0;
     memset(offs, 0, sizeof(offs));
@@ -602,15 +606,30 @@ static void test_call_hooks(void)
     TEST_CHECK(((SceSize(*)(const char *, SceSize))imp[CALL_CLIB_STRNLEN].func)(s, 8) == 8);
     TEST_CHECK(call_stream_with(L_TODAY, 8) != 0); /* the 8 bytes the game measured */
     TEST_CHECK(reals == 9 && in_flight == 0);
+    for (unsigned k = 0; k < CALL_IMPORTS; k++)
+        TEST_CHECK_(real_runs[k] == (k == CALL_CLIB_STRNLEN ? 2u : 1u), "import %u: its own function", k);
     TEST_CHECK(call_slots_used() == 9);
 
     /* another hook after ours (taiHEN's chain): TAI_CONTINUE runs it, not the game's function */
     chained.next = 0;
     chained.old = NULL;
-    chained.func = (void *)(uintptr_t)real_memcpy;
+    chained.func = (void *)(uintptr_t)chained_memcpy;
     imp[CALL_MEMCPY].user.next = (uintptr_t)&chained;
     ((void *(*)(void *, const void *, size_t))imp[CALL_MEMCPY].func)(d, L_HELLO, 20);
-    TEST_CHECK(reals == 10 && !memcmp(d, L_HELLO, 20));
+    TEST_CHECK(chained_runs == 1 && reals == 9 && !memcmp(d, L_HELLO, 20));
+    imp[CALL_MEMCPY].user.next = 0;
+
+    /* more than 512 bytes: a mem copy is no text even with a NUL inside 512; a string copy's text is */
+    {
+        static char big_s[640], big_d[640];
+        const unsigned used = call_slots_used();
+        for (unsigned i = 0; i + 22 <= 600; i += 22) memcpy(big_s + i, L_TODAY, 22);
+        big_s[506] = 0;
+        ((void *(*)(void *, const void *, size_t))imp[CALL_MEMCPY].func)(big_d, big_s, 600);
+        TEST_CHECK(call_stream_with(big_d, 506) == 0 && call_slots_used() == used);
+        ((char *(*)(char *, const char *, size_t))imp[CALL_STRNCPY].func)(big_d, big_s, 600);
+        TEST_CHECK(call_stream_with(big_d, 506) != 0);
+    }
 }
 
 /* ---- read_game ---- */
@@ -656,6 +675,8 @@ static void test_read_game(void)
     TEST_CHECK(read_game(NULL, base + 0x10, out, 16, 1) == 0);
     blocks[0].base = base;
     blocks[0].size = 0x10;
+    TEST_CHECK(read_game(NULL, base + 0x10, out, 16, 1) == 0);
+    blocks[0].size = 0x8; /* one that ends before it */
     TEST_CHECK(read_game(NULL, base + 0x10, out, 16, 1) == 0);
     /* a block whose end wraps past 4 GiB holds nothing at the top (never read: no memory there) */
     blocks[0].base = 0xFFFF0000u;
@@ -771,7 +792,7 @@ static void log_outcomes(char *out, size_t cap)
 static void test_install_order(void)
 {
     VjoPlaceVerified v[2];
-    VjoLunaSite l[10];
+    VjoLunaSite l[13];
     VjoStreamSlot zero;
     uint32_t mode, inst, refused;
     char outcomes[256];
@@ -781,10 +802,12 @@ static void test_install_order(void)
     put_site(0x300, 0, NULL);
     put_site(0x380, 1, NULL);
     put_site(0x400, 1, form(1, 0, "ldr r0, [pc, #4]"));
+    put_site(0x480, 1, NULL);
+    put_site(0x500, 1, NULL);
     v[0] = verified_entry(0x100, mod.nid, 6, 0);
     v[1] = verified_entry(0x200, mod.nid + 1u, 6, 0); /* another module's NID: its signature differs */
     l[0] = luna_site(0x200, 1, 0, 1, 0x0101);
-    l[1] = luna_site(CODE_SIZE + 0x10, 1, 0, 0, 0x0101);    /* unported (and out of range) */
+    l[1] = luna_site(CODE_SIZE + 0x10, 1, 0, 0, 0x0102);    /* unported (and another version's, out of range) */
     l[2] = luna_site(CODE_SIZE + 0x10, 1, 0, 1, 0x0102);    /* another version (and out of range) */
     l[3] = luna_site(CODE_SIZE + 0x10, 1, 0, 1, 0x0101);    /* in the guard page past the segment */
     l[4] = luna_site(0, 1, 0, 1, 0x0101);
@@ -794,10 +817,13 @@ static void test_install_order(void)
     l[7] = luna_site(0x100, 1, 0, 1, 0x0101);               /* the verified entry's address */
     l[8] = luna_site(0x380, 1, 0, 1, 0);                    /* unnamed, beside named ones that match */
     l[9] = luna_site(0x400, 1, 0, 1, 0x0101);               /* a PC-relative load in the window */
+    l[10] = luna_site(0x480, 1, 0, 0, 0x0101);              /* unported, at an entry the check accepts */
+    l[11] = luna_site(0x500, 1, 0, 1, 0x0110);              /* another version's, at an accepted entry */
+    l[12] = luna_site(CODE_SIZE, 1, 0, 1, 0x0101);          /* exactly at the segment's end */
     t_ver = v;
     t_nver = 2;
     t_luna = l;
-    t_nluna = 10;
+    t_nluna = 13;
     set_sfo("01.01");
     vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
 
@@ -814,7 +840,7 @@ static void test_install_order(void)
     vjo_hooks_counts(&mode, &inst, &refused);
     TEST_CHECK(mode == VJO_TEXT_SOURCE_AUTO);
     TEST_CHECK(inst == (3u << 16 | CALL_IMPORTS));
-    TEST_CHECK_(refused == 8, "refused %u", (unsigned)refused);
+    TEST_CHECK_(refused == 11, "refused %u", (unsigned)refused);
     /* APP_VER read once, into the CALL slots' storage, zeroed after */
     TEST_CHECK(sfo_opens == 1);
     memset(&zero, 0, sizeof(zero));
@@ -824,10 +850,10 @@ static void test_install_order(void)
 #if VJO_DEBUG
     log_outcomes(outcomes, sizeof(outcomes));
     TEST_CHECK_(!strcmp(outcomes, "hooked,signature,hooked,unported,version,range,range,entry,hooked,skipped,version,"
-                                  "window"),
+                                  "window,unported,version,range"),
                 "outcomes %s", outcomes);
-    TEST_CHECK(strstr(logbuf, "APP_VER 0101; 2 verified, 10 Luna sites") != NULL);
-    TEST_CHECK(strstr(logbuf, "sites hooked 3, refused 8; CALL imports hooked 8 of 8") != NULL);
+    TEST_CHECK(strstr(logbuf, "APP_VER 0101; 2 verified, 13 Luna sites") != NULL);
+    TEST_CHECK(strstr(logbuf, "sites hooked 3, refused 11; CALL imports hooked 8 of 8") != NULL);
     TEST_CHECK(log_opens == 1 && closes == 2 && log_flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC));
 #else
     (void)outcomes;
@@ -870,6 +896,17 @@ static void test_site_cap(void)
                     "outcomes %s", outcomes);
     }
 #endif
+    /* the one site taiHEN refuses leaves its slot as it was */
+    reset();
+    put_site(0x100, 1, NULL);
+    l[0] = luna_site(0x100, 1, 0, 1, 0);
+    t_luna = l;
+    t_nluna = 1;
+    fail_offset = 0x100;
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    vjo_hooks_counts(NULL, &inst, &refused);
+    TEST_CHECK(n_offs == 0 && offset_calls == 1 && n_sites == 0 && inst >> 16 == 0 && refused == 1);
+    TEST_CHECK(slots[0].key == 0 && slots[0].site == NULL && site_uid[0] < 0);
 }
 
 /* The text source word: its mode, NO_SITES (no table site, the CALL source as the mode says), and the words
@@ -934,6 +971,37 @@ static void test_word(void)
     }
 }
 
+/* auto: a title with a hook entry gets hooks: Rubi's verified entry alone, or Luna's sites alone. */
+static void test_auto_listed(void)
+{
+    VjoPlaceVerified v;
+    VjoLunaSite l;
+    reset();
+    put_site(0x100, 1, NULL);
+    v = verified_entry(0x100, mod.nid, 6, 0);
+    t_ver = &v;
+    t_nver = 1;
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_CHECK(n_imp == 8 && n_offs == 1 && sfo_opens == 0);
+    reset();
+    put_site(0x200, 1, NULL);
+    l = luna_site(0x200, 1, 0, 1, 0);
+    t_luna = &l;
+    t_nluna = 1;
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_CHECK(n_imp == 8 && n_offs == 1 && sfo_opens == 1);
+    /* the real tables: CLANNAD (Rubi's entry), a Luna title; an unlisted title gets nothing */
+    reset();
+    vjo_hooks_start("PCSG00415", VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_CHECK(n_imp == 8);
+    reset();
+    vjo_hooks_start("PCSG00917", VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_CHECK(n_imp == 8);
+    reset();
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_CHECK(n_imp == 0 && !live);
+}
+
 /* The main module: taiHEN's TAI_MAIN_MODULE whose path ends in eboot.bin, with a segment 0; and the imports
  * this firmware may not resolve. */
 static void test_main_module(void)
@@ -953,8 +1021,8 @@ static void test_main_module(void)
         TEST_CHECK_(n_imp == 8 && live, "%s: hooked", good_paths[k]);
     }
     reset();
-    memset(mod.path, 'a', sizeof(mod.path) - 1); /* no NUL in the path's 256 bytes */
-    mod.path[sizeof(mod.path) - 1] = 0;
+    memset(mod.path, 'a', sizeof(mod.path)); /* no NUL in the path's 256 bytes, though it ends in /eboot.bin */
+    memcpy(mod.path + sizeof(mod.path) - 10, "/eboot.bin", 10);
     vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
     TEST_CHECK(n_imp == 0);
     reset();
@@ -1047,6 +1115,10 @@ static void test_site_hits(void)
     TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) > 0 && !strcmp(text, "今日はいい天気ですね。"));
     seq = s.seq;
     TEST_CHECK(in_flight == 0);
+    /* a slot a game thread holds: no snapshot, and its lock stays the thread's */
+    slots[0].lock = 1;
+    TEST_CHECK(!vjo_hooks_snap(1, &s) && slots[0].lock == 1);
+    slots[0].lock = 0;
 
     memcpy(data + 0x80, L_HELLO, 21);
     frame[0] = a32(data) + 0x80;
@@ -1072,6 +1144,11 @@ static void test_site_hits(void)
     scratch_lock = 1;
     TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
     TEST_CHECK(stream_clock.dropped == 1 && stream_clock.call_dropped == 0);
+    {
+        uint32_t cd = 9, cr = 9;
+        vjo_hooks_call_stats(&cd, &cr);
+        TEST_CHECK(cd == 0 && cr == 0);
+    }
     TEST_CHECK(vjo_hooks_snap(1, &s) && s.n == 22 && s.hits == 1);
     scratch_lock = 0;
     /* an unreadable address: no text */
@@ -1221,7 +1298,8 @@ static void test_app_version(void)
         const char *ver;
         uint16_t want;
     } cases[] = {{"01.01", 0x0101}, {"1.10", 0x0110}, {"02.00", 0x0200}, {"01.1", 0}, {"01.01a", 0},
-                 {"a1.00", 0},     {"", 0},          {"100.00", 0},     {"01,01", 0}, {"01.0x", 0}};
+                 {"a1.00", 0},     {"", 0},          {"100.00", 0},     {"01,01", 0}, {"01.0x", 0},
+                 {".10", 0},       {"101.01", 0}};
     VjoStreamSlot zero;
     memset(&zero, 0, sizeof(zero));
     for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
@@ -1247,6 +1325,7 @@ TEST_LIST = {
     {"install order: verified first; unported, version, range, entry, window; duplicates", test_install_order},
     {"8 site slots, a duplicate address, taiHEN's refusal", test_site_cap},
     {"the text source word: modes, NO_SITES, OCR for an unknown mode or flag", test_word},
+    {"auto: Rubi's entry alone, Luna's alone, the real tables", test_auto_listed},
     {"the main module (eboot.bin, segment 0) and unresolved imports", test_main_module},
     {"site hits through the observer's C entry", test_site_hits},
     {"CALL slots: replacement, keep, busy, stats", test_replacement_keep},
