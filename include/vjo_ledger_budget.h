@@ -166,10 +166,10 @@
  * never loads into SceShell, AGENTS.md rules 1-2), in every game that is ON whatever its text source, and now
  * per build again: the engine (game_ocr/hooks.c and hooks_observer.S, core/hook_place.c, core/hook_stream.c,
  * core/sfo.c, at -Os) and what it links of Luna's ported table (core/hook_luna.c and its table: the sites, the
- * version gate and the capture's hookfuncs) take the debug build's text 81,644 -> 98,984 B and the normal
- * build's 80,344 -> 96,476 B, and both builds' data/bss 15,752 -> 27,496 B: debug 98,304 -> 131,072 B, normal
- * 98,304 -> 126,976 B [measured: the build log's module rows, both builds, hooks/engine with origin/hooks/
- * luna-port 5434ab5 merged; the engine alone was 88,904 / 86,396 B of text; the debug "before" is the same
+ * version gate and the capture's hookfuncs) take the debug build's text 81,644 -> 99,016 B and the normal
+ * build's 80,344 -> 96,524 B (1,780 B of room in its last page), and both builds' data/bss 15,752 -> 27,496 B: debug 98,304 -> 131,072 B, normal
+ * 98,304 -> 126,976 B [measured: the build log's module rows, both builds, hooks/engine 8aa79eb with origin/hooks/
+ * luna-port merged; the engine alone was 88,904 / 86,396 B of text; the debug "before" is the same
  * tree with the engine unreferenced (81,644 + 15,752, as main's), the normal "before" this header's API 26
  * figure]. The data is the 20 stream slots' static storage (VJO_HOOK_STREAMS x 548 B = 10,960 B: a stream's
  * 512 raw bytes and its header, include/vjo_game_ocr.h) and a site hit's 512-byte capture buffer: static, so
