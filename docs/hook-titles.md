@@ -4,14 +4,16 @@ The games Rubi can read text from with a native hook instead of OCR, from
 [LunaTranslator](https://github.com/HIllya51/LunaTranslator)'s PS Vita table (51884b6, v12.1.2.12,
 GPL-3.0, vendored in [third_party/LunaTranslator](../third_party/LunaTranslator/README.md)), and Rubi's
 own CLANNAD entry. Luna's entries are hooks for the Vita3K emulator: a guest address per title ID, the
-register that holds the text there, its encoding, and a hookfunc and a filter per site. They have never
-run on a real Vita. How the game worker uses them, and when it installs one, is in
+register that holds the text there, its encoding, and a hookfunc and a filter per site. These table sites
+remain unverified on a real Vita. CLANNAD's string-copy CALL source was verified on the owner's Vita with
+the combined debug test build on 2026-10-20; its register site remains unverified on a console. The normal
+release build has no reported console run. How the game worker uses the hooks, and when it installs one, is in
 [native-hooks.md](native-hooks.md).
 
 - **Address.** Luna's address is in Vita3K's guest space after `vita3k.cpp`'s `addr_offset`, where the
   game executable's first segment starts at 0x80004000: the site is that segment's start + (address −
-  0x80004000) on a console. This is inferred from Vita3K's load address and Luna's offsets; **no site
-  has been seen on a console yet.** Vita3K hooks a site where its JIT starts a block, which is a
+  0x80004000) on a console. This is inferred from Vita3K's load address and Luna's offsets; **no table-address
+  site has been verified on a console yet.** Vita3K hooks a site where its JIT starts a block, which is a
   function's start or a block inside one: the worker checks the bytes before it patches anything.
 - **Ported** means everything the site needs exists in C (`core/hook_luna.c`): the read, its hookfunc,
   its filter. **Refused** sites stay in the table (the worker can log why) and are never installed; the
@@ -392,7 +394,7 @@ Title IDs whose sites Luna's comments name more than one game for:
 
 | Title ID | Region | Game | Site | Encoding | Status |
 | --- | --- | --- | --- | --- | --- |
-| PCSG00415 | JP | CLANNAD | the CALL source (SceLibc `memcpy`/`strcpy`/`strncpy`/`memmove` imports of the game executable); the register site segment 0 + 0x2CA70 (Luna's space 0x80030A70), r6, module NID 0xC5187D60, 8-byte signature | CP932 (AUTO for the CALL source) | Rubi's own, not in Luna's table: an earlier build's CALL source (the code removed in c35ebf9) followed CLANNAD's dialogue on a console (2026-10-10, vita-vn-ocr note 23); this one is new code, not run on a console yet; the register site proven in Vita3K only (note 22) |
+| PCSG00415 | JP | CLANNAD | the CALL source (SceLibc `memcpy`/`strcpy`/`strncpy`/`memmove` imports of the game executable); the register site segment 0 + 0x2CA70 (Luna's space 0x80030A70), r6, module NID 0xC5187D60, 8-byte signature | CP932 (AUTO for the CALL source) | Rubi's own, not in Luna's table: the current CALL source was verified on the owner's Vita with the combined debug test build (2026-10-20); the register site was proven in Vita3K only (note 22) and remains unverified on a console; the normal release build has no reported console run |
 
 ## Hookfuncs and filters
 
