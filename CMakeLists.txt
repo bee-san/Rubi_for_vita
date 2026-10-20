@@ -42,12 +42,12 @@ target_compile_options(vjo_taihen_parser PRIVATE -w)
 
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
-  core/textfilter.c core/textjoin.c core/linebreak.c core/entries.c core/config.c core/regions.c
+  core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
-  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/payload.c)
+  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl vjo_taihen_parser)
@@ -126,6 +126,39 @@ target_include_directories(vjo-kernel-input-tests PRIVATE third_party/acutest/in
 target_compile_definitions(vjo-kernel-input-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-input-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_input COMMAND vjo-kernel-input-tests)
+# API 31: the text source's syscalls (kernel/text_source.c): the registered Shell sets it, a process the
+# loader started the worker in as ON reads it (any other OCR), OCR until set and in a safe boot.
+add_executable(vjo-kernel-text-source-tests host/tests/test_kernel_text_source.c)
+target_include_directories(vjo-kernel-text-source-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-kernel-text-source-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-kernel-text-source-tests PRIVATE -Wall -Wextra)
+add_test(NAME kernel_text_source COMMAND vjo-kernel-text-source-tests)
+# API 31: text-source config helpers and diagnostic pick/label utilities.
+target_sources(vjo_core PRIVATE core/hook_pick.c core/hook_titles.c)
+# The Rubi app's Games tag (core/hook_titles.c) knows Luna's games once core/hook_luna.c is there
+# (hooks/luna-port), as the Vita app's build does (vita/CMakeLists.txt).
+if(EXISTS ${CMAKE_SOURCE_DIR}/core/hook_luna.c)
+  foreach(_vjo_luna hook_luna.c hook_re.c hook_text.c)
+    if(EXISTS ${CMAKE_SOURCE_DIR}/core/${_vjo_luna})
+      target_sources(vjo_core PRIVATE core/${_vjo_luna})
+    endif()
+  endforeach()
+  set_property(SOURCE core/hook_titles.c APPEND PROPERTY COMPILE_DEFINITIONS VJO_HOOK_LUNA=1)
+endif()
+add_executable(vjo-hook-pick-tests host/tests/test_hook_pick.c core/hook_pick.c)
+target_include_directories(vjo-hook-pick-tests PRIVATE third_party/acutest/include)
+target_compile_definitions(vjo-hook-pick-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-hook-pick-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_pick COMMAND vjo-hook-pick-tests)
+# API 31: the Rubi app's Games tag (core/hook_titles.c), through the host core.
+add_executable(vjo-hook-titles-tests host/tests/test_hook_titles.c)
+target_include_directories(vjo-hook-titles-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-hook-titles-tests PRIVATE -Wall -Wextra)
+target_link_libraries(vjo-hook-titles-tests vjo_core)
+if(EXISTS ${CMAKE_SOURCE_DIR}/core/hook_luna.c)
+  target_compile_definitions(vjo-hook-titles-tests PRIVATE VJO_HOOK_LUNA=1)
+endif()
+add_test(NAME hook_titles COMMAND vjo-hook-titles-tests)
 # #104: the process event hook releases the game's input block in the same event
 # (kernel/lifecycle.c with the real foreground state machine).
 add_executable(vjo-kernel-lifecycle-tests host/tests/test_kernel_lifecycle.c kernel/foreground.c)
@@ -164,6 +197,27 @@ target_include_directories(vjo-boot-guard-tests PRIVATE third_party/acutest/incl
 target_compile_definitions(vjo-boot-guard-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-boot-guard-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME boot_guard COMMAND vjo-boot-guard-tests)
+# Native hooks (docs/native-hooks.md): the site check on the VitaSDK assembler's byte fixtures
+# (tools/gen_hook_place_fixtures.sh), Rubi's verified entry and the CALL prefilter; the stream slots.
+add_executable(vjo-hook-place-tests host/tests/test_hook_place.c core/hook_place.c)
+target_include_directories(vjo-hook-place-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-hook-place-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_place COMMAND vjo-hook-place-tests)
+find_package(Threads REQUIRED)
+add_executable(vjo-hook-stream-tests host/tests/test_hook_stream.c core/hook_stream.c core/hook_place.c)
+target_include_directories(vjo-hook-stream-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-hook-stream-tests PRIVATE -Wall -Wextra)
+target_link_libraries(vjo-hook-stream-tests Threads::Threads)
+add_test(NAME hook_stream COMMAND vjo-hook-stream-tests)
+# The hook engine itself (game_ocr/hooks.c, audit-hooks F4) against stubbed taiHEN, modulemgr, sysmem and io
+# (host/tests/hooks_stubs before game_stubs), in this build's variant (VJO_DEBUG: its hooks.log too).
+add_executable(vjo-hooks-engine-tests host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c
+  core/hook_luna.c core/hook_re.c core/hook_text.c core/sfo.c)
+target_include_directories(vjo-hooks-engine-tests PRIVATE third_party/acutest/include host/tests
+  host/tests/hooks_stubs host/tests/game_stubs)
+target_compile_definitions(vjo-hooks-engine-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-hooks-engine-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME hooks_engine COMMAND vjo-hooks-engine-tests)
 # kernel/foreground.c, scene.c, triggers.c: kernel logic without psp2kern.
 add_executable(vjo-tests host/tests/test_core.c kernel/foreground.c kernel/scene.c kernel/triggers.c)
 
@@ -283,6 +337,13 @@ target_include_directories(vjo-text-join-tests PRIVATE third_party/acutest/inclu
 target_link_libraries(vjo-text-join-tests vjo_host)
 target_compile_options(vjo-text-join-tests PRIVATE -Wall -Wextra)
 add_test(NAME text_join COMMAND vjo-text-join-tests)
+# Native hooks (docs/native-hooks.md): which text a job shows, OCR's or a hook stream's (core/hook_select.h):
+# the similarity of a stream's text within OCR's, against a brute-force reference, and the lock job by job.
+add_executable(vjo-hook-select-tests host/tests/test_hook_select.c)
+target_include_directories(vjo-hook-select-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-hook-select-tests vjo_host)
+target_compile_options(vjo-hook-select-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_select COMMAND vjo-hook-select-tests)
 add_executable(vjo-text-rows-tests host/tests/test_text_rows.c)
 target_include_directories(vjo-text-rows-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-text-rows-tests vjo_host)
@@ -305,12 +366,28 @@ target_include_directories(vjo-shell-anki-tests PRIVATE third_party/acutest/incl
 target_compile_options(vjo-shell-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-anki-tests vjo_host)
 add_test(NAME shell_anki COMMAND vjo-shell-anki-tests)
-# The hidden auto-OCR CSV appender: real files, bounded writes and injected failures.
-add_executable(vjo-shell-history-tests host/tests/test_shell_history.c)
+# The hidden auto-OCR CSV appender: real files, bounded writes and injected failures; its
+# characters column (core/reading_chars.h: core/utf.c's decoder, core/text_rows.c's letters).
+add_executable(vjo-shell-history-tests host/tests/test_shell_history.c core/utf.c core/text_rows.c core/textnorm.c)
 target_include_directories(vjo-shell-history-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-shell-history-tests vjo_core) # line history's reader: core/history_lines.c
 add_test(NAME shell_history COMMAND vjo-shell-history-tests)
+# The same writer and count for tools/reading_stats.py's tests (tools/tests/test_reading_stats.py:
+# VJO_HISTORY_WRITER), with the game worker's normalisation of the text it returns.
+add_executable(vjo-history-writer host/tests/history_writer.c core/utf.c core/text_rows.c core/textnorm.c)
+target_include_directories(vjo-history-writer PRIVATE host/tests/vita_stubs)
+target_compile_definitions(vjo-history-writer PRIVATE VJO_HOST=1)
+target_compile_options(vjo-history-writer PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-history-writer PRIVATE vjo_core) # shell/history.c also contains the line-history reader
+# Line history (docs/line-history.md): history.csv's records read back from a window of the file,
+# this game's lines newest first, filtered and deduplicated as the overlay shows them.
+add_executable(vjo-history-lines-tests host/tests/test_history_lines.c)
+target_include_directories(vjo-history-lines-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-history-lines-tests vjo_core)
+target_compile_options(vjo-history-lines-tests PRIVATE -Wall -Wextra)
+add_test(NAME history_lines COMMAND vjo-history-lines-tests)
 # The Rubi app's .apkg export (settings/anki_export.c, core/apkg.c and its SQLite, ZIP and Lapis
 # writers) on real files; host/tests/test_apkg.py opens its packages with Python's zipfile and sqlite3
 # and imports them into Anki itself (the `anki` package, tools/requirements-anki.txt) when it is there:
@@ -378,6 +455,30 @@ add_test(NAME apkg_packages COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/ho
   $<TARGET_FILE:vjo-apkg-tests>)
 # The Lapis note type in core/lapis_notetype.inc is third_party/lapis's, generated by tools/gen_lapis.py.
 add_test(NAME lapis_notetype COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/gen_lapis.py --check)
+# Native hooks (docs/hook-titles.md): the hook text decoder (core/hook_text.c: every CP932 cell against
+# tools/gen_cp932.py's mapping), LunaTranslator's Vita table and its ports (core/hook_luna.c) on a fake
+# memory image, and its filters' regex subset (core/hook_re.c) against Python's re
+# (host/tests/hook_re_vectors.inc); the generated files must match their generators.
+add_executable(vjo-hook-text-tests host/tests/test_hook_text.c core/hook_text.c)
+target_include_directories(vjo-hook-text-tests PRIVATE third_party/acutest/include core)
+target_link_libraries(vjo-hook-text-tests bearssl)
+target_compile_options(vjo-hook-text-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_text COMMAND vjo-hook-text-tests)
+add_executable(vjo-hook-luna-tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c)
+target_include_directories(vjo-hook-luna-tests PRIVATE third_party/acutest/include core host/tests)
+target_compile_options(vjo-hook-luna-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_luna COMMAND vjo-hook-luna-tests)
+add_test(NAME hook_luna_table COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/gen_luna_vita.py --check)
+add_test(NAME hook_cp932_table COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/gen_cp932.py --check)
+add_test(NAME hook_re_vectors COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/gen_hook_re_vectors.py --check)
+# The debug build's read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): Luna's PSP table
+# as the probe looks it up (core/hook_luna_psp.inc, generated by tools/gen_luna_psp.py), its reads' bounds
+# and its log lines.
+add_executable(vjo-psp-probe-tests host/tests/test_psp_probe.c core/psp_probe.c)
+target_include_directories(vjo-psp-probe-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-psp-probe-tests PRIVATE -Wall -Wextra)
+add_test(NAME psp_probe COMMAND vjo-psp-probe-tests)
+add_test(NAME psp_probe_table COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/gen_luna_psp.py --check)
 # API 23: the Anki screenshot's JPEG encoder (core/jpegsw.c, the game worker's): every output
 # decoded by Pillow, its size and quality against its source and against libjpeg's.
 add_executable(vjo-jpeg host/jpeg_tool.c)
@@ -385,6 +486,12 @@ target_link_libraries(vjo-jpeg vjo_core)
 target_compile_options(vjo-jpeg PRIVATE -Wall -Wextra)
 add_test(NAME jpeg_encoder COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_jpegsw.py
   $<TARGET_FILE:vjo-jpeg>)
+# API 32: the Anki screenshot's black bars (core/shottrim.c, the game worker's) on synthetic frames.
+add_executable(vjo-shot-trim-tests host/tests/test_shot_trim.c)
+target_include_directories(vjo-shot-trim-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-shot-trim-tests vjo_core)
+target_compile_options(vjo-shot-trim-tests PRIVATE -Wall -Wextra)
+add_test(NAME shot_trim COMMAND vjo-shot-trim-tests)
 if(VJO_WITH_NCNN)
   add_executable(vjo-ocr-tests host/tests/test_ocr.c)
   target_include_directories(vjo-ocr-tests PRIVATE third_party/acutest/include)
@@ -474,6 +581,7 @@ if(VJO_DEBUG)
 endif()
 string(APPEND _vjo_tool_env ";VJO_DICT_BENCH=$<TARGET_FILE:vjo-dict-bench>")
 string(APPEND _vjo_tool_env ";VJO_TAICFG=$<TARGET_FILE:vjo-taicfg>")
+string(APPEND _vjo_tool_env ";VJO_HISTORY_WRITER=$<TARGET_FILE:vjo-history-writer>")
 if(VJO_WITH_VOCR)
   string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
 endif()
@@ -680,7 +788,7 @@ target_link_libraries(vjo-game-ocr-client-tests vjo_host)
 add_test(NAME game_ocr_client COMMAND vjo-game-ocr-client-tests)
 
 if(VJO_WITH_VOCR)
-  add_executable(vjo-game-vocr-tests host/tests/test_game_vocr.c)
+  add_executable(vjo-game-vocr-tests host/tests/test_game_vocr.c host/tests/hooks_none.c)
   target_include_directories(vjo-game-vocr-tests PRIVATE third_party/acutest/include host/tests/game_stubs)
   target_compile_options(vjo-game-vocr-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-vocr-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}"
@@ -689,7 +797,7 @@ if(VJO_WITH_VOCR)
   add_test(NAME game_vocr_worker COMMAND vjo-game-vocr-tests)
   # The same game worker and the Shell's job with another package's tier map, Normal
   # and Large one model (host/tests/test_shared_tiers.h): each file's own tests for it.
-  add_executable(vjo-game-vocr-shared-tests host/tests/test_game_vocr.c)
+  add_executable(vjo-game-vocr-shared-tests host/tests/test_game_vocr.c host/tests/hooks_none.c)
   target_include_directories(vjo-game-vocr-shared-tests PRIVATE third_party/acutest/include host/tests/game_stubs
     host/tests)
   target_compile_options(vjo-game-vocr-shared-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -707,7 +815,8 @@ if(VJO_WITH_VOCR)
   add_test(NAME shell_worker_shared_tiers COMMAND vjo-shell-worker-shared-tests)
   # The actual game worker and core adapter with synthetic pinned weights and a
   # spy runtime: the resident-weights lifecycle runs without release files (CI).
-  add_executable(vjo-game-resident-tests host/tests/test_game_resident.c core/vocr_ocr.c core/textnorm.c)
+  add_executable(vjo-game-resident-tests host/tests/test_game_resident.c core/vocr_ocr.c core/textnorm.c
+    host/tests/hooks_none.c)
   target_include_directories(vjo-game-resident-tests PRIVATE third_party/acutest/include
     host/tests/game_stubs host/tests)
   target_compile_options(vjo-game-resident-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -717,7 +826,19 @@ if(VJO_WITH_VOCR)
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
-  add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c
+  # Native hooks in the job path (docs/native-hooks.md): the actual worker with the resident test's spies and
+  # a fake of game_ocr/hooks.h: a stream answers with the first capture pass only, or replaces OCR's agreeing
+  # text; nothing installed is OCR as before.
+  add_executable(vjo-game-hooks-tests host/tests/test_game_hooks.c core/vocr_ocr.c core/textnorm.c)
+  target_include_directories(vjo-game-hooks-tests PRIVATE third_party/acutest/include host/tests/game_stubs host/tests)
+  target_compile_options(vjo-game-hooks-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-hooks-tests PRIVATE
+    VJO_VOCR_TEST_MODELS="test_resident_models.h"
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
+    vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
+  target_link_libraries(vjo-game-hooks-tests vjo_vocr_rt vjo_host)
+  add_test(NAME game_hooks COMMAND vjo-game-hooks-tests)
+  add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c host/tests/hooks_none.c
     host/tests/kernel_model_broker_boundary.c kernel/buffers.c kernel/capture.c
     kernel/scene.c kernel/ledger.c core/ledger.c)
   target_include_directories(vjo-game-model-broker-tests PRIVATE third_party/acutest/include
@@ -727,7 +848,7 @@ if(VJO_WITH_VOCR)
     VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}")
   target_link_libraries(vjo-game-model-broker-tests vjo_vocr)
   # #74 preflight: the real worker and kernel under the console's measured pool limits.
-  add_executable(vjo-alloc-sim-tests host/tests/test_alloc_sim.c host/tests/kernel_model_broker_boundary.c
+  add_executable(vjo-alloc-sim-tests host/tests/test_alloc_sim.c host/tests/hooks_none.c host/tests/kernel_model_broker_boundary.c
     kernel/buffers.c kernel/capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
   target_include_directories(vjo-alloc-sim-tests PRIVATE third_party/acutest/include host/tests/game_stubs
     host/tests/vita_stubs)
@@ -739,7 +860,7 @@ if(VJO_WITH_VOCR)
   add_test(NAME game_model_broker COMMAND vjo-game-model-broker-tests)
   # API 23: the Anki screenshot through the actual worker and kernel transport, real files, its
   # JPEGs decoded by Pillow (host/tests/test_game_shot.py).
-  add_executable(vjo-game-shot-tests host/tests/test_game_shot.c host/tests/kernel_model_broker_boundary.c
+  add_executable(vjo-game-shot-tests host/tests/test_game_shot.c host/tests/hooks_none.c host/tests/kernel_model_broker_boundary.c
     kernel/buffers.c kernel/capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
   target_include_directories(vjo-game-shot-tests PRIVATE third_party/acutest/include host/tests/game_stubs
     host/tests/vita_stubs)

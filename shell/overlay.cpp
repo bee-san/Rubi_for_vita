@@ -45,6 +45,7 @@
 extern "C" {
 #include "../core/utf.h"
 #include "../core/text_hit.h"
+#include "../core/port.h"
 #include "../include/vjo_ledger_budget.h"
 }
 
@@ -82,6 +83,7 @@ void operator delete(void *p, unsigned int)
  * initial sizes: header 128, body 320). */
 #define HEADER_TOP 260.0f
 #define HEADER_MAX_LINES 3
+#define HEADER_MAX_LINES_HISTORY 5 /* an earlier line and a row of each neighbour (line history) */
 #define HEADER_SEP_GAP 19.0f /* header bottom -> separator */
 #define SEP_BODY_GAP 17.0f   /* separator -> body top */
 #define BODY_BOTTOM -224.0f
@@ -95,6 +97,8 @@ void operator delete(void *p, unsigned int)
 #define LAYOUT_RETRY_FRAMES 6 /* layout may land a frame or two after SetString */
 #define CLEAR_HOLD_US 1000000
 #define MAX_RANGES VJO_MAX_ENTRIES /* entries whose header highlight range is cached */
+static_assert(HEADER_UNITS <= UINT16_MAX && VJO_STRIP_MAX - 1 <= UINT16_MAX,
+              "visible header ranges and owned cursor text fit 16-bit offsets");
 
 enum { MODE_OVERLAY = 0, MODE_REGION = 1 };
 
@@ -123,7 +127,19 @@ static int s_selected;
  * the result memory (the control thread frees it when a game exits) and no
  * paf call runs while the lock is held. */
 static int s_n_entries;
-static uint32_t s_rng_start[MAX_RANGES], s_rng_len[MAX_RANGES]; /* len 0 = no highlight */
+/* The header has at most HEADER_UNITS UTF-16 units. Keep every entry's range,
+ * using half the static storage; len 0 still means no highlight. */
+static uint16_t s_rng_start[MAX_RANGES], s_rng_len[MAX_RANGES];
+
+static void cache_header_range(const VjoEntryList *list, int entry)
+{
+    uint32_t start, len;
+    s_rng_len[entry] = 0;
+    if (vjo_entry_header_range(list, entry, &start, &len) && start <= UINT16_MAX && len <= UINT16_MAX) {
+        s_rng_start[entry] = (uint16_t)start;
+        s_rng_len[entry] = (uint16_t)len;
+    }
+}
 /* Local lookups select a source character, including one with no entry.
  * This owned copy survives lookup-result arena resets and never borrows
  * a worker pointer outside the view lock. */
@@ -138,6 +154,11 @@ static int s_dict_page, s_dict_pages; /* local: shown/requested dictionary page,
 static VjoRowNav s_nav; /* the arrow keys: Right's history, Up/Down's column, counts */
 static uint32_t s_tap; /* the L or R being tapped: dictionary pages */
 static int s_ja_px;    /* the header's point size: a row's last cell */
+/* Line history (worker.c history_show): the text is this game's s_history-th earlier line (0: the
+ * current text), shown between the line before it and the line after it, dimmed: s_hdr_lead is the
+ * header's units before the text, which the cursor, taps, arrows and highlight count from. */
+static int s_history;
+static uint32_t s_hdr_lead;
 
 /* logged when the overlay closes: the debug build's counts and timings
  * (docs/release-variants.md); the normal build keeps none */
@@ -173,7 +194,7 @@ static int s_square_clear_armed;
  * open and given back when it closes, so no page of SceShell's partition is
  * held for a page that is closed almost all the time (#59; it was a 96 KiB
  * static buffer). Its size is what render() allocates from it: two styled
- * texts of HEADER_UNITS/BODY_UNITS UTF-16 units plus their spans, 17,968 B,
+ * texts of HEADER_UNITS/BODY_UNITS UTF-16 units plus their spans, 18,016 B,
  * rounded up to 24 KiB (host test: test_overlay_ui_arena_fits). A refused
  * allocation means the page does not open this time (fail closed). */
 #define UI_MEM_BYTES VJO_BUDGET_PAF_UI
@@ -199,10 +220,10 @@ uint32_t vjo_wrap_paf(VjoWrap *w, ui::Text *t, const uint16_t *u, uint32_t n, ui
     return vjo_wrap_step<graph::TextLayoutCharInfo>(w, t, u, n, room);
 }
 
-/* A header unit of the recognized text as shown, the breaks put in. */
+/* A header unit of the recognized text as shown, the breaks (and an earlier line's line before it) put in. */
 static __attribute__((noinline)) uint32_t header_shown(uint32_t unit)
 {
-    return vjo_wrap_shown(s_hdr_brk, s_hdr_nbrk, unit);
+    return vjo_wrap_shown(s_hdr_brk, s_hdr_nbrk, s_hdr_lead + unit);
 }
 
 /* The left stick over the text: its state, its due lookup, stick_lookup_ms and the
@@ -283,6 +304,13 @@ static bool header_highlight(void)
     } else if (s_selected < s_n_entries && s_selected < MAX_RANGES && s_rng_len[s_selected]) {
         start = s_rng_start[s_selected];
         len = s_rng_len[s_selected];
+    }
+    /* After a failed recolour the next one makes the whole header white: an earlier line's dimmed
+     * neighbours take their colour back from the text's own spans first. */
+    if (s_hl_dirty && s_history) {
+        text_set(s_header.text, &s_hdr_st);
+        s_hl_dirty = false;
+        s_hl_len = 0;
     }
     if (!vjo_header_recolor(s_header.text, graph::TextStyleAttribute_Color,
                             s_hl_start, s_hl_len, s_hl_dirty, start, len,
@@ -392,8 +420,10 @@ static void render(int new_content)
         s_selected = 0;
         /* Copy only the current result's range while its arena is locked.
          * An in-flight or unsuccessful lookup falls back to the character. */
-        if (!s_n_entries || !vjo_entry_header_range(l, 0, &s_rng_start[0], &s_rng_len[0]))
+        if (!s_n_entries)
             s_rng_len[0] = 0;
+        else
+            cache_header_range(l, 0);
         if (s_n_entries && l->entries[0].hl_start == (int)s_cursor_byte &&
             l->entries[0].hl_end > (int)s_cursor_byte &&
             l->entries[0].hl_end <= (int)s_cursor_text_len)
@@ -411,9 +441,13 @@ static void render(int new_content)
     if (rebuild_header) {
         s_hdr_nbrk = 0;
         s_hdr_wrap.frames = 0;
-        if (vjo_styled_init(&hdr, &s_ui, HEADER_UNITS, 1) == 0) {
-            if (s_local_cursor_mode)
-                vjo_styled_puts(&hdr, s_cursor_text, VJO_RGB_TEXT, ja);
+        s_hdr_lead = 0;
+        s_history = s_local_cursor_mode ? g_view.history : 0;
+        if (vjo_styled_init(&hdr, &s_ui, HEADER_UNITS, VJO_HEADER_SPANS) == 0) {
+            /* an earlier line (line history) between its neighbours, dimmed (the owner, 2026-10-20:
+             * "we can dim [them], so it shows focus on the current line") */
+            if (s_local_cursor_mode) /* (the neighbours are NULL but in a visit: worker.c history_detach) */
+                s_hdr_lead = vjo_styled_history(&hdr, g_view.history_before, s_cursor_text, g_view.history_after, ja);
             else
                 vjo_styled_header(&hdr, l, ja);
             have_hdr = 1;
@@ -424,13 +458,21 @@ static void render(int new_content)
         s_hdr_mark = vjo_arena_mark(&s_ui);
         if (!s_local_cursor_mode)
             for (int i = 0; i < s_n_entries && i < MAX_RANGES; i++)
-                if (!vjo_entry_header_range(l, i, &s_rng_start[i], &s_rng_len[i]))
-                    s_rng_len[i] = 0;
+                cache_header_range(l, i);
     }
 
     /* body: page, the app notice, status, the selected entry (or "no entries"), config warnings */
     if (vjo_styled_init(&body, &s_ui, BODY_UNITS, MAX_SPANS) == 0) {
         have_body = 1;
+        if (s_history) { /* where the text is in this game's line history */
+            /* (▲ only when there is a line before it: the oldest kept has none) */
+            static const char where[] VJO_DATA_TABLE(history_where) = "Earlier line -%d%s · ▼ later";
+            char at[64];
+            sceClibSnprintf(at, sizeof(at), where, s_history, g_view.history_before ? " · ▲ earlier" : "");
+            vjo_styled_puts(&body, at, VJO_RGB_RANK, en);
+            if (s_dict_pages > 1)
+                vjo_styled_puts(&body, "\n", VJO_RGB_RANK, en);
+        }
         vjo_styled_dict_page(&body, s_dict_page, s_dict_pages, en);
         if (const char *notice = vjo_view_notice()) { /* the Rubi app is not the plugins' (once) */
             if (body.len)
@@ -570,17 +612,18 @@ static void layout_apply(float header_h)
         s_follow_frames = LAYOUT_RETRY_FRAMES;
 }
 
-/* Fits the header to its text: 1..HEADER_MAX_LINES laid-out lines. Cheap
- * (two queries); applies only on a change. */
+/* Fits the header to its text: 1..HEADER_MAX_LINES laid-out lines, and up to
+ * HEADER_MAX_LINES_HISTORY for an earlier line between its neighbours (the body
+ * shrinks to make room). Cheap (two queries); applies only on a change. */
 static void header_fit(void)
 {
-    uint32_t lines = 0;
-    float h = text_height(s_header.text), want;
+    uint32_t lines = 0, most = s_history ? HEADER_MAX_LINES_HISTORY : HEADER_MAX_LINES;
+    float h = text_height(s_header.text), want, cap = HEADER_H_INITIAL / HEADER_MAX_LINES * (float)most;
     if (!s_header.text || h <= 0.0f || s_header.text->GetLineCount(lines) < 0 || !lines)
         return;
-    want = h / (float)lines * (float)(lines < HEADER_MAX_LINES ? lines : HEADER_MAX_LINES);
-    if (want > HEADER_H_INITIAL)
-        want = HEADER_H_INITIAL;
+    want = h / (float)lines * (float)(lines < most ? lines : most);
+    if (want > cap)
+        want = cap;
     want = (float)(int)(want + 0.5f);
     if (want != s_header.h) {
         layout_apply(want);
@@ -956,18 +999,25 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
              * Up/Down change rows, soft-wrapped ones included. */
             VjoTextRows rows;
             size_t to;
+            int rc;
 #if VJO_DEBUG
             int64_t t0 = sceKernelGetProcessTimeWide();
 #endif
-            vjo_text_row_key(&s_nav, s_cursor_text, s_cursor_text_len, header_rows(&rows) ? &rows : NULL, cursor,
-                             s_highlight_mode == VJO_HIGHLIGHT_WORD ? s_match_end : 0, direction, vertical,
-                             s_japanese_only_selection, stick != 0, &to);
+            rc = vjo_text_row_key(&s_nav, s_cursor_text, s_cursor_text_len, header_rows(&rows) ? &rows : NULL, cursor,
+                                  s_highlight_mode == VJO_HIGHLIGHT_WORD ? s_match_end : 0, direction, vertical,
+                                  s_japanese_only_selection, stick != 0, &to);
 #if VJO_DEBUG
             t0 = sceKernelGetProcessTimeWide() - t0; /* the walk's console cost, for the close log */
             if (!stick && t0 > s_key_max_us) /* the slowest key is the arrows' (the stick's moves are its own) */
                 s_key_max_us = t0;
 #endif
             cursor = (uint32_t)to;
+            /* Line history (worker.c history_ask): Up with no row above the text, and Down with none
+             * below an earlier line, go to this game's line before or after it (Down on the current text
+             * posts nothing: no command holds the slot a cursor move takes next). The d-pad's only: a
+             * held stick stops at the text's ends, as it does at a one-row text's. */
+            if (rc == VJO_ROW_STAY && !direction && !stick && (vertical < 0 || s_history))
+                vjo_post_command(vertical < 0 ? VJO_CMD_EARLIER : VJO_CMD_LATER, NULL);
         }
         if (stick)
             vjo_stick_cursor_moved(&s_stick, cursor != s_cursor_byte, now);

@@ -353,15 +353,16 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         rc = VJO_ERR_COPY; goto out;
     }
     /* API 23: a shot names its card (32 lowercase hex digits) and nothing else; an OCR job its
-     * models and no card. */
+     * models and no card. API 32: a shot's only speed bit is VJO_GAME_OCR_S_TRIM, an OCR job's never. */
     shot = (next.flags & VJO_GAME_OCR_F_SHOT) != 0;
     if (next.size != sizeof(next) || next.model[sizeof(next.model)-1] != 0 ||
         next.model_dir[sizeof(next.model_dir)-1] != 0 ||
         next.fallback[sizeof(next.fallback)-1] != 0 || (next.flags & ~VJO_GAME_OCR_F_ALL) ||
-        (next.tiers & ~VJO_VOCR_TIERS_ALL) || (next.speed & ~VJO_GAME_OCR_S_ALL) ||
+        (next.tiers & ~VJO_VOCR_TIERS_ALL) || (next.speed & ~(shot ? VJO_GAME_OCR_S_SHOT_ALL : VJO_GAME_OCR_S_ALL)) ||
+        /* API 31: an OCR job's hook pick is automatic, a stream or OCR only; a shot answers from no text */
         (shot ? !shot_id_ok(next.shot) || (next.flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL)) ||
-                    next.tiers || next.speed
-              : !next.model[0] || !next.model_dir[0] || next.shot[0])) {
+                    next.tiers || next.hook_pick
+              : !next.model[0] || !next.model_dir[0] || next.shot[0] || !VJO_HOOK_PICK_OK(next.hook_pick))) {
         rc = VJO_ERR_ARG; goto out;
     }
     VJO_LOCK();

@@ -1,6 +1,7 @@
 /* The Rubi app's Anki page itself (settings/anki_page.c; #163 c3), on the host. The page draws
- * through main.c's helpers (VjoAnkiUi), recorded here; its four rows are checked for their layout,
- * Up/Down and the left stick, Left/Right, Enter and touch on each, each settings row's save into a
+ * through main.c's helpers (VjoAnkiUi), recorded here; its five rows (API 32 added Trim black bars), which
+ * scroll a row at a time, are checked for their layout and clipping, Up/Down and the left stick,
+ * Left/Right, Enter and touch on each, each settings row's save into a
  * real config.ini (settings/preferences.c, read back by the app and by the Shell's own loader,
  * shell/files.c), and its export through the real settings/anki_export.c on a temporary memory
  * card, on the page's worker thread, which these stubs start when a test says (a join runs a
@@ -36,8 +37,15 @@
 
 void vjo_config_load(VjoConfig *cfg, VjoArena *scratch); /* shell/files.c: what the overlay reads */
 
-/* settings/anki_page.c's layout: four rows, then the 3-line status box above main.c's controls line. */
-static const int row_top[4] = {112, 184, 256, 336}, row_height[4] = {68, 68, 76, 76};
+/* settings/anki_page.c's layout: five rows in a column that scrolls a row at a time in the room from y 112
+ * to 412, then the 3-line status box above main.c's controls line. With the first row in view, rows 0-3
+ * are whole and row 4 is cut at the room's bottom; with row 4 selected, rows 1-4 are whole. */
+#define ROWS 5
+static const int row_offset[ROWS] = {0, 72, 144, 216, 296}, row_height[ROWS] = {68, 68, 68, 76, 76};
+#define VIEW_Y 112
+#define VIEW_END 412
+/* Row r's top on screen with row `top` first in view. */
+static int row_top_at(int r, int top) { return VIEW_Y + row_offset[r] - row_offset[top]; }
 #define FOOTER_Y 416
 #define FOOTER_H 92
 #define TABS_END 100       /* main.c: TAB_Y 52 + TAB_H 48 */
@@ -48,6 +56,7 @@ static const int row_top[4] = {112, 184, 256, 336}, row_height[4] = {68, 68, 76,
 #define DIM 2u
 #define ACCENT 3u
 #define OFF 4u
+#define CARD 5u
 
 /* ---------------- the memory card: real files under a temporary directory ---------------- */
 
@@ -194,6 +203,11 @@ void vjo_log(const char *fmt, ...)
     }
 }
 static int frames_begun, frames_shown;
+/* the clipping the page sets around a row cut at the room's bottom, as each drawing call sees it */
+static int clipping, clip_x0, clip_y0, clip_x1, clip_y1;
+void vita2d_enable_clipping(void) { clipping = 1; }
+void vita2d_disable_clipping(void) { clipping = 0; }
+void vita2d_set_clip_rectangle(int x0, int y0, int x1, int y1) { clip_x0 = x0, clip_y0 = y0, clip_x1 = x1, clip_y1 = y1; }
 void vita2d_start_drawing(void) { frames_begun++; }
 void vita2d_clear_screen(void) {}
 void vita2d_end_drawing(void) {}
@@ -201,38 +215,53 @@ void vita2d_swap_buffers(void) { frames_shown++; }
 
 /* ---------------- what a frame draws (main.c's helpers, recorded) ---------------- */
 
-typedef struct { int x, y, width; unsigned color; float px; int lines; char s[480]; } Text; /* width 0: a single line */
-typedef struct { int y, height, focus; } Card;
-typedef struct { int x, y, width, height, active; char label[32]; } Badge;
+/* clip: the clipping on (its rectangle's bottom; 0: none) when it was drawn */
+typedef struct { int x, y, width; unsigned color; float px; int lines, clip; char s[480]; } Text; /* width 0: a single line */
+typedef struct { int y, height, focus, clip; } Card;
+typedef struct { int x, y, width, height, active, clip; char label[32]; } Badge;
+typedef struct { int x, y, width, height; unsigned color; } Rect;
 static struct {
     Text text[32];
     Card card[8];
     Badge badge[8];
-    int texts, cards, badges, headers, footers;
-    int footer_y, footer_h, footer_text_y, footer_lines, footer_error;
+    Rect rect[8];
+    int texts, cards, badges, rects, headers, footers;
+    int footer_y, footer_h, footer_text_y, footer_lines, footer_error, footer_clip;
     char footer[480], controls[160];
 } drawn;
+static int clip_now(void)
+{
+    if (!clipping) return 0;
+    TEST_CHECK_(clip_x0 == 24 && clip_x1 == 936 && clip_y1 == VIEW_END, "clip %d,%d..%d,%d", clip_x0, clip_y0, clip_x1, clip_y1);
+    return clip_y1;
+}
+void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int color)
+{
+    if (drawn.rects < 8) drawn.rect[drawn.rects++] = (Rect){(int)x, (int)y, (int)w, (int)h, color};
+}
 
 static void d_text(int x, int y, unsigned color, float px, const char *s)
 {
     if (drawn.texts < 32)
-        drawn.text[drawn.texts++] = (Text){x, y, 0, color, px, 1, ""}, snprintf(drawn.text[drawn.texts - 1].s, 480, "%s", s);
+        drawn.text[drawn.texts++] = (Text){x, y, 0, color, px, 1, clip_now(), ""},
+        snprintf(drawn.text[drawn.texts - 1].s, 480, "%s", s);
 }
 static void d_wrapped(int x, int y, int width, unsigned color, float px, int line_height, int lines, const char *s)
 {
     (void)line_height;
     if (drawn.texts < 32)
-        drawn.text[drawn.texts++] = (Text){x, y, width, color, px, lines, ""}, snprintf(drawn.text[drawn.texts - 1].s, 480, "%s", s);
+        drawn.text[drawn.texts++] = (Text){x, y, width, color, px, lines, clip_now(), ""},
+        snprintf(drawn.text[drawn.texts - 1].s, 480, "%s", s);
 }
 static void d_card(int y, int height, int focus)
 {
     if (drawn.cards < 8)
-        drawn.card[drawn.cards++] = (Card){y, height, focus};
+        drawn.card[drawn.cards++] = (Card){y, height, focus, clip_now()};
 }
 static void d_badge(int x, int y, int width, int height, const char *label, int active)
 {
     if (drawn.badges < 8) {
-        drawn.badge[drawn.badges] = (Badge){x, y, width, height, active, ""};
+        drawn.badge[drawn.badges] = (Badge){x, y, width, height, active, clip_now(), ""};
         snprintf(drawn.badge[drawn.badges++].label, 32, "%s", label);
     }
 }
@@ -241,13 +270,15 @@ static void d_footer(int y, int height, int text_y, int lines, const char *messa
     drawn.footers++;
     drawn.footer_y = y, drawn.footer_h = height, drawn.footer_text_y = text_y, drawn.footer_lines = lines;
     drawn.footer_error = error;
+    drawn.footer_clip = clipping;
     snprintf(drawn.footer, sizeof(drawn.footer), "%s", message);
     snprintf(drawn.controls, sizeof(drawn.controls), "%s", controls);
 }
 static void d_header(void) { drawn.headers++; }
 
 static VjoButtons buttons;
-static const VjoAnkiUi ui = {d_text, d_wrapped, d_card, d_badge, d_footer, d_header, WHITE, DIM, ACCENT, OFF, &buttons};
+static const VjoAnkiUi ui = {d_text, d_wrapped, d_card, d_badge, d_footer, d_header, WHITE, DIM, ACCENT, OFF, CARD,
+                             &buttons};
 static unsigned char scratch_mem[64 * 1024];
 static VjoArena scratch;
 
@@ -267,23 +298,27 @@ static void show(void)
 static int save_now(int mining, int screenshot)
 {
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
-    return vjo_preferences_save_anki(mining, screenshot, &scratch);
+    return vjo_preferences_save_anki(mining, screenshot, 1, &scratch);
 }
 
+/* The first row the frame drew: the last row is always drawn (cut or whole), so the rows drawn are
+ * that one's to the last. */
+static int first_row(void) { return ROWS - drawn.cards; }
 /* The row drawn focused (-1: none, -2: more than one). */
 static int focused(void)
 {
     int f = -1;
     for (int i = 0; i < drawn.cards; i++)
         if (drawn.card[i].focus)
-            f = f == -1 ? i : -2;
+            f = f == -1 ? first_row() + i : -2;
     return f;
 }
-/* Row r's badge (each row has one, drawn in row order); an empty one when none was drawn. */
+/* Row r's badge (each row drawn has one, in row order); an empty one when it was not drawn. */
 static const Badge *badge(int r)
 {
-    static const Badge none = {0, 0, 0, 0, 0, "(none)"};
-    return r >= 0 && r < drawn.badges ? &drawn.badge[r] : &none;
+    static const Badge none = {0, 0, 0, 0, 0, 0, "(none)"};
+    int i = r - first_row();
+    return i >= 0 && i < drawn.badges ? &drawn.badge[i] : &none;
 }
 static const Text *text_starting(const char *prefix)
 {
@@ -406,8 +441,8 @@ static const char *queue_card(const char *spelling, int picture)
     return id;
 }
 
-/* config.ini's two Anki lines as written, and as the app and the Shell load them back. */
-static void check_saved(int mining, int screenshot)
+/* config.ini's three Anki lines as written, and as the app and the Shell load them back. */
+static void check_saved3(int mining, int screenshot, int trim)
 {
     char text[VJO_CONFIG_TEXT_MAX + 1], want[64];
     static unsigned char shell_mem[24 * 1024];
@@ -417,32 +452,101 @@ static void check_saved(int mining, int screenshot)
     snprintf(want, sizeof(want), "anki_mining = %s\n", mining ? "on" : "off");
     TEST_CHECK_(count_lines(text, "anki_mining") == 1 && strstr(text, want), "config.ini: want %s", want);
     snprintf(want, sizeof(want), "anki_screenshot = %s\n", screenshot ? "on" : "off");
-    TEST_CHECK_(count_lines(text, "anki_screenshot") == 1 && strstr(text, want), "config.ini: want %s", want);
+    TEST_CHECK_(count_lines(text, "anki_screenshot =") == 1 && strstr(text, want), "config.ini: want %s", want);
+    snprintf(want, sizeof(want), "anki_screenshot_trim_bars = %s\n", trim ? "on" : "off");
+    TEST_CHECK_(count_lines(text, "anki_screenshot_trim_bars") == 1 && strstr(text, want), "config.ini: want %s", want);
     vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
     TEST_ASSERT(vjo_preferences_load(&cfg, &scratch) == 0);
-    TEST_CHECK(cfg.anki_mining == mining && cfg.anki_screenshot == screenshot);
+    TEST_CHECK(cfg.anki_mining == mining && cfg.anki_screenshot == screenshot && cfg.anki_screenshot_trim_bars == trim);
     vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
     vjo_config_load(&cfg, &shell);
-    TEST_CHECK_(cfg.anki_mining == mining && cfg.anki_screenshot == screenshot && !cfg.n_warnings,
-                "the Shell loads anki_mining %d, anki_screenshot %d (%d warnings)", cfg.anki_mining,
-                cfg.anki_screenshot, cfg.n_warnings);
+    TEST_CHECK_(cfg.anki_mining == mining && cfg.anki_screenshot == screenshot && cfg.anki_screenshot_trim_bars == trim &&
+                    !cfg.n_warnings,
+                "the Shell loads anki_mining %d, anki_screenshot %d, anki_screenshot_trim_bars %d (%d warnings)",
+                cfg.anki_mining, cfg.anki_screenshot, cfg.anki_screenshot_trim_bars, cfg.n_warnings);
 }
-/* Rows 0 and 1's badges show the saved states, and the page's note says it was saved. */
-static void check_shown(int mining, int screenshot)
+static void check_saved(int mining, int screenshot) { check_saved3(mining, screenshot, 1); }
+/* The settings rows' badges show the saved states, and the page's note says it was saved. */
+static void check_shown3(int mining, int screenshot, int trim)
 {
     frame(0);
     TEST_CHECK_(!strcmp(badge(0)->label, mining ? "ON" : "OFF") && badge(0)->active == mining,
                 "Card mining shows %s", badge(0)->label);
     TEST_CHECK_(!strcmp(badge(1)->label, screenshot ? "ON" : "OFF") && badge(1)->active == screenshot,
                 "Screenshots shows %s", badge(1)->label);
+    TEST_CHECK_(!strcmp(badge(2)->label, trim ? "ON" : "OFF") && badge(2)->active == trim,
+                "Trim black bars shows %s", badge(2)->label);
     TEST_CHECK_(!strcmp(drawn.footer, "Saved. The overlay uses it when it next opens.") && !drawn.footer_error,
                 "the note: %s", drawn.footer);
 }
+static void check_shown(int mining, int screenshot) { check_shown3(mining, screenshot, 1); }
 
 /* ---------------- tests ---------------- */
 
-/* Four rows below the tabs, none over another, each row's text and badge in it, the footer below
- * them and above main.c's controls line; one row focused; the hints name the console's buttons. */
+/* The rows drawn with row `top` first in view: each where the column puts it, none over another, its
+ * badge and texts inside it; a row cut at the room's bottom drawn clipped there, its card, texts and
+ * badge; the others and the footer not clipped; a bar right of the rows where the view is in the
+ * column (372 px of rows in a 300 px room). */
+static void check_layout(int top)
+{
+    TEST_ASSERT(drawn.cards == ROWS - top && drawn.badges == ROWS - top && drawn.headers == 1 && drawn.footers == 1);
+    for (int i = 0; i < drawn.cards; i++) {
+        int r = top + i, y = row_top_at(r, top), whole = y + row_height[r] <= VIEW_END;
+        const Card *c = &drawn.card[i];
+        const Badge *b = badge(r);
+        TEST_CHECK_(c->y == y && c->height == row_height[r], "row %d at %d+%d", r, c->y, c->height);
+        TEST_CHECK_(i ? c->y >= drawn.card[i - 1].y + drawn.card[i - 1].height : c->y >= TABS_END,
+                    "row %d at %d overlaps what is above it", r, c->y);
+        TEST_CHECK_(c->y < VIEW_END && whole == (r < ROWS - 1 || top > 0) && c->clip == (whole ? 0 : VIEW_END),
+                    "row %d (first %d): whole %d, clip %d", r, top, whole, c->clip);
+        /* its badge inside it, right of its title */
+        TEST_CHECK_(b->y >= c->y && b->y + b->height <= c->y + c->height && b->x >= CARD_X + 4 &&
+                        b->x + b->width <= CARD_END - 4 && b->clip == c->clip, "row %d's badge outside its card", r);
+    }
+    /* every text inside exactly one row, from its cap height to its descent, clipped as its row is */
+    for (int i = 0; i < drawn.texts; i++) {
+        const Text *t = &drawn.text[i];
+        int t_top = t->y - (int)(t->px * 0.8f), bottom = t->y + (int)(t->px * 0.25f), in = 0, clip = -1;
+        for (int k = 0; k < drawn.cards; k++)
+            if (t_top >= drawn.card[k].y && bottom <= drawn.card[k].y + drawn.card[k].height)
+                in++, clip = drawn.card[k].clip;
+        TEST_CHECK_(in == 1 && t->clip == clip && t->x >= CARD_X + 4 && (!t->width || t->x + t->width <= CARD_END - 4),
+                    "'%s' at %d,%d is not inside one row (clip %d)", t->s, t->x, t->y, t->clip);
+        TEST_CHECK_(bottom <= VIEW_END || t->clip == VIEW_END, "'%s' at %d,%d below the room, not clipped", t->s, t->x, t->y);
+        /* nothing runs into a badge or a text on its line: a title or count ends before it (stub metrics) */
+        for (int k = 0; k < drawn.badges; k++) {
+            const Badge *b = &drawn.badge[k];
+            if (!t->width && t_top < b->y + b->height && bottom > b->y && t->x < b->x)
+                TEST_CHECK_(t->x + width_of(t->s, t->px) <= b->x, "'%s' runs into the badge '%s'", t->s, b->label);
+        }
+        for (int k = 0; k < drawn.texts; k++) {
+            const Text *u = &drawn.text[k];
+            int u_top = u->y - (int)(u->px * 0.8f), u_bottom = u->y + (int)(u->px * 0.25f);
+            if (k != i && !t->width && t_top < u_bottom && bottom > u_top && t->x < u->x)
+                TEST_CHECK_(t->x + width_of(t->s, t->px) <= u->x, "'%s' runs into '%s'", t->s, u->s);
+        }
+    }
+    /* the bar: its track the room's height, its thumb where the view is */
+    int all_rows = row_offset[ROWS - 1] + row_height[ROWS - 1], room = VIEW_END - VIEW_Y, from = row_offset[top];
+    int shown = all_rows - from < room ? all_rows - from : room;
+    TEST_ASSERT(drawn.rects == 2);
+    TEST_CHECK(drawn.rect[0].x == 942 && drawn.rect[0].y == VIEW_Y && drawn.rect[0].width == 6 &&
+               drawn.rect[0].height == room && drawn.rect[0].color == CARD);
+    TEST_CHECK_(drawn.rect[1].x == 942 && drawn.rect[1].y == VIEW_Y + room * from / all_rows && drawn.rect[1].width == 6 &&
+                    drawn.rect[1].height == room * shown / all_rows && drawn.rect[1].color == DIM,
+                "thumb at %d+%d", drawn.rect[1].y, drawn.rect[1].height);
+    TEST_CHECK(drawn.rect[1].y >= VIEW_Y && drawn.rect[1].y + drawn.rect[1].height <= VIEW_END);
+    /* the footer: below the room, three 28 px lines inside it, above the controls line; not clipped */
+    TEST_CHECK(drawn.footer_y == FOOTER_Y && drawn.footer_h == FOOTER_H && drawn.footer_lines == 3 && !drawn.footer_clip);
+    TEST_CHECK(drawn.footer_y >= VIEW_END && drawn.footer_y + drawn.footer_h <= CONTROLS_TOP);
+    TEST_CHECK(drawn.footer_text_y - 24 >= drawn.footer_y + 2 &&
+               drawn.footer_text_y + (drawn.footer_lines - 1) * 28 + 6 <= drawn.footer_y + drawn.footer_h);
+}
+
+/* Five rows below the tabs (API 32 added Trim black bars), more than their room: with the first row
+ * selected rows 0-3 are whole and row 4 is cut at the room's bottom; with the last, rows 1-4 (check_layout);
+ * the footer below them and above main.c's controls line; one row focused; the hints name the console's
+ * buttons. */
 static void the_rows_and_the_footer_do_not_overlap(void)
 {
     reset(VJO_BUTTON_ASSIGN_CROSS);
@@ -450,59 +554,31 @@ static void the_rows_and_the_footer_do_not_overlap(void)
     show();
     TEST_CHECK(log_enabled == 1); /* config.ini's log_file (on by default), set when the page is shown */
     frame(0);
-    TEST_ASSERT(drawn.cards == 4 && drawn.badges == 4 && drawn.headers == 1 && drawn.footers == 1);
     TEST_CHECK(frames_begun == 1 && frames_shown == 1);
-    for (int r = 0; r < 4; r++) {
-        const Card *c = &drawn.card[r];
-        TEST_CHECK_(c->y == row_top[r] && c->height == row_height[r], "row %d at %d+%d", r, c->y, c->height);
-        TEST_CHECK_(r ? c->y >= drawn.card[r - 1].y + drawn.card[r - 1].height : c->y >= TABS_END,
-                    "row %d at %d overlaps what is above it", r, c->y);
-        /* its badge inside it, right of its title */
-        const Badge *b = badge(r);
-        TEST_CHECK_(b->y >= c->y && b->y + b->height <= c->y + c->height && b->x >= CARD_X + 4 &&
-                        b->x + b->width <= CARD_END - 4, "row %d's badge outside its card", r);
-    }
-    TEST_CHECK(focused() == 0);
-    /* every text inside exactly one row, from its cap height to its descent (the footer's are the footer's) */
-    for (int i = 0; i < drawn.texts; i++) {
-        const Text *t = &drawn.text[i];
-        int top = t->y - (int)(t->px * 0.8f), bottom = t->y + (int)(t->px * 0.25f), in = 0;
-        for (int r = 0; r < 4; r++)
-            in += top >= row_top[r] && bottom <= row_top[r] + row_height[r];
-        TEST_CHECK_(in == 1 && t->x >= CARD_X + 4 && (!t->width || t->x + t->width <= CARD_END - 4),
-                    "'%s' at %d,%d is not inside one row", t->s, t->x, t->y);
-        /* nothing runs into a badge or a text on its line: a title or count ends before it (stub metrics) */
-        for (int k = 0; k < drawn.badges; k++) {
-            const Badge *b = &drawn.badge[k];
-            if (!t->width && top < b->y + b->height && bottom > b->y && t->x < b->x)
-                TEST_CHECK_(t->x + width_of(t->s, t->px) <= b->x, "'%s' runs into the badge '%s'", t->s, b->label);
-        }
-        for (int k = 0; k < drawn.texts; k++) {
-            const Text *u = &drawn.text[k];
-            int u_top = u->y - (int)(u->px * 0.8f), u_bottom = u->y + (int)(u->px * 0.25f);
-            if (k != i && !t->width && top < u_bottom && bottom > u_top && t->x < u->x)
-                TEST_CHECK_(t->x + width_of(t->s, t->px) <= u->x, "'%s' runs into '%s'", t->s, u->s);
-        }
-    }
-    /* the footer: below the last row, three 28 px lines inside it, above the controls line */
-    TEST_CHECK(drawn.footer_y == FOOTER_Y && drawn.footer_h == FOOTER_H && drawn.footer_lines == 3);
-    TEST_CHECK(drawn.footer_y >= row_top[3] + row_height[3] && drawn.footer_y + drawn.footer_h <= CONTROLS_TOP);
-    TEST_CHECK(drawn.footer_text_y - 24 >= drawn.footer_y + 2 &&
-               drawn.footer_text_y + (drawn.footer_lines - 1) * 28 + 6 <= drawn.footer_y + drawn.footer_h);
+    check_layout(0);
+    TEST_CHECK(focused() == 0 && !clipping);
     TEST_CHECK(!strcmp(drawn.controls, "Up/Down: choose   ×: select   Select: page   ○: exit"));
     TEST_CHECK(strstr(drawn.footer, "ux0:data/VitaJPOverlay/anki/") && !drawn.footer_error);
-    /* the rows' texts and states: mining off and screenshots on by default, one card queued */
-    TEST_CHECK(text_starting("Card mining") && text_starting("Screenshots") && text_starting("Export all cards"));
-    TEST_CHECK(text_starting("× in the overlay saves the word"));
+    /* the rows' texts and states: mining off, screenshots on and their bars trimmed by default, one card queued */
+    TEST_CHECK(text_starting("Card mining") && text_starting("Screenshots") && text_starting("Trim black bars") &&
+               text_starting("Export all cards"));
+    TEST_CHECK(text_starting("× in the overlay saves the word") && text_starting("Cuts black borders from the picture"));
     TEST_CHECK(text_starting("Export cards (1 queued)") && text_starting("1 card in all"));
-    TEST_CHECK(!strcmp(badge(0)->label, "OFF") && !strcmp(badge(1)->label, "ON") && !strcmp(badge(2)->label, "Export") &&
-               !strcmp(badge(3)->label, "Export all"));
+    TEST_CHECK(!strcmp(badge(0)->label, "OFF") && !strcmp(badge(1)->label, "ON") && !strcmp(badge(2)->label, "ON") &&
+               badge(2)->active && !strcmp(badge(3)->label, "Export") && !strcmp(badge(4)->label, "Export all"));
     /* the widest counts still fit before their badges (both at x 760) */
     for (int k = 0; k < 2; k++) {
         const char *s = k ? "20000 cards in all" : "Export cards (20000 queued)";
         int x = k ? 500 : 42, px = k ? 24 : 28;
-        TEST_CHECK_(x + width_of(s, (float)px) <= badge(2 + k)->x, "'%s' runs into its badge", s);
+        TEST_CHECK_(x + width_of(s, (float)px) <= badge(3 + k)->x, "'%s' runs into its badge", s);
     }
+    /* the last row selected: the view one row down, every row it shows whole; back at the top as it was */
+    frame(SCE_CTRL_UP);
+    TEST_CHECK(focused() == 4);
+    check_layout(1);
+    frame(SCE_CTRL_DOWN);
+    TEST_CHECK(focused() == 0);
+    check_layout(0);
     /* the Japanese button assignment: ○ enters */
     reset(VJO_BUTTON_ASSIGN_CIRCLE);
     show();
@@ -511,15 +587,17 @@ static void the_rows_and_the_footer_do_not_overlap(void)
     TEST_CHECK(text_starting("○ in the overlay saves the word"));
 }
 
-/* Up/Down go round the four rows; the left stick moves one row a step and stops at the first and
- * the last; in a frame with both, the d-pad's press wins. Moving saves nothing. */
+/* Up/Down go round the five rows; the left stick moves one row a step and stops at the first and
+ * the last; in a frame with both, the d-pad's press wins. The view follows the selection by the fewest
+ * rows (row 4 brings rows 1-4 in, row 0 rows 0-3). Moving saves nothing. */
 static void up_down_and_the_stick_choose_a_row(void)
 {
-    static const struct { uint32_t pressed; int stick, row; } steps[] = {
-        {SCE_CTRL_DOWN, 0, 1}, {SCE_CTRL_DOWN, 0, 2}, {SCE_CTRL_DOWN, 0, 3}, {SCE_CTRL_DOWN, 0, 0},
-        {SCE_CTRL_UP, 0, 3},   {SCE_CTRL_UP, 0, 2},   {0, 1, 3},             {0, 1, 3},
-        {0, -1, 2},            {0, -3, 0},            {0, -1, 0},            {SCE_CTRL_DOWN, 1, 1},
-        {SCE_CTRL_UP, 2, 0},   {0, 2, 2},             {SCE_CTRL_UP, -1, 1},  {0, 0, 1},
+    static const struct { uint32_t pressed; int stick, row, top; } steps[] = {
+        {SCE_CTRL_DOWN, 0, 1, 0}, {SCE_CTRL_DOWN, 0, 2, 0}, {SCE_CTRL_DOWN, 0, 3, 0}, {SCE_CTRL_DOWN, 0, 4, 1},
+        {SCE_CTRL_DOWN, 0, 0, 0}, {SCE_CTRL_UP, 0, 4, 1},   {SCE_CTRL_UP, 0, 3, 1},   {0, 1, 4, 1},
+        {0, 1, 4, 1},             {0, -1, 3, 1},            {SCE_CTRL_UP, 0, 2, 1},   {0, -1, 1, 1},
+        {0, -5, 0, 0},            {0, -1, 0, 0},            {SCE_CTRL_DOWN, 1, 1, 0}, {SCE_CTRL_UP, 2, 0, 0},
+        {0, 2, 2, 0},             {SCE_CTRL_UP, -1, 1, 0},  {0, 0, 1, 0},
     };
     reset(VJO_BUTTON_ASSIGN_CROSS);
     show();
@@ -528,14 +606,15 @@ static void up_down_and_the_stick_choose_a_row(void)
     for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
         vjo_anki_page_stick(steps[i].stick);
         frame(steps[i].pressed);
-        TEST_CHECK_(focused() == steps[i].row, "step %u: row %d focused, want %d", i, focused(), steps[i].row);
+        TEST_CHECK_(focused() == steps[i].row && first_row() == steps[i].top, "step %u: row %d focused (first %d), want %d (%d)",
+                    i, focused(), first_row(), steps[i].row, steps[i].top);
     }
     TEST_CHECK(!there(VJO_PREFERENCES_PATH) && writes_opened == 0 && threads_created == 0);
 }
 
 /* Enter on a settings row turns it the other way; Left/Right turn it OFF/ON, and do nothing when
  * it is that already; on the export rows they do nothing. Each save writes that row's key, and the
- * other row's as it was, where the app and the Shell read them. */
+ * other rows' as they were, where the app and the Shell read them. */
 static void enter_and_left_right_save_each_row_s_key(void)
 {
     reset(VJO_BUTTON_ASSIGN_CROSS);
@@ -573,10 +652,35 @@ static void enter_and_left_right_save_each_row_s_key(void)
     frame(SCE_CTRL_RIGHT);
     check_saved(1, 0);
     check_shown(1, 0);
+    /* API 32: row 2, the screenshots' black bars: trimmed by default, kept, trimmed again */
+    frame(SCE_CTRL_DOWN);
+    frame(SCE_CTRL_DOWN);
+    TEST_CHECK(focused() == 2);
+    frame(SCE_CTRL_CROSS);
+    check_saved3(1, 0, 0);
+    check_shown3(1, 0, 0);
+    frame(SCE_CTRL_RIGHT);
+    check_saved3(1, 0, 1);
+    check_shown3(1, 0, 1);
+    renames = 0;
+    frame(SCE_CTRL_RIGHT);
+    TEST_CHECK(renames == 0);
+    frame(SCE_CTRL_LEFT);
+    check_saved3(1, 0, 0);
+    renames = 0;
+    frame(SCE_CTRL_LEFT);
+    TEST_CHECK(renames == 0);
+    frame(SCE_CTRL_UP); /* row 1 keeps row 2's choice */
+    frame(SCE_CTRL_RIGHT);
+    check_saved3(1, 1, 0);
+    frame(SCE_CTRL_LEFT);
+    check_saved3(1, 0, 0);
+    frame(SCE_CTRL_DOWN);
+    frame(SCE_CTRL_CROSS);
+    check_saved3(1, 0, 1);
     /* the export rows: Left/Right start nothing and save nothing */
-    for (int r = 2; r < 4; r++) {
+    for (int r = 3; r < 5; r++) {
         frame(SCE_CTRL_DOWN);
-        frame(SCE_CTRL_DOWN * (r == 2));
         TEST_CHECK(focused() == r);
         renames = 0;
         frame(SCE_CTRL_LEFT);
@@ -587,7 +691,7 @@ static void enter_and_left_right_save_each_row_s_key(void)
     /* with ○ as enter (a Japanese console), × is no Enter */
     reset(VJO_BUTTON_ASSIGN_CIRCLE);
     show();
-    frame(SCE_CTRL_DOWN); /* from row 3 round to row 0 */
+    frame(SCE_CTRL_DOWN); /* from row 4 round to row 0 */
     TEST_CHECK(focused() == 0);
     frame(SCE_CTRL_CROSS);
     TEST_CHECK(!there(VJO_PREFERENCES_PATH));
@@ -595,8 +699,9 @@ static void enter_and_left_right_save_each_row_s_key(void)
     check_saved(1, 1);
 }
 
-/* A touch inside a row chooses it and acts as Enter does, from its top edge to the line above its
- * bottom; between the rows, outside the cards' width, above them and on the footer, nothing. */
+/* A touch inside a row in view chooses it and acts as Enter does, from its top edge to the line above
+ * its bottom; on the row cut at the room's bottom it only chooses it (the view then brings it in);
+ * between the rows, outside the cards' width, above them, below the room and on the footer, nothing. */
 static void touch_chooses_and_acts_on_each_row(void)
 {
     reset(VJO_BUTTON_ASSIGN_CROSS);
@@ -604,32 +709,40 @@ static void touch_chooses_and_acts_on_each_row(void)
     show();
     frame(0);
     /* the settings rows: each touch turns the row the other way */
-    touch(0, 480, row_top[0]);
+    touch(0, 480, row_top_at(0, 0));
     TEST_CHECK(focused() == 0);
     check_saved(1, 1);
-    touch(0, 935, row_top[0] + row_height[0] - 1);
+    touch(0, 935, row_top_at(0, 0) + row_height[0] - 1);
     check_saved(0, 1);
-    touch(0, 24, row_top[1]);
+    touch(0, 24, row_top_at(1, 0));
     TEST_CHECK(focused() == 1);
     check_saved(0, 0);
-    touch(0, 480, row_top[1] + row_height[1] - 1);
+    touch(0, 480, row_top_at(1, 0) + row_height[1] - 1);
     check_saved(0, 1);
-    /* nothing: the gaps, the sides, above, the footer */
-    static const int miss[][2] = {{480, 180}, {480, 183}, {480, 252}, {480, 255}, {480, 332}, {480, 335},
-                                  {480, 412}, {480, 450}, {480, 111}, {480, 60}, {23, 140}, {936, 140},
-                                  {23, 300}, {936, 360}};
+    touch(0, 480, row_top_at(2, 0)); /* API 32: the black bars */
+    TEST_CHECK(focused() == 2);
+    check_saved3(0, 1, 0);
+    touch(0, 935, row_top_at(2, 0) + row_height[2] - 1);
+    check_saved3(0, 1, 1);
+    /* nothing: the gaps, the sides, above, below the room, the footer */
+    static const int miss[][2] = {{480, 180}, {480, 183}, {480, 252}, {480, 255}, {480, 324}, {480, 327},
+                                  {480, 404}, {480, 407}, {480, 412}, {480, 450}, {480, 111}, {480, 60},
+                                  {23, 140}, {936, 140}, {23, 300}, {936, 360}};
     renames = 0;
     for (unsigned i = 0; i < sizeof(miss) / sizeof(miss[0]); i++) {
         touch(0, miss[i][0], miss[i][1]);
-        TEST_CHECK_(focused() == 1 && renames == 0 && threads_created == 0, "a touch at %d,%d acted", miss[i][0],
-                    miss[i][1]);
+        TEST_CHECK_(focused() == 2 && first_row() == 0 && renames == 0 && threads_created == 0, "a touch at %d,%d acted",
+                    miss[i][0], miss[i][1]);
     }
-    /* the export rows: a touch at each one's top and bottom edges starts that export */
+    /* the last row, cut at the room's bottom (its 4 px from y 408): chosen, nothing started; the view brings it in */
+    touch(0, 480, row_top_at(4, 0) + 1);
+    TEST_CHECK(focused() == 4 && first_row() == 1 && threads_created == 0 && !vjo_anki_page_busy());
+    /* the export rows, rows 1-4 in view: a touch at each one's top and bottom edges starts that export */
     for (int k = 0; k < 4; k++) {
         static const char *const result[4] = {"to 2026-10-12_093005-1card.apkg.", "No cards queued",
                                               "to 2026-10-12_093005-all-1card.apkg.",
                                               "to 2026-10-12_093005-all-1card-2.apkg."};
-        int r = 2 + k / 2, y = k % 2 ? row_top[r] + row_height[r] - 1 : row_top[r];
+        int r = 3 + k / 2, y = k % 2 ? row_top_at(r, 1) + row_height[r] - 1 : row_top_at(r, 1);
         touch(0, k % 2 ? 935 : 480, y);
         TEST_CHECK_(focused() == r && vjo_anki_page_busy() && threads_created == k + 1,
                     "a touch at y %d did not start row %d's export", y, r);
@@ -654,12 +767,13 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     TEST_CHECK(text_starting("Export cards (2 queued)") && text_starting("2 cards in all"));
     frame(SCE_CTRL_DOWN);
     frame(SCE_CTRL_DOWN);
+    frame(SCE_CTRL_DOWN); /* row 3 */
     frame(SCE_CTRL_CROSS);
     TEST_CHECK(vjo_anki_page_busy() && threads_created == 1 && thread_stack == 64 * 1024 &&
                thread_affinity == SCE_KERNEL_CPU_MASK_SYSTEM && thread_priority == 0x10000100);
     frame(0);
-    TEST_CHECK(!strcmp(badge(2)->label, "Exporting…") && badge(2)->active && !strcmp(badge(3)->label, "Export all") &&
-               !badge(3)->active);
+    TEST_CHECK(!strcmp(badge(3)->label, "Exporting…") && badge(3)->active && !strcmp(badge(4)->label, "Export all") &&
+               !badge(4)->active);
     TEST_CHECK(text_starting("Reading the cards…") && text_starting("Every card again") &&
                !strcmp(drawn.controls, "○: stop   Select: page"));
     /* busy: no save, no second export, from Enter, Left/Right or a touch */
@@ -667,11 +781,13 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     TEST_ASSERT(read_file(VJO_PREFERENCES_PATH, before, sizeof(before)) > 0);
     frame(SCE_CTRL_UP);
     frame(SCE_CTRL_UP);
+    frame(SCE_CTRL_UP);
     TEST_CHECK(focused() == 0); /* (the selection still moves) */
     frame(SCE_CTRL_CROSS);
     frame(SCE_CTRL_RIGHT);
-    touch(0, 480, row_top[1] + 10);
-    touch(0, 480, row_top[3] + 10);
+    touch(0, 480, row_top_at(1, 0) + 10);
+    touch(0, 480, row_top_at(2, 0) + 10);
+    touch(0, 480, row_top_at(3, 0) + 10);
     TEST_ASSERT(read_file(VJO_PREFERENCES_PATH, after, sizeof(after)) > 0);
     TEST_CHECK(!strcmp(before, after) && threads_created == 1 && vjo_anki_page_busy());
     /* the export ends: the page joins it and counts again */
@@ -683,7 +799,7 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
                !drawn.footer_error);
     TEST_MSG("%s", drawn.footer);
     TEST_CHECK(text_starting("Export cards (0 queued)") && text_starting("2 cards in all"));
-    TEST_CHECK(!strcmp(badge(2)->label, "Export") && !badge(2)->active);
+    TEST_CHECK(!strcmp(badge(3)->label, "Export") && !badge(3)->active);
     TEST_CHECK(there(VJO_EXPORT_DIR "/2026-10-12_093005-2cards.apkg") && files_in(VJO_QUEUE_DIR, ".json") == 0 &&
                files_in(VJO_QUEUE_EXPORTED_DIR, ".json") == 2 && files_in(VJO_QUEUE_EXPORTED_DIR, ".jpg") == 1);
     TEST_CHECK(strstr(logs, "anki: export (queued) rc=0: 2 cards, 2 moved, 0 kept, 0 unreadable, 0 too large, 0 left, "
@@ -692,11 +808,11 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     /* Export all cards: the two again (the last row, by the stick) */
     vjo_anki_page_stick(3);
     frame(0);
-    TEST_CHECK(focused() == 3);
+    TEST_CHECK(focused() == 4 && first_row() == 1);
     frame(SCE_CTRL_CROSS);
     frame(0);
-    TEST_CHECK(!strcmp(badge(3)->label, "Exporting…") && badge(3)->active && !strcmp(badge(2)->label, "Export") &&
-               !badge(2)->active);
+    TEST_CHECK(!strcmp(badge(4)->label, "Exporting…") && badge(4)->active && !strcmp(badge(3)->label, "Export") &&
+               !badge(3)->active);
     /* the progress on its own row only; the last export's result is not the footer while this one runs */
     TEST_CHECK(text_starting("Reading the cards…") && text_starting("Writes a new .apkg"));
     TEST_CHECK_(!strstr(drawn.footer, "Exported") && strstr(drawn.footer, "Copy the .apkg from"), "busy: %s", drawn.footer);
@@ -708,8 +824,8 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     queue_card("鳥", 0);
     show();
     frame(SCE_CTRL_UP);
-    frame(SCE_CTRL_CROSS); /* row 2 */
-    TEST_CHECK(focused() == 2 && vjo_anki_page_busy());
+    frame(SCE_CTRL_CROSS); /* row 3 */
+    TEST_CHECK(focused() == 3 && vjo_anki_page_busy());
     frame(SCE_CTRL_CIRCLE);
     run_worker();
     frame(0);
@@ -728,7 +844,7 @@ static void an_export_runs_on_the_worker_and_the_page_follows_it(void)
     /* with ○ as enter, ○ during an export does not stop it, and × does */
     buttons = vjo_buttons(VJO_BUTTON_ASSIGN_CIRCLE);
     frame(SCE_CTRL_CIRCLE);
-    TEST_CHECK(focused() == 2 && vjo_anki_page_busy() && threads_created == 5);
+    TEST_CHECK(focused() == 3 && vjo_anki_page_busy() && threads_created == 5);
     frame(0);
     TEST_CHECK(!strcmp(drawn.controls, "×: stop   Select: page"));
     frame(SCE_CTRL_CIRCLE);
@@ -757,7 +873,7 @@ static void a_missing_screenshot_is_reported_after_export(void)
     snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", queue_card("猫", 1));
     TEST_ASSERT(unlink(path) == 0);
     show();
-    touch(0, 480, row_top[2] + 10);
+    touch(0, 480, row_top_at(3, 0) + 10);
     run_worker();
     frame(0);
     TEST_CHECK(!vjo_anki_page_busy() && text_starting("Export cards (0 queued)"));
@@ -775,18 +891,22 @@ static void failures_are_shown_and_change_nothing(void)
     show();
     frame(0);
     TEST_CHECK(!strcmp(badge(0)->label, "--") && !badge(0)->active && !strcmp(badge(1)->label, "--") &&
-               !badge(1)->active);
+               !badge(1)->active && !strcmp(badge(2)->label, "--") && !badge(2)->active);
     writes_opened = renames = 0;
     frame(SCE_CTRL_CROSS);
     TEST_CHECK(!strcmp(drawn.footer, "Cannot read config.ini. Choices have not been changed.") && drawn.footer_error);
     frame(SCE_CTRL_DOWN);
     frame(SCE_CTRL_RIGHT);
     frame(SCE_CTRL_LEFT);
+    frame(SCE_CTRL_DOWN); /* API 32: the black bars' row too */
+    frame(SCE_CTRL_CROSS);
+    frame(SCE_CTRL_LEFT);
     TEST_CHECK(writes_opened == 0 && renames == 0);
     fail_open = NULL;
     check_saved(1, 1);
     /* a save that does not complete: said, and the choice shown is the file's */
     show();
+    frame(SCE_CTRL_UP);
     frame(SCE_CTRL_UP);
     fail_rename = 1;
     frame(SCE_CTRL_CROSS);
@@ -807,7 +927,8 @@ static void failures_are_shown_and_change_nothing(void)
     fail_create = 1;
     frame(SCE_CTRL_DOWN);
     frame(SCE_CTRL_DOWN);
-    TEST_CHECK(focused() == 2);
+    frame(SCE_CTRL_DOWN);
+    TEST_CHECK(focused() == 3);
     frame(SCE_CTRL_CROSS);
     TEST_CHECK(!vjo_anki_page_busy() && !strcmp(drawn.footer, "Could not start the export (0x80020001).") &&
                drawn.footer_error);

@@ -969,6 +969,10 @@ LOG = {
                             r"mem (\d+), free USER (-?\d+); (\d+) strips src (\d+) (\d+) ms, encode (\d+) ms, "
                             r"write (\d+) ms; (\d+) ms)?"),
     "anki_sent": re.compile(r"^anki: sent (\d+), (\d+) duplicates, (\d+) unreadable, (\d+) too large, (-?\d+) pending"),
+    # API 32, shell/anki.c take_shot (the debug build): a screenshot's black bars (kind 0 none, 1 trimmed, 2 kept whole;
+    # how 0 the first rows decided, 1 the guess held, 2 read again), the picture kept, the scan's time
+    "anki_bars": re.compile(r"^anki: screenshot bars (\d+) how (\d+): picture (\d+)x(\d+) at (\d+),(\d+) of (\d+)x(\d+); "
+                            r"scan (\d+) us"),
     "gstep": re.compile(r"^gstep (job|probe) (\w+) kind=(\S+) arg=(\S+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) .*main=(-?\d+) "
                         r"cdram=(-?\d+)"),
     # shell/worker.c net_stack_check: VjoNet's painted stack, at a game exit when the figure grew
@@ -1302,10 +1306,15 @@ def shot_summary(a):
     fails = ", ".join(f"{'no JPEG after it (rc -1)' if r == -1 else rc_text(r)} x{n}"
                       for r, n in sorted(a["shot_fail"].items()))
     kb = sorted(b / 1024 for b in a["shot_bytes"])
-    return [f"  Anki screenshots: {a['shots']} taken"
-            + (f", {sum(a['shot_fail'].values())} not ({fails})" if a["shot_fail"] else "")
-            + (f"; {kb[0]:.1f}-{kb[-1]:.1f} KB (median {kb[len(kb) // 2]:.1f}), encode {_span(a['shot_encode_ms'])} ms, "
-               f"the whole {_span(a['shot_ms'])} ms" if kb else "")]
+    out = [f"  Anki screenshots: {a['shots']} taken"
+           + (f", {sum(a['shot_fail'].values())} not ({fails})" if a["shot_fail"] else "")
+           + (f"; {kb[0]:.1f}-{kb[-1]:.1f} KB (median {kb[len(kb) // 2]:.1f}), encode {_span(a['shot_encode_ms'])} ms, "
+              f"the whole {_span(a['shot_ms'])} ms" if kb else "")]
+    b = a.get("bars") or {}
+    if b.get("scan_us"):  # API 32 (the debug build's line): what the black bars came to
+        out.append(f"  their black bars: {b['trimmed']} trimmed, {b['none']} none, {b['kept']} kept whole; "
+                   f"{b['read_again']} read again; scan {_span(b['scan_us'])} us")
+    return out
 
 
 def _span(values):
@@ -2263,6 +2272,7 @@ def summarise_log(text):
          "memory_unknown": 0, "speed_us": [], "cascade_speed_us": [], "unusable": [], "line_ms": [], "dictionary_ms": [], "overlay": [],
          "anki": {"saves": 0, "save_fail": 0, "queue": None, "sent": 0, "picture_off": 0, "exports": 0,
                   "shots": 0, "shot_fail": {}, "shot_bytes": [], "shot_ms": [], "shot_encode_ms": [],
+                  "bars": {"none": 0, "trimmed": 0, "kept": 0, "read_again": 0, "scan_us": []},
                   "exported": 0, "export_fail": 0, "export_ok": 0, "export_partial": 0, "export_empty": 0,
                   "export_stopped": 0, "export_left": 0, "export_swept": 0, "export_problems": []}, "trouble": {},
          "gstep_fail": {}, "config_warnings": [], "tier_misses": [],
@@ -2508,7 +2518,7 @@ def summarise_log(text):
             continue
         for key in ("capture", "memory", "memory_unknown", "speed", "cascade_speed", "unusable", "tier", "game", "disabled",
                     "psp", "done", "overlay", "close_why", "touch_left", "anki_save", "anki_queue", "anki_sent", "anki_export",
-                    "anki_shot",
+                    "anki_shot", "anki_bars",
                     "gstep", "net_stack", "net_stack_off"):
             m = LOG[key].match(line)
             if not m:
@@ -2591,6 +2601,11 @@ def summarise_log(text):
                     an["shot_bytes"].append(int(m.group(6)))
                     an["shot_encode_ms"].append(int(m.group(13)))
                     an["shot_ms"].append(int(m.group(15)))
+            elif key == "anki_bars":
+                b = s["anki"]["bars"]
+                b[{0: "none", 1: "trimmed"}.get(int(m.group(1)), "kept")] += 1
+                b["read_again"] += int(m.group(2)) == 2
+                b["scan_us"].append(int(m.group(9)))
             elif key == "anki_sent":
                 s["anki"]["sent"] += int(m.group(1))
             elif key == "anki_export":

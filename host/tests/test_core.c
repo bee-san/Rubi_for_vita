@@ -796,6 +796,20 @@ static void test_config(void)
     gate = "ocr_text_gate = off\nocr_text_gate = maybe\n";
     vjo_config_parse(&c, gate, strlen(gate));
     TEST_CHECK(c.ocr_text_gate == 0 && c.n_warnings == 1);
+    /* API 31, audit-hooks F3: the hooks' table sites, on by default; off makes the Shell send
+     * VJO_TEXT_SOURCE_NO_SITES (only the string copies hooked). Any case; an unknown value is on, warned. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.hook_sites == 1);
+    static const struct { const char *text; int sites, warnings; } sites[] = {
+        {"hook_sites = off\n", 0, 0}, {"Hook_Sites = OFF\n", 0, 0}, {"hook_sites = off\nhook_sites = On\n", 1, 0},
+        {"hook_sites = off ; the string copies alone\n", 0, 0}, {"hook_sites = off\nhook_sites = maybe\n", 1, 1},
+        {"hook_sites = off\nhook_sites =\n", 1, 1}, {"hook_sites = 0\n", 1, 1}, {"hook_sites = no\n", 1, 1}};
+    for (unsigned i = 0; i < sizeof(sites) / sizeof(sites[0]); i++) {
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, sites[i].text, strlen(sites[i].text));
+        TEST_CHECK_(c.hook_sites == sites[i].sites && c.n_warnings == sites[i].warnings, "%s", sites[i].text);
+        if (sites[i].warnings) TEST_CHECK(strstr(c.warnings[0], "hook_sites") != NULL); /* named, never the value */
+    }
     vjo_config_defaults(&c);
     const char *lm = "ocr_lm = 1000K\nocr_cascade_ms = 0\n";
     vjo_config_parse(&c, lm, strlen(lm));
@@ -842,6 +856,7 @@ static void test_config(void)
         TEST_CHECK(d.ocr_lm == 2 && d.ocr_cascade_ms == 2000 && strstr(t, "\nocr_lm = 1000k\n") &&
                    strstr(t, "\nocr_cascade_ms = 2000\n"));
         TEST_CHECK(d.stick_lookup_ms == 200 && strstr(t, "\nstick_lookup_ms = 200\n"));
+        TEST_CHECK(d.hook_sites == 1 && strstr(t, "\nhook_sites = on\n")); /* audit-hooks F3 */
         /* Japanese characters only: OFF in both (the owner, 2026-10-20; ON before) */
         TEST_CHECK(d.japanese_only_selection == 0 && strstr(t, "\njapanese_only_selection = off\n") &&
                    !strstr(t, "japanese_only_selection = on"));
@@ -1046,6 +1061,57 @@ static void test_styled(void)
     TEST_CHECK(st.len == 3 && st.text[0] == 0xD83D && st.text[1] == 0xDE00 && st.truncated);
     TEST_CHECK(vjo_utf16_index("😀猫", 4) == 2 && vjo_utf16_index("a\r\nb", 3) == 2);
     TEST_CHECK(vjo_font_px(15) == 23 && vjo_font_px(8) == 12);
+}
+
+/* Line history's header (docs/line-history.md, the owner's example of 2026-10-20): the earlier line
+ * ４７７８万 in white between the last row of the line before it (昭和５２) and the first row of the
+ * line after it (昨日すき焼きを食べました), both dimmed; the text's units start after the line before. */
+static void test_styled_history_header(void)
+{
+    VjoStyled st;
+    uint32_t lead;
+    setup();
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    lead = vjo_styled_history(&st, "昭和５２", "４７７８万", "昨日すき焼きを食べました", 27);
+    TEST_CHECK(lead == 5 && st.n_spans == 5 && st.len == 5 + 5 + 1 + 12 && !st.truncated);
+    TEST_CHECK(st.spans[0].start == 0 && st.spans[0].len == 4 && st.spans[0].rgb == VJO_RGB_RANK); /* 昭和５２ */
+    TEST_CHECK(st.spans[1].len == 1 && st.text[4] == '\n' && st.spans[1].rgb == VJO_RGB_RANK);
+    TEST_CHECK(st.spans[2].start == lead && st.spans[2].len == 5 && st.spans[2].rgb == VJO_RGB_TEXT); /* the focus */
+    TEST_CHECK(st.text[lead] == 0xFF14 && st.text[lead + 4] == 0x4E07);                          /* ４ ... 万 */
+    TEST_CHECK(st.spans[3].len == 1 && st.text[10] == '\n' && st.spans[4].len == 12 && st.spans[4].rgb == VJO_RGB_RANK);
+    for (int i = 0; i < st.n_spans; i++)
+        TEST_CHECK(st.spans[i].px == 27);
+    /* the current text (no neighbours): the text alone, in one span, as before line history */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    TEST_CHECK(vjo_styled_history(&st, NULL, "猫が\r\n好き", NULL, 21) == 0 && st.n_spans == 1 && st.len == 5);
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    TEST_CHECK(vjo_styled_history(&st, "", "猫", "", 21) == 0 && st.n_spans == 1 && st.len == 1);
+    /* the oldest line kept: no line before it; the newest: the current text after it */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    TEST_CHECK(vjo_styled_history(&st, NULL, "犬", "猫", 21) == 0 && st.n_spans == 3 && st.text[1] == '\n');
+    /* a textbox's rows: of the line before its last row, of the line after its first */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    lead = vjo_styled_history(&st, "一行目\n二行目", "今の\n行", "三行目\n四行目", 21);
+    TEST_CHECK(lead == 4 && st.text[0] == 0x4E8C && st.len == 4 + 4 + 4 && st.text[lead + 2] == '\n'); /* 二行目 */
+    TEST_CHECK(st.text[lead + 5] == 0x4E09 && st.spans[4].len == 3);                                  /* 三行目 */
+    /* a row longer than any textbox's: the line before is cut at 128 units (whole characters), the text
+     * keeps its own units; a surrogate pair is never split */
+    {
+        static char row[3 * 300 + 1], text[4 * 1000 + 1];
+        for (int i = 0; i < 300; i++)
+            memcpy(row + 3 * i, "あ", 3);
+        for (int i = 0; i < 1000; i++)
+            memcpy(text + 4 * i, "😀", 4);
+        TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+        lead = vjo_styled_history(&st, row, text, row, 21);
+        TEST_CHECK(lead == 129 && st.spans[0].len == 128 && st.cap == 4096);
+        TEST_CHECK(st.spans[2].len == 2000 && st.text[lead + 1999] == 0xDE00);   /* the whole text */
+        TEST_CHECK(st.spans[4].len == 300 && st.len == 129 + 2000 + 1 + 300);    /* the line after, its whole row */
+        /* a line before of surrogate pairs: cut at 128 units, the pair whole */
+        TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+        lead = vjo_styled_history(&st, text, "猫", NULL, 21);
+        TEST_CHECK(lead == 129 && st.spans[0].len == 128 && st.text[127] == 0xDE00);
+    }
 }
 
 /* Bee's Ultimate Dictionary's kanji lines: the trailing lines "漢=meaning",
@@ -2361,6 +2427,7 @@ TEST_LIST = {
     {"frequency_badge_config", test_frequency_badge_config},
     {"regions", test_regions},
     {"styled", test_styled},
+    {"styled_history_header", test_styled_history_header},
     {"kanji_block", test_kanji_block},
     {"styled_kanji_lines_and_fitting", test_styled_kanji_lines_and_fitting},
     {NULL, NULL},

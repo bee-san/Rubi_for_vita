@@ -114,7 +114,9 @@ def classify(blobs):
 # A part's sources, the files only the debug build compiles, and the directories whose other literals are kept
 # (a debug-only literal also used by kept code is not one). include/ holds vjo_build.h's "debug".
 PART_SOURCES = {"shell": ("shell",), "kernel": ("kernel",), "worker": ("game_ocr",), "app": ("settings",)}
-DEBUG_ONLY_FILES = {"shell": ("shell/selftest.c",), "kernel": ("kernel/meminfo.c",)}
+DEBUG_ONLY_FILES = {"shell": ("shell/selftest.c",), "kernel": ("kernel/meminfo.c",),
+                    # the read-only PSP probe (vita/CMakeLists.txt: the debug worker's only) and what it includes
+                    "worker": ("game_ocr/psp_probe.c", "core/psp_probe.c", "core/hook_luna_psp.inc")}
 KEPT_SOURCES = ("shell", "kernel", "game_ocr", "settings", "core", "include", "vita")
 SUFFIXES = (".c", ".cpp", ".h", ".inc")  # .inc: tables a .c file includes (core/deinflect.inc, lapis_notetype.inc)
 DERIVED_MIN = 12  # shorter literals ("%s", "none") are too likely to be other strings too

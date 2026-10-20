@@ -33,9 +33,9 @@ set(VJO_BUILD_VITA ON)
 option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
 # The release's version: the base zips' names and the Rubi app's version (beside its title). The
-# test builds are v0.8.0-test.N packages of these binaries; the final release sets it to its own
+# test builds use this version with a -test.N suffix; the final release sets it to its own
 # version first (docs/release-variants.md), and tools/package_variants.py checks the two agree.
-set(VJO_VERSION "0.8.0" CACHE STRING "Release archive version")
+set(VJO_VERSION "0.9.0" CACHE STRING "Release archive version")
 # The build variant (docs/release-variants.md). ON, the default, is the debug build, the test
 # builds' own: every log line, the self-test, the timing and trace lines, the game worker's step
 # log. OFF is the normal build, the release's main download: errors, warnings and a short log;
@@ -74,6 +74,7 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/scene.c
   ${ROOT}/kernel/triggers.c
   ${ROOT}/kernel/loader.c
+  ${ROOT}/kernel/text_source.c # API 31: the text source and the loader's ON processes (docs/native-hooks.md)
   ${ROOT}/core/games.c)
 target_compile_options(VitaJPOverlay_Kernel PRIVATE -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu99 -fno-builtin
   -mgeneral-regs-only)
@@ -99,7 +100,7 @@ target_compile_definitions(VitaJPOverlay_Kernel PRIVATE VJO_KERNEL=1)
 # (kernel/input.c, kernel/triggers.c) stay at -O2.
 set_source_files_properties(${ROOT}/kernel/game_ocr.c ${ROOT}/kernel/lifecycle.c ${ROOT}/kernel/foreground.c
   ${ROOT}/kernel/meminfo.c ${ROOT}/kernel/loader.c ${ROOT}/kernel/main.c ${ROOT}/kernel/io_worker.c ${ROOT}/kernel/boot.c
-  ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c
+  ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c ${ROOT}/kernel/text_source.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 
 target_link_options(VitaJPOverlay_Kernel PRIVATE -nostdlib -Wl,-q)
@@ -140,11 +141,13 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/arena.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
   ${ROOT}/core/json.c
   ${ROOT}/core/textfilter.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/entries.c
+  ${ROOT}/core/history_lines.c
   ${ROOT}/core/config.c ${ROOT}/core/regions.c
   ${ROOT}/core/client.c ${ROOT}/core/styled.c
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
-  ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c)
+  ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c
+  ${ROOT}/core/hook_pick.c) # API 31: text-source config helpers
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
@@ -168,6 +171,10 @@ target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-param
 # normal builds), which vita-vn-ocr's A9 cost model puts at most 2.1 us more at
 # 333 MHz (1.6 us at 444) [estimate], against a console lookup's 70-81 ms of
 # mostly file reads (docs/performance.md); the Rubi app's copy is -Os too.
+# Line history's reader (core/history_lines.c) and the non-Japanese line filter
+# (core/textfilter.c, once per recognized text and per earlier line: 288 -> 240 B)
+# are built for size for the room line history's code takes in the normal Shell's
+# text pages (docs/line-history.md).
 set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c
   ${ROOT}/core/json.c
   ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c ${ROOT}/core/regions.c
@@ -175,7 +182,8 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/utf.c
   ${ROOT}/core/app_stamp.c
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
-  ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c
+  ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/hook_pick.c
+  ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
@@ -296,8 +304,27 @@ if(VJO_WITH_VOCR)
     ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c
     # API 23: the Anki screenshot's JPEG encoder, in the game's process only (never the Shell's),
     # and the arena it encodes into
-    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c)
+    ${ROOT}/core/jpegsw.c ${ROOT}/core/shottrim.c ${ROOT}/core/arena.c
+    # API 31: the native text hooks (docs/native-hooks.md), in the game's process only: the hook
+    # engine, the site check, the stream slots, Luna's table and the hook text decoder
+    ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S ${ROOT}/core/hook_place.c
+    ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
+    ${ROOT}/core/sfo.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
+  # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
+  # For size, as the worker's control code is: 1,992 B of text and rodata at -Os (2,640 B at -O2; measured,
+  # vitasdk 2026.08, with the lock's checks of audit-hooks-text F3).
+  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
+  set_source_files_properties(${ROOT}/core/hook_select.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
+  # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
+  set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # The read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): the debug build's worker only,
+  # control code built for size, with Luna's PSP table (core/hook_luna_psp.inc) as its data.
+  if(VJO_DEBUG)
+    target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/game_ocr/psp_probe.c ${ROOT}/core/psp_probe.c)
+    set_source_files_properties(${ROOT}/game_ocr/psp_probe.c ${ROOT}/core/psp_probe.c PROPERTIES COMPILE_OPTIONS "-Os")
+  endif()
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
   # The worker's control code (a job's request, memory checks and ladder, one call
@@ -306,6 +333,19 @@ if(VJO_WITH_VOCR)
   # the model tiers' ladder (API 21: +788 B of text at -O2) within the module's
   # pages (game_ocr/main.c's text 12,276 B at -O2 before it, 9,164 B at -Os with it).
   set_source_files_properties(${ROOT}/game_ocr/main.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # API 31: the native hooks' engine is control code too (install once, a few checks per hit), built
+  # for size: every page of it is in every game that is ON.
+  set_source_files_properties(${ROOT}/game_ocr/hooks.c ${ROOT}/core/hook_place.c ${ROOT}/core/hook_stream.c
+    ${ROOT}/core/sfo.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # API 31: the worker reads the text source (vjoGetTextSource) once the kernel exports it; until then
+  # its native hooks stay off (game_ocr/main.c text_source: OCR).
+  file(STRINGS ${ROOT}/kernel/exports.yml VJO_KERNEL_TEXT_SOURCE REGEX "vjoGetTextSource")
+  if(VJO_KERNEL_TEXT_SOURCE)
+    target_compile_definitions(VitaJPOverlay_OCR PRIVATE VJO_HAVE_TEXT_SOURCE_IMPORT=1)
+  endif()
+  # API 32: the screenshot's black bars, for size too (612 B of text against 816 B at -O2): the scan
+  # reads only the bars' pixels, a small part of the frame, once a shot; the encoder stays at -O2.
+  set_source_files_properties(${ROOT}/core/shottrim.c PROPERTIES COMPILE_OPTIONS "-Os")
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
     -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
@@ -368,6 +408,19 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
   ${VJO_SETTINGS_ANKI_SRC})
+# API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, and the games of Luna's
+# ported Vita table (core/hook_luna.c, from hooks/luna-port: of it only vjo_luna_title_ported, the title
+# list and the site table stay linked, --gc-sections drops the rest; audit-hooks-text N2: a title with a
+# ported site). Without that file only Rubi's own entries.
+list(APPEND VJO_SETTINGS_SRC ${ROOT}/core/hook_titles.c)
+if(EXISTS ${ROOT}/core/hook_luna.c)
+  foreach(_vjo_luna hook_luna.c hook_re.c hook_text.c)
+    if(EXISTS ${ROOT}/core/${_vjo_luna})
+      list(APPEND VJO_SETTINGS_SRC ${ROOT}/core/${_vjo_luna})
+    endif()
+  endforeach()
+  set_property(SOURCE ${ROOT}/core/hook_titles.c APPEND PROPERTY COMPILE_DEFINITIONS VJO_HOOK_LUNA=1)
+endif()
 # The one-VPK install's config.txt check is taiHEN's own parser (DaveeFTW/taihen-parser 6d817fd, MIT),
 # built as taiHEN 309b380 builds it: its inbuilt ctype and string functions (docs/one-vpk-install.md).
 set_source_files_properties(${ROOT}/third_party/taihen-parser/src/lexer.c ${ROOT}/third_party/taihen-parser/src/parser.c
@@ -577,19 +630,36 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/check_adrenaline_vsh.py ${STAGE}/tools/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/third_party
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/docs/img
+    ${STAGE}/third_party/LunaTranslator
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/reading_stats.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_plaintext.py --source ${VJO_PLAINTEXT_SOURCE} --stage ${STAGE}
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt ${STAGE}/ux0/data/VitaJPOverlay/
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/guide.md ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${STAGE}/docs/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/guide.md ${ROOT}/docs/project-lessons.md ${ROOT}/docs/todo-20261011.md ${ROOT}/docs/settings-readability.md ${ROOT}/docs/settings-png-runtime.md ${ROOT}/docs/touch-lookup.md ${ROOT}/docs/anki.md ${ROOT}/docs/local-dictionaries.md ${ROOT}/docs/local-ocr.md ${ROOT}/docs/vita-vn-ocr.md ${ROOT}/docs/lookup-performance.md ${ROOT}/docs/jmdict-source.json ${ROOT}/docs/release-variants.md ${ROOT}/docs/ocr-history.md ${STAGE}/docs/
+  # Keep the guide's feature and recovery links usable in the downloaded ZIP.
+  COMMAND ${CMAKE_COMMAND} -E copy
+    ${ROOT}/docs/line-history.md ${ROOT}/docs/native-hooks.md ${ROOT}/docs/hook-titles.md
+    ${ROOT}/docs/text-detector.md ${ROOT}/docs/memory-ledger.md ${ROOT}/docs/boot-safety.md
+    ${ROOT}/docs/worker-loading.md ${ROOT}/docs/ingame-capture.md ${ROOT}/docs/performance.md
+    ${ROOT}/docs/auto-vs-press.md ${ROOT}/docs/first-ocr.md ${ROOT}/docs/ocr-speed.md
+    ${ROOT}/docs/offline-testing.md ${ROOT}/docs/one-vpk-install.md ${ROOT}/docs/rename-rubi.md
+    ${ROOT}/docs/self-test.md ${ROOT}/docs/text-stability.md ${ROOT}/docs/vita-memory.md
+    ${ROOT}/docs/config.example.ini ${STAGE}/docs/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/img/line-history-host.png ${STAGE}/docs/img/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/local-lookup-jitendex.json ${ROOT}/docs/benchmarks/kernel-startup-20261010.json ${ROOT}/docs/benchmarks/daijirin-v3-selected-20261011.json ${ROOT}/docs/benchmarks/daijirin-import-20261010.json ${ROOT}/docs/benchmarks/vocr-vs-ncnn-20261010.json ${ROOT}/docs/benchmarks/vocr-release-20261011.json ${ROOT}/docs/benchmarks/vocr2-candidate-20261012.json ${ROOT}/docs/benchmarks/local-result-memory-20261011.json ${ROOT}/docs/benchmarks/local-character-memory-20261011.json ${STAGE}/docs/benchmarks/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/benchmarks/refine-20261015.json ${STAGE}/docs/benchmarks/
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/README.md ${STAGE}/third_party/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/LunaTranslator/README.md
+    ${ROOT}/third_party/LunaTranslator/LICENSE ${STAGE}/third_party/LunaTranslator/
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${ROOT}/third_party/licenses ${STAGE}/third_party/licenses
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/bearssl/LICENSE.txt ${STAGE}/third_party/licenses/BearSSL-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/jsmn/LICENSE ${STAGE}/third_party/licenses/jsmn-MIT.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/taihen-parser/LICENSE ${STAGE}/third_party/licenses/taihen-parser-MIT.txt
+  # package_vpk.py carries third_party/licenses into the standalone VPK.
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/third_party/LunaTranslator/LICENSE
+    ${STAGE}/third_party/licenses/LunaTranslator-GPL-3.0.txt
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/Rubi.vpk ${STAGE}/
   COMMAND ${CMAKE_COMMAND} -E chdir ${STAGE} ${CMAKE_COMMAND} -E tar cf ${CMAKE_CURRENT_BINARY_DIR}/Rubi-${VJO_VERSION}${VJO_VARIANT_SUFFIX}.zip --format=zip ur0 ux0 config.ini README.md LICENSE tools docs third_party compat Rubi.vpk
   DEPENDS VitaJPOverlay_Kernel.skprx-self VitaJPOverlay_Shell.suprx-self ${VJO_WORKER_RELEASE_DEPS} vjo_rco vjo_syscall_abi vjo_settings_assets vjo_settings_self vjo_variant vjo_one_vpk

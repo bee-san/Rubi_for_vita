@@ -88,7 +88,9 @@
  * (owner, 2026-10-16) makes it 99,196 -> 98,972 text on main a7abad7, the same data and pages
  * [measured: the build log's module rows, main a7abad7 and this change]. The left stick a character
  * at a time (owner, 2026-10-20) makes it 98,732 -> 98,812 text on main f482c21, the same data and
- * pages [measured: the build log's module rows, main f482c21 and this change]. */
+ * pages [measured: the build log's module rows, main f482c21 and this change]. Line history (owner,
+ * 2026-10-20; docs/line-history.md) makes it 98,812 -> 100,492 text and 73,272 -> 73,576 data/bss on
+ * main 75041a0, the same pages [measured: the build log's module rows, main 75041a0 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -112,7 +114,10 @@
  * net_main) make it 88,556 + 69,868 on main eece6c6 (88,460 + 69,796), the same pages, 1,556 B of text
  * room [measured: the same rows, main eece6c6 and t3-log-path]. The left stick a character at a time
  * (owner, 2026-10-20) makes it 88,348 -> 88,428 + 73,280 on main f482c21, the same pages, 1,684 B of
- * text room [measured: the same rows, main f482c21 and this change]. Its check is
+ * text room [measured: the same rows, main f482c21 and this change]. Line history (owner, 2026-10-20;
+ * docs/line-history.md, paid in part by core/textfilter.c at -Os and strings in the data segment)
+ * makes it 88,428 -> 90,044 + 73,280 -> 73,584 on main 75041a0, the same pages, 68 B of text room and
+ * 144 B of data room [measured: the same rows, main 75041a0 and this change]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
@@ -165,8 +170,66 @@
  * fit: 94,208 -> 98,304 B [measured: the build log's module rows, both builds, main 1de7b67 and this change]. At
  * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
  * which would still need the page. In the game's partition, never SceShell's. Both builds now have the same
- * budget. */
-#define VJO_BUDGET_WORKER_MODULE_PAGES 98304u
+ * budget.
+ * Raised for API 31, the native text hooks (docs/native-hooks.md), in the game's partition only (the worker
+ * never loads into SceShell, AGENTS.md rules 1-2), in every game that is ON whatever its text source, and now
+ * per build again: the engine (game_ocr/hooks.c and hooks_observer.S, core/hook_place.c, core/hook_stream.c,
+ * core/sfo.c, at -Os) and what it links of Luna's ported table (core/hook_luna.c and its table: the sites, the
+ * version gate and the capture's hookfuncs) take the debug build's text 81,644 -> 99,016 B and the normal
+ * build's 80,344 -> 96,524 B (1,780 B of room in its last page), and both builds' data/bss 15,752 -> 27,496 B: debug 98,304 -> 131,072 B, normal
+ * 98,304 -> 126,976 B [measured: the build log's module rows, both builds, hooks/engine 8aa79eb with origin/hooks/
+ * luna-port merged; the engine alone was 88,904 / 86,396 B of text; the debug "before" is the same
+ * tree with the engine unreferenced (81,644 + 15,752, as main's), the normal "before" this header's API 26
+ * figure]. The data is the 20 stream slots' static storage (VJO_HOOK_STREAMS x 548 B = 10,960 B: a stream's
+ * 512 raw bytes and its header, include/vjo_game_ocr.h) and a site hit's 512-byte capture buffer: static, so
+ * a hook in a game thread never allocates. Not in these figures: the job path's decoder (core/hook_text.c,
+ * its CP932 table), Luna's filters (core/hook_re.c) and the selection (core/hook_select.c), linked when the
+ * job path calls vjo_hooks_text (hooks-select); they add their own pages then.
+ * Raised again for API 31's job path (docs/native-hooks.md: which text a job shows, OCR's or a native hook
+ * stream's), which decodes the streams' texts (vjo_hooks_text) and so links the decoder and its CP932 table
+ * (core/hook_text.c, 12,958 B of text and rodata) and Luna's filters (their part of core/hook_luna.c, and
+ * core/hook_re.c, 3,407 B at -Os), and adds the selection (core/hook_select.c, 1,708 B at -Os, and the job
+ * path in game_ocr/main.c) [object sizes, arm-vita-eabi-gcc at the worker's flags]; its static snapshot of
+ * the streams (one stream's copy, 548 B, the texts as the job began, 2,048 B, and the candidates, 400 B) is
+ * 3,064 B more .bss, and the comparison's 2,562 B of arrays are on the worker's stack only while it compares.
+ * The debug build's text 99,016 -> 127,144 B, the normal build's 96,524 -> 124,668 B, both builds' data/bss
+ * 27,496 -> 30,560 B: debug 131,072 -> 163,840 B, normal 126,976 -> 159,744 B [measured: the build log's
+ * module rows, both builds, hooks/select 4f9dca9 with hooks/engine dca6d5f merged]. The selection alone,
+ * before the engine (a stand-in for game_ocr/hooks.c), took 98,304 -> 106,496 B in both builds: text 81,644
+ * -> 84,588 B debug, 80,344 -> 83,336 B normal, data/bss 15,752 -> 18,816 B [measured, hooks/select
+ * 7fd2cb8].
+ * Raised in the debug build only, 163,840 -> 167,936 B, by one text page for the read-only PSP probe
+ * (docs/native-hooks.md "PSP probe (debug build)": game_ocr/psp_probe.c, 881 B of text, and core/psp_probe.c,
+ * 5,345 B of text and rodata with Luna's PSP table's 3,515 B, both at -Os, and main.c's call): the debug build's
+ * text 127,144 -> 133,392 B, 2,320 B past its page; its data/bss 30,560 -> 30,568 B (two words) fit the pages it
+ * had [measured: the build log's module rows, debug build, hooks/psp-probe with feat/native-hooks 960ac20 merged
+ * against 960ac20; the objects' sizes: arm-vita-eabi-size]. No block, no thread. The normal build has none of
+ * it: its worker is byte for byte its parent's. In the game's partition only. */
+/* Standalone PR #235 (de5f7e0, based on main 75041a0), API 32: the Anki screenshot's black bars
+ * (core/shottrim.c at -Os, 612 B of text, and game_ocr/main.c shot_pass,
+ * the passes that guess, check and read again) take the debug build's text 81,644 -> 82,876 B, 956 B past the 81,920 B
+ * of its text pages, and the normal build's 80,344 -> 81,608 B, which still fits (312 B left); data/bss 15,720 B as
+ * before in both [measured: the build log's module rows, both builds, main 75041a0 (the worker's the same on f482c21
+ * and 44d4e8d) and PR #235 fb6ed5d (de5f7e0 changes docs only), CI's container]. So the debug
+ * build, the test builds' own and the -debug download, takes one more text page in each game that is ON, 98,304 ->
+ * 102,400 B, and the normal build, the main download, keeps 98,304 B. Already cut to get there: the scan at -Os
+ * (816 B at -O2) and no row buffer for black rows above the strip. Kept: the one-colour rule, which keeps a dark Vita
+ * picture's edges from being guessed as bars and read twice (24 of 1,727 frames without it, 1 with it [measured, host,
+ * on local copies of the owner's frames, docs/anki.md "Black bars"]), and the one-compare path for runs of the bars'
+ * colour, which pays back most of what the rule's colour check costs: every row of a PSP game's 1x frame scanned in
+ * 3.55 million Cortex-A9 instructions, 5.11 million with the check and no such path, 2.75 million with neither (the
+ * rule out) [measured: qemu-arm's insn_mix plugin, the Vita compiler's objects; the last by audit-blackbars]. In the
+ * game's partition, never SceShell's. */
+/* Combined enhancement build, API 33: native hooks and screenshot trimming retain the original
+ * native-hook page budgets. Move the immutable 1820-byte Luna title-ID table into existing data-page
+ * room (VJO_DATA_TABLE); no new allocation or per-pixel work. Measured with VitaSDK GCC 15.2.0:
+ * debug segments 134120+32576 B, normal 125172+32568 B; rounded 167936/159744 B
+ * (build/combined-{debug,normal}-ledger.json). Shell budgets and PAF reserve remain unchanged. */
+#if VJO_DEBUG
+#define VJO_BUDGET_WORKER_MODULE_PAGES 167936u
+#else
+#define VJO_BUDGET_WORKER_MODULE_PAGES 159744u
+#endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
  * installer writes for it (until the one-VPK install removes them) loads it into that game
@@ -235,12 +298,22 @@
  * A save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B
  * on main dcb7b31) [measured, host, test_shell_anki.c]. anki.c checks its arena against this at compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
-#define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
+#define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 18,016 B needed (overlay.cpp, test_ledger.c) */
+/* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
+ * first Up past its text's top row until the return to the current text (or the overlay's close): the
+ * table (core/history_lines.h VjoHistory, 34 line pointers and two counts) and the worker's three words
+ * beside it, the current text (at most 4,095 B and its NUL), and as many of this game's earlier lines as
+ * fit, at most VJO_HISTORY_LINES (32). Typical dialogue lines (20-60 characters of 3 B) are 60-180 B,
+ * so 32 take 2-6 KiB [estimate]. history.csv's last 24,512 B (and the byte before them) are read into the
+ * control thread's static 24 KiB scratch, not here. Held beside an open overlay, its lookup and an Anki
+ * save (a card from an earlier line). */
+#define VJO_BUDGET_PAF_HISTORY 16384u
 #define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
 /* The only configuration (the overlay is offline): one 64 KiB arena, the
- * overlay open, an Anki card being saved. The opt-in network row went with
- * Google Lens and the Hachidori relay (707,840 B with one connection slot). */
-#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
+ * overlay open on an earlier line, an Anki card being saved. The opt-in network
+ * row went with Google Lens and the Hachidori relay (707,840 B with one connection slot). */
+#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI + \
+                             VJO_BUDGET_PAF_HISTORY)
 /* What the measured free heap leaves us once the reserve is kept: the
  * reserve is the headroom. Later sessions saw 355-441 KiB and 190 KiB free
  * [measured]; under those every allocation is refused, which the code

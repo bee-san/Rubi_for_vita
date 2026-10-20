@@ -108,6 +108,16 @@ worker thread per process; another thread's `vjoOcrRegister` in the same process
 (`VJO_ERR_BUSY`, never a job, never weights) and logged once, so a console run shows a second copy
 that stayed.
 
+**Native text hooks only where the loader said ON** (API 31, audit-hooks F1). A per-title line also
+loads the worker into a game that is OFF, where this loader loads none. The kernel records each
+process it starts the worker in as ON (before the load, so the worker's `module_start` finds it; a
+fixed table of 4 process IDs in the kernel's .bss, the newest replacing the oldest, one game running
+at a time) and clears a process's entry at every start it does not judge ON. `vjoGetTextSource`
+answers the Shell's text source only to a recorded process and `ocr` to every other one, so such a
+worker installs no hook: turning a game OFF stops its hooks whatever taiHEN's config still holds.
+With the loader off (its firmware functions not found), no process is recorded and no worker
+installs a hook.
+
 ## Lifecycle
 
 | event | what happens |
@@ -144,7 +154,7 @@ every title without a row of its own.
 
 ## Memory
 
-- **Game partition.** Unchanged per process: the worker's module pages (98,304 B in both builds since API 26's text-presence gate) and its idle
+- **Game partition.** Unchanged per process: the worker's module pages (98,304 B in both builds from API 26's text-presence gate; 102,400 B in the debug build since API 32's black bars) and its idle
   thread (32,768 B stack + 4,096 B TLS) until a job, then the jobs' blocks as before
   ([memory-ledger.md](memory-ledger.md)). What changes is where: every title ON in `games.ini`,
   not only those with a line. With `default = enabled`, the installer's default, that is every
@@ -179,7 +189,8 @@ start. CPU3: unmeasured (AGENTS.md rule 8).
 ## Recovery
 
 Nothing here runs at boot before SceShell, and nothing runs in a safe boot. A game that will not
-start with the worker: turn it OFF in the Rubi app, or hold L while starting it. If the Vita
+start with the worker: turn it OFF in the Rubi app, or hold L while starting it. Turning it OFF also
+stops its native text hooks when a `*TITLEID` line kept by hand still loads the worker (above). If the Vita
 does not boot: hold L at power-on (taiHEN loads no plugins, our kernel included), as before
 ([boot-safety.md](boot-safety.md)).
 

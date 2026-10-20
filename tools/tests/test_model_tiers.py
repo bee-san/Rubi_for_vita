@@ -52,7 +52,8 @@ class ModelTiers(unittest.TestCase):
         self.assertEqual(sizes["VJO_VOCR_TIER_DEFAULT"], ids.index(TIERS["default"]) + 1)
         ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
         config = (ROOT / "core/config.c").read_text()
-        self.assertIn('tier_ids[VJO_VOCR_TIERS] = {"' + '", "'.join(ids) + '"}', config)
+        self.assertRegex(config, r'\btier_ids\[VJO_VOCR_TIERS\]\s*(?:VJO_DATA_TABLE\([^)]*\)\s*)?=\s*'
+                         + re.escape('{"' + '", "'.join(ids) + '"}'))
         self.assertIn("\nvocr_tier = " + TIERS["default"] + "\n", (ROOT / "docs/config.example.ini").read_text())
         rows = c_tiers()
         self.assertEqual([r[0] for r in rows], ids)

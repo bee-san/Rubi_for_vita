@@ -246,7 +246,7 @@ app when it starts.
 | Select + R | Toggle the subtitle strip |
 | Left / Right | Move through the text in reading order, across its rows: skip matched words in Whole word mode, one character in Character mode (the left stick: one character in both); Right from a row's last word goes to the next row's first, Left from a row's first to the row above's last, and the text's first and last stop the cursor. A text on one row goes round its ends (Right from the last to the first, Left from the first to the last) |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
-| Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position |
+| Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position. **Up on the text's top row shows this game's earlier line** (with **Read text: Automatically**), dimmed between its neighbours: more Up goes further back, up to 32 lines; Down on an earlier line's last row goes to the line after it, and past the newest back to the current text ([line history](line-history.md)) |
 | Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right a character at a time in reading order across the rows, in Whole word mode too (the shown word is not skipped, and its left never retraces a Right), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too. With **Japanese characters only** ON it lands only on kana and kanji, OFF on every visible character, punctuation and Latin included. Once the cursor rests for `stick_lookup_ms` (200 ms), not at each step, the word starting at its character is looked up and, in Whole word mode, highlighted ([left stick](touch-lookup.md#the-left-stick-138)) |
 | Right stick | Scroll a long definition |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
@@ -254,6 +254,19 @@ app when it starts.
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
 | Cancel | Close the overlay |
+
+**Earlier lines.** With **Read text** on **Automatically**, the overlay can go back through this game's
+earlier dialogue, the lines `history.csv` keeps ([ocr-history.md](ocr-history.md)): Up on the text's
+top row shows the line before it, in white between the last row of the line before that and the
+first row of the line after it, both dimmed, and the body's first line says how far back it is
+(`Earlier line -2`). Everything works on it as on the current text: the cursor, taps, the left stick,
+lookups, the dictionaries' pages and Enter, whose card has that line as its sentence and **no
+screenshot** (Rubi keeps no frame of an earlier line; the status line says so). Down past the newest
+earlier line comes back to the current text, its cursor where it was; closing the overlay does too.
+Up and Down between lines are the d-pad's: the left stick stops at the text's first and last rows.
+With **Only when I press L + R**, which records no line, Up on the top row does nothing, as before.
+The last 24 KiB of `history.csv` are read when Up first goes past the top row (about 28 three-row
+textboxes of every game, at most 32 of this game's lines kept): [line history](line-history.md).
 
 Pressing PS with the overlay open closes it: the game's controls are released
 in the suspend's own event, the overlay no longer turns off the LiveArea's
@@ -279,6 +292,56 @@ its sentence and every dictionary's entry for it to the card queue on the
 memory card, with a JPEG of the game's screen (about 60 KB, made in the game's
 own process: [screenshots](anki.md#the-screenshot)); the Rubi app exports
 the queue as an `.apkg`, the screenshot in each note's Picture.
+
+### Native text hooks
+
+A native text hook reads the line a game is about to draw, so the popup gets the game's own text
+instead of OCR's reading of the screen, as Textractor and LunaTranslator do for PC games. Rubi's
+hooks run in the game's own process, installed as the game starts; how, and why a site is
+installed or refused, is in [docs/native-hooks.md](native-hooks.md). Nothing of them has run on a
+console yet: everything below is what the code does, checked on the host.
+
+- **Text source** (the Rubi app's OCR & lookup page, `text_source` in `config.ini`) applies when a
+  game next starts: **Automatic** (`auto`, the default) installs hooks only in the games that have a
+  hook entry, Rubi's own (CLANNAD, PCSG00415) or a site in LunaTranslator's table that Rubi has ported.
+  Seven titles that the table lists have no ported site (PCSB00985, PCSG00291, PCSG00451, PCSG00595,
+  PCSG00663, PCSG01081, PCSG01152): with Automatic they get OCR only, as a game with no entry does;
+  **Every game** (`hooks`)
+  adds the game's own string copies in every game that is ON; **OCR only** (`ocr`) installs none.
+  An install or an update keeps the file's value; installs before this one wrote `text_source =
+  ocr`, so choose Automatic once to use hooks.
+- **What is shown.** With hooks, every job still reads the screen with OCR at first: a hook's line
+  replaces OCR's only when the two agree (70 % or more, four characters at least; so a hook's line
+  shown can lack up to 30 % of the box, such as the speaker's name), and after two
+  agreements in a row that hook is locked and answers new lines of four characters or more without
+  recognition, two pages at most: OCR reads the next one, and the hook's line must agree there. A
+  screen with no new hook line is read by OCR again; a disagreement makes OCR read every page until
+  the hook agrees again, and two in a row unlock it. So a locked hook that turns wrong (it runs ahead
+  of the screen, or its latest line is a speaker's name or a menu's text) shows at most two wrong
+  pages. To disable hooks, choose **OCR only** in the Rubi app and restart the game.
+- **The popup** shows the dialogue and dictionary entries. Source selection is automatic; there is
+  no hook number, source-status label or Triangle source picker. Technical source details remain in
+  the debug log.
+- **The Games page** tags a game with a hook entry: `Hook` for Rubi's own, `Luna hook` for a ported
+  site in LunaTranslator's table (its entries are not checked by Rubi; the worker installs one only where
+  the game's code there looks as the entry expects). The seven titles above, whose every site in the
+  table is unported, have no tag.
+- **Logs.** `log.txt` has one line per game session with what the worker installed (`hooks in
+  PCSG00415: text source auto, 1 table sites and 8 string copies hooked, 0 sites refused`; the normal
+  build only where something was hooked or refused); the debug build also rewrites
+  `ux0:data/VitaJPOverlay/hooks.log` at each game start (each site's verdict and why, each string copy
+  hooked or not, no text: [native-hooks.md](native-hooks.md#logs)), and adds to `log.txt` each job's source, flags,
+  agreement score, the streams with text and the pick (`game vocr source: hook 9, flags 0x03, score
+  1000, streams 0x00901, pick 0`) and logs the shown text, a hook's too. The normal build logs no
+  hook text, as it logs no OCR text. `history.csv` gets the text shown, with `hook` instead of `vocr`
+  as its engine for a hook's line; `kernel.txt` has `text source N` when the setting changes.
+- **If a game misbehaves with hooks**, hold L while starting it (no Rubi in it at all), turn it OFF
+  on the Games page, or set Text source to OCR only (`text_source = ocr`): each applies at the
+  game's next start. A safe boot ([boot safety](boot-safety.md)) installs no hook anywhere.
+- **Table sites off, for a test**: `hook_sites = off` in `config.ini` (no setting in the app; `on` by
+  default) installs no table site in any game, only the string copies, from a game's next start, so a
+  console run can tell the two apart; `kernel.txt`'s `text source N` is then 256 more than the mode
+  (257 for `auto`).
 
 ### Drawing the region
 
@@ -325,11 +388,14 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 
 On the **OCR & lookup** page, select a row with Up/Down. Enter
 or touch a row changes its choice: the Model size, **Read text**, the **Speed boost while
-reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, or how many
-dictionaries are shown. Touch a size, a Read text choice or a number to choose it directly;
+reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, how many
+dictionaries are shown, or the **Text source** (the last card: [native text hooks](#native-text-hooks)).
+Touch a size, a Read text choice, a number or a Text source choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
 Automatically/Only when I press on Read text, OFF/ON on the Speed boost and selection cards,
-Whole word/Character on the Highlight card, or 1–8 on Dictionaries shown. The page is taller
+Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, or Automatic/Every
+game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
+as a game's worker reads it then). The page is taller
 than the screen: it scrolls a card at a time to keep the selected one whole, the next card shows
 at the bottom, a bar at the right shows where the view is, and a touch on a card cut at the
 bottom only scrolls it into view. Read text (`ocr_mode`, [Use in a game](#use-in-a-game)) reads
@@ -349,6 +415,12 @@ paths and capture mode, are preserved; only the lines of removed features are
 rewritten (the [removed online dictionaries](#settings-and-dictionaries)'
 API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and the
 removed engine choice's `ocr_backend` line goes).
+
+On the **Anki** page the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
+Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), then
+**Export cards** and **Export all cards**. Five rows are more than the room above the page's status
+box: they scroll a row at a time as the OCR page's cards do, a bar at the right shows where the view is,
+and a touch on the row cut at the bottom only scrolls it into view ([Anki](anki.md#setup-and-use)).
 
 Japanese-only selection (**Japanese characters only**) is **OFF by default** (the
 owner's choice, 2026-10-20; ON before): every visible character is selectable, the
@@ -445,7 +517,9 @@ corrupt policy fails closed and reports the problem rather than enabling every
 game. A game turned ON gets OCR at its next start: the kernel plugin loads the
 OCR worker into it as it starts ([Install](#install)).
 
-PSP games have a `PSP` tag. Each Adrenaline bubble is listed under its game's
+PSP games have a `PSP` tag; a Vita game with a native text hook entry has `Hook` (Rubi's own) or
+`Luna hook` (a ported site in LunaTranslator's table: [native text hooks](#native-text-hooks)), a title
+whose every site is unported none. Each Adrenaline bubble is listed under its game's
 title, which the app reads from the `PARAM.SFO` of the ISO, CSO, ZSO or EBOOT.PBP
 it boots. Its icon is the bubble's, which Adrenaline Bubble Manager made from
 the game's. A bubble without its own choice follows the shared row
@@ -485,7 +559,7 @@ dictionary = local
 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 local_dictionaries = plaintext.vjdict
 local_dictionary_results = 1
-text_source = ocr
+text_source = auto
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
 vocr_tier = normal
 ocr_mode = auto
@@ -685,7 +759,11 @@ with a JPEG of the game's screen beside it (`anki_screenshot = on`, the default:
 960 × 544 at quality 70, 55.6 KB for the median of 294 Vita screens, 46.6 KB of
 304 PSP ones). The game worker reads the frame and encodes it in the game's
 memory (a 450,560 B block while it runs), and the kernel writes it to the memory
-card; SceShell holds none of it ([the screenshot](anki.md#the-screenshot)).
+card; SceShell holds none of it ([the screenshot](anki.md#the-screenshot)). With
+`anki_screenshot_trim_bars = on`, the default, the JPEG leaves out the frame's black
+letterbox or pillarbox bars (a PSP game shown smaller than the screen: at 1× a 484 × 276
+picture), found as the rows are read, with no copy of the frame
+([black bars](anki.md#black-bars)).
 The cards survive restarts and need no network. Each record (version 4) keeps everything known at the
 press: the word, its reading and furigana, the shown entry and its
 dictionary's name, the other dictionaries' entries, the whole recognized text
@@ -694,7 +772,8 @@ the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
 The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
-ON/OFF, **Export cards (N queued)** and **Export all cards**. An export writes the cards as
+ON/OFF, **Trim black bars** ON/OFF, **Export cards (N queued)** and **Export all cards**
+(five rows, which scroll a row at a time). An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into
@@ -729,7 +808,8 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 98,304 B of module pages and its 36,864 B thread stack and TLS from its
+holds the worker's 159,744 B of module pages (167,936 B in the debug build; API 31's native hooks and
+their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
@@ -889,7 +969,8 @@ page, or from a computer run `bash tools/install_ftp.sh --uninstall VITA_IP`. Re
 normally. Uninstalling preserves data. A `config.txt.vjo-<date-time>.bak` is the
 configuration from before that install, not before the overlay: an update replaces the
 plugin files its lines name. If one game does not start, turn it OFF in the Rubi app,
-or hold L while starting it ([recovery](one-vpk-install.md#recovery-r1)).
+or hold L while starting it ([recovery](one-vpk-install.md#recovery-r1)); if it starts but misbehaves
+since its native text hooks, set Text source to OCR only ([native text hooks](#native-text-hooks)).
 
 The Rubi app is not a plugin and never starts by itself, so it cannot stop
 the Vita from starting, and its Install page writes nothing until you choose an

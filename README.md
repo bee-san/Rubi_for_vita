@@ -99,7 +99,9 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
    mistakes. Hold **□** for a second to go back to the whole screen.
 3. **Look a word up.** **◀ ▶** go word by word and **▲ ▼** a row up or down. The left stick goes a
    character at a time, faster while held, and looks up the word that starts where it stops. Or tap
-   a word. The right stick scrolls a long entry.
+   a word. The right stick scrolls a long entry. **▲** on the top row goes back to this game's earlier
+   lines, one at a time (with **Read text: Automatically**), and **▼** comes forward again
+   ([earlier lines](docs/line-history.md)).
 4. **Make a card.** Turn **Card mining** ON on the app's **Anki** page once. Then press **Enter** on
    a word: it is saved with its sentence and a screenshot. **Export cards** on the Anki page writes
    them into `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`: copy that file to a computer
@@ -121,8 +123,10 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries an L or R tap pages through, 1–8 | 1 |
+| | **Text source**: Automatic (native text hooks in the games that have one, else OCR), Every game, or OCR only, from a game's next start ([guide](docs/guide.md#native-text-hooks)) | Automatic |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
+| | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
 | | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
 | Install | **Install**, **Update** or **Check and repair**, and **Uninstall** | |
 
@@ -152,8 +156,11 @@ logging, is in `ux0:data/VitaJPOverlay/config.ini`
 | ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
+| ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
+| ❓ | Native text hooks (CLANNAD's entry, [LunaTranslator's Vita table](docs/hook-titles.md)) | not run on a console by this code; an earlier hook build followed CLANNAD's dialogue on the owner's console in 2026-10 ([#230](https://github.com/bee-san/Rubi_for_vita/issues/230)) |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
+| ❓ | Trim black bars on Anki screenshots | not run on a console yet ([details](docs/anki.md#black-bars)) |
 | ❓ | The normal build (the main download) | no console run reported; the test runs used the debug build |
 
 What each build changed, and what its console run showed: the [changelog](CHANGELOG.md).
@@ -194,8 +201,8 @@ Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the e
 the home screen (SceShell) or another system app. Before each reading it checks how much memory the
 game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
-Rubi's OCR worker from its start: 132 KiB of its memory (96 KiB of module pages, 36 KiB of stack and
-TLS: the build's figures). If a game or homebrew app won't start with it, turn it OFF in the app, or
+Rubi's OCR worker from its start: 192 KiB of its memory (156 KiB of module pages, 36 KiB of stack and
+TLS: the normal build's figures; the debug build's pages are 8 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).
 
@@ -221,9 +228,11 @@ Recognition, lookups and cards all stay on the Vita; your cards leave it only wh
 (`log_file = off` in `config.ini` turns off the main one, `log.txt`). The normal build, the
 release's main download, logs no recognized or looked-up text; the `-debug` build, made for bug
 reports, logs both. With **Read text** on **Automatically**, both builds also keep the dialogue they
-read, with its game and time, in `ux0:data/VitaJPOverlay/history.csv`, for reading statistics (the
-CSV that GameSentenceMiner imports; [details](docs/ocr-history.md)). It stays on the Vita too, grows
-as you read and is never deleted by itself; **Only when I press L + R** saves none.
+read, with its game, time and number of characters, in `ux0:data/VitaJPOverlay/history.csv`, for
+reading statistics (the CSV that GameSentenceMiner imports; on a computer,
+`python3 tools/reading_stats.py history.csv` gives the characters read and per hour, per game and
+per day; [details](docs/ocr-history.md)). It stays on the Vita too, grows as you read and is never
+deleted by itself; **Only when I press L + R** saves none.
 
 ### How good is the OCR?
 
@@ -286,6 +295,11 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   Dictionary, whose sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0). Every
   source keeps its own licence: the [attribution](docs/plaintext-attribution.txt) has them all.
 - **Anki:** the [Lapis](https://github.com/donkuri/lapis) note type by donkuri (GPL-3.0).
+- **Native text hooks:** [LunaTranslator](https://github.com/HIllya51/LunaTranslator) by HIllya51 and
+  contributors (GPL-3.0): its PS Vita hook table, and its text clean-up for each game ported to C, from
+  release v12.1.2.12 (commit 51884b6), whose source files Rubi keeps in
+  [third_party/LunaTranslator/](third_party/LunaTranslator/README.md)
+  ([the games](docs/hook-titles.md)).
 - **Lookups:** Yomichan's deinflection rules. The dictionary's key filter is modelled on the Bloom
   filter of [hoshidicts](https://github.com/Manhhao/hoshidicts), Manhhao's dictionary library, which
   bee-san's [Hachidori](https://github.com/bee-san/hachidori) app is built on; Rubi has no code of

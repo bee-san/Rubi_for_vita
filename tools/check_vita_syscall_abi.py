@@ -32,6 +32,11 @@ GAME_FUNCTIONS = ("vjoOcrRegister", "vjoOcrTake", "vjoOcrCancelled", "vjoOcrCapt
 REMOVED = {"vjoOcrReadRaw": 19, "vjoRequestCapture": 24, "vjoReadRaw": 24}
 GAME = {name: int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
         for name in GAME_FUNCTIONS}
+# API 31, the text source (docs/native-hooks.md): the Shell sets it from config.ini's text_source, the
+# game worker reads it as its game starts. Set is the registered Shell's only (the worker never imports
+# it); the kernel exports both in every build.
+TEXT_SOURCE = {name: int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
+               for name in ("vjoSetTextSource", "vjoGetTextSource")}
 WEAK_STUB = (0xE3E00000, 0xE12FFF1E, 0xE1A00000, 0)
 # Sysmem's ForKernel library was renumbered in 3.63. A direct strong import
 # makes an otherwise valid plugin fail before module_start on the other ABI.
@@ -191,6 +196,9 @@ def audit(kernel, shell, require_hooks=False, worker=None):
         require(nid in exports, f"Kernel does not export {name}")
         if name != "vjoTextSubmit":
             require(nid in imports, f"Shell does not import {name}")
+    for name, nid in TEXT_SOURCE.items():
+        require(nid in exports, f"Kernel does not export {name}")
+    require(TEXT_SOURCE["vjoSetTextSource"] in imports, "Shell does not import vjoSetTextSource")
     # removed syscalls: the kernel exports none and the Shell imports none, in every audit (the worker's below)
     removed = {int.from_bytes(hashlib.sha256(n.encode()).digest()[:4], "big"): (n, api) for n, api in REMOVED.items()}
     for nid, (name, api) in removed.items():
@@ -218,10 +226,12 @@ def audit(kernel, shell, require_hooks=False, worker=None):
             require(nid in owner, f"Missing role-specific import {name}")
         for nid, (name, api) in removed.items():
             require(nid not in worker_imports, f"{name} was removed in API {api}")
-        shell_only = ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel", "vjoRegisterShell")
+        shell_only = ("vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel", "vjoRegisterShell", "vjoSetTextSource")
         for name in shell_only:
             nid = int.from_bytes(hashlib.sha256(name.encode()).digest()[:4], "big")
             require(nid not in worker_imports, f"Worker imports Shell-only syscall {name}")
+        # API 31: the worker reads the text source as its game starts (which hooks it installs)
+        require(TEXT_SOURCE["vjoGetTextSource"] in worker_imports, "Worker does not import vjoGetTextSource")
         # API 23: the JPEG's bytes go from the game worker to the kernel, never through SceShell
         for name in ("vjoOcrShotWrite", "vjoOcrShotSave"):
             require(GAME[name] not in imports, f"Shell imports the game worker's {name}")

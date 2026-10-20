@@ -12,24 +12,45 @@
 #include <unistd.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
+#include "../../core/history_lines.h"
+#include "../../core/textfilter.h"
 
 static char directory[PATH_MAX], path[PATH_MAX + 16];
-static unsigned opens, writes, short_bytes;
-static int open_error, write_error_after, sync_error, close_error, rollback_error;
+static unsigned opens, writes, short_bytes, read_opens, reads, read_limit;
+static int open_error, write_error_after, sync_error, close_error, rollback_error, read_open_error, read_error;
 static SceOff last_size;
 
 static int native(int rc) { return rc < 0 ? -errno : rc; }
 int sceIoOpen(const char *file, int flags, unsigned mode)
 {
     TEST_CHECK(!strcmp(file, "ux0:data/VitaJPOverlay/history.csv"));
+    if (flags == SCE_O_RDONLY) { /* line history's reader */
+        read_opens++;
+        return read_open_error ? (int)0x80010002 : native(open(path, O_RDONLY));
+    }
     TEST_CHECK(flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND));
     opens++;
     return open_error ? -71 : native(open(path, flags, mode));
 }
 SceOff sceIoLseek(int fd, SceOff off, int whence)
 {
-    TEST_CHECK(whence == SCE_SEEK_END && off == 0);
+    TEST_CHECK((whence == SCE_SEEK_END && off == 0) || (whence == SCE_SEEK_SET && off >= 0));
     return lseek(fd, off, whence);
+}
+/* read_limit: at most this many bytes a read (a short read); read_error: the n-th read fails */
+static off_t read_eof_at; /* nonzero: the file ends there for the reader (an append rolled back) */
+int sceIoRead(int fd, void *p, size_t n)
+{
+    reads++;
+    TEST_CHECK(n > 0 && n <= VJO_HISTORY_WINDOW + 1);
+    if (read_error && reads >= (unsigned)read_error) return -76;
+    if (read_limit && n > read_limit) n = read_limit;
+    if (read_eof_at) {
+        off_t at = lseek(fd, 0, SEEK_CUR);
+        if (at >= read_eof_at) return 0;
+        if (at + (off_t)n > read_eof_at) n = (size_t)(read_eof_at - at);
+    }
+    return native((int)read(fd, p, n));
 }
 int sceIoWrite(int fd, const void *p, size_t n)
 {
@@ -66,9 +87,10 @@ static void reset(void)
         TEST_ASSERT(snprintf(path, sizeof(path), "%s/history.csv", directory) < (int)sizeof(path));
     }
     vjo_history_reset();
-    opens = writes = short_bytes = 0;
-    open_error = write_error_after = sync_error = close_error = rollback_error = 0;
+    opens = writes = short_bytes = read_opens = reads = read_limit = 0;
+    open_error = write_error_after = sync_error = close_error = rollback_error = read_open_error = read_error = 0;
     last_size = 0;
+    read_eof_at = 0;
 }
 
 static VjoGameOcrResult result;
@@ -166,7 +188,106 @@ static void test_csv_fields_and_metadata(void)
     check_cell(csv, 1, 17, "900"); check_cell(csv, 1, 23, "2");
     check_cell(csv, 1, 28, "500000");
     check_cell(csv, 1, 40, "800:30:50:950:300000|400:30:25:1023:200000");
+    check_cell(csv, 0, 41, "characters");
+    check_cell(csv, 1, 41, "8"); /* 日本語 です はい 次: not 「」, the comma, the quotes or the breaks */
     TEST_CHECK(!*row_start(csv, 2));
+}
+
+/* 0.8.0's header (#187): the columns a file it began holds, which every row
+ * still has in these positions. The characters column is appended after them. */
+static const char header_080[] =
+    "uuid,given_identifier,name,line,time,platform,title_id,engine,model,raw_line,"
+    "scene,region_seq,monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,"
+    "fb_width,fb_height,fb_pitch,fb_format,lines,recognized,frames,find_us,load_us,"
+    "recognize_us,capture_us,captures,tears,region_sum,source,capture_memory,"
+    "capture_bytes,strip_rows,workspace_bytes,resident_bytes,fallback,line_metrics";
+
+static unsigned cells(const char *csv, unsigned row)
+{
+    char value[8192];
+    const char *p = row_start(csv, row);
+    unsigned n = 1;
+    if (!*p) return 0;
+    while (cell(&p, value, sizeof(value)) == ',') n++;
+    return n;
+}
+
+static void test_header_keeps_080_columns(void)
+{
+    char csv[16384], wanted[1024];
+    reset();
+    VjoHistoryRecord r = record("「また明日。」");
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    read_history(csv, sizeof(csv));
+    snprintf(wanted, sizeof(wanted), "%s,characters\n", header_080);
+    TEST_CHECK(!strncmp(csv, wanted, strlen(wanted)));
+    TEST_MSG("header: %.*s", (int)(strchr(csv, '\n') - csv), csv);
+    TEST_CHECK(cells(csv, 0) == 42 && cells(csv, 1) == 42);
+    check_cell(csv, 1, 41, "4"); /* また明日 */
+
+    /* A file 0.8.0 began keeps its header: the rows appended now have one cell
+     * more than it names, the 42nd the characters (docs/ocr-history.md). */
+    reset();
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    TEST_ASSERT(fd >= 0);
+    TEST_ASSERT(write(fd, header_080, strlen(header_080)) == (ssize_t)strlen(header_080));
+    TEST_ASSERT(write(fd, "\n", 1) == 1);
+    close(fd);
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    read_history(csv, sizeof(csv));
+    TEST_CHECK(cells(csv, 0) == 41 && cells(csv, 1) == 42);
+    check_cell(csv, 1, 3, "「また明日。」");
+    check_cell(csv, 1, 41, "4"); /* また明日 */
+    TEST_CHECK(!strstr(strchr(csv, '\n') + 1, "uuid,given_identifier"));
+}
+
+/* What the count is for each kind of text (core/reading_chars.h), in the file
+ * and from the function itself. */
+static void test_characters_column(void)
+{
+    static const struct { const char *text; unsigned characters; } cases[] = {
+        {"ひらがなカタカナ", 8},
+        {"漢字と仮名", 5},
+        {"OK, 2人で100円!", 9},           /* ASCII letters and digits count; the comma, space and ! do not */
+        {"「えっ……？」『うん』", 4},     /* brackets, ellipses and marks do not */
+        {"コーヒー・タイム", 7},          /* ー counts, the middle dot not */
+        {"人々　ヶ月〆", 5},              /* 々 ヶ 〆 count, the ideographic space not */
+        {"ｶﾀｶﾅ", 4},                      /* half-width katakana */
+        {"\xF0\xA0\xAE\x9Fる", 2},        /* 𠮟: one character, 4 bytes, a surrogate pair in UTF-16 */
+        {"\xF0\x9F\x98\x80笑", 1},        /* an emoji is a symbol */
+        {"一行目\n二行目\r\n三", 7},     /* wrapped lines: the breaks count nothing */
+        {"♪〜〜♪", 0},                    /* text, but no character: written, with 0 */
+        {"\xC1\x81\xE0\x81\x81", 0},     /* 'A' in overlong forms */
+        {"\xF0\x83\x81\x82", 0},          /* あ in an overlong form */
+        {"\xED\xA0\x80\xF4\x90\x80\x80\xFF", 0}, /* a surrogate, past U+10FFFF, an invalid byte */
+        {"あ\x80い\xE3\x81", 2},           /* a stray continuation byte, a cut sequence at the end */
+    };
+    char csv[65536], wanted[16];
+    reset();
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        size_t n = strlen(cases[i].text);
+        TEST_CHECK(vjo_reading_characters(cases[i].text, n) == cases[i].characters);
+        TEST_MSG("case %zu: %u, wanted %u", i, (unsigned)vjo_reading_characters(cases[i].text, n),
+                 cases[i].characters);
+        VjoHistoryRecord r = record(cases[i].text);
+        r.time_us += i;
+        TEST_CHECK(vjo_history_append(&r) == 1);
+    }
+    read_history(csv, sizeof(csv));
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        snprintf(wanted, sizeof(wanted), "%u", cases[i].characters);
+        check_cell(csv, (unsigned)i + 1, 3, cases[i].text);
+        check_cell(csv, (unsigned)i + 1, 41, wanted);
+    }
+    TEST_CHECK(vjo_reading_characters("", 0) == 0);
+    TEST_CHECK(vjo_reading_characters("あい", 3) == 1); /* only len bytes: い is cut */
+    TEST_CHECK(vjo_reading_characters("あ\0い", 7) == 2); /* len bytes, not a string: a NUL counts nothing */
+    /* The line is the game worker's normalised text, in which the full-width
+     * forms are ASCII (core/textnorm.h): they count as the letters they are. */
+    char fw[64] = "ＯＫ！１２３ＡＢｃ";
+    TEST_CHECK(vjo_reading_characters(fw, strlen(fw)) == 0);
+    vjo_text_normalize(fw, NULL);
+    TEST_CHECK(!strcmp(fw, "OK!123ABc") && vjo_reading_characters(fw, strlen(fw)) == 8);
 }
 
 static void test_adjacent_dedup_and_header(void)
@@ -207,8 +328,16 @@ static void test_maximum_text_and_short_writes(void)
     TEST_CHECK(vjo_history_append(&r) == 1);
     TEST_CHECK(writes > 100);
     read_history(csv, sizeof(csv));
-    check_cell(csv, 1, 3, longest); check_cell(csv, 1, 9, "");
+    check_cell(csv, 1, 3, longest); check_cell(csv, 1, 9, ""); check_cell(csv, 1, 41, "0");
     TEST_CHECK(!*row_start(csv, 2));
+
+    reset(); /* the most kana the text holds: 1,365 of 3 bytes */
+    for (size_t i = 0; i + 3 < sizeof(longest); i += 3) memcpy(longest + i, "あ", 3);
+    longest[sizeof(longest) - 1] = 0;
+    r = record(longest);
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    read_history(csv, sizeof(csv));
+    check_cell(csv, 1, 3, longest); check_cell(csv, 1, 41, "1365");
 }
 
 static void test_failures_roll_back_and_retry(void)
@@ -290,8 +419,273 @@ static void test_empty_and_invalid(void)
     TEST_CHECK(vjo_history_append(NULL) < 0 && !opens);
 }
 
+/* ---- line history: the reader (docs/line-history.md) ---- */
+
+static uint8_t visit_mem[16384], scratch_mem[24 * 1024] __attribute__((aligned(8)));
+static VjoHistory visit;
+static VjoArena visit_lines, scratch;
+
+static int load(const char *current, const char *uuid)
+{
+    memset(&visit, 0, sizeof(visit));
+    visit.line[0] = current;
+    vjo_arena_init(&visit_lines, visit_mem, sizeof(visit_mem));
+    vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
+    vjo_arena_alloc(&scratch, 24); /* something of the caller's below the reader's window */
+    char match[32];
+    snprintf(match, sizeof(match), "%s\",", uuid); /* the column, its closing quote and comma (worker.c) */
+    int rc = vjo_history_load(&visit, &visit_lines, match, VJO_FILTER_LINES, &scratch);
+    TEST_CHECK(scratch.used == 24); /* the window is released */
+    return rc;
+}
+
+/* n lines "<prefix><i>行目「台詞」" (and a Latin row the overlay does not show) of game tid, appended
+ * by the real writer, each a different line */
+static void append_lines(VjoHistoryRecord *r, const char *tid, const char *prefix, int from, int n)
+{
+    strcpy(r->title_id, tid);
+    for (int i = from; i < from + n; i++) {
+        memset(result.text, 0, sizeof(result.text)); /* no raw text after it */
+        snprintf(result.text, sizeof(result.text), "%s%d行目「台詞」\nAUTO", prefix, i);
+        r->time_us += 1000000;
+        TEST_ASSERT(vjo_history_append(r) == 1);
+    }
+}
+
+static void test_reader_this_games_lines_from_the_files_end(void)
+{
+    char want[96];
+    struct stat st;
+    reset();
+    VjoHistoryRecord r = record("x");
+    append_lines(&r, "PCSG00415", "前", 0, 60);
+    append_lines(&r, "PCSG00002", "他", 0, 40); /* another game, in between */
+    append_lines(&r, "PCSG00415", "", 0, 20);
+    TEST_CHECK(stat(path, &st) == 0 && st.st_size > VJO_HISTORY_WINDOW + 4096); /* more than is read */
+    int n = load("19行目「台詞」", "vita-PCSG00415");
+    TEST_CHECK(n == visit.n && n > 20 && n <= VJO_HISTORY_LINES && read_opens == 1 && reads == 1);
+    /* the newest record is the current text: -1 is the line before it, then the earlier ones, as far
+     * back as the window reaches (the oldest record in it, cut by its start, is not read) */
+    for (int k = 1; k <= n; k++) {
+        int i = 19 - k;
+        if (i >= 0)
+            snprintf(want, sizeof(want), "%d行目「台詞」", i);
+        else
+            snprintf(want, sizeof(want), "前%d行目「台詞」", 60 + i);
+        TEST_CHECK(!strcmp(visit.line[k], want)); /* without the Latin row, as the overlay shows the text */
+        TEST_MSG("-%d: '%s', want '%s'", k, visit.line[k], want);
+    }
+    /* the other game's own lines, the same way: as many as a visit keeps; a game with none */
+    TEST_CHECK(load("", "vita-PCSG00002") == VJO_HISTORY_LINES && !strcmp(visit.line[1], "他39行目「台詞」") &&
+               !strcmp(visit.line[VJO_HISTORY_LINES], "他8行目「台詞」"));
+    TEST_CHECK(load("", "vita-PCSG00003") == 0 && visit.n == 0);
+    /* reads short of what was asked gather the window all the same */
+    read_limit = 1000;
+    reads = 0;
+    TEST_CHECK(load("19行目「台詞」", "vita-PCSG00415") == n && !strcmp(visit.line[1], "18行目「台詞」") && reads > 20);
+}
+
+static void test_reader_reads_a_bounded_tail(void)
+{
+    struct stat st;
+    reset();
+    VjoHistoryRecord r = record("x");
+    /* What a record takes, as the writer writes it: a textbox's three rows of 32 characters (3 B each),
+     * the recognizer's raw text as long, three lines' metrics; what the window reaches back */
+    {
+        char line[400] = "", one[] = "昨日の夜は遅くまで台所で料理の本を読んでいたので今朝は眠かった。"; /* invented */
+        size_t n = 0;
+        for (int row = 0; row < 3; row++) {
+            n += (size_t)snprintf(line + n, sizeof(line) - n, "%s%s", row ? "\n" : "", one);
+        }
+        memset(result.text, 0, sizeof(result.text));
+        memcpy(result.text, line, n);
+        memcpy(result.text + n + 1, line, n); /* the raw text after the normalised one */
+        result.recognized = 3;
+        result.line[2] = result.line[1];
+        TEST_ASSERT(vjo_history_append(&r) == 1);
+        TEST_CHECK(stat(path, &st) == 0);
+        size_t header = 0;
+        char csv[1024];
+        read_history(csv, sizeof(csv));
+        header = (size_t)(strchr(csv, '\n') - csv) + 1;
+        printf("measure: a record of a %zu-byte line (three rows) and its raw text: %zu B; the %u B window holds %zu\n",
+               n, (size_t)st.st_size - header, VJO_HISTORY_WINDOW, VJO_HISTORY_WINDOW / ((size_t)st.st_size - header));
+        TEST_CHECK((size_t)st.st_size - header > 2 * n && (size_t)st.st_size - header < 2 * n + 400);
+        reset();
+        r = record("x");
+    }
+    append_lines(&r, "PCSG00415", "古", 0, 5);
+    append_lines(&r, "PCSG00002", "他", 0, 300); /* far more than the window holds */
+    TEST_CHECK(stat(path, &st) == 0 && st.st_size > 2 * VJO_HISTORY_WINDOW);
+    TEST_CHECK(load("", "vita-PCSG00415") == 0 && visit.n == 0);
+    TEST_CHECK(reads == 1); /* one window, the file's last bytes: this game's lines are older */
+    /* a game with fewer lines in the file than a visit holds: all of them, the file read whole */
+    reset();
+    r = record("x");
+    append_lines(&r, "PCSG00415", "", 0, 3);
+    TEST_CHECK(load("", "vita-PCSG00415") == 3 && reads == 1);
+    TEST_CHECK(!strcmp(visit.line[1], "2行目「台詞」") && !strcmp(visit.line[3], "0行目「台詞」"));
+}
+
+static void test_reader_failures(void)
+{
+    char pad[520], want[600];
+    struct stat st;
+    reset();
+    TEST_CHECK(load("", "vita-PCSG00415") < 0 && visit.n == 0); /* no history.csv yet */
+    /* lines of about 530 B: the window holds fewer records than a visit's 32 */
+    for (int i = 0; i < 170; i++)
+        memcpy(pad + 3 * i, "あ", 3);
+    pad[510] = 0;
+    VjoHistoryRecord r = record("x");
+    append_lines(&r, "PCSG00415", pad, 0, 60);
+    read_open_error = 1;
+    TEST_CHECK(load("", "vita-PCSG00415") == (int)0x80010002 && visit.n == 0);
+    read_open_error = 0;
+    /* a read that fails: nothing read, nothing kept */
+    reads = 0;
+    read_error = 1;
+    TEST_CHECK(load("", "vita-PCSG00415") == 0 && visit.n == 0 && reads == 1);
+    read_error = 0;
+    /* the file shorter than its size said (an append rolled back meanwhile): the window is read short
+     * and its last record, cut in its line, skipped */
+    TEST_CHECK(stat(path, &st) == 0);
+    reads = 0;
+    read_eof_at = st.st_size - 400;
+    int n = load("", "vita-PCSG00415");
+    snprintf(want, sizeof(want), "%s58行目「台詞」", pad);
+    TEST_CHECK(n > 5 && n < VJO_HISTORY_LINES && reads == 2 && !strcmp(visit.line[1], want)); /* the data, then the end */
+    read_eof_at = 0;
+    snprintf(want, sizeof(want), "%s59行目「台詞」", pad);
+    TEST_CHECK(load("", "vita-PCSG00415") == n + 1 && !strcmp(visit.line[1], want));
+    /* a scratch too small for the window: nothing read, nothing held */
+    read_opens = 0;
+    memset(&visit, 0, sizeof(visit));
+    visit.line[0] = "";
+    vjo_arena_init(&visit_lines, visit_mem, sizeof(visit_mem));
+    vjo_arena_init(&scratch, scratch_mem, VJO_HISTORY_WINDOW);
+    TEST_CHECK(vjo_history_load(&visit, &visit_lines, "vita-PCSG00415\",", VJO_FILTER_LINES, &scratch) < 0 &&
+               visit.n == 0 && scratch.used == 0 && !read_opens);
+}
+
+/* The window's edge: a record that starts exactly at the window's first byte (the file's size less
+ * VJO_HISTORY_WINDOW) is read, as the byte before the window, a newline, says it starts a record; one
+ * starting a byte later is read too, and one starting a byte earlier is cut by the window and skipped. */
+static void lines_of_a_kilobyte(VjoHistoryRecord *r, int n)
+{
+    char pad[3 * 250 + 1];
+    for (int k = 0; k < 250; k++)
+        memcpy(pad + 3 * k, "あ", 3);
+    pad[sizeof(pad) - 1] = 0;
+    for (int i = 0; i < n; i++) { /* a short line and a long raw text after it: about 1 KB a record */
+        memset(result.text, 0, sizeof(result.text));
+        int len = snprintf(result.text, sizeof(result.text), "%d行目", i);
+        memcpy(result.text + len + 1, pad, sizeof(pad) - 1);
+        r->time_us += 1000000;
+        TEST_ASSERT(vjo_history_append(r) == 1);
+    }
+}
+
+static void test_reader_the_windows_first_byte(void)
+{
+    static char csv[160 * 1024];
+    char want[64];
+    for (int shift = -1; shift <= 1; shift++) {
+        reset();
+        VjoHistoryRecord r = record("x");
+        lines_of_a_kilobyte(&r, 80); /* about 23 records in the window: fewer than a visit's 32 */
+        size_t size = read_history(csv, sizeof(csv));
+        int n = 30, oldest = -1;
+        snprintf(want, sizeof(want), "\"%d行目", n);
+        const char *line = strstr(csv, want);
+        TEST_ASSERT(line != NULL);
+        size_t start = (size_t)(line - csv);
+        while (start && csv[start - 1] != '\n')
+            start--; /* the record's first byte, after the newline the record before it ends with */
+        TEST_ASSERT(start > 0 && csv[start] == '"' && start + VJO_HISTORY_WINDOW + 1 < size);
+        /* the file ends VJO_HISTORY_WINDOW bytes after that start (less shift): its last record is cut */
+        TEST_ASSERT(truncate(path, (off_t)(start + VJO_HISTORY_WINDOW - (size_t)shift)) == 0);
+        int got = load("", "vita-PCSG00415");
+        TEST_ASSERT(got > 0 && got < VJO_HISTORY_LINES);
+        sscanf(visit.line[got], "%d", &oldest);
+        /* shift 0: the record starts at the window's first byte; 1: a byte inside it; -1: before it */
+        TEST_CHECK_(oldest == (shift < 0 ? n + 1 : n), "shift %d: the oldest line read is %d", shift, oldest);
+    }
+}
+
+/* The reader beside the writer's own records: its maximum text with quotes, and a record cut by a
+ * power loss (the file's last bytes) */
+static void test_reader_maximum_and_cut_records(void)
+{
+    static char csv[3 * VJO_GAME_OCR_TEXT_BYTES + 4096];
+    char longest[VJO_GAME_OCR_TEXT_BYTES];
+    size_t n = 0, size, line;
+    reset();
+    VjoHistoryRecord r = record("最初");
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    for (int i = 0; i < 1023; i++, n += 4) /* 4,095 B: "あ\"" 1,023 times and "あ" */
+        memcpy(longest + n, "あ\"", 4);
+    memcpy(longest + n, "あ", 4);
+    memset(result.text, 0, sizeof(result.text));
+    strcpy(result.text, longest);
+    TEST_CHECK(strlen(longest) == sizeof(longest) - 1 && vjo_history_append(&r) == 1);
+    memset(result.text, 0, sizeof(result.text));
+    strcpy(result.text, "最後");
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    TEST_CHECK(load("最後", "vita-PCSG00415") == 2 && !strcmp(visit.line[1], longest) && !strcmp(visit.line[2], "最初"));
+    /* the last record cut after its line's field, the comma and the time's first digit: the line is read;
+     * cut before that digit, it is not (a record run into the next append has a '"' there) */
+    size = read_history(csv, sizeof(csv));
+    line = (size_t)(strstr(csv, "\"最後\",") - csv) + strlen("\"最後\",");
+    TEST_ASSERT(truncate(path, (off_t)line + 1) == 0);
+    TEST_CHECK(load("", "vita-PCSG00415") == 3 && !strcmp(visit.line[1], "最後"));
+    TEST_ASSERT(truncate(path, (off_t)line) == 0);
+    TEST_CHECK(load("", "vita-PCSG00415") == 2 && !strcmp(visit.line[1], longest));
+    TEST_ASSERT(truncate(path, (off_t)line - 1) == 0);
+    TEST_CHECK(load("", "vita-PCSG00415") == 2 && !strcmp(visit.line[1], longest));
+    TEST_CHECK(size > line);
+}
+
+/* Native text uses the same CSV writer and reader as OCR. The appended characters column and the
+ * hook engine marker must not change how a quoted, wrapped dialogue is recovered for the popup. */
+static void test_reader_hook_rows_with_characters(void)
+{
+    static const char hooked[] = "「日本語,\"はい\"」\n続き";
+    char csv[16384];
+    reset();
+    VjoHistoryRecord r = record("前の行");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    r = record(hooked);
+    result.text_from = VJO_HOOK_SITE_STREAMS + 1u;
+    result.hook_flags = VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR;
+    strcpy(result.text + strlen(result.text) + 1, "raw OCR text is not the displayed line");
+    r.time_us++;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    r = record("今の行");
+    r.time_us += 2;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    read_history(csv, sizeof(csv));
+    check_cell(csv, 1, 7, "vocr");
+    check_cell(csv, 2, 3, hooked);
+    check_cell(csv, 2, 7, "hook");
+    check_cell(csv, 2, 41, "7"); /* 日本語 はい 続き; neither quotes nor the comma nor the newline */
+    check_cell(csv, 3, 7, "vocr");
+    TEST_CHECK(cells(csv, 2) == 42);
+    TEST_CHECK(load("今の行", "vita-PCSG00415") == 2 && read_opens == 1 && reads == 1);
+    TEST_CHECK(!strcmp(visit.line[1], hooked) && !strcmp(visit.line[2], "前の行"));
+}
+
 TEST_LIST = {
     {"CSV quotes UTF-8 and complete OCR metadata", test_csv_fields_and_metadata},
+    {"0.8.0's columns stay; characters is appended, also to its files", test_header_keeps_080_columns},
+    {"characters: letters and digits, not marks, bytes or breaks", test_characters_column},
+    {"line history: this game's lines, newest first, from the file's end", test_reader_this_games_lines_from_the_files_end},
+    {"line history: a bounded tail of the file", test_reader_reads_a_bounded_tail},
+    {"line history: no file, read errors, no scratch", test_reader_failures},
+    {"line history: the writer's maximum text and cut records", test_reader_maximum_and_cut_records},
+    {"line history: a record at the window's first byte", test_reader_the_windows_first_byte},
+    {"line history: hook dialogue with characters, quotes and wrapped lines", test_reader_hook_rows_with_characters},
     {"adjacent rescans dedup but A/B/A and other games remain", test_adjacent_dedup_and_header},
     {"maximum text streams through bounded short writes", test_maximum_text_and_short_writes},
     {"I/O failures restore file and allow retry", test_failures_roll_back_and_retry},

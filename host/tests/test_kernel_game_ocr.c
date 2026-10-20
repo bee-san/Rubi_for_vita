@@ -1043,6 +1043,9 @@ static void invalid_capture_and_wire(void)
     r.flags = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.flags = 0;
     r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* VJO_GAME_OCR_S_* bits 5-31 unknown (API 26: 4) */
+    r.speed = VJO_GAME_OCR_S_TRIM; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 32: bit 6, a shot's only */
+    r.speed = 0x80; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    TEST_CHECK(VJO_GAME_OCR_S_TRIM == 0x40u); /* bit 5 is draft #228's scan screen (VJO_GAME_OCR_S_SPOT) */
     r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate: known */
     uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
@@ -1378,15 +1381,26 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     }
     r = shot_request(); r.shot[32] = '0'; /* not ended where the 32 digits end */
     TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
-    /* a shot carries no job policy, no tiers and no speed */
+    /* a shot carries no job policy, no tiers and no speed but (API 32) VJO_GAME_OCR_S_TRIM */
     r = shot_request(); r.flags |= VJO_GAME_OCR_F_BLANK; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.flags |= VJO_GAME_OCR_F_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.tiers = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 26 */
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM | VJO_GAME_OCR_S_BOOST; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM << 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 5 */
+    TEST_CHECK(VJO_GAME_OCR_S_SHOT_ALL == VJO_GAME_OCR_S_TRIM && !(VJO_GAME_OCR_S_TRIM & VJO_GAME_OCR_S_ALL));
     /* an OCR job names no card; without models it is refused as before */
     r = make_request(); memcpy(r.shot, SHOT_ID, sizeof(SHOT_ID)); TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     TEST_CHECK(!valid && !pending);
+    /* API 32: a shot that trims its black bars is accepted, the bit given to the worker as it was asked */
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM;
+    TEST_CHECK(vjoOcrSubmit(&r) > 0 && request.speed == VJO_GAME_OCR_S_TRIM);
+    caller = 7; TEST_CHECK(vjoOcrTake(&r) == 0 && r.speed == VJO_GAME_OCR_S_TRIM && r.flags == VJO_GAME_OCR_F_SHOT);
+    message.size = sizeof(message); message.seq = r.seq; message.text[0] = 0;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3;
     /* F_FULL is a shot's anyway; without a model, which a shot never opens */
     r = shot_request(); r.flags |= VJO_GAME_OCR_F_FULL;
     TEST_CHECK(vjoOcrSubmit(&r) > 0 && request.width == FB_W && request.height == FB_H && !request.x && !request.y);
@@ -2247,8 +2261,80 @@ static void modification_times_pack_distinctly(void)
     TEST_CHECK(pack_time(&c) > pack_time(&b));
 }
 
+/* API 31: an OCR job's hook pick is automatic, a stream ID (1..VJO_HOOK_STREAMS: a table site or a CALL
+ * caller) or OCR only, and reaches the worker as sent; any other value, or a shot that names one (a shot
+ * answers from no text), is refused before anything is queued. The grown request and result cross the
+ * transport whole (their sizes, the text at its new offset). */
+static void hook_pick_is_checked(void)
+{
+    static const uint32_t ok[] = {VJO_HOOK_PICK_AUTO, 1u, VJO_HOOK_SITE_STREAMS, VJO_HOOK_SITE_STREAMS + 1u,
+                                  VJO_HOOK_STREAMS, VJO_HOOK_PICK_OCR};
+    static const uint32_t bad[] = {VJO_HOOK_STREAMS + 1u, 0x80u, 0xFEu, 0x100u, 0x1FFu, 0xFFFFFFFFu};
+    for (unsigned i = 0; i < sizeof(ok) / sizeof(ok[0]); i++) {
+        setup();
+        VjoGameOcrRequest r = make_request(), got = {0};
+        r.hook_pick = ok[i];
+        caller = 3;
+        int seq = vjoOcrSubmit(&r);
+        TEST_CHECK_(seq > 0, "pick 0x%X", ok[i]);
+        caller = 7;
+        TEST_CHECK(vjoOcrTake(&got) == 0 && got.seq == (uint32_t)seq && got.hook_pick == ok[i]);
+        /* the result's new fields and its text come back as the worker wrote them */
+        memset(&message, 0, sizeof(message));
+        message.size = sizeof(message); message.seq = (uint32_t)seq;
+        message.text_from = ok[i] <= VJO_HOOK_STREAMS ? ok[i] : 0u;
+        message.hook_flags = VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR;
+        message.hook_score = 1000u; message.hook_streams = 0x000FFFFFu;
+        message.hook_mode = VJO_TEXT_SOURCE_AUTO; message.hook_installed = 1u << 16 | 8u; message.hook_refused = 3u;
+        strcpy(message.text, "猫が");
+        TEST_CHECK(vjoOcrComplete(&message) == 0);
+        VjoGameOcrResult out;
+        memset(&out, 0, sizeof(out));
+        caller = 3;
+        TEST_CHECK(vjoOcrRead((uint32_t)seq, &out) == 0);
+        TEST_CHECK(out.size == sizeof(out) && !strcmp(out.text, "猫が") && out.text_from == message.text_from &&
+                   out.hook_flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR) && out.hook_score == 1000u &&
+                   out.hook_streams == 0x000FFFFFu && out.hook_mode == VJO_TEXT_SOURCE_AUTO &&
+                   out.hook_installed == (1u << 16 | 8u) && out.hook_refused == 3u);
+    }
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        setup();
+        VjoGameOcrRequest r = make_request();
+        r.hook_pick = bad[i];
+        caller = 3;
+        TEST_CHECK_(vjoOcrSubmit(&r) == VJO_ERR_ARG && !pending && !valid, "pick 0x%X", bad[i]);
+    }
+    /* The combined interface keeps a screenshot's source pick empty, with trimming both off and on.
+     * Exercise submission and Take together: accepting TRIM must not bypass hook-pick validation. */
+    static const uint32_t shot_picks[] = {1u, VJO_HOOK_STREAMS, VJO_HOOK_PICK_OCR,
+                                          VJO_HOOK_STREAMS + 1u, 0xFFFFFFFFu};
+    for (unsigned trim = 0; trim < 2; trim++) {
+        setup();
+        VjoGameOcrRequest r = shot_request(), got = {0};
+        r.speed = trim ? VJO_GAME_OCR_S_TRIM : 0u;
+        caller = 3;
+        for (unsigned i = 0; i < sizeof(shot_picks) / sizeof(shot_picks[0]); i++) {
+            r.hook_pick = shot_picks[i];
+            TEST_CHECK_(vjoOcrSubmit(&r) == VJO_ERR_ARG && !pending && !valid,
+                        "shot speed 0x%X, pick 0x%X", r.speed, r.hook_pick);
+        }
+        r.hook_pick = VJO_HOOK_PICK_AUTO;
+        int seq = vjoOcrSubmit(&r);
+        TEST_ASSERT(seq > 0);
+        caller = 7;
+        TEST_CHECK(vjoOcrTake(&got) == 0 && got.size == sizeof(got) && got.seq == (uint32_t)seq &&
+                   got.speed == r.speed && got.hook_pick == VJO_HOOK_PICK_AUTO && !strcmp(got.shot, SHOT_ID));
+    }
+    /* The new fields sit before the text, which stays the struct's last field (its NUL check and the
+     * Shell's vjo_text_raw read the whole buffer). */
+    TEST_CHECK(offsetof(VjoGameOcrResult, hook_refused) < offsetof(VjoGameOcrResult, text) &&
+               offsetof(VjoGameOcrResult, text) + sizeof(((VjoGameOcrResult *)0)->text) == sizeof(VjoGameOcrResult));
+    TEST_CHECK(offsetof(VjoGameOcrRequest, hook_pick) + sizeof(uint32_t) == sizeof(VjoGameOcrRequest));
+}
+
 TEST_LIST = {
     {"one worker thread per game: a second copy's is refused (#138)", second_worker_thread_is_refused},
+    {"API 31: the hook pick is checked; the grown request and result cross whole", hook_pick_is_checked},
     {"hand-off: an idle take waits for a submission, bounded", take_wakes_on_submit},
     {"hand-off: a pending read waits for the completion, bounded", read_wakes_on_complete},
     {"hand-off: a read waiting at a shutdown is counted and woken; every waited read gives its count back",

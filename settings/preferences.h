@@ -17,13 +17,17 @@ int vjo_preferences_load(VjoConfig *cfg, VjoArena *scratch);
  * when the save itself then fails. */
 int vjo_preferences_save(int vocr_tier, int japanese_only, int highlight_mode,
                          int dictionary_results, VjoArena *scratch);
-/* The Anki page's settings, saved the same way: anki_mining and anki_screenshot on/off. */
-int vjo_preferences_save_anki(int mining, int screenshot, VjoArena *scratch);
+/* The Anki page's settings, saved the same way: anki_mining, anki_screenshot and (API 32)
+ * anki_screenshot_trim_bars on/off. */
+int vjo_preferences_save_anki(int mining, int screenshot, int trim_bars, VjoArena *scratch);
 /* The OCR page's reading settings, saved the same way: ocr_mode (VJO_OCR_AUTO
  * auto, VJO_OCR_ON_PRESS on_press: the Rubi app's Read text) and
  * ocr_boost_clock (1 on, 0 off: its Speed boost while reading). Any other
  * value is refused (-1) before anything is read or written. */
 int vjo_preferences_save_reading(int ocr_mode, int boost_clock, VjoArena *scratch);
+/* API 31: Text source (config.ini text_source: VJO_SOURCE_AUTO auto, _HOOKS hooks, _OCR ocr), saved as the
+ * others are; a game reads it as it starts (docs/native-hooks.md). 0, or -1 (an unknown source: nothing saved). */
+int vjo_preferences_save_text_source(int source, VjoArena *a);
 /* config.ini's text as the app's load reads it (into the arena): 0 config.ini; 1 its backup
  * (config.ini.bak, when config.ini is missing: a save that stopped between its two renames); 2 there
  * is neither (*out NULL); -1 unreadable. The installer's update patches this text and writes the

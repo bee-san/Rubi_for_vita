@@ -63,7 +63,8 @@
  * (core/jpegsw.h) and has the kernel's worker thread write it, a VJO_GAME_OCR_SHOT_CHUNK
  * at a time, to VJO_GAME_OCR_SHOT_DIR/<shot>.jpg (vjoOcrShotWrite, vjoOcrShotSave): the
  * card's screenshot, beside its record. A shot recognizes nothing, opens no model and
- * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed. */
+ * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed but
+ * (API 32) VJO_GAME_OCR_S_TRIM. */
 #define VJO_GAME_OCR_F_SHOT 0x4000u
 #define VJO_GAME_OCR_F_ALL 0xFFFF7FFFu
 /* The shot's file: the Anki queue (core/anki_queue.h VJO_QUEUE_DIR; a host test checks the
@@ -93,6 +94,12 @@
  * bit left. */
 #define VJO_GAME_OCR_S_GATE 0x10u
 #define VJO_GAME_OCR_S_ALL 0x1Fu
+/* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
+ * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
+ * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
+ * Not bit 5: draft #228's scan screen (API 30) has it (VJO_GAME_OCR_S_SPOT), so the two can merge. */
+#define VJO_GAME_OCR_S_TRIM 0x40u
+#define VJO_GAME_OCR_S_SHOT_ALL VJO_GAME_OCR_S_TRIM
 #define VJO_PACE_SLOW_US 25000 /* a frame gap over 25 ms: a dropped frame at 60 fps */
 
 typedef struct {
@@ -123,7 +130,37 @@ typedef struct {
      * NUL; the kernel writes VJO_GAME_OCR_SHOT_DIR/<shot>.jpg, a name no caller supplies. Empty for
      * an OCR job. */
     char shot[VJO_GAME_OCR_SHOT_ID_BYTES];
+    /* API 31, native text hooks (docs/native-hooks.md): what this job may answer from.
+     * VJO_HOOK_PICK_AUTO: OCR, its text replaced by a hook stream's that agrees with it (the worker's
+     * automatic pick, which may lock a stream and then answer without recognition); a stream ID
+     * 1..VJO_HOOK_STREAMS: that stream's latest text, pinned, without recognition (OCR when it has none);
+     * VJO_HOOK_PICK_OCR: OCR only. Normal Shell jobs use AUTO; explicit picks are for diagnostics. */
+    uint32_t hook_pick;
 } VjoGameOcrRequest;
+
+/* API 31: hook streams (game_ocr/hooks.h). IDs 1..VJO_HOOK_SITE_STREAMS are table sites (Luna's or
+ * Rubi's own), the rest CALL callers (the game's string copies, keyed by caller); an ID names the same
+ * stream for the whole game session. */
+#define VJO_HOOK_SITE_STREAMS 8u
+#define VJO_HOOK_CALL_STREAMS 12u
+#define VJO_HOOK_STREAMS (VJO_HOOK_SITE_STREAMS + VJO_HOOK_CALL_STREAMS)
+#define VJO_HOOK_PICK_AUTO 0u
+#define VJO_HOOK_PICK_OCR 0xFFu
+/* A pick the kernel's vjoOcrSubmit accepts in an OCR job (a shot's is VJO_HOOK_PICK_AUTO). */
+#define VJO_HOOK_PICK_OK(p) ((p) <= VJO_HOOK_STREAMS || (p) == VJO_HOOK_PICK_OCR)
+/* VjoGameOcrResult.hook_streams: bit (id - 1) for each stream holding text, for diagnostics.
+ * Sites 1..8 and CALL callers 9..20 need not be contiguous. */
+#define VJO_HOOK_STREAM_BIT(id) (1u << ((id) - 1u))
+/* VjoGameOcrResult.text_from: 0 = OCR (or no text), else the stream ID whose text text[] holds. */
+#define VJO_TEXT_FROM_OCR 0u
+/* VjoGameOcrResult.hook_flags. */
+#define VJO_HOOK_R_AGREED 0x01u /* text_from's stream agreed with this job's OCR text (hook_score) */
+#define VJO_HOOK_R_LOCKED 0x02u /* text_from's stream is locked: two agreements in a row */
+#define VJO_HOOK_R_PINNED 0x04u /* the request pinned text_from's stream (hook_pick) */
+#define VJO_HOOK_R_NO_OCR 0x08u /* answered without recognition (the region's first capture pass only) */
+#define VJO_HOOK_R_SITE 0x10u   /* text_from is a table site (else a CALL caller) */
+#define VJO_HOOK_R_UNLOCK 0x20u /* this job unlocked the stream that was locked (two disagreements) */
+#define VJO_HOOK_R_CALLS_FULL 0x40u /* every CALL slot is taken: a new caller was dropped or replaced one */
 
 /* vjoOcrModelOpen's `which`: the request's model or its fallback, or (API 20)
  * the LM of tier which - VJO_GAME_OCR_OPEN_LM + 1, up to the request's LM tier,
@@ -225,9 +262,10 @@ enum {
                             rc the longest gap (us), bytes their sum (us), sum the gaps over
                             VJO_PACE_SLOW_US; and since the job before: us how many frames, main their
                             sum, cdram the longest gap, phycont the gaps over VJO_PACE_SLOW_US */
-    VJO_GSTEP_SHOT,      /* API 23, a shot's encoding, one per try: kind the JPEG quality, arg the try (1-3),
-                            rc 0 or why it stopped (VJO_E_TOO_LARGE: over VJO_GAME_OCR_SHOT_MAX, the next try
-                            encodes a lower quality), bytes the JPEG's, sum the strips read, us the try */
+    VJO_GSTEP_SHOT,      /* API 23, a shot's encoding, one per try: kind the JPEG quality, arg the try (1-3; API 32:
+                            1-4, a frame whose bars came to another picture than its first rows' read again), rc 0
+                            or why it stopped (VJO_E_TOO_LARGE: over VJO_GAME_OCR_SHOT_MAX, the next try encodes a
+                            lower quality), bytes the JPEG's, sum the strips read, us the try */
     VJO_GSTEP_SAVE,      /* API 23, a shot's file: kind the chunks written, rc 0 or the kernel's error,
                             bytes written, us the writes and the save */
     VJO_GSTEP_GATE,      /* API 26, the text-presence gate (VJO_GAME_OCR_S_GATE), once per job (its last try)
@@ -237,6 +275,12 @@ enum {
                             score + 129 (0..256) | its threshold + 129 << 16 | VJO_GLM_READ (its weights were
                             read from the card in this job), sum the rows it read, us its time (its share of the
                             finder's pass and its decision) */
+    VJO_GSTEP_TRIM,      /* API 32, a shot's black bars (VJO_GAME_OCR_S_TRIM), once: kind VJO_TRIM_* of
+                            core/shottrim.h (0 no bars, 1 trimmed, 2 kept whole: bars that frame no centred
+                            picture, or a black band over 3/10 of the frame at its top), arg how (0 decided by the
+                            first rows, 1 the first rows' guess, every row checked, 2 every row came to another
+                            picture: read again), bytes = the picture's x << 16 | y, sum = its width << 16 | height
+                            (the JPEG's), us the scan's time */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */
@@ -335,6 +379,15 @@ typedef struct {
      * screenshot is frozen: closing the overlay can no longer change it.
      * It is a progress marker then, not a committed file size. */
     uint32_t shot_bytes, shot_quality, shot_tries, shot_block, shot_memory, shot_encode_us, shot_write_us;
+    /* API 31, native text hooks: where text[] came from (VJO_TEXT_FROM_OCR or a stream ID), how
+     * (VJO_HOOK_R_*), the best stream's similarity to this job's OCR text (0..1000; 0 when not compared;
+     * text_from's own when that stream replaced OCR's text), the streams holding text as the job began
+     * (bit ID - 1 of each), and what the worker installed as its game started: the text source word it
+     * applied (a VJO_TEXT_SOURCE_* in the low byte, with VJO_TEXT_SOURCE_NO_SITES when no table site was
+     * tried because of it), table sites hooked << 16 | CALL imports hooked, and sites refused. A
+     * failed result carries them too, with text_from and hook_flags 0 (it has no text). */
+    uint32_t text_from, hook_flags, hook_score, hook_streams;
+    uint32_t hook_mode, hook_installed, hook_refused;
     /* UTF-8 OCR text on success; every failed result carries empty text. API 20:
      * the text is normalised (core/textnorm.h) and the recognizer's own text
      * follows its NUL (vjo_text_raw), for the log. */

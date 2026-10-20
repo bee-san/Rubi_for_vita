@@ -8,10 +8,11 @@
 #include <psp2/kernel/threadmgr.h>
 
 #include "../core/ledger.h"
+#include "../core/port.h"
 #include "../include/vjo_ledger_budget.h"
 #include "shell.h"
 
-static const VjoLedgerItemDef defs[VJO_SL_COUNT] = {
+static const VjoLedgerItemDef defs[VJO_SL_COUNT] VJO_DATA_TABLE(shell_ledger_defs) = {
     [VJO_SL_MODULE] = {"Shell pages", VJO_LEDGER_POOL_SHELL_PAGES},
     [VJO_SL_WORKER_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_SHELL_PAGES},
     [VJO_SL_NET_STACK] = {"VjoNet stack", VJO_LEDGER_POOL_SHELL_PAGES},
@@ -22,6 +23,7 @@ static const VjoLedgerItemDef defs[VJO_SL_COUNT] = {
     [VJO_SL_PAF_RESULTS] = {"result arenas", VJO_LEDGER_POOL_SHELL_PAF},
     [VJO_SL_PAF_ANKI] = {"Anki arena", VJO_LEDGER_POOL_SHELL_PAF},
     [VJO_SL_PAF_UI] = {"overlay text arena", VJO_LEDGER_POOL_SHELL_PAF},
+    [VJO_SL_PAF_HISTORY] = {"line history", VJO_LEDGER_POOL_SHELL_PAF},
 };
 
 VjoLedger g_shell_ledger;

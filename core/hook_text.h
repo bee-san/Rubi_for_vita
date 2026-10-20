@@ -1,0 +1,47 @@
+/* Text a native hook copied out of a game, decoded to UTF-8 (docs/native-hooks.md).
+ * Plain C, no allocation, no platform calls: the game worker uses it at job time,
+ * in its own thread, never inside a hooked game function; host tests link it as is. */
+#ifndef VJO_HOOK_TEXT_H
+#define VJO_HOOK_TEXT_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+/* The encoding of a hook's raw bytes. AUTO (the CALL source's string copies): valid
+ * UTF-8 with at least one non-ASCII character is UTF-8, else CP932. */
+enum {
+    VJO_HOOK_ENC_AUTO = 0,
+    VJO_HOOK_ENC_UTF8 = 1,
+    VJO_HOOK_ENC_UTF16LE = 2,
+    VJO_HOOK_ENC_CP932 = 3,
+    VJO_HOOK_ENC_COUNT
+};
+
+/* Decodes n raw bytes (stopping at the first NUL unit: one 0 byte, or for UTF-16LE
+ * one 0x0000 unit) into NUL-terminated UTF-8 in dst (cap bytes, cap >= 1). A byte
+ * sequence that is not valid in the encoding is dropped (never copied through), a
+ * character that does not fit ends the text at the last whole character. Returns
+ * the bytes written before the NUL; *used, when not NULL, gets the encoding that
+ * was decoded (AUTO resolved to UTF8 or CP932). */
+size_t vjo_hook_decode(unsigned encoding, const uint8_t *src, size_t n, char *dst, size_t cap,
+                       unsigned *used);
+
+/* Japanese characters (hiragana, katakana, CJK ideographs, the CJK symbols and
+ * fullwidth forms blocks, the iteration and prolonged sound marks) in n bytes of
+ * UTF-8; invalid sequences count as none. */
+unsigned vjo_hook_japanese(const char *utf8, size_t n);
+
+/* A cheap test for the CALL source's hook path (a game thread, inside the hooked
+ * string function; its copies are UTF-8 or CP932, never UTF-16): may these n raw
+ * bytes hold Japanese text? 1 when a byte >= 0x81 is among the first min(n, 8)
+ * bytes (a CP932 lead byte or a UTF-8 lead/continuation byte), else 0. No
+ * decoding: the worker decodes and judges later. */
+static inline int vjo_hook_maybe_text(const uint8_t *p, size_t n)
+{
+    size_t k = n < 8 ? n : 8;
+    for (size_t i = 0; i < k; i++)
+        if (p[i] >= 0x81) return 1;
+    return 0;
+}
+
+#endif

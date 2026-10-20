@@ -20,6 +20,7 @@
 #include "psp.h"
 #include "search.h"
 #include "text_layout.h"
+#include "../core/hook_titles.h"
 #include "../core/local_dict.h"
 #include "../core/utf.h"
 #include "../vita/games_storage.h"
@@ -70,6 +71,9 @@
 #define RESULT_BADGE_X 540
 #define RESULT_BADGE_W 44
 #define RESULT_BADGE_PITCH 48
+#define SOURCE_BADGE_X 440 /* API 31: Text source's three choices */
+#define SOURCE_BADGE_W 152
+#define SOURCE_BADGE_PITCH 160
 /* The rows Up/Down select, the page's cards top to bottom: how text is read
  * (the Model size, Read text, Speed boost), then the three lookup cards. They
  * are more than the room between the tabs and the status line: the page
@@ -81,7 +85,8 @@
 #define PREF_SELECTION 3
 #define PREF_HIGHLIGHT 4
 #define PREF_RESULTS 5
-#define PREFERENCES 6
+#define PREF_SOURCE 6 /* API 31: Text source (config.ini text_source), the last card */
+#define PREFERENCES 7
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -262,7 +267,7 @@ static void read_buttons(void)
 }
 
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
-                                  WHITE, DIM, ACCENT, OFF, &buttons};
+                                  WHITE, DIM, ACCENT, OFF, CARD, &buttons};
 
 static void rect(int x, int y, int width, int height, unsigned color) { vita2d_draw_rectangle(x, y, width, height, color); }
 static void hints_row(const char *controls) { wrapped_text(24, 535, 912, DIM, 24, 26, 1, controls); }
@@ -621,6 +626,21 @@ static void set_reading(int ocr_mode, int boost_clock)
     preference_saved(vjo_preferences_save_reading(ocr_mode, boost_clock, &scratch));
 }
 
+/* API 31, Text source (config.ini text_source): its three choices left to right, Automatic, Hooks in
+ * every game, OCR only; a game reads it as it starts, so the save says so. */
+static const int source_choice[3] = {VJO_SOURCE_AUTO, VJO_SOURCE_HOOKS, VJO_SOURCE_OCR};
+
+static int source_index(int source) { return source == VJO_SOURCE_HOOKS ? 1 : source == VJO_SOURCE_OCR ? 2 : 0; }
+
+static void set_text_source(int index)
+{
+    if (index < 0 || index > 2 || source_choice[index] == preferences.text_source) return;
+    if (preferences_locked()) return;
+    preference_saved(vjo_preferences_save_text_source(source_choice[index], &scratch));
+    if (!preference_error)
+        snprintf(preference_status, sizeof(preference_status), "Saved. It applies when a game next starts.");
+}
+
 /* Model size: enter cycles Small -> Normal -> Large; Left/Right step within it. */
 static void set_tier(int tier)
 {
@@ -639,6 +659,10 @@ static void set_dictionary_results(int results)
 
 static void toggle_preference(void)
 {
+    if (preference_selected == PREF_SOURCE) {
+        set_text_source((source_index(preferences.text_source) + 1) % 3);
+        return;
+    }
     if (preference_selected == PREF_RESULTS) {
         set_dictionary_results(preferences.local_dictionary_results % VJO_LOCAL_MAX_DICTS + 1);
         return;
@@ -666,6 +690,10 @@ static void toggle_preference(void)
  * ON/OFF cards). */
 static void set_preference(int right)
 {
+    if (preference_selected == PREF_SOURCE) {
+        set_text_source(source_index(preferences.text_source) + (right ? 1 : -1));
+        return;
+    }
     if (preference_selected == PREF_RESULTS) {
         set_dictionary_results(preferences.local_dictionary_results + (right ? 1 : -1));
         return;
@@ -690,7 +718,7 @@ static void set_preference(int right)
 }
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
-static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H};
+static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
@@ -848,6 +876,22 @@ static void draw_results_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, results_help);
 }
 
+/* API 31: where the overlay's text comes from (docs/native-hooks.md): native text hooks in the games with
+ * a hook entry (the Games page tags them), in every game that is ON, or none. */
+static void draw_source_card(int y)
+{
+    static const char *const names[3] = {"Automatic", "Every game", "OCR only"};
+    static const char *const help[3] = {"Hooks in games with a hook entry, else OCR. From a game's next start.",
+                                        "Hooks in every game that is ON. Applies when a game next starts.",
+                                        "Screenshots only, no hooks. Applies when a game next starts."};
+    int chosen = source_index(preferences.text_source);
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Text source");
+    for (int i = 0; i < 3; i++)
+        badge(SOURCE_BADGE_X + i * SOURCE_BADGE_PITCH, y + CARD_BADGE_Y, SOURCE_BADGE_W, CARD_BADGE_H, names[i],
+              preferences_writable && chosen == i);
+    text(42, y + CARD_HELP_Y, DIM, 24, preferences_writable ? help[chosen] : "Cannot read the saved choice.");
+}
+
 static void draw_card(int i, int y)
 {
     switch (i) {
@@ -856,6 +900,7 @@ static void draw_card(int i, int y)
     case PREF_BOOST: draw_boost_card(y); break;
     case PREF_SELECTION: draw_selection_card(y); break;
     case PREF_HIGHLIGHT: draw_highlight_card(y); break;
+    case PREF_SOURCE: draw_source_card(y); break;
     default: draw_results_card(y); break;
     }
 }
@@ -933,6 +978,12 @@ static void touch_preference(int x, int y)
         else toggle_preference();
         break;
     }
+    case PREF_SOURCE:
+        /* Touch a choice to take it; the rest of the card only focuses. */
+        if (dy >= CARD_BADGE_Y && dy < CARD_BADGE_Y + CARD_BADGE_H && x >= SOURCE_BADGE_X &&
+            (x - SOURCE_BADGE_X) % SOURCE_BADGE_PITCH < SOURCE_BADGE_W && (x - SOURCE_BADGE_X) / SOURCE_BADGE_PITCH < 3)
+            set_text_source((x - SOURCE_BADGE_X) / SOURCE_BADGE_PITCH);
+        break;
     case PREF_RESULTS:
         /* Touch a number to choose it; the rest of the card only focuses. */
         if (dy >= CARD_BADGE_Y && dy < CARD_BADGE_Y + CARD_BADGE_H && x >= RESULT_BADGE_X &&
@@ -972,7 +1023,7 @@ static void draw(void)
     for (int r = 0; r < ROWS && offset + r < count; r++) {
         int index = offset + r, y = GAMES_Y + r * GAME_PITCH;
         const VjoInstalledGame *g = &library[visible[index]];
-        int on = row_on(g);
+        int on = row_on(g), hook;
         vita2d_texture *icon = vjo_icon_cache_get(&icon_cache, g->id);
         focus_card(y, GAME_H, index == selected);
         if (icon) vita2d_draw_texture_scale(icon, 38, y + 4,
@@ -987,9 +1038,11 @@ static void draw(void)
         draw_rows(90, y + 21, WHITE, 22, 24, g->title, title_rows(visible[index]));
         vita2d_disable_clipping();
         badge(788, y + 5, 128, 30, !writable ? "--" : on ? "ON" : "OFF", writable && on);
-        /* PSP games: the tag. */
+        /* PSP games: the tag; API 31: a game with a native text hook entry (Rubi's own, or Luna's table) */
         if (psp_row(g))
             text(260, y + 36, ACCENT, 16, "PSP");
+        else if ((hook = vjo_hook_title_listed(g->id)) != VJO_HOOK_TITLE_NONE)
+            text(260, y + 36, ACCENT, 16, hook == VJO_HOOK_TITLE_RUBI ? "Hook" : "Luna hook");
         text(90, y + 36, DIM, 16, g->id);
     }
     if (!count) wrapped_text(42, GAMES_Y + 42, 870, WHITE, 28, 34, 2,

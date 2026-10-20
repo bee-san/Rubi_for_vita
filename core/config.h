@@ -18,7 +18,10 @@ enum { VJO_OCR_AUTO = 0, VJO_OCR_ON_PRESS = 1 };
  * went with the network too: a set one gives one config warning, an empty one
  * none, and the app's next save and the installer drop the line; log.txt and
  * status.txt stay. */
-enum { VJO_SOURCE_OCR = 0, VJO_SOURCE_AUTO = 1, VJO_SOURCE_HOOKS = 2 };
+/* text_source (API 31, docs/native-hooks.md): the kernel's VJO_TEXT_SOURCE_* (include/vjo_api.h), which
+ * the Shell pushes with vjoSetTextSource whenever it reads the config; a game reads it as it starts. */
+enum { VJO_SOURCE_OCR = VJO_TEXT_SOURCE_OCR, VJO_SOURCE_AUTO = VJO_TEXT_SOURCE_AUTO,
+       VJO_SOURCE_HOOKS = VJO_TEXT_SOURCE_HOOKS };
 enum { VJO_HIGHLIGHT_WORD = 0, VJO_HIGHLIGHT_CHARACTER = 1 };
 /* dictionary: the local .vjdict files, the only dictionary (VJO_DICT_NAME in
  * messages and the log). The self-test reports the value (config
@@ -51,7 +54,7 @@ typedef struct {
     int toggle_button;        /* enum VjoTrigger */
     int subtitle_button;      /* enum VjoTrigger, != toggle_button */
     int ocr_mode;             /* VJO_OCR_* */
-    int text_source;          /* compatibility setting, always screenshot OCR in this build */
+    int text_source;          /* VJO_SOURCE_*: auto (the default) | hooks | ocr; applies at a game's next start */
     char ocr_model_dir[160];
     /* The local engine's model size (API 21): VJO_VOCR_TIER_SMALL, _NORMAL (the
      * default) or _LARGE of include/vjo_vocr_sizes.h; config.ini vocr_tier = small |
@@ -104,6 +107,14 @@ typedef struct {
      * (vita-vn-ocr #100, core/vocr_ocr.h VjoVocrPolicy.gate): a region it says holds no
      * text (a hidden text box, a CG screen) returns no line. Last, as above. */
     int ocr_text_gate;        /* 0/1 */
+    /* Native text hooks (API 31, audit-hooks F3): 0 (config.ini hook_sites = off) installs no table site in
+     * any game, only the CALL source (the string copies), so a console run can tell the two apart; the
+     * Shell sends it as VJO_TEXT_SOURCE_NO_SITES in the text source's word. Last, as above. */
+    int hook_sites;           /* 0/1, on by default */
+    /* Anki (API 32): a card's screenshot is of the picture between the frame's black bars, a
+     * letterbox or pillarbox the game worker finds as it reads the frame (on by default;
+     * core/shottrim.h, docs/anki.md "Black bars"). Last, as above. */
+    int anki_screenshot_trim_bars; /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

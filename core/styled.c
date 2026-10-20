@@ -100,6 +100,40 @@ void vjo_styled_header(VjoStyled *s, const VjoEntryList *l, int ja_px)
         vjo_styled_puts(s, l->header, VJO_RGB_TEXT, ja_px);
 }
 
+/* A neighbour's row, dimmed: the last row of the line before (at most 128 units: a textbox's row is
+ * about 40, and the text after it keeps its own) and a break, or a break and the first row of the
+ * line after. */
+static void faded_row(VjoStyled *s, const char *t, int after, int px)
+{
+    const char *nl;
+    uint32_t cap = s->cap;
+    if (!t || !*t)
+        return;
+    if (after) {
+        vjo_styled_add(s, "\n", 1, VJO_RGB_RANK, px);
+    } else {
+        while ((nl = strchr(t, '\n')))
+            t = nl + 1;
+        if (cap > s->len + 128)
+            s->cap = s->len + 128; /* vjo_styled_add stops at a whole character */
+    }
+    nl = strchr(t, '\n');
+    vjo_styled_add(s, t, nl ? (size_t)(nl - t) : strlen(t), VJO_RGB_RANK, px);
+    s->cap = cap;
+    if (!after)
+        vjo_styled_add(s, "\n", 1, VJO_RGB_RANK, px);
+}
+
+uint32_t vjo_styled_history(VjoStyled *s, const char *before, const char *text, const char *after, int ja_px)
+{
+    uint32_t lead;
+    faded_row(s, before, 0, ja_px);
+    lead = s->len;
+    vjo_styled_puts(s, text, VJO_RGB_TEXT, ja_px);
+    faded_row(s, after, 1, ja_px);
+    return lead;
+}
+
 int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, uint32_t *len)
 {
     const VjoEntry *e;

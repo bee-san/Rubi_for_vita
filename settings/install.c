@@ -774,7 +774,8 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     int k = 0;
     keys[k] = "local_dictionary_dir"; values[k++] = "ux0:data/VitaJPOverlay/dictionaries";
     keys[k] = "ocr_model_dir"; values[k++] = "ux0:data/VitaJPOverlay/ocr";
-    keys[k] = "text_source"; values[k++] = "ocr";
+    /* text_source is the user's (the Rubi app's Text source, API 31): an update keeps it, a first
+     * install gets the template's auto; older installs wrote ocr here, which stays (docs/guide.md) */
     int d = dictionaries(base.local_dictionaries, value, sizeof(value));
     if (d > 0) { keys[k] = "local_dictionaries"; values[k++] = value; }
     else if (d < 0)
