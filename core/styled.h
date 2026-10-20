@@ -31,6 +31,9 @@ typedef struct {
  * spans. The host tests render every bundled entry within them. */
 #define VJO_BODY_UNITS 4096
 #define VJO_BODY_SPANS 96
+/* The header's spans: one for the text; an earlier line (line history) adds its dimmed neighbours,
+ * two spans each (the row and the line break between). */
+#define VJO_HEADER_SPANS 5
 
 typedef struct {
     uint16_t *text;      /* UTF-16, NUL-terminated */
@@ -61,6 +64,12 @@ uint32_t vjo_utf16_index(const char *utf8, size_t off);
 
 /* Header: the OCR text in one span (highlights are applied separately). */
 void vjo_styled_header(VjoStyled *s, const VjoEntryList *l, int ja_px);
+
+/* Header of the overlay's local text: the text in VJO_RGB_TEXT and, for an earlier line (line history,
+ * docs/line-history.md), the last row of the line before it above it and the first row of the line
+ * after it below, dimmed (VJO_RGB_RANK; NULL or "": none, as for the current text). Returns the units
+ * before the text: where the cursor's, taps' and highlight's units start. */
+uint32_t vjo_styled_history(VjoStyled *s, const char *before, const char *text, const char *after, int ja_px);
 
 /* UTF-16 range of an entry's highlight in the header; 0 if it has none. */
 int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, uint32_t *len);

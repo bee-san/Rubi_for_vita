@@ -1719,6 +1719,49 @@ static void test_no_screenshot_is_asked_for_when_off_or_without_a_game(void)
     TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && !slot_begins && !shot_jobs && files_ending(".jpg") == 0);
     finish();
 }
+
+/* Line history (docs/line-history.md): a card from an earlier line (the view shows the k-th earlier
+ * one) takes no screenshot: the screen shows another line now, and Rubi keeps no frame of a line, so
+ * a screenshot now would be of another screen. Its sentence is that line, and the status says it has
+ * none; with screenshots off it says what any card's does. The current line's card still has one. */
+static void test_an_earlier_lines_card_has_no_screenshot(void)
+{
+    char id[VJO_QUEUE_ID_SIZE];
+    size_t len;
+    const char *json;
+    reset();
+    screenshots_on();
+    list.header = "前の猫が好き猫"; /* the earlier line, as worker.c history_show publishes it (local_text) */
+    entries[0].hl_start = 6, entries[0].hl_end = 9;
+    g_view.history = 2;
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki (an earlier line: no screenshot)") &&
+               g_view.anki_mark[0] == VJO_ANKI_MARK_QUEUED);
+    TEST_MSG("%s", g_view.anki_status);
+    TEST_CHECK(!slot_begins && !shot_jobs && files_ending(".json") == 1 && files_ending(".jpg") == 0);
+    only_id(id);
+    TEST_CHECK((json = queue_file(id, "json", &len)) && strstr(json, "\"picture\":false") && strstr(json, "前の猫が好き猫"));
+    /* no OCR model named: the last recognition's (VOCR3_H15 here) may not be the one that read that line */
+    TEST_CHECK(json && strstr(json, "\"ocr_model\":null") && strstr(json, "\"ocr_engine\":\"vocr\""));
+    TEST_MSG("%s", json ? json : "(none)");
+    TEST_CHECK(!heap_live && heap_allocs == heap_frees);
+    finish();
+    /* screenshots off: as any card */
+    reset();
+    g_view.history = 1;
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && !shot_jobs && files_ending(".jpg") == 0);
+    finish();
+    /* the current line (history 0): its screenshot, as before line history */
+    reset();
+    screenshots_on();
+    g_view.history = 0;
+    enter(0);
+    TEST_CHECK(!strcmp(g_view.anki_status, "Saved for Anki") && shot_jobs == 1 && files_ending(".jpg") == 1);
+    only_id(id);
+    TEST_CHECK((json = queue_file(id, "json", &len)) && strstr(json, "\"ocr_model\":\"VOCR3_H15_w8.vocr\""));
+    finish();
+}
 #endif
 
 TEST_LIST = {
@@ -1745,6 +1788,7 @@ TEST_LIST = {
     {"api23_a_captured_shot_finishes_after_overlay_closes", test_a_captured_shot_finishes_after_overlay_closes},
     {"api23_an_interrupted_saves_jpeg_is_replaced", test_an_interrupted_saves_jpeg_is_replaced},
     {"api23_no_screenshot_is_asked_for_when_off_or_without_a_game", test_no_screenshot_is_asked_for_when_off_or_without_a_game},
+    {"line_history_an_earlier_lines_card_has_no_screenshot", test_an_earlier_lines_card_has_no_screenshot},
 #endif
     {NULL, NULL}
 };

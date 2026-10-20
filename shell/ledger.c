@@ -22,6 +22,7 @@ static const VjoLedgerItemDef defs[VJO_SL_COUNT] = {
     [VJO_SL_PAF_RESULTS] = {"result arenas", VJO_LEDGER_POOL_SHELL_PAF},
     [VJO_SL_PAF_ANKI] = {"Anki arena", VJO_LEDGER_POOL_SHELL_PAF},
     [VJO_SL_PAF_UI] = {"overlay text arena", VJO_LEDGER_POOL_SHELL_PAF},
+    [VJO_SL_PAF_HISTORY] = {"line history", VJO_LEDGER_POOL_SHELL_PAF},
 };
 
 VjoLedger g_shell_ledger;

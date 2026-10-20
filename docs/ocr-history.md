@@ -1,8 +1,10 @@
 # Offline OCR history (internal)
 
-Automatic OCR silently appends to `ux0:data/VitaJPOverlay/history.csv`. There is
-no UI, setting, network connection or export job. Copy the file with VitaShell.
-Only successful, current-game OCR in `ocr_mode = auto` is eligible: ordinary
+Automatic text reads silently append to `ux0:data/VitaJPOverlay/history.csv`,
+whether the text comes from OCR or a native hook. Recording adds no setting,
+network connection or export job. Copy the file with VitaShell; the overlay's
+[line history](line-history.md) also reads earlier dialogue from it.
+Only successful, current-game reads in `ocr_mode = auto` are eligible: ordinary
 background scans, scans on opening, and refreshes of an open overlay. Dictionary
 failure does not discard recognized text. Cursor lookups, self-tests, cancelled
 or failed scans, and `on_press` mode produce no records. Blank scans reset the
@@ -49,8 +51,8 @@ the result while the existing worker streams it to disk; that worker cannot
 replace the existing transport result until the append returns. Only game/job
 facts are copied on its existing stack. The writer has a fixed 192-byte output
 buffer and a 16-byte static fingerprint (source sizes, not a console memory
-measurement); no allocation, thread, growing queue, second OCR-text buffer or
-history read is added. A seek obtains the append offset even for a large file.
+measurement); an append adds no allocation, thread, growing queue, second OCR-text
+buffer or read of the file. A seek obtains the append offset even for a large file.
 The character count is one more pass over the text, in the writer and on its
 frame: 76 B more of `vjo_history_append`'s code, paid for by moving the writer's
 own strings (93 B: its path and formats) into the data segment with its header,
@@ -73,6 +75,12 @@ after the result is published, while the record is written: the writer sends its
 192-byte buffer to the file each time it fills, and the count comes before the
 last of those writes, the sync and the close.
 Both module-page budgets and thread-stack budgets remain enforced by the ledger.
+
+The overlay reads the file back for one thing only: [line history](line-history.md). When Up
+first goes past the overlay's top row, the control thread reads the file's last 24,512 B once
+(into its existing 24 KiB scratch) and keeps up to 32 of this game's lines, by `uuid`, in a 16 KiB Paf
+block while the user looks back; nothing else reads it, and that reader never writes it. An append in
+progress can only cut the last record, which the reader skips.
 
 Consecutive identical normalized text within a game is suppressed, including
 rescans caused by a blinking icon or reopening/resuming. A different sentence,

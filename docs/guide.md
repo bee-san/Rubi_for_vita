@@ -246,7 +246,7 @@ app when it starts.
 | Select + R | Toggle the subtitle strip |
 | Left / Right | Move through the text in reading order, across its rows: skip matched words in Whole word mode, one character in Character mode (the left stick: one character in both); Right from a row's last word goes to the next row's first, Left from a row's first to the row above's last, and the text's first and last stop the cursor. A text on one row goes round its ends (Right from the last to the first, Left from the first to the last) |
 | Touch a recognized character | Look up the word starting there with a local dictionary |
-| Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position |
+| Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position. **Up on the text's top row shows this game's earlier line** (with **Read text: Automatically**), dimmed between its neighbours: more Up goes further back, up to 32 lines; Down on an earlier line's last row goes to the line after it, and past the newest back to the current text ([line history](line-history.md)) |
 | Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right a character at a time in reading order across the rows, in Whole word mode too (the shown word is not skipped, and its left never retraces a Right), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too. With **Japanese characters only** ON it lands only on kana and kanji, OFF on every visible character, punctuation and Latin included. Once the cursor rests for `stick_lookup_ms` (200 ms), not at each step, the word starting at its character is looked up and, in Whole word mode, highlighted ([left stick](touch-lookup.md#the-left-stick-138)) |
 | Right stick | Scroll a long definition |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
@@ -254,6 +254,19 @@ app when it starts.
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
 | Cancel | Close the overlay |
+
+**Earlier lines.** With **Read text** on **Automatically**, the overlay can go back through this game's
+earlier dialogue, the lines `history.csv` keeps ([ocr-history.md](ocr-history.md)): Up on the text's
+top row shows the line before it, in white between the last row of the line before that and the
+first row of the line after it, both dimmed, and the body's first line says how far back it is
+(`Earlier line -2`). Everything works on it as on the current text: the cursor, taps, the left stick,
+lookups, the dictionaries' pages and Enter, whose card has that line as its sentence and **no
+screenshot** (Rubi keeps no frame of an earlier line; the status line says so). Down past the newest
+earlier line comes back to the current text, its cursor where it was; closing the overlay does too.
+Up and Down between lines are the d-pad's: the left stick stops at the text's first and last rows.
+With **Only when I press L + R**, which records no line, Up on the top row does nothing, as before.
+The last 24 KiB of `history.csv` are read when Up first goes past the top row (about 28 three-row
+textboxes of every game, at most 32 of this game's lines kept): [line history](line-history.md).
 
 Pressing PS with the overlay open closes it: the game's controls are released
 in the suspend's own event, the overlay no longer turns off the LiveArea's

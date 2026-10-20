@@ -23,6 +23,7 @@
 #include "../core/textnorm.h"
 #include "../core/utf.h"
 #include "../core/text_rows.h"
+#include "../core/history_lines.h"
 #ifdef VJO_WITH_VOCR
 #include "../core/local_ocr.h"
 #include "game_ocr_client.h"
@@ -101,6 +102,18 @@ static uint32_t job_cursor_byte, job_cursor_seq, job_text_generation;
 static int local_page, job_page;
 static uint32_t pages_generation;
 static int pages_limit;
+/* Line history (owner 2026-10-20, docs/line-history.md): Up from the overlay's top row shows this
+ * game's earlier lines as history.csv keeps them (Read text: Automatically's). While one is shown,
+ * `history` is the visit's block (Paf, VJO_SL_PAF_HISTORY: history_open) and local_text is that line,
+ * so its lookups, pages and cards are the current text's ways; the current text waits in it as line
+ * 0. history_step: a step asked for (history_ask), 1 earlier, -1 later, taken once no job runs (one
+ * reads local_text: control_tick). Control thread; the view's pointers under the view lock. */
+typedef struct {
+    VjoHistory h;
+    uint32_t cursor, scene, seq; /* the current text's cursor and capture, for the return to it */
+} HistoryVisit;
+static HistoryVisit *history;
+static int history_step;
 
 static VjoConfig cfg;      /* control thread */
 static VjoConfig job_cfg;  /* snapshot used by the network thread */
@@ -264,8 +277,27 @@ static uint32_t advance_generation(uint32_t *value)
     return *value;
 }
 
+/* Under the view lock: the view lets an earlier line go (its pointers are into the visit's block);
+ * the block, which the caller frees once the lock is released (history_free), or NULL. */
+static HistoryVisit *history_detach(void)
+{
+    HistoryVisit *v = history;
+    history = NULL;
+    history_step = 0;
+    g_view.history = 0;
+    g_view.history_before = g_view.history_after = NULL;
+    return v;
+}
+
+static void history_free(HistoryVisit *v)
+{
+    if (v)
+        vjo_shell_heap_free(VJO_SL_PAF_HISTORY, v, VJO_BUDGET_PAF_HISTORY);
+}
+
 static void retire_local_text(int new_generation)
 {
+    HistoryVisit *v;
     sceKernelLockMutex(cmd_lock, 1, NULL);
     vjo_view_lock();
     local_text_valid = 0;
@@ -275,9 +307,11 @@ static void retire_local_text(int new_generation)
     g_view.list = NULL;
     g_view.local_cursor_mode = 0;
     g_view.dict_page = g_view.dict_pages = 0;
+    v = history_detach(); /* an earlier line goes with the text, the current one with it */
     g_view.version++;
     vjo_view_unlock();
     sceKernelUnlockMutex(cmd_lock, 1);
+    history_free(v);
 }
 
 void vjo_view_lock(void)
@@ -293,7 +327,9 @@ void vjo_view_unlock(void)
 void vjo_post_command(int cmd, const VjoRect *rect)
 {
     sceKernelLockMutex(cmd_lock, 1, NULL);
-    pending_cmd = cmd;
+    /* a line-history step takes an empty slot only: never a close's, a region's or a lookup's */
+    if (cmd < VJO_CMD_EARLIER || pending_cmd == VJO_CMD_NONE)
+        pending_cmd = cmd;
     if (rect)
         pending_rect = *rect;
     sceKernelUnlockMutex(cmd_lock, 1);
@@ -322,9 +358,11 @@ static void post_local_lookup(uint32_t text_generation)
 void vjo_post_cursor(uint32_t byte_offset, uint32_t text_generation)
 {
     /* This order is also used by cursor completion: a newer request cannot
-     * race past the stale-result check and republish the old definition. */
+     * race past the stale-result check and republish the old definition.
+     * A line-history step not taken yet gives the slot up: the latest press wins,
+     * and an Up with nothing to go to never holds a move (audit-line-history F2). */
     sceKernelLockMutex(cmd_lock, 1, NULL);
-    if (pending_cmd != VJO_CMD_NONE && pending_cmd != VJO_CMD_CURSOR) {
+    if (pending_cmd != VJO_CMD_NONE && pending_cmd < VJO_CMD_CURSOR) {
         sceKernelUnlockMutex(cmd_lock, 1);
         return;
     }
@@ -357,7 +395,7 @@ int vjo_post_page(int page, uint32_t text_generation)
 {
     int accepted = 0;
     sceKernelLockMutex(cmd_lock, 1, NULL);
-    if (pending_cmd == VJO_CMD_NONE || pending_cmd == VJO_CMD_CURSOR) {
+    if (pending_cmd == VJO_CMD_NONE || pending_cmd >= VJO_CMD_CURSOR) { /* (a step gives it up, as for a move) */
         vjo_view_lock();
         /* Only pages of the published (or already pending) result for this
          * text and cursor; dict_pages is reset whenever either changes. */
@@ -617,6 +655,13 @@ static const char OOM_GAME_SMALLEST[] VJO_DATA_TABLE(OOM_GAME_SMALLEST) = "The g
 static const char OOM_GAME_ALLOCATION[] VJO_DATA_TABLE(OOM_GAME_ALLOCATION) = "The game's memory could not be allocated although the memory check "
     "passed. Try again.";
 static const char OOM_GAME_UNKNOWN[] VJO_DATA_TABLE(OOM_GAME_UNKNOWN) = "The game's free memory could not be checked (see log.txt), so OCR did not start.";
+/* The dictionary's result arena refused (mem_alloc), after OCR or for a cursor's lookup. In the data
+ * segment as the others: line history's code took the normal Shell's text room (docs/line-history.md). */
+static const char OOM_SHELL_RESULTS[] VJO_DATA_TABLE(OOM_SHELL_RESULTS) = "Text was recognized, but Shell UI memory is too "
+    "low for dictionary results. Restart the Vita and try again.";
+/* The model's storage unavailable to the game (ENODEV): run_vocr. */
+static const char MODEL_STORAGE[] VJO_DATA_TABLE(MODEL_STORAGE) = "The local OCR model storage is unavailable to this game. "
+    "See log.txt for details.";
 
 #ifdef VJO_WITH_VOCR
 /* Which part of the game worker's memory check failed: no OCR can fit
@@ -1241,7 +1286,7 @@ static int run_vocr(VjoOverlayData *out)
         if (out->err.rc == VJO_E_OCR_MODEL) {
             /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
             if ((uint32_t)vocr_result.io_error == 0x80010013u)
-                out->err.detail = "The local OCR model storage is unavailable to this game. See log.txt for details.";
+                out->err.detail = MODEL_STORAGE;
             else if ((uint32_t)vocr_result.io_error == 0x8001000Du)
                 out->err.detail = "Access to the local OCR model was denied. See log.txt for details.";
         }
@@ -1302,7 +1347,7 @@ static int run_vocr(VjoOverlayData *out)
         return VJO_OK;
     out->failed_stage = VJO_STAGE_DICT;
     out->err.dict = VJO_DICT_LOCAL;
-    out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
+    out->err.detail = OOM_SHELL_RESULTS;
     return out->err.rc = VJO_E_OOM;
 }
 #else
@@ -1383,7 +1428,7 @@ static int run_cursor_job(VjoArena *a, VjoOverlayData *out)
     if (mem_alloc() < 0) {
         out->failed_stage = VJO_STAGE_DICT;
         out->err.dict = VJO_DICT_LOCAL;
-        out->err.detail = "Text was recognized, but Shell UI memory is too low for dictionary results. Restart the Vita and try again.";
+        out->err.detail = OOM_SHELL_RESULTS;
         return out->err.rc = VJO_E_OOM;
     }
     vjo_view_lock(); /* the published list is the static header, never old entries */
@@ -1666,6 +1711,10 @@ static void start_job(const char *why, int lookup)
  * cancelled and asked again once the lookups pause. */
 static void start_cursor_job(void)
 {
+    if (history_step) { /* the step to another line goes first: its own lookup follows (history_show) */
+        cursor_waiting = 0;
+        return;
+    }
     if (job_running) {
         cursor_waiting = 1;
         job_cancelled |= job_refresh;
@@ -1913,6 +1962,7 @@ static void close_overlay_for(int why)
         return;
     }
     ov = OV_CLOSED;
+    history_step = 0; /* an earlier line shown goes once no job reads it: control_tick */
     if (net_busy()) dict_close_pending = 1;
     else vjo_local_session_close(plat.local_session);
     idle_since_us = now_us();
@@ -1946,6 +1996,127 @@ static void close_overlay_for(int why)
 static void close_overlay(void)
 {
     close_overlay_for(CLOSE_IN_GAME);
+}
+
+/* ---- line history (docs/line-history.md) ---- */
+
+/* history.csv's last bytes are read into the control thread's scratch, with the byte before them. */
+typedef char history_window_fits_scratch[VJO_HISTORY_WINDOW + 1 <= SCRATCH_SIZE ? 1 : -1];
+/* A visit's block holds its table and, always, the current text. */
+typedef char history_visit_fits[sizeof(HistoryVisit) + VJO_STRIP_MAX + 8 <= VJO_BUDGET_PAF_HISTORY ? 1 : -1];
+
+/* The visit: its block, the current text as its line 0 and this game's earlier lines from
+ * history.csv (history.csv's game: Anki's, as net_job writes it). A job may run: it only reads
+ * local_text, which only this thread writes. 0, or -1 with no visit. */
+static int history_open(void)
+{
+    char name[128], tid[12], uuid[24]; /* vita-PCSG00415", */
+    const char *platform = vjo_anki_get_game(name, tid);
+    HistoryVisit *v = (HistoryVisit *)vjo_shell_heap_alloc_for(VJO_SL_PAF_HISTORY, VJO_BUDGET_PAF_HISTORY);
+    VjoArena lines;
+    int rc = -1;
+    if (!v)
+        return -1;
+    sceClibMemset(v, 0, sizeof(*v));
+    vjo_arena_init(&lines, v + 1, VJO_BUDGET_PAF_HISTORY - sizeof(*v));
+    sceClibSnprintf(uuid, sizeof(uuid), "%s-%s\",", platform, tid[0] ? tid : title_id); /* the column and its end */
+    v->h.line[0] = vjo_arena_strndup(&lines, local_text, sceClibStrnlen(local_text, sizeof(local_text) - 1));
+#ifdef VJO_WITH_VOCR
+    rc = vjo_history_load(&v->h, &lines, uuid, cfg.non_japanese_filter, &scratch);
+#endif
+#if VJO_DEBUG
+    uuid[sceClibStrnlen(uuid, sizeof(uuid)) - 2] = '\0'; /* the game's ID, without the quote and comma of the match */
+#endif
+    vjo_dlog("history: %d earlier lines of %s, %u B", rc, uuid, (unsigned)lines.used);
+    if (v->h.n) {
+        history = v;
+        return 0;
+    }
+    history_free(v);
+    return -1;
+}
+
+/* Shows line `at` of the visit (0: the current text, which ends the visit) as the overlay's text:
+ * local_text becomes it with a new generation and cursor sequence, published with its pending lookup
+ * as a cursor move publishes one (post_local_lookup), so the overlay, its lookups, pages and cards
+ * take it as a new text and requests for the line before fail. An earlier line was read from no
+ * screen shown now (capture 0): neither a reopen nor a cache claims it for one. No job runs (one would
+ * read local_text). With the overlay open, the line's word at the cursor is looked up. */
+static void history_show(int at)
+{
+    HistoryVisit *v = history, *done = NULL;
+    const char *text = v->h.line[at];
+    size_t len = sceClibStrnlen(text, sizeof(local_text) - 1);
+    int keep;
+    sceKernelLockMutex(cmd_lock, 1, NULL);
+    vjo_view_lock();
+    if (!v->h.at) { /* leaving the current text: its cursor and capture, for the return to it */
+        v->cursor = local_cursor_byte;
+        v->scene = local_text_scene;
+        v->seq = local_text_capture_seq;
+    }
+    sceClibMemcpy(local_text, text, len);
+    local_text[len] = '\0';
+    g_view.text_generation = advance_generation(&local_text_generation);
+    local_page = 0;
+    local_cursor_byte = at ? (cfg.japanese_only_selection ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0)
+                           : v->cursor;
+    local_text_scene = at ? 0 : v->scene;
+    local_text_capture_seq = at ? 0 : v->seq;
+    /* the result arena's entry is the line before's, and its screen tag no longer the text's: a cached
+     * sentence is local_text, which no screen shows now (the subtitle strip's first branch reads the tag
+     * without cache_ok: audit-line-history F3) */
+    cache_ok = 0;
+    cache_scene = cache_seq = 0;
+    v->h.at = at;
+    if (at) {
+        g_view.history = at;
+        g_view.history_before = v->h.line[at + 1]; /* NULL past the oldest: the table is zeroed */
+        g_view.history_after = v->h.line[at - 1];
+    } else {
+        done = history_detach();
+    }
+    if (ov != OV_CLOSED) {
+        g_view.dict_pages = 0;
+        keep = pending_cmd; /* (its cursor command is not the overlay's: the lookup starts below) */
+        post_local_lookup(local_text_generation);
+        pending_cmd = keep;
+    }
+    vjo_view_unlock();
+    sceKernelUnlockMutex(cmd_lock, 1);
+    history_free(done);
+    if (ov != OV_CLOSED) {
+        start_cursor_job();
+    } else { /* the return after a close (a step needs the overlay open): */
+        /* it leaves no lookup in the cache (the arena's is the earlier line's), so Auto, asked by a screen
+         * that settled while the overlay was open (stable_pending), would read the screen the text was
+         * read from again: one that still shows the text has nothing new (as claim_cache_for would say
+         * with the text's lookup there) */
+        VjoState st;
+        st.size = sizeof(st);
+        if (vjoGetState(&st) >= 0 && shows_screen(local_text_scene, local_text_capture_seq, &st))
+            stable_pending = 0;
+    }
+}
+
+/* The overlay's Up from its text's top row (d = 1) or Down from an earlier line's last row (d = -1):
+ * the step to this game's line before or after the one shown, which control_tick takes once no job
+ * runs (one reads local_text). Up opens the visit first (history_open). Only Read text:
+ * Automatically keeps lines (docs/ocr-history.md): in on_press mode Up does what it did before line
+ * history, nothing; so it does with no earlier line (none of this game's in history.csv's last bytes,
+ * none before the oldest a visit keeps, no Paf memory for a visit: the debug log has a line for a read, and
+ * both builds one for a refused block, the oldest line none), and while a
+ * step waits. A step drops the lookup or refresh of the line it leaves (asked again after the visit),
+ * and nothing else: a step asked for is always taken, unless a close or a retired text drops it. */
+static void history_ask(int d)
+{
+    if (ov == OV_CLOSED || !local_text_valid || history_step ||
+        (!history && (d < 0 || cfg.ocr_mode != VJO_OCR_AUTO || history_open() < 0)) ||
+        (unsigned)(history->h.at + d) > (unsigned)history->h.n)
+        return;
+    history_step = d;
+    if (job_running && (job_cursor_only || job_refresh)) /* (a preparation is short: it ends first) */
+        job_cancelled = 1;
 }
 
 static void backoff_note(Backoff *b, int failed)
@@ -2455,6 +2626,10 @@ static void on_command(void)
     case VJO_CMD_CLOSED:
         close_overlay();
         break;
+    case VJO_CMD_EARLIER:
+    case VJO_CMD_LATER:
+        history_ask(cmd == VJO_CMD_EARLIER ? 1 : -1);
+        break;
     case VJO_CMD_SET_REGION:
     case VJO_CMD_CLEAR_REGION:
         if (!game_active()) { /* the game exited meanwhile */
@@ -2702,7 +2877,8 @@ static void background_open(void)
 {
     VjoState st = {.size = sizeof(st)};
     int64_t t = now_us();
-    if (ov != OV_OPEN || job_running || pending_cmd != VJO_CMD_NONE)
+    /* an earlier line is not this screen's: its refresh waits for the return to the current text */
+    if (ov != OV_OPEN || job_running || pending_cmd != VJO_CMD_NONE || history)
         return;
     if (open_retry) {
         if (t >= screen_retry_until) {
@@ -2858,6 +3034,22 @@ static void control_tick(uint32_t bits)
         on_job_text();
     if (job_running && job_done)
         on_job_done();
+    /* line history, once no job reads local_text: a step asked for meanwhile (only with a visit);
+     * else a visit that shows no earlier line (Up during a job, then a close: never shown, so the view
+     * holds nothing of it) goes, so it holds no block and stops no refresh; else the current text
+     * again after the overlay closed on an earlier line (history_show) */
+    if (!job_running && history) {
+        int d = history_step;
+        history_step = 0;
+        if (d) {
+            history_show(history->h.at + d);
+        } else if (!history->h.at) {
+            history_free(history);
+            history = NULL;
+        } else if (ov == OV_CLOSED) {
+            history_show(0);
+        }
+    }
     if (bits & (VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET)) {
         stable_pending = 1;
         if (ov == OV_OPEN)
@@ -2983,6 +3175,8 @@ int vjo_worker_stop(void)
     if (vjo_anki_stop() < 0)
         return -1;
     mem_free();
+    if (history) /* the threads are gone: the visit's block goes with the text */
+        retire_local_text(0);
     if (net_evf >= 0)
         sceKernelDeleteEventFlag(net_evf);
     if (cmd_lock >= 0)

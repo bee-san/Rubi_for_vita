@@ -806,6 +806,88 @@ static void the_close_line_counts_are_the_arrows(void)
     TEST_CHECK(n.nav.wraps == 1);
 }
 
+/* ---- line history (docs/line-history.md) ----
+ * An earlier line is shown between the last row of the line before it and the first row of the line
+ * after it, dimmed (core/styled.c vjo_styled_history), in the one header the layout lays out: the
+ * cursor's units start `lead` units in (overlay.cpp header_shown). Up with no row of the text above
+ * the cursor, and Down with none below on an earlier line, are what the overlay turns into this
+ * game's line before or after it (input_overlay: a d-pad press whose vertical step stays); the dimmed
+ * rows hold no character of the text, so the cursor never goes into them, and Left/Right stop at the
+ * text's own ends. */
+typedef struct {
+    Layout *l;
+    uint32_t lead;
+} Shown;
+static int shown_position(void *ctx, uint32_t unit, float *x, uint32_t *line)
+{
+    Shown *s = (Shown *)ctx;
+    return layout_position(s->l, s->lead + unit, x, line);
+}
+
+/* One d-pad press over the header of an earlier line (history: its place, 0 the current text): the new
+ * cursor, and the line step the overlay posts (-1 earlier, 1 later, 0 none). */
+static size_t history_press(const char *text, VjoTextRows *rows, VjoRowNav *nav, size_t cursor, int dx, int dy,
+                            int history, int *step)
+{
+    size_t to = cursor;
+    int rc = vjo_text_row_key(nav, text, strlen(text), rows, cursor, 0, dx, dy, 0, 0, &to);
+    *step = rc == VJO_ROW_STAY && !dx && (dy < 0 || history) ? dy : 0; /* VJO_CMD_EARLIER / VJO_CMD_LATER */
+    return to;
+}
+
+static void up_and_down_past_an_earlier_lines_rows(void)
+{
+    /* the line before's last row, the earlier line (two rows), the line after's first row:
+     * 二行目\n | 犬0 も3 好6 き9 \n12 | 鳥13 も16 \n | 三行目 (the text's bytes) */
+    static const char header[] = "二行目\n犬も好き\n鳥も\n三行目";
+    static const char text[] = "犬も好き\n鳥も";
+    Shown sh = {&lay, 4}; /* "二行目\n": 4 units */
+    VjoTextRows rows;
+    VjoRowNav nav;
+    int step;
+    size_t at;
+    memset(&nav, 0, sizeof(nav));
+    TEST_ASSERT(layout_text(&lay, header, W, JA, NARROW) == 4);
+    rows = layout_rows(&lay);
+    rows.position = shown_position;
+    rows.ctx = &sh;
+    /* Up from the text's first row: no row of it above (the dimmed row has none): the line before */
+    at = history_press(text, &rows, &nav, 3, 0, -1, 2, &step);
+    TEST_CHECK(at == 3 && step == -1);
+    /* Down from its first row: its second row, as on any text */
+    at = history_press(text, &rows, &nav, 3, 0, 1, 2, &step);
+    TEST_CHECK(at == 16 && step == 0);
+    /* Down from its last row: the line after (an earlier line only) */
+    at = history_press(text, &rows, &nav, 16, 0, 1, 2, &step);
+    TEST_CHECK(at == 16 && step == 1);
+    at = history_press(text, &rows, &nav, 16, 0, 1, 0, &step);
+    TEST_CHECK(at == 16 && step == 0); /* the current text: Down stays, as before line history */
+    /* Up from its last row: its first row */
+    at = history_press(text, &rows, &nav, 16, 0, -1, 2, &step);
+    TEST_CHECK(at == 3 && step == 0);
+    /* Left/Right stop at the text's own ends: never in a dimmed row, never a line step */
+    at = history_press(text, &rows, &nav, 0, -1, 0, 2, &step);
+    TEST_CHECK(at == 0 && step == 0);
+    at = history_press(text, &rows, &nav, 16, 1, 0, 2, &step);
+    TEST_CHECK(at == 16 && step == 0);
+    at = history_press(text, &rows, &nav, 9, 1, 0, 2, &step);
+    TEST_CHECK(at == 13 && step == 0); /* across the text's own break */
+    TEST_CHECK(!lay.bad_queries);
+    /* the current text on one row (no neighbours): Up is the line before, as the owner asked */
+    static const char one[] = "昨日すき焼きを食べました";
+    sh.lead = 0;
+    TEST_ASSERT(layout_text(&lay, one, 2 * W, JA, NARROW) == 1);
+    rows = layout_rows(&lay);
+    rows.position = shown_position;
+    rows.ctx = &sh;
+    at = history_press(one, &rows, &nav, 6, 0, -1, 0, &step);
+    TEST_CHECK(at == 6 && step == -1);
+    /* not laid out yet: no step (the overlay waits for the layout) */
+    at = history_press(one, NULL, &nav, 6, 0, -1, 0, &step);
+    TEST_CHECK(at == 6 && step == 0);
+    TEST_CHECK(!lay.bad_queries);
+}
+
 TEST_LIST = {
     {"two_lines_right_and_left_cross_the_break", two_lines_right_and_left_cross_the_break},
     {"three_lines_walk_to_the_ends_and_stop", three_lines_walk_to_the_ends_and_stop},
@@ -822,4 +904,5 @@ TEST_LIST = {
     {"the_owners_example_a_character_at_a_time", the_owners_example_a_character_at_a_time},
     {"the_sticks_left_at_the_edges", the_sticks_left_at_the_edges},
     {"the_close_line_counts_are_the_arrows", the_close_line_counts_are_the_arrows},
+    {"up_and_down_past_an_earlier_lines_rows", up_and_down_past_an_earlier_lines_rows},
     {NULL, NULL}};

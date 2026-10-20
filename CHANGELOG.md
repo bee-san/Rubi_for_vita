@@ -42,9 +42,8 @@ On `main` since 0.8.0; the next release brings it.
     shows at most 2 wrong pages.
   - The controls: `text_source = auto | hooks | ocr` (the Rubi app's **Text source**, Automatic by
     default, applied when a game next starts), which the Shell hands the kernel and a game's worker
-    reads as the game starts; **Triangle** in the overlay cycles the game session's source (Automatic,
-    each hook with text, OCR only) and a short label says where the text came from (`Hook 2/5 locked`);
-    the Games page tags a game with a hook entry (`Hook`: CLANNAD, Rubi's own; `Luna hook`: a title with
+    reads as the game starts. The popup selects its text automatically and keeps source diagnostics
+    in logs; the Games page tags a game with a hook entry (`Hook`: CLANNAD, Rubi's own; `Luna hook`: a title with
     a site Rubi has ported from LunaTranslator's table; the table's 7 titles without one, PCSB00985,
     PCSG00291, PCSG00451, PCSG00595, PCSG00663, PCSG01081 and PCSG01152, get no tag and OCR only in
     Automatic). `log.txt` says what each game's worker hooked (counts only in the normal build),
@@ -69,6 +68,11 @@ On `main` since 0.8.0; the next release brings it.
   GameSentenceMiner and ッツ Ebook Reader leave punctuation out too). `tools/reading_stats.py` gives
   the characters read and per hour, in all, per game and per day, from new and 0.8.0 files
   ([#233]; [docs/ocr-history.md](docs/ocr-history.md)).
+- Earlier lines: in the overlay, Up on the text's top row shows this game's line before it, dimmed
+  between its neighbours, for lookups and cards (a card from an earlier line has that line as its
+  sentence and no screenshot); Down comes forward again. Only with **Read text: Automatically**, from
+  the lines `history.csv` keeps: its last 24 KiB, at most 32 lines, in a 16 KiB Paf block while you
+  look back ([line history](docs/line-history.md)).
 
 ### Changed
 

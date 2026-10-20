@@ -1063,6 +1063,57 @@ static void test_styled(void)
     TEST_CHECK(vjo_font_px(15) == 23 && vjo_font_px(8) == 12);
 }
 
+/* Line history's header (docs/line-history.md, the owner's example of 2026-10-20): the earlier line
+ * ４７７８万 in white between the last row of the line before it (昭和５２) and the first row of the
+ * line after it (昨日すき焼きを食べました), both dimmed; the text's units start after the line before. */
+static void test_styled_history_header(void)
+{
+    VjoStyled st;
+    uint32_t lead;
+    setup();
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    lead = vjo_styled_history(&st, "昭和５２", "４７７８万", "昨日すき焼きを食べました", 27);
+    TEST_CHECK(lead == 5 && st.n_spans == 5 && st.len == 5 + 5 + 1 + 12 && !st.truncated);
+    TEST_CHECK(st.spans[0].start == 0 && st.spans[0].len == 4 && st.spans[0].rgb == VJO_RGB_RANK); /* 昭和５２ */
+    TEST_CHECK(st.spans[1].len == 1 && st.text[4] == '\n' && st.spans[1].rgb == VJO_RGB_RANK);
+    TEST_CHECK(st.spans[2].start == lead && st.spans[2].len == 5 && st.spans[2].rgb == VJO_RGB_TEXT); /* the focus */
+    TEST_CHECK(st.text[lead] == 0xFF14 && st.text[lead + 4] == 0x4E07);                          /* ４ ... 万 */
+    TEST_CHECK(st.spans[3].len == 1 && st.text[10] == '\n' && st.spans[4].len == 12 && st.spans[4].rgb == VJO_RGB_RANK);
+    for (int i = 0; i < st.n_spans; i++)
+        TEST_CHECK(st.spans[i].px == 27);
+    /* the current text (no neighbours): the text alone, in one span, as before line history */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    TEST_CHECK(vjo_styled_history(&st, NULL, "猫が\r\n好き", NULL, 21) == 0 && st.n_spans == 1 && st.len == 5);
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    TEST_CHECK(vjo_styled_history(&st, "", "猫", "", 21) == 0 && st.n_spans == 1 && st.len == 1);
+    /* the oldest line kept: no line before it; the newest: the current text after it */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    TEST_CHECK(vjo_styled_history(&st, NULL, "犬", "猫", 21) == 0 && st.n_spans == 3 && st.text[1] == '\n');
+    /* a textbox's rows: of the line before its last row, of the line after its first */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    lead = vjo_styled_history(&st, "一行目\n二行目", "今の\n行", "三行目\n四行目", 21);
+    TEST_CHECK(lead == 4 && st.text[0] == 0x4E8C && st.len == 4 + 4 + 4 && st.text[lead + 2] == '\n'); /* 二行目 */
+    TEST_CHECK(st.text[lead + 5] == 0x4E09 && st.spans[4].len == 3);                                  /* 三行目 */
+    /* a row longer than any textbox's: the line before is cut at 128 units (whole characters), the text
+     * keeps its own units; a surrogate pair is never split */
+    {
+        static char row[3 * 300 + 1], text[4 * 1000 + 1];
+        for (int i = 0; i < 300; i++)
+            memcpy(row + 3 * i, "あ", 3);
+        for (int i = 0; i < 1000; i++)
+            memcpy(text + 4 * i, "😀", 4);
+        TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+        lead = vjo_styled_history(&st, row, text, row, 21);
+        TEST_CHECK(lead == 129 && st.spans[0].len == 128 && st.cap == 4096);
+        TEST_CHECK(st.spans[2].len == 2000 && st.text[lead + 1999] == 0xDE00);   /* the whole text */
+        TEST_CHECK(st.spans[4].len == 300 && st.len == 129 + 2000 + 1 + 300);    /* the line after, its whole row */
+        /* a line before of surrogate pairs: cut at 128 units, the pair whole */
+        TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+        lead = vjo_styled_history(&st, text, "猫", NULL, 21);
+        TEST_CHECK(lead == 129 && st.spans[0].len == 128 && st.text[127] == 0xDE00);
+    }
+}
+
 /* Bee's Ultimate Dictionary's kanji lines: the trailing lines "漢=meaning",
  * a kanji (by whole code point), '=' and the meanings. */
 static void test_kanji_block(void)
@@ -2376,6 +2427,7 @@ TEST_LIST = {
     {"frequency_badge_config", test_frequency_badge_config},
     {"regions", test_regions},
     {"styled", test_styled},
+    {"styled_history_header", test_styled_history_header},
     {"kanji_block", test_kanji_block},
     {"styled_kanji_lines_and_fitting", test_styled_kanji_lines_and_fitting},
     {NULL, NULL},

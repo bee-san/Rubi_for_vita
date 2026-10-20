@@ -99,7 +99,9 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
    mistakes. Hold **□** for a second to go back to the whole screen.
 3. **Look a word up.** **◀ ▶** go word by word and **▲ ▼** a row up or down. The left stick goes a
    character at a time, faster while held, and looks up the word that starts where it stops. Or tap
-   a word. The right stick scrolls a long entry.
+   a word. The right stick scrolls a long entry. **▲** on the top row goes back to this game's earlier
+   lines, one at a time (with **Read text: Automatically**), and **▼** comes forward again
+   ([earlier lines](docs/line-history.md)).
 4. **Make a card.** Turn **Card mining** ON on the app's **Anki** page once. Then press **Enter** on
    a word: it is saved with its sentence and a screenshot. **Export cards** on the Anki page writes
    them into `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`: copy that file to a computer
@@ -154,6 +156,7 @@ logging, is in `ux0:data/VitaJPOverlay/config.ini`
 | ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
+| ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
 | ❓ | Native text hooks (CLANNAD's entry, [LunaTranslator's Vita table](docs/hook-titles.md)) | not run on a console by this code; an earlier hook build followed CLANNAD's dialogue on the owner's console in 2026-10 ([#230](https://github.com/bee-san/Rubi_for_vita/issues/230)) |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |

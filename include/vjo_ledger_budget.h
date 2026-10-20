@@ -88,7 +88,9 @@
  * (owner, 2026-10-16) makes it 99,196 -> 98,972 text on main a7abad7, the same data and pages
  * [measured: the build log's module rows, main a7abad7 and this change]. The left stick a character
  * at a time (owner, 2026-10-20) makes it 98,732 -> 98,812 text on main f482c21, the same data and
- * pages [measured: the build log's module rows, main f482c21 and this change]. */
+ * pages [measured: the build log's module rows, main f482c21 and this change]. Line history (owner,
+ * 2026-10-20; docs/line-history.md) makes it 98,812 -> 100,492 text and 73,272 -> 73,576 data/bss on
+ * main 75041a0, the same pages [measured: the build log's module rows, main 75041a0 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -112,7 +114,10 @@
  * net_main) make it 88,556 + 69,868 on main eece6c6 (88,460 + 69,796), the same pages, 1,556 B of text
  * room [measured: the same rows, main eece6c6 and t3-log-path]. The left stick a character at a time
  * (owner, 2026-10-20) makes it 88,348 -> 88,428 + 73,280 on main f482c21, the same pages, 1,684 B of
- * text room [measured: the same rows, main f482c21 and this change]. Its check is
+ * text room [measured: the same rows, main f482c21 and this change]. Line history (owner, 2026-10-20;
+ * docs/line-history.md, paid in part by core/textfilter.c at -Os and strings in the data segment)
+ * makes it 88,428 -> 90,044 + 73,280 -> 73,584 on main 75041a0, the same pages, 68 B of text room and
+ * 144 B of data room [measured: the same rows, main 75041a0 and this change]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
@@ -292,12 +297,22 @@
  * A save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B
  * on main dcb7b31) [measured, host, test_shell_anki.c]. anki.c checks its arena against this at compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
-#define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 17,952 B needed (overlay.cpp) */
+#define VJO_BUDGET_PAF_UI 20480u                   /* the overlay's text arena while its page is open: 18,016 B needed (overlay.cpp, test_ledger.c) */
+/* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
+ * first Up past its text's top row until the return to the current text (or the overlay's close): the
+ * table (core/history_lines.h VjoHistory, 34 line pointers and two counts) and the worker's three words
+ * beside it, the current text (at most 4,095 B and its NUL), and as many of this game's earlier lines as
+ * fit, at most VJO_HISTORY_LINES (32). Typical dialogue lines (20-60 characters of 3 B) are 60-180 B,
+ * so 32 take 2-6 KiB [estimate]. history.csv's last 24,512 B (and the byte before them) are read into the
+ * control thread's static 24 KiB scratch, not here. Held beside an open overlay, its lookup and an Anki
+ * save (a card from an earlier line). */
+#define VJO_BUDGET_PAF_HISTORY 16384u
 #define VJO_WORST_SHELL_PAF_PERMANENT VJO_BUDGET_PAF_PLUGIN
 /* The only configuration (the overlay is offline): one 64 KiB arena, the
- * overlay open, an Anki card being saved. The opt-in network row went with
- * Google Lens and the Hachidori relay (707,840 B with one connection slot). */
-#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI)
+ * overlay open on an earlier line, an Anki card being saved. The opt-in network
+ * row went with Google Lens and the Hachidori relay (707,840 B with one connection slot). */
+#define VJO_WORST_SHELL_PAF (VJO_WORST_SHELL_PAF_PERMANENT + VJO_BUDGET_PAF_RESULTS_LOCAL + VJO_BUDGET_PAF_ANKI + VJO_BUDGET_PAF_UI + \
+                             VJO_BUDGET_PAF_HISTORY)
 /* What the measured free heap leaves us once the reserve is kept: the
  * reserve is the headroom. Later sessions saw 355-441 KiB and 190 KiB free
  * [measured]; under those every allocation is refused, which the code

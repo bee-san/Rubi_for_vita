@@ -109,6 +109,8 @@ build text_join host/tests/test_textjoin.c core/textjoin.c core/utf.c
 build linebreak host/tests/test_linebreak.c core/linebreak.c core/utf.c
 # Native hooks: which text a job shows (core/hook_select.h), as the game worker runs it on the A9.
 build hook_select host/tests/test_hook_select.c core/hook_select.c
+# Line history (docs/line-history.md): history.csv's records read back from a window, 32-bit size_t.
+build history_lines host/tests/test_history_lines.c core/history_lines.c core/textfilter.c core/utf.c core/arena.c
 # The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
 build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
 # The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
@@ -150,7 +152,7 @@ build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak hook_select stick_cursor cursor_nav settings_layout shell_log shell_history apkg psp taicfg shot_trim)
+TESTS+=(touch_hold text_rows text_join linebreak history_lines hook_select stick_cursor cursor_nav settings_layout shell_log shell_history apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
