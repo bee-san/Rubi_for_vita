@@ -177,11 +177,22 @@
  * its CP932 table), Luna's filters (core/hook_re.c) and the selection (core/hook_select.c), linked when the
  * job path calls vjo_hooks_text (hooks-select); they add their own pages then.
  * Raised again for API 31's job path (docs/native-hooks.md: which text a job shows, OCR's or a native hook
- * stream's): MEASURE. */
+ * stream's), which decodes the streams' texts (vjo_hooks_text) and so links the decoder and its CP932 table
+ * (core/hook_text.c, 12,958 B of text and rodata) and Luna's filters (their part of core/hook_luna.c, and
+ * core/hook_re.c, 3,407 B at -Os), and adds the selection (core/hook_select.c, 1,708 B at -Os, and the job
+ * path in game_ocr/main.c) [object sizes, arm-vita-eabi-gcc at the worker's flags]; its static snapshot of
+ * the streams (one stream's copy, 548 B, the texts as the job began, 2,048 B, and the candidates, 400 B) is
+ * 3,064 B more .bss, and the comparison's 2,562 B of arrays are on the worker's stack only while it compares.
+ * The debug build's text 99,016 -> 127,144 B, the normal build's 96,524 -> 124,668 B, both builds' data/bss
+ * 27,496 -> 30,560 B: debug 131,072 -> 163,840 B, normal 126,976 -> 159,744 B [measured: the build log's
+ * module rows, both builds, hooks/select 4f9dca9 with hooks/engine dca6d5f merged]. The selection alone,
+ * before the engine (a stand-in for game_ocr/hooks.c), took 98,304 -> 106,496 B in both builds: text 81,644
+ * -> 84,588 B debug, 80,344 -> 83,336 B normal, data/bss 15,752 -> 18,816 B [measured, hooks/select
+ * 7fd2cb8]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 163840u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 163840u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 159744u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
