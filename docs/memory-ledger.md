@@ -595,7 +595,7 @@ code segment grows by 1,632 B (1,680 B debug) and leaves 132 B of room for the n
 grows by 240 B (the strings, `VjoView`'s three line-history fields, the visit's pointer and step, the
 overlay's two words, the Shell ledger's eleventh item):
 
-| | main `44d4e8d` | this change | room left |
+| | main `f482c21` | this change | room left |
 |---|---:|---:|---:|
 | normal Shell, text | 88,348 B | 89,980 B (+1,632) | 132 B of 90,112 |
 | normal Shell, data/bss | 73,280 B | 73,520 B (+240) | 208 B of 73,728 |
@@ -605,7 +605,7 @@ overlay's two words, the Shell ledger's eleventh item):
 The pages stay 163,840 B (exact) and 176,128 B. `VJO_LEDGER_MAX_ITEMS` goes from 10 to 11 for the
 Shell's new item, so every module's `VjoLedger` has 8 B more `.bss`: the kernel 77,636 → 77,644 and
 75,948 → 75,956 B, the worker 15,720 → 15,728 B (both builds), the same pages [measured: the build log's
-module rows, both builds of main `44d4e8d` and this change; per function, `arm-vita-eabi-nm -S`]. The
+module rows, both builds of main `f482c21` and this change; per function, `arm-vita-eabi-nm -S`]. The
 next change that adds more than 132 B of code to the normal Shell makes room first.
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change

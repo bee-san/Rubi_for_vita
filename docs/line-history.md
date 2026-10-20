@@ -71,7 +71,7 @@ The task left two sources open: a bounded RAM ring of recent texts, or a bounded
 `history.csv`'s end when Up asks for earlier lines. The owner's 09:22Z note settled the modes
 (Automatically only, which is what `history.csv` records), and the evidence settles the rest:
 
-- **The Shell's code pages were nearly full.** On main `44d4e8d` the normal Shell had 1,764 B of text
+- **The Shell's code pages were nearly full.** On main `f482c21` the normal Shell had 1,764 B of text
   room in its 90,112 B of text pages, which `tools/check_memory_ledger.py` checks exactly
   [measured: the build log's module row]. AGENTS.md rule 1: its permanent footprint may only shrink.
 - **A RAM ring is permanent SceShell memory.** 32 lines kept for the moment Up is pressed would hold
@@ -111,10 +111,11 @@ written by this code.
 
 ## Memory and pages
 
-Every figure from the build log's module rows and ledger, both builds, main `44d4e8d` and this change,
+Every figure from the build log's module rows and ledger, both builds, main `f482c21` (the same modules as
+`44d4e8d`, this work's first base) and this change,
 VitaSDK gcc 15.2.0 in `vitasdk/vitasdk:2026.08` [measured]:
 
-| | main `44d4e8d` | this change | room left |
+| | main `f482c21` | this change | room left |
 |---|---:|---:|---:|
 | normal Shell, text | 88,348 B | 89,980 B (+1,632) | 132 B of 90,112 |
 | normal Shell, data/bss | 73,280 B | 73,520 B (+240) | 208 B of 73,728 |
@@ -141,7 +142,7 @@ dictionary's out-of-memory message, 106 B, moved out of `.rodata`); per function
   576 B (`ctl_main` 312, `vjo_history_load` 80, `vjo_history_scan` 64, `vjo_filter_lines` 48,
   `vjo_buf_append` 16, `buf_reserve` 40, `vjo_arena_extend_last` 16), under the thread's config load
   (`apply_config` alone is 1,352 B) [measured: `arm-vita-eabi-gcc -Os -fstack-usage` with the Vita
-  build's flags, both builds the same, main `44d4e8d` and this change; the SDK's own calls not
+  build's flags, both builds the same, main `f482c21` and this change; the SDK's own calls not
   counted].
 - **The overlay's text arena** (`VJO_BUDGET_PAF_UI`, 20,480 B): the header's spans go from 1 to 5
   (`VJO_HEADER_SPANS`: the text and each neighbour's row and line break), so its need goes from
