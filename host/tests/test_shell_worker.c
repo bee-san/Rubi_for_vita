@@ -2633,8 +2633,21 @@ static int stick_render(StickOverlay *o)
     return matches;
 }
 
-/* a frame with the stick at (lx, 128): its step, a Left/Right's (one character
- * here: 猫犬鳥 has 3-byte letters; the stick's Left/Right ask no layout) */
+/* render's s_match_end: in Whole word mode, the end of the word the worker shows when it starts at
+ * the overlay's cursor (0 for none, a pending lookup or Character mode) */
+static size_t stick_shown_end(const StickOverlay *o)
+{
+    const VjoEntryList *l = g_view.list;
+    size_t len = strlen(local_text);
+    if (g_view.highlight_mode != VJO_HIGHLIGHT_WORD || g_view.cursor_byte != o->cursor || !l || !l->n_entries)
+        return 0;
+    const VjoEntry *e = &l->entries[0];
+    return e->hl_start == (int)o->cursor && e->hl_end > (int)o->cursor && (size_t)e->hl_end <= len ? (size_t)e->hl_end : 0;
+}
+
+/* a frame with the stick at (lx, 128): its step, a Left/Right's, as input_overlay hands it to the
+ * arrows' code (the shown word's end and Japanese-only from the view; the stick's left/right ask no
+ * layout and go a character a step) */
 static void stick_frame(StickOverlay *o, uint8_t lx)
 {
     int direction = 0, vertical = 0;
@@ -2642,7 +2655,8 @@ static void stick_frame(StickOverlay *o, uint8_t lx)
     int step = vjo_stick_cursor_step(vjo_stick_cursor(&o->st, lx, 128, o->now), &direction, &vertical);
     if (step) {
         size_t to = o->cursor;
-        vjo_text_row_key(&o->nav, local_text, strlen(local_text), NULL, o->cursor, 0, direction, vertical, 1, 1, &to);
+        vjo_text_row_key(&o->nav, local_text, strlen(local_text), NULL, o->cursor, stick_shown_end(o), direction,
+                         vertical, g_view.japanese_only_selection, 1, &to);
         vjo_stick_cursor_moved(&o->st, to != o->cursor, o->now);
         if (to != o->cursor) {
             o->cursor = (uint32_t)to;
@@ -2933,6 +2947,83 @@ static void test_word_lookup_with_the_bundled_dictionary(void)
     TEST_CHECK(!lookup_line("会ってなかった")); /* the normal build logs no lookup's text */
 #endif
     close_overlay(); mem_free();
+}
+
+/* The left stick a character at a time with this worker and the bundled dictionary (the owner,
+ * 2026-10-20 08:37Z: on 昨日すき焼きを食べました, from 食べました to ました), Japanese-only on and
+ * off: Auto OCR prepares 昨日; the d-pad's Rights look each word up at once, to 食べました (食べる);
+ * the stick's right from it is べ, looked up once the cursor rests, from that character (べ), and
+ * again ま (ました: the longest match starting there), each shown with its header range, the
+ * Whole word highlight, starting at the cursor. Selection never reruns OCR: one recognition, the
+ * text's generation kept, no new result memory and the dictionary opened once. */
+static void test_stick_steps_characters_with_the_bundled_dictionary(void)
+{
+    const char *dir = getenv("VJO_PLAINTEXT_DIR");
+    if (!dir) { printf("  skipped: VJO_PLAINTEXT_DIR unset\n"); return; }
+    for (int jp = 0; jp <= 1; jp++) {
+        PosixPlatform pp = {0};
+        VjoPlatform posix;
+        TEST_CASE_("Japanese-only %d", jp);
+        cursor_setup();
+        posix_platform_init(&pp, &posix);
+        real_open = posix.file_open; real_opens = 0;
+        plat.file_open = counting_open;
+        snprintf(loaded.local_dictionary_dir, sizeof(loaded.local_dictionary_dir), "%s", dir);
+        strcpy(loaded.local_dictionaries, "plaintext.vjdict");
+        loaded.japanese_only_selection = jp; /* both values, whatever the default */
+        loaded.highlight_mode = VJO_HIGHLIGHT_WORD;
+        cfg = loaded;
+        fake_recognized_text = "昨日すき焼きを食べました"; /* 食 21, べ 24, ま 27 */
+        stable_pending = 1; auto_prefetch();
+        TEST_ASSERT(job_running && job_lookup && ov == OV_CLOSED);
+        finish_current_job();
+        open_overlay();
+        TEST_ASSERT(!job_running && g_view.list && g_view.list->n_entries == 1 && g_view.japanese_only_selection == jp);
+        unsigned inferences = vocr_allocs, users = user_allocs, heaps = heap_allocs;
+        uint32_t generation = local_text_generation;
+        StickOverlay o;
+        memset(&o, 0, sizeof(o));
+        o.st.rest_us = (uint32_t)g_view.stick_lookup_ms * 1000u;
+        o.now = 5000000u;
+        TEST_CHECK(stick_render(&o) && o.cursor == 0);
+        stick_frame(&o, 128); /* new text latched the stick: let go */
+        static const char *const heads[] = {"昨日", "すき焼き", "を", "食べる", "べ", "ました"};
+        static const uint32_t at[] = {0, 6, 18, 21, 24, 27}, ends[] = {6, 18, 21, 36, 27, 36};
+        for (int i = 0; i < 6; i++) {
+            if (i && i < 4) { /* the d-pad's Right: the arrows' code, the word skipped, looked up at once */
+                size_t to = o.cursor;
+                vjo_text_row_key(&o.nav, local_text, strlen(local_text), NULL, o.cursor, stick_shown_end(&o), 1, 0,
+                                 g_view.japanese_only_selection, 0, &to);
+                o.cursor = (uint32_t)to;
+                o.st.due = 0; /* post_cursor_now */
+                vjo_post_cursor(o.cursor, o.generation);
+            } else if (i) { /* the stick pushed right once, then let go: looked up once it rests */
+                stick_frame(&o, 255);
+                TEST_CHECK(o.cursor == at[i] && o.st.due && pending_cmd == VJO_CMD_NONE);
+                for (int f = 0; f < 30 && pending_cmd == VJO_CMD_NONE; f++)
+                    stick_frame(&o, 128);
+                TEST_CHECK(!o.st.due && o.st.lookups == i - 3);
+            }
+            if (i) {
+                TEST_ASSERT(pending_cmd == VJO_CMD_CURSOR && g_view.cursor_byte == at[i]);
+                on_command(); finish_current_job();
+            }
+            TEST_CHECK(stick_render(&o) && o.cursor == at[i]);
+            TEST_ASSERT_(g_view.list && g_view.list->n_entries == 1, "no entry at %u", at[i]);
+            const VjoEntry *e = &g_view.list->entries[0];
+            uint32_t hs = 0, hl = 0;
+            TEST_CHECK_(!strcmp(e->vocab->spelling, heads[i]) && e->hl_start == (int)at[i] && e->hl_end == (int)ends[i],
+                        "at %u: %s [%d, %d), expected %s [%u, %u)", at[i], e->vocab->spelling, e->hl_start, e->hl_end,
+                        heads[i], at[i], ends[i]);
+            TEST_CHECK(vjo_entry_header_range(g_view.list, 0, &hs, &hl) && hs == at[i] / 3 && hl == (ends[i] - at[i]) / 3);
+        }
+        TEST_CHECK(o.nav.words.count == 5 && o.st.moves == 2 && o.st.lookups == 2);
+        TEST_CHECK_(vocr_allocs == inferences && local_text_generation == generation && user_allocs == users &&
+                    heap_allocs == heaps && real_opens == 1,
+                    "OCR %u -> %u, generation %u -> %u, allocations %u/%u -> %u/%u, %u opens", inferences, vocr_allocs,
+                    generation, local_text_generation, users, heaps, user_allocs, heap_allocs, real_opens);
+        close_overlay(); mem_free();
+    }
 }
 #if VJO_DEBUG /* the debug build's log lines (the normal build's: test_normal_build_*) */
 /* vjo_log keeps 254 bytes of a line. The lookup line's numbers come first and
@@ -7286,6 +7377,7 @@ TEST_LIST = {
     {"history_records_refreshes_but_not_cursor_jobs", test_history_records_refreshes_but_not_cursor_jobs},
     {"history_excludes_disabled_failed_cancelled_and_invalid_clock", test_history_excludes_disabled_failed_cancelled_and_invalid_clock},
     {"word_lookup_with_the_bundled_dictionary_first_word_right_and_tap", test_word_lookup_with_the_bundled_dictionary},
+    {"stick_steps_characters_with_the_bundled_dictionary", test_stick_steps_characters_with_the_bundled_dictionary},
 #if VJO_DEBUG
     {"lookup_log_line_fits_with_worst_case_fields", test_lookup_log_line_fits_with_worst_case_fields},
 #endif

@@ -45,8 +45,8 @@
 
 - **Look up any word in the dialogue.** L + R opens the overlay over the game: the dialogue at the
   top, a word's dictionary entry under it, with its reading and how common the word is. Go word by
-  word with the d-pad or the left stick, or tap a word. An inflected word is looked up in its
-  dictionary form (した → する).
+  word with the d-pad, character by character with the left stick, or tap a word. An inflected word
+  is looked up in its dictionary form (した → する).
 - **Fully offline.** Rubi reads the text with its own OCR on the Vita and looks it up in a
   dictionary on the memory card: no Wi-Fi, no computer, no account, and no network code
   ([privacy](#does-it-send-anything-over-the-internet)).
@@ -97,8 +97,9 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
    it with the left stick (or the d-pad, a pixel at a time), press **Enter** at one corner of the
    dialogue box, then again at the opposite corner. A tight box needs less memory and makes fewer
    mistakes. Hold **□** for a second to go back to the whole screen.
-3. **Look a word up.** **◀ ▶** go word by word, **▲ ▼** go a row up or down, and the left stick
-   moves faster. Or tap a word. The right stick scrolls a long entry.
+3. **Look a word up.** **◀ ▶** go word by word and **▲ ▼** a row up or down. The left stick goes a
+   character at a time, faster while held, and looks up the word that starts where it stops. Or tap
+   a word. The right stick scrolls a long entry.
 4. **Make a card.** Turn **Card mining** ON on the app's **Anki** page once. Then press **Enter** on
    a word: it is saved with its sentence and a screenshot. **Export cards** on the Anki page writes
    them into `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`: copy that file to a computer

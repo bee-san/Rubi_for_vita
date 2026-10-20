@@ -12,9 +12,10 @@
  *   input_overlay: the d-pad, then the stick's step, then its lookup) is replayed
  *   here over a cursor on a text;
  * - the stick's step along the text (core/text_rows.c vjo_text_row_key with
- *   `stick`, the arrows' Left/Right): in reading order across lines, the
- *   matched word skipped, never round the ends. host/tests/test_cursor_nav.c
- *   compares the stick's four directions with the d-pad's on layouts.
+ *   `stick`): a character a step in reading order across lines, the matched
+ *   word never skipped (the owner, 2026-10-20), never round the ends.
+ *   host/tests/test_cursor_nav.c compares the stick's four directions with
+ *   the d-pad's on layouts.
  *
  * The texts are synthetic. */
 #include <stdio.h>
@@ -672,11 +673,11 @@ static void a_refused_post_is_not_kept_at_the_close(void)
 
 /* ---- the stick's step along the text ---- */
 
-/* The stick's left/right as the overlay takes it (owner, 2026-10-16, item 3):
- * an arrow's for vjo_text_row_key with `stick` set, which never goes round
- * the text's ends; here on a fresh path (no Right to retrace: Left one
- * character back) and without a layout, which a stick's Left/Right never
- * asks for. Nothing goes into the arrows' counts. */
+/* The stick's left/right as the overlay takes it (owner, 2026-10-16, item 3,
+ * and 2026-10-20): an arrow's for vjo_text_row_key with `stick` set, a
+ * character a step, never round the text's ends; here on a fresh path and
+ * without a layout, which a stick's Left/Right never asks for. Nothing goes
+ * into the arrows' counts. */
 static size_t read_step(const char *s, size_t len, size_t cursor, size_t matched_end, int direction, int jp)
 {
     VjoRowNav nav;
@@ -731,28 +732,32 @@ static void read_steps_in_reading_order(void)
     TEST_CHECK(read_step(s, len, 40, 0, -1, 1) == 35);
 }
 
-/* Whole word: the matched word is skipped on the step from its start (as the
- * d-pad's Right), a bad end is one character; Left never uses a match. */
-static void read_steps_skip_the_matched_word(void)
+/* Whole word: the stick's step never skips the matched word (the owner, 2026-10-20: the d-pad goes
+ * word by word, the stick character by character): from a word's start it goes to the next
+ * character whatever match end is shown, a word's, a bad one or the text's end; Left never uses a
+ * match. */
+static void read_steps_never_skip_the_matched_word(void)
 {
     /* 今 0, 日 3, は 6, 天 9, 気 12, が 15, い 18, い 21, 。 24, 散 27, 歩 30 */
     const char *s = "今日は天気がいい。散歩";
     size_t len = strlen(s);
     TEST_CHECK(len == 33);
-    TEST_CHECK(read_step(s, len, 0, 6, 1, 1) == 6);     /* 今日 -> は */
-    TEST_CHECK(read_step(s, len, 9, 15, 1, 1) == 15);   /* 天気 -> が */
-    TEST_CHECK(read_step(s, len, 15, 24, 1, 1) == 27);  /* がいい -> 散 (the 。 skipped) */
-    TEST_CHECK(read_step(s, len, 15, 24, 1, 0) == 24);  /* off: -> 。 */
-    TEST_CHECK(read_step(s, len, 0, 4, 1, 1) == 3);     /* not a character boundary: one character */
+    TEST_CHECK(read_step(s, len, 0, 6, 1, 1) == 3);     /* 今日 shown -> 日, not は */
+    TEST_CHECK(read_step(s, len, 9, 15, 1, 1) == 12);   /* 天気 -> 気 */
+    TEST_CHECK(read_step(s, len, 15, 24, 1, 1) == 18);  /* がいい -> い */
+    TEST_CHECK(read_step(s, len, 21, 24, 1, 1) == 27);  /* い -> 散 (the 。 skipped) */
+    TEST_CHECK(read_step(s, len, 21, 24, 1, 0) == 24);  /* off: -> 。 */
+    TEST_CHECK(read_step(s, len, 0, 4, 1, 1) == 3);     /* not a character boundary: one character, as always */
     TEST_CHECK(read_step(s, len, 0, 0, 1, 1) == 3);     /* no match: one character */
-    TEST_CHECK(read_step(s, len, 30, len, 1, 1) == 30); /* the match reaches the end: stays */
-    TEST_CHECK(read_step(s, len, 27, len, 1, 1) == 27);
+    TEST_CHECK(read_step(s, len, 27, len, 1, 1) == 30); /* 散歩 reaches the end: 歩 */
+    TEST_CHECK(read_step(s, len, 30, len, 1, 1) == 30); /* the last: stays */
     TEST_CHECK(read_step(s, len, 9, 15, -1, 1) == 6);   /* Left: one character back */
     TEST_CHECK(read_step(s, len, 0, 0, -1, 1) == 0);
     TEST_CHECK(read_step(s, len, 3, 0, 0, 1) == 3);     /* no direction */
     TEST_CHECK(read_step("", 0, 0, 0, 1, 1) == 0);
     TEST_CHECK(read_step("ABC", 3, 3, 0, 1, 1) == 3);   /* no Japanese: the cursor is len */
     TEST_CHECK(read_step("ABC", 3, 3, 0, -1, 1) == 3);
+    TEST_CHECK(read_step("ABC", 3, 0, 3, 1, 0) == 1);   /* off: ABC shown, B */
 }
 
 /* Every step from every character of generated texts against the rule restated:
@@ -844,7 +849,7 @@ TEST_LIST = {
     {"new_text_drops_the_due_word_and_latches", new_text_drops_the_due_word_and_latches},
     {"a_refused_post_is_not_kept_at_the_close", a_refused_post_is_not_kept_at_the_close},
     {"read_steps_in_reading_order", read_steps_in_reading_order},
-    {"read_steps_skip_the_matched_word", read_steps_skip_the_matched_word},
+    {"read_steps_never_skip_the_matched_word", read_steps_never_skip_the_matched_word},
     {"read_steps_against_the_rule", read_steps_against_the_rule},
     {"held_through_a_text", held_through_a_text},
     {NULL, NULL}

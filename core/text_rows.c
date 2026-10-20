@@ -201,14 +201,23 @@ size_t vjo_word_step(VjoWordNavigation *h, const char *s, size_t len, size_t cur
 int vjo_text_row_key(VjoRowNav *nav, const char *s, size_t len, const VjoTextRows *r, size_t cursor,
                      size_t matched_end, int dx, int dy, int japanese_only, int stick, size_t *out)
 {
+    VjoWordNavigation *h = &nav->words;
     int rc;
     *out = cursor;
     if (dx) {
         nav->goal.at = 0; /* Up/Down take their column afresh */
-        *out = vjo_word_step(&nav->words, s, len, cursor, matched_end, dx, japanese_only, r, !stick, &rc);
+        if (stick && dx < 0) {
+            /* The stick's left: the character before, never a Right retraced (the owner,
+             * 2026-10-20). The newest Right, if it started there or after, leaves the history;
+             * the Rights before it stay, for the d-pad's Left. */
+            rc = vjo_text_row_step(s, len, r, cursor, cursor, -1, japanese_only, 0, out);
+            if (rc > 0 && h->count && h->previous[h->count - 1] >= *out)
+                h->count--;
+        } else /* the stick's right: the next character, never past the shown word */
+            *out = vjo_word_step(h, s, len, cursor, stick ? 0 : matched_end, dx, japanese_only, r, !stick, &rc);
     }
     else if ((rc = vjo_text_row_vertical(s, len, r, cursor, dy, japanese_only, &nav->goal, out)) > 0)
-        nav->words.count = 0;
+        h->count = 0;
     if (!stick) { /* the close log's counts are the arrows' */
         nav->row_moves += !dx && rc > 0;
         nav->wraps += rc == VJO_ROW_WRAPPED;

@@ -359,7 +359,8 @@ static void real_lines_walk_word_by_word(void)
  * text in reading order across its rows, each step to the first letter at or
  * after the match's end (the rule restated over the cells, layout_double.h),
  * and stops at the text's last word, going round to its first word only on a
- * text on one row; the stick's step (no wrap) is the same but there. Left
+ * text on one row; the stick's step from each is the next letter, the shown word
+ * not skipped (the owner, 2026-10-20). Left
  * retraces the last 16 Rights, then steps one character back. Up and Down from
  * every letter land where the rule restated over the cells says. */
 static void real_lines_navigate_displayed_rows(void)
@@ -408,14 +409,15 @@ static void real_lines_navigate_displayed_rows(void)
                                   ? end : cursor + 1;
                 int wrapped;
                 size_t want = ref_read_step(&lay, cursor, from, 1, 1, 1, &wrapped);
-                VjoWordNavigation as_stick = nav;
-                int stick_rc;
-                size_t stick_next = vjo_word_cursor_step(as_stick, s, len, cursor, end, 1, 1, &rows, &stick_rc, 0);
+                VjoRowNav as_stick = VjoRowNav();
+                as_stick.words = nav;
+                size_t stick_next = cursor;
+                int stick_wrapped, stick_rc = vjo_text_row_key(&as_stick, s, len, &rows, cursor, end, 1, 0, 1, 1, &stick_next);
                 visited.push_back(cursor);
                 size_t next = vjo_word_cursor_step(nav, s, len, cursor, end, 1, 1, &rows, &rc);
                 TEST_CHECK_(next == want && rc == (want == cursor ? VJO_ROW_STAY : wrapped ? VJO_ROW_WRAPPED : VJO_ROW_MOVED),
                             "Right from %zu (match end %zu): %zu rc %d, expected %zu", cursor, end, next, rc, want);
-                TEST_CHECK(stick_next == (rc == VJO_ROW_WRAPPED ? cursor : next) && stick_rc >= 0);
+                TEST_CHECK(stick_next == ref_read_step(&lay, cursor, cursor + 1, 1, 1, 0, &stick_wrapped) && stick_rc >= 0);
                 if (rc == VJO_ROW_STAY) {
                     TEST_CHECK(!one || cursor == lay.begin[sel.front()]); /* one row stays only with nowhere to go round */
                     break;
@@ -469,6 +471,112 @@ static void real_lines_navigate_displayed_rows(void)
     printf("\n  %zu real lines x 3 layouts: %lu texts on %lu rows (%lu on one row, which wrap), Right through "
            "%lu words crossing %lu row ends (%lu walks over 16 words), %lu lookups; %lu Up/Down checks\n",
            lines.size(), texts, rows_seen, one_row, words, crossings, long_walks, lookups_n, verticals);
+}
+
+/* The left stick a character at a time (the owner, 2026-10-20 08:37Z: "lets say i have a sentence
+ * like 昨日すき焼きを食べました. I go to word 食べました. I want to go to ました. ... It would be nice if
+ * it went character by character and just looked up from that character"), with the bundled
+ * dictionary, Japanese-only on and off. The d-pad goes to 食べました word by word; the stick's right
+ * from it (食べる shown) is べ, then ま, and the lookup there, as the overlay's deferred lookup makes
+ * it once the cursor rests, is the longest match starting at that character: べ, then ました, whose
+ * header range (the Whole word highlight) starts at the cursor. Then every real line, laid out at
+ * 920 px: the stick's right from the first selectable character lands on every selectable one in
+ * reading order (with Japanese-only off, punctuation and Latin too), never past the word shown at
+ * the cursor, the lookup at each an entry starting there or none; its left comes back the same way. */
+static void the_stick_looks_up_from_each_character(void)
+{
+    VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
+    static Layout lay;
+    unsigned long steps = 0, lookups = 0, entries = 0, inside = 0, not_letters = 0;
+    load(); setup(&cfg, &p, &pp);
+    for (int jp = 0; jp <= 1; jp++) {
+        cfg.japanese_only_selection = jp; /* both values, whatever the default */
+        {
+            VjoArena a; VjoOverlayData d;
+            const char *text = "昨日すき焼きを食べました";
+            TEST_CASE_("the owner's example, Japanese-only %d", jp);
+            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, text, &d) == VJO_OK);
+            const char *s = d.sentence;
+            size_t len = strlen(s), mark = vjo_arena_mark(&a), cursor = 0, to = 0, end = 0;
+            TEST_ASSERT(!strcmp(s, text));
+            layout_text(&lay, s, 920.0f, 27.0f, 13.5f);
+            VjoTextRows rows = layout_rows(&lay);
+            VjoRowNav nav = VjoRowNav();
+            static const char *const spans[] = {"昨日", "すき焼き", "を", "食べました", "べ", "ました"};
+            static const char *const heads[] = {"昨日", "すき焼き", "を", "食べる", "べ", "ました"};
+            for (int i = 0; i < 6; i++) {
+                if (i) { /* the d-pad's Right, three times (a word each); then the stick's right, twice */
+                    vjo_text_row_key(&nav, s, len, &rows, cursor, end, 1, 0, jp, i > 3, &to);
+                    cursor = to;
+                }
+                vjo_arena_release(&a, mark);
+                TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, cursor, &d) == VJO_OK);
+                TEST_ASSERT_(d.list.n_entries == 1, "no entry at \"%s\"", s + cursor);
+                const VjoEntry *e = &d.list.entries[0];
+                std::string span(s + e->hl_start, (size_t)(e->hl_end - e->hl_start));
+                TEST_CHECK_(e->hl_start == (int)cursor && span == spans[i] && !strcmp(e->vocab->spelling, heads[i]),
+                            "step %d at \"%s\": %s (%s), expected %s (%s)", i, s + cursor, span.c_str(),
+                            e->vocab->spelling, spans[i], heads[i]);
+                check_header_range(&d, cursor, (size_t)e->hl_end);
+                end = (size_t)e->hl_end;
+            }
+            TEST_CHECK(cursor == strlen("昨日すき焼きを食べ") && nav.words.count == 5);
+        }
+        for (auto &line : lines) {
+            VjoArena a; VjoOverlayData d;
+            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, line.text.c_str(), &d) == VJO_OK);
+            const char *s = d.sentence;
+            size_t len = strlen(s), mark = vjo_arena_mark(&a);
+            layout_text(&lay, s, 920.0f, 27.0f, 13.5f);
+            VjoTextRows rows = layout_rows(&lay);
+            std::vector<size_t> sel;
+            for (unsigned k = 0; k < lay.n; k++)
+                if (layout_selectable(&lay, k, jp)) sel.push_back(lay.begin[k]);
+            if (sel.empty()) continue;
+            TEST_CASE_("%s %s, Japanese-only %d", line.id.c_str(), line.model.c_str(), jp);
+            VjoRowNav nav = VjoRowNav();
+            size_t cursor = sel.front();
+            for (size_t i = 0;; i++) {
+                vjo_arena_release(&a, mark);
+                TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, cursor, &d) == VJO_OK);
+                lookups++;
+                TEST_CHECK(d.list.n_entries <= 1 && opens == closes);
+                size_t end = 0, to = cursor;
+                if (d.list.n_entries) {
+                    const VjoEntry *e = &d.list.entries[0];
+                    TEST_CHECK(e->hl_start == (int)cursor && e->hl_end > (int)cursor && e->hl_end <= (int)len);
+                    check_header_range(&d, cursor, (size_t)e->hl_end);
+                    end = (size_t)e->hl_end;
+                    entries++;
+                }
+                int rc = vjo_text_row_key(&nav, s, len, &rows, cursor, end, 1, 0, jp, 1, &to);
+                if (i + 1 == sel.size()) {
+                    TEST_CHECK_(to == cursor && rc == VJO_ROW_STAY, "the stick's right from the last moved to %zu", to);
+                    break;
+                }
+                TEST_CHECK_(to == sel[i + 1] && rc == VJO_ROW_MOVED, "the stick's right from %zu (shown to %zu): %zu, "
+                            "expected %zu", cursor, end, to, sel[i + 1]);
+                inside += end > to; /* inside the shown word, which the d-pad's Right skips */
+                size_t j = to;
+                not_letters += !vjo_is_japanese_letter(vjo_utf8_next(s, len, &j));
+                cursor = to;
+                steps++;
+            }
+            for (size_t i = sel.size() - 1; i-- > 0;) {
+                size_t to = cursor;
+                TEST_CHECK(vjo_text_row_key(&nav, s, len, &rows, cursor, 0, -1, 0, jp, 1, &to) == VJO_ROW_MOVED &&
+                           to == sel[i]);
+                cursor = to;
+            }
+            TEST_CHECK(nav.words.count == 0 && nav.row_moves == 0 && nav.wraps == 0 && lay.bad_queries == 0);
+        }
+    }
+    TEST_CHECK(inside > 100 && not_letters > 10);
+    printf("\n  the stick through %zu real lines, Japanese-only on and off: %lu steps (%lu inside the shown word, "
+           "%lu onto punctuation, Latin or digits), %lu lookups, %lu entries\n",
+           lines.size(), steps, inside, not_letters, lookups, entries);
 }
 
 /* Inflections, kana-only words, katakana loanwords, names, common readings
@@ -981,6 +1089,7 @@ TEST_LIST = {
     {"expected_entries_at_real_lines", expected_entries_at_real_lines},
     {"touch_and_left_right_follow_the_words", touch_and_left_right_follow_the_words},
     {"real_lines_navigate_displayed_rows", real_lines_navigate_displayed_rows},
+    {"the_stick_looks_up_from_each_character", the_stick_looks_up_from_each_character},
     {"ultimate_dictionary_fixture_entries", ultimate_dictionary_fixture_entries},
     {"every_bundled_entry_fits_the_popup", every_bundled_entry_fits_the_popup},
     {"split_words_are_looked_up_whole", split_words_are_looked_up_whole},

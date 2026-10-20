@@ -11,8 +11,9 @@ falls back to one Unicode character. Character mode always steps one character.
 Both go in reading order across the header's displayed rows and stop at the
 text's ends (a text on one row goes round them), and Up/Down change rows
 ([rows and arrow keys](#rows-and-arrow-keys)). The left stick moves the cursor
-in the same four directions, faster, and looks its word up only once it rests
-([the left stick](#the-left-stick-138)).
+in the same four directions, faster, its left and right a character at a time
+in both modes, and looks up the word starting at its character only once it
+rests ([the left stick](#the-left-stick-138)).
 Whole word uses the matched source span, including an inflected ending, rather
 than the dictionary's normalized spelling. While a lookup runs or has no result,
 it highlights the selected character instead. Changing the preference preserves
@@ -309,23 +310,42 @@ way:
   of the stick is handed to the arrows' own code as that arrow's press
   (`vjo_text_row_key`, `core/text_rows.c`, with its `stick` flag). Left and
   right go in reading order across the displayed rows and line breaks as
-  Left/Right do: Right from a word whose lookup is shown skips that word; every
-  other step is one character, because no lookup tells where the next word ends
-  while the stick moves; Left retraces the Rights, the d-pad's and the stick's
-  alike (one history), and otherwise steps one character back. Up and down go a
+  Left/Right do, but a character a step (next item). Up and down go a
   displayed row, keeping the d-pad's column across a short row. Japanese-only
   applies as to the arrows. A diagonal counts as the axis pushed farther (a tie
   as left/right), and the one held keeps counting while it stays past half way,
-  so a stick rolled round changes direction once. The one difference: the stick
-  stops at the text's first and last character even on a text on one row, which
-  the d-pad goes round, as the app's lists stop at their ends while their
-  Up/Down wrap, so a held stick never circles a short line. Its Left still
-  undoes a d-pad Right that went round there (Right at the last character to
-  the first, then the stick left: back to the last), because any Left retraces
-  the Rights before it; the stick itself never goes round.
+  so a stick rolled round changes direction once. The stick stops at the text's
+  first and last character even on a text on one row, which the d-pad goes
+  round, as the app's lists stop at their ends while their Up/Down wrap, so a
+  held stick never circles a short line.
+- **A character at a time** (the owner, 2026-10-20: "lets say i have a sentence
+  like 昨日すき焼きを食べました. I go to word 食べました. I want to go to ました.
+  Currently i cannot do this with [the d-pad], which is okay as its meant for word
+  by word level. Left joystick can move fast through the text, but it still obeys
+  the word level rules. It would be nice if it went character by character and
+  just looked up from that character"). The stick's left and right go one
+  character in reading order in both highlight modes. Its right never skips the
+  shown word (`vjo_text_row_key` does not use the match's end for the stick) and
+  is recorded in Right's history as any Right. Its left steps a character back
+  and never retraces a Right; the newest Right, if it started where the stick
+  lands or after, leaves the history, so the d-pad's Left goes on retracing the
+  ones before it (from inside a word the d-pad skipped, back to that word's
+  start). Where the cursor rests, the word starting at its character is looked
+  up, the longest match there as for a tap, and in Whole word mode highlighted
+  as that match: on that sentence,
+  from 食べました (食べる) the stick's right is べ (looked up: べ), then ま
+  (ました), where the d-pad's Right goes past 食べました. With Japanese-only ON
+  it lands only on kana and kanji; OFF, on every visible character, punctuation
+  and Latin too (、 and 。 in 昨日、すき焼きを食べました。), never a space or a
+  line break. Two things change on purpose: the stick's right from a word whose
+  lookup is shown no longer skips it (before, its first step did, and every
+  later one went a character), and its left no longer undoes a d-pad Right that
+  went round a one-row text: at the text's first character it stays, as the
+  stick never goes round (the d-pad's Left still undoes it). The d-pad, taps,
+  Up/Down, the ends, Character mode and the deferred lookup are as they were.
 - **The deferred lookup.** While the stick moves the cursor, the body says
-  "Looking up words…" and the header highlights the character. The word at the
-  cursor is looked up once, when the cursor has rested there for
+  "Looking up words…" and the header highlights the character. The word
+  starting at the cursor is looked up once, when the cursor has rested there for
   `stick_lookup_ms` (`config.ini`, 200 ms by default, 0-1000; 0 looks up as soon
   as the stick stops driving the cursor), counted from its last move with the
   steps' 1 ms slack for the microsecond clock (six frames at exactly 30 Hz read
@@ -382,20 +402,50 @@ us at exactly 30 Hz, not 1,001 us sooner), none while held, a stick held into
 an end and rolled back moving again without a lookup at any rest, the owner's
 150-250 ms range and 0, flicks, the text's end held, the d-pad's lookup at once
 and its frame, back on the shown word, new text, and the close after a refused
-post; and the stick's step along the text (the arrows' Left/Right without the
-wrap) from every character of 200 generated texts against the rule restated.
-`host/tests/test_cursor_nav.c` (13 cases, on the ARM lane too) compares the
-stick's four directions with the d-pad's from every selectable character of
-nine multi-line and one-row layouts, in both highlight modes (1,520 moves: the
-same character, the d-pad's looked up at once, the stick's once it rests), and
-drives diagonals, the stick held across lines and rows to the text's ends, and
-the history the two share. `host/tests/test_shell_worker.c` runs the
+post; and the stick's step along the text (a character a step, never past the
+shown word, without the wrap) from every character of 200 generated texts
+against the rule restated.
+`host/tests/test_cursor_nav.c` (15 cases, on the ARM lane too) compares the
+stick's four directions and the d-pad's, each with its rule restated over the
+cells, from every selectable character of eleven multi-line and one-row layouts,
+the owner's sentence and a punctuated one among them with Japanese-only on and
+off, in both highlight modes (2,320 moves: up/down the same character for both;
+left/right the d-pad's word or character, the stick's character; the d-pad's
+looked up at once, the stick's once it rests), and drives diagonals, the stick
+held across lines and rows to the text's ends, the history the two share, and
+the owner's example: the d-pad to 食べました, the stick's right to べ and to ま,
+each looked up once it rests, then on to the last character and back; and the
+stick's left at its edges: with Japanese-only OFF a tap through the real hit test
+on an ideographic space, which no step lands on, then the d-pad's Right from it and
+the stick's left past it, after which the d-pad's Left goes back, never forward to
+the space; the d-pad's wrap on one row, which the stick's right and left leave for
+the d-pad's Left to undo; and Up/Down's column, which a stick's left drops even
+where it stays.
+`host/tests/test_text_rows.c` checks the same key function on that sentence on
+one, two and three rows (the stick's characters, the d-pad's Left retracing
+them and then its words, a stick's left inside a word the d-pad skipped), and
+the stick's left and right from every selectable character of 120 generated
+texts, with any match end, with and without a layout, against the rule and the
+history it must leave (17,892 steps), and 400 sessions of mixed keys (the d-pad,
+the stick, Up/Down, taps, Character mode: 120,000 keys) that keep Right's
+history in order before the cursor. Each of 14 mutants of the new step fails a
+test; two more are equivalent (the stick's left with another `from`, which a left
+does not use, or without the rows, which it never asks). `host/tests/test_word_lookup.cpp` takes it to the bundled dictionary: from
+食べました (食べる) the stick's right is べ, then ま, whose lookups are べ and
+ました, their header ranges starting at the cursor; and through every real VOCR
+line, Japanese-only on and off, the stick's right lands on every selectable
+character in turn (2,726 steps, 1,474 inside the shown word, 182 onto
+punctuation, Latin or digits), each lookup an entry starting there or none.
+`host/tests/test_shell_worker.c` runs the owner's example with the real worker
+and the bundled dictionary (one recognition, the text's generation kept, no new
+result memory) and the
 close with the real worker: the audit's B1 sequence (a flick, Cancel 183 ms
 later, the rest ending while the close waits: the reopened overlay shows the
 worker's word, and the stick goes on from there), the close before and after the
-rest, and `stick_lookup_ms` reaching the view. 44 mutants of `core/stick_cursor.h`
-and the step, and 4 of the close and the view's copy against the worker, each
-fail a test. `input_overlay` and `close_page` themselves are paf code no host
+rest, and `stick_lookup_ms` reaching the view. #156's 44 mutants of
+`core/stick_cursor.h` and of the step as it was then (rewritten since, with its
+own mutants above), and 4 of the close and the view's copy against the worker,
+each failed a test. `input_overlay` and `close_page` themselves are paf code no host
 target builds: the tests replay their calls around the real helpers.
 
 In test.3 the overlay drew at 59.5-59.9 Hz (the two sessions with arrow moves:
