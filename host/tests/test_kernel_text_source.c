@@ -63,6 +63,19 @@ static int read_as(SceUID pid)
     return v;
 }
 
+/* audit-hooks N6: the module's initial values, before any reset() writes them: the word is OCR (no hooks
+ * anywhere until the Shell sets one) and the table of processes started ON is empty. First in the list, so
+ * it reads them untouched whether acutest runs each test in a child of this process or all in it. */
+static void test_initial_value_is_ocr(void)
+{
+    TEST_CHECK(text_source == VJO_TEXT_SOURCE_OCR);
+    for (unsigned i = 0; i < TEXT_SOURCE_PIDS; i++) TEST_CHECK_(on_pid[i] == 0, "slot %u", i);
+    TEST_CHECK(on_next == 0);
+    TEST_CHECK(read_as(GAME) == (int)VJO_TEXT_SOURCE_OCR); /* not recorded */
+    text_source_started(GAME, 1);
+    TEST_CHECK(read_as(GAME) == (int)VJO_TEXT_SOURCE_OCR); /* recorded: the initial word itself */
+}
+
 /* Before any Shell sets one: OCR (no hooks), for every caller. */
 static void test_ocr_until_set(void)
 {
@@ -241,6 +254,7 @@ static void test_no_syscall_frame(void)
 }
 
 TEST_LIST = {
+    {"initial_value_is_ocr", test_initial_value_is_ocr}, /* first: before any reset (audit-hooks N6) */
     {"ocr_until_set", test_ocr_until_set},
     {"shell_only", test_shell_only},
     {"modes", test_modes},

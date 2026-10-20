@@ -15,6 +15,8 @@
 #include "../core/boot_guard.h"
 
 #define TEXT_SOURCE_PIDS 4
+/* The word is .bss: 0 as the module loads, which must be OCR (no hooks until the Shell sets one; N6). */
+typedef char text_source_starts_as_ocr[VJO_TEXT_SOURCE_OCR == 0u ? 1 : -1];
 static uint32_t text_source; /* the word, mode | flags: 0, VJO_TEXT_SOURCE_OCR, until the Shell sets one */
 static SceUID on_pid[TEXT_SOURCE_PIDS]; /* 0: free */
 static uint32_t on_next;                /* the slot the next ON start takes, modulo TEXT_SOURCE_PIDS */
