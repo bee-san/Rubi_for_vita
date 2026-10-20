@@ -50,7 +50,7 @@ On `main` since 0.8.0; the next release brings it.
   trim step); before it, 28: API 26's interface again, after vertical text was merged as API 27 ([#213],
   [#216], [#217]) and taken out again ([#222]). 29-31 are the open draft pull requests' builds.
 - The debug build's OCR worker grows one page, to 102,400 B in each game that is ON, for the black bars'
-  code (1,216 B of text); the normal build's stays at 98,304 B.
+  code (1,232 B of text); the normal build's stays at 98,304 B.
 - The README shows the promo film ([#206]) and says what the console runs showed ([#204]); its build
   history is now this changelog ([#224]).
 - The left stick goes a character at a time over the recognized text, in Whole word mode too, and

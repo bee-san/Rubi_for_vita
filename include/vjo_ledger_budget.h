@@ -166,14 +166,14 @@
  * -Os the gate's code is 564 B smaller (2,072 against 2,636 B, vita-vn-ocr eval/textgate_sizes_20261018.json),
  * which would still need the page. In the game's partition, never SceShell's. Both builds now have the same
  * budget.
- * API 32, the Anki screenshot's black bars (core/shottrim.c at -Os, 606 B of text, and game_ocr/main.c shot_pass,
- * the passes that guess, check and read again) take the debug build's text 81,644 -> 82,860 B, 940 B past the 81,920 B
+ * API 32, the Anki screenshot's black bars (core/shottrim.c at -Os, 612 B of text, and game_ocr/main.c shot_pass,
+ * the passes that guess, check and read again) take the debug build's text 81,644 -> 82,876 B, 956 B past the 81,920 B
  * of its text pages, and the normal build's 80,344 -> 81,608 B, which still fits (312 B left); data/bss 15,720 B as
  * before in both [measured: the build log's module rows, both builds, main 75041a0 (the worker's the same on f482c21
  * and 44d4e8d) and this change, CI's container]. So the debug
  * build, the test builds' own and the -debug download, takes one more text page in each game that is ON, 98,304 ->
  * 102,400 B, and the normal build, the main download, keeps 98,304 B. Already cut to get there: the scan at -Os
- * (812 B at -O2) and no row buffer for black rows above the strip. Kept: the one-colour rule, which keeps a dark Vita
+ * (816 B at -O2) and no row buffer for black rows above the strip. Kept: the one-colour rule, which keeps a dark Vita
  * picture's edges from being guessed as bars and read twice (24 of 1,727 frames without it, 1 with it [measured, host,
  * on local copies of the owner's frames, docs/anki.md "Black bars"]), and the one-compare path for runs of the bars'
  * colour, which pays back most of what the rule's colour check costs: every row of a PSP game's 1x frame scanned in
