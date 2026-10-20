@@ -18,7 +18,9 @@ automatic": line history has the lines of **Read text: Automatically** only, the
 *A host rendering of the code's own spans (the header from `core/styled.c`'s `vjo_styled_history`,
 the body in `shell/overlay.cpp` `render()`'s order and strings, the bundled dictionary's real
 lookups), drawn in IPA P Gothic at the overlay's geometry: not a console capture. The game worker's
-normalisation stores full-width digits as ASCII (４７７８ → 4778), as `history.csv` keeps them.*
+normalisation stores full-width digits as ASCII (４７７８ → 4778), as `history.csv` keeps them. The
+rendering's lookups use **Japanese characters only** ON (the promo capture's setting), under which an
+earlier line opens with the cursor on 万; with today's default, OFF, it opens on 4.*
 
 ## What it does
 
@@ -32,7 +34,8 @@ normalisation stores full-width digits as ASCII (４７７８ → 4778), as `his
   row of the line after it** (at first, the current text), both dimmed (`VJO_RGB_RANK`, the colour of
   the frequency badge), with no characters of theirs selectable. The header grows to at most five
   rows for it, and the definition below shrinks by as much (`HEADER_MAX_LINES_HISTORY`).
-- The body's first line says where the text is: `Earlier line -2 · ▲ earlier · ▼ later`.
+- The body's first line says where the text is: `Earlier line -2 · ▲ earlier · ▼ later` (without
+  `▲ earlier` on the oldest line kept).
 - On the focused line everything works as on the current text: Left/Right, Up/Down between its own
   rows, the left stick, a tap, the dictionaries' pages (L/R) and Enter. Each line's first word is
   looked up when it is shown, as the current text's is when the overlay opens. The arrows' Up/Down
@@ -40,7 +43,9 @@ normalisation stores full-width digits as ASCII (４７７８ → 4778), as `his
   stops at a one-row text's ends ([touch-lookup.md](touch-lookup.md#the-left-stick-138)).
 - Only this game's lines: a record whose first column (`uuid`, `vita-PCSG00415` or `psp-<disc ID>`)
   is the running game's, as `net_job` writes it from the game Anki's cards name. Another game's lines
-  between two of this game's are skipped. Consecutive identical lines are shown once (history.csv
+  between two of this game's are skipped. Where that ID is shared, so are the lines: PSP games started
+  from inside Adrenaline's own menu all write `psp-PSPEMUCFW` (the Rubi app describes no disc for them),
+  and a game whose title ID cannot be read writes `vita-GAME`, as their Anki cards say already. Consecutive identical lines are shown once (history.csv
   already collapses rescans of one screen; a line that is the same as the line after it, once filtered,
   is skipped too), and a line again after a different one (A, B, A) stays.
 - A line is shown as the overlay shows a text: its rows without Japanese left out when
@@ -48,7 +53,10 @@ normalisation stores full-width digits as ASCII (４７７８ → 4778), as `his
 - **Read text: Only when I press L + R**: Up on the top row does what it did before line history,
   nothing (owner 09:22Z: "only work on automatic"); that mode records no line. Up does nothing either
   when there is no earlier line: no `history.csv` yet, none of this game's lines in its last 24 KiB,
-  past the 32nd line, or no Paf memory for a visit (the log says which, in the debug build).
+  on the oldest line kept (the 32nd at most), or no Paf memory for a visit. The debug build's log has
+  a line for each read (`history: N earlier lines of …`), and both builds log a Paf block the reserve
+  guard refused; an Up on the oldest line has none. With no earlier line, each such Up reads the
+  file again (it keeps nothing to remember that there was none).
 - A step goes to its line once no job reads the overlay's text: a lookup or a refresh of the line it
   leaves is dropped (a refresh is asked again once the current text is back), a word's preparation
   ends first. Another Up or Down pressed while a step waits for that is dropped (press again).
@@ -67,7 +75,8 @@ is the overlay's text then), its word, every dictionary's entry for it, the game
 **no screenshot**: Rubi keeps no frame of a line, and a screenshot taken now would be of another
 screen (whatever the game shows now), so none is asked for. The status line says so: `Saved for Anki
 (an earlier line: no screenshot)` when screenshots are on; with `anki_screenshot = off` it says what
-any card's does. No audio either (Rubi records none).
+any card's does. Its record names no OCR model: the last recognition's, which a card of the current
+text names, may not be the one that read that line. No audio either (Rubi records none).
 
 ## Where the lines come from (and why)
 
@@ -98,12 +107,20 @@ smaller. Nothing is read or kept at any other time; the file is never written by
 - The read is on VjoControl, never on the Paf thread, so the overlay keeps drawing. It is one open,
   two seeks, one read of at most 24,513 B and one close, once a visit. Console time unmeasured: the
   dictionary's lookups on `ux0:` take 15.3 ms for an open, a seek, a small read and a close, and
-  3.82 ms more per 4 KiB read ([performance.md](performance.md)), so about 15-40 ms [estimate]. Steps
-  within a visit read nothing.
+  3.82 ms more per 4 KiB read ([performance.md](performance.md)), so about 15-40 ms [estimate]. The
+  debug build adds two log appends a visit (the Paf block's line and the visit's), 9.4-47 ms each on
+  the console [measured there for other lines, docs/performance.md]. Steps within a visit read nothing.
 - An append in progress on VjoNet (it appends after publishing each Automatically result) can only
   make the file's last record incomplete: a record is read only once its line's field is closed and
-  the comma after it is there, so a cut record is skipped, and an append rolled back meanwhile only
-  shortens the read.
+  followed by the comma and the time's first digit, so a cut record is skipped, and an append rolled
+  back meanwhile only shortens the read.
+- A record a power loss or a crash cut is not always the last one: the next boot's append follows the
+  cut with no newline between. The cut record's fields then run into the new record's, and it would
+  read as another field's text (the game's name) or as bytes of both; the time's digit after the line
+  field rejects every such merge (the writer always writes one there, a merge has another field's
+  `"`), so neither the cut record nor the one appended right after it is shown, and the lines before
+  and after both are (audit-line-history F1: host tests at every cut position, and the auditor's fuzz
+  of the real writer and reader, 0 bad lines in 39,759 cut-and-append cases).
 - The record parser matches `history.csv`'s own quoting (`shell/history.c`: the first four fields
   quoted, `"` doubled): a record starts at a `"` after a newline whose next byte is neither `"` nor
   `,`, which no byte inside a quoted field can be.
@@ -126,17 +143,20 @@ VitaSDK gcc 15.2.0 in `vitasdk/vitasdk:2026.08` [measured]:
 
 | | main `75041a0` | this change | room left |
 |---|---:|---:|---:|
-| normal Shell, text | 88,428 B | 90,028 B (+1,600) | 84 B of 90,112 |
-| normal Shell, data/bss | 73,280 B | 73,600 B (+320) | 128 B of 73,728 |
-| debug Shell, text | 98,812 B | 100,444 B (+1,632) | 1,956 B of 102,400 |
-| debug Shell, data/bss | 73,272 B | 73,592 B (+320) | 136 B of 73,728 |
+| normal Shell, text | 88,428 B | 90,044 B (+1,616) | 68 B of 90,112 |
+| normal Shell, data/bss | 73,280 B | 73,584 B (+304) | 144 B of 73,728 |
+| debug Shell, text | 98,812 B | 100,492 B (+1,680) | 1,908 B of 102,400 |
+| debug Shell, data/bss | 73,272 B | 73,576 B (+304) | 152 B of 73,728 |
 | kernel / OCR worker data/bss | | +8 B each | `VjoLedger`'s eleventh item |
 
 The pages stay 163,840 B (normal, exact) and 176,128 B (debug); the kernel and the worker keep theirs.
 The normal Shell's text pays for line history's code with `core/textfilter.c` built `-Os` (its object
 288 → 240 B) and four strings in the data segment (`VJO_DATA_TABLE`: line history's two, and two of
 `shell/worker.c`'s cold error messages, 108 and 82 B, moved out of `.rodata`); per function in
-[memory-ledger.md](memory-ledger.md#tables-in-the-data-segment).
+[memory-ledger.md](memory-ledger.md#tables-in-the-data-segment). Beside #233 (the `characters` column,
+its head `6e8a6cb` merged into this one) both builds still fit: the normal Shell 90,068 + 73,688 B
+(44 B of text room, 40 B of data room), the debug one 100,500 + 73,680 B [measured: the two builds of
+that merge].
 
 - **Paf, `VJO_SL_PAF_HISTORY` (16,384 B)**: one block per visit, from the first Up past the top row to
   the return to the current text (or the close, the game's exit). `VJO_WORST_SHELL_PAF` adds it: the
@@ -147,13 +167,14 @@ The normal Shell's text pays for line history's code with `core/textfilter.c` bu
   Typical lines (20-60 characters of 3 B) are 60-180 B, so 32 take 2-6 KiB [estimate]. A refused
   block means no visit: Up does nothing.
 - **VjoControl's stack** (16 KiB): `history_open` and `history_ask` are inlined into `ctl_main`, whose
-  frame goes from 256 to 312 B (+56 B under every chain of the thread); line history's deepest chain is
-  576 B (`ctl_main` 312, `vjo_history_load` 80, `vjo_history_scan` 64, `vjo_filter_lines` 48,
-  `vjo_buf_append` 16, `buf_reserve` 40, `vjo_arena_extend_last` 16; `history_show`'s 112 B, with its
-  `VjoState`, is beside it), under the thread's config load
-  (`apply_config` alone is 1,352 B) [measured: `arm-vita-eabi-gcc -Os -fstack-usage` with the Vita
-  build's flags, both builds the same, main `75041a0` and this change; the SDK's own calls not
-  counted].
+  frame goes from 256 to 312 B in the normal build and from 248 to 304 B in the debug one (+56 B under
+  every chain of the thread); line history's deepest chain is 576 B (`ctl_main` 312, `vjo_history_load`
+  80, `vjo_history_scan` 64, `vjo_filter_lines` 48, `vjo_buf_append` 16, `buf_reserve` 40,
+  `vjo_arena_extend_last` 16; `history_show`'s 96 B, with its `VjoState`, is beside it), under the
+  thread's config load
+  (`apply_config` alone is 1,352 B) [measured: each file's exact compile command from the Vita build
+  (`flags.make` and its own options) with `-fstack-usage`, both builds, main `75041a0` and this change;
+  the SDK's own calls not counted].
 - **The overlay's text arena** (`VJO_BUDGET_PAF_UI`, 20,480 B): the header's spans go from 1 to 5
   (`VJO_HEADER_SPANS`: the text and each neighbour's row and line break), so its need goes from
   17,952 to 18,016 B (`test_ledger.c`).
@@ -166,12 +187,14 @@ The normal Shell's text pays for line history's code with `core/textfilter.c` bu
   `history.csv`'s records: this game's lines newest first, other games' and a longer title ID's
   skipped, the current text not shown again, A/B/A, lines newer than the current text's newest record
   skipped (and no pointer to them left in the table), quotes, commas, a textbox's rows, the filter and
-  trim, a record cut by the window's start or by an append at every byte, at most 32 lines, a full
-  block ending the list without a gap, the writer's longest text.
+  trim, a record cut by the window's start or by an append at every byte, a record cut at every byte
+  and run into the next append (F1), a damaged separator, a record with more columns, at most 32 lines,
+  a full block ending the list without a gap, the writer's longest text.
 - `host/tests/test_shell_history.c`: the real writer and the real reader over real files: a file
   larger than the window (its last 24,512 B read, once), another game's lines in between, short reads,
   no file, a failed read, a file shorter than its size, no scratch, the writer's maximum text, a record
-  cut by a power loss, and a measure of a three-row textbox's record (871 B: the window holds 28).
+  cut by a power loss, a record at the window's first byte (and a byte either side), and a measure of
+  a three-row textbox's record (871 B: the window holds 28).
 - `host/tests/test_shell_worker.c` (`history_*`): the real control thread: Up and Down through a
   visit with lookups and moves on each line, the oldest line, the return with the cursor and the
   screen, a reopen showing the saved word, on_press, no memory (and a lookup running then still
@@ -179,10 +202,13 @@ The normal Shell's text pays for line history's code with `core/textfilter.c` bu
   waits; no refresh in a visit and the one asked for after it; Up during a lookup then a close and a
   reopen on the same screen or another: the visit, never shown, goes and refreshes resume; a close on
   an earlier line (no re-read of the text's screen after it), a reopen during its lookup, a game exit
-  and a new region; the Paf block's ledger item and its release (filled with a pattern when taken and
-  freed, so a pointer kept into it shows).
+  and a new region; a move or a page posted over a pending step (F2) and a step never taking a close's
+  or a region's slot; the subtitle strip turned on during an earlier line's lookup after a close (F3);
+  the Paf block's ledger item and its release (filled with a pattern when taken and freed, so a
+  pointer kept into it shows).
 - `host/tests/test_shell_anki.c`: a card from an earlier line has that line as its sentence and no
-  screenshot, says so, and asks the game for none; the current line's card still has its screenshot.
+  screenshot, says so, asks the game for none and names no OCR model; the current line's card still has
+  its screenshot and its model.
 - `host/tests/test_core.c` (`styled_history_header`): the header's composition and dimming: the
   neighbours' rows and colours, the text's first unit, a textbox's rows, a pathological row cut at 128
   units without splitting a surrogate pair.
@@ -190,11 +216,12 @@ The normal Shell's text pays for line history's code with `core/textfilter.c` bu
   with the dimmed rows (the layout double): Up on the text's top row and Down on an earlier line's last
   row are the line steps, Up/Down between its own rows and Left/Right stay in the text.
 
-A mutation pass over the new code (20 one-line mutants: the parser's record rules, the newer-than-current
-reset, the dedupe and the limit, the step's wait and cancellations, on_press, the return's cursor and
-screen, the visit's frees, the refresh guard, the earlier card's screenshot, the header's lead and dimming,
-the reader's window) is killed 20 of 20 by these suites [measured: a scratch copy of the tree, each mutant
-built and every suite above run].
+A mutation pass over the new code (27 one-line mutants: the parser's record rules and the time check, the
+newer-than-current reset, the dedupe and the limit, the step's wait, cancellations and slot rules, on_press,
+the return's cursor and screen, the visit's frees, the refresh guard, the cache's tag, the earlier card's
+screenshot and model, the header's lead and dimming, the reader's window and its byte before) is killed 27
+of 27 by these suites [measured: a scratch copy of the tree, each mutant built and every suite above run].
+The auditor's own tests of F1-F3 and the slot rule pass on this head too.
 
 Not tested off the console: how the dimmed rows look on the Vita's screen, the read's time on `ux0:`,
 and the Paf heap's free size during a visit. Vita3K is not evidence for any of them (AGENTS.md
