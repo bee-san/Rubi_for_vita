@@ -1833,6 +1833,7 @@ static inline int outside_segments(const uintptr_t *base, const uint32_t *size, 
 #ifdef VJO_HOST
 #define pspemu_process vjo_test_pspemu_process /* host/tests/game_stubs/psp2/kernel/modulemgr.h */
 #define another_copy vjo_test_another_copy
+#define vjoGetTextSource vjo_test_get_text_source
 #else
 static int pspemu_process(void)
 {
@@ -1861,6 +1862,19 @@ static int another_copy(void)
 }
 #endif
 
+/* API 31: the text source the Shell set (config.ini text_source), VJO_TEXT_SOURCE_*, as module_start
+ * reads it for the hooks' mode in this game session (game_ocr/hooks.h vjo_hooks_start); OCR, no hooks,
+ * when the kernel cannot say: no such syscall, another API's kernel (whose jobs
+ * vjo_game_ocr_worker_start refuses too), or a value this build does not know. */
+static unsigned hooks_text_source(void)
+{
+    int m;
+    if (!IMPORT_READY(vjoGetVersion) || !IMPORT_READY(vjoGetTextSource) || vjoGetVersion() != VJO_API_VERSION)
+        return VJO_TEXT_SOURCE_OCR;
+    m = vjoGetTextSource();
+    return m >= 0 && (unsigned)m < VJO_TEXT_SOURCE_COUNT ? (unsigned)m : VJO_TEXT_SOURCE_OCR;
+}
+
 int _start(SceSize args, void *argp) __attribute__((weak, alias("module_start")));
 int module_start(SceSize args, void *argp)
 {
@@ -1881,6 +1895,9 @@ int module_start(SceSize args, void *argp)
      * games keep an idle worker until the Shell confirms their games.ini
      * policy; one per process (another_copy). */
     if (rc < 0 || !vjo_game_is_candidate(title) || another_copy()) return SCE_KERNEL_START_NO_RESIDENT;
+    /* hooks/api alone: keeps the worker's vjoGetTextSource import until hooks/engine's
+     * vjo_hooks_start(title, hooks_text_source(), psp_title) reads it; delete this line in that merge. */
+    (void)hooks_text_source();
     psp_title = pspemu_process() || vjo_game_is_psp(title);
     vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects

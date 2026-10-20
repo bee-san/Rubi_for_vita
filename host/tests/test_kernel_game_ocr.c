@@ -2247,8 +2247,68 @@ static void modification_times_pack_distinctly(void)
     TEST_CHECK(pack_time(&c) > pack_time(&b));
 }
 
+/* API 31: an OCR job's hook pick is automatic, a stream ID (1..VJO_HOOK_STREAMS: a table site or a CALL
+ * caller) or OCR only, and reaches the worker as sent; any other value, or a shot that names one (a shot
+ * answers from no text), is refused before anything is queued. The grown request and result cross the
+ * transport whole (their sizes, the text at its new offset). */
+static void hook_pick_is_checked(void)
+{
+    static const uint32_t ok[] = {VJO_HOOK_PICK_AUTO, 1u, VJO_HOOK_SITE_STREAMS, VJO_HOOK_SITE_STREAMS + 1u,
+                                  VJO_HOOK_STREAMS, VJO_HOOK_PICK_OCR};
+    static const uint32_t bad[] = {VJO_HOOK_STREAMS + 1u, 0x80u, 0xFEu, 0x100u, 0x1FFu, 0xFFFFFFFFu};
+    for (unsigned i = 0; i < sizeof(ok) / sizeof(ok[0]); i++) {
+        setup();
+        VjoGameOcrRequest r = make_request(), got = {0};
+        r.hook_pick = ok[i];
+        caller = 3;
+        int seq = vjoOcrSubmit(&r);
+        TEST_CHECK_(seq > 0, "pick 0x%X", ok[i]);
+        caller = 7;
+        TEST_CHECK(vjoOcrTake(&got) == 0 && got.seq == (uint32_t)seq && got.hook_pick == ok[i]);
+        /* the result's new fields and its text come back as the worker wrote them */
+        memset(&message, 0, sizeof(message));
+        message.size = sizeof(message); message.seq = (uint32_t)seq;
+        message.text_from = ok[i] <= VJO_HOOK_STREAMS ? ok[i] : 0u;
+        message.hook_flags = VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR;
+        message.hook_score = 1000u; message.hook_streams = 0x000FFFFFu;
+        message.hook_mode = VJO_TEXT_SOURCE_AUTO; message.hook_installed = 1u << 16 | 8u; message.hook_refused = 3u;
+        strcpy(message.text, "猫が");
+        TEST_CHECK(vjoOcrComplete(&message) == 0);
+        VjoGameOcrResult out;
+        memset(&out, 0, sizeof(out));
+        caller = 3;
+        TEST_CHECK(vjoOcrRead((uint32_t)seq, &out) == 0);
+        TEST_CHECK(out.size == sizeof(out) && !strcmp(out.text, "猫が") && out.text_from == message.text_from &&
+                   out.hook_flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR) && out.hook_score == 1000u &&
+                   out.hook_streams == 0x000FFFFFu && out.hook_mode == VJO_TEXT_SOURCE_AUTO &&
+                   out.hook_installed == (1u << 16 | 8u) && out.hook_refused == 3u);
+    }
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        setup();
+        VjoGameOcrRequest r = make_request();
+        r.hook_pick = bad[i];
+        caller = 3;
+        TEST_CHECK_(vjoOcrSubmit(&r) == VJO_ERR_ARG && !pending && !valid, "pick 0x%X", bad[i]);
+    }
+    setup();
+    VjoGameOcrRequest r = shot_request();
+    r.hook_pick = 1u;
+    caller = 3;
+    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG && !pending);
+    r.hook_pick = VJO_HOOK_PICK_OCR;
+    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG && !pending);
+    r.hook_pick = VJO_HOOK_PICK_AUTO;
+    TEST_CHECK(vjoOcrSubmit(&r) > 0);
+    /* The new fields sit before the text, which stays the struct's last field (its NUL check and the
+     * Shell's vjo_text_raw read the whole buffer). */
+    TEST_CHECK(offsetof(VjoGameOcrResult, hook_refused) < offsetof(VjoGameOcrResult, text) &&
+               offsetof(VjoGameOcrResult, text) + sizeof(((VjoGameOcrResult *)0)->text) == sizeof(VjoGameOcrResult));
+    TEST_CHECK(offsetof(VjoGameOcrRequest, hook_pick) + sizeof(uint32_t) == sizeof(VjoGameOcrRequest));
+}
+
 TEST_LIST = {
     {"one worker thread per game: a second copy's is refused (#138)", second_worker_thread_is_refused},
+    {"API 31: the hook pick is checked; the grown request and result cross whole", hook_pick_is_checked},
     {"hand-off: an idle take waits for a submission, bounded", take_wakes_on_submit},
     {"hand-off: a pending read waits for the completion, bounded", read_wakes_on_complete},
     {"hand-off: a read waiting at a shutdown is counted and woken; every waited read gives its count back",

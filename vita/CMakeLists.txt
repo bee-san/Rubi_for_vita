@@ -74,6 +74,7 @@ add_executable(VitaJPOverlay_Kernel
   ${ROOT}/kernel/scene.c
   ${ROOT}/kernel/triggers.c
   ${ROOT}/kernel/loader.c
+  ${ROOT}/kernel/text_source.c # API 31: the text source, one word (docs/native-hooks.md)
   ${ROOT}/core/games.c)
 target_compile_options(VitaJPOverlay_Kernel PRIVATE -Wall -Wextra -Wno-unused-parameter -O2 -std=gnu99 -fno-builtin
   -mgeneral-regs-only)
@@ -99,7 +100,7 @@ target_compile_definitions(VitaJPOverlay_Kernel PRIVATE VJO_KERNEL=1)
 # (kernel/input.c, kernel/triggers.c) stay at -O2.
 set_source_files_properties(${ROOT}/kernel/game_ocr.c ${ROOT}/kernel/lifecycle.c ${ROOT}/kernel/foreground.c
   ${ROOT}/kernel/meminfo.c ${ROOT}/kernel/loader.c ${ROOT}/kernel/main.c ${ROOT}/kernel/io_worker.c ${ROOT}/kernel/boot.c
-  ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c
+  ${ROOT}/core/boot_guard.c ${ROOT}/kernel/buffers.c ${ROOT}/kernel/log.c ${ROOT}/kernel/text_source.c
   PROPERTIES COMPILE_OPTIONS "-Os")
 
 target_link_options(VitaJPOverlay_Kernel PRIVATE -nostdlib -Wl,-q)

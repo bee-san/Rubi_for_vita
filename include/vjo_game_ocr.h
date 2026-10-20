@@ -139,6 +139,12 @@ typedef struct {
 #define VJO_HOOK_STREAMS (VJO_HOOK_SITE_STREAMS + VJO_HOOK_CALL_STREAMS)
 #define VJO_HOOK_PICK_AUTO 0u
 #define VJO_HOOK_PICK_OCR 0xFFu
+/* A pick the kernel's vjoOcrSubmit accepts in an OCR job (a shot's is VJO_HOOK_PICK_AUTO). */
+#define VJO_HOOK_PICK_OK(p) ((p) <= VJO_HOOK_STREAMS || (p) == VJO_HOOK_PICK_OCR)
+/* VjoGameOcrResult.hook_streams: bit (id - 1) for each stream ID that holds text, so the Shell's △ cycles
+ * the IDs that have some (sites 1..8 and CALL callers 9..20 need not be contiguous) and its label counts
+ * them ("Hook 2/5": text_from is the second of five). */
+#define VJO_HOOK_STREAM_BIT(id) (1u << ((id) - 1u))
 /* VjoGameOcrResult.text_from: 0 = OCR (or no text), else the stream ID whose text text[] holds. */
 #define VJO_TEXT_FROM_OCR 0u
 /* VjoGameOcrResult.hook_flags. */

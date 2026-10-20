@@ -199,7 +199,8 @@ int sceKernelDelayThread(unsigned us) { clock_value += us; if (quit_on_delay) qu
 int sceKernelGetProcessTitleId(SceUID pid, char *out, SceSize size)
 { TEST_CHECK(pid == 7); snprintf(out, size, "%s", own_title); return 0; }
 int sceAppMgrAppParamGetString(int pid, int param, char *out, SceSize cap) { return -1; }
-int vjoGetVersion(void) { return VJO_API_VERSION; }
+static int text_source_api = VJO_API_VERSION; /* the kernel's API (module_start_reads_the_text_source) */
+int vjoGetVersion(void) { return text_source_api; }
 static int safe_boot_mode, boot_info_calls;
 int vjoBootInfo(VjoBootInfo *out) { boot_info_calls++; TEST_CHECK(out->size == sizeof(*out)); out->mode = safe_boot_mode; return 0; }
 int vjoOcrRegister(void) { return VJO_ERR_NO_GAME; }
@@ -1811,6 +1812,46 @@ static void the_refine_step_carries_its_counts(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 
+/* API 31: the text source as module_start reads it for the hooks (hooks_text_source): the kernel's
+ * VJO_TEXT_SOURCE_*, a value this build does not know as OCR (no hooks), and OCR without asking from
+ * another API's kernel; and only in a game that keeps the worker: none of the processes module_start
+ * unloads from asks. */
+static void module_start_reads_the_text_source(void)
+{
+    static const struct { int kernel; unsigned seen; } cases[] = {
+        {(int)VJO_TEXT_SOURCE_OCR, VJO_TEXT_SOURCE_OCR}, {(int)VJO_TEXT_SOURCE_AUTO, VJO_TEXT_SOURCE_AUTO},
+        {(int)VJO_TEXT_SOURCE_HOOKS, VJO_TEXT_SOURCE_HOOKS}, {(int)VJO_TEXT_SOURCE_COUNT, VJO_TEXT_SOURCE_OCR},
+        {0x7FFFFFFF, VJO_TEXT_SOURCE_OCR}, {VJO_ERR_PERM, VJO_TEXT_SOURCE_OCR}};
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        vjo_test_text_source = cases[i].kernel;
+        vjo_test_text_source_calls = 0;
+        unsigned m = hooks_text_source();
+        TEST_CHECK_(m == cases[i].seen && vjo_test_text_source_calls == 1, "kernel %d: %u", cases[i].kernel, m);
+    }
+    text_source_api = VJO_API_VERSION - 1; /* another API's kernel: not asked */
+    vjo_test_text_source = (int)VJO_TEXT_SOURCE_HOOKS;
+    vjo_test_text_source_calls = 0;
+    TEST_CHECK(hooks_text_source() == VJO_TEXT_SOURCE_OCR && !vjo_test_text_source_calls);
+    text_source_api = VJO_API_VERSION;
+    /* module_start: a candidate game asks, the processes it unloads from never do */
+    setup();
+    strcpy(own_title, "PCSG00415");
+    TEST_CHECK(!module_start(0, NULL) && thread_creates == 1 && vjo_test_text_source_calls >= 1);
+    TEST_CHECK(!module_stop(0, NULL));
+    setup();
+    vjo_test_text_source_calls = 0;
+    strcpy(own_title, "NPXS10015"); /* a system app */
+    TEST_CHECK(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && !vjo_test_text_source_calls);
+    safe_boot_mode = VJO_BOOT_SAFE; /* a safe boot: before any title is read */
+    strcpy(own_title, "PCSG00415");
+    TEST_CHECK(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && !vjo_test_text_source_calls);
+    safe_boot_mode = VJO_BOOT_NORMAL;
+    vjo_test_another = 1; /* another copy runs in this game */
+    TEST_CHECK(module_start(0, NULL) == SCE_KERNEL_START_NO_RESIDENT && !vjo_test_text_source_calls);
+    vjo_test_another = 0;
+    vjo_test_text_source = 0;
+}
+
 /* module_start records whether the game is a PSP game: in psp mode its jobs
  * refine. The PSP emulator's process (its ScePspemu module, whatever its
  * title: an Adrenaline bubble named ABCD12345), Adrenaline's NPXS10028, a
@@ -2523,6 +2564,7 @@ TEST_LIST = {
     {"the refinement: on, in PSP games only by title, its step and arena; mode 3 refused", refine_modes},
     {"the refine step's counts: boxes, splits, the 16-line cap, rows", the_refine_step_carries_its_counts},
     {"module_start records whether the game is a PSP game", module_start_sets_the_psp_title},
+    {"module_start reads the text source for the hooks (API 31)", module_start_reads_the_text_source},
     {"model tiers: the largest that fits beside its reserve, then the next one down, each check logged",
      tier_ladder_takes_the_largest_size_that_fits},
     {"model tiers: the cascade is the next size up, the reserve the largest held, files by tier",

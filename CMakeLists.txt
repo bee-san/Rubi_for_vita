@@ -126,6 +126,13 @@ target_include_directories(vjo-kernel-input-tests PRIVATE third_party/acutest/in
 target_compile_definitions(vjo-kernel-input-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-input-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME kernel_input COMMAND vjo-kernel-input-tests)
+# API 31: the text source's syscalls (kernel/text_source.c): the registered Shell sets it, any process
+# reads it, OCR until set and in a safe boot.
+add_executable(vjo-kernel-text-source-tests host/tests/test_kernel_text_source.c)
+target_include_directories(vjo-kernel-text-source-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_definitions(vjo-kernel-text-source-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-kernel-text-source-tests PRIVATE -Wall -Wextra)
+add_test(NAME kernel_text_source COMMAND vjo-kernel-text-source-tests)
 # #104: the process event hook releases the game's input block in the same event
 # (kernel/lifecycle.c with the real foreground state machine).
 add_executable(vjo-kernel-lifecycle-tests host/tests/test_kernel_lifecycle.c kernel/foreground.c)
