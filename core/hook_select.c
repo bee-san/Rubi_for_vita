@@ -116,13 +116,14 @@ static unsigned within(const uint32_t *o, unsigned m, const uint32_t *h, unsigne
     unsigned j, best;
     for (j = 0; j <= m; j++) row[j] = 0;
     for (unsigned i = 1; i <= n; i++) {
-        unsigned diag = row[0];
+        uint32_t hc = h[i - 1u];
+        unsigned diag = row[0], left = i;
         row[0] = (uint16_t)i;
         for (j = 1; j <= m; j++) {
-            unsigned up = row[j], v = diag + (h[i - 1u] != o[j - 1u]);
-            if (up + 1u < v) v = up + 1u;
-            if (row[j - 1u] + 1u < v) v = row[j - 1u] + 1u;
+            unsigned up = row[j], v = diag + (hc != o[j - 1u]), gap = (up < left ? up : left) + 1u;
+            if (gap < v) v = gap;
             row[j] = (uint16_t)v;
+            left = v;
             diag = up;
         }
     }
