@@ -72,7 +72,9 @@ def py_count(item: bytes) -> int:
 class Counter(unittest.TestCase):
     def test_table_is_core_utf_c(self):
         src = (ROOT / "core/utf.c").read_text()
-        body = src[src.index("japanese_letters[] = {"):]
+        declaration = re.search(r"\bjapanese_letters\[\]\s*(?:VJO_DATA_TABLE\([^)]*\)\s*)?=\s*\{", src)
+        self.assertIsNotNone(declaration)
+        body = src[declaration.end():]
         body = body[:body.index("};")]
         table = tuple((int(a, 16), int(b, 16)) for a, b in re.findall(r"\{0x([0-9A-F]+)u, 0x([0-9A-F]+)u\}", body))
         self.assertEqual(len(table), 33)

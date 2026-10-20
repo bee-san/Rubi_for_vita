@@ -11,7 +11,10 @@ been reported.
 
 ## [Unreleased]
 
-On `main` since 0.8.0; the next release brings it.
+## [0.9.0] - 2026-10-20
+
+Native text extraction, dialogue history, reading statistics and Anki screenshot trimming.
+The normal build omits the debug traces and on-device self-test; the overlay keeps all user features.
 
 ### Added
 
@@ -25,7 +28,8 @@ On `main` since 0.8.0; the next release brings it.
 - The Rubi app's Games page shows five games a page and searches by title or title ID ([#219]).
 - Native text hooks (API 31; [the guide](docs/guide.md#native-text-hooks),
   [the design](docs/native-hooks.md), [#230]): in a game that is ON, the game's worker can read the line
-  the game is about to draw instead of OCR's reading. Not run on a console.
+  the game is about to draw instead of OCR's reading. CLANNAD's string-copy source was verified on
+  the owner's console in the combined test build; table sites remain unverified on hardware.
   - What is hooked: LunaTranslator's Vita table, 294 ported sites for 175 title IDs, each installed only
     where the game's code at that address is a plain function entry that taiHEN can patch, and, where the
     table names a game version, only in that version ([the games](docs/hook-titles.md)); Rubi's own entry
@@ -68,8 +72,8 @@ On `main` since 0.8.0; the next release brings it.
   GameSentenceMiner and ッツ Ebook Reader leave punctuation out too). `tools/reading_stats.py` gives
   the characters read and per hour, in all, per game and per day, from new and 0.8.0 files
   ([#233]; [docs/ocr-history.md](docs/ocr-history.md)).
-- Earlier lines: in the overlay, Up on the text's top row shows this game's line before it, dimmed
-  between its neighbours, for lookups and cards (a card from an earlier line has that line as its
+- Earlier lines: in the overlay, Up on the text's top row shows this game's line before it, focused
+  between its dimmed neighbours, for lookups and cards (a card from an earlier line has that line as its
   sentence and no screenshot); Down comes forward again. Only with **Read text: Automatically**, from
   the lines `history.csv` keeps: its last 24 KiB, at most 32 lines, in a 16 KiB Paf block while you
   look back ([line history](docs/line-history.md)).
@@ -90,11 +94,14 @@ On `main` since 0.8.0; the next release brings it.
   saved without its picture ([#208]; [#207], [#210]).
 - A queued card whose screenshot is missing or damaged is exported without it, and the export says
   so; before, it stayed in the queue ([#218]).
-- The plugins' API is 32 (black bars: a shot's request may carry `VJO_GAME_OCR_S_TRIM`, and its result a
-  trim step); before it, 28: API 26's interface again, after vertical text was merged as API 27 ([#213],
-  [#216], [#217]) and taken out again ([#222]). 29-31 are the open draft pull requests' builds.
-- The debug build's OCR worker grows one page, to 102,400 B in each game that is ON, for the black bars'
-  code (1,232 B of text); the normal build's stays at 98,304 B.
+- The plugins use API 33, combining native hook selection and screenshot trimming in one matched
+  protocol. API 31's hook fields and API 32's standalone trimming build cannot be mixed.
+- The combined build retains the native-hook worker's 167,936 B debug / 159,744 B normal module
+  pages. Compact highlight ranges and fixed tables in existing data-page space keep the Shell at
+  176,128 B debug / 163,840 B normal, with the existing PAF reserve unchanged
+  ([binary measurements](docs/memory-ledger.md#combined-enhancement-test-build-local-api-33)).
+- The popup shows dialogue without hook numbers or source-status controls. Source diagnostics stay
+  in the logs, and ordinary text reads select their source automatically.
 - The README shows the promo film ([#206]) and says what the console runs showed ([#204]); its build
   history is now this changelog ([#224]).
 - The left stick goes a character at a time over the recognized text, in Whole word mode too, and
@@ -104,6 +111,12 @@ On `main` since 0.8.0; the next release brings it.
 
 ### On the console
 
+- 2026-10-20, combined API 33 debug build on the owner's PCH-1001: plugin readbacks matched the
+  package and the Vita completed a normal boot. The owner confirmed CLANNAD's popup text, Up/Down
+  history, mining an older line, and returning to current dialogue after closing history. The latest
+  captured session contained five successful native reads with OCR recognition skipped. All 19 new
+  history records' stored character counts matched a desktop recount. This is not a hardware test
+  of every Luna table site or of black-bar trimming, and the normal build remains hardware-unmeasured.
 - 2026-10-17, with the small bridge: Boku no Natsuyasumi 4 started from its LiveArea bubble, and the
   kernel loaded Rubi's OCR worker into the bubble's PSP emulator process (`PSPEMU004`). Reading text
   in a PSP game is still untested.
@@ -488,7 +501,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.0
 [0.8.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.8.0
 [0.8.0-test.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.8.0-test.4
 [0.8.0-test.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.8.0-test.3
