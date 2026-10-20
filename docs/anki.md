@@ -26,7 +26,10 @@ directory.
    `ux0:data/VitaJPOverlay/config.ini`; the overlay reads it when it next opens.
    **Screenshots**, below it, is ON by default (`anki_screenshot`): each card
    keeps a picture of the game's screen, about 60 KB. Turn it OFF for
-   text-only cards.
+   text-only cards. **Trim black bars**, below that, is ON by default too
+   (`anki_screenshot_trim_bars`): the picture leaves out the black borders
+   around the game's picture, as a PSP game shown smaller than the screen has
+   them ([black bars](#black-bars)). The page's five rows scroll a row at a time.
 2. In a game, open the overlay, select a word and press Enter. The status line
    shows `Saving card…`, then `Saved for Anki`. Enter again on the same
    entry says `Already queued`. In a local character lookup, Enter saves
@@ -291,8 +294,9 @@ AnkiConnect with each note; this is its return, made where heavy work belongs
 (AGENTS.md rule 1): in the game's process, never in SceShell.
 
 It is the game's whole frame when Enter is pressed, 960 × 544 (a PSP game as
-Adrenaline shows it, at 2×), without the overlay, which is SceShell's layer
-and not in the game's frame. With the overlay open the game has no input, so
+Adrenaline shows it, at 2× or smaller in black), without the overlay, which is SceShell's layer
+and not in the game's frame, or with **Trim black bars** ON the part of it between
+the frame's black bars ([below](#black-bars)). With the overlay open the game has no input, so
 this is normally the screen the text was read from; a game that changes its
 screen by itself (a scene that goes on alone, a video) is pictured as it is
 then, and, as the frame is read over 9 of the game's frames, possibly with a
@@ -318,7 +322,9 @@ seam between two bands of rows.
 3. It encodes each band of 16 rows as it comes (`core/jpegsw.c`: baseline JPEG,
    YCbCr 4:2:0, the standard tables, quality 70) into the same block. A JPEG
    over 192 KiB (the most an export reads) is encoded again at quality 50, then
-   35; none of the 598 frames measured below needed it.
+   35; none of the 598 frames measured below needed it. With **Trim black bars**
+   (API 32) the rows are those of the picture between the bars, their columns
+   the picture's: the same strip, nothing copied ([below](#black-bars)).
 4. It hands the JPEG to the kernel in 32 KiB pieces (`vjoOcrShotWrite`, through
    the staging buffer the model reads use), and the kernel's worker thread
    writes them to `anki_queue/<id>.jpg.tmp`, closes it and renames it to
@@ -380,6 +386,95 @@ the game claims it, within the same total job deadline, and can still be
 cancelled. The model open's shorter deadline starts only after preparation
 finishes. Retrying a failed reserve close also waits for an idle transport;
 between retries it does not prevent OCR jobs from running.
+
+### Black bars
+
+With **Trim black bars** ON (`anki_screenshot_trim_bars = on`, the default; API 32's
+`VJO_GAME_OCR_S_TRIM`), the JPEG leaves out the black bars around the game's picture: a
+letterbox (bars above and below) and a pillarbox (bars left and right), as Adrenaline shows
+a PSP game's 480 × 272 picture smaller than the Vita's screen (its screen sizes below 2.0×: 1.75×,
+1.5×, 1.25×, 1.0×, and since v6.3 any size; Adrenaline's README, `TheOfficialFloW/Adrenaline`
+`7d382b7`) or a 4:3 picture in the 16:9 frame. GameSentenceMiner's
+screenshots have the same option, "Black Bar Removal".
+
+The rule (`core/shottrim.h`), on the frame as the worker reads it:
+
+- A pixel is black when its R, G and B are each under 16 (`VJO_TRIM_BLACK_MASK`), so the bars
+  of a JPEG or a scaler's blur still count; a bar is rows (or columns) of black pixels only.
+- An axis is trimmed when both of its bars are at least 8 px, neither is over 3/10 of the side,
+  and the narrower is at least 3/4 of the wider: by the narrower bar less 2 px, rounded down to
+  an even number, on both sides, so 2 px of black stay beside the picture and the picture keeps
+  at least 2/5 of each side. An axis whose two bars are both under 8 px has none.
+- Anything else frames no centred picture and the frame is kept whole: one bar alone (a dark
+  sky, a dark side of a scene), two too unequal, one too wide (a small logo in the middle), and
+  an all-black frame. Every pixel that is not black is in the JPEG, whatever the frame, as long as the
+  frame holds still while it is read (over 9 of the game's frames, as for API 23's seam above): a picture
+  that changes meanwhile is trimmed by the rows as the scan saw them.
+
+So a PSP game at 1× (bars of 240 and 136 px) gives a 484 × 276 picture, at 1.5× 724 × 412, and
+at 2×, the whole screen, the whole frame as before; a game's own black areas count as bar only
+where they reach the frame's edge in every row (or column) of it.
+
+There is no copy of the frame and no second buffer: the worker finds the bars as the rows come
+(`vjo_trim_rows`: a black row read whole, a picture's row only from each end up to its first pixel
+that is not black) and encodes the picture's sub-rectangle of the strip it has. Its
+first rows are read without being encoded until the picture's first row; the bars they show
+are its guess, which it encodes while it scans every row below, and every row checks it:
+
+- A frame decided by its first rows, because they reach its top edge and a side's (it cannot be
+  trimmed) or a black band over 3/10 of the frame is at its top (no letterbox is that tall: kept
+  whole), is read and encoded as without the option, to the same bytes, in the same 9 strips (12
+  when that band is black of more than one value: its rows are read again): 1,661 of the 1,727 Vita
+  frames below (`test_game_shot.c`, `test_game_shot.py`).
+- A frame whose rows come to another picture than its guess is read again, at the same quality: a
+  second pass of the picture's rows only (9 strips at most), and one more encoding. The first pass
+  takes 9 to 12 strips: 9 when its picture starts in the strip in hand, 10 when the picture's first
+  rows are above that strip and read again, 11 or 12 when the guess is the whole frame under black
+  rows of more than one colour, read again from the top. So a shot reads 19 strips at most (a top
+  bar that ends at a strip's end, then a wrong guess: `test_game_shot.c`; a whole-frame guess read
+  again leaves a picture of 8 strips at most), and takes 4 tries when the JPEG is also too large. Side bars under no top bar whose black is not all one
+  colour, mostly a dark picture's edges (an emulator's bars are one colour), are guessed as the
+  whole frame, which is right for them.
+- A wrong guess is read again even when its JPEG already held every pixel that is not black (the
+  guess was the whole frame, and the rows below came to a trimmed picture: 22 of the 29 PSP frames
+  read again below, audit-blackbars): the card then gets the trimmed picture, at the price of the
+  second pass. When the guess cut the picture (the 1 Vita frame read again), the second pass is
+  needed.
+
+Measured on the host with the actual worker (`vjo-game-shot-tests --shot … trim`) on local copies
+of the owner's frames (not in the repository; aggregate counts only):
+
+| Frames | Trimmed | Read again | Strips a shot (mean, most) | Pixels lost |
+| --- | --- | --- | --- | --- |
+| Vita, 960 × 544, 1,727 (47 games) | 0 | 1 | 9.02, 18 | — |
+| PSP at 1× in the black frame, 300 | 282 | 11 | 9.22, 17 | none (no pixel ≥ 16 outside the JPEG) |
+| PSP at 1.5×, 300 | 282 | 11 | 9.30, 18 | none |
+| PSP at 2× (the whole screen), 300 | 4 (the game's own black borders) | 6 | 9.18, 18 | none |
+
+The PSP frames are a fixed random 300 of the owner's 2,628 PSP screens (480 × 272), scaled
+(bilinear) and centred in the black 960 × 544 frame as Adrenaline shows them. Trimmed, their JPEGs are smaller: median 24.3 KB against 28.2 KB whole at 1×, 38.1
+against 40.3 KB at 1.5×.
+
+What it costs on the Cortex-A9 (the Vita compiler's code as the worker builds it, its
+instructions counted under qemu-arm's insn_mix plugin [measured]; times at 444 MHz are estimates,
+scaled as `docs/performance.md` scales them): the first strip of a frame without bars, about 4,000
+instructions; every row of a PSP game's 1× frame, its bars all read, 3.55 million (about 4 to
+9 ms); the encoding of its 484 × 276 picture 20.0 million against 73.8 million for the whole
+frame of the same synthetic picture, so a trimmed shot takes less time than an untrimmed one.
+A frame read again takes up to 10 more of the game's frames than one that is not (about 167 ms at
+60 fps) and one more encoding of the whole frame (69 to 149 ms at 444 MHz, below), so a card whose
+save took 523 to 905 ms on the console (#207) can take over a second then: on the host, 1 of the
+1,727 Vita frames and 11 of 300 PSP frames at 1×. The console-test checklist asks for those shots'
+time. The scan needs no memory: the shot's block is 450,560 B as before. The worker's code
+grows by 1,232 B of text in the debug build and 1,264 B in the normal one (`core/shottrim.c` at
+`-Os`, the passes in `game_ocr/main.c`): the debug build's worker takes one more page, 102,400 B,
+the normal build's keeps its 98,304 B ([memory ledger](memory-ledger.md)).
+
+The debug build's `log.txt` has a line for each screenshot's bars: `anki: screenshot bars K how H:
+picture W×H at X,Y of 960x544; scan N us` (K 0 no bars, 1 trimmed, 2 kept whole; H 0 decided by
+the first rows, 1 the guess checked on every row, 2 read again). `anki_screenshot_trim_bars = off`
+makes every screenshot the whole frame, API 23's, byte for byte. None of this has run on a
+console yet.
 
 ### Size and quality
 
@@ -447,7 +542,14 @@ no card names ([above](#the-queue-on-the-memory-card), #161).
 What the host checks: every encoder output decoded by Pillow
 (`host/tests/test_jpegsw.py`); a screenshot through the actual game worker and
 kernel transport in each pixel format a game submits, decoded too
-(`host/tests/test_game_shot.c`, `test_game_shot.py`); the kernel's rules
+(`host/tests/test_game_shot.c`, `test_game_shot.py`); API 32's black bars on
+synthetic frames (`test_shot_trim.c`: a letterbox, a pillarbox, both, none,
+near-black content at an edge, an all-black frame, noisy bars, Adrenaline's
+layouts, bars that frame no centred picture, random frames that must lose no
+pixel) and through the worker (`test_game_shot.c`, `test_game_shot.py`: each
+trimmed JPEG byte for byte the picture's sub-rectangle as one encoding gives it,
+an untrimmed frame's the same with the option on or off, a wrong guess read
+again, too large after a trim, the kernel strip, a cancel); the kernel's rules
 (`test_kernel_game_ocr.c`); the Shell's saves with one and without
 (`test_shell_anki.c`); a save stopped at each of its writes in a fresh process
 (`test_anki_restart.py`); the screenshots such a stop leaves without a card,
@@ -470,7 +572,8 @@ audio source's URL can carry a key), and
 no longer read or written; delete it if you like. Earlier builds had a field
 mapping too: `anki_deck`, `anki_note_type`, `anki_tags` and the 13
 `anki_field_*` keys, ignored and removed the same way. `anki_mining` and,
-since the screenshot's return, `anki_screenshot` remain.
+since the screenshot's return, `anki_screenshot` remain, and since API 32
+`anki_screenshot_trim_bars`.
 
 ## Memory
 

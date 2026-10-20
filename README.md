@@ -124,6 +124,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Text source**: Automatic (native text hooks in the games that have one, else OCR), Every game, or OCR only, from a game's next start ([guide](docs/guide.md#native-text-hooks)) | Automatic |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
+| | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
 | | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
 | Install | **Install**, **Update** or **Check and repair**, and **Uninstall** | |
 
@@ -156,6 +157,7 @@ logging, is in `ux0:data/VitaJPOverlay/config.ini`
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
 | ❓ | Native text hooks (CLANNAD's entry, [LunaTranslator's Vita table](docs/hook-titles.md)) | not run on a console by this code; an earlier hook build followed CLANNAD's dialogue on the owner's console in 2026-10 ([#230](https://github.com/bee-san/Rubi_for_vita/issues/230)) |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
+| ❓ | Trim black bars on Anki screenshots | not run on a console yet ([details](docs/anki.md#black-bars)) |
 | ❓ | The normal build (the main download) | no console run reported; the test runs used the debug build |
 
 What each build changed, and what its console run showed: the [changelog](CHANGELOG.md).

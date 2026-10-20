@@ -47,7 +47,7 @@ set(CORE_SRC
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
-  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/payload.c core/hook_select.c)
+  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl vjo_taihen_parser)
@@ -470,6 +470,12 @@ target_link_libraries(vjo-jpeg vjo_core)
 target_compile_options(vjo-jpeg PRIVATE -Wall -Wextra)
 add_test(NAME jpeg_encoder COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_jpegsw.py
   $<TARGET_FILE:vjo-jpeg>)
+# API 32: the Anki screenshot's black bars (core/shottrim.c, the game worker's) on synthetic frames.
+add_executable(vjo-shot-trim-tests host/tests/test_shot_trim.c)
+target_include_directories(vjo-shot-trim-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-shot-trim-tests vjo_core)
+target_compile_options(vjo-shot-trim-tests PRIVATE -Wall -Wextra)
+add_test(NAME shot_trim COMMAND vjo-shot-trim-tests)
 if(VJO_WITH_NCNN)
   add_executable(vjo-ocr-tests host/tests/test_ocr.c)
   target_include_directories(vjo-ocr-tests PRIVATE third_party/acutest/include)

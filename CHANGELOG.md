@@ -56,6 +56,14 @@ On `main` since 0.8.0; the next release brings it.
     `text_source = ocr`: its module pages grow from 98,304 to 159,744 B (167,936 B in the debug build)
     [measured: the build logs' module rows, `feat/native-hooks` 9fa24c5]. A hook's own CPU time is
     unmeasured.
+- Anki screenshots without black bars: with **Trim black bars** (`anki_screenshot_trim_bars`, on by
+  default; API 32), a card's picture leaves out the letterbox or pillarbox around the game's picture, as
+  Adrenaline shows a PSP game smaller than the screen (at 1×: 484 × 276 of 960 × 544). The game worker
+  finds the bars as it reads the rows and encodes the picture's part of the same rows, with no copy of the
+  frame; a frame without bars gives the same JPEG as before, byte for byte. On the host, with local copies
+  of the owner's frames: none of 1,727 Vita frames trimmed, 282 of 300 PSP frames at 1× and 1.5×, no pixel
+  that is not black left out ([details](docs/anki.md#black-bars)). Not run on a console yet. The Rubi
+  app's Anki page has the switch; its five rows scroll.
 
 ### Changed
 
@@ -73,8 +81,11 @@ On `main` since 0.8.0; the next release brings it.
   saved without its picture ([#208]; [#207], [#210]).
 - A queued card whose screenshot is missing or damaged is exported without it, and the export says
   so; before, it stayed in the queue ([#218]).
-- The plugins' API is 28: API 26's interface again, after vertical text was merged as API 27
-  ([#213], [#216], [#217]) and taken out again ([#222]).
+- The plugins' API is 32 (black bars: a shot's request may carry `VJO_GAME_OCR_S_TRIM`, and its result a
+  trim step); before it, 28: API 26's interface again, after vertical text was merged as API 27 ([#213],
+  [#216], [#217]) and taken out again ([#222]). 29-31 are the open draft pull requests' builds.
+- The debug build's OCR worker grows one page, to 102,400 B in each game that is ON, for the black bars'
+  code (1,232 B of text); the normal build's stays at 98,304 B.
 - The README shows the promo film ([#206]) and says what the console runs showed ([#204]); its build
   history is now this changelog ([#224]).
 - The left stick goes a character at a time over the recognized text, in Whole word mode too, and

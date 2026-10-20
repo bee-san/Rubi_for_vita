@@ -298,7 +298,7 @@ if(VJO_WITH_VOCR)
     ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c
     # API 23: the Anki screenshot's JPEG encoder, in the game's process only (never the Shell's),
     # and the arena it encodes into
-    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c
+    ${ROOT}/core/jpegsw.c ${ROOT}/core/shottrim.c ${ROOT}/core/arena.c
     # API 31: the native text hooks (docs/native-hooks.md), in the game's process only: the hook
     # engine, the site check, the stream slots, Luna's table and the hook text decoder
     ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S ${ROOT}/core/hook_place.c
@@ -337,6 +337,9 @@ if(VJO_WITH_VOCR)
   if(VJO_KERNEL_TEXT_SOURCE)
     target_compile_definitions(VitaJPOverlay_OCR PRIVATE VJO_HAVE_TEXT_SOURCE_IMPORT=1)
   endif()
+  # API 32: the screenshot's black bars, for size too (612 B of text against 816 B at -O2): the scan
+  # reads only the bars' pixels, a small part of the frame, once a shot; the encoder stays at -O2.
+  set_source_files_properties(${ROOT}/core/shottrim.c PROPERTIES COMPILE_OPTIONS "-Os")
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
     -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)

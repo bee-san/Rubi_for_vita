@@ -319,7 +319,8 @@ cat <<'EOF'
     tests), the card is then not saved and the overlay says so.
   - An Anki card's screenshot (API 23, anki_screenshot = on by default) runs in the game: a
     450,560 B block beside the game's 4 MiB reserve, 9 frames of colour strips through the
-    display hook (or the kernel strip), the JPEG encoded at the lowest priority (60.0 M A9
+    display hook (or the kernel strip; with anki_screenshot_trim_bars, API 32, up to 19 when a
+    frame is read again: docs/anki.md "Black bars"), the JPEG encoded at the lowest priority (60.0 M A9
     instructions, 69-149 ms at 444 MHz, an estimate), then the kernel worker's file writes and
     two memory card syncs. None of it has run on a console: the hook's colour copy into the
     game's block, the encode's time beside a running game, the syncs' time and whether

@@ -111,6 +111,10 @@ typedef struct {
      * any game, only the CALL source (the string copies), so a console run can tell the two apart; the
      * Shell sends it as VJO_TEXT_SOURCE_NO_SITES in the text source's word. Last, as above. */
     int hook_sites;           /* 0/1, on by default */
+    /* Anki (API 32): a card's screenshot is of the picture between the frame's black bars, a
+     * letterbox or pillarbox the game worker finds as it reads the frame (on by default;
+     * core/shottrim.h, docs/anki.md "Black bars"). Last, as above. */
+    int anki_screenshot_trim_bars; /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

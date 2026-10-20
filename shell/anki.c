@@ -342,6 +342,8 @@ static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
         ShotWait wait = {&job->res, 0, add_seq, t0};
         job->req.size = sizeof(job->req);
         job->req.flags = VJO_GAME_OCR_F_SHOT;
+        /* API 32: the JPEG of the picture between the frame's black bars (anki_screenshot_trim_bars, on by default) */
+        job->req.speed = acfg->anki_screenshot_trim_bars ? VJO_GAME_OCR_S_TRIM : 0u;
         sceClibMemcpy(job->req.shot, id, VJO_QUEUE_ID_SIZE);
         rc = VJO_E_OCR_UNAVAILABLE; /* the slot stayed busy */
         if (!vjo_game_job_begin(shot_stopped, SHOT_WAIT_US)) {
@@ -357,6 +359,15 @@ static int take_shot(const char id[VJO_QUEUE_ID_SIZE])
                 res->shot_tries, res->shot_bytes, res->shot_block, res->shot_memory, (int)res->free_user,
                 res->captures, res->source, res->capture_us / 1000, res->shot_encode_us / 1000,
                 res->shot_write_us / 1000, (int)((now_us() - t0) / 1000));
+        /* API 32: the black bars' outcome (VJO_GSTEP_TRIM): kind 0 none, 1 trimmed, 2 kept whole; how 0 the
+         * first rows, 1 checked on every row, 2 read again */
+        for (uint32_t i = 0; i < res->n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+            const VjoGameOcrStep *s = &res->step[i];
+            if (s->id == VJO_GSTEP_TRIM)
+                vjo_log("anki: screenshot bars %u how %u: picture %ux%u at %u,%u of %ux%u; scan %u us", s->kind, s->arg,
+                        (unsigned)(s->sum >> 16), (unsigned)(s->sum & 0xFFFFu), (unsigned)(s->bytes >> 16),
+                        (unsigned)(s->bytes & 0xFFFFu), res->width, res->height, s->us);
+        }
         /* the game worker's steps (shell/selftest.c vjo_gstep_format, the debug build's) */
         for (uint32_t i = 0; rc && i < res->n_steps && i < VJO_GAME_OCR_STEPS; i++) {
             char line[224];

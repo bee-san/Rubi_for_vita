@@ -99,6 +99,8 @@ if [ -f core/hook_luna.c ]; then
 else
   build hook_titles host/tests/test_hook_titles.c core/hook_titles.c
 fi
+# API 32: the Anki screenshot's black bars (core/shottrim.c, the game worker's): 32-bit size_t and offsets.
+build shot_trim host/tests/test_shot_trim.c core/shottrim.c
 # The overlay's arrow keys over the header's displayed rows (#81): pure C, float cell edges.
 build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 # The recognized text's lines as one running text (core/textjoin.h): byte offsets, 32-bit size_t.
@@ -145,7 +147,7 @@ build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak hook_select stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
+TESTS+=(touch_hold text_rows text_join linebreak hook_select stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then

@@ -18,17 +18,23 @@
 
 #define WORKER_STACK (64 * 1024)
 
-/* Four rows (API 23 added Screenshots), then the 3-line status box, which ends above the
- * controls line main.c draws at y 535: the export rows' help is one line. */
-#define MINING_Y 112
-#define SHOT_Y 184     /* API 23: the card's screenshot on/off */
-#define EXPORT_Y 256
-#define ALL_Y 336
+/* Five rows (API 23 added Screenshots, API 32 their black bars), then the 3-line status box,
+ * which ends above the controls line main.c draws at y 535: the export rows' help is one line.
+ * The rows are more than the room above the box: they scroll a row at a time, the selected one
+ * always whole, as the OCR page's cards do (a row cut at the room's bottom shows there is more,
+ * and a bar at the right where the view is); a touch on a cut row only selects it. */
+#define VIEW_Y 112
+#define VIEW_END 412   /* the rows' room ends above the status box */
+#define ROW_GAP 4
 #define CARD_H 68
 #define ACTION_H 76
 #define FOOTER_Y 416
 #define FOOTER_H 92
-#define ROWS 4
+#define SCROLL_X 942
+#define SCROLL_W 6
+enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_EXPORT, ROW_ALL, ROWS };
+static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H, ACTION_H, ACTION_H};
+static int top_row; /* the first row in view */
 
 static VjoConfig cfg;           /* the settings shown (main thread) */
 static int writable, selected;
@@ -152,14 +158,14 @@ static void cancel(void)
 
 /* ---------------- settings ---------------- */
 
-static void save(int mining, int screenshot, VjoArena *scratch)
+static void save(int mining, int screenshot, int trim, VjoArena *scratch)
 {
     if (!writable) {
         snprintf(note, sizeof(note), "Cannot read config.ini. Choices have not been changed.");
         note_error = 1;
         return;
     }
-    int rc = vjo_preferences_save_anki(mining, screenshot, scratch);
+    int rc = vjo_preferences_save_anki(mining, screenshot, trim, scratch);
     int read_rc = vjo_preferences_load(&cfg, scratch);
     writable = read_rc >= 0;
     note_error = rc < 0 || read_rc < 0;
@@ -186,16 +192,42 @@ int vjo_anki_page_busy(void)
     return running;
 }
 
+/* A settings row's switch (the first three rows), as config.ini has it. */
+static int row_on(int row)
+{
+    return row == ROW_MINING ? cfg.anki_mining : row == ROW_SHOT ? cfg.anki_screenshot : cfg.anki_screenshot_trim_bars;
+}
+
 static void activate(int row, VjoArena *scratch)
 {
     if (running)
         return;
-    if (row == 0)
-        save(!cfg.anki_mining, cfg.anki_screenshot, scratch);
-    else if (row == 1)
-        save(cfg.anki_mining, !cfg.anki_screenshot, scratch);
+    if (row < ROW_EXPORT)
+        save(row == ROW_MINING ? !cfg.anki_mining : cfg.anki_mining,
+             row == ROW_SHOT ? !cfg.anki_screenshot : cfg.anki_screenshot,
+             row == ROW_TRIM ? !cfg.anki_screenshot_trim_bars : cfg.anki_screenshot_trim_bars, scratch);
     else
-        start(row == 3);
+        start(row == ROW_ALL);
+}
+
+/* Row i's top in the column (the first row's: 0), and on screen. */
+static int row_offset(int i)
+{
+    int y = 0;
+    for (int k = 0; k < i; k++)
+        y += row_height[k] + ROW_GAP;
+    return y;
+}
+static int row_y(int i) { return VIEW_Y + row_offset(i) - row_offset(top_row); }
+/* Row i is all in view. */
+static int row_whole(int i) { return i >= top_row && row_y(i) + row_height[i] <= VIEW_END; }
+/* Scrolls by the fewest rows that bring row i all into view. */
+static void row_show(int i)
+{
+    if (i < top_row)
+        top_row = i;
+    while (top_row < i && row_y(i) + row_height[i] > VIEW_END)
+        top_row++;
 }
 
 void vjo_anki_page_stick(int move)
@@ -211,9 +243,44 @@ static void count_text(char *out, size_t cap, int n, const char *what)
         snprintf(out, cap, "%d card%s %s", n, n == 1 ? "" : "s", what);
 }
 
+/* Row i at y (busy: an export runs; busy_text its progress; total every card). */
+static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *busy_text, int total)
+{
+    static const char *const titles[ROW_EXPORT] = {"Card mining", "Screenshots", "Trim black bars"};
+    char line[260];
+    ui->card(y, row_height[i], selected == i);
+    if (i < ROW_EXPORT) {
+        ui->text(42, y + 30, ui->white, 28, titles[i]);
+        ui->badge(812, y + 6, 108, 34, !writable ? "--" : row_on(i) ? "ON" : "OFF", writable && row_on(i));
+        if (i == ROW_MINING)
+            snprintf(line, sizeof(line), "%s in the overlay saves the word to a queue on the memory card.",
+                     ui->buttons->enter_glyph);
+        else /* the card's screenshot (anki_screenshot, API 23) and its black bars (anki_screenshot_trim_bars, API 32) */
+            snprintf(line, sizeof(line), "%s", i == ROW_SHOT ? "Each card keeps a picture of the game screen (about 60 KB)."
+                                                             : "Cuts black borders from the picture (a PSP game shown small).");
+        ui->text(42, y + 60, ui->dim, 24, line);
+    } else if (i == ROW_EXPORT) { /* the queued cards */
+        if (counts.queued < 0)
+            snprintf(line, sizeof(line), "Export cards (queue unreadable)");
+        else
+            snprintf(line, sizeof(line), "Export cards (%d queued)", counts.queued);
+        ui->text(42, y + 30, counts.queued < 0 ? ui->off : ui->white, 28, line);
+        ui->badge(760, y + 6, 160, 34, busy && !all ? "Exporting…" : "Export", busy && !all);
+        ui->wrapped(42, y + 62, 870, ui->dim, 22, 24, 1,
+                    busy && !all ? busy_text : "Writes a new .apkg; the queue clears once it is checked.");
+    } else { /* every card */
+        ui->text(42, y + 30, ui->white, 28, "Export all cards");
+        count_text(line, sizeof(line), total, "in all");
+        ui->text(500, y + 30, total < 0 ? ui->off : ui->dim, 24, line);
+        ui->badge(760, y + 6, 160, 34, busy && all ? "Exporting…" : "Export all", busy && all);
+        ui->wrapped(42, y + 62, 870, ui->dim, 22, 24, 1,
+                    busy && all ? busy_text : "Every card again, the exported too: Anki adds only new notes.");
+    }
+}
+
 void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int touch_y, VjoArena *scratch)
 {
-    char line[260], busy_text[160], controls[96], last[480];
+    char busy_text[160], controls[96], last[480];
     int stick = stick_move, busy = running, err = 0, total;
     stick_move = 0;
     reap();
@@ -227,21 +294,22 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
         selected = vjo_stick_step(selected, ROWS, stick);
     if (pressed & ui->buttons->enter)
         activate(selected, scratch);
-    /* Left/Right: OFF/ON on the two settings' rows */
-    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < 2 && !busy &&
-        !!(pressed & SCE_CTRL_RIGHT) != (selected ? cfg.anki_screenshot : cfg.anki_mining))
+    /* Left/Right: OFF/ON on the three settings' rows */
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < ROW_EXPORT && !busy &&
+        !!(pressed & SCE_CTRL_RIGHT) != row_on(selected))
         activate(selected, scratch);
     if ((pressed & ui->buttons->cancel) && busy)
         cancel();
-    if (touch_y >= 0 && touch_x >= 24 && touch_x < 936) {
-        static const int top[ROWS] = {MINING_Y, SHOT_Y, EXPORT_Y, ALL_Y};
-        static const int height[ROWS] = {CARD_H, CARD_H, ACTION_H, ACTION_H};
-        for (int r = 0; r < ROWS; r++)
-            if (touch_y >= top[r] && touch_y < top[r] + height[r]) {
+    /* A touch on a row in view chooses it and acts as Enter does; on a row cut at the room's bottom it only
+     * chooses it (which scrolls it into view). */
+    if (touch_y >= VIEW_Y && touch_y < VIEW_END && touch_x >= 24 && touch_x < 936)
+        for (int r = top_row; r < ROWS && row_y(r) < VIEW_END; r++)
+            if (touch_y >= row_y(r) && touch_y < row_y(r) + row_height[r]) {
                 selected = r;
-                activate(r, scratch);
+                if (row_whole(r))
+                    activate(r, scratch);
+                break;
             }
-    }
     busy_text[0] = last[0] = '\0';
     if (lock >= 0) {
         sceKernelLockMutex(lock, 1, NULL);
@@ -255,38 +323,23 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     vita2d_start_drawing();
     vita2d_clear_screen();
     ui->header();
-    /* Card mining */
-    ui->card(MINING_Y, CARD_H, selected == 0);
-    ui->text(42, MINING_Y + 30, ui->white, 28, "Card mining");
-    ui->badge(812, MINING_Y + 6, 108, 34, !writable ? "--" : cfg.anki_mining ? "ON" : "OFF",
-              writable && cfg.anki_mining);
-    snprintf(line, sizeof(line), "%s in the overlay saves the word to a queue on the memory card.",
-             ui->buttons->enter_glyph);
-    ui->text(42, MINING_Y + 60, ui->dim, 24, line);
-    /* The card's screenshot (anki_screenshot, API 23) */
-    ui->card(SHOT_Y, CARD_H, selected == 1);
-    ui->text(42, SHOT_Y + 30, ui->white, 28, "Screenshots");
-    ui->badge(812, SHOT_Y + 6, 108, 34, !writable ? "--" : cfg.anki_screenshot ? "ON" : "OFF",
-              writable && cfg.anki_screenshot);
-    ui->text(42, SHOT_Y + 60, ui->dim, 24, "Each card keeps a picture of the game screen (about 60 KB).");
-    /* Export the queued cards */
-    ui->card(EXPORT_Y, ACTION_H, selected == 2);
-    if (counts.queued < 0)
-        snprintf(line, sizeof(line), "Export cards (queue unreadable)");
-    else
-        snprintf(line, sizeof(line), "Export cards (%d queued)", counts.queued);
-    ui->text(42, EXPORT_Y + 30, counts.queued < 0 ? ui->off : ui->white, 28, line);
-    ui->badge(760, EXPORT_Y + 6, 160, 34, busy && !all ? "Exporting…" : "Export", busy && !all);
-    ui->wrapped(42, EXPORT_Y + 62, 870, ui->dim, 22, 24, 1,
-                busy && !all ? busy_text : "Writes a new .apkg; the queue clears once it is checked.");
-    /* Export every card */
-    ui->card(ALL_Y, ACTION_H, selected == 3);
-    ui->text(42, ALL_Y + 30, ui->white, 28, "Export all cards");
-    count_text(line, sizeof(line), total, "in all");
-    ui->text(500, ALL_Y + 30, total < 0 ? ui->off : ui->dim, 24, line);
-    ui->badge(760, ALL_Y + 6, 160, 34, busy && all ? "Exporting…" : "Export all", busy && all);
-    ui->wrapped(42, ALL_Y + 62, 870, ui->dim, 22, 24, 1,
-                busy && all ? busy_text : "Every card again, the exported too: Anki adds only new notes.");
+    row_show(selected); /* the selected row all in view */
+    for (int i = top_row; i < ROWS && row_y(i) < VIEW_END; i++) {
+        int y = row_y(i), whole = row_whole(i);
+        if (!whole) { /* cut at the bottom of the room: its card and its text */
+            vita2d_enable_clipping();
+            vita2d_set_clip_rectangle(24, y, 936, VIEW_END);
+        }
+        draw_row(ui, i, y, busy, busy_text, total);
+        if (!whole)
+            vita2d_disable_clipping();
+    }
+    { /* where the view is in the column: a thin bar right of the rows */
+        int room = VIEW_END - VIEW_Y, all_rows = row_offset(ROWS - 1) + row_height[ROWS - 1];
+        int from = row_offset(top_row), shown = all_rows - from < room ? all_rows - from : room;
+        vita2d_draw_rectangle(SCROLL_X, VIEW_Y, SCROLL_W, room, ui->track);
+        vita2d_draw_rectangle(SCROLL_X, VIEW_Y + room * from / all_rows, SCROLL_W, room * shown / all_rows, ui->dim);
+    }
     /* The last result, else how to get the file to Anki */
     if (busy)
         snprintf(controls, sizeof(controls), "%s: stop   Select: page", ui->buttons->cancel_glyph);

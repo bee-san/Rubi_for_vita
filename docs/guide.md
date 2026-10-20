@@ -403,6 +403,12 @@ rewritten (the [removed online dictionaries](#settings-and-dictionaries)'
 API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and the
 removed engine choice's `ocr_backend` line goes).
 
+On the **Anki** page the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
+Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), then
+**Export cards** and **Export all cards**. Five rows are more than the room above the page's status
+box: they scroll a row at a time as the OCR page's cards do, a bar at the right shows where the view is,
+and a touch on the row cut at the bottom only scrolls it into view ([Anki](anki.md#setup-and-use)).
+
 Japanese-only selection (**Japanese characters only**) is **OFF by default** (the
 owner's choice, 2026-10-20; ON before): every visible character is selectable, the
 initial cursor is the text's first character, and the arrows skip spaces and line
@@ -740,7 +746,11 @@ with a JPEG of the game's screen beside it (`anki_screenshot = on`, the default:
 960 × 544 at quality 70, 55.6 KB for the median of 294 Vita screens, 46.6 KB of
 304 PSP ones). The game worker reads the frame and encodes it in the game's
 memory (a 450,560 B block while it runs), and the kernel writes it to the memory
-card; SceShell holds none of it ([the screenshot](anki.md#the-screenshot)).
+card; SceShell holds none of it ([the screenshot](anki.md#the-screenshot)). With
+`anki_screenshot_trim_bars = on`, the default, the JPEG leaves out the frame's black
+letterbox or pillarbox bars (a PSP game shown smaller than the screen: at 1× a 484 × 276
+picture), found as the rows are read, with no copy of the frame
+([black bars](anki.md#black-bars)).
 The cards survive restarts and need no network. Each record (version 4) keeps everything known at the
 press: the word, its reading and furigana, the shown entry and its
 dictionary's name, the other dictionaries' entries, the whole recognized text
@@ -749,7 +759,8 @@ the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
 The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
-ON/OFF, **Export cards (N queued)** and **Export all cards**. An export writes the cards as
+ON/OFF, **Trim black bars** ON/OFF, **Export cards (N queued)** and **Export all cards**
+(five rows, which scroll a row at a time). An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into

@@ -1238,6 +1238,17 @@ class AnkiExportLines(unittest.TestCase):
         self.assertIn('vjo_log("anki: screenshot rc=%d", shot.rc);', src)
         m = a.LOG["anki_shot"].match("anki: screenshot rc=%d" % -103)
         self.assertEqual((m.group(1), m.group(6)), ("-103", None))
+        # API 32: the debug build's black bars line, as take_shot writes it, read back and summarised
+        fmt = re.search(r'vjo_log\("(anki: screenshot bars [^"]*)"', src)
+        self.assertIsNotNone(fmt, "shell/anki.c's bars line moved: update LOG['anki_bars']")
+        line = fmt.group(1) % (1, 1, 484, 276, 238, 134, 960, 544, 2100)
+        m = a.LOG["anki_bars"].match(line)
+        self.assertEqual(m.groups(), ("1", "1", "484", "276", "238", "134", "960", "544", "2100"))
+        log = line + "\n" + (fmt.group(1) % (0, 0, 960, 544, 0, 0, 960, 544, 31)) + "\n" + \
+            (fmt.group(1) % (0, 2, 960, 544, 0, 0, 960, 544, 4000)) + "\n"
+        bars = a.summarise_log(log)["anki"]["bars"]
+        self.assertEqual((bars["trimmed"], bars["none"], bars["kept"], bars["read_again"], bars["scan_us"]),
+                         (1, 2, 0, 1, [2100, 31, 4000]))
 
     def test_the_app_writes_the_lines_the_analyser_reads(self):
         page = (ROOT / "settings/anki_page.c").read_text(encoding="utf-8")

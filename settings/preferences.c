@@ -225,11 +225,11 @@ done:
     return rc;
 }
 
-int vjo_preferences_save_anki(int mining, int screenshot, VjoArena *a)
+int vjo_preferences_save_anki(int mining, int screenshot, int trim_bars, VjoArena *a)
 {
-    static const char *const keys[] = {"anki_mining", "anki_screenshot"};
-    const char *values[] = {mining ? "on" : "off", screenshot ? "on" : "off"};
-    return save_keys(keys, values, 2, a);
+    static const char *const keys[] = {"anki_mining", "anki_screenshot", "anki_screenshot_trim_bars"};
+    const char *values[] = {mining ? "on" : "off", screenshot ? "on" : "off", trim_bars ? "on" : "off"};
+    return save_keys(keys, values, 3, a);
 }
 
 int vjo_preferences_save_reading(int ocr_mode, int boost_clock, VjoArena *a)

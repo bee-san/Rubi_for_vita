@@ -275,12 +275,12 @@ static int read_back(const char *path, char *text, size_t cap);
 static int lines_with(const char *text, const char *prefix);
 
 /* The app's saves of config.ini, each patching its own keys: 0 the OCR page's
- * four choices (the arguments), 1 the Anki page's (mining and screenshots on), 2
- * the reading settings (Read text: only on a press; Speed boost while reading: on). */
+ * four choices (the arguments), 1 the Anki page's (mining, screenshots and, API 32, their black
+ * bars trimmed: on), 2 the reading settings (Read text: only on a press; Speed boost while reading: on). */
 #define APP_SAVES 3
 static int app_save(int which, int tier, int japanese_only, int highlight_mode, int results)
 {
-    return which == 1 ? vjo_preferences_save_anki(1, 1, &arena)
+    return which == 1 ? vjo_preferences_save_anki(1, 1, 1, &arena)
          : which == 2 ? vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 1, &arena)
                       : vjo_preferences_save(tier, japanese_only, highlight_mode, results, &arena);
 }
@@ -290,7 +290,8 @@ static int app_save(int which, int tier, int japanese_only, int highlight_mode, 
  * their lines (core/config.h vjo_config_removed_line), the backup included:
  * anki_audio_url's URL can hold a key. anki_mining and every other line stay,
  * and anki_screenshot: the OCR page's and the reading settings' saves keep it as
- * it was (off), the Anki page's writes its own (on); #163 c2. */
+ * it was (off), the Anki page's writes its own (on), and (API 32) anki_screenshot_trim_bars,
+ * which only the Anki page's writes; #163 c2. */
 static void test_settings_save_drops_removed_anki_settings(void)
 {
     static const char anki[] =
@@ -313,9 +314,12 @@ static void test_settings_save_drops_removed_anki_settings(void)
                    !strstr(out, "anki_field_") && !strstr(out, "ANKI_FIELD_") && !strstr(out, "anki_audio_url") &&
                    !strstr(out, "secret") && !strstr(out, "ocr_backend")); /* the engine choice went too */
         TEST_CHECK(strstr(out, "; mine\n") && strstr(out, "anki_mining = on\n") && strstr(out, "font_size_ja = 22\n"));
-        TEST_CHECK_(lines_with(out, "anki_screenshot") == 1 &&
+        TEST_CHECK_(lines_with(out, "anki_screenshot =") == 1 &&
                         strstr(out, save == 1 ? "\nanki_screenshot = on\n" : "\nanki_mining = on\nanki_screenshot = off\n"),
                     "save %d: anki_screenshot: %s", save, out);
+        TEST_CHECK_(lines_with(out, "anki_screenshot_trim_bars") == (save == 1) &&
+                        (save != 1 || strstr(out, "\nanki_screenshot_trim_bars = on\n")),
+                    "save %d: anki_screenshot_trim_bars: %s", save, out);
         TEST_MSG("save %d: %s", save, out);
         TEST_ASSERT(read_back(VJO_PREFERENCES_PATH ".bak", out, sizeof(out)) > 0);
         TEST_CHECK_(!strstr(out, "secret") && !strstr(out, "anki_audio_url"), "save %d: config.ini.bak: %s", save, out);
@@ -325,13 +329,15 @@ static void test_settings_save_drops_removed_anki_settings(void)
                    (save != 2 || (cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.ocr_boost_clock == 1)));
         TEST_CHECK_(cfg.anki_screenshot == (save == 1), "save %d: anki_screenshot loads as %d", save,
                     cfg.anki_screenshot);
+        TEST_CHECK(cfg.anki_screenshot_trim_bars == 1); /* on: the default, or the Anki page's own line */
     }
 }
 
 /* #163 c1: the saves' slack. save_keys allocates bytes + bytes / 4 + 160 B for the patched file;
- * the most a two-key save needs beyond bytes + bytes / 4 is for a 1-byte file without a final
- * newline: 42 B for the Anki page's (anki_mining, anki_screenshot off), 44 B for the reading
- * settings' (ocr_mode = on_press, ocr_boost_clock = off), with the NUL (audit-overlay-anki-screenshot-c).
+ * the most a save needs beyond bytes + bytes / 4 is for a 1-byte file without a final newline:
+ * 74 B for the Anki page's three keys (anki_mining, anki_screenshot, API 32's
+ * anki_screenshot_trim_bars, all off), 44 B for the reading settings' two (ocr_mode = on_press,
+ * ocr_boost_clock = off), with the NUL (audit-overlay-anki-screenshot-c).
  * Each case is saved, compared byte for byte, and read back by the app and by the Shell's own loader. */
 typedef struct { const char *name, *before, *after; int warnings; } SlackCase; /* (the Shell's, of the case's own lines) */
 static void check_slack(int anki, const SlackCase *cases, int n)
@@ -342,17 +348,18 @@ static void check_slack(int anki, const SlackCase *cases, int n)
     for (int i = 0; i < n; i++) {
         int rc;
         reset(); put_file(VJO_PREFERENCES_PATH, cases[i].before, strlen(cases[i].before));
-        rc = anki ? vjo_preferences_save_anki(0, 0, &arena) : vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 0, &arena);
+        rc = anki ? vjo_preferences_save_anki(0, 0, 0, &arena) : vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 0, &arena);
         TEST_CHECK_(rc == 0 && arena.used == 0 && handles == 0, "%s: %s save rc %d", cases[i].name,
                     anki ? "the Anki page's" : "the reading", rc);
         TEST_CHECK_(read_back(VJO_PREFERENCES_PATH, out, sizeof(out)) == (int)strlen(cases[i].after) &&
                         !strcmp(out, cases[i].after), "%s: saved\n%s", cases[i].name, out);
         TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-        TEST_CHECK_(anki ? !cfg.anki_mining && !cfg.anki_screenshot : cfg.ocr_mode == VJO_OCR_ON_PRESS && !cfg.ocr_boost_clock,
+        TEST_CHECK_(anki ? !cfg.anki_mining && !cfg.anki_screenshot && !cfg.anki_screenshot_trim_bars
+                         : cfg.ocr_mode == VJO_OCR_ON_PRESS && !cfg.ocr_boost_clock,
                     "%s: the app loads them back", cases[i].name);
         vjo_arena_init(&shell, shell_mem, sizeof(shell_mem));
         vjo_config_load(&cfg, &shell); /* shell/files.c: what the overlay runs with */
-        TEST_CHECK_((anki ? !cfg.anki_mining && !cfg.anki_screenshot
+        TEST_CHECK_((anki ? !cfg.anki_mining && !cfg.anki_screenshot && !cfg.anki_screenshot_trim_bars
                           : cfg.ocr_mode == VJO_OCR_ON_PRESS && !cfg.ocr_boost_clock) &&
                         cfg.n_warnings == cases[i].warnings && shell.used == 0,
                     "%s: the Shell loads them back (%d warnings)", cases[i].name, cfg.n_warnings);
@@ -364,12 +371,18 @@ static void check_slack(int anki, const SlackCase *cases, int n)
 static void test_anki_page_save(void)
 {
     static const SlackCase slack[] = {
-        {"an empty config.ini", "", "anki_mining = off\nanki_screenshot = off\n", 0},
-        {"one byte, no final newline", "x", "x\nanki_mining = off\nanki_screenshot = off\n", 1},
-        {"a line without a final newline", "font_size_ja = 22", "font_size_ja = 22\nanki_mining = off\nanki_screenshot = off\n", 0},
+        {"an empty config.ini", "", "anki_mining = off\nanki_screenshot = off\nanki_screenshot_trim_bars = off\n", 0},
+        {"one byte, no final newline", "x",
+         "x\nanki_mining = off\nanki_screenshot = off\nanki_screenshot_trim_bars = off\n", 1},
+        {"a line without a final newline", "font_size_ja = 22",
+         "font_size_ja = 22\nanki_mining = off\nanki_screenshot = off\nanki_screenshot_trim_bars = off\n", 0},
         {"CRLF, both keys twice",
          "anki_mining = on\r\nfont_size_ja = 22\r\nANKI_SCREENSHOT=on\r\nanki_mining = off\r\nanki_screenshot = on\r\n",
-         "anki_mining = off\nfont_size_ja = 22\r\nanki_screenshot = off\n", 0},
+         "anki_mining = off\nfont_size_ja = 22\r\nanki_screenshot = off\nanki_screenshot_trim_bars = off\n", 0},
+        {"API 32: each of the three keys twice, the trim key's first last",
+         "anki_screenshot_trim_bars=on\nanki_mining = on\nanki_screenshot = on\nANKI_SCREENSHOT_TRIM_BARS = on\n"
+         "anki_mining = on\nanki_screenshot = on\n",
+         "anki_screenshot_trim_bars = off\nanki_mining = off\nanki_screenshot = off\n", 0},
     };
     static const char before[] =
         "\xEF\xBB\xBF; Keep this comment\r\nanki_mining = off ; old\r\nocr_backend = vocr\n"
@@ -399,20 +412,27 @@ static void test_anki_page_save(void)
     TEST_CHECK(vjo_config_patch_keys("a\0b", 3, keys, values, 2, out, sizeof(out)) == -1);
     /* through the file: what the overlay then loads */
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
-    TEST_ASSERT(vjo_preferences_save_anki(1, 1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save_anki(1, 1, 1, &arena) == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     /* (the fixture's one warning is its unknown_future_setting) */
     TEST_CHECK(cfg.anki_mining == 1 && cfg.n_warnings == 1 && cfg.font_size_ja == 22 &&
                cfg.vocr_tier == VJO_VOCR_TIER_NORMAL);
     TEST_MSG("mining %d warnings %d: %s", cfg.anki_mining, cfg.n_warnings, cfg.warnings[0]);
-    TEST_CHECK(cfg.anki_screenshot == 1); /* API 23: on, the default the save wrote */
+    TEST_CHECK(cfg.anki_screenshot == 1 && cfg.anki_screenshot_trim_bars == 1); /* API 23, 32: on, the defaults the save wrote */
     /* the cards' screenshots off: their own line, read back as such */
-    TEST_ASSERT(vjo_preferences_save_anki(1, 0, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_save_anki(1, 0, 1, &arena) == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.anki_mining == 1 && cfg.anki_screenshot == 0 && cfg.n_warnings == 1);
-    TEST_ASSERT(vjo_preferences_save_anki(0, 1, &arena) == 0);
+    TEST_CHECK(cfg.anki_mining == 1 && cfg.anki_screenshot == 0 && cfg.anki_screenshot_trim_bars == 1 &&
+               cfg.n_warnings == 1);
+    /* API 32: their black bars kept, then trimmed again */
+    TEST_ASSERT(vjo_preferences_save_anki(1, 1, 0, &arena) == 0);
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
-    TEST_CHECK(cfg.anki_mining == 0 && cfg.anki_screenshot == 1 && cfg.n_warnings == 1 && cfg.font_size_ja == 22);
+    TEST_CHECK(cfg.anki_mining == 1 && cfg.anki_screenshot == 1 && cfg.anki_screenshot_trim_bars == 0 &&
+               cfg.n_warnings == 1);
+    TEST_ASSERT(vjo_preferences_save_anki(0, 1, 1, &arena) == 0);
+    TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
+    TEST_CHECK(cfg.anki_mining == 0 && cfg.anki_screenshot == 1 && cfg.anki_screenshot_trim_bars == 1 &&
+               cfg.n_warnings == 1 && cfg.font_size_ja == 22);
     {
         char text[sizeof(original) + 160];
         int fd = open(VJO_PREFERENCES_PATH, O_RDONLY);
@@ -425,15 +445,15 @@ static void test_anki_page_save(void)
         TEST_ASSERT(engine != NULL);
         size_t head = (size_t)(engine - original), line = strlen("ocr_backend = lens\n");
         size_t tail = sizeof(original) - 1 - head - line;
-        /* (API 23: and the cards' screenshots, on unless the page turned them off) */
+        /* (API 23, 32: and the cards' screenshots and their black bars, on unless the page turned them off) */
         TEST_CHECK(!strncmp(text, original, head) && !strncmp(text + head, engine + line, tail) &&
-                   !strcmp(text + head + tail, "anki_mining = off\nanki_screenshot = on\n"));
+                   !strcmp(text + head + tail, "anki_mining = off\nanki_screenshot = on\nanki_screenshot_trim_bars = on\n"));
         TEST_MSG("%s", text);
     }
     /* a failed write leaves the old file */
     reset(); put_file(VJO_PREFERENCES_PATH, original, sizeof(original)-1);
     write_fail = 1;
-    TEST_CHECK(vjo_preferences_save_anki(1, 1, &arena) < 0);
+    TEST_CHECK(vjo_preferences_save_anki(1, 1, 1, &arena) < 0);
     write_fail = 0;
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(!cfg.anki_mining);
@@ -501,7 +521,7 @@ static void test_reading_settings_save(void)
     /* the OCR page's other choices and the Anki page's keep them, and they keep those */
     TEST_ASSERT(vjo_preferences_save_reading(VJO_OCR_ON_PRESS, 0, &arena) == 0);
     TEST_ASSERT(vjo_preferences_save(VJO_VOCR_TIER_LARGE, 0, VJO_HIGHLIGHT_CHARACTER, 3, &arena) == 0);
-    TEST_ASSERT(vjo_preferences_save_anki(1, 0, &arena) == 0); /* (API 23: the cards' screenshots off) */
+    TEST_ASSERT(vjo_preferences_save_anki(1, 0, 1, &arena) == 0); /* (API 23: the cards' screenshots off) */
     TEST_ASSERT(vjo_preferences_load(&cfg, &arena) == 0);
     TEST_CHECK(cfg.ocr_mode == VJO_OCR_ON_PRESS && cfg.ocr_boost_clock == 0 && cfg.vocr_tier == VJO_VOCR_TIER_LARGE &&
                !cfg.japanese_only_selection && cfg.highlight_mode == VJO_HIGHLIGHT_CHARACTER &&
