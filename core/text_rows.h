@@ -62,8 +62,9 @@ typedef struct {
 int vjo_text_row_vertical(const char *text, size_t len, const VjoTextRows *rows, size_t cursor,
                           int direction, int japanese_only, VjoRowGoal *goal, size_t *out);
 
-/* Left/Right in both highlight modes, as the overlay's arrows and the left
- * stick move. Whole word: Right skips the matched source span [cursor,
+/* Left/Right in both highlight modes, as the overlay's arrows move (and the
+ * left stick's right, with matched_end 0: vjo_text_row_key). Whole word: Right
+ * skips the matched source span [cursor,
  * matched_end), wherever it ends, and records where it started; Left retraces
  * up to 16 of those (a wrap too), else steps one character back and forgets
  * them. Character mode (and a pending or failed lookup) passes matched_end 0:
@@ -83,11 +84,15 @@ size_t vjo_word_step(VjoWordNavigation *history, const char *text, size_t len, s
  * drops Up/Down's column, else Up/Down (dy) by vjo_text_row_vertical; Up/Down
  * forget Right's history, so Left then retraces only the Rights made since
  * (across rows). One history and one column for both. `stick`: the left
- * stick's step (#138, core/stick_cursor.h), which never goes round a one-row
- * text's ends itself, as a held stick stops at the ends of the Rubi app's
- * lists (its Left still retraces a d-pad Right that went round), and is not
- * counted: the counts are the arrows', for the overlay's close log. Returns the
- * VJO_ROW_* result; *out is the new cursor (the old one if it stays). */
+ * stick's step (#138, core/stick_cursor.h). Its left/right go one character
+ * in reading order whatever the highlight (the owner, 2026-10-20): its right
+ * never skips the shown word (matched_end is not used) and is recorded as any
+ * Right, its left never retraces a Right (the one that started where it lands
+ * leaves the history, so the d-pad's Left retraces the Rights before it); it
+ * never goes round a one-row text's ends, as a held stick stops at the ends
+ * of the Rubi app's lists, and is not counted: the counts are the arrows', for
+ * the overlay's close log. Returns the VJO_ROW_* result; *out is the new
+ * cursor (the old one if it stays). */
 typedef struct {
     VjoWordNavigation words;
     VjoRowGoal goal;

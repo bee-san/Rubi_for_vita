@@ -12,12 +12,13 @@
  * How far it is pushed beyond the threshold does not change the speed, as in
  * the lists. Its four directions are the d-pad's four arrows (the owner,
  * 2026-10-16, item 3): shell/overlay.cpp hands each step to vjo_text_row_key
- * (core/text_rows.h) as the arrow's, so left/right step as Left/Right do (the
- * shown word skipped, Right's history shared, across rows, stopping at the
- * text's ends) and up/down go a displayed row keeping the arrows' column. The
- * one difference: a one-row text's ends, which the d-pad goes round, stop the
- * stick, as a held stick stops at the lists' ends (its Left still retraces a
- * d-pad Right that went round, as any Left retraces a Right). The
+ * (core/text_rows.h) as the arrow's, with its `stick` flag: left/right go in
+ * reading order across rows, stopping at the text's ends, but a character a
+ * step in both highlight modes (the owner, 2026-10-20: the d-pad goes word by
+ * word): the shown word is never skipped, a right is recorded in Right's
+ * history and a left never retraces one; up/down go a displayed row keeping
+ * the arrows' column. A one-row text's ends, which the d-pad goes round, stop
+ * the stick, as a held stick stops at the lists' ends. The
  * axis pushed farther counts (a diagonal is its dominant axis's arrow), and the
  * one held keeps counting until it is let back inside the threshold, so a
  * stick rolled round from one axis to the other changes once.
@@ -27,7 +28,7 @@
  * time counts at most one fastest step's, so a frame moves the cursor at most
  * once and a stalled frame never makes it jump.
  *
- * The lookup: a stick move only makes the word at the cursor due. It is looked
+ * The lookup: a stick move only makes the word starting at the cursor due. It is looked
  * up (vjo_stick_cursor_lookup returns 1, once) when the cursor has not moved
  * for rest_us (config.ini stick_lookup_ms, 200 ms by default) and the stick
  * no longer drives it: let go, or held against the text's end. The d-pad and

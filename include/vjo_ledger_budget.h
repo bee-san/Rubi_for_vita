@@ -86,7 +86,9 @@
  * it 100,364 -> 98,684 text and 69,828 -> 69,860 data/bss, the same pages [measured: the build log's
  * module rows, main 74f8de8 and #138]. The cursor across rows with the stick on the arrows' path
  * (owner, 2026-10-16) makes it 99,196 -> 98,972 text on main a7abad7, the same data and pages
- * [measured: the build log's module rows, main a7abad7 and this change]. */
+ * [measured: the build log's module rows, main a7abad7 and this change]. The left stick a character
+ * at a time (owner, 2026-10-20) makes it 98,732 -> 98,812 text on main 44d4e8d, the same data and
+ * pages [measured: the build log's module rows, main 44d4e8d and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -108,7 +110,9 @@
  * it 88,636 -> 88,460 + 69,796 on main a7abad7, 1,652 B of text room [measured: the build log's module
  * rows, main a7abad7 and this change]. The held log lines of a job (t3-log-path, shell/worker.c
  * net_main) make it 88,556 + 69,868 on main eece6c6 (88,460 + 69,796), the same pages, 1,556 B of text
- * room [measured: the same rows, main eece6c6 and t3-log-path]. Its check is
+ * room [measured: the same rows, main eece6c6 and t3-log-path]. The left stick a character at a time
+ * (owner, 2026-10-20) makes it 88,348 -> 88,428 + 73,280 on main 44d4e8d, the same pages, 1,684 B of
+ * text room [measured: the same rows, main 44d4e8d and this change]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
