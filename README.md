@@ -221,9 +221,11 @@ Recognition, lookups and cards all stay on the Vita; your cards leave it only wh
 (`log_file = off` in `config.ini` turns off the main one, `log.txt`). The normal build, the
 release's main download, logs no recognized or looked-up text; the `-debug` build, made for bug
 reports, logs both. With **Read text** on **Automatically**, both builds also keep the dialogue they
-read, with its game and time, in `ux0:data/VitaJPOverlay/history.csv`, for reading statistics (the
-CSV that GameSentenceMiner imports; [details](docs/ocr-history.md)). It stays on the Vita too, grows
-as you read and is never deleted by itself; **Only when I press L + R** saves none.
+read, with its game, time and number of characters, in `ux0:data/VitaJPOverlay/history.csv`, for
+reading statistics (the CSV that GameSentenceMiner imports; on a computer,
+`python3 tools/reading_stats.py history.csv` gives the characters read and per hour, per game and
+per day; [details](docs/ocr-history.md)). It stays on the Vita too, grows as you read and is never
+deleted by itself; **Only when I press L + R** saves none.
 
 ### How good is the OCR?
 

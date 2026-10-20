@@ -166,7 +166,105 @@ static void test_csv_fields_and_metadata(void)
     check_cell(csv, 1, 17, "900"); check_cell(csv, 1, 23, "2");
     check_cell(csv, 1, 28, "500000");
     check_cell(csv, 1, 40, "800:30:50:950:300000|400:30:25:1023:200000");
+    check_cell(csv, 0, 41, "characters");
+    check_cell(csv, 1, 41, "8"); /* 日本語 です はい 次: not 「」, the comma, the quotes or the breaks */
     TEST_CHECK(!*row_start(csv, 2));
+}
+
+/* 0.8.0's header (#187): the columns a file it began holds, which every row
+ * still has in these positions. The characters column is appended after them. */
+static const char header_080[] =
+    "uuid,given_identifier,name,line,time,platform,title_id,engine,model,raw_line,"
+    "scene,region_seq,monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,"
+    "fb_width,fb_height,fb_pitch,fb_format,lines,recognized,frames,find_us,load_us,"
+    "recognize_us,capture_us,captures,tears,region_sum,source,capture_memory,"
+    "capture_bytes,strip_rows,workspace_bytes,resident_bytes,fallback,line_metrics";
+
+static unsigned cells(const char *csv, unsigned row)
+{
+    char value[8192];
+    const char *p = row_start(csv, row);
+    unsigned n = 1;
+    if (!*p) return 0;
+    while (cell(&p, value, sizeof(value)) == ',') n++;
+    return n;
+}
+
+static void test_header_keeps_080_columns(void)
+{
+    char csv[16384], wanted[1024];
+    reset();
+    VjoHistoryRecord r = record("「また明日。」");
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    read_history(csv, sizeof(csv));
+    snprintf(wanted, sizeof(wanted), "%s,characters\n", header_080);
+    TEST_CHECK(!strncmp(csv, wanted, strlen(wanted)));
+    TEST_MSG("header: %.*s", (int)(strchr(csv, '\n') - csv), csv);
+    TEST_CHECK(cells(csv, 0) == 42 && cells(csv, 1) == 42);
+    check_cell(csv, 1, 41, "4"); /* また明日 */
+
+    /* A file 0.8.0 began keeps its header: the rows appended now have one cell
+     * more than it names, the 42nd the characters (docs/ocr-history.md). */
+    reset();
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    TEST_ASSERT(fd >= 0);
+    TEST_ASSERT(write(fd, header_080, strlen(header_080)) == (ssize_t)strlen(header_080));
+    TEST_ASSERT(write(fd, "\n", 1) == 1);
+    close(fd);
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    read_history(csv, sizeof(csv));
+    TEST_CHECK(cells(csv, 0) == 41 && cells(csv, 1) == 42);
+    check_cell(csv, 1, 3, "「また明日。」");
+    check_cell(csv, 1, 41, "4"); /* また明日 */
+    TEST_CHECK(!strstr(strchr(csv, '\n') + 1, "uuid,given_identifier"));
+}
+
+/* What the count is for each kind of text (core/reading_chars.h), in the file
+ * and from the function itself. */
+static void test_characters_column(void)
+{
+    static const struct { const char *text; unsigned characters; } cases[] = {
+        {"ひらがなカタカナ", 8},
+        {"漢字と仮名", 5},
+        {"OK, 2人で100円!", 9},           /* ASCII letters and digits count; the comma, space and ! do not */
+        {"「えっ……？」『うん』", 4},     /* brackets, ellipses and marks do not */
+        {"コーヒー・タイム", 7},          /* ー counts, the middle dot not */
+        {"人々　ヶ月〆", 5},              /* 々 ヶ 〆 count, the ideographic space not */
+        {"ｶﾀｶﾅ", 4},                      /* half-width katakana */
+        {"\xF0\xA0\xAE\x9Fる", 2},        /* 𠮟: one character, 4 bytes, a surrogate pair in UTF-16 */
+        {"\xF0\x9F\x98\x80笑", 1},        /* an emoji is a symbol */
+        {"一行目\n二行目\r\n三", 7},     /* wrapped lines: the breaks count nothing */
+        {"♪〜〜♪", 0},                    /* text, but no character: written, with 0 */
+        {"\xC1\x81\xE0\x81\x81", 0},     /* 'A' in overlong forms */
+        {"\xF0\x83\x81\x82", 0},          /* あ in an overlong form */
+        {"\xED\xA0\x80\xF4\x90\x80\x80\xFF", 0}, /* a surrogate, past U+10FFFF, an invalid byte */
+        {"あ\x80い\xE3\x81", 2},           /* a stray continuation byte, a cut sequence at the end */
+    };
+    char csv[65536], wanted[16];
+    reset();
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        size_t n = strlen(cases[i].text);
+        TEST_CHECK(vjo_reading_characters(cases[i].text, n) == cases[i].characters);
+        TEST_MSG("case %zu: %u, wanted %u", i, (unsigned)vjo_reading_characters(cases[i].text, n),
+                 cases[i].characters);
+        VjoHistoryRecord r = record(cases[i].text);
+        r.time_us += i;
+        TEST_CHECK(vjo_history_append(&r) == 1);
+    }
+    read_history(csv, sizeof(csv));
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        snprintf(wanted, sizeof(wanted), "%u", cases[i].characters);
+        check_cell(csv, (unsigned)i + 1, 3, cases[i].text);
+        check_cell(csv, (unsigned)i + 1, 41, wanted);
+    }
+    TEST_CHECK(vjo_reading_characters("", 0) == 0);
+    TEST_CHECK(vjo_reading_characters("あい", 3) == 1); /* only len bytes: い is cut */
+    /* The line is the game worker's normalised text, in which the full-width
+     * forms are ASCII (core/textnorm.h): they count as the letters they are. */
+    char fw[64] = "ＯＫ！１２３ＡＢｃ";
+    TEST_CHECK(vjo_reading_characters(fw, strlen(fw)) == 0);
+    vjo_text_normalize(fw, NULL);
+    TEST_CHECK(!strcmp(fw, "OK!123ABc") && vjo_reading_characters(fw, strlen(fw)) == 8);
 }
 
 static void test_adjacent_dedup_and_header(void)
@@ -207,8 +305,16 @@ static void test_maximum_text_and_short_writes(void)
     TEST_CHECK(vjo_history_append(&r) == 1);
     TEST_CHECK(writes > 100);
     read_history(csv, sizeof(csv));
-    check_cell(csv, 1, 3, longest); check_cell(csv, 1, 9, "");
+    check_cell(csv, 1, 3, longest); check_cell(csv, 1, 9, ""); check_cell(csv, 1, 41, "0");
     TEST_CHECK(!*row_start(csv, 2));
+
+    reset(); /* the most kana the text holds: 1,365 of 3 bytes */
+    for (size_t i = 0; i + 3 < sizeof(longest); i += 3) memcpy(longest + i, "あ", 3);
+    longest[sizeof(longest) - 1] = 0;
+    r = record(longest);
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    read_history(csv, sizeof(csv));
+    check_cell(csv, 1, 3, longest); check_cell(csv, 1, 41, "1365");
 }
 
 static void test_failures_roll_back_and_retry(void)
@@ -292,6 +398,8 @@ static void test_empty_and_invalid(void)
 
 TEST_LIST = {
     {"CSV quotes UTF-8 and complete OCR metadata", test_csv_fields_and_metadata},
+    {"0.8.0's columns stay; characters is appended, also to its files", test_header_keeps_080_columns},
+    {"characters: letters and digits, not marks, bytes or breaks", test_characters_column},
     {"adjacent rescans dedup but A/B/A and other games remain", test_adjacent_dedup_and_header},
     {"maximum text streams through bounded short writes", test_maximum_text_and_short_writes},
     {"I/O failures restore file and allow retry", test_failures_roll_back_and_retry},

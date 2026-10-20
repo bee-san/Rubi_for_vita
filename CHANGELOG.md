@@ -23,6 +23,10 @@ On `main` since 0.8.0; the next release brings it.
   text-free returns no line. On the host it did so for 59 of 66 text-free regions, against 5 without
   it ([#214]).
 - The Rubi app's Games page shows five games a page and searches by title or title ID ([#219]).
+- `history.csv` has a `characters` column: each line's kanji, kana and ASCII letters and digits,
+  without punctuation, brackets, symbols, spaces or line breaks, as GameSentenceMiner and ッツ
+  Ebook Reader count them. `tools/reading_stats.py` gives the characters read and per hour, in all,
+  per game and per day, from new and 0.8.0 files ([docs/ocr-history.md](docs/ocr-history.md)).
 
 ### Changed
 
