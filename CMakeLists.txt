@@ -210,6 +210,15 @@ target_include_directories(vjo-hook-stream-tests PRIVATE third_party/acutest/inc
 target_compile_options(vjo-hook-stream-tests PRIVATE -Wall -Wextra)
 target_link_libraries(vjo-hook-stream-tests Threads::Threads)
 add_test(NAME hook_stream COMMAND vjo-hook-stream-tests)
+# The hook engine itself (game_ocr/hooks.c, audit-hooks F4) against stubbed taiHEN, modulemgr, sysmem and io
+# (host/tests/hooks_stubs before game_stubs), in this build's variant (VJO_DEBUG: its hooks.log too).
+add_executable(vjo-hooks-engine-tests host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c
+  core/hook_luna.c core/hook_re.c core/hook_text.c core/sfo.c)
+target_include_directories(vjo-hooks-engine-tests PRIVATE third_party/acutest/include host/tests
+  host/tests/hooks_stubs host/tests/game_stubs)
+target_compile_definitions(vjo-hooks-engine-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-hooks-engine-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME hooks_engine COMMAND vjo-hooks-engine-tests)
 # kernel/foreground.c, scene.c, triggers.c: kernel logic without psp2kern.
 add_executable(vjo-tests host/tests/test_core.c kernel/foreground.c kernel/scene.c kernel/triggers.c)
 
