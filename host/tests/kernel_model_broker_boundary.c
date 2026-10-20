@@ -13,6 +13,7 @@
 #define vjoOcrModelClose test_kernel_model_close
 #define vjoOcrShotWrite test_kernel_shot_write
 #define vjoOcrShotSave test_kernel_shot_save
+#define vjoOcrHookCache test_kernel_hook_cache
 #include "../../kernel/game_ocr.c"
 
 /* The model-only and allocation harnesses never write a screenshot. They still

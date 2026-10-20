@@ -13,6 +13,7 @@
  * Hook time (a game thread) only copies bounded raw bytes into a static slot under its try-lock:
  * no allocation, no lock wait, and no syscall in the CALL path. Decoding happens at job time. */
 #include <stdarg.h>
+#include <bearssl_hash.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/clib.h>
 #include <psp2/kernel/modulemgr.h>
@@ -337,6 +338,40 @@ static int main_module(tai_module_info_t *tai, SceKernelModuleInfo *mi)
         return -1;
     if (!mi->segments[0].vaddr || !mi->segments[0].memsz) return -1;
     return 0;
+}
+
+int vjo_hooks_build_id(uint8_t out[32])
+{
+    tai_module_info_t tai;
+    SceKernelModuleInfo mi;
+    br_sha256_context hash;
+    uint8_t chunk[1024];
+    /* A damaged/malicious stream must not keep the worker reading forever. Larger executables still
+     * use fresh learning; this is a cache limit, not a game or text limit. */
+    const uint32_t limit = 256u * 1024u * 1024u;
+    uint32_t total = 0;
+    SceUID fd;
+    int got, ok = 0;
+    if (!out) return 0;
+    sceClibMemset(out, 0, 32);
+    if (!VJO_IMPORT_READY(sceIoOpen) || !VJO_IMPORT_READY(sceIoRead) || !VJO_IMPORT_READY(sceIoClose) ||
+        main_module(&tai, &mi) < 0) return 0;
+    fd = sceIoOpen(mi.path, SCE_O_RDONLY, 0);
+    if (fd < 0) return 0;
+    br_sha256_init(&hash);
+    while ((got = sceIoRead(fd, chunk, sizeof(chunk))) > 0) {
+        if ((unsigned)got > sizeof(chunk) || (uint32_t)got > limit - total) goto done;
+        total += (uint32_t)got;
+        br_sha256_update(&hash, chunk, (size_t)got);
+    }
+    if (!got && total) {
+        br_sha256_out(&hash, out);
+        ok = 1;
+    }
+done:
+    if (sceIoClose(fd) < 0) ok = 0;
+    if (!ok) sceClibMemset(out, 0, 32);
+    return ok;
 }
 
 static void install_calls(const char *module_name)

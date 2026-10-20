@@ -179,17 +179,77 @@ static int enough_chars(const char *s, size_t n)
     return all >= VJO_HOOK_MIN_CHARS;
 }
 
-/* The lock and what belongs to it, gone. */
-static void unlock(VjoHookSelect *st)
+/* Fingerprint the same folded code points as cmp_form, including those beyond CMP_MAX. Only hashes
+ * live between jobs; a collision conservatively delays learning/counting rather than adding evidence. */
+static uint64_t hash_cp(uint64_t h, uint32_t c)
 {
-    st->locked = st->locked_seq = st->misses = st->unchecked = st->locked_key = 0;
+    for (unsigned i = 0; i < 4; i++, c >>= 8) h = (h ^ (c & 255u)) * UINT64_C(1099511628211);
+    return h;
 }
 
-/* The locked stream among the candidates, NULL when it is not one (no lock, or its slot was busy). */
+static uint64_t text_hash(const char *s, size_t n)
+{
+    const unsigned char *p = (const unsigned char *)s;
+    uint64_t h = UINT64_C(14695981039346656037);
+    uint32_t pending = 0, count = 0;
+    size_t i = 0;
+    int half = 0, next_half;
+    while (p && i < n && p[i]) {
+        uint32_t c = utf8_next(p, n, &i);
+        if (c == 0xFF9E || c == 0xFF9F) {
+            if (half) pending = voiced(pending, c);
+            half = 0;
+            continue;
+        }
+        c = fold(c, &next_half);
+        half = next_half && c;
+        if (!c) continue;
+        if (pending) h = hash_cp(h, pending);
+        pending = c;
+        count++;
+    }
+    if (pending) h = hash_cp(h, pending);
+    h = hash_cp(h, count);
+    return h ? h : 1u;
+}
+
+static void unlock(VjoHookSelect *st)
+{
+    *st = (VjoHookSelect){0};
+}
+
+int vjo_hook_select_restore(VjoHookSelect *st, const VjoHookLearned *saved)
+{
+    if (!st) return 0;
+    unlock(st);
+    if (!saved || saved->site > 1u ||
+        (saved->interval != 8u && saved->interval != 16u && saved->interval != 32u)) return 0;
+    st->locked_site = saved->site;
+    st->locked_key = saved->key;
+    st->locked_encoding = saved->encoding;
+    st->interval = saved->interval;
+    st->confirm = 1;
+    return 1;
+}
+
+int vjo_hook_select_learned(const VjoHookSelect *st, VjoHookLearned *out)
+{
+    if (out) *out = (VjoHookLearned){0};
+    if (!st || !st->interval) return 0;
+    if (out) *out = (VjoHookLearned){st->locked_site, st->locked_key, st->locked_encoding, st->interval};
+    return 1;
+}
+
+static int same_source(const VjoHookCand *k, uint32_t site, uint32_t key, uint32_t encoding)
+{
+    return !!k->site == !!site && k->key == key && k->encoding == encoding;
+}
+
 static const VjoHookCand *locked_cand(const VjoHookSelect *st, const VjoHookCand *c, unsigned n)
 {
-    for (unsigned i = 0; st->locked && i < n; i++)
-        if (c[i].id == st->locked && has_text(&c[i])) return &c[i];
+    for (unsigned i = 0; st->interval && i < n; i++)
+        if (same_source(&c[i], st->locked_site, st->locked_key, st->locked_encoding) && has_text(&c[i]))
+            return &c[i];
     return NULL;
 }
 
@@ -197,9 +257,10 @@ uint32_t vjo_hook_select_before(VjoHookSelect *st, uint32_t pick, const VjoHookC
                                 uint32_t *flags)
 {
     const VjoHookCand *k = NULL;
+    uint64_t h;
     if (flags) *flags = 0;
-    if (!st || !c || pick == VJO_HOOK_PICK_OCR || pick > VJO_HOOK_STREAMS) return 0;
-    if (pick != VJO_HOOK_PICK_AUTO) { /* pinned: that stream's text when it has one */
+    if (!st || (!c && n) || pick == VJO_HOOK_PICK_OCR || pick > VJO_HOOK_STREAMS) return 0;
+    if (pick != VJO_HOOK_PICK_AUTO) {
         for (unsigned i = 0; i < n && !k; i++)
             if (c[i].id == pick && has_text(&c[i])) k = &c[i];
         if (!k) return 0;
@@ -207,14 +268,15 @@ uint32_t vjo_hook_select_before(VjoHookSelect *st, uint32_t pick, const VjoHookC
         return pick;
     }
     k = locked_cand(st, c, n);
-    /* OCR reads this page unless the locked stream has new text since the last job shown, long enough to
-       be compared (a 2-character name never answers), with no miss pending, its key unchanged (after()
-       unlocks on another), and fewer than VJO_HOOK_UNCHECKED_MAX jobs in a row answered so: the next is
-       checked by OCR */
-    if (!k || k->seq == st->locked_seq || st->misses || st->unchecked >= VJO_HOOK_UNCHECKED_MAX ||
-        k->key != st->locked_key || !enough_chars(k->text, k->n))
+    if (!k || !enough_chars(k->text, k->n)) {
+        if (st->interval) st->confirm = 1;
         return 0;
+    }
+    st->locked = k->id; /* a restored source, or the same source in a different runtime slot */
+    h = text_hash(k->text, k->n);
+    if (st->confirm || st->misses || h == st->shown_hash || st->unchecked + 1u >= st->interval) return 0;
     st->locked_seq = k->seq;
+    st->shown_hash = h;
     st->unchecked++;
     if (flags) *flags = VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR | (k->site ? VJO_HOOK_R_SITE : 0u);
     return k->id;
@@ -235,79 +297,119 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
     uint32_t oc[CMP_MAX], f = 0;
     unsigned mf, m, best = 0, agree = 0, lscore = 0, pscore = 0;
     const VjoHookCand *top = NULL, *chosen = NULL, *locked = NULL, *pinned = NULL;
+    uint64_t hh = 0, oh;
     if (score) *score = 0;
     if (flags) *flags = 0;
-    if (!st || !c) return 0;
-    if (pick == VJO_HOOK_PICK_AUTO && (locked = locked_cand(st, c, n)) && locked->key != st->locked_key) {
-        /* the locked ID's slot holds another caller now: what agreed was not this one */
-        if (st->streak_id == st->locked) st->streak_id = st->streak = 0;
-        unlock(st);
-        f |= VJO_HOOK_R_UNLOCK;
+    if (!st || (!c && n)) return 0;
+    if (pick == VJO_HOOK_PICK_AUTO && st->interval) {
+        locked = locked_cand(st, c, n);
+        if (locked) st->locked = locked->id;
+        else {
+            /* If the old slot now names another source, that source needs its own learning. A busy
+             * or absent slot is merely temporary and keeps its identity/interval. */
+            for (unsigned i = 0; st->locked && i < n; i++) {
+                if (c[i].id == st->locked && !same_source(&c[i], st->locked_site, st->locked_key,
+                                                         st->locked_encoding)) {
+                    unlock(st);
+                    f |= VJO_HOOK_R_UNLOCK;
+                    break;
+                }
+            }
+            if (st->interval) st->confirm = 1;
+        }
     }
-    locked = NULL;
     m = cmp_form(ocr, ocr ? on : 0, oc, &mf);
     for (unsigned i = 0; i < n; i++) {
         const VjoHookCand *k = &c[i];
-        int is_locked = st->locked && k->id == st->locked, is_pinned = k->id == pick;
+        int is_locked = k == locked, is_pinned = k->id == pick;
         unsigned s;
         if (!has_text(k)) continue;
-        /* every score that can matter, exactly: the best one, the locked and the pinned stream's */
         s = score_of(oc, m, mf, k->text, k->n, is_locked || is_pinned ? 0u : best);
-        if (is_locked) { locked = k; lscore = s; }
+        if (is_locked) lscore = s;
         if (is_pinned) { pinned = k; pscore = s; }
         if (s > best || (s && s == best && wins_tie(k, top, st->streak_id))) {
             best = s;
             top = k;
         }
     }
-    if (pick != VJO_HOOK_PICK_AUTO) { /* pinned (its text when it has one) or OCR only: no state change */
+    if (pick != VJO_HOOK_PICK_AUTO) {
         if (pinned && pick <= VJO_HOOK_STREAMS) {
             if (score) *score = pscore;
-            if (flags)
-                *flags = VJO_HOOK_R_PINNED | (pscore >= VJO_HOOK_AGREE ? VJO_HOOK_R_AGREED : 0u) |
-                         (pinned->site ? VJO_HOOK_R_SITE : 0u);
+            if (flags) *flags = VJO_HOOK_R_PINNED | (pscore >= VJO_HOOK_AGREE ? VJO_HOOK_R_AGREED : 0u) |
+                                (pinned->site ? VJO_HOOK_R_SITE : 0u);
             return pinned->id;
         }
         if (score) *score = best;
         return 0;
     }
-    if (mf < VJO_HOOK_MIN_CHARS) { /* OCR read (almost) nothing: no evidence either way */
+    if (locked && enough_chars(locked->text, locked->n)) hh = text_hash(locked->text, locked->n);
+    else if (st->interval) st->confirm = 1;
+    oh = mf >= VJO_HOOK_MIN_CHARS ? text_hash(ocr, on) : 0;
+    if (!oh) { /* no evidence: retain the last comparable pair, including a pending disagreement */
+        /* An unscheduled inconclusive read asks for a confirmation next time. An overdue scheduled
+         * check stays overdue so its eventual valid match can still increase the interval. */
+        if (st->interval && st->unchecked + 1u < st->interval) st->confirm = 1;
         if (flags) *flags = f;
         return 0;
     }
-    if (locked && lscore >= VJO_HOOK_AGREE) {
-        chosen = locked;
-        agree = lscore;
-    } else if (top && best >= VJO_HOOK_AGREE) {
-        chosen = top;
-        agree = best;
-    }
-    if (st->locked && locked && lscore < VJO_HOOK_AGREE && ++st->misses >= VJO_HOOK_UNLOCK_MISSES) {
-        unlock(st);
-        f |= VJO_HOOK_R_UNLOCK;
+    if (locked && lscore >= VJO_HOOK_AGREE) { chosen = locked; agree = lscore; }
+    else if (top && best >= VJO_HOOK_AGREE) { chosen = top; agree = best; }
+    if (st->interval && hh) {
+        int fresh = hh != st->compare_hook_hash ||
+                    (st->compare_ocr_hash && oh != st->compare_ocr_hash);
+        if (fresh) {
+            st->compare_hook_hash = hh;
+            st->compare_ocr_hash = oh;
+            if (lscore >= VJO_HOOK_AGREE) {
+                int scheduled = hh != st->shown_hash && !st->confirm && !st->misses &&
+                                st->unchecked + 1u >= st->interval;
+                if (st->misses) st->interval = VJO_HOOK_INTERVAL_MIN;
+                else if (scheduled && st->interval < VJO_HOOK_INTERVAL_MAX) st->interval *= 2u;
+                if (scheduled || st->confirm || st->misses) st->unchecked = 0;
+                st->confirm = st->misses = 0;
+                st->shown_hash = hh;
+                st->locked_seq = locked->seq;
+            } else {
+                st->confirm = 1;
+                if (++st->misses >= VJO_HOOK_UNLOCK_MISSES) {
+                    unlock(st);
+                    f |= VJO_HOOK_R_UNLOCK;
+                    locked = NULL;
+                }
+            }
+        }
     }
     if (!chosen) {
-        st->streak_id = st->streak = 0;
+        if (!st->interval && mf >= VJO_HOOK_MIN_CHARS) st->streak_id = st->streak = 0;
         if (score) *score = best;
         if (flags) *flags = f;
         return 0;
     }
-    if (chosen->id == st->streak_id) {
-        st->streak++;
-    } else {
+    if (!st->interval) {
+        uint64_t h = text_hash(chosen->text, chosen->n);
+        if (st->streak && same_source(chosen, st->streak_site, st->streak_key, st->streak_encoding)) {
+            if (h != st->streak_hash) { st->streak++; st->streak_hash = h; }
+        } else {
+            st->streak = 1;
+            st->streak_hash = h;
+            st->streak_key = chosen->key;
+            st->streak_site = !!chosen->site;
+            st->streak_encoding = chosen->encoding;
+        }
         st->streak_id = chosen->id;
-        st->streak = 1;
+        if (st->streak >= VJO_HOOK_LOCK_AGREEMENTS) {
+            st->locked = chosen->id;
+            st->locked_key = chosen->key;
+            st->locked_site = !!chosen->site;
+            st->locked_encoding = chosen->encoding;
+            st->interval = VJO_HOOK_INTERVAL_MIN;
+            st->shown_hash = st->compare_hook_hash = h;
+            st->compare_ocr_hash = oh;
+            st->locked_seq = chosen->seq;
+        }
     }
-    if (st->streak >= VJO_HOOK_LOCK_AGREEMENTS && st->locked != chosen->id) {
-        unlock(st);
-        st->locked = chosen->id;
-        st->locked_key = chosen->key;
-    }
-    if (st->locked == chosen->id) { /* OCR has checked it: up to VJO_HOOK_UNCHECKED_MAX jobs without OCR again */
-        st->locked_seq = chosen->seq;
-        st->misses = st->unchecked = 0;
+    if (st->interval && same_source(chosen, st->locked_site, st->locked_key, st->locked_encoding))
         f |= VJO_HOOK_R_LOCKED;
-    }
     if (score) *score = agree;
     if (flags) *flags = f | VJO_HOOK_R_AGREED | (chosen->site ? VJO_HOOK_R_SITE : 0u);
     return chosen->id;

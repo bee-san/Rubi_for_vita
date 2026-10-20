@@ -186,27 +186,34 @@ texts, so a pool that fills cuts the oldest. Then, by the request's `hook_pick`:
 - **Pinned** (a stream ID in a diagnostic request): that stream's text, without recognition; OCR when it has none.
 - **OCR only** (`VJO_HOOK_PICK_OCR`): OCR's text. The self-test's jobs (every line recognized, or the
   fallback forced) are OCR only whatever their pick.
-- **Automatic** (`VJO_HOOK_PICK_AUTO`): OCR runs, and a stream whose text agrees with OCR's (similarity
-  at least 700 of 1000) replaces it. Two agreements in a row by one stream lock it. A locked stream then
-  answers a job without recognition only when it has new text since the last job shown (its seq), of at
-  least 4 compared characters (`VJO_HOOK_MIN_CHARS`: a name of 2 or 3 characters never answers), and for
-  at most 2 jobs in a row (`VJO_HOOK_UNCHECKED_MAX`): the next job runs OCR, and the locked stream must
-  agree with it there. Every other job runs OCR: nothing new (the screen changed without the stream: a
-  choice menu, a CG), a text too short, or that check. A locked stream that disagrees (a miss) makes every
-  job run OCR until it agrees again, and two misses in a row unlock it. A locked stream whose key changed
-  (its CALL slot went to another caller) unlocks at once. A job whose OCR text has fewer than 4
-  characters (an empty box) is no evidence: nothing changes, and neither does a job that fails.
+- **Automatic** (`VJO_HOOK_PICK_AUTO`): OCR runs initially. An agreeing hook replaces its text at
+  the existing normalized similarity threshold of 700/1000 and a minimum of four characters. Two
+  different normalized dialogue lines from the same source establish confidence. Reopening the same
+  dialogue, a duplicate job, or another background copy cannot establish confidence or advance checks.
+  The next eight fresh readings include seven hook-only readings and one OCR comparison. A successful
+  scheduled comparison grows the interval to 16, then 32, capped at 32. Failed jobs roll back their state.
+- **Recovery:** one comparable disagreement retains the source but shows the existing OCR fallback and
+  checks the next fresh line. A match resumes at eight; two consecutive comparable disagreements discard
+  learning. Empty/short OCR is inconclusive and neither clears nor adds a pending disagreement. A missing
+  or short hook temporarily uses OCR and requires confirmation when it returns; menus and blank screens
+  do not erase a reliable identity. Changed source kind, offset or encoding must earn fresh confidence.
 
-  So once a stream is locked, OCR still reads at least one page in three. A locked stream that turns
-  wrong, because it runs ahead of the screen (the game copies the next line before it draws it) or its
-  caller's latest copy is a speaker's name or a UI string of 4 characters or more, shows at most 2 wrong
-  pages before OCR's check catches it; then OCR reads every page until the stream agrees again or unlocks
-  (audit-hooks-text F3; `host/tests/test_hook_select.c`: `locked_runs_ahead` 2 wrong pages,
-  `locked_name_alone` none for the audit's 2-character name then 4-character one, 2 for a 4-character
-  name first, `locked_ui_string` 1 and 2, `locked_backlog_and_reread` 1 each, `locked_checked_by_ocr` none).
-  The bound is on pages in a row: a stream that is wrong only on some pages and right at each check could
-  show a wrong page again after a check it passed. To disable hooks, set Text source to **OCR only**
-  in the Rubi app and restart the game ([Recovery](#recovery)).
+Learning is automatic, with no picker or extra setup. The cache holds at most 32 titles in a fixed
+3,088-byte blob (source-derived file size, not a console memory measurement), plus bounded temporary and
+backup files for recoverable replacement. Each entry stores the source kind, module-relative site or
+caller offset, encoding, and learned interval. Its key includes the title ID, SHA-256 of the complete
+executable, the applied text-source word, and a CMake-generated SHA-256 revision of hook definitions,
+placement rules, filters and decoders. It never saves dialogue, stream slots or runtime addresses.
+On the next launch, one fresh OCR agreement confirms the saved source and resumes its interval with a
+fresh counter; this startup check does not promote the interval. A single startup disagreement follows
+the same recovery rule. Missing, corrupt, inaccessible or unwritable storage means fresh learning.
+Hashing and cache work run in the game worker; the existing kernel file thread handles its fixed paths
+through the optional `vjoOcrHookCache` broker. There is no new Shell allocation or UI.
+
+A longer interval delays detection: a learned source that starts returning incorrect text can show up
+to 31 hook-only readings before the next scheduled comparison. A hook that is wrong between checks can
+still pass a check; reliability is conditional, not guaranteed. Choose **OCR only** in the Rubi app and
+restart the game to disable hooks ([Recovery](#recovery)).
 
 The Shell's normal jobs always request Automatic. The popup has no hook labels or source picker;
 source IDs, flags and scores stay in the debug log. The job protocol retains explicit stream and
@@ -241,7 +248,7 @@ compared), `hook_streams` (bit ID − 1 of each stream that held text as the job
 `hook_installed`, `hook_refused` (`vjo_hooks_counts`), in failed results too (with `text_from` and
 `hook_flags` 0: a failed result has no text).
 
-Cost: `core/hook_select.c` is 1,992 B of code at `-Os` (1,708 B before the lock's checks of F3); its
+Historical baseline (before adaptive validation and persistence): `core/hook_select.c` is 1,992 B of code at `-Os` (1,708 B before the lock's checks of F3); its
 comparison's 2,562 B of arrays are on the worker's stack only while it compares (its frames at most
 2,772 B: `vjo_hook_select_after` 1,112 + `score_of` 1,600 + `cmp_form` 40 + `utf8_next` 20; `-fstack-usage`,
 vitasdk 2026.08, the worker's flags); the job path's static snapshot is 3,160 B of `.bss` (3,064 B before
@@ -336,19 +343,19 @@ Hardware is paused; these are for the test issue (#230):
 4. A game outside the tables with `hooks`: only CALL imports in `hooks.log`; no slowdown that shows.
 5. A Luna-listed game with `auto`: every site's verdict in `hooks.log`; a hooked site's text.
 6. Quitting a game with hooks: the console returns to LiveArea, and the next game start works.
-7. CLANNAD with `auto`, Automatically: the first pages show the CALL stream's text with OCR's agreement
-   (the debug log's `hook_flags` AGREED and a `hook_score`), and from the third page on the stream answers
-   two pages of every three without recognition (NO_OCR: no model load or recognize step, and the overlay's
-   text sooner) while OCR reads the third and agrees (AGREED and LOCKED); the text matches the screen on
-   every page, and the scene logic (a page's text cached, a new page read) works as with OCR.
-8. A choice menu or a CG without text (the stream unchanged): OCR's text, or none, and the lock stays.
-9. With Only when I press L + R, and with the subtitle strip: the same pages, the same texts.
-10. A game where no stream follows the dialogue (or one that runs ahead of the screen from the start): OCR's
-    text on every page, nothing locked. A stream that locked and then runs ahead (the next line), or whose
-    latest copy is a speaker's name or a UI string of 4 characters or more: at most 2 pages in a row show
-    that text instead of the screen's (NO_OCR), then OCR's check misses, OCR's text is shown on every page,
-    and the second miss unlocks it (UNLOCK in the debug log). A name of 2 or 3 characters (朋也) is never
-    shown alone. If it happens, set `text_source = ocr` and restart the game.
+7. CLANNAD with `auto`, Automatically: record OCR invocation counts separately from host results.
+   On a fresh cache, confirm two distinct lines, then seven hook-only readings and a checked eighth;
+   successful scheduled checks step to 16 and 32. Close/reopen the unchanged seventh line and confirm
+   the next new line is still the eighth, rather than resetting or promoting the interval.
+8. Restart the same exact game build: one startup confirmation, then the saved interval with a fresh
+   counter. A menu, blank screen, missing hook, or inconclusive OCR retains the learned identity and
+   requires confirmation when comparable dialogue returns.
+9. With Only when I press L + R, and with the subtitle strip: the same texts and confidence rules.
+10. Check one comparable disagreement, then agreement: OCR fallback first, then resume at eight. Two
+    consecutive disagreements on fresh dialogue must unlock. Inconclusive and unchanged repeated readings
+    must not add or clear pending disagreements. The wider interval may show up to 31 wrong hook-only
+    readings before detecting a source that starts returning incorrect text. Change the executable,
+    text-source setting or definitions and confirm that old learning is not reused.
 11. The popup shows text without hook numbers or source-status labels. Triangle does not change the
     text source. Normal jobs keep `hook_pick = VJO_HOOK_PICK_AUTO`; diagnostic jobs can still request
     a stream directly through the job protocol.

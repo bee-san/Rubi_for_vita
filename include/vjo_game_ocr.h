@@ -479,6 +479,15 @@ int vjoOcrModelClose(uint32_t seq);
  * removed), as a cancellation or the worker's exit does. The path is the kernel's own. */
 int vjoOcrShotWrite(uint32_t seq, uint32_t offset, uint32_t bytes, const void *src);
 int vjoOcrShotSave(uint32_t seq, uint32_t bytes);
+/* Optional hook-learning cache, through the same file worker/staging buffer. Only the worker of a
+ * claimed OCR job may call it, with no model file open. No caller path or pointer is retained.
+ * LOAD copies exactly BYTES and returns BYTES (0 if absent); SAVE copies BYTES in and returns 0 after a
+ * recoverable temp/backup rename. Invalid storage is a negative error; BUSY means repeat the same call.
+ * ModelClose drains a failed/cancelled cache operation too. */
+#define VJO_GAME_OCR_HOOK_CACHE_BYTES 3088u
+#define VJO_GAME_OCR_HOOK_CACHE_LOAD 0u
+#define VJO_GAME_OCR_HOOK_CACHE_SAVE 1u
+int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data);
 #ifdef __cplusplus
 }
 #endif

@@ -6,6 +6,8 @@ option(VJO_WITH_NCNN "Build the CPU-only local mobile OCR recognizer" OFF)
 option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime sources)" ON)
 set(VJO_VOCR_MODEL_DIR "" CACHE PATH "Directory with vita-vn-ocr weights for the model tests (optional)")
 set(VJO_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+include(cmake/HookRevision.cmake)
+vjo_hook_revision(${VJO_ROOT})
 # The build variant (docs/release-variants.md), as vita/CMakeLists.txt's: ON, the default, the
 # debug build (the test builds'); OFF the normal build. The host suites run for both: the
 # debug-only ones (the self-test writer, the kernel's memory routes) only in the debug build, and
@@ -47,7 +49,7 @@ set(CORE_SRC
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
-  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c)
+  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl vjo_taihen_parser)
@@ -217,6 +219,7 @@ target_include_directories(vjo-hooks-engine-tests PRIVATE third_party/acutest/in
   host/tests/hooks_stubs host/tests/game_stubs)
 target_compile_definitions(vjo-hooks-engine-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-hooks-engine-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-hooks-engine-tests bearssl)
 add_test(NAME hooks_engine COMMAND vjo-hooks-engine-tests)
 # kernel/foreground.c, scene.c, triggers.c: kernel logic without psp2kern.
 add_executable(vjo-tests host/tests/test_core.c kernel/foreground.c kernel/scene.c kernel/triggers.c)
@@ -344,6 +347,11 @@ target_include_directories(vjo-hook-select-tests PRIVATE third_party/acutest/inc
 target_link_libraries(vjo-hook-select-tests vjo_host)
 target_compile_options(vjo-hook-select-tests PRIVATE -Wall -Wextra)
 add_test(NAME hook_select COMMAND vjo-hook-select-tests)
+add_executable(vjo-hook-cache-tests host/tests/test_hook_cache.c)
+target_include_directories(vjo-hook-cache-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-hook-cache-tests vjo_host)
+target_compile_options(vjo-hook-cache-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_cache COMMAND vjo-hook-cache-tests)
 add_executable(vjo-text-rows-tests host/tests/test_text_rows.c)
 target_include_directories(vjo-text-rows-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-text-rows-tests vjo_host)

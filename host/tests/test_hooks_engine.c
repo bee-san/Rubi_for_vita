@@ -310,9 +310,20 @@ static int log_flags;
 static char logbuf[16384];
 static size_t loglen;
 
+static uint8_t exe_bytes[4096];
+static size_t exe_size, exe_pos;
+static unsigned exe_opens;
+static int exe_error, exe_close_error, exe_missing;
+
 SceUID sceIoOpen(const char *path, int flags, unsigned mode)
 {
     (void)mode;
+    if (!strcmp(path, mod.path)) {
+        exe_opens++;
+        exe_pos = 0;
+        TEST_CHECK(flags == SCE_O_RDONLY);
+        return exe_missing ? -1 : 12;
+    }
     if (!strcmp(path, "app0:sce_sys/param.sfo")) {
         sfo_opens++;
         TEST_CHECK(flags == SCE_O_RDONLY);
@@ -332,6 +343,14 @@ SceUID sceIoOpen(const char *path, int flags, unsigned mode)
 int sceIoRead(SceUID fd, void *buf, SceSize n)
 {
     size_t k = sfo_len < 0 ? 0u : (size_t)sfo_len;
+    if (fd == 12) {
+        if (exe_error && exe_pos >= 1024) return -1;
+        k = exe_size - exe_pos;
+        if (k > n) k = n;
+        memcpy(buf, exe_bytes + exe_pos, k);
+        exe_pos += k;
+        return (int)k;
+    }
     TEST_CHECK(fd == 10);
     if (k > n) k = n;
     memcpy(buf, sfo, k);
@@ -351,9 +370,8 @@ int sceIoWrite(SceUID fd, const void *d, SceSize n)
 
 int sceIoClose(SceUID fd)
 {
-    (void)fd;
     closes++;
-    return 0;
+    return fd == 12 && exe_close_error ? -1 : 0;
 }
 
 /* param.sfo with one key, APP_VER (its 0x0204 string format) */
@@ -454,6 +472,8 @@ static void reset(void)
     liar = -1;
     sfo_len = -1;
     sfo_opens = log_opens = closes = 0;
+    exe_size = exe_pos = exe_opens = 0;
+    exe_error = exe_close_error = exe_missing = 0;
     log_flags = 0;
     loglen = 0;
     logbuf[0] = 0;
@@ -1409,7 +1429,36 @@ static void test_app_version(void)
     TEST_CHECK(app_version() == 0 && sfo_opens == 0);
 }
 
+static void test_exact_build_identity(void)
+{
+    static const uint8_t abc_sha[32] = {
+        0xba,0x78,0x16,0xbf,0x8f,0x01,0xcf,0xea,0x41,0x41,0x40,0xde,0x5d,0xae,0x22,0x23,
+        0xb0,0x03,0x61,0xa3,0x96,0x17,0x7a,0x9c,0xb4,0x10,0xff,0x61,0xf2,0x00,0x15,0xad};
+    uint8_t a[32], b[32], zero[32] = {0};
+    reset();
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    TEST_CHECK(!exe_opens); /* never hash at module_start */
+    memcpy(exe_bytes, "abc", 3); exe_size = 3;
+    TEST_CHECK(vjo_hooks_build_id(a) && !memcmp(a, abc_sha, sizeof(a)));
+    memset(exe_bytes, 0x51, sizeof(exe_bytes)); exe_size = sizeof(exe_bytes);
+    TEST_CHECK(vjo_hooks_build_id(a) && exe_pos == exe_size);
+    exe_bytes[sizeof(exe_bytes) - 1] ^= 1; /* same title/path/NID, changed executable tail */
+    TEST_CHECK(vjo_hooks_build_id(b) && memcmp(a, b, sizeof(a)));
+    exe_error = 1;
+    TEST_CHECK(!vjo_hooks_build_id(a) && !memcmp(a, zero, sizeof(a)));
+    exe_error = 0; exe_size = 0;
+    TEST_CHECK(!vjo_hooks_build_id(a) && !memcmp(a, zero, sizeof(a)));
+    exe_size = 3; exe_close_error = 1;
+    TEST_CHECK(!vjo_hooks_build_id(a) && !memcmp(a, zero, sizeof(a)));
+    exe_close_error = 0; exe_missing = 1;
+    TEST_CHECK(!vjo_hooks_build_id(a) && !memcmp(a, zero, sizeof(a)));
+    exe_missing = 0; MISS(sceIoRead);
+    unsigned opened = exe_opens;
+    TEST_CHECK(!vjo_hooks_build_id(a) && exe_opens == opened);
+}
+
 TEST_LIST = {
+    {"exact build SHA-256: whole executable, worker only, safe failure", test_exact_build_identity},
     {"call_hit: 4..512 bytes, the NUL rules, the pointer-array shape", test_call_hit_bounds},
     {"the CALL hooks: the game's function first, each one's length rule", test_call_hooks},
     {"read_game: the block's bounds, units, a kernel answer that does not hold the address, wrap", test_read_game},

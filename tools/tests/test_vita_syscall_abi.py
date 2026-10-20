@@ -92,5 +92,22 @@ class TextSource(unittest.TestCase):
         self.assertEqual(str(e.exception), "Worker imports Shell-only syscall vjoSetTextSource")
 
 
+class HookCache(unittest.TestCase):
+    def test_worker_import_and_kernel_export_are_required(self):
+        with self.assertRaises(abi.InvalidABI) as e:
+            audit(drop=("vjoOcrHookCache",))
+        self.assertIn("vjoOcrHookCache", str(e.exception))
+        with self.assertRaises(abi.InvalidABI) as e:
+            abi.audit(Fake("VitaJPOverlay_Kernel", KERNEL, True),
+                      Fake("VitaJPOverlay_Shell", SHELL, False), False,
+                      Fake("VitaJPOverlay_OCR", tuple(n for n in WORKER if n != "vjoOcrHookCache"), False))
+        self.assertIn("vjoOcrHookCache", str(e.exception))
+
+    def test_shell_does_not_import_the_cache_broker(self):
+        with self.assertRaises(abi.InvalidABI) as e:
+            audit(shell=("vjoOcrHookCache",))
+        self.assertEqual(str(e.exception), "Shell imports the game worker's vjoOcrHookCache")
+
+
 if __name__ == "__main__":
     unittest.main()

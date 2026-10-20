@@ -22,6 +22,7 @@
 #include "../core/textnorm.h"
 #include "../core/vocr_ocr.h"
 #include "../core/hook_select.h"
+#include "../core/hook_cache.h"
 #include "../include/vjo_vocr_sizes.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/ledger.h"
@@ -60,6 +61,10 @@
 #define PHYCONT_UNIT (1024u * 1024u)  /* SDK: USER_MAIN_PHYCONT_NC_RW sizes are multiples of 1 MB */
 #ifdef VJO_HOST
 #define IMPORT_READY(fn) 1
+#ifndef VJO_TEST_HOOK_CACHE
+#define vjoOcrHookCache(seq, op, data) (-1)
+#define vjo_hooks_build_id(out) 0
+#endif
 #else
 #define IMPORT_READY(fn) VJO_IMPORT_READY(fn)
 #endif
@@ -1392,6 +1397,9 @@ typedef char vjo_hook_show_check[HOOK_SHOW_BYTES < VJO_GAME_OCR_TEXT_BYTES / 2u 
 static struct {
     VjoHookSelect sel;   /* the automatic pick's state, for the game session */
     VjoHookSelect saved; /* sel as the job found it: a job that fails changes nothing */
+    VjoHookCacheKey cache_key;
+    VjoHookLearned cached; /* last loaded/attempted saved identity, never dialogue or partial evidence */
+    int cache_attempted, build_known, cache_ready;
     uint32_t mode, installed, refused; /* vjo_hooks_counts */
     uint32_t from, flags, score, streams; /* this job's result fields */
     unsigned n;
@@ -1427,6 +1435,10 @@ static void hooks_snapshot(uint32_t pick)
         unsigned at;
         if (!vjo_hooks_snap(id, &hk.snap) || !hk.snap.n) continue;
         hk.streams |= 1u << (id - 1u);
+        if (pick == VJO_HOOK_PICK_AUTO && hk.sel.interval &&
+            (hk.snap.kind == VJO_HOOK_KIND_SITE) == !!hk.sel.locked_site &&
+            hk.snap.key == hk.sel.locked_key && hk.snap.encoding == hk.sel.locked_encoding)
+            want = id; /* a restored source has no runtime slot until this launch supplies it */
         seq[id] = hk.snap.seq;
         for (at = k; at && hook_first(id, order[at - 1u], seq, want); at--) order[at] = order[at - 1u];
         order[at] = (uint8_t)id;
@@ -1438,7 +1450,7 @@ static void hooks_snapshot(uint32_t pick)
         if (room < 2u || !vjo_hooks_snap(id, &hk.snap)) continue;
         len = vjo_hooks_text(&hk.snap, hk.pool + used, room < HOOK_TEXT_CAP ? room : HOOK_TEXT_CAP);
         if (!len) continue;
-        hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, hk.snap.kind == VJO_HOOK_KIND_SITE, hk.pool + used, len, hk.snap.key};
+        hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, hk.snap.kind == VJO_HOOK_KIND_SITE, hk.pool + used, len, hk.snap.key, hk.snap.encoding};
         used += len + 1u;
     }
 }
@@ -1471,7 +1483,9 @@ static void hook_show(VjoGameOcrResult *out, const VjoHookCand *k, int ocr)
         t[cap - 1u] = '\0';
         room = cap - 1u - o;
     }
-    if (vjo_hooks_snap(k->id, &hk.snap) && hk.snap.seq == k->seq) h = vjo_hooks_text(&hk.snap, t, room);
+    if (vjo_hooks_snap(k->id, &hk.snap) && hk.snap.seq == k->seq && hk.snap.key == k->key &&
+        (hk.snap.kind == VJO_HOOK_KIND_SITE) == !!k->site && hk.snap.encoding == k->encoding)
+        h = vjo_hooks_text(&hk.snap, t, room);
     if (!h) {
         h = k->n < room - 1u ? k->n : room - 1u;
         memmove(t, k->text, h);
@@ -1522,6 +1536,90 @@ static int run_hook_pass(const VjoGameOcrRequest *r, VjoGameOcrResult *out, Capt
     return VJO_OK;
 }
 
+/* The cache is optional (older kernels do not export its broker). All IO and exact-build hashing
+ * happen in this worker thread, never module_start or a hook. A temporary cache blob is on the worker
+ * stack only while loading/saving; dialogue and partial comparison history never leave the process. */
+static int hooks_cache_io(unsigned op, uint8_t *data)
+{
+    uint64_t started = now_wide();
+    int rc, previous_error = io_error;
+    model_owned = 1;
+    model_seq = active_seq;
+    do {
+        rc = vjoOcrHookCache(active_seq, op, data);
+        if (rc != VJO_ERR_BUSY || cancelled(NULL) || now_wide() - started >= MODEL_WAIT_US) break;
+        sceKernelDelayThread(MODEL_POLL_US);
+    } while (1);
+    /* A timeout, user-copy failure or failed close can leave broker ownership even though this helper
+     * is optional. Drain it exactly like a model; cleanup() must retain any unresolved descriptor. */
+    file_close(NULL);
+    if (model_owned) return VJO_ERR_BUSY;
+    io_error = previous_error; /* a cache miss/failure is not a model error */
+    return rc;
+}
+
+static int hook_revision(uint8_t out[32])
+{
+#ifdef VJO_HOOK_DEFINITION_SHA256
+    const char *hex = VJO_HOOK_DEFINITION_SHA256;
+    for (unsigned i = 0; i < 32; i++) {
+        unsigned v = 0;
+        for (unsigned j = 0; j < 2; j++) {
+            unsigned c = (unsigned char)hex[2 * i + j];
+            if (c >= '0' && c <= '9') c -= '0';
+            else if (c >= 'a' && c <= 'f') c -= 'a' - 10u;
+            else return 0;
+            v = v * 16u + c;
+        }
+        out[i] = (uint8_t)v;
+    }
+    return !hex[64];
+#else
+    (void)out;
+    return 0; /* a build without a definition fingerprint must use fresh learning */
+#endif
+}
+
+static void hooks_cache_prepare(uint32_t pick)
+{
+    uint8_t data[VJO_HOOK_CACHE_BYTES];
+    VjoHookLearned learned;
+    int n;
+    if (pick != VJO_HOOK_PICK_AUTO || !hk.installed || hk.cache_attempted) return;
+    hk.cache_key.mode = hk.mode;
+    hk.cache_attempted = 1;
+    if (!IMPORT_READY(vjoOcrHookCache) || !hk.cache_key.title[0] ||
+        !hook_revision(hk.cache_key.definition)) return;
+    if (!hk.build_known) {
+        if (!vjo_hooks_build_id(hk.cache_key.build)) return;
+        hk.build_known = 1;
+    }
+    n = hooks_cache_io(VJO_GAME_OCR_HOOK_CACHE_LOAD, data);
+    if (n == VJO_ERR_FORMAT) n = 0; /* corrupt data is equivalent to fresh learning */
+    if (n < 0) return; /* fresh learning; an inaccessible cache never affects display */
+    hk.cache_ready = 1;
+    if (vjo_hook_cache_get(data, (size_t)n, &hk.cache_key, &learned) &&
+        vjo_hook_select_restore(&hk.sel, &learned)) hk.cached = learned;
+}
+
+static void hooks_cache_save(void)
+{
+    uint8_t data[VJO_HOOK_CACHE_BYTES];
+    VjoHookLearned learned;
+    int n, has;
+    if (!hk.cache_ready) return;
+    has = vjo_hook_select_learned(&hk.sel, &learned);
+    if (!memcmp(&learned, &hk.cached, sizeof(learned))) return;
+    /* Attempt only when the chosen identity or learned interval changes. A failed write must not
+     * become a write per reading; OCR selection and in-session confidence remain usable. */
+    hk.cached = learned;
+    n = hooks_cache_io(VJO_GAME_OCR_HOOK_CACHE_LOAD, data);
+    if (n == VJO_ERR_FORMAT) n = 0;
+    if (n < 0 || cancelled(NULL)) return;
+    if (vjo_hook_cache_put(data, (size_t)n, &hk.cache_key, has ? &learned : NULL) > 0)
+        (void)hooks_cache_io(VJO_GAME_OCR_HOOK_CACHE_SAVE, data);
+}
+
 /* Every result's hook fields; a job that failed shows no text, from any stream, and leaves the
  * selection as it found it. A stream that agreed with this job's OCR keeps its CALL slot for the session,
  * and CALLS_FULL says a new caller found every CALL slot taken (dropped, or it replaced one): audit-hooks F2. */
@@ -1554,6 +1652,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     out->size = sizeof(*out); out->seq = r->seq;
     /* Native hooks: what the worker installed as its game started; this job's hook fields begin empty. */
     vjo_hooks_counts(&hk.mode, &hk.installed, &hk.refused);
+    if (hk.cache_attempted && hk.cache_key.mode != hk.mode) {
+        sceClibMemset(&hk.sel, 0, sizeof(hk.sel));
+        sceClibMemset(&hk.cached, 0, sizeof(hk.cached));
+        hk.cache_attempted = hk.cache_ready = 0;
+    }
     hk.saved = hk.sel;
     hk.from = hk.flags = hk.score = hk.streams = 0;
     hk.n = 0;
@@ -1600,6 +1703,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                              ? VJO_HOOK_PICK_OCR : r->hook_pick;
     if (hk.installed) {
         if (hook_pick && hook_pick <= VJO_HOOK_STREAMS) vjo_hooks_keep(hook_pick, 0); /* pinned: keeps its CALL slot */
+        hooks_cache_prepare(hook_pick);
+        hk.saved = hk.sel; /* a failed request preserves the restored provisional identity */
         hooks_snapshot(hook_pick);
         uint32_t hook_id = vjo_hook_select_before(&hk.sel, hook_pick, hk.cand, hk.n, &hk.flags);
         if (hook_id) {
@@ -1944,6 +2049,12 @@ done:
     out->stat_error = stat_error;
     if (out->cleanup_status) { blocked = 1; rc = VJO_E_OCR_UNAVAILABLE; }
     else if (cancelled(NULL)) rc = VJO_E_CANCELLED;
+    if (!rc) {
+        hooks_cache_save(); /* only a completed capture/OCR with successful primary cleanup */
+        out->cleanup_status |= cleanup(); /* drain an optional cache operation before publishing */
+        if (out->cleanup_status) { blocked = 1; rc = VJO_E_OCR_UNAVAILABLE; }
+        else if (cancelled(NULL)) rc = VJO_E_CANCELLED;
+    }
     if (rc) sceClibMemset(out->text, 0, sizeof(out->text));
     hooks_result(out, rc);
     out->rc = rc; active_seq = 0;
@@ -2208,6 +2319,7 @@ int module_start(SceSize args, void *argp)
     psp_title = pspemu_process() || vjo_game_is_psp(title);
     /* The native text hooks, before the game's main thread runs: none in a safe boot (above), none
      * unless the text source allows them here (game_ocr/hooks.c); never fails the start. */
+    sceClibMemcpy(hk.cache_key.title, title, sizeof(title));
     vjo_hooks_start(title, text_source(), psp_title);
     vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects

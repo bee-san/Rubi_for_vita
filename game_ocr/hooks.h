@@ -50,6 +50,12 @@ int vjo_hooks_stop(void);
  * hooked, sites refused. */
 void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused);
 
+/* Worker thread only, never module_start or a game hook: SHA-256 of the complete main executable at
+ * the path reported by modulemgr. Hashing relocated/patched runtime pages or a module NID would not
+ * identify an exact build. An inaccessible, empty, oversized or unreadable executable disables cached
+ * learning (0); fresh automatic selection still works. No allocation or retained executable bytes. */
+int vjo_hooks_build_id(uint8_t out[32]);
+
 /* Job time: stream id agreed with OCR, or the Shell pinned it: its CALL slot is never given to another
  * caller (audit-hooks F2). key: the stream's key as the job's snapshot saw it (VjoHookSnap.key): kept only
  * while the slot still holds that caller (a slot another caller took during the job is not kept for it),

@@ -12,15 +12,8 @@
 
 static VjoHookCand cand(uint32_t id, uint32_t seq, uint32_t site, const char *text)
 {
-    VjoHookCand c = {id, seq, site, text, text ? strlen(text) : 0, 0};
+    VjoHookCand c = {id, seq, site, text, text ? strlen(text) : 0, id * 0x100u, 0};
     return c;
-}
-
-/* A state locked on stream id (its seq seq, key 0), after a streak of two. */
-static VjoHookSelect locked_on(uint32_t id, uint32_t seq, uint32_t misses)
-{
-    VjoHookSelect st = {.locked = id, .locked_seq = seq, .streak_id = id, .streak = 2, .misses = misses};
-    return st;
 }
 
 static unsigned sim(const char *o, const char *h)
@@ -180,18 +173,12 @@ static void empty_texts(void)
     c[0] = cand(9, 1, 0, NULL);
     TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), c, 1, &score, &flags) == 0);
     TEST_CHECK(!memcmp(&st, &zero, sizeof(st)));
-    /* OCR read nothing: no evidence, so a locked stream misses nothing and nothing is chosen */
-    st.locked = 9; st.locked_seq = 4; st.streak_id = 9; st.streak = 3; st.misses = 1;
-    zero = st;
-    c[0] = cand(9, 4, 0, LINE1);
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "", 0, c, 1, &score, &flags) == 0);
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "……", strlen("……"), c, 1, &score, &flags) == 0);
-    TEST_CHECK(score == 0 && flags == 0 && !memcmp(&st, &zero, sizeof(st)));
     /* NULL state or candidates */
     TEST_CHECK(vjo_hook_select_before(NULL, 9, c, 1, &flags) == 0 && flags == 0);
     TEST_CHECK(vjo_hook_select_after(NULL, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), c, 1, &score, &flags) == 0);
     TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), NULL, 3, &score, &flags) == 0);
     /* NULL out-parameters are allowed */
+    c[0] = cand(9, 1, 0, LINE1);
     TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), c, 1, NULL, NULL) == 9);
 }
 
@@ -270,167 +257,6 @@ static void longer_than_compared(void)
     TEST_CHECK(sim(b, tail) == 0);
 }
 
-/* ---- the selection, job by job ---- */
-
-static void lock_and_unlock(void)
-{
-    VjoHookSelect st = {0};
-    VjoHookCand c[2];
-    unsigned score;
-    uint32_t flags;
-    c[1] = cand(10, 1, 0, "セーブしますか");
-    /* job 1: the stream agrees with OCR: its text is shown, not yet locked */
-    c[0] = cand(9, 2, 0, LINE1);
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, c, 2, &score, &flags) == 9);
-    TEST_CHECK(flags == VJO_HOOK_R_AGREED && score == 1000);
-    TEST_CHECK(st.locked == 0 && st.streak_id == 9 && st.streak == 1);
-    /* job 2: new text, still not locked, so OCR reads again; the second agreement in a row locks it */
-    c[0] = cand(9, 3, 0, LINE2);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 0 && flags == 0);
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, "「そんなこと急に言われても、困るんだけとな」", c, 2, &score, &flags) == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED) && score >= VJO_HOOK_AGREE && score < 1000);
-    TEST_CHECK(st.locked == 9 && st.locked_seq == 3 && st.streak == 2 && st.misses == 0);
-    /* job 3: new text in the locked stream: it answers without OCR */
-    c[0] = cand(9, 4, 0, LINE3);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR) && st.locked_seq == 4);
-    /* job 4: the screen changed but the stream did not (a choice menu): OCR reads, the stream disagrees */
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 0 && flags == 0);
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "どこへ行く？\n学校\n公園", strlen("どこへ行く？\n学校\n公園"),
-                                     c, 2, &score, &flags) == 0);
-    TEST_CHECK(flags == 0 && st.locked == 9 && st.misses == 1 && st.streak == 0);
-    /* job 5: the next agreement keeps the lock and forgets the miss */
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE3, c, 2, &score, &flags) == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED) && st.misses == 0 && st.locked_seq == 4);
-    /* jobs 6, 7: two disagreements in a row unlock it */
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE4, c, 2, &score, &flags) == 0);
-    TEST_CHECK(flags == 0 && st.locked == 9 && st.misses == 1);
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE4, c, 2, &score, &flags) == 0);
-    TEST_CHECK(flags == VJO_HOOK_R_UNLOCK && st.locked == 0 && st.locked_seq == 0 && st.misses == 0);
-    /* unlocked: new text no longer answers without OCR */
-    c[0] = cand(9, 5, 0, LINE4);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 0 && flags == 0);
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE4, c, 2, &score, &flags) == 9 && flags == VJO_HOOK_R_AGREED);
-    /* a locked stream absent from a job (its slot was busy) misses nothing */
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE4, c, 2, &score, &flags) == 9 && st.locked == 9);
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, c + 1, 1, &score, &flags) == 0);
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, c + 1, 1, &score, &flags) == 0);
-    TEST_CHECK(st.locked == 9 && st.misses == 0);
-}
-
-static void locked_nothing_new(void)
-{
-    VjoHookSelect st = locked_on(9, 5, 0);
-    VjoHookCand c[1] = {cand(9, 5, 1, LINE1)};
-    unsigned score;
-    uint32_t flags;
-    /* the same seq as the last job shown: run OCR */
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 0 && flags == 0);
-    /* OCR still shows that line: the stream's text, agreed and locked */
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "明日の朝、駅前の公園でもう一度会おうよ",
-                                     strlen("明日の朝、駅前の公園でもう一度会おうよ"), c, 1, &score, &flags) == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_SITE) && score == 1000);
-    TEST_CHECK(st.locked == 9 && st.locked_seq == 5 && st.streak == 3 && st.misses == 0);
-}
-
-static void locked_new_text(void)
-{
-    VjoHookSelect st = locked_on(9, 5, 0);
-    VjoHookCand c[2] = {cand(3, 7, 1, LINE1), cand(9, 6, 0, LINE2)};
-    uint32_t flags;
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
-    /* only the seq moved, and the job is counted as one without OCR */
-    TEST_CHECK(st.locked == 9 && st.locked_seq == 6 && st.misses == 0 && st.streak == 2 && st.unchecked == 1);
-    /* the next job: nothing new again */
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 0);
-    /* a site that is locked answers with VJO_HOOK_R_SITE */
-    st.locked = 3;
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 3);
-    TEST_CHECK(flags == (VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE) && st.locked_seq == 7);
-    /* a miss pending (audit-hooks-text F3): new text or not, OCR reads until the stream agrees again */
-    st = locked_on(9, 5, 1);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 0 && flags == 0);
-    TEST_CHECK(st.locked_seq == 5 && st.misses == 1 && st.unchecked == 0);
-}
-
-static void pinned_stream(void)
-{
-    VjoHookSelect st = locked_on(9, 2, 1), was = st;
-    VjoHookCand c[2] = {cand(3, 4, 1, LINE3), cand(9, 5, 0, LINE2)};
-    unsigned score;
-    uint32_t flags;
-    /* pinned with text: that text, without OCR, whatever OCR would read, and no state change */
-    TEST_CHECK(vjo_hook_select_before(&st, 3, c, 2, &flags) == 3);
-    TEST_CHECK(flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
-    TEST_CHECK(vjo_hook_select_before(&st, 9, c, 2, &flags) == 9 && flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR));
-    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
-    /* pinned without text: OCR, and OCR's text kept even where another stream agrees */
-    TEST_CHECK(vjo_hook_select_before(&st, 4, c, 2, &flags) == 0 && flags == 0);
-    TEST_CHECK(vjo_hook_select_after(&st, 4, LINE2, strlen(LINE2), c, 2, &score, &flags) == 0);
-    TEST_CHECK(flags == 0 && score == 1000); /* the best stream's similarity, for the log */
-    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
-    /* after() with the pinned stream among the candidates: its text, agreeing or not */
-    TEST_CHECK(vjo_hook_select_after(&st, 3, LINE2, strlen(LINE2), c, 2, &score, &flags) == 3);
-    TEST_CHECK(flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_SITE) && score < VJO_HOOK_AGREE);
-    TEST_CHECK(vjo_hook_select_after(&st, 9, LINE2, strlen(LINE2), c, 2, &score, &flags) == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_AGREED) && score == 1000);
-    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
-}
-
-static void ocr_only(void)
-{
-    VjoHookSelect st = locked_on(9, 2, 1), was = st;
-    VjoHookCand c[1] = {cand(9, 5, 0, LINE2)};
-    unsigned score;
-    uint32_t flags;
-    /* a locked stream with new text, an agreeing one: OCR only, its text kept, nothing changes */
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_OCR, c, 1, &flags) == 0 && flags == 0);
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_OCR, LINE2, strlen(LINE2), c, 1, &score, &flags) == 0);
-    TEST_CHECK(flags == 0 && score == 1000);
-    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
-    /* a pick that is neither AUTO, a stream ID nor OCR: as OCR */
-    for (uint32_t pick = VJO_HOOK_STREAMS + 1u; pick < 0x200; pick += 37) {
-        TEST_CHECK(vjo_hook_select_before(&st, pick, c, 1, &flags) == 0 && flags == 0);
-        TEST_CHECK(vjo_hook_select_after(&st, pick, LINE2, strlen(LINE2), c, 1, &score, &flags) == 0 && flags == 0);
-    }
-    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
-}
-
-static void ties(void)
-{
-    VjoHookSelect st = {0};
-    unsigned score;
-    uint32_t flags;
-    /* two callers copying the same line: the newer copy */
-    VjoHookCand c[3] = {cand(9, 10, 0, LINE1), cand(12, 11, 0, LINE1), cand(15, 9, 0, LINE1)};
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), c, 3, &score, &flags) == 12);
-    /* then the streak's stream at equal scores, so the copies do not take turns and the lock comes */
-    c[0].seq = 20;
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), c, 3, &score, &flags) == 12);
-    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED) && st.locked == 12);
-    /* a site over a caller at equal scores (no streak) */
-    memset(&st, 0, sizeof(st));
-    c[2] = cand(2, 1, 1, LINE1);
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), c, 3, &score, &flags) == 2);
-    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_SITE));
-    /* seqs compare across a wrap of the clock */
-    memset(&st, 0, sizeof(st));
-    VjoHookCand w[2] = {cand(9, 0xFFFFFFF0u, 0, LINE1), cand(10, 3, 0, LINE1)};
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), w, 2, &score, &flags) == 10);
-    /* a higher score wins over every tie rule */
-    memset(&st, 0, sizeof(st));
-    st.streak_id = 9;
-    st.streak = 1;
-    VjoHookCand h[2] = {cand(9, 30, 1, "明日の朝、駅前の公園でもう一度会おう"), cand(10, 3, 0, LINE1)};
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), h, 2, &score, &flags) == 10);
-    TEST_CHECK(score == 1000 && st.streak_id == 10 && st.streak == 1);
-    /* the locked stream when it agrees, even if another scores higher */
-    st.locked = 9; st.locked_seq = 30; st.streak_id = 9; st.streak = 2;
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), h, 2, &score, &flags) == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_SITE) && score == 944);
-}
-
 static void many_candidates(void)
 {
     static const char *const junk[] = {
@@ -474,276 +300,308 @@ static void many_candidates(void)
     TEST_CHECK(score == best && score < VJO_HOOK_AGREE && flags == 0);
 }
 
-/* ---- a locked stream, page by page (audit-hooks-text F3, section 5's scenarios) ---- */
+/* ---- adaptive selection, with actual distinct content rather than background sequence numbers ---- */
 
-/* The auditor's lines (audit-hooks-text section 5, sel_scen.c), and two more. */
-#define P1 "「今日はいい天気だね。どこかへ出かけようか」"
-#define P2 "「うん、駅前の新しいお店に行ってみたいな」"
-#define P3 "「じゃあ、お昼を食べてから行こう」"
-#define P4 "「そうだね。楽しみにしてるよ」"
-#define P5 "「ところで、宿題はもう終わったの？」"
-#define P6 "「……あっ、まだ半分も残ってる」"
-#define P7 "「宿題なんて後でいいから、先に遊びに行こうよ」"
-#define P8 "「だめだよ、ちゃんと終わらせてからにしよう」"
-#define NAME "朋也"
-#define NAME4 "春原陽平"
-
-typedef struct {
-    const char *screen; /* what OCR reads (here it reads the screen exactly) */
-    const char *line;   /* the screen's line without its speaker's name, NULL when the screen has none */
-    const char *text;   /* stream 9's latest text as the job begins, NULL none */
-    uint32_t seq, key;  /* its seq and key */
-} Page;
-
-/* The pages, a job each, as the game worker runs them, from state *st: the pages whose shown text is
- * neither the screen's nor its line (a name alone, another line, a UI string). *ocr gets the jobs that ran
- * OCR. */
-static unsigned wrong_pages(VjoHookSelect *st, const Page *p, unsigned n, unsigned *ocr)
+static void reading(VjoHookCand *c, unsigned line)
 {
-    unsigned wrong = 0;
-    *ocr = 0;
-    for (unsigned j = 0; j < n; j++) {
-        VjoHookCand c = {9, p[j].seq, 0, p[j].text, p[j].text ? strlen(p[j].text) : 0, p[j].key};
-        unsigned score;
-        uint32_t flags, id = vjo_hook_select_before(st, VJO_HOOK_PICK_AUTO, &c, p[j].text ? 1u : 0u, &flags);
-        const char *shown = p[j].screen;
-        if (id) {
-            shown = c.text;
-        } else {
-            (*ocr)++;
-            if (vjo_hook_select_after(st, VJO_HOOK_PICK_AUTO, p[j].screen, strlen(p[j].screen), &c,
-                                      p[j].text ? 1u : 0u, &score, &flags))
-                shown = c.text;
-        }
-        if (strcmp(shown, p[j].screen) && (!p[j].line || strcmp(shown, p[j].line))) {
-            wrong++;
-            TEST_MSG("page %u: screen [%s], shown [%s]", j + 1, p[j].screen, shown);
-        }
-    }
-    return wrong;
+    static char text[128];
+    snprintf(text, sizeof(text), "会話の新しいページ番号%uです", line);
+    *c = cand(9, line, 0, text);
 }
 
-static void locked_runs_ahead(void)
-{
-    /* locked on two pages, then the game copies the next line before it draws it, on every page */
-    static const Page pages[] = {
-        {P1, NULL, P1, 1, 0}, {P2, NULL, P2, 2, 0}, {P3, NULL, P4, 4, 0}, {P4, NULL, P5, 5, 0},
-        {P5, NULL, P6, 6, 0}, {P6, NULL, P7, 7, 0}, {P7, NULL, P8, 8, 0}};
-    VjoHookSelect st = {0};
-    unsigned ocr;
-    /* pages 3 and 4 show the next line (the unchecked jobs), page 5's OCR misses, page 6's unlocks */
-    TEST_CHECK(wrong_pages(&st, pages, 7, &ocr) == VJO_HOOK_UNCHECKED_MAX && ocr == 5);
-    TEST_CHECK(st.locked == 0 && st.unchecked == 0 && st.misses == 0);
-}
-
-static void locked_name_alone(void)
-{
-    /* the auditor's: locked on a name beside each line, then the caller's latest copy is the name */
-    static const Page pages[] = {
-        {NAME P1, P1, P1, 1, 0}, {NAME P2, P2, P2, 2, 0}, {NAME P3, P3, NAME, 4, 0},
-        {NAME4 P4, P4, NAME4, 6, 0}, {NAME P5, P5, P5, 8, 0}};
-    /* a 4-character name first: as long as VJO_HOOK_MIN_CHARS, so the unchecked jobs show it */
-    static const Page four[] = {
-        {NAME4 P1, P1, P1, 1, 0}, {NAME4 P2, P2, P2, 2, 0}, {NAME4 P3, P3, NAME4, 4, 0},
-        {NAME4 P4, P4, NAME4, 6, 0}, {NAME4 P5, P5, NAME4, 8, 0}, {NAME4 P6, P6, NAME4, 10, 0},
-        {NAME4 P7, P7, P7, 12, 0}};
-    VjoHookSelect st = {0};
-    unsigned ocr;
-    /* 朋也 has 2 characters: OCR reads that page (a miss), and the miss makes OCR read the next one too,
-       where 春原陽平 alone does not agree with the box: unlocked; then the line agrees again */
-    TEST_CHECK(wrong_pages(&st, pages, 5, &ocr) == 0 && ocr == 5);
-    TEST_CHECK(st.locked == 0 && st.streak_id == 9 && st.streak == 1);
-    memset(&st, 0, sizeof(st));
-    TEST_CHECK(wrong_pages(&st, four, 7, &ocr) == VJO_HOOK_UNCHECKED_MAX && ocr == 5);
-    TEST_CHECK(st.locked == 0);
-}
-
-static void locked_ui_string(void)
-{
-    /* the auditor's: messages through the locked caller, then a UI string over the dialogue */
-    static const Page pages[] = {
-        {P1, NULL, P1, 1, 0}, {P2, NULL, P2, 2, 0}, {"セーブしました", NULL, "セーブしました", 3, 0},
-        {"ロード", NULL, "ロード", 4, 0}, {P3, NULL, "オートモード", 5, 0}, {P3, NULL, "オートモード", 5, 0},
-        {P3, NULL, "オートモード", 5, 0}};
-    /* a new UI string on every page */
-    static const Page every[] = {
-        {P1, NULL, P1, 1, 0}, {P2, NULL, P2, 2, 0}, {P3, NULL, "オートモード", 3, 0},
-        {P4, NULL, "スキップ中です", 4, 0}, {P5, NULL, "オートモード", 5, 0}, {P6, NULL, "スキップ中です", 6, 0},
-        {P7, NULL, "オートモード", 7, 0}};
-    VjoHookSelect st = {0};
-    unsigned ocr;
-    /* セーブしました is the screen's; ロード (3 characters) lets OCR read; オートモード is the wrong page */
-    TEST_CHECK(wrong_pages(&st, pages, 7, &ocr) == 1 && ocr == 5 && st.locked == 0);
-    memset(&st, 0, sizeof(st));
-    TEST_CHECK(wrong_pages(&st, every, 7, &ocr) == VJO_HOOK_UNCHECKED_MAX && ocr == 5 && st.locked == 0);
-}
-
-static void locked_backlog_and_reread(void)
-{
-    /* the auditor's: the backlog screen through the locked caller (one of its two lines), then the game */
-    static const Page backlog[] = {
-        {P1, NULL, P1, 1, 0}, {P2, NULL, P2, 2, 0}, {P1 P2, NULL, P1, 3, 0}, {P3, NULL, P3, 4, 0}};
-    /* the next line once, then the same screen read again (nothing new): two misses, then it agrees */
-    static const Page reread[] = {
-        {P1, NULL, P1, 1, 0}, {P2, NULL, P2, 2, 0}, {P3, NULL, P4, 4, 0}, {P3, NULL, P4, 4, 0},
-        {P3, NULL, P4, 4, 0}, {P4, NULL, P4, 4, 0}};
-    VjoHookSelect st = {0};
-    unsigned ocr;
-    TEST_CHECK(wrong_pages(&st, backlog, 4, &ocr) == 1 && ocr == 2 && st.locked == 9 && st.unchecked == 2);
-    memset(&st, 0, sizeof(st));
-    TEST_CHECK(wrong_pages(&st, reread, 6, &ocr) == 1 && ocr == 5);
-    TEST_CHECK(st.locked == 0 && st.streak_id == 9 && st.streak == 1);
-}
-
-static void locked_checked_by_ocr(void)
-{
-    /* a stream that follows the dialogue: no wrong page, and once locked OCR reads one page in three */
-    static const Page pages[] = {
-        {P1, NULL, P1, 1, 0}, {P2, NULL, P2, 2, 0}, {P3, NULL, P3, 3, 0}, {P4, NULL, P4, 4, 0},
-        {P5, NULL, P5, 5, 0}, {P6, NULL, P6, 6, 0}, {P7, NULL, P7, 7, 0}, {P8, NULL, P8, 8, 0}};
-    VjoHookSelect st = {0};
-    VjoHookCand c[1];
-    unsigned ocr, score;
-    uint32_t flags;
-    TEST_CHECK(wrong_pages(&st, pages, 8, &ocr) == 0 && ocr == 4); /* pages 1, 2, 5 and 8 */
-    TEST_CHECK(st.locked == 9 && st.unchecked == 0 && st.misses == 0 && st.locked_seq == 8);
-    /* job by job: two answers without OCR, then the check, which agrees */
-    c[0] = cand(9, 9, 0, P1);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 9 && st.unchecked == 1);
-    c[0] = cand(9, 10, 0, P2);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 9 && st.unchecked == 2);
-    c[0] = cand(9, 11, 0, P3);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 0 && flags == 0);
-    TEST_CHECK(st.locked_seq == 10 && st.unchecked == 2);
-    /* the check's OCR reads (almost) nothing: no evidence, so the next job is checked again */
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "……", strlen("……"), c, 1, &score, &flags) == 0);
-    TEST_CHECK(flags == 0 && st.unchecked == 2 && st.locked == 9);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 0);
-    /* the locked stream busy in the check: nothing compared, still unchecked */
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, P3, strlen(P3), c, 0, &score, &flags) == 0);
-    TEST_CHECK(st.unchecked == 2 && st.misses == 0 && st.locked == 9);
-    /* it agrees: shown, and two jobs without OCR again */
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, P3, strlen(P3), c, 1, &score, &flags) == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED) && st.unchecked == 0 && st.locked_seq == 11);
-    c[0] = cand(9, 12, 0, P4);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 9);
-    /* a pinned or OCR-only job between them changes nothing */
-    VjoHookSelect was = st;
-    c[0] = cand(9, 13, 0, P5);
-    TEST_CHECK(vjo_hook_select_before(&st, 9, c, 1, &flags) == 9 && !memcmp(&st, &was, sizeof(st)));
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_OCR, P5, strlen(P5), c, 1, &score, &flags) == 0);
-    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
-}
-
-static void locked_short_text(void)
-{
-    static const char pool[][8] = {"あ", "漢", "ｶ", "ﾞ", "ﾟ", "、", "…", "「", "」", "ー", "一", "A", "1", " ",
-                                   "！", "々", "・", "\n", "☆", "ｰ", "\xff"};
-    VjoHookSelect st = locked_on(9, 1, 0);
-    VjoHookCand c[1];
-    uint32_t flags;
-    char t[64];
-    /* fewer than VJO_HOOK_MIN_CHARS compared characters never answer: OCR reads the page */
-    c[0] = cand(9, 2, 0, "「えっ？」");
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 0 && st.unchecked == 0);
-    c[0] = cand(9, 2, 0, "……！？");
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 0);
-    c[0] = cand(9, 2, 0, "ｶﾞｷﾞｸﾞ"); /* 3 characters: the voiced marks join their kana */
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 0);
-    c[0] = cand(9, 2, 0, "ｶﾞｷﾞｸﾞｹﾞ");
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 9 && st.unchecked == 1);
-    /* the count is the comparison's: a text answers exactly when it could agree with itself */
-    srand(7);
-    for (unsigned k = 0; k < 3000; k++) {
-        unsigned len = (unsigned)rand() % 7u;
-        t[0] = '\0';
-        for (unsigned i = 0; i < len; i++) strcat(t, pool[(unsigned)rand() % (sizeof(pool) / sizeof(pool[0]))]);
-        st = locked_on(9, 1, 0);
-        c[0] = cand(9, 2, 0, t);
-        TEST_CHECK_((vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 9) ==
-                        (vjo_hook_similarity(t, strlen(t), t, strlen(t)) == 1000),
-                    "[%s]", t);
-    }
-    /* a pinned stream is the user's choice: its text answers whatever its length */
-    st = locked_on(9, 1, 0);
-    c[0] = cand(9, 2, 0, NAME);
-    TEST_CHECK(vjo_hook_select_before(&st, 9, c, 1, &flags) == 9 && flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR));
-}
-
-static void locked_key_changes(void)
+static VjoHookSelect learn(void)
 {
     VjoHookSelect st = {0};
-    VjoHookCand c[2];
+    VjoHookCand c;
     unsigned score;
     uint32_t flags;
-    /* locked on the caller with key 0x5910F */
-    c[0] = cand(9, 1, 0, P1);
-    c[0].key = 0x5910Fu;
-    c[1] = cand(3, 1, 1, "セーブしますか");
-    c[1].key = 0x2CA70u;
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, P1, c, 2, &score, &flags) == 9);
-    c[0].seq = 2;
-    c[0].text = P2;
-    c[0].n = strlen(P2);
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, P2, c, 2, &score, &flags) == 9);
-    TEST_CHECK(st.locked == 9 && st.locked_key == 0x5910Fu);
-    /* the same key: it answers */
-    c[0].seq = 3;
-    c[0].text = P3;
-    c[0].n = strlen(P3);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 9);
-    /* its slot went to another caller (key 0x1234): no answer, and OCR's job unlocks it at once, even
-       though the new caller's text agrees; that is its first agreement */
-    c[0].seq = 4;
-    c[0].key = 0x1234u;
-    c[0].text = P4;
-    c[0].n = strlen(P4);
-    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 0 && flags == 0);
-    TEST_CHECK(st.locked == 9 && st.locked_seq == 3);
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, P4, strlen(P4), c, 2, &score, &flags) == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_UNLOCK | VJO_HOOK_R_AGREED) && st.locked == 0 && st.locked_key == 0);
-    TEST_CHECK(st.streak_id == 9 && st.streak == 1 && st.unchecked == 0 && st.misses == 0);
-    /* the new caller locks on its own two agreements, with its own key */
-    c[0].seq = 5;
-    c[0].text = P5;
-    c[0].n = strlen(P5);
-    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, P5, c, 2, &score, &flags) == 9 && st.locked == 9);
-    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED) && st.locked_key == 0x1234u);
-    /* another key while OCR reads nothing: unlocked all the same */
-    c[0].key = 0x5678u;
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "", 0, c, 2, &score, &flags) == 0);
-    TEST_CHECK(flags == VJO_HOOK_R_UNLOCK && st.locked == 0 && st.streak == 0);
-    /* a pinned or OCR-only job never unlocks */
-    st = locked_on(9, 5, 0);
-    st.locked_key = 0x1234u;
-    VjoHookSelect was = st;
-    TEST_CHECK(vjo_hook_select_after(&st, 9, P5, strlen(P5), c, 2, &score, &flags) == 9);
-    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_OCR, P5, strlen(P5), c, 2, &score, &flags) == 0);
+    reading(&c, 1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, c.text, &c, 1, &score, &flags) == 9);
+    reading(&c, 2);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, c.text, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(st.interval == 8 && st.locked == 9 && st.streak == 2);
+    return st;
+}
+
+static void distinct_initial_lines(void)
+{
+    VjoHookSelect st = {0};
+    VjoHookCand c = cand(9, 1, 0, "「ガッコウヘイクヨ」");
+    unsigned score;
+    uint32_t flags;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, c.text, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(!st.interval && st.streak == 1);
+    /* changed raw writes, width, punctuation and whitespace still form the same line */
+    c = cand(9, 1000, 0, " ｶﾞｯｺｳﾍ ｲｸﾖ！ ");
+    for (unsigned i = 0; i < 5; i++) {
+        c.seq++;
+        TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, c.text, &c, 1, &score, &flags) == 9);
+    }
+    TEST_CHECK(!st.interval && st.streak == 1);
+    c = cand(9, 2000, 0, LINE2);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(st.interval == 8 && st.streak == 2);
+    TEST_CHECK(flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED));
+}
+
+static void exact_adaptive_cadence(void)
+{
+    VjoHookSelect st = learn();
+    VjoHookCand c;
+    unsigned score, checks = 0;
+    uint32_t flags;
+    /* 8,16,32,32 readings, including each checked reading. Sequence jumps do not count. */
+    for (unsigned line = 1; line <= 88; line++) {
+        int scheduled = line == 8 || line == 24 || line == 56 || line == 88;
+        reading(&c, line + 2);
+        c.seq = line * 1000u;
+        uint32_t id = vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags);
+        TEST_CHECK_((id == 0) == scheduled, "fresh reading %u, interval %u, count %u", line, st.interval, st.unchecked);
+        if (!id) {
+            checks++;
+            TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 9);
+        }
+        TEST_CHECK(st.interval == (line < 8 ? 8u : line < 24 ? 16u : 32u));
+        /* Reopening unchanged dialogue follows the existing OCR path but changes no cadence. */
+        VjoHookSelect was = st;
+        for (unsigned reopen = 0; reopen < 2; reopen++) {
+            c.seq++;
+            TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+            TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 9);
+            TEST_CHECK(st.interval == was.interval && st.unchecked == was.unchecked && st.misses == was.misses);
+        }
+    }
+    TEST_CHECK(checks == 4 && st.unchecked == 0);
+}
+
+static void restart_confirmation(void)
+{
+    VjoHookSelect st;
+    VjoHookLearned saved = {1, 0x1234, 2, 32}, out;
+    VjoHookCand c = cand(3, 1, 1, LINE1);
+    unsigned score;
+    uint32_t flags;
+    c.key = saved.key;
+    c.encoding = saved.encoding;
+    TEST_CHECK(vjo_hook_select_restore(&st, &saved));
+    TEST_CHECK(st.interval == 32 && st.confirm && !st.locked);
+    TEST_CHECK(vjo_hook_select_learned(&st, &out) && !memcmp(&saved, &out, sizeof(out)));
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, LINE1, strlen(LINE1), &c, 1, &score, &flags) == 3);
+    TEST_CHECK(st.interval == 32 && !st.confirm && st.unchecked == 0 && st.locked == 3);
+    c.text = LINE2; c.n = strlen(LINE2); c.seq = 2;
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 3 && st.unchecked == 1);
+    TEST_CHECK(vjo_hook_select_learned(&st, &out) && !memcmp(&saved, &out, sizeof(out)));
+    /* Identity follows the source rather than its slot. */
+    c.id = 12; c.text = LINE3; c.n = strlen(LINE3); c.seq++;
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 12 && st.locked == 12);
+    TEST_CHECK(vjo_hook_select_learned(&st, &out) && !memcmp(&saved, &out, sizeof(out)));
+    saved.interval = 31;
+    TEST_CHECK(!vjo_hook_select_restore(&st, &saved));
+    TEST_CHECK(!vjo_hook_select_learned(&st, &out) && !out.interval);
+    TEST_CHECK(!vjo_hook_select_restore(&st, NULL));
+    saved.interval = 32; saved.site = 2;
+    TEST_CHECK(!vjo_hook_select_restore(&st, &saved));
+}
+
+static void startup_disagreement_recovery(void)
+{
+    VjoHookSelect st;
+    VjoHookLearned saved = {0, 0x900, 0, 32}, out;
+    VjoHookCand c = cand(9, 1, 0, LINE1);
+    unsigned score;
+    uint32_t flags;
+    TEST_CHECK(vjo_hook_select_restore(&st, &saved));
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, &c, 1, &score, &flags) == 0);
+    TEST_CHECK(st.interval == 32 && st.misses == 1 && st.confirm);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, &c, 1, &score, &flags) == 0 && st.misses == 1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, "……", &c, 1, &score, &flags) == 0 && st.misses == 1);
+    c.text = LINE3; c.n = strlen(LINE3); c.seq++;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE3, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(st.interval == 8 && !st.misses && !st.confirm && st.unchecked == 0);
+    TEST_CHECK(vjo_hook_select_learned(&st, &out) && out.interval == 8);
+    /* Two fresh comparable startup disagreements unlock; an inconclusive line keeps the first. */
+    TEST_CHECK(vjo_hook_select_restore(&st, &saved));
+    c.text = LINE1; c.n = strlen(LINE1); c.seq++;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, &c, 1, &score, &flags) == 0 && st.misses == 1);
+    c.text = LINE3; c.n = strlen(LINE3); c.seq++;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, "…", &c, 1, &score, &flags) == 0 && st.misses == 1);
+    c.text = LINE4; c.n = strlen(LINE4); c.seq++;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, &c, 1, &score, &flags) == 0);
+    TEST_CHECK(flags == VJO_HOOK_R_UNLOCK && !st.interval && !st.locked);
+    TEST_CHECK(!vjo_hook_select_learned(&st, &out));
+    /* A stale hook can stay unchanged while the actual screen advances. Empty OCR must not erase
+     * the last comparable screen: a new screen is the second disagreement, an unchanged one is not. */
+    TEST_CHECK(vjo_hook_select_restore(&st, &saved));
+    c = cand(9, 1, 0, LINE1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, &c, 1, &score, &flags) == 0 && st.misses == 1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, "…", &c, 1, &score, &flags) == 0 && st.misses == 1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, &c, 1, &score, &flags) == 0 && st.misses == 1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE3, &c, 1, &score, &flags) == 0);
+    TEST_CHECK(flags == VJO_HOOK_R_UNLOCK && !st.interval);
+}
+
+static void scheduled_disagreement(void)
+{
+    VjoHookSelect st = learn();
+    VjoHookCand c;
+    unsigned score;
+    uint32_t flags;
+    for (unsigned i = 3; i <= 9; i++) {
+        reading(&c, i);
+        TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 9);
+    }
+    reading(&c, 10);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, &c, 1, &score, &flags) == 0);
+    TEST_CHECK(st.misses == 1 && st.interval == 8 && st.unchecked == 7);
+    for (unsigned i = 0; i < 3; i++) {
+        c.seq++;
+        TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, &c, 1, &score, &flags) == 0 && st.misses == 1);
+    }
+    reading(&c, 11);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, c.text, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(!st.misses && st.interval == 8 && st.unchecked == 0);
+    /* More trust still resets to8 after a single disagreement and successful next line. */
+    VjoHookLearned high = {0, 0x900, 0, 32};
+    TEST_CHECK(vjo_hook_select_restore(&st, &high));
+    reading(&c, 12);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, c.text, &c, 1, &score, &flags) == 9);
+    st.unchecked = 31;
+    reading(&c, 13);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, &c, 1, &score, &flags) == 0 && st.misses == 1);
+    reading(&c, 14);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, c.text, &c, 1, &score, &flags) == 9 && st.interval == 8);
+}
+
+static void inconclusive_and_missing(void)
+{
+    VjoHookSelect st;
+    VjoHookLearned high = {0, 0x900, 0, 32};
+    VjoHookCand c;
+    unsigned score;
+    uint32_t flags;
+    TEST_CHECK(vjo_hook_select_restore(&st, &high));
+    reading(&c, 1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, c.text, &c, 1, &score, &flags) == 9);
+    reading(&c, 2);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 9 && st.unchecked == 1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, "メニュー画面", NULL, 0, &score, &flags) == 0);
+    TEST_CHECK(st.interval == 32 && st.confirm && !st.misses && st.unchecked == 1);
+    reading(&c, 3);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(st.interval == 32 && !st.confirm && st.unchecked == 0);
+    /* Empty/too-short hook text is also temporary, not a comparable disagreement. */
+    c = cand(9, 4, 0, "はい");
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, &c, 1, &score, &flags) == 0 && !st.misses && st.interval == 32);
+    c = cand(9, 5, 0, LINE1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, "……", &c, 1, &score, &flags) == 0 && !st.misses && st.interval == 32);
+    /* An inconclusive read supplied no dialogue/evidence. Its first valid comparison may confirm. */
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, &c, 1, &score, &flags) == 9 && !st.confirm);
+    c = cand(9, 6, 0, LINE2);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, &c, 1, &score, &flags) == 9 && !st.confirm && st.interval == 32);
+}
+
+static void inconclusive_check_cadence(void)
+{
+    VjoHookSelect st = learn();
+    VjoHookCand c;
+    unsigned score;
+    uint32_t flags;
+    for (unsigned i = 3; i <= 9; i++) {
+        reading(&c, i);
+        TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 9);
+    }
+    reading(&c, 10);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, "…", &c, 1, &score, &flags) == 0);
+    TEST_CHECK(st.unchecked == 7 && st.interval == 8 && !st.confirm);
+    reading(&c, 11);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(st.interval == 16 && st.unchecked == 0 && !st.confirm);
+    /* A reopen before the check is due can also have empty OCR. Its next fresh line needs a
+     * confirmation, while the successful confirmation preserves the interval instead of promoting. */
+    reading(&c, 12);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 9);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, "…", &c, 1, &score, &flags) == 0);
+    TEST_CHECK(st.confirm && st.interval == 16 && st.unchecked == 1);
+    reading(&c, 13);
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, c.text, c.n, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(!st.confirm && st.interval == 16 && st.unchecked == 0);
+}
+
+static void source_invalidation(void)
+{
+    VjoHookSelect st = learn();
+    VjoHookCand c = cand(9, 3, 0, LINE3);
+    unsigned score;
+    uint32_t flags;
+    c.key++;
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, &c, 1, &flags) == 0);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_AUTO, "", 0, &c, 1, &score, &flags) == 0);
+    TEST_CHECK(flags == VJO_HOOK_R_UNLOCK && !st.interval && !st.streak);
+    st = learn(); c = cand(9, 3, 0, LINE3); c.encoding++;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE3, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(flags == (VJO_HOOK_R_UNLOCK | VJO_HOOK_R_AGREED) && !st.interval && st.streak == 1);
+    st = learn(); c = cand(9, 3, 1, LINE3);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE3, &c, 1, &score, &flags) == 9);
+    TEST_CHECK(flags == (VJO_HOOK_R_UNLOCK | VJO_HOOK_R_AGREED | VJO_HOOK_R_SITE) && !st.interval);
+    /* A slot reused between the first and second agreements cannot borrow its predecessor's streak. */
+    st = (VjoHookSelect){0}; c = cand(9, 1, 0, LINE1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, &c, 1, &score, &flags) == 9);
+    c = cand(9, 2, 0, LINE2); c.key++;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, &c, 1, &score, &flags) == 9 && st.streak == 1 && !st.interval);
+}
+
+static void pinned_and_ocr(void)
+{
+    VjoHookSelect st = learn(), was = st;
+    VjoHookCand c[2] = {cand(3, 4, 1, "はい"), cand(9, 5, 0, LINE2)};
+    unsigned score;
+    uint32_t flags;
+    TEST_CHECK(vjo_hook_select_before(&st, 3, c, 2, &flags) == 3);
+    TEST_CHECK(flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
+    TEST_CHECK(vjo_hook_select_after(&st, 3, LINE2, strlen(LINE2), c, 2, &score, &flags) == 3);
+    TEST_CHECK(flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_SITE));
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_OCR, c, 2, &flags) == 0);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_OCR, LINE2, strlen(LINE2), c, 2, &score, &flags) == 0);
     TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
+}
+
+static void ties_and_fallback(void)
+{
+    VjoHookSelect st = {0};
+    VjoHookCand c[3] = {cand(9, 10, 0, LINE1), cand(12, 11, 0, LINE1), cand(15, 9, 0, LINE1)};
+    unsigned score;
+    uint32_t flags;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, c, 3, &score, &flags) == 12);
+    for (unsigned i = 0; i < 3; i++) { c[i].text = LINE2; c[i].n = strlen(LINE2); }
+    c[0].seq = 100;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, c, 3, &score, &flags) == 12 && st.interval == 8);
+    st = (VjoHookSelect){0}; c[2] = cand(2, 1, 1, LINE1);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE1, c, 3, &score, &flags) == 2);
+    /* A different source may supply checked, agreeing text without replacing the trusted identity
+     * after just one disagreement. */
+    st = learn();
+    c[0] = cand(9, 3, 0, LINE1); c[1] = cand(12, 3, 0, LINE2);
+    st.unchecked = 7;
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE2, c, 2, &score, &flags) == 12);
+    TEST_CHECK(st.locked == 9 && st.misses == 1 && !(flags & VJO_HOOK_R_LOCKED));
+    c[0] = cand(9, 4, 0, LINE3); c[1] = cand(12, 4, 0, LINE4);
+    TEST_CHECK(job(&st, VJO_HOOK_PICK_AUTO, LINE4, c, 2, &score, &flags) == 12);
+    TEST_CHECK((flags & VJO_HOOK_R_UNLOCK) && !st.interval && st.streak == 1 && st.streak_id == 12);
 }
 
 TEST_LIST = {
-    {"exact_text", exact_text},
-    {"wrong_characters", wrong_characters},
-    {"name_and_line", name_and_line},
-    {"backlog_and_prefetch", backlog_and_prefetch},
-    {"short_strings", short_strings},
-    {"empty_texts", empty_texts},
-    {"random_against_reference", random_against_reference},
-    {"longer_than_compared", longer_than_compared},
-    {"lock_and_unlock", lock_and_unlock},
-    {"locked_nothing_new", locked_nothing_new},
-    {"locked_new_text", locked_new_text},
-    {"pinned_stream", pinned_stream},
-    {"ocr_only", ocr_only},
-    {"ties", ties},
-    {"many_candidates", many_candidates},
-    {"locked_runs_ahead", locked_runs_ahead},
-    {"locked_name_alone", locked_name_alone},
-    {"locked_ui_string", locked_ui_string},
-    {"locked_backlog_and_reread", locked_backlog_and_reread},
-    {"locked_checked_by_ocr", locked_checked_by_ocr},
-    {"locked_short_text", locked_short_text},
-    {"locked_key_changes", locked_key_changes},
-    {NULL, NULL}
+    {"exact_text", exact_text}, {"wrong_characters", wrong_characters},
+    {"name_and_line", name_and_line}, {"backlog_and_prefetch", backlog_and_prefetch},
+    {"short_strings", short_strings}, {"empty_texts", empty_texts},
+    {"random_against_reference", random_against_reference}, {"longer_than_compared", longer_than_compared},
+    {"distinct_initial_lines", distinct_initial_lines}, {"exact_adaptive_cadence", exact_adaptive_cadence},
+    {"restart_confirmation", restart_confirmation}, {"startup_disagreement_recovery", startup_disagreement_recovery},
+    {"scheduled_disagreement", scheduled_disagreement}, {"inconclusive_and_missing", inconclusive_and_missing},
+    {"inconclusive_check_cadence", inconclusive_check_cadence},
+    {"source_invalidation", source_invalidation}, {"pinned_and_ocr", pinned_and_ocr},
+    {"ties_and_fallback", ties_and_fallback}, {"many_candidates", many_candidates}, {NULL, NULL}
 };

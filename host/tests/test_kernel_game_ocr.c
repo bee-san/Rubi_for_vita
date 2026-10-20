@@ -195,6 +195,7 @@ static int shot_worker_context(void) { return caller == 0 && !locks && !syscall_
 static SceUID shot_file_open(const char *path, int flags)
 {
     int i, spare = !strcmp(path, SHOT_SPARE_PATH);
+    int cache = !strncmp(path, HOOK_CACHE_PATH, sizeof(HOOK_CACHE_PATH) - 1u);
     TEST_ASSERT(shot_worker_context() && !shot_open);
     if (spare) {
         TEST_CHECK(flags == (SCE_O_WRONLY | SCE_O_CREAT));
@@ -202,8 +203,9 @@ static SceUID shot_file_open(const char *path, int flags)
         spare_last_open_flags = flags;
         if (spare_open_error) return spare_open_error;
     } else {
-        TEST_CHECK((flags == SCE_O_WRONLY || flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC)) &&
-                   strlen(path) > 8 && !strcmp(path + strlen(path) - 8, ".jpg.tmp"));
+        TEST_CHECK(cache ? flags == SCE_O_RDONLY || flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC)
+                        : (flags == SCE_O_WRONLY || flags == (SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC)) &&
+                          strlen(path) > 8 && !strcmp(path + strlen(path) - 8, ".jpg.tmp"));
         shot_opens++;
         shot_last_open_flags = flags;
         if (shot_open_error) return shot_open_error;
@@ -314,6 +316,7 @@ int ksceIoSyncByFd(SceUID fd, int flag) { (void)fd; (void)flag; TEST_CHECK(0); s
 SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
 {
     if (!strcmp(path, SHOT_SPARE_PATH) ||
+        !strncmp(path, HOOK_CACHE_PATH, sizeof(HOOK_CACHE_PATH) - 1u) ||
         !strncmp(path, VJO_GAME_OCR_SHOT_DIR "/", sizeof(VJO_GAME_OCR_SHOT_DIR))) return shot_file_open(path, flags);
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && !file_live);
     char expected[320]; snprintf(expected,sizeof(expected),"%s/%s",VJO_VOCR_MODEL_ROOT,
@@ -324,9 +327,26 @@ SceUID ksceIoOpen(const char *path, int flags, unsigned mode)
     file_live = 1; return 31;
 }
 SceOff ksceIoLseek(SceUID fd, SceOff offset, int whence)
-{ TEST_CHECK(fd == 31 && file_live && !locks && !syscall_depth); return seek_error ? (SceOff)seek_error : (SceOff)expected_model_size + bad_size; }
+{
+    if (fd == SHOT_FD) {
+        TEST_ASSERT(shot_worker_context() && shot_open && offset == 0 && whence == SCE_SEEK_END);
+        return seek_error ? (SceOff)seek_error : shot_fs[shot_index].len;
+    }
+    TEST_CHECK(fd == 31 && file_live && !locks && !syscall_depth);
+    return seek_error ? (SceOff)seek_error : (SceOff)expected_model_size + bad_size;
+}
 int ksceIoPread(SceUID fd, void *out, SceSize bytes, SceOff offset)
 {
+    if (fd == SHOT_FD) {
+        TEST_ASSERT(shot_worker_context() && shot_open && offset >= 0);
+        interrupt_io();
+        if (read_error) return read_error;
+        if (eof) return 0;
+        if (short_read && bytes > 37) bytes = 37;
+        if ((uint64_t)offset + bytes > shot_fs[shot_index].len) bytes = shot_fs[shot_index].len - offset;
+        memcpy(out, shot_fs[shot_index].data + offset, bytes);
+        return (int)bytes;
+    }
     TEST_ASSERT(caller == 0 && !locks && !syscall_depth && file_live && fd == 31);
     TEST_CHECK(bytes <= VJO_GAME_OCR_MODEL_CHUNK && offset >= 0 && offset + bytes <= expected_model_size);
     model_reads++; interrupt_io();
@@ -2332,7 +2352,88 @@ static void hook_pick_is_checked(void)
     TEST_CHECK(offsetof(VjoGameOcrRequest, hook_pick) + sizeof(uint32_t) == sizeof(VjoGameOcrRequest));
 }
 
+static void hook_cache_persists_with_bounded_broker(void)
+{
+    unsigned char data[VJO_GAME_OCR_HOOK_CACHE_BYTES], readback[sizeof(data)];
+    setup();
+    caller = 7;
+    TEST_CHECK(vjoOcrHookCache(1, 0, data) == VJO_ERR_PERM); /* no claimed job */
+    uint32_t seq = submit(); take(seq);
+    wait_runs_worker = 1;
+    caller = 3;
+    TEST_CHECK(vjoOcrHookCache(seq, 0, data) == VJO_ERR_PERM);
+    caller = 7;
+    TEST_CHECK(vjoOcrHookCache(seq, 2, data) == VJO_ERR_ARG);
+    TEST_CHECK(vjoOcrHookCache(seq, 0, NULL) == VJO_ERR_ARG);
+    TEST_CHECK(vjoOcrHookCache(seq, 0, data) == 0 && !model_io.seq); /* absent, including backup */
+    memset(data, 0x51, sizeof(data));
+    shot_short_writes = 1;
+    TEST_CHECK(vjoOcrHookCache(seq, 1, data) == 0 && !model_io.seq);
+    TEST_CHECK(shot_writes == 4 && !shot_open && shot_entry(HOOK_CACHE_TEMP) < 0);
+    int main = shot_entry(HOOK_CACHE_PATH);
+    TEST_ASSERT(main >= 0);
+    TEST_CHECK(shot_fs[main].len == sizeof(data) && !memcmp(shot_fs[main].data, data, sizeof(data)));
+    short_read = 1;
+    memset(readback, 0, sizeof(readback));
+    TEST_CHECK(vjoOcrHookCache(seq, 0, readback) == sizeof(data) && !memcmp(data, readback, sizeof(data)));
+    /* Replacement retains the last committed version, without renaming over any destination. */
+    memset(data, 0x62, sizeof(data));
+    TEST_CHECK(vjoOcrHookCache(seq, 1, data) == 0);
+    int backup = shot_entry(HOOK_CACHE_BACKUP);
+    TEST_ASSERT(backup >= 0);
+    TEST_CHECK(shot_fs[backup].data[0] == 0x51 && shot_entry(HOOK_CACHE_TEMP) < 0);
+    main = shot_entry(HOOK_CACHE_PATH);
+    TEST_ASSERT(main >= 0);
+    shot_fs[main].live = 0; /* interrupted after old->backup, before temp->main */
+    TEST_CHECK(vjoOcrHookCache(seq, 0, readback) == sizeof(data) && readback[0] == 0x51);
+    shot_rename_error = (int)0x80010005u;
+    TEST_CHECK(vjoOcrHookCache(seq, 1, data) == shot_rename_error);
+    shot_rename_error = 0;
+    TEST_CHECK(vjoOcrHookCache(seq, 0, readback) == sizeof(data) && readback[0] == 0x51);
+    TEST_CHECK(!allocations && !shot_syncs && !model_io.seq);
+}
+
+static void hook_cache_failures_preserve_previous_file(void)
+{
+    unsigned char data[VJO_GAME_OCR_HOOK_CACHE_BYTES];
+    setup();
+    uint32_t seq = submit(); take(seq); wait_runs_worker = 1;
+    memset(data, 0x71, sizeof(data));
+    TEST_ASSERT(vjoOcrHookCache(seq, 1, data) == 0);
+    int main = shot_entry(HOOK_CACHE_PATH);
+    TEST_ASSERT(main >= 0);
+    memset(data, 0x88, sizeof(data));
+    copy_in_fail = 1;
+    TEST_CHECK(vjoOcrHookCache(seq, 1, data) == VJO_ERR_COPY && !model_io.seq);
+    copy_in_fail = 0; shot_write_error = (int)0x80010005u;
+    TEST_CHECK(vjoOcrHookCache(seq, 1, data) == shot_write_error && !model_io.seq);
+    TEST_CHECK(shot_fs[main].data[0] == 0x71 && shot_entry(HOOK_CACHE_TEMP) < 0);
+    shot_write_error = 0; shot_rename_error = (int)0x80010005u;
+    TEST_CHECK(vjoOcrHookCache(seq, 1, data) == shot_rename_error && !model_io.seq);
+    TEST_CHECK(shot_fs[main].data[0] == 0x71 && shot_entry(HOOK_CACHE_TEMP) < 0);
+    shot_rename_error = 0; shot_close_error = (int)0x80010005u;
+    TEST_CHECK(vjoOcrHookCache(seq, 1, data) == shot_close_error && model_io.seq && shot_open);
+    shot_close_error = 0;
+    TEST_CHECK(vjoOcrModelClose(seq) == 0 && !model_io.seq && !shot_open);
+    TEST_CHECK(shot_fs[main].data[0] == 0x71 && shot_entry(HOOK_CACHE_TEMP) < 0);
+    copy_out_fail = 1;
+    TEST_CHECK(vjoOcrHookCache(seq, 0, data) == VJO_ERR_COPY && model_io.seq);
+    copy_out_fail = 0;
+    TEST_CHECK(vjoOcrHookCache(seq, 0, data) == sizeof(data) && data[0] == 0x71 && !model_io.seq);
+    /* Wrong-size and truncated files cannot leak partial data into a valid cache. */
+    shot_fs[main].len--;
+    TEST_CHECK(vjoOcrHookCache(seq, 0, data) == VJO_ERR_FORMAT && !model_io.seq);
+    shot_fs[main].len++; eof = 1;
+    TEST_CHECK(vjoOcrHookCache(seq, 0, data) == VJO_ERR_FORMAT && !model_io.seq);
+    eof = 0; during_io = 1;
+    TEST_CHECK(vjoOcrHookCache(seq, 0, data) == VJO_ERR_CANCELLED);
+    TEST_CHECK(vjoOcrModelClose(seq) == 0 && !model_io.seq && !shot_open);
+    TEST_CHECK(shot_fs[main].data[0] == 0x71 && !shot_syncs);
+}
+
 TEST_LIST = {
+    {"hook cache: bounded authenticated broker and recoverable replacement", hook_cache_persists_with_bounded_broker},
+    {"hook cache: copy IO size cancellation and close failures", hook_cache_failures_preserve_previous_file},
     {"one worker thread per game: a second copy's is refused (#138)", second_worker_thread_is_refused},
     {"API 31: the hook pick is checked; the grown request and result cross whole", hook_pick_is_checked},
     {"hand-off: an idle take waits for a submission, bounded", take_wakes_on_submit},
