@@ -2054,6 +2054,7 @@ done:
         out->cleanup_status |= cleanup(); /* drain an optional cache operation before publishing */
         if (out->cleanup_status) { blocked = 1; rc = VJO_E_OCR_UNAVAILABLE; }
         else if (cancelled(NULL)) rc = VJO_E_CANCELLED;
+        out->io_error = io_error;
     }
     if (rc) sceClibMemset(out->text, 0, sizeof(out->text));
     hooks_result(out, rc);
