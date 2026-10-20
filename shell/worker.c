@@ -160,6 +160,16 @@ static int open_retry;
  * must not be shown once another job starts in it. */
 static int view_waiting, view_job_text;
 static VjoEntryList job_text_list;
+/* API 31, native text hooks (docs/native-hooks.md). hook_pick: each OCR job's VjoGameOcrRequest.hook_pick,
+ * which △ in the overlay cycles (core/hook_pick.h), for the game session: kept while its process lives
+ * (a resume too), automatic in the next one (hook_pid). The session's last result: the streams with text
+ * (a bit per stream ID), whether the worker hooked anything (else △ does nothing and the overlay has no
+ * label), where its text came from (hook_result: they are hook_pick's), and what the worker installed as
+ * its game started, as logged (hook_logged). The control thread writes the pick, the network thread the
+ * result's words. */
+static SceUID hook_pid;
+static uint32_t hook_pick, hook_streams, hook_from, hook_flags, hook_logged[3];
+static int hook_installed, hook_result;
 typedef struct {
     int64_t until, us;
 } Backoff;
@@ -562,6 +572,8 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
         g_view.dict_page = shown && g_view.local_cursor_mode ? shown->page : 0;
         g_view.dict_pages = shown && g_view.local_cursor_mode ? vjo_overlay_page_count(shown) : 0;
     }
+    vjo_hook_label(g_view.hook_label, sizeof(g_view.hook_label), hook_pick, hook_installed, hook_result, hook_from,
+                   hook_flags, hook_streams);
     g_view.japanese_only_selection = cfg.japanese_only_selection;
     g_view.highlight_mode = cfg.highlight_mode;
     g_view.frequency_badge = cfg.frequency_badge;
@@ -980,6 +992,39 @@ static void log_tier_checks(const VjoGameOcrResult *r)
     }
 }
 
+/* API 31: a user job's result for the session's hook pick: the overlay's label and △'s streams, and the
+ * log: what the worker installed as its game started (counts, no text), once per session and when it
+ * changes (the normal build only where it hooked or refused something), and in the debug build each job's
+ * source, flags and score. No hook text in the normal build (the debug build's text lines show the text
+ * shown, a hook's included). */
+static void hook_note(const VjoGameOcrResult *r, uint32_t pick)
+{
+    static const char *const modes[] = {"ocr", "auto", "hooks"};
+    hook_installed = r->hook_installed != 0;
+    hook_streams = r->hook_streams;
+    hook_from = r->text_from;
+    hook_flags = r->hook_flags;
+    __sync_synchronize();
+    hook_result = 1;
+    if ((VJO_DEBUG || r->hook_installed || r->hook_refused) &&
+        (hook_logged[0] != r->hook_mode + 1u || hook_logged[1] != r->hook_installed || hook_logged[2] != r->hook_refused)) {
+        hook_logged[0] = r->hook_mode + 1u; /* 0: none logged in this session */
+        hook_logged[1] = r->hook_installed;
+        hook_logged[2] = r->hook_refused;
+        vjo_log("hooks in %s: text source %s, %u table sites and %u string copies hooked, %u sites refused",
+                job_title[0] ? job_title : "this game", r->hook_mode < 3 ? modes[r->hook_mode] : "?",
+                (unsigned)(r->hook_installed >> 16), (unsigned)(r->hook_installed & 0xFFFFu), (unsigned)r->hook_refused);
+    }
+#if VJO_DEBUG
+    if (r->hook_installed || pick != VJO_HOOK_PICK_AUTO)
+        vjo_log("game vocr source: %s %u, flags 0x%02X, score %u, streams 0x%05X, pick %u", r->text_from ? "hook" : "ocr",
+                (unsigned)r->text_from, (unsigned)r->hook_flags, (unsigned)r->hook_score, (unsigned)r->hook_streams,
+                (unsigned)pick);
+#else
+    (void)pick;
+#endif
+}
+
 /* One job: request (flags: VJO_GAME_OCR_F_*; tiers: the model tiers it may run,
  * bit t - 1 for tier t), exchange, logs. *ran: the tier the worker chose (or
  * whose check refused it last). stage: the self-test stage the job is (its speed
@@ -1027,6 +1072,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
     /* API 26: the text-presence gate, in the user's jobs (the self-test's stages read as before) */
     if (job_cfg.ocr_text_gate && stage < 0) request.speed |= VJO_GAME_OCR_S_GATE;
+    /* API 31: the session's hook pick in the user's jobs; the self-test's and full-frame ones read OCR only */
+    request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : hook_pick;
     int64_t t0 = now_us();
     /* the slot: a screenshot's exchange may hold it (a cancellation ends the wait) */
     int locked = !game_job_lock(vocr_poll_cancelled, INT64_MAX / 2);
@@ -1038,6 +1085,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     job_game_us += now_us() - t0; /* the done line's (net_job) */
 #endif
     vocr_note_capture();
+    if (stage < 0 && !flags && request.hook_pick == hook_pick && result->seq && rc != VJO_E_CANCELLED &&
+        !job_cancelled && job_generation == game_generation) /* a user job's result for this session's pick */
+        hook_note(result, request.hook_pick);
 #if VJO_DEBUG
     /* weights: read = from the card and SHA-256 checked, resident = kept from
      * an earlier job (file unchanged); resident = bytes the game keeps after it. */
@@ -1709,6 +1759,9 @@ static void apply_config(void)
     anki_on = vjo_anki_configure(&cfg);
     if (vjoSetTriggers(cfg.toggle_button, cfg.subtitle_button) < 0)
         vjo_log("kernel refused the buttons: keeping the previous ones");
+    /* API 31: the text source, for each game that starts from now on (its worker reads it then) */
+    if (vjoSetTextSource((uint32_t)cfg.text_source) < 0)
+        vjo_log("kernel refused the text source");
     /* Logged when they change, not at every load (each overlay open, game
      * start, subtitles on): test.2's log.txt had one line per load and key
      * (#101). The overlay still lists them each time it opens. */
@@ -2413,6 +2466,25 @@ static void on_command(void)
     case VJO_CMD_CLOSED:
         close_overlay();
         break;
+    case VJO_CMD_HOOK_PICK:
+        /* API 31: △ cycles this game session's text source and reads the screen again with it; nothing
+         * where the worker hooked nothing */
+        if (ov == OV_CLOSED || !game_active() || !hook_installed)
+            break;
+        hook_pick = vjo_hook_pick_next(hook_pick, hook_streams);
+        hook_result = 0;
+        vjo_dlog("text source pick %u", (unsigned)hook_pick);
+        cache_ok = 0;
+        retire_local_text(1);
+        if (job_running) { /* its result is for the old pick: a new job follows it */
+            job_cancelled = 1;
+            ov = OV_OPEN_OLD_JOB;
+            view_publish(1, NULL, "Recognizing…", 0);
+        } else {
+            start_job("text source", 1);
+        }
+        view_waiting = 1;
+        break;
     case VJO_CMD_SET_REGION:
     case VJO_CMD_CLEAR_REGION:
         if (!game_active()) { /* the game exited meanwhile */
@@ -2495,6 +2567,12 @@ static void activate_game(SceUID pid, const VjoGameId *id)
 {
     const char *tid = id->key;
     int mode = id->mode;
+    if (pid != hook_pid) { /* API 31: another game session: automatic, nothing known of its hooks */
+        hook_pid = pid;
+        hook_pick = VJO_HOOK_PICK_AUTO;
+        hook_installed = hook_result = 0;
+        hook_streams = hook_from = hook_flags = hook_logged[0] = 0;
+    }
     if (!vjo_game_enabled(tid, id->psp, &scratch)) {
         title_id[0] = '\0';
         vjoSetGameActive(pid, VJO_GAME_NONE);
@@ -2567,6 +2645,9 @@ static void on_game_exit(void)
     vjoGetState(&st);
     invalidate_game_work();
     pending_pid = 0;
+    /* API 31: a game's worker reads the text source as the game starts, before the Shell sees it in
+     * front: the Rubi app's change reaches the kernel here (the app or a game left the front) */
+    apply_config();
     close_overlay_for(st.game_pid ? CLOSE_FOREGROUND : CLOSE_GAME_LEFT);
     if (subtitles)
         set_subtitles(0);

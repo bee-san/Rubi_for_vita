@@ -36,7 +36,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->toggle_button = VJO_TRIGGER_L_R;
     c->subtitle_button = VJO_TRIGGER_SELECT_R;
     c->ocr_mode = VJO_OCR_AUTO;
-    c->text_source = VJO_SOURCE_OCR;
+    c->text_source = VJO_SOURCE_AUTO; /* native text hooks only in the games with a hook entry */
     vjo_snprintf(c->ocr_model_dir, sizeof(c->ocr_model_dir), "ux0:data/VitaJPOverlay/ocr");
     /* Normal (VOCR5-N) where the game's memory allows; a smaller tier otherwise. */
     c->vocr_tier = VJO_VOCR_TIER_DEFAULT;
@@ -105,8 +105,10 @@ const char *vjo_config_default_text(void)
            "; on release.\n"
            "subtitle_button = select+r\n"
            "\n"
-           "; Text is read from screenshots using OCR.\n"
-           "text_source = ocr\n"
+           "; Where the text comes from (the Rubi app's Text source), from a game's next start:\n"
+           "; auto (native text hooks in the games that have one, checked against OCR) |\n"
+           "; hooks (as auto, and the game's own text copies in every game that is ON) | ocr\n"
+           "text_source = auto\n"
            "\n"
            "; OCR: vita-vn-ocr, offline on the Vita (docs/vita-vn-ocr.md)\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
@@ -507,13 +509,9 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "subtitle_button")) {
         set_trigger(c, key, val, &c->subtitle_button);
     } else if (vjo_ieq(key, "text_source")) {
-        if (vjo_ieq(val, "auto")) c->text_source = VJO_SOURCE_OCR;
-        else if (vjo_ieq(val, "hooks")) {
-            c->text_source = VJO_SOURCE_OCR;
-            warn(c, "%s: hooks are unavailable in this OCR build", key);
-        }
-        else if (vjo_ieq(val, "ocr")) c->text_source = VJO_SOURCE_OCR;
-        else warn(c, "%s: invalid value", key);
+        static const char *const sources[] = {"ocr", "auto", "hooks", NULL}; /* VJO_SOURCE_*'s order */
+        c->text_source = VJO_SOURCE_AUTO; /* an unknown value: auto, with the warning */
+        set_choice(c, key, val, &c->text_source, sources);
     } else if (vjo_ieq(key, "ocr_backend")) {
         /* The removed engine choice (core/config.h): vocr is the only engine. */
         const char *removed = removed_engine(val);

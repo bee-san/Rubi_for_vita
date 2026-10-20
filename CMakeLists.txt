@@ -133,6 +133,14 @@ target_include_directories(vjo-kernel-text-source-tests PRIVATE third_party/acut
 target_compile_definitions(vjo-kernel-text-source-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-text-source-tests PRIVATE -Wall -Wextra)
 add_test(NAME kernel_text_source COMMAND vjo-kernel-text-source-tests)
+# API 31: the Shell's triangle cycle and the overlay's source label (core/hook_pick.c), in the host core
+# too (the Shell's worker tests link it).
+target_sources(vjo_core PRIVATE core/hook_pick.c)
+add_executable(vjo-hook-pick-tests host/tests/test_hook_pick.c core/hook_pick.c)
+target_include_directories(vjo-hook-pick-tests PRIVATE third_party/acutest/include)
+target_compile_definitions(vjo-hook-pick-tests PRIVATE VJO_HOST=1)
+target_compile_options(vjo-hook-pick-tests PRIVATE -Wall -Wextra)
+add_test(NAME hook_pick COMMAND vjo-hook-pick-tests)
 # #104: the process event hook releases the game's input block in the same event
 # (kernel/lifecycle.c with the real foreground state machine).
 add_executable(vjo-kernel-lifecycle-tests host/tests/test_kernel_lifecycle.c kernel/foreground.c)
