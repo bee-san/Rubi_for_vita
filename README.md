@@ -24,6 +24,7 @@
   ➡️ <a href="#install">Install</a> ·
   <a href="#use-in-a-game">Use it</a> ·
   <a href="#what-it-does">Features</a> ·
+  <a href="#native-text-hooks">Text hooks</a> ·
   <a href="#supported">Supported</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="docs/guide.md">Guide</a> ·
@@ -47,8 +48,9 @@
   top, a word's dictionary entry under it, with its reading and how common the word is. Go word by
   word with the d-pad, character by character with the left stick, or tap a word. An inflected word
   is looked up in its dictionary form (した → する).
-- **Fully offline.** Rubi reads the text with its own OCR on the Vita and looks it up in a
-  dictionary on the memory card: no Wi-Fi, no computer, no account, and no network code
+- **Fully offline.** Rubi reads dialogue directly with [native text hooks](#native-text-hooks) where
+  available, or uses its own OCR on the Vita, then looks it up in a dictionary on the memory card:
+  no Wi-Fi, no computer, no account, and no network code
   ([privacy](#does-it-send-anything-over-the-internet)).
 - **A big dictionary built in.** Bee's Ultimate Dictionary: 486,529 entries with English
   definitions from Daijirin, Sankoku and JMdict, the meanings of a word's kanji, a short
@@ -123,7 +125,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries an L or R tap pages through, 1–8 | 1 |
-| | **Text source**: Automatic (native text hooks in the games that have one, else OCR), Every game, or OCR only, from a game's next start ([guide](docs/guide.md#native-text-hooks)) | Automatic |
+| | **Text source**: Automatic (tries listed hooks, with OCR fallback), Every game (experimental), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -133,6 +135,33 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 Everything else, such as the button that opens the overlay (`toggle_button`), the OCR's timings and
 logging, is in `ux0:data/VitaJPOverlay/config.ini`
 ([guide](docs/guide.md#settings-and-dictionaries), [template](docs/config.example.ini)).
+
+## Native text hooks
+
+A text hook reads dialogue directly from the game instead of recognizing letters in a screenshot.
+With **OCR & lookup → Text source → Automatic** (the default), Rubi identifies the game's title ID,
+tries its available hooks and selects the text automatically. **You do not choose a hook or enter
+codes.** Keep the game ON on the Games page; after changing Text source, close and restart the game.
+Older installs may have kept **OCR only**, so choose Automatic once if needed.
+
+| Game or group | Native text support | Console testing |
+| --- | --- | --- |
+| **CLANNAD**, Japanese Vita release (`PCSG00415`) | Automatic; string-copy hooks and Rubi's own game profile | String-copy extraction confirmed in the combined debug test build, including readings without OCR. The separate game profile's hook site remains unverified on a real Vita. |
+| **175 Vita title IDs from LunaTranslator's table** | Automatic attempts using 294 ported hook sites, plus string-copy hooks | Experimental: these game-specific hook sites have not been verified on a real Vita. Examples include **TIME TRAVELERS** (`PCSG00062`), **Code:Realize ～創世の姫君～** (`PCSG00402`) and **DRAMAtical Murder** (`PCSG00420`). |
+| Other native Vita games | **Every game** also tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. Automatic uses OCR for games without a listed hook. |
+| PSP games in Adrenaline | OCR only | Native PSP text hooks are not implemented, including in Every game mode. |
+
+That is **176 Vita title IDs eligible for automatic hook attempts**, including CLANNAD.
+See the **[full Vita game list](docs/hook-titles.md#vita-titles)** for title
+IDs, versions and individual hook status; entries marked **refused** are not installed. The PSP table
+on that page is reference material for future work.
+
+Automatic selection does not guarantee every listed game or version works. Game-specific hook sites
+must pass Rubi's version and code checks, and a hook must produce usable dialogue. Rubi checks hook
+text against OCR initially and periodically afterwards, and falls back to OCR when a hook cannot
+supply it. Both text sources work
+offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
+[technical design](docs/native-hooks.md) covers string-copy hooks and game-specific hook sites.
 
 ## Supported
 
@@ -158,7 +187,7 @@ logging, is in `ux0:data/VitaJPOverlay/config.ini`
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
-| ❓ | Native text hooks (CLANNAD's entry, [LunaTranslator's Vita table](docs/hook-titles.md)) | not run on a console by this code; an earlier hook build followed CLANNAD's dialogue on the owner's console in 2026-10 ([#230](https://github.com/bee-san/Rubi_for_vita/issues/230)) |
+| ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |
 | ❓ | Trim black bars on Anki screenshots | not run on a console yet ([details](docs/anki.md#black-bars)) |
 | ❓ | The normal build (the main download) | no console run reported; the test runs used the debug build |

@@ -298,8 +298,10 @@ the queue as an `.apkg`, the screenshot in each note's Picture.
 A native text hook reads the line a game is about to draw, so the popup gets the game's own text
 instead of OCR's reading of the screen, as Textractor and LunaTranslator do for PC games. Rubi's
 hooks run in the game's own process, installed as the game starts; how, and why a site is
-installed or refused, is in [docs/native-hooks.md](native-hooks.md). Nothing of them has run on a
-console yet: everything below is what the code does, checked on the host.
+installed or refused, is in [docs/native-hooks.md](native-hooks.md). CLANNAD's string-copy source was
+verified on the owner's Vita with the combined debug test build on 2026-10-20. Table-address hooks,
+including CLANNAD's register site, remain unverified on a console, and the normal release build has no
+reported console run. The behaviour below is checked on the host.
 
 - **Text source** (the Rubi app's OCR & lookup page, `text_source` in `config.ini`) applies when a
   game next starts: **Automatic** (`auto`, the default) installs hooks only in the games that have a

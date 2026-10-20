@@ -6,10 +6,11 @@ the technical design of the hook engine in Rubi's game worker: where it runs, wh
 hook site must pass, what a hit does, and how it is undone. It changes nothing the game computes: a hook
 copies bytes and lets the game's function run as before.
 
-Status: built and host-tested; **not run on a console** in this form. What has run on a console is the
-removed code's CALL source (the string-copy hooks of PRs #7 and #12, picked with #13's matching; #16 added
-the register profile) in CLANNAD (vita-vn-ocr note 23, below); this page's CALL source is new code (its
-prefilter, its slots). Every console step is in [To test on a console](#to-test-on-a-console).
+Status: built and host-tested. The current CALL source (string-copy hooks) was verified in CLANNAD
+(`PCSG00415`) on the owner's Vita with the combined debug test build on 2026-10-20. Table-address hooks,
+including CLANNAD's register site, remain unverified on a console; the register site was proven only in
+Vita3K. The normal release build has no reported console run. The remaining console checks are in
+[To test on a console](#to-test-on-a-console).
 
 ## Where it runs
 
