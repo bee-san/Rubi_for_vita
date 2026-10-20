@@ -88,7 +88,9 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
   recently (a slot that never had text first) that is not kept, under that slot's try-lock: the slot's
   key, hits and text become the new caller's, so a job's snapshot sees another key for that ID; a busy
   slot, or every slot kept, drops the hit, never waiting. A stream that agreed with OCR, and a stream the
-  Shell pinned, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. The job's
+  Shell pinned, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. An agreeing
+  stream is kept only while its slot still holds the caller the job's snapshot saw (checked under the
+  slot's lock), so a slot another caller took during the job is not kept for the new one. The job's
   result says `VJO_HOOK_R_CALLS_FULL` (0x40 in `hook_flags`, the debug log's `flags`) once a caller found
   every slot taken (`vjo_hooks_call_stats`: hits dropped for lack of a slot, callers that replaced one).
 

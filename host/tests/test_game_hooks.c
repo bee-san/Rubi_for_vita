@@ -37,6 +37,7 @@ static uint32_t fake_mode, fake_installed, fake_refused;
 static unsigned snaps, texts;
 /* vjo_hooks_keep's calls (audit-hooks F2), and what vjo_hooks_call_stats answers */
 static unsigned keeps, kept_ids[8];
+static uint32_t kept_keys[8];
 static uint32_t fake_call_dropped, fake_call_replaced;
 /* At the snap_at-th snapshot, stream bump_id gets bump_text (its seq moves on), as a game thread would. */
 static unsigned bump_at;
@@ -50,9 +51,12 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
     *installed = fake_installed;
     *refused = fake_refused;
 }
-void vjo_hooks_keep(uint32_t id)
+void vjo_hooks_keep(uint32_t id, uint32_t key)
 {
-    if (keeps < sizeof(kept_ids) / sizeof(kept_ids[0])) kept_ids[keeps] = id;
+    if (keeps < sizeof(kept_ids) / sizeof(kept_ids[0])) {
+        kept_ids[keeps] = id;
+        kept_keys[keeps] = key;
+    }
     keeps++;
 }
 void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced)
@@ -234,7 +238,7 @@ static void reset(void)
     memset(fs, 0, sizeof(fs));
     fake_mode = VJO_TEXT_SOURCE_AUTO; fake_installed = 1u << 16 | 4u; fake_refused = 2;
     snaps = texts = bump_at = 0; bump_id = 0; bump_text = NULL;
-    keeps = 0; memset(kept_ids, 0, sizeof(kept_ids)); fake_call_dropped = fake_call_replaced = 0;
+    keeps = 0; memset(kept_ids, 0, sizeof(kept_ids)); memset(kept_keys, 0, sizeof(kept_keys)); fake_call_dropped = fake_call_replaced = 0;
     capture_live = job_live = weights_live = 0; capture_block = capture_allocs = 0; live_bytes = 0;
     shot_allocs = probe_allocs = 0;
     available = 64*1024*1024; clock_value = 0;
@@ -544,11 +548,12 @@ static void keep_and_calls_full(void)
 {
     VjoGameOcrResult out;
     reset();
+    fs[9].key = 0x1230u;
     stream(9, VJO_HOOK_KIND_CALL, 5, LINE1);
     stream(12, VJO_HOOK_KIND_CALL, 6, "セーブしますか？");
     spy_text = OCR1;
     TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9 && out.hook_flags == VJO_HOOK_R_AGREED);
-    TEST_CHECK(keeps == 1 && kept_ids[0] == 9);
+    TEST_CHECK(keeps == 1 && kept_ids[0] == 9 && kept_keys[0] == 0x1230u); /* the key the job's snapshot saw */
     /* OCR reads something else: nothing agrees, nothing kept */
     keeps = 0;
     spy_text = "全然関係のない画面の文字がここに表示されている";
@@ -558,7 +563,7 @@ static void keep_and_calls_full(void)
     TEST_CHECK(run(VJO_HOOK_PICK_OCR, &out) == 0 && !out.text_from && !keeps);
     /* pinned: the pick is kept, with text or without */
     TEST_CHECK(run(12, &out) == 0 && out.text_from == 12 && (out.hook_flags & VJO_HOOK_R_PINNED));
-    TEST_CHECK(keeps == 1 && kept_ids[0] == 12);
+    TEST_CHECK(keeps == 1 && kept_ids[0] == 12 && kept_keys[0] == 0); /* pinned: whichever caller holds it */
     keeps = 0;
     TEST_CHECK(run(15, &out) == 0 && !out.text_from && keeps == 1 && kept_ids[0] == 15);
     TEST_CHECK(!(out.hook_flags & VJO_HOOK_R_CALLS_FULL));

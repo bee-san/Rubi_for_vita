@@ -1459,7 +1459,8 @@ static void hooks_result(VjoGameOcrResult *out, int rc)
         hk.sel = hk.saved;
         hk.from = hk.flags = 0;
     } else if (hk.installed) {
-        if (hk.from && (hk.flags & VJO_HOOK_R_AGREED)) vjo_hooks_keep(hk.from);
+        const VjoHookCand *agreed = hk.from && (hk.flags & VJO_HOOK_R_AGREED) ? hook_cand(hk.from) : NULL;
+        if (agreed) vjo_hooks_keep(hk.from, agreed->key); /* only while its slot holds the caller the job saw */
         vjo_hooks_call_stats(&dropped, &replaced);
         if (dropped || replaced) hk.flags |= VJO_HOOK_R_CALLS_FULL;
     }
@@ -1525,7 +1526,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     uint32_t hook_pick = (r->speed & VJO_GAME_OCR_S_NOCACHE) || (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK)
                              ? VJO_HOOK_PICK_OCR : r->hook_pick;
     if (hk.installed) {
-        if (hook_pick && hook_pick <= VJO_HOOK_STREAMS) vjo_hooks_keep(hook_pick); /* pinned: keeps its CALL slot */
+        if (hook_pick && hook_pick <= VJO_HOOK_STREAMS) vjo_hooks_keep(hook_pick, 0); /* pinned: keeps its CALL slot */
         hooks_snapshot(hook_pick);
         uint32_t hook_id = vjo_hook_select_before(&hk.sel, hook_pick, hk.cand, hk.n, &hk.flags);
         if (hook_id) {

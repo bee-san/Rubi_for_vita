@@ -18,9 +18,10 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
     return 0;
 }
 
-void vjo_hooks_keep(uint32_t id)
+void vjo_hooks_keep(uint32_t id, uint32_t key)
 {
     (void)id;
+    (void)key;
 }
 
 void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced)

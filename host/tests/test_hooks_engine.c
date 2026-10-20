@@ -1249,7 +1249,7 @@ static void test_replacement_keep(void)
     TEST_CHECK(dropped == 0 && replaced == 1);
     /* caller 0 again: it has no slot now, so it takes the oldest (caller 1's, stream 10) */
     /* kept: caller 1's stream 10 agreed with OCR; the next caller takes caller 2's (stream 11) */
-    vjo_hooks_keep(10);
+    vjo_hooks_keep(10, 0);
     call_hit(t[13], 22, 1, seg_base + K + 0x10 * 13);
     TEST_CHECK(vjo_hooks_snap(10, &s) && s.key == K + 0x10 && !memcmp(s.raw, t[1], 22));
     TEST_CHECK(vjo_hooks_snap(11, &s) && s.key == K + 0x10 * 13 && !memcmp(s.raw, t[13], 22));
@@ -1268,7 +1268,7 @@ static void test_replacement_keep(void)
     TEST_CHECK(vjo_hooks_snap(12, &s) && s.key == K + 0x10 * 3 && call_stream_with(t[15], 22) == 0);
 
     /* every slot kept: dropped */
-    for (uint32_t id = VJO_HOOK_SITE_STREAMS + 1; id <= VJO_HOOK_STREAMS; id++) vjo_hooks_keep(id);
+    for (uint32_t id = VJO_HOOK_SITE_STREAMS + 1; id <= VJO_HOOK_STREAMS; id++) vjo_hooks_keep(id, 0);
     call_hit(t[15], 22, 1, seg_base + K + 0x10 * 15);
     vjo_hooks_call_stats(&dropped, &replaced);
     TEST_CHECK(dropped == 2 && replaced == 2 && call_stream_with(t[15], 22) == 0);
@@ -1276,14 +1276,49 @@ static void test_replacement_keep(void)
     /* a site's slot, or no stream: no effect */
     {
         VjoStreamClock before = stream_clock;
-        vjo_hooks_keep(0);
-        vjo_hooks_keep(1);
-        vjo_hooks_keep(VJO_HOOK_SITE_STREAMS);
-        vjo_hooks_keep(VJO_HOOK_STREAMS + 1);
-        vjo_hooks_keep(0xFFFFFFFFu);
+        vjo_hooks_keep(0, 0);
+        vjo_hooks_keep(1, 0);
+        vjo_hooks_keep(1, slots[0].key - 1u);
+        vjo_hooks_keep(VJO_HOOK_SITE_STREAMS, 0);
+        vjo_hooks_keep(VJO_HOOK_STREAMS + 1, 0);
+        vjo_hooks_keep(0xFFFFFFFFu, 0);
         for (unsigned i = 0; i < VJO_HOOK_SITE_STREAMS; i++) TEST_CHECK(slots[i].kept == 0);
         TEST_CHECK(!memcmp(&before, &stream_clock, sizeof(before)));
     }
+}
+
+/* vjo_hooks_keep with the key the job saw: kept only while the slot holds that caller (a slot another caller
+ * took during the job is not kept for it), under the slot's lock (busy: not kept now). */
+static void test_keep_key(void)
+{
+    uint8_t a[22], b[22];
+    VjoHookSnap s;
+    const uint32_t K = 0x2000u;
+    reset();
+    seg_base = a32(code);
+    live = 1;
+    memcpy(a, L_TODAY, 22);
+    memcpy(b, L_HELLO "\x82\xA0", 22);
+    for (unsigned i = 0; i < VJO_HOOK_CALL_STREAMS; i++) call_hit(a, 22, 1, seg_base + K + 0x10 * i);
+    TEST_ASSERT(vjo_hooks_snap(9, &s) && s.key == K);
+    /* the job saw K under stream 9; another caller took the slot since: not kept */
+    call_hit(b, 22, 1, seg_base + K + 0x10 * 12);
+    TEST_ASSERT(vjo_hooks_snap(9, &s) && s.key == K + 0x10 * 12);
+    vjo_hooks_keep(9, K);
+    TEST_CHECK(slots[8].kept == 0);
+    /* the key it holds: kept (the next caller takes another slot) */
+    vjo_hooks_keep(9, K + 0x10 * 12);
+    TEST_CHECK(slots[8].kept == 1);
+    /* busy: not kept now, the lock left as it was */
+    slots[9].lock = 1;
+    vjo_hooks_keep(10, K + 0x10);
+    TEST_CHECK(slots[9].kept == 0 && slots[9].lock == 1);
+    slots[9].lock = 0;
+    vjo_hooks_keep(10, K + 0x10);
+    TEST_CHECK(slots[9].kept == 1 && slots[9].lock == 0);
+    /* a key the slot never held */
+    vjo_hooks_keep(11, 0x7777u);
+    TEST_CHECK(slots[10].kept == 0);
 }
 
 /* vjo_hooks_stop: live off, every hook released newest first (CALL imports, then the sites), each once; then
@@ -1385,6 +1420,7 @@ TEST_LIST = {
     {"the main module (eboot.bin, segment 0) and unresolved imports", test_main_module},
     {"site hits through the observer's C entry", test_site_hits},
     {"CALL slots: replacement, keep, busy, stats", test_replacement_keep},
+    {"vjo_hooks_keep: only while the slot holds the caller the job saw", test_keep_key},
     {"vjo_hooks_stop: newest first, once; STOP_FAIL while a thread is inside", test_stop},
     {"APP_VER of param.sfo", test_app_version},
     {NULL, NULL},
