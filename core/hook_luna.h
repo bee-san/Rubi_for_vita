@@ -42,7 +42,16 @@ typedef struct {
     uint8_t func;      /* Luna's custom hookfunc, ported (VJO_LUNA_NONE: the default read) */
     uint8_t filter;    /* Luna's filterfun, ported (VJO_LUNA_NONE: none) */
     uint8_t ported;    /* 1: everything this site needs is ported; 0: refused natively (why: docs/hook-titles.md) */
+    uint16_t version;  /* the game version Luna's comment names for this entry ("1.01" -> 0x0101), 0: none named */
 } VjoLunaSite;
+
+/* Whether site s, one of the n sites of its title (all, from vjo_luna_sites), may be
+ * tried in a game whose param.sfo APP_VER is app_ver ("01.01" -> 0x0101; 0 when it
+ * could not be read): a site that names a version only in that version; a site that
+ * names none only when no site of its title names app_ver (those unnamed entries are
+ * another version's). With app_ver 0 only the sites that name no version may be
+ * tried. 1 yes, 0 no. */
+int vjo_luna_version_ok(const VjoLunaSite *all, unsigned n, const VjoLunaSite *s, uint16_t app_ver);
 
 /* Reads up to max bytes at the game's address addr into dst, never past the end of
  * the memory block that holds addr. unit 1 or 2: stop after the first NUL unit of
