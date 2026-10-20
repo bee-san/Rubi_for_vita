@@ -86,4 +86,28 @@ unsigned vjo_luna_capture(const VjoLunaSite *s, const uint32_t regs[16], VjoHook
 size_t vjo_luna_text(const VjoLunaSite *s, const uint8_t *raw, unsigned n, unsigned encoding, char *out,
                      size_t cap);
 
+/* Added by hooks-luna-port (core/hook_luna.c). */
+
+/* vjo_luna_capture reads through rd at most this many times per hit (a string
+ * per call; the strings of a hookfunc that joins several, a pointer, a length). */
+#define VJO_LUNA_READS 32u
+
+/* vjo_luna_text works on at most this many bytes of decoded text (a longer text is
+ * cut at its last whole character first): its scratch, on the caller's stack. */
+#define VJO_LUNA_TEXT_MAX 1536u
+
+/* 1 when s is ported (s->ported) and this build has every part it needs: the
+ * sites vjo_luna_capture and vjo_luna_text serve; 0 otherwise. */
+int vjo_luna_ported(const VjoLunaSite *s);
+
+/* vjo_luna_capture: cap must be at least 4 (0 otherwise); its return counts the
+ * text's bytes up to the first NUL unit (not the NUL); a site that is not ported
+ * gives 0. */
+
+/* What the flags change (texthook.cc, LunaHost's textthread.cpp at the pin):
+ * FULL_STRING changes no read; LunaHost ends each such hit's text with a newline
+ * and flushes the hits that come within its flush delay (100 ms by default) as
+ * one sentence, a site without it the same without the newline. Rubi keeps a
+ * site's latest hit. */
+
 #endif

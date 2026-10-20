@@ -1812,7 +1812,7 @@ static void the_refine_step_carries_its_counts(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 
-/* API 31: the text source as module_start reads it for the hooks (hooks_text_source): the kernel's
+/* API 31: the text source as module_start reads it for the hooks (text_source): the kernel's
  * VJO_TEXT_SOURCE_*, a value this build does not know as OCR (no hooks), and OCR without asking from
  * another API's kernel; and only in a game that keeps the worker: none of the processes module_start
  * unloads from asks. */
@@ -1825,13 +1825,13 @@ static void module_start_reads_the_text_source(void)
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         vjo_test_text_source = cases[i].kernel;
         vjo_test_text_source_calls = 0;
-        unsigned m = hooks_text_source();
+        unsigned m = text_source();
         TEST_CHECK_(m == cases[i].seen && vjo_test_text_source_calls == 1, "kernel %d: %u", cases[i].kernel, m);
     }
     text_source_api = VJO_API_VERSION - 1; /* another API's kernel: not asked */
     vjo_test_text_source = (int)VJO_TEXT_SOURCE_HOOKS;
     vjo_test_text_source_calls = 0;
-    TEST_CHECK(hooks_text_source() == VJO_TEXT_SOURCE_OCR && !vjo_test_text_source_calls);
+    TEST_CHECK(text_source() == VJO_TEXT_SOURCE_OCR && !vjo_test_text_source_calls);
     text_source_api = VJO_API_VERSION;
     /* module_start: a candidate game asks, the processes it unloads from never do */
     setup();

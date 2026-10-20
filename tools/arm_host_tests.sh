@@ -104,6 +104,8 @@ build text_rows host/tests/test_text_rows.c core/text_rows.c core/utf.c
 build text_join host/tests/test_textjoin.c core/textjoin.c core/utf.c
 # Where the overlay's own wrapping may break a line (core/linebreak.h).
 build linebreak host/tests/test_linebreak.c core/linebreak.c core/utf.c
+# Native hooks: which text a job shows (core/hook_select.h), as the game worker runs it on the A9.
+build hook_select host/tests/test_hook_select.c core/hook_select.c
 # The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
 build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
 # The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
@@ -126,11 +128,17 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
       core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c")
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
+# The native hooks (core/hook_text.c, hook_re.c, hook_luna.c): the decoders, the regex VM's 16-bit
+# positions and 32-bit longs, LunaTranslator's table and its ports on the Vita's word size.
+build hook_text -I third_party/bearssl/inc -I "$BS" host/tests/test_hook_text.c core/hook_text.c "$BS/hash/sha2small.c" \
+  "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
+build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
-TESTS+=(kernel_text_source hook_pick hook_titles) # API 31
+TESTS+=(touch_hold text_rows text_join linebreak hook_select stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg)
+TESTS+=(hook_text hook_luna)
+TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
   "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c

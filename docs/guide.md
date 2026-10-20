@@ -313,7 +313,9 @@ console yet: everything below is what the code does, checked on the host.
   game's code there looks as the entry expects).
 - **Logs.** `log.txt` has one line per game session with what the worker installed (`hooks in
   PCSG00415: text source auto, 1 table sites and 8 string copies hooked, 0 sites refused`; the normal
-  build only where something was hooked or refused); the debug build adds each job's source, flags,
+  build only where something was hooked or refused); the debug build also rewrites
+  `ux0:data/VitaJPOverlay/hooks.log` at each game start (each site's verdict and why, each string copy
+  hooked or not, no text: [native-hooks.md](native-hooks.md#logs)), and adds to `log.txt` each job's source, flags,
   agreement score, the streams with text and the pick (`game vocr source: hook 9, flags 0x03, score
   1000, streams 0x00901, pick 0`) and logs the shown text, a hook's too. The normal build logs no
   hook text, as it logs no OCR text. `history.csv` gets the text shown, with `hook` instead of `vocr`
@@ -761,7 +763,8 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 98,304 B of module pages and its 36,864 B thread stack and TLS from its
+holds the worker's 159,744 B of module pages (163,840 B in the debug build; API 31's native hooks and
+their job path added 61,440 B and 65,536 B, [native-hooks.md](native-hooks.md#memory)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

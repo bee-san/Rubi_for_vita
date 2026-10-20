@@ -298,8 +298,20 @@ if(VJO_WITH_VOCR)
     ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c
     # API 23: the Anki screenshot's JPEG encoder, in the game's process only (never the Shell's),
     # and the arena it encodes into
-    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c)
+    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c
+    # API 31: the native text hooks (docs/native-hooks.md), in the game's process only: the hook
+    # engine, the site check, the stream slots, Luna's table and the hook text decoder
+    ${ROOT}/game_ocr/hooks.c ${ROOT}/game_ocr/hooks_observer.S ${ROOT}/core/hook_place.c
+    ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
+    ${ROOT}/core/sfo.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
+  # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
+  # For size, as the worker's control code is: 1,708 B of text and rodata at -Os (2,240 B at -O2).
+  target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c)
+  set_source_files_properties(${ROOT}/core/hook_select.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
+  # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
+  set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
   # The worker's control code (a job's request, memory checks and ladder, one call
@@ -308,6 +320,16 @@ if(VJO_WITH_VOCR)
   # the model tiers' ladder (API 21: +788 B of text at -O2) within the module's
   # pages (game_ocr/main.c's text 12,276 B at -O2 before it, 9,164 B at -Os with it).
   set_source_files_properties(${ROOT}/game_ocr/main.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # API 31: the native hooks' engine is control code too (install once, a few checks per hit), built
+  # for size: every page of it is in every game that is ON.
+  set_source_files_properties(${ROOT}/game_ocr/hooks.c ${ROOT}/core/hook_place.c ${ROOT}/core/hook_stream.c
+    ${ROOT}/core/sfo.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # API 31: the worker reads the text source (vjoGetTextSource) once the kernel exports it; until then
+  # its native hooks stay off (game_ocr/main.c text_source: OCR).
+  file(STRINGS ${ROOT}/kernel/exports.yml VJO_KERNEL_TEXT_SOURCE REGEX "vjoGetTextSource")
+  if(VJO_KERNEL_TEXT_SOURCE)
+    target_compile_definitions(VitaJPOverlay_OCR PRIVATE VJO_HAVE_TEXT_SOURCE_IMPORT=1)
+  endif()
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
     -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)

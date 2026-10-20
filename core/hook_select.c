@@ -1,0 +1,271 @@
+/* Which text a job shows: OCR's or a native hook stream's (core/hook_select.h, docs/native-hooks.md).
+ * Plain C, no allocation, no platform calls. The comparison works on at most CMP_MAX characters of each
+ * text, in a form where the same words read the same (folded widths, no spaces or punctuation), and
+ * keeps its scratch on the stack: two code point arrays and one row of the edit distance, 2,562 B. */
+#include "hook_select.h"
+
+#include "../include/vjo_game_ocr.h" /* VJO_HOOK_PICK_*, VJO_HOOK_R_*, VJO_HOOK_STREAMS */
+
+/* Characters of each text compared: a dialogue box holds far fewer (CLANNAD's three lines about 75), and
+ * a stream's 512 raw bytes (game_ocr/hooks.h VJO_HOOK_RAW_BYTES) at most 256 CP932 characters. */
+#define CMP_MAX 256u
+
+/* The half-width katakana U+FF66-U+FF9D (CP932's single bytes 0xA6-0xDD) as their full-width forms,
+ * U+30A0 + this. */
+static const unsigned char half_kata[56] = {
+    0x52, 0x01, 0x03, 0x05, 0x07, 0x09, 0x43, 0x45, 0x47, 0x23, 0x5C, 0x02, 0x04, 0x06, 0x08, 0x0A,
+    0x0B, 0x0D, 0x0F, 0x11, 0x13, 0x15, 0x17, 0x19, 0x1B, 0x1D, 0x1F, 0x21, 0x24, 0x26, 0x28, 0x2A,
+    0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x32, 0x35, 0x38, 0x3B, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x44, 0x46,
+    0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4F, 0x53};
+
+/* One code point of UTF-8 at p[*i] (n bytes in all), *i moved past it; 0 for a byte that does not
+ * start a valid, shortest sequence (it is skipped alone). */
+static uint32_t utf8_next(const unsigned char *p, size_t n, size_t *i)
+{
+    unsigned a = p[*i], len, k;
+    uint32_t c, min;
+    if (a < 0x80) {
+        (*i)++;
+        return a;
+    }
+    if (a >= 0xC2 && a <= 0xDF) { len = 2; c = a & 0x1Fu; min = 0x80; }
+    else if (a >= 0xE0 && a <= 0xEF) { len = 3; c = a & 0x0Fu; min = 0x800; }
+    else if (a >= 0xF0 && a <= 0xF4) { len = 4; c = a & 0x07u; min = 0x10000; }
+    else { (*i)++; return 0; }
+    if (n - *i < len) { (*i)++; return 0; }
+    for (k = 1; k < len; k++) {
+        unsigned b = p[*i + k];
+        if ((b & 0xC0) != 0x80) { (*i)++; return 0; }
+        c = c << 6 | (b & 0x3Fu);
+    }
+    if (c < min || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) { (*i)++; return 0; }
+    *i += len;
+    return c;
+}
+
+/* The compared form of code point c, 0 when it is dropped: full-width ASCII as ASCII, capitals as small
+ * letters, half-width katakana as full-width (*half set), 一 as ー (OCR reads one for the other);
+ * whitespace, controls, punctuation and symbols (ASCII's, Latin-1's, U+2000-U+2BFF, the CJK marks but
+ * 々〆〇 and the repeat marks, ・, the spacing (semi-)voiced marks, the vertical, small and half-width
+ * forms, private use, emoji) dropped. */
+static uint32_t fold(uint32_t c, int *half)
+{
+    *half = 0;
+    if (c >= 0xFF01 && c <= 0xFF5E) c -= 0xFEE0;
+    if (c < 0x80) {
+        if (c >= 'A' && c <= 'Z') return c + 32u;
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ? c : 0u;
+    }
+    if (c >= 0xFF66 && c <= 0xFF9D) {
+        *half = 1;
+        return 0x30A0u + half_kata[c - 0xFF66];
+    }
+    if (c == 0x4E00) return 0x30FC;
+    if (c >= 0x3000 && c <= 0x303F)
+        return (c >= 0x3005 && c <= 0x3007) || (c >= 0x3031 && c <= 0x3035) || c == 0x303B ? c : 0u;
+    if (c < 0xC0 || c == 0xD7 || c == 0xF7 || (c >= 0x2000 && c <= 0x2BFF) || (c >= 0x3099 && c <= 0x309C) ||
+        c == 0x30A0 || c == 0x30FB || (c >= 0xE000 && c <= 0xF8FF) || (c >= 0xFE10 && c <= 0xFE6F) ||
+        c == 0xFEFF || (c >= 0xFF5F && c <= 0xFF65) || (c >= 0xFFE0 && c <= 0xFFFF) ||
+        (c >= 0x1F000 && c <= 0x1FAFF))
+        return 0;
+    return c;
+}
+
+/* A half-width voiced (U+FF9E) or semi-voiced (U+FF9F) mark on the full-width kana k it follows. */
+static uint32_t voiced(uint32_t k, uint32_t mark)
+{
+    if (mark == 0xFF9E) {
+        if (k == 0x30A6) return 0x30F4; /* ウ -> ヴ */
+        if ((k >= 0x30AB && k <= 0x30C1 && !((k - 0x30AB) & 1u)) || k == 0x30C4 || k == 0x30C6 || k == 0x30C8)
+            return k + 1u;
+    }
+    if (k >= 0x30CF && k <= 0x30DB && !((k - 0x30CF) % 3u)) return k + (mark == 0xFF9E ? 1u : 2u);
+    return k;
+}
+
+/* The compared form of n bytes of UTF-8 s (up to a NUL): its first CMP_MAX characters in out, returned
+ * as their count; *total gets every character's. */
+static unsigned cmp_form(const char *s, size_t n, uint32_t *out, unsigned *total)
+{
+    const unsigned char *p = (const unsigned char *)s;
+    size_t i = 0;
+    unsigned all = 0;
+    int half = 0, h;
+    while (p && i < n && p[i]) {
+        uint32_t c = utf8_next(p, n, &i);
+        if (c == 0xFF9E || c == 0xFF9F) {
+            if (half && all <= CMP_MAX) out[all - 1u] = voiced(out[all - 1u], c);
+            half = 0;
+            continue;
+        }
+        c = fold(c, &h);
+        half = h && c;
+        if (!c) continue;
+        if (all < CMP_MAX) out[all] = c;
+        all++;
+    }
+    *total = all;
+    return all < CMP_MAX ? all : CMP_MAX;
+}
+
+/* The edit distance (unit costs) of all of h to the part of o it matches best: o's characters before
+ * and after that part are free. One row of the table, O(m n). */
+static unsigned within(const uint32_t *o, unsigned m, const uint32_t *h, unsigned n)
+{
+    uint16_t row[CMP_MAX + 1u];
+    unsigned j, best;
+    for (j = 0; j <= m; j++) row[j] = 0;
+    for (unsigned i = 1; i <= n; i++) {
+        uint32_t hc = h[i - 1u];
+        unsigned diag = row[0], left = i;
+        row[0] = (uint16_t)i;
+        for (j = 1; j <= m; j++) {
+            unsigned up = row[j], v = diag + (hc != o[j - 1u]), gap = (up < left ? up : left) + 1u;
+            if (gap < v) v = gap;
+            row[j] = (uint16_t)v;
+            left = v;
+            diag = up;
+        }
+    }
+    best = row[0];
+    for (j = 1; j <= m; j++)
+        if (row[j] < best) best = row[j];
+    return best;
+}
+
+/* h's similarity to o (its compared form: m characters kept, mf in all), 0..1000: the characters of h
+ * that match o (h's length less its distance within o) over the longer text's length, so OCR's text
+ * around the match (a name, another line) lowers it as much as it is long. Characters past CMP_MAX are
+ * never compared and count as unmatched: a cut text scores no higher than it would whole. 0 when either
+ * text has fewer than VJO_HOOK_MIN_CHARS characters, or when it cannot reach floor (its bound: no more of
+ * h can match than o holds). */
+static unsigned score_of(const uint32_t *o, unsigned m, unsigned mf, const char *h, size_t hn, unsigned floor)
+{
+    uint32_t hc[CMP_MAX];
+    unsigned nf, n = cmp_form(h, hn, hc, &nf), top, d;
+    if (nf < VJO_HOOK_MIN_CHARS || mf < VJO_HOOK_MIN_CHARS) return 0;
+    top = nf > mf ? nf : mf;
+    if ((n < m ? n : m) * 1000u / top < floor) return 0;
+    d = within(o, m, hc, n);
+    return d >= n ? 0u : (n - d) * 1000u / top;
+}
+
+unsigned vjo_hook_similarity(const char *o, size_t on, const char *h, size_t hn)
+{
+    uint32_t oc[CMP_MAX];
+    unsigned mf, m;
+    if (!o || !h) return 0;
+    m = cmp_form(o, on, oc, &mf);
+    return score_of(oc, m, mf, h, hn, 0);
+}
+
+static int has_text(const VjoHookCand *k)
+{
+    return k->id && k->text && k->n;
+}
+
+uint32_t vjo_hook_select_before(VjoHookSelect *st, uint32_t pick, const VjoHookCand *c, unsigned n,
+                                uint32_t *flags)
+{
+    uint32_t want, f;
+    if (flags) *flags = 0;
+    if (!st || !c || pick == VJO_HOOK_PICK_OCR || pick > VJO_HOOK_STREAMS) return 0;
+    want = pick == VJO_HOOK_PICK_AUTO ? st->locked : pick;
+    if (!want) return 0;
+    for (unsigned i = 0; i < n; i++) {
+        const VjoHookCand *k = &c[i];
+        if (k->id != want || !has_text(k)) continue;
+        if (pick == VJO_HOOK_PICK_AUTO) {
+            if (k->seq == st->locked_seq) return 0; /* nothing new since the last job shown: OCR reads */
+            st->locked_seq = k->seq;
+            f = VJO_HOOK_R_LOCKED;
+        } else {
+            f = VJO_HOOK_R_PINNED;
+        }
+        if (flags) *flags = f | VJO_HOOK_R_NO_OCR | (k->site ? VJO_HOOK_R_SITE : 0u);
+        return want;
+    }
+    return 0;
+}
+
+/* At equal scores, is a the better pick than b? The stream of the current streak (two copies of one text
+ * must not take turns and keep each other from locking), then a table site, then the newer text. */
+static int wins_tie(const VjoHookCand *a, const VjoHookCand *b, uint32_t streak_id)
+{
+    if ((a->id == streak_id) != (b->id == streak_id)) return a->id == streak_id;
+    if (!a->site != !b->site) return a->site != 0;
+    return (int32_t)(a->seq - b->seq) > 0;
+}
+
+uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr, size_t on,
+                               const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags)
+{
+    uint32_t oc[CMP_MAX], f = 0;
+    unsigned mf, m, best = 0, agree = 0, lscore = 0, pscore = 0;
+    const VjoHookCand *top = NULL, *chosen = NULL, *locked = NULL, *pinned = NULL;
+    if (score) *score = 0;
+    if (flags) *flags = 0;
+    if (!st || !c) return 0;
+    m = cmp_form(ocr, ocr ? on : 0, oc, &mf);
+    for (unsigned i = 0; i < n; i++) {
+        const VjoHookCand *k = &c[i];
+        int is_locked = st->locked && k->id == st->locked, is_pinned = k->id == pick;
+        unsigned s;
+        if (!has_text(k)) continue;
+        /* every score that can matter, exactly: the best one, the locked and the pinned stream's */
+        s = score_of(oc, m, mf, k->text, k->n, is_locked || is_pinned ? 0u : best);
+        if (is_locked) { locked = k; lscore = s; }
+        if (is_pinned) { pinned = k; pscore = s; }
+        if (s > best || (s && s == best && wins_tie(k, top, st->streak_id))) {
+            best = s;
+            top = k;
+        }
+    }
+    if (pick != VJO_HOOK_PICK_AUTO) { /* pinned (its text when it has one) or OCR only: no state change */
+        if (pinned && pick <= VJO_HOOK_STREAMS) {
+            if (score) *score = pscore;
+            if (flags)
+                *flags = VJO_HOOK_R_PINNED | (pscore >= VJO_HOOK_AGREE ? VJO_HOOK_R_AGREED : 0u) |
+                         (pinned->site ? VJO_HOOK_R_SITE : 0u);
+            return pinned->id;
+        }
+        if (score) *score = best;
+        return 0;
+    }
+    if (mf < VJO_HOOK_MIN_CHARS) return 0; /* OCR read (almost) nothing: no evidence either way */
+    if (locked && lscore >= VJO_HOOK_AGREE) {
+        chosen = locked;
+        agree = lscore;
+    } else if (top && best >= VJO_HOOK_AGREE) {
+        chosen = top;
+        agree = best;
+    }
+    if (st->locked && locked && lscore < VJO_HOOK_AGREE && ++st->misses >= VJO_HOOK_UNLOCK_MISSES) {
+        st->locked = st->locked_seq = st->misses = 0;
+        f |= VJO_HOOK_R_UNLOCK;
+    }
+    if (!chosen) {
+        st->streak_id = st->streak = 0;
+        if (score) *score = best;
+        if (flags) *flags = f;
+        return 0;
+    }
+    if (chosen->id == st->streak_id) {
+        st->streak++;
+    } else {
+        st->streak_id = chosen->id;
+        st->streak = 1;
+    }
+    if (st->streak >= VJO_HOOK_LOCK_AGREEMENTS && st->locked != chosen->id) {
+        st->locked = chosen->id;
+        st->misses = 0;
+    }
+    if (st->locked == chosen->id) {
+        st->locked_seq = chosen->seq;
+        st->misses = 0;
+        f |= VJO_HOOK_R_LOCKED;
+    }
+    if (score) *score = agree;
+    if (flags) *flags = f | VJO_HOOK_R_AGREED | (chosen->site ? VJO_HOOK_R_SITE : 0u);
+    return chosen->id;
+}

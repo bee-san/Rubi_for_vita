@@ -14,10 +14,12 @@
  * read through a small kernel strip instead: each rung's native result is in
  * the job's step log, so one console run says which works. */
 #include "main.h"
+#include "hooks.h"
 #include "../core/fbgrey.h"
 #include "../core/jpegsw.h"
 #include "../core/textnorm.h"
 #include "../core/vocr_ocr.h"
+#include "../core/hook_select.h"
 #include "../include/vjo_vocr_sizes.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/ledger.h"
@@ -39,6 +41,7 @@
 #include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
+#include <string.h> /* memmove: shell/libc_shim.c's in the worker */
 #ifndef VJO_HOST
 #include <taihen.h>
 #endif
@@ -1294,12 +1297,185 @@ static size_t helpers_need(const char *model, size_t block, unsigned helpers)
     return PAGE_ROUND(block + hb) - PAGE_ROUND(block) + (size_t)helpers * VJO_BUDGET_GAME_HELPER_STACK;
 }
 
+/* ---- native text hooks: which text a job shows (docs/native-hooks.md, core/hook_select.h) ----
+ * With hooks installed in this game (game_ocr/hooks.c), a job begins with a snapshot of the streams'
+ * texts. vjo_hook_select_before may name a stream that answers the job without recognition: the job
+ * then reads only the region's first capture pass, so the kernel publishes its capture (capture_seq,
+ * done_seq, the scene) as for OCR, and returns the stream's text. Otherwise OCR runs as without hooks
+ * and vjo_hook_select_after may replace its text with an agreeing stream's. With nothing installed
+ * a job does none of this. The snapshot is static, in the worker's data pages (never on its stack):
+ * one stream's copy, the texts as the job began (HOOK_POOL_BYTES, each at most HOOK_TEXT_CAP) and the
+ * candidates; the comparison's scratch, 2,562 B of arrays, is on the stack only while it compares. */
+#define HOOK_POOL_BYTES 2048u
+/* A stream's text for the comparison: 512 raw bytes (VJO_HOOK_RAW_BYTES) of double-byte CP932 or 256
+ * UTF-16 units whole, as UTF-8 (768 B); a text cut by it or by a full pool compares as what it holds
+ * (core/hook_select.c counts nothing it did not see as matched) and is shown whole (hook_show). */
+#define HOOK_TEXT_CAP 769u
+/* The room a shown stream's text keeps in the result: any stream's 512 raw bytes decoded (3 UTF-8
+ * bytes each at most) and the NUL; OCR's text after it (for the log) is cut to the rest. */
+#define HOOK_SHOW_BYTES (VJO_HOOK_RAW_BYTES * 3u + 1u)
+typedef char vjo_hook_show_check[HOOK_SHOW_BYTES < VJO_GAME_OCR_TEXT_BYTES / 2u ? 1 : -1];
+static struct {
+    VjoHookSelect sel;   /* the automatic pick's state, for the game session */
+    VjoHookSelect saved; /* sel as the job found it: a job that fails changes nothing */
+    uint32_t mode, installed, refused; /* vjo_hooks_counts */
+    uint32_t from, flags, score, streams; /* this job's result fields */
+    unsigned n;
+    VjoHookCand cand[VJO_HOOK_STREAMS];
+    VjoHookSnap snap;
+    char pool[HOOK_POOL_BYTES];
+} hk;
+
+static size_t text_len(const char *s, size_t cap)
+{
+    size_t n = 0;
+    while (n < cap && s[n]) n++;
+    return n;
+}
+
+/* In the snapshot's order, does stream a come before b? The stream the pick names, then the newer text. */
+static int hook_first(uint32_t a, uint32_t b, const uint32_t *seq, uint32_t want)
+{
+    if ((a == want) != (b == want)) return a == want;
+    return (int32_t)(seq[a] - seq[b]) > 0;
+}
+
+/* The streams that hold text as the job begins (hk.streams: bit id - 1 each), and as candidates
+ * (hk.cand) those whose text decodes to some: the stream the pick names (pinned, or the locked one)
+ * first, then the newest texts, so a full pool cuts the oldest. */
+static void hooks_snapshot(uint32_t pick)
+{
+    uint32_t seq[VJO_HOOK_STREAMS + 1u], want = pick == VJO_HOOK_PICK_AUTO ? hk.sel.locked : pick;
+    uint8_t order[VJO_HOOK_STREAMS];
+    unsigned k = 0;
+    size_t used = 0;
+    for (uint32_t id = 1; id <= VJO_HOOK_STREAMS; id++) {
+        unsigned at;
+        if (!vjo_hooks_snap(id, &hk.snap) || !hk.snap.n) continue;
+        hk.streams |= 1u << (id - 1u);
+        seq[id] = hk.snap.seq;
+        for (at = k; at && hook_first(id, order[at - 1u], seq, want); at--) order[at] = order[at - 1u];
+        order[at] = (uint8_t)id;
+        k++;
+    }
+    for (unsigned i = 0; i < k; i++) {
+        uint32_t id = order[i];
+        size_t room = sizeof(hk.pool) - used, len;
+        if (room < 2u || !vjo_hooks_snap(id, &hk.snap)) continue;
+        len = vjo_hooks_text(&hk.snap, hk.pool + used, room < HOOK_TEXT_CAP ? room : HOOK_TEXT_CAP);
+        if (!len) continue;
+        hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, hk.snap.kind == VJO_HOOK_KIND_SITE, hk.pool + used, len};
+        used += len + 1u;
+    }
+}
+
+static const VjoHookCand *hook_cand(uint32_t id)
+{
+    for (unsigned i = 0; i < hk.n; i++)
+        if (hk.cand[i].id == id) return &hk.cand[i];
+    return NULL;
+}
+
+/* Stream k's text in out->text, normalised as OCR's text is (core/textnorm.h), with, after its NUL for
+ * the log, OCR's text when the stream replaces it (ocr), else the stream's own before normalising. The
+ * text is the stream's whole when it still holds what the job compared (the same seq), else the job's
+ * copy of it. */
+static void hook_show(VjoGameOcrResult *out, const VjoHookCand *k, int ocr)
+{
+    char *t = out->text;
+    const size_t cap = sizeof(out->text);
+    size_t o = 0, room = cap, h = 0;
+    VjoTextNorm norm;
+    if (!k) return;
+    if (ocr) { /* OCR's (normalised) text to the end of the buffer, cut at a character to leave the room */
+        o = text_len(t, cap - 1u);
+        if (o > cap - 1u - HOOK_SHOW_BYTES) {
+            o = cap - 1u - HOOK_SHOW_BYTES;
+            while (o && ((unsigned char)t[o] & 0xC0) == 0x80) o--;
+        }
+        memmove(t + cap - 1u - o, t, o);
+        t[cap - 1u] = '\0';
+        room = cap - 1u - o;
+    }
+    if (vjo_hooks_snap(k->id, &hk.snap) && hk.snap.seq == k->seq) h = vjo_hooks_text(&hk.snap, t, room);
+    if (!h) {
+        h = k->n < room - 1u ? k->n : room - 1u;
+        memmove(t, k->text, h);
+        t[h] = '\0';
+    }
+    if (!ocr) {
+        vjo_text_normalize_keep(t, cap, NULL, &norm);
+        return;
+    }
+    vjo_text_normalize(t, &norm);
+    h = text_len(t, room);
+    memmove(t + h + 1u, t + cap - 1u - o, o + 1u);
+    sceClibMemset(t + h + 2u + o, 0, cap - (h + 2u + o));
+}
+
+/* A job a stream answers: no model and no memory check for one, no finding, no recognition; the region's
+ * first capture pass, a strip at a time into one strip's block (VjoGameVocrCapture, under the job's
+ * reserve), so the kernel publishes the capture as for an OCR job's first pass. */
+static int run_hook_pass(const VjoGameOcrRequest *r, VjoGameOcrResult *out, Capture *c, VjoVocrStats *st)
+{
+    unsigned rows = vjo_vocr_strip_rows(r->width, r->height);
+    uint32_t bytes = rows * r->width, held, mem;
+    void *base = NULL;
+    SceUID leaked;
+    if (!rows) return VJO_E_OCR_REGION;
+    out->free_user = free_user();
+    out->reserve_bytes = job_reserve;
+    out->need_workspace = PAGE_ROUND(bytes);
+    if (out->free_user < 0 || (int64_t)out->free_user - (int64_t)job_reserve < (int64_t)PAGE_ROUND(bytes))
+        return VJO_E_OOM;
+    capture_uid = game_memblock_alloc(GL_CAPTURE, VJO_GITEM_CAPTURE, "VjoGameVocrCapture", bytes, LADDER_ALL, &base,
+                                      &leaked, &held, &mem);
+    if (capture_uid < 0) {
+        capture_uid = leaked;
+        return VJO_E_OOM;
+    }
+    capture_bytes_held = held;
+    capture_memory = mem;
+    st->strip_rows = rows;
+    for (unsigned y = 0; y < r->height; y += rows) {
+        unsigned n = r->height - y < rows ? r->height - y : rows;
+        uint64_t t0 = now_wide();
+        int got = strip_source(c, y, n, base, r->width, VJO_STRIP_FIRST | (y + n == r->height ? VJO_STRIP_LAST : 0u));
+        st->capture_us += (uint32_t)(now_wide() - t0);
+        st->strips++;
+        if (got != (int)n) return got < 0 ? got : VJO_E_SOURCE;
+    }
+    return VJO_OK;
+}
+
+/* Every result's hook fields; a job that failed shows no text, from any stream, and leaves the
+ * selection as it found it. */
+static void hooks_result(VjoGameOcrResult *out, int rc)
+{
+    if (rc) {
+        hk.sel = hk.saved;
+        hk.from = hk.flags = 0;
+    }
+    out->text_from = hk.from;
+    out->hook_flags = hk.flags;
+    out->hook_score = hk.score;
+    out->hook_streams = hk.streams;
+    out->hook_mode = hk.mode;
+    out->hook_installed = hk.installed;
+    out->hook_refused = hk.refused;
+}
+
 int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 {
     if (!r || !out) return VJO_E_SOURCE;
     if (!g_game_ledger.defs) ledger_init();
     sceClibMemset(out, 0, sizeof(*out));
     out->size = sizeof(*out); out->seq = r->seq;
+    /* Native hooks: what the worker installed as its game started; this job's hook fields begin empty. */
+    vjo_hooks_counts(&hk.mode, &hk.installed, &hk.refused);
+    hk.saved = hk.sel;
+    hk.from = hk.flags = hk.score = hk.streams = 0;
+    hk.n = 0;
     active_seq = r->seq; io_error = 0; stat_error = 0; open_which = VJO_GAME_OCR_OPEN_MODEL; open_cascade = 0;
     tiered = 0; job_reserve = GAME_RESERVE;
     log_to = out;
@@ -1323,7 +1499,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         (shot ? r->tiers || r->speed || (r->flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL))
               : !r->model_dir[0] || !r->model[0]) ||
         r->model_dir[sizeof(r->model_dir)-1] || r->model[sizeof(r->model)-1] ||
-        r->fallback[sizeof(r->fallback)-1]) goto done;
+        r->fallback[sizeof(r->fallback)-1] ||
+        (r->hook_pick > VJO_HOOK_STREAMS && r->hook_pick != VJO_HOOK_PICK_OCR)) goto done;
     out->region_x = r->x; out->region_y = r->y; out->width = r->width; out->height = r->height;
     out->fb_width = r->fb_width; out->fb_height = r->fb_height;
     if (cancelled(NULL)) { rc = VJO_E_CANCELLED; goto done; }
@@ -1334,6 +1511,27 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 #else
     if (r->flags & VJO_GAME_OCR_F_PROBE) goto done; /* no probe in the normal build: VJO_E_SOURCE */
 #endif
+    /* Native hooks (docs/native-hooks.md): the streams as the job begins, and a stream that may answer
+     * it without recognition. The self-test's jobs (every line recognized, or the fallback forced) are
+     * OCR's work whatever their pick. With nothing installed, none of this runs. */
+    uint32_t hook_pick = (r->speed & VJO_GAME_OCR_S_NOCACHE) || (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK)
+                             ? VJO_HOOK_PICK_OCR : r->hook_pick;
+    if (hk.installed) {
+        hooks_snapshot(hook_pick);
+        uint32_t hook_id = vjo_hook_select_before(&hk.sel, hook_pick, hk.cand, hk.n, &hk.flags);
+        if (hook_id) {
+            rc = run_hook_pass(r, out, &capture, &stats);
+            if (rc < -199) rc = VJO_E_SOURCE; /* a native capture error, as for OCR */
+            if (capture.failed)
+                step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
+                         capture.last.fb_format, capture.pass_us, 0);
+            if (!rc) {
+                hook_show(out, hook_cand(hook_id), 0);
+                hk.from = hook_id;
+            }
+            goto done;
+        }
+    }
     /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
     unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
                       ? VJO_VOCR_REFINE_ALL : 0u;
@@ -1590,6 +1788,17 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                      (uint32_t)(now_wide() - t0) + 1u, 0);
 #undef CLAMP8
     }
+    /* Native hooks: a stream whose text agrees with OCR's replaces it (core/hook_select.h). */
+    if (!rc && hk.installed) {
+        unsigned score = 0;
+        uint32_t id = vjo_hook_select_after(&hk.sel, hook_pick, out->text, text_len(out->text, sizeof(out->text)),
+                                            hk.cand, hk.n, &score, &hk.flags);
+        hk.score = score;
+        if (id) {
+            hook_show(out, hook_cand(id), 1);
+            hk.from = id;
+        }
+    }
     if (stats.lines && (want_helpers || stats.cached)) {
         /* the recognized lines' share of a core: the lowest and the mean (percent; 0 unknown) */
         uint32_t lo = 100u, sum = 0, n = 0;
@@ -1653,6 +1862,7 @@ done:
     if (out->cleanup_status) { blocked = 1; rc = VJO_E_OCR_UNAVAILABLE; }
     else if (cancelled(NULL)) rc = VJO_E_CANCELLED;
     if (rc) sceClibMemset(out->text, 0, sizeof(out->text));
+    hooks_result(out, rc);
     out->rc = rc; active_seq = 0;
     log_to = NULL;
     return rc;
@@ -1834,6 +2044,9 @@ static inline int outside_segments(const uintptr_t *base, const uint32_t *size, 
 #define pspemu_process vjo_test_pspemu_process /* host/tests/game_stubs/psp2/kernel/modulemgr.h */
 #define another_copy vjo_test_another_copy
 #define vjoGetTextSource vjo_test_get_text_source
+#ifndef VJO_HAVE_TEXT_SOURCE_IMPORT /* the host tests stub the kernel's answer (game_stubs psp2/kernel/modulemgr.h) */
+#define VJO_HAVE_TEXT_SOURCE_IMPORT 1
+#endif
 #else
 static int pspemu_process(void)
 {
@@ -1862,17 +2075,27 @@ static int another_copy(void)
 }
 #endif
 
-/* API 31: the text source the Shell set (config.ini text_source), VJO_TEXT_SOURCE_*, as module_start
- * reads it for the hooks' mode in this game session (game_ocr/hooks.h vjo_hooks_start); OCR, no hooks,
- * when the kernel cannot say: no such syscall, another API's kernel (whose jobs
- * vjo_game_ocr_worker_start refuses too), or a value this build does not know. */
-static unsigned hooks_text_source(void)
+#ifdef VJO_HOST
+/* The host tests that include this file run no game: no hooks (game_ocr/hooks.c is the Vita's). */
+#define vjo_hooks_start(title, mode, psp) ((void)(title), (void)(mode), (void)(psp))
+#define vjo_hooks_stop() 0
+#endif
+
+/* API 31's text source (VJO_TEXT_SOURCE_*, docs/native-hooks.md), as the Shell gave it to the kernel:
+ * which native hooks vjo_hooks_start installs in this game. OCR (no hooks) when the kernel's import is
+ * not resolved (an older kernel), when it answers out of range, and in a build whose kernel stubs do
+ * not have vjoGetTextSource yet (vita/CMakeLists.txt sets VJO_HAVE_TEXT_SOURCE_IMPORT from
+ * kernel/exports.yml). */
+static unsigned text_source(void)
 {
-    int m;
-    if (!IMPORT_READY(vjoGetVersion) || !IMPORT_READY(vjoGetTextSource) || vjoGetVersion() != VJO_API_VERSION)
-        return VJO_TEXT_SOURCE_OCR;
-    m = vjoGetTextSource();
-    return m >= 0 && (unsigned)m < VJO_TEXT_SOURCE_COUNT ? (unsigned)m : VJO_TEXT_SOURCE_OCR;
+#if VJO_HAVE_TEXT_SOURCE_IMPORT
+    /* another API's kernel (whose jobs vjo_game_ocr_worker_start refuses too) is not asked (hooks/api) */
+    if (IMPORT_READY(vjoGetTextSource) && IMPORT_READY(vjoGetVersion) && vjoGetVersion() == VJO_API_VERSION) {
+        int mode = vjoGetTextSource();
+        if (mode >= 0 && (unsigned)mode < VJO_TEXT_SOURCE_COUNT) return (unsigned)mode;
+    }
+#endif
+    return VJO_TEXT_SOURCE_OCR;
 }
 
 int _start(SceSize args, void *argp) __attribute__((weak, alias("module_start")));
@@ -1895,10 +2118,10 @@ int module_start(SceSize args, void *argp)
      * games keep an idle worker until the Shell confirms their games.ini
      * policy; one per process (another_copy). */
     if (rc < 0 || !vjo_game_is_candidate(title) || another_copy()) return SCE_KERNEL_START_NO_RESIDENT;
-    /* hooks/api alone: keeps the worker's vjoGetTextSource import until hooks/engine's
-     * vjo_hooks_start(title, hooks_text_source(), psp_title) reads it; delete this line in that merge. */
-    (void)hooks_text_source();
     psp_title = pspemu_process() || vjo_game_is_psp(title);
+    /* The native text hooks, before the game's main thread runs: none in a safe boot (above), none
+     * unless the text source allows them here (game_ocr/hooks.c); never fails the start. */
+    vjo_hooks_start(title, text_source(), psp_title);
     vjo_game_ocr_worker_start();
     /* Import/start failures leave the host app usable. Retained thread objects
      * keep the module loaded until module_stop can safely delete them. */
@@ -1906,7 +2129,12 @@ int module_start(SceSize args, void *argp)
 }
 int module_stop(SceSize args, void *argp)
 {
+    int busy;
     (void)args; (void)argp;
-    return vjo_game_ocr_worker_stop() ? SCE_KERNEL_STOP_FAIL : SCE_KERNEL_STOP_SUCCESS;
+    /* The hooks first (newest first), so no game thread enters our code again; a thread still in it
+     * keeps the module (STOP_FAIL), as the worker's thread does. */
+    busy = vjo_hooks_stop();
+    if (vjo_game_ocr_worker_stop()) busy = 1;
+    return busy ? SCE_KERNEL_STOP_FAIL : SCE_KERNEL_STOP_SUCCESS;
 }
 #endif

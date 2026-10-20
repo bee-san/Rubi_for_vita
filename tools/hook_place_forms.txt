@@ -1,0 +1,157 @@
+# The instruction forms core/hook_place.c's site check must accept or refuse
+# (docs/native-hooks.md#where-a-hook-may-go). tools/gen_hook_place_fixtures.sh assembles each line
+# with the VitaSDK assembler into host/tests/fixtures/hook_place_forms.inc; host/tests/test_hook_place.c
+# runs the check on the bytes. Columns: isa (thumb | arm), expected (ok | no), role (entry: the site's
+# first instruction; win: an instruction inside the bytes the hook overwrites), then the source
+# (";" separates instructions of one form). Unclear forms are refused: add them as "no".
+#
+# Entries: a function start that saves LR.
+thumb ok entry push {r4, lr}
+thumb ok entry push {r4-r7, lr}
+thumb ok entry push {lr}
+thumb ok entry push.w {r4-r11, lr}
+thumb ok entry push.w {r4, r5, r6, r7, r8, lr}
+thumb no entry push {r4-r7}
+thumb no entry push.w {r4-r11}
+thumb no entry sub sp, #8
+thumb no entry mov r7, sp
+thumb no entry ldr r0, [pc, #4]
+thumb no entry b.n .+4
+thumb no entry bx lr
+thumb no entry nop
+arm ok entry push {r4, lr}
+arm ok entry push {r4-r11, lr}
+arm ok entry stmfd sp!, {r0-r3, lr}
+arm no entry push {r4-r11}
+arm no entry stmdb r0!, {r4, lr}
+arm no entry sub sp, sp, #16
+arm no entry ldr r0, [pc, #8]
+arm no entry b .+8
+arm no entry pusheq {r4, lr}
+#
+# Thumb, inside the window: the allow-list.
+thumb ok win push {r4, r5}
+thumb ok win push {r4-r7, lr}
+thumb ok win push.w {r8-r11}
+thumb ok win push.w {r4-r11, lr}
+thumb ok win sub sp, #8
+thumb ok win add sp, #16
+thumb ok win sub.w sp, sp, #0x100
+thumb ok win add.w r7, sp, #8
+thumb ok win subw sp, sp, #0x404
+thumb ok win addw r7, sp, #0x404
+thumb ok win add r7, sp, #12
+thumb ok win mov r7, sp
+thumb ok win mov r8, r9
+thumb ok win mov r0, r1
+thumb ok win movs r0, r1
+thumb ok win mov.w r8, r1
+thumb ok win movw r0, #0x1234
+thumb ok win movt r0, #0x5678
+thumb ok win movw r12, #0xffff
+thumb ok win str r0, [sp, #4]
+thumb ok win ldr r0, [sp, #4]
+thumb ok win str r1, [r0, #4]
+thumb ok win ldr r1, [r0, #4]
+thumb ok win str.w r0, [sp, #0x100]
+thumb ok win ldr.w r0, [sp, #0x100]
+thumb ok win ldr.w r1, [r2, #0x200]
+thumb ok win str r0, [sp, #-4]!
+thumb ok win ldr r0, [r1, #-8]
+thumb ok win strd r0, r1, [sp, #8]
+thumb ok win strd r4, r5, [sp, #-8]!
+thumb ok win vpush {d8-d15}
+thumb ok win vpush {s16-s17}
+#
+# Thumb, inside the window: refused (the PC, branches, IT, CBZ, TBB, and what the list lacks).
+thumb no win ldr r0, [pc, #4]
+thumb no win ldr.w r0, [pc, #8]
+thumb no win ldr.w r0, [pc, #-8]
+thumb no win add r0, pc, #4
+thumb no win adr.w r0, .+8
+thumb no win addw r0, pc, #8
+thumb no win subw r0, pc, #8
+thumb no win ldrd r0, r1, [pc, #8]
+thumb no win vldr d0, [pc, #8]
+thumb no win mov r0, pc
+thumb no win mov pc, r0
+thumb no win add r0, pc
+thumb no win b.n .+4
+thumb no win b.w .+8
+thumb no win bl .+8
+thumb no win blx .+8
+thumb no win bx lr
+thumb no win blx r3
+thumb no win cbz r0, .+8
+thumb no win cbnz r1, .+8
+thumb no win it eq; moveq r0, r1
+thumb no win ite ne; movne r0, r1; moveq r0, r2
+thumb no win tbb [r0, r1]
+thumb no win tbh [r0, r1, lsl #1]
+thumb no win pop {r4, pc}
+thumb no win pop.w {r4-r11, pc}
+thumb no win ldr.w pc, [sp], #4
+thumb no win ldr r0, [r1, r2]
+thumb no win ldr.w r0, [r1, r2]
+thumb no win ldrb r0, [r1, #1]
+thumb no win ldrh r0, [r1, #2]
+thumb no win strb.w r0, [r1, #4]
+thumb no win ldrd r0, r1, [sp, #8]
+thumb no win strex r0, r1, [r2]
+thumb no win movs r0, #1
+thumb no win add r0, r1
+thumb no win adds r0, r1, r2
+thumb no win nop
+thumb no win svc #0
+thumb no win mrs r0, apsr
+thumb no win vldr d0, [sp, #8]
+#
+# ARM, inside the window: the allow-list.
+arm ok win push {r4-r7}
+arm ok win push {r4-r11, lr}
+arm ok win sub sp, sp, #16
+arm ok win add r7, sp, #8
+arm ok win sub r7, sp, #8
+arm ok win mov r7, sp
+arm ok win mov r4, r0
+arm ok win movs r4, r0
+arm ok win movw r0, #0x1234
+arm ok win movt r0, #0x5678
+arm ok win str r0, [sp, #4]
+arm ok win ldr r0, [sp, #4]
+arm ok win str r1, [r2, #-8]
+arm ok win ldr r1, [r2, #8]
+arm ok win str r0, [sp, #-4]!
+arm ok win strd r4, r5, [sp, #8]
+arm ok win strd r4, r5, [sp, #-8]!
+arm ok win vpush {d8-d15}
+#
+# ARM, inside the window: refused.
+arm no win ldr r0, [pc, #8]
+arm no win ldr r0, [pc, #-8]
+arm no win add r0, pc, #8
+arm no win sub r0, pc, #8
+arm no win ldrd r0, r1, [pc, #8]
+arm no win vldr d0, [pc, #8]
+arm no win mov r0, pc
+arm no win mov pc, lr
+arm no win add r0, pc, r1
+arm no win b .+8
+arm no win bl .+8
+arm no win blx .+8
+arm no win bx lr
+arm no win blx r3
+arm no win ldr pc, [sp], #4
+arm no win pop {r4, pc}
+arm no win moveq r0, r1
+arm no win streq r0, [sp, #4]
+arm no win ldrb r0, [r1, #1]
+arm no win ldrh r0, [r1, #2]
+arm no win ldr r0, [r1, r2]
+arm no win strd r4, r5, [sp, r2]
+arm no win ldrd r4, r5, [sp, #8]
+arm no win mov r0, #1
+arm no win mov r0, r1, lsl #2
+arm no win add r0, r1, r2
+arm no win svc #0
+arm no win nop
