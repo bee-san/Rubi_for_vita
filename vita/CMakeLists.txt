@@ -296,7 +296,11 @@ if(VJO_WITH_VOCR)
     ${ROOT}/game_ocr/main.c ${ROOT}/core/games.c ${ROOT}/core/ledger.c ${ROOT}/shell/libc_shim.c
     # API 23: the Anki screenshot's JPEG encoder, in the game's process only (never the Shell's),
     # and the arena it encodes into
-    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c)
+    ${ROOT}/core/jpegsw.c ${ROOT}/core/arena.c
+    # API 31: the native text hooks (docs/native-hooks.md), in the game's process only: the hook
+    # engine, the site check, the stream slots, Luna's table and the hook text decoder
+    ${ROOT}/game_ocr/hooks.c ${ROOT}/core/hook_place.c ${ROOT}/core/hook_stream.c
+    ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_text.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   target_compile_options(VitaJPOverlay_OCR PRIVATE -O2 -Wall -Wextra -fno-builtin -fshort-wchar
     -ffunction-sections -fdata-sections)
