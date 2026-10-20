@@ -155,11 +155,12 @@ GameSentenceMiner's by its pinned `regex` 2026.7.19):
   half-width ｰ (U+FF70).
 - GameSentenceMiner counts every code point that is not punctuation, a symbol or
   a separator, and Rubi's characters are among them. It also counts the letters
-  of other scripts (é Я 한), every number that is not a digit 0-9 (① Ⅳ ² ㊀,
-  Han ones too), every combining mark (so ❤️, a
-  symbol and a variation selector, is 1), the control and format characters
-  inside a line (its line breaks, `\t`, a CRLF's `\r`, a zero-width joiner)
-  and the private-use and unassigned code points.
+  of other scripts (é Я 한), the other numbers (① Ⅳ ² ㊀, Han ones too) but for 〇
+  and the Hangzhou numerals, which Rubi counts as well, every combining mark but
+  the dakuten and handakuten Rubi counts (so ❤️, a symbol and a variation
+  selector, is 1), the control and format characters inside a line (its line
+  breaks, `\t`, a CRLF's `\r`, a zero-width joiner) and the private-use and
+  unassigned code points.
 
 On the 50 real VOCR textboxes of `host/fixtures/word_lookup` (138 lines), once
 the writer normalises them: Rubi's count is 1,329, ttsu's 1,329,
@@ -180,24 +181,25 @@ python3 tools/reading_stats.py history.csv      # days in this computer's time z
 python3 tools/reading_stats.py old/history.csv history.csv --break-minutes 10 --utc
 ```
 
-The reading time is the time from one record to the next, credited to the
-first. A gap of more than `--break-minutes` (5 by default) or a change of game
-is a break: it is not reading time, and the record before it gets none, since
-how long it was read is unknown. Characters per hour counts only the records
-that got a time; the totals count them all. A record in more than one copy
-counts once: by `uuid` and `given_identifier`, as GameSentenceMiner's import
-does, and another tracker's record (whose `given_identifier` can name just its
-game, as exSTATic's does) by those, its time and its line. A record cut short
-by a power loss is skipped and counted, also when more records were appended
-after it; blank lines and the header lines of files joined together are
-ignored. A file that is not the writer's own bytes (Rubi's re-saved by a
-spreadsheet, or another tracker's ExStatic lines CSV) is read as plain CSV: its
-`characters` cells are used where it has them, and the tool counts the other
-lines. A record whose time is not Unix seconds between 1970 and 3000 (another
-tracker's milliseconds, say) is skipped and counted, as GameSentenceMiner's
-import refuses it. A file that is not CSV, or has none of the five ExStatic
-columns, makes the tool stop with exit status 2 and say why. 100,000 records
-(a 42 MB file) take about 2 s and 60 MB [measured on the host].
+The reading time is the time from one record to the next, credited to the first.
+A gap of more than `--break-minutes` (5 by default) or a change of game is a
+break: it is not reading time, and the record before it gets none, since how
+long it was read is unknown. Characters per hour counts only the records that
+got a time; the totals count them all. A record in more than one copy counts
+once: by `uuid` and `given_identifier`, as GameSentenceMiner's import does, and
+another tracker's record (whose `given_identifier` can name just its game, as
+exSTATic's does) by those, its time and its line. A record cut short by a power
+loss is skipped and counted, also when more records were appended after it;
+blank lines and the header lines of files joined together are ignored. A file
+that is not the writer's own bytes (Rubi's re-saved by a spreadsheet, or another
+tracker's ExStatic lines CSV) is read as plain CSV: its `characters` cells are
+used where it has them, and the tool counts the other lines. A record whose time
+is a number but not Unix seconds between 1970 and 3000 (another tracker's
+milliseconds, which GameSentenceMiner's import refuses too), or one this
+computer cannot place on a day (after 2038 where `time_t` has 32 bits), is
+skipped and counted. A file that cannot be read, is not CSV, or lacks one of the
+five ExStatic columns makes the tool stop with exit status 2 and say why.
+100,000 records (a 42 MB file) take about 2 s and 60 MB [measured on the host].
 
 The totals count what was recorded: a line that types out slowly can be
 recorded twice, once part-way and once whole (see the duplicate text above), and
@@ -231,15 +233,17 @@ default): add `,characters` to the end of the file's first line (on Linux,
 `sed -i '1s/$/,characters/' history.csv`), or move the file away on the Vita so
 that Rubi starts a new one with the new header.
 
-A power loss in a new file's very first append can cut its header short. The
-writer writes the header only into an empty file, so the next record then
-follows the cut on the first line. GameSentenceMiner's import then refuses the
-file, when the cut left less than `uuid,given_identifier,name,line,time,` (its
-first 37 bytes), or leaves out the record on the first line [checked: its
-import's header check and `DictReader` at `7a46a00`, every cut of the header];
-`tools/reading_stats.py` reads every record with Rubi's columns and says so. To
-import it whole, replace what comes before the first record (`"vita-` or
-`"psp-`) with this header line and a line break:
+A power loss in a new file's very first append can cut its header short, and the
+record that append held is lost. The writer writes the header only into an empty
+file, so the next record then follows the cut on the first line (maybe after the
+lost write's zeros, and maybe cut short itself). GameSentenceMiner's import then
+refuses the file, when the cut left less than
+`uuid,given_identifier,name,line,time,` (its first 37 bytes), or leaves out the
+record on the first line [checked: its import's header check and `DictReader` at
+`7a46a00`, every cut of the header]; `tools/reading_stats.py` reads every record
+after the cut with Rubi's columns, counts the lost one as cut short and says so.
+To import the file whole, replace what comes before the first record (`"vita-`
+or `"psp-`) with this header line and a line break:
 
 ```
 uuid,given_identifier,name,line,time,platform,title_id,engine,model,raw_line,scene,region_seq,monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,fb_width,fb_height,fb_pitch,fb_format,lines,recognized,frames,find_us,load_us,recognize_us,capture_us,captures,tears,region_sum,source,capture_memory,capture_bytes,strip_rows,workspace_bytes,resident_bytes,fallback,line_metrics,characters

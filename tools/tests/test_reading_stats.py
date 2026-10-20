@@ -7,6 +7,7 @@ mock games (docs/promo/capture/make_promo_games.py).
 fixtures/history-0.8.0.csv is RECORDS as 0.8.0's writer wrote them: shell/history.c at main 44d4e8d
 (the release's writer, #187), built on the host with host/tests/history_writer.c's record mode."""
 import csv
+import datetime
 import io
 import os
 import random
@@ -16,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -346,18 +348,57 @@ class Files(unittest.TestCase):
         self.assertEqual(([r.characters for r in report.records], report.incomplete), ([2], 0))
 
     def test_times_that_are_not_unix_seconds(self):
-        """Milliseconds (another tracker's), a time past the year 3000, zero, a negative one, words, NaN and inf:
-        each record is skipped and counted, none stops the report."""
+        """Milliseconds (another tracker's), a time past the year 3000, zero and a negative one are numbers
+        but not Unix seconds; a word, NaN and inf are no time (a damaged record, as a cut record's time with
+        the next file's header glued to it): each record is skipped and counted, none stops the report. A
+        time after 2038 is read, where this computer can place it on a day."""
         path = self.dir / "lines.csv"
-        times = ["1792220400500", "32503680000", "0", "-5", "soon", "nan", "inf"]
+        times = ["1792220400500", "32503680000", "0", "-5", "soon", "17922uuid", "nan", "inf"]
         path.write_bytes(("uuid,given_identifier,name,line,time\n" + "".join(
-            f"g1,VN,VN,文{i},{t}\n" for i, t in enumerate(times)) + "g1,VN,VN,よし,1792220400\n").encode())
+            f"g1,VN,VN,文{i},{t}\n" for i, t in enumerate(times)) + "g1,VN,VN,よし,1792220400\n"
+            "g1,VN,VN,ずっと先,2200000000\n").encode())
         report = rs.read_history([path])
-        self.assertEqual(([r.characters for r in report.records], report.bad_times, report.incomplete), ([2], 7, 0))
+        later = rs.placeable(2200000000.0)  # 2039-09-18: not where time_t has 32 bits
+        self.assertEqual(([r.characters for r in report.records], report.bad_times, report.incomplete),
+                         ([2, 4] if later else [2], 4 if later else 5, 4))
         out = io.StringIO()
         with redirect_stdout(out):
             self.assertEqual(rs.main(["--utc", str(path)]), 0)
-        self.assertIn("1 file, 1 records (7 with a time that is not Unix seconds skipped)\n", out.getvalue())
+        self.assertIn(f"1 file, {2 if later else 1} records (4 incomplete skipped; {4 if later else 5} with a time "
+                      "that is not Unix seconds skipped)\n", out.getvalue())
+
+    def test_a_32_bit_time_t(self):
+        """Where time_t has 32 bits, datetime cannot place a time after 2038 (OverflowError): such a record is a
+        bad time, and the report is made."""
+        class Datetime32(datetime.datetime):
+            @classmethod
+            def fromtimestamp(cls, t, tz=None):
+                if t >= 2 ** 31:
+                    raise OverflowError("timestamp out of range for platform time_t")
+                return datetime.datetime.fromtimestamp(t, tz)
+        fake = type("datetime32", (), {"datetime": Datetime32, "timezone": datetime.timezone})
+        path = self.dir / "lines.csv"
+        path.write_bytes("uuid,given_identifier,name,line,time\ng1,VN,VN,今日,1792220400\n"
+                         "g1,VN,VN,ずっと先,2200000000\n".encode())
+        with mock.patch.object(rs, "datetime", fake):
+            report = rs.read_history([path])
+            rs.credit_time(report.records, 300.0)
+            text = rs.render(report, 5.0, utc=False)
+        self.assertEqual(([r.characters for r in report.records], report.bad_times), ([2], 1))
+        self.assertIn("1 file, 1 records (1 with a time that is not Unix seconds skipped)", text)
+
+        class DatetimeLocal(datetime.datetime):  # local time fails where UTC does not (the days are local)
+            @classmethod
+            def fromtimestamp(cls, t, tz=None):
+                if t >= 2 ** 31 and tz is None:
+                    raise OSError(22, "Invalid argument")
+                return datetime.datetime.fromtimestamp(t, tz)
+        fake = type("datetime_local", (), {"datetime": DatetimeLocal, "timezone": datetime.timezone})
+        with mock.patch.object(rs, "datetime", fake):
+            report = rs.read_history([path])
+            rs.credit_time(report.records, 300.0)
+            rs.render(report, 5.0, utc=False)
+        self.assertEqual(([r.characters for r in report.records], report.bad_times), ([2], 1))
 
     @need_writer
     def test_stored_counts_are_the_files(self):
@@ -376,6 +417,13 @@ class Files(unittest.TestCase):
         with redirect_stdout(out):
             self.assertEqual(rs.main([str(path)]), 0)
         self.assertIn("Characters: 2 records carry their count, 1 counted here; 1 stored counts differ", out.getvalue())
+        # nine digits are a count (an absurd one), ten are not; nor are other digits (² ① １２): int() would refuse
+        # some, and none is the writer's
+        for cell, want in ((b"123456789", 123456789), (b"1234567890", COUNTS[0]), ("²".encode(), COUNTS[0]),
+                           ("①".encode(), COUNTS[0]), ("１２".encode(), COUNTS[0])):
+            lines[1] = lines[1][:lines[1].rindex(b",") + 1] + cell
+            path.write_bytes(b"\n".join(lines))
+            self.assertEqual(rs.read_history([path]).records[0].characters, want, cell)
 
     @need_writer
     def test_records_at_the_same_time(self):
@@ -400,19 +448,90 @@ class Files(unittest.TestCase):
             write_history(path, RECORDS[1:3])
             report = rs.read_history([path])
             got = ([r.characters for r in report.records], report.stored, report.incomplete, report.cut_headers)
-            self.assertEqual(got, (COUNTS[1:3], 2, 0, 1), cut)
+            self.assertEqual(got, (COUNTS[1:3], 2, 1, 1), cut)  # the record the cut append held: lost, counted
         old = FIXTURE.read_bytes()
-        old_header, old_records = old[:old.index(b"\n") + 1], old[old.index(b"\n") + 1:]
+        old_header = old[:old.index(b"\n") + 1]
+        old_records = old[old.index(b"\n", old.index(b"vjo-")) + 1:]  # without the first: it went with the cut
         for cut in range(1, len(old_header)):
             path.write_bytes(old_header[:cut] + old_records)
             report = rs.read_history([path])
             got = ([r.characters for r in report.records], report.stored, report.incomplete, report.cut_headers)
-            self.assertEqual(got, (COUNTS, 0, 0, 1), cut)
+            self.assertEqual(got, (COUNTS[1:], 0, 1, 1), cut)
         out = io.StringIO()
         with redirect_stdout(out):
             self.assertEqual(rs.main([str(path)]), 0)
         self.assertIn("\nA header cut short (a power loss in a new file's first append) in 1 file: read with Rubi's "
                       "columns", out.getvalue())
+
+    @need_writer
+    def test_a_cut_header_then_zeros_or_a_cut_record(self):
+        """The cut header's two rarer shapes: the zeros a lost write leaves after it (and a first append lost to
+        zeros whole), and the next append cut short too, in its record start, before the ones after it."""
+        whole = self.dir / "whole.csv"
+        write_history(whole, RECORDS[:1])
+        header = whole.read_bytes()[:whole.read_bytes().index(b"\n") + 1]
+        more = self.dir / "more.csv"
+        write_history(more, RECORDS[1:4])
+        records = more.read_bytes()[len(header):]
+        second = records.index(b'"vita-', 1)  # where the second of them starts
+        path = self.dir / "history.csv"
+        for cut in list(range(0, len(header), 7)) + [len(header) - 1]:
+            for zeros in (1, 300):
+                path.write_bytes(header[:cut] + b"\0" * zeros + records)
+                report = rs.read_history([path])
+                got = ([r.characters for r in report.records], report.incomplete, report.cut_headers)
+                self.assertEqual(got, (COUNTS[1:4], 1, 1), (cut, zeros))
+            for part in (1, 6, 20, second - 1):  # the next record cut after `part` of its bytes
+                path.write_bytes(header[:max(cut, 1)] + records[:part] + records[second:])
+                report = rs.read_history([path])
+                got = ([r.characters for r in report.records], report.incomplete, report.cut_headers)
+                self.assertEqual(got, (COUNTS[2:4], 2, 1), (cut, part))
+            for part in (1, 3, 6, 20):  # ... and nothing after it: no record start whole on the line
+                path.write_bytes(header[:max(cut, 1)] + records[:part])
+                report = rs.read_history([path])
+                got = ([r.characters for r in report.records], report.incomplete, report.cut_headers)
+                self.assertEqual(got, ([], 2, 1), (cut, part))
+            for part in (6, 20):  # ... then a whole file joined (cat), its header glued to the cut record
+                path.write_bytes(header[:max(cut, 1)] + records[:part] + more.read_bytes())
+                report = rs.read_history([path])
+                got = ([r.characters for r in report.records], report.incomplete, report.cut_headers)
+                self.assertEqual(got, (COUNTS[1:4], 2, 1), (cut, part, "joined"))
+            # two such files joined: the second's cut header is its lost first record
+            path.write_bytes(header[:max(cut, 1)] + records[:second] + header[:max(cut, 1)] + records[second:])
+            report = rs.read_history([path])
+            got = ([r.characters for r in report.records], report.incomplete, report.cut_headers)
+            self.assertEqual(got, (COUNTS[1:4], 2, 1), (cut, "two joined"))
+
+    @need_writer
+    def test_no_header_and_a_header_with_names_twice(self):
+        """A file of records without a header is refused (it is not a cut one: nothing comes before its first
+        quote). A header with one of the five names again after Rubi's (a cut header glued to a whole file's by
+        cat, or a column added) reads by the first."""
+        path = self.dir / "history.csv"
+        write_history(path, RECORDS[:3])
+        data = path.read_bytes()
+        (self.dir / "bare.csv").write_bytes(data[data.index(b"\n") + 1:])
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(rs.main([str(self.dir / "bare.csv")]), 2)
+        self.assertIn("no uuid, given_identifier, name, line, time column", err.getvalue())
+        header = data[:data.index(b"\n") + 1]
+        for cut in range(1, len(header) - 1):  # a first append cut in its header, held nothing else: cat
+            for glue in (b"", b"\0" * 9, b"\xef\xbb\xbf"):  # the lost write's zeros; the joined file's BOM
+                (self.dir / "glued.csv").write_bytes(header[:cut] + glue + data)
+                report = rs.read_history([self.dir / "glued.csv"])
+                got = ([r.characters for r in report.records], report.incomplete, report.cut_headers)
+                self.assertEqual(got, (COUNTS[:3], 1, 1), (cut, glue))
+        (self.dir / "extra.csv").write_bytes(data.replace(b"characters\n", b"characters,time\n", 1))
+        report = rs.read_history([self.dir / "extra.csv"])
+        self.assertEqual(([r.characters for r in report.records], report.incomplete), (COUNTS[:3], 0))
+
+    @need_writer
+    def test_blank_lines_before_the_header(self):
+        path = self.dir / "history.csv"
+        write_history(path, RECORDS[:3])
+        (self.dir / "blank.csv").write_bytes(b"\n\r\n\xef\xbb\xbf\n" + path.read_bytes())
+        report = rs.read_history([self.dir / "blank.csv"])
+        self.assertEqual(([r.characters for r in report.records], report.incomplete), (COUNTS[:3], 0))
 
     @need_writer
     def test_resaved_by_a_spreadsheet(self):
@@ -479,13 +598,82 @@ class Files(unittest.TestCase):
 
     @need_writer
     def test_old_mac_line_endings(self):
-        """A copy whose lines end in CR alone (an old Mac format) is refused with a message that says so."""
+        """A copy whose lines end in CR alone (an old Mac format) is refused with a message that says so; a file
+        whose first CR-ended line is no ExStatic header is not called one."""
         path = self.dir / "history.csv"
         write_history(path, RECORDS[:3])
         (self.dir / "cr.csv").write_bytes(path.read_bytes().replace(b"\n", b"\r"))
+        (self.dir / "cr2.csv").write_bytes(b"uuid,given_identifier,name\rline,time\r1,2\n")
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as err:
             self.assertEqual(rs.main([str(self.dir / "cr.csv")]), 2)
-        self.assertIn("its lines end in a carriage return alone", err.getvalue())
+            self.assertEqual(rs.main([str(self.dir / "cr2.csv")]), 2)
+        first, second = err.getvalue().splitlines()
+        self.assertIn("its lines end in a carriage return alone", first)
+        self.assertIn("not a Rubi history.csv (its first line is not CSV", second)
+
+    def test_the_first_lines_read_is_capped(self):
+        """A file with no line break (3 MiB here) is not read whole for its header: at most HEADER_READ (1 MiB)
+        of it is read, and it is refused."""
+        read = []
+
+        class CountingFile(io.BytesIO):
+            def readline(self, *args):
+                line = super().readline(*args)
+                read.append(len(line))
+                return line
+
+        class CountingPath(type(rs.Path())):
+            def open(self, mode="r", *args, **kwargs):
+                return CountingFile(b"x" * (3 << 20))
+        with mock.patch.object(rs, "Path", CountingPath), redirect_stdout(io.StringIO()), \
+                redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(rs.main(["big.csv"]), 2)
+        self.assertEqual(rs.HEADER_READ, 1 << 20)
+        self.assertLessEqual(sum(read), rs.HEADER_READ)
+        self.assertIn("not a Rubi history.csv", err.getvalue())
+
+    def test_a_console_without_the_names_characters(self):
+        """A console that cannot show a game's name (here ASCII) shows "?" for its characters, and the report is
+        made (exit 0)."""
+        env = dict(os.environ, PYTHONIOENCODING="ascii")
+        r = subprocess.run([sys.executable, str(ROOT / "tools/reading_stats.py"), str(FIXTURE)], env=env,
+                           capture_output=True, check=False)
+        self.assertEqual((r.returncode, r.stderr), (0, b""))
+        self.assertIn(b"\n?????? (vita-PROMO0001)", r.stdout)
+
+    def test_read_errors(self):
+        """A read that fails (a failing memory card or reader: EIO), at the header or later, exits 2 with the
+        error, never a traceback."""
+        real_path = rs.Path
+
+        class FailingFile(io.BytesIO):
+            def __init__(self, data, good):
+                super().__init__(data)
+                self.good = good
+
+            def readline(self, *args):
+                if self.good <= 0:
+                    raise OSError(5, "Input/output error")
+                self.good -= 1
+                return super().readline(*args)
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                line = self.readline()
+                if not line:
+                    raise StopIteration
+                return line
+
+        for good in (0, 1, 3):
+            class FailingPath(type(real_path())):
+                def open(self, mode="r", *args, **kwargs):
+                    return FailingFile(real_path(self).read_bytes(), good)
+            with mock.patch.object(rs, "Path", FailingPath), redirect_stdout(io.StringIO()), \
+                    redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(rs.main([str(FIXTURE)]), 2, good)
+            self.assertIn("Input/output error", err.getvalue())
 
 
 class Time(unittest.TestCase):
