@@ -59,7 +59,7 @@ build and 16 B in the debug one, its data 104 B larger in both; the pages and th
 writer's stack frame (420 B) stay as they were [measured: the build log's module
 rows, `arm-vita-eabi-nm -S` and the writer's disassembly, both builds of main
 `44d4e8d` and this change]. The count runs 107 Cortex-A9 instructions a code
-point, 11,070 for a textbox of three lines (104 code points) [measured: the
+point, 11,070 for the mean three-line textbox (104 code points) [measured: the
 Vita compiler's code under `qemu-arm -cpu cortex-a9` with vita-vn-ocr's
 instruction-count plugin, over the 50 real VOCR lines of
 `host/fixtures/word_lookup`], about 25 µs at 444 MHz [estimate: one instruction
