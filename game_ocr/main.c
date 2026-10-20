@@ -1339,9 +1339,9 @@ static int hook_first(uint32_t a, uint32_t b, const uint32_t *seq, uint32_t want
     return (int32_t)(seq[a] - seq[b]) > 0;
 }
 
-/* The streams that hold text as the job begins, as candidates (hk.cand, hk.streams: bit id - 1 each):
- * the stream the pick names (pinned, or the locked one) first, then the newest texts, so a full pool
- * cuts the oldest. */
+/* The streams that hold text as the job begins (hk.streams: bit id - 1 each), and as candidates
+ * (hk.cand) those whose text decodes to some: the stream the pick names (pinned, or the locked one)
+ * first, then the newest texts, so a full pool cuts the oldest. */
 static void hooks_snapshot(uint32_t pick)
 {
     uint32_t seq[VJO_HOOK_STREAMS + 1u], want = pick == VJO_HOOK_PICK_AUTO ? hk.sel.locked : pick;
@@ -1351,6 +1351,7 @@ static void hooks_snapshot(uint32_t pick)
     for (uint32_t id = 1; id <= VJO_HOOK_STREAMS; id++) {
         unsigned at;
         if (!vjo_hooks_snap(id, &hk.snap) || !hk.snap.n) continue;
+        hk.streams |= 1u << (id - 1u);
         seq[id] = hk.snap.seq;
         for (at = k; at && hook_first(id, order[at - 1u], seq, want); at--) order[at] = order[at - 1u];
         order[at] = (uint8_t)id;
@@ -1363,7 +1364,6 @@ static void hooks_snapshot(uint32_t pick)
         len = vjo_hooks_text(&hk.snap, hk.pool + used, room < HOOK_TEXT_CAP ? room : HOOK_TEXT_CAP);
         if (!len) continue;
         hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, hk.snap.kind == VJO_HOOK_KIND_SITE, hk.pool + used, len};
-        hk.streams |= 1u << (id - 1u);
         used += len + 1u;
     }
 }

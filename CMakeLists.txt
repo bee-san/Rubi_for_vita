@@ -725,6 +725,18 @@ if(VJO_WITH_VOCR)
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
+  # Native hooks in the job path (docs/native-hooks.md): the actual worker with the resident test's spies and
+  # a fake of game_ocr/hooks.h: a stream answers with the first capture pass only, or replaces OCR's agreeing
+  # text; nothing installed is OCR as before.
+  add_executable(vjo-game-hooks-tests host/tests/test_game_hooks.c core/vocr_ocr.c core/textnorm.c)
+  target_include_directories(vjo-game-hooks-tests PRIVATE third_party/acutest/include host/tests/game_stubs host/tests)
+  target_compile_options(vjo-game-hooks-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-hooks-tests PRIVATE
+    VJO_VOCR_TEST_MODELS="test_resident_models.h"
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
+    vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
+  target_link_libraries(vjo-game-hooks-tests vjo_vocr_rt vjo_host)
+  add_test(NAME game_hooks COMMAND vjo-game-hooks-tests)
   add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c host/tests/hooks_none.c
     host/tests/kernel_model_broker_boundary.c kernel/buffers.c kernel/capture.c
     kernel/scene.c kernel/ledger.c core/ledger.c)
