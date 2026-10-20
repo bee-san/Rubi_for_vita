@@ -123,6 +123,9 @@ build taicfg -DNO_CTYPE -DNO_STRING -DVJO_SOURCE_DIR="\"$PWD\"" host/tests/test_
 # The Shell's logger (shell/log_vita.c) on an in-memory file system: batched appends, 32-bit sizes.
 # Its stubs come before vita_stubs (both have psp2/io/fcntl.h).
 "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
+# The reading history's writer (shell/history.c) and its characters column (core/reading_chars.h) on
+# the Vita's word size: 32-bit size_t, the append offsets past 4 GiB.
+build shell_history host/tests/test_shell_history.c core/utf.c core/text_rows.c core/textnorm.c
 
 # The Rubi app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets. Its
 # picture cards carry the game worker's JPEG (core/jpegsw.c), which must come out the same on the A9.
@@ -147,7 +150,7 @@ build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak hook_select stick_cursor cursor_nav settings_layout shell_log apkg psp taicfg shot_trim)
+TESTS+=(touch_hold text_rows text_join linebreak hook_select stick_cursor cursor_nav settings_layout shell_log shell_history apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then

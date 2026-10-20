@@ -366,12 +366,19 @@ target_include_directories(vjo-shell-anki-tests PRIVATE third_party/acutest/incl
 target_compile_options(vjo-shell-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-anki-tests vjo_host)
 add_test(NAME shell_anki COMMAND vjo-shell-anki-tests)
-# The hidden auto-OCR CSV appender: real files, bounded writes and injected failures.
-add_executable(vjo-shell-history-tests host/tests/test_shell_history.c)
+# The hidden auto-OCR CSV appender: real files, bounded writes and injected failures; its
+# characters column (core/reading_chars.h: core/utf.c's decoder, core/text_rows.c's letters).
+add_executable(vjo-shell-history-tests host/tests/test_shell_history.c core/utf.c core/text_rows.c core/textnorm.c)
 target_include_directories(vjo-shell-history-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 add_test(NAME shell_history COMMAND vjo-shell-history-tests)
+# The same writer and count for tools/reading_stats.py's tests (tools/tests/test_reading_stats.py:
+# VJO_HISTORY_WRITER), with the game worker's normalisation of the text it returns.
+add_executable(vjo-history-writer host/tests/history_writer.c core/utf.c core/text_rows.c core/textnorm.c)
+target_include_directories(vjo-history-writer PRIVATE host/tests/vita_stubs)
+target_compile_definitions(vjo-history-writer PRIVATE VJO_HOST=1)
+target_compile_options(vjo-history-writer PRIVATE -Wall -Wextra -Wno-unused-parameter)
 # The Rubi app's .apkg export (settings/anki_export.c, core/apkg.c and its SQLite, ZIP and Lapis
 # writers) on real files; host/tests/test_apkg.py opens its packages with Python's zipfile and sqlite3
 # and imports them into Anki itself (the `anki` package, tools/requirements-anki.txt) when it is there:
@@ -565,6 +572,7 @@ if(VJO_DEBUG)
 endif()
 string(APPEND _vjo_tool_env ";VJO_DICT_BENCH=$<TARGET_FILE:vjo-dict-bench>")
 string(APPEND _vjo_tool_env ";VJO_TAICFG=$<TARGET_FILE:vjo-taicfg>")
+string(APPEND _vjo_tool_env ";VJO_HISTORY_WRITER=$<TARGET_FILE:vjo-history-writer>")
 if(VJO_WITH_VOCR)
   string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
 endif()

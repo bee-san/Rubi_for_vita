@@ -616,8 +616,10 @@ nothing more at run time (one copy, loaded with the module; the Shell is loaded 
 and moves no page: it uses the data segment's last page, which the module holds anyway. It is the
 cheaper of the two ways to keep the Shell's pages when its code grows (the other is `-Os`, which
 costs instructions a lookup), and both segments are checked exactly by `tools/check_memory_ledger.py`.
-Only tables of the Shell's own core code are so marked (`core/local_dict.c`, `core/linebreak.c`,
-`core/textjoin.c`).
+Only tables and strings of the Shell's own code are so marked (`core/local_dict.c`,
+`core/linebreak.c`, `core/textjoin.c`, `shell/worker.c`'s out-of-memory messages, and
+`shell/history.c`'s header, offsets and strings, which pay for its `characters` column:
+[ocr-history](ocr-history.md)).
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would
