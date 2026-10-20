@@ -30,8 +30,15 @@ What is installed depends on the text source (API 31, `VJO_TEXT_SOURCE_*`, read 
 | Text source | Installed in this game |
 | --- | --- |
 | `ocr` | nothing (today's behaviour). Also the value before the Shell sets one, with an older kernel, and in a build whose kernel does not export `vjoGetTextSource` |
-| `auto` (default) | only in a title with an entry (Rubi's verified list or Luna's table): its sites that pass the checks below, and the CALL source |
+| `auto` (default) | only in a title with an entry (Rubi's verified list, or a ported site in Luna's table): its sites that pass the checks below, and the CALL source |
 | `hooks` | as `auto`, plus the CALL source in every game that is ON (discovery) |
+
+"An entry" means a site the worker may try: Rubi's verified entry, or a site of Luna's table that is ported
+(`vjo_luna_title_ported`, core/hook_luna.h; audit-hooks-text N2). Seven titles in Luna's table have none,
+every site of theirs needing code that is not ported (PCSB00985, PCSG00291, PCSG00451, PCSG00595, PCSG00663,
+PCSG01081, PCSG01152): with `auto` they get nothing, OCR only, and the Games page gives them no tag (the
+same rule, core/hook_titles.c); with `hooks` they get the CALL source and their sites are refused
+(`unported`).
 
 Nothing is installed in the PSP emulator's process in this version. The worker reports what it did in
 every job's result (`hook_mode`; `hook_installed` = sites << 16 | CALL imports; `hook_refused`).

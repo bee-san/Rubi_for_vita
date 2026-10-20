@@ -452,10 +452,11 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
     }
 }
 
-/* 1 when title_id has a hook entry: Rubi's verified list or Luna's table (auto's titles). */
+/* 1 when title_id has a hook entry (auto's titles): Rubi's verified list, or a ported site in Luna's table
+ * (a title whose every Luna site is unported has none: audit-hooks-text N2). */
 static int title_listed(const char *title_id)
 {
-    return vjo_place_title_verified(title_id) || vjo_luna_title_known(title_id);
+    return vjo_place_title_verified(title_id) || vjo_luna_title_ported(title_id);
 }
 
 static void set_kinds(void)

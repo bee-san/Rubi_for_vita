@@ -399,8 +399,9 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
   ${VJO_SETTINGS_ANKI_SRC})
 # API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, and the games of Luna's
-# ported Vita table (core/hook_luna.c, from hooks/luna-port: of it only vjo_luna_title_known and the
-# title list stay linked, --gc-sections drops the rest). Without that file only Rubi's own entries.
+# ported Vita table (core/hook_luna.c, from hooks/luna-port: of it only vjo_luna_title_ported, the title
+# list and the site table stay linked, --gc-sections drops the rest; audit-hooks-text N2: a title with a
+# ported site). Without that file only Rubi's own entries.
 list(APPEND VJO_SETTINGS_SRC ${ROOT}/core/hook_titles.c)
 if(EXISTS ${ROOT}/core/hook_luna.c)
   foreach(_vjo_luna hook_luna.c hook_re.c hook_text.c)

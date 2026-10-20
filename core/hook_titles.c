@@ -16,7 +16,8 @@ int vjo_hook_title_listed(const char *title_id)
         if (!strcmp(title_id, rubi_titles[i]))
             return VJO_HOOK_TITLE_RUBI;
 #if VJO_HOOK_LUNA /* core/hook_luna.c is in the build (hooks/luna-port) */
-    return vjo_luna_title_known(title_id) ? VJO_HOOK_TITLE_LUNA : VJO_HOOK_TITLE_NONE;
+    /* a site the worker may try: a title whose every site is unported has no tag (audit-hooks-text N2) */
+    return vjo_luna_title_ported(title_id) ? VJO_HOOK_TITLE_LUNA : VJO_HOOK_TITLE_NONE;
 #else
     return VJO_HOOK_TITLE_NONE;
 #endif

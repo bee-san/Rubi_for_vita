@@ -78,6 +78,17 @@ int vjo_luna_title_known(const char *title_id)
     return title_index(title_id) >= 0;
 }
 
+int vjo_luna_title_ported(const char *title_id)
+{
+    const VjoLunaSite *s;
+    unsigned n = vjo_luna_sites(title_id, &s);
+    /* the table's flag: vjo_luna_ported's answer for every site (test_hook_luna's table_counts), without
+     * linking the filters into the Rubi app, which tags its Games page with this */
+    for (unsigned i = 0; i < n; i++)
+        if (s[i].ported) return 1;
+    return 0;
+}
+
 const char *vjo_luna_title(unsigned index)
 {
     return index < VJO_LUNA_TITLES ? vjo_luna_ids[index] : NULL;

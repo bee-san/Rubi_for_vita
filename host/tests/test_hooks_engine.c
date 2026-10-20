@@ -28,22 +28,22 @@ static int test_ready(const void *fn);
 static unsigned test_place_verified(const char *title_id, const VjoPlaceVerified **out);
 static int test_place_title_verified(const char *title_id);
 static unsigned test_luna_sites(const char *title_id, const VjoLunaSite **sites);
-static int test_luna_title_known(const char *title_id);
+static int test_luna_title_ported(const char *title_id);
 #define VJO_IMPORT_H 1
 #define VJO_IMPORT_READY(fn) test_ready((const void *)(uintptr_t)(fn))
 #define vjo_place_verified test_place_verified
 #define vjo_place_title_verified test_place_title_verified
 #define vjo_luna_sites test_luna_sites
-#define vjo_luna_title_known test_luna_title_known
+#define vjo_luna_title_ported test_luna_title_ported
 #include "../../game_ocr/hooks.c"
 #undef vjo_place_verified
 #undef vjo_place_title_verified
 #undef vjo_luna_sites
-#undef vjo_luna_title_known
+#undef vjo_luna_title_ported
 unsigned vjo_place_verified(const char *title_id, const VjoPlaceVerified **out);
 int vjo_place_title_verified(const char *title_id);
 unsigned vjo_luna_sites(const char *title_id, const VjoLunaSite **sites);
-int vjo_luna_title_known(const char *title_id);
+int vjo_luna_title_ported(const char *title_id);
 
 /* CP932 (Python's cp932 codec) */
 #define L_TODAY "\x8D\xA1\x93\xFA\x82\xCD\x82\xA2\x82\xA2\x93\x56\x8B\x43\x82\xC5\x82\xB7\x82\xCB\x81\x42" /* 今日はいい天気ですね。 22 B */
@@ -110,9 +110,12 @@ static unsigned test_luna_sites(const char *title_id, const VjoLunaSite **sites)
     if (sites) *sites = t_nluna ? t_luna : NULL;
     return t_nluna;
 }
-static int test_luna_title_known(const char *title_id)
+static int test_luna_title_ported(const char *title_id)
 {
-    return is_test_title(title_id) ? t_nluna > 0 : vjo_luna_title_known(title_id);
+    if (!is_test_title(title_id)) return vjo_luna_title_ported(title_id);
+    for (unsigned i = 0; i < t_nluna; i++)
+        if (vjo_luna_ported(&t_luna[i])) return 1;
+    return 0;
 }
 
 /* ---- taiHEN and modulemgr ---- */
@@ -991,16 +994,39 @@ static void test_auto_listed(void)
     t_nluna = 1;
     vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 8 && n_offs == 1 && sfo_opens == 1);
-    /* the real tables: CLANNAD (Rubi's entry), a Luna title; an unlisted title gets nothing */
+    /* a title whose every Luna site is unported has no hook entry (audit-hooks-text N2): nothing in auto, its
+     * sites refused (unported) in hooks */
     reset();
-    vjo_hooks_start("PCSG00415", VJO_TEXT_SOURCE_AUTO, 0);
-    TEST_CHECK(n_imp == 8);
+    put_site(0x200, 1, NULL);
+    l = luna_site(0x200, 1, 0, 0, 0);
+    t_luna = &l;
+    t_nluna = 1;
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_CHECK(n_imp == 0 && n_offs == 0 && !live);
     reset();
-    vjo_hooks_start("PCSG00917", VJO_TEXT_SOURCE_AUTO, 0);
-    TEST_CHECK(n_imp == 8);
-    reset();
-    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
-    TEST_CHECK(n_imp == 0 && !live);
+    put_site(0x200, 1, NULL);
+    l = luna_site(0x200, 1, 0, 0, 0);
+    t_luna = &l;
+    t_nluna = 1;
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_HOOKS, 0);
+    TEST_CHECK(n_imp == 8 && n_offs == 0 && n_refused == 1);
+    /* the real tables: CLANNAD (Rubi's entry), Luna titles with a ported site; the 7 without one, and an
+     * unlisted title, get nothing */
+    {
+        static const char *const listed[] = {"PCSG00415", "PCSG00917", "PCSG00543"};
+        static const char *const none[] = {"PCSB00985", "PCSG00291", "PCSG00451", "PCSG00595",
+                                           "PCSG00663", "PCSG01081", "PCSG01152", UNLISTED};
+        for (unsigned i = 0; i < 3; i++) {
+            reset();
+            vjo_hooks_start(listed[i], VJO_TEXT_SOURCE_AUTO, 0);
+            TEST_CHECK_(n_imp == 8 && live, "%s: hooked in auto", listed[i]);
+        }
+        for (unsigned i = 0; i < 8; i++) {
+            reset();
+            vjo_hooks_start(none[i], VJO_TEXT_SOURCE_AUTO, 0);
+            TEST_CHECK_(n_imp == 0 && n_offs == 0 && !live && sfo_opens == 0, "%s: nothing in auto", none[i]);
+        }
+    }
 }
 
 /* The main module: taiHEN's TAI_MAIN_MODULE whose path ends in eboot.bin, with a segment 0; and the imports
@@ -1355,7 +1381,7 @@ TEST_LIST = {
     {"install order: verified first; unported, version, range, entry, window; duplicates", test_install_order},
     {"8 site slots, a duplicate address, taiHEN's refusal", test_site_cap},
     {"the text source word: modes, NO_SITES, OCR for an unknown mode or flag", test_word},
-    {"auto: Rubi's entry alone, Luna's alone, the real tables", test_auto_listed},
+    {"auto: Rubi's entry alone, Luna's alone, no ported site, the real tables", test_auto_listed},
     {"the main module (eboot.bin, segment 0) and unresolved imports", test_main_module},
     {"site hits through the observer's C entry", test_site_hits},
     {"CALL slots: replacement, keep, busy, stats", test_replacement_keep},

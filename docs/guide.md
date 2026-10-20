@@ -291,7 +291,10 @@ console yet: everything below is what the code does, checked on the host.
 
 - **Text source** (the Rubi app's OCR & lookup page, `text_source` in `config.ini`) applies when a
   game next starts: **Automatic** (`auto`, the default) installs hooks only in the games that have a
-  hook entry, Rubi's own (CLANNAD, PCSG00415) or LunaTranslator's table; **Every game** (`hooks`)
+  hook entry, Rubi's own (CLANNAD, PCSG00415) or a site in LunaTranslator's table that Rubi has ported.
+  Seven titles that the table lists have no ported site (PCSB00985, PCSG00291, PCSG00451, PCSG00595,
+  PCSG00663, PCSG01081, PCSG01152): with Automatic they get OCR only, as a game with no entry does;
+  **Every game** (`hooks`)
   adds the game's own string copies in every game that is ON; **OCR only** (`ocr`) installs none.
   An install or an update keeps the file's value; installs before this one wrote `text_source =
   ocr`, so choose Automatic once to use hooks.
@@ -308,9 +311,10 @@ console yet: everything below is what the code does, checked on the host.
   the text came from: `OCR`, `Hook 2/5` (the second of five hooks with text agreed with OCR),
   `Hook 2/5 locked`, `Hook 2/5 pinned`, `OCR, Hook 2/5 empty` (pinned, no text: OCR's), `OCR only`, or
   `Automatic` while a new pick is read. A game with no hook installed shows no label.
-- **The Games page** tags a game with a hook entry: `Hook` for Rubi's own, `Luna hook` for
-  LunaTranslator's table (its entries are not checked by Rubi; the worker installs one only where the
-  game's code there looks as the entry expects).
+- **The Games page** tags a game with a hook entry: `Hook` for Rubi's own, `Luna hook` for a ported
+  site in LunaTranslator's table (its entries are not checked by Rubi; the worker installs one only where
+  the game's code there looks as the entry expects). The seven titles above, whose every site in the
+  table is unported, have no tag.
 - **Logs.** `log.txt` has one line per game session with what the worker installed (`hooks in
   PCSG00415: text source auto, 1 table sites and 8 string copies hooked, 0 sites refused`; the normal
   build only where something was hooked or refused); the debug build also rewrites
@@ -483,7 +487,8 @@ game. A game turned ON gets OCR at its next start: the kernel plugin loads the
 OCR worker into it as it starts ([Install](#install)).
 
 PSP games have a `PSP` tag; a Vita game with a native text hook entry has `Hook` (Rubi's own) or
-`Luna hook` (LunaTranslator's table: [native text hooks](#native-text-hooks)). Each Adrenaline bubble is listed under its game's
+`Luna hook` (a ported site in LunaTranslator's table: [native text hooks](#native-text-hooks)), a title
+whose every site is unported none. Each Adrenaline bubble is listed under its game's
 title, which the app reads from the `PARAM.SFO` of the ISO, CSO, ZSO or EBOOT.PBP
 it boots. Its icon is the bubble's, which Adrenaline Bubble Manager made from
 the game's. A bubble without its own choice follows the shared row

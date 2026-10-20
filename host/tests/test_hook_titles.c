@@ -1,5 +1,5 @@
-/* API 31: core/hook_titles.c, the Rubi app's Games tag: Rubi's own entry (CLANNAD), Luna's ported table
- * when core/hook_luna.c is in the build (hooks/luna-port), nothing else. */
+/* API 31: core/hook_titles.c, the Rubi app's Games tag: Rubi's own entry (CLANNAD), a title with a ported
+ * site in Luna's table when core/hook_luna.c is in the build (hooks/luna-port), nothing else. */
 #include "acutest.h"
 #include <string.h>
 
@@ -25,14 +25,24 @@ static void test_none(void)
 static void test_luna_table(void)
 {
 #if VJO_HOOK_LUNA
-    /* every title the table lists, Rubi's own first */
-    unsigned n = 0;
+    /* every title the table lists with a ported site, Rubi's own first; one whose every site is unported has
+     * no tag (audit-hooks-text N2: the 7 of docs/guide.md) */
+    static const char *const unported[] = {"PCSB00985", "PCSG00291", "PCSG00451", "PCSG00595",
+                                           "PCSG00663", "PCSG01081", "PCSG01152"};
+    unsigned n = 0, tagged = 0;
     for (unsigned i = 0; vjo_luna_title(i); i++, n++) {
         const char *id = vjo_luna_title(i);
-        int want = !strcmp(id, "PCSG00415") ? VJO_HOOK_TITLE_RUBI : VJO_HOOK_TITLE_LUNA;
+        int want = !strcmp(id, "PCSG00415") ? VJO_HOOK_TITLE_RUBI
+                   : vjo_luna_title_ported(id) ? VJO_HOOK_TITLE_LUNA
+                                               : VJO_HOOK_TITLE_NONE;
         TEST_CHECK_(vjo_hook_title_listed(id) == want, "%s", id);
+        tagged += want != VJO_HOOK_TITLE_NONE;
     }
-    TEST_CHECK(n > 0);
+    TEST_CHECK(n > 0 && tagged == n - 7u);
+    for (unsigned i = 0; i < 7; i++)
+        TEST_CHECK_(vjo_luna_title_known(unported[i]) && vjo_hook_title_listed(unported[i]) == VJO_HOOK_TITLE_NONE,
+                    "%s: no tag", unported[i]);
+    TEST_CHECK(vjo_hook_title_listed("PCSG00543") == VJO_HOOK_TITLE_LUNA);
 #else
     TEST_SKIP("core/hook_luna.c is not in this build (hooks/luna-port)");
 #endif

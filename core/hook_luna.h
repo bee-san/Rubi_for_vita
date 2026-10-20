@@ -64,8 +64,13 @@ typedef unsigned (*VjoHookRead)(void *ud, uint32_t addr, void *dst, unsigned max
  * the table's order; 0 and *sites = NULL for a title it does not list. */
 unsigned vjo_luna_sites(const char *title_id, const VjoLunaSite **sites);
 
-/* 1 when the table lists title_id (the Games page's "hook available"), else 0. */
+/* 1 when the table lists title_id, else 0. */
 int vjo_luna_title_known(const char *title_id);
+
+/* 1 when the table has at least one site of title_id that is ported (its ported flag, which is
+ * vjo_luna_ported's answer: one the worker may try natively), else 0: "has a hook entry" for the Games page's tag (core/hook_titles.c) and the text
+ * source auto (game_ocr/hooks.c), audit-hooks-text N2. A title whose every site is unported gets neither. */
+int vjo_luna_title_ported(const char *title_id);
 
 /* The title ID of a site's title index, or NULL. */
 const char *vjo_luna_title(unsigned index);

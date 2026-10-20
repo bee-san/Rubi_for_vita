@@ -204,7 +204,7 @@ static size_t hit(const VjoLunaSite *s, const uint32_t *regs, Mem *m, char *out,
 
 static void table_counts(void)
 {
-    unsigned total = 0, ported = 0, known = 0;
+    unsigned total = 0, ported = 0, known = 0, titles_ported = 0;
     TEST_CHECK(VJO_LUNA_TITLES == 182u && VJO_LUNA_SITES == 306u);
     for (unsigned t = 0; t < VJO_LUNA_TITLES; t++) {
         const VjoLunaSite *s = NULL;
@@ -225,11 +225,29 @@ static void table_counts(void)
         TEST_CHECK_(!strcmp(id, vjo_luna_ids[t]), "%s", id);
         if (t) TEST_CHECK_(strcmp(vjo_luna_title(t - 1), id) < 0, "%s sorted", id);
         known += vjo_luna_title_known(id);
+        {
+            /* a title with a ported site (audit-hooks-text N2) */
+            unsigned any = 0;
+            for (unsigned i = 0; i < n; i++) any |= (unsigned)vjo_luna_ported(&s[i]);
+            TEST_CHECK_(vjo_luna_title_ported(id) == (int)any, "%s: has a ported site %u", id, any);
+            titles_ported += any;
+        }
         total += n;
     }
     TEST_CHECK_(total == VJO_LUNA_SITES, "%u sites", total);
     TEST_CHECK_(ported == 294, "%u ported", ported);
     TEST_CHECK(known == VJO_LUNA_TITLES);
+    /* the 7 titles whose every site is unported (docs/guide.md, docs/native-hooks.md): no tag, OCR only in auto */
+    TEST_CHECK_(titles_ported == VJO_LUNA_TITLES - 7u, "%u of %u titles have a ported site", titles_ported,
+                (unsigned)VJO_LUNA_TITLES);
+    {
+        static const char *const none[] = {"PCSB00985", "PCSG00291", "PCSG00451", "PCSG00595",
+                                           "PCSG00663", "PCSG01081", "PCSG01152"};
+        for (unsigned i = 0; i < 7; i++)
+            TEST_CHECK_(vjo_luna_title_known(none[i]) && !vjo_luna_title_ported(none[i]), "%s", none[i]);
+    }
+    TEST_CHECK(vjo_luna_title_ported("PCSG00543") && vjo_luna_title_ported("PCSG00917"));
+    TEST_CHECK(!vjo_luna_title_ported("PCSG00415") && !vjo_luna_title_ported("") && !vjo_luna_title_ported(NULL));
     TEST_CHECK(!vjo_luna_title(VJO_LUNA_TITLES) && !strcmp(vjo_luna_title(0), "PCSB00985"));
     /* every ported site has every part this build ports; every refused one is refused */
     for (unsigned i = 0; i < VJO_LUNA_SITES; i++)
