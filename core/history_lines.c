@@ -57,6 +57,7 @@ static int keep(VjoHistory *h, VjoArena *lines, const char *line, int filter, si
     if (*top != SEEN && !strcmp(t, h->line[0])) {
         vjo_arena_release(lines, *top);
         *top = SEEN;
+        memset(h->line + 1, 0, sizeof(h->line[0]) * (size_t)h->n); /* past the last kept, NULL (history_show) */
         h->n = 0;
     }
     if (!*t || !strcmp(t, h->line[h->n]))

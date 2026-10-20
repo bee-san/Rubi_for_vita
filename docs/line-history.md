@@ -52,9 +52,11 @@ normalisation stores full-width digits as ASCII (４７７８ → 4778), as `his
 - A step goes to its line once no job reads the overlay's text: a lookup or a refresh of the line it
   leaves is dropped (a refresh is asked again once the current text is back), a word's preparation
   ends first. Another Up or Down pressed while a step waits for that is dropped (press again).
-- Closing the overlay on an earlier line ends the visit: the current text comes back (once no
-  lookup of the earlier line runs), so a reopen on the same screen shows its saved word. A game exit,
-  a new region or another OCR pipeline ends it with the text, as they retire any shown text.
+- Closing the overlay on an earlier line ends the visit: the current text comes back with its cursor
+  and its screen (once no lookup of the earlier line runs), so a reopen on the same screen shows it,
+  its word looked up again (the dictionary only: no recognition). Reopened before that lookup ended,
+  the overlay recognizes the screen, as after any lookup a close dropped. A game exit, a new region or
+  another OCR pipeline ends the visit with the text, as they retire any shown text.
 
 ## Cards from an earlier line
 
@@ -86,15 +88,16 @@ The task left two sources open: a bounded RAM ring of recent texts, or a bounded
 So: when a visit opens, the control thread reads the **last 24,512 B of `history.csv`** (one read,
 with the byte before them, into its existing 24 KiB static scratch, released before the call
 returns), finds this game's records newest first, and keeps up to **32** of their lines in one Paf
-block of **16 KiB**, held only while the visit lasts. A typical CSV record is 300-1,000 B (41 columns
-of figures beside the text) [estimate from the host tests' records], so the window reaches back about
-25-80 records of all games [estimate]. Nothing is read or kept at any other time; the file is never
-written by this code.
+block of **16 KiB**, held only while the visit lasts. A three-row textbox's record (a 290 B line, its
+raw text as long, and its 39 other fields) is 871 B [measured: the host test's record, by
+the real writer], so the window holds about 28 such records, of every game; a shorter line's record is
+smaller. Nothing is read or kept at any other time; the file is never written by this code.
 
 - The read is on VjoControl, never on the Paf thread, so the overlay keeps drawing. It is one open,
-  one seek, one read of at most 24,513 B and one close. Console time unmeasured; from
-  [performance.md](performance.md)'s figures (15.3 ms per open/seek/read/close of small files) it
-  should be tens of ms [estimate]. Steps within a visit read nothing.
+  two seeks, one read of at most 24,513 B and one close, once a visit. Console time unmeasured: the
+  dictionary's lookups on `ux0:` take 15.3 ms for an open, a seek, a small read and a close, and
+  3.82 ms more per 4 KiB read ([performance.md](performance.md)), so about 15-40 ms [estimate]. Steps
+  within a visit read nothing.
 - An append in progress on VjoNet (it appends after publishing each Automatically result) can only
   make the file's last record incomplete: a record is read only once its line's field is closed and
   the comma after it is there, so a cut record is skipped, and an append rolled back meanwhile only
@@ -117,16 +120,16 @@ VitaSDK gcc 15.2.0 in `vitasdk/vitasdk:2026.08` [measured]:
 
 | | main `f482c21` | this change | room left |
 |---|---:|---:|---:|
-| normal Shell, text | 88,348 B | 89,980 B (+1,632) | 132 B of 90,112 |
+| normal Shell, text | 88,348 B | 90,012 B (+1,664) | 100 B of 90,112 |
 | normal Shell, data/bss | 73,280 B | 73,520 B (+240) | 208 B of 73,728 |
-| debug Shell, text | 98,732 B | 100,412 B (+1,680) | 1,988 B of 102,400 |
+| debug Shell, text | 98,732 B | 100,444 B (+1,712) | 1,956 B of 102,400 |
 | debug Shell, data/bss | 73,272 B | 73,512 B (+240) | 216 B of 73,728 |
 | kernel / OCR worker data/bss | | +8 B each | `VjoLedger`'s eleventh item |
 
 The pages stay 163,840 B (normal, exact) and 176,128 B (debug); the kernel and the worker keep theirs.
 The normal Shell's text pays for line history's code with `core/textfilter.c` built `-Os` (its object
 288 → 240 B) and three strings in the data segment (`VJO_DATA_TABLE`: line history's two and the
-dictionary's out-of-memory message, 106 B, moved out of `.rodata`); per function in
+dictionary's out-of-memory message, 108 B, moved out of `.rodata`); per function in
 [memory-ledger.md](memory-ledger.md#tables-in-the-data-segment).
 
 - **Paf, `VJO_SL_PAF_HISTORY` (16,384 B)**: one block per visit, from the first Up past the top row to
@@ -154,18 +157,22 @@ dictionary's out-of-memory message, 106 B, moved out of `.rodata`); per function
 
 - `host/tests/test_history_lines.c` (also on the ARM lane, `tools/arm_host_tests.sh`): the parser on
   `history.csv`'s records: this game's lines newest first, other games' and a longer title ID's
-  skipped, the current text not shown again, A/B/A, quotes, commas, a textbox's rows, the filter and
+  skipped, the current text not shown again, A/B/A, lines newer than the current text's newest record
+  skipped (and no pointer to them left in the table), quotes, commas, a textbox's rows, the filter and
   trim, a record cut by the window's start or by an append at every byte, at most 32 lines, a full
   block ending the list without a gap, the writer's longest text.
-- `host/tests/test_shell_history.c`: the real writer and the real reader over real files: windows of
-  a file larger than one, another game's lines in between, short reads, no file, a failed read, a file
-  shorter than its size, no scratch, the writer's maximum text, a record cut by a power loss.
+- `host/tests/test_shell_history.c`: the real writer and the real reader over real files: a file
+  larger than the window (its last 24,512 B read, once), another game's lines in between, short reads,
+  no file, a failed read, a file shorter than its size, no scratch, the writer's maximum text, a record
+  cut by a power loss, and a measure of a three-row textbox's record (871 B: the window holds 28).
 - `host/tests/test_shell_worker.c` (`history_*`): the real control thread: Up and Down through a
   visit with lookups and moves on each line, the oldest line, the return with the cursor and the
-  screen, a reopen showing the saved word, on_press, no memory, no file, a PSP game's ID; a step
-  while a lookup or a refresh runs; no refresh in a visit and the one asked for after it; a close, a
-  reopen during the earlier line's lookup, a game exit and a new region; the Paf block's ledger item
-  and its release (filled with a pattern when taken and freed, so a pointer kept into it shows).
+  screen, a reopen showing the saved word, on_press, no memory (and a lookup running then still
+  shown), no file, a PSP game's ID; a step while a lookup or a refresh runs, a second Up while it
+  waits; no refresh in a visit and the one asked for after it; Up during a lookup then a close (and a
+  reopen): the visit, never shown, goes and refreshes resume; a close on an earlier line, a reopen
+  during its lookup, a game exit and a new region; the Paf block's ledger item and its release (filled
+  with a pattern when taken and freed, so a pointer kept into it shows).
 - `host/tests/test_shell_anki.c`: a card from an earlier line has that line as its sentence and no
   screenshot, says so, and asks the game for none; the current line's card still has its screenshot.
 - `host/tests/test_core.c` (`styled_history_header`): the header's composition and dimming: the

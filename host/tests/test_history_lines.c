@@ -128,6 +128,18 @@ static void test_lines_newer_than_the_current_text(void)
     record(UUID, "B");
     scan_all(VJO_FILTER_NONE);
     check_lines(none, 2);
+    /* the lines dropped leave no pointer behind: past line[n] the table is NULL, as the overlay reads
+     * line[n + 1] for the line before the oldest */
+    reset("A");
+    record(UUID, "X");
+    record(UUID, "A");
+    record(UUID, "B");
+    record(UUID, "C");
+    record(UUID, "D");
+    scan_all(VJO_FILTER_NONE);
+    check_lines(older, 1);
+    for (int k = 2; k < VJO_HISTORY_LINES + 2; k++)
+        TEST_CHECK_(h.line[k] == NULL, "line[%d] left behind", k);
 }
 
 static void test_quotes_commas_and_wrapped_rows(void)
@@ -222,7 +234,7 @@ static void test_bounds_lines_and_memory(void)
         record(UUID, line);
     }
     scan_all(VJO_FILTER_LINES);
-    TEST_CHECK(h.n == VJO_HISTORY_LINES);
+    TEST_CHECK(h.n == VJO_HISTORY_LINES && h.line[VJO_HISTORY_LINES + 1] == NULL);
     snprintf(line, sizeof(line), "%d行目", 9 + VJO_HISTORY_LINES);
     TEST_CHECK(!strcmp(h.line[1], line));
     snprintf(line, sizeof(line), "%d行目", 10);

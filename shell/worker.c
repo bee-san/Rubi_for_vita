@@ -1977,6 +1977,9 @@ static int history_open(void)
 #ifdef VJO_WITH_VOCR
     rc = vjo_history_load(&v->h, &lines, uuid, cfg.non_japanese_filter, &scratch);
 #endif
+#if VJO_DEBUG
+    uuid[sceClibStrnlen(uuid, sizeof(uuid)) - 2] = '\0'; /* the game's ID, without the quote and comma of the match */
+#endif
     vjo_dlog("history: %d earlier lines of %s, %u B", rc, uuid, (unsigned)lines.used);
     if (v->h.n) {
         history = v;
@@ -2962,14 +2965,19 @@ static void control_tick(uint32_t bits)
         on_job_text();
     if (job_running && job_done)
         on_job_done();
-    /* line history, once no job reads local_text: a step asked for meanwhile, or the current text
+    /* line history, once no job reads local_text: a step asked for meanwhile (only with a visit);
+     * else a visit that shows no earlier line (Up during a job, then a close: never shown, so the view
+     * holds nothing of it) goes, so it holds no block and stops no refresh; else the current text
      * again after the overlay closed on an earlier line */
-    if (!job_running && history_step) {
+    if (!job_running && history) {
         int d = history_step;
         history_step = 0;
-        history_show(history->h.at + d);
-    } else if (!job_running && history && ov == OV_CLOSED) {
-        history_show(0);
+        if (d)
+            history_show(history->h.at + d);
+        else if (!history->h.at)
+            history_free(history), history = NULL;
+        else if (ov == OV_CLOSED)
+            history_show(0);
     }
     if (bits & (VJO_EV_REGION_STABLE | VJO_EV_REGION_QUIET)) {
         stable_pending = 1;

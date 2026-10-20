@@ -4304,6 +4304,26 @@ static void test_history_waits_for_the_running_job(void)
     TEST_ASSERT(job_running && job_cursor_only && history);
     finish_current_job();
     check_shown("犬鳥", "dog", 0);
+    /* back to the current text; then Up during a lookup, a close and a reopen while it runs: the step
+     * goes with the close, and the visit, which never showed a line, once no job runs; a settled
+     * screen's refresh is not held back by it */
+    history_key(VJO_CMD_LATER);
+    finish_current_job();
+    TEST_CHECK(!history && history_frees == 2);
+    vjo_post_cursor(0, local_text_generation); on_command();
+    history_key(VJO_CMD_EARLIER);
+    TEST_ASSERT(job_running && job_cursor_only && history && history_step == 1 && !history->h.at);
+    close_overlay(); open_overlay();
+    TEST_CHECK(!history_step && history && !g_view.history);
+    while (job_running) /* the cancelled lookup, then the reopen's own */
+        finish_current_job(), control_tick(0);
+    TEST_CHECK(!history && history_frees == 3 && !history_held() && !g_view.history);
+    check_shown("猫犬鳥", "cat", 0);
+    next_scene(30);
+    test_now += 10 * REFRESH_GAP_US;
+    control_tick(VJO_EV_REGION_STABLE);
+    TEST_CHECK(job_running && job_refresh);
+    finish_current_job();
 }
 
 /* Closing on an earlier line: the current text comes back once no job reads local_text, so a reopen

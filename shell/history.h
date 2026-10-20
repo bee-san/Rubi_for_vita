@@ -29,12 +29,12 @@ int vjo_history_append(const VjoHistoryRecord *record);
 void vjo_history_reset(void);
 
 /* Line history: game uuid's earlier lines (the file's first column with its closing quote and the comma
- * after it, "vita-PCSG00415\",": core/history_lines.h) from the end
- * of history.csv into h (h->line[0] set: the current text), newest first, copied into `lines`
- * (core/history_lines.h vjo_history_scan; filter: config non_japanese_filter). At most
- * VJO_HISTORY_WINDOWS reads of VJO_HISTORY_WINDOW bytes, each into scratch, which is released again;
- * an append in progress on VjoNet only makes the last record incomplete, and it is skipped. Returns
- * h->n, or the SDK's error when the file cannot be read (0x80010002: there is none yet). */
+ * after it, "vita-PCSG00415\",": core/history_lines.h) from the end of history.csv into h (h->line[0]
+ * set: the current text), newest first, copied into `lines` (core/history_lines.h vjo_history_scan;
+ * filter: config non_japanese_filter). One read of the file's last VJO_HISTORY_WINDOW bytes and the byte
+ * before them into scratch, which is released again; an append in progress on VjoNet only makes the
+ * last record incomplete, and it is skipped. Returns h->n, or the SDK's error when the file cannot be
+ * read (0x80010002: there is none yet). */
 int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filter, VjoArena *scratch);
 
 #endif

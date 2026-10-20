@@ -20,7 +20,8 @@
 #define VJO_HISTORY_WINDOW 24512u
 
 typedef struct {
-    const char *line[VJO_HISTORY_LINES + 2]; /* [0] the current text, [k] the k-th earlier line, then NULL */
+    const char *line[VJO_HISTORY_LINES + 2]; /* [0] the current text, [k] the k-th earlier line; NULL past
+                                              * line[n] (zeroed by the caller, kept so by the scan) */
     int n;                                   /* earlier lines: line[1..n] */
     int at;                                  /* the line shown: 0 the current text */
 } VjoHistory;
