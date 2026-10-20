@@ -243,3 +243,11 @@ int vjo_place_text_prefilter(const uint8_t *p, unsigned n)
     if (z < 4) return 0;
     return utf8_text(p, z, cut) || cp932_text(p, z, cut);
 }
+
+int vjo_place_pointer_array(const uint8_t *p, unsigned n)
+{
+    if (!p || n < VJO_PLACE_POINTER_MIN || n % 4) return 0;
+    for (unsigned i = 3; i < n; i += 4)
+        if (p[i] < 0x81u || p[i] > 0x9Fu) return 0;
+    return 1;
+}

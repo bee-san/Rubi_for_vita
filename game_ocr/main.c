@@ -1450,12 +1450,18 @@ static int run_hook_pass(const VjoGameOcrRequest *r, VjoGameOcrResult *out, Capt
 }
 
 /* Every result's hook fields; a job that failed shows no text, from any stream, and leaves the
- * selection as it found it. */
+ * selection as it found it. A stream that agreed with this job's OCR keeps its CALL slot for the session,
+ * and CALLS_FULL says a new caller found every CALL slot taken (dropped, or it replaced one): audit-hooks F2. */
 static void hooks_result(VjoGameOcrResult *out, int rc)
 {
+    uint32_t dropped = 0, replaced = 0;
     if (rc) {
         hk.sel = hk.saved;
         hk.from = hk.flags = 0;
+    } else if (hk.installed) {
+        if (hk.from && (hk.flags & VJO_HOOK_R_AGREED)) vjo_hooks_keep(hk.from);
+        vjo_hooks_call_stats(&dropped, &replaced);
+        if (dropped || replaced) hk.flags |= VJO_HOOK_R_CALLS_FULL;
     }
     out->text_from = hk.from;
     out->hook_flags = hk.flags;
@@ -1519,6 +1525,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     uint32_t hook_pick = (r->speed & VJO_GAME_OCR_S_NOCACHE) || (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK)
                              ? VJO_HOOK_PICK_OCR : r->hook_pick;
     if (hk.installed) {
+        if (hook_pick && hook_pick <= VJO_HOOK_STREAMS) vjo_hooks_keep(hook_pick); /* pinned: keeps its CALL slot */
         hooks_snapshot(hook_pick);
         uint32_t hook_id = vjo_hook_select_before(&hk.sel, hook_pick, hk.cand, hk.n, &hk.flags);
         if (hook_id) {

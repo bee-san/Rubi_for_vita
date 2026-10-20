@@ -54,8 +54,10 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused);
  * caller (audit-hooks F2). No effect on a table site, or on an id that is not a stream. */
 void vjo_hooks_keep(uint32_t id);
 
-/* Job time: CALL callers that found every slot taken since the game started: dropped (no slot), replaced
- * (they took the least recently written slot that was not kept). */
+/* Job time: since the game started, with every CALL slot held by other callers: dropped, the CALL hits that
+ * took no slot (the least recently written one not kept was busy, or every slot was kept; also a hit whose
+ * slot went to another caller just before it wrote); replaced, the callers that took the least recently
+ * written slot that was not kept (audit-hooks F2). */
 void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced);
 
 /* Job time: stream id's latest text, copied out under its slot's try-lock. 1 when copied; 0 when the

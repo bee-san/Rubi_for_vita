@@ -97,6 +97,21 @@ int vjo_place_check_verified(const VjoPlaceVerified *v, const uint8_t *code, uin
  * control bytes or break the encoding. */
 int vjo_place_text_prefilter(const uint8_t *p, unsigned n);
 
+/* The CALL source's second test, for a copy the prefilter passed (audit-hooks F2): 1 when the n bytes at
+ * p, all readable, have a pointer array's shape: n % 4 == 0, n >= VJO_PLACE_POINTER_MIN, and every byte at
+ * index 3 mod 4 is 0x81..0x9F, the high byte of a little-endian user pointer (0x81000000-0x9FFFFFFF; such
+ * a byte is also a CP932 lead, and the next word's low byte often a valid trail, so a struct of them can
+ * pass the prefilter). Else 0. Reads n / 4 bytes at most, and stops at the first one out of that range. */
+int vjo_place_pointer_array(const uint8_t *p, unsigned n);
+
+/* The shortest copy vjo_place_pointer_array refuses: five words. With the conductor's 8 (two words), real
+ * Japanese was refused: 2 of the repo's 1,080 CP932 lines of 8 B or more copied exactly (ソラユメ, 逢魔が刻,
+ * 8 B each) and 120 of 64,136 substrings at character boundaries (106 of them 8 B, 12 at 12 B, 2 at 16 B);
+ * from 20 B on none, in CP932 or UTF-8, while it still refuses 98% of the pointer structs that pass the
+ * prefilter (2,868 of 2,930 uniform user pointers, 2-128 words) [measured, hooks-fix-engine's report and
+ * $HERD/shared/artifacts/hooks-fix-engine/shape_variants.txt]. */
+#define VJO_PLACE_POINTER_MIN 20u
+
 /* 32-bit FNV-1a of n bytes (the streams' change test). */
 static inline uint32_t vjo_place_hash(const uint8_t *p, unsigned n)
 {

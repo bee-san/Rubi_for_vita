@@ -18,6 +18,17 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
     return 0;
 }
 
+void vjo_hooks_keep(uint32_t id)
+{
+    (void)id;
+}
+
+void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced)
+{
+    *dropped = 0;
+    *replaced = 0;
+}
+
 size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
 {
     (void)s;

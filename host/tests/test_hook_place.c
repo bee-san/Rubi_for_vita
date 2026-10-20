@@ -242,6 +242,61 @@ static void test_prefilter(void)
     TEST_CHECK(vjo_place_text_prefilter((const uint8_t *)"\x82\xA0\x00\x82\xA2\x82\xA4", 7) == 0);
 }
 
+/* audit-hooks F2 (a): a pointer array's shape (n % 4 == 0, n >= VJO_PLACE_POINTER_MIN, every byte at 3 mod 4
+ * 0x81..0x9F), which a struct of user pointers can have although it passes the prefilter; real Japanese
+ * never has it from 20 bytes on (measured: hooks-fix-engine's report). */
+static void test_pointer_array(void)
+{
+    /* five user pointers, little-endian (0x894E947D, 0x9E8772C0, 0x92E7897C, 0x9D9172CC, 0x9F2F3E5A: found by a
+     * seeded search with this file's C functions), whose first 16 bytes read as CP932 text with kanji, so the
+     * prefilter passes them */
+    static const uint8_t ptrs[] = {0x7D, 0x94, 0x4E, 0x89, 0xC0, 0x72, 0x87, 0x9E, 0x7C, 0x89, 0xE7, 0x92,
+                                   0xCC, 0x72, 0x91, 0x9D, 0x5A, 0x3E, 0x2F, 0x9F};
+    /* CP932: 「明日の朝、駅前の公園でもう一度会おうよ」, エヴァンゲリオン (16 B) and ダンガンロン (12 B), whose
+     * odd characters' trails are all 0x81..0x9F; ソラユメ and 逢魔が刻 (8 B): refused if the minimum were 8 */
+    static const uint8_t line[] = "\x81\x75\x96\xBE\x93\xFA\x82\xCC\x92\xA9\x81\x41\x89\x77\x91\x4F\x82\xCC\x8C\xF6"
+                                  "\x89\x80\x82\xC5\x82\xE0\x82\xA4\x88\xEA\x93\x78\x89\xEF\x82\xA8\x82\xA4\x82\xE6"
+                                  "\x81\x76";
+    static const uint8_t eva[] = "\x83\x47\x83\x94\x83\x40\x83\x93\x83\x51\x83\x8A\x83\x49\x83\x93";
+    static const uint8_t dangan[] = "\x83\x5F\x83\x93\x83\x4B\x83\x93\x83\x8D\x83\x93";
+    static const uint8_t sorayume[] = "\x83\x5C\x83\x89\x83\x86\x83\x81";
+    static const uint8_t ouma[] = "\x88\xA7\x96\x82\x82\xAA\x8D\x8F";
+    uint8_t buf[64];
+    TEST_CHECK(VJO_PLACE_POINTER_MIN == 20u);
+    TEST_CHECK(vjo_place_text_prefilter(ptrs, sizeof(ptrs)) == 1); /* the prefilter alone takes it */
+    TEST_CHECK(vjo_place_pointer_array(ptrs, sizeof(ptrs)) == 1);
+    TEST_CHECK(vjo_place_pointer_array(ptrs, 16) == 0);               /* four words: under the minimum */
+    TEST_CHECK(vjo_place_pointer_array(ptrs, sizeof(ptrs) - 1) == 0); /* not whole words */
+    TEST_CHECK(vjo_place_pointer_array(NULL, 20) == 0);
+    /* one high byte out of 0x81..0x9F (a small integer, 0x80 or 0xA0): not a pointer array */
+    for (unsigned w = 0; w < 5; w++) {
+        static const uint8_t bad[] = {0x00, 0x05, 0x80, 0xA0, 0xE3};
+        for (unsigned k = 0; k < sizeof(bad); k++) {
+            memcpy(buf, ptrs, sizeof(ptrs));
+            buf[4 * w + 3] = bad[k];
+            TEST_CHECK_(vjo_place_pointer_array(buf, sizeof(ptrs)) == 0, "word %u high byte %02X", w, bad[k]);
+        }
+    }
+    /* the high bytes' range's ends */
+    memcpy(buf, ptrs, sizeof(ptrs));
+    buf[3] = 0x81; buf[7] = 0x9F; buf[11] = 0x90; buf[15] = 0x81; buf[19] = 0x9F;
+    TEST_CHECK(vjo_place_pointer_array(buf, sizeof(ptrs)) == 1);
+    /* 16 words: every one checked, the last too */
+    for (unsigned i = 0; i < 16; i++) memcpy(buf + i * 4, ptrs + (i % 5) * 4, 4);
+    TEST_CHECK(vjo_place_pointer_array(buf, 64) == 1);
+    buf[63] = 0x7F;
+    TEST_CHECK(vjo_place_pointer_array(buf, 64) == 0);
+    /* Japanese text: never */
+    TEST_CHECK(vjo_place_pointer_array(line, sizeof(line) - 1) == 0);
+    TEST_CHECK(vjo_place_pointer_array(line, 20) == 0 && vjo_place_pointer_array(line, 40) == 0);
+    TEST_CHECK(vjo_place_pointer_array(eva, sizeof(eva) - 1) == 0);
+    TEST_CHECK(vjo_place_pointer_array(dangan, sizeof(dangan) - 1) == 0);
+    TEST_CHECK(vjo_place_pointer_array(sorayume, sizeof(sorayume) - 1) == 0);
+    TEST_CHECK(vjo_place_pointer_array(ouma, sizeof(ouma) - 1) == 0);
+    /* ... and those five copied with their NUL */
+    TEST_CHECK(vjo_place_pointer_array(eva, sizeof(eva)) == 0 && vjo_place_pointer_array(sorayume, sizeof(sorayume)) == 0);
+}
+
 static void test_reasons(void)
 {
     TEST_CHECK(!strcmp(vjo_place_reason(VJO_PLACE_OK), "ok"));
@@ -261,6 +316,7 @@ TEST_LIST = {
     {"isa", test_isa},
     {"verified", test_verified},
     {"prefilter", test_prefilter},
+    {"pointer_array", test_pointer_array},
     {"reasons", test_reasons},
     {NULL, NULL},
 };

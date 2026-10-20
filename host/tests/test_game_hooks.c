@@ -35,6 +35,9 @@ typedef struct {
 static FakeStream fs[VJO_HOOK_STREAMS + 1u];
 static uint32_t fake_mode, fake_installed, fake_refused;
 static unsigned snaps, texts;
+/* vjo_hooks_keep's calls (audit-hooks F2), and what vjo_hooks_call_stats answers */
+static unsigned keeps, kept_ids[8];
+static uint32_t fake_call_dropped, fake_call_replaced;
 /* At the snap_at-th snapshot, stream bump_id gets bump_text (its seq moves on), as a game thread would. */
 static unsigned bump_at;
 static uint32_t bump_id;
@@ -46,6 +49,16 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
     *mode = fake_mode;
     *installed = fake_installed;
     *refused = fake_refused;
+}
+void vjo_hooks_keep(uint32_t id)
+{
+    if (keeps < sizeof(kept_ids) / sizeof(kept_ids[0])) kept_ids[keeps] = id;
+    keeps++;
+}
+void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced)
+{
+    *dropped = fake_call_dropped;
+    *replaced = fake_call_replaced;
 }
 int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
 {
@@ -220,6 +233,7 @@ static void reset(void)
     memset(fs, 0, sizeof(fs));
     fake_mode = VJO_TEXT_SOURCE_AUTO; fake_installed = 1u << 16 | 4u; fake_refused = 2;
     snaps = texts = bump_at = 0; bump_id = 0; bump_text = NULL;
+    keeps = 0; memset(kept_ids, 0, sizeof(kept_ids)); fake_call_dropped = fake_call_replaced = 0;
     capture_live = job_live = weights_live = 0; capture_block = capture_allocs = 0; live_bytes = 0;
     shot_allocs = probe_allocs = 0;
     available = 64*1024*1024; clock_value = 0;
@@ -493,6 +507,52 @@ static void full_pool_keeps_the_pick_and_the_newest(void)
     TEST_CHECK(hk.cand[5].n < 399 && hk.cand[4].n == 399);
 }
 
+/* audit-hooks F2: the stream that agreed with OCR (text_from, AGREED) and a pinned pick keep their CALL slot
+ * (vjo_hooks_keep); nothing else is kept; CALLS_FULL is set while a new caller found every CALL slot taken
+ * (vjo_hooks_call_stats: dropped or replaced), in a result with text, never in a failed one. */
+static void keep_and_calls_full(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    stream(9, VJO_HOOK_KIND_CALL, 5, LINE1);
+    stream(12, VJO_HOOK_KIND_CALL, 6, "セーブしますか？");
+    spy_text = OCR1;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9 && out.hook_flags == VJO_HOOK_R_AGREED);
+    TEST_CHECK(keeps == 1 && kept_ids[0] == 9);
+    /* OCR reads something else: nothing agrees, nothing kept */
+    keeps = 0;
+    spy_text = "全然関係のない画面の文字がここに表示されている";
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !out.text_from && !keeps);
+    /* OCR only: nothing kept */
+    spy_text = OCR1;
+    TEST_CHECK(run(VJO_HOOK_PICK_OCR, &out) == 0 && !out.text_from && !keeps);
+    /* pinned: the pick is kept, with text or without */
+    TEST_CHECK(run(12, &out) == 0 && out.text_from == 12 && (out.hook_flags & VJO_HOOK_R_PINNED));
+    TEST_CHECK(keeps == 1 && kept_ids[0] == 12);
+    keeps = 0;
+    TEST_CHECK(run(15, &out) == 0 && !out.text_from && keeps == 1 && kept_ids[0] == 15);
+    TEST_CHECK(!(out.hook_flags & VJO_HOOK_R_CALLS_FULL));
+    /* a new caller was dropped, or replaced a slot: CALLS_FULL on every result with text */
+    hk.sel = (VjoHookSelect){0};
+    keeps = 0;
+    fake_call_dropped = 1;
+    spy_text = "全然関係のない画面の文字がここに表示されている";
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.hook_flags == VJO_HOOK_R_CALLS_FULL && !keeps);
+    fake_call_dropped = 0;
+    fake_call_replaced = 3;
+    spy_text = OCR1;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9);
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_CALLS_FULL) && keeps == 1 && kept_ids[0] == 9);
+    /* a failed job: no flags, nothing kept */
+    keeps = 0;
+    available = 1024;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.hook_flags && !out.text_from && !keeps);
+    available = 64*1024*1024;
+    /* nothing installed: neither */
+    fake_installed = 0;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !out.hook_flags && !keeps);
+}
+
 TEST_LIST = {
     {"nothing installed: OCR as before, no snapshot", nothing_installed_is_ocr_as_before},
     {"an agreeing stream's text replaces OCR's", agreeing_stream_replaces_ocr_text},
@@ -503,5 +563,6 @@ TEST_LIST = {
     {"a shot and the probe take no snapshot", shot_and_probe_take_no_snapshot},
     {"the shown text is the stream's whole text", shown_text_is_whole},
     {"a full pool keeps the pick's stream and the newest", full_pool_keeps_the_pick_and_the_newest},
+    {"an agreeing or pinned stream keeps its CALL slot; CALLS_FULL", keep_and_calls_full},
     {NULL, NULL}
 };

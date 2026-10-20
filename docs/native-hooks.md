@@ -64,8 +64,25 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
   must be well-formed text in one encoding with at least two Japanese characters (CP932 kana or kanji
   lead bytes, or UTF-8 three-byte characters with leads E3-E9). A struct of pointers (0x81xxxxxx) or
   small integers fails it: its low bytes are control bytes or break the encoding;
-- the text then goes to its caller's stream: the stream key is the caller's return address (LR), and
-  a stream's ID is fixed for the game session once a caller has claimed it.
+- `vjo_place_pointer_array` (audit-hooks F2): a copy that has a pointer array's shape is refused too: 20
+  bytes or more, a multiple of 4, and every byte at index 3 mod 4 in 0x81..0x9F (the high byte of a user
+  pointer, which is also a CP932 lead, so 0.6-0.75% of such structs pass the prefilter: the audit's
+  measurement). Measured with the C function on every Japanese line of this repository (1,080 CP932 and
+  1,335 UTF-8 lines of 8 bytes or more) and on 1,982 / 2,168 real visual-novel lines (vita-vn-ocr's
+  realdata training labels), each copied exactly, with its NUL, and as every substring between character
+  boundaries (64,136 to 144,750 per set): **0 refused**. It still refuses 6,982 of the 7,147 random
+  user-pointer structs (2 to 128 words) that pass the prefilter; the 165 it lets through are 2 to 4 words.
+  With a minimum of 8 bytes it refused real text: ソラユメ, 逢魔が刻, イヴァン, ジャンル, ダンベル, チンピラ,
+  佐伯世羅, 森嶋永遠 (8 bytes each in CP932) and 18分前 in UTF-8, so the minimum is 20 (5 words)
+  [measured: `$HERD/shared/artifacts/hooks-fix-engine/prefilter_false_refusals*.txt`];
+- the text then goes to its caller's stream: the stream key is the caller's return address (LR). A new
+  caller claims a free CALL slot (9-20). When all 12 hold other callers, it takes the one written least
+  recently (a slot that never had text first) that is not kept, under that slot's try-lock: the slot's
+  key, hits and text become the new caller's, so a job's snapshot sees another key for that ID; a busy
+  slot, or every slot kept, drops the hit, never waiting. A stream that agreed with OCR, and a stream the
+  Shell pinned, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. The job's
+  result says `VJO_HOOK_R_CALLS_FULL` (0x40 in `hook_flags`, the debug log's `flags`) once a caller found
+  every slot taken (`vjo_hooks_call_stats`: hits dropped for lack of a slot, callers that replaced one).
 
 No syscall, no allocation and no waiting in this path: the slot's try-lock is taken or the hit is
 dropped (and counted). Our own worker's string calls are not hooked: only the main module's imports are.
@@ -131,7 +148,8 @@ counted), then into the site's stream.
 ## Streams
 
 20 static slots in the worker's .bss (`core/hook_stream.c`): 1-8 for sites, 9-20 for CALL callers, 512
-raw bytes each, with a try-lock, key, sequence stamp, hit count, FNV-1a hash and encoding. An identical
+raw bytes each, with a try-lock, key, sequence stamp, hit count, FNV-1a hash, encoding and a kept mark
+(a CALL slot no other caller may take). An identical
 copy only counts a hit; a new text takes the next value of a shared clock. Decoding to UTF-8
 (`vjo_luna_text` for a Luna site, `vjo_hook_decode` otherwise) happens at job time in the worker's
 thread (`vjo_hooks_snap`, `vjo_hooks_text`), never in a hook. Which stream's text a job shows, and when,

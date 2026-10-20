@@ -123,19 +123,18 @@ static unsigned bounded_len(const uint8_t *p, unsigned lim)
 static void call_hit(const uint8_t *dst, unsigned written, int mem, uint32_t caller)
 {
     unsigned lim, n;
-    VjoStreamSlot *s;
     if (!live || !dst || written < 4) return;
     if (mem && written > VJO_HOOK_RAW_BYTES) return;
     lim = written < VJO_HOOK_RAW_BYTES ? written : VJO_HOOK_RAW_BYTES;
     if (!vjo_place_text_prefilter(dst, lim)) return; /* reads at most 16 bytes */
     n = bounded_len(dst, lim);
     if (n < 4 || (!mem && n == VJO_HOOK_RAW_BYTES)) return;
-    s = vjo_stream_caller(&slots[VJO_HOOK_SITE_STREAMS], VJO_HOOK_CALL_STREAMS, caller);
-    if (!s) {
-        __atomic_add_fetch(&stream_clock.dropped, 1u, __ATOMIC_RELAXED);
-        return;
-    }
-    vjo_stream_offer(s, &stream_clock, dst, n, VJO_HOOK_ENC_AUTO);
+    /* a pointer array's shape (audit-hooks F2): the bytes the stream would keep, and a mem copy's whole copy
+     * (both valid: the game has just written them) */
+    if (vjo_place_pointer_array(dst, n) || (mem && n < lim && vjo_place_pointer_array(dst, lim))) return;
+    /* the caller's slot, an unused one, or (every slot held) the least recently written one not kept */
+    vjo_stream_offer_caller(&slots[VJO_HOOK_SITE_STREAMS], VJO_HOOK_CALL_STREAMS, &stream_clock, caller, dst, n,
+                            VJO_HOOK_ENC_AUTO);
 }
 
 #define CALLER() ((uint32_t)(uintptr_t)__builtin_return_address(0))
@@ -552,6 +551,18 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
 }
 
 /* ---- job time ---- */
+
+void vjo_hooks_keep(uint32_t id)
+{
+    if (id <= VJO_HOOK_SITE_STREAMS || id > VJO_HOOK_STREAMS) return; /* a site's slot is never given away */
+    vjo_stream_keep(&slots[id - 1]);
+}
+
+void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced)
+{
+    if (dropped) *dropped = __atomic_load_n(&stream_clock.call_dropped, __ATOMIC_RELAXED);
+    if (replaced) *replaced = __atomic_load_n(&stream_clock.call_replaced, __ATOMIC_RELAXED);
+}
 
 int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
 {
