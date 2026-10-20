@@ -164,28 +164,60 @@ static int has_text(const VjoHookCand *k)
     return k->id && k->text && k->n;
 }
 
+/* Has UTF-8 s (n bytes, up to a NUL) at least VJO_HOOK_MIN_CHARS characters in the compared form? The
+ * count cmp_form makes (a voiced mark is never a character of its own), without its array. */
+static int enough_chars(const char *s, size_t n)
+{
+    const unsigned char *p = (const unsigned char *)s;
+    size_t i = 0;
+    unsigned all = 0;
+    int half;
+    while (p && i < n && p[i] && all < VJO_HOOK_MIN_CHARS) {
+        uint32_t c = utf8_next(p, n, &i);
+        if (c != 0xFF9E && c != 0xFF9F && fold(c, &half)) all++;
+    }
+    return all >= VJO_HOOK_MIN_CHARS;
+}
+
+/* The lock and what belongs to it, gone. */
+static void unlock(VjoHookSelect *st)
+{
+    st->locked = st->locked_seq = st->misses = st->unchecked = st->locked_key = 0;
+}
+
+/* The locked stream among the candidates, NULL when it is not one (no lock, or its slot was busy). */
+static const VjoHookCand *locked_cand(const VjoHookSelect *st, const VjoHookCand *c, unsigned n)
+{
+    for (unsigned i = 0; st->locked && i < n; i++)
+        if (c[i].id == st->locked && has_text(&c[i])) return &c[i];
+    return NULL;
+}
+
 uint32_t vjo_hook_select_before(VjoHookSelect *st, uint32_t pick, const VjoHookCand *c, unsigned n,
                                 uint32_t *flags)
 {
-    uint32_t want, f;
+    const VjoHookCand *k = NULL;
     if (flags) *flags = 0;
     if (!st || !c || pick == VJO_HOOK_PICK_OCR || pick > VJO_HOOK_STREAMS) return 0;
-    want = pick == VJO_HOOK_PICK_AUTO ? st->locked : pick;
-    if (!want) return 0;
-    for (unsigned i = 0; i < n; i++) {
-        const VjoHookCand *k = &c[i];
-        if (k->id != want || !has_text(k)) continue;
-        if (pick == VJO_HOOK_PICK_AUTO) {
-            if (k->seq == st->locked_seq) return 0; /* nothing new since the last job shown: OCR reads */
-            st->locked_seq = k->seq;
-            f = VJO_HOOK_R_LOCKED;
-        } else {
-            f = VJO_HOOK_R_PINNED;
-        }
-        if (flags) *flags = f | VJO_HOOK_R_NO_OCR | (k->site ? VJO_HOOK_R_SITE : 0u);
-        return want;
+    if (pick != VJO_HOOK_PICK_AUTO) { /* pinned: that stream's text when it has one */
+        for (unsigned i = 0; i < n && !k; i++)
+            if (c[i].id == pick && has_text(&c[i])) k = &c[i];
+        if (!k) return 0;
+        if (flags) *flags = VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR | (k->site ? VJO_HOOK_R_SITE : 0u);
+        return pick;
     }
-    return 0;
+    k = locked_cand(st, c, n);
+    /* OCR reads this page unless the locked stream has new text since the last job shown, long enough to
+       be compared (a 2-character name never answers), with no miss pending, its key unchanged (after()
+       unlocks on another), and fewer than VJO_HOOK_UNCHECKED_MAX jobs in a row answered so: the next is
+       checked by OCR */
+    if (!k || k->seq == st->locked_seq || st->misses || st->unchecked >= VJO_HOOK_UNCHECKED_MAX ||
+        k->key != st->locked_key || !enough_chars(k->text, k->n))
+        return 0;
+    st->locked_seq = k->seq;
+    st->unchecked++;
+    if (flags) *flags = VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR | (k->site ? VJO_HOOK_R_SITE : 0u);
+    return k->id;
 }
 
 /* At equal scores, is a the better pick than b? The stream of the current streak (two copies of one text
@@ -206,6 +238,13 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
     if (score) *score = 0;
     if (flags) *flags = 0;
     if (!st || !c) return 0;
+    if (pick == VJO_HOOK_PICK_AUTO && (locked = locked_cand(st, c, n)) && locked->key != st->locked_key) {
+        /* the locked ID's slot holds another caller now: what agreed was not this one */
+        if (st->streak_id == st->locked) st->streak_id = st->streak = 0;
+        unlock(st);
+        f |= VJO_HOOK_R_UNLOCK;
+    }
+    locked = NULL;
     m = cmp_form(ocr, ocr ? on : 0, oc, &mf);
     for (unsigned i = 0; i < n; i++) {
         const VjoHookCand *k = &c[i];
@@ -232,7 +271,10 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
         if (score) *score = best;
         return 0;
     }
-    if (mf < VJO_HOOK_MIN_CHARS) return 0; /* OCR read (almost) nothing: no evidence either way */
+    if (mf < VJO_HOOK_MIN_CHARS) { /* OCR read (almost) nothing: no evidence either way */
+        if (flags) *flags = f;
+        return 0;
+    }
     if (locked && lscore >= VJO_HOOK_AGREE) {
         chosen = locked;
         agree = lscore;
@@ -241,7 +283,7 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
         agree = best;
     }
     if (st->locked && locked && lscore < VJO_HOOK_AGREE && ++st->misses >= VJO_HOOK_UNLOCK_MISSES) {
-        st->locked = st->locked_seq = st->misses = 0;
+        unlock(st);
         f |= VJO_HOOK_R_UNLOCK;
     }
     if (!chosen) {
@@ -257,12 +299,13 @@ uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr
         st->streak = 1;
     }
     if (st->streak >= VJO_HOOK_LOCK_AGREEMENTS && st->locked != chosen->id) {
+        unlock(st);
         st->locked = chosen->id;
-        st->misses = 0;
+        st->locked_key = chosen->key;
     }
-    if (st->locked == chosen->id) {
+    if (st->locked == chosen->id) { /* OCR has checked it: up to VJO_HOOK_UNCHECKED_MAX jobs without OCR again */
         st->locked_seq = chosen->seq;
-        st->misses = 0;
+        st->misses = st->unchecked = 0;
         f |= VJO_HOOK_R_LOCKED;
     }
     if (score) *score = agree;

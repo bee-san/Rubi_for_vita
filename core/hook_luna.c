@@ -487,7 +487,7 @@ static const LunaOp f_PCSG00402[] = {
 static const LunaOp f_FPCSG00815[] = {SUB("\\s*(#n)*\\s*", ""), SUB("#\\w+(\\[.+?\\])?", ""), END};
 static const LunaOp f_PCSG01250_T[] = {
     PREFIX("<text"), CUT(6, 1), SUB("/ruby:(.*?)&(.*?)/", "$1"), SUB("#n", ""), END};
-static const LunaOp f_PCSG01250_N1[] = {PREFIX("<name"), CUT(7, 3), END}; /* PCSG01250_N<1> */
+static const LunaOp f_PCSG01250_N1[] = {PREFIX("<name"), CUT(7, 2), END}; /* PCSG01250_N<1>: substr(7, size - 9) */
 static const LunaOp f_PCSG01250_N0[] = {PREFIX("<name"), CUT(6, 1), END}; /* PCSG01250_N<0> */
 static const LunaOp f_PCSG01202[] = {SUB("/ruby:(.*?)&(.*?)/", "$1"), END};
 static const LunaOp f_PCSG01325[] = {SUB("@[_\\*\\d\\w]*", ""), END};
@@ -505,7 +505,7 @@ static const LunaOp f_PCSG00654[] = {DEL("\\"), DEL("$"), END};
 static const LunaOp f_PCSG00829[] = {DEL("\\n　"), DEL("\\n"), SUBW("\\[(.*?),\\d\\]", ""), END};
 static const LunaOp f_PCSG00535_1[] = {DEL("\\f"), REP("\\n", "\n"), END};
 static const LunaOp f_PCSG01114[] = {DEL("@"), BETWEEN("{", "}"), END};
-static const LunaOp f_PCSG00482[] = {DEL("▼"), DEL("\n"), END};
+static const LunaOp f_PCSG00482[] = {DEL("▼\f"), DEL("\n"), END}; /* u8"▼\f": E2 96 BC 0C, a page end */
 static const LunaOp f_PCSG01249[] = {DEL("[n]"), END};
 static const LunaOp f_PCSG00370[] = {DEL("\n　"), DEL("▼"), DEL("＞"), DEL("\n"), /* \x81\xa5, \x81\x84 */ END};
 static const LunaOp f_PCSG01063[] = {DEL("\n　"), DEL("\n"), END};

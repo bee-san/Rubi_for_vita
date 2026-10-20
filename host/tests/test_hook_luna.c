@@ -602,7 +602,12 @@ static void filters_cp932(void)
     filters_to("PCSG01250", 0x80013ED6u, "<text 本文#n/ruby:漢&かん/字>", "本文漢字");
     filters_to("PCSG01250", 0x80013ED6u, "台詞", "");
     filters_to("PCSG01250", 0x80013ED6u, "<text", ""); /* shorter than the cut: substr throws in Luna */
-    filters_to("PCSG01250", 0x80013EE6u, "<name x名前yz>", "名前");
+    /* PCSG01250_N (ex = 1): Luna's s.substr(7, s.size() - 9) keeps [7, size - 2) of the CP932 bytes
+       (audit-hooks-text F1: the port cut one byte more and lost the name's last character) */
+    filters_to("PCSG01250", 0x80013EE6u, "<name=\"名前\">", "名前");
+    filters_to("PCSG01250", 0x80013EE6u, "<name=\"ナナ\">", "ナナ");
+    filters_to("PCSG01250", 0x80013EE6u, "<name x名前yz>", "名前y");
+    filters_to("PCSG01250", 0x80013EE6u, "台詞", ""); /* no <name: cleared */
     filters_to("PCSG01318", 0x800154CCu, "<name 名前>", "名前");
     filters_to("PCSG01202", 0x80022C9Cu, "/ruby:漢&かん/字", "漢字");
     filters_to("PCSG00431", 0x80019DFAu, "一#n　二#n三", "一二三");
@@ -674,7 +679,11 @@ static void filters_utf8(void)
     filters_to("PCSG00654", 0x80059946u, "一\\二$", "一二");
     filters_to("PCSG00787", 0x8001D862u, "一\\二", "一二");
     filters_to("PCSG01114", 0x80029E5Cu, "@一{注釈}二{x", "一二{x");
-    filters_to("PCSG00482", 0x80086798u, "一▼\n二", "一二");
+    /* PCSG00482: Luna's StringFilter(u8"▼\f") removes ▼ only before a form feed (bytes E2 96 BC 0C), then
+       CharFilter('\n') (audit-hooks-text F2: the port removed every ▼ and left the \f) */
+    filters_to("PCSG00482", 0x80086798u, "一▼\f二\n三▼\f", "一二三");
+    filters_to("PCSG00482", 0x80086798u, "一▼\n二", "一▼二");
+    filters_to("PCSG00482", 0x8005F0C4u, "▼一\f二▼", "▼一\f二▼"); /* ▼ and \f apart: both kept */
     filters_to("PCSG01314", 0x8031BFA2u, "@r漢@かん@字@wait1", "漢字");
     filters_to("PCSG00745", 0x8000C2D4u, "一\\n二", "一二"); /* PCSG01247 on UTF-8 */
     filters_to("PCSG01180", 0x8006808Eu, "一\\n二,注", "一 二 ");

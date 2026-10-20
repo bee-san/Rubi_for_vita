@@ -7,8 +7,9 @@ hook site must pass, what a hit does, and how it is undone. It changes nothing t
 copies bytes and lets the game's function run as before.
 
 Status: built and host-tested; **not run on a console** in this form. What has run on a console is the
-older CALL source of PR #16 in CLANNAD (vita-vn-ocr note 23, below). Every console step is in
-[To test on a console](#to-test-on-a-console).
+removed code's CALL source (the string-copy hooks of PRs #7 and #12, picked with #13's matching; #16 added
+the register profile) in CLANNAD (vita-vn-ocr note 23, below); this page's CALL source is new code (its
+prefilter, its slots). Every console step is in [To test on a console](#to-test-on-a-console).
 
 ## Where it runs
 
@@ -94,9 +95,12 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
 No syscall, no allocation and no waiting in this path: the slot's try-lock is taken or the hit is
 dropped (and counted). Our own worker's string calls are not hooked: only the main module's imports are.
 
-From the console run (note 23): in CLANNAD the text came from one memcpy caller at absolute LR
-0x8105910F, picked by hand; segment 0's base was not queried in that run, so its offset 0x5910F is
-unverified.
+From the console run (note 23): in CLANNAD the text came from one caller of the removed code's
+string-copy hooks ("CALL kind 2": any of its hooked memcpy, strcpy, strncpy and memmove imports and
+SceLibKernel's copies; which one the note does not say) at absolute LR 0x8105910F, picked by hand; segment
+0's base was not queried in that run, so its offset 0x5910F is unverified. Its texts were 24 → 6 → 18 →
+72 → 18 bytes, so a 2-character text can come through a dialogue caller. Only the earlier emulator run's
+caller 0x8102CA7F is named as a memcpy caller (note 23).
 
 ## Table sites
 
@@ -175,11 +179,26 @@ texts, so a pool that fills cuts the oldest. Then, by the request's `hook_pick`:
 - **OCR only** (`VJO_HOOK_PICK_OCR`): OCR's text. The self-test's jobs (every line recognized, or the
   fallback forced) are OCR only whatever their pick.
 - **Automatic** (`VJO_HOOK_PICK_AUTO`): OCR runs, and a stream whose text agrees with OCR's (similarity
-  at least 700 of 1000) replaces it. Two agreements in a row by one stream lock it; a locked stream with
-  new text since the last job shown (its seq) then answers a job without recognition, and one with
-  nothing new lets OCR read (the screen changed without it: a choice menu, a CG). Two disagreements in a
-  row unlock it. A job whose OCR text has fewer than 4 characters (an empty box) is no evidence: nothing
-  changes, and neither does a job that fails.
+  at least 700 of 1000) replaces it. Two agreements in a row by one stream lock it. A locked stream then
+  answers a job without recognition only when it has new text since the last job shown (its seq), of at
+  least 4 compared characters (`VJO_HOOK_MIN_CHARS`: a name of 2 or 3 characters never answers), and for
+  at most 2 jobs in a row (`VJO_HOOK_UNCHECKED_MAX`): the next job runs OCR, and the locked stream must
+  agree with it there. Every other job runs OCR: nothing new (the screen changed without the stream: a
+  choice menu, a CG), a text too short, or that check. A locked stream that disagrees (a miss) makes every
+  job run OCR until it agrees again, and two misses in a row unlock it. A locked stream whose key changed
+  (its CALL slot went to another caller) unlocks at once. A job whose OCR text has fewer than 4
+  characters (an empty box) is no evidence: nothing changes, and neither does a job that fails.
+
+  So once a stream is locked, OCR still reads at least one page in three. A locked stream that turns
+  wrong, because it runs ahead of the screen (the game copies the next line before it draws it) or its
+  caller's latest copy is a speaker's name or a UI string of 4 characters or more, shows at most 2 wrong
+  pages before OCR's check catches it; then OCR reads every page until the stream agrees again or unlocks
+  (audit-hooks-text F3; `host/tests/test_hook_select.c`: `locked_runs_ahead` 2 wrong pages,
+  `locked_name_alone` none for the audit's 2-character name then 4-character one, 2 for a 4-character
+  name first, `locked_ui_string` 1 and 2, `locked_backlog_and_reread` 1 each, `locked_checked_by_ocr` none).
+  The bound is on pages in a row: a stream that is wrong only on some pages and right at each check could
+  show a wrong page again after a check it passed. The way out in the game is △ to `OCR only`; for every
+  game, `text_source = ocr` from the next game start ([Recovery](#recovery)).
 
 A job a stream answers reads only the region's first capture pass (a strip at a time into one strip's
 block, under the job's reserve, as the probe reads), so the kernel publishes its capture (`capture_seq`,
@@ -193,7 +212,13 @@ dropped), at most 256 characters each; then d, the edit distance of all of the s
 of OCR's text o it matches best (o's characters before and after it free), and 1000 × (|h| − d) /
 max(|h|, |o|). OCR's text around the match (a speaker's name, another line) lowers it as much as it is
 long: a stream with one line of a two-line page, a backlog line or a line prepared ahead of the screen does
-not agree, and a name in the box agrees only beside a line about 2.3 times its length. Characters past
+not agree (so it never locks; once a stream is locked, its new text is checked as above), and a name in the
+box agrees only beside a line about 2.3 times its length. The other side of the same rule: a stream that
+agrees matches at least 70 % of OCR's characters, so the text shown may lack up to 30 % of the box, and
+is then shown alone, after a lock without OCR too. A speaker's name beside the line is the intended case;
+a box that grows by clicks is another: `「えっ」` and then a 25-character segment, whose stream holds only
+the segment, scores 916, so the popup shows the segment without `えっ` (audit-hooks-text N3; 7 of 10
+characters score 700, 6 of 10 600) [measured: `vjo_hook_similarity` on the host]. Characters past
 the 256 compared count as unmatched, so a cut text never scores higher than it would whole. Fewer than 4
 characters in either text: 0. Equal scores: the stream of the current streak (two callers copying one text
 must not take turns), then a table site, then the newer text.
@@ -204,9 +229,13 @@ compared), `hook_streams` (bit ID − 1 of each stream that held text as the job
 `hook_installed`, `hook_refused` (`vjo_hooks_counts`), in failed results too (with `text_from` and
 `hook_flags` 0: a failed result has no text).
 
-Cost: `core/hook_select.c` is 1,708 B of code at `-Os`; its comparison's 2,562 B of arrays are on the
-worker's stack only while it compares (its frames 2,712 B, `-fstack-usage`); the job path's static
-snapshot is 3,064 B of `.bss`. The comparison's inner loop is 19 instructions a cell at `-Os`: a
+Cost: `core/hook_select.c` is 1,992 B of code at `-Os` (1,708 B before the lock's checks of F3); its
+comparison's 2,562 B of arrays are on the worker's stack only while it compares (its frames at most
+2,772 B: `vjo_hook_select_after` 1,112 + `score_of` 1,600 + `cmp_form` 40 + `utf8_next` 20; `-fstack-usage`,
+vitasdk 2026.08, the worker's flags); the job path's static snapshot is 3,160 B of `.bss` (3,064 B before
+F3's key and counts: 20 candidates of 24 B and two states of 28 B, `arm-vita-eabi-nm`), and the worker's
+pages are unchanged by it [measured: hooks/fix-text c0ea49d's Vita jobs, debug 133,784 + 30,664 B and normal
+125,076 + 30,656 B in 167,936 and 159,744 B]. The comparison's inner loop is 19 instructions a cell at `-Os`: a
 dialogue box of 60 characters against a few streams is about 10^4 cells, under a millisecond at 444 MHz,
 and the worst case, 20 streams of 256 characters against 256, 1.3 million cells, about 30-60 ms
 [estimate: the instructions of the `-Os` disassembly at 0.5-1 cycle each, not run on a console].
@@ -235,7 +264,9 @@ game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
 | normal, with Luna's table linked | 96,524 B | 27,496 B | 126,976 B |
 | debug, with the job path (the decoder, Luna's filters, the selection) | 127,144 B | 30,560 B | 163,840 B |
 | normal, with the job path (the decoder, Luna's filters, the selection) | 124,668 B | 30,560 B | 159,744 B |
-| debug, with the job path and the [PSP probe](#psp-probe-debug-build) | 133,392 B | 30,568 B | 167,936 B |
+| debug, with the job path and the [PSP probe](#psp-probe-debug-build), hooks/psp-probe | 133,392 B | 30,568 B | 167,936 B |
+| debug, `feat/native-hooks` 9fa24c5 (the probe and hooks-api's text source import) | 133,464 B | 30,568 B | 167,936 B |
+| normal, `feat/native-hooks` 9fa24c5 | 124,740 B | 30,560 B | 159,744 B |
 
 [measured: the build log's module rows on hooks/engine 8aa79eb (local CI), both builds, with
 origin/hooks/luna-port merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
@@ -247,14 +278,22 @@ SceShell and kernel modules do not change here. The job path decodes the streams
 static snapshot: the two job path rows [measured: the build log's module rows on hooks/select `4f9dca9` with
 hooks/engine `dca6d5f` merged, both builds]. The PSP probe's row: hooks/psp-probe with feat/native-hooks `960ac20`
 merged, against `960ac20`, whose normal build it leaves byte for byte as it was [measured, the build log's module rows].
+The two `9fa24c5` rows: the PR's head as audited, where hooks-api's `vjoGetTextSource` import adds 72 B of
+text to the debug build in the same pages [measured: the module rows of local CI's Vita jobs on 9fa24c5,
+audit-hooks section 3].
 
-Stack: a site hit uses the observer's 328 bytes and the C frames below it on the game's thread, an
-estimate of under 1 KiB in all (not measured); a CALL hit, a few dozen bytes. CPU time per hit, and any
+Stack, on the game's thread: a site hit about 564 B at most (the observer's 328 B frame and up to 4 B to
+align it, then `vjo_hooks_observe` 56, `vjo_luna_capture` 72, `mirror` 56 and `read_game` 48; the
+memory-block syscall runs on the kernel's stack); a CALL hit about 80 B (the hook 24, `call_hit` 32, then
+the prefilter or the stream's offer 24) [measured: the C frames by `-fstack-usage` of 9fa24c5's worker,
+the same in both builds, the observer's from its code; audit-hooks section 2]. CPU time per hit, and any
 CPU3 load, are unmeasured.
 
 ## Logs
 
-The normal build writes no hook text anywhere. The debug build writes
+The normal build logs no hook text, as it logs no OCR text; with **Read text** on **Automatically**, both
+builds keep the shown line in `ux0:data/VitaJPOverlay/history.csv`, a hook's as OCR's (engine `hook`
+instead of `vocr`: `shell/history.c`; [ocr-history.md](ocr-history.md)). The debug build writes
 `ux0:data/VitaJPOverlay/hooks.log` at each game start (rewritten): the title, the text source, the main
 module's name, NID and segment 0, `APP_VER`, each site with its verdict, reason and first 16 bytes, and
 each CALL import hooked or not. No text is in it. Job results carry the counts; the Shell's debug log
@@ -284,13 +323,17 @@ Hardware is paused; these are for the test issue (#230):
 6. Quitting a game with hooks: the console returns to LiveArea, and the next game start works.
 7. CLANNAD with `auto`, Automatically: the first pages show the CALL stream's text with OCR's agreement
    (the debug log's `hook_flags` AGREED and a `hook_score`), and from the third page on the stream answers
-   without recognition (NO_OCR: no model load or recognize step, and the overlay's text sooner); the
-   text matches the screen on every page, and the scene logic (a page's text cached, a new page read) works
-   as with OCR.
+   two pages of every three without recognition (NO_OCR: no model load or recognize step, and the overlay's
+   text sooner) while OCR reads the third and agrees (AGREED and LOCKED); the text matches the screen on
+   every page, and the scene logic (a page's text cached, a new page read) works as with OCR.
 8. A choice menu or a CG without text (the stream unchanged): OCR's text, or none, and the lock stays.
 9. With Only when I press L + R, and with the subtitle strip: the same pages, the same texts.
-10. A game where no stream follows the dialogue (or one that runs ahead of the screen): OCR's text on
-    every page, nothing locked.
+10. A game where no stream follows the dialogue (or one that runs ahead of the screen from the start): OCR's
+    text on every page, nothing locked. A stream that locked and then runs ahead (the next line), or whose
+    latest copy is a speaker's name or a UI string of 4 characters or more: at most 2 pages in a row show
+    that text instead of the screen's (NO_OCR), then OCR's check misses, OCR's text is shown on every page,
+    and the second miss unlocks it (UNLOCK in the debug log). A name of 2 or 3 characters (朋也) is never
+    shown alone. If it happens: △ to `OCR only` for the game, or `text_source = ocr` from the next game start.
 11. △ (hooks-api) pins a stream: its text, without OCR; OCR only: OCR's text, whatever agrees.
 
 ## PSP probe (debug build)
@@ -306,12 +349,15 @@ report's sources, none has been seen on a console.
 emulator's process (the worker's `psp_title`: ScePspemu is loaded, or the title is the PSP emulator's or
 Adrenaline's), only when the text source is `auto` or `hooks`, and once per process: at the first OCR job
 (the first reading of the screen: in the background with **Read text: Automatically**, else at the first
-L + R; an Anki screenshot or a self-test job is not one). Adrenaline's XMB runs in the same process as the
+L + R; the self-test's OCR stages are OCR jobs too, while an Anki screenshot and the self-test's capture
+probe are not). Adrenaline's XMB runs in the same process as the
 game started from it, and a reading there would use the probe up with no game's ID, so start the game
 from its own bubble, or set **Read text** to **Only when I press L + R** and press it first in the game. To
-probe again, close the emulator (or the bubble) and start it again. Until the text source reaches the
-worker (the kernel's `vjoGetTextSource`, hooks-api; this tree's kernel does not export it, so
-`game_ocr/main.c` `text_source` answers `ocr`), the probe does nothing in any game.
+probe again, close the emulator (or the bubble) and start it again. The text source reaches the worker
+through the kernel's `vjoGetTextSource` (`kernel/exports.yml` exports it, and the worker imports it:
+`VJO_HAVE_TEXT_SOURCE_IMPORT` in `vita/CMakeLists.txt`), so the debug build's probe runs as described
+here; it does nothing with `text_source = ocr`, or with a kernel of another API version, which the worker
+reads as OCR.
 
 **What it does.** In the worker's thread, at its lowest priority:
 

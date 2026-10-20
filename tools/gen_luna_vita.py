@@ -172,7 +172,7 @@ FILTERS = {
     "PCSG01250_T": ("PCSG01250_T", True,
                     "only <text ...> kept, its first 6 and last 1 bytes cut (CP932 bytes, as Luna counts them); "
                     "/ruby:base&reading/ becomes base; #n removed"),
-    "PCSG01250_N": ("PCSG01250_N1", True, "only <name ...> kept, its first 7 and last 3 bytes cut (CP932 bytes)"),
+    "PCSG01250_N": ("PCSG01250_N1", True, "only <name ...> kept, its first 7 and last 2 bytes cut (CP932 bytes)"),
     "PCSG01250_N<0>": ("PCSG01250_N0", True, "only <name ...> kept, its first 6 and last 1 bytes cut (CP932 bytes)"),
     "PCSG01202": ("PCSG01202", True, "/ruby:base&reading/ becomes base"),
     "PCSG01325": ("PCSG01325", True, "@cmd removed (UTF-8 bytes)"),
@@ -200,7 +200,7 @@ FILTERS = {
                     "other site dropped"),
     "PCSG00787": ("BACKSLASH", True, "\\ removed"),
     "PCSG01114": ("PCSG01114", True, "@ and {...} removed"),
-    "PCSG00482": ("PCSG00482", True, "\u25bc and newlines removed"),
+    "PCSG00482": ("PCSG00482", True, "\u25bc + form feed (its page end) and newlines removed; a \u25bc alone kept"),
     "PCSG01249": ("PCSG01249", True, "[n] removed"),
     "PCSG00370": ("PCSG00370", True, "newline + \u3000, \u25bc, \uff1e and newlines removed"),
     "PCSG01289": ("PCSG01289", True,
@@ -641,8 +641,9 @@ def render_doc():
     out.append("| PCSG00415 | JP | CLANNAD | the CALL source (SceLibc `memcpy`/`strcpy`/`strncpy`/`memmove` imports "
                "of the game executable); the register site segment 0 + 0x2CA70 (Luna's space 0x80030A70), r6, "
                "module NID 0xC5187D60, 8-byte signature | CP932 (AUTO for the CALL source) | Rubi's own, not in "
-               "Luna's table: the CALL source proven on a console (2026-10-10, vita-vn-ocr notes 23); the register "
-               "site proven in Vita3K only (notes 22) |")
+               "Luna's table: an earlier build's CALL source (the code removed in c35ebf9) followed CLANNAD's "
+               "dialogue on a console (2026-10-10, vita-vn-ocr note 23); this one is new code, not run on a "
+               "console yet; the register site proven in Vita3K only (note 22) |")
     out.append("")
     out.append("## Hookfuncs and filters")
     out.append("")
