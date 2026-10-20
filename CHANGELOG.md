@@ -23,6 +23,11 @@ On `main` since 0.8.0; the next release brings it.
   text-free returns no line. On the host it did so for 59 of 66 text-free regions, against 5 without
   it ([#214]).
 - The Rubi app's Games page shows five games a page and searches by title or title ID ([#219]).
+- Earlier lines: in the overlay, Up on the text's top row shows this game's line before it, dimmed
+  between its neighbours, for lookups and cards (a card from an earlier line has that line as its
+  sentence and no screenshot); Down comes forward again. Only with **Read text: Automatically**, from
+  the lines `history.csv` keeps: its last 24 KiB, at most 32 lines, in a 16 KiB Paf block while you
+  look back ([line history](docs/line-history.md)).
 
 ### Changed
 

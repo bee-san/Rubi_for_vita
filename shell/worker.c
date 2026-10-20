@@ -323,7 +323,9 @@ void vjo_view_unlock(void)
 void vjo_post_command(int cmd, const VjoRect *rect)
 {
     sceKernelLockMutex(cmd_lock, 1, NULL);
-    pending_cmd = cmd;
+    /* a line-history step never takes the place of a close or a region not handled yet */
+    if (cmd < VJO_CMD_EARLIER || pending_cmd == VJO_CMD_NONE || pending_cmd == VJO_CMD_CURSOR)
+        pending_cmd = cmd;
     if (rect)
         pending_rect = *rect;
     sceKernelUnlockMutex(cmd_lock, 1);

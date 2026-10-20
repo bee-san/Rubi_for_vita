@@ -339,26 +339,6 @@ static int header_follow(void)
     return 1;
 }
 
-/* An earlier line's neighbours, dimmed (the owner, 2026-10-20: "we can dim [them], so it shows focus
- * on the current line"): of the line before it its last row, above it, and of the line after it its
- * first row, below (a recognized text's rows are the textbox's: one row of the header, or two when
- * the game's row is wider than the header's). */
-static __attribute__((noinline)) void faded_line(VjoStyled *s, const char *t, int after, int px)
-{
-    const char *nl;
-    if (!t || !*t)
-        return;
-    if (after)
-        vjo_styled_add(s, "\n", 1, VJO_RGB_RANK, px);
-    else
-        while ((nl = sceClibStrchr(t, '\n')))
-            t = nl + 1;
-    nl = sceClibStrchr(t, '\n');
-    vjo_styled_add(s, t, nl ? (size_t)(nl - t) : sceClibStrnlen(t, VJO_STRIP_MAX), VJO_RGB_RANK, px);
-    if (!after)
-        vjo_styled_add(s, "\n", 1, VJO_RGB_RANK, px);
-}
-
 /* new_content: a new result (header text rebuilt and scrolled to the top);
  * otherwise only the selection moved. The text is built from the view under
  * its lock; the paf calls happen after it is released. */
@@ -448,14 +428,13 @@ static void render(int new_content)
         s_hdr_lead = 0;
         s_history = s_local_cursor_mode ? g_view.history : 0;
         if (vjo_styled_init(&hdr, &s_ui, HEADER_UNITS, VJO_HEADER_SPANS) == 0) {
-            if (s_local_cursor_mode) { /* an earlier line (line history) between its neighbours */
-                faded_line(&hdr, s_history ? g_view.history_before : NULL, 0, ja);
-                s_hdr_lead = hdr.len;
-                vjo_styled_puts(&hdr, s_cursor_text, VJO_RGB_TEXT, ja);
-                faded_line(&hdr, s_history ? g_view.history_after : NULL, 1, ja);
-            } else {
+            /* an earlier line (line history) between its neighbours, dimmed (the owner, 2026-10-20:
+             * "we can dim [them], so it shows focus on the current line") */
+            if (s_local_cursor_mode)
+                s_hdr_lead = vjo_styled_history(&hdr, s_history ? g_view.history_before : NULL, s_cursor_text,
+                                                s_history ? g_view.history_after : NULL, ja);
+            else
                 vjo_styled_header(&hdr, l, ja);
-            }
             have_hdr = 1;
             s_hdr_st = hdr;
             if (s_local_cursor_mode) /* the cursor's text, whose units are mapped */
@@ -472,8 +451,8 @@ static void render(int new_content)
     if (vjo_styled_init(&body, &s_ui, BODY_UNITS, MAX_SPANS) == 0) {
         have_body = 1;
         if (s_history) { /* where the text is in this game's line history */
-            static const char where[] VJO_DATA_TABLE(history_where) = "Line −%d";
-            char at[16];
+            static const char where[] VJO_DATA_TABLE(history_where) = "Earlier line -%d · ▲ earlier · ▼ later";
+            char at[64];
             sceClibSnprintf(at, sizeof(at), where, s_history);
             vjo_styled_puts(&body, at, VJO_RGB_RANK, en);
             if (s_dict_pages > 1)

@@ -23,13 +23,13 @@ the Vita job against the packaged modules; `ctest -R memory_ledger` runs it loca
 ```
   pool                              permanent   worst case        limit     headroom
   shell pages                         217,088      237,568    1,048,576      811,008
-  shell paf                             8,192      225,280      985,088      759,808
+  shell paf                             8,192      241,664      985,088      743,424
   kernel                              151,552      241,664      241,664            0
   game                                135,168   10,567,680   10,567,680            0
   packaged modules (loaded pages vs declared budget)
-      VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (40,484->40,960 + 77,636->77,824)
-      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (98,732->102,400 + 73,272->73,728)
-      VitaJPOverlay_OCR          98,304 B of     98,304 B declared (81,644->81,920 + 15,720->16,384)
+      VitaJPOverlay_Kernel      118,784 B of    118,784 B declared (40,484->40,960 + 77,644->77,824)
+      VitaJPOverlay_Shell       176,128 B of    176,128 B declared (100,476->102,400 + 73,408->73,728)
+      VitaJPOverlay_OCR          98,304 B of     98,304 B declared (81,644->81,920 + 15,728->16,384)
 ```
 
 Every Shell configuration is the shipped one since Google Lens and the Hachidori relay were
@@ -38,7 +38,7 @@ network row (it was 707,840 B with Google Lens alone, 731,632 B with the relay's
 slot). An Anki card's screenshot (API 23) is made in the game: the Shell's 128 KiB Anki arena
 holds only its job's request and result, and the game's `VjoGameShot` block (450,560 B) is a job of
 the one job slot, never beside an OCR job's transient blocks, so neither pool's worst case moves.
-The shipped default (local JMdict) has 759,808 B of headroom. The kernel row has no full-frame
+The shipped default (local JMdict) has 743,424 B of headroom (759,808 B before line history). The kernel row has no full-frame
 capture since API 24 (2,088,960 B of its 2,248,704 B worst case until then): no Shell code took it
 after Google Lens's removal, and OCR and the screenshot read the screen in the game. Its worst case is
 now the permanent part, a kernel strip and a starting game's `games.ini` read.
@@ -65,14 +65,16 @@ transient set that can be live at once.
 | Paf plugin+RCO | 8,192 | the RCO (6,368 B file, measured; 5,632 B before the region selector's cursor) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
 | result arenas | 65,536 (the local dictionary's lookup; the network paths' 2 × 262,144 B arenas and connection pool went with Google Lens and the Hachidori relay) | taken after a job's OCR, freed before the next job's | `shell/worker.c` `LOCAL_RESULT_ARENA_SIZE`; asserted equal in `test_shell_worker.c` |
 | Anki job arena | 131,072 | per job: saving a card to the queue. Its screenshot (API 23) is the game worker's: here only the job's request and result, 5,404 B (a one-word card's save peaks at 6,860 B with it); the Shell's own screenshot branch went with AnkiConnect (its 393,216 B arena and the kernel's 2,088,960 B full-frame capture), so the kernel capture is never taken for Anki; a save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B on main `dcb7b31`, before `anki_screenshot`'s `VjoConfig` field) [measured, host] | `shell/anki.c` `ANKI_TEXT_MEM`; checked against the budget at compile time and in `test_shell_anki.c` |
-| overlay text arena | 20,480 | the header and body texts and their spans (17,952 B needed, `test_ledger.c`), only while the overlay page is open; a refusal keeps the page closed | `shell/overlay.cpp` |
+| overlay text arena | 20,480 | the header and body texts and their spans (18,016 B needed, `test_ledger.c`: 17,952 B before line history's four header spans), only while the overlay page is open; a refusal keeps the page closed | `shell/overlay.cpp` |
+| line history | 16,384 | one visit's block ([line history](line-history.md)): from the overlay's first Up past its text's top row until the current text is back (or the overlay closes, the game exits): the visit's table, the current text and up to 32 of this game's earlier lines from `history.csv`'s last 24,512 B (read into VjoControl's static scratch, not here); a refusal means no visit, Up does nothing | `shell/worker.c` `history_open`; `VJO_BUDGET_PAF_HISTORY`, its fit checked at compile time |
 | **limit** | **985,088** | the measured free heap, 2,557,952 B (2,498 KiB beside CLANNAD, 2026-10-10), minus the 1.5 MiB reserve the runtime guard keeps for firmware; the reserve is the headroom | `docs/meiki-ocr.md` on `experiment/meiki-ocr` [measured]; `shell/memory.cpp` |
 
 Allocations here take no new pages from the partition; a failure is a `NULL`, never `0x80024302`
 (vita-memory.md 3.2). Later sessions saw 355-441 KiB and 190 KiB free [measured], which would
 refuse everything above; the code survives a refusal (host tests), so this limit is the best
 measured case, not a guarantee. The worst case of the shipped default (one 64 KiB arena, the
-overlay open, an Anki card being saved) is 225,280 B, the only configuration since the network
+overlay open on an earlier line, an Anki card being saved) is 241,664 B (225,280 B before line
+history's 16 KiB visit), the only configuration since the network
 paths' removal (the opt-in network row was 707,840 B with Google Lens alone; with a 384 KiB
 picture card and the relay's second connection slot it was 993,776 B, 8,688 B over the limit,
 which the checker reported as a warning).
@@ -578,6 +580,31 @@ cheaper of the two ways to keep the Shell's pages when its code grows (the other
 costs instructions a lookup), and both segments are checked exactly by `tools/check_memory_ledger.py`.
 Only tables of the Shell's own core code are so marked (`core/local_dict.c`, `core/linebreak.c`,
 `core/textjoin.c`).
+
+Line history ([line-history.md](line-history.md), owner 2026-10-20): Up on the overlay's top row shows
+this game's earlier lines from `history.csv`. The normal Shell's code grows by 1,696 B (the reader,
+`vjo_history_scan` 326 B at `-Os` and `vjo_history_load` 244 B; the control thread's visit,
+`history_show` 264 B and its other steps inlined into `ctl_main` +264 B; the overlay's header,
+`vjo_styled_history` 54 B and `faded_row` 132 B, the position line in `render` +148 B, the arrows' line
+step in `frame` +88 B, the dimmed rows' recolour in `header_highlight` +44 B; the rest under 25 B each)
+and the debug one's by 1,744 B (`ctl_main` +316 B there), where the normal Shell's code segment had
+1,764 B of room: it pays with `core/textfilter.c` built `-Os` (`vjo_filter_lines` 190 → 168 B) and two
+strings in the data segment (`VJO_DATA_TABLE`, 93 B). Data/bss grows by 136 B (the strings,
+`VjoView`'s three line-history fields, the visit's pointer and step, the overlay's two words, the
+Shell ledger's eleventh item):
+
+| | main `44d4e8d` | this change | room left |
+|---|---:|---:|---:|
+| normal Shell, text | 88,348 B | 90,044 B (+1,696) | 68 B of 90,112 |
+| normal Shell, data/bss | 73,280 B | 73,416 B (+136) | 312 B of 73,728 |
+| debug Shell, text | 98,732 B | 100,476 B (+1,744) | 1,924 B of 102,400 |
+| debug Shell, data/bss | 73,272 B | 73,408 B (+136) | 320 B of 73,728 |
+
+The pages stay 163,840 B (exact) and 176,128 B. `VJO_LEDGER_MAX_ITEMS` goes from 10 to 11 for the
+Shell's new item, so every module's `VjoLedger` has 8 B more `.bss`: the kernel 77,636 → 77,644 and
+75,948 → 75,956 B, the worker 15,720 → 15,728 B (both builds), the same pages [measured: the build log's
+module rows, both builds of main `44d4e8d` and this change; per function, `arm-vita-eabi-nm -S`]. The
+next change that adds code to the normal Shell makes room first: 68 B of its text pages are left.
 
 The worker's budget is one value for both builds (their pages are the same since #124). A change
 that adds a page to the debug worker only cannot just raise it: the normal build's exact check would

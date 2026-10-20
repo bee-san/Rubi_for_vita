@@ -43,9 +43,15 @@ the result while the existing worker streams it to disk; that worker cannot
 replace the existing transport result until the append returns. Only game/job
 facts are copied on its existing stack. The writer has a fixed 192-byte output
 buffer and a 16-byte static fingerprint (source sizes, not a console memory
-measurement); no allocation, thread, growing queue, second OCR-text buffer or
-history read is added. A seek obtains the append offset even for a large file.
+measurement); an append adds no allocation, thread, growing queue, second OCR-text
+buffer or read of the file. A seek obtains the append offset even for a large file.
 Both module-page budgets and thread-stack budgets remain enforced by the ledger.
+
+The overlay reads the file back for one thing only: [line history](line-history.md). When Up
+first goes past the overlay's top row, the control thread reads the file's last 24,512 B once
+(into its existing 24 KiB scratch) and keeps up to 32 of this game's lines, by `uuid`, in a 16 KiB Paf
+block while the user looks back; nothing else reads it, and that reader never writes it. An append in
+progress can only cut the last record, which the reader skips.
 
 Consecutive identical normalized text within a game is suppressed, including
 rescans caused by a blinking icon or reopening/resuming. A different sentence,

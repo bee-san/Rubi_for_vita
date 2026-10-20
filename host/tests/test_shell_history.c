@@ -383,6 +383,31 @@ static void test_reader_reads_a_bounded_tail(void)
     struct stat st;
     reset();
     VjoHistoryRecord r = record("x");
+    /* What a record takes, as the writer writes it: a textbox's three rows of 35 characters (3 B each),
+     * the recognizer's raw text as long, three lines' metrics; what the window reaches back */
+    {
+        char line[400] = "", one[] = "それでも僕たちは、あの坂の下で待ち合わせることにしていた。いつも";
+        size_t n = 0;
+        for (int row = 0; row < 3; row++) {
+            n += (size_t)snprintf(line + n, sizeof(line) - n, "%s%s", row ? "\n" : "", one);
+        }
+        memset(result.text, 0, sizeof(result.text));
+        memcpy(result.text, line, n);
+        memcpy(result.text + n + 1, line, n); /* the raw text after the normalised one */
+        result.recognized = 3;
+        result.line[2] = result.line[1];
+        TEST_ASSERT(vjo_history_append(&r) == 1);
+        TEST_CHECK(stat(path, &st) == 0);
+        size_t header = 0;
+        char csv[1024];
+        read_history(csv, sizeof(csv));
+        header = (size_t)(strchr(csv, '\n') - csv) + 1;
+        printf("measure: a record of a %zu-byte line (three rows) and its raw text: %zu B; the %u B window holds %zu\n",
+               n, (size_t)st.st_size - header, VJO_HISTORY_WINDOW, VJO_HISTORY_WINDOW / ((size_t)st.st_size - header));
+        TEST_CHECK((size_t)st.st_size - header > 2 * n && (size_t)st.st_size - header < 2 * n + 400);
+        reset();
+        r = record("x");
+    }
     append_lines(&r, "PCSG00415", "古", 0, 5);
     append_lines(&r, "PCSG00002", "他", 0, 300); /* far more than the window holds */
     TEST_CHECK(stat(path, &st) == 0 && st.st_size > 2 * VJO_HISTORY_WINDOW);
