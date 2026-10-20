@@ -218,7 +218,9 @@ game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
 | normal, with Luna's table linked | 96,524 B | 27,496 B | 126,976 B |
 | debug, with the job path (the decoder, Luna's filters, the selection) | 127,144 B | 30,560 B | 163,840 B |
 | normal, with the job path (the decoder, Luna's filters, the selection) | 124,668 B | 30,560 B | 159,744 B |
-| debug, with the job path and the [PSP probe](#psp-probe-debug-build) | 133,392 B | 30,568 B | 167,936 B |
+| debug, with the job path and the [PSP probe](#psp-probe-debug-build), hooks/psp-probe | 133,392 B | 30,568 B | 167,936 B |
+| debug, `feat/native-hooks` 9fa24c5 (the probe and hooks-api's text source import) | 133,464 B | 30,568 B | 167,936 B |
+| normal, `feat/native-hooks` 9fa24c5 | 124,740 B | 30,560 B | 159,744 B |
 
 [measured: the build log's module rows on hooks/engine 8aa79eb (local CI), both builds, with
 origin/hooks/luna-port merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
@@ -230,9 +232,15 @@ SceShell and kernel modules do not change here. The job path decodes the streams
 static snapshot: the two job path rows [measured: the build log's module rows on hooks/select `4f9dca9` with
 hooks/engine `dca6d5f` merged, both builds]. The PSP probe's row: hooks/psp-probe with feat/native-hooks `960ac20`
 merged, against `960ac20`, whose normal build it leaves byte for byte as it was [measured, the build log's module rows].
+The two `9fa24c5` rows: the PR's head as audited, where hooks-api's `vjoGetTextSource` import adds 72 B of
+text to the debug build in the same pages [measured: the module rows of local CI's Vita jobs on 9fa24c5,
+audit-hooks section 3].
 
-Stack: a site hit uses the observer's 328 bytes and the C frames below it on the game's thread, an
-estimate of under 1 KiB in all (not measured); a CALL hit, a few dozen bytes. CPU time per hit, and any
+Stack, on the game's thread: a site hit about 564 B at most (the observer's 328 B frame and up to 4 B to
+align it, then `vjo_hooks_observe` 56, `vjo_luna_capture` 72, `mirror` 56 and `read_game` 48; the
+memory-block syscall runs on the kernel's stack); a CALL hit about 80 B (the hook 24, `call_hit` 32, then
+the prefilter or the stream's offer 24) [measured: the C frames by `-fstack-usage` of 9fa24c5's worker,
+the same in both builds, the observer's from its code; audit-hooks section 2]. CPU time per hit, and any
 CPU3 load, are unmeasured.
 
 ## Logs
