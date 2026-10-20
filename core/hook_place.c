@@ -75,8 +75,9 @@ static int thumb32_ok(uint16_t hw1, uint16_t hw2)
     }
     /* STR.W / LDR.W Rt, [Rn, #imm12] */
     if ((hw1 & 0xFFE0u) == 0xF8C0u) return rn != 15u && rt != 15u;
-    /* STR / LDR Rt, [Rn, #+/-imm8] with P, U, W (STR Rt, [SP, #-4]! is a one-register push) */
-    if ((hw1 & 0xFFE0u) == 0xF840u && (hw2 & 0x0800u)) return rn != 15u && rt != 15u;
+    /* STR / LDR Rt, [Rn, #+/-imm8] with P, U, W (STR Rt, [SP, #-4]! is a one-register push); P or W set:
+     * P = W = 0 is UNDEFINED (audit-hooks N1) */
+    if ((hw1 & 0xFFE0u) == 0xF840u && (hw2 & 0x0800u) && (hw2 & 0x0500u)) return rn != 15u && rt != 15u;
     /* STRD Rt, Rt2, [Rn, #+/-imm8] (P or W set: else STREX, TBB, TBH) */
     if ((hw1 & 0xFE50u) == 0xE840u && (hw1 & 0x0120u)) return rn != 15u && rt != 15u && rd != 15u;
     return 0;

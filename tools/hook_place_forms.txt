@@ -58,6 +58,8 @@ thumb ok win ldr.w r0, [sp, #0x100]
 thumb ok win ldr.w r1, [r2, #0x200]
 thumb ok win str r0, [sp, #-4]!
 thumb ok win ldr r0, [r1, #-8]
+thumb ok win str r0, [r1], #4
+thumb ok win ldr r0, [r1], #-4
 thumb ok win strd r0, r1, [sp, #8]
 thumb ok win strd r4, r5, [sp, #-8]!
 thumb ok win vpush {d8-d15}
@@ -91,6 +93,9 @@ thumb no win tbh [r0, r1, lsl #1]
 thumb no win pop {r4, pc}
 thumb no win pop.w {r4-r11, pc}
 thumb no win ldr.w pc, [sp], #4
+# STR / LDR (T4) with P = W = 0: UNDEFINED (audit-hooks N1); the assembler has no mnemonic for it
+thumb no win .inst.w 0xf8408888
+thumb no win .inst.w 0xf8500804
 thumb no win ldr r0, [r1, r2]
 thumb no win ldr.w r0, [r1, r2]
 thumb no win ldrb r0, [r1, #1]
