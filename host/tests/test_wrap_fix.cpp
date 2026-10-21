@@ -118,7 +118,7 @@ static bool line_start_allowed(const std::vector<uint16_t> &u, uint32_t s)
 /* Runs the overlay's loop: settle, fix, put the '\n' in, set again; returns the breaks put in. */
 static int rewrap(Model &m, std::vector<uint16_t> &u, int frames = 200)
 {
-    VjoWrap w;
+    VjoWrap w = {}; /* keep 0: vjo_wrap_arm leaves it (audit-source-badge F2) */
     int put = 0;
     m.set(u.data(), (uint32_t)u.size());
     vjo_wrap_arm(&w);
@@ -168,7 +168,7 @@ static void soft_lines_move_to_word_starts(void)
 static void stale_or_missing_layouts_are_waited_for(void)
 {
     Model m;
-    VjoWrap w;
+    VjoWrap w = {}; /* keep 0 (audit-source-badge F2) */
     std::vector<uint16_t> u = u16("あいうえおかきくけこさしすせそ食べるかなと思った");
     m.set(u.data(), (uint32_t)u.size());
     vjo_wrap_arm(&w);

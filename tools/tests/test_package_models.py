@@ -417,8 +417,11 @@ class PackageModels(unittest.TestCase):
             else:
                 self.assertEqual(got, value, key)
         # every setting the template has is classified as core/config.c parses it
-        self.assertEqual({k for k in template if template[k] in ("on", "off") and k != "ocr_refine_lines"},
+        # (the choices whose value can be on or off: ocr_refine_lines, source_badge's on | off | icons)
+        self.assertEqual({k for k in template if template[k] in ("on", "off") and k not in ("ocr_refine_lines",
+                                                                                            "source_badge")},
                          set(release.SWITCHES))
+        self.assertEqual(defaults["source_badge"], "on")
         self.assertEqual({k for k in template if template[k].isdigit()}, set(release.NUMBERS))
         # the API 20 job keys, as the template and core/config.c's defaults have them
         self.assertEqual({k: defaults[k] for k in ("ocr_settle_ms", "ocr_settle_max_ms", "ocr_skip_blank_lines",

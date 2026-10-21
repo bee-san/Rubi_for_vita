@@ -90,7 +90,10 @@ static uint32_t local_text_scene, local_text_capture_seq;
 /* VJO_BADGE_*: where local_text came from (its job's text_from: a native text hook's stream, or OCR),
  * written with local_text (run_vocr under cmd_lock, a refresh's replacement), published to the view's
  * source_badge; an earlier line shown in its place (history_show) leaves it to the current text, the
- * only text the overlay puts a badge before (overlay.cpp render). */
+ * only text the overlay puts a badge before (overlay.cpp render). The overlay draws the badge that a
+ * text generation's first publication carries (render rebuilds the header only for a new text), so the
+ * source changes only with a new generation, published with it: a change of source for the same text
+ * would need the header rebuilt too (audit-source-badge F1; host test badge_invariant). */
 static uint8_t local_text_source;
 static uint32_t local_cursor_byte, local_cursor_seq;
 static int cursor_waiting;
@@ -601,7 +604,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.status_is_error = is_error;
     g_view.local_cursor_mode = local_text_valid && list &&
                                list->header == local_text;
-    g_view.source_badge = cfg.source_badge ? local_text_source : VJO_BADGE_NONE; /* local_text's */
+    g_view.source_badge = VJO_BADGE_STYLED(cfg.source_badge, local_text_source); /* local_text's */
     g_view.cursor_byte = local_cursor_byte;
     /* The static header placeholder keeps the requested page while its
      * lookup runs; a published result carries its own page count. */
@@ -2326,7 +2329,7 @@ static void on_refresh_done(void)
                 g_view.list = &local_header;
                 g_view.cursor_byte = local_cursor_byte;
                 g_view.text_generation = local_text_generation;
-                g_view.source_badge = cfg.source_badge ? local_text_source : VJO_BADGE_NONE;
+                g_view.source_badge = VJO_BADGE_STYLED(cfg.source_badge, local_text_source);
                 g_view.dict_page = g_view.dict_pages = 0;
                 sceClibSnprintf(g_view.status, sizeof(g_view.status), "Looking up words…");
                 g_view.status_is_error = 0;

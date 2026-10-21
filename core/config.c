@@ -94,7 +94,8 @@ const char *vjo_config_default_text(void)
            "frequency_badge = on\n"
            "\n"
            "; Start the popup's text with where it came from: [HOOK] (a native text hook)\n"
-           "; or [OCR] (read off the screen): on | off\n"
+           "; or [OCR] (read off the screen): on | off | icons (an anchor and an eye from\n"
+           "; the system's fonts instead: untested, shown as _ if SceShell lacks them)\n"
            "source_badge = on\n"
            "\n"
            "; Text size, 8-40: Japanese (sentence, words, readings) and English (meanings, messages)\n"
@@ -437,8 +438,10 @@ static void set_font(VjoConfig *c, const char *key, const char *val, int *dst)
         warn(c, "%s: invalid value (8-40)", key);
 }
 
-/* The on | off settings' values, as set_choice reads them (off 0, on 1). */
+/* The on | off settings' values, as set_choice reads them (off 0, on 1); source_badge's, which has icons too. */
 static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", NULL};
+static const char icons_name[] VJO_DATA_TABLE(config_icons) = "icons";
+static const char *const badge_styles[] VJO_DATA_TABLE(config_badge_styles) = {"off", "on", icons_name, NULL};
 
 /* A time in ms within [lo, hi]. */
 /* One of names (NULL-ended), stored as its index. */
@@ -507,8 +510,9 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         else if (vjo_ieq(val, "character")) c->highlight_mode = VJO_HIGHLIGHT_CHARACTER;
         else warn(c, "%s: invalid value", key);
     } else if (vjo_ieq(key, "frequency_badge") || vjo_ieq(key, "source_badge")) {
-        /* the popup's frequency rank, or its text's source ([HOOK] or [OCR]): an invalid value keeps it */
-        set_choice(c, key, val, vjo_ieq(key, "source_badge") ? &c->source_badge : &c->frequency_badge, off_on);
+        /* the popup's frequency rank, or its text's source ([HOOK] or [OCR], or icons): an invalid value keeps it */
+        int source = vjo_ieq(key, "source_badge");
+        set_choice(c, key, val, source ? &c->source_badge : &c->frequency_badge, source ? badge_styles : off_on);
     } else if (vjo_ieq(key, "local_dictionary_results")) {
         int v;
         if (parse_int(val, &v) == 0 && v >= 1 && v <= VJO_LOCAL_MAX_DICTS)

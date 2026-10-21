@@ -50,9 +50,10 @@ typedef struct {
     int highlight_mode;       /* whole matched word or selected source character */
     int frequency_badge;      /* config frequency_badge: the entry's frequency rank is shown */
     /* VJO_BADGE_* (core/styled.h): where the local text (the current one, not an earlier line's) came
-     * from, a native text hook or OCR, as the job that read it (or the refresh that replaced it) said;
-     * VJO_BADGE_NONE with config source_badge = off. The overlay puts it before the current text only
-     * (overlay.cpp render, core/styled.c vjo_styled_badge: an earlier line's source is not known). */
+     * from, a native text hook or OCR, as the job that read it (or the refresh that replaced it) said, in
+     * config source_badge's style (VJO_BADGE_STYLED: VJO_BADGE_NONE when off, the _ICON forms for icons).
+     * The overlay puts it before the current text only (overlay.cpp render, core/styled.c
+     * vjo_styled_badge: an earlier line's source is not read back). */
     int source_badge;
     int stick_lookup_ms;      /* config stick_lookup_ms: the left stick's lookup waits for the cursor to rest */
     uint32_t cursor_byte;     /* byte offset in the immutable trimmed header */

@@ -223,7 +223,9 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/vita/buttons_vita.c
   ${ROOT}/shell/libc_shim.c)
 add_dependencies(VitaJPOverlay_Shell vjo_kernel_stubs)
-target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
+# VJO_SHIM_ARM: shell/libc_shim.c's shims as ARM code, without their Thumb-to-ARM veneers (144 B of text,
+# which pay for the popup's source badge: docs/memory-ledger.md); the game worker keeps them Thumb.
+target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1 VJO_SHIM_ARM=1)
 # The overlay page (once a frame while it is open; paf's own calls dominate)
 # and the region selector it draws: built for size, which gave the region's
 # stick cursor its room in the module's pages (#81; overlay.cpp's text 11,608 B at -O2,

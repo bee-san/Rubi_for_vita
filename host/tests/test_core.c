@@ -975,6 +975,12 @@ static void test_source_badge_config(void)
     vjo_config_parse(&c, invalid, sizeof(invalid) - 1);
     TEST_CHECK(c.source_badge == 1 && c.n_warnings == 2); /* an invalid value keeps the setting, and is named */
     TEST_CHECK(strstr(c.warnings[0], "source_badge: invalid value") != NULL && !strstr(c.warnings[0], "hook"));
+    const char icons[] = "source_badge = ICONS\n";
+    vjo_config_parse(&c, icons, sizeof(icons) - 1);
+    TEST_CHECK(c.source_badge == 2 && c.n_warnings == 2);
+    const char freq_icons[] = "frequency_badge = icons\n"; /* frequency_badge stays on | off */
+    vjo_config_parse(&c, freq_icons, sizeof(freq_icons) - 1);
+    TEST_CHECK(c.frequency_badge == 0 && c.source_badge == 2 && c.n_warnings == 3);
     /* The written template carries it, on, right after frequency_badge. */
     vjo_config_defaults(&c);
     c.source_badge = 0;
@@ -982,6 +988,7 @@ static void test_source_badge_config(void)
     TEST_CHECK(c.source_badge == 1 && c.n_warnings == 0);
     const char *t = strstr(vjo_config_default_text(), "\nsource_badge = on\n");
     TEST_CHECK(t != NULL && t > strstr(vjo_config_default_text(), "\nfrequency_badge = on\n"));
+    TEST_CHECK(strstr(vjo_config_default_text(), "on | off | icons") != NULL);
 }
 
 static void test_regions(void)
@@ -1155,7 +1162,7 @@ static void test_styled_history_header(void)
 static void test_styled_source_badge(void)
 {
     static const struct { int badge; const char *text; } cases[] = {
-        {VJO_BADGE_HOOK, "[HOOK]"}, {VJO_BADGE_OCR, "[OCR]"}, {VJO_BADGE_NONE, ""}, {3, ""}, {-1, ""}, {1 << 30, ""}};
+        {VJO_BADGE_HOOK, "[HOOK]"}, {VJO_BADGE_OCR, "[OCR]"}, {VJO_BADGE_NONE, ""}, {5, ""}, {-1, ""}, {1 << 30, ""}};
     static const char line[] = "また明日、一緒に見に行こう!";
     VjoStyled st, plain;
     uint32_t lead;
@@ -1193,6 +1200,21 @@ static void test_styled_source_badge(void)
     TEST_CHECK(st.len == 3 && st.truncated && vjo_styled_history(&st, NULL, "猫", NULL, 27) == 3 && st.len == 3);
     /* the current text's badge and text: two of the header's spans, at most */
     TEST_CHECK(VJO_HEADER_SPANS >= 2);
+    /* source_badge = icons: the system's eye (U+E541) and anchor (U+E1BB), one unit each, dimmed as the ASCII */
+    static const struct { int badge; uint16_t unit; } icons[] = {{VJO_BADGE_OCR_ICON, 0xE541}, {VJO_BADGE_HOOK_ICON, 0xE1BB}};
+    for (size_t c = 0; c < 2; c++) {
+        TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+        vjo_styled_badge(&st, icons[c].badge, 21);
+        TEST_CHECK(vjo_styled_history(&st, NULL, line, NULL, 27) == 1 && st.text[0] == icons[c].unit &&
+                   st.n_spans == 2 && st.spans[0].len == 1 && st.spans[0].rgb == VJO_RGB_RANK && st.spans[0].px == 21);
+    }
+    vjo_styled_badge(&st, 5, 21); /* past the table: nothing */
+    TEST_CHECK(st.len == 1 + plain.len && st.n_spans == 2);
+    /* the style of config source_badge on a text's source: off none, on the ASCII, icons the symbols */
+    TEST_CHECK(VJO_BADGE_STYLED(0, VJO_BADGE_OCR) == VJO_BADGE_NONE && VJO_BADGE_STYLED(0, VJO_BADGE_HOOK) == VJO_BADGE_NONE);
+    TEST_CHECK(VJO_BADGE_STYLED(1, VJO_BADGE_OCR) == VJO_BADGE_OCR && VJO_BADGE_STYLED(1, VJO_BADGE_HOOK) == VJO_BADGE_HOOK);
+    TEST_CHECK(VJO_BADGE_STYLED(2, VJO_BADGE_OCR) == VJO_BADGE_OCR_ICON &&
+               VJO_BADGE_STYLED(2, VJO_BADGE_HOOK) == VJO_BADGE_HOOK_ICON);
 }
 
 /* Bee's Ultimate Dictionary's kanji lines: the trailing lines "漢=meaning",

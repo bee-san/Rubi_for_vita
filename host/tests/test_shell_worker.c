@@ -37,6 +37,11 @@ static int held_cmd, held_view, retirement_checks;
  * view that shows local_text shows it with its own generation (a replaced
  * text never appears with the old one's entry or cursor). */
 static int view_invariant, view_invariant_checks;
+/* audit-source-badge F1: whenever the view lock is released after a publication (g_view.version moved), a view
+ * that shows the local text shows it with that text's own source badge: the overlay draws the badge a text's
+ * first publication carries (render rebuilds the header only for a new text), so a later one cannot fix it. */
+static int badge_invariant, badge_invariant_checks;
+static unsigned badge_invariant_version;
 static uint32_t invariant_generation;
 static unsigned invariant_seq;
 uint64_t sceKernelGetProcessTimeWide(void) { return test_now; }
@@ -151,6 +156,15 @@ int sceKernelLockMutex(SceUID uid, int count, void *timeout)
 }
 int sceKernelUnlockMutex(SceUID uid, int count)
 {
+    if (uid == 81 && badge_invariant && g_view.version != badge_invariant_version) {
+        badge_invariant_version = g_view.version;
+        if (g_view.local_cursor_mode && local_text_valid && g_view.list && g_view.list->header == local_text) {
+            badge_invariant_checks++;
+            TEST_CHECK_(g_view.source_badge == VJO_BADGE_STYLED(cfg.source_badge, local_text_source),
+                        "text %u published with badge %d, its source %d", (unsigned)g_view.text_generation,
+                        g_view.source_badge, local_text_source);
+        }
+    }
     if (uid == 81 && view_invariant && g_view.open && g_view.local_cursor_mode && g_view.list &&
         g_view.list->header == local_text && local_text_valid) {
         view_invariant_checks++;
@@ -4366,6 +4380,7 @@ static void test_history_up_walks_back_and_down_returns(void)
 static void test_the_source_badge_follows_the_texts_source(void)
 {
     cursor_setup();
+    badge_invariant = 1; badge_invariant_checks = 0; badge_invariant_version = g_view.version;
     TEST_CHECK(loaded.source_badge == 1); /* on by default */
     vjo_ledger_shell_init();
     history_csv_add("vita-PCSG00415", "犬鳥");
@@ -4429,6 +4444,9 @@ static void test_the_source_badge_follows_the_texts_source(void)
     open_overlay();
     TEST_CHECK(g_view.source_badge == VJO_BADGE_NONE && local_text_source == VJO_BADGE_HOOK);
     TEST_CHECK(local_text_valid && !job_running && vocr_allocs == inferences);
+    close_overlay(); loaded.source_badge = 2; /* icons */
+    open_overlay();
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK_ICON && local_text_source == VJO_BADGE_HOOK && !job_running);
     close_overlay(); loaded.source_badge = 1;
     open_overlay();
     TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK && !job_running);
@@ -4450,6 +4468,8 @@ static void test_the_source_badge_follows_the_texts_source(void)
     open_overlay();
     finish_current_job();
     TEST_CHECK(!local_text_valid && !g_view.local_cursor_mode && g_view.status_is_error); /* no text: no badge drawn */
+    TEST_CHECK_(badge_invariant_checks > 5, "%d publications checked", badge_invariant_checks);
+    badge_invariant = 0;
     fail_vocr_user = 0;
     close_overlay(); mem_free();
 }

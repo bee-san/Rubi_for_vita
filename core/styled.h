@@ -68,8 +68,11 @@ void vjo_styled_header(VjoStyled *s, const VjoEntryList *l, int ja_px);
 
 /* Where the overlay's current text came from (VjoView.source_badge, config source_badge): not shown (the
  * badge turned off, no text read yet), recognized by OCR, or a native text hook's (VjoGameOcrResult's
- * text_from, docs/native-hooks.md). */
-enum { VJO_BADGE_NONE = 0, VJO_BADGE_OCR = 1, VJO_BADGE_HOOK = 2 };
+ * text_from, docs/native-hooks.md); _ICON: the same in the system's symbols (source_badge = icons). */
+enum { VJO_BADGE_NONE = 0, VJO_BADGE_OCR = 1, VJO_BADGE_HOOK = 2, VJO_BADGE_OCR_ICON = 3, VJO_BADGE_HOOK_ICON = 4 };
+/* The badge of a text whose source is VJO_BADGE_OCR or VJO_BADGE_HOOK in config source_badge's style:
+ * 0 off (none), 1 on (the ASCII badges), 2 icons (their _ICON forms). */
+#define VJO_BADGE_STYLED(style, source) ((style) ? (source) + 2 * ((style) - 1) : VJO_BADGE_NONE)
 
 /* Header of the overlay's local text: the text in VJO_RGB_TEXT and, for an earlier line (line history,
  * docs/line-history.md), the last row of the line before it above it and the first row of the line
@@ -79,11 +82,12 @@ enum { VJO_BADGE_NONE = 0, VJO_BADGE_OCR = 1, VJO_BADGE_HOOK = 2 };
 uint32_t vjo_styled_history(VjoStyled *s, const char *before, const char *text, const char *after, int ja_px);
 
 /* The current text's source badge (VJO_BADGE_*, config source_badge; the owner, 2026-10-21): "[HOOK]" or
- * "[OCR]", dimmed (VJO_RGB_RANK, the frequency badge's colour) at px; VJO_BADGE_NONE (or a value that is no
- * badge) puts nothing. The overlay puts it first, right before vjo_styled_history's text and only for the
- * current text (an earlier line's source is not known); no space follows it, so the line never breaks
- * between the badge and the text (core/linebreak.h), and the overlay's re-wrap never breaks in it
- * (shell/wrap_fix.h VjoWrap.keep). */
+ * "[OCR]", or with source_badge = icons the system's anchor (U+E1BB) or eye (U+E541) of its extra font
+ * music_arib.pvf, drawn only if SceShell's PAF loaded that font (unverified: `_` otherwise); dimmed
+ * (VJO_RGB_RANK, the frequency badge's colour) at px; VJO_BADGE_NONE (or a value that is no badge) puts
+ * nothing. The overlay puts it first, right before vjo_styled_history's text and only for the current
+ * text (an earlier line's source is not read back); no space follows it, and the overlay's re-wrap never
+ * breaks right after it (shell/wrap_fix.h VjoWrap.keep), so Rubi never leaves it alone on a row. */
 void vjo_styled_badge(VjoStyled *s, int badge, int px);
 
 /* UTF-16 range of an entry's highlight in the header; 0 if it has none. */
