@@ -47,7 +47,7 @@ VOCR3_FILES = ("teacher_val", "devnative_strict_ink", "devnative_strict_grad", "
 VOCR4_PREFIX = {"teacher_val": "tv", "devnative_strict_ink": "dn_strict_ink",
                 "devnative_strict_grad": "dn_strict_grad", "devnative_tv_native_ink": "dn_tv_native_ink",
                 "devnative_tv_native_grad": "dn_tv_native_grad"}
-RULES = ("width", "tilde", "dash", "ellipsis", "long_vowel", "kanji_one")
+RULES = ("width", "tilde", "dash", "ellipsis", "long_vowel", "kanji_one", "counter")
 
 
 def lines_of(herd, family, size, run):

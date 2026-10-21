@@ -2,6 +2,7 @@
  * and that the text never grows (it is normalised in place). */
 #include "acutest.h"
 #include "textnorm.h"
+#include "vocr_post.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -91,6 +92,66 @@ static void test_long_vowel_and_kanji_one(void)
     TEST_CHECK(check("ラーメン", "ラーメン", &k) == 0);
 }
 
+/* ッ before a counter is ヶ (vita-vn-ocr #109, docs/counters.md there): 月 年 after
+ * anything, 国 条 after a numeral or 何数幾, 所 after one other than 一; the
+ * corpora's own ッ before a counter character stays. */
+static void test_counters(void)
+{
+    VjoTextNorm k;
+    TEST_CHECK(check("ルッ月です」", "ルヶ月です」", &k) == 1 && k.counter == 1);
+    TEST_CHECK(check("九ッ月、３ッ年", "九ヶ月、3ヶ年", &k) == 3 && k.counter == 2 && k.width == 1);
+    TEST_CHECK(check("ッ月", "ヶ月", &k) == 1);
+    TEST_CHECK(check("十ッ国、数ッ条、何ッ国", "十ヶ国、数ヶ条、何ヶ国", &k) == 3 && k.counter == 3);
+    TEST_CHECK(check("三ッ所、幾ッ所、5ッ所", "三ヶ所、幾ヶ所、5ヶ所", &k) == 3);
+    TEST_CHECK(check("一ッ所に立つて", "一ッ所に立つて", &k) == 0);
+    TEST_CHECK(check("「えッ国上山。", "「えッ国上山。", &k) == 0);
+    TEST_CHECK(check("国の為ッ国の為ッて", "国の為ッ国の為ッて", &k) == 0);
+    TEST_CHECK(check("生命に別ッ条ない", "生命に別ッ条ない", &k) == 0);
+    TEST_CHECK(check("三ッ日月、四ッ谷、三ッ村", "三ッ日月、四ッ谷、三ッ村", &k) == 0);
+    TEST_CHECK(check("九っ月、九ツ月、九ヵ月、九ケ月", "九っ月、九ツ月、九ヵ月、九ケ月", &k) == 0);
+    TEST_CHECK(check("三\nッ国", "三\nッ国", &k) == 0);
+    TEST_CHECK(check("九ッ\n月", "九ッ\n月", &k) == 0);
+    /* before the 一/ー rule: the 一 before the counter stays a numeral */
+    TEST_CHECK(check("ハネムーン一ッ月", "ハネムーン一ヶ月", &k) == 1 && k.counter == 1 && !k.long_vowel);
+    TEST_CHECK(check("ア一ッ月", "ア一ヶ月", &k) == 1);
+}
+
+/* The rule is vita-vn-ocr's vocr_post_counters() (runtime/vocr_post.c): on random
+ * texts of its characters both change the same ッ (the other passes do not touch
+ * these characters, except that a full-width digit is folded first). */
+static void test_counters_match_the_runtime(void)
+{
+    static const char *const pieces[] = {"ッ", "ヶ", "月", "年", "国", "条", "所", "日", "一", "三", "九", "何",
+                                         "数", "幾", "ル", "え", "3", "\n", "「", "」", "谷", "ー", "３", ".",
+                                         "・", "\xFF"};
+    static char a[256], b[256];
+    unsigned seed = 12345;
+    for (int t = 0; t < 20000; t++) {
+        size_t n = 0;
+        int len = 1 + (int)((seed = seed * 1103515245u + 12345u) >> 16) % 10;
+        for (int i = 0; i < len; i++) {
+            const char *p = pieces[((seed = seed * 1103515245u + 12345u) >> 16) % (sizeof(pieces) / sizeof(pieces[0]))];
+            memcpy(a + n, p, strlen(p));
+            n += strlen(p);
+        }
+        a[n] = 0;
+        memcpy(b, a, n + 1);
+        VjoTextNorm k;
+        vjo_text_normalize(a, &k);
+        unsigned m = vocr_post_counters(b);
+        if (!TEST_CHECK(k.counter == m)) TEST_MSG("%s: %u against %u", b, k.counter, m);
+        /* the same ッ made ヶ: the texts' sequences of ッ and ヶ agree (pass 1 folds dots, so the texts
+         * themselves may differ in length; no pass but the rule touches either character) */
+        char sa[64], sb[64];
+        size_t na = 0, nb = 0;
+        for (size_t i = 0; a[i] && na < sizeof(sa) - 1; i++)
+            if (!memcmp(a + i, "ッ", 3) || !memcmp(a + i, "ヶ", 3)) sa[na++] = a[i + 2];
+        for (size_t i = 0; b[i] && nb < sizeof(sb) - 1; i++)
+            if (!memcmp(b + i, "ッ", 3) || !memcmp(b + i, "ヶ", 3)) sb[nb++] = b[i + 2];
+        if (!TEST_CHECK(na == nb && !memcmp(sa, sb, na))) TEST_MSG("%s / %s", a, b);
+    }
+}
+
 /* A rule never looks across a line break; the break stays. */
 static void test_lines(void)
 {
@@ -171,6 +232,8 @@ TEST_LIST = {
     {"tildes_and_dashes", test_tildes_and_dashes},
     {"ellipses", test_ellipses},
     {"long_vowel_or_kanji_one_by_context", test_long_vowel_and_kanji_one},
+    {"counter_tsu_is_ke", test_counters},
+    {"counters_match_the_runtime", test_counters_match_the_runtime},
     {"lines_are_separate", test_lines},
     {"invalid_bytes_are_kept", test_invalid_bytes},
     {"a_full_buffer_never_grows", test_full_buffer},
