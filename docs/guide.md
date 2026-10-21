@@ -325,9 +325,9 @@ reported console run. The behaviour below is checked on the host.
   starts with a dim `[HOOK]` when a native text hook supplied the line (the hook agreed with OCR, or
   answered for it once trusted) and `[OCR]` when Rubi read it off the screen. An earlier line (line
   history) has none, since its source is not kept; `source_badge = off` in `config.ini` (no setting in
-  the app; `on` by default) hides it. The badge is part of the text's first row (about three
-  characters' width at the default sizes) and never takes a row of its own; the cursor, taps and the
-  highlight skip it ([details](native-hooks.md#the-popups-source-badge)). Source selection is
+  the app; `on` by default) hides it. The badge is part of the text's first row (at the default sizes
+  `[HOOK]` is as wide as 2.9 Japanese characters, `[OCR]` 2.3) and never takes a row of its own; the
+  cursor, taps and the highlight skip it ([details](native-hooks.md#the-popups-source-badge)). Source selection is
   automatic; there is no hook number or Triangle source picker. Technical source details remain in the
   debug log.
 - **The Games page** tags a game with a hook entry: `Hook` for Rubi's own, `Luna hook` for a ported

@@ -17,11 +17,12 @@ been reported.
   hook supplied the line and `[OCR]` when Rubi read it off the screen (the owner asked for a hook emoji
   and an eye, then for ASCII over an image). An earlier line (line history) has none, since its source
   is not kept; `source_badge = off` in `config.ini` hides it (no setting in the app). It sits on the
-  text's first row, about three characters wide at the default sizes, never on a row of its own, and
-  the cursor, taps and the highlight skip it. Emoji are not used: the system fonts the popup draws
-  with lack even ✓ (the console draws it as `_`), so 🪝 and 👁 are not expected there (unchecked), and
-  the firmware's `imagefont.bin` and `psexchar.pvf` have no hook or eye glyph
-  ([details](docs/native-hooks.md#the-popups-source-badge)). Host-tested only.
+  text's first row, as wide as 2.9 Japanese characters (`[OCR]` 2.3) at the default sizes, never on a
+  row of its own, and the cursor, taps and the highlight skip it. Emoji are not used: none of the
+  Vita's 20 system fonts has a character beyond U+FFFF, so none has 🪝 or 👁 (nor ⚓ or ✓, which the
+  console draws as `_`), and the firmware's `imagefont.bin` and `psexchar.pvf` have no hook or eye
+  glyph [measured: the fonts of Sony's font package and the 3.74 update, on the host;
+  [details](docs/native-hooks.md#the-popups-source-badge)]. Host-tested only.
 
 ### Changed
 
