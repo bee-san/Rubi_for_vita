@@ -456,20 +456,24 @@ static void cancel_and_wire(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.speed = VJO_GAME_OCR_S_TRIM; /* API 32: a shot's bit, refused on an OCR job by the worker too */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
-    /* API 35: the PSP probe's bit is an OCR job's, known to both builds' workers: the job gets past the request's
-     * check (to the cancellation that follows it), alone or with the other known bits (audit-adrenaline-probe F2:
-     * the debug Shell sets it on every user job) */
-    cancel_job = 1;
-    r.speed = VJO_GAME_OCR_S_PSP_PROBE;
-    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_CANCELLED && !allocations);
-    r.speed = VJO_GAME_OCR_S_PSP_PROBE | VJO_GAME_OCR_S_GATE | VJO_GAME_OCR_S_BOOST | 2u;
-    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_CANCELLED && !allocations);
-    cancel_job = 0;
-    r.speed = VJO_GAME_OCR_S_PSP_PROBE << 1; /* bit 8: unknown */
+    r.speed = VJO_GAME_OCR_S_PSP_PROBE << 1; /* bit 8: unknown (API 35's bit 7: psp_probe_bit_is_an_ocr_jobs) */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.speed = 0;
     r.flags = 0; r.model[31] = 'x';
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
+}
+/* API 35: the PSP probe's bit is an OCR job's, known to both builds' workers: a job carrying it runs as one
+ * without it, alone and with other known bits (audit-adrenaline-probe F2: the debug Shell sets it on every
+ * user job, so a worker that refused it would fail them all). A cancelled job cannot show it: the result's
+ * code is then VJO_E_CANCELLED whatever stopped the job. */
+static void psp_probe_bit_is_an_ocr_jobs(void)
+{
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    r.speed = VJO_GAME_OCR_S_PSP_PROBE;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !out.rc);
+    r = setup();
+    r.speed = VJO_GAME_OCR_S_PSP_PROBE | VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_NOCACHE | 2u;
+    TEST_CHECK(!vjo_game_ocr_run_request(&r, &out) && !out.rc);
 }
 static void real_model_io_and_cancellation(void)
 {
@@ -2571,6 +2575,7 @@ TEST_LIST = {
     {"100 real vocr jobs and game USER reserve", repeated_jobs_and_reserve},
     {"allocation base free failure and retry", memory_failure_and_retry},
     {"cancel before allocation and wire validation", cancel_and_wire},
+    {"the PSP probe's bit is an OCR job's (API 35)", psp_probe_bit_is_an_ocr_jobs},
     {"real model bounded short reads errors and cancellation", real_model_io_and_cancellation},
     {"model callbacks without weights timeouts errors and saved cleanup sequence", model_callbacks_timeouts_errors_and_cleanup},
     {"ALL system gate and retained thread joins", system_app_gate_and_failed_joins},
