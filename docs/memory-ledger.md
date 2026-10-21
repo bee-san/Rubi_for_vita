@@ -13,7 +13,7 @@ e33f8f6 and of this change:
 
 | Module (build) | Segments on main | With the probe | Pages |
 |---|---:|---:|---:|
-| Game worker (debug) | 137,088 + 32,888 B | 137,800 + 36,104 B | 176,128 B, unchanged |
+| Game worker (debug) | 137,088 + 32,888 B | 137,816 + 36,104 B | 176,128 B, unchanged |
 | Game worker (normal) | 128,220 + 32,880 B | the same | 167,936 B, unchanged |
 | Shell (debug) | 100,940 + 73,560 B | 100,924 + 73,600 B | 176,128 B, unchanged |
 | Shell (normal) | 90,092 + 73,576 B | 90,084 + 73,616 B | 163,840 B, unchanged |
@@ -22,7 +22,7 @@ e33f8f6 and of this change:
 The probe's classifier, timed read, passes and job lines are in the debug worker only. Its text would have
 crossed a page, so Luna's PSP title IDs and site addresses (3,140 B of `core/hook_luna_psp.inc`) are in the
 data segment instead (`VJO_DATA_TABLE`, as API 33 did for the Vita title IDs), which leaves both segments
-room (1,464 B of text, 760 B of data). The Shell reads the new `psp_probe` key in both builds, as it reads
+room (1,448 B of text, 760 B of data). The Shell reads the new `psp_probe` key in both builds, as it reads
 every setting; it and the three other `off | on` settings read with `set_choice` are one table in the data
 segment (`core/config.c` `off_on_settings`), so the Shell's text is smaller than main's in both builds and
 its data 40 B larger, in the same pages (the normal build's text had 20 B of room on main). No allocation

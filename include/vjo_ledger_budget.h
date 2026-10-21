@@ -234,7 +234,7 @@
 /* API 35, the read-only PSP probe v2 (docs/native-hooks.md "PSP probe (debug build)"): no budget changes. Its
  * classifier, timed read, passes and job lines are in the debug worker only; Luna's PSP title IDs and site
  * addresses (3,140 B of core/hook_luna_psp.inc) are in its data segment (VJO_DATA_TABLE), so its segments go
- * 137,088 + 32,888 -> 137,800 + 36,104 B, 176,128 B of pages as before. The normal worker is unchanged
+ * 137,088 + 32,888 -> 137,816 + 36,104 B, 176,128 B of pages as before. The normal worker is unchanged
  * (128,220 + 32,880 B). The psp_probe key, read by both builds as every setting is, and the off | on settings
  * it joins in one table (core/config.c off_on_settings): debug Shell 100,940 + 73,560 -> 100,924 + 73,600 B,
  * normal Shell 90,092 + 73,576 -> 90,084 + 73,616 B, the same pages (text smaller in both); the kernel's

@@ -287,7 +287,7 @@ game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
 | debug, `feat/native-hooks` 9fa24c5 (the probe and hooks-api's text source import) | 133,464 B | 30,568 B | 167,936 B |
 | normal, `feat/native-hooks` 9fa24c5 | 124,740 B | 30,560 B | 159,744 B |
 | debug, main e33f8f6 (API 34) | 137,088 B | 32,888 B | 176,128 B |
-| debug, the [PSP probe](#psp-probe-debug-build) v2 (API 35; Luna's PSP IDs and addresses in the data segment) | 137,800 B | 36,104 B | 176,128 B |
+| debug, the [PSP probe](#psp-probe-debug-build) v2 (API 35; Luna's PSP IDs and addresses in the data segment) | 137,816 B | 36,104 B | 176,128 B |
 
 [measured: the build log's module rows on hooks/engine 8aa79eb (local CI), both builds, with
 origin/hooks/luna-port merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
