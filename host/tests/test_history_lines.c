@@ -372,7 +372,29 @@ static void test_a_file_without_header_or_records(void)
     TEST_CHECK(h.n == 0);
 }
 
+static void test_saved_engine_follows_its_line(void)
+{
+    reset("今");
+    record(UUID, "古いOCR");
+    record(UUID, "フック");
+    char *engine = strstr(csv, "\"フック\",1792220400.250123,\"vita\",\"PCSG00415\",\"vocr\"");
+    TEST_ASSERT(engine != NULL);
+    engine = strstr(engine, "\"vocr\"");
+    memcpy(engine + 1, "hook", 4);
+    record(UUID, "今");
+    scan_all(VJO_FILTER_NONE);
+    TEST_ASSERT(h.n == 2);
+    TEST_CHECK(!strcmp(h.line[1], "フック") && h.origin[1] == VJO_LINE_HOOK);
+    TEST_CHECK(!strcmp(h.line[2], "古いOCR") && h.origin[2] == VJO_LINE_OCR);
+
+    reset("今");
+    strcpy(csv, "\"" UUID "\",\"id\",\"game\",\"昔\",1\n");
+    scan_all(VJO_FILTER_NONE);
+    TEST_CHECK(h.n == 1 && h.origin[1] == VJO_LINE_UNKNOWN);
+}
+
 TEST_LIST = {
+    {"saved engine follows its line, missing metadata stays unknown", test_saved_engine_follows_its_line},
     {"this game's lines, newest first, the current text not again", test_this_games_lines_newest_first},
     {"consecutive duplicates collapse, A/B/A stays", test_consecutive_duplicates_collapse_but_aba_stays},
     {"lines newer than the current text are no earlier lines", test_lines_newer_than_the_current_text},

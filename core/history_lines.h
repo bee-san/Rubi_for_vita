@@ -19,11 +19,14 @@
 #define VJO_HISTORY_LINES 32
 #define VJO_HISTORY_WINDOW 24512u
 
+enum { VJO_LINE_UNKNOWN, VJO_LINE_OCR, VJO_LINE_HOOK };
+
 typedef struct {
     const char *line[VJO_HISTORY_LINES + 2]; /* [0] the current text, [k] the k-th earlier line; NULL past
                                               * line[n] (zeroed by the caller, kept so by the scan) */
     int n;                                   /* earlier lines: line[1..n] */
     int at;                                  /* the line shown: 0 the current text */
+    uint8_t origin[VJO_HISTORY_LINES + 2]; /* saved engine; unknown for older/incomplete records */
 } VjoHistory;
 
 /* Adds the earlier lines of game `uuid` (history.csv's first column with the quote and comma after it:

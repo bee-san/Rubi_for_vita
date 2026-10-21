@@ -46,6 +46,7 @@ extern "C" {
 #include "../core/utf.h"
 #include "../core/text_hit.h"
 #include "../core/port.h"
+#include "../core/history_lines.h"
 #include "../include/vjo_ledger_budget.h"
 }
 
@@ -100,7 +101,7 @@ void operator delete(void *p, unsigned int)
 static_assert(HEADER_UNITS <= UINT16_MAX && VJO_STRIP_MAX - 1 <= UINT16_MAX,
               "visible header ranges and owned cursor text fit 16-bit offsets");
 
-enum { MODE_OVERLAY = 0, MODE_REGION = 1 };
+enum { MODE_OVERLAY = 0, MODE_REGION = 1, MODE_LINE_DEBUG = 2 };
 
 static Plugin *s_plugin;
 static ui::Scene *s_page;
@@ -129,7 +130,8 @@ static int s_selected;
 static int s_n_entries;
 /* The header has at most HEADER_UNITS UTF-16 units. Keep every entry's range,
  * using half the static storage; len 0 still means no highlight. */
-static uint16_t s_rng_start[MAX_RANGES], s_rng_len[MAX_RANGES];
+static uint16_t *s_rng_start, *s_rng_len; /* the open page's existing UI block */
+static_assert(VJO_HEADER_RANGE_BYTES == MAX_RANGES * 2u * sizeof(uint16_t), "UI block holds all header ranges");
 
 static void cache_header_range(const VjoEntryList *list, int entry)
 {
@@ -196,7 +198,8 @@ static int s_square_clear_armed;
  * held for a page that is closed almost all the time (#59; it was a 96 KiB
  * static buffer). Its size is what render() allocates from it: two styled
  * texts of HEADER_UNITS/BODY_UNITS UTF-16 units plus their spans, 18,016 B,
- * rounded up to 24 KiB (host test: test_overlay_ui_arena_fits). A refused
+ * plus the entry ranges (VJO_HEADER_RANGE_BYTES), within the existing 20 KiB
+ * (host test: test_budget_table_is_consistent). A refused
  * allocation means the page does not open this time (fail closed). */
 #define UI_MEM_BYTES VJO_BUDGET_PAF_UI
 static uint8_t *s_ui_mem;
@@ -362,6 +365,16 @@ static int header_follow(void)
  * codepoints, rather than cutting a Japanese sentence after 80 bytes. */
 static void render(int new_content)
 {
+    static const char line_no_entries[] VJO_DATA_TABLE(line_no_entries) = "No dictionary entries for this text.";
+    static const char line_no_entry[] VJO_DATA_TABLE(line_no_entry) = "No dictionary entry starts at this character.";
+    static const char line_no_japanese[] VJO_DATA_TABLE(line_no_japanese) = "No Japanese characters in this text.";
+    static const char line_queue_count[] VJO_DATA_TABLE(line_queue_count) = "Anki queue: %d · export in the Rubi app";
+    static const char line_queue_export[] VJO_DATA_TABLE(line_queue_export) = "Anki queue · export in the Rubi app";
+    static const char line_queue_error[] VJO_DATA_TABLE(line_queue_error) = "Anki queue unavailable: check ux0 storage";
+    static const char line_hint_format[] VJO_DATA_TABLE(line_hint_format) = "<font color=\"#8a94a6\">%s · %sR stick scroll · □ region · %s close</font>";
+    static const char line_nav_character[] VJO_DATA_TABLE(line_nav_character) = "Tap / ◀▶▲▼ / stick character";
+    static const char line_nav_japanese[] VJO_DATA_TABLE(line_nav_japanese) = "Tap / ◀▶▲▼ / stick Japanese letter";
+    static const char line_nav_word[] VJO_DATA_TABLE(line_nav_word) = "Tap / ◀▶▲▼ / stick word";
     VjoStyled hdr, body;
     int ja, en, have_hdr = 0, have_body = 0, rebuild_header, cursor_matches = 1;
     const VjoEntryList *l;
@@ -465,6 +478,43 @@ static void render(int new_content)
     /* body: page, the app notice, status, the selected entry (or "no entries"), config warnings */
     if (vjo_styled_init(&body, &s_ui, BODY_UNITS, MAX_SPANS) == 0) {
         have_body = 1;
+        if (s_mode == MODE_LINE_DEBUG) {
+            const VjoLineDebug *d = &g_view.line_debug;
+            char info[512];
+            /* Cold diagnostic strings live in the existing data pages, not the crowded code segment. */
+            static const char source[] VJO_DATA_TABLE(line_debug_source) = "Line debug · Triangle hides\nSource: %s%s\n";
+            sceClibSnprintf(info, sizeof(info), source,
+                            !s_local_cursor_mode || !d->origin ? "Unknown" : d->origin == VJO_LINE_HOOK ? "Hook" : "OCR",
+                            s_history ? " (history.csv)" : "");
+            vjo_styled_puts(&body, info, VJO_RGB_RANK, en);
+            if (s_local_cursor_mode && d->model) {
+                static const char detail[] VJO_DATA_TABLE(line_debug_detail) =
+                    "Stream: %u (%s) · flags: 0x%02X\n"
+                    "Agreed: %u · locked: %u · pinned: %u · no OCR: %u\n"
+                    "Unlocked: %u · CALL slots full: %u\n"
+                    "Similarity: %u/1000 (0 may mean not compared)\n"
+                    "Available streams: 0x%05X\nMode: %s · table sites: %s\n"
+                    "Installed: %u sites, %u CALL imports · refused: %u\n"
+                    "OCR model: %s\nScene: %u · capture: %u";
+                uint32_t f = d->flags, mode = d->mode & VJO_TEXT_SOURCE_MODE_MASK;
+                sceClibSnprintf(info, sizeof(info), detail,
+                    (unsigned)d->stream, !d->stream ? "none" : (f & VJO_HOOK_R_SITE) ? "table site" : "CALL caller",
+                    (unsigned)f, !!(f & VJO_HOOK_R_AGREED), !!(f & VJO_HOOK_R_LOCKED),
+                    !!(f & VJO_HOOK_R_PINNED), !!(f & VJO_HOOK_R_NO_OCR),
+                    !!(f & VJO_HOOK_R_UNLOCK), !!(f & VJO_HOOK_R_CALLS_FULL),
+                    (unsigned)d->score, (unsigned)d->streams,
+                    mode == VJO_TEXT_SOURCE_OCR ? "OCR" : mode == VJO_TEXT_SOURCE_AUTO ? "Auto" : "Hooks",
+                    (d->mode & VJO_TEXT_SOURCE_NO_SITES) ? "off" : "on",
+                    (unsigned)(d->installed >> 16), (unsigned)(d->installed & 0xFFFFu), (unsigned)d->refused,
+                    (d->flags & VJO_HOOK_R_NO_OCR) ? "not run (hook only)" : d->model,
+                    (unsigned)d->scene, (unsigned)d->capture_seq);
+                vjo_styled_puts(&body, info, VJO_RGB_DIM, en);
+            } else {
+                static const char unavailable[] VJO_DATA_TABLE(line_debug_unavailable) =
+                    "Detailed capture/hook data unavailable for this line.";
+                vjo_styled_puts(&body, unavailable, VJO_RGB_DIM, en);
+            }
+        } else {
         if (s_history) { /* where the text is in this game's line history */
             /* (▲ only when there is a line before it: the oldest kept has none) */
             static const char where[] VJO_DATA_TABLE(history_where) = "Earlier line -%d%s · ▼ later";
@@ -490,11 +540,11 @@ static void render(int new_content)
             /* the offline queue: what the Rubi app exports */
             char queue[80];
             if (g_view.anki_pending == -1)
-                sceClibSnprintf(queue, sizeof(queue), "Anki queue unavailable: check ux0 storage");
+                sceClibSnprintf(queue, sizeof(queue), line_queue_error);
             else if (g_view.anki_pending < 0)
-                sceClibSnprintf(queue, sizeof(queue), "Anki queue · export in the Rubi app");
+                sceClibSnprintf(queue, sizeof(queue), line_queue_export);
             else
-                sceClibSnprintf(queue, sizeof(queue), "Anki queue: %d · export in the Rubi app",
+                sceClibSnprintf(queue, sizeof(queue), line_queue_count,
                                 g_view.anki_pending);
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_DIM, en);
@@ -523,15 +573,16 @@ static void render(int new_content)
         } else if (l && !g_view.status[0] && cursor_matches) {
             vjo_styled_puts(&body, s_local_cursor_mode
                 ? (s_japanese_only_selection && s_cursor_byte >= s_cursor_text_len
-                    ? "No Japanese characters in this text."
-                    : "No dictionary entry starts at this character.")
-                : "No dictionary entries for this text.", VJO_RGB_DIM, en);
+                    ? line_no_japanese
+                    : line_no_entry)
+                : line_no_entries, VJO_RGB_DIM, en);
         }
         for (int i = 0; i < g_view.n_warnings; i++) {
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_ERROR, en);
             vjo_styled_puts(&body, "config.ini: ", VJO_RGB_ERROR, en);
             vjo_styled_puts(&body, g_view.warnings[i], VJO_RGB_ERROR, en);
+        }
         }
     }
     vjo_view_unlock();
@@ -543,14 +594,14 @@ static void render(int new_content)
     {
         char hint[192];
         const char *nav = s_local_cursor_mode
-            ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? "Tap / ◀▶▲▼ / stick word"
-               : s_japanese_only_selection ? "Tap / ◀▶▲▼ / stick Japanese letter" : "Tap / ◀▶▲▼ / stick character")
+            ? (s_highlight_mode == VJO_HIGHLIGHT_WORD ? line_nav_word
+               : s_japanese_only_selection ? line_nav_japanese : line_nav_character)
             : "◀ ▶ ▲ ▼ word";
         char anki[32] = "";
         if (s_anki_enabled)
             sceClibSnprintf(anki, sizeof(anki), "%s queue · ", s_btn.enter_glyph);
         sceClibSnprintf(hint, sizeof(hint),
-                        "<font color=\"#8a94a6\">%s · %sR stick scroll · □ region · %s close</font>", nav, anki,
+                        line_hint_format, nav, anki,
                         s_btn.cancel_glyph);
         set_rich(s_hint, hint);
     }
@@ -664,6 +715,9 @@ static void show_region(void)
  * most ten times a second. */
 static void region_hint(int force)
 {
+    static const char first_corner[] VJO_DATA_TABLE(region_first_corner) =
+        "<font color=\"#ffffff\">Stick / ◀▶▲▼ move · %s first corner · "
+        "or drag on screen · %s cancel · hold □ full screen</font>";
     int x, y, w = 0, h = 0, corner = vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     int64_t now = sceKernelGetProcessTimeWide();
     char hint[192]; /* the longest is 144 B */
@@ -675,8 +729,7 @@ static void region_hint(int force)
     s_hint_box[2] = h;
     s_hint_us = now;
     if (!corner)
-        sceClibSnprintf(hint, sizeof(hint), "<font color=\"#ffffff\">Stick / ◀▶▲▼ move · %s first corner · "
-                                            "or drag on screen · %s cancel · hold □ full screen</font>",
+        sceClibSnprintf(hint, sizeof(hint), first_corner,
                         s_btn.enter_glyph, s_btn.cancel_glyph);
     else if (w < VJO_RSEL_MIN || h < VJO_RSEL_MIN)
         sceClibSnprintf(hint, sizeof(hint), "<font color=\"%s\">Box %d x %d (min. %d x %d)</font>"
@@ -749,7 +802,9 @@ static void open_page(void)
             return;
         }
     }
-    vjo_arena_init(&s_ui, s_ui_mem, UI_MEM_BYTES);
+    s_rng_start = (uint16_t *)s_ui_mem;
+    s_rng_len = s_rng_start + MAX_RANGES;
+    vjo_arena_init(&s_ui, s_ui_mem + VJO_HEADER_RANGE_BYTES, UI_MEM_BYTES - VJO_HEADER_RANGE_BYTES);
     param.overwrite_draw_priority = 6; /* above the game, like PSVshellPlus' HUD */
     s_page = s_plugin->PageOpen("vjo_page_overlay", param);
     if (!s_page) {
@@ -982,6 +1037,10 @@ static void input_header_touch(void)
 
 static void input_overlay(const VjoInput *in, uint32_t pressed)
 {
+    if (pressed & SCE_CTRL_TRIANGLE) {
+        s_mode = s_mode == MODE_LINE_DEBUG ? MODE_OVERLAY : MODE_LINE_DEBUG;
+        render(0);
+    }
     input_header_touch();
     int n = s_n_entries;
     int next = s_selected;
@@ -1249,7 +1308,7 @@ static void frame_body(unsigned version, unsigned anki_version)
         held = in.buttons;
         pressed = held & ~s_prev_buttons;
         s_prev_buttons = held;
-        if (s_mode == MODE_OVERLAY) {
+        if (s_mode != MODE_REGION) {
             /* Up/Down: one step now, then a steady repeat, with no catch-up burst.
              * Only a fresh press arms it; opening with a key held still does nothing. */
             uint32_t vertical = held & (SCE_CTRL_UP | SCE_CTRL_DOWN);

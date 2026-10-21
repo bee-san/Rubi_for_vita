@@ -5,6 +5,25 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Hidden Triangle line diagnostics
+
+Measured with VitaSDK GCC 15.2.0, Release, on the built Shell SELF files, with
+`check_memory_ledger.py --exact` in each variant:
+
+| Shell | Text | Data/bss | Loaded pages (existing budget) |
+|---|---:|---:|---:|
+| Debug | 100,948 B | 72,752 B | 176,128 B |
+| Normal | 90,100 B | 72,800 B | 163,840 B |
+
+The source snapshot uses 44 B in the view on ARM (source layout), with its current-line backup and
+34 history engine bytes inside the existing bounded history allocation. The 2,048 B header-range
+arrays move out of permanent storage into the open page's existing UI block: text/spans plus ranges
+need 20,064 of its 20,480 B (source bounds, `test_budget_table_is_consistent`, also checked against
+`MAX_RANGES` in the overlay). Cold UI/hook format strings use the freed data space to keep both
+segments within their existing pages. No allocation site, thread, block size or budget increases.
+These are binary and source-bound measurements; console boot, available heap and PAF layout have
+not been measured for this change.
+
 ## Border lines dropped (API 36)
 
 Measured with VitaSDK GCC 15.2.0, Release, against main `144bc8e` (after #249's counters and #250's held

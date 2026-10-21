@@ -308,6 +308,24 @@ the prefilter or the stream's offer 24) [measured: the C frames by `-fstack-usag
 the same in both builds, the observer's from its code; audit-hooks section 2]. CPU time per hit, and any
 CPU3 load, are unmeasured.
 
+## Hidden line diagnostics
+
+With the overlay open, press **Triangle** to replace the dictionary body with diagnostics for the
+displayed text; press it again to return. The text and cursor remain visible, Up/Down still visit
+history, and the right stick scrolls the details. The toggle is absent from the normal hints and
+starts off each time the overlay opens, in both normal and debug builds.
+
+`Source` says **OCR** or **Hook** for the job that supplied that text. Hook details include its stream
+ID and table-site/CALL origin, agreement/lock/pin/no-OCR/unlock flags, similarity, available streams,
+the worker's applied mode, installed/refused hooks, model and capture identifiers. Similarity zero
+can mean no comparison, rather than a failed match. A hook-only answer says the OCR model did not run.
+Cursor lookups and refreshes that keep the same text preserve its original provenance. A replacement
+gets its own provenance; cancelled/dropped refreshes do not replace it.
+
+Earlier lines show the engine saved in `history.csv`. Their detailed hook/capture information was
+not saved and is explicitly unavailable; old records without an engine say **Unknown**. Returning
+to the current text restores its full diagnostics.
+
 ## Logs
 
 The normal build logs no hook text, as it logs no OCR text; with **Read text** on **Automatically**, both

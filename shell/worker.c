@@ -110,6 +110,7 @@ static int pages_limit;
  * reads local_text: control_tick). Control thread; the view's pointers under the view lock. */
 typedef struct {
     VjoHistory h;
+    VjoLineDebug current_debug;
     uint32_t cursor, scene, seq; /* the current text's cursor and capture, for the return to it */
 } HistoryVisit;
 static HistoryVisit *history;
@@ -306,6 +307,7 @@ static void retire_local_text(int new_generation)
     if (new_generation) advance_generation(&local_text_generation);
     g_view.list = NULL;
     g_view.local_cursor_mode = 0;
+    sceClibMemset(&g_view.line_debug, 0, sizeof(g_view.line_debug));
     g_view.dict_page = g_view.dict_pages = 0;
     v = history_detach(); /* an earlier line goes with the text, the current one with it */
     g_view.version++;
@@ -1035,6 +1037,7 @@ static void log_tier_checks(const VjoGameOcrResult *r)
  * shown, a hook's included). */
 static void hook_note(const VjoGameOcrResult *r, uint32_t pick)
 {
+    static const char hook_format[] VJO_DATA_TABLE(hook_format) = "hooks in %s: text source %s%s, %u table sites and %u string copies hooked, %u sites refused";
     static const char *const modes[] = {"ocr", "auto", "hooks"};
     if ((VJO_DEBUG || r->hook_installed || r->hook_refused) &&
         (hook_logged[0] != r->hook_mode + 1u || hook_logged[1] != r->hook_installed || hook_logged[2] != r->hook_refused)) {
@@ -1042,7 +1045,7 @@ static void hook_note(const VjoGameOcrResult *r, uint32_t pick)
         hook_logged[1] = r->hook_installed;
         hook_logged[2] = r->hook_refused;
         /* hook_mode: the text source word the worker applied (its mode, and NO_SITES: hook_sites = off) */
-        vjo_log("hooks in %s: text source %s%s, %u table sites and %u string copies hooked, %u sites refused",
+        vjo_log(hook_format,
                 job_title[0] ? job_title : "this game",
                 (r->hook_mode & VJO_TEXT_SOURCE_MODE_MASK) < 3 ? modes[r->hook_mode & VJO_TEXT_SOURCE_MODE_MASK] : "?",
                 (r->hook_mode & VJO_TEXT_SOURCE_NO_SITES) ? ", sites off" : "",
@@ -1056,6 +1059,18 @@ static void hook_note(const VjoGameOcrResult *r, uint32_t pick)
 #else
     (void)pick;
 #endif
+}
+
+/* View lock held. Snapshot only when this job's text is accepted, before its result is reused. */
+static void line_debug_accept(const VjoGameOcrResult *r, const char *model)
+{
+    g_view.line_debug = (VjoLineDebug){
+        .origin = r->text_from ? VJO_LINE_HOOK : VJO_LINE_OCR,
+        .stream = r->text_from, .flags = r->hook_flags, .score = r->hook_score,
+        .streams = r->hook_streams, .mode = r->hook_mode,
+        .installed = r->hook_installed, .refused = r->hook_refused,
+        .scene = job_capture_scene, .capture_seq = job_capture_seq, .model = model
+    };
 }
 
 /* One job: request (flags: VJO_GAME_OCR_F_*; tiers: the model tiers it may run,
@@ -1343,6 +1358,9 @@ static int run_vocr(VjoOverlayData *out)
     local_text_game_generation = job_generation;
     local_text_scene = job_capture_scene;
     local_text_capture_seq = job_capture_seq;
+    vjo_view_lock();
+    line_debug_accept(&vocr_result, read_by);
+    vjo_view_unlock();
     __sync_synchronize();
     local_text_valid = 1;
     sceKernelUnlockMutex(cmd_lock, 1);
@@ -2057,10 +2075,12 @@ static void history_show(int at)
         v->cursor = local_cursor_byte;
         v->scene = local_text_scene;
         v->seq = local_text_capture_seq;
+        v->current_debug = g_view.line_debug;
     }
     sceClibMemcpy(local_text, text, len);
     local_text[len] = '\0';
     g_view.text_generation = advance_generation(&local_text_generation);
+    g_view.line_debug = at ? (VjoLineDebug){.origin = v->h.origin[at]} : v->current_debug;
     local_page = 0;
     local_cursor_byte = at ? (cfg.japanese_only_selection ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0)
                            : v->cursor;
@@ -2307,6 +2327,9 @@ static void on_refresh_done(void)
                 what = "same text";
             } else if (len && len < sizeof(local_text)) {
                 sceClibMemcpy(local_text, text, len + 1);
+#ifdef VJO_WITH_VOCR
+                line_debug_accept(&vocr_result, refresh_model);
+#endif
                 advance_generation(&local_text_generation);
                 local_page = 0;
                 local_cursor_byte = job_cfg.japanese_only_selection

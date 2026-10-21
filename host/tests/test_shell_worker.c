@@ -599,7 +599,8 @@ static void history_csv_add(const char *uuid, const char *line)
         history_csv[n++] = '"';
         history_csv[n++] = ',';
     }
-    n += (size_t)snprintf(history_csv + n, sizeof(history_csv) - n, "1792220400.250123,\"vita\"\n");
+    n += (size_t)snprintf(history_csv + n, sizeof(history_csv) - n,
+        "1792220400.250123,\"vita\",\"PCSG00415\",\"vocr\",\"model\"\n");
     TEST_ASSERT(n < sizeof(history_csv));
 }
 static VjoGameOcrRequest fake_game_request;
@@ -4313,11 +4314,14 @@ static unsigned history_held(void) { return vjo_ledger_current(&g_shell_ledger, 
 static void test_history_up_walks_back_and_down_returns(void)
 {
     history_setup();
+    VjoLineDebug debug = g_view.line_debug;
+    TEST_CHECK(debug.origin == VJO_LINE_OCR && debug.model != NULL);
     uint32_t scene = local_text_scene, seq = local_text_capture_seq;
     vjo_post_cursor(3, local_text_generation); on_command(); finish_current_job();
     check_shown("猫犬鳥", "dog", 3);
     unsigned list_seq = g_view.list_seq;
     history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(g_view.line_debug.origin == VJO_LINE_OCR && !g_view.line_debug.model);
     TEST_CHECK(history_loads == 1 && !strcmp(history_uuid, "vita-PCSG00415\",")); /* this game's lines only */
     TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
     TEST_CHECK(g_view.history == 1 && !strcmp(g_view.history_before, "鳥") && !strcmp(g_view.history_after, "猫犬鳥"));
@@ -4349,6 +4353,7 @@ static void test_history_up_walks_back_and_down_returns(void)
     TEST_CHECK(g_view.history == 0 && !g_view.history_before && !g_view.history_after && !history);
     TEST_CHECK(history_allocs == 1 && history_frees == 1 && !history_held());
     TEST_CHECK(local_text_scene == scene && local_text_capture_seq == seq);
+    TEST_CHECK(!memcmp(&debug, &g_view.line_debug, sizeof(debug)));
     finish_current_job();
     check_shown("猫犬鳥", "dog", 3);
     /* Down on the current text: nothing */
@@ -4689,9 +4694,18 @@ static void test_history_close_exit_and_region(void)
 static void test_open_overlay_refreshes_its_text_quietly(void)
 {
     cursor_setup();
+    fake_hook[0] = 9;
+    fake_hook[1] = VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR;
+    fake_hook[3] = VJO_HOOK_STREAM_BIT(9);
+    fake_hook[4] = VJO_TEXT_SOURCE_AUTO;
+    fake_hook[5] = 8;
     view_invariant = 1; view_invariant_checks = 0; invariant_generation = 0; invariant_seq = 0;
     open_overlay(); finish_current_job();
     check_shown("猫犬鳥", "cat", 0);
+    VjoLineDebug debug = g_view.line_debug;
+    TEST_CHECK(debug.origin == VJO_LINE_HOOK && debug.stream == 9 && debug.flags == fake_hook[1]);
+    TEST_CHECK(debug.streams == fake_hook[3] && debug.mode == VJO_TEXT_SOURCE_AUTO && debug.installed == 8);
+    memset(fake_hook, 0, sizeof(fake_hook)); /* later OCR results must not relabel the accepted hook line */
     uint32_t generation = local_text_generation;
     unsigned seq = g_view.list_seq, inferences = vocr_allocs;
     const VjoEntryList *shown = g_view.list;
@@ -4706,6 +4720,7 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     TEST_CHECK(local_text_valid && has_result_memory() && !g_view.status[0]);
     finish_current_job();
     TEST_CHECK(DLOGGED("refresh rc=0: same text") && local_text_scene == 8 && cache_scene == 8);
+    TEST_CHECK(!memcmp(&debug, &g_view.line_debug, sizeof(debug)));
     check_shown("猫犬鳥", "cat", 0);
     TEST_CHECK(g_view.list_seq == seq && local_text_generation == generation && vocr_allocs == inferences + 1);
     control_tick(VJO_EV_REGION_STABLE);
@@ -4724,6 +4739,8 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     TEST_ASSERT(job_running && job_refresh);
     finish_current_job();
     TEST_CHECK(DLOGGED("refresh rc=0: new text"));
+    TEST_CHECK(g_view.line_debug.origin == VJO_LINE_OCR && !g_view.line_debug.stream);
+    TEST_CHECK(g_view.line_debug.scene == 9 && g_view.line_debug.model != NULL);
     TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
     TEST_CHECK(!strcmp(local_text, "犬猫") && local_text_generation != generation && local_text_scene == 9);
     TEST_CHECK(g_view.list == &local_header && !g_view.list->n_entries && g_view.text_generation == local_text_generation);
