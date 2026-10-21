@@ -305,6 +305,12 @@ static void test_lines(void)
             "psp probe 2: titleid 0x73CDE098: 225C017F41FF7A2000510000 \"....A.z \"\n");
     line_is(vjo_psp_line_titleid(buf, sizeof(buf), 0x73CDE098u, 0, raw), buf,
             "psp probe 2: titleid 0x73CDE098: outside the blocks\n");
+    {
+        /* 12 bytes without a NUL, and printable bytes after them: only the 12 are read */
+        static const uint8_t longer[16] = {'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'X', 'Y', 'Z', 0};
+        line_is(vjo_psp_line_titleid(buf, sizeof(buf), 0x73CDE098u, 1, longer), buf,
+                "psp probe 2: titleid 0x73CDE098: 575757575757575757575757 \"WWWWWWWWWWWW\"\n");
+    }
     line_is(vjo_psp_line_sites(buf, sizeof(buf), "ULJM05889", 1, 1), buf, "psp probe 2: luna ULJM05889: 1 sites, 1 read\n");
     line_is(vjo_psp_line_sites(buf, sizeof(buf), "ULJM05334", 0, 0), buf, "psp probe 2: luna ULJM05334: not listed\n");
     line_is(vjo_psp_line_sites(buf, sizeof(buf), "", 0, 0), buf, "psp probe 2: luna : not listed\n");
@@ -331,6 +337,25 @@ static void test_lines(void)
     line_is(vjo_psp_line_end(buf, sizeof(buf), "a block is missing or not readable"), buf,
             "psp probe 2: stop: a block is missing or not readable\n");
     line_is(vjo_psp_line_end(buf, sizeof(buf), NULL), buf, "psp probe 2: done\n");
+    {
+        /* a reason is cut at 96 characters */
+        char why[200];
+        memset(why, 'r', sizeof(why) - 1);
+        why[sizeof(why) - 1] = 0;
+        TEST_CHECK(vjo_psp_line_end(buf, sizeof(buf), why) == strlen("psp probe 2: stop: ") + 96u + 1u);
+    }
+    {
+        /* the text's characters and hash stop at the end of its buffer, whatever follows it */
+        static struct { VjoGameOcrResult r; char tail[16]; } big;
+        char want_chars[64];
+        memcpy(&big.r, r, sizeof(*r));
+        memset(big.r.text, 'x', sizeof(big.r.text)); /* no NUL in it */
+        memset(big.tail, 'y', sizeof(big.tail));
+        vjo_psp_line_job_ocr(buf, sizeof(buf), &big.r, 0);
+        snprintf(want_chars, sizeof(want_chars), ", chars %u hash ", (unsigned)sizeof(big.r.text));
+        TEST_CHECK(strstr(buf, want_chars) != NULL);
+        TEST_MSG("%s", buf);
+    }
     line_is(vjo_psp_line_job_capture(buf, sizeof(buf), r, 0x10, 0x86), buf,
             "psp probe 2: job 7: rc 0, flags 0x00000010 speed 0x00000086, capture src 1 mem 2 block 12288, fb 960x544 "
             "pitch 960 fmt 0x00000000, region 480x136 at 0,408, rows 16 strips 9 tears 0 in 150000 us, sum 0x1234ABCD\n");
@@ -350,6 +375,8 @@ static void test_lines(void)
     line_is(vjo_psp_line_job_ocr(buf, sizeof(buf), r, 0), buf,
             "psp probe 2: job 7 ocr: lines 3 rec 3 frames 205, us find 100000 load 0 rec 900000 job 0, free -1 need "
             "4096000+0 reserve 8388608 fallback 0, weights ? resident 1310720, from 0, chars 0 hash 0x811C9DC5\n");
+    r->weights = 3; /* one past the names: "?" too */
+    TEST_CHECK(vjo_psp_line_job_ocr(buf, sizeof(buf), r, 0) && strstr(buf, ", weights ? resident ") != NULL);
     line_is(vjo_psp_line_job_capture(buf, sizeof(buf), NULL, 0, 0), buf, "psp probe 2: job: no result\n");
     line_is(vjo_psp_line_job_ocr(buf, sizeof(buf), NULL, 0), buf, "psp probe 2: job: no result\n");
     line_is(vjo_psp_line_jobs_cap(buf, sizeof(buf), 1000), buf,
@@ -531,6 +558,9 @@ static void test_classify(void)
     TEST_CHECK(classify4(LW(V0, 0, S0), JR(RA), NOP, ADDIU(SP, SP, -32)) == VJO_PSP_CLASS_DELAY);
     TEST_CHECK(classify4(JAL(0x08804100u), JAL(0x08804200u), NOP, NOP) == VJO_PSP_CLASS_DELAY); /* before return */
     TEST_CHECK(classify4(NOP, COP(2, 0x08, 1, 5), NOP, NOP) == VJO_PSP_CLASS_DELAY);                /* bvt */
+    /* a delay slot whose own words are unsafe too: delay, the check before branch */
+    TEST_CHECK(classify4(NOP, JR(RA), JAL(0x08804100u), NOP) == VJO_PSP_CLASS_DELAY);
+    TEST_CHECK(classify4(NOP, I(0x05, V0, ZERO, 4), NOP, 0x0000000Cu) == VJO_PSP_CLASS_DELAY);
     /* a patch would overwrite a branch, syscall, eret, ll or sc (the target's word or the next one) */
     TEST_CHECK(classify4(NOP, NOP, JR(RA), NOP) == VJO_PSP_CLASS_BRANCH);
     TEST_CHECK(classify4(NOP, NOP, ADDIU(SP, SP, -32), JAL(0x08804100u)) == VJO_PSP_CLASS_BRANCH); /* before entry */
@@ -546,7 +576,9 @@ static void test_classify(void)
     TEST_CHECK(classify4(0, 0, 0, 0) == VJO_PSP_CLASS_ZERO);
     TEST_CHECK(classify4(0, 0, 0, 1) == VJO_PSP_CLASS_OTHER);
     for (unsigned mask = 0; mask < 15u; mask++) {
+        static const uint32_t zeros[4] = {0, 0, 0, 0};
         TEST_CHECK(vjo_psp_classify(entry, mask) == VJO_PSP_CLASS_UNREAD);
+        TEST_CHECK(vjo_psp_classify(zeros, mask) == VJO_PSP_CLASS_UNREAD); /* unread before zero */
         TEST_MSG("mask %u", mask);
     }
     TEST_CHECK(vjo_psp_classify(entry, 0xFFu) == VJO_PSP_CLASS_ENTRY); /* bits past the four: ignored */
@@ -858,7 +890,8 @@ static void test_run_xmb_then_game(void)
     TEST_CHECK(log_count("site 0x08868AB8 at 0x70868AB8: 0E201040 00000000 00402021 8FBF001C return\n") == 1 &&
                log_count("classes: entry 0 return 1 ") == 1);
     TEST_CHECK(F.sum_calls == 1 && log_count(": reading\n") == 1 && log_count("psp probe 2: done\n") == 2);
-    TEST_CHECK(F.bad_reads == 0);
+    /* reads: job 1 the title and the 1 MiB, job 2 the title, job 3 the title (once) and the site's 4 words */
+    TEST_CHECK(F.reads == 2u + 1u + 5u && F.bad_reads == 0);
 }
 
 /* A block missing: the pass stops after the block lines and reads nothing; a mapping that appears later is a
@@ -934,6 +967,120 @@ static void test_run_site_outside(void)
                log_count("read 0x70800000: 0x00100000 bytes: outside the blocks\n") == 1 &&
                log_count("psp probe 2: done\n") == 1);
     TEST_CHECK(F.reads == 3 && F.bad_reads == 0 && F.sum_calls == 0 && F.find_calls == 0 && p.timed);
+}
+
+/* Blocks that end inside a word or inside the title ID: what straddles the end is not read. */
+static void test_run_partial_ends(void)
+{
+    VjoPspProbe p;
+    fake_reset();
+    memset(&p, 0, sizeof(p));
+    set_title("ULJM05889");
+    put_site(0x08868AB8u, JR(RA), NOP, ADDIU(SP, SP, -32), SW(RA, 28, SP));
+    F.blk[0] = view_block(0x70000000u, 0x00868ABAu, VIEW_UID); /* ends 2 bytes into the target's word */
+    F.blk[1] = view_block(ADR_BASE, ADR_BYTES, 0x10002);
+    F.n_blk = 2;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
+    TEST_CHECK(log_count("site 0x08868AB8 at 0x70868AB8: 03E00008 00000000 -------- -------- unread\n") == 1);
+    TEST_CHECK(F.reads == 3 && F.bad_reads == 0);
+    /* the title's block ends 6 bytes into it: not read, by a pass or between passes */
+    fake_reset();
+    memset(&p, 0, sizeof(p));
+    set_title("ULJM05889");
+    F.blk[0] = view_block(0x70000000u, 0x03CDE000u, VIEW_UID);
+    F.blk[1] = view_block(ADR_BASE, VJO_PSP_TITLEID_OFFSET + 6u, 0x10002);
+    F.n_blk = 2;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
+    vjo_psp_probe_job(&p, &fake_ops, job_result(2), 0, 0x80, 0);
+    TEST_CHECK(log_count("titleid 0x73CDE098: outside the blocks\n") == 1 && F.reads == 0 && F.bad_reads == 0);
+}
+
+/* The user partition in a block of its own, the view's start in another: the sites and the 1 MiB are read in
+ * the second (each read checked against every block found, the 1 MiB's pages against the block that holds it). */
+static void test_run_two_blocks(void)
+{
+    VjoPspProbe p;
+    fake_reset();
+    memset(&p, 0, sizeof(p));
+    set_title("ULJM05889");
+    put_site(0x08868AB8u, JR(RA), NOP, ADDIU(SP, SP, -32), SW(RA, 28, SP));
+    F.blk[0] = view_block(0x70000000u, 0x00800000u, VIEW_UID);  /* PSP 0x08000000-0x087FFFFF */
+    F.blk[1] = view_block(USER_BASE, 0x03800000u, 0x10002);     /* PSP 0x08800000-0x0BFFFFFF */
+    F.n_blk = 2;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
+    TEST_CHECK(log_count("site 0x08868AB8 at 0x70868AB8: 03E00008 00000000 27BDFFE0 AFBF001C entry\n") == 1);
+    TEST_CHECK(log_count("read 0x70800000: 0x00100000 bytes, 256 pages in block 0x00010002 (7 us): reading\n") == 1 &&
+               F.sum_calls == 1 && F.find_calls == 256 && F.bad_reads == 0);
+}
+
+/* Each of what a pass compares, changed alone, gives a new pass: a block's UID, base, size, readability; the
+ * title. Nothing changed gives none. The reads between passes: the title only. */
+static void test_run_changes(void)
+{
+    VjoPspProbe p;
+    unsigned reads;
+    fake_reset();
+    memset(&p, 0, sizeof(p));
+    set_title("ULJM05889");
+    vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 1);
+    reads = F.reads;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(2), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 1 && F.reads == reads + 1u); /* the title, read again */
+    F.blk[0].uid = 0x10009;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(3), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 2);
+    F.blk[0].base = 0x6FFFF000u;
+    F.blk[0].size = 0x04001000u;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(4), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 3);
+    F.blk[0].size = 0x04002000u;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(5), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 4);
+    reads = F.reads;
+    F.blk[0].access = 2; /* not readable: a pass that stops, and no read between */
+    vjo_psp_probe_job(&p, &fake_ops, job_result(6), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 5 && F.reads == reads && log_count("stop: a block is missing or not readable\n") == 1);
+    vjo_psp_probe_job(&p, &fake_ops, job_result(7), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 5 && F.reads == reads);
+    F.blk[0].access = 6;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(8), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 6 && F.reads == reads + 1u + 4u); /* the title once (between passes), the site's words */
+    set_title("ULJM05795");
+    vjo_psp_probe_job(&p, &fake_ops, job_result(9), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 7 && log_count("luna ULJM05795: 1 sites, 1 read\n") == 1 && F.bad_reads == 0);
+    /* only which block fails changes (a block per view; the title unread either way): a new pass */
+    fake_reset();
+    memset(&p, 0, sizeof(p));
+    F.blk[0] = view_block(0x70000000u, 0x00800000u, VIEW_UID);
+    F.blk[1] = view_block(USER_BASE, 0x03000000u, 0x10002);
+    F.blk[2] = view_block(ADR_BASE, ADR_BYTES, 0x10003);
+    F.n_blk = 3;
+    F.blk[2].info_rc = -1; /* found, but its info refused: not ok */
+    vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 1 && log_count(" bad\n") == 1);
+    F.blk[2].info_rc = 0;
+    F.blk[1].info_rc = -1;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(2), 0, 0x80, 0);
+    TEST_CHECK(p.passes == 2 && log_count(" bad\n") == 2 && F.reads == 0);
+}
+
+/* A block op that writes another address than the one asked: the lines name the address asked. */
+static void f_block_wrong_addr(void *ud, uint32_t addr, VjoPspBlock *out)
+{
+    f_block(ud, addr, out);
+    out->addr = 0;
+}
+
+static void test_run_block_addr(void)
+{
+    const VjoPspOps ops = {NULL, f_module, f_block_wrong_addr, f_find, f_word, f_bytes, f_sum, f_now, f_put};
+    VjoPspProbe p;
+    fake_reset();
+    memset(&p, 0, sizeof(p));
+    vjo_psp_probe_job(&p, &ops, job_result(1), 0, 0x80, 0);
+    TEST_CHECK(!strcmp(log_line(2), blocks_ok[0]) && !strcmp(log_line(3), blocks_ok[1]) &&
+               !strcmp(log_line(4), blocks_ok[2]) && F.bad_reads == 0);
 }
 
 /* A page of the 1 MiB whose lookup names another block: the read is not made, and not tried again. */
@@ -1064,6 +1211,10 @@ TEST_LIST = {
     {"run_missing_block", test_run_missing_block},
     {"run_title_outside", test_run_title_outside},
     {"run_site_outside", test_run_site_outside},
+    {"run_partial_ends", test_run_partial_ends},
+    {"run_two_blocks", test_run_two_blocks},
+    {"run_changes", test_run_changes},
+    {"run_block_addr", test_run_block_addr},
     {"run_odd_page", test_run_odd_page},
     {"run_classes", test_run_classes},
     {"run_pass_cap", test_run_pass_cap},
