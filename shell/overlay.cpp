@@ -703,8 +703,10 @@ static void touch_write(int action)
 #if VJO_DEBUG
     vjo_log("touch region %s: 0x%X t=%u ms", action == VJO_TOUCH_ACTIVATE ? "on" : "off", rc, vjo_log_ms());
 #else
-    if (rc < 0) /* the normal build logs a refusal only */
-        vjo_log("touch region %s refused 0x%X", action == VJO_TOUCH_ACTIVATE ? "on" : "off", rc);
+    if (rc < 0) { /* the normal build logs a refusal only */
+        static const char refused[] VJO_DATA_TABLE(overlay_touch_refused) = "touch region %s refused 0x%X";
+        vjo_log(refused, action == VJO_TOUCH_ACTIVATE ? "on" : "off", rc);
+    }
 #endif
 }
 
@@ -751,8 +753,7 @@ static void open_page(void)
     param.overwrite_draw_priority = 6; /* above the game, like PSVshellPlus' HUD */
     s_page = s_plugin->PageOpen("vjo_page_overlay", param);
     if (!s_page) {
-        static const char no_page[] VJO_DATA_TABLE(overlay_no_page) = "overlay page failed to open";
-        vjo_log(no_page);
+        vjo_log("overlay page failed to open");
         vjo_shell_heap_free(VJO_SL_PAF_UI, s_ui_mem, UI_MEM_BYTES);
         s_ui_mem = NULL;
         vjo_arena_init(&s_ui, NULL, 0);
