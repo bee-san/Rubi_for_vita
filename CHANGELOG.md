@@ -11,6 +11,60 @@ been reported.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-21
+
+Native text hooks that Rubi remembers for each game build and checks less often as they prove
+reliable, and the conjugation of a looked-up word in its dictionary entry. Like 0.9.0, the release
+is the normal build only.
+
+### Added
+
+- A dictionary entry names the conjugation of the word looked up: under the headword, in blue,
+  `Conjugation: polite past` for 食べました (found as 食べる), `Conjugation: negative → past` for
+  食べなかった; a word in its dictionary form gets no such line. The reasons are those of the
+  Yomichan rules that found the entry, and stay with each word through dictionary paging and
+  prepared lookups; a chain of more than four shows `…` before the three nearest the written word.
+  Definitions and Anki cards are unchanged ([#243]; [details](docs/conjugation-display.md)). Its
+  previews are host renders: the Vita's font and wrapping of the line are unchecked.
+- Remembered hooks (API 34; [#242], [#241]): a hook that has proved reliable is kept for each game
+  build in `ux0:data/VitaJPOverlay/hooks.cache`, at most 32 games in 3,088 B (by its format): the
+  source's kind, its offset in the game's module, its encoding and its check interval, never dialogue.
+  An entry is keyed by the title ID, the SHA-256 of the game's whole executable, the text source and a
+  revision of Rubi's hook definitions, so a game update, another text source or changed hooks learn
+  afresh, as does a missing, damaged or unwritable file. At the game's next start, one agreement with
+  OCR resumes the saved interval. The game's worker hashes the executable and reads the entry; the
+  kernel's existing file thread writes the file. Nothing new runs in SceShell.
+
+### Changed
+
+- How **Automatic** trusts a native text hook ([#242]). A hook's line still replaces OCR's only when
+  the two agree (70 % or more, four characters at least), but trust now takes agreement on two
+  different dialogue lines (one line read twice does not count). Then the hook answers seven new
+  readings without OCR and OCR checks the eighth; each check it passes widens the interval to 16, then
+  32 readings (0.9.0's OCR read at least every third page). Reopening the overlay on unchanged dialogue
+  is not a new reading. One disagreement shows OCR's text and checks the next new line, where an
+  agreement resumes at 8; two disagreements in a row drop the hook until it earns trust again. An empty
+  or too-short OCR reading counts neither way, and a screen without the hook's text (a menu, a blank
+  screen) keeps what it learned. The cost: a hook that turns wrong can show up to 31 readings before a
+  check catches it.
+- Each game that is ON carries a bigger OCR worker: 167,936 B of module pages in the normal build and
+  176,128 B in the debug build, 8,192 B more than 0.9.0's. The kernel plugin's pages grow 4,096 B, to
+  118,784 B (122,880 B debug); the Shell's stay at 163,840 B (176,128 B debug), the conjugation line
+  included [measured: the build logs' module rows, Release run 39581967210 at `d428c55`].
+- The README says which games have native text hooks and how **Automatic** picks their text ([#239]):
+  CLANNAD, 175 title IDs from LunaTranslator's table (294 ported sites, none verified on a console),
+  the string-copy hooks of **Every game** elsewhere, and no PSP hooks. The guide, the design and the
+  hook list say the same about what the console has shown.
+
+### On the console
+
+- None of 0.9.1's changes has run on a console: the remembered hooks and their check intervals (how
+  often OCR runs while reading, reopening and restarting, the boot and the CPU cost are unmeasured),
+  the conjugation line, and the normal build itself. The native hooks' console record is still
+  0.9.0's below, CLANNAD's string-copy reads in the combined debug test build; the test.7 checklist
+  ([#237]) has no reported results, and no site from LunaTranslator's table has been reported working
+  on a console.
+
 ## [0.9.0] - 2026-10-20
 
 Native text extraction, dialogue history, reading statistics and Anki screenshot trimming.
@@ -501,7 +555,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.1
 [0.9.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.0
 [0.8.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.8.0
 [0.8.0-test.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.8.0-test.4
@@ -618,3 +673,8 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#231]: https://github.com/bee-san/Rubi_for_vita/pull/231
 [#232]: https://github.com/bee-san/Rubi_for_vita/pull/232
 [#233]: https://github.com/bee-san/Rubi_for_vita/pull/233
+[#237]: https://github.com/bee-san/Rubi_for_vita/issues/237
+[#239]: https://github.com/bee-san/Rubi_for_vita/pull/239
+[#241]: https://github.com/bee-san/Rubi_for_vita/issues/241
+[#242]: https://github.com/bee-san/Rubi_for_vita/pull/242
+[#243]: https://github.com/bee-san/Rubi_for_vita/pull/243
