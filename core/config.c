@@ -31,6 +31,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->japanese_only_selection = 0; /* OFF: the cursor can select any character (the owner, 2026-10-20; ON before) */
     c->highlight_mode = VJO_HIGHLIGHT_WORD;
     c->frequency_badge = 1;
+    c->source_badge = 1; /* the popup says where its text came from, [HOOK] or [OCR] (the owner, 2026-10-21) */
     c->font_size_ja = 18;
     c->font_size_en = 14;
     c->toggle_button = VJO_TRIGGER_L_R;
@@ -91,6 +92,10 @@ const char *vjo_config_default_text(void)
            "; Show each word's frequency rank after its reading: on | off. #1 is the most\n"
            "; frequent word; unranked: not in the frequency list its dictionary carries.\n"
            "frequency_badge = on\n"
+           "\n"
+           "; Start the popup's text with where it came from: [HOOK] (a native text hook)\n"
+           "; or [OCR] (read off the screen): on | off\n"
+           "source_badge = on\n"
            "\n"
            "; Text size, 8-40: Japanese (sentence, words, readings) and English (meanings, messages)\n"
            "font_size_ja = 18\n"
@@ -432,6 +437,9 @@ static void set_font(VjoConfig *c, const char *key, const char *val, int *dst)
         warn(c, "%s: invalid value (8-40)", key);
 }
 
+/* The on | off settings' values, as set_choice reads them (off 0, on 1). */
+static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", NULL};
+
 /* A time in ms within [lo, hi]. */
 /* One of names (NULL-ended), stored as its index. */
 static void set_choice(VjoConfig *c, const char *key, const char *val, int *dst, const char *const *names)
@@ -498,10 +506,9 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         if (vjo_ieq(val, "word")) c->highlight_mode = VJO_HIGHLIGHT_WORD;
         else if (vjo_ieq(val, "character")) c->highlight_mode = VJO_HIGHLIGHT_CHARACTER;
         else warn(c, "%s: invalid value", key);
-    } else if (vjo_ieq(key, "frequency_badge")) {
-        if (vjo_ieq(val, "on")) c->frequency_badge = 1;
-        else if (vjo_ieq(val, "off")) c->frequency_badge = 0;
-        else warn(c, "%s: invalid value", key);
+    } else if (vjo_ieq(key, "frequency_badge") || vjo_ieq(key, "source_badge")) {
+        /* the popup's frequency rank, or its text's source ([HOOK] or [OCR]): an invalid value keeps it */
+        set_choice(c, key, val, vjo_ieq(key, "source_badge") ? &c->source_badge : &c->frequency_badge, off_on);
     } else if (vjo_ieq(key, "local_dictionary_results")) {
         int v;
         if (parse_int(val, &v) == 0 && v >= 1 && v <= VJO_LOCAL_MAX_DICTS)
@@ -521,7 +528,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         c->text_source = VJO_SOURCE_AUTO; /* an unknown value: auto, with the warning */
         set_choice(c, key, val, &c->text_source, sources);
     } else if (vjo_ieq(key, "hook_sites")) {
-        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_1) = {"off", "on", NULL};
         c->hook_sites = 1; /* an unknown value: on, with the warning */
         set_choice(c, key, val, &c->hook_sites, off_on);
     } else if (vjo_ieq(key, "ocr_backend")) {
@@ -569,7 +575,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const modes[] VJO_DATA_TABLE(config_modes_1) = {"off", "on", "psp", NULL};
         set_choice(c, key, val, &c->ocr_refine_lines, modes);
     } else if (vjo_ieq(key, "ocr_text_gate")) {
-        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_2) = {"off", "on", NULL};
         set_choice(c, key, val, &c->ocr_text_gate, off_on);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
@@ -579,7 +584,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const threads[] VJO_DATA_TABLE(config_threads_1) = {"1", "2", "3", NULL}; /* stored as the helpers: 0-2 */
         set_choice(c, key, val, &c->ocr_helpers, threads);
     } else if (vjo_ieq(key, "ocr_boost_clock")) {
-        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_3) = {"off", "on", NULL};
         set_choice(c, key, val, &c->ocr_boost_clock, off_on);
     } else if (vjo_ieq(key, "ocr_mode")) {
         if (vjo_ieq(val, "auto"))

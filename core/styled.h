@@ -32,7 +32,8 @@ typedef struct {
 #define VJO_BODY_UNITS 4096
 #define VJO_BODY_SPANS 96
 /* The header's spans: one for the text; an earlier line (line history) adds its dimmed neighbours,
- * two spans each (the row and the line break between). */
+ * two spans each (the row and the line break between); the current text's source badge one (the
+ * overlay shows none on an earlier line: two spans at most then). */
 #define VJO_HEADER_SPANS 5
 
 typedef struct {
@@ -65,11 +66,25 @@ uint32_t vjo_utf16_index(const char *utf8, size_t off);
 /* Header: the OCR text in one span (highlights are applied separately). */
 void vjo_styled_header(VjoStyled *s, const VjoEntryList *l, int ja_px);
 
+/* Where the overlay's current text came from (VjoView.source_badge, config source_badge): not shown (the
+ * badge turned off, no text read yet), recognized by OCR, or a native text hook's (VjoGameOcrResult's
+ * text_from, docs/native-hooks.md). */
+enum { VJO_BADGE_NONE = 0, VJO_BADGE_OCR = 1, VJO_BADGE_HOOK = 2 };
+
 /* Header of the overlay's local text: the text in VJO_RGB_TEXT and, for an earlier line (line history,
  * docs/line-history.md), the last row of the line before it above it and the first row of the line
  * after it below, dimmed (VJO_RGB_RANK; NULL or "": none, as for the current text). Returns the units
- * before the text: where the cursor's, taps' and highlight's units start. */
+ * before the text (a source badge put in first included): where the cursor's, taps' and highlight's
+ * units start. */
 uint32_t vjo_styled_history(VjoStyled *s, const char *before, const char *text, const char *after, int ja_px);
+
+/* The current text's source badge (VJO_BADGE_*, config source_badge; the owner, 2026-10-21): "[HOOK]" or
+ * "[OCR]", dimmed (VJO_RGB_RANK, the frequency badge's colour) at px; VJO_BADGE_NONE (or a value that is no
+ * badge) puts nothing. The overlay puts it first, right before vjo_styled_history's text and only for the
+ * current text (an earlier line's source is not known); no space follows it, so the line never breaks
+ * between the badge and the text (core/linebreak.h), and the overlay's re-wrap never breaks in it
+ * (shell/wrap_fix.h VjoWrap.keep). */
+void vjo_styled_badge(VjoStyled *s, int badge, int px);
 
 /* UTF-16 range of an entry's highlight in the header; 0 if it has none. */
 int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, uint32_t *len);

@@ -124,6 +124,16 @@ static void faded_row(VjoStyled *s, const char *t, int after, int px)
         vjo_styled_add(s, "\n", 1, VJO_RGB_RANK, px);
 }
 
+/* The source badges by VJO_BADGE_*: a cold table, in the data segment (core/port.h). No space after
+ * them: one would be a place to break the line right after the badge (core/linebreak.h). */
+static const char source_badges[3][7] VJO_DATA_TABLE(source_badges) = {"", "[OCR]", "[HOOK]"};
+
+void vjo_styled_badge(VjoStyled *s, int badge, int px)
+{
+    if ((unsigned)badge < 3u) /* (VJO_BADGE_NONE: "", nothing added) */
+        vjo_styled_puts(s, source_badges[badge], VJO_RGB_RANK, px);
+}
+
 uint32_t vjo_styled_history(VjoStyled *s, const char *before, const char *text, const char *after, int ja_px)
 {
     uint32_t lead;

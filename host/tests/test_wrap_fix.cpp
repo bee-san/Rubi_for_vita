@@ -8,6 +8,7 @@
  * the console's (its glyph widths); this is not a substitute for it. Also the
  * header's unit map and vjo_styled_insert's spans. */
 #include <string.h>
+#include <string>
 #include <vector>
 #include "acutest.h"
 #include "../../shell/wrap_fix.h"
@@ -253,10 +254,72 @@ static void styled_insert_keeps_the_spans(void)
     TEST_CHECK(!vjo_styled_insert(&st, 1, '\n') && st.len == 12);
 }
 
+/* The source badge before the current text (core/styled.c vjo_styled_history: "[HOOK]" or "[OCR]", the
+ * owner's 2026-10-21 request): the re-wrap keeps its rules with it (every soft line starts where
+ * core/linebreak.h allows), never breaks inside or right after the badge (VjoWrap.keep, as overlay.cpp sets
+ * it), which stays whole at the first row's start with text after it, and the overlay's unit map
+ * (overlay.cpp header_shown: the lead, then vjo_wrap_add's breaks) still finds each of the text's units, so
+ * the cursor, taps and the highlight are on the text's characters. The first row has the badge's width less
+ * room for the text: nothing else of the wrap changes. A text that opens with 「 may break before it
+ * (core/linebreak.h): right after the badge that would leave the badge a row of its own, so that row keeps
+ * paf's break, as a word wider than the box does. */
+static void the_source_badge_keeps_the_wrap_rules(void)
+{
+    static const char *const texts[] = {
+        "あいうえおかきくけこさしすせそ食べるかなと思った",
+        "彼女は学校へ行ったあと図書館で本を読んでいた\n今日は雨だったので家にいた私は明日も晴れると思う",
+        "また明日、一緒に見に行こう!", "エンサイクロペディアブリタニカエンサイクロペディア",
+        "「あいうえおかきくけこさしすせそ」と言った"};
+    static const char *const badges[] = {"[HOOK]", "[OCR]"};
+    for (unsigned t = 0; t < sizeof(texts) / sizeof(texts[0]); t++)
+        for (unsigned k = 0; k < 2; k++) {
+            std::string shown = std::string(badges[k]) + texts[t];
+            std::vector<uint16_t> u = u16(shown.c_str()), text = u16(texts[t]);
+            uint32_t lead = (uint32_t)strlen(badges[k]), brk[VJO_WRAP_BREAKS];
+            int nbrk = 0;
+            Model m;
+            VjoWrap w = {};
+            TEST_CASE(shown.c_str());
+            m.set(u.data(), (uint32_t)u.size());
+            vjo_wrap_arm(&w);
+            w.keep = lead; /* overlay.cpp render: the current text's lead */
+            for (int frames = 0; frames < 200; frames++) {
+                uint32_t b = vjo_wrap_step<Info>(&w, &m, u.data(), (uint32_t)u.size(), 64);
+                if (!b)
+                    continue;
+                TEST_CHECK_(b > lead, "a break at %u, in the badge's %u units or right after them", b, lead);
+                u.insert(u.begin() + b, (uint16_t)'\n');
+                vjo_wrap_put(&w, b);
+                vjo_wrap_add(brk, &nbrk, b); /* as overlay.cpp wrap_frame records the header's */
+                m.set(u.data(), (uint32_t)u.size());
+            }
+            for (uint32_t i = 0; i <= lead; i++) /* the badge, whole, and the text's first unit on the first row */
+                TEST_CHECK(m.line[i] == 0 && (i == lead || u[i] == (uint16_t)badges[k][i]));
+            /* every soft line starts where a line may break, or keeps paf's break when its row has no such
+             * place past the badge (one word wider than what is left of the box) */
+            for (uint32_t i = lead + 1, row = 0; i < u.size(); i++)
+                if (m.line[i] > m.line[i - 1]) {
+                    if (u[i - 1] != '\n' && !line_start_allowed(u, i))
+                        TEST_CHECK_(vjo_break_last16(u.data(), (uint32_t)u.size(), row, i) <= lead, "line at %u", i);
+                    row = i;
+                }
+            for (uint32_t i = 0; i < text.size(); i++)
+                TEST_CHECK_(u[vjo_wrap_shown(brk, nbrk, lead + i)] == text[i], "the text's unit %u", i);
+        }
+    /* keep is what holds the badge there: without it, the 「 text's first row would break right after it */
+    std::string shown = std::string("[HOOK]") + texts[4];
+    std::vector<uint16_t> u = u16(shown.c_str());
+    Model m;
+    m.set(u.data(), (uint32_t)u.size());
+    TEST_CHECK(vjo_wrap_fix<Info>(&m, u.data(), (uint32_t)u.size()) == 6);
+    TEST_CHECK(vjo_wrap_fix<Info>(&m, u.data(), (uint32_t)u.size(), 6) == 0);
+}
+
 TEST_LIST = {
     {"soft_lines_move_to_word_starts", soft_lines_move_to_word_starts},
     {"stale_or_missing_layouts_are_waited_for", stale_or_missing_layouts_are_waited_for},
     {"header_units_map_to_the_shown_ones", header_units_map_to_the_shown_ones},
     {"styled_insert_keeps_the_spans", styled_insert_keeps_the_spans},
+    {"the_source_badge_keeps_the_wrap_rules", the_source_badge_keeps_the_wrap_rules},
     {NULL, NULL},
 };

@@ -87,6 +87,11 @@ static VjoEntryList local_header;
 static volatile int local_text_valid;
 static uint32_t local_text_generation, local_text_game_generation;
 static uint32_t local_text_scene, local_text_capture_seq;
+/* VJO_BADGE_*: where local_text came from (its job's text_from: a native text hook's stream, or OCR),
+ * written with local_text (run_vocr under cmd_lock, a refresh's replacement), published to the view's
+ * source_badge; an earlier line shown in its place (history_show) leaves it to the current text, the
+ * only text the overlay puts a badge before (overlay.cpp render). */
+static uint8_t local_text_source;
 static uint32_t local_cursor_byte, local_cursor_seq;
 static int cursor_waiting;
 static int job_cursor_only;
@@ -201,6 +206,7 @@ static volatile int job_lookup;     /* the job looks the words up (else OCR only
  * result (cache_data[1].ocr_text) until on_refresh_done compares the two. */
 static volatile int job_refresh;
 static const char *refresh_model; /* the model that read the refresh's text (job_cfg's, or a constant) */
+static uint8_t refresh_source;     /* VJO_BADGE_* of the last job's text, a refresh's too (run_vocr) */
 /* The job is the self-test's (shell/selftest.c, selftest_job_due): its stages
  * run on the screen the last job read text from, with the overlay closed, and
  * it shows nothing: the shown text, its lookup and the result arenas stay, and
@@ -595,6 +601,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.status_is_error = is_error;
     g_view.local_cursor_mode = local_text_valid && list &&
                                list->header == local_text;
+    g_view.source_badge = cfg.source_badge ? local_text_source : VJO_BADGE_NONE; /* local_text's */
     g_view.cursor_byte = local_cursor_byte;
     /* The static header placeholder keeps the requested page while its
      * lookup runs; a published result carries its own page count. */
@@ -1306,6 +1313,7 @@ static int run_vocr(VjoOverlayData *out)
     const char *read_by = vjo_vocr_tier_model((int)ran);
     if (!read_by) read_by = vjo_vocr_tier_model(VJO_VOCR_TIER_DEFAULT);
     refresh_model = read_by; /* this result's constant model name, also for history */
+    refresh_source = vocr_result.text_from ? VJO_BADGE_HOOK : VJO_BADGE_OCR; /* API 31: a hook's stream, or OCR */
     if (job_refresh) {
         /* The open overlay shows local_text, its lookup and Anki card: this
          * job changes none of them. The control thread compares its text
@@ -1340,6 +1348,7 @@ static int run_vocr(VjoOverlayData *out)
     local_text_game_generation = job_generation;
     local_text_scene = job_capture_scene;
     local_text_capture_seq = job_capture_seq;
+    local_text_source = refresh_source;
     __sync_synchronize();
     local_text_valid = 1;
     sceKernelUnlockMutex(cmd_lock, 1);
@@ -2311,11 +2320,13 @@ static void on_refresh_done(void)
                 local_text_scene = job_capture_scene;
                 local_text_capture_seq = job_capture_seq;
                 cache_ok = 0; /* the arena's entry is the old text's */
+                local_text_source = refresh_source; /* where the new text came from */
                 local_header = (VjoEntryList){.header = local_text};
                 /* As post_local_lookup: the new text and its pending lookup, at once. */
                 g_view.list = &local_header;
                 g_view.cursor_byte = local_cursor_byte;
                 g_view.text_generation = local_text_generation;
+                g_view.source_badge = cfg.source_badge ? local_text_source : VJO_BADGE_NONE;
                 g_view.dict_page = g_view.dict_pages = 0;
                 sceClibSnprintf(g_view.status, sizeof(g_view.status), "Looking up words…");
                 g_view.status_is_error = 0;

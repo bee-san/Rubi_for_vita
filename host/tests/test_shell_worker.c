@@ -4355,6 +4355,105 @@ static void test_history_up_walks_back_and_down_returns(void)
     view_invariant = 0;
 }
 
+/* The popup's source badge (the owner, 2026-10-21: "show a hook ... to show it has found a hook and is
+ * using it successfully ... or an eye for OCR"): the view says where the current text came from, as the
+ * job that read it said (VjoGameOcrResult.text_from: a hook stream's ID, or 0 for OCR): HOOK or OCR. A
+ * refresh that replaces the text gives the new text's; one that reads the same text keeps the shown
+ * one's (its source is how it was read). An earlier line (line history) leaves it to the current text,
+ * whose header alone the overlay puts it in (overlay.cpp render: not with an earlier line's), and the
+ * current text has it again once back. source_badge = off: none. No local text (recognizing, a failed
+ * job): the overlay's header is no local text's, so no badge is drawn (render's local branch only). */
+static void test_the_source_badge_follows_the_texts_source(void)
+{
+    cursor_setup();
+    TEST_CHECK(loaded.source_badge == 1); /* on by default */
+    vjo_ledger_shell_init();
+    history_csv_add("vita-PCSG00415", "犬鳥");
+    history_csv_add("vita-PCSG00415", "猫犬鳥");
+    const uint32_t hooked[7] = {9, VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED, 1000, VJO_HOOK_STREAM_BIT(9),
+                                VJO_TEXT_SOURCE_AUTO, 1u << 16 | 8u, 0};
+    memcpy(fake_hook, hooked, sizeof(fake_hook)); /* a string copy's text, agreeing with OCR */
+    open_overlay();
+    TEST_CHECK(!g_view.local_cursor_mode); /* "Recognizing…": no text yet, so no badge drawn */
+    finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK && local_text_source == VJO_BADGE_HOOK);
+    /* cursor moves and lookups keep it */
+    vjo_post_cursor(3, local_text_generation); on_command();
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK);
+    finish_current_job();
+    check_shown("猫犬鳥", "dog", 3);
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK);
+    /* line history: the earlier line is shown (no badge drawn for it: render's !s_history), the current
+     * text's source kept for its return */
+    history_key(VJO_CMD_EARLIER);
+    TEST_CHECK(g_view.history == 1 && g_view.source_badge == VJO_BADGE_HOOK && local_text_source == VJO_BADGE_HOOK);
+    finish_current_job();
+    check_shown("犬鳥", "dog", 0);
+    TEST_CHECK(g_view.history == 1 && g_view.source_badge == VJO_BADGE_HOOK); /* its lookup's publication too */
+    history_key(VJO_CMD_LATER);
+    TEST_CHECK(!g_view.history && g_view.source_badge == VJO_BADGE_HOOK);
+    finish_current_job();
+    check_shown("猫犬鳥", "dog", 3);
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK);
+    /* a refresh of the same text, read by OCR this time: the shown text keeps its own source */
+    memset(fake_hook, 0, sizeof(fake_hook));
+    next_scene(8);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(DLOGGED("refresh rc=0: same text") && refresh_source == VJO_BADGE_OCR);
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK && !strcmp(local_text, "猫犬鳥"));
+    /* a refresh that replaces it: the new text's source, OCR, with the new text at once */
+    fake_recognized_text = "犬猫";
+    next_scene(9);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(!strcmp(local_text, "犬猫") && g_view.list == &local_header && g_view.source_badge == VJO_BADGE_OCR);
+    finish_current_job(); /* the new text's first word */
+    check_shown("犬猫", "dog", 0);
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_OCR);
+    /* ... and one from a table site's stream */
+    fake_hook[0] = 3; fake_hook[1] = VJO_HOOK_R_AGREED | VJO_HOOK_R_SITE;
+    fake_recognized_text = "鳥";
+    next_scene(10);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job(); finish_current_job();
+    check_shown("鳥", "bird", 0);
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK);
+    /* source_badge = off: none, with the same text, lookup and source (no recognition) */
+    unsigned inferences = vocr_allocs;
+    close_overlay(); loaded.source_badge = 0;
+    open_overlay();
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_NONE && local_text_source == VJO_BADGE_HOOK);
+    TEST_CHECK(local_text_valid && !job_running && vocr_allocs == inferences);
+    close_overlay(); loaded.source_badge = 1;
+    open_overlay();
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK && !job_running);
+    /* a new screen's recognition by OCR, as the overlay opens on it */
+    close_overlay();
+    memset(fake_hook, 0, sizeof(fake_hook));
+    fake_recognized_text = "猫";
+    next_scene(11);
+    open_overlay();
+    TEST_ASSERT(job_running && !job_cursor_only && !job_refresh);
+    TEST_CHECK(!local_text_valid && !g_view.local_cursor_mode); /* the old text went with its screen: no badge */
+    finish_current_job();
+    check_shown("猫", "cat", 0);
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_OCR && local_text_source == VJO_BADGE_OCR);
+    /* a failed recognition: no text, no badge */
+    close_overlay();
+    fail_vocr_user = 1; fake_free_user = 1000;
+    next_scene(12);
+    open_overlay();
+    finish_current_job();
+    TEST_CHECK(!local_text_valid && !g_view.local_cursor_mode && g_view.status_is_error); /* no text: no badge drawn */
+    fail_vocr_user = 0;
+    close_overlay(); mem_free();
+}
+
 /* Only Read text: Automatically keeps lines (history.csv): in on_press mode Up does what it did. No
  * earlier line, or no memory for a visit: nothing, and nothing kept. */
 static void test_history_needs_auto_lines_and_memory(void)
@@ -7726,6 +7825,7 @@ TEST_LIST = {
     {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
     {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
     {"history_up_walks_back_and_down_returns", test_history_up_walks_back_and_down_returns},
+    {"the_source_badge_follows_the_texts_source", test_the_source_badge_follows_the_texts_source},
     {"history_needs_auto_lines_and_memory", test_history_needs_auto_lines_and_memory},
     {"history_waits_for_the_running_job", test_history_waits_for_the_running_job},
     {"history_close_exit_and_region", test_history_close_exit_and_region},

@@ -306,8 +306,8 @@ static bool header_highlight(void)
         len = s_rng_len[s_selected];
     }
     /* After a failed recolour the next one makes the whole header white: an earlier line's dimmed
-     * neighbours take their colour back from the text's own spans first. */
-    if (s_hl_dirty && s_history) {
+     * neighbours and the source badge take their colour back from the text's own spans first. */
+    if (s_hl_dirty && (s_history || s_hdr_lead)) {
         text_set(s_header.text, &s_hdr_st);
         s_hl_dirty = false;
         s_hl_len = 0;
@@ -445,15 +445,21 @@ static void render(int new_content)
         s_history = s_local_cursor_mode ? g_view.history : 0;
         if (vjo_styled_init(&hdr, &s_ui, HEADER_UNITS, VJO_HEADER_SPANS) == 0) {
             /* an earlier line (line history) between its neighbours, dimmed (the owner, 2026-10-20:
-             * "we can dim [them], so it shows focus on the current line") */
-            if (s_local_cursor_mode) /* (the neighbours are NULL but in a visit: worker.c history_detach) */
+             * "we can dim [them], so it shows focus on the current line"); the current text after its
+             * source, [HOOK] or [OCR], dimmed (the owner, 2026-10-21; config source_badge): the lead
+             * counts it, and the re-wrap keeps it (keep, below) */
+            if (s_local_cursor_mode) { /* (the neighbours are NULL but in a visit: worker.c history_detach) */
+                if (!s_history) /* none for an earlier line: its source is not known */
+                    vjo_styled_badge(&hdr, g_view.source_badge, en < ja ? en : ja);
                 s_hdr_lead = vjo_styled_history(&hdr, g_view.history_before, s_cursor_text, g_view.history_after, ja);
-            else
+            } else {
                 vjo_styled_header(&hdr, l, ja);
+            }
             have_hdr = 1;
             s_hdr_st = hdr;
             if (s_local_cursor_mode) /* the cursor's text, whose units are mapped */
                 vjo_wrap_arm(&s_hdr_wrap);
+            s_hdr_wrap.keep = s_history ? 0 : s_hdr_lead; /* the current text's lead is its source badge */
         }
         s_hdr_mark = vjo_arena_mark(&s_ui);
         if (!s_local_cursor_mode)

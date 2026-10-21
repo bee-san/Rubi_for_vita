@@ -32,6 +32,7 @@
 #include "acutest.h"
 #include "layout_double.h"
 #include "stick_cursor.h"
+#include "text_hit.h"
 #include "text_rows.h"
 #include "utf.h"
 
@@ -888,6 +889,51 @@ static void up_and_down_past_an_earlier_lines_rows(void)
     TEST_CHECK(!lay.bad_queries);
 }
 
+/* ---- the source badge (core/styled.c vjo_styled_history: "[HOOK]" or "[OCR]" before the current text) ----
+ * The badge is laid out on the text's first row, before it, in the one header: the cursor's units start
+ * after it (lead), as after an earlier line's dimmed row. The cursor never goes into it, Up on the text's
+ * top row is still the line before (no row of the text above), a tap on it selects nothing, and the
+ * text's own characters are where taps and the arrows find them. */
+static void the_source_badge_is_never_the_cursors(void)
+{
+    static const char *const headers[] = {"[HOOK]猫が好き。犬も好き", "[OCR]猫が好き。犬も好き"};
+    static const char text[] = "猫が好き。犬も好き"; /* 猫0 が3 好6 き9 。12 犬15 も18 好21 き24 */
+    for (int b = 0; b < 2; b++) {
+        Shown sh = {&lay, b ? 5u : 6u};
+        VjoTextRows rows;
+        VjoRowNav nav;
+        int step;
+        size_t at, byte = 99;
+        TEST_CASE(headers[b]);
+        memset(&nav, 0, sizeof(nav));
+        /* 10 cells a row: the badge (6 or 5 narrow cells, 3 or 2.5 full-width) and 7 of the text */
+        TEST_ASSERT(layout_text(&lay, headers[b], W, JA, NARROW) == 2);
+        rows = layout_rows(&lay);
+        rows.position = shown_position;
+        rows.ctx = &sh;
+        /* Left from the text's first character: it stays (no badge cell to go to), no line step */
+        at = history_press(text, &rows, &nav, 0, -1, 0, 0, &step);
+        TEST_CHECK(at == 0 && step == 0);
+        /* Right walks the text's characters only */
+        at = history_press(text, &rows, &nav, 0, 1, 0, 0, &step);
+        TEST_CHECK(at == 3 && step == 0);
+        /* Up on the top row: the line before (line history), never the badge */
+        at = history_press(text, &rows, &nav, 3, 0, -1, 0, &step);
+        TEST_CHECK(at == 3 && step == -1);
+        /* Down: the text's second row, as without a badge; Up comes back to the first */
+        at = history_press(text, &rows, &nav, 3, 0, 1, 0, &step);
+        TEST_CHECK(at > 12 && step == 0);
+        at = history_press(text, &rows, &nav, at, 0, -1, 0, &step);
+        TEST_CHECK(at <= 12 && step == 0);
+        /* taps (overlay.cpp input_header_touch): on the badge, nothing; on 猫, its first byte */
+        VjoTextHitLayout hit = {0, 0, W, 4 * JA, 2 * JA, 0, JA, 2, shown_position, &sh};
+        TEST_CHECK(!vjo_text_hit(text, strlen(text), &hit, 1.0f, 2.0f, 0, &byte) && byte == 99);
+        TEST_CHECK(!vjo_text_hit(text, strlen(text), &hit, (float)sh.lead * NARROW - 1.0f, 2.0f, 0, &byte));
+        TEST_CHECK(vjo_text_hit(text, strlen(text), &hit, (float)sh.lead * NARROW + 1.0f, 2.0f, 0, &byte) && byte == 0);
+        TEST_CHECK(!lay.bad_queries);
+    }
+}
+
 TEST_LIST = {
     {"two_lines_right_and_left_cross_the_break", two_lines_right_and_left_cross_the_break},
     {"three_lines_walk_to_the_ends_and_stop", three_lines_walk_to_the_ends_and_stop},
@@ -905,4 +951,5 @@ TEST_LIST = {
     {"the_sticks_left_at_the_edges", the_sticks_left_at_the_edges},
     {"the_close_line_counts_are_the_arrows", the_close_line_counts_are_the_arrows},
     {"up_and_down_past_an_earlier_lines_rows", up_and_down_past_an_earlier_lines_rows},
+    {"the_source_badge_is_never_the_cursors", the_source_badge_is_never_the_cursors},
     {NULL, NULL}};

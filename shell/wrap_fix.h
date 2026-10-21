@@ -37,9 +37,12 @@ static inline int64_t vjo_wrap_line(Text *t, uint32_t i)
  * text's (no line count, or no position for its last unit: a layout of the
  * text before the last '\n' was put in has one unit fewer). Lines grow with
  * the units. A layout read too early can only end a line early: every place
- * returned is one core/linebreak.h allows in this text. */
+ * returned is one core/linebreak.h allows in this text. keep: units at the
+ * text's start that no place returned is in or right after (the header's
+ * source badge, core/styled.c: never a row of its own); a line whose only
+ * allowed places are there keeps paf's break, as one word wider than the box. */
 template <class Info, class Text>
-uint32_t vjo_wrap_fix(Text *t, const uint16_t *u, uint32_t n)
+uint32_t vjo_wrap_fix(Text *t, const uint16_t *u, uint32_t n, uint32_t keep = 0)
 {
     uint32_t lines = 0, start = 0;
     if (!t || !n)
@@ -64,7 +67,7 @@ uint32_t vjo_wrap_fix(Text *t, const uint16_t *u, uint32_t n)
          * last test reads a few units before lo only); else the line before
          * ends at its last such place */
         if (u[lo - 1] != '\n' && u[lo] != '\n' && u[lo] != ' ' && u[lo] != 0x3000 &&
-            vjo_break_last16(u, n, lo - 1, lo) != lo && (b = vjo_break_last16(u, n, start, lo)) > start)
+            vjo_break_last16(u, n, lo - 1, lo) != lo && (b = vjo_break_last16(u, n, start, lo)) > start && b > keep)
             return b;
         start = lo;
     }
@@ -72,10 +75,11 @@ uint32_t vjo_wrap_fix(Text *t, const uint16_t *u, uint32_t n)
 }
 
 /* One text's re-wrap, a step a frame: armed with VJO_WRAP_SETTLE frames when
- * the text is set. last: the unit of the '\n' put in last. */
+ * the text is set. last: the unit of the '\n' put in last. keep: vjo_wrap_fix's
+ * (the owner of the text sets it; arming leaves it). */
 struct VjoWrap {
     int frames, tries, count;
-    uint32_t last;
+    uint32_t last, keep;
 };
 
 static inline void vjo_wrap_arm(VjoWrap *w)
@@ -92,7 +96,7 @@ uint32_t vjo_wrap_step(VjoWrap *w, Text *t, const uint16_t *u, uint32_t n, uint3
     uint32_t b;
     if (!w->frames || --w->frames)
         return 0;
-    b = vjo_wrap_fix<Info>(t, u, n);
+    b = vjo_wrap_fix<Info>(t, u, n, w->keep);
     if (b == VJO_WRAP_WAIT) {
         w->frames = ++w->tries <= VJO_WRAP_TRIES; /* try again next frame */
         return 0;

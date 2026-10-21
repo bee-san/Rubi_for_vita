@@ -952,6 +952,38 @@ static void test_frequency_badge_config(void)
     TEST_CHECK(strstr(vjo_config_default_text(), "\nfrequency_badge = on\n") != NULL);
 }
 
+/* source_badge (the popup's HOOK / OCR before its text): on unless config.ini says off, read as
+ * frequency_badge is, and the two never set each other. */
+static void test_source_badge_config(void)
+{
+    VjoConfig c;
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.source_badge == 1 && c.frequency_badge == 1);
+    const char old[] = "frequency_badge = on\n"; /* a config.ini from before the key: on */
+    vjo_config_parse(&c, old, sizeof(old) - 1);
+    TEST_CHECK(c.source_badge == 1 && c.n_warnings == 0);
+    const char off[] = "  Source_Badge =  OFF\r\n";
+    vjo_config_parse(&c, off, sizeof(off) - 1);
+    TEST_CHECK(c.source_badge == 0 && c.frequency_badge == 1 && c.n_warnings == 0);
+    const char freq_off[] = "frequency_badge = off\n";
+    vjo_config_parse(&c, freq_off, sizeof(freq_off) - 1);
+    TEST_CHECK(c.source_badge == 0 && c.frequency_badge == 0 && c.n_warnings == 0);
+    const char on[] = "source_badge = on\n";
+    vjo_config_parse(&c, on, sizeof(on) - 1);
+    TEST_CHECK(c.source_badge == 1 && c.frequency_badge == 0 && c.n_warnings == 0);
+    const char invalid[] = "source_badge = hook\nsource_badge =\n";
+    vjo_config_parse(&c, invalid, sizeof(invalid) - 1);
+    TEST_CHECK(c.source_badge == 1 && c.n_warnings == 2); /* an invalid value keeps the setting, and is named */
+    TEST_CHECK(strstr(c.warnings[0], "source_badge: invalid value") != NULL && !strstr(c.warnings[0], "hook"));
+    /* The written template carries it, on, right after frequency_badge. */
+    vjo_config_defaults(&c);
+    c.source_badge = 0;
+    vjo_config_parse(&c, vjo_config_default_text(), strlen(vjo_config_default_text()));
+    TEST_CHECK(c.source_badge == 1 && c.n_warnings == 0);
+    const char *t = strstr(vjo_config_default_text(), "\nsource_badge = on\n");
+    TEST_CHECK(t != NULL && t > strstr(vjo_config_default_text(), "\nfrequency_badge = on\n"));
+}
+
 static void test_regions(void)
 {
 #define P(s, t, g) vjo_region_parse(s, strlen(s), t, g)
@@ -1112,6 +1144,55 @@ static void test_styled_history_header(void)
         lead = vjo_styled_history(&st, text, "猫", NULL, 21);
         TEST_CHECK(lead == 129 && st.spans[0].len == 128 && st.text[127] == 0xDE00);
     }
+}
+
+/* The source badge (the owner, 2026-10-21: "show a hook ... or an eye for OCR"; ASCII, his choice over an
+ * image): "[HOOK]" before a native text hook's text, "[OCR]" before recognized text, dimmed (the frequency
+ * badge's colour) at the size given; nothing when the source is not known. Put first, as the overlay puts
+ * it, the text after it has the span it has without a badge, and vjo_styled_history's lead counts the
+ * badge, so the cursor, taps and the highlight (overlay.cpp header_shown) start at the text's first
+ * character. No space after the badge: no line may break between it and the text (core/linebreak.h). */
+static void test_styled_source_badge(void)
+{
+    static const struct { int badge; const char *text; } cases[] = {
+        {VJO_BADGE_HOOK, "[HOOK]"}, {VJO_BADGE_OCR, "[OCR]"}, {VJO_BADGE_NONE, ""}, {3, ""}, {-1, ""}, {1 << 30, ""}};
+    static const char line[] = "また明日、一緒に見に行こう!";
+    VjoStyled st, plain;
+    uint32_t lead;
+    setup();
+    TEST_ASSERT(vjo_styled_init(&plain, &A, 4096, VJO_HEADER_SPANS) == 0);
+    TEST_CHECK(vjo_styled_history(&plain, NULL, line, NULL, 27) == 0 && plain.n_spans == 1);
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        uint32_t n = (uint32_t)strlen(cases[c].text);
+        TEST_CASE_("badge %d", cases[c].badge);
+        TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+        vjo_styled_badge(&st, cases[c].badge, 21);
+        lead = vjo_styled_history(&st, NULL, line, NULL, 27);
+        TEST_CHECK(lead == n && st.len == n + plain.len && st.n_spans == (n ? 2 : 1) && !st.truncated);
+        for (uint32_t i = 0; i < n; i++)
+            TEST_CHECK(st.text[i] == (uint16_t)cases[c].text[i]);
+        if (n) /* dimmed, at the size given */
+            TEST_CHECK(st.spans[0].start == 0 && st.spans[0].len == n && st.spans[0].rgb == VJO_RGB_RANK &&
+                       st.spans[0].px == 21);
+        /* the text: the same units and span as without a badge, after the lead */
+        const VjoSpan *t = &st.spans[st.n_spans - 1];
+        TEST_CHECK(t->start == lead && t->len == plain.spans[0].len && t->rgb == VJO_RGB_TEXT && t->px == 27);
+        TEST_CHECK(!memcmp(st.text + lead, plain.text, plain.len * sizeof(uint16_t)));
+    }
+    /* an empty recognition: the badge alone says what read it (nothing) */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+    vjo_styled_badge(&st, VJO_BADGE_OCR, 21);
+    TEST_CHECK(vjo_styled_history(&st, NULL, "", NULL, 27) == 5 && st.len == 5 && st.n_spans == 1);
+    /* a full header: the badge and the text stop at whole characters, within the cap */
+    TEST_ASSERT(vjo_styled_init(&st, &A, 7, VJO_HEADER_SPANS) == 0);
+    vjo_styled_badge(&st, VJO_BADGE_HOOK, 21);
+    TEST_CHECK(vjo_styled_history(&st, NULL, "一緒に見に行こう", NULL, 27) == 6 && st.len == 7 && st.truncated &&
+               st.text[6] == 0x4E00);
+    TEST_ASSERT(vjo_styled_init(&st, &A, 3, VJO_HEADER_SPANS) == 0);
+    vjo_styled_badge(&st, VJO_BADGE_HOOK, 21);
+    TEST_CHECK(st.len == 3 && st.truncated && vjo_styled_history(&st, NULL, "猫", NULL, 27) == 3 && st.len == 3);
+    /* the current text's badge and text: two of the header's spans, at most */
+    TEST_CHECK(VJO_HEADER_SPANS >= 2);
 }
 
 /* Bee's Ultimate Dictionary's kanji lines: the trailing lines "漢=meaning",
@@ -2425,9 +2506,11 @@ TEST_LIST = {
     {"config", test_config},
     {"highlight_config", test_highlight_config},
     {"frequency_badge_config", test_frequency_badge_config},
+    {"source_badge_config", test_source_badge_config},
     {"regions", test_regions},
     {"styled", test_styled},
     {"styled_history_header", test_styled_history_header},
+    {"styled_source_badge", test_styled_source_badge},
     {"kanji_block", test_kanji_block},
     {"styled_kanji_lines_and_fitting", test_styled_kanji_lines_and_fitting},
     {NULL, NULL},

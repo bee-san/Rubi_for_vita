@@ -115,6 +115,9 @@ typedef struct {
      * letterbox or pillarbox the game worker finds as it reads the frame (on by default;
      * core/shottrim.h, docs/anki.md "Black bars"). Last, as above. */
     int anki_screenshot_trim_bars; /* 0/1 */
+    /* The popup's source badge (the owner, 2026-10-21): its text starts with where it came from, [HOOK] (a
+     * native text hook) or [OCR] (core/styled.h VJO_BADGE_*; on by default). Last, as above. */
+    int source_badge;         /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
