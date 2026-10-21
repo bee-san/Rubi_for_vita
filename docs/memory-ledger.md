@@ -7,17 +7,18 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 
 ## Border lines dropped (API 36)
 
-Measured with VitaSDK GCC 15.2.0, Release, against main `e33f8f6`, on the packaged SELF files
-(`check_memory_ledger.py` in each variant's build); text + data/bss:
+Measured with VitaSDK GCC 15.2.0, Release, against main `a182b87` (after #249's counters), on the packaged
+SELF files (`check_memory_ledger.py` in each variant's build); text + data/bss. Against main `e33f8f6`, before
+#249, the increases were the same:
 
 | Module | Debug: before → after | Normal: before → after | Loaded pages, unchanged |
 |---|---:|---:|---:|
-| Game worker | 137,088 → 137,328 + 32,888 B | 128,220 → 128,476 + 32,880 B | 176,128 / 167,936 B |
+| Game worker | 140,032 → 140,272 + 32,888 B | 131,164 → 131,420 + 32,880 B | 180,224 / 172,032 B |
 | Shell | 100,940 → 100,956 + 73,560 B | 90,092 → 90,108 + 73,576 B | 176,128 / 163,840 B |
 | Kernel | 41,740 → 41,756 + 77,732 B | 36,904 + 76,044 B, unchanged | 122,880 / 118,784 B |
 
-The worker's text normalisation gains its third pass (`core/textnorm.c` at -Os: 1,220 → 1,404 B of
-code and 10 → 26 B of read-only data, the 8-entry set; its two functions' stack frames 88 + 40 → 96 + 48 B,
+The worker's text normalisation gains its third pass (`core/textnorm.c` at -Os: 1,380 → 1,564 B of
+code and 44 → 60 B of read-only data, the 8-entry set; its two functions' stack frames 88 + 40 → 96 + 48 B,
 measured `-fstack-usage`), in place on the
 result buffer. The Shell sets one request bit from the config it already holds; the normal Shell's
 code segment keeps 4 B of its last page. The kernel only accepts the bit (its known-bit mask). No
