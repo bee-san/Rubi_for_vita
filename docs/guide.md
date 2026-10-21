@@ -327,7 +327,7 @@ reported console run. The behaviour below is checked on the host.
   history) has none (`history.csv` keeps its source, but the popup does not read it back).
   `source_badge` in `config.ini` (no setting in the app): `on` (the default), `off` hides it, `icons`
   shows the system's anchor and eye instead (untested on a console: they appear only if SceShell has
-  the font, `_` otherwise). The badge is part of the text's first row (at the default sizes `[HOOK]` is
+  the font, `_` or nothing otherwise: unverified). The badge is part of the text's first row (at the default sizes `[HOOK]` is
   as wide as 2.9 Japanese characters, `[OCR]` 2.3); Rubi never leaves it alone on a row, and the cursor,
   taps and the highlight skip it ([details](native-hooks.md#the-popups-source-badge)). Source selection
   is automatic; there is no hook number or Triangle source picker. Technical source details remain in
@@ -818,8 +818,9 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 159,744 B of module pages (167,936 B in the debug build; API 31's native hooks and
-their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory)) and its 36,864 B thread stack and TLS from its
+holds the worker's 172,032 B of module pages (180,224 B in the debug build; API 31's native hooks and
+their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
+API 34's remembered hooks 8,192 B and vita-vn-ocr #109's counter re-decode 4,096 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

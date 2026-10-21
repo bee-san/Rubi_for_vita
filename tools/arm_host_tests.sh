@@ -171,7 +171,7 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
     "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
     -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
     "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
-    "$RT/vocr_lines_rows.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" \
+    "$RT/vocr_lines_rows.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_post.c" \
     third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
     third_party/bearssl/src/codec/enc32be.c -lm
   TESTS+=(capture_parity)

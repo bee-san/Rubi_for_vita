@@ -95,7 +95,7 @@ const char *vjo_config_default_text(void)
            "\n"
            "; Start the popup's text with where it came from: [HOOK] (a native text hook)\n"
            "; or [OCR] (read off the screen): on | off | icons (an anchor and an eye from\n"
-           "; the system's fonts instead: untested, shown as _ if SceShell lacks them)\n"
+           "; the system's fonts instead: untested; _ or nothing if SceShell lacks them)\n"
            "source_badge = on\n"
            "\n"
            "; Text size, 8-40: Japanese (sentence, words, readings) and English (meanings, messages)\n"

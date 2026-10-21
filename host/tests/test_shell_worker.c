@@ -4447,6 +4447,28 @@ static void test_the_source_badge_follows_the_texts_source(void)
     close_overlay(); loaded.source_badge = 2; /* icons */
     open_overlay();
     TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK_ICON && local_text_source == VJO_BADGE_HOOK && !job_running);
+    /* ... with refreshes that replace the text: the new text's icon, published with it (audit-source-badge-b
+     * N13: the refresh's own publication in the icons style), OCR's eye, then a stream's anchor */
+    memset(fake_hook, 0, sizeof(fake_hook));
+    fake_recognized_text = "猫犬";
+    next_scene(30);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(!strcmp(local_text, "猫犬") && g_view.list == &local_header && g_view.source_badge == VJO_BADGE_OCR_ICON);
+    finish_current_job();
+    check_shown("猫犬", "cat", 0);
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_OCR_ICON);
+    memcpy(fake_hook, hooked, sizeof(fake_hook));
+    fake_recognized_text = "犬鳥";
+    next_scene(31);
+    test_now += REFRESH_GAP_US; control_tick(VJO_EV_REGION_STABLE);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_CHECK(!strcmp(local_text, "犬鳥") && g_view.source_badge == VJO_BADGE_HOOK_ICON);
+    finish_current_job();
+    check_shown("犬鳥", "dog", 0);
+    TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK_ICON && local_text_source == VJO_BADGE_HOOK);
     close_overlay(); loaded.source_badge = 1;
     open_overlay();
     TEST_CHECK(g_view.source_badge == VJO_BADGE_HOOK && !job_running);

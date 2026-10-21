@@ -130,6 +130,8 @@ static int usage(void)
                     "             [--cascade VOCR4_W20_w8.vocr [--cascade-conf 700] [--cascade-ms 2000]] read\n"
                     "             lines under that confidence again with the larger model, within that time;\n"
                     "             [--refine on] refine the finder's boxes (vita-vn-ocr's vocr_lines_refine)\n"
+                    "             [--counters on] the counter re-decode (vita-vn-ocr's vocr_post_redecode) as the\n"
+                    "             game worker runs it; needs --lm or --cascade (their top-K)\n"
 #endif
                     "backends built:"
 #ifdef VJO_WITH_NCNN
@@ -152,7 +154,7 @@ int main(int argc, char **argv)
     const char *model = NULL;
 #ifdef VJO_WITH_VOCR
     const char *lines_path = NULL, *lm_name = NULL, *cascade_name = NULL;
-    int blank = 0, refine = 0;
+    int blank = 0, refine = 0, counters = 0;
     unsigned cascade_conf = 0, cascade_ms = 2000;
 #endif
     int i = 1;
@@ -168,6 +170,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--cascade-conf")) cascade_conf = (unsigned)strtoul(argv[i+1], NULL, 10);
         else if (!strcmp(argv[i], "--cascade-ms")) cascade_ms = (unsigned)strtoul(argv[i+1], NULL, 10);
         else if (!strcmp(argv[i], "--refine")) refine = !strcmp(argv[i+1], "on");
+        else if (!strcmp(argv[i], "--counters")) counters = !strcmp(argv[i+1], "on");
 #endif
         else return usage();
     }
@@ -219,10 +222,12 @@ int main(int argc, char **argv)
         VjoRgbaImage rgba = {im.pixels, im.width, im.height, (size_t)im.width * 4};
         VjoGreySource grey;
         vjo_grey_source_rgba(&rgba, &grey);
-        if (lines_path || blank || lm_name || cascade_name || refine) {
+        if (lines_path || blank || lm_name || cascade_name || refine || counters) {
             /* The game worker's form: resident weights, the job policy, the LM. */
             VjoVocrPolicy policy = {.blank = blank, .line = lines_path ? print_line : NULL,
-                                    .refine = refine ? VJO_VOCR_REFINE_ALL : 0u, .short_lines = 1};
+                                    .refine = refine ? VJO_VOCR_REFINE_ALL : 0u, .short_lines = 1,
+                                    .counter_tau = counters ? VJO_VOCR_COUNTER_TAU : 0,
+                                    .counter_open = counters ? VJO_VOCR_COUNTER_OPEN : 0};
             VjoVocrResident res = {resident_alloc, resident_release, NULL, NULL, NULL, 0, 0, 0};
             VjoVocrLmResident lres = {lm_alloc, lm_release, NULL, NULL, NULL, 0, 0, 0};
             FILE *lf = lines_path ? fopen(lines_path, "w") : NULL;
@@ -253,6 +258,8 @@ int main(int argc, char **argv)
             grey.line_buffer = line_buffer;
             rc = vjo_vocr_ocr_policy(&platform, argv[i], model, &grey, &res, lws ? lws : workspace, job, capture, cap,
                                      &policy, text, sizeof(text), &st);
+            if (counters) fprintf(stderr, "counters=%d,%d counter_lines=%u\n", policy.counter_tau, policy.counter_open,
+                                  st.counter_lines);
             if (policy.lm)
                 fprintf(stderr, "lm=%s lm_rc=%d lm_lines=%u lm_changed=%u lm_us=%u lm_load_us=%u\n",
                         st.lm ? st.lm->name : "-", st.lm_rc, st.lm_lines, st.lm_changed, (unsigned)st.lm_us,

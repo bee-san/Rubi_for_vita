@@ -14,6 +14,7 @@
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"
 #include "vocr_lines_refine.h"
+#include "vocr_post.h"
 #include "vocr_lm.h"
 #include "vocr_textgate.h"
 
@@ -1286,6 +1287,7 @@ typedef struct {
     const VjoPlatform *p;
     const char *dir;
     const VjoVocrModel *mi;
+    const vocr_model *model;    /* the job's parsed model (its slots share it) */
     const VjoGreySource *im;
     const VjoVocrPolicy *pol;
     const Layout *l;
@@ -1361,6 +1363,16 @@ static uint32_t len_finished_after(const Lines *L)
     return n;
 }
 
+/* vita-vn-ocr #109's counter re-decode of a line's top-K (VjoVocrPolicy.counter_tau, counter_open), then the
+ * edited extras' greedy text into t (cap bytes): 0 nothing edited (t as it was), 1 edited but the text does
+ * not fit (t holds part of it), 2 edited and t holds it. */
+static int counter_redecode(const VjoVocrPolicy *pol, const vocr_model *m, vocr_extra *ex, char *t, size_t cap)
+{
+    const vocr_post_opts po = {pol->counter_tau, pol->counter_open};
+    if (!(po.tau || po.open) || vocr_post_redecode(m, ex, &po, NULL) <= 0) return 0;
+    return vocr_post_greedy(m, ex, t, cap, NULL) == VOCR_OK ? 2 : 1;
+}
+
 /* A recognized line's turn in the text, exactly as the serial job finishes a line
  * after its vocr_run: its greedy text is at text + start already. The LM decode,
  * the cascade's re-read (of img: the strip, or the slot's copy), the stats, the
@@ -1383,7 +1395,7 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
     uint32_t line_us;
     size_t n, gn = strlen(text + start), need = gn;
     uint32_t roff = NO_RAW;
-    int rc, lm_done = 0, casc_done = 0;
+    int rc, lm_done = 0, casc_done = 0, counted = 0;
     if (l->lm) {
         flags = line_conf(ex, text + start);
         if (gn < LM_LINE_TEXT) { /* a class a frame, 4 bytes at most: always; kept for the log */
@@ -1392,6 +1404,19 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
             } else {
                 greedy = (char *)(L->x0 + L->x.line);
                 memcpy(greedy, text + start, gn + 1);
+            }
+        }
+        /* The counter re-decode edits the extras' top-1 classes, which the LM then reads; the line's text
+         * becomes their greedy text (the recognizer's own stays in greedy, for the log). */
+        if (gn && greedy != text + start &&
+            (counted = counter_redecode(pol, L->model, ex, text + start, cap - start)) != 0) {
+            if (counted == 2) {
+                size_t cn = strlen(text + start);
+                st->counter_lines++;
+                if (cn > need) need = cn;
+            } else { /* longer than the room left: the recognizer's line stands */
+                memcpy(text + start, greedy, gn + 1);
+                counted = 0;
             }
         }
         if (L->lm_on && gn && greedy != text + start) { /* a line read as empty stays empty */
@@ -1407,7 +1432,8 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
                 lm_done = 1;
                 if (ln > need) need = ln;
             } else { /* longer than the room left, or refused: the greedy line stands */
-                memcpy(text + start, greedy, gn + 1);
+                if (!counted || vocr_post_greedy(L->model, ex, text + start, cap - start, NULL) != VOCR_OK)
+                    memcpy(text + start, greedy, gn + 1);
                 if (rc != VOCR_E_TEXT) {
                     st->lm_rc = VJO_E_OCR_INFERENCE;
                     L->lm_on = 0;
@@ -1453,6 +1479,10 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
                     rc = vocr_run((vocr_ctx *)(void *)(L->c0 + L->cx.ctx), img, cg, LM_LINE_TEXT, &e2);
                     if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
                     if (rc == VOCR_OK) st->cascade_frames += e2.frames;
+                    /* the same re-decode on the larger model's reading (its greedy text always fits) */
+                    if (rc == VOCR_OK && cg[0])
+                        counter_redecode(pol, (const vocr_model *)(void *)(L->c0 + L->cx.model), &e2, cg,
+                                         LM_LINE_TEXT);
                     if (rc == VOCR_OK && L->lm_on && cg[0]) {
                         rc = vocr_lm_decode((vocr_lm_ctx *)(void *)(L->c0 + L->cx.lm_ctx), &e2,
                                             (char *)(L->c0 + L->cx.text), LM_LINE_TEXT, NULL);
@@ -1737,6 +1767,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
     st->cached = st->dispatched = st->run_failures = 0;
     st->gate_ran = st->gate_stopped = st->gate_rows = 0;
+    st->counter_lines = 0;
     st->gate_score = 0;
     st->gate_us = 0;
     if (l->gate_bytes) st->gate_rc = 0;
@@ -1795,6 +1826,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     L->p = p;
     L->dir = dir;
     L->mi = mi;
+    L->model = model;
     L->im = im;
     L->pol = pol;
     L->l = l;

@@ -352,8 +352,14 @@ if(VJO_WITH_VOCR)
   # API 32: the screenshot's black bars, for size too (612 B of text against 816 B at -O2): the scan
   # reads only the bars' pixels, a small part of the frame, once a shot; the encoder stays at -O2.
   set_source_files_properties(${ROOT}/core/shottrim.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # __sce_headroom, as the Rubi app's link below has it: room after the code segment for the SCE data
+  # vita-elf-create appends there (the module info and import tables: 1,204 B in the normal build). Without
+  # it the room is what the code leaves below the next 64 KiB boundary, and vita-elf-create refuses, then
+  # crashes, when that is less ("Cannot allocate 1204 bytes for SCE data at end of segment 0; segment 1
+  # overlaps": the normal build's worker with vita-vn-ocr #109's counter re-decode, its code ending 1,112 B
+  # below 128 KiB). The gap costs no memory: only the segments are loaded (the ledger counts their pages).
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
-    -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
+    -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning -Wl,--defsym,__sce_headroom=0x1000)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
   target_link_libraries(VitaJPOverlay_OCR vjo_vocr vjo_vocr_rt vjo_bearssl VitaJPOverlay_Kernel_stub_weak
     SceLibKernel_stub SceKernelThreadMgr_stub SceSysmem_stub_weak SceProcessmgr_stub_weak

@@ -333,7 +333,7 @@ one-line change of `core/styled.c`'s `source_badges`.*
   draws it in a `ui::Text` as LiveArea does in titles (unverified; moot, nothing fits). The music_arib
   anchor and eye cost nothing if SceShell's PAF set `PvfOption_ExtraFontMusicArib` and so loaded that
   font: then the header's `ui::Text` draws them as it draws any character, three bytes of UTF-8 each in
-  `source_badges`. If it did not, PAF draws `_` (as for ✓), and the only other way, libpvf and a glyph
+  `source_badges`. If it did not, PAF draws `_` (as for ✓) or nothing (unverified), and the only other way, libpvf and a glyph
   texture in SceShell, would allocate after boot: not done. Which holds is unverified, hence the icons
   are an option, not the default.
 
@@ -465,8 +465,8 @@ Hardware is paused; these are for the test issue (#230):
     were ARM already, the rest is Thumb), and its SELF the first R_ARM_JUMP24 relocations,
     9, their branches to SceLibKernel's stubs (audit-source-badge applied every relocation of the packaged
     SELF as the module loader does, and each gave back the linked instruction). `log.txt` has `Rubi shell
-    started` and `status.txt` no safe-boot note (the Shell's `module_start` calls `memcpy` and `strlen`
-    already); a game that is ON starts (its worker is unchanged); the popup opens and looks a word up
+    started` and `status.txt` no safe-boot note (the Shell's start calls `memcpy`, `strlen` and `strcmp`
+    before it logs that line: its config load, from the PAF callback); a game that is ON starts (its worker is unchanged); the popup opens and looks a word up
     (`strcmp`, `memcmp`). If the Vita does not come back, hold L as it starts ([Recovery](#recovery)); the
     boot-safety guard makes the next boot a safe one.
 

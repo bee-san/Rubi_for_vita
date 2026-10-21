@@ -320,6 +320,8 @@ typedef struct {
     int gate_rc;             /* 0, or why it could not decide (VJO_E_*, VOCR_LINES_E_*: the lines were kept) */
     unsigned gate_rows;      /* rows it took (each the first time the finder asked for it) */
     uint32_t gate_us;        /* its time: its share of the first pass, and its decision */
+    /* The counter re-decode (VjoVocrPolicy.counter_tau, counter_open). */
+    unsigned counter_lines;  /* lines whose numeral or opening bracket it put back (the job's model) */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
@@ -510,7 +512,17 @@ typedef struct {
      * in stats->gate_rc. A job whose finder finds no line is not scored. gate 0: off, exactly as before. */
     int gate;
     VjoVocrGateResident *gate_res;
+    /* The counter re-decode (vita-vn-ocr #109, runtime/vocr_post.h vocr_post_redecode), on the top-K of a
+     * job with the LM extras (VjoVocrPolicy.lm or .cascade), before the LM: where a line reads a letter X
+     * that is not a numeral before ッ/ヶ/ヵ and 月/所/年/国/条, X becomes the cheapest numeral the frames
+     * allow within counter_tau, and a 「/『 the line's left edge cut (its 」/』 read, no opener) is put
+     * back before it within counter_open, both 1/1000 nat (VJO_VOCR_COUNTER_TAU/OPEN: vita-vn-ocr's
+     * development choice). 0 and 0: off, exactly as before. The greedy text (VjoVocrPolicy.raw) stays the
+     * recognizer's own. */
+    int counter_tau, counter_open;
 } VjoVocrPolicy;
+#define VJO_VOCR_COUNTER_TAU 6000
+#define VJO_VOCR_COUNTER_OPEN 4000
 #define VJO_VOCR_SETTLE_MAX_US 2000000u
 /* VjoVocrPolicy.refine: every step of vita-vn-ocr's refinement
  * (VOCR_REFINE_DEFAULT, vocr_lines_refine.h: tighten, frames, split, cursor,

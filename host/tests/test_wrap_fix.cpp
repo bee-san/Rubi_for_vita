@@ -315,12 +315,14 @@ static void the_source_badge_keeps_the_wrap_rules(void)
     m.set(u.data(), (uint32_t)u.size());
     TEST_CHECK(vjo_wrap_fix<Info>(&m, u.data(), (uint32_t)u.size()) == 6);
     TEST_CHECK(vjo_wrap_fix<Info>(&m, u.data(), (uint32_t)u.size(), 6) == 0);
-    /* and an icon: the rules allow a break after it before any text; keep 1 refuses it */
-    std::vector<uint16_t> v = u16((std::string("\xEE\x86\xBB") + texts[0]).c_str());
+    /* and an icon: the rules allow a break right after it (a symbol), here before the 「 text's first row;
+     * keep 1 refuses it (audit-source-badge-b N12: before texts[0] the check could not fail) */
+    std::vector<uint16_t> v = u16((std::string("\xEE\x86\xBB") + texts[4]).c_str());
     Model mv;
     mv.set(v.data(), (uint32_t)v.size());
     TEST_CHECK(vjo_break_last16(v.data(), (uint32_t)v.size(), 0, 1) == 1);
-    TEST_CHECK(vjo_wrap_fix<Info>(&mv, v.data(), (uint32_t)v.size(), 1) != 1);
+    TEST_CHECK(vjo_wrap_fix<Info>(&mv, v.data(), (uint32_t)v.size()) == 1);
+    TEST_CHECK(vjo_wrap_fix<Info>(&mv, v.data(), (uint32_t)v.size(), 1) == 0);
 }
 
 TEST_LIST = {

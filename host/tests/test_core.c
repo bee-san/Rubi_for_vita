@@ -1,4 +1,5 @@
 #include <dirent.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -1163,7 +1164,7 @@ static void test_styled_source_badge(void)
 {
     static const struct { int badge; const char *text; } cases[] = {
         {VJO_BADGE_HOOK, "[HOOK]"}, {VJO_BADGE_OCR, "[OCR]"}, {VJO_BADGE_NONE, ""}, {3, ""}, {6, ""}, {-1, ""},
-        {1 << 30, ""}};
+        {1 << 30, ""}, {INT_MIN, ""}}; /* (INT_MIN: a signed bound would read far before the table) */
     static const char line[] = "また明日、一緒に見に行こう!";
     VjoStyled st, plain;
     uint32_t lead;

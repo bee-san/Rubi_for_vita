@@ -84,7 +84,7 @@ uint32_t vjo_styled_history(VjoStyled *s, const char *before, const char *text, 
 
 /* The current text's source badge (VJO_BADGE_*, config source_badge; the owner, 2026-10-21): "[HOOK]" or
  * "[OCR]", or with source_badge = icons the system's anchor (U+E1BB) or eye (U+E541) of its extra font
- * music_arib.pvf, drawn only if SceShell's PAF loaded that font (unverified: `_` otherwise); dimmed
+ * music_arib.pvf, drawn only if SceShell's PAF loaded that font (else `_` or nothing: unverified); dimmed
  * (VJO_RGB_RANK, the frequency badge's colour) at px; VJO_BADGE_NONE (or a value that is no badge) puts
  * nothing. The overlay puts it first, right before vjo_styled_history's text and only for the current
  * text (an earlier line's source is not read back); no space follows it, and the overlay's re-wrap never

@@ -105,8 +105,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #101's merge: the text-presence gate, after #85, #83 and #82)
-          ref: ac0d6b1d3da5e96cd771a48da7992b6cf25d6519
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #112's merge: #111's counter re-decode and its header's
+          # condition for the LM, after #101's text-presence gate, #85, #83 and #82)
+          ref: 817d203a49d38dda4f73d11639cf608aed84d17e
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
@@ -194,8 +195,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #101's merge: the text-presence gate, after #85, #83 and #82)
-          ref: ac0d6b1d3da5e96cd771a48da7992b6cf25d6519
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #112's merge: #111's counter re-decode and its header's
+          # condition for the LM, after #101's text-presence gate, #85, #83 and #82)
+          ref: 817d203a49d38dda4f73d11639cf608aed84d17e
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr

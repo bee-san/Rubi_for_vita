@@ -23,18 +23,28 @@ been reported.
   it. Emoji are not used: none of the Vita's 20 system fonts has a character beyond U+FFFF, so none has
   🪝 or 👁 (nor U+2693 ⚓ or ✓, which the console draws as `_`); their ARIB symbols font
   (`music_arib.pvf`) has an anchor (U+E1BB) and an eye (U+E541), which `icons` uses and which appear
-  only if SceShell's PAF loaded that font (unverified: `_` otherwise); the firmware's `imagefont.bin`
+  only if SceShell's PAF loaded that font (else `_` or nothing: unverified); the firmware's `imagefont.bin`
   and `psexchar.pvf` have neither [measured: the fonts of Sony's font package and the 3.74 update, on
   the host; [details](docs/native-hooks.md#the-popups-source-badge)]. Host-tested only.
 
 ### Changed
 
+- Each game that is ON carries 4,096 B more of the OCR worker's module pages, for the counter re-decode:
+  172,032 B in the normal build, 180,224 B in the debug build (`docs/memory-ledger.md`).
 - The Shell keeps its pages (163,840 B normal, 176,128 B debug) with the badge: its libc shims, which
   only branch to SceLibKernel's ARM stubs, are built as ARM code in the Shell, so the linker drops nine
   interworking veneers (144 B), and the enter button's registry read is built for size. The normal
   Shell's code segment is 16 B larger (4 B of room left), the debug one's unchanged; the kernel plugin
   and the game worker are byte-identical [measured: both builds' module rows;
   [memory ledger](docs/memory-ledger.md#the-popups-source-badge)].
+
+### Fixed
+
+- A counter read as `ッ` is `ヶ` again (`ルッ月です」` → `ルヶ月です」`): a text rule in the shown and
+  looked-up text's normalisation (`core/textnorm.c`). Before the LM, the job puts back a numeral or
+  `「` that the frames hold close below what the recognizer read before a counter, so `ル` becomes `九`
+  (vita-vn-ocr #109's counter re-decode, `runtime/vocr_post.c`; pin bumped). On vita-vn-ocr's
+  development data neither changes a line; see [docs/vita-vn-ocr.md](docs/vita-vn-ocr.md#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109).
 
 ## [0.9.1] - 2026-10-21
 
