@@ -91,6 +91,7 @@ static int show_local_entry(VjoArena *a, VjoOverlayData *out, const VjoDictResul
     if (!entry) return VJO_E_OOM;
     entry->vocab = &result->vocab[0];
     entry->pos16 = result->tokens[0].pos16;
+    entry->conjugation = result->tokens[0].conjugation;
     entry->hl_start = (int)cursor_byte;
     entry->hl_end = (int)end;
     entry->text = vjo_entry_format(a, entry->vocab, result->source);

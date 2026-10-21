@@ -66,6 +66,7 @@ static void add_entry(VjoEntryList *out, const VjoVocab *v, const char *text, co
     VjoEntry *e = &out->entries[out->n_entries++];
     e->vocab = v;
     e->text = text;
+    e->conjugation = tok ? tok->conjugation : 0;
     e->pos16 = -1;
     e->hl_start = e->hl_end = -1;
     if (tok && tok->pos16 >= 0) {

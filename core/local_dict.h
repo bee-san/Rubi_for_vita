@@ -97,10 +97,12 @@ int vjo_local_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
 typedef struct {
     uint64_t entry_off; /* payload offset in its dictionary */
     uint64_t file_size; /* that file's size when located: detects replacement */
-    uint32_t entry_len;
+    /* Entry lengths are bounded by 8192; reuse these bytes to retain the
+     * reason path without growing the 24-byte locator or session cache. */
+    uint16_t entry_len;
     uint16_t len16;     /* matched source span from the cursor, UTF-16 units */
-    uint8_t dict;       /* index in local_dictionaries */
-    uint8_t reserved;
+    uint32_t conjugation : 24;
+    uint32_t dict : 8;  /* index in local_dictionaries */
 } VjoLocalPage;
 
 struct VjoLocalPages { /* typedef in client.h */

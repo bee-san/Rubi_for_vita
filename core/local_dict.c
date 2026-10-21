@@ -50,6 +50,15 @@
 #define HINT_READING 4u       /* the entry has a reading */
 #define HINT_FREQ_SHIFT 3     /* bits 3-15: freq_key of the payload's frequency word */
 
+/* Cold diagnostics use the data segment's remaining room so conjugation
+ * display keeps the normal Shell within its existing code pages. */
+static const char dictionary_open_error[] VJO_DATA_TABLE(dictionary_open_error) =
+    "Cannot open a configured dictionary; check local_dictionary_dir and local_dictionaries";
+static const char dictionary_names_error[] VJO_DATA_TABLE(dictionary_names_error) =
+    "Set local_dictionaries to up to 8 .vjdict filenames in config.ini";
+static const char dictionary_changed_error[] VJO_DATA_TABLE(dictionary_changed_error) =
+    "A dictionary file changed. Close and reopen the overlay.";
+
 #ifdef VJO_LOCAL_STATS
 VjoLocalStats vjo_local_stats;
 void (*vjo_local_trace)(int dict, int cand, int depth, const char *key, int outcome);
@@ -78,6 +87,7 @@ typedef struct {
     char key[VJO_LOCAL_MAX_KEY + 1];
     uint8_t depth; /* deinflection steps from the text (in the former padding) */
     uint16_t rules, len;
+    uint32_t conjugation;
 } Candidate;
 
 typedef struct {
@@ -141,8 +151,10 @@ typedef struct {
 } Record;
 
 typedef struct {
-    int dict;
+    uint8_t dict;
+    uint8_t reserved;
     uint16_t units; /* selected lookups: matched source span (in former padding) */
+    uint32_t conjugation;
     Record record;
 } Match;
 
@@ -165,6 +177,7 @@ typedef char WorkspaceFits[(sizeof(Workspace) + MAX_CANDIDATES * sizeof(Candidat
 typedef char SessionLookupFits[(sizeof(VjoLocalSession) + sizeof(Workspace) + MAX_CANDIDATES * sizeof(Candidate) +
     VJO_LOCAL_SELECTED_BUDGET + sizeof(VjoLocalPages) + 14u <= VJO_LOCAL_RESULT_BUDGET) ? 1 : -1];
 typedef char MatchKeepsItsSize[(sizeof(Match) == 8 + sizeof(Record)) ? 1 : -1];
+typedef char PageKeepsItsSize[(sizeof(VjoLocalPage) == 24) ? 1 : -1];
 
 static Workspace *workspace(VjoArena *a)
 {
@@ -284,7 +297,7 @@ static int open_file(const VjoPlatform *p, const VjoConfig *cfg, const char *nam
     char path[256];
     int n = vjo_snprintf(path, sizeof(path), "%s/%s", cfg->local_dictionary_dir, name);
     if (n < 0 || (size_t)n >= sizeof(path) || p->file_open(p->ud, path, &d->file)) {
-        err->detail = "Cannot open a configured dictionary; check local_dictionary_dir and local_dictionaries";
+        err->detail = dictionary_open_error;
         return VJO_E_LOCAL_IO;
     }
     return VJO_OK;
@@ -501,7 +514,7 @@ static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig
     }
     vjo_local_session_close(s);
     if (!p->file_open || !vjo_local_names_valid(names) || !cfg->local_dictionary_dir[0]) {
-        err->detail = "Set local_dictionaries to up to 8 .vjdict filenames in config.ini";
+        err->detail = dictionary_names_error;
         return VJO_E_LOCAL_IO;
     }
     while (next_name(&names, name) > 0) {
@@ -788,18 +801,21 @@ static int take_postings(Workspace *w, int di, const Candidate *c, Query *q, int
     }
     if (best == n && any && q->fallback && !q->fell_back) {
         q->fallback->dict = di;
+        q->fallback->conjugation = c->conjugation;
         q->fallback->record = other;
         q->fell_back = 1;
     }
     if (best == n || w->n_matches >= limit) return VJO_OK;
     q->score = best_score;
     w->matches[w->n_matches].dict = di;
+    w->matches[w->n_matches].conjugation = c->conjugation;
     w->matches[w->n_matches++].record = top;
     for (uint32_t j = 0; j < n && !q->strict && w->n_matches < limit; j++) {
         if (j == best) continue;
         if ((rc = posting_at(w, d, group, key_len, j, &r, NULL))) return rc;
         if ((c->rules && !(c->rules & r.rules)) || is_duplicate(w, di, &r)) continue;
         w->matches[w->n_matches].dict = di;
+        w->matches[w->n_matches].conjugation = c->conjugation;
         w->matches[w->n_matches++].record = r;
     }
     return VJO_OK;
@@ -944,6 +960,7 @@ static int deinflect(Workspace *w, const char *key)
     }
     Candidate *c = w->candidates;
     memcpy(c[0].key, key, len + 1); c[0].len = (uint16_t)len; c[0].rules = 0; c[0].depth = 0;
+    c[0].conjugation = 0;
     for (int i = 0; i < count; i++) {
         unsigned suffix = (uint8_t)c[i].key[c[i].len - 1];
         for (unsigned r = deinflect_offsets[suffix]; r < deinflect_offsets[suffix + 1]; r++) {
@@ -968,6 +985,11 @@ static int deinflect(Workspace *w, const char *key)
                 w->candidate_cap = cap;
             }
             memcpy(c[count].key, next, n + 1);
+            /* Four steps fit the locator's existing bytes. An exceptionally
+             * long chain keeps its surface-side steps with an explicit ellipsis. */
+            c[count].conjugation = c[i].conjugation >> 18
+                ? (c[i].conjugation & 0xffffc0u) | 63u
+                : (c[i].conjugation << 6) | deinflect_reasons[r];
             c[count].depth = (uint8_t)(c[i].depth + 1);
             c[count].rules = rule->rules_out; c[count++].len = (uint16_t)n;
         }
@@ -1056,7 +1078,8 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
     for (int i = 0; i < n; i++) {
         if (w->seen_dict[i] == m->dict && w->seen_off[i] == m->record.entry_off) {
             if (res->n_tokens >= VJO_LOCAL_MAX_RESULTS) return VJO_E_TOO_LARGE;
-            res->tokens[res->n_tokens++] = (VjoToken){.vocab = i, .pos16 = pos16, .len16 = len16};
+            res->tokens[res->n_tokens++] = (VjoToken){.vocab = i, .pos16 = pos16, .len16 = len16,
+                .conjugation = m->conjugation};
             return VJO_OK;
         }
     }
@@ -1066,7 +1089,8 @@ static int append_match(VjoArena *a, Workspace *w, const Match *m, int pos16, in
         (rc = set_source(a, &w->dicts[m->dict], res)))
         return rc;
     w->seen_dict[n] = m->dict; w->seen_off[n] = m->record.entry_off;
-    res->tokens[res->n_tokens++] = (VjoToken){.vocab = n, .pos16 = pos16, .len16 = len16};
+    res->tokens[res->n_tokens++] = (VjoToken){.vocab = n, .pos16 = pos16, .len16 = len16,
+        .conjugation = m->conjugation};
     res->n_vocab++;
     return VJO_OK;
 }
@@ -1170,7 +1194,7 @@ static void add_page(VjoLocalPages *pages, const Workspace *w, int match)
     pg->file_size = w->dicts[m->dict].file.size;
     pg->len16 = m->units;
     pg->dict = (uint8_t)m->dict;
-    pg->reserved = 0;
+    pg->conjugation = m->conjugation;
 }
 
 static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
@@ -1397,7 +1421,7 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         return err->rc = VJO_E_PARSE;
     pg = &pages->page[page];
     if (!p->file_open || !cfg->local_dictionary_dir[0] || !nth_name(cfg->local_dictionaries, pg->dict, name)) {
-        err->detail = "Set local_dictionaries to up to 8 .vjdict filenames in config.ini";
+        err->detail = dictionary_names_error;
         return err->rc = VJO_E_LOCAL_IO;
     }
     outmem = vjo_arena_alloc(a, VJO_LOCAL_SELECTED_BUDGET);
@@ -1416,7 +1440,7 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         if (!rc) rc = check_header(&d);
     }
     if (!rc && d.file.size != pg->file_size) {
-        err->detail = "A dictionary file changed. Close and reopen the overlay.";
+        err->detail = dictionary_changed_error;
         rc = VJO_E_LOCAL_IO;
     }
     if (!rc && (pg->entry_off < d.data || pg->entry_len < min_entry(&d) || pg->entry_len > VJO_LOCAL_MAX_ENTRY ||
@@ -1431,7 +1455,8 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         vjo_arena_release(a, mark);
         return err->rc = rc;
     }
-    res->tokens[0] = (VjoToken){.vocab = 0, .pos16 = pages->pos16, .len16 = pg->len16};
+    res->tokens[0] = (VjoToken){.vocab = 0, .pos16 = pages->pos16, .len16 = pg->len16,
+        .conjugation = pg->conjugation};
     res->n_vocab = res->n_tokens = 1;
     vjo_arena_release(a, (size_t)((uint8_t *)outmem - a->base) + output.used);
     return VJO_OK;

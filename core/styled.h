@@ -78,7 +78,10 @@ int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, ui
  * show_rank (config frequency_badge), the frequency badge (vjo_rank_badge:
  * " #1234", " unranked" or nothing) and the meanings at en_px; a green
  * VJO_ANKI_MARK after the badge when in_anki. The text is shown as the
- * dictionary wrote it, without a dictionary or source name of its own. Bee's
+ * dictionary wrote it. An inflected occurrence adds a blue "Conjugation:"
+ * line below the headword, its reasons in base-to-surface order; an exact
+ * match has no such line. The definition follows it as usual. The
+ * entry has no dictionary or source name of its own. Bee's
  * Ultimate Dictionary's kanji lines (vjo_kanji_block) end it, one a line,
  * "漢=meaning, meaning", each kanji at ja_px in VJO_RGB_TEXT (two spans a line;
  * past the spans left, as written, unstyled), after a blank line when a
