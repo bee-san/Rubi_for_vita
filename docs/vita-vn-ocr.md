@@ -499,14 +499,20 @@ console compares with the evaluation directly:
   kana, `ー`, `~`, `!`, `?`, an ellipsis, `」` or `』` follows (`だよ一っ` → `だよーっ`); `ー` between
   two kanji becomes `一` (`玄ー郎` → `玄一郎`). The counters `ヶ` and `ヵ` do not count as small kana
   (`あと一ヶ月` and `ハネムーン一ヶ月` stay). After a hiragana, `一` at the end of a line also stays,
-  because a text box wraps mid-word and `もう一` / `度` is far more common there than `すごー`.
+  because a text box wraps mid-word and `もう一` / `度` is far more common there than `すごー`;
+- counters (vita-vn-ocr #109): `ッ` becomes `ヶ` before `月` or `年`, before `国` or `条` after a numeral
+  (`〇一二三四五六七八九十百千万`, `0-9`) or `何数幾`, and before `所` after one of those other than `一`
+  (`ルッ月です」` → `ルヶ月です」`; the valid `一ッ所` stays). `ッ月` and `ッ年` occur nowhere in the
+  700 million characters of training-side text vita-vn-ocr counted (`docs/counters.md` there); `ッ`
+  before `日`, `村` or `町` stays. It runs before the ー/一 rule, so `ハネムーン一ッ月` keeps its `一`.
 
 The text never grows, so the game worker normalises it in place before it returns it, and keeps
 the recognizer's own text after it in the same 4 KiB buffer (`vjo_text_normalize_keep`; nothing
 is added to SceShell). The Shell writes the recognizer's text to `log.txt`, one line per
 recognized line (`game vocr text N: …`, 60 characters at most), and, for a line that changed,
 what is shown (`game vocr text N shown: …`). The job's `gstep job norm` step counts the changes
-(`bytes`: full-width forms; `sum`: tildes << 24 | dashes << 16 | ellipses << 8 | 一→ー << 4 | ー→一).
+(`bytes`: full-width forms; `sum`: tildes << 24 | dashes << 16 | ellipses << 8 | 一→ー << 4 | ー→一;
+the counter rule's changes count in its total only).
 
 **Measured on development data** (`tools/textnorm_eval.py`, `docs/benchmarks/textnorm-20261014.json`):
 teacher_val and devnative v3 (2,629 lines, 28,544 reference characters), the console-polarity
@@ -539,6 +545,31 @@ accounts for most of the rest. What the
 console shows moves a lot: against the references the raw text differs in 1,115 characters
 (H15), the normalised text in 603, exactly the scored errors. Lookups see the ー/一 changes only
 (punctuation is never looked up).
+
+## Counters: a numeral or a 「 the line lost (vita-vn-ocr #109)
+
+On the owner's console, CLANNAD's `「九ヶ月です」` came back as `ルッ月です」`: 「 lost, 九 read as ル, ヶ as ッ.
+The text rule above turns the ッ into ヶ. Before the LM, the job also runs vita-vn-ocr's counter re-decode
+(`runtime/vocr_post.c` `vocr_post_redecode`, on the top-K the LM extras hold; `VjoVocrPolicy.counter_tau`
+and `counter_open`, `VJO_VOCR_COUNTER_TAU` 6000 and `VJO_VOCR_COUNTER_OPEN` 4000, 1/1000 nat). Where a line
+reads a letter that is not a numeral before ッ/ヶ/ヵ and 月/所/年/国/条, it takes the cheapest numeral in
+that character's frames, if the frames allow one within 6 nats of the reading. Where the line's first
+bracket is a closer with no opener, it puts the 「 or 『 back before the numeral, if a blank frame there
+holds it within 4 nats. The LM then decodes the edited top-K. The recognizer's own reading stays the one
+logged. Off (0, 0) the job is exactly as before. A job without the LM extras (`ocr_lm = off`, no cascade)
+has no top-K and does not run it. The game worker turns it on for every job; the cache keeps its entries
+apart (bit 29 of `cache_variant`).
+
+vita-vn-ocr chose the thresholds on development data only (`docs/counters.md` there): VOCR5-S/N/L on
+teacher_val dev, devnative dev and whole dialogue changed 0 lines. On a synthetic counter set drawn from
+the development text pools in open fonts, with the left edge cut 0-10 px, CER fell from 4.81 / 5.18 /
+4.29 % to 3.55 / 3.87 / 3.05 % greedy (S / N / L), and from 3.78 / 4.08 / 3.40 % to 3.45 / 3.60 / 2.98 %
+with the LM, with 0 lines worse. On the owner's photo of that page (a local check, not the console's
+framebuffer), through `vjo-ocr` with the region's left edge 20-22 px into the line, Normal's `ルヶ月です」`
+and Large's `しヶ月です」` became `九ヶ月です」`. The 「 comes back only when the region leaves the line's
+left edge in it: vita-vn-ocr #110 is the follow-up (capture a margin around the region).
+
+`vjo-ocr --counters on` runs it on the host as the worker does (it needs `--lm` or `--cascade`).
 
 ## Beam + LM decoding (API 20)
 
@@ -959,7 +990,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout ac0d6b1d3da5e96cd771a48da7992b6cf25d6519  # #101's merge (after #85's, #83's and #82's): the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout a40df553e1442ecf5e9aee93872dc11ee7884740  # #111's merge (after #101's, #85's, #83's and #82's): the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
@@ -973,9 +1004,10 @@ cmake -S . -B build/host -G Ninja -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path
 cmake --build build/host && ctest --test-dir build/host --output-on-failure
 ```
 
-`cmake/VocrOCR.cmake` checks the twelve runtime files (`runtime/vocr.c`, `vocr.h`,
+`cmake/VocrOCR.cmake` checks the fourteen runtime files (`runtime/vocr.c`, `vocr.h`,
 `vocr_lines.c`, `vocr_lines.h`, `vocr_lines_rows.c`, `vocr_lines_rows.h`, `vocr_lm.c`,
-`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`) against their
+`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`, `vocr_post.c`,
+`vocr_post.h`) against their
 SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. For the host tests that run
 the text-presence gate, `cmake/VocrGate.cmake` downloads its pinned weights from the release at configure time and
 checks them (or takes `-DVJO_VOCR_GATE_BLOB=FILE`; without either, those tests skip); the plugins read the file

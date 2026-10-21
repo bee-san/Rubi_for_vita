@@ -810,8 +810,9 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 159,744 B of module pages (167,936 B in the debug build; API 31's native hooks and
-their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory)) and its 36,864 B thread stack and TLS from its
+holds the worker's 172,032 B of module pages (180,224 B in the debug build; API 31's native hooks and
+their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
+API 34's remembered hooks 8,192 B and vita-vn-ocr #109's counter re-decode 4,096 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
