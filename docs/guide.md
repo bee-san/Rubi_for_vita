@@ -344,6 +344,12 @@ reported console run. The behaviour below is checked on the host.
   default) installs no table site in any game, only the string copies, from a game's next start, so a
   console run can tell the two apart; `kernel.txt`'s `text source N` is then 256 more than the mode
   (257 for `auto`).
+- **The PSP probe, debug build only**: in a PSP game under Adrenaline, the debug build's worker reads
+  (never writes) what PSP hooks would need, after your OCR jobs, and logs it with each job's PSP OCR
+  timings to `ux0:data/VitaJPOverlay/psp_probe.log` (no text in it; `--collect` fetches it). It hooks
+  nothing. `psp_probe = off` in `config.ini` turns it off (no setting in the app; `on` by default; the
+  normal build reads the key but has no probe):
+  [native-hooks.md](native-hooks.md#psp-probe-debug-build).
 
 ### Drawing the region
 

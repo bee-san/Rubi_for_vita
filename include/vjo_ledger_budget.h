@@ -231,6 +231,18 @@
  * debug segments 137088+32888 B ->176128 B, normal 128220+32880 B ->167936 B,
  * local build/vita-minimal and build/vita-minimal-normal measure-ledger.json reports.
  * These are binary measurements, not console pool or boot measurements. */
+/* API 35, the read-only PSP probe v2 (docs/native-hooks.md "PSP probe (debug build)"): no budget changes. Its
+ * classifier, timed read, passes and job lines take the debug worker's text 135,784 -> 137,912 B (34 pages
+ * both), with Luna's PSP site addresses (1,724 B, core/hook_luna_psp.inc) moved to the data segment
+ * (VJO_DATA_TABLE), whose memsz goes 32,888 -> 34,688 B (9 pages both): 176,128 B as before. The normal
+ * worker's segments are unchanged (127,016 + 32,880 B). The Shell's psp_probe key (read by both builds, as
+ * every setting is) and the debug Shell's request bit: debug Shell text 98,664 -> 98,696 B and data 72,352 ->
+ * 72,384 B, normal Shell text 87,824 -> 87,864 B and data 72,368 -> 72,400 B, the same pages; the kernel's
+ * segments are unchanged in both builds [measured: the
+ * ELF LOAD segments (arm-vita-eabi-readelf), CI's vitasdk image, both builds of main ae9b02d and of this
+ * change]. No block, no thread; the probe's deepest call chain takes about 2.1 KiB of the worker thread's
+ * existing stack (pass 1,024 B, vjo_psp_probe_job 520 B, op_module 512 B, measured -fstack-usage frames,
+ * summed). In the game's partition only, never SceShell's. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 176128u
 #else
