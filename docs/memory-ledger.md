@@ -16,8 +16,9 @@ Measured with VitaSDK GCC 15.2.0, Release, against main `e33f8f6`, on the packag
 | Shell | 100,940 → 100,956 + 73,560 B | 90,092 → 90,108 + 73,576 B | 176,128 / 163,840 B |
 | Kernel | 41,740 → 41,756 + 77,732 B | 36,904 + 76,044 B, unchanged | 122,880 / 118,784 B |
 
-The worker's text normalisation gains its third pass (`core/textnorm.c` at -Os: 1,230 → 1,430 B of
-code, its two functions' stack frames 88 + 40 → 96 + 48 B, measured `-fstack-usage`), in place on the
+The worker's text normalisation gains its third pass (`core/textnorm.c` at -Os: 1,220 → 1,404 B of
+code and 10 → 26 B of read-only data, the 8-entry set; its two functions' stack frames 88 + 40 → 96 + 48 B,
+measured `-fstack-usage`), in place on the
 result buffer. The Shell sets one request bit from the config it already holds; the normal Shell's
 code segment keeps 4 B of its last page. The kernel only accepts the bit (its known-bit mask). No
 allocation site, thread, static buffer or budget is added. These are binary measurements; console

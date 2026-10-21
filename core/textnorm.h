@@ -74,7 +74,9 @@ typedef struct {
 
 /* Normalises the NUL-terminated UTF-8 text s in place (it never grows) and
  * returns the number of changes, each counted in *counts when it is not NULL;
- * a line dropped is one change. Invalid UTF-8 bytes are kept as they are.
+ * a line dropped is one change. Invalid UTF-8 bytes are kept as they are (an
+ * overlong three-byte sequence is read as the code point it encodes, as every
+ * pass always has; recognized text has none).
  * flags: 0, every rule, or VJO_TEXTNORM_KEEP_BORDERS. */
 unsigned vjo_text_normalize_as(char *s, unsigned flags, VjoTextNorm *counts);
 

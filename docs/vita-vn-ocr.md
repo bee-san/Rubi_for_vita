@@ -521,9 +521,9 @@ is added to SceShell). The Shell writes the recognizer's text to `log.txt`, one 
 recognized line (`game vocr text N: …`, 60 characters at most), and, for a line that changed,
 what is shown (`game vocr text N shown: …`); after a dropped line the shown lines are the next
 ones, so the log pairs them with the recognizer's lines by position. The job's `gstep job norm`
-step counts the changes (`bytes`: full-width forms; `sum`: tildes << 24 | dashes << 16 | ellipses << 8 |
-一→ー << 4 | ー→一; API 36, `kind`: the lines of a border dropped; the counter rule's changes count in
-its total only), and is logged also when the lines it dropped were all the text.
+step counts the changes to OCR's text (`bytes`: full-width forms; `sum`: tildes << 24 | dashes << 16 | ellipses << 8 |
+一→ー << 4 | ー→一; API 36, `kind`: the lines of a border dropped; the counter rule's changes count in its total
+only; a hook stream's text is not counted), and is logged also when the lines it dropped were all the text.
 
 **The border rule, measured on development data** (postproc-research's R08d, measured again on this
 code: `docs/benchmarks/textnorm-border-20261021.json`). The inputs are Rubi's default path on the

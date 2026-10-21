@@ -796,7 +796,28 @@ static void border_lines_follow_the_request(void)
     TEST_CHECK_(!strcmp(out.text, "本当に!\nーニーーーニー"), "%s", out.text);
 }
 
+/* API 36: the border rule on a stream that agrees with OCR and replaces its text (Auto: hook_show with OCR's
+ * text kept after it), with and without VJO_GAME_OCR_S_DROP_BORDERS (audit-postproc S1). */
+static void border_lines_on_an_agreeing_stream(void)
+{
+    static const char streamed[] = "「明日の朝、駅前の公園でもう一度会おうよ」\nーニーーーニー";
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    for (int bit = 1; bit >= 0; bit--) {
+        reset();
+        stream(9, VJO_HOOK_KIND_CALL, 5, streamed);
+        spy_text = OCR1;
+        r = request(VJO_HOOK_PICK_AUTO);
+        r.speed = bit ? VJO_GAME_OCR_S_DROP_BORDERS : 0u;
+        vjo_game_ocr_cache_clear();
+        TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == 0 && out.text_from == 9);
+        TEST_CHECK_(!strcmp(out.text, bit ? LINE1 : streamed), "bit %d: %s", bit, out.text);
+        TEST_CHECK(!strcmp(vjo_text_raw(out.text, sizeof(out.text)), OCR1)); /* OCR's text for the log */
+    }
+}
+
 TEST_LIST = {
+    {"the border rule on a stream that replaces OCR's text (API 36)", border_lines_on_an_agreeing_stream},
     {"the border rule follows the request (API 36), on OCR's and a stream's text", border_lines_follow_the_request},
     {"hook cache cleanup: BUSY, copy failure, cancellation, failed primary free", hook_cache_cleanup_ownership},
     {"remembered hook: startup confirmation, exact32 cadence, recovery", remembered_hook_worker_cadence},
