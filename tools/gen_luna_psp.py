@@ -90,6 +90,7 @@ def render_inc():
         f" * (HIllya51/LunaTranslator {luna.LUNA_COMMIT[:7]}, {luna.LUNA_VERSION}, GPL-3.0): its emfunctionhooks_1 PSP",
         " * table, each entry's PPSSPP address and title IDs only, for the debug build's PSP probe",
         " * (core/psp_probe.c). Do not edit: change the generator. */",
+        '#include "port.h" /* VJO_DATA_TABLE; this .inc is also included directly by a host test */',
         f"/* {c['entries']} entries ({c['addresses']} addresses), {c['titles']} title IDs, {c['sites']} sites (one per address"
         f" and title: {c['multi_id_entries']} entries name several IDs); at most {c['max_sites_per_title']} sites per title;"
         f" {c['bytes']:,} bytes. */",
@@ -118,8 +119,10 @@ def render_inc():
     for k in range(0, len(counts_list), 24):
         out.append("    " + ", ".join(str(n) for n in counts_list[k:k + 24]) + ",")
     out += ["};", "",
-            "/* The sites' PPSSPP addresses: each title's together, in the IDs' order, a title's in the table's order */",
-            "static const uint32_t vjo_luna_psp_addr[VJO_LUNA_PSP_SITES] = {"]
+            "/* The sites' PPSSPP addresses: each title's together, in the IDs' order, a title's in the table's order. In",
+            " * the debug worker's data segment, whose last page has room, not its code pages (core/port.h VJO_DATA_TABLE;",
+            " * include/vjo_ledger_budget.h, API 35) */",
+            "static const uint32_t vjo_luna_psp_addr[VJO_LUNA_PSP_SITES] VJO_DATA_TABLE(luna_psp_addr) = {"]
     for i in ids:
         addrs = sites[i]
         for k in range(0, len(addrs), ADDRS_PER_LINE):

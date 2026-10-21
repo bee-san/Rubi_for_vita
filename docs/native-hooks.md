@@ -326,6 +326,8 @@ game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
 | debug, with the job path and the [PSP probe](#psp-probe-debug-build), hooks/psp-probe | 133,392 B | 30,568 B | 167,936 B |
 | debug, `feat/native-hooks` 9fa24c5 (the probe and hooks-api's text source import) | 133,464 B | 30,568 B | 167,936 B |
 | normal, `feat/native-hooks` 9fa24c5 | 124,740 B | 30,560 B | 159,744 B |
+| debug, main ae9b02d (API 34) | 135,784 B | 32,888 B | 176,128 B |
+| debug, the [PSP probe](#psp-probe-debug-build) v2 (API 35; Luna's PSP addresses in the data segment) | 137,912 B | 34,688 B | 176,128 B |
 
 [measured: the build log's module rows on hooks/engine 8aa79eb (local CI), both builds, with
 origin/hooks/luna-port merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
@@ -339,7 +341,9 @@ hooks/engine `dca6d5f` merged, both builds]. The PSP probe's row: hooks/psp-prob
 merged, against `960ac20`, whose normal build it leaves byte for byte as it was [measured, the build log's module rows].
 The two `9fa24c5` rows: the PR's head as audited, where hooks-api's `vjoGetTextSource` import adds 72 B of
 text to the debug build in the same pages [measured: the module rows of local CI's Vita jobs on 9fa24c5,
-audit-hooks section 3].
+audit-hooks section 3]. The last two rows are ELF LOAD segments (`arm-vita-eabi-readelf -l`, data as
+memsz) in CI's vitasdk image, a measure the build log's rows do not share, so compare them only with each
+other; the normal build's worker is the same size in both ([memory ledger](memory-ledger.md)).
 
 Stack, on the game's thread: a site hit about 564 B at most (the observer's 328 B frame and up to 4 B to
 align it, then `vjo_hooks_observe` 56, `vjo_luna_capture` 72, `mirror` 56 and `read_game` 48; the
@@ -375,7 +379,8 @@ instead of `vocr`, and `line_source` `hook` instead of `ocr`: `shell/history.c`;
 `ux0:data/VitaJPOverlay/hooks.log` at each game start (rewritten): the title, the text source, the main
 module's name, NID and segment 0, `APP_VER`, each site with its verdict, reason and first 16 bytes, and
 each CALL import hooked or not. No text is in it. Job results carry the counts; the Shell's debug log
-shows them (hooks-api).
+shows them (hooks-api). In PSP games the debug build also appends to `psp_probe.log`
+([PSP probe](#psp-probe-debug-build)), which has no text either; `--collect` fetches both files.
 
 ## Recovery
 
@@ -423,96 +428,140 @@ Hardware is paused; these are for the test issue (#230):
 
 Status: built and host-tested; **not run on a console**. Nothing is hooked in a PSP game in this version.
 The probe only reads and logs, so that one console run can answer whether PSP hooks (a later round) can
-work: can the worker read PSP RAM, does the running game's ID come through, and do LunaTranslator's PSP
-addresses land on code on a console. It follows section 5 of the PSP feasibility report (hooks-psp, on
-[#230](https://github.com/bee-san/Rubi_for_vita/issues/230)); every address below comes from that
-report's sources, none has been seen on a console.
+work: can the worker read PSP RAM, does the running game's ID come through, do LunaTranslator's PSP
+addresses land on code on a console, and how fast such reads are. It follows section 5 of the PSP
+feasibility report (hooks-psp, on [#230](https://github.com/bee-san/Rubi_for_vita/issues/230)); every
+address below comes from that report's sources, none has been seen on a console. Rubi's OCR in PSP games
+is unverified on a console too, so the probe also logs every PSP OCR job's timings and results.
 
-**When it runs.** Only in the debug build (`game_ocr/psp_probe.c` is in no other build), only in the PSP
-emulator's process (the worker's `psp_title`: ScePspemu is loaded, or the title is the PSP emulator's or
-Adrenaline's), only when the text source is `auto` or `hooks`, and once per process: at the first OCR job
-(the first reading of the screen: in the background with **Read text: Automatically**, else at the first
-L + R; the self-test's OCR stages are OCR jobs too, while an Anki screenshot and the self-test's capture
-probe are not). Adrenaline's XMB runs in the same process as the
-game started from it, and a reading there would use the probe up with no game's ID, so start the game
-from its own bubble, or set **Read text** to **Only when I press L + R** and press it first in the game. To
-probe again, close the emulator (or the bubble) and start it again. The text source reaches the worker
-through the kernel's `vjoGetTextSource` (`kernel/exports.yml` exports it, and the worker imports it:
-`VJO_HAVE_TEXT_SOURCE_IMPORT` in `vita/CMakeLists.txt`), so the debug build's probe runs as described
-here; it does nothing with `text_source = ocr`, or with a kernel of another API version, which the worker
-reads as OCR.
+**When it runs.** Only in the debug build (`game_ocr/psp_probe.c` is in no other build), only while
+`config.ini`'s `psp_probe` is on (the default; `psp_probe = off` turns it off; it is not in the template and
+has no setting in the app; both builds read it, as they read every setting alike, and the normal build,
+which has no probe, does nothing with it), and only in the PSP emulator's process (the worker's `psp_title`: ScePspemu is loaded,
+or the title is the PSP emulator's or Adrenaline's). The debug build's Shell asks for it in each of the
+user's OCR jobs with `VJO_GAME_OCR_S_PSP_PROBE`, bit 7 of the request's `speed` (API 35). The self-test's
+stages and Anki screenshots never carry it, and both builds' kernels and workers accept it, so the two
+builds keep one interface. The worker runs the probe after the job, once the job's result is with the
+kernel (`game_ocr/main.c` `worker_main`), so it never delays a popup. A job runs for each new screen of
+text with **Read text: Automatically**, else at each L + R. The text source does not matter: the probe
+hooks nothing.
+
+- A **pass** (steps 1 to 4 below, from `start` to `done` or `stop`) runs after the process's first job,
+  and again after a job whose step-1 lookups or title ID differ from the last pass's. Adrenaline's XMB and
+  the game started from it share one process, so a reading in the XMB and then one in the game give two
+  passes. At most 8 passes per process. Between passes, each job repeats only step 1's lookups and the
+  12-byte title read, and writes no line for them.
+- Step 4 runs once per process, in the first pass that gets that far.
+- Every job gets two **job lines**, at most 1,000 jobs per process (then one line says so).
+
+To probe a new process, close the emulator (or the bubble) and start it again.
 
 **What it does.** In the worker's thread, at its lowest priority:
 
-1. `taiGetModuleInfo("ScePspemu")`: its return code and the module's NID, which tells the ScePspemu
-   build (3.60 `0x2714F07D`, 3.65-3.70 `0x3F75D4D3`, 3.71 `0xEA8C1AE2`, 3.72-3.74 `0x5459B715`, from the
-   report). Then, at each of three Vita addresses of Adrenaline's view of PSP RAM (`CONVERT_ADDRESS(a) =
-   0x68000000 + (a & 0x0FFFFFFF)`): `0x70000000` (PSP RAM's start), `0x70800000` (the user partition)
-   and `0x73CDE000` (`SceAdrenaline`, the struct Adrenaline's PSP side shares),
-   `sceKernelFindMemBlockByAddr` and `sceKernelGetMemBlockInfoByAddr`. It stops unless all three blocks
-   are found, hold their address and are readable.
-2. The 12 bytes of `SceAdrenaline.titleid` at `0x73CDE098`, read only when they lie inside a block found
-   in step 1.
+1. `taiGetModuleInfo("ScePspemu")`: its return code, NID and modid, then `sceKernelGetModuleInfo`'s
+   segment 0 (base and size, for a later round's `ScePspemuConvertAddress` at text + 0x6364). The NID
+   tells the ScePspemu build (3.60 `0x2714F07D`, 3.65-3.70 `0x3F75D4D3`, 3.71 `0xEA8C1AE2`, 3.72-3.74
+   `0x5459B715`, from the report). Both ask the module manager; nothing in ScePspemu is called. Then, at
+   each of three Vita addresses of Adrenaline's view of PSP RAM (`CONVERT_ADDRESS(a) = 0x68000000 + (a &
+   0x0FFFFFFF)`): `0x70000000` (PSP RAM's start), `0x70800000` (the user partition) and `0x73CDE000`
+   (`SceAdrenaline`, the struct Adrenaline's PSP side shares), `sceKernelFindMemBlockByAddr` and
+   `sceKernelGetMemBlockInfoByAddr`: the block's UID, base, size, memory type (its cache policy: `0xD0`
+   cached, `0x80` uncached), access and block type. The pass stops unless all three blocks are found,
+   hold their address and are readable.
+2. The 12 bytes of `SceAdrenaline.titleid` at `0x73CDE098`, read only when a block found in step 1 holds
+   them all.
 3. When Luna's PSP table lists that ID: at each of its sites (at most 16; 6 is the table's most), the four
-   32-bit words from target − 8 to target + 4, each read only when it lies inside a found block. The
-   target is Luna's PPSSPP address in the view, assuming the game's main module is where PPSSPP puts it,
-   at `0x08804000`.
+   32-bit words from target − 8 to target + 4, each read only when it lies inside a found block, and the
+   site's class (below). The target is Luna's PPSSPP address in the view, assuming the game's main module
+   is where PPSSPP puts it, at `0x08804000`. Then the count of each class.
+4. One timed read of 1 MiB at `0x70800000` (PSP `0x08800000`, where the game's code and data start and
+   where a RAM scan, the report's design c, would read), to calibrate the scan's estimate. First a lookup
+   of each of its 256 pages; only when every one names the block that holds the whole range, the read
+   itself: 32-bit loads, summed so that none is left out. The lookups are timed apart from the read.
 
-It never writes to the game's or the PSP's memory, makes no cache operation, calls nothing in ScePspemu,
-allocates nothing, starts no thread and does nothing at `module_start`. The report's fourth step, timing
-a 1 MiB read of the view, is left out: it matters only for a RAM scan (the report's design c), not for
-the hooks the next round builds (design a), and it would read 256 times the bytes of steps 2 and 3
-together, of a view whose layout (SceCompat's CDRAM "with hole") no console run has shown yet.
+**What it never does.** No write to the game's or the PSP's memory, no cache operation, no call into
+ScePspemu, no allocation, no new thread, nothing at `module_start`. Every read is behind the check that a
+block found in that job's lookups holds all of it (`vjo_psp_inside`). Each line is written before the next
+read, so a fault would leave the log ending at the step before it: the third `block` line (the title's
+read), the `luna` or a `site` line (a site's words), `...: reading` (the 1 MiB). Its cost is not measured
+(estimates): the first pass about 270 system calls and the 1 MiB read, once per process; each later job
+six lookups, 12 bytes and two short lines. Its CPU load, CPU3's included, is unmeasured.
 
-Luna's PSP table is in the debug worker as `core/hook_luna_psp.inc`, generated by `tools/gen_luna_psp.py`
+**The classes**, from the four words (MIPS instructions as loaded), with the checks in this order (report
+section 3; `core/psp_probe.c` `vjo_psp_classify`, host-tested on synthetic code):
+
+| Class | Meaning |
+| --- | --- |
+| `unread` | a word was outside the blocks, not read |
+| `zero` | all four words are 0: nothing loaded there, or the base is not `0x08804000` |
+| `delay` | the word before the target (V − 4) is a branch or jump: the target is its delay slot |
+| `branch` | the target's word or the next one, the two a patch would overwrite, is a branch, jump, `syscall`, `break`, COP0 instruction (`eret` ...), `ll` or `sc` |
+| `entry` | the target is `addiu sp, sp, -N`: a function's first instruction |
+| `return` | two words before the target is a call (`jal`, `jalr`, `bltzal` ...): where it returns |
+| `other` | none of these: a block start in mid-function, to be verified before a hook may use it |
+
+`delay` and `branch` sites are the ones a later round's hooks refuse. Luna's sites are block starts in
+PPSSPP, so `entry` and `return` at most sites of a game would say the `0x08804000` base holds on a console;
+`zero`, `other` or data at every site would say it does not, or that the view is not where the report
+expects.
+
+**Luna's table.** In the debug worker as `core/hook_luna_psp.inc`, generated by `tools/gen_luna_psp.py`
 from the vendored `third_party/LunaTranslator/ppsspp_1.cpp` (51884b6, the SHA-256 pin of
 `gen_luna_vita.py`): for each of its 415 entries only the address and the title IDs. That is 354 IDs and
-431 sites (an entry that names several IDs is a site of each), 3,515 bytes: each ID packed in a word as
-its prefix's index (5 prefixes, `ULJM` ...) and its number. Which register, encoding and filter a site
-has is in Luna's source, found by its address.
+431 sites (an entry that names several IDs is a site of each), 3,515 bytes: each ID packed in a word as its
+prefix's index (5 prefixes, `ULJM` ...) and its number; the addresses are in the worker's data segment
+([memory ledger](memory-ledger.md)). Which register, encoding and filter a site has is in Luna's source,
+found by its address. `psp_probe_table` (ctest) checks the generated file against the source,
+`tools/tests/test_gen_luna_psp.py` reads it back, and `host/tests/test_psp_probe.c` checks every title's
+sites against it and 12 entries copied by hand.
 
-**Where.** Appended to `ux0:data/VitaJPOverlay/hooks.log`, which the worker rewrites at each game start
-when the text source is not `ocr` ([Logs](#logs)); `tools/install_ftp.sh --collect` does not fetch it
-yet, so copy it with VitaShell (FTP or USB). Each line is written before the probe's next read, so if a
-read faulted the log would end at the step that caused it.
+**Where.** Appended to `ux0:data/VitaJPOverlay/psp_probe.log`, its own file; a log longer than 1 MiB when a
+process first opens it starts again. `tools/install_ftp.sh --collect` fetches it. Each process's lines
+begin with a `process` line.
 
-**How to read it.** Every line starts `psp probe 1:` (the 1 is the format's version); every number is raw,
-in hex unless it counts something:
+**How to read it.** Every line starts `psp probe 2:` (the format's version; 1 was the first probe's, in
+`hooks.log`). Numbers are raw, in hex unless they count something:
 
 | Line | What it says |
 | --- | --- |
-| `start: text source S` | the probe ran; S is the text source (1 `auto`, 2 `hooks`) |
-| `ScePspemu: rc R nid N` | `taiGetModuleInfo`'s answer and the module NID (above) |
-| `block A: uid U info I base B size Z memtype M access X type T ok` | the block at Vita address A: U the block's UID (negative: none found), I `sceKernelGetMemBlockInfoByAddr`'s answer, then its base and size, memory type (`0xD0` cached, `0x80` uncached), access (`0x4` readable) and block type; `ok` or `bad` (step 1's check). One UID on all three lines: one block holds all of PSP RAM |
+| `process T` | a process's first line: the worker's title (`NPXS10028`, `PSPEMUCFW` or a bubble's) |
+| `start: pass P after job S` | pass P began, after job S (the Shell's job number) |
+| `ScePspemu: rc R nid N modid M info I seg0 B size Z` | `taiGetModuleInfo`'s answer, the NID (above) and modid, `sceKernelGetModuleInfo`'s answer and segment 0 |
+| `block A: uid U info I base B size Z memtype M (cached) access X type T ok` | the block at Vita address A: U its UID (negative: none found), I `sceKernelGetMemBlockInfoByAddr`'s answer, then its base and size, memory type, access (`0x4` readable) and block type; `ok` or `bad` (step 1's check). One UID on all three lines: one block holds all of PSP RAM |
 | `titleid A: <24 hex digits> "<text>"` | the 12 bytes at A and their printable part, up to the first NUL (other bytes as `.`); `outside the blocks`: not read |
-| `luna ID: T sites, R read` or `luna ID: not listed` | Luna's entries for the ID (empty when the bytes are not an ID) |
-| `site P at V: W0 W1 W2 W3` | Luna's site P (a PSP address), V its Vita address, and the words at V − 8, V − 4, V and V + 4 (MIPS instruction words, as loaded); `--------`: outside the blocks, not read |
-| `stop: <why>` or `done` | the probe ended early, or finished |
+| `luna ID: T sites, R read` or `luna ID: not listed` | Luna's entries for the ID (ID empty when the bytes are not an ID, as perhaps in the XMB) |
+| `site P at V: W0 W1 W2 W3 class` | Luna's site P (a PSP address), V its Vita address, the words at V − 8, V − 4, V and V + 4; `--------`: outside the blocks, not read; then its class |
+| `classes: entry E return R branch B delay D other O zero Z unread U` | the pass's sites by class |
+| `read A: N bytes, 256 pages in block U (C us): reading` | step 4: every page's lookup named block U (in C µs); the read follows. `page P in block U2, not U: not read` or `outside the blocks`: no read |
+| `read A: N bytes in T us, sum S` | step 4's read: its time and the sum of its words |
+| `stop: <why>` or `done` | the pass ended early, or finished |
+| `job S: rc R, flags F speed P, capture src ...` | job S's capture: its result code, the request's flags and speed, the capture path, memory type and block, the frame, the region, rows per strip, strips, tears, the capture's time and the region's checksum |
+| `job S ocr: lines L rec K frames F, us find ...` | its OCR: lines found and recognized, CTC frames, the find, load, recognition and whole-job times in µs, the memory check (free, needed, reserve, fallback), the weights' state, the text's source (0: OCR) and the shown text's characters and FNV-1a hash |
+| `jobs: 1000, the most per process: no more job lines` | the cap |
 
-Telling what the words are is left to a host script of a later round. For a first look: Luna's sites are
-block starts in PPSSPP, so W2 is often a function's first instruction, `addiu sp, sp, -N` (`27BDxxxx`),
-or the instruction after a call, which is then two words back in W0 (`jal`, `0Cxxxxxx`). Words like these
-at most sites say the `0x08804000` base holds on a console; data, zeros or the same words at every site
-say it does not, or that the view is not where the report expects.
+The text itself is not in this file. The debug build's `log.txt` has it, with each job's step log
+(`gstep` lines), under the same job number.
 
-**To test on a console** (hardware is paused; for #230), with the debug build and `text_source = auto`:
+**To test on a console** (for #230; the v0.8.0-test.8 test issue has the owner's steps):
 
 1. A PSP game Luna lists, under Adrenaline: ましろ色シンフォニー *mutsu-no-hana `ULJM05889` (one site,
-   `0x08868AB8`), started from its bubble (When it runs, above). Wait for text, press L + R once. The game
-   and the popup work as before; then copy `hooks.log`. Expected: `start`, the ScePspemu line, three `block` lines ending `ok`, `titleid ...
-   "ULJM05889"`, `luna ULJM05889: 1 sites, 1 read`, one `site 0x08868AB8 at 0x70868AB8:` line, `done`.
-   咎狗の血 True Blood Portable `ULJM05795` (one site, `0x08836918`) too, if at hand.
-2. A PSP game Luna does not list, e.g. MEMORIES OFF `ULJM05334` (Luna names it only in a comment): the
-   same up to `luna ULJM05334: not listed`, then `done`.
-3. L + R again, several times: no second probe in the same emulator process.
-4. With `text_source = ocr`: no `psp probe` line (no `hooks.log` at all).
-5. If a game stops at the first L + R: send `hooks.log` (its last line is the step) and the crash dump
-   (`--collect` fetches the dumps).
+   `0x08868AB8`), started from the XMB or from its own bubble. Let Rubi read a few lines (L + R at least
+   once). The game and the popup work as before. Expected in `psp_probe.log`: `process`, a pass for each
+   title seen, with the ScePspemu line, three `block` lines ending `ok`, `titleid ... "ULJM05889"`,
+   `luna ULJM05889: 1 sites, 1 read`, one `site 0x08868AB8 at 0x70868AB8:` line with its class, `classes`,
+   step 4's two `read` lines in the first pass, `done`; two job lines per reading. 咎狗の血 True Blood
+   Portable `ULJM05795` (one site, `0x08836918`) too, if at hand.
+2. A PSP game Luna does not list, e.g. MEMORIES OFF `ULJM05334` (Luna names it only in a comment): the same
+   up to `luna ULJM05334: not listed`, then `done`.
+3. More lines read: job lines only, no new pass while the title stays the same.
+4. With `psp_probe = off`: no new `psp probe` line.
+5. If a game stops at a reading: send the `--collect` zip (the log's last line is the step before the
+   fault, and `--collect` fetches the crash dump).
 
 The answers decide the next round: a `bad` block or a fault means the worker cannot read PSP RAM this way
 (the report's fallbacks: `ScePspemuConvertAddress`, or a small kernel syscall); a missing or wrong title ID
-means the disc ID must come another way; function entries and return points at the sites mean Luna's
-addresses can be patched as they are.
+means the disc ID must come another way; `entry` and `return` sites mean Luna's addresses can be patched as
+they are; step 4's time sets the cost of a RAM scan.
 
 ## Files
 

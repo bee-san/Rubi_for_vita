@@ -94,6 +94,29 @@ normal build): 2,938 B. The normal build's code ended 1,112 B below 128 KiB, und
 (about 0.9 KiB of the worker's stack while it runs, `-fstack-usage`). These are binary measurements;
 nothing of it has run on a console.
 
+## Read-only PSP probe v2 (API 35, debug build)
+
+No budget changes: every module keeps its pages in both builds. Measured as the ELF LOAD segments
+(`arm-vita-eabi-readelf -l`) in CI's vitasdk image, both builds of main ae9b02d and of this change:
+
+| Module (build) | Text | Data (memsz) | Pages |
+|---|---:|---:|---:|
+| Game worker (debug) | 135,784 → 137,912 B | 32,888 → 34,688 B | 176,128 B, unchanged |
+| Game worker (normal) | 127,016 B | 32,880 B | unchanged, byte for byte the same sizes |
+| Shell (debug) | 98,664 → 98,696 B | 72,352 → 72,384 B | 176,128 B, unchanged |
+| Shell (normal) | 87,824 → 87,864 B | 72,368 → 72,400 B | 163,840 B, unchanged |
+| Kernel (both) | unchanged | unchanged | unchanged |
+
+The probe's classifier, timed read, passes and job lines are in the debug worker only. Its text would have
+crossed a page, so Luna's PSP site addresses (1,724 B of `core/hook_luna_psp.inc`) are in the data segment
+instead (`VJO_DATA_TABLE`, as API 33 did for the Vita title IDs), whose last page had room. The Shell gains
+the `psp_probe` key (both builds read every setting alike: 40 B of text in the normal build) and, in the
+debug build, one request bit.
+No allocation site, block or thread is added; the probe's deepest call chain takes about 2.1 KiB of the
+worker thread's existing stack (frames from `-fstack-usage`, summed: `pass` 1,024 B,
+`vjo_psp_probe_job` 520 B, `op_module` 512 B). These are binary and compiler measurements; console memory,
+boot and CPU (CPU3 included) are not measured for this change.
+
 ## Dictionary conjugation display
 
 Measured with VitaSDK GCC 15.2.0, Release, against main `ae9b02d`, on the Shell SELF's loaded

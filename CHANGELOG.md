@@ -11,6 +11,25 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- The debug build's read-only PSP probe, completed (API 35; [the design](docs/native-hooks.md#psp-probe-debug-build),
+  [#230]): in a PSP game under Adrenaline, after the user's OCR jobs, the debug build's worker logs
+  ScePspemu's build, the memory blocks of Adrenaline's view of PSP RAM, the running game's ID, the code at
+  each of that game's sites in LunaTranslator's PSP table with a MIPS classifier's verdict (a function's
+  entry, a return point, a branch or delay slot), and the time of one 1 MiB read, to
+  `ux0:data/VitaJPOverlay/psp_probe.log`, with two lines for every PSP OCR job (its capture and OCR
+  timings and results). It only reads: no write, no cache operation, no call into ScePspemu, no new memory
+  block or thread, and every read is checked against the blocks found first. `psp_probe = off` in
+  `config.ini` turns it off (on by default; the normal build reads the key but has no probe). It hooks
+  nothing, and has not run on a console.
+
+### Changed
+
+- `--collect` also fetches the game worker's `hooks.log` and `psp_probe.log` (neither holds any text).
+- The interface is API 35: `VjoGameOcrRequest.speed` bit 7 is the probe's (`VJO_GAME_OCR_S_PSP_PROBE`), which
+  both builds accept on an OCR job. No module's pages change in either build ([memory ledger](docs/memory-ledger.md)).
+
 ## [0.9.3] - 2026-10-23
 
 A second bundled dictionary, of the characters of PSP and Vita visual novels; the figures of a
