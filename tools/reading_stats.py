@@ -72,6 +72,7 @@ HEADER_LINE = (",".join(HEADER) + "\n").encode()
 # (Rubi 0.9.1 and older) says it in its `engine`: every Rubi wrote vocr for OCR's line, and since native text
 # hooks came (0.8.0-test.7) hook for a hook's. Any other row's source is unknown.
 SOURCES = ("hook", "ocr", "unknown")
+CELL_SOURCES = {"hook": "hook", "ocr": "ocr"}  # a line_source cell's values (the shared strings, not the cell's)
 ENGINE_SOURCES = {"hook": "hook", "vocr": "ocr"}
 # A time is Unix seconds from 1970 to before 3000 (Rubi's are this century), so another tracker's
 # milliseconds are not taken for seconds (GameSentenceMiner's import refuses them too). datetime places
@@ -368,9 +369,10 @@ def cell(row, i) -> str:
 
 def line_source(report: Report, row, source_col, engine_col) -> str:
     """Where a record's line came from (SOURCES): its line_source cell, hook or ocr; else its engine cell, as
-    an older Rubi wrote it (hook, or vocr: OCR); else unknown."""
-    said = cell(row, source_col)
-    if said in ("hook", "ocr"):
+    an older Rubi wrote it (hook, or vocr: OCR); else unknown. One string object per source, however many
+    records (as for the games' names)."""
+    said = CELL_SOURCES.get(cell(row, source_col))
+    if said:
         report.source_cells += 1
         return said
     engine = ENGINE_SOURCES.get(cell(row, engine_col))
