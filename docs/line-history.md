@@ -102,9 +102,10 @@ So: when a visit opens, the control thread reads the **last 24,512 B of `history
 with the byte before them, into its existing 24 KiB static scratch, released before the call
 returns), finds this game's records newest first, and keeps up to **32** of their lines in one Paf
 block of **16 KiB**, held only while the visit lasts. A three-row textbox's record (a 290 B line, its
-raw text as long, and its 41 other fields) is 880 B [measured: the host test's record, by
-the real writer; 871 B before the `characters` and `line_source` columns], so the window holds about 27
-such records, of every game; a shorter line's record is smaller. Nothing is read or kept at any other time; the file is never written by this code.
+raw text as long, and its 41 other fields) is 880 B [measured: the host test's record, by the real
+writer; 874 B before the `line_source` column, 871 B before `characters`], so the window holds about
+27 such records, of every game; a shorter line's record is smaller. Nothing is read or kept at any
+other time; the file is never written by this code.
 
 - The read is on VjoControl, never on the Paf thread, so the overlay keeps drawing. It is one open,
   two seeks, one read of at most 24,513 B and one close, once a visit. Console time unmeasured: the
@@ -114,15 +115,19 @@ such records, of every game; a shorter line's record is smaller. Nothing is read
   the console [measured there for other lines, docs/performance.md]. Steps within a visit read nothing.
 - An append in progress on VjoNet (it appends after publishing each Automatically result) can only
   make the file's last record incomplete: a record is read only once its line's field is closed and
-  followed by the comma and the time's first digit, so a cut record is skipped, and an append rolled
-  back meanwhile only shortens the read.
+  followed by the comma and the time's first digit, so one cut before that digit is skipped and one
+  cut after it is read, its line whole (the fields after the time, `characters` and `line_source`
+  among them, are not read); an append rolled back meanwhile only shortens the read.
 - A record a power loss or a crash cut is not always the last one: the next boot's append follows the
   cut with no newline between. The cut record's fields then run into the new record's, and it would
   read as another field's text (the game's name) or as bytes of both; the time's digit after the line
   field rejects every such merge (the writer always writes one there, a merge has another field's
-  `"`), so neither the cut record nor the one appended right after it is shown, and the lines before
-  and after both are (audit-line-history F1: host tests at every cut position, and the auditor's fuzz
-  of the real writer and reader, 0 bad lines in 39,759 cut-and-append cases).
+  `"`). So a record cut before its time's first digit is not shown, and one cut after it shows its own
+  line, which is whole (every cut in its last fields: audit-history-source N1); the record appended
+  right after the cut is not shown (it follows no newline), unless the cut ended after a newline inside
+  a field, and the lines before and after both are. No line is ever shown that is not a real line
+  (audit-line-history F1: host tests at every cut position, and the auditor's fuzz of the real writer
+  and reader, 0 bad lines in 39,759 cut-and-append cases).
 - The record parser matches `history.csv`'s own quoting (`shell/history.c`: the first four fields
   quoted, `"` doubled): a record starts at a `"` after a newline whose next byte is neither `"` nor
   `,`, which no byte inside a quoted field can be.

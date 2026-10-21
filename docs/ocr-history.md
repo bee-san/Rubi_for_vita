@@ -99,11 +99,17 @@ The overlay reads the file back for one thing only: [line history](line-history.
 first goes past the overlay's top row, the control thread reads the file's last 24,512 B once
 (into its existing 24 KiB scratch) and keeps up to 32 of this game's lines, by `uuid`, in a 16 KiB Paf
 block while the user looks back; nothing else reads it, and that reader never writes it. An append in
-progress can only cut the last record, which the reader skips.
+progress can only cut the last record: the reader skips it until its line and the time's first digit
+after it are written, then reads its line, which is whole
+([line-history.md](line-history.md#where-the-lines-come-from-and-why)).
 
 Consecutive identical normalized text within a game is suppressed, including
 rescans caused by a blinking icon or reopening/resuming. A different sentence,
-game, or successful blank scan permits the same text again. Fingerprints reset
+game, or successful blank scan permits the same text again; so does, until
+[#252](https://github.com/bee-san/Rubi_for_vita/issues/252) is fixed, a read
+whose exchange with the game worker failed (no worker, a timeout, or a cancellation
+that the history's check does not see), which the writer takes for a blank scan:
+the next read of the same text is then recorded again. Fingerprints reset
 on Shell restart. This is deliberately lightweight: an immediately repeated
 identical sentence with no observed change may be collapsed, and a long pause
 while text types out can still produce a partial sentence followed by its full
@@ -227,7 +233,8 @@ whichever supplied it. Not recorded:
   auto mode): a hook stream keeps its latest text only, and the history has one record
   per read, not one for each line a hook saw.
 - A line the same as the record before it, whatever its source: OCR's reading, then
-  the same text from a hook, is one record, `ocr`.
+  the same text from a hook, is one record, `ocr` (unless a read between them failed:
+  [#252](https://github.com/bee-san/Rubi_for_vita/issues/252), above).
 - A line of a text box's border read as text (API 36, with `non_japanese_filter = lines`,
   the default: [vita-vn-ocr.md](vita-vn-ocr.md#text-normalisation-shown-and-looked-up)):
   the game worker drops it from OCR's text and from a hook's alike, before the text is
@@ -312,7 +319,10 @@ the 43rd as the line's source, counts `line` itself for the rows without a count
 takes the source of the rows without one from their `engine`
 ([Line source](#line-source)). A reader that wants as many cells in every row as the
 header has names stops at the first longer row (pandas' `read_csv` does, by
-default): add the missing names to the end of the file's first line (on Linux,
+default). So pandas, which reads a file that 0.9.0 or 0.9.1 began as they left it,
+refuses it from the first row this version appends (`Expected 42 fields ..., saw 43`),
+as it refused a file 0.8.0 began from 0.9.0's first row [checked: pandas 2.2.3 on
+the fixtures]. Add the missing names to the end of the file's first line (on Linux,
 `sed -i '1s/line_metrics$/&,characters/; 1s/characters$/&,line_source/' history.csv`
 adds both to a 0.8.0 header and `line_source` to a 0.9 one, and changes nothing in a
 new one), or move the file away on the Vita so that Rubi starts a new one with the

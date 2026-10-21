@@ -544,6 +544,7 @@ static unsigned history_calls;
 static int history_rtc_fail, history_write_fail;
 static VjoHistoryRecord last_history;
 static char history_text[VJO_GAME_OCR_TEXT_BYTES];
+static uint32_t history_text_from; /* the record's result's text_from, as the writer sees it */
 static void (*history_on_append)(void);
 int sceRtcGetCurrentTick(SceRtcTick *tick)
 {
@@ -558,6 +559,7 @@ int vjo_history_append(const VjoHistoryRecord *record)
     history_calls++;
     last_history = *record;
     snprintf(history_text, sizeof(history_text), "%s", record->result->text);
+    history_text_from = record->result->text_from;
     if (history_on_append) history_on_append();
     return history_write_fail ? -1 : 1;
 }
@@ -921,6 +923,7 @@ static void reset(void)
     history_on_append = NULL;
     memset(&last_history, 0, sizeof(last_history));
     history_text[0] = '\0';
+    history_text_from = 0;
     anki_game[0] = anki_tid[0] = '\0';
     anki_psp = 0;
     fake_model_io_error = 0;
@@ -5474,6 +5477,32 @@ static void test_history_ignores_storage_failure_and_dictionary_oom(void)
     mem_free();
 }
 
+/* A native text hook's line is recorded as OCR's is (docs/ocr-history.md#line-source): the record is the
+ * Automatically read's own result, whose text_from (here a string copy's stream, 9, locked, answering without
+ * recognition) the writer turns into `engine` and `line_source` hook (test_shell_history.c checks the writer);
+ * OCR's next line keeps 0. The request is the automatic pick both times. */
+static void test_history_records_a_hooks_line_with_its_source(void)
+{
+    const uint32_t locked[7] = {9, VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR, 1000, VJO_HOOK_STREAM_BIT(9),
+                                VJO_TEXT_SOURCE_AUTO, 0u << 16 | 8u, 0};
+    cursor_setup();
+    memcpy(fake_hook, locked, sizeof(fake_hook));
+    start_job("history: a hook's line", 0);
+    finish_current_job();
+    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
+    TEST_CHECK(history_calls == 1 && last_history.result == &vocr_result && !strcmp(history_text, "猫犬鳥"));
+    TEST_CHECK_(history_text_from == 9, "the hook's record: text_from %u", (unsigned)history_text_from);
+    memset(fake_hook, 0, sizeof(fake_hook));
+    next_scene(8);
+    fake_recognized_text = "犬猫";
+    start_job("history: OCR's line", 0);
+    finish_current_job();
+    TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
+    TEST_CHECK(history_calls == 2 && !strcmp(history_text, "犬猫"));
+    TEST_CHECK_(history_text_from == 0, "OCR's record: text_from %u", (unsigned)history_text_from);
+    mem_free();
+}
+
 static void test_history_records_refreshes_but_not_cursor_jobs(void)
 {
     cursor_setup();
@@ -7835,6 +7864,7 @@ TEST_LIST = {
     {"word_Auto_prepares_first_match_and_reopen_reuses_only_current_cache", test_word_background_lookup_and_reopen_cache},
     {"history_snapshots_auto_ocr_after_publication", test_history_snapshots_auto_ocr_after_publication},
     {"history_ignores_storage_failure_and_dictionary_oom", test_history_ignores_storage_failure_and_dictionary_oom},
+    {"history_records_a_hooks_line_with_its_source", test_history_records_a_hooks_line_with_its_source},
     {"history_records_refreshes_but_not_cursor_jobs", test_history_records_refreshes_but_not_cursor_jobs},
     {"history_excludes_disabled_failed_cancelled_and_invalid_clock", test_history_excludes_disabled_failed_cancelled_and_invalid_clock},
     {"word_lookup_with_the_bundled_dictionary_first_word_right_and_tap", test_word_lookup_with_the_bundled_dictionary},

@@ -17,8 +17,10 @@ been reported.
   native text hook supplied the line and `ocr` when Rubi's OCR read it, the same choice as the
   `engine` column's `hook` or `vocr`. It is the 43rd column, after `characters`: the first five
   (GameSentenceMiner's ExStatic lines) and every other column keep their places, and a file an older
-  Rubi began keeps its header (its new rows have more cells than it names;
-  [details](docs/ocr-history.md#the-format-and-older-files)). `tools/reading_stats.py` adds **By
+  Rubi began keeps its header: its new rows have more cells than it names. GameSentenceMiner's import
+  reads it as before; pandas' `read_csv` stops at the first new row of a file 0.9.0 or 0.9.1 began,
+  which it read before, until one `sed` line adds the new name to the file's first line
+  ([details](docs/ocr-history.md#the-format-and-older-files)). `tools/reading_stats.py` adds **By
   text source** (native text hook, OCR) to its totals, and reads the source of an older Rubi's rows
   from their `engine` ([docs/ocr-history.md](docs/ocr-history.md#line-source)). Hook lines were
   recorded before too (with **Read text: Automatically**); what is not recorded, from either source,

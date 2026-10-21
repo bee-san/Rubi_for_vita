@@ -79,7 +79,7 @@ ENGINE_SOURCES = {"hook": "hook", "vocr": "ocr"}
 # those on a day where time_t has 64 bits; where it has 32, it cannot after 2038, and such a time is
 # skipped too (add_row).
 TIME_MAX = 32503680000.0  # 3000-01-01T00:00:00Z
-# The most of a file's first line read as its header: Rubi's is 396 bytes, and after a cut header the next
+# The most of a file's first line read as its header: Rubi's is 408 bytes, and after a cut header the next
 # record's first line follows it (under 10 KB). A file with no line break is not read whole for it.
 HEADER_READ = 1 << 20
 
