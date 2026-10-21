@@ -11,6 +11,19 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- A counter read as `ッ` is `ヶ` again (`ルッ月です」` → `ルヶ月です」`): a text rule in the shown and
+  looked-up text's normalisation (`core/textnorm.c`). Before the LM, the job puts back a numeral or
+  `「` that the frames hold close below what the recognizer read before a counter, so `ル` becomes `九`
+  (vita-vn-ocr #109's counter re-decode, `runtime/vocr_post.c`; pin bumped). On vita-vn-ocr's
+  development data neither changes a line; see [docs/vita-vn-ocr.md](docs/vita-vn-ocr.md#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109).
+
+### Changed
+
+- Each game that is ON carries 4,096 B more of the OCR worker's module pages, for the counter re-decode:
+  172,032 B in the normal build, 180,224 B in the debug build (`docs/memory-ledger.md`).
+
 ## [0.9.1] - 2026-10-21
 
 Native text hooks that Rubi remembers for each game build and checks less often as they prove

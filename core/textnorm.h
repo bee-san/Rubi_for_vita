@@ -20,10 +20,21 @@
  *    a hiragana or a counter ヶ ヵ stays ("コーヒー一杯", "ケーキ一つ",
  *    "ハネムーン一ヶ月"), and so does one after a hiragana at the end of a line,
  *    which a wrapped line often is ("もう一 / 度").
+ *  - counters: the small tsu ッ, which the recognizer reads for the small ke ヶ
+ *    in some fonts (CLANNAD's 「九ヶ月です」 as "ルッ月です」", vita-vn-ocr #109),
+ *    becomes ヶ before 月 or 年 whatever comes before it, before 国 or 条 after
+ *    a numeral (〇一二三四五六七八九十百千万, 0-9) or 何 数 幾, and before 所
+ *    after one of those other than 一 (一ッ所, ひとつところ, stays). ッ月 and ッ年
+ *    occur nowhere in the 700 M characters of text vita-vn-ocr counted; ッ before
+ *    日, 村 or 町 stays (三ッ日月, place names). It runs before the 一/ー rule, so
+ *    "ハネムーン一ッ月" keeps its 一 before the counter. vita-vn-ocr's
+ *    runtime/vocr_post.c vocr_post_counters() is the same rule
+ *    (docs/counters.md there has the counts).
  *
- * Nothing else changes: whitespace, small kana, dakuten and lookalike kanji or
- * kana are left as the recognizer read them (those are recognition errors, not
- * forms). The text never grows, so it is normalised in place. Lines (\n) are
+ * Nothing else changes: whitespace, small kana (but the counter ッ above),
+ * dakuten and lookalike kanji or kana are left as the recognizer read them
+ * (those are recognition errors, not forms; the counter's is the one a text
+ * rule can fix, as no text holds ッ there). The text never grows, so it is normalised in place. Lines (\n) are
  * normalised separately: a rule never looks across one. The game worker runs it
  * on every recognized text (vjo_text_normalize_keep), so no consumer (overlay,
  * subtitles, Anki, lookup) sees the recognizer's forms, and SceShell runs none
@@ -44,6 +55,7 @@ typedef struct {
     unsigned ellipsis;   /* "..." and ・ runs made … */
     unsigned long_vowel; /* 一 made ー */
     unsigned kanji_one;  /* ー made 一 */
+    unsigned counter;    /* ッ made ヶ before a counter */
 } VjoTextNorm;
 
 /* Normalises the NUL-terminated UTF-8 text s in place (it never grows) and

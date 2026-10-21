@@ -10,6 +10,8 @@
 #define CP_MIDDLE_DOT 0x30FBu /* ・ */
 #define CP_ELLIPSIS 0x2026u   /* … */
 #define CP_DASH 0x2015u       /* ― */
+#define CP_SMALL_TSU 0x30C3u  /* ッ */
+#define CP_SMALL_KE 0x30F6u   /* ヶ */
 
 /* One code point at s: ASCII or a three-byte sequence, the only ones a rule
  * reads (every mark, kana and common kanji); anything else is one byte of
@@ -77,13 +79,35 @@ static int is_dash(uint32_t c)
     return (c >= 0x2010 && c <= 0x2014) || c == 0x2212 || c == 0x2500 || c == 0x2501;
 }
 
-/* Pass 1: the forms (width, tildes, dashes, ellipses). Writes at w <= r. */
+/* A numeral (〇一二三四五六七八九十百千万, 0-9, ０-９), or 何 数 幾. */
+static int is_count(uint32_t c)
+{
+    static const uint16_t num[] = {0x3007, 0x4E00, 0x4E8C, 0x4E09, 0x56DB, 0x4E94, 0x516D, 0x4E03, 0x516B,
+                                   0x4E5D, 0x5341, 0x767E, 0x5343, 0x4E07, 0x4F55, 0x6570, 0x5E7E};
+    if ((c >= '0' && c <= '9') || (c >= 0xFF10 && c <= 0xFF19)) return 1;
+    for (size_t i = 0; i < sizeof(num) / sizeof(num[0]); i++)
+        if (c == num[i]) return 1;
+    return 0;
+}
+
+/* Pass 1: the forms (width, tildes, dashes, ellipses), and ッ before a counter made ヶ (textnorm.h: before
+ * the 一/ー rule of pass 2, on the text as read). Writes at w <= r. */
 static void fold_forms(char *s, VjoTextNorm *k)
 {
     size_t r = 0, w = 0, n, m;
+    uint32_t prev = 0; /* the code point read before c */
     while (s[r]) {
-        uint32_t c = decode(s + r, &n);
+        uint32_t c = decode(s + r, &n), next;
         unsigned dots = 0;
+        if (c == CP_SMALL_TSU && ((next = decode(s + r + n, &m)) == 0x6708 || next == 0x5E74 ||  /* 月 年 */
+                                  (is_count(prev) && (next == 0x56FD || next == 0x6761 ||        /* 国 条 */
+                                                      (next == 0x6240 && prev != CP_KANJI_ONE))))) { /* 所 */
+            r += n;
+            w += encode3(CP_SMALL_KE, s + w);
+            k->counter++;
+            prev = CP_SMALL_KE;
+            continue;
+        }
         if (c == '.' || c == 0xFF0E || (c == CP_MIDDLE_DOT && decode(s + r + n, &m) == CP_MIDDLE_DOT)) {
             /* A run of dots: an ellipsis for every three (of ・, at least one), the rest as dots. */
             uint32_t d = c == CP_MIDDLE_DOT ? c : '.';
@@ -98,9 +122,11 @@ static void fold_forms(char *s, VjoTextNorm *k)
             while (e--) w += encode3(CP_ELLIPSIS, s + w);
             if (d == '.')
                 for (unsigned i = 0; i < dots % 3; i++) s[w++] = '.';
+            prev = 0;
             continue;
         }
         r += n;
+        prev = c;
         if (c >= 0xFF01 && c <= 0xFF5E) {
             s[w++] = (char)(c - 0xFEE0);
             k->width++;
@@ -171,7 +197,7 @@ unsigned vjo_text_normalize(char *s, VjoTextNorm *counts)
         long_vowels(s, &k);
     }
     if (counts) *counts = k;
-    return k.width + k.tilde + k.dash + k.ellipsis + k.long_vowel + k.kanji_one;
+    return k.width + k.tilde + k.dash + k.ellipsis + k.long_vowel + k.kanji_one + k.counter;
 }
 
 unsigned vjo_text_normalize_keep(char *buf, size_t cap, const char *raw, VjoTextNorm *counts)

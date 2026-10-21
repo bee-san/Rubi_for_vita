@@ -1893,10 +1893,15 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     }
     policy.refine = refine;
     policy.short_lines = 1; /* #194: a box's short last line */
+    /* vita-vn-ocr #109: a numeral or a 「 the line lost before a counter (ルッ月 -> 九ヶ月 with
+     * core/textnorm.c's rule), from the top-K the LM extras hold; nothing without them */
+    policy.counter_tau = VJO_VOCR_COUNTER_TAU;
+    policy.counter_open = VJO_VOCR_COUNTER_OPEN;
     /* The cache's entries are those of jobs with this LM (bits 0-2), cascade (bit 3),
      * cascade ceiling (ms, bits 4-15: at most 3,750), cascade model (since API 21 the
      * next tier up of the job's, so a Small job's is Normal's model and a Normal one's Large's: its
-     * index among the pinned models + 1, bits 16-23) and refinement (bits 24-28). */
+     * index among the pinned models + 1, bits 16-23), refinement (bits 24-28) and the counter
+     * re-decode (bit 29). */
     unsigned casc_index = 0;
     if (casc) {
         unsigned count = 0;
@@ -1905,7 +1910,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
             if (&all[k] == casc) casc_index = k + 1u;
     }
     policy.cache_variant = (lm ? lm->tier : 0u) | (casc ? 8u : 0u) | (uint32_t)(casc_us / 1000u) << 4 |
-                           (uint32_t)casc_index << 16 | refine << 24;
+                           (uint32_t)casc_index << 16 | refine << 24 |
+                           (policy.counter_tau || policy.counter_open ? 1u << 29 : 0u);
     helper_pool.helpers = use_helpers;
     helper_creates = helper_create_failures = 0;
     open_which = cand[used].which;

@@ -896,7 +896,44 @@ static struct {
     const char *cascade_text; /* the cascade's runs read this (it reads nothing on the synthetic lines) */
     int decode_rc; /* nonzero: each decode of the job's model writes "X" and returns it */
     long beta[8];  /* the per-character bonus each decoder was planned with */
+    int counter_line;    /* the job's model reads every line as counter_frames() (its own classes) */
+    unsigned seen_top1;  /* the class the job's decoder saw on top at counter_frames()'s frame 2 */
 } wrap;
+
+/* "ルッ月です」" as a top-4 of the model's own classes: 九 3 nats under ル at frame 2 and 2 nats of
+ * blank at frame 3 (the cheapest 九: 5 nats), 「 3 nats under the blank at frame 1 (vita-vn-ocr #109's
+ * re-decode at VJO_VOCR_COUNTER_TAU/OPEN takes both); the greedy text it gives. */
+static unsigned counter_class(const vocr_model *m, const char *t)
+{
+    for (unsigned c = 1; c < m->n_classes; c++) {
+        unsigned len;
+        const char *s = vocr_class_text(m, c, &len);
+        if (len == strlen(t) && !memcmp(s, t, len)) return c;
+    }
+    return 0;
+}
+static void counter_frames(const vocr_model *m, vocr_extra *ex, char *text, size_t cap)
+{
+    static const char *const rows[][4] = {{"", "「", "」", "九"}, {"", "「", "九", "ル"}, {"ル", "九", "", "し"},
+                                          {"ル", "", "九", "し"}, {"", "ル", "九", "ッ"}, {"ッ", "ヶ", "", "ヵ"},
+                                          {"", "ッ", "ヶ", "で"}, {"月", "", "す", "で"}, {"", "月", "で", "す"},
+                                          {"で", "", "す", "」"}, {"", "で", "す", "」"}, {"す", "", "で", "」"},
+                                          {"", "す", "」", "で"}, {"」", "", "す", "で"}, {"", "」", "す", "で"}};
+    static const float vals[][4] = {{10, 2, 1, 0}, {10, 7, 4, 1}, {9, 6, 5, 1}, {9, 7, 5.5f, 1}, {10, 3, 2, 1},
+                                    {8, 6, 5, 1}, {10, 2, 1, 0}, {9, 4, 1, 0}, {10, 3, 1, 0}, {9, 4, 1, 0},
+                                    {10, 2, 1, 0}, {9, 4, 1, 0}, {10, 2, 1, 0}, {9, 3, 1, 0}, {10, 2, 1, 0}};
+    const unsigned n = sizeof(rows) / sizeof(rows[0]);
+    if (!ex || ex->topk < 4 || ex->cap_frames < n || !ex->topk_class || !ex->topk_logit) return;
+    for (unsigned f = 0; f < n; f++)
+        for (unsigned j = 0; j < ex->topk; j++) {
+            ex->topk_class[f * ex->topk + j] = (uint16_t)(j < 4 ? (rows[f][j][0] ? counter_class(m, rows[f][j]) : 0u)
+                                                                : counter_class(m, "あ") + j);
+            ex->topk_logit[f * ex->topk + j] = j < 4 ? vals[f][j] : -(float)j;
+            if (ex->blank_logit && j < 4 && !rows[f][j][0]) ex->blank_logit[f] = vals[f][j];
+        }
+    ex->frames = n;
+    if (cap > strlen("ルッ月です」")) strcpy(text, "ルッ月です」");
+}
 
 static void wrap_reset(void)
 {
@@ -913,6 +950,7 @@ int __wrap_vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t text_
     if (!wrap.on) return rc;
     if (!wrap.model_ctx) wrap.model_ctx = c;
     if (c == wrap.model_ctx) {
+        if (rc == VOCR_OK && wrap.counter_line) counter_frames(c->model, extra, text, text_cap);
         if (rc == VOCR_OK && (int)wrap.runs == wrap.empty_run && text_cap) text[0] = '\0';
         wrap.runs++;
         scr.clock += wrap.run_us;
@@ -935,6 +973,7 @@ int __wrap_vocr_lm_decode(vocr_lm_ctx *c, const vocr_extra *ex, char *text, size
             wrap.cascade_decodes++;
         } else {
             wrap.decodes++;
+            if (ex && ex->frames > 2 && ex->topk) wrap.seen_top1 = ex->topk_class[2 * ex->topk];
             if (wrap.decode_rc) { /* a decoder that wrote part of a line, then failed */
                 if (text_cap > 1) {
                     text[0] = 'X';
@@ -1926,6 +1965,97 @@ static void test_the_gate_fits_beside_the_finder(void)
     TEST_MSG("the gate's largest arena: %zu B; the least scratch left: %zu B", worst, least);
 }
 
+/* The counter re-decode (vita-vn-ocr #109, VjoVocrPolicy.counter_tau/open), with the wrapped runtime and
+ * the release weights: on a line the job's model reads as "ルッ月です」" with 九 and 「 close below, the
+ * decoder reads the edited top-K and the shown text is "「九ッ月です」" (core/textnorm.c then makes the ッ a
+ * ヶ in the worker) while the recognizer's own reading is the one logged; off, nothing changes. */
+static void test_the_counter_redecode(void)
+{
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM2_NAME};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
+    const VjoVocrLm *lm2 = vjo_vocr_lm_tier(2);
+    VjoPlatform p;
+    VjoVocrStats st;
+    static char text[1024], raw[1024];
+    unsigned char *ws = NULL;
+    size_t ws_bytes;
+    if (!have_files(dir, files, 2)) {
+        TEST_SKIP("no VOCR3-FL10 and the 1000k LM in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    TEST_ASSERT(fl10 && lm2);
+    posix_platform_init(&cascade_pp, &p);
+    p.file_open = posix_open ? posix_open : p.file_open;
+    ws_bytes = vjo_vocr_job_bytes(fl10->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name);
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    res.ud = &res;
+    lres.ud = &lres;
+    VjoVocrPolicy on = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
+                        .counter_tau = VJO_VOCR_COUNTER_TAU, .counter_open = VJO_VOCR_COUNTER_OPEN};
+    VjoVocrPolicy off = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw)};
+    VjoVocrPolicy numeral = on;
+    numeral.counter_open = 0;
+#define RUN(pol) vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture, \
+                                     vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
+    /* on, the decoder failing (too long): the edited greedy text is shown, the recognizer's logged */
+    reset();
+    wrap_reset();
+    wrap.counter_line = 1;
+    wrap.decode_rc = VOCR_E_TEXT;
+    TEST_ASSERT(RUN(&on) == VJO_OK);
+    TEST_CHECK(!strcmp(text, "「九ッ月です」") && !strcmp(raw, "ルッ月です」") && st.counter_lines == 1);
+    TEST_MSG("shown '%s', logged '%s', %u lines", text, raw, st.counter_lines);
+    TEST_CHECK(wrap.model_ctx && wrap.decodes == 1 &&
+               wrap.seen_top1 == counter_class(((const vocr_ctx *)wrap.model_ctx)->model, "九"));
+    /* the numeral alone */
+    reset();
+    wrap_reset();
+    wrap.counter_line = 1;
+    wrap.decode_rc = VOCR_E_TEXT;
+    TEST_ASSERT(RUN(&numeral) == VJO_OK);
+    TEST_CHECK(!strcmp(text, "九ッ月です」") && st.counter_lines == 1);
+    /* on, with the LM: it decodes the edited top-K (九 on top at frame 2) */
+    reset();
+    wrap_reset();
+    wrap.counter_line = 1;
+    TEST_ASSERT(RUN(&on) == VJO_OK);
+    TEST_CHECK(st.counter_lines == 1 && st.lm_lines == 1 && wrap.decodes == 1 && !strcmp(raw, "ルッ月です」"));
+    TEST_CHECK(!strcmp(text, "「九ヶ月です」")); /* the LM itself takes ヶ after 九 */
+    TEST_MSG("shown '%s'", text);
+    /* off, with the LM: the LM alone takes the ヶ but keeps ル and no 「 */
+    reset();
+    wrap_reset();
+    wrap.counter_line = 1;
+    TEST_ASSERT(RUN(&off) == VJO_OK);
+    TEST_CHECK(!st.counter_lines && wrap.seen_top1 == counter_class(((const vocr_ctx *)wrap.model_ctx)->model, "ル"));
+    TEST_CHECK(!strcmp(text, "ルヶ月です」"));
+    TEST_MSG("shown '%s'", text);
+    /* off: the recognizer's reading, nothing re-decoded, the decoder sees ル on top */
+    reset();
+    wrap_reset();
+    wrap.counter_line = 1;
+    wrap.decode_rc = VOCR_E_TEXT;
+    TEST_ASSERT(RUN(&off) == VJO_OK);
+    TEST_CHECK(!strcmp(text, "ルッ月です」") && !strcmp(raw, "ルッ月です」") && !st.counter_lines);
+    /* on, on the synthetic lines of the real model (no counter there): exactly the job without it */
+    static char t_off[1024], r_off[1024];
+    reset();
+    wrap.on = 0;
+    TEST_ASSERT(RUN(&off) == VJO_OK);
+    memcpy(t_off, text, sizeof(t_off));
+    memcpy(r_off, raw, sizeof(r_off));
+    reset();
+    TEST_ASSERT(RUN(&on) == VJO_OK);
+    TEST_CHECK(!strcmp(text, t_off) && !strcmp(raw, r_off) && !st.counter_lines);
+#undef RUN
+    wrap.on = 0;
+    TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));
+    free(ws);
+}
+
 TEST_LIST = {
     {"the_capture_block_stays_within_64_KiB_at_every_size", test_capture_block_sizes},
     {"a_zero_policy_reads_exactly_as_api19", test_zero_policy_is_api19},
@@ -1951,6 +2081,7 @@ TEST_LIST = {
     {"the_cascade_reads_doubtful_lines_again", test_the_cascade_reads_doubtful_lines_again},
     {"the_cascade_ceiling_counts_the_time_spent_the_reread_and_the_rest", test_the_cascade_ceiling_counts_spent_reread_and_rest},
     {"the_lm_decodes_rereads_skips_empty_lines_and_keeps_greedy_on_failure", test_the_lm_paths},
+    {"the_counter_redecode_feeds_the_lm_and_keeps_the_recognizer_text_off_unchanged", test_the_counter_redecode},
     {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},
     {"a_short_last_line_is_read", test_a_short_last_line_is_read},
     {"the_gate_stops_a_region_without_text", test_the_gate_stops_a_region_without_text},
