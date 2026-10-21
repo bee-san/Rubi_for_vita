@@ -381,10 +381,10 @@ which has no probe, does nothing with it), and only in the PSP emulator's proces
 or the title is the PSP emulator's or Adrenaline's). The debug build's Shell asks for it in each of the
 user's OCR jobs with `VJO_GAME_OCR_S_PSP_PROBE`, bit 7 of the request's `speed` (API 35). The self-test's
 stages and Anki screenshots never carry it, and both builds' kernels and workers accept it, so the two
-builds keep one interface. The worker runs the probe after the job, once the job's result is with the
-kernel (`game_ocr/main.c` `worker_main`), so it never delays a popup. A job runs for each new screen of
-text with **Read text: Automatically**, else at each L + R. The text source does not matter: the probe
-hooks nothing.
+builds keep one interface. The worker runs the probe after the job, once the kernel has accepted the job's
+result (`game_ocr/main.c` `worker_main`; a result still to be handed over gets no probe), so it never delays
+a popup; it delays only the worker's next job, by its own time. A job runs for each new screen of text with
+**Read text: Automatically**, else at each L + R. The text source does not matter: the probe hooks nothing.
 
 - A **pass** (steps 1 to 4 below, from `start` to `done` or `stop`) runs after the process's first job,
   and again after a job whose step-1 lookups or title ID differ from the last pass's. Adrenaline's XMB and
@@ -421,11 +421,14 @@ To probe a new process, close the emulator (or the bubble) and start it again.
 
 **What it never does.** No write to the game's or the PSP's memory, no cache operation, no call into
 ScePspemu, no allocation, no new thread, nothing at `module_start`. Every read is behind the check that a
-block found in that job's lookups holds all of it (`vjo_psp_inside`). Each line is written before the next
-read, so a fault would leave the log ending at the step before it: the third `block` line (the title's
-read), the `luna` or a `site` line (a site's words), `...: reading` (the 1 MiB). Its cost is not measured
-(estimates): the first pass about 270 system calls and the 1 MiB read, once per process; each later job
-six lookups, 12 bytes and two short lines. Its CPU load, CPU3's included, is unmeasured.
+block found in that job's lookups holds all of it (`vjo_psp_inside`). Within a pass each line is handed to
+`sceIoWrite` before the next read, so a fault would leave the log ending at the step before it: the third
+`block` line (the title's read), the `luna` or a `site` line (a site's words), `...: reading` (the 1 MiB).
+Between passes a job's lookups and its 12-byte title read come before that job's lines, so a fault there
+would leave the previous job's `ocr` line last. (Whether a crashed process's last writes reach the card is
+unverified on a console.) Its cost is not measured (estimates): the first pass about 270 system calls and
+the 1 MiB read, once per process; each later job six lookups, 12 bytes, and the log's open, two writes and
+close on `ux0:`. Its CPU load, CPU3's included, is unmeasured.
 
 **The classes**, from the four words (MIPS instructions as loaded), with the checks in this order (report
 section 3; `core/psp_probe.c` `vjo_psp_classify`, host-tested on synthetic code):
@@ -450,7 +453,9 @@ from the vendored `third_party/LunaTranslator/ppsspp_1.cpp` (51884b6, the SHA-25
 `gen_luna_vita.py`): for each of its 415 entries only the address and the title IDs. That is 354 IDs and
 431 sites (an entry that names several IDs is a site of each), 3,515 bytes: each ID packed in a word as its
 prefix's index (5 prefixes, `ULJM` ...) and its number; the IDs and addresses are in the worker's data
-segment ([memory ledger](memory-ledger.md)). Which register, encoding and filter a site has is in Luna's source,
+segment ([memory ledger](memory-ledger.md)). The table is not an input of the hook definitions' revision
+(`cmake/HookRevision.cmake`): no Vita hook reads it, so editing it does not make a game's remembered hook be
+learned again. Which register, encoding and filter a site has is in Luna's source,
 found by its address. `psp_probe_table` (ctest) checks the generated file against the source,
 `tools/tests/test_gen_luna_psp.py` reads it back, and `host/tests/test_psp_probe.c` checks every title's
 sites against it and 12 entries copied by hand.
@@ -479,8 +484,9 @@ begin with a `process` line.
 | `job S ocr: lines L rec K frames F, us find ...` | its OCR: lines found and recognized, CTC frames, the find, load, recognition and whole-job times in µs, the memory check (free, needed, reserve, fallback), the weights' state, the text's source (0: OCR) and the shown text's characters and FNV-1a hash |
 | `jobs: 1000, the most per process: no more job lines` | the cap |
 
-The text itself is not in this file. The debug build's `log.txt` has it, with each job's step log
-(`gstep` lines), under the same job number.
+The text itself is not in this file, only its length in characters and a 32-bit hash (enough to tell two
+readings apart; a short line's could be guessed from them). The debug build's `log.txt` has the text itself
+anyway, with each job's step log (`gstep` lines), under the same job number.
 
 **To test on a console** (for #230; the v0.8.0-test.8 test issue has the owner's steps):
 

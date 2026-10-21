@@ -491,7 +491,7 @@ static void test_mips(void)
         REGIMM(A0, 0x10, 3), REGIMM(A0, 0x11, 3), REGIMM(A0, 0x12, 3), REGIMM(A0, 0x13, 3), /* ...al, ...all */
         COP(1, 0x08, 0, 5), COP(1, 0x08, 1, 5), COP(1, 0x08, 2, 5), COP(1, 0x08, 3, 5),     /* bc1f bc1t (l) */
         COP(2, 0x08, 0, 5), COP(2, 0x08, 1, 5), COP(2, 0x08, 3, 5),                          /* bvf bvt bvtl */
-        COP(0, 0x08, 0, 5),                                                                  /* bc0f */
+        COP(0, 0x08, 0, 5), /* COP0 rs 8: MIPS I's bc0f (mftc0 on MIPS32 MT, invalid on Allegrex): a branch, to be safe */
     };
     /* and what is not: arithmetic, loads, stores, traps, syscall, eret, coprocessor moves and arithmetic */
     const uint32_t plain[] = {

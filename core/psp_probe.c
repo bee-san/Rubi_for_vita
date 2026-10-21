@@ -108,7 +108,8 @@ int vjo_mips_is_cti(uint32_t w)
     case 0x02: case 0x03:                                      /* j, jal */
     case 0x04: case 0x05: case 0x06: case 0x07:                /* beq, bne, blez, bgtz */
     case 0x14: case 0x15: case 0x16: case 0x17: return 1;      /* beql, bnel, blezl, bgtzl */
-    case 0x10: case 0x11: case 0x12: return RS(w) == 0x08u;    /* COPz rs BC: bc0*, bc1*, bc2* (bvf, bvt) */
+    case 0x10: case 0x11: case 0x12: return RS(w) == 0x08u;    /* COPz rs BC: bc1* (FPU), bc2* (bvf, bvt);
+                                                                  * bc0*, invalid on Allegrex, to be safe */
     default: return 0;
     }
 }

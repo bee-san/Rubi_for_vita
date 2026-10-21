@@ -27,6 +27,9 @@ been reported.
 ### Changed
 
 - `--collect` also fetches the game worker's `hooks.log` and `psp_probe.log` (neither holds any text).
+- Luna's PSP table is no longer an input of the hook definitions' revision (`cmake/HookRevision.cmake`): no Vita
+  hook reads it, so a later edit of it no longer makes every game learn its remembered hook again. This change of
+  the revision's inputs does so once, after this build is installed.
 - The interface is API 35: `VjoGameOcrRequest.speed` bit 7 is the probe's (`VJO_GAME_OCR_S_PSP_PROBE`), which
   both builds accept on an OCR job. No module's pages change in either build ([memory ledger](docs/memory-ledger.md)).
 
