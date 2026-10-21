@@ -12,8 +12,9 @@
 
 /* The writer's strings, as its header and offsets: in the data segment (core/port.h), whose last
  * page has room. They pay for the characters column's count in the normal Shell's full code pages
- * (docs/ocr-history.md). */
-static const char history_path[] VJO_DATA_TABLE(history_path) = HISTORY_PATH;
+ * (docs/ocr-history.md). The file's path is not among them: its one copy is the code segment's string,
+ * which the line-history reader (vjo_history_load) has too, so the append's open and rollback share it
+ * (a data-segment copy of it, 35 B, paid for the line_source column's cells: docs/memory-ledger.md). */
 static const char id_format[] VJO_DATA_TABLE(history_id_format) = "vjo-%llu-%llu";
 static const char time_format[] VJO_DATA_TABLE(history_time_format) = ",%llu.%06u,";
 static const char number_format[] VJO_DATA_TABLE(history_number_format) = ",%llu";
@@ -133,7 +134,7 @@ int vjo_history_append(const VjoHistoryRecord *r)
     if (r->platform) for (const char *p = r->platform; *p; p++)
         game = (game ^ (unsigned char)*p) * 16777619u;
     if (previous_text == hash && previous_length == len && previous_game == game) return 0;
-    w.fd = sceIoOpen(history_path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
+    w.fd = sceIoOpen(HISTORY_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
     if (w.fd < 0) return w.fd;
     start = sceIoLseek(w.fd, 0, SCE_SEEK_END);
     if (start < 0) { sceIoClose(w.fd); return (int)start; }
@@ -187,7 +188,7 @@ int vjo_history_append(const VjoHistoryRecord *r)
         SceIoStat st;
         sceClibMemset(&st, 0, sizeof(st));
         st.st_size = start;
-        sceIoChstat(history_path, &st, SCE_CST_SIZE);
+        sceIoChstat(HISTORY_PATH, &st, SCE_CST_SIZE);
         return rc;
     }
     previous_text = hash;

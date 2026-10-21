@@ -22,7 +22,7 @@ been reported.
   text source** (native text hook, OCR) to its totals, and reads the source of an older Rubi's rows
   from their `engine` ([docs/ocr-history.md](docs/ocr-history.md#line-source)). Hook lines were
   recorded before too (with **Read text: Automatically**); what is not recorded, from either source,
-  is unchanged. No popup change. The Shell's code is unchanged in size, its data 32 B larger in the
+  is unchanged. No popup change. The Shell's code is unchanged in size and its data 8 B smaller, in the
   same pages (`docs/memory-ledger.md`).
 
 ### Fixed

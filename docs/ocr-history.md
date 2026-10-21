@@ -83,13 +83,16 @@ The line's source costs no code: the writer chooses, once for the record, a
 pointer into one table of both sources' cells (`source_cells`, 35 B, in the data
 segment beside the header, whose new name adds 12 B; it replaces the engine's two
 cells, 18 B), keeps it in its own state on its frame, and writes the engine's cell
-and, at the record's end, the `line_source` cell and the line break from it.
-`vjo_history_append` stays 1,068 B of code with a 456 B frame, the Shell's code
-segment keeps its size in both builds (90,092 B normal, 100,940 B debug), and its
-data segment grows 32 B in both (73,576 → 73,608 B normal, 73,560 → 73,592 B
-debug), in the same pages [measured: the build log's module rows,
-`arm-vita-eabi-nm -S` and `-fstack-usage`, both builds of main `a182b87` and this
-change]. A record is 6 B longer for OCR's line (`,"ocr"`) and 7 B for a hook's.
+and, at the record's end, the `line_source` cell and the line break from it. The
+data segment was full in the normal build, so the append now opens the file by
+the code segment's copy of its path, which line history's reader has already (the
+data segment's copy, 35 B, is gone). `vjo_history_append` stays 1,068 B of code
+with a 456 B frame, the Shell's code segment keeps its size in both builds (90,100 B
+normal, 100,988 B debug), and its data segment is 8 B smaller in both (73,728 →
+73,720 B normal, 73,680 → 73,672 B debug), in the same pages [measured: the build
+log's module rows, `arm-vita-eabi-nm -S` and `-fstack-usage`, both builds of main
+`ebd9e22` and this change]. A record is 6 B longer for OCR's line (`,"ocr"`) and 7 B
+for a hook's.
 Both module-page budgets and thread-stack budgets remain enforced by the ledger.
 
 The overlay reads the file back for one thing only: [line history](line-history.md). When Up
@@ -225,6 +228,10 @@ whichever supplied it. Not recorded:
   per read, not one for each line a hook saw.
 - A line the same as the record before it, whatever its source: OCR's reading, then
   the same text from a hook, is one record, `ocr`.
+- A line of a text box's border read as text (API 36, with `non_japanese_filter = lines`,
+  the default: [vita-vn-ocr.md](vita-vn-ocr.md#text-normalisation-shown-and-looked-up)):
+  the game worker drops it from OCR's text and from a hook's alike, before the text is
+  shown or recorded; a text that was only such lines is blank, and is not recorded.
 
 PSP games in Adrenaline have no native hooks, and **Text source: OCR only** uses
 none: their lines are all `ocr`.

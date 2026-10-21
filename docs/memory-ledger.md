@@ -9,22 +9,27 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 
 `history.csv`'s `line_source` column ([ocr-history](ocr-history.md#line-source)), measured with VitaSDK
 GCC 15.2.0 in `vitasdk/vitasdk:2026.08` (CI's digest), Release, on the packaged Shell SELF of both variants
-(`tools/check_memory_ledger.py`, `--exact` in the normal build), main `a182b87` against this change:
+(`tools/check_memory_ledger.py`, `--exact` in the normal build), main `ebd9e22` (after #247's border lines)
+against this change:
 
 | Shell | main text + data/bss | this change | Loaded pages, unchanged |
 |---|---:|---:|---:|
-| Debug | 100,940 + 73,560 B | 100,940 + 73,592 B | 176,128 B |
-| Normal | 90,092 + 73,576 B | 90,092 + 73,608 B | 163,840 B (exact) |
+| Debug | 100,988 + 73,680 B | 100,988 + 73,672 B | 176,128 B |
+| Normal | 90,100 + 73,728 B | 90,100 + 73,720 B | 163,840 B (exact) |
 
 No code: the writer's two engine cells (`engine`, `hook_engine`, 9 B each) become one table of both
 sources' engine and `line_source` cells (`source_cells`, 35 B), and the header names the column (397 → 409 B),
 both in the data segment ("Tables in the data segment" below); the writer keeps its pointer into the table in
 its own state on its frame, so `vjo_history_append` stays 1,068 B with its 456 B frame (`-fstack-usage`) and
-the code segment keeps 20 B of room in the normal build. Data/bss is 32 B larger (+29 B of tables and their
-alignment), leaving 120 B of room in its last page (152 B on main). The kernel, the game worker, the Rubi app
-and the RCO are byte for byte main's [measured: sha256 of both variants' packaged files]. No allocation,
-thread, stack, PAF block or budget changes; a record is 6 or 7 B longer on the memory card. These are binary
-and host measurements; nothing of it has run on a console.
+the code segment keeps its 12 B of room in the normal build. The normal Shell's data segment had no room on
+main (73,728 B, its last page full), and the table and the header's name took 29 B more (one page past the
+exact budget, as built: 73,752 B). The append's open and rollback now use the code segment's copy of the
+file's path, which line history's reader (`vjo_history_load`) already has: the data segment's copy (35 B,
+`history_path`) goes and the code is the same instructions, so data/bss is 8 B smaller than main's in both
+builds (8 B of room in the normal build's last page). The kernel, the game worker, the Rubi app and the RCO
+are byte for byte main's [measured: sha256 of both variants' packaged files]. No allocation, thread, stack,
+PAF block or budget changes; a record is 6 or 7 B longer on the memory card. These are binary and host
+measurements; nothing of it has run on a console.
 
 ## Border lines dropped (API 36)
 
