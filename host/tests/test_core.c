@@ -1162,7 +1162,8 @@ static void test_styled_history_header(void)
 static void test_styled_source_badge(void)
 {
     static const struct { int badge; const char *text; } cases[] = {
-        {VJO_BADGE_HOOK, "[HOOK]"}, {VJO_BADGE_OCR, "[OCR]"}, {VJO_BADGE_NONE, ""}, {5, ""}, {-1, ""}, {1 << 30, ""}};
+        {VJO_BADGE_HOOK, "[HOOK]"}, {VJO_BADGE_OCR, "[OCR]"}, {VJO_BADGE_NONE, ""}, {3, ""}, {6, ""}, {-1, ""},
+        {1 << 30, ""}};
     static const char line[] = "また明日、一緒に見に行こう!";
     VjoStyled st, plain;
     uint32_t lead;
@@ -1208,13 +1209,19 @@ static void test_styled_source_badge(void)
         TEST_CHECK(vjo_styled_history(&st, NULL, line, NULL, 27) == 1 && st.text[0] == icons[c].unit &&
                    st.n_spans == 2 && st.spans[0].len == 1 && st.spans[0].rgb == VJO_RGB_RANK && st.spans[0].px == 21);
     }
-    vjo_styled_badge(&st, 5, 21); /* past the table: nothing */
+    vjo_styled_badge(&st, 6, 21); /* past the table: nothing */
     TEST_CHECK(st.len == 1 + plain.len && st.n_spans == 2);
     /* the style of config source_badge on a text's source: off none, on the ASCII, icons the symbols */
     TEST_CHECK(VJO_BADGE_STYLED(0, VJO_BADGE_OCR) == VJO_BADGE_NONE && VJO_BADGE_STYLED(0, VJO_BADGE_HOOK) == VJO_BADGE_NONE);
     TEST_CHECK(VJO_BADGE_STYLED(1, VJO_BADGE_OCR) == VJO_BADGE_OCR && VJO_BADGE_STYLED(1, VJO_BADGE_HOOK) == VJO_BADGE_HOOK);
     TEST_CHECK(VJO_BADGE_STYLED(2, VJO_BADGE_OCR) == VJO_BADGE_OCR_ICON &&
                VJO_BADGE_STYLED(2, VJO_BADGE_HOOK) == VJO_BADGE_HOOK_ICON);
+    /* a source that is not known puts nothing in any style (never another source's badge) */
+    for (int style = 0; style <= 2; style++) {
+        TEST_ASSERT(vjo_styled_init(&st, &A, 4096, VJO_HEADER_SPANS) == 0);
+        vjo_styled_badge(&st, VJO_BADGE_STYLED(style, VJO_BADGE_NONE), 21);
+        TEST_CHECK_(st.len == 0 && st.n_spans == 0, "style %d", style);
+    }
 }
 
 /* Bee's Ultimate Dictionary's kanji lines: the trailing lines "漢=meaning",

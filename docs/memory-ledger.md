@@ -13,13 +13,13 @@ Release, on the packaged SELF files of main `e33f8f6` and of this change, `check
 
 | Module | Main text + data/bss | This change | Loaded pages, unchanged |
 |---|---:|---:|---:|
-| Shell, debug | 100,940 + 73,560 B | 100,940 + 73,648 B | 176,128 B |
-| Shell, normal | 90,092 + 73,576 B | 90,108 + 73,648 B | 163,840 B |
+| Shell, debug | 100,940 + 73,560 B | 100,940 + 73,656 B | 176,128 B |
+| Shell, normal | 90,092 + 73,576 B | 90,108 + 73,656 B | 163,840 B |
 
 The kernel plugin, the game worker (both builds) and the RCO are byte-identical to main's. In the normal
-Shell the badge's code is 162 B (`arm-vita-eabi-nm -S`: the header's span `vjo_styled_badge` 36 and its
+Shell the badge's code is 166 B (`arm-vita-eabi-nm -S`: the header's span `vjo_styled_badge` 36 and its
 call in `render` +40, the source with each new text in `run_vocr` +28 and a refresh's in `ctl_main` +28,
-its publication in `view_publish` +20, the re-wrap's keep +6, the dimmed badge's recolour +4, the config
+its publication in `view_publish` +24, the re-wrap's keep +6, the dimmed badge's recolour +4, the config
 key's default and parse 4 − 4, `frame` +4 and `start_cursor_job` −4; `icons` included) and 16 B of
 `.rodata` (the key's name). It is paid for by two changes that keep behaviour: the libc shims of
 `shell/libc_shim.c`, which only tail-call SceLibKernel's ARM stubs, are built as ARM code in the Shell
@@ -29,9 +29,9 @@ call sites, none a tail call), and `vita/buttons_vita.c`, the enter button's reg
 overlay open, is built `-Os` (`vjo_buttons_read` 118 → 84 B). The Shell's code segment grows 16 B in the
 normal build (`.text` −8, `.rodata` +16, alignment +8) and none in the debug build; the normal one has 4 B
 of room left in its pages (20 B on main): the next change that adds Shell code makes room first.
-Data/bss grows by 72 B in the normal Shell (88 B debug), in the same pages (80 B left):
+Data/bss grows by 80 B in the normal Shell (96 B debug), in the same pages (72 B left):
 `VjoConfig.source_badge` in its three copies, `VjoView.source_badge`, the two source bytes, `VjoWrap.keep`
-in its three instances, the 35-byte badge table, `source_badge`'s table of names (16 B) and its `icons`
+in its three instances, the 42-byte badge table, `source_badge`'s table of names (16 B) and its `icons`
 (6 B) in the data segment (`VJO_DATA_TABLE`), less two of the three `off`/`on` tables `core/config.c`
 had, now one. The Rubi app,
 which links `core/config.c` and the same `buttons_vita.c`, grows by 280 B (debug) and 264 B (normal), to

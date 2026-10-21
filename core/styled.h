@@ -69,10 +69,11 @@ void vjo_styled_header(VjoStyled *s, const VjoEntryList *l, int ja_px);
 /* Where the overlay's current text came from (VjoView.source_badge, config source_badge): not shown (the
  * badge turned off, no text read yet), recognized by OCR, or a native text hook's (VjoGameOcrResult's
  * text_from, docs/native-hooks.md); _ICON: the same in the system's symbols (source_badge = icons). */
-enum { VJO_BADGE_NONE = 0, VJO_BADGE_OCR = 1, VJO_BADGE_HOOK = 2, VJO_BADGE_OCR_ICON = 3, VJO_BADGE_HOOK_ICON = 4 };
-/* The badge of a text whose source is VJO_BADGE_OCR or VJO_BADGE_HOOK in config source_badge's style:
- * 0 off (none), 1 on (the ASCII badges), 2 icons (their _ICON forms). */
-#define VJO_BADGE_STYLED(style, source) ((style) ? (source) + 2 * ((style) - 1) : VJO_BADGE_NONE)
+enum { VJO_BADGE_NONE = 0, VJO_BADGE_OCR = 1, VJO_BADGE_HOOK = 2, VJO_BADGE_OCR_ICON = 4, VJO_BADGE_HOOK_ICON = 5 };
+/* The badge of a text whose source is VJO_BADGE_OCR, VJO_BADGE_HOOK or VJO_BADGE_NONE (not known) in config
+ * source_badge's style: 0 off (none), 1 on (the ASCII badges), 2 icons (their _ICON forms; 3, an unknown
+ * source's, puts nothing too). */
+#define VJO_BADGE_STYLED(style, source) ((style) ? (source) + 3 * ((style) - 1) : VJO_BADGE_NONE)
 
 /* Header of the overlay's local text: the text in VJO_RGB_TEXT and, for an earlier line (line history,
  * docs/line-history.md), the last row of the line before it above it and the first row of the line
