@@ -171,6 +171,7 @@ static int s_frames, s_moves, s_stick_max; /* largest stick deflection from cent
 #endif
 static int s_mode;
 static uint32_t s_prev_buttons;
+static uint64_t s_vertical_repeat_us;
 static int s_prev_touch;
 
 /* header state */
@@ -702,8 +703,10 @@ static void touch_write(int action)
 #if VJO_DEBUG
     vjo_log("touch region %s: 0x%X t=%u ms", action == VJO_TOUCH_ACTIVATE ? "on" : "off", rc, vjo_log_ms());
 #else
-    if (rc < 0) /* the normal build logs a refusal only */
-        vjo_log("touch region %s refused 0x%X", action == VJO_TOUCH_ACTIVATE ? "on" : "off", rc);
+    if (rc < 0) { /* the normal build logs a refusal only */
+        static const char refused[] VJO_DATA_TABLE(overlay_touch_refused) = "touch region %s refused 0x%X";
+        vjo_log(refused, action == VJO_TOUCH_ACTIVATE ? "on" : "off", rc);
+    }
 #endif
 }
 
@@ -741,7 +744,8 @@ static void open_page(void)
     if (!s_ui_mem) {
         s_ui_mem = (uint8_t *)vjo_shell_heap_alloc_for(VJO_SL_PAF_UI, UI_MEM_BYTES);
         if (!s_ui_mem) {
-            vjo_log("overlay not opened: no Paf memory for its text (%u KiB)", UI_MEM_BYTES >> 10);
+            static const char no_memory[] VJO_DATA_TABLE(overlay_no_memory) = "overlay not opened: no Paf memory for its text (%u KiB)";
+            vjo_log(no_memory, UI_MEM_BYTES >> 10);
             return;
         }
     }
@@ -825,6 +829,7 @@ static void open_page(void)
     s_stick_max = 0;
 #endif
     s_prev_buttons = ~0u; /* ignore buttons already held when opening */
+    s_vertical_repeat_us = 0;
     s_prev_touch = 1;
     touch_write(vjo_touch_hold(&s_touch)); /* own front input throughout the overlay, not just crops */
 }
@@ -1223,8 +1228,10 @@ static void frame_body(unsigned version, unsigned anki_version)
     } else if (s_highlight_retry_frames > 0) {
         if (header_highlight())
             s_highlight_retry_frames = 0;
-        else if (--s_highlight_retry_frames == 0)
-            vjo_log("header highlight update failed after layout retries");
+        else if (--s_highlight_retry_frames == 0) {
+            static const char no_highlight[] VJO_DATA_TABLE(overlay_no_highlight) = "header highlight update failed after layout retries";
+            vjo_log(no_highlight);
+        }
     }
     if (s_follow_frames > 0 && (header_follow() || --s_follow_frames == 0))
         s_follow_frames = 0;
@@ -1242,10 +1249,24 @@ static void frame_body(unsigned version, unsigned anki_version)
         held = in.buttons;
         pressed = held & ~s_prev_buttons;
         s_prev_buttons = held;
-        if (s_mode == MODE_OVERLAY)
+        if (s_mode == MODE_OVERLAY) {
+            /* Up/Down: one step now, then a steady repeat, with no catch-up burst.
+             * Only a fresh press arms it; opening with a key held still does nothing. */
+            uint32_t vertical = held & (SCE_CTRL_UP | SCE_CTRL_DOWN);
+            uint64_t now = (uint64_t)sceKernelGetProcessTimeWide();
+            if (!vertical || vertical == (SCE_CTRL_UP | SCE_CTRL_DOWN))
+                s_vertical_repeat_us = 0;
+            else if (pressed & vertical)
+                s_vertical_repeat_us = now + 350000;
+            else if (s_vertical_repeat_us && now >= s_vertical_repeat_us) {
+                pressed |= vertical;
+                s_vertical_repeat_us = now + 150000;
+            }
             input_overlay(&in, pressed);
-        else
+        } else {
+            s_vertical_repeat_us = 0;
             input_region(&in, held, pressed);
+        }
     }
 }
 
