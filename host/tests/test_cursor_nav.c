@@ -896,18 +896,21 @@ static void up_and_down_past_an_earlier_lines_rows(void)
  * text's own characters are where taps and the arrows find them. */
 static void the_source_badge_is_never_the_cursors(void)
 {
-    static const char *const headers[] = {"[HOOK]猫が好き。犬も好き", "[OCR]猫が好き。犬も好き"};
-    static const char text[] = "猫が好き。犬も好き"; /* 猫0 が3 好6 き9 。12 犬15 も18 好21 き24 */
-    for (int b = 0; b < 2; b++) {
-        Shown sh = {&lay, b ? 5u : 6u};
+    /* the ASCII badges (6 and 5 narrow cells) and an icon (source_badge = icons: U+E1BB, one full-width cell) */
+    static const struct { const char *header; uint32_t lead; float width; } headers[] = {
+        {"[HOOK]猫が好き。犬も好きだ", 6, 6 * NARROW}, {"[OCR]猫が好き。犬も好きだ", 5, 5 * NARROW},
+        {"\xEE\x86\xBB猫が好き。犬も好きだ", 1, JA}};
+    static const char text[] = "猫が好き。犬も好きだ"; /* 猫0 が3 好6 き9 。12 犬15 も18 好21 き24 だ27 */
+    for (unsigned b = 0; b < sizeof(headers) / sizeof(headers[0]); b++) {
+        Shown sh = {&lay, headers[b].lead};
         VjoTextRows rows;
         VjoRowNav nav;
         int step;
         size_t at, byte = 99;
-        TEST_CASE(headers[b]);
+        TEST_CASE(headers[b].header);
         memset(&nav, 0, sizeof(nav));
-        /* 10 cells a row: the badge (6 or 5 narrow cells, 3 or 2.5 full-width) and 7 of the text */
-        TEST_ASSERT(layout_text(&lay, headers[b], W, JA, NARROW) == 2);
+        /* 10 cells a row: the badge (3, 2.5 or 1 full-width) and 7, 7 or 9 of the text's 10 */
+        TEST_ASSERT(layout_text(&lay, headers[b].header, W, JA, NARROW) == 2);
         rows = layout_rows(&lay);
         rows.position = shown_position;
         rows.ctx = &sh;
@@ -928,8 +931,8 @@ static void the_source_badge_is_never_the_cursors(void)
         /* taps (overlay.cpp input_header_touch): on the badge, nothing; on 猫, its first byte */
         VjoTextHitLayout hit = {0, 0, W, 4 * JA, 2 * JA, 0, JA, 2, shown_position, &sh};
         TEST_CHECK(!vjo_text_hit(text, strlen(text), &hit, 1.0f, 2.0f, 0, &byte) && byte == 99);
-        TEST_CHECK(!vjo_text_hit(text, strlen(text), &hit, (float)sh.lead * NARROW - 1.0f, 2.0f, 0, &byte));
-        TEST_CHECK(vjo_text_hit(text, strlen(text), &hit, (float)sh.lead * NARROW + 1.0f, 2.0f, 0, &byte) && byte == 0);
+        TEST_CHECK(!vjo_text_hit(text, strlen(text), &hit, headers[b].width - 1.0f, 2.0f, 0, &byte));
+        TEST_CHECK(vjo_text_hit(text, strlen(text), &hit, headers[b].width + 1.0f, 2.0f, 0, &byte) && byte == 0);
         TEST_CHECK(!lay.bad_queries);
     }
 }

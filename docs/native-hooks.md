@@ -343,7 +343,10 @@ one-line change of `core/styled.c`'s `source_badges`.*
 anchor, before a hook's text and U+E541, the eye, before OCR's, in the badge's grey at its size. Untested
 on a console: it shows them only if SceShell's PAF loaded `music_arib.pvf`, and `_` or nothing otherwise
 (console item 12 below says what to report). The ASCII badge stays the default, the owner's choice of
-"ascii characters" over an image.
+"ascii characters" over an image. An icon is one UTF-16 unit, the header's lead 1; `core/linebreak.h`
+takes it as a symbol, after which a line may break, so `VjoWrap.keep` alone holds it on the text's first
+row (host tests: `the_source_badge_keeps_the_wrap_rules` and `the_source_badge_is_never_the_cursors` run
+both icons beside the ASCII badges).
 
 - **Cost**: no allocation, thread, stack or RCO change. The Shell's pages are unchanged in both builds, the
   game worker and the kernel byte-identical ([memory ledger](memory-ledger.md#the-popups-source-badge)).

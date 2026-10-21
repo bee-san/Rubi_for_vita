@@ -270,12 +270,14 @@ static void the_source_badge_keeps_the_wrap_rules(void)
         "彼女は学校へ行ったあと図書館で本を読んでいた\n今日は雨だったので家にいた私は明日も晴れると思う",
         "また明日、一緒に見に行こう!", "エンサイクロペディアブリタニカエンサイクロペディア",
         "「あいうえおかきくけこさしすせそ」と言った"};
-    static const char *const badges[] = {"[HOOK]", "[OCR]"};
+    /* the ASCII badges, and the icons (source_badge = icons: U+E1BB, U+E541), one unit each, which
+     * core/linebreak.h takes as symbols, after which a line may break: keep alone holds them on the row */
+    static const char *const badges[] = {"[HOOK]", "[OCR]", "\xEE\x86\xBB", "\xEE\x95\x81"};
     for (unsigned t = 0; t < sizeof(texts) / sizeof(texts[0]); t++)
-        for (unsigned k = 0; k < 2; k++) {
+        for (unsigned k = 0; k < sizeof(badges) / sizeof(badges[0]); k++) {
             std::string shown = std::string(badges[k]) + texts[t];
-            std::vector<uint16_t> u = u16(shown.c_str()), text = u16(texts[t]);
-            uint32_t lead = (uint32_t)strlen(badges[k]), brk[VJO_WRAP_BREAKS];
+            std::vector<uint16_t> u = u16(shown.c_str()), text = u16(texts[t]), badge = u16(badges[k]);
+            uint32_t lead = (uint32_t)badge.size(), brk[VJO_WRAP_BREAKS];
             int nbrk = 0;
             Model m;
             VjoWrap w = {};
@@ -294,7 +296,7 @@ static void the_source_badge_keeps_the_wrap_rules(void)
                 m.set(u.data(), (uint32_t)u.size());
             }
             for (uint32_t i = 0; i <= lead; i++) /* the badge, whole, and the text's first unit on the first row */
-                TEST_CHECK(m.line[i] == 0 && (i == lead || u[i] == (uint16_t)badges[k][i]));
+                TEST_CHECK(m.line[i] == 0 && (i == lead || u[i] == badge[i]));
             /* every soft line starts where a line may break, or keeps paf's break when its row has no such
              * place past the badge (one word wider than what is left of the box) */
             for (uint32_t i = lead + 1, row = 0; i < u.size(); i++)
@@ -313,6 +315,12 @@ static void the_source_badge_keeps_the_wrap_rules(void)
     m.set(u.data(), (uint32_t)u.size());
     TEST_CHECK(vjo_wrap_fix<Info>(&m, u.data(), (uint32_t)u.size()) == 6);
     TEST_CHECK(vjo_wrap_fix<Info>(&m, u.data(), (uint32_t)u.size(), 6) == 0);
+    /* and an icon: the rules allow a break after it before any text; keep 1 refuses it */
+    std::vector<uint16_t> v = u16((std::string("\xEE\x86\xBB") + texts[0]).c_str());
+    Model mv;
+    mv.set(v.data(), (uint32_t)v.size());
+    TEST_CHECK(vjo_break_last16(v.data(), (uint32_t)v.size(), 0, 1) == 1);
+    TEST_CHECK(vjo_wrap_fix<Info>(&mv, v.data(), (uint32_t)v.size(), 1) != 1);
 }
 
 TEST_LIST = {
