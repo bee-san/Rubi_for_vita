@@ -18,8 +18,8 @@ enum { VJO_LUNA_PSP_NPJH = 0, VJO_LUNA_PSP_UCJS = 1, VJO_LUNA_PSP_ULJM = 2, VJO_
  * decimal without its leading zeros: NPJH00065 is VJO_LUNA_PSP_ID(NPJH, 65)) */
 #define VJO_LUNA_PSP_ID(prefix, number) ((uint32_t)VJO_LUNA_PSP_##prefix << VJO_LUNA_PSP_NUMBER_BITS | (number##u))
 
-/* The title IDs, sorted, packed */
-static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] = {
+/* The title IDs, sorted, packed. In the debug worker's data segment, as the addresses below */
+static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] VJO_DATA_TABLE(luna_psp_ids) = {
     VJO_LUNA_PSP_ID(NPJH, 65), VJO_LUNA_PSP_ID(NPJH, 122), VJO_LUNA_PSP_ID(NPJH, 50127), VJO_LUNA_PSP_ID(NPJH, 50186), VJO_LUNA_PSP_ID(NPJH, 50215),
     VJO_LUNA_PSP_ID(NPJH, 50224), VJO_LUNA_PSP_ID(NPJH, 50243), VJO_LUNA_PSP_ID(NPJH, 50247), VJO_LUNA_PSP_ID(NPJH, 50266), VJO_LUNA_PSP_ID(NPJH, 50269),
     VJO_LUNA_PSP_ID(NPJH, 50273), VJO_LUNA_PSP_ID(NPJH, 50342), VJO_LUNA_PSP_ID(NPJH, 50380), VJO_LUNA_PSP_ID(NPJH, 50381), VJO_LUNA_PSP_ID(NPJH, 50393),

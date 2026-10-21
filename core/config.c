@@ -388,6 +388,32 @@ static const StrSetting *find_str_setting(const char *key)
     return NULL;
 }
 
+/* The on | off settings read with set_choice, stored as 0 | 1. After a value that is neither, one with
+ * unknown_on is on again (the default), the others keep what they had; set_choice warns either way. One
+ * table, so a new switch costs the Shell's full code pages a row of data (API 35's psp_probe). */
+typedef struct {
+    const char *key;
+    size_t offset;
+    int unknown_on;
+} OffOnSetting;
+
+#define OFF_ON_SETTING(name, unknown_on) {#name, offsetof(VjoConfig, name), unknown_on}
+static const OffOnSetting off_on_settings[] VJO_DATA_TABLE(config_off_on_settings) = {
+    OFF_ON_SETTING(hook_sites, 1),      /* the hooks' table sites (API 31, audit-hooks F3) */
+    OFF_ON_SETTING(psp_probe, 1),       /* the debug build's read-only PSP probe (API 35) */
+    OFF_ON_SETTING(ocr_text_gate, 0),   /* the text-presence gate (API 26) */
+    OFF_ON_SETTING(ocr_boost_clock, 0), /* 444 MHz while a job recognizes (API 22) */
+};
+static const char *const off_on[] VJO_DATA_TABLE(config_off_on) = {"off", "on", NULL};
+
+static const OffOnSetting *find_off_on_setting(const char *key)
+{
+    for (size_t i = 0; i < sizeof(off_on_settings) / sizeof(off_on_settings[0]); i++)
+        if (vjo_ieq(key, off_on_settings[i].key))
+            return &off_on_settings[i];
+    return NULL;
+}
+
 /* Removed Anki settings (any case), ignored without a warning: the field
  * mapping a fixed note type replaced (anki_deck, anki_note_type, anki_tags,
  * anki_field_*), and AnkiConnect's address and the word audio source
@@ -468,6 +494,7 @@ static void set_trigger(VjoConfig *c, const char *key, const char *val, int *dst
 static void set_kv(VjoConfig *c, const char *key, const char *val)
 {
     const StrSetting *ss;
+    const OffOnSetting *oo;
     if (vjo_ieq(key, "dictionary")) {
         /* the local dictionaries are the only ones: c->dictionary stays VJO_DICT_LOCAL */
         const char *removed = removed_dictionary(val);
@@ -521,14 +548,12 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const sources[] VJO_DATA_TABLE(config_sources_1) = {"ocr", "auto", "hooks", NULL}; /* VJO_SOURCE_*'s order */
         c->text_source = VJO_SOURCE_AUTO; /* an unknown value: auto, with the warning */
         set_choice(c, key, val, &c->text_source, sources);
-    } else if (vjo_ieq(key, "hook_sites")) {
-        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_1) = {"off", "on", NULL};
-        c->hook_sites = 1; /* an unknown value: on, with the warning */
-        set_choice(c, key, val, &c->hook_sites, off_on);
-    } else if (vjo_ieq(key, "psp_probe")) { /* both builds read it; only the debug build has the probe */
-        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_4) = {"off", "on", NULL};
-        c->psp_probe = 1; /* an unknown value: on, the default, with the warning */
-        set_choice(c, key, val, &c->psp_probe, off_on);
+    } else if ((oo = find_off_on_setting(key)) != NULL) {
+        /* hook_sites, psp_probe (both builds read it; only the debug build has the probe), ocr_text_gate,
+         * ocr_boost_clock */
+        int *dst = (int *)(void *)((char *)c + oo->offset);
+        if (oo->unknown_on) *dst = 1; /* an unknown value: on, with the warning */
+        set_choice(c, key, val, dst, off_on);
     } else if (vjo_ieq(key, "ocr_backend")) {
         /* The removed engine choice (core/config.h): vocr is the only engine. */
         const char *removed = removed_engine(val);
@@ -573,9 +598,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_refine_lines")) {
         static const char *const modes[] VJO_DATA_TABLE(config_modes_1) = {"off", "on", "psp", NULL};
         set_choice(c, key, val, &c->ocr_refine_lines, modes);
-    } else if (vjo_ieq(key, "ocr_text_gate")) {
-        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_2) = {"off", "on", NULL};
-        set_choice(c, key, val, &c->ocr_text_gate, off_on);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;
@@ -583,9 +605,6 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_threads")) {
         static const char *const threads[] VJO_DATA_TABLE(config_threads_1) = {"1", "2", "3", NULL}; /* stored as the helpers: 0-2 */
         set_choice(c, key, val, &c->ocr_helpers, threads);
-    } else if (vjo_ieq(key, "ocr_boost_clock")) {
-        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_3) = {"off", "on", NULL};
-        set_choice(c, key, val, &c->ocr_boost_clock, off_on);
     } else if (vjo_ieq(key, "ocr_mode")) {
         if (vjo_ieq(val, "auto"))
             c->ocr_mode = VJO_OCR_AUTO;

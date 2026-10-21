@@ -108,8 +108,8 @@ def render_inc():
         " * decimal without its leading zeros: NPJH00065 is VJO_LUNA_PSP_ID(NPJH, 65)) */",
         "#define VJO_LUNA_PSP_ID(prefix, number) ((uint32_t)VJO_LUNA_PSP_##prefix << VJO_LUNA_PSP_NUMBER_BITS | (number##u))",
         "",
-        "/* The title IDs, sorted, packed */",
-        "static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] = {",
+        "/* The title IDs, sorted, packed. In the debug worker's data segment, as the addresses below */",
+        "static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] VJO_DATA_TABLE(luna_psp_ids) = {",
     ]
     for k in range(0, len(ids), IDS_PER_LINE):
         out.append("    " + " ".join(f"VJO_LUNA_PSP_ID({i[:4]}, {int(i[4:], 10)})," for i in ids[k:k + IDS_PER_LINE]))

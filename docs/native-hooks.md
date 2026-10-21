@@ -286,8 +286,8 @@ game that is ON, whatever its text source (`include/vjo_ledger_budget.h`):
 | debug, with the job path and the [PSP probe](#psp-probe-debug-build), hooks/psp-probe | 133,392 B | 30,568 B | 167,936 B |
 | debug, `feat/native-hooks` 9fa24c5 (the probe and hooks-api's text source import) | 133,464 B | 30,568 B | 167,936 B |
 | normal, `feat/native-hooks` 9fa24c5 | 124,740 B | 30,560 B | 159,744 B |
-| debug, main ae9b02d (API 34) | 135,784 B | 32,888 B | 176,128 B |
-| debug, the [PSP probe](#psp-probe-debug-build) v2 (API 35; Luna's PSP addresses in the data segment) | 137,912 B | 34,688 B | 176,128 B |
+| debug, main e33f8f6 (API 34) | 137,088 B | 32,888 B | 176,128 B |
+| debug, the [PSP probe](#psp-probe-debug-build) v2 (API 35; Luna's PSP IDs and addresses in the data segment) | 137,800 B | 36,104 B | 176,128 B |
 
 [measured: the build log's module rows on hooks/engine 8aa79eb (local CI), both builds, with
 origin/hooks/luna-port merged; the debug "before" is the same tree with the engine unreferenced, the normal "before" the budget
@@ -301,9 +301,8 @@ hooks/engine `dca6d5f` merged, both builds]. The PSP probe's row: hooks/psp-prob
 merged, against `960ac20`, whose normal build it leaves byte for byte as it was [measured, the build log's module rows].
 The two `9fa24c5` rows: the PR's head as audited, where hooks-api's `vjoGetTextSource` import adds 72 B of
 text to the debug build in the same pages [measured: the module rows of local CI's Vita jobs on 9fa24c5,
-audit-hooks section 3]. The last two rows are ELF LOAD segments (`arm-vita-eabi-readelf -l`, data as
-memsz) in CI's vitasdk image, a measure the build log's rows do not share, so compare them only with each
-other; the normal build's worker is the same size in both ([memory ledger](memory-ledger.md)).
+audit-hooks section 3]. The last two rows: the memory ledger's packaged-module rows in CI's vitasdk image,
+main e33f8f6 and this change; the normal build's worker is the same in both ([memory ledger](memory-ledger.md)).
 
 Stack, on the game's thread: a site hit about 564 B at most (the observer's 328 B frame and up to 4 B to
 align it, then `vjo_hooks_observe` 56, `vjo_luna_capture` 72, `mirror` 56 and `read_game` 48; the
@@ -450,8 +449,8 @@ expects.
 from the vendored `third_party/LunaTranslator/ppsspp_1.cpp` (51884b6, the SHA-256 pin of
 `gen_luna_vita.py`): for each of its 415 entries only the address and the title IDs. That is 354 IDs and
 431 sites (an entry that names several IDs is a site of each), 3,515 bytes: each ID packed in a word as its
-prefix's index (5 prefixes, `ULJM` ...) and its number; the addresses are in the worker's data segment
-([memory ledger](memory-ledger.md)). Which register, encoding and filter a site has is in Luna's source,
+prefix's index (5 prefixes, `ULJM` ...) and its number; the IDs and addresses are in the worker's data
+segment ([memory ledger](memory-ledger.md)). Which register, encoding and filter a site has is in Luna's source,
 found by its address. `psp_probe_table` (ctest) checks the generated file against the source,
 `tools/tests/test_gen_luna_psp.py` reads it back, and `host/tests/test_psp_probe.c` checks every title's
 sites against it and 12 entries copied by hand.

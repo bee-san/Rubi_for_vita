@@ -847,6 +847,12 @@ static void test_config(void)
             "ocr_boost_clock = maybe\n";
     vjo_config_parse(&c, speed, strlen(speed));
     TEST_CHECK(c.ocr_helpers == 1 && c.ocr_boost_clock == 1 && c.n_warnings == 4); /* one warning each, kept 2 */
+    /* an unknown value keeps what it had, off too (core/config.c off_on_settings: not reset to on, unlike
+     * hook_sites and psp_probe) */
+    vjo_config_defaults(&c);
+    speed = "ocr_boost_clock = off\nOCR_BOOST_CLOCK = maybe\n";
+    vjo_config_parse(&c, speed, strlen(speed));
+    TEST_CHECK(c.ocr_boost_clock == 0 && c.n_warnings == 1 && strstr(c.warnings[0], "OCR_BOOST_CLOCK") != NULL);
     TEST_MSG("helpers %d clock %d, %u warnings", c.ocr_helpers, c.ocr_boost_clock, c.n_warnings);
 
     /* the default file parses cleanly to the defaults */
