@@ -205,7 +205,8 @@ class Files(unittest.TestCase):
         writer (v0.9.1, e33f8f6) and this change's host/tests/history_writer.c, with its one call that changed
         since 0.9.1 put back in 0.9.1's form (API 36, #247, gave vjo_text_normalize_keep a flags argument):
 
-            mkdir -p /tmp/t && git archive v0.9.1 | tar -x -C /tmp/t && cp host/tests/history_writer.c /tmp/t/host/tests/
+            mkdir -p /tmp/t && git archive v0.9.1 | tar -x -C /tmp/t
+            cp host/tests/history_writer.c /tmp/t/host/tests/
             cd /tmp/t && sed -i 's/sizeof(result.text), NULL, 0, NULL)/sizeof(result.text), NULL, NULL)/' \\
               host/tests/history_writer.c
             gcc -std=gnu11 -DVJO_HOST=1 -Ihost/tests/vita_stubs -Icore -Iinclude \\
