@@ -202,10 +202,13 @@ class Files(unittest.TestCase):
     def test_091_fixture_is_the_writers(self):
         """This writer writes 0.9.1's records with the line_source cell appended: the same 42 cells but the byte
         offsets in given_identifier, its engine and line_source agreeing. The fixture was made with 0.9.1's
-        writer (v0.9.1, e33f8f6) and this change's host/tests/history_writer.c:
+        writer (v0.9.1, e33f8f6) and this change's host/tests/history_writer.c, with its one call that changed
+        since 0.9.1 put back in 0.9.1's form (API 36, #247, gave vjo_text_normalize_keep a flags argument):
 
-            git archive v0.9.1 | tar -x -C /tmp/t && cp host/tests/history_writer.c /tmp/t/host/tests/
-            cd /tmp/t && gcc -std=gnu11 -DVJO_HOST=1 -Ihost/tests/vita_stubs -Icore -Iinclude \\
+            mkdir -p /tmp/t && git archive v0.9.1 | tar -x -C /tmp/t && cp host/tests/history_writer.c /tmp/t/host/tests/
+            cd /tmp/t && sed -i 's/sizeof(result.text), NULL, 0, NULL)/sizeof(result.text), NULL, NULL)/' \\
+              host/tests/history_writer.c
+            gcc -std=gnu11 -DVJO_HOST=1 -Ihost/tests/vita_stubs -Icore -Iinclude \\
               host/tests/history_writer.c core/utf.c core/text_rows.c core/textnorm.c core/history_lines.c \\
               core/arena.c core/textfilter.c -o writer-091
             ./writer-091 history-0.9.1.csv < records   # records_input(RECORDS, FROM)
