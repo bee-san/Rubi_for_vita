@@ -102,9 +102,9 @@ So: when a visit opens, the control thread reads the **last 24,512 B of `history
 with the byte before them, into its existing 24 KiB static scratch, released before the call
 returns), finds this game's records newest first, and keeps up to **32** of their lines in one Paf
 block of **16 KiB**, held only while the visit lasts. A three-row textbox's record (a 290 B line, its
-raw text as long, and its 39 other fields) is 871 B [measured: the host test's record, by
-the real writer], so the window holds about 28 such records, of every game; a shorter line's record is
-smaller. Nothing is read or kept at any other time; the file is never written by this code.
+raw text as long, and its 41 other fields) is 880 B [measured: the host test's record, by
+the real writer; 871 B before the `characters` and `line_source` columns], so the window holds about 27
+such records, of every game; a shorter line's record is smaller. Nothing is read or kept at any other time; the file is never written by this code.
 
 - The read is on VjoControl, never on the Paf thread, so the overlay keeps drawing. It is one open,
   two seeks, one read of at most 24,513 B and one close, once a visit. Console time unmeasured: the
@@ -196,7 +196,7 @@ that merge].
   larger than the window (its last 24,512 B read, once), another game's lines in between, short reads,
   no file, a failed read, a file shorter than its size, no scratch, the writer's maximum text, a record
   cut by a power loss, a record at the window's first byte (and a byte either side), and a measure of
-  a three-row textbox's record (871 B: the window holds 28).
+  a three-row textbox's record (880 B: the window holds 27).
 - `host/tests/test_shell_worker.c` (`history_*`): the real control thread: Up and Down through a
   visit with lookups and moves on each line, the oldest line, the return with the cursor and the
   screen, a reopen showing the saved word, on_press, no memory (and a lookup running then still

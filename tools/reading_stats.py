@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Reading statistics from Rubi's reading history (docs/ocr-history.md): the characters read and
-the characters per hour, in all, per game and per day.
+the characters per hour, in all, by text source (a native text hook or OCR), per game and per day.
 
     python3 tools/reading_stats.py history.csv [MORE.csv ...] [--break-minutes 5] [--utc]
 
@@ -14,6 +14,12 @@ breaks count nothing (docs/ocr-history.md, core/reading_chars.h). A file Rubi 0.
 such column, and a file it began keeps its header when a newer Rubi appends to it: those rows carry
 the count as an extra, 42nd cell. Where a row has no count this tool counts its `line` itself, the
 same way.
+
+Text source: where each line came from, a native text hook or Rubi's OCR: the record's `line_source`
+cell (hook or ocr, the 43rd), or, in a row an older Rubi wrote (0.9.1 and before: no such cell), its
+`engine` cell, which says hook for a hook's line and vocr for OCR's (0.8.0 had no hooks: all vocr).
+A record that says neither (another tracker's) is unknown. Each record's reading time goes to its
+line's source.
 
 Reading time: the time from one record to the next, credited to the first. A gap of more than
 --break-minutes (default 5) between two records, or a change of game, is a break: it is not
@@ -50,7 +56,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # The columns Rubi 0.8.0 wrote (#187), in order: every row has them in these positions. The
-# `characters` column comes after them.
+# `characters` column (0.9.0) and the `line_source` column come after them.
 HEADER_080 = (
     "uuid,given_identifier,name,line,time,platform,title_id,engine,model,raw_line,scene,region_seq,"
     "monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,fb_width,fb_height,fb_pitch,"
@@ -58,10 +64,15 @@ HEADER_080 = (
     "region_sum,source,capture_memory,capture_bytes,strip_rows,workspace_bytes,resident_bytes,"
     "fallback,line_metrics").split(",")
 REQUIRED = ("uuid", "given_identifier", "name", "line", "time")
-# The header this writer writes (0.8.0's columns, then `characters`): what a file whose first append was
-# cut short in its header is read with.
-HEADER = HEADER_080 + ["characters"]
+# The header this writer writes (0.8.0's columns, then `characters` and `line_source`): what a file whose first
+# append was cut short in its header is read with.
+HEADER = HEADER_080 + ["characters", "line_source"]
 HEADER_LINE = (",".join(HEADER) + "\n").encode()
+# Where a line came from (docs/ocr-history.md#line-source): `line_source` says hook or ocr. A row without it
+# (Rubi 0.9.1 and older) says it in its `engine`: every Rubi wrote vocr for OCR's line, and since native text
+# hooks came (0.8.0-test.7) hook for a hook's. Any other row's source is unknown.
+SOURCES = ("hook", "ocr", "unknown")
+ENGINE_SOURCES = {"hook": "hook", "vocr": "ocr"}
 # A time is Unix seconds from 1970 to before 3000 (Rubi's are this century), so another tracker's
 # milliseconds are not taken for seconds (GameSentenceMiner's import refuses them too). datetime places
 # those on a day where time_t has 64 bits; where it has 32, it cannot after 2038, and such a time is
@@ -111,6 +122,7 @@ class Record:
     characters: int
     stored: bool     # the count came from the file (else this tool counted the line)
     seconds: float | None = None  # reading time credited to it, None after a break
+    source: str = "unknown"       # where the line came from: hook, ocr or unknown (SOURCES)
 
 
 @dataclass
@@ -141,6 +153,8 @@ class Report:
     mismatched: int = 0    # of those, counts this tool's count disagrees with
     bad_times: int = 0     # records skipped for a time that is not Unix seconds
     cut_headers: int = 0   # files whose header a power loss cut short
+    source_cells: int = 0    # records whose line_source cell says where the line came from
+    source_engines: int = 0  # records without one whose engine cell says it (an older Rubi's)
 
 
 class HistoryError(Exception):
@@ -314,8 +328,10 @@ def read_lines(path: Path, f, report: Report, seen: set, names: dict) -> None:
         col.setdefault(name, i)  # a name twice (a cut header with another file's after it): its first
     rubi = header[:len(HEADER_080)] == HEADER_080
     # The count's cell: in Rubi's rows always the 42nd (also in a file that 0.8.0 began, whose header names
-    # the first 41 only), else the header's `characters`.
-    count_col = len(HEADER_080) if rubi else col.get("characters")
+    # the first 41 only), else the header's `characters`; the line's source the 43rd, after it (also in a file
+    # that 0.8.0 or 0.9 began), else the header's `line_source`; the engine, which says it in older rows, the 8th.
+    cols = ((len(HEADER_080), len(HEADER_080) + 1, HEADER_080.index("engine")) if rubi else
+            (col.get("characters"), col.get("line_source"), col.get("engine")))
     # every cell Rubi writes up to line_metrics, or the columns another file names
     cells = len(HEADER_080) if rubi else max(col[name] for name in REQUIRED) + 1
     if data is None:
@@ -328,10 +344,10 @@ def read_lines(path: Path, f, report: Report, seen: set, names: dict) -> None:
             rows, cut = parse_chunk(chunk, cells)
             report.incomplete += cut
             for row in rows:
-                add_row(report, seen, names, col, count_col, row)
+                add_row(report, seen, names, col, cols, row)
     else:
         for row in plain_rows(lines, cells, report):
-            add_row(report, seen, names, col, count_col, row)
+            add_row(report, seen, names, col, cols, row)
 
 
 def placeable(t: float) -> bool:
@@ -345,8 +361,28 @@ def placeable(t: float) -> bool:
     return True
 
 
-def add_row(report: Report, seen: set, names: dict, col: dict, count_col, row) -> None:
-    """Adds one whole record."""
+def cell(row, i) -> str:
+    """Cell i of row, stripped and in lower case; "" when the row has none (or i is None)."""
+    return row[i].strip().lower() if i is not None and i < len(row) else ""
+
+
+def line_source(report: Report, row, source_col, engine_col) -> str:
+    """Where a record's line came from (SOURCES): its line_source cell, hook or ocr; else its engine cell, as
+    an older Rubi wrote it (hook, or vocr: OCR); else unknown."""
+    said = cell(row, source_col)
+    if said in ("hook", "ocr"):
+        report.source_cells += 1
+        return said
+    engine = ENGINE_SOURCES.get(cell(row, engine_col))
+    if engine:
+        report.source_engines += 1
+        return engine
+    return "unknown"
+
+
+def add_row(report: Report, seen: set, names: dict, col: dict, cols, row) -> None:
+    """Adds one whole record. cols: the indexes of its characters, line_source and engine cells (or None)."""
+    count_col, source_col, engine_col = cols
     uuid, ident, when = row[col["uuid"]].strip(), row[col["given_identifier"]].strip(), row[col["time"]].strip()
     if not uuid or not ident or not when:
         report.incomplete += 1
@@ -369,15 +405,16 @@ def add_row(report: Report, seen: set, names: dict, col: dict, count_col, row) -
         return
     seen.add(key)
     counted = characters(row[col["line"]])
-    cell = row[count_col].strip() if count_col is not None and count_col < len(row) else ""
-    stored = cell.isascii() and cell.isdigit() and len(cell) <= 9  # a line holds at most 4,095 characters
+    count = row[count_col].strip() if count_col is not None and count_col < len(row) else ""
+    stored = count.isascii() and count.isdigit() and len(count) <= 9  # a line holds at most 4,095 characters
     if stored:
         report.stored += 1
-        report.mismatched += int(cell) != counted
+        report.mismatched += int(count) != counted
     name = row[col["name"]].strip() or uuid
     # one string object per game and name, however many records: a long history stays small
     report.records.append(Record(game=names.setdefault(uuid, uuid), name=names.setdefault(name, name),
-                                 time=t, characters=int(cell) if stored else counted, stored=stored))
+                                 time=t, characters=int(count) if stored else counted, stored=stored,
+                                 source=line_source(report, row, source_col, engine_col)))
 
 
 def read_history(paths) -> Report:
@@ -408,6 +445,20 @@ def summarize(records, utc: bool = False):
         day = datetime.datetime.fromtimestamp(r.time, zone).date().isoformat()
         days.setdefault(day, Totals()).add(r)
     return total, games, names, days
+
+
+def by_source(records) -> dict:
+    """The totals of each source (SOURCES, in that order): hook and ocr always, unknown when a record is.
+    A record's reading time is its own line's, so it goes to its line's source."""
+    sources = {s: Totals() for s in SOURCES}
+    for r in records:
+        sources[r.source].add(r)
+    if not sources["unknown"].lines:
+        del sources["unknown"]
+    return sources
+
+
+SOURCE_LABELS = {"hook": "Native text hook", "ocr": "OCR", "unknown": "Unknown"}
 
 
 def duration(seconds: float) -> str:
@@ -447,11 +498,16 @@ def render(report: Report, break_minutes: float, utc: bool) -> str:
     if report.cut_headers:
         out.append(f"A header cut short (a power loss in a new file's first append) in {report.cut_headers:,} "
                    f"file{'s' if report.cut_headers != 1 else ''}: read with Rubi's columns (docs/ocr-history.md)")
+    unknown = total.lines - report.source_cells - report.source_engines
     out += [f"Characters: {report.stored:,} records carry their count, {total.lines - report.stored:,} counted here"
             + (f"; {report.mismatched:,} stored counts differ from this tool's" if report.mismatched else ""),
+            f"Text source: {report.source_cells:,} records name it (line_source), {report.source_engines:,} known by "
+            f"their engine (an older Rubi's), {unknown:,} unknown",
             f"Reading time: a gap of more than {break_minutes:g} minutes between two records, or a change of game,"
             " is a break", ""]
     out += table([("All games", total)])
+    out += ["", "By text source"]
+    out += table([(SOURCE_LABELS[s], t) for s, t in by_source(report.records).items()])
     out += ["", "By game"]
     out += table([(f"{names[g]} ({g})", t) for g, t in sorted(games.items(), key=lambda kv: -kv[1].characters)])
     out += ["", f"By day ({'UTC' if utc else 'local time'})"]

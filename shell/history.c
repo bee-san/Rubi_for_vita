@@ -18,8 +18,20 @@ static const char id_format[] VJO_DATA_TABLE(history_id_format) = "vjo-%llu-%llu
 static const char time_format[] VJO_DATA_TABLE(history_time_format) = ",%llu.%06u,";
 static const char number_format[] VJO_DATA_TABLE(history_number_format) = ",%llu";
 static const char line_format[] VJO_DATA_TABLE(history_line_format) = "%s%u:%u:%u:%u:%u";
-static const char engine[] VJO_DATA_TABLE(history_engine) = ",\"vocr\",";
-static const char hook_engine[] VJO_DATA_TABLE(history_hook_engine) = ",\"hook\",";
+/* Where the line came from (VjoGameOcrResult.text_from: 0 OCR, else a native text hook's stream): for
+ * each, its engine cell and, after that cell's NUL, its line_source cell with the record's end. The writer
+ * keeps one pointer into this table for the record (HistoryWriter.cells), so the two cells always agree.
+ * In the data segment too, and the pointer in the writer's frame: the normal Shell's code stays the same
+ * size (docs/ocr-history.md#line-source). */
+#define OCR_ENGINE ",\"vocr\","
+#define OCR_SOURCE ",\"ocr\"\n"
+#define HOOK_ENGINE ",\"hook\","
+#define HOOK_SOURCE ",\"hook\"\n"
+static const char source_cells[] VJO_DATA_TABLE(history_source_cells) =
+    OCR_ENGINE "\0" OCR_SOURCE "\0" HOOK_ENGINE "\0" HOOK_SOURCE;
+#define HOOK_CELLS (sizeof(OCR_ENGINE) + sizeof(OCR_SOURCE)) /* a hook's cells, after OCR's */
+#define LINE_SOURCE sizeof(OCR_ENGINE)                        /* the line_source cell, after the engine's */
+_Static_assert(sizeof(HOOK_ENGINE) == LINE_SOURCE, "both sources' line_source cells at one offset");
 
 /* Only fingerprints survive a call. No text or file-size-dependent memory. */
 static uint64_t previous_text;
@@ -29,6 +41,7 @@ typedef struct {
     SceUID fd;
     int error;
     unsigned used;
+    const char *cells; /* this record's in source_cells: its engine cell, then its line_source cell */
     char bytes[192];
 } HistoryWriter;
 
@@ -87,7 +100,7 @@ int vjo_history_append(const VjoHistoryRecord *r)
         "scene,region_seq,monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,"
         "fb_width,fb_height,fb_pitch,fb_format,lines,recognized,frames,find_us,load_us,"
         "recognize_us,capture_us,captures,tears,region_sum,source,capture_memory,"
-        "capture_bytes,strip_rows,workspace_bytes,resident_bytes,fallback,line_metrics,characters\n";
+        "capture_bytes,strip_rows,workspace_bytes,resident_bytes,fallback,line_metrics,characters,line_source\n";
 #define OFFSET(member) offsetof(VjoGameOcrResult, member)
     static const uint16_t offsets[] VJO_DATA_TABLE(history_offsets) = {
         OFFSET(seq), OFFSET(region_x), OFFSET(region_y), OFFSET(width), OFFSET(height),
@@ -142,7 +155,8 @@ int vjo_history_append(const VjoHistoryRecord *r)
     literal(&w, text);
     field(&w, r->platform, 16);
     put(&w, ','); field(&w, r->title_id, sizeof(r->title_id));
-    literal(&w, o->text_from ? hook_engine : engine);
+    w.cells = source_cells + (o->text_from ? HOOK_CELLS : 0);
+    literal(&w, w.cells); /* the engine: vocr, or hook for the line a native text hook read (API 31) */
     field(&w, r->model, VJO_GAME_OCR_MODEL_BYTES);
     put(&w, ','); field(&w, vjo_text_raw(o->text, sizeof(o->text)), sizeof(o->text) - len - 1);
     number(&w, r->scene); number(&w, r->region_seq);
@@ -159,10 +173,11 @@ int vjo_history_append(const VjoHistoryRecord *r)
         literal(&w, text);
     }
     put(&w, '"');
-    /* The line's characters as a reading tracker counts them (core/reading_chars.h), last:
-     * every earlier column keeps its position (docs/ocr-history.md). */
+    /* The line's characters as a reading tracker counts them (core/reading_chars.h), then where the line
+     * came from (hook or ocr) and the record's end, from the engine's table: appended columns, so every
+     * earlier column keeps its position (docs/ocr-history.md). */
     number(&w, vjo_reading_characters(o->text, len));
-    put(&w, '\n');
+    literal(&w, w.cells + LINE_SOURCE);
     flush(&w);
     rc = w.error;
     if (!rc) rc = sceIoSyncByFd(w.fd, 0);

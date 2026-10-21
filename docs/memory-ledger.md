@@ -5,6 +5,27 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## history.csv's line source
+
+`history.csv`'s `line_source` column ([ocr-history](ocr-history.md#line-source)), measured with VitaSDK
+GCC 15.2.0 in `vitasdk/vitasdk:2026.08` (CI's digest), Release, on the packaged Shell SELF of both variants
+(`tools/check_memory_ledger.py`, `--exact` in the normal build), main `a182b87` against this change:
+
+| Shell | main text + data/bss | this change | Loaded pages, unchanged |
+|---|---:|---:|---:|
+| Debug | 100,940 + 73,560 B | 100,940 + 73,592 B | 176,128 B |
+| Normal | 90,092 + 73,576 B | 90,092 + 73,608 B | 163,840 B (exact) |
+
+No code: the writer's two engine cells (`engine`, `hook_engine`, 9 B each) become one table of both
+sources' engine and `line_source` cells (`source_cells`, 35 B), and the header names the column (397 → 409 B),
+both in the data segment ("Tables in the data segment" below); the writer keeps its pointer into the table in
+its own state on its frame, so `vjo_history_append` stays 1,068 B with its 456 B frame (`-fstack-usage`) and
+the code segment keeps 20 B of room in the normal build. Data/bss is 32 B larger (+29 B of tables and their
+alignment), leaving 120 B of room in its last page (152 B on main). The kernel, the game worker, the Rubi app
+and the RCO are byte for byte main's [measured: sha256 of both variants' packaged files]. No allocation,
+thread, stack, PAF block or budget changes; a record is 6 or 7 B longer on the memory card. These are binary
+and host measurements; nothing of it has run on a console.
+
 ## Border lines dropped (API 36)
 
 Measured with VitaSDK GCC 15.2.0, Release, against main `144bc8e` (after #249's counters and #250's held
