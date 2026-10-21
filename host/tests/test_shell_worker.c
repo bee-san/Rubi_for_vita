@@ -2094,6 +2094,19 @@ static void test_vocr_request_carries_the_job_policy(void)
     TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & VJO_GAME_OCR_S_DROP_BORDERS));
     TEST_MSG("non_japanese_filter = none: speed 0x%08X", (unsigned)fake_game_request.speed);
     mem_free();
+    /* API 35: the read-only PSP probe rides in the speed word of the debug build's jobs (psp_probe, on by default
+     * there; the worker acts on it in PSP games only); the normal build never sets it */
+    reset();
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL) &&
+               !(fake_game_request.speed & VJO_GAME_OCR_S_PSP_PROBE) == !VJO_DEBUG);
+    TEST_MSG("psp probe by default: speed 0x%08X", (unsigned)fake_game_request.speed);
+    mem_free();
+    reset();
+    cfg.psp_probe = 0;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & VJO_GAME_OCR_S_PSP_PROBE));
+    mem_free();
     /* the refinement's mode: psp by default, on, off */
     static const unsigned modes[] = {VJO_GAME_OCR_REFINE_PSP, VJO_GAME_OCR_REFINE_ON, 0};
     for (unsigned i = 0; i < 3; i++) {

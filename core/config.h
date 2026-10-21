@@ -115,6 +115,12 @@ typedef struct {
      * letterbox or pillarbox the game worker finds as it reads the frame (on by default;
      * core/shottrim.h, docs/anki.md "Black bars"). Last, as above. */
     int anki_screenshot_trim_bars; /* 0/1 */
+    /* The debug build's read-only PSP probe (API 35; config.ini psp_probe, docs/native-hooks.md "PSP probe
+     * (debug build)"): 1 has the debug build's Shell ask for it in each OCR job (VJO_GAME_OCR_S_PSP_PROBE),
+     * and its worker then probes in PSP games. On by default in the debug build, which alone parses the key
+     * (the normal build has no probe: there the key is unknown and stays 0). Not in the template. Last, as
+     * above. */
+    int psp_probe; /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

@@ -1119,6 +1119,12 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
      * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
     if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
+#if VJO_DEBUG
+    /* API 35: the read-only PSP probe (config.ini psp_probe, on by default here), in the user's jobs (the
+     * self-test's stages read as before): the worker probes after the job, in a PSP game only, and logs it
+     * (game_ocr/psp_probe.h); elsewhere the bit does nothing. */
+    if (job_cfg.psp_probe && stage < 0) request.speed |= VJO_GAME_OCR_S_PSP_PROBE;
+#endif
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
     int64_t t0 = now_us();
