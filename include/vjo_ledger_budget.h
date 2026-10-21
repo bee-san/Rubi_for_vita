@@ -238,8 +238,9 @@
  * (core/textnorm.c fold_forms and its numeral table: +194 B) and the worker's policy and cache bit
  * (game_ocr/main.c: +40 B, +44 B normal), 2,938 B of text in all [the linked ELFs' symbols, both builds],
  * take the debug build's text 137,088 -> 140,032 B and the normal build's 128,220 -> 131,164 B;
- * data/bss as before (32,888 / 32,880 B) [measured: the build log's module rows, both builds, main ae9b02d
- * and this change, VitaSDK GCC 15.2.0 in vitasdk/vitasdk:2026.08]. The normal build's code ended 1,112 B
+ * data/bss as before (32,888 / 32,880 B) [measured: the build log's module rows, both builds, main e33f8f6
+ * (whose worker is ae9b02d's) and this change, VitaSDK GCC 15.2.0 in vitasdk/vitasdk:2026.08; the kernel and
+ * Shell SELF files are byte-identical to main's]. The normal build's code ended 1,112 B
  * below 128 KiB, less than the SCE data vita-elf-create appends (1,204 B): the worker's link now keeps
  * __sce_headroom (vita/CMakeLists.txt), as the Rubi app's does. No new block, thread or allocation. */
 #if VJO_DEBUG

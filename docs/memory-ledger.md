@@ -8,14 +8,15 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 ## Counters (vita-vn-ocr #109)
 
 Measured with VitaSDK GCC 15.2.0 in `vitasdk/vitasdk:2026.08`, Release, on the packaged SELF files of both
-variants (`tools/check_memory_ledger.py`, the build log's module rows), main `ae9b02d` against this change:
+variants (`tools/check_memory_ledger.py`, the build log's module rows), main `e33f8f6` (whose worker is `ae9b02d`'s)
+against this change:
 
 | Module | Debug pages | Normal pages | Increase |
 |---|---:|---:|---:|
 | Game worker | 176,128 → 180,224 B | 167,936 → 172,032 B | 4,096 B |
 
 The worker's text segment grows 137,088 → 140,032 B (debug) and 128,220 → 131,164 B (normal); data/bss
-stays 32,888 / 32,880 B, and the kernel and the Shell are byte for byte as before. By symbol, from the
+stays 32,888 / 32,880 B, and the kernel and the Shell SELF files are byte for byte main's (sha256, both variants). By symbol, from the
 linked ELFs: vita-vn-ocr's counter re-decode (`runtime/vocr_post.c`, built `-Os`: `vocr_post_redecode`
 1,770 B, `vocr_post_greedy` 216 B, their helpers 446 B), its calls in the job (`core/vocr_ocr.c`
 `counter_redecode` and `finish_line`, +272 B), the counter rule in the text normalisation
