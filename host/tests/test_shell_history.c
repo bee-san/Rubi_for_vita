@@ -282,12 +282,17 @@ static void test_line_source_column(void)
     }
     read_history(csv, sizeof(csv));
     const char *p = row_start(csv, 1);
+    unsigned char engine_at[192] = {0}, source_at[192] = {0}; /* the writer's buffer offsets the cells began at */
     for (unsigned n = 1; n <= 2 * 192 + 1; n++) { /* each row once, cell by cell */
         int hooked = from[n % (sizeof(from) / sizeof(from[0]))] != 0;
         char value[512], engine[16] = "", count[16] = "", source[16] = "";
+        const char *append = n == 1 ? csv : p; /* the append's first byte: the first's is the header's */
         unsigned k = 0;
         int sep;
         do {
+            /* a cell's literal (the engine's, line_source's) starts with the comma before the cell */
+            if (k == 7) engine_at[(size_t)(p - 1 - append) % sizeof(engine_at)] = 1;
+            if (k == 42) source_at[(size_t)(p - 1 - append) % sizeof(source_at)] = 1;
             sep = cell(&p, value, sizeof(value));
             if (k == 7) snprintf(engine, sizeof(engine), "%.15s", value);
             if (k == 41) snprintf(count, sizeof(count), "%.15s", value);
@@ -301,6 +306,9 @@ static void test_line_source_column(void)
         rows++;
     }
     TEST_CHECK(rows == 2 * 192 + 1 && !*p);
+    for (size_t at = 0; at < sizeof(source_at); at++)
+        TEST_CHECK_(engine_at[at] && source_at[at], "a cell at the buffer's byte %zu: engine %d, line_source %d", at,
+                    engine_at[at], source_at[at]);
 
     /* the source is not part of the repeat check: OCR's line, then the same line from a hook */
     reset();
