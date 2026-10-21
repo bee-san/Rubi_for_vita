@@ -181,6 +181,10 @@ static void entry_text(VjoStyled *s, const char *text, int ja_px, int en_px)
     }
 }
 
+#include "conjugation.inc"
+static const char conjugation_prefix[] VJO_DATA_TABLE(conjugation_prefix) = "\nConjugation: ";
+static const char conjugation_arrow[] VJO_DATA_TABLE(conjugation_arrow) = " → ";
+
 void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki,
                       int show_rank)
 {
@@ -199,6 +203,16 @@ void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_
         vjo_styled_puts(s, vjo_rank_badge(rank, v->rank, l->source), VJO_RGB_RANK, en_px);
     if (in_anki)
         vjo_styled_puts(s, " " VJO_ANKI_MARK, VJO_RGB_OK, en_px);
+    uint32_t reasons = l->entries[selected].conjugation;
+    if (reasons) {
+        vjo_styled_puts(s, conjugation_prefix, VJO_RGB_READING, en_px);
+        for (; reasons; reasons >>= 6) {
+            unsigned reason = reasons & 63u;
+            vjo_styled_puts(s, reason && reason < sizeof(conjugation_offsets) / sizeof(*conjugation_offsets)
+                ? conjugation_labels + conjugation_offsets[reason] : "…", VJO_RGB_READING, en_px);
+            if (reasons >> 6) vjo_styled_puts(s, conjugation_arrow, VJO_RGB_READING, en_px);
+        }
+    }
     for (int i = 0; i < v->n_meanings; i++) {
         if (i == v->n_meanings - 1) {
             entry_text(s, v->meanings[i], ja_px, en_px);

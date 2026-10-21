@@ -323,6 +323,7 @@ class LocalDictionaryTest(unittest.TestCase):
 
     def test_generated_table_is_reproducible(self):
         self.assertEqual(gen_deinflect.generate(), (ROOT / "core/deinflect.inc").read_text())
+        self.assertEqual(gen_deinflect.generate_labels(), (ROOT / "core/conjugation.inc").read_text())
 
     def test_corrupt_index_does_not_crash_runtime(self):
         path, _ = self.build([term("猫", "ねこ")], format_version=1)

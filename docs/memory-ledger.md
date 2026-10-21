@@ -5,6 +5,25 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Dictionary conjugation display
+
+Measured with VitaSDK GCC 15.2.0, Release, against main `ae9b02d`, on the Shell SELF's loaded
+segments (including conversion metadata), with `check_memory_ledger.py --exact` in each variant:
+
+| Shell | Before text + data/bss | After text + data/bss | Loaded pages, unchanged |
+|---|---:|---:|---:|
+| Debug | 100,892 + 72,352 B | 100,940 + 73,560 B | 176,128 B |
+| Normal | 90,044 + 72,368 B | 90,092 + 73,576 B | 163,840 B |
+
+The immutable reason IDs, labels and offsets use the data segment. Three existing cold dictionary
+diagnostics and the conjugation prefix/separator also move there to keep the normal code segment
+within its existing pages. The 24-byte page locators and session cache retain their sizes: the
+entry length, already bounded to 8192, uses 16 bits, leaving room for four six-bit reason IDs.
+The deinflection candidates and per-occurrence tokens/entries grow inside the existing bounded
+arenas; their compile-time bounds and maximum-entry host tests pass. No allocation site, thread,
+static runtime buffer or budget is added. These are binary and host measurements; console boot,
+heap availability and the PAF layout have not been measured for this change.
+
 ## Remembered hooks (API 34, issue #241)
 
 Measured with VitaSDK GCC 15.2.0, Release, on the packaged SELF files in both variants:

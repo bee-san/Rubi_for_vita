@@ -1876,7 +1876,84 @@ static void candidate_growth_fails_without_truncating_a_lookup(void)
     TEST_CHECK(result.n_vocab == 1 && !strcmp(result.vocab[0].meanings[0], "eat"));
 }
 
+/* Exercise the actual local lookup -> entry -> styled popup, including cached
+ * locators and fallback postings. A word can have a different inflection at
+ * each occurrence even when the vocabulary payload is shared. */
+static void conjugation_reaches_the_popup(void)
+{
+    const Row rows[] = {{"食べる", "食べる", "たべる", "to eat", 1, 20},
+        {"する", "する", "する", "to do", 4, 10},
+        {"高い", "高い", "たかい", "high; expensive", 32, 30}};
+    const char *texts[] = {"食べました", "食べなかった", "しました", "高かった", "食べさせられたくなかった", "食べる"};
+    const char *labels[] = {"polite past", "negative → past", "polite past", "past", "… → -tai → negative → past", NULL};
+    for (int version = 1; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, 3, version);
+        build(&fixtures[1], "other.vjdict", rows, 3, version);
+        strcpy(cfg.local_dictionaries, "main.vjdict,other.vjdict");
+        cfg.local_dictionary_results = 2;
+        size_t size = vjo_local_session_size();
+        memset(arena_mem, 0, size);
+        p.local_session = (VjoLocalSession *)arena_mem;
+        p.local_text_generation = 1;
+        vjo_arena_init(&a, arena_mem + size, sizeof(arena_mem) - size);
+        for (int i = 0; i < 6; i++) {
+            for (int cached = 0; cached < 2; cached++) {
+                VjoOverlayData out = {0}; out.sentence = texts[i];
+                vjo_arena_reset(&a);
+                /* Generation changes invalidate old text's prepared locators. */
+                p.local_text_generation = (uint32_t)i + 1;
+                TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_OK);
+                TEST_ASSERT(out.list.n_entries == 1);
+                for (int page = 0; page < 2; page++) {
+                    uint8_t ui[12000]; VjoArena ua; VjoStyled st;
+                    if (page) TEST_ASSERT(vjo_overlay_lookup_page(&a, &p, &cfg, page, &out) == VJO_OK);
+                    vjo_arena_init(&ua, ui, sizeof(ui));
+                    TEST_ASSERT(!vjo_styled_init(&st, &ua, VJO_BODY_UNITS, VJO_BODY_SPANS));
+                    vjo_styled_entry(&st, &out.list, 0, 27, 21, 0, 1);
+                    char rendered[4096]; size_t n = 0;
+                    for (uint32_t u = 0; u < st.len; u++) n += (size_t)vjo_utf8_encode(st.text[u], rendered + n);
+                    rendered[n] = 0;
+                    if (labels[i]) {
+                        TEST_CHECK_(strstr(rendered, labels[i]) != NULL, "%s: %s", texts[i], rendered);
+                        TEST_CHECK(strstr(rendered, "Conjugation: ") != NULL);
+                    } else TEST_CHECK(strstr(rendered, "Conjugation:") == NULL);
+                    TEST_CHECK(!st.truncated);
+                    TEST_CHECK(out.list.entries[0].hl_end == (int)strlen(texts[i]));
+                }
+            }
+        }
+        vjo_local_session_close(p.local_session);
+        TEST_CHECK(opened == closed);
+        /* Reading-key fallback: the surface's kanji spelling differs from the
+         * kana key, but its matched candidate must still carry its reason. */
+        setup(&a, &p, &cfg);
+        const Row fallback = {"たべる", "食べる", "たべる", "to eat", 1, 0};
+        build(&fixtures[0], "main.vjdict", &fallback, 1, version);
+        VjoDictResult r; VjoErr err;
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "たべました", 0, &r, &err));
+        TEST_ASSERT(r.n_tokens == 1);
+        TEST_CHECK(r.tokens[0].conjugation != 0);
+        /* Whole-text lookup shares one vocabulary payload across exact and
+         * inflected occurrences, retaining separate reasons on their tokens. */
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, 3, version);
+        uint8_t whole_mem[128 * 1024];
+        vjo_arena_init(&a, whole_mem, sizeof(whole_mem));
+        TEST_ASSERT(!vjo_local_lookup(&a, &p, &cfg, "食べる 食べました", &r, &err));
+        TEST_ASSERT(r.n_vocab == 1 && r.n_tokens == 2);
+        TEST_CHECK(!r.tokens[0].conjugation && r.tokens[1].conjugation);
+        VjoEntryList l;
+        TEST_ASSERT(!vjo_entries_build(&a, "食べる 食べました", &r, &l));
+        TEST_ASSERT(l.n_entries == 2);
+        TEST_CHECK(!l.entries[0].conjugation && l.entries[1].conjugation);
+    }
+    TEST_CHECK(sizeof(VjoLocalPage) == 24);
+}
+
 TEST_LIST = {
+    {"conjugation_reaches_the_popup", conjugation_reaches_the_popup},
     {"candidate_growth_fails_without_truncating_a_lookup", candidate_growth_fails_without_truncating_a_lookup},
     {"prepared_words_keep_output_and_read_only_the_selected_payload", prepared_words_keep_output_and_read_only_the_selected_payload},
     {"preparation_oom_preserves_the_displayed_result", preparation_oom_preserves_the_displayed_result},

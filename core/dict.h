@@ -1,6 +1,7 @@
 /* The dictionary lookup's result (the local dictionaries, local_dict.h). */
 #ifndef VJO_DICT_H
 #define VJO_DICT_H
+#include <stdint.h>
 
 /* No frequency rank: ranks start at 1. (It was 99999, jpdb's missing
  * frequency_rank; Jiten's global list ranks to 398,255, 99999 included.) */
@@ -25,6 +26,9 @@ typedef struct {
 typedef struct {
     int vocab;          /* index into vocabulary, -1 if none */
     int pos16, len16;   /* UTF-16 units into the request text */
+    /* Up to four six-bit Yomichan reasons, base form first; 0 = exact,
+     * 63 = further steps omitted. Per occurrence, never per vocabulary. */
+    uint32_t conjugation;
 } VjoToken;
 
 typedef struct {
