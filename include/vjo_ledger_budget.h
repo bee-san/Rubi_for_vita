@@ -231,10 +231,21 @@
  * debug segments 137088+32888 B ->176128 B, normal 128220+32880 B ->167936 B,
  * local build/vita-minimal and build/vita-minimal-normal measure-ledger.json reports.
  * These are binary measurements, not console pool or boot measurements. */
+/* vita-vn-ocr #109, counters (ルッ月 -> 九ヶ月): one text page more in both builds, in the game's partition
+ * only. The counter re-decode (vita-vn-ocr's runtime/vocr_post.c, built -Os: vocr_post_redecode 1,770 B,
+ * vocr_post_greedy 216 B and their helpers 446 B, as linked), its calls before the LM and in the cascade
+ * (core/vocr_ocr.c counter_redecode and finish_line: +272 B), the counter rule in the text normalisation
+ * (core/textnorm.c fold_forms and its numeral table: +194 B) and the worker's policy and cache bit
+ * (game_ocr/main.c: +40 B, +44 B normal), 2,938 B of text in all [the linked ELFs' symbols, both builds],
+ * take the debug build's text 137,088 -> 140,032 B and the normal build's 128,220 -> 131,164 B;
+ * data/bss as before (32,888 / 32,880 B) [measured: the build log's module rows, both builds, main ae9b02d
+ * and this change, VitaSDK GCC 15.2.0 in vitasdk/vitasdk:2026.08]. The normal build's code ended 1,112 B
+ * below 128 KiB, less than the SCE data vita-elf-create appends (1,204 B): the worker's link now keeps
+ * __sce_headroom (vita/CMakeLists.txt), as the Rubi app's does. No new block, thread or allocation. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 176128u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 180224u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 167936u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 172032u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
@@ -499,7 +510,8 @@
  * tier (game_ocr/main.c), never a smaller tier for the helpers. */
 #define VJO_LIMIT_GAME_WEIGHTS 2502656u
 #define VJO_LIMIT_GAME_WORKSPACE 1212416u
-/* API 34 adds the measured 8192 B of worker module pages to the prior ceiling. */
-#define VJO_LIMIT_GAME_JOB 10575872u
+/* API 34 adds the measured 8192 B of worker module pages to the prior ceiling, and vita-vn-ocr #109's
+ * counter re-decode its 4,096 B. */
+#define VJO_LIMIT_GAME_JOB 10579968u
 
 #endif
