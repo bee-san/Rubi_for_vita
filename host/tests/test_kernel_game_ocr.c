@@ -1076,8 +1076,23 @@ static void invalid_capture_and_wire(void)
     TEST_CHECK(VJO_GAME_OCR_S_TRIM == 0x40u); /* bit 5 is draft #228's scan screen (VJO_GAME_OCR_S_SPOT) */
     /* API 35: bit 7, the debug build's read-only PSP probe, is known on an OCR job (both builds accept it) */
     TEST_CHECK(VJO_GAME_OCR_S_PSP_PROBE == 0x80u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_PSP_PROBE));
-    r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate, the PSP probe: known */
-    uint32_t seq = submit(); take(seq);
+    /* this very request, with every known bit (helpers, the clock, no line cache, the gate, the PSP probe), is
+     * accepted, and the worker takes it with its speed whole (audit-adrenaline-probe F1: submit() sends a
+     * request of its own) */
+    r.speed = VJO_GAME_OCR_S_ALL;
+    caller = 3;
+    int submitted = vjoOcrSubmit(&r);
+    TEST_ASSERT(submitted > 0);
+    uint32_t seq = (uint32_t)submitted;
+    {
+        VjoGameOcrRequest taken = {0};
+        caller = 7;
+        TEST_ASSERT(vjoOcrTake(&taken) == 0);
+        TEST_CHECK(taken.seq == seq && taken.speed == VJO_GAME_OCR_S_ALL && (taken.speed & VJO_GAME_OCR_S_PSP_PROBE));
+        memset(&message, 0, sizeof(message));
+        message.size = sizeof(message); message.seq = seq;
+        strcpy(message.text, "\xE7\x8C\xAB");
+    }
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;
     message.cleanup_status = -1; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG);

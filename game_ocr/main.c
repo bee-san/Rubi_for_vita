@@ -2173,9 +2173,11 @@ static int worker_main(SceSize args, void *argp)
 #endif
                     if (!vjoOcrComplete(&pending_result) && !pending_result.cleanup_status) claim_outstanding = 0;
 #if VJO_DEBUG
-                    /* The read-only PSP probe, after a job that asked for it, once its result is with the
-                     * kernel: nothing it does delays the popup (game_ocr/psp_probe.h). */
-                    vjo_psp_probe_after(psp_title, hk.cache_key.title, &request, &pending_result, job_us);
+                    /* The read-only PSP probe, after a job that asked for it, once the kernel has its result:
+                     * it never holds up a result (one still to hand over gets no probe), only this thread's
+                     * next job, by the probe's own time (game_ocr/psp_probe.h). */
+                    if (!claim_outstanding)
+                        vjo_psp_probe_after(psp_title, hk.cache_key.title, &request, &pending_result, job_us);
 #endif
                     nap = claim_outstanding; /* done: the next job may be queued already */
                 } else if (now_wide() - asked >= TAKE_WAITED_US) {
