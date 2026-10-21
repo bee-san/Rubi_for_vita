@@ -160,8 +160,8 @@ Automatic selection does not guarantee every listed game or version works. Game-
 must pass Rubi's version and code checks, and a hook must produce usable dialogue. Rubi checks hook
 text against OCR initially and periodically afterwards, and falls back to OCR when a hook cannot
 supply it. The popup's dialogue starts with a dim `[HOOK]` when a hook supplied it and `[OCR]` when Rubi
-read it off the screen (`source_badge = off` in `config.ini` hides it). Both text sources work
-offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
+read it off the screen (`source_badge = off` in `config.ini` hides it, `icons` tries the system's anchor
+and eye). Both text sources work offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
 [technical design](docs/native-hooks.md) covers string-copy hooks and game-specific hook sites.
 
 ## Supported
@@ -187,6 +187,7 @@ offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
+| ❓ | The popup's `[HOOK]`/`[OCR]` badge, and `source_badge = icons` | not run on a console yet ([source badge](docs/native-hooks.md#the-popups-source-badge)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |

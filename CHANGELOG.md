@@ -15,22 +15,26 @@ been reported.
 
 - The popup says where its text came from: the dialogue starts with a dim `[HOOK]` when a native text
   hook supplied the line and `[OCR]` when Rubi read it off the screen (the owner asked for a hook emoji
-  and an eye, then for ASCII over an image). An earlier line (line history) has none, since its source
-  is not kept; `source_badge = off` in `config.ini` hides it (no setting in the app). It sits on the
-  text's first row, as wide as 2.9 Japanese characters (`[OCR]` 2.3) at the default sizes, never on a
-  row of its own, and the cursor, taps and the highlight skip it. Emoji are not used: none of the
-  Vita's 20 system fonts has a character beyond U+FFFF, so none has 🪝 or 👁 (nor ⚓ or ✓, which the
-  console draws as `_`), and the firmware's `imagefont.bin` and `psexchar.pvf` have no hook or eye
-  glyph [measured: the fonts of Sony's font package and the 3.74 update, on the host;
-  [details](docs/native-hooks.md#the-popups-source-badge)]. Host-tested only.
+  and an eye, then for ASCII over an image). An earlier line (line history) has none (`history.csv`
+  keeps its source; the popup does not read it back). `source_badge` in `config.ini` (no setting in the
+  app): `on` (the default), `off` hides it, `icons` shows an anchor and an eye from the system's own
+  fonts instead. It sits on the text's first row, as wide as 2.9 Japanese characters (`[OCR]` 2.3) at
+  the default sizes; Rubi never leaves it alone on a row, and the cursor, taps and the highlight skip
+  it. Emoji are not used: none of the Vita's 20 system fonts has a character beyond U+FFFF, so none has
+  🪝 or 👁 (nor U+2693 ⚓ or ✓, which the console draws as `_`); their ARIB symbols font
+  (`music_arib.pvf`) has an anchor (U+E1BB) and an eye (U+E541), which `icons` uses and which appear
+  only if SceShell's PAF loaded that font (unverified: `_` otherwise); the firmware's `imagefont.bin`
+  and `psexchar.pvf` have neither [measured: the fonts of Sony's font package and the 3.74 update, on
+  the host; [details](docs/native-hooks.md#the-popups-source-badge)]. Host-tested only.
 
 ### Changed
 
 - The Shell keeps its pages (163,840 B normal, 176,128 B debug) with the badge: its libc shims, which
-  only branch to SceLibKernel's ARM stubs, are built as ARM code, so the linker drops nine
-  interworking veneers (144 B), and the enter button's registry read is built for size. The Shell's
-  text is 16 B smaller in both builds, the game worker's 112 B (the same shims) [measured: both builds'
-  module rows; [memory ledger](docs/memory-ledger.md#the-popups-source-badge)].
+  only branch to SceLibKernel's ARM stubs, are built as ARM code in the Shell, so the linker drops nine
+  interworking veneers (144 B), and the enter button's registry read is built for size. The normal
+  Shell's code segment is 16 B larger (4 B of room left), the debug one's unchanged; the kernel plugin
+  and the game worker are byte-identical [measured: both builds' module rows;
+  [memory ledger](docs/memory-ledger.md#the-popups-source-badge)].
 
 ## [0.9.1] - 2026-10-21
 

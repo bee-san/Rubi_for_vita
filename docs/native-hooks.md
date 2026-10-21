@@ -266,59 +266,87 @@ The owner, 2026-10-21: "Maybe show a hook emoji in the dictionary output to show
 is using it successfully. 🪝 or an eye for OCR"; then: "What about any ascii characters that can fit? i'd
 prefer that over an image icon". The popup's current text starts with a dim `[HOOK]` when the job that
 read it shows a stream's text (`text_from` is a stream's ID: the stream agreed with OCR, or a locked one
-answered without OCR) and `[OCR]` when it shows OCR's (`text_from` 0).
+answered without OCR) and `[OCR]` when it shows OCR's (`text_from` 0). `source_badge = icons` shows the
+system's own anchor and eye instead ([below](#the-anchor-and-the-eye-source_badge--icons)); `off` shows
+nothing.
 
-<img src="img/source-badge-host.png" width="640" alt="The popup's top: [HOOK] and [OCR], dim and small, before the line また明日、一緒に見に行こう! with 一緒に highlighted and its entry below; [HOOK] before a line of two rows; the line without a badge; and four alternatives that are not built: [H] and [O], HOOK· and OCR·, the kanji 鉤 (hook) and 目 (eye), J and o.">
+<img src="img/source-badge-host.png" width="640" alt="The popup's top: [HOOK] and [OCR], dim and small, before the line また明日、一緒に見に行こう! with 一緒に highlighted and its entry below; [HOOK] before a line of two rows, broken before 雨; the line without a badge; the opt-in anchor and eye; and four alternatives that are not built: [H] and [O], HOOK· and OCR·, the kanji 鉤 (hook) and 目 (eye), J and o.">
 
 *A host rendering of the code's own spans (the header from `core/styled.c`'s `vjo_styled_badge` and
 `vjo_styled_history`, the entry from `vjo_styled_entry`, the default sizes) in the Vita's own system
-fonts, SCE Rodin Cattleya JPN and LATIN Regular (`jpn0.pvf`, `ltn0.pvf` of Sony's font package, below),
-at the overlay's geometry with a greedy wrap: not a console capture (PAF's layout is the console's). The
-alternatives are the same spans with the badge's text replaced, a one-line change of `core/styled.c`'s
-`source_badges`.*
+fonts, SCE Rodin Cattleya JPN, LATIN and EXT Regular (`jpn0.pvf`, `ltn0.pvf`, `music_arib.pvf` of Sony's
+font package, below), at the overlay's geometry: a greedy wrap, as PAF's, then Rubi's own re-wrap
+(`core/linebreak.c`, the rule of `shell/wrap_fix.h` with the header's `keep`). Not a console capture:
+PAF's layout is the console's. The alternatives are the same spans with the badge's text replaced, a
+one-line change of `core/styled.c`'s `source_badges`.*
 
 - **What it marks**: the source of the job that read the shown text (`shell/worker.c`
   `local_text_source`), or of the refresh that replaced it; a refresh that reads the same text leaves it,
   as it leaves the text (the badge would otherwise need the header redrawn, the definition's scroll
-  with it). An earlier line (line history) has none: `history.csv` records its engine, the visit does
-  not keep it. Before a job has read text, or after one failed, the header holds no text and no badge.
-  `source_badge = off` in `config.ini` hides it (`on` by default; no setting in the Rubi app).
+  with it). The overlay draws the badge a text's first publication carries, so the source changes only
+  with a new text, published with it (a host check holds every publication to that). An earlier line
+  (line history) has none: `history.csv` keeps each line's source (`hook` or `vocr`), but a visit does
+  not read it back. Before a job has read text, or after one failed, the header holds no text and no
+  badge; a read that found no text shows the badge alone. `source_badge = off` in `config.ini` hides it
+  (`on` by default; no setting in the Rubi app).
 - **How it is drawn**: one span before the text in the header (`vjo_styled_badge`), at the English size
   (the Japanese one if that is smaller) in the frequency badge's grey, `VJO_RGB_RANK`. The header's lead
   counts it, as it counts an earlier line's dimmed row, so the cursor, taps and the highlight start at
   the text's first character. No space follows it: `core/linebreak.h` allows no break between Latin
-  letters and Japanese, and `VjoWrap.keep` stops the overlay's re-wrap from breaking right after it
-  (before a `「`, where the rules allow one), so it never takes a row of its own. The first row has its
-  width less room: `[HOOK]` is 79 px and `[OCR]` 63 px at the default sizes (21 px beside 27 px text),
-  2.9 and 2.3 of the 27 px Japanese characters [measured: the advance widths in `ltn0.pvf` and
-  `jpn0.pvf`; PAF's own spacing is unmeasured], so a line that filled its rows can take one more
-  (the header grows to its three rows, then scrolls to the selected word, as before).
-  Host tests: `test_core.c` (`styled_source_badge`, `source_badge_config`), `test_cursor_nav.c`
-  (`the_source_badge_is_never_the_cursors`), `test_wrap_fix.cpp`
-  (`the_source_badge_keeps_the_wrap_rules`) and `test_shell_worker.c`
-  (`the_source_badge_follows_the_texts_source`).
-- **Why not the emoji, or a PlayStation symbol**: the popup is SceShell's PAF `ui::Text`, drawn with
-  the fonts SceShell's PAF loaded (its init takes a Japanese, a Latin, a Hangul and a Chinese PVF font,
-  `paf/framework.h`); the Shell opens no font itself (it imports no `ScePvf`). None of the system's 20
-  PVF fonts (`sa0:data/font/pvf/`: Sony's font package, `PSP2UPDAT.PUP` of 2019-09-24, MD5
-  `8b5f60b56c3da8365b973dba570c53a5`, from Sony's update server, the file Vita3K installs) has a code
-  point above U+FFFF, so none has 👁 (U+1F441) or 🪝 (U+1FA9D), and none has ⚓ (U+2693) or ✓ (U+2713,
-  which the console draws as `_`, `core/styled.h`: the same finding); `jpn0.pvf` (SCE Rodin Cattleya
-  JPN Regular, 9,861 code points) has ◉ ◎ 目 and 鉤 ("hook") [measured: their OpenType `cmap`s with
-  fontTools 4.60.1; the package was installed into a scratch directory and deleted afterwards].
-  [libvita2d #55](https://github.com/xerpi/libvita2d/issues/55)'s two candidates have no hook, anchor
-  or eye either: the firmware's `vs0:data/external/font/emoji/imagefont.bin` (3.74:
-  55,110 B, MD5 `59b8d380817083deaf6b3c1cae145507`, 45 icons at U+2120 and U+F880-U+F8ED: the face
-  buttons, the d-pad, L and R, SELECT, START, PS, trophies, PS Plus and PlayStation word marks; the
-  PS3's 332-icon file has emoji the Vita's lacks) [measured: decoded on the host from the official 3.74
-  update, psdevwiki's format], and `sa0:data/font/pvf/psexchar.pvf` ("PSExChar", 39 code points, the
-  PlayStation symbols at `0`-`9`, `A`-`G` and ASCII punctuation: buttons, arrows, a keyboard, a home, a
-  push pin [measured: its `cmap`]; [chart](https://github.com/nobodywasishere/vita_Symbols)).
-  An imagefont glyph would cost nothing if PAF draws its code points in a `ui::Text` as it does in
-  LiveArea's titles (unverified for the overlay's page); a PVF glyph or a bitmap would need libpvf or a
-  texture in SceShell, allocations after boot (AGENTS.md rule 1).
-- **Cost**: no allocation, thread, stack or RCO change; the Shell's pages are unchanged in both builds,
-  its text 16 B smaller ([memory ledger](memory-ledger.md#the-popups-source-badge)).
+  letters and Japanese, and `VjoWrap.keep` stops Rubi's re-wrap from breaking right after it (before a
+  `「`, where the rules allow one), so Rubi never leaves it alone on a row; PAF's own word wrap could, before
+  a first Latin word longer than the rest of the row (unverified; rare in a visual novel's text). The first
+  row has its width less room: `[HOOK]` is 79 px and `[OCR]` 63 px at the default sizes (21 px beside 27 px
+  text), 2.9 and 2.3 of the 27 px Japanese characters, each icon 21 px, 0.8 [measured: the advance widths
+  in `ltn0.pvf`, `jpn0.pvf` and `music_arib.pvf`; PAF's own spacing is unmeasured], so a line that filled
+  its rows can take one more (the header grows to its three rows, then scrolls to the selected word, as
+  before). Host tests: `test_core.c` (`styled_source_badge`, `source_badge_config`), `test_cursor_nav.c`
+  (`the_source_badge_is_never_the_cursors`), `test_wrap_fix.cpp` (`the_source_badge_keeps_the_wrap_rules`)
+  and `test_shell_worker.c` (`the_source_badge_follows_the_texts_source`, with its check of every
+  publication).
+- **The system's fonts and glyphs** (the owner's steer: [libvita2d #55](https://github.com/xerpi/libvita2d/issues/55)).
+  The popup is SceShell's PAF `ui::Text`, drawn with the fonts SceShell's PAF loaded (its init takes a
+  Japanese, a Latin, a Hangul and a Chinese PVF font, and an option for an extra font, `paf/framework.h`
+  `InitParam`); the Shell opens no font itself (it imports no `ScePvf`).
+  - The 20 PVF fonts (`sa0:data/font/pvf/`: Sony's font package, `PSP2UPDAT.PUP` of 2019-09-24, MD5
+    `8b5f60b56c3da8365b973dba570c53a5`, from Sony's update server, the file Vita3K installs; OpenType, 18
+    of them CFF, `cn0`/`cn1` TrueType): none has a code point above U+FFFF, so none has 👁 (U+1F441) or 🪝
+    (U+1FA9D), and none has ⚓ (U+2693) or ✓ (U+2713, which the console draws as `_`, `core/styled.h`: the
+    same finding). `jpn0.pvf` (SCE Rodin Cattleya JPN Regular, 9,861 code points) has ◉ ◎ 目 and 鉤
+    ("hook"). **`music_arib.pvf`** (SCE Rodin Cattleya EXT Regular, 116,140 B, MD5
+    `608e8cd5e049ba0d19491152e55d71bf`, 797 code points, 788 of them ARIB symbols in the Private Use Area,
+    U+E0C9-U+E659) has an **anchor at U+E1BB** and an **eye at U+E541** (with lashes and a tear), each a
+    full-width glyph (1,000/1,000 em) [measured: the `cmap`s and glyphs with fontTools 4.60.1;
+    audit-source-badge found the two].
+  - `vs0:data/external/font/emoji/imagefont.bin` (3.74: 55,110 B, MD5 `59b8d380817083deaf6b3c1cae145507`,
+    45 colour icons: U+2120 SM, U+F880-U+F88F the face buttons, the d-pad, L and R, SELECT, START, U+F892
+    PS, U+F898-U+F89A the pad and the analog stick, U+F8AC-U+F8AF trophies, U+F8B6 PS Plus, U+F8B9 a dot,
+    U+F8BA-U+F8BD pieces of text, U+F8C8-U+F8C9 L and R, and 12 at U+F8E0-U+F8ED, no F8E8 or F8E9: the
+    PS3, PS4 and PS Vita tags, the PS logo, the PS2, PS3, PS4, PSP and PS VITA word marks, PS Store, PS
+    Plus and a stroke) has no hook, anchor or eye; the PS3's 332-icon file has emoji the Vita's lacks
+    [measured: decoded on the host from the official 3.74 update, psdevwiki's format].
+  - `psexchar.pvf` ("PSExChar", 39 code points: the space, `0`-`9`, `A`-`G` and ASCII punctuation but `?`;
+    PlayStation symbols: buttons, arrows, a keyboard, a home, a push pin;
+    [chart](https://github.com/nobodywasishere/vita_Symbols)) has no hook or eye.
+  - The firmware files were installed into a scratch directory, read and deleted; none is in the repo.
+- **The cost of a system glyph** (AGENTS.md rule 1). An imagefont code point would cost nothing if PAF
+  draws it in a `ui::Text` as LiveArea does in titles (unverified; moot, nothing fits). The music_arib
+  anchor and eye cost nothing if SceShell's PAF set `PvfOption_ExtraFontMusicArib` and so loaded that
+  font: then the header's `ui::Text` draws them as it draws any character, three bytes of UTF-8 each in
+  `source_badges`. If it did not, PAF draws `_` (as for ✓), and the only other way, libpvf and a glyph
+  texture in SceShell, would allocate after boot: not done. Which holds is unverified, hence the icons
+  are an option, not the default.
+
+### The anchor and the eye (`source_badge = icons`)
+
+`source_badge = icons` in `config.ini` (read when the overlay opens, like every setting) puts U+E1BB, the
+anchor, before a hook's text and U+E541, the eye, before OCR's, in the badge's grey at its size. Untested
+on a console: it shows them only if SceShell's PAF loaded `music_arib.pvf`, and `_` or nothing otherwise
+(console item 12 below says what to report). The ASCII badge stays the default, the owner's choice of
+"ascii characters" over an image.
+
+- **Cost**: no allocation, thread, stack or RCO change. The Shell's pages are unchanged in both builds, the
+  game worker and the kernel byte-identical ([memory ledger](memory-ledger.md#the-popups-source-badge)).
 
 ## Release
 
@@ -417,12 +445,27 @@ Hardware is paused; these are for the test issue (#230):
     must not add or clear pending disagreements. The wider interval may show up to 31 wrong hook-only
     readings before detecting a source that starts returning incorrect text. Change the executable,
     text-source setting or definitions and confirm that old learning is not reused.
-11. The popup's text starts with a dim `[HOOK]` while the debug log's `game vocr source:` line says
-    `hook` for the job that read it, and `[OCR]` while it says `ocr`; an earlier line (▲ on the top row)
-    has none; `source_badge = off` hides it. The badge sits on the text's first row, never alone on a
-    row, and the cursor, taps and the highlight never land on it. No hook numbers; Triangle does not
-    change the text source. Normal jobs keep `hook_pick = VJO_HOOK_PICK_AUTO`; diagnostic jobs can still
-    request a stream directly through the job protocol.
+11. The popup's text starts with a dim `[HOOK]` when the job that read it shows a hook's text and
+    `[OCR]` otherwise. In the debug build, that job's `game vocr source:` line says `hook` or `ocr`; the
+    line is logged only in a game where the worker hooked something (elsewhere every text is `[OCR]`).
+    A quiet refresh that reads the same text again keeps the shown text's badge, though its own line may
+    name the other source; a refresh that replaces the text brings the new text's. An earlier line (▲ on
+    the top row) has none; `source_badge = off` hides it. The badge sits on the text's first row, and the
+    cursor, taps and the highlight never land on it. No hook numbers; Triangle does not change the text
+    source. Normal jobs keep `hook_pick = VJO_HOOK_PICK_AUTO`; diagnostic jobs can still request a stream
+    directly through the job protocol.
+12. With `source_badge = icons`: the badge is an anchor before a hook's text and an eye before OCR's,
+    or `_` (or nothing) if SceShell's PAF did not load `music_arib.pvf`. Report which (a photo helps), so
+    the owner can choose the default.
+13. The first boot with this build: its Shell has ARM-mode functions of its own for the first time, the
+    libc shims (`shell/libc_shim.c`, reached by `blx` from Thumb; the import stubs and the linker's veneers
+    were ARM already, the rest is Thumb), and its SELF the first R_ARM_JUMP24 relocations,
+    9, their branches to SceLibKernel's stubs (audit-source-badge applied every relocation of the packaged
+    SELF as the module loader does, and each gave back the linked instruction). `log.txt` has `Rubi shell
+    started` and `status.txt` no safe-boot note (the Shell's `module_start` calls `memcpy` and `strlen`
+    already); a game that is ON starts (its worker is unchanged); the popup opens and looks a word up
+    (`strcmp`, `memcmp`). If the Vita does not come back, hold L as it starts ([Recovery](#recovery)); the
+    boot-safety guard makes the next boot a safe one.
 
 ## PSP probe (debug build)
 

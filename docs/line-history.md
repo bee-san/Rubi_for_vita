@@ -34,9 +34,9 @@ earlier line opens with the cursor on 万; with today's default, OFF, it opens o
   row of the line after it** (at first, the current text), both dimmed (`VJO_RGB_RANK`, the colour of
   the frequency badge), with no characters of theirs selectable. The header grows to at most five
   rows for it, and the definition below shrinks by as much (`HEADER_MAX_LINES_HISTORY`). An earlier
-  line has no `[HOOK]` or `[OCR]` before it, as the current text has: its source is not kept
-  ([source badge](native-hooks.md#the-popups-source-badge)); the current text has its own again when
-  Down comes back to it.
+  line has no `[HOOK]` or `[OCR]` before it, as the current text has: `history.csv` keeps each line's
+  source, but a visit does not read it back ([source badge](native-hooks.md#the-popups-source-badge));
+  the current text has its own again when Down comes back to it.
 - The body's first line says where the text is: `Earlier line -2 · ▲ earlier · ▼ later` (without
   `▲ earlier` on the oldest line kept).
 - On the focused line everything works as on the current text: Left/Right, Up/Down between its own

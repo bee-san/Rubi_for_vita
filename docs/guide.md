@@ -324,12 +324,14 @@ reported console run. The behaviour below is checked on the host.
 - **The popup** shows the dialogue and dictionary entries, and says where the dialogue came from: it
   starts with a dim `[HOOK]` when a native text hook supplied the line (the hook agreed with OCR, or
   answered for it once trusted) and `[OCR]` when Rubi read it off the screen. An earlier line (line
-  history) has none, since its source is not kept; `source_badge = off` in `config.ini` (no setting in
-  the app; `on` by default) hides it. The badge is part of the text's first row (at the default sizes
-  `[HOOK]` is as wide as 2.9 Japanese characters, `[OCR]` 2.3) and never takes a row of its own; the
-  cursor, taps and the highlight skip it ([details](native-hooks.md#the-popups-source-badge)). Source selection is
-  automatic; there is no hook number or Triangle source picker. Technical source details remain in the
-  debug log.
+  history) has none (`history.csv` keeps its source, but the popup does not read it back).
+  `source_badge` in `config.ini` (no setting in the app): `on` (the default), `off` hides it, `icons`
+  shows the system's anchor and eye instead (untested on a console: they appear only if SceShell has
+  the font, `_` otherwise). The badge is part of the text's first row (at the default sizes `[HOOK]` is
+  as wide as 2.9 Japanese characters, `[OCR]` 2.3); Rubi never leaves it alone on a row, and the cursor,
+  taps and the highlight skip it ([details](native-hooks.md#the-popups-source-badge)). Source selection
+  is automatic; there is no hook number or Triangle source picker. Technical source details remain in
+  the debug log.
 - **The Games page** tags a game with a hook entry: `Hook` for Rubi's own, `Luna hook` for a ported
   site in LunaTranslator's table (its entries are not checked by Rubi; the worker installs one only where
   the game's code there looks as the entry expects). The seven titles above, whose every site in the

@@ -13,29 +13,34 @@ Release, on the packaged SELF files of main `e33f8f6` and of this change, `check
 
 | Module | Main text + data/bss | This change | Loaded pages, unchanged |
 |---|---:|---:|---:|
-| Shell, debug | 100,940 + 73,560 B | 100,924 + 73,608 B | 176,128 B |
-| Shell, normal | 90,092 + 73,576 B | 90,076 + 73,608 B | 163,840 B |
-| Game worker, debug | 137,088 + 32,888 B | 136,976 + 32,888 B | 176,128 B |
-| Game worker, normal | 128,220 + 32,880 B | 128,108 + 32,880 B | 167,936 B |
+| Shell, debug | 100,940 + 73,560 B | 100,940 + 73,648 B | 176,128 B |
+| Shell, normal | 90,092 + 73,576 B | 90,108 + 73,648 B | 163,840 B |
 
-The kernel plugin and the RCO are byte-identical. In the normal Shell the badge's code is 146 B
-(`arm-vita-eabi-nm -S`: the header's span `vjo_styled_badge` 36 and its call in `render` +40, the
-source with each new text in `run_vocr` +28 and a refresh's in `ctl_main` +20, its publication in
-`view_publish` +16, the re-wrap's keep +6, the dimmed badge's recolour +4, the config key's default and
-parse 4 − 8, `frame` +4 and `start_cursor_job` −4) and 16 B of `.rodata` (the key's name). It is paid
-for by two changes that keep behaviour:
-the libc shims of `shell/libc_shim.c`, which tail-call ARM stubs, are built as ARM code, so the linker
-drops their nine Thumb-to-ARM interworking veneers (16 B each, 144 B; their callers reach them by
-`blx`, as they reach the stubs: 151 call sites, none a tail call), and `vita/buttons_vita.c`, the
-enter button's registry read once per overlay open, is built `-Os` (`vjo_buttons_read` 118 → 84 B).
-The normal Shell's code segment then has 36 B of room (20 B on main). The game worker shares the shims:
-7 of its veneers go, 112 B of its text. Data/bss grows by 32 B in the normal Shell (48 B debug), in the
-same pages (120 B left): `VjoConfig.source_badge` in its three copies, `VjoView.source_badge`, the two
-source bytes, `VjoWrap.keep` in its three instances, the 21-byte badge table in the data segment
-(`VJO_DATA_TABLE`), less two of the three `off`/`on` tables `core/config.c` had, now one. No allocation,
-thread, stack, PAF block or budget is added; the overlay's text arena keeps its 20,480 B (the badge is
-one more span of the header's five, and at most 6 of its 4,096 units). These are binary measurements;
-the console's glyph widths, the popup's layout and the ARM shims have not run on a console.
+The kernel plugin, the game worker (both builds) and the RCO are byte-identical to main's. In the normal
+Shell the badge's code is 162 B (`arm-vita-eabi-nm -S`: the header's span `vjo_styled_badge` 36 and its
+call in `render` +40, the source with each new text in `run_vocr` +28 and a refresh's in `ctl_main` +28,
+its publication in `view_publish` +20, the re-wrap's keep +6, the dimmed badge's recolour +4, the config
+key's default and parse 4 − 4, `frame` +4 and `start_cursor_job` −4; `icons` included) and 16 B of
+`.rodata` (the key's name). It is paid for by two changes that keep behaviour: the libc shims of
+`shell/libc_shim.c`, which only tail-call SceLibKernel's ARM stubs, are built as ARM code in the Shell
+(`VJO_SHIM_ARM`; the game worker keeps them Thumb), so the linker drops their nine Thumb-to-ARM
+interworking veneers (16 B each, 144 B; their callers reach them by `blx`, as they reach the stubs: 151
+call sites, none a tail call), and `vita/buttons_vita.c`, the enter button's registry read once per
+overlay open, is built `-Os` (`vjo_buttons_read` 118 → 84 B). The Shell's code segment grows 16 B in the
+normal build (`.text` −8, `.rodata` +16, alignment +8) and none in the debug build; the normal one has 4 B
+of room left in its pages (20 B on main): the next change that adds Shell code makes room first.
+Data/bss grows by 72 B in the normal Shell (88 B debug), in the same pages (80 B left):
+`VjoConfig.source_badge` in its three copies, `VjoView.source_badge`, the two source bytes, `VjoWrap.keep`
+in its three instances, the 35-byte badge table, `source_badge`'s table of names (16 B) and its `icons`
+(6 B) in the data segment (`VJO_DATA_TABLE`), less two of the three `off`/`on` tables `core/config.c`
+had, now one. The Rubi app,
+which links `core/config.c` and the same `buttons_vita.c`, grows by 280 B (debug) and 264 B (normal), to
+4,846,592 and 4,845,936 B of loaded segments (`tools/check_settings_self.py`'s `segment_bytes`): the
+template's new lines in `.rodata`, its own two `VjoConfig` copies. No allocation, thread, stack, PAF
+block or budget is added; the overlay's text arena keeps its 20,480 B (the badge is one more span of the
+header's five, and at most 6 of its 4,096 units). These are binary measurements; the console's glyph
+widths, the popup's layout and the ARM shims have not run on a console
+([native hooks, console item 13](native-hooks.md#to-test-on-a-console)).
 
 ## Dictionary conjugation display
 
