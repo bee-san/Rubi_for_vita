@@ -68,8 +68,11 @@
  * with API 32's shot-trimming speed bit and step. A new number keeps existing API 31 and 32 builds from
  * exchanging requests with an interface that differs from theirs.
  * 34: optional worker-only bounded hook-learning cache through the existing file broker
- * (vjoOcrHookCache). Request/result layouts are unchanged; unavailable storage means fresh learning. */
-#define VJO_API_VERSION 34
+ * (vjoOcrHookCache). Request/result layouts are unchanged; unavailable storage means fresh learning.
+ * 35: the debug build's read-only PSP probe (config.ini psp_probe; docs/native-hooks.md "PSP probe (debug
+ * build)"): VjoGameOcrRequest.speed bit 7 (VJO_GAME_OCR_S_PSP_PROBE), on an OCR job only. Both builds accept
+ * it; only the debug build's Shell sets it and only the debug build's worker acts on it. Sizes are unchanged. */
+#define VJO_API_VERSION 35
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

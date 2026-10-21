@@ -5,6 +5,32 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Read-only PSP probe v2 (API 35, debug build)
+
+No budget changes: every module keeps its pages in both builds. Measured as this ledger's packaged-module
+rows (`check_memory_ledger.py`: each SELF's loaded segments) in CI's vitasdk image, both builds of main
+e33f8f6 and of this change:
+
+| Module (build) | Segments on main | With the probe | Pages |
+|---|---:|---:|---:|
+| Game worker (debug) | 137,088 + 32,888 B | 137,816 + 36,104 B | 176,128 B, unchanged |
+| Game worker (normal) | 128,220 + 32,880 B | the same | 167,936 B, unchanged |
+| Shell (debug) | 100,940 + 73,560 B | 100,924 + 73,600 B | 176,128 B, unchanged |
+| Shell (normal) | 90,092 + 73,576 B | 90,084 + 73,616 B | 163,840 B, unchanged |
+| Kernel (both) | 41,740 + 77,732 B, 36,904 + 76,044 B | the same | unchanged |
+
+The probe's classifier, timed read, passes and job lines are in the debug worker only. Its text would have
+crossed a page, so Luna's PSP title IDs and site addresses (3,140 B of `core/hook_luna_psp.inc`) are in the
+data segment instead (`VJO_DATA_TABLE`, as API 33 did for the Vita title IDs), which leaves both segments
+room (1,448 B of text, 760 B of data). The Shell reads the new `psp_probe` key in both builds, as it reads
+every setting; it and the three other `off | on` settings read with `set_choice` are one table in the data
+segment (`core/config.c` `off_on_settings`), so the Shell's text is smaller than main's in both builds and
+its data 40 B larger, in the same pages (the normal build's text had 20 B of room on main). No allocation
+site, block or thread is added; the probe's deepest call chain takes about 2.1 KiB of the worker thread's
+existing stack (frames from `-fstack-usage`, summed: `pass` 1,024 B, `vjo_psp_probe_job` 520 B, `op_module`
+512 B). These are binary and compiler measurements; console memory, boot and CPU (CPU3 included) are not
+measured for this change.
+
 ## Dictionary conjugation display
 
 Measured with VitaSDK GCC 15.2.0, Release, against main `ae9b02d`, on the Shell SELF's loaded

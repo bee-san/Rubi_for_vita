@@ -810,6 +810,20 @@ static void test_config(void)
         TEST_CHECK_(c.hook_sites == sites[i].sites && c.n_warnings == sites[i].warnings, "%s", sites[i].text);
         if (sites[i].warnings) TEST_CHECK(strstr(c.warnings[0], "hook_sites") != NULL); /* named, never the value */
     }
+    /* API 35: the debug build's read-only PSP probe, on by default; both builds read the key alike (only the debug
+     * build's Shell acts on it). Any case; an unknown value is on, warned. Not in the template. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.psp_probe == 1 && !strstr(vjo_config_default_text(), "psp_probe"));
+    static const struct { const char *text; int probe, warnings; } probes[] = {
+        {"psp_probe = off\n", 0, 0}, {"PSP_Probe = OFF\n", 0, 0}, {"psp_probe = off\npsp_probe = on\n", 1, 0},
+        {"psp_probe = off ; no PSP probe\n", 0, 0}, {"psp_probe = off\npsp_probe = maybe\n", 1, 1},
+        {"psp_probe =\n", 1, 1}, {"psp_probe = 0\n", 1, 1}};
+    for (unsigned i = 0; i < sizeof(probes) / sizeof(probes[0]); i++) {
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, probes[i].text, strlen(probes[i].text));
+        TEST_CHECK_(c.psp_probe == probes[i].probe && c.n_warnings == probes[i].warnings, "%s", probes[i].text);
+        if (probes[i].warnings) TEST_CHECK(strstr(c.warnings[0], "psp_probe") != NULL); /* named, never the value */
+    }
     vjo_config_defaults(&c);
     const char *lm = "ocr_lm = 1000K\nocr_cascade_ms = 0\n";
     vjo_config_parse(&c, lm, strlen(lm));
@@ -833,6 +847,12 @@ static void test_config(void)
             "ocr_boost_clock = maybe\n";
     vjo_config_parse(&c, speed, strlen(speed));
     TEST_CHECK(c.ocr_helpers == 1 && c.ocr_boost_clock == 1 && c.n_warnings == 4); /* one warning each, kept 2 */
+    /* an unknown value keeps what it had, off too (core/config.c off_on_settings: not reset to on, unlike
+     * hook_sites and psp_probe) */
+    vjo_config_defaults(&c);
+    speed = "ocr_boost_clock = off\nOCR_BOOST_CLOCK = maybe\n";
+    vjo_config_parse(&c, speed, strlen(speed));
+    TEST_CHECK(c.ocr_boost_clock == 0 && c.n_warnings == 1 && strstr(c.warnings[0], "OCR_BOOST_CLOCK") != NULL);
     TEST_MSG("helpers %d clock %d, %u warnings", c.ocr_helpers, c.ocr_boost_clock, c.n_warnings);
 
     /* the default file parses cleanly to the defaults */
