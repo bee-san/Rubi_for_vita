@@ -488,7 +488,7 @@ The text itself is not in this file, only its length in characters and a 32-bit 
 readings apart; a short line's could be guessed from them). The debug build's `log.txt` has the text itself
 anyway, with each job's step log (`gstep` lines), under the same job number.
 
-**To test on a console** (for #230; the v0.8.0-test.8 test issue has the owner's steps):
+**To test on a console** (for #230; the test build v0.9.1-test.8 and its issue, #248, have the owner's steps):
 
 1. A PSP game Luna lists, under Adrenaline: ましろ色シンフォニー *mutsu-no-hana `ULJM05889` (one site,
    `0x08868AB8`), started from the XMB or from its own bubble. Let Rubi read a few lines (L + R at least
