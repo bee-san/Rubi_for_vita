@@ -5,6 +5,38 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## The popup's source badge
+
+Measured with VitaSDK GCC 15.2.0 (the `vitasdk/vitasdk:2026.08` image after `tools/setup_toolchain.sh`),
+Release, on the packaged SELF files of main `e33f8f6` and of this change, `check_memory_ledger.py`
+(`--exact` in the normal build):
+
+| Module | Main text + data/bss | This change | Loaded pages, unchanged |
+|---|---:|---:|---:|
+| Shell, debug | 100,940 + 73,560 B | 100,924 + 73,608 B | 176,128 B |
+| Shell, normal | 90,092 + 73,576 B | 90,076 + 73,608 B | 163,840 B |
+| Game worker, debug | 137,088 + 32,888 B | 136,976 + 32,888 B | 176,128 B |
+| Game worker, normal | 128,220 + 32,880 B | 128,108 + 32,880 B | 167,936 B |
+
+The kernel plugin and the RCO are byte-identical. In the normal Shell the badge's code is 146 B
+(`arm-vita-eabi-nm -S`: the header's span `vjo_styled_badge` 36 and its call in `render` +40, the
+source with each new text in `run_vocr` +28 and a refresh's in `ctl_main` +20, its publication in
+`view_publish` +16, the re-wrap's keep +6, the dimmed badge's recolour +4, the config key's default and
+parse 4 − 8, `frame` +4 and `start_cursor_job` −4) and 16 B of `.rodata` (the key's name). It is paid
+for by two changes that keep behaviour:
+the libc shims of `shell/libc_shim.c`, which tail-call ARM stubs, are built as ARM code, so the linker
+drops their nine Thumb-to-ARM interworking veneers (16 B each, 144 B; their callers reach them by
+`blx`, as they reach the stubs: 151 call sites, none a tail call), and `vita/buttons_vita.c`, the
+enter button's registry read once per overlay open, is built `-Os` (`vjo_buttons_read` 118 → 84 B).
+The normal Shell's code segment then has 36 B of room (20 B on main). The game worker shares the shims:
+7 of its veneers go, 112 B of its text. Data/bss grows by 32 B in the normal Shell (48 B debug), in the
+same pages (120 B left): `VjoConfig.source_badge` in its three copies, `VjoView.source_badge`, the two
+source bytes, `VjoWrap.keep` in its three instances, the 21-byte badge table in the data segment
+(`VJO_DATA_TABLE`), less two of the three `off`/`on` tables `core/config.c` had, now one. No allocation,
+thread, stack, PAF block or budget is added; the overlay's text arena keeps its 20,480 B (the badge is
+one more span of the header's five, and at most 6 of its 4,096 units). These are binary measurements;
+the console's glyph widths, the popup's layout and the ARM shims have not run on a console.
+
 ## Dictionary conjugation display
 
 Measured with VitaSDK GCC 15.2.0, Release, against main `ae9b02d`, on the Shell SELF's loaded

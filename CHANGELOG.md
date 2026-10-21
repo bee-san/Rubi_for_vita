@@ -11,6 +11,26 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- The popup says where its text came from: the dialogue starts with a dim `[HOOK]` when a native text
+  hook supplied the line and `[OCR]` when Rubi read it off the screen (the owner asked for a hook emoji
+  and an eye, then for ASCII over an image). An earlier line (line history) has none, since its source
+  is not kept; `source_badge = off` in `config.ini` hides it (no setting in the app). It sits on the
+  text's first row, about three characters wide at the default sizes, never on a row of its own, and
+  the cursor, taps and the highlight skip it. Emoji are not used: the system fonts the popup draws
+  with lack even ✓ (the console draws it as `_`), so 🪝 and 👁 are not expected there (unchecked), and
+  the firmware's `imagefont.bin` and `psexchar.pvf` have no hook or eye glyph
+  ([details](docs/native-hooks.md#the-popups-source-badge)). Host-tested only.
+
+### Changed
+
+- The Shell keeps its pages (163,840 B normal, 176,128 B debug) with the badge: its libc shims, which
+  only branch to SceLibKernel's ARM stubs, are built as ARM code, so the linker drops nine
+  interworking veneers (144 B), and the enter button's registry read is built for size. The Shell's
+  text is 16 B smaller in both builds, the game worker's 112 B (the same shims) [measured: both builds'
+  module rows; [memory ledger](docs/memory-ledger.md#the-popups-source-badge)].
+
 ## [0.9.1] - 2026-10-21
 
 Native text hooks that Rubi remembers for each game build and checks less often as they prove

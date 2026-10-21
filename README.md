@@ -159,7 +159,8 @@ on that page is reference material for future work.
 Automatic selection does not guarantee every listed game or version works. Game-specific hook sites
 must pass Rubi's version and code checks, and a hook must produce usable dialogue. Rubi checks hook
 text against OCR initially and periodically afterwards, and falls back to OCR when a hook cannot
-supply it. Both text sources work
+supply it. The popup's dialogue starts with a dim `[HOOK]` when a hook supplied it and `[OCR]` when Rubi
+read it off the screen (`source_badge = off` in `config.ini` hides it). Both text sources work
 offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
 [technical design](docs/native-hooks.md) covers string-copy hooks and game-specific hook sites.
 

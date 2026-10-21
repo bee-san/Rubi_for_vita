@@ -6,9 +6,9 @@
  * linker adds (__sceClibMemcpy_from_thumb, ...), one a function, where an ARM
  * one branches to the stub directly, in the same 4 bytes. Their Thumb callers
  * reach them by BLX, as they reach the stubs themselves: no veneer, no byte
- * more (9 veneers, 144 B of the Shell's text; the game worker's too). memset
- * stays Thumb: a Thumb function tail-calls it, and an ARM memset would only
- * move its veneer to that call. */
+ * more (the Shell's 9 veneers, 144 B of its text; 7 of the game worker's,
+ * 112 B: docs/memory-ledger.md). memset stays Thumb: a Thumb function
+ * tail-calls it, and an ARM memset would only move its veneer to that call. */
 #include <psp2/kernel/clib.h>
 #include <stddef.h>
 

@@ -258,7 +258,7 @@ endif()
 # the per-tap hit test, the overlay's text styling (once per render) and
 # games.ini storage (the Settings app's copy too). Measured -O2 -> -Os: 54 + 176 + 279 + 108 + 454 + 133 B.
 # The enter button's registry read (vita/buttons_vita.c, once per overlay open; the Rubi app's copy too):
-# for size since the popup's source badge, -39 B (159 -> 120 B of object text).
+# for size since the popup's source badge (vjo_buttons_read 118 -> 84 B in the normal Shell; measured).
 set_source_files_properties(${ROOT}/shell/main.cpp ${ROOT}/shell/memory.cpp ${ROOT}/core/entries.c
   ${ROOT}/core/text_hit.c ${ROOT}/core/styled.c ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c
   PROPERTIES COMPILE_OPTIONS "-Os")

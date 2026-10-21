@@ -215,9 +215,10 @@ to 31 hook-only readings before the next scheduled comparison. A hook that is wr
 still pass a check; reliability is conditional, not guaranteed. Choose **OCR only** in the Rubi app and
 restart the game to disable hooks ([Recovery](#recovery)).
 
-The Shell's normal jobs always request Automatic. The popup has no hook labels or source picker;
-source IDs, flags and scores stay in the debug log. The job protocol retains explicit stream and
-OCR-only requests for diagnostics and the self-test.
+The Shell's normal jobs always request Automatic. The popup says only where its text came from, a dim
+`[HOOK]` or `[OCR]` before it ([The popup's source badge](#the-popups-source-badge)); it has no hook
+numbers or source picker: source IDs, flags and scores stay in the debug log. The job protocol retains
+explicit stream and OCR-only requests for diagnostics and the self-test.
 
 A job a stream answers reads only the region's first capture pass (a strip at a time into one strip's
 block, under the job's reserve, as the probe reads), so the kernel publishes its capture (`capture_seq`,
@@ -258,6 +259,56 @@ pages are unchanged by it [measured: hooks/fix-text c0ea49d's Vita jobs, debug 1
 dialogue box of 60 characters against a few streams is about 10^4 cells, under a millisecond at 444 MHz,
 and the worst case, 20 streams of 256 characters against 256, 1.3 million cells, about 30-60 ms
 [estimate: the instructions of the `-Os` disassembly at 0.5-1 cycle each, not run on a console].
+
+## The popup's source badge
+
+The owner, 2026-10-21: "Maybe show a hook emoji in the dictionary output to show it has found a hook and
+is using it successfully. 🪝 or an eye for OCR"; then: "What about any ascii characters that can fit? i'd
+prefer that over an image icon". The popup's current text starts with a dim `[HOOK]` when the job that
+read it shows a stream's text (`text_from` is a stream's ID: the stream agreed with OCR, or a locked one
+answered without OCR) and `[OCR]` when it shows OCR's (`text_from` 0).
+
+<img src="img/source-badge-host.png" width="640" alt="The popup's top in seven states: [HOOK] and [OCR], dim and small, before the line また明日、一緒に見に行こう! with 一緒に highlighted and its entry below; [HOOK] before a line of two rows; the line without a badge; and three alternatives that are not built: [H] and [O], HOOK· and OCR·, J and o.">
+
+*A host rendering of the code's own spans (the header from `core/styled.c`'s `vjo_styled_badge` and
+`vjo_styled_history`, the entry from `vjo_styled_entry`, the default sizes), drawn in M PLUS 1p and Noto
+Sans at the overlay's geometry with a greedy wrap: not a console capture. The alternatives are the same
+spans with the badge's text replaced, a one-line change of `core/styled.c`'s `source_badges`.*
+
+- **What it marks**: the source of the job that read the shown text (`shell/worker.c`
+  `local_text_source`), or of the refresh that replaced it; a refresh that reads the same text leaves it,
+  as it leaves the text (the badge would otherwise need the header redrawn, the definition's scroll
+  with it). An earlier line (line history) has none: `history.csv` records its engine, the visit does
+  not keep it. Before a job has read text, or after one failed, the header holds no text and no badge.
+  `source_badge = off` in `config.ini` hides it (`on` by default; no setting in the Rubi app).
+- **How it is drawn**: one span before the text in the header (`vjo_styled_badge`), at the English size
+  (the Japanese one if that is smaller) in the frequency badge's grey, `VJO_RGB_RANK`. The header's lead
+  counts it, as it counts an earlier line's dimmed row, so the cursor, taps and the highlight start at
+  the text's first character. No space follows it: `core/linebreak.h` allows no break between Latin
+  letters and Japanese, and `VjoWrap.keep` stops the overlay's re-wrap from breaking right after it
+  (before a `「`, where the rules allow one), so it never takes a row of its own; the first row has its
+  width less room, about three characters at the default sizes [estimate: the rendering's fonts].
+  Host tests: `test_core.c` (`styled_source_badge`, `source_badge_config`), `test_cursor_nav.c`
+  (`the_source_badge_is_never_the_cursors`), `test_wrap_fix.cpp`
+  (`the_source_badge_keeps_the_wrap_rules`) and `test_shell_worker.c`
+  (`the_source_badge_follows_the_texts_source`).
+- **Why not the emoji, or a PlayStation symbol**: the popup is SceShell's PAF `ui::Text`, drawn with
+  the fonts SceShell's PAF loaded (its init takes a Japanese, a Latin, a Hangul and a Chinese PVF font,
+  `paf/framework.h`); the Shell opens no font itself (it imports no `ScePvf`). The console draws ✓
+  (U+2713, outside JIS X 0208) as `_` (`core/styled.h`), and 👁 (U+1F441, Unicode 7.0) and 🪝 (U+1FA9D,
+  13.0) are newer still [not checked on a console: the system's PVF fonts are in a separate firmware
+  package, not here]. [libvita2d #55](https://github.com/xerpi/libvita2d/issues/55)'s two candidates
+  have no hook, anchor or eye either: the firmware's `vs0:data/external/font/emoji/imagefont.bin` (3.74:
+  55,110 B, MD5 `59b8d380817083deaf6b3c1cae145507`, 45 icons at U+2120 and U+F880-U+F8ED: the face
+  buttons, the d-pad, L and R, SELECT, START, PS, trophies, PS Plus and PlayStation word marks; the
+  PS3's 332-icon file has emoji the Vita's lacks) [measured: decoded on the host from the official 3.74
+  update, psdevwiki's format], and `sa0:data/font/pvf/psexchar.pvf` (PlayStation symbols at ASCII code
+  points: buttons, arrows, a keyboard, a home, a push pin; [chart](https://github.com/nobodywasishere/vita_Symbols)).
+  An imagefont glyph would cost nothing if PAF draws its code points in a `ui::Text` as it does in
+  LiveArea's titles (unverified for the overlay's page); a PVF glyph or a bitmap would need libpvf or a
+  texture in SceShell, allocations after boot (AGENTS.md rule 1).
+- **Cost**: no allocation, thread, stack or RCO change; the Shell's pages are unchanged in both builds,
+  its text 16 B smaller ([memory ledger](memory-ledger.md#the-popups-source-badge)).
 
 ## Release
 
@@ -356,9 +407,12 @@ Hardware is paused; these are for the test issue (#230):
     must not add or clear pending disagreements. The wider interval may show up to 31 wrong hook-only
     readings before detecting a source that starts returning incorrect text. Change the executable,
     text-source setting or definitions and confirm that old learning is not reused.
-11. The popup shows text without hook numbers or source-status labels. Triangle does not change the
-    text source. Normal jobs keep `hook_pick = VJO_HOOK_PICK_AUTO`; diagnostic jobs can still request
-    a stream directly through the job protocol.
+11. The popup's text starts with a dim `[HOOK]` while the debug log's `game vocr source:` line says
+    `hook` for the job that read it, and `[OCR]` while it says `ocr`; an earlier line (▲ on the top row)
+    has none; `source_badge = off` hides it. The badge sits on the text's first row, never alone on a
+    row, and the cursor, taps and the highlight never land on it. No hook numbers; Triangle does not
+    change the text source. Normal jobs keep `hook_pick = VJO_HOOK_PICK_AUTO`; diagnostic jobs can still
+    request a stream directly through the job protocol.
 
 ## PSP probe (debug build)
 
