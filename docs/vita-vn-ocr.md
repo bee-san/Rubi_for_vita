@@ -504,15 +504,46 @@ console compares with the evaluation directly:
   (`〇一二三四五六七八九十百千万`, `0-9`) or `何数幾`, and before `所` after one of those other than `一`
   (`ルッ月です」` → `ルヶ月です」`; the valid `一ッ所` stays). `ッ月` and `ッ年` occur nowhere in the
   700 million characters of training-side text vita-vn-ocr counted (`docs/counters.md` there); `ッ`
-  before `日`, `村` or `町` stays. It runs before the ー/一 rule, so `ハネムーン一ッ月` keeps its `一`.
+  before `日`, `村` or `町` stays. It runs before the ー/一 rule, so `ハネムーン一ッ月` keeps its `一`;
+- a line made only of a box's border or scene art read as text is dropped, with its line break:
+  three or more characters, each one of `ー ニ 一 二 ― - ~ ・` (after the forms above), at least
+  two different ones and `ー` or `ニ` among them, such as the `ーニーーーーニーニー…` a text box's
+  decorative bottom edge reads as. The kanji numerals (`一二三`), a pause (`――――`, `ーーー`), a word
+  (`ニート`) and a line with anything else on it (`「ーー」`, `ニーー!`) stay; a line goes whole or
+  not at all. It follows `non_japanese_filter` in `config.ini`: `lines`, the default, drops such a
+  line, `none` keeps it (API 36: the Shell sets `VJO_GAME_OCR_S_DROP_BORDERS`, bit 16 of the job's
+  `speed` word, in the user's jobs; the self-test's stages read as before). A native hook's text
+  gets the same rule; a game's own dialogue is not expected to hold such a line.
 
 The text never grows, so the game worker normalises it in place before it returns it, and keeps
 the recognizer's own text after it in the same 4 KiB buffer (`vjo_text_normalize_keep`; nothing
 is added to SceShell). The Shell writes the recognizer's text to `log.txt`, one line per
 recognized line (`game vocr text N: …`, 60 characters at most), and, for a line that changed,
-what is shown (`game vocr text N shown: …`). The job's `gstep job norm` step counts the changes
-(`bytes`: full-width forms; `sum`: tildes << 24 | dashes << 16 | ellipses << 8 | 一→ー << 4 | ー→一;
-the counter rule's changes count in its total only).
+what is shown (`game vocr text N shown: …`); after a dropped line the shown lines are the next
+ones, so the log pairs them with the recognizer's lines by position. The job's `gstep job norm`
+step counts the changes (`bytes`: full-width forms; `sum`: tildes << 24 | dashes << 16 | ellipses << 8 |
+一→ー << 4 | ー→一; API 36, `kind`: the lines of a border dropped; the counter rule's changes count in
+its total only), and is logged also when the lines it dropped were all the text.
+
+**The border rule, measured on development data** (postproc-research's R08d, measured again on this
+code: `docs/benchmarks/textnorm-border-20261021.json`). The inputs are Rubi's default path on the
+VOCR5 development cohorts (VOCR5-S/N/L, the beam with the 1000k LM, the confidence cascade): teacher_val
+dev (8,000 dialogue characters), devnative dev (8,332) and 1,161 whole-dialogue units (25,854), with the
+whole dialogue also in the Adrenaline 2× view a PSP game has on the console. Each region's text went
+through the C code as the worker runs it. The rule changes one unit on every model size in both views,
+`v21004_142145`'s +8 px region, whose 35-character line is the box's bottom border, and nothing else:
+
+| whole-dialogue CER | Small | Normal | Large |
+|---|---|---|---|
+| native view | 5.167 → 5.032 % | 5.055 → 4.920 % | 4.986 → 4.850 % |
+| Adrenaline 2× view | 3.361 → 3.226 % | 3.152 → 3.017 % | 3.129 → 2.994 % |
+
+The fixed lines (teacher_val and devnative) do not change. With one unit, the gain's VN-cluster
+interval reaches 0 (Normal, native: −0.135 points, 95 % −0.446 to 0). On correct text it dropped none of
+the 2,298 development reference lines and none of the 1.6 million lines of vita-vn-ocr's training
+corpus (`shared/data/corpus`: dialogue, narration, Wikipedia). Wrapped every 20 or 26 characters, as a
+text box wraps, it dropped 1 of 8.8 million pieces: `ニーニ`, the end of `ベルニーニ` on a Wikipedia
+line without a final mark. That one case is why `non_japanese_filter = none` turns it off.
 
 **Measured on development data** (`tools/textnorm_eval.py`, `docs/benchmarks/textnorm-20261014.json`):
 teacher_val and devnative v3 (2,629 lines, 28,544 reference characters), the console-polarity

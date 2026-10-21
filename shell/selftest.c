@@ -330,9 +330,10 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
     } else {
         if (s->id == VJO_GSTEP_CHECK || s->id == VJO_GSTEP_LM || s->id == VJO_GSTEP_CASCADE ||
             s->id == VJO_GSTEP_REFINE || s->id == VJO_GSTEP_SHOT || s->id == VJO_GSTEP_SAVE ||
-            s->id == VJO_GSTEP_GATE) {
+            s->id == VJO_GSTEP_GATE || s->id == VJO_GSTEP_NORM) {
             /* API 20: the LM tier (check: | 8 with the cascade), the refinement's mode; API 23: the
-             * shot's JPEG quality, the save's chunks; API 26: the gate's mode */
+             * shot's JPEG quality, the save's chunks; API 26: the gate's mode; API 36: the norm step's lines
+             * of a border dropped (core/textnorm.h) */
             sceClibSnprintf(kindbuf, sizeof(kindbuf), "%u", (unsigned)s->kind);
             kind = kindbuf;
         }

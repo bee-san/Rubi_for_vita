@@ -5,6 +5,24 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Border lines dropped (API 36)
+
+Measured with VitaSDK GCC 15.2.0, Release, against main `e33f8f6`, on the packaged SELF files
+(`check_memory_ledger.py` in each variant's build); text + data/bss:
+
+| Module | Debug: before → after | Normal: before → after | Loaded pages, unchanged |
+|---|---:|---:|---:|
+| Game worker | 137,088 → 137,328 + 32,888 B | 128,220 → 128,476 + 32,880 B | 176,128 / 167,936 B |
+| Shell | 100,940 → 100,956 + 73,560 B | 90,092 → 90,108 + 73,576 B | 176,128 / 163,840 B |
+| Kernel | 41,740 → 41,756 + 77,732 B | 36,904 + 76,044 B, unchanged | 122,880 / 118,784 B |
+
+The worker's text normalisation gains its third pass (`core/textnorm.c` at -Os: 1,230 → 1,430 B of
+code, its two functions' stack frames 88 + 40 → 96 + 48 B, measured `-fstack-usage`), in place on the
+result buffer. The Shell sets one request bit from the config it already holds; the normal Shell's
+code segment keeps 4 B of its last page. The kernel only accepts the bit (its known-bit mask). No
+allocation site, thread, static buffer or budget is added. These are binary measurements; console
+boot, memory and timing have not been measured for this change.
+
 ## Counters (vita-vn-ocr #109)
 
 Measured with VitaSDK GCC 15.2.0 in `vitasdk/vitasdk:2026.08`, Release, on the packaged SELF files of both

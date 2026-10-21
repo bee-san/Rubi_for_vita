@@ -23,6 +23,20 @@ been reported.
 
 - Each game that is ON carries 4,096 B more of the OCR worker's module pages, for the counter re-decode:
   172,032 B in the normal build, 180,224 B in the debug build (`docs/memory-ledger.md`).
+- A line that is only a text box's border or scene art read as text, such as the `ーニーーーーニーニー…`
+  a box's decorative bottom edge reads as, is no longer shown, saved or looked up: three or more
+  characters, each one of `ー ニ 一 二 ― - ~ ・`, at least two different ones, `ー` or `ニ` among them, and
+  nothing else on the line. It follows `non_japanese_filter` in `config.ini`: `lines`, the default, drops
+  such a line, `none` keeps it. On vita-vn-ocr's development data (postproc-research's R08d) it removed
+  the one such line there, 35 characters in 1 of 1,161 whole-dialogue units, on every model size, and
+  changed no other line: whole-dialogue CER 5.06 → 4.92 % with Normal (3.15 → 3.02 % in the Adrenaline 2×
+  view a PSP game has). On correct text it dropped none of 1.6 million corpus lines, and 1 of 8.8 million
+  pieces of them wrapped as a text box wraps
+  ([details](docs/vita-vn-ocr.md#text-normalisation-shown-and-looked-up)). Not run on a console yet.
+- The plugins use API 36: an OCR job's request carries that choice (`VJO_GAME_OCR_S_DROP_BORDERS`, bit 16
+  of its `speed` word), and the debug build's `gstep job norm` step counts the lines dropped as its `kind`
+  (`tools/analyse_selftest.py` says so). The game worker does the work; no module's pages change
+  ([measured](docs/memory-ledger.md#border-lines-dropped-api-36)).
 
 ## [0.9.1] - 2026-10-21
 

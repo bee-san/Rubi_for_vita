@@ -87,7 +87,7 @@ int main(int argc, char **argv)
         VjoHistoryRecord r = {0};
         memset(&result, 0, sizeof(result));
         snprintf(result.text, sizeof(result.text), "%s", field[3]);
-        vjo_text_normalize_keep(result.text, sizeof(result.text), NULL, NULL);
+        vjo_text_normalize_keep(result.text, sizeof(result.text), NULL, 0, NULL);
         result.seq = 1; result.width = 900; result.height = 125; result.fb_width = 960; result.fb_height = 544;
         result.lines = result.recognized = 1;
         result.line[0] = (VjoGameOcrLine){800, 30, 50, 950, 300000};

@@ -1462,11 +1462,18 @@ static const VjoHookCand *hook_cand(uint32_t id)
     return NULL;
 }
 
-/* Stream k's text in out->text, normalised as OCR's text is (core/textnorm.h), with, after its NUL for
- * the log, OCR's text when the stream replaces it (ocr), else the stream's own before normalising. The
- * text is the stream's whole when it still holds what the job compared (the same seq), else the job's
- * copy of it. */
-static void hook_show(VjoGameOcrResult *out, const VjoHookCand *k, int ocr)
+/* The rules the job's text gets (core/textnorm.h): every one, or (API 36) all but the border rule without
+ * VJO_GAME_OCR_S_DROP_BORDERS (config.ini non_japanese_filter = none). */
+static unsigned norm_flags(const VjoGameOcrRequest *r)
+{
+    return r->speed & VJO_GAME_OCR_S_DROP_BORDERS ? 0u : VJO_TEXTNORM_KEEP_BORDERS;
+}
+
+/* Stream k's text in out->text, normalised as OCR's text is (core/textnorm.h, with the job's flags), with,
+ * after its NUL for the log, OCR's text when the stream replaces it (ocr), else the stream's own before
+ * normalising. The text is the stream's whole when it still holds what the job compared (the same seq), else
+ * the job's copy of it. */
+static void hook_show(VjoGameOcrResult *out, const VjoHookCand *k, int ocr, unsigned flags)
 {
     char *t = out->text;
     const size_t cap = sizeof(out->text);
@@ -1492,10 +1499,10 @@ static void hook_show(VjoGameOcrResult *out, const VjoHookCand *k, int ocr)
         t[h] = '\0';
     }
     if (!ocr) {
-        vjo_text_normalize_keep(t, cap, NULL, &norm);
+        vjo_text_normalize_keep(t, cap, NULL, flags, &norm);
         return;
     }
-    vjo_text_normalize(t, &norm);
+    vjo_text_normalize_as(t, flags, &norm);
     h = text_len(t, room);
     memmove(t + h + 1u, t + cap - 1u - o, o + 1u);
     sceClibMemset(t + h + 2u + o, 0, cap - (h + 2u + o));
@@ -1714,7 +1721,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                 step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
                          capture.last.fb_format, capture.pass_us, 0);
             if (!rc) {
-                hook_show(out, hook_cand(hook_id), 0);
+                hook_show(out, hook_cand(hook_id), 0, norm_flags(r));
                 hk.from = hook_id;
             }
             goto done;
@@ -1973,10 +1980,12 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
          * Shell would otherwise log as the recognizer's text. */
         VjoTextNorm k;
         uint64_t t0 = now_wide();
-        unsigned changes = vjo_text_normalize_keep(out->text, sizeof(out->text), lm_extra ? policy.raw : NULL, &k);
+        unsigned changes = vjo_text_normalize_keep(out->text, sizeof(out->text), lm_extra ? policy.raw : NULL,
+                                                   norm_flags(r), &k);
 #define CLAMP8(v) ((v) > 255u ? 255u : (v))
-        if (out->text[0])
-            step_add(VJO_GSTEP_NORM, 0, changes, 0, k.width,
+        /* also a text that only dropped lines emptied (core/textnorm.h): the step says why it is empty */
+        if (out->text[0] || changes)
+            step_add(VJO_GSTEP_NORM, CLAMP8(k.garbage), changes, 0, k.width,
                      CLAMP8(k.tilde) << 24 | CLAMP8(k.dash) << 16 | CLAMP8(k.ellipsis) << 8 |
                      (k.long_vowel > 15u ? 15u : k.long_vowel) << 4 | (k.kanji_one > 15u ? 15u : k.kanji_one),
                      (uint32_t)(now_wide() - t0) + 1u, 0);
@@ -1989,7 +1998,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                                             hk.cand, hk.n, &score, &hk.flags);
         hk.score = score;
         if (id) {
-            hook_show(out, hook_cand(id), 1);
+            hook_show(out, hook_cand(id), 1, norm_flags(r));
             hk.from = id;
         }
     }

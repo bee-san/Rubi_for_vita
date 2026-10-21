@@ -1,0 +1,435 @@
+{
+ "what": "The border rule (core/textnorm.c pass 3, postproc-research R08d) on development data: Rubi's default path, each region's whole text through the C code before (main) and after (this change).",
+ "how": "pp_impl_measure.py in shared/artifacts/postproc-impl (not committed: it reads postproc-research's dumps of VOCR5-S/N/L W8I + beam + vocr_lm_o3_1000k.vlm + the confidence cascade, built from Rubi ae9b02d and vita-vn-ocr ac0d6b1); vita-vn-ocr's scorer (eval/metrics norm + Levenshtein for fixed lines, train/general_vn_textbox_guard.transcript_score for whole dialogue); VN-cluster paired bootstrap, 10,000 resamples, seed 0.",
+ "textnorm_c_sha256": {
+  "after": "24268efb8ce18c11451db7b9c9b7bd267a27d6cb8798881042e517c361db4d42",
+  "before (main e33f8f6)": "c5c65a2f70c89072b5518306fcd450a9a18787fbc2b67d93dc96ce6680080989"
+ },
+ "cohorts": {
+  "tv": "teacher_val dev, dialogue lines",
+  "dn": "devnative dev (4 files), dialogue crops",
+  "wd": "whole dialogue: tv_dlg + dn_dlg units (base, +4, +8 px) as eval/vocr5_select.py pools them"
+ },
+ "views": {
+  "native": "VOCR5's cohorts as stored",
+  "psp2x": "PSP regions x2 (cv2.INTER_LINEAR), as Adrenaline shows a PSP game on the console; whole dialogue only"
+ },
+ "results": {
+  "native": {
+   "S": {
+    "sets": {
+     "tv_name": {
+      "errors_before": 63,
+      "errors_after": 63,
+      "chars": 1416,
+      "cer_before": 4.449,
+      "cer_after": 4.449
+     },
+     "tv": {
+      "errors_before": 55,
+      "errors_after": 55,
+      "chars": 8000,
+      "cer_before": 0.688,
+      "cer_after": 0.688
+     },
+     "dn_name": {
+      "errors_before": 60,
+      "errors_after": 60,
+      "chars": 639,
+      "cer_before": 9.39,
+      "cer_after": 9.39
+     },
+     "dn": {
+      "errors_before": 63,
+      "errors_after": 63,
+      "chars": 8332,
+      "cer_before": 0.756,
+      "cer_after": 0.756
+     },
+     "wd": {
+      "errors_before": 1336,
+      "errors_after": 1301,
+      "chars": 25854,
+      "cer_before": 5.167,
+      "cer_after": 5.032
+     }
+    },
+    "regions": 2885,
+    "crops": 4176,
+    "changed": [
+     {
+      "set": "wd",
+      "id": "v21004_142145@97,496,486,518|expanded-8",
+      "vn": "v21004",
+      "errors_before": 35,
+      "errors_after": 0,
+      "d_errors": -35,
+      "lines_dropped": 1,
+      "first_word_same": true
+     }
+    ],
+    "improved": 1,
+    "regressed": 0,
+    "neutral": 0,
+    "ci_points": {
+     "tv": {
+      "delta": 0.0,
+      "lo": 0.0,
+      "hi": 0.0,
+      "vns": 94
+     },
+     "dn": {
+      "delta": 0.0,
+      "lo": 0.0,
+      "hi": 0.0,
+      "vns": 34
+     },
+     "wd": {
+      "delta": -0.1354,
+      "lo": -0.4463,
+      "hi": 0.0,
+      "vns": 93
+     },
+     "score": {
+      "delta": -0.0677,
+      "lo": -0.2231,
+      "hi": 0.0
+     }
+    },
+    "crops_dropped": 1,
+    "c_equals_postproc_research_python_rule": true
+   },
+   "N": {
+    "sets": {
+     "tv_name": {
+      "errors_before": 44,
+      "errors_after": 44,
+      "chars": 1416,
+      "cer_before": 3.107,
+      "cer_after": 3.107
+     },
+     "tv": {
+      "errors_before": 41,
+      "errors_after": 41,
+      "chars": 8000,
+      "cer_before": 0.512,
+      "cer_after": 0.512
+     },
+     "dn_name": {
+      "errors_before": 53,
+      "errors_after": 53,
+      "chars": 639,
+      "cer_before": 8.294,
+      "cer_after": 8.294
+     },
+     "dn": {
+      "errors_before": 51,
+      "errors_after": 51,
+      "chars": 8332,
+      "cer_before": 0.612,
+      "cer_after": 0.612
+     },
+     "wd": {
+      "errors_before": 1307,
+      "errors_after": 1272,
+      "chars": 25854,
+      "cer_before": 5.055,
+      "cer_after": 4.92
+     }
+    },
+    "regions": 2885,
+    "crops": 4176,
+    "changed": [
+     {
+      "set": "wd",
+      "id": "v21004_142145@97,496,486,518|expanded-8",
+      "vn": "v21004",
+      "errors_before": 35,
+      "errors_after": 0,
+      "d_errors": -35,
+      "lines_dropped": 1,
+      "first_word_same": true
+     }
+    ],
+    "improved": 1,
+    "regressed": 0,
+    "neutral": 0,
+    "ci_points": {
+     "tv": {
+      "delta": 0.0,
+      "lo": 0.0,
+      "hi": 0.0,
+      "vns": 94
+     },
+     "dn": {
+      "delta": 0.0,
+      "lo": 0.0,
+      "hi": 0.0,
+      "vns": 34
+     },
+     "wd": {
+      "delta": -0.1354,
+      "lo": -0.4463,
+      "hi": 0.0,
+      "vns": 93
+     },
+     "score": {
+      "delta": -0.0677,
+      "lo": -0.2231,
+      "hi": 0.0
+     }
+    },
+    "crops_dropped": 1,
+    "c_equals_postproc_research_python_rule": true
+   },
+   "L": {
+    "sets": {
+     "tv_name": {
+      "errors_before": 47,
+      "errors_after": 47,
+      "chars": 1416,
+      "cer_before": 3.319,
+      "cer_after": 3.319
+     },
+     "tv": {
+      "errors_before": 36,
+      "errors_after": 36,
+      "chars": 8000,
+      "cer_before": 0.45,
+      "cer_after": 0.45
+     },
+     "dn_name": {
+      "errors_before": 51,
+      "errors_after": 51,
+      "chars": 639,
+      "cer_before": 7.981,
+      "cer_after": 7.981
+     },
+     "dn": {
+      "errors_before": 47,
+      "errors_after": 47,
+      "chars": 8332,
+      "cer_before": 0.564,
+      "cer_after": 0.564
+     },
+     "wd": {
+      "errors_before": 1289,
+      "errors_after": 1254,
+      "chars": 25854,
+      "cer_before": 4.986,
+      "cer_after": 4.85
+     }
+    },
+    "regions": 2885,
+    "crops": 4176,
+    "changed": [
+     {
+      "set": "wd",
+      "id": "v21004_142145@97,496,486,518|expanded-8",
+      "vn": "v21004",
+      "errors_before": 35,
+      "errors_after": 0,
+      "d_errors": -35,
+      "lines_dropped": 1,
+      "first_word_same": true
+     }
+    ],
+    "improved": 1,
+    "regressed": 0,
+    "neutral": 0,
+    "ci_points": {
+     "tv": {
+      "delta": 0.0,
+      "lo": 0.0,
+      "hi": 0.0,
+      "vns": 94
+     },
+     "dn": {
+      "delta": 0.0,
+      "lo": 0.0,
+      "hi": 0.0,
+      "vns": 34
+     },
+     "wd": {
+      "delta": -0.1354,
+      "lo": -0.4463,
+      "hi": 0.0,
+      "vns": 93
+     },
+     "score": {
+      "delta": -0.0677,
+      "lo": -0.2231,
+      "hi": 0.0
+     }
+    },
+    "crops_dropped": 1,
+    "c_equals_postproc_research_python_rule": true
+   }
+  },
+  "psp2x": {
+   "S": {
+    "sets": {
+     "wd": {
+      "errors_before": 869,
+      "errors_after": 834,
+      "chars": 25854,
+      "cer_before": 3.361,
+      "cer_after": 3.226
+     }
+    },
+    "regions": 1161,
+    "crops": 2510,
+    "changed": [
+     {
+      "set": "wd",
+      "id": "v21004_142145@97,496,486,518|expanded-8",
+      "vn": "v21004",
+      "errors_before": 35,
+      "errors_after": 0,
+      "d_errors": -35,
+      "lines_dropped": 1,
+      "first_word_same": true
+     }
+    ],
+    "improved": 1,
+    "regressed": 0,
+    "neutral": 0,
+    "ci_points": {
+     "wd": {
+      "delta": -0.1354,
+      "lo": -0.4531,
+      "hi": 0.0,
+      "vns": 93
+     }
+    },
+    "crops_dropped": 1,
+    "c_equals_postproc_research_python_rule": true
+   },
+   "N": {
+    "sets": {
+     "wd": {
+      "errors_before": 815,
+      "errors_after": 780,
+      "chars": 25854,
+      "cer_before": 3.152,
+      "cer_after": 3.017
+     }
+    },
+    "regions": 1161,
+    "crops": 2510,
+    "changed": [
+     {
+      "set": "wd",
+      "id": "v21004_142145@97,496,486,518|expanded-8",
+      "vn": "v21004",
+      "errors_before": 35,
+      "errors_after": 0,
+      "d_errors": -35,
+      "lines_dropped": 1,
+      "first_word_same": true
+     }
+    ],
+    "improved": 1,
+    "regressed": 0,
+    "neutral": 0,
+    "ci_points": {
+     "wd": {
+      "delta": -0.1354,
+      "lo": -0.4531,
+      "hi": 0.0,
+      "vns": 93
+     }
+    },
+    "crops_dropped": 1,
+    "c_equals_postproc_research_python_rule": true
+   },
+   "L": {
+    "sets": {
+     "wd": {
+      "errors_before": 809,
+      "errors_after": 774,
+      "chars": 25854,
+      "cer_before": 3.129,
+      "cer_after": 2.994
+     }
+    },
+    "regions": 1161,
+    "crops": 2510,
+    "changed": [
+     {
+      "set": "wd",
+      "id": "v21004_142145@97,496,486,518|expanded-8",
+      "vn": "v21004",
+      "errors_before": 35,
+      "errors_after": 0,
+      "d_errors": -35,
+      "lines_dropped": 1,
+      "first_word_same": true
+     }
+    ],
+    "improved": 1,
+    "regressed": 0,
+    "neutral": 0,
+    "ci_points": {
+     "wd": {
+      "delta": -0.1354,
+      "lo": -0.4531,
+      "hi": 0.0,
+      "vns": 93
+     }
+    },
+    "crops_dropped": 1,
+    "c_equals_postproc_research_python_rule": true
+   }
+  }
+ },
+ "valid_text": {
+  "dev references, fixed lines": {
+   "texts": 1724,
+   "lines": 1724,
+   "dropped": 0
+  },
+  "dev references, wd units (base)": {
+   "texts": 387,
+   "lines": 574,
+   "dropped": 0
+  },
+  "corpus dialogue, whole lines": {
+   "lines": 600000,
+   "dropped": 0
+  },
+  "corpus dialogue, wrapped every 20": {
+   "lines": 1499623,
+   "dropped": 0
+  },
+  "corpus dialogue, wrapped every 26": {
+   "lines": 1237533,
+   "dropped": 0
+  },
+  "corpus narration, whole lines": {
+   "lines": 600000,
+   "dropped": 0
+  },
+  "corpus narration, wrapped every 20": {
+   "lines": 2130195,
+   "dropped": 0
+  },
+  "corpus narration, wrapped every 26": {
+   "lines": 1731563,
+   "dropped": 0
+  },
+  "corpus wiki, whole lines": {
+   "lines": 400000,
+   "dropped": 0
+  },
+  "corpus wiki, wrapped every 20": {
+   "lines": 1233134,
+   "dropped": 0
+  },
+  "corpus wiki, wrapped every 26": {
+   "lines": 1006965,
+   "dropped": 1
+  },
+  "note": "every drop here is wrong; the one (corpus wiki, wrapped every 26) is the 3-character end of a katakana name on a line without a final mark (docs/vita-vn-ocr.md)"
+ }
+}

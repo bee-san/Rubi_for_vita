@@ -447,6 +447,27 @@ class AnalyseV2(unittest.TestCase):
         gt = a.summarise_log("\n".join(lines) + "\n")["gate"]
         self.assertEqual(gt, {"jobs": 1, "stopped": 1, "lines_stopped": 2, "scores": [-60], "us": [9001], "rcs": {},
                               "reads": 1})
+        # the text normalised: its kind, the lines of a border dropped (core/textnorm.h), read back
+        self.assertTrue(any(line.startswith("gstep job norm kind=1 arg=3 rc=0x00000000 bytes=1 sum=0x00010000 ")
+                            for line in lines), lines)
+        nm = a.summarise_log("\n".join(lines) + "\n")["norm"]
+        self.assertEqual(nm, {"jobs": 1, "changed": 1, "width": 1, "tilde": 0, "dash": 1, "ellipsis": 0,
+                              "long_vowel": 0, "kanji_one": 0, "garbage": 1, "us": [41]})
+
+    def test_the_norm_step_counts_the_lines_of_a_border_dropped(self):
+        # VJO_GSTEP_NORM: API 36's kind, the lines of a border dropped; an older Shell printed kind=- (none counted)
+        def step(kind, arg):
+            return (f"gstep job norm kind={kind} arg={arg} rc=0x00000000 bytes=0 sum=0x00000000 main=0 cdram=0 "
+                    f"phycont=0 us=30\n")
+        nm = a.summarise_log(step("-", 0) + step("1", 1) + step("2", 3))["norm"]
+        self.assertEqual((nm["jobs"], nm["changed"], nm["garbage"], nm["us"]), (3, 2, 3, [30, 30, 30]))
+        self.assertEqual(a.norm_line(nm), "  text normalised: 2 of 3 job(s) changed: 0 full-width form(s), 0 tilde(s), "
+                                          "0 dash(es), 0 ellipsis(es), 0 一->ー, 0 ー->一, 3 line(s) of a border "
+                                          "dropped; 30-30 us")
+        # none dropped: the line as before
+        nm = a.summarise_log(step("-", 0) + step("0", 0))["norm"]
+        self.assertEqual(a.norm_line(nm), "  text normalised: 0 of 2 job(s) changed: 0 full-width form(s), 0 tilde(s), "
+                                          "0 dash(es), 0 ellipsis(es), 0 一->ー, 0 ー->一; 30-30 us")
 
     def test_the_gate_step_reads_its_score_beside_the_read_bit(self):
         # API 26 (VJO_GSTEP_GATE): bytes = score + 129 | (threshold + 129) << 16 | VJO_GLM_READ; arg 0 kept the
