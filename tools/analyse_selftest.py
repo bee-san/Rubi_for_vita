@@ -997,8 +997,10 @@ LOG = {
                        r".*us=(\d+)"),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
     "conf": re.compile(r"ms c(\d+)(\*?)(\^?)"),
-    # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM)
-    "norm": re.compile(r"^gstep job norm kind=\S+ arg=(\d+) rc=0x[0-9A-Fa-f]+ bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
+    # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM); API 36: kind the lines of a border
+    # dropped ("-" from an older Shell, which did not print it)
+    "norm": re.compile(r"^gstep job norm kind=(\S+) arg=(\d+) rc=0x[0-9A-Fa-f]+ bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
+                       r".*us=(\d+)"),
     # API 22 (docs/ocr-speed.md): parallel lines and the line cache, the ARM clock, the game's frame pacing
     "par": re.compile(r"^gstep job par kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) .*us=(\d+)"),
     "clock": re.compile(r"^gstep job clock kind=\S+ arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+)"),
@@ -2279,7 +2281,7 @@ def summarise_log(text):
          "settle": {"jobs": 0, "held": 0, "timeout": 0, "none": 0, "ms": [], "passes": [], "changes": 0, "toggling_jobs": 0},
          "blank": {"lines": 0, "sizes": [], "edges": []},
          "norm": {"jobs": 0, "changed": 0, "width": 0, "tilde": 0, "dash": 0, "ellipsis": 0, "long_vowel": 0,
-                  "kanji_one": 0, "us": []},
+                  "kanji_one": 0, "garbage": 0, "us": []},
          "lm": {"jobs": 0, "greedy": 0, "rcs": {}, "lines": 0, "changed": 0, "low": 0, "read": 0, "load_ms": [],
                 "decode_ms": [], "conf": [], "tiers": {}},
          "cascade": {"jobs": 0, "lines": 0, "changed": 0, "left": 0, "read": 0, "load_ms": [], "ms": [], "rcs": {},
@@ -2441,15 +2443,16 @@ def summarise_log(text):
             continue
         m = LOG["norm"].match(line)
         if m:
-            nm, packed = s["norm"], int(m.group(3), 16)
+            nm, packed = s["norm"], int(m.group(4), 16)
             nm["jobs"] += 1
-            nm["changed"] += int(m.group(1)) > 0
-            nm["width"] += int(m.group(2))
+            nm["changed"] += int(m.group(2)) > 0
+            nm["width"] += int(m.group(3))
             for k, shift in (("tilde", 24), ("dash", 16), ("ellipsis", 8)):
                 nm[k] += (packed >> shift) & 0xFF
             nm["long_vowel"] += (packed >> 4) & 0xF
             nm["kanji_one"] += packed & 0xF
-            nm["us"].append(int(m.group(4)))
+            nm["garbage"] += int(m.group(1)) if m.group(1).isdigit() else 0
+            nm["us"].append(int(m.group(5)))
             continue
         m = LOG["blank"].match(line)
         if m:
@@ -3411,6 +3414,16 @@ def backend_line(value):
             "installer deletes the line")
 
 
+def norm_line(nm):
+    """The text normalisation's summary line (VJO_GSTEP_NORM, core/textnorm.h): the jobs it changed, each rule's
+    changes, the lines of a border it dropped (said only when there are some) and its time."""
+    return (f"  text normalised: {nm['changed']} of {nm['jobs']} job(s) changed: {nm['width']} full-width "
+            f"form(s), {nm['tilde']} tilde(s), {nm['dash']} dash(es), {nm['ellipsis']} ellipsis(es), "
+            f"{nm['long_vowel']} 一->ー, {nm['kanji_one']} ー->一"
+            + (f", {nm['garbage']} line(s) of a border dropped" if nm.get("garbage") else "")
+            + f"; {_span(nm['us'])} us")
+
+
 def render_collect(c):
     L = [f"collect {c['folder']} ({c['record'].get('collected_at')}, {c['record'].get('host')})"]
     pkg = c["record"].get("package") or {}
@@ -3570,9 +3583,7 @@ def render_collect(c):
                         if gt["rcs"] else ""))
         nm = lg.get("norm") or {}
         if nm.get("jobs"):
-            L.append(f"  text normalised: {nm['changed']} of {nm['jobs']} job(s) changed: {nm['width']} full-width "
-                     f"form(s), {nm['tilde']} tilde(s), {nm['dash']} dash(es), {nm['ellipsis']} ellipsis(es), "
-                     f"{nm['long_vowel']} 一->ー, {nm['kanji_one']} ー->一; {_span(nm['us'])} us")
+            L.append(norm_line(nm))
         bl = lg.get("blank") or {}
         if bl.get("lines"):
             L.append(f"  blank lines skipped: {bl['lines']} ({', '.join(bl['sizes'][:6])}"

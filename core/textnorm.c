@@ -188,27 +188,60 @@ static void long_vowels(char *s, VjoTextNorm *k)
     }
 }
 
-unsigned vjo_text_normalize(char *s, VjoTextNorm *counts)
+/* Pass 3: a box's border or scene art read as a line of text, "ーニーーーーニーニー…": three or
+ * more code points, each one of ー ニ 一 二 ― - ~ ・ (the forms passes 1 and 2 leave), at least two
+ * different ones, and ー or ニ (katakana) among them. Such a line goes with its line break; no line
+ * is changed in part. */
+static void garbage_lines(char *s, VjoTextNorm *k)
+{
+    /* bit i of seen: set[i] is in the line; bit 8: something else is */
+    static const uint16_t set[] = {CP_LONG_VOWEL, 0x30CB /* ニ */, CP_KANJI_ONE, 0x4E8C /* 二 */, CP_DASH, '-', '~',
+                                   CP_MIDDLE_DOT};
+    size_t r = 0, w = 0, e, n;
+    while (s[r]) {
+        unsigned seen = 0, len = 0, i;
+        for (e = r; s[e] && s[e] != '\n'; e += n, len++) {
+            uint32_t c = decode(s + e, &n);
+            for (i = 0; i < 8 && set[i] != c; i++) {
+            }
+            seen |= 1u << i;
+        }
+        if (len >= 3 && seen < 0x100 && (seen & (seen - 1)) && (seen & 3)) {
+            k->garbage++;
+            if (!s[e] && w) w--; /* the last line: the break before it goes */
+            r = e + !!s[e];      /* any other: the break after it */
+            continue;
+        }
+        e += !!s[e];
+        memmove(s + w, s + r, e - r);
+        w += e - r;
+        r = e;
+    }
+    s[w] = '\0';
+}
+
+unsigned vjo_text_normalize_as(char *s, unsigned flags, VjoTextNorm *counts)
 {
     VjoTextNorm k;
     memset(&k, 0, sizeof(k));
     if (s) {
         fold_forms(s, &k);
         long_vowels(s, &k);
+        if (!(flags & VJO_TEXTNORM_KEEP_BORDERS)) garbage_lines(s, &k);
     }
     if (counts) *counts = k;
-    return k.width + k.tilde + k.dash + k.ellipsis + k.long_vowel + k.kanji_one + k.counter;
+    return k.width + k.tilde + k.dash + k.ellipsis + k.long_vowel + k.kanji_one + k.counter + k.garbage;
 }
 
-unsigned vjo_text_normalize_keep(char *buf, size_t cap, const char *raw, VjoTextNorm *counts)
+unsigned vjo_text_normalize_keep(char *buf, size_t cap, const char *raw, unsigned flags, VjoTextNorm *counts)
 {
     size_t n = 0, keep, m, rn;
     unsigned changes;
-    if (!buf || cap < 2) return vjo_text_normalize(NULL, counts);
+    if (!buf || cap < 2) return vjo_text_normalize_as(NULL, flags, counts);
     while (n + 1 < cap && buf[n]) n++;
     buf[n] = '\0';
     if (n + 2 > cap) { /* no room for a copy: the text fills the buffer */
-        changes = vjo_text_normalize(buf, counts);
+        changes = vjo_text_normalize_as(buf, flags, counts);
         m = strlen(buf);
         memset(buf + m, 0, cap - m);
         return changes;
@@ -221,7 +254,7 @@ unsigned vjo_text_normalize_keep(char *buf, size_t cap, const char *raw, VjoText
     while (keep && keep < rn && ((unsigned char)raw[keep] & 0xC0) == 0x80) keep--;
     memmove(buf + n + 1, raw, keep);
     buf[n + 1 + keep] = '\0';
-    changes = vjo_text_normalize(buf, counts);
+    changes = vjo_text_normalize_as(buf, flags, counts);
     m = strlen(buf);
     memmove(buf + m + 1, buf + n + 1, keep + 1);
     memset(buf + m + 1 + keep + 1, 0, cap - (m + 1 + keep + 1));

@@ -620,7 +620,9 @@ nothing to skip in the test screenshots. Both are logged per job; see
 for what each costs and what the host measurements show.
 The recognized text is shown, saved and looked up in one form of each mark
 (full-width `！` as `!`, `〜` as `~`, `...` as `…`, `ー` or `一` by context), the
-form vita-vn-ocr's scorer uses; the recognizer's own text is in `log.txt`
+form vita-vn-ocr's scorer uses, and without a line that is only a box's border
+read as text (`ーニーーーーニーニー…`; `non_japanese_filter = none` keeps it); the
+recognizer's own text is in `log.txt`
 ([text normalisation](vita-vn-ocr.md#text-normalisation-shown-and-looked-up)).
 Each line is decoded with a beam search and a character language model
 (`ocr_lm = 1000k` by default; `4000k`, `2000k`, `500k` or `off`). The LM is

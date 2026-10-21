@@ -161,8 +161,66 @@ static void test_lines(void)
     TEST_CHECK(check("統\nー的", "統\nー的", &k) == 0);
     TEST_CHECK(check("あ..\n.い", "あ..\n.い", &k) == 0);
     TEST_CHECK(check("", "", &k) == 0);
-    TEST_CHECK(vjo_text_normalize(NULL, &k) == 0 && !k.width);
+    TEST_CHECK(vjo_text_normalize(NULL, &k) == 0 && !k.width && !k.garbage);
     TEST_CHECK(vjo_text_normalize(buf, NULL) == 0); /* no counts wanted */
+}
+
+/* A box's border or scene art read as a line (postproc-research R08d): 3+ code
+ * points, each of ー ニ 一 二 ― - ~ ・, at least two different, ー or ニ among
+ * them. The line goes with its break, counted once; nothing else changes. */
+static void test_border_lines(void)
+{
+    VjoTextNorm k;
+    /* the research's positives */
+    TEST_CHECK(check("ーニーーーーニーニーーーー", "", &k) == 1 && k.garbage == 1);
+    TEST_CHECK(check("ニーニー", "", &k) == 1 && k.garbage == 1);
+    TEST_CHECK(check("ーーニ", "", &k) == 1 && k.garbage == 1);
+    TEST_CHECK(check("ニ一ニ一", "", &k) == 3 && k.long_vowel == 2 && k.garbage == 1); /* ー by context first */
+    TEST_CHECK(check("テキスト\nーニーーーニー", "テキスト", &k) == 1 && k.garbage == 1);
+    TEST_CHECK(check("ーニーーーニー\nテキスト", "テキスト", &k) == 1 && k.garbage == 1);
+    TEST_CHECK(check("あ\nーニー\nい", "あ\nい", &k) == 1 && k.garbage == 1);
+    /* the research's negatives: one character, no katakana, too short, a word, anything else on the line */
+    TEST_CHECK(check("ーーー", "ーーー", &k) == 0);
+    TEST_CHECK(check("――――", "――――", &k) == 0); /* a pause */
+    TEST_CHECK(check("―――――", "―――――", &k) == 0);
+    TEST_CHECK(check("一二一二", "一二一二", &k) == 0); /* kanji numerals */
+    TEST_CHECK(check("一二三", "一二三", &k) == 0);
+    TEST_CHECK(check("ニー", "ニー", &k) == 0);
+    TEST_CHECK(check("ニート", "ニート", &k) == 0);
+    TEST_CHECK(check("コーヒー", "コーヒー", &k) == 0);
+    TEST_CHECK(check("「ーー」", "「ーー」", &k) == 0);
+    TEST_CHECK(check("ニーー!", "ニーー!", &k) == 0);
+    TEST_CHECK(check("ー、ー", "ー、ー", &k) == 0);
+    TEST_CHECK(check("~~~", "~~~", &k) == 0);
+    TEST_CHECK(check("……", "……", &k) == 0);
+    TEST_CHECK(check("・", "・", &k) == 0);
+    TEST_CHECK(check("-~-~", "-~-~", &k) == 0); /* ASCII only: no katakana */
+    TEST_CHECK(check("ーニー ーニー", "ーニー ーニー", &k) == 0); /* a space is something else */
+    TEST_CHECK(check("ーニー\xFF", "ーニー\xFF", &k) == 0);         /* so is an invalid byte */
+    TEST_CHECK(check("また明日、一緒に見に行こう!", "また明日、一緒に見に行こう!", &k) == 0 && !k.garbage);
+    /* every line on its own: several, at either end, all of them; an empty line or a last break stays */
+    TEST_CHECK(check("あ\nーニー\nニーニ\nい", "あ\nい", &k) == 2 && k.garbage == 2);
+    TEST_CHECK(check("ーニー\nあ\nニーニ", "あ", &k) == 2 && k.garbage == 2);
+    TEST_CHECK(check("ーニー\nニーニ", "", &k) == 2 && k.garbage == 2);
+    TEST_CHECK(check("あ\n\nい", "あ\n\nい", &k) == 0);
+    TEST_CHECK(check("あ\nーニー\n", "あ\n", &k) == 1);
+    TEST_CHECK(check("あ\n\nーニー", "あ\n", &k) == 1);
+    /* on the forms passes 1 and 2 leave: － is -, 〜 is ~, — is ― */
+    TEST_CHECK(check("ー－ー", "", &k) == 2 && k.width == 1 && k.garbage == 1);
+    TEST_CHECK(check("ニ〜ニ", "", &k) == 2 && k.tilde == 1 && k.garbage == 1);
+    TEST_CHECK(check("ー—ー", "", &k) == 2 && k.dash == 1 && k.garbage == 1);
+    TEST_CHECK(check("ーニー・ニ二一―-~", "", &k) == 1 && k.garbage == 1); /* the whole set */
+    TEST_CHECK(check("また明日、一緒に見に行こう!\nーニーーーーニーニーーーーーーーーーーーーーーーーーーニーニーニーーー",
+                     "また明日、一緒に見に行こう!", &k) == 1 && k.garbage == 1);
+    /* VJO_TEXTNORM_KEEP_BORDERS (non_japanese_filter = none): such a line stays; every other rule runs */
+    snprintf(buf, sizeof(buf), "%s", "テキスト\nーニーーーニー");
+    TEST_CHECK(vjo_text_normalize_as(buf, VJO_TEXTNORM_KEEP_BORDERS, &k) == 0 && !k.garbage &&
+               !strcmp(buf, "テキスト\nーニーーーニー"));
+    snprintf(buf, sizeof(buf), "%s", "ニ一ニ一\nー—ー");
+    TEST_CHECK(vjo_text_normalize_as(buf, VJO_TEXTNORM_KEEP_BORDERS, &k) == 3 && k.long_vowel == 2 && k.dash == 1 &&
+               !k.garbage && !strcmp(buf, "ニーニー\nー―ー"));
+    snprintf(buf, sizeof(buf), "%s", "ーニー");
+    TEST_CHECK(vjo_text_normalize_as(buf, 0, &k) == 1 && k.garbage == 1 && !buf[0]); /* 0: every rule */
 }
 
 /* Invalid bytes are kept; a cut sequence at the end too. */
@@ -196,34 +254,52 @@ static void test_keep_raw(void)
     VjoTextNorm k;
     memset(b, 'x', sizeof(b));
     strcpy(b, "コ一ヒ一！");
-    TEST_CHECK(vjo_text_normalize_keep(b, sizeof(b), NULL, &k) == 3 && k.long_vowel == 2 && k.width == 1);
+    TEST_CHECK(vjo_text_normalize_keep(b, sizeof(b), NULL, 0, &k) == 3 && k.long_vowel == 2 && k.width == 1);
     TEST_CHECK(!strcmp(b, "コーヒー!") && !strcmp(vjo_text_raw(b, sizeof(b)), "コ一ヒ一！"));
     for (size_t i = strlen(b) + 1 + strlen(vjo_text_raw(b, sizeof(b))); i < sizeof(b); i++) TEST_CHECK(!b[i]);
     /* 30 bytes of text in a 48-byte buffer: 16 bytes of copy room, cut to 15 (5 kana) */
     static char c[48];
     memset(c, 'x', sizeof(c));
     strcpy(c, "あいうえおかきくけこ");
-    TEST_CHECK(vjo_text_normalize_keep(c, sizeof(c), NULL, NULL) == 0);
+    TEST_CHECK(vjo_text_normalize_keep(c, sizeof(c), NULL, 0, NULL) == 0);
     TEST_CHECK(!strcmp(c, "あいうえおかきくけこ") && !strcmp(vjo_text_raw(c, sizeof(c)), "あいうえお") && !c[47]);
     /* the text fills the buffer: normalised, no copy, the tail zeroed */
     static char d[8];
     memcpy(d, "ab\xEF\xBC\x81" "cd", 7); d[7] = 0; /* ab！cd */
-    TEST_CHECK(vjo_text_normalize_keep(d, sizeof(d), NULL, NULL) == 1 && !strcmp(d, "ab!cd") && !*vjo_text_raw(d, sizeof(d)));
+    TEST_CHECK(vjo_text_normalize_keep(d, sizeof(d), NULL, 0, NULL) == 1 && !strcmp(d, "ab!cd") && !*vjo_text_raw(d, sizeof(d)));
     TEST_CHECK(!d[5] && !d[6] && !d[7]);
     /* an empty text keeps an empty copy */
     static char e[4] = {0, 'z', 'z', 'z'};
-    TEST_CHECK(vjo_text_normalize_keep(e, sizeof(e), NULL, NULL) == 0 && !e[0] && !*vjo_text_raw(e, sizeof(e)) && !e[3]);
-    TEST_CHECK(vjo_text_normalize_keep(NULL, 10, NULL, &k) == 0 && !k.width);
+    TEST_CHECK(vjo_text_normalize_keep(e, sizeof(e), NULL, 0, NULL) == 0 && !e[0] && !*vjo_text_raw(e, sizeof(e)) && !e[3]);
+    TEST_CHECK(vjo_text_normalize_keep(NULL, 10, NULL, 0, &k) == 0 && !k.width);
     /* another raw text (the greedy one, with the LM): kept, cut to the room left */
     static char f[32], g[24];
     memset(f, 'x', sizeof(f));
     strcpy(f, "ぼくの！");
-    TEST_CHECK(vjo_text_normalize_keep(f, sizeof(f), "ばくの！？", NULL) == 1 && !strcmp(f, "ぼくの!"));
+    TEST_CHECK(vjo_text_normalize_keep(f, sizeof(f), "ばくの！？", 0, NULL) == 1 && !strcmp(f, "ぼくの!"));
     TEST_CHECK(!strcmp(vjo_text_raw(f, sizeof(f)), "ばくの！？") && !f[31]);
     memset(g, 'x', sizeof(g));
     strcpy(g, "ぼくの！");
-    TEST_CHECK(vjo_text_normalize_keep(g, sizeof(g), "ばくの！？", NULL) == 1 && !strcmp(g, "ぼくの!"));
+    TEST_CHECK(vjo_text_normalize_keep(g, sizeof(g), "ばくの！？", 0, NULL) == 1 && !strcmp(g, "ぼくの!"));
     TEST_CHECK(!strcmp(vjo_text_raw(g, sizeof(g)), "ばくの") && !g[23]); /* 10 bytes of room: cut at a character */
+    /* a border line dropped (test_border_lines): the copy still holds it, for the Shell's log */
+    static char h[96], j[48];
+    memset(h, 'x', sizeof(h));
+    strcpy(h, "テキスト\nーニーーーニー");
+    TEST_CHECK(vjo_text_normalize_keep(h, sizeof(h), NULL, 0, &k) == 1 && k.garbage == 1);
+    TEST_CHECK(!strcmp(h, "テキスト") && !strcmp(vjo_text_raw(h, sizeof(h)), "テキスト\nーニーーーニー"));
+    for (size_t i = strlen(h) + 1 + strlen(vjo_text_raw(h, sizeof(h))); i < sizeof(h); i++) TEST_CHECK(!h[i]);
+    /* a text that was only such a line: empty, and the copy holds the line */
+    memset(j, 'x', sizeof(j));
+    strcpy(j, "ーニーーーニー");
+    TEST_CHECK(vjo_text_normalize_keep(j, sizeof(j), NULL, 0, &k) == 1 && k.garbage == 1 && !j[0]);
+    TEST_CHECK(!strcmp(vjo_text_raw(j, sizeof(j)), "ーニーーーニー"));
+    for (size_t i = 1 + strlen(vjo_text_raw(j, sizeof(j))); i < sizeof(j); i++) TEST_CHECK(!j[i]);
+    /* VJO_TEXTNORM_KEEP_BORDERS: the line stays in the text as in the copy */
+    memset(h, 'x', sizeof(h));
+    strcpy(h, "テキスト\nーニーーーニー");
+    TEST_CHECK(vjo_text_normalize_keep(h, sizeof(h), NULL, VJO_TEXTNORM_KEEP_BORDERS, &k) == 0 && !k.garbage);
+    TEST_CHECK(!strcmp(h, "テキスト\nーニーーーニー") && !strcmp(vjo_text_raw(h, sizeof(h)), "テキスト\nーニーーーニー"));
 }
 
 TEST_LIST = {
@@ -235,6 +311,7 @@ TEST_LIST = {
     {"counter_tsu_is_ke", test_counters},
     {"counters_match_the_runtime", test_counters_match_the_runtime},
     {"lines_are_separate", test_lines},
+    {"a_border_read_as_a_line_is_dropped", test_border_lines},
     {"invalid_bytes_are_kept", test_invalid_bytes},
     {"a_full_buffer_never_grows", test_full_buffer},
     {NULL, NULL}

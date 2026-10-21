@@ -299,7 +299,11 @@ int main(int argc, char **argv)
                                                 * its weights read in this job */
                                                {.id = VJO_GSTEP_GATE, .kind = 1, .arg = 2,
                                                 .bytes = (uint32_t)(-60 + 129) | (uint32_t)(-8 + 129) << 16 | VJO_GLM_READ,
-                                                .sum = 112, .us = 9001}};
+                                                .sum = 112, .us = 9001},
+                                               /* the text normalised: a full-width form, a dash and a line of a
+                                                * border dropped (its kind) */
+                                               {.id = VJO_GSTEP_NORM, .kind = 1, .arg = 3, .bytes = 1, .sum = 1u << 16,
+                                                .us = 41}};
         char line[256];
         for (unsigned i = 0; i < sizeof(steps) / sizeof(steps[0]); i++)
             if (vjo_gstep_format(line, sizeof(line), "job", &steps[i]) > 0) puts(line);

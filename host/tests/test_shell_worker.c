@@ -782,7 +782,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
     if (fake_game_result.rc == VJO_OK && fake_recognized_text) {
         snprintf(fake_game_result.text, sizeof(fake_game_result.text), "%s", fake_recognized_text);
         /* as the worker returns it (API 20): normalised, its own text kept after the NUL */
-        vjo_text_normalize_keep(fake_game_result.text, sizeof(fake_game_result.text), NULL, NULL);
+        vjo_text_normalize_keep(fake_game_result.text, sizeof(fake_game_result.text), NULL, 0, NULL);
         /* A supplied measurement, as the real worker copies VjoVocrStats. */
         fake_game_result.free_user = fake_memory_fallback ? 5300000 : 91226112;
         fake_game_result.reserve_bytes = 4194304;
@@ -2074,6 +2074,19 @@ static void test_vocr_request_carries_the_job_policy(void)
     TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_GATE) &&
                !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
     TEST_MSG("gate on: speed 0x%08X", (unsigned)fake_game_request.speed);
+    mem_free();
+    /* API 36: the border rule (core/textnorm.h) rides in the speed word with non_japanese_filter = lines, the
+     * default, and not with none */
+    reset();
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_DROP_BORDERS) &&
+               !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+    mem_free();
+    reset();
+    cfg.non_japanese_filter = VJO_FILTER_NONE;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & VJO_GAME_OCR_S_DROP_BORDERS));
+    TEST_MSG("non_japanese_filter = none: speed 0x%08X", (unsigned)fake_game_request.speed);
     mem_free();
     /* the refinement's mode: psp by default, on, off */
     static const unsigned modes[] = {VJO_GAME_OCR_REFINE_PSP, VJO_GAME_OCR_REFINE_ON, 0};
@@ -4054,7 +4067,8 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     for (unsigned i = 0; i < 5; i++) {
         /* API 22: the default ocr_threads = 3 (two helpers), the default ocr_boost_clock = on (444 MHz while
          * recognizing), no line cache in any stage; textbox2 (the last) serially, to compare with textbox,
-         * with the clock kept; the begin record says so */
+         * with the clock kept; the begin record says so. API 36: no stage drops a border line (as the gate,
+         * the user's jobs only) */
         const uint32_t boost = VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_NOCACHE;
         TEST_CHECK(selftest_speed_seen[i] == (i == 4 ? boost : 2u | boost));
         TEST_CHECK(selftest_begin_speed[i] == selftest_speed_seen[i]);

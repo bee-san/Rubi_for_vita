@@ -1105,6 +1105,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
     /* API 26: the text-presence gate, in the user's jobs (the self-test's stages read as before) */
     if (job_cfg.ocr_text_gate && stage < 0) request.speed |= VJO_GAME_OCR_S_GATE;
+    /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
+     * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
+    if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
     int64_t t0 = now_us();

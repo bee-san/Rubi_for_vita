@@ -749,7 +749,76 @@ static void hook_cache_cleanup_ownership(void)
     TEST_CHECK(!cleanup()); /* fixture releases the retained block before the next reset */
 }
 
+/* API 36: the border rule (core/textnorm.h) on the text a job returns, OCR's or a pinned stream's, only with
+ * VJO_GAME_OCR_S_DROP_BORDERS (the Shell's non_japanese_filter = lines); the norm step's kind counts the lines,
+ * and it is logged when they were all the text. The recognizer's (or the stream's) text stays after the NUL. */
+static unsigned norm_step(const VjoGameOcrResult *out, unsigned *kind, unsigned *arg)
+{
+    unsigned n = 0;
+    for (unsigned i = 0; i < out->n_steps; i++)
+        if (out->step[i].id == VJO_GSTEP_NORM) { n++; *kind = out->step[i].kind; *arg = out->step[i].arg; }
+    return n;
+}
+static void border_lines_follow_the_request(void)
+{
+    static const char border[] = "ーニーーーーニーニーーーー";
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    unsigned kind = 9, arg = 9;
+    reset();
+    spy_text = border; /* the region's one line */
+    r = request(VJO_HOOK_PICK_OCR);
+    r.speed = VJO_GAME_OCR_S_DROP_BORDERS;
+    vjo_game_ocr_cache_clear();
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == 0 && opens == 1 && !out.text[0] && !out.text_from);
+    TEST_CHECK(!strcmp(vjo_text_raw(out.text, sizeof(out.text)), border));
+    TEST_CHECK(norm_step(&out, &kind, &arg) == 1 && kind == 1 && arg == 1);
+    r.speed = 0; /* non_japanese_filter = none: the line stays */
+    vjo_game_ocr_cache_clear();
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == 0 && !strcmp(out.text, border));
+    TEST_CHECK(norm_step(&out, &kind, &arg) == 1 && kind == 0 && arg == 0);
+    spy_text = "ーニー、本当"; /* a line with anything else on it stays */
+    r.speed = VJO_GAME_OCR_S_DROP_BORDERS;
+    vjo_game_ocr_cache_clear();
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == 0 && !strcmp(out.text, spy_text));
+    TEST_CHECK(norm_step(&out, &kind, &arg) == 1 && kind == 0);
+    /* a pinned stream's text, normalised as OCR's is */
+    reset();
+    stream(2, VJO_HOOK_KIND_SITE, 4, "本当に！\nーニーーーニー");
+    r = request(2);
+    r.speed = VJO_GAME_OCR_S_DROP_BORDERS;
+    vjo_game_ocr_cache_clear();
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == 0 && !opens && out.text_from == 2);
+    TEST_CHECK_(!strcmp(out.text, "本当に!"), "%s", out.text);
+    TEST_CHECK(!strcmp(vjo_text_raw(out.text, sizeof(out.text)), "本当に！\nーニーーーニー"));
+    r.speed = 0;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == 0 && out.text_from == 2);
+    TEST_CHECK_(!strcmp(out.text, "本当に!\nーニーーーニー"), "%s", out.text);
+}
+
+/* API 36: the border rule on a stream that agrees with OCR and replaces its text (Auto: hook_show with OCR's
+ * text kept after it), with and without VJO_GAME_OCR_S_DROP_BORDERS (audit-postproc S1). */
+static void border_lines_on_an_agreeing_stream(void)
+{
+    static const char streamed[] = "「明日の朝、駅前の公園でもう一度会おうよ」\nーニーーーニー";
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    for (int bit = 1; bit >= 0; bit--) {
+        reset();
+        stream(9, VJO_HOOK_KIND_CALL, 5, streamed);
+        spy_text = OCR1;
+        r = request(VJO_HOOK_PICK_AUTO);
+        r.speed = bit ? VJO_GAME_OCR_S_DROP_BORDERS : 0u;
+        vjo_game_ocr_cache_clear();
+        TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == 0 && out.text_from == 9);
+        TEST_CHECK_(!strcmp(out.text, bit ? LINE1 : streamed), "bit %d: %s", bit, out.text);
+        TEST_CHECK(!strcmp(vjo_text_raw(out.text, sizeof(out.text)), OCR1)); /* OCR's text for the log */
+    }
+}
+
 TEST_LIST = {
+    {"the border rule on a stream that replaces OCR's text (API 36)", border_lines_on_an_agreeing_stream},
+    {"the border rule follows the request (API 36), on OCR's and a stream's text", border_lines_follow_the_request},
     {"hook cache cleanup: BUSY, copy failure, cancellation, failed primary free", hook_cache_cleanup_ownership},
     {"remembered hook: startup confirmation, exact32 cadence, recovery", remembered_hook_worker_cadence},
     {"hook cache worker: failed job, exact build invalidation, IO failures", hook_cache_worker_failures},

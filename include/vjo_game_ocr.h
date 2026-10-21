@@ -82,8 +82,8 @@
  * recognize lines in parallel (0-2, VjoVocrPool: config ocr_threads minus one);
  * bit 2 the ARM clock at 444 MHz while the job recognizes (ocr_boost_clock, on
  * by default; never lowered); bit 3 the line cache neither read nor filled, and emptied (the
- * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below). Other bits
- * are refused, as unknown flags are. */
+ * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below); API 36, bit 16
+ * the border rule (below). Other bits are refused, as unknown flags are. */
 #define VJO_GAME_OCR_S_HELPERS_MASK 0x3u
 #define VJO_GAME_OCR_S_BOOST 0x4u
 #define VJO_GAME_OCR_S_NOCACHE 0x8u
@@ -93,7 +93,13 @@
  * VJO_VOCR_GATE_NAME beside the models (VJO_GAME_OCR_OPEN_GATE). It is in `speed` because the flags have one
  * bit left. */
 #define VJO_GAME_OCR_S_GATE 0x10u
-#define VJO_GAME_OCR_S_ALL 0x1Fu
+/* API 36, bit 16: the text the job returns (OCR's or a hook's) drops a line made only of a box's border read as
+ * text (core/textnorm.h, the border rule; its norm step counts them); without it such a line stays. The Shell
+ * sets it in the user's jobs with config non_japanese_filter = lines, the default (the self-test's stages read as
+ * before, as with the gate). Not bit 5 (draft #228's VJO_GAME_OCR_S_SPOT), bit 7 (draft #245's PSP probe) or
+ * bits 8-15 (draft #226's frame pacing), so all four can merge. */
+#define VJO_GAME_OCR_S_DROP_BORDERS 0x10000u
+#define VJO_GAME_OCR_S_ALL 0x1001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
@@ -238,7 +244,9 @@ enum {
     VJO_GSTEP_NORM,      /* API 20, the text normalised (core/textnorm.h) before it is returned, the
                             recognizer's own text kept after its NUL: arg the changes, bytes the full-width
                             forms folded, sum = tildes << 24 | dashes << 16 | ellipses << 8 | 一 made ー << 4 |
-                            ー made 一 (each at most 255, the last two 15), us the time */
+                            ー made 一 (each at most 255, the last two 15), us the time; API 36: kind the lines
+                            of a border read as text it dropped (VJO_GAME_OCR_S_DROP_BORDERS; at most 255).
+                            Logged when the text is not empty, or when dropping lines emptied it */
     VJO_GSTEP_LM,        /* API 20, the beam + LM decoder: kind the LM tier, arg lines it changed, rc 0 or why the
                             job read greedily (VJO_E_*), bytes = VJO_GLM_* | lines under VJO_GAME_OCR_LOW_CONF << 16 |
                             lines decoded, sum the LM's load time (us), us the decoding */

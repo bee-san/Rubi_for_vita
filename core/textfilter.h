@@ -7,7 +7,9 @@
 enum { VJO_FILTER_NONE = 0, VJO_FILTER_LINES = 1 };
 
 /* non_japanese_filter = lines: split on \r?\n, keep lines containing a
- * Japanese char, join with \n. NONE returns a copy. */
+ * Japanese char, join with \n. NONE returns a copy. With lines the game worker
+ * also drops a line that is only a box's border read as text, before the Shell
+ * sees it (API 36: include/vjo_game_ocr.h VJO_GAME_OCR_S_DROP_BORDERS). */
 char *vjo_filter_lines(VjoArena *a, const char *text, int mode);
 
 /* Removes "\r\n" and "\n" from the text. */

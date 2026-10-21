@@ -25,7 +25,8 @@ dialogue, narration and wiki, from Aozora and Wikipedia), each line as it is and
 wrapped every 20 and 26 characters as a text box wraps it (the worker normalises
 each recognized line alone, so a word cut by the wrap ends a line). Reported:
 the changes per 100k characters and the contexts they fall in (character
-classes, no text).
+classes, no text), and the lines the border rule drops (`lines_dropped`, each one
+wrong too).
 
 No protected set is read (the score files hold dev cohorts only); the output
 holds counts only, no text.
@@ -47,7 +48,7 @@ VOCR3_FILES = ("teacher_val", "devnative_strict_ink", "devnative_strict_grad", "
 VOCR4_PREFIX = {"teacher_val": "tv", "devnative_strict_ink": "dn_strict_ink",
                 "devnative_strict_grad": "dn_strict_grad", "devnative_tv_native_ink": "dn_tv_native_ink",
                 "devnative_tv_native_grad": "dn_tv_native_grad"}
-RULES = ("width", "tilde", "dash", "ellipsis", "long_vowel", "kanji_one", "counter")
+RULES = ("width", "tilde", "dash", "ellipsis", "long_vowel", "kanji_one", "counter", "garbage")
 
 
 def lines_of(herd, family, size, run):
@@ -109,10 +110,12 @@ def correct_text(tool, corpus):
         for width in (0, 20, 26):
             lines = text if not width else [t[k:k + width] for t in text for k in range(0, len(t), width)]
             s = {"lines": len(lines), "chars": sum(map(len, lines)), "一": sum(t.count("一") for t in lines),
-                 "ー": sum(t.count("ー") for t in lines), "一->ー": 0, "ー->一": 0}
+                 "ー": sum(t.count("ー") for t in lines), "一->ー": 0, "ー->一": 0, "lines_dropped": 0}
             ctx = collections.Counter()
             for src, (dst, counts) in zip(lines, normalise(tool, lines)):
-                if not (counts["long_vowel"] or counts["kanji_one"]):
+                # a line the border rule drops (every one is wrong here) has no marks left to pair
+                s["lines_dropped"] += counts["garbage"]
+                if counts["garbage"] or not (counts["long_vowel"] or counts["kanji_one"]):
                     continue
                 # the forms pass can shorten the text (... is …) but never adds or drops a mark:
                 # the marks pair up in order
