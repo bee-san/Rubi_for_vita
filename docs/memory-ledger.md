@@ -16,9 +16,8 @@ the 0.9.1 release) and of this change, `check_memory_ledger.py` (`--exact` in th
 | Shell, debug | 100,940 + 73,560 B | 100,940 + 73,656 B | 176,128 B |
 | Shell, normal | 90,092 + 73,576 B | 90,108 + 73,656 B | 163,840 B |
 
-The kernel plugin, the game worker (both builds: the counters' worker above) and the RCO are byte-identical
-to main's. In the normal
-Shell the badge's code is 166 B (`arm-vita-eabi-nm -S`: the header's span `vjo_styled_badge` 36 and its
+The kernel plugin, the game worker (both builds: the counters' worker, [below](#counters-vita-vn-ocr-109))
+and the RCO are byte-identical to main's. In the normal Shell the badge's code is 166 B (`arm-vita-eabi-nm -S`: the header's span `vjo_styled_badge` 36 and its
 call in `render` +40, the source with each new text in `run_vocr` +28 and a refresh's in `ctl_main` +28,
 its publication in `view_publish` +24, the re-wrap's keep +6, the dimmed badge's recolour +4, the config
 key's default and parse 4 − 4, `frame` +4 and `start_cursor_job` −4; `icons` included) and 16 B of

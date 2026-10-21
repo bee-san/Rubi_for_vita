@@ -327,9 +327,10 @@ reported console run. The behaviour below is checked on the host.
   history) has none (`history.csv` keeps its source, but the popup does not read it back).
   `source_badge` in `config.ini` (no setting in the app): `on` (the default), `off` hides it, `icons`
   shows the system's anchor and eye instead (untested on a console: they appear only if SceShell has
-  the font, `_` or nothing otherwise: unverified). The badge is part of the text's first row (at the default sizes `[HOOK]` is
-  as wide as 2.9 Japanese characters, `[OCR]` 2.3); Rubi never leaves it alone on a row, and the cursor,
-  taps and the highlight skip it ([details](native-hooks.md#the-popups-source-badge)). Source selection
+  the font, `_` or nothing otherwise: unverified). The badge is part of the text's first row (at the
+  default sizes `[HOOK]` is as wide as 2.9 Japanese characters, `[OCR]` 2.3); Rubi never leaves it
+  alone on a row, and the cursor, taps and the highlight skip it
+  ([details](native-hooks.md#the-popups-source-badge)). Source selection
   is automatic; there is no hook number or Triangle source picker. Technical source details remain in
   the debug log.
 - **The Games page** tags a game with a hook entry: `Hook` for Rubi's own, `Luna hook` for a ported
