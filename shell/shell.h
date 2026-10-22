@@ -36,6 +36,14 @@ enum { VJO_ANKI_MARK_NONE = 0, VJO_ANKI_MARK_ADDED = 1, VJO_ANKI_MARK_QUEUED = 2
 enum { VJO_STRIP_SENTENCE = 0, VJO_STRIP_STATUS = 1, VJO_STRIP_ERROR = 2 };
 #define VJO_STRIP_MAX 4096 /* bytes of UTF-8 */
 
+/* Provenance belongs to the accepted text, never to a later job or cursor lookup.
+ * model is a constant tier name; NULL means only history.csv's engine is known. */
+typedef struct {
+    uint32_t origin, stream, flags, score, streams, mode, installed, refused;
+    uint32_t scene, capture_seq;
+    const char *model;
+} VjoLineDebug;
+
 /* ---- view model read by the overlay (under vjo_view_lock) ---- */
 typedef struct {
     int open;                 /* overlay should be visible (stored atomically) */
@@ -58,6 +66,7 @@ typedef struct {
      * shown; k while the text is this game's k-th earlier line, with the line before it and the line
      * after it (NULL: none), in the worker's history block: read them under the lock only */
     int history;
+    VjoLineDebug line_debug;
     const char *history_before, *history_after;
     char warnings[VJO_CONFIG_MAX_WARNINGS][96];
     int n_warnings;

@@ -83,7 +83,7 @@ static void test_budget_table_is_consistent(void)
         uint32_t text = (2u * (4096u + 1u) + 7u) & ~7u, span = (uint32_t)sizeof(VjoSpan);
         uint32_t body = (2u * (VJO_BODY_UNITS + 1u) + 7u) & ~7u;
         uint32_t need = text + ((span * VJO_HEADER_SPANS + 7u) & ~7u) + body + ((span * VJO_BODY_SPANS + 7u) & ~7u);
-        TEST_CHECK_(need == 18016u && need <= VJO_BUDGET_PAF_UI, "%u", need);
+        TEST_CHECK_(need == 18016u && need + VJO_HEADER_RANGE_BYTES <= VJO_BUDGET_PAF_UI, "%u", need);
     }
     TEST_CHECK(VJO_WORST_KERNEL <= VJO_LIMIT_KERNEL);
     TEST_CHECK(VJO_WORST_GAME_JOB <= VJO_LIMIT_GAME_JOB);
