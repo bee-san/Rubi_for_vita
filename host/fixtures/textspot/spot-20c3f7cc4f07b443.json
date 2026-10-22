@@ -2,7 +2,7 @@
  "kind": "rubi-spot-fixture",
  "weights": "textspot3_t64n8c16_kd_w8.vtsp",
  "weights_sha256": "20c3f7cc4f07b443741bbb45fe4270f6fa8c74ce29045a796a5ed8887a3fb26a",
- "vita_vn_ocr": "30d3f557b7c306dc72539b101340b423994e6119",
+ "vita_vn_ocr": "73203f0c2bba2fc10fb09a39e72f130047414a0a",
  "twin_sha256": "9a05b6c90140659c08e2bad7160dd79dbcc7b79840db214ac79dc5bfd1ca4f1a",
  "note": "vita-vn-ocr synth/textspot2_twin.py spot() on tools/spot_frames.py's frames; dark written as 0 (a scan reads no box: VOCR_TEXTSPOT_NO_DARK)",
  "frames": [

@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT 30d3f557b7c306dc72539b101340b423994e6119)
+set(VJO_VOCR_COMMIT 73203f0c2bba2fc10fb09a39e72f130047414a0a)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -27,9 +27,10 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # drops frame rows and cursors, splits boxes holding several text rows).
 # vocr_textspot2.c (vita-vn-ocr #106, merged as 5af7741) is the full-frame text spotter of scan screen (API 30): it
 # runs the VTSP version 2 blob vita-vn-ocr #108 (textspot3) selected, and version 1 blobs bit for bit as #104's
-# vocr_textspot.c, whose header (the result types, flags, limits and error codes) it includes. The commit is #108's
-# branch head (PR #113); the fifteen files hash as at main 817d203 and 5af7741, the twelve before vocr_textspot.h as at
-# ac0d6b1 (#101's merge), and vocr_textspot.h as at 7a6dce0 (#105's merge of #104).
+# vocr_textspot.c, whose header (the result types, flags, limits and error codes) it includes. The commit is main,
+# #113's squash-merge of #108; the fifteen files hash as at main 817d203 and 5af7741 (and #108's branch head 30d3f55,
+# which this pinned first), the twelve before vocr_textspot.h as at ac0d6b1 (#101's merge), and vocr_textspot.h as at
+# 7a6dce0 (#105's merge of #104).
 set(_vocr_pins
   vocr.c 3e1756138b2e1d9aff15abdda95b02e0c015a5ba0af99678bdd678377b73f559
   vocr.h 30bb32693e634a4c4b4cd5cd3a4da8d33f6882bf00348d0e1d8264ba08376271
