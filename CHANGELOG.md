@@ -11,10 +11,17 @@ been reported.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-10-22
+
+Where each line of `history.csv` came from, with reading statistics by text source; a held ▲ or ▼
+that repeats; a hidden view, on △, of where the shown line came from; and two fixes to OCR's text, a
+counter's `ヶ` and its numeral, and no box border read as a line. Like 0.9.0 and 0.9.1, the release is
+the normal build only.
+
 ### Added
 
-- `history.csv` says where each line came from: a new last column, `line_source`, is `hook` when a
-  native text hook supplied the line and `ocr` when Rubi's OCR read it, the same choice as the
+- `history.csv` says where each line came from ([#251]): a new last column, `line_source`, is `hook`
+  when a native text hook supplied the line and `ocr` when Rubi's OCR read it, the same choice as the
   `engine` column's `hook` or `vocr`. It is the 43rd column, after `characters`: the first five
   (GameSentenceMiner's ExStatic lines) and every other column keep their places, and a file an older
   Rubi began keeps its header: its new rows have more cells than it names. GameSentenceMiner's import
@@ -24,21 +31,48 @@ been reported.
   text source** (native text hook, OCR) to its totals, and reads the source of an older Rubi's rows
   from their `engine` ([docs/ocr-history.md](docs/ocr-history.md#line-source)). Hook lines were
   recorded before too (with **Read text: Automatically**); what is not recorded, from either source,
-  is unchanged. No popup change. The Shell's code is unchanged in size and its data 8 B smaller, in the
-  same pages (`docs/memory-ledger.md`).
+  is unchanged, and so is a known fault of earlier releases: after a read whose exchange with the game
+  worker failed, the next read of the same text is recorded again, and counted twice ([#252], open).
+  No popup change. The Shell's code is unchanged in size and its data 8 B smaller, in the same pages
+  (`docs/memory-ledger.md`).
+- A hidden view of where the shown line came from ([#253];
+  [details](docs/native-hooks.md#hidden-line-diagnostics)): with the overlay open, △ (Triangle)
+  replaces the dictionary entry with the line's source, **OCR** or **Hook**, and for a hook its stream,
+  whether a table site or the CALL source supplied it, its agreement, lock and pin flags, its similarity
+  to OCR's reading, the streams available, the hooks installed and refused, the model and the capture;
+  △ again brings the entry back. The text and its cursor stay, ▲ ▼ still go through earlier lines, and
+  the right stick scrolls the view. An earlier line shows the engine its `history.csv` row saved
+  (**Unknown** in an older row) and says the rest was not saved. The source is the one that supplied
+  the text: a cursor move, or a refresh that keeps the text or is cancelled, does not change it. The
+  view is in both builds, named in no hint, off at every opening, and changes no text source (test.7's
+  △ source picker stays out). The Shell's pages are unchanged in both builds: the header's 2,048 B of
+  ranges moved from its permanent data into the overlay's existing 20,480 B text block, which now needs
+  20,064 B of it, and cold strings into the data space freed
+  ([measured](docs/memory-ledger.md#hidden-triangle-line-diagnostics)).
 
 ### Fixed
 
-- A counter read as `ッ` is `ヶ` again (`ルッ月です」` → `ルヶ月です」`): a text rule in the shown and
-  looked-up text's normalisation (`core/textnorm.c`). Before the LM, the job puts back a numeral or
-  `「` that the frames hold close below what the recognizer read before a counter, so `ル` becomes `九`
-  (vita-vn-ocr #109's counter re-decode, `runtime/vocr_post.c`; pin bumped). On vita-vn-ocr's
-  development data neither changes a line; see [docs/vita-vn-ocr.md](docs/vita-vn-ocr.md#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109).
+- A counter read as `ッ` is `ヶ` again (`ルッ月です」` → `ルヶ月です」`; [#249]): a text rule in the
+  shown and looked-up text's normalisation (`core/textnorm.c`). Before the LM, the job puts back a
+  numeral or `「` that the frames hold close below what the recognizer read before a counter, so `ル`
+  becomes `九` (vita-vn-ocr #109's counter re-decode, `runtime/vocr_post.c`; pin bumped to `817d203`).
+  On vita-vn-ocr's development data neither changes a line; see
+  [docs/vita-vn-ocr.md](docs/vita-vn-ocr.md#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109).
 
 ### Changed
 
-- Each game that is ON carries 4,096 B more of the OCR worker's module pages, for the counter re-decode:
-  172,032 B in the normal build, 180,224 B in the debug build (`docs/memory-ledger.md`).
+- A held ▲ or ▼ in the overlay repeats ([#250]): one step at once, then, after 350 ms, one every
+  150 ms, through the text's rows and on through this game's earlier lines, back and forward
+  ([line history](docs/line-history.md)). The pace is steady: at most one step a frame, and no burst
+  of steps after a slow frame. Releasing the button stops it, and holding both repeats neither; a
+  button already held when the overlay opens moves nothing until it is pressed again, and the region
+  selector (□) clears the repeat. Before, a press moved one step however long it was held. Three of
+  the Shell's error strings moved to its data segment, so that its code fits the same pages; no
+  allocation or thread is added.
+- Each game that is ON carries 4,096 B more of the OCR worker's module pages, for the counter re-decode
+  ([#249]): 172,032 B in the normal build, 180,224 B in the debug build. The kernel plugin's pages stay
+  at 118,784 B (122,880 B debug) and the Shell's at 163,840 B (176,128 B debug) [measured: the build
+  logs' module rows, Release run 39735440794 at `4d73121`; `docs/memory-ledger.md`].
 - A line that is only a text box's border or scene art read as text, such as the `ーニーーーーニーニー…`
   a box's decorative bottom edge reads as, is no longer shown, saved or looked up ([#247]): three or more
   characters, each one of `ー ニ 一 二 ― - ~ ・`, at least two different ones, `ー` or `ニ` among them, and
@@ -53,6 +87,14 @@ been reported.
   of its `speed` word), and the debug build's `gstep job norm` step counts the lines dropped as its `kind`
   (`tools/analyse_selftest.py` says so). The game worker does the work; no module's pages change
   ([measured](docs/memory-ledger.md#border-lines-dropped-api-36)).
+
+### On the console
+
+- None of 0.9.2's changes has run on a console: the `line_source` column and the statistics by text
+  source, the △ view, the held ▲ ▼ repeat, the counter rule and its re-decode, the border-line drop,
+  and the normal build itself. The native hooks' console record is still 0.9.0's below, CLANNAD's
+  string-copy reads in the combined debug test build; the test.7 checklist ([#237]) has no reported
+  results, and no site from LunaTranslator's table has been reported working on a console.
 
 ## [0.9.1] - 2026-10-21
 
@@ -598,7 +640,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.2
 [0.9.1]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.1
 [0.9.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.0
 [0.8.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.8.0
@@ -722,3 +765,8 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#242]: https://github.com/bee-san/Rubi_for_vita/pull/242
 [#243]: https://github.com/bee-san/Rubi_for_vita/pull/243
 [#247]: https://github.com/bee-san/Rubi_for_vita/pull/247
+[#249]: https://github.com/bee-san/Rubi_for_vita/pull/249
+[#250]: https://github.com/bee-san/Rubi_for_vita/pull/250
+[#251]: https://github.com/bee-san/Rubi_for_vita/pull/251
+[#252]: https://github.com/bee-san/Rubi_for_vita/issues/252
+[#253]: https://github.com/bee-san/Rubi_for_vita/pull/253
