@@ -2949,7 +2949,8 @@ static void test_character_scene_change_keeps_the_shown_text(void)
 
 #ifdef VJO_WITH_VOCR
 /* ---- scan screen (API 30, ocr_scan_screen; core/spot_pick.h) ---- */
-/* The sample's scan (host/fixtures/textspot): a HUD line (0) and the name plate with the dialogue (1, the pick). */
+/* The sample's scan as #104's spotter gave it (host/fixtures/textspot before vita-vn-ocr #108's): a HUD line (0) and
+ * the name plate with the dialogue (1, the pick). */
 static void fake_scan_screen(void)
 {
     memset(&fake_scan_set, 0, sizeof(fake_scan_set));

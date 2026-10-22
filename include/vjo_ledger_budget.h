@@ -163,14 +163,16 @@
  * which would still need the page. In the game's partition, never SceShell's. Both builds now have the same
  * budget.
  * Raised from 98,304 B by three text pages for API 30, scan screen (config.ini ocr_scan_screen, off by default):
- * vita-vn-ocr #104's text spotter (runtime/vocr_textspot.c at -Os, 9,402 B of the worker's text; its dark pass,
- * which a scan never reaches, is linked to a refusing stub: cmake/VocrOCR.cmake) and the scan (game_ocr/main.c
- * run_spot, core/vocr_ocr.c vjo_vocr_spot, core/spot_pick.c, the overlay's map made here so that SceShell's code
- * for it is a table lookup: 2,390 B of symbols in the debug build, 2,398 B in the normal one), on or off. The debug
- * build's text 81,644 -> 93,460 B, the normal build's 80,344 -> 92,160 B, data/bss 15,720 B in both; 98,304 ->
+ * vita-vn-ocr's text spotter (runtime/vocr_textspot2.c at -Os for #108's VTSP version 2 weights, 9,682 B of the
+ * worker's text; #104's runtime/vocr_textspot.c, 9,402 B, before them; its dark pass, which a scan never reaches,
+ * is linked to a refusing stub: cmake/VocrOCR.cmake) and the scan (game_ocr/main.c run_spot, core/vocr_ocr.c
+ * vjo_vocr_spot, core/spot_pick.c, the overlay's map made here so that SceShell's code for it is a table lookup:
+ * 2,394 B of symbols in the debug build, 2,402 B in the normal one), on or off. The debug build's text 81,644 ->
+ * 93,748 B (460 B of room left), the normal build's 80,344 -> 92,464 B, data/bss 15,720 B in both; 98,304 ->
  * 110,592 B [measured: the build log's module rows and arm-vita-eabi-nm, both builds, main 24c0219 and this
- * change]. Its weights (a few KB) are a file read in each scan, never kept:
- * no data page. In the game's partition, never SceShell's: the spotter runs where OCR runs (AGENTS.md rule 2). */
+ * change; with #104's spotter 93,460 and 92,160 B, the same pages]. Its weights (51,008 B) are a file read in each
+ * scan, never kept: no data page. In the game's partition, never SceShell's: the spotter runs where OCR runs
+ * (AGENTS.md rule 2). */
 #define VJO_BUDGET_WORKER_MODULE_PAGES 110592u
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
@@ -405,10 +407,12 @@
 #define VJO_BUDGET_GAME_SHOT 450560u
 /* API 30, a scan (scan screen, game_ocr/main.c run_spot): a job of the one slot too, under the OCR jobs' own items:
  * its strip (64 grey rows, at most 61,440 B) is a VjoGameVocrCapture block within VJO_BUDGET_GAME_CAPTURE, and the
- * spotter's weights, model and arena (core/vocr_ocr.h vjo_vocr_spot_bytes, 87,520 B with the pinned weights on the
- * Vita, a 90,112 B block) a VjoGameVocr block within VJO_BUDGET_GAME_WORKSPACE (game_ocr/main.c and
- * test_game_spot.c check both). It keeps the resident weights, LM and cascade model, as a shot does, and holds less than an OCR job's
- * transient blocks: it adds nothing to VJO_WORST_GAME_JOB. Its memory check keeps VJO_GAME_RESERVE free beside it. */
+ * spotter's weights, model and arena (core/vocr_ocr.h vjo_vocr_spot_bytes, 292,992 B with vita-vn-ocr #108's pinned
+ * weights on the Vita: 51,008 + 992 + 240,992; a 294,912 B block; 87,520 B in a 90,112 B block with #104's) a
+ * VjoGameVocr block within VJO_BUDGET_GAME_WORKSPACE (game_ocr/main.c and test_game_spot.c check both). It keeps the
+ * resident weights, LM and cascade model, as a shot does, and holds less than an OCR job's transient blocks
+ * (356,352 B against 1,835,008 B): it adds nothing to VJO_WORST_GAME_JOB. Its memory check keeps VJO_GAME_RESERVE
+ * free beside it. */
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
 #define VJO_WORST_GAME_JOB (VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE + \
                             VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE + \

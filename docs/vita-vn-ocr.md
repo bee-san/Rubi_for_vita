@@ -887,14 +887,14 @@ ocr_scan_screen = off   ; on: □ starts on the text boxes found on the whole sc
 ```
 
 With `ocr_scan_screen = on`, the overlay's draw-a-region action (□) starts on the text boxes the game worker finds on
-the whole screen with vita-vn-ocr #104's full-frame text spotter (`docs/textspot.md` there), instead of an empty
-screen. It is a faster way to set the region: the cursor starts on the box the spotter takes for the dialogue (right
-on 61% of #104's development frames with dialogue, below), and Enter reads it.
+the whole screen with vita-vn-ocr #108's full-frame text spotter (textspot3, `docs/textspot3.md` there), instead of
+an empty screen. It is a faster way to set the region: the cursor starts on the box the spotter takes for the
+dialogue (right on 59% of the development frames with dialogue, below), and Enter reads it.
 No key is remapped and no button changes meaning. Press by press:
 
 1. **L + R** opens the overlay over the game, as always; **□** dims the game, as always. The hint line says
    `◀▶▲▼ or tap a box · Enter read · Cancel draw by hand` (with the console's own Enter and Cancel glyphs).
-2. The game worker scans the screen (an estimated 0.2-0.3 s, below, after a read that is already running); then
+2. The game worker scans the screen (an estimated 0.3 s, below, after a read that is already running); then
    every box it found is drawn as a translucent white rectangle (at most 16), each the region it would read, and the
    one it took for the dialogue is highlighted in yellow. (A □ pressed again while a scan still runs gets that
    scan's boxes and then its own: each scan's boxes are drawn afresh when they come, the highlight on its pick.)
@@ -917,7 +917,8 @@ no request is ever a scan.
 - **What a scan reads.** The game's whole frame, its grey rows once top to bottom, 64 rows a game frame through
   the display hook (9 frames at 960×544, 5 at 480×272): the OCR jobs' capture path, its kernel strip as the last
   rung. It publishes no capture (the region's scene and Auto's state stay as they were) and recognizes nothing.
-- **The spotter.** vita-vn-ocr's `runtime/vocr_textspot.c` (pinned: [Build](#build)) with `VOCR_TEXTSPOT_NO_DARK`:
+- **The spotter.** vita-vn-ocr's `runtime/vocr_textspot2.c` (#106's runtime for VTSP versions 1 and 2, which the
+  pinned version 2 blob needs; pinned: [Build](#build)) with `VOCR_TEXTSPOT_NO_DARK`:
   no box is read again (the read that follows works out its polarity itself). Its set, at most 64 boxes (x, y, w,
   h, vertical, confidence, block) and 64 blocks in reading order, the pick and a truncated flag, is written in
   place into the result's text (`include/vjo_spot.h` `VjoSpotResult`: the runtime's own layout, which
@@ -932,50 +933,69 @@ no request is ever a scan.
   it (an arrow in use is routed through it to its old block), so each step reaches one block more and loses none.
   On #104's development detections of the selected run (geometry only, a design statistic, not a score) the
   earlier rule, on the margin-grown regions, left 4 of the 495 blocks that can be picked unreachable, on 3 of the
-  109 frames with two or more; this one leaves none (none of 12,165 over all 22 family B detector arms either). The Shell takes those
+  109 frames with two or more; this one leaves none (none of 12,165 over all 22 family B detector arms either, and
+  none of the 402 of #108's pick's detector on the same frames, 90 of them with two or more). The Shell takes those
   196 B only when every index in them is one of their blocks (`vjo_spot_map_ok`; the result comes from the game's
   process), copies them and looks things up in them: nothing of the spotter runs in SceShell, which holds no more
   than that map (AGENTS.md rule 1).
-- **The weights** are a file beside the models: `ocr/textspot_s4_c24n4_w8.vtsp`, 5,732 B, sha256
-  `852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf`, the model vita-vn-ocr #104's pre-registered
-  rule selected (`B_h2_s4_c24n4_seed2_detref`; its header halves a frame wider than 600 px and keeps every
-  confidence from 1), from its `v0.3.3-textspot.1` pre-release, whose `ATTRIBUTION.md` ships beside it as
-  `ocr/TEXTSPOT-ATTRIBUTION.md` (`tools/prepare_ocr.py` pins both). The rule's arm is detection plus refinement:
-  the boxes a scan draws are the spotter's own (the detector), and the read of the picked block is Rubi's usual job,
-  whose finder and refinement run on the saved region, so the refinement is the read's, not the scan's.
-  The kernel's broker opens the file only for a scan (`VJO_GAME_OCR_OPEN_SPOT`), at its pinned size; the worker
-  reads it and checks its SHA-256 in every scan (5,732 B: no resident copy and no data page). Without it (an `ocr`
-  folder from an older package) a scan fails with `rc=-115` and the overlay draws by hand.
+- **The weights** are a file beside the models: `ocr/textspot3_t64n8c16_kd_w8.vtsp`, 51,008 B, sha256
+  `20c3f7cc4f07b443741bbb45fe4270f6fa8c74ce29045a796a5ed8887a3fb26a`, the model vita-vn-ocr #108's pre-registered
+  rule selected (`T3_kd_t64n8c16_seed3_detref`: a VTSP version 2 blob, a stride-8 trunk of 8 separable blocks of 64
+  channels with a 2×2 sub-pixel head, distilled from a 447 KB multi-scale model; its header halves a frame wider than
+  480 px and keeps every confidence from 1), from its `v0.3.4-textspot3.1` pre-release, whose `ATTRIBUTION.md` ships
+  beside it as `ocr/TEXTSPOT-ATTRIBUTION.md` (`tools/prepare_ocr.py` pins both). It replaced #104's
+  `textspot_s4_c24n4_w8.vtsp` (5,732 B, `v0.3.3-textspot.1`), which this build no longer reads. The rule's arm is
+  detection plus refinement: the boxes a scan draws are the spotter's own (the detector), and the read of the picked
+  block is Rubi's usual job, whose finder and refinement run on the saved region, so the refinement is the read's,
+  not the scan's. The kernel's broker opens the file only for a scan (`VJO_GAME_OCR_OPEN_SPOT`), at its pinned size;
+  the worker reads it (two of the broker's 32 KiB reads) and checks its SHA-256 in every scan (no resident copy and
+  no data page). Without it (an `ocr` folder from an older package) a scan fails with `rc=-115` and the overlay
+  draws by hand.
 - **The request.** `VJO_GAME_OCR_S_SPOT`, bit 5 of the request's `speed` word, with `VJO_GAME_OCR_F_FULL` and
   nothing else: no tiers, no fallback, no other flag or speed bit. The kernel and the worker each refuse another
   shape. The flags' one free bit stays vertical text's.
 - **Memory** (the game's, during a scan only): a strip block of 61,440 B (64 rows of 960 px, within
-  `VjoGameVocrCapture`'s budget) and a workspace block of 90,112 B (the weights, the loaded model and the arena,
-  87,520 B on the Vita, `vjo_vocr_spot_bytes`; the arena is `VJO_VOCR_SPOT_ARENA` = 80,799 B, `vocr_textspot_arena_bytes` for
-  every frame up to 960×544 with these weights; within `VjoGameVocr`'s budget). Its memory check keeps the 4 MiB
-  reserve beside both; the resident weights, LM and cascade model stay. No new ledger item, and the job's worst
-  case is unchanged ([memory-ledger.md](memory-ledger.md)).
-- **Module pages** (measured, both builds, VitaSDK gcc 15.2.0): the worker gains 11,816 B of text in both builds,
-  on or off (the spotter's code at `-Os` with NEON, 9,402 B; its dark pass,
-  which a scan never reaches, is linked to a refusing stub, `cmake/VocrOCR.cmake`; the scan and the map, about
-  2.4 KB): 98,304 → 110,592 B, three text pages more in every enabled game's memory, never SceShell's. SceShell keeps
-  its pages: the Shell's text grows by 2,144 B (debug) and 1,656 B (normal; 108 B of text room left in its pages),
-  its data and bss by 232 B; Enter's read at once is 64 B and 32 B of that. The kernel's text grows by 88 B (debug) and 92 B
-  (normal), the same pages. The RCO grows from 6,000 to 7,152 B (16 planes and a style), in the PAF heap: the 8,192 B estimate for it and
-  the Paf plugin object is kept. The 16 planes' widgets add to the open page's PAF use, unmeasured.
-- **Time (estimate, nothing of it has run on a console):** the spotter's own work is about 127 ms on one core at
-  333 MHz (vita-vn-ocr's Cortex-A9 cycle model for this shape, `eval/textspot_a9_20261019.json`: 122.5 ms at
-  `-O2` without the dark pass, scaled by its default call's `-O2` → `-Os` ratio, 130.7 → 135.6 ms; at 444 MHz about
-  95 ms). It runs between the strips, whose reads wait a game frame each (as test.1's still-screen jobs read theirs,
-  above: about a frame a strip), so the boxes come about 0.17 s after □ at 60 frames a second and 0.32 s at 30.
+  `VjoGameVocrCapture`'s budget) and a workspace block of 294,912 B (the weights, the loaded model and the arena,
+  51,008 + 992 + 240,992 = 292,992 B on the Vita with 16-byte alignment, `vjo_vocr_spot_bytes`; the arena is
+  `VJO_VOCR_SPOT_ARENA` = 240,991 B, `vocr_textspot2_arena_bytes` for every frame up to 960×544 with these weights,
+  240,031 B at 480×272; within `VjoGameVocr`'s budget, 1,212,416 B), 356,352 B in all (151,552 B with #104's
+  spotter: its workspace block was 90,112 B). Its memory check keeps the 4 MiB reserve beside both; the resident
+  weights, LM and cascade model stay. No new ledger item, and the job's worst case is unchanged
+  ([memory-ledger.md](memory-ledger.md)).
+- **Module pages** (measured, both builds, VitaSDK gcc 15.2.0, against main `24c0219`): the worker gains 12,104 B of
+  text (debug) and 12,120 B (normal), on or off (the spotter's code, `vocr_textspot2.c` at `-Os` with NEON, 9,682 B
+  of symbols; its dark pass, which a scan never reaches, is linked to a refusing stub, `cmake/VocrOCR.cmake`; the
+  scan and the map, about 2.4 KB): 98,304 → 110,592 B, three text pages more in every enabled game's memory, never
+  SceShell's (#104's spotter, `vocr_textspot.c`, was 9,402 B: the worker's text with it 288 B and 304 B smaller, the
+  same pages; 460 B of the debug build's text room is left). SceShell keeps its pages: the Shell's text grows by
+  2,144 B (debug) and 1,664 B (normal; 100 B of text room left in its pages; the spotter's longer file name, which
+  the scan request names, is 8 B of it), its data and bss by 232 B; Enter's read at once is 64 B and 32 B of that.
+  The kernel's text grows by 92 B (debug) and 96 B (normal), the same pages. The RCO grows from 6,000 to 7,152 B (16
+  planes and a style), in the PAF heap: the 8,192 B estimate for it and the Paf plugin object is kept. The 16 planes'
+  widgets add to the open page's PAF use, unmeasured.
+- **Time (estimate, nothing of it has run on a console):** the spotter's own work is about 270 ms per 960×544 frame
+  on one core at 333 MHz and 203 ms at 444 MHz: vita-vn-ocr's Cortex-A9 cycle model for this blob's shape
+  (`t64n8c16`, 84.7 M MACs a frame; `eval/textspot3_a9.py measure --runtime v2 --half-above 480`, high bound × 1.0007)
+  on the Vita compiler's code as Rubi builds it, `-Os` NEON, with `VOCR_TEXTSPOT_NO_DARK`: 270.4 / 202.8 ms. Its
+  table of record, `eval/textspot3_a9_t_20261021.json`, has the `-O2` build: 255.7 / 191.8 ms without the dark pass,
+  which the same command reproduces to the instruction (260.8 / 195.6 ms with it). `-O2` would be 14.6 ms faster,
+  but its object's text is 2,150 B larger (12,080 against 9,930 B), more than the worker's text room (460 B in the
+  debug build, 1,744 B in the normal one): a fourth page in every enabled game. A PSP 480×272 frame, read whole:
+  265.1 / 198.8 ms. #104's spotter, measured the same way: 127.4 / 95.6 ms (PSP 122.4 ms). It runs between the
+  strips, whose reads wait a game frame each (as test.1's still-screen jobs read theirs, above: about a frame a
+  strip): about 30 ms of work a strip, more than a frame at 60 frames a second, so each strip takes two of them, and
+  the boxes come about 0.31 s after □ at 60 frames a second and 0.33 s at 30 (0.17 s and 0.32 s with #104's
+  spotter, about 15 ms a strip).
   A scan waits for a read that is already running (L + R's own, or an Automatic one; only a refresh of the entry
   yields to it): □ pressed during a read gets its boxes that much later (on the owner's v0.8.0-test.1 logs a
   5-line full screen took 1.84 s of recognition, before API 22 made recognition faster: [ocr-speed.md](ocr-speed.md)).
   The scan runs at the game's own clock (it does not raise it). Each strip is copied in the game's display call,
-  as an OCR job's are.
+  as an OCR job's are. The weights' read (51,008 B, two reads through the broker, and their SHA-256) and the
+  Shell's exchange are not in the estimate.
 - **Why it is off by default.** It is opt-in by the owner's rule for this round's features, and nothing of it is
   measured on a console: how well the spotter's boxes fit the text boxes of real games' frames, the time, and how
-  the picker feels. vita-vn-ocr #104 measures the spotter on host development frames (its `docs/textspot.md`).
+  the picker feels. vita-vn-ocr #108 measures the spotter on host development and test frames (its
+  `docs/textspot3.md`).
 
 **Logs.** One line a scan in both builds: `scan rc=R: N boxes, M blocks, pick P` and its time (the debug build adds
 `, truncated` when the spotter kept its 64 most confident boxes, `(weights read W, spot S)`, `arena A` and `free
@@ -984,16 +1004,28 @@ steps (`gstep scan ...`; its `spot` step: kind 1 when it read the frame whole, a
 << 16 | (pick + 1) << 8 | truncated, sum the arena it took, us the spotter's time with the strips' waits) and, from
 the overlay, `scan: N blocks shown, the cursor on I` and `scan: block I read, x,y wxh`.
 
+**Accuracy** (vita-vn-ocr #108's host measurements, each box read by VOCR5-N: the spotter's own boxes, not Rubi's
+read of the picked block, which runs Rubi's finder on it; nothing of it is measured on a console). On vita-test +
+psp-test as whole frames, read once (176 frames of 28 VNs, det+refine), #108's spotter against #104's: box F1 0.776
+against 0.694 and dialogue CER 2.29% against 3.00% (both resolved better), all-text CER 20.57% against 20.02%
+(level); on CLANNAD's whole frames, dialogue CER 0.99% against 1.14%.
+
 **Limits.**
-- The highlight starts on the box the spotter takes for the dialogue, which is right on 77 of #104's 126
-  development frames with dialogue (61%; its detector, the boxes a scan draws, at vita-vn-ocr main `7a6dce0`, host).
-  #104's selected arm adds a refinement (det+refine: 86 of 126, 68%; on its protected test frames 97 of 157, 62%);
-  the test sets were not read with the detector alone, so no test figure exists for the scan's own pick.
-- A text-free screen can get a stray box: about 1 in 5 (5 of #104's 25 text-free development frames get at least one;
-  6 of 19 text-free test frames with det+refine).
+- The highlight starts on the box the spotter takes for the dialogue, which is right on 74 of the 126 development
+  frames with dialogue (59%; vita-vn-ocr's textspot development set, which #104 and #108 share; its detector, the
+  boxes a scan draws, from #108's stored development units of the pick's det decode, host; #104's detector: 77 of
+  126, 61%). #108's selected arm adds a refinement (det+refine: 81 of 126, 64%, and on its protected test frames
+  102 of 157, 65%; #104's 86 of 126 and 97 of 157); the test sets were not read with the detector alone, so no test
+  figure exists for the scan's own pick.
+- A text-free screen can get a stray box: none of the 25 text-free development frames got one (5 with #104's
+  spotter), and 2 of the 19 text-free test frames did with det+refine (6 with #104's).
+- UI labels and Vita frames are its weak spots: on the test frames it finds 37% of the UI labels (#104's spotter 49%),
+  and it merges neighbouring lines or labels into one box more often; on vita-test its all-text CER is worse (23.4%
+  against 21.0%). Its gains are the dialogue boxes, mostly on PSP and Adrenaline frames.
 - At most 16 blocks are drawn (the first in reading order, the pick in the last place when it is not among them);
-  vita-vn-ocr's h2 family B spotters gave more on 2 of their 2,632 results on its 188 development frames (0.08 %,
-  at most 19; a design statistic, read from #104's `eval/famB/*_det/boxes.json`, not a score).
+  #108's spotter gave at most 13 on its 188 development frames (16 with det+refine; a design statistic, read from
+  its stored `boxes.json`, not a score), and vita-vn-ocr's h2 family B spotters (#104) more than 16 on 2 of their
+  2,632 results (0.08 %, at most 19).
 - A screen that changes during the scan's frames can give a box that is half the old screen's, half the new
   one's; the read that follows reads its region afresh.
 - Vertical text (columns, NOBORU's portrait text) is drawn but not read, until vertical text is in.
@@ -1082,7 +1114,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 7a6dce0e3e3630557f5729ba9eba17c92acf4c24  # main, #105's merge: #104's text spotter, after #101's gate, #85's faster kernels, #83's refinement, #82's beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout 30d3f557b7c306dc72539b101340b423994e6119  # #108's branch head (PR #113): #106's vocr_textspot2.c for #108's text spotter, its other runtime files as on main 817d203
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
@@ -1096,17 +1128,19 @@ cmake -S . -B build/host -G Ninja -DVJO_WITH_VOCR=ON -DVJO_VOCR_SOURCE_DIR=/path
 cmake --build build/host && ctest --test-dir build/host --output-on-failure
 ```
 
-`cmake/VocrOCR.cmake` checks the fourteen runtime files (`runtime/vocr.c`, `vocr.h`,
+`cmake/VocrOCR.cmake` checks the fifteen runtime files (`runtime/vocr.c`, `vocr.h`,
 `vocr_lines.c`, `vocr_lines.h`, `vocr_lines_rows.c`, `vocr_lines_rows.h`, `vocr_lm.c`,
-`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`, `vocr_textspot.c`,
-`vocr_textspot.h`; the first twelve as at `ac0d6b1`, #101's merge) against their
+`vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`, `vocr_textspot.h`,
+`vocr_textspot2.c`, `vocr_textspot2.h`; the first twelve as at `ac0d6b1`, #101's merge, `vocr_textspot.h` as at
+`7a6dce0`, #105's, and all fifteen as on main since `5af7741`, #107's) against their
 SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. For the host tests that run
 the text-presence gate, `cmake/VocrGate.cmake` downloads its pinned weights from the release at configure time and
 checks them (or takes `-DVJO_VOCR_GATE_BLOB=FILE`; without either, those tests skip); `cmake/VocrSpot.cmake` does
 the same for scan screen's text spotter (`-DVJO_VOCR_SPOT_BLOB=FILE`); the plugins read both files
-from `ocr/` at run time. The text spotter's `vocr_textspot.c` is built with its two dark-pass helpers renamed to
+from `ocr/` at run time. The text spotter's `vocr_textspot2.c` is built with its two dark-pass helpers renamed to
 refusing stubs (`core/vocr_ocr.c` `vjo_spot_no_dark`): a scan never reaches them (`VOCR_TEXTSPOT_NO_DARK`), and a
-call without that flag gives no box instead of linking `vocr_lines.c`'s 1,170 B of dark code into the worker. Copying those files to
+call without that flag gives no box instead of linking `vocr_lines.c`'s 1,170 B of dark code into the worker.
+`vocr_textspot.c`, #104's runtime, which refuses the pinned version 2 blob, is not built. Copying those files to
 `third_party/vita-vn-ocr/runtime/` works too and needs no source directory.
 Without `VJO_WITH_VOCR` the Shell has no OCR engine: a job reports that the
 backend is missing (install a build made with `VJO_WITH_VOCR`).

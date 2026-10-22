@@ -287,7 +287,7 @@ class PackageModels(unittest.TestCase):
             self.assertFalse((self.root / "package.zip").exists())
 
     def test_the_spotters_weights_and_attribution_are_required_and_pinned(self):
-        """API 30: scan screen's text spotter weights (vita-vn-ocr #104's VTSP blob, read at run time by a scan when
+        """API 30: scan screen's text spotter weights (vita-vn-ocr #108's VTSP blob, read at run time by a scan when
         ocr_scan_screen = on) and its release's ATTRIBUTION.md ship as ocr/TEXTSPOT-ATTRIBUTION.md: a package
         without either, or with another file under its name, is refused."""
         for name, other in ((prepare.VOCR_SPOT_MODEL, b"another spotter"), (prepare.VOCR_SPOT_ATTRIBUTION, self.attribution)):

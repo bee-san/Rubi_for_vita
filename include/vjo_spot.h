@@ -1,10 +1,10 @@
-/* API 30, a scan's result (scan screen: VJO_GAME_OCR_S_SPOT, include/vjo_game_ocr.h): vita-vn-ocr #104's text
+/* API 30, a scan's result (scan screen: VJO_GAME_OCR_S_SPOT, include/vjo_game_ocr.h): vita-vn-ocr #108's text
  * spotter's set as the game worker returns it, at the start of VjoGameOcrResult.text, the rest of the text zero
  * (so it keeps its NUL), and nothing there after a failed scan. The layout is the runtime's own
- * (runtime/vocr_textspot.h VocrTextspotSet, which the spotter writes there in place; core/vocr_ocr.c checks every
- * field's offset), in frame pixels (the result's fb_width x fb_height): boxes and blocks in the spotter's reading
- * order, a block's boxes box[first .. first + count). Plain types only: core/vocr_ocr.h and the host tools
- * include it too. */
+ * (runtime/vocr_textspot.h VocrTextspotSet, which runtime/vocr_textspot2.c writes there in place; core/vocr_ocr.c
+ * checks every field's offset), in frame pixels (the result's fb_width x fb_height): boxes and blocks in the
+ * spotter's reading order, a block's boxes box[first .. first + count). Plain types only: core/vocr_ocr.h and the
+ * host tools include it too. */
 #ifndef VJO_SPOT_H
 #define VJO_SPOT_H
 
@@ -40,10 +40,10 @@ typedef char vjo_spot_layout[sizeof(VjoSpotBox) == 12 && sizeof(VjoSpotBlock) ==
 /* The overlay's map of a scan (core/spot_pick.c vjo_spot_map), which the game worker makes from the set so that
  * SceShell's code for it is a table lookup (AGENTS.md rule 1): the first VJO_SPOT_SHOWN blocks in reading order,
  * the last place the pick's when it is not among them (vita-vn-ocr #104's h2 family B spotters gave more than 16
- * blocks on 2 of their 2,632 results on its 188 development frames, at most 19: a design statistic, not a
- * score), each as the region it is read as: the block on the 960 x 544 screen, grown by VJO_SPOT_MARGIN pixels on
- * every side and clipped to the screen. The Shell uses a map only when every index in it is one of its blocks
- * (core/spot_pick.h vjo_spot_map_ok). */
+ * blocks on 2 of their 2,632 results on its 188 development frames, at most 19, and #108's pick at most 13: a
+ * design statistic, not a score), each as the region it is read as: the block on the 960 x 544 screen, grown by
+ * VJO_SPOT_MARGIN pixels on every side and clipped to the screen. The Shell uses a map only when every index in it
+ * is one of its blocks (core/spot_pick.h vjo_spot_map_ok). */
 #define VJO_SPOT_SHOWN 16
 #define VJO_SPOT_MARGIN 8
 typedef struct {

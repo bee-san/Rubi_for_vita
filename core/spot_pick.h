@@ -1,5 +1,5 @@
 /* Scan screen (API 30, config.ini ocr_scan_screen): the overlay's region drawing starts on the text spotter's
- * blocks (vita-vn-ocr #104) instead of an empty screen. The d-pad and the left stick go to the nearest block that
+ * blocks (vita-vn-ocr #108's) instead of an empty screen. The d-pad and the left stick go to the nearest block that
  * way, a touch picks the block under the finger, enter reads the picked one (its rectangle becomes the game's
  * region, as a box drawn by hand does, and is read at once) and cancel goes back to drawing the box by hand.
  * Vertical blocks are drawn but cannot be picked (no vertical text in this build).

@@ -55,7 +55,7 @@
  * 28: API 26's interface again (vertical text left main, to come back as its own pull request): flags
  * bit 15 is unknown again and no Open is VJO_GAME_OCR_OPEN_VERTICAL. A new number, not 26: builds of
  * 27 exist, and a number names one interface only. Sizes are unchanged.
- * 30: scan screen (config.ini ocr_scan_screen; vita-vn-ocr #104's text spotter): VjoGameOcrRequest.speed bit 5
+ * 30: scan screen (config.ini ocr_scan_screen; vita-vn-ocr's text spotter, #108's): VjoGameOcrRequest.speed bit 5
  * (VJO_GAME_OCR_S_SPOT) with VJO_GAME_OCR_F_FULL alone, the spotter's weights' file (VJO_GAME_OCR_OPEN_SPOT,
  * VJO_VOCR_SPOT_NAME) in the kernel's broker for such a request, its result (VjoSpotResult) in the result's
  * text, and a new step kind (spot). Sizes are unchanged. 29 is the number the open drafts
