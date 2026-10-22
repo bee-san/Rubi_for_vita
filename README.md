@@ -54,8 +54,9 @@
   ([privacy](#does-it-send-anything-over-the-internet)).
 - **A big dictionary built in.** Bee's Ultimate Dictionary: 486,529 entries with English
   definitions from Daijirin, Sankoku and JMdict, the meanings of a word's kanji, a short
-  English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. You can add your
-  own Yomitan dictionaries too.
+  English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. The bundled
+  [PSP/Vita names dictionary](docs/vndb-attribution.txt) adds 12,151 VNDB characters from 1,202
+  visual novels, with their games and romanized names. You can add your own Yomitan dictionaries too.
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
   sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
   [Lapis](https://github.com/donkuri/lapis) notes for Anki.

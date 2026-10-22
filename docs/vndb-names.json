@@ -1,0 +1,25 @@
+{
+  "title": "VNDB Names — PSP & PS Vita",
+  "repository": "bee-san/psp_and_vita_vndb_name_dict",
+  "revision": "680a5e3a6fb4e53c060c08a4c29ed383eca3282e",
+  "snapshot": "2026-10-22",
+  "archive": "third_party/vndb-names/VNDB-Names-PSP-PSVita.zip",
+  "archive_bytes": 1535651,
+  "archive_sha256": "fec2fe3cdb934193b433ab87b6eaed27838d2072b28a85e80a6ac44b94b7fa10",
+  "filename": "vndb-names.vjdict",
+  "max_definition_bytes": 7000,
+  "games": 1202,
+  "characters": 12151,
+  "source_entries": 30927,
+  "bytes": 10452992,
+  "sha256": "1f66abf0596cfbc7243ced383951d991cd458234353359a64e13096de6741aa3",
+  "conversion": {
+    "format_version": 2,
+    "entries": 30923,
+    "index_records": 32346,
+    "truncated_definitions": 1,
+    "skipped_long_headwords": 4,
+    "key_filter": true,
+    "title_offset": 192
+  }
+}

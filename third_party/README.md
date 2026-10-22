@@ -1,4 +1,9 @@
 Vendored sources:
+- vndb-names https://github.com/bee-san/psp_and_vita_vndb_name_dict
+  680a5e3a6fb4e53c060c08a4c29ed383eca3282e: unchanged combined PSP/Vita Yomitan ZIP,
+  snapshot cutoff 2026-10-22; VNDB contributors, ODbL 1.0 / DbCL 1.0. Converted
+  offline by tools/prepare_vndb.py; docs/vndb-names.json pins its checksums and
+  docs/vndb-attribution.txt records the changes. Full licences: licenses/VNDB-*.txt.
 - bearssl  https://www.bearssl.org/git/BearSSL  7bea48e5e850ab4cafbe68d3765cdaba13a86d6f (MIT):
            only SHA-1 and SHA-224/256 are kept (src/hash/sha1.c, src/hash/sha2small.c, the
            byte-order helpers src/codec/dec32be.c and enc32be.c, src/inner.h, src/config.h and

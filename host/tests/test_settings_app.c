@@ -1392,7 +1392,7 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
         {"VJDICT3\0", "bad\x01title", "Best match only. 1 dictionary enabled."},
     };
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        card(NULL);
+        card("local_dictionaries = plaintext.vjdict\n");
         put_dictionary("plaintext.vjdict", cases[i].magic, cases[i].title);
         TEST_CASE_("case %u", i);
         TEST_ASSERT(run(in, FRAMES) == FRAMES);
@@ -1400,27 +1400,27 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
         TEST_CHECK_(t && !strcmp(t->text, cases[i].line), "'%s'", t ? t->text : "(none)");
     }
     /* no file: the count */
-    card(NULL);
+    card("local_dictionaries = plaintext.vjdict\n");
     unlink(DICT_DIR "/plaintext.vjdict");
     TEST_ASSERT(run(in, FRAMES) == FRAMES);
     const Text *t = results_help(LAST);
     TEST_CHECK_(t && !strcmp(t->text, "Best match only. 1 dictionary enabled."), "'%s'", t ? t->text : "(none)");
     /* one file, paging on (2 shown): the paging line, which names none */
-    card("local_dictionary_results = 2\n");
+    card("local_dictionaries = plaintext.vjdict\nlocal_dictionary_results = 2\n");
     put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
     TEST_ASSERT(run(in, FRAMES) == FRAMES);
     t = results_help(LAST);
     TEST_CHECK_(t && !strcmp(t->text, "Best match, then others with an L/R tap. 1 enabled."), "'%s'",
                 t ? t->text : "(none)");
     /* a file shorter than page 0's 256 bytes (cut inside its title): the count */
-    card(NULL);
+    card("local_dictionaries = plaintext.vjdict\n");
     put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
     TEST_ASSERT(truncate(DICT_DIR "/plaintext.vjdict", 200) == 0);
     TEST_ASSERT(run(in, FRAMES) == FRAMES);
     t = results_help(LAST);
     TEST_CHECK_(t && !strcmp(t->text, "Best match only. 1 dictionary enabled."), "'%s'", t ? t->text : "(none)");
-    /* two enabled, the first titled: the count (the paging line names none) */
-    card("local_dictionaries = plaintext.vjdict,extra.vjdict\n");
+    /* Two bundled files enabled by default: the count (the paging line names none). */
+    card(NULL);
     put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
     TEST_ASSERT(run(in, FRAMES) == FRAMES);
     t = results_help(LAST);

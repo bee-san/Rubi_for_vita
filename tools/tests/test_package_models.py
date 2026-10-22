@@ -434,7 +434,7 @@ class PackageModels(unittest.TestCase):
                          {"ocr_engine": prepare.VOCR_GENERATION[prepare.release_assets(
                              prepare.model_tiers()["tiers"][1]["model"])[1]], "vocr_tier": "normal",
                           "dictionary": "local",
-                          "local_dictionaries": "plaintext.vjdict", "japanese_only_selection": False,
+                          "local_dictionaries": "plaintext.vjdict,vndb-names.vjdict", "japanese_only_selection": False,
                           "ocr_mode": "auto", "log_file": True, "anki": False})
 
     def test_package_settings_reach_the_defaults_and_no_credential_is_one(self):

@@ -575,12 +575,13 @@ static void before_overlay(const char *path, char *out, size_t cap)
     if (best[0]) snprintf(out, cap, "%.20s/%.*s", dir, (int)(cap > 22 ? cap - 22 : 0), best);
 }
 
-/* The local dictionaries list with plaintext.vjdict in it: 0.7.12's jmdict.vjdict replaced, else first;
+/* The bundled dictionaries: 0.7.12's jmdict.vjdict replaced, else plaintext first;
+ * names appended after the user's dictionaries so ordinary words keep their priority.
  * 1 when it changed, 0 unchanged, -1 when it would hold more than 8 names (left as it is). */
 static int dictionaries(const char *names, char *out, size_t cap)
 {
     char list[512], *parts[16];
-    int n = 0, has = 0, jm = -1;
+    int n = 0, has = 0, has_names = 0, jm = -1;
     snprintf(list, sizeof(list), "%s", names);
     for (char *s = strtok(list, ","); s && n < 16; s = strtok(NULL, ",")) {
         while (*s == ' ' || *s == '\t') s++;
@@ -588,18 +589,22 @@ static int dictionaries(const char *names, char *out, size_t cap)
         while (e > s && (e[-1] == ' ' || e[-1] == '\t')) *--e = '\0';
         if (!*s) continue;
         if (!strcmp(s, "plaintext.vjdict")) has = 1;
+        if (!strcmp(s, "vndb-names.vjdict")) has_names = 1;
         if (!strcmp(s, "jmdict.vjdict") && jm < 0) jm = n;
         parts[n++] = s;
     }
-    if (has) return 0;
+    if (has && has_names) return 0;
+    if (n + (!has && jm < 0) + !has_names > 8) return -1;
     size_t used = 0;
     out[0] = '\0';
-    if (jm < 0) {
-        if (n >= 8) return -1;
+    if (!has && jm < 0) {
         used = (size_t)snprintf(out, cap, "plaintext.vjdict");
     }
     for (int i = 0; i < n && used < cap; i++)
-        used += (size_t)snprintf(out + used, cap - used, "%s%s", used ? ", " : "", i == jm ? "plaintext.vjdict" : parts[i]);
+        used += (size_t)snprintf(out + used, cap - used, "%s%s", used ? ", " : "",
+                                !has && i == jm ? "plaintext.vjdict" : parts[i]);
+    if (!has_names && used < cap)
+        used += (size_t)snprintf(out + used, cap - used, "%s%s", used ? ", " : "", "vndb-names.vjdict");
     return used < cap ? 1 : -1;
 }
 
@@ -779,7 +784,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     int d = dictionaries(base.local_dictionaries, value, sizeof(value));
     if (d > 0) { keys[k] = "local_dictionaries"; values[k++] = value; }
     else if (d < 0)
-        INI_CHANGE(s, "local_dictionaries has 8 names: add plaintext.vjdict to it yourself");
+        INI_CHANGE(s, "local_dictionaries has no room for both bundled dictionaries: choose which to enable yourself");
     int log_set = 0;
     for (int i = 0; i < s->payload.sets && k < 6; i++) {
         keys[k] = s->payload.set[i].key; values[k++] = s->payload.set[i].value;
