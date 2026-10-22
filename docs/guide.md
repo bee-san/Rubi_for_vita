@@ -296,7 +296,7 @@ and its acceleration are covered by host tests; how they feel on the console is
 not tested yet.
 
 With `ocr_scan_screen = on` (off by default), Square first scans the whole screen in the game: an estimated
-0.3 s later (after a read that is already running) every text box it found is drawn as a light rectangle, at
+0.35-0.4 s later (after a read that is already running) every text box it found is drawn as a light rectangle, at
 most 16, and the cursor starts on the box the spotter takes for the dialogue (right on 59% of vita-vn-ocr #108's
 development frames with dialogue). ◀ ▶ ▲ ▼ or a push of the left stick goes to the nearest box that way (every box can be
 reached: where no box lies that way, an arrow may lead to one the arrows could not reach otherwise), and Enter reads

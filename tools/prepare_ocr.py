@@ -157,8 +157,8 @@ VOCR_SPOT_ASSETS = {
 }
 VOCR_SPOT_ATTRIBUTION = 'TEXTSPOT-ATTRIBUTION.md'
 VOCR_SPOT_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
-VOCR_SPOT_ATTRIBUTION_PIN = {VOCR_SPOT_ATTRIBUTION: (VOCR_SPOT_BASE + VOCR_SPOT_ATTRIBUTION_ASSET, 2903,
-    '65d7f24b705f99b70d7299dbeb4655d7f9085606f0699d6275cbef66fa571621')}
+VOCR_SPOT_ATTRIBUTION_PIN = {VOCR_SPOT_ATTRIBUTION: (VOCR_SPOT_BASE + VOCR_SPOT_ATTRIBUTION_ASSET, 2952,
+    'cd5970887179ffbf1521f3657c5872e1b7e026a2dc35eba9701822734961d74a')}
 
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so

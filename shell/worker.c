@@ -1277,6 +1277,8 @@ static int run_vocr(VjoOverlayData *out)
  * run_spot), a job of this thread; its blocks go to the overlay once the control thread takes it
  * (on_scan_done). One line in either build's log, after the result is out; the debug build's steps too. */
 #define SCAN_TIMEOUT_US 10000000
+/* The spotter's file name and its NUL fit the request's model field (#254's audit, N5): no code. */
+typedef char vjo_spot_name_fits[sizeof(VJO_VOCR_SPOT_NAME) <= VJO_GAME_OCR_MODEL_BYTES ? 1 : -1];
 static void scan_run(void)
 {
     VjoGameOcrRequest request = {.size = sizeof(request), .flags = VJO_GAME_OCR_F_FULL, .speed = VJO_GAME_OCR_S_SPOT};

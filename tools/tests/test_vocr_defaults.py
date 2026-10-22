@@ -367,7 +367,8 @@ class VocrDefaults(unittest.TestCase):
         self.assertRegex(ocr_cmake, r"\n  vocr_textspot2\.c [0-9a-f]{64}\n  vocr_textspot2\.h [0-9a-f]{64}\)")
         url, size, sha = prepare_ocr.VOCR_SPOT_ATTRIBUTION_PIN[prepare_ocr.VOCR_SPOT_ATTRIBUTION]
         self.assertEqual(url, prepare_ocr.VOCR_SPOT_BASE + "ATTRIBUTION.md")
-        self.assertEqual((size, sha), (2903, "65d7f24b705f99b70d7299dbeb4655d7f9085606f0699d6275cbef66fa571621"))
+        # the release's corrected ATTRIBUTION.md (it names MeikiOCR's licences, as v0.3.3-textspot.1's did)
+        self.assertEqual((size, sha), (2952, "cd5970887179ffbf1521f3657c5872e1b7e026a2dc35eba9701822734961d74a"))
 
     def test_lm_pins_agree_c_kernel_python_and_the_ledger(self):
         table = c_lm_table()

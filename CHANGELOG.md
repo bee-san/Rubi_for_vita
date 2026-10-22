@@ -27,7 +27,7 @@ On `main` since 0.8.0; the next release brings it.
   vita-vn-ocr's text spotter finds on the whole screen, in the game's process, with the likely dialogue
   highlighted; the arrows or a tap pick one, and Enter saves it as the game's region and reads it at
   once. Cancel draws the box by hand, as before. The spotter is vita-vn-ocr #108's (51,008 B of weights,
-  read only while a scan runs; an estimated 0.3 s a scan). Not run on a console yet ([#228]).
+  read only while a scan runs; an estimated 0.35-0.4 s a scan). Not run on a console yet ([#228]).
 
 ### Changed
 

@@ -894,7 +894,7 @@ No key is remapped and no button changes meaning. Press by press:
 
 1. **L + R** opens the overlay over the game, as always; **□** dims the game, as always. The hint line says
    `◀▶▲▼ or tap a box · Enter read · Cancel draw by hand` (with the console's own Enter and Cancel glyphs).
-2. The game worker scans the screen (an estimated 0.3 s, below, after a read that is already running); then
+2. The game worker scans the screen (an estimated 0.35-0.4 s, below, after a read that is already running); then
    every box it found is drawn as a translucent white rectangle (at most 16), each the region it would read, and the
    one it took for the dialogue is highlighted in yellow. (A □ pressed again while a scan still runs gets that
    scan's boxes and then its own: each scan's boxes are drawn afresh when they come, the highlight on its pick.)
@@ -980,18 +980,24 @@ no request is ever a scan.
   table of record, `eval/textspot3_a9_t_20261021.json`, has the `-O2` build: 255.7 / 191.8 ms without the dark pass,
   which the same command reproduces to the instruction (260.8 / 195.6 ms with it). `-O2` would be 14.6 ms faster,
   but its object's text is 2,150 B larger (12,080 against 9,930 B), more than the worker's text room (460 B in the
-  debug build, 1,744 B in the normal one): a fourth page in every enabled game. A PSP 480×272 frame, read whole:
-  265.1 / 198.8 ms. #104's spotter, measured the same way: 127.4 / 95.6 ms (PSP 122.4 ms). It runs between the
-  strips, whose reads wait a game frame each (as test.1's still-screen jobs read theirs, above: about a frame a
-  strip): about 30 ms of work a strip, more than a frame at 60 frames a second, so each strip takes two of them, and
-  the boxes come about 0.31 s after □ at 60 frames a second and 0.33 s at 30 (0.17 s and 0.32 s with #104's
-  spotter, about 15 ms a strip).
+  debug build, 1,744 B in the normal one): a fourth page in every enabled game. A 480×272 frame, read whole (the
+  tests' PSP size; a PSP game in Adrenaline reaches the display hook at 960×544, above, and costs the 960×544
+  figure): 265.1 / 198.8 ms. #104's spotter, measured the same way: 127.4 / 95.6 ms (480×272: 122.4 ms). Each scan
+  also loads the blob, whose CRC-32 checks are 17.7 ms at 333 MHz by the same model (13.2 ms at 444: the tool's dry
+  run, which the figures above leave out), after the worker's SHA-256 of it, about 3-6 ms (`sha256_h15`'s A9 row in
+  [performance.md](performance.md), 66-139 ms for 1,155,968 B, scaled by the bytes). The spotter runs between the
+  strips, whose reads wait for the game's next frame (as test.1's still-screen jobs read theirs, above: about a frame
+  a strip), and its work is not even: the network's rows lag its input by its 287-px receptive field, and the decode
+  and the blocks run at the end, so the strips' shares are 3-12% each and 30% comes after the last one (the Vita
+  object's instructions under qemu, counted at each strip boundary, on the repo's sample; the PSP frame alike). So
+  the boxes come about 0.35 s after □ at 60 frames a second and 0.39 s at 30 (averaged over the display's phase;
+  #228's estimate for #104's spotter, an even split without the load: 0.17 s and 0.32 s).
   A scan waits for a read that is already running (L + R's own, or an Automatic one; only a refresh of the entry
   yields to it): □ pressed during a read gets its boxes that much later (on the owner's v0.8.0-test.1 logs a
   5-line full screen took 1.84 s of recognition, before API 22 made recognition faster: [ocr-speed.md](ocr-speed.md)).
   The scan runs at the game's own clock (it does not raise it). Each strip is copied in the game's display call,
-  as an OCR job's are. The weights' read (51,008 B, two reads through the broker, and their SHA-256) and the
-  Shell's exchange are not in the estimate.
+  as an OCR job's are. The weights' read from the card (51,008 B, two reads through the broker) and the Shell's
+  exchange are not in the estimate.
 - **Why it is off by default.** It is opt-in by the owner's rule for this round's features, and nothing of it is
   measured on a console: how well the spotter's boxes fit the text boxes of real games' frames, the time, and how
   the picker feels. vita-vn-ocr #108 measures the spotter on host development and test frames (its
@@ -1021,7 +1027,8 @@ against 0.694 and dialogue CER 2.29% against 3.00% (both resolved better), all-t
   spotter), and 2 of the 19 text-free test frames did with det+refine (6 with #104's).
 - UI labels and Vita frames are its weak spots: on the test frames it finds 37% of the UI labels (#104's spotter 49%),
   and it merges neighbouring lines or labels into one box more often; on vita-test its all-text CER is worse (23.4%
-  against 21.0%). Its gains are the dialogue boxes, mostly on PSP and Adrenaline frames.
+  against 21.0%), and so is its dialogue CER (2.00% against 1.83%). Its gains are the dialogue boxes on PSP frames
+  (psp-test's dialogue CER 2.60% against 4.21%; 2.78% against 6.98% at Adrenaline's 2×, report only).
 - At most 16 blocks are drawn (the first in reading order, the pick in the last place when it is not among them);
   #108's spotter gave at most 13 on its 188 development frames (16 with det+refine; a design statistic, read from
   its stored `boxes.json`, not a score), and vita-vn-ocr's h2 family B spotters (#104) more than 16 on 2 of their
