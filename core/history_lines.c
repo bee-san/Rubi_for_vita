@@ -5,12 +5,30 @@
 #include "textfilter.h"
 #include "utf.h"
 
+/* After the line: time, platform, title ID, engine. Respect quoted commas and doubled quotes.
+ * Old records still supply text even if they have no readable engine. */
+static uint8_t record_origin(const char *p, const char *end)
+{
+    for (int field = 0; field < 3; field++) {
+        int quoted = 0;
+        for (; p < end; p++) {
+            if (*p == '"') {
+                if (quoted && p + 1 < end && p[1] == '"') { p++; continue; }
+                quoted = !quoted;
+            } else if (*p == ',' && !quoted) { p++; break; }
+        }
+    }
+    if (end - p >= 7 && !memcmp(p, "\"vocr\",", 7)) return VJO_LINE_OCR;
+    if (end - p >= 7 && !memcmp(p, "\"hook\",", 7)) return VJO_LINE_HOOK;
+    return VJO_LINE_UNKNOWN;
+}
+
 /* The line of the record that starts at p (its '"') and ends before end, when the record is game
  * uuid's (its first field, the closing quote and comma included): its fourth field, unescaped in
  * place and NUL-terminated; NULL otherwise, and when the record is cut before the time that follows
  * that field (its first digit). shell/history.c quotes each of the first four fields, doubles a '"'
  * inside one and writes the time, unquoted, after them. */
-static char *record_line(char *p, char *end, const char *uuid, size_t ulen)
+static char *record_line(char *p, char *end, const char *uuid, size_t ulen, uint8_t *origin)
 {
     if ((size_t)(end - p) < ulen + 2 || memcmp(p + 1, uuid, ulen))
         return NULL;
@@ -40,6 +58,7 @@ static char *record_line(char *p, char *end, const char *uuid, size_t ulen)
             if (q + 2 >= end || q[2] < '0' || q[2] > '9')
                 return NULL;
             *o = '\0';
+            *origin = record_origin(q + 2, end);
             return p + 1;
         }
         p = q + 2;
@@ -51,7 +70,7 @@ static char *record_line(char *p, char *end, const char *uuid, size_t ulen)
  * current text's newest record is read (then SEEN): a line newer than it (a refresh's that was
  * dropped as the visit opened) is no earlier line, so the lines kept before it go. */
 #define SEEN ((size_t)-1)
-static int keep(VjoHistory *h, VjoArena *lines, const char *line, int filter, size_t *top)
+static int keep(VjoHistory *h, VjoArena *lines, const char *line, uint8_t origin, int filter, size_t *top)
 {
     size_t mark = vjo_arena_mark(lines), n;
     char *f = vjo_filter_lines(lines, line, filter), *kept;
@@ -71,6 +90,7 @@ static int keep(VjoHistory *h, VjoArena *lines, const char *line, int filter, si
     kept = (char *)vjo_arena_alloc(lines, n); /* where the filter's copy began: at or below t */
     memmove(kept, t, n);
     h->line[++h->n] = kept;
+    h->origin[h->n] = origin;
     return 1;
 }
 
@@ -79,6 +99,7 @@ void vjo_history_scan(VjoHistory *h, VjoArena *lines, char *buf, size_t len, int
     size_t ulen = strlen(uuid), end = len, i = len, low = whole ? 0 : 1, top = vjo_arena_mark(lines);
     while (h->n < VJO_HISTORY_LINES && i-- > low) {
         char *line;
+        uint8_t origin = VJO_LINE_UNKNOWN;
         /* A record starts with '"' after a newline (or as the file starts: buf[0] is read only when the
          * window is the whole file, `low`), and the next byte is neither '"' nor ',': inside a field
          * every '"' is doubled, and a field's closing '"' is followed by ',' or a newline (the header line
@@ -86,9 +107,9 @@ void vjo_history_scan(VjoHistory *h, VjoArena *lines, char *buf, size_t len, int
         if (buf[i] != '"' || (i && buf[i - 1] != '\n') || i + 1 >= len || buf[i + 1] == '"' ||
             buf[i + 1] == ',')
             continue;
-        line = record_line(buf + i, buf + end, uuid, ulen);
+        line = record_line(buf + i, buf + end, uuid, ulen, &origin);
         end = i;
-        if (line && keep(h, lines, line, filter, &top) < 0)
+        if (line && keep(h, lines, line, origin, filter, &top) < 0)
             break;
     }
 }
