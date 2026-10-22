@@ -42,12 +42,12 @@ the normal build only.
   to OCR's reading, the streams available, the hooks installed and refused, the model and the capture;
   △ again brings the entry back. The text and its cursor stay, ▲ ▼ still go through earlier lines, and
   the right stick scrolls the view. An earlier line shows the engine its `history.csv` row saved
-  (**Unknown** in an older row) and says the rest was not saved. The source is the one that supplied
-  the text: a cursor move, or a refresh that keeps the text or is cancelled, does not change it. The
-  view is in both builds, named in no hint, off at every opening, and changes no text source (test.7's
-  △ source picker stays out). The Shell's pages are unchanged in both builds: the header's 2,048 B of
-  ranges moved from its permanent data into the overlay's existing 20,480 B text block, which now needs
-  20,064 B of it, and cold strings into the data space freed
+  (**Unknown** when the row has no readable engine) and says the rest was not saved. The source is the
+  one that supplied the text: a cursor move, or a refresh that keeps the text or is cancelled, does not
+  change it. The view is in both builds, named in no hint, off at every opening, and changes no text
+  source (test.7's △ source picker stays out). The Shell's pages are unchanged in both builds: the
+  header's 2,048 B of ranges moved from its permanent data into the overlay's existing 20,480 B text
+  block, which now needs 20,064 B of it, and cold strings into the data space freed
   ([measured](docs/memory-ledger.md#hidden-triangle-line-diagnostics)).
 
 ### Fixed
