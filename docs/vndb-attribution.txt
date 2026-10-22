@@ -1,0 +1,30 @@
+VNDB Names — PSP & PS Vita
+
+Character names and release metadata: VNDB contributors, https://vndb.org/,
+via the Kana API, https://api.vndb.org/kana. Snapshot cutoff: 22 October 2026.
+Source: bee-san/psp_and_vita_vndb_name_dict, commit
+680a5e3a6fb4e53c060c08a4c29ed383eca3282e
+https://github.com/bee-san/psp_and_vita_vndb_name_dict
+
+The database is offered under the Open Database License 1.0 (ODbL);
+individual database contents under the Database Contents License 1.0 (DbCL).
+The full licences accompany this file in third_party/licenses/VNDB-ODbL-1.0.txt
+and VNDB-DbCL-1.0.txt (under licenses/ inside the standalone VPK).
+VNDB's data licence: https://vndb.org/d17#3
+
+Rubi converts the combined PSP + Vita Yomitan dictionary into its disk-backed
+format 2 with tools/prepare_vndb.py and tools/convert_dictionary.py. This adapted
+database remains under ODbL 1.0. The unchanged machine-readable source is bundled
+in the source repository at third_party/vndb-names/VNDB-Names-PSP-PSVita.zip and
+is available from the source commit's dist/VNDB-Names-PSP-PSVita.zip. Exact input
+and output checksums and conversion counts are in docs/vndb-names.json.
+
+The source has 30,927 searchable name rows for 12,151 characters across 1,202
+qualifying VNs. Rubi retains 30,923 rows: four names exceed its 32-character lookup
+limit. One definition exceeds the 7,000-byte text limit and is clipped with an
+ellipsis. Shared names retain their source's combined character/game definitions.
+No images, biographies, guessed kanji readings or frequency ranks are added.
+Aliases may reveal names: VNDB does not give aliases individual spoiler flags.
+
+Inspired by kaanium/VNDB-Names-for-Yomitan:
+https://github.com/kaanium/VNDB-Names-for-Yomitan

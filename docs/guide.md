@@ -560,7 +560,7 @@ these defaults:
 ```ini
 dictionary = local
 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
-local_dictionaries = plaintext.vjdict
+local_dictionaries = plaintext.vjdict,vndb-names.vjdict
 local_dictionary_results = 1
 text_source = auto
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
@@ -670,7 +670,7 @@ console run).
 The complete settings template is
 [docs/config.example.ini](config.example.ini).
 
-The release bundles one frozen disk-backed `plaintext.vjdict`, **Bee's
+The release bundles the frozen disk-backed `plaintext.vjdict`, **Bee's
 Ultimate Dictionary**: word definitions from **Daijirin4 → Sankoku8 → JMdict** in
 that priority order, an English summary of each grammar point (は, に, ので,
 ～てしまう …), a line for each kanji with its most common meanings, and the
@@ -681,6 +681,23 @@ The public release includes the processed dictionary and its attribution.
 The snapshots it is built from are pinned by exact commit and SHA-256; builds
 perform no dictionary updates and need no conversion or current upstream
 snapshot.
+
+It also bundles `vndb-names.vjdict`, **VNDB Names — PSP & PS Vita**, with 30,923
+searchable name entries for 12,151 characters across 1,202 qualifying visual
+novels (snapshot cutoff 22 October 2026). Full names, name parts and aliases show
+the original/romanized name, source game, platform and VNDB link. No images or
+biographies are included; aliases may reveal names. Both dictionaries are
+enabled on a fresh install. An update adds missing bundled files to the enabled
+list while keeping custom dictionaries in order; if the list would exceed eight
+files, it stays as it was and the install plan asks you to choose.
+
+The main dictionary comes first for equal-length word matches; longer full names
+can still match the names dictionary. The default **Dictionaries shown** stays
+1. Set it to **2** in the Rubi app to page between word and name entries with L/R
+when both match. The names source ZIP is committed unchanged, converted offline
+with `python3 tools/prepare_vndb.py`, and verified against input/output checksums
+in [vndb-names.json](vndb-names.json). [Attribution and licences](vndb-attribution.txt)
+ship in both release ZIPs and standalone VPKs (ODbL 1.0 / DbCL 1.0).
 
 An entry shows its definition (or a grammar point's summary), a blank line, then
 one line per kanji of its spelling, the kanji at the headword's size:
@@ -731,9 +748,9 @@ You can add your own Yomitan dictionaries with
 [the converter and installation guide](local-dictionaries.md).
 Up to eight dictionary files can be enabled in priority order. The Rubi
 app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages
-through files for the selected word. The combined bundle is one file, so
-it displays the preferred source; add separate dictionaries to page through
-other definitions. Only the page on screen is held in memory.
+through files for the selected word. Bee's Ultimate Dictionary combines its
+word, grammar and kanji sources in one file; the names are a second file. Only
+the page on screen is held in memory.
 
 The subtitle strip (Select + R) shows the recognized text, without readings,
 and adds no lookups for it. Recognition and dictionary lookup make no network

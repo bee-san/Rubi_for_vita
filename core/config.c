@@ -25,7 +25,7 @@ void vjo_config_defaults(VjoConfig *c)
     memset(c, 0, sizeof(*c));
     c->dictionary = VJO_DICT_LOCAL;
     vjo_snprintf(c->local_dictionary_dir, sizeof(c->local_dictionary_dir), "ux0:data/VitaJPOverlay/dictionaries");
-    vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "plaintext.vjdict");
+    vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "plaintext.vjdict,vndb-names.vjdict");
     c->local_dictionary_results = 1;
     c->non_japanese_filter = VJO_FILTER_LINES;
     c->japanese_only_selection = 0; /* OFF: the cursor can select any character (the owner, 2026-10-20; ON before) */
@@ -66,8 +66,9 @@ const char *vjo_config_default_text(void)
            "\n"
            "; Local Yomitan dictionaries: convert on a computer, then copy .vjdict files here.\n"
            "local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries\n"
+           "; The bundled word/grammar/kanji and PSP/Vita character-name dictionaries.\n"
            "; Up to 8 filenames, separated by commas, in priority order.\n"
-           "local_dictionaries = plaintext.vjdict\n"
+           "local_dictionaries = plaintext.vjdict,vndb-names.vjdict\n"
            "; Dictionaries shown per selected word, 1-8: the best match first, then each\n"
            "; other dictionary's entry in the order above. L/R tap pages; one is in memory.\n"
            "local_dictionary_results = 1\n"

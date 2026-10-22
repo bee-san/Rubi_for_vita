@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import convert_dictionary as convert
 import prepare_plaintext as prepare
 import package_release as release
+import prepare_vndb
 
 
 class FrozenPlaintext(unittest.TestCase):
@@ -108,6 +109,7 @@ class FrozenPlaintext(unittest.TestCase):
     def test_package_uses_staged_dictionary_without_external_data_and_rejects_wrong_one(self):
         stage = self.root / "stage"
         prepare.stage(stage, self.archive)
+        prepare_vndb.stage(stage)
         for name in ("ur0/tai/VitaJPOverlay_Kernel.skprx", "ur0/tai/VitaJPOverlay_Shell.suprx",
                      "ur0/tai/VitaJPOverlay_OCR.suprx", "Rubi.vpk",
                      "ur0/data/VitaJPOverlay/vitajpoverlay.rco"):
@@ -147,15 +149,23 @@ class FrozenPlaintext(unittest.TestCase):
              mock.patch.object(release, "VOCR_GATE_ASSETS", gate), mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
              mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \
              mock.patch.object(release, "VOCR5_ASSETS", vocr5), \
+             mock.patch.object(convert, "convert", side_effect=AssertionError("No packaging conversion")), \
              mock.patch.object(prepare.subprocess, "run", side_effect=AssertionError("No packaging fetch")), \
              contextlib.redirect_stdout(io.StringIO()):
             release.package(base, output, models)
         with zipfile.ZipFile(output) as zipped:
             manifest = json.loads(zipped.read("package-manifest.json"))
-            self.assertEqual(manifest["defaults"]["local_dictionaries"], prepare.FILENAME)
+            self.assertEqual(manifest["defaults"]["local_dictionaries"], prepare.FILENAME + ",vndb-names.vjdict")
             name = release.DATA + "dictionaries/" + prepare.FILENAME
             self.assertEqual(hashlib.sha256(zipped.read(name)).hexdigest(), self.pin["sha256"])
             self.assertEqual(manifest["dictionary"], self.pin)
+            names_pin = prepare_vndb.load_manifest()
+            self.assertEqual(hashlib.sha256(zipped.read(release.DATA + "dictionaries/" + prepare_vndb.FILENAME)).hexdigest(),
+                             names_pin["sha256"])
+            for name in prepare_vndb.DOCS:
+                self.assertEqual(zipped.read("docs/" + name), (ROOT / "docs" / name).read_bytes())
+            for name in prepare_vndb.LICENSES:
+                self.assertIn("third_party/licenses/" + name, manifest["files"])
             zipped.extractall(self.root / "unpacked")
         with contextlib.redirect_stdout(io.StringIO()):
             release.verify(self.root / "unpacked")

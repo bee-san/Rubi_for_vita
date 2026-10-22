@@ -47,8 +47,10 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_VPK = "Rubi.vpk"
 MANIFEST = "payload/manifest.txt"
 LICENSES = "licenses/"
-# The zip's licence and attribution files the VPK carries (licenses/<zip path>); the first three must be there.
-REQUIRED_LICENSES = ("LICENSE", "docs/plaintext-attribution.txt", "docs/JMdict-LICENSE.html")
+# The zip's required licences and attribution, carried under licenses/<zip path>.
+REQUIRED_LICENSES = ("LICENSE", "docs/plaintext-attribution.txt", "docs/JMdict-LICENSE.html",
+                     "docs/vndb-attribution.txt", "third_party/licenses/VNDB-ODbL-1.0.txt",
+                     "third_party/licenses/VNDB-DbCL-1.0.txt")
 
 
 def licence_name(name):
