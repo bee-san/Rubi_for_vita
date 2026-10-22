@@ -1,7 +1,8 @@
 # Offline OCR history (internal)
 
 Automatic text reads silently append to `ux0:data/VitaJPOverlay/history.csv`,
-whether the text comes from OCR or a native hook. Recording adds no setting,
+whether the text comes from OCR or a native hook; each record says which, in its
+`line_source` column ([Line source](#line-source)). Recording adds no setting,
 network connection or export job. Copy the file with VitaShell; the overlay's
 [line history](line-history.md) also reads earlier dialogue from it.
 Only successful, current-game reads in `ocr_mode = auto` are eligible: ordinary
@@ -40,11 +41,15 @@ The low ten flag bits are confidence in thousandths (1023 means unavailable);
 0x4000 means LM decoded, 0x8000 means LM changed the line (see
 `include/vjo_game_ocr.h`). No screenshot, model or dictionary content is copied.
 
-The last column, `characters`, is how many characters `line` has as a reading
+The 42nd column, `characters`, is how many characters `line` has as a reading
 tracker counts them: its kanji, kana and other Japanese letters and its ASCII
 letters and digits ([Characters](#characters)). Its sum is the characters read;
 divided by the reading time it is the characters per hour, which
 `tools/reading_stats.py` works out ([Reading statistics](#reading-statistics)).
+
+The last column, `line_source`, is where `line` came from: `hook` when a native
+text hook supplied it, `ocr` when Rubi's OCR read it off the screen
+([Line source](#line-source)).
 
 VjoNet publishes `job_done` before appending. The UI/control thread can consume
 the result while the existing worker streams it to disk; that worker cannot
@@ -74,17 +79,37 @@ text a result holds (1,365 kana) [estimates: one instruction a cycle]. It runs
 after the result is published, while the record is written: the writer sends its
 192-byte buffer to the file each time it fills, and the count comes before the
 last of those writes, the sync and the close.
+The line's source costs no code: the writer chooses, once for the record, a
+pointer into one table of both sources' cells (`source_cells`, 35 B, in the data
+segment beside the header, whose new name adds 12 B; it replaces the engine's two
+cells, 18 B), keeps it in its own state on its frame, and writes the engine's cell
+and, at the record's end, the `line_source` cell and the line break from it. The
+data segment was full in the normal build, so the append now opens the file by
+the code segment's copy of its path, which line history's reader has already (the
+data segment's copy, 35 B, is gone). `vjo_history_append` stays 1,068 B of code
+with a 456 B frame, the Shell's code segment keeps its size in both builds (90,100 B
+normal, 100,988 B debug), and its data segment is 8 B smaller in both (73,728 →
+73,720 B normal, 73,680 → 73,672 B debug), in the same pages [measured: the build
+log's module rows, `arm-vita-eabi-nm -S` and `-fstack-usage`, both builds of main
+`ebd9e22` and this change]. A record is 6 B longer for OCR's line (`,"ocr"`) and 7 B
+for a hook's.
 Both module-page budgets and thread-stack budgets remain enforced by the ledger.
 
 The overlay reads the file back for one thing only: [line history](line-history.md). When Up
 first goes past the overlay's top row, the control thread reads the file's last 24,512 B once
 (into its existing 24 KiB scratch) and keeps up to 32 of this game's lines, by `uuid`, in a 16 KiB Paf
 block while the user looks back; nothing else reads it, and that reader never writes it. An append in
-progress can only cut the last record, which the reader skips.
+progress can only cut the last record: the reader skips it until its line and the time's first digit
+after it are written, then reads its line, which is whole
+([line-history.md](line-history.md#where-the-lines-come-from-and-why)).
 
 Consecutive identical normalized text within a game is suppressed, including
 rescans caused by a blinking icon or reopening/resuming. A different sentence,
-game, or successful blank scan permits the same text again. Fingerprints reset
+game, or successful blank scan permits the same text again; so does, until
+[#252](https://github.com/bee-san/Rubi_for_vita/issues/252) is fixed, a read
+whose exchange with the game worker failed (no worker, a timeout, or a cancellation
+that the history's check does not see), which the writer takes for a blank scan:
+the next read of the same text is then recorded again. Fingerprints reset
 on Shell restart. This is deliberately lightweight: an immediately repeated
 identical sentence with no observed change may be collapsed, and a long pause
 while text types out can still produce a partial sentence followed by its full
@@ -169,12 +194,66 @@ GameSentenceMiner's 1,417 (the 88 line breaks inside them) and exSTATic's 1,344
 `line`]. GameSentenceMiner's import reads only the first five columns, so its
 own totals for imported lines count `line` its way, not from this column.
 
+## Line source
+
+`line_source`, the 43rd column, is where the record's `line` came from:
+
+| Value | The line |
+| --- | --- |
+| `hook` | a native text hook's stream supplied it ([native-hooks.md](native-hooks.md)): it agreed with OCR's reading of the same screen and replaced it, or a stream Rubi trusts answered the read without recognition |
+| `ocr` | Rubi's OCR read it off the screen |
+
+The writer takes it from the read's result (`VjoGameOcrResult.text_from`: 0 when OCR's
+text is shown, else the ID of the stream whose text is), as `engine` has done since
+native text hooks came: `engine` is `hook` exactly when `line_source` is, and `vocr`
+when it is `ocr`, both written from one choice. Every result says where its text
+came from, so the writer writes nothing else; `unknown` is `tools/reading_stats.py`'s,
+for a record that says neither. For a hook's line, `raw_line` is OCR's (normalised)
+reading of the screen when OCR ran and the hook's text replaced it, or the hook's
+text before normalisation when the hook answered without recognition.
+
+The column is not called `source` because the file has one: the 34th, the route the
+game worker read the screen's rows through (`VJO_GAME_OCR_SRC_*`, where 1 is the
+kernel's display hook: a capture hook, nothing to do with text hooks). Two columns of
+one name would read as one in a reader that goes by names (`csv.DictReader` keeps the
+last, pandas renames the second `source.1`).
+
+A hook's line is recorded as OCR's is: with **Read text: Automatically**, in both
+builds, every completed read of the game in front whose text is not blank and is not
+the text of the record before it (a background read, a read as the overlay opens, a
+refresh of the open overlay). Each of these reads asks the game worker for its
+automatic choice between OCR and the hook streams, and its result is recorded,
+whichever supplied it. Not recorded:
+
+- With **Only when I press L + R** (`ocr_mode = on_press`): no line, from either
+  source.
+- A read that failed, was cancelled or found the screen changed under it; a cursor
+  move (it reads nothing); the debug build's self-test (OCR only).
+- Dialogue the game showed and replaced between two reads (skipping, or the game's
+  auto mode): a hook stream keeps its latest text only, and the history has one record
+  per read, not one for each line a hook saw.
+- A line the same as the record before it, whatever its source: OCR's reading, then
+  the same text from a hook, is one record, `ocr` (unless a read between them failed:
+  [#252](https://github.com/bee-san/Rubi_for_vita/issues/252), above).
+- A line of a text box's border read as text (API 36, with `non_japanese_filter = lines`,
+  the default: [vita-vn-ocr.md](vita-vn-ocr.md#text-normalisation-shown-and-looked-up)):
+  the game worker drops it from OCR's text and from a hook's alike, before the text is
+  shown or recorded; a text that was only such lines is blank, and is not recorded.
+
+PSP games in Adrenaline have no native hooks, and **Text source: OCR only** uses
+none: their lines are all `ocr`.
+
+Rubi 0.9.1 and older wrote no `line_source`, but their `engine` says the same: `hook`
+for a hook's line (since 0.9.0; the test build 0.8.0-test.7 before it, the first with
+native hooks) and `vocr` for OCR's (0.8.0 had no hooks, so all of its lines are OCR's).
+`tools/reading_stats.py` takes the source of those rows from there.
+
 ## Reading statistics
 
 `tools/reading_stats.py` (Python 3, nothing to install; in the release zip's
 `tools/` folder and in the repository) reads one or more copies of
 `history.csv` and prints the records, characters, reading time and characters
-per hour, in all, per game and per day. It prints no dialogue text.
+per hour, in all, by text source, per game and per day. It prints no dialogue text.
 
 ```sh
 python3 tools/reading_stats.py history.csv      # days in this computer's time zone
@@ -201,6 +280,14 @@ skipped and counted. A file that cannot be read, is not CSV, or lacks one of the
 five ExStatic columns makes the tool stop with exit status 2 and say why.
 100,000 records (a 42 MB file) take about 2 s and 60 MB [measured on the host].
 
+**By text source** splits the totals by where each line came from: a record's
+`line_source` (Native text hook, OCR), or in a row without one (Rubi 0.9.1 and
+older) its `engine` (`hook`, or `vocr`: OCR); a row with neither (another tracker's)
+is Unknown, a row of the table only when there is one. The `Text source:` line says
+how many records were placed each way. A record's reading time is its own line's, so
+it goes to that line's source, and the sources' lines, characters and times add up
+to the totals.
+
 The totals count what was recorded: a line that types out slowly can be
 recorded twice, once part-way and once whole (see the duplicate text above), and
 then counts twice, so the totals and the characters per hour can come out a
@@ -221,17 +308,25 @@ tracker counts time while it runs and stops its clock 60 s after the last line
 ## The format and older files
 
 The file has no version number: its first line names its columns. Rubi 0.8.0
-wrote the 41 columns up to `line_metrics`; `characters` is the 42nd, and every
-other column keeps its position. A file is never rewritten, so a `history.csv`
-that 0.8.0 began keeps its 41-name header, and the rows appended to it since
-have one cell more than the header names. Readers that go by the header's names
-ignore that cell, as GameSentenceMiner's import (Python's `csv.DictReader`)
-does; `tools/reading_stats.py` reads it as the count and counts `line` itself
-for the older rows. A reader that wants as many cells in every row as the
+wrote the 41 columns up to `line_metrics`; 0.9.0 added `characters`, the 42nd,
+and this version `line_source`, the 43rd; every other column keeps its position.
+A file is never rewritten, so a `history.csv` that 0.8.0 began keeps its 41-name
+header, and one that 0.9.0 or 0.9.1 began its 42-name one; the rows appended to it
+since have more cells than the header names. Readers that go by the header's names
+ignore those cells, as GameSentenceMiner's import (Python's `csv.DictReader`)
+does; `tools/reading_stats.py` reads them by position, the 42nd as the count and
+the 43rd as the line's source, counts `line` itself for the rows without a count and
+takes the source of the rows without one from their `engine`
+([Line source](#line-source)). A reader that wants as many cells in every row as the
 header has names stops at the first longer row (pandas' `read_csv` does, by
-default): add `,characters` to the end of the file's first line (on Linux,
-`sed -i '1s/$/,characters/' history.csv`), or move the file away on the Vita so
-that Rubi starts a new one with the new header.
+default). So pandas, which reads a file that 0.9.0 or 0.9.1 began as they left it,
+refuses it from the first row this version appends (`Expected 42 fields ..., saw 43`),
+as it refused a file 0.8.0 began from 0.9.0's first row [checked: pandas 2.2.3 on
+the fixtures]. Add the missing names to the end of the file's first line (on Linux,
+`sed -i '1s/line_metrics$/&,characters/; 1s/characters$/&,line_source/' history.csv`
+adds both to a 0.8.0 header and `line_source` to a 0.9 one, and changes nothing in a
+new one), or move the file away on the Vita so that Rubi starts a new one with the
+new header.
 
 A power loss in a new file's very first append can cut its header short, and the
 record that append held is lost. The writer writes the header only into an empty
@@ -246,5 +341,5 @@ To import the file whole, replace what comes before the first record (`"vita-`
 or `"psp-`) with this header line and a line break:
 
 ```
-uuid,given_identifier,name,line,time,platform,title_id,engine,model,raw_line,scene,region_seq,monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,fb_width,fb_height,fb_pitch,fb_format,lines,recognized,frames,find_us,load_us,recognize_us,capture_us,captures,tears,region_sum,source,capture_memory,capture_bytes,strip_rows,workspace_bytes,resident_bytes,fallback,line_metrics,characters
+uuid,given_identifier,name,line,time,platform,title_id,engine,model,raw_line,scene,region_seq,monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,fb_width,fb_height,fb_pitch,fb_format,lines,recognized,frames,find_us,load_us,recognize_us,capture_us,captures,tears,region_sum,source,capture_memory,capture_bytes,strip_rows,workspace_bytes,resident_bytes,fallback,line_metrics,characters,line_source
 ```

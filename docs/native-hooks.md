@@ -330,7 +330,8 @@ to the current text restores its full diagnostics.
 
 The normal build logs no hook text, as it logs no OCR text; with **Read text** on **Automatically**, both
 builds keep the shown line in `ux0:data/VitaJPOverlay/history.csv`, a hook's as OCR's (engine `hook`
-instead of `vocr`: `shell/history.c`; [ocr-history.md](ocr-history.md)). The debug build writes
+instead of `vocr`, and `line_source` `hook` instead of `ocr`: `shell/history.c`;
+[ocr-history.md](ocr-history.md#line-source)). The debug build writes
 `ux0:data/VitaJPOverlay/hooks.log` at each game start (rewritten): the title, the text source, the main
 module's name, NID and segment 0, `APP_VER`, each site with its verdict, reason and first 16 bytes, and
 each CALL import hooked or not. No text is in it. Job results carry the counts; the Shell's debug log

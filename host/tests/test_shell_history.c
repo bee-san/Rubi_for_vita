@@ -190,11 +190,15 @@ static void test_csv_fields_and_metadata(void)
     check_cell(csv, 1, 40, "800:30:50:950:300000|400:30:25:1023:200000");
     check_cell(csv, 0, 41, "characters");
     check_cell(csv, 1, 41, "8"); /* 日本語 です はい 次: not 「」, the comma, the quotes or the breaks */
+    check_cell(csv, 0, 42, "line_source");
+    check_cell(csv, 1, 42, "ocr"); /* text_from 0: OCR's line */
+    check_cell(csv, 1, 33, "0");   /* `source`, the capture route (VJO_GAME_OCR_SRC_*), is another column */
     TEST_CHECK(!*row_start(csv, 2));
 }
 
 /* 0.8.0's header (#187): the columns a file it began holds, which every row
- * still has in these positions. The characters column is appended after them. */
+ * still has in these positions. The characters column (0.9.0) and the
+ * line_source column are appended after them. */
 static const char header_080[] =
     "uuid,given_identifier,name,line,time,platform,title_id,engine,model,raw_line,"
     "scene,region_seq,monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,"
@@ -212,6 +216,18 @@ static unsigned cells(const char *csv, unsigned row)
     return n;
 }
 
+/* A file an older Rubi began: its header line, as that Rubi wrote it */
+static void begin_file(const char *header, const char *more)
+{
+    reset();
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    TEST_ASSERT(fd >= 0);
+    TEST_ASSERT(write(fd, header, strlen(header)) == (ssize_t)strlen(header));
+    TEST_ASSERT(write(fd, more, strlen(more)) == (ssize_t)strlen(more));
+    TEST_ASSERT(write(fd, "\n", 1) == 1);
+    close(fd);
+}
+
 static void test_header_keeps_080_columns(void)
 {
     char csv[16384], wanted[1024];
@@ -219,26 +235,94 @@ static void test_header_keeps_080_columns(void)
     VjoHistoryRecord r = record("「また明日。」");
     TEST_CHECK(vjo_history_append(&r) == 1);
     read_history(csv, sizeof(csv));
-    snprintf(wanted, sizeof(wanted), "%s,characters\n", header_080);
+    snprintf(wanted, sizeof(wanted), "%s,characters,line_source\n", header_080);
     TEST_CHECK(!strncmp(csv, wanted, strlen(wanted)));
     TEST_MSG("header: %.*s", (int)(strchr(csv, '\n') - csv), csv);
-    TEST_CHECK(cells(csv, 0) == 42 && cells(csv, 1) == 42);
+    TEST_CHECK(cells(csv, 0) == 43 && cells(csv, 1) == 43);
     check_cell(csv, 1, 41, "4"); /* また明日 */
+    check_cell(csv, 1, 42, "ocr");
 
-    /* A file 0.8.0 began keeps its header: the rows appended now have one cell
-     * more than it names, the 42nd the characters (docs/ocr-history.md). */
+    /* A file 0.8.0 began keeps its header, and one 0.9 began (with characters) its own: the rows
+     * appended now have more cells than it names, the 42nd the characters and the 43rd the line's
+     * source (docs/ocr-history.md). */
+    for (int began = 0; began < 2; began++) {
+        begin_file(header_080, began ? ",characters" : "");
+        TEST_CHECK(vjo_history_append(&r) == 1);
+        read_history(csv, sizeof(csv));
+        TEST_CHECK(cells(csv, 0) == (began ? 42u : 41u) && cells(csv, 1) == 43);
+        check_cell(csv, 1, 3, "「また明日。」");
+        check_cell(csv, 1, 41, "4"); /* また明日 */
+        check_cell(csv, 1, 42, "ocr");
+        TEST_CHECK(!strstr(strchr(csv, '\n') + 1, "uuid,given_identifier"));
+    }
+}
+
+/* line_source (docs/ocr-history.md#line-source): hook when a native text hook's stream supplied the
+ * line (text_from: a table site's 1..8, a string copy's 9..20, or any other nonzero value, as the
+ * engine column has said since API 31), ocr when OCR read it (0), the same in both columns. Records
+ * of every length put both cells at every offset of the writer's 192-byte buffer. A line that repeats
+ * the last one is not written again when another source supplies it: one record, the first's source. */
+static void test_line_source_column(void)
+{
+    static const uint32_t from[] = {0u, 1u, VJO_HOOK_SITE_STREAMS, VJO_HOOK_SITE_STREAMS + 1u, VJO_HOOK_STREAMS,
+                                    VJO_HOOK_STREAMS + 1u, 0xFFFFFFFFu};
+    static char csv[256 * 1024];
+    char text[2 * 192 + 2];
+    unsigned rows = 0;
     reset();
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    TEST_ASSERT(fd >= 0);
-    TEST_ASSERT(write(fd, header_080, strlen(header_080)) == (ssize_t)strlen(header_080));
-    TEST_ASSERT(write(fd, "\n", 1) == 1);
-    close(fd);
+    for (unsigned n = 1; n <= 2 * 192 + 1; n++) {
+        VjoHistoryRecord r = record("");
+        memset(text, 'a', n);
+        text[n] = 0;
+        snprintf(result.text, sizeof(result.text), "%s", text);
+        result.text_from = from[n % (sizeof(from) / sizeof(from[0]))];
+        result.hook_flags = result.text_from ? VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR : 0u;
+        r.time_us += n;
+        TEST_ASSERT(vjo_history_append(&r) == 1);
+    }
+    read_history(csv, sizeof(csv));
+    const char *p = row_start(csv, 1);
+    unsigned char engine_at[192] = {0}, source_at[192] = {0}; /* the writer's buffer offsets the cells began at */
+    for (unsigned n = 1; n <= 2 * 192 + 1; n++) { /* each row once, cell by cell */
+        int hooked = from[n % (sizeof(from) / sizeof(from[0]))] != 0;
+        char value[512], engine[16] = "", count[16] = "", source[16] = "";
+        const char *append = n == 1 ? csv : p; /* the append's first byte: the first's is the header's */
+        unsigned k = 0;
+        int sep;
+        do {
+            /* a cell's literal (the engine's, line_source's) starts with the comma before the cell */
+            if (k == 7) engine_at[(size_t)(p - 1 - append) % sizeof(engine_at)] = 1;
+            if (k == 42) source_at[(size_t)(p - 1 - append) % sizeof(source_at)] = 1;
+            sep = cell(&p, value, sizeof(value));
+            if (k == 7) snprintf(engine, sizeof(engine), "%.15s", value);
+            if (k == 41) snprintf(count, sizeof(count), "%.15s", value);
+            if (k == 42) snprintf(source, sizeof(source), "%.15s", value);
+            k++;
+        } while (sep == ',');
+        TEST_CHECK_(sep == '\n' && k == 43, "record %u: %u cells", n, k);
+        TEST_CHECK_(!strcmp(engine, hooked ? "hook" : "vocr") && !strcmp(source, hooked ? "hook" : "ocr") &&
+                    (unsigned)atoi(count) == n, "record %u: engine %s, characters %s, line_source %s", n, engine,
+                    count, source);
+        rows++;
+    }
+    TEST_CHECK(rows == 2 * 192 + 1 && !*p);
+    for (size_t at = 0; at < sizeof(source_at); at++)
+        TEST_CHECK_(engine_at[at] && source_at[at], "a cell at the buffer's byte %zu: engine %d, line_source %d", at,
+                    engine_at[at], source_at[at]);
+
+    /* the source is not part of the repeat check: OCR's line, then the same line from a hook */
+    reset();
+    VjoHistoryRecord r = record("同じ台詞");
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    result.text_from = VJO_HOOK_SITE_STREAMS + 1u;
+    r.time_us++;
+    TEST_CHECK(vjo_history_append(&r) == 0);
+    strcpy(result.text, "次の台詞");
     TEST_CHECK(vjo_history_append(&r) == 1);
     read_history(csv, sizeof(csv));
-    TEST_CHECK(cells(csv, 0) == 41 && cells(csv, 1) == 42);
-    check_cell(csv, 1, 3, "「また明日。」");
-    check_cell(csv, 1, 41, "4"); /* また明日 */
-    TEST_CHECK(!strstr(strchr(csv, '\n') + 1, "uuid,given_identifier"));
+    check_cell(csv, 1, 3, "同じ台詞"); check_cell(csv, 1, 42, "ocr");
+    check_cell(csv, 2, 3, "次の台詞"); check_cell(csv, 2, 42, "hook");
+    TEST_CHECK(!*row_start(csv, 3));
 }
 
 /* What the count is for each kind of text (core/reading_chars.h), in the file
@@ -329,15 +413,20 @@ static void test_maximum_text_and_short_writes(void)
     TEST_CHECK(writes > 100);
     read_history(csv, sizeof(csv));
     check_cell(csv, 1, 3, longest); check_cell(csv, 1, 9, ""); check_cell(csv, 1, 41, "0");
+    check_cell(csv, 1, 42, "ocr");
     TEST_CHECK(!*row_start(csv, 2));
 
-    reset(); /* the most kana the text holds: 1,365 of 3 bytes */
+    reset(); /* the most kana the text holds: 1,365 of 3 bytes, a hook's, in writes of 7 bytes */
     for (size_t i = 0; i + 3 < sizeof(longest); i += 3) memcpy(longest + i, "あ", 3);
     longest[sizeof(longest) - 1] = 0;
     r = record(longest);
+    result.text_from = VJO_HOOK_SITE_STREAMS;
+    short_bytes = 7;
     TEST_CHECK(vjo_history_append(&r) == 1);
     read_history(csv, sizeof(csv));
-    check_cell(csv, 1, 3, longest); check_cell(csv, 1, 41, "1365");
+    check_cell(csv, 1, 3, longest); check_cell(csv, 1, 7, "hook"); check_cell(csv, 1, 41, "1365");
+    check_cell(csv, 1, 42, "hook");
+    TEST_CHECK(cells(csv, 1) == 43 && !*row_start(csv, 2));
 }
 
 static void test_failures_roll_back_and_retry(void)
@@ -647,8 +736,9 @@ static void test_reader_maximum_and_cut_records(void)
     TEST_CHECK(size > line);
 }
 
-/* Native text uses the same CSV writer and reader as OCR. The appended characters column and the
- * hook engine marker must not change how a quoted, wrapped dialogue is recovered for the popup. */
+/* Native text uses the same CSV writer and reader as OCR. The appended characters and line_source
+ * columns and the hook engine marker must not change how a quoted, wrapped dialogue is recovered for
+ * the popup. */
 static void test_reader_hook_rows_with_characters(void)
 {
     static const char hooked[] = "「日本語,\"はい\"」\n続き";
@@ -666,19 +756,22 @@ static void test_reader_hook_rows_with_characters(void)
     r.time_us += 2;
     TEST_ASSERT(vjo_history_append(&r) == 1);
     read_history(csv, sizeof(csv));
-    check_cell(csv, 1, 7, "vocr");
+    check_cell(csv, 1, 7, "vocr"); check_cell(csv, 1, 42, "ocr");
     check_cell(csv, 2, 3, hooked);
     check_cell(csv, 2, 7, "hook");
     check_cell(csv, 2, 41, "7"); /* 日本語 はい 続き; neither quotes nor the comma nor the newline */
-    check_cell(csv, 3, 7, "vocr");
-    TEST_CHECK(cells(csv, 2) == 42);
+    check_cell(csv, 2, 42, "hook");
+    check_cell(csv, 3, 7, "vocr"); check_cell(csv, 3, 42, "ocr");
+    TEST_CHECK(cells(csv, 1) == 43 && cells(csv, 2) == 43 && cells(csv, 3) == 43);
     TEST_CHECK(load("今の行", "vita-PCSG00415") == 2 && read_opens == 1 && reads == 1);
     TEST_CHECK(!strcmp(visit.line[1], hooked) && !strcmp(visit.line[2], "前の行"));
 }
 
 TEST_LIST = {
     {"CSV quotes UTF-8 and complete OCR metadata", test_csv_fields_and_metadata},
-    {"0.8.0's columns stay; characters is appended, also to its files", test_header_keeps_080_columns},
+    {"0.8.0's and 0.9's columns stay; characters and line_source are appended, also to their files",
+     test_header_keeps_080_columns},
+    {"line_source: hook or ocr, as the engine says, at every buffer offset", test_line_source_column},
     {"characters: letters and digits, not marks, bytes or breaks", test_characters_column},
     {"line history: this game's lines, newest first, from the file's end", test_reader_this_games_lines_from_the_files_end},
     {"line history: a bounded tail of the file", test_reader_reads_a_bounded_tail},

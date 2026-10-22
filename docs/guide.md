@@ -265,7 +265,7 @@ screenshot** (Rubi keeps no frame of an earlier line; the status line says so). 
 earlier line comes back to the current text, its cursor where it was; closing the overlay does too.
 Up and Down between lines are the d-pad's: the left stick stops at the text's first and last rows.
 With **Only when I press L + R**, which records no line, Up on the top row does nothing, as before.
-The last 24 KiB of `history.csv` are read when Up first goes past the top row (about 28 three-row
+The last 24 KiB of `history.csv` are read when Up first goes past the top row (about 27 three-row
 textboxes of every game, at most 32 of this game's lines kept): [line history](line-history.md).
 
 Pressing PS with the overlay open closes it: the game's controls are released
@@ -336,7 +336,8 @@ reported console run. The behaviour below is checked on the host.
   agreement score, the streams with text and the pick (`game vocr source: hook 9, flags 0x03, score
   1000, streams 0x00901, pick 0`) and logs the shown text, a hook's too. The normal build logs no
   hook text, as it logs no OCR text. `history.csv` gets the text shown, with `hook` instead of `vocr`
-  as its engine for a hook's line; `kernel.txt` has `text source N` when the setting changes.
+  as its engine for a hook's line and `hook` or `ocr` in its last column, `line_source`
+  ([ocr-history.md](ocr-history.md#line-source)); `kernel.txt` has `text source N` when the setting changes.
 - **If a game misbehaves with hooks**, hold L while starting it (no Rubi in it at all), turn it OFF
   on the Games page, or set Text source to OCR only (`text_source = ocr`): each applies at the
   game's next start. A safe boot ([boot safety](boot-safety.md)) installs no hook anywhere.

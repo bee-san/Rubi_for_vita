@@ -6,7 +6,9 @@
  *   vjo-history-writer --count < texts  prints each text's characters, one line each
  *
  * Records and texts end with a NUL byte. A record is TITLE_ID, NAME, TIME_US and
- * TEXT separated by 0x1F; its text is normalised in place as the game worker
+ * TEXT separated by 0x1F, and optionally a fifth field after another 0x1F: the
+ * result's text_from (0 OCR, the default; 1..20 the native hook stream whose text
+ * it is: docs/ocr-history.md#line-source); its text is normalised in place as the game worker
  * normalises what it returns (vjo_text_normalize_keep: the recognizer's text after
  * the NUL, for raw_line), and the other OCR facts are fixed. One line per record
  * on stdout: vjo_history_append's result (1 appended, 0 blank or the text just
@@ -85,7 +87,15 @@ int main(int argc, char **argv)
             field[f] = sep + 1;
         }
         VjoHistoryRecord r = {0};
+        char *from = strchr(field[3], 0x1F);
         memset(&result, 0, sizeof(result));
+        if (from) { /* the text's source: a hook stream's ID, which a hook's answer also flags */
+            *from++ = 0;
+            result.text_from = (uint32_t)strtoul(from, NULL, 10);
+            if (result.text_from)
+                result.hook_flags = VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED |
+                                    (result.text_from <= VJO_HOOK_SITE_STREAMS ? VJO_HOOK_R_SITE : 0u);
+        }
         snprintf(result.text, sizeof(result.text), "%s", field[3]);
         vjo_text_normalize_keep(result.text, sizeof(result.text), NULL, 0, NULL);
         result.seq = 1; result.width = 900; result.height = 125; result.fb_width = 960; result.fb_height = 544;
