@@ -1025,9 +1025,9 @@ against 0.694 and dialogue CER 2.29% against 3.00% (both resolved better), all-t
   figure exists for the scan's own pick.
 - A text-free screen can get a stray box: none of the 25 text-free development frames got one (5 with #104's
   spotter), and 2 of the 19 text-free test frames did with det+refine (6 with #104's).
-- UI labels and Vita frames are its weak spots: on the test frames it finds 37% of the UI labels (#104's spotter 49%),
+- UI labels and Vita frames are its weak spots: on the test frames it finds 37% of the UI labels (#104's spotter 48%),
   and it merges neighbouring lines or labels into one box more often; on vita-test its all-text CER is worse (23.4%
-  against 21.0%), and so is its dialogue CER (2.00% against 1.83%). Its gains are the dialogue boxes on PSP frames
+  against 20.9%), and so is its dialogue CER (2.00% against 1.83%). Its gains are the dialogue boxes on PSP frames
   (psp-test's dialogue CER 2.60% against 4.21%; 2.78% against 6.98% at Adrenaline's 2×, report only).
 - At most 16 blocks are drawn (the first in reading order, the pick in the last place when it is not among them);
   #108's spotter gave at most 13 on its 188 development frames (16 with det+refine; a design statistic, read from
