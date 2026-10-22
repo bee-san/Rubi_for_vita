@@ -105,9 +105,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr main, #105's merge: #104's text spotter, after #101's gate,
-          # #85, #83 and #82)
-          ref: 7a6dce0e3e3630557f5729ba9eba17c92acf4c24
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #108's branch head, PR #113: its runtime files as on main
+          # 817d203, with #106's vocr_textspot2.c for #108's text spotter, after #105's, #101's gate, #85, #83 and #82)
+          ref: 30d3f557b7c306dc72539b101340b423994e6119
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr
@@ -195,9 +195,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr main, #105's merge: #104's text spotter, after #101's gate,
-          # #85, #83 and #82)
-          ref: 7a6dce0e3e3630557f5729ba9eba17c92acf4c24
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #108's branch head, PR #113: its runtime files as on main
+          # 817d203, with #106's vocr_textspot2.c for #108's text spotter, after #105's, #101's gate, #85, #83 and #82)
+          ref: 30d3f557b7c306dc72539b101340b423994e6119
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
           path: .refs/vita-vn-ocr

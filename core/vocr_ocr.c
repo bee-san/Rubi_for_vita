@@ -16,7 +16,7 @@
 #include "vocr_lines_refine.h"
 #include "vocr_lm.h"
 #include "vocr_textgate.h"
-#include "vocr_textspot.h"
+#include "vocr_textspot2.h" /* vita-vn-ocr #106's spotter for VTSP versions 1 and 2; vocr_textspot.h's types */
 
 typedef char vjo_vocr_max_lines_matches_runtime[VJO_VOCR_MAX_LINES == VOCR_LINES_MAX ? 1 : -1];
 /* API 30: a scan's result carries the spotter's whole set (include/vjo_spot.h). */
@@ -2404,7 +2404,7 @@ int vjo_vocr_warm(const VjoPlatform *p, const char *dir, const char *model, cons
     return VJO_OK;
 }
 
-/* ---- API 30: a scan, vita-vn-ocr #104's full-frame text spotter (scan screen) ---- */
+/* ---- API 30: a scan, vita-vn-ocr #108's full-frame text spotter (scan screen) ---- */
 /* The spotter writes its set straight into the scan's result (include/vjo_spot.h): the same layout. */
 #define SPOT_SAME(a, b) (offsetof(VjoSpotResult, a) == offsetof(VocrTextspotSet, b))
 typedef char vjo_spot_set_layout[sizeof(VjoSpotResult) == sizeof(VocrTextspotSet) && SPOT_SAME(box, boxes) &&
@@ -2432,11 +2432,11 @@ int vjo_spot_no_dark_rows(const VocrLinesRows *src, unsigned x, unsigned y, unsi
 }
 /* The spotter's weights file (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_NAME; tools/prepare_ocr.py pins it too). */
 static const unsigned char spot_sha256[32] = {
-    0x85,0x25,0x06,0x91,0x9b,0xa9,0x4e,0x54,0xa4,0xef,0xc5,0x5e,0x36,0x95,0xf3,0x65,
-    0x62,0x6d,0x9d,0x4c,0xe6,0x34,0x7f,0x42,0x0c,0xbf,0x2a,0xfe,0x3e,0x83,0x60,0xcf};
+    0x20,0xc3,0xf7,0xcc,0x4f,0x07,0xb4,0x43,0x74,0x1b,0xbb,0x45,0xfe,0x42,0x70,0xf6,
+    0xfa,0x8c,0x74,0xce,0x29,0x04,0x5a,0x79,0x6a,0x5e,0xd8,0x88,0x7a,0x3f,0xb2,0x6a};
 /* The workspace: [the weights | the loaded model | the arena], each 16-byte aligned. */
 #define SPOT_BLOB ALIGN16((size_t)VJO_VOCR_SPOT_BYTES)
-#define SPOT_MODEL ALIGN16(sizeof(vocr_textspot))
+#define SPOT_MODEL ALIGN16(sizeof(vocr_textspot2))
 
 size_t vjo_vocr_spot_bytes(void)
 {
@@ -2491,7 +2491,7 @@ int vjo_vocr_spot(const VjoPlatform *p, const char *dir, const VjoGreySource *im
                   void *strip, size_t strip_bytes, VjoSpotResult *out, VjoVocrStats *st)
 {
     unsigned char *base = (unsigned char *)ws;
-    vocr_textspot *m = (vocr_textspot *)(base + SPOT_BLOB);
+    vocr_textspot2 *m = (vocr_textspot2 *)(base + SPOT_BLOB);
     char path[256];
     VjoFile file;
     VocrLinesRows rows;
@@ -2513,7 +2513,8 @@ int vjo_vocr_spot(const VjoPlatform *p, const char *dir, const VjoGreySource *im
     if (ws_bytes < st->workspace || ((uintptr_t)ws & 15u) || ((uintptr_t)out & 3u) ||
         strip_bytes < vjo_vocr_spot_strip_bytes(im->width))
         return VJO_E_OOM;
-    /* The weights: read and checked in every scan (a few KB), as the models are checked on their first read. */
+    /* The weights: read and checked in every scan (51,008 B: two of the broker's reads), as the models are checked
+     * on their first read; nothing of them stays between scans. */
     if (join_path(path, sizeof(path), dir, VJO_VOCR_SPOT_NAME) < 0)
         return VJO_E_OCR_MODEL;
     memset(&file, 0, sizeof(file));
@@ -2528,8 +2529,8 @@ int vjo_vocr_spot(const VjoPlatform *p, const char *dir, const VjoGreySource *im
     if (rc)
         return rc;
     st->model_loaded = 1;
-    need = vocr_textspot_load(m, base, VJO_VOCR_SPOT_BYTES) == VOCR_LINES_OK
-           ? vocr_textspot_frame_arena_bytes(m, im->width, im->height) : 0;
+    need = vocr_textspot2_load(m, base, VJO_VOCR_SPOT_BYTES) == VOCR_LINES_OK
+           ? vocr_textspot2_frame_arena_bytes(m, im->width, im->height) : 0;
     if (!need || need > VJO_VOCR_SPOT_ARENA)
         return VJO_E_OCR_MODEL;
     st->scratch_bytes = need;
@@ -2544,8 +2545,8 @@ int vjo_vocr_spot(const VjoPlatform *p, const char *dir, const VjoGreySource *im
     rows.row = spot_row;
     rows.user = &src;
     t0 = clock_us(p);
-    rc = vocr_textspot_find_rows(m, &rows, VOCR_TEXTSPOT_NO_DARK, base + SPOT_BLOB + SPOT_MODEL, need,
-                                 (VocrTextspotSet *)(void *)out);
+    rc = vocr_textspot2_find_rows(m, &rows, VOCR_TEXTSPOT_NO_DARK, base + SPOT_BLOB + SPOT_MODEL, need,
+                                  (VocrTextspotSet *)(void *)out);
     st->find_us = clock_us(p) - t0;
     if (rc == VOCR_LINES_OK)
         return VJO_OK;

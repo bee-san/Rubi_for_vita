@@ -131,8 +131,8 @@ static void the_dpad_goes_to_the_nearest_block_that_way(void)
     /* the repo's sample frame (host/fixtures/textspot): a HUD line at the top and the dialogue: left and right
      * stay, up and down go between the two */
     clear();
-    block(0, 12, 10, 376, 28, 0);
-    block(1, 43, 324, 562, 135, 0);
+    block(0, 12, 9, 376, 29, 0);
+    block(1, 43, 325, 570, 134, 0);
     vjo_spot_map(&set, 960, 544, &m);
     TEST_CHECK(vjo_spot_step(&m, 1, VJO_RSEL_LEFT) == 1 && vjo_spot_step(&m, 1, VJO_RSEL_RIGHT) == 1);
     TEST_CHECK(vjo_spot_step(&m, 1, VJO_RSEL_UP) == 0 && vjo_spot_step(&m, 0, VJO_RSEL_DOWN) == 1);
@@ -185,9 +185,10 @@ static int all_reachable(const VjoSpotMap *m)
     return m->start < 0 ? want == 0 : (seen & want) == want;
 }
 
-/* The repo's grid frame (tools/spot_frames.py; the spotter's 20 blocks on it, host/fixtures/textspot): tall columns
- * beside stacks of lines, their regions overlapping by the margin. With the regions as the geometry, down from a
- * stack's first line went to the column beside it and three lines were never reached (#228's audit, N1). */
+/* The repo's grid frame as #104's spotter saw it (tools/spot_frames.py's grid before vita-vn-ocr #108's spotter, its
+ * 20 blocks in the fixture of then): tall columns beside stacks of lines, their regions overlapping by the margin. With
+ * the regions as the geometry, down from a stack's first line went to the column beside it and three lines were never
+ * reached (#228's audit, N1). Kept as a layout: the map is the worker's, whichever spotter gives it the blocks. */
 static const uint16_t grid[20][5] = {
     {11, 43, 106, 478, 0}, {131, 43, 114, 39, 0}, {131, 131, 114, 39, 0}, {131, 219, 114, 39, 0},
     {131, 307, 114, 39, 0}, {131, 395, 114, 39, 0}, {131, 483, 114, 39, 0}, {259, 43, 114, 478, 0},

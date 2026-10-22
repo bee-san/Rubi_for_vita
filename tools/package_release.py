@@ -120,7 +120,7 @@ def shipped_models():
         models.append((name, VOCR_LM_ASSETS, VOCR_LM_TAG, "character LM (beam + LM decoder)"))
     # the text-presence gate's weights (ocr_text_gate, off by default; vita-vn-ocr #100)
     models.append((VOCR_GATE_MODEL, VOCR_GATE_ASSETS, VOCR_GATE_TAG, "text-presence gate (ocr_text_gate)"))
-    # scan screen's text spotter weights (ocr_scan_screen, off by default; vita-vn-ocr #104)
+    # scan screen's text spotter weights (ocr_scan_screen, off by default; vita-vn-ocr #108)
     models.append((VOCR_SPOT_MODEL, VOCR_SPOT_ASSETS, VOCR_SPOT_TAG, "text spotter (ocr_scan_screen)"))
     return models
 

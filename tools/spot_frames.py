@@ -4,8 +4,10 @@ host/samples/vn_textbox.jpg (tools/make_test_screens.py), by pixel copies and an
 Pillow that decodes the JPEG alike gives the same bytes (each frame's sha256 is in the fixture). No game's pixels.
 
     sample  the sample itself, 960x544: a HUD line, a name plate and two lines of dialogue
-    grid    84 copies of a 100x36 piece of its dialogue on black, 960x544: more than 64 candidates (the spotter
-            keeps the most confident 64: truncated) and more than 16 blocks (the overlay draws the first 16)
+    grid    96 copies of an 80x36 piece of its dialogue on black, 40 px apart, 960x544: more than 64 candidates (the
+            spotter keeps the most confident 64: truncated) and more than 16 blocks (the overlay draws the first 16,
+            the pick among them). The pieces were 100 px wide and 30 px apart until vita-vn-ocr #108's spotter, which
+            reads such a row as one line (17 boxes, 1 block)
     psp     the sample at the PSP's 480x272 (exact 2x2 means, as a PSP frame): read without halving
 
 frames() -> [(name, width, height, rgba bytes)]; tools/spot_fixture.py runs vita-vn-ocr's twin on them and
@@ -29,10 +31,10 @@ def _rgb(path=SAMPLE):
 
 def _grid(src):
     from PIL import Image
-    piece = src.crop((70, 385, 170, 421))  # 100x36 of the first dialogue line
+    piece = src.crop((70, 385, 150, 421))  # 80x36 of the first dialogue line
     frame = Image.new("RGB", (960, 544), (0, 0, 0))
     for y in range(4, 544 - 36, 36 + 8):
-        for x in range(4, 960 - 100, 100 + 30):
+        for x in range(4, 960 - 80, 80 + 40):
             frame.paste(piece, (x, y))
     return frame
 

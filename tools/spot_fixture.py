@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Writes scan screen's fixture: vita-vn-ocr's bit-exact Python twin of the text spotter (synth/textspot_twin.py at
-the commit cmake/VocrOCR.cmake pins) on tools/spot_frames.py's frames, with the pinned weights, as
-host/fixtures/textspot/spot-<the weights' sha256, 16 digits>.json: each frame's sha256 and the spotter's boxes,
-blocks, pick and truncated flag (boxes only: no pixels). Run it again whenever the weights' pin changes
-(host/tests/test_game_spot.py, which compares the game worker's scan with it, names the file it looks for):
+"""Writes scan screen's fixture: vita-vn-ocr's bit-exact Python twin of the text spotter (synth/textspot2_twin.py at
+the commit cmake/VocrOCR.cmake pins: VTSP versions 1 and 2, runtime/vocr_textspot2.c's twin) on tools/spot_frames.py's
+frames, with the pinned weights, as host/fixtures/textspot/spot-<the weights' sha256, 16 digits>.json: each frame's
+sha256 and the spotter's boxes, blocks, pick and truncated flag (boxes only: no pixels). Run it again whenever the
+weights' pin changes (host/tests/test_game_spot.py, which compares the game worker's scan with it, names the file it
+looks for):
 
-    python3 tools/spot_fixture.py --vocr-source /path/to/vita-vn-ocr --blob ocr/textspot_..._w8.vtsp
+    python3 tools/spot_fixture.py --vocr-source /path/to/vita-vn-ocr --blob ocr/textspot3_..._w8.vtsp
 
 Needs numpy and Pillow (vita-vn-ocr's .venv-ci has both). The twin's dark flags are written as 0: a scan reads
 no box (VOCR_TEXTSPOT_NO_DARK), and the runtime then leaves every dark flag 0.
@@ -41,14 +42,14 @@ def main():
     if sha != pinned("VJO_VOCR_SPOT_SHA256"):
         raise SystemExit(f"{args.blob}: sha256 {sha}, not the pinned {pinned('VJO_VOCR_SPOT_SHA256')}")
     commit = re.search(r"set\(VJO_VOCR_COMMIT ([0-9a-f]{40})\)", (ROOT / "cmake" / "VocrOCR.cmake").read_text()).group(1)
-    twin_path = args.vocr_source / "synth" / "textspot_twin.py"
+    twin_path = args.vocr_source / "synth" / "textspot2_twin.py"
     sys.path.insert(0, str(args.vocr_source / "synth"))
     import numpy as np
-    import textspot_twin as T
+    import textspot2_twin as T
     model = T.Model(blob)
     out = {"kind": "rubi-spot-fixture", "weights": pinned("VJO_VOCR_SPOT_NAME"), "weights_sha256": sha,
            "vita_vn_ocr": commit, "twin_sha256": hashlib.sha256(twin_path.read_bytes()).hexdigest(),
-           "note": "vita-vn-ocr synth/textspot_twin.py spot() on tools/spot_frames.py's frames; dark written as 0 "
+           "note": "vita-vn-ocr synth/textspot2_twin.py spot() on tools/spot_frames.py's frames; dark written as 0 "
                    "(a scan reads no box: VOCR_TEXTSPOT_NO_DARK)", "frames": []}
     for name, w, h, data in spot_frames.frames():
         rgb = np.frombuffer(data, dtype=np.uint8).reshape(h, w, 4)[:, :, :3]

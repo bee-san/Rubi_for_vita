@@ -93,7 +93,7 @@
  * VJO_VOCR_GATE_NAME beside the models (VJO_GAME_OCR_OPEN_GATE). It is in `speed` because the flags have one
  * bit left. */
 #define VJO_GAME_OCR_S_GATE 0x10u
-/* API 30, bit 5: a scan (vita-vn-ocr #104's full-frame text spotter, runtime/vocr_textspot.c; config.ini
+/* API 30, bit 5: a scan (vita-vn-ocr's full-frame text spotter: #108's weights, runtime/vocr_textspot2.c; config.ini
  * ocr_scan_screen; docs/vita-vn-ocr.md "Scan screen"). The request is exactly VJO_GAME_OCR_F_FULL with this bit
  * alone in `speed` (no tiers, no fallback, no other flag); its model names the spotter's file
  * (VJO_VOCR_SPOT_NAME), which only VJO_GAME_OCR_OPEN_SPOT opens. The worker reads the whole frame's grey rows

@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT 7a6dce0e3e3630557f5729ba9eba17c92acf4c24)
+set(VJO_VOCR_COMMIT 30d3f557b7c306dc72539b101340b423994e6119)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -25,8 +25,11 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # vocr_run()'s per-frame top-K, which also reports each line's confidence.
 # vocr_lines_refine.c (vita-vn-ocr #83) refines the finder's boxes (tightens,
 # drops frame rows and cursors, splits boxes holding several text rows).
-# vocr_textspot.c (vita-vn-ocr #104) is the full-frame text spotter of scan screen (API 30); the twelve files
-# before it hash as at ac0d6b1 (#101's merge), the commit before.
+# vocr_textspot2.c (vita-vn-ocr #106, merged as 5af7741) is the full-frame text spotter of scan screen (API 30): it
+# runs the VTSP version 2 blob vita-vn-ocr #108 (textspot3) selected, and version 1 blobs bit for bit as #104's
+# vocr_textspot.c, whose header (the result types, flags, limits and error codes) it includes. The commit is #108's
+# branch head (PR #113); the fifteen files hash as at main 817d203 and 5af7741, the twelve before vocr_textspot.h as at
+# ac0d6b1 (#101's merge), and vocr_textspot.h as at 7a6dce0 (#105's merge of #104).
 set(_vocr_pins
   vocr.c 3e1756138b2e1d9aff15abdda95b02e0c015a5ba0af99678bdd678377b73f559
   vocr.h 30bb32693e634a4c4b4cd5cd3a4da8d33f6882bf00348d0e1d8264ba08376271
@@ -40,8 +43,9 @@ set(_vocr_pins
   vocr_lines_refine.h 66fe3b716193d835e9ab1d614d71ad8e19de70db5ac8ec0f09b8e027b260dc6b
   vocr_textgate.c da772dd316b69ac79dc0d6ffbae14da428df429657d089fd99ba8cd74c43266e
   vocr_textgate.h aeb8c5bdb810e8ab82bfaa37aadc1d564ec0dec2a80b1e2f80323819853d7258
-  vocr_textspot.c d2054a2d5ccbda1a31c5aafec0079d4da65cf13bc1d5db991dc8cdda746df331
-  vocr_textspot.h a25ef000164af61610a6f5201fb9e345f8a67cf6525d2f16bae44afca712dd57)
+  vocr_textspot.h a25ef000164af61610a6f5201fb9e345f8a67cf6525d2f16bae44afca712dd57
+  vocr_textspot2.c 359f97c8b628e4086466497d5667f96e83be75ef3b9f2f6173d9f36e9b864ce2
+  vocr_textspot2.h 2d7429e4799e6a2242c6972762936f40ef672677286bf470b80d88a3f9529ee2)
 while(_vocr_pins)
   list(POP_FRONT _vocr_pins _file _want)
   if(NOT EXISTS "${_vocr_rt}/${_file}")
@@ -64,11 +68,12 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # Its few libc calls (memcpy, memset, the fabsf/signbit builtins) need no
 # newlib, which SceShell plugins link without.
 # vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
-# (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time. vocr_textspot.c
-# (vita-vn-ocr #104) is scan screen's text spotter; its weights are a pinned file too (VJO_VOCR_SPOT_NAME).
+# (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time. vocr_textspot2.c
+# (vita-vn-ocr #106, the spotter #108 selected) is scan screen's text spotter; its weights are a pinned file too
+# (VJO_VOCR_SPOT_NAME). vocr_textspot.c (#104's, version 1 only) is not built: vocr_textspot2.c is self-contained.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
   "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c"
-  "${_vocr_rt}/vocr_textspot.c")
+  "${_vocr_rt}/vocr_textspot2.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)
@@ -80,12 +85,13 @@ set(_vocr_spot_options "-Dvocr_line_dark=vjo_spot_no_dark" "-Dvocr_line_dark_row
 if(VJO_BUILD_VITA)
   target_compile_options(vjo_vocr_rt PRIVATE -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard)
   # Built for size: its code is in every enabled game's worker pages, used only when the player scans
-  # (vita-vn-ocr eval/textspot_a9_20261019.json: -Os NEON is 17% less code for 1-5% more time).
+  # (vita-vn-ocr runtime/README.md: vocr_textspot2.c's .text is 9,746 B at -Os NEON against 11,844 B at -O2;
+  # eval/textspot_a9_20261019.json: -Os cost #104's shapes 1-5% more time).
   list(APPEND _vocr_spot_options "-Os")
 else()
   target_link_libraries(vjo_vocr_rt PUBLIC m)
 endif()
-set_source_files_properties("${_vocr_rt}/vocr_textspot.c" PROPERTIES COMPILE_OPTIONS "${_vocr_spot_options}")
+set_source_files_properties("${_vocr_rt}/vocr_textspot2.c" PROPERTIES COMPILE_OPTIONS "${_vocr_spot_options}")
 
 
 # core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h).

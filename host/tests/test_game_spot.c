@@ -1,5 +1,5 @@
 /* API 30, scan screen end to end in the game's process: the actual game worker (game_ocr/main.c run_spot,
- * core/vocr_ocr.c vjo_vocr_spot, vita-vn-ocr's runtime/vocr_textspot.c at the pin) and the actual kernel
+ * core/vocr_ocr.c vjo_vocr_spot, vita-vn-ocr's runtime/vocr_textspot2.c at the pin) and the actual kernel
  * transport (kernel/game_ocr.c through kernel_model_broker_boundary.c's retail return model; kernel/capture.c's
  * rows as the display hook copies them from the game's frame; the model broker's file calls on real files, the
  * test's own memory card). The frame is procedural here; with --spot FRAME.rgba W H it is the given picture and
@@ -23,7 +23,7 @@
 #include "../../kernel/game_ocr.h"
 #include "../../include/vjo_vocr_sizes.h"
 #include "../../game_ocr/main.c"
-#include "vocr_textspot.h"
+#include "vocr_textspot2.h"
 
 #ifndef VJO_VOCR_SPOT_TEST_DIR
 #define VJO_VOCR_SPOT_TEST_DIR ""
@@ -381,14 +381,14 @@ static const VjoSpotScan *scan_of(const VjoGameOcrResult *r) { return (const Vjo
 static void in_memory(VocrTextspotSet *set, uint32_t w, uint32_t h)
 {
     static unsigned char grey[960 * 544], arena[VJO_VOCR_SPOT_ARENA];
-    vocr_textspot m;
+    vocr_textspot2 m;
     for (uint32_t i = 0; i < w * h; i++) {
         uint32_t p = frame32[(i / w) * fb_w + i % w];
         grey[i] = (unsigned char)((77u * (p & 0xFFu) + 150u * (p >> 8 & 0xFFu) + 29u * (p >> 16 & 0xFFu)) >> 8);
     }
     VocrLinesImage im = {grey, w, h, w, VOCR_LINES_GREY};
-    TEST_ASSERT(vocr_textspot_load(&m, blob, sizeof(blob)) == VOCR_LINES_OK);
-    TEST_ASSERT(vocr_textspot_find(&m, &im, VOCR_TEXTSPOT_NO_DARK, arena, sizeof(arena), set) == VOCR_LINES_OK);
+    TEST_ASSERT(vocr_textspot2_load(&m, blob, sizeof(blob)) == VOCR_LINES_OK);
+    TEST_ASSERT(vocr_textspot2_find(&m, &im, VOCR_TEXTSPOT_NO_DARK, arena, sizeof(arena), set) == VOCR_LINES_OK);
 }
 
 #define NEED_BLOB() do { if (!have_blob) { TEST_SKIP("no spotter weights (cmake/VocrSpot.cmake)"); return; } } while (0)
@@ -418,9 +418,9 @@ static void a_scan_reads_the_whole_frame_once(void)
     TEST_CHECK(!memcmp(&got->set, &want, sizeof(want)));
     TEST_MSG("the scan's set differs from the runtime's on the frame in memory");
     TEST_CHECK(s->kind == 1 && !s->rc && s->arg == want.count && s->bytes == (want.block_count << 16 | (uint32_t)(want.pick + 1) << 8 | want.truncated));
-    vocr_textspot m;
-    TEST_ASSERT(vocr_textspot_load(&m, blob, sizeof(blob)) == VOCR_LINES_OK);
-    TEST_CHECK(s->sum == vocr_textspot_frame_arena_bytes(&m, 960, 544) && s->sum <= VJO_VOCR_SPOT_ARENA);
+    vocr_textspot2 m;
+    TEST_ASSERT(vocr_textspot2_load(&m, blob, sizeof(blob)) == VOCR_LINES_OK);
+    TEST_CHECK(s->sum == vocr_textspot2_frame_arena_bytes(&m, 960, 544) && s->sum <= VJO_VOCR_SPOT_ARENA);
     VjoSpotMap map;
     vjo_spot_map(&got->set, 960, 544, &map);
     TEST_CHECK(!memcmp(&got->map, &map, sizeof(map)));
@@ -432,19 +432,21 @@ static void a_scan_reads_the_whole_frame_once(void)
            64u * 960u, frames);
 }
 
-/* The arena the scan allocates is the runtime's own for any frame up to 960 x 544 with the pinned weights. */
+/* The arena the scan allocates is the runtime's own for any frame up to 960 x 544 with the pinned weights: vita-vn-ocr
+ * #108's VTSP version 2 blob (the d2s head), which halves a frame wider than 480 px, so a PSP frame is read whole. */
 static void the_pinned_arena_is_the_runtime_s(void)
 {
-    vocr_textspot m;
+    vocr_textspot2 m;
     NEED_BLOB();
-    TEST_ASSERT(vocr_textspot_load(&m, blob, sizeof(blob)) == VOCR_LINES_OK);
-    TEST_CHECK(vocr_textspot_arena_bytes(&m, 960, 544) == VJO_VOCR_SPOT_ARENA);
-    TEST_CHECK(vocr_textspot_frame_arena_bytes(&m, 480, 272) <= VJO_VOCR_SPOT_ARENA &&
-               vocr_textspot_frame_arena_bytes(&m, 960, 544) <= VJO_VOCR_SPOT_ARENA);
+    TEST_ASSERT(vocr_textspot2_load(&m, blob, sizeof(blob)) == VOCR_LINES_OK);
+    TEST_CHECK(m.version == VOCR_TEXTSPOT2_VERSION_D2S && m.half_above == 480 && m.stride == 4);
+    TEST_CHECK(vocr_textspot2_arena_bytes(&m, 960, 544) == VJO_VOCR_SPOT_ARENA);
+    TEST_CHECK(vocr_textspot2_frame_arena_bytes(&m, 480, 272) <= VJO_VOCR_SPOT_ARENA &&
+               vocr_textspot2_frame_arena_bytes(&m, 960, 544) <= VJO_VOCR_SPOT_ARENA);
     TEST_CHECK(((vjo_vocr_spot_bytes() + 4095u) & ~4095u) <= VJO_BUDGET_GAME_WORKSPACE &&
                vjo_vocr_spot_strip_bytes(960) <= VJO_BUDGET_GAME_CAPTURE);
     printf("measure: arena %u B up to 960x544 (%zu B at 480x272), workspace %zu B, strip %zu B\n",
-           VJO_VOCR_SPOT_ARENA, vocr_textspot_frame_arena_bytes(&m, 480, 272), vjo_vocr_spot_bytes(),
+           VJO_VOCR_SPOT_ARENA, vocr_textspot2_frame_arena_bytes(&m, 480, 272), vjo_vocr_spot_bytes(),
            vjo_vocr_spot_strip_bytes(960));
 }
 
@@ -603,7 +605,7 @@ static int no_strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t
 { (void)ud; (void)y; (void)n; (void)dst; (void)stride; (void)flags; TEST_CHECK(0); return -1; }
 static void the_core_refuses_short_or_misaligned_blocks(void)
 {
-    static unsigned char ws[96 * 1024] __attribute__((aligned(16))), strip[64 * 960];
+    static unsigned char ws[320 * 1024] __attribute__((aligned(16))), strip[64 * 960];
     static uint32_t text[sizeof(VjoSpotResult) / 4 + 1];
     VjoPlatform p = {.file_open = no_open};
     VjoGreySource im = {NULL, 960, 544, no_strip, NULL, NULL};

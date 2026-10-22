@@ -12,7 +12,7 @@ v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 VOCR5_N_w8.vocr, VOCR5_L_w8.vocr) and their release's attribution, v0.3.0's ATTRIBUTION.md
 kept as MODEL-ATTRIBUTION.md, the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
 with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, and scan screen's text spotter weights
-(VOCR_SPOT_MODEL, vita-vn-ocr #104) with their release's ATTRIBUTION.md kept as TEXTSPOT-ATTRIBUTION.md, which a
+(VOCR_SPOT_MODEL, vita-vn-ocr #108) with their release's ATTRIBUTION.md kept as TEXTSPOT-ATTRIBUTION.md, which a
 package ships. Each file comes from the
 release's public download; only when that fails (a draft release) is an authenticated
 GitHub CLI (`gh auth login`) tried. --from takes a copy downloaded by other means.
@@ -141,23 +141,24 @@ VOCR_GATE_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
 VOCR_GATE_ATTRIBUTION_PIN = {VOCR_GATE_ATTRIBUTION: (VOCR_GATE_BASE + VOCR_GATE_ATTRIBUTION_ASSET, 3706,
     '44a353c76e19c6bdabcb9dbd06d14867696dcb59ce0460db22d09749af687f6e')}
 
-# Scan screen's full-frame text spotter (vita-vn-ocr #104, docs/textspot.md there): a VTSP blob of int8 weights
-# (config.ini ocr_scan_screen, off by default), the release whose SHA256SUMS lists these hashes; the plugin pins
-# the same name, size and hash (include/vjo_vocr_sizes.h, core/vocr_ocr.c, cmake/VocrSpot.cmake). Its release's
-# ATTRIBUTION.md (its training data's licences and the weights' terms) ships beside it as
-# ocr/TEXTSPOT-ATTRIBUTION.md. The model vita-vn-ocr #104's pre-registered rule selected, B_h2_s4_c24n4_seed2_detref
-# (its v0.3.3-textspot.1 pre-release; a scan runs its detector, the read of the picked block Rubi's own finder).
-VOCR_SPOT_TAG = 'v0.3.3-textspot.1'
+# Scan screen's full-frame text spotter (vita-vn-ocr #108, docs/textspot3.md there): a VTSP version 2 blob of int8
+# weights, run by its runtime/vocr_textspot2.c (config.ini ocr_scan_screen, off by default), the release whose
+# SHA256SUMS lists these hashes; the plugin pins the same name, size and hash (include/vjo_vocr_sizes.h,
+# core/vocr_ocr.c, cmake/VocrSpot.cmake). Its release's ATTRIBUTION.md (its training data's licences and the
+# weights' terms) ships beside it as ocr/TEXTSPOT-ATTRIBUTION.md. The model vita-vn-ocr #108's pre-registered rule
+# selected, T3_kd_t64n8c16_seed3_detref (its v0.3.4-textspot3.1 pre-release; a scan runs its detector, the read of the
+# picked block Rubi's own finder). It replaced #104's textspot_s4_c24n4_w8.vtsp (v0.3.3-textspot.1).
+VOCR_SPOT_TAG = 'v0.3.4-textspot3.1'
 VOCR_SPOT_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_SPOT_TAG}/'
-VOCR_SPOT_MODEL = 'textspot_s4_c24n4_w8.vtsp'
+VOCR_SPOT_MODEL = 'textspot3_t64n8c16_kd_w8.vtsp'
 VOCR_SPOT_ASSETS = {
-    VOCR_SPOT_MODEL: (VOCR_SPOT_BASE + VOCR_SPOT_MODEL, 5732,
-        '852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf'),
+    VOCR_SPOT_MODEL: (VOCR_SPOT_BASE + VOCR_SPOT_MODEL, 51008,
+        '20c3f7cc4f07b443741bbb45fe4270f6fa8c74ce29045a796a5ed8887a3fb26a'),
 }
 VOCR_SPOT_ATTRIBUTION = 'TEXTSPOT-ATTRIBUTION.md'
 VOCR_SPOT_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
-VOCR_SPOT_ATTRIBUTION_PIN = {VOCR_SPOT_ATTRIBUTION: (VOCR_SPOT_BASE + VOCR_SPOT_ATTRIBUTION_ASSET, 3345,
-    '0226b181342d2ff93b836b8e0a8a01f7d5736b75cb93bda11a3a0bbe59fae5f7')}
+VOCR_SPOT_ATTRIBUTION_PIN = {VOCR_SPOT_ATTRIBUTION: (VOCR_SPOT_BASE + VOCR_SPOT_ATTRIBUTION_ASSET, 2903,
+    '65d7f24b705f99b70d7299dbeb4655d7f9085606f0699d6275cbef66fa571621')}
 
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so

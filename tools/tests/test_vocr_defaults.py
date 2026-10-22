@@ -339,7 +339,7 @@ class VocrDefaults(unittest.TestCase):
         import re  # noqa: PLC0415
         name = prepare_ocr.VOCR_SPOT_MODEL
         url, size, sha = prepare_ocr.VOCR_SPOT_ASSETS[name]
-        self.assertRegex(name, r"^textspot_[a-z0-9_]+_w8\.vtsp$")
+        self.assertRegex(name, r"^textspot[0-9]*_[a-z0-9_]+_w8\.vtsp$")
         self.assertEqual(url, prepare_ocr.VOCR_SPOT_BASE + name)
         self.assertTrue(prepare_ocr.VOCR_SPOT_BASE.endswith(f"/releases/download/{prepare_ocr.VOCR_SPOT_TAG}/"))
         sizes = (ROOT / "include/vjo_vocr_sizes.h").read_text()
@@ -356,12 +356,18 @@ class VocrDefaults(unittest.TestCase):
         payload = (ROOT / "include/vjo_payload.h").read_text()
         self.assertIn("X(VJO_PAYLOAD_OCR VJO_VOCR_SPOT_NAME, VJO_PAYLOAD_COPY)", payload)
         self.assertIn('X(VJO_PAYLOAD_OCR "TEXTSPOT-ATTRIBUTION.md", VJO_PAYLOAD_COPY)', payload)
-        self.assertEqual((name, size, sha), ("textspot_s4_c24n4_w8.vtsp", 5732,
-                                             "852506919ba94e54a4efc55e3695f365626d9d4ce6347f420cbf2afe3e8360cf"))
-        self.assertEqual(prepare_ocr.VOCR_SPOT_TAG, "v0.3.3-textspot.1")
+        # vita-vn-ocr #108's pick (textspot3), a VTSP version 2 blob, which runtime/vocr_textspot2.c runs (the runtime
+        # cmake/VocrOCR.cmake builds); #104's textspot_s4_c24n4_w8.vtsp (v0.3.3-textspot.1, 5,732 B) before it
+        self.assertEqual((name, size, sha), ("textspot3_t64n8c16_kd_w8.vtsp", 51008,
+                                             "20c3f7cc4f07b443741bbb45fe4270f6fa8c74ce29045a796a5ed8887a3fb26a"))
+        self.assertEqual(prepare_ocr.VOCR_SPOT_TAG, "v0.3.4-textspot3.1")
+        ocr_cmake = (ROOT / "cmake/VocrOCR.cmake").read_text()
+        self.assertIn('"${_vocr_rt}/vocr_textspot2.c")', ocr_cmake)  # the runtime that runs version 2, built
+        self.assertNotIn('"${_vocr_rt}/vocr_textspot.c"', ocr_cmake)  # #104's, which refuses version 2, not built
+        self.assertRegex(ocr_cmake, r"\n  vocr_textspot2\.c [0-9a-f]{64}\n  vocr_textspot2\.h [0-9a-f]{64}\)")
         url, size, sha = prepare_ocr.VOCR_SPOT_ATTRIBUTION_PIN[prepare_ocr.VOCR_SPOT_ATTRIBUTION]
         self.assertEqual(url, prepare_ocr.VOCR_SPOT_BASE + "ATTRIBUTION.md")
-        self.assertEqual((size, sha), (3345, "0226b181342d2ff93b836b8e0a8a01f7d5736b75cb93bda11a3a0bbe59fae5f7"))
+        self.assertEqual((size, sha), (2903, "65d7f24b705f99b70d7299dbeb4655d7f9085606f0699d6275cbef66fa571621"))
 
     def test_lm_pins_agree_c_kernel_python_and_the_ledger(self):
         table = c_lm_table()

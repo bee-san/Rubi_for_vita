@@ -1122,7 +1122,7 @@ static int run_shot(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
 }
 
 /* ---- API 30: a scan (VJO_GAME_OCR_S_SPOT, scan screen) ----
- * vita-vn-ocr #104's text spotter on the game's whole frame (core/vocr_ocr.c vjo_vocr_spot): its grey rows once,
+ * vita-vn-ocr #108's text spotter on the game's whole frame (core/vocr_ocr.c vjo_vocr_spot): its grey rows once,
  * top to bottom, 64 a frame through the display hook (the OCR jobs' capture path, its kernel strip as the last
  * rung), no row published as the region's capture. Two blocks of the game's memory while it runs, under the
  * OCR jobs' own ledger items: the strip (VjoGameVocrCapture) and the weights, the spotter's model, its set and

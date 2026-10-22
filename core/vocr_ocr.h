@@ -621,11 +621,11 @@ int vjo_vocr_ocr(const VjoPlatform *platform, const char *model_dir, const char 
                  const VjoGreySource *image, void *workspace, size_t workspace_size,
                  void *capture, size_t capture_size, char *text, size_t text_cap, VjoVocrStats *stats);
 
-/* API 30, a scan (scan screen, config.ini ocr_scan_screen): vita-vn-ocr #104's full-frame text spotter
- * (runtime/vocr_textspot.h) on the whole image, read once top to bottom in strips of VJO_VOCR_SPOT_ROWS rows
- * (image->strip with flags 0: no capture is published), with VOCR_TEXTSPOT_NO_DARK: no box is read again and
- * nothing is recognized. Its weights, the pinned file VJO_VOCR_SPOT_NAME in model_dir, are read and their
- * SHA-256 checked in every scan into the front of workspace (they are a few KB: no resident copy); then the
+/* API 30, a scan (scan screen, config.ini ocr_scan_screen): vita-vn-ocr #108's full-frame text spotter
+ * (runtime/vocr_textspot2.h, VTSP version 2) on the whole image, read once top to bottom in strips of
+ * VJO_VOCR_SPOT_ROWS rows (image->strip with flags 0: no capture is published), with VOCR_TEXTSPOT_NO_DARK: no box
+ * is read again and nothing is recognized. Its weights, the pinned file VJO_VOCR_SPOT_NAME in model_dir, are read
+ * and their SHA-256 checked in every scan into the front of workspace (51,008 B: no resident copy); then the
  * loaded model, the spotter's set and its arena (VJO_VOCR_SPOT_ARENA, exact for every frame up to 960 x 544).
  * workspace: 16-byte aligned, at least vjo_vocr_spot_bytes(); strip: at least vjo_vocr_spot_strip_bytes(width).
  * On VJO_OK *out holds the boxes, blocks and pick (count 0: no text); on an error it is empty (pick -1).
