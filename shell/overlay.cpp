@@ -965,6 +965,7 @@ static void open_page(void)
         vjo_log("overlay page failed to open");
         vjo_shell_heap_free(VJO_SL_PAF_UI, s_ui_mem, UI_MEM_BYTES);
         s_ui_mem = NULL;
+        s_cursor_text = s_no_text; /* API 37: it was in the block */
         vjo_arena_init(&s_ui, NULL, 0);
         return;
     }
