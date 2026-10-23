@@ -611,7 +611,7 @@ static int32_t fake_model_io_error;
 static const char *fake_recognized_text;
 static unsigned fake_lines;
 static int32_t fake_free_user;
-static uint32_t fake_need_weights, fake_reserve;
+static uint32_t fake_need_weights, fake_reserve, fake_release;
 static const char *fake_missing_model;
 static int fake_memory_fallback, fake_missing_with_fallback, fake_cancel_on_model_error;
 static int32_t fake_missing_io;
@@ -764,6 +764,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.free_user = fake_free_user;
         fake_game_result.need_workspace = 245760; fake_game_result.need_weights = fake_need_weights;
         fake_game_result.reserve_bytes = fake_reserve;
+        fake_game_result.release_bytes = fake_release;
         fake_game_result.workspace_bytes = 244896;
     }
     else {
@@ -937,6 +938,7 @@ static void reset(void)
     fake_free_user = 5000000;
     fake_need_weights = 659456;
     fake_reserve = 4194304;
+    fake_release = 0;
     fake_missing_model = NULL;
     fake_memory_fallback = fake_missing_with_fallback = fake_cancel_on_model_error = 0;
     fake_missing_io = (int32_t)0x80010002u;
@@ -2164,11 +2166,11 @@ static void check_oom_message(const char *advice, const char *must, const char *
     TEST_CHECK(cache_data[0].err.detail == advice || (advice && cache_data[0].err.detail &&
                                                       !strcmp(cache_data[0].err.detail, advice)));
     TEST_CHECK(!strncmp(text, "Text recognition failed: not enough memory", 42));
-    if (advice) TEST_CHECK(!strncmp(text + 42, ". ", 2) && !strcmp(text + 44, advice));
+    if (advice) TEST_CHECK(strstr(text, advice) != NULL);
     TEST_CHECK(strlen(text) < sizeof(g_view.status)); /* shown whole in the status line */
     if (must) TEST_CHECK(strstr(text, must) != NULL);
     if (must_not) TEST_CHECK(strstr(text, must_not) == NULL);
-    /* No size, reserve or fallback on screen, in any memory advice (owner 2026-10-15 04:54Z). */
+    /* Memory statistics are requested now; model names and fallback hints stay in the log. */
     static const char *const hints[] = {"smallest", "smaller", "fallback", "fall back", "falls back", "instead",
                                         "did not fit in", "Small", "Normal", "Large", "MiB", "tier", "size", "VOCR"};
     for (unsigned i = 0; i < sizeof(hints) / sizeof(hints[0]); i++)
@@ -2182,16 +2184,15 @@ static void test_vocr_oom_advice_names_the_stage(void)
      * job = reserve 4194304 + workspace 245760 = 4440064. */
     /* job + FL10's 659456-byte block = 5099520; job + H15's 1159168 = 5599232. A job asks by
      * tiers (API 21): the weights its last check refused are its smallest tier's. No advice
-     * names a model, a model file, a size, a reserve, or that a smaller one was tried (owner
-     * 2026-10-15 04:54Z: no fallback hint on screen); check_oom_message checks every text. */
+     * names a model, a model file, or that a smaller one was tried. */
     const struct { int32_t free_user; uint32_t weights; const char *advice, *must, *must_not; } cases[] = {
         {4000000, 659456, OOM_GAME_NONE, "any OCR right now", "MiB"},            /* below the reserve */
         {4300000, 659456, OOM_GAME_REGION, "tighter dialogue region", "FL10"},   /* the region's job */
         {4300000, 0, OOM_GAME_REGION, "tighter dialogue region", "FL10"},        /* resident weights */
         {5200000, 1159168, OOM_GAME_SMALLEST, "for the OCR model's weights", "vocr"},
-        {5000000, 1159168, OOM_GAME_SMALLEST, "tighter dialogue region", "VOCR3"},
+        {5000000, 1159168, OOM_GAME_SMALLEST, "Try again later", "VOCR3"},
         {5000000, 659456, OOM_GAME_SMALLEST, "for the OCR model's weights", "Select FL10"}, /* FL10's weights */
-        {6000000, 659456, OOM_GAME_ALLOCATION, "although the memory check passed", "FL10"},
+        {6000000, 659456, OOM_GAME_ALLOCATION, "after the memory check passed", "FL10"},
         {5000000, 0, OOM_GAME_ALLOCATION, "Try again", "FL10"},
         {(int32_t)0x80020001u, 659456, OOM_GAME_UNKNOWN, "could not be checked", "FL10"},
     };
@@ -2201,6 +2202,17 @@ static void test_vocr_oom_advice_names_the_stage(void)
         TEST_CHECK(run_vocr_job() == VJO_E_OOM);
         TEST_CASE_("memory check %u", i);
         check_oom_message(cases[i].advice, cases[i].must, cases[i].must_not);
+        const char *text = ocr_error_text();
+        if (cases[i].free_user < 0) {
+            TEST_CHECK(strstr(text, "Game RAM unavailable (0x80020001)") != NULL);
+            TEST_CHECK(strstr(text, "free ") == NULL);
+        } else {
+            char want[160];
+            snprintf(want, sizeof(want), "Game RAM (KiB): free %u + reclaim 0; need %u (240 workspace + %u models + 4096 reserve)",
+                (unsigned)cases[i].free_user / 1024u, (unsigned)((4440064u + cases[i].weights + 1023u) / 1024u),
+                (unsigned)((cases[i].weights + 1023u) / 1024u));
+            TEST_CHECK_(strstr(text, want) != NULL, "%s", text);
+        }
         mem_free();
     }
     /* A game OOM without the check's numbers gets no specific advice. */
@@ -2209,6 +2221,31 @@ static void test_vocr_oom_advice_names_the_stage(void)
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
     check_oom_message(NULL, "not enough memory", "FL10");
     TEST_CHECK(!strcmp(ocr_error_text(), "Text recognition failed: not enough memory"));
+    mem_free();
+}
+
+static void test_vocr_oom_statistics_are_cached(void)
+{
+    reset();
+    fail_vocr_user = 1; fake_release = 659456;
+    TEST_ASSERT(run_vocr_job() == VJO_E_OOM);
+    TEST_CHECK(strstr(ocr_error_text(), "free 4882 + reclaim 644; need 4980") != NULL);
+    TEST_CHECK(cache_data[0].err.detail == OOM_GAME_ALLOCATION);
+    /* A later transport result cannot overwrite this error's snapshot. */
+    memset(&vocr_result, 0xFF, sizeof(vocr_result));
+    active = 0;
+    view_show_cache();
+    TEST_CHECK(strstr(g_view.status, "free 4882 + reclaim 644; need 4980") != NULL);
+    TEST_CHECK(strstr(g_view.status, "Try again.") != NULL);
+    mem_free();
+
+    /* Bounded output and 64-bit totals even for impossible, oversized reports. */
+    reset();
+    fail_vocr_user = 1; fake_free_user = INT32_MAX;
+    fake_need_weights = fake_reserve = UINT32_MAX;
+    TEST_ASSERT(run_vocr_job() == VJO_E_OOM);
+    TEST_CHECK(strstr(ocr_error_text(), "need 8388848") != NULL);
+    TEST_CHECK(strlen(ocr_error_text()) < sizeof(g_view.status));
     mem_free();
 }
 
@@ -7925,6 +7962,7 @@ TEST_LIST = {
 #endif
     {"vocr_request_carries_the_job_policy", test_vocr_request_carries_the_job_policy},
     {"vocr_oom_advice_names_the_stage", test_vocr_oom_advice_names_the_stage},
+    {"vocr_oom_statistics_are_cached", test_vocr_oom_statistics_are_cached},
     {"vocr_unusable_model_uses_the_fallback", test_vocr_unusable_model_uses_the_fallback},
     {"vocr_memory_fallback_is_logged", test_vocr_memory_fallback_is_logged},
     {"vocr_transient_model_failure_is_not_sticky", test_vocr_transient_model_failure_is_not_sticky},

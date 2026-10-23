@@ -31,6 +31,12 @@ typedef struct {
     int rc;             /* VJO_OK or VJO_E_* */
     const char *detail; /* a message for the user, may be NULL */
     int dict;           /* VJO_DICT_* for VJO_STAGE_DICT errors */
+    /* OCR memory-check snapshot; reserve == 0 means unavailable. Keep values
+     * with the cached error, independent of the next game-worker response. */
+    struct {
+        int32_t free;
+        uint32_t reclaim, workspace, models, reserve;
+    } memory;
 } VjoErr;
 
 #endif

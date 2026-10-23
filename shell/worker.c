@@ -648,15 +648,11 @@ static void view_show_cache(void)
  * status line after "Text recognition failed: not enough memory. ". */
 static const char OOM_TEXT_BUFFER[] VJO_DATA_TABLE(OOM_TEXT_BUFFER) = "The recognized text did not fit the overlay's text buffer. Select a tighter "
     "dialogue region with Square.";
-static const char OOM_GAME_REGION[] VJO_DATA_TABLE(OOM_GAME_REGION) = "The game has too little free memory for OCR of this region. Select a tighter "
-    "dialogue region with Square.";
-static const char OOM_GAME_NONE[] VJO_DATA_TABLE(OOM_GAME_NONE) = "The game has too little free memory for any OCR right now (it keeps a "
-    "reserve for the game). Try again later in the game, or restart it.";
-static const char OOM_GAME_SMALLEST[] VJO_DATA_TABLE(OOM_GAME_SMALLEST) = "The game has too little free memory for the OCR model's weights. Select "
-    "a tighter dialogue region with Square, or try again later.";
-static const char OOM_GAME_ALLOCATION[] VJO_DATA_TABLE(OOM_GAME_ALLOCATION) = "The game's memory could not be allocated although the memory check "
-    "passed. Try again.";
-static const char OOM_GAME_UNKNOWN[] VJO_DATA_TABLE(OOM_GAME_UNKNOWN) = "The game's free memory could not be checked (see log.txt), so OCR did not start.";
+static const char OOM_GAME_REGION[] VJO_DATA_TABLE(OOM_GAME_REGION) = "Select a tighter dialogue region with Square.";
+static const char OOM_GAME_NONE[] VJO_DATA_TABLE(OOM_GAME_NONE) = "No room for any OCR right now. Restart the game.";
+static const char OOM_GAME_SMALLEST[] VJO_DATA_TABLE(OOM_GAME_SMALLEST) = "No room for the OCR model's weights. Try again later.";
+static const char OOM_GAME_ALLOCATION[] VJO_DATA_TABLE(OOM_GAME_ALLOCATION) = "Allocation failed after the memory check passed. Try again.";
+static const char OOM_GAME_UNKNOWN[] VJO_DATA_TABLE(OOM_GAME_UNKNOWN) = "Memory could not be checked. See log.txt.";
 /* The dictionary's result arena refused (mem_alloc), after OCR or for a cursor's lookup. In the data
  * segment as the others: line history's code took the normal Shell's text room (docs/line-history.md). */
 static const char OOM_SHELL_RESULTS[] VJO_DATA_TABLE(OOM_SHELL_RESULTS) = "Text was recognized, but Shell UI memory is too "
@@ -669,9 +665,9 @@ static const char MODEL_STORAGE[] VJO_DATA_TABLE(MODEL_STORAGE) = "The local OCR
 /* Which part of the game worker's memory check failed: no OCR can fit
  * beside the reserve; the region's job workspace; the model's weights; an
  * allocation after a passed check; or the check itself. A job asks by tiers
- * (API 21): its last check is its smallest tier's. The advice names no model,
- * size or reserve: the screen never says which size ran or was tried (owner
- * 2026-10-15 04:54Z); log.txt has the tier lines. */
+ * (API 21): its last check is its smallest tier's. The advice names no model
+ * or tier: log.txt has the tier lines. The cached error now also shows this
+ * check's memory figures (owner 2026-10-23). */
 static const char *game_oom_detail(const VjoGameOcrResult *r)
 {
     int64_t job, free_bytes;
@@ -1308,8 +1304,14 @@ static int run_vocr(VjoOverlayData *out)
             else if ((uint32_t)vocr_result.io_error == 0x8001000Du)
                 out->err.detail = "Access to the local OCR model was denied. See log.txt for details.";
         }
-        if (out->err.rc == VJO_E_OOM)
+        if (out->err.rc == VJO_E_OOM) {
             out->err.detail = game_oom_detail(&vocr_result);
+            out->err.memory.free = vocr_result.free_user;
+            out->err.memory.reclaim = vocr_result.release_bytes;
+            out->err.memory.workspace = vocr_result.need_workspace;
+            out->err.memory.models = vocr_result.need_weights;
+            out->err.memory.reserve = vocr_result.reserve_bytes;
+        }
         if (out->err.rc == VJO_E_SOURCE)
             out->err.detail = "The game's screen could not be read (see log.txt).";
         return out->err.rc;
