@@ -467,9 +467,12 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
          (unsigned)tai->module_nid, (unsigned)seg_base, (unsigned)code_size, (unsigned)appv, nv, nl);
     for (unsigned i = 0; i < nv; i++) {
         const VjoPlaceVerified *v = &ver[i];
+        /* a Luna site at the same address: the entry reads the text, Luna's hookfunc and filter post-process it */
+        const VjoLunaSite *same = vjo_luna_site_at(sites, nl, v->off, appv);
         int r = vjo_place_check_verified(v, code, code_size, seg_base, tai->module_nid);
-        DLOG("verified +%X %s r%u", (unsigned)v->off, v->thumb ? "thumb" : "arm", (unsigned)v->reg);
-        if (r == VJO_PLACE_OK) r = hook_site(tai->modid, v->off, v->thumb, NULL, v);
+        DLOG("verified +%X %s r%u%s", (unsigned)v->off, v->thumb ? "thumb" : "arm", (unsigned)v->reg,
+             same ? ", Luna's text" : "");
+        if (r == VJO_PLACE_OK) r = hook_site(tai->modid, v->off, v->thumb, same, v);
         site_result(r, v->off, code, code_size);
     }
     for (unsigned i = 0; i < nl; i++) {
@@ -576,6 +579,12 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
     if (mode) *mode = applied_mode;
     if (installed) *installed = n_sites << 16 | n_calls;
     if (refused) *refused = n_refused;
+}
+
+int vjo_hooks_verified(uint32_t id)
+{
+    /* a site's stream ID is its slot + 1 (hook_site) */
+    return id >= 1u && id <= n_sites && id <= VJO_HOOK_SITE_STREAMS && site_info[id - 1u].ver != NULL;
 }
 
 /* ---- job time ---- */

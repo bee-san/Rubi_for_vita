@@ -116,10 +116,23 @@ A table site is an address in the main module's segment 0 where the game holds a
 Two lists name them:
 
 - **Rubi's verified entries** (`core/hook_place.c`): title, module NID, segment-0 offset, Thumb or ARM,
-  register, encoding and 8 to 16 bytes recorded at the site. One so far: CLANNAD PCSG00415, NID
-  0xC5187D60, +0x2CA70, Thumb, r6, CP932, `AB F8 2C 23 14 F5 53 70` (STRH.W r2, [r11, #0x32C];
-  ADDS.W r0, r4, #0x34C). From PR #16's `profiles/PCSG00415.vjhook`; proven in Vita3K only (note 22).
-  It is hooked only when the module NID and every recorded byte match.
+  register, encoding and 8 to 16 bytes recorded at the site. Two so far:
+  - CLANNAD PCSG00415, NID 0xC5187D60, +0x2CA70, Thumb, r6, CP932, `AB F8 2C 23 14 F5 53 70` (STRH.W r2,
+    [r11, #0x32C]; ADDS.W r0, r4, #0x34C). From PR #16's `profiles/PCSG00415.vjhook`; proven in Vita3K
+    only (note 22).
+  - アマツツミ PCSG01198 (APP_VER 01.00), NID 0x8AA413F2, +0x745C8, Thumb, r2, CP932, 16 bytes from
+    `09 EB 87 0E` (ADD.W lr, r9, r7, LSL #2; ADD.W lr, lr, #0x1620). Luna's site 0x800785C8, which the
+    placement check refuses as no entry (it is inside a function's loop); no branch in segment 0 targets
+    its 8 patched bytes (checked on the decrypted eboot). Proven on a console (PCH-2000, 3.65,
+    2026-10-23): hooked, its stream held text, and with OCR refused for memory the overlay showed the
+    game's line.
+
+  An entry is hooked only when the module NID and every recorded byte match. An entry at the address of
+  a ported Luna site that this version may try takes that site's hookfunc and filter for its text
+  (`vjo_luna_site_at`); the Luna site is then skipped as hooked. When OCR is refused for memory
+  (`VJO_E_OOM`) with the automatic pick, a verified entry's newest text answers unconfirmed
+  (`vjo_hook_select_no_memory`, `VJO_HOOK_R_UNCONFIRMED`), its capture pass beside
+  `VJO_GAME_RESERVE_HOOK_ONLY`; Luna's sites and CALL callers never do.
 - **Luna's table** (`core/hook_luna.h`, `core/hook_luna_table.inc`: LunaTranslator's Vita3K table,
   ported by hooks-luna-port; [hook-titles.md](hook-titles.md)). Luna's addresses are Vita3K's: the
   offset into segment 0 is `addr - 0x80004000` (`VJO_LUNA_SEG0`), which matches the CLANNAD Vita3K run

@@ -105,6 +105,18 @@ int vjo_luna_version_ok(const VjoLunaSite *all, unsigned n, const VjoLunaSite *s
     return 1;
 }
 
+const VjoLunaSite *vjo_luna_site_at(const VjoLunaSite *all, unsigned n, uint32_t off, uint16_t app_ver)
+{
+    for (unsigned i = 0; all && i < n; i++) {
+        const VjoLunaSite *s = &all[i];
+        uint32_t a = s->addr & ~1u;
+        if (a >= VJO_LUNA_SEG0 && a - VJO_LUNA_SEG0 == off && vjo_luna_ported(s) &&
+            vjo_luna_version_ok(all, n, s, app_ver))
+            return s;
+    }
+    return NULL;
+}
+
 /* ---------------- hook time ---------------- */
 
 static uint32_t le32(const uint8_t *p)

@@ -11,6 +11,12 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
     *refused = 0;
 }
 
+int vjo_hooks_verified(uint32_t id)
+{
+    (void)id;
+    return 0;
+}
+
 int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
 {
     (void)id;
