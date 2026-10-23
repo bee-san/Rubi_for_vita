@@ -110,12 +110,12 @@ for the measured results and remaining hardware checks.
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
 **Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
 
-Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.2/Rubi-0.9.2.zip)
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.3/Rubi-0.9.3.zip)
 and extract it.
 
 ### 1. Transfer modules
 
-Using VitaShell FTP, transfer the files from `Rubi-0.9.2/ur0/tai/` to `ur0:tai/` on the Vita:
+Using VitaShell FTP, transfer the files from `Rubi-0.9.3/ur0/tai/` to `ur0:tai/` on the Vita:
 
 - `VitaJPOverlay_Kernel.skprx`
 - `VitaJPOverlay_OCR.suprx`
@@ -142,13 +142,13 @@ If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the en
 
 ### 3. Transfer data files for the plugin
 
-Transfer `Rubi-0.9.2/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+Transfer `Rubi-0.9.3/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
 as `ur0:data/VitaJPOverlay`.
 
 ### 4. Transfer data files for OCR and the dictionary
 
 **This is a separate folder, not a duplicate of step 3.** Transfer
-`Rubi-0.9.2/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+`Rubi-0.9.3/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
 as `ux0:data/VitaJPOverlay`.
 
 If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
@@ -157,7 +157,7 @@ and keep your existing settings file when copying the data.
 ### 5. Transfer and install the VPK / companion app
 
 Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
-top-right corner of its LiveArea page. Transfer `Rubi-0.9.2/Rubi.vpk` to the Vita and install
+top-right corner of its LiveArea page. Transfer `Rubi-0.9.3/Rubi.vpk` to the Vita and install
 (promote) it with VitaShell. Accept the installation and extended-permissions prompts.
 
 ### 6. Reboot the Vita

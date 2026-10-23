@@ -11,12 +11,100 @@ been reported.
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-10-23
+
+A second bundled dictionary, of the characters of PSP and Vita visual novels; the figures of a
+failed OCR memory check in the overlay's error; hooked text without the game's control codes; and an
+install on a console that refuses the Rubi app its own payload's data folders. Like 0.9.0–0.9.2, the
+release is the normal build only.
+
+### Added
+
+- A second bundled dictionary, **VNDB Names — PSP & PS Vita** (`vndb-names.vjdict`, [#256];
+  [details](docs/guide.md#settings-and-dictionaries)): 30,923 searchable name entries for 12,151
+  characters from 1,202 visual novels (VNDB snapshot of 2026-10-22). A full name, a part of one or
+  an alias shows the original and romanized name, the game, its platforms and the VNDB link; no
+  images or biographies (an alias may reveal a name). A fresh install enables both dictionaries
+  (`local_dictionaries = plaintext.vjdict,vndb-names.vjdict`). An update through the Rubi app's
+  Install page adds the names after your own dictionaries, keeping their order, unless the list
+  would then hold more than eight (it is left as it is, and the plan says so); `install-vita.sh`
+  sets both. An update by hand from the ZIP that keeps your `config.ini` keeps its list: add
+  `vndb-names.vjdict` to `local_dictionaries` to use the names. Bee's Ultimate Dictionary keeps
+  first place for matches of equal length, and **Dictionaries shown** stays 1: set it to 2 to page
+  between a word's entry and a name's with L or R. The VNDB attribution and licences
+  (ODbL 1.0, DbCL 1.0) ship in the ZIP and the VPK ([attribution](docs/vndb-attribution.txt)).
+  The file, 10,452,992 B, is copied to `ux0:data/VitaJPOverlay/dictionaries/`, and the app keeps
+  its own copy, as it keeps the models.
+- When OCR fails for lack of memory, the overlay's error shows the failed check's figures, in KiB
+  ([#259]; [details](docs/guide.md#memory-and-troubleshooting)): the game's free memory, Rubi's
+  reclaimable resident memory, and the total needed with its workspace, models and the reserve left
+  to the game: `Game RAM (KiB): free F + reclaim R; need N (W workspace + M models + V reserve)`.
+  These are the game worker's measurements at that check; the reserve is counted in the need but
+  never allocated. A failed memory query shows its native code instead
+  (`Game RAM unavailable (0x…)`), and an error before the check has no figures. The figures stay
+  with their error when it is shown again, whatever a later job reports. The advice after them is
+  shorter, to fit the existing status line (such as
+  `Select a tighter dialogue region with Square.`). No allocation or thread is added.
+
 ### Fixed
 
-- Hooked text drops backslash control codes such as `\s156` before stream selection and display,
-  so the overlay, mined sentences and new reading-history records omit them, and reading statistics
-  no longer count their letters and digits. Literal `\n`, `\r` and `\t` become whitespace.
-  Existing history files are unchanged.
+- Hooked text drops backslash control codes such as `\s156` before stream selection and display
+  ([#268]; [details](docs/native-hooks.md#which-text-a-job-shows)): `\s156「ばーーーっっ!」` is shown as
+  `「ばーーーっっ!」`, so the overlay, mined sentences and new reading-history records omit them, and
+  reading statistics no longer count their letters and digits. Numeric `\s` and `\w` commands go
+  with their argument, a standalone `\c`, `\k`, `\p` or `\f` goes, and a standalone `\n`, `\r` or
+  `\t` becomes whitespace; unknown escapes, doubled backslashes and words such as `\new` are kept,
+  and nonprinting ASCII controls other than tab, CR and LF are dropped. It applies to the
+  string-copy (CALL) and table-site streams alike, after a site's own filter. OCR and existing
+  history files are unchanged.
+- The Install page installs on a console that refuses the Rubi app its own folder's payload data
+  ([#257], by a contributor). On one PCH-2000 (3.65, Ensō, StorageMgr with ux0 on an SD2Vita,
+  rePatch, reF00D, NoNpDrm, Adrenaline), `ux0:app/VJOSET001/payload/ux0/data/…` and `…/ur0/data/…`
+  returned `0x80010016` to the app, before and after `app0:`'s unmount, while `app0:payload/…` read
+  every file: 0.9.2's Install page said the package's `config.ini` template was missing or damaged,
+  which reinstalling the VPK cannot fix. The scan and the install now read such a file through
+  `app0:`. When any payload file reads only that way, the install keeps `app0:` mounted, copies
+  every file from it, and copies the dictionary instead of moving it, so on such a console the app
+  keeps its 157 MB copy too. A console whose folder reads installs as 0.9.2 did. The refusal's cause
+  is unknown. Still open ([#260]): the payload's manifest is read through the folder only, and the
+  fallback is chosen by `sceIoGetstat`, not by a read that succeeded.
+
+### Changed
+
+- The README's and the guide's installation instructions are six steps from the ZIP ([#258]): copy
+  the three plugins to `ur0:tai`, add the kernel and Shell lines to taiHEN's `config.txt` by hand,
+  copy the `ur0` and `ux0` data folders (keeping your `config.ini` when updating), install the app's
+  `Rubi.vpk`, and reboot. The standalone VPK with its Install page is the guide's alternative.
+- The downloads grow by the names dictionary: the VPK and the ZIP by about 2.2 MB each, and the
+  VPK's install needs about 270 MB free on ux0 while the VPK is on the card, about 23 MB more than
+  0.9.2's [estimate: the 245 MB that docs/one-vpk-install.md derives, plus the names file unpacked
+  from the VPK and copied out of the app, 10.5 MB each, and the VPK's own growth]. The ZIP's `ux0`
+  data folder is 179.5 MB, 10.5 MB more than 0.9.2's.
+- No module's pages change. The Shell's stay at 163,840 B (176,128 B debug), the kernel plugin's at
+  118,784 B (122,880 B debug), and each game that is ON carries 172,032 B of the OCR worker's
+  (180,224 B debug). #256's default dictionary list had taken the normal Shell's code from 90,100 B
+  to 90,116 B, 4 B past its last page, so its Vita build failed the memory ledger's check; #259's
+  messages, moved into the data segment, bring it back to 90,004 B [measured: the build logs' module
+  rows, Release run 39928577888 at `2f85de0`, Release run 39755005256 at `15e028e` and Release run
+  39845048444 at `708e84b`; `docs/memory-ledger.md`].
+
+### On the console
+
+- The contributor's PCH-2000 above ran #257's fix, built as the normal build at 0.9.2's tree,
+  before the names dictionary ([#257], the contributor's report): the scan passed, the install kept
+  `app0:` mounted, copied the dictionary and finished with `install: done (v0.9.2 normal)`, all 17
+  installed files matched the manifest, `ur0:tai/config.txt` gained the two lines after its backup,
+  and after a restart both plugins loaded with no errors (`boot.txt` `stage=3 fault=0 failures=0`,
+  `status.txt` `Rubi shell started … worker started`). The overlay was not tried in a game, and the
+  fix as merged, with the names file among the payload's files, has not run there.
+- Users have reported OCR refusing for lack of memory in some games after a fresh install ([#266],
+  アマツツミ and あおかな; not reproduced, with no title IDs or memory figures yet). The figures of #259
+  are there to show why; they have not been seen on a console yet.
+- None of 0.9.3's other changes has run on a console: the names dictionary, the memory figures and
+  the control-code clean-up, nor this release's build; the owner's console has run no normal build.
+  The native hooks' console record is still 0.9.0's below, CLANNAD's string-copy reads in the
+  combined debug test build; the test.7 checklist ([#237]) was closed without reported results, and
+  no site from LunaTranslator's table has been reported working on a console.
 
 ## [0.9.2] - 2026-10-22
 
@@ -647,7 +735,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.3
 [0.9.2]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.2
 [0.9.1]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.1
 [0.9.0]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.0
@@ -777,3 +866,10 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#251]: https://github.com/bee-san/Rubi_for_vita/pull/251
 [#252]: https://github.com/bee-san/Rubi_for_vita/issues/252
 [#253]: https://github.com/bee-san/Rubi_for_vita/pull/253
+[#256]: https://github.com/bee-san/Rubi_for_vita/pull/256
+[#257]: https://github.com/bee-san/Rubi_for_vita/pull/257
+[#258]: https://github.com/bee-san/Rubi_for_vita/pull/258
+[#259]: https://github.com/bee-san/Rubi_for_vita/pull/259
+[#260]: https://github.com/bee-san/Rubi_for_vita/issues/260
+[#266]: https://github.com/bee-san/Rubi_for_vita/issues/266
+[#268]: https://github.com/bee-san/Rubi_for_vita/pull/268
