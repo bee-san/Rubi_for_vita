@@ -857,7 +857,8 @@ static void test_install_order(void)
     TEST_CHECK(offs[2].offset == 0x300 && offs[2].thumb == 0 && offs[2].source == (const void *)observers[2]);
     for (unsigned i = 0; i < 3; i++) TEST_CHECK(offs[i].modid == mod.modid && offs[i].segidx == 0);
     TEST_CHECK(offset_calls == 3);
-    TEST_CHECK(site_info[0].ver == &v[0] && site_info[0].luna == NULL && slots[0].site == NULL);
+    /* l[7], ported and this version's, is at v[0]'s address: the entry takes its text processing */
+    TEST_CHECK(site_info[0].ver == &v[0] && site_info[0].luna == &l[7] && slots[0].site == &l[7]);
     TEST_CHECK(site_info[1].luna == &l[0] && slots[1].site == &l[0] && site_info[2].luna == &l[6]);
     TEST_CHECK(slots[0].key == 0x101 && slots[1].key == 0x201 && slots[2].key == 0x301 && slots[3].key == 0);
     TEST_CHECK(site_info[1].addr == a32(code) + 0x200);
@@ -1457,7 +1458,70 @@ static void test_exact_build_identity(void)
     TEST_CHECK(!vjo_hooks_build_id(a) && exe_opens == opened);
 }
 
+/* A verified entry at a Luna site's address (PCSG01198's, with that title's real filter): one hook, the
+ * entry's register read, Luna's filter on the text; the Luna site is skipped (its address is hooked), not
+ * refused. A Luna site at another address, unported, or another version's gives the entry nothing. */
+static void test_verified_takes_luna_text(void)
+{
+    /* $[漢字$/かんじ$] in CP932: the filter keeps the base */
+    static const uint8_t ruby[] = {'$', '[', 0x8A, 0xBF, 0x8E, 0x9A, '$', '/', 0x82, 0xA9, 0x82, 0xF1,
+                                   0x82, 0xB6, '$', ']', 0};
+    VjoPlaceVerified v;
+    VjoLunaSite l[1];
+    const VjoLunaSite *real;
+    uint32_t frame[16], inst, refused;
+    VjoHookSnap s;
+    char text[128];
+    TEST_ASSERT(vjo_luna_sites("PCSG01198", &real) == 1 && real[0].filter != VJO_LUNA_NONE);
+    reset();
+    put_site(0x100, 1, NULL);
+    v = verified_entry(0x100, mod.nid, 2, 0);
+    l[0] = luna_site(0x100, 1, 2, 1, 0);
+    l[0].filter = real[0].filter;
+    t_ver = &v;
+    t_nver = 1;
+    t_luna = l;
+    t_nluna = 1;
+    add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_ASSERT(n_sites == 1 && n_offs == 1);
+    TEST_CHECK(site_info[0].ver == &v && site_info[0].luna == &l[0] && slots[0].site == &l[0]);
+    vjo_hooks_counts(NULL, &inst, &refused);
+    TEST_CHECK(inst >> 16 == 1 && refused == 0);
+
+    memcpy(data + 0x40, ruby, sizeof ruby);
+    memset(frame, 0, sizeof(frame));
+    frame[2] = a32(data) + 0x40;
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(s.site == &l[0] && s.n == sizeof ruby - 1 && !memcmp(s.raw, ruby, sizeof ruby - 1));
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) > 0 && !strcmp(text, "漢字"));
+    TEST_MSG("got [%s]", text);
+    s.site = NULL; /* without Luna's entry: the markup stays */
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) > 0 && strstr(text, "$[漢字$/かんじ$]") != NULL);
+
+    /* no Luna site at the entry's address, or one that may not be tried: the entry's text is unprocessed */
+    static const struct { uint32_t off; uint8_t ported; uint16_t version; } others[] = {
+        {0x104, 1, 0}, {0x100, 0, 0}, {0x100, 1, 0x0102}};
+    for (unsigned k = 0; k < sizeof others / sizeof others[0]; k++) {
+        reset();
+        put_site(0x100, 1, NULL);
+        v = verified_entry(0x100, mod.nid, 2, 0);
+        l[0] = luna_site(others[k].off, 1, 2, others[k].ported, others[k].version);
+        l[0].filter = real[0].filter;
+        t_ver = &v;
+        t_nver = 1;
+        t_luna = l;
+        t_nluna = 1;
+        set_sfo("01.00");
+        vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+        TEST_CHECK_(n_sites >= 1 && site_info[0].ver == &v && site_info[0].luna == NULL && slots[0].site == NULL,
+                    "case %u", k);
+    }
+}
+
 TEST_LIST = {
+    {"a verified entry at a Luna site's address takes Luna's text processing", test_verified_takes_luna_text},
     {"exact build SHA-256: whole executable, worker only, safe failure", test_exact_build_identity},
     {"call_hit: 4..512 bytes, the NUL rules, the pointer-array shape", test_call_hit_bounds},
     {"the CALL hooks: the game's function first, each one's length rule", test_call_hooks},

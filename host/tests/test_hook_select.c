@@ -12,7 +12,7 @@
 
 static VjoHookCand cand(uint32_t id, uint32_t seq, uint32_t site, const char *text)
 {
-    VjoHookCand c = {id, seq, site, text, text ? strlen(text) : 0, id * 0x100u, 0};
+    VjoHookCand c = {id, seq, site, text, text ? strlen(text) : 0, id * 0x100u, 0, 0};
     return c;
 }
 
@@ -593,7 +593,37 @@ static void ties_and_fallback(void)
     TEST_CHECK((flags & VJO_HOOK_R_UNLOCK) && !st.interval && st.streak == 1 && st.streak_id == 12);
 }
 
+/* OCR refused for memory: only a Rubi verified table site's text answers, unconfirmed, the newest one; Luna's
+ * sites, CALL callers, short texts and pinned or OCR-only picks never do; nothing is learned. */
+static void no_memory_verified_site(void)
+{
+    VjoHookCand c[5] = {cand(9, 7, 0, LINE1), cand(2, 8, 1, LINE3), cand(1, 5, 1, LINE1), cand(3, 9, 1, "あい"),
+                        cand(4, 6, 1, LINE3)};
+    uint32_t flags = 123;
+    c[2].verified = 1; /* a verified site, older than the Luna site 2 */
+    c[3].verified = 1; /* verified, newest, but too short */
+    c[4].verified = 1; /* verified, newer than 1 */
+    TEST_CHECK(vjo_hook_select_no_memory(VJO_HOOK_PICK_AUTO, c, 5, &flags) == 4);
+    TEST_CHECK(flags == (VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
+    c[4].verified = 0;
+    TEST_CHECK(vjo_hook_select_no_memory(VJO_HOOK_PICK_AUTO, c, 5, &flags) == 1);
+    /* a CALL caller is never verified, even if marked so; neither is a Luna site (verified 0) */
+    c[2].verified = 0;
+    c[0].verified = 1;
+    flags = 123;
+    TEST_CHECK(vjo_hook_select_no_memory(VJO_HOOK_PICK_AUTO, c, 5, &flags) == 0 && flags == 0);
+    c[2].verified = 1;
+    TEST_CHECK(vjo_hook_select_no_memory(VJO_HOOK_PICK_OCR, c, 5, &flags) == 0 && flags == 0);
+    TEST_CHECK(vjo_hook_select_no_memory(2, c, 5, &flags) == 0); /* pinned: the job's own path answers it */
+    TEST_CHECK(vjo_hook_select_no_memory(VJO_HOOK_PICK_AUTO, NULL, 0, NULL) == 0);
+    /* the seq wraps: the newer of two verified sites by serial order */
+    VjoHookCand w[2] = {cand(1, 0xFFFFFFF0u, 1, LINE1), cand(4, 3, 1, LINE3)};
+    w[0].verified = w[1].verified = 1;
+    TEST_CHECK(vjo_hook_select_no_memory(VJO_HOOK_PICK_AUTO, w, 2, &flags) == 4);
+}
+
 TEST_LIST = {
+    {"no_memory_verified_site", no_memory_verified_site},
     {"exact_text", exact_text}, {"wrong_characters", wrong_characters},
     {"name_and_line", name_and_line}, {"backlog_and_prefetch", backlog_and_prefetch},
     {"short_strings", short_strings}, {"empty_texts", empty_texts},

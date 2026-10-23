@@ -22,6 +22,7 @@ typedef struct {
     size_t n;         /* bytes of text */
     uint32_t key;     /* module-relative site/caller offset, never an absolute address */
     uint32_t encoding; /* decoding identity; definition/filter changes also invalidate the cache revision */
+    uint32_t verified; /* 1: a Rubi verified table site (core/hook_place.c), checked against the game's bytes */
 } VjoHookCand;
 
 /* The only learned data that may be persisted. A slot ID, runtime address, dialogue or partial
@@ -70,5 +71,13 @@ uint32_t vjo_hook_select_before(VjoHookSelect *st, uint32_t pick, const VjoHookC
  * Pinned/OCR-only calls never change AUTO state. Equal scores prefer the streak, a site, newest seq. */
 uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr, size_t on,
                                const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags);
+
+/* After OCR was refused for memory, so no stream can ever agree with it (a game that leaves less than
+ * the smallest model's reserve free): with the automatic pick, the newest candidate from a Rubi verified
+ * table site (c->verified) with at least VJO_HOOK_MIN_CHARS characters answers unconfirmed (flags:
+ * VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE). Luna's sites and CALL callers never do:
+ * only a site whose bytes Rubi checked. A pinned or OCR-only pick, or no such candidate: 0. Never changes
+ * the automatic pick's state (nothing is learned without OCR). */
+uint32_t vjo_hook_select_no_memory(uint32_t pick, const VjoHookCand *c, unsigned n, uint32_t *flags);
 
 #endif

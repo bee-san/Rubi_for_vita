@@ -50,6 +50,10 @@ int vjo_hooks_stop(void);
  * hooked, sites refused. */
 void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused);
 
+/* 1 when stream id is a table site hooked from a Rubi verified entry (core/hook_place.c: its module NID and
+ * bytes checked at hook time), else 0. */
+int vjo_hooks_verified(uint32_t id);
+
 /* Worker thread only, never module_start or a game hook: SHA-256 of the complete main executable at
  * the path reported by modulemgr. Hashing relocated/patched runtime pages or a module NID would not
  * identify an exact build. An inaccessible, empty, oversized or unreadable executable disables cached
