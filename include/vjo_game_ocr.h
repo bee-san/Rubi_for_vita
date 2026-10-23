@@ -137,8 +137,8 @@ typedef struct {
      * an OCR job. */
     char shot[VJO_GAME_OCR_SHOT_ID_BYTES];
     /* API 31, native text hooks (docs/native-hooks.md): what this job may answer from.
-     * VJO_HOOK_PICK_AUTO: OCR, its text replaced by a hook stream's that agrees with it (the worker's
-     * automatic pick, which may lock a stream and then answer without recognition); a stream ID
+     * VJO_HOOK_PICK_AUTO: a nonempty Luna site without recognition, else OCR with a regular hook's
+     * agreeing text (the worker may learn that source and answer without recognition between checks); a stream ID
      * 1..VJO_HOOK_STREAMS: that stream's latest text, pinned, without recognition (OCR when it has none);
      * VJO_HOOK_PICK_OCR: OCR only. Normal Shell jobs use AUTO; explicit picks are for diagnostics. */
     uint32_t hook_pick;

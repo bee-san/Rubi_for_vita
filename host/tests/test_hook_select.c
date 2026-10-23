@@ -569,6 +569,56 @@ static void pinned_and_ocr(void)
     TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
 }
 
+/* Luna entries already identify a game's extraction/filter script. They need neither the generic
+ * source's initial comparisons nor its learned cadence, including on short or repeated dialogue. */
+static void luna_bypasses_learning(void)
+{
+    VjoHookSelect st = learn(), was = st;
+    VjoHookCand c[2] = {cand(2, 1, VJO_HOOK_CAND_SITE | VJO_HOOK_CAND_LUNA, "はい"),
+                        cand(9, 100, 0, LINE3)};
+    uint32_t flags;
+    st.unchecked = st.interval - 1u; /* a generic check is due, but Luna takes precedence */
+    was = st;
+    for (unsigned i = 0; i < 72; i++) {
+        c[0].seq = i / 2u + 1u; /* repeated dialogue and enough fresh readings to pass the maximum interval */
+        c[0].text = i / 2u % 2u ? "うん" : "はい";
+        c[0].n = strlen(c[0].text);
+        TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 2);
+        TEST_CHECK(flags == (VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR));
+        TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
+    }
+    /* A missing Luna stream resumes the generic cadence at the same check, without borrowing trust. */
+    c[0].text = ""; c[0].n = 0;
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 2, &flags) == 0);
+    TEST_CHECK(!flags && !memcmp(&st, &was, sizeof(st)));
+    st = (VjoHookSelect){0};
+    c[0] = cand(2, 1, VJO_HOOK_CAND_LUNA, "はい"); /* the Luna bit alone is not a table site */
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 1, &flags) == 0 && !flags);
+}
+
+static void luna_newest_and_explicit_picks(void)
+{
+    const uint32_t luna = VJO_HOOK_CAND_SITE | VJO_HOOK_CAND_LUNA;
+    VjoHookSelect st = learn(), was = st;
+    VjoHookCand c[4] = {cand(5, 10, luna, LINE1), cand(2, 11, luna, "はい"),
+                        cand(9, 100, 0, LINE3), cand(1, 11, luna, LINE2)};
+    uint32_t flags;
+    unsigned score;
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 4, &flags) == 1); /* stable lower-ID tie */
+    c[0].seq = UINT32_MAX - 1u;
+    c[1].seq = 1; c[3].seq = UINT32_MAX;
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_AUTO, c, 4, &flags) == 2); /* sequence wrap */
+    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
+    TEST_CHECK(vjo_hook_select_before(&st, 9, c, 4, &flags) == 9);
+    TEST_CHECK(flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR));
+    TEST_CHECK(vjo_hook_select_before(&st, 5, c, 4, &flags) == 5);
+    TEST_CHECK(flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
+    TEST_CHECK(vjo_hook_select_before(&st, VJO_HOOK_PICK_OCR, c, 4, &flags) == 0 && !flags);
+    TEST_CHECK(vjo_hook_select_after(&st, VJO_HOOK_PICK_OCR, LINE1, strlen(LINE1), c, 4,
+                                    &score, &flags) == 0);
+    TEST_CHECK(!memcmp(&st, &was, sizeof(st)));
+}
+
 static void ties_and_fallback(void)
 {
     VjoHookSelect st = {0};
@@ -603,5 +653,7 @@ TEST_LIST = {
     {"scheduled_disagreement", scheduled_disagreement}, {"inconclusive_and_missing", inconclusive_and_missing},
     {"inconclusive_check_cadence", inconclusive_check_cadence},
     {"source_invalidation", source_invalidation}, {"pinned_and_ocr", pinned_and_ocr},
+    {"luna_bypasses_learning", luna_bypasses_learning},
+    {"luna_newest_and_explicit_picks", luna_newest_and_explicit_picks},
     {"ties_and_fallback", ties_and_fallback}, {"many_candidates", many_candidates}, {NULL, NULL}
 };

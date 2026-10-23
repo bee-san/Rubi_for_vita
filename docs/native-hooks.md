@@ -189,13 +189,22 @@ UTF-8 or UTF-16, before comparison or display: the overlay, mined sentence, hist
 hooked in the game (`vjo_hooks_counts`: no site and no CALL import) a job is OCR's exactly as before: no
 snapshot, no comparison. Otherwise a job begins with a snapshot of the streams: each stream that holds
 text is copied out and decoded into a static 2,048-byte pool, each text at most 768 bytes (512 raw bytes
-of double-byte CP932 whole); the stream the job's pick names (pinned or locked) first, then the newest
-texts, so a pool that fills cuts the oldest. Then, by the request's `hook_pick`:
+of double-byte CP932 whole). Automatic jobs keep Luna sites first, then the learned stream, then the
+newest remaining texts, so generic traffic cannot fill the pool before Luna is decoded. Other jobs
+keep their pinned stream first, then the newest texts. Then, by the request's `hook_pick`:
 
 - **Pinned** (a stream ID in a diagnostic request): that stream's text, without recognition; OCR when it has none.
 - **OCR only** (`VJO_HOOK_PICK_OCR`): OCR's text. The self-test's jobs (every line recognized, or the
   fallback forced) are OCR only whatever their pick.
-- **Automatic** (`VJO_HOOK_PICK_AUTO`): OCR runs initially. An agreeing hook replaces its text at
+- **Automatic, Luna** (`VJO_HOOK_PICK_AUTO`): nonempty text from an installed Luna site answers
+  immediately, without initial OCR, periodic OCR or learned-source cache work. Installation still
+  requires the existing port, game-version and site-placement checks. Short and unchanged text also
+  skips recognition. With several nonempty Luna sites, the newest sequence wins (a tie goes to the
+  lower stream ID). This does not identify a stream's semantic role, such as a speaker name versus
+  dialogue; it trusts the existing game-specific extraction and filters. Rubi's own table sites are
+  not Luna sites and still require the regular validation below. An empty, busy or filtered-empty Luna
+  site is unavailable for this job: the remaining hooks and OCR provide the fallback.
+- **Automatic, regular hooks**: without a nonempty Luna candidate, OCR runs initially. An agreeing hook replaces its text at
   the existing normalized similarity threshold of 700/1000 and a minimum of four characters. Two
   different normalized dialogue lines from the same source establish confidence. Reopening the same
   dialogue, a duplicate job, or another background copy cannot establish confidence or advance checks.
@@ -218,6 +227,14 @@ fresh counter; this startup check does not promote the interval. A single startu
 the same recovery rule. Missing, corrupt, inaccessible or unwritable storage means fresh learning.
 Hashing and cache work run in the game worker; the existing kernel file thread handles its fixed paths
 through the optional `vjoOcrHookCache` broker. There is no new Shell allocation or UI.
+Luna does not establish, restore, advance or erase this learning while it supplies text. If it stops
+supplying text, regular selection resumes its existing state or attempts the cache on first use.
+Luna answers carry `SITE | NO_OCR`, without claiming an OCR agreement or learned lock.
+
+The Luna distinction uses provenance bits in the candidate's existing `site` word. The fixed candidate
+array, selection state and text pool keep their layouts and bounds; no allocation site or thread is
+added [source inspection]. Packaged module pages and console timing are not measured locally for this
+change; the existing build-time ledger still enforces the declared module budgets.
 
 A longer interval delays detection: a learned source that starts returning incorrect text can show up
 to 31 hook-only readings before the next scheduled comparison. A hook that is wrong between checks can

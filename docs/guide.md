@@ -370,7 +370,10 @@ reported console run. The behaviour below is checked on the host.
   adds the game's own string copies in every game that is ON; **OCR only** (`ocr`) installs none.
   An install or an update keeps the file's value; installs before this one wrote `text_source =
   ocr`, so choose Automatic once to use hooks.
-- **What is shown.** A hook first agrees with OCR on two different dialogue lines (70 % normalized
+- **What is shown.** Nonempty Luna hook text is preferred immediately, including short or unchanged
+  lines, without initial or periodic OCR checks. With multiple Luna streams, the newest wins.
+  When Luna supplies no text, regular hooks use the following validation and cache.
+  A regular hook first agrees with OCR on two different dialogue lines (70 % normalized
   similarity, four characters at least). It then answers seven new readings without OCR and checks the
   eighth. Successful scheduled checks grow the interval to 16, then 32. Reopening unchanged dialogue
   does not advance it. Rubi remembers the source for the exact game build and confirms it once after
