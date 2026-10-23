@@ -167,7 +167,7 @@ SceShell is a user-mode system application spawned with the system-application b
 | | | result arena 64 KiB (the local dictionary's; the network's 2 × 256 KiB and connection pool went with Google Lens), Anki save 128 KiB, each behind a 1.5 MiB PAF reserve guard, transient | ScePaf global heap | transient | [`shell/memory.cpp`]; [guide.md, 'Memory and troubleshooting'] |
 | | | Anki thread stack 16 KiB + TLS (64 KiB until the network went), only while an Anki job runs (with `anki_mining = on`: counting the queue on every overlay open, saving) | Shell partition | transient | [`shell/anki.c`] |
 | `VitaJPOverlay_OCR.suprx` | loaded by the kernel into each game ON in `games.ini` since #138 (`*TITLEID`, one section per game, before; `*ALL` up to the installer's `--title`) | module pages in each enabled game only. Under `*ALL` they were in **every** process, SceShell included: 45,056 B each, until the #59 fix made `module_start` return `NO_RESIDENT` outside a candidate game (section 4.3) | the host's budget | 45,056 B at API 16; 0 outside candidate games since PR #68 [measured]; not loaded outside the registered games since `--title` [source: taihen-parser `parser.c`], nor outside the enabled ones since #138 [source: `kernel/loader.c`] | [PR #60, `docs/issue-59-root-cause.md` section 3.3] |
-| | in an enabled game | an Anki card's screenshot (API 23): one block of 450,560 B (`VjoGameShot`: the JPEG encoder, a strip of 64 colour rows, the JPEG) only while it runs, never beside an OCR job's blocks; worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 823,296 B (VOCR5-S: Small), 1,187,840 B (VOCR5-N: Normal) or 2,473,984 B (VOCR5-L: Large; 659,456, 1,159,168 and 1,560,576 B for VOCR3-FL10, VOCR3-H15 and VOCR4-W20 before VOCR5); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a reserve kept free before any block: 4 MiB, and since API 21 4, 8 or 16 MiB by the largest model size the job holds [estimate, vita-vn-ocr `docs/model-tiers.md`] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [guide.md, 'Memory and troubleshooting'] |
+| | in an enabled game | an Anki card's screenshot (API 23): one block of 450,560 B (`VjoGameShot`: the JPEG encoder, a strip of 64 colour rows, the JPEG) only while it runs, never beside an OCR job's blocks; worker thread 32 KiB stack + TLS; resident weights `VjoGameVocrWeights` 823,296 B (VOCR5-S: Small), 1,187,840 B (VOCR5-N: Normal) or 2,473,984 B (VOCR5-L: Large; 659,456, 1,159,168 and 1,560,576 B for VOCR3-FL10, VOCR3-H15 and VOCR4-W20 before VOCR5); per-job workspace `VjoGameVocr`, region-sized (900,896 B at 917×125 for FL10, 1,457,312 B for H15); a fixed 1 MiB reserve kept free before any block, for all model sizes [estimate; owner 2026-10-23, pending console validation] | the game's budget, `USER_RW` | per job [measured] | [`game_ocr/main.c`]; [guide.md, 'Memory and troubleshooting'] |
 
 Permanent pages held in SceShell's partition: 540,672 B at API 16 against 503,808 B at API 13;
 the 36,864 B growth coincides with the build that stopped booting (#59) [measured: PR #60,
@@ -321,14 +321,14 @@ Facts:
   will allocate from (`sizeMain` for `USER_RW`).
 - Allocation granularity is 4 KiB, so round every request up before comparing [SDK:
   Kernel-Reference, 'sceKernelAllocMemBlock'].
-- The game worker today: free `sizeMain` − the reserve (4, 8 or 16 MiB by model size since API 21)
+- The game worker today: free `sizeMain` − the fixed 1 MiB reserve
   must cover the page-rounded weights and workspace, or that size is refused before anything is
   allocated and the next smaller one is tried [`game_ocr/main.c`].
 
 Rules:
 
-- Preflight every allocation, keep a reserve (4 MiB today; [estimate] it has not been tuned on
-  more than one game), allocate the whole job's memory in as few blocks as possible, free it when
+- Preflight every allocation, keep a reserve (1 MiB for every model size, owner 2026-10-23;
+  [estimate] console validation is pending), allocate the whole job's memory in as few blocks as possible, free it when
   the job ends, and treat a failed `sceKernelAllocMemBlock` after a passed preflight as normal
   (the game moved first).
 - Resident data (the weights, the LM, the cascade's model) must be dropped once the game has not

@@ -34,9 +34,9 @@ models and estimates); the self-test analyser reads it, and
 
 | size | model | shape | int8 weights | W8I arena | est. time per 3-line textbox | game memory a job takes | its reserve | needs free |
 |---|---|---|---:|---:|---:|---:|---:|---:|
-| Small | VOCR5-S | FL10's topology, 4,987 classes | 819,792 B | 124,832 B | 0.63 s | 1,019,904 B | 4 MiB | 5,214,208 B |
-| Normal (default) | VOCR5-N | H15's topology, 5,631 classes | 1,185,632 B | 182,944 B | 0.92 s | 1,441,792 B | 8 MiB | 9,830,400 B |
-| Large | VOCR5-L | late-wide (channels 64/128/256/480/576), 5,631 classes | 2,473,696 B | 261,024 B | 2.08 s | 2,805,760 B | 16 MiB | 19,582,976 B |
+| Small | VOCR5-S | FL10's topology, 4,987 classes | 819,792 B | 124,832 B | 0.63 s | 1,019,904 B | 1 MiB | 2,068,480 B |
+| Normal (default) | VOCR5-N | H15's topology, 5,631 classes | 1,185,632 B | 182,944 B | 0.92 s | 1,441,792 B | 1 MiB | 2,490,368 B |
+| Large | VOCR5-L | late-wide (channels 64/128/256/480/576), 5,631 classes | 2,473,696 B | 261,024 B | 2.08 s | 2,805,760 B | 1 MiB | 3,854,336 B |
 
 The sizes and arenas are exact (vita-vn-ocr `train/export.py`; `host/tests/test_vocr.c`
 checks the arenas against the files). The times are estimates from
@@ -70,19 +70,20 @@ is planned; its workspace grows with the classes (41,632 B for 5,631 against 40,
 
 **The ladder.** The Shell asks for the chosen size and every smaller one
 (`VjoGameOcrRequest.tiers`); the game worker tries them largest first and runs the
-first whose job fits the game's free USER memory beside that size's reserve
-(vita-vn-ocr `docs/model-tiers.md` 1.5, the reserve the largest size the job holds,
-the cascade's included), its own resident blocks of another size counted as free
-because they are released first. §1.5 gives each size its own reserve; the job keeps
-the largest held size's because §1.3's reason for a larger reserve is the resident
-block, not the size's name: Normal reading with Large's model as its cascade holds a
-Large-sized block, so it leaves Large's 16 MiB. Each try is a `check` step of the job
+first whose job fits the game's free USER memory beside a fixed 1 MiB reserve.
+Its own resident blocks of another size count as free because they are released
+first. The former 4/8/16 MiB margins came from vita-vn-ocr `docs/model-tiers.md`
+§1.3/1.5's untuned proposal. After あおかな reported 3 MiB free but Small was
+refused for its 4 MiB margin, the owner chose 1 MiB for all sizes (2026-10-23;
+an estimate, console validation pending). Model, workspace, LM, cascade and
+helper allocations are still counted separately beside that margin.
+Each try is a `check` step of the job
 (`include/vjo_game_ocr.h` VJO_GSTEP_CHECK: the size in the kind, refused or
 passed, what it needed). Nothing on screen says that a smaller size ran (owner
 2026-10-15 04:54Z): the Shell writes it to `log.txt`, e.g.
 
 ```
-tier large did not fit in PCSG00415 (need 19582976, free 12000000); using normal
+tier large did not fit in PCSG00415 (need 3854336, free 3000000); using normal
 ```
 
 with need = the size's workspace, weights and reserve, and free = the game's free
@@ -101,7 +102,7 @@ model (`eval/vocr5_protocol.json`, amendment 3: Normal is the better of VOCR5-N 
 VOCR4-W20, and Large keeps VOCR4-W20 unless VOCR5-L beats it), so Normal and Large
 can be one file. The worker then gives Normal no cascade (`cascade_of` takes only a
 larger next size up: the same model would read a doubtful line the same again),
-so a Normal job keeps Normal's 8 MiB reserve; Small's cascade is that model,
+so a Normal job keeps the same 1 MiB reserve; Small's cascade is that model,
 opened as Normal's. A job opens the file as its own size, the one its request
 allows (a Large-only request as Large's), and the weights stay resident when the
 other size runs them. A bad file leaves out both of its sizes at once. The release
@@ -271,7 +272,7 @@ Shell has confirmed its per-game policy.
 
 The workspace is one private `USER_RW` memblock in that game's process.
 The worker requires enough reported free USER memory for the page-rounded
-workspace plus the size's game reserve (4, 8 or 16 MiB); there is no Paf fallback for OCR.
+workspace plus the fixed 1 MiB game reserve; there is no Paf fallback for OCR.
 It does not borrow the game's heap. Spare bytes inside a game-owned memblock
 remain owned by the game and are not available through this allocator. Free
 USER memory, the process budget and available physical pages all affect fit.
@@ -632,7 +633,7 @@ the first read, as #82's calibrated costs advise for the Normal tier.
 - **Releasing:** released when a job's memory check fails, when `ocr_lm = off`, after those 5 s, and
   on exit.
 - **Tier choice:** a job takes the largest tier up to `ocr_lm` that fits the memory check (free
-  USER minus the job's reserve (4, 8 or 16 MiB: the largest size it holds) must cover the workspace, the weights, the LM and the cascade's
+  USER minus the job's fixed 1 MiB reserve must cover the workspace, the weights, the LM and the cascade's
   model), else a smaller tier, else none (greedy).
 - **Workspace:** the job's workspace holds the decoder's extras (the top-K of every frame, the LM
   context and the beam workspace: 56,928 B, bounded for every pinned model and LM) and 4 KiB for
@@ -1179,7 +1180,7 @@ copied, and the settings above. Close other apps first.
    - *the kernel could not allocate this region's screen capture*: kernel
      memory; select a tighter region (the model does not matter) or restart;
    - *the game has too little free memory for any OCR right now*: below the
-     job's reserve (4, 8 or 16 MiB by size); try later or restart the game;
+     job's fixed 1 MiB reserve; try later or restart the game;
    - *... for OCR of this region*: select a tighter region;
    - *... for the OCR model's weights*: no size fits, the smallest one asked for
      included; a tighter region or later in the game. Like every message it names

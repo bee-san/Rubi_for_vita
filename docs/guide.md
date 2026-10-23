@@ -650,7 +650,7 @@ over its frames (`tools/analyse_selftest.py --collect`,
 [#191](https://github.com/bee-san/Rubi_for_vita/issues/191)); no console run has reported Small
 yet, and the box times above stay estimates.
 A job runs the chosen size when the
-game's free memory has room for it beside that size's reserve (4, 8 or 16 MiB),
+game's free memory has room for it beside the fixed 1 MiB reserve,
 else the next smaller size, silently: `log.txt` has a line `tier large did not
 fit in PCSG00415 (need N, free F); using normal`, and so does the `--collect`
 summary, but nothing on screen. A size whose model file is missing or corrupt
@@ -927,10 +927,12 @@ one for 5 s of its running time (another app in front of it, title disabled; the
 time stops while the game is suspended, so a suspend and resume keeps them) and
 on exit. A job
 then needs only its region-sized workspace. The worker leaves free USER memory
-for the game beside what the job holds: 4 MiB with Small, 8 MiB with Normal and
-16 MiB with Large (the largest size the job holds, the cascade's included;
-vita-vn-ocr docs/model-tiers.md proposes them, an estimate), before allocating
-any block; allocation can still fail because the game or system uses memory
+for the game beside what the job holds: a fixed 1 MiB for every model size,
+including cascades and helper threads (owner 2026-10-23; an estimate pending
+console validation). This replaces the untuned 4/8/16 MiB tier margins, which
+blocked Small in あおかな despite 3 MiB free and only 996 KiB needed for OCR.
+The worker checks the full page-rounded memory need plus this reserve before
+allocating any block; allocation can still fail because the game or system uses memory
 concurrently.
 
 If OCR fails for lack of memory, the overlay shows the failed check's game RAM

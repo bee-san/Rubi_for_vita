@@ -404,7 +404,7 @@ static void repeated_jobs_and_reserve(void)
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_CAPTURE) == 0 && vjo_ledger_peak(&g_game_ledger, GL_CAPTURE) == 16384); /* 200x60: 12,000 B strip + 8 B and 3 bits per row */
     TEST_CHECK(vjo_ledger_peak(&g_game_ledger, GL_CAPTURE) <= VJO_BUDGET_GAME_CAPTURE);
     TEST_CHECK(vjo_ledger_pool_peak(&g_game_ledger, VJO_LEDGER_POOL_GAME) <= VJO_WORST_GAME_PERMANENT + VJO_WORST_GAME_JOB);
-    available = 4*1024*1024;
+    available = GAME_RESERVE;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM && allocations == 100);
     available = -1;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM && allocations == 100);
@@ -1306,7 +1306,7 @@ static void the_weights_blocks_hold_the_large_size_and_no_more(void)
     TEST_ASSERT(cascade_alloc(NULL, VJO_VOCR_MAX_BYTES) != NULL && cascade_live && cascade_block == block);
     TEST_CHECK(cascade_block == VJO_BUDGET_GAME_CASCADE);
     TEST_CHECK(!weights_release(NULL) && !cascade_release(NULL) && !weights_live && !cascade_live);
-    /* the reserve is kept: Large's block with exactly its 16 MiB left over fits, a page less does not */
+    /* the reserve is kept: Large's block with exactly 1 MiB left over fits, a page less does not */
     available = (int)(VJO_GAME_RESERVE_LARGE + block);
     TEST_ASSERT(weights_alloc(NULL, VJO_VOCR_MAX_BYTES) != NULL && weights_live);
     TEST_CHECK(!weights_release(NULL));
@@ -1950,6 +1950,38 @@ static uint32_t tier_need(const VjoGameOcrRequest *r, unsigned t, size_t extra)
                  vjo_vocr_capture_bytes(r->width, r->height), NULL, NULL, t);
     return o.need_workspace + o.need_weights + o.reserve_bytes;
 }
+/* Regression for あおかな's 3 MiB report: a real worker request reaches the
+ * largest fitting tier with the fixed 1 MiB margin. Blank captures make this
+ * independent of private model files; this checks budgeting, not inference. */
+static void three_mib_free_can_start_ocr(void)
+{
+    static const unsigned masks[] = {7u, 3u, 1u};
+    for (unsigned i = 0; i < sizeof(masks) / sizeof(masks[0]); i++) {
+        VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+        unsigned top = i == 0 ? 3u : i == 1 ? 2u : 1u;
+        r.tiers = masks[i];
+        snprintf(r.model, sizeof(r.model), "%s", tier_names[top - 1u]);
+        available = 3 * 1024 * 1024;
+        TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == VJO_OK);
+        TEST_CHECK(out.reserve_bytes == 1024u * 1024u);
+        TEST_CHECK(out.fallback == (top == 3u ? 1u : 0u));
+        TEST_CHECK(out.need_workspace + out.need_weights + out.reserve_bytes <= 3u * 1024u * 1024u);
+        TEST_CHECK(allocations == 1 && !memory_live && !capture_live);
+        TEST_CHECK(tier_opens[top == 3u ? 2u : top] == 1);
+        TEST_CHECK(!drop_resident());
+    }
+    /* The margin is still enforced at the boundary; an allocation that fails
+     * after a successful preflight still returns OOM and releases the job. */
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    r.tiers = 1u;
+    available = (int)tier_need(&r, 1, 0) - 4096;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM && !allocations && !capture_allocs);
+    r = setup(); r.tiers = 1u;
+    available = 3 * 1024 * 1024; alloc_failure = 1;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM && !out.text[0]);
+    TEST_CHECK(!memory_live && !capture_live && !weights_live);
+}
+
 static unsigned check_steps(const VjoGameOcrResult *out, const VjoGameOcrStep **steps)
 {
     unsigned n = 0;
@@ -1960,7 +1992,7 @@ static unsigned check_steps(const VjoGameOcrResult *out, const VjoGameOcrStep **
 static const uint32_t tier_reserve[] = {0, VJO_GAME_RESERVE_SMALL, VJO_GAME_RESERVE_NORMAL, VJO_GAME_RESERVE_LARGE};
 
 /* A request by tiers runs the largest of its tiers whose job fits the game's free
- * USER memory beside that tier's own reserve (16, 8, 4 MiB), else the next one
+ * USER memory beside the fixed 1 MiB reserve, else the next one
  * down, and refuses only when none fits. Each tier tried is a CHECK step (its tier
  * in the kind, refused or passed, what it needed, the own blocks it counted as
  * free); the result says how many tiers down the job went, with the largest's need.
@@ -2037,7 +2069,7 @@ static void tier_ladder_takes_the_largest_size_that_fits(void)
  * fits too: Small's is Normal's model, Normal's Large's, Large has none; a size the
  * request leaves out below its largest is no cascade. The kernel opens the tier
  * above the largest asked for (kernel/game_ocr.c tier_allowed). A job holding the
- * cascade's larger block keeps that tier's reserve. A request by name has
+ * cascade's larger block keeps the same 1 MiB reserve. A request by name has
  * VOCR4-W20 beside a smaller model, as before. No files needed. */
 static void tier_cascade_is_the_next_size_up(void)
 {
@@ -2068,7 +2100,7 @@ static void tier_cascade_is_the_next_size_up(void)
     TEST_CHECK(!cascade_of(&byname, &r, 0, 1)); /* not larger than the job's own */
     byname.m = large;
     TEST_CHECK(!cascade_of(&byname, &r, 0, 1)); /* VOCR4-W20 is smaller than the Large size's */
-    /* the reserve: the largest tier held */
+    /* the same fixed reserve, with or without a cascade */
     TEST_CHECK(check_reserve(1, NULL) == VJO_GAME_RESERVE_SMALL && check_reserve(1, normal) == VJO_GAME_RESERVE_NORMAL &&
                check_reserve(2, NULL) == VJO_GAME_RESERVE_NORMAL && check_reserve(2, large) == VJO_GAME_RESERVE_LARGE &&
                check_reserve(3, NULL) == VJO_GAME_RESERVE_LARGE && check_reserve(0, w20) == GAME_RESERVE &&
@@ -2140,10 +2172,9 @@ static void forced_fallback_by_tiers_runs_the_smallest(void)
  * a model file that cannot be opened ends the job with VJO_E_OCR_MODEL and says
  * which tier failed (out.fallback), for the Shell to leave it out. And a job that
  * went down three checks keeps its LM, refinement and normalisation steps. */
-/* API 22 with model tiers (#108's audit N2): the helpers' memory fit keeps the job's
- * tier reserve (16 MiB for Large), not the flat 4 MiB, and helpers never make a job
- * step down a tier: with room for Large and its helpers only at 4 MiB, Large runs
- * serially and leaves its 16 MiB free; with room at 16 MiB, it takes both helpers. */
+/* Helpers share the fixed 1 MiB guard and never make a job step down a tier:
+ * with room for Large alone it runs serially; with room for both helpers beside
+ * the reserve it takes them without changing the model. */
 static void helpers_keep_the_tier_reserve(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
@@ -2154,10 +2185,10 @@ static void helpers_keep_the_tier_reserve(void)
     r.speed = 2u | VJO_GAME_OCR_S_NOCACHE;
     const VjoVocrModel *w20 = vjo_vocr_model(VJO_VOCR_TIER3_NAME);
     const size_t block = vjo_vocr_job_bytes(w20->name, r.width, r.height);
-    const uint32_t large = tier_need(&r, 3, 0); /* Large's need with its 16 MiB reserve */
+    const uint32_t large = tier_need(&r, 3, 0); /* Large's need with the 1 MiB reserve */
     const size_t two = helpers_need(w20->name, block, 2);
-    TEST_ASSERT(two > 0 && VJO_GAME_RESERVE_LARGE - VJO_GAME_RESERVE_SMALL > two);
-    /* room for Large beside its 16 MiB, not for its helpers too (which a flat 4 MiB would allow) */
+    TEST_ASSERT(two > 4096u);
+    /* room for Large beside the 1 MiB reserve, not for its helpers too */
     TEST_CHECK(!drop_resident());
     available = (int)(live_bytes + large + 4096u);
     int rc = vjo_game_ocr_run_request(&r, &out);
@@ -2174,7 +2205,7 @@ static void helpers_keep_the_tier_reserve(void)
     par = NULL;
     for (unsigned i = 0; i < out.n_steps; i++) if (out.step[i].id == VJO_GSTEP_PAR) par = &out.step[i];
     TEST_CHECK(!par || par->arg == 0); /* no helper taken */
-    /* room for both helpers beside the 16 MiB too: both taken, the same tier */
+    /* room for both helpers beside the 1 MiB reserve too: both taken, the same tier */
     TEST_CHECK(!drop_resident());
     available = (int)(live_bytes + large + two + 4096u);
     rc = vjo_game_ocr_run_request(&r, &out);
@@ -2276,19 +2307,19 @@ static void tier_jobs_open_their_models_by_tier(void)
     open_failure = 0;
     TEST_CHECK(!memory_live && !capture_live && !model);
     /* the blocks a job allocates after its check keep its size's reserve: Large's check passes,
-     * then the game takes 6 MiB; the weights, read after the workspace, would leave less than
-     * Large's 16 MiB free, so they are refused (with the flat 4 MiB they would be taken) */
+     * then the game takes two pages; the weights, read after the workspace, would leave less than
+     * 1 MiB free, so they are refused */
     TEST_CHECK(!drop_resident());
     r.tiers = 4u;
     snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
     r.flags = 0;
     available = (int)tier_need(&r, 3, 0) + 4096;
-    drop_on_workspace = 6 * 1024 * 1024;
+    drop_on_workspace = 8192;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OOM && !weights_live && !out.text[0]);
     TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_LARGE && !memory_live && !capture_live);
     drop_on_workspace = 0;
-    /* a PSP game, Large chosen and only Small's job with the 1 MB LM fitting: three checks, and the
-     * step log still holds the LM, the refinement, the normalisation and both releases */
+    /* A PSP game with room only for bare Small: three checks, optional LM dropped,
+     * refinement and normalisation retained, both job blocks released. */
     TEST_CHECK(!drop_resident());
     r = setup();
     line();
@@ -2297,17 +2328,8 @@ static void tier_jobs_open_their_models_by_tier(void)
     snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
     r.flags = 2u << VJO_GAME_OCR_LM_SHIFT | VJO_GAME_OCR_REFINE_PSP << VJO_GAME_OCR_REFINE_SHIFT |
               15u << VJO_GAME_OCR_SETTLE_SHIFT;
-    {
-        VjoGameOcrResult o;
-        const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR_TIER1_NAME);
-        size_t refine = vjo_vocr_refine_bytes(r.width, r.height);
-        memset(&o, 0, sizeof(o));
-        o.free_user = INT32_MAX;
-        check_memory(&o, fl10, vjo_vocr_job_bytes(fl10->name, r.width, r.height) + refine,
-                     vjo_vocr_capture_bytes(r.width, r.height), vjo_vocr_lm_tier(2), NULL, 1);
-        available = (int)(o.need_workspace + o.need_weights + o.reserve_bytes);
-        TEST_ASSERT((uint32_t)available < tier_need(&r, 2, refine)); /* Normal alone does not fit */
-    }
+    available = (int)tier_need(&r, 1, vjo_vocr_refine_bytes(r.width, r.height));
+    TEST_ASSERT((uint32_t)available < tier_need(&r, 2, vjo_vocr_refine_bytes(r.width, r.height)));
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
     unsigned checks = 0, lm = 0, refine = 0, norm = 0, frees = 0;
     for (unsigned i = 0; i < out.n_steps; i++) {
@@ -2315,8 +2337,8 @@ static void tier_jobs_open_their_models_by_tier(void)
         checks += id == VJO_GSTEP_CHECK; lm += id == VJO_GSTEP_LM; refine += id == VJO_GSTEP_REFINE;
         norm += id == VJO_GSTEP_NORM; frees += id == VJO_GSTEP_FREE;
     }
-    TEST_CHECK(out.fallback == 2u && checks == 3 && lm == 1 && refine == 1 && frees == 2 && (norm == 1 || !out.text[0]));
-    TEST_CHECK(lm_res.lm == vjo_vocr_lm_tier(2) && resident.model == vjo_vocr_model(VJO_VOCR_TIER1_NAME));
+    TEST_CHECK(out.fallback == 2u && checks == 3 && lm == 0 && refine == 1 && frees == 2 && (norm == 1 || !out.text[0]));
+    TEST_CHECK(!lm_res.lm && resident.model == vjo_vocr_model(VJO_VOCR_TIER1_NAME));
     TEST_MSG("%u steps: %u checks, lm %u, refine %u, norm %u, frees %u; text '%s'", out.n_steps, checks, lm, refine,
              norm, frees, out.text);
     TEST_CHECK(!vjo_game_ocr_worker_stop() && !weights_live && !lm_live);
@@ -2400,8 +2422,8 @@ static void tier_release_counts_other_sizes_as_free(void)
 }
 
 /* ocr-first with model sizes: another size's resident weights stay while the job
- * fits beside them with its own size's reserve (8 MiB for Normal), not the flat
- * 4 MiB. Small's weights resident, a Normal job on a screen with a line: with
+ * fits beside them with the fixed 1 MiB reserve. Small's weights resident, a Normal
+ * job on a screen with a line: with
  * exactly Normal's need free beside Small's block, that block goes only when the
  * core reads Normal's weights, after the job's workspace; 4 KiB less, before it. */
 static void another_sizes_weights_stay_beside_its_reserve(void)
@@ -2479,9 +2501,8 @@ static void shared_model_no_cascade_and_the_job_s_own_tier(void)
 
 /* With the release weights: Large alone opens the model as Large's (tier 3, the
  * only one a Large-only request allows); Normal opens it as Normal's, with no
- * cascade and Normal's reserve, the block still resident; Large chosen with room
- * beside Normal's 8 MiB but not Large's 16 runs Normal, the same model; Small's
- * cascade reads it as Normal's tier. */
+ * cascade and the same reserve, the block still resident; Large chosen at Normal's
+ * memory edge still runs Large, the same model; Small's cascade reads it as Normal's tier. */
 static void shared_model_jobs_run_as_their_own_tier(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
@@ -2517,18 +2538,17 @@ static void shared_model_jobs_run_as_their_own_tier(void)
     TEST_CHECK(resident.model == shared && weight_allocations == 1); /* resident across the two sizes */
     TEST_CHECK(out.recognized >= 1 && !(out.line[0].flags & VJO_VOCR_LINE_CASCADE));
     TEST_CHECK(check_steps(&out, s) == 1 && VJO_GCHECK_TIER(s[0]->kind) == 2 && !(s[0]->kind & VJO_GCHECK_CASCADE));
-    /* Large chosen, room for the model beside Normal's 8 MiB, not beside Large's 16 MiB */
+    /* Shared models have identical needs: Large runs at the same memory edge as Normal. */
     TEST_CHECK(!drop_resident());
     memset(tier_opens, 0, sizeof(tier_opens));
     r.tiers = 7u;
     snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
     available = (int)tier_need(&r, 2, 0) + 4096;
-    TEST_ASSERT((uint32_t)available < tier_need(&r, 3, 0));
+    TEST_ASSERT(tier_need(&r, 2, 0) == tier_need(&r, 3, 0));
     TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
-    TEST_CHECK(out.rc == VJO_OK && out.fallback == 1 && out.reserve_bytes == VJO_GAME_RESERVE_NORMAL);
-    TEST_CHECK(tier_opens[2] >= 1 && !tier_opens[3] && resident.model == shared);
-    TEST_CHECK(check_steps(&out, s) == 2 && VJO_GCHECK_TIER(s[0]->kind) == 3 && s[0]->rc &&
-               VJO_GCHECK_TIER(s[1]->kind) == 2 && !s[1]->rc);
+    TEST_CHECK(out.rc == VJO_OK && !out.fallback && out.reserve_bytes == VJO_GAME_RESERVE_LARGE);
+    TEST_CHECK(tier_opens[3] >= 1 && !tier_opens[2] && resident.model == shared);
+    TEST_CHECK(check_steps(&out, s) == 1 && VJO_GCHECK_TIER(s[0]->kind) == 3 && !s[0]->rc);
     /* Small chosen: its cascade is the shared model, opened as Normal's; Normal's reserve */
     TEST_CHECK(!drop_resident());
     memset(tier_opens, 0, sizeof(tier_opens));
@@ -2555,6 +2575,7 @@ TEST_LIST = {
 };
 #else
 TEST_LIST = {
+    {"3 MiB free: Normal or Small can start; reserve and allocation failures still enforced", three_mib_free_can_start_ocr},
     {"a job without lines reads the weights, the LM and the cascade (ocr-first)", a_job_without_lines_reads_the_weights_lm_and_cascade},
     {"the TEAR step says when the retry began", the_tear_step_says_when_the_retry_began},
     {"100 real vocr jobs and game USER reserve", repeated_jobs_and_reserve},
@@ -2595,7 +2616,7 @@ TEST_LIST = {
     {"module_start reads the text source for the hooks (API 31)", module_start_reads_the_text_source},
     {"model tiers: the largest that fits beside its reserve, then the next one down, each check logged",
      tier_ladder_takes_the_largest_size_that_fits},
-    {"model tiers: the cascade is the next size up, the reserve the largest held, files by tier",
+    {"model tiers: the cascade is the next size up, a fixed reserve, files by tier",
      tier_cascade_is_the_next_size_up},
     {"model tiers: two sizes with one model open it as the job's own tier", two_sizes_with_one_model_open_as_the_job_s_own_tier},
     {"model tiers: the self-test's fallback stage runs the smallest", forced_fallback_by_tiers_runs_the_smallest},
