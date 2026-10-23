@@ -248,7 +248,7 @@
  * 396 B, the group lookup 152 B, libgcc's __aeabi_ldivmod 160 B, as linked), the char map's writer
  * (core/charmap_build.c and core/charmap.c's writer with the UTF-8 decoder, -Os, 1,772 B) and the job's calls (core/vocr_ocr.c
  * line_chars in finish_line, game_ocr/main.c write_char_map) take the debug build's text 140,656 -> 146,392 B and
- * the normal build's 131,804 -> 137,524 B; data/bss 32,888 -> 36,672 and 32,880 -> 36,664 B, within its pages (the
+ * the normal build's 131,804 -> 137,540 B; data/bss 32,888 -> 36,672 and 32,880 -> 36,664 B, within its pages (the
  * job's characters, VjoVocrChars: 256 characters, 16 lines and one line's box buffer, which the map's builder and a
  * line read without the LM borrow) [measured: the build log's module rows, both builds of main 2f85de0 and this
  * change, VitaSDK GCC 15.2.0 in vitasdk/vitasdk:2026.08]. No new block, thread or allocation; the game pool's
