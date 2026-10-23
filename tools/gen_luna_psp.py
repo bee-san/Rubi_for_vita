@@ -109,12 +109,12 @@ def render_inc():
         "#define VJO_LUNA_PSP_ID(prefix, number) ((uint32_t)VJO_LUNA_PSP_##prefix << VJO_LUNA_PSP_NUMBER_BITS | (number##u))",
         "",
         "/* The title IDs, sorted, packed */",
-        "static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] = {",
+        "static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] VJO_DATA_TABLE(luna_psp_ids) = {",
     ]
     for k in range(0, len(ids), IDS_PER_LINE):
         out.append("    " + " ".join(f"VJO_LUNA_PSP_ID({i[:4]}, {int(i[4:], 10)})," for i in ids[k:k + IDS_PER_LINE]))
     out += ["};", "", "/* Each title's number of sites, in the IDs' order */",
-            "static const uint8_t vjo_luna_psp_count[VJO_LUNA_PSP_TITLES] = {"]
+            "static const uint8_t vjo_luna_psp_count[VJO_LUNA_PSP_TITLES] VJO_DATA_TABLE(luna_psp_count) = {"]
     counts_list = [len(sites[i]) for i in ids]
     for k in range(0, len(counts_list), 24):
         out.append("    " + ", ".join(str(n) for n in counts_list[k:k + 24]) + ",")

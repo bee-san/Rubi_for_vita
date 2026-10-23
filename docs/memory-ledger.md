@@ -5,6 +5,17 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Adrenaline mapping follow-up (API 38)
+
+Combining probe v2 with current main initially needed 184,320 B of debug worker pages and failed
+the existing 180,224 B budget [measured: PR #278, Release run 39989456090]. The generated PSP title
+IDs (354 words, 1,416 B) and per-title site counts (354 B) now use `VJO_DATA_TABLE`, beside the
+addresses already there, to use space in the existing data pages. These are source table sizes,
+not console headroom measurements. Both variants must pass the existing module-page checks;
+no budget is raised. The probe's mapping checks use the worker's existing stack; no allocation
+or thread is added. The retry limit reuses Shell state and adds no permanent buffer. Console
+headroom and CPU cost remain unmeasured.
+
 ## history.csv's line source
 
 `history.csv`'s `line_source` column ([ocr-history](ocr-history.md#line-source)), measured with VitaSDK
