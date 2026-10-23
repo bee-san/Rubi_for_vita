@@ -10,7 +10,8 @@ its links adjusted to this folder.
 Contents:
 
 - [Rubi — local Japanese OCR](#rubi--local-japanese-ocr)
-- [Install](#install)
+- [Installation instructions](#install)
+  - [Alternative: install with the standalone VPK](#alternative-install-with-the-standalone-vpk)
   - [Advanced: install from a computer](#advanced-install-from-a-computer)
 - [Use in a game](#use-in-a-game)
   - [Drawing the region](#drawing-the-region)
@@ -102,12 +103,73 @@ still require hardware checks. See the
 [installation checkpoint](todo-20261011.md#v079-touchhighlight-installation-checkpoint)
 for the measured results and remaining hardware checks.
 
-## Install
+<a id="install"></a>
 
-You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card (ux0) before
-you copy the VPK to it: 61 MB for the VPK, 170 MB for VitaShell to unpack it and 12 MB for the models
-Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 61 MB back.
+## Installation instructions
+
+You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
+**Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
+
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.2/Rubi-0.9.2.zip)
+and extract it.
+
+### 1. Transfer modules
+
+Using VitaShell FTP, transfer the files from `Rubi-0.9.2/ur0/tai/` to `ur0:tai/` on the Vita:
+
+- `VitaJPOverlay_Kernel.skprx`
+- `VitaJPOverlay_OCR.suprx`
+- `VitaJPOverlay_Shell.suprx`
+
+### 2. Edit the taiHEN config
+
+Back up `ur0:tai/config.txt`, then add `ur0:tai/VitaJPOverlay_Kernel.skprx` to its `*KERNEL`
+section and `ur0:tai/VitaJPOverlay_Shell.suprx` to its `*main` section. The two sections can
+appear in either order; each plugin must be beneath its matching section. Keep your other entries.
+
+Example (`ur0:tai/config.txt`):
+
+```text
+*KERNEL
+ur0:tai/VitaJPOverlay_Kernel.skprx
+
+*main
+ur0:tai/VitaJPOverlay_Shell.suprx
+```
+
+If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the entries there instead.
+`VitaJPOverlay_OCR.suprx` needs no config entry; the kernel plugin loads it into enabled games.
+
+### 3. Transfer data files for the plugin
+
+Transfer `Rubi-0.9.2/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+as `ur0:data/VitaJPOverlay`.
+
+### 4. Transfer data files for OCR and the dictionary
+
+**This is a separate folder, not a duplicate of step 3.** Transfer
+`Rubi-0.9.2/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+as `ux0:data/VitaJPOverlay`.
+
+If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
+and keep your existing settings file when copying the data.
+
+### 5. Transfer and install the VPK / companion app
+
+Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
+top-right corner of its LiveArea page. Transfer `Rubi-0.9.2/Rubi.vpk` to the Vita and install
+(promote) it with VitaShell. Accept the installation and extended-permissions prompts.
+
+### 6. Reboot the Vita
+
+In VitaShell, press **START** and choose **Reboot**.
+
+Start a game and press **L + R** to open Rubi. Every game is ON by default.
+
+### Alternative: install with the standalone VPK
+
+The separate `Rubi-<version>.vpk` download includes the files that the ZIP method copies by hand.
+With that download, use the app's Install page as follows:
 
 1. Download `Rubi-<version>.vpk` from the
    [latest release](https://github.com/bee-san/Rubi_for_vita/releases/latest).
@@ -223,14 +285,10 @@ overlay files of its own, so its Install page names this installer);
 `install-vita.sh` predates all of this and registers the worker under `*ALL`; use the installer from
 `main` or a later release.
 
-For a manual installation, copy `ur0/` and `ux0/` of the zip to their matching Vita partitions and
-install `Rubi.vpk`. Back up your old overlay `config.ini` before copying the included
-one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL` and `ur0:tai/VitaJPOverlay_Shell.suprx`
-under `*main` in the active taiHEN config (`ux0:tai/config.txt` if it exists, else
-`ur0:tai/config.txt`). `ur0:tai/VitaJPOverlay_OCR.suprx` needs no line: the kernel plugin loads it
-into each game that is ON (from `ux0:tai/` only when `ur0:tai/` has none, so leave no older copy
-there). Never list it under `*ALL`. Disable old `VitaJPOverlay_Text.suprx` entries and old worker
-lines, then reboot. Keep unrelated plugins and configuration intact.
+For a manual installation, follow [Installation instructions](#install) above. If replacing an old
+install, disable old `VitaJPOverlay_Text.suprx` entries and old OCR worker lines. Never list
+`VitaJPOverlay_OCR.suprx` under `*ALL`; the kernel plugin loads it into enabled games. Keep unrelated
+plugins and configuration intact.
 
 ## Use in a game
 
