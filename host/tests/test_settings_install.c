@@ -64,6 +64,10 @@ static struct {
     int calls;
 } fault;
 static int unsafe_off, umount_rc, app_readonly, locked, lock_calls;
+/* the console of 2026-10-22 (payload_readable): the app folder's paths below payload/ux0/data and
+ * payload/ur0/data are refused with 0x80010016 (payload/ur0/tai is read), app0:'s unmount or not; app0:
+ * reads them until it is unmounted */
+static int payload_locked, app0_unmounted;
 /* The app's log.txt lines (settings/applog.c, #149), kept since the card was made (the oldest go when it
  * is full): a run's lines that the collect reads (#194: what became of the app's dictionary copy). */
 static char log_text[1 << 16];
@@ -88,10 +92,17 @@ static long long free_space[2] = {1LL << 34, 1LL << 34}; /* ux0, ur0 */
 static int matches(const char *p) { return fault.pattern && p && strstr(p, fault.pattern); }
 static int hit(int nth) { return nth && ++fault.calls == nth; }
 static int in_app(const char *p) { return p && !strncmp(p, "ux0:app/", 8); }
+static int refused_payload(const char *p)
+{
+    static const char ux0[] = VJO_PAYLOAD_DIR "/ux0/data/", ur0[] = VJO_PAYLOAD_DIR "/ur0/data/";
+    if (p && app0_unmounted && !strncmp(p, "app0:", 5)) return 1;
+    return payload_locked && p && (!strncmp(p, ux0, sizeof(ux0) - 1) || !strncmp(p, ur0, sizeof(ur0) - 1));
+}
 
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
     int writing = flags & (O_WRONLY | O_RDWR);
+    if (refused_payload(p)) return (int)0x80010016u;
     if (writing && app_readonly && in_app(p)) return (int)0x80010013u;
     if (writing && matches(p) && hit(fault.open_write)) return (int)(0x80010000u | ENOSPC);
     return native(open(p, flags, mode));
@@ -118,6 +129,7 @@ int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
 int sceIoGetstat(const char *p, SceIoStat *out)
 {
     struct stat st;
+    if (refused_payload(p)) return (int)0x80010016u;
     int rc = stat(p, &st);
     if (!rc) { out->st_mode = st.st_mode; out->st_size = st.st_size; }
     return native(rc);
@@ -180,7 +192,12 @@ int sceIoDevctl(const char *dev, unsigned int cmd, void *in, int inlen, void *ou
     info->free_size = free_space[!strncmp(dev, "ur0", 3)];
     return 0;
 }
-int sceAppMgrUmount(const char *mp) { (void)mp; return umount_rc; }
+int sceAppMgrUmount(const char *mp)
+{
+    (void)mp;
+    if (umount_rc >= 0) app0_unmounted = 1;
+    return umount_rc;
+}
 int sceShellUtilInitEvents(int unk) { (void)unk; return 0; }
 int sceShellUtilLock(int type) { (void)type; locked = 1; lock_calls++; return 0; }
 int sceShellUtilUnlock(int type) { (void)type; locked = 0; return 0; }
@@ -324,6 +341,7 @@ static void fresh_card(int with_ux0)
     TEST_ASSERT(chdir(card) == 0);
     memset(&fault, 0, sizeof(fault));
     unsafe_off = umount_rc = app_readonly = locked = lock_calls = 0;
+    payload_locked = app0_unmounted = 0;
     free_space[0] = free_space[1] = 1LL << 34;
     log_used = 0;
     log_text[0] = '\0';
@@ -2632,7 +2650,42 @@ static void a_repair_with_backups_has_no_update_note(void)
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && scan_now().state == VJO_INSTALL_INSTALLED);
 }
 
+/* The console refuses this app its folder's payload paths below data, before and after app0:'s unmount
+ * (2026-10-22: 0x80010016 for payload/ux0/data/VitaJPOverlay/config.ini; the install stopped at the
+ * dictionary after the unmount): the scan reads through app0:, and the install keeps app0: mounted and
+ * copies every file from it; the dictionary is copied, not moved, and stays in this app. */
+static void a_payload_the_folder_refuses_is_installed_from_app0(void)
+{
+    fresh_card(1);
+    TEST_ASSERT(symlink(VJO_PAYLOAD_DIR, "app0:payload") == 0); /* the card's app0: is a folder per name */
+    payload_locked = 1;
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_NOT_INSTALLED, "state %d: %s %s", s.state, s.title, s.reason);
+    TEST_CHECK(s.actions == VJO_INSTALL_ACT_INSTALL);
+    TEST_CHECK(s.config_ini == 2);
+    TEST_CHECK(s.dict_in_app);
+    VjoInstallResult r;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && r.rc == 0 && r.written);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])r.lines, r.count);
+    TEST_CHECK(!app0_unmounted);
+    TEST_CHECK(strstr(log_text, "app0: kept mounted (this app's folder is read through it)") != NULL);
+    TEST_CHECK(has_line(r.lines, r.count, "The dictionary was copied (it could not be moved): this app keeps its copy too"));
+    TEST_CHECK(installed_files(1));
+    char src[256];
+    vjo_payload_source(s.dict_index, src, sizeof(src));
+    TEST_CHECK(there(src)); /* copied, so still in this app */
+    char *ini = slurp(VJO_PREFERENCES_PATH_TEST, NULL);
+    TEST_CHECK(ini && !strcmp(ini, template_text));
+    char *cfg = slurp("ur0:tai/config.txt", NULL);
+    TEST_CHECK(cfg && strstr(cfg, "*KERNEL\n" K "\n") && strstr(cfg, "*main\n" S "\n"));
+    /* the page's scan afterwards: installed, app0: still mounted */
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INSTALLED, "state %d: %s %s", s.state, s.title, s.reason);
+    TEST_CHECK(unlink("app0:payload") == 0);
+}
+
 TEST_LIST = {
+    {"a_payload_the_folder_refuses_is_installed_from_app0", a_payload_the_folder_refuses_is_installed_from_app0},
     {"the_diff_at_its_line_bound", the_diff_at_its_line_bound},
     {"a_plan_stays_within_its_max", a_plan_stays_within_its_max},
     {"a_backup_too_large_to_rewrite_is_left", a_backup_too_large_to_rewrite_is_left},

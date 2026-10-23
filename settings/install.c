@@ -53,6 +53,21 @@ static int64_t size_of(const char *path)
     return sceIoGetstat(path, &st) < 0 || SCE_S_ISDIR(st.st_mode) ? -1 : (int64_t)st.st_size;
 }
 
+/* Payload file index as this app can read it (into out): its path in the app folder, else the same file
+ * through app0:. A console refused the folder's paths below payload/ux0/data and payload/ur0/data to this
+ * app, before and after app0:'s unmount (sceIoOpen and sceIoGetstat: 0x80010016; PCH-2000, 3.65,
+ * StorageMgr and rePatch, 2026-10-22), and read payload/manifest.txt and payload/ur0/tai; app0: read all
+ * 17. An install then keeps app0: mounted and copies from it (run_install). 0, or -1. */
+static int payload_readable(int index, char *out, size_t cap)
+{
+    if (vjo_payload_source(index, out, cap) < 0) return -1;
+    if (exists(out)) return 0;
+    char app0[PATH];
+    int n = snprintf(app0, sizeof(app0), "app0:%s", out + sizeof(VJO_PAYLOAD_APP_DIR));
+    if (n > 0 && (size_t)n < sizeof(app0) && (size_t)n < cap && exists(app0)) memcpy(out, app0, (size_t)n + 1);
+    return 0;
+}
+
 static void sync_path(const char *path)
 {
     char dev[5];
@@ -721,7 +736,7 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
     }
     if (rc == 2) {
         char src[PATH];
-        int t = vjo_payload_source(VJO_PAYLOAD_COUNT - 1, src, sizeof(src)) < 0 ? -1
+        int t = payload_readable(VJO_PAYLOAD_COUNT - 1, src, sizeof(src)) < 0 ? -1
               : read_all(src, template_text, sizeof(template_text));
         uint8_t sha[32];
         if (t >= 0) sha_text(template_text, (size_t)t, sha);
@@ -1003,7 +1018,7 @@ void vjo_install_scan(VjoInstallScan *s, const VjoInstallBuild *build)
         if (f->kind == VJO_PAYLOAD_MOVE) {
             s->dict_index = i;
             char src[PATH];
-            s->dict_in_app = vjo_payload_source(i, src, sizeof(src)) == 0 && exists(src);
+            s->dict_in_app = payload_readable(i, src, sizeof(src)) == 0 && exists(src);
         }
     }
 
@@ -1611,7 +1626,7 @@ static int install_files(Run *x, VjoInstallScan *s, int move_ok, char *dict_note
         int i = order[j];
         const VjoPayloadFile *f = &s->payload.file[i];
         const char *name = strrchr(f->dest, '/') + 1;
-        vjo_payload_source(i, src, sizeof(src));
+        payload_readable(i, src, sizeof(src));
         snprintf(fresh, sizeof(fresh), "%s.vjo-new", f->dest);
         /* a file that already has the payload's SHA-256 is not written again */
         step(x, "Checking %s", name);
@@ -1715,9 +1730,20 @@ static int run_install(Run *x, VjoInstallScan *s)
     VjoInstallResult *r = x->r;
     /* 1: the PS button and the power-off menu held, app0: unmounted (its folder is writable then), every
      * folder probed: nothing of the overlay is written before all of them pass */
+    /* A payload file this app reads only through app0: (payload_readable: the folder's paths stay refused
+     * after the unmount too): app0: stays mounted, every file is copied from it, and the dictionary is copied,
+     * not moved, so it stays in this app (its folder cannot be written while app0: is mounted). */
+    char via[PATH];
+    int through_app0 = 0;
+    for (int i = 0; i < VJO_PAYLOAD_COUNT; i++)
+        through_app0 |= payload_readable(i, via, sizeof(via)) == 0 && !strncmp(via, "app0:", 5);
     lock(1);
-    int umount = sceAppMgrUmount("app0:");
-    vjo_log("install: %s, app0: unmount 0x%08X", s->title, (unsigned)umount);
+    if (through_app0) {
+        vjo_log("install: %s, app0: kept mounted (this app's folder is read through it)", s->title);
+    } else {
+        int umount = sceAppMgrUmount("app0:");
+        vjo_log("install: %s, app0: unmount 0x%08X", s->title, (unsigned)umount);
+    }
     static const char *const dirs[] = {"ur0:tai", "ur0:data/VitaJPOverlay", "ux0:data/VitaJPOverlay",
                                        "ux0:data/VitaJPOverlay/ocr", "ux0:data/VitaJPOverlay/dictionaries"};
     step(x, "Checking that every folder can be written", NULL);
@@ -1730,7 +1756,7 @@ static int run_install(Run *x, VjoInstallScan *s)
     int stale_copies = exists("ux0:tai/VitaJPOverlay_Kernel.skprx") || exists("ux0:tai/VitaJPOverlay_Shell.suprx") ||
                        exists("ux0:tai/VitaJPOverlay_OCR.suprx");
     if ((s->cfg[0].exists || stale_copies) && probe_dir("ux0:tai") < 0) { lock(0); return stop(x, "%s cannot be written.", "ux0:tai"); }
-    int move_ok = probe_move("ux0:data/VitaJPOverlay/dictionaries") == 0;
+    int move_ok = !through_app0 && probe_move("ux0:data/VitaJPOverlay/dictionaries") == 0;
     vjo_log("install: a file %s be moved out of this app", move_ok ? "can" : "cannot");
     /* room for the copies and their temporary files */
     uint64_t need[2] = {ROOM, ROOM}; /* ux0, ur0 */
