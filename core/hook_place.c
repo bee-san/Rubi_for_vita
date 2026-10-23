@@ -147,8 +147,10 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
  * filter: Luna's entry at the same address post-processes the text), which the placement check refuses
  * as no entry: it is inside a function (0x81070E3A's loop, 0x810745C8 in the game). Its 8 patched bytes
  * are ADD.W lr, r9, r7, LSL #2; ADD.W lr, lr, #0x1620 (no PC use), and no branch in segment 0 targets
- * them (the loop's BLT goes to +0x745D0, past them): checked on the decrypted eboot, 2026-10-23. Proven in
- * Vita3K by Luna only, not yet on a console. */
+ * them (the loop's BLT goes to +0x745D0, past them): checked on the decrypted eboot, 2026-10-23. Proven on a
+ * console (PCH-2000, 3.65, 2026-10-23): hooked ("1 table sites"), its stream held text, it answered the jobs
+ * (core/hook_select.h vjo_hook_select_no_memory: "game vocr source: hook 1, flags 0x98", rc 0), the overlay
+ * showed the game's line (checked by eye against the screen), and the game did not crash. */
 static const VjoPlaceVerified verified[] = {
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
      {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}},
