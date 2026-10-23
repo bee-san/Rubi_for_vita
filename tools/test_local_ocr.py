@@ -3,7 +3,7 @@
 
 --backend ncnn (default): PP-OCRv5 mobile, model directory from prepare_ocr.py.
 --backend vocr: vita-vn-ocr, a directory holding the default model size's recognizer
-(tools/model_tiers.json's Normal: VOCR5_N_w8.vocr; tools/prepare_ocr.py --backend vocr).
+(tools/model_tiers.json's Normal: VOCR5_N_w8g.vocr; tools/prepare_ocr.py --backend vocr).
 """
 import argparse
 from pathlib import Path

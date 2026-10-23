@@ -47,19 +47,21 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #else
 static const VjoVocrModel models[] = {
     /* VOCR5 (vita-vn-ocr eval/vocr5_protocol.json, v0.3.0): the Small, Normal (the
-     * default) and Large tiers, each its own shape. */
+     * default) and Large tiers, each its own shape; API 39: their head-gated blobs
+     * (vita-vn-ocr #117, v0.3.5-headgate.1), whose arena holds the gate's frame indices
+     * (+48 B: vocr_arena_bytes with VOCR_HEAD_GATE_ON; without it the arena is v0.3.0's). */
     {VJO_VOCR5_S_NAME, VJO_VOCR5_S_BYTES,
-     {0xf1,0x75,0xbf,0xcb,0x8c,0xec,0x65,0xd6,0x9e,0x85,0xdd,0x5f,0x2c,0xf7,0x07,0xc9,
-      0xa7,0x11,0xad,0xa7,0x20,0x3c,0x0d,0x10,0x99,0xcd,0x2d,0x01,0x42,0x97,0x8b,0x8d},
-     124832, VJO_VOCR_FINDER},
+     {0x76,0xa1,0xbc,0x5d,0xe5,0xcd,0x04,0x19,0xa7,0xed,0xad,0x31,0xbc,0x19,0x8a,0xf8,
+      0x01,0x6b,0xda,0x55,0x92,0xa7,0xe5,0x95,0xde,0x75,0x69,0x76,0x71,0xd3,0xe9,0x28},
+     124880, VJO_VOCR_FINDER},
     {VJO_VOCR5_N_NAME, VJO_VOCR5_N_BYTES,
-     {0x20,0xbe,0x17,0x9d,0xef,0x80,0x33,0x17,0x14,0x35,0xba,0x62,0x38,0x86,0x57,0xb3,
-      0xd3,0xc9,0x32,0xb3,0x65,0x09,0x37,0x37,0x94,0x8c,0x63,0x6e,0x02,0x5e,0x3b,0xdc},
-     182944, VJO_VOCR_FINDER},
+     {0x18,0xdd,0xf9,0x3f,0x70,0x65,0xb1,0xcb,0x9d,0x00,0xbd,0x46,0xaf,0xe3,0x89,0xa6,
+      0x44,0xbe,0x15,0x58,0x6c,0x79,0x42,0xfb,0x14,0x6b,0x9b,0xaf,0x13,0x9a,0xd5,0x10},
+     182992, VJO_VOCR_FINDER},
     {VJO_VOCR5_L_NAME, VJO_VOCR5_L_BYTES,
-     {0x50,0x41,0x3b,0x37,0xdb,0xd8,0x5b,0x2a,0xcb,0x09,0x08,0x96,0x7b,0xde,0xaf,0x7c,
-      0xa6,0x78,0x03,0x85,0x0e,0x06,0x27,0xa7,0xb7,0xcc,0x3d,0x27,0x4e,0xdc,0x0b,0xa3},
-     261024, VJO_VOCR_FINDER},
+     {0xee,0x76,0xe9,0x35,0x12,0xd0,0x2d,0xe3,0xa4,0xf9,0xaf,0xda,0x82,0xdd,0xf8,0xd5,
+      0x0b,0x9f,0xfd,0xee,0xf4,0xbc,0x15,0x69,0x1e,0x21,0x16,0x4f,0x0c,0x7a,0x97,0x00},
+     261072, VJO_VOCR_FINDER},
     /* VOCR3 (vita-vn-ocr #67): H15's and FL10's shapes retrained, the same sizes and
      * arenas; the Normal and Small tiers before VOCR5, now accepted by name only. */
     {VJO_VOCR3_H15_NAME, VJO_VOCR_H15_BYTES,
@@ -1013,11 +1015,20 @@ static const unsigned char *line_pixels(Stream *s, const VocrLine *ln, size_t *s
     }
 }
 
+/* The recognizer's options of a job: W8I, and with VjoVocrPolicy.head_gate the head gate (vita-vn-ocr #117,
+ * docs/vita-vn-ocr.md "Head gate") when the model's blob has one; a blob without one reads as before. */
+static void run_opts(vocr_opts *opts, const vocr_model *model, int head_gate)
+{
+    memset(opts, 0, sizeof(*opts));
+    opts->mode = VOCR_MODE_W8I;
+    if (head_gate && vocr_has_gate(model)) opts->head_gate = VOCR_HEAD_GATE_ON;
+}
+
 /* The weights resident and verified, the runtime's model parsed and its arena
  * planned in the scratch (the finder is done with it). */
 static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel *mi, const VjoGreySource *im,
                       VjoVocrResident *res, unsigned char *ws, const Layout *l, VjoVocrStats *st,
-                      VjoVocrCache *cache)
+                      VjoVocrCache *cache, int head_gate)
 {
     vocr_model *model = (vocr_model *)(void *)(ws + l->structs_off);
     vocr_ctx *ctx = (vocr_ctx *)(void *)(ws + l->structs_off + ALIGN16(sizeof(vocr_model)));
@@ -1030,8 +1041,7 @@ static int load_model(const VjoPlatform *p, const char *dir, const VjoVocrModel 
     if (st->model_loaded && cache) memset(cache, 0, sizeof(*cache));
     /* Verified bytes the runtime refuses would fail every job: release them. */
     if (vocr_load(model, res->data, mi->bytes) != VOCR_OK) return drop_with(res, VJO_E_OCR_MODEL);
-    memset(&opts, 0, sizeof(opts));
-    opts.mode = VOCR_MODE_W8I;
+    run_opts(&opts, model, head_gate);
     {
         size_t need = vocr_arena_bytes(model, &opts);
         if (!need || need > l->scratch) return drop_with(res, VJO_E_OCR_MODEL);
@@ -1100,8 +1110,7 @@ static int cascade_setup(const VjoPlatform *p, const char *dir, const VjoGreySou
         rc = drop_with(pol->cascade_res, VJO_E_OCR_MODEL); /* verified bytes the runtime refuses: every job would */
         return rc == VJO_E_OCR_UNAVAILABLE ? rc : (st->cascade_rc = rc);
     }
-    memset(&opts, 0, sizeof(opts));
-    opts.mode = VOCR_MODE_W8I;
+    run_opts(&opts, model, pol->head_gate);
     need = vocr_arena_bytes(model, &opts);
     if (!need || need > ALIGN16(c->arena_bytes)) {
         rc = drop_with(pol->cascade_res, VJO_E_OCR_MODEL);
@@ -1288,6 +1297,7 @@ typedef struct {
     const char *dir;
     const VjoVocrModel *mi;
     const vocr_model *model;    /* the job's parsed model (its slots share it) */
+    vocr_ctx *ctx;              /* the job's own context (slot 0's): free while a line is finished */
     const VjoGreySource *im;
     const VjoVocrPolicy *pol;
     const Layout *l;
@@ -1365,12 +1375,33 @@ static uint32_t len_finished_after(const Lines *L)
 
 /* vita-vn-ocr #109's counter re-decode of a line's top-K (VjoVocrPolicy.counter_tau, counter_open), then the
  * edited extras' greedy text into t (cap bytes): 0 nothing edited (t as it was), 1 edited but the text does
- * not fit (t holds part of it), 2 edited and t holds it. */
-static int counter_redecode(const VjoVocrPolicy *pol, const vocr_model *m, vocr_extra *ex, char *t, size_t cap)
+ * not fit (t holds part of it), 2 edited and t holds it. *contexts (optional): the counter contexts it saw. */
+static int counter_redecode(const VjoVocrPolicy *pol, const vocr_model *m, vocr_extra *ex, char *t, size_t cap,
+                            unsigned *contexts)
 {
     const vocr_post_opts po = {pol->counter_tau, pol->counter_open};
-    if (!(po.tau || po.open) || vocr_post_redecode(m, ex, &po, NULL) <= 0) return 0;
+    vocr_post_stats ps;
+    int n;
+    if (contexts) *contexts = 0;
+    if (!(po.tau || po.open)) return 0;
+    n = vocr_post_redecode(m, ex, &po, &ps);
+    if (contexts && n >= 0) *contexts = ps.contexts;
+    if (n <= 0) return 0;
     return vocr_post_greedy(m, ex, t, cap, NULL) == VOCR_OK ? 2 : 1;
+}
+
+/* vita-vn-ocr #117 (docs/vita-vn-ocr.md "Head gate"): the counter re-decode reads the top-K of the blank frames
+ * beside a numeral it suspects, which a frame the head gate skipped does not offer (its top-K is the blank
+ * alone). A line it skipped frames of whose re-decode finds a counter context is read again without the gate
+ * (vocr_extra.ungated), by ctx on img, into ex and t (cap bytes): VOCR_OK, VOCR_E_TEXT (ex holds the
+ * re-read, t part of its text), VOCR_E_CANCELLED, or another error of vocr_run. */
+static int reread_ungated(vocr_ctx *ctx, const vocr_image *img, vocr_extra *ex, char *t, size_t cap)
+{
+    int rc;
+    ex->ungated = 1;
+    rc = vocr_run(ctx, img, t, cap, ex);
+    ex->ungated = 0;
+    return rc;
 }
 
 /* A recognized line's turn in the text, exactly as the serial job finishes a line
@@ -1408,8 +1439,27 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
         }
         /* The counter re-decode edits the extras' top-1 classes, which the LM then reads; the line's text
          * becomes their greedy text (the recognizer's own stays in greedy, for the log). */
-        if (gn && greedy != text + start &&
-            (counted = counter_redecode(pol, L->model, ex, text + start, cap - start)) != 0) {
+        if (gn && greedy != text + start) {
+            unsigned contexts = 0;
+            counted = counter_redecode(pol, L->model, ex, text + start, cap - start, &contexts);
+            if (contexts && ex->gated && L->ctx) { /* #117: the head gate skipped frames: read it again without */
+                rc = reread_ungated(L->ctx, img, ex, text + start, cap - start);
+                if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
+                if (rc == VOCR_OK) {
+                    gn = strlen(text + start); /* the re-read's: a class a frame, always shorter than LM_LINE_TEXT */
+                    if (gn > need) need = gn;
+                    memcpy(greedy, text + start, gn + 1);
+                    flags = line_conf(ex, text + start);
+                    st->head_rereads++;
+                    counted = gn ? counter_redecode(pol, L->model, ex, text + start, cap - start, NULL) : 0;
+                } else { /* its text does not fit (or it failed): the gated reading stands, without the re-decode */
+                    memcpy(text + start, greedy, gn + 1);
+                    counted = 0;
+                    if (rc != VOCR_E_TEXT) return run_error(rc);
+                }
+            }
+        }
+        if (counted) {
             if (counted == 2) {
                 size_t cn = strlen(text + start);
                 st->counter_lines++;
@@ -1479,10 +1529,22 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
                     rc = vocr_run((vocr_ctx *)(void *)(L->c0 + L->cx.ctx), img, cg, LM_LINE_TEXT, &e2);
                     if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
                     if (rc == VOCR_OK) st->cascade_frames += e2.frames;
-                    /* the same re-decode on the larger model's reading (its greedy text always fits) */
-                    if (rc == VOCR_OK && cg[0])
-                        counter_redecode(pol, (const vocr_model *)(void *)(L->c0 + L->cx.model), &e2, cg,
-                                         LM_LINE_TEXT);
+                    /* the same re-decode on the larger model's reading (its greedy text always fits), and
+                     * the same re-read without the head gate when it finds a counter context (#117) */
+                    if (rc == VOCR_OK && cg[0]) {
+                        const vocr_model *cm = (const vocr_model *)(void *)(L->c0 + L->cx.model);
+                        unsigned contexts = 0;
+                        counter_redecode(pol, cm, &e2, cg, LM_LINE_TEXT, &contexts);
+                        if (contexts && e2.gated) {
+                            rc = reread_ungated((vocr_ctx *)(void *)(L->c0 + L->cx.ctx), img, &e2, cg, LM_LINE_TEXT);
+                            if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
+                            if (rc == VOCR_OK) {
+                                st->head_rereads++;
+                                if (cg[0]) counter_redecode(pol, cm, &e2, cg, LM_LINE_TEXT, NULL);
+                            }
+                        }
+                        st->head_gated += e2.gated;
+                    }
                     if (rc == VOCR_OK && L->lm_on && cg[0]) {
                         rc = vocr_lm_decode((vocr_lm_ctx *)(void *)(L->c0 + L->cx.lm_ctx), &e2,
                                             (char *)(L->c0 + L->cx.text), LM_LINE_TEXT, NULL);
@@ -1517,6 +1579,7 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
     }
     if (strcmp(greedy, text + start)) flags |= VJO_VOCR_LINE_CHANGED;
     st->frames += ex->frames;
+    st->head_gated += ex->gated;
     line_stat(L, e, ex->frames, flags, line_us, cpu_us, slot, 0);
     if (pol->line) {
         VjoVocrLineInfo info = {e->index, e->x, e->y, e->w, e->h, e->dark, e->pixels, e->stride, e->ink, 0,
@@ -1681,13 +1744,12 @@ static void stop_all(Lines *L)
 /* A helper's context over the shared model, planned in its own arena of `avail`
  * bytes (the pinned arena, S_ARENA): a plan that needs more is refused, as
  * load_model refuses it for the job's own context. */
-static int slot_init(Slot *sl, const vocr_model *model, size_t avail)
+static int slot_init(Slot *sl, const vocr_model *model, size_t avail, int head_gate)
 {
     vocr_opts opts;
     size_t need;
     if (sl->inited) return VJO_OK;
-    memset(&opts, 0, sizeof(opts));
-    opts.mode = VOCR_MODE_W8I;
+    run_opts(&opts, model, head_gate);
     need = vocr_arena_bytes(model, &opts);
     if (!need || need > avail) return VJO_E_OCR_MODEL;
     if (vocr_init(sl->ctx, model, &opts, sl->arena, avail) != VOCR_OK) return VJO_E_OCR_INFERENCE;
@@ -1768,6 +1830,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     st->cached = st->dispatched = st->run_failures = 0;
     st->gate_ran = st->gate_stopped = st->gate_rows = 0;
     st->counter_lines = 0;
+    st->head_gated = st->head_rereads = 0;
     st->gate_score = 0;
     st->gate_us = 0;
     if (l->gate_bytes) st->gate_rc = 0;
@@ -1827,6 +1890,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     L->dir = dir;
     L->mi = mi;
     L->model = model;
+    L->ctx = ctx;
     L->im = im;
     L->pol = pol;
     L->l = l;
@@ -1881,7 +1945,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     /* With the blank-line check, the weights are read at the first line that
      * is not skipped: a box of blank lines opens no model file. */
     if (!pol->blank) {
-        rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache);
+        rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache, pol->head_gate);
         if (rc) return rc;
         loaded = 1;
         if (l->lm && pol->lm) {
@@ -1987,7 +2051,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             }
             if (!loaded) {
                 uint32_t r0 = clock_us(p);
-                rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache);
+                rc = load_model(p, dir, mi, im, res, ws, l, st, pol->cache, pol->head_gate);
                 if (rc) goto fail;
                 loaded = 1;
                 if (l->lm && pol->lm) {
@@ -2029,7 +2093,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             }
             if (sl) {
                 const unsigned k2 = (unsigned)(sl - L->slot);
-                if ((rc = slot_init(sl, model, S_ARENA(mi))) != VJO_OK) goto fail;
+                if ((rc = slot_init(sl, model, S_ARENA(mi), pol->head_gate)) != VJO_OK) goto fail;
                 slot_line(sl, pixels, stride, ln);
                 line_extra(&sl->extra, slot_cancel, sl, l->lm, sl->topk_logit, sl->topk_class, sl->blank);
                 sl->busy = 1;

@@ -41,7 +41,7 @@
 extern "C" {
 #endif
 
-#define VJO_VOCR_DEFAULT_MODEL "VOCR5_N_w8.vocr" /* the Normal tier's, VJO_VOCR_TIER2_NAME (include/vjo_vocr_sizes.h) */
+#define VJO_VOCR_DEFAULT_MODEL "VOCR5_N_w8g.vocr" /* the Normal tier's, VJO_VOCR_TIER2_NAME (include/vjo_vocr_sizes.h) */
 
 /* The capture block: one strip of at most this many bytes of grey rows (the
  * strip is region width x VJO_VOCR_STRIP_ROWS(width) rows), plus per region
@@ -322,6 +322,10 @@ typedef struct {
     uint32_t gate_us;        /* its time: its share of the first pass, and its decision */
     /* The counter re-decode (VjoVocrPolicy.counter_tau, counter_open). */
     unsigned counter_lines;  /* lines whose numeral or opening bracket it put back (the job's model) */
+    /* The head gate (VjoVocrPolicy.head_gate, API 39). */
+    unsigned head_gated;     /* CTC frames whose output head it skipped, every reading that stands (the
+                                cascade's too): of frames + cascade_frames */
+    unsigned head_rereads;   /* lines read again without it for the counter re-decode (the cascade's too) */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
@@ -520,6 +524,13 @@ typedef struct {
      * development choice). 0 and 0: off, exactly as before. The greedy text (VjoVocrPolicy.raw) stays the
      * recognizer's own. */
     int counter_tau, counter_open;
+    /* API 39: the head gate (vita-vn-ocr #117, docs/vita-vn-ocr.md "Head gate"): a model whose blob carries one
+     * (the VOCR5 models' `_w8g` blobs) skips its output head on the CTC frames the gate calls blank, in every
+     * reading of the job (its model's, its helpers', the cascade's). A frame it skips reads as the blank; the
+     * others' logits, top-K and confidence are as without it. A line it skipped frames of whose counter re-decode
+     * finds a counter context is read again without it (the re-decode reads blank frames' top-K). A model
+     * without one reads as before. 0: off, exactly as before. */
+    int head_gate;
 } VjoVocrPolicy;
 #define VJO_VOCR_COUNTER_TAU 6000
 #define VJO_VOCR_COUNTER_OPEN 4000

@@ -1067,11 +1067,15 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x80; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = 0x20000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 36: but bit 16) */
+    r.speed = 0x80000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 39: but bit 18) */
     TEST_CHECK(VJO_GAME_OCR_S_TRIM == 0x40u); /* bit 5 is draft #228's scan screen (VJO_GAME_OCR_S_SPOT) */
     /* API 36: bit 16; bit 7 is draft #245's PSP probe, bits 8-15 draft #226's frame pacing */
     TEST_CHECK(VJO_GAME_OCR_S_DROP_BORDERS == 0x10000u);
     TEST_CHECK(VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_DROP_BORDERS); /* an OCR job's: the submit below carries it */
-    r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate, (API 36) the border rule: known */
+    TEST_CHECK(VJO_GAME_OCR_S_HEAD_GATE == 0x40000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_HEAD_GATE)); /* API 39 */
+    TEST_CHECK(!(VJO_GAME_OCR_S_HEAD_GATE & VJO_GAME_OCR_S_SHOT_ALL)); /* an OCR job's, never a shot's */
+    r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate, (API 36) the border rule, (API 39) the
+                                   * head gate: known */
     uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;

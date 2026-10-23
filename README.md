@@ -355,7 +355,7 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
 
 - Based on [Dartv/vita-jp-overlay](https://github.com/Dartv/vita-jp-overlay).
 - **OCR:** VOCR, from [bee-san/vita-vn-ocr](https://github.com/bee-san/vita-vn-ocr) (GPL-3.0). Its
-  VOCR5 recognizers, the three model sizes, were trained in part on NVIDIA's
+  VOCR5 recognizers, the three model sizes (with their head gates, v0.3.5-headgate.1), were trained in part on NVIDIA's
   OCR-Synthetic-Multilingual-v1 (CC BY 4.0) and on fonts and text that are free for non-commercial
   use only, so their weights are for non-commercial use only: their attribution and terms ship
   beside them as `ocr/MODEL-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#models)). Its character

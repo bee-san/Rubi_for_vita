@@ -4,12 +4,12 @@
 No ONNX/Paddle/Python runtime is needed on the Vita. Run without --ncnn-source
 to prepare the model directory to copy to ux0:data/VitaJPOverlay/ocr.
 
---backend vocr fetches a vita-vn-ocr recognizer (default VOCR5_N_w8.vocr, the Normal
-model size's, from the bee-san/vita-vn-ocr v0.3.0 release; VOCR3_H15_w8.vocr and
+--backend vocr fetches a vita-vn-ocr recognizer (default VOCR5_N_w8g.vocr, the Normal
+model size's, from the bee-san/vita-vn-ocr v0.3.5-headgate.1 pre-release; VOCR3_H15_w8.vocr and
 VOCR3_FL10_w8.vocr from the v0.2.5-vocr3.1 pre-release, VOCR4_W20_w8.vocr from
 v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
---backend vocr-tiers the three model sizes' (tools/model_tiers.json: VOCR5_S_w8.vocr,
-VOCR5_N_w8.vocr, VOCR5_L_w8.vocr) and their release's attribution, v0.3.0's ATTRIBUTION.md
+--backend vocr-tiers the three model sizes' (tools/model_tiers.json: VOCR5_S_w8g.vocr,
+VOCR5_N_w8g.vocr, VOCR5_L_w8g.vocr) and their release's attribution, v0.3.5-headgate.1's ATTRIBUTION.md
 kept as MODEL-ATTRIBUTION.md, and the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
 with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which a package ships. Each file comes from the
 release's public download; only when that fails (a draft release) is an authenticated
@@ -99,28 +99,30 @@ VOCR4_ASSETS = {
 VOCR_CASCADE_MODEL = 'VOCR4_W20_w8.vocr'  # the cascade's model of a request by name (host tools)
 
 # VOCR5 (vita-vn-ocr eval/vocr5_protocol.json): the three model sizes, Small, Normal (the default)
-# and Large, each its own shape; release v0.3.0, whose SHA256SUMS lists these hashes.
-VOCR5_TAG = 'v0.3.0'
+# and Large, each its own shape; release v0.3.0's recognizers with their head gate (vita-vn-ocr #117,
+# docs/headgate.md: v0.3.0's bytes and a 1,792 B gate section), pre-release v0.3.5-headgate.1, whose
+# SHA256SUMS lists these hashes.
+VOCR5_TAG = 'v0.3.5-headgate.1'
 VOCR5_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5_TAG}/'
 VOCR5_ASSETS = {
-    'VOCR5_S_w8.vocr': (VOCR5_BASE + 'VOCR5_S_w8.vocr', 819792,
-        'f175bfcb8cec65d69e85dd5f2cf707c9a711ada7203c0d1099cd2d0142978b8d'),
-    'VOCR5_N_w8.vocr': (VOCR5_BASE + 'VOCR5_N_w8.vocr', 1185632,
-        '20be179def8033171435ba62388657b3d3c932b365093737948c636e025e3bdc'),
-    'VOCR5_L_w8.vocr': (VOCR5_BASE + 'VOCR5_L_w8.vocr', 2473696,
-        '50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3'),
+    'VOCR5_S_w8g.vocr': (VOCR5_BASE + 'VOCR5_S_w8g.vocr', 821584,
+        '76a1bc5de5cd0419a7edad31bc198af8016bda5592a7e595de75697671d3e928'),
+    'VOCR5_N_w8g.vocr': (VOCR5_BASE + 'VOCR5_N_w8g.vocr', 1187424,
+        '18ddf93f7065b1cb9d00bd46afe389a644be15586c7942fb146b9baf139ad510'),
+    'VOCR5_L_w8g.vocr': (VOCR5_BASE + 'VOCR5_L_w8g.vocr', 2475488,
+        'ee76e93512d02de3a4f9afda82ddf8d50b9ffdeef4bc15691e21164f0c7a9700'),
 }
-VOCR_DEFAULT_MODEL = 'VOCR5_N_w8.vocr'  # the default model size's (Normal's), tools/model_tiers.json
-# The model sizes' attribution: v0.3.0's ATTRIBUTION.md (in its SHA256SUMS), the licences of what the
-# VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
+VOCR_DEFAULT_MODEL = 'VOCR5_N_w8g.vocr'  # the default model size's (Normal's), tools/model_tiers.json
+# The model sizes' attribution: v0.3.5-headgate.1's ATTRIBUTION.md (in its SHA256SUMS; v0.3.0's, which it
+# extends with the head gate's fit), the licences of what the VOCR5 recognizers were trained on (NVIDIA OCR-Synthetic-Multilingual-v1, CC BY 4.0, among them) and
 # their terms (non-commercial use only). The package ships it beside the weights as
 # ocr/MODEL-ATTRIBUTION.md, and it is kept under that name in a models directory too: the LMs' release
 # names its own attribution ATTRIBUTION.md as well (VOCR_LM_ATTRIBUTION).
 VOCR_MODEL_ATTRIBUTION = 'MODEL-ATTRIBUTION.md'
 VOCR_MODEL_ATTRIBUTION_TAG = VOCR5_TAG
 VOCR_MODEL_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
-VOCR_MODEL_ATTRIBUTION_PIN = {VOCR_MODEL_ATTRIBUTION: (VOCR5_BASE + VOCR_MODEL_ATTRIBUTION_ASSET, 3158,
-    'db307ca08f4282a235173a77d0ef0f9c4c918dc43ac17fa289d27b831bf1c194')}
+VOCR_MODEL_ATTRIBUTION_PIN = {VOCR_MODEL_ATTRIBUTION: (VOCR5_BASE + VOCR_MODEL_ATTRIBUTION_ASSET, 3648,
+    '971f0422be26ecead1a7e672e15e516e5315c97a707a96db46a38ecb28f0e05f')}
 
 # The text-presence gate (vita-vn-ocr #100, docs/textgate.md): 1,540 B of int8 weights in front of the
 # line finder (ocr_text_gate, off by default), pre-release v0.3.2-textgate.1, whose SHA256SUMS lists these

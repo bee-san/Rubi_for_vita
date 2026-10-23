@@ -21,20 +21,23 @@
 /* VOCR5's three shapes (vita-vn-ocr eval/vocr5_protocol.json "estimates": one core,
  * vita-vn-ocr #85's runtime without credit for its prefetch, 333 MHz, a box of
  * 240 frames + 0.1 s for the finder, calibrated to VOCR3-H15's measured console
- * rate). */
-#define VOCR5_S_BOX_MS 631u
-#define VOCR5_N_BOX_MS 921u
-#define VOCR5_L_BOX_MS 2077u
+ * rate: 631 / 921 / 2,077 ms), with the head gate on (API 39, the default; vita-vn-ocr
+ * docs/headgate.md: its estimated saving per such box, -122 / -137 / -163 ms, by the
+ * same method) subtracted. Estimates, not console measurements. */
+#define VOCR5_S_BOX_MS 509u
+#define VOCR5_N_BOX_MS 784u
+#define VOCR5_L_BOX_MS 1914u
 #define VOCR5_S_JOB_BYTES 1019904u  /* 823,296 + 131,072 + 65,536 */
 #define VOCR5_N_JOB_BYTES 1441792u  /* 1,187,840 + 188,416 + 65,536 */
-#define VOCR5_L_JOB_BYTES 2805760u  /* 2,473,984 + 266,240 + 65,536 */
+#define VOCR5_L_JOB_BYTES 2809856u  /* 2,478,080 + 266,240 + 65,536 (the gated blob: one weights page more) */
 
 #ifdef VJO_VOCR_MODEL_INFO_TEST
 /* Host tests only: another package's tables (a later generation's tiers). */
 #include VJO_VOCR_MODEL_INFO_TEST
 #else
 static const VjoVocrModelInfo infos[] = {
-    /* v0.3.0 (vita-vn-ocr eval/vocr5_protocol.json): the Small, Normal and Large tiers. */
+    /* v0.3.0 (vita-vn-ocr eval/vocr5_protocol.json): the Small, Normal and Large tiers, with their head gate
+     * (v0.3.5-headgate.1, API 39). */
     {VJO_VOCR5_S_NAME, "VOCR5", "S", VJO_VOCR5_S_BYTES, VOCR5_S_BOX_MS, VOCR5_S_JOB_BYTES},
     {VJO_VOCR5_N_NAME, "VOCR5", "N", VJO_VOCR5_N_BYTES, VOCR5_N_BOX_MS, VOCR5_N_JOB_BYTES},
     {VJO_VOCR5_L_NAME, "VOCR5", "L", VJO_VOCR5_L_BYTES, VOCR5_L_BOX_MS, VOCR5_L_JOB_BYTES},
