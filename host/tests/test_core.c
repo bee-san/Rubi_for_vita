@@ -796,6 +796,16 @@ static void test_config(void)
     gate = "ocr_text_gate = off\nocr_text_gate = maybe\n";
     vjo_config_parse(&c, gate, strlen(gate));
     TEST_CHECK(c.ocr_text_gate == 0 && c.n_warnings == 1);
+    /* API 39: the head gate, on by default (docs/vita-vn-ocr.md "Head gate"); an unknown value keeps it, warned */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_head_gate == 1 && VJO_HEAD_GATE_DEFAULT == 1);
+    const char *hg = "ocr_head_gate = OFF\n";
+    vjo_config_parse(&c, hg, strlen(hg));
+    TEST_CHECK(c.ocr_head_gate == 0 && c.n_warnings == 0);
+    hg = "ocr_head_gate = on\nocr_head_gate = sometimes\n";
+    vjo_config_parse(&c, hg, strlen(hg));
+    TEST_CHECK(c.ocr_head_gate == 1 && c.n_warnings == 1);
+    TEST_CHECK(strstr(vjo_config_default_text(), "\nocr_head_gate = on\n") != NULL);
     /* API 31, audit-hooks F3: the hooks' table sites, on by default; off makes the Shell send
      * VJO_TEXT_SOURCE_NO_SITES (only the string copies hooked). Any case; an unknown value is on, warned. */
     vjo_config_defaults(&c);

@@ -293,6 +293,9 @@ int main(int argc, char **argv)
                                                {.id = VJO_GSTEP_LM, .kind = 2, .arg = 1, .us = 2100},
                                                {.id = VJO_GSTEP_CASCADE, .kind = 1, .arg = 1, .us = 550001},
                                                {.id = VJO_GSTEP_RECOGNIZE, .kind = 0, .arg = 1, .us = 820000},
+                                               /* API 39: the head gate skipped 61% of the job's 240 frames */
+                                               {.id = VJO_GSTEP_RECOGNIZE, .kind = 61, .arg = 3, .bytes = 240,
+                                                .us = 640000},
                                                {.id = VJO_GSTEP_REFINE, .kind = 2, .arg = 16, .bytes = 9u << 16 | 2u << 8 | 7u,
                                                 .sum = 410, .us = 1400},
                                                /* API 26: the gate stopped 2 lines, score -60, threshold -8,

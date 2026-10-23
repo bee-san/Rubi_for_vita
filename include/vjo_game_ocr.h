@@ -99,7 +99,12 @@
  * before, as with the gate). Not bit 5 (draft #228's VJO_GAME_OCR_S_SPOT), bit 7 (draft #245's PSP probe) or
  * bits 8-15 (draft #226's frame pacing), so all four can merge. */
 #define VJO_GAME_OCR_S_DROP_BORDERS 0x10000u
-#define VJO_GAME_OCR_S_ALL 0x1001Fu
+/* API 39, bit 18: the head gate (vita-vn-ocr #117, core/vocr_ocr.h VjoVocrPolicy.head_gate, config ocr_head_gate):
+ * a model whose blob carries one skips its output head on the CTC frames the gate calls blank. The Shell sets it in
+ * the user's jobs with ocr_head_gate = on, the default (the self-test's stages read as before, as with the text
+ * gate). Not bit 17 (draft #271's VJO_GAME_OCR_S_CHARS), so both can merge. */
+#define VJO_GAME_OCR_S_HEAD_GATE 0x40000u
+#define VJO_GAME_OCR_S_ALL 0x5001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
@@ -229,7 +234,8 @@ enum {
     VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's */
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes; arg 1: read by a job that found no
                             line (core/vocr_ocr.h vjo_vocr_warm) */
-    VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc */
+    VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc, bytes their CTC frames; API 39: kind the share of
+                            those frames the head gate skipped, percent (0 without it) */
     VJO_GSTEP_FALLBACK,  /* API 19 only: the fallback model runs, arg 1 = forced (now the fallback's CHECK) */
     VJO_GSTEP_FB,        /* the frame: kind 1 = the kernel's, 3 = sceDisplayGetFrameBuf's; bytes = pitch,
                             arg = width, sum = pixel format, rc the query's */

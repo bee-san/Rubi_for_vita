@@ -72,8 +72,13 @@
  * 36: VjoGameOcrRequest.speed bit 16 (VJO_GAME_OCR_S_DROP_BORDERS): the game worker drops a line made only
  * of a box's border read as text (core/textnorm.h; config.ini non_japanese_filter = lines, the default), and
  * its norm step's kind counts those lines. Sizes and layouts are unchanged. 35 and speed bit 7 are taken by
- * draft #245 (the debug build's PSP probe), so this is 36. */
-#define VJO_API_VERSION 36
+ * draft #245 (the debug build's PSP probe), so this is 36.
+ * 39: VjoGameOcrRequest.speed bit 18 (VJO_GAME_OCR_S_HEAD_GATE): the game worker's recognizers skip their output
+ * head on the frames vita-vn-ocr's head gate calls blank (#117; config.ini ocr_head_gate, on by default), and the
+ * model tiers' files are the head-gated VOCR5 blobs (VOCR5_*_w8g.vocr). The recognize step's kind is the share of
+ * frames it skipped, in percent. Sizes and layouts are unchanged. 37 and speed bit 17 are taken by draft #271 (per-
+ * character boxes), 38 by #278 (the PSP probe's bit with the border bit), so this is 39. */
+#define VJO_API_VERSION 39
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
