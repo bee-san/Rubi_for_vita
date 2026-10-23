@@ -99,7 +99,13 @@
  * before, as with the gate). Not bit 5 (draft #228's VJO_GAME_OCR_S_SPOT), bit 7 (draft #245's PSP probe) or
  * bits 8-15 (draft #226's frame pacing), so all four can merge. */
 #define VJO_GAME_OCR_S_DROP_BORDERS 0x10000u
-#define VJO_GAME_OCR_S_ALL 0x1001Fu
+/* API 35, bit 7: the debug build's read-only PSP probe (config.ini psp_probe; docs/native-hooks.md "PSP probe
+ * (debug build)"): after the job, once its result is with the kernel, the debug build's worker in a PSP game
+ * reads and logs what PSP hooks will need (game_ocr/psp_probe.c). Both builds' kernels and workers accept it
+ * on an OCR job, so the two builds keep one interface; only the debug build's Shell sets it, and the normal
+ * build's worker has no probe. Not bit 5 (draft #228's VJO_GAME_OCR_S_SPOT) nor bits 8-15 (draft #226's). */
+#define VJO_GAME_OCR_S_PSP_PROBE 0x80u
+#define VJO_GAME_OCR_S_ALL 0x1009Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.

@@ -1716,7 +1716,6 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (shot) { rc = run_shot(r, out); goto done; } /* both builds: an Anki card's screenshot (API 23) */
 #if VJO_DEBUG
     if (r->flags & VJO_GAME_OCR_F_PROBE) { rc = run_probe(r, out); goto done; }
-    vjo_psp_probe_job(psp_title); /* the read-only PSP probe: once, at the first OCR job (game_ocr/psp_probe.h) */
 #else
     if (r->flags & VJO_GAME_OCR_F_PROBE) goto done; /* no probe in the normal build: VJO_E_SOURCE */
 #endif
@@ -2169,7 +2168,17 @@ static int worker_main(SceSize args, void *argp)
                 if (!took) {
                     claim_outstanding = 1;
                     vjo_game_ocr_run_request(&request, &pending_result);
+#if VJO_DEBUG
+                    uint32_t job_us = (uint32_t)(now_wide() - job_started_us);
+#endif
                     if (!vjoOcrComplete(&pending_result) && !pending_result.cleanup_status) claim_outstanding = 0;
+#if VJO_DEBUG
+                    /* The read-only PSP probe, after a job that asked for it, once the kernel has its result:
+                     * it never holds up a result (one still to hand over gets no probe), only this thread's
+                     * next job, by the probe's own time (game_ocr/psp_probe.h). */
+                    if (!claim_outstanding)
+                        vjo_psp_probe_after(psp_title, hk.cache_key.title, &request, &pending_result, job_us);
+#endif
                     nap = claim_outstanding; /* done: the next job may be queued already */
                 } else if (now_wide() - asked >= TAKE_WAITED_US) {
                     nap = 0; /* the kernel held the take: its wait was the pace */

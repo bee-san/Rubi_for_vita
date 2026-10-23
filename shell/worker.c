@@ -56,9 +56,14 @@ typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 :
 /* VJO_E_SCREEN_CHANGED (the screen changed under every read of a job): the
  * next try starts at once, from the second in a row SCREEN_RETRY_MS later,
  * doubling up to SCREEN_RETRY_MAX_MS. The try itself waits in the game for the
- * text to hold still (vocr_run_one's request). Nothing is shown for either. */
+ * text to hold still (vocr_run_one's request). After three consecutive failed
+ * captures the open overlay stops waiting and shows a message; closed-overlay
+ * prefetch and quiet refreshes retain their backoff. */
 #define SCREEN_RETRY_MS      250u
 #define SCREEN_RETRY_MAX_MS 4000u
+#define SCREEN_OPEN_TRIES 3
+static const char SCREEN_CHANGED_MESSAGE[] VJO_DATA_TABLE(SCREEN_CHANGED_MESSAGE) =
+    "The screen keeps changing. Close and reopen the overlay when the text stops.";
 
 VjoView g_view;
 
@@ -1119,6 +1124,12 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
      * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
     if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
+#if VJO_DEBUG
+    /* API 35: the read-only PSP probe (config.ini psp_probe, on by default here), in the user's jobs (the
+     * self-test's stages read as before): the worker probes after the job, in a PSP game only, and logs it
+     * (game_ocr/psp_probe.h); elsewhere the bit does nothing. */
+    if (job_cfg.psp_probe && stage < 0) request.speed |= VJO_GAME_OCR_S_PSP_PROBE;
+#endif
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
     int64_t t0 = now_us();
@@ -2448,6 +2459,13 @@ static void on_job_done(void)
         stable_pending = game_active(); /* only the current game's next screen (Auto) */
         if (ov != OV_CLOSED && stable_pending) { /* the overlay waits for this screen's */
             ov = OV_OPEN;
+            if (d->err.rc == VJO_E_SCREEN_CHANGED && screen_changed_streak >= SCREEN_OPEN_TRIES) {
+                open_retry = view_waiting = view_job_text = 0;
+                view_publish(1, NULL, SCREEN_CHANGED_MESSAGE, 1);
+                if (subtitles) vjo_strip_set_busy(0);
+                strip_after_wait();
+                return;
+            }
             if (now_us() < screen_retry_until)
                 open_retry = 1; /* "Recognizing…" stays until background_open retries */
             else

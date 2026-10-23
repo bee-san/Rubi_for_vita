@@ -55,6 +55,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->anki_screenshot_trim_bars = 1; /* its black bars trimmed unless anki_screenshot_trim_bars = off (docs/anki.md) */
     c->ocr_text_gate = VJO_TEXT_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Text-presence gate" */
     c->hook_sites = 1; /* the table sites with the CALL source; off: the CALL source alone */
+    c->psp_probe = 1; /* the debug build's read-only PSP probe (docs/native-hooks.md): on unless psp_probe = off */
 }
 
 const char *vjo_config_default_text(void)
@@ -526,6 +527,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const off_on[] VJO_DATA_TABLE(config_off_on_1) = {"off", "on", NULL};
         c->hook_sites = 1; /* an unknown value: on, with the warning */
         set_choice(c, key, val, &c->hook_sites, off_on);
+    } else if (vjo_ieq(key, "psp_probe")) { /* both builds read it; only the debug build has the probe */
+        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_4) = {"off", "on", NULL};
+        c->psp_probe = 1; /* an unknown value: on, the default, with the warning */
+        set_choice(c, key, val, &c->psp_probe, off_on);
     } else if (vjo_ieq(key, "ocr_backend")) {
         /* The removed engine choice (core/config.h): vocr is the only engine. */
         const char *removed = removed_engine(val);

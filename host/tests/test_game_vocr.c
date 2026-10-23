@@ -456,6 +456,17 @@ static void cancel_and_wire(void)
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.speed = VJO_GAME_OCR_S_TRIM; /* API 32: a shot's bit, refused on an OCR job by the worker too */
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
+    /* API 35: the PSP probe's bit is an OCR job's, known to both builds' workers: the job gets past the request's
+     * check (to the cancellation that follows it), alone or with the other known bits (audit-adrenaline-probe F2:
+     * the debug Shell sets it on every user job) */
+    cancel_job = 1;
+    r.speed = VJO_GAME_OCR_S_PSP_PROBE;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_CANCELLED && !allocations);
+    r.speed = VJO_GAME_OCR_S_PSP_PROBE | VJO_GAME_OCR_S_GATE | VJO_GAME_OCR_S_BOOST | 2u;
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_CANCELLED && !allocations);
+    cancel_job = 0;
+    r.speed = VJO_GAME_OCR_S_PSP_PROBE << 1; /* bit 8: unknown */
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);
     r.speed = 0;
     r.flags = 0; r.model[31] = 'x';
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_SOURCE && !allocations);

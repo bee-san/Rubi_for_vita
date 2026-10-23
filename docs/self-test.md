@@ -253,8 +253,10 @@ only on a yes: [below](#archiving-older-dumps-off-the-vita)), into one timestamp
   the text after either name in the logs' config warnings is masked too), `games.ini`, `region.ini`,
   the whole `anki_queue/` with its `exported/` cards, and the listing (names and sizes only) of
   `anki/`, the Rubi app's `.apkg` packages, `vjo_app.txt`, the record of the Rubi app the plugins came
-  with, and `installed.txt`, the one-VPK install's record ([one-vpk-install.md](one-vpk-install.md)), which
-  the analysis compares with the package's `payload-manifest.txt`;
+  with, `installed.txt`, the one-VPK install's record ([one-vpk-install.md](one-vpk-install.md)), which
+  the analysis compares with the package's `payload-manifest.txt`, and the game worker's two logs,
+  `hooks.log` (the native hooks') and `psp_probe.log` (the debug build's read-only PSP probe's), neither of
+  which holds any text ([native-hooks.md](native-hooks.md));
 - `ux0:app/VJOSET001/vjo_app.txt`, the installed Rubi app's version stamp, and the SHA-256 of its
   `eboot.bin` (hashed, never kept; [core/app_stamp.h](../core/app_stamp.h)). Both are read as `--check-app`
   reads them: through the folder (curl's CWD into each folder on the way), then, when that is answered "not

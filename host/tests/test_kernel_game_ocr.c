@@ -1064,7 +1064,6 @@ static void invalid_capture_and_wire(void)
     r.flags = 0;
     r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* VJO_GAME_OCR_S_* bits 5-31 unknown (API 26: 4) */
     r.speed = VJO_GAME_OCR_S_TRIM; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 32: bit 6, a shot's only */
-    r.speed = 0x80; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = 0x20000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 36: but bit 16) */
     TEST_CHECK(VJO_GAME_OCR_S_TRIM == 0x40u); /* bit 5 is draft #228's scan screen (VJO_GAME_OCR_S_SPOT) */
@@ -1072,7 +1071,28 @@ static void invalid_capture_and_wire(void)
     TEST_CHECK(VJO_GAME_OCR_S_DROP_BORDERS == 0x10000u);
     TEST_CHECK(VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_DROP_BORDERS); /* an OCR job's: the submit below carries it */
     r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate, (API 36) the border rule: known */
-    uint32_t seq = submit(); take(seq);
+    r.speed = 0x100; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bits 8-31 unknown (8-15: draft #226's) */
+    r.speed = 0x80000000u; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    TEST_CHECK(VJO_GAME_OCR_S_TRIM == 0x40u); /* bit 5 is draft #228's scan screen (VJO_GAME_OCR_S_SPOT) */
+    /* API 35: bit 7, the debug build's read-only PSP probe, is known on an OCR job (both builds accept it) */
+    TEST_CHECK(VJO_GAME_OCR_S_PSP_PROBE == 0x80u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_PSP_PROBE));
+    /* this very request, with every known bit (helpers, the clock, no line cache, the gate, the PSP probe), is
+     * accepted, and the worker takes it with its speed whole (audit-adrenaline-probe F1: submit() sends a
+     * request of its own) */
+    r.speed = VJO_GAME_OCR_S_ALL;
+    caller = 3;
+    int submitted = vjoOcrSubmit(&r);
+    TEST_ASSERT(submitted > 0);
+    uint32_t seq = (uint32_t)submitted;
+    {
+        VjoGameOcrRequest taken = {0};
+        caller = 7;
+        TEST_ASSERT(vjoOcrTake(&taken) == 0);
+        TEST_CHECK(taken.seq == seq && taken.speed == VJO_GAME_OCR_S_ALL && (taken.speed & VJO_GAME_OCR_S_PSP_PROBE));
+        memset(&message, 0, sizeof(message));
+        message.size = sizeof(message); message.seq = seq;
+        strcpy(message.text, "\xE7\x8C\xAB");
+    }
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;
     message.cleanup_status = -1; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG);
@@ -1416,6 +1436,7 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM | VJO_GAME_OCR_S_BOOST; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM << 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_PSP_PROBE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 35: an OCR job's */
     r = shot_request(); r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 5 */
     TEST_CHECK(VJO_GAME_OCR_S_SHOT_ALL == VJO_GAME_OCR_S_TRIM && !(VJO_GAME_OCR_S_TRIM & VJO_GAME_OCR_S_ALL));
     /* an OCR job names no card; without models it is refused as before */
