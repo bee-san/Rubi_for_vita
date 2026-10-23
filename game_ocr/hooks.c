@@ -487,13 +487,6 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
     }
 }
 
-/* 1 when title_id has a hook entry (auto's titles): Rubi's verified list, or a ported site in Luna's table
- * (a title whose every Luna site is unported has none: audit-hooks-text N2). */
-static int title_listed(const char *title_id)
-{
-    return vjo_place_title_verified(title_id) || vjo_luna_title_ported(title_id);
-}
-
 static void set_kinds(void)
 {
     for (unsigned i = 0; i < VJO_HOOK_STREAMS; i++)
@@ -504,14 +497,9 @@ static void start(const char *title_id, unsigned word, int psp)
 {
     tai_module_info_t tai;
     SceKernelModuleInfo mi;
-    const unsigned mode = word & VJO_TEXT_SOURCE_MODE_MASK;
     if (psp || !title_id || !title_id[0]) {
         DLOG("nothing: %s\n", psp ? "the PSP emulator's process" : "no title ID");
         return; /* nothing in the PSP emulator in this version */
-    }
-    if (mode == VJO_TEXT_SOURCE_AUTO && !title_listed(title_id)) {
-        DLOG("nothing: %s has no hook entry (text source auto)\n", title_id);
-        return;
     }
     if (main_module(&tai, &mi) < 0) {
         DLOG("nothing: no main module (eboot.bin) with a segment 0\n");

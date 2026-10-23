@@ -36,7 +36,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->toggle_button = VJO_TRIGGER_L_R;
     c->subtitle_button = VJO_TRIGGER_SELECT_R;
     c->ocr_mode = VJO_OCR_AUTO;
-    c->text_source = VJO_SOURCE_AUTO; /* native text hooks only in the games with a hook entry */
+    c->text_source = VJO_SOURCE_AUTO; /* try native text hooks in every enabled Vita game */
     vjo_snprintf(c->ocr_model_dir, sizeof(c->ocr_model_dir), "ux0:data/VitaJPOverlay/ocr");
     /* Normal (VOCR5-N) where the game's memory allows; a smaller tier otherwise. */
     c->vocr_tier = VJO_VOCR_TIER_DEFAULT;
@@ -110,8 +110,8 @@ const char *vjo_config_default_text(void)
            "subtitle_button = select+r\n"
            "\n"
            "; Where the text comes from (the Rubi app's Text source), from a game's next start:\n"
-           "; auto (native text hooks in the games that have one, checked against OCR) |\n"
-           "; hooks (as auto, and the game's own text copies in every game that is ON) | ocr\n"
+           "; auto (try native hooks in every enabled Vita game, with OCR fallback) |\n"
+           "; hooks (legacy alias for auto) | ocr (screenshots only, no hooks)\n"
            "text_source = auto\n"
            "; Text hooks at table sites (Rubi's and Luna's entries): on | off (off: only\n"
            "; the string-copy hooks, to tell the two apart in a test)\n"

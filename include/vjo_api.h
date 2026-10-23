@@ -78,8 +78,8 @@
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
 #define VJO_TEXT_SOURCE_OCR 0u   /* no hooks anywhere: the kernel's value until the Shell sets one */
-#define VJO_TEXT_SOURCE_AUTO 1u  /* hooks only in titles with a hook entry (Luna's table, Rubi's own) */
-#define VJO_TEXT_SOURCE_HOOKS 2u /* as AUTO, plus the CALL source in every game that is ON */
+#define VJO_TEXT_SOURCE_AUTO 1u  /* CALL hooks in every enabled native Vita game, plus available table sites */
+#define VJO_TEXT_SOURCE_HOOKS 2u /* legacy choice: the same hook attempts as AUTO */
 #define VJO_TEXT_SOURCE_COUNT 3u
 /* The word vjoSetTextSource takes and vjoGetTextSource returns: a VJO_TEXT_SOURCE_* in its low byte, plus
  * flags. VJO_TEXT_SOURCE_NO_SITES (config.ini hook_sites = off): install no table site, only the CALL

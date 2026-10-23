@@ -26,24 +26,16 @@
 /* Each import's readiness (a test marks one missing), and the tables a test gives a synthetic title. */
 static int test_ready(const void *fn);
 static unsigned test_place_verified(const char *title_id, const VjoPlaceVerified **out);
-static int test_place_title_verified(const char *title_id);
 static unsigned test_luna_sites(const char *title_id, const VjoLunaSite **sites);
-static int test_luna_title_ported(const char *title_id);
 #define VJO_IMPORT_H 1
 #define VJO_IMPORT_READY(fn) test_ready((const void *)(uintptr_t)(fn))
 #define vjo_place_verified test_place_verified
-#define vjo_place_title_verified test_place_title_verified
 #define vjo_luna_sites test_luna_sites
-#define vjo_luna_title_ported test_luna_title_ported
 #include "../../game_ocr/hooks.c"
 #undef vjo_place_verified
-#undef vjo_place_title_verified
 #undef vjo_luna_sites
-#undef vjo_luna_title_ported
 unsigned vjo_place_verified(const char *title_id, const VjoPlaceVerified **out);
-int vjo_place_title_verified(const char *title_id);
 unsigned vjo_luna_sites(const char *title_id, const VjoLunaSite **sites);
-int vjo_luna_title_ported(const char *title_id);
 
 /* CP932 (Python's cp932 codec) */
 #define L_TODAY "\x8D\xA1\x93\xFA\x82\xCD\x82\xA2\x82\xA2\x93\x56\x8B\x43\x82\xC5\x82\xB7\x82\xCB\x81\x42" /* 今日はいい天気ですね。 22 B */
@@ -100,24 +92,12 @@ static unsigned test_place_verified(const char *title_id, const VjoPlaceVerified
     *out = t_nver ? t_ver : NULL;
     return t_nver;
 }
-static int test_place_title_verified(const char *title_id)
-{
-    return is_test_title(title_id) ? t_nver > 0 : vjo_place_title_verified(title_id);
-}
 static unsigned test_luna_sites(const char *title_id, const VjoLunaSite **sites)
 {
     if (!is_test_title(title_id)) return vjo_luna_sites(title_id, sites);
     if (sites) *sites = t_nluna ? t_luna : NULL;
     return t_nluna;
 }
-static int test_luna_title_ported(const char *title_id)
-{
-    if (!is_test_title(title_id)) return vjo_luna_title_ported(title_id);
-    for (unsigned i = 0; i < t_nluna; i++)
-        if (vjo_luna_ported(&t_luna[i])) return 1;
-    return 0;
-}
-
 /* ---- taiHEN and modulemgr ---- */
 
 static struct {
@@ -947,10 +927,13 @@ static void test_word(void)
         {TITLE, VJO_TEXT_SOURCE_AUTO, 0, VJO_TEXT_SOURCE_AUTO, 8, 2},
         {TITLE, VJO_TEXT_SOURCE_HOOKS | VJO_TEXT_SOURCE_NO_SITES, 0, VJO_TEXT_SOURCE_HOOKS | VJO_TEXT_SOURCE_NO_SITES, 8, 0},
         {TITLE, VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES, 0, VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES, 8, 0},
-        {UNLISTED, VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES, 0, VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES, 0, 0},
-        {UNLISTED, VJO_TEXT_SOURCE_AUTO, 0, VJO_TEXT_SOURCE_AUTO, 0, 0},
+        {UNLISTED, VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES, 0, VJO_TEXT_SOURCE_AUTO | VJO_TEXT_SOURCE_NO_SITES, 8, 0},
+        {UNLISTED, VJO_TEXT_SOURCE_AUTO, 0, VJO_TEXT_SOURCE_AUTO, 8, 0},
         {UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0, VJO_TEXT_SOURCE_HOOKS, 8, 0},
         {TITLE, VJO_TEXT_SOURCE_HOOKS, 1, VJO_TEXT_SOURCE_HOOKS, 0, 0},
+        {UNLISTED, VJO_TEXT_SOURCE_AUTO, 1, VJO_TEXT_SOURCE_AUTO, 0, 0},
+        {"", VJO_TEXT_SOURCE_AUTO, 0, VJO_TEXT_SOURCE_AUTO, 0, 0},
+        {NULL, VJO_TEXT_SOURCE_AUTO, 0, VJO_TEXT_SOURCE_AUTO, 0, 0},
         {"", VJO_TEXT_SOURCE_HOOKS, 0, VJO_TEXT_SOURCE_HOOKS, 0, 0},
         {NULL, VJO_TEXT_SOURCE_HOOKS, 0, VJO_TEXT_SOURCE_HOOKS, 0, 0},
         {TITLE, VJO_TEXT_SOURCE_HOOKS | 0x200u, 0, VJO_TEXT_SOURCE_OCR, 0, 0},
@@ -958,6 +941,7 @@ static void test_word(void)
         {TITLE, VJO_TEXT_SOURCE_COUNT, 0, VJO_TEXT_SOURCE_OCR, 0, 0},
         {TITLE, VJO_TEXT_SOURCE_OCR | VJO_TEXT_SOURCE_NO_SITES, 0, VJO_TEXT_SOURCE_OCR, 0, 0},
         {TITLE, VJO_TEXT_SOURCE_OCR, 0, VJO_TEXT_SOURCE_OCR, 0, 0},
+        {UNLISTED, VJO_TEXT_SOURCE_OCR, 0, VJO_TEXT_SOURCE_OCR, 0, 0},
     };
     for (unsigned c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
         VjoPlaceVerified v;
@@ -995,8 +979,8 @@ static void test_word(void)
     }
 }
 
-/* auto: a title with a hook entry gets hooks: Rubi's verified entry alone, or Luna's sites alone. */
-static void test_auto_listed(void)
+/* Automatic attempts CALL imports even without a table entry. The table-site checks still apply. */
+static void test_auto_all_native(void)
 {
     VjoPlaceVerified v;
     VjoLunaSite l;
@@ -1014,15 +998,14 @@ static void test_auto_listed(void)
     t_nluna = 1;
     vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 8 && n_offs == 1 && sfo_opens == 1);
-    /* a title whose every Luna site is unported has no hook entry (audit-hooks-text N2): nothing in auto, its
-     * sites refused (unported) in hooks */
+    /* A title whose Luna sites are all unported still gets generic discovery; those sites are refused. */
     reset();
     put_site(0x200, 1, NULL);
     l = luna_site(0x200, 1, 0, 0, 0);
     t_luna = &l;
     t_nluna = 1;
     vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
-    TEST_CHECK(n_imp == 0 && n_offs == 0 && !live);
+    TEST_CHECK(n_imp == 8 && n_offs == 0 && n_refused == 1 && live);
     reset();
     put_site(0x200, 1, NULL);
     l = luna_site(0x200, 1, 0, 0, 0);
@@ -1030,8 +1013,7 @@ static void test_auto_listed(void)
     t_nluna = 1;
     vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_HOOKS, 0);
     TEST_CHECK(n_imp == 8 && n_offs == 0 && n_refused == 1);
-    /* the real tables: CLANNAD (Rubi's entry), Luna titles with a ported site; the 7 without one, and an
-     * unlisted title, get nothing */
+    /* The real tables: listed and unlisted native Vita games get CALL discovery. Unported sites stay out. */
     {
         static const char *const listed[] = {"PCSG00415", "PCSG00917", "PCSG00543"};
         static const char *const none[] = {"PCSB00985", "PCSG00291", "PCSG00451", "PCSG00595",
@@ -1044,8 +1026,26 @@ static void test_auto_listed(void)
         for (unsigned i = 0; i < 8; i++) {
             reset();
             vjo_hooks_start(none[i], VJO_TEXT_SOURCE_AUTO, 0);
-            TEST_CHECK_(n_imp == 0 && n_offs == 0 && !live && sfo_opens == 0, "%s: nothing in auto", none[i]);
+            TEST_CHECK_(n_imp == 8 && n_offs == 0 && live, "%s: generic hooks in auto", none[i]);
+            TEST_CHECK_(sfo_opens == (i < 7 ? 1u : 0u), "%s: APP_VER only when there are Luna sites", none[i]);
+            TEST_CHECK_(i < 7 ? n_refused > 0 : n_refused == 0, "%s: refuse unported sites", none[i]);
         }
+    }
+    /* Exercise the actual installed string-copy hook in an unlisted game, through decoding and release. */
+    {
+        char copied[64], text[128];
+        VjoHookSnap snap;
+        unsigned id;
+        reset();
+        vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
+        TEST_ASSERT(n_imp == CALL_IMPORTS);
+        TEST_CHECK(((char *(*)(char *, const char *))imp[CALL_STRCPY].func)(copied, L_TODAY) == copied);
+        id = call_stream_with(L_TODAY, 22);
+        TEST_ASSERT(id && vjo_hooks_snap(id, &snap));
+        TEST_CHECK(snap.kind == VJO_HOOK_KIND_CALL && snap.site == NULL);
+        TEST_CHECK(vjo_hooks_text(&snap, text, sizeof(text)) == strlen("今日はいい天気ですね。"));
+        TEST_CHECK(!strcmp(text, "今日はいい天気ですね。"));
+        TEST_CHECK(vjo_hooks_stop() == 0 && n_released == CALL_IMPORTS && !live);
     }
 }
 
@@ -1059,43 +1059,43 @@ static void test_main_module(void)
     for (unsigned k = 0; k < sizeof(bad_paths) / sizeof(bad_paths[0]); k++) {
         reset();
         snprintf(mod.path, sizeof(mod.path), "%s", bad_paths[k]);
-        vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+        vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
         TEST_CHECK_(n_imp == 0 && !live, "%s: nothing", bad_paths[k]);
     }
     for (unsigned k = 0; k < 2; k++) {
         reset();
         snprintf(mod.path, sizeof(mod.path), "%s", good_paths[k]);
-        vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+        vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
         TEST_CHECK_(n_imp == 8 && live, "%s: hooked", good_paths[k]);
     }
     reset();
     memset(mod.path, 'a', sizeof(mod.path)); /* no NUL in the path's 256 bytes, though it ends in /eboot.bin */
     memcpy(mod.path + sizeof(mod.path) - 10, "/eboot.bin", 10);
-    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 0);
     reset();
     mod.seg0 = NULL;
-    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 0);
     reset();
     mod.seg0_size = 0;
-    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 0);
     reset();
     mod.tai_rc = (int)0x90010002u;
-    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 0);
     reset();
     mod.mi_rc = (int)0x80020001u;
-    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 0);
     reset();
     MISS(taiGetModuleInfo);
-    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 0 && !live);
     reset();
     MISS(sceKernelGetModuleInfo);
-    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 0 && !live);
     /* no import hook API: no CALL source; no offset hook API: every site refused (tai) */
     {
@@ -1117,7 +1117,7 @@ static void test_main_module(void)
     reset();
     not_imported[n_not_imported++] = 0x85B924B7u; /* strcpy */
     not_imported[n_not_imported++] = 0xAC595E68u; /* sceClibStrnlen */
-    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_HOOKS, 0);
+    vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(n_imp == 6 && n_calls == 6 && call_uid[CALL_STRCPY] < 0 && call_uid[CALL_CLIB_STRNLEN] < 0);
 #if VJO_DEBUG
     TEST_CHECK(strstr(logbuf, "import BE43BB07/85B924B7: not hooked\n") != NULL);
@@ -1398,6 +1398,7 @@ static void test_stop(void)
     vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_OCR, 0);
     TEST_CHECK(vjo_hooks_stop() == 0 && n_released == 0 && delays == 0);
     reset();
+    MISS(taiHookFunctionImportForUser);
     vjo_hooks_start(UNLISTED, VJO_TEXT_SOURCE_AUTO, 0);
     TEST_CHECK(vjo_hooks_stop() == 0 && n_released == 0 && delays == 0);
 }
@@ -1491,7 +1492,7 @@ TEST_LIST = {
     {"install order: verified first; unported, version, range, entry, window; duplicates", test_install_order},
     {"8 site slots, a duplicate address, taiHEN's refusal", test_site_cap},
     {"the text source word: modes, NO_SITES, OCR for an unknown mode or flag", test_word},
-    {"auto: Rubi's entry alone, Luna's alone, no ported site, the real tables", test_auto_listed},
+    {"auto: discover CALL text in every native game; retain table-site checks", test_auto_all_native},
     {"the main module (eboot.bin, segment 0) and unresolved imports", test_main_module},
     {"site hits through the observer's C entry", test_site_hits},
     {"CALL slots: replacement, keep, busy, stats", test_replacement_keep},

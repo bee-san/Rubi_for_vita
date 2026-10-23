@@ -876,13 +876,13 @@ static void draw_results_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, results_help);
 }
 
-/* API 31: where the overlay's text comes from (docs/native-hooks.md): native text hooks in the games with
- * a hook entry (the Games page tags them), in every game that is ON, or none. */
+/* API 31: where the overlay's text comes from (docs/native-hooks.md). The saved Every game choice is
+ * retained for compatibility; Automatic now tries the same native hooks in every enabled Vita game. */
 static void draw_source_card(int y)
 {
     static const char *const names[3] = {"Automatic", "Every game", "OCR only"};
-    static const char *const help[3] = {"Hooks in games with a hook entry, else OCR. From a game's next start.",
-                                        "Hooks in every game that is ON. Applies when a game next starts.",
+    static const char *const help[3] = {"Try hooks in every enabled Vita game, else OCR. From the next start.",
+                                        "Same as Automatic. Applies when a game next starts.",
                                         "Screenshots only, no hooks. Applies when a game next starts."};
     int chosen = source_index(preferences.text_source);
     text(42, y + CARD_TITLE_Y, WHITE, 28, "Text source");
