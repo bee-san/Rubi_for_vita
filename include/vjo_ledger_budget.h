@@ -469,24 +469,22 @@
  * count 1,286,144 B more than any job holds (VOCR5-N's 1,187,840 B weights block beside
  * VOCR5-L's cascade), an over-count kept so that each item's worst case stays its own. */
 #define VJO_BUDGET_GAME_CASCADE 2473984u
-/* The free USER memory a job leaves to the game beside what it holds, by the
- * largest model tier the job holds (include/vjo_vocr_sizes.h; the job's own model
- * or the cascade's): vita-vn-ocr docs/model-tiers.md §1.3 and §1.5 proposes
- * 4 MiB for Small, 8 MiB for Normal and 16 MiB for Large, because a larger
- * resident block held while the game is in front is a larger worst-case bite out
- * of the game's own later allocations (an estimate, untuned; tools/model_tiers.json
- * "reserve_bytes"). The reserves are what the job leaves free, not memory it
- * takes: a larger one only makes a tier fall back sooner. A request by model name
- * (host tools; the Shell asks by tier since API 21) keeps the flat 4 MiB. */
-#define VJO_GAME_RESERVE_SMALL (4u * 1024u * 1024u)
-#define VJO_GAME_RESERVE_NORMAL (8u * 1024u * 1024u)
-#define VJO_GAME_RESERVE_LARGE (16u * 1024u * 1024u)
+/* Free USER memory every game job leaves beside its page-rounded allocations.
+ * The owner chose a fixed 1 MiB (2026-10-23) after あおかな reported 3 MiB free
+ * but Small needed only 996 KiB before the old 4 MiB reserve. The former 4/8/16
+ * MiB tier margins were untuned estimates; this smaller margin also needs console
+ * validation. It is headroom left free, never allocated. Keep the tier names for
+ * the shared model table (tools/model_tiers.json); model, LM, cascade and helper
+ * memory is counted separately, and every allocation still checks the reserve. */
+#define VJO_GAME_RESERVE_SMALL (1u * 1024u * 1024u)
+#define VJO_GAME_RESERVE_NORMAL (1u * 1024u * 1024u)
+#define VJO_GAME_RESERVE_LARGE (1u * 1024u * 1024u)
 #define VJO_GAME_RESERVE VJO_GAME_RESERVE_SMALL    /* kept free in the game before either block (game_ocr/main.c) */
 /* The capture pass of a job a Rubi verified table site answers after OCR was refused for memory
  * (game_ocr/main.c, core/hook_select.h vjo_hook_select_no_memory): one strip's block (at most
- * VJO_VOCR_STRIP_BYTES, 56 KiB), freed with the job, beside this smaller reserve. A game that leaves
- * less than VJO_GAME_RESERVE free (アマツツミ, PCSG01198: 2 MiB measured on a console, 2026-10-23)
- * cannot run OCR, and would otherwise never show its hook's text. It adds nothing to
+ * VJO_VOCR_STRIP_BYTES, 56 KiB), freed with the job, beside the same 1 MiB reserve.
+ * A game with too little room for OCR can still show its hook's text when this
+ * smaller capture-only job fits. It adds nothing to
  * VJO_WORST_GAME_JOB: it is the capture block every job may hold. */
 #define VJO_GAME_RESERVE_HOOK_ONLY (1u * 1024u * 1024u)
 /* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG

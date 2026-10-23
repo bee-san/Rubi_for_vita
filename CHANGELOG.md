@@ -11,6 +11,14 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- OCR keeps a fixed 1 MiB of game RAM free for every model size, replacing the
+  untuned 4/8/16 MiB margins. あおかな reported 3 MiB free but Small was refused
+  despite needing only 996 KiB for its model and workspace. Full memory checks,
+  automatic fallback and allocation-failure cleanup remain; the new margin is
+  an estimate pending console validation.
+
 ## [0.9.4] - 2026-10-23
 
 Publishes the native-hook changes already merged into main after 0.9.3. Both the normal build
