@@ -827,7 +827,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.fallback = top - ran;
         if ((fake_tier_checks >> (ran - 1u)) & 1u) { /* every tier refused: the worker's OOM */
             fake_game_result.rc = VJO_E_OOM;
-            fake_game_result.free_user = fake_free_user; fake_game_result.reserve_bytes = 4194304;
+            fake_game_result.free_user = fake_free_user; fake_game_result.reserve_bytes = VJO_GAME_RESERVE_SMALL;
             fake_game_result.need_workspace = 245760; fake_game_result.need_weights = 659456;
             *out = fake_game_result;
             return 0;
@@ -1979,7 +1979,7 @@ static void test_vocr_unusable_model_uses_the_fallback(void)
     TEST_CHECK(run_job_t(&results[0], &cache_data[0]) == VJO_OK);
     TEST_CHECK(fake_game_request.tiers == 5u && !strcmp(fake_game_request.model, VJO_VOCR_TIER3_NAME));
     /* the worker went from Large to Small: two tiers down, Small read the text */
-    TEST_CHECK(logged("tier large did not fit in this game (need 19777216, free 91238400); using small") != NULL);
+    TEST_CHECK(logged("tier large did not fit in this game (need 4048576, free 91238400); using small") != NULL);
     mem_free();
 }
 
@@ -2055,12 +2055,12 @@ static void test_vocr_refused_fallback_is_labelled(void)
     /* every tier refused by the ladder: one line per tier, the last says nothing smaller fits */
     reset();
     cfg.vocr_tier = VJO_VOCR_TIER_LARGE;
-    fake_tier_checks = VJO_VOCR_TIERS_ALL; fake_free_user = 4300000;
+    fake_tier_checks = VJO_VOCR_TIERS_ALL; fake_free_user = 1500000;
     memcpy(job_title, "PCSG00415", 10);
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
-    TEST_CHECK(logged("tier large did not fit in PCSG00415 (need 19777216, free 4312288); trying normal") != NULL);
-    TEST_CHECK(logged("tier normal did not fit in PCSG00415 (need 10388608, free 4308192); trying small") != NULL);
-    TEST_CHECK(logged("tier small did not fit in PCSG00415 (need 5194304, free 4304096); no smaller tier: "
+    TEST_CHECK(logged("tier large did not fit in PCSG00415 (need 4048576, free 1512288); trying normal") != NULL);
+    TEST_CHECK(logged("tier normal did not fit in PCSG00415 (need 3048576, free 1508192); trying small") != NULL);
+    TEST_CHECK(logged("tier small did not fit in PCSG00415 (need 2048576, free 1504096); no smaller tier: "
                       "not enough memory") != NULL);
     mem_free();
 }
@@ -2086,10 +2086,10 @@ static void test_vocr_memory_fallback_is_logged(void)
     TEST_CHECK(line != NULL);
     /* need: the check's bytes and the tier's reserve; free: free USER and the own blocks released first */
     line = logged("tier large");
-    TEST_CHECK(line && !strcmp(line, "tier large did not fit in PCSG00415 (need 19777216, free 91238400); trying normal"));
+    TEST_CHECK(line && !strcmp(line, "tier large did not fit in PCSG00415 (need 4048576, free 91238400); trying normal"));
     TEST_MSG("%s", line ? line : "(no large line)");
     line = logged("tier normal");
-    TEST_CHECK(line && !strcmp(line, "tier normal did not fit in PCSG00415 (need 10388608, free 91234304); using small"));
+    TEST_CHECK(line && !strcmp(line, "tier normal did not fit in PCSG00415 (need 3048576, free 91234304); using small"));
     TEST_MSG("%s", line ? line : "(no normal line)");
     TEST_CHECK(!logged("tier small")); /* it fitted */
     /* nothing of it in what the user sees: no error, no warning, the Anki cards name Small's model */

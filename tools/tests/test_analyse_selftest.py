@@ -285,19 +285,19 @@ class AnalyseV2(unittest.TestCase):
         # tier's ceilings of tools/model_tiers.json
         self.assertEqual([row["need"] for row in t["rows"]], [4_399_104, 2_449_408, 1_720_320])
         self.assertEqual([row["weights"] for row in t["rows"]], [2_500_000, 1_600_000, 999_999])
-        self.assertEqual([row["reserve"] for row in t["rows"]], [16 << 20, 8 << 20, 4 << 20])
+        self.assertEqual([row["reserve"] for row in t["rows"]], [1 << 20, 1 << 20, 1 << 20])
         self.assertEqual([row["box_ms"] for row in t["rows"]], [3000, 2000, 1000])
         self.assertEqual([row["id"] for row in t["rows"]], ["large", "normal", "small"])
         self.assertIn("recommendation: Large", r.stdout)
-        self.assertIn("  Large     2,500,000     < 3 s  1,310,720        4,399,104  16,777,216    70,049,792 yes\n",
+        self.assertIn("  Large     2,500,000     < 3 s  1,310,720        4,399,104   1,048,576    85,778,432 yes\n",
                       r.stdout)
         self.assertIn("box time: the tier's limit for a typical full textbox (3 lines of about 640 px, 1 core at "
                       "444 MHz), estimated; the recommendation is memory alone", r.stdout)
 
     def test_the_tier_falls_with_the_free_memory(self):
         # each tier's first job (above) plus its reserve, and one byte less
-        for free, want in ((21_176_320, "Large"), (21_176_319, "Normal"), (10_838_016, "Normal"), (10_838_015, "Small"),
-                           (5_914_624, "Small"), (5_914_623, None)):
+        for free, want in ((5_447_680, "Large"), (5_447_679, "Normal"), (3_497_984, "Normal"), (3_497_983, "Small"),
+                           (2_768_896, "Small"), (2_768_895, None)):
             self.assertEqual(a.tier_table(free)["recommendation"], want, free)
         # a refused stage has a negative headroom and says so: the textbox stage in a game with 5,000,000 B free
         text = (FIXTURES / "selftest-v2-pass.txt").read_text()
@@ -712,11 +712,12 @@ class SharedTierTable(unittest.TestCase):
         self.assertEqual((a.TIER_DEFAULT, a.TIER_BOX), (table["default"], table["box"]))
         # no ceiling of its own, in any spelling: 9000000, 9_000_000 and 9 * 10**6 compile to the same
         # constant. None of the table's ceilings and reserves, nor the superseded 9 MB / 4 MB / 1 MB ones,
-        # is a constant of the tool; 262,144 is (KERNEL_TXT_CAP, kernel.txt's 256 KiB), not as a tier's.
+        # is a constant of the tool, except the unrelated log rotation caps: 262,144
+        # (kernel.txt's 256 KiB) and 1,048,576 (log.txt's 1 MiB).
         forbidden = {t[k] for t in table["tiers"] for k in ("weights_max_bytes", "arena_max_bytes", "reserve_bytes")}
         forbidden |= {9_000_000, 4_000_000, 1_000_000}
-        self.assertEqual(a.KERNEL_TXT_CAP, 262_144)
-        self.assertEqual(forbidden & (compiled_ints(SCRIPT) - {a.KERNEL_TXT_CAP}), set())
+        self.assertEqual((a.KERNEL_TXT_CAP, a.LOG_TXT_CAP), (262_144, 1_048_576))
+        self.assertEqual(forbidden & (compiled_ints(SCRIPT) - {a.KERNEL_TXT_CAP, a.LOG_TXT_CAP}), set())
 
     def test_the_formulas_blocks_are_todays(self):
         """The capture block and the line-block ceiling of the first-job formula are the game worker's
@@ -737,9 +738,9 @@ class SharedTierTable(unittest.TestCase):
                           ("large", "Large", 2_500_000, 3000)])
         self.assertEqual(table["box"], {"lines": 3, "line_px": 640, "cores": 1, "mhz": 444})
         self.assertEqual(table["default"], "normal")
-        # vita-vn-ocr docs/model-tiers.md 1.3 and 1.5: the W8I arena ceilings and the per-tier reserve
+        # vita-vn-ocr docs/model-tiers.md 1.3: arenas; owner 2026-10-23: a fixed 1 MiB reserve
         self.assertEqual([(t["arena_max_bytes"], t["reserve_bytes"]) for t in table["tiers"]],
-                         [(131_072, 4 << 20), (262_144, 8 << 20), (1_310_720, 16 << 20)])
+                         [(131_072, 1 << 20), (262_144, 1 << 20), (1_310_720, 1 << 20)])
 
     def test_other_keys_are_ignored_and_a_table_it_cannot_use_is_refused(self):
         table = self.table()

@@ -204,8 +204,9 @@ INCOMPLETE, 2 for a file that is not a report. `--json` gives `ocr_result` (`PAS
 
 After the diagnostics the analyser prints each OCR stage's **headroom**: the game's free USER
 memory at the job's memory check, plus another model's resident weights the job released first,
-minus the model size's reserve (4, 8 or 16 MiB for Small, Normal and Large since API 21; 4 MiB
-before), the job's workspace and capture block and the weights it had to load. A
+minus the reserve recorded by the job (currently 1 MiB for every model size;
+earlier logs retain their original margins), the job's workspace and capture block
+and the weights it had to load. A
 negative headroom is a refused job. The Shell's `game vocr memory:` log line carries the same figure
 for every OCR job, not only the self-test's.
 
@@ -215,8 +216,7 @@ reads as well, so the analyser and the app cannot price different tiers. Each ti
 ceilings, an estimate, with vita-vn-ocr's formula (`docs/model-tiers.md` there, section 1.5):
 page(weights) + page(max(the line finder's 83,323 B arena, the tier's W8I arena) + 3,760 B of
 runtime structs) + the 65,536 B capture block (today's `VJO_BUDGET_GAME_CAPTURE`; that section has
-API 19's 61,440 B) + the 516,096 B line-block ceiling, plus the tier's own reserve (4 / 8 /
-16 MiB), against the free USER the game had before the worker's first block.
+API 19's 61,440 B) + the 516,096 B line-block ceiling, plus the fixed 1 MiB reserve, against the free USER the game had before the worker's first block.
 The recommendation is the largest tier whose first job fits: it is one sample in one game, and
 memory alone. It prices each tier at its ceilings; the game worker checks the pinned model of
 each size (`model`, `job_bytes` in the same table), which needs less, and logs each size that did
@@ -228,9 +228,9 @@ depends on them.
 
 | tier | weights at most | box time | W8I arena ceiling | first job needs | reserve | free USER needed |
 |---|---|---|---|---|---|---|
-| Large | 2,500,000 B | < 3 s | 1,310,720 B | 4,399,104 B | 16 MiB | 21,176,320 B |
-| Normal | 1,600,000 B | < 2 s | 262,144 B | 2,449,408 B | 8 MiB | 10,838,016 B |
-| Small | 999,999 B | < 1 s | 131,072 B | 1,720,320 B | 4 MiB | 5,914,624 B |
+| Large | 2,500,000 B | < 3 s | 1,310,720 B | 4,399,104 B | 1 MiB | 5,447,680 B |
+| Normal | 1,600,000 B | < 2 s | 262,144 B | 2,449,408 B | 1 MiB | 3,497,984 B |
+| Small | 999,999 B | < 1 s | 131,072 B | 1,720,320 B | 1 MiB | 2,768,896 B |
 
 ## Collecting everything: `--collect`
 

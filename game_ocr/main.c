@@ -880,9 +880,9 @@ static size_t extra_job_bytes(const VjoVocrModel *m, const VjoVocrLm *lm, const 
            VJO_GAME_OCR_TEXT_BYTES;
 }
 
-/* The reserve a job of model tier `tier` keeps (include/vjo_ledger_budget.h): the
- * largest tier it holds, so the cascade's (the next tier up) when it has one; a
- * request by name (tier 0) keeps the flat GAME_RESERVE. */
+/* All tiers, cascades and requests by name (tier 0) keep the fixed 1 MiB game
+ * reserve (include/vjo_ledger_budget.h). The tier constants remain in the shared
+ * model table; their model allocations are counted separately. */
 static uint32_t check_reserve(unsigned tier, const VjoVocrModel *casc)
 {
     unsigned held = casc && tier ? tier + 1u : tier;
@@ -1660,7 +1660,7 @@ static int hooks_snapshot(uint32_t pick, int trust)
         if (!len) continue;
         site = hk.snap.kind == VJO_HOOK_KIND_SITE ? VJO_HOOK_CAND_SITE : 0u;
         /* A Rubi verified entry may borrow Luna's filter (#273). Keep its verified identity:
-         * in a tight-memory game it must reach the smaller-reserve fallback below. */
+         * in a tight-memory game it must reach the capture-only fallback below. */
         verified = (uint32_t)vjo_hooks_verified(id);
         if (site && hk.snap.site && !verified) { site |= VJO_HOOK_CAND_LUNA; has_luna = 1; }
         else if (site && verified && trust) has_luna = 1; /* API 43: it answers as Luna's do */
@@ -2216,9 +2216,8 @@ retry_smaller:
     if (want_spot && !spot && drop_spot()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     /* Helpers (ocr_threads, API 22) only when they fit beside everything else the
      * check chose (the tier's model, its LM, the cascade), keeping the same reserve
-     * as that check (the tier's, out->reserve_bytes: 4, 8 or 16 MiB by the largest
-     * model the job holds): one fewer at a time, down to none, which is the serial
-     * job, so helpers never make a job step down a tier. Their line slots end the
+     * as that check (out->reserve_bytes: 1 MiB for every tier): one fewer at a
+     * time, down to none, which is the serial job, so helpers never make a job step down a tier. Their line slots end the
      * workspace block. */
     unsigned want_helpers = r->speed & VJO_GAME_OCR_S_HELPERS_MASK;
     unsigned use_helpers = 0;
@@ -2250,7 +2249,7 @@ retry_smaller:
         else rc = VJO_E_OOM;
         /* No stream can ever agree with OCR in this game now: a Rubi verified site's newest text answers,
          * unconfirmed (core/hook_select.h vjo_hook_select_no_memory), with its capture pass beside the
-         * smaller VJO_GAME_RESERVE_HOOK_ONLY. A pass that fails keeps the refusal. */
+         * same VJO_GAME_RESERVE_HOOK_ONLY. A pass that fails keeps the refusal. */
         if (rc == VJO_E_OOM && hk.installed) {
             uint32_t no_mem_flags = 0, id = vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
             if (id) {

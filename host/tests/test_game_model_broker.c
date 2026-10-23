@@ -356,7 +356,7 @@ static void real_models_cross_namespace(void)
         /* The real runtime's frames for the one line, and the memory check. */
         TEST_CHECK(out.recognized == 1 && out.frames == out.line[0].frames && out.frames > 0);
         TEST_CHECK(out.line[0].width > 0 && out.line[0].height > 0 && out.frames <= out.line[0].width);
-        TEST_CHECK(out.free_user == 16*1024*1024 && out.reserve_bytes == 4u*1024u*1024u && out.need_weights);
+        TEST_CHECK(out.free_user == 16*1024*1024 && out.reserve_bytes == VJO_GAME_RESERVE && out.need_weights);
         /* The capture: the region in strips through the display hook, into a
          * capture block under 64 KiB; the first pass published the capture. */
         TEST_CHECK(out.source == VJO_GAME_OCR_SRC_HOOK && out.capture_memory == VJO_GAME_OCR_MEM_USER);

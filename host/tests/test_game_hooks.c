@@ -1210,7 +1210,7 @@ static void border_lines_on_an_agreeing_stream(void)
     }
 }
 
-/* A game that leaves too little for any model (アマツツミ: 2 MiB free on a console): OCR is refused, and a
+/* A game that leaves too little for any model: OCR is refused, and a
  * Rubi verified site's newest text answers unconfirmed, with one first pass beside the hook-only reserve and
  * no recognition; nothing is learned. A Luna site or CALL caller, an OCR-only pick, or too little even for
  * the pass: the refusal as before. With room for OCR nothing of this runs. */
@@ -1219,7 +1219,7 @@ static void verified_site_answers_when_ocr_has_no_memory(void)
     VjoGameOcrResult out;
     for (unsigned borrowed_filter = 0; borrowed_filter < 2; borrowed_filter++) {
         reset();
-        available = 2 * 1024 * 1024;
+        available = VJO_GAME_RESERVE_HOOK_ONLY + 64 * 1024;
         stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
         stream(9, VJO_HOOK_KIND_CALL, 6, LINE2);
         TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.text_from && !out.hook_flags);
@@ -1237,12 +1237,12 @@ static void verified_site_answers_when_ocr_has_no_memory(void)
         TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_HOOK_ONLY && out.need_workspace == capture_block);
         TEST_CHECK(!hk.sel.locked && !hk.sel.interval && !hk.sel.streak); /* nothing learned without OCR */
 
-        /* too little even for the pass beside the smaller reserve: refused, no text */
+        /* too little even for the pass beside the reserve: refused, no text */
         stream(1, VJO_HOOK_KIND_SITE, 6, LINE3);
         available = VJO_GAME_RESERVE_HOOK_ONLY + 4096;
         TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.text_from && !out.text[0]);
         /* an OCR-only pick: the refusal */
-        available = 2 * 1024 * 1024;
+        available = VJO_GAME_RESERVE_HOOK_ONLY + 64 * 1024;
         TEST_CHECK(run(VJO_HOOK_PICK_OCR, &out) == VJO_E_OOM && !out.text_from);
         /* room for OCR: recognition as before, never the unconfirmed answer */
         available = 64 * 1024 * 1024;

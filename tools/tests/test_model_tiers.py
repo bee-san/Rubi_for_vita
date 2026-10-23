@@ -41,6 +41,7 @@ class ModelTiers(unittest.TestCase):
         self.assertIn("source", TIERS)
         self.assertEqual([t["id"] for t in TIERS["tiers"]], ["small", "normal", "large"])
         for tier in TIERS["tiers"]:
+            self.assertEqual(tier["reserve_bytes"], 1 << 20, tier["id"])
             for key in ("id", "name", "weights_max_bytes", "box_ms_under", "arena_max_bytes", "reserve_bytes",
                         "model", "tagline", "est_box_ms", "est_box_ms_444", "job_bytes", "need_bytes"):
                 self.assertIn(key, tier, tier["id"])
@@ -93,15 +94,15 @@ class ModelTiers(unittest.TestCase):
             self.assertLess(tier["est_box_ms_444"], tier["est_box_ms"], tier["id"])
             if previous and tier["model"] == previous["model"]:
                 # a size that kept the model of the size below it (vita-vn-ocr eval/vocr5_protocol.json
-                # amendment 3): the same figures, a larger reserve
+                # amendment 3): the same figures and the same fixed reserve
                 for key in ("est_box_ms", "est_box_ms_444", "job_bytes"):
                     self.assertEqual(tier[key], previous[key], tier["id"])
-                self.assertGreater(tier["reserve_bytes"], previous["reserve_bytes"])
+                self.assertEqual(tier["reserve_bytes"], previous["reserve_bytes"])
             elif previous:
                 self.assertGreater(size, pins[previous["model"]][0])
                 self.assertGreater(tier["est_box_ms"], previous["est_box_ms"])
                 self.assertGreater(tier["est_box_ms_444"], previous["est_box_ms_444"])
-                self.assertGreater(tier["reserve_bytes"], previous["reserve_bytes"])
+                self.assertEqual(tier["reserve_bytes"], previous["reserve_bytes"])
             previous = tier
 
     def test_each_tier_model_is_shipped_and_pinned_once(self):
