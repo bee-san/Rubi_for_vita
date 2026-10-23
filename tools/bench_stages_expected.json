@@ -10,6 +10,7 @@
   "config": "64d6054492cc3cbd",
   "find": "80623443cd1ef05e",
   "furigana": "2c611520e218b2eb",
+  "history_scan": "9660efd4a9cf6b61",
   "job_h15": "dd6569dbcaa66395",
   "job_h15_first": "dd6569dbcaa66395",
   "job_h15_greedy": "6ffadefbb19d0d61",
@@ -25,7 +26,9 @@
   "scene_sig": "1be6f203f8214077",
   "scene_update": "0f6ac6889dc93ab4",
   "scene_update_typing": "47a591be264574a5",
-  "sha256_h15": "dfecd73969bab9ef"
+  "sha256_h15": "dfecd73969bab9ef",
+  "total_count": "d9a632cfef1c0f13",
+  "total_number": "ba40bd6427da8971"
  },
  "note": "output checksums of tools/bench_stages.py's workloads (FNV-1a of each stage's output); a speed change must not alter them"
 }

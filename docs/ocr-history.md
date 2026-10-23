@@ -95,13 +95,15 @@ log's module rows, `arm-vita-eabi-nm -S` and `-fstack-usage`, both builds of mai
 for a hook's.
 Both module-page budgets and thread-stack budgets remain enforced by the ledger.
 
-The overlay reads the file back for one thing only: [line history](line-history.md). When Up
+The overlay reads the file back for two things. [Line history](line-history.md): when Up
 first goes past the overlay's top row, the control thread reads the file's last 24,512 B once
 (into its existing 24 KiB scratch) and keeps up to 32 of this game's lines, by `uuid`, in a 16 KiB Paf
-block while the user looks back; nothing else reads it, and that reader never writes it. An append in
-progress can only cut the last record: the reader skips it until its line and the time's first digit
-after it are written, then reads its line, which is whole
-([line-history.md](line-history.md#where-the-lines-come-from-and-why)).
+block while the user looks back. And the [total characters read](#total-characters-read) that △ shows,
+when it is not known yet: the control thread counts the file 24,512 B at a time in the same scratch.
+Neither reader writes `history.csv`. An append in progress can only cut the last record: the reader
+skips it until its line and the time's first digit after it are written, then reads its line, which is
+whole ([line-history.md](line-history.md#where-the-lines-come-from-and-why)); the count leaves out the
+record an append may be writing and counts it once the append is done.
 
 Consecutive identical normalized text within a game is suppressed, including
 rescans caused by a blinking icon or reopening/resuming. A different sentence,
@@ -304,6 +306,89 @@ five or more characters read in 1 s to 5 minutes), but at least 2 s and at most
 `web/stats.py` `calculate_actual_reading_time`). exSTATic's visual-novel
 tracker counts time while it runs and stops its clock 60 s after the last line
 (`afk_max_time`, [`src/vn/vn.svelte`](https://github.com/KamWithK/exSTATic/blob/8543967fb9bdf70154f521e3c8c68aa18da1339f/src/vn/vn.svelte)).
+
+## Total characters read
+
+With the overlay open, △ (Triangle) shows the line's source view
+([native-hooks.md](native-hooks.md#hidden-line-diagnostics)), and its first line is the total:
+
+```
+Total characters read: 1,234,567
+```
+
+It is the sum of [`characters`](#characters) over every record of `history.csv`, every game's: the
+characters column of `tools/reading_stats.py`'s **All games** row for the same file (the two differ only
+where a power loss cut a record and the next boot's record runs on from it: each counts one of the two
+or both, as each reads such records). `characters` is not the line's length: punctuation, brackets,
+symbols, spaces and line breaks count nothing ([Characters](#characters)). On the 50 real VOCR textboxes
+of `host/fixtures/word_lookup`, written by the writer, the column's sum is 1,329, the lines' code points
+1,593 (`len()`, 19.9 % more) and 1,505 without their 88 line breaks (13.2 % more; 176 marks:
+`。、「」！？…` and the like), and their UTF-8 bytes 4,533 [measured: the writer's records, Python's
+`len` on each `line`]. The total counts what was recorded, so a line recorded twice (a part-way read,
+#252) counts twice, as in the tool. It is every game's: a total of the game in front would need another
+count of the whole file at each change of game, or a table of every game's, and the normal Shell's code
+pages have 20 B of room left (docs/memory-ledger.md#the-reading-total).
+
+**How it is kept, so that a press costs nothing.** The Shell does not count the file at a press. It
+keeps the total, the characters of `history.csv`'s first `covered` bytes, in its data (56 B), under the
+view's lock:
+
+- While the total is known, the writer (VjoNet) adds each record's `characters` as it appends the
+  record, when the record starts where the total's bytes end (otherwise it marks the total unknown):
+  some 40 instructions a record (`vjo_history_append` 1,068 → 1,100 B of code, `flush` +6 B) and a lock
+  and unlock of the view's mutex (two system calls, unmeasured), after the result was published and the
+  record written, synced and closed, as before [measured: the normal Shell's compiled code].
+- It is counted from the file only when a press finds it unknown: the first press ever, the first press
+  after the Shell starts (from where the kept total ends: only the records appended since it was kept),
+  and after `history.csv` was replaced, cut or changed under it. The view says `counting…` until the
+  count ends and then shows the number (it is drawn again). The control thread reads the file 24,512 B
+  at a time, with the byte before them, into its existing 24 KiB scratch (line history's window), one
+  window a wakeup, after the wakeup's other work, and wakes itself for the next. A count that an append
+  ran beside goes on from there at the next wakeup (50 ms at most). A failed open or read makes the view
+  say `unavailable`; the next press tries again. A press that never comes costs nothing: with no press
+  since the Shell started, the writer adds nothing and nothing is read.
+- `ux0:data/VitaJPOverlay/history_total.bin` keeps it between starts: 16 bytes, the total (64-bit), the
+  bytes of `history.csv` it is the total of and a check (32-bit each, little-endian), written through a
+  temporary file and a rename when a count ends and at each game's exit when lines were added. A missing,
+  torn or wrong file (its check, a size past the file's end, no record starting where its bytes end), or
+  one of another `history.csv`, is not used: the whole file is counted again. Moving `history.csv` away
+  (Rubi then begins a new one) starts the total again: it is the file's. (A file put in its place with a
+  record starting exactly where the kept total ends is taken for the same file.)
+- A `history.csv` of 4 GiB or more (some ten million records) has no total: `unavailable`.
+
+What it costs [host: measured, an AMD EPYC 9R14, the median of 5 runs of `vjo-stage-bench`; A9: the Vita
+compiler's code of the normal build under `qemu-arm -cpu cortex-a9`, `tools/bench_stages.py a9`, costed
+with vita-vn-ocr's Cortex-A9 model: an estimate; nothing of this has run on a console]:
+
+| | host | Cortex-A9, 333 MHz (444 MHz) |
+| --- | --- | --- |
+| a press, the total known: the number with its commas (`total_number`) | 38 ns | 578 instructions: 0.9-1.8 µs (0.7-1.4 µs) |
+| a record's append, the total known | | some 40 instructions and the mutex's two system calls (unmeasured) |
+| the count, a record (`total_count`, 2,000 records of 512 B) | 0.80 µs | 9,060 instructions: 14-30 µs (10-22 µs) |
+| line history's read, for comparison (`history_scan`, 24,513 B) | 21 µs | 316,983 instructions on main, 297,608 with this change (its record parser shared) |
+
+A press also has paf lay out one more line of the view (33 characters), whose cost is unmeasured. The
+count of a whole file (`vjo-history-writer --total`: the Shell's code, its windows and reads; the median
+of 21 counts; records of the 50 textboxes in turn, 408 B each as the writer writes them), and its console
+estimate: the CPU at 14-30 µs a record (the A9 figure above, 333 MHz) and the reads at 7.0-14.6 MB/s (on
+the console, H15's 1,155,968 B weights were read through the kernel's broker in 32 KiB pieces and
+SHA-256-checked in 218-231 ms, the SHA-256 alone 66-139 ms: `docs/performance.md`; the Shell's own reads
+are assumed no slower):
+
+| records | bytes | windows | host | console (estimate) |
+| ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 407,617 | 17 | 0.92 ms | 0.04-0.09 s |
+| 10,000 | 4,072,498 | 168 | 8.90 ms | 0.4-0.9 s |
+| 100,000 | 40,721,308 | 1,676 | 89.6 ms | 4.2-8.8 s |
+
+That is the first press's wait at most; afterwards a press costs the number's formatting, and a restart's
+first press counts only what was recorded since the total was kept (each game's exit keeps it). Nothing of
+it runs in the game: the game worker and the kernel plugin are the same bytes, and the OCR job's code is
+unchanged; the record's append, which the next job already waited for, takes the lock after its file is
+closed. While a count runs, the control thread's other work in each wakeup comes first, so a job, a
+refresh or a lookup it starts waits at most for one window (an estimate: 1.7-3.5 ms of reading and
+0.7-1.4 ms of counting at 333 MHz); the overlay's input and drawing are the paf thread's and do not wait.
+CPU3 use is unmeasured (AGENTS.md rule 8).
 
 ## The format and older files
 

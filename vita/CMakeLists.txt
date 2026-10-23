@@ -221,7 +221,8 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/files.c
   ${ROOT}/vita/games_storage.c
   ${ROOT}/vita/buttons_vita.c
-  ${ROOT}/shell/libc_shim.c)
+  ${ROOT}/shell/libc_shim.c
+  ${ROOT}/shell/divide.c) # the Shell's integer division, in place of libgcc's (the Shell only)
 add_dependencies(VitaJPOverlay_Shell vjo_kernel_stubs)
 target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
 # The overlay page (once a frame while it is open; paf's own calls dominate)
@@ -248,6 +249,9 @@ set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${RO
   ${ROOT}/shell/anki_queue.c ${ROOT}/shell/history.c ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/strip.cpp ${ROOT}/core/text_rows.c ${ROOT}/core/arena.c
   PROPERTIES COMPILE_OPTIONS "-Os")
+# The Shell's integer division (shell/divide.c): for size, and each helper in its own section, so the
+# build links only those its code calls (the normal build no divmod).
+set_source_files_properties(${ROOT}/shell/divide.c PROPERTIES COMPILE_OPTIONS "-Os;-ffunction-sections")
 if(VJO_WITH_NCNN)
   target_link_libraries(VitaJPOverlay_Shell vjo_ocr ncnn)
 endif()

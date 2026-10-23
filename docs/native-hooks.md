@@ -322,7 +322,9 @@ CPU3 load, are unmeasured.
 With the overlay open, press **Triangle** to replace the dictionary body with diagnostics for the
 displayed text; press it again to return. The text and cursor remain visible, Up/Down still visit
 history, and the right stick scrolls the details. The toggle is absent from the normal hints and
-starts off each time the overlay opens, in both normal and debug builds.
+starts off each time the overlay opens, in both normal and debug builds. Its first line is the total
+characters read, every game's lines in `history.csv` (`Total characters read: 1,234,567`, or `counting…`
+while the Shell counts the file once: [ocr-history.md](ocr-history.md#total-characters-read)).
 
 `Source` says **OCR** or **Hook** for the job that supplied that text. Hook details include its stream
 ID and table-site/CALL origin, agreement/lock/pin/no-OCR/unlock flags, similarity, available streams,

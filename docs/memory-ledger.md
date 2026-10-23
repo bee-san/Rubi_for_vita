@@ -5,6 +5,47 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## The reading total
+
+The overlay's "Total characters read" (△; [ocr-history](ocr-history.md#total-characters-read)), measured
+with VitaSDK GCC 15.2.0 in `vitasdk/vitasdk:2026.08` (CI's digest), Release, main `e132517` (0.9.3) against
+this change, the build log's module rows (`tools/check_memory_ledger.py`, `--exact` in the normal build):
+
+| Shell | main text + data/bss | this change | Loaded pages, unchanged |
+|---|---:|---:|---:|
+| Debug | 100,860 + 72,912 B | 101,156 + 73,048 B | 176,128 B |
+| Normal | 90,004 + 72,960 B | 90,092 + 73,072 B | 163,840 B (exact) |
+
+The total's code is 1,304 B in the normal Shell (`arm-vita-eabi-nm -S`): the count of a window
+(`vjo_history_chars` 148 B, with line history's record parser shared, `record_line` 232 B and
+`record_starts` 42 B, which `vjo_history_scan` used to inline: 528 → 280 B), the count's step
+(`vjo_history_total_step` 636 B), the number with its commas (`vjo_history_number` 80 B), the view's
+and the game exit's (`vjo_history_total_text` 40, `_want` 44, `_keep` 56, `total_save` 54, `_stop` 24 B),
+the writer's addition (`vjo_history_append` 1,068 → 1,100 B, `flush` +6 B) and the callers (+40 B). The
+normal Shell's code segment had 108 B of room on main. It is paid for by the Shell's integer division:
+libgcc's `__udivsi3` and `__divsi3` (604 + 660 B, unrolled for speed) give way to `shell/divide.c`'s
+bit-at-a-time `__aeabi_uidiv` and `__aeabi_idiv` (54 + 36 B, `-Os`), for the three divisions the Shell
+makes (the region selector's corners when a region is saved, its stick cursor's speed twice a frame
+while the stick moves it, and the debug build's job log): 1,264 B less. `host/tests/test_shell_divide.c`
+checks every quotient and remainder of 1,048,576 operand pairs, 2,000,000 random ones and the edges
+against what C's division means, on the host and on the Cortex-A9 under qemu (the ARM lane); the game
+worker's OCR divides in its loops and keeps libgcc's. The normal Shell's code segment keeps 20 B of room,
+its data segment 656 B.
+
+Data/bss: the total's state (`total`, 56 B in the normal build, 72 B in the debug one with its count's
+log figures), the view's two strings (`counting…`, `unavailable`, 24 B) and the number's format (5 B), all
+in the data segment; the Triangle view's format string grows by 26 B. No allocation, thread, PAF block or
+budget is added. The count reads into the control thread's existing 24 KiB scratch (line history's
+window, `VJO_HISTORY_WINDOW` + 1 B) and releases it in the same wakeup; `history_total.bin`'s 16 bytes go
+through the existing `vjo_file_write` (a temporary file and a rename). Stacks (`-fstack-usage`, the
+Shell's flags): the writer's frame 456 → 464 B on VjoNet, whose deepest chain is a job's (5,624 B, below);
+on VjoControl the count adds `vjo_history_total_step` 80 B, `vjo_history_chars` 64, `record_line` 16 and
+the count of a line 32 B under `ctl_main` (or `vjo_file_read` and `vjo_file_write`, which the config and
+region files use already), well inside the thread's 16 KiB, whose deepest chain was 3,744 B (below). The
+kernel, the game worker, the RCO and the Rubi app (`eboot.bin`) are byte for byte main's in both builds
+[measured: sha256 of the CI-path builds of both commits, `tools/ci_container_build.sh`]. These are binary
+and host measurements; nothing of it has run on a console.
+
 ## history.csv's line source
 
 `history.csv`'s `line_source` column ([ocr-history](ocr-history.md#line-source)), measured with VitaSDK
@@ -789,7 +830,8 @@ cheaper of the two ways to keep the Shell's pages when its code grows (the other
 costs instructions a lookup), and both segments are checked exactly by `tools/check_memory_ledger.py`.
 Only tables and cold strings of the Shell's own code are so marked: `core/local_dict.c`,
 `core/linebreak.c` and `core/textjoin.c`'s tables, `shell/history.c`'s header, offsets and strings
-(which pay for PR #233's `characters` column: [ocr-history](ocr-history.md)), `shell/worker.c`'s
+(which pay for PR #233's `characters` column: [ocr-history](ocr-history.md)) and the reading total's two
+(`counting…`, `unavailable`), `core/history_lines.c`'s number format, `shell/worker.c`'s
 out-of-memory and model-storage messages, and line history's strings in `shell/overlay.cpp` and
 `shell/anki.c`.
 

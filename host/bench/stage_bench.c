@@ -19,6 +19,7 @@
 #include "config.h"
 #include "fbgrey.h"
 #include "furigana.h"
+#include "history_lines.h"
 #include "jpegsw.h"
 #include "local_dict.h"
 #include "port.h"
@@ -919,6 +920,158 @@ static int stage_jpeg(const BenchIn *in, unsigned iters, BenchOut *out)
     return 0;
 }
 
+/* ---- the reading total (docs/ocr-history.md#total-characters-read; shell/history.c) ---- */
+
+/* history.csv of TOTAL_RECORDS records, as the Shell's writer writes them (shell/history.c
+ * vjo_history_append) for a resident job of the texts in turn: each text its line and its raw line, the
+ * OCR facts' 30 cells at a resident job's sizes, one metrics entry a row, the characters and the source. */
+#define TOTAL_RECORDS 2000u
+static char history_mem[TOTAL_RECORDS * 1024u];
+static char total_window[VJO_HISTORY_WINDOW + 1];
+
+static size_t put_field(char *p, const char *s)
+{
+    size_t n = 0;
+    p[n++] = '"';
+    for (; *s; s++) {
+        if (*s == '"') p[n++] = '"';
+        p[n++] = *s;
+    }
+    p[n++] = '"';
+    return n;
+}
+
+static size_t history_image(const BenchIn *in, unsigned *records)
+{
+    static const char header[] =
+        "uuid,given_identifier,name,line,time,platform,title_id,engine,model,raw_line,"
+        "scene,region_seq,monotonic_us,elapsed_us,job_seq,region_x,region_y,width,height,"
+        "fb_width,fb_height,fb_pitch,fb_format,lines,recognized,frames,find_us,load_us,"
+        "recognize_us,capture_us,captures,tears,region_sum,source,capture_memory,"
+        "capture_bytes,strip_rows,workspace_bytes,resident_bytes,fallback,line_metrics,characters,line_source\n";
+    const char *texts[TEXTS_MAX];
+    unsigned n = split_texts(in, texts, TEXTS_MAX), k;
+    size_t len = strlen(header);
+    if (!n) return 0;
+    memcpy(history_mem, header, len);
+    for (k = 0; k < TOTAL_RECORDS; k++) {
+        const char *text = texts[k % n];
+        unsigned rows = 1;
+        uint64_t t = 1792220400250123ull + (uint64_t)k * 7000000u;
+        for (const char *c = text; *c; c++) rows += *c == '\n';
+        if (len + 2 * strlen(text) * 2 + 600 > sizeof(history_mem)) break;
+        len += (size_t)vjo_snprintf(history_mem + len, 64, "\"vita-PCSG00415\",\"vjo-%llu-%u\",",
+                                    (unsigned long long)t, (unsigned)len);
+        len += put_field(history_mem + len, "CLANNAD");
+        history_mem[len++] = ',';
+        len += put_field(history_mem + len, text);
+        len += (size_t)vjo_snprintf(history_mem + len, 96, ",%llu.%06u,\"vita\",\"PCSG00415\",\"vocr\",\"VOCR5_N_w8.vocr\",",
+                                    (unsigned long long)(t / 1000000u), (unsigned)(t % 1000000u));
+        len += put_field(history_mem + len, text); /* the raw line: the recognizer's text, as long */
+        len += (size_t)vjo_snprintf(history_mem + len, 256,
+                                    ",17,%u,%llu,550000,%u,32,362,896,156,960,544,960,0,%u,%u,%u,98000,0,%u,88000,6,0,"
+                                    "%u,1,0,65536,64,610304,1159168,0,\"",
+                                    k + 23, (unsigned long long)(9876543210ull + k * 7000000ull), k + 42, rows, rows,
+                                    rows * 54u, rows * 273000u, 1234567890u + k);
+        for (unsigned r = 0; r < rows; r++)
+            len += (size_t)vjo_snprintf(history_mem + len, 48, "%s%u:32:54:%u:273000", r ? "|" : "", 860u - 40u * r,
+                                        900u + r);
+        len += (size_t)vjo_snprintf(history_mem + len, 32, "\",%u,\"ocr\"\n",
+                                    (unsigned)vjo_line_characters(text, strlen(text)));
+    }
+    *records = k;
+    return len;
+}
+
+/* A Triangle press's count: the whole file in 24,512 B windows read with the byte before each into the
+ * control thread's scratch (the memcpy here stands in for the read), each from the newest record start of
+ * the one before, as vjo_history_total_step takes them. Per record. */
+static int stage_total(const BenchIn *in, unsigned iters, BenchOut *out)
+{
+    unsigned records = 0, windows = 0;
+    size_t len = history_image(in, &records);
+    uint64_t t0 = 0, chars = 0;
+    if (!len) return -1;
+    for (unsigned it = 0; it <= iters; it++) {
+        size_t at = 0;
+        if (it == 1) t0 = now_ns(in);
+        chars = 0;
+        windows = 0;
+        for (;;) {
+            size_t to = len - at > VJO_HISTORY_WINDOW ? at + VJO_HISTORY_WINDOW : len, base = at ? at - 1 : 0;
+            size_t first, last;
+            int cut = to < len;
+            memcpy(total_window, history_mem + base, to - base);
+            chars += vjo_history_chars(total_window, to - base, !at, cut, &first, &last);
+            windows++;
+            if (!cut) break;
+            at = last < to - base && base + last > at ? base + last : to;
+        }
+    }
+    out->ns = now_ns(in) - t0;
+    out->check = fnv64(fnv64(0, &chars, sizeof(chars)), &windows, sizeof(windows));
+    out->ops = records;
+    out->c[0] = records;
+    out->c[1] = len;
+    out->c[2] = windows;
+    out->c[3] = chars;
+    return 0;
+}
+
+/* Line history's read (shell/history.c vjo_history_load, core/history_lines.c vjo_history_scan): the first
+ * Up past the overlay's top row reads history.csv's last 24,512 B and the byte before them into the control
+ * thread's scratch and keeps this game's lines, newest first (the current text: the newest record's). */
+static int stage_history_scan(const BenchIn *in, unsigned iters, BenchOut *out)
+{
+    static uint8_t lines_mem[16384];
+    static VjoHistory h;
+    unsigned records = 0;
+    size_t len = history_image(in, &records), from = len > VJO_HISTORY_WINDOW ? len - VJO_HISTORY_WINDOW - 1 : 0;
+    uint64_t t0 = 0, hash = 0;
+    if (!len) return -1;
+    for (unsigned it = 0; it <= iters; it++) {
+        VjoArena lines;
+        if (it == 1) t0 = now_ns(in);
+        memcpy(total_window, history_mem + from, len - from);
+        memset(&h, 0, sizeof(h));
+        h.line[0] = "";
+        vjo_arena_init(&lines, lines_mem, sizeof(lines_mem));
+        vjo_history_scan(&h, &lines, total_window, len - from, !from, "vita-PCSG00415\",", VJO_FILTER_LINES);
+        if (it == 0)
+            for (int k = 1; k <= h.n; k++) hash = fnv64s(hash, h.line[k]);
+    }
+    out->ns = now_ns(in) - t0;
+    out->check = hash;
+    out->ops = 1;
+    out->c[0] = (uint64_t)h.n;
+    out->c[1] = len - from;
+    return 0;
+}
+
+/* The Triangle view's total with its commas (vjo_history_number), at every press: per number. */
+static int stage_total_number(const BenchIn *in, unsigned iters, BenchOut *out)
+{
+    static const uint64_t numbers[] = {7u, 12345u, 1234567u, 98765432109ull};
+    char buf[32];
+    uint64_t t0 = 0, h = 0, bytes = 0;
+    (void)in;
+    for (unsigned it = 0; it <= iters; it++) {
+        if (it == 1) t0 = now_ns(in);
+        bytes = 0;
+        for (unsigned i = 0; i < sizeof(numbers) / sizeof(numbers[0]); i++) {
+            const char *t = vjo_history_number(buf, sizeof(buf), numbers[i]);
+            bytes += strlen(t);
+            if (it == 0) h = fnv64s(h, t);
+        }
+    }
+    out->ns = now_ns(in) - t0;
+    out->check = h;
+    out->ops = sizeof(numbers) / sizeof(numbers[0]);
+    out->c[0] = out->ops;
+    out->c[1] = bytes;
+    return 0;
+}
+
 /* ---- the table ---- */
 
 typedef struct {
@@ -945,6 +1098,9 @@ static const Stage stages[] = {
     {"anki", stage_anki, {"cards", "json_bytes"}},
     {"furigana", stage_furigana, {"words", "bytes"}},
     {"jpeg", stage_jpeg, {"jpeg_bytes", "w", "h", "arena_peak"}},
+    {"total", stage_total, {"records", "bytes", "windows", "characters"}},
+    {"total_number", stage_total_number, {"numbers", "bytes"}},
+    {"history_scan", stage_history_scan, {"lines", "bytes"}},
 };
 #define N_STAGES (sizeof(stages) / sizeof(stages[0]))
 
