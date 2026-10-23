@@ -7,17 +7,21 @@
 #include <stdint.h>
 
 #define VJO_HOOK_AGREE 700u        /* similarity (0..1000) at or above which a stream agrees with OCR */
-#define VJO_HOOK_MIN_CHARS 4u      /* fewer characters (after normalising) never agree, nor answer a job */
+#define VJO_HOOK_MIN_CHARS 4u      /* fewer characters (after normalising) never establish OCR agreement */
 #define VJO_HOOK_LOCK_AGREEMENTS 2u
 #define VJO_HOOK_UNLOCK_MISSES 2u
 #define VJO_HOOK_INTERVAL_MIN 8u
 #define VJO_HOOK_INTERVAL_MAX 32u
 
+/* Candidate provenance in the existing site word; no extra per-stream storage. */
+#define VJO_HOOK_CAND_SITE 1u
+#define VJO_HOOK_CAND_LUNA 2u /* only a successfully installed Luna table site */
+
 /* One stream's decoded text at job time (game_ocr/hooks.h VjoHookSnap after vjo_hooks_text). */
 typedef struct {
     uint32_t id;      /* stream ID, 1..VJO_HOOK_STREAMS */
     uint32_t seq;     /* the stream's seq: changes at each new text */
-    uint32_t site;    /* 1: a table site, 0: a CALL caller (a tie goes to the site) */
+    uint32_t site;    /* VJO_HOOK_CAND_* flags; 0: a CALL caller (a tie goes to a site) */
     const char *text; /* UTF-8 */
     size_t n;         /* bytes of text */
     uint32_t key;     /* module-relative site/caller offset, never an absolute address */
@@ -27,7 +31,7 @@ typedef struct {
 
 /* The only learned data that may be persisted. A slot ID, runtime address, dialogue or partial
  * comparison history never belongs in a cache. The worker scopes this to the exact executable and
- * hook-definition revision. site is the same boolean as VjoHookCand.site. */
+ * hook-definition revision. site is the boolean !!VjoHookCand.site, not its provenance flags. */
 typedef struct {
     uint32_t site, key, encoding, interval;
 } VjoHookLearned;
@@ -55,8 +59,10 @@ int vjo_hook_select_learned(const VjoHookSelect *st, VjoHookLearned *out);
  * characters in h (or in o): 0. */
 unsigned vjo_hook_similarity(const char *o, size_t on, const char *h, size_t hn);
 
-/* Before recognition: a pinned stream with text, or a learned AUTO source with fresh comparable
- * text and no confirmation/check due, may answer without OCR. The first interval permits seven
+/* Before recognition: a pinned stream with text, or AUTO's newest nonempty Luna site, answers without
+ * OCR. Luna does not consult or change learned AUTO state, including for short or repeated text.
+ * Otherwise a learned AUTO source with fresh comparable text and no confirmation/check due may
+ * answer without OCR. The first interval permits seven
  * hook-only readings, then checks the eighth. Unchanged text still takes the existing OCR path but
  * does not advance the cadence. A missing/short source uses OCR and requires confirmation on return.
  * A successful job must still capture the region; rollback state when capture/job delivery fails. */

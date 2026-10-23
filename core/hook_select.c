@@ -267,6 +267,19 @@ uint32_t vjo_hook_select_before(VjoHookSelect *st, uint32_t pick, const VjoHookC
         if (flags) *flags = VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR | (k->site ? VJO_HOOK_R_SITE : 0u);
         return pick;
     }
+    /* These game-specific recipes already passed installation's version/placement checks. Their
+     * text is authoritative without OCR evidence; leave generic learning and its cadence alone.
+     * Sequence subtraction follows the hook engine's wrapping stream clock. */
+    for (unsigned i = 0; i < n; i++) {
+        if ((c[i].site & (VJO_HOOK_CAND_SITE | VJO_HOOK_CAND_LUNA)) !=
+            (VJO_HOOK_CAND_SITE | VJO_HOOK_CAND_LUNA) || !has_text(&c[i])) continue;
+        if (!k || (int32_t)(c[i].seq - k->seq) > 0 ||
+            (c[i].seq == k->seq && c[i].id < k->id)) k = &c[i];
+    }
+    if (k) {
+        if (flags) *flags = VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR;
+        return k->id;
+    }
     k = locked_cand(st, c, n);
     if (!k || !enough_chars(k->text, k->n)) {
         if (st->interval) st->confirm = 1;
