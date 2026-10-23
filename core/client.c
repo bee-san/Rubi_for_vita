@@ -201,6 +201,21 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         return "";
     case VJO_E_OOM:
         vjo_buf_printf(&b, "%s failed: not enough memory", what);
+        if (stage == VJO_STAGE_OCR && err->memory.reserve) {
+            if (err->memory.free < 0) {
+                vjo_buf_printf(&b, ". Game RAM unavailable (0x%08X)", (unsigned)err->memory.free);
+            } else {
+                /* Free is rounded down; requirements up. Sum in 64 bits before
+                 * converting to KiB, including the reserve, which is not used. */
+                uint64_t need = (uint64_t)err->memory.workspace + err->memory.models + err->memory.reserve;
+                vjo_buf_printf(&b, ". Game RAM (KiB): free %u + reclaim %u; need %u (%u workspace + %u models + %u reserve)",
+                    (unsigned)err->memory.free >> 10, (unsigned)(err->memory.reclaim >> 10),
+                    (unsigned)((need + 1023u) >> 10),
+                    (unsigned)(((uint64_t)err->memory.workspace + 1023u) >> 10),
+                    (unsigned)(((uint64_t)err->memory.models + 1023u) >> 10),
+                    (unsigned)(((uint64_t)err->memory.reserve + 1023u) >> 10));
+            }
+        }
         if (err->detail) vjo_buf_printf(&b, ". %s", err->detail);
         break;
     case VJO_E_SOURCE:

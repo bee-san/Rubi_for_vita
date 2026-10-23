@@ -929,6 +929,14 @@ vita-vn-ocr docs/model-tiers.md proposes them, an estimate), before allocating
 any block; allocation can still fail because the game or system uses memory
 concurrently.
 
+If OCR fails for lack of memory, the overlay shows the failed check's game RAM
+figures in KiB: free memory, Rubi's reclaimable resident memory, and the total
+needed, broken down into workspace, models and the reserve left to the game.
+These are the game worker's measurements at that check, not the Vita's total RAM
+or a live reading after cleanup. Requirements include the reserve; Rubi does not
+allocate it. If the memory query failed, the error shows its native code instead
+of a free-memory figure. An error before the check has no memory figures.
+
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
 only these names in `ux0:data/VitaJPOverlay/ocr`:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
