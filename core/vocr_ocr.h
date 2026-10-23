@@ -41,7 +41,7 @@
 extern "C" {
 #endif
 
-#define VJO_VOCR_DEFAULT_MODEL "VOCR5_N_w8.vocr" /* the Normal tier's, VJO_VOCR_TIER2_NAME (include/vjo_vocr_sizes.h) */
+#define VJO_VOCR_DEFAULT_MODEL "VOCR5_N_w8g2.vocr" /* the Normal tier's, VJO_VOCR_TIER2_NAME (include/vjo_vocr_sizes.h) */
 
 /* The capture block: one strip of at most this many bytes of grey rows (the
  * strip is region width x VJO_VOCR_STRIP_ROWS(width) rows), plus per region
@@ -322,6 +322,13 @@ typedef struct {
     uint32_t gate_us;        /* its time: its share of the first pass, and its decision */
     /* The counter re-decode (VjoVocrPolicy.counter_tau, counter_open). */
     unsigned counter_lines;  /* lines whose numeral or opening bracket it put back (the job's model) */
+    /* The head gate (VjoVocrPolicy.head_gate, API 39). */
+    unsigned head_gated;     /* CTC frames whose output head it skipped, every reading that stands (the
+                                cascade's too): of frames + cascade_frames */
+    unsigned head_rereads;   /* lines read again without it for the counter re-decode (the cascade's too); API 40:
+                                also those read again without the two-level head (VjoVocrPolicy.two_level) */
+    /* The two-level head (VjoVocrPolicy.two_level, API 40). */
+    unsigned head_escaped;   /* CTC frames that also ran its rare rows, every reading that stands (the cascade's too) */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. */
@@ -520,6 +527,21 @@ typedef struct {
      * development choice). 0 and 0: off, exactly as before. The greedy text (VjoVocrPolicy.raw) stays the
      * recognizer's own. */
     int counter_tau, counter_open;
+    /* API 39: the head gate (vita-vn-ocr #117, docs/vita-vn-ocr.md "Head gate"): a model whose blob carries one
+     * (the VOCR5 models' `_w8g` blobs) skips its output head on the CTC frames the gate calls blank, in every
+     * reading of the job (its model's, its helpers', the cascade's). A frame it skips reads as the blank; the
+     * others' logits, top-K and confidence are as without it. A line it skipped frames of whose counter re-decode
+     * finds a counter context is read again without it (the re-decode reads blank frames' top-K). A model
+     * without one reads as before. 0: off, exactly as before. */
+    int head_gate;
+    /* API 40: the two-level head (vita-vn-ocr #117 item 2, docs/vita-vn-ocr.md "Two-level head"): a model whose blob
+     * carries one (VOCR5 Normal's and Large's `_w8g2` blobs) computes its output head's 504 most frequent rows on
+     * every frame (the head gate's frames it does not skip) and the other rows only where its escape fires, in every
+     * reading of the job. A frame that fires reads as without it; one that does not, over the frequent classes. A
+     * line it ran is read again with the full head when its counter re-decode finds a counter context or its reading
+     * holds a full-size カ or ケ before 月 所 年 国 条 (the escape can miss the small ヵ or ヶ). A model without one
+     * reads as before. 0: off, exactly as before. */
+    int two_level;
 } VjoVocrPolicy;
 #define VJO_VOCR_COUNTER_TAU 6000
 #define VJO_VOCR_COUNTER_OPEN 4000

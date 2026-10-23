@@ -11,6 +11,29 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- The Normal and Large recognizers compute their rare output rows only on the frames that may need them
+  (API 40, vita-vn-ocr #117 item 2's two-level head; it runs with the head gate, `ocr_head_gate = on`, the
+  default; `off` computes every row). The two sizes now run `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr`
+  (vita-vn-ocr v0.3.6-head2level.1: their rows in frequency order, the same gate, a 1,984 B trailer);
+  Small keeps `VOCR5_S_w8g.vocr`. On vita-vn-ocr's development data the score against the gate alone is
+  +0.000 / +0.006 points (not resolved worse); the estimated time per 3-line box at 333 MHz drops from
+  0.78 / 1.91 s to 0.72 / 1.82 s (Normal / Large; estimates, nothing of it has run on a console). A line
+  whose reading holds a full-size カ or ケ before 月, 所, 年, 国 or 条, or whose counter re-decode finds a
+  counter, is read again with the full head. Normal's weights block is one page larger, the largest job's
+  workspace two (`VJO_BUDGET_GAME_WORKSPACE`) and the normal build's worker one (its code); the Shell is
+  unchanged.
+- The local engine's recognizers skip their output layer on the frames vita-vn-ocr #117's head gate calls
+  blank, about three in five (API 39; `ocr_head_gate = on`, the default; `off` reads every frame in full).
+  The three sizes now run `VOCR5_S_w8g.vocr`, `VOCR5_N_w8g.vocr` and `VOCR5_L_w8g.vocr` (vita-vn-ocr
+  v0.3.5-headgate.1: v0.3.0's blobs with a 1,792 B gate each). On vita-vn-ocr's development data no score
+  is resolved worse, greedy or with the beam + LM and the cascade; the estimated time per 3-line box at
+  333 MHz drops from 0.63 / 0.92 / 2.08 s to 0.51 / 0.78 / 1.91 s (Small / Normal / Large; estimates,
+  nothing of it has run on a console). A line whose counter re-decode finds a counter is read again
+  without the gate. Large's weights block is one page larger (2,478,080 B), every size's arena 48 B; the
+  runtime pin is bumped to `868bc91` (vita-vn-ocr #120); see [docs/vita-vn-ocr.md](docs/vita-vn-ocr.md#head-gate-api-39).
+
 ## [0.9.4] - 2026-10-23
 
 Publishes the native-hook changes already merged into main after 0.9.3. Both the normal build

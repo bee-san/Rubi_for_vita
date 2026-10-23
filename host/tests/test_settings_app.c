@@ -569,7 +569,7 @@ static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR5-N fou
 static const char *const SMALL_STATUS = "Small: fastest. VOCR5-S found.";
 static const char *const LARGE_STATUS = "Large: most accurate. VOCR5-L found.";
 /* This package's estimates (core/vocr_models.c): VOCR5-S, VOCR5-N, VOCR5-L. */
-static const char *const DETAILS[3] = {"0.6 s, 1.0 MB", "0.9 s, 1.4 MB", "2.1 s, 2.8 MB"};
+static const char *const DETAILS[3] = {"0.5 s, 1.0 MB", "0.7 s, 1.4 MB", "1.8 s, 2.8 MB"};
 
 /* This package: one engine, VOCR; the OCR card is its Model size, Normal chosen,
  * each size with its estimates from the models' metadata, and the status line

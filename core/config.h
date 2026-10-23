@@ -115,11 +115,18 @@ typedef struct {
      * letterbox or pillarbox the game worker finds as it reads the frame (on by default;
      * core/shottrim.h, docs/anki.md "Black bars"). Last, as above. */
     int anki_screenshot_trim_bars; /* 0/1 */
+    /* Local OCR (vocr, API 39): the head gate (vita-vn-ocr #117, core/vocr_ocr.h VjoVocrPolicy.head_gate): the
+     * recognizers skip their output head on the frames the model's gate calls blank (on by default; off reads
+     * as before, bit for bit). Last, as above. */
+    int ocr_head_gate;        /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
 #define VJO_TEXT_GATE_DEFAULT 0
 #define VJO_TEXT_GATE_DEFAULT_TEXT "off"
+/* ocr_head_gate's default (docs/vita-vn-ocr.md, "Head gate": why). */
+#define VJO_HEAD_GATE_DEFAULT 1
+#define VJO_HEAD_GATE_DEFAULT_TEXT "on"
 
 void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and

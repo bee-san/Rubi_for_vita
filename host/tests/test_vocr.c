@@ -508,6 +508,10 @@ static void test_release_files(void)
         o.mode = VOCR_MODE_W8I;
         TEST_CHECK(vocr_load(&m, blob, all[i].bytes) == VOCR_OK);
         TEST_CHECK(vocr_check_crc(blob, all[i].bytes) == VOCR_OK);
+        /* API 39: a blob with a head gate is pinned with the arena its gate takes (the job turns it on); API 40: a
+         * blob with a two-level head with the arena that takes too */
+        if (vocr_has_gate(&m)) o.head_gate = VOCR_HEAD_GATE_ON;
+        if (vocr_has_two_level(&m)) o.two_level = 1;
         TEST_CHECK(vocr_arena_bytes(&m, &o) == all[i].arena_bytes);
         TEST_MSG("%s: arena %zu, pinned %u", all[i].name, vocr_arena_bytes(&m, &o), all[i].arena_bytes);
         for (unsigned c = 1; c < m.n_classes; c++) {
@@ -539,7 +543,7 @@ static void test_release_files(void)
 }
 
 /* The device default is the Normal size (test_tier_pins.h: VOCR5-N, bee-san/vita-vn-ocr
- * v0.3.0's VOCR5_N_w8.vocr), Small VOCR5-S and Large VOCR5-L; each within its size's ceilings
+ * v0.3.5-headgate.1's VOCR5_N_w8g.vocr: v0.3.0's VOCR5_N_w8.vocr with its head gate), Small VOCR5-S and Large VOCR5-L; each within its size's ceilings
  * (the owner's int8 weights, 2026-10-14 18:09Z: Small < 1 MB, Normal <= 1.6 MB, Large
  * <= 2.5 MB; the arenas of vita-vn-ocr docs/model-tiers.md 1.3: 128 KiB, 256 KiB,
  * 1.25 MiB), and a larger size larger. VOCR3's and v0.2.0's models stay accepted

@@ -3,7 +3,7 @@
 # copied into this repository: point VJO_VOCR_SOURCE_DIR at a checkout of the
 # pinned commit (or place its runtime/ files under third_party/vita-vn-ocr/).
 # Every file is checked against the hash it was evaluated with.
-set(VJO_VOCR_COMMIT 817d203a49d38dda4f73d11639cf608aed84d17e)
+set(VJO_VOCR_COMMIT fb635323dde1ef1b192a952ff77803c8379c163c)
 set(VJO_VOCR_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_COMMIT}")
 option(VJO_VOCR_ALLOW_UNPINNED "Build vita-vn-ocr runtime files that differ from the pinned commit" OFF)
 
@@ -27,10 +27,13 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # drops frame rows and cursors, splits boxes holding several text rows).
 # vocr_post.c (vita-vn-ocr #109) is the counter-context re-decode over the
 # same top-K (core/vocr_ocr.c finish_line, before the LM) and the counter rule
-# that core/textnorm.c mirrors (ッ月 -> ヶ月).
+# that core/textnorm.c mirrors (ッ月 -> ヶ月). vocr.c (vita-vn-ocr #117) skips the
+# output head on the frames a blob's head gate calls blank (VjoVocrPolicy.head_gate), and
+# (#117 item 2) computes its rare rows only where a blob's two-level head needs them
+# (VjoVocrPolicy.two_level).
 set(_vocr_pins
-  vocr.c 3e1756138b2e1d9aff15abdda95b02e0c015a5ba0af99678bdd678377b73f559
-  vocr.h 30bb32693e634a4c4b4cd5cd3a4da8d33f6882bf00348d0e1d8264ba08376271
+  vocr.c 9e3ec20c064391f4a3137b6637749760f48ce27abab257358bcb177d2376c1d5
+  vocr.h f2e8a97c41cdda36f3c767f2df9a2c3b5986755600560570016838eb8be88c19
   vocr_lines.c 90c30a1c1e1707b818c2bd919243ee589700ff44ceac8b8d7a842b9d55d8d9ca
   vocr_lines.h 4f768c9a7aaa1f9e3b8f16990be23c3b098b675cf6316df7eb20dc6198b9f37d
   vocr_lines_rows.c 3207edb85d1cd7c79899390bb2ee028839dd120ca5d2278a28edd5fa9ca2ee6e

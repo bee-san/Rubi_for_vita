@@ -243,10 +243,31 @@
  * Shell SELF files are byte-identical to main's]. The normal build's code ended 1,112 B
  * below 128 KiB, less than the SCE data vita-elf-create appends (1,204 B): the worker's link now keeps
  * __sce_headroom (vita/CMakeLists.txt), as the Rubi app's does. No new block, thread or allocation. */
+/* API 39, vita-vn-ocr #117's head gate: one text page more in the debug build only, in the game's partition
+ * only. The runtime's gate path (vita-vn-ocr's vocr.c: vocr_run +1,102 B, vocr_load +366 B, run_head +224 B,
+ * plan +80 B, vocr_has_gate 22 B) and the job's (core/vocr_ocr.c: finish_line's ungated re-read +184 B, line_conf
+ * out of line 60 B, run_opts 36 B, run_job +32 B, counter_redecode +20 B, 4 B elsewhere; game_ocr/main.c +80 B),
+ * 2,210 B of text in all, and 24 B of read-only data [the linked ELFs' symbols, both builds], take the debug
+ * build's text 141,312 -> 143,552 B, 192 B past its 143,360 B of text pages, and the normal build's 132,556 ->
+ * 134,796 B, which still fits (372 B left); data/bss 32,968 -> 33,024 B and 32,960 -> 33,016 B, within their
+ * pages [measured: the build log's module rows, both builds, main 56a831c and this change, VitaSDK GCC 15.2.0 in
+ * vitasdk/vitasdk:2026.08]. So the debug build, the test builds' own and the -debug download, takes 180,224 ->
+ * 184,320 B in each game that is ON, and the normal build, the main download, keeps 172,032 B. Kept: the gate
+ * saves an estimated 0.12-0.16 s per 3-line box (docs/vita-vn-ocr.md "Head gate"). */
+/* API 40, vita-vn-ocr #117 item 2's two-level head: one text page more in the normal build only, in the game's
+ * partition only. The runtime's two-level path (parse_two, run_head2, the plan's buffers) and the job's re-read rule
+ * (core/vocr_ocr.c read_again, kana_counter) take the normal build's text 134,796 -> 138,156 B, past its 135,168 B of
+ * text pages, and the debug build's 143,552 -> 146,912 B, which still fits (544 B left); data/bss 33,016 -> 33,040 B
+ * and 33,024 -> 33,048 B, within their pages [measured: the build log's module rows, both builds, #281 6787e31
+ * and this change, VitaSDK GCC 15.2.0 in vitasdk/vitasdk:2026.08]. So the normal build, the main download, takes
+ * 172,032 -> 176,128 B in each game that is ON, and the debug build keeps 184,320 B; the Shell is unchanged (the
+ * two-level head has no key or request bit of its own; its Shell takes 8 B of text more in the debug build, the
+ * longer file names, within its pages). Kept: an estimated 62-94 ms less per 3-line box beyond the
+ * gate's (docs/vita-vn-ocr.md "Two-level head"). */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 180224u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 184320u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 172032u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 176128u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
@@ -413,30 +434,39 @@
 #define VJO_STACK_GAME 32768u                      /* VjoGameVocr */
 #define VJO_BUDGET_GAME_STACK (VJO_STACK_GAME + VJO_LEDGER_TLS)
 /* The largest accepted model, page-rounded: the Large tier's (include/vjo_vocr_sizes.h VJO_VOCR_MAX_BYTES,
- * VOCR5-L's 2,473,696 B; game_ocr/main.c refuses a larger weights block). Raised from 1,560,576 B, F20's
- * shape, the largest before VOCR5. */
-#define VJO_BUDGET_GAME_WEIGHTS 2473984u
+ * VOCR5-L's head-gated blob, 2,475,488 B since API 39: v0.3.0's 2,473,696 B and its 1,792 B gate section, one
+ * page more; game_ocr/main.c refuses a larger weights block). Raised from 1,560,576 B, F20's shape, the largest
+ * before VOCR5, then from 2,473,984 B (VOCR5-L without its gate). */
+#define VJO_BUDGET_GAME_WEIGHTS 2478080u
 /* The largest job's workspace at a 960x544 region, page-rounded (host/tests/test_ledger.c
- * computes it): the model's own (vjo_vocr_job_bytes; VOCR5-L 265,776 B, VOCR5-N and H15 187,696 B
- * on the host build), and with the beam + LM decoder (API 20) its extras (vjo_vocr_lm_job_bytes:
+ * computes it): the model's own (vjo_vocr_job_bytes; VOCR5-L 265,904 B, VOCR5-N 187,824 B and H15
+ * 187,776 B on the host build since API 39), and with the beam + LM decoder (API 20) its extras (vjo_vocr_lm_job_bytes:
  * the top-K buffers, the decoder's structs and its workspace, bounded by VJO_VOCR_LM_WS_BYTES:
  * 56,928 B on the host build) and the greedy text kept for the log (4,096 B), and with the
  * confidence cascade the cascade's extras (vjo_vocr_cascade_job_bytes: the larger model's arena,
- * structs and decoder; by tiers the next tier up's, VOCR5-L's 316,160 B beside VOCR5-N; by name
- * VOCR4-W20's 296,192 B beside a smaller model), and the finder's boxes refined
- * (vjo_vocr_refine_bytes: 72,400 B at 960x544): 637,280 B for VOCR5-N with VOCR5-L's cascade.
+ * structs and decoder; by tiers the next tier up's, VOCR5-L's 316,288 B beside VOCR5-N; by name
+ * VOCR4-W20's 296,272 B beside a smaller model), and the finder's boxes refined
+ * (vjo_vocr_refine_bytes: 72,400 B at 960x544): 637,536 B for VOCR5-N with VOCR5-L's cascade.
  * API 22 (parallel lines) ends it with the line slots of the most helpers a job takes
  * (vjo_vocr_helpers_bytes, VJO_VOCR_HELPERS_MAX = 2: the caller's slot, a line's pixels, greedy
- * text and top-K, 68,160 B, and per helper its recognizer arena and context and a slot, 253,104 B
- * for VOCR5-N on the host build): 1,211,648 B for VOCR5-N with VOCR5-L's cascade, the largest
- * (VOCR5-L alone 1,129,728 B; 1,191,680 B with H15 and VOCR4-W20 before VOCR5). The worker takes
+ * text and top-K, 68,160 B, and per helper its recognizer arena and context and a slot, 253,168 B
+ * for VOCR5-N on the host build): 1,212,032 B for VOCR5-N with VOCR5-L's cascade, the largest
+ * (VOCR5-L alone 1,129,984 B; 1,191,680 B with H15 and VOCR4-W20 before VOCR5). API 39 added 384 B to
+ * that largest job (it was 1,211,648 B): vita-vn-ocr #117's head gate, 48 B in each gated blob's arena and
+ * its fields in the runtime's model and context; the page-rounded budget is unchanged. API 40 adds 6,016 B
+ * (1,218,048 B on the host build, VOCR5-N with VOCR5-L's cascade): vita-vn-ocr #117 item 2's two-level head,
+ * 1,456 B in the arena of each of the four contexts such a job plans (its own, the cascade's and the two
+ * helpers'; level 1's maxima, the escape's units and the fired frames' indices) and its fields in the runtime's
+ * model and context; two pages more. Kept: an estimated 62-94 ms less per 3-line box beyond the gate's
+ * (docs/vita-vn-ocr.md "Two-level head"). The worker takes
  * helpers only when its memory check passes with them, one fewer at a time down to none.
  * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544). */
-#define VJO_BUDGET_GAME_WORKSPACE 1212416u
+#define VJO_BUDGET_GAME_WORKSPACE 1220608u
 /* API 22: one thread per line a helper recognizes, created for the line and deleted once it is
  * placed (game_ocr/main.c pool_run): at most VJO_VOCR_HELPERS_MAX at once, none between jobs.
- * Its deepest chain: vocr_run 448 + run_head 1,328 + mm_i16 616 = 2,392 B with the Vita compiler
- * (-fstack-usage, vita-vn-ocr #85's runtime), about a seventh of it. */
+ * Its deepest chain: vocr_run 584 + run_head 1,328 + mm_i16 616 = 2,528 B with the Vita compiler
+ * (-fstack-usage, vita-vn-ocr #117's runtime; 2,392 B, vocr_run 448, before its head gate), about a
+ * sixth of it. */
 #define VJO_STACK_GAME_HELPER 16384u
 #define VJO_BUDGET_GAME_HELPER_STACK (VJO_STACK_GAME_HELPER + VJO_LEDGER_TLS)
 #define VJO_BUDGET_GAME_HELPERS (2u * VJO_BUDGET_GAME_HELPER_STACK)
@@ -463,12 +493,12 @@
  * page-rounded; taken only when the memory check passes with it. API 21: the cascade's model
  * is the next tier up of the job's (Small's is Normal's, Normal's is Large's, Large has none;
  * a request by name's, the host tools', VOCR4-W20), so its largest is the Large tier's
- * (VJO_VOCR_MAX_BYTES, VOCR5-L's 2,473,696 B; game_ocr/main.c refuses a larger cascade block).
- * Raised from 1,560,576 B, VOCR4-W20's, Large before VOCR5. A job's own weights and its
- * cascade's are at most Normal's and Large's: the two budgets, each the largest model's,
- * count 1,286,144 B more than any job holds (VOCR5-N's 1,187,840 B weights block beside
+ * (VJO_VOCR_MAX_BYTES, VOCR5-L's 2,475,488 B since API 39; game_ocr/main.c refuses a larger cascade
+ * block). Raised from 1,560,576 B, VOCR4-W20's, Large before VOCR5, then from 2,473,984 B (VOCR5-L without
+ * its gate). A job's own weights and its cascade's are at most Normal's and Large's: the two budgets, each the
+ * largest model's, count 1,290,240 B more than any job holds (VOCR5-N's 1,187,840 B weights block beside
  * VOCR5-L's cascade), an over-count kept so that each item's worst case stays its own. */
-#define VJO_BUDGET_GAME_CASCADE 2473984u
+#define VJO_BUDGET_GAME_CASCADE 2478080u
 /* The free USER memory a job leaves to the game beside what it holds, by the
  * largest model tier the job holds (include/vjo_vocr_sizes.h; the job's own model
  * or the cascade's): vita-vn-ocr docs/model-tiers.md §1.3 and §1.5 proposes
@@ -495,8 +525,8 @@
  * (196,608 B), page-rounded: 450,560 B, only while a shot runs. A shot is a job of
  * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
  * line or helpers (1,835,008 B of the job's worst case besides the resident weights, LM
- * and cascade model, which a shot keeps: 8,732,672 + 450,560 B under the job's
- * 10,567,680 B): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
+ * and cascade model, which a shot keeps: 8,740,864 + 450,560 B under the job's
+ * 10,575,872 B): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
@@ -518,9 +548,13 @@
  * A game with less runs fewer helpers, a smaller LM, no cascade or none of them, then a smaller
  * tier (game_ocr/main.c), never a smaller tier for the helpers. */
 #define VJO_LIMIT_GAME_WEIGHTS 2502656u
-#define VJO_LIMIT_GAME_WORKSPACE 1212416u
+#define VJO_LIMIT_GAME_WORKSPACE 1220608u
 /* API 34 adds the measured 8192 B of worker module pages to the prior ceiling, and vita-vn-ocr #109's
- * counter re-decode its 4,096 B. */
-#define VJO_LIMIT_GAME_JOB 10579968u
+ * counter re-decode its 4,096 B; API 39 the head-gated Large blob's page in the weights and the cascade
+ * budgets (8,192 B: vita-vn-ocr #117's gate section, 1,792 B a blob) and its debug worker's text page
+ * (4,096 B): the job's worst case 10,575,872 B, 11.7 % of that free USER (a real peak, VOCR5-N with
+ * VOCR5-L's cascade, the 4 MB LM and both helpers, 9,285,632 B, is 1,290,240 B less). API 40 the two-level
+ * head's two workspace pages (8,192 B; VJO_BUDGET_GAME_WORKSPACE): the job's worst case 10,584,064 B. */
+#define VJO_LIMIT_GAME_JOB 10600448u
 
 #endif

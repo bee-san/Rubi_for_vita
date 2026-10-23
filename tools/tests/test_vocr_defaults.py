@@ -1,5 +1,5 @@
-"""The device default is the Normal model size, VOCR5_N_w8.vocr from bee-san/vita-vn-ocr v0.3.0,
-with Small (VOCR5_S_w8.vocr) and Large (VOCR5_L_w8.vocr) the other sizes (tools/model_tiers.json;
+"""The device default is the Normal model size, VOCR5_N_w8g2.vocr from bee-san/vita-vn-ocr v0.3.6-head2level.1 (v0.3.0's
+recognizer with its head gate and two-level head), with Small (VOCR5_S_w8g.vocr) and Large (VOCR5_L_w8g2.vocr) the other sizes (tools/model_tiers.json;
 tools/tests/test_model_tiers.py checks the C tiers against it); VOCR3's, VOCR4-W20 and v0.2.0's
 models stay pinned (host tools) but are not shipped; every pinned model fits the Large size's
 ceilings and the game worker's weights block (VJO_VOCR_MAX_BYTES, the largest pin); and the game
@@ -22,16 +22,20 @@ VOCR3_H15_SHA256 = "cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b
 VOCR3_FL10_SHA256 = "87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154"
 # The model sizes' pins, the one place a test states them: per tier its file, exact size, SHA-256
 # (the release's SHA256SUMS), W8I arena, release and generation. VOCR5's are vita-vn-ocr
-# eval/vocr5_protocol.json's "tiers" (exact sizes and arenas), released as v0.3.0; a tier whose
-# VOCR5 candidate did not beat its incumbent keeps that model, the VOCR4 one of v0.2.5-vocr4.1.
+# eval/vocr5_protocol.json's "tiers" (exact sizes and arenas), released as v0.3.0, with their head gate since
+# API 39 (vita-vn-ocr #117: v0.3.0's bytes + a 1,792 B section; the arena with the gate on, +48 B), released as
+# v0.3.5-headgate.1, and Normal's and Large's with their two-level head since API 40 (#117 item 2: the output rows
+# in frequency order, the gate, a 1,984 B VOC2 trailer; the arena with it on, +1,456 B more), released with Small's
+# gated file as v0.3.6-head2level.1; a tier whose VOCR5 candidate did not beat its incumbent keeps that model, the VOCR4 one of
+# v0.2.5-vocr4.1.
 # The other tests read the tiers from here, tools/model_tiers.json or the C tier macros.
 TIER_PINS = {
-    "small": ("VOCR5_S_w8.vocr", 819792, "f175bfcb8cec65d69e85dd5f2cf707c9a711ada7203c0d1099cd2d0142978b8d", 124832,
-              "v0.3.0", "VOCR5"),
-    "normal": ("VOCR5_N_w8.vocr", 1185632, "20be179def8033171435ba62388657b3d3c932b365093737948c636e025e3bdc", 182944,
-               "v0.3.0", "VOCR5"),
-    "large": ("VOCR5_L_w8.vocr", 2473696, "50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3", 261024,
-              "v0.3.0", "VOCR5"),
+    "small": ("VOCR5_S_w8g.vocr", 821584, "76a1bc5de5cd0419a7edad31bc198af8016bda5592a7e595de75697671d3e928", 124880,
+              "v0.3.6-head2level.1", "VOCR5"),
+    "normal": ("VOCR5_N_w8g2.vocr", 1189408, "f0c8e52c9c1d9f2a714d5ca3ecfba9c0b031ee7ac51a522a2c29fd558d51761b", 184448,
+               "v0.3.6-head2level.1", "VOCR5"),
+    "large": ("VOCR5_L_w8g2.vocr", 2477472, "41c3543ff8dddd45dc953a6a5f5d579ef9ca779f0e43196406be59c1d985c5b5", 262528,
+              "v0.3.6-head2level.1", "VOCR5"),
 }
 TIER_FILES = [TIER_PINS[t][0] for t in ("small", "normal", "large")]
 
@@ -192,8 +196,8 @@ class VocrDefaults(unittest.TestCase):
         """The three sizes' recognizers, pinned by URL, size and SHA-256 in the packager and by size,
         SHA-256 and arena in the game worker, as their release publishes them, and the C tier macros
         name them; the Large size's is the largest pin and the weights blocks' limit (VJO_VOCR_MAX_BYTES).
-        VOCR5's release, v0.3.0, holds exactly the VOCR5 sizes' files."""
-        self.assertEqual(prepare_ocr.VOCR5_TAG, "v0.3.0")
+        VOCR5's release, v0.3.6-head2level.1, holds exactly the VOCR5 sizes' files."""
+        self.assertEqual(prepare_ocr.VOCR5_TAG, "v0.3.6-head2level.1")
         self.assertEqual(prepare_ocr.VOCR_GENERATION[prepare_ocr.VOCR5_TAG], "VOCR5")
         table, sizes = c_table(), macros()
         for n, tier in enumerate(("small", "normal", "large"), 1):
@@ -205,7 +209,7 @@ class VocrDefaults(unittest.TestCase):
             self.assertEqual((got_size, got_sha), (size, sha), name)
             self.assertEqual(table[name], (size, sha, arena), name)
             self.assertEqual((sizes[f"VJO_VOCR_TIER{n}_NAME"], sizes[f"VJO_VOCR_TIER{n}_BYTES"]), (name, size), tier)
-        self.assertEqual(set(prepare_ocr.VOCR5_ASSETS), {p[0] for p in TIER_PINS.values() if p[4] == "v0.3.0"})
+        self.assertEqual(set(prepare_ocr.VOCR5_ASSETS), {p[0] for p in TIER_PINS.values() if p[4] == "v0.3.6-head2level.1"})
         self.assertEqual(sizes["VJO_VOCR_MAX_BYTES"], max(size for size, _, _ in table.values()))
         self.assertEqual(sizes["VJO_VOCR_MAX_BYTES"], sizes["VJO_VOCR_TIER3_BYTES"])
 
@@ -287,10 +291,10 @@ class VocrDefaults(unittest.TestCase):
                 # its own name beside the LMs' file: taken
                 (src / "MODEL-ATTRIBUTION.md").write_bytes(att)
                 self.assertIn("MODEL-ATTRIBUTION.md", [p.name for p in prepare_ocr.fetch_tiers(out, src)])
-        # the real pin is v0.3.0's ATTRIBUTION.md (its SHA256SUMS)
+        # the real pin is v0.3.6-head2level.1's ATTRIBUTION.md (its SHA256SUMS)
         url, size, sha = prepare_ocr.VOCR_MODEL_ATTRIBUTION_PIN[prepare_ocr.VOCR_MODEL_ATTRIBUTION]
-        self.assertTrue(url.endswith("/releases/download/v0.3.0/ATTRIBUTION.md"))
-        self.assertEqual((size, sha), (3158, "db307ca08f4282a235173a77d0ef0f9c4c918dc43ac17fa289d27b831bf1c194"))
+        self.assertTrue(url.endswith("/releases/download/v0.3.6-head2level.1/ATTRIBUTION.md"))
+        self.assertEqual((size, sha), (5536, "74b15e8a8ffb01a997ff15bff3ebc137c48a51439732fd838300a9ddff4953c3"))
         # it is VOCR5's release's, which every size with a VOCR5 model comes from (a size may keep an earlier model)
         self.assertEqual(prepare_ocr.VOCR_MODEL_ATTRIBUTION_TAG, prepare_ocr.VOCR5_TAG)
         self.assertLessEqual({pin[4] for pin in TIER_PINS.values() if pin[5] == "VOCR5"}, {prepare_ocr.VOCR5_TAG})
@@ -430,7 +434,7 @@ class VocrDefaults(unittest.TestCase):
                 self.assertTrue(name.startswith(generation + "_"), name)
             self.assertIn(shape, name, name)
         self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3",
-                                                       "v0.2.5-vocr4.1": "VOCR4", "v0.3.0": "VOCR5"})
+                                                       "v0.2.5-vocr4.1": "VOCR4", "v0.3.6-head2level.1": "VOCR5"})
         self.assertEqual(meta[prepare_ocr.VOCR_DEFAULT_MODEL][0], TIER_PINS["normal"][5])
         tiers = prepare_ocr.model_tiers()["tiers"]
         self.assertEqual([meta[t["model"]][0] for t in tiers], [TIER_PINS[t["id"]][5] for t in tiers])
