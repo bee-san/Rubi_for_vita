@@ -11,6 +11,19 @@ been reported.
 
 ## [Unreleased]
 
+### Adrenaline follow-up test build (0.9.3-test.10)
+
+- Includes main's native hook changes with the debug PSP probe v2, under API 38 to reject
+  mixed API 35/36 installations. Both normal and debug packages carry their matching Rubi app.
+- The read-only probe accepts #248's observed `INVALID_UID` only with successful readable
+  mapping information, revalidating every page's bounds, permissions and mapping identity
+  before its one bulk read. Other lookup errors still refuse reads. New log lines use format 3.
+- An open overlay stops retrying after three consecutive changed-screen failures and shows
+  a message. Closing it lets Auto try again. Capture checks remain enabled.
+- [The previous console run](docs/adrenaline-test-20261023.md) established working PSP OCR,
+  while the probe stopped before reading PSP RAM. Direct reads, the retry fix and the cause
+  of the reported exit stutter still need hardware validation.
+
 ### Added
 
 - The debug build's read-only PSP probe, completed (API 35; [the design](docs/native-hooks.md#psp-probe-debug-build),

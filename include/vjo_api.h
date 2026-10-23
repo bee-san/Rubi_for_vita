@@ -72,8 +72,10 @@
  * 35: the debug build's read-only PSP probe (config.ini psp_probe): request speed bit 7.
  * Both builds accept it; only the debug Shell sets it and only the debug worker acts on it.
  * 36: request speed bit 16 (VJO_GAME_OCR_S_DROP_BORDERS): drop box-border-only text lines
- * with non_japanese_filter = lines. Sizes and layouts are unchanged. */
-#define VJO_API_VERSION 36
+ * with non_japanese_filter = lines. Sizes and layouts are unchanged.
+ * 38: combine 35's probe request bit with 36's border bit. 37 is reserved by the popup draft;
+ * reject mixed installations whose API 36 workers do not accept the probe bit. */
+#define VJO_API_VERSION 38
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

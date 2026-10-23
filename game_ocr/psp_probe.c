@@ -20,6 +20,7 @@
  * line is written before the next read, so a fault would leave the log ending at the step before it. */
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/clib.h>
+#include <psp2/kernel/error.h>
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
@@ -34,6 +35,7 @@
 #endif
 
 _Static_assert(SCE_KERNEL_MEMORY_ACCESS_R == VJO_PSP_ACCESS_R, "the readable bit core/psp_probe.c checks");
+_Static_assert((int32_t)SCE_KERNEL_ERROR_INVALID_UID == VJO_PSP_INVALID_UID, "the shared-mapping UID error");
 _Static_assert(SCE_KERNEL_MEMORY_TYPE_NORMAL == VJO_PSP_MEMTYPE_CACHED, "the cached memory type");
 _Static_assert(SCE_KERNEL_MEMORY_TYPE_NORMAL_NC == VJO_PSP_MEMTYPE_UNCACHED, "the uncached memory type");
 

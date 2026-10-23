@@ -479,6 +479,13 @@ To probe a new process, close the emulator (or the bubble) and start it again.
    of each of its 256 pages; only when every one names the block that holds the whole range, the read
    itself: 32-bit loads, summed so that none is left out. The lookups are timed apart from the read.
 
+In the #248 console run, the three UID lookups returned `0x80024501` (`INVALID_UID`), while mapping
+information succeeded with readable uncached ranges. Probe format 3 accepts that specific UID error
+only with successful, readable, nonwrapping mapping information; other UID errors still refuse the
+read. Before its 1 MiB read, this case also queries every page's mapping information and requires the
+original base, size, type, cache policy and access, covering the entire page. Equal error codes alone
+never authorize a read. This change has host coverage; its direct reads still need a console test.
+
 **What it never does.** No write to the game's or the PSP's memory, no cache operation, no call into
 ScePspemu, no allocation, no new thread, nothing at `module_start`. Every read is behind the check that a
 block found in that job's lookups holds all of it (`vjo_psp_inside`). Within a pass each line is handed to
@@ -486,7 +493,8 @@ block found in that job's lookups holds all of it (`vjo_psp_inside`). Within a p
 `block` line (the title's read), the `luna` or a `site` line (a site's words), `...: reading` (the 1 MiB).
 Between passes a job's lookups and its 12-byte title read come before that job's lines, so a fault there
 would leave the previous job's `ocr` line last. (Whether a crashed process's last writes reach the card is
-unverified on a console.) Its cost is not measured (estimates): the first pass about 270 system calls and
+unverified on a console.) Its cost is not measured (estimates): the first pass about 270 system calls
+(about 780 when each page also needs mapping information) and
 the 1 MiB read, once per process; each later job six lookups, 12 bytes, and the log's open, two writes and
 close on `ux0:`. Its CPU load, CPU3's included, is unmeasured.
 
@@ -524,7 +532,7 @@ sites against it and 12 entries copied by hand.
 process first opens it starts again. `tools/install_ftp.sh --collect` fetches it. Each process's lines
 begin with a `process` line.
 
-**How to read it.** Every line starts `psp probe 2:` (the format's version; 1 was the first probe's, in
+**How to read it.** New lines start `psp probe 3:` (format 2 was test.8's; format 1 used
 `hooks.log`). Numbers are raw, in hex unless they count something:
 
 | Line | What it says |
@@ -537,7 +545,7 @@ begin with a `process` line.
 | `luna ID: T sites, R read` or `luna ID: not listed` | Luna's entries for the ID (ID empty when the bytes are not an ID, as perhaps in the XMB) |
 | `site P at V: W0 W1 W2 W3 class` | Luna's site P (a PSP address), V its Vita address, the words at V − 8, V − 4, V and V + 4; `--------`: outside the blocks, not read; then its class |
 | `classes: entry E return R branch B delay D other O zero Z unread U` | the pass's sites by class |
-| `read A: N bytes, 256 pages in block U (C us): reading` | step 4: every page's lookup named block U (in C µs); the read follows. `page P in block U2, not U: not read` or `outside the blocks`: no read |
+| `read A: N bytes, 256 pages in readable mapping, uid U (C us): reading` | step 4: every page passed validation (in C µs); the read follows. `page P in block U2, not U: not read`, `page mapping changed or unreadable: not read`, or `outside the blocks`: no bulk read |
 | `read A: N bytes in T us, sum S` | step 4's read: its time and the sum of its words |
 | `stop: <why>` or `done` | the pass ended early, or finished |
 | `job S: rc R, flags F speed P, capture src ...` | job S's capture: its result code, the request's flags and speed, the capture path, memory type and block, the frame, the region, rows per strip, strips, tears, the capture's time and the region's checksum |
@@ -564,8 +572,9 @@ anyway, with each job's step log (`gstep` lines), under the same job number.
 5. If a game stops at a reading: send the `--collect` zip (the log's last line is the step before the
    fault, and `--collect` fetches the crash dump).
 
-The answers decide the next round: a `bad` block or a fault means the worker cannot read PSP RAM this way
-(the report's fallbacks: `ScePspemuConvertAddress`, or a small kernel syscall); a missing or wrong title ID
+The answers decide the next round: a `bad` block means the probe refused the read; it does not by itself
+prove that PSP RAM is inaccessible. A fault needs investigation before another read is attempted
+(the report's fallbacks include `ScePspemuConvertAddress`, or a small kernel syscall). A missing or wrong title ID
 means the disc ID must come another way; `entry` and `return` sites mean Luna's addresses can be patched as
 they are; step 4's time sets the cost of a RAM scan.
 

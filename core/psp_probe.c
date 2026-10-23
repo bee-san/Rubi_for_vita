@@ -13,7 +13,8 @@ _Static_assert(VJO_PSP_READ_BYTES % VJO_PSP_PAGE == 0 && VJO_PSP_READ_BYTES % 16
 
 int vjo_psp_block_ok(const VjoPspBlock *b)
 {
-    if (!b || b->uid < 0 || b->info_rc < 0 || !b->size) return 0;
+    if (!b || (b->uid < 0 && b->uid != VJO_PSP_INVALID_UID) || b->info_rc != 0 || !b->size) return 0;
+    if (b->size - 1u > 0xFFFFFFFFu - b->base) return 0; /* reject a wrapping mapping */
     if (b->addr - b->base >= b->size) return 0; /* holds its own address (an address below base wraps) */
     return (b->access & VJO_PSP_ACCESS_R) != 0;
 }
@@ -384,7 +385,7 @@ size_t vjo_psp_line_read_check(char *out, size_t cap, uint32_t addr, uint32_t n,
     } else {
         put_s(&l, ", ");
         put_dec(&l, pages);
-        put_s(&l, " pages in block ");
+        put_s(&l, " pages in readable mapping, uid ");
         put_hex(&l, (uint32_t)block_uid);
         put_s(&l, " (");
         put_dec(&l, check_us);
@@ -588,6 +589,20 @@ static void timed_read(const VjoPspOps *o, const VjoPspBlock *blocks)
         if (uid != blocks[h].uid) {
             say(o, line, vjo_psp_line_read_check(line, sizeof(line), addr, n, 0, pages, page, uid, blocks[h].uid, 0));
             return;
+        }
+        if (uid == VJO_PSP_INVALID_UID) {
+            VjoPspBlock b = {page, -1, -1, 0, 0, 0, 0, 0};
+            if (o->block) o->block(o->ud, page, &b);
+            b.addr = page;
+            /* Shared mappings may expose no user UID. Identical error codes are not a page check:
+             * require fresh readable info, the complete page, and the original mapping's identity. */
+            if (!vjo_psp_inside(&b, 1, page, VJO_PSP_PAGE) || b.uid != uid ||
+                b.base != blocks[h].base || b.size != blocks[h].size || b.type != blocks[h].type ||
+                b.memtype != blocks[h].memtype || b.access != blocks[h].access) {
+                say(o, line, vjo_psp_line_block(line, sizeof(line), &b));
+                say(o, line, vjo_psp_line_end(line, sizeof(line), "page mapping changed or unreadable: not read"));
+                return;
+            }
         }
     }
     t1 = now(o);

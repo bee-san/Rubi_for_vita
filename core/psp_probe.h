@@ -36,7 +36,8 @@
 #define VJO_PSP_ACCESS_R 0x04u              /* SCE_KERNEL_MEMORY_ACCESS_R (vita-headers psp2/kernel/sysmem.h:41) */
 #define VJO_PSP_MEMTYPE_CACHED 0xD0u        /* SCE_KERNEL_MEMORY_TYPE_NORMAL (psp2common/kernel/sysmem.h:20-21) */
 #define VJO_PSP_MEMTYPE_UNCACHED 0x80u      /* SCE_KERNEL_MEMORY_TYPE_NORMAL_NC */
-#define VJO_PSP_LOG_FORMAT 2u               /* the "psp probe N:" prefix: bumped when a line changes */
+#define VJO_PSP_LOG_FORMAT 3u               /* the "psp probe N:" prefix: bumped when a line changes */
+#define VJO_PSP_INVALID_UID ((int32_t)0x80024501u) /* SCE_KERNEL_ERROR_INVALID_UID: no user UID for the mapping */
 /* Report section 5's fourth step: one timed read of 1 MiB of the view, at the user partition's start (where
  * a RAM scan, the report's design c, would read), once per process, after its pages' lookups agree. */
 #define VJO_PSP_READ_ADDR VJO_PSP_VIEW_USER
@@ -111,7 +112,10 @@ static inline uint32_t vjo_psp_vita_addr(uint32_t psp_addr)
     return 0x68000000u + (psp_addr & 0x0FFFFFFFu);
 }
 
-/* 1 when the lookup found b's block, the block holds b->addr and it is readable; else 0. The probe goes
+/* 1 when mapping info succeeded, holds b->addr and is readable, and UID lookup either succeeded or returned
+ * INVALID_UID (observed for Adrenaline's shared mappings on the console, #248); other UID errors fail.
+ * Negative UID equality never authorizes the timed read: that path rechecks each page's mapping info.
+ * The probe goes
  * past its first step only when all three blocks are. */
 int vjo_psp_block_ok(const VjoPspBlock *b);
 

@@ -170,6 +170,15 @@ static void test_blocks(void)
     b.info_rc = -1;
     TEST_CHECK(!vjo_psp_block_ok(&b));
     TEST_CHECK(!vjo_psp_block_ok(NULL));
+    b = block(0x70800000u, 0x70000000u, 0x02000000u, 6);
+    b.uid = VJO_PSP_INVALID_UID; /* #248: info succeeds for a shared mapping with no user UID */
+    TEST_CHECK(vjo_psp_block_ok(&b));
+    b.info_rc = -1;
+    TEST_CHECK(!vjo_psp_block_ok(&b));
+    b.info_rc = 0; b.access = 2;
+    TEST_CHECK(!vjo_psp_block_ok(&b));
+    b = block(0xFFFFF000u, 0xFFFFF000u, 0x1001u, 4);
+    TEST_CHECK(!vjo_psp_block_ok(&b)); /* malformed mapping wraps */
     b = block(0x70800000u, 0x70000000u, 0, 4); /* empty */
     TEST_CHECK(!vjo_psp_block_ok(&b));
     b = block(0x6FFFFFFFu, 0x70000000u, 0x04000000u, 4); /* below the block */
@@ -276,66 +285,66 @@ static void test_lines(void)
     VjoGameOcrResult *r = job_result(7);
     static const uint8_t raw[12] = {'U', 'L', 'J', 'M', '0', '5', '8', '8', '9', 0, 0, 0};
     static const uint8_t odd[12] = {'"', '\\', 0x01, 0x7F, 'A', 0xFF, 'z', ' ', 0, 'Q', 0, 0};
-    line_is(vjo_psp_line_process(buf, sizeof(buf), "PSPEMUCFW"), buf, "psp probe 2: process PSPEMUCFW\n");
-    line_is(vjo_psp_line_process(buf, sizeof(buf), "AB\ncd 0123456789"), buf, "psp probe 2: process AB.cd.012345\n");
-    line_is(vjo_psp_line_process(buf, sizeof(buf), NULL), buf, "psp probe 2: process \n");
-    line_is(vjo_psp_line_start(buf, sizeof(buf), 1, 7), buf, "psp probe 2: start: pass 1 after job 7\n");
+    line_is(vjo_psp_line_process(buf, sizeof(buf), "PSPEMUCFW"), buf, "psp probe 3: process PSPEMUCFW\n");
+    line_is(vjo_psp_line_process(buf, sizeof(buf), "AB\ncd 0123456789"), buf, "psp probe 3: process AB.cd.012345\n");
+    line_is(vjo_psp_line_process(buf, sizeof(buf), NULL), buf, "psp probe 3: process \n");
+    line_is(vjo_psp_line_start(buf, sizeof(buf), 1, 7), buf, "psp probe 3: start: pass 1 after job 7\n");
     line_is(vjo_psp_line_module(buf, sizeof(buf), &m), buf,
-            "psp probe 2: ScePspemu: rc 0x00000000 nid 0x3F75D4D3 modid 0x40010003 info 0x00000000 seg0 0x81000000 "
+            "psp probe 3: ScePspemu: rc 0x00000000 nid 0x3F75D4D3 modid 0x40010003 info 0x00000000 seg0 0x81000000 "
             "size 0x00200000\n");
     line_is(vjo_psp_line_module(buf, sizeof(buf), NULL), buf,
-            "psp probe 2: ScePspemu: rc 0xFFFFFFFF nid 0x00000000 modid 0x00000000 info 0x00000000 seg0 0x00000000 "
+            "psp probe 3: ScePspemu: rc 0xFFFFFFFF nid 0x00000000 modid 0x00000000 info 0x00000000 seg0 0x00000000 "
             "size 0x00000000\n");
     line_is(vjo_psp_line_block(buf, sizeof(buf), &b), buf,
-            "psp probe 2: block 0x70800000: uid 0x00001234 info 0x00000000 base 0x70000000 size 0x04000000 "
+            "psp probe 3: block 0x70800000: uid 0x00001234 info 0x00000000 base 0x70000000 size 0x04000000 "
             "memtype 0x000000D0 (cached) access 0x00000006 type 0x0C20D060 ok\n");
     b.memtype = 0x80;
     line_is(vjo_psp_line_block(buf, sizeof(buf), &b), buf,
-            "psp probe 2: block 0x70800000: uid 0x00001234 info 0x00000000 base 0x70000000 size 0x04000000 "
+            "psp probe 3: block 0x70800000: uid 0x00001234 info 0x00000000 base 0x70000000 size 0x04000000 "
             "memtype 0x00000080 (uncached) access 0x00000006 type 0x0C20D060 ok\n");
     b.uid = -1;
     b.info_rc = (int32_t)0x80020001u;
     b.base = b.size = b.memtype = b.access = b.type = 0;
     line_is(vjo_psp_line_block(buf, sizeof(buf), &b), buf,
-            "psp probe 2: block 0x70800000: uid 0xFFFFFFFF info 0x80020001 base 0x00000000 size 0x00000000 "
+            "psp probe 3: block 0x70800000: uid 0xFFFFFFFF info 0x80020001 base 0x00000000 size 0x00000000 "
             "memtype 0x00000000 (?) access 0x00000000 type 0x00000000 bad\n");
     line_is(vjo_psp_line_titleid(buf, sizeof(buf), 0x73CDE098u, 1, raw), buf,
-            "psp probe 2: titleid 0x73CDE098: 554C4A4D3035383839000000 \"ULJM05889\"\n");
+            "psp probe 3: titleid 0x73CDE098: 554C4A4D3035383839000000 \"ULJM05889\"\n");
     line_is(vjo_psp_line_titleid(buf, sizeof(buf), 0x73CDE098u, 1, odd), buf,
-            "psp probe 2: titleid 0x73CDE098: 225C017F41FF7A2000510000 \"....A.z \"\n");
+            "psp probe 3: titleid 0x73CDE098: 225C017F41FF7A2000510000 \"....A.z \"\n");
     line_is(vjo_psp_line_titleid(buf, sizeof(buf), 0x73CDE098u, 0, raw), buf,
-            "psp probe 2: titleid 0x73CDE098: outside the blocks\n");
-    line_is(vjo_psp_line_sites(buf, sizeof(buf), "ULJM05889", 1, 1), buf, "psp probe 2: luna ULJM05889: 1 sites, 1 read\n");
-    line_is(vjo_psp_line_sites(buf, sizeof(buf), "ULJM05334", 0, 0), buf, "psp probe 2: luna ULJM05334: not listed\n");
-    line_is(vjo_psp_line_sites(buf, sizeof(buf), "", 0, 0), buf, "psp probe 2: luna : not listed\n");
-    line_is(vjo_psp_line_sites(buf, sizeof(buf), "AB\ncd 0123456789", 0, 0), buf, "psp probe 2: luna AB.cd.012: not listed\n");
+            "psp probe 3: titleid 0x73CDE098: outside the blocks\n");
+    line_is(vjo_psp_line_sites(buf, sizeof(buf), "ULJM05889", 1, 1), buf, "psp probe 3: luna ULJM05889: 1 sites, 1 read\n");
+    line_is(vjo_psp_line_sites(buf, sizeof(buf), "ULJM05334", 0, 0), buf, "psp probe 3: luna ULJM05334: not listed\n");
+    line_is(vjo_psp_line_sites(buf, sizeof(buf), "", 0, 0), buf, "psp probe 3: luna : not listed\n");
+    line_is(vjo_psp_line_sites(buf, sizeof(buf), "AB\ncd 0123456789", 0, 0), buf, "psp probe 3: luna AB.cd.012: not listed\n");
     line_is(vjo_psp_line_site(buf, sizeof(buf), 0x08868AB8u, 0x70868AB8u, words, 0xFu), buf,
-            "psp probe 2: site 0x08868AB8 at 0x70868AB8: 03E00008 00000000 27BDFFE0 AFBF001C entry\n");
+            "psp probe 3: site 0x08868AB8 at 0x70868AB8: 03E00008 00000000 27BDFFE0 AFBF001C entry\n");
     line_is(vjo_psp_line_site(buf, sizeof(buf), 0x08868AB8u, 0x70868AB8u, words, 0x6u), buf,
-            "psp probe 2: site 0x08868AB8 at 0x70868AB8: -------- 00000000 27BDFFE0 -------- unread\n");
+            "psp probe 3: site 0x08868AB8 at 0x70868AB8: -------- 00000000 27BDFFE0 -------- unread\n");
     line_is(vjo_psp_line_site(buf, sizeof(buf), 0x08868AB8u, 0x70868AB8u, NULL, 0xFu), buf,
-            "psp probe 2: site 0x08868AB8 at 0x70868AB8: -------- -------- -------- -------- unread\n");
+            "psp probe 3: site 0x08868AB8 at 0x70868AB8: -------- -------- -------- -------- unread\n");
     line_is(vjo_psp_line_classes(buf, sizeof(buf), count), buf,
-            "psp probe 2: classes: entry 5 return 6 branch 4 delay 3 other 7 zero 2 unread 1\n");
+            "psp probe 3: classes: entry 5 return 6 branch 4 delay 3 other 7 zero 2 unread 1\n");
     line_is(vjo_psp_line_classes(buf, sizeof(buf), NULL), buf,
-            "psp probe 2: classes: entry 0 return 0 branch 0 delay 0 other 0 zero 0 unread 0\n");
+            "psp probe 3: classes: entry 0 return 0 branch 0 delay 0 other 0 zero 0 unread 0\n");
     line_is(vjo_psp_line_read_check(buf, sizeof(buf), 0x70800000u, 0x100000u, 0, 256, 0, 0, 0x10001, 1234), buf,
-            "psp probe 2: read 0x70800000: 0x00100000 bytes, 256 pages in block 0x00010001 (1234 us): reading\n");
+            "psp probe 3: read 0x70800000: 0x00100000 bytes, 256 pages in readable mapping, uid 0x00010001 (1234 us): reading\n");
     line_is(vjo_psp_line_read_check(buf, sizeof(buf), 0x70800000u, 0x100000u, 0, 128, 0x70880000u, 0x20002, 0x10001, 9),
-            buf, "psp probe 2: read 0x70800000: 0x00100000 bytes: page 0x70880000 in block 0x00020002, not 0x00010001: "
+            buf, "psp probe 3: read 0x70800000: 0x00100000 bytes: page 0x70880000 in block 0x00020002, not 0x00010001: "
                  "not read\n");
     line_is(vjo_psp_line_read_check(buf, sizeof(buf), 0x70800000u, 0x100000u, 1, 0, 0, 0, 0, 0), buf,
-            "psp probe 2: read 0x70800000: 0x00100000 bytes: outside the blocks\n");
+            "psp probe 3: read 0x70800000: 0x00100000 bytes: outside the blocks\n");
     line_is(vjo_psp_line_read_done(buf, sizeof(buf), 0x70800000u, 0x100000u, 5678, 0xDEADBEEFu), buf,
-            "psp probe 2: read 0x70800000: 0x00100000 bytes in 5678 us, sum 0xDEADBEEF\n");
+            "psp probe 3: read 0x70800000: 0x00100000 bytes in 5678 us, sum 0xDEADBEEF\n");
     line_is(vjo_psp_line_end(buf, sizeof(buf), "a block is missing or not readable"), buf,
-            "psp probe 2: stop: a block is missing or not readable\n");
-    line_is(vjo_psp_line_end(buf, sizeof(buf), NULL), buf, "psp probe 2: done\n");
+            "psp probe 3: stop: a block is missing or not readable\n");
+    line_is(vjo_psp_line_end(buf, sizeof(buf), NULL), buf, "psp probe 3: done\n");
     line_is(vjo_psp_line_job_capture(buf, sizeof(buf), r, 0x10, 0x86), buf,
-            "psp probe 2: job 7: rc 0, flags 0x00000010 speed 0x00000086, capture src 1 mem 2 block 12288, fb 960x544 "
+            "psp probe 3: job 7: rc 0, flags 0x00000010 speed 0x00000086, capture src 1 mem 2 block 12288, fb 960x544 "
             "pitch 960 fmt 0x00000000, region 480x136 at 0,408, rows 16 strips 9 tears 0 in 150000 us, sum 0x1234ABCD\n");
     snprintf(want, sizeof(want),
-             "psp probe 2: job 7 ocr: lines 3 rec 3 frames 205, us find 100000 load 0 rec 900000 job 1200000, free "
+             "psp probe 3: job 7 ocr: lines 3 rec 3 frames 205, us find 100000 load 0 rec 900000 job 1200000, free "
              "12345678 need 4096000+0 reserve 8388608 fallback 0, weights resident resident 1310720, from 0, chars 3 "
              "hash 0x%08X\n", (unsigned)fnv1a(r->text));
     line_is(vjo_psp_line_job_ocr(buf, sizeof(buf), r, 1200000), buf, want);
@@ -344,16 +353,16 @@ static void test_lines(void)
     r->weights = 7;
     r->text[0] = 0;
     line_is(vjo_psp_line_job_capture(buf, sizeof(buf), r, 0, 0x80), buf,
-            "psp probe 2: job 7: rc -2147352567, flags 0x00000000 speed 0x00000080, capture src 1 mem 2 block 12288, fb "
+            "psp probe 3: job 7: rc -2147352567, flags 0x00000000 speed 0x00000080, capture src 1 mem 2 block 12288, fb "
             "960x544 pitch 960 fmt 0x00000000, region 480x136 at 0,408, rows 16 strips 9 tears 0 in 150000 us, sum "
             "0x1234ABCD\n");
     line_is(vjo_psp_line_job_ocr(buf, sizeof(buf), r, 0), buf,
-            "psp probe 2: job 7 ocr: lines 3 rec 3 frames 205, us find 100000 load 0 rec 900000 job 0, free -1 need "
+            "psp probe 3: job 7 ocr: lines 3 rec 3 frames 205, us find 100000 load 0 rec 900000 job 0, free -1 need "
             "4096000+0 reserve 8388608 fallback 0, weights ? resident 1310720, from 0, chars 0 hash 0x811C9DC5\n");
-    line_is(vjo_psp_line_job_capture(buf, sizeof(buf), NULL, 0, 0), buf, "psp probe 2: job: no result\n");
-    line_is(vjo_psp_line_job_ocr(buf, sizeof(buf), NULL, 0), buf, "psp probe 2: job: no result\n");
+    line_is(vjo_psp_line_job_capture(buf, sizeof(buf), NULL, 0, 0), buf, "psp probe 3: job: no result\n");
+    line_is(vjo_psp_line_job_ocr(buf, sizeof(buf), NULL, 0), buf, "psp probe 3: job: no result\n");
     line_is(vjo_psp_line_jobs_cap(buf, sizeof(buf), 1000), buf,
-            "psp probe 2: jobs: 1000, the most per process: no more job lines\n");
+            "psp probe 3: jobs: 1000, the most per process: no more job lines\n");
 }
 
 /* Each kind of line at its longest. */
@@ -580,6 +589,7 @@ typedef struct {
     unsigned n_blk;
     uint32_t odd_page; /* find(odd_page) answers odd_uid (0: none) */
     int32_t odd_uid;
+    VjoPspBlock odd_info; /* nonzero size overrides page info at odd_page */
     VjoPspModule module;
     unsigned block_calls, find_calls, reads, bad_reads, sum_calls, lines;
     unsigned read_after[64], n_read_after; /* the lines out before each read */
@@ -634,6 +644,7 @@ static void f_block(void *ud, uint32_t addr, VjoPspBlock *out)
         *out = none;
     }
     out->addr = addr;
+    if (F.odd_info.size && addr == F.odd_page) { *out = F.odd_info; out->addr = addr; }
 }
 
 static int32_t f_find(void *ud, uint32_t addr)
@@ -777,15 +788,15 @@ static void lines_are(unsigned first, const char *const *want, unsigned n)
 }
 
 static const char *const blocks_ok[3] = {
-    "psp probe 2: block 0x70000000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x04000000 memtype "
+    "psp probe 3: block 0x70000000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x04000000 memtype "
     "0x000000D0 (cached) access 0x00000006 type 0x0C20D060 ok",
-    "psp probe 2: block 0x70800000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x04000000 memtype "
+    "psp probe 3: block 0x70800000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x04000000 memtype "
     "0x000000D0 (cached) access 0x00000006 type 0x0C20D060 ok",
-    "psp probe 2: block 0x73CDE000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x04000000 memtype "
+    "psp probe 3: block 0x73CDE000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x04000000 memtype "
     "0x000000D0 (cached) access 0x00000006 type 0x0C20D060 ok",
 };
 #define MODULE_LINE                                                                                                \
-    "psp probe 2: ScePspemu: rc 0x00000000 nid 0x3F75D4D3 modid 0x40010003 info 0x00000000 seg0 0x81000000 size "  \
+    "psp probe 3: ScePspemu: rc 0x00000000 nid 0x3F75D4D3 modid 0x40010003 info 0x00000000 seg0 0x81000000 size "  \
     "0x00200000"
 
 /* The probe's first console title: ましろ色シンフォニー, one site, a function's entry there; the 1 MiB read. */
@@ -798,7 +809,7 @@ static void test_run_listed(void)
     set_title("ULJM05889");
     for (uint32_t i = 0; i < VJO_PSP_READ_BYTES / 4u; i++) put_word(USER_BASE + 4u * i, i * 2654435761u);
     put_site(0x08868AB8u, JR(RA), NOP, ADDIU(SP, SP, -32), SW(RA, 28, SP));
-    snprintf(want_sum, sizeof(want_sum), "psp probe 2: read 0x70800000: 0x00100000 bytes in 7 us, sum 0x%08X",
+    snprintf(want_sum, sizeof(want_sum), "psp probe 3: read 0x70800000: 0x00100000 bytes in 7 us, sum 0x%08X",
              (unsigned)sum_words(user_ram, VJO_PSP_READ_BYTES));
     vjo_psp_probe_job(&p, &fake_ops, job_result(7), 0x10, 0x86, 1200000);
     vjo_psp_line_job_capture(job[0], sizeof(job[0]), job_result(7), 0x10, 0x86);
@@ -806,16 +817,16 @@ static void test_run_listed(void)
     job[0][strlen(job[0]) - 1] = job[1][strlen(job[1]) - 1] = 0;
     {
         const char *const want[] = {
-            "psp probe 2: start: pass 1 after job 7",
+            "psp probe 3: start: pass 1 after job 7",
             MODULE_LINE,
             blocks_ok[0], blocks_ok[1], blocks_ok[2],
-            "psp probe 2: titleid 0x73CDE098: 554C4A4D3035383839000000 \"ULJM05889\"",
-            "psp probe 2: luna ULJM05889: 1 sites, 1 read",
-            "psp probe 2: site 0x08868AB8 at 0x70868AB8: 03E00008 00000000 27BDFFE0 AFBF001C entry",
-            "psp probe 2: classes: entry 1 return 0 branch 0 delay 0 other 0 zero 0 unread 0",
-            "psp probe 2: read 0x70800000: 0x00100000 bytes, 256 pages in block 0x00010001 (7 us): reading",
+            "psp probe 3: titleid 0x73CDE098: 554C4A4D3035383839000000 \"ULJM05889\"",
+            "psp probe 3: luna ULJM05889: 1 sites, 1 read",
+            "psp probe 3: site 0x08868AB8 at 0x70868AB8: 03E00008 00000000 27BDFFE0 AFBF001C entry",
+            "psp probe 3: classes: entry 1 return 0 branch 0 delay 0 other 0 zero 0 unread 0",
+            "psp probe 3: read 0x70800000: 0x00100000 bytes, 256 pages in readable mapping, uid 0x00010001 (7 us): reading",
             want_sum,
-            "psp probe 2: done",
+            "psp probe 3: done",
             job[0], job[1],
         };
         lines_are(0, want, 14);
@@ -829,8 +840,8 @@ static void test_run_listed(void)
     TEST_CHECK(p.passes == 1 && p.jobs == 1 && p.job_lines == 1 && p.timed);
     /* the next job, nothing changed: its lookups and the title, read again, and its two lines only */
     vjo_psp_probe_job(&p, &fake_ops, job_result(8), 0, 0x80, 1000);
-    TEST_CHECK(F.lines == 16 && starts(log_line(14), "psp probe 2: job 8: rc 0, flags 0x00000000 speed 0x00000080,") &&
-               starts(log_line(15), "psp probe 2: job 8 ocr: "));
+    TEST_CHECK(F.lines == 16 && starts(log_line(14), "psp probe 3: job 8: rc 0, flags 0x00000000 speed 0x00000080,") &&
+               starts(log_line(15), "psp probe 3: job 8 ocr: "));
     TEST_CHECK(p.passes == 1 && F.reads == 7 && F.read_after[6] == 14 && F.bad_reads == 0 && F.sum_calls == 1 &&
                F.find_calls == 256 && F.block_calls == 6);
     /* no result (a job the worker had none for): the lookups, no line */
@@ -845,9 +856,9 @@ static void test_run_xmb_then_game(void)
     fake_reset();
     memset(&p, 0, sizeof(p));
     vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
-    TEST_CHECK(!strcmp(log_line(5), "psp probe 2: titleid 0x73CDE098: 000000000000000000000000 \"\"") &&
-               !strcmp(log_line(6), "psp probe 2: luna : not listed") && starts(log_line(7), "psp probe 2: read ") &&
-               !strcmp(log_line(9), "psp probe 2: done"));
+    TEST_CHECK(!strcmp(log_line(5), "psp probe 3: titleid 0x73CDE098: 000000000000000000000000 \"\"") &&
+               !strcmp(log_line(6), "psp probe 3: luna : not listed") && starts(log_line(7), "psp probe 3: read ") &&
+               !strcmp(log_line(9), "psp probe 3: done"));
     TEST_CHECK(F.sum_calls == 1 && F.bad_reads == 0 && p.passes == 1);
     vjo_psp_probe_job(&p, &fake_ops, job_result(2), 0, 0x80, 0); /* the XMB still */
     TEST_CHECK(p.passes == 1 && log_count("start: pass") == 1);
@@ -857,7 +868,7 @@ static void test_run_xmb_then_game(void)
     TEST_CHECK(p.passes == 2 && log_count("start: pass") == 2 && log_count("start: pass 2 after job 3\n") == 1);
     TEST_CHECK(log_count("site 0x08868AB8 at 0x70868AB8: 0E201040 00000000 00402021 8FBF001C return\n") == 1 &&
                log_count("classes: entry 0 return 1 ") == 1);
-    TEST_CHECK(F.sum_calls == 1 && log_count(": reading\n") == 1 && log_count("psp probe 2: done\n") == 2);
+    TEST_CHECK(F.sum_calls == 1 && log_count(": reading\n") == 1 && log_count("psp probe 3: done\n") == 2);
     TEST_CHECK(F.bad_reads == 0);
 }
 
@@ -873,15 +884,15 @@ static void test_run_missing_block(void)
     vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
     {
         const char *const want[] = {
-            "psp probe 2: start: pass 1 after job 1",
+            "psp probe 3: start: pass 1 after job 1",
             MODULE_LINE,
-            "psp probe 2: block 0x70000000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x03000000 memtype "
+            "psp probe 3: block 0x70000000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x03000000 memtype "
             "0x000000D0 (cached) access 0x00000006 type 0x0C20D060 ok",
-            "psp probe 2: block 0x70800000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x03000000 memtype "
+            "psp probe 3: block 0x70800000: uid 0x00010001 info 0x00000000 base 0x70000000 size 0x03000000 memtype "
             "0x000000D0 (cached) access 0x00000006 type 0x0C20D060 ok",
-            "psp probe 2: block 0x73CDE000: uid 0x80020006 info 0x80020006 base 0x00000000 size 0x00000000 memtype "
+            "psp probe 3: block 0x73CDE000: uid 0x80020006 info 0x80020006 base 0x00000000 size 0x00000000 memtype "
             "0x00000000 (?) access 0x00000000 type 0x00000000 bad",
-            "psp probe 2: stop: a block is missing or not readable",
+            "psp probe 3: stop: a block is missing or not readable",
         };
         lines_are(0, want, 6);
     }
@@ -911,8 +922,8 @@ static void test_run_title_outside(void)
     F.blk[1] = view_block(ADR_BASE, VJO_PSP_TITLEID_OFFSET, 0x10002); /* holds 0x73CDE000, ends at the title */
     F.n_blk = 2;
     vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
-    TEST_CHECK(!strcmp(log_line(5), "psp probe 2: titleid 0x73CDE098: outside the blocks") &&
-               !strcmp(log_line(6), "psp probe 2: stop: the title ID is outside the blocks"));
+    TEST_CHECK(!strcmp(log_line(5), "psp probe 3: titleid 0x73CDE098: outside the blocks") &&
+               !strcmp(log_line(6), "psp probe 3: stop: the title ID is outside the blocks"));
     TEST_CHECK(log_count(" ok\n") == 3 && F.reads == 0 && F.sum_calls == 0 && !p.timed);
 }
 
@@ -932,7 +943,7 @@ static void test_run_site_outside(void)
     TEST_CHECK(log_count("site 0x08868AB8 at 0x70868AB8: 03E00008 00000000 -------- -------- unread\n") == 1 &&
                log_count("classes: entry 0 return 0 branch 0 delay 0 other 0 zero 0 unread 1\n") == 1 &&
                log_count("read 0x70800000: 0x00100000 bytes: outside the blocks\n") == 1 &&
-               log_count("psp probe 2: done\n") == 1);
+               log_count("psp probe 3: done\n") == 1);
     TEST_CHECK(F.reads == 3 && F.bad_reads == 0 && F.sum_calls == 0 && F.find_calls == 0 && p.timed);
 }
 
@@ -953,6 +964,51 @@ static void test_run_odd_page(void)
     TEST_CHECK(p.passes == 2 && F.find_calls == 129 && F.sum_calls == 0 && log_count("read 0x70800000") == 1);
 }
 
+/* Actual #248 layout and INVALID_UID result: mapping info, never matching errors alone, authorizes
+ * the read. Changed identity, permissions, failed info, short pages and other UID errors refuse it. */
+static void shared_layout(void)
+{
+    fake_reset();
+    F.blk[0] = view_block(0x70000000u, 0x02000000u, VJO_PSP_INVALID_UID);
+    F.blk[1] = view_block(0x73000000u, 0x01000000u, VJO_PSP_INVALID_UID);
+    F.n_blk = 2;
+    for (unsigned i = 0; i < 2; i++) { F.blk[i].memtype = 0x80; F.blk[i].type = 0x0C208060; }
+    set_title("ULJM05889");
+}
+
+static void test_run_shared_mapping(void)
+{
+    VjoPspProbe p = {0};
+    shared_layout();
+    vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
+    TEST_CHECK(F.sum_calls == 1 && F.find_calls == 256 && F.block_calls == 259 && !F.bad_reads);
+    TEST_CHECK(log_count("luna ULJM05889: 1 sites") == 1 &&
+               log_count("256 pages in readable mapping, uid 0x80024501") == 1);
+    for (unsigned bad = 0; bad < 7; bad++) {
+        memset(&p, 0, sizeof(p));
+        shared_layout();
+        F.odd_page = USER_BASE + 0x80000u;
+        F.odd_info = F.blk[0];
+        switch (bad) {
+        case 0: F.odd_info.info_rc = NOT_FOUND; break;
+        case 1: F.odd_info.access = 2; break;
+        case 2: F.odd_info.base += VJO_PSP_PAGE; break;
+        case 3: F.odd_info.size -= VJO_PSP_PAGE; break;
+        case 4: F.odd_info.memtype = 0xD0; break;
+        case 5: F.odd_info.type ^= 1u; break;
+        case 6: F.odd_info.base = F.odd_page; F.odd_info.size = VJO_PSP_PAGE - 1u; break;
+        }
+        vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
+        TEST_CHECK_(F.sum_calls == 0 && !F.bad_reads && F.find_calls == 129 &&
+                    log_count("page mapping changed or unreadable: not read") == 1, "bad mapping %u", bad);
+    }
+    memset(&p, 0, sizeof(p));
+    shared_layout();
+    F.blk[0].uid = NOT_FOUND;
+    vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
+    TEST_CHECK(!F.reads && !F.sum_calls); /* arbitrary UID errors still stop before any read */
+}
+
 /* The most sites a title has (6, NPJH50619), one of each class, in the table's order. */
 static void test_run_classes(void)
 {
@@ -969,14 +1025,14 @@ static void test_run_classes(void)
     vjo_psp_probe_job(&p, &fake_ops, job_result(1), 0, 0x80, 0);
     {
         const char *const want[] = {
-            "psp probe 2: luna NPJH50619: 6 sites, 6 read",
-            "psp probe 2: site 0x08952CFC at 0x70952CFC: 03E00008 00000000 27BDFFE0 AFBF001C entry",
-            "psp probe 2: site 0x0884AAD4 at 0x7084AAD4: 0E201040 00000000 00402021 8FBF001C return",
-            "psp probe 2: site 0x0882E1B0 at 0x7082E1B0: 27BDFFE0 8E020000 03E00008 00000000 branch",
-            "psp probe 2: site 0x088BB108 at 0x708BB108: 8E020000 0E201040 24840001 00000000 delay",
-            "psp probe 2: site 0x089526A0 at 0x709526A0: 3C020889 24420004 8C440000 AFA40004 other",
-            "psp probe 2: site 0x088BCEF8 at 0x708BCEF8: 00000000 00000000 00000000 00000000 zero",
-            "psp probe 2: classes: entry 1 return 1 branch 1 delay 1 other 1 zero 1 unread 0",
+            "psp probe 3: luna NPJH50619: 6 sites, 6 read",
+            "psp probe 3: site 0x08952CFC at 0x70952CFC: 03E00008 00000000 27BDFFE0 AFBF001C entry",
+            "psp probe 3: site 0x0884AAD4 at 0x7084AAD4: 0E201040 00000000 00402021 8FBF001C return",
+            "psp probe 3: site 0x0882E1B0 at 0x7082E1B0: 27BDFFE0 8E020000 03E00008 00000000 branch",
+            "psp probe 3: site 0x088BB108 at 0x708BB108: 8E020000 0E201040 24840001 00000000 delay",
+            "psp probe 3: site 0x089526A0 at 0x709526A0: 3C020889 24420004 8C440000 AFA40004 other",
+            "psp probe 3: site 0x088BCEF8 at 0x708BCEF8: 00000000 00000000 00000000 00000000 zero",
+            "psp probe 3: classes: entry 1 return 1 branch 1 delay 1 other 1 zero 1 unread 0",
         };
         lines_are(6, want, 8);
     }
@@ -1012,7 +1068,7 @@ static void test_run_job_cap(void)
     for (unsigned j = 1; j <= VJO_PSP_JOB_LINES_MAX + 5u; j++) vjo_psp_probe_job(&p, &fake_ops, job_result(j), 0, 0x80, 0);
     TEST_CHECK(log_count(" ocr: ") == VJO_PSP_JOB_LINES_MAX && log_count("job 1000 ocr: ") == 1 &&
                log_count("job 1001") == 0);
-    TEST_CHECK(log_count("psp probe 2: jobs: 1000, the most per process: no more job lines\n") == 1);
+    TEST_CHECK(log_count("psp probe 3: jobs: 1000, the most per process: no more job lines\n") == 1);
     TEST_CHECK(p.jobs == VJO_PSP_JOB_LINES_MAX + 5u && F.bad_reads == 0);
 }
 
@@ -1031,8 +1087,8 @@ static void test_run_null(void)
     TEST_CHECK(p.jobs == 1 && p.passes == 1);
     memset(&p, 0, sizeof(p));
     vjo_psp_probe_job(&p, &put_only, NULL, 0, 0x80, 0);
-    TEST_CHECK(!strcmp(log_line(0), "psp probe 2: start: pass 1 after job 0") &&
-               !strcmp(log_line(1), "psp probe 2: ScePspemu: rc 0xFFFFFFFF nid 0x00000000 modid 0x00000000 info "
+    TEST_CHECK(!strcmp(log_line(0), "psp probe 3: start: pass 1 after job 0") &&
+               !strcmp(log_line(1), "psp probe 3: ScePspemu: rc 0xFFFFFFFF nid 0x00000000 modid 0x00000000 info "
                                     "0x00000000 seg0 0x00000000 size 0x00000000") &&
                log_count(" bad\n") == 3 && log_count("stop: a block is missing or not readable\n") == 1 && F.lines == 6);
     /* the blocks there, but no read ops: the title is not read, and the pass says so */
@@ -1065,6 +1121,7 @@ TEST_LIST = {
     {"run_title_outside", test_run_title_outside},
     {"run_site_outside", test_run_site_outside},
     {"run_odd_page", test_run_odd_page},
+    {"run_shared_mapping", test_run_shared_mapping},
     {"run_classes", test_run_classes},
     {"run_pass_cap", test_run_pass_cap},
     {"run_job_cap", test_run_job_cap},
