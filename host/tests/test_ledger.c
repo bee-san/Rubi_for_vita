@@ -8,12 +8,12 @@
 #include "../../include/vjo_vocr_sizes.h"
 #include "../../core/styled.h"
 #include "test_tier_pins.h"
-#ifdef VJO_WITH_VOCR
-#include "../../core/vocr_ocr.h"
-#include "../../core/charmap.h"
+#include "../../core/charmap.h" /* API 37: VJO_CMAP_MAX_BYTES (plain C, no OCR) */
 #ifndef VJO_STRIP_MAX
 #define VJO_STRIP_MAX 4096 /* shell/shell.h */
 #endif
+#ifdef VJO_WITH_VOCR
+#include "../../core/vocr_ocr.h"
 #endif
 
 enum { A = 0, B, C, N };

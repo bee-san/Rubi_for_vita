@@ -171,6 +171,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries an L or R tap pages through, 1–8 | 1 |
 | | **Text source**: Automatic (tries listed hooks, with OCR fallback), Every game (experimental), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
+| | **Popup on the game's text**: the word marked on the game's own text, taps on the game's text, the popup beside the word ([details](docs/overlay-on-text.md)) | OFF |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -231,6 +232,7 @@ offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
+| ❓ | Popup on the game's text | not run on a console yet ([overlay on the game's text](docs/overlay-on-text.md)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
 | ⚠️ | Anki screenshots | saved in 851 ms; after a restart, the first card can take about 21 s or lose its picture ([#207](https://github.com/bee-san/Rubi_for_vita/issues/207); `main`'s fix untested) |

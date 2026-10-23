@@ -15,7 +15,7 @@ against this change:
 | Module | main text + data/bss | this change | Loaded pages |
 |---|---:|---:|---:|
 | Shell, debug | 100,860 + 72,912 B | 105,132 + 69,016 B | 176,128 B, unchanged |
-| Shell, normal | 90,004 + 72,960 B | 94,140 + 69,064 B | 163,840 B (exact), unchanged |
+| Shell, normal | 90,004 + 72,960 B | 94,140 + 69,072 B | 163,840 B (exact), unchanged |
 | Game worker, debug | 140,656 + 32,888 B | 146,392 + 36,672 B | 180,224 → 184,320 B |
 | Game worker, normal | 131,804 + 32,880 B | 137,524 + 36,664 B | 172,032 → 176,128 B |
 
@@ -23,7 +23,7 @@ against this change:
   4,096 B of `.bss`) moved into the open page's UI block, a PAF allocation made when the page opens and freed when
   it closes (`VJO_BUDGET_PAF_UI` 20,480 → 24,576 B, the pool "shell paf" table below). The char map follows that
   copy there. The data segment gives back a page and the code segment takes one, so the module's pages are main's
-  in both builds. The normal build's code has 68 B of room in its last page, and its data has 568 B.
+  in both builds. The normal build's code has 68 B of room in its last page, and its data has 560 B.
   - By symbol, from the linked normal ELFs: the overlay's text mode (`render` +1,144 B with the marks' and the
     reading's placing inlined, `ontext_layout` 596 B, `open_page` +296 B, `layout_apply` +176 B, `frame` +132 B)
     and the char map's reader (`core/charmap.c`, `-Os`: `vjo_cmap_span` 252 B, its parser 250 B, `vjo_cmap_vertical`
