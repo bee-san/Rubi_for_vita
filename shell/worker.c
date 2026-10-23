@@ -24,6 +24,7 @@
 #include "../core/utf.h"
 #include "../core/text_rows.h"
 #include "../core/history_lines.h"
+#include "../core/charmap.h"
 #ifdef VJO_WITH_VOCR
 #include "../core/local_ocr.h"
 #include "game_ocr_client.h"
@@ -610,6 +611,7 @@ static void view_publish(int open, const VjoEntryList *list, const char *status,
     g_view.highlight_mode = cfg.highlight_mode;
     g_view.frequency_badge = cfg.frequency_badge;
     g_view.stick_lookup_ms = cfg.stick_lookup_ms;
+    g_view.on_text = cfg.overlay_on_text; /* API 37 */
     g_view.text_generation = local_text_generation;
     g_view.font_size_ja = cfg.font_size_ja;
     g_view.font_size_en = cfg.font_size_en;
@@ -660,6 +662,17 @@ static const char OOM_SHELL_RESULTS[] VJO_DATA_TABLE(OOM_SHELL_RESULTS) = "Text 
 /* The model's storage unavailable to the game (ENODEV): run_vocr. */
 static const char MODEL_STORAGE[] VJO_DATA_TABLE(MODEL_STORAGE) = "The local OCR model storage is unavailable to this game. "
     "See log.txt for details.";
+
+/* API 37, under the view lock: local_text's char map (core/charmap.h) is there (bytes), or not; the open overlay
+ * reads it from local_text's tail (docs/overlay-on-text.md). */
+static void cmap_publish(size_t bytes)
+{
+    if (!bytes && !g_view.cmap_text && !g_view.cmap_stale)
+        return; /* no map before or now: the open overlay has nothing to redraw (audit-overlay-boxes F1) */
+    g_view.cmap_text = bytes ? local_text : NULL;
+    g_view.cmap_seq++;
+    g_view.cmap_stale = 0;
+}
 
 #ifdef VJO_WITH_VOCR
 /* Which part of the game worker's memory check failed: no OCR can fit
@@ -1119,6 +1132,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
      * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
     if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
+    /* API 37: where each character of the text is on the screen, for the overlay on the game's text */
+    if (job_cfg.overlay_on_text && stage < 0) request.speed |= VJO_GAME_OCR_S_CHARS;
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
     int64_t t0 = now_us();
@@ -1259,6 +1274,13 @@ static int run_selftest_stages(VjoGameOcrResult *result, unsigned tiers, unsigne
  * published. Only VjoNet replaces it, on its next OCR job: no second text copy. */
 static VjoGameOcrResult vocr_result;
 
+/* API 37: the worker's char map of the sentence of len bytes in local_text, carried after its NUL (core/charmap.h);
+ * its bytes, 0 for none */
+static size_t cmap_carry_result(size_t len)
+{
+    return vjo_cmap_carry(local_text, sizeof(local_text), len, vocr_result.text, sizeof(vocr_result.text));
+}
+
 static int run_vocr(VjoOverlayData *out)
 {
     unsigned tiers = vocr_tiers(), ran = vocr_top_tier(tiers);
@@ -1349,6 +1371,8 @@ static int run_vocr(VjoOverlayData *out)
     /* Cursor byte0 is the trimmed sentence, not discarded whitespace. */
     size_t len = sceClibStrnlen(out->sentence, sizeof(local_text) - 1);
     sceClibMemmove(local_text, out->sentence, len + 1);
+    /* API 37: the char map of this sentence, if the worker wrote one, follows its NUL (core/charmap.h) */
+    size_t cmap = cmap_carry_result(len);
     out->filtered = out->sentence = local_text;
     out->list.header = out->sentence ? out->sentence : "";
     sceKernelLockMutex(cmd_lock, 1, NULL);
@@ -1362,6 +1386,7 @@ static int run_vocr(VjoOverlayData *out)
     local_text_capture_seq = job_capture_seq;
     vjo_view_lock();
     line_debug_accept(&vocr_result, read_by);
+    cmap_publish(cmap);
     vjo_view_unlock();
     __sync_synchronize();
     local_text_valid = 1;
@@ -1380,6 +1405,7 @@ static int run_vocr(VjoOverlayData *out)
     return out->err.rc = VJO_E_OCR_UNAVAILABLE;
 }
 static int shot_waiting(void) { return 0; } /* no game worker: no screenshot */
+static size_t cmap_carry_result(size_t len) { (void)len; return 0; } /* API 37: no worker, no char map */
 #endif
 
 static int run_job(VjoArena *a, VjoOverlayData *out)
@@ -1779,8 +1805,9 @@ static void start_cursor_job(void)
 
 static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
 {
+    /* API 37: a text read without its char map (or with one) is read again when overlay_on_text changes */
     if (a->non_japanese_filter != b->non_japanese_filter ||
-        a->japanese_only_selection != b->japanese_only_selection)
+        a->japanese_only_selection != b->japanese_only_selection || a->overlay_on_text != b->overlay_on_text)
         return 0;
     if (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) || a->ocr_skip_blank_lines != b->ocr_skip_blank_lines ||
         a->ocr_lm != b->ocr_lm || a->ocr_cascade_ms != b->ocr_cascade_ms ||
@@ -2320,6 +2347,8 @@ static void on_refresh_done(void)
             sceKernelLockMutex(cmd_lock, 1, NULL);
             vjo_view_lock();
             if (!sceClibStrcmp(text, local_text)) {
+                /* API 37: this screen's char map (the same text may sit elsewhere now) */
+                cmap_publish(cmap_carry_result(len));
                 local_text_scene = job_capture_scene;
                 local_text_capture_seq = job_capture_seq;
                 if (active == 0) { /* a cached lookup of this text is this screen's too */
@@ -2329,6 +2358,7 @@ static void on_refresh_done(void)
                 what = "same text";
             } else if (len && len < sizeof(local_text)) {
                 sceClibMemcpy(local_text, text, len + 1);
+                cmap_publish(cmap_carry_result(len));
 #ifdef VJO_WITH_VOCR
                 line_debug_accept(&vocr_result, refresh_model);
 #endif
@@ -2905,6 +2935,18 @@ static void background_open(void)
 {
     VjoState st = {.size = sizeof(st)};
     int64_t t = now_us();
+    /* API 37: the marks on the game's text go once the screen no longer shows what they were read from; a quiet
+     * refresh brings the new screen's (docs/overlay-on-text.md) */
+    if (ov == OV_OPEN && cfg.overlay_on_text && g_view.cmap_text) {
+        int stale = !local_text_valid || history ||
+                    (vjoGetState(&st) >= 0 && !shows_screen(local_text_scene, local_text_capture_seq, &st));
+        if (stale != g_view.cmap_stale) {
+            vjo_view_lock();
+            g_view.cmap_stale = stale;
+            g_view.cmap_seq++;
+            vjo_view_unlock();
+        }
+    }
     /* an earlier line is not this screen's: its refresh waits for the return to the current text */
     if (ov != OV_OPEN || job_running || pending_cmd != VJO_CMD_NONE || history)
         return;

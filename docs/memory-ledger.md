@@ -5,6 +5,47 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Overlay on the game's text (API 37)
+
+The overlay on the game's text ([overlay-on-text](overlay-on-text.md)), measured with VitaSDK GCC 15.2.0 in
+`vitasdk/vitasdk:2026.08` (CI's digest), Release, on the packaged SELF files of both variants
+(`tools/check_memory_ledger.py`, the build log's module rows, `--exact` in the normal build), main `2f85de0`
+against this change:
+
+| Module | main text + data/bss | this change | Loaded pages |
+|---|---:|---:|---:|
+| Shell, debug | 100,860 + 72,912 B | 104,932 + 69,344 B | 176,128 B, unchanged |
+| Shell, normal | 90,004 + 72,960 B | 93,956 + 69,392 B | 163,840 B (exact), unchanged |
+| Game worker, debug | 140,656 + 32,888 B | 146,392 + 36,672 B | 180,224 → 184,320 B |
+| Game worker, normal | 131,804 + 32,880 B | 137,540 + 36,664 B | 172,032 → 176,128 B |
+
+- **The Shell** pays for its code with its data. The overlay's copy of the cursor's text (`s_cursor_text`,
+  4,096 B of `.bss`) moved into the open page's UI block, a PAF allocation made when the page opens and freed when
+  it closes (`VJO_BUDGET_PAF_UI` 20,480 → 24,576 B, the pool "shell paf" table below). The char map follows that
+  copy there. The data segment gives back a page and the code segment takes one, so the module's pages are main's
+  in both builds. The normal build's code has 252 B of room in its last page, and its data has 240 B: the overlay's
+  widget ids and the reading's markup format (295 B) are in the data segment, as the module's other tables are
+  ("Tables in the data segment" below).
+  - By symbol, from the linked normal ELFs: the overlay's text mode (`render` +1,212 B with the marks' and the
+    reading's placing inlined, `ontext_layout` 388 B, `frame` +296 B, `open_page` +248 B, `layout_apply` +176 B,
+    `ontext_hide` 72 B)
+    and the char map's reader (`core/charmap.c`, `-Os`: `vjo_cmap_span` 252 B, its parser 250 B, `vjo_cmap_vertical`
+    182 B, `vjo_cmap_carry` 172 B, `vjo_cmap_hit` 132 B and smaller ones).
+  - No thread, stack, kernel call or permanent allocation: the Shell makes no allocation for it beyond the UI
+    block's larger size.
+- **The game worker** takes one text page in both builds, in the game's partition, never SceShell's. That is
+  vita-vn-ocr's `runtime/vocr_charbox.c` (`vocr_charbox_find` 2,048 B, `vocr_charbox_align` 396 B, the group lookup
+  152 B, libgcc's `__aeabi_ldivmod` 160 B), the char map's writer (1,772 B with its UTF-8 decoder) and the job's
+  calls. Its data/bss stays within its pages: the job's characters (`VjoVocrChars`, 256 characters, 16 lines and one
+  line's box buffer) are static. The map's builder borrows that buffer once the lines are read, a line the job's
+  thread reads without the LM keeps its frames' classes in it, and a helper's line keeps them in its slot's idle
+  top-K. `VJO_BUDGET_WORKER_MODULE_PAGES` grows by 4,096 B in both builds (`include/vjo_ledger_budget.h`). The game
+  pool's permanent part grows by that page (212,992 B normal, 221,184 B debug). A job's worst case and its ceiling
+  (`VJO_LIMIT_GAME_JOB`) are unchanged, with 12,288 B of headroom (`tools/check_memory_ledger.py`, both builds).
+- The kernel's module rows are main's. No new block, thread or allocation in any module.
+
+These are binary measurements: nothing of it has run on a console.
+
 ## history.csv's line source
 
 `history.csv`'s `line_source` column ([ocr-history](ocr-history.md#line-source)), measured with VitaSDK
@@ -241,10 +282,10 @@ transient set that can be live at once.
 
 | item | bytes | what | source |
 |---|---|---|---|
-| Paf plugin+RCO | 8,192 | the RCO (6,368 B file, measured; 5,632 B before the region selector's cursor) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
+| Paf plugin+RCO | 8,192 | the RCO (6,432 B file with API 37's marks and reading, measured; 6,000 B on main `2f85de0`; 5,632 B before the region selector's cursor) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
 | result arenas | 65,536 (the local dictionary's lookup; the network paths' 2 × 262,144 B arenas and connection pool went with Google Lens and the Hachidori relay) | taken after a job's OCR, freed before the next job's | `shell/worker.c` `LOCAL_RESULT_ARENA_SIZE`; asserted equal in `test_shell_worker.c` |
 | Anki job arena | 131,072 | per job: saving a card to the queue. Its screenshot (API 23) is the game worker's: here only the job's request and result, 5,404 B (a one-word card's save peaks at 6,860 B with it); the Shell's own screenshot branch went with AnkiConnect (its 393,216 B arena and the kernel's 2,088,960 B full-frame capture), so the kernel capture is never taken for Anki; a save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B on main `dcb7b31`, before `anki_screenshot`'s `VjoConfig` field) [measured, host] | `shell/anki.c` `ANKI_TEXT_MEM`; checked against the budget at compile time and in `test_shell_anki.c` |
-| overlay text arena | 20,480 | the header and body texts and their spans (18,016 B needed, `test_ledger.c`: 17,952 B before line history's four header spans), only while the overlay page is open; a refusal keeps the page closed | `shell/overlay.cpp` |
+| overlay text arena | 24,576 | the header and body texts and their spans (18,016 B needed, `test_ledger.c`: 17,952 B before line history's four header spans) and, since API 37, the cursor's copy of the text with its char map (4,096 B, out of the Shell's data segment), only while the overlay page is open; a refusal keeps the page closed | `shell/overlay.cpp` |
 | line history | 16,384 | one visit's block ([line history](line-history.md)): from the overlay's first Up past its text's top row until the current text is back (or the overlay closes, the game exits): the visit's table, the current text and up to 32 of this game's earlier lines from `history.csv`'s last 24,512 B (read into VjoControl's static scratch, not here); a refusal means no visit, Up does nothing | `shell/worker.c` `history_open`; `VJO_BUDGET_PAF_HISTORY`, its fit checked at compile time |
 | **limit** | **985,088** | the measured free heap, 2,557,952 B (2,498 KiB beside CLANNAD, 2026-10-10), minus the 1.5 MiB reserve the runtime guard keeps for firmware; the reserve is the headroom | `docs/meiki-ocr.md` on `experiment/meiki-ocr` [measured]; `shell/memory.cpp` |
 
@@ -790,8 +831,9 @@ costs instructions a lookup), and both segments are checked exactly by `tools/ch
 Only tables and cold strings of the Shell's own code are so marked: `core/local_dict.c`,
 `core/linebreak.c` and `core/textjoin.c`'s tables, `shell/history.c`'s header, offsets and strings
 (which pay for PR #233's `characters` column: [ocr-history](ocr-history.md)), `shell/worker.c`'s
-out-of-memory and model-storage messages, and line history's strings in `shell/overlay.cpp` and
-`shell/anki.c`.
+out-of-memory and model-storage messages, line history's strings in `shell/overlay.cpp` and
+`shell/anki.c`, and (API 37) the overlay's 20 widget ids and the reading's markup format (295 B,
+`shell/overlay.cpp`).
 
 Standalone PR #236 (`6ed8f30`, on main `75041a0`), line history ([line-history.md](line-history.md),
 owner 2026-10-20): Up on the overlay's top row shows

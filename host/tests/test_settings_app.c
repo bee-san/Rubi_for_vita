@@ -128,6 +128,7 @@ typedef struct {
     char highlight[16]; /* its highlight_mode value */
     char results[16];   /* its local_dictionary_results value */
     char source[16];    /* API 31: its text_source value */
+    char ontext[16];    /* API 37: its overlay_on_text value */
     int model_line;   /* it still has an older build's vocr_model or vocr_fallback_model line */
 } Frame;
 /* Each run is one process of the app, as on the console: settings/main.c keeps
@@ -220,6 +221,7 @@ int sceDisplayWaitVblankStart(void)
         saved_value("highlight_mode", shown[frame].highlight);
         saved_value("local_dictionary_results", shown[frame].results);
         saved_value("text_source", shown[frame].source);
+        saved_value("overlay_on_text", shown[frame].ontext);
         shown[frame].model_line = has_model_line();
     }
     frame++;
@@ -475,10 +477,11 @@ static const char *const SIZES[3] = {"Small", "Normal", "Large"};
 #define SAVED_BACKEND ""
 
 #ifndef VJO_VOCR_MODEL_INFO_TEST
-#define CARDS 7 /* the page's cards, top to bottom, by their titles */
+#define CARDS 8 /* the page's cards, top to bottom, by their titles */
 static const char *const CARD_NAMES[CARDS] = {"Model size", "Read text", "Speed boost while reading (444 MHz)",
                                               "Japanese characters only", "Highlight", "Dictionaries shown",
-                                              "Text source"}; /* API 31 */
+                                              "Text source", /* API 31 */
+                                              "Popup on the game's text"}; /* API 37 */
 /* Frame f's card i: its top (its title is drawn 30 below it, at x 42), or -1 when not shown. */
 static int card_top(int f, int i)
 {
@@ -941,7 +944,7 @@ static void test_the_page_scrolls_a_card_at_a_time(void)
     static const struct { int frame, focus, top; } want[] = {
         {1, 0, 0}, {3, 1, 0}, {5, 2, 0}, {7, 3, 1}, {9, 4, 2}, {11, 5, 2},
         {13, 4, 2}, {15, 3, 2}, {17, 2, 2}, {19, 1, 1}, {21, 0, 0},
-        {23, 6, 3}, /* Up from the first: the last (API 31: Text source, Japanese characters only on top) */
+        {23, 7, 4}, /* Up from the first: the last (API 37: Popup on the game's text, Highlight on top) */
     };
     for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         int f = want[i].frame, top = card_top(f, want[i].top), mine = card_top(f, want[i].focus);
@@ -953,14 +956,14 @@ static void test_the_page_scrolls_a_card_at_a_time(void)
         int h = want[i].focus == 0 ? OCR_H : want[i].focus == 1 ? READ_H : CARD_H;
         TEST_CHECK_(mine >= OCR_Y && mine + h <= ROOM_END, "frame %d: the focused card at %d..%d", f, mine, mine + h);
         check_room(f);
-        /* the scroll bar's thumb: where the view is in the 560-pixel column (310 of it shown; API 31's
-         * Text source card made it 488 + 4 + 68) */
-        static const int offset[] = {0, 98, 204, 276};
+        /* the scroll bar's thumb: where the view is in the 632-pixel column (310 of it shown; API 31's
+         * Text source card made it 488 + 4 + 68, API 37's card 560 + 4 + 68) */
+        static const int offset[] = {0, 98, 204, 276, 348};
         int thumb = 0;
         for (int k = 0; k < shown[f].rects; k++)
             if (shown[f].rect[k].x == 942 && shown[f].rect[k].color == DIM)
-                thumb = shown[f].rect[k].y == OCR_Y + 310 * offset[want[i].top] / 560 &&
-                        shown[f].rect[k].h == 310 * (560 - offset[want[i].top] < 310 ? 560 - offset[want[i].top] : 310) / 560;
+                thumb = shown[f].rect[k].y == OCR_Y + 310 * offset[want[i].top] / 632 &&
+                        shown[f].rect[k].h == 310 * (632 - offset[want[i].top] < 310 ? 632 - offset[want[i].top] : 310) / 632;
         TEST_CHECK_(thumb, "frame %d: the scroll bar's thumb", f);
     }
     /* the size buttons' place is Read text's title row once the page has scrolled: a tap there
@@ -1117,7 +1120,7 @@ static void test_a_saved_choice_says_when_it_applies(void)
                 "the status line: '%s'", st ? st->text : "(none)");
 }
 
-/* API 31: Text source, the last card (Up from the first card reaches it): Right and Left step within its
+/* API 31: Text source, the card before the last (Up from the first card, twice, reaches it): Right and Left step within its
  * three choices (Automatic, Every game, OCR only: auto, hooks, ocr), Enter takes the next one (OCR only
  * to Automatic), a touch on a choice takes it and elsewhere on the card only focuses. Each change is
  * config.ini's text_source, every other line kept, and the status line says it applies when a game next
@@ -1125,20 +1128,20 @@ static void test_a_saved_choice_says_when_it_applies(void)
 static void test_text_source_by_keys_and_touch(void)
 {
     card("; mine\nvocr_tier = small\n");
-    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT),
-                               PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT),
-                               PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT)};
+    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_RIGHT),
+                               PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_RIGHT), PRESS(SCE_CTRL_CROSS),
+                               PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_LEFT)};
     int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
     TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
     static const struct { int frame; const char *source; } want[] = {
-        {2, ""},      /* Up: Text source, nothing saved */
-        {4, "hooks"}, /* Right: Every game */
-        {6, "ocr"},   /* Right: OCR only */
-        {8, "ocr"},   /* Right again: no change */
-        {10, "auto"}, /* Enter: the next, round to Automatic */
-        {12, "auto"}, /* Left: Automatic already */
-        {14, "hooks"},/* Enter */
-        {16, "auto"}, /* Left */
+        {4, ""},      /* Up, Up: Text source, nothing saved */
+        {6, "hooks"}, /* Right: Every game */
+        {8, "ocr"},   /* Right: OCR only */
+        {10, "ocr"},  /* Right again: no change */
+        {12, "auto"}, /* Enter: the next, round to Automatic */
+        {14, "auto"}, /* Left: Automatic already */
+        {16, "hooks"},/* Enter */
+        {18, "auto"}, /* Left */
     };
     for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
         int f = want[i].frame;
@@ -1147,7 +1150,7 @@ static void test_text_source_by_keys_and_touch(void)
         TEST_CHECK_(focused_card(f) == 6 && !strcmp(shown[f].tier, "small"), "frame %d: card %d", f, focused_card(f));
         check_room(f);
     }
-    const Text *st = text_at(4, ROOM_END + 4 + 22, 40, 41);
+    const Text *st = text_at(6, ROOM_END + 4 + 22, 40, 41);
     TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when a game next starts."), "the status line: '%s'",
                 st ? st->text : "(none)");
     {
@@ -1160,15 +1163,15 @@ static void test_text_source_by_keys_and_touch(void)
         TEST_CHECK(!strcmp(text, "; mine\nvocr_tier = small\ntext_source = auto\n"));
         TEST_MSG("%s", text);
     }
-    /* touch, once the card is in view (Up wraps to it): each choice, then the title row and the help line
+    /* touch, once the card is in view (Up wraps to the last card, below it): each choice, then the title row and the help line
      * (focus only). The choices span x 440-591, 600-751 and 760-911, y from the card's top + 6 to + 39. */
     card("text_source = ocr\n");
     static const Input taps[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), TAP(500, 0), TAP(700, 0), TAP(911, 0), TAP(595, 0),
                                  TAP(300, 0), TAP(450, 0)};
     Input script_taps[sizeof(taps) / sizeof(taps[0])];
     memcpy(script_taps, taps, sizeof(taps));
-    /* the card's top once in view: Japanese characters only first (the column's 276), Text source 492 down it */
-    const int top = OCR_Y + 492 - 276;
+    /* the card's top once the last card is in view: Highlight first (the column's 348), Text source 492 down it */
+    const int top = OCR_Y + 492 - 348;
     for (unsigned i = 4; i < sizeof(taps) / sizeof(taps[0]); i += 2) script_taps[i].y = top + 6 + 16;
     script_taps[12].y = top + 30; /* the title row: focus only */
     frames = run(script_taps, (int)(sizeof(script_taps) / sizeof(script_taps[0])));
@@ -1178,6 +1181,60 @@ static void test_text_source_by_keys_and_touch(void)
     for (unsigned i = 0; i < 6; i++)
         TEST_CHECK_(!strcmp(shown[4 + 2 * i].source, after[i]) && focused_card(4 + 2 * i) == 6,
                     "tap %u: text_source '%s', want %s", i, shown[4 + 2 * i].source, after[i]);
+}
+
+/* API 37: Popup on the game's text, the last card (Up from the first card reaches it): Enter toggles it, Right
+ * turns it on and Left off, a touch on the card toggles it. Each change is config.ini's overlay_on_text, every
+ * other line kept, and the status line says it applies when the overlay next opens; a file without the line
+ * shows OFF and writes nothing until a change. */
+static void test_overlay_on_text_by_keys_and_touch(void)
+{
+    card("; mine\nvocr_tier = small\n");
+    static const Input in[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_CROSS), PRESS(SCE_CTRL_RIGHT),
+                               PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_LEFT), PRESS(SCE_CTRL_CROSS)};
+    int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
+    TEST_ASSERT(frames == (int)(sizeof(in) / sizeof(in[0])));
+    static const struct { int frame; const char *value; } want[] = {
+        {2, ""},     /* Up: the card, nothing saved */
+        {4, "on"},   /* Enter: on */
+        {6, "on"},   /* Right: on already */
+        {8, "off"},  /* Left: off */
+        {10, "off"}, /* Left again: no change */
+        {12, "on"},  /* Enter */
+    };
+    for (unsigned i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
+        int f = want[i].frame;
+        TEST_CHECK_(!strcmp(shown[f].ontext, want[i].value), "frame %d: overlay_on_text '%s', want '%s'", f,
+                    shown[f].ontext, want[i].value);
+        TEST_CHECK_(focused_card(f) == 7 && !strcmp(shown[f].tier, "small"), "frame %d: card %d", f, focused_card(f));
+        check_room(f);
+    }
+    TEST_CHECK(shows(2, "Popup on the game's text") && shows(2, "OFF") && shows(4, "ON"));
+    const Text *st = text_at(4, ROOM_END + 4 + 22, 40, 41);
+    TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the overlay next opens."), "the status line: '%s'",
+                st ? st->text : "(none)");
+    {
+        FILE *file = fopen(VJO_PREFERENCES_PATH, "rb");
+        char text[4096];
+        TEST_ASSERT(file != NULL);
+        size_t n = fread(text, 1, sizeof(text) - 1, file);
+        fclose(file);
+        text[n] = 0;
+        TEST_CHECK(!strcmp(text, "; mine\nvocr_tier = small\noverlay_on_text = on\n"));
+        TEST_MSG("%s", text);
+    }
+    /* a touch on the card, once in view, toggles it */
+    card("overlay_on_text = on\n");
+    static const Input taps[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), TAP(600, 0), TAP(600, 0)};
+    Input script_taps[sizeof(taps) / sizeof(taps[0])];
+    memcpy(script_taps, taps, sizeof(taps));
+    const int top = OCR_Y + 564 - 348; /* Highlight first (the column's 348), this card 564 down it */
+    script_taps[4].y = script_taps[6].y = top + 34; /* TAP is two entries: the touch, then the release */
+    frames = run(script_taps, (int)(sizeof(script_taps) / sizeof(script_taps[0])));
+    TEST_ASSERT(frames == (int)(sizeof(script_taps) / sizeof(script_taps[0])));
+    TEST_CHECK_(card_top(2, 7) == top, "the card at %d, want %d", card_top(2, 7), top);
+    TEST_CHECK_(!strcmp(shown[2].ontext, "on") && !strcmp(shown[4].ontext, "off") && !strcmp(shown[6].ontext, "on"),
+                "taps: %s %s %s", shown[2].ontext, shown[4].ontext, shown[6].ontext);
 }
 
 /* engine.c on its own: the card of a parsed config.ini, its status line, the sizes' lines. */
@@ -1439,6 +1496,7 @@ TEST_LIST = {
     {"a_saved_choice_says_when_it_applies_with_or_without_a_game", test_a_saved_choice_says_when_it_applies},
     {"read_text_and_speed_boost_first_run_auto_and_on_below_the_model_size", test_read_text_and_speed_boost_defaults},
     {"text_source by keys and touch, saved as text_source (API 31)", test_text_source_by_keys_and_touch},
+    {"popup on the game's text by keys and touch, saved as overlay_on_text (API 37)", test_overlay_on_text_by_keys_and_touch},
     {"read_text_and_speed_boost_by_keys_and_touch_saved_as_ocr_mode_and_ocr_boost_clock",
      test_read_text_and_speed_boost_by_keys_and_touch},
     {"the_page_scrolls_a_card_at_a_time_and_never_draws_into_the_status_line", test_the_page_scrolls_a_card_at_a_time},

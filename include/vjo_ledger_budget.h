@@ -243,10 +243,21 @@
  * Shell SELF files are byte-identical to main's]. The normal build's code ended 1,112 B
  * below 128 KiB, less than the SCE data vita-elf-create appends (1,204 B): the worker's link now keeps
  * __sce_headroom (vita/CMakeLists.txt), as the Rubi app's does. No new block, thread or allocation. */
+/* API 37, the overlay on the game's text (docs/overlay-on-text.md): one text page more in both builds, in the
+ * game's partition only. vita-vn-ocr's runtime/vocr_charbox.c (#114; -Os: vocr_charbox_find 2,048 B, its align
+ * 396 B, the group lookup 152 B, libgcc's __aeabi_ldivmod 160 B, as linked), the char map's writer
+ * (core/charmap_build.c and core/charmap.c's writer with the UTF-8 decoder, -Os, 1,772 B) and the job's calls (core/vocr_ocr.c
+ * line_chars in finish_line, game_ocr/main.c write_char_map) take the debug build's text 140,656 -> 146,392 B and
+ * the normal build's 131,804 -> 137,540 B; data/bss 32,888 -> 36,672 and 32,880 -> 36,664 B, within its pages (the
+ * job's characters, VjoVocrChars: 256 characters, 16 lines and one line's box buffer, which the map's builder and a
+ * line read without the LM borrow) [measured: the build log's module rows, both builds of main 2f85de0 and this
+ * change, VitaSDK GCC 15.2.0 in vitasdk/vitasdk:2026.08]. No new block, thread or allocation; the game pool's
+ * permanent part grows by the page, and a job's worst case and its ceiling (VJO_LIMIT_GAME_JOB, 12,288 B of headroom)
+ * are unchanged. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 180224u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 184320u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 172032u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 176128u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
@@ -301,7 +312,7 @@
 #define VJO_PAF_HEAP 5242880u                      /* [measured, docs/meiki-ocr.md on experiment/meiki-ocr] */
 #define VJO_PAF_FREE_MEASURED 2557952u             /* 2,498 KiB free beside CLANNAD, 2026-10-10 [measured, same] */
 #define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/memory.cpp RESERVE */
-#define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,368 B file; 5,632 B before the region cursor) and the Paf Plugin object [estimate] */
+#define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,432 B file with API 37's marks and reading, 6,000 B on main 2f85de0 [measured]) and the Paf Plugin object [estimate] */
 /* One result arena, the local dictionary's lookup (worker.c LOCAL_RESULT_ARENA_SIZE): the only result
  * memory since the network paths, Google Lens and the Hachidori relay, were removed (they took
  * 2 x 262,144 B arenas and a connection pool: 571,888 B with two slots, 548,096 B with one). */
@@ -317,7 +328,10 @@
  * on main dcb7b31) [measured, host, test_shell_anki.c]. anki.c checks its arena against this at compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_HEADER_RANGE_BYTES 2048u              /* 512 entry starts and lengths, uint16_t each, in the open page's UI block */
-#define VJO_BUDGET_PAF_UI 20480u                   /* text/spans 18,016 B + ranges 2,048 B (source bounds, test_ledger.c) */
+/* The open page's UI block: text/spans 18,016 B + ranges 2,048 B (source bounds, test_ledger.c) + (API 37) the
+ * cursor's copy of the text and its char map, VJO_STRIP_MAX, moved here from the Shell's data pages
+ * (shell/overlay.cpp s_cursor_text; docs/overlay-on-text.md) */
+#define VJO_BUDGET_PAF_UI 24576u
 /* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
  * first Up past its text's top row until the return to the current text (or the overlay's close): the
  * table (core/history_lines.h VjoHistory, 34 line pointers and two counts) and the worker's three words

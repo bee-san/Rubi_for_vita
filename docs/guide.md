@@ -313,6 +313,14 @@ app when it starts.
 | Enter | Save the shown word as an Anki card in the offline queue, with card mining on ([Anki mining](anki.md)) |
 | Cancel | Close the overlay |
 
+**On the game's text** (API 37, off by default: **Popup on the game's text** on the Rubi app's OCR & lookup page,
+`overlay_on_text = on`). With OCR's text, the overlay works on the game's own text instead of covering the screen.
+It marks the word at the cursor where the game shows it, with its reading above it. A tap on the game's text looks
+up the word there. Up and Down go to the game's line above or below, and the dictionary popup is a band beside the
+word. When the text has no places, the overlay shows its normal popup: a hook text with no OCR'd line, an earlier
+line, or a screen that moved on. The details and the things still to check on a console are in
+[overlay-on-text](overlay-on-text.md).
+
 **Earlier lines.** With **Read text** on **Automatically**, the overlay can go back through this game's
 earlier dialogue, the lines `history.csv` keeps ([ocr-history.md](ocr-history.md)): Up on the text's
 top row shows the line before it, in white between the last row of the line before that and the

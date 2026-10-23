@@ -62,6 +62,21 @@
           <layout_hint size="920, 30" pos="0, -250" />
         </rich_text>
       </plane>
+      <!-- API 37, the overlay on the game's text (docs/overlay-on-text.md): the marks on the word at the cursor
+           where the game shows it (two: a word can wrap to the next line) and its reading above it; code sizes,
+           places, shows and hides them (shell/overlay.cpp ontext_place) -->
+      <plane style="vjo_style_region" id="vjo_mark_0">
+        <layout_hint size="2, 2" />
+      </plane>
+      <plane style="vjo_style_region" id="vjo_mark_1">
+        <layout_hint size="2, 2" />
+      </plane>
+      <plane style="vjo_style_band" id="vjo_ruby_bg">
+        <layout_hint size="2, 2" />
+      </plane>
+      <rich_text style="vjo_style_text" id="vjo_ruby">
+        <layout_hint size="320, 26" />
+      </rich_text>
       <!-- region selector: dimmed game, translucent selection rectangle, the
            cursor the stick and the d-pad move -->
       <plane style="vjo_style_dim" id="vjo_region_layer">

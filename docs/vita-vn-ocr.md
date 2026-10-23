@@ -517,7 +517,12 @@ console compares with the evaluation directly:
 
 The text never grows, so the game worker normalises it in place before it returns it, and keeps
 the recognizer's own text after it in the same 4 KiB buffer (`vjo_text_normalize_keep`; nothing
-is added to SceShell). The Shell writes the recognizer's text to `log.txt`, one line per
+is added to SceShell). API 37: with `VJO_GAME_OCR_S_CHARS` (bit 17 of the job's `speed` word, which the
+Shell sets in the user's jobs when `overlay_on_text` is on), the worker also writes the text's char map
+after the recognizer's copy in that buffer, with its last byte left zero: every character's place on the
+screen, from vita-vn-ocr's `runtime/vocr_charbox.c` (#114) cells without INK, aligned to the shown text
+([core/charmap.h](../core/charmap.h), [overlay-on-text](overlay-on-text.md)). A job with the bit reads its
+lines without the line cache, whose entries keep no places. The Shell writes the recognizer's text to `log.txt`, one line per
 recognized line (`game vocr text N: …`, 60 characters at most), and, for a line that changed,
 what is shown (`game vocr text N shown: …`); after a dropped line the shown lines are the next
 ones, so the log pairs them with the recognizer's lines by position. The job's `gstep job norm`
@@ -1021,7 +1026,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 817d203a49d38dda4f73d11639cf608aed84d17e  # #112's merge (after #111's, #101's, #85's, #83's and #82's): the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout 6f24967d311d6984c138b2e8477c650801e2f2df  # main after #116's merge (the characters' places, vita-vn-ocr #114), after #112's merge: the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").

@@ -72,8 +72,12 @@
  * 36: VjoGameOcrRequest.speed bit 16 (VJO_GAME_OCR_S_DROP_BORDERS): the game worker drops a line made only
  * of a box's border read as text (core/textnorm.h; config.ini non_japanese_filter = lines, the default), and
  * its norm step's kind counts those lines. Sizes and layouts are unchanged. 35 and speed bit 7 are taken by
- * draft #245 (the debug build's PSP probe), so this is 36. */
-#define VJO_API_VERSION 36
+ * draft #245 (the debug build's PSP probe), so this is 36.
+ * 37: VjoGameOcrRequest.speed bit 17 (VJO_GAME_OCR_S_CHARS): the game worker writes where each character of the
+ * text it returns is on the frame (core/charmap.h, after the text and its recognizer's copy in
+ * VjoGameOcrResult.text, whose last bytes were zero), for the overlay on the game's text (config.ini
+ * overlay_on_text, docs/overlay-on-text.md). Sizes and layouts are unchanged. */
+#define VJO_API_VERSION 37
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

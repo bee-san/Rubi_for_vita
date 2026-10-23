@@ -47,6 +47,7 @@ extern "C" {
 #include "../core/text_hit.h"
 #include "../core/port.h"
 #include "../core/history_lines.h"
+#include "../core/charmap.h"
 #include "../include/vjo_ledger_budget.h"
 }
 
@@ -142,11 +143,48 @@ static void cache_header_range(const VjoEntryList *list, int entry)
         s_rng_len[entry] = (uint16_t)len;
     }
 }
+/* The page's widget ids (shell/rco/vitajpoverlay.xml), in the data segment: the code segment's last page is full
+ * in the normal build (docs/memory-ledger.md, "Tables in the data segment"; API 37). */
+static const char k_vjo_band_footer[] VJO_DATA_TABLE(overlay_vjo_band_footer) = "vjo_band_footer";
+static const char k_vjo_band_mid[] VJO_DATA_TABLE(overlay_vjo_band_mid) = "vjo_band_mid";
+static const char k_vjo_band_top[] VJO_DATA_TABLE(overlay_vjo_band_top) = "vjo_band_top";
+static const char k_vjo_body[] VJO_DATA_TABLE(overlay_vjo_body) = "vjo_body";
+static const char k_vjo_body_box[] VJO_DATA_TABLE(overlay_vjo_body_box) = "vjo_body_box";
+static const char k_vjo_body_view[] VJO_DATA_TABLE(overlay_vjo_body_view) = "vjo_body_view";
+static const char k_vjo_header[] VJO_DATA_TABLE(overlay_vjo_header) = "vjo_header";
+static const char k_vjo_header_box[] VJO_DATA_TABLE(overlay_vjo_header_box) = "vjo_header_box";
+static const char k_vjo_header_view[] VJO_DATA_TABLE(overlay_vjo_header_view) = "vjo_header_view";
+static const char k_vjo_hint[] VJO_DATA_TABLE(overlay_vjo_hint) = "vjo_hint";
+static const char k_vjo_mark_0[] VJO_DATA_TABLE(overlay_vjo_mark_0) = "vjo_mark_0";
+static const char k_vjo_mark_1[] VJO_DATA_TABLE(overlay_vjo_mark_1) = "vjo_mark_1";
+static const char k_vjo_panel[] VJO_DATA_TABLE(overlay_vjo_panel) = "vjo_panel";
+static const char k_vjo_region_cursor[] VJO_DATA_TABLE(overlay_vjo_region_cursor) = "vjo_region_cursor";
+static const char k_vjo_region_hint[] VJO_DATA_TABLE(overlay_vjo_region_hint) = "vjo_region_hint";
+static const char k_vjo_region_layer[] VJO_DATA_TABLE(overlay_vjo_region_layer) = "vjo_region_layer";
+static const char k_vjo_region_rect[] VJO_DATA_TABLE(overlay_vjo_region_rect) = "vjo_region_rect";
+static const char k_vjo_ruby[] VJO_DATA_TABLE(overlay_vjo_ruby) = "vjo_ruby";
+static const char k_vjo_ruby_bg[] VJO_DATA_TABLE(overlay_vjo_ruby_bg) = "vjo_ruby_bg";
+static const char k_vjo_separator[] VJO_DATA_TABLE(overlay_vjo_separator) = "vjo_separator";
+
 /* Local lookups select a source character, including one with no entry.
  * This owned copy survives lookup-result arena resets and never borrows
- * a worker pointer outside the view lock. */
-static char s_cursor_text[VJO_STRIP_MAX];
+ * a worker pointer outside the view lock. It is in the open page's UI block
+ * (VJO_BUDGET_PAF_UI) since API 37, not in SceShell's data pages, and the char
+ * map of the overlay on the game's text (core/charmap.h) follows its NUL; a
+ * closed page has none (s_no_text). */
+static char s_no_text[1];
+static char *s_cursor_text = s_no_text;
 static size_t s_cursor_text_len;
+/* API 37, the overlay on the game's text (docs/overlay-on-text.md): the shown text's char map (in
+ * s_cursor_text's tail, or none: p NULL), the view's cmap_seq it was copied at, config overlay_on_text and the
+ * screen having moved on; the marks on the word, its reading above it and the popup's layout beside it. */
+static VjoCmap s_cmap;
+static unsigned s_cmap_seq;
+static int s_on_text, s_cmap_stale, s_compact;
+static ui::Widget *s_mark[2], *s_ruby_bg, *s_band_top, *s_band_footer;
+static VjoCmapRect s_cover[2]; /* screen px the popup's band and the reading's band hide (no tap reaches the game there) */
+static ui::RichText *s_ruby;
+static char s_ruby_text[96];
 static int s_local_cursor_mode, s_header_has_text;
 static int s_japanese_only_selection;
 static int s_highlight_mode;
@@ -357,6 +395,127 @@ static int header_follow(void)
     return 1;
 }
 
+/* API 37 (docs/overlay-on-text.md): the overlay on the game's text is ready: a char map for the shown text, the
+ * screen still the one it was read from, the current text (not an earlier line) and the page's text mode. */
+static int ontext_ready(void)
+{
+    return s_on_text && s_cmap.p && !s_cmap_stale && !s_history && s_local_cursor_mode && s_mode == MODE_OVERLAY;
+}
+
+static void layout_apply(float header_h);
+
+/* The popup beside the word (compact) or the full panel as before: the header, which repeats the game's text, is
+ * hidden in the first, the body and the hint fill a band of POPUP_H px at `top` (screen px). */
+#define POPUP_H 196
+#define POPUP_GAP 6
+#define RUBY_W 320
+#define RUBY_H 26
+static void ontext_layout(int compact, int top)
+{
+    /* the top band, the hint and the footer band: the compact popup's places, then the RCO's (centre-origin, y up) */
+    static const float place[2][3] = {{POPUP_H / 2.0f - 6.0f, -POPUP_H / 2.0f + 22.0f, -POPUP_H / 2.0f + 22.0f},
+                                      {266.0f, -250.0f, -250.0f}};
+    ui::Widget *full[3] = {s_header.view, s_separator, s_band_mid}, *moved[3] = {s_band_top, s_hint, s_band_footer};
+    if (s_panel && (compact || s_compact)) { /* the band follows the word; the full panel as the RCO has it */
+        s_panel->SetSize((float)SCREEN_W, compact ? (float)POPUP_H : (float)SCREEN_H, 0.0f);
+        s_panel->SetPos(0.0f, compact ? SCREEN_H / 2.0f - top - POPUP_H / 2.0f : 0.0f, 0.0f);
+    }
+    if (compact == s_compact)
+        return;
+    s_compact = compact;
+    for (int i = 0; i < 3; i++) {
+        if (full[i]) {
+            if (compact) full[i]->Hide();
+            else full[i]->Show();
+        }
+        if (moved[i]) moved[i]->SetPos(0.0f, place[!compact][i], 0.0f);
+    }
+    if (compact) /* the body between the top band and the footer */
+        pane_size(&s_body, POPUP_H - 12.0f - 44.0f, POPUP_H / 2.0f - 12.0f);
+    else
+        layout_apply(s_header.h);
+}
+
+/* The marks and the word's reading off the game's text (a closed map, the region selector). */
+static void ontext_hide(void)
+{
+    ui::Widget *w[4] = {s_mark[0], s_mark[1], s_ruby_bg, s_ruby};
+    for (int i = 0; i < 4; i++)
+        if (w[i]) w[i]->Hide();
+}
+
+/* The marks on the word at the cursor where the game shows it (its characters' cells, one rectangle a line), its
+ * reading above it, and the popup beside it; none of them, and the full panel, without a place for it. */
+static void ontext_place(void)
+{
+    VjoCmapRect r[2];
+    int n = 0;
+    s_cover[1].w = 0; /* the reading's band, if it is shown below */
+    if (ontext_ready() && s_cursor_byte < s_cursor_text_len) {
+        size_t end = s_cursor_byte;
+        if (s_highlight_mode == VJO_HIGHLIGHT_WORD && s_match_end > s_cursor_byte)
+            end = s_match_end;
+        else
+            vjo_utf8_next(s_cursor_text, s_cursor_text_len, &end);
+        n = vjo_cmap_span(&s_cmap, s_cursor_byte, (uint32_t)end, r, 2);
+    }
+    for (int i = 0; i < 2; i++) {
+        if (!s_mark[i])
+            continue;
+        if (i >= n) {
+            s_mark[i]->Hide();
+            continue;
+        }
+        s_mark[i]->SetSize((float)r[i].w, (float)r[i].h, 0.0f);
+        s_mark[i]->SetPos(r[i].x + r[i].w / 2.0f - SCREEN_W / 2, SCREEN_H / 2 - r[i].y - r[i].h / 2.0f, 0.0f);
+        s_mark[i]->Show();
+    }
+    if (s_ruby && s_ruby_bg) { /* the word's reading above its first line, when there is room */
+        if (n && s_ruby_text[0] && r[0].y >= RUBY_H + 2) {
+            char markup[160];
+            size_t cps = 0, i = 0, len = sceClibStrnlen(s_ruby_text, sizeof(s_ruby_text));
+            while (i < len) {
+                vjo_utf8_next(s_ruby_text, len, &i);
+                cps++;
+            }
+            int w = (int)cps * 18 + 10, x = r[0].x > SCREEN_W - RUBY_W ? SCREEN_W - RUBY_W : r[0].x, y = r[0].y - RUBY_H - 2;
+            if (w > RUBY_W) w = RUBY_W;
+            static const char ruby_format[] VJO_DATA_TABLE(overlay_ruby_format) = "<font color=\"#ffd24a\">%s</font>";
+            sceClibSnprintf(markup, sizeof(markup), ruby_format, s_ruby_text);
+            set_rich(s_ruby, markup);
+            s_cover[1].x = x; s_cover[1].y = y; s_cover[1].w = w; s_cover[1].h = RUBY_H;
+            s_ruby_bg->SetSize((float)w, (float)RUBY_H, 0.0f);
+            s_ruby_bg->SetPos(x + w / 2.0f - SCREEN_W / 2, SCREEN_H / 2 - y - RUBY_H / 2.0f, 0.0f);
+            s_ruby->SetPos(x + 4 + RUBY_W / 2.0f - SCREEN_W / 2, SCREEN_H / 2 - y - RUBY_H / 2.0f, 0.0f);
+            s_ruby_bg->Show();
+            s_ruby->Show();
+        } else {
+            s_ruby_bg->Hide();
+            s_ruby->Hide();
+        }
+    }
+    if (n) {
+        VjoCmapRect w = r[0];
+        if (n > 1) { /* both lines: the popup goes beside the whole word */
+            int x1 = r[0].x + r[0].w > r[1].x + r[1].w ? r[0].x + r[0].w : r[1].x + r[1].w;
+            w.x = r[0].x < r[1].x ? r[0].x : r[1].x;
+            w.w = x1 - w.x;
+            w.h = r[1].y + r[1].h - w.y;
+        }
+        if (s_ruby_text[0] && w.y >= RUBY_H + 2) { /* and beside its reading */
+            w.h += RUBY_H + 2;
+            w.y -= RUBY_H + 2;
+        }
+        s_cover[0].x = 0;
+        s_cover[0].w = SCREEN_W;
+        s_cover[0].h = POPUP_H;
+        s_cover[0].y = vjo_cmap_popup_top(&w, POPUP_H, POPUP_GAP);
+        ontext_layout(1, s_cover[0].y);
+    } else {
+        ontext_layout(0, 0);
+    }
+}
+
 /* new_content: a new result (header text rebuilt and scrolled to the top);
  * otherwise only the selection moved. The text is built from the view under
  * its lock; the paf calls happen after it is released. */
@@ -399,7 +558,7 @@ static void render(int new_content)
         if (copy_text) {
             size_t n = 0;
             if (l && l->header) {
-                while (n + 1 < sizeof(s_cursor_text) && l->header[n]) {
+                while (n + 1 < VJO_STRIP_MAX && l->header[n]) {
                     s_cursor_text[n] = l->header[n];
                     n++;
                 }
@@ -407,6 +566,19 @@ static void render(int new_content)
             s_cursor_text[n] = 0;
             s_cursor_text_len = n;
         }
+        /* API 37: the char map that follows the shown text's NUL in the worker's local_text */
+        if (copy_text || s_cmap_seq != g_view.cmap_seq || s_on_text != g_view.on_text) {
+            VjoCmap m;
+            s_cmap_seq = g_view.cmap_seq;
+            s_on_text = g_view.on_text;
+            s_cmap.p = NULL;
+            if (s_on_text && l && l->header && l->header == g_view.cmap_text &&
+                vjo_cmap_find(l->header, VJO_STRIP_MAX, s_cursor_text_len, &m)) {
+                sceClibMemcpy(s_cursor_text + s_cursor_text_len + 1, m.p, vjo_cmap_bytes(&m));
+                vjo_cmap_find(s_cursor_text, VJO_STRIP_MAX, s_cursor_text_len, &s_cmap);
+            }
+        }
+        s_cmap_stale = g_view.cmap_stale;
         if (new_text || copy_text) {
             s_nav.words.count = 0;
             s_nav.goal.at = 0;
@@ -426,6 +598,8 @@ static void render(int new_content)
         s_local_cursor_mode = 0;
         s_cursor_text_len = 0;
         s_cursor_text[0] = 0;
+        s_cmap.p = NULL; /* API 37: no text of the cursor's, no char map */
+        s_cmap_seq = g_view.cmap_seq;
         s_dict_page = s_dict_pages = 0;
     }
     s_n_entries = l ? l->n_entries : 0;
@@ -442,6 +616,14 @@ static void render(int new_content)
             l->entries[0].hl_end > (int)s_cursor_byte &&
             l->entries[0].hl_end <= (int)s_cursor_text_len)
             s_match_end = (uint32_t)l->entries[0].hl_end;
+        /* API 37: the word's reading, above it on the game's text, when its spelling is not its reading */
+        s_ruby_text[0] = 0;
+        if (s_cmap.p && s_match_end && l->entries[0].vocab && l->entries[0].vocab->reading &&
+            (!l->entries[0].vocab->spelling || sceClibStrcmp(l->entries[0].vocab->spelling, l->entries[0].vocab->reading))) {
+            sceClibSnprintf(s_ruby_text, sizeof(s_ruby_text), "%s", l->entries[0].vocab->reading);
+            for (const char *c = s_ruby_text; *c; c++) /* it goes into RichText markup: none with < or & */
+                if (*c == '<' || *c == '&') s_ruby_text[0] = 0;
+        }
     }
     s_list_seq = g_view.list_seq;
     s_anki_enabled = g_view.anki_enabled;
@@ -622,6 +804,7 @@ static void render(int new_content)
     } else
         s_body_wrap.frames = 0;
     pane_reset(&s_body);
+    ontext_place(); /* API 37 */
 }
 
 /* A shown text's step of its re-wrap (wrap_fix.h): a break put in where paf
@@ -671,8 +854,8 @@ static void header_fit(void)
 {
     uint32_t lines = 0, most = s_history ? HEADER_MAX_LINES_HISTORY : HEADER_MAX_LINES;
     float h = text_height(s_header.text), want, cap = HEADER_H_INITIAL / HEADER_MAX_LINES * (float)most;
-    if (!s_header.text || h <= 0.0f || s_header.text->GetLineCount(lines) < 0 || !lines)
-        return;
+    if (s_compact || !s_header.text || h <= 0.0f || s_header.text->GetLineCount(lines) < 0 || !lines)
+        return; /* (API 37: the popup beside the word has no header) */
     want = h / (float)lines * (float)(lines < most ? lines : most);
     if (want > cap)
         want = cap;
@@ -770,6 +953,7 @@ static void enter_region_mode(void)
     s_square_down_us = sceKernelGetProcessTimeWide();
     s_square_clear_armed = 1;
     vjo_rsel_begin(&s_rsel, s_square_down_us);
+    ontext_hide(); /* API 37: no marks while the region is drawn */
     if (s_panel)
         s_panel->Hide();
     if (s_region_layer)
@@ -804,30 +988,37 @@ static void open_page(void)
     }
     s_rng_start = (uint16_t *)s_ui_mem;
     s_rng_len = s_rng_start + MAX_RANGES;
-    vjo_arena_init(&s_ui, s_ui_mem + VJO_HEADER_RANGE_BYTES, UI_MEM_BYTES - VJO_HEADER_RANGE_BYTES);
+    /* the ranges, the text arena, then (API 37) the cursor's text and its char map */
+    vjo_arena_init(&s_ui, s_ui_mem + VJO_HEADER_RANGE_BYTES,
+                   UI_MEM_BYTES - VJO_HEADER_RANGE_BYTES - VJO_STRIP_MAX);
+    s_cursor_text = (char *)s_ui_mem + UI_MEM_BYTES - VJO_STRIP_MAX;
+    s_cursor_text[0] = 0;
+    s_cursor_text_len = 0; /* copied afresh from the view (render) */
+    s_cmap.p = NULL;
     param.overwrite_draw_priority = 6; /* above the game, like PSVshellPlus' HUD */
     s_page = s_plugin->PageOpen("vjo_page_overlay", param);
     if (!s_page) {
         vjo_log("overlay page failed to open");
         vjo_shell_heap_free(VJO_SL_PAF_UI, s_ui_mem, UI_MEM_BYTES);
         s_ui_mem = NULL;
+        s_cursor_text = s_no_text; /* API 37: it was in the block */
         vjo_arena_init(&s_ui, NULL, 0);
         return;
     }
-    s_panel = s_page->FindChild("vjo_panel");
-    s_header.text = (ui::Text *)s_page->FindChild("vjo_header");
-    s_body.text = (ui::Text *)s_page->FindChild("vjo_body");
-    s_header.view = s_page->FindChild("vjo_header_view");
-    s_header.box = s_page->FindChild("vjo_header_box");
-    s_body.view = s_page->FindChild("vjo_body_view");
-    s_body.box = s_page->FindChild("vjo_body_box");
-    s_separator = s_page->FindChild("vjo_separator");
-    s_band_mid = s_page->FindChild("vjo_band_mid");
+    s_panel = s_page->FindChild(k_vjo_panel);
+    s_header.text = (ui::Text *)s_page->FindChild(k_vjo_header);
+    s_body.text = (ui::Text *)s_page->FindChild(k_vjo_body);
+    s_header.view = s_page->FindChild(k_vjo_header_view);
+    s_header.box = s_page->FindChild(k_vjo_header_box);
+    s_body.view = s_page->FindChild(k_vjo_body_view);
+    s_body.box = s_page->FindChild(k_vjo_body_box);
+    s_separator = s_page->FindChild(k_vjo_separator);
+    s_band_mid = s_page->FindChild(k_vjo_band_mid);
     s_header.h = HEADER_H_INITIAL; /* the page opens with the RCO layout */
     s_body.h = BODY_H_INITIAL;
     pane_reset(&s_header);
     pane_reset(&s_body);
-    s_hint = (ui::RichText *)s_page->FindChild("vjo_hint");
+    s_hint = (ui::RichText *)s_page->FindChild(k_vjo_hint);
     {
         /* The views get these empty scrollbars instead of their default
          * ones, which flashed whenever the text moved. */
@@ -839,12 +1030,21 @@ static void open_page(void)
                 w->Hide();
         }
     }
-    s_region_layer = s_page->FindChild("vjo_region_layer");
-    s_region_rect = s_page->FindChild("vjo_region_rect");
-    s_region_cursor = s_page->FindChild("vjo_region_cursor");
-    s_region_hint = (ui::RichText *)s_page->FindChild("vjo_region_hint");
+    s_region_layer = s_page->FindChild(k_vjo_region_layer);
+    s_region_rect = s_page->FindChild(k_vjo_region_rect);
+    s_region_cursor = s_page->FindChild(k_vjo_region_cursor);
+    s_region_hint = (ui::RichText *)s_page->FindChild(k_vjo_region_hint);
     if (s_region_layer)
         s_region_layer->Hide();
+    /* API 37: the marks on the game's text and the word's reading, shown by ontext_place */
+    s_mark[0] = s_page->FindChild(k_vjo_mark_0);
+    s_mark[1] = s_page->FindChild(k_vjo_mark_1);
+    s_ruby_bg = s_page->FindChild(k_vjo_ruby_bg);
+    s_ruby = (ui::RichText *)s_page->FindChild(k_vjo_ruby);
+    s_band_top = s_page->FindChild(k_vjo_band_top);
+    s_band_footer = s_page->FindChild(k_vjo_band_footer);
+    ontext_hide();
+    s_compact = 0;
     /* Wrapped text with Japanese line-breaking rules. */
     {
         ui::Text *texts[2] = {s_header.text, s_body.text};
@@ -929,6 +1129,12 @@ static void close_page(int handback)
     vjo_view_unlock();
     s_header.view = s_header.box = s_body.view = s_body.box = NULL;
     s_header.text = s_body.text = NULL;
+    s_mark[0] = s_mark[1] = s_ruby_bg = s_band_top = s_band_footer = NULL; /* API 37 */
+    s_ruby = NULL;
+    s_compact = 0;
+    s_cmap.p = NULL;
+    s_cursor_text = s_no_text; /* it goes with the UI block: the next render copies it again */
+    s_cursor_text_len = 0;
     s_separator = s_band_mid = NULL;
     s_hint = s_region_hint = NULL;
     s_region_cursor = NULL;
@@ -1013,8 +1219,33 @@ static void input_header_touch(void)
         return;
     float x = 0, y = 0;
     uint32_t lines = 0;
-    if (inputdevice::touchscreen::GetPointFromTopleft(inputdevice::touchscreen::PORT_FRONT, 0, x, y) < 0 ||
-        s_header.text->GetLineCount(lines) < 0 || !lines) return;
+    if (inputdevice::touchscreen::GetPointFromTopleft(inputdevice::touchscreen::PORT_FRONT, 0, x, y) < 0)
+        return;
+    if (ontext_ready() && s_compact) { /* API 37: a tap on the game's text takes the character there */
+        int k = vjo_cmap_hit(&s_cmap, (int)x, (int)y);
+        for (int i = 0; i < 2; i++) /* never under the popup's band or the reading's (audit-overlay-boxes F4) */
+            if (x >= s_cover[i].x && x < s_cover[i].x + s_cover[i].w && y >= s_cover[i].y &&
+                y < s_cover[i].y + s_cover[i].h)
+                k = -1;
+        if (k >= 0) {
+            uint32_t off;
+            unsigned line, a, b;
+            vjo_cmap_get(&s_cmap, (unsigned)k, &off, &line, &a, &b);
+            if (s_japanese_only_selection)
+                off = (uint32_t)vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, off, 0);
+            if (off != s_cursor_byte && off < s_cursor_text_len) {
+                s_cursor_byte = off;
+                s_nav.words.count = 0;
+                COUNT_MOVE();
+                vjo_dlog("game text touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
+                post_cursor_now();
+                render(0);
+            }
+            return;
+        }
+        return; /* the popup's own band, or the game away from its text: no header there */
+    }
+    if (s_header.text->GetLineCount(lines) < 0 || !lines) return;
     int ja, en;
     font_px(&ja, &en);
     /* The header has one font size, so its measured line count and bounds
@@ -1056,6 +1287,18 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
         int stick = vjo_stick_cursor_step(vjo_stick_cursor(&s_stick, in->lx, in->ly, now), &direction, &vertical);
         /* L or R tapped alone (never the L + R chord): seen every frame. */
         int tap = vjo_shoulder_tap(s_tap, in->buttons & 0xFFFFu, pressed, SCE_CTRL_LTRIGGER, SCE_CTRL_RTRIGGER);
+        /* API 37: on the game's text, Up and Down go to its line above or below, the character nearest in x */
+        if (vertical && !direction && ontext_ready()) {
+            int k = vjo_cmap_vertical(&s_cmap, vjo_cmap_index(&s_cmap, cursor), vertical);
+            if (k >= 0) {
+                uint32_t off;
+                unsigned line, a, b;
+                vjo_cmap_get(&s_cmap, (unsigned)k, &off, &line, &a, &b);
+                cursor = s_japanese_only_selection
+                    ? (uint32_t)vjo_utf8_japanese_cursor_step(s_cursor_text, s_cursor_text_len, off, 0) : off;
+                vertical = 0;
+            }
+        }
         if (direction || vertical) {
             /* The header's displayed rows (core/text_rows.h): Left/Right in
              * reading order across rows, stopping at the text's ends (a
@@ -1213,12 +1456,12 @@ static void input_region(const VjoInput *in, uint32_t held, uint32_t pressed)
 
 /* ---- frame ---- */
 
-static void frame_body(unsigned version, unsigned anki_version);
+static void frame_body(unsigned version, unsigned anki_version, unsigned cmap_seq);
 
 static void frame(void *arg)
 {
     int want_open, want_strip, handback;
-    unsigned version, anki_version, strip_version;
+    unsigned version, anki_version, strip_version, cmap_seq;
     (void)arg;
 
     /* Runs on SceShell's paf main thread every frame: while closed, skip the
@@ -1232,6 +1475,7 @@ static void frame(void *arg)
     handback = g_view.touch_handback;
     version = g_view.version;
     anki_version = g_view.anki_version;
+    cmap_seq = g_view.cmap_seq;
     want_strip = g_view.strip_on && g_view.strip_text[0] && !want_open;
     strip_version = g_view.strip_version;
     vjo_view_unlock();
@@ -1259,19 +1503,19 @@ static void frame(void *arg)
 #if VJO_DEBUG
     {
         int64_t t0 = sceKernelGetProcessTimeWide();
-        frame_body(version, anki_version);
+        frame_body(version, anki_version, cmap_seq);
         t0 = sceKernelGetProcessTimeWide() - t0;
         if (t0 > s_frame_max_us)
             s_frame_max_us = t0;
         s_frames++;
     }
 #else
-    frame_body(version, anki_version); /* the normal build times no frame (the debug build's close line) */
+    frame_body(version, anki_version, cmap_seq); /* the normal build times no frame (the debug build's close line) */
 #endif
 }
 
 /* One frame with the overlay page open. */
-static void frame_body(unsigned version, unsigned anki_version)
+static void frame_body(unsigned version, unsigned anki_version, unsigned cmap_seq)
 {
     if (version != s_seen_version) {
         s_seen_version = version;
@@ -1284,6 +1528,12 @@ static void frame_body(unsigned version, unsigned anki_version)
         s_seen_anki_version = anki_version;
         render(0);
         s_body.scroll = scroll;
+    } else if (cmap_seq != s_cmap_seq) { /* API 37: a char map of this text, or the screen moved on */
+        float scroll = s_body.scroll; /* the definition stays where it was (audit-overlay-boxes F1) */
+        int compact = s_compact;
+        render(0);
+        if (s_compact == compact) /* the same pane: else it starts at the top of the new one */
+            s_body.scroll = scroll;
     } else if (s_highlight_retry_frames > 0) {
         if (header_highlight())
             s_highlight_retry_frames = 0;
