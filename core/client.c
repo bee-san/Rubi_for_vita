@@ -192,6 +192,15 @@ int vjo_overlay_ocr_text(VjoArena *a, const VjoConfig *cfg, const char *text, Vj
 
 const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
 {
+    /* Cold diagnostics use the data segment's existing room so the normal
+     * Shell's full code pages do not grow (docs/memory-ledger.md). */
+    static const char memory_unknown[] VJO_DATA_TABLE(error_memory_unknown) = ". Game RAM unavailable (0x%08X)";
+    static const char memory_stats[] VJO_DATA_TABLE(error_memory_stats) =
+        ". Game RAM (KiB): free %u + reclaim %u; need %u (%u workspace + %u models + %u reserve)";
+    static const char capture_error[] VJO_DATA_TABLE(error_capture) =
+        "Cannot capture the game screen. Close the overlay and try again on a dialogue line.";
+    static const char dictionary_io[] VJO_DATA_TABLE(error_dictionary_io) =
+        "Cannot read local dictionaries. Check the .vjdict files and local_dictionaries in config.ini.";
     /* Lookups are the local dictionaries' and recognition the game worker's: no network. */
     const char *what = stage == VJO_STAGE_OCR ? "Text recognition" : VJO_DICT_NAME " lookup";
     VjoBuf b;
@@ -203,12 +212,12 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         vjo_buf_printf(&b, "%s failed: not enough memory", what);
         if (stage == VJO_STAGE_OCR && err->memory.reserve) {
             if (err->memory.free < 0) {
-                vjo_buf_printf(&b, ". Game RAM unavailable (0x%08X)", (unsigned)err->memory.free);
+                vjo_buf_printf(&b, memory_unknown, (unsigned)err->memory.free);
             } else {
                 /* Free is rounded down; requirements up. Sum in 64 bits before
                  * converting to KiB, including the reserve, which is not used. */
                 uint64_t need = (uint64_t)err->memory.workspace + err->memory.models + err->memory.reserve;
-                vjo_buf_printf(&b, ". Game RAM (KiB): free %u + reclaim %u; need %u (%u workspace + %u models + %u reserve)",
+                vjo_buf_printf(&b, memory_stats,
                     (unsigned)err->memory.free >> 10, (unsigned)(err->memory.reclaim >> 10),
                     (unsigned)((need + 1023u) >> 10),
                     (unsigned)(((uint64_t)err->memory.workspace + 1023u) >> 10),
@@ -219,11 +228,11 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         if (err->detail) vjo_buf_printf(&b, ". %s", err->detail);
         break;
     case VJO_E_SOURCE:
-        vjo_buf_puts(&b, "Cannot capture the game screen. Close the overlay and try again on a dialogue line.");
+        vjo_buf_puts(&b, capture_error);
         if (err->detail) vjo_buf_printf(&b, " %s", err->detail);
         break;
     case VJO_E_LOCAL_IO:
-        vjo_buf_puts(&b, "Cannot read local dictionaries. Check the .vjdict files and local_dictionaries in config.ini.");
+        vjo_buf_puts(&b, dictionary_io);
         if (err->detail) vjo_buf_printf(&b, " %s", err->detail);
         break;
     case VJO_E_LOCAL_FORMAT:

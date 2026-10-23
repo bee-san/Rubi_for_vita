@@ -665,8 +665,8 @@ static const char MODEL_STORAGE[] VJO_DATA_TABLE(MODEL_STORAGE) = "The local OCR
 /* Which part of the game worker's memory check failed: no OCR can fit
  * beside the reserve; the region's job workspace; the model's weights; an
  * allocation after a passed check; or the check itself. A job asks by tiers
- * (API 21): its last check is its smallest tier's. The advice names no model,
- * tier: log.txt has the tier lines. The cached error now also shows this
+ * (API 21): its last check is its smallest tier's. The advice names no model
+ * or tier: log.txt has the tier lines. The cached error now also shows this
  * check's memory figures (owner 2026-10-23). */
 static const char *game_oom_detail(const VjoGameOcrResult *r)
 {
