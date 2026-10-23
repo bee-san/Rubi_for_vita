@@ -11,6 +11,13 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- Hooked text drops backslash control codes such as `\s156` before stream selection and display,
+  so the overlay, mined sentences and new reading-history records omit them, and reading statistics
+  no longer count their letters and digits. Literal `\n`, `\r` and `\t` become whitespace.
+  Existing history files are unchanged.
+
 ## [0.9.2] - 2026-10-22
 
 Where each line of `history.csv` came from, with reading statistics by text source; a held ▲ or ▼

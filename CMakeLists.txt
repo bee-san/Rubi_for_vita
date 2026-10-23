@@ -469,7 +469,7 @@ add_test(NAME lapis_notetype COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/t
 # (host/tests/hook_re_vectors.inc); the generated files must match their generators.
 add_executable(vjo-hook-text-tests host/tests/test_hook_text.c core/hook_text.c)
 target_include_directories(vjo-hook-text-tests PRIVATE third_party/acutest/include core)
-target_link_libraries(vjo-hook-text-tests bearssl)
+target_link_libraries(vjo-hook-text-tests vjo_core)
 target_compile_options(vjo-hook-text-tests PRIVATE -Wall -Wextra)
 add_test(NAME hook_text COMMAND vjo-hook-text-tests)
 add_executable(vjo-hook-luna-tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c)

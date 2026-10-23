@@ -141,7 +141,7 @@ APKG=(host/tests/test_apkg.c core/apkg.c core/sqlw.c core/zipw.c core/lapis.c co
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 # The native hooks (core/hook_text.c, hook_re.c, hook_luna.c): the decoders, the regex VM's 16-bit
 # positions and 32-bit longs, LunaTranslator's table and its ports on the Vita's word size.
-build hook_text -I third_party/bearssl/inc -I "$BS" host/tests/test_hook_text.c core/hook_text.c "$BS/hash/sha2small.c" \
+build hook_text -I third_party/bearssl/inc -I "$BS" host/tests/test_hook_text.c core/hook_text.c core/utf.c core/text_rows.c "$BS/hash/sha2small.c" \
   "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
 build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c
 # The debug build's PSP probe (core/psp_probe.c): its reads' bounds in 32-bit arithmetic.

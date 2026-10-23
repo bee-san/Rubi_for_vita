@@ -9,6 +9,7 @@
 #include "acutest.h"
 #include "bearssl_hash.h"
 #include "hook_text.h"
+#include "reading_chars.h"
 
 #include "hook_cp932.inc" /* VJO_CP932_MAP_SHA256 (the table itself is hook_text.c's) */
 
@@ -227,6 +228,48 @@ static void fuzz_well_formed(void)
     }
 }
 
+static void clean_controls(void)
+{
+    static const struct { const char *raw, *want; } cases[] = {
+        {"\\s156「ばーーーっっ!」", "「ばーーーっっ!」"},
+        {"\\s0猫\\w123犬\\s999999999999鳥\\k", "猫犬鳥"},
+        {"猫\\n犬\\r\\n鳥\\t魚\\c\\p\\f", "猫\n犬\r\n鳥\t魚"},
+        {"猫\x01\x1b\x7f犬\n\r\t鳥", "猫犬\n\r\t鳥"},
+        {"「ABC123、猫ー々ｱ」", "「ABC123、猫ー々ｱ」"},
+        {"\\q123 \\new \\path \\s \\w \\s猫 \\c123", "\\q123 \\new \\path \\s \\w \\s猫 \\c123"},
+        {"\\\\s156猫\\\\n犬\\", "\\\\s156猫\\\\n犬\\"},
+        {"\\s156\\w1\\k\\c", ""},
+        {"", ""},
+    };
+    for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+        char text[256];
+        strcpy(text, cases[k].raw);
+        size_t n = vjo_hook_clean(text, strlen(text));
+        TEST_CHECK_(n == strlen(cases[k].want) && !strcmp(text, cases[k].want),
+                    "[%s] -> [%s], want [%s]", cases[k].raw, text, cases[k].want);
+    }
+    /* The same count history.csv saves: the command's letter and digits are not reading. */
+    char text[] = "\\s156「ばーーーっっ!」\\w10\\k";
+    size_t n = vjo_hook_clean(text, strlen(text));
+    TEST_CHECK(vjo_reading_characters(text, n) == 6);
+}
+
+static void clean_bounds(void)
+{
+    const char *raw = "\\s156猫\\n犬\\k\\";
+    for (size_t n = 0; n <= strlen(raw); n++) {
+        char text[64];
+        memset(text, 0x55, sizeof(text));
+        memcpy(text, raw, n); /* no NUL in the readable input: n is the bound */
+        size_t got = vjo_hook_clean(text, n);
+        TEST_CHECK(got <= n && text[got] == 0);
+        for (size_t j = n + 1; j < sizeof(text); j++) TEST_CHECK(text[j] == 0x55);
+    }
+    char text[] = "猫\0\\s156";
+    TEST_CHECK(vjo_hook_clean(text, sizeof(text) - 1) == 3 && !strcmp(text, "猫"));
+    TEST_CHECK(vjo_hook_clean(NULL, 10) == 0);
+}
+
 static void japanese_count(void)
 {
     const char *s = "「こんにちは」、世界！ABC々ー㌔ｱ漢\xf0\xa0\x80\x8b";
@@ -257,6 +300,8 @@ TEST_LIST = {
     {"nul_and_cap", nul_and_cap},
     {"never_past_n", never_past_n},
     {"fuzz_well_formed", fuzz_well_formed},
+    {"clean_controls", clean_controls},
+    {"clean_bounds", clean_bounds},
     {"japanese_count", japanese_count},
     {"maybe_text", maybe_text},
     {NULL, NULL},

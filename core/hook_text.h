@@ -26,6 +26,15 @@ enum {
 size_t vjo_hook_decode(unsigned encoding, const uint8_t *src, size_t n, char *dst, size_t cap,
                        unsigned *used);
 
+/* Job time, AFTER any game-specific filter: remove common backslash controls
+ * from decoded UTF-8 in place. Numeric \s and \w commands lose their decimal
+ * argument; literal \n/\r/\t become whitespace, \c/\k/\p/\f are dropped.
+ * Unknown escapes and doubled backslashes stay literal. Nonprinting ASCII
+ * controls are dropped, except real tab/CR/LF. At most n bytes are read, stopping
+ * at NUL; text has room for n + 1 bytes. Returns the new length and terminates it.
+ * No allocation, and the result never grows. */
+size_t vjo_hook_clean(char *text, size_t n);
+
 /* Japanese characters (hiragana, katakana, CJK ideographs, the CJK symbols and
  * fullwidth forms blocks, the iteration and prolonged sound marks) in n bytes of
  * UTF-8; invalid sequences count as none. */
