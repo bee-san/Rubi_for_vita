@@ -201,6 +201,8 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         "Cannot capture the game screen. Close the overlay and try again on a dialogue line.";
     static const char dictionary_io[] VJO_DATA_TABLE(error_dictionary_io) =
         "Cannot read local dictionaries. Check the .vjdict files and local_dictionaries in config.ini.";
+    static const char ocr_region[] VJO_DATA_TABLE(error_ocr_region) =
+        "Local OCR needs a tight dialogue region with horizontal white text. Select a region, excluding portraits and menus.";
     /* Lookups are the local dictionaries' and recognition the game worker's: no network. */
     const char *what = stage == VJO_STAGE_OCR ? "Text recognition" : VJO_DICT_NAME " lookup";
     VjoBuf b;
@@ -243,7 +245,7 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
                      "Local OCR model is missing or invalid. Run tools/prepare_ocr.py and copy the complete model to ocr_model_dir.");
         break;
     case VJO_E_OCR_REGION:
-        vjo_buf_puts(&b, "Local OCR needs a tight dialogue region with horizontal white text. Select a region, excluding portraits and menus.");
+        vjo_buf_puts(&b, ocr_region);
         break;
     case VJO_E_OCR_UNAVAILABLE:
         vjo_buf_puts(&b, err->detail ? err->detail : "This build has no local OCR. Install a build made with VJO_WITH_VOCR.");
