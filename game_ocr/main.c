@@ -23,6 +23,7 @@
 #include "../core/vocr_ocr.h"
 #include "../core/hook_select.h"
 #include "../core/hook_cache.h"
+#include "../core/charmap_build.h"
 #include "../include/vjo_vocr_sizes.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/ledger.h"
@@ -1340,6 +1341,35 @@ static void policy_sleep(uint32_t us)
     sceKernelDelayThread(us);
 }
 
+/* API 37 (VJO_GAME_OCR_S_CHARS): the recognized lines' characters and their cells (core/vocr_ocr.h), from which the
+ * job writes its char map (core/charmap_build.h). ~6.6 KiB in the worker's data, used only by such a job. */
+static VjoVocrChars job_chars;
+
+/* API 37: where the characters of the job's text are on the frame (core/charmap.h), after the text and its
+ * recognizer's copy, for the overlay on the game's text. The sentence is the one the Shell shows: the text
+ * filtered as the job's border rule says (bit 16: non_japanese_filter = lines) and trimmed. */
+static void write_char_map(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
+{
+    VjoCmapSource src[VJO_VOCR_MAX_LINES];
+    unsigned n = job_chars.n_lines < VJO_VOCR_MAX_LINES ? job_chars.n_lines : VJO_VOCR_MAX_LINES;
+    for (unsigned i = 0; i < n; i++) {
+        const VjoVocrCharLine *l = &job_chars.line[i];
+        src[i].cp = job_chars.cp + l->first;
+        src[i].a = job_chars.a + l->first;
+        src[i].b = job_chars.b + l->first;
+        src[i].n = l->count;
+        src[i].x = r->x;
+        src[i].y0 = r->y + l->y;
+        src[i].y1 = r->y + l->y + l->h;
+    }
+    /* the last byte stays 0: the kernel refuses a result whose text[] is not terminated (kernel/game_ocr.c) */
+    /* the builder works in the per-line box buffer, idle once the job's lines are read (the sources point at
+     * job_chars' own arrays, not into it) */
+    _Static_assert(sizeof(VjoCmapScratch) <= sizeof(job_chars.scratch), "the char map builder's scratch");
+    if (n) vjo_cmap_build(out->text, sizeof(out->text) - 1, (r->speed & VJO_GAME_OCR_S_DROP_BORDERS) != 0, src, n,
+                          r->fb_width, r->fb_height, (VjoCmapScratch *)(void *)job_chars.scratch);
+}
+
 static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
 {
     sceClibMemset(p, 0, sizeof(*p));
@@ -1359,6 +1389,10 @@ static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
     if (r->speed & VJO_GAME_OCR_S_NOCACHE) { /* the self-test: every line recognized, no stale entry left */
         sceClibMemset(&line_cache, 0, sizeof(line_cache));
         p->cache = NULL;
+    }
+    if (r->speed & VJO_GAME_OCR_S_CHARS) { /* API 37: the characters' places; the job reads without the cache */
+        job_chars.n_lines = job_chars.n_chars = 0;
+        p->chars = &job_chars;
     }
     boost_job = (r->speed & VJO_GAME_OCR_S_BOOST) != 0;
     boost_raised = 0;
@@ -2002,6 +2036,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
             hk.from = id;
         }
     }
+    /* API 37: the char map of the text shown, OCR's or (aligned to OCR's characters) a hook's */
+    if (!rc && policy.chars && out->text[0]) write_char_map(r, out);
     if (stats.lines && (want_helpers || stats.cached)) {
         /* the recognized lines' share of a core: the lowest and the mean (percent; 0 unknown) */
         uint32_t lo = 100u, sum = 0, n = 0;

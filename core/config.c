@@ -94,6 +94,11 @@ const char *vjo_config_default_text(void)
            "; frequent word; unranked: not in the frequency list its dictionary carries.\n"
            "frequency_badge = on\n"
            "\n"
+           "; Draw the overlay on the game's own text: the word under the cursor is marked\n"
+           "; where it is on the screen, a tap on the game's text looks a word up, and the\n"
+           "; popup sits beside the word: on | off (docs/overlay-on-text.md)\n"
+           "overlay_on_text = off\n"
+           "\n"
            "; Text size, 8-40: Japanese (sentence, words, readings) and English (meanings, messages)\n"
            "font_size_ja = 18\n"
            "font_size_en = 14\n"
@@ -500,6 +505,9 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         if (vjo_ieq(val, "word")) c->highlight_mode = VJO_HIGHLIGHT_WORD;
         else if (vjo_ieq(val, "character")) c->highlight_mode = VJO_HIGHLIGHT_CHARACTER;
         else warn(c, "%s: invalid value", key);
+    } else if (vjo_ieq(key, "overlay_on_text")) {
+        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_4) = {"off", "on", NULL};
+        set_choice(c, key, val, &c->overlay_on_text, off_on);
     } else if (vjo_ieq(key, "frequency_badge")) {
         if (vjo_ieq(val, "on")) c->frequency_badge = 1;
         else if (vjo_ieq(val, "off")) c->frequency_badge = 0;

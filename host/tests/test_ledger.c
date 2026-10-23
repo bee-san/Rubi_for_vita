@@ -10,6 +10,10 @@
 #include "test_tier_pins.h"
 #ifdef VJO_WITH_VOCR
 #include "../../core/vocr_ocr.h"
+#include "../../core/charmap.h"
+#ifndef VJO_STRIP_MAX
+#define VJO_STRIP_MAX 4096 /* shell/shell.h */
+#endif
 #endif
 
 enum { A = 0, B, C, N };
@@ -83,7 +87,9 @@ static void test_budget_table_is_consistent(void)
         uint32_t text = (2u * (4096u + 1u) + 7u) & ~7u, span = (uint32_t)sizeof(VjoSpan);
         uint32_t body = (2u * (VJO_BODY_UNITS + 1u) + 7u) & ~7u;
         uint32_t need = text + ((span * VJO_HEADER_SPANS + 7u) & ~7u) + body + ((span * VJO_BODY_SPANS + 7u) & ~7u);
-        TEST_CHECK_(need == 18016u && need + VJO_HEADER_RANGE_BYTES <= VJO_BUDGET_PAF_UI, "%u", need);
+        /* API 37: and the cursor's copy of the text with its char map (shell/overlay.cpp s_cursor_text) */
+        TEST_CHECK_(need == 18016u && need + VJO_HEADER_RANGE_BYTES + VJO_STRIP_MAX <= VJO_BUDGET_PAF_UI, "%u", need);
+        TEST_CHECK(VJO_STRIP_MAX >= VJO_CMAP_MAX_BYTES + 1u); /* a char map fits after an empty text, at least */
     }
     TEST_CHECK(VJO_WORST_KERNEL <= VJO_LIMIT_KERNEL);
     TEST_CHECK(VJO_WORST_GAME_JOB <= VJO_LIMIT_GAME_JOB);

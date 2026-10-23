@@ -11,6 +11,15 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- **Popup on the game's text** (API 37, opt-in: the Rubi app's OCR & lookup page, `overlay_on_text = on`;
+  [overlay-on-text](docs/overlay-on-text.md)). The overlay marks the word at the cursor on the game's own text, with
+  its reading above it. A tap on the game's text looks up the word there, Up and Down move between the game's lines,
+  and the popup sits beside the word. The game worker places every character OCR reads with vita-vn-ocr's
+  per-character boxes (#114, merged as vita-vn-ocr `6f24967`) and aligns hook and LM text to them. It falls back to
+  the normal popup without places. SceShell's module pages are unchanged; the game worker takes one text page more
+  ([memory-ledger](docs/memory-ledger.md)). Nothing of it has run on a console yet.
 ## [0.9.3] - 2026-10-23
 
 A second bundled dictionary, of the characters of PSP and Vita visual novels; the figures of a

@@ -520,9 +520,33 @@ typedef struct {
      * development choice). 0 and 0: off, exactly as before. The greedy text (VjoVocrPolicy.raw) stays the
      * recognizer's own. */
     int counter_tau, counter_open;
+    /* API 37: the characters' places (core/charmap.h, docs/overlay-on-text.md): when set, every line the job's model
+     * reads gets its greedy characters and their cells along the line (vita-vn-ocr runtime/vocr_charbox.c with the
+     * model's calibration, no INK), in region pixels, in `chars` (the caller zeroes its counts before
+     * the job). A job with it reads its lines without the line cache (an entry keeps no places). NULL: off,
+     * exactly as before. */
+    struct VjoVocrChars *chars;
 } VjoVocrPolicy;
 #define VJO_VOCR_COUNTER_TAU 6000
 #define VJO_VOCR_COUNTER_OPEN 4000
+
+/* API 37, VjoVocrPolicy.chars: the lines' greedy characters and their cells (region px, along the line). */
+#define VJO_VOCR_CHARS_MAX 256u   /* characters of a job: a line beyond them gets none */
+#define VJO_VOCR_CHARS_LINE 64u   /* of a line: its first 64 (a 960-px dialogue line holds about 35-40) */
+typedef struct {
+    uint16_t x, y, w, h;          /* the line's crop in the region */
+    uint16_t first, count;        /* its characters in cp, a, b */
+} VjoVocrCharLine;
+typedef struct VjoVocrChars {
+    unsigned n_lines, n_chars;
+    VjoVocrCharLine line[VJO_VOCR_MAX_LINES];
+    uint16_t cp[VJO_VOCR_CHARS_MAX];        /* each character's code point (0xFFFD: a class of several, or one
+                                             * beyond the BMP, which no model's vocabulary has) */
+    uint16_t a[VJO_VOCR_CHARS_MAX], b[VJO_VOCR_CHARS_MAX]; /* its cell [a, b) along the line, region px */
+    /* one line's vocr_charbox entries (28 B each), then the frames' classes of a line the job thread reads
+     * without the LM (no top-K to read them from; a helper's line uses its slot's idle top-K) */
+    uint32_t scratch[VJO_VOCR_CHARS_LINE * 7u + (VJO_VOCR_LM_FRAMES + 1u) / 2u];
+} VjoVocrChars;
 #define VJO_VOCR_SETTLE_MAX_US 2000000u
 /* VjoVocrPolicy.refine: every step of vita-vn-ocr's refinement
  * (VOCR_REFINE_DEFAULT, vocr_lines_refine.h: tighten, frames, split, cursor,

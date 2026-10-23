@@ -99,7 +99,13 @@
  * before, as with the gate). Not bit 5 (draft #228's VJO_GAME_OCR_S_SPOT), bit 7 (draft #245's PSP probe) or
  * bits 8-15 (draft #226's frame pacing), so all four can merge. */
 #define VJO_GAME_OCR_S_DROP_BORDERS 0x10000u
-#define VJO_GAME_OCR_S_ALL 0x1001Fu
+/* API 37, bit 17: the characters' places (docs/overlay-on-text.md, core/charmap.h): the game worker writes where
+ * each character of the sentence it returns is on the frame, a char map after the text and its recognizer's copy
+ * in VjoGameOcrResult.text, keyed to the sentence the Shell shows (the text filtered as bit 16 says, then
+ * trimmed). The Shell sets it in the user's jobs with config overlay_on_text = on. Such a job reads its lines
+ * without the line cache. */
+#define VJO_GAME_OCR_S_CHARS 0x20000u
+#define VJO_GAME_OCR_S_ALL 0x3001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
