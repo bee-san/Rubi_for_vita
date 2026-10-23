@@ -640,9 +640,12 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
 
 size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
 {
+    size_t n;
     if (!out || !cap) return 0;
     out[0] = 0;
     if (!s || !s->n || s->n > VJO_HOOK_RAW_BYTES) return 0;
-    if (s->site) return vjo_luna_text(s->site, s->raw, s->n, s->encoding, out, cap);
-    return vjo_hook_decode(s->encoding, s->raw, s->n, out, cap, NULL);
+    if (s->site) n = vjo_luna_text(s->site, s->raw, s->n, s->encoding, out, cap);
+    else n = vjo_hook_decode(s->encoding, s->raw, s->n, out, cap, NULL);
+    /* One clean text for selection, display, mining and history's character count. */
+    return vjo_hook_clean(out, n);
 }

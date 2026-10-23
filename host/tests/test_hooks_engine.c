@@ -1457,7 +1457,33 @@ static void test_exact_build_identity(void)
     TEST_CHECK(!vjo_hooks_build_id(a) && exe_opens == opened);
 }
 
+static void test_clean_stream_text(void)
+{
+    static const struct { unsigned enc; const char *raw; size_t n; } cases[] = {
+        {VJO_HOOK_ENC_UTF8, "\\s156猫\\n犬\\k", sizeof("\\s156猫\\n犬\\k") - 1},
+        {VJO_HOOK_ENC_AUTO, "\\s156猫\\n犬\\k", sizeof("\\s156猫\\n犬\\k") - 1},
+        {VJO_HOOK_ENC_CP932, "\\s156\x94\x4c\\n\x8c\xa2\\k", 13},
+        {VJO_HOOK_ENC_UTF16LE, "\\\0s\0" "1\0" "5\0" "6\0\x2b\x73\\\0n\0\xac\x72\\\0k\0", 22},
+    };
+    for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+        VjoHookSnap s = {0};
+        char text[64];
+        s.encoding = cases[k].enc;
+        s.n = cases[k].n;
+        memcpy(s.raw, cases[k].raw, s.n);
+        TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) == strlen("猫\n犬"));
+        TEST_CHECK(!strcmp(text, "猫\n犬"));
+        /* The same cleanup applies to a table site, after its own filter. */
+        VjoLunaSite site = {.ported = 1, .encoding = cases[k].enc};
+        s.site = &site;
+        TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) == strlen("猫\n犬"));
+        TEST_CHECK(!strcmp(text, "猫\n犬"));
+        TEST_CHECK(vjo_hooks_text(&s, text, 1) == 0 && text[0] == 0);
+    }
+}
+
 TEST_LIST = {
+    {"clean controls from CALL and table-site streams in every encoding", test_clean_stream_text},
     {"exact build SHA-256: whole executable, worker only, safe failure", test_exact_build_identity},
     {"call_hit: 4..512 bytes, the NUL rules, the pointer-array shape", test_call_hit_bounds},
     {"the CALL hooks: the game's function first, each one's length rule", test_call_hooks},
