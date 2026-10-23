@@ -11,6 +11,28 @@ been reported.
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-10-23
+
+Publishes the native-hook changes already merged into main after 0.9.3. Both the normal build
+and the debug build are included; the normal VPK is the main download.
+
+### Fixed
+
+- Automatic text selection tries generic string-copy hooks in enabled native Vita games even
+  when the game has no title-specific profile ([#275]). Existing source validation and OCR fallback remain.
+- Nonempty text from an installed Luna table site answers before OCR ([#274]), avoiding OCR
+  validation for that source. Generic CALL sources retain their learning and validation policy.
+- アマツツミ has a verified entry-site recipe, and a verified entry can supply text when OCR
+  cannot allocate its workspace ([#273]). Hook placement and readable-memory checks remain required.
+
+### On the console
+
+- The owner's initial CLANNAD run used matching debug plugins from main `56a831c`; hooked text
+  matched the screen and hook-only readings were recorded. Later mixed-build readings do not
+  establish coverage of these changes. This normal release still needs its own restart and game test.
+- PSP OCR and the separate probe-v2 experiment do not establish PSP native hooking. The unmerged
+  Adrenaline follow-up is outside this release.
+
 ## [0.9.3] - 2026-10-23
 
 A second bundled dictionary, of the characters of PSP and Vita visual novels; the figures of a
@@ -735,7 +757,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.4
 [0.9.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.3
 [0.9.2]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.2
 [0.9.1]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.1
@@ -873,3 +896,7 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#260]: https://github.com/bee-san/Rubi_for_vita/issues/260
 [#266]: https://github.com/bee-san/Rubi_for_vita/issues/266
 [#268]: https://github.com/bee-san/Rubi_for_vita/pull/268
+
+[#273]: https://github.com/bee-san/Rubi_for_vita/pull/273
+[#274]: https://github.com/bee-san/Rubi_for_vita/pull/274
+[#275]: https://github.com/bee-san/Rubi_for_vita/pull/275
