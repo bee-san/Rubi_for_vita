@@ -290,7 +290,7 @@ target_link_libraries(VitaJPOverlay_Shell
   # Weak: the enter button's registry read (vita/buttons_vita.c); unbound, it
   # fails and × enters, as before.
   SceRegistryMgr_stub_weak
-  vjo_bearssl  # again after the core: its integer division comes from libgcc
+  vjo_bearssl  # again after the core: its 64-bit division comes from libgcc (32-bit: shell/divide.c)
   gcc)
 set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
 set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")

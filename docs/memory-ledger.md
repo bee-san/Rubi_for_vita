@@ -13,38 +13,48 @@ this change, the build log's module rows (`tools/check_memory_ledger.py`, `--exa
 
 | Shell | main text + data/bss | this change | Loaded pages, unchanged |
 |---|---:|---:|---:|
-| Debug | 100,860 + 72,912 B | 101,156 + 73,048 B | 176,128 B |
-| Normal | 90,004 + 72,960 B | 90,092 + 73,072 B | 163,840 B (exact) |
+| Debug | 100,860 + 72,912 B | 101,172 + 73,048 B | 176,128 B |
+| Normal | 90,004 + 72,960 B | 90,108 + 73,072 B | 163,840 B (exact) |
 
-The total's code is 1,304 B in the normal Shell (`arm-vita-eabi-nm -S`): the count of a window
-(`vjo_history_chars` 148 B, with line history's record parser shared, `record_line` 232 B and
-`record_starts` 42 B, which `vjo_history_scan` used to inline: 528 → 280 B), the count's step
-(`vjo_history_total_step` 636 B), the number with its commas (`vjo_history_number` 80 B), the view's
-and the game exit's (`vjo_history_total_text` 40, `_want` 44, `_keep` 56, `total_save` 54, `_stop` 24 B),
-the writer's addition (`vjo_history_append` 1,068 → 1,100 B, `flush` +6 B) and the callers (+40 B). The
-normal Shell's code segment had 108 B of room on main. It is paid for by the Shell's integer division:
-libgcc's `__udivsi3` and `__divsi3` (604 + 660 B, unrolled for speed) give way to `shell/divide.c`'s
-bit-at-a-time `__aeabi_uidiv` and `__aeabi_idiv` (54 + 36 B, `-Os`), for the three divisions the Shell
-makes (the region selector's corners when a region is saved, its stick cursor's speed twice a frame
-while the stick moves it, and the debug build's job log): 1,264 B less. `host/tests/test_shell_divide.c`
-checks every quotient and remainder of 1,048,576 operand pairs, 2,000,000 random ones and the edges
-against what C's division means, on the host and on the Cortex-A9 under qemu (the ARM lane); the game
-worker's OCR divides in its loops and keeps libgcc's. The normal Shell's code segment keeps 20 B of room,
-its data segment 656 B.
+The total's code is 1,280 B in the normal Shell (`arm-vita-eabi-nm -S`, the sum of every function's change
+but the division's): the count of a window (`vjo_history_chars` 148 B, with line history's record parser
+shared, `record_line` 232 B and `record_starts` 42 B, which `vjo_history_scan` used to inline: 528 → 280 B,
+and the characters' count, `vjo_reading_characters` 74 B and `vjo_line_characters` 4 B, out of line now that
+the writer and the count share it), the count's step (`vjo_history_total_step` 652 B), the number with its
+commas (`vjo_history_number` 80 B), the view's and the game exit's (`vjo_history_total_text` 40, `_want` 44,
+`_keep` 56, `total_save` 54, `_stop` 24 B), the writer's (`vjo_history_append` 1,068 → 1,100 B, `flush` +6 B)
+and the callers' (`render` +16, `frame` +12, `ctl_main` +8, `vjo_worker_stop` +4 B). The debug build's is
+1,384 B (its step logs the count: 756 B). The normal Shell's code segment had 108 B of room on main. It is
+paid for by the Shell's integer division: libgcc's `__udivsi3`, `__divsi3`, `__aeabi_uidivmod` and
+`__aeabi_idivmod` (604 + 660 + 24 + 24 B, unrolled for speed) give way to `shell/divide.c`'s bit-at-a-time
+`__aeabi_uidiv` and `__aeabi_idiv` (54 + 36 B, `-Os`), for the three divisions the Shell makes (the region
+selector's corners when a region is saved, its stick cursor's speed twice a frame while the stick moves it,
+and the debug build's job log, which also takes a remainder: its `__aeabi_uidivmod` is divide.c's 16 B):
+1,222 B less in the normal build and 1,206 B in the debug one. On those operands a division takes 145
+Cortex-A9 instructions against libgcc's 93 [measured: the Vita compiler's objects of both under `qemu-arm
+-cpu cortex-a9` with vita-vn-ocr's instruction-count plugin, 128 divisions of the two kinds]: the stick's two
+a frame are about 100 instructions more, est. 0.3 µs at 333 MHz. `host/tests/test_shell_divide.c` checks the
+source's every quotient and remainder of 1,048,576 operand pairs, 2,000,000 random ones and the edges against
+what C's division means, on the host and on the Cortex-A9 under qemu (the ARM lane, built there by GCC 14;
+audit-total-chars ran the Vita compiler's own `divide.c.obj` through it under qemu too: 4/4); the game
+worker's OCR divides in its loops and keeps libgcc's. The normal Shell's code segment keeps 4 B of room, its
+data segment 656 B.
 
-Data/bss: the total's state (`total`, 56 B in the normal build, 72 B in the debug one with its count's
-log figures), the view's two strings (`counting…`, `unavailable`, 24 B) and the number's format (5 B), all
-in the data segment; the Triangle view's format string grows by 26 B. No allocation, thread, PAF block or
-budget is added. The count reads into the control thread's existing 24 KiB scratch (line history's
-window, `VJO_HISTORY_WINDOW` + 1 B) and releases it in the same wakeup; `history_total.bin`'s 16 bytes go
-through the existing `vjo_file_write` (a temporary file and a rename). Stacks (`-fstack-usage`, the
-Shell's flags): the writer's frame 456 → 464 B on VjoNet, whose deepest chain is a job's (5,624 B, below);
-on VjoControl the count adds `vjo_history_total_step` 80 B, `vjo_history_chars` 64, `record_line` 16 and
-the count of a line 32 B under `ctl_main` (or `vjo_file_read` and `vjo_file_write`, which the config and
-region files use already), well inside the thread's 16 KiB, whose deepest chain was 3,744 B (below). The
-kernel, the game worker, the RCO and the Rubi app (`eboot.bin`) are byte for byte main's in both builds
-[measured: sha256 of the CI-path builds of both commits, `tools/ci_container_build.sh`]. These are binary
-and host measurements; nothing of it has run on a console.
+Data/bss: the total's state (`total`, 56 B in the normal build, 72 B in the debug one with its count's log
+figures), the view's two strings (`counting…`, `unavailable`, 24 B) and the number's format (5 B), all in the
+data segment; the Triangle view's format string grows by 26 B. No allocation, thread, PAF block or budget is
+added. The count reads into the control thread's existing 24 KiB scratch (line history's window,
+`VJO_HISTORY_WINDOW` + 1 B) and releases it in the same wakeup; `history_total.bin`'s 16 bytes go through the
+existing `vjo_file_write` (a temporary file and a rename). Stacks (`-fstack-usage`, the Shell's flags): the
+writer's frame 456 → 464 B on VjoNet, whose deepest chain is a job's (5,624 B, below); on VjoControl the
+count adds `vjo_history_total_step` 80 B (96 B in the debug build), `vjo_history_chars` 64, `record_line` 16
+and the count of a line 32 B under `ctl_main` (or `vjo_file_read` and `vjo_file_write`, which the config and
+region files use already), and line history's `vjo_history_scan` frame is 64 → 72 B, all well inside the
+thread's 16 KiB, whose deepest chain was 3,744 B (below). The kernel, the game worker, the RCO and the Rubi
+app (`eboot.bin` and every file of the VPK) are byte for byte main's in both builds, and the Shell's import
+tables and stub sections are main's [measured: sha256 of the CI-path builds of both commits,
+`tools/ci_container_build.sh`; the import tables by audit-total-chars]. These are binary and host
+measurements; nothing of it has run on a console.
 
 ## history.csv's line source
 

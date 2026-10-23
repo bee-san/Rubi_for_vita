@@ -152,7 +152,7 @@ uint32_t vjo_history_chars(char *buf, size_t len, int whole, int cut, size_t *fi
 
 char *vjo_history_number(char *buf, size_t cap, uint64_t n)
 {
-    static const char format[] VJO_DATA_TABLE(history_number_format) = "%llu"; /* (the Shell's code pages are full) */
+    static const char format[] VJO_DATA_TABLE(history_total_number) = "%llu"; /* (the Shell's code pages are full) */
     int len = vjo_snprintf(buf, cap, format, (unsigned long long)n), commas = (len - 1) / 3, digits = 0;
     buf[len + commas] = '\0'; /* a comma between every three digits, from the right: 1,234,567 */
     for (int i = len - 1; commas; i--) {

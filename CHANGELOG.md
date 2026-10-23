@@ -22,10 +22,11 @@ been reported.
   characters as it appends it, and the Shell counts the file only when it does not know the total: once
   after an install, then only what was recorded since its last start, a 24 KiB window a wakeup in the
   scratch line history reads into, with `counting…` meanwhile; `history_total.bin` (16 bytes, next to
-  `history.csv`) keeps the total between starts. The first count of 100,000 lines (40.7 MB) took 90 ms
-  on the host and is estimated at 4-9 s on the console; 10,000 lines at 0.4-0.9 s. Nothing of it runs
-  in the game or changes the OCR job. The Shell's pages are unchanged in both builds: its integer
-  division, libgcc's, is replaced by a 90 B one of its own, 1,264 B less code
+  `history.csv`) keeps the total between starts. The first count of 100,000 lines (40.7 MB) took 76-90 ms
+  on the host and is estimated at 10-15 s on the console (4-40 s by the bounds), 10,000 lines at about
+  1-1.5 s; meanwhile the first word is not looked up ahead. Nothing of it runs in the game or changes
+  the OCR job's code. The Shell's pages are unchanged in both builds: its 32-bit integer division,
+  libgcc's, is replaced by a 90 B one of its own, 1,222 B less code
   ([measured](docs/memory-ledger.md#the-reading-total)).
 
 ## [0.9.3] - 2026-10-23

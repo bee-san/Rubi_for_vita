@@ -1167,6 +1167,212 @@ static void test_total_of_older_and_cut_records(void)
     TEST_MSG("%llu", (unsigned long long)total.chars);
 }
 
+/* ---- the total and power losses, a file shrinking, an append at the end (audit-total-chars A1-A6) ---- */
+
+/* A fresh count of the file as it is now (as after a lost history_total.bin), the running total put back */
+static uint64_t recount(void)
+{
+    uint64_t chars = total.chars;
+    uint32_t covered = total.covered, saved = total.saved;
+    int state = total.state;
+    memset(&total, 0, sizeof(total));
+    unlink(total_file());
+    count_total();
+    uint64_t fresh = total.chars;
+    TEST_CHECK(total.state == TOTAL_KNOWN);
+    total.chars = chars;
+    total.covered = covered;
+    total.saved = saved;
+    total.state = state;
+    return fresh;
+}
+
+static void write_raw(const char *bytes, size_t n, int append)
+{
+    int fd = open(path, O_WRONLY | O_CREAT | (append ? O_APPEND : O_TRUNC), 0600);
+    TEST_ASSERT(fd >= 0 && write(fd, bytes, n) == (ssize_t)n);
+    close(fd);
+}
+
+/* A power loss in an append, then the next boot: a press counts the file, which ends in the cut record
+ * (no line break after it), then the writer appends the next line right after the cut. The total is a
+ * recount's, whenever the press came: the cut record is left for the round after the next append, which
+ * counts it as a fresh count does (its line, when the line and the time's first digit were written),
+ * and never the record that runs on from it (A1) */
+static void test_total_after_a_record_a_power_loss_cut(void)
+{
+    static const struct { const char *cut; uint64_t line; } cuts[] = {
+        {"\"vita-PCSG00415\",\"vjo-2-1\",\"CLANNAD\",\"切れた行です\",17922", 6}, /* after the time's first digit */
+        {"\"vita-PCSG00415\",\"vjo-2-1\",\"CLANNAD\",\"切れた", 0},              /* inside its line */
+        {NULL, 0},                                                             /* whole but its line break */
+    };
+    for (int k = 0; k < 3; k++) {
+        reset();
+        VjoHistoryRecord r = record("x");
+        uint64_t before = append_total_lines(&r, 40), line = cuts[k].line;
+        if (cuts[k].cut) {
+            write_raw(cuts[k].cut, strlen(cuts[k].cut), 1);
+        } else { /* the writer's own record, its last byte lost */
+            line = append_total_lines(&r, 1);
+            TEST_ASSERT(truncate(path, file_size() - 1) == 0);
+        }
+        off_t cut_at = file_size();
+        vjo_history_reset();
+        count_total(); /* the next boot's first press: the cut record is not counted yet */
+        TEST_CHECK(total.state == TOTAL_KNOWN && total.chars == before && total.covered < (uint32_t)cut_at);
+        TEST_CHECK(recount() == before);
+        uint64_t next = append_total_lines(&r, 1); /* runs on from the cut: no record starts there */
+        TEST_CHECK(total.state == TOTAL_COUNTING); /* the writer's record is not the next one after the total */
+        vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
+        for (int w = 0; w < 1000 && (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING); w++) {}
+        uint64_t running = total.chars, fresh = recount();
+        TEST_CHECK_(total.state == TOTAL_KNOWN && running == fresh && running == before + line,
+                    "case %d: running %llu, recount %llu, want %llu (the next line's %llu not counted)", k,
+                    (unsigned long long)running, (unsigned long long)fresh, (unsigned long long)(before + line),
+                    (unsigned long long)next);
+        TEST_CHECK(total.covered == (uint32_t)file_size());
+    }
+}
+
+/* A lost write's zeros between a cut record and the next boot's records: the cut record's line counts (its
+ * time's first digit is there), the record after the zeros runs on from it and does not (A2) */
+static void test_total_with_zeros_after_a_lost_write(void)
+{
+    static const char cut[] = "\"vita-PCSG00415\",\"vjo-2-1\",\"CLANNAD\",\"切れた行\",1792";
+    static char zeros[700];
+    reset();
+    VjoHistoryRecord r = record("x");
+    uint64_t before = append_total_lines(&r, 30);
+    write_raw(cut, strlen(cut), 1);
+    write_raw(zeros, sizeof(zeros), 1);
+    vjo_history_reset();
+    uint64_t after_zeros = append_total_lines(&r, 1), then = append_total_lines(&r, 3);
+    count_total();
+    TEST_CHECK_(total.state == TOTAL_KNOWN && total.chars == before + 4 + then,
+                "%llu, want %llu (+4 for 切れた行; the %llu after the zeros not)", (unsigned long long)total.chars,
+                (unsigned long long)(before + 4 + then), (unsigned long long)after_zeros);
+}
+
+/* Every size of a file around the windows' edges (within 40 B of 1, 2 and 3 windows) and at every record's
+ * end: the count's windows give a count of the whole file in one buffer, a file not ending in a line break
+ * with its last record left out (A3) */
+static void test_total_at_every_size_around_the_windows(void)
+{
+    static char full[4 * VJO_HISTORY_WINDOW + 8192], copy[sizeof(full)];
+    unsigned bad = 0, checked = 0;
+    reset();
+    VjoHistoryRecord r = record("x");
+    while (file_size() < (off_t)(3 * VJO_HISTORY_WINDOW + 4000)) append_total_lines(&r, 1);
+    off_t size = file_size();
+    int fd = open(path, O_RDONLY);
+    TEST_ASSERT(fd >= 0 && read(fd, full, (size_t)size) == size);
+    close(fd);
+    for (off_t at = 1; at <= size; at++) {
+        int near = 0;
+        size_t first, last;
+        for (int w = 1; w <= 3; w++)
+            near |= at >= (off_t)w * VJO_HISTORY_WINDOW - 40 && at <= (off_t)w * VJO_HISTORY_WINDOW + 40;
+        if (!near && full[at - 1] != '\n') continue;
+        write_raw(full, (size_t)at, 0);
+        memcpy(copy, full, (size_t)at);
+        int ends = full[at - 1] == '\n';
+        uint64_t want = vjo_history_chars(copy, (size_t)at, 1, !ends, &first, &last);
+        uint32_t want_covered = ends ? (uint32_t)at : last < (size_t)at ? (uint32_t)last : 0;
+        memset(&total, 0, sizeof(total));
+        unlink(total_file());
+        count_total();
+        checked++;
+        if (total.chars != want || total.covered != want_covered) {
+            if (++bad < 5)
+                TEST_MSG("%lld B: %llu in %u B, want %llu in %u B", (long long)at, (unsigned long long)total.chars,
+                         (unsigned)total.covered, (unsigned long long)want, (unsigned)want_covered);
+        }
+    }
+    TEST_CHECK_(bad == 0 && checked > 500, "%u of %u sizes of a %lld B file differ", bad, checked, (long long)size);
+}
+
+/* A new file's first append cut in its header, and the next boot's records: the one that runs on from the
+ * cut header does not count (tools/reading_stats.py counts it), the others do (A4) */
+static void test_total_after_a_cut_header(void)
+{
+    static const char cut[] = "uuid,given_identifier,name,li";
+    reset();
+    write_raw(cut, strlen(cut), 0);
+    vjo_history_reset();
+    VjoHistoryRecord r = record("x");
+    uint64_t runs_on = append_total_lines(&r, 1), then = append_total_lines(&r, 4);
+    count_total();
+    TEST_CHECK_(total.state == TOTAL_KNOWN && total.chars == then && recount() == then, "%llu, want %llu (not %llu)",
+                (unsigned long long)total.chars, (unsigned long long)then, (unsigned long long)runs_on);
+    /* the same with a press before the next boot's appends: the cut header alone is a window cut with no record
+     * in it, whose total ends where the window starts, so the writer does not add the record run on from it */
+    reset();
+    write_raw(cut, strlen(cut), 0);
+    vjo_history_reset();
+    count_total();
+    TEST_CHECK(total.state == TOTAL_KNOWN && !total.chars && !total.covered);
+    runs_on = append_total_lines(&r, 1);
+    TEST_CHECK(total.state == TOTAL_COUNTING);
+    vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
+    for (int w = 0; w < 1000 && (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING); w++) {}
+    then = append_total_lines(&r, 2);
+    TEST_CHECK_(total.state == TOTAL_KNOWN && total.chars == then && recount() == then, "%llu, want %llu (not %llu)",
+                (unsigned long long)total.chars, (unsigned long long)then, (unsigned long long)runs_on);
+}
+
+/* The file shrinks under a count (a read meets its end early: an append rolled back, a file replaced over
+ * FTP): the count stops with "unavailable" instead of reading nothing for ever, and the next press counts
+ * again (A5) */
+static void test_total_when_the_file_shrinks_during_a_count(void)
+{
+    reset();
+    VjoHistoryRecord r = record("x");
+    uint64_t want = append_total_lines(&r, 150);
+    vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
+    vjo_history_total_want();
+    TEST_CHECK(vjo_history_total_step(&count_scratch) == 1); /* the first window */
+    read_eof_at = VJO_HISTORY_WINDOW + 100;                   /* the file ends there for the reader */
+    int steps = 0;
+    while (steps++ < 1000 && (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING)) {}
+    TEST_CHECK_(total.state == TOTAL_FAILED && !total.fd && steps < 10, "state %d after %d steps", total.state, steps);
+    read_eof_at = 0;
+    count_total();
+    TEST_CHECK(total.state == TOTAL_KNOWN && total.chars == want);
+}
+
+/* A press after a restart with nothing appended since the total was kept: the count's one round reads the
+ * byte before the end, and VjoNet appends a line meanwhile, a record that starts where the total's bytes
+ * end. It is counted once: by the next round, not by the writer as well, which adds nothing while a count
+ * runs (A6) */
+static int a6_left;
+static VjoHistoryRecord *a6_record;
+static uint64_t a6_chars;
+static void append_once_in_a_read(void)
+{
+    if (a6_left-- > 0) {
+        on_read = NULL;
+        a6_chars += append_total_lines(a6_record, 1);
+        on_read = append_once_in_a_read;
+    }
+}
+static void test_total_with_an_append_during_a_round_at_the_end(void)
+{
+    reset();
+    VjoHistoryRecord r = record("x");
+    uint64_t want = append_total_lines(&r, 20);
+    count_total(); /* kept in history_total.bin */
+    TEST_CHECK(total.chars == want && total_writes == 1);
+    memset(&total, 0, sizeof(total)); /* a restart */
+    a6_record = &r;
+    a6_left = 1;
+    a6_chars = 0;
+    on_read = append_once_in_a_read;
+    count_total();
+    on_read = NULL;
+    TEST_CHECK_(total.state == TOTAL_KNOWN && total.chars == want + a6_chars && total.covered == (uint32_t)file_size(),
+                "%llu, want %llu", (unsigned long long)total.chars, (unsigned long long)(want + a6_chars));
+}
+
 TEST_LIST = {
     {"CSV quotes UTF-8 and complete OCR metadata", test_csv_fields_and_metadata},
     {"0.8.0's and 0.9's columns stay; characters and line_source are appended, also to their files",
@@ -1192,6 +1398,13 @@ TEST_LIST = {
     {"total: no file, failed reads, short reads, 4 GiB", test_total_without_a_file_and_after_failures},
     {"total: the view's number with its commas", test_total_text},
     {"total: an older Rubi's records and a cut one", test_total_of_older_and_cut_records},
+    {"total: a record a power loss cut, then the next boot's: a recount's, whenever pressed",
+     test_total_after_a_record_a_power_loss_cut},
+    {"total: a lost write's zeros after a cut record", test_total_with_zeros_after_a_lost_write},
+    {"total: every size around the windows' edges", test_total_at_every_size_around_the_windows},
+    {"total: a new file's header cut, then records", test_total_after_a_cut_header},
+    {"total: the file shrinks during a count", test_total_when_the_file_shrinks_during_a_count},
+    {"total: an append during a round at the file's end, counted once", test_total_with_an_append_during_a_round_at_the_end},
     {NULL, NULL}
 };
 

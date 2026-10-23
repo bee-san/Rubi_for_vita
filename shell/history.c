@@ -371,9 +371,11 @@ int vjo_history_total_step(VjoArena *scratch)
             goto failed;
         n += (size_t)r;
     }
-    /* the newest record of a window that the file's end does not end, or of one read while a record
-     * was appended, is left for the next window or count */
-    cut = to < total.top || !total.clean;
+    /* the newest record of a window that the file's end does not end, of one read while a record was
+     * appended, or of a file that ends in no line break (a record a power loss cut: the next boot's
+     * record runs on from it, and a count of the two takes the cut one only, as a fresh count does), is
+     * left for the next window or count */
+    cut = to < total.top || !total.clean || (n && buf[n - 1] != '\n');
     total.found += vjo_history_chars(buf, n, !from, cut, &first, &last);
 #if VJO_DEBUG
     total.windows++;
@@ -395,7 +397,8 @@ int vjo_history_total_step(VjoArena *scratch)
     total.fd = 0;
     vjo_view_lock();
     chars = total.chars += total.found;
-    covered = total.covered = cut && last < n ? base + (uint32_t)last : to;
+    /* a cut window's total ends where its newest record starts, or, with none, where it starts */
+    covered = total.covered = !cut ? to : last < n ? base + (uint32_t)last : from;
     /* an append since the end was read: another count, from there, at the next wakeup (the append is
      * done by then: no count waits for it here) */
     known = total.clean && total.seq == total.top_seq;

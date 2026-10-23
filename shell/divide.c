@@ -3,9 +3,11 @@
  * normal Shell's code pages, where the Shell divides in three places that are not hot (the region
  * selector's rectangle, once a region is saved, and its stick cursor's speed, twice a frame while the
  * stick moves it; the debug build's job log too). A bit-at-a-time loop from the quotient's highest bit
- * does it in 108 B (docs/memory-ledger.md, "The reading total"). Linked into the Shell only: the game
- * worker's OCR divides in its loops and keeps libgcc's. A zero divisor gives 0 (no call divides by one;
- * C leaves it undefined). host/tests/test_shell_divide.c checks them against the host's division. */
+ * does it in 90 B of the normal Shell (106 B in the debug build, whose job log also takes a remainder:
+ * docs/memory-ledger.md, "The reading total"), at 145 instructions a division against libgcc's 93.
+ * Linked into the Shell only: the game worker's OCR divides in its loops and keeps libgcc's. A zero
+ * divisor gives 0 (no call divides by zero; C leaves it undefined). host/tests/test_shell_divide.c checks
+ * this source against what C's division means, on the host and in the ARM lane. */
 #include <stdint.h>
 
 unsigned __aeabi_uidiv(unsigned n, unsigned d)
