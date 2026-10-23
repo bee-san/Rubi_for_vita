@@ -32,15 +32,15 @@ What is installed depends on the text source (API 31, `VJO_TEXT_SOURCE_*`, read 
 | Text source | Installed in this game |
 | --- | --- |
 | `ocr` | nothing (today's behaviour). Also the value before the Shell sets one, with an older kernel, and in a build whose kernel does not export `vjoGetTextSource` |
-| `auto` (default) | only in a title with an entry (Rubi's verified list, or a ported site in Luna's table): its sites that pass the checks below, and the CALL source |
-| `hooks` | as `auto`, plus the CALL source in every game that is ON (discovery) |
+| `auto` (default) | the CALL source in every enabled native Vita game, plus its available table sites that pass the checks below |
+| `hooks` | the same attempts as `auto`; retained for existing configurations |
 
-"An entry" means a site the worker may try: Rubi's verified entry, or a site of Luna's table that is ported
+The Games page's hook-entry tag still means Rubi has a verified entry or a ported Luna table site
 (`vjo_luna_title_ported`, core/hook_luna.h; audit-hooks-text N2). Seven titles in Luna's table have none,
 every site of theirs needing code that is not ported (PCSB00985, PCSG00291, PCSG00451, PCSG00595, PCSG00663,
-PCSG01081, PCSG01152): with `auto` they get nothing, OCR only, and the Games page gives them no tag (the
-same rule, core/hook_titles.c); with `hooks` they get the CALL source and their sites are refused
-(`unported`).
+PCSG01081, PCSG01152): they have no tag, but both `auto` and `hooks` try the CALL source and refuse their
+table sites (`unported`). Games without any table entry also get CALL discovery. An unavailable import
+or a stream that never supplies matching dialogue falls back to OCR.
 
 The kernel answers `vjoGetTextSource` with the Shell's value only in a process its loader started the
 worker in as ON (it records the process as it decides, before the worker's `module_start` runs); every
@@ -52,7 +52,7 @@ every job's result (`hook_mode`; `hook_installed` = sites << 16 | CALL imports; 
 
 `hook_sites = off` in `config.ini` (the kernel's text source word then carries `VJO_TEXT_SOURCE_NO_SITES`,
 include/vjo_api.h) installs no table site, neither Rubi's verified entries nor Luna's: only the CALL source,
-in the games the mode gives it to (`auto`: the titles with an entry; `hooks`: every game that is ON), so a
+in every enabled native Vita game with `auto` or `hooks`, so a
 console run can tell the CALL source from the sites (audit-hooks F3). `hook_mode` is then the mode with that
 flag, `log.txt`'s line says so (`hooks in PCSG00415: text source auto, sites off, 0 table sites and 8 string
 copies hooked, 0 sites refused`), and the debug build's `hooks.log` says `sites off`. The worker takes the
@@ -368,7 +368,7 @@ Hardware is paused; these are for the test issue (#230):
 2. CLANNAD with `auto`: `hooks.log` shows NID C5187D60, the verified site +0x2CA70 hooked (or refused
    with its bytes), the CALL imports it has, and the game runs through several scenes.
 3. CLANNAD: the CALL stream that holds the dialogue has key 0x5910F (LR minus segment 0's base).
-4. A game outside the tables with `hooks`: only CALL imports in `hooks.log`; no slowdown that shows.
+4. A game outside the tables with `auto` or `hooks`: only CALL imports in `hooks.log`; no slowdown that shows.
 5. A Luna-listed game with `auto`: every site's verdict in `hooks.log`; a hooked site's text.
 6. Quitting a game with hooks: the console returns to LiveArea, and the next game start works.
 7. CLANNAD with `auto`, Automatically: record OCR invocation counts separately from host results.
