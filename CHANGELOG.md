@@ -20,6 +20,7 @@ been reported.
   per-character boxes (#114, merged as vita-vn-ocr `6f24967`) and aligns hook and LM text to them. It falls back to
   the normal popup without places. SceShell's module pages are unchanged; the game worker takes one text page more
   ([memory-ledger](docs/memory-ledger.md)). Nothing of it has run on a console yet.
+
 ## [0.9.3] - 2026-10-23
 
 A second bundled dictionary, of the characters of PSP and Vita visual novels; the figures of a
