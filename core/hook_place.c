@@ -142,10 +142,20 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
 /* Rubi's own verified sites. CLANNAD (PCSG00415): the function that receives each line in r6 as
  * CP932, at segment 0 + 0x2CA70 (Thumb: STRH.W r2, [r11, #0x32C]; ADDS.W r0, r4, #0x34C, no PC
  * use). From the PR #16 profile (profiles/PCSG00415.vjhook, removed in c35ebf9); proven in Vita3K
- * only (vita-vn-ocr notes 22), not yet on a console. */
+ * only (vita-vn-ocr notes 22), not yet on a console.
+ * アマツツミ (PCSG01198, AMATSUTSUMI_PSVITA, APP_VER 01.00): Luna's site 0x800785C8 (r2, CP932, its
+ * filter: Luna's entry at the same address post-processes the text), which the placement check refuses
+ * as no entry: it is inside a function (0x81070E3A's loop, 0x810745C8 in the game). Its 8 patched bytes
+ * are ADD.W lr, r9, r7, LSL #2; ADD.W lr, lr, #0x1620 (no PC use), and no branch in segment 0 targets
+ * them (the loop's BLT goes to +0x745D0, past them): checked on the decrypted eboot, 2026-10-23. Proven on a
+ * console (PCH-2000, 3.65, 2026-10-23): hooked ("1 table sites"), its stream held text, it answered the jobs
+ * (core/hook_select.h vjo_hook_select_no_memory: "game vocr source: hook 1, flags 0x98", rc 0), the overlay
+ * showed the game's line (checked by eye against the screen), and the game did not crash. */
 static const VjoPlaceVerified verified[] = {
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
      {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}},
+    {"PCSG01198", 0x8AA413F2u, 0x745C8u, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x09, 0xEB, 0x87, 0x0E, 0x0E, 0xF5, 0xB1, 0x5E, 0x01, 0x37, 0x4E, 0xF8, 0x04, 0x0B, 0x09, 0x2F}},
 };
 #define VERIFIED_N (sizeof(verified) / sizeof(verified[0]))
 

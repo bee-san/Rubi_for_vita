@@ -362,12 +362,13 @@ including CLANNAD's register site, remain unverified on a console, and the norma
 reported console run. The behaviour below is checked on the host.
 
 - **Text source** (the Rubi app's OCR & lookup page, `text_source` in `config.ini`) applies when a
-  game next starts: **Automatic** (`auto`, the default) installs hooks only in the games that have a
-  hook entry, Rubi's own (CLANNAD, PCSG00415) or a site in LunaTranslator's table that Rubi has ported.
+  game next starts: **Automatic** (`auto`, the default) tries the game's own string-copy hooks in every
+  native Vita game that is ON, plus available table sites from Rubi or LunaTranslator.
   Seven titles that the table lists have no ported site (PCSB00985, PCSG00291, PCSG00451, PCSG00595,
-  PCSG00663, PCSG01081, PCSG01152): with Automatic they get OCR only, as a game with no entry does;
-  **Every game** (`hooks`)
-  adds the game's own string copies in every game that is ON; **OCR only** (`ocr`) installs none.
+  PCSG00663, PCSG01081, PCSG01152): Automatic still tries their string-copy hooks, as it does in games
+  with no table entry, and falls back to OCR if they provide no usable dialogue.
+  **Every game** (`hooks`) is retained for existing configurations and now makes the same attempts as
+  Automatic; **OCR only** (`ocr`) installs none. PSP games still use OCR only.
   An install or an update keeps the file's value; installs before this one wrote `text_source =
   ocr`, so choose Automatic once to use hooks.
 - **What is shown.** Nonempty Luna hook text is preferred immediately, including short or unchanged

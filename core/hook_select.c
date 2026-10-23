@@ -304,6 +304,21 @@ static int wins_tie(const VjoHookCand *a, const VjoHookCand *b, uint32_t streak_
     return (int32_t)(a->seq - b->seq) > 0;
 }
 
+uint32_t vjo_hook_select_no_memory(uint32_t pick, const VjoHookCand *c, unsigned n, uint32_t *flags)
+{
+    const VjoHookCand *best = NULL;
+    if (flags) *flags = 0;
+    if (pick != VJO_HOOK_PICK_AUTO) return 0;
+    for (unsigned i = 0; c && i < n; i++) {
+        const VjoHookCand *k = &c[i];
+        if (!has_text(k) || !k->site || !k->verified || !enough_chars(k->text, k->n)) continue;
+        if (!best || (int32_t)(k->seq - best->seq) > 0) best = k;
+    }
+    if (!best) return 0;
+    if (flags) *flags = VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE;
+    return best->id;
+}
+
 uint32_t vjo_hook_select_after(VjoHookSelect *st, uint32_t pick, const char *ocr, size_t on,
                                const VjoHookCand *c, unsigned n, unsigned *score, uint32_t *flags)
 {

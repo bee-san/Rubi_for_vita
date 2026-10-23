@@ -482,6 +482,13 @@
 #define VJO_GAME_RESERVE_NORMAL (8u * 1024u * 1024u)
 #define VJO_GAME_RESERVE_LARGE (16u * 1024u * 1024u)
 #define VJO_GAME_RESERVE VJO_GAME_RESERVE_SMALL    /* kept free in the game before either block (game_ocr/main.c) */
+/* The capture pass of a job a Rubi verified table site answers after OCR was refused for memory
+ * (game_ocr/main.c, core/hook_select.h vjo_hook_select_no_memory): one strip's block (at most
+ * VJO_VOCR_STRIP_BYTES, 56 KiB), freed with the job, beside this smaller reserve. A game that leaves
+ * less than VJO_GAME_RESERVE free (アマツツミ, PCSG01198: 2 MiB measured on a console, 2026-10-23)
+ * cannot run OCR, and would otherwise never show its hook's text. It adds nothing to
+ * VJO_WORST_GAME_JOB: it is the capture block every job may hold. */
+#define VJO_GAME_RESERVE_HOOK_ONLY (1u * 1024u * 1024u)
 /* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG
  * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), one strip of
  * 64 colour rows at 960 px (245,760 B) and the JPEG, at most VJO_GAME_OCR_SHOT_MAX

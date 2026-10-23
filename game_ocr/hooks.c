@@ -467,9 +467,12 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
          (unsigned)tai->module_nid, (unsigned)seg_base, (unsigned)code_size, (unsigned)appv, nv, nl);
     for (unsigned i = 0; i < nv; i++) {
         const VjoPlaceVerified *v = &ver[i];
+        /* a Luna site at the same address: the entry reads the text, Luna's hookfunc and filter post-process it */
+        const VjoLunaSite *same = vjo_luna_site_at(sites, nl, v->off, appv);
         int r = vjo_place_check_verified(v, code, code_size, seg_base, tai->module_nid);
-        DLOG("verified +%X %s r%u", (unsigned)v->off, v->thumb ? "thumb" : "arm", (unsigned)v->reg);
-        if (r == VJO_PLACE_OK) r = hook_site(tai->modid, v->off, v->thumb, NULL, v);
+        DLOG("verified +%X %s r%u%s", (unsigned)v->off, v->thumb ? "thumb" : "arm", (unsigned)v->reg,
+             same ? ", Luna's text" : "");
+        if (r == VJO_PLACE_OK) r = hook_site(tai->modid, v->off, v->thumb, same, v);
         site_result(r, v->off, code, code_size);
     }
     for (unsigned i = 0; i < nl; i++) {
@@ -487,13 +490,6 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
     }
 }
 
-/* 1 when title_id has a hook entry (auto's titles): Rubi's verified list, or a ported site in Luna's table
- * (a title whose every Luna site is unported has none: audit-hooks-text N2). */
-static int title_listed(const char *title_id)
-{
-    return vjo_place_title_verified(title_id) || vjo_luna_title_ported(title_id);
-}
-
 static void set_kinds(void)
 {
     for (unsigned i = 0; i < VJO_HOOK_STREAMS; i++)
@@ -504,14 +500,9 @@ static void start(const char *title_id, unsigned word, int psp)
 {
     tai_module_info_t tai;
     SceKernelModuleInfo mi;
-    const unsigned mode = word & VJO_TEXT_SOURCE_MODE_MASK;
     if (psp || !title_id || !title_id[0]) {
         DLOG("nothing: %s\n", psp ? "the PSP emulator's process" : "no title ID");
         return; /* nothing in the PSP emulator in this version */
-    }
-    if (mode == VJO_TEXT_SOURCE_AUTO && !title_listed(title_id)) {
-        DLOG("nothing: %s has no hook entry (text source auto)\n", title_id);
-        return;
     }
     if (main_module(&tai, &mi) < 0) {
         DLOG("nothing: no main module (eboot.bin) with a segment 0\n");
@@ -588,6 +579,12 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
     if (mode) *mode = applied_mode;
     if (installed) *installed = n_sites << 16 | n_calls;
     if (refused) *refused = n_refused;
+}
+
+int vjo_hooks_verified(uint32_t id)
+{
+    /* a site's stream ID is its slot + 1 (hook_site) */
+    return id >= 1u && id <= n_sites && id <= VJO_HOOK_SITE_STREAMS && site_info[id - 1u].ver != NULL;
 }
 
 /* ---- job time ---- */

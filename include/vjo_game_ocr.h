@@ -167,6 +167,7 @@ typedef struct {
 #define VJO_HOOK_R_SITE 0x10u   /* text_from is a table site (else a CALL caller) */
 #define VJO_HOOK_R_UNLOCK 0x20u /* this job unlocked the stream that was locked (two disagreements) */
 #define VJO_HOOK_R_CALLS_FULL 0x40u /* every CALL slot is taken: a new caller was dropped or replaced one */
+#define VJO_HOOK_R_UNCONFIRMED 0x80u /* a Rubi verified table site answered with no OCR agreement ever: OCR had no memory */
 
 /* vjoOcrModelOpen's `which`: the request's model or its fallback, or (API 20)
  * the LM of tier which - VJO_GAME_OCR_OPEN_LM + 1, up to the request's LM tier,

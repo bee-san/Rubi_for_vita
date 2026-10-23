@@ -1442,7 +1442,8 @@ static int hooks_snapshot(uint32_t pick)
         unsigned at;
         if (!vjo_hooks_snap(id, &hk.snap) || !hk.snap.n) continue;
         hk.streams |= 1u << (id - 1u);
-        if (pick == VJO_HOOK_PICK_AUTO && hk.snap.kind == VJO_HOOK_KIND_SITE && hk.snap.site)
+        if (pick == VJO_HOOK_PICK_AUTO && hk.snap.kind == VJO_HOOK_KIND_SITE && hk.snap.site &&
+            !vjo_hooks_verified(id))
             luna |= VJO_HOOK_STREAM_BIT(id);
         if (pick == VJO_HOOK_PICK_AUTO && hk.sel.interval &&
             (hk.snap.kind == VJO_HOOK_KIND_SITE) == !!hk.sel.locked_site &&
@@ -1455,14 +1456,17 @@ static int hooks_snapshot(uint32_t pick)
     }
     for (unsigned i = 0; i < k; i++) {
         uint32_t id = order[i];
-        uint32_t site;
+        uint32_t site, verified;
         size_t room = sizeof(hk.pool) - used, len;
         if (room < 2u || !vjo_hooks_snap(id, &hk.snap)) continue;
         len = vjo_hooks_text(&hk.snap, hk.pool + used, room < HOOK_TEXT_CAP ? room : HOOK_TEXT_CAP);
         if (!len) continue;
         site = hk.snap.kind == VJO_HOOK_KIND_SITE ? VJO_HOOK_CAND_SITE : 0u;
-        if (site && hk.snap.site) { site |= VJO_HOOK_CAND_LUNA; has_luna = 1; }
-        hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, site, hk.pool + used, len, hk.snap.key, hk.snap.encoding};
+        /* A Rubi verified entry may borrow Luna's filter (#273). Keep its verified identity:
+         * in a tight-memory game it must reach the smaller-reserve fallback below. */
+        verified = (uint32_t)vjo_hooks_verified(id);
+        if (site && hk.snap.site && !verified) { site |= VJO_HOOK_CAND_LUNA; has_luna = 1; }
+        hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, site, hk.pool + used, len, hk.snap.key, hk.snap.encoding, verified};
         used += len + 1u;
     }
     return has_luna;
@@ -1864,6 +1868,25 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         /* Too little memory: give the game back the resident weights and LM too. */
         if (drop_resident()) rc = VJO_E_OCR_UNAVAILABLE;
         else rc = VJO_E_OOM;
+        /* No stream can ever agree with OCR in this game now: a Rubi verified site's newest text answers,
+         * unconfirmed (core/hook_select.h vjo_hook_select_no_memory), with its capture pass beside the
+         * smaller VJO_GAME_RESERVE_HOOK_ONLY. A pass that fails keeps the refusal. */
+        if (rc == VJO_E_OOM && hk.installed) {
+            uint32_t no_mem_flags = 0, id = vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
+            if (id) {
+                job_reserve = VJO_GAME_RESERVE_HOOK_ONLY;
+                int pass = run_hook_pass(r, out, &capture, &stats);
+                if (capture.failed)
+                    step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
+                             capture.last.fb_format, capture.pass_us, 0);
+                if (!pass) {
+                    hook_show(out, hook_cand(id), 0, norm_flags(r));
+                    hk.from = id;
+                    hk.flags = no_mem_flags;
+                    rc = VJO_OK;
+                }
+            }
+        }
         goto done;
     }
     /* The check counted another model's weights, or another LM (or one this job

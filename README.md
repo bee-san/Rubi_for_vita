@@ -170,7 +170,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries an L or R tap pages through, 1–8 | 1 |
-| | **Text source**: Automatic (tries listed hooks, with OCR fallback), Every game (experimental), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
+| | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -193,10 +193,11 @@ Older installs may have kept **OCR only**, so choose Automatic once if needed.
 | --- | --- | --- |
 | **CLANNAD**, Japanese Vita release (`PCSG00415`) | Automatic; string-copy hooks and Rubi's own game profile | String-copy extraction confirmed in the combined debug test build, including readings without OCR. The separate game profile's hook site remains unverified on a real Vita. |
 | **175 Vita title IDs from LunaTranslator's table** | Automatic attempts using 294 ported hook sites, plus string-copy hooks | Experimental: these game-specific hook sites have not been verified on a real Vita. Examples include **TIME TRAVELERS** (`PCSG00062`), **Code:Realize ～創世の姫君～** (`PCSG00402`) and **DRAMAtical Murder** (`PCSG00420`). |
-| Other native Vita games | **Every game** also tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. Automatic uses OCR for games without a listed hook. |
+| Other native Vita games | Automatic tries general string-copy hooks | Experimental discovery; useful dialogue is not guaranteed. OCR is used until a matching source is found. **Every game** makes the same attempts. |
 | PSP games in Adrenaline | OCR only | Native PSP text hooks are not implemented, including in Every game mode. |
 
-That is **176 Vita title IDs eligible for automatic hook attempts**, including CLANNAD.
+That is **176 Vita title IDs with game-specific hook entries**, including CLANNAD; Automatic also
+tries generic string-copy hooks in other enabled native Vita games.
 See the **[full Vita game list](docs/hook-titles.md#vita-titles)** for title
 IDs, versions and individual hook status; entries marked **refused** are not installed. The PSP table
 on that page is reference material for future work.

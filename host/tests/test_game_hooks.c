@@ -86,6 +86,11 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
     *installed = fake_installed;
     *refused = fake_refused;
 }
+static uint32_t fake_verified; /* bit id - 1: a Rubi verified table site's stream */
+int vjo_hooks_verified(uint32_t id)
+{
+    return id >= 1u && id <= 32u && (fake_verified >> (id - 1u) & 1u);
+}
 void vjo_hooks_keep(uint32_t id, uint32_t key)
 {
     if (keeps < sizeof(kept_ids) / sizeof(kept_ids[0])) {
@@ -283,7 +288,7 @@ static void reset(void)
     model_owned = 0; quitting = active_seq = 0; blocked = 0;
     memset(&hk, 0, sizeof(hk));
     memset(fs, 0, sizeof(fs));
-    fake_mode = VJO_TEXT_SOURCE_AUTO; fake_installed = 1u << 16 | 4u; fake_refused = 2;
+    fake_mode = VJO_TEXT_SOURCE_AUTO; fake_installed = 1u << 16 | 4u; fake_refused = 2; fake_verified = 0;
     snaps = texts = bump_at = 0; bump_id = 0; bump_text = NULL;
     keeps = 0; memset(kept_ids, 0, sizeof(kept_ids)); memset(kept_keys, 0, sizeof(kept_keys)); fake_call_dropped = fake_call_replaced = 0;
     capture_live = job_live = weights_live = 0; capture_block = capture_allocs = 0; live_bytes = 0;
@@ -945,7 +950,48 @@ static void border_lines_on_an_agreeing_stream(void)
     }
 }
 
+/* A game that leaves too little for any model (アマツツミ: 2 MiB free on a console): OCR is refused, and a
+ * Rubi verified site's newest text answers unconfirmed, with one first pass beside the hook-only reserve and
+ * no recognition; nothing is learned. A Luna site or CALL caller, an OCR-only pick, or too little even for
+ * the pass: the refusal as before. With room for OCR nothing of this runs. */
+static void verified_site_answers_when_ocr_has_no_memory(void)
+{
+    VjoGameOcrResult out;
+    for (unsigned borrowed_filter = 0; borrowed_filter < 2; borrowed_filter++) {
+        reset();
+        available = 2 * 1024 * 1024;
+        stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
+        stream(9, VJO_HOOK_KIND_CALL, 6, LINE2);
+        TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.text_from && !out.hook_flags);
+        TEST_CHECK(capture_allocs == 0 && runs == 0);
+
+        fake_verified = 1u; /* stream 1 */
+        /* PCSG01198's verified entry borrows Luna's filter; it still needs the low-memory path. */
+        fs[1].luna = borrowed_filter ? &fake_luna_site : NULL;
+        TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+        TEST_CHECK_(!strcmp(out.text, LINE1), "%s", out.text);
+        TEST_CHECK(out.text_from == 1 && out.hook_flags == (VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
+        TEST_CHECK(out.hook_streams == (1u | 1u << 8) && runs == 0 && !out.lines);
+        TEST_CHECK_(first_pass_only(), "%u rows calls", rows_calls);
+        TEST_CHECK(out.source == VJO_GAME_OCR_SRC_HOOK && capture_allocs == 1);
+        TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_HOOK_ONLY && out.need_workspace == capture_block);
+        TEST_CHECK(!hk.sel.locked && !hk.sel.interval && !hk.sel.streak); /* nothing learned without OCR */
+
+        /* too little even for the pass beside the smaller reserve: refused, no text */
+        stream(1, VJO_HOOK_KIND_SITE, 6, LINE3);
+        available = VJO_GAME_RESERVE_HOOK_ONLY + 4096;
+        TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.text_from && !out.text[0]);
+        /* an OCR-only pick: the refusal */
+        available = 2 * 1024 * 1024;
+        TEST_CHECK(run(VJO_HOOK_PICK_OCR, &out) == VJO_E_OOM && !out.text_from);
+        /* room for OCR: recognition as before, never the unconfirmed answer */
+        available = 64 * 1024 * 1024;
+        TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && runs >= 1 && !(out.hook_flags & VJO_HOOK_R_UNCONFIRMED));
+    }
+}
+
 TEST_LIST = {
+    {"OCR refused for memory: a verified site answers unconfirmed", verified_site_answers_when_ocr_has_no_memory},
     {"Luna: no initial, periodic or repeated OCR and no generic cache IO", luna_never_loads_ocr_or_generic_learning},
     {"Luna: preserve generic learning and resume it when unavailable", luna_preserves_generic_state_and_falls_back_when_unavailable},
     {"Luna: pool saturation, newest script, stable ties and sequence wrap", luna_survives_pool_saturation_and_uses_newest_script},
