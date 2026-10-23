@@ -831,8 +831,9 @@ costs instructions a lookup), and both segments are checked exactly by `tools/ch
 Only tables and cold strings of the Shell's own code are so marked: `core/local_dict.c`,
 `core/linebreak.c` and `core/textjoin.c`'s tables, `shell/history.c`'s header, offsets and strings
 (which pay for PR #233's `characters` column: [ocr-history](ocr-history.md)), `shell/worker.c`'s
-out-of-memory and model-storage messages, and line history's strings in `shell/overlay.cpp` and
-`shell/anki.c`.
+out-of-memory and model-storage messages, line history's strings in `shell/overlay.cpp` and
+`shell/anki.c`, and (API 37) the overlay's 20 widget ids and the reading's markup format (295 B,
+`shell/overlay.cpp`).
 
 Standalone PR #236 (`6ed8f30`, on main `75041a0`), line history ([line-history.md](line-history.md),
 owner 2026-10-20): Up on the overlay's top row shows

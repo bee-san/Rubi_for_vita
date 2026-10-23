@@ -416,7 +416,7 @@ static void ontext_layout(int compact, int top)
     static const float place[2][3] = {{POPUP_H / 2.0f - 6.0f, -POPUP_H / 2.0f + 22.0f, -POPUP_H / 2.0f + 22.0f},
                                       {266.0f, -250.0f, -250.0f}};
     ui::Widget *full[3] = {s_header.view, s_separator, s_band_mid}, *moved[3] = {s_band_top, s_hint, s_band_footer};
-    if (s_panel) { /* the compact popup's band follows the word, every render */
+    if (s_panel && (compact || s_compact)) { /* the band follows the word; the full panel as the RCO has it */
         s_panel->SetSize((float)SCREEN_W, compact ? (float)POPUP_H : (float)SCREEN_H, 0.0f);
         s_panel->SetPos(0.0f, compact ? SCREEN_H / 2.0f - top - POPUP_H / 2.0f : 0.0f, 0.0f);
     }
@@ -1530,8 +1530,10 @@ static void frame_body(unsigned version, unsigned anki_version, unsigned cmap_se
         s_body.scroll = scroll;
     } else if (cmap_seq != s_cmap_seq) { /* API 37: a char map of this text, or the screen moved on */
         float scroll = s_body.scroll; /* the definition stays where it was (audit-overlay-boxes F1) */
+        int compact = s_compact;
         render(0);
-        s_body.scroll = scroll;
+        if (s_compact == compact) /* the same pane: else it starts at the top of the new one */
+            s_body.scroll = scroll;
     } else if (s_highlight_retry_frames > 0) {
         if (header_highlight())
             s_highlight_retry_frames = 0;
