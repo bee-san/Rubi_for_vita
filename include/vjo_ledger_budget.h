@@ -251,8 +251,9 @@
  * the normal build's 131,804 -> 137,524 B; data/bss 32,888 -> 36,672 and 32,880 -> 36,664 B, within its pages (the
  * job's characters, VjoVocrChars: 256 characters, 16 lines and one line's box buffer, which the map's builder and a
  * line read without the LM borrow) [measured: the build log's module rows, both builds of main 2f85de0 and this
- * change, VitaSDK GCC 15.2.0 in vitasdk/vitasdk:2026.08]. No new block, thread or allocation; the game ceiling
- * keeps 8,192 B of headroom. */
+ * change, VitaSDK GCC 15.2.0 in vitasdk/vitasdk:2026.08]. No new block, thread or allocation; the game pool's
+ * permanent part grows by the page, and a job's worst case and its ceiling (VJO_LIMIT_GAME_JOB, 12,288 B of headroom)
+ * are unchanged. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 184320u
 #else
@@ -311,7 +312,7 @@
 #define VJO_PAF_HEAP 5242880u                      /* [measured, docs/meiki-ocr.md on experiment/meiki-ocr] */
 #define VJO_PAF_FREE_MEASURED 2557952u             /* 2,498 KiB free beside CLANNAD, 2026-10-10 [measured, same] */
 #define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/memory.cpp RESERVE */
-#define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,368 B file; 5,632 B before the region cursor) and the Paf Plugin object [estimate] */
+#define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,432 B file with API 37's marks and reading, 6,000 B on main 2f85de0 [measured]) and the Paf Plugin object [estimate] */
 /* One result arena, the local dictionary's lookup (worker.c LOCAL_RESULT_ARENA_SIZE): the only result
  * memory since the network paths, Google Lens and the Hachidori relay, were removed (they took
  * 2 x 262,144 B arenas and a connection pool: 571,888 B with two slots, 548,096 B with one). */

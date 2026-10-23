@@ -1342,7 +1342,8 @@ static void policy_sleep(uint32_t us)
 }
 
 /* API 37 (VJO_GAME_OCR_S_CHARS): the recognized lines' characters and their cells (core/vocr_ocr.h), from which the
- * job writes its char map (core/charmap_build.h). ~6.6 KiB in the worker's data, used only by such a job. */
+ * job writes its char map (core/charmap_build.h). 3,788 B of the worker's data (nm, both builds), used only by such a
+ * job. */
 static VjoVocrChars job_chars;
 
 /* API 37: where the characters of the job's text are on the frame (core/charmap.h), after the text and its

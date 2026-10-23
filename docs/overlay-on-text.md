@@ -19,7 +19,8 @@ map, below), the overlay:
   else above it, else at the screen's edge farther from the word. The band holds the dictionary body and the hint
   line. The panel's header, which repeats the game's text, is not shown: the game's own text is the header;
 - **takes a tap on the game's text**: the character there becomes the cursor, as a tap on the header's text does
-  in the normal popup. A tap elsewhere does nothing (the popup's own band scrolls with the right stick, as before);
+  in the normal popup. A tap on the popup's band or the reading's band, or elsewhere, does nothing (the band scrolls
+  with the right stick, as before); in the full popup (no places) taps work on its header as before;
 - **moves Up and Down across the game's lines**: to the character of the line above or below whose cell's
   centre is nearest. Left, Right and the left stick move in reading order, as before. Up on the top line does
   what it does now (line history, below).
@@ -36,6 +37,13 @@ for the text:
 
 Turning the setting on or off retires the shown text, so the next open reads the screen again, with or without
 its map.
+
+**With the setting on, every job reads its lines without the line cache**: a cache entry keeps the text, not the
+places, so a line that would have come from the cache is recognized again. A quiet refresh of an unchanged screen,
+for example while the "next" icon animates, then costs a full recognition, about 0.3-0.5 s a line on the game's
+cores (estimate) instead of cache hits. On the owner's test.4 log at least 72 of 482 lines came from the cache, about
+15% [measured: the log's `par` steps, audit-overlay-boxes]. Keeping the places in the cache entries would remove
+this; it is a larger change and is not done here.
 
 ## How the places are made
 
@@ -107,7 +115,9 @@ on a console.
 | carrying and checking it (`vjo_cmap_carry` + `vjo_cmap_find`) | the Shell, once a new text | 9 K | 0.03 ms |
 | a tap's hit-test and a word's rectangles (`vjo_cmap_hit` + `vjo_cmap_span`) | the Shell, a tap or a key | 11 K | 0.03 ms |
 
-A recognized line costs about 0.3-0.5 s, so the places add well under 1% to a job. The drawing is paf's: the
+A recognized line costs about 0.3-0.5 s, so the places' own work adds well under 1% to a job. The larger cost is the
+line cache, which jobs with the setting on do not use (above): about 15% of lines on the owner's test.4 log would be
+recognized again. The drawing is paf's: the
 overlay sets the size and place of four planes (two marks, the reading's band and the popup's panel) on a key
 press, a tap or a new text, never every frame; what paf's renderer takes for them and the frame pacing beside
 the game are unmeasured.
@@ -118,7 +128,13 @@ the game are unmeasured.
 - MeikiOCR's boxes are the development reference of the cells; a game font far from training's could place them
   worse; narrow punctuation is the least exact (vita-vn-ocr `docs/char-boxes.md`).
 - A hook text gets places only for the lines OCR also read in that job and that align with OCR's reading.
-- The reading is one line of kana above the word's first line, not per kanji.
+- The reading is one line of kana above the word's first line, not per kanji, and a reading with `<` or `&` (a user
+  dictionary's) is not shown.
+- After a visit to an earlier line longer than the current text, the current text's map is overwritten in the
+  Shell's buffer (line history reuses it): its marks come back with the next refresh. The reader refuses the
+  overwritten block, so nothing wrong is drawn.
+- A block is checked for its own consistency only: a corrupted one with rows or cells outside the frame would draw
+  its marks off the text (inside the overlay's own planes).
 - Nothing of it has run on a console: the popup's layout, the marks' alignment on the screen and the drawing's
   cost are host-built and unchecked there.
 
@@ -130,5 +146,7 @@ With `overlay_on_text = on` (the Rubi app: OCR & lookup, **Popup on the game's t
   move between the box's lines, the popup does not cover the word, the reading sits above it, and the marks go
   when the next line appears;
 - one PSP game in Adrenaline: the same, on a 2× picture;
-- the game's frame pacing with the overlay open (no stutter while moving the cursor);
+- the game's frame pacing with the overlay open (no stutter while moving the cursor), and how often the quiet
+  refresh re-reads an unchanged screen (no line cache with the setting on);
+- Up on the game's top line reaches the earlier lines when the first line is long (the hidden header's rows decide);
 - logs: `log.txt`, `kernel.txt` and `tools/install_ftp.sh --collect`.

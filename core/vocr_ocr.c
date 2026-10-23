@@ -1819,6 +1819,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
     text[0] = '\0';
     if (pol->raw && pol->raw_cap) pol->raw[0] = '\0';
+    if (pol->chars) pol->chars->n_lines = pol->chars->n_chars = 0; /* API 37: this try's lines only */
     st->lines = st->truncated = st->dark = st->frames = st->recognized = 0;
     st->blank = st->lm_lines = st->lm_changed = 0;
     st->lm_us = 0;

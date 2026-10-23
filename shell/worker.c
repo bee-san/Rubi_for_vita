@@ -667,6 +667,8 @@ static const char MODEL_STORAGE[] VJO_DATA_TABLE(MODEL_STORAGE) = "The local OCR
  * reads it from local_text's tail (docs/overlay-on-text.md). */
 static void cmap_publish(size_t bytes)
 {
+    if (!bytes && !g_view.cmap_text && !g_view.cmap_stale)
+        return; /* no map before or now: the open overlay has nothing to redraw (audit-overlay-boxes F1) */
     g_view.cmap_text = bytes ? local_text : NULL;
     g_view.cmap_seq++;
     g_view.cmap_stale = 0;

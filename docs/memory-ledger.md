@@ -37,7 +37,8 @@ against this change:
   line's box buffer) are static. The map's builder borrows that buffer once the lines are read, a line the job's
   thread reads without the LM keeps its frames' classes in it, and a helper's line keeps them in its slot's idle
   top-K. `VJO_BUDGET_WORKER_MODULE_PAGES` grows by 4,096 B in both builds (`include/vjo_ledger_budget.h`). The game
-  ceiling (`VJO_LIMIT_GAME_JOB`) is unchanged and keeps 8,192 B of headroom.
+  pool's permanent part grows by that page (212,992 B normal, 221,184 B debug). A job's worst case and its ceiling
+  (`VJO_LIMIT_GAME_JOB`) are unchanged, with 12,288 B of headroom (`tools/check_memory_ledger.py`, both builds).
 - The kernel's module rows are main's. No new block, thread or allocation in any module.
 
 These are binary measurements: nothing of it has run on a console.
@@ -278,7 +279,7 @@ transient set that can be live at once.
 
 | item | bytes | what | source |
 |---|---|---|---|
-| Paf plugin+RCO | 8,192 | the RCO (6,368 B file, measured; 5,632 B before the region selector's cursor) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
+| Paf plugin+RCO | 8,192 | the RCO (6,432 B file with API 37's marks and reading, measured; 6,000 B on main `2f85de0`; 5,632 B before the region selector's cursor) and the Paf `Plugin` object | **[estimate]**; the self-test measures it |
 | result arenas | 65,536 (the local dictionary's lookup; the network paths' 2 × 262,144 B arenas and connection pool went with Google Lens and the Hachidori relay) | taken after a job's OCR, freed before the next job's | `shell/worker.c` `LOCAL_RESULT_ARENA_SIZE`; asserted equal in `test_shell_worker.c` |
 | Anki job arena | 131,072 | per job: saving a card to the queue. Its screenshot (API 23) is the game worker's: here only the job's request and result, 5,404 B (a one-word card's save peaks at 6,860 B with it); the Shell's own screenshot branch went with AnkiConnect (its 393,216 B arena and the kernel's 2,088,960 B full-frame capture), so the kernel capture is never taken for Anki; a save with 8 dictionaries' entries peaks at 102,624 B, with a screenshot or without (102,616 B on main `dcb7b31`, before `anki_screenshot`'s `VjoConfig` field) [measured, host] | `shell/anki.c` `ANKI_TEXT_MEM`; checked against the budget at compile time and in `test_shell_anki.c` |
 | overlay text arena | 24,576 | the header and body texts and their spans (18,016 B needed, `test_ledger.c`: 17,952 B before line history's four header spans) and, since API 37, the cursor's copy of the text with its char map (4,096 B, out of the Shell's data segment), only while the overlay page is open; a refusal keeps the page closed | `shell/overlay.cpp` |

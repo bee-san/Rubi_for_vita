@@ -2130,6 +2130,21 @@ static void test_the_characters_places(void)
     TEST_ASSERT(RUN(&plain) == VJO_OK);
     TEST_CHECK_(chars.n_lines >= 1 && chars.n_lines <= st.recognized, "%u lines of %u", chars.n_lines, st.recognized);
     check_chars_in_lines(&chars);
+    /* a screen that changes under the read (a retried job: VJO_VOCR_TRIES): only the final try's lines, at the
+     * final try's rows (the audit's probe, audit-overlay-boxes F2) */
+    for (unsigned after = 0; after <= 12; after++) {
+        reset();
+        scr.three_lines = 1;
+        scr.change_after = after;
+        memset(&chars, 0, sizeof(chars)); /* game_ocr/main.c request_policy: once a job */
+        if (RUN(&plain) != VJO_OK) continue;
+        TEST_CHECK_(chars.n_lines <= st.recognized, "change_after %u: %u lines of places, %u recognized (%u tries)",
+                    after, chars.n_lines, st.recognized, st.tries);
+        for (unsigned i = 1; i < chars.n_lines; i++)
+            TEST_CHECK_(chars.line[i].y > chars.line[i - 1].y, "change_after %u: line %u at %u after %u", after, i,
+                        chars.line[i].y, chars.line[i - 1].y);
+        check_chars_in_lines(&chars);
+    }
 #undef RUN
     TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));
     free(ws);
