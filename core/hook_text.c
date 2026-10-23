@@ -199,6 +199,49 @@ size_t vjo_hook_decode(unsigned encoding, const uint8_t *src, size_t n, char *ds
     return w;
 }
 
+static int ascii_word(unsigned char c)
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_';
+}
+
+size_t vjo_hook_clean(char *text, size_t n)
+{
+    size_t i = 0, w = 0;
+    if (!text) return 0;
+    while (i < n && text[i]) {
+        unsigned char c = (unsigned char)text[i++];
+        if (c == '\\' && i < n && text[i]) {
+            unsigned char cmd = (unsigned char)text[i];
+            if (cmd == '\\') { /* literal pair: do not treat its second slash as a command */
+                text[w++] = (char)c;
+                text[w++] = text[i++];
+                continue;
+            }
+            if ((cmd == 's' || cmd == 'w') && i + 1 < n &&
+                text[i + 1] >= '0' && text[i + 1] <= '9') {
+                i++;
+                do { i++; } while (i < n && text[i] >= '0' && text[i] <= '9');
+                continue;
+            }
+            /* Do not eat the beginning of a literal word such as \new or \path. */
+            if (i + 1 == n || !ascii_word((unsigned char)text[i + 1])) {
+                if (cmd == 'n' || cmd == 'r' || cmd == 't') {
+                    i++;
+                    c = cmd == 'n' ? '\n' : cmd == 'r' ? '\r' : '\t';
+                } else if (cmd == 'c' || cmd == 'k' || cmd == 'p' || cmd == 'f') {
+                    i++;
+                    continue;
+                }
+            }
+        }
+        if ((c < 0x20 && c != '\n' && c != '\r' && c != '\t') || c == 0x7F) continue;
+        text[w++] = (char)c;
+    }
+    text[w] = 0;
+    return w;
+}
+
 unsigned vjo_hook_japanese(const char *utf8, size_t n)
 {
     const uint8_t *s = (const uint8_t *)utf8;

@@ -29,7 +29,7 @@ class ReleaseInstall(unittest.TestCase):
         for folder in ("tools", "ur0/tai", "ur0/data/VitaJPOverlay",
                        "ux0/data/VitaJPOverlay/ocr", "ux0/data/VitaJPOverlay/dictionaries"):
             (self.package / folder).mkdir(parents=True, exist_ok=True)
-        for name in ("install_ftp.sh", "package_release.py", "prepare_ocr.py", "prepare_plaintext.py",
+        for name in ("install_ftp.sh", "package_release.py", "prepare_ocr.py", "prepare_plaintext.py", "prepare_vndb.py",
                      "migrate_config.py", "patch_tai_config.py", "collect_vita.py", "analyse_selftest.py",
                      "model_tiers.json", "app_stamp.py"):
             shutil.copyfile(ROOT / "tools" / name, self.package / "tools" / name)
@@ -42,7 +42,8 @@ class ReleaseInstall(unittest.TestCase):
                      "ux0/data/VitaJPOverlay/ocr/VOCR3_H15_w8.vocr", "ux0/data/VitaJPOverlay/ocr/VOCR3_FL10_w8.vocr",
                      "ux0/data/VitaJPOverlay/ocr/vocr_lm_o3_4000k.vlm", "ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md",
                      "ux0/data/VitaJPOverlay/ocr/MODEL-ATTRIBUTION.md", "ux0/data/VitaJPOverlay/ocr/VOCR4_W20_w8.vocr",
-                     "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict"):
+                     "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict",
+                     "ux0/data/VitaJPOverlay/dictionaries/vndb-names.vjdict"):
             (self.package / name).write_bytes(("test payload " + name).encode())
         self.worker = "kernel"
         self.write_manifest()
@@ -172,7 +173,7 @@ elif '-o' in a:
         self.assertIn("config.ini: ocr_backend removed", first.stdout)  # said by the first update
         for setting in ("dictionary = local", "vocr_tier = normal",
                         "log_file = on", "anki_mining = off",
-                        "local_dictionaries = plaintext.vjdict", "font_size_ja = 24",
+                        "local_dictionaries = plaintext.vjdict,vndb-names.vjdict", "font_size_ja = 24",
                         "ocr_lm = 1000k", "ocr_cascade_ms = 2000"):
             self.assertIn(setting, config)
         # the removed online dictionaries' API key is gone, its value never printed; so is the relay
@@ -184,7 +185,7 @@ elif '-o' in a:
         self.assertTrue((self.device / "ux0/data/Rubi.vpk").is_file())
         self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
                          (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
-        for name in ("dictionaries/plaintext.vjdict",
+        for name in ("dictionaries/plaintext.vjdict", "dictionaries/vndb-names.vjdict",
                      "ocr/VOCR3_H15_w8.vocr", "ocr/VOCR3_FL10_w8.vocr", "ocr/vocr_lm_o3_4000k.vlm",
                      "ocr/LM-ATTRIBUTION.md", "ocr/MODEL-ATTRIBUTION.md", "ocr/VOCR4_W20_w8.vocr"):
             self.assertEqual((self.data / name).read_bytes(),

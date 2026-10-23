@@ -37,7 +37,7 @@ option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime
 # The release's version: the base zips' names and the Rubi app's version (beside its title). The
 # test builds use this version with a -test.N suffix; the final release sets it to its own
 # version first (docs/release-variants.md), and tools/package_variants.py checks the two agree.
-set(VJO_VERSION "0.9.2" CACHE STRING "Release archive version")
+set(VJO_VERSION "0.9.3" CACHE STRING "Release archive version")
 # The build variant (docs/release-variants.md). ON, the default, is the debug build, the test
 # builds' own: every log line, the self-test, the timing and trace lines, the game worker's step
 # log. OFF is the normal build, the release's main download: errors, warnings and a short log;
@@ -640,8 +640,9 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/docs/img
     ${STAGE}/third_party/LunaTranslator
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/reading_stats.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/prepare_vndb.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/reading_stats.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_plaintext.py --source ${VJO_PLAINTEXT_SOURCE} --stage ${STAGE}
+  COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_vndb.py --stage ${STAGE}
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/ux0/data/VitaJPOverlay
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/vjo_app.txt ${STAGE}/ux0/data/VitaJPOverlay/

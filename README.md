@@ -54,8 +54,9 @@
   ([privacy](#does-it-send-anything-over-the-internet)).
 - **A big dictionary built in.** Bee's Ultimate Dictionary: 486,529 entries with English
   definitions from Daijirin, Sankoku and JMdict, the meanings of a word's kanji, a short
-  English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. You can add your
-  own Yomitan dictionaries too.
+  English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. The bundled
+  [PSP/Vita names dictionary](docs/vndb-attribution.txt) adds 12,151 VNDB characters from 1,202
+  visual novels, with their games and romanized names. You can add your own Yomitan dictionaries too.
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
   sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
   [Lapis](https://github.com/donkuri/lapis) notes for Anki.
@@ -67,26 +68,70 @@
   need L + R themselves. The app opens beside your game, which waits suspended behind it (a game
   that uses extended memory may have to close first).
 
-## Install
+<a id="install"></a>
 
-You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card before you
-copy the VPK to it (an estimate from the package's size; it counts the VPK, which you can delete
-once it is installed).
+## Installation instructions
 
-1. Download `Rubi-<version>.vpk` from the
-   [latest release](https://github.com/bee-san/Rubi_for_vita/releases/latest).
-2. Close the app first if an older version of it is open, even suspended behind VitaShell (**Rubi**,
-   **Overlay** or **JP Overlay Settings**): pull the top-right corner of its LiveArea page. Copy the
-   VPK to the Vita with VitaShell's USB or FTP connection, press Enter on it in VitaShell, and answer
-   Yes to installing it and Yes to its notice about extended permissions. If VitaShell stops with
-   error `0x80101114`, close the old app or restart the Vita, then install again.
-3. Open **Rubi** from LiveArea, choose **Install** on its Install page, and restart the Vita.
+You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
+**Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
 
-That's all: nothing is downloaded on the Vita, and every game is ON. Start a game and press L + R.
-To update, close the app and do the same with the new VPK (the Install page then offers
-**Update**); **Uninstall** is on the same page. The [guide](docs/guide.md#install) has what Install
-changes, the debug build and the installer for a computer.
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.3/Rubi-0.9.3.zip)
+and extract it.
+
+### 1. Transfer modules
+
+Using VitaShell FTP, transfer the files from `Rubi-0.9.3/ur0/tai/` to `ur0:tai/` on the Vita:
+
+- `VitaJPOverlay_Kernel.skprx`
+- `VitaJPOverlay_OCR.suprx`
+- `VitaJPOverlay_Shell.suprx`
+
+### 2. Edit the taiHEN config
+
+Back up `ur0:tai/config.txt`, then add `ur0:tai/VitaJPOverlay_Kernel.skprx` to its `*KERNEL`
+section and `ur0:tai/VitaJPOverlay_Shell.suprx` to its `*main` section. The two sections can
+appear in either order; each plugin must be beneath its matching section. Keep your other entries.
+
+Example (`ur0:tai/config.txt`):
+
+```text
+*KERNEL
+ur0:tai/VitaJPOverlay_Kernel.skprx
+
+*main
+ur0:tai/VitaJPOverlay_Shell.suprx
+```
+
+If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the entries there instead.
+`VitaJPOverlay_OCR.suprx` needs no config entry; the kernel plugin loads it into enabled games.
+
+### 3. Transfer data files for the plugin
+
+Transfer `Rubi-0.9.3/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+as `ur0:data/VitaJPOverlay`.
+
+### 4. Transfer data files for OCR and the dictionary
+
+**This is a separate folder, not a duplicate of step 3.** Transfer
+`Rubi-0.9.3/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+as `ux0:data/VitaJPOverlay`.
+
+If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
+and keep your existing settings file when copying the data.
+
+### 5. Transfer and install the VPK / companion app
+
+Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
+top-right corner of its LiveArea page. Transfer `Rubi-0.9.3/Rubi.vpk` to the Vita and install
+(promote) it with VitaShell. Accept the installation and extended-permissions prompts.
+
+### 6. Reboot the Vita
+
+In VitaShell, press **START** and choose **Reboot**.
+
+Start a game and press **L + R** to open Rubi. Every game is ON by default.
+
+The [guide](docs/guide.md#install) also covers the standalone VPK and computer-side installers.
 
 ## Use in a game
 

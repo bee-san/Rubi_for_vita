@@ -78,7 +78,8 @@ def app_vpk(eboot):
 
 LICENCES = {"LICENSE": b"GPL-3.0 fixture\n", "third_party/README.md": b"third-party index\n",
             "third_party/licenses/BearSSL-MIT.txt": b"MIT fixture\n", "docs/plaintext-attribution.txt": b"CC BY-SA 4.0\n",
-            "docs/JMdict-LICENSE.html": b"<html>JMdict</html>\n"}
+            "docs/JMdict-LICENSE.html": b"<html>JMdict</html>\n",
+            **{name: b"VNDB licence fixture\n" for name in vpk.REQUIRED_LICENSES[3:]}}
 
 
 def release_zip(path, eboot=None, kernel_imports=(), shell_imports=(), variant="normal", settings=None, corrupt=None,
@@ -128,7 +129,7 @@ class BuildCheck(unittest.TestCase):
 class PayloadList(unittest.TestCase):
     def test_the_python_list_is_the_compiled_one(self):
         files = vpk.payload_files()
-        self.assertEqual(len(files), 17)  # API 26: the text-presence gate's weights and its GATE-ATTRIBUTION.md
+        self.assertEqual(len(files), 18)  # the bundled PSP/Vita names are a separate payload file
         header = (ROOT / "include/vjo_payload.h").read_text()
         kernel = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX (\d+)", header).group(1))
         self.assertEqual(files[kernel], ("ur0:tai/VitaJPOverlay_Kernel.skprx", "copy"))
@@ -299,7 +300,7 @@ class Package(unittest.TestCase):
     def test_the_licences_are_required(self):
         """A release zip without the GPL, the dictionary's attribution or JMdict's licence makes no VPK, and a
         VPK that lacks one, or has another file under licenses/, fails --verify."""
-        for missing in ("LICENSE", "docs/plaintext-attribution.txt", "docs/JMdict-LICENSE.html"):
+        for missing in vpk.REQUIRED_LICENSES:
             with self.subTest(missing=missing):
                 release = release_zip(self.root / "l.zip", licences={k: v for k, v in LICENCES.items() if k != missing})
                 with self.assertRaisesRegex(ValueError, "must carry its licences"):

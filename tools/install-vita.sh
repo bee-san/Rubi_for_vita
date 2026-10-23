@@ -70,7 +70,7 @@ for k, v in json.load(open(sys.argv[1], encoding="utf-8")).get("install_settings
 # Speed boost while reading (ocr_boost_clock): kept, or the template's auto and on. And its Text
 # source (text_source, API 31): kept, or the template's auto.
 exec bash "$PACKAGE/tools/install_ftp.sh" --package-dir "$PACKAGE" ${TITLES[@]+"${TITLES[@]}"} \
-  --set dictionary=local --set local_dictionaries=plaintext.vjdict \
+  --set dictionary=local --set local_dictionaries=plaintext.vjdict,vndb-names.vjdict \
   --set local_dictionary_dir=ux0:data/VitaJPOverlay/dictionaries \
   --set ocr_model_dir=ux0:data/VitaJPOverlay/ocr --set log_file=on \
   ${PACKAGE_SETS[@]+"${PACKAGE_SETS[@]}"} "$HOST"

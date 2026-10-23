@@ -176,6 +176,15 @@ is `core/hook_select.c`'s (hooks-select).
 
 ## Which text a job shows
 
+At job time, `vjo_hooks_text` decodes the snapshot, applies a table site's game-specific filter when
+present, then cleans common backslash controls in place (`core/hook_text.c`, `vjo_hook_clean`).
+Numeric `\s` and `\w` commands, including their decimal arguments (`\s156`), are removed;
+standalone `\c`, `\k`, `\p` and `\f` are removed, and literal `\n`, `\r` and `\t` become
+whitespace. Unknown escapes and doubled backslashes are kept. Nonprinting ASCII controls other
+than real tab/CR/LF are dropped. This runs for CALL and table-site streams, after decoding CP932,
+UTF-8 or UTF-16, before comparison or display: the overlay, mined sentence, history line and its
+`characters` count all use the cleaned text. OCR is unchanged. Existing history is not rewritten.
+
 `core/hook_select.c`, called by the job path in `game_ocr/main.c`, in the worker's thread. With nothing
 hooked in the game (`vjo_hooks_counts`: no site and no CALL import) a job is OCR's exactly as before: no
 snapshot, no comparison. Otherwise a job begins with a snapshot of the streams: each stream that holds

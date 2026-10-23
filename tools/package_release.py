@@ -17,6 +17,7 @@ from prepare_ocr import (VOCR_ASSETS, VOCR_GATE_ASSETS, VOCR_GATE_ATTRIBUTION, V
                          VOCR_TAG, VOCR3_ASSETS, VOCR3_TAG, VOCR4_ASSETS, VOCR4_TAG, VOCR5_ASSETS, VOCR5_TAG,
                          model_tiers)
 from prepare_plaintext import FILENAME, load_manifest, validate
+import prepare_vndb
 
 DATA = "ux0/data/VitaJPOverlay/"
 SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
@@ -250,6 +251,20 @@ def package_with_dictionary(base, output, models, dictionary, license_file, vers
                   "config.ini": template,
                   DATA + "config.ini": template,
                   "install-vita.sh": source / "tools/install-vita.sh"}
+        # Repack the cross-build's exact names file without needing its source ZIP.
+        # Older bases / explicit --dictionary builds use the vendored public source.
+        names_stage = Path(tmp) / "names"
+        names_file = names_stage / DATA / "dictionaries" / prepare_vndb.FILENAME
+        with zipfile.ZipFile(base) as original:
+            entry = DATA + "dictionaries/" + prepare_vndb.FILENAME
+            if entry in original.namelist():
+                names_file.parent.mkdir(parents=True, exist_ok=True)
+                with original.open(entry) as src, names_file.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                prepare_vndb.validate(names_file, prepare_vndb.load_manifest())
+        prepare_vndb.stage(names_stage)
+        assets.update({p.relative_to(names_stage).as_posix(): p
+                       for p in names_stage.rglob("*") if p.is_file()})
         return write_package(base, output, models, assets, conversion, version, source_revision, settings, variant)
 
 

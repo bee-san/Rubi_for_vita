@@ -78,7 +78,8 @@ void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced);
 int vjo_hooks_snap(uint32_t id, VjoHookSnap *out);
 
 /* Job time: a snapshot's raw text as UTF-8, NUL-terminated, in out (cap bytes): vjo_luna_text for a
- * Luna site (its filter), vjo_hook_decode otherwise. Returns the bytes before the NUL. */
+ * Luna site (its filter), vjo_hook_decode otherwise, then vjo_hook_clean for both.
+ * Returns the bytes before the NUL. */
 size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap);
 
 #endif

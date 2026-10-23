@@ -10,7 +10,8 @@ its links adjusted to this folder.
 Contents:
 
 - [Rubi — local Japanese OCR](#rubi--local-japanese-ocr)
-- [Install](#install)
+- [Installation instructions](#install)
+  - [Alternative: install with the standalone VPK](#alternative-install-with-the-standalone-vpk)
   - [Advanced: install from a computer](#advanced-install-from-a-computer)
 - [Use in a game](#use-in-a-game)
   - [Drawing the region](#drawing-the-region)
@@ -102,12 +103,73 @@ still require hardware checks. See the
 [installation checkpoint](todo-20261011.md#v079-touchhighlight-installation-checkpoint)
 for the measured results and remaining hardware checks.
 
-## Install
+<a id="install"></a>
 
-You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, **Settings >
-HENkaku Settings > Enable Unsafe Homebrew** on, and about 245 MB free on the memory card (ux0) before
-you copy the VPK to it: 61 MB for the VPK, 170 MB for VitaShell to unpack it and 12 MB for the models
-Install copies. Deleting the `.vpk` once VitaShell has installed it gives its 61 MB back.
+## Installation instructions
+
+You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
+**Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
+
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.3/Rubi-0.9.3.zip)
+and extract it.
+
+### 1. Transfer modules
+
+Using VitaShell FTP, transfer the files from `Rubi-0.9.3/ur0/tai/` to `ur0:tai/` on the Vita:
+
+- `VitaJPOverlay_Kernel.skprx`
+- `VitaJPOverlay_OCR.suprx`
+- `VitaJPOverlay_Shell.suprx`
+
+### 2. Edit the taiHEN config
+
+Back up `ur0:tai/config.txt`, then add `ur0:tai/VitaJPOverlay_Kernel.skprx` to its `*KERNEL`
+section and `ur0:tai/VitaJPOverlay_Shell.suprx` to its `*main` section. The two sections can
+appear in either order; each plugin must be beneath its matching section. Keep your other entries.
+
+Example (`ur0:tai/config.txt`):
+
+```text
+*KERNEL
+ur0:tai/VitaJPOverlay_Kernel.skprx
+
+*main
+ur0:tai/VitaJPOverlay_Shell.suprx
+```
+
+If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the entries there instead.
+`VitaJPOverlay_OCR.suprx` needs no config entry; the kernel plugin loads it into enabled games.
+
+### 3. Transfer data files for the plugin
+
+Transfer `Rubi-0.9.3/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+as `ur0:data/VitaJPOverlay`.
+
+### 4. Transfer data files for OCR and the dictionary
+
+**This is a separate folder, not a duplicate of step 3.** Transfer
+`Rubi-0.9.3/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+as `ux0:data/VitaJPOverlay`.
+
+If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
+and keep your existing settings file when copying the data.
+
+### 5. Transfer and install the VPK / companion app
+
+Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
+top-right corner of its LiveArea page. Transfer `Rubi-0.9.3/Rubi.vpk` to the Vita and install
+(promote) it with VitaShell. Accept the installation and extended-permissions prompts.
+
+### 6. Reboot the Vita
+
+In VitaShell, press **START** and choose **Reboot**.
+
+Start a game and press **L + R** to open Rubi. Every game is ON by default.
+
+### Alternative: install with the standalone VPK
+
+The separate `Rubi-<version>.vpk` download includes the files that the ZIP method copies by hand.
+With that download, use the app's Install page as follows:
 
 1. Download `Rubi-<version>.vpk` from the
    [latest release](https://github.com/bee-san/Rubi_for_vita/releases/latest).
@@ -223,14 +285,10 @@ overlay files of its own, so its Install page names this installer);
 `install-vita.sh` predates all of this and registers the worker under `*ALL`; use the installer from
 `main` or a later release.
 
-For a manual installation, copy `ur0/` and `ux0/` of the zip to their matching Vita partitions and
-install `Rubi.vpk`. Back up your old overlay `config.ini` before copying the included
-one. Add `ur0:tai/VitaJPOverlay_Kernel.skprx` under `*KERNEL` and `ur0:tai/VitaJPOverlay_Shell.suprx`
-under `*main` in the active taiHEN config (`ux0:tai/config.txt` if it exists, else
-`ur0:tai/config.txt`). `ur0:tai/VitaJPOverlay_OCR.suprx` needs no line: the kernel plugin loads it
-into each game that is ON (from `ux0:tai/` only when `ur0:tai/` has none, so leave no older copy
-there). Never list it under `*ALL`. Disable old `VitaJPOverlay_Text.suprx` entries and old worker
-lines, then reboot. Keep unrelated plugins and configuration intact.
+For a manual installation, follow [Installation instructions](#install) above. If replacing an old
+install, disable old `VitaJPOverlay_Text.suprx` entries and old OCR worker lines. Never list
+`VitaJPOverlay_OCR.suprx` under `*ALL`; the kernel plugin loads it into enabled games. Keep unrelated
+plugins and configuration intact.
 
 ## Use in a game
 
@@ -560,7 +618,7 @@ these defaults:
 ```ini
 dictionary = local
 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
-local_dictionaries = plaintext.vjdict
+local_dictionaries = plaintext.vjdict,vndb-names.vjdict
 local_dictionary_results = 1
 text_source = auto
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
@@ -670,7 +728,7 @@ console run).
 The complete settings template is
 [docs/config.example.ini](config.example.ini).
 
-The release bundles one frozen disk-backed `plaintext.vjdict`, **Bee's
+The release bundles the frozen disk-backed `plaintext.vjdict`, **Bee's
 Ultimate Dictionary**: word definitions from **Daijirin4 → Sankoku8 → JMdict** in
 that priority order, an English summary of each grammar point (は, に, ので,
 ～てしまう …), a line for each kanji with its most common meanings, and the
@@ -681,6 +739,23 @@ The public release includes the processed dictionary and its attribution.
 The snapshots it is built from are pinned by exact commit and SHA-256; builds
 perform no dictionary updates and need no conversion or current upstream
 snapshot.
+
+It also bundles `vndb-names.vjdict`, **VNDB Names — PSP & PS Vita**, with 30,923
+searchable name entries for 12,151 characters across 1,202 qualifying visual
+novels (snapshot cutoff 22 October 2026). Full names, name parts and aliases show
+the original/romanized name, source game, platform and VNDB link. No images or
+biographies are included; aliases may reveal names. Both dictionaries are
+enabled on a fresh install. An update adds missing bundled files to the enabled
+list while keeping custom dictionaries in order; if the list would exceed eight
+files, it stays as it was and the install plan asks you to choose.
+
+The main dictionary comes first for equal-length word matches; longer full names
+can still match the names dictionary. The default **Dictionaries shown** stays
+1. Set it to **2** in the Rubi app to page between word and name entries with L/R
+when both match. The names source ZIP is committed unchanged, converted offline
+with `python3 tools/prepare_vndb.py`, and verified against input/output checksums
+in [vndb-names.json](vndb-names.json). [Attribution and licences](vndb-attribution.txt)
+ship in both release ZIPs and standalone VPKs (ODbL 1.0 / DbCL 1.0).
 
 An entry shows its definition (or a grammar point's summary), a blank line, then
 one line per kanji of its spelling, the kanji at the headword's size:
@@ -731,9 +806,9 @@ You can add your own Yomitan dictionaries with
 [the converter and installation guide](local-dictionaries.md).
 Up to eight dictionary files can be enabled in priority order. The Rubi
 app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages
-through files for the selected word. The combined bundle is one file, so
-it displays the preferred source; add separate dictionaries to page through
-other definitions. Only the page on screen is held in memory.
+through files for the selected word. Bee's Ultimate Dictionary combines its
+word, grammar and kanji sources in one file; the names are a second file. Only
+the page on screen is held in memory.
 
 The subtitle strip (Select + R) shows the recognized text, without readings,
 and adds no lookups for it. Recognition and dictionary lookup make no network
@@ -853,6 +928,14 @@ for the game beside what the job holds: 4 MiB with Small, 8 MiB with Normal and
 vita-vn-ocr docs/model-tiers.md proposes them, an estimate), before allocating
 any block; allocation can still fail because the game or system uses memory
 concurrently.
+
+If OCR fails for lack of memory, the overlay shows the failed check's game RAM
+figures in KiB: free memory, Rubi's reclaimable resident memory, and the total
+needed, broken down into workspace, models and the reserve left to the game.
+These are the game worker's measurements at that check, not the Vita's total RAM
+or a live reading after cleanup. Requirements include the reserve; Rubi does not
+allocate it. If the memory query failed, the error shows its native code instead
+of a free-memory figure. An error before the check has no memory figures.
 
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts

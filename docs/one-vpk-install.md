@@ -73,6 +73,7 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 | `payload/ur0/data/VitaJPOverlay/vitajpoverlay.rco` | `ur0:data/VitaJPOverlay/` | 6,000 |
 | `payload/ux0/data/VitaJPOverlay/ocr/` (3 recognizers, 4 LMs, `LM-ATTRIBUTION.md`, `MODEL-ATTRIBUTION.md`, the text-presence gate's `textgate_p8_c8_w8.vtd` and `GATE-ATTRIBUTION.md`) | `ux0:data/VitaJPOverlay/ocr/` | 11,730,126 (with API 26's gate, +5,246; VOCR5's 11,724,880; 10,614,250 before) |
 | `payload/ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict` | moved to `ux0:data/VitaJPOverlay/dictionaries/` | 157,298,688 (Bee's Ultimate Dictionary, #153; 143,425,536 before) |
+| `payload/ux0/data/VitaJPOverlay/dictionaries/vndb-names.vjdict` | copied to `ux0:data/VitaJPOverlay/dictionaries/` | 10,452,992 (PSP/Vita VNDB names; file size pinned in docs/vndb-names.json) |
 | `payload/ux0/data/VitaJPOverlay/config.ini` | written only when there is none | 3,552 |
 | `payload/manifest.txt` | read by the app | small |
 | `licenses/` (`LICENSE`, the GPL; `docs/plaintext-attribution.txt`; `docs/JMdict-LICENSE.html`; `third_party/README.md` and `third_party/licenses/`), at their zip paths | stays in the app, `ux0:app/VJOSET001/licenses/` | 79,336 (this PR's 0.8.0 packages) |
@@ -579,7 +580,8 @@ as the app's own saves patch it
   (`install-vita.sh` sets them too); `text_source` is the user's since API 31 (the Rubi app's Text
   source): an update keeps it, a first install gets the template's `auto`;
 - `plaintext.vjdict` is put in `local_dictionaries` when it is not listed: in place of 0.7.12's
-  `jmdict.vjdict`, else first. A list that would then hold more than 8 names (`core/config.c` turns an
+  `jmdict.vjdict`, else first. Missing `vndb-names.vjdict` is appended after the user's files.
+  A list that would then hold more than 8 names (`core/config.c` turns an
   invalid list off, `:308,531-540`) is left as it was, with a note in the plan;
 - the package's `set` lines (a test build's `anki_mining on`; the debug VPK's `log_file on`, so that a
   debug install over 0.7.12's `log_file = off` records its log);
@@ -587,8 +589,9 @@ as the app's own saves patch it
   `hw_jpeg`, `combo_delay_ms`, `hachidori_host`), as `tools/migrate_config.py` drops them.
 
 The two installers differ in what the PC path still forces: `install-vita.sh` sets `log_file = on` and
-`local_dictionaries = plaintext.vjdict` on every install (its `--set`s, from before this design), where
-the app sets `log_file` only for the debug build and puts `plaintext.vjdict` into the user's list.
+`local_dictionaries = plaintext.vjdict,vndb-names.vjdict` on every install (its `--set`s, from before
+this design), where the app sets `log_file` only for the debug build and adds missing bundled
+dictionaries to the user's list.
 
 Every other setting is the user's and is kept: `vocr_tier`, `ocr_mode`, `ocr_boost_clock` (the OCR &
 lookup page's choices, overlay-ocr-mode-setting), `log_file`, `anki_mining` (unless the package sets

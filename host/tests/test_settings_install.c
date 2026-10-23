@@ -64,6 +64,10 @@ static struct {
     int calls;
 } fault;
 static int unsafe_off, umount_rc, app_readonly, locked, lock_calls;
+/* the console of 2026-10-22 (payload_readable): the app folder's paths below payload/ux0/data and
+ * payload/ur0/data are refused with 0x80010016 (payload/ur0/tai is read), app0:'s unmount or not; app0:
+ * reads them until it is unmounted */
+static int payload_locked, app0_unmounted;
 /* The app's log.txt lines (settings/applog.c, #149), kept since the card was made (the oldest go when it
  * is full): a run's lines that the collect reads (#194: what became of the app's dictionary copy). */
 static char log_text[1 << 16];
@@ -88,10 +92,17 @@ static long long free_space[2] = {1LL << 34, 1LL << 34}; /* ux0, ur0 */
 static int matches(const char *p) { return fault.pattern && p && strstr(p, fault.pattern); }
 static int hit(int nth) { return nth && ++fault.calls == nth; }
 static int in_app(const char *p) { return p && !strncmp(p, "ux0:app/", 8); }
+static int refused_payload(const char *p)
+{
+    static const char ux0[] = VJO_PAYLOAD_DIR "/ux0/data/", ur0[] = VJO_PAYLOAD_DIR "/ur0/data/";
+    if (p && app0_unmounted && !strncmp(p, "app0:", 5)) return 1;
+    return payload_locked && p && (!strncmp(p, ux0, sizeof(ux0) - 1) || !strncmp(p, ur0, sizeof(ur0) - 1));
+}
 
 int sceIoOpen(const char *p, int flags, unsigned mode)
 {
     int writing = flags & (O_WRONLY | O_RDWR);
+    if (refused_payload(p)) return (int)0x80010016u;
     if (writing && app_readonly && in_app(p)) return (int)0x80010013u;
     if (writing && matches(p) && hit(fault.open_write)) return (int)(0x80010000u | ENOSPC);
     return native(open(p, flags, mode));
@@ -118,6 +129,7 @@ int sceIoMkdir(const char *p, unsigned mode) { return native(mkdir(p, mode)); }
 int sceIoGetstat(const char *p, SceIoStat *out)
 {
     struct stat st;
+    if (refused_payload(p)) return (int)0x80010016u;
     int rc = stat(p, &st);
     if (!rc) { out->st_mode = st.st_mode; out->st_size = st.st_size; }
     return native(rc);
@@ -180,7 +192,12 @@ int sceIoDevctl(const char *dev, unsigned int cmd, void *in, int inlen, void *ou
     info->free_size = free_space[!strncmp(dev, "ur0", 3)];
     return 0;
 }
-int sceAppMgrUmount(const char *mp) { (void)mp; return umount_rc; }
+int sceAppMgrUmount(const char *mp)
+{
+    (void)mp;
+    if (umount_rc >= 0) app0_unmounted = 1;
+    return umount_rc;
+}
 int sceShellUtilInitEvents(int unk) { (void)unk; return 0; }
 int sceShellUtilLock(int type) { (void)type; locked = 1; lock_calls++; return 0; }
 int sceShellUtilUnlock(int type) { (void)type; locked = 0; return 0; }
@@ -324,6 +341,7 @@ static void fresh_card(int with_ux0)
     TEST_ASSERT(chdir(card) == 0);
     memset(&fault, 0, sizeof(fault));
     unsafe_off = umount_rc = app_readonly = locked = lock_calls = 0;
+    payload_locked = app0_unmounted = 0;
     free_space[0] = free_space[1] = 1LL << 34;
     log_used = 0;
     log_text[0] = '\0';
@@ -532,13 +550,44 @@ static void update_over_a_test3_install(void)
     VjoConfig parsed;
     vjo_config_defaults(&parsed);
     vjo_config_parse(&parsed, ini, strlen(ini));
-    TEST_CHECK(!strcmp(parsed.local_dictionaries, "plaintext.vjdict") && !parsed.n_warnings); /* the default: no line needed */
+    TEST_CHECK(!strcmp(parsed.local_dictionaries, "plaintext.vjdict,vndb-names.vjdict") && !parsed.n_warnings); /* the default: no line needed */
     TEST_MSG("%s", ini);
     TEST_CHECK(!strcmp(slurp(VJO_APP_STAMP_PACKAGE, NULL), STAMP "\n"));
     TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
 }
 
 /* config.ini of 0.7.12: its model, its dictionary, removed settings and an API key. */
+static void bundled_dictionary_lists_preserve_custom_priority(void)
+{
+    static const struct { const char *before, *after; } cases[] = {
+        {"plaintext.vjdict", "plaintext.vjdict, vndb-names.vjdict"},
+        {"mine.vjdict", "plaintext.vjdict, mine.vjdict, vndb-names.vjdict"},
+        {"vndb-names.vjdict,mine.vjdict", "plaintext.vjdict, vndb-names.vjdict, mine.vjdict"},
+        {"mine.vjdict,plaintext.vjdict,vndb-names.vjdict", "mine.vjdict,plaintext.vjdict,vndb-names.vjdict"},
+        {"a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,jmdict.vjdict",
+         "a.vjdict, b.vjdict, c.vjdict, d.vjdict, e.vjdict, f.vjdict, plaintext.vjdict, vndb-names.vjdict"},
+        /* Two additions need two slots: no custom dictionary is dropped. */
+        {"a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict",
+         "a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict"},
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        fresh_card(1);
+        char text[512];
+        snprintf(text, sizeof(text), "local_dictionaries = %s\nlocal_dictionary_results = 3\n", cases[i].before);
+        put_text(VJO_PREFERENCES_PATH_TEST, text);
+        VjoInstallScan s = scan_now();
+        VjoInstallResult r;
+        TEST_ASSERT(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+        VjoConfig cfg;
+        vjo_config_defaults(&cfg);
+        char *ini = slurp(VJO_PREFERENCES_PATH_TEST, NULL);
+        vjo_config_parse(&cfg, ini, strlen(ini));
+        TEST_CHECK_(!strcmp(cfg.local_dictionaries, cases[i].after), "%s", cfg.local_dictionaries);
+        TEST_CHECK(cfg.local_dictionary_results == 3 && !cfg.n_warnings);
+        TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+    }
+}
+
 static void config_ini_from_0712(void)
 {
     fresh_card(1);
@@ -552,7 +601,7 @@ static void config_ini_from_0712(void)
     TEST_ASSERT(ini != NULL);
     TEST_MSG("%s", ini);
     TEST_CHECK(strstr(ini, "dictionary = local\n") && !strstr(ini, "secret") && !strstr(ini, "api_key"));
-    TEST_CHECK(strstr(ini, "local_dictionaries = plaintext.vjdict, mine.vjdict\n") != NULL);
+    TEST_CHECK(strstr(ini, "local_dictionaries = plaintext.vjdict, mine.vjdict, vndb-names.vjdict\n") != NULL);
     TEST_CHECK(strstr(ini, "vocr_tier = small\n") && !strstr(ini, "vocr_model") && !strstr(ini, "ocr_backend"));
     TEST_CHECK(strstr(ini, "font_size_ja = 24\n") != NULL);
     /* the removed settings go, as tools/migrate_config.py drops them; a key that only starts alike stays */
@@ -565,7 +614,7 @@ static void config_ini_from_0712(void)
     s = scan_now();
     char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
     int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
-    TEST_CHECK(has_line(plan, n, "local_dictionaries has 8 names: add plaintext.vjdict to it yourself"));
+    TEST_CHECK(has_line(plan, n, "local_dictionaries has no room for both bundled dictionaries: choose which to enable yourself"));
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
     TEST_CHECK(strstr(slurp(VJO_PREFERENCES_PATH_TEST, NULL), "local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict\n") != NULL);
     /* only config.ini.bak (a save stopped between its renames): patched from it, never the template */
@@ -614,12 +663,13 @@ static void the_plan_names_each_config_ini_line_that_goes(void)
     int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
     dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
     int at = ini_part((const char (*)[VJO_INSTALL_LINE])plan, n);
-    TEST_ASSERT(at >= 0 && at + 3 < n);
+    TEST_ASSERT(at >= 0 && at + 4 < n);
     TEST_CHECK(strstr(plan[at], "config.ini: these lines change; every other setting stays") != NULL);
-    /* exactly the two lines that go, in the file's order, and nothing after them */
-    TEST_CHECK_(!strcmp(plan[at + 1], "   ocr_backend: a removed setting, goes"), "[%s]", plan[at + 1]);
-    TEST_CHECK_(!strcmp(plan[at + 2], "   log_host: a removed setting, goes"), "[%s]", plan[at + 2]);
-    TEST_CHECK_(strncmp(plan[at + 3], "   ", 3) != 0, "[%s]", plan[at + 3]);
+    /* The missing bundled names file, then the two removed settings, in order. */
+    TEST_CHECK_(!strcmp(plan[at + 1], "   local_dictionaries = plaintext.vjdict, vndb-names.vjdict"), "[%s]", plan[at + 1]);
+    TEST_CHECK_(!strcmp(plan[at + 2], "   ocr_backend: a removed setting, goes"), "[%s]", plan[at + 2]);
+    TEST_CHECK_(!strcmp(plan[at + 3], "   log_host: a removed setting, goes"), "[%s]", plan[at + 3]);
+    TEST_CHECK_(strncmp(plan[at + 4], "   ", 3) != 0, "[%s]", plan[at + 4]);
     TEST_CHECK(!has_line(plan, n, "vocr_tier")); /* the user's Large is not a change */
     VjoInstallResult r;
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
@@ -2600,7 +2650,42 @@ static void a_repair_with_backups_has_no_update_note(void)
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && scan_now().state == VJO_INSTALL_INSTALLED);
 }
 
+/* The console refuses this app its folder's payload paths below data, before and after app0:'s unmount
+ * (2026-10-22: 0x80010016 for payload/ux0/data/VitaJPOverlay/config.ini; the install stopped at the
+ * dictionary after the unmount): the scan reads through app0:, and the install keeps app0: mounted and
+ * copies every file from it; the dictionary is copied, not moved, and stays in this app. */
+static void a_payload_the_folder_refuses_is_installed_from_app0(void)
+{
+    fresh_card(1);
+    TEST_ASSERT(symlink(VJO_PAYLOAD_DIR, "app0:payload") == 0); /* the card's app0: is a folder per name */
+    payload_locked = 1;
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_NOT_INSTALLED, "state %d: %s %s", s.state, s.title, s.reason);
+    TEST_CHECK(s.actions == VJO_INSTALL_ACT_INSTALL);
+    TEST_CHECK(s.config_ini == 2);
+    TEST_CHECK(s.dict_in_app);
+    VjoInstallResult r;
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && r.rc == 0 && r.written);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])r.lines, r.count);
+    TEST_CHECK(!app0_unmounted);
+    TEST_CHECK(strstr(log_text, "app0: kept mounted (this app's folder is read through it)") != NULL);
+    TEST_CHECK(has_line(r.lines, r.count, "The dictionary was copied (it could not be moved): this app keeps its copy too"));
+    TEST_CHECK(installed_files(1));
+    char src[256];
+    vjo_payload_source(s.dict_index, src, sizeof(src));
+    TEST_CHECK(there(src)); /* copied, so still in this app */
+    char *ini = slurp(VJO_PREFERENCES_PATH_TEST, NULL);
+    TEST_CHECK(ini && !strcmp(ini, template_text));
+    char *cfg = slurp("ur0:tai/config.txt", NULL);
+    TEST_CHECK(cfg && strstr(cfg, "*KERNEL\n" K "\n") && strstr(cfg, "*main\n" S "\n"));
+    /* the page's scan afterwards: installed, app0: still mounted */
+    s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_INSTALLED, "state %d: %s %s", s.state, s.title, s.reason);
+    TEST_CHECK(unlink("app0:payload") == 0);
+}
+
 TEST_LIST = {
+    {"a_payload_the_folder_refuses_is_installed_from_app0", a_payload_the_folder_refuses_is_installed_from_app0},
     {"the_diff_at_its_line_bound", the_diff_at_its_line_bound},
     {"a_plan_stays_within_its_max", a_plan_stays_within_its_max},
     {"a_backup_too_large_to_rewrite_is_left", a_backup_too_large_to_rewrite_is_left},
@@ -2633,6 +2718,7 @@ TEST_LIST = {
     {"removed_settings_go_however_their_line_starts", removed_settings_go_however_their_line_starts},
     {"a_line_that_goes_is_named_whatever_its_case_or_line_ends", a_line_that_goes_is_named_whatever_its_case_or_line_ends},
     {"a_crafted_config_ini_is_scanned_in_bounded_time", a_crafted_config_ini_is_scanned_in_bounded_time},
+    {"bundled_dictionary_lists_preserve_custom_priority", bundled_dictionary_lists_preserve_custom_priority},
     {"the_dictionary_already_installed_is_not_moved_again", the_dictionary_already_installed_is_not_moved_again},
     {"a_move_that_cannot_happen_copies", a_move_that_cannot_happen_copies},
     {"check_and_repair_says_what_became_of_the_apps_dictionary_copy", check_and_repair_says_what_became_of_the_apps_dictionary_copy},
