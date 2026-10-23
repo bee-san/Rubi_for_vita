@@ -14,8 +14,8 @@ against this change:
 
 | Module | main text + data/bss | this change | Loaded pages |
 |---|---:|---:|---:|
-| Shell, debug | 100,860 + 72,912 B | 104,916 + 69,344 B | 176,128 B, unchanged |
-| Shell, normal | 90,004 + 72,960 B | 93,940 + 69,392 B | 163,840 B (exact), unchanged |
+| Shell, debug | 100,860 + 72,912 B | 104,932 + 69,344 B | 176,128 B, unchanged |
+| Shell, normal | 90,004 + 72,960 B | 93,956 + 69,392 B | 163,840 B (exact), unchanged |
 | Game worker, debug | 140,656 + 32,888 B | 146,392 + 36,672 B | 180,224 → 184,320 B |
 | Game worker, normal | 131,804 + 32,880 B | 137,540 + 36,664 B | 172,032 → 176,128 B |
 
@@ -23,7 +23,7 @@ against this change:
   4,096 B of `.bss`) moved into the open page's UI block, a PAF allocation made when the page opens and freed when
   it closes (`VJO_BUDGET_PAF_UI` 20,480 → 24,576 B, the pool "shell paf" table below). The char map follows that
   copy there. The data segment gives back a page and the code segment takes one, so the module's pages are main's
-  in both builds. The normal build's code has 268 B of room in its last page, and its data has 240 B: the overlay's
+  in both builds. The normal build's code has 252 B of room in its last page, and its data has 240 B: the overlay's
   widget ids and the reading's markup format (295 B) are in the data segment, as the module's other tables are
   ("Tables in the data segment" below).
   - By symbol, from the linked normal ELFs: the overlay's text mode (`render` +1,212 B with the marks' and the
