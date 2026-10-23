@@ -321,7 +321,9 @@ characters column of `tools/reading_stats.py`'s **All games** row for the same f
 where a power loss cut a record: the Shell counts a cut record when its line and the time's first digit
 after it were written, never the record that the next boot appended right after the cut (it runs on from
 the cut one, with no line break before it), nor one after a header cut short; the tool counts the record
-after the cut and never the cut one (it is skipped as incomplete). `characters` is not the line's length:
+after the cut and never the cut one (it is skipped as incomplete). Until the next append, the Shell also
+leaves out a file's last whole record when not even the cut record's first two bytes were written after it
+(zeros a lost write left, or its first quote alone), which the tool counts. `characters` is not the line's length:
 punctuation, brackets, symbols, spaces and line breaks count nothing ([Characters](#characters)). On the 50
 real VOCR textboxes of `host/fixtures/word_lookup`, written by the writer, the column's sum is 1,329, the
 lines' code points 1,593 (`len()`, 19.9 % more) and 1,505 without their 88 line breaks (13.2 % more; 176
@@ -349,8 +351,10 @@ data (56 B), under the view's lock:
   reads the file 24,512 B at a time, with the byte before them, into its existing 24 KiB scratch (line
   history's window), one window a wakeup, after the wakeup's other work, and wakes itself for the next. A
   count that an append ran beside goes on from there at the next wakeup (50 ms at most). A file that ends in
-  a record with no line break after it (one a power loss cut) is counted but for that record, which waits
-  for the next record's append: the count of the two then takes the cut one only, as a fresh count does. A
+  no line break (a record a power loss cut) is counted but for its newest record: the cut one, or, when not
+  even the cut one's first two bytes were written (zeros a lost write left), the whole one before it. That
+  record waits for the next record's append: the count then takes it, and the cut one when its line was
+  written, as a fresh count does. A
   failed open or read makes the view say `unavailable`; the next press tries again.
 - `ux0:data/VitaJPOverlay/history_total.bin` keeps it between starts: 16 bytes, the total (64-bit), the
   bytes of `history.csv` it is the total of and a check (32-bit each, little-endian), written through a

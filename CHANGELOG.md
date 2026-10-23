@@ -23,8 +23,8 @@ been reported.
   after an install, then only what was recorded since its last start, a 24 KiB window a wakeup in the
   scratch line history reads into, with `counting…` meanwhile; `history_total.bin` (16 bytes, next to
   `history.csv`) keeps the total between starts. The first count of 100,000 lines (40.7 MB) took 76-90 ms
-  on the host and is estimated at 10-15 s on the console (4-40 s by the bounds), 10,000 lines at about
-  1-1.5 s; meanwhile the first word is not looked up ahead. Nothing of it runs in the game or changes
+  on the host and is estimated at 10-15 s on the console (4-41 s by the bounds), 10,000 lines at about
+  1-1.5 s; meanwhile the words after the cursor are not looked up ahead. Nothing of it runs in the game or changes
   the OCR job's code. The Shell's pages are unchanged in both builds: its 32-bit integer division,
   libgcc's, is replaced by a 90 B one of its own, 1,222 B less code
   ([measured](docs/memory-ledger.md#the-reading-total)).

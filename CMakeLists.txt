@@ -382,6 +382,7 @@ target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-history-tests vjo_core) # line history's reader: core/history_lines.c
 add_test(NAME shell_history COMMAND vjo-shell-history-tests)
+set_tests_properties(shell_history PROPERTIES TIMEOUT 120) # a count's read loop that never ends fails, not hangs
 # The Shell's integer division (shell/divide.c, in place of libgcc's in the Vita Shell): every quotient and
 # remainder checked against what C's division means, without dividing; the ARM lane runs it too.
 add_executable(vjo-shell-divide-tests host/tests/test_shell_divide.c)
