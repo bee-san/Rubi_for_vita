@@ -41,13 +41,16 @@
  * H15's with 5,631, Large late-wide (channels 64/128/256/480/576) with 5,631. API 39:
  * the same recognizers with their head gate (vita-vn-ocr #117, docs/headgate.md,
  * pre-release v0.3.5-headgate.1): v0.3.0's bytes unchanged, then a 1,792 B gate section
- * (VjoVocrPolicy.head_gate). */
+ * (VjoVocrPolicy.head_gate). API 40: Normal's and Large's with the two-level head too (vita-vn-ocr #117 item 2,
+ * docs/head2level.md, pre-release v0.3.6-head2level.1, which also carries Small's file unchanged): the recognizer
+ * with its output rows in frequency order (its bytes' count unchanged), the same gate, then a 1,984 B VOC2 trailer
+ * (VjoVocrPolicy.two_level). */
 #define VJO_VOCR5_S_NAME "VOCR5_S_w8g.vocr"
 #define VJO_VOCR5_S_BYTES 821584u
-#define VJO_VOCR5_N_NAME "VOCR5_N_w8g.vocr"
-#define VJO_VOCR5_N_BYTES 1187424u
-#define VJO_VOCR5_L_NAME "VOCR5_L_w8g.vocr"
-#define VJO_VOCR5_L_BYTES 2475488u
+#define VJO_VOCR5_N_NAME "VOCR5_N_w8g2.vocr"
+#define VJO_VOCR5_N_BYTES 1189408u
+#define VJO_VOCR5_L_NAME "VOCR5_L_w8g2.vocr"
+#define VJO_VOCR5_L_BYTES 2477472u
 /* API 21: the three model tiers the Rubi app offers (config.ini vocr_tier),
  * smallest first; tools/model_tiers.json is the same table (its "tiers", in
  * this order), and tools/tests/test_vocr_defaults.py checks the two agree. A

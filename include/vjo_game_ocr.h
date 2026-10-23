@@ -103,6 +103,9 @@
  * a model whose blob carries one skips its output head on the CTC frames the gate calls blank. The Shell sets it in
  * the user's jobs with ocr_head_gate = on, the default (the self-test's stages read as before, as with the text
  * gate). Not bit 17 (draft #271's VJO_GAME_OCR_S_CHARS), so both can merge. */
+/* API 40: the same bit also runs a blob's two-level head (vita-vn-ocr #117 item 2, VjoVocrPolicy.two_level), the
+ * Normal and Large sizes' (game_ocr/main.c request_policy): no bit and no Shell code of its own, whose pages may only
+ * shrink. */
 #define VJO_GAME_OCR_S_HEAD_GATE 0x40000u
 #define VJO_GAME_OCR_S_ALL 0x5001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a

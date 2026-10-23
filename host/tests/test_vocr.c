@@ -508,8 +508,10 @@ static void test_release_files(void)
         o.mode = VOCR_MODE_W8I;
         TEST_CHECK(vocr_load(&m, blob, all[i].bytes) == VOCR_OK);
         TEST_CHECK(vocr_check_crc(blob, all[i].bytes) == VOCR_OK);
-        /* API 39: a blob with a head gate is pinned with the arena its gate takes (the job turns it on) */
+        /* API 39: a blob with a head gate is pinned with the arena its gate takes (the job turns it on); API 40: a
+         * blob with a two-level head with the arena that takes too */
         if (vocr_has_gate(&m)) o.head_gate = VOCR_HEAD_GATE_ON;
+        if (vocr_has_two_level(&m)) o.two_level = 1;
         TEST_CHECK(vocr_arena_bytes(&m, &o) == all[i].arena_bytes);
         TEST_MSG("%s: arena %zu, pinned %u", all[i].name, vocr_arena_bytes(&m, &o), all[i].arena_bytes);
         for (unsigned c = 1; c < m.n_classes; c++) {

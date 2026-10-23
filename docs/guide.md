@@ -634,8 +634,8 @@ log_file = on
 
 `vocr_tier` is the local engine's model size, the Rubi app's Model size:
 `small` runs VOCR5-S (821,584 B of int8 weights: FL10's topology with 4,987
-classes), `normal` (the default) VOCR5-N (1,187,424 B: H15's topology with 5,631
-classes) and `large` VOCR5-L (2,475,488 B: a late-wide shape, 5,631 classes), the
+classes), `normal` (the default) VOCR5-N (1,189,408 B: H15's topology with 5,631
+classes) and `large` VOCR5-L (2,477,472 B: a late-wide shape, 5,631 classes), the
 three recognizers of vita-vn-ocr's VOCR5 round (its v0.3.0 release, each with its
 1,792 B head gate appended in v0.3.5-headgate.1; selection and scores in that
 repository's `docs/vocr5.md` and `docs/headgate.md`). Each is inside the owner's weights
@@ -922,7 +922,7 @@ gives OCR nothing. If the game's `USER_RW` refuses that block the worker tries
 CDRAM, then phycont, then a kernel strip of at most 64 KiB for one call, and
 logs each attempt ([docs/ingame-capture.md](ingame-capture.md)). The
 worker frees each job's workspace before returning text. The verified weights stay in their own `USER_RW` block between jobs
-(821,584 B for VOCR5-S, 1,187,424 B for VOCR5-N and 2,475,488 B for VOCR5-L,
+(821,584 B for VOCR5-S, 1,189,408 B for VOCR5-N and 2,477,472 B for VOCR5-L,
 held as 823,296, 1,187,840 and 2,478,080 B page-rounded blocks; the worker takes
 no larger one) and are read and
 SHA-256 checked again only when the model file's size or modification time
@@ -952,12 +952,13 @@ of a free-memory figure. An error before the check has no memory figures.
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
 only these names in `ux0:data/VitaJPOverlay/ocr`:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
-the recognizers `VOCR5_N_w8g.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g.vocr`
-(VOCR5, release v0.3.5-headgate.1); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr`
-(VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr`
-(VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1);
-and the character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
-`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
+the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
+(VOCR5, release v0.3.6-head2level.1); `VOCR3_H15_w8.vocr` and
+`VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
+`H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
+(VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+`vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm`
+(release v0.2.6-ctclm.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,
 when the request sets a cascade ceiling, the next size up, each by its size,
 never by a name or a path. A request by name (the host tools) opens only its own

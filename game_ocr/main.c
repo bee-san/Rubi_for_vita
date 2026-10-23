@@ -1357,6 +1357,7 @@ static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
     p->blank = (r->flags & VJO_GAME_OCR_F_BLANK) != 0;
     p->gate = (r->speed & VJO_GAME_OCR_S_GATE) != 0; /* API 26: the text-presence gate */
     p->head_gate = (r->speed & VJO_GAME_OCR_S_HEAD_GATE) != 0; /* API 39: the head gate */
+    p->two_level = p->head_gate; /* API 40: a blob's two-level head rides with the head gate */
     p->gate_res = &gate_res;
     p->sleep = policy_sleep;
     /* API 22: helpers, the line cache, the clock around the recognitions. */
@@ -1957,7 +1958,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
      * cascade ceiling (ms, bits 4-15: at most 3,750), cascade model (since API 21 the
      * next tier up of the job's, so a Small job's is Normal's model and a Normal one's Large's: its
      * index among the pinned models + 1, bits 16-23), refinement (bits 24-28), the counter
-     * re-decode (bit 29) and the head gate (bit 30: a line it read can differ in rare frames). */
+     * re-decode (bit 29) and the head gate (bit 30: a line it read can differ in rare frames; API 40: with the
+     * two-level head, which rides with it). */
     unsigned casc_index = 0;
     if (casc) {
         unsigned count = 0;

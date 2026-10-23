@@ -146,7 +146,7 @@ class PackageModels(unittest.TestCase):
 
     def test_bundle_ships_the_three_model_sizes(self):
         """API 21: each model size's pinned recognizer (tools/model_tiers.json: VOCR5-S Small,
-        VOCR5-N Normal, the default, VOCR5-L Large, each from vita-vn-ocr v0.3.5-headgate.1) and the LMs; the
+        VOCR5-N Normal, the default, VOCR5-L Large, each from vita-vn-ocr v0.3.6-head2level.1) and the LMs; the
         earlier generations' (VOCR3's, VOCR4-W20, v0.2.0's), which no setting selects any more, are
         not shipped."""
         package = self.package_fixture()
@@ -174,7 +174,7 @@ class PackageModels(unittest.TestCase):
                 if name not in sizes:
                     self.assertNotIn(release.DATA + "ocr/" + name, manifest["files"])
             self.assertIn(release.DATA + "ocr/LM-" + prepare.VOCR_LM_ATTRIBUTION, manifest["files"])
-            # the model sizes' attribution (v0.3.5-headgate.1's ATTRIBUTION.md) ships beside them, its own bytes
+            # the model sizes' attribution (v0.3.6-head2level.1's ATTRIBUTION.md) ships beside them, its own bytes
             self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_MODEL_ATTRIBUTION), self.model_attribution)
             self.assertEqual(manifest["files"][release.DATA + "ocr/" + prepare.VOCR_MODEL_ATTRIBUTION]["sha256"],
                              hashlib.sha256(self.model_attribution).hexdigest())
@@ -192,7 +192,7 @@ class PackageModels(unittest.TestCase):
                                  (len(self.fixture_of(name)), hashlib.sha256(self.fixture_of(name)).hexdigest()))
             # VOCR5's sizes come from its head-gated pre-release (API 39; v0.3.0's recognizers with their gate)
             for name in prepare.VOCR5_ASSETS:
-                self.assertEqual(models[name]["release"], "bee-san/vita-vn-ocr v0.3.5-headgate.1")
+                self.assertEqual(models[name]["release"], "bee-san/vita-vn-ocr v0.3.6-head2level.1")
             self.assertEqual(manifest["defaults"]["vocr_tier"], "normal")
             for key in ("vocr_model", "vocr_fallback_model"):
                 self.assertNotIn(key, manifest["defaults"])

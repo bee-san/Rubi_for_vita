@@ -903,6 +903,9 @@ static struct {
      * gated blob's run does; such runs are counted in gated_runs, the ungated ones in ungated_runs (all runs:
      * the job's model's and the cascade's) */
     unsigned gated_line, gated_runs, ungated_runs;
+    /* API 40, the two-level head: with kana_line every run of the job's model that does not ask for the ungated
+     * read reads 九カ月です (a full-size カ before 月) with no frame that ran the rare rows (vocr_extra.escaped 0) */
+    int kana_line;
 } wrap;
 
 /* "ルッ月です」" as a top-4 of the model's own classes: 九 3 nats under ル at frame 2 and 2 nats of
@@ -960,6 +963,10 @@ int __wrap_vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t text_
         if (rc == VOCR_OK && wrap.gated_line && extra && !extra->ungated) {
             extra->gated = wrap.gated_line;
             wrap.gated_runs++;
+        }
+        if (rc == VOCR_OK && wrap.kana_line && extra && !extra->ungated && text_cap > strlen("九カ月です")) {
+            strcpy(text, "九カ月です");
+            extra->escaped = 0;
         }
         if (rc == VOCR_OK && (int)wrap.runs == wrap.empty_run && text_cap) text[0] = '\0';
         wrap.runs++;
@@ -2066,6 +2073,77 @@ static void test_the_counter_redecode(void)
     free(ws);
 }
 
+/* API 40: the two-level head (vita-vn-ocr #117 item 2, VjoVocrPolicy.two_level), on the real VOCR5-N blob with it
+ * (when the model directory has it). Its runs compute the rare rows on part of the frames only (VjoVocrStats
+ * head_escaped); a line its run read with a full-size カ or ケ before a counter character, where its escape can have
+ * missed the small ヵ or ヶ, is read again with the full head (vocr_extra.ungated), and only with the two-level head;
+ * a line without one is not. With it off, its blob reads as the gated blob does. */
+static void test_the_two_level_head(void)
+{
+    static const char *const files[] = {VJO_VOCR5_N_NAME, VJO_VOCR_LM2_NAME};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *n5 = vjo_vocr_model(VJO_VOCR5_N_NAME);
+    const VjoVocrLm *lm2 = vjo_vocr_lm_tier(2);
+    VjoPlatform p;
+    VjoVocrStats st;
+    static char text[1024], raw[1024], t_gate[1024];
+    unsigned char *ws = NULL;
+    size_t ws_bytes;
+    if (!n5 || !lm2 || !have_files(dir, files, 2)) {
+        TEST_SKIP("no VOCR5-N two-level blob and the 1000k LM in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    posix_platform_init(&cascade_pp, &p);
+    p.file_open = posix_open ? posix_open : p.file_open;
+    ws_bytes = vjo_vocr_job_bytes(n5->name, W, H) + vjo_vocr_lm_job_bytes(n5->name);
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    res.ud = &res;
+    lres.ud = &lres;
+    VjoVocrPolicy two = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
+                         .counter_tau = VJO_VOCR_COUNTER_TAU, .counter_open = VJO_VOCR_COUNTER_OPEN, .head_gate = 1,
+                         .two_level = 1};
+    VjoVocrPolicy gate = two;
+    gate.two_level = 0;
+#define RUN(pol) vjo_vocr_ocr_policy(&p, dir, n5->name, &im, &res, ws, ws_bytes, capture, \
+                                     vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
+    /* with it off: no frame runs the rare rows apart (the gate's reading) */
+    reset();
+    scr.three_lines = 1;
+    wrap_reset();
+    TEST_ASSERT(RUN(&gate) == VJO_OK);
+    memcpy(t_gate, text, sizeof(t_gate));
+    TEST_CHECK(!st.head_escaped && !wrap.ungated_runs);
+    /* on: its escape runs on the frames the gate keeps (on these synthetic lines, a test pattern and no text, it
+     * fires on every one of them, so the reading is the gate's bit for bit); none read again (no カ or ケ) */
+    reset();
+    scr.three_lines = 1;
+    wrap_reset();
+    TEST_ASSERT(RUN(&two) == VJO_OK);
+    TEST_CHECK(st.frames > 0 && st.head_escaped > 0 && st.head_escaped + st.head_gated <= st.frames);
+    TEST_MSG("VOCR5-N two-level: %u of %u frames escaped, %u gated, %u re-reads; '%s'", st.head_escaped, st.frames,
+             st.head_gated, st.head_rereads, text);
+    if (st.head_escaped + st.head_gated == st.frames) TEST_CHECK(!strcmp(text, t_gate));
+    TEST_CHECK(!wrap.ungated_runs && !st.head_rereads);
+    /* a reading with カ before 月 and no frame that ran the rare rows: read again with the full head, which stands */
+    reset();
+    wrap_reset();
+    wrap.kana_line = 1;
+    TEST_ASSERT(RUN(&two) == VJO_OK);
+    TEST_CHECK(wrap.ungated_runs == 1 && st.head_rereads == 1 && !strstr(text, "カ月"));
+    TEST_MSG("shown '%s', logged '%s', %u re-reads", text, raw, st.head_rereads);
+    /* the same reading without the two-level head (the gate alone, no frame skipped): not read again */
+    reset();
+    wrap_reset();
+    wrap.kana_line = 1;
+    TEST_ASSERT(RUN(&gate) == VJO_OK);
+    TEST_CHECK(!wrap.ungated_runs && !st.head_rereads);
+#undef RUN
+    TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));
+    free(ws);
+}
+
 /* API 39: the head gate (vita-vn-ocr #117, VjoVocrPolicy.head_gate). Every reading plans its context with the gate
  * when the policy asks for it and the blob has one; a line whose reading skipped frames (vocr_extra.gated) and whose
  * counter re-decode finds a counter context is read again without the gate (vocr_extra.ungated), and that reading
@@ -2204,6 +2282,7 @@ TEST_LIST = {
     {"the_lm_decodes_rereads_skips_empty_lines_and_keeps_greedy_on_failure", test_the_lm_paths},
     {"the_counter_redecode_feeds_the_lm_and_keeps_the_recognizer_text_off_unchanged", test_the_counter_redecode},
     {"the_head_gate_rereads_a_gated_counter_line_and_skips_frames_of_a_gated_blob", test_the_head_gate},
+    {"the_two_level_head_rereads_a_kana_counter_line_and_counts_its_escaped_frames", test_the_two_level_head},
     {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},
     {"a_short_last_line_is_read", test_a_short_last_line_is_read},
     {"the_gate_stops_a_region_without_text", test_the_gate_stops_a_region_without_text},

@@ -18,8 +18,8 @@ typedef struct {
 
 static const TestTierPin test_tier_pins[3] = {
     {"VOCR5_S_w8g.vocr", 821584u, 124880u, "VOCR5", "VOCR5-S"},
-    {"VOCR5_N_w8g.vocr", 1187424u, 182992u, "VOCR5", "VOCR5-N"},
-    {"VOCR5_L_w8g.vocr", 2475488u, 261072u, "VOCR5", "VOCR5-L"},
+    {"VOCR5_N_w8g2.vocr", 1189408u, 184448u, "VOCR5", "VOCR5-N"},
+    {"VOCR5_L_w8g2.vocr", 2477472u, 262528u, "VOCR5", "VOCR5-L"},
 };
 
 #endif

@@ -23,13 +23,16 @@
  * 240 frames + 0.1 s for the finder, calibrated to VOCR3-H15's measured console
  * rate: 631 / 921 / 2,077 ms), with the head gate on (API 39, the default; vita-vn-ocr
  * docs/headgate.md: its estimated saving per such box, -122 / -137 / -163 ms, by the
- * same method) subtracted. Estimates, not console measurements. */
+ * same method) subtracted, and for Normal and Large the two-level head on too (API 40, the
+ * default; vita-vn-ocr docs/head2level.md: its estimated saving beyond the gate's, at the
+ * development share of frames that escape, -62 / -94 ms) subtracted. Estimates, not console
+ * measurements. */
 #define VOCR5_S_BOX_MS 509u
-#define VOCR5_N_BOX_MS 784u
-#define VOCR5_L_BOX_MS 1914u
+#define VOCR5_N_BOX_MS 722u
+#define VOCR5_L_BOX_MS 1820u
 #define VOCR5_S_JOB_BYTES 1019904u  /* 823,296 + 131,072 + 65,536 */
-#define VOCR5_N_JOB_BYTES 1441792u  /* 1,187,840 + 188,416 + 65,536 */
-#define VOCR5_L_JOB_BYTES 2809856u  /* 2,478,080 + 266,240 + 65,536 (the gated blob: one weights page more) */
+#define VOCR5_N_JOB_BYTES 1445888u  /* 1,191,936 + 188,416 + 65,536 (API 40's blob: one weights page more) */
+#define VOCR5_L_JOB_BYTES 2813952u  /* 2,478,080 + 270,336 + 65,536 (API 40's arena: one workspace page more) */
 
 #ifdef VJO_VOCR_MODEL_INFO_TEST
 /* Host tests only: another package's tables (a later generation's tiers). */
@@ -37,7 +40,7 @@
 #else
 static const VjoVocrModelInfo infos[] = {
     /* v0.3.0 (vita-vn-ocr eval/vocr5_protocol.json): the Small, Normal and Large tiers, with their head gate
-     * (v0.3.5-headgate.1, API 39). */
+     * (v0.3.5-headgate.1, API 39), Normal and Large with their two-level head too (v0.3.6-head2level.1, API 40). */
     {VJO_VOCR5_S_NAME, "VOCR5", "S", VJO_VOCR5_S_BYTES, VOCR5_S_BOX_MS, VOCR5_S_JOB_BYTES},
     {VJO_VOCR5_N_NAME, "VOCR5", "N", VJO_VOCR5_N_BYTES, VOCR5_N_BOX_MS, VOCR5_N_JOB_BYTES},
     {VJO_VOCR5_L_NAME, "VOCR5", "L", VJO_VOCR5_L_BYTES, VOCR5_L_BOX_MS, VOCR5_L_JOB_BYTES},
