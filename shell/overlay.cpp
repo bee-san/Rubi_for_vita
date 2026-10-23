@@ -143,6 +143,29 @@ static void cache_header_range(const VjoEntryList *list, int entry)
         s_rng_len[entry] = (uint16_t)len;
     }
 }
+/* The page's widget ids (shell/rco/vitajpoverlay.xml), in the data segment: the code segment's last page is full
+ * in the normal build (docs/memory-ledger.md, "Tables in the data segment"; API 37). */
+static const char k_vjo_band_footer[] VJO_DATA_TABLE(overlay_vjo_band_footer) = "vjo_band_footer";
+static const char k_vjo_band_mid[] VJO_DATA_TABLE(overlay_vjo_band_mid) = "vjo_band_mid";
+static const char k_vjo_band_top[] VJO_DATA_TABLE(overlay_vjo_band_top) = "vjo_band_top";
+static const char k_vjo_body[] VJO_DATA_TABLE(overlay_vjo_body) = "vjo_body";
+static const char k_vjo_body_box[] VJO_DATA_TABLE(overlay_vjo_body_box) = "vjo_body_box";
+static const char k_vjo_body_view[] VJO_DATA_TABLE(overlay_vjo_body_view) = "vjo_body_view";
+static const char k_vjo_header[] VJO_DATA_TABLE(overlay_vjo_header) = "vjo_header";
+static const char k_vjo_header_box[] VJO_DATA_TABLE(overlay_vjo_header_box) = "vjo_header_box";
+static const char k_vjo_header_view[] VJO_DATA_TABLE(overlay_vjo_header_view) = "vjo_header_view";
+static const char k_vjo_hint[] VJO_DATA_TABLE(overlay_vjo_hint) = "vjo_hint";
+static const char k_vjo_mark_0[] VJO_DATA_TABLE(overlay_vjo_mark_0) = "vjo_mark_0";
+static const char k_vjo_mark_1[] VJO_DATA_TABLE(overlay_vjo_mark_1) = "vjo_mark_1";
+static const char k_vjo_panel[] VJO_DATA_TABLE(overlay_vjo_panel) = "vjo_panel";
+static const char k_vjo_region_cursor[] VJO_DATA_TABLE(overlay_vjo_region_cursor) = "vjo_region_cursor";
+static const char k_vjo_region_hint[] VJO_DATA_TABLE(overlay_vjo_region_hint) = "vjo_region_hint";
+static const char k_vjo_region_layer[] VJO_DATA_TABLE(overlay_vjo_region_layer) = "vjo_region_layer";
+static const char k_vjo_region_rect[] VJO_DATA_TABLE(overlay_vjo_region_rect) = "vjo_region_rect";
+static const char k_vjo_ruby[] VJO_DATA_TABLE(overlay_vjo_ruby) = "vjo_ruby";
+static const char k_vjo_ruby_bg[] VJO_DATA_TABLE(overlay_vjo_ruby_bg) = "vjo_ruby_bg";
+static const char k_vjo_separator[] VJO_DATA_TABLE(overlay_vjo_separator) = "vjo_separator";
+
 /* Local lookups select a source character, including one with no entry.
  * This owned copy survives lookup-result arena resets and never borrows
  * a worker pointer outside the view lock. It is in the open page's UI block
@@ -389,35 +412,28 @@ static void layout_apply(float header_h);
 #define RUBY_H 26
 static void ontext_layout(int compact, int top)
 {
-    ui::Widget *full[3] = {s_header.view, s_separator, s_band_mid};
-    if (compact && s_panel) { /* every frame it moves: its band follows the word */
-        s_panel->SetSize((float)SCREEN_W, (float)POPUP_H, 0.0f);
-        s_panel->SetPos(0.0f, SCREEN_H / 2.0f - top - POPUP_H / 2.0f, 0.0f);
+    /* the top band, the hint and the footer band: the compact popup's places, then the RCO's (centre-origin, y up) */
+    static const float place[2][3] = {{POPUP_H / 2.0f - 6.0f, -POPUP_H / 2.0f + 22.0f, -POPUP_H / 2.0f + 22.0f},
+                                      {266.0f, -250.0f, -250.0f}};
+    ui::Widget *full[3] = {s_header.view, s_separator, s_band_mid}, *moved[3] = {s_band_top, s_hint, s_band_footer};
+    if (s_panel) { /* the compact popup's band follows the word, every render */
+        s_panel->SetSize((float)SCREEN_W, compact ? (float)POPUP_H : (float)SCREEN_H, 0.0f);
+        s_panel->SetPos(0.0f, compact ? SCREEN_H / 2.0f - top - POPUP_H / 2.0f : 0.0f, 0.0f);
     }
     if (compact == s_compact)
         return;
     s_compact = compact;
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 3; i++) {
         if (full[i]) {
             if (compact) full[i]->Hide();
             else full[i]->Show();
         }
-    if (compact) { /* the panel's children sit at its centre: the top band, the body, the footer band and hint */
-        if (s_band_top) s_band_top->SetPos(0.0f, POPUP_H / 2.0f - 6.0f, 0.0f);
+        if (moved[i]) moved[i]->SetPos(0.0f, place[!compact][i], 0.0f);
+    }
+    if (compact) /* the body between the top band and the footer */
         pane_size(&s_body, POPUP_H - 12.0f - 44.0f, POPUP_H / 2.0f - 12.0f);
-        if (s_hint) s_hint->SetPos(0.0f, -POPUP_H / 2.0f + 22.0f, 0.0f);
-        if (s_band_footer) s_band_footer->SetPos(0.0f, -POPUP_H / 2.0f + 22.0f, 0.0f);
-        return;
-    }
-    if (s_panel) {
-        s_panel->SetSize((float)SCREEN_W, (float)SCREEN_H, 0.0f);
-        s_panel->SetPos(0.0f, 0.0f, 0.0f);
-    }
-    /* shell/rco/vitajpoverlay.xml's places */
-    if (s_band_top) s_band_top->SetPos(0.0f, 266.0f, 0.0f);
-    if (s_hint) s_hint->SetPos(0.0f, -250.0f, 0.0f);
-    if (s_band_footer) s_band_footer->SetPos(0.0f, -250.0f, 0.0f);
-    layout_apply(s_header.h);
+    else
+        layout_apply(s_header.h);
 }
 
 /* The marks and the word's reading off the game's text (a closed map, the region selector). */
@@ -464,7 +480,8 @@ static void ontext_place(void)
             }
             int w = (int)cps * 18 + 10, x = r[0].x > SCREEN_W - RUBY_W ? SCREEN_W - RUBY_W : r[0].x, y = r[0].y - RUBY_H - 2;
             if (w > RUBY_W) w = RUBY_W;
-            sceClibSnprintf(markup, sizeof(markup), "<font color=\"#ffd24a\">%s</font>", s_ruby_text);
+            static const char ruby_format[] VJO_DATA_TABLE(overlay_ruby_format) = "<font color=\"#ffd24a\">%s</font>";
+            sceClibSnprintf(markup, sizeof(markup), ruby_format, s_ruby_text);
             set_rich(s_ruby, markup);
             s_cover[1].x = x; s_cover[1].y = y; s_cover[1].w = w; s_cover[1].h = RUBY_H;
             s_ruby_bg->SetSize((float)w, (float)RUBY_H, 0.0f);
@@ -988,20 +1005,20 @@ static void open_page(void)
         vjo_arena_init(&s_ui, NULL, 0);
         return;
     }
-    s_panel = s_page->FindChild("vjo_panel");
-    s_header.text = (ui::Text *)s_page->FindChild("vjo_header");
-    s_body.text = (ui::Text *)s_page->FindChild("vjo_body");
-    s_header.view = s_page->FindChild("vjo_header_view");
-    s_header.box = s_page->FindChild("vjo_header_box");
-    s_body.view = s_page->FindChild("vjo_body_view");
-    s_body.box = s_page->FindChild("vjo_body_box");
-    s_separator = s_page->FindChild("vjo_separator");
-    s_band_mid = s_page->FindChild("vjo_band_mid");
+    s_panel = s_page->FindChild(k_vjo_panel);
+    s_header.text = (ui::Text *)s_page->FindChild(k_vjo_header);
+    s_body.text = (ui::Text *)s_page->FindChild(k_vjo_body);
+    s_header.view = s_page->FindChild(k_vjo_header_view);
+    s_header.box = s_page->FindChild(k_vjo_header_box);
+    s_body.view = s_page->FindChild(k_vjo_body_view);
+    s_body.box = s_page->FindChild(k_vjo_body_box);
+    s_separator = s_page->FindChild(k_vjo_separator);
+    s_band_mid = s_page->FindChild(k_vjo_band_mid);
     s_header.h = HEADER_H_INITIAL; /* the page opens with the RCO layout */
     s_body.h = BODY_H_INITIAL;
     pane_reset(&s_header);
     pane_reset(&s_body);
-    s_hint = (ui::RichText *)s_page->FindChild("vjo_hint");
+    s_hint = (ui::RichText *)s_page->FindChild(k_vjo_hint);
     {
         /* The views get these empty scrollbars instead of their default
          * ones, which flashed whenever the text moved. */
@@ -1013,19 +1030,19 @@ static void open_page(void)
                 w->Hide();
         }
     }
-    s_region_layer = s_page->FindChild("vjo_region_layer");
-    s_region_rect = s_page->FindChild("vjo_region_rect");
-    s_region_cursor = s_page->FindChild("vjo_region_cursor");
-    s_region_hint = (ui::RichText *)s_page->FindChild("vjo_region_hint");
+    s_region_layer = s_page->FindChild(k_vjo_region_layer);
+    s_region_rect = s_page->FindChild(k_vjo_region_rect);
+    s_region_cursor = s_page->FindChild(k_vjo_region_cursor);
+    s_region_hint = (ui::RichText *)s_page->FindChild(k_vjo_region_hint);
     if (s_region_layer)
         s_region_layer->Hide();
     /* API 37: the marks on the game's text and the word's reading, shown by ontext_place */
-    s_mark[0] = s_page->FindChild("vjo_mark_0");
-    s_mark[1] = s_page->FindChild("vjo_mark_1");
-    s_ruby_bg = s_page->FindChild("vjo_ruby_bg");
-    s_ruby = (ui::RichText *)s_page->FindChild("vjo_ruby");
-    s_band_top = s_page->FindChild("vjo_band_top");
-    s_band_footer = s_page->FindChild("vjo_band_footer");
+    s_mark[0] = s_page->FindChild(k_vjo_mark_0);
+    s_mark[1] = s_page->FindChild(k_vjo_mark_1);
+    s_ruby_bg = s_page->FindChild(k_vjo_ruby_bg);
+    s_ruby = (ui::RichText *)s_page->FindChild(k_vjo_ruby);
+    s_band_top = s_page->FindChild(k_vjo_band_top);
+    s_band_footer = s_page->FindChild(k_vjo_band_footer);
     ontext_hide();
     s_compact = 0;
     /* Wrapped text with Japanese line-breaking rules. */
