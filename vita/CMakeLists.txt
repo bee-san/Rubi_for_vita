@@ -137,7 +137,7 @@ add_library(vjo_bearssl STATIC
   ${ROOT}/third_party/bearssl/src/hash/sha1.c ${ROOT}/third_party/bearssl/src/hash/sha2small.c
   ${ROOT}/third_party/bearssl/src/codec/dec32be.c ${ROOT}/third_party/bearssl/src/codec/enc32be.c)
 target_include_directories(vjo_bearssl PUBLIC ${ROOT}/third_party/bearssl/inc PRIVATE ${ROOT}/third_party/bearssl/src)
-target_compile_options(vjo_bearssl PRIVATE -O2 -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
+target_compile_options(vjo_bearssl PRIVATE -Os -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
 
 add_library(vjo_core_vita STATIC
   ${ROOT}/core/arena.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
@@ -249,6 +249,11 @@ set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${RO
   ${ROOT}/shell/anki_queue.c ${ROOT}/shell/history.c ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/strip.cpp ${ROOT}/core/text_rows.c ${ROOT}/core/arena.c
   PROPERTIES COMPILE_OPTIONS "-Os")
+# Reading statistics must fit the existing Shell pages. The control/UI and history parser are
+# cold paths; GCC's size-first -Oz also trades instructions for smaller encodings there. Hashing
+# for saved notes/queues is built at -Os above; no OCR inference runs in these objects.
+set_property(SOURCE ${ROOT}/shell/worker.c ${ROOT}/shell/overlay.cpp
+  ${ROOT}/shell/history.c ${ROOT}/core/history_lines.c APPEND PROPERTY COMPILE_OPTIONS "-Oz")
 # The Shell's integer division (shell/divide.c): for size, and each helper in its own section, so the
 # build links only those its code calls (the normal build no divmod).
 set_source_files_properties(${ROOT}/shell/divide.c PROPERTIES COMPILE_OPTIONS "-Os;-ffunction-sections")
