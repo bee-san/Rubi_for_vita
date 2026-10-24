@@ -137,7 +137,14 @@ add_library(vjo_bearssl STATIC
   ${ROOT}/third_party/bearssl/src/hash/sha1.c ${ROOT}/third_party/bearssl/src/hash/sha2small.c
   ${ROOT}/third_party/bearssl/src/codec/dec32be.c ${ROOT}/third_party/bearssl/src/codec/enc32be.c)
 target_include_directories(vjo_bearssl PUBLIC ${ROOT}/third_party/bearssl/inc PRIVATE ${ROOT}/third_party/bearssl/src)
-target_compile_options(vjo_bearssl PRIVATE -Os -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
+target_compile_options(vjo_bearssl PRIVATE -O2 -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
+
+# The Shell hashes saved notes and queues on cold paths. Give it a size-built copy so the game
+# worker's model checks and the Settings app keep their existing -O2 hashing code.
+get_target_property(_vjo_hash_sources vjo_bearssl SOURCES)
+add_library(vjo_bearssl_shell STATIC ${_vjo_hash_sources})
+target_include_directories(vjo_bearssl_shell PUBLIC ${ROOT}/third_party/bearssl/inc PRIVATE ${ROOT}/third_party/bearssl/src)
+target_compile_options(vjo_bearssl_shell PRIVATE -Os -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
 
 add_library(vjo_core_vita STATIC
   ${ROOT}/core/arena.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
@@ -151,7 +158,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c
   ${ROOT}/core/hook_pick.c) # API 31: text-source config helpers
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
-target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
+target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl_shell)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
   -ffunction-sections -fdata-sections)
 # Cold core paths (configuration, parsers, queue files): built for
@@ -251,7 +258,7 @@ set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${RO
   PROPERTIES COMPILE_OPTIONS "-Os")
 # Reading statistics must fit the existing Shell pages. The control/UI and history parser are
 # cold paths; GCC's size-first -Oz also trades instructions for smaller encodings there. Hashing
-# for saved notes/queues is built at -Os above; no OCR inference runs in these objects.
+# for the Shell's saved notes/queues is built at -Os above; no OCR inference runs in these objects.
 set_property(SOURCE ${ROOT}/shell/worker.c ${ROOT}/shell/overlay.cpp
   ${ROOT}/shell/history.c ${ROOT}/core/history_lines.c APPEND PROPERTY COMPILE_OPTIONS "-Oz")
 # The Shell's integer division (shell/divide.c): for size, and each helper in its own section, so the
@@ -295,7 +302,7 @@ target_link_libraries(VitaJPOverlay_Shell
   # Weak: the enter button's registry read (vita/buttons_vita.c); unbound, it
   # fails and × enters, as before.
   SceRegistryMgr_stub_weak
-  vjo_bearssl  # again after the core: its 64-bit division comes from libgcc (32-bit: shell/divide.c)
+  vjo_bearssl_shell  # again after the core: its 64-bit division comes from libgcc (32-bit: shell/divide.c)
   gcc)
 set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
 set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
