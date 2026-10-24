@@ -351,15 +351,16 @@ class Collect(unittest.TestCase):
                      "free game USER before the self-test's first block (selftest-report.txt): 91,226,112 B",
                      "recommendation: Large (the largest tier",
                      "free game USER the lowest any job in log.txt saw",
-                     "recommendation: none: not even Small fits",
-                     "recommendation for this game: none (not even Small fits) (the most conservative",
+                     "recommendation: Normal (the largest tier",
+                     "recommendation for this game: Normal (the most conservative",
                      "PASS: every stage completed",
                      "  - 1 crash dump on the card is from earlier boots (above): install_ftp.sh --collect offers to "
                      "archive them off the Vita",
                      "log.txt rotated"):
             self.assertIn(text, analysis)
-        # the lowest free USER any job saw (5,000,000 B, a refused job) is under Small's 4 MiB reserve +
-        # 1,720,320 B first job: the game's recommendation is the most conservative sample's
+        # the lowest free USER any job saw (5,000,000 B, a job the old 4 MiB reserve refused) has room for
+        # Normal's 2,449,408 B first job beside the fixed 1 MiB reserve, not for Large's 4,399,104 B: the
+        # game's recommendation is the most conservative sample's
         problems = analysis.split("lines reporting a problem", 1)[1].split("anki_queue on the card")[0]
         self.assertNotIn("key MISSING", problems)
         self.assertNotIn("anki: sent N, N duplicates, N unreadable", problems)  # a clean summary is not a problem
@@ -376,8 +377,8 @@ class Collect(unittest.TestCase):
         self.assertEqual([(v["verdict"], v["ratio"], v["n"]) for v in summary["log"]["boost_verdicts"]],
                          [("unclear", None, 0)])
         self.assertEqual(summary["selftest"]["ocr_result"], "PASS")
-        self.assertEqual([t["recommendation"] for t in summary["tiers_all"]], ["Large", None])
-        self.assertIsNone(summary["tiers"]["recommendation"])
+        self.assertEqual([t["recommendation"] for t in summary["tiers_all"]], ["Large", "Normal"])
+        self.assertEqual(summary["tiers"]["recommendation"], "Normal")
         self.assertEqual(summary["selftest"]["tiers"]["rows"][2]["need"], 1_720_320)
 
     def test_the_overlay_app_is_collected_read_only_and_compared(self):
