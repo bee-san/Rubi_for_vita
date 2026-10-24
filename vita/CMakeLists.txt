@@ -254,7 +254,8 @@ set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${RO
   PROPERTIES COMPILE_OPTIONS "-Os")
 # The Shell's integer division (shell/divide.c): for size, and each helper in its own section, so the
 # build links only those its code calls (the normal build no divmod).
-set_source_files_properties(${ROOT}/shell/divide.c PROPERTIES COMPILE_OPTIONS "-Os;-ffunction-sections")
+# GCC emits calls to these helpers after LTO's reachability pass; keep this tiny ABI object native.
+set_source_files_properties(${ROOT}/shell/divide.c PROPERTIES COMPILE_OPTIONS "-Os;-ffunction-sections;-fno-lto")
 if(VJO_WITH_NCNN)
   target_link_libraries(VitaJPOverlay_Shell vjo_ocr ncnn)
 endif()
@@ -362,7 +363,7 @@ if(VJO_WITH_VOCR)
   # overlaps": the normal build's worker with vita-vn-ocr #109's counter re-decode, its code ending 1,112 B
   # below 128 KiB). The gap costs no memory: only the segments are loaded (the ledger counts their pages).
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
-    -Wl,--undefined=module_start -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning -Wl,--defsym,__sce_headroom=0x1000)
+    -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning -Wl,--defsym,__sce_headroom=0x1000)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
   target_link_libraries(VitaJPOverlay_OCR vjo_vocr vjo_vocr_rt vjo_bearssl VitaJPOverlay_Kernel_stub_weak
     SceLibKernel_stub SceKernelThreadMgr_stub SceSysmem_stub_weak SceProcessmgr_stub_weak
