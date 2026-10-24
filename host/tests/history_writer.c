@@ -87,7 +87,7 @@ int main(int argc, char **argv)
     static char item[2 * VJO_GAME_OCR_TEXT_BYTES];
     static VjoGameOcrResult result;
     int more = 1;
-    if ((argc == 3 || argc == 4) && !strcmp(argv[1], "--total")) {
+    if ((argc == 3 || argc == 4) && (!strcmp(argv[1], "--total") || !strcmp(argv[1], "--stats"))) {
         static uint8_t mem[24 * 1024] __attribute__((aligned(8)));
         static uint64_t ns[101];
         VjoArena scratch;
@@ -108,6 +108,11 @@ int main(int argc, char **argv)
         }
         for (unsigned a = 1; a < runs; a++) /* the median */
             for (unsigned b = a; b && ns[b - 1] > ns[b]; b--) { uint64_t t = ns[b]; ns[b] = ns[b - 1]; ns[b - 1] = t; }
+        if (!strcmp(argv[1], "--stats")) {
+            printf("%llu %llu %llu\n", (unsigned long long)total.chars,
+                (unsigned long long)total.time.active_us, (unsigned long long)total.time.timed_chars);
+            return 0;
+        }
         printf("%llu %u %u %llu\n", (unsigned long long)total.chars, (unsigned)total.covered, windows,
                (unsigned long long)ns[runs / 2]);
         return 0;

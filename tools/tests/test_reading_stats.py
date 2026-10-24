@@ -973,6 +973,31 @@ class ShellTotal(unittest.TestCase):
         self.assertGreater(windows, 50)
 
     @need_writer
+    def test_overlay_time_at_15_seconds(self):
+        """Independent Python reference, including many scan-window boundaries and older CSV versions."""
+        for path in (FIXTURE, FIXTURE_091):
+            report = rs.read_history([path])
+            rs.credit_time(report.records, 15)
+            want = rs.summarize(report.records)[0]
+            out = subprocess.check_output([WRITER, "--stats", str(path)], text=True)
+            chars, us, timed = map(int, out.split())
+            self.assertEqual(chars, want.characters)
+            self.assertAlmostEqual(us / 1e6, want.seconds, places=5)
+            self.assertEqual(timed, want.timed_characters)
+        rnd = random.Random(272)
+        records, sec = [], 0
+        for i in range(2000):
+            sec += rnd.choice([0.125, 1, 5, 15, 15.125, 80])
+            records.append((A if i % 7 else B, sec, f'{i}猫\n"台詞", ABC', None))
+        path = self.dir / "timed.csv"
+        write_history(path, records)
+        report = rs.read_history([path])
+        rs.credit_time(report.records, 15)
+        want = rs.summarize(report.records)[0]
+        chars, us, timed = map(int, subprocess.check_output([WRITER, "--stats", str(path)], text=True).split())
+        self.assertEqual((chars, us, timed), (want.characters, round(want.seconds * 1e6), want.timed_characters))
+
+    @need_writer
     def test_a_cut_record_and_the_one_after_it(self):
         """Every cut of a record, with the next append right after it: the records before the cut always count,
         and the cut one and the one after it each at most once, with their own characters."""

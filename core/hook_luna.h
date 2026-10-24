@@ -53,6 +53,11 @@ typedef struct {
  * tried. 1 yes, 0 no. */
 int vjo_luna_version_ok(const VjoLunaSite *all, unsigned n, const VjoLunaSite *s, uint16_t app_ver);
 
+/* The site of all[0..n) at segment-0 offset off (its address less VJO_LUNA_SEG0, the Thumb bit
+ * cleared) that is ported and that app_ver may try (vjo_luna_version_ok), or NULL. A Rubi verified
+ * entry at the same address takes its text's hookfunc and filter from it (game_ocr/hooks.c). */
+const VjoLunaSite *vjo_luna_site_at(const VjoLunaSite *all, unsigned n, uint32_t off, uint16_t app_ver);
+
 /* Reads up to max bytes at the game's address addr into dst, never past the end of
  * the memory block that holds addr. unit 1 or 2: stop after the first NUL unit of
  * that size (copied, and counted); unit 0: read exactly max or nothing. Returns the

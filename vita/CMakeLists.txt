@@ -37,7 +37,7 @@ option(VJO_WITH_VOCR "Build the vita-vn-ocr local OCR backend (needs its runtime
 # The release's version: the base zips' names and the Rubi app's version (beside its title). The
 # test builds use this version with a -test.N suffix; the final release sets it to its own
 # version first (docs/release-variants.md), and tools/package_variants.py checks the two agree.
-set(VJO_VERSION "0.9.3" CACHE STRING "Release archive version")
+set(VJO_VERSION "0.9.4" CACHE STRING "Release archive version")
 # The build variant (docs/release-variants.md). ON, the default, is the debug build, the test
 # builds' own: every log line, the self-test, the timing and trace lines, the game worker's step
 # log. OFF is the normal build, the release's main download: errors, warnings and a short log;

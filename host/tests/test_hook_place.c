@@ -208,6 +208,32 @@ static void test_verified(void)
     TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code), SEG_BASE + 2, 0xC5187D60u) == VJO_PLACE_ALIGN);
 }
 
+/* アマツツミ's entry (PCSG01198): Luna's site, which the placement check refuses as no entry (it is inside
+ * a function), recorded with the 16 bytes of the decrypted eboot (APP_VER 01.00, NID 0x8AA413F2). */
+static void test_verified_amatsutsumi(void)
+{
+    static const uint8_t sig[16] = {0x09, 0xEB, 0x87, 0x0E, 0x0E, 0xF5, 0xB1, 0x5E,
+                                    0x01, 0x37, 0x4E, 0xF8, 0x04, 0x0B, 0x09, 0x2F};
+    static uint8_t code[0x80000];
+    const VjoPlaceVerified *v;
+    TEST_CHECK(vjo_place_verified("PCSG01198", &v) == 1 && v);
+    TEST_CHECK(v->module_nid == 0x8AA413F2u && v->off == 0x745C8u && v->thumb == 1 && v->reg == 2);
+    TEST_CHECK(v->encoding == VJO_HOOK_ENC_CP932 && v->sig_len == 16 && v->padding == 0 && !memcmp(v->sig, sig, 16));
+    TEST_CHECK(vjo_place_title_verified("PCSG01198") == 1);
+    TEST_CHECK(vjo_place_verified("PCSG00415", &v) == 1); /* CLANNAD's is still its own */
+    vjo_place_verified("PCSG01198", &v);
+    memset(code, 0, sizeof(code));
+    memcpy(code + 0x745C8, sig, sizeof(sig));
+    /* the placement check (Luna's path) refuses it: no PUSH saving LR at the site */
+    TEST_CHECK(vjo_place_isa(code + 0x745C8, 16, 0x800785C8u) == -1);
+    TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code), SEG_BASE, 0x8AA413F2u) == VJO_PLACE_OK);
+    TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code), SEG_BASE, 0x8AA413F3u) == VJO_PLACE_SIGNATURE);
+    code[0x745C8 + 15] ^= 1; /* the 16th byte counts too */
+    TEST_CHECK(vjo_place_check_verified(v, code, sizeof(code), SEG_BASE, 0x8AA413F2u) == VJO_PLACE_SIGNATURE);
+    code[0x745C8 + 15] ^= 1;
+    TEST_CHECK(vjo_place_check_verified(v, code, 0x745C8 + 15, SEG_BASE, 0x8AA413F2u) == VJO_PLACE_RANGE);
+}
+
 /* The CALL prefilter: Japanese lines pass, binary structs and Latin text do not. */
 static void test_prefilter(void)
 {
@@ -315,6 +341,7 @@ TEST_LIST = {
     {"range_align", test_range_align},
     {"isa", test_isa},
     {"verified", test_verified},
+    {"verified: アマツツミ, a site inside a function", test_verified_amatsutsumi},
     {"prefilter", test_prefilter},
     {"pointer_array", test_pointer_array},
     {"reasons", test_reasons},

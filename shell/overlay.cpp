@@ -483,10 +483,11 @@ static void render(int new_content)
             const VjoLineDebug *d = &g_view.line_debug;
             char info[512];
             /* Cold diagnostic strings live in the existing data pages, not the crowded code segment. */
-            char total[32]; /* 20 digits and 6 commas at most (history.c) */
+            vjo_history_total_summary(info, sizeof(info));
+            vjo_styled_puts(&body, info, VJO_RGB_RANK, en);
             static const char source[] VJO_DATA_TABLE(line_debug_source) =
-                "Total characters read: %s\nLine debug · Triangle hides\nSource: %s%s\n";
-            sceClibSnprintf(info, sizeof(info), source, vjo_history_total_text(total, sizeof(total)),
+                "Line debug · Triangle hides\nSource: %s%s\n";
+            sceClibSnprintf(info, sizeof(info), source,
                             !s_local_cursor_mode || !d->origin ? "Unknown" : d->origin == VJO_LINE_HOOK ? "Hook" : "OCR",
                             s_history ? " (history.csv)" : "");
             vjo_styled_puts(&body, info, VJO_RGB_RANK, en);

@@ -309,109 +309,54 @@ tracker counts time while it runs and stops its clock 60 s after the last line
 
 ## Total characters read
 
-With the overlay open, △ (Triangle) shows the line's source view
-([native-hooks.md](native-hooks.md#hidden-line-diagnostics)), and its first line is the total:
+With the overlay open, △ (Triangle) shows these statistics above the line diagnostics:
 
 ```
 Total characters read: 1,234,567
+Characters/hour: 8,234
+Total time played: 149:55:48 (active)
 ```
 
-It is the sum of [`characters`](#characters) over every record of `history.csv`, every game's: the
-characters column of `tools/reading_stats.py`'s **All games** row for the same file. The two differ only
-where a power loss cut a record: the Shell counts a cut record when its line and the time's first digit
-after it were written, never the record that the next boot appended right after the cut (it runs on from
-the cut one, with no line break before it), nor one after a header cut short; the tool counts the record
-after the cut and never the cut one (it is skipped as incomplete). Until the next append, the Shell also
-leaves out a file's last whole record when not even the cut record's first two bytes were written after it
-(zeros a lost write left, or its first quote alone), which the tool counts. `characters` is not the line's length:
-punctuation, brackets, symbols, spaces and line breaks count nothing ([Characters](#characters)). On the 50
-real VOCR textboxes of `host/fixtures/word_lookup`, written by the writer, the column's sum is 1,329, the
-lines' code points 1,593 (`len()`, 19.9 % more) and 1,505 without their 88 line breaks (13.2 % more; 176
-marks: `。、「」！？…` and the like), and their UTF-8 bytes 4,533 [measured: the writer's records, Python's
-`len` on each `line`]. The total counts what was recorded, so a line recorded twice (a part-way read,
-#252) counts twice, as in the tool. It is every game's: a total of the game in front would need another
-count of the whole file at each change of game, or a table of every game's, and the normal Shell's code
-pages have 4 B of room left (docs/memory-ledger.md#the-reading-total).
+All three cover every game's recorded lines in `history.csv`. Characters retain the existing
+[character definition](#characters): Japanese and Latin letters and digits, excluding punctuation,
+spaces and line breaks. Repeated lines that were recorded separately count separately.
 
-**How it is kept, so that a press costs nothing.** The Shell does not count the file at a press. It
-keeps the total, the characters of the records that start in `history.csv`'s first `covered` bytes, in its
-data (56 B), under the view's lock:
+**Time played is an estimate of active reading**, using the existing Unix timestamps, in file order.
+Only a positive interval of **15 seconds or less** between adjacent records of the same game counts.
+A longer pause, a game change, an invalid timestamp or a clock going backwards starts a new interval.
+The first and last line of a session have no independently measurable reading duration; time is added
+when the next recorded line arrives. Menus, unrecorded gameplay and AFK time are not measured.
+Characters/hour uses only the earlier lines of those timed intervals divided by their total duration;
+untimed lines still count in total characters, but cannot inflate reading speed. With no timed interval,
+speed is `-` and time is `0:00:00`. Hook and OCR records follow the same rule.
 
-- While the total is known, the writer (VjoNet) adds each record's `characters` as it appends the
-  record, when the record starts where the total's bytes end; otherwise it marks the total unknown and
-  wakes the control thread to count what it does not know. Every append, whatever the total's state, also
-  takes and releases the view's mutex (two system calls, unmeasured) and raises a sequence number twice,
-  with a memory barrier each time: some 40 instructions a record (`vjo_history_append` 1,068 → 1,100 B of
-  code, `flush` +6 B), after the result was published and the record written, synced and closed, as before
-  [measured: the normal Shell's compiled code].
-- It is counted from the file only when it is not known: at the first press ever, at the first press after
-  the Shell starts (from where the kept total ends: only the records appended since it was kept), and when
-  `history.csv` was replaced, cut or changed under it (the writer then asks for the count itself). The view
-  says `counting…` until the count ends and then shows the number (it is drawn again). The control thread
-  reads the file 24,512 B at a time, with the byte before them, into its existing 24 KiB scratch (line
-  history's window), one window a wakeup, after the wakeup's other work, and wakes itself for the next. A
-  count that an append ran beside goes on from there at the next wakeup (50 ms at most). A file that ends in
-  no line break (a record a power loss cut) is counted but for its newest record: the cut one, or, when not
-  even the cut one's first two bytes were written (zeros a lost write left), the whole one before it. That
-  record waits for the next record's append: the count then takes it, and the cut one when its line was
-  written, as a fresh count does. A
-  failed open or read makes the view say `unavailable`; the next press tries again.
-- `ux0:data/VitaJPOverlay/history_total.bin` keeps it between starts: 16 bytes, the total (64-bit), the
-  bytes of `history.csv` it is the total of and a check (32-bit each, little-endian), written through a
-  temporary file and a rename when a count ends and at each game's exit when lines were added. A missing,
-  torn or wrong file (its check, a size past the file's end, no record starting where its bytes end), or
-  one of another `history.csv`, is not used: the whole file is counted again. Moving `history.csv` away
-  (Rubi then begins a new one) starts the total again: it is the file's. (A file put in its place with a
-  record starting exactly where the kept total ends is taken for the same file.)
-- A `history.csv` of 4 GiB or more (some ten million records) has no total: `unavailable`.
+For an external report with the same timeout, run:
 
-What it costs [host: measured, an AMD EPYC 9R14, the median of 5 runs of `vjo-stage-bench`; A9: the Vita
-compiler's code of the normal build under `qemu-arm -cpu cortex-a9`, `tools/bench_stages.py a9`, costed
-with vita-vn-ocr's Cortex-A9 model: an estimate; nothing of this has run on a console]:
+```sh
+python3 tools/reading_stats.py history.csv --break-minutes 0.25
+```
 
-| | host | Cortex-A9, 333 MHz (444 MHz) |
-| --- | --- | --- |
-| a press, the total known: the number with its commas (`total_number`) | 38 ns | 578 instructions: 0.9-1.8 µs (0.7-1.4 µs) |
-| a record's append | | some 40 instructions and the mutex's two system calls (unmeasured) |
-| the count, a record (`total_count`, 2,000 records of 512 B) | 0.80 µs | 9,060 instructions: 14-30 µs (10-22 µs) |
-| line history's read, for comparison (`history_scan`, 24,513 B) | 21 µs | 297,258 instructions; 316,983 → 297,608 (−6.1 %) on main's and this change's libraries in a copy of the bench that stubs the total's functions (main's library has none): its record parser is shared now |
+The tool sorts by timestamp; the overlay follows append order so that backward clock changes break
+an interval. The tool also accepts some externally edited CSV formats; the overlay reads Rubi's native
+format (quoted fields and six fractional timestamp digits). Zero-duration intervals contribute no timed
+characters in the overlay. The existing power-loss recovery rule for character counts remains: a cut
+record with its line and time's first digit may count once, while a record glued to it without a newline
+is skipped. Invalid or incomplete timestamps never contribute time.
 
-A press also has paf lay out one more line of the view (33 characters), whose cost is unmeasured. The count
-of a whole file was measured on the host with `vjo-history-writer --total` (the Shell's code, its windows
-and reads; records of the 50 textboxes in turn, 408 B each as the writer writes them; the medians of 21
-counts in four sessions on a shared 64-core host, which differed by up to 18 %: the range). On the console it is the CPU, 14-30 µs a record (the A9 figure above, 333 MHz), and the reads, whose
-speed from the Shell is not measured for 24 KiB reads. Three bounds [estimates]: (a) the kernel broker's
-rate, 7.0-14.6 MB/s (on the console H15's 1,155,968 B weights were read through it, in 32 KiB pieces, and
-SHA-256-checked in 218-231 ms; the SHA-256's own 66-139 ms is itself an A9 estimate: `docs/performance.md`);
-(b) each window's read costing what a dictionary read costs the Shell, 3.82 ms a `sceIoLseek` +
-`sceIoRead` [measured on the console: `docs/performance.md`], plus its bytes at (a)'s rate; (c) 3.82 ms for
-each 4 KiB of it, if a read's cost grows with its bytes as with small random reads:
+**Counting and persistence.** A Triangle press does no file I/O. The control thread counts an unknown
+history in existing 24 KiB scratch, one window per wakeup, after other control work. The view says
+`Reading statistics: counting…` until ready, or `unavailable` on a failed read (the next press retries).
+While the totals are known, successful appends update them in constant space. The scan and writer use
+the same timing rule, including the interval across scan windows or a saved prefix. No new threads or
+heap allocations are used. While a count runs, it shares storage with game reads and word lookups ahead
+are deferred; console latency and CPU3 usage are unmeasured.
 
-| records | bytes | windows | host | console: (a) | (b) | (c) |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 407,617 | 17 | 0.77-0.92 ms | 0.04-0.09 s | 0.11-0.15 s | 0.4 s |
-| 10,000 | 4,072,498 | 168 | 7.5-8.9 ms | 0.4-0.9 s | 1.1-1.5 s | 3.9-4.1 s |
-| 100,000 | 40,721,308 | 1,676 | 76-90 ms | 4.2-8.8 s | 10.6-15.2 s | 39-41 s |
-
-(b) is the likeliest; (c) the most it could take. That is the first press's wait at most, once after an
-install; afterwards a press costs the number's formatting, and a restart's first press counts only what was
-recorded since the total was kept (each game's exit keeps it): for up to some 60 lines, one window, est.
-35-55 ms (two opens at the dictionary's 15.3 ms and one to six 4 KiB reads at its 3.82 ms:
-`docs/performance.md`). While a count runs:
-
-- The control thread's other work in each wakeup comes first, so a job, a refresh or a lookup it starts
-  waits at most for one window (est. 5.5-7.3 ms of reading by (b), 23 ms by (c), and 0.8-1.8 ms of counting
-  at 333 MHz). The overlay's input and drawing are the paf thread's and do not wait.
-- Words are not looked up ahead in the background (`prepare_words` runs only in a wakeup with no event, and
-  a count's self-wakeup is one), so until the count ends a cursor move waits for its own lookup (70-81 ms on
-  the console: `docs/performance.md`) where it could have found it prepared [read from the code; not
-  measured].
-- The count's reads share the memory card with the game's own reads and with the OCR worker's model reads
-  through the kernel's broker, which can slow both while it lasts [not measured].
-
-Nothing of it runs in the game: the game worker and the kernel plugin are the same bytes, and the OCR job's
-code is unchanged; the record's append, which the next job already waited for, takes the lock after its
-file is closed. CPU3 use is unmeasured (AGENTS.md rule 8).
+`ux0:data/VitaJPOverlay/history_total.bin` is a **48-byte** cache: character total, covered CSV bytes,
+checksum, active microseconds, timed characters, and the last line's timestamp, game fingerprint and
+character count. It is saved through the existing temporary-file/rename path after counting and on game
+exit when records were added. A missing, corrupt or old 16-byte character-only cache triggers a recount;
+`history.csv` is never rewritten. A truncated/replaced file detected at the prefix boundary resets all
+three statistics. Histories of 4 GiB or more remain unsupported by the on-device totals.
 
 ## The format and older files
 

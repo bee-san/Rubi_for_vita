@@ -44,6 +44,8 @@ int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filte
 void vjo_history_total_want(void);
 /* Under the view lock: the total as the view shows it, written into buf, or "counting…" or "unavailable". */
 const char *vjo_history_total_text(char *buf, size_t cap);
+/* Under the view lock: all three reading statistics, or the count state. */
+void vjo_history_total_summary(char *buf, size_t cap);
 /* Control thread, each wakeup: one window (24 KiB, in scratch) of a count asked for. 1 while the count has
  * more (wake the thread again), 0 otherwise; a count that an append ran beside goes on at the next wakeup
  * (the 50 ms poll's at the latest). A count's end saves the total to history_total.bin. */

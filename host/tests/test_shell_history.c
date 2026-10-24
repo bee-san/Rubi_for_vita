@@ -968,7 +968,7 @@ static void test_total_recovers_from_a_bad_kept_total(void)
         {"a total of nothing", {0, 0, 0}, sizeof(good)},
     };
     for (size_t k = 0; k < sizeof(bad) / sizeof(bad[0]); k++) {
-        if (!bad[k].file.check) bad[k].file.check = total_check(bad[k].file.chars, bad[k].file.covered);
+        if (!bad[k].file.check) bad[k].file.check = total_file_check(&bad[k].file);
         f = fopen(total_file(), "wb");
         TEST_ASSERT(f && fwrite(&bad[k].file, 1, bad[k].len, f) == bad[k].len);
         fclose(f);
@@ -1373,7 +1373,96 @@ static void test_total_with_an_append_during_a_round_at_the_end(void)
                 "%llu, want %llu", (unsigned long long)total.chars, (unsigned long long)(want + a6_chars));
 }
 
+static void test_reading_time_and_speed(void)
+{
+    reset();
+    count_total();
+    char summary[256];
+    vjo_history_total_summary(summary, sizeof(summary));
+    TEST_CHECK(strstr(summary, "Characters/hour: -") && strstr(summary, "0:00:00 (active)"));
+    /* Unequal line lengths catch using the last/current line, or all characters, for the rate. */
+    const struct { const char *line; uint64_t us; const char *game; } rows[] = {
+        {"あいうえお", 100000000, "PCSG00415"},
+        {"AB", 110000000, "PCSG00415"},    /* 10 s, five timed chars */
+        {"猫", 125000000, "PCSG00415"},    /* exactly 15 s, two timed chars */
+        {"長い休憩後", 140000001, "PCSG00415"}, /* >15 s: no credit */
+        {"別のゲーム", 141000001, "PCSG00002"}, /* switching games: no credit */
+        {"逆行", 139000001, "PCSG00002"},   /* clock rollback: no credit */
+        {"同時刻", 139000001, "PCSG00002"}, /* zero delta: no timed chars */
+        {"再開", 140000001, "PCSG00002"},   /* 1 s, three timed chars */
+    };
+    uint64_t chars = 0;
+    for (size_t i = 0; i < sizeof(rows)/sizeof(rows[0]); i++) {
+        VjoHistoryRecord r = record(rows[i].line);
+        r.time_us = rows[i].us;
+        strcpy(r.title_id, rows[i].game);
+        TEST_ASSERT(vjo_history_append(&r) == 1);
+        chars += vjo_line_characters(rows[i].line, strlen(rows[i].line));
+    }
+    TEST_CHECK(total.chars == chars && total.time.active_us == 26000000 && total.time.timed_chars == 10);
+    vjo_history_total_summary(summary, sizeof(summary));
+    TEST_CHECK(strstr(summary, "Characters/hour: 1,384\n") && strstr(summary, "0:00:26 (active)"));
+    VjoReadingTime running = total.time;
+    vjo_history_total_keep();
+    /* Reboot: the cache's boundary line must time the first newly recorded line exactly once. */
+    memset(&total, 0, sizeof(total));
+    VjoHistoryRecord r = record("次の日");
+    r.time_us = 145000001;
+    strcpy(r.title_id, "PCSG00002");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    TEST_CHECK(count_total() == 1);
+    TEST_CHECK(total.time.active_us == 31000000 && total.time.timed_chars == 12);
+    /* A complete recount has exactly the same statistics. */
+    VjoReadingTime kept = total.time;
+    memset(&total, 0, sizeof(total)); unlink(total_file());
+    count_total();
+    TEST_CHECK(!memcmp(&total.time, &kept, sizeof(kept)));
+    TEST_CHECK(total.time.active_us > running.active_us);
+    /* A pre-time (16 byte) cache must rebuild rather than claim time zero for old history. */
+    TotalFile old = {total.chars, total.covered, total_check(total.chars, total.covered)};
+    FILE *f = fopen(total_file(), "wb");
+    TEST_ASSERT(f && fwrite(&old, 1, 16, f) == 16); fclose(f);
+    memset(&total, 0, sizeof(total)); count_total();
+    TEST_CHECK(!memcmp(&total.time, &kept, sizeof(kept)));
+    /* Replacing/truncating the CSV resets the timed prefix as well as its character count. */
+    TEST_ASSERT(truncate(path, 0) == 0);
+    r = record("新しい記録"); r.time_us = 1000000000;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    count_total();
+    TEST_CHECK(total.time.active_us == 0 && total.time.timed_chars == 0);
+}
+
+static void test_reading_time_windows_and_retry(void)
+{
+    reset();
+    VjoHistoryRecord r = record("x");
+    uint64_t chars = append_total_lines(&r, 300);
+    uint32_t last_chars = vjo_line_characters(result.text, strlen(result.text));
+    TEST_CHECK(count_total() > 3);
+    TEST_CHECK(total.time.active_us == 299000000 && total.time.timed_chars == chars - last_chars);
+    VjoReadingTime expected = total.time;
+    /* Read errors mid-count must not publish partially counted time or double it on retry. */
+    memset(&total, 0, sizeof(total)); unlink(total_file());
+    reads = 0; read_error = 2;
+    vjo_history_total_want();
+    TEST_CHECK(vjo_history_total_step(&count_scratch) == 1);
+    TEST_CHECK(vjo_history_total_step(&count_scratch) == 0 && total.state == TOTAL_FAILED);
+    read_error = 0;
+    count_total();
+    TEST_CHECK(!memcmp(&total.time, &expected, sizeof(expected)));
+    /* A cached time bit corrupted independently of the count is rejected and reconstructed. */
+    TotalFile bad = {total.chars, total.covered, 0, total.time};
+    bad.check = total_file_check(&bad);
+    bad.time.active_us++;
+    FILE *f = fopen(total_file(), "wb");
+    TEST_ASSERT(f && fwrite(&bad, 1, sizeof(bad), f) == sizeof(bad)); fclose(f);
+    memset(&total, 0, sizeof(total)); count_total();
+    TEST_CHECK(!memcmp(&total.time, &expected, sizeof(expected)));
+}
+
 TEST_LIST = {
+    {"reading time: AFK cutoff, speed, restarts and replacement", test_reading_time_and_speed},
+    {"reading time: window boundaries, errors and corrupt cache", test_reading_time_windows_and_retry},
     {"CSV quotes UTF-8 and complete OCR metadata", test_csv_fields_and_metadata},
     {"0.8.0's and 0.9's columns stay; characters and line_source are appended, also to their files",
      test_header_keeps_080_columns},

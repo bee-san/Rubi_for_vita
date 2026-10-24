@@ -110,12 +110,12 @@ for the measured results and remaining hardware checks.
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
 **Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
 
-Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.3/Rubi-0.9.3.zip)
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.4/Rubi-0.9.4.zip)
 and extract it.
 
 ### 1. Transfer modules
 
-Using VitaShell FTP, transfer the files from `Rubi-0.9.3/ur0/tai/` to `ur0:tai/` on the Vita:
+Using VitaShell FTP, transfer the files from `Rubi-0.9.4/ur0/tai/` to `ur0:tai/` on the Vita:
 
 - `VitaJPOverlay_Kernel.skprx`
 - `VitaJPOverlay_OCR.suprx`
@@ -142,13 +142,13 @@ If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the en
 
 ### 3. Transfer data files for the plugin
 
-Transfer `Rubi-0.9.3/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+Transfer `Rubi-0.9.4/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
 as `ur0:data/VitaJPOverlay`.
 
 ### 4. Transfer data files for OCR and the dictionary
 
 **This is a separate folder, not a duplicate of step 3.** Transfer
-`Rubi-0.9.3/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+`Rubi-0.9.4/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
 as `ux0:data/VitaJPOverlay`.
 
 If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
@@ -157,7 +157,7 @@ and keep your existing settings file when copying the data.
 ### 5. Transfer and install the VPK / companion app
 
 Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
-top-right corner of its LiveArea page. Transfer `Rubi-0.9.3/Rubi.vpk` to the Vita and install
+top-right corner of its LiveArea page. Transfer `Rubi-0.9.4/Rubi.vpk` to the Vita and install
 (promote) it with VitaShell. Accept the installation and extended-permissions prompts.
 
 ### 6. Reboot the Vita
@@ -307,7 +307,7 @@ app when it starts.
 | Up / Down | Move to the displayed row above/below, soft-wrapped rows included, keeping the horizontal position. **Up on the text's top row shows this game's earlier line** (with **Read text: Automatically**), dimmed between its neighbours: more Up goes further back, up to 32 lines; Down on an earlier line's last row goes to the line after it, and past the newest back to the current text ([line history](line-history.md)) |
 | Left stick | Move the cursor in the d-pad's four directions, faster while held: left/right a character at a time in reading order across the rows, in Whole word mode too (the shown word is not skipped, and its left never retraces a Right), up/down a row as Up/Down, a diagonal as the direction pushed farther; it stops at the text's first and last character, a one-row text's too. With **Japanese characters only** ON it lands only on kana and kanji, OFF on every visible character, punctuation and Latin included. Once the cursor rests for `stick_lookup_ms` (200 ms), not at each step, the word starting at its character is looked up and, in Whole word mode, highlighted ([left stick](touch-lookup.md#the-left-stick-138)) |
 | Right stick | Scroll a long definition |
-| Triangle | **Total characters read**, every game's lines in `history.csv` (the characters column's sum: kanji, kana, Latin letters and digits, no punctuation), above where the shown line came from (OCR or a native text hook); Triangle again brings the entry back. The first press after the Shell starts may say `counting…` for a moment while it reads what was recorded since; the very first one counts the whole file once, in the background (est. 1-1.5 s for 10,000 lines and 10-15 s for 100,000, up to 4 and 41 s: [total characters read](ocr-history.md#total-characters-read)) |
+| Triangle | **Total characters read, characters/hour and total time played** across recorded games, above the line's OCR/hook diagnostics. Time estimates active reading with a 15-second AFK cutoff; speed uses timed lines only. Triangle again brings the entry back. The first press may show `counting…` while history is counted in background windows; subsequent presses read cached totals. [Details](ocr-history.md#total-characters-read). |
 | Square | Draw the dialogue region with the left stick or the touchscreen ([Drawing the region](#drawing-the-region)) |
 | Hold Square | Restore the full-screen region |
 | L or R (tap alone) | Show the previous/next local dictionary's entry when **Dictionaries shown** is 2–8 |
@@ -363,15 +363,19 @@ including CLANNAD's register site, remain unverified on a console, and the norma
 reported console run. The behaviour below is checked on the host.
 
 - **Text source** (the Rubi app's OCR & lookup page, `text_source` in `config.ini`) applies when a
-  game next starts: **Automatic** (`auto`, the default) installs hooks only in the games that have a
-  hook entry, Rubi's own (CLANNAD, PCSG00415) or a site in LunaTranslator's table that Rubi has ported.
+  game next starts: **Automatic** (`auto`, the default) tries the game's own string-copy hooks in every
+  native Vita game that is ON, plus available table sites from Rubi or LunaTranslator.
   Seven titles that the table lists have no ported site (PCSB00985, PCSG00291, PCSG00451, PCSG00595,
-  PCSG00663, PCSG01081, PCSG01152): with Automatic they get OCR only, as a game with no entry does;
-  **Every game** (`hooks`)
-  adds the game's own string copies in every game that is ON; **OCR only** (`ocr`) installs none.
+  PCSG00663, PCSG01081, PCSG01152): Automatic still tries their string-copy hooks, as it does in games
+  with no table entry, and falls back to OCR if they provide no usable dialogue.
+  **Every game** (`hooks`) is retained for existing configurations and now makes the same attempts as
+  Automatic; **OCR only** (`ocr`) installs none. PSP games still use OCR only.
   An install or an update keeps the file's value; installs before this one wrote `text_source =
   ocr`, so choose Automatic once to use hooks.
-- **What is shown.** A hook first agrees with OCR on two different dialogue lines (70 % normalized
+- **What is shown.** Nonempty Luna hook text is preferred immediately, including short or unchanged
+  lines, without initial or periodic OCR checks. With multiple Luna streams, the newest wins.
+  When Luna supplies no text, regular hooks use the following validation and cache.
+  A regular hook first agrees with OCR on two different dialogue lines (70 % normalized
   similarity, four characters at least). It then answers seven new readings without OCR and checks the
   eighth. Successful scheduled checks grow the interval to 16, then 32. Reopening unchanged dialogue
   does not advance it. Rubi remembers the source for the exact game build and confirms it once after

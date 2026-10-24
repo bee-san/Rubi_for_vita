@@ -7,6 +7,19 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 
 ## The reading total
 
+Triangle also shows characters/hour and active time with a 15-second cutoff. Its state adds two
+32-byte `VjoReadingTime` snapshots (the committed prefix and scan in progress), measured by C
+`sizeof`, within the existing data-page allowance. The cache is now 48 bytes. The forward scan
+retains the preceding line across windows; the writer updates the same state on a successful append.
+No allocation, stack budget or thread is added. The compiled module ledger remains authoritative;
+console timing and CPU3 are unmeasured.
+
+### Original character-only measurements
+
+The figures below describe PR #272's initial character-only version, `b6f4385`, before time and
+speed were added. They are historical measurements, not timings or sizes of the extended version.
+
+
 The overlay's "Total characters read" (△; [ocr-history](ocr-history.md#total-characters-read)), measured
 with VitaSDK GCC 15.2.0 in `vitasdk/vitasdk:2026.08` (CI's digest), Release, main `e132517` (0.9.3) against
 this change, the build log's module rows (`tools/check_memory_ledger.py`, `--exact` in the normal build):

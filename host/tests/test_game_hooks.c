@@ -63,7 +63,10 @@ typedef struct {
     uint32_t kind, seq, key; /* key: VjoHookSnap.key (another caller's when its CALL slot was replaced) */
     const char *text; /* UTF-8, NULL: no text */
     int busy;         /* a game thread is writing it: the snapshot fails */
+    int filtered_empty; /* raw text exists, but the decoder/filter produces no text */
+    const VjoLunaSite *luna; /* only Luna entries carry the game's extraction/filter script */
 } FakeStream;
+static const VjoLunaSite fake_luna_site = {0};
 static FakeStream fs[VJO_HOOK_STREAMS + 1u];
 static uint32_t fake_mode, fake_installed, fake_refused;
 static unsigned snaps, texts;
@@ -82,6 +85,11 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
     *mode = fake_mode;
     *installed = fake_installed;
     *refused = fake_refused;
+}
+static uint32_t fake_verified; /* bit id - 1: a Rubi verified table site's stream */
+int vjo_hooks_verified(uint32_t id)
+{
+    return id >= 1u && id <= 32u && (fake_verified >> (id - 1u) & 1u);
 }
 void vjo_hooks_keep(uint32_t id, uint32_t key)
 {
@@ -111,6 +119,7 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
     out->key = fs[id].key;
     out->hits = 1;
     out->encoding = VJO_HOOK_ENC_UTF8;
+    out->site = fs[id].luna;
     out->n = (uint32_t)strlen(fs[id].text) < VJO_HOOK_RAW_BYTES ? (uint32_t)strlen(fs[id].text) : VJO_HOOK_RAW_BYTES;
     memcpy(out->raw, &fs[id].text, sizeof(fs[id].text)); /* the fake's raw bytes: the text's address */
     return 1;
@@ -120,6 +129,7 @@ size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
     const char *t;
     size_t n;
     texts++;
+    if (fs[s->id].filtered_empty) { out[0] = '\0'; return 0; }
     memcpy(&t, s->raw, sizeof(t));
     n = strlen(t);
     if (n >= cap) { /* cut at the last whole character, as vjo_hook_decode does */
@@ -278,7 +288,7 @@ static void reset(void)
     model_owned = 0; quitting = active_seq = 0; blocked = 0;
     memset(&hk, 0, sizeof(hk));
     memset(fs, 0, sizeof(fs));
-    fake_mode = VJO_TEXT_SOURCE_AUTO; fake_installed = 1u << 16 | 4u; fake_refused = 2;
+    fake_mode = VJO_TEXT_SOURCE_AUTO; fake_installed = 1u << 16 | 4u; fake_refused = 2; fake_verified = 0;
     snaps = texts = bump_at = 0; bump_id = 0; bump_text = NULL;
     keeps = 0; memset(kept_ids, 0, sizeof(kept_ids)); memset(kept_keys, 0, sizeof(kept_keys)); fake_call_dropped = fake_call_replaced = 0;
     capture_live = job_live = weights_live = 0; capture_block = capture_allocs = 0; live_bytes = 0;
@@ -659,6 +669,130 @@ static void restart_hook_selection(void)
     hk.cache_attempted = hk.cache_ready = hk.build_known = 0;
 }
 
+static void luna_never_loads_ocr_or_generic_learning(void)
+{
+    VjoGameOcrResult out;
+    VjoHookSelect empty = {0};
+    reset(); prime_hook_cache(32); /* even an available generic cache must wait until it is needed */
+    stream(2, VJO_HOOK_KIND_SITE, 1, "はい"); fs[2].luna = &fake_luna_site;
+    stream(9, VJO_HOOK_KIND_CALL, 100, LINE1);
+    for (unsigned i = 0; i < 72; i++) { /* 36 fresh readings plus their unchanged reopens */
+        fs[2].seq = i / 2u + 1u;
+        fs[2].text = i / 2u % 2u ? "うん" : "はい";
+        TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+        TEST_CHECK(!strcmp(out.text, fs[2].text) && out.text_from == 2);
+        TEST_CHECK(out.hook_flags == (VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR) && !out.hook_score);
+        TEST_CHECK(first_pass_only() && !out.recognized && out.weights == VJO_GAME_OCR_WEIGHTS_NONE);
+        TEST_CHECK(!opens && !finds && !runs && !keeps);
+        TEST_CHECK(!cache_loads && !cache_saves && !build_reads && !hk.cache_attempted);
+        TEST_CHECK(!memcmp(&hk.sel, &empty, sizeof(empty)));
+    }
+}
+
+static void luna_preserves_generic_state_and_falls_back_when_unavailable(void)
+{
+    VjoGameOcrResult out;
+    VjoHookSelect was;
+    reset();
+    stream(2, VJO_HOOK_KIND_SITE, 1, LINE3); fs[2].luna = &fake_luna_site;
+    fs[2].filtered_empty = 1; /* a real raw Luna snapshot cannot bypass OCR if its filter discards it */
+    stream(9, VJO_HOOK_KIND_CALL, 2, LINE1); spy_text = OCR1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9 && runs == 1);
+    TEST_CHECK(out.hook_streams == (VJO_HOOK_STREAM_BIT(2) | VJO_HOOK_STREAM_BIT(9)));
+    TEST_CHECK(hk.n == 1 && hk.cand[0].id == 9 && out.hook_flags == VJO_HOOK_R_AGREED);
+    TEST_CHECK(hk.sel.streak == 1 && !hk.sel.interval);
+    /* A busy Luna stream is unavailable too: the second regular line still needs OCR to learn. */
+    fs[2].filtered_empty = 0; fs[2].busy = 1;
+    stream(9, VJO_HOOK_KIND_CALL, 3, LINE2); spy_text = OCR2;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9 && runs == 2);
+    TEST_CHECK(hk.sel.locked == 9 && hk.sel.interval == 8);
+    hk.sel.unchecked = 7; /* preserve an overdue generic check while the trusted script answers */
+    was = hk.sel;
+    fs[2].busy = 0;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 2);
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR));
+    TEST_CHECK(runs == 2 && !memcmp(&hk.sel, &was, sizeof(was)));
+    fs[2].text = NULL;
+    stream(9, VJO_HOOK_KIND_CALL, 4, LINE3); spy_text = OCR3;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9 && runs == 3);
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_LOCKED));
+    TEST_CHECK(hk.sel.interval == 16 && !hk.sel.unchecked);
+}
+
+static void luna_survives_pool_saturation_and_uses_newest_script(void)
+{
+    static char long_text[400];
+    VjoGameOcrResult out;
+    VjoHookSelect was;
+    reset();
+    for (unsigned i = 0; i < 133; i++) memcpy(long_text + 3 * i, "あ", 3);
+    long_text[399] = '\0';
+    for (uint32_t id = 1; id <= VJO_HOOK_STREAMS; id++) {
+        stream(id, id <= VJO_HOOK_SITE_STREAMS ? VJO_HOOK_KIND_SITE : VJO_HOOK_KIND_CALL,
+               100 + id, long_text);
+        fs[id].key = id * 0x100u;
+    }
+    fs[2].seq = 1; fs[2].luna = &fake_luna_site; /* oldest text, behind enough CALL text to fill the pool */
+    hk.sel = (VjoHookSelect){.locked = 15, .locked_seq = 115, .locked_key = 0xf00u,
+                              .locked_encoding = VJO_HOOK_ENC_UTF8, .interval = 8, .unchecked = 7};
+    was = hk.sel;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 2 && !runs && !opens);
+    TEST_CHECK(hk.cand[0].id == 2 && hk.cand[0].n == 399 && !strcmp(out.text, long_text));
+    TEST_CHECK(!memcmp(&hk.sel, &was, sizeof(was)));
+    fs[4].luna = &fake_luna_site; fs[4].seq = 2; fs[4].text = LINE1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 4 && !strcmp(out.text, LINE1));
+    fs[2].seq = 2; /* equal sequence: stable lowest stream ID, independent of generic preference */
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 2);
+    fs[2].seq = UINT32_MAX; fs[4].seq = 1;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 4);
+    TEST_CHECK(!runs && !opens && !memcmp(&hk.sel, &was, sizeof(was)));
+}
+
+static void luna_respects_explicit_picks_and_self_tests(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset();
+    stream(2, VJO_HOOK_KIND_SITE, 1, "はい"); fs[2].luna = &fake_luna_site;
+    stream(9, VJO_HOOK_KIND_CALL, 2, LINE1); spy_text = OCR1;
+    TEST_ASSERT(run(9, &out) == 0 && out.text_from == 9 && !opens && !runs);
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR));
+    TEST_ASSERT(run(2, &out) == 0 && out.text_from == 2 && !opens && !runs);
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_PINNED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
+    TEST_ASSERT(run(VJO_HOOK_PICK_OCR, &out) == 0 && !out.text_from && runs == 1);
+    TEST_CHECK(!strcmp(out.text, OCR1) && !(out.hook_flags & VJO_HOOK_R_NO_OCR));
+    for (unsigned fallback = 0; fallback < 2; fallback++) {
+        r = request(VJO_HOOK_PICK_AUTO);
+        if (fallback) r.flags = VJO_GAME_OCR_F_FORCE_FALLBACK;
+        else r.speed = VJO_GAME_OCR_S_NOCACHE;
+        vjo_game_ocr_cache_clear();
+        TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0 && !out.text_from);
+        TEST_CHECK(runs == fallback + 2u && !strcmp(out.text, OCR1));
+    }
+}
+
+static void luna_capture_failure_preserves_state(void)
+{
+    VjoGameOcrResult out;
+    VjoHookSelect was;
+    reset();
+    stream(2, VJO_HOOK_KIND_SITE, 1, "はい"); fs[2].luna = &fake_luna_site;
+    hk.sel = (VjoHookSelect){.locked = 9, .locked_seq = 5, .locked_key = 0x1234u,
+                              .locked_encoding = VJO_HOOK_ENC_UTF8, .interval = 32, .unchecked = 31};
+    was = hk.sel;
+    rows_error = VJO_ERR_ARG;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_SOURCE);
+    TEST_CHECK(!out.text[0] && !out.text_from && !out.hook_flags && !opens && !runs);
+    TEST_CHECK(!memcmp(&hk.sel, &was, sizeof(was)));
+    rows_error = 0; available = GAME_RESERVE + 4096;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM);
+    TEST_CHECK(!out.text[0] && !out.text_from && !out.hook_flags && !memcmp(&hk.sel, &was, sizeof(was)));
+    available = 64*1024*1024;
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 2 && !strcmp(out.text, "はい"));
+    TEST_CHECK(first_pass_only() && !opens && !runs && !cache_loads && !cache_saves);
+    TEST_CHECK(!memcmp(&hk.sel, &was, sizeof(was)));
+}
+
 static void remembered_hook_worker_cadence(void)
 {
     VjoGameOcrResult out;
@@ -816,7 +950,53 @@ static void border_lines_on_an_agreeing_stream(void)
     }
 }
 
+/* A game that leaves too little for any model (アマツツミ: 2 MiB free on a console): OCR is refused, and a
+ * Rubi verified site's newest text answers unconfirmed, with one first pass beside the hook-only reserve and
+ * no recognition; nothing is learned. A Luna site or CALL caller, an OCR-only pick, or too little even for
+ * the pass: the refusal as before. With room for OCR nothing of this runs. */
+static void verified_site_answers_when_ocr_has_no_memory(void)
+{
+    VjoGameOcrResult out;
+    for (unsigned borrowed_filter = 0; borrowed_filter < 2; borrowed_filter++) {
+        reset();
+        available = 2 * 1024 * 1024;
+        stream(1, VJO_HOOK_KIND_SITE, 5, LINE1);
+        stream(9, VJO_HOOK_KIND_CALL, 6, LINE2);
+        TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.text_from && !out.hook_flags);
+        TEST_CHECK(capture_allocs == 0 && runs == 0);
+
+        fake_verified = 1u; /* stream 1 */
+        /* PCSG01198's verified entry borrows Luna's filter; it still needs the low-memory path. */
+        fs[1].luna = borrowed_filter ? &fake_luna_site : NULL;
+        TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0);
+        TEST_CHECK_(!strcmp(out.text, LINE1), "%s", out.text);
+        TEST_CHECK(out.text_from == 1 && out.hook_flags == (VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
+        TEST_CHECK(out.hook_streams == (1u | 1u << 8) && runs == 0 && !out.lines);
+        TEST_CHECK_(first_pass_only(), "%u rows calls", rows_calls);
+        TEST_CHECK(out.source == VJO_GAME_OCR_SRC_HOOK && capture_allocs == 1);
+        TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_HOOK_ONLY && out.need_workspace == capture_block);
+        TEST_CHECK(!hk.sel.locked && !hk.sel.interval && !hk.sel.streak); /* nothing learned without OCR */
+
+        /* too little even for the pass beside the smaller reserve: refused, no text */
+        stream(1, VJO_HOOK_KIND_SITE, 6, LINE3);
+        available = VJO_GAME_RESERVE_HOOK_ONLY + 4096;
+        TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == VJO_E_OOM && !out.text_from && !out.text[0]);
+        /* an OCR-only pick: the refusal */
+        available = 2 * 1024 * 1024;
+        TEST_CHECK(run(VJO_HOOK_PICK_OCR, &out) == VJO_E_OOM && !out.text_from);
+        /* room for OCR: recognition as before, never the unconfirmed answer */
+        available = 64 * 1024 * 1024;
+        TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && runs >= 1 && !(out.hook_flags & VJO_HOOK_R_UNCONFIRMED));
+    }
+}
+
 TEST_LIST = {
+    {"OCR refused for memory: a verified site answers unconfirmed", verified_site_answers_when_ocr_has_no_memory},
+    {"Luna: no initial, periodic or repeated OCR and no generic cache IO", luna_never_loads_ocr_or_generic_learning},
+    {"Luna: preserve generic learning and resume it when unavailable", luna_preserves_generic_state_and_falls_back_when_unavailable},
+    {"Luna: pool saturation, newest script, stable ties and sequence wrap", luna_survives_pool_saturation_and_uses_newest_script},
+    {"Luna: manual picks, OCR-only and self-test overrides", luna_respects_explicit_picks_and_self_tests},
+    {"Luna: failed capture preserves generic state", luna_capture_failure_preserves_state},
     {"the border rule on a stream that replaces OCR's text (API 36)", border_lines_on_an_agreeing_stream},
     {"the border rule follows the request (API 36), on OCR's and a stream's text", border_lines_follow_the_request},
     {"hook cache cleanup: BUSY, copy failure, cancellation, failed primary free", hook_cache_cleanup_ownership},

@@ -32,15 +32,15 @@ What is installed depends on the text source (API 31, `VJO_TEXT_SOURCE_*`, read 
 | Text source | Installed in this game |
 | --- | --- |
 | `ocr` | nothing (today's behaviour). Also the value before the Shell sets one, with an older kernel, and in a build whose kernel does not export `vjoGetTextSource` |
-| `auto` (default) | only in a title with an entry (Rubi's verified list, or a ported site in Luna's table): its sites that pass the checks below, and the CALL source |
-| `hooks` | as `auto`, plus the CALL source in every game that is ON (discovery) |
+| `auto` (default) | the CALL source in every enabled native Vita game, plus its available table sites that pass the checks below |
+| `hooks` | the same attempts as `auto`; retained for existing configurations |
 
-"An entry" means a site the worker may try: Rubi's verified entry, or a site of Luna's table that is ported
+The Games page's hook-entry tag still means Rubi has a verified entry or a ported Luna table site
 (`vjo_luna_title_ported`, core/hook_luna.h; audit-hooks-text N2). Seven titles in Luna's table have none,
 every site of theirs needing code that is not ported (PCSB00985, PCSG00291, PCSG00451, PCSG00595, PCSG00663,
-PCSG01081, PCSG01152): with `auto` they get nothing, OCR only, and the Games page gives them no tag (the
-same rule, core/hook_titles.c); with `hooks` they get the CALL source and their sites are refused
-(`unported`).
+PCSG01081, PCSG01152): they have no tag, but both `auto` and `hooks` try the CALL source and refuse their
+table sites (`unported`). Games without any table entry also get CALL discovery. An unavailable import
+or a stream that never supplies matching dialogue falls back to OCR.
 
 The kernel answers `vjoGetTextSource` with the Shell's value only in a process its loader started the
 worker in as ON (it records the process as it decides, before the worker's `module_start` runs); every
@@ -52,7 +52,7 @@ every job's result (`hook_mode`; `hook_installed` = sites << 16 | CALL imports; 
 
 `hook_sites = off` in `config.ini` (the kernel's text source word then carries `VJO_TEXT_SOURCE_NO_SITES`,
 include/vjo_api.h) installs no table site, neither Rubi's verified entries nor Luna's: only the CALL source,
-in the games the mode gives it to (`auto`: the titles with an entry; `hooks`: every game that is ON), so a
+in every enabled native Vita game with `auto` or `hooks`, so a
 console run can tell the CALL source from the sites (audit-hooks F3). `hook_mode` is then the mode with that
 flag, `log.txt`'s line says so (`hooks in PCSG00415: text source auto, sites off, 0 table sites and 8 string
 copies hooked, 0 sites refused`), and the debug build's `hooks.log` says `sites off`. The worker takes the
@@ -116,10 +116,23 @@ A table site is an address in the main module's segment 0 where the game holds a
 Two lists name them:
 
 - **Rubi's verified entries** (`core/hook_place.c`): title, module NID, segment-0 offset, Thumb or ARM,
-  register, encoding and 8 to 16 bytes recorded at the site. One so far: CLANNAD PCSG00415, NID
-  0xC5187D60, +0x2CA70, Thumb, r6, CP932, `AB F8 2C 23 14 F5 53 70` (STRH.W r2, [r11, #0x32C];
-  ADDS.W r0, r4, #0x34C). From PR #16's `profiles/PCSG00415.vjhook`; proven in Vita3K only (note 22).
-  It is hooked only when the module NID and every recorded byte match.
+  register, encoding and 8 to 16 bytes recorded at the site. Two so far:
+  - CLANNAD PCSG00415, NID 0xC5187D60, +0x2CA70, Thumb, r6, CP932, `AB F8 2C 23 14 F5 53 70` (STRH.W r2,
+    [r11, #0x32C]; ADDS.W r0, r4, #0x34C). From PR #16's `profiles/PCSG00415.vjhook`; proven in Vita3K
+    only (note 22).
+  - アマツツミ PCSG01198 (APP_VER 01.00), NID 0x8AA413F2, +0x745C8, Thumb, r2, CP932, 16 bytes from
+    `09 EB 87 0E` (ADD.W lr, r9, r7, LSL #2; ADD.W lr, lr, #0x1620). Luna's site 0x800785C8, which the
+    placement check refuses as no entry (it is inside a function's loop); no branch in segment 0 targets
+    its 8 patched bytes (checked on the decrypted eboot). Proven on a console (PCH-2000, 3.65,
+    2026-10-23): hooked, its stream held text, and with OCR refused for memory the overlay showed the
+    game's line.
+
+  An entry is hooked only when the module NID and every recorded byte match. An entry at the address of
+  a ported Luna site that this version may try takes that site's hookfunc and filter for its text
+  (`vjo_luna_site_at`); the Luna site is then skipped as hooked. When OCR is refused for memory
+  (`VJO_E_OOM`) with the automatic pick, a verified entry's newest text answers unconfirmed
+  (`vjo_hook_select_no_memory`, `VJO_HOOK_R_UNCONFIRMED`), its capture pass beside
+  `VJO_GAME_RESERVE_HOOK_ONLY`; Luna's sites and CALL callers never do.
 - **Luna's table** (`core/hook_luna.h`, `core/hook_luna_table.inc`: LunaTranslator's Vita3K table,
   ported by hooks-luna-port; [hook-titles.md](hook-titles.md)). Luna's addresses are Vita3K's: the
   offset into segment 0 is `addr - 0x80004000` (`VJO_LUNA_SEG0`), which matches the CLANNAD Vita3K run
@@ -189,13 +202,23 @@ UTF-8 or UTF-16, before comparison or display: the overlay, mined sentence, hist
 hooked in the game (`vjo_hooks_counts`: no site and no CALL import) a job is OCR's exactly as before: no
 snapshot, no comparison. Otherwise a job begins with a snapshot of the streams: each stream that holds
 text is copied out and decoded into a static 2,048-byte pool, each text at most 768 bytes (512 raw bytes
-of double-byte CP932 whole); the stream the job's pick names (pinned or locked) first, then the newest
-texts, so a pool that fills cuts the oldest. Then, by the request's `hook_pick`:
+of double-byte CP932 whole). Automatic jobs keep Luna sites first, then the learned stream, then the
+newest remaining texts, so generic traffic cannot fill the pool before Luna is decoded. Other jobs
+keep their pinned stream first, then the newest texts. Then, by the request's `hook_pick`:
 
 - **Pinned** (a stream ID in a diagnostic request): that stream's text, without recognition; OCR when it has none.
 - **OCR only** (`VJO_HOOK_PICK_OCR`): OCR's text. The self-test's jobs (every line recognized, or the
   fallback forced) are OCR only whatever their pick.
-- **Automatic** (`VJO_HOOK_PICK_AUTO`): OCR runs initially. An agreeing hook replaces its text at
+- **Automatic, Luna** (`VJO_HOOK_PICK_AUTO`): nonempty text from an installed Luna site answers
+  immediately, without initial OCR, periodic OCR or learned-source cache work. Installation still
+  requires the existing port, game-version and site-placement checks. Short and unchanged text also
+  skips recognition. With several nonempty Luna sites, the newest sequence wins (a tie goes to the
+  lower stream ID). This does not identify a stream's semantic role, such as a speaker name versus
+  dialogue; it trusts the existing game-specific extraction and filters. Rubi's own table sites are
+  not Luna sites and still require the regular validation below, even when they borrow a Luna filter
+  (PCSG01198, #273); their verified low-memory fallback remains available. An empty, busy or filtered-empty Luna
+  site is unavailable for this job: the remaining hooks and OCR provide the fallback.
+- **Automatic, regular hooks**: without a nonempty Luna candidate, OCR runs initially. An agreeing hook replaces its text at
   the existing normalized similarity threshold of 700/1000 and a minimum of four characters. Two
   different normalized dialogue lines from the same source establish confidence. Reopening the same
   dialogue, a duplicate job, or another background copy cannot establish confidence or advance checks.
@@ -218,6 +241,14 @@ fresh counter; this startup check does not promote the interval. A single startu
 the same recovery rule. Missing, corrupt, inaccessible or unwritable storage means fresh learning.
 Hashing and cache work run in the game worker; the existing kernel file thread handles its fixed paths
 through the optional `vjoOcrHookCache` broker. There is no new Shell allocation or UI.
+Luna does not establish, restore, advance or erase this learning while it supplies text. If it stops
+supplying text, regular selection resumes its existing state or attempts the cache on first use.
+Luna answers carry `SITE | NO_OCR`, without claiming an OCR agreement or learned lock.
+
+The Luna distinction uses provenance bits in the candidate's existing `site` word. The fixed candidate
+array, selection state and text pool keep their layouts and bounds; no allocation site or thread is
+added [source inspection]. Packaged module pages and console timing are not measured locally for this
+change; the existing build-time ledger still enforces the declared module budgets.
 
 A longer interval delays detection: a learned source that starts returning incorrect text can show up
 to 31 hook-only readings before the next scheduled comparison. A hook that is wrong between checks can
@@ -323,8 +354,9 @@ With the overlay open, press **Triangle** to replace the dictionary body with di
 displayed text; press it again to return. The text and cursor remain visible, Up/Down still visit
 history, and the right stick scrolls the details. The toggle is absent from the normal hints and
 starts off each time the overlay opens, in both normal and debug builds. Its first line is the total
-characters read, every game's lines in `history.csv` (`Total characters read: 1,234,567`, or `counting…`
-while the Shell counts the file once: [ocr-history.md](ocr-history.md#total-characters-read)).
+characters read, characters/hour and total active reading time across every game's lines in
+`history.csv`, with a 15-second AFK cutoff (`counting…` until the background count completes:
+[ocr-history.md](ocr-history.md#total-characters-read)).
 
 `Source` says **OCR** or **Hook** for the job that supplied that text. Hook details include its stream
 ID and table-site/CALL origin, agreement/lock/pin/no-OCR/unlock flags, similarity, available streams,
@@ -370,7 +402,7 @@ Hardware is paused; these are for the test issue (#230):
 2. CLANNAD with `auto`: `hooks.log` shows NID C5187D60, the verified site +0x2CA70 hooked (or refused
    with its bytes), the CALL imports it has, and the game runs through several scenes.
 3. CLANNAD: the CALL stream that holds the dialogue has key 0x5910F (LR minus segment 0's base).
-4. A game outside the tables with `hooks`: only CALL imports in `hooks.log`; no slowdown that shows.
+4. A game outside the tables with `auto` or `hooks`: only CALL imports in `hooks.log`; no slowdown that shows.
 5. A Luna-listed game with `auto`: every site's verdict in `hooks.log`; a hooked site's text.
 6. Quitting a game with hooks: the console returns to LiveArea, and the next game start works.
 7. CLANNAD with `auto`, Automatically: record OCR invocation counts separately from host results.

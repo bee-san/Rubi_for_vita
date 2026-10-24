@@ -137,8 +137,8 @@ typedef struct {
      * an OCR job. */
     char shot[VJO_GAME_OCR_SHOT_ID_BYTES];
     /* API 31, native text hooks (docs/native-hooks.md): what this job may answer from.
-     * VJO_HOOK_PICK_AUTO: OCR, its text replaced by a hook stream's that agrees with it (the worker's
-     * automatic pick, which may lock a stream and then answer without recognition); a stream ID
+     * VJO_HOOK_PICK_AUTO: a nonempty Luna site without recognition, else OCR with a regular hook's
+     * agreeing text (the worker may learn that source and answer without recognition between checks); a stream ID
      * 1..VJO_HOOK_STREAMS: that stream's latest text, pinned, without recognition (OCR when it has none);
      * VJO_HOOK_PICK_OCR: OCR only. Normal Shell jobs use AUTO; explicit picks are for diagnostics. */
     uint32_t hook_pick;
@@ -167,6 +167,7 @@ typedef struct {
 #define VJO_HOOK_R_SITE 0x10u   /* text_from is a table site (else a CALL caller) */
 #define VJO_HOOK_R_UNLOCK 0x20u /* this job unlocked the stream that was locked (two disagreements) */
 #define VJO_HOOK_R_CALLS_FULL 0x40u /* every CALL slot is taken: a new caller was dropped or replaced one */
+#define VJO_HOOK_R_UNCONFIRMED 0x80u /* a Rubi verified table site answered with no OCR agreement ever: OCR had no memory */
 
 /* vjoOcrModelOpen's `which`: the request's model or its fallback, or (API 20)
  * the LM of tier which - VJO_GAME_OCR_OPEN_LM + 1, up to the request's LM tier,
