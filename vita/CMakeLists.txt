@@ -139,13 +139,6 @@ add_library(vjo_bearssl STATIC
 target_include_directories(vjo_bearssl PUBLIC ${ROOT}/third_party/bearssl/inc PRIVATE ${ROOT}/third_party/bearssl/src)
 target_compile_options(vjo_bearssl PRIVATE -O2 -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
 
-# The Shell hashes saved notes and queues on cold paths. Give it a size-built copy so the game
-# worker's model checks and the Settings app keep their existing -O2 hashing code.
-get_target_property(_vjo_hash_sources vjo_bearssl SOURCES)
-add_library(vjo_bearssl_shell STATIC ${_vjo_hash_sources})
-target_include_directories(vjo_bearssl_shell PUBLIC ${ROOT}/third_party/bearssl/inc PRIVATE ${ROOT}/third_party/bearssl/src)
-target_compile_options(vjo_bearssl_shell PRIVATE -Os -w -fno-builtin -fshort-wchar -ffunction-sections -fdata-sections)
-
 add_library(vjo_core_vita STATIC
   ${ROOT}/core/arena.c ${ROOT}/core/utf.c ${ROOT}/core/text_hit.c ${ROOT}/core/text_rows.c
   ${ROOT}/core/json.c
@@ -158,7 +151,7 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c
   ${ROOT}/core/hook_pick.c) # API 31: text-source config helpers
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
-target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl_shell)
+target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
   -ffunction-sections -fdata-sections)
 # Cold core paths (configuration, parsers, queue files): built for
@@ -230,6 +223,9 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/vita/buttons_vita.c
   ${ROOT}/shell/libc_shim.c
   ${ROOT}/shell/divide.c) # the Shell's integer division, in place of libgcc's (the Shell only)
+# Cross-file optimization removes redundant wrappers and constant branches so reading statistics
+# fit the existing Shell pages. Only these Shell targets use LTO; kernel, OCR and Settings do not.
+set_property(TARGET vjo_core_vita VitaJPOverlay_Shell PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 add_dependencies(VitaJPOverlay_Shell vjo_kernel_stubs)
 target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
 # The overlay page (once a frame while it is open; paf's own calls dominate)
@@ -256,11 +252,6 @@ set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${RO
   ${ROOT}/shell/anki_queue.c ${ROOT}/shell/history.c ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/strip.cpp ${ROOT}/core/text_rows.c ${ROOT}/core/arena.c
   PROPERTIES COMPILE_OPTIONS "-Os")
-# Reading statistics must fit the existing Shell pages. The control/UI and history parser are
-# cold paths; GCC's size-first -Oz also trades instructions for smaller encodings there. Hashing
-# for the Shell's saved notes/queues is built at -Os above; no OCR inference runs in these objects.
-set_property(SOURCE ${ROOT}/shell/worker.c ${ROOT}/shell/overlay.cpp
-  ${ROOT}/shell/history.c ${ROOT}/core/history_lines.c APPEND PROPERTY COMPILE_OPTIONS "-Oz")
 # The Shell's integer division (shell/divide.c): for size, and each helper in its own section, so the
 # build links only those its code calls (the normal build no divmod).
 set_source_files_properties(${ROOT}/shell/divide.c PROPERTIES COMPILE_OPTIONS "-Os;-ffunction-sections")
@@ -282,7 +273,7 @@ target_compile_options(VitaJPOverlay_Shell PRIVATE -O2 -Wall -Wno-unused-paramet
   "-D__declspec(x)=")
 target_link_directories(VitaJPOverlay_Shell PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
 target_link_options(VitaJPOverlay_Shell PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
-  -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
+  -Wl,--undefined=module_start -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
 target_link_libraries(VitaJPOverlay_Shell
   vjo_core_vita
   VitaJPOverlay_Kernel_stub_weak  # weak: the shell still starts (and reports) without the kernel plugin
@@ -302,7 +293,7 @@ target_link_libraries(VitaJPOverlay_Shell
   # Weak: the enter button's registry read (vita/buttons_vita.c); unbound, it
   # fails and × enters, as before.
   SceRegistryMgr_stub_weak
-  vjo_bearssl_shell  # again after the core: its 64-bit division comes from libgcc (32-bit: shell/divide.c)
+  vjo_bearssl  # again after the core: its 64-bit division comes from libgcc (32-bit: shell/divide.c)
   gcc)
 set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
 set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")
@@ -371,7 +362,7 @@ if(VJO_WITH_VOCR)
   # overlaps": the normal build's worker with vita-vn-ocr #109's counter re-decode, its code ending 1,112 B
   # below 128 KiB). The gap costs no memory: only the segments are loaded (the ledger counts their pages).
   target_link_options(VitaJPOverlay_OCR PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
-    -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning -Wl,--defsym,__sce_headroom=0x1000)
+    -Wl,--undefined=module_start -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning -Wl,--defsym,__sce_headroom=0x1000)
   target_link_directories(VitaJPOverlay_OCR PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
   target_link_libraries(VitaJPOverlay_OCR vjo_vocr vjo_vocr_rt vjo_bearssl VitaJPOverlay_Kernel_stub_weak
     SceLibKernel_stub SceKernelThreadMgr_stub SceSysmem_stub_weak SceProcessmgr_stub_weak
