@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include "port.h"
+#include "reading_chars.h"
 #include "textfilter.h"
 #include "utf.h"
 
@@ -24,16 +26,16 @@ static uint8_t record_origin(const char *p, const char *end)
 }
 
 /* The line of the record that starts at p (its '"') and ends before end, when the record is game
- * uuid's (its first field, the closing quote and comma included): its fourth field, unescaped in
- * place and NUL-terminated; NULL otherwise, and when the record is cut before the time that follows
- * that field (its first digit). shell/history.c quotes each of the first four fields, doubles a '"'
- * inside one and writes the time, unquoted, after them. */
-static char *record_line(char *p, char *end, const char *uuid, size_t ulen, uint8_t *origin)
+ * uuid's (its first field, the closing quote and comma included; any game's when ulen is 0): its
+ * fourth field, unescaped in place and NUL-terminated; NULL otherwise, and when the record is cut
+ * before the time that follows that field (its first digit). shell/history.c quotes each of the first
+ * four fields, doubles a '"' inside one and writes the time, unquoted, after them. */
+static char *record_line(char *p, char *end, const char *uuid, size_t ulen, uint8_t *origin, VjoReadingTime *time)
 {
     if ((size_t)(end - p) < ulen + 2 || memcmp(p + 1, uuid, ulen))
         return NULL;
-    p += ulen + 1; /* the second field's opening quote */
-    for (int field = 2;; field++) {
+    uint32_t game = 2166136261u;
+    for (int field = 1;; field++) {
         char *q = p + 1, *o = q;
         if (p >= end || *p != '"')
             return NULL;
@@ -50,6 +52,8 @@ static char *record_line(char *p, char *end, const char *uuid, size_t ulen, uint
             }
             *o++ = *q++;
         }
+        if (field == 1 && time)
+            for (char *c = p + 1; c < o; c++) game = (game ^ (unsigned char)*c) * 16777619u;
         if (q + 1 >= end || q[1] != ',')
             return NULL; /* each of these fields has another after it */
         if (field == 4) {
@@ -58,7 +62,21 @@ static char *record_line(char *p, char *end, const char *uuid, size_t ulen, uint
             if (q + 2 >= end || q[2] < '0' || q[2] > '9')
                 return NULL;
             *o = '\0';
-            *origin = record_origin(q + 2, end);
+            if (origin) *origin = record_origin(q + 2, end);
+            if (time) {
+                /* Rubi writes Unix seconds and exactly six fractional digits. Invalid/missing
+                 * times break the interval, but do not hide the line's character count. */
+                char *c = q + 2;
+                uint64_t us = 0;
+                int digits = 0;
+                while (c < end && *c >= '0' && *c <= '9' && digits++ < 12) us = us * 10 + *c++ - '0';
+                if (c < end && *c++ == '.' && digits <= 12) {
+                    for (digits = 0; digits < 6 && c < end && *c >= '0' && *c <= '9'; digits++)
+                        us = us * 10 + *c++ - '0';
+                    if (digits != 6 || c >= end || *c != ',') us = 0;
+                } else us = 0;
+                vjo_reading_time_add(time, us, game, vjo_line_characters(p + 1, (size_t)(o - p - 1)));
+            }
             return p + 1;
         }
         p = q + 2;
@@ -94,22 +112,86 @@ static int keep(VjoHistory *h, VjoArena *lines, const char *line, uint8_t origin
     return 1;
 }
 
+/* Whether a record starts at buf[i]: a '"' after a newline (or as the file starts: buf[0] is read only
+ * when the window is the whole file, the callers' `low`), and the next byte is neither '"' nor ',':
+ * inside a field every '"' is doubled, and a field's closing '"' is followed by ',' or a newline (the
+ * header line starts with "uuid,"). */
+static int record_starts(const char *buf, size_t i, size_t len)
+{
+    return buf[i] == '"' && (!i || buf[i - 1] == '\n') && i + 1 < len && buf[i + 1] != '"' && buf[i + 1] != ',';
+}
+
 void vjo_history_scan(VjoHistory *h, VjoArena *lines, char *buf, size_t len, int whole, const char *uuid, int filter)
 {
     size_t ulen = strlen(uuid), end = len, i = len, low = whole ? 0 : 1, top = vjo_arena_mark(lines);
     while (h->n < VJO_HISTORY_LINES && i-- > low) {
         char *line;
         uint8_t origin = VJO_LINE_UNKNOWN;
-        /* A record starts with '"' after a newline (or as the file starts: buf[0] is read only when the
-         * window is the whole file, `low`), and the next byte is neither '"' nor ',': inside a field
-         * every '"' is doubled, and a field's closing '"' is followed by ',' or a newline (the header line
-         * starts with "uuid,"). */
-        if (buf[i] != '"' || (i && buf[i - 1] != '\n') || i + 1 >= len || buf[i + 1] == '"' ||
-            buf[i + 1] == ',')
+        if (buf[i] != '"' || !record_starts(buf, i, len)) /* (most bytes: no call) */
             continue;
-        line = record_line(buf + i, buf + end, uuid, ulen, &origin);
+        line = record_line(buf + i, buf + end, uuid, ulen, &origin, NULL);
         end = i;
         if (line && keep(h, lines, line, origin, filter, &top) < 0)
             break;
     }
+}
+
+uint32_t vjo_line_characters(const char *s, size_t len)
+{
+    return vjo_reading_characters(s, len);
+}
+
+void vjo_reading_time_add(VjoReadingTime *t, uint64_t us, uint32_t game, uint32_t chars)
+{
+    uint64_t gap = us - t->last_us;
+    if (t->last_us && us && game == t->last_game && gap && gap <= 15000000) {
+        t->active_us += gap;
+        t->timed_chars += t->last_chars;
+    }
+    t->last_us = us;
+    t->last_game = game;
+    t->last_chars = chars;
+}
+
+uint32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
+                           VjoReadingTime *time)
+{
+    uint32_t n = 0;
+    size_t start = len;
+    *first = *last = len;
+    /* Forward order preserves the previous line's time across windows. A record is parsed only
+     * after its end is known; a cut newest record waits for the next window, as before. */
+    for (size_t i = (size_t)!whole; i <= len; i++) {
+        if (i < len && (buf[i] != '"' || !record_starts(buf, i, len))) continue;
+        if (start < len && (i < len || !cut)) {
+            char *line = record_line(buf + start, buf + i, "", 0, NULL, time);
+            if (line) n += time ? time->last_chars : vjo_line_characters(line, strlen(line));
+            else if (time) time->last_us = 0; /* damaged records break the interval */
+        }
+        if (i < len) {
+            if (*first == len) *first = i;
+            *last = start = i;
+        }
+    }
+    return n;
+}
+
+uint32_t vjo_history_chars(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last)
+{
+    return vjo_history_count(buf, len, whole, cut, first, last, NULL);
+}
+
+char *vjo_history_number(char *buf, size_t cap, uint64_t n)
+{
+    static const char format[] VJO_DATA_TABLE(history_total_number) = "%llu"; /* (the Shell's code pages are full) */
+    int len = vjo_snprintf(buf, cap, format, (unsigned long long)n), commas = (len - 1) / 3, digits = 0;
+    buf[len + commas] = '\0'; /* a comma between every three digits, from the right: 1,234,567 */
+    for (int i = len - 1; commas; i--) {
+        buf[i + commas] = buf[i];
+        if (++digits == 3) {
+            buf[i + --commas] = ',';
+            digits = 0;
+        }
+    }
+    return buf;
 }

@@ -9,6 +9,7 @@
 #define VJO_HISTORY_LINES_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "arena.h"
 
@@ -40,5 +41,32 @@ typedef struct {
  * or the file's first byte when `whole` (the window is the whole file). Stops once h or `lines` is
  * full: the lines kept are always the newest, without a gap. */
 void vjo_history_scan(VjoHistory *h, VjoArena *lines, char *buf, size_t len, int whole, const char *uuid, int filter);
+
+/* The characters a line counts in history.csv's `characters` column (core/reading_chars.h): the writer's
+ * count, and the total's. */
+uint32_t vjo_line_characters(const char *s, size_t len);
+
+/* Active reading: only intervals (0, 15 s] between adjacent records of the same game.
+ * timed_chars belongs to the earlier line; untimed lines never inflate the speed. Stored with
+ * the total so incremental scans and restarts retain the interval at their boundary. */
+typedef struct {
+    uint64_t active_us, timed_chars, last_us;
+    uint32_t last_game, last_chars;
+} VjoReadingTime;
+void vjo_reading_time_add(VjoReadingTime *t, uint64_t us, uint32_t game, uint32_t chars);
+/* Like vjo_history_chars, also updating reading time in file order, across window boundaries. */
+uint32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
+                           VjoReadingTime *time);
+
+/* The total (docs/ocr-history.md#total-characters-read): the characters of the lines of the records that
+ * start in buf[0, len), a window of history.csv read with the byte before it (buf[0], or the file's first
+ * byte when `whole`), every game's, as vjo_history_scan finds records and reads their lines (unescaped in
+ * place: buf is changed). With `cut` the newest record is left out: the window's end may cut it. *first
+ * and *last: where the oldest and the newest record start (len: none). */
+uint32_t vjo_history_chars(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last);
+
+/* n in decimal with a comma between every three digits (1,234,567) into buf, which has room for them:
+ * 27 bytes for any n (20 digits and 6 commas). Returns buf. The Triangle view's total. */
+char *vjo_history_number(char *buf, size_t cap, uint64_t n);
 
 #endif

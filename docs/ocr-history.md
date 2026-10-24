@@ -95,13 +95,15 @@ log's module rows, `arm-vita-eabi-nm -S` and `-fstack-usage`, both builds of mai
 for a hook's.
 Both module-page budgets and thread-stack budgets remain enforced by the ledger.
 
-The overlay reads the file back for one thing only: [line history](line-history.md). When Up
+The overlay reads the file back for two things. [Line history](line-history.md): when Up
 first goes past the overlay's top row, the control thread reads the file's last 24,512 B once
 (into its existing 24 KiB scratch) and keeps up to 32 of this game's lines, by `uuid`, in a 16 KiB Paf
-block while the user looks back; nothing else reads it, and that reader never writes it. An append in
-progress can only cut the last record: the reader skips it until its line and the time's first digit
-after it are written, then reads its line, which is whole
-([line-history.md](line-history.md#where-the-lines-come-from-and-why)).
+block while the user looks back. And the [total characters read](#total-characters-read) that △ shows,
+when it is not known yet: the control thread counts the file 24,512 B at a time in the same scratch.
+Neither reader writes `history.csv`. An append in progress can only cut the last record: the reader
+skips it until its line and the time's first digit after it are written, then reads its line, which is
+whole ([line-history.md](line-history.md#where-the-lines-come-from-and-why)); the count leaves out the
+record an append may be writing and counts it once the append is done.
 
 Consecutive identical normalized text within a game is suppressed, including
 rescans caused by a blinking icon or reopening/resuming. A different sentence,
@@ -304,6 +306,57 @@ five or more characters read in 1 s to 5 minutes), but at least 2 s and at most
 `web/stats.py` `calculate_actual_reading_time`). exSTATic's visual-novel
 tracker counts time while it runs and stops its clock 60 s after the last line
 (`afk_max_time`, [`src/vn/vn.svelte`](https://github.com/KamWithK/exSTATic/blob/8543967fb9bdf70154f521e3c8c68aa18da1339f/src/vn/vn.svelte)).
+
+## Total characters read
+
+With the overlay open, △ (Triangle) shows these statistics above the line diagnostics:
+
+```
+Total characters read: 1,234,567
+Characters/hour: 8,234
+Total time played: 149:55:48 (active)
+```
+
+All three cover every game's recorded lines in `history.csv`. Characters retain the existing
+[character definition](#characters): Japanese and Latin letters and digits, excluding punctuation,
+spaces and line breaks. Repeated lines that were recorded separately count separately.
+
+**Time played is an estimate of active reading**, using the existing Unix timestamps, in file order.
+Only a positive interval of **15 seconds or less** between adjacent records of the same game counts.
+A longer pause, a game change, an invalid timestamp or a clock going backwards starts a new interval.
+The first and last line of a session have no independently measurable reading duration; time is added
+when the next recorded line arrives. Menus, unrecorded gameplay and AFK time are not measured.
+Characters/hour uses only the earlier lines of those timed intervals divided by their total duration;
+untimed lines still count in total characters, but cannot inflate reading speed. With no timed interval,
+speed is `-` and time is `0:00:00`. Hook and OCR records follow the same rule.
+
+For an external report with the same timeout, run:
+
+```sh
+python3 tools/reading_stats.py history.csv --break-minutes 0.25
+```
+
+The tool sorts by timestamp; the overlay follows append order so that backward clock changes break
+an interval. The tool also accepts some externally edited CSV formats; the overlay reads Rubi's native
+format (quoted fields and six fractional timestamp digits). Zero-duration intervals contribute no timed
+characters in the overlay. The existing power-loss recovery rule for character counts remains: a cut
+record with its line and time's first digit may count once, while a record glued to it without a newline
+is skipped. Invalid or incomplete timestamps never contribute time.
+
+**Counting and persistence.** A Triangle press does no file I/O. The control thread counts an unknown
+history in existing 24 KiB scratch, one window per wakeup, after other control work. The view says
+`Reading statistics: counting…` until ready, or `unavailable` on a failed read (the next press retries).
+While the totals are known, successful appends update them in constant space. The scan and writer use
+the same timing rule, including the interval across scan windows or a saved prefix. No new threads or
+heap allocations are used. While a count runs, it shares storage with game reads and word lookups ahead
+are deferred; console latency and CPU3 usage are unmeasured.
+
+`ux0:data/VitaJPOverlay/history_total.bin` is a **48-byte** cache: character total, covered CSV bytes,
+checksum, active microseconds, timed characters, and the last line's timestamp, game fingerprint and
+character count. It is saved through the existing temporary-file/rename path after counting and on game
+exit when records were added. A missing, corrupt or old 16-byte character-only cache triggers a recount;
+`history.csv` is never rewritten. A truncated/replaced file detected at the prefix boundary resets all
+three statistics. Histories of 4 GiB or more remain unsupported by the on-device totals.
 
 ## The format and older files
 

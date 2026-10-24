@@ -382,8 +382,16 @@ target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-history-tests vjo_core) # line history's reader: core/history_lines.c
 add_test(NAME shell_history COMMAND vjo-shell-history-tests)
+set_tests_properties(shell_history PROPERTIES TIMEOUT 120) # a count's read loop that never ends fails, not hangs
+# The Shell's integer division (shell/divide.c, in place of libgcc's in the Vita Shell): every quotient and
+# remainder checked against what C's division means, without dividing; the ARM lane runs it too.
+add_executable(vjo-shell-divide-tests host/tests/test_shell_divide.c)
+target_include_directories(vjo-shell-divide-tests PRIVATE third_party/acutest/include)
+target_compile_options(vjo-shell-divide-tests PRIVATE -Wall -Wextra)
+add_test(NAME shell_divide COMMAND vjo-shell-divide-tests)
 # The same writer and count for tools/reading_stats.py's tests (tools/tests/test_reading_stats.py:
-# VJO_HISTORY_WRITER), with the game worker's normalisation of the text it returns.
+# VJO_HISTORY_WRITER), with the game worker's normalisation of the text it returns, and the Shell's reading
+# total of a file (--total).
 add_executable(vjo-history-writer host/tests/history_writer.c core/utf.c core/text_rows.c core/textnorm.c)
 target_include_directories(vjo-history-writer PRIVATE host/tests/vita_stubs)
 target_compile_definitions(vjo-history-writer PRIVATE VJO_HOST=1)

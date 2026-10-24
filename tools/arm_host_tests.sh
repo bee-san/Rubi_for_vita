@@ -112,7 +112,8 @@ build hook_select host/tests/test_hook_select.c core/hook_select.c
 # Persisted learning has a fixed byte layout, independent of pointer/size_t width.
 build hook_cache host/tests/test_hook_cache.c core/hook_cache.c
 # Line history (docs/line-history.md): history.csv's records read back from a window, 32-bit size_t.
-build history_lines host/tests/test_history_lines.c core/history_lines.c core/textfilter.c core/utf.c core/arena.c
+build history_lines host/tests/test_history_lines.c core/history_lines.c core/textfilter.c core/utf.c core/arena.c \
+  core/text_rows.c
 # The overlay's left stick (#138): its clock arithmetic (64-bit microseconds, 32-bit credit) and the step.
 build stick_cursor host/tests/test_stick_cursor.c core/text_rows.c core/utf.c
 # The cursor over several lines, d-pad and stick (owner 2026-10-16): 32-bit offsets, float cells.
@@ -131,6 +132,10 @@ build taicfg -DNO_CTYPE -DNO_STRING -DVJO_SOURCE_DIR="\"$PWD\"" host/tests/test_
 # the Vita's word size: 32-bit size_t, the append offsets past 4 GiB.
 build shell_history host/tests/test_shell_history.c core/utf.c core/text_rows.c core/textnorm.c \
   core/history_lines.c core/arena.c core/textfilter.c
+
+# The Shell's integer division (shell/divide.c), here the program's own (it replaces libgcc's in the link,
+# as in the Vita Shell): on the Vita's CPU, with CLZ and Thumb-2.
+build shell_divide host/tests/test_shell_divide.c
 
 # The Rubi app's .apkg export: 32-bit size_t in the B-tree, overflow pages and ZIP offsets. Its
 # picture cards carry the game worker's JPEG (core/jpegsw.c), which must come out the same on the A9.
@@ -157,7 +162,7 @@ build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
-TESTS+=(touch_hold text_rows text_join linebreak history_lines hook_select hook_cache stick_cursor cursor_nav settings_layout shell_log shell_history apkg psp taicfg shot_trim)
+TESTS+=(touch_hold text_rows text_join linebreak history_lines hook_select hook_cache stick_cursor cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
 TESTS+=(hook_text hook_luna psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then

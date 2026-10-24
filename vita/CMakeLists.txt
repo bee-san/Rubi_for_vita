@@ -221,7 +221,11 @@ add_executable(VitaJPOverlay_Shell
   ${ROOT}/shell/files.c
   ${ROOT}/vita/games_storage.c
   ${ROOT}/vita/buttons_vita.c
-  ${ROOT}/shell/libc_shim.c)
+  ${ROOT}/shell/libc_shim.c
+  ${ROOT}/shell/divide.c) # the Shell's integer division, in place of libgcc's (the Shell only)
+# Cross-file optimization removes redundant wrappers and constant branches so reading statistics
+# fit the existing Shell pages. Only these Shell targets use LTO; kernel, OCR and Settings do not.
+set_property(TARGET vjo_core_vita VitaJPOverlay_Shell PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 add_dependencies(VitaJPOverlay_Shell vjo_kernel_stubs)
 target_compile_definitions(VitaJPOverlay_Shell PRIVATE VJO_PAF_ALLOC=1)
 # The overlay page (once a frame while it is open; paf's own calls dominate)
@@ -248,6 +252,10 @@ set_source_files_properties(${ROOT}/shell/ledger.c ${ROOT}/shell/selftest.c ${RO
   ${ROOT}/shell/anki_queue.c ${ROOT}/shell/history.c ${ROOT}/shell/platform_vita.c
   ${ROOT}/shell/strip.cpp ${ROOT}/core/text_rows.c ${ROOT}/core/arena.c
   PROPERTIES COMPILE_OPTIONS "-Os")
+# The Shell's integer division (shell/divide.c): for size, and each helper in its own section, so the
+# build links only those its code calls (the normal build no divmod).
+# GCC emits calls to these helpers after LTO's reachability pass; keep this tiny ABI object native.
+set_source_files_properties(${ROOT}/shell/divide.c PROPERTIES COMPILE_OPTIONS "-Os;-ffunction-sections;-fno-lto")
 if(VJO_WITH_NCNN)
   target_link_libraries(VitaJPOverlay_Shell vjo_ocr ncnn)
 endif()
@@ -266,7 +274,7 @@ target_compile_options(VitaJPOverlay_Shell PRIVATE -O2 -Wall -Wno-unused-paramet
   "-D__declspec(x)=")
 target_link_directories(VitaJPOverlay_Shell PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/vjo_kernel_stubs)
 target_link_options(VitaJPOverlay_Shell PRIVATE -nostdlib -nostartfiles -Wl,-q -Wl,--gc-sections
-  -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
+  -Wl,--undefined=module_start -Wl,--undefined=module_stop -Wl,--no-wchar-size-warning)
 target_link_libraries(VitaJPOverlay_Shell
   vjo_core_vita
   VitaJPOverlay_Kernel_stub_weak  # weak: the shell still starts (and reports) without the kernel plugin
@@ -286,7 +294,7 @@ target_link_libraries(VitaJPOverlay_Shell
   # Weak: the enter button's registry read (vita/buttons_vita.c); unbound, it
   # fails and × enters, as before.
   SceRegistryMgr_stub_weak
-  vjo_bearssl  # again after the core: its integer division comes from libgcc
+  vjo_bearssl  # again after the core: its 64-bit division comes from libgcc (32-bit: shell/divide.c)
   gcc)
 set(VITA_ELF_CREATE_FLAGS "${VJO_ELF_FLAGS}")
 set(VITA_MAKE_FSELF_FLAGS "${VJO_SELF_FLAGS}")

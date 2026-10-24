@@ -2828,6 +2828,9 @@ static void on_game_exit(void)
         mem_free();
     title_id[0] = '\0';
     vjo_anki_set_game("", "", 0);
+#ifdef VJO_WITH_VOCR
+    vjo_history_total_keep(); /* the reading total's file, when lines were added to it */
+#endif
     vjo_ledger_shell_log("exit");
     net_stack_check();
     vjo_selftest_step("exit");
@@ -3098,6 +3101,10 @@ static void control_tick(uint32_t bits)
     vjo_anki_reap(); /* an Anki job's thread and stack go once it is done */
     if (!game_active() && !net_busy() && has_result_memory() && ov == OV_CLOSED)
         mem_free();
+#ifdef VJO_WITH_VOCR
+    if (vjo_history_total_step(&scratch)) /* the reading total's count, a window a wakeup: the next at once */
+        vjoNotifyShell();
+#endif
 }
 
 static int ctl_main(SceSize args, void *argp)
@@ -3205,6 +3212,9 @@ int vjo_worker_stop(void)
     mem_free();
     if (history) /* the threads are gone: the visit's block goes with the text */
         retire_local_text(0);
+#ifdef VJO_WITH_VOCR
+    vjo_history_total_stop(); /* and a count's file */
+#endif
     if (net_evf >= 0)
         sceKernelDeleteEventFlag(net_evf);
     if (cmd_lock >= 0)

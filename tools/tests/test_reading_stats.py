@@ -77,6 +77,15 @@ def c_counts(items):
     return [int(x) for x in out.stdout.split()]
 
 
+def shell_total(path):
+    """The Shell's reading total of a history.csv (shell/history.c, docs/ocr-history.md#total-characters-read),
+    counted as a Triangle press has the control thread count it, with nothing kept from before: (characters,
+    the bytes they are of, the windows read)."""
+    out = subprocess.run([WRITER, "--total", str(path)], capture_output=True, check=True)
+    chars, covered, windows, _ns = (int(x) for x in out.stdout.split())
+    return chars, covered, windows
+
+
 def py_count(item: bytes) -> int:
     return rs.characters(item.decode("utf-8", errors="replace"))
 
@@ -915,6 +924,98 @@ class Time(unittest.TestCase):
         self.assertRegex(text, r"\nBy text source\n.*\nNative text hook +4 +32 +0 h 01 m +1,494\nOCR +6 +43 "
                                r"+0 h 00 m +3,120\n")
 
+
+
+class ShellTotal(unittest.TestCase):
+    """The overlay's "Total characters read" (shell/history.c, as the Shell counts a file a 24 KiB window at a
+    time) is this tool's total of the characters for every file the writer writes, began by any Rubi; for a
+    record a power loss cut short, each of the two counts it or the record after it at most once."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="vjo-reading-total-")
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def tools_total(self, path):
+        return sum(r.characters for r in rs.read_history([path]).records)
+
+    @need_writer
+    def test_every_rubis_files(self):
+        new, began_080, began_091 = self.dir / "new.csv", self.dir / "080.csv", self.dir / "091.csv"
+        write_history(new, RECORDS, FROM)
+        began_080.write_bytes(FIXTURE.read_bytes())
+        began_091.write_bytes(FIXTURE_091.read_bytes())
+        more = [(A, 172800, "三日目です。", 5), (B, 172810, "ABCは3文字", 7)]
+        write_history(began_080, more, [9, 0])
+        write_history(began_091, more, [0, 1])
+        for path in (FIXTURE, FIXTURE_091, new, began_080, began_091):
+            chars, covered, windows = shell_total(path)
+            self.assertEqual(chars, self.tools_total(path), path.name)
+            self.assertEqual((covered, windows), (path.stat().st_size, 1), path.name)
+        self.assertEqual(shell_total(FIXTURE)[0], sum(COUNTS))
+
+    @need_writer
+    def test_a_long_file_in_windows(self):
+        """3,000 records of 1 to 300 characters (some 1.6 MB, 70 windows): the same total as this tool's."""
+        rnd = random.Random(20261023)
+        words = ["また明日", "一緒に", "見に行こう", "、", "。", "「", "」", "AB12", "𠮟", "😀", "\"引用\"", ",", "\n", "ｶﾀｶﾅ"]
+        records = []
+        for i in range(3000):
+            text = "".join(rnd.choice(words) for _ in range(rnd.randrange(1, 80))) + str(i)
+            records.append(((A if i % 3 else B), i * 7, text, None))
+        path = self.dir / "history.csv"
+        self.assertEqual(write_history(path, records), [1] * len(records))
+        chars, covered, windows = shell_total(path)
+        self.assertEqual(chars, self.tools_total(path))
+        self.assertEqual(covered, path.stat().st_size)
+        self.assertGreater(windows, 50)
+
+    @need_writer
+    def test_overlay_time_at_15_seconds(self):
+        """Independent Python reference, including many scan-window boundaries and older CSV versions."""
+        for path in (FIXTURE, FIXTURE_091):
+            report = rs.read_history([path])
+            rs.credit_time(report.records, 15)
+            want = rs.summarize(report.records)[0]
+            out = subprocess.check_output([WRITER, "--stats", str(path)], text=True)
+            chars, us, timed = map(int, out.split())
+            self.assertEqual(chars, want.characters)
+            self.assertAlmostEqual(us / 1e6, want.seconds, places=5)
+            self.assertEqual(timed, want.timed_characters)
+        rnd = random.Random(272)
+        records, sec = [], 0
+        for i in range(2000):
+            sec += rnd.choice([0.125, 1, 5, 15, 15.125, 80])
+            records.append((A if i % 7 else B, sec, f'{i}猫\n"台詞", ABC', None))
+        path = self.dir / "timed.csv"
+        write_history(path, records)
+        report = rs.read_history([path])
+        rs.credit_time(report.records, 15)
+        want = rs.summarize(report.records)[0]
+        chars, us, timed = map(int, subprocess.check_output([WRITER, "--stats", str(path)], text=True).split())
+        self.assertEqual((chars, us, timed), (want.characters, round(want.seconds * 1e6), want.timed_characters))
+
+    @need_writer
+    def test_a_cut_record_and_the_one_after_it(self):
+        """Every cut of a record, with the next append right after it: the records before the cut always count,
+        and the cut one and the one after it each at most once, with their own characters."""
+        path, nxt = self.dir / "history.csv", self.dir / "next.csv"
+        write_history(path, RECORDS[:-1], FROM[:-1])
+        data = path.read_bytes()
+        last = data.rindex(b"\n", 0, len(data) - 1) + 1
+        write_history(nxt, [RECORDS[-1]], [1])
+        after = nxt.read_bytes()
+        after = after[after.index(b"\n") + 1:]
+        before = sum(COUNTS[:-2])
+        allowed = {before + a + b for a in (0, COUNTS[-2]) for b in (0, COUNTS[-1])}
+        for cut in range(last + 1, len(data)):
+            (self.dir / "cut.csv").write_bytes(data[:cut] + after)
+            chars, covered, _ = shell_total(self.dir / "cut.csv")
+            self.assertIn(chars, allowed, cut)
+            self.assertIn(self.tools_total(self.dir / "cut.csv"), allowed, cut)
+            self.assertEqual(covered, cut + len(after))
 
 if __name__ == "__main__":
     unittest.main()

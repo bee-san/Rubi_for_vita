@@ -393,6 +393,82 @@ static void test_saved_engine_follows_its_line(void)
     TEST_CHECK(h.n == 1 && h.origin[1] == VJO_LINE_UNKNOWN);
 }
 
+/* ---- the total's count (docs/ocr-history.md#total-characters-read): every game's lines, in windows ---- */
+
+static uint32_t count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last)
+{
+    static char copy[sizeof(csv)];
+    memcpy(copy, buf, len); /* the count unescapes in place: count a copy, so csv stays as written */
+    return vjo_history_chars(copy, len, whole, cut, first, last);
+}
+
+static void test_count_every_games_lines(void)
+{
+    size_t first, last;
+    reset("");
+    strcpy(csv, HEADER);
+    record(UUID, "「また明日、一緒に見に行こう!」");     /* 12 */
+    record("vita-PCSG00002", "10時に駅で待ってるね。"); /* 11: another game's count too */
+    record("psp-ULJM05000", "\"引用\",と、\n改行AB");  /* 7: quotes, a comma, a wrapped row */
+    record(UUID, "♪〜♪ 😀 𠮟");                        /* 1: 𠮟 only */
+    size_t len = strlen(csv);
+    TEST_CHECK(count(csv, len, 1, 0, &first, &last) == 12 + 11 + 7 + 1);
+    TEST_CHECK(first == strlen(HEADER) && last < len && csv[last] == '"' && csv[last - 1] == '\n');
+    /* cut: the newest is left for the next window */
+    TEST_CHECK(count(csv, len, 1, 1, &first, &last) == 12 + 11 + 7);
+    /* the bytes before a record: buf[0] the byte before the window, not read as a record's first */
+    TEST_CHECK(count(csv + first - 1, len - first + 1, 0, 0, &first, &last) == 31 && first == 1);
+    /* nothing but the header, or nothing at all */
+    TEST_CHECK(count(csv, strlen(HEADER), 1, 0, &first, &last) == 0 && first == strlen(HEADER) &&
+               last == strlen(HEADER));
+    TEST_CHECK(count(csv, 0, 1, 0, &first, &last) == 0 && first == 0 && last == 0);
+}
+
+/* The windows a count reads (shell/history.c vjo_history_total_step): each from the newest record start of
+ * the one before, with the byte before it; together they count every record once, whatever the size */
+static void test_count_in_windows(void)
+{
+    reset("");
+    strcpy(csv, HEADER);
+    uint32_t want = 0;
+    for (int i = 0; i < 300; i++) {
+        char line[64];
+        snprintf(line, sizeof(line), i % 3 ? "行%d「台詞」\nAB" : "\"%d\",と言った。", i);
+        record(i % 2 ? UUID : "vita-PCSG00002", line);
+        want += vjo_line_characters(line, strlen(line));
+    }
+    size_t len = strlen(csv);
+    for (size_t window = 700; window <= 9000; window += 1650) {
+        uint32_t got = 0;
+        size_t at = 0, first, last;
+        while (at < len) {
+            size_t to = len - at > window ? at + window : len, base = at ? at - 1 : 0;
+            int cut = to < len;
+            got += count(csv + base, to - base, !at, cut, &first, &last);
+            if (!cut)
+                break;
+            at = last < to - base && base + last > at ? base + last : to;
+        }
+        TEST_CHECK(got == want);
+        TEST_MSG("%zu B windows: %u, want %u", window, got, want);
+    }
+}
+
+/* What a count does not take for a record: a line cut before the time after it, a quote inside a field, a
+ * record run on from a cut one without a line break */
+static void test_count_cut_and_damaged_records(void)
+{
+    size_t first, last;
+    reset("");
+    strcpy(csv, HEADER);
+    record(UUID, "一二三");
+    strcat(csv, "\"" UUID "\",\"vjo-1-2\",\"game\",\"切れた行"); /* cut inside its line */
+    record(UUID, "四五");                                         /* runs on from it: no record start */
+    strcat(csv, "\"" UUID "\",\"vjo-1-2\",\"game\",\"時刻なし\",x\n"); /* no time after its line */
+    record(UUID, "六");
+    TEST_CHECK(count(csv, strlen(csv), 1, 0, &first, &last) == 3 + 1);
+}
+
 TEST_LIST = {
     {"saved engine follows its line, missing metadata stays unknown", test_saved_engine_follows_its_line},
     {"this game's lines, newest first, the current text not again", test_this_games_lines_newest_first},
@@ -404,5 +480,8 @@ TEST_LIST = {
     {"a record cut by a power loss and the next append: no garbage", test_a_cut_record_and_the_next_append},
     {"at most VJO_HISTORY_LINES, and only what fits", test_bounds_lines_and_memory},
     {"a file with no header, or no record", test_a_file_without_header_or_records},
+    {"total: every game's lines, the newest left for the next window", test_count_every_games_lines},
+    {"total: windows of any size count every record once", test_count_in_windows},
+    {"total: cut and damaged records", test_count_cut_and_damaged_records},
     {NULL, NULL}
 };

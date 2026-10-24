@@ -563,6 +563,18 @@ int vjo_history_append(const VjoHistoryRecord *record)
     if (history_on_append) history_on_append();
     return history_write_fail ? -1 : 1;
 }
+/* The reading total (shell/history.c, its own tests in test_shell_history.c): the control thread's calls.
+ * total_windows: the windows a count still has (each wakeup's step takes one, and wakes the thread again). */
+static unsigned total_steps, total_keeps, total_windows;
+int vjo_history_total_step(VjoArena *scratch)
+{
+    TEST_CHECK(scratch != NULL && !held_view && !held_cmd);
+    total_steps++;
+    return total_windows ? (int)(--total_windows > 0) : 0;
+}
+void vjo_history_total_keep(void) { TEST_CHECK(!held_view && !held_cmd); total_keeps++; }
+static unsigned total_stops;
+void vjo_history_total_stop(void) { TEST_CHECK(!held_view && !held_cmd && !threads_started); total_stops++; }
 /* Line history: history.csv as the tests write it (history_csv), read by the real scanner
  * (core/history_lines.c) in one window, as shell/history.c reads its windows, through the scratch it
  * is given. history_loads counts the reads; history_load_rc < 0 is the file's error. */
@@ -882,6 +894,7 @@ static void reset(void)
     history_csv[0] = history_uuid[0] = 0;
     history_loads = 0;
     history_load_rc = 0;
+    total_steps = total_keeps = total_windows = 0;
 #endif
     memset(&g_view, 0, sizeof(g_view));
     view_lock = 81;
@@ -2420,11 +2433,20 @@ static void test_failed_join_keeps_allocations(void)
     size_t bytes = results[0].size;
     threads_started = 1;
     fail_join = 1;
+#ifdef VJO_WITH_VOCR
+    total_stops = 0;
+#endif
     TEST_CHECK(vjo_worker_stop() < 0);
     TEST_CHECK(has_result_memory() && results[0].base == base && results[0].size == bytes && threads_started == 1);
+#ifdef VJO_WITH_VOCR
+    TEST_CHECK(!total_stops); /* the control thread may still count: its file stays open */
+#endif
     fail_join = 0;
     TEST_CHECK(vjo_worker_stop() == 0);
     TEST_CHECK(!has_result_memory() && threads_started == 0);
+#ifdef VJO_WITH_VOCR
+    TEST_CHECK(total_stops == 1); /* the reading total's count closes its history.csv */
+#endif
 }
 
 /* Anki is off by default; anki_mining reaches the overlay with each config
@@ -7745,6 +7767,32 @@ static void test_input_wins_the_worker_slot_after_one_prepared_word(void)
 }
 #endif
 
+#ifdef VJO_WITH_VOCR
+/* The reading total (docs/ocr-history.md#total-characters-read; shell/history.c, whose own tests are
+ * test_shell_history.c's): each wakeup takes one window of a count asked for and wakes the thread again
+ * for the next, after everything else the wakeup does; a game's exit keeps the total. */
+static void test_reading_total_on_the_control_thread(void)
+{
+    reset();
+    control_tick(0);
+    TEST_CHECK(total_steps == 1 && !shell_notifications); /* nothing asked for: no wakeup */
+    total_windows = 3;
+    control_tick(0);
+    TEST_CHECK(total_steps == 2 && shell_notifications == 1);
+    control_tick(VJO_EV_SHELL);
+    TEST_CHECK(total_steps == 3 && shell_notifications == 2);
+    control_tick(VJO_EV_SHELL); /* the last window */
+    TEST_CHECK(total_steps == 4 && shell_notifications == 2 && !total_windows);
+    state.game_pid = PS_GAME_PID;
+    control_tick(VJO_EV_GAME_START);
+    TEST_CHECK(!total_keeps); /* a game's start reads nothing for it */
+    state.game_pid = 0;
+    control_tick(VJO_EV_GAME_EXIT);
+    TEST_CHECK(total_keeps == 1);
+    mem_free();
+}
+#endif
+
 #ifdef VJO_VOCR_TIERS_TEST
 /* Two sizes, one model (host/tests/test_shared_tiers.h: Normal and Large
  * VOCR4-W20): a bad file leaves out both of its sizes at once, and the job goes on
@@ -7775,6 +7823,7 @@ static void test_vocr_a_shared_bad_model_leaves_out_both_its_sizes(void)
     TEST_CHECK(run_vocr_job() == VJO_OK && vocr_allocs == 2 && fake_game_request.tiers == 1u && vocr_unusable == 6u);
     mem_free();
 }
+
 
 TEST_LIST = {
     {"vocr_a_shared_bad_model_leaves_out_both_its_sizes", test_vocr_a_shared_bad_model_leaves_out_both_its_sizes},
@@ -7988,6 +8037,10 @@ TEST_LIST = {
      test_ps_with_the_overlay_open_releases_input_and_leaves_touch_to_shell},
     {"foreground_switch_gives_the_touch_region_back", test_foreground_switch_gives_the_touch_region_back},
     {"close_just_before_ps_leaves_touch_to_shell", test_close_just_before_ps_leaves_touch_to_shell},
+#ifdef VJO_WITH_VOCR
+    {"reading_total_a_window_a_wakeup_kept_at_a_games_exit",
+     test_reading_total_on_the_control_thread},
+#endif
     {NULL, NULL}
 };
 #endif /* VJO_VOCR_TIERS_TEST */

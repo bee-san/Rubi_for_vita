@@ -37,4 +37,22 @@ void vjo_history_reset(void);
  * read (0x80010002: there is none yet). */
 int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filter, VjoArena *scratch);
 
+/* The total of history.csv's characters (docs/ocr-history.md#total-characters-read), which the overlay's
+ * Triangle view shows. The writer adds each record's (vjo_history_append); the rest is counted from the
+ * file once a view asks for it. */
+/* The Triangle view opened (paf thread, no lock held): the total is counted unless it is known. */
+void vjo_history_total_want(void);
+/* Under the view lock: the total as the view shows it, written into buf, or "counting…" or "unavailable". */
+const char *vjo_history_total_text(char *buf, size_t cap);
+/* Under the view lock: all three reading statistics, or the count state. */
+void vjo_history_total_summary(char *buf, size_t cap);
+/* Control thread, each wakeup: one window (24 KiB, in scratch) of a count asked for. 1 while the count has
+ * more (wake the thread again), 0 otherwise; a count that an append ran beside goes on at the next wakeup
+ * (the 50 ms poll's at the latest). A count's end saves the total to history_total.bin. */
+int vjo_history_total_step(VjoArena *scratch);
+/* Control thread, at a game's exit: history_total.bin gets the total if the writer added to it. */
+void vjo_history_total_keep(void);
+/* The Shell's stop, its threads joined: a count's history.csv is closed. */
+void vjo_history_total_stop(void);
+
 #endif

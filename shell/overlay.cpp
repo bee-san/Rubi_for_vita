@@ -48,6 +48,7 @@ extern "C" {
 #include "../core/port.h"
 #include "../core/history_lines.h"
 #include "../include/vjo_ledger_budget.h"
+#include "history.h"
 }
 
 #include "../core/region_select.h"
@@ -482,7 +483,10 @@ static void render(int new_content)
             const VjoLineDebug *d = &g_view.line_debug;
             char info[512];
             /* Cold diagnostic strings live in the existing data pages, not the crowded code segment. */
-            static const char source[] VJO_DATA_TABLE(line_debug_source) = "Line debug · Triangle hides\nSource: %s%s\n";
+            vjo_history_total_summary(info, sizeof(info));
+            vjo_styled_puts(&body, info, VJO_RGB_RANK, en);
+            static const char source[] VJO_DATA_TABLE(line_debug_source) =
+                "Line debug · Triangle hides\nSource: %s%s\n";
             sceClibSnprintf(info, sizeof(info), source,
                             !s_local_cursor_mode || !d->origin ? "Unknown" : d->origin == VJO_LINE_HOOK ? "Hook" : "OCR",
                             s_history ? " (history.csv)" : "");
@@ -1039,6 +1043,8 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
 {
     if (pressed & SCE_CTRL_TRIANGLE) {
         s_mode = s_mode == MODE_LINE_DEBUG ? MODE_OVERLAY : MODE_LINE_DEBUG;
+        if (s_mode == MODE_LINE_DEBUG)
+            vjo_history_total_want(); /* its top line: the characters read (history.c) */
         render(0);
     }
     input_header_touch();

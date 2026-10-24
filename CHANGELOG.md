@@ -11,6 +11,15 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- Triangle in the overlay shows **total characters read, characters/hour and total time played**
+  across recorded games. Time estimates active reading from adjacent same-game lines at most 15 seconds
+  apart; longer pauses and game changes are excluded. Speed uses only timed lines' characters, and is
+  `-` until an interval is available. Existing history is counted in background windows once, then kept
+  in a 48-byte cache across restarts; old character-only caches rebuild automatically. No new thread or
+  heap allocation is added. [Details](docs/ocr-history.md#total-characters-read).
+
 ## [0.9.4] - 2026-10-23
 
 Publishes the native-hook changes already merged into main after 0.9.3. Both the normal build

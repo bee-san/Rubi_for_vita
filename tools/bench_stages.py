@@ -137,6 +137,14 @@ WORKLOADS = [
     W("anki", "anki", ("texts", "dict"), unit="card", what="Shell: an Anki card's note and queue record"),
     W("furigana", "furigana", ("texts", "dict"), unit="word",
       what="Shell: a word's reading aligned with its spelling (an Anki card from a queued record with ruby)"),
+    W("total_count", "total", ("texts",), unit="record",
+      what="Shell: the reading total's count of history.csv (Triangle's first press), 24,512 B windows as the "
+           "control thread reads them, per record of 2,000 (docs/ocr-history.md#total-characters-read)"),
+    W("total_number", "total_number", (), unit="number",
+      what="Shell: the Triangle view's total with its commas (every press)"),
+    W("history_scan", "history_scan", ("texts",), unit="read",
+      what="Shell: line history's read, this game's lines in history.csv's last 24,512 B (the first Up past the top "
+           "row; docs/line-history.md)"),
 ]
 
 
