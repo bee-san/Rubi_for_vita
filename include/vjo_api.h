@@ -72,8 +72,13 @@
  * 36: VjoGameOcrRequest.speed bit 16 (VJO_GAME_OCR_S_DROP_BORDERS): the game worker drops a line made only
  * of a box's border read as text (core/textnorm.h; config.ini non_japanese_filter = lines, the default), and
  * its norm step's kind counts those lines. Sizes and layouts are unchanged. 35 and speed bit 7 are taken by
- * draft #245 (the debug build's PSP probe), so this is 36. */
-#define VJO_API_VERSION 36
+ * draft #245 (the debug build's PSP probe), so this is 36.
+ * 41: the hook watch (docs/native-hooks.md, "A new line starts the read"): the game worker reports a new line
+ * in the dialogue's hook stream between jobs (vjoOcrHookLine); the region gets a new scene at once, held
+ * while the line draws, VjoState.quiet is set meanwhile and the Shell is woken with VJO_EV_REGION_QUIET, so
+ * its background read starts when the game copies the line, not when the pixels settle. Sizes and layouts
+ * are unchanged; the Shell's code is too. 37-40 are taken by drafts #271, #278, #281 and #282. */
+#define VJO_API_VERSION 41
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
@@ -137,7 +142,7 @@ typedef struct {
     uint32_t done_seq;      /* that job's capture sequence number */
     uint32_t unsettled_ms;  /* the region has been changing this long without settling (0 = settled) */
     /* not settled, but only a small spot keeps changing (an icon not
-     * masked yet): worth capturing */
+     * masked yet), or (API 41) a hooked line still drawing: worth capturing */
     uint32_t quiet;
     uint32_t region_seq;    /* the same capture's; 0 after a region change, and while a job's first pass rewrites it */
     /* the scene if that capture shows it now (animated cells aside, and

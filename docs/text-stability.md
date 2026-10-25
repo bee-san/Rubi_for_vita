@@ -31,7 +31,11 @@ console logs or marked est. The logs hold the owner's reading, so only counts ar
   spot of 3 × 3 cells that went back to a recent state.
 - **The job.** Either event starts Automatically's background job (`shell/worker.c`
   `auto_prefetch`: `auto: screen settled` or `auto: screen quiet`), unless the last result's
-  capture still shows the screen. A press with no result for its screen starts a job at once,
+  capture still shows the screen.
+- **A hooked line** (API 41). A new line in a hook stream that answers without OCR starts the job
+  at once, as a quiet screen, and its scene holds while the line types out
+  ([native-hooks.md](native-hooks.md#a-new-line-starts-the-read)). A job that reads it with OCR
+  still waits for the stable text below. A press with no result for its screen starts a job at once,
   whatever the tracker says. If a background job is still running, the press waits for it instead.
 
 **The game worker's stable-text wait** (`core/vocr_ocr.c` `settle_wait`, `settle_verify`) decides

@@ -299,6 +299,64 @@ dialogue box of 60 characters against a few streams is about 10^4 cells, under a
 and the worst case, 20 streams of 256 characters against 256, 1.3 million cells, about 30-60 ms
 [estimate: the instructions of the `-Os` disassembly at 0.5-1 cycle each, not run on a console].
 
+## A new line starts the read
+
+API 41. A hook has the line as soon as the game copies it, but the Shell used to ask for it only once the
+region's pixels settled (300 ms after the line finished typing: [text-stability.md](text-stability.md#when-a-read-starts-and-what-counts-as-stable))
+or when the overlay opened, so a press soon after a line appeared waited for that read. Now the new line
+itself starts the read:
+
+- **The watch** (`game_ocr/main.c` `hooks_watch`). Each round of the worker's loop between jobs (its
+  `vjoOcrTake` waits for a job at most 100 ms) reads the sequence numbers of the streams a job answers
+  without recognition: Luna's sites that have held text, and the learned source while its slot still holds
+  that source (`hk.sel.locked`, its key and kind). It reads them without the slots' try-locks
+  (`vjo_hooks_seq`), so a game thread writing one is never turned away for it. A sequence newer than every
+  text the last job's snapshot saw is a new line, reported once with `vjoOcrHookLine`, with its raw length;
+  at most one report every 200 ms (`HOOK_LINE_GAP_US`), and a refused one is tried again at the next round.
+  Nothing is watched before a source answers without recognition: a Luna site's first line and a learned
+  source's first agreeing lines are read as before.
+- **The kernel** (`kernel/game_ocr.c` `vjoOcrHookLine`: the registered worker's thread only, never while
+  a job is claimed) gives the region a new scene at once, held while the line draws (`kernel/scene.c`
+  `scene_hook`), stops the last capture standing for the screen (`region_seq` 0), sets `VjoState.quiet`
+  while the line draws, and wakes the Shell with `VJO_EV_REGION_QUIET`. A line reported while the last
+  reported one is still drawing (lines in quick succession: a skip, clicks through the typing) gets its
+  scene but wakes nobody: it is read once the region settles, as without the watch, so a skip reads no
+  line it passes (nor adds it to `history.csv`).
+- **The Shell** is unchanged. As for any quiet screen, Automatically's background read (`shell/worker.c`
+  `auto_prefetch`, a job `auto: screen quiet`) starts at once; the stream answers it with the first capture
+  pass only, and its text and first word are kept for its capture's scene. That capture began after the
+  report, so it is the held scene's (`scene_capture`), and L + R on that scene shows it at once
+  (`open: background result` or `open: saved local word`).
+- **The held scene.** The box clearing, the line typing out and the player skipping the typing keep the
+  scene's number until the region settles, so the result still stands for the screen once the line has
+  drawn. After that an icon-sized change keeps it too (the blinking "next" arrow, a mask that ended), and
+  a larger one (a menu, a line without a hook) is another screen, read as before. A region that has not
+  settled `SCENE_HOOK_DRAW_US` (10 s) after the report is held through icon-sized changes only. The next
+  report, a region change or the game leaving the front ends it.
+
+What does not change: which text a job shows ([above](#which-text-a-job-shows)). A scheduled check, a
+confirmation, or a short or missing line still runs OCR, only sooner; such a job waits for the rows to hold
+still before its first pass, as for any screen that has not settled (`VJO_GAME_OCR_F_SETTLE_FIRST`), so it
+reads the whole line. **Only when I press** starts no background read, so a press there still starts its
+own job.
+
+When the text is ready [estimate, not measured on a console]: the report at most 100 ms after the copy,
+then one job: its first capture pass (three game frames for CLANNAD's region; 56-73 ms a pass in test.3,
+[auto-vs-press.md](auto-vs-press.md#what-settled-means)) and the Shell's lookup of the first word. That is
+before most lines have finished typing, so the overlay opens on the line with its word already looked up.
+
+Limits:
+- A line reported more than 300 ms before the box starts to change settles as drawn on the unchanged
+  screen; its typing is then another screen, read as before.
+- A menu opened while the line is still drawing is held as the line's screen, until a change larger than
+  an icon after the region has settled.
+- Each new text of a watched stream is a report: a game that sends a line through the same caller in parts
+  reports each part. The debug build's `kernel.txt` logs every report (`hook line: seq N, B bytes, scene S`),
+  so a console run shows whether a game's lines arrive whole.
+
+No block, thread or buffer: a few words of `.bss` in the kernel and the worker, and the code, within the
+modules' declared pages (`tools/check_memory_ledger.py` fails the build otherwise).
+
 ## Release
 
 `vjo_hooks_stop` stops taking hits, releases every hook newest first (CALL imports, then sites, in
@@ -378,7 +436,9 @@ instead of `vocr`, and `line_source` `hook` instead of `ocr`: `shell/history.c`;
 `ux0:data/VitaJPOverlay/hooks.log` at each game start (rewritten): the title, the text source, the main
 module's name, NID and segment 0, `APP_VER`, each site with its verdict, reason and first 16 bytes, and
 each CALL import hooked or not. No text is in it. Job results carry the counts; the Shell's debug log
-shows them (hooks-api).
+shows them (hooks-api). API 41: the debug build's `kernel.txt` has a line for each new line the hook watch
+reports, its sequence, raw length and held scene (`hook line: seq N, B bytes, scene S`, with `, no wakeup`
+for a line reported while the last one was still drawing), no text.
 
 ## Recovery
 
@@ -418,6 +478,12 @@ Hardware is paused; these are for the test issue (#230):
     must not add or clear pending disagreements. The wider interval may show up to 31 wrong hook-only
     readings before detecting a source that starts returning incorrect text. Change the executable,
     text-source setting or definitions and confirm that old learning is not reused.
+11. API 41, a new line starts the read (CLANNAD, Automatically, the debug build): once the source is
+    learned, each new line gives one `hook line` in `kernel.txt` (its byte counts show whether lines arrive
+    whole), followed by an `auto: screen quiet` job that the stream answers; L + R pressed as the line
+    finishes typing opens on it at once (`open: background result` or `open: saved local word`, not
+    `background job still running`). A menu opened after the line has drawn, then L + R, shows the menu's
+    text as before.
 11. The popup shows text without hook numbers or source-status labels. Triangle does not change the
     text source. Normal jobs keep `hook_pick = VJO_HOOK_PICK_AUTO`; diagnostic jobs can still request
     a stream directly through the job protocol.

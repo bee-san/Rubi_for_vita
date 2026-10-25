@@ -384,6 +384,10 @@ reported console run. The behaviour below is checked on the host.
   erase it. Longer gaps can delay detection of incorrect hook text by up to 31 hook-only readings.
   Missing or unwritable cache storage means fresh learning. Choose **OCR only** and restart the game
   to disable hooks.
+- **When it is read.** Once a hook answers without OCR, its new line is read as the game copies it
+  (with **Read text** on **Automatically**): the overlay opened as the line finishes typing usually shows
+  it at once, its first word looked up. Lines in quick succession (a skip) are read once the screen
+  settles, as before ([details](native-hooks.md#a-new-line-starts-the-read)).
 - **The popup** shows the dialogue and dictionary entries. Source selection is automatic; there is
   no hook number, source-status label or Triangle source picker. Technical source details remain in
   the debug log.

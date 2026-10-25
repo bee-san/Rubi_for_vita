@@ -24,6 +24,15 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
     return 0;
 }
 
+uint32_t vjo_hooks_seq(uint32_t id, uint32_t *key, uint32_t *kind, uint32_t *bytes)
+{
+    (void)id;
+    (void)key;
+    (void)kind;
+    (void)bytes;
+    return 0;
+}
+
 void vjo_hooks_keep(uint32_t id, uint32_t key)
 {
     (void)id;

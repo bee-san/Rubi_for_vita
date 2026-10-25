@@ -11,6 +11,7 @@
 #include "vocr_lines_rows.h"
 #include "test_resident_weights.h"
 #define VJO_TEST_HOOK_CACHE 1
+#define VJO_TEST_HOOK_LINE 1
 #include "../../game_ocr/main.c"
 
 #define W 200u
@@ -123,6 +124,29 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
     out->n = (uint32_t)strlen(fs[id].text) < VJO_HOOK_RAW_BYTES ? (uint32_t)strlen(fs[id].text) : VJO_HOOK_RAW_BYTES;
     memcpy(out->raw, &fs[id].text, sizeof(fs[id].text)); /* the fake's raw bytes: the text's address */
     return 1;
+}
+/* The hook watch's lock-free read (API 41): never refused, a busy stream included. */
+static unsigned seq_reads;
+uint32_t vjo_hooks_seq(uint32_t id, uint32_t *key, uint32_t *kind, uint32_t *bytes)
+{
+    seq_reads++;
+    if (!id || id > VJO_HOOK_STREAMS || !fs[id].text) return 0;
+    *key = fs[id].key;
+    *kind = fs[id].kind;
+    *bytes = (uint32_t)strlen(fs[id].text);
+    return fs[id].seq;
+}
+/* vjoOcrHookLine (API 41): what the watch reported, and what the kernel answers */
+static unsigned hook_lines;
+static uint32_t hook_line_seq, hook_line_bytes;
+static int hook_line_rc;
+int vjoOcrHookLine(uint32_t seq, uint32_t bytes)
+{
+    hook_lines++;
+    if (hook_line_rc) return hook_line_rc;
+    hook_line_seq = seq;
+    hook_line_bytes = bytes;
+    return 0;
 }
 size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
 {
@@ -290,6 +314,7 @@ static void reset(void)
     memset(fs, 0, sizeof(fs));
     fake_mode = VJO_TEXT_SOURCE_AUTO; fake_installed = 1u << 16 | 4u; fake_refused = 2; fake_verified = 0;
     snaps = texts = bump_at = 0; bump_id = 0; bump_text = NULL;
+    seq_reads = hook_lines = 0; hook_line_seq = hook_line_bytes = 0; hook_line_rc = 0;
     keeps = 0; memset(kept_ids, 0, sizeof(kept_ids)); memset(kept_keys, 0, sizeof(kept_keys)); fake_call_dropped = fake_call_replaced = 0;
     capture_live = job_live = weights_live = 0; capture_block = capture_allocs = 0; live_bytes = 0;
     shot_allocs = probe_allocs = 0;
@@ -425,6 +450,89 @@ static void locked_stream_answers_with_the_first_pass_only(void)
     fs[9].busy = 1;
     TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && opens == 4 && !out.text_from && !strcmp(out.text, OCR3));
     TEST_CHECK(hk.sel.locked == 9 && hk.sel.misses == 0 && !out.hook_streams);
+}
+
+/* API 41, the hook watch (hooks_watch, between jobs): once a source answers without recognition, a newer
+ * line in it is reported once (vjoOcrHookLine: its sequence and raw length), read without the slot's lock;
+ * the job's own snapshot, other streams, a caller that took the source's slot, and a report within
+ * HOOK_LINE_GAP_US of the last are not; a refused report is tried again. */
+static void hook_watch_reports_a_new_line(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    /* nothing learned: nothing watched */
+    stream(9, VJO_HOOK_KIND_CALL, 5, LINE1);
+    hooks_watch();
+    TEST_CHECK(!hook_lines && !seq_reads);
+    spy_text = OCR1;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9 && !hk.sel.interval);
+    stream(9, VJO_HOOK_KIND_CALL, 6, LINE2);
+    hooks_watch();
+    TEST_CHECK(!hook_lines);
+    spy_text = OCR2;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && hk.sel.locked == 9 && hk.watch_seen == 6);
+    /* the line the job read is no news */
+    hooks_watch();
+    TEST_CHECK(!hook_lines && seq_reads == 1);
+    /* the game copies the next line: reported once, its sequence and length; a slot a game thread is
+     * writing does not stop the watch, which takes no lock */
+    stream(9, VJO_HOOK_KIND_CALL, 7, LINE3);
+    fs[9].busy = 1;
+    hooks_watch();
+    TEST_CHECK(hook_lines == 1 && hook_line_seq == 7 && hook_line_bytes == strlen(LINE3));
+    fs[9].busy = 0;
+    hooks_watch();
+    TEST_CHECK(hook_lines == 1);
+    /* the job the Shell starts for it answers from the stream, without recognition */
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 9 && !strcmp(out.text, LINE3));
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR) && hk.watch_seen == 7);
+    hooks_watch();
+    TEST_CHECK(hook_lines == 1);
+    /* another stream's text is no line of the dialogue */
+    clock_value += HOOK_LINE_GAP_US;
+    stream(10, VJO_HOOK_KIND_CALL, 8, "セーブしますか？");
+    hooks_watch();
+    TEST_CHECK(hook_lines == 1);
+    /* within HOOK_LINE_GAP_US of the last report: the next round after it */
+    hk.watch_sent = now_wide();
+    stream(9, VJO_HOOK_KIND_CALL, 9, LINE2);
+    hooks_watch();
+    TEST_CHECK(hook_lines == 1);
+    clock_value += HOOK_LINE_GAP_US;
+    hooks_watch();
+    TEST_CHECK(hook_lines == 2 && hook_line_seq == 9);
+    /* refused (another app in front, a job claimed): tried again at the next round */
+    clock_value += HOOK_LINE_GAP_US;
+    stream(9, VJO_HOOK_KIND_CALL, 11, LINE1);
+    hook_line_rc = VJO_ERR_PERM;
+    hooks_watch();
+    TEST_CHECK(hook_lines == 3 && hook_line_seq == 9 && hk.watch_seen == 9);
+    hook_line_rc = 0;
+    hooks_watch();
+    TEST_CHECK(hook_lines == 4 && hook_line_seq == 11 && hk.watch_seen == 11);
+    /* another caller took the source's slot: its text is not the source's line */
+    clock_value += HOOK_LINE_GAP_US;
+    fs[9].key = 0x4444;
+    fs[9].seq = 12;
+    hooks_watch();
+    TEST_CHECK(hook_lines == 4);
+}
+
+/* Luna's sites answer without recognition from their first line: each new line of one is reported. */
+static void hook_watch_reports_luna_lines(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    stream(2, VJO_HOOK_KIND_SITE, 1, "はい"); fs[2].luna = &fake_luna_site;
+    hooks_watch();
+    TEST_CHECK(!hook_lines); /* no site has held text in a job yet */
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 2);
+    TEST_CHECK(hk.luna_seen == VJO_HOOK_STREAM_BIT(2) && !hk.sel.interval);
+    hooks_watch();
+    TEST_CHECK(!hook_lines);
+    stream(2, VJO_HOOK_KIND_SITE, 3, "うん");
+    hooks_watch();
+    TEST_CHECK(hook_lines == 1 && hook_line_seq == 3 && hook_line_bytes == strlen("うん"));
 }
 
 /* A locked CALL stream whose slot another caller took (audit-hooks F2: the slot's key is the new caller's,
@@ -1005,6 +1113,8 @@ TEST_LIST = {
     {"nothing installed: OCR as before, no snapshot", nothing_installed_is_ocr_as_before},
     {"an agreeing stream's text replaces OCR's", agreeing_stream_replaces_ocr_text},
     {"a locked stream with new text answers with the first pass only", locked_stream_answers_with_the_first_pass_only},
+    {"the hook watch reports a learned source's new line once (API 41)", hook_watch_reports_a_new_line},
+    {"the hook watch reports a Luna site's new lines (API 41)", hook_watch_reports_luna_lines},
     {"a locked CALL stream whose slot another caller took unlocks (VjoHookCand.key)", replaced_slot_unlocks},
     {"a job that fails changes nothing", failed_answer_changes_nothing},
     {"a pinned stream, OCR only, an unknown pick", pinned_and_ocr_only},

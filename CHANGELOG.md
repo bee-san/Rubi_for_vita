@@ -11,6 +11,23 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- A hooked line is read as soon as the game copies it (API 41). Once a hook answers without OCR (a Luna
+  site, or a source Rubi has learned, such as CLANNAD's), the game worker sees the hook stream take a new
+  line within 100 ms (est.) and tells the kernel, which wakes the Shell's background read at once instead
+  of 300 ms after the line has finished typing, and holds that line's scene while it types out. So with
+  **Read text** on **Automatically**, L + R as the line finishes usually opens on it, its first word
+  already looked up, instead of waiting for a read. Lines in quick succession (a skip) wake nothing until
+  the screen settles, as before, so a skip adds no line to the history. The Shell's code is unchanged,
+  as are which text a job shows (and when OCR checks a hook) and **Only when I press**. The debug build
+  logs each report in `kernel.txt` with its byte count, which shows whether a game's lines arrive whole
+  ([details](docs/native-hooks.md#a-new-line-starts-the-read)).
+
+### On the console
+
+- Not run on a console yet: host-tested only (the held scene, the kernel's syscall and the worker's watch).
+
 ## [0.9.5] - 2026-10-25
 
 Shows a word's character name as its second page, with the cleaned names dictionary, and adds the

@@ -58,7 +58,18 @@
  * spot only, so it shows the screen with the spot left aside
  * (scene_match_since), until something changes outside the spot, a mask
  * ends or an input edge. A spot that changes to new content in place (a
- * one-character counter) is taken for the icon meanwhile. */
+ * one-character counter) is taken for the icon meanwhile.
+ *
+ * A hooked line (API 41, scene_hook): when the game worker sees the dialogue's
+ * hook stream take a new line, the region gets a new scene at once, before
+ * the pixels show it, and holds that number while the line draws: every
+ * change until the region next settles (the box clearing, the text typing
+ * out, the player skipping the typing) keeps it, for at most
+ * SCENE_HOOK_DRAW_US. Once settled, an icon-sized change (a blinking "next"
+ * icon, a mask ending) still keeps it; a larger one (a menu, the next line
+ * without a hook) is another screen, as without a hook. A capture begun since
+ * the hooked line is that scene's (scene_capture): its text is that line or a
+ * newer one, since the worker reports a line only between jobs. */
 #ifndef VJO_SCENE_H
 #define VJO_SCENE_H
 
@@ -77,6 +88,7 @@
 #define SCENE_STABLE_US     300000  /* no change this long = settled */
 #define SCENE_SPOT          3       /* quiet: changes in a spot this many cells wide and tall */
 #define SCENE_QUIET_US      400000  /* for this long */
+#define SCENE_HOOK_DRAW_US  10000000 /* a hooked line's scene waits this long at most for the region to settle */
 
 typedef struct {
     uint32_t w, h; /* the region size it was built for; 0 = none */
@@ -138,6 +150,8 @@ typedef struct {
     int64_t spot_us;       /* every change since fits in one spot; 0 = none */
     int spot_cycles;       /* a spot cell went back to a recent state */
     int quiet;             /* the spot has been cycling for SCENE_QUIET_US */
+    int64_t hook_us;       /* the current scene is a hooked line's, reported then (scene_hook); 0 = none */
+    int hook_drawn;        /* the region settled since: only an icon-sized change keeps the scene now */
 } SceneTracker;
 
 /* Forget the screen (new game or region); keeps the numbering. */
@@ -158,5 +172,17 @@ uint32_t scene_match_since(const SceneTracker *t, const SceneSig *sig, int64_t s
 
 /* How long the region has been changing without settling (0 = settled). */
 int64_t scene_unsettled_us(const SceneTracker *t, int64_t now);
+
+/* API 41: the dialogue's hook stream took a new line (vjoOcrHookLine): a new scene, held while the line
+ * draws and, once the region settles, through icon-sized changes (see the top of this file). */
+void scene_hook(SceneTracker *t, int64_t now);
+/* The scene of a capture whose first pass began at begin_us: while a hooked line's scene holds, that scene
+ * for a capture begun since the line was reported and 0 for one begun before it; else scene_match. */
+uint32_t scene_capture(const SceneTracker *t, const SceneSig *sig, int64_t begin_us);
+/* A hooked line's scene that has not settled yet: worth reading now (VjoState.quiet). */
+static inline int scene_hook_drawing(const SceneTracker *t)
+{
+    return t->hook_us != 0 && !t->hook_drawn;
+}
 
 #endif
