@@ -8,4 +8,6 @@ typedef struct {
 } SceDateTime;
 int sceRtcGetCurrentTick(SceRtcTick *tick);
 int sceRtcGetCurrentClockLocalTime(SceDateTime *time);
+int sceRtcGetTick(const SceDateTime *date, SceRtcTick *tick);
+int sceRtcConvertLocalTimeToUtc(const SceRtcTick *local, SceRtcTick *utc);
 #endif

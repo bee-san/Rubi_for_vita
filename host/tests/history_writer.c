@@ -63,6 +63,7 @@ void vjo_log(const char *fmt, ...) { (void)fmt; }
 
 /* The total's: the view's lock, the Shell's wakeup, and no history_total.bin */
 VjoView g_view;
+int vjo_history_context(VjoReadingScope *scope) { (void)scope; return 1; }
 void vjo_view_lock(void) {}
 void vjo_view_unlock(void) {}
 int vjoNotifyShell(void) { return 0; }

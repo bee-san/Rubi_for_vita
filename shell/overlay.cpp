@@ -479,40 +479,26 @@ static void render(int new_content)
             const VjoLineDebug *d = &g_view.line_debug;
             char info[512];
             /* Cold diagnostic strings live in the existing data pages, not the crowded code segment. */
-            vjo_history_total_summary(info, sizeof(info));
-            vjo_styled_puts(&body, info, VJO_RGB_RANK, en);
             static const char source[] VJO_DATA_TABLE(line_debug_source) =
-                "Line debug · Triangle hides\nSource: %s%s\n";
+                "This line came in through: %s\n\n";
+            static const char origins[] VJO_DATA_TABLE(stats_origins) = "Unknown\0hooking\0ocr";
             sceClibSnprintf(info, sizeof(info), source,
-                            !s_local_cursor_mode || !d->origin ? "Unknown" : d->origin == VJO_LINE_HOOK ? "Hook" : "OCR",
-                            s_history ? " (history.csv)" : "");
-            vjo_styled_puts(&body, info, VJO_RGB_RANK, en);
-            if (s_local_cursor_mode && d->model) {
-                static const char detail[] VJO_DATA_TABLE(line_debug_detail) =
-                    "Stream: %u (%s) · flags: 0x%02X\n"
-                    "Agreed: %u · locked: %u · pinned: %u · no OCR: %u\n"
-                    "Unlocked: %u · CALL slots full: %u\n"
-                    "Similarity: %u/1000 (0 may mean not compared)\n"
-                    "Available streams: 0x%05X\nMode: %s · table sites: %s\n"
-                    "Installed: %u sites, %u CALL imports · refused: %u\n"
-                    "OCR model: %s\nScene: %u · capture: %u";
-                uint32_t f = d->flags, mode = d->mode & VJO_TEXT_SOURCE_MODE_MASK;
-                sceClibSnprintf(info, sizeof(info), detail,
-                    (unsigned)d->stream, !d->stream ? "none" : (f & VJO_HOOK_R_SITE) ? "table site" : "CALL caller",
-                    (unsigned)f, !!(f & VJO_HOOK_R_AGREED), !!(f & VJO_HOOK_R_LOCKED),
-                    !!(f & VJO_HOOK_R_PINNED), !!(f & VJO_HOOK_R_NO_OCR),
-                    !!(f & VJO_HOOK_R_UNLOCK), !!(f & VJO_HOOK_R_CALLS_FULL),
-                    (unsigned)d->score, (unsigned)d->streams,
-                    mode == VJO_TEXT_SOURCE_OCR ? "OCR" : mode == VJO_TEXT_SOURCE_AUTO ? "Auto" : "Hooks",
-                    (d->mode & VJO_TEXT_SOURCE_NO_SITES) ? "off" : "on",
-                    (unsigned)(d->installed >> 16), (unsigned)(d->installed & 0xFFFFu), (unsigned)d->refused,
-                    (d->flags & VJO_HOOK_R_NO_OCR) ? "not run (hook only)" : d->model,
-                    (unsigned)d->scene, (unsigned)d->capture_seq);
-                vjo_styled_puts(&body, info, VJO_RGB_DIM, en);
-            } else {
-                static const char unavailable[] VJO_DATA_TABLE(line_debug_unavailable) =
-                    "Detailed capture/hook data unavailable for this line.";
-                vjo_styled_puts(&body, unavailable, VJO_RGB_DIM, en);
+                origins + (!s_local_cursor_mode || !d->origin ? 0 : d->origin == VJO_LINE_HOOK ? 8 : 16));
+            vjo_styled_puts(&body, info, VJO_RGB_DIM, en);
+            static const char today[] VJO_DATA_TABLE(stats_today) = "TODAY · THIS GAME\n";
+            static const char game[] VJO_DATA_TABLE(stats_game) = "\n\nTHIS GAME · TOTAL\n";
+            for (int block = 0; block < 2; block++) {
+                vjo_styled_puts(&body, block ? game : today, VJO_RGB_RANK, en);
+                vjo_history_stats_block(info, sizeof(info), !block);
+                /* The character count is the first row, larger than the supporting time/rate. */
+                char *detail = info;
+                while (*detail && *detail != '\n') detail++;
+                if (*detail) *detail++ = 0;
+                vjo_styled_puts(&body, info, VJO_RGB_TEXT, en + 4);
+                if (*detail) {
+                    vjo_styled_puts(&body, "\n", VJO_RGB_TEXT, en);
+                    vjo_styled_puts(&body, detail, VJO_RGB_DIM, en);
+                }
             }
         } else {
         if (s_history) { /* where the text is in this game's line history */

@@ -53,6 +53,16 @@ typedef struct {
     uint64_t active_us, timed_chars, last_us;
     uint32_t last_game, last_chars;
 } VjoReadingTime;
+/* One selected game's daily counters. UTC bounds represent local midnight on the Vita.
+ * Empty uuid retains the unfiltered total used by offline tools. */
+typedef struct {
+    char uuid[24];
+    uint64_t start_us, end_us, chars, active_us, timed_chars;
+} VjoReadingScope;
+void vjo_reading_scope_add(VjoReadingTime *t, VjoReadingScope *scope,
+                           uint64_t us, uint32_t game, uint32_t chars);
+uint32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut,
+    size_t *first, size_t *last, VjoReadingTime *time, VjoReadingScope *scope);
 void vjo_reading_time_add(VjoReadingTime *t, uint64_t us, uint32_t game, uint32_t chars);
 /* Like vjo_history_chars, also updating reading time in file order, across window boundaries. */
 uint32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,

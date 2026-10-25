@@ -94,6 +94,8 @@ void vjo_log(const char *fmt, ...) { (void)fmt; }
 /* The total's (docs/ocr-history.md#total-characters-read): the view's lock, the Shell's wakeup and
  * shell/files.c's file access, on the test's directory, for history_total.bin only */
 VjoView g_view;
+static VjoReadingScope context;
+int vjo_history_context(VjoReadingScope *scope) { *scope = context; return 1; }
 static int view_held, view_locks, notifies, total_reads, total_writes, total_write_error;
 void vjo_view_lock(void) { TEST_CHECK(!view_held); view_held = 1; view_locks++; }
 void vjo_view_unlock(void) { TEST_CHECK(view_held); view_held = 0; }
@@ -104,14 +106,20 @@ static const char *total_file(void)
     snprintf(p, sizeof(p), "%s/history_total.bin", directory);
     return p;
 }
+static const char *cache_file(const char *file)
+{
+    static char p[PATH_MAX + 80];
+    snprintf(p, sizeof(p), "%s/%s", directory, strrchr(file, '/') + 1);
+    return p;
+}
 /* shell/files.c's, on the test's directory: history_total.bin is the only file they are given */
 char *vjo_file_read(VjoArena *a, const char *file, size_t *len)
 {
-    TEST_CHECK(!strcmp(file, "ux0:data/VitaJPOverlay/history_total.bin"));
+    TEST_CHECK(strstr(file, "ux0:data/VitaJPOverlay/") == file);
     total_reads++;
-    FILE *f = fopen(total_file(), "rb");
-    char *buf = f ? (char *)vjo_arena_alloc(a, 65) : NULL;
-    size_t n = buf ? fread(buf, 1, 64, f) : 0;
+    FILE *f = fopen(cache_file(file), "rb");
+    char *buf = f ? (char *)vjo_arena_alloc(a, 257) : NULL;
+    size_t n = buf ? fread(buf, 1, 256, f) : 0;
     if (f) fclose(f);
     if (!buf) return NULL;
     buf[n] = 0;
@@ -120,18 +128,18 @@ char *vjo_file_read(VjoArena *a, const char *file, size_t *len)
 }
 int vjo_file_write(const char *file, const void *data, size_t len)
 {
-    TEST_CHECK(!strcmp(file, "ux0:data/VitaJPOverlay/history_total.bin"));
+    TEST_CHECK(strstr(file, "ux0:data/VitaJPOverlay/") == file);
     total_writes++;
     if (total_write_error) return -1;
-    FILE *f = fopen(total_file(), "wb");
+    FILE *f = fopen(cache_file(file), "wb");
     TEST_ASSERT(f && fwrite(data, 1, len, f) == len);
     fclose(f);
     return 0;
 }
 int vjo_file_exists(const char *file)
 {
-    TEST_CHECK(!strcmp(file, "ux0:data/VitaJPOverlay/history_total.bin"));
-    return access(total_file(), F_OK) == 0;
+    TEST_CHECK(strstr(file, "ux0:data/VitaJPOverlay/") == file);
+    return access(cache_file(file), F_OK) == 0;
 }
 
 
@@ -143,6 +151,7 @@ static void reset(void)
         TEST_ASSERT(snprintf(path, sizeof(path), "%s/history.csv", directory) < (int)sizeof(path));
     }
     vjo_history_reset();
+    memset(&context, 0, sizeof(context));
     memset(&total, 0, sizeof(total)); /* the Shell's start: the total not read yet */
     unlink(total_file());
     on_read = NULL;
@@ -906,7 +915,7 @@ static void test_total_counts_the_file_once_then_adds(void)
     want += append_total_lines(&r, 50);
     vjo_history_total_want();
     TEST_CHECK(total.state == TOTAL_KNOWN && total.chars == want && total.covered == (uint32_t)file_size());
-    TEST_CHECK(!vjo_history_total_step(&count_scratch) && reads == before && read_opens == opened && notifies == 1);
+    TEST_CHECK(!vjo_history_total_step(&count_scratch) && reads == before && read_opens == opened && notifies == 2);
     TEST_CHECK(shown() == want);
     /* a game's exit keeps it */
     vjo_history_total_keep();
@@ -1419,7 +1428,7 @@ static void test_reading_time_and_speed(void)
     TEST_CHECK(!memcmp(&total.time, &kept, sizeof(kept)));
     TEST_CHECK(total.time.active_us > running.active_us);
     /* A pre-time (16 byte) cache must rebuild rather than claim time zero for old history. */
-    TotalFile old = {total.chars, total.covered, total_check(total.chars, total.covered)};
+    TotalFile old = {total.chars, total.covered, (uint32_t)total.chars ^ (uint32_t)(total.chars >> 32) ^ total.covered ^ 0x49425552u};
     FILE *f = fopen(total_file(), "wb");
     TEST_ASSERT(f && fwrite(&old, 1, 16, f) == 16); fclose(f);
     memset(&total, 0, sizeof(total)); count_total();
@@ -1460,7 +1469,69 @@ static void test_reading_time_windows_and_retry(void)
     TEST_CHECK(!memcmp(&total.time, &expected, sizeof(expected)));
 }
 
+/* Real CSV, multiple game caches, daily rollover, restart and constant-time append. */
+static void test_scoped_reading_stats(void)
+{
+    reset();
+    strcpy(context.uuid, "vita-PCSG00415");
+    context.start_us = 1792195200000000ull;
+    context.end_us = context.start_us + 86400000000ull;
+    unlink(cache_file("x/reading-vita-PCSG00415.bin"));
+    unlink(cache_file("x/reading-vita-PCSG00002.bin"));
+    VjoHistoryRecord r = record("猫犬");
+    r.time_us = context.start_us - 1000000;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    strcpy(result.text, "猫犬鳥"); r.time_us = context.start_us + 1000000;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    strcpy(result.text, "猫犬鳥魚"); r.time_us += 1000000;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    strcpy(r.title_id, "PCSG00002"); strcpy(result.text, "他"); r.time_us += 1000000;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    strcpy(r.title_id, "PCSG00415"); strcpy(result.text, "五六七八九"); r.time_us += 1000000;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    count_total();
+    TEST_CHECK(total.chars == 14 && total.scope.chars == 12);
+    TEST_CHECK(total.time.active_us == 3000000 && total.scope.active_us == 1000000);
+    TEST_CHECK(total.scope.timed_chars == 3); /* no time bridged over the other game */
+    unsigned before = reads, saved = total_writes;
+    strcpy(result.text, "六七八九十百"); r.time_us += 1000000;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    TEST_CHECK(total.chars == 20 && total.scope.chars == 18 && reads == before && total_writes == saved);
+    count_total();
+    TEST_CHECK(reads == before && total.scope.active_us == 2000000);
+    vjo_history_total_keep();
+    memset(&total, 0, sizeof(total));
+    count_total();
+    TEST_CHECK(total.chars == 20 && total.scope.chars == 18);
+    strcpy(context.uuid, "vita-PCSG00002");
+    count_total();
+    TEST_CHECK(total.chars == 1 && total.scope.chars == 1 && total.time.active_us == 0);
+    strcpy(context.uuid, "vita-PCSG00415");
+    count_total();
+    TEST_CHECK(total.chars == 20 && total.scope.chars == 18);
+    char summary[256];
+    vjo_history_stats_block(summary, sizeof(summary), 1);
+    TEST_CHECK(strstr(summary, "18 characters\n0 min reading · 14,400 chars/hour"));
+    /* Local midnight: even an open page changes day when the next record arrives. */
+    strcpy(result.text, "次"); r.time_us = context.end_us + 1000000;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    context.start_us = context.end_us;
+    context.end_us += 86400000000ull;
+    count_total();
+    TEST_CHECK(total.chars == 21 && total.scope.chars == 1 && total.scope.active_us == 0);
+    TEST_CHECK(total.time.active_us == 4000000);
+    /* A checkpoint is periodic, not per dialogue. */
+    saved = total_writes;
+    strcpy(result.text, "翌"); r.time_us += 61000000;
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    TEST_CHECK(total_writes == saved);
+    TEST_CHECK(vjo_history_total_step(&count_scratch) == 0 && total_writes == saved + 1);
+    unlink(cache_file("x/reading-vita-PCSG00415.bin"));
+    unlink(cache_file("x/reading-vita-PCSG00002.bin"));
+}
+
 TEST_LIST = {
+    {"scoped reading stats", test_scoped_reading_stats},
     {"reading time: AFK cutoff, speed, restarts and replacement", test_reading_time_and_speed},
     {"reading time: window boundaries, errors and corrupt cache", test_reading_time_windows_and_retry},
     {"CSV quotes UTF-8 and complete OCR metadata", test_csv_fields_and_metadata},
