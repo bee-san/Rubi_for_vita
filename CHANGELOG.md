@@ -11,6 +11,12 @@ been reported.
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-10-25
+
+Shows a word's character name as its second page, with the cleaned names dictionary, and adds the
+reading totals on Triangle. Like 0.9.4, both the normal build and the debug build are included; the
+normal VPK is the main download.
+
 ### Added
 
 - Triangle in the overlay shows **total characters read, characters/hour and total time played**
@@ -35,7 +41,13 @@ been reported.
 - The bundled names dictionary no longer has the one- and two-kana parts of names
   (bee-san/psp_and_vita_vndb_name_dict#1): the particles of foreign names (the デ and ラ of
   ファナ=デ・ラ・…) and honorifics (さん in 村上 さん) matched ordinary words such as で, だ and する.
-  Whole names and kanji parts (渚) stay.
+  Whole names and kanji parts (渚) stay ([#283]).
+
+### On the console
+
+- The owner's Vita runs this release's Shell plugin and names dictionary (CI build of `ca73bd9`, copied
+  by FTP over 0.9.4, whose other plugins are byte-identical); it has not been restarted with them yet,
+  so no console run of the names page is reported. This release still needs its own restart and game test.
 
 ## [0.9.4] - 2026-10-23
 
@@ -783,7 +795,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.5
 [0.9.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.4
 [0.9.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.3
 [0.9.2]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.2
@@ -926,3 +939,4 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#273]: https://github.com/bee-san/Rubi_for_vita/pull/273
 [#274]: https://github.com/bee-san/Rubi_for_vita/pull/274
 [#275]: https://github.com/bee-san/Rubi_for_vita/pull/275
+[#283]: https://github.com/bee-san/Rubi_for_vita/pull/283
