@@ -11,6 +11,12 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- Holding **Left / Right** on the d-pad in the overlay now keeps moving the cursor, as Up / Down and
+  the left stick already did: one step at once, then after 0.35 s ten words a second. A held arrow
+  stops at the text's ends rather than going round a one-row text.
+
 ## [0.9.5] - 2026-10-25
 
 Shows a word's character name as its second page, with the cleaned names dictionary, and adds the
