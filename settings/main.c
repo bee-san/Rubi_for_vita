@@ -866,9 +866,10 @@ static void draw_results_card(int y)
         snprintf(results_help, sizeof(results_help), "Cannot read the saved choice.");
     else if (!enabled)
         snprintf(results_help, sizeof(results_help), "Set local_dictionaries in config.ini first.");
-    else if (preferences.local_dictionary_results == 1 && enabled == 1 && dictionary_title[0])
+    /* one file has nothing to page to, whatever the count */
+    else if (enabled == 1 && dictionary_title[0])
         snprintf(results_help, sizeof(results_help), "Best match only: %s.", dictionary_title);
-    else if (preferences.local_dictionary_results == 1)
+    else if (preferences.local_dictionary_results == 1 || enabled == 1)
         snprintf(results_help, sizeof(results_help), "Best match only. %d %s enabled.",
                  enabled, enabled == 1 ? "dictionary" : "dictionaries");
     else

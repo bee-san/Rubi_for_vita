@@ -3,7 +3,7 @@ VNDB Names — PSP & PS Vita
 Character names and release metadata: VNDB contributors, https://vndb.org/,
 via the Kana API, https://api.vndb.org/kana. Snapshot cutoff: 22 October 2026.
 Source: bee-san/psp_and_vita_vndb_name_dict, commit
-680a5e3a6fb4e53c060c08a4c29ed383eca3282e
+baa1481e031a737dde9f5da93dce1d7bc8e0f5fc
 https://github.com/bee-san/psp_and_vita_vndb_name_dict
 
 The database is offered under the Open Database License 1.0 (ODbL);
@@ -19,8 +19,9 @@ in the source repository at third_party/vndb-names/VNDB-Names-PSP-PSVita.zip and
 is available from the source commit's dist/VNDB-Names-PSP-PSVita.zip. Exact input
 and output checksums and conversion counts are in docs/vndb-names.json.
 
-The source has 30,927 searchable name rows for 12,151 characters across 1,202
-qualifying VNs. Rubi retains 30,923 rows: four names exceed its 32-character lookup
+The source has 30,713 searchable name rows for 12,151 characters across 1,202
+qualifying VNs; name parts of one or two kana are not rows. Rubi retains 30,709
+rows: four names exceed its 32-character lookup
 limit. One definition exceeds the 7,000-byte text limit and is clipped with an
 ellipsis. Shared names retain their source's combined character/game definitions.
 No images, biographies, guessed kanji readings or frequency ranks are added.

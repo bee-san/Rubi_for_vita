@@ -26,7 +26,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->dictionary = VJO_DICT_LOCAL;
     vjo_snprintf(c->local_dictionary_dir, sizeof(c->local_dictionary_dir), "ux0:data/VitaJPOverlay/dictionaries");
     vjo_snprintf(c->local_dictionaries, sizeof(c->local_dictionaries), "plaintext.vjdict,vndb-names.vjdict");
-    c->local_dictionary_results = 1;
+    c->local_dictionary_results = 2; /* a word's entry, then the same word as a name (vndb-names) */
     c->non_japanese_filter = VJO_FILTER_LINES;
     c->japanese_only_selection = 0; /* OFF: the cursor can select any character (the owner, 2026-10-20; ON before) */
     c->highlight_mode = VJO_HIGHLIGHT_WORD;
@@ -69,9 +69,9 @@ const char *vjo_config_default_text(void)
            "; The bundled word/grammar/kanji and PSP/Vita character-name dictionaries.\n"
            "; Up to 8 filenames, separated by commas, in priority order.\n"
            "local_dictionaries = plaintext.vjdict,vndb-names.vjdict\n"
-           "; Dictionaries shown per selected word, 1-8: the best match first, then each\n"
-           "; other dictionary's entry in the order above. L/R tap pages; one is in memory.\n"
-           "local_dictionary_results = 1\n"
+           "; Dictionaries shown per selected word, 1-8: the best match first, then the same\n"
+           "; word in each other dictionary, in the order above. L/R tap pages; one is in memory.\n"
+           "local_dictionary_results = 2\n"
            "\n"
            "; Drop OCR lines without Japanese characters, and lines that are only a text\n"
            "; box's border read as long vowels and dashes: none | lines\n"

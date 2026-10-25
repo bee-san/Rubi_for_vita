@@ -1405,13 +1405,18 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
     TEST_ASSERT(run(in, FRAMES) == FRAMES);
     const Text *t = results_help(LAST);
     TEST_CHECK_(t && !strcmp(t->text, "Best match only. 1 dictionary enabled."), "'%s'", t ? t->text : "(none)");
-    /* one file, paging on (2 shown): the paging line, which names none */
+    /* one file with 2 shown (the default): nothing to page to, so best match only */
     card("local_dictionaries = plaintext.vjdict\nlocal_dictionary_results = 2\n");
     put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
     TEST_ASSERT(run(in, FRAMES) == FRAMES);
     t = results_help(LAST);
-    TEST_CHECK_(t && !strcmp(t->text, "Best match, then others with an L/R tap. 1 enabled."), "'%s'",
+    TEST_CHECK_(t && !strcmp(t->text, "Best match only: Bee's Ultimate Dictionary."), "'%s'",
                 t ? t->text : "(none)");
+    /* two files and 1 shown: the count */
+    card("local_dictionaries = plaintext.vjdict,vndb-names.vjdict\nlocal_dictionary_results = 1\n");
+    TEST_ASSERT(run(in, FRAMES) == FRAMES);
+    t = results_help(LAST);
+    TEST_CHECK_(t && !strcmp(t->text, "Best match only. 2 dictionaries enabled."), "'%s'", t ? t->text : "(none)");
     /* a file shorter than page 0's 256 bytes (cut inside its title): the count */
     card("local_dictionaries = plaintext.vjdict\n");
     put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
@@ -1419,12 +1424,13 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
     TEST_ASSERT(run(in, FRAMES) == FRAMES);
     t = results_help(LAST);
     TEST_CHECK_(t && !strcmp(t->text, "Best match only. 1 dictionary enabled."), "'%s'", t ? t->text : "(none)");
-    /* Two bundled files enabled by default: the count (the paging line names none). */
+    /* The defaults: two bundled files and 2 shown, the paging line (it names none). */
     card(NULL);
     put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
     TEST_ASSERT(run(in, FRAMES) == FRAMES);
     t = results_help(LAST);
-    TEST_CHECK_(t && !strcmp(t->text, "Best match only. 2 dictionaries enabled."), "'%s'", t ? t->text : "(none)");
+    TEST_CHECK_(t && !strcmp(t->text, "Best match, then others with an L/R tap. 2 enabled."), "'%s'",
+                t ? t->text : "(none)");
     TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
 }
 

@@ -145,7 +145,7 @@ static void test_dictionary_results_patch_and_parse(void)
                                             0, out, sizeof(out)) < 0);
     VjoConfig cfg;
     vjo_config_defaults(&cfg);
-    TEST_CHECK(cfg.local_dictionary_results == 1);
+    TEST_CHECK(cfg.local_dictionary_results == 2);
     vjo_config_parse(&cfg, out, (size_t)n);
     TEST_CHECK(cfg.local_dictionary_results == 8 && !cfg.n_warnings);
     const char *invalid[] = {"local_dictionary_results = 0\n", "local_dictionary_results = 9\n",
@@ -154,14 +154,14 @@ static void test_dictionary_results_patch_and_parse(void)
     for (unsigned i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         vjo_config_defaults(&cfg);
         vjo_config_parse(&cfg, invalid[i], strlen(invalid[i]));
-        TEST_CHECK(cfg.local_dictionary_results == 1 && cfg.n_warnings == 1);
+        TEST_CHECK(cfg.local_dictionary_results == 2 && cfg.n_warnings == 1);
         TEST_MSG("%s", invalid[i]);
     }
     /* The default file documents the option with the preserved default. */
     vjo_config_defaults(&cfg);
     vjo_config_parse(&cfg, vjo_config_default_text(), strlen(vjo_config_default_text()));
-    TEST_CHECK(cfg.local_dictionary_results == 1 && !cfg.n_warnings);
-    TEST_CHECK(strstr(vjo_config_default_text(), "\nlocal_dictionary_results = 1\n") != NULL);
+    TEST_CHECK(cfg.local_dictionary_results == 2 && !cfg.n_warnings);
+    TEST_CHECK(strstr(vjo_config_default_text(), "\nlocal_dictionary_results = 2\n") != NULL);
 }
 /* API 21: the Model size is owned like the other choices. The app's save writes
  * vocr_tier and drops an older build's vocr_model and vocr_fallback_model lines

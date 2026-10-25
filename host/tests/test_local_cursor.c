@@ -695,8 +695,9 @@ static void joined_word_pages_span_both_lines(void)
 
 static void pages_follow_best_match_then_priority(void)
 {
-    /* d2 has the longest span, so it is the single best result. d1 has only
-     * an inflected match and d3 has none; they keep configured order. */
+    /* 猫舌 is the longest span: d1 and d2 have it, in configured order. The
+     * other pages are the same word, so d0's shorter 猫 is no page, and d3
+     * has nothing. */
     const Row d0[] = {{"猫", "猫", "ねこ", "d0 cat", 0, 0}};
     const Row d1[] = {{"猫", "猫", "ねこ", "d1 cat", 0, 0}, {"猫舌", "猫舌", "", "d1 other", 0, 0}};
     const Row d2[] = {{"猫舌", "猫舌", "ねこじた", "d2 long", 0, 0}};
@@ -714,18 +715,27 @@ static void pages_follow_best_match_then_priority(void)
         vjo_arena_reset(&a); payload_reads = 0;
         TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫舌。", 0, 8, &pages, &r, &e));
         TEST_CHECK(payload_reads <= 1); /* only the shown entry, unless already cached */
-        TEST_ASSERT(pages.count == 3 && r.n_vocab == 1);
+        TEST_ASSERT(pages.count == 2 && r.n_vocab == 1);
         TEST_CHECK(!strcmp(r.vocab[0].meanings[0], "d1 other") && r.tokens[0].len16 == 2);
         TEST_CHECK(pages.page[0].dict == 1 && pages.page[0].len16 == 2);
-        TEST_CHECK(pages.page[1].dict == 0 && pages.page[1].len16 == 1); /* only 猫 in d0 */
-        TEST_CHECK(pages.page[2].dict == 2 && pages.page[2].len16 == 2);
+        TEST_CHECK(pages.page[1].dict == 2 && pages.page[1].len16 == 2);
         TEST_CHECK(pages.cursor_byte == 0 && pages.pos16 == 0);
+        /* At 猫 alone every dictionary that has it is a page. */
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫。", 0, 8, &pages, &r, &e));
+        TEST_CHECK(pages.count == 2 && pages.page[0].dict == 0 && pages.page[1].dict == 1);
+        TEST_CHECK(pages.page[0].len16 == 1 && pages.page[1].len16 == 1);
         /* A limit keeps the first pages only. */
         vjo_arena_reset(&a);
         TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫舌。", 0, 2, &pages, &r, &e));
-        TEST_CHECK(pages.count == 2 && pages.page[1].dict == 0);
+        TEST_CHECK(pages.count == 2 && pages.page[1].dict == 2);
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫舌。", 0, 1, &pages, &r, &e));
+        TEST_CHECK(pages.count == 1 && pages.page[0].dict == 1);
+        vjo_arena_reset(&a);
+        TEST_ASSERT(!pages_lookup(&a, &p, &cfg, "猫舌。", 0, 2, &pages, &r, &e));
         /* Each page reads exactly its own payload. */
-        const char *expect[] = {"d1 other", "d0 cat"};
+        const char *expect[] = {"d1 other", "d2 long"};
         for (int page = 0; page < 2; page++) {
             VjoDictResult one;
             size_t used = a.used;

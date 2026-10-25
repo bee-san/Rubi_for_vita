@@ -73,7 +73,7 @@ which mirrors the zip's device folders [sizes measured: #141's packages, e5e2a26
 | `payload/ur0/data/VitaJPOverlay/vitajpoverlay.rco` | `ur0:data/VitaJPOverlay/` | 6,000 |
 | `payload/ux0/data/VitaJPOverlay/ocr/` (3 recognizers, 4 LMs, `LM-ATTRIBUTION.md`, `MODEL-ATTRIBUTION.md`, the text-presence gate's `textgate_p8_c8_w8.vtd` and `GATE-ATTRIBUTION.md`) | `ux0:data/VitaJPOverlay/ocr/` | 11,730,126 (with API 26's gate, +5,246; VOCR5's 11,724,880; 10,614,250 before) |
 | `payload/ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict` | moved to `ux0:data/VitaJPOverlay/dictionaries/` | 157,298,688 (Bee's Ultimate Dictionary, #153; 143,425,536 before) |
-| `payload/ux0/data/VitaJPOverlay/dictionaries/vndb-names.vjdict` | copied to `ux0:data/VitaJPOverlay/dictionaries/` | 10,452,992 (PSP/Vita VNDB names; file size pinned in docs/vndb-names.json) |
+| `payload/ux0/data/VitaJPOverlay/dictionaries/vndb-names.vjdict` | copied to `ux0:data/VitaJPOverlay/dictionaries/` | 10,358,784 (PSP/Vita VNDB names; file size pinned in docs/vndb-names.json) |
 | `payload/ux0/data/VitaJPOverlay/config.ini` | written only when there is none | 3,552 |
 | `payload/manifest.txt` | read by the app | small |
 | `licenses/` (`LICENSE`, the GPL; `docs/plaintext-attribution.txt`; `docs/JMdict-LICENSE.html`; `third_party/README.md` and `third_party/licenses/`), at their zip paths | stays in the app, `ux0:app/VJOSET001/licenses/` | 79,336 (this PR's 0.8.0 packages) |

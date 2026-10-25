@@ -624,7 +624,7 @@ these defaults:
 dictionary = local
 local_dictionary_dir = ux0:data/VitaJPOverlay/dictionaries
 local_dictionaries = plaintext.vjdict,vndb-names.vjdict
-local_dictionary_results = 1
+local_dictionary_results = 2
 text_source = auto
 ocr_model_dir = ux0:data/VitaJPOverlay/ocr
 vocr_tier = normal
@@ -745,19 +745,24 @@ The snapshots it is built from are pinned by exact commit and SHA-256; builds
 perform no dictionary updates and need no conversion or current upstream
 snapshot.
 
-It also bundles `vndb-names.vjdict`, **VNDB Names — PSP & PS Vita**, with 30,923
+It also bundles `vndb-names.vjdict`, **VNDB Names — PSP & PS Vita**, with 30,709
 searchable name entries for 12,151 characters across 1,202 qualifying visual
 novels (snapshot cutoff 22 October 2026). Full names, name parts and aliases show
-the original/romanized name, source game, platform and VNDB link. No images or
+the original/romanized name, source game, platform and VNDB link; a name part of
+one or two kana (the デ of ファナ=デ・ラ・…, the さん of 村上 さん) is no entry, as it
+would match ordinary words. No images or
 biographies are included; aliases may reveal names. Both dictionaries are
 enabled on a fresh install. An update adds missing bundled files to the enabled
 list while keeping custom dictionaries in order; if the list would exceed eight
 files, it stays as it was and the install plan asks you to choose.
 
 The main dictionary comes first for equal-length word matches; longer full names
-can still match the names dictionary. The default **Dictionaries shown** stays
-1. Set it to **2** in the Rubi app to page between word and name entries with L/R
-when both match. The names source ZIP is committed unchanged, converted offline
+can still match the names dictionary. **Dictionaries shown** is 2 by default, so a
+word that is also a name (渚: a beach, and Nagisa) shows `L/R Dictionary 2 of 2`
+and R shows the name. Another dictionary's page is always the same word: a name
+that only matches the start of a longer word (空 in 空港) is no page. An update
+that enables the names (the Install page, `install_ftp.sh`) turns a count of 1
+into 2. The names source ZIP is committed unchanged, converted offline
 with `python3 tools/prepare_vndb.py`, and verified against input/output checksums
 in [vndb-names.json](vndb-names.json). [Attribution and licences](vndb-attribution.txt)
 ship in both release ZIPs and standalone VPKs (ODbL 1.0 / DbCL 1.0).
@@ -810,7 +815,7 @@ travels inside each entry on disk: no table of ranks is held in memory.
 You can add your own Yomitan dictionaries with
 [the converter and installation guide](local-dictionaries.md).
 Up to eight dictionary files can be enabled in priority order. The Rubi
-app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 1) pages
+app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 2) pages
 through files for the selected word. Bee's Ultimate Dictionary combines its
 word, grammar and kanji sources in one file; the names are a second file. Only
 the page on screen is held in memory.

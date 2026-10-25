@@ -239,10 +239,12 @@ the previous dictionary.
 
 ### Dictionaries shown
 
-By default the overlay shows only the best match at the selected character.
+The overlay shows the best match at the selected character first.
 Rubi app → OCR & lookup → **Dictionaries shown** (or `local_dictionary_results`
-in `config.ini`, 1–8, default 1) shows the other enabled dictionaries' entries
-for the same word, one page at a time:
+in `config.ini`, 1–8, default 2) shows the other enabled dictionaries' entries
+for the same word, one page at a time; 1 shows the best match only. The default
+of 2 pages from a word to the bundled names (渚: the word, then Nagisa); an update
+that enables the names turns a count of 1, the default before them, into 2:
 
 ```ini
 local_dictionaries = jitendex.vjdict,jmdict.vjdict,names.vjdict
@@ -256,9 +258,11 @@ character; tapping L goes back. Up/Down move the cursor between the header's
 displayed rows instead ([rows and arrow keys](touch-lookup.md#rows-and-arrow-keys)).
 The L + R chord that closes the overlay, Select + L/R and a shoulder held with
 another button never page. The body reads `L/R Dictionary 2 of 3` while paging
-is available; dictionaries with no entry are skipped. Each page highlights its
-own match, which can be shorter than
-page 1's, for example `猫` in one dictionary and `猫舌` in another; in Whole word
+is available; dictionaries with no entry are skipped. Every page is the same
+word: a dictionary counts only with an entry for page 1's whole match, so with
+`猫舌` on page 1, a dictionary that has only `猫` has no page, and the lookup
+searches no shorter span once page 1 is found. So a name that is the whole word
+(渚) is a page, and a name that is only its start (空 in 空港) is none. In Whole word
 mode, Right skips the highlighted match. Every new character, from the arrows
 or a tap, starts at page 1. Changing the count looks the word up again without capturing
 or recognizing the screen again. Separate files are paged; a combined file
