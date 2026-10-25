@@ -112,7 +112,7 @@ struct VjoLocalSession {
     int (*file_open)(void *, const char *, VjoFile *);
     char dir[sizeof(((VjoConfig *)0)->local_dictionary_dir)];
     char names[sizeof(((VjoConfig *)0)->local_dictionaries)];
-    uint64_t game_offset;
+    uint32_t game_offset;
     uint32_t game_bytes;
     int count;
     uint8_t directory[DIRECTORY_CACHE_BLOCKS * 4u];
@@ -355,7 +355,7 @@ static int open_index(const VjoPlatform *p, const VjoConfig *cfg, int index, Dic
 #define GAMES_HEADER 64u
 #define GAMES_RECORD 24u
 
-int vjo_game_names_find(const VjoPlatform *p, const char *dir, const char *id, uint64_t *offset,
+int vjo_game_names_find(const VjoPlatform *p, const char *dir, const char *id, uint32_t *offset,
                         uint32_t *bytes)
 {
     char path[256], key[12];
@@ -384,9 +384,10 @@ int vjo_game_names_find(const VjoPlatform *p, const char *dir, const char *id, u
         if (cmp < 0) hi = mid;
         else if (cmp > 0) lo = mid + 1;
         else {
-            *offset = u64(r + 12);
+            uint64_t at = u64(r + 12);
             *bytes = u32(r + 20);
-            found = *bytes && *offset <= f.size && *bytes <= f.size - *offset ? 1 : -1;
+            *offset = (uint32_t)at;
+            found = *bytes && at <= f.size && at <= UINT32_MAX && *bytes <= f.size - at ? 1 : -1;
         }
     }
     f.close(f.ctx);

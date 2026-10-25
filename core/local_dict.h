@@ -27,7 +27,7 @@ size_t vjo_local_session_size(void);
 int vjo_local_dict_count(const VjoConfig *cfg);
 /* The window of VJO_GAME_NAMES_FILE for title ID id (a Vita title ID or a PSP disc ID): 1 with
  * *offset and *bytes set, 0 when the pack has none for it, -1 when it cannot be read. */
-int vjo_game_names_find(const VjoPlatform *p, const char *dir, const char *id, uint64_t *offset,
+int vjo_game_names_find(const VjoPlatform *p, const char *dir, const char *id, uint32_t *offset,
                         uint32_t *bytes);
 void vjo_local_session_close(VjoLocalSession *session);
 /* Locate a word without loading its definition; the optional session remembers

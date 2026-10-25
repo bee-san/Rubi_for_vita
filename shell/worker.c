@@ -125,7 +125,7 @@ static char title_id[12];   /* set while a game is active ("" otherwise) */
 static char job_title[12];  /* the job's game (title_id when the job started), for its log lines */
 /* The game's own names (docs/per-game-names.md): its window of the pack, 0 bytes for none; apply_config
  * copies it into cfg. */
-static uint64_t game_names_offset;
+static uint32_t game_names_offset;
 static uint32_t game_names_bytes;
 /* Scene IDs survive kernel resets. A foreground boundary must also reject
  * results captured for the preceding game, even before a new scene arrives. */

@@ -48,7 +48,7 @@ typedef struct {
     /* The running game's own names: a window of VJO_GAME_NAMES_FILE (docs/per-game-names.md) that
      * the Shell sets for the game in front, never config.ini; 0 bytes: none. Searched before the
      * local_dictionaries, as dictionary 0, when they leave it room. */
-    uint64_t game_names_offset;
+    uint32_t game_names_offset;
     uint32_t game_names_bytes;
     int non_japanese_filter;  /* VJO_FILTER_NONE | VJO_FILTER_LINES */
     int japanese_only_selection; /* 0/1: local cursor skips non-Japanese characters */

@@ -139,12 +139,25 @@ jobs:
           "${{ steps.anki-python.outputs.python-path }}" -m venv .venv-anki
           .venv-anki/bin/pip install --require-hashes --only-binary=:all: -r tools/requirements-anki.txt
       # VJO_REQUIRE_ANKI: the import tests fail, not skip, if the anki package cannot be imported.
-      - run: ctest --test-dir build/host --output-on-failure
+      - shell: bash
+        run: ctest --test-dir build/host --output-on-failure 2>&1 | tee ctest.log
         env:
           VJO_ANKI_PYTHON: ${{ github.workspace }}/.venv-anki/bin/python
           VJO_REQUIRE_ANKI: '1'
       # What Anki imported, in the log (ctest shows a passing test's output only with -V); the
       # step fails unless the import line is there.
+      - name: DIAG (temporary) failing output as an annotation
+        if: failure()
+        shell: bash
+        run: |
+          python3 - "ctest.log" <<'PY'
+          import re, sys
+          lines = open(sys.argv[1], errors="replace").read().splitlines()
+          keep = [i for i, l in enumerate(lines) if re.search(r"error|FAIL|Error|failed|Traceback|assert|exceeds|budget", l)]
+          picked = sorted({j for i in keep for j in range(max(0, i - 3), min(len(lines), i + 4))})
+          text = "\n".join(lines[j][:300] for j in picked)[-30000:]
+          print("::error title=diag::" + text.replace("%", "%25").replace("\r", "").replace("\n", "%0A"))
+          PY
       - name: The packages Anki imported
         shell: bash
         run: |
@@ -214,9 +227,22 @@ jobs:
       - run: WORK=$PWD/.refs/toolchain bash tools/setup_toolchain.sh
       # The build runs every check (kernel instructions, syscall ABI, memory ledger, the Rubi
       # app's PNG ABI and artwork); only the release zip needs the dictionary.
-      - run: |
+      - shell: bash
+        run: |
           export PATH=$PWD/.refs/toolchain/psp2cxml-tool/mbuild:$PATH
-          cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG=${{ matrix.debug }} -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/vita -j4
+          cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG=${{ matrix.debug }} -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/vita -j4 2>&1 | tee vita-build.log
+      - name: DIAG (temporary) failing output as an annotation
+        if: failure()
+        shell: bash
+        run: |
+          python3 - "vita-build.log" <<'PY'
+          import re, sys
+          lines = open(sys.argv[1], errors="replace").read().splitlines()
+          keep = [i for i, l in enumerate(lines) if re.search(r"error|FAIL|Error|failed|Traceback|assert|exceeds|budget", l)]
+          picked = sorted({j for i in keep for j in range(max(0, i - 3), min(len(lines), i + 4))})
+          text = "\n".join(lines[j][:300] for j in picked)[-30000:]
+          print("::error title=diag::" + text.replace("%", "%25").replace("\r", "").replace("\n", "%0A"))
+          PY
       - name: Package the release zip (with the frozen dictionary)
         if: ${{ needs.changes.outputs.dicts != 'false' }}
         run: |
