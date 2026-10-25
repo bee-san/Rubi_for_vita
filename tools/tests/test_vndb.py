@@ -126,7 +126,7 @@ class PerGameNames(unittest.TestCase):
             self.assertLess(out.index("[Word fixture]"), out.index("Saitou Hajime"))
             out, _ = lookup("斎藤一", "--game", "PCSG00217")
             self.assertEqual(out.split("\n")[3:5], ["[Hakuouki ~Shinsengumi Kitan~]", "Saitou Hajime (斎藤 一)"])
-            pack.write_bytes(b"VJGAMES1" + bytes(56))
+            pack.write_bytes(b"VJGAMES0" + data[8:])  # a damaged magic
             out, err = lookup("渚", "--game", "PCSG00415")
             self.assertIn("names for PCSG00415: -1 ", err)
             self.assertLess(out.index("shore (ordinary word)"), out.index("Furukawa Nagisa"))
