@@ -254,7 +254,8 @@ int vjoGetState(VjoState *out)
     s.scene = g.tracker.id;
     s.stable = g.tracker.stable;
     s.unsettled_ms = (uint32_t)(scene_unsettled_us(&g.tracker, ksceKernelGetSystemTimeWide()) / 1000);
-    s.quiet = g.tracker.quiet && !g.tracker.stable;
+    /* API 41: a hooked line still drawing is worth reading too (vjoOcrHookLine) */
+    s.quiet = (g.tracker.quiet || scene_hook_drawing(&g.tracker)) && !g.tracker.stable;
     /* 0 while a region capture rewrites capture_sig */
     if (g.region_seq) {
         s.region_seq = g.region_seq;

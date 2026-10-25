@@ -635,6 +635,19 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
     return 1;
 }
 
+uint32_t vjo_hooks_seq(uint32_t id, uint32_t *key, uint32_t *kind, uint32_t *bytes)
+{
+    const VjoStreamSlot *s;
+    uint32_t k;
+    if (!id || id > VJO_HOOK_STREAMS) return 0;
+    s = &slots[id - 1];
+    k = __atomic_load_n(&s->key, __ATOMIC_ACQUIRE);
+    if (key) *key = s->kind == VJO_HOOK_KIND_SITE ? k - 1u : k - seg_base;
+    if (kind) *kind = s->kind;
+    if (bytes) *bytes = __atomic_load_n(&s->n, __ATOMIC_RELAXED);
+    return __atomic_load_n(&s->seq, __ATOMIC_ACQUIRE);
+}
+
 size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
 {
     size_t n;

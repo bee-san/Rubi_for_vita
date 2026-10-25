@@ -1429,7 +1429,7 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
     put_dictionary("plaintext.vjdict", "VJDICT3\0", "Bee's Ultimate Dictionary");
     TEST_ASSERT(run(in, FRAMES) == FRAMES);
     t = results_help(LAST);
-    TEST_CHECK_(t && !strcmp(t->text, "Best match, then others with an L/R tap. 2 enabled."), "'%s'",
+    TEST_CHECK_(t && !strcmp(t->text, "Best match, then the others below it. 2 enabled."), "'%s'",
                 t ? t->text : "(none)");
     TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
 }

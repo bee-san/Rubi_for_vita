@@ -26,7 +26,9 @@ GAME_FUNCTIONS = ("vjoOcrRegister", "vjoOcrTake", "vjoOcrCancelled", "vjoOcrCapt
                   "vjoOcrComplete", "vjoOcrSubmit", "vjoOcrRead", "vjoOcrCancel",
                   "vjoOcrModelOpen", "vjoOcrModelRead", "vjoOcrModelClose",
                   # API 23: the Anki screenshot's JPEG, written through the kernel's worker
-                  "vjoOcrShotWrite", "vjoOcrShotSave", "vjoOcrHookCache")
+                  "vjoOcrShotWrite", "vjoOcrShotSave", "vjoOcrHookCache",
+                  # API 41: the hook watch's new line (the worker's thread, between jobs)
+                  "vjoOcrHookLine")
 # Removed syscalls, with the API that removed them: no module may still export or import one.
 # API 19 the game worker's RGBA reader; API 24 the kernel's full-frame capture and its reader.
 REMOVED = {"vjoOcrReadRaw": 19, "vjoRequestCapture": 24, "vjoReadRaw": 24}
@@ -232,8 +234,9 @@ def audit(kernel, shell, require_hooks=False, worker=None):
             require(nid not in worker_imports, f"Worker imports Shell-only syscall {name}")
         # API 31: the worker reads the text source as its game starts (which hooks it installs)
         require(TEXT_SOURCE["vjoGetTextSource"] in worker_imports, "Worker does not import vjoGetTextSource")
-        # API 23: the JPEG's bytes go from the game worker to the kernel, never through SceShell
-        for name in ("vjoOcrShotWrite", "vjoOcrShotSave", "vjoOcrHookCache"):
+        # API 23: the JPEG's bytes go from the game worker to the kernel, never through SceShell; API 41: a hooked
+        # line is the worker's to report
+        for name in ("vjoOcrShotWrite", "vjoOcrShotSave", "vjoOcrHookCache", "vjoOcrHookLine"):
             require(GAME[name] not in imports, f"Shell imports the game worker's {name}")
         for nid, (segment, offset) in worker_imports.items():
             require(nid in exports, f"Worker imports missing syscall 0x{nid:08x}")

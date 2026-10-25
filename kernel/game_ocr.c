@@ -507,7 +507,8 @@ void game_ocr_rows_hook(SceUID pid, uintptr_t base, uint32_t pitch, uint32_t fmt
  * shows now. */
 static void publish_capture_locked(void)
 {
-    g.capture_scene = scene_match(&g.tracker, &g.capture_sig);
+    /* API 41: a capture begun since the hook's newest line (vjoOcrHookLine) is that line's scene */
+    g.capture_scene = scene_capture(&g.tracker, &g.capture_sig, g.capture_begin_us);
     g.crop_w = request.width;
     g.crop_h = request.height;
     g.region_seq = request.capture_seq;
@@ -594,6 +595,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         rows.job.rgba = rgba;
         if (rows.job.sig && req.y == 0) {
             g.region_seq = 0; /* capture_sig gets rewritten */
+            g.capture_begin_us = ksceKernelGetSystemTimeWide();
             capture_sig_begin(request.width, request.height);
             rows.sig_seq = req.seq;
         }
@@ -1121,6 +1123,37 @@ static int hook_cache_locked(SceUID pid, uint32_t seq, uint32_t operation, void 
     model_io.phase = MODEL_QUEUED;
     model_wake_locked();
     return VJO_ERR_BUSY;
+}
+
+/* API 41: the registered worker's loop, between jobs, saw the dialogue's hook stream take a new line
+ * (game_ocr/main.c hooks_watch): the region gets a new scene now, held while the line draws
+ * (kernel/scene.h scene_hook), the last capture stops standing for the screen (region_seq 0), and the
+ * Shell is woken as for a quiet screen, so its background read starts at once instead of once the
+ * pixels settle (0). A line reported while the last one is still drawing (lines in quick succession: a
+ * skip, clicks through the typing) wakes no one (1): it is read once the region settles, as without the
+ * watch, so a skip reads no line it passes. Never during a job: a capture begun since is the line's
+ * own. seq and bytes (the stream's sequence and raw length) are only logged. */
+int vjoOcrHookLine(uint32_t seq, uint32_t bytes)
+{
+    uint32_t state, scene = 0;
+    SceUID pid = ksceKernelGetProcessId();
+    int rc;
+    ENTER_SYSCALL(state);
+    VJO_LOCK();
+    sync_locked();
+    if (!registration_current(pid) || ksceKernelGetThreadId() != worker_thread) rc = VJO_ERR_PERM;
+    else if (claimed) rc = VJO_ERR_BUSY;
+    else {
+        rc = scene_hook_drawing(&g.tracker) ? 1 : 0;
+        scene_hook(&g.tracker, ksceKernelGetSystemTimeWide());
+        g.region_seq = 0;
+        scene = g.tracker.id;
+    }
+    VJO_UNLOCK();
+    if (!rc) ksceKernelSetEventFlag(g.evf, VJO_EV_REGION_QUIET);
+    if (rc >= 0) klog_d("hook line: seq %u, %u bytes, scene %u%s", seq, bytes, scene, rc ? ", no wakeup" : "");
+    EXIT_SYSCALL(state);
+    return rc;
 }
 
 int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data)

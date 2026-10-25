@@ -31,6 +31,11 @@ with Whole word highlighting its first word is looked up too (`want_lookup`). L 
 While the overlay is open, a newly settled screen is read again in the background and replaces the text
 quietly when it reads differently (`background_open`: 2 s apart, 1.5 s after the last lookup).
 
+API 41: in a game whose hook answers without OCR (a Luna site, or a source Rubi has learned), the hook's
+new line starts that background read when the game copies it, before the line has finished typing, and
+the scene it is read for holds while the line draws, so L + R as the line finishes typing usually finds
+the finished result ([native-hooks.md](native-hooks.md#a-new-line-starts-the-read)).
+
 **Only when I press.** Nothing is read while the overlay is closed (`background_wanted` is false). Each
 press of a new screen starts a job (`overlay opened`), whose first word is looked up in the same job.
 Reopening on the same screen shows the saved word at once, as in Automatically. Once the press's text is

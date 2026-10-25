@@ -110,12 +110,12 @@ for the measured results and remaining hardware checks.
 You need a PS Vita on firmware 3.60–3.74 with HENkaku/Ensō or h-encore, VitaShell, and
 **Settings > HENkaku Settings > Enable Unsafe Homebrew** turned on.
 
-Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.5/Rubi-0.9.5.zip)
+Download the [Rubi .zip](https://github.com/bee-san/Rubi_for_vita/releases/download/v0.9.6/Rubi-0.9.6.zip)
 and extract it.
 
 ### 1. Transfer modules
 
-Using VitaShell FTP, transfer the files from `Rubi-0.9.5/ur0/tai/` to `ur0:tai/` on the Vita:
+Using VitaShell FTP, transfer the files from `Rubi-0.9.6/ur0/tai/` to `ur0:tai/` on the Vita:
 
 - `VitaJPOverlay_Kernel.skprx`
 - `VitaJPOverlay_OCR.suprx`
@@ -142,13 +142,13 @@ If `ux0:tai/config.txt` exists, taiHEN reads it first: back it up and add the en
 
 ### 3. Transfer data files for the plugin
 
-Transfer `Rubi-0.9.5/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
+Transfer `Rubi-0.9.6/ur0/data/VitaJPOverlay` to `ur0:data/` on the Vita, so the folder is present
 as `ur0:data/VitaJPOverlay`.
 
 ### 4. Transfer data files for OCR and the dictionary
 
 **This is a separate folder, not a duplicate of step 3.** Transfer
-`Rubi-0.9.5/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
+`Rubi-0.9.6/ux0/data/VitaJPOverlay` to `ux0:data/` on the Vita, so the folder is present
 as `ux0:data/VitaJPOverlay`.
 
 If updating an existing installation, back up your `ux0:data/VitaJPOverlay/config.ini` first
@@ -157,7 +157,7 @@ and keep your existing settings file when copying the data.
 ### 5. Transfer and install the VPK / companion app
 
 Close Rubi first if it is already open, including when suspended behind VitaShell: pull the
-top-right corner of its LiveArea page. Transfer `Rubi-0.9.5/Rubi.vpk` to the Vita and install
+top-right corner of its LiveArea page. Transfer `Rubi-0.9.6/Rubi.vpk` to the Vita and install
 (promote) it with VitaShell. Accept the installation and extended-permissions prompts.
 
 ### 6. Reboot the Vita
@@ -384,6 +384,10 @@ reported console run. The behaviour below is checked on the host.
   erase it. Longer gaps can delay detection of incorrect hook text by up to 31 hook-only readings.
   Missing or unwritable cache storage means fresh learning. Choose **OCR only** and restart the game
   to disable hooks.
+- **When it is read.** Once a hook answers without OCR, its new line is read as the game copies it
+  (with **Read text** on **Automatically**): the overlay opened as the line finishes typing usually shows
+  it at once, its first word looked up. Lines in quick succession (a skip) are read once the screen
+  settles, as before ([details](native-hooks.md#a-new-line-starts-the-read)).
 - **The popup** shows the dialogue and dictionary entries. Source selection is automatic; there is
   no hook number, source-status label or Triangle source picker. Technical source details remain in
   the debug log.
@@ -758,9 +762,10 @@ files, it stays as it was and the install plan asks you to choose.
 
 The main dictionary comes first for equal-length word matches; longer full names
 can still match the names dictionary. **Dictionaries shown** is 2 by default, so a
-word that is also a name (渚: a beach, and Nagisa) shows `L/R Dictionary 2 of 2`
-and R shows the name. Another dictionary's page is always the same word: a name
-that only matches the start of a longer word (空 in 空港) is no page. An update
+word that is also a name (渚: a beach, and Nagisa) shows the word, then the name
+below it; scroll down with the right stick. Another dictionary's entry is always the
+same word: a name that only matches the start of a longer word (空 in 空港) is not
+shown. An update
 that enables the names (the Install page, `install_ftp.sh`) turns a count of 1
 into 2. The names source ZIP is committed unchanged, converted offline
 with `python3 tools/prepare_vndb.py`, and verified against input/output checksums

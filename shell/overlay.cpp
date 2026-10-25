@@ -153,9 +153,7 @@ static int s_japanese_only_selection;
 static int s_highlight_mode;
 static uint32_t s_cursor_byte, s_text_generation;
 static uint32_t s_match_end; /* raw UTF-8 end of the current matched source word */
-static int s_dict_page, s_dict_pages; /* local: shown/requested dictionary page, pages at the cursor */
 static VjoRowNav s_nav; /* the arrow keys: Right's history, Up/Down's column, counts */
-static uint32_t s_tap; /* the L or R being tapped: dictionary pages */
 static int s_ja_px;    /* the header's point size: a row's last cell */
 /* Line history (worker.c history_show): the text is this game's s_history-th earlier line (0: the
  * current text), shown between the line before it and the line after it, dimmed: s_hdr_lead is the
@@ -421,14 +419,11 @@ static void render(int new_content)
         s_japanese_only_selection = g_view.japanese_only_selection;
         cursor_matches = g_view.cursor_byte == s_cursor_byte;
         vjo_stick_cursor_shown(&s_stick, cursor_matches); /* back on the shown word: nothing to look up */
-        s_dict_page = g_view.dict_page;
-        s_dict_pages = cursor_matches ? g_view.dict_pages : 0;
     } else {
         rebuild_header |= s_local_cursor_mode;
         s_local_cursor_mode = 0;
         s_cursor_text_len = 0;
         s_cursor_text[0] = 0;
-        s_dict_page = s_dict_pages = 0;
     }
     s_n_entries = l ? l->n_entries : 0;
     if (s_local_cursor_mode) {
@@ -526,10 +521,7 @@ static void render(int new_content)
             char at[64];
             sceClibSnprintf(at, sizeof(at), where, s_history, g_view.history_before ? " · ▲ earlier" : "");
             vjo_styled_puts(&body, at, VJO_RGB_RANK, en);
-            if (s_dict_pages > 1)
-                vjo_styled_puts(&body, "\n", VJO_RGB_RANK, en);
         }
-        vjo_styled_dict_page(&body, s_dict_page, s_dict_pages, en);
         if (const char *notice = vjo_view_notice()) { /* the Rubi app is not the plugins' (once) */
             if (body.len)
                 vjo_styled_puts(&body, "\n", VJO_RGB_ERROR, en);
@@ -592,8 +584,8 @@ static void render(int new_content)
     }
     vjo_view_unlock();
 
-    /* Dictionary paging is taught by the body's "L/R Dictionary 2 of 3" line,
-     * shown only while paging is available. The longest hint, Character mode
+    /* The other dictionaries' entries for the word follow it in the body (the
+     * right stick scrolls to them). The longest hint, Character mode
      * with Japanese-only and Anki, is 82 characters with the sticks' parts (#138;
      * 72 before): whether it fits the 920 px line is for the console run. */
     {
@@ -883,7 +875,6 @@ static void open_page(void)
      * state is taken afresh then. A word it left due at the close is dropped by
      * the next render (close_page: the text is taken afresh). */
     vjo_stick_cursor_latch(&s_stick);
-    s_tap = 0;
 #if VJO_DEBUG
     s_frame_max_us = s_key_max_us = 0;
     s_stick_max = 0;
@@ -1061,8 +1052,6 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
          * dominant axis's). Its word is looked up only once the cursor rests. */
         uint64_t now = (uint64_t)sceKernelGetProcessTimeWide();
         int stick = vjo_stick_cursor_step(vjo_stick_cursor(&s_stick, in->lx, in->ly, now), &direction, &vertical);
-        /* L or R tapped alone (never the L + R chord): seen every frame. */
-        int tap = vjo_shoulder_tap(s_tap, in->buttons & 0xFFFFu, pressed, SCE_CTRL_LTRIGGER, SCE_CTRL_RTRIGGER);
         if (direction || vertical) {
             /* The header's displayed rows (core/text_rows.h): Left/Right in
              * reading order across rows, stopping at the text's ends (a
@@ -1105,15 +1094,6 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
                 post_cursor_now();
             }
             render(0);
-        } else {
-            /* A tapped shoulder: another dictionary's entry at this cursor.
-             * The worker reads only that page's definition into the same
-             * result arena. */
-            int page = s_dict_page + tap;
-            if (tap && page >= 0 && page < s_dict_pages && vjo_post_page(page, s_text_generation)) {
-                COUNT_MOVE();
-                render(0);
-            }
         }
         if (vjo_stick_cursor_lookup(&s_stick, now))
             vjo_post_cursor(s_cursor_byte, s_text_generation);

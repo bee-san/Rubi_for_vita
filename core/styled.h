@@ -90,7 +90,10 @@ int vjo_entry_header_range(const VjoEntryList *l, int entry, uint32_t *start, ui
  * left (s's cap; overlay.cpp lowers it by what follows the entry) is clipped
  * at the end of its definition, at a whole character, and marked "…": the
  * kanji lines stay whole. (A grammar summary comes first in the bundle's
- * entries, so it is kept.) */
+ * entries, so it is kept.) The list's other dictionaries' entries for the word
+ * (VjoEntryList.more: a character's name) follow it, each after a blank line,
+ * headword, reading and definition, without badge or marks; the entry is
+ * clipped first so that they keep their room. */
 void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki,
                       int show_rank);
 

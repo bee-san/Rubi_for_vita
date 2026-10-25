@@ -1,10 +1,10 @@
 # Touch selection and highlighting
 
 Rubi app → OCR & lookup → Highlight chooses **Whole word** (default) or
-**Character**. Local dictionaries show one entry at a time; with
-**Dictionaries shown** above 1, an L or R tap pages to other dictionaries'
-entries at the same character ([details](local-dictionaries.md#dictionaries-shown)).
-Each page highlights its own match, and Right skips the one shown. In Whole
+**Character**. With **Dictionaries shown** above 1, the other dictionaries'
+entries for the same word (a character's name) follow the best match in the body,
+and the right stick scrolls down to them ([details](local-dictionaries.md#dictionaries-shown)).
+Right skips the match shown. In Whole
 word mode, Right skips the current matched source span and Left retraces up to
 16 recent forward selections. Without a match or previous selection, movement
 falls back to one Unicode character. Character mode always steps one character.
@@ -226,9 +226,8 @@ the arrows.
   and pass over a row of only those (an empty line, or with Japanese-only one
   of only Latin text and punctuation), which also never counts as a row of the
   text's own for the wrap.
-- Dictionary paging, which used Up/Down, is an **L or R tap**: a shoulder
-  pressed and released with no other button, so the L + R chord that closes the
-  overlay and Select + L/R never page.
+- Up/Down never change dictionaries: the other dictionaries' entries are below
+  the best match in the body (an L or R tap paged between them before 0.9.6).
 
 The rows are the header's own layout, as for taps: the laid-out line and start
 x of each character from paf (`GetCharInfo`), with a row's last cell bounded by

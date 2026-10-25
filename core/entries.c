@@ -107,6 +107,8 @@ int vjo_entries_build(VjoArena *a, const char *filtered, const VjoDictResult *r,
     out->entries = NULL;
     out->n_entries = 0;
     out->source = r->source;
+    out->more = NULL;
+    out->n_more = 0;
 
     if (!n)
         return 0;

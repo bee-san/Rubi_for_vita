@@ -185,32 +185,32 @@ static void entry_text(VjoStyled *s, const char *text, int ja_px, int en_px)
 static const char conjugation_prefix[] VJO_DATA_TABLE(conjugation_prefix) = "\nConjugation: ";
 static const char conjugation_arrow[] VJO_DATA_TABLE(conjugation_arrow) = " → ";
 
-void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki,
-                      int show_rank)
+/* A vocabulary's headword, reading and, with mark, the badge, the in-Anki mark and the conjugation
+ * (the shown entry's own: NULL for a stacked one), then its meanings. */
+static void vocab_text(VjoStyled *s, const VjoVocab *v, const VjoEntryList *l, const VjoEntry *e, int ja_px,
+                       int en_px, int in_anki, int show_rank)
 {
-    const VjoVocab *v;
     char rank[VJO_RANK_BADGE_MAX];
-    if (!l || selected < 0 || selected >= l->n_entries)
-        return;
-    v = l->entries[selected].vocab;
     vjo_styled_puts(s, v->spelling, VJO_RGB_HIGHLIGHT, ja_px);
     if (strcmp(v->spelling, v->reading) != 0) {
         vjo_styled_puts(s, " (", VJO_RGB_READING, ja_px);
         vjo_styled_puts(s, v->reading, VJO_RGB_READING, ja_px);
         vjo_styled_puts(s, ")", VJO_RGB_READING, ja_px);
     }
-    if (show_rank)
-        vjo_styled_puts(s, vjo_rank_badge(rank, v->rank, l->source), VJO_RGB_RANK, en_px);
-    if (in_anki)
-        vjo_styled_puts(s, " " VJO_ANKI_MARK, VJO_RGB_OK, en_px);
-    uint32_t reasons = l->entries[selected].conjugation;
-    if (reasons) {
-        vjo_styled_puts(s, conjugation_prefix, VJO_RGB_READING, en_px);
-        for (; reasons; reasons >>= 6) {
-            unsigned reason = reasons & 63u;
-            vjo_styled_puts(s, reason && reason < sizeof(conjugation_offsets) / sizeof(*conjugation_offsets)
-                ? conjugation_labels + conjugation_offsets[reason] : "…", VJO_RGB_READING, en_px);
-            if (reasons >> 6) vjo_styled_puts(s, conjugation_arrow, VJO_RGB_READING, en_px);
+    if (e) {
+        if (show_rank)
+            vjo_styled_puts(s, vjo_rank_badge(rank, v->rank, l->source), VJO_RGB_RANK, en_px);
+        if (in_anki)
+            vjo_styled_puts(s, " " VJO_ANKI_MARK, VJO_RGB_OK, en_px);
+        uint32_t reasons = e->conjugation;
+        if (reasons) {
+            vjo_styled_puts(s, conjugation_prefix, VJO_RGB_READING, en_px);
+            for (; reasons; reasons >>= 6) {
+                unsigned reason = reasons & 63u;
+                vjo_styled_puts(s, reason && reason < sizeof(conjugation_offsets) / sizeof(*conjugation_offsets)
+                    ? conjugation_labels + conjugation_offsets[reason] : "…", VJO_RGB_READING, en_px);
+                if (reasons >> 6) vjo_styled_puts(s, conjugation_arrow, VJO_RGB_READING, en_px);
+            }
         }
     }
     for (int i = 0; i < v->n_meanings; i++) {
@@ -220,6 +220,36 @@ void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_
         }
         vjo_styled_puts(s, "\n", VJO_RGB_DIM, en_px);
         vjo_styled_puts(s, v->meanings[i], VJO_RGB_DIM, en_px);
+    }
+}
+
+/* UTF-16 units a stacked vocabulary takes at most: its blank line, headword, reading and meanings (each
+ * after a newline), and a clip mark. */
+static uint32_t stacked_units(const VjoVocab *v)
+{
+    uint32_t n = 3 + vjo_utf16_index(v->spelling, strlen(v->spelling)) + vjo_utf16_index(v->reading, strlen(v->reading)) + 3;
+    for (int i = 0; i < v->n_meanings; i++)
+        n += vjo_utf16_index(v->meanings[i], strlen(v->meanings[i])) + 3;
+    return n;
+}
+
+void vjo_styled_entry(VjoStyled *s, const VjoEntryList *l, int selected, int ja_px, int en_px, int in_anki,
+                      int show_rank)
+{
+    uint32_t cap, room = 0;
+    if (!l || selected < 0 || selected >= l->n_entries)
+        return;
+    /* the stacked entries below keep their room: a long entry is clipped instead */
+    cap = s->cap;
+    for (int i = 0; i < l->n_more && selected == 0; i++)
+        room += stacked_units(l->more[i]);
+    s->cap = cap > s->len + room ? cap - room : s->len;
+    vocab_text(s, l->entries[selected].vocab, l, &l->entries[selected], ja_px, en_px, in_anki, show_rank);
+    s->cap = cap;
+    for (int i = 0; i < l->n_more && selected == 0; i++) {
+        const VjoVocab *v = l->more[i];
+        vjo_styled_puts(s, "\n\n", VJO_RGB_DIM, en_px); /* its definition names its dictionary ("[title]") */
+        vocab_text(s, v, l, NULL, ja_px, en_px, 0, 0);
     }
 }
 

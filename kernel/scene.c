@@ -182,6 +182,8 @@ void scene_reset(SceneTracker *t)
     spot_reset(t);
     t->ref.w = 0;
     t->stable = 0;
+    t->hook_us = 0; /* another screen: no hooked line's */
+    t->hook_drawn = 0;
     t->masked_us = 0; /* not warm */
     for (int i = 0; i < SCENE_CELLS; i++) {
         t->cell[i].seen = 0;
@@ -347,6 +349,8 @@ SceneEvent scene_update(SceneTracker *t, const SceneSig *sig, int64_t now, int64
     SceneEvent quiet;
     if (changed)
         scene_reset(t);
+    if (scene_hook_drawing(t) && now - t->hook_us >= SCENE_HOOK_DRAW_US)
+        t->hook_drawn = 1; /* never settled (an animated background): held through small changes only */
     if (edge_us != t->edge_us)
         spot_reset(t); /* the player's doing */
     for (int i = 0; i < SCENE_CELLS; i++)
@@ -361,13 +365,21 @@ SceneEvent scene_update(SceneTracker *t, const SceneSig *sig, int64_t now, int64
         changed = sig->hash[i] != t->ref.hash[i] && !t->cell[i].masked;
     if (changed) {
         uint8_t diff[SCENE_CELLS];
-        for (int i = 0; i < SCENE_CELLS; i++)
+        int any = 0;
+        for (int i = 0; i < SCENE_CELLS; i++) {
             diff[i] = (uint8_t)(t->ref.w && sig->hash[i] != t->ref.hash[i]);
+            any |= diff[i];
+        }
         t->icon_change = icon_sized(diff, sig->cols);
         if (t->stable || !t->ref.w)
             t->unsettled_us = now;
+        /* A hooked line's scene keeps its number while the line draws, then through icon-sized changes
+         * (a mask that ended on what the cells already showed changes nothing); a larger change after it
+         * settled is another screen. */
+        if (t->hook_us && t->hook_drawn && any && !t->icon_change)
+            t->hook_us = 0;
         t->ref = *sig;
-        if (++t->id == 0) /* 0 = unknown */
+        if (!t->hook_us && ++t->id == 0) /* 0 = unknown */
             t->id = 1;
         t->stable = 0;
         t->changed_us = now;
@@ -378,7 +390,29 @@ SceneEvent scene_update(SceneTracker *t, const SceneSig *sig, int64_t now, int64
     if (waiting_for_animation(t, now))
         return quiet;
     t->stable = 1;
+    if (t->hook_us)
+        t->hook_drawn = 1; /* the hooked line is drawn */
     return SCENE_SETTLED;
+}
+
+void scene_hook(SceneTracker *t, int64_t now)
+{
+    spot_reset(t); /* an icon's spot was the last line's */
+    if (++t->id == 0)
+        t->id = 1;
+    t->hook_us = now ? now : 1;
+    t->hook_drawn = 0;
+    if (t->stable || !t->ref.w)
+        t->unsettled_us = now;
+    t->stable = 0;
+    t->changed_us = now; /* settles once the line has drawn, or SCENE_STABLE_US on if nothing changes */
+}
+
+uint32_t scene_capture(const SceneTracker *t, const SceneSig *sig, int64_t begin_us)
+{
+    if (t->hook_us) /* begun before the hooked line: the screen before it, however alike it looks */
+        return begin_us >= t->hook_us ? t->id : 0;
+    return scene_match(t, sig);
 }
 
 static uint32_t match(const SceneTracker *t, const SceneSig *sig, int spot)

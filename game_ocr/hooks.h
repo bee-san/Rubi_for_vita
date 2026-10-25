@@ -77,6 +77,13 @@ void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced);
  * stream is empty, unknown, or busy (a game thread is writing it: try again at the next job). */
 int vjo_hooks_snap(uint32_t id, VjoHookSnap *out);
 
+/* The hook watch (API 41, game_ocr/main.c hooks_watch), the worker's thread between jobs: stream id's
+ * sequence (0: no text yet, or no such stream), with its key and kind as vjo_hooks_snap gives them and
+ * its raw length, read without the slot's lock, so a game thread writing it is never turned away for
+ * this. A hint that the stream took a new line, which the job's snapshot then reads properly; a read
+ * across a write may mix two texts' fields. */
+uint32_t vjo_hooks_seq(uint32_t id, uint32_t *key, uint32_t *kind, uint32_t *bytes);
+
 /* Job time: a snapshot's raw text as UTF-8, NUL-terminated, in out (cap bytes): vjo_luna_text for a
  * Luna site (its filter), vjo_hook_decode otherwise, then vjo_hook_clean for both.
  * Returns the bytes before the NUL. */

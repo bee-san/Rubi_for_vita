@@ -65,6 +65,9 @@
 #define vjoOcrHookCache(seq, op, data) (-1)
 #define vjo_hooks_build_id(out) 0
 #endif
+#ifndef VJO_TEST_HOOK_LINE
+#define vjoOcrHookLine(seq, bytes) ((void)(seq), (void)(bytes), -1)
+#endif
 #else
 #define IMPORT_READY(fn) VJO_IMPORT_READY(fn)
 #endif
@@ -1402,6 +1405,10 @@ static struct {
     int cache_attempted, build_known, cache_ready;
     uint32_t mode, installed, refused; /* vjo_hooks_counts */
     uint32_t from, flags, score, streams; /* this job's result fields */
+    /* the hook watch (hooks_watch): Luna's sites that have held text (bit id - 1), the newest sequence a
+     * job's snapshot saw or the watch reported, and when it last reported one */
+    uint32_t luna_seen, watch_seen;
+    uint64_t watch_sent;
     unsigned n;
     VjoHookCand cand[VJO_HOOK_STREAMS];
     VjoHookSnap snap;
@@ -1442,6 +1449,7 @@ static int hooks_snapshot(uint32_t pick)
         unsigned at;
         if (!vjo_hooks_snap(id, &hk.snap) || !hk.snap.n) continue;
         hk.streams |= 1u << (id - 1u);
+        if ((int32_t)(hk.snap.seq - hk.watch_seen) > 0) hk.watch_seen = hk.snap.seq; /* this job reads it */
         if (pick == VJO_HOOK_PICK_AUTO && hk.snap.kind == VJO_HOOK_KIND_SITE && hk.snap.site &&
             !vjo_hooks_verified(id))
             luna |= VJO_HOOK_STREAM_BIT(id);
@@ -1469,6 +1477,7 @@ static int hooks_snapshot(uint32_t pick)
         hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, site, hk.pool + used, len, hk.snap.key, hk.snap.encoding, verified};
         used += len + 1u;
     }
+    hk.luna_seen |= luna;
     return has_luna;
 }
 
@@ -2150,6 +2159,42 @@ static int inactive_long(int registered)
     return now - inactive_since >= INACTIVE_DROP_US;
 }
 
+/* API 41, the hook watch (docs/native-hooks.md, "A new line starts the read"). Each round of the loop
+ * between jobs (vjoOcrTake waits for one at most 100 ms) reads, without their locks, the sequences of the
+ * streams a job answers without recognition: Luna's sites that have held text, and the learned source
+ * (hk.sel.locked, while its slot still holds that source). One newer than every text the last job's
+ * snapshot saw (hk.watch_seen) is a new line: the kernel gives the region a new scene and wakes the Shell
+ * (vjoOcrHookLine), so its background read starts now rather than once the pixels settle. At most one
+ * report every HOOK_LINE_GAP_US; a refused one is tried again at the next round. */
+#define HOOK_LINE_GAP_US 200000u
+static void hooks_watch(void)
+{
+    uint32_t want = hk.luna_seen, best = 0, bytes = 0;
+    uint64_t now;
+    if (hk.sel.interval && hk.sel.locked && hk.sel.locked <= VJO_HOOK_STREAMS)
+        want |= VJO_HOOK_STREAM_BIT(hk.sel.locked);
+    if (!want || !IMPORT_READY(vjoOcrHookLine)) return;
+    for (uint32_t id = 1; id <= VJO_HOOK_STREAMS; id++) {
+        uint32_t key = 0, kind = 0, n = 0, seq;
+        if (!(want & VJO_HOOK_STREAM_BIT(id))) continue;
+        seq = vjo_hooks_seq(id, &key, &kind, &n);
+        if (!seq || !n || (int32_t)(seq - hk.watch_seen) <= 0) continue;
+        if (!(hk.luna_seen & VJO_HOOK_STREAM_BIT(id)) &&
+            (key != hk.sel.locked_key || (kind == VJO_HOOK_KIND_SITE) != !!hk.sel.locked_site))
+            continue; /* another caller took the learned source's slot: its next job tells */
+        if (!best || (int32_t)(seq - best) > 0) {
+            best = seq;
+            bytes = n;
+        }
+    }
+    if (!best) return;
+    now = now_wide();
+    if (hk.watch_sent && now - hk.watch_sent < HOOK_LINE_GAP_US) return;
+    if (vjoOcrHookLine(best, bytes) < 0) return; /* not the active game now, or a job in the way */
+    hk.watch_seen = best;
+    hk.watch_sent = now;
+}
+
 static int worker_main(SceSize args, void *argp)
 {
     (void)args; (void)argp;
@@ -2161,8 +2206,10 @@ static int worker_main(SceSize args, void *argp)
             int registered = vjoOcrRegister(), gone = inactive_long(registered);
             if (!registered) {
                 static VjoGameOcrRequest request; /* not on the 32 KiB stack */
-                uint64_t asked = now_wide();
+                uint64_t asked;
                 int took;
+                hooks_watch(); /* API 41: a new hooked line, reported before waiting for the next job */
+                asked = now_wide();
                 sceClibMemset(&request, 0, sizeof(request));
                 request.size = sizeof(request);
                 took = vjoOcrTake(&request);
