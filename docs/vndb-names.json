@@ -21,5 +21,21 @@
     "skipped_long_headwords": 4,
     "key_filter": true,
     "title_offset": 192
+  },
+  "per_game": {
+    "title": "VNDB Names — PSP & PS Vita, per game",
+    "repository": "bee-san/psp_and_vita_vndb_name_dict",
+    "revision": "0e27b06986ec40ee7346ded5dcae9d5ac767736e",
+    "archive": "third_party/vndb-names/VNDB-Names-Games.zip",
+    "archive_bytes": 718108,
+    "archive_sha256": "66484d184977011dc301fa02ee510811036cc0fb3adfdb3f14064facf862385f",
+    "guard": "third_party/vndb-names/games-common-words.txt",
+    "guard_sha256": "d51f60f24c9e2587015544aa26cedba22c413f3fdfee0dafae200f9043d48078",
+    "filename": "vndb-games.vjgames",
+    "game_sets": 851,
+    "title_ids": 1335,
+    "guarded_terms": 224,
+    "bytes": 9710742,
+    "sha256": "fd0e03afb8617986bb99e00936fc98fe98880861e2236308ebe095b99bda54d8"
   }
 }

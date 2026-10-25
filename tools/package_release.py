@@ -262,6 +262,13 @@ def package_with_dictionary(base, output, models, dictionary, license_file, vers
                 with original.open(entry) as src, names_file.open("wb") as dst:
                     shutil.copyfileobj(src, dst)
                 prepare_vndb.validate(names_file, prepare_vndb.load_manifest())
+            games_entry = DATA + "dictionaries/" + prepare_vndb.GAMES
+            if games_entry in original.namelist():
+                games_file = names_stage / DATA / "dictionaries" / prepare_vndb.GAMES
+                games_file.parent.mkdir(parents=True, exist_ok=True)
+                with original.open(games_entry) as src, games_file.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                prepare_vndb.validate_games(games_file, prepare_vndb.load_manifest()["per_game"])
         prepare_vndb.stage(names_stage)
         assets.update({p.relative_to(names_stage).as_posix(): p
                        for p in names_stage.rglob("*") if p.is_file()})

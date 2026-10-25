@@ -11,6 +11,20 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- **The running game's character names come first** ([details](docs/per-game-names.md)). In a
+  game known by its Vita title ID or, from an Adrenaline bubble, its PSP disc ID, that game's VNDB
+  names are searched before the other dictionaries: in CLANNAD (`PCSG00415`), 渚 is Furukawa
+  Nagisa, with the word as the next L/R page, and only CLANNAD's Nagisa is listed. 526 of the 751
+  PSP games (85% of their characters) and 459 of the 618 Vita games (79%) in the names snapshot
+  have an ID; other games keep today's lookups. An entry lists a character whose own name has the
+  spelling before one known by it as an alias, then main characters first (岡崎: Okazaki Tomoya).
+  Keys among the word dictionary's 3,000 most frequent words (一, 光, 先生 …) are left out, so
+  they stay words. The new file, `vndb-games.vjgames` (9,710,742 B), is installed beside
+  `vndb-names.vjdict`; the Shell finds a game's window in it at the game's start with a few small
+  reads and no allocation (`log.txt`: `names for PCSG00415: this game's`).
+
 ### Changed
 
 - A hooked line is read as soon as the game copies it (API 41). Once a hook answers without OCR (a Luna

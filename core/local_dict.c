@@ -92,6 +92,7 @@ typedef struct {
 
 typedef struct {
     VjoFile file;
+    uint64_t base;                     /* the dictionary's offset in its file: a game's in the pack, else 0 */
     uint32_t count, version, buckets;
     uint64_t data;
     uint32_t prefix;                   /* bytes before a payload's spelling: 4 in v3, else 0 */
@@ -111,6 +112,8 @@ struct VjoLocalSession {
     int (*file_open)(void *, const char *, VjoFile *);
     char dir[sizeof(((VjoConfig *)0)->local_dictionary_dir)];
     char names[sizeof(((VjoConfig *)0)->local_dictionaries)];
+    uint64_t game_offset;
+    uint32_t game_bytes;
     int count;
     uint8_t directory[DIRECTORY_CACHE_BLOCKS * 4u];
     int directory_dict;
@@ -133,7 +136,8 @@ static int session_matches(const VjoPlatform *p, const VjoConfig *cfg)
 {
     const VjoLocalSession *s = p->local_session;
     return s && s->count && s->ud == p->ud && s->file_open == p->file_open &&
-        !strcmp(s->dir, cfg->local_dictionary_dir) && !strcmp(s->names, cfg->local_dictionaries);
+        !strcmp(s->dir, cfg->local_dictionary_dir) && !strcmp(s->names, cfg->local_dictionaries) &&
+        s->game_offset == cfg->game_names_offset && s->game_bytes == cfg->game_names_bytes;
 }
 
 typedef struct {
@@ -266,7 +270,7 @@ static int cached_page(Workspace *w, Dictionary *d, uint64_t base, Page **out)
         page->off = base;
         page->len = remaining < PAGE_SIZE ? (size_t)remaining : PAGE_SIZE;
         STAT_READ(page->len);
-        if (d->file.read(d->file.ctx, base, page->bytes, page->len)) return VJO_E_LOCAL_IO;
+        if (d->file.read(d->file.ctx, d->base + base, page->bytes, page->len)) return VJO_E_LOCAL_IO;
         page->dict = d;
     }
     page->used = ++w->clock;
@@ -300,7 +304,94 @@ static int open_file(const VjoPlatform *p, const VjoConfig *cfg, const char *nam
         err->detail = dictionary_open_error;
         return VJO_E_LOCAL_IO;
     }
+    d->base = 0;
     return VJO_OK;
+}
+
+/* The game's own names: dictionary 0 when cfg names a window and local_dictionaries leave room. */
+static int has_game(const VjoConfig *cfg)
+{
+    int n = vjo_local_names_count(cfg->local_dictionaries);
+    return cfg->game_names_bytes && n > 0 && n < VJO_LOCAL_MAX_DICTS;
+}
+
+int vjo_local_dict_count(const VjoConfig *cfg)
+{
+    int n = vjo_local_names_count(cfg->local_dictionaries);
+    return n ? n + has_game(cfg) : 0;
+}
+
+/* The game's window of the pack, as a dictionary of its own: offsets from its start, its size the
+ * window's. 0, or an error with nothing left open. */
+static int open_game(const VjoPlatform *p, const VjoConfig *cfg, Dictionary *d, VjoErr *err)
+{
+    int rc = open_file(p, cfg, VJO_GAME_NAMES_FILE, d, err);
+    if (rc) return rc;
+    if (cfg->game_names_offset > d->file.size || cfg->game_names_bytes > d->file.size - cfg->game_names_offset) {
+        d->file.close(d->file.ctx);
+        err->detail = dictionary_changed_error;
+        return VJO_E_LOCAL_IO;
+    }
+    d->base = cfg->game_names_offset;
+    d->file.size = cfg->game_names_bytes;
+    return VJO_OK;
+}
+
+/* Dictionary index (vjo_local_dict_count's order) opened, its header unread. */
+static int open_index(const VjoPlatform *p, const VjoConfig *cfg, int index, Dictionary *d, VjoErr *err)
+{
+    char name[64];
+    int game = has_game(cfg);
+    if (game && index == 0) return open_game(p, cfg, d, err);
+    if (!nth_name(cfg->local_dictionaries, index - game, name)) {
+        err->detail = dictionary_names_error;
+        return VJO_E_LOCAL_IO;
+    }
+    return open_file(p, cfg, name, d, err);
+}
+
+/* The pack: "VJGAMES1", version 1, a 64-byte header, then title IDs sorted bytewise, each 24 bytes
+ * (12 NUL-padded, a dictionary's u64 offset, its u32 length); tools/prepare_vndb.py writes it. */
+#define GAMES_HEADER 64u
+#define GAMES_RECORD 24u
+
+int vjo_game_names_find(const VjoPlatform *p, const char *dir, const char *id, uint64_t *offset,
+                        uint32_t *bytes)
+{
+    char path[256], key[12];
+    uint8_t h[40], r[GAMES_RECORD];
+    VjoFile f;
+    size_t len = strlen(id);
+    int found = 0;
+    *offset = 0;
+    *bytes = 0;
+    if (!len || len >= sizeof(key)) return 0;
+    memset(key, 0, sizeof(key));
+    memcpy(key, id, len);
+    int n = vjo_snprintf(path, sizeof(path), "%s/%s", dir, VJO_GAME_NAMES_FILE);
+    if (n < 0 || (size_t)n >= sizeof(path) || !p->file_open || p->file_open(p->ud, path, &f)) return -1;
+    if (f.size < GAMES_HEADER || f.read(f.ctx, 0, h, sizeof(h)) || memcmp(h, "VJGAMES1", 8) || u32(h + 8) != 1 ||
+        u32(h + 12) != GAMES_HEADER || u32(h + 20) != GAMES_RECORD || u64(h + 24) != GAMES_HEADER ||
+        u64(h + 32) != f.size || (uint64_t)u32(h + 16) * GAMES_RECORD > f.size - GAMES_HEADER) {
+        f.close(f.ctx);
+        return -1;
+    }
+    for (uint32_t lo = 0, hi = u32(h + 16); lo < hi && !found;) {
+        uint32_t mid = lo + (hi - lo) / 2;
+        int cmp;
+        if (f.read(f.ctx, GAMES_HEADER + (uint64_t)mid * GAMES_RECORD, r, sizeof(r))) { found = -1; break; }
+        cmp = memcmp(key, r, sizeof(key));
+        if (cmp < 0) hi = mid;
+        else if (cmp > 0) lo = mid + 1;
+        else {
+            *offset = u64(r + 12);
+            *bytes = u32(r + 20);
+            found = *bytes && *offset <= f.size && *bytes <= f.size - *offset ? 1 : -1;
+        }
+    }
+    f.close(f.ctx);
+    if (found < 0) *offset = *bytes = 0;
+    return found;
 }
 
 /* A page-0 text field (the frequency list's name, the dictionary's title):
@@ -379,7 +470,7 @@ static int check_header(Dictionary *d)
     if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
     READ_KIND(VJO_READ_HEADER);
     STAT_READ(n);
-    if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, 0, h, n)) return VJO_E_LOCAL_IO;
+    if (!d->file.read || !d->file.close || d->file.read(d->file.ctx, d->base, h, n)) return VJO_E_LOCAL_IO;
     return parse_header(d, h, n);
 }
 
@@ -517,6 +608,14 @@ static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig
         err->detail = dictionary_names_error;
         return VJO_E_LOCAL_IO;
     }
+    if (has_game(cfg)) {
+        Dictionary *d = &w->dicts[w->n_dicts];
+        int rc = open_game(p, cfg, d, err);
+        if (rc) return rc;
+        w->n_dicts++;
+        if ((rc = open_header(w, d))) return rc;
+        vjo_snprintf(d->title, sizeof(d->title), "%s", VJO_GAME_NAMES_TITLE); /* format 1 has no title of its own */
+    }
     while (next_name(&names, name) > 0) {
         Dictionary *d = &w->dicts[w->n_dicts];
         int rc = open_file(p, cfg, name, d, err);
@@ -528,6 +627,8 @@ static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig
         memcpy(s->dicts, w->dicts, (size_t)w->n_dicts * sizeof(Dictionary));
         memcpy(s->dir, cfg->local_dictionary_dir, sizeof(s->dir));
         memcpy(s->names, cfg->local_dictionaries, sizeof(s->names));
+        s->game_offset = cfg->game_names_offset;
+        s->game_bytes = cfg->game_names_bytes;
         s->ud = p->ud;
         s->file_open = p->file_open;
         s->count = w->n_dicts;
@@ -1032,7 +1133,7 @@ static int read_entry(VjoArena *out, const Dictionary *d, uint64_t off, uint32_t
     if (cached) memcpy(payload, cached, len);
     else {
         STAT_READ(len);
-        if (d->file.read(d->file.ctx, off, payload, len)) return VJO_E_LOCAL_IO;
+        if (d->file.read(d->file.ctx, d->base + off, payload, len)) return VJO_E_LOCAL_IO;
     }
     if (d->prefix) {
         rank = (int)(u32((const uint8_t *)payload) & FREQ_RANK_MASK);
@@ -1396,7 +1497,6 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     const VjoLocalPage *pg;
     Dictionary d;
     VjoArena output;
-    char name[64];
     void *outmem;
     int rc, opened = 0;
 
@@ -1406,7 +1506,7 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     if (!pages || page < 0 || page >= pages->count || pages->count > VJO_LOCAL_MAX_DICTS)
         return err->rc = VJO_E_PARSE;
     pg = &pages->page[page];
-    if (!p->file_open || !cfg->local_dictionary_dir[0] || !nth_name(cfg->local_dictionaries, pg->dict, name)) {
+    if (!p->file_open || !cfg->local_dictionary_dir[0] || pg->dict >= vjo_local_dict_count(cfg)) {
         err->detail = dictionary_names_error;
         return err->rc = VJO_E_LOCAL_IO;
     }
@@ -1421,9 +1521,11 @@ int vjo_local_read_page(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         rc = VJO_OK;
     } else {
         vjo_local_session_close(p->local_session);
-        rc = open_file(p, cfg, name, &d, err);
+        rc = open_index(p, cfg, pg->dict, &d, err);
         opened = rc == VJO_OK;
         if (!rc) rc = check_header(&d);
+        if (!rc && has_game(cfg) && pg->dict == 0)
+            vjo_snprintf(d.title, sizeof(d.title), "%s", VJO_GAME_NAMES_TITLE);
     }
     if (!rc && d.file.size != pg->file_size) {
         err->detail = dictionary_changed_error;

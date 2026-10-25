@@ -56,7 +56,9 @@
   definitions from Daijirin, Sankoku and JMdict, the meanings of a word's kanji, a short
   English note on each grammar point (は, に, ので …) and Jiten's frequency ranks. The bundled
   [PSP/Vita names dictionary](docs/vndb-attribution.txt) adds 12,151 VNDB characters from 1,202
-  visual novels, with their games and romanized names. You can add your own Yomitan dictionaries too.
+  visual novels, with their games and romanized names. In a game Rubi knows by its title ID (about
+  four in five of those games' characters), [that game's names come first](docs/per-game-names.md):
+  in CLANNAD, 渚 is Nagisa before it is a beach. You can add your own Yomitan dictionaries too.
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
   sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
   [Lapis](https://github.com/donkuri/lapis) notes for Anki.

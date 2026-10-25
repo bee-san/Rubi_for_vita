@@ -490,7 +490,8 @@ for f in ${EXTRA_K[@]+"${EXTRA_K[@]}"}; do
   echo "uploaded ur0:tai/$(basename "$f")"
 done
 if [ -n "$PACKAGE_DIR" ]; then
-  for f in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/dictionaries/*.vjdict; do
+  for f in "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/dictionaries/*.vjdict \
+           "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/dictionaries/*.vjgames; do
     [ -f "$f" ] || continue
     put "$f" "ux0:/data/VitaJPOverlay/dictionaries/$(basename "$f")"
   done

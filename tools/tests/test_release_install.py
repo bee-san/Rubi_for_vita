@@ -43,7 +43,8 @@ class ReleaseInstall(unittest.TestCase):
                      "ux0/data/VitaJPOverlay/ocr/vocr_lm_o3_4000k.vlm", "ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md",
                      "ux0/data/VitaJPOverlay/ocr/MODEL-ATTRIBUTION.md", "ux0/data/VitaJPOverlay/ocr/VOCR4_W20_w8.vocr",
                      "ux0/data/VitaJPOverlay/dictionaries/plaintext.vjdict",
-                     "ux0/data/VitaJPOverlay/dictionaries/vndb-names.vjdict"):
+                     "ux0/data/VitaJPOverlay/dictionaries/vndb-names.vjdict",
+                     "ux0/data/VitaJPOverlay/dictionaries/vndb-games.vjgames"):
             (self.package / name).write_bytes(("test payload " + name).encode())
         self.worker = "kernel"
         self.write_manifest()
@@ -185,7 +186,7 @@ elif '-o' in a:
         self.assertTrue((self.device / "ux0/data/Rubi.vpk").is_file())
         self.assertEqual((self.device / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes(),
                          (self.package / "ur0/tai/VitaJPOverlay_OCR.suprx").read_bytes())
-        for name in ("dictionaries/plaintext.vjdict", "dictionaries/vndb-names.vjdict",
+        for name in ("dictionaries/plaintext.vjdict", "dictionaries/vndb-names.vjdict", "dictionaries/vndb-games.vjgames",
                      "ocr/VOCR3_H15_w8.vocr", "ocr/VOCR3_FL10_w8.vocr", "ocr/vocr_lm_o3_4000k.vlm",
                      "ocr/LM-ATTRIBUTION.md", "ocr/MODEL-ATTRIBUTION.md", "ocr/VOCR4_W20_w8.vocr"):
             self.assertEqual((self.data / name).read_bytes(),

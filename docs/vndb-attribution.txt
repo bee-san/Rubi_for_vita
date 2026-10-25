@@ -19,6 +19,16 @@ in the source repository at third_party/vndb-names/VNDB-Names-PSP-PSVita.zip and
 is available from the source commit's dist/VNDB-Names-PSP-PSVita.zip. Exact input
 and output checksums and conversion counts are in docs/vndb-names.json.
 
+Per-game names (vndb-games.vjgames, docs/per-game-names.md): the same snapshot's
+names grouped by the game a console's title ID or PSP disc ID names, from the
+source repository's VNDB-Names-Games.zip (vendored beside the combined ZIP; source
+commit 0e27b06986ec40ee7346ded5dcae9d5ac767736e). Its title IDs come from VNDB's
+catalog numbers and PlayStation Store links, and from Vita3K's compatibility list,
+https://github.com/Vita3K/compatibility, whose issues pair a Vita title ID with its
+game. Rubi converts each game into a format 1 dictionary, leaves out 224 rows whose
+key is among its word dictionary's 3,000 most frequent words
+(third_party/vndb-names/games-common-words.txt) and packs them in one file.
+
 The source has 30,713 searchable name rows for 12,151 characters across 1,202
 qualifying VNs; name parts of one or two kana are not rows. Rubi retains 30,709
 rows: four names exceed its 32-character lookup

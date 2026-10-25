@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "client.h"
+#include "local_dict.h"
 #include "platform_posix.h"
 #include "render.h"
 #include "replay.h"
@@ -18,7 +19,7 @@ static void usage(void)
     fprintf(stderr,
             "usage: vjo-cli --text TEXT [--dict local] [--config FILE]\n"
             "               [--local-dir DIR] [--local-dicts main.vjdict,extra.vjdict]\n"
-            "               [--filter lines|none] [--nav] [--stats] [-v]\n"
+            "               [--filter lines|none] [--game TITLEID] [--nav] [--stats] [-v]\n"
             );
     exit(2);
 }
@@ -32,7 +33,7 @@ int main(int argc, char **argv)
     VjoPlatform plat;
     VjoOverlayData d;
     const char *text = NULL, *config = NULL, *dict = NULL;
-    const char *local_dir = NULL, *local_dicts = NULL;
+    const char *local_dir = NULL, *local_dicts = NULL, *game = NULL;
     int nav = 0, stats = 0, rc;
 
     memset(mem, 0xA5, sizeof(mem)); /* like a reused arena on the Vita */
@@ -54,6 +55,8 @@ int main(int argc, char **argv)
             cfg.non_japanese_filter = strcmp(argv[++i], "none") ? 1 : 0;
         else if (!strcmp(s, "--text") && more)
             text = argv[++i];
+        else if (!strcmp(s, "--game") && more) /* the game in front: its own names first, as the Shell */
+            game = argv[++i];
         else if (!strcmp(s, "--nav"))
             nav = 1;
         else if (!strcmp(s, "--stats"))
@@ -91,6 +94,12 @@ int main(int argc, char **argv)
 
     posix_platform_init(&pp, &plat);
     memset(&d, 0, sizeof(d));
+    if (game) {
+        int found = vjo_game_names_find(&plat, cfg.local_dictionary_dir, game, &cfg.game_names_offset,
+                                        &cfg.game_names_bytes);
+        fprintf(stderr, "names for %s: %s (%u B)\n", game, found > 0 ? "this game's" : found ? "pack unreadable" : "none",
+                (unsigned)cfg.game_names_bytes);
+    }
 
     if (!text)
         usage();

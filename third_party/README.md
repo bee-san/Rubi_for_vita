@@ -4,6 +4,9 @@ Vendored sources:
   snapshot cutoff 2026-10-22; VNDB contributors, ODbL 1.0 / DbCL 1.0. Converted
   offline by tools/prepare_vndb.py; docs/vndb-names.json pins its checksums and
   docs/vndb-attribution.txt records the changes. Full licences: licenses/VNDB-*.txt.
+  Beside it, VNDB-Names-Games.zip from 0e27b06986ec40ee7346ded5dcae9d5ac767736e (the per-game
+  names, title IDs partly from Vita3K's compatibility list) and games-common-words.txt, the keys
+  tools/prepare_vndb.py leaves out of them (tools/vndb_games_guard.py; docs/per-game-names.md).
 - bearssl  https://www.bearssl.org/git/BearSSL  7bea48e5e850ab4cafbe68d3765cdaba13a86d6f (MIT):
            only SHA-1 and SHA-224/256 are kept (src/hash/sha1.c, src/hash/sha2small.c, the
            byte-order helpers src/codec/dec32be.c and enc32be.c, src/inner.h, src/config.h and

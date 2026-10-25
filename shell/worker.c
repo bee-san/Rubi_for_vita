@@ -123,6 +123,10 @@ static VjoPlatform plat;
 static int dict_close_pending; /* control thread: close after an in-flight lookup */
 static char title_id[12];   /* set while a game is active ("" otherwise) */
 static char job_title[12];  /* the job's game (title_id when the job started), for its log lines */
+/* The game's own names (docs/per-game-names.md): its window of the pack, 0 bytes for none; apply_config
+ * copies it into cfg. */
+static uint64_t game_names_offset;
+static uint32_t game_names_bytes;
 /* Scene IDs survive kernel resets. A foreground boundary must also reject
  * results captured for the preceding game, even before a new scene arrives. */
 static uint32_t game_generation;
@@ -460,7 +464,7 @@ static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t curs
     const VjoEntry *e = out->list.n_entries > 0 ? &out->list.entries[0] : NULL;
     const char *text = out->sentence ? out->sentence : "";
     size_t len = sceClibStrnlen(text, VJO_LOCAL_MAX_TEXT);
-    int chars = 0, page = out->page, files = vjo_local_names_count(job_cfg.local_dictionaries);
+    int chars = 0, page = out->page, files = vjo_local_dict_count(&job_cfg);
     /* Which file: known with one, or from the page locators (2-8 shown). */
     int file = files == 1 ? 1 : out->pages && page >= 0 && page < out->pages->count ? out->pages->page[page].dict + 1 : 0;
     query[0] = head[0] = reading[0] = source[0] = rank[0] = 0;
@@ -1788,13 +1792,16 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         a->ocr_text_gate != b->ocr_text_gate)
         return 0;
     return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
-           !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);
+           !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries) &&
+           a->game_names_offset == b->game_names_offset && a->game_names_bytes == b->game_names_bytes;
 }
 
 static void apply_config(void)
 {
     VjoConfig previous = cfg;
     vjo_config_load(&cfg, &scratch);
+    cfg.game_names_offset = game_names_offset; /* the game in front's, never config.ini's */
+    cfg.game_names_bytes = game_names_bytes;
     if (vjo_selftest_armed())
         cfg.ocr_mode = VJO_OCR_AUTO; /* the first settled screen is recognized unasked */
     if (!same_pipeline(&previous, &cfg)) {
@@ -2736,6 +2743,16 @@ static void check_app(void)
             prc);
 }
 
+/* The game's own names: its Vita title ID or the PSP disc ID the Rubi app described, looked up in the
+ * pack (a few 24-byte reads, no allocation). A game with neither, or one the pack lacks, has none. */
+static void find_game_names(const VjoGameId *id)
+{
+    const char *key = id->disc[0] ? id->disc : id->key;
+    int rc = vjo_game_names_find(&plat, cfg.local_dictionary_dir, key, &game_names_offset, &game_names_bytes);
+    vjo_log("names for %s: %s (%u B)", key, rc > 0 ? "this game's" : rc == 0 ? "none" : "pack unreadable",
+            (unsigned)game_names_bytes);
+}
+
 static void activate_game(SceUID pid, const VjoGameId *id)
 {
     const char *tid = id->key;
@@ -2744,6 +2761,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
         hook_pid = pid;
         hook_logged[0] = 0;
     }
+    game_names_offset = game_names_bytes = 0;
     if (!vjo_game_enabled(tid, id->psp, &scratch)) {
         title_id[0] = '\0';
         vjoSetGameActive(pid, VJO_GAME_NONE);
@@ -2758,6 +2776,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
         /* recorded on Anki cards: a PSP game's disc ID and title when the Rubi app described it */
         vjo_anki_set_game(id->disc[0] ? id->disc : tid, id->name[0] ? id->name : name, id->psp);
     }
+    find_game_names(id);
     apply_config();
     push_region();
     backoff_note(&ocr_backoff, 0);
@@ -2816,6 +2835,7 @@ static void on_game_exit(void)
     vjoGetState(&st);
     invalidate_game_work();
     pending_pid = 0;
+    game_names_offset = game_names_bytes = 0; /* the next apply_config drops the game's names */
     /* API 31: a game's worker reads the text source as the game starts, before the Shell sees it in
      * front: the Rubi app's change reaches the kernel here (the app or a game left the front) */
     apply_config();

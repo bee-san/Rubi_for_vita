@@ -4,6 +4,9 @@
 #include "client.h"
 
 #define VJO_LOCAL_MAX_DICTS 8
+/* The per-game names pack, in local_dictionary_dir (docs/per-game-names.md). */
+#define VJO_GAME_NAMES_FILE "vndb-games.vjgames"
+#define VJO_GAME_NAMES_TITLE "VNDB Names — this game"
 #define VJO_LOCAL_MAX_KEY 192
 #define VJO_LOCAL_MAX_ENTRY 8192
 #define VJO_LOCAL_MAX_TEXT 4096
@@ -18,6 +21,14 @@
  * Config/platform changes and file errors close the old handles. Files must
  * not be modified during a session; close/reopen after replacing them. */
 size_t vjo_local_session_size(void);
+/* The dictionaries a lookup searches: the game's own names (cfg->game_names_bytes) first when the
+ * configured list leaves room, then local_dictionaries; 0 when that list is invalid. A page's
+ * dict is an index in this order. */
+int vjo_local_dict_count(const VjoConfig *cfg);
+/* The window of VJO_GAME_NAMES_FILE for title ID id (a Vita title ID or a PSP disc ID): 1 with
+ * *offset and *bytes set, 0 when the pack has none for it, -1 when it cannot be read. */
+int vjo_game_names_find(const VjoPlatform *p, const char *dir, const char *id, uint64_t *offset,
+                        uint32_t *bytes);
 void vjo_local_session_close(VjoLocalSession *session);
 /* Locate a word without loading its definition; the optional session remembers
  * it for local_text_generation. Scratch is released, preserving displayed output.
