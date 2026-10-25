@@ -309,17 +309,28 @@ tracker counts time while it runs and stops its clock 60 s after the last line
 
 ## Total characters read
 
-With the overlay open, △ (Triangle) shows these statistics above the line diagnostics:
+With the overlay open, △ (Triangle) shows the selected line's source, followed by two reading blocks:
 
-```
-Total characters read: 1,234,567
-Characters/hour: 8,234
-Total time played: 149:55:48 (active)
-```
+> This line came in through: hooking
+>
+> **TODAY · THIS GAME**\
+> **8,420 characters**\
+> 48 min reading · 10,525 chars/hour
+>
+> **THIS GAME · TOTAL**\
+> **142,680 characters**\
+> 16 h 25 min reading · 8,691 chars/hour
 
-All three cover every game's recorded lines in `history.csv`. Characters retain the existing
-[character definition](#characters): Japanese and Latin letters and digits, excluding punctuation,
-spaces and line breaks. Repeated lines that were recorded separately count separately.
+The source is `hooking`, `ocr`, or `Unknown` for a line without provenance, including older history.
+The technical stream, flags, similarity, model and capture fields are no longer displayed here.
+Both blocks cover the current game's recorded lines, identified separately for PSP and Vita.
+Today means the Vita's local calendar day, across closes and restarts, not a session. Its UTC
+bounds come from both local midnights. A change of day or console timezone rebuilds the daily
+counters on the next press or recorded line after midnight. Intervals crossing midnight are
+excluded from today's time/speed; they can still count in the game's total. The heading uses
+larger character-count text with dimmer supporting time/speed, in the existing PAF text pane.
+Characters retain the [character definition](#characters). Repeated lines recorded separately
+count separately. Only automatically recorded text contributes; on-press mode records none.
 
 **Time played is an estimate of active reading**, using the existing Unix timestamps, in file order.
 Only a positive interval of **15 seconds or less** between adjacent records of the same game counts.
@@ -328,7 +339,7 @@ The first and last line of a session have no independently measurable reading du
 when the next recorded line arrives. Menus, unrecorded gameplay and AFK time are not measured.
 Characters/hour uses only the earlier lines of those timed intervals divided by their total duration;
 untimed lines still count in total characters, but cannot inflate reading speed. With no timed interval,
-speed is `-` and time is `0:00:00`. Hook and OCR records follow the same rule.
+speed is `—` and time is `0 min`. Hook and OCR records follow the same rule.
 
 For an external report with the same timeout, run:
 
@@ -351,12 +362,20 @@ the same timing rule, including the interval across scan windows or a saved pref
 heap allocations are used. While a count runs, it shares storage with game reads and word lookups ahead
 are deferred; console latency and CPU3 usage are unmeasured.
 
-`ux0:data/VitaJPOverlay/history_total.bin` is a **48-byte** cache: character total, covered CSV bytes,
-checksum, active microseconds, timed characters, and the last line's timestamp, game fingerprint and
-character count. It is saved through the existing temporary-file/rename path after counting and on game
-exit when records were added. A missing, corrupt or old 16-byte character-only cache triggers a recount;
-`history.csv` is never rewritten. A truncated/replaced file detected at the prefix boundary resets all
-three statistics. Histories of 4 GiB or more remain unsupported by the on-device totals.
+`ux0:data/VitaJPOverlay/reading-<platform>-<title_id>.bin` is a **112-byte cache**
+(C `sizeof`, not a console measurement) for one game's identity, calendar bounds, character/time
+counters and covered CSV prefix, protected by a checksum. The control thread checkpoints through
+the existing temporary-file/rename path after counting, on game exit, before changing context,
+and at most once per 60 seconds of newly recorded timestamps. A dialogue updates RAM counters;
+it adds no cache write. Speed is formatted only when the menu is rendered. No new allocation,
+thread or file-size-dependent RAM is added.
+
+A missing, damaged, obsolete or different-day cache triggers a bounded recount; otherwise only
+new CSV bytes are scanned. Switching games restores that game's cache. `history.csv` is never
+rewritten. The old all-game `history_total.bin` is ignored by the menu (offline test tools can
+still use unfiltered totals). Detected history replacement/truncation resets the cached counters.
+Histories of 4 GiB or more remain unsupported by on-device totals. Console latency, CPU3 usage
+and the appearance on a physical Vita remain unmeasured until a console run.
 
 ## The format and older files
 

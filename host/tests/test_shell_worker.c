@@ -546,6 +546,9 @@ static VjoHistoryRecord last_history;
 static char history_text[VJO_GAME_OCR_TEXT_BYTES];
 static uint32_t history_text_from; /* the record's result's text_from, as the writer sees it */
 static void (*history_on_append)(void);
+int sceRtcGetCurrentClockLocalTime(SceDateTime *date) { (void)date; return -1; }
+int sceRtcGetTick(const SceDateTime *date, SceRtcTick *tick) { (void)date; (void)tick; return -1; }
+int sceRtcConvertLocalTimeToUtc(const SceRtcTick *local, SceRtcTick *utc) { (void)local; (void)utc; return -1; }
 int sceRtcGetCurrentTick(SceRtcTick *tick)
 {
     tick->tick = 62135596800000000ull + 1792220400250000ull + test_now;

@@ -5,7 +5,16 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
-## The reading total
+## The reading stats menu
+
+The Triangle menu retains only line provenance and today's/current-game totals. It reuses the
+existing text widgets, UI arena and windowed history scanner. `VjoReadingScope` is 64 bytes and
+the per-game cache 112 bytes (host C `sizeof`, not console measurements); committed and scanning
+snapshots use fixed state. There are no new allocations or threads, and no budget is raised.
+The game worker and kernel are unchanged. Build/module-page checks remain authoritative;
+physical-console latency, CPU3 and boot behaviour remain unmeasured.
+
+### Previous all-game reading total
 
 Triangle also shows characters/hour and active time with a 15-second cutoff. Its state adds two
 32-byte `VjoReadingTime` snapshots (the committed prefix and scan in progress), measured by C

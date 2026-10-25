@@ -30,7 +30,7 @@ static uint8_t record_origin(const char *p, const char *end)
  * fourth field, unescaped in place and NUL-terminated; NULL otherwise, and when the record is cut
  * before the time that follows that field (its first digit). shell/history.c quotes each of the first
  * four fields, doubles a '"' inside one and writes the time, unquoted, after them. */
-static char *record_line(char *p, char *end, const char *uuid, size_t ulen, uint8_t *origin, VjoReadingTime *time)
+static char *record_line(char *p, char *end, const char *uuid, size_t ulen, uint8_t *origin, VjoReadingTime *time, VjoReadingScope *scope)
 {
     if ((size_t)(end - p) < ulen + 2 || memcmp(p + 1, uuid, ulen))
         return NULL;
@@ -75,7 +75,7 @@ static char *record_line(char *p, char *end, const char *uuid, size_t ulen, uint
                         us = us * 10 + *c++ - '0';
                     if (digits != 6 || c >= end || *c != ',') us = 0;
                 } else us = 0;
-                vjo_reading_time_add(time, us, game, vjo_line_characters(p + 1, (size_t)(o - p - 1)));
+                vjo_reading_scope_add(time, scope, us, game, vjo_line_characters(p + 1, (size_t)(o - p - 1)));
             }
             return p + 1;
         }
@@ -129,7 +129,7 @@ void vjo_history_scan(VjoHistory *h, VjoArena *lines, char *buf, size_t len, int
         uint8_t origin = VJO_LINE_UNKNOWN;
         if (buf[i] != '"' || !record_starts(buf, i, len)) /* (most bytes: no call) */
             continue;
-        line = record_line(buf + i, buf + end, uuid, ulen, &origin, NULL);
+        line = record_line(buf + i, buf + end, uuid, ulen, &origin, NULL, NULL);
         end = i;
         if (line && keep(h, lines, line, origin, filter, &top) < 0)
             break;
@@ -153,8 +153,28 @@ void vjo_reading_time_add(VjoReadingTime *t, uint64_t us, uint32_t game, uint32_
     t->last_chars = chars;
 }
 
-uint32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
-                           VjoReadingTime *time)
+void vjo_reading_scope_add(VjoReadingTime *t, VjoReadingScope *scope,
+                           uint64_t us, uint32_t game, uint32_t chars)
+{
+    uint32_t selected = 2166136261u;
+    if (scope && scope->uuid[0]) {
+        for (const char *p = scope->uuid; *p; p++) selected = (selected ^ (unsigned char)*p) * 16777619u;
+        if (game != selected) { t->last_us = 0; t->last_chars = 0; return; }
+    }
+    uint64_t before = t->active_us, timed = t->timed_chars, prev = t->last_us;
+    vjo_reading_time_add(t, us, game, chars);
+    if (scope && us >= scope->start_us && us < scope->end_us) {
+        scope->chars += chars;
+        /* Midnight breaks the daily interval, rather than crediting yesterday's line today. */
+        if (prev >= scope->start_us) {
+            scope->active_us += t->active_us - before;
+            scope->timed_chars += t->timed_chars - timed;
+        }
+    }
+}
+
+uint32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
+                           VjoReadingTime *time, VjoReadingScope *scope)
 {
     uint32_t n = 0;
     size_t start = len;
@@ -164,7 +184,7 @@ uint32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *fi
     for (size_t i = (size_t)!whole; i <= len; i++) {
         if (i < len && (buf[i] != '"' || !record_starts(buf, i, len))) continue;
         if (start < len && (i < len || !cut)) {
-            char *line = record_line(buf + start, buf + i, "", 0, NULL, time);
+            char *line = record_line(buf + start, buf + i, "", 0, NULL, time, scope);
             if (line) n += time ? time->last_chars : vjo_line_characters(line, strlen(line));
             else if (time) time->last_us = 0; /* damaged records break the interval */
         }
@@ -174,6 +194,12 @@ uint32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *fi
         }
     }
     return n;
+}
+
+uint32_t vjo_history_count(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
+                           VjoReadingTime *time)
+{
+    return vjo_history_count_scope(buf, len, whole, cut, first, last, time, NULL);
 }
 
 uint32_t vjo_history_chars(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last)

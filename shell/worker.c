@@ -2031,6 +2031,30 @@ typedef char history_visit_fits[sizeof(HistoryVisit) + VJO_STRIP_MAX + 8 <= VJO_
 /* The visit: its block, the current text as its line 0 and this game's earlier lines from
  * history.csv (history.csv's game: Anki's, as net_job writes it). A job may run: it only reads
  * local_text, which only this thread writes. 0, or -1 with no visit. */
+/* Resolve the visible game's actual PSP/Vita ID and the console's local calendar day.
+ * UTC conversion for both midnights respects the console's timezone/DST rules. */
+
+#ifdef VJO_WITH_VOCR
+__attribute__((noinline)) int vjo_history_context(VjoReadingScope *scope)
+{
+    char name[128], tid[12];
+    const char *platform = vjo_anki_get_game(name, tid);
+    SceDateTime date;
+    SceRtcTick local, utc;
+    const uint64_t epoch = 62135596800000000ull;
+    if (!tid[0] || sceRtcGetCurrentClockLocalTime(&date) < 0) return 0;
+    date.hour = date.minute = date.second = date.microsecond = 0;
+    if (sceRtcGetTick(&date, &local) < 0 || sceRtcConvertLocalTimeToUtc(&local, &utc) < 0 || utc.tick < epoch)
+        return 0;
+    scope->start_us = utc.tick - epoch;
+    local.tick += 86400000000ull;
+    if (sceRtcConvertLocalTimeToUtc(&local, &utc) < 0) return 0;
+    scope->end_us = utc.tick - epoch;
+    sceClibSnprintf(scope->uuid, sizeof(scope->uuid), "%s-%s", platform, tid);
+    return 1;
+}
+#endif
+
 static int history_open(void)
 {
     char name[128], tid[12], uuid[24]; /* vita-PCSG00415", */

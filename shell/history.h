@@ -42,6 +42,10 @@ int vjo_history_load(VjoHistory *h, VjoArena *lines, const char *uuid, int filte
  * file once a view asks for it. */
 /* The Triangle view opened (paf thread, no lock held): the total is counted unless it is known. */
 void vjo_history_total_want(void);
+/* Control-thread context: current game's identity and today's local-midnight UTC bounds. */
+int vjo_history_context(VjoReadingScope *scope);
+/* Under view lock: block 0 today, 1 game total; separate styles are applied by the overlay. */
+void vjo_history_stats_block(char *buf, size_t cap, int today);
 /* Under the view lock: the total as the view shows it, written into buf, or "counting…" or "unavailable". */
 const char *vjo_history_total_text(char *buf, size_t cap);
 /* Under the view lock: all three reading statistics, or the count state. */

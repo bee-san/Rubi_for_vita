@@ -13,6 +13,11 @@ been reported.
 
 ### Changed
 
+- Triangle now shows the selected line's source (`hooking` / `ocr`) and two reading-stat blocks:
+  **TODAY · THIS GAME** and **THIS GAME · TOTAL**, each with characters, estimated active reading
+  time and characters/hour. Daily/game counters update in RAM with recorded dialogue and use
+  per-game caches between restarts; technical line diagnostics no longer fill the menu.
+
 - Holding **Left / Right** on the d-pad in the overlay now keeps moving the cursor, as Up / Down and
   the left stick already did: one step at once, then after 0.35 s ten words a second. A held arrow
   stops at the text's ends rather than going round a one-row text.
