@@ -914,11 +914,16 @@ static void overlay_pages_stream_through_one_arena(void)
     out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
     TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
     TEST_ASSERT(out.pages && vjo_overlay_page_count(&out) == 8 && out.page == 0);
-    TEST_CHECK(payload_reads == 1 && out.list.n_entries == 1 && meaning_byte(&out) == 'a');
+    TEST_CHECK(out.list.n_entries == 1 && meaning_byte(&out) == 'a');
+    /* The other pages stacked below it (VjoEntryList.more) as long as the arena has room: one payload
+     * each, in order; the rest are left out, page 0 untouched. */
+    TEST_CHECK(out.list.n_more >= 1 && out.list.n_more < 7 && payload_reads == 1u + (unsigned)out.list.n_more);
+    for (int i = 0; i < out.list.n_more; i++)
+        TEST_CHECK(out.list.more[i]->meanings[0][0] == 'b' + i);
     TEST_CHECK((uint8_t *)out.pages == a.base); /* locators first; the entry after them */
     size_t resident = a.used, peak = a.peak;
-    TEST_CHECK(resident <= single_used + sizeof(VjoLocalPages) + 8);
-    TEST_CHECK(peak <= single_peak + sizeof(VjoLocalPages) + 8 && peak <= sizeof(arena_mem));
+    TEST_CHECK(resident <= sizeof(arena_mem) && peak <= sizeof(arena_mem));
+    (void)single_used; (void)single_peak;
     for (int round = 0; round < 25; round++) {
         for (int page = 0; page < 8; page++) {
             int target = round % 2 ? 7 - page : page;
@@ -929,13 +934,49 @@ static void overlay_pages_stream_through_one_arena(void)
             TEST_CHECK(out.list.entries[0].vocab->rank == (int)rows[target].rank);
             TEST_CHECK(target % 3 ? !out.list.source : out.list.source && !strcmp(out.list.source, longest_title));
             TEST_CHECK(out.list.entries[0].hl_start == 0 && out.list.entries[0].hl_end == 3);
-            TEST_CHECK(payload_reads == 1 && opens_by[target] == 1 && opened == closed);
+            TEST_CHECK(payload_reads == 1 && opens_by[target] == 1 && opened == closed && !out.list.n_more);
             TEST_CHECK(a.used <= resident); /* one entry resident, never more */
         }
     }
     TEST_CHECK(a.peak <= peak); /* page reads need no lookup scratch */
     printf("  8 x 8 KiB definitions: single peak %zu resident %zu; paged peak %zu resident %zu\n",
            single_peak, single_used, a.peak, resident);
+}
+
+/* The other dictionaries' entries for the word are read with it and shown below it (a word, then a
+ * character's name): Dictionaries shown 1 stacks none; a dictionary with only a shorter match stacks
+ * none either. */
+static void other_dictionaries_stack_below_the_word(void)
+{
+    const Row d0[] = {{"渚", "渚", "なぎさ", "[Bee] beach", 0, 0}};
+    const Row d1[] = {{"渚", "渚", "なぎさ", "[VNDB] Furukawa Nagisa", 0, 0}};
+    const Row d2[] = {{"空", "空", "そら", "[VNDB] Sora", 0, 0}};
+    VjoArena a; VjoPlatform p; VjoConfig cfg; VjoOverlayData out;
+    setup(&a, &p, &cfg); set_names(&cfg, 2);
+    build(&fixtures[0], page_names[0], d0, 1, 2);
+    build(&fixtures[1], page_names[1], d1, 1, 2);
+    const char *text = "渚が好き";
+    cfg.local_dictionary_results = 1;
+    out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
+    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
+    TEST_CHECK(out.list.n_entries == 1 && !out.list.n_more && !out.list.more);
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    cfg.local_dictionary_results = 2;
+    out = (VjoOverlayData){.ocr_text = text, .filtered = text, .sentence = text};
+    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
+    TEST_CHECK(out.list.n_entries == 1 && !strcmp(out.list.entries[0].vocab->meanings[0], "[Bee] beach"));
+    TEST_ASSERT(out.list.n_more == 1);
+    TEST_CHECK(!strcmp(out.list.more[0]->meanings[0], "[VNDB] Furukawa Nagisa") &&
+               !strcmp(out.list.more[0]->reading, "なぎさ"));
+    /* a name that is only the word's start is no page, so nothing stacks */
+    const char *text2 = "空港";
+    const Row w[] = {{"空港", "空港", "くうこう", "[Bee] airport", 0, 0}};
+    build(&fixtures[0], page_names[0], w, 1, 2);
+    build(&fixtures[1], page_names[1], d2, 1, 2);
+    vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+    out = (VjoOverlayData){.ocr_text = text2, .filtered = text2, .sentence = text2};
+    TEST_ASSERT(!vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out));
+    TEST_CHECK(out.list.n_entries == 1 && !out.list.n_more);
 }
 
 static void page_failures_keep_header_and_locators(void)
@@ -1989,6 +2030,7 @@ TEST_LIST = {
     {"katakana_text_prefers_its_spelling_then_hiragana", katakana_text_prefers_its_spelling_then_hiragana},
     {"single_result_reads_are_unchanged", single_result_reads_are_unchanged},
     {"overlay_pages_stream_through_one_arena", overlay_pages_stream_through_one_arena},
+    {"other_dictionaries_stack_below_the_word", other_dictionaries_stack_below_the_word},
     {"page_failures_keep_header_and_locators", page_failures_keep_header_and_locators},
     {"eight_dictionaries_only_matching_pages", eight_dictionaries_only_matching_pages},
     {"longest_and_first_posting", longest_and_first_posting},

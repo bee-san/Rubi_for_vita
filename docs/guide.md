@@ -762,9 +762,10 @@ files, it stays as it was and the install plan asks you to choose.
 
 The main dictionary comes first for equal-length word matches; longer full names
 can still match the names dictionary. **Dictionaries shown** is 2 by default, so a
-word that is also a name (渚: a beach, and Nagisa) shows `L/R Dictionary 2 of 2`
-and R shows the name. Another dictionary's page is always the same word: a name
-that only matches the start of a longer word (空 in 空港) is no page. An update
+word that is also a name (渚: a beach, and Nagisa) shows the word, then the name
+below it; scroll down with the right stick. Another dictionary's entry is always the
+same word: a name that only matches the start of a longer word (空 in 空港) is not
+shown. An update
 that enables the names (the Install page, `install_ftp.sh`) turns a count of 1
 into 2. The names source ZIP is committed unchanged, converted offline
 with `python3 tools/prepare_vndb.py`, and verified against input/output checksums
