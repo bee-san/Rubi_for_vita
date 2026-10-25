@@ -169,7 +169,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Speed boost while reading (444 MHz)** | ON |
 | | **Japanese characters only**: the cursor skips Latin letters, digits and punctuation | OFF |
 | | **Highlight**: Whole word or Character | Whole word |
-| | **Dictionaries shown**: how many dictionaries' entries an L or R tap pages through, 1–8 | 1 |
+| | **Dictionaries shown**: how many dictionaries' entries for the same word an L or R tap pages through, 1–8 (2: a word, then the same word as a character's name) | 2 |
 | | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |

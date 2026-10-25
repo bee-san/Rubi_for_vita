@@ -114,10 +114,10 @@ struct VjoLocalPages { /* typedef in client.h */
 
 /* vjo_local_lookup_at for up to `limit` (1..8) dictionaries. Page 0 is exactly
  * vjo_local_lookup_at's single result, also read into res. Later pages are the
- * best match (longest span, then as above) of each other dictionary that has
- * one, in local_dictionaries order; only their locators
- * are kept. limit 1 performs the same reads as vjo_local_lookup_at, and pages
- * may then be NULL (nothing to locate). */
+ * same word in the other dictionaries: each one's best match (as above) over
+ * page 0's span, in local_dictionaries order; a dictionary with only a shorter
+ * match has no page. Only their locators are kept. limit 1 performs the same
+ * reads as vjo_local_lookup_at, and pages may then be NULL (nothing to locate). */
 int vjo_local_lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                            const char *text, size_t cursor_byte, int limit,
                            VjoLocalPages *pages, VjoDictResult *res, VjoErr *err);

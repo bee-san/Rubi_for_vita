@@ -1167,22 +1167,6 @@ done:
     return err->rc = rc;
 }
 
-/* Pages are final when the overall best match is known and every dictionary
- * that may take one of the remaining limit - 1 places (configured order) is
- * resolved. limit 1 stops at the first match, exactly as a single lookup. */
-static int pages_complete(const Workspace *w, unsigned resolved, int limit)
-{
-    int best, shown = 1;
-    if (!w->n_matches) return 0;
-    best = w->matches[0].dict;
-    for (int d = 0; d < w->n_dicts && shown < limit; d++) {
-        if (d == best) continue;
-        if (!(resolved & (1u << d))) return 0; /* may still match a shorter span */
-        shown++;
-    }
-    return 1;
-}
-
 static void add_page(VjoLocalPages *pages, const Workspace *w, int match)
 {
     const Match *m = &w->matches[match];
@@ -1204,8 +1188,7 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     size_t mark = vjo_arena_mark(a), len = strlen(text), off = 0, bytes = 0, raw_bytes = 0;
     size_t lengths[MAX_SCAN_CHARS + 1];
     uint8_t raws[MAX_SCAN_CHARS + 1];
-    int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0, complete = 0;
-    unsigned resolved = 0;
+    int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0;
     char key[VJO_LOCAL_MAX_KEY + 1], raw[MAX_SCAN_CHARS * 4];
     Match fallback[VJO_LOCAL_MAX_DICTS], chosen[VJO_LOCAL_MAX_DICTS];
     VjoArena output;
@@ -1287,11 +1270,14 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
      * dictionary beats an inflected hit in an earlier one; otherwise
      * configured order. A dictionary without such an entry takes the best
      * homograph of its first matching candidate (passes 0, 1, 2 below). Each dictionary keeps only its best match;
-     * the first one overall is the single result. Only page 0's payload is
-     * read: other pages are located, never loaded. */
-    for (int k = count; k > 0 && !complete; k--) {
+     * the first one overall is the single result. The other pages are the
+     * same word: only the other dictionaries' matches at that span, so the
+     * search ends with it (a name that is also a word is a page; a shorter
+     * match in another dictionary is none). Only page 0's payload is read:
+     * other pages are located, never loaded. */
+    for (int k = count; k > 0 && !w->n_matches; k--) {
         int candidates;
-        unsigned fell_back = 0, found = 0, exact = 0;
+        unsigned fell_back = 0, found = 0, exact = 0, resolved = 0;
         key[lengths[k]] = 0;
         candidates = deinflect(w, key);
         if (candidates < 0) { rc = candidates; goto done; }
@@ -1303,7 +1289,7 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
             for (int d = 0; d < w->n_dicts && !(limit == 1 && found); d++) {
             uint32_t top = 0;
             int depth = 0;
-            if (((resolved | found) >> d) & 1) continue;
+            if ((found >> d) & 1) continue;
             for (int c = phase; c < (phase ? candidates : 1); c++) {
                 int before = w->n_matches;
                 Query q = {0};
@@ -1325,8 +1311,9 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                 exact |= (unsigned)!c << d;
             }
         }
-        for (int pass = 0; pass < 3 && !complete; pass++)
-            for (int d = 0; d < w->n_dicts && !complete; d++) {
+        /* With one result, the first match ends it. */
+        for (int pass = 0; pass < 3 && !(limit == 1 && w->n_matches); pass++)
+            for (int d = 0; d < w->n_dicts && !(limit == 1 && w->n_matches); d++) {
                 unsigned bit = 1u << d;
                 const Match *m = &fallback[d];
                 if (resolved & bit) continue;
@@ -1337,7 +1324,6 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                 resolved |= bit;
                 w->matches[w->n_matches] = *m;
                 w->matches[w->n_matches++].units = (uint16_t)units[k];
-                complete = pages_complete(w, resolved, limit);
             }
     }
     if (w->n_matches) {

@@ -20,6 +20,22 @@ been reported.
   in a 48-byte cache across restarts; old character-only caches rebuild automatically. No new thread or
   heap allocation is added. [Details](docs/ocr-history.md#total-characters-read).
 
+### Changed
+
+- A word that is also a character's name shows the name too: **Dictionaries shown** is 2 by
+  default, so 渚 shows Bee's Ultimate Dictionary's entry (a beach) with `L/R Dictionary 2 of 2`, and
+  R shows the name (Nagisa). Before, the word always won and the name never showed. A fresh install
+  gets 2; an update keeps the count its `config.ini` has (1 from earlier releases): choose 2 in the
+  Rubi app. With 2, an Anki card of such a word also carries the name in its `Glossary`
+  ([details](docs/local-dictionaries.md#dictionaries-shown)).
+- Another dictionary's page is always the same word: only an entry for page 1's whole match counts,
+  so a name that is just the start of a longer word (空 in 空港) is no page, and the lookup searches no
+  shorter span once page 1 is found. Page 1 itself is unchanged.
+- The bundled names dictionary no longer has the one- and two-kana parts of names
+  (bee-san/psp_and_vita_vndb_name_dict#1): the particles of foreign names (the デ and ラ of
+  ファナ=デ・ラ・…) and honorifics (さん in 村上 さん) matched ordinary words such as で, だ and する.
+  Whole names and kanji parts (渚) stay.
+
 ## [0.9.4] - 2026-10-23
 
 Publishes the native-hook changes already merged into main after 0.9.3. Both the normal build
