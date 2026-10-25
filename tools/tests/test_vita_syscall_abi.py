@@ -109,5 +109,24 @@ class HookCache(unittest.TestCase):
         self.assertEqual(str(e.exception), "Shell imports the game worker's vjoOcrHookCache")
 
 
+
+class HookLine(unittest.TestCase):
+    """API 41: the hook watch's report is the worker's import and the kernel's export, never the Shell's."""
+
+    def test_worker_import_and_kernel_export_are_required(self):
+        with self.assertRaises(abi.InvalidABI) as e:
+            audit(drop=("vjoOcrHookLine",))
+        self.assertIn("vjoOcrHookLine", str(e.exception))
+        with self.assertRaises(abi.InvalidABI) as e:
+            abi.audit(Fake("VitaJPOverlay_Kernel", KERNEL, True),
+                      Fake("VitaJPOverlay_Shell", SHELL, False), False,
+                      Fake("VitaJPOverlay_OCR", tuple(n for n in WORKER if n != "vjoOcrHookLine"), False))
+        self.assertIn("vjoOcrHookLine", str(e.exception))
+
+    def test_shell_does_not_import_it(self):
+        with self.assertRaises(abi.InvalidABI) as e:
+            audit(shell=("vjoOcrHookLine",))
+        self.assertEqual(str(e.exception), "Shell imports the game worker's vjoOcrHookLine")
+
 if __name__ == "__main__":
     unittest.main()

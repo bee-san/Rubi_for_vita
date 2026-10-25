@@ -46,6 +46,7 @@ typedef struct {
     uint32_t capture_scene;    /* scene of the captured pixels, 0 = unknown */
     uint32_t region_seq;       /* capture_sig is this capture's (0 = none) */
     int64_t region_us;         /* when its first pass started */
+    int64_t capture_begin_us;  /* API 41: when the capture being taken began (its first pass's row 0) */
     uint32_t capture_seq;      /* bumped per job */
     uint32_t done_seq;         /* seq of the last finished first pass */
 

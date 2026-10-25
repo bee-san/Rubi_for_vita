@@ -497,6 +497,13 @@ int vjoOcrShotSave(uint32_t seq, uint32_t bytes);
 #define VJO_GAME_OCR_HOOK_CACHE_LOAD 0u
 #define VJO_GAME_OCR_HOOK_CACHE_SAVE 1u
 int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data);
+/* API 41, the registered worker's thread between jobs only: the dialogue's hook stream (a Luna site or the
+ * learned source, docs/native-hooks.md) took a new line, sequence seq, bytes raw bytes (both only logged).
+ * The region gets a new scene at once, held while the line draws (kernel/scene.h scene_hook), and the
+ * Shell is woken as for a quiet screen (VJO_EV_REGION_QUIET): 0. While the last reported line is still
+ * drawing (lines in quick succession, a skip), the same but nobody is woken: 1. VJO_ERR_PERM for any other
+ * caller; VJO_ERR_BUSY while a job is claimed. */
+int vjoOcrHookLine(uint32_t seq, uint32_t bytes);
 #ifdef __cplusplus
 }
 #endif

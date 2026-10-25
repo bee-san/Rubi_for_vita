@@ -38,6 +38,7 @@ static int stall_copy; /* the hook starts the copy and has not finished it (anot
 static int gone_after_frame; /* the game exits right after its frame, while the rows call is in the kernel */
 static unsigned frees_seen_at_exit;
 static unsigned rows_events, capture_events, hook_frames, kstrip_allocs, kstrip_frees;
+static unsigned quiet_events; /* API 41: vjoOcrHookLine's wakeup of the Shell */
 static unsigned char user_rows[64 * 64]; /* the worker's capture block */
 
 static unsigned klogs, delays;
@@ -66,6 +67,7 @@ int ksceKernelSetEventFlag(SceUID uid, unsigned bits)
     }
     if (uid == g.mevf && g.mevf > 0) { TEST_CHECK(bits == MEV_DONE); done_events++; done_pending = 1; return 0; }
     if (uid == g.evf && bits == VJO_EV_CAPTURE_DONE) { capture_events++; return 0; }
+    if (uid == g.evf && bits == VJO_EV_REGION_QUIET) { TEST_CHECK(locks == 0); quiet_events++; return 0; } /* API 41 */
     TEST_CHECK(uid == g.ioevf && bits == IEV_MODEL); model_events++; return 0;
 }
 int ksceKernelClearEventFlag(SceUID uid, unsigned bits)
@@ -466,6 +468,7 @@ static void setup(void)
     stall_copy = gone_after_frame = 0;
     kledger_init();
     rows_events = capture_events = hook_frames = kstrip_allocs = kstrip_frees = 0;
+    quiet_events = 0;
     memset(user_rows, 0xCC, sizeof(user_rows));
     caller = 7; module_id = 99;
     module_missing = copy_in_fail = copy_out_fail = 0;
@@ -1150,6 +1153,57 @@ static void rows_hook_copies_grey_and_publishes_the_capture(void)
     TEST_CHECK(rows_call(seq, 3, 5, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == 5 && rows_match(user_rows, 3, 5, 32, 0));
     TEST_CHECK(game_ocr_capture_busy_locked()); /* the job still owns the capture */
     caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
+}
+/* API 41: the registered worker's thread reports a hooked line between jobs (vjoOcrHookLine): the region
+ * gets a new scene, held while the line draws, the last capture stops standing for the screen, the Shell is
+ * woken as for a quiet screen (outside the lock), and the next job's capture is that scene's whatever its
+ * pixels; a line reported while the last still draws (a skip) wakes nobody. The Shell, another thread of
+ * the game, a claimed job or a game not in front is refused. */
+static void hook_line_starts_a_held_scene(void)
+{
+    VjoGameOcrRowsInfo info;
+    uint32_t seq, before;
+    setup();
+    seq = submit(); take(seq);
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | VJO_ROWS_LAST, 40, user_rows, &info) == 32);
+    TEST_CHECK(g.region_seq == request.capture_seq && capture_events == 1);
+    before = g.tracker.id;
+    caller = 3;
+    TEST_CHECK(vjoOcrHookLine(5, 24) == VJO_ERR_PERM);
+    caller = 7; caller_thread = 0x7002;
+    TEST_CHECK(vjoOcrHookLine(5, 24) == VJO_ERR_PERM);
+    caller_thread = 0x7001;
+    TEST_CHECK(vjoOcrHookLine(5, 24) == VJO_ERR_BUSY); /* its job is claimed: never during one */
+    TEST_CHECK(g.tracker.id == before && !g.tracker.hook_us && g.region_seq && !quiet_events);
+    message.size = sizeof(message); message.seq = seq;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* between jobs */
+    caller = 7;
+    TEST_CHECK(vjoOcrHookLine(5, 24) == 0 && !locks && !syscall_depth);
+    TEST_CHECK(g.tracker.id == before + 1 && g.tracker.hook_us == (int64_t)model_clock && scene_hook_drawing(&g.tracker));
+    TEST_CHECK(!g.region_seq && quiet_events == 1);
+    /* the job the Shell starts for it: its capture is the hooked line's scene */
+    seq = submit(); take(seq);
+    model_clock += 1000;
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | VJO_ROWS_LAST, 40, user_rows, &info) == 32);
+    TEST_CHECK(g.capture_scene == before + 1 && g.region_seq == request.capture_seq && capture_events == 2);
+    caller = 7; message.seq = seq;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* the next line while that one is still drawing (a skip): a new scene, but nobody woken */
+    before = g.tracker.id;
+    model_clock += 1000;
+    TEST_CHECK(vjoOcrHookLine(6, 24) == 1);
+    TEST_CHECK(g.tracker.id == before + 1 && g.tracker.hook_us == (int64_t)model_clock && quiet_events == 1);
+    /* once the region has settled, the next line wakes the Shell again */
+    g.tracker.stable = 1; g.tracker.hook_drawn = 1;
+    TEST_CHECK(vjoOcrHookLine(7, 24) == 0 && quiet_events == 2 && g.tracker.id == before + 2);
+    /* another app in front: refused */
+    g.game_active = 0;
+    TEST_CHECK(vjoOcrHookLine(8, 24) == VJO_ERR_PERM && quiet_events == 2 && g.tracker.id == before + 2);
+    g.game_active = VJO_GAME;
+    caller = 3;
 }
 static void rows_refuse_bad_requests_without_arming(void)
 {
@@ -2442,6 +2496,7 @@ TEST_LIST = {
     {"hook cache: bounded authenticated broker and recoverable replacement", hook_cache_persists_with_bounded_broker},
     {"hook cache: copy IO size cancellation and close failures", hook_cache_failures_preserve_previous_file},
     {"one worker thread per game: a second copy's is refused (#138)", second_worker_thread_is_refused},
+    {"API 41: a hooked line starts a held scene; only the worker's thread, between jobs", hook_line_starts_a_held_scene},
     {"API 31: the hook pick is checked; the grown request and result cross whole", hook_pick_is_checked},
     {"hand-off: an idle take waits for a submission, bounded", take_wakes_on_submit},
     {"hand-off: a pending read waits for the completion, bounded", read_wakes_on_complete},
