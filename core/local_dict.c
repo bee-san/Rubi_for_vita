@@ -322,7 +322,7 @@ int vjo_local_dict_count(const VjoConfig *cfg)
 }
 
 /* The game's window of the pack, as a dictionary of its own (offsets from its start, its size the
- * window's, its title VJO_GAME_NAMES_TITLE: format 1 has none). 0, or an error with nothing open. */
+ * window's; format 1 has no title). 0, or an error with nothing open. */
 static int open_game(const VjoPlatform *p, const VjoConfig *cfg, Dictionary *d, VjoErr *err)
 {
     int rc = open_file(p, cfg, VJO_GAME_NAMES_FILE, d, err);
@@ -369,7 +369,7 @@ int vjo_game_names_find(const VjoPlatform *p, const char *dir, const char *id, u
     if (strlen(id) >= sizeof(key) || (size_t)vjo_snprintf(path, sizeof(path), "%s/" VJO_GAME_NAMES_FILE, dir) >=
         sizeof(path) || !p->file_open || p->file_open(p->ud, path, &f)) return -1;
     memcpy(key, id, strlen(id));
-    if (!f.read(f.ctx, 0, r, sizeof(r)) && !memcmp(r, "VJGAMES1", 8) && u32(r + 20) == GAMES_RECORD &&
+    if (!f.read(f.ctx, 0, r, sizeof(r)) && !memcmp(r, "VJGAMES1", 8) &&
         (uint64_t)u32(r + 16) * GAMES_RECORD + GAMES_HEADER <= f.size) {
         found = 0;
         hi = u32(r + 16);
@@ -612,7 +612,6 @@ static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig
         if (rc) return rc;
         w->n_dicts++; /* close even if header validation fails */
         if ((rc = open_header(w, d))) return rc;
-        if (d->base) memcpy(d->title, VJO_GAME_NAMES_TITLE, sizeof(VJO_GAME_NAMES_TITLE)); /* format 1 has no title */
     }
     if (s) {
         memcpy(s->dicts, w->dicts, (size_t)w->n_dicts * sizeof(Dictionary));

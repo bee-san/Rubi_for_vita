@@ -464,7 +464,7 @@ static void log_lookup(const char *why, const VjoOverlayData *out, uint32_t curs
     const VjoEntry *e = out->list.n_entries > 0 ? &out->list.entries[0] : NULL;
     const char *text = out->sentence ? out->sentence : "";
     size_t len = sceClibStrnlen(text, VJO_LOCAL_MAX_TEXT);
-    int chars = 0, page = out->page, files = vjo_local_dict_count(&job_cfg);
+    int chars = 0, page = out->page, files = vjo_local_names_count(job_cfg.local_dictionaries);
     /* Which file: known with one, or from the page locators (2-8 shown). */
     int file = files == 1 ? 1 : out->pages && page >= 0 && page < out->pages->count ? out->pages->page[page].dict + 1 : 0;
     query[0] = head[0] = reading[0] = source[0] = rank[0] = 0;
@@ -2749,7 +2749,7 @@ static void find_game_names(const VjoGameId *id)
 {
     const char *key = id->disc[0] ? id->disc : id->key;
     int rc = vjo_game_names_find(&plat, cfg.local_dictionary_dir, key, &game_names_offset, &game_names_bytes);
-    vjo_log("names for %s: %d (%u B)", key, rc, (unsigned)game_names_bytes); /* 1 this game's, 0 none, -1 no pack */
+    vjo_log("names %s %d", key, rc); /* 1 this game's, 0 none, -1 no pack */
 }
 
 static void activate_game(SceUID pid, const VjoGameId *id)
@@ -2834,7 +2834,6 @@ static void on_game_exit(void)
     vjoGetState(&st);
     invalidate_game_work();
     pending_pid = 0;
-    game_names_offset = game_names_bytes = 0; /* the next apply_config drops the game's names */
     /* API 31: a game's worker reads the text source as the game starts, before the Shell sees it in
      * front: the Rubi app's change reaches the kernel here (the app or a game left the front) */
     apply_config();

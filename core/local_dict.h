@@ -6,7 +6,6 @@
 #define VJO_LOCAL_MAX_DICTS 8
 /* The per-game names pack, in local_dictionary_dir (docs/per-game-names.md). */
 #define VJO_GAME_NAMES_FILE "vndb-games.vjgames"
-#define VJO_GAME_NAMES_TITLE "VNDB Names — this game"
 #define VJO_LOCAL_MAX_KEY 192
 #define VJO_LOCAL_MAX_ENTRY 8192
 #define VJO_LOCAL_MAX_TEXT 4096

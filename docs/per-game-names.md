@@ -24,10 +24,10 @@ have an ID. A game without one keeps the combined names dictionary only, as befo
 ## In the overlay
 
 At a game's start the Shell looks the ID up in `ux0:data/VitaJPOverlay/dictionaries/vndb-games.vjgames`
-(a few 20-byte reads; `log.txt` says `names for PCSG00415: 1 (11649 B)`: 1 for this game's names, 0 for none, -1 when the
-pack cannot be read). The
+(a few 20-byte reads; `log.txt` says `names PCSG00415 1`: 1 for this game's names, 0 for none, -1 when the pack cannot
+be read). The
 game's names are then searched first, before `local_dictionaries`, as one more dictionary: the
-popup labels them with the game's title, Anki cards name them `VNDB Names — this game`, and
+popup labels them with the game's title (an Anki card names no dictionary for them), and
 **Dictionaries shown** counts them. They take no setting; with eight dictionaries configured there
 is no room for them and none are searched.
 
@@ -50,4 +50,5 @@ window of the file (`core/local_dict.c` `vjo_game_names_find`, `open_game`). It 
 ## Memory
 
 No allocation: the game's names use one of the lookup's existing eight dictionary slots and its
-page cache. The Shell keeps the window (8 bytes) between the game's start and its end.
+page cache. The Shell keeps the window (8 bytes) until the next game's start, and searches it only
+while a game is in front.
