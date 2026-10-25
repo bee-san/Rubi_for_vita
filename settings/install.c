@@ -790,23 +790,27 @@ static int plan_config_ini(VjoInstallScan *s, int patch_existing)
         ini_new[w] = '\0';
         /* each line dropped here is named below, with every other line that only goes */
     }
-    const char *keys[6], *values[6];
+    const char *keys[7], *values[7];
     int k = 0;
     keys[k] = "local_dictionary_dir"; values[k++] = "ux0:data/VitaJPOverlay/dictionaries";
     keys[k] = "ocr_model_dir"; values[k++] = "ux0:data/VitaJPOverlay/ocr";
     /* text_source is the user's (the Rubi app's Text source, API 31): an update keeps it, a first
      * install gets the template's auto; older installs wrote ocr here, which stays (docs/guide.md) */
     int d = dictionaries(base.local_dictionaries, value, sizeof(value));
-    if (d > 0) { keys[k] = "local_dictionaries"; values[k++] = value; }
+    if (d > 0) {
+        keys[k] = "local_dictionaries"; values[k++] = value;
+        /* the names newly enabled: a count of 1, the default before them, becomes 2 (a word's name is a page) */
+        if (base.local_dictionary_results == 1) { keys[k] = "local_dictionary_results"; values[k++] = "2"; }
+    }
     else if (d < 0)
         INI_CHANGE(s, "local_dictionaries has no room for both bundled dictionaries: choose which to enable yourself");
     int log_set = 0;
-    for (int i = 0; i < s->payload.sets && k < 6; i++) {
+    for (int i = 0; i < s->payload.sets && k < 7; i++) {
         keys[k] = s->payload.set[i].key; values[k++] = s->payload.set[i].value;
         log_set |= !strcmp(s->payload.set[i].key, "log_file");
     }
     /* the debug build is the one asked for when a full log is needed (docs/release-variants.md) */
-    if (VJO_DEBUG && !log_set && k < 6) { keys[k] = "log_file"; values[k++] = "on"; }
+    if (VJO_DEBUG && !log_set && k < 7) { keys[k] = "log_file"; values[k++] = "on"; }
     /* each key only when it adds no config warning (a value the overlay would turn off) */
     vjo_config_defaults(&cfg);
     vjo_config_parse(&cfg, ini_new, (size_t)ini_new_len);

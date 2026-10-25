@@ -94,6 +94,28 @@ class MigrateConfig(unittest.TestCase):
                      "config.ini: api_key removed", "config.ini: jpdb_api_key is no longer a setting, not set"):
             self.assertEqual(report.count(line + "\n"), 1, line)
 
+    def test_an_update_enables_the_bundled_names(self):
+        # The owner's 0.9.4 config, saved before the names: they are added after the user's own and the count
+        # of 1 (the old default) becomes 2, so a word that is also a name pages to it.
+        text, report = self.migrate("local_dictionaries = plaintext.vjdict\nlocal_dictionary_results = 1\n")
+        self.assertIn("\nlocal_dictionaries = plaintext.vjdict,vndb-names.vjdict\n", text)
+        self.assertIn("\nlocal_dictionary_results = 2\n", text)
+        self.assertIn("config.ini: local_dictionary_results = 2", report)
+        text, _ = self.migrate("local_dictionaries = mine.vjdict, jmdict.vjdict\nlocal_dictionary_results = 3\n")
+        self.assertIn("\nlocal_dictionaries = mine.vjdict,plaintext.vjdict,vndb-names.vjdict\n", text)
+        self.assertIn("\nlocal_dictionary_results = 3\n", text)  # a count the user chose stays
+        # both there already: nothing changes, a 1 included (chosen with the names enabled)
+        text, _ = self.migrate("local_dictionaries = plaintext.vjdict,vndb-names.vjdict\nlocal_dictionary_results = 1\n")
+        self.assertIn("\nlocal_dictionary_results = 1\n", text)
+        # no room for the names (eight files): the list and the count stay
+        eight = ",".join("d%d.vjdict" % i for i in range(7)) + ",plaintext.vjdict"
+        text, _ = self.migrate("local_dictionaries = %s\nlocal_dictionary_results = 1\n" % eight)
+        self.assertIn("\nlocal_dictionaries = %s\n" % eight, text)
+        self.assertIn("\nlocal_dictionary_results = 1\n", text)
+        # an explicit --set wins
+        text, _ = self.migrate("local_dictionaries = plaintext.vjdict\n", "local_dictionaries=plaintext.vjdict")
+        self.assertIn("\nlocal_dictionaries = plaintext.vjdict\n", text)
+
     def test_the_local_dictionary_is_unchanged(self):
         text, report = self.migrate("dictionary = local\nocr_mode = on_press\n")
         self.assertIn("\ndictionary = local\n", text)

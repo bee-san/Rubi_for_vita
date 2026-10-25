@@ -57,6 +57,8 @@ MODEL_TIER = (("FL10", "small"), ("H15", "normal"), ("W20", "large"), ("F20", "l
 # (6-63 characters of [0-9A-Za-z._-], ending in .vocr).
 TIERS = ("small", "normal", "large")
 VALID_MODEL = re.compile(r"[0-9A-Za-z._-]{1,58}\.vocr")
+# The bundled dictionaries: Bee's Ultimate Dictionary, then the PSP/Vita names.
+BUNDLED = ("plaintext.vjdict", "vndb-names.vjdict")
 
 
 def valid_tier(value):
@@ -69,6 +71,23 @@ def model_tier(name):
     if not VALID_MODEL.fullmatch(name):
         return None
     return next((tier for shape, tier in MODEL_TIER if shape in name), None)
+
+
+def bundled_dictionaries(value):
+    """local_dictionaries with both bundled files, as the Rubi app's update writes it (settings/install.c
+    dictionaries): 0.7.12's jmdict.vjdict becomes plaintext.vjdict, else plaintext comes first; the names
+    come after the user's own. None when both are there or the list would hold more than eight."""
+    names = [n.strip() for n in value.split(",") if n.strip()]
+    if BUNDLED[0] in names and BUNDLED[1] in names:
+        return None
+    if BUNDLED[0] not in names:
+        if "jmdict.vjdict" in names:
+            names[names.index("jmdict.vjdict")] = BUNDLED[0]
+        else:
+            names.insert(0, BUNDLED[0])
+    if BUNDLED[1] not in names:
+        names.append(BUNDLED[1])
+    return ",".join(names) if len(names) <= 8 else None
 
 
 def secret(k):
@@ -119,6 +138,15 @@ def main():
         k = RENAMED.get(k, k)
         if not removed(k):
             vals[k] = REPLACED_VALUES.get(k, {}).get(v.lower(), v)
+    # An update enables the bundled names after the user's dictionaries, as the Rubi app's does. Newly
+    # enabled, a count of 1 (the default before the names) becomes 2, so a word's name is a page. A --set
+    # below still wins.
+    if old and "local_dictionaries" in vals:
+        listed = bundled_dictionaries(vals["local_dictionaries"])
+        if listed:
+            vals["local_dictionaries"] = listed
+            if vals.get("local_dictionary_results") == "1":
+                vals["local_dictionary_results"] = "2"
     # An older build's model choice is its model size, unless the file already names a valid one.
     # core/config.c ignores a vocr_tier it cannot read (with a warning): so does this, in either
     # order of the two lines, so the installed file says the size the plugin would run.

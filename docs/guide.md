@@ -760,9 +760,9 @@ The main dictionary comes first for equal-length word matches; longer full names
 can still match the names dictionary. **Dictionaries shown** is 2 by default, so a
 word that is also a name (渚: a beach, and Nagisa) shows `L/R Dictionary 2 of 2`
 and R shows the name. Another dictionary's page is always the same word: a name
-that only matches the start of a longer word (空 in 空港) is no page. An install
-updated from an earlier release keeps the count its `config.ini` already has
-(1 there); choose 2 in the Rubi app to page to names. The names source ZIP is committed unchanged, converted offline
+that only matches the start of a longer word (空 in 空港) is no page. An update
+that enables the names (the Install page, `install_ftp.sh`) turns a count of 1
+into 2. The names source ZIP is committed unchanged, converted offline
 with `python3 tools/prepare_vndb.py`, and verified against input/output checksums
 in [vndb-names.json](vndb-names.json). [Attribution and licences](vndb-attribution.txt)
 ship in both release ZIPs and standalone VPKs (ODbL 1.0 / DbCL 1.0).

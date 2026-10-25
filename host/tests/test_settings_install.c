@@ -663,13 +663,15 @@ static void the_plan_names_each_config_ini_line_that_goes(void)
     int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
     dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
     int at = ini_part((const char (*)[VJO_INSTALL_LINE])plan, n);
-    TEST_ASSERT(at >= 0 && at + 4 < n);
+    TEST_ASSERT(at >= 0 && at + 5 < n);
     TEST_CHECK(strstr(plan[at], "config.ini: these lines change; every other setting stays") != NULL);
-    /* The missing bundled names file, then the two removed settings, in order. */
+    /* The missing bundled names file and, with it newly enabled, its count of 1 (the old default) as 2, then
+     * the two removed settings, in order. */
     TEST_CHECK_(!strcmp(plan[at + 1], "   local_dictionaries = plaintext.vjdict, vndb-names.vjdict"), "[%s]", plan[at + 1]);
-    TEST_CHECK_(!strcmp(plan[at + 2], "   ocr_backend: a removed setting, goes"), "[%s]", plan[at + 2]);
-    TEST_CHECK_(!strcmp(plan[at + 3], "   log_host: a removed setting, goes"), "[%s]", plan[at + 3]);
-    TEST_CHECK_(strncmp(plan[at + 4], "   ", 3) != 0, "[%s]", plan[at + 4]);
+    TEST_CHECK_(!strcmp(plan[at + 2], "   local_dictionary_results = 2"), "[%s]", plan[at + 2]);
+    TEST_CHECK_(!strcmp(plan[at + 3], "   ocr_backend: a removed setting, goes"), "[%s]", plan[at + 3]);
+    TEST_CHECK_(!strcmp(plan[at + 4], "   log_host: a removed setting, goes"), "[%s]", plan[at + 4]);
+    TEST_CHECK_(strncmp(plan[at + 5], "   ", 3) != 0, "[%s]", plan[at + 5]);
     TEST_CHECK(!has_line(plan, n, "vocr_tier")); /* the user's Large is not a change */
     VjoInstallResult r;
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
@@ -677,6 +679,7 @@ static void the_plan_names_each_config_ini_line_that_goes(void)
     TEST_ASSERT(ini != NULL);
     TEST_CHECK(strstr(ini, "vocr_tier = large\n") && !strstr(ini, "\nocr_backend") && !strstr(ini, "\nlog_host"));
     TEST_CHECK(strstr(ini, "anki_mining = on\n") && strstr(ini, "log_file = on\n"));
+    TEST_CHECK(strstr(ini, "\nlocal_dictionary_results = 2\n") && !strstr(ini, "local_dictionary_results = 1"));
     /* its japanese_only_selection = on, the template's line from 0.7.6 until 2026-10-20, stays: the default (OFF
      * since then) is only for a file without the line */
     TEST_CHECK(strstr(owner, "\njapanese_only_selection = on\n") && strstr(ini, "\njapanese_only_selection = on\n"));

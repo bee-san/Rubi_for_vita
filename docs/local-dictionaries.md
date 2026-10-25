@@ -243,8 +243,8 @@ The overlay shows the best match at the selected character first.
 Rubi app → OCR & lookup → **Dictionaries shown** (or `local_dictionary_results`
 in `config.ini`, 1–8, default 2) shows the other enabled dictionaries' entries
 for the same word, one page at a time; 1 shows the best match only. The default
-of 2 pages from a word to the bundled names (渚: the word, then Nagisa); an install
-updated from an earlier release keeps the count its `config.ini` already has:
+of 2 pages from a word to the bundled names (渚: the word, then Nagisa); an update
+that enables the names turns a count of 1, the default before them, into 2:
 
 ```ini
 local_dictionaries = jitendex.vjdict,jmdict.vjdict,names.vjdict
