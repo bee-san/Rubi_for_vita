@@ -11,6 +11,13 @@ been reported.
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-10-25
+
+Hooked lines are read as soon as the game copies them, and a word's character name is shown below it
+(scroll down with the right stick) instead of on an L/R page. Like 0.9.5, both the normal build and the
+debug build are included; the normal VPK is the main download. API 41: install all of its plugins together
+(the VPK's Install does).
+
 ### Changed
 
 - The other dictionaries' entries for a word are shown below it instead of on L/R pages: with
@@ -18,8 +25,7 @@ been reported.
   below it; the right stick scrolls down to it, as it scrolls a long definition. L and R taps no longer
   do anything in the overlay. The extra entries are read with the word into the same result memory (no
   new allocation; one that does not fit is left out), and a long definition is clipped first so the
-  ones below keep their room ([details](docs/local-dictionaries.md#dictionaries-shown)).
-
+  ones below keep their room ([details](docs/local-dictionaries.md#dictionaries-shown), [#289]).
 - A hooked line is read as soon as the game copies it (API 41). Once a hook answers without OCR (a Luna
   site, or a source Rubi has learned, such as CLANNAD's), the game worker sees the hook stream take a new
   line within 100 ms (est.) and tells the kernel, which wakes the Shell's background read at once instead
@@ -29,11 +35,12 @@ been reported.
   the screen settles, as before, so a skip adds no line to the history. The Shell's code is unchanged,
   as are which text a job shows (and when OCR checks a hook) and **Only when I press**. The debug build
   logs each report in `kernel.txt` with its byte count, which shows whether a game's lines arrive whole
-  ([details](docs/native-hooks.md#a-new-line-starts-the-read)).
+  ([details](docs/native-hooks.md#a-new-line-starts-the-read), [#286]).
 
 ### On the console
 
-- Not run on a console yet: host-tested only (the held scene, the kernel's syscall and the worker's watch).
+- Not run on a console yet: both changes are host-tested only (the held scene, the kernel's syscall and
+  the worker's watch; the stacked entries' lookup and layout). This release needs its own restart and game test.
 
 ## [0.9.5] - 2026-10-25
 
@@ -819,7 +826,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.6
 [0.9.5]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.5
 [0.9.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.4
 [0.9.3]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.3
@@ -964,3 +972,5 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#274]: https://github.com/bee-san/Rubi_for_vita/pull/274
 [#275]: https://github.com/bee-san/Rubi_for_vita/pull/275
 [#283]: https://github.com/bee-san/Rubi_for_vita/pull/283
+[#286]: https://github.com/bee-san/Rubi_for_vita/pull/286
+[#289]: https://github.com/bee-san/Rubi_for_vita/pull/289
