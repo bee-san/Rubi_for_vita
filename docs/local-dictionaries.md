@@ -196,7 +196,7 @@ BMP). No other line of the bundle's texts has that shape, and any other
 dictionary's text is shown as before.
 
 The body holds 4,096 UTF-16 units and 96 styled spans; a kanji line takes two.
-An entry longer than the room left (after the dictionary page, status and Anki
+An entry longer than the room left (after the status and Anki
 lines before it, and with room kept for the config warnings after it, at their
 longest) is clipped at the end of its definition, at a whole character, and marked `…`: the
 kanji lines stay whole, and so does a grammar summary, which the bundle puts first. A long entry
@@ -242,8 +242,8 @@ the previous dictionary.
 The overlay shows the best match at the selected character first.
 Rubi app → OCR & lookup → **Dictionaries shown** (or `local_dictionary_results`
 in `config.ini`, 1–8, default 2) shows the other enabled dictionaries' entries
-for the same word, one page at a time; 1 shows the best match only. The default
-of 2 pages from a word to the bundled names (渚: the word, then Nagisa); an update
+for the same word below it, in the same body; 1 shows the best match only. The default
+of 2 shows a word, then the bundled names' entry for it (渚: the word, then Nagisa); an update
 that enables the names turns a count of 1, the default before them, into 2:
 
 ```ini
@@ -251,36 +251,27 @@ local_dictionaries = jitendex.vjdict,jmdict.vjdict,names.vjdict
 local_dictionary_results = 3
 ```
 
-Page 1 is unchanged: the longest match, then an exact match, then dictionary
-order. Tapping R (pressed and released alone) shows the next enabled
-dictionary, in `local_dictionaries` order, that has an entry at the selected
-character; tapping L goes back. Up/Down move the cursor between the header's
-displayed rows instead ([rows and arrow keys](touch-lookup.md#rows-and-arrow-keys)).
-The L + R chord that closes the overlay, Select + L/R and a shoulder held with
-another button never page. The body reads `L/R Dictionary 2 of 3` while paging
-is available; dictionaries with no entry are skipped. Every page is the same
-word: a dictionary counts only with an entry for page 1's whole match, so with
-`猫舌` on page 1, a dictionary that has only `猫` has no page, and the lookup
-searches no shorter span once page 1 is found. So a name that is the whole word
-(渚) is a page, and a name that is only its start (空 in 空港) is none. In Whole word
-mode, Right skips the highlighted match. Every new character, from the arrows
-or a tap, starts at page 1. Changing the count looks the word up again without capturing
-or recognizing the screen again. Separate files are paged; a combined file
-built from several ZIPs is one dictionary.
+The best match is unchanged: the longest match, then an exact match, then dictionary
+order. Below it, after a blank line, each other enabled dictionary that has an entry
+for the same word follows, in `local_dictionaries` order (its definition starts with
+its own `[title]`); dictionaries with no entry are left out. The right stick scrolls
+the body down to them, as it scrolls a long definition. Every stacked entry is the
+same word: a dictionary counts only with an entry for the best match's whole span, so
+with `猫舌` shown, a dictionary that has only `猫` adds nothing, and the lookup searches
+no shorter span. So a name that is the whole word (渚) is shown, and a name that is only
+its start (空 in 空港) is not. A best match too long for the body is clipped first
+(`…`), so the entries below it keep their room. Changing the count looks the word up
+again without capturing or recognizing the screen again. Separate files are stacked; a
+combined file built from several ZIPs is one dictionary.
 
-Paging was chosen over a stacked view: one definition fills the existing body
-and scrolls with the stick, and only it is held in memory. A stacked view
-would keep several definitions resident and make each entry shorter.
-
-Only the entry on screen is in memory. When looking up a word, the worker
-records where each other dictionary's best entry is on disk: 24 bytes per
-dictionary, a 208-byte table at the start of the single result arena. A page
-change releases the shown entry, then reuses that dictionary's session handle
-and reads one payload into the same arena. Without a live session it opens
-only that page's dictionary and validates its header first. It needs no page cache,
-deinflection scratch or allocation, and is checked against the file's size
-when located; a replaced file reports an error and is located again next time.
-With 1, no locator table is allocated.
+Until 0.9.6 the other dictionaries were pages, one at a time, with an L or R tap
+(`L/R Dictionary 2 of 3`). Stacking reads them with the word: when looking it up, the
+worker records where each other dictionary's best entry is on disk (24 bytes per
+dictionary, a 208-byte table at the start of the single result arena), then reads each
+one's payload into the same 64 KiB arena after the best match's, through the open
+session's handles. No allocation is added: an entry that does not fit what is left of
+the arena (eight maximum-size definitions do not) is left out with those after it, and
+the best match stays. With 1, no locator table is allocated and nothing else is read.
 
 ## Memory and lookup behavior
 

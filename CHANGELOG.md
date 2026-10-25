@@ -13,6 +13,13 @@ been reported.
 
 ### Changed
 
+- The other dictionaries' entries for a word are shown below it instead of on L/R pages: with
+  **Dictionaries shown** 2 (the default), 渚 shows the word, then Nagisa from the names dictionary
+  below it; the right stick scrolls down to it, as it scrolls a long definition. L and R taps no longer
+  do anything in the overlay. The extra entries are read with the word into the same result memory (no
+  new allocation; one that does not fit is left out), and a long definition is clipped first so the
+  ones below keep their room ([details](docs/local-dictionaries.md#dictionaries-shown)).
+
 - A hooked line is read as soon as the game copies it (API 41). Once a hook answers without OCR (a Luna
   site, or a source Rubi has learned, such as CLANNAD's), the game worker sees the hook stream take a new
   line within 100 ms (est.) and tells the kernel, which wakes the Shell's background read at once instead

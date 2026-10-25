@@ -102,6 +102,28 @@ static int show_local_entry(VjoArena *a, VjoOverlayData *out, const VjoDictResul
     return VJO_OK;
 }
 
+/* The other dictionaries' entries for the shown word, read now and shown below it (VjoEntryList.more):
+ * one payload each into the same arena, after page 0's. One that cannot be read (no room left in the
+ * arena, a replaced file) is left out with those after it; page 0 stays as it is. */
+static void stack_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg, VjoOverlayData *out)
+{
+    const VjoLocalPages *pages = out->pages;
+    const VjoVocab **more;
+    if (pages->count < 2 || !(more = vjo_arena_alloc(a, sizeof(*more) * (size_t)(pages->count - 1))))
+        return;
+    out->list.more = more;
+    for (int i = 1; i < pages->count; i++) {
+        size_t mark = vjo_arena_mark(a);
+        VjoDictResult r;
+        VjoErr err;
+        if (vjo_local_read_page(a, p, cfg, pages, i, &r, &err) || !r.n_vocab) {
+            vjo_arena_release(a, mark);
+            return;
+        }
+        more[out->list.n_more++] = &r.vocab[0];
+    }
+}
+
 static void local_lookup_begin(VjoOverlayData *out)
 {
     memset(&out->err, 0, sizeof(out->err));
@@ -138,7 +160,10 @@ int vjo_overlay_lookup_at(VjoArena *a, const VjoPlatform *p, const VjoConfig *cf
         return VJO_OK;
     }
     if ((rc = show_local_entry(a, out, &result, cursor_byte))) goto failed;
-    if (limit > 1) out->pages = pages;
+    if (limit > 1) {
+        out->pages = pages;
+        stack_pages(a, p, cfg, out);
+    }
     return VJO_OK;
 failed:
     vjo_arena_release(a, mark);

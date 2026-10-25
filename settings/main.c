@@ -873,7 +873,7 @@ static void draw_results_card(int y)
         snprintf(results_help, sizeof(results_help), "Best match only. %d %s enabled.",
                  enabled, enabled == 1 ? "dictionary" : "dictionaries");
     else
-        snprintf(results_help, sizeof(results_help), "Best match, then others with an L/R tap. %d enabled.", enabled);
+        snprintf(results_help, sizeof(results_help), "Best match, then the others below it. %d enabled.", enabled);
     text(42, y + CARD_HELP_Y, DIM, 24, results_help);
 }
 

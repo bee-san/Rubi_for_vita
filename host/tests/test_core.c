@@ -1055,6 +1055,39 @@ static void test_styled(void)
     l.source = NULL;
     r.vocab[0].rank = 1500;
 
+    /* another dictionary's entry for the word (a character's name) below it: a blank line, its headword
+     * and reading, its definition; no badge, no mark */
+    {
+        static const char *name_meanings[] = {"[VNDB] Furukawa Nagisa"};
+        static VjoVocab name = {"渚", "なぎさ", 7, name_meanings, 1};
+        static const VjoVocab *more[] = {&name};
+        static char longdef[600];
+        uint16_t want[] = {'\n', '\n', 0x6E1A, ' ', '('};
+        uint32_t at;
+        l.more = more;
+        l.n_more = 1;
+        TEST_ASSERT(vjo_styled_init(&st, &A, 256, 32) == 0);
+        vjo_styled_entry(&st, &l, 0, 21, 18, 1, 1);
+        for (at = 0; at + 5 <= st.len && memcmp(&st.text[at], want, sizeof(want)); at++) {}
+        TEST_CHECK(at + 5 <= st.len);
+        TEST_CHECK(st.text[st.len - 1] == 'a' && st.n_spans == 17); /* the entry's 10, then \n\n, 渚 ( なぎさ ) and \n + "Nagisa" */
+        TEST_MSG("last %04X, %d spans", st.text[st.len - 1], st.n_spans);
+        /* a definition longer than the body is clipped, so the name below still shows whole */
+        memset(longdef, 'x', sizeof(longdef) - 1);
+        const char **was = r.vocab[0].meanings, *clipped[] = {"cat <pet>", longdef};
+        r.vocab[0].meanings = clipped;
+        TEST_ASSERT(vjo_styled_init(&st, &A, 256, 32) == 0);
+        vjo_styled_entry(&st, &l, 0, 21, 18, 0, 1);
+        TEST_CHECK(!st.truncated && st.text[st.len - 1] == 'a');
+        r.vocab[0].meanings = was;
+        /* only the shown entry of a list stacks them */
+        TEST_ASSERT(vjo_styled_init(&st, &A, 256, 32) == 0);
+        vjo_styled_entry(&st, &l, 1, 21, 18, 0, 1);
+        TEST_CHECK(st.text[st.len - 1] == 'd'); /* "liked" */
+        l.more = NULL;
+        l.n_more = 0;
+    }
+
     /* surrogate pairs and truncation */
     TEST_ASSERT(vjo_styled_init(&st, &A, 3, 4) == 0);
     vjo_styled_puts(&st, "😀ab", 0, 10);
