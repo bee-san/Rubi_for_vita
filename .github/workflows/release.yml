@@ -15,7 +15,7 @@ name: Release
 # the `package` job does so on every run and checks each with tools/e2e_package.py.
 on:
   push:
-    branches: [main]
+    branches: [main, test/0.9.5-test.11]
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -258,7 +258,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: write  # the test build's pre-release (its tag only)
+      contents: write  # the test build's pre-release (its branch only)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -326,10 +326,10 @@ jobs:
 # bundled dictionary (Bee's Ultimate Dictionary): Rubi-<version>.zip (normal) and -debug.zip, and each
 # build's one-VPK install, Rubi-<version>.vpk and -debug.vpk (tools/package_vpk.py,
 # docs/one-vpk-install.md). CI never publishes an incomplete archive lacking local OCR/dictionary data.
-      # The test build v0.9.5-test.11 only (its own commit; never on main): package both builds under the
+      # The test build v0.9.5-test.11 only (its own branch's commit; never on main): package both builds under the
       # test version with card mining on, as the test builds are, check them, and publish the pre-release.
       - name: Test build v0.9.5-test.11
-        if: ${{ github.ref == 'refs/tags/v0.9.5-test.11' }}
+        if: ${{ github.ref == 'refs/heads/test/0.9.5-test.11' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -341,7 +341,7 @@ jobs:
             --set anki_mining=on -o ci/test
           for zip in ci/test/Rubi-*.zip; do python3 tools/e2e_package.py "$zip"; done
           ls -l ci/test
-          gh release create v0.9.5-test.11 ci/test/* --prerelease --verify-tag \
+          gh release create v0.9.5-test.11 ci/test/* --prerelease --target ${{ github.sha }} \
             --title "0.9.5-test.11: test build (per-game names #287, quick hook reads #286)" \
             --notes-file .github/test-release.md
 
