@@ -45,7 +45,7 @@ and 斎藤一 is Saitou Hajime.
 dictionary, and the pack is a 64-byte header (`VJGAMES1`, then version 1, the header size, the ID count and the
 record size 20, each a u32), the title IDs sorted bytewise (12 bytes NUL-padded, a dictionary's u32
 offset and u32 length) and the dictionaries. A game's dictionary is read as a
-window of the file (`core/local_dict.c` `vjo_game_names_find`, `open_game`). It is 9,705,406 B for
+window of the file (`core/local_dict.c` `vjo_game_names_find`, `open_file`). It is 9,705,406 B for
 851 game sets and 1,335 IDs; the Rubi app's Install copies it like the other names file.
 
 ## Memory
