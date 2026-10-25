@@ -88,7 +88,7 @@ class PerGameNames(unittest.TestCase):
             self.assertEqual((magic, version, header, size, records, total),
                              (names.GAMES_MAGIC, 1, 64, names.GAMES_RECORD.size, 64, len(data)))
             self.assertEqual(count, pin["title_ids"])
-            ids = [names.GAMES_RECORD.unpack_from(data, 64 + 24 * i) for i in range(count)]
+            ids = [names.GAMES_RECORD.unpack_from(data, 64 + names.GAMES_RECORD.size * i) for i in range(count)]
             self.assertEqual([r[0] for r in ids], sorted({r[0] for r in ids}))  # sorted, each once
             for _, offset, length in ids:
                 self.assertEqual(data[offset:offset + 8], b"VJDICT1\0")
@@ -115,11 +115,11 @@ class PerGameNames(unittest.TestCase):
                 return run.stdout, run.stderr
             for game in ("PCSG00415", "ULJM05338"):  # CLANNAD on the Vita, and its PSP disc
                 out, err = lookup("渚", "--game", game)
-                self.assertIn(f"names for {game}: this game's", err)
+                self.assertIn(f"names for {game}: 1 ", err)
                 self.assertLess(out.index("Furukawa Nagisa"), out.index("shore (ordinary word)"))
                 self.assertNotIn("Chinen Nagisa", out.split("shore (ordinary word)")[0])  # this game's only
             out, err = lookup("渚", "--game", "PCSG99999")
-            self.assertIn("names for PCSG99999: none", err)
+            self.assertIn("names for PCSG99999: 0 ", err)
             self.assertLess(out.index("shore (ordinary word)"), out.index("Furukawa Nagisa"))
             # Hakuouki's Saitou Hajime (斎藤 一): his full name is this game's, 一 alone stays the word
             out, _ = lookup("一", "--game", "PCSG00217")
@@ -128,7 +128,7 @@ class PerGameNames(unittest.TestCase):
             self.assertEqual(out.split("\n")[3:5], ["[Hakuouki ~Shinsengumi Kitan~]", "Saitou Hajime (斎藤 一)"])
             pack.write_bytes(b"VJGAMES1" + bytes(56))
             out, err = lookup("渚", "--game", "PCSG00415")
-            self.assertIn("names for PCSG00415: pack unreadable", err)
+            self.assertIn("names for PCSG00415: -1 ", err)
             self.assertLess(out.index("shore (ordinary word)"), out.index("Furukawa Nagisa"))
 
     def test_a_bad_archive_or_guard_preserves_the_existing_pack(self):

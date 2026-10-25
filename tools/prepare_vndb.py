@@ -27,7 +27,7 @@ GAMES = "vndb-games.vjgames"
 GAMES_MAGIC = b"VJGAMES1"
 GAMES_HEADER = struct.Struct("<8sIIIIQQ")  # magic, version, header size, IDs, record size, records, file size
 GAMES_HEADER_SIZE = 64
-GAMES_RECORD = struct.Struct("<12sQI")     # title ID (NUL padded), dictionary offset, dictionary length
+GAMES_RECORD = struct.Struct("<12sII")     # title ID (NUL padded), dictionary offset, dictionary length
 DOCS = ("vndb-names.json", "vndb-attribution.txt")
 LICENSES = ("VNDB-ODbL-1.0.txt", "VNDB-DbCL-1.0.txt")
 
@@ -103,6 +103,8 @@ def build_games(archive, output, guard):
         offset = (offset + 7) & ~7
         places.append((offset, len(blob)))
         offset += len(blob)
+    if offset > 0xFFFFFFFF:
+        raise ValueError("the pack's offsets are 32-bit")
     with open(output, "wb") as out:
         out.write(GAMES_HEADER.pack(GAMES_MAGIC, 1, GAMES_HEADER_SIZE, len(ids), GAMES_RECORD.size,
                                     GAMES_HEADER_SIZE, offset).ljust(GAMES_HEADER_SIZE, b"\0"))

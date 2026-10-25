@@ -97,7 +97,7 @@ int main(int argc, char **argv)
     if (game) {
         int found = vjo_game_names_find(&plat, cfg.local_dictionary_dir, game, &cfg.game_names_offset,
                                         &cfg.game_names_bytes);
-        fprintf(stderr, "names for %s: %s (%u B)\n", game, found > 0 ? "this game's" : found ? "pack unreadable" : "none",
+        fprintf(stderr, "names for %s: %d (%u B)\n", game, found,
                 (unsigned)cfg.game_names_bytes);
     }
 

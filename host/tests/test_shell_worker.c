@@ -2560,6 +2560,7 @@ static void cursor_file_close(void *ud)
 static int cursor_file_open(void *ud, const char *path, VjoFile *out)
 {
     (void)ud;
+    if (strstr(path, "vndb-games.vjgames")) return -1; /* no per-game names pack: every game has none */
     TEST_CHECK(strstr(path, "main.vjdict") != NULL && !cursor_handle_live);
     cursor_handle_live = 1; cursor_opens++;
     *out = (VjoFile){NULL, cursor_dict_size, cursor_file_read, cursor_file_close, 0}; return 0;

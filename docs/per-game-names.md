@@ -24,7 +24,8 @@ have an ID. A game without one keeps the combined names dictionary only, as befo
 ## In the overlay
 
 At a game's start the Shell looks the ID up in `ux0:data/VitaJPOverlay/dictionaries/vndb-games.vjgames`
-(a few 24-byte reads; `log.txt` says `names for PCSG00415: this game's (11649 B)` or `none`). The
+(a few 20-byte reads; `log.txt` says `names for PCSG00415: 1 (11649 B)`: 1 for this game's names, 0 for none, -1 when the
+pack cannot be read). The
 game's names are then searched first, before `local_dictionaries`, as one more dictionary: the
 popup labels them with the game's title, Anki cards name them `VNDB Names — this game`, and
 **Dictionaries shown** counts them. They take no setting; with eight dictionaries configured there
@@ -40,13 +41,13 @@ and 斎藤一 is Saitou Hajime.
 
 `tools/prepare_vndb.py` builds it from the vendored archive, pinned in `docs/vndb-names.json`
 (`per_game`): each game set (a bundle's ID names all its games) becomes a small format 1
-dictionary, and the pack is a 64-byte header (`VJGAMES1`, version 1, the ID count, the record size
-24, the records' offset and the file size), the title IDs sorted bytewise (12 bytes NUL-padded, a
-dictionary's u64 offset and u32 length) and the dictionaries. A game's dictionary is read as a
-window of the file (`core/local_dict.c` `vjo_game_names_find`, `open_game`). It is 9,710,742 B for
+dictionary, and the pack is a 64-byte header (`VJGAMES1`, then version 1, the header size, the ID count and the
+record size 20, each a u32), the title IDs sorted bytewise (12 bytes NUL-padded, a dictionary's u32
+offset and u32 length) and the dictionaries. A game's dictionary is read as a
+window of the file (`core/local_dict.c` `vjo_game_names_find`, `open_game`). It is 9,705,406 B for
 851 game sets and 1,335 IDs; the Rubi app's Install copies it like the other names file.
 
 ## Memory
 
 No allocation: the game's names use one of the lookup's existing eight dictionary slots and its
-page cache. The Shell keeps the window (12 bytes) between the game's start and its end.
+page cache. The Shell keeps the window (8 bytes) between the game's start and its end.

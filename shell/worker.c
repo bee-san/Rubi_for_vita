@@ -2744,13 +2744,12 @@ static void check_app(void)
 }
 
 /* The game's own names: its Vita title ID or the PSP disc ID the Rubi app described, looked up in the
- * pack (a few 24-byte reads, no allocation). A game with neither, or one the pack lacks, has none. */
+ * pack (a few 20-byte reads, no allocation). A game with neither, or one the pack lacks, has none. */
 static void find_game_names(const VjoGameId *id)
 {
     const char *key = id->disc[0] ? id->disc : id->key;
     int rc = vjo_game_names_find(&plat, cfg.local_dictionary_dir, key, &game_names_offset, &game_names_bytes);
-    vjo_log("names for %s: %s (%u B)", key, rc > 0 ? "this game's" : rc == 0 ? "none" : "pack unreadable",
-            (unsigned)game_names_bytes);
+    vjo_log("names for %s: %d (%u B)", key, rc, (unsigned)game_names_bytes); /* 1 this game's, 0 none, -1 no pack */
 }
 
 static void activate_game(SceUID pid, const VjoGameId *id)

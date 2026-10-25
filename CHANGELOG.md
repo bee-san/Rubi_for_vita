@@ -21,9 +21,9 @@ been reported.
   have an ID; other games keep today's lookups. An entry lists a character whose own name has the
   spelling before one known by it as an alias, then main characters first (岡崎: Okazaki Tomoya).
   Keys among the word dictionary's 3,000 most frequent words (一, 光, 先生 …) are left out, so
-  they stay words. The new file, `vndb-games.vjgames` (9,710,742 B), is installed beside
+  they stay words. The new file, `vndb-games.vjgames` (9,705,406 B), is installed beside
   `vndb-names.vjdict`; the Shell finds a game's window in it at the game's start with a few small
-  reads and no allocation (`log.txt`: `names for PCSG00415: this game's`).
+  reads and no allocation (`log.txt`: `names for PCSG00415: 1`).
 
 ### Changed
 
