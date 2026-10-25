@@ -2745,8 +2745,8 @@ static void activate_game(SceUID pid, const VjoGameId *id)
     const char *tid = id->key;
     int mode = id->mode;
     /* its Vita title ID, or the PSP disc ID the Rubi app described: a few 20-byte reads of the pack */
-    int names = vjo_game_names_find(&plat, cfg.local_dictionary_dir, id->disc[0] ? id->disc : tid,
-                                    &game_names_offset, &game_names_bytes);
+    vjo_game_names_find(&plat, cfg.local_dictionary_dir, id->disc[0] ? id->disc : tid, &game_names_offset,
+                        &game_names_bytes);
     if (pid != hook_pid) { /* API 31: log this game session's installation counts again. */
         hook_pid = pid;
         hook_logged[0] = 0;
@@ -2771,8 +2771,8 @@ static void activate_game(SceUID pid, const VjoGameId *id)
     backoff_note(&dict_backoff, 0);
     backoff_note(&refresh_backoff, 0);
     vjoSetGameActive(pid, mode);
-    vjo_log("game %s started: dictionary " VJO_DICT_NAME ", names %d, trigger %s, subtitles %s, ocr_mode %s", title_id,
-            names, vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
+    vjo_log("game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s", title_id,
+            vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
             cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
     vjo_ledger_shell_log("start");
     vjo_selftest_game(tid, 1, mode, &game_region);
