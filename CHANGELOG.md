@@ -11,6 +11,12 @@ been reported.
 
 ## [Unreleased]
 
+### Changed
+
+- Holding **Left / Right** on the d-pad in the overlay now keeps moving the cursor, as Up / Down and
+  the left stick already did: one step at once, then after 0.35 s ten words a second. A held arrow
+  stops at the text's ends rather than going round a one-row text.
+
 ## [0.9.6] - 2026-10-25
 
 Hooked lines are read as soon as the game copies them, and a word's character name is shown below it

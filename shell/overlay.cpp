@@ -172,7 +172,8 @@ static int s_frames, s_moves, s_stick_max; /* largest stick deflection from cent
 #endif
 static int s_mode;
 static uint32_t s_prev_buttons;
-static uint64_t s_vertical_repeat_us;
+static uint64_t s_arrow_repeat_us; /* when a held d-pad arrow next repeats; 0: none armed */
+static int s_arrow_repeated;       /* this frame's arrow is a hold's repeat, not a press */
 static int s_prev_touch;
 
 /* header state */
@@ -879,7 +880,7 @@ static void open_page(void)
     s_stick_max = 0;
 #endif
     s_prev_buttons = ~0u; /* ignore buttons already held when opening */
-    s_vertical_repeat_us = 0;
+    s_arrow_repeat_us = 0;
     s_prev_touch = 1;
     touch_write(vjo_touch_hold(&s_touch)); /* own front input throughout the overlay, not just crops */
 }
@@ -1070,6 +1071,10 @@ static void input_overlay(const VjoInput *in, uint32_t pressed)
             if (!stick && t0 > s_key_max_us) /* the slowest key is the arrows' (the stick's moves are its own) */
                 s_key_max_us = t0;
 #endif
+            /* A held Left/Right stops at the text's ends: only a fresh press goes
+             * round a one-row text's (a repeat would cycle it forever). */
+            if (s_arrow_repeated && !stick && direction && (direction > 0 ? to < cursor : to > cursor))
+                to = cursor;
             cursor = (uint32_t)to;
             /* Line history (worker.c history_ask): Up with no row above the text, and Down with none
              * below an earlier line, go to this game's line before or after it (Down on the current text
@@ -1295,21 +1300,26 @@ static void frame_body(unsigned version, unsigned anki_version)
         pressed = held & ~s_prev_buttons;
         s_prev_buttons = held;
         if (s_mode != MODE_REGION) {
-            /* Up/Down: one step now, then a steady repeat, with no catch-up burst.
-             * Only a fresh press arms it; opening with a key held still does nothing. */
-            uint32_t vertical = held & (SCE_CTRL_UP | SCE_CTRL_DOWN);
+            /* A d-pad arrow: one step now, then a steady repeat, with no catch-up burst
+             * (Left/Right faster than Up/Down, as they step words, not rows). Only a
+             * fresh press arms it; opening with a key held still does nothing, and two
+             * arrows held at once repeat neither. */
+            uint32_t arrows = held & (SCE_CTRL_UP | SCE_CTRL_DOWN | SCE_CTRL_LEFT | SCE_CTRL_RIGHT);
             uint64_t now = (uint64_t)sceKernelGetProcessTimeWide();
-            if (!vertical || vertical == (SCE_CTRL_UP | SCE_CTRL_DOWN))
-                s_vertical_repeat_us = 0;
-            else if (pressed & vertical)
-                s_vertical_repeat_us = now + 350000;
-            else if (s_vertical_repeat_us && now >= s_vertical_repeat_us) {
-                pressed |= vertical;
-                s_vertical_repeat_us = now + 150000;
+            s_arrow_repeated = 0;
+            if (!arrows || (arrows & (arrows - 1)))
+                s_arrow_repeat_us = 0;
+            else if (pressed & arrows)
+                s_arrow_repeat_us = now + 350000;
+            else if (s_arrow_repeat_us && now >= s_arrow_repeat_us) {
+                pressed |= arrows;
+                s_arrow_repeated = 1;
+                s_arrow_repeat_us = now + (arrows & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT) ? 100000 : 150000);
             }
             input_overlay(&in, pressed);
         } else {
-            s_vertical_repeat_us = 0;
+            s_arrow_repeat_us = 0;
+            s_arrow_repeated = 0;
             input_region(&in, held, pressed);
         }
     }
