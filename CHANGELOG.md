@@ -23,7 +23,7 @@ been reported.
   Keys among the word dictionary's 3,000 most frequent words (一, 光, 先生 …) are left out, so
   they stay words. The new file, `vndb-games.vjgames` (9,705,406 B), is installed beside
   `vndb-names.vjdict`; the Shell finds a game's window in it at the game's start with a few small
-  reads and no allocation (`log.txt`: `names PCSG00415 1`).
+  reads and no allocation (`log.txt`'s `game PCSG00415 started` line says `names 1`).
 
 ### Changed
 

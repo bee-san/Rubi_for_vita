@@ -95,10 +95,10 @@ int main(int argc, char **argv)
     posix_platform_init(&pp, &plat);
     memset(&d, 0, sizeof(d));
     if (game) {
-        int found = vjo_game_names_find(&plat, cfg.local_dictionary_dir, game, &cfg.game_names_offset,
-                                        &cfg.game_names_bytes);
-        fprintf(stderr, "names for %s: %d (%u B)\n", game, found,
-                (unsigned)cfg.game_names_bytes);
+        uint32_t offset, bytes;
+        int found = vjo_game_names_find(&plat, cfg.local_dictionary_dir, game, &offset, &bytes);
+        vjo_game_names_first(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), offset, bytes);
+        fprintf(stderr, "names for %s: %d (%u B)\n", game, found, (unsigned)bytes);
     }
 
     if (!text)

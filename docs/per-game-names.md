@@ -24,9 +24,11 @@ have an ID. A game without one keeps the combined names dictionary only, as befo
 ## In the overlay
 
 At a game's start the Shell looks the ID up in `ux0:data/VitaJPOverlay/dictionaries/vndb-games.vjgames`
-(a few 20-byte reads; `log.txt` says `names PCSG00415 1`: 1 for this game's names, 0 for none, -1 when the pack cannot
-be read). The
-game's names are then searched first, before `local_dictionaries`, as one more dictionary: the
+(a few 20-byte reads; `log.txt`'s `game PCSG00415 started` line says `names 1`: 1 for this game's
+names, 0 for none, -1 when the pack cannot be read). The
+game's names are then searched first, as one more dictionary at the front of the Shell's in-memory
+`local_dictionaries` (named `vndb-games-<offset>-<bytes>.vjdict`, its window; never written to
+`config.ini`): the
 popup labels them with the game's title (an Anki card names no dictionary for them), and
 **Dictionaries shown** counts them. They take no setting; with eight dictionaries configured there
 is no room for them and none are searched.

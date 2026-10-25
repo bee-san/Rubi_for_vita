@@ -123,10 +123,9 @@ static VjoPlatform plat;
 static int dict_close_pending; /* control thread: close after an in-flight lookup */
 static char title_id[12];   /* set while a game is active ("" otherwise) */
 static char job_title[12];  /* the job's game (title_id when the job started), for its log lines */
-/* The game's own names (docs/per-game-names.md): its window of the pack, 0 bytes for none; apply_config
- * copies it into cfg. */
-static uint32_t game_names_offset;
-static uint32_t game_names_bytes;
+/* The game in front's own names (docs/per-game-names.md): its window of the pack, 0 bytes for none.
+ * apply_config puts it first in cfg's in-memory dictionary list. */
+static uint32_t game_names_offset, game_names_bytes;
 /* Scene IDs survive kernel resets. A foreground boundary must also reject
  * results captured for the preceding game, even before a new scene arrives. */
 static uint32_t game_generation;
@@ -1792,16 +1791,14 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         a->ocr_text_gate != b->ocr_text_gate)
         return 0;
     return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
-           !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries) &&
-           a->game_names_offset == b->game_names_offset && a->game_names_bytes == b->game_names_bytes;
+           !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);
 }
 
 static void apply_config(void)
 {
     VjoConfig previous = cfg;
     vjo_config_load(&cfg, &scratch);
-    cfg.game_names_offset = game_names_offset; /* the game in front's, never config.ini's */
-    cfg.game_names_bytes = game_names_bytes;
+    vjo_game_names_first(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), game_names_offset, game_names_bytes);
     if (vjo_selftest_armed())
         cfg.ocr_mode = VJO_OCR_AUTO; /* the first settled screen is recognized unasked */
     if (!same_pipeline(&previous, &cfg)) {
@@ -2743,24 +2740,17 @@ static void check_app(void)
             prc);
 }
 
-/* The game's own names: its Vita title ID or the PSP disc ID the Rubi app described, looked up in the
- * pack (a few 20-byte reads, no allocation). A game with neither, or one the pack lacks, has none. */
-static void find_game_names(const VjoGameId *id)
-{
-    const char *key = id->disc[0] ? id->disc : id->key;
-    int rc = vjo_game_names_find(&plat, cfg.local_dictionary_dir, key, &game_names_offset, &game_names_bytes);
-    vjo_log("names %s %d", key, rc); /* 1 this game's, 0 none, -1 no pack */
-}
-
 static void activate_game(SceUID pid, const VjoGameId *id)
 {
     const char *tid = id->key;
     int mode = id->mode;
+    /* its Vita title ID, or the PSP disc ID the Rubi app described: a few 20-byte reads of the pack */
+    int names = vjo_game_names_find(&plat, cfg.local_dictionary_dir, id->disc[0] ? id->disc : tid,
+                                    &game_names_offset, &game_names_bytes);
     if (pid != hook_pid) { /* API 31: log this game session's installation counts again. */
         hook_pid = pid;
         hook_logged[0] = 0;
     }
-    game_names_offset = game_names_bytes = 0;
     if (!vjo_game_enabled(tid, id->psp, &scratch)) {
         title_id[0] = '\0';
         vjoSetGameActive(pid, VJO_GAME_NONE);
@@ -2775,15 +2765,14 @@ static void activate_game(SceUID pid, const VjoGameId *id)
         /* recorded on Anki cards: a PSP game's disc ID and title when the Rubi app described it */
         vjo_anki_set_game(id->disc[0] ? id->disc : tid, id->name[0] ? id->name : name, id->psp);
     }
-    find_game_names(id);
     apply_config();
     push_region();
     backoff_note(&ocr_backoff, 0);
     backoff_note(&dict_backoff, 0);
     backoff_note(&refresh_backoff, 0);
     vjoSetGameActive(pid, mode);
-    vjo_log("game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s", title_id,
-            vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
+    vjo_log("game %s started: dictionary " VJO_DICT_NAME ", names %d, trigger %s, subtitles %s, ocr_mode %s", title_id,
+            names, vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
             cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
     vjo_ledger_shell_log("start");
     vjo_selftest_game(tid, 1, mode, &game_region);
