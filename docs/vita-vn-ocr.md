@@ -634,8 +634,20 @@ bit. A line the recognizer reads as empty is never decoded.
 
 The default is the 1 MB tier. On vita-vn-ocr's development data the VOCR6 settings and LMs read the
 hooked titles' pages better than ctclm.2's at Rubi's old settings (VOCR5-N with its cascade, page
-path 4.12 % → 3.39 %, cross-validated), and are level on unseen games (#127; no console run yet).
+path 4.12 % → 3.39 %, cross-validated), and are level on unseen games (#127; no console run yet). They
+ship under VOCR6's adoption rule as the conductor ruled it (2026-10-26 16:38Z): better on the hooked
+titles' held-out pages and not worse on the unseen-game development sets (game-bootstrap 95 % interval).
 The measurements below are VOCR3's with ctclm.2's LMs.
+
+**Counters.** On #109's synthetic counter set ([counters](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/counters.md):
+189 lines of public text with a numeral before ヶ月, ヶ所 …, in three forms and seven left-edge cuts, 3,969
+crops; VOCR5-N's cached top-8, Rubi's counter re-decode, beam + LM and counter rule) the 1 MB game-text LM
+keeps the small ke in 3,015 crops against ctclm.2's 3,104: it loses 121 crops that ctclm.2 kept and gains 32
+(dialogue CER 3.60 % → 3.78 %). The difference is mostly in crops whose left edge cuts into the line: with a
+3 px margin before the line's first ink (the uncut form), 27 against 36 errors in 7,320 characters [measured on
+the host, 2026-10-26; the same run's real development lines, which hold no counter: teacher_val 108 → 110,
+devnative 112 → 104, whole dialogue 2,841 → 2,835 errors]. On a crafted counter line
+(`host/tests/test_vocr_policy.c`) the 1 MB tier reads 「九月です」 where ctclm.2's 2 MB tier reads 「九ヶ月です」.
 
 **Memory.** The LM is a resident `USER_RW` block (`VjoGameVocrLM`), like the weights:
 - **Reading:** read through the kernel's file broker 32 KiB at a time, with size and SHA-256 checked

@@ -71,7 +71,9 @@ been reported.
   cross-validated) the hooked titles' page-path dialogue CER goes from 4.12% to 3.39% (1 MB) and 4.03% to
   3.57% (4 MB), and their clean lines from 0.49% to 0.40%; the unseen-game development score is level (not
   resolved). Most of the page-path gain is one title whose box decoration the finder reads as a junk line.
-  The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
+  On vita-vn-ocr's synthetic counter lines (#109: 九ヶ月, 三ヶ所 …) the 1 MB LM keeps the small ke slightly less
+  often than ctclm.2's (3,015 against 3,104 of 3,969 crops), mostly where the region's edge cuts into the line
+  ([details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)). The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
   replace (982,320 and 3,603,552 B), so the game's LM block shrinks by 180,224 B at most
   ([vita-vn-ocr docs/vocr6-lm.md](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vocr6-lm.md);
   no console run yet).
