@@ -132,6 +132,11 @@ Two lists name them:
     - PCSG00206 グリザイアの果実 -LE FRUIT DE LA GRISAIA-, NID 0x4668F40F, +0x25FDE, Thumb, r4 + 10282, CP932, filter `RF_PROTOTYPE`; 3292 farm pages
     - PCSG00620 グリザイアの果実スピンアウト！？ アイドル魔法少女ちるちる☆みちる, NID 0x90E7EC14, +0x31E90, Thumb, r4 + 1066, CP932, filter `RF_PROTOTYPE`; 995 farm pages
 
+  - IF:Lib GAME-ENGINE 3.00 titles from the psandvita Vita3K farm (proven in Vita3K only; patched bytes checked as above). Each one's Luna site at the same address is refused by the placement check, and Luna's filter there drops the player name that the hook sees before the game expands it:
+    - PCSG00448 MARGINAL#4 IDOL OF SUPERNOVA, NID 0x84668EFE, +0x6D8F8, Thumb, r0, CP932, filter `RF_PCSG00448`; 497 farm pages
+    - PCSG00469 CLOCK ZERO ～終焉の一秒～ ExTime, NID 0x31270870, +0x27A9C, Thumb, r0, UTF-8, filter `RF_PCSG00469`; 2047 farm pages
+    - PCSG00853 ピリオドキューブ～鳥籠のアマデウス～, NID 0xA92335D4, +0x7DF2, Thumb, r5, UTF-8, filter `RF_PCSG00853`; 749 farm pages
+
   An entry is hooked only when the module NID and every recorded byte match. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text
   (`vjo_luna_site_at`); the Luna site is then skipped as hooked. Two more fields, both 0 by default:
