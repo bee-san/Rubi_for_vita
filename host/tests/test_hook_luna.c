@@ -783,6 +783,106 @@ static void regex_vectors(void)
     TEST_CHECK_(!bad, "%u of %u vectors differ from Python's re", bad, (unsigned)VJO_RE_VECTORS);
 }
 
+/* Rubi's own filter f (VJO_RF_*) on utf8 held in encoding enc, with no Luna site: want */
+static void rubi_to(unsigned f, unsigned enc, const char *in, const char *want)
+{
+    uint8_t raw[1024];
+    char out[1024];
+    unsigned n = encode(enc, in, raw, sizeof raw);
+    size_t got = vjo_luna_text_filter(NULL, f, enc, raw, n, enc, out, sizeof out);
+    TEST_CHECK_(got == strlen(want) && !strcmp(out, want), "filter 0x%02X enc %u: [%s]", f, enc, in);
+    TEST_MSG("want [%s]", want);
+    TEST_MSG("got  [%s]", out);
+}
+
+/* Rubi's filters (core/hook_luna.c, docs/native-hooks.md#rubis-filters), on examples from the farm's
+ * hook bytes (bee-san/psandvita hooks/vita/<title>/RUBI-HOOK.md and hook-text-artifacts.jsonl). */
+static void rubi_filters(void)
+{
+    const VjoLunaSite *s;
+    uint8_t raw[256];
+    char out[256];
+    unsigned n;
+    /* every Rubi filter is known and has ops; nothing between Luna's and Rubi's, nor after Rubi's */
+    for (unsigned f = VJO_RF_BASE; f < VJO_RF_END; f++) TEST_CHECK_(vjo_luna_filter_known(f), "0x%02X", f);
+    TEST_CHECK(vjo_luna_filter_known(VJO_LUNA_NONE) && vjo_luna_filter_known(VJO_LF_CARET));
+    TEST_CHECK(!vjo_luna_filter_known(VJO_LF_COUNT) && !vjo_luna_filter_known(VJO_RF_BASE - 1u));
+    TEST_CHECK(!vjo_luna_filter_known(VJO_RF_END) && !vjo_luna_filter_known(0x100u));
+    TEST_CHECK(VJO_LF_COUNT <= VJO_RF_BASE);
+
+    /* PROTOTYPE: PCSG00007 event 3 (a nameplate), PCSG00206 (an inline name, ruby), PCSG00620 events 80-81 */
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "$t声$d｢ｷｮｰｽｹが帰ｯﾃｷﾀぞｰｯ！｣", "声\n「きょーすけが帰ってきたぞーっ！」");
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "$t天音@｢$[周防$/すおう$]ﾉ話｣$d次", "天音「周防の話」\n次");
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "\n　$A1$S120ﾃｽﾄ$S$w$C[ff0000]赤$C[]＿終", "てすと赤　終");
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "$L1一般設定", "一般設定");
+    /* IFENGINE: PCSG00448 event 1 and 54, PCSG00935 event 1, PCSG00410's #Pos */
+    rubi_to(VJO_RF_IFENGINE, VJO_HOOK_ENC_CP932, "#Scale[1.0]一行目#n二行目#n", "一行目\n二行目");
+    rubi_to(VJO_RF_IFENGINE, VJO_HOOK_ENC_UTF8, "#Ruby[漢字,かんじ]を#Color[7]読む#Color[0]#n", "漢字を読む");
+    rubi_to(VJO_RF_IFENGINE, VJO_HOOK_ENC_CP932, "……#nLAGRANGE POINTの", "……\nLAGRANGE POINTの");
+    rubi_to(VJO_RF_IFENGINE, VJO_HOOK_ENC_UTF8, "#Pos[10, 20]#Speed[5]台詞#Upper", "台詞");
+    /* default names before the expander: PCSG00448 event 208, PCSG00469 sample 001345, PCSG00853 */
+    rubi_to(VJO_RF_PCSG00448, VJO_HOOK_ENC_CP932, "担当する#n#Name[1]#Name[2]です。", "担当する\n片岡ユエです。");
+    rubi_to(VJO_RF_PCSG00469, VJO_HOOK_ENC_UTF8, "私は#Name[1]。#n", "私は撫子。");
+    rubi_to(VJO_RF_PCSG00853, VJO_HOOK_ENC_UTF8, "#Name[1]#Name[2]、#Name[3]#Color[3]！#n", "花宮かずは、カズハ！");
+    /* <base,reading>: PCSG00648 sample 000005; PCSG00509 event 1011's name code and its ^ */
+    rubi_to(VJO_RF_ANGLE_RUBY, VJO_HOOK_ENC_CP932, "…旅立って<一月,ひとつき>が経ちました。", "…旅立って一月が経ちました。");
+    rubi_to(VJO_RF_PCSG00509, VJO_HOOK_ENC_CP932, "「どしたの、＊Ｂ？^ひょっとして<疲,つか>れちゃった？」",
+            "「どしたの、鈴？\nひょっとして疲れちゃった？」");
+    /* <br> (PCSG00807 sample 000002, PCSG00553's centred card), a lone backslash (PCSG00787 event 1) */
+    rubi_to(VJO_RF_BR_NEWLINE, VJO_HOOK_ENC_UTF16LE, "　　鬼丸国綱<br>次の行<br>", "鬼丸国綱\n次の行");
+    rubi_to(VJO_RF_BACKSLASH_NEWLINE, VJO_HOOK_ENC_UTF8, "一行目\\二行目\\", "一行目\n二行目");
+    /* PCSG00450's voice cue, PCSG00817's codes, PCSG00876's @@ and $<digit> */
+    rubi_to(VJO_RF_PCSG00450, VJO_HOOK_ENC_UTF16LE, "ダイチ「《SP QUE,1,0012》行くぞ」", "ダイチ「行くぞ」");
+    rubi_to(VJO_RF_PCSG00817, VJO_HOOK_ENC_CP932, "[w024][h024]一行目[n][c00ff00]二行目[e]", "一行目\n二行目");
+    rubi_to(VJO_RF_PCSG00876, VJO_HOOK_ENC_UTF8, "$4強調$0です@@次", "強調です\n次");
+    /* PCSG01194 events 1 and 21: a name, a pause and a voice, half-width kana; narration from @r */
+    rubi_to(VJO_RF_PCSG01194, VJO_HOOK_ENC_CP932, "男@r@p10.@vA_男a6_04.｢ぎｬﾞ｣", "男\n「ぎゃ！」");
+    rubi_to(VJO_RF_PCSG01194, VJO_HOOK_ENC_CP932, "@rｿﾝﾅ･･私ﾊ･･ﾞ", "そんな……私は……！");
+    /* PCSG00540: a named line with a voice, a pause and b ruby; narration with and without a voice */
+    rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "c12.大石rv01_0001.ｺﾚﾊw300.bき.<吉>だ･ﾞ", "大石\nこれは吉だ…！");
+    rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "rvzen01.ｿｳｶﾟ", "そうか？");
+    rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "r静かだ", "静かだ");
+
+    /* in place of a Luna site's filter: PCSG00448's own drops the name the hook sees before the expander */
+    s = site("PCSG00448", 0x800718F8u);
+    if (s) {
+        n = encode(VJO_HOOK_ENC_CP932, "#Name[2]です。#n", raw, sizeof raw);
+        TEST_CHECK(vjo_luna_text(s, raw, n, VJO_HOOK_ENC_CP932, out, sizeof out) == strlen("です。") &&
+                   !strcmp(out, "です。"));
+        TEST_CHECK(vjo_luna_text_filter(s, VJO_RF_PCSG00448, VJO_HOOK_ENC_CP932, raw, n, VJO_HOOK_ENC_CP932, out,
+                                        sizeof out) == strlen("ユエです。") && !strcmp(out, "ユエです。"));
+        /* filter 0: none at all, not the site's */
+        TEST_CHECK(vjo_luna_text_filter(s, VJO_LUNA_NONE, VJO_HOOK_ENC_CP932, raw, n, VJO_HOOK_ENC_CP932, out,
+                                        sizeof out) == strlen("#Name[2]です。#n"));
+    }
+    /* a site's hookfunc clean-up still runs first (PCSG00914's name glyphs), then the Rubi filter */
+    s = site("PCSG00914", 0x8005A534u);
+    if (s) {
+        n = encode(VJO_HOOK_ENC_CP932, "㌫と<漢,かん>", raw, sizeof raw);
+        TEST_CHECK(vjo_luna_text_filter(s, VJO_RF_ANGLE_RUBY, VJO_HOOK_ENC_CP932, raw, n, VJO_HOOK_ENC_CP932, out,
+                                        sizeof out) > 0 && !strcmp(out, "七海と漢"));
+        TEST_MSG("got [%s]", out);
+    }
+    /* an unknown filter, a site that is not ported, no input or no buffer: no text */
+    n = encode(VJO_HOOK_ENC_UTF8, "台詞", raw, sizeof raw);
+    TEST_CHECK(vjo_luna_text_filter(NULL, VJO_RF_END, VJO_HOOK_ENC_UTF8, raw, n, VJO_HOOK_ENC_UTF8, out, sizeof out) ==
+               0 && !out[0]);
+    TEST_CHECK(vjo_luna_text_filter(NULL, 0x200u, VJO_HOOK_ENC_UTF8, raw, n, VJO_HOOK_ENC_UTF8, out, sizeof out) == 0);
+    {
+        VjoLunaSite off;
+        memset(&off, 0, sizeof off);
+        off.encoding = VJO_HOOK_ENC_UTF8;
+        TEST_CHECK(vjo_luna_text_filter(&off, VJO_RF_ANGLE_RUBY, VJO_HOOK_ENC_UTF8, raw, n, VJO_HOOK_ENC_UTF8, out,
+                                        sizeof out) == 0);
+    }
+    TEST_CHECK(vjo_luna_text_filter(NULL, VJO_RF_ANGLE_RUBY, VJO_HOOK_ENC_UTF8, NULL, n, VJO_HOOK_ENC_UTF8, out,
+                                    sizeof out) == 0);
+    TEST_CHECK(vjo_luna_text_filter(NULL, VJO_RF_ANGLE_RUBY, VJO_HOOK_ENC_UTF8, raw, n, VJO_HOOK_ENC_UTF8, NULL, 9) ==
+               0);
+    TEST_CHECK(vjo_luna_text_filter(NULL, VJO_LUNA_NONE, VJO_HOOK_ENC_UTF8, raw, n, VJO_HOOK_ENC_UTF8, out,
+                                    sizeof out) == n && !strcmp(out, "台詞"));
+}
+
 static void regex_limits(void)
 {
     char out[64];
@@ -850,5 +950,6 @@ TEST_LIST = {
     {"filter_ops_and_limits", filter_ops_and_limits},
     {"regex_vectors", regex_vectors},
     {"regex_limits", regex_limits},
+    {"rubi_filters", rubi_filters},
     {NULL, NULL},
 };

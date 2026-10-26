@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../../core/hook_luna.h"
 #include "../../core/hook_place.h"
 #include "../../core/hook_text.h"
 
@@ -234,6 +235,33 @@ static void test_verified_amatsutsumi(void)
     TEST_CHECK(vjo_place_check_verified(v, code, 0x745C8 + 15, SEG_BASE, 0x8AA413F2u) == VJO_PLACE_RANGE);
 }
 
+/* Every entry of Rubi's list: a 9-character title whose entries are contiguous, a register that holds an
+ * address (r0-r12, sp, lr), an encoding, a site aligned for its instruction set, 8-16 recorded bytes and at
+ * least the whole patch at its address (12 at a Thumb address = 2 mod 4), deref 0 or 1, a filter this build
+ * has; one entry per (title, NID, offset). */
+static void test_verified_table(void)
+{
+    const VjoPlaceVerified *all, *first;
+    unsigned n = vjo_place_verified_all(&all);
+    TEST_ASSERT(n >= 2 && all);
+    for (unsigned i = 0; i < n; i++) {
+        const VjoPlaceVerified *v = &all[i];
+        TEST_CHECK_(v->title && strlen(v->title) == 9, "entry %u", i);
+        TEST_CHECK_(v->reg <= 14 && v->encoding > VJO_HOOK_ENC_AUTO && v->encoding < VJO_HOOK_ENC_COUNT, "%s +%X", v->title,
+                    (unsigned)v->off);
+        TEST_CHECK_(v->thumb <= 1 && !(v->off & (v->thumb ? 1u : 3u)), "%s +%X alignment", v->title, (unsigned)v->off);
+        TEST_CHECK_(v->sig_len <= 16 && v->sig_len >= vjo_place_patch_bytes(0x81000000u + v->off, v->thumb),
+                    "%s +%X: %u recorded bytes", v->title, (unsigned)v->off, v->sig_len);
+        TEST_CHECK_(v->deref <= 1 && vjo_luna_filter_known(v->filter), "%s +%X: filter 0x%02X", v->title,
+                    (unsigned)v->off, v->filter);
+        TEST_CHECK_(vjo_place_verified(v->title, &first) >= 1 && first <= v && v < first + vjo_place_verified(v->title, &first),
+                    "%s: its entries are contiguous", v->title);
+        for (unsigned j = i + 1; j < n; j++)
+            TEST_CHECK_(strcmp(all[j].title, v->title) || all[j].module_nid != v->module_nid || all[j].off != v->off,
+                        "%s +%X twice", v->title, (unsigned)v->off);
+    }
+}
+
 /* The CALL prefilter: Japanese lines pass, binary structs and Latin text do not. */
 static void test_prefilter(void)
 {
@@ -342,6 +370,7 @@ TEST_LIST = {
     {"isa", test_isa},
     {"verified", test_verified},
     {"verified: アマツツミ, a site inside a function", test_verified_amatsutsumi},
+    {"verified: every entry of the list", test_verified_table},
     {"prefilter", test_prefilter},
     {"pointer_array", test_pointer_array},
     {"reasons", test_reasons},

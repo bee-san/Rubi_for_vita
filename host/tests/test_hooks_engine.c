@@ -1521,6 +1521,99 @@ static void test_verified_takes_luna_text(void)
     }
 }
 
+/* A verified entry with deref reads the text through the pointer at its register + padding (one exact
+ * 4-byte read; an unreadable pointer or pointee gives no text); its own filter (a Rubi VJO_RF_*) processes
+ * the text, with or without a Luna site at its address, and replaces that site's filter. */
+static void test_verified_deref_and_filter(void)
+{
+    /* <漢,かん>字 in CP932: the ruby filter keeps the base */
+    static const uint8_t ruby[] = {'<', 0x8A, 0xBF, ',', 0x82, 0xA9, 0x82, 0xF1, '>', 0x8E, 0x9A, 0};
+    /* #Name[2]#n in CP932 is ASCII: PCSG00448's filter names it, Luna's drops it */
+    static const char name[] = "#Name[2]#n";
+    VjoPlaceVerified v;
+    VjoLunaSite l[1];
+    const VjoLunaSite *real;
+    uint32_t frame[16], p;
+    VjoHookSnap s;
+    char text[128];
+    reset();
+    put_site(0x100, 1, NULL);
+    v = verified_entry(0x100, mod.nid, 4, 8);
+    v.deref = 1;
+    v.filter = VJO_RF_ANGLE_RUBY;
+    t_ver = &v;
+    t_nver = 1;
+    add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_ASSERT(n_sites == 1 && site_info[0].ver == &v && slots[0].site == NULL);
+
+    p = a32(data) + 0x80;
+    memcpy(data + 0x48, &p, 4); /* r4 + 8: the pointer (little-endian, as on the Vita) */
+    memcpy(data + 0x80, ruby, sizeof ruby);
+    memset(frame, 0, sizeof(frame));
+    frame[4] = a32(data) + 0x40;
+    TEST_CHECK(vjo_hooks_observe(0, frame) == (uintptr_t)CONT(0));
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(s.n == sizeof ruby - 1 && !memcmp(s.raw, ruby, sizeof ruby - 1) && s.hits == 1);
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) > 0 && !strcmp(text, "漢字"));
+    TEST_MSG("got [%s]", text);
+    /* without the entry (another stream's key, a CALL snapshot): the markup stays */
+    s.key = 0x104;
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) > 0 && strstr(text, "<漢,かん>字") != NULL);
+    s.key = 0x100;
+    s.kind = VJO_HOOK_KIND_CALL;
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) > 0 && strstr(text, "<漢,かん>字") != NULL);
+    /* an unreadable pointer, or the pointer itself out of the block: no hit */
+    p = 0x10;
+    memcpy(data + 0x48, &p, 4);
+    vjo_hooks_observe(0, frame);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 1);
+    frame[4] = a32(data) + DATA_SIZE - 10; /* + 8: two of the pointer's four bytes in the block */
+    vjo_hooks_observe(0, frame);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 1);
+    /* deref 0: the register + padding is the text */
+    v.deref = 0;
+    memcpy(data + 0x48, ruby, sizeof ruby);
+    frame[4] = a32(data) + 0x40;
+    vjo_hooks_observe(0, frame);
+    TEST_CHECK(vjo_hooks_snap(1, &s) && s.hits == 2 && s.n == sizeof ruby - 1);
+
+    /* at a Luna site's address: the entry's own filter replaces that site's (PCSG00448's real one) */
+    {
+        const VjoLunaSite *all;
+        unsigned nr = vjo_luna_sites("PCSG00448", &all), k = 0;
+        while (k < nr && all[k].addr != 0x800718F8u) k++;
+        TEST_ASSERT_(k < nr, "PCSG00448's site 0x800718F8");
+        real = &all[k];
+    }
+    reset();
+    put_site(0x100, 1, NULL);
+    v = verified_entry(0x100, mod.nid, 2, 0);
+    v.filter = VJO_RF_PCSG00448;
+    l[0] = luna_site(0x100, 1, 2, 1, 0);
+    l[0].filter = real->filter;
+    t_ver = &v;
+    t_nver = 1;
+    t_luna = l;
+    t_nluna = 1;
+    add_block(a32(data), DATA_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+    vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
+    TEST_ASSERT(n_sites == 1 && site_info[0].luna == &l[0] && slots[0].site == &l[0]);
+    memcpy(data + 0x40, name, sizeof name);
+    memcpy(data + 0x40 + sizeof name - 1, L_AI, sizeof L_AI); /* #Name[2]#nあい */
+    memset(frame, 0, sizeof(frame));
+    frame[2] = a32(data) + 0x40;
+    vjo_hooks_observe(0, frame);
+    TEST_ASSERT(vjo_hooks_snap(1, &s));
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) > 0 && !strcmp(text, "ユエ\nあい"));
+    TEST_MSG("got [%s]", text);
+    v.filter = VJO_LUNA_NONE; /* the site's own filter: the name and #n go */
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) > 0 && !strcmp(text, "あい"));
+    TEST_MSG("got [%s]", text);
+    v.filter = VJO_RF_END; /* an unknown filter: no text */
+    TEST_CHECK(vjo_hooks_text(&s, text, sizeof(text)) == 0 && !text[0]);
+}
+
 static void test_clean_stream_text(void)
 {
     static const struct { unsigned enc; const char *raw; size_t n; } cases[] = {
@@ -1548,6 +1641,7 @@ static void test_clean_stream_text(void)
 
 TEST_LIST = {
     {"a verified entry at a Luna site's address takes Luna's text processing", test_verified_takes_luna_text},
+    {"a verified entry: deref, its own filter in place of a Luna site's", test_verified_deref_and_filter},
     {"clean controls from CALL and table-site streams in every encoding", test_clean_stream_text},
     {"exact build SHA-256: whole executable, worker only, safe failure", test_exact_build_identity},
     {"call_hit: 4..512 bytes, the NUL rules, the pointer-array shape", test_call_hit_bounds},

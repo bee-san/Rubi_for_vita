@@ -281,9 +281,16 @@ static void site_hit(unsigned i, const uint32_t *regs)
         return;
     }
     if (si->ver) {
+        uint32_t addr = regs[si->ver->reg] + (uint32_t)si->ver->padding;
         enc = si->ver->encoding;
         unit = enc == VJO_HOOK_ENC_UTF16LE ? 2u : 1u;
-        n = read_game(NULL, regs[si->ver->reg] + (uint32_t)si->ver->padding, scratch, sizeof(scratch), unit);
+        if (si->ver->deref) { /* the text's pointer there: one exact 4-byte read (none: no text) */
+            uint8_t w[4];
+            addr = read_game(NULL, addr, w, 4, 0) == 4
+                       ? (uint32_t)w[0] | (uint32_t)w[1] << 8 | (uint32_t)w[2] << 16 | (uint32_t)w[3] << 24
+                       : 0u;
+        }
+        n = read_game(NULL, addr, scratch, sizeof(scratch), unit);
         /* the text without its NUL unit, as vjo_luna_capture counts it */
         if (n >= unit && !scratch[n - 1] && (unit == 1 || !scratch[n - 2])) n -= unit;
     } else if (si->luna) {
@@ -654,7 +661,13 @@ size_t vjo_hooks_text(const VjoHookSnap *s, char *out, size_t cap)
     if (!out || !cap) return 0;
     out[0] = 0;
     if (!s || !s->n || s->n > VJO_HOOK_RAW_BYTES) return 0;
-    if (s->site) n = vjo_luna_text(s->site, s->raw, s->n, s->encoding, out, cap);
+    if (s->kind == VJO_HOOK_KIND_SITE && s->id >= 1u && s->id <= n_sites && s->id <= VJO_HOOK_SITE_STREAMS &&
+        site_info[s->id - 1u].ver && site_info[s->id - 1u].ver->filter &&
+        site_info[s->id - 1u].addr - seg_base == s->key) {
+        /* a Rubi verified entry's own filter, in place of a Luna site's at its address */
+        const VjoPlaceVerified *v = site_info[s->id - 1u].ver;
+        n = vjo_luna_text_filter(s->site, v->filter, v->encoding, s->raw, s->n, s->encoding, out, cap);
+    } else if (s->site) n = vjo_luna_text(s->site, s->raw, s->n, s->encoding, out, cap);
     else n = vjo_hook_decode(s->encoding, s->raw, s->n, out, cap, NULL);
     /* One clean text for selection, display, mining and history's character count. */
     return vjo_hook_clean(out, n);

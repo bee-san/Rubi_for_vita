@@ -129,7 +129,13 @@ Two lists name them:
 
   An entry is hooked only when the module NID and every recorded byte match. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text
-  (`vjo_luna_site_at`); the Luna site is then skipped as hooked. When OCR is refused for memory
+  (`vjo_luna_site_at`); the Luna site is then skipped as hooked. Two more fields, both 0 by default:
+  `filter` names a filter for the entry's text, a Luna one (`VJO_LF_*`) or one of
+  [Rubi's own](#rubis-filters) (`VJO_RF_*`), in place of the Luna site's filter at that address (whose
+  hookfunc clean-up still runs first; `vjo_luna_text_filter`); `deref` reads the text through a 32-bit
+  pointer at the register + padding, one exact 4-byte read, as Luna's `DATA_INDIRECT` (an unreadable
+  pointer gives no text). The host test `verified: every entry of the list` checks every entry's
+  alignment, recorded bytes against the patch, register, encoding and filter. When OCR is refused for memory
   (`VJO_E_OOM`) with the automatic pick, a verified entry's newest text answers unconfirmed
   (`vjo_hook_select_no_memory`, `VJO_HOOK_R_UNCONFIRMED`), its capture pass beside
   `VJO_GAME_RESERVE_HOOK_ONLY`; Luna's sites and CALL callers never do.
@@ -161,6 +167,40 @@ assembled by `arm-vita-eabi-as` (`tools/hook_place_forms.txt`, `tools/gen_hook_p
 debug build logs its first 16 bytes, so a later build can add it as a verified entry.
 
 At most 8 sites are hooked (streams 1-8), one per address, verified entries first.
+
+### Rubi's filters
+
+Rubi's own filters (`VJO_RF_*`, `core/hook_luna.c`) clean a verified entry's text with the same ops
+as Luna's filters (literal replacements, the regex subset of `core/hook_re.c`, `remapkatakana`,
+`Trim`). They come from the Vita3K screenshot farm in bee-san/psandvita: each code below was seen in a
+hook's bytes there and compared with the native frame the game drew at that moment (its
+`hooks/vita/<title>/RUBI-HOOK.md` and `hooks/hook-text-artifacts.jsonl`; event and sample numbers are
+that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filters`
+(`host/tests/test_hook_luna.c`), one example from the farm's bytes per rule.
+
+| Filter | Titles | What it does | Farm evidence |
+| --- | --- | --- | --- |
+| `PROTOTYPE` | PCSG00007, PCSG00206, PCSG00620 | half-width kana to hiragana (Luna's map, as its PCSG01198 filter); `$t<name>$d` to the name on its own line, `$t<name>@` to the name; `$d` to a line break; `$[base$/reading$]` to the base; drops `$L1` `$A1` `$S<nnn>` `$S` `$w` `$C[..]`; `＿` to a blank; trims | PCSG00007 events 1-3; PCSG00206 event 367; PCSG00620 events 80-82 |
+| `IFENGINE` | (with names: PCSG00448, PCSG00469, PCSG00853) | `#Ruby[base,reading]` to the base; drops `#Tag` and `#Tag[..]`; `#n` to a line break; trims | PCSG00448 events 1, 54; PCSG00853 sample 1; PCSG00935 event 1 |
+| `ANGLE_RUBY` | PCSG00648 (and PCSG00509) | `<base,reading>` to the base | PCSG00648 sample 5; PCSG00509 event 50 |
+| `BR_NEWLINE` | PCSG00553, PCSG00807 | `<br>` to a line break; trims | PCSG00807 sample 2; PCSG00553 events 33-37 |
+| `BACKSLASH_NEWLINE` | PCSG00787 | a lone `\` to a line break; trims | PCSG00787 event 1 |
+| `PCSG00448` | MARGINAL#4 IDOL OF SUPERNOVA | `#Name[1]` 片岡, `#Name[2]` ユエ, then `IFENGINE` | event 208, sample 206 |
+| `PCSG00450` | キャプテン・アース Mind Labyrinth | drops `《SP QUE,1,NNNN》` voice cues | script.dat (355 uses), event 4 |
+| `PCSG00469` | CLOCK ZERO ExTime | `#Name[1]` 撫子, then `IFENGINE` | samples 80, 182, 1345 |
+| `PCSG00509` | POSSESSION MAGENTA | `＊Ｂ` 鈴; `^` to a line break; `<base,reading>` to the base | events 50, 1011 (67 pages hold `＊Ｂ`) |
+| `PCSG00540` | 忠臣蔵46+1 V | `c<id>.<name>r` to the name on its own line, narration's `r`, `v<voice>.` and `w<ms>.` dropped, `b<reading>.<base>` to the base, half-width kana (･ ﾞ ﾟ drawn … ！ ？) | events 1-5, 51, 53, 55 |
+| `PCSG00817` | EVE burst error R | `[n]` to a line break; drops `[wNNN]` `[hNNN]` `[cRRGGBB]` `[e]` and the other `[x]` codes | events 1-59, 432 |
+| `PCSG00853` | ピリオドキューブ | `#Name[1]` 花宮, `#Name[2]` かずは, `#Name[3]` カズハ, then `IFENGINE` | samples 78, 120, 259, 371, 464, 492 |
+| `PCSG00876` | 7'scarlet | `@@` to a line break; drops `$<digit>` style switches | scn op 0x10 records |
+| `PCSG01194` | 参千世界遊戯 | `<name>@r` to the name on its own line, `@r` to a line break, drops `@p<n>.` and `@v<voice>.`, half-width kana (･ ﾞ ﾟ drawn … ！ ？) | events 1, 11, 21-23 |
+
+**Player names.** Where a hook reads a line before the game expands its player-name code (`#Name[n]`,
+`＊Ｂ`), Rubi cannot know the name the player typed. The filter writes the game's default name instead,
+the one the farm kept at name entry and saw drawn. A player who renamed the character gets that line
+with the default name: the popup then differs from the screen by that name only, and OCR agreement
+(70 % similarity) still holds for most lines. Dropping the code would cut the name out of the sentence
+instead. A per-game name setting could replace the default later.
 
 ### The observer
 

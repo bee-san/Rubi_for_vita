@@ -201,7 +201,8 @@ target_compile_options(vjo-boot-guard-tests PRIVATE -Wall -Wextra -Wno-unused-pa
 add_test(NAME boot_guard COMMAND vjo-boot-guard-tests)
 # Native hooks (docs/native-hooks.md): the site check on the VitaSDK assembler's byte fixtures
 # (tools/gen_hook_place_fixtures.sh), Rubi's verified entry and the CALL prefilter; the stream slots.
-add_executable(vjo-hook-place-tests host/tests/test_hook_place.c core/hook_place.c)
+add_executable(vjo-hook-place-tests host/tests/test_hook_place.c core/hook_place.c core/hook_luna.c core/hook_re.c
+               core/hook_text.c)
 target_include_directories(vjo-hook-place-tests PRIVATE third_party/acutest/include)
 target_compile_options(vjo-hook-place-tests PRIVATE -Wall -Wextra)
 add_test(NAME hook_place COMMAND vjo-hook-place-tests)
