@@ -692,6 +692,16 @@ static const LunaOp r_PCSG00628[] VJO_DATA_TABLE(rubi_PCSG00628) = {
 static const LunaOp r_PCSG00380[] VJO_DATA_TABLE(rubi_PCSG00380) = {
     REP("㊤", "―"), REP("㊥", "―"), REP("㊦", "―"), REP("㌫", "北條"), REP("㍊", "紗希"), SPECIAL(OP_TRIM), END};
 
+/* PCSG00700 蒼の彼方のフォーリズム (sprite's BGI/Ethornell port, "Buriko"): the page's script text as it is set on the
+ * text window, 0x81074d48 r1. Plain hiragana and punctuation are half-width kana bytes (｢ｿﾛｿﾛ､行ｶﾅｷｬ｣ is 「そろそろ、
+ * 行かなきゃ」); a spoken line starts <a>(｢): <a> is not drawn and (｢) is its opening 「 (31 of the first 60 pages,
+ * Vita3K 2026-10-26); <ruby>(2,ｼﾄｳ)四島市 is ruby over the next 2 characters, drawn 四島市 (console, 2026-10-26). The
+ * eboot's tag table also names f, c, parallel and ruby2 (and /f, /c), in none of those pages: any <tag> is not drawn.
+ * The speaker's name is set apart from the page and is not in it. */
+static const LunaOp r_PCSG00700[] VJO_DATA_TABLE(rubi_PCSG00700) = {
+    SUB("<a>\\(([^)\n]*)\\)", "$1"), SUB("<ruby2?>\\([^)\n]*\\)", ""), SUB("</?[a-z][a-z0-9]*>", ""),
+    SPECIAL(OP_KANA), END};
+
 static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_TABLE(rubi_filters) = {
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
@@ -701,6 +711,7 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_T
     [VJO_RF_PCSG00817 - VJO_RF_BASE] = r_PCSG00817, [VJO_RF_PCSG00853 - VJO_RF_BASE] = r_PCSG00853,
     [VJO_RF_PCSG00876 - VJO_RF_BASE] = r_PCSG00876, [VJO_RF_PCSG01194 - VJO_RF_BASE] = r_PCSG01194,
     [VJO_RF_PCSG00628 - VJO_RF_BASE] = r_PCSG00628, [VJO_RF_PCSG00380 - VJO_RF_BASE] = r_PCSG00380,
+    [VJO_RF_PCSG00700 - VJO_RF_BASE] = r_PCSG00700,
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */

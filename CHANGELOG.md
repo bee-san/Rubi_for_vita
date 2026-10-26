@@ -11,6 +11,16 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- A native text hook for 蒼の彼方のフォーリズム (`PCSG00700`, APP_VER 01.00), with Rubi's own clean-up rules for
+  its text (half-width kana, `<a>(｢)`, `<ruby>(n,reading)`). Found in Vita3K with the psandvita farm's capture
+  build: the site gets each page once, 60 pages in a row. **On the console** (a PCH-2000 on 3.65, Rubi 0.9.7 with
+  this entry, before trusted hooks, API 43): the site was hooked (`1 table sites`, 0 refused); of its 19 lines in
+  two sessions, the 15 compared with OCR agreed (score 1000), the ruby line scored 771 before its rule (1000
+  after), 3 scored 0 ([details](docs/native-hooks.md#table-sites)). On `main` the entry is trusted from its first
+  line, so its lines need no OCR.
+
 ### Changed
 
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
