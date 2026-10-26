@@ -35,7 +35,7 @@ set(ARCH -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard)
 
 # runtime/README.md "Porting notes": C99, -O2, no FP contraction, so every platform computes the same bits
 add_library(smoke_vocr_rt STATIC ${RT}/vocr.c ${RT}/vocr_lm.c ${RT}/vocr_lines.c ${RT}/vocr_lines_rows.c
-  ${RT}/vocr_lines_refine.c ${RT}/vocr_textgate.c ${RT}/vocr_vertical.c)
+  ${RT}/vocr_lines_fix.c ${RT}/vocr_lines_refine.c ${RT}/vocr_textgate.c ${RT}/vocr_vertical.c)
 target_compile_options(smoke_vocr_rt PRIVATE ${ARCH} -std=c99 -O2 -ffp-contract=off)
 add_library(smoke_bearssl STATIC ${ROOT}/third_party/bearssl/src/hash/sha2small.c
   ${ROOT}/third_party/bearssl/src/codec/dec32be.c ${ROOT}/third_party/bearssl/src/codec/enc32be.c)

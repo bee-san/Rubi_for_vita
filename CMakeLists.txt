@@ -590,7 +590,8 @@ if(VJO_WITH_VOCR)
   add_executable(vjo-vocr-mode-tests host/tests/test_vocr_mode.c core/vocr_ocr.c)
   target_include_directories(vjo-vocr-mode-tests PRIVATE third_party/acutest/include)
   target_compile_definitions(vjo-vocr-mode-tests PRIVATE vocr_find_lines_rows=vjo_test_find_lines_rows
-    vocr_find_columns_rows=vjo_test_find_columns_rows)
+    vocr_find_columns_rows=vjo_test_find_columns_rows
+    vocr_find_lines_fix_rows=vjo_test_find_lines_fix_rows)
   target_link_libraries(vjo-vocr-mode-tests vjo_vocr_rt vjo_host)
   target_compile_options(vjo-vocr-mode-tests PRIVATE -Wall -Wextra)
   add_test(NAME vocr_finder_dispatch COMMAND vjo-vocr-mode-tests)
@@ -894,7 +895,8 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-game-resident-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-resident-tests PRIVATE
     VJO_VOCR_TEST_MODELS="test_resident_models.h"
-    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_find_lines_fix_rows=test_vocr_find_lines_fix_rows
+    vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
@@ -906,7 +908,8 @@ if(VJO_WITH_VOCR)
   target_compile_options(vjo-game-hooks-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-hooks-tests PRIVATE
     VJO_VOCR_TEST_MODELS="test_resident_models.h"
-    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_find_lines_fix_rows=test_vocr_find_lines_fix_rows
+    vocr_load=test_vocr_load
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-hooks-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_hooks COMMAND vjo-game-hooks-tests)

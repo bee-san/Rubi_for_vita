@@ -43,6 +43,8 @@ set(_vocr_pins
   vocr_lines.h 4f768c9a7aaa1f9e3b8f16990be23c3b098b675cf6316df7eb20dc6198b9f37d
   vocr_lines_rows.c 3207edb85d1cd7c79899390bb2ee028839dd120ca5d2278a28edd5fa9ca2ee6e
   vocr_lines_rows.h 60967239238df1ecca767e95c9c752f4c0b9efba097a59034ae2326717ad3465
+  vocr_lines_fix.c 242a0a9eacaf38dc901eb35c54639f69c94cc0419eeb36467dfc74ab79c70fb4
+  vocr_lines_fix.h d28af14903e1604006edbb75dc5d939ac845651220fa661c0e7fc7a1cec9efe4
   vocr_lm.c 89e0494caf22090cab52131b8b9d489a26085300b61e59855cb9a0d4074dbd05
   vocr_lm.h 6d314c7fbc74c240b4e6d70c0dc0a9e1c98fcb196ecd6bc1aa2ccf5c8fb9fb86
   vocr_lines_refine.c f4fb08aa995379c5ee9cb746307ed2c2d357574d71e5556f2b40d8ce1584e797
@@ -76,9 +78,11 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # newlib, which SceShell plugins link without.
 # vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
 # (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
+# vocr_lines_fix.c (vita-vn-ocr #129, API 44) is vocr_lines_rows.c with the line finder's fixes behind flags
+# (core/vocr_ocr.h VjoVocrPolicy.line_fix); flags 0 give vocr_lines_rows.c's lines bit for bit.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c" "${_vocr_rt}/vocr_post.c"
-  "${_vocr_rt}/vocr_vertical.c")
+  "${_vocr_rt}/vocr_lines_fix.c" "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c"
+  "${_vocr_rt}/vocr_post.c" "${_vocr_rt}/vocr_vertical.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)

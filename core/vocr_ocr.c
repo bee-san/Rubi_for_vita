@@ -13,6 +13,7 @@
 #include "vocr.h"
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"
+#include "vocr_lines_fix.h"
 #include "vocr_lines_refine.h"
 #include "vocr_post.h"
 #include "vocr_lm.h"
@@ -2021,9 +2022,11 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             s->gate_next = 0;
         }
     }
-    /* The finder: rows, or a model of columns' columns, right to left (vocr_vertical.h) */
+    /* The finder: rows, or a model of columns' columns, right to left (vocr_vertical.h). API 44: the rows with
+     * pol->line_fix's fixes; 0 is vocr_find_lines_rows exactly (vita-vn-ocr's check-lines-fix) */
     rc = cols ? vocr_find_columns_rows(&region, mi->finder_mode & 0xFFu, ws + l->scratch_off, l->finder, &set)
-              : vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
+              : vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, pol->line_fix, ws + l->scratch_off,
+                                         l->finder, &set);
     /* API 47, auto (VjoVocrPolicy.vertical_check): rows that look like vertical text are not read, and no
      * weights are (nor the gate's score, made for rows): the caller reads the region's columns instead
      * (game_ocr/main.c). */

@@ -21,6 +21,7 @@
 #include "../core/shottrim.h"
 #include "../core/textnorm.h"
 #include "../core/vocr_ocr.h"
+#include "vocr_lines_fix.h" /* API 44: VOCR_FIX_DEFAULT, _JUNK, _VALLEY (vita-vn-ocr #129) */
 #include "../core/hook_select.h"
 #include "../core/hook_cache.h"
 #include "../include/vjo_vocr_sizes.h"
@@ -1367,6 +1368,10 @@ static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
     p->gate = (r->speed & VJO_GAME_OCR_S_GATE) != 0; /* API 26: the text-presence gate */
     p->head_gate = (r->speed & VJO_GAME_OCR_S_HEAD_GATE) != 0; /* API 42: the head gate */
     p->two_level = (r->speed & VJO_GAME_OCR_S_TWO_LEVEL) != 0;  /* API 42: the two-level head */
+    /* API 44: the line finder's fixes (bee-san/vita-vn-ocr #129) */
+    p->line_fix = (r->speed & VJO_GAME_OCR_S_LINE_FIX ? (unsigned)VOCR_FIX_DEFAULT : 0u) |
+                  (r->speed & VJO_GAME_OCR_S_LINE_JUNK ? (unsigned)VOCR_FIX_JUNK : 0u) |
+                  (r->speed & VJO_GAME_OCR_S_LINE_VALLEY ? (unsigned)VOCR_FIX_VALLEY : 0u);
     p->gate_res = &gate_res;
     p->sleep = policy_sleep;
     /* API 22: helpers, the line cache, the clock around the recognitions. */

@@ -819,6 +819,17 @@ static void test_config(void)
     vjo_config_parse(&c, hg, strlen(hg));
     TEST_CHECK(c.ocr_head_gate == VJO_HEAD_GATE && c.n_warnings == 2); /* no ocr_two_level key: unknown, warned */
     TEST_CHECK(strstr(vjo_config_default_text(), "\nocr_head_gate = on\n") != NULL);
+    /* API 44: the line finder's fixes, on by default (vita-vn-ocr #129's measured default); off; junk; all */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_line_fix == 1 && VJO_LINE_FIX_DEFAULT == 1);
+    static const struct { const char *text; int want, warnings; } fixes[] = {
+        {"ocr_line_fix = off\n", 0, 0}, {"ocr_line_fix = ON\n", 1, 0}, {"ocr_line_fix = junk\n", 2, 0},
+        {"ocr_line_fix = all\n", 3, 0}, {"ocr_line_fix = all\nocr_line_fix = valley\n", 3, 1}};
+    for (unsigned k = 0; k < sizeof(fixes) / sizeof(fixes[0]); k++) {
+        vjo_config_parse(&c, fixes[k].text, strlen(fixes[k].text));
+        TEST_CHECK(c.ocr_line_fix == fixes[k].want && c.n_warnings == fixes[k].warnings);
+        TEST_MSG("%s: %d, %d warnings", fixes[k].text, c.ocr_line_fix, c.n_warnings);
+    }
     /* API 31, audit-hooks F3: the hooks' table sites, on by default; off makes the Shell send
      * VJO_TEXT_SOURCE_NO_SITES (only the string copies hooked). Any case; an unknown value is on, warned. */
     vjo_config_defaults(&c);

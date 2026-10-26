@@ -115,6 +115,16 @@ been reported.
   in a few minutes and is the merge gate ([AGENTS.md](AGENTS.md)); CI caches its toolchains, runs ctest in
   parallel and skips what a pull request does not touch (`tools/ci_scope.py`), and builds the Vita targets in
   the VitaSDK image pinned by digest.
+- **OCR cuts lines better** (API 44): vita-vn-ocr #129's column fix (`ocr_line_fix = on`, the default): a line's parts
+  across a full-width space stay one line. On the owner's hooked PS Vita and PSP pages it takes the whole-dialogue
+  error from 3.88% to 3.29%, and on other games' development screenshots from 3.04% to 2.34% (host, measured;
+  nothing of it has run on a console). The other settings:
+  - `junk`: box frames and ornaments are not read as lines either, for regions drawn with a margin;
+  - `all`: touching rows are also split, as Narcissu's are;
+  - `off`: the old finder.
+
+  Install all of this build's plugins together (the VPK's Install does): the game worker and the Shell must both be
+  API 44.
 
 ### Fixed
 

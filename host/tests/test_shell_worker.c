@@ -2226,6 +2226,23 @@ static void test_vocr_request_carries_the_job_policy(void)
                fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
     TEST_MSG("hook_trust = off: speed 0x%08X", (unsigned)fake_game_request.speed);
     mem_free();
+    /* API 44: the line finder's fixes ride in the speed word: the default (on) bit 21 alone, junk bits 21 and 22,
+     * all bits 21-23, off none */
+    const uint32_t lf_bits = VJO_GAME_OCR_S_LINE_FIX | VJO_GAME_OCR_S_LINE_JUNK | VJO_GAME_OCR_S_LINE_VALLEY;
+    static const struct { int cfg; uint32_t want; } fixes[] = {
+        {1, VJO_GAME_OCR_S_LINE_FIX}, {2, VJO_GAME_OCR_S_LINE_FIX | VJO_GAME_OCR_S_LINE_JUNK},
+        {3, VJO_GAME_OCR_S_LINE_FIX | VJO_GAME_OCR_S_LINE_JUNK | VJO_GAME_OCR_S_LINE_VALLEY}, {0, 0u}};
+    for (unsigned k = 0; k < sizeof(fixes) / sizeof(fixes[0]); k++) {
+        reset();
+        if (k == 0) TEST_CHECK(cfg.ocr_line_fix == 1);       /* the default */
+        cfg.ocr_line_fix = fixes[k].cfg;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK &&
+                   (fake_game_request.speed & lf_bits) == fixes[k].want &&
+                   !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+        TEST_MSG("ocr_line_fix %d: speed 0x%08X", fixes[k].cfg, (unsigned)fake_game_request.speed);
+        mem_free();
+    }
     /* the refinement's mode: psp by default, on, off */
     static const unsigned modes[] = {VJO_GAME_OCR_REFINE_PSP, VJO_GAME_OCR_REFINE_ON, 0};
     for (unsigned i = 0; i < 3; i++) {

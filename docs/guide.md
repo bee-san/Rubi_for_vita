@@ -754,6 +754,15 @@ that may need one, the two-level head: an estimated 0.12 / 0.20 / 0.26 s less pe
 Normal / Large), with no development score resolved worse; nothing of it has run on a console yet. `gate` and
 `two_level` keep one of the two; `off` reads every frame with the full head, as before API 42
 ([head gate and two-level head](vita-vn-ocr.md#head-gate-and-two-level-head-api-42)).
+`ocr_line_fix = on`, the default, runs the line finder with vita-vn-ocr #129's column fix: a line's parts across a
+full-width space stay one line. On the owner's hooked PS Vita and PSP pages (host, measured), this takes the
+whole-dialogue error from 3.88% to 3.29%, and on other games' development screenshots from 3.04% to 2.34%. It gains as
+much on regions drawn tight.
+- `junk` also stops box frames and ornaments from being read as lines. It is for regions drawn a few pixels outside
+  the text, because in a tight region it can drop a real line.
+- `all` also splits two touching rows (Narcissu).
+- `off` is the frozen finder
+([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-44)).
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
 decode, the cascade's re-read and its place in the text still follow line order on the job's own
