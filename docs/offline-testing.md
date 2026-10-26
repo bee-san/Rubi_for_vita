@@ -59,13 +59,22 @@ in it, when it ends (`host/tests/test_tmpdir.h`, which removes a tree in-process
 followed, no path it could not spell whole).
 
 Both builds run (docs/release-variants.md): the `host` and `vita` jobs are a matrix of the debug
-build (`VJO_DEBUG=ON`, the test builds') and the normal one (`OFF`), the ARM lane included
-(`VJO_DEBUG=0` for `tools/arm_host_tests.sh`). The debug build's zip is the `Rubi`
+build (`VJO_DEBUG=ON`, the test builds') and the normal one (`OFF`), and the `arm` job runs the ARM lane
+for both (`VJO_DEBUG=1` and `0` for `tools/arm_host_tests.sh`). The debug build's zip is the `Rubi`
 artifact (`VitaJPOverlay` before the rename); the normal build's is `Rubi-normal`. The `package` job makes the
 release's two zips of them as the final release does (`tools/package_variants.py`, with the models
 and LMs `tools/prepare_ocr.py` downloads from vita-vn-ocr's public releases and checks against their
 pins) and runs `tools/e2e_package.py` on each. `tools/preflight.sh` checks
 either (`VJO_DEBUG=0` for the normal one), and the Vita3K smokes build each in its own directory.
+
+What a run leaves out (2026-10-26, `tools/ci_scope.py`, the same rules as `tools/fast_gate.sh`): a pull
+request that changes Markdown alone builds nothing; one that changes only the hooks' verified-entry table
+(`core/hook_place.c` and its suites) leaves out the tools' Python suites (label `tools`), whose programs
+have no hook table in them; and one that changes none of the package's files makes no release zip, no
+artifact and no package e2e. The normal build's `host` job leaves the suites that never read the build
+(label `variant_free`) to the debug build's. Pushes (`main`, test branches), tags and manual runs run all of
+it. The apt packages and `tools/setup_toolchain.sh`'s result come from `actions/cache`
+(`tools/ci_apt_cache.sh`, `tools/ci_toolchain_cache.sh`); a miss falls back to the mirror and the full setup.
 
 ### CI's Vita build in its container
 
@@ -84,12 +93,13 @@ bash tools/ci_container_build.sh --vocr-source /path/to/vita-vn-ocr --compare Vi
 `--variant normal` builds the normal build (`VJO_DEBUG=OFF`), to compare with the release's main
 zip or CI's `Rubi-normal` artifact; the default is the debug build.
 
-- **The image, by digest.** `vitasdk/vitasdk@sha256:fd82d88ff456d118eef16533ebf9a3a6ae0e292684fb8a3a35f15f0707b4692d`,
-  the tag's multi-platform index as CI pulled it for v0.8.0-test.2 (Release run 38689391878, job
-  `vita`, 2026-10-15 05:55Z: its "Initialize containers" step prints `Digest: sha256:fd82d88f…`). Its
-  `linux/amd64` image, the one CI's runner runs and the script asks for, is `sha256:5c0c8b36…`
-  (GCC 15.2.0). The workflow names the tag: if the tag moves, that step's digest changes, and
-  `VJO_CI_IMAGE` runs the script with the new one.
+- **The image, by digest.** `vitasdk/vitasdk@sha256:8227da1b596d981f4513cd9b36bda1e43857f6dae5bcf4312c1cd40167f7d9bb`,
+  the tag's multi-platform index that the workflow's `vita` job pins (`container:`, since 2026-10-26) and
+  every release from v0.9.2 to v0.9.7 was built in (each Release run's "Initialize containers" step prints
+  `Digest: sha256:8227da1b…`). Its `linux/amd64` image, the one CI's runner runs and the script asks for, is
+  `sha256:4f726038…` (GCC 15.2.0). Before 2026-10-26 the workflow named the tag, which had moved from
+  `sha256:fd82d88f…` (v0.8.0-test.2's, Release run 38689391878) without a commit; now a new SDK is a change
+  to the workflow, this script and `tools/gate/vita.Dockerfile`. `VJO_CI_IMAGE` runs the script with another.
 - **The job's steps.** The commit's tree (`git archive`, what `actions/checkout` gives; uncommitted
   changes are not built) is unpacked at CI's path, `/__w/Rubi_for_vita/Rubi_for_vita`. For a
   pull request CI builds its merge with the base, not its head: to compare with a pull request's

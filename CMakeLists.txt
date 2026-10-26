@@ -585,8 +585,42 @@ if(VJO_WITH_VOCR)
       --cli $<TARGET_FILE:vjo-ocr> --backend vocr --model ${VJO_VOCR_MODEL_DIR})
   endif()
 endif()
-add_test(NAME local_dictionary COMMAND ${Python3_EXECUTABLE} -m unittest discover
-  -s ${CMAKE_SOURCE_DIR}/tools/tests -v)
+# The tools' Python suites (tools/tests/test_*.py), one test per module, tools_<module>: one
+# `unittest discover` of them all took 312 of the 384 s of a CI host job's ctest (2026-10-26), and
+# `ctest -j` runs these side by side. Each runs as that discover did (this build's directory, the
+# environment below), on its own module only.
+file(GLOB _vjo_tool_suites CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tools/tests/test_*.py)
+set(_vjo_tool_tests)
+foreach(_vjo_suite IN LISTS _vjo_tool_suites)
+  get_filename_component(_vjo_suite_module ${_vjo_suite} NAME_WE)
+  string(REGEX REPLACE "^test_" "tools_" _vjo_test ${_vjo_suite_module})
+  add_test(NAME ${_vjo_test} COMMAND ${Python3_EXECUTABLE} -m unittest discover
+    -s ${CMAKE_SOURCE_DIR}/tools/tests -p ${_vjo_suite_module}.py -v)
+  list(APPEND _vjo_tool_tests ${_vjo_test})
+  # Label tools: a change to the hooks' verified-entry table alone leaves these out in CI
+  # (tools/ci_scope.py hooks_only; their programs have no hook table in them).
+  set_property(TEST ${_vjo_test} APPEND PROPERTY LABELS tools)
+  # A suite that never reads this build (its programs, VJO_CLI and the rest below, or build/host) gives
+  # the same result in both builds: label variant_free, which the normal build's CI job and
+  # tools/fast_gate.sh leave to the debug build's run (ctest -LE variant_free).
+  file(READ ${_vjo_suite} _vjo_suite_text)
+  if(NOT _vjo_suite_text MATCHES "VJO_(CLI|BENCH|SELFTEST_WRITER|DICT_BENCH|TAICFG|HISTORY_WRITER|CAPTURE_PARITY)|build/host")
+    set_property(TEST ${_vjo_test} APPEND PROPERTY LABELS variant_free)
+  endif()
+endforeach()
+# The slowest suites first under ctest -j: a new build directory (CI's) has no timings of its own, and
+# a long suite started last would end the run alone. Seconds, measured 2026-10-26 (this box, 64 cores,
+# loaded); only the order matters.
+foreach(_vjo_cost IN ITEMS tools_release_install:92 tools_collect:64 tools_package_models:46 tools_crash_dumps:43
+                           tools_release_variants:37 tools_plaintext:33 plaintext_dictionary:27 tools_reading_stats:24
+                           vocr_parallel:19)
+  string(REPLACE ":" ";" _vjo_cost ${_vjo_cost})
+  list(GET _vjo_cost 0 _vjo_test)
+  list(GET _vjo_cost 1 _vjo_seconds)
+  if(TEST ${_vjo_test})
+    set_tests_properties(${_vjo_test} PROPERTIES COST ${_vjo_seconds})
+  endif()
+endforeach()
 # The real self-test writer (shell/selftest.c) on the host: v2 reports for the analyser's tests.
 # The debug build's only: the normal build has no self-test (its analyser tests run on the fixtures).
 set(_vjo_tool_env "VJO_CLI=$<TARGET_FILE:vjo-cli>;VJO_BENCH=$<TARGET_FILE:vjo-local-bench>")
@@ -603,7 +637,7 @@ string(APPEND _vjo_tool_env ";VJO_HISTORY_WRITER=$<TARGET_FILE:vjo-history-write
 if(VJO_WITH_VOCR)
   string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
 endif()
-set_tests_properties(local_dictionary PROPERTIES ENVIRONMENT "${_vjo_tool_env}")
+set_tests_properties(${_vjo_tool_tests} PROPERTIES ENVIRONMENT "${_vjo_tool_env}")
 
 
 # Counts production file reads and times lookup only (no OCR or process startup).

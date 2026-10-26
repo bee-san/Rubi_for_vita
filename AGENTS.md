@@ -31,6 +31,37 @@ git merge upstream/main
 
 Build and test instructions are in [the guide](docs/guide.md#build-and-validation).
 
+## Merge gate (binding, owner 2026-10-26)
+
+Pull requests do not wait for GitHub CI ("i'd rather us just merge everything and release quickly").
+The gate is one command in your clone, on the exact head you merge, rebased on `main`:
+
+```sh
+bash tools/fast_gate.sh        # FAST GATE: PASS or FAIL, one line per lane; logs in build/gate/logs
+```
+
+It runs CI's checks side by side, in containers built once (`tools/gate/`): the host build and every
+ctest suite in parallel for both builds (normal and debug, with the pinned OCR runtime, the frozen
+dictionary and the Anki import), the ARM lane under qemu-arm for both, both Vita builds with their gates
+(kernel instructions, syscall ABI, offline imports, module variant and metadata, the Rubi app's SELF,
+PNG ABI and artwork, and the memory ledger), and, when a packaging file changed
+(`tools/ci_scope.py`), both release zips through `tools/e2e_package.py`. On the 64-core fleet box it
+takes about 3-5 minutes (the first run also builds the two images).
+
+- **PASS: merge.** `gh pr merge -R bee-san/Rubi_for_vita --squash --delete-branch`, no `--admin`. Paste
+  the `FAST GATE` line and the lane lines into the PR body. If branch protection requires checks, stop
+  and tell the conductor.
+- **FAIL: never merge**, above all a failed Vita build or memory ledger. Fix it, or say in the PR why
+  the failure is not the change's (with the log), and rerun.
+- Audits of non-trivial code changes run in parallel: merge first; their findings become a follow-up PR.
+- CI still runs on every pull request (path-filtered: Markdown alone builds nothing) and on `main`,
+  whose run makes the test-build artifacts. A red run on `main` gets a follow-up PR at once.
+- Releases: tag right after merging; the tag's Release run builds the assets.
+
+Needs docker or podman, and SSH access to `bee-san/plaintext-dicts` (or a checkout of its pinned
+revision in `.refs/plaintext-dicts`). Without the dictionary the gate runs what CI runs for a fork's
+pull request and says so; it then cannot run the e2e, so a packaging change fails it.
+
 ## Memory and process context (binding)
 
 These rules come from a PS Vita plugin developer (2026-10-11), the Sony SDK documentation and

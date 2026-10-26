@@ -24,6 +24,10 @@ been reported.
   `history.csv` on the first Triangle press (its cache was counted with the old rule); the file itself is
   unchanged. `tools/reading_stats.py` gives the same numbers (`--time-rule break` or `--break-minutes N`:
   its old rule) ([#303]).
+- Building and testing (no change to the app or the plugins): `tools/fast_gate.sh` runs CI's checks locally
+  in a few minutes and is the merge gate ([AGENTS.md](AGENTS.md)); CI caches its toolchains, runs ctest in
+  parallel and skips what a pull request does not touch (`tools/ci_scope.py`), and builds the Vita targets in
+  the VitaSDK image pinned by digest.
 
 ### Fixed
 
