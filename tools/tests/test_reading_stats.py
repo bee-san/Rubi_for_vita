@@ -55,6 +55,7 @@ COUNTS = [c for *_, c in RECORDS]
 FROM = [0, 9, 9, 0, 1, 1, 0, 0, 0, 0]
 SOURCES = ["hook" if f else "ocr" for f in FROM]
 FIXTURE_091 = ROOT / "tools/tests/fixtures/history-0.9.1.csv"
+GAPS_15S = dict(os.environ, VJO_READING_TIME="15s")  # the writer's --stats with reading_time = 15s
 
 
 def records_input(records, sources=None):
@@ -882,10 +883,13 @@ class Time(unittest.TestCase):
         self.assertEqual((days["2026-10-18"].characters, days["2026-10-18"].per_hour()), (11, 1800))
 
     def test_report_text(self):
+        """Rubi 0.9.7's rule (--break-minutes 5, or --time-rule break): its numbers, as before."""
         out = io.StringIO()
         with redirect_stdout(out):
-            self.assertEqual(rs.main(["--utc", str(FIXTURE)]), 0)
+            self.assertEqual(rs.main(["--utc", "--break-minutes", "5", str(FIXTURE)]), 0)
         text = out.getvalue()
+        self.assertIn("Reading time: a gap of more than 5 minutes between two records, or a change of game, is a "
+                      "break\n", text)
         self.assertIn("1 file, 10 records\n", text)
         self.assertIn("Characters: 0 records carry their count, 10 counted here\n", text)
         self.assertIn("Text source: 0 records name it (line_source), 10 known by their engine (an older Rubi's), "
@@ -915,7 +919,7 @@ class Time(unittest.TestCase):
         self.assertEqual((ocr.lines, ocr.characters, ocr.timed_characters, ocr.seconds), (6, 43, 26, 30))
         out = io.StringIO()
         with redirect_stdout(out):
-            self.assertEqual(rs.main(["--utc", str(FIXTURE_091)]), 0)
+            self.assertEqual(rs.main(["--utc", "--time-rule", "break", str(FIXTURE_091)]), 0)
         text = out.getvalue()
         self.assertIn("Characters: 10 records carry their count, 0 counted here\n", text)
         self.assertIn("Text source: 0 records name it (line_source), 10 known by their engine (an older Rubi's), "
@@ -974,12 +978,13 @@ class ShellTotal(unittest.TestCase):
 
     @need_writer
     def test_overlay_time_at_15_seconds(self):
-        """Independent Python reference, including many scan-window boundaries and older CSV versions."""
+        """config.ini reading_time = 15s (Rubi 0.9.7's rule): this tool's --break-minutes 0.25 is the overlay's
+        count, including many scan-window boundaries and older CSV versions."""
         for path in (FIXTURE, FIXTURE_091):
             report = rs.read_history([path])
             rs.credit_time(report.records, 15)
             want = rs.summarize(report.records)[0]
-            out = subprocess.check_output([WRITER, "--stats", str(path)], text=True)
+            out = subprocess.check_output([WRITER, "--stats", str(path)], text=True, env=GAPS_15S)
             chars, us, timed = map(int, out.split())
             self.assertEqual(chars, want.characters)
             self.assertAlmostEqual(us / 1e6, want.seconds, places=5)
@@ -994,7 +999,8 @@ class ShellTotal(unittest.TestCase):
         report = rs.read_history([path])
         rs.credit_time(report.records, 15)
         want = rs.summarize(report.records)[0]
-        chars, us, timed = map(int, subprocess.check_output([WRITER, "--stats", str(path)], text=True).split())
+        chars, us, timed = map(int, subprocess.check_output([WRITER, "--stats", str(path)], text=True,
+                                                            env=GAPS_15S).split())
         self.assertEqual((chars, us, timed), (want.characters, round(want.seconds * 1e6), want.timed_characters))
 
     @need_writer
@@ -1016,6 +1022,144 @@ class ShellTotal(unittest.TestCase):
             self.assertIn(chars, allowed, cut)
             self.assertIn(self.tools_total(self.dir / "cut.csv"), allowed, cut)
             self.assertEqual(covered, cut + len(after))
+
+
+TIMELINES = sorted((ROOT / "host/fixtures/reading_time").glob("*.tsv"))
+sys.path.insert(0, str(ROOT / "tools"))
+import reading_time_sim as sim  # noqa: E402
+
+
+def timeline_records(path, game="vita-PCSG00415"):
+    """A host/fixtures/reading_time timeline's records as this tool reads them, and its header."""
+    head, recs = sim.read_fixture(path)
+    return head, [rs.Record(game=game, name=game, time=us / 1e6, characters=chars, stored=True, us=us)
+                  for us, chars, _ in recs]
+
+
+def credited_us(records):
+    """The records' credited time in whole microseconds (each credit is a whole number of them)."""
+    return sum(round(r.seconds * 1e6) for r in records if r.seconds is not None)
+
+
+class Adaptive(unittest.TestCase):
+    """The adaptive reading time (config.ini reading_time = adaptive, the default; docs/ocr-history.md#reading-time):
+    adaptive_credit is the overlay's integers (core/history_lines.c vjo_reading_time_add), the Shell's own counters
+    give the same on any file (VJO_HISTORY_WRITER --stats), and on the simulated timelines of
+    host/fixtures/reading_time (tools/reading_time_sim.py) it is near their true reading time where the 15 s
+    rule was not."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="vjo-reading-adaptive-")
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_credit(self):
+        """host/tests/test_shell_history.c's cases: each line at most 2.5 x its expected time at the pace (in
+        64 us units), 2 s to 5 minutes; the pace learns from lines of 5+ characters read in 1 s to 5 minutes."""
+        c = rs.adaptive_credit
+        self.assertEqual(c(8_000_000, 10, 0), (8_000_000, 18_165))  # under its 30 s cap; faster: the pace down
+        self.assertEqual(c(6_000_000, 2, 18_165), (5_812_800, 18_165))  # its cap; too short to teach the pace
+        self.assertEqual(c(600_000_000, 1, 18_165), (2_906_400, 18_165))  # an AFK: the cap, and no sample
+        self.assertEqual(c(10_800_000_000, 7, 18_165), (20_344_800, 18_165))  # 3 h (no sessions): the cap
+        self.assertEqual(c(10_000_000, 0, 18_165), (2_000_000, 18_165))  # no characters: the 2 s floor
+        self.assertEqual(c(15_000_000, 11, 18_165), (15_000_000, 19_866))  # slower than the pace: up 3/32
+        self.assertEqual(c(600_000_000, 1000, 18_165), (300_000_000, 18_165))  # the 5-minute ceiling
+        pace = 0
+        for _ in range(300):  # 20 characters in 4 s, again and again
+            self.assertEqual(c(4_000_000, 20, pace)[0], 4_000_000)
+            pace = c(4_000_000, 20, pace)[1]
+        self.assertEqual(pace, 3255)  # 208 ms a character: about the reader's 200
+        self.assertEqual(c(600_000_000, 20, pace), (10_416_000, 3255))  # an AFK gets 10.4 s, not 10 minutes
+        pace = 0
+        for _ in range(40):  # slower than 4.19 s a character: the pace stops at 16 bits
+            pace = c(300_000_000, 5, pace)[1]
+        self.assertEqual(c(600_000_000, 5, pace), (52_428_000, 0xFFFF))
+
+    def test_rules_and_options(self):
+        """adaptive by default; --time-rule break or --break-minutes N is the old rule; not both rules at once."""
+        report = rs.read_history([FIXTURE])
+        rs.credit_time(report.records)
+        a = rs.summarize(report.records, utc=True)[1]["vita-PROMO0004"]
+        # 12 + 5.8128 (2 chars' cap) + 15 + 2 (no characters) + 20 s; the record before the change of game: none
+        self.assertEqual((a.lines, a.timed_characters, round(a.seconds * 1e6)), (6, 34, 54_812_800))
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(rs.main(["--utc", str(FIXTURE)]), 0)
+        text = out.getvalue()
+        self.assertIn("Reading time: each line at most 2.5 times what your pace takes for it (2 s to 5 minutes), "
+                      "as the overlay counts (adaptive); a change of game is a break\n", text)
+        self.assertRegex(text, r"\nEmber Garden \(vita-PROMO0004\) +6 +44 +0 h 01 m +2,233\n")
+        for argv, minutes in ((["--time-rule", "break"], 5), (["--break-minutes", "0.25"], 0.25)):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                self.assertEqual(rs.main(argv + [str(FIXTURE)]), 0)
+            self.assertIn(f"a gap of more than {minutes:g} minutes", out.getvalue())
+        for argv in (["--time-rule", "adaptive", "--break-minutes", "5"], ["--time-rule", "15s"],
+                     ["--break-minutes", "0"]):
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                rs.main(argv + [str(FIXTURE)])
+
+    def test_timelines(self):
+        """Each timeline's header holds what each rule credits; this tool gives exactly that (adaptive) and within
+        a microsecond a record (15s: --break-minutes 0.25, in seconds as floats). The error against the
+        simulation's true reading time: adaptive's within 20 % on each, 6 % on average; 15s's over 40 %."""
+        self.assertEqual(len(TIMELINES), len(sim.FIXTURES))
+        errors = {"adaptive": [], "15s": []}
+        for path in TIMELINES:
+            head, records = timeline_records(path)
+            rs.credit_time(records)
+            want = head["adaptive"]
+            self.assertEqual(credited_us(records), want["active_us"], path.name)
+            self.assertEqual(sum(r.characters for r in records if r.seconds is not None), want["timed_chars"])
+            self.assertEqual(sum(r.characters for r in records), want["characters"])
+            errors["adaptive"].append(want["active_us"] / 1e6 / head["truth"]["seconds"] - 1)
+            rs.credit_time(records, 15)
+            want = head["15s"]
+            self.assertLessEqual(abs(credited_us(records) - want["active_us"]), len(records), path.name)
+            self.assertEqual(sum(r.characters for r in records if r.seconds is not None), want["timed_chars"])
+            errors["15s"].append(want["active_us"] / 1e6 / head["truth"]["seconds"] - 1)
+        adaptive = [abs(e) for e in errors["adaptive"]]
+        self.assertLessEqual(max(adaptive), 0.20)
+        self.assertLessEqual(sum(adaptive) / len(adaptive), 0.06)
+        self.assertGreaterEqual(sum(abs(e) for e in errors["15s"]) / len(adaptive), 0.40)
+
+    @need_writer
+    def test_the_shells_counters(self):
+        """The Shell's count of a file (shell/history.c, window by window, one game's records as the Triangle view
+        counts them) equals this tool's, for both rules: the 0.8.0 and 0.9.1 fixtures, a timeline, and 2,000
+        records of two games with gaps from 0.1 s to 2 hours."""
+        rnd = random.Random(304)
+        records, sec = [], 0.0
+        for i in range(2000):
+            sec += rnd.choice([0.125, 0.9, 1, 3, 5, 15, 15.000001, 42, 80, 299, 301, 1800, 7200])
+            records.append((A if i % 7 else B, sec, f'{i}猫\n"台詞", ABC{"あ" * rnd.randrange(30)}', None))
+        mixed = self.dir / "mixed.csv"
+        write_history(mixed, records)
+        head, timeline = timeline_records(TIMELINES[0], game="vita-PROMO0004")
+        line = self.dir / "timeline.csv"
+        write_history(line, [(A, (us - timeline[0].us) / 1e6, "「" + "あ" * r.characters + f"」{n}", r.characters)
+                             for n, (r, us) in enumerate((r, r.us) for r in timeline)])
+        for path in (FIXTURE, FIXTURE_091, mixed, line):
+            report = rs.read_history([path])
+            for rule, minutes in (("adaptive", None), ("15s", 0.25)):
+                rs.credit_time(report.records, None if minutes is None else minutes * 60)
+                games = rs.summarize(report.records)[1]
+                for uuid in ("vita-PROMO0004", "vita-PROMO0001"):
+                    if uuid not in games:
+                        continue
+                    want = [r for r in report.records if r.game == uuid]
+                    env = dict(os.environ, VJO_READING_TIME=rule, VJO_READING_SCOPE=uuid)
+                    out = subprocess.check_output([WRITER, "--stats", str(path)], text=True, env=env)
+                    chars, us, timed = map(int, out.split())
+                    self.assertEqual(chars, games[uuid].characters, (path.name, rule, uuid))
+                    self.assertEqual(timed, games[uuid].timed_characters, (path.name, rule, uuid))
+                    if rule == "adaptive":
+                        self.assertEqual(us, credited_us(want), (path.name, rule, uuid))
+                    else:
+                        self.assertLessEqual(abs(us - credited_us(want)), len(want), (path.name, rule, uuid))
+
 
 if __name__ == "__main__":
     unittest.main()

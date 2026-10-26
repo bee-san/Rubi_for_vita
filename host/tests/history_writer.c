@@ -9,6 +9,9 @@
  *                                       window by window, with nothing kept from before: the characters,
  *                                       the bytes they are of, the windows read and the count's time in ns
  *                                       (the median of N counts, 1 by default; the host's, not a console's)
+ *   vjo-history-writer --stats FILE     prints its characters, active reading time (us) and timed characters
+ *                                       (environment: VJO_READING_TIME=adaptive | 15s, the rule, adaptive by
+ *                                       default; VJO_READING_SCOPE=<uuid>, one game's, as the Triangle counts)
  *
  * Records and texts end with a NUL byte. A record is TITLE_ID, NAME, TIME_US and
  * TEXT separated by 0x1F, and optionally a fifth field after another 0x1F: the
@@ -61,9 +64,20 @@ void vjo_log(const char *fmt, ...) { (void)fmt; }
 
 #include "../../shell/history.c"
 
-/* The total's: the view's lock, the Shell's wakeup, and no history_total.bin */
+/* The total's: the view's lock, the Shell's wakeup, and no history_total.bin. --stats and --total count every
+ * game's records, or with VJO_READING_SCOPE=<uuid> (vita-PCSG00415) only that game's, as the Triangle view
+ * does (the day's bounds: all time); VJO_READING_TIME=15s counts with config.ini's reading_time = 15s. */
 VjoView g_view;
-int vjo_history_context(VjoReadingScope *scope) { (void)scope; return 1; }
+int vjo_history_context(VjoReadingScope *scope)
+{
+    const char *uuid = getenv("VJO_READING_SCOPE");
+    if (uuid && *uuid) {
+        snprintf(scope->uuid, sizeof(scope->uuid), "%s", uuid);
+        scope->start_us = 0;
+        scope->end_us = UINT64_MAX;
+    }
+    return 1;
+}
 void vjo_view_lock(void) {}
 void vjo_view_unlock(void) {}
 int vjoNotifyShell(void) { return 0; }
@@ -93,7 +107,13 @@ int main(int argc, char **argv)
         static uint64_t ns[101];
         VjoArena scratch;
         unsigned windows = 0, runs = argc == 4 ? (unsigned)strtoul(argv[3], NULL, 10) : 1;
+        const char *rule = getenv("VJO_READING_TIME");
         if (!runs || runs > 101) { fprintf(stderr, "vjo-history-writer: 1 to 101 counts\n"); return 2; }
+        if (rule && *rule && strcmp(rule, "15s") && strcmp(rule, "adaptive")) {
+            fprintf(stderr, "vjo-history-writer: VJO_READING_TIME is adaptive or 15s\n");
+            return 2;
+        }
+        vjo_reading_rule = rule && !strcmp(rule, "15s") ? VJO_READING_GAPS_15S : VJO_READING_ADAPTIVE;
         path = argv[2];
         for (unsigned k = 0; k < runs; k++) {
             struct timespec t0, t1;

@@ -151,6 +151,7 @@ static void reset(void)
         TEST_ASSERT(snprintf(path, sizeof(path), "%s/history.csv", directory) < (int)sizeof(path));
     }
     vjo_history_reset();
+    vjo_reading_rule = VJO_READING_ADAPTIVE; /* config.ini's default (reading_time = adaptive) */
     memset(&context, 0, sizeof(context));
     memset(&total, 0, sizeof(total)); /* the Shell's start: the total not read yet */
     unlink(total_file());
@@ -1382,9 +1383,11 @@ static void test_total_with_an_append_during_a_round_at_the_end(void)
                 "%llu, want %llu", (unsigned long long)total.chars, (unsigned long long)(want + a6_chars));
 }
 
+/* reading_time = 15s, Rubi 0.9.7's rule (and its counters' tests, unchanged): only a gap of at most 15 s */
 static void test_reading_time_and_speed(void)
 {
     reset();
+    vjo_reading_rule = VJO_READING_GAPS_15S;
     count_total();
     char summary[256];
     vjo_history_total_summary(summary, sizeof(summary));
@@ -1469,10 +1472,13 @@ static void test_reading_time_windows_and_retry(void)
     TEST_CHECK(!memcmp(&total.time, &expected, sizeof(expected)));
 }
 
-/* Real CSV, multiple game caches, daily rollover, restart and constant-time append. */
-static void test_scoped_reading_stats(void)
+/* Real CSV, multiple game caches, daily rollover, restart and constant-time append, with either reading_time
+ * rule: they credit these 1-2 s gaps alike; past midnight, 15s credits the last line nothing and adaptive its
+ * cap (6 characters at the pace it learned, 18,165 x 64 us: 17.4384 s), to the game's total, not to today. */
+static void scoped_reading_stats(uint32_t rule)
 {
     reset();
+    vjo_reading_rule = rule;
     strcpy(context.uuid, "vita-PCSG00415");
     context.start_us = 1792195200000000ull;
     context.end_us = context.start_us + 86400000000ull;
@@ -1519,7 +1525,8 @@ static void test_scoped_reading_stats(void)
     context.end_us += 86400000000ull;
     count_total();
     TEST_CHECK(total.chars == 21 && total.scope.chars == 1 && total.scope.active_us == 0);
-    TEST_CHECK(total.time.active_us == 4000000);
+    TEST_CHECK(total.time.active_us == (rule == VJO_READING_GAPS_15S ? 4000000u : 21438400u));
+    TEST_MSG("%llu us", (unsigned long long)total.time.active_us);
     /* A checkpoint is periodic, not per dialogue. */
     saved = total_writes;
     strcpy(result.text, "翌"); r.time_us += 61000000;
@@ -1529,10 +1536,249 @@ static void test_scoped_reading_stats(void)
     unlink(cache_file("x/reading-vita-PCSG00415.bin"));
     unlink(cache_file("x/reading-vita-PCSG00002.bin"));
 }
+static void test_scoped_reading_stats(void) { scoped_reading_stats(VJO_READING_GAPS_15S); }
+static void test_scoped_reading_stats_adaptive(void) { scoped_reading_stats(VJO_READING_ADAPTIVE); }
+
+/* reading_time = adaptive (docs/ocr-history.md#reading-time), the default. The numbers are
+ * tools/reading_stats.py adaptive_credit's for the same records (tools/tests/test_reading_stats.py checks it
+ * against the C counters too); the writer's counters, a recount, and the 15s rule's recount of the same file. */
+static void test_reading_time_adaptive(void)
+{
+    reset();
+    TEST_CHECK(vjo_reading_rule == VJO_READING_ADAPTIVE);
+    count_total();
+    const uint64_t t0 = 100000000;
+    const struct { const char *line; uint64_t us; const char *game; } rows[] = {
+        {"あいうえおかきくけこ", t0, "PCSG00415"},
+        {"AB", t0 + 8000000, "PCSG00415"},                 /* 10 chars in 8 s: all 8 s (cap 30 s at 1.2 s a
+                                                            * character); faster than the pace: 18,750 -> 18,165 */
+        {"猫", t0 + 14000000, "PCSG00415"},                /* 2 chars in 6 s: the cap, 2.5 x 2 x 18,165 x 64 us */
+        {"長い休憩の後で", t0 + 614000000, "PCSG00415"},     /* 1 char, then AFK 10 min: its cap, 2.9064 s */
+        {"次", t0 + 10814000000ull, "PCSG00415"},          /* 7 chars, 3 h later (no session): 20.3448 s */
+        {"別のゲーム", t0 + 10815000000ull, "PCSG00002"},   /* another game: nothing */
+        {"戻った", t0 + 10816000000ull, "PCSG00415"},      /* back: nothing across the other game's record */
+        {"逆行した時計", t0 + 10815500000ull, "PCSG00415"}, /* a clock set back: nothing */
+        {"同じ時刻", t0 + 10815500000ull, "PCSG00415"},     /* the same time: nothing */
+        {"終わり", t0 + 10817500000ull, "PCSG00415"},       /* 4 chars in 2 s: 2 s (under 5: no pace) */
+        {"……", t0 + 10822500000ull, "PCSG00415"},         /* 3 chars in 5 s: 5 s */
+        {"最後", t0 + 10832500000ull, "PCSG00415"},        /* no characters, 10 s: the 2 s floor */
+    };
+    uint64_t chars = 0;
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        VjoHistoryRecord r = record(rows[i].line);
+        r.time_us = rows[i].us;
+        strcpy(r.title_id, rows[i].game);
+        TEST_ASSERT(vjo_history_append(&r) == 1);
+        chars += vjo_line_characters(rows[i].line, strlen(rows[i].line));
+    }
+    TEST_CHECK(chars == 44 && total.chars == chars);
+    TEST_CHECK_(total.time.active_us == 46064000 && total.time.timed_chars == 27 && total.time.pace == 18165,
+                "%llu us, %llu timed, pace %u", (unsigned long long)total.time.active_us,
+                (unsigned long long)total.time.timed_chars, (unsigned)total.time.pace);
+    char summary[256];
+    vjo_history_total_summary(summary, sizeof(summary));
+    TEST_CHECK(strstr(summary, "Characters/hour: 2,110\n") && strstr(summary, "0:00:46 (active)")); /* 27 in 46 s */
+    TEST_MSG("%s", summary);
+    /* a recount from the file: the same counters, pace included */
+    VjoReadingTime kept = total.time;
+    memset(&total, 0, sizeof(total)); unlink(total_file());
+    count_total();
+    TEST_CHECK(total.chars == chars && !memcmp(&total.time, &kept, sizeof(kept)));
+    /* the same file with 15s: 8 + 6 + 2 + 5 + 10 s, the gaps of 15 s or less */
+    vjo_reading_rule = VJO_READING_GAPS_15S;
+    memset(&total, 0, sizeof(total)); unlink(total_file());
+    count_total();
+    TEST_CHECK(total.chars == chars && total.time.active_us == 31000000 && total.time.timed_chars == 19 &&
+               !total.time.pace);
+}
+
+static void test_reading_time_pace(void)
+{
+    VjoReadingTime t = {0};
+    const uint32_t game = 7;
+    uint64_t us = 1000000000;
+    reset();
+    /* 300 lines of 20 characters, 4 s each (0.2 s a character, 18,000 an hour): the pace settles at about the
+     * reader's, 3,255 x 64 us (adaptive_credit's), and a 10-minute AFK then gets 2.5 x 20 x 0.21 s, not 600 s */
+    vjo_reading_time_add(&t, us, game, 20);
+    for (int i = 0; i < 300; i++) {
+        us += 4000000;
+        TEST_CHECK(vjo_reading_time_add(&t, us, game, 20) == 4000000);
+    }
+    TEST_CHECK_(t.pace == 3255, "pace %u", (unsigned)t.pace);
+    us += 600000000;
+    TEST_CHECK(vjo_reading_time_add(&t, us, game, 20) == 10416000 && t.pace == 3255); /* > 300 s: no sample */
+    /* no sample either from a line under 5 characters, a gap under 1 s; a gap over 2^32 us (3 h) is its cap */
+    uint64_t active = t.active_us;
+    TEST_CHECK(vjo_reading_time_add(&t, us += 900000, game, 4) == 900000 && t.pace == 3255);
+    TEST_CHECK(vjo_reading_time_add(&t, us += 3000000, game, 20) == 2083200 && t.pace == 3255); /* 4 chars' cap */
+    TEST_CHECK(vjo_reading_time_add(&t, us += 10800000000ull, game, 0) == 10416000 && t.pace == 3255);
+    TEST_CHECK(vjo_reading_time_add(&t, us += 10000000, game, 5) == 2000000); /* the empty line: 2 s */
+    TEST_CHECK(t.active_us == active + 900000 + 2083200 + 10416000 + 2000000);
+    /* a reader slower than 4.19 s a character: the pace stops at 16 bits, 65,535 x 64 us */
+    memset(&t, 0, sizeof(t));
+    vjo_reading_time_add(&t, us = 1000000000, game, 5);
+    for (int i = 0; i < 40; i++) vjo_reading_time_add(&t, us += 300000000, game, 5);
+    TEST_CHECK(t.pace == 0xFFFF);
+    TEST_CHECK(vjo_reading_time_add(&t, us += 600000000, game, 5) == 52428000 && t.pace == 0xFFFF);
+    /* 15s: the pace stays unlearned, and a longer gap gets nothing */
+    vjo_reading_rule = VJO_READING_GAPS_15S;
+    memset(&t, 0, sizeof(t));
+    vjo_reading_time_add(&t, us = 1000000000, game, 20);
+    TEST_CHECK(vjo_reading_time_add(&t, us += 15000000, game, 20) == 15000000);
+    TEST_CHECK(vjo_reading_time_add(&t, us += 15000001, game, 20) == 0);
+    TEST_CHECK(!t.pace && t.active_us == 15000000 && t.timed_chars == 20);
+    vjo_reading_rule = VJO_READING_ADAPTIVE;
+}
+
+/* A 0.9.7 file is 112 bytes, as this one; its check starts from 0x33544d45, as 15s's does: it stays valid with
+ * reading_time = 15s (its counters are that rule's), and adaptive counts the history again. */
+static uint32_t check_097(const TotalFile *f)
+{
+    uint32_t check = 0x33544d45u;
+    const unsigned char *p = (const unsigned char *)f;
+    for (size_t i = 0; i < sizeof(*f); i++)
+        if (i < offsetof(TotalFile, check) || i >= offsetof(TotalFile, time))
+            check = (check * 16777619u) ^ p[i];
+    return check;
+}
+static void test_reading_time_caches(void)
+{
+    reset();
+    VjoHistoryRecord r = record("x");
+    r.time_us = 2000000000;
+    vjo_reading_rule = VJO_READING_GAPS_15S;
+    append_total_lines(&r, 300); /* more than one window: a count from the start reads several */
+    count_total();
+    vjo_history_total_keep();
+    VjoReadingTime gaps15 = total.time;
+    uint64_t chars = total.chars;
+    TotalFile f;
+    FILE *in = fopen(total_file(), "rb");
+    TEST_ASSERT(in && fread(&f, 1, sizeof(f), in) == sizeof(f));
+    fclose(in);
+    TEST_CHECK(f.check == check_097(&f) && !f.time.pace); /* what 0.9.7 writes for these counters */
+    /* a restart with 15s: the file is used, history.csv is read from its end only */
+    memset(&total, 0, sizeof(total));
+    unsigned before = reads;
+    count_total();
+    TEST_CHECK(reads - before <= 1 && !memcmp(&total.time, &gaps15, sizeof(gaps15)) && total.chars == chars);
+    /* a restart with adaptive: the file is not this rule's: every window again, and the adaptive counters */
+    vjo_reading_rule = VJO_READING_ADAPTIVE;
+    memset(&total, 0, sizeof(total));
+    before = reads;
+    count_total();
+    TEST_CHECK(reads - before > 1 && total.chars == chars && total.time.pace);
+    VjoReadingTime adaptive = total.time;
+    memset(&total, 0, sizeof(total)); unlink(total_file());
+    count_total();
+    TEST_CHECK(!memcmp(&total.time, &adaptive, sizeof(adaptive)));
+    /* and back: the adaptive file is not 15s's either */
+    vjo_reading_rule = VJO_READING_GAPS_15S;
+    memset(&total, 0, sizeof(total));
+    before = reads;
+    count_total();
+    TEST_CHECK(reads - before > 1 && !memcmp(&total.time, &gaps15, sizeof(gaps15)));
+}
+
+/* host/fixtures/reading_time/*.tsv (tools/reading_time_sim.py --fixtures): simulated reading timelines as
+ * history.csv records them (breaks, suspends and standby, menus and the backlog, skip and auto mode, OCR
+ * and hooks), with what each rule credits (tools/reading_stats.py's integers). Each is appended through the
+ * real writer, which updates the counters, then counted again from the file: both must give those. */
+static const char *const fixtures[] = {
+    "clean-learner", "afk-breaks-learner", "suspend-standby-learner", "menus-backlog-learner",
+    "skip-mode-learner", "auto-mode-learner", "everyday-learner", "everyday-hook-learner", "everyday-beginner",
+    "everyday-fluent",
+};
+static uint64_t header_value(const char *text, const char *key, const char *name)
+{
+    const char *line = strstr(text, key), *v = line ? strstr(line, name) : NULL;
+    TEST_ASSERT_(v != NULL && v < strchr(line, '\n'), "%s %s", key, name);
+    return strtoull(v + strlen(name), NULL, 10);
+}
+/* the fixture's text ID (L12: dialogue line 12; P, X, M: a part, a misreading, a menu) as a line of `chars`
+ * kana that counts exactly them, then the ID in symbols that count nothing: one text for one ID */
+static void fixture_text(char *out, size_t cap, const char *id, unsigned chars)
+{
+    static const char *const kana[] = {"あ", "い", "う", "え", "お", "か", "き", "く", "け", "こ", "さ", "し", "す",
+                                       "せ", "そ", "た", "ち", "つ", "て", "と", "な", "に", "ぬ", "ね", "の"};
+    static const char *const kind[] = {"■", "□", "▲", "△"}; /* L P X M */
+    static const char *const digit[] = {"⓪", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"};
+    uint32_t h = 2166136261u;
+    size_t n = 0;
+    for (const char *p = id; *p; p++) h = (h ^ (unsigned char)*p) * 16777619u;
+    n += (size_t)snprintf(out + n, cap - n, "「");
+    for (unsigned i = 0; i < chars; i++) n += (size_t)snprintf(out + n, cap - n, "%s", kana[(h + i * 7u) % 25u]);
+    n += (size_t)snprintf(out + n, cap - n, "」%s", kind[strchr("LPXM", id[0]) - "LPXM"]);
+    for (const char *p = id + 1; *p; p++) n += (size_t)snprintf(out + n, cap - n, "%s", digit[*p - '0']);
+}
+static void test_reading_time_fixtures(void)
+{
+    for (size_t k = 0; k < sizeof(fixtures) / sizeof(fixtures[0]); k++) {
+        char file[PATH_MAX];
+        snprintf(file, sizeof(file), "%s/reading_time/%s.tsv", VJO_FIXTURES, fixtures[k]);
+        FILE *in = fopen(file, "rb");
+        TEST_ASSERT_(in != NULL, "%s", file);
+        static char text[64 * 1024];
+        size_t len = fread(text, 1, sizeof(text) - 1, in);
+        fclose(in);
+        TEST_ASSERT(len > 0 && len < sizeof(text) - 1);
+        text[len] = 0;
+        for (int rule = VJO_READING_ADAPTIVE; rule <= VJO_READING_GAPS_15S; rule++) {
+            const char *key = rule == VJO_READING_ADAPTIVE ? "# adaptive:" : "# 15s:";
+            uint64_t want_us = header_value(text, key, "active_us="), want_timed = header_value(text, key, "timed_chars=");
+            uint64_t want_chars = header_value(text, key, "characters=");
+            reset();
+            vjo_reading_rule = (uint32_t)rule;
+            count_total();
+            VjoHistoryRecord r = record("");
+            unsigned records = 0;
+            for (char *line = text; *line; line = strchr(line, '\n') + 1) {
+                if (*line != '#') {
+                    char id[24], line_text[512];
+                    unsigned long long us;
+                    unsigned chars;
+                    TEST_ASSERT(sscanf(line, "%llu\t%u\t%23s", &us, &chars, id) == 3);
+                    r.time_us = us;
+                    if (!strcmp(id, "-")) { /* a read of a blank box: no record, and the check starts over */
+                        result.text[0] = 0;
+                        TEST_CHECK(vjo_history_append(&r) == 0);
+                        if (!strchr(line, '\n')) break;
+                        continue;
+                    }
+                    fixture_text(line_text, sizeof(line_text), id, chars);
+                    TEST_ASSERT(vjo_line_characters(line_text, strlen(line_text)) == chars);
+                    snprintf(result.text, sizeof(result.text), "%s", line_text);
+                    TEST_ASSERT_(vjo_history_append(&r) == 1, "%s record %u", fixtures[k], records);
+                    records++;
+                }
+                if (!strchr(line, '\n')) break;
+            }
+            TEST_CHECK_(total.chars == want_chars && total.time.active_us == want_us &&
+                        total.time.timed_chars == want_timed, "%s %s: %llu chars, %llu us, %llu timed",
+                        fixtures[k], key, (unsigned long long)total.chars, (unsigned long long)total.time.active_us,
+                        (unsigned long long)total.time.timed_chars);
+            if (rule == VJO_READING_ADAPTIVE)
+                TEST_CHECK(total.time.pace == header_value(text, key, "pace="));
+            VjoReadingTime kept = total.time;
+            memset(&total, 0, sizeof(total)); unlink(total_file());
+            count_total();
+            TEST_CHECK_(total.chars == want_chars && !memcmp(&total.time, &kept, sizeof(kept)), "%s %s: recount",
+                        fixtures[k], key);
+        }
+    }
+}
 
 TEST_LIST = {
-    {"scoped reading stats", test_scoped_reading_stats},
-    {"reading time: AFK cutoff, speed, restarts and replacement", test_reading_time_and_speed},
+    {"scoped reading stats (15s)", test_scoped_reading_stats},
+    {"scoped reading stats (adaptive)", test_scoped_reading_stats_adaptive},
+    {"reading time 15s: AFK cutoff, speed, restarts and replacement", test_reading_time_and_speed},
+    {"reading time adaptive: each line's cap, the pace, breaks, the 15s rule on the same file",
+     test_reading_time_adaptive},
+    {"reading time adaptive: the pace converges, is clamped, and caps an AFK at the reader's line time",
+     test_reading_time_pace},
+    {"reading time: 0.9.7's caches stay valid with 15s, adaptive counts again", test_reading_time_caches},
+    {"reading time: event-timeline fixtures, the writer and a recount, both rules", test_reading_time_fixtures},
     {"reading time: window boundaries, errors and corrupt cache", test_reading_time_windows_and_retry},
     {"CSV quotes UTF-8 and complete OCR metadata", test_csv_fields_and_metadata},
     {"0.8.0's and 0.9's columns stay; characters and line_source are appended, also to their files",

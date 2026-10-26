@@ -380,7 +380,7 @@ add_test(NAME shell_anki COMMAND vjo-shell-anki-tests)
 # characters column (core/reading_chars.h: core/utf.c's decoder, core/text_rows.c's letters).
 add_executable(vjo-shell-history-tests host/tests/test_shell_history.c core/utf.c core/text_rows.c core/textnorm.c)
 target_include_directories(vjo-shell-history-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
-target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1)
+target_compile_definitions(vjo-shell-history-tests PRIVATE VJO_HOST=1 VJO_FIXTURES="${CMAKE_SOURCE_DIR}/host/fixtures")
 target_compile_options(vjo-shell-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-shell-history-tests vjo_core) # line history's reader: core/history_lines.c
 add_test(NAME shell_history COMMAND vjo-shell-history-tests)

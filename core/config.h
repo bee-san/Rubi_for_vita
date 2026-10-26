@@ -115,6 +115,10 @@ typedef struct {
      * letterbox or pillarbox the game worker finds as it reads the frame (on by default;
      * core/shottrim.h, docs/anki.md "Black bars"). Last, as above. */
     int anki_screenshot_trim_bars; /* 0/1 */
+    /* Reading statistics (the overlay's Triangle view, docs/ocr-history.md#reading-time): how a line's
+     * reading time is measured, VJO_READING_* (core/history_lines.h): 0 adaptive (the default), 1 15s
+     * (Rubi 0.9.7 and older). The Shell takes it once, as it starts. Last, as above. */
+    int reading_time;
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

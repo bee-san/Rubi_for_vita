@@ -259,14 +259,19 @@ per hour, in all, by text source, per game and per day. It prints no dialogue te
 
 ```sh
 python3 tools/reading_stats.py history.csv      # days in this computer's time zone
-python3 tools/reading_stats.py old/history.csv history.csv --break-minutes 10 --utc
+python3 tools/reading_stats.py old/history.csv history.csv --utc
+python3 tools/reading_stats.py history.csv --break-minutes 10   # Rubi 0.9.7's rule, 10-minute breaks
 ```
 
-The reading time is the time from one record to the next, credited to the first.
-A gap of more than `--break-minutes` (5 by default) or a change of game is a
-break: it is not reading time, and the record before it gets none, since how
-long it was read is unknown. Characters per hour counts only the records that
-got a time; the totals count them all. A record in more than one copy counts
+The reading time is the overlay's ([Reading time](#reading-time)): each record's
+line gets the time to the next record of its game, at most 2.5 times what the
+reader's pace would take for it, in the same integers as the overlay, so the
+tool's totals are the Triangle view's (`reading_time = adaptive`). A change of
+game is a break. `--time-rule break` (or `--break-minutes N`) is Rubi 0.9.7's
+rule instead: a gap of more than N minutes (5 by default) is a break, and the
+record before it gets none, since how long it was read is unknown;
+`--break-minutes 0.25` is the overlay's old 15 s. Characters per hour counts
+only the records that got a time; the totals count them all. A record in more than one copy counts
 once: by `uuid` and `given_identifier`, as GameSentenceMiner's import does, and
 another tracker's record (whose `given_identifier` can name just its game, as
 exSTATic's does) by those, its time and its line. A record cut short by a power
@@ -302,10 +307,47 @@ for the line (3 s a character when the session has no usable pace: no line of
 five or more characters read in 1 s to 5 minutes), but at least 2 s and at most
 5 minutes; a line it counts no character in gets nothing, and a gap of more than
 30 minutes ends the session
-(`session_gap_seconds`; [`util/stats/stats_util.py`](https://github.com/bpwhelan/GameSentenceMiner/blob/7a46a00e8816f3cd39891cef2c9d01e5ac88fc78/GameSentenceMiner/util/stats/stats_util.py),
-`web/stats.py` `calculate_actual_reading_time`). exSTATic's visual-novel
+(`session_gap_seconds`; [`util/stats/stats_util.py`](https://github.com/bpwhelan/GameSentenceMiner/blob/5190b613f5ff2c70bfe505377b297854aacf6b27/GameSentenceMiner/util/stats/stats_util.py),
+`web/stats.py` `calculate_actual_reading_time`). Rubi's adaptive rule is this cap
+without the sessions, with a running 75th percentile for the median
+([Reading time](#reading-time)). exSTATic's visual-novel
 tracker counts time while it runs and stops its clock 60 s after the last line
 (`afk_max_time`, [`src/vn/vn.svelte`](https://github.com/KamWithK/exSTATic/blob/8543967fb9bdf70154f521e3c8c68aa18da1339f/src/vn/vn.svelte)).
+
+## Reading time
+
+A line is read from the moment Rubi records it to the moment it records the next line of the same
+game, and that time is the line's, credited when the next line comes. What a gap between two records
+holds besides reading is unknown: word lookups and slow reading, but also an AFK, a suspend (the PS
+button, the Rubi app), standby or the next day. `reading_time` in `config.ini` says how much of a gap
+counts, from the Vita's next start (the Shell takes it once, as it starts):
+
+- **adaptive** (the default): each line gets the gap, but at most **2.5 times what your pace would take
+  for it**, and no less than 2 s nor more than 5 minutes. The pace is learned per game from its own
+  history: the 75th percentile of the time a character took in its lines of 5 or more characters that
+  took 1 s to 5 minutes, as a running estimate (3/32 of itself up after a slower line, 1/32 down after a
+  faster one; 1.2 s a character, 3,000 an hour, until it has learned). A long pause of any kind gives the
+  line before it its cap, 2.5 times its expected time, and no more; there are no sessions. In the
+  simulated timelines below, a 30-character line could count up to about 2 minutes for a beginner
+  (3,000 characters an hour with many lookups), 1 minute for a learner (6,000) and 20 s for a fluent
+  reader (18,000).
+- **15s**: Rubi 0.9.7's rule. Only a gap of 15 s or less counts, whole; a line that took longer gets
+  nothing, however much of the gap was reading, and its characters leave characters/hour.
+
+This is GameSentenceMiner's adaptive cap (`util/stats/stats_util.py` `adaptive_cap_seconds`,
+`reading_speed_sample`, at `5190b613`) without its 30-minute sessions, and with a running 75th
+percentile where it takes a session's median. On simulated reading timelines (readers at 3,000-18,000
+characters an hour, with lookups, AFK breaks, suspends and standby, menus and the backlog, skip and
+auto mode; [docs/reading-time.md](reading-time.md)) the 15 s rule counted 53 % too little time on
+average (93 % for a beginner) and characters/hour 63 % too high; the adaptive rule is off by 2.2 % on
+average and 9 % at most [estimates: simulated, no console history was available]. GameSentenceMiner's
+own history of AFK rules, and why each changed, is there too.
+
+**Cost.** The rule is integer arithmetic in the counters the writer and the count already share
+(`core/history_lines.c` `vjo_reading_time_add`): the pace is 16 bits of the existing cache record, and
+the normal Shell's code segment is 80 B smaller, its data 328 B larger, in the same pages, with three
+of the overlay's cold error messages moved to the data segment (docs/memory-ledger.md) [measured: the
+build log's module rows, both builds]. The time a count takes on a console is unmeasured.
 
 ## Total characters read
 
@@ -332,20 +374,17 @@ larger character-count text with dimmer supporting time/speed, in the existing P
 Characters retain the [character definition](#characters). Repeated lines recorded separately
 count separately. Only automatically recorded text contributes; on-press mode records none.
 
-**Time played is an estimate of active reading**, using the existing Unix timestamps, in file order.
-Only a positive interval of **15 seconds or less** between adjacent records of the same game counts.
-A longer pause, a game change, an invalid timestamp or a clock going backwards starts a new interval.
-The first and last line of a session have no independently measurable reading duration; time is added
-when the next recorded line arrives. Menus, unrecorded gameplay and AFK time are not measured.
-Characters/hour uses only the earlier lines of those timed intervals divided by their total duration;
-untimed lines still count in total characters, but cannot inflate reading speed. With no timed interval,
-speed is `—` and time is `0 min`. Hook and OCR records follow the same rule.
+**Time played is an estimate of active reading**, using the existing Unix timestamps, in file order:
+each line is credited when the next recorded line of the same game arrives, by the rule of
+[Reading time](#reading-time) (`reading_time` in `config.ini`: adaptive, the default, or Rubi 0.9.7's
+15s). A game change, an invalid timestamp or a clock going backwards starts a new interval.
+The last line before one has no measurable reading duration; time is added when the next recorded line
+arrives. Characters/hour uses only the earlier lines of those timed intervals divided by their total
+duration; untimed lines still count in total characters, but cannot inflate reading speed. With no timed
+interval, speed is `—` and time is `0 min`. Hook and OCR records follow the same rule.
 
-For an external report with the same timeout, run:
-
-```sh
-python3 tools/reading_stats.py history.csv --break-minutes 0.25
-```
+For an external report with the same numbers, run `python3 tools/reading_stats.py history.csv`
+(with `reading_time = 15s`: `--break-minutes 0.25`).
 
 The tool sorts by timestamp; the overlay follows append order so that backward clock changes break
 an interval. The tool also accepts some externally edited CSV formats; the overlay reads Rubi's native
@@ -371,7 +410,10 @@ it adds no cache write. Speed is formatted only when the menu is rendered. No ne
 thread or file-size-dependent RAM is added.
 
 A missing, damaged, obsolete or different-day cache triggers a bounded recount; otherwise only
-new CSV bytes are scanned. Switching games restores that game's cache. `history.csv` is never
+new CSV bytes are scanned. So does one counted with the other `reading_time` rule: the cache's checksum
+starts from the rule, 15s's start being 0.9.7's, so a 0.9.7 cache stays valid with `reading_time = 15s`
+and is counted again, once per game, with `adaptive` (`last_chars` was 32 bits in 0.9.7; the pace takes
+its high half, always zero there, so the 112-byte layout is unchanged). Switching games restores that game's cache. `history.csv` is never
 rewritten. The old all-game `history_total.bin` is ignored by the menu (offline test tools can
 still use unfiltered totals). Detected history replacement/truncation resets the cached counters.
 Histories of 4 GiB or more remain unsupported by on-device totals. Console latency, CPU3 usage
