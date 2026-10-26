@@ -603,7 +603,11 @@ static const LunaOp *const vjo_luna_post[VJO_LH_COUNT] = {
  * Proven in Vita3K only. Ruby keeps its base (the word the dictionary looks up), as Luna's filters do; a
  * line-break code becomes "\n" (what the game draws); a player-name code the hook sees before the game
  * expands it becomes the game's default name (Rubi cannot know a name the player typed: such a line then
- * differs from the screen by that name only). docs/native-hooks.md#rubis-filters has the evidence. */
+ * differs from the screen by that name only). docs/native-hooks.md#rubis-filters has the evidence.
+ * The ops arrays and their index (776 B) are kept in the worker's data segment (VJO_DATA_TABLE, core/port.h),
+ * whose last page has room: in its code segment they took the debug build's worker 8 B past its pages
+ * (include/vjo_ledger_budget.h; docs/memory-ledger.md, "Tables in the data segment"). Their strings stay
+ * read-only. */
 _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one byte");
 #define RCALL(f) {OP_CALL, 0, VJO_RF_##f, NULL, NULL}
 
@@ -613,7 +617,7 @@ _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one
  * $t<name>@ a name drawn inline (PCSG00206); $d a line break; $[base$/reading$] ruby (PCSG00206 event
  * 367); $L1 (config labels), $A1, $S<nnn>..$S, $w, $C[rrggbb] are not drawn (PCSG00620 event 81); ＿ is a
  * blank indent and leading line breaks place the text (PCSG00620 event 80). */
-static const LunaOp r_PROTOTYPE[] = {
+static const LunaOp r_PROTOTYPE[] VJO_DATA_TABLE(rubi_PROTOTYPE) = {
     SPECIAL(OP_KANA), SUB("\\$t([^$@\n]*)\\$d", "$1\n"), SUB("\\$t([^$@\n]*)@", "$1"), REP("$d", "\n"),
     SUB("\\$\\[(.*?)\\$/(.*?)\\$\\]", "$1"), SUB("\\$[LA]\\d|\\$S\\d\\d\\d|\\$S|\\$w|\\$C\\[[0-9A-Fa-f]*\\]", ""),
     REP("＿", "　"), SPECIAL(OP_TRIM), END};
@@ -621,49 +625,53 @@ static const LunaOp r_PROTOTYPE[] = {
  * event 1); #Scale[1.0], #Color[7], #Speed[5], #Word[..], #Pos[x, y] and other #Tag[..] are not drawn
  * (PCSG00448 event 1, PCSG00853 sample 000001); #n is a line break, also before a Latin word (PCSG00448
  * event 54 #nLAGRANGE); a trailing #n ends every page and draws nothing. */
-static const LunaOp r_IFENGINE[] = {
+static const LunaOp r_IFENGINE[] VJO_DATA_TABLE(rubi_IFENGINE) = {
     SUB("#Ruby\\[([^,\\]]*),[^\\]]*\\]", "$1"), SUB("#[A-Z][A-Za-z]*(\\[[^\\]\n]*\\])?", ""), REP("#n", "\n"),
     SPECIAL(OP_TRIM), END};
 /* <base,reading>: the base drawn, the reading above it (PCSG00648 sample 000005, PCSG00509 event 50). */
-static const LunaOp r_ANGLE_RUBY[] = {SUB("<([^<>,\n]*),[^<>\n]*>", "$1"), END};
+static const LunaOp r_ANGLE_RUBY[] VJO_DATA_TABLE(rubi_ANGLE_RUBY) = {SUB("<([^<>,\n]*),[^<>\n]*>", "$1"), END};
 /* Rejet's Unity history strings (剣が君 for V PCSG00553, Dance with Devils PCSG00807): <br> is a line break
  * (PCSG00807 sample 000002); leading full-width spaces centre a line. */
-static const LunaOp r_BR_NEWLINE[] = {REP("<br>", "\n"), SPECIAL(OP_TRIM), END};
+static const LunaOp r_BR_NEWLINE[] VJO_DATA_TABLE(rubi_BR_NEWLINE) = {REP("<br>", "\n"), SPECIAL(OP_TRIM), END};
 /* 鏡界の白雪 PCSG00787: a lone backslash is the line break (event 1). */
-static const LunaOp r_BACKSLASH_NEWLINE[] = {REP("\\", "\n"), SPECIAL(OP_TRIM), END};
+static const LunaOp r_BACKSLASH_NEWLINE[] VJO_DATA_TABLE(rubi_BACKSLASH_NEWLINE) = {
+    REP("\\", "\n"), SPECIAL(OP_TRIM), END};
 /* PCSG00448: the hook is before the #Name expander; 片岡 ユエ, the default name, was drawn for #Name[1]#Name[2]
  * (event 208, sample 000206). */
-static const LunaOp r_PCSG00448[] = {REP("#Name[1]", "片岡"), REP("#Name[2]", "ユエ"), RCALL(IFENGINE), END};
+static const LunaOp r_PCSG00448[] VJO_DATA_TABLE(rubi_PCSG00448) = {
+    REP("#Name[1]", "片岡"), REP("#Name[2]", "ユエ"), RCALL(IFENGINE), END};
 /* PCSG00450: 《SP QUE,1,NNNN》 voice-sync cues are never drawn (script.dat, 355 uses). */
-static const LunaOp r_PCSG00450[] = {SUB("《SP [^》]*》", ""), END};
+static const LunaOp r_PCSG00450[] VJO_DATA_TABLE(rubi_PCSG00450) = {SUB("《SP [^》]*》", ""), END};
 /* PCSG00469: #Name[1] is drawn as the default 撫子 (samples 000080, 000182, 001345). */
-static const LunaOp r_PCSG00469[] = {REP("#Name[1]", "撫子"), RCALL(IFENGINE), END};
+static const LunaOp r_PCSG00469[] VJO_DATA_TABLE(rubi_PCSG00469) = {REP("#Name[1]", "撫子"), RCALL(IFENGINE), END};
 /* PCSG00509: ＊Ｂ is drawn as the heroine's default name 鈴 (event 1011, 67 approved pages hold it); ^ is
  * a line break (Luna's FPCSG00852 drops it); <base,reading> ruby (event 50). */
-static const LunaOp r_PCSG00509[] = {REP("＊Ｂ", "鈴"), REP("^", "\n"), RCALL(ANGLE_RUBY), END};
+static const LunaOp r_PCSG00509[] VJO_DATA_TABLE(rubi_PCSG00509) = {
+    REP("＊Ｂ", "鈴"), REP("^", "\n"), RCALL(ANGLE_RUBY), END};
 /* PCSG00540 (ADV::MSGSET): c<id>.<nameplate>r[v<voice>.]<body>, narration r<body>; w<ms>. a timed pause;
  * b<reading>.<base> ruby; plain hiragana are half-width kana, and ･ ﾞ ﾟ are drawn … ！ ？ (events 1-5, 51,
  * 53, 55). The name goes on its own line. */
-static const LunaOp r_PCSG00540[] = {
+static const LunaOp r_PCSG00540[] VJO_DATA_TABLE(rubi_PCSG00540) = {
     SUB("^c\\d+\\.([^\n]*?)r", "$1\n"), SUB("^r", ""), SUB("^v[^.\n]*\\.", ""), SUB("\nv[^.\n]*\\.", "\n"),
     SUB("w\\d+\\.", ""), SUB("b[^.<>\n]*\\.<([^<>\n]*)>", "$1"), SPECIAL(OP_KANA), END};
 /* PCSG00817: [n] is a line break; [wNNN] [hNNN] [cRRGGBB] [e] and the other [x] codes are not drawn
  * (session 458160a9, events 1-59, event 432). */
-static const LunaOp r_PCSG00817[] = {REP("[n]", "\n"), SUB("\\[[a-z@][0-9a-fA-F]*\\]", ""), END};
+static const LunaOp r_PCSG00817[] VJO_DATA_TABLE(rubi_PCSG00817) = {
+    REP("[n]", "\n"), SUB("\\[[a-z@][0-9a-fA-F]*\\]", ""), END};
 /* PCSG00853: defaults 花宮 かずは and カズハ drawn for #Name[1], #Name[2], #Name[3] (samples 000078, 000120,
  * 000259, 000371, 000464, 000492). */
-static const LunaOp r_PCSG00853[] = {
+static const LunaOp r_PCSG00853[] VJO_DATA_TABLE(rubi_PCSG00853) = {
     REP("#Name[1]", "花宮"), REP("#Name[2]", "かずは"), REP("#Name[3]", "カズハ"), RCALL(IFENGINE), END};
 /* PCSG00876: @@ is a line break, $4..$0 switch the style (scn op 0x10 records); %first and the other name
  * codes are expanded before the hook. */
-static const LunaOp r_PCSG00876[] = {REP("@@", "\n"), SUB("\\$\\d", ""), END};
+static const LunaOp r_PCSG00876[] VJO_DATA_TABLE(rubi_PCSG00876) = {REP("@@", "\n"), SUB("\\$\\d", ""), END};
 /* PCSG01194 (shin engine, @-markup build): <name>@r[@p<n>.][@v<voice>.]<body>, narration starts with @r; @r is a
  * line break, @p<n>. and @v<voice>. are not drawn; plain hiragana are half-width kana, ･ ﾞ ﾟ drawn … ！ ？
  * (events 1, 11, 21-23; main.snr: 10,909 @v, 2,242 @p). Luna lists the site with no filter ("too complex"). */
-static const LunaOp r_PCSG01194[] = {
+static const LunaOp r_PCSG01194[] VJO_DATA_TABLE(rubi_PCSG01194) = {
     SUB("@v[^.@\n]*\\.", ""), SUB("@p\\d+\\.", ""), REP("@r", "\n"), SPECIAL(OP_KANA), SPECIAL(OP_TRIM), END};
 
-static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = {
+static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_TABLE(rubi_filters) = {
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
     [VJO_RF_BACKSLASH_NEWLINE - VJO_RF_BASE] = r_BACKSLASH_NEWLINE, [VJO_RF_PCSG00448 - VJO_RF_BASE] = r_PCSG00448,

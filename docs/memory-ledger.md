@@ -860,12 +860,15 @@ nothing more at run time (one copy, loaded with the module; the Shell is loaded 
 and moves no page: it uses the data segment's last page, which the module holds anyway. It is the
 cheaper of the two ways to keep the Shell's pages when its code grows (the other is `-Os`, which
 costs instructions a lookup), and both segments are checked exactly by `tools/check_memory_ledger.py`.
-Only tables and cold strings of the Shell's own code are so marked: `core/local_dict.c`,
+Only tables and cold strings are so marked. In the Shell: `core/local_dict.c`,
 `core/linebreak.c` and `core/textjoin.c`'s tables, `shell/history.c`'s header, offsets and strings
 (which pay for PR #233's `characters` column: [ocr-history](ocr-history.md)) and the reading total's two
 (`counting…`, `unavailable`), `core/history_lines.c`'s number format, `shell/worker.c`'s
 out-of-memory and model-storage messages, and line history's strings in `shell/overlay.cpp` and
-`shell/anki.c`.
+`shell/anki.c`. In the game worker: Luna's title-ID table (`core/hook_luna_table.inc`, API 33) and
+Rubi's filters' ops arrays and their index (`core/hook_luna.c`, 776 B, PR #292, whose code took the
+debug build's worker text 8 B past its pages without them; the numbers are in
+`include/vjo_ledger_budget.h`). Their strings stay in the code segment.
 
 Standalone PR #236 (`6ed8f30`, on main `75041a0`), line history ([line-history.md](line-history.md),
 owner 2026-10-20): Up on the overlay's top row shows

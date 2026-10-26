@@ -243,6 +243,16 @@
  * Shell SELF files are byte-identical to main's]. The normal build's code ended 1,112 B
  * below 128 KiB, less than the SCE data vita-elf-create appends (1,204 B): the worker's link now keeps
  * __sce_headroom (vita/CMakeLists.txt), as the Rubi app's does. No new block, thread or allocation. */
+/* PR #292, Rubi's own filters for its verified entries (core/hook_luna.c's VJO_RF_* and vjo_luna_text_filter,
+ * the entries' filter and deref fields, game_ocr/hooks.c): +1,616 B of text in both builds took the debug
+ * build's text 141,752 -> 143,368 B, 8 B past its 143,360 B of pages (the normal build's 132,996 -> 134,612 B
+ * still fit) [measured: the build log's module rows, both builds, main bd130a8 and the PR's acddaaf, CI's
+ * container]. The filters' ops arrays and their index, 776 B of tables [arm-vita-eabi-nm -S], are kept in the
+ * data segment instead (VJO_DATA_TABLE, core/port.h), whose last page had room (3,880 B debug, 3,888 B
+ * normal): text 142,600 B debug (760 B of room) and 133,828 B normal (1,340 B), data/bss 32,984 -> 33,760 B
+ * debug and 32,976 -> 33,752 B normal, the same pages, 180,224 and 172,032 B [measured: the build log's
+ * module rows, both builds, the PR rebased on main bd130a8 with this change, vitasdk/vitasdk:2026.08's gcc
+ * 15.2.0]. The kernel and Shell SELF files are byte-identical to main's. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 180224u
 #else
