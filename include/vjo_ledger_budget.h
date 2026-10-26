@@ -125,8 +125,8 @@
  * 627a673, the same pages, 884 B of text room and 704 B of data room [measured: the same rows, main
  * 627a673 and this change]. API 47's vertical text (the request's vertical field, the model a text was read with by
  * its lines' column flag, config.ini ocr_vertical's parse; its key, the model's name and one cold message of the
- * OCR's in the data segment, VJO_DATA_TABLE) makes it 89,252 -> 89,300 + 73,048 -> 73,160 on main cbaa4e3, the same
- * pages, 812 B of text room [measured: the same rows, main cbaa4e3 and this change; the debug build 101,460 ->
+ * OCR's in the data segment, VJO_DATA_TABLE) makes it 89,252 -> 89,300 + 73,048 -> 73,160 on main 796168e, the same
+ * pages, 812 B of text room [measured: the same rows, main 796168e and this change; the debug build 101,460 ->
  * 101,548 + 73,008 -> 73,152, the same pages]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
@@ -302,9 +302,9 @@
  * setting. vita-vn-ocr's column finder and rotation (runtime/vocr_vertical.c, built -Os), the dark flag the job
  * computes on a column's pixels (vocr_lines.c's vocr_line_dark, linked now), the job's column path, VOCR5-V's model
  * entry, auto's rule (core/vocr_ocr.c vjo_vocr_rows_vertical) and the worker's request and retry (game_ocr/main.c):
- * on main cbaa4e3 the debug build's text 149,352 -> 155,016 B (632 B of room), 188,416 -> 192,512 B of pages, the
- * normal build's 140,564 -> 146,100 B (1,356 B), 180,224 -> 184,320 B; data/bss unchanged (35,312 and 35,304 B)
- * [measured: the build log's module rows, both builds, main cbaa4e3 (CI's Release run 40396574562) and this change,
+ * on main 796168e the debug build's text 149,368 -> 155,032 B (616 B of room), 188,416 -> 192,512 B of pages, the
+ * normal build's 140,596 -> 146,116 B (1,340 B), 180,224 -> 184,320 B; data/bss unchanged (35,312 and 35,304 B)
+ * [measured: the build log's module rows, both builds, main 796168e (CI's Release run 40407403783) and this change,
  * tools/fast_gate.sh's vitasdk image]. A job of columns allocates only what a job allocates (its workspace holds the
  * 57,344 B rotation buffer: test_ledger.c), none when ocr_vertical is off. The kernel and the Shell keep their
  * pages. No block, thread or allocation. */

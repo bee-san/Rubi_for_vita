@@ -15,20 +15,20 @@ that is ON, whatever the setting: its column finder (vita-vn-ocr's `runtime/vocr
 of a column (`vocr_line_dark`), the column path, auto's rule and the worker's retry take each build's text one page
 past main's. In the Shell, the setting's key, the vertical model's name and one cold message of the OCR's (the denied
 model, 69 B) are in the data segment (`VJO_DATA_TABLE`, as main's other keys), so its normal build keeps its exact
-pages. The module rows [measured: the build log's module rows, `tools/fast_gate.sh`'s VitaSDK image, main `cbaa4e3`
-(CI's Release run 40396574562) and this change]:
+pages. The module rows [measured: the build log's module rows, `tools/fast_gate.sh`'s VitaSDK image, main `796168e`
+(CI's Release run 40407403783) and this change]:
 
-| module | main `cbaa4e3` | this change | pages |
+| module | main `796168e` | this change | pages |
 |---|---:|---:|---:|
-| Game worker, debug | 149,352 + 35,312 B | 155,016 + 35,312 B | 188,416 → 192,512 B |
-| Game worker, normal | 140,564 + 35,304 B | 146,100 + 35,304 B | 180,224 → 184,320 B |
+| Game worker, debug | 149,368 + 35,312 B | 155,032 + 35,312 B | 188,416 → 192,512 B |
+| Game worker, normal | 140,596 + 35,304 B | 146,116 + 35,304 B | 180,224 → 184,320 B |
 | Shell, debug | 101,460 + 73,008 B | 101,548 + 73,152 B | 176,128 B both |
 | Shell, normal | 89,252 + 73,048 B | 89,300 + 73,160 B | 163,840 B both (exact) |
-| Kernel, debug | 42,540 + 77,756 B | 42,652 + 77,756 B | 122,880 B both |
-| Kernel, normal | 37,508 + 76,068 B | 37,620 + 76,068 B | 118,784 B both |
+| Kernel, debug | 42,544 + 77,756 B | 42,656 + 77,756 B | 122,880 B both |
+| Kernel, normal | 37,512 + 76,068 B | 37,624 + 76,068 B | 118,784 B both |
 
 `VJO_BUDGET_WORKER_MODULE_PAGES` is raised by 4,096 B in each build, in the game's partition only. The normal
-worker's text has 1,356 B of its last page left, the debug worker's 632 B; the normal Shell's 812 B. None of it is
+worker's text has 1,340 B of its last page left, the debug worker's 616 B; the normal Shell's 812 B. None of it is
 measured on a console.
 
 ## Trusted hooks and the OCR-skip switches (API 43)
