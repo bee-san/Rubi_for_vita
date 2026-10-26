@@ -868,7 +868,9 @@ out-of-memory and model-storage messages, and line history's strings in `shell/o
 `shell/anki.c`. In the game worker: Luna's title-ID table (`core/hook_luna_table.inc`, API 33) and
 Rubi's filters' ops arrays and their index (`core/hook_luna.c`, 776 B, PR #292, whose code took the
 debug build's worker text 8 B past its pages without them; the numbers are in
-`include/vjo_ledger_budget.h`). Their strings stay in the code segment.
+`include/vjo_ledger_budget.h`), and Rubi's verified entries (`core/hook_place.c`'s `verified`, 28 rows,
+1,120 B, PR #296: PRs #293-#296's 26 farm entries took the debug build's worker text 536 B past its pages
+without it; the numbers are in `include/vjo_ledger_budget.h` too). Their strings stay in the code segment.
 
 Standalone PR #236 (`6ed8f30`, on main `75041a0`), line history ([line-history.md](line-history.md),
 owner 2026-10-20): Up on the overlay's top row shows

@@ -148,6 +148,19 @@ Two lists name them:
     - PCSG01075 悠久のティアブレイド -Fragments of Memory-, NID 0x8ECBA36A, +0x31F44, Thumb, r10, UTF-8, filter Luna's at its address; 333 farm pages
     - PCSG01221 紅色天井艶妖綺譚 二藍, NID 0x1A9CF884, +0x3B554, Thumb, r4, CP932, filter Luna's at its address; 5 farm pages
 
+  - Other engines from the psandvita Vita3K farm, Rubi's own sites (proven in Vita3K only; patched bytes checked as above):
+    - PCSG00450 キャプテン・アース Mind Labyrinth, NID 0x28CB1B14, +0x6AB56, Thumb, r1 + 32 (deref), UTF-16LE, filter `RF_PCSG00450`; 78 farm pages
+    - PCSG00509 POSSESSION MAGENTA, NID 0xA11A6741, +0x12C76, Thumb, r0, CP932, filter `RF_PCSG00509`; 1299 farm pages
+    - PCSG00540 忠臣蔵46+1 V, NID 0xC595CF25, +0x2B90A, Thumb, r1, CP932, filter `RF_PCSG00540`; 1037 farm pages
+    - PCSG00553 剣が君 for V, NID 0xCF234754, +0x11452B8, ARM, r1 + 12, UTF-16LE, filter `RF_BR_NEWLINE`; 1130 farm pages
+    - PCSG00648 月に寄りそう乙女の作法, NID 0xE5819F44, +0x26EFA, Thumb, r2, CP932, filter `RF_ANGLE_RUBY`; 1397 farm pages
+    - PCSG00713 百花百狼 ～戦国忍法帖～, NID 0x08B1647C, +0x112F46, Thumb, r6, UTF-8, filter none; 1464 farm pages
+    - PCSG00787 鏡界の白雪, NID 0xA88A2E95, +0x21F1A, Thumb, r6, UTF-8, filter `RF_BACKSLASH_NEWLINE`; 502 farm pages
+    - PCSG00807 Dance with Devils, NID 0x608A4999, +0xD68164, ARM, r1 + 12, UTF-16LE, filter `RF_BR_NEWLINE`; 690 farm pages
+    - PCSG00817 EVE burst error R, NID 0x2DBAE009, +0x19132, Thumb, r0, CP932, filter `RF_PCSG00817`; 685 farm pages
+    - PCSG00876 7'scarlet, NID 0x16FEB862, +0x12B60, Thumb, r6, UTF-8, filter `RF_PCSG00876`; 1051 farm pages
+    - PCSG01194 参千世界遊戯 ～Re Multi Universe Myself～, NID 0xECD30306, +0x56E24, Thumb, r0, CP932, filter `RF_PCSG01194`; 30 farm pages
+
   An entry is hooked only when the module NID and every recorded byte match. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text
   (`vjo_luna_site_at`); the Luna site is then skipped as hooked. Two more fields, both 0 by default:
