@@ -88,7 +88,11 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, not 15: the ARM lane's apt install (61.3 MB: gcc-14-arm-linux-gnueabihf, its libc, qemu-user-static)
+    # comes from the runner's Azure Ubuntu mirror after the 6-minute ctest. At the ~120 kB/s that mirror gave on
+    # 2026-10-26 it takes about 8.5 minutes, and three attempts of run 40308253058's host (debug) were cancelled
+    # at 15 minutes inside that step, ctest passed; a normal run takes 9-10 minutes.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
