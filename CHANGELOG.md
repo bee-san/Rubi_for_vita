@@ -13,6 +13,16 @@ been reported.
 
 ### Added
 
+- **Vertical text** (`ocr_vertical` in `config.ini`, the Rubi app's **Vertical text** card on the OCR & lookup
+  page): Japanese set in columns, read right to left, as in a vertical dialogue box or a manga in NOBORU, is read
+  with vita-vn-ocr's vertical model VOCR5-V. **Automatic**, the default, reads the columns where the text box's
+  rows look like vertical text, and rows everywhere else exactly as before; **ON** reads columns in every game,
+  **OFF** rows only. On the host, through Rubi's own job, it read 863 pages of Yunohana SpRING! (PS Vita, a VN
+  the model never trained on) at 4.5 % CER in a box drawn around the columns and 14.0 % in one box drawn once for
+  the game (rows read them at 83 %), and on 101,651 regions and screens of 44 horizontal games Automatic read no
+  columns and every sampled job's text was main's. The game worker takes one more page in each build (4 KiB, in
+  the game's memory); SceShell's and the kernel's pages are as before. Nothing of it has run on a console yet
+  ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); supersedes draft #223).
 - **Trusted hooks replace OCR** (the Rubi app's OCR & lookup page, `hook_trust` in `config.ini`, on by default;
   API 43): when a hook Rubi trusts has the line, no OCR runs at all: no model, LM or cascade is read, no OCR
   memory is kept back (its one capture pass keeps 1 MiB instead of 4 MiB), and after eight such lines in a row the

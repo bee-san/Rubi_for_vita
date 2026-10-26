@@ -89,8 +89,15 @@
  * 43: trusted hooks (docs/native-hooks.md, "Trusted hooks"): VjoGameOcrRequest.speed bit 20
  * (VJO_GAME_OCR_S_TRUST, config.ini hook_trust) lets a trusted source answer a job without OCR, its capture pass
  * beside VJO_GAME_RESERVE_HOOK_ONLY, and VjoGameOcrResult.hook_flags has VJO_HOOK_R_TRUSTED. Sizes and layouts
- * are unchanged. */
-#define VJO_API_VERSION 43
+ * are unchanged.
+ * 47: vertical text (config.ini ocr_vertical, vita-vn-ocr #99; docs/vita-vn-ocr.md "Vertical text"):
+ * VjoGameOcrRequest.speed bits 28-29 (VJO_GAME_OCR_S_VERTICAL): 1 has the job read the region's columns, right
+ * to left, with the vertical model (VJO_GAME_OCR_OPEN_VERTICAL, VJO_VOCR_VERTICAL_NAME), 2 read its rows unless
+ * the line finder's rows look like vertical text, then its columns; a line read as a column carries
+ * VJO_GAME_OCR_LINE_COLUMN in its flags. Sizes and layouts are unchanged. API 27 and draft #223's API 29 were the
+ * same feature as flags bit 15, which stays undefined. 44-46 are taken by work in flight (VOCR6's line-finder
+ * fixes, the spotter finder, draft #326's text overlay in test.17), as are speed bits 21-27, so this is 47. */
+#define VJO_API_VERSION 47
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

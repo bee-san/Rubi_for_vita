@@ -263,6 +263,15 @@ int vjo_preferences_save_skips(int text_gate, int hook_trust, VjoArena *a)
     return save_keys(keys, values, 2, a);
 }
 
+int vjo_preferences_save_vertical(int mode, VjoArena *a)
+{
+    static const char *const keys[] = {"ocr_vertical"};
+    const char *values[1];
+    if (mode != VJO_VERTICAL_OFF && mode != VJO_VERTICAL_ON && mode != VJO_VERTICAL_AUTO) return -1;
+    values[0] = mode == VJO_VERTICAL_ON ? "on" : mode == VJO_VERTICAL_AUTO ? "auto" : "off"; /* core/config.c's */
+    return save_keys(keys, values, 1, a);
+}
+
 int vjo_preferences_text(VjoArena *a, char **out, size_t *bytes)
 {
     int rc = read_text(VJO_PREFERENCES_PATH, a, out, bytes);

@@ -120,7 +120,8 @@ if [ -n "$PACKAGE_DIR" ]; then
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vtd \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/MODEL-ATTRIBUTION.md \
-               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/GATE-ATTRIBUTION.md; do
+               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/GATE-ATTRIBUTION.md \
+               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/VERTICAL-ATTRIBUTION.md; do
     [ -f "$model" ] && VOCR_MODELS+=("$model")
   done
 fi

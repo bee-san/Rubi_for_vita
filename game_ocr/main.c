@@ -266,11 +266,15 @@ static int psp_title;
  * and whether the cascade's model is the job's to open by its name. */
 static uint32_t open_which;
 static int open_cascade;
-/* API 21: the job is a request by tiers (its models open by their tier), and the
+/* API 21: the job is a request by tiers (its models open by their tier; not a
+ * job of columns', API 47, whose model opens as VJO_GAME_OCR_OPEN_VERTICAL), and the
  * reserve its memory check kept (include/vjo_ledger_budget.h VJO_GAME_RESERVE_*),
  * which its resident blocks' allocations keep too. */
 static int tiered;
 static uint32_t job_reserve = GAME_RESERVE;
+/* API 47, auto (config.ini ocr_vertical): the vertical model could not be read in this game (absent, short or
+ * failing its hash), so its jobs read rows without checking them for vertical text. */
+static int columns_bad;
 /* The model tiers' pinned models (include/vjo_vocr_sizes.h), smallest first. */
 static const char *const tier_names[VJO_VOCR_TIERS] = {VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME,
                                                        VJO_VOCR_TIER3_NAME};
@@ -395,6 +399,8 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
     return rc;
 }
 
+/* API 47: a column's line flag, as the core sets it and the Shell reads it. */
+typedef char vjo_line_column_check[VJO_VOCR_LINE_COLUMN == VJO_GAME_OCR_LINE_COLUMN ? 1 : -1];
 /* The core never asks for more than the ledger counts. */
 typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LINE ? 1 : -1];
 typedef char vjo_capture_budget_check[VJO_VOCR_CAPTURE_LIMIT <= VJO_BUDGET_GAME_CAPTURE ? 1 : -1];
@@ -1721,6 +1727,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     job_started_us = now_wide();
     int rc = VJO_E_SOURCE;
     VjoVocrStats stats = {0};
+    uint32_t tried_strips = 0, tried_us = 0, tried_find_us = 0; /* API 47, auto: the tries before the last */
     Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
     if (blocked || workspace_uid >= 0 || capture_uid >= 0 || shot_uid >= 0 || model_owned) {
         rc = VJO_E_OCR_UNAVAILABLE; goto done;
@@ -1729,7 +1736,13 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
     /* API 23: a shot carries no model, tiers or other flag but F_FULL, and (API 32) no speed but S_TRIM */
     int shot = (r->flags & VJO_GAME_OCR_F_SHOT) != 0;
+    /* API 47: vertical text (config.ini ocr_vertical): on, the vertical model on the region's columns; auto, its
+     * rows unless the finder's rows look like vertical text (check), then its columns (vertical, below) */
+    unsigned vmode = (r->speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK;
+    int vertical = vmode == VJO_GAME_OCR_VERTICAL_ON;
+    int check = vmode == VJO_GAME_OCR_VERTICAL_AUTO && !columns_bad;
     if (r->size != sizeof(*r) || !r->seq || !r->capture_seq || (r->flags & ~VJO_GAME_OCR_F_ALL) ||
+        vmode > VJO_GAME_OCR_VERTICAL_AUTO ||
         refine_mode > VJO_GAME_OCR_REFINE_PSP || (r->tiers & ~VJO_VOCR_TIERS_ALL) ||
         (r->speed & ~(shot ? VJO_GAME_OCR_S_SHOT_ALL : VJO_GAME_OCR_S_ALL)) ||
         !r->width || r->width > VJO_OCR_MAX_WIDTH || !r->height || r->height > VJO_OCR_MAX_HEIGHT ||
@@ -1792,18 +1805,26 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         }
     }
     hk.trusted_run = 0; /* API 43: this job runs OCR: the trusted answers' run starts again */
-    /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
-    unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
+    /* API 47, auto: the job again from here, as columns (its rows looked like vertical text), or as rows (the
+     * columns' model could not be read or fit): each try its own check and blocks, the last one's result. */
+again:;
+    /* The finder's boxes refined (API 20): the mode, here or in a PSP game; never columns (API 47). */
+    unsigned refine = !vertical && (refine_mode == VJO_GAME_OCR_REFINE_ON ||
+                                    (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title))
                       ? VJO_VOCR_REFINE_ALL : 0u;
     size_t refine_bytes = refine ? vjo_vocr_refine_bytes(r->width, r->height) : 0;
     size_t capture_bytes = vjo_vocr_capture_bytes(r->width, r->height);
     /* The models this job may run, in the order it tries them (API 21): a request
      * by tiers names its tiers, the largest first; one by name its model, then its
-     * fallback, used only if it is another pinned model needing less memory. */
+     * fallback, used only if it is another pinned model needing less memory. A
+     * job of columns (API 47) runs the vertical model alone, whatever its tiers, with
+     * a request by name's reserve (VOCR5-S's shape: the Small size's 4 MiB). */
     Candidate cand[CANDIDATES];
     unsigned n = 0, top = 0;
-    tiered = r->tiers != 0;
-    if (tiered) {
+    tiered = r->tiers != 0 && !vertical;
+    if (vertical) {
+        cand[n++] = (Candidate){vjo_vocr_model(VJO_VOCR_VERTICAL_NAME), 0, VJO_GAME_OCR_OPEN_VERTICAL, 0};
+    } else if (tiered) {
         for (unsigned t = VJO_VOCR_TIERS; t >= 1u; t--)
             if (r->tiers & (1u << (t - 1u))) {
                 if (!top) top = t;
@@ -1828,8 +1849,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
      * check, for the record, then the smallest one's. */
     int forced = (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK) && n > 1;
     if (forced) { cand[1] = cand[n - 1u]; n = 2; }
-    /* Weights of a model this job cannot use: useless now, and two are never held. */
-    if (resident.model && !candidate_of(cand, n, resident.model) && drop_weights()) {
+    /* Weights of a model this job cannot use: useless now, and two are never held. Auto's job of rows keeps
+     * the vertical model's, which its columns use if its rows look like vertical text (the core reads no
+     * weights before that check, and drops them before it reads the rows' model). */
+    if (resident.model && !candidate_of(cand, n, resident.model) &&
+        !(check && resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME)) && drop_weights()) {
         rc = VJO_E_OCR_UNAVAILABLE; goto done;
     }
     /* The LM: the largest tier the request allows that fits (API 20); none
@@ -1840,8 +1864,9 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (!lm_max && (lm_res.data || lm_uid >= 0) && drop_lm()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     /* The confidence cascade (API 20): the request's time ceiling, and a larger
      * model beside the job's (cascade_of); none asked for, and a resident one goes. */
-    uint32_t casc_us = ((r->flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK) *
-                       VJO_GAME_OCR_CASCADE_UNIT_US;
+    uint32_t casc_us = vertical ? 0u /* no larger model reads columns */
+                                : ((r->flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK) *
+                                      VJO_GAME_OCR_CASCADE_UNIT_US;
     const VjoVocrModel *casc = NULL;
     if (!casc_us && (cascade_res.data || cascade_uid >= 0) && drop_cascade()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
     /* Reported also when refused: each title's real free memory. Each model is
@@ -1908,6 +1933,10 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         }
     }
     stats.workspace = use_bytes;
+    if (!fits && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO) { /* auto: no room for its columns, its rows */
+        vertical = 0;
+        goto again;
+    }
     if (!fits) {
         /* Too little memory: give the game back the resident weights and LM too. */
         if (drop_resident()) rc = VJO_E_OCR_UNAVAILABLE;
@@ -1983,6 +2012,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         policy.cascade_conf = VJO_GAME_CASCADE_CONF;
     }
     policy.refine = refine;
+    policy.vertical_check = check; /* API 47, auto: the rows checked for vertical text first */
     policy.short_lines = 1; /* #194: a box's short last line */
     /* vita-vn-ocr #109: a numeral or a 「 the line lost before a counter (ルッ月 -> 九ヶ月 with
      * core/textnorm.c's rule), from the top-K the LM extras hold; nothing without them */
@@ -2012,6 +2042,30 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
+    /* API 47, auto: the rows looked like vertical text (nothing was read: no weights, no line), or its columns'
+     * model cannot be read here (absent, short, failing its hash: this game's jobs read rows from now on). The
+     * same request again, as columns or as rows, after this try's blocks are freed; its capture and finder
+     * time are the job's too. */
+    if (!stats.stuck &&
+        (rc == VJO_E_VERTICAL || (rc == VJO_E_OCR_MODEL && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO))) {
+        if (rc == VJO_E_VERTICAL) {
+            step_add(VJO_GSTEP_FIND, 2, stats.lines, 0, 0, stats.dark, stats.find_us, 0);
+        } else {
+            step_add(VJO_GSTEP_FIND, 3, stats.lines, io_error, 0, 0, stats.find_us, 0);
+            if (!io_error || io_error == VJO_ERR_FORMAT || (uint32_t)io_error == 0x80010002u)
+                columns_bad = 1; /* the file is absent, the wrong length or fails its hash (the Shell's file_bad);
+                                  * a timeout or busy storage is this job's only */
+            io_error = stat_error = 0; /* the rows' try reports its own model's I/O, as a job of rows does */
+        }
+        tried_strips += stats.strips;
+        tried_us += stats.capture_us;
+        tried_find_us += stats.find_us;
+        vertical = rc == VJO_E_VERTICAL;
+        check = 0;
+        sceClibMemset(&stats, 0, sizeof(stats));
+        if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+        goto again;
+    }
     /* ocr-first: a job that read no line (or only blank ones) reads what the
      * session's first job with text would otherwise read while the user waits
      * (docs/first-ocr.md), as its check allowed; not the self-test's forced
@@ -2020,7 +2074,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
      * effort, so its rc is not the job's: a cancellation ends the job below,
      * a block it could not release is cleanup()'s, a file it could not read the
      * next text job's (io_error says which). */
-    if (!rc && !stats.model_loaded && !stats.model_cached && !forced && !(trust && hk.trusted))
+    if (!rc && !stats.model_loaded && !stats.model_cached && !forced && !(trust && hk.trusted) &&
+        !(check && resident.model == vjo_vocr_model(VJO_VOCR_VERTICAL_NAME))) /* auto keeps the columns' model */
         vjo_vocr_warm(&platform, r->model_dir, use->name, &image, &resident, &policy, &stats);
     /* A native capture error (the kernel's VJO_ERR_*, an SDK code) ends the job
      * as a source failure; its exact code is in the step log (VJO_GSTEP_PASS). */
@@ -2030,7 +2085,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                  stats.tries > 1 ? stats.retry_at - (uint32_t)job_started_us : 0u, 0, 0, 0);
     if (capture.failed) step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
                                  capture.last.fb_format, capture.pass_us, 0);
-    step_add(VJO_GSTEP_FIND, 0, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, 0, stats.dark, stats.find_us, 0);
+    step_add(VJO_GSTEP_FIND, stats.columns, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, stats.rotate_skipped,
+             stats.dark, stats.find_us, 0);
     if (policy.settle_us)
         step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes,
                  stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,
@@ -2119,7 +2175,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     if (stats.stuck) { blocked = 1; hook_owns_workspace = 1; }
 done:
     out->workspace_bytes = (uint32_t)stats.workspace;
-    out->lines = stats.lines; out->find_us = stats.find_us;
+    out->lines = stats.lines; out->find_us = stats.find_us + tried_find_us;
     out->load_us = stats.load_us; out->recognize_us = stats.recognize_us;
     out->weights = stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ :
                    stats.model_cached ? VJO_GAME_OCR_WEIGHTS_RESIDENT : VJO_GAME_OCR_WEIGHTS_NONE;
@@ -2135,9 +2191,9 @@ done:
     if (!(r && (r->flags & (VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT)))) { /* (theirs are their own) */
         out->source = capture.pass_strips ? capture.mode : VJO_GAME_OCR_SRC_NONE;
         out->strip_rows = stats.strip_rows;
-        out->captures = stats.strips;
+        out->captures = stats.strips + tried_strips;
         out->tears = stats.tears;
-        out->capture_us = stats.capture_us;
+        out->capture_us = stats.capture_us + tried_us;
         out->region_sum = stats.region_sum;
         if (capture.last.fb_width) {
             out->fb_width = capture.last.fb_width; out->fb_height = capture.last.fb_height;

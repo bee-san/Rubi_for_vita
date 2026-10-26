@@ -130,6 +130,9 @@ typedef struct {
      * or Rubi verified site, or a regular source after four OCR agreements) answer without OCR; 0 (hook_trust = off)
      * selects as Rubi 0.9.7 did. The Shell sends it as VJO_GAME_OCR_S_TRUST in each job's speed word. Last, as above. */
     int hook_trust;           /* 0/1, on by default */
+    /* Vertical text (vita-vn-ocr #99, API 47; docs/vita-vn-ocr.md "Vertical text"): VJO_VERTICAL_*, the
+     * request's VJO_GAME_OCR_S_VERTICAL field as it is (include/vjo_game_ocr.h). Last, as above. */
+    int ocr_vertical;
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
@@ -141,6 +144,17 @@ typedef struct {
 #define VJO_HEAD_TWO_LEVEL 2
 #define VJO_HEAD_GATE_DEFAULT (VJO_HEAD_GATE | VJO_HEAD_TWO_LEVEL)
 #define VJO_HEAD_GATE_DEFAULT_TEXT "on"
+/* ocr_vertical (vita-vn-ocr #99; docs/vita-vn-ocr.md "Vertical text"): off reads every region's rows, as
+ * before; on reads its columns, right to left, with the vertical model, in every game; auto reads its rows
+ * unless the line finder's rows look like vertical text, then its columns. The values are the request's
+ * VJO_GAME_OCR_S_VERTICAL field's (include/vjo_game_ocr.h), so the Shell sends the setting as it is. */
+#define VJO_VERTICAL_OFF 0
+#define VJO_VERTICAL_ON 1
+#define VJO_VERTICAL_AUTO 2
+/* auto (docs/vita-vn-ocr.md "Vertical text": why): on horizontal text it is off's job, bit for bit, wherever its rule
+ * sees rows (measured on the host, never on a console). */
+#define VJO_VERTICAL_DEFAULT VJO_VERTICAL_AUTO
+#define VJO_VERTICAL_DEFAULT_TEXT "auto"
 
 void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and
