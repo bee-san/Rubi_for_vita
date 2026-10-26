@@ -92,7 +92,8 @@ Smaller fixes, measured on the same grid with the adaptive rule:
 - **Counting a line again in the backlog or after a menu once only** (a record whose text is one of the
   8 before it): characters 0.5 → 0.2 % (everyday OCR +3 → +1 %), time unchanged. Not done: it needs the
   last texts in the Shell, for a small gain.
-- **Sessions** (GameSentenceMiner's 30-minute break, its median per session): 2.2 → 2.1 %. Not done, by
+- **Sessions** (GameSentenceMiner's 30-minute break: a longer gap credited nothing; measured on the running
+  75th percentile, in floats, not with a median per session): 2.2 → 2.1 %. Not done, by
   the owner's decision: Rubi has no sessions.
 
 ## GameSentenceMiner's AFK rules, in order
@@ -107,10 +108,10 @@ the way to its own. Its stats were added by bee-san in 2025; the commits are its
 | 2025-12-17 | issue #321 "Sentence Length Aware AFK" | | AFK on 「ああ...」 with a 60 s timer gives 120 characters an hour; suggests [JL](https://github.com/rampaa/JL)'s per-length timer and the reader's own speed for that game, with clamping so a skip cannot set it |
 | 2025-12-31 | `cb405a01` | the timer's default 60 s; a `minimum_chars_per_hour` (5,000) setting declared, never used | |
 | 2026-03-13 | `6dd5b958` (plan `.opencode/plans/reading_speed.md`), `6906151d` (`test_afk_detection.py`: fixed, 1.2 s a character, an EMA × 3), `5c11e6b9` "remove afk timer" (and its setting); shipped in #394, #409 | each line at most max(15 s, 3 s a character), 300 s ceiling; then a line slower than Q1 − 1.5 IQR is re-timed at the median speed | the flat timer cut long lines, lookups and re-reading, so it understated time and overstated speed, and users had to tune it by hand |
-| 2026-06-19 | `f4c5a955` "Adaptive reading-time v2" (opt-in) | each line at most 2.5 × its expected time at the median pace of the lines (5+ characters), 2 s floor, 300 s ceiling, 3 s a character before a pace; time and characters credited together when the next line comes | short lines and pauses no longer over-count |
+| 2026-06-19 | `f4c5a955` "Adaptive reading-time v2" (a setting, `reading_time_adaptive_v2`: the commit message calls it opt-in, its default is on) | each line at most 2.5 × its expected time at the median pace of the lines (5+ characters), 2 s floor, 300 s ceiling, 3 s a character before a pace; time and characters credited together when the next line comes | short lines and pauses no longer over-count |
 | 2026-07-05 | `e59edb51` | 2.5 × at 80 % of the median | so fast, easy lines do not make later caps too tight |
 | 2026-07-10 | `ad677c4b` "Use a more conservative adaptive reading pace" | 2.5 × at 50 % of the median (5 × its expected time) | |
-| 2026-09-30 | `f13f205f` | the adaptive rule for everyone; the 2026-03 rule and its opt-in setting removed | |
+| 2026-09-30 | `f13f205f` | the adaptive rule for everyone; the 2026-03 rule and the setting removed | |
 | 2026-10-01 | `9eba9390` "use consistent session pace" | back to 2.5 × the median, now per 30-minute session (a longer gap: no credit); a line teaches the pace only with 5+ characters and 1-300 s (`reading_speed_sample`); an empty line gets nothing | sub-second bursts measure text delivery, and a gap over the ceiling would teach a break as reading; filtering the samples, not loosening the cap, fixed the too-fast median |
 | 2026-10-05 | `ca5eb642` | a live session expires after 30 minutes idle | |
 | 2026-10-10 | `6d58dd08` | a gap across an explicit pause (text intake paused, from `fb5ccb00`) is neither credited nor a sample | |
@@ -139,3 +140,7 @@ interaction (off by default), rolling the idle time back (`book-reading-tracker.
   based on the records' times can tell.
 - The pace starts at 1.2 s a character for a game with no history (3,000 an hour); a much faster
   reader's first few dozen lines get a looser cap while it learns.
+- The pace stays between 2 ms and 4.19 s a character (`VJO_READING_PACE_MIN` to 16 bits of 64 µs). Below
+  32 units its 1/32 steps are 0: before this floor, a game with many records of 489 or more characters, a
+  second or more apart and read at under 2 ms a character (a hook returning a page at once), could take
+  the pace there for good, and every later line of the game got the 2 s floor (audit of #303).

@@ -31,6 +31,10 @@ been reported.
 
 ### Fixed
 
+- The adaptive reading time's pace ([#303], in 0.9.7-test.12) stays at 2 ms a character or more. Below that,
+  its 1/32 steps rounded to 0, so a game with many records of 489 or more characters read at under 2 ms a
+  character (a hook returning a page at once) could freeze it, and every later line of that game counted
+  at most 2 s, also when counted again. Every other history counts exactly as before ([#305]).
 - The Rubi app's Games page shows `Hook` for every game with one of Rubi's own verified hook entries. The tag
   kept its own copy of their titles, CLANNAD alone, so 10 of 0.9.7's new games (リトルバスターズ！ Converted
   Edition, グリザイアの果実, 剣が君 for V …) had no tag and 17, アマツツミ among them, showed `Luna hook`; it now
@@ -1061,3 +1065,4 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#296]: https://github.com/bee-san/Rubi_for_vita/pull/296
 [#299]: https://github.com/bee-san/Rubi_for_vita/pull/299
 [#303]: https://github.com/bee-san/Rubi_for_vita/pull/303
+[#305]: https://github.com/bee-san/Rubi_for_vita/pull/305

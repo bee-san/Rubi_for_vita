@@ -441,10 +441,12 @@ def read_history(paths) -> Report:
 # record of its game, at most 2.5 times what the reader's pace would take for it, 2 s to 5 minutes. The
 # pace, per game, is a running 75th percentile of the time a character took (in 64 us units, 16 bits):
 # 3/32 up after a line of 5 or more characters read in 1 s to 5 minutes more slowly than it, 1/32 down
-# after one read faster; 1.2 s a character until it has learned. As GameSentenceMiner's adaptive cap
+# after one read faster; 1.2 s a character until it has learned, and kept between 2 ms and 4.19 s a character.
+# As GameSentenceMiner's adaptive cap
 # (util/stats/stats_util.py adaptive_cap_seconds, reading_speed_sample), without its sessions.
 PACE_UNIT_SHIFT = 6       # VJO_READING_PACE_UNIT_SHIFT: 64 us a character
 PACE_START = 18750        # VJO_READING_PACE_START: 1.2 s a character, 3,000 an hour
+PACE_MIN = 32             # VJO_READING_PACE_MIN: 2 ms a character, the smallest pace whose 1/32 step is not 0
 CAP_FLOOR_US = 2_000_000
 CAP_CEILING_US = 300_000_000
 CAP_PER_UNIT_US = 160     # 2.5 x 64 us
@@ -460,7 +462,7 @@ def adaptive_credit(gap_us: int, chars: int, pace: int) -> tuple[int, int]:
     cap = max(cap, CAP_FLOOR_US)
     if chars >= 5 and 1_000_000 <= g <= CAP_CEILING_US:
         p = p + 3 * (p >> 5) if (g >> PACE_UNIT_SHIFT) > expect else p - (p >> 5)
-        pace = min(p, 0xFFFF)
+        pace = min(max(p, PACE_MIN), 0xFFFF)  # 16 bits; under PACE_MIN no line could move it again
     return min(g, cap), pace
 
 

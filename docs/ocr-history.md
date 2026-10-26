@@ -326,7 +326,8 @@ counts, from the Vita's next start (the Shell takes it once, as it starts):
   for it**, and no less than 2 s nor more than 5 minutes. The pace is learned per game from its own
   history: the 75th percentile of the time a character took in its lines of 5 or more characters that
   took 1 s to 5 minutes, as a running estimate (3/32 of itself up after a slower line, 1/32 down after a
-  faster one; 1.2 s a character, 3,000 an hour, until it has learned). A long pause of any kind gives the
+  faster one; 1.2 s a character, 3,000 an hour, until it has learned; never under 2 ms a character, where
+  those steps would round to nothing, nor over 4.19 s). A long pause of any kind gives the
   line before it its cap, 2.5 times its expected time, and no more; there are no sessions. In the
   simulated timelines below, a 30-character line could count up to about 2 minutes for a beginner
   (3,000 characters an hour with many lookups), 1 minute for a learner (6,000) and 20 s for a fluent

@@ -34,6 +34,19 @@ recognition: 292 B) move to the data segment, as its other messages did. The She
 The normal Shell has 100 B of code room now (20 B before) and 224 B of data room (552 B). The kernel
 and the game worker are byte-identical to main's.
 
+The pace's floor (audit of #303: `VJO_READING_PACE_MIN`, one comparison) makes `vjo_reading_scope_add`
+386 → 394 B in the normal build (388 → 396 B in the debug one, `arm-vita-eabi-nm`). The Shell's rows
+[measured: the build log's module rows, `tools/ci_container_build.sh` as of #303 (VitaSDK 2026.08,
+`sha256:fd82d88f…`), main `4bc2604`, whose plugins `213fd60` keeps, and this change]:
+
+| Shell | main `4bc2604` | the floor | pages |
+|---|---:|---:|---:|
+| normal | 90,012 + 73,504 B | 90,028 + 73,504 B | 163,840 B both (exact) |
+| debug | 102,204 + 73,464 B | 102,204 + 73,464 B | 176,128 B both |
+
+The normal Shell has 84 B of code room now. The kernel, the game worker, the RCO and the Rubi app's
+`eboot.bin` are byte-identical to main's in both builds.
+
 ### Previous all-game reading total
 
 Triangle also shows characters/hour and active time with a 15-second cutoff. Its state adds two
