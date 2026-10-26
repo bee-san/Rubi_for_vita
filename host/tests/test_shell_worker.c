@@ -4798,8 +4798,13 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     /* What anki.c checks before saving the shown entry still holds. */
     TEST_CHECK(g_view.open && g_view.list == shown && g_view.list_seq == seq && g_view.list->n_entries == 1);
     TEST_CHECK(local_text_valid && has_result_memory() && !g_view.status[0]);
+    unsigned cmap_seq = g_view.cmap_seq;
     finish_current_job();
     TEST_CHECK(DLOGGED("refresh rc=0: same text") && local_text_scene == 8 && cache_scene == 8);
+    /* API 46: with overlay_on_text off there is no char map, and the open popup is left alone (no redraw that would
+     * scroll its definition back; audit-overlay-boxes F1) */
+    TEST_CHECK_(!cfg.overlay_on_text && g_view.cmap_seq == cmap_seq && !g_view.cmap_text, "cmap_seq %u -> %u", cmap_seq,
+                g_view.cmap_seq);
     TEST_CHECK(!memcmp(&debug, &g_view.line_debug, sizeof(debug)));
     check_shown("猫犬鳥", "cat", 0);
     TEST_CHECK(g_view.list_seq == seq && local_text_generation == generation && vocr_allocs == inferences + 1);

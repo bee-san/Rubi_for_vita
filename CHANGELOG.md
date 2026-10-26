@@ -13,6 +13,17 @@ been reported.
 
 ### Added
 
+- **The overlay on the game's text** (API 46, #309; testing, off by default: the Rubi app's OCR & lookup page,
+  **Overlay on the game's text**, or `overlay_on_text = on`). As GameSentenceMiner's overlay does on a PC, the
+  overlay works on the game's own text: the word at the cursor is marked where the game draws it and the game's
+  lines are underlined, a tap on a character looks its word up, Up and Down go to the game's line above or below,
+  and the dictionary popup is a 196 px band beside the text instead of the full screen. The places come from the
+  OCR's own CTC frames (vita-vn-ocr #114): on the hooked corpus's held-out pages a tap at a glyph's middle selects
+  the right character for 97.3% of 43,294 characters, against 81-82% for a line box cut by glyph widths
+  ([measured](docs/overlay-on-text.md#where-the-places-come-from)). A native hook's text is placed on OCR's
+  characters, so with the setting on every read recognizes (also in hooked games) and skips the line cache.
+  Off, nothing of it runs; the game worker's code is one page (4,096 B) larger in each game that is ON, SceShell's
+  pages are unchanged. Nothing of it has run on a console. It builds on closed draft #271 (API 37).
 - Native text hooks for two more Vita visual novels from the hook farm's data bucket, with Rubi's own
   clean-up rules for their text: ALIA's CARNIVAL! サクラメント (`PCSG00628`) and 真 流行り神 (`PCSG00380`, a page
   record of character cells, a new way to read a hook's text). Proven in the Vita3K emulator only: Rubi's

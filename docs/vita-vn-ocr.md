@@ -524,7 +524,12 @@ console compares with the evaluation directly:
 
 The text never grows, so the game worker normalises it in place before it returns it, and keeps
 the recognizer's own text after it in the same 4 KiB buffer (`vjo_text_normalize_keep`; nothing
-is added to SceShell). The Shell writes the recognizer's text to `log.txt`, one line per
+is added to SceShell). API 46: with `VJO_GAME_OCR_S_CHARS` (bit 25 of the job's `speed` word, which the
+Shell sets in the user's jobs when `overlay_on_text` is on), the worker also writes the text's char map
+after the recognizer's copy in that buffer, with its last byte left zero: every character's place on the
+screen, from vita-vn-ocr's `runtime/vocr_charbox.c` (#114) cells without INK, aligned to the shown text
+([core/charmap.h](../core/charmap.h), [overlay-on-text](overlay-on-text.md)). A job with the bit reads its
+lines without the line cache, whose entries keep no places. The Shell writes the recognizer's text to `log.txt`, one line per
 recognized line (`game vocr text N: …`, 60 characters at most), and, for a line that changed,
 what is shown (`game vocr text N shown: …`); after a dropped line the shown lines are the next
 ones, so the log pairs them with the recognizer's lines by position. The job's `gstep job norm`

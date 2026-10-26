@@ -32,6 +32,9 @@ set(_vocr_rt "${VJO_VOCR_SOURCE_DIR}/runtime")
 # its rare rows only where a blob's two-level head needs them (#122, VjoVocrPolicy.two_level);
 # since #123 it also parses width strides up to 3 (stride-12 blobs; none is pinned) and
 # refuses a kernel narrower than its stride. Its gate and two-level code is #122's (fb63532).
+# vocr_charbox.c (vita-vn-ocr #114, unchanged since 6f24967) places each character a line's run emits on
+# the line, from the CTC frame it fires at (core/vocr_ocr.c line_chars, API 46's overlay on the game's
+# text; docs/overlay-on-text.md).
 set(_vocr_pins
   vocr.c 83cb778c482853d43bd2c361818793efdb9e9dcb50a6fff3c14f9fcf2e39ffda
   vocr.h a2fbed39216433dff01a44dd8b3ed0838c613f2aee4afe16a652dd2d3429297e
@@ -46,7 +49,9 @@ set(_vocr_pins
   vocr_textgate.c da772dd316b69ac79dc0d6ffbae14da428df429657d089fd99ba8cd74c43266e
   vocr_textgate.h aeb8c5bdb810e8ab82bfaa37aadc1d564ec0dec2a80b1e2f80323819853d7258
   vocr_post.c 4636baa19b2ef991ab4aa306d606db1c0b2bd71fbc09df9ce2619bba458b95f4
-  vocr_post.h 9f1cf5735a2fbabda104536603b3f209d3a52b6d8d76954b07382e8cc314b43a)
+  vocr_post.h 9f1cf5735a2fbabda104536603b3f209d3a52b6d8d76954b07382e8cc314b43a
+  vocr_charbox.c 0e338f516a59529507ce9451198b692acd26a26267105e9efba2d58a18750018
+  vocr_charbox.h da5209e372dbdf4efff3e5da3c05a424becbb860b23ebe64bab984af534ff5c9)
 while(_vocr_pins)
   list(POP_FRONT _vocr_pins _file _want)
   if(NOT EXISTS "${_vocr_rt}/${_file}")
@@ -71,7 +76,8 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # vocr_textgate.c (vita-vn-ocr #100) is the text-presence gate; its weights are a pinned file beside the models
 # (include/vjo_vocr_sizes.h VJO_VOCR_GATE_NAME, tools/prepare_ocr.py), read at run time.
 add_library(vjo_vocr_rt STATIC "${_vocr_rt}/vocr.c" "${_vocr_rt}/vocr_lines.c" "${_vocr_rt}/vocr_lines_rows.c"
-  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c" "${_vocr_rt}/vocr_post.c")
+  "${_vocr_rt}/vocr_lm.c" "${_vocr_rt}/vocr_lines_refine.c" "${_vocr_rt}/vocr_textgate.c" "${_vocr_rt}/vocr_post.c"
+  "${_vocr_rt}/vocr_charbox.c")
 target_include_directories(vjo_vocr_rt PUBLIC "${_vocr_rt}")
 target_compile_options(vjo_vocr_rt PRIVATE -std=c99 -O2 -ffp-contract=off -Wall -Wextra
   -ffunction-sections -fdata-sections)
@@ -80,13 +86,17 @@ if(VJO_BUILD_VITA)
   # The counter re-decode is a line's control code, a few thousand integer steps, not per-pixel work:
   # built for size like the job's (the worker's pages; vita-vn-ocr docs/counters.md: 2,598 B at -Os).
   set_source_files_properties("${_vocr_rt}/vocr_post.c" PROPERTIES COMPILE_OPTIONS "-Os")
+  # API 46: the characters' places, a line's control code too (vita-vn-ocr runtime/README.md: 3,186 B at -Os).
+  set_source_files_properties("${_vocr_rt}/vocr_charbox.c" PROPERTIES COMPILE_OPTIONS "-Os")
 else()
   target_link_libraries(vjo_vocr_rt PUBLIC m)
 endif()
 
 
-# core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h).
-add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c")
+# core/textnorm.c: the text the game worker returns, normalised (core/textnorm.h). core/charmap_build.c (API 46):
+# the char map the worker writes after it (core/charmap.h; its reader core/charmap.c and core/utf.c are the
+# worker's own sources on the Vita, vjo_core's on the host).
+add_library(vjo_vocr STATIC "${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c" "${VJO_ROOT}/core/charmap_build.c")
 target_link_libraries(vjo_vocr PUBLIC vjo_vocr_rt)
 target_compile_options(vjo_vocr PRIVATE -Wall -Wextra -ffunction-sections -fdata-sections)
 if(VJO_BUILD_VITA)
@@ -95,6 +105,6 @@ if(VJO_BUILD_VITA)
   # and cascade set-up, a few hundred bytes of text normalisation once per job):
   # built for size, the worker's pages. The per-pixel work, the recognizer and
   # the decoder, is the runtime's (vjo_vocr_rt, -O2).
-  set_source_files_properties("${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c" PROPERTIES
-    COMPILE_OPTIONS "-Os")
+  set_source_files_properties("${VJO_ROOT}/core/vocr_ocr.c" "${VJO_ROOT}/core/textnorm.c"
+    "${VJO_ROOT}/core/charmap_build.c" PROPERTIES COMPILE_OPTIONS "-Os")
 endif()

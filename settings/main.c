@@ -85,8 +85,9 @@
 #define PREF_SELECTION 3
 #define PREF_HIGHLIGHT 4
 #define PREF_RESULTS 5
-#define PREF_SOURCE 6 /* API 31: Text source (config.ini text_source), the last card */
-#define PREFERENCES 7
+#define PREF_SOURCE 6 /* API 31: Text source (config.ini text_source) */
+#define PREF_ONTEXT 7 /* API 46: Overlay on the game's text (config.ini overlay_on_text), the last card */
+#define PREFERENCES 8
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -641,6 +642,13 @@ static void set_text_source(int index)
         snprintf(preference_status, sizeof(preference_status), "Saved. It applies when a game next starts.");
 }
 
+/* API 46: the popup on the game's own text (config.ini overlay_on_text, docs/overlay-on-text.md). */
+static void set_on_text(int on)
+{
+    if (on == preferences.overlay_on_text || preferences_locked()) return;
+    preference_saved(vjo_preferences_save_overlay_on_text(on, &scratch));
+}
+
 /* Model size: enter cycles Small -> Normal -> Large; Left/Right step within it. */
 static void set_tier(int tier)
 {
@@ -659,6 +667,10 @@ static void set_dictionary_results(int results)
 
 static void toggle_preference(void)
 {
+    if (preference_selected == PREF_ONTEXT) {
+        set_on_text(!preferences.overlay_on_text);
+        return;
+    }
     if (preference_selected == PREF_SOURCE) {
         set_text_source((source_index(preferences.text_source) + 1) % 3);
         return;
@@ -690,6 +702,10 @@ static void toggle_preference(void)
  * ON/OFF cards). */
 static void set_preference(int right)
 {
+    if (preference_selected == PREF_ONTEXT) {
+        set_on_text(right);
+        return;
+    }
     if (preference_selected == PREF_SOURCE) {
         set_text_source(source_index(preferences.text_source) + (right ? 1 : -1));
         return;
@@ -718,7 +734,7 @@ static void set_preference(int right)
 }
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
-static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H};
+static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
@@ -893,6 +909,16 @@ static void draw_source_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, preferences_writable ? help[chosen] : "Cannot read the saved choice.");
 }
 
+/* API 46 (#309): the overlay on the game's own text: the word marked where the game shows it, taps on the game's
+ * text, the popup beside the word (docs/overlay-on-text.md). Off by default until a console run has checked it. */
+static void draw_ontext_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Overlay on the game's text");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
+          preferences.overlay_on_text ? "ON" : "OFF", preferences_writable && preferences.overlay_on_text);
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: words marked where the game shows them; tap one.");
+}
+
 static void draw_card(int i, int y)
 {
     switch (i) {
@@ -902,6 +928,7 @@ static void draw_card(int i, int y)
     case PREF_SELECTION: draw_selection_card(y); break;
     case PREF_HIGHLIGHT: draw_highlight_card(y); break;
     case PREF_SOURCE: draw_source_card(y); break;
+    case PREF_ONTEXT: draw_ontext_card(y); break;
     default: draw_results_card(y); break;
     }
 }
@@ -992,7 +1019,7 @@ static void touch_preference(int x, int y)
             (x - RESULT_BADGE_X) / RESULT_BADGE_PITCH < VJO_LOCAL_MAX_DICTS)
             set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
         break;
-    default: /* the ON/OFF cards: Speed boost and Japanese characters only */
+    default: /* the ON/OFF cards: Speed boost, Japanese characters only and (API 46) Overlay on the game's text */
         toggle_preference();
     }
 }
