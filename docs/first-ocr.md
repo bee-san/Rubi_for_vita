@@ -26,8 +26,9 @@ The game worker's steps (`gstep job ...`, `game_ocr/main.c` `step_add`) carry tw
   `tear`, `clock`): `step_add` called with us 0 (`game_ocr/main.c:148` at `4ac02ac`).
 
 A job of vertical text (API 47, `ocr_vertical`; [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) logs
-`find` with kind 1 when its lines were columns, and with kind 2 for `auto`'s rows that looked like vertical text
-(nothing was read from them; the next `find`, kind 1, is the columns'). Its `bytes=` are the columns it left out
+`find` with kind 1 when its lines were columns, with kind 2 for `auto`'s rows that looked like vertical text
+(nothing was read from them; the next `find`, kind 1, is the columns'), and with kind 3 when `auto`'s columns had no
+vertical model to read (`rc=` its I/O error; the rows are read next). Its `bytes=` are the columns it left out
 because their crop (width × height) holds more than its rotation buffer, 57,344 B (`VJO_VOCR_ROTATE_BYTES`,
 `VjoVocrStats.rotate_skipped`; 0 for rows, so a job of rows logs as before). Those are never read, so at most
 `arg=` (the columns found) minus `bytes=` were read: blank columns (the blank-line check), tall ones without the
