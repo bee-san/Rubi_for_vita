@@ -23,7 +23,7 @@ been reported.
   0.9.7's rule, from the Vita's next start. Each game's statistics are counted once again from
   `history.csv` on the first Triangle press (its cache was counted with the old rule); the file itself is
   unchanged. `tools/reading_stats.py` gives the same numbers (`--time-rule break` or `--break-minutes N`:
-  its old rule).
+  its old rule) ([#303]).
 
 ### Fixed
 
@@ -1056,3 +1056,4 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#295]: https://github.com/bee-san/Rubi_for_vita/pull/295
 [#296]: https://github.com/bee-san/Rubi_for_vita/pull/296
 [#299]: https://github.com/bee-san/Rubi_for_vita/pull/299
+[#303]: https://github.com/bee-san/Rubi_for_vita/pull/303
