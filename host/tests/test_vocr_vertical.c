@@ -561,8 +561,9 @@ static uint64_t job_hash(int rc, const char *text, const char *raw, const VjoVoc
 }
 
 /* ------------------------------------------------------------ off: today's job of rows */
-/* The figures main 1de7b67's core gives (this file with -DVJO_TEST_OFF_ONLY, built against that tree and
- * the runtime it pins, vita-vn-ocr d214a05; and on this tree's runtime, the same): each job's hash. */
+/* The figures main 93647d3's core gives (this file with -DVJO_TEST_OFF_ONLY, built against that tree and the
+ * runtime it pins, vita-vn-ocr 47cf3a3): each job's hash. Main 1de7b67's, before API 42's runtime grew the
+ * recognizer's structs, were others (the workspace is in the hash). */
 static const struct {
     const char *what;
     uint64_t hash;

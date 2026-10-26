@@ -1082,8 +1082,9 @@ vita-vn-ocr #103 read its held-out vertical test set once (host, C runtime, gree
 11.29 % end to end on VN regions, 0.86 % and 2.45 % on manga.
 
 **Measured through Rubi's job** (host, x86-64: `vjo-page-ocr`, the game worker's job in `core/vocr_ocr.c` on each
-region with the weights kept, on config.ini's defaults: Normal size, the 1 MB LM, the cascade within 2 s, the counter
-re-decode, the text normalised and filtered as the Shell shows it; `tools/vertical_eval.py`). Dialogue CER: every line
+region with the weights kept, on config.ini's defaults: Normal size, the 1 MB LM, the cascade within 2 s, the head
+gate and two-level head (each where a blob has it: VOCR5-V's has neither), the counter re-decode, the text normalised
+and filtered as the Shell shows it; `tools/vertical_eval.py`, on main `93647d3` and this change). Dialogue CER: every line
 the job read but those over another text box of the page (a speaker's name tag), each normalised with vita-vn-ocr's
 `eval/metrics.norm`, joined in the job's order, against the page's dialogue columns right to left, with 95 % intervals
 from 10,000 page bootstrap resamples. Column recall and precision: found columns against the labelled ones at IoU ≥
@@ -1098,30 +1099,35 @@ vita-vn-ocr #103's held-out vertical test cluster (VOCR5-S, its starting point, 
 |---|---:|---:|---:|
 | tight: the columns plus 12 px | 82.62 % | **4.51 %** [4.09, 4.95]; recall 0.972, precision 0.995 | 5.08 % (789 of 863) |
 | drawn once: one box for every page whose text box is in the same place (2 places) | 83.63 % | **14.03 %** [12.58, 15.58]; recall 0.942, precision 0.687 | 13.58 % (741 of 764) |
-| the text box and its speaker's name tag | 84.34 % | 23.37 % [22.06, 24.73]; recall 0.960, precision 0.727 | 23.64 % (837 of 863) |
-| the whole screen | 95.94 % | 168.32 % | 97.45 % (41 of 863) |
+| the text box and its speaker's name tag | 84.30 % | 23.37 % [22.06, 24.73]; recall 0.960, precision 0.727 | 23.64 % (837 of 863) |
+| the whole screen | 96.04 % | 168.32 % | 97.55 % (41 of 863) |
 
 A box drawn once has the box's empty edge and the name tag beside the columns: the finder takes some of their marks
 for short columns (precision 0.69), whose readings add errors. On vita-vn-ocr #103's development regions (181: its
 regions are a page's dialogue columns plus 12 px; PC pages scaled to 960×544, PSP frames shown 2× as Adrenaline shows
 them, manga in NOBORU's fit-to-width view; scored the same way): `on` 12.29 % [8.80, 16.08] (PSP VN 1.37 %, PC VN
 22.81 %, manga 4.59 %), `off` 88.16 %; auto read columns in 153 of the 181 regions (all 28 PSP, 47 of 56 PC, 78 of 97
-manga), 29.32 % [20.01, 38.74].
+manga), 29.32 % [20.01, 38.74] (PSP 1.37 %, PC 43.97 %, manga 23.60 %).
 
 **On horizontal text, auto is off.** Its rule took no region for vertical text on 50,945 drawn boxes and 50,706 whole
 screens of the hooked corpus's 44 other titles with pages, PS Vita and PSP (all of vocr6-ingest's pages but Yunohana
 SpRING!'s and the three titles related to protected test titles), and took 1 of 2,837 PS Vita and PSP screenshots
 from VNDB (vita-vn-ocr #99's census, no test VN or session), a whole PSP screen whose row finder had found a
 portrait's blocks and no dialogue line. On a sample of 3,080 of the hooked regions (60 drawn boxes and 10 whole screens per title, seeded),
-`auto`'s and `off`'s jobs gave main `213fd60`'s text, lines, CTC frames, strips and workspace, every one of them.
-HORIZONTAL_TIME
+`auto`'s and `off`'s jobs gave main `93647d3`'s text, lines, CTC frames, strips and workspace, every one of them
+(`off`'s gave main `213fd60`'s too, before the head gate). The rule took 310 ns a region on the host (median; 910 ns
+at the 99th percentile), against a job's median of 55 ms there; on 600 of those regions, each read by main's job,
+`off`'s and `auto`'s in turn and timed three times (`vertical_eval.py abtime`), the host's job times were within its
+noise: `off` / main 1.0026 [0.9983, 1.0069] and `auto` / main 1.0039 [0.9998, 1.0080] (geometric means, 95 %
+intervals). On the console the rule is a few hundred instructions a job (an estimate): nothing next to the job.
 
 **Memory.** The worker's code, in every game that is ON whatever the setting: 4,096 B more module pages in each build
 (176,128 B normal, 184,320 B debug: [memory-ledger.md](memory-ledger.md#vertical-text-api-47)). SceShell's and the
 kernel's pages are as before. A job of columns takes the vertical model's weights (823,296 B in pages, a Small job's)
-and a workspace of VOCR5-S's plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + 3,760 (the
-console's runtime structs) + 57,344 = 185,936 B at 960×544, with the LM extras, the greedy text and both helpers'
-slots 706,096 B on the host build, within `VJO_BUDGET_GAME_WORKSPACE` (1,212,416 B; `host/tests/test_ledger.c`). A
+and a workspace of VOCR5-S's shape plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + about
+3,800 (the console's runtime structs: 3,760 B before API 42's fields, an estimate) + 57,344 B, 188,416 B in pages at
+960×544; with the LM extras, the greedy text and both helpers' slots 706,320 B on the host build (708,608 B in pages),
+within `VJO_BUDGET_GAME_WORKSPACE` (1,220,608 B; `host/tests/test_ledger.c`). A
 column whose crop holds more than the rotation buffer (wider than 105 px at the full 544-px height) is left out and
 counted (`VjoVocrStats.rotate_skipped`, the bytes of the log's `find` step). auto's job that reads columns holds the
 row job's blocks first, for the finder's pass only, and frees them before the column job allocates its own.
@@ -1137,7 +1143,7 @@ more first, for the row finder: 49 strips (56), about 0.8 s at 60 fps. Horizonta
 
 **Off and auto are today's job** (`host/tests/test_vocr_vertical.c`): jobs of rows on a 5-line region and on #194's
 box, greedy, with the LM, with two helpers and refined, give the same text, greedy text, frames, line stats, workspace
-and strips as main `1de7b67` (before vertical text) gave, hash for hash, with auto's check and without it; the stage
+and strips as main `93647d3` (before vertical text) gives, hash for hash, with auto's check and without it; the stage
 benchmark's recorded job checksums are unchanged too. `test_game_vocr.c` runs the worker's auto retry, its fallback
 to rows, and the request's checks; `test_shell_worker.c` the Shell's field and model name; `test_settings_app.c` the
 app's card.
@@ -1154,6 +1160,8 @@ app's card.
   vita-vn-ocr's development regions; then rows are read), and a whole screen is mostly read as rows. Set `on` for a
   vertical game.
 - The self-test's stages (the debug build, [self-test](self-test.md)) read rows whatever the setting.
+- With `auto`, a region that holds vertical text in some screens and rows in others reads the other model's weights
+  (0.8 or 1.2 MB, from the card) at each change.
 ## Head gate and two-level head (API 42)
 
 ```ini

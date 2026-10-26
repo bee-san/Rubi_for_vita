@@ -352,7 +352,8 @@ int main(int argc, char **argv)
         }
         memset(&first, 0, sizeof(first));
         if (su.mode == 1) {
-            rc = run_one(&job, &plat, su.vertical, &src, &vres, 0, text, sizeof(text), raw, sizeof(raw), &st, &kept, &ws);
+            rc = run_one(&job, &plat, su.vertical, &src, &vres, 0, text, sizeof(text), raw, sizeof(raw), &st, &kept,
+                         &ws);
         } else {
             rc = run_one(&job, &plat, su.model, &src, &res, su.mode == 2, text, sizeof(text), raw, sizeof(raw), &st,
                          &kept, &ws);
@@ -383,7 +384,8 @@ int main(int argc, char **argv)
         json_text(stdout, shown ? shown : text);
         printf(", \"lines\": [");
         for (unsigned i = 0; i < kept.n; i++) {
-            printf("%s{\"box\": [%u, %u, %u, %u], \"dark\": %u, \"flags\": %u, \"blank\": %u, \"text\": ", i ? ", " : "",
+            printf("%s{\"box\": [%u, %u, %u, %u], \"dark\": %u, \"flags\": %u, \"blank\": %u, \"text\": ",
+                   i ? ", " : "",
                    kept.l[i].x, kept.l[i].y, kept.l[i].w, kept.l[i].h, kept.l[i].dark, kept.l[i].flags,
                    kept.l[i].blank);
             json_text(stdout, kept.l[i].text);

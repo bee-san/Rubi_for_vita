@@ -155,7 +155,8 @@ def page_units(rec, regions):
     if vert:
         if len(vert) != len(lines):
             return []  # a page of both: not a vertical unit, not a horizontal one
-        refs = sorted(({"box": ln["box"], "text": ln["text"]} for ln in vert), key=lambda r: (-r["box"][0], r["box"][1]))
+        refs = sorted(({"box": ln["box"], "text": ln["text"]} for ln in vert),
+                      key=lambda r: (-r["box"][0], r["box"][1]))
         for kind in regions:
             if kind == "fixed":  # cmd_units sets it, from every page of the title in the same place
                 continue
@@ -248,7 +249,8 @@ def cmd_ext_units(a):
             fit = list(fit_scale(r["dims"][0], r["dims"][1], (480, 272) if psp else CONSOLE))
             k = 2 if psp else 1
             units.append({"title": r["vn"], "page": r["shot"], "split": "vndb:" + r["plat"], "image": r["path"],
-                          "platform": "psp" if psp else "vita", "fit": fit, "scale": k, "dims": [fit[0] * k, fit[1] * k],
+                          "platform": "psp" if psp else "vita", "fit": fit, "scale": k,
+                          "dims": [fit[0] * k, fit[1] * k],
                           "complete": False, "vertical": False, "id": r["shot"] + ":full", "kind": "full",
                           "region": [0, 0, fit[0] * k, fit[1] * k], "refs": [], "ignore": []})
             kept += 1
@@ -301,6 +303,8 @@ def run_shard(units, a, out_rows, lock):
     args = [a.tool, a.models] + (a.tool_args.split() if a.tool_args else [])
     p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
+    failed = []
+
     def feed():
         cache = (None, None)
         try:
@@ -317,15 +321,24 @@ def run_shard(units, a, out_rows, lock):
                 crop = cache[1].crop((x, y, x + w, y + h))
                 psp = int(u.get("platform") == "psp")
                 p.stdin.write(f"{u['id']} {w} {h} {psp}\n".encode() + crop.tobytes())
-            p.stdin.close()
         except BrokenPipeError:
             pass
+        except Exception as e:  # a page that cannot be read: the tool gets no more jobs, and the run fails below
+            failed.append(repr(e))
+        finally:
+            try:
+                p.stdin.close()
+            except BrokenPipeError:
+                pass
 
     t = threading.Thread(target=feed, daemon=True)
     t.start()
     rows = [json.loads(line) for line in p.stdout]
     t.join()
     err = p.stderr.read().decode(errors="replace")
+    if failed:
+        p.wait()
+        raise SystemExit(f"cannot feed the regions: {failed[0]}")
     if p.wait() or len(rows) != len(units):
         raise SystemExit(f"vjo-page-ocr failed ({len(rows)} of {len(units)} results): {err[-2000:]}")
     with lock:
@@ -406,7 +419,8 @@ def cmd_abtime(a):
         lr = [math.log(b / max(1.0, x)) for x, b in zip(times[first], t) if x > 0 and b > 0]
         m = statistics.mean(lr) if lr else 0.0
         se = statistics.stdev(lr) / math.sqrt(len(lr)) if len(lr) > 1 else 0.0
-        res["arms"][name] = {"median_ms": round(statistics.median(t) / 1000, 3), "mean_ms": round(statistics.mean(t) / 1000, 3),
+        res["arms"][name] = {"median_ms": round(statistics.median(t) / 1000, 3),
+                             "mean_ms": round(statistics.mean(t) / 1000, 3),
                              "ratio_geomean": round(math.exp(m), 4),
                              "ratio_ci95": [round(math.exp(m - 1.96 * se), 4), round(math.exp(m + 1.96 * se), 4)],
                              "same_as_first": same[name]}
@@ -467,7 +481,8 @@ def summarize(rows):
     for o in rows:
         groups[("vertical" if o["vertical"] else "horizontal") + ":" + o["kind"]].append(o)
     for key, g in sorted(groups.items()):
-        s = {"units": len(g), "rc_nonzero": sum(1 for o in g if o["rc"]), "read_as_columns": sum(o["columns"] for o in g),
+        s = {"units": len(g), "rc_nonzero": sum(1 for o in g if o["rc"]),
+             "read_as_columns": sum(o["columns"] for o in g),
              "auto_switched": sum(o["switched"] for o in g)}
         if g[0]["vertical"]:
             tp, fp, fn = (sum(o[k] for o in g) for k in ("tp", "fp", "fn"))
@@ -480,7 +495,8 @@ def summarize(rows):
         walls = sorted(o["wall_us"] for o in g)
         strips = sorted(o["strips"] for o in g)
         if walls:
-            s.update(wall_ms_median=round(walls[len(walls) // 2] / 1000, 2), wall_ms_mean=round(sum(walls) / len(walls) / 1000, 2),
+            s.update(wall_ms_median=round(walls[len(walls) // 2] / 1000, 2),
+                     wall_ms_mean=round(sum(walls) / len(walls) / 1000, 2),
                      strips_median=strips[len(strips) // 2], strips_mean=round(sum(strips) / len(strips), 2))
         out[key] = s
     return out
