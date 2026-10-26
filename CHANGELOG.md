@@ -60,6 +60,18 @@ been reported.
 
 ### Fixed
 
+- **Dictionary lookups, checked against Yomitan on 5,000 hooked visual-novel lines** (64,579 taps; the shown
+  entry differed from Yomitan's first on 69.2 taps per 1,000, now 65.8;
+  [the report](reports/yomitan-check.md), what remains in [#321]):
+  - spoken forms the lookup did not find, with Yomitan's rules for them: しておく, 変わらん, 構わん, しちゃ駄目,
+    戻らなきゃ, 認めざる, 返さねば, しやがって, 聞きやしねえ, いたしまして, 知らねー, できねー;
+  - kana text of a verb spelled in kanji shows the more frequent word of the same number of inflection steps:
+    わかった is 分かる, not 分かつ;
+  - Yomichan's bare imperative negative is gone, as in Yomitan: 失礼な is 失礼, not a verb 失礼 read しつらい,
+    and するな highlights する.
+
+  The Shell's module is 856 B smaller (the rule table is packed), with the same pages; nothing of it has run on
+  a console ([#320]).
 - The adaptive reading time's pace ([#303], in 0.9.7-test.12) stays at 2 ms a character or more. Below that,
   its 1/32 steps rounded to 0, so a game with many records of 489 or more characters read at under 2 ms a
   character (a hook returning a page at once) could freeze it, and every later line of that game counted
@@ -1105,3 +1117,5 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#299]: https://github.com/bee-san/Rubi_for_vita/pull/299
 [#303]: https://github.com/bee-san/Rubi_for_vita/pull/303
 [#305]: https://github.com/bee-san/Rubi_for_vita/pull/305
+[#320]: https://github.com/bee-san/Rubi_for_vita/pull/320
+[#321]: https://github.com/bee-san/Rubi_for_vita/issues/321
