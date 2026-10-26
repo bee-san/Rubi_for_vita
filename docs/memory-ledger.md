@@ -315,13 +315,17 @@ loaded segments, main `627a673` and this change, `check_memory_ledger.py --exact
 | Normal | 90,084 + 73,560 B | 89,228 + 73,024 B | 163,840 B |
 
 `arm-vita-eabi-nm -S` on the normal Shell: `deinflect_rules` 4,552 -> 4,344 B, `deinflect_strings`
-5,322 -> 4,549 B (both rodata), `deinflect_reasons` 569 B -> none, `conjugation_labels` 333 -> 355 B and
-`conjugation_offsets` 74 -> 86 B (data). The Rubi app links `core/local_dict.c` without the rules and is
-unchanged (`arm-vita-eabi-size`). The lookup's candidates per span stay bounded by the same 128-record
-scratch; over the 590,351 spans of the 64,579 taps of [the Yomitan check](../reports/yomitan-check.md)
-the new table makes 1,175,863 candidates where the old made 1,175,170 (at most 15 a span either way,
-host simulation). No allocation, thread or budget is added. These are binary and host measurements;
-nothing of it has run on a console.
+5,322 -> 4,549 B and the new `deinflect_rules_in` 5 B (all rodata), `deinflect_reasons` 569 B -> none,
+`conjugation_labels` 333 -> 355 B and `conjugation_offsets` 74 -> 86 B (data). The Rubi app links
+`core/local_dict.c` without the rules and is unchanged (its `eboot.bin` byte-identical in both variants). The
+lookup's candidates per span stay bounded by the same 128-record scratch: `core/local_dict.c`'s own
+`deinflect()` on every span the 64,579 taps of [the Yomitan check](../reports/yomitan-check.md) scan (590,006,
+the key stopping where `boundary()` stops) makes 1,175,231 candidates where the old table made 1,174,549, at
+most 15 a span either way, none at the cap, and the same 24,432 B arena peak (host, ASan/UBSan, audit of
+#320; #320's figures, 590,351 spans and 1,175,170 -> 1,175,863, came from a Python model that did not stop at
+U+0004). The VjoNet thread's frames grow by 56 B (`lookup_pages` 1,536 -> 1,584 B, `deinflect` 264 -> 272 B,
+`-fstack-usage` with the Shell's flags), inside its 16 KiB stack. No allocation, thread or budget is added.
+These are binary and host measurements; nothing of it has run on a console.
 
 ## Remembered hooks (API 34, issue #241)
 

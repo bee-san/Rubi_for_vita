@@ -20,8 +20,8 @@ measurements**, not measured Vita or SD-card latency.
    request. Filtered senses and duplicate results are not negative-cache entries,
    and a hash collision cannot create a false negative.
 4. **Suffix dispatch.** Deinflection visits only rules with the matching final
-   UTF-8 byte, preserving their previous order and all 569 source rules. It no
-   longer scans the entire rule table for every candidate.
+   UTF-8 byte, preserving their previous order and every source rule (569 then,
+   724 since #320). It no longer scans the entire rule table for every candidate.
 
 ## Results
 
