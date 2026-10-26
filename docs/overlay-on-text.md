@@ -173,6 +173,9 @@ every character's cell on a frame, for a local check; corpus and game frames sta
 
 - Horizontal text only: no places for vertical columns.
 - A hook's text gets places only where OCR read the same characters (at least half of each line).
+- With the setting on, a game whose hook answered without OCR reads as an OCR game does: a screen that keeps
+  changing, or a block the job could not take after its memory check, ends that read as it ends OCR's, where the
+  hook alone would have answered (the next read tries again).
 - The cells' accuracy is the measurement's above, on the corpus's 40 titles; a game font far from them could place
   them worse, and narrow punctuation is the least exact.
 - No hook gives positions yet (above): the first source in the order is the format's, for later work.
