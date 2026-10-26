@@ -583,7 +583,7 @@ align it, then `vjo_hooks_observe` 56, `vjo_luna_capture` 72, `mirror` 56 and `r
 memory-block syscall runs on the kernel's stack); a CALL hit about 80 B (the hook 24, `call_hit` 32, then
 the prefilter or the stream's offer 24) [measured: the C frames by `-fstack-usage` of 9fa24c5's worker,
 the same in both builds, the observer's from its code; audit-hooks section 2]. With the page-record read,
-`vjo_hooks_observe` is 56 B (48 B on main 6f2ac6c), and a verified entry's hit adds `read_game` 48 or the
+`vjo_hooks_observe` is 56 B (48 B on main 0b1a45b), and a verified entry's hit adds `read_game` 48 or the
 stream's offer, under that maximum [measured: `-fstack-usage`, tools/fast_gate.sh's vitasdk image, both
 builds]. CPU time per hit, and any CPU3 load, are unmeasured; PCSG00380's site is hit every frame.
 
