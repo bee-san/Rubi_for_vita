@@ -74,12 +74,14 @@ static int read_kind;
 #define STAT_READ(n) ((void)0)
 #endif
 
-/* Generated string offsets and seven-bit rule masks keep each record at
- * eight bytes, paying for lookup preparation inside the existing module pages. */
+/* Six bytes a rule (tools/gen_deinflect.py), inside the Shell's module pages:
+ * in and out, a string of deinflect_strings each, as its offset (bits 0-10)
+ * and length (bits 11-15), in characters (every rule string is three-byte
+ * UTF-8, and the strings share bytes, without NULs); bits, the rule's reason
+ * (its conjugation label, bits 0-5), its output rule bits (6-12) and its
+ * input rule bits' index in deinflect_rules_in (13-15). */
 typedef struct {
-    uint16_t in, out;
-    uint8_t in_len, out_len;
-    uint8_t rules_in, rules_out;
+    uint16_t in, out, bits;
 } DeinflectRule;
 #include "deinflect.inc"
 
@@ -152,7 +154,7 @@ typedef struct {
 
 typedef struct {
     uint8_t dict;
-    uint8_t reserved;
+    uint8_t depth;  /* a fallback's inflection steps (in the former padding) */
     uint16_t units; /* selected lookups: matched source span (in former padding) */
     uint32_t conjugation;
     Record record;
@@ -658,9 +660,13 @@ typedef struct {
     const char *preferred; /* preferred_readings' value for the key, or NULL */
     const char *usual;     /* usual_spellings' value for the key, or NULL */
     /* Strict: only an entry written so (or preferred) is taken; the best
-     * other one goes to *fallback, once, for when no candidate has one. */
+     * other one goes to *fallback, for when no candidate has one: of the
+     * candidates with the fewest inflection steps (the match's depth), the
+     * best-ranked (*fallback_score), as for the entries written so
+     * (わかった: 分かる, not 分かつ, one step each). */
     int strict, fell_back;
     Match *fallback;
+    uint32_t *fallback_score;
     uint32_t score; /* the taken posting's rank */
 } Query;
 
@@ -799,10 +805,13 @@ static int take_postings(Workspace *w, int di, const Candidate *c, Query *q, int
         }
         if (best == n || score > best_score) { best = j; best_score = score; top = r; }
     }
-    if (best == n && any && q->fallback && !q->fell_back) {
+    if (best == n && any && q->fallback &&
+        (!q->fell_back || (c->depth == q->fallback->depth && other_score > *q->fallback_score))) {
         q->fallback->dict = di;
+        q->fallback->depth = c->depth;
         q->fallback->conjugation = c->conjugation;
         q->fallback->record = other;
+        *q->fallback_score = other_score;
         q->fell_back = 1;
     }
     if (best == n || w->n_matches >= limit) return VJO_OK;
@@ -965,17 +974,19 @@ static int deinflect(Workspace *w, const char *key)
         unsigned suffix = (uint8_t)c[i].key[c[i].len - 1];
         for (unsigned r = deinflect_offsets[suffix]; r < deinflect_offsets[suffix + 1]; r++) {
             const DeinflectRule *rule = &deinflect_rules[r];
-            size_t stem, n;
+            const char *in = deinflect_strings + (rule->in & 0x7ffu) * 3u, *out = deinflect_strings + (rule->out & 0x7ffu) * 3u;
+            size_t in_len = (size_t)(rule->in >> 11) * 3u, out_len = (size_t)(rule->out >> 11) * 3u, stem, n;
+            unsigned rules_out = rule->bits >> 6 & RULE_MASK;
             char next[VJO_LOCAL_MAX_KEY + 1];
             int duplicate = 0;
-            if ((c[i].rules && !(c[i].rules & rule->rules_in)) || c[i].len < rule->in_len) continue;
-            stem = c[i].len - rule->in_len;
-            if (memcmp(c[i].key + stem, deinflect_strings + rule->in, rule->in_len)) continue;
-            n = stem + rule->out_len;
+            if ((c[i].rules && !(c[i].rules & deinflect_rules_in[rule->bits >> 13])) || c[i].len < in_len) continue;
+            stem = c[i].len - in_len;
+            if (memcmp(c[i].key + stem, in, in_len)) continue;
+            n = stem + out_len;
             if (!n || n > VJO_LOCAL_MAX_KEY) continue;
-            memcpy(next, c[i].key, stem); memcpy(next + stem, deinflect_strings + rule->out, rule->out_len); next[n] = 0;
+            memcpy(next, c[i].key, stem); memcpy(next + stem, out, out_len); next[n] = 0;
             for (int j = 0; j < count; j++)
-                if (c[j].rules == rule->rules_out && !strcmp(next, c[j].key)) duplicate = 1;
+                if (c[j].rules == rules_out && !strcmp(next, c[j].key)) duplicate = 1;
             if (duplicate) continue;
             if (count >= MAX_CANDIDATES) return count;
             if (count == w->candidate_cap) {
@@ -989,9 +1000,9 @@ static int deinflect(Workspace *w, const char *key)
              * long chain keeps its surface-side steps with an explicit ellipsis. */
             c[count].conjugation = c[i].conjugation >> 18
                 ? (c[i].conjugation & 0xffffc0u) | 63u
-                : (c[i].conjugation << 6) | deinflect_reasons[r];
+                : (c[i].conjugation << 6) | (rule->bits & 63u);
             c[count].depth = (uint8_t)(c[i].depth + 1);
-            c[count].rules = rule->rules_out; c[count++].len = (uint16_t)n;
+            c[count].rules = (uint16_t)rules_out; c[count++].len = (uint16_t)n;
         }
     }
     return count;
@@ -1191,6 +1202,7 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
     int units[MAX_SCAN_CHARS + 1], pos16 = 0, count = 0, source_units = 0;
     char key[VJO_LOCAL_MAX_KEY + 1], raw[MAX_SCAN_CHARS * 4];
     Match fallback[VJO_LOCAL_MAX_DICTS], chosen[VJO_LOCAL_MAX_DICTS];
+    uint32_t fallback_score[VJO_LOCAL_MAX_DICTS];
     VjoArena output;
     Workspace *w;
     void *outmem = NULL;
@@ -1297,6 +1309,7 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
                 if (((found >> d) & 1) && w->candidates[c].depth > depth) break;
                 q.strict = 1;
                 q.fallback = &fallback[d];
+                q.fallback_score = &fallback_score[d];
                 q.fell_back = (fell_back >> d) & 1;
                 if ((rc = find_matches(w, d, c, raw, raws[k], &q, before + 1)))
                     goto done;

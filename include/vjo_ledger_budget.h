@@ -90,7 +90,10 @@
  * at a time (owner, 2026-10-20) makes it 98,732 -> 98,812 text on main f482c21, the same data and
  * pages [measured: the build log's module rows, main f482c21 and this change]. Line history (owner,
  * 2026-10-20; docs/line-history.md) makes it 98,812 -> 100,492 text and 73,272 -> 73,576 data/bss on
- * main 75041a0, the same pages [measured: the build log's module rows, main 75041a0 and this change]. */
+ * main 75041a0, the same pages [measured: the build log's module rows, main 75041a0 and this change].
+ * Yomitan's deinflection rules in a packed table (docs/memory-ledger.md) make it 102,212 -> 101,332 text
+ * and 73,544 -> 73,008 data/bss on main 627a673, the same pages [measured: the same rows, main 627a673
+ * and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -117,7 +120,10 @@
  * text room [measured: the same rows, main f482c21 and this change]. Line history (owner, 2026-10-20;
  * docs/line-history.md, paid in part by core/textfilter.c at -Os and strings in the data segment)
  * makes it 88,428 -> 90,044 + 73,280 -> 73,584 on main 75041a0, the same pages, 68 B of text room and
- * 144 B of data room [measured: the same rows, main 75041a0 and this change]. Its check is
+ * 144 B of data room [measured: the same rows, main 75041a0 and this change]. Yomitan's deinflection
+ * rules in a packed table (docs/memory-ledger.md) make it 90,084 -> 89,228 + 73,560 -> 73,024 on main
+ * 627a673, the same pages, 884 B of text room and 704 B of data room [measured: the same rows, main
+ * 627a673 and this change]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif

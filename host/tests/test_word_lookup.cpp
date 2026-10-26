@@ -701,9 +701,13 @@ static void touch_and_left_right_follow_the_words(void)
 }
 
 /* The deinflection the overlay relies on, with the bundled dictionary:
- * Yomichan's 569 suffix rules (core/deinflect.inc) and the converter's
- * part-of-speech flags. 静かな is the na-adjective and the next word (な), as
- * in Yomitan. Synthetic phrases, not game text. */
+ * Yomichan's suffix rules with Yomitan's for spoken forms (core/deinflect.inc)
+ * and the converter's part-of-speech flags. 静かな is the na-adjective and the
+ * next word (な), as in Yomitan. Synthetic phrases, not game text. The second
+ * half are forms Rubi's lookup missed or misread on 5,000 hooked visual-novel
+ * lines where Yomitan finds the word (reports/yomitan-check.md), as short
+ * phrases of their own: the old bare imperative negative (な) read 失礼な as
+ * a verb 失礼 (しつらい); わかった showed 分かつ, the first rule's homograph. */
 static void bundled_dictionary_deinflects(void)
 {
     static const char *const cases[][3] = {
@@ -711,7 +715,17 @@ static void bundled_dictionary_deinflects(void)
         {"静かな", "静か", "静か"}, {"美しかった", "美しかった", "美しい"},
         {"読んでいる", "読んでいる", "読む"}, {"来ました", "来ました", "来る"},
         {"高くなかった", "高くなかった", "高い"}, {"食べませんでした", "食べませんでした", "食べる"},
-        {"しなかった", "しなかった", "する"}, {"見せてくれ", "見せて", "見せる"}};
+        {"しなかった", "しなかった", "する"}, {"見せてくれ", "見せて", "見せる"},
+        {"わかった", "わかった", "分かる"}, {"わかってる", "わかってる", "分かる"},
+        {"失礼な態度", "失礼", "失礼"}, {"捨てるな", "捨てる", "捨てる"},
+        {"しておくよ", "しておく", "する"}, {"聞いておいた", "聞いておいた", "聞く"},
+        {"変わらん", "変わらん", "変わる"}, {"構わん", "構わん", "構う"},
+        {"しちゃ駄目", "しちゃ", "する"}, {"近づけちゃ駄目", "近づけちゃ", "近づける"},
+        {"戻らなきゃ", "戻らなきゃ", "戻る"}, {"認めざるを得ない", "認めざる", "認める"},
+        {"返さねばならない", "返さねば", "返す"}, {"しやがって", "しやがって", "する"},
+        {"聞きやしねえ", "聞きやしねえ", "聞く"}, {"出来やしない", "出来やしない", "出来る"},
+        {"知らねー", "知らねー", "知らない"}, {"できねーよ", "できねー", "出来る"},
+        {"改めまして", "改めまして", "改める"}};
     VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
     setup(&cfg, &p, &pp);
     for (auto &c : cases) {
