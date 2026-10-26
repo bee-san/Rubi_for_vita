@@ -31,36 +31,32 @@ uses the spotter, and the spotter's code to the game worker, in every game that 
   11,214,848 B (12.4 %).
 - **The worker's code**: vita-vn-ocr's `runtime/vocr_textspot6.c` at the runtime's `-O2` with
   `VOCR_TEXTSPOT6_NO_MS` (13,532 B of code and read-only data, its object), the runtime's `vocr_line_dark` it calls
-  for each box's dark flag (1,170 B, `arm-vita-eabi-nm -S`), `core/vocr_ocr.c`'s finder path and sizes (16,886 →
-  18,316 B of text at `-Os`) and `game_ocr/main.c`'s block and job flow (15,815 → 16,970 B in the normal build; the
-  objects at the worker's flags): four text pages more in each build. Data/bss stay in their pages.
+  for each box's dark flag (1,170 B, `arm-vita-eabi-nm -S`), `core/vocr_ocr.c`'s finder path and sizes (17,050 →
+  18,484 B of text at `-Os`) and `game_ocr/main.c`'s block and job flow (15,979 → 17,134 B in the normal build; the
+  objects at the worker's flags, main `796168e`): four text pages more in each build. Data/bss stay in their pages.
 
 Measured with the gate's Vita image (VitaSDK gcc 15.2.0), Release, on the packaged SELF files
-(`tools/check_memory_ledger.py`, the build log's module rows), main `0b1a45b` (API 42) and this change, both builds;
+(`tools/check_memory_ledger.py`, the build log's module rows), main `796168e` (API 43) and this change, both builds;
 text + data/bss:
 
 | Module | Debug: main → this change | Normal: main → this change | Loaded pages, debug / normal |
 |---|---:|---:|---:|
-| Game worker | 148,424 + 34,960 → 165,312 + 35,016 B | 139,668 + 34,952 → 156,540 + 35,000 B | 188,416 → **204,800** / 180,224 → **196,608 B** |
-| Shell | 102,212 + 73,544 → 102,180 + 73,560 B | 90,084 + 73,560 → 90,020 + 73,568 B | 176,128 / 163,840 B, unchanged |
-| Kernel | 42,540 + 77,756 → 42,616 + 77,756 B | 37,508 + 76,068 → 37,584 + 76,068 B | 122,880 / 118,784 B, unchanged |
+| Game worker | 149,368 + 35,312 → 166,272 + 35,368 B | 140,596 + 35,304 → 157,484 + 35,352 B | 188,416 → **204,800** / 180,224 → **196,608** B |
+| Shell | 101,460 + 73,008 → 101,644 + 73,056 B | 89,252 + 73,048 → 89,428 + 73,096 B | 176,128 / 163,840 B, unchanged |
+| Kernel | 42,544 + 77,756 → 42,616 + 77,756 B | 37,512 + 76,068 → 37,588 + 76,068 B | 122,880 / 118,784 B, unchanged |
 
-The worker's code ends 2,624 B under its last page in the debug build, 3,204 B in the normal one. Built with the
+The worker's code ends 1,664 B under its last page in the debug build, 2,260 B in the normal one. Built with the
 spotter's multi-scale paths too (`-DVJO_VOCR_SPOT_NO_MS=OFF`, for a pin of the `ms` form), the worker's text is
-11,920 B more, three pages: 177,232 + 35,016 B (217,088 B) debug and 168,460 + 35,000 B (208,896 B) normal [the same
+11,936 B more, three pages: 178,208 + 35,368 B (217,088 B) debug and 169,420 + 35,352 B (208,896 B) normal [the same
 rows]; `trunk`, the pinned form, builds without them, and `cmake/VocrOCR.cmake` refuses `ms` with them left out.
 
-The Shell parses the two settings and sets two request bits from the config it already holds; the normal Shell's
-code had 28 B of its last page left. Its config parser's off | on settings now share one choices table and each
-is a `set_choice` call (`japanese_only_selection`, `frequency_badge`, `log_file`, `ocr_skip_blank_lines` and the
-three Anki switches parsed their two words by hand, `hook_sites` and `ocr_boost_clock` had a table each: the
-same values and warnings, `tools/bench_stages.py`'s config checksum unchanged by it), the request's user-job bits
-are set under one test, and `same_pipeline` compares the config's last three ints (`ocr_head_gate`, `ocr_finder`,
-`ocr_spotter_refine`) at once: the normal Shell's text is 64 B smaller than main's, 92 B under its last page, its
-data/bss 8 B larger (the finder's choices table and the two fields in each copy of the config, less the two tables
-that went), 160 B under its last page. The kernel only accepts the open kind (`VJO_GAME_OCR_OPEN_SPOT`,
-at the pinned size, for a request with the spotter's bit): 76 B of code. No thread, static buffer or other block is
-added. These are binary measurements; console boot, memory and timing have not been measured for this change.
+The Shell parses the two settings (two `set_choice` branches; their choices tables in the data segment) and sets the
+two request bits from the config it already holds, which `same_pipeline` compares: 176 B of code in the normal build
+(184 B in the debug build) and 48 B of data/bss, the same pages; the normal Shell's code keeps 684 B of its last page
+(860 B on main). The kernel only accepts the open kind (`VJO_GAME_OCR_OPEN_SPOT`, at the pinned size, for a request
+with the spotter's bit): 76 B of code (72 B in the debug build), the same pages. No thread, static buffer or other
+block is added. These are binary measurements; console boot, memory and timing have not been measured for this
+change.
 
 ## Trusted hooks and the OCR-skip switches (API 43)
 

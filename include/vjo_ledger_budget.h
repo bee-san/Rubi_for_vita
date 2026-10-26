@@ -297,12 +297,12 @@
  * vita-vn-ocr #128's runtime/vocr_textspot6.c at the runtime's -O2, built with VOCR_TEXTSPOT6_NO_MS (only the
  * trunk form the pin uses; cmake/VocrOCR.cmake VJO_VOCR_SPOT_NO_MS), 13,532 B of code and read-only data
  * [arm-vita-eabi-size, its object], with the vocr_line_dark it calls (1,170 B [arm-vita-eabi-nm -S]), and its use
- * (core/vocr_ocr.c at -Os 16,886 -> 18,316 B of text, game_ocr/main.c's block and job flow 15,815 -> 16,970 B
- * in the normal build [the objects, the worker's flags]) take the debug build's text 148,424 -> 165,312 B and the
- * normal build's 139,668 -> 156,540 B, data/bss 34,960 -> 35,016 B and 34,952 -> 35,000 B: four text pages more in
- * each build, 204,800 and 196,608 B (their code 2,624 and 3,204 B under their last pages) [measured: the build
- * log's module rows, both builds, main 0b1a45b and this change, the gate's Vita image (VitaSDK gcc 15.2.0)]. Built
- * with the multi-scale paths too (-DVJO_VOCR_SPOT_NO_MS=OFF) the worker's text is 11,920 B more, three pages:
+ * (core/vocr_ocr.c at -Os 17,050 -> 18,484 B of text, game_ocr/main.c's block and job flow 15,979 -> 17,134 B in
+ * the normal build [the objects, the worker's flags]) take the debug build's text 149,368 -> 166,272 B and the
+ * normal build's 140,596 -> 157,484 B, data/bss 35,312 -> 35,368 B and 35,304 -> 35,352 B: four text pages more in
+ * each build, 204,800 and 196,608 B (their code 1,664 and 2,260 B under their last pages) [measured: the build
+ * log's module rows, both builds, main 796168e and this change, the gate's Vita image (VitaSDK gcc 15.2.0)]. Built
+ * with the multi-scale paths too (-DVJO_VOCR_SPOT_NO_MS=OFF) the worker's text is 11,936 B more, three pages:
  * 217,088 and 208,896 B [measured: the same rows]. Its weights are a block of their own (VJO_BUDGET_GAME_SPOT),
  * never static; data/bss keep their pages. */
 #if VJO_DEBUG
