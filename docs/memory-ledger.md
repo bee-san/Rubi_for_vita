@@ -18,7 +18,7 @@ physical-console latency, CPU3 and boot behaviour remain unmeasured.
 
 `reading_time = adaptive` ([ocr-history.md](ocr-history.md#reading-time)) is integer arithmetic in
 `vjo_reading_time_add`, which the writer and the count already share (`vjo_reading_scope_add` with it
-inlined: 270 → 414 B in the normal build), and a `reading_time` setting (its parse, a field in each
+inlined: 270 → 386 B in the normal build, `arm-vita-eabi-nm`), and a `reading_time` setting (its parse, a field in each
 `VjoConfig` copy, the Shell's one read of it as it starts). `VjoReadingTime` stays 32 bytes and the
 cache 112: `last_chars` is 16 bits now (a line has at most 4,095 characters) and the 16-bit pace takes
 the other half [C `sizeof`]. No allocation, thread or stack budget is added. To keep the normal Shell's
