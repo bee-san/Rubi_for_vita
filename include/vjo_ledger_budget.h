@@ -320,7 +320,10 @@
  * vocr.c, a light attention op that no pinned blob has, is vocr.o 23,255 -> 25,963 B (VitaSDK -O2 NEON, the
  * build's flags; vocr_run +984 B, gate_tile 806 B, vocr_load +442 B, plan +268 B by symbol). Together they take
  * two more text pages each on top of API 49's: 192,512 -> 200,704 B (debug) and 184,320 -> 192,512 B (normal, the main
- * download) in each game that is ON. Data/bss as before. No block, thread or allocation. */
+ * download) in each game that is ON. Measured: debug 155,576 -> 160,648 B of text, normal 146,676 -> 151,748 B,
+ * data/bss 35,328 / 35,320 B as before; 3,192 / 3,900 B of text room left [measured: the build log's module rows,
+ * both builds, main 3388f7a and this change at b74669b (merged as 0994afc), tools/fast_gate.sh's vitasdk image]. No
+ * block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
@@ -507,7 +510,8 @@
  * API 22 (parallel lines) ends it with the line slots of the most helpers a job takes
  * (vjo_vocr_helpers_bytes, VJO_VOCR_HELPERS_MAX = 2: the caller's slot, a line's pixels, greedy
  * text and top-K, 68,160 B, and per helper its recognizer arena and context and a slot, 254,640 B
- * for VOCR5-N on the host build): 1,218,048 B for VOCR5-N with VOCR5-L's cascade, the largest
+ * for VOCR5-N on the host build): 1,218,240 B for VOCR5-N with VOCR5-L's cascade, the largest (1,218,048 B
+ * before vita-vn-ocr f8a1856's structs, API 50: on the host its two models and four contexts are 32 B larger each)
  * (1,211,648 B on main, 1,191,680 B with H15 and VOCR4-W20 before VOCR5). API 42 adds 6,400 B: vita-vn-ocr's
  * head gate (48 B in each gated blob's arena) and two-level head (1,456 B more in each two-level blob's) in each of
  * the four contexts such a job plans (its own, the cascade's and the two helpers'), and their fields in the
@@ -518,9 +522,10 @@
 #define VJO_BUDGET_GAME_WORKSPACE 1220608u
 /* API 22: one thread per line a helper recognizes, created for the line and deleted once it is
  * placed (game_ocr/main.c pool_run): at most VJO_VOCR_HELPERS_MAX at once, none between jobs.
- * Its deepest chain: vocr_run 592 + run_head 1,320 + mm_i16 616 = 2,528 B with the Vita compiler
- * (-fstack-usage, vita-vn-ocr 47cf3a3's runtime, since API 42; 448 + 1,328 + 616 = 2,392 B with 817d203's
- * before it; the two-level path's vocr_run 592 + run_head2 1,232 + mm_i16 616 = 2,440 B), about a sixth of it. */
+ * Its deepest chain: vocr_run 600 + run_head 1,320 + mm_i16 616 = 2,536 B with the Vita compiler
+ * (-fstack-usage, the build's flags, vita-vn-ocr f8a1856's runtime, since API 50; 592 + 1,320 + 616 = 2,528 B with
+ * 47cf3a3's from API 42, 448 + 1,328 + 616 = 2,392 B with 817d203's before it; the two-level path's vocr_run 600 +
+ * run_head2 1,240 + mm_i16 616 = 2,456 B), about a sixth of it. */
 #define VJO_STACK_GAME_HELPER 16384u
 #define VJO_BUDGET_GAME_HELPER_STACK (VJO_STACK_GAME_HELPER + VJO_LEDGER_TLS)
 #define VJO_BUDGET_GAME_HELPERS (2u * VJO_BUDGET_GAME_HELPER_STACK)
