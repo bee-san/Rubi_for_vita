@@ -99,7 +99,18 @@
  * before, as with the gate). Not bit 5 (draft #228's VJO_GAME_OCR_S_SPOT), bit 7 (draft #245's PSP probe) or
  * bits 8-15 (draft #226's frame pacing), so all four can merge. */
 #define VJO_GAME_OCR_S_DROP_BORDERS 0x10000u
-#define VJO_GAME_OCR_S_ALL 0x1001Fu
+/* API 42, bits 18 and 19: vita-vn-ocr #117's speed work (core/vocr_ocr.h VjoVocrPolicy.head_gate, two_level).
+ * Bit 18, the head gate: a model whose blob carries one (a VOCG section) skips its output head on the CTC frames
+ * the gate calls blank. Bit 19, the two-level head: a model whose blob carries one (a VOC2 trailer) computes its
+ * head's frequent rows on every frame it does not skip and the rare rows only where its escape picks the frame.
+ * The Shell sets them in the user's jobs from config.ini ocr_head_gate, whose value is the two bits
+ * (core/config.h VJO_HEAD_*: on, the default, both; gate; two_level; off neither), shifted by
+ * VJO_GAME_OCR_S_HEAD_SHIFT; the self-test's stages read as before, as with the text gate. Not bit 17 (closed
+ * draft #271's VJO_GAME_OCR_S_CHARS). */
+#define VJO_GAME_OCR_S_HEAD_SHIFT 18
+#define VJO_GAME_OCR_S_HEAD_GATE (1u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x40000 */
+#define VJO_GAME_OCR_S_TWO_LEVEL (2u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x80000 */
+#define VJO_GAME_OCR_S_ALL 0xD001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
@@ -229,7 +240,8 @@ enum {
     VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's */
     VJO_GSTEP_LOAD,      /* weights: kind VJO_GAME_OCR_WEIGHTS_*, bytes; arg 1: read by a job that found no
                             line (core/vocr_ocr.h vjo_vocr_warm) */
-    VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc */
+    VJO_GSTEP_RECOGNIZE, /* all lines: arg recognized, rc, bytes their CTC frames; API 42: kind the share of
+                            those frames the head gate skipped, percent (0 without it) */
     VJO_GSTEP_FALLBACK,  /* API 19 only: the fallback model runs, arg 1 = forced (now the fallback's CHECK) */
     VJO_GSTEP_FB,        /* the frame: kind 1 = the kernel's, 3 = sceDisplayGetFrameBuf's; bytes = pitch,
                             arg = width, sum = pixel format, rc the query's */

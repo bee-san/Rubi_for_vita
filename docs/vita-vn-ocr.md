@@ -20,7 +20,9 @@ accurate); `config.ini` keeps it as `vocr_tier = small | normal | large`. Each s
 is one pinned recognizer: this package's Small is VOCR5-S, its Normal VOCR5-N and
 its Large VOCR5-L, vita-vn-ocr's VOCR5 round (`eval/vocr5_protocol.json` there: one
 shape per size, selected on its fixed development sample, published as the v0.3.0
-release). A later generation's blobs replace them through the pins, with no change
+release), each with vita-vn-ocr #117's head gate, and Normal's and Large's with its two-level head, since API 42
+(the v0.3.6-head2level.1 pre-release: [Head gate and two-level head](#head-gate-and-two-level-head-api-42)). A later generation's blobs replace them
+through the pins, with no change
 to the app; a size whose new candidate does not beat its model keeps that model,
 which is a pin edit too (`include/vjo_vocr_sizes.h` VJO_VOCR_TIERn and
 `tools/model_tiers.json`, the model pinned where every model is), unless it gives
@@ -34,9 +36,9 @@ models and estimates); the self-test analyser reads it, and
 
 | size | model | shape | int8 weights | W8I arena | est. time per 3-line textbox | game memory a job takes | its reserve | needs free |
 |---|---|---|---:|---:|---:|---:|---:|---:|
-| Small | VOCR5-S | FL10's topology, 4,987 classes | 819,792 B | 124,832 B | 0.63 s | 1,019,904 B | 4 MiB | 5,214,208 B |
-| Normal (default) | VOCR5-N | H15's topology, 5,631 classes | 1,185,632 B | 182,944 B | 0.92 s | 1,441,792 B | 8 MiB | 9,830,400 B |
-| Large | VOCR5-L | late-wide (channels 64/128/256/480/576), 5,631 classes | 2,473,696 B | 261,024 B | 2.08 s | 2,805,760 B | 16 MiB | 19,582,976 B |
+| Small | VOCR5-S | FL10's topology, 4,987 classes | 821,584 B | 124,880 B | 0.51 s | 1,019,904 B | 4 MiB | 5,214,208 B |
+| Normal (default) | VOCR5-N | H15's topology, 5,631 classes | 1,189,408 B | 184,448 B | 0.72 s | 1,445,888 B | 8 MiB | 9,834,496 B |
+| Large | VOCR5-L | late-wide (channels 64/128/256/480/576), 5,631 classes | 2,477,472 B | 262,528 B | 1.82 s | 2,813,952 B | 16 MiB | 19,591,168 B |
 
 The sizes and arenas are exact (vita-vn-ocr `train/export.py`; `host/tests/test_vocr.c`
 checks the arenas against the files). The times are estimates from
@@ -44,9 +46,13 @@ checks the arenas against the files). The times are estimates from
 with vita-vn-ocr #85's runtime (the pin since API 22) and no credit for its weight
 prefetch, one core at 333 MHz, 240 CTC frames (3 lines of about 640 px) and 0.1 s for the
 line finder, every phase's high bound calibrated so that VOCR3-H15 costs its measured
-4,941.7 us per frame on v0.8.0-test.1's console. At 444 MHz (`ocr_boost_clock`, the
-default since API 22) the same estimates are 0.50, 0.72 and 1.63 s; with credit for the
-prefetch 0.57, 0.81 and 1.47 s at 333 MHz; parallel lines (`ocr_threads`) take less again
+4,941.7 us per frame on v0.8.0-test.1's console, less the head gate's estimated saving at
+the share of frames it skips on vita-vn-ocr's finder-cut development lines (0.12, 0.14 and
+0.16 s) and, for Normal and Large, the two-level head's beyond it (0.06 and 0.09 s;
+[Head gate and two-level head](#head-gate-and-two-level-head-api-42)). At 444 MHz (`ocr_boost_clock`, the default since
+API 22) the same estimates are 0.41, 0.57 and 1.43 s; with `ocr_head_gate = off` 0.63, 0.92
+and 2.08 s (0.50, 0.72 and 1.63 s at 444 MHz), and with credit for the prefetch (and
+neither) 0.57, 0.81 and 1.47 s at 333 MHz; parallel lines (`ocr_threads`) take less again
 ([OCR speed](ocr-speed.md)). No console has run a VOCR5 model yet: the buttons' times are
 estimates until a test build's logs measure them. Each size is within the owner's
 weights ceilings of 2026-10-14 (Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB) and its
@@ -57,7 +63,7 @@ memory check), without the character LM, the cascade's model or the PSP refineme
 a job leaves out first when memory is short, and without the helper threads of
 `ocr_threads` (API 22), which a job takes only when the game also has room for them beside
 the same reserve, and never runs a smaller size for. The app's buttons show the time and
-that memory (`0.9 s, 1.4 MB`).
+that memory (`0.7 s, 1.4 MB`).
 
 **The class counts.** VOCR5's models have 4,987 (Small) and 5,631 (Normal, Large) classes,
 VOCR3's 3,501 and 5,355. Nothing in the overlay is sized by a class count: the top-K keeps
@@ -116,8 +122,8 @@ VOCR4-W20 (`game_vocr_shared_tiers`, `shell_worker_shared_tiers`,
 **A missing or damaged file** of a size (`VJO_E_OCR_MODEL` from the worker) leaves
 that size out for the rest of the game's session, and the job is repeated with the
 next smaller one; a timeout or unavailable storage repeats it for that job only.
-Only `log.txt` says so (`game vocr: VOCR5_N_w8.vocr is unusable here
-(io=0x80010002), using VOCR5_S_w8.vocr for this game`). The Rubi app's
+Only `log.txt` says so (`game vocr: VOCR5_N_w8g2.vocr is unusable here
+(io=0x80010002), using VOCR5_S_w8g.vocr for this game`). The Rubi app's
 status line names the chosen size's file missing (`VOCR5-N missing. Reinstall
 the package.`), a broken install rather than a memory fallback.
 
@@ -284,12 +290,13 @@ reads in at most 32 KiB calls and check cancellation between calls. Each call
 waits up to 50 ms in the kernel for the worker thread's result; only a slower
 read returns BUSY, which the game repeats after a 1 ms yield. The kernel
 allows only these names under the exact directory above:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
-the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
-(VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
-release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
-release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
-character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
-`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->,
+the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
+(VOCR5, release v0.3.6-head2level.1); `VOCR3_H15_w8.vocr` and
+`VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
+`H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
+(VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+`vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm`
+(release v0.2.6-ctclm.2)<!-- end of the names -->,
 each with its pinned file length; it does not accept a caller-supplied file
 path. Each async Open,
 Read or Close is tied to the claimed job's PID and sequence. Reads also require
@@ -703,12 +710,13 @@ below are VOCR3's and VOCR4-W20's.
   same holds: VOCR5-N's box is an estimated 0.92 s and VOCR5-L's re-read of a 640-px line 0.66 s
   (80 frames at 8.24 ms, one core at 333 MHz, no prefetch credit; `eval/vocr5_protocol.json`).
 - **Memory.** The cascade's weights are a resident `USER_RW` block (`VjoGameVocrCascade`, at
-  most the Large size's 2,473,984 B; VOCR4-W20's was 1,560,576 B),
+  most the Large size's 2,478,080 B since API 42's head gate and two-level head, 2,473,984 B before; VOCR4-W20's was
+  1,560,576 B),
   read and SHA-256 checked at the first doubtful line, or (test.3 on) by the first job that finds no
   line when its memory check takes the cascade, before any line is doubted: from then on the block is
   held whether or not a line is ever doubted (299-307 ms through the broker in test.2, once a game
   process), and kept like the job's weights. The job's workspace grows by
-  the cascade's arena and decoder (VOCR5-L's 316,160 B beside VOCR5-N, VOCR5-N's 238,080 B beside
+  the cascade's arena and decoder (VOCR5-L's 316,288 B beside VOCR5-N, VOCR5-N's 238,208 B beside
   VOCR5-S; W20's was 296,192 B). The memory check takes, in order: the cascade with the
   largest LM tier that fits, the LM alone, the cascade alone, neither. A resident block the job
   would give back counts as free. The block is given back when `ocr_cascade_ms = 0`, when the check
@@ -942,35 +950,166 @@ above never read.
 A job it stopped logs `find` with arg 0 and no `recognize` step. A job whose finder found no line logs no gate step.
 `tools/analyse_selftest.py --collect` counts the gate's jobs, those it stopped, their scores and the weights' reads.
 
+## Head gate and two-level head (API 42)
+
+```ini
+ocr_head_gate = on    ; on (both, the default) | gate | two_level | off (the full head on every frame, as before)
+```
+
+Two speed-only changes from vita-vn-ocr #117, each adopted there under its pre-registered rule: the **head gate**
+(vita-vn-ocr #120, `docs/headgate.md` there; all three sizes) and the **two-level head** on top of it (#122,
+`docs/head2level.md`; Normal and Large). `ocr_head_gate` sets them: `on` both, `gate` or `two_level` one, `off`
+neither. Its value is two bits, `VJO_HEAD_GATE` and `VJO_HEAD_TWO_LEVEL` (`core/config.h`), which the Shell sends as
+they are in the request's speed word, bits 18 and 19 (`VJO_GAME_OCR_S_HEAD_GATE`, `VJO_GAME_OCR_S_TWO_LEVEL`), on
+each of the user's OCR jobs. One key, not two: the normal Shell's code had 100 B of its last page left on main, and a
+second key cost more than that (`docs/memory-ledger.md`, "Head gate and two-level head"). The self-test's stages leave
+both off, as they do the text-presence gate, so their reports compare with older ones; `same_pipeline` compares the
+setting, so a changed value voids the scene's text. The Rubi app has no switch for it, as it has none for the other
+OCR pipeline settings (`ocr_text_gate`, `ocr_refine_lines`).
+
+The game worker plans every recognizer of a job with what the request asks for **and its blob carries**
+(`core/vocr_ocr.c` `run_opts`: `vocr_has_gate`, `vocr_has_two_level`): the job's own lines, its helpers' and the
+confidence cascade's re-reads. A blob without a gate section, or without a two-level trailer, reads as before, so a
+model asked for by name (VOCR3, VOCR4, v0.2.0's) is unchanged, and Small, whose blob has no trailer, runs the gate
+alone whatever the setting. Nothing in the code names a model for either path: each blob's own sections (below)
+drive them. The line cache keeps the entries of each setting apart (bits 30 and 31 of `cache_variant`).
+
+- **The head gate.** The recognizer reads a line as CTC frames, about three in five of them blank, and its output
+  head (96 inputs to 4,987 or 5,631 classes) is 15-40 % of a frame's time. A tiny gate on the head's input, 96 → 16 →
+  1, says "blank" before the head runs; the runtime then skips the head on that frame and gives it only the blank (its
+  blank logit is the head's own, so the confidence and the top-K's blank stay exact). The other frames read exactly
+  as without it. Each size's blob carries its own gate, fit on that model's own frames of training-side lines
+  (nothing was retrained): a 1,792 B `VOCG` section after the version-1 blob, which a runtime without the gate
+  ignores. On vita-vn-ocr's development data it skips 61.4 / 61.0 / 57.9 % of the frames of finder-cut dialogue lines
+  (Small / Normal / Large) and 0.16-0.19 % of the frames that are not blank; no development score was resolved worse
+  greedy, with this overlay's beam + 1 MB LM and counter re-decode, or with its cascade (every 95 % upper bound at most
+  +0.050 points, the rule's margin; Normal and Large with room, Small at the rule's edges). vita-test, psp-test and
+  CLANNAD, read once afterwards: greedy dialogue text unchanged on the test sets, dialogue CER −0.043 to +0.006
+  points, 0-3 lines changed per size.
+- **The two-level head.** Most CTC frames that are not blank read one of a few hundred common characters, yet the
+  head computes all 5,631 rows on every frame the gate keeps. Normal's and Large's blobs have their head rows and
+  vocabulary in frequency order (every class's logit the same) and a 1,984 B `VOC2` trailer: level 1, the blank and
+  the 503 most frequent classes (504 rows), runs on every kept frame, with a tiny escape (98 → 16 → 1, on the head's
+  input and level 1's two largest logits) that says whether the frame may need a rarer character; only those frames
+  run the other 5,128 rows. A frame it picks reads exactly as the full head; one it does not reads over level 1's
+  classes. The escape fires on 21 % (Normal) and 13 % (Large) of the frames the gate keeps, 8 % and 5 % of all
+  frames. Against the gate alone the development score is +0.000 [+0.000, +0.000] (Normal) and +0.006 [−0.006,
+  +0.022] points (Large) with this overlay's beam + LM and counter re-decode, and rare-character recall at most 0.06 /
+  0.09 points lower than today's. vita-test and psp-test, read once afterwards: no line changed beyond the gate's;
+  CLANNAD's dialogue: Normal one more line on the cascade (+0.003 points), Large 3-5 lines where the gate alone
+  changes 0-1 (+0.003 to +0.009 points). Small's was not adopted (vita-vn-ocr `docs/head2level.md`, "Why not Small").
+- **Time (estimates).** The gate: −122 / −137 / −163 ms per nominal 3-line box at 333 MHz on one core without
+  prefetch credit (−19.5 / −14.9 / −7.9 %; −92 / −103 / −122 ms at 444 MHz), −45 / −51 / −60 ms on a real 89-frame Vita
+  box. The two-level head, beyond the gate's: −62 / −94 ms (Normal / Large) at the development share of frames that
+  escape (−32 / −66 ms as measured on 24 development lines, which escape 3-5 times as often; −47 / −71 ms at 444 MHz).
+  Both from qemu instruction counts of the Vita build calibrated to VOCR3-H15's measured console rate. The sizes' times
+  in the Rubi app (`tools/model_tiers.json`) subtract them: 0.51 / 0.72 / 1.82 s at 333 MHz (0.63 / 0.92 / 2.08 s with
+  `ocr_head_gate = off`). No console has run either.
+- **The counter re-read.** [Counters](#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109) look at the top-K of
+  blank frames beside a numeral they suspect and before a line's first bracket, and a skipped frame offers only the
+  blank there; and the escape can miss a small ヵ or ヶ, a rare row, which then reads as the full-size カ or ケ. So a
+  line whose run skipped something (frames the gate skipped, or with the two-level head frames that ran level 1 only)
+  is read again with the full head (`vocr_extra.ungated`, `core/vocr_ocr.c` `read_again`) when its counter re-decode
+  finds a counter context or, with the two-level head, its recognizer's reading holds a full-size カ or ケ before 月,
+  所, 年, 国 or 条; that reading is the line's: its re-decode, its LM decode, its text and its confidence. This is the
+  rule vita-vn-ocr's `eval/head2level_dev.py counter` scores; it applies to the job's lines and to the cascade's
+  re-reads. On real development lines it read nothing again (0 in 8,233 reads per size); on vita-vn-ocr's synthetic
+  counter set it leaves 76 (Normal) and 18 (Large) of 3,969 lines worse with the gate (96 and 32 without the re-read;
+  Small 14), all of them lines cut 2-10 px into their first character, which the finder's margin avoids, and the
+  two-level head 3 and 1 lines more.
+- **Off is today's output.** With `ocr_head_gate = off` every recognizer reads with the full head on every frame:
+  Small's blob is v0.3.0's bytes and its section, and Normal's and Large's give every class v0.3.0's logit bit for
+  bit, the same class text at another class number, so the greedy text, the top-K, the LM decode and the counter
+  re-decode (which map classes by text) are v0.3.0's; only where two classes' logits tie exactly could the first
+  maximum differ (vita-vn-ocr's development sample has none). `host/tests/test_vocr.c`
+  `the_off_path_reads_v030s_logits_bit_for_bit` checks every logit of synthetic lines against v0.3.0's blobs.
+  The game worker's whole job (`vjo-ocr` in its worker form: blank lines skipped, the beam + 1000k LM, the counter
+  re-decode, the cascade at confidence 700, the refinement on PSP regions), run on the 358 regions of vita-vn-ocr's
+  linefind development manifests whose screenshots are on the build host (192 Vita, 166 PSP; no protected set), gave
+  main's text, CTC frames and every count at every size with `off` [measured on the host: main `4bc2604` with
+  v0.3.0's blobs against this change; only the cascade's file name differs]. With `on` the text of 43 / 24 / 21 of
+  those regions changes (Small / Normal / Large) and the gate skips 63.2 / 62.6 / 60.8 % of the jobs' frames; the
+  regions carry no reference text, so this says nothing of accuracy (vita-vn-ocr's scores above do).
+- **Memory** (measured: both Vita builds, [memory-ledger.md](memory-ledger.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
+  The game worker takes two text pages more in each game that is ON (180,224 / 188,416 B in the normal / debug
+  build, 8,192 B more each): the runtime's two paths (`vocr.o` +5,037 B) and the job's re-read. The Shell's pages
+  are unchanged (the key's name and values live in its data segment). Normal's and Large's blobs are 3,776 B larger
+  than v0.3.0's, a weights page more each (1,191,936 / 2,478,080 B, the ledger's weights and cascade budgets); Small's
+  1,792 B stay in its block. The arenas are 48 B (Small) and 1,504 B (Normal, Large) larger, the largest job's
+  workspace 6,400 B (1,218,048 B on the host build, two pages more: `VJO_BUDGET_GAME_WORKSPACE` 1,220,608 B), and a
+  first Normal or Large job takes 4,096 B more; `VJO_LIMIT_GAME_JOB` is 10,604,544 B. The helper threads' deepest
+  stack chain is 2,528 B of 16 KiB (2,392 B before; the two-level path's 2,440 B). No new block, thread or
+  allocation site.
+- **Logs.** The job's `recognize` step logs the share of its CTC frames the gate skipped as its kind, in percent
+  (`gstep job recognize kind=61 arg=3 ... bytes=240`: 61 % of 240 frames); `kind=-` without the gate or when it
+  skipped none. `tools/analyse_selftest.py --collect` sums it (`head gate: N of M job(s) skipped frames: at least F of
+  T CTC frames`). `VjoVocrStats.head_gated`, `head_escaped` and `head_rereads` count the frames the gate skipped, the
+  frames that ran the rare rows and the lines read again; `vjo-ocr --head-gate on` and `--two-level on` run them on the
+  host as the worker does and print them.
+
+### A new pin set (VOCR6)
+
+The paths are the blobs': a generation whose S/N/L blobs bring their own `VOCG` gate and `VOC2` trailer (each fit on
+that blob's own outputs: vita-vn-ocr `train/headgate.py`, `train/head2level.py`, under #120's and #122's rules)
+changes no code here, only pins. A size whose new blob has no gate or no trailer simply runs without it. A new set
+updates:
+
+1. `include/vjo_vocr_sizes.h`: `VJO_VOCR5_{S,N,L}_NAME` and `_BYTES` (or the new generation's names, with
+   `VJO_VOCR_TIERn_*` pointing at them); `VJO_VOCR_MAX_BYTES` follows the largest.
+2. `core/vocr_ocr.c` `models[]`: each blob's SHA-256 and its W8I arena with both paths on (the planning
+   `vocr_arena_bytes` gives with `VOCR_HEAD_GATE_ON` and `two_level = 1` where the blob has them;
+   `host/tests/test_vocr.c` `pinned_table_matches_release_files` checks it against the files).
+3. `core/vocr_models.c`: the generation, the box times (estimates with the paths on) and the job bytes;
+   `tools/model_tiers.json` the same values (`tools/tests/test_model_tiers.py` checks they agree).
+4. `tools/prepare_ocr.py`: the release tag, each asset's URL, size and SHA-256, the attribution's pin, and
+   `VOCR_GENERATION`; the host tests' pins (`host/tests/test_tier_pins.h`, `tools/tests/test_vocr_defaults.py`
+   `TIER_PINS`) and the self-test fixtures (`vjo-selftest-writer`).
+5. `cmake/VocrOCR.cmake` and both checkouts in `.github/workflows/release.yml`: the runtime commit and each runtime
+   file's SHA-256, when the runtime changes.
+6. The memory ledger (`include/vjo_ledger_budget.h`): the weights and cascade budgets (the largest blob,
+   page-rounded), the workspace, the worker's pages if the runtime grows, and `VJO_LIMIT_GAME_JOB`, each raise
+   justified ([memory-ledger.md](memory-ledger.md)).
+7. The docs: this file's size table and models, [ocr-speed.md](ocr-speed.md), the guide's sizes and the CHANGELOG;
+   `kernel/game_ocr.c` and the names' lists here and in the guide follow `tools/docs_model_names.py`.
+
 ## Models
 
-**The default size, Normal, is VOCR5-N (`VOCR5_N_w8.vocr`); Small is VOCR5-S
-(`VOCR5_S_w8.vocr`) and Large VOCR5-L (`VOCR5_L_w8.vocr`).** They are vita-vn-ocr's VOCR5
+**The default size, Normal, is VOCR5-N (`VOCR5_N_w8g2.vocr`); Small is VOCR5-S
+(`VOCR5_S_w8g.vocr`) and Large VOCR5-L (`VOCR5_L_w8g2.vocr`).** They are vita-vn-ocr's VOCR5
 recognizers (`eval/vocr5_protocol.json` and `docs/vocr5.md` there), one shape per size,
-published as the [v0.3.0 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.0).
+published as the [v0.3.0 release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.0),
+each with its head gate appended since API 42: v0.3.0's bytes unchanged, then a 1,792 B
+section (the [v0.3.5-headgate.1 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.5-headgate.1)),
+and Normal's and Large's with their two-level head too: their head rows and vocabulary in frequency order (every
+other byte v0.3.0's but the CRC), the same gate and a 1,984 B trailer (the
+[v0.3.6-head2level.1 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.6-head2level.1), which
+carries Small's gated file too, byte for byte; [Head gate and two-level head](#head-gate-and-two-level-head-api-42)).
 VOCR5-S keeps FL10's topology and arena with a 4,987-class head, VOCR5-N H15's with a
 5,631-class head, and VOCR5-L is a late-wide shape (channels 64, 128, 256, 480, 576) with
 5,631 classes. A first full-screen job of Small takes 163,840 B more than one of VOCR3-FL10
-(1,019,904 against 856,064 B: the larger head's weights), Normal 28,672 B more than VOCR3-H15
-(1,441,792 against 1,413,120 B) and Large 933,888 B more than VOCR4-W20 (2,805,760 against
-1,871,872 B), for which the memory ledger's weights and cascade budgets are raised
-(`include/vjo_ledger_budget.h`).
+(1,019,904 against 856,064 B: the larger head's weights), Normal 32,768 B more than VOCR3-H15
+(1,445,888 against 1,413,120 B; 1,441,792 B with v0.3.0's blob, before API 42's two-level blob took its weights
+block one page more) and Large 942,080 B more than VOCR4-W20 (2,813,952 against 1,871,872 B; 2,805,760 B with
+v0.3.0's blob: its weights block and its workspace each take one page more since API 42), for
+which the memory ledger's weights and cascade budgets are raised (`include/vjo_ledger_budget.h`).
 
 | file | bytes | sha256 | W8I arena | release |
 |---|---|---|---|---|
-| `VOCR5_N_w8.vocr` (Normal, the default) | 1,185,632 | `20be179def8033171435ba62388657b3d3c932b365093737948c636e025e3bdc` | 182,944 | v0.3.0 |
-| `VOCR5_S_w8.vocr` (Small) | 819,792 | `f175bfcb8cec65d69e85dd5f2cf707c9a711ada7203c0d1099cd2d0142978b8d` | 124,832 | v0.3.0 |
-| `VOCR5_L_w8.vocr` (Large) | 2,473,696 | `50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3` | 261,024 | v0.3.0 |
+| `VOCR5_N_w8g2.vocr` (Normal, the default) | 1,189,408 | `f0c8e52c9c1d9f2a714d5ca3ecfba9c0b031ee7ac51a522a2c29fd558d51761b` | 184,448 | v0.3.6-head2level.1 |
+| `VOCR5_S_w8g.vocr` (Small) | 821,584 | `76a1bc5de5cd0419a7edad31bc198af8016bda5592a7e595de75697671d3e928` | 124,880 | v0.3.6-head2level.1 (v0.3.5-headgate.1's file) |
+| `VOCR5_L_w8g2.vocr` (Large) | 2,477,472 | `41c3543ff8dddd45dc953a6a5f5d579ef9ca779f0e43196406be59c1d985c5b5` | 262,528 | v0.3.6-head2level.1 |
 | `VOCR3_H15_w8.vocr` | 1,155,968 | `cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c` | 182,944 | v0.2.5-vocr3.1 |
 | `VOCR3_FL10_w8.vocr` | 657,664 | `87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154` | 124,832 | v0.2.5-vocr3.1 |
 | `VOCR4_W20_w8.vocr` | 1,558,016 | `2745e69699ad7b2aba3092f83e5ddc1912f405f54b9df8a2e55be82c385b716e` | 241,056 | v0.2.5-vocr4.1 |
 | `H15_w8.vocr` | 1,155,968 | `316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f03cd` | 182,944 | v0.2.0 |
 | `FL10_w8.vocr` | 657,664 | `500e0b842e5f0cb326f55e7d991a52ab66dd24977ccc89bd188228aedc825e84` | 124,832 | v0.2.0 |
 
-VOCR5's scores are in vita-vn-ocr's `docs/vocr5.md` (its locked report). No console has run
-a VOCR5 model yet.
+The arenas are those with `ocr_head_gate = on`: the head gate's 48 B more than v0.3.0's, and for Normal and Large
+the two-level head's 1,456 B more (with `off` the blobs plan v0.3.0's arenas). VOCR5's scores are in vita-vn-ocr's
+`docs/vocr5.md` (its locked report), the gate's and the two-level head's in its `docs/headgate.md` and
+`docs/head2level.md`. No console has run a VOCR5 model yet.
 
-**Their attribution and terms.** v0.3.0 ships an `ATTRIBUTION.md` (in its `SHA256SUMS`), which
+**Their attribution and terms.** v0.3.0, v0.3.5-headgate.1 and v0.3.6-head2level.1 ship an `ATTRIBUTION.md` (in their `SHA256SUMS`), which
 the package ships beside the weights as `ocr/MODEL-ATTRIBUTION.md` (`tools/prepare_ocr.py`
 pins it; the one-VPK install copies it with the models). It names what the recognizers were
 trained on. Pretraining used line crops of the Japanese subset of NVIDIA's
@@ -987,12 +1126,13 @@ VOCR3-FL10 in test.2's self-test fallback stage and VOCR4-W20 there as the confi
 The earlier models are no longer shipped or selectable (no size names them), but the game
 worker and the kernel's model broker still accept them by name, for the host tools:
 they accept exactly these files, each at its pinned size and SHA-256:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
-the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
-(VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
-release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
-release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
-character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
-`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
+the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
+(VOCR5, release v0.3.6-head2level.1); `VOCR3_H15_w8.vocr` and
+`VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
+`H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
+(VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+`vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm`
+(release v0.2.6-ctclm.2)<!-- end of the names -->.
 `core/vocr_models.c` gives each recognizer its generation (VOCR5, VOCR3, VOCR4, or VOCR1 for
 v0.2.0's), the name of the local engine in the Rubi app.
 
@@ -1021,7 +1161,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 817d203a49d38dda4f73d11639cf608aed84d17e  # #112's merge (after #111's, #101's, #85's, #83's and #82's): the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout 47cf3a3f9a0d8398d742b98b81f5fb85fe11a9ae  # #123's merge (after #122's, #120's, #112's, #111's, #101's, #85's, #83's and #82's): the two-level head, the head gate, the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
@@ -1068,11 +1208,11 @@ steps below cover a source build or adding another model.
    release). `--from FILE` checks a copy downloaded another way.
    `tools/package_release.py --models ocr` needs the first two lines' files: it ships
    the LMs with their attribution as `ocr/LM-ATTRIBUTION.md` (CC BY-SA 4.0), and the
-   sizes' models with theirs, v0.3.0's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
+   sizes' models with theirs, v0.3.6-head2level.1's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
    (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), and the text-presence
    gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`.
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/`, the attributions included, or let the
-   FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8.vocr --set vocr_tier=normal VITA_IP`.
+   FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8g2.vocr --set vocr_tier=normal VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:
 
    ```ini
@@ -1205,6 +1345,16 @@ copied, and the settings above. Close other apps first.
 8. **Stability.** Leave `ocr_mode = auto` with subtitles on (Select+R) for ten
    minutes of reading. Watch for game slowdown, audio stutter, or a SceShell
    crash (`tools/install_ftp.sh --dumps VITA_IP` fetches crash dumps).
+9. **Head gate and two-level head (API 42).** With `ocr_head_gate = on` (the default), read ten dialogue lines
+   at each size and note the `speed` line's microseconds per frame and each job's `gstep job recognize kind=`
+   (the share of frames the gate skipped; vita-vn-ocr's development share is 57-61 %). Set `ocr_head_gate = off`,
+   reload the settings, read the same lines and compare the text shown and the time per frame: the estimate is
+   about 21 / 16 / 11 % less per frame with the gate (Small / Normal / Large, on lines where it skips 49-57 % of
+   the frames; vita-vn-ocr `docs/headgate.md`) and, for Normal and Large, an estimated 3.5-6.8 % and 3.2-4.5 % of a
+   box's time less again with the two-level head (`docs/head2level.md`); `gate` and `two_level` turn on one each. Any line whose text differs between `on` and
+   `off` goes in the report with its photo. A line such as CLANNAD's 「九ヶ月です」 should read the same every way
+   (the counter re-read), and no job should be refused for memory at your usual free memory (a first Normal or
+   Large job takes 4 KiB more).
 
 ## Limits
 

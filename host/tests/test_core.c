@@ -796,6 +796,27 @@ static void test_config(void)
     gate = "ocr_text_gate = off\nocr_text_gate = maybe\n";
     vjo_config_parse(&c, gate, strlen(gate));
     TEST_CHECK(c.ocr_text_gate == 0 && c.n_warnings == 1);
+    /* API 42: the head gate and the two-level head, ocr_head_gate's VJO_HEAD_* bits: on (both) by default
+     * (docs/vita-vn-ocr.md "Head gate", "Two-level head"), gate or two_level alone, off neither, in any case; an
+     * unknown value keeps the value, warned */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_head_gate == (VJO_HEAD_GATE | VJO_HEAD_TWO_LEVEL) && VJO_HEAD_GATE_DEFAULT == 3);
+    {
+        static const struct { const char *text; int bits; } heads[] = {
+            {"ocr_head_gate = OFF\n", 0}, {"ocr_head_gate = gate\n", VJO_HEAD_GATE},
+            {"ocr_head_gate = Two_Level\n", VJO_HEAD_TWO_LEVEL}, {"ocr_head_gate = on\n", VJO_HEAD_GATE | VJO_HEAD_TWO_LEVEL}};
+        for (unsigned i = 0; i < sizeof(heads) / sizeof(heads[0]); i++) {
+            vjo_config_defaults(&c);
+            if (i == 3) c.ocr_head_gate = 0;
+            vjo_config_parse(&c, heads[i].text, strlen(heads[i].text));
+            TEST_CHECK_(c.ocr_head_gate == heads[i].bits && c.n_warnings == 0, "%s", heads[i].text);
+        }
+    }
+    vjo_config_defaults(&c);
+    const char *hg = "ocr_head_gate = gate\nocr_head_gate = sometimes\nocr_two_level = off\n";
+    vjo_config_parse(&c, hg, strlen(hg));
+    TEST_CHECK(c.ocr_head_gate == VJO_HEAD_GATE && c.n_warnings == 2); /* no ocr_two_level key: unknown, warned */
+    TEST_CHECK(strstr(vjo_config_default_text(), "\nocr_head_gate = on\n") != NULL);
     /* API 31, audit-hooks F3: the hooks' table sites, on by default; off makes the Shell send
      * VJO_TEXT_SOURCE_NO_SITES (only the string copies hooked). Any case; an unknown value is on, warned. */
     vjo_config_defaults(&c);

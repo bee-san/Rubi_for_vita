@@ -2097,6 +2097,21 @@ static void test_vocr_request_carries_the_job_policy(void)
                !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
     TEST_MSG("gate on: speed 0x%08X", (unsigned)fake_game_request.speed);
     mem_free();
+    /* API 42: the head gate and the two-level head ride in the speed word as ocr_head_gate's bits: both with on, the
+     * default, either alone with gate or two_level, neither with off */
+    for (int bits = 3; bits >= 0; bits--) {
+        const uint32_t want = (bits & VJO_HEAD_GATE ? VJO_GAME_OCR_S_HEAD_GATE : 0u) |
+                              (bits & VJO_HEAD_TWO_LEVEL ? VJO_GAME_OCR_S_TWO_LEVEL : 0u);
+        reset();
+        TEST_CHECK(bits != 3 || cfg.ocr_head_gate == 3); /* the default */
+        cfg.ocr_head_gate = bits;
+        fake_recognized_text = "猫";
+        TEST_CHECK(run_vocr_job() == VJO_OK &&
+                   (fake_game_request.speed & (VJO_GAME_OCR_S_HEAD_GATE | VJO_GAME_OCR_S_TWO_LEVEL)) == want &&
+                   !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+        TEST_MSG("ocr_head_gate bits %d: speed 0x%08X", bits, (unsigned)fake_game_request.speed);
+        mem_free();
+    }
     /* API 36: the border rule (core/textnorm.h) rides in the speed word with non_japanese_filter = lines, the
      * default, and not with none */
     reset();

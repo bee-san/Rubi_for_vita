@@ -262,7 +262,7 @@ So Vita3K can run none of the three plugins as they are, and it would say nothin
 or memory if it could: no `ScePhyMemPartShell`, no `ScePhyMemPartKD`, no `0x80024302`
 [expert; AGENTS.md rule 5]. It is not wired into CI. `tools/vita3k_smoke.sh` (#74 preflight)
 builds `tools/vita3k_smoke/` as a homebrew app: the real game worker's five self-test jobs, a
-full-screen job with each model size's own recognizer (the Large size's 2,473,984 B weights block
+full-screen job with each model size's own recognizer (the Large size's 2,478,080 B weights block
 the largest it holds) and the two other pixel formats in a Vita user process, on a 32 KiB thread
 stack, with the release weights and an in-process stand-in for the kernel's syscalls. It passes when every job returns
 and the app and the emulator exit 0: it catches crashes in that code, and is not evidence of

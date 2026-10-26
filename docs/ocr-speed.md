@@ -188,7 +188,12 @@ speed. The table gives the time ceilings those sizes stay inside. 333 MHz is the
 default raises the clock to 444 MHz while a job recognizes, but `ocr_boost_clock = off` and a refused set call keep
 the game's. VOCR5's shapes inside those sizes (vita-vn-ocr `eval/vocr5_protocol.json`, the model sizes since this
 package): Small 819,792 B, Normal 1,185,632 B, Large 2,473,696 B, an estimated 0.63, 0.92 and 2.08 s per 3-line box
-on one core at 333 MHz without prefetch credit (0.50, 0.72 and 1.63 s at 444 MHz).
+on one core at 333 MHz without prefetch credit (0.50, 0.72 and 1.63 s at 444 MHz). Since API 42 each carries its
+1,792 B head gate (vita-vn-ocr #120), which skips the output layer on about three frames in five, and Normal's and
+Large's their two-level head too (#122: 821,584, 1,189,408 and 2,477,472 B), whose rare output rows run only on the
+frames whose escape fires; with both on (`ocr_head_gate = on`, the default) an estimated 0.51, 0.72 and 1.82 s at
+333 MHz (0.41, 0.57 and 1.43 s at 444 MHz; the gate alone 0.51, 0.78 and 1.91 s;
+[head gate and two-level head](vita-vn-ocr.md#head-gate-and-two-level-head-api-42)).
 
 The largest int8 weights whose 3-line box (3 x 640-px lines = 240 CTC frames, plus 0.1 s for the finder and the
 strips) stays under each tier's time, with the LM's top 8: random-init blobs of vita-vn-ocr's `vita/model_tiers.py`

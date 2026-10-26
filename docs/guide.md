@@ -57,7 +57,8 @@ build with Google Lens is the tag `archive/online-last` (branch `archive/online`
 The engine's name comes from the pinned metadata of the model it runs
 (`core/vocr_models.c`, also written per model into the package's
 `package-manifest.json`), not from the app: VOCR5 for each of this package's
-three sizes (vita-vn-ocr's v0.3.0 release; before it VOCR3 for Small and Normal
+three sizes (vita-vn-ocr's v0.3.0 release, with the head gates and two-level heads of its v0.3.6-head2level.1;
+before it VOCR3 for Small and Normal
 and VOCR4 for Large). A release that pins a new generation's models as the sizes
 shows that generation's name, with no change to the app; a size that keeps an
 earlier generation's model shows that one's. A `.vocr` file itself carries no
@@ -475,7 +476,7 @@ ready when you press) or only once the overlay opens (**Only when I press L + R*
 `toggle_button`: nothing runs until you press, and the press waits for the reading); the Speed
 boost (`ocr_boost_clock`, ON by default) runs the ARM clock at 444 MHz only while text is read
 ([docs/auto-vs-press.md](auto-vs-press.md)). Each size button shows its estimated time for a 3-line
-textbox and the game memory a job of it takes (`0.9 s, 1.4 MB` for Normal), from
+textbox and the game memory a job of it takes (`0.7 s, 1.4 MB` for Normal), from
 the models' pinned metadata. The
 card's last line names the size and its model file (`Normal: default, balanced.
 VOCR5-N found.`), or reports that file missing; it never says that a game ran a
@@ -639,17 +640,19 @@ log_file = on
 ```
 
 `vocr_tier` is the local engine's model size, the Rubi app's Model size:
-`small` runs VOCR5-S (819,792 B of int8 weights: FL10's topology with 4,987
-classes), `normal` (the default) VOCR5-N (1,185,632 B: H15's topology with 5,631
-classes) and `large` VOCR5-L (2,473,696 B: a late-wide shape, 5,631 classes), the
-three recognizers of vita-vn-ocr's VOCR5 round (its v0.3.0 release; selection and
-scores in that repository's `docs/vocr5.md`). Each is inside the owner's weights
-ceiling for its size (Small < 1 MB, Normal <= 1.6 MB, Large <= 2.5 MB). Their
-estimated times for a 3-line textbox are 0.6 s (Small), 0.9 s (Normal) and
-2.1 s (Large) on one core at 333 MHz with the pinned runtime (vita-vn-ocr #85's
-kernels, no credit for their weight prefetch), calibrated to VOCR3-H15's measured
-4.94 ms per CTC frame on the console (v0.8.0-test.1); at 444 MHz, the clock a job
-raises by default, 0.5, 0.7 and 1.6 s, and less again with lines read in parallel
+`small` runs VOCR5-S (821,584 B of int8 weights: FL10's topology with 4,987
+classes), `normal` (the default) VOCR5-N (1,189,408 B: H15's topology with 5,631
+classes) and `large` VOCR5-L (2,477,472 B: a late-wide shape, 5,631 classes), the
+three recognizers of vita-vn-ocr's VOCR5 round (its v0.3.0 release, each with its
+1,792 B head gate, and Normal's and Large's with their two-level head, in v0.3.6-head2level.1;
+selection and scores in that repository's `docs/vocr5.md`, `docs/headgate.md` and
+`docs/head2level.md`). Each is inside the owner's weights ceiling for its size (Small < 1 MB,
+Normal <= 1.6 MB, Large <= 2.5 MB). Their estimated times for a 3-line textbox are 0.5 s
+(Small), 0.7 s (Normal) and 1.8 s (Large) on one core at 333 MHz with the pinned runtime
+(vita-vn-ocr #85's kernels, no credit for their weight prefetch, with the head gate and the
+two-level head, `ocr_head_gate = on`: 0.6, 0.9 and 2.1 s with `off`), calibrated to
+VOCR3-H15's measured 4.94 ms per CTC frame on the console (v0.8.0-test.1); at 444 MHz, the
+clock a job raises by default, 0.4, 0.6 and 1.4 s, and less again with lines read in parallel
 ([OCR speed](ocr-speed.md)). On a console, test.4's logs measured VOCR5-N at 2.61 ms per CTC
 frame (10 jobs) and VOCR5-L at 4.98-5.10 ms (8 jobs), at 444 MHz, each a job's recognition time
 over its frames (`tools/analyse_selftest.py --collect`,
@@ -723,6 +726,12 @@ no text (the game hid its text box, a CG screen) returns no line, so no junk is 
 vita-vn-ocr's test sets and CLANNAD it changed no text read; it costs an estimated 0.1 s per job, so it is off
 until a console run shows how often it helps
 ([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)).
+`ocr_head_gate = on`, the default, lets the recognizer skip its output layer on the frames vita-vn-ocr #117's
+head gate calls blank, about three in five, and (Normal and Large) compute its rare characters only on the frames
+that may need one, the two-level head: an estimated 0.12 / 0.20 / 0.26 s less per 3-line box at 333 MHz (Small /
+Normal / Large), with no development score resolved worse; nothing of it has run on a console yet. `gate` and
+`two_level` keep one of the two; `off` reads every frame with the full head, as before API 42
+([head gate and two-level head](vita-vn-ocr.md#head-gate-and-two-level-head-api-42)).
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
 decode, the cascade's re-read and its place in the text still follow line order on the job's own
@@ -904,9 +913,10 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 172,032 B of module pages (180,224 B in the debug build; API 31's native hooks and
+holds the worker's 180,224 B of module pages (188,416 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
-API 34's remembered hooks 8,192 B and vita-vn-ocr #109's counter re-decode 4,096 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B and API 42's head gate and
+two-level head 8,192 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
@@ -926,8 +936,8 @@ gives OCR nothing. If the game's `USER_RW` refuses that block the worker tries
 CDRAM, then phycont, then a kernel strip of at most 64 KiB for one call, and
 logs each attempt ([docs/ingame-capture.md](ingame-capture.md)). The
 worker frees each job's workspace before returning text. The verified weights stay in their own `USER_RW` block between jobs
-(819,792 B for VOCR5-S, 1,185,632 B for VOCR5-N and 2,473,696 B for VOCR5-L,
-held as 823,296, 1,187,840 and 2,473,984 B page-rounded blocks; the worker takes
+(821,584 B for VOCR5-S, 1,189,408 B for VOCR5-N and 2,477,472 B for VOCR5-L,
+held as 823,296, 1,191,936 and 2,478,080 B page-rounded blocks; the worker takes
 no larger one) and are read and
 SHA-256 checked again only when the model file's size or modification time
 changes, or the model changes. A job that finds no line (a title screen, a
@@ -956,12 +966,13 @@ of a free-memory figure. An error before the check has no memory figures.
 Model files are opened by the existing kernel worker because some games cannot
 access the `ux0:` storage namespace (`0x80010013`, ENODEV). The broker accepts
 only these names in `ux0:data/VitaJPOverlay/ocr`:<!-- names from kernel/game_ocr.c, written by tools/docs_model_names.py -->
-the recognizers `VOCR5_N_w8.vocr`, `VOCR5_S_w8.vocr` and `VOCR5_L_w8.vocr`
-(VOCR5, release v0.3.0); `VOCR3_H15_w8.vocr` and `VOCR3_FL10_w8.vocr` (VOCR3,
-release v0.2.5-vocr3.1); `FL10_w8.vocr`, `H15_w8.vocr` and `F20_w8.vocr` (VOCR1,
-release v0.2.0); `VOCR4_W20_w8.vocr` (VOCR4, release v0.2.5-vocr4.1); and the
-character LMs `vocr_lm_o3_500k.vlm`, `vocr_lm_o3_1000k.vlm`,
-`vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm` (release v0.2.6-ctclm.2)<!-- end of the names -->.
+the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
+(VOCR5, release v0.3.6-head2level.1); `VOCR3_H15_w8.vocr` and
+`VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
+`H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
+(VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+`vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm`
+(release v0.2.6-ctclm.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,
 when the request sets a cascade ceiling, the next size up, each by its size,
 never by a name or a path. A request by name (the host tools) opens only its own
@@ -1254,7 +1265,8 @@ sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0
 ([attribution](plaintext-attribution.txt)). The beam + LM decoder's character
 LMs (bee-san/vita-vn-ocr v0.2.6-ctclm.2): CC BY-SA 4.0, with their sources and changes in
 `ocr/LM-ATTRIBUTION.md`, which ships beside them. The model sizes' VOCR5 recognizers
-(bee-san/vita-vn-ocr v0.3.0) were trained in part on NVIDIA's OCR-Synthetic-Multilingual-v1
+(bee-san/vita-vn-ocr v0.3.0, with their head gates and two-level heads in v0.3.6-head2level.1) were trained in
+part on NVIDIA's OCR-Synthetic-Multilingual-v1
 (CC BY 4.0) and on non-commercial fonts and text: their attribution and terms, including that
 the weights are for non-commercial use only, are in `ocr/MODEL-ATTRIBUTION.md`, which ships
 beside them ([details](vita-vn-ocr.md#models)). The text-presence gate's weights
