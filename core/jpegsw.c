@@ -10,7 +10,7 @@
 #include <string.h>
 
 /* The encoder's tables are in the worker's data segment (VJO_DATA_TABLE, core/port.h; const, never written): with
- * vertical text (API 44) the debug build's text ended past a page, and its last data page had room
+ * vertical text (API 47) the debug build's text ended past a page, and its last data page had room
  * (docs/memory-ledger.md). */
 static const uint8_t zigzag[64] VJO_DATA_TABLE(jpeg_zigzag) = {
     0,  1,  8,  16, 9,  2,  3,  10, 17, 24, 32, 25, 18, 11, 4,  5,

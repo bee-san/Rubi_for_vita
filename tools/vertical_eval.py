@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vertical text through Rubi's own job (docs/vita-vn-ocr.md "Vertical text", API 44): column recall and dialogue CER
+"""Vertical text through Rubi's own job (docs/vita-vn-ocr.md "Vertical text", API 47): column recall and dialogue CER
 on hooked pages with labelled vertical columns, and what auto (config.ini ocr_vertical = auto) decides on pages of
 horizontal games.
 

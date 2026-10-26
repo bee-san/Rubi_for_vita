@@ -634,7 +634,7 @@ static int32_t fake_missing_io;
 static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
-static int fake_rows_vertical; /* API 44, ocr_vertical = auto: the worker found the rows to be vertical text */
+static int fake_rows_vertical; /* API 47, ocr_vertical = auto: the worker found the rows to be vertical text */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
 static int fake_steps; /* the steps of a resident job on main's defaults (game_ocr/main.c), as the worker reports */
 /* A clock step (game_ocr/main.c job_busy): the ARM clock before, while and after, and the boost's rc. */
@@ -760,7 +760,7 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         }
     } else if (fake_memory_fallback && top > 1u) ran = top - 1u;
     const char *ran_model = top ? vjo_vocr_tier_model((int)ran) : fake_game_request.model;
-    /* API 44: a job of columns runs the vertical model, whatever its tiers (game_ocr/main.c): ocr_vertical = on,
+    /* API 47: a job of columns runs the vertical model, whatever its tiers (game_ocr/main.c): ocr_vertical = on,
      * or auto where the rows looked like vertical text and the vertical model can be read (else its rows) */
     unsigned vmode = (fake_game_request.speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK;
     int fake_columns = vmode == VJO_GAME_OCR_VERTICAL_ON ||
@@ -1720,7 +1720,7 @@ static void test_vocr_model_change_invalidates_cache(void)
     TEST_CHECK(cache_ok);
 }
 
-/* API 44: config.ini ocr_vertical goes into the speed word of every user job as it is (off 0, on 1, auto 2), which
+/* API 47: config.ini ocr_vertical goes into the speed word of every user job as it is (off 0, on 1, auto 2), which
  * keeps the job's tiers, model name and the rest of its flags and speed. The text's Anki cards and the job's log
  * line name the vertical model where its lines were columns (VJO_GAME_OCR_LINE_COLUMN): with on, and with auto where
  * the rows looked like vertical text; else the size's model, as before. A vertical model that fails to open (on)

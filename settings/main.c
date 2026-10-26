@@ -655,7 +655,7 @@ static void set_skips(int text_gate, int hook_trust)
     preference_saved(vjo_preferences_save_skips(text_gate, hook_trust, &scratch));
 }
 
-/* API 44, Vertical text (config.ini ocr_vertical, docs/vita-vn-ocr.md "Vertical text"): its three choices left to
+/* API 47, Vertical text (config.ini ocr_vertical, docs/vita-vn-ocr.md "Vertical text"): its three choices left to
  * right, OFF (rows, as before), Automatic (columns where the rows look like vertical text), ON (columns in every
  * game); the Shell reads it each time the overlay opens. */
 static const int vertical_choice[3] = {VJO_VERTICAL_OFF, VJO_VERTICAL_AUTO, VJO_VERTICAL_ON};
@@ -959,7 +959,7 @@ static void draw_gate_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, "ON: a hidden text box or a picture is not read.");
 }
 
-/* API 44: Japanese set in columns (manga in NOBORU, a vertical dialogue box), read right to left with the
+/* API 47: Japanese set in columns (manga in NOBORU, a vertical dialogue box), read right to left with the
  * vertical model (docs/vita-vn-ocr.md "Vertical text"). Same badges as Text source. */
 static void draw_vertical_card(int y)
 {

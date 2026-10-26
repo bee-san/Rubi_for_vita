@@ -66,7 +66,7 @@
  * publishes no capture; it carries no other flag but F_FULL, no tiers and no speed but
  * (API 32) VJO_GAME_OCR_S_TRIM. */
 #define VJO_GAME_OCR_F_SHOT 0x4000u
-/* Bit 15 is not defined: API 27 (#213, reverted) and draft #223's API 29 had vertical text there; API 44 has it in
+/* Bit 15 is not defined: API 27 (#213, reverted) and draft #223's API 29 had vertical text there; API 47 has it in
  * the speed word (VJO_GAME_OCR_S_VERTICAL). */
 #define VJO_GAME_OCR_F_ALL 0xFFFF7FFFu
 /* The shot's file: the Anki queue (core/anki_queue.h VJO_QUEUE_DIR; a host test checks the
@@ -120,7 +120,7 @@
  * resident weights, LM and cascade model. Without the bit a job selects as API 42's did. The Shell sets it in the
  * user's jobs; a pick of OCR or a stream ignores it. Not bit 17 (closed draft #271's VJO_GAME_OCR_S_CHARS). */
 #define VJO_GAME_OCR_S_TRUST 0x100000u
-/* API 44, bits 23-24: vertical text (config.ini ocr_vertical, core/config.h VJO_VERTICAL_*, vita-vn-ocr #99;
+/* API 47, bits 28-29: vertical text (config.ini ocr_vertical, core/config.h VJO_VERTICAL_*, vita-vn-ocr #99;
  * docs/vita-vn-ocr.md "Vertical text"). 0: the region's rows, as before. 1 (on): the job runs the vertical model
  * (include/vjo_vocr_sizes.h VJO_VOCR_VERTICAL_NAME), whatever its tiers name, and opens it as
  * VJO_GAME_OCR_OPEN_VERTICAL: it finds the region's columns and reads each turned 90 degrees, right to left
@@ -214,7 +214,7 @@ typedef struct {
  * a request by tiers) the model of tier which - VJO_GAME_OCR_OPEN_TIER + 1: one of
  * the request's tiers, or with a cascade ceiling the tier above its largest
  * (the cascade's model). A request by tiers opens no MODEL, FALLBACK or CASCADE;
- * one by name opens no TIER. API 44: a request with a VJO_GAME_OCR_S_VERTICAL mode may
+ * one by name opens no TIER. API 47: a request with a VJO_GAME_OCR_S_VERTICAL mode may
  * open the vertical model (VJO_GAME_OCR_OPEN_VERTICAL), by tiers or by name; the
  * vertical model opens no other way (not as a request's MODEL or FALLBACK). */
 #define VJO_GAME_OCR_OPEN_MODEL 0u
@@ -268,7 +268,7 @@ enum {
                             try began (us since the job started; 0 with one try), us when it was logged,
                             after the tries */
     VJO_GSTEP_SIG,       /* the first pass is in: rc of vjoOcrCaptureRows' publication */
-    VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's; API 44: kind 1 when they were columns
+    VJO_GSTEP_FIND,      /* lines found: arg the count, rc the finder's; API 47: kind 1 when they were columns
                             (VJO_GAME_OCR_S_VERTICAL), 2 when they were rows that looked like vertical text (auto: the
                             job read the columns next), 3 when auto's columns could not be read for want of the
                             vertical model (rc its I/O error, 0: it failed its check; the job read the rows next),
@@ -378,7 +378,7 @@ typedef struct {
 /* One recognized line: crop size, CTC frames, recognition time and (API 20)
  * flags: its confidence in 1/1000, 1023 when not read with the top K, and
  * whether the LM decoded (0x4000) and changed (0x8000) it (core/vocr_ocr.h
- * VJO_VOCR_LINE_*); API 44, whether it was a column read with the vertical
+ * VJO_VOCR_LINE_*); API 47, whether it was a column read with the vertical
  * model (VJO_GAME_OCR_LINE_COLUMN, core/vocr_ocr.h VJO_VOCR_LINE_COLUMN). */
 #define VJO_GAME_OCR_LINE_COLUMN 0x0800u
 typedef struct {

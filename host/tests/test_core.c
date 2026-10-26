@@ -5,7 +5,7 @@
 #include "acutest.h"
 #include "client.h"
 #include "config.h"
-#include "../include/vjo_game_ocr.h" /* VJO_GAME_OCR_VERTICAL_*: ocr_vertical's values (API 44) */
+#include "../include/vjo_game_ocr.h" /* VJO_GAME_OCR_VERTICAL_*: ocr_vertical's values (API 47) */
 #include "entries.h"
 #include "foreground.h"
 #include "furigana.h"
@@ -888,7 +888,7 @@ static void test_config(void)
     vjo_config_parse(&c, speed, strlen(speed));
     TEST_CHECK(c.ocr_helpers == 1 && c.ocr_boost_clock == 1 && c.n_warnings == 4); /* one warning each, kept 2 */
     TEST_MSG("helpers %d clock %d, %u warnings", c.ocr_helpers, c.ocr_boost_clock, c.n_warnings);
-    /* vita-vn-ocr #99 (API 44): vertical text, VJO_VERTICAL_DEFAULT by default; off | on | auto in any case, stored
+    /* vita-vn-ocr #99 (API 47): vertical text, VJO_VERTICAL_DEFAULT by default; off | on | auto in any case, stored
      * as the request's field (core/config.h VJO_VERTICAL_*); anything else keeps the value with a warning that
      * names the setting, not the value */
     vjo_config_defaults(&c);

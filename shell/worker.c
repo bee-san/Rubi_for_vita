@@ -864,7 +864,7 @@ static unsigned vocr_top_tier(unsigned tiers)
 }
 
 /* The model a job that ran tier `ran` read its text with, a constant string: the
- * vertical model when its lines were columns (API 44: ocr_vertical on, or auto where
+ * vertical model when its lines were columns (API 47: ocr_vertical on, or auto where
  * the rows looked like vertical text; the worker runs it whatever the tier), else
  * the tier's. A result without a recognized line has line[0] zeroed (the worker
  * clears it). The name is kept in the data segment: the normal Shell's text pages
@@ -1098,7 +1098,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     sceClibMemcpy(request.model_dir, job_cfg.ocr_model_dir,
                   sceClibStrnlen(job_cfg.ocr_model_dir, sizeof(request.model_dir) - 1));
     /* The largest tier's model names the job (the kernel's log); the worker opens each by its tier
-     * (and a job of columns the vertical model by its own open, API 44). */
+     * (and a job of columns the vertical model by its own open, API 47). */
     sceClibSnprintf(request.model, sizeof(request.model), "%s", vjo_vocr_tier_model((int)top));
     st0.size = sizeof(st0);
     if (vjoGetState(&st0) < 0) st0.done_seq = st0.stable = 0;
@@ -1135,7 +1135,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
      * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
     if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
-    /* API 44: vertical text (ocr_vertical off, on or auto: the field's own values), in the user's jobs; the
+    /* API 47: vertical text (ocr_vertical off, on or auto: the field's own values), in the user's jobs; the
      * self-test's stages read rows */
     if (stage < 0) request.speed |= (uint32_t)job_cfg.ocr_vertical << VJO_GAME_OCR_S_VERTICAL_SHIFT;
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
@@ -1293,7 +1293,7 @@ static int run_vocr(VjoOverlayData *out)
      * game; a timeout or unavailable storage does not. Every tier with the same
      * file is left out with it (vocr_same_file). Log only. With ocr_vertical = on a
      * job's file is the vertical model's, whatever the tier: no tier is left out for
-     * it (auto reads rows where the vertical model cannot be read, API 44). */
+     * it (auto reads rows where the vertical model cannot be read, API 47). */
     while (out->err.rc == VJO_E_OCR_MODEL && job_cfg.ocr_vertical != VJO_VERTICAL_ON && ran >= VJO_VOCR_TIER_SMALL &&
            ran <= VJO_VOCR_TIERS && !vocr_cancelled(NULL)) {
         int file_bad = !vocr_result.io_error || vocr_result.io_error == VJO_ERR_FORMAT ||
@@ -1323,7 +1323,7 @@ static int run_vocr(VjoOverlayData *out)
             if ((uint32_t)vocr_result.io_error == 0x80010013u)
                 out->err.detail = MODEL_STORAGE;
             else if ((uint32_t)vocr_result.io_error == 0x8001000Du) {
-                /* in the data segment, for the normal Shell's text room (API 44's vertical text) */
+                /* in the data segment, for the normal Shell's text room (API 47's vertical text) */
                 static const char denied[] VJO_DATA_TABLE(worker_model_denied) =
                     "Access to the local OCR model was denied. See log.txt for details.";
                 out->err.detail = denied;

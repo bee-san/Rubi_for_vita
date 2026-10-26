@@ -476,9 +476,7 @@ and **Vertical text** (`ocr_vertical`, the last card: [vertical text](vita-vn-oc
 Touch a size, a Read text choice, a number, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
 Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection and two skip cards,
-Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, OFF/Automatic/ON on Vertical text
-(Automatic, the default, reads columns where the text box holds vertical text and rows elsewhere; ON reads
-columns in every game), or Automatic/Every
+Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, Automatic/Every
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
 as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the
 overlay's next open: Automatic, the default, reads columns where the text box holds vertical text

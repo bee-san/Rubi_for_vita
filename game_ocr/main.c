@@ -267,12 +267,12 @@ static int psp_title;
 static uint32_t open_which;
 static int open_cascade;
 /* API 21: the job is a request by tiers (its models open by their tier; not a
- * job of columns', API 44, whose model opens as VJO_GAME_OCR_OPEN_VERTICAL), and the
+ * job of columns', API 47, whose model opens as VJO_GAME_OCR_OPEN_VERTICAL), and the
  * reserve its memory check kept (include/vjo_ledger_budget.h VJO_GAME_RESERVE_*),
  * which its resident blocks' allocations keep too. */
 static int tiered;
 static uint32_t job_reserve = GAME_RESERVE;
-/* API 44, auto (config.ini ocr_vertical): the vertical model could not be read in this game (absent, short or
+/* API 47, auto (config.ini ocr_vertical): the vertical model could not be read in this game (absent, short or
  * failing its hash), so its jobs read rows without checking them for vertical text. */
 static int columns_bad;
 /* The model tiers' pinned models (include/vjo_vocr_sizes.h), smallest first. */
@@ -399,7 +399,7 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
     return rc;
 }
 
-/* API 44: a column's line flag, as the core sets it and the Shell reads it. */
+/* API 47: a column's line flag, as the core sets it and the Shell reads it. */
 typedef char vjo_line_column_check[VJO_VOCR_LINE_COLUMN == VJO_GAME_OCR_LINE_COLUMN ? 1 : -1];
 /* The core never asks for more than the ledger counts. */
 typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LINE ? 1 : -1];
@@ -1727,7 +1727,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     job_started_us = now_wide();
     int rc = VJO_E_SOURCE;
     VjoVocrStats stats = {0};
-    uint32_t tried_strips = 0, tried_us = 0, tried_find_us = 0; /* API 44, auto: the tries before the last */
+    uint32_t tried_strips = 0, tried_us = 0, tried_find_us = 0; /* API 47, auto: the tries before the last */
     Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
     if (blocked || workspace_uid >= 0 || capture_uid >= 0 || shot_uid >= 0 || model_owned) {
         rc = VJO_E_OCR_UNAVAILABLE; goto done;
@@ -1736,7 +1736,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     unsigned refine_mode = (r->flags >> VJO_GAME_OCR_REFINE_SHIFT) & VJO_GAME_OCR_REFINE_MASK;
     /* API 23: a shot carries no model, tiers or other flag but F_FULL, and (API 32) no speed but S_TRIM */
     int shot = (r->flags & VJO_GAME_OCR_F_SHOT) != 0;
-    /* API 44: vertical text (config.ini ocr_vertical): on, the vertical model on the region's columns; auto, its
+    /* API 47: vertical text (config.ini ocr_vertical): on, the vertical model on the region's columns; auto, its
      * rows unless the finder's rows look like vertical text (check), then its columns (vertical, below) */
     unsigned vmode = (r->speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK;
     int vertical = vmode == VJO_GAME_OCR_VERTICAL_ON;
@@ -1805,10 +1805,10 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         }
     }
     hk.trusted_run = 0; /* API 43: this job runs OCR: the trusted answers' run starts again */
-    /* API 44, auto: the job again from here, as columns (its rows looked like vertical text), or as rows (the
+    /* API 47, auto: the job again from here, as columns (its rows looked like vertical text), or as rows (the
      * columns' model could not be read or fit): each try its own check and blocks, the last one's result. */
 again:;
-    /* The finder's boxes refined (API 20): the mode, here or in a PSP game; never columns (API 44). */
+    /* The finder's boxes refined (API 20): the mode, here or in a PSP game; never columns (API 47). */
     unsigned refine = !vertical && (refine_mode == VJO_GAME_OCR_REFINE_ON ||
                                     (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title))
                       ? VJO_VOCR_REFINE_ALL : 0u;
@@ -1817,7 +1817,7 @@ again:;
     /* The models this job may run, in the order it tries them (API 21): a request
      * by tiers names its tiers, the largest first; one by name its model, then its
      * fallback, used only if it is another pinned model needing less memory. A
-     * job of columns (API 44) runs the vertical model alone, whatever its tiers, with
+     * job of columns (API 47) runs the vertical model alone, whatever its tiers, with
      * a request by name's reserve (VOCR5-S's shape: the Small size's 4 MiB). */
     Candidate cand[CANDIDATES];
     unsigned n = 0, top = 0;
@@ -2012,7 +2012,7 @@ again:;
         policy.cascade_conf = VJO_GAME_CASCADE_CONF;
     }
     policy.refine = refine;
-    policy.vertical_check = check; /* API 44, auto: the rows checked for vertical text first */
+    policy.vertical_check = check; /* API 47, auto: the rows checked for vertical text first */
     policy.short_lines = 1; /* #194: a box's short last line */
     /* vita-vn-ocr #109: a numeral or a 「 the line lost before a counter (ルッ月 -> 九ヶ月 with
      * core/textnorm.c's rule), from the top-K the LM extras hold; nothing without them */
@@ -2042,7 +2042,7 @@ again:;
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
-    /* API 44, auto: the rows looked like vertical text (nothing was read: no weights, no line), or its columns'
+    /* API 47, auto: the rows looked like vertical text (nothing was read: no weights, no line), or its columns'
      * model cannot be read here (absent, short, failing its hash: this game's jobs read rows from now on). The
      * same request again, as columns or as rows, after this try's blocks are freed; its capture and finder
      * time are the job's too. */

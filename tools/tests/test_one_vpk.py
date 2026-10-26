@@ -129,7 +129,7 @@ class BuildCheck(unittest.TestCase):
 class PayloadList(unittest.TestCase):
     def test_the_python_list_is_the_compiled_one(self):
         files = vpk.payload_files()
-        # the bundled PSP/Vita names are a separate payload file; API 44: VOCR5-V and VERTICAL-ATTRIBUTION.md
+        # the bundled PSP/Vita names are a separate payload file; API 47: VOCR5-V and VERTICAL-ATTRIBUTION.md
         self.assertEqual(len(files), 20)
         header = (ROOT / "include/vjo_payload.h").read_text()
         kernel = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX (\d+)", header).group(1))

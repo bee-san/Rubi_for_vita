@@ -25,7 +25,7 @@ The game worker's steps (`gstep job ...`, `game_ocr/main.c` `step_add`) carry tw
 - a time since the job started, for the instant steps (`mem`, `check`, `alloc`, `free`, `sig`,
   `tear`, `clock`): `step_add` called with us 0 (`game_ocr/main.c:148` at `4ac02ac`).
 
-A job of vertical text (API 44, `ocr_vertical`; [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) logs
+A job of vertical text (API 47, `ocr_vertical`; [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) logs
 `find` with kind 1 when its lines were columns, and with kind 2 for `auto`'s rows that looked like vertical text
 (nothing was read from them; the next `find`, kind 1, is the columns'). Its `bytes=` are the columns it left out
 because their crop (width × height) holds more than its rotation buffer, 57,344 B (`VJO_VOCR_ROTATE_BYTES`,

@@ -928,7 +928,7 @@ weights may still be read ahead by the session's warm-up, as after any job that 
   checks its CRC-32 in every job. Without the file (an `ocr` folder from an older package) the gate does not decide:
   the job reads as without it, and the gate's step says why.
 - **The request.** `VJO_GAME_OCR_S_GATE`, bit 4 of the request's `speed` word. The flags have one free bit, bit 15
-  (API 27's vertical text had it; API 44's is in the `speed` word, bits 23-24). The Shell sets it in the user's jobs when
+  (API 27's vertical text had it; API 47's is in the `speed` word, bits 28-29). The Shell sets it in the user's jobs when
   `ocr_text_gate = on`; the self-test's stages and shots never carry it.
 - **Memory.** Its arena (35,529 B at 960×544) takes scratch the finder leaves free, which the recognizer's arena
   holds anyway at every region size (`test_vocr_policy.c` checks every pinned model at every size up to 960×544): no
@@ -1063,7 +1063,7 @@ it cannot read (absent, short, failing its hash) or fit has the job read the row
 read, the game's later jobs read rows unchecked. The rule was chosen on the hooked pages below, before it was checked
 on any other page; on the pages it was then checked on it was not changed.
 
-**The request (API 44).** `VjoGameOcrRequest.speed` bits 23-24 (`VJO_GAME_OCR_S_VERTICAL`): 0 rows, 1 columns, 2
+**The request (API 47).** `VjoGameOcrRequest.speed` bits 28-29 (`VJO_GAME_OCR_S_VERTICAL`): 0 rows, 1 columns, 2
 auto; 3 is refused, as unknown bits are, by the kernel and by the game worker. The Shell sends the setting as it is
 in the user's jobs (`ocr_vertical`'s values are the field's: `core/config.h` `VJO_VERTICAL_*`); the self-test's
 stages and the Anki screenshot never carry it. A job of columns runs the vertical model alone, whatever its tiers,
@@ -1117,7 +1117,7 @@ portrait's blocks and no dialogue line. On a sample of 3,080 of the hooked regio
 HORIZONTAL_TIME
 
 **Memory.** The worker's code, in every game that is ON whatever the setting: 4,096 B more module pages in each build
-(176,128 B normal, 184,320 B debug: [memory-ledger.md](memory-ledger.md#vertical-text-api-44)). SceShell's and the
+(176,128 B normal, 184,320 B debug: [memory-ledger.md](memory-ledger.md#vertical-text-api-47)). SceShell's and the
 kernel's pages are as before. A job of columns takes the vertical model's weights (823,296 B in pages, a Small job's)
 and a workspace of VOCR5-S's plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + 3,760 (the
 console's runtime structs) + 57,344 = 185,936 B at 960×544, with the LM extras, the greedy text and both helpers'

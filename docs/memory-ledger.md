@@ -5,7 +5,7 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
-## Vertical text (API 44)
+## Vertical text (API 47)
 
 `ocr_vertical` ([vita-vn-ocr.md](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) adds code to the game worker and a
 little to the kernel and the Shell, and no block, thread or stack: a job of columns takes its workspace from the job's

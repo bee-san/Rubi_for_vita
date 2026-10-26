@@ -167,12 +167,13 @@ static void test_game_workspace_budget_matches_the_layout(void)
  * the loop above's larger count (a request by name's VOCR4-W20 cascade and the refinement beside it). */
 static void test_vertical_job_fits_the_workspace_budget(void)
 {
-    const char *v = VJO_VOCR_VERTICAL_NAME, *s = VJO_VOCR5_S_NAME;
+    /* VOCR5-V has v0.3.0's VOCR5-S shape (VOCR3-FL10's arena), without API 42's head gate */
+    const char *v = VJO_VOCR_VERTICAL_NAME, *s = VJO_VOCR3_FL10_NAME;
     size_t own = vjo_vocr_job_bytes(v, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT);
     size_t job = own + vjo_vocr_lm_job_bytes(v) + VJO_GAME_OCR_TEXT_BYTES + vjo_vocr_helpers_bytes(v, VJO_VOCR_HELPERS_MAX);
     size_t page = (job + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE;
     TEST_ASSERT(vjo_vocr_model(v) && own);
-    /* its own job: VOCR5-S's plus the rotation buffer (the shapes' arena is the larger than either finder's) */
+    /* its own job: the shape's plus the rotation buffer (the shapes' arena is the larger than either finder's) */
     TEST_CHECK(own == vjo_vocr_job_bytes(s, VJO_OCR_MAX_WIDTH, VJO_OCR_MAX_HEIGHT) +
                           ((VJO_VOCR_ROTATE_BYTES + 15u) & ~(size_t)15u));
     TEST_CHECK_(page <= VJO_BUDGET_GAME_WORKSPACE && page + 4u * 65536u < VJO_BUDGET_GAME_WORKSPACE,

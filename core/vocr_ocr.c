@@ -58,7 +58,7 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #define VJO_VOCR_COLUMNS (VJO_VOCR_FINDER_COLUMNS | VJO_VOCR_COLUMN_FLAGS)
 
 /* The release table is in the worker's data segment (VJO_DATA_TABLE, core/port.h; const, never written): with
- * vertical text (API 44) the worker's text took a page more than it needs, and its last data page had room
+ * vertical text (API 47) the worker's text took a page more than it needs, and its last data page had room
  * (docs/memory-ledger.md, "Vertical text"). */
 #ifdef VJO_VOCR_TEST_MODELS
 /* Host lifecycle tests only (host/tests/test_game_resident.c): synthetic pins. */
@@ -245,7 +245,7 @@ static int columns_of(const VjoVocrModel *m)
     return (m->finder_mode & VJO_VOCR_FINDER_COLUMNS) != 0;
 }
 
-/* API 44, ocr_vertical = auto: the row finder's rows of vertical text are one character of each column side by
+/* API 47, ocr_vertical = auto: the row finder's rows of vertical text are one character of each column side by
  * side, stacked down the columns: many rows, each about as tall as a character and a few characters wide, over
  * the same span. Horizontal dialogue gives a few lines, each many characters wide. The rule (docs/vita-vn-ocr.md
  * "Vertical text": chosen on the hooked pages of vita-vn-ocr #125, 0 of 101,651 horizontal regions and full
@@ -1472,7 +1472,7 @@ static void line_stat(Lines *L, const Pending *e, unsigned frames, uint16_t flag
     ls->width = e->w;
     ls->height = e->h;
     ls->frames = (uint16_t)(frames > 0xFFFFu ? 0xFFFFu : frames);
-    ls->flags = (uint16_t)(flags | (columns_of(L->mi) ? VJO_VOCR_LINE_COLUMN : 0u)); /* API 44: a column */
+    ls->flags = (uint16_t)(flags | (columns_of(L->mi) ? VJO_VOCR_LINE_COLUMN : 0u)); /* API 47: a column */
     ls->us = us; /* without a re-read: frames and time are the job's model's */
     ls->slot = (uint8_t)slot;
     ls->cached = (uint8_t)(cached != 0);
@@ -2015,7 +2015,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     if (l->gate_bytes) st->gate_rc = 0;
     t0 = clock_us(p);
     /* API 26: the gate takes the rows the finder reads (stream_row). It scores row boxes: a model of columns
-     * (vertical text, API 44) reads without it. */
+     * (vertical text, API 47) reads without it. */
     if (l->gate_bytes && !cols) {
         int grc = vocr_textgate_begin(&gate, &l->gate, VJO_VOCR_GATE_MODE, VJO_VOCR_GATE_K, w, im->height,
                                       ws + l->gate_off, l->gate_bytes);
@@ -2029,7 +2029,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     /* The finder: rows, or a model of columns' columns, right to left (vocr_vertical.h) */
     rc = cols ? vocr_find_columns_rows(&region, mi->finder_mode & 0xFFu, ws + l->scratch_off, l->finder, &set)
               : vocr_find_lines_rows(&region, (int)mi->finder_mode, ws + l->scratch_off, l->finder, &set);
-    /* API 44, auto (VjoVocrPolicy.vertical_check): rows that look like vertical text are not read, and no
+    /* API 47, auto (VjoVocrPolicy.vertical_check): rows that look like vertical text are not read, and no
      * weights are (nor the gate's score, made for rows): the caller reads the region's columns instead
      * (game_ocr/main.c). */
     if (!rc && pol->vertical_check && !cols && vjo_vocr_rows_vertical(set.lines, set.count, w, im->height)) {
@@ -2479,7 +2479,7 @@ static int run_job(const VjoPlatform *platform, const char *model_dir, const cha
     if (!workspace || ((uintptr_t)workspace & 15u) || workspace_size < front + l.total ||
         !capture || capture_size < need_capture) return VJO_E_OOM;
     if (policy && policy->gate && (!columns_of(mi) || test_gate_columns)) { /* it scores row boxes: a model of
-                                                                              * columns (API 44) reads without */
+                                                                              * columns (API 47) reads without */
         /* API 26: the gate's weights (read once, then kept), and its arena in the scratch the finder leaves
          * free (the recognizer's arena is the larger part of it at every region size), so the workspace never
          * grows for it. Without either the job reads as without the gate (stats->gate_rc says why). */

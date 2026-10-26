@@ -15,7 +15,8 @@
  *    policy asks (and no workspace for them);
  *  - off: a job on the model of rows gives today's job exactly. Its text, greedy text, frames, every
  *    line's stats, the workspace and the strips read hash to the figures this file's off part gives when
- *    built against main 1de7b67 (before vertical text; VJO_TEST_OFF_ONLY, which leaves the rest out), on a
+ *    built against main 93647d3 (before vertical text; VJO_TEST_OFF_ONLY, which leaves the rest out; main
+ *    1de7b67's, before the head gate's runtime, gave other workspace figures), on a
  *    5-line region and on host/fixtures/short_line/textbox.pgm (#194's box), greedy and with the LM.
  * This makes no claim about accuracy: the tiny models read nothing real. */
 #define main acutest_main
@@ -506,7 +507,7 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
     pol.refine = o->refine ? VJO_VOCR_REFINE_ALL : 0u;
     pol.short_lines = o->short_lines;
 #ifndef VJO_TEST_OFF_ONLY
-    pol.vertical_check = o->check; /* API 44, auto */
+    pol.vertical_check = o->check; /* API 47, auto */
     static VjoVocrGateResident gate_res; /* its weights: from the models' directory when a gate test put them there
                                            * (put_gate_file); without them the gate cannot decide */
     if (o->gate) {
@@ -566,12 +567,12 @@ static const struct {
     const char *what;
     uint64_t hash;
 } golden[] = {
-    {"5 lines greedy", 0xcd35c9240432349bull},
-    {"5 lines lm", 0xe6e8a12f12f952b9ull},
-    {"5 lines lm, 2 helpers", 0xe5d5add21606ed7bull},
-    {"short line greedy", 0x94ef9049dc5ba6c1ull},
-    {"short line lm, refined, short lines", 0xbb7cd64c103607fbull},
-    {"one big row greedy", 0x6d6657eecf01de6dull},
+    {"5 lines greedy", 0xe2572f2fa151c0bbull},
+    {"5 lines lm", 0x6c64d803e5ffa2ceull},
+    {"5 lines lm, 2 helpers", 0x28c1fae31b586636ull},
+    {"short line greedy", 0xa5a1fa4ab4c5f221ull},
+    {"short line lm, refined, short lines", 0x8cc063648a0972b0ull},
+    {"one big row greedy", 0x6b01f34572b1decdull},
 };
 
 static int load_pgm(const char *path)
@@ -897,7 +898,7 @@ static void test_line_lengths(void)
     TEST_CHECK(vjo_vocr_test_line_length(36, 290, 0) == 36u * 32u / 290u + 1u); /* the same box as a row */
 }
 
-/* The text-presence gate (API 26) scores row boxes, and two guards keep it off columns (API 44): run_job sets it
+/* The text-presence gate (API 26) scores row boxes, and two guards keep it off columns (API 47): run_job sets it
  * up only for a model of rows (its weights read, its arena placed), and recognize begins it only on rows. Each test
  * below fails when its guard is gone (audit-vertical-rubi S2). Both put the gate's weights in the models' directory
  * when cmake/VocrGate.cmake got them, and run columns on M_COLSG, whose arena has room for the gate's. */
@@ -992,7 +993,7 @@ static void test_empty_region_opens_no_model(void)
                 "rc %d, %u columns, text \"%s\"", rc, st.lines, text);
 }
 
-/* ------------------------------------------------------------ API 44, ocr_vertical = auto */
+/* ------------------------------------------------------------ API 47, ocr_vertical = auto */
 static int rule_of(const unsigned (*boxes)[4], unsigned n, unsigned w, unsigned h)
 {
     VocrLine ln[VJO_VOCR_MAX_LINES];
@@ -1106,7 +1107,7 @@ static void test_auto_check(void)
 #endif /* VJO_TEST_OFF_ONLY */
 
 TEST_LIST = {
-    {"off: a job of rows is today's job exactly (main 1de7b67's figures)", test_off_is_todays_job},
+    {"off: a job of rows is today's job exactly (main 93647d3's figures)", test_off_is_todays_job},
 #ifndef VJO_TEST_OFF_ONLY
     {"columns: right to left, each read turned, light and dark, short and tall, greedy and LM, P0 and P1",
      test_columns_read_right_to_left},

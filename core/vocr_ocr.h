@@ -128,7 +128,7 @@ typedef struct {
  * (width x height) is left out, never read, and counted (VjoVocrStats.rotate_skipped): one wider than
  * 105 px at the full 544-px height. */
 #define VJO_VOCR_ROTATE_BYTES VJO_VOCR_STRIP_BYTES
-/* API 44, config.ini ocr_vertical = auto (VjoVocrPolicy.vertical_check): whether the row finder's n lines
+/* API 47, config.ini ocr_vertical = auto (VjoVocrPolicy.vertical_check): whether the row finder's n lines
  * (vita-vn-ocr's VocrLine, vocr_lines.h) on a w x h region look like vertical text read as rows, so that the
  * job reads its columns instead. Geometry only (core/vocr_ocr.c: the rule; docs/vita-vn-ocr.md "Vertical
  * text": how it was measured). */
@@ -226,7 +226,7 @@ typedef struct {
 #define VJO_VOCR_LINE_CASCADE 0x0400u
 #define VJO_VOCR_LINE_LM 0x4000u
 #define VJO_VOCR_LINE_CHANGED 0x8000u
-/* API 44: the line was a column, read turned with a model of columns (include/vjo_game_ocr.h
+/* API 47: the line was a column, read turned with a model of columns (include/vjo_game_ocr.h
  * VJO_GAME_OCR_LINE_COLUMN, which the Shell reads). */
 #define VJO_VOCR_LINE_COLUMN 0x0800u
 
@@ -580,7 +580,7 @@ typedef struct {
      * two-level head, when its reading holds a full-size カ or ケ before 月 所 年 国 条 (the escape can miss the
      * small ヵ or ヶ), and that reading is the line's. */
     int two_level;
-    /* API 44 (config.ini ocr_vertical = auto): a job of rows checks the finder's rows first
+    /* API 47 (config.ini ocr_vertical = auto): a job of rows checks the finder's rows first
      * (vjo_vocr_rows_vertical); where they look like vertical text it reads nothing, opens no weights and
      * returns VJO_E_VERTICAL, and the caller reads the region's columns with the model of columns. 0: off,
      * exactly as before; a model of columns ignores it. */

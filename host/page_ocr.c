@@ -4,10 +4,11 @@
  * The game worker's job (core/vocr_ocr.c, as game_ocr/main.c sets it up on the defaults of config.ini) on many
  * regions, with the weights, the LM and the cascade's model read once and kept, as a game keeps them between
  * jobs: the model of a size (vocr_tier: Small, Normal or Large), the LM up to that tier (ocr_lm = 1000k: tier 2),
- * the confidence cascade with the next size up within 2,000 ms (ocr_cascade_ms), the counter re-decode, the
+ * the confidence cascade with the next size up within 2,000 ms (ocr_cascade_ms), the head gate and the two-level
+ * head (ocr_head_gate = on, API 42: each where a blob carries it; --head-gate off: neither), the counter re-decode, the
  * short-line probe, the refinement on PSP titles only (--psp; ocr_refine_lines = psp), the text normalised as
  * the worker returns it (core/textnorm.c, the border rule: non_japanese_filter = lines) and filtered as the Shell
- * shows it (core/textfilter.c). API 44's vertical text (ocr_vertical): off reads rows; on reads the region's
+ * shows it (core/textfilter.c). API 47's vertical text (ocr_vertical): off reads rows; on reads the region's
  * columns with the vertical model (VJO_VOCR_VERTICAL_NAME), no cascade and no refinement; auto reads rows
  * checked first (VjoVocrPolicy.vertical_check) and, where they look like vertical text, the columns as on: the
  * worker's retry (game_ocr/main.c, VJO_E_VERTICAL).
@@ -39,7 +40,7 @@
 #include "vocr_ocr.h"
 #include "vocr_lines.h"
 #include "../include/vjo_vocr_sizes.h"
-/* API 44's vertical text; without it (a tree before it, main's for the comparison) the tool reads rows only. */
+/* API 47's vertical text; without it (a tree before it, main's for the comparison) the tool reads rows only. */
 #ifdef VJO_VOCR_LINE_COLUMN
 #define HAVE_VERTICAL 1
 #include "vocr_vertical.h"
@@ -162,7 +163,7 @@ typedef struct {
     const char *dir;
     const VjoVocrModel *model, *vertical, *cascade;
     const VjoVocrLm *lm;
-    int psp, mode;
+    int psp, mode, head;
     unsigned helpers, lines_cb, find_only;
 } Setup;
 
@@ -260,6 +261,7 @@ static int run_one(const Setup *su, const VjoPlatform *plat, const VjoVocrModel 
     pol.short_lines = 1; /* #194 */
     pol.counter_tau = VJO_VOCR_COUNTER_TAU;
     pol.counter_open = VJO_VOCR_COUNTER_OPEN;
+    pol.head_gate = pol.two_level = su->head; /* API 42, config.ini ocr_head_gate = on */
 #if HAVE_VERTICAL
     pol.vertical_check = check;
 #endif
@@ -286,6 +288,7 @@ int main(int argc, char **argv)
     su.dir = argv[1];
     su.mode = 0;
     su.lines_cb = 1;
+    su.head = 1;
     for (int i = 2; i < argc; i++) {
         const char *v = i + 1 < argc ? argv[i + 1] : NULL;
         if (!strcmp(argv[i], "--tier") && v) tier = (unsigned)atoi(v), i++;
@@ -295,6 +298,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--helpers") && v) su.helpers = (unsigned)atoi(v), i++;
         else if (!strcmp(argv[i], "--no-lines")) su.lines_cb = 0;
         else if (!strcmp(argv[i], "--find-only")) su.find_only = 1;
+        else if (!strcmp(argv[i], "--head-gate") && v) su.head = !strcmp(v, "on"), i++;
         else if (!strcmp(argv[i], "--vertical") && v) {
             su.mode = !strcmp(v, "on") ? 1 : !strcmp(v, "auto") ? 2 : 0;
             i++;
@@ -306,7 +310,7 @@ int main(int argc, char **argv)
 #if HAVE_VERTICAL
     su.vertical = vjo_vocr_model(VJO_VOCR_VERTICAL_NAME);
 #else
-    su.vertical = su.model; /* never used: --vertical on and auto need API 44 */
+    su.vertical = su.model; /* never used: --vertical on and auto need API 47 */
     if (su.mode) goto usage;
 #endif
     su.cascade = cascade && tier < VJO_VOCR_TIERS ? vjo_vocr_model(vjo_vocr_tier_model((int)tier + 1)) : NULL;
@@ -401,6 +405,6 @@ int main(int argc, char **argv)
     return 0;
 usage:
     fprintf(stderr, "usage: %s MODEL_DIR [--tier 1-3] [--lm 0-4] [--cascade on|off] [--psp] [--vertical off|on|auto] "
-                    "[--helpers 0-2] [--no-lines] [--find-only] < JOBS\n", argv[0]);
+                    "[--helpers 0-2] [--no-lines] [--find-only] [--head-gate on|off] < JOBS\n", argv[0]);
     return 2;
 }

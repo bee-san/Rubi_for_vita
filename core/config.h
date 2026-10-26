@@ -130,7 +130,7 @@ typedef struct {
      * or Rubi verified site, or a regular source after four OCR agreements) answer without OCR; 0 (hook_trust = off)
      * selects as Rubi 0.9.7 did. The Shell sends it as VJO_GAME_OCR_S_TRUST in each job's speed word. Last, as above. */
     int hook_trust;           /* 0/1, on by default */
-    /* Vertical text (vita-vn-ocr #99, API 44; docs/vita-vn-ocr.md "Vertical text"): VJO_VERTICAL_*, the
+    /* Vertical text (vita-vn-ocr #99, API 47; docs/vita-vn-ocr.md "Vertical text"): VJO_VERTICAL_*, the
      * request's VJO_GAME_OCR_S_VERTICAL field as it is (include/vjo_game_ocr.h). Last, as above. */
     int ocr_vertical;
 } VjoConfig;
