@@ -30,7 +30,9 @@ int sceClibSnprintf(char *dst, size_t dst_max_size, const char *fmt, ...);
  * its code segment: the Shell's code pages are full in the normal build, and
  * the last page of its data segment has room, so the module's pages stay as
  * they are (docs/memory-ledger.md, "Tables in the data segment"). The table
- * stays const (never written); on the host it is ordinary .rodata. */
+ * stays const (never written); on the host it is ordinary read-only data
+ * (.rodata; a table of pointers in a position-independent build, as Ubuntu's
+ * GCC makes by default, is .data.rel.ro, read-only once relocated). */
 #if defined(__vita__)
 #define VJO_DATA_TABLE(name) __attribute__((section(".data.vjo." #name)))
 #else

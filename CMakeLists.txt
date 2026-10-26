@@ -135,8 +135,9 @@ target_include_directories(vjo-kernel-text-source-tests PRIVATE third_party/acut
 target_compile_definitions(vjo-kernel-text-source-tests PRIVATE VJO_HOST=1)
 target_compile_options(vjo-kernel-text-source-tests PRIVATE -Wall -Wextra)
 add_test(NAME kernel_text_source COMMAND vjo-kernel-text-source-tests)
-# API 31: text-source config helpers and diagnostic pick/label utilities.
-target_sources(vjo_core PRIVATE core/hook_pick.c core/hook_titles.c)
+# API 31: text-source config helpers and diagnostic pick/label utilities; the Games tag reads Rubi's
+# verified entries from the worker's own table (core/hook_place.c).
+target_sources(vjo_core PRIVATE core/hook_pick.c core/hook_titles.c core/hook_place.c)
 # The Rubi app's Games tag (core/hook_titles.c) knows Luna's games once core/hook_luna.c is there
 # (hooks/luna-port), as the Vita app's build does (vita/CMakeLists.txt).
 if(EXISTS ${CMAKE_SOURCE_DIR}/core/hook_luna.c)
