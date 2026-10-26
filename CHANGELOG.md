@@ -11,6 +11,13 @@ been reported.
 
 ## [Unreleased]
 
+### Fixed
+
+- The Rubi app's Games page shows `Hook` for every game with one of Rubi's own verified hook entries. The tag
+  kept its own copy of their titles, CLANNAD alone, so 10 of 0.9.7's new games (リトルバスターズ！ Converted
+  Edition, グリザイアの果実, 剣が君 for V …) had no tag and 17, アマツツミ among them, showed `Luna hook`; it now
+  reads the game worker's own table ([#299]).
+
 ## [0.9.7] - 2026-10-26
 
 Native text hooks for 26 more Vita visual novels, with Rubi's own clean-up rules for their text,
@@ -1034,3 +1041,4 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#294]: https://github.com/bee-san/Rubi_for_vita/pull/294
 [#295]: https://github.com/bee-san/Rubi_for_vita/pull/295
 [#296]: https://github.com/bee-san/Rubi_for_vita/pull/296
+[#299]: https://github.com/bee-san/Rubi_for_vita/pull/299
