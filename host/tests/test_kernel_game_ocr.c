@@ -55,6 +55,7 @@ uint64_t ksceKernelGetSystemTimeWide(void) { return model_clock; }
  * game's completion, a cancellation). */
 static int job_bit, result_bit;
 static unsigned job_events, result_events, job_waits, result_waits;
+static unsigned take_wait_us = 100000u; /* API 49: the take's wait (vjoOcrTake's out->seq, else 100 ms) */
 static void (*during_event_wait)(void);
 int ksceKernelSetEventFlag(SceUID uid, unsigned bits)
 {
@@ -118,7 +119,7 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
         int *bit = bits == MEV_JOB ? &job_bit : &result_bit;
         TEST_ASSERT(uid == g.mevf && !locks && syscall_depth == 1 && timeout);
         TEST_CHECK(wait == (SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR_PAT));
-        TEST_CHECK(*timeout == (bits == MEV_JOB ? 100000u : 50000u));
+        TEST_CHECK(*timeout == (bits == MEV_JOB ? take_wait_us : 50000u));
         if (bits == MEV_JOB) job_waits++; else result_waits++;
         if (during_event_wait) { /* another thread's syscall meanwhile */
             void (*fn)(void) = during_event_wait;
@@ -479,6 +480,7 @@ static void setup(void)
     file_live = open_error = seek_error = read_error = close_error = eof = short_read = bad_size = during_io = 0;
     done_events = waits = stats = 0; done_pending = wait_runs_worker = stat_error = 0; expect_fallback = 0; expect_lm = NULL;
     job_bit = result_bit = 0; job_events = result_events = job_waits = result_waits = 0; during_event_wait = NULL;
+    take_wait_us = 100000u;
     record_unlocks = 0; unlock_count = lock_count = 0; klogs = delays = 0; last_klog = ""; before_lock = NULL;
     memset(&file_stat, 0, sizeof(file_stat));
     file_stat.st_mtime = (SceDateTime){2026, 10, 11, 9, 43, 58, 123456};
@@ -603,6 +605,7 @@ static void take_wakes_on_submit(void)
     setup(); seq = submit(); take(seq); TEST_CHECK(vjoOcrComplete(&message) == 0);
     TEST_CHECK(job_bit == 1); /* nobody waited for that submission */
     t0 = model_clock;
+    r.seq = 0; /* as the worker asks before every take (API 49: else out->seq is the wait) */
     TEST_CHECK(vjoOcrTake(&r) == 1 && job_waits == 1 && model_clock - t0 == 100000);
     /* the module stopping while the worker waits: the shutdown wakes it, it leaves at once, and
      * module_stop sees no thread inside the wait any more */
@@ -1223,6 +1226,90 @@ static void hook_line_starts_a_held_scene(void)
     g.game_active = VJO_GAME;
     caller = 3;
 }
+/* API 49: the take's wait is what the worker asks in out->seq when it is shorter than 100 ms (the trusted hook
+ * watch's pace), at least VJO_GAME_OCR_TAKE_WAIT_MIN_US; 0, a longer one, or a copy that fails is 100 ms. A job
+ * queued meanwhile is claimed at once, as before. */
+static void take_waits_the_asked_time(void)
+{
+    VjoGameOcrRequest r = {0};
+    uint64_t t0;
+    setup(); caller = 7;
+    r.seq = 16000; take_wait_us = 16000; t0 = model_clock;
+    TEST_CHECK(vjoOcrTake(&r) == 1 && job_waits == 1 && model_clock - t0 == 16000);
+    r.seq = 1; take_wait_us = VJO_GAME_OCR_TAKE_WAIT_MIN_US; t0 = model_clock; /* an old job's number: floored */
+    TEST_CHECK(vjoOcrTake(&r) == 1 && job_waits == 2 && model_clock - t0 == VJO_GAME_OCR_TAKE_WAIT_MIN_US);
+    r.seq = 250000; take_wait_us = 100000; t0 = model_clock; /* never longer than before */
+    TEST_CHECK(vjoOcrTake(&r) == 1 && job_waits == 3 && model_clock - t0 == 100000);
+    r.seq = 16000; copy_in_fail = 1; take_wait_us = 100000; t0 = model_clock;
+    TEST_CHECK(vjoOcrTake(&r) == 1 && job_waits == 4 && model_clock - t0 == 100000);
+    copy_in_fail = 0;
+    /* a submission during a short wait is claimed at once */
+    r.seq = 16000; take_wait_us = 16000; t0 = model_clock; during_event_wait = shell_submits; caller = 7;
+    TEST_CHECK(vjoOcrTake(&r) == 0 && job_waits == 5 && model_clock == t0 && claimed);
+    take_wait_us = 100000;
+    caller = 3;
+}
+
+/* API 49: a trusted source's line (VJO_HOOK_LINE_TRUSTED) wakes the Shell even while the last line still draws, and
+ * its scene is g.hook_scene; an untrusted line after it is not (0 again). VJO_ROWS_HOOK then publishes a trusted
+ * answer's capture as that scene, with no rows armed, no frame waited for and no signature: refused (FORMAT) once
+ * the region shows another scene, and (ARG) with rows, a destination, other flags or for a full-frame job. */
+static void trusted_hook_line_reads_at_once(void)
+{
+    VjoGameOcrRows q;
+    VjoGameOcrRowsInfo info;
+    uint32_t seq, before;
+    memset(&q, 0, sizeof(q)); q.size = sizeof(q);
+    memset(&info, 0, sizeof(info)); info.size = sizeof(info);
+    setup();
+    caller = 7;
+    TEST_CHECK(vjoOcrHookLine(5, 24 | VJO_HOOK_LINE_TRUSTED) == 0 && quiet_events == 1);
+    before = g.tracker.id;
+    TEST_CHECK(g.hook_scene == before && scene_hook_drawing(&g.tracker));
+    /* the next trusted line while that one still draws: woken all the same */
+    model_clock += 1000;
+    TEST_CHECK(vjoOcrHookLine(6, 30 | VJO_HOOK_LINE_TRUSTED) == 0 && quiet_events == 2);
+    TEST_CHECK(g.tracker.id == before + 1 && g.hook_scene == before + 1);
+    /* the Shell's job for it: the capture without pixels */
+    seq = submit(); take(seq);
+    caller = 7;
+    q.seq = seq; q.mode = VJO_GAME_OCR_SRC_HOOK; q.flags = VJO_ROWS_HOOK;
+    q.n = 1; TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_ARG); q.n = 0;
+    TEST_CHECK(vjoOcrCaptureRows(&q, user_rows, &info) == VJO_ERR_ARG);
+    q.flags = VJO_ROWS_HOOK | VJO_ROWS_SIG; TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_ARG);
+    q.flags = VJO_ROWS_HOOK;
+    TEST_CHECK(capture_events == 0 && !hook_frames && rows.state == ROWS_IDLE);
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == 0 && info.rc == 0 && !info.armed);
+    TEST_CHECK(g.capture_scene == before + 1 && g.region_seq == request.capture_seq && g.done_seq == request.capture_seq);
+    TEST_CHECK(capture_events == 1 && !hook_frames && !g.capture_sig.w && !locks && !syscall_depth);
+    message.size = sizeof(message); message.seq = seq;
+    TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* an untrusted line since: no hook scene; a trusted answer's capture then reads the pass */
+    model_clock += 1000;
+    TEST_CHECK(vjoOcrHookLine(7, 24) == 1 && !g.hook_scene); /* the last one still draws: nobody woken */
+    seq = submit(); take(seq); caller = 7; q.seq = seq;
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 1);
+    message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* a trusted line, then the region shows another screen (a menu over it): refused */
+    g.tracker.stable = 1; g.tracker.hook_drawn = 1;
+    TEST_CHECK(vjoOcrHookLine(8, 24 | VJO_HOOK_LINE_TRUSTED) == 0 && g.hook_scene == g.tracker.id);
+    g.tracker.hook_us = 0; g.tracker.id++; /* what scene_update does on a larger change once the line is drawn */
+    seq = submit(); take(seq); caller = 7; q.seq = seq;
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_FORMAT && capture_events == 1);
+    message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* a full-frame job never stands for the region */
+    TEST_CHECK(vjoOcrHookLine(9, 24 | VJO_HOOK_LINE_TRUSTED) == 0);
+    {
+        VjoGameOcrRequest r = make_request();
+        r.flags = VJO_GAME_OCR_F_FULL; caller = 3;
+        seq = (uint32_t)vjoOcrSubmit(&r); TEST_CHECK((int)seq > 0); take(seq);
+    }
+    caller = 7; q.seq = seq;
+    TEST_CHECK(vjoOcrCaptureRows(&q, NULL, &info) == VJO_ERR_ARG && capture_events == 1);
+    message.seq = seq; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    caller = 3;
+}
+
 static void rows_refuse_bad_requests_without_arming(void)
 {
     setup(); uint32_t seq = submit(); take(seq);
@@ -1489,6 +1576,7 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM | VJO_GAME_OCR_S_BOOST; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM << 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = 0x20; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 5 */
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_TRUST; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 43: a job's */
     TEST_CHECK(VJO_GAME_OCR_S_SHOT_ALL == VJO_GAME_OCR_S_TRIM && !(VJO_GAME_OCR_S_TRIM & VJO_GAME_OCR_S_ALL));
     /* an OCR job names no card; without models it is refused as before */
     r = make_request(); memcpy(r.shot, SHOT_ID, sizeof(SHOT_ID)); TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
@@ -2565,6 +2653,8 @@ TEST_LIST = {
     {"API 41: a hooked line starts a held scene; only the worker's thread, between jobs", hook_line_starts_a_held_scene},
     {"API 31: the hook pick is checked; the grown request and result cross whole", hook_pick_is_checked},
     {"hand-off: an idle take waits for a submission, bounded", take_wakes_on_submit},
+    {"API 49: the take waits the time the worker asks, floored, never longer", take_waits_the_asked_time},
+    {"API 49: a trusted hook line wakes at once; its job's capture is its scene, without pixels", trusted_hook_line_reads_at_once},
     {"hand-off: a pending read waits for the completion, bounded", read_wakes_on_complete},
     {"hand-off: a read waiting at a shutdown is counted and woken; every waited read gives its count back",
      read_waiters_are_counted_and_woken},

@@ -308,6 +308,11 @@
  * tools/fast_gate.sh's vitasdk image]. A job of columns allocates only what a job allocates (its workspace holds the
  * 57,344 B rotation buffer: test_ledger.c), none when ocr_vertical is off. The kernel and the Shell keep their
  * pages. No block, thread or allocation. */
+/* API 49, trusted hooks without waiting (game_ocr/main.c hooks_watch's trusted reports and pace, hook_publish):
+ * debug text 155,032 -> 155,576 B (72 B of room left) and data/bss 35,312 -> 35,328 B, normal 146,116 ->
+ * 146,676 B and 35,304 -> 35,320 B, the same pages [measured: the build log's module rows, both builds, main
+ * b6c715c and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the watch reads a
+ * trusted line's text into the hook pool, which no job uses between jobs. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
 #else
@@ -562,7 +567,9 @@
  * VJO_WORST_GAME_JOB: it is the capture block every job may hold. API 43: a trusted hook's answer
  * (VJO_GAME_OCR_S_TRUST, core/hook_select.h vjo_hook_select_trusted) takes the same one strip beside
  * the same reserve, and after 8 such answers in a row gives back the resident weights, LM and cascade
- * model: no new block, and the job's own worst case is the capture block's. */
+ * model: no new block, and the job's own worst case is the capture block's. API 49: it takes no strip at
+ * all while the region shows the trusted line's scene (VJO_ROWS_HOOK publishes its capture without rows),
+ * and API 43's strip otherwise. */
 #define VJO_GAME_RESERVE_HOOK_ONLY (1u * 1024u * 1024u)
 /* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG
  * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), one strip of

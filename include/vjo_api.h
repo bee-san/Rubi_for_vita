@@ -96,8 +96,14 @@
  * the line finder's rows look like vertical text, then its columns; a line read as a column carries
  * VJO_GAME_OCR_LINE_COLUMN in its flags. Sizes and layouts are unchanged. API 27 and draft #223's API 29 were the
  * same feature as flags bit 15, which stays undefined. 44-46 are taken by work in flight (VOCR6's line-finder
- * fixes, the spotter finder, draft #326's text overlay in test.17), as are speed bits 21-27, so this is 47. */
-#define VJO_API_VERSION 47
+ * fixes, the spotter finder, draft #326's text overlay in test.17), as are speed bits 21-27, so this is 47.
+ * 49: trusted hooks without waiting (docs/native-hooks.md, "No wait for a trusted line"): vjoOcrTake's wait for a
+ * job is out->seq microseconds when the worker sets it lower than 100 ms; vjoOcrHookLine's bytes carry
+ * VJO_HOOK_LINE_TRUSTED, which always wakes the Shell and makes the line's scene VjoState.hook_scene (a new field
+ * at the end: the struct is 4 bytes longer); vjoOcrCaptureRows' VJO_ROWS_HOOK publishes a trusted answer's capture
+ * as that scene without reading pixels. API numbers on main only grow: 47 is #335's (vertical text) and 48
+ * #330's (the line finder). */
+#define VJO_API_VERSION 49
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
@@ -168,6 +174,9 @@ typedef struct {
      * the quiet spot for one taken since it started), else 0: a capture
      * taken before an icon was masked shows the screen once it is */
     uint32_t region_scene;
+    /* API 49: the scene of the newest line a trusted hook reported (vjoOcrHookLine with VJO_HOOK_LINE_TRUSTED)
+     * while the region still shows it, else 0: the Shell reads it at once, past the background read's pacing */
+    uint32_t hook_scene;
 } VjoState;
 
 typedef struct {

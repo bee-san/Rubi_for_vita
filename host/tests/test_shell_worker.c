@@ -1670,6 +1670,12 @@ static void test_engine_cache_tracks_backend_models_and_storage(void)
     strcpy(loaded.ocr_model_dir, "ux0:data/other-ocr");
     apply_config();
     TEST_CHECK(!cache_ok);
+    /* API 43: hook_trust decides which text a job shows (a trusted hook's or OCR's): switching it drops the result,
+     * so the overlay's next open reads the screen with the new rule */
+    cache_ok = 1;
+    loaded.hook_trust = !loaded.hook_trust;
+    apply_config();
+    TEST_CHECK(!cache_ok);
 }
 
 static void test_vocr_config(void)
@@ -5035,6 +5041,64 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
 
 /* ocr_mode = on_press recognizes only when the overlay opens: the open
  * overlay keeps its text and runs no refresh, however the screen settles. */
+/* API 49: a trusted hook's line (VjoState.hook_scene, the kernel's while the region shows it) is read at once.
+ * Overlay closed: past the subtitles' SUBTITLE_GAP_US and a failure's backoff, which still hold an untrusted
+ * screen back. Open: its refresh starts right after the last refresh and lookup (REFRESH_GAP_US, REFRESH_IDLE_US
+ * hold an untrusted screen back), and a line that grew (the text shown, then more) keeps the cursor where it was. */
+static void test_trusted_hook_line_is_read_at_once(void)
+{
+    cursor_setup();
+    subtitles = 1;
+    stable_pending = 1; control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    next_scene(30); control_tick(VJO_EV_REGION_QUIET);
+    TEST_CHECK(!job_running && stable_pending); /* an untrusted screen: SUBTITLE_GAP_US after the last job */
+    state.hook_scene = 30; control_tick(0);
+    TEST_ASSERT(job_running); /* the trusted line: at once */
+    finish_current_job();
+    subtitles = 0;
+    ocr_backoff.until = test_now + 10000000; /* a failure's backoff */
+    state.hook_scene = 0; next_scene(31); control_tick(VJO_EV_REGION_QUIET); /* (the kernel's: only the scene's own) */
+    TEST_CHECK(!job_running && stable_pending);
+    state.hook_scene = 31; control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    ocr_backoff.until = 0;
+    /* the open overlay */
+    open_overlay();
+    if (job_running) finish_current_job();
+    check_shown("猫犬鳥", "cat", 0);
+    fake_recognized_text = "犬猫";
+    next_scene(32); state.hook_scene = 0; control_tick(VJO_EV_REGION_QUIET);
+    TEST_ASSERT(job_running && job_refresh); /* the first refresh: nothing to pace it yet */
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only);
+    finish_current_job();
+    check_shown("犬猫", "dog", 0);
+    uint32_t generation = local_text_generation;
+    vjo_post_cursor(3, generation); on_command(); finish_current_job(); /* the reader moves to 猫 */
+    check_shown("犬猫", "cat", 3);
+    state.hook_scene = 0; next_scene(33); control_tick(VJO_EV_REGION_QUIET);
+    TEST_CHECK(!job_running && refresh_pending); /* untrusted: REFRESH_GAP_US and REFRESH_IDLE_US */
+    state.hook_scene = 33; fake_recognized_text = "犬猫鳥"; control_tick(0);
+    TEST_ASSERT(job_running && job_refresh); /* trusted: at once */
+    finish_current_job();
+    TEST_CHECK(DLOGGED("refresh rc=0: new text") && !strcmp(local_text, "犬猫鳥"));
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 3); /* the line grew: the cursor stays */
+    finish_current_job();
+    check_shown("犬猫鳥", "cat", 3);
+    /* another line, trusted: replaced at once, the cursor at its start */
+    next_scene(34); state.hook_scene = 34; fake_recognized_text = "鳥猫"; control_tick(VJO_EV_REGION_QUIET);
+    TEST_ASSERT(job_running && job_refresh);
+    finish_current_job();
+    TEST_ASSERT(job_running && job_cursor_only && job_cursor_byte == 0);
+    finish_current_job();
+    state.hook_scene = 0;
+    close_overlay();
+    mem_free();
+}
+
 static void test_on_press_overlay_never_refreshes(void)
 {
     cursor_setup();
@@ -7986,6 +8050,7 @@ TEST_LIST = {
 #endif
     {"screen_changed_is_retried_quietly_at_a_bounded_pace", test_screen_changed_is_retried_quietly_at_a_bounded_pace},
     {"open_overlay_keeps_its_text_and_refreshes_it_quietly", test_open_overlay_refreshes_its_text_quietly},
+    {"api49_trusted_hook_line_is_read_at_once", test_trusted_hook_line_is_read_at_once},
     {"history_up_walks_back_and_down_returns", test_history_up_walks_back_and_down_returns},
     {"history_needs_auto_lines_and_memory", test_history_needs_auto_lines_and_memory},
     {"history_waits_for_the_running_job", test_history_waits_for_the_running_job},

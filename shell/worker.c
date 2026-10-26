@@ -1815,7 +1815,8 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
         a->ocr_lm != b->ocr_lm || a->ocr_cascade_ms != b->ocr_cascade_ms ||
         a->ocr_refine_lines != b->ocr_refine_lines || a->vocr_tier != b->vocr_tier ||
         a->ocr_text_gate != b->ocr_text_gate || a->ocr_head_gate != b->ocr_head_gate ||
-        a->ocr_vertical != b->ocr_vertical)
+        a->ocr_vertical != b->ocr_vertical ||
+        a->hook_trust != b->hook_trust) /* API 43: which text a job shows, a hook's or OCR's */
         return 0;
     return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
            !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);
@@ -2382,14 +2383,18 @@ static void on_refresh_done(void)
                 }
                 what = "same text";
             } else if (len && len < sizeof(local_text)) {
+                /* API 49: a line that grew (a hook that gives its text as it types) keeps the cursor where it was */
+                size_t was = sceClibStrnlen(local_text, sizeof(local_text));
+                int grown = was && was < len && !sceClibMemcmp(local_text, text, was);
                 sceClibMemcpy(local_text, text, len + 1);
 #ifdef VJO_WITH_VOCR
                 line_debug_accept(&vocr_result, refresh_model);
 #endif
                 advance_generation(&local_text_generation);
                 local_page = 0;
-                local_cursor_byte = job_cfg.japanese_only_selection
-                    ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0;
+                if (!grown)
+                    local_cursor_byte = job_cfg.japanese_only_selection
+                        ? (uint32_t)vjo_utf8_japanese_cursor_step(local_text, len, 0, 0) : 0;
                 local_text_scene = job_capture_scene;
                 local_text_capture_seq = job_capture_seq;
                 cache_ok = 0; /* the arena's entry is the old text's */
@@ -2931,18 +2936,17 @@ static int background_throttled(void)
 /* A stable event that arrives while busy (or throttled) is kept, so the
  * newest screen is still recognized afterwards. With subtitles, a region
  * that never settles (a video behind the text) is recognized every
- * UNSETTLED_US anyway. */
+ * UNSETTLED_US anyway. API 49: a trusted hook's line (VjoState.hook_scene)
+ * is read at once, past the throttle (docs/native-hooks.md). */
 static void auto_prefetch(void)
 {
-    VjoState st;
+    VjoState st = {.size = sizeof(st)};
     int unsettled_due;
-    if (ov != OV_CLOSED || job_running || !game_active() || !background_wanted() || background_throttled())
+    if (ov != OV_CLOSED || job_running || !game_active() || !background_wanted())
         return;
     unsettled_due = subtitles && now_us() - job_started_us >= UNSETTLED_US;
-    if (!stable_pending && !unsettled_due)
+    if ((!stable_pending && !unsettled_due) || vjoGetState(&st) < 0 || (background_throttled() && !st.hook_scene))
         return;
-    st.size = sizeof(st);
-    vjoGetState(&st);
     if (stable_pending) {
         stable_pending = 0;
         if ((st.stable || st.quiet) && !claim_cache_for(&st))
@@ -2972,13 +2976,14 @@ static void background_open(void)
         }
         return;
     }
-    if (!refresh_pending || t < refresh_after_us || t < refresh_backoff.until || t - lookup_us < REFRESH_IDLE_US ||
-        shot_waiting())
+    /* API 49: a trusted hook's line replaces the text at once, past the pace (docs/native-hooks.md) */
+    if (!refresh_pending || shot_waiting() || vjoGetState(&st) < 0 ||
+        (!st.hook_scene && (t < refresh_after_us || t < refresh_backoff.until || t - lookup_us < REFRESH_IDLE_US)))
         return;
     refresh_pending = 0;
     /* Local text is valid only for this game's local pipeline (retired at every
      * change). ocr_mode = on_press recognizes only when the overlay opens. */
-    if (local_text_valid && cfg.ocr_mode == VJO_OCR_AUTO && vjoGetState(&st) >= 0 &&
+    if (local_text_valid && cfg.ocr_mode == VJO_OCR_AUTO &&
         (st.stable || st.quiet) && !shows_screen(local_text_scene, local_text_capture_seq, &st))
         start_job_kind("auto: screen settled", 0, 1);
 }

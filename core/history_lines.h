@@ -84,6 +84,10 @@ typedef struct {
 } VjoReadingScope;
 void vjo_reading_scope_add(VjoReadingTime *t, VjoReadingScope *scope,
                            uint64_t us, uint32_t game, uint32_t chars);
+/* API 49: the newest line, added at `us`, grew to `chars` characters (its record replaced, at the same time): the
+ * characters it gains, also in the scope's day, and 0 when that line was not counted (another game, or not the
+ * newest). No time is credited: the gap before it is the same. */
+uint32_t vjo_reading_scope_grow(VjoReadingTime *t, VjoReadingScope *scope, uint64_t us, uint32_t chars);
 uint32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut,
     size_t *first, size_t *last, VjoReadingTime *time, VjoReadingScope *scope);
 /* Adds the record at `us` (its game, its line's characters) and credits the record before it: returns the

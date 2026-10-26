@@ -229,6 +229,12 @@ int vjo_hook_select_restore(VjoHookSelect *st, const VjoHookLearned *saved)
     st->locked_encoding = saved->encoding;
     st->interval = saved->interval;
     st->confirm = 1;
+#if VJO_HOOK_TRUST_INTERVAL > 8u
+    /* API 49: saved at the trusted interval only while it was trusted (vjo_hook_select_learned): trusted again at
+     * once, without the confirmation OCR read a restored source otherwise gets (vjo_hook_select_trusted ignores
+     * confirm; with hook_trust = off the confirmation runs as before) */
+    st->strong = saved->interval >= VJO_HOOK_TRUST_INTERVAL;
+#endif
     return 1;
 }
 
@@ -236,7 +242,11 @@ int vjo_hook_select_learned(const VjoHookSelect *st, VjoHookLearned *out)
 {
     if (out) *out = (VjoHookLearned){0};
     if (!st || !st->interval) return 0;
-    if (out) *out = (VjoHookLearned){st->locked_site, st->locked_key, st->locked_encoding, st->interval};
+    uint32_t interval = st->interval;
+#if VJO_HOOK_TRUST_INTERVAL > 8u
+    if (interval >= VJO_HOOK_TRUST_INTERVAL && !st->strong) interval = VJO_HOOK_TRUST_INTERVAL / 2u; /* API 49 */
+#endif
+    if (out) *out = (VjoHookLearned){st->locked_site, st->locked_key, st->locked_encoding, interval};
     return 1;
 }
 

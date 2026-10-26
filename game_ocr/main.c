@@ -1430,6 +1430,12 @@ static struct {
      * reported, and when it last reported one */
     uint32_t luna_seen, watch_seen;
     uint64_t watch_sent;
+    /* API 49: the site streams the watch has classified (bit id - 1; a site's kind and table entry never change), the
+     * last user job's VJO_GAME_OCR_S_TRUST, and the content of the last trusted line it reported (its decoded text's
+     * hash and length: the same text again, from this stream or another, is no new line) */
+    uint32_t sites_known;
+    int trust_on;
+    uint32_t watch_hash, watch_len;
     /* API 43: a trusted source has answered in this game (VJO_GAME_OCR_S_TRUST): no warm-up reads the weights
      * after a job that found no line, as the hook supplies the lines; and the trusted answers since the last job
      * that ran OCR (at TRUST_DROP_ANSWERS the resident blocks go back to the game) */
@@ -1560,6 +1566,23 @@ static void hook_show(VjoGameOcrResult *out, const VjoHookCand *k, int ocr, unsi
     h = text_len(t, room);
     memmove(t + h + 1u, t + cap - 1u - o, o + 1u);
     sceClibMemset(t + h + 2u + o, 0, cap - (h + 2u + o));
+}
+
+/* API 49: a trusted answer's capture without a pixel read (VJO_ROWS_HOOK): the kernel publishes the trusted line's
+ * scene while the region shows it, 0; else (a menu over the line, an untrusted line since, an older kernel's refusal)
+ * the first pass as before, run_hook_pass. No memory: the answer needs no block. */
+static int hook_publish(const VjoGameOcrRequest *r)
+{
+    VjoGameOcrRows q;
+    VjoGameOcrRowsInfo info;
+    sceClibMemset(&q, 0, sizeof(q));
+    sceClibMemset(&info, 0, sizeof(info));
+    q.size = sizeof(q);
+    q.seq = r->seq;
+    q.mode = VJO_GAME_OCR_SRC_HOOK;
+    q.flags = VJO_ROWS_HOOK;
+    info.size = sizeof(info);
+    return vjoOcrCaptureRows(&q, NULL, &info);
 }
 
 /* A job a stream answers: no model and no memory check for one, no finding, no recognition; the region's
@@ -1771,6 +1794,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                              ? VJO_HOOK_PICK_OCR : r->hook_pick;
     /* API 43: trusted hooks answer without OCR (the automatic pick only) */
     int trust = (r->speed & VJO_GAME_OCR_S_TRUST) && hook_pick == VJO_HOOK_PICK_AUTO;
+    if (hook_pick == VJO_HOOK_PICK_AUTO) hk.trust_on = trust; /* API 49: the watch's (a diagnostic job's is not) */
     if (hk.installed) {
         if (hook_pick && hook_pick <= VJO_HOOK_STREAMS) vjo_hooks_keep(hook_pick, 0); /* pinned: keeps its CALL slot */
         if (!hooks_snapshot(hook_pick, trust)) {
@@ -1790,9 +1814,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                 hk.trusted = 1;
                 job_reserve = VJO_GAME_RESERVE_HOOK_ONLY;
                 if (hk.trusted_run < TRUST_DROP_ANSWERS) hk.trusted_run++;
-                if (hk.trusted_run >= TRUST_DROP_ANSWERS && drop_resident()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+                /* A give-back that fails (a block this worker cannot free: nearly unreachable) costs no line, and is
+                 * not tried again until a job runs OCR (audit-rubi-ocr-skip N1) */
+                if (hk.trusted_run == TRUST_DROP_ANSWERS && drop_resident()) hk.trusted_run = TRUST_DROP_ANSWERS + 1u;
             }
-            rc = run_hook_pass(r, out, &capture, &stats);
+            rc = (hk.flags & VJO_HOOK_R_TRUSTED) && !hook_publish(r) ? VJO_OK : run_hook_pass(r, out, &capture, &stats);
             if (rc < -199) rc = VJO_E_SOURCE; /* a native capture error, as for OCR */
             if (capture.failed)
                 step_add(VJO_GSTEP_PASS, capture.mode, capture.pass_strips, capture.failed, capture.pass_bytes,
@@ -2260,39 +2286,84 @@ static int inactive_long(int registered)
  * (hk.sel.locked, while its slot still holds that source). One newer than every text the last job's
  * snapshot saw (hk.watch_seen) is a new line: the kernel gives the region a new scene and wakes the Shell
  * (vjoOcrHookLine), so its background read starts now rather than once the pixels settle. At most one
- * report every HOOK_LINE_GAP_US; a refused one is tried again at the next round. */
+ * report every HOOK_LINE_GAP_US; a refused one is tried again at the next round.
+ *
+ * API 49 (docs/native-hooks.md, "No wait for a trusted line"): when the last user job asked for trusted hooks
+ * (VJO_GAME_OCR_S_TRUST, hook_trust = on), a trusted source's line is reported at once, VJO_HOOK_LINE_TRUSTED:
+ * a site that answers without recognition from its first line (no job need have seen it), and the learned
+ * source once vjo_hook_select_trusted answers from it (a restored one by its identity, before a job has found
+ * its slot). No gap: the same text again, decoded, from that stream or another watched one, is no new line, and
+ * a write the decoder leaves empty is none either. While a trusted source is watched the loop polls every
+ * HOOK_WATCH_US (vjoOcrTake's wait, the value hooks_watch returns) instead of 100 ms. */
 #define HOOK_LINE_GAP_US 200000u
-static void hooks_watch(void)
+#ifndef HOOK_WATCH_US
+#define HOOK_WATCH_US 16000u /* host/hook_latency_bench.c measures 4-33 ms; docs/native-hooks.md */
+#endif
+static uint32_t hooks_watch(void)
 {
-    uint32_t want = hk.luna_seen, best = 0, bytes = 0;
+    uint32_t want = hk.luna_seen, best = 0, best_id = 0, bytes = 0, pace, h = 2166136261u;
+    /* lt: the learned source is trusted (vjo_hook_select_trusted's rule for it) */
+    int trusted = 0, lt = hk.trust_on && hk.sel.interval >= VJO_HOOK_TRUST_INTERVAL && hk.sel.strong && !hk.sel.misses;
     uint64_t now;
+    size_t len;
     if (hk.sel.interval && hk.sel.locked && hk.sel.locked <= VJO_HOOK_STREAMS)
         want |= VJO_HOOK_STREAM_BIT(hk.sel.locked);
-    if (!want || !IMPORT_READY(vjoOcrHookLine)) return;
+    if (!hk.installed || !IMPORT_READY(vjoOcrHookLine) || (!want && !hk.trust_on)) return 0;
     for (uint32_t id = 1; id <= VJO_HOOK_STREAMS; id++) {
-        uint32_t key = 0, kind = 0, n = 0, seq;
-        if (!(want & VJO_HOOK_STREAM_BIT(id))) continue;
+        uint32_t key = 0, kind = 0, n = 0, seq, bit = VJO_HOOK_STREAM_BIT(id);
+        int own;
+        if (!(want & bit) && !hk.trust_on) continue;
         seq = vjo_hooks_seq(id, &key, &kind, &n);
-        if (!seq || !n || (int32_t)(seq - hk.watch_seen) <= 0) continue;
-        if (!(hk.luna_seen & VJO_HOOK_STREAM_BIT(id)) &&
-            (key != hk.sel.locked_key || (kind == VJO_HOOK_KIND_SITE) != !!hk.sel.locked_site))
-            continue; /* another caller took the learned source's slot: its next job tells */
+        if (!seq || !n) continue;
+        /* API 49: a site from its first line, as hooks_snapshot counts them (Luna's; a Rubi verified one with trust) */
+        if (hk.trust_on && kind == VJO_HOOK_KIND_SITE && !(hk.luna_seen & bit)) {
+            if (vjo_hooks_verified(id)) hk.luna_seen |= bit;
+            else if (!(hk.sites_known & bit) && vjo_hooks_snap(id, &hk.snap)) {
+                hk.sites_known |= bit; /* its table entry never changes */
+                if (hk.snap.site) hk.luna_seen |= bit;
+            }
+        }
+        own = hk.sel.interval && key == hk.sel.locked_key && (kind == VJO_HOOK_KIND_SITE) == !!hk.sel.locked_site &&
+              (hk.sel.locked ? hk.sel.locked == id : hk.trust_on);
+        if (!(hk.luna_seen & bit) && !own) continue; /* another caller took the learned source's slot: its next job tells */
+        if ((int32_t)(seq - hk.watch_seen) <= 0) continue;
         if (!best || (int32_t)(seq - best) > 0) {
             best = seq;
+            best_id = id;
             bytes = n;
+            trusted = (hk.trust_on && (hk.luna_seen & bit)) || lt;
         }
     }
-    if (!best) return;
+    /* the fast pace from before a trusted source's first text: a game with table sites installed (its dialogue's), or
+     * a trusted learned source (one restored from the cache included) */
+    pace = (hk.trust_on && (hk.installed >> 16)) || lt ? HOOK_WATCH_US : 0u;
+    if (!best) return pace;
     now = now_wide();
-    if (hk.watch_sent && now - hk.watch_sent < HOOK_LINE_GAP_US) return;
-    if (vjoOcrHookLine(best, bytes) < 0) return; /* not the active game now, or a job in the way */
+    if (trusted) {
+        /* the line's text as a job would show it (hk.pool is free between jobs: each job's snapshot fills it); a
+         * stream a game thread is writing is read at the next round */
+        if (!vjo_hooks_snap(best_id, &hk.snap)) return pace;
+        len = vjo_hooks_text(&hk.snap, hk.pool, HOOK_TEXT_CAP);
+        for (size_t i = 0; i < len; i++) h = (h ^ (unsigned char)hk.pool[i]) * 16777619u;
+        if (len && (h != hk.watch_hash || len != hk.watch_len)) {
+            if (vjoOcrHookLine(best, bytes | VJO_HOOK_LINE_TRUSTED) < 0) return pace; /* a job in the way */
+            hk.watch_hash = h;
+            hk.watch_len = (uint32_t)len;
+            hk.watch_sent = now;
+        }
+    } else {
+        if (hk.watch_sent && now - hk.watch_sent < HOOK_LINE_GAP_US) return pace;
+        if (vjoOcrHookLine(best, bytes) < 0) return pace; /* not the active game now, or a job in the way */
+        hk.watch_sent = now;
+    }
     hk.watch_seen = best;
-    hk.watch_sent = now;
+    return pace;
 }
 
 static int worker_main(SceSize args, void *argp)
 {
     (void)args; (void)argp;
+    uint32_t pace = 0; /* API 49: the trusted watch's poll, 0 = the 100 ms one */
     while (!__atomic_load_n(&quitting, __ATOMIC_ACQUIRE) && !blocked) {
         int nap = 1;
         if (claim_outstanding) {
@@ -2303,17 +2374,20 @@ static int worker_main(SceSize args, void *argp)
                 static VjoGameOcrRequest request; /* not on the 32 KiB stack */
                 uint64_t asked;
                 int took;
-                hooks_watch(); /* API 41: a new hooked line, reported before waiting for the next job */
+                /* API 41: a new hooked line, reported before waiting for the next job; API 49: the wait itself is
+                 * HOOK_WATCH_US while a trusted source is watched (the kernel reads it from request.seq) */
+                pace = hooks_watch();
                 asked = now_wide();
                 sceClibMemset(&request, 0, sizeof(request));
                 request.size = sizeof(request);
+                request.seq = pace;
                 took = vjoOcrTake(&request);
                 if (!took) {
                     claim_outstanding = 1;
                     vjo_game_ocr_run_request(&request, &pending_result);
                     if (!vjoOcrComplete(&pending_result) && !pending_result.cleanup_status) claim_outstanding = 0;
                     nap = claim_outstanding; /* done: the next job may be queued already */
-                } else if (now_wide() - asked >= TAKE_WAITED_US) {
+                } else if (now_wide() - asked >= (pace ? pace / 2u : TAKE_WAITED_US)) {
                     nap = 0; /* the kernel held the take: its wait was the pace */
                 }
             } else if (gone &&

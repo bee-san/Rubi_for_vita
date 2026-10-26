@@ -175,6 +175,7 @@ int vjoOcrShotSave(uint32_t seq, uint32_t bytes) { (void)seq; (void)bytes; retur
 static unsigned rows_calls;
 int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
 {
+    if (req->flags & VJO_ROWS_HOOK) return 0; /* API 49: a trusted answer's capture, published without pixels */
     if (req->y >= height || !req->n || req->n > height - req->y) return VJO_ERR_ARG;
     rows_calls++;
     sim_us += 16667u;

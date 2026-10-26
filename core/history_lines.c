@@ -198,6 +198,15 @@ void vjo_reading_scope_add(VjoReadingTime *t, VjoReadingScope *scope,
     }
 }
 
+uint32_t vjo_reading_scope_grow(VjoReadingTime *t, VjoReadingScope *scope, uint64_t us, uint32_t chars)
+{
+    uint32_t was = t->last_chars;
+    if (!t->last_us || t->last_us != us || chars <= was || chars > 0xFFFFu) return 0;
+    t->last_chars = (uint16_t)chars;
+    if (scope && us >= scope->start_us && us < scope->end_us) scope->chars += chars - was;
+    return chars - was;
+}
+
 uint32_t vjo_history_count_scope(char *buf, size_t len, int whole, int cut, size_t *first, size_t *last,
                            VjoReadingTime *time, VjoReadingScope *scope)
 {

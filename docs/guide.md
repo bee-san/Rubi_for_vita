@@ -380,7 +380,10 @@ reported console run. The behaviour below is checked on the host.
   with OCR four times, on four different lines. OCR comes back by itself when no trusted hook has text (or a
   string copy's caller is replaced). The price: a screen the hook did not copy (a choice menu, the backlog)
   shows the hook's last line. `hook_trust = off` checks every hook with OCR as 0.9.7 did, below
-  ([details](native-hooks.md#trusted-hooks-api-43)).
+  ([details](native-hooks.md#trusted-hooks-api-43)). A trusted line is also read at once (API 49): within 16 ms of
+  the game's copy, without waiting for the screen to settle or the line to finish typing, so L + R opens on it with
+  its first word looked up, and the open overlay shows each new line as it starts
+  ([details](native-hooks.md#no-wait-for-a-trusted-line-api-49)).
 - **What is shown** with `hook_trust = off`. Nonempty Luna hook text is preferred immediately, including short
   or unchanged lines, without initial or periodic OCR checks. With multiple Luna streams, the newest wins.
   When Luna supplies no text, regular hooks use the following validation and cache.
@@ -742,7 +745,7 @@ no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-o
 `ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
 #100's text-presence gate in front of the finder: a region it says holds no text (the game hid its text box, a CG
 screen) returns no line, so nothing is recognized and no junk is read off the picture. It stays off because it also
-stops a few real lines, mostly very short ones (measured on the host on 47 games' hooked pages: lines OCR would
+stops a few real lines, mostly very short ones (measured on the host on 46 games' hooked pages: lines OCR would
 have read, 0.004-0.17 % of all, by platform and region); it costs an estimated 0.1 s per job at the game's clock
 ([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)).
 `ocr_head_gate = on`, the default, lets the recognizer skip its output layer on the frames vita-vn-ocr #117's

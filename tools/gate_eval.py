@@ -94,8 +94,9 @@ def fold(s):
 
 
 def similarity(ocr, hook):
-    """1000 x the share of the hook text OCR read: (|h| - d) / max(|h|, |o|), d the edit distance of the hook's
-    folded text to OCR's (0 when either is empty), as core/hook_select.c scores a stream against OCR."""
+    """1000 x the share of the hook text OCR read: (|h| - d) / max(|h|, |o|), d the full edit distance of the hook's
+    folded text to OCR's (0 when either is empty), with no minimum length. Not core/hook_select.c's score (the hook's
+    text within OCR's, 4 characters at least): this one also counts a 1-3-character line OCR reads exactly."""
     o, h = fold(ocr), fold(hook)
     if not o or not h:
         return 0

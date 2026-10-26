@@ -924,6 +924,24 @@ if(VJO_WITH_VOCR)
     target_compile_definitions(${_vjo_target} PRIVATE VJO_HOOK_TRUST_INTERVAL=${_vjo_trust}u)
     target_link_libraries(${_vjo_target} vjo_vocr vjo_host)
   endforeach()
+  # The trusted-hook latency bench (docs/native-hooks.md "No wait for a trusted line", tools/hook_latency_bench.py):
+  # the actual worker, kernel transport and client on one virtual clock, from a hook's write to the line's lookup;
+  # not a test. Built with the worker's default watch pace and, for the poll's cost, 4, 8 and 33 ms (HOOK_WATCH_US).
+  foreach(_vjo_watch IN ITEMS 0 4000 8000 33000)
+    set(_vjo_target vjo-hook-latency-bench)
+    if(NOT _vjo_watch EQUAL 0)
+      set(_vjo_target vjo-hook-latency-bench-${_vjo_watch})
+    endif()
+    add_executable(${_vjo_target} host/hook_latency_bench.c host/hook_latency_kernel.c kernel/buffers.c
+      kernel/capture.c kernel/scene.c kernel/ledger.c core/ledger.c)
+    target_include_directories(${_vjo_target} PRIVATE host/tests/game_stubs host/tests/vita_stubs)
+    target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    target_compile_definitions(${_vjo_target} PRIVATE VJO_HOST=1 VJO_TEST_MODEL_BROKER=1)
+    if(NOT _vjo_watch EQUAL 0)
+      target_compile_definitions(${_vjo_target} PRIVATE HOOK_WATCH_US=${_vjo_watch}u)
+    endif()
+    target_link_libraries(${_vjo_target} vjo_vocr)
+  endforeach()
   # The text-presence gate on many regions as the worker's job runs it (tools/gate_eval.py); not a test.
   add_executable(vjo-gate-eval host/gate_eval.c)
   target_compile_options(vjo-gate-eval PRIVATE -Wall -Wextra -Wno-unused-parameter)
