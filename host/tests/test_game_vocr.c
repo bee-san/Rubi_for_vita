@@ -40,6 +40,8 @@ static int memory_live, alloc_failure, base_failure, free_failure, close_failure
 static unsigned live_bytes, job_block, weights_block;
 static int join_failure, start_failure, delete_failure, budget_failure, cancel_reads;
 static int available, cancel_job, short_reads, open_failure, bad_read;
+/* 1: report free USER memory in whole MiB, rounded down, as a console did (あおかな, 2026-10-26) */
+static int free_mib;
 static FILE *model;
 static char model_path[512];
 static unsigned user_open_calls;
@@ -54,7 +56,12 @@ SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_value++; }
 /* Free USER memory as the game sees it: what remains after the worker's blocks. */
 int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
-{ TEST_CHECK(out->size == sizeof(*out)); out->size_user = available < 0 ? available : available - (int)live_bytes; return budget_failure ? -1 : 0; }
+{
+    TEST_CHECK(out->size == sizeof(*out));
+    out->size_user = available < 0 ? available : available - (int)live_bytes;
+    if (free_mib && out->size_user > 0) out->size_user -= out->size_user % (1024 * 1024);
+    return budget_failure ? -1 : 0;
+}
 static unsigned workspace_tries, workspace_types[8];
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opts)
 {
@@ -353,7 +360,7 @@ static VjoGameOcrRequest setup(void)
     memory_live = alloc_failure = base_failure = free_failure = close_failure = 0;
     join_failure = start_failure = delete_failure = budget_failure = cancel_reads = 0;
     cancel_job = short_reads = open_failure = bad_read = 0;
-    available = 16*1024*1024;
+    available = 16*1024*1024; free_mib = 0;
     memset(pixels, 0, sizeof(pixels)); strcpy(own_title, "PCSG00415");
     frame_at = NULL; frame_info_calls = 0; frame_w = 200;
     change_at_rows = clear_at_rows = 0; blocks_held = 0; frame_h = 60;
@@ -1957,6 +1964,63 @@ static unsigned check_steps(const VjoGameOcrResult *out, const VjoGameOcrStep **
         if (out->step[i].id == VJO_GSTEP_CHECK) steps[n++] = &out->step[i];
     return n;
 }
+
+/* The console reports the game's free memory in whole MiB (あおかな, PCSG00700, 2026-10-26: every sample 1, 2,
+ * 3 or 4 MiB). A job whose check passed with less than 1 MiB to spare took its own blocks, the next sample read
+ * a whole MiB less, and its model's weights, checked again against that less the reserve, were refused before
+ * any was read: recognition ended out of memory, and no smaller model was tried. Now the job gives its blocks
+ * back and checks the next model, which fits, and reads the line. With that model the last one, its refusal
+ * is the job's: no loop. Whatever the tiers' reserves: the free memory is set from each tier's own need. */
+static void weights_refused_after_the_check_retry_the_next_smaller_model(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Release weights absent; the weights' own check is not reached"); return; }
+    const uint32_t mib = 1024u * 1024u;
+    const uint32_t small = (uint32_t)PAGE_ROUND(vjo_vocr_model(VJO_VOCR_TIER1_NAME)->bytes);
+    const uint32_t normal = (uint32_t)PAGE_ROUND(vjo_vocr_model(VJO_VOCR_TIER2_NAME)->bytes);
+    VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
+    r.tiers = 1u << (VJO_VOCR_TIER_NORMAL - 1u) | 1u << (VJO_VOCR_TIER_SMALL - 1u);
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+    /* Normal passes the check at F, the least whole MiB its need fits; once its blocks are taken the sample
+     * reads F - 1 MiB, which less its reserve is short of its weights. Small fits both. */
+    const uint32_t f = (tier_need(&r, 2, 0) + mib - 1u) / mib * mib;
+    TEST_ASSERT(f - mib < VJO_GAME_RESERVE_NORMAL + normal);
+    TEST_ASSERT(tier_need(&r, 1, 0) <= f && f - mib >= VJO_GAME_RESERVE_SMALL + small);
+    line();
+    free_mib = 1;
+    available = (int)(f + 4096u);
+    int rc = vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK_(rc == VJO_OK, "free %u: rc %d", f, rc);
+    TEST_CHECK_(out.lines >= 1 && out.fallback == 1u, "%u lines, fallback %u", out.lines, out.fallback);
+    TEST_CHECK(out.weights == VJO_GAME_OCR_WEIGHTS_READ && weights_live && weights_block == small);
+    TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_SMALL && !memory_live && !capture_live && !out.cleanup_status);
+    {
+        const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
+        unsigned n = check_steps(&out, s);
+        TEST_CHECK_(n == 2 && VJO_GCHECK_TIER(s[0]->kind) == 2 && !s[0]->rc && VJO_GCHECK_TIER(s[1]->kind) == 1 &&
+                    s[1]->arg == 1u && !s[1]->rc, "%u checks", n); /* Normal passed, then Small, the retry's */
+    }
+    TEST_CHECK(!drop_resident());
+
+    /* Small is the only one left: Normal refused by its check, Small passed at F2 and refused its weights at
+     * F2 - 1 MiB; the job's OOM, its blocks given back, Small tried once */
+    r = setup();
+    r.tiers = 1u << (VJO_VOCR_TIER_NORMAL - 1u) | 1u << (VJO_VOCR_TIER_SMALL - 1u);
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+    const uint32_t f2 = (tier_need(&r, 1, 0) + mib - 1u) / mib * mib;
+    TEST_ASSERT(tier_need(&r, 2, 0) > f2 && f2 - mib < VJO_GAME_RESERVE_SMALL + small);
+    line();
+    free_mib = 1;
+    available = (int)(f2 + 4096u);
+    rc = vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK_(rc == VJO_E_OOM && !out.text[0], "free %u: rc %d", f2, rc);
+    TEST_CHECK(!memory_live && !capture_live && !weights_live && !out.cleanup_status);
+    {
+        const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
+        unsigned n = check_steps(&out, s);
+        TEST_CHECK_(n == 2 && s[0]->rc && VJO_GCHECK_TIER(s[1]->kind) == 1 && !s[1]->rc, "%u checks", n);
+    }
+    free_mib = 0;
+}
 static const uint32_t tier_reserve[] = {0, VJO_GAME_RESERVE_SMALL, VJO_GAME_RESERVE_NORMAL, VJO_GAME_RESERVE_LARGE};
 
 /* A request by tiers runs the largest of its tiers whose job fits the game's free
@@ -2595,6 +2659,8 @@ TEST_LIST = {
     {"module_start reads the text source for the hooks (API 31)", module_start_reads_the_text_source},
     {"model tiers: the largest that fits beside its reserve, then the next one down, each check logged",
      tier_ladder_takes_the_largest_size_that_fits},
+    {"model tiers: weights refused after the check (free memory in whole MiB): the next smaller model",
+     weights_refused_after_the_check_retry_the_next_smaller_model},
     {"model tiers: the cascade is the next size up, the reserve the largest held, files by tier",
      tier_cascade_is_the_next_size_up},
     {"model tiers: two sizes with one model open it as the job's own tier", two_sizes_with_one_model_open_as_the_job_s_own_tier},
