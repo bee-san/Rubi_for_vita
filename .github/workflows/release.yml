@@ -26,7 +26,7 @@ name: Release
 # two zips of them; the `package` job does so and checks each with tools/e2e_package.py.
 on:
   push:
-    branches: [main]
+    branches: [main, test/0.9.7-test.19]
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -382,7 +382,9 @@ jobs:
     needs: [changes, vita]
     if: ${{ needs.changes.outputs.code == 'true' && needs.changes.outputs.dicts != 'false' && needs.changes.outputs.packaging == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    permissions:
+      contents: write  # the test build's pre-release (its branch only)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -451,6 +453,24 @@ jobs:
           path: build/e2e-package/*/*.log
           if-no-files-found: ignore
           retention-days: 7
+      # The test build v0.9.7-test.19 only (its own branch's commit; never on main): package both builds under
+      # the test version with card mining on, as the test builds are, check them, and publish the pre-release.
+      - name: Test build v0.9.7-test.19
+        if: ${{ github.ref == 'refs/heads/test/0.9.7-test.19' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          normal=(ci/normal/Rubi-*.zip)
+          debug=(ci/debug/Rubi-*-debug.zip)
+          python3 tools/package_variants.py --normal "${normal[0]}" --debug "${debug[0]}" --models ci/models \
+            --version 0.9.7-test.19 --source-revision ${{ github.sha }} --sources . \
+            --set anki_mining=on -o ci/test
+          for zip in ci/test/Rubi-*.zip; do python3 tools/e2e_package.py "$zip"; done
+          ls -l ci/test
+          gh release create v0.9.7-test.19 ci/test/* --prerelease --target ${{ github.sha }} \
+            --title "0.9.7-test.19: test build (vertical text #335)" \
+            --notes-file .github/test-release.md
 
 # A release is published explicitly after these gates. tools/package_variants.py (tools/package_release.py
 # for each build) combines the two builds' binaries with checksum-pinned models and the frozen
