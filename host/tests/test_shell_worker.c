@@ -1722,6 +1722,10 @@ static void test_vocr_model_change_invalidates_cache(void)
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
+    loaded.ocr_line_fix = loaded.ocr_line_fix == 2 ? 1 : 2; /* API 50: and the line finder's fixes */
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
     apply_config(); /* the same again: nothing changed */
     TEST_CHECK(cache_ok);
 }
