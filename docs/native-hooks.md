@@ -116,7 +116,7 @@ A table site is an address in the main module's segment 0 where the game holds a
 Two lists name them:
 
 - **Rubi's verified entries** (`core/hook_place.c`): title, module NID, segment-0 offset, Thumb or ARM,
-  register, encoding and 8 to 16 bytes recorded at the site. Two so far:
+  register, encoding and 8 to 16 bytes recorded at the site, and optionally a filter and a pointer read:
   - CLANNAD PCSG00415, NID 0xC5187D60, +0x2CA70, Thumb, r6, CP932, `AB F8 2C 23 14 F5 53 70` (STRH.W r2,
     [r11, #0x32C]; ADDS.W r0, r4, #0x34C). From PR #16's `profiles/PCSG00415.vjhook`; proven in Vita3K
     only (note 22).
@@ -126,6 +126,11 @@ Two lists name them:
     its 8 patched bytes (checked on the decrypted eboot). Proven on a console (PCH-2000, 3.65,
     2026-10-23): hooked, its stream held text, and with OCR refused for memory the overlay showed the
     game's line.
+
+  - PROTOTYPE engine titles from the psandvita Vita3K farm (proven in Vita3K only; no branch, PC use or IT in the patched bytes and no branch in segment 0 into them, checked on each dumped segment 0):
+    - PCSG00007 リトルバスターズ！ Converted Edition, NID 0x8A335ECD, +0x1D15C, Thumb, r4 (deref), CP932, filter `RF_PROTOTYPE`; 562 farm pages
+    - PCSG00206 グリザイアの果実 -LE FRUIT DE LA GRISAIA-, NID 0x4668F40F, +0x25FDE, Thumb, r4 + 10282, CP932, filter `RF_PROTOTYPE`; 3292 farm pages
+    - PCSG00620 グリザイアの果実スピンアウト！？ アイドル魔法少女ちるちる☆みちる, NID 0x90E7EC14, +0x31E90, Thumb, r4 + 1066, CP932, filter `RF_PROTOTYPE`; 995 farm pages
 
   An entry is hooked only when the module NID and every recorded byte match. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text

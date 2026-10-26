@@ -3,6 +3,7 @@
 
 #include <string.h>
 
+#include "hook_luna.h" /* VJO_RF_*: a verified entry's filter */
 #include "hook_text.h"
 
 const char *vjo_place_reason(int reason)
@@ -156,6 +157,16 @@ static const VjoPlaceVerified verified[] = {
      {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, 0, 0},
     {"PCSG01198", 0x8AA413F2u, 0x745C8u, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
      {0x09, 0xEB, 0x87, 0x0E, 0x0E, 0xF5, 0xB1, 0x5E, 0x01, 0x37, 0x4E, 0xF8, 0x04, 0x0B, 0x09, 0x2F}, 0, 0},
+    /* PROTOTYPE engine (psandvita farm, Vita3K only): VJO_RF_PROTOTYPE; PCSG00007 reads through the text struct's buffer pointer */
+    /* PCSG00007 リトルバスターズ！ Converted Edition (APP_VER 01.00): Vita3K 0x8101d15c, 562 farm pages (paired-vita-pcsg00007-20261023); patch: ldr.w r7, [r8, #0x40]; movw r0, #0x6b04 */
+    {"PCSG00007", 0x8A335ECDu, 0x1D15Cu, 1, 4, VJO_HOOK_ENC_CP932, 16, 0,
+     {0xD8, 0xF8, 0x40, 0x70, 0x46, 0xF6, 0x04, 0x30, 0xD8, 0xF8, 0x08, 0x60, 0x46, 0xF6, 0xF8, 0x22}, VJO_RF_PROTOTYPE, 1},
+    /* PCSG00206 グリザイアの果実 -LE FRUIT DE LA GRISAIA- (APP_VER 01.00): Vita3K 0x81025fde, 3292 farm pages (paired-vita-pcsg00206-20261023); patch: ldr.w r0, [r8, #0x48]; movw r1, #0x8be8; ldr.w r7, [r8, #0x8] */
+    {"PCSG00206", 0x4668F40Fu, 0x25FDEu, 1, 4, VJO_HOOK_ENC_CP932, 16, 10282,
+     {0xD8, 0xF8, 0x48, 0x00, 0x48, 0xF6, 0xE8, 0x31, 0xD8, 0xF8, 0x08, 0x70, 0x48, 0xF6, 0xD8, 0x33}, VJO_RF_PROTOTYPE, 0},
+    /* PCSG00620 グリザイアの果実スピンアウト！？ アイドル魔法少女ちるちる☆みちる (APP_VER 01.00): Vita3K 0x81031e90, 995 farm pages (paired-vita-pcsg00620-20261023); patch: ldr.w lr, [r5, #0x50]; ldr r2, [r5, #0x8]; cmp lr, r2 */
+    {"PCSG00620", 0x90E7EC14u, 0x31E90u, 1, 4, VJO_HOOK_ENC_CP932, 16, 1066,
+     {0xD5, 0xF8, 0x50, 0xE0, 0xAA, 0x68, 0x96, 0x45, 0x05, 0xDB, 0xBA, 0xF1, 0x00, 0x0F, 0x02, 0xD1}, VJO_RF_PROTOTYPE, 0},
 };
 #define VERIFIED_N (sizeof(verified) / sizeof(verified[0]))
 
