@@ -596,6 +596,91 @@ static const LunaOp *const vjo_luna_post[VJO_LH_COUNT] = {
     [VJO_LH_PCSG00914] = p_PCSG00914, [VJO_LH_PCSG00769] = p_PCSG00769,
 };
 
+/* ---------------- Rubi's own filters (VjoPlaceVerified.filter) ---------------- */
+
+/* Written from bee-san/psandvita's Vita3K runs (hooks/vita/<title>/RUBI-HOOK.md, hook-text-artifacts.jsonl):
+ * each code below was seen in the hook's bytes there and compared with the native frame the game drew.
+ * Proven in Vita3K only. Ruby keeps its base (the word the dictionary looks up), as Luna's filters do; a
+ * line-break code becomes "\n" (what the game draws); a player-name code the hook sees before the game
+ * expands it becomes the game's default name (Rubi cannot know a name the player typed: such a line then
+ * differs from the screen by that name only). docs/native-hooks.md#rubis-filters has the evidence. */
+_Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one byte");
+#define RCALL(f) {OP_CALL, 0, VJO_RF_##f, NULL, NULL}
+
+/* グリザイアの果実 PCSG00206, its spin-out PCSG00620 and リトルバスターズ！ Converted Edition PCSG00007 (the
+ * PROTOTYPE engine, as Luna's PCSG01198/PCSG01289): plain hiragana and punctuation are half-width kana
+ * bytes (OP_KANA: ｷｮｰｽｹ -> きょーすけ); $t<name>$d is a name in its own nameplate (PCSG00007 event 3),
+ * $t<name>@ a name drawn inline (PCSG00206); $d a line break; $[base$/reading$] ruby (PCSG00206 event
+ * 367); $L1 (config labels), $A1, $S<nnn>..$S, $w, $C[rrggbb] are not drawn (PCSG00620 event 81); ＿ is a
+ * blank indent and leading line breaks place the text (PCSG00620 event 80). */
+static const LunaOp r_PROTOTYPE[] = {
+    SPECIAL(OP_KANA), SUB("\\$t([^$@\n]*)\\$d", "$1\n"), SUB("\\$t([^$@\n]*)@", "$1"), REP("$d", "\n"),
+    SUB("\\$\\[(.*?)\\$/(.*?)\\$\\]", "$1"), SUB("\\$[LA]\\d|\\$S\\d\\d\\d|\\$S|\\$w|\\$C\\[[0-9A-Fa-f]*\\]", ""),
+    REP("＿", "　"), SPECIAL(OP_TRIM), END};
+/* The IF:Lib GAME-ENGINE 3.00 titles (Otomate, Rejet, Design Factory): #Ruby[base,reading] (PCSG00935
+ * event 1); #Scale[1.0], #Color[7], #Speed[5], #Word[..], #Pos[x, y] and other #Tag[..] are not drawn
+ * (PCSG00448 event 1, PCSG00853 sample 000001); #n is a line break, also before a Latin word (PCSG00448
+ * event 54 #nLAGRANGE); a trailing #n ends every page and draws nothing. */
+static const LunaOp r_IFENGINE[] = {
+    SUB("#Ruby\\[([^,\\]]*),[^\\]]*\\]", "$1"), SUB("#[A-Z][A-Za-z]*(\\[[^\\]\n]*\\])?", ""), REP("#n", "\n"),
+    SPECIAL(OP_TRIM), END};
+/* <base,reading>: the base drawn, the reading above it (PCSG00648 sample 000005, PCSG00509 event 50). */
+static const LunaOp r_ANGLE_RUBY[] = {SUB("<([^<>,\n]*),[^<>\n]*>", "$1"), END};
+/* Rejet's Unity history strings (剣が君 for V PCSG00553, Dance with Devils PCSG00807): <br> is a line break
+ * (PCSG00807 sample 000002); leading full-width spaces centre a line. */
+static const LunaOp r_BR_NEWLINE[] = {REP("<br>", "\n"), SPECIAL(OP_TRIM), END};
+/* 鏡界の白雪 PCSG00787: a lone backslash is the line break (event 1). */
+static const LunaOp r_BACKSLASH_NEWLINE[] = {REP("\\", "\n"), SPECIAL(OP_TRIM), END};
+/* PCSG00448: the hook is before the #Name expander; 片岡 ユエ, the default name, was drawn for #Name[1]#Name[2]
+ * (event 208, sample 000206). */
+static const LunaOp r_PCSG00448[] = {REP("#Name[1]", "片岡"), REP("#Name[2]", "ユエ"), RCALL(IFENGINE), END};
+/* PCSG00450: 《SP QUE,1,NNNN》 voice-sync cues are never drawn (script.dat, 355 uses). */
+static const LunaOp r_PCSG00450[] = {SUB("《SP [^》]*》", ""), END};
+/* PCSG00469: #Name[1] is drawn as the default 撫子 (samples 000080, 000182, 001345). */
+static const LunaOp r_PCSG00469[] = {REP("#Name[1]", "撫子"), RCALL(IFENGINE), END};
+/* PCSG00509: ＊Ｂ is drawn as the heroine's default name 鈴 (event 1011, 67 approved pages hold it); ^ is
+ * a line break (Luna's FPCSG00852 drops it); <base,reading> ruby (event 50). */
+static const LunaOp r_PCSG00509[] = {REP("＊Ｂ", "鈴"), REP("^", "\n"), RCALL(ANGLE_RUBY), END};
+/* PCSG00540 (ADV::MSGSET): c<id>.<nameplate>r[v<voice>.]<body>, narration r<body>; w<ms>. a timed pause;
+ * b<reading>.<base> ruby; plain hiragana are half-width kana, and ･ ﾞ ﾟ are drawn … ！ ？ (events 1-5, 51,
+ * 53, 55). The name goes on its own line. */
+static const LunaOp r_PCSG00540[] = {
+    SUB("^c\\d+\\.([^\n]*?)r", "$1\n"), SUB("^r", ""), SUB("^v[^.\n]*\\.", ""), SUB("\nv[^.\n]*\\.", "\n"),
+    SUB("w\\d+\\.", ""), SUB("b[^.<>\n]*\\.<([^<>\n]*)>", "$1"), SPECIAL(OP_KANA), END};
+/* PCSG00817: [n] is a line break; [wNNN] [hNNN] [cRRGGBB] [e] and the other [x] codes are not drawn
+ * (session 458160a9, events 1-59, event 432). */
+static const LunaOp r_PCSG00817[] = {REP("[n]", "\n"), SUB("\\[[a-z@][0-9a-fA-F]*\\]", ""), END};
+/* PCSG00853: defaults 花宮 かずは and カズハ drawn for #Name[1], #Name[2], #Name[3] (samples 000078, 000120,
+ * 000259, 000371, 000464, 000492). */
+static const LunaOp r_PCSG00853[] = {
+    REP("#Name[1]", "花宮"), REP("#Name[2]", "かずは"), REP("#Name[3]", "カズハ"), RCALL(IFENGINE), END};
+/* PCSG00876: @@ is a line break, $4..$0 switch the style (scn op 0x10 records); %first and the other name
+ * codes are expanded before the hook. */
+static const LunaOp r_PCSG00876[] = {REP("@@", "\n"), SUB("\\$\\d", ""), END};
+/* PCSG01194 (shin engine, @-markup build): <name>@r[@p<n>.][@v<voice>.]<body>, narration starts with @r; @r is a
+ * line break, @p<n>. and @v<voice>. are not drawn; plain hiragana are half-width kana, ･ ﾞ ﾟ drawn … ！ ？
+ * (events 1, 11, 21-23; main.snr: 10,909 @v, 2,242 @p). Luna lists the site with no filter ("too complex"). */
+static const LunaOp r_PCSG01194[] = {
+    SUB("@v[^.@\n]*\\.", ""), SUB("@p\\d+\\.", ""), REP("@r", "\n"), SPECIAL(OP_KANA), SPECIAL(OP_TRIM), END};
+
+static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = {
+    [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
+    [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
+    [VJO_RF_BACKSLASH_NEWLINE - VJO_RF_BASE] = r_BACKSLASH_NEWLINE, [VJO_RF_PCSG00448 - VJO_RF_BASE] = r_PCSG00448,
+    [VJO_RF_PCSG00450 - VJO_RF_BASE] = r_PCSG00450, [VJO_RF_PCSG00469 - VJO_RF_BASE] = r_PCSG00469,
+    [VJO_RF_PCSG00509 - VJO_RF_BASE] = r_PCSG00509, [VJO_RF_PCSG00540 - VJO_RF_BASE] = r_PCSG00540,
+    [VJO_RF_PCSG00817 - VJO_RF_BASE] = r_PCSG00817, [VJO_RF_PCSG00853 - VJO_RF_BASE] = r_PCSG00853,
+    [VJO_RF_PCSG00876 - VJO_RF_BASE] = r_PCSG00876, [VJO_RF_PCSG01194 - VJO_RF_BASE] = r_PCSG01194,
+};
+
+/* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */
+static const LunaOp *filter_ops(unsigned f)
+{
+    if (f > VJO_LF_NONE && f < VJO_LF_COUNT) return vjo_luna_filters[f];
+    if (f >= VJO_RF_BASE && f < VJO_RF_END) return vjo_rubi_filters[f - VJO_RF_BASE];
+    return NULL;
+}
+
 /* ---------------- job time: the text and its ops ---------------- */
 
 typedef struct {
@@ -855,7 +940,7 @@ static void run_ops(Txt *t, const LunaOp *op, unsigned depth)
             op_sub(t, op->a, op->b, 0);
             break;
         case OP_CALL:
-            if (depth < 3 && op->arg < VJO_LF_COUNT) run_ops(t, vjo_luna_filters[op->arg], depth + 1);
+            if (depth < 3) run_ops(t, filter_ops(op->arg), depth + 1);
             break;
         case OP_IFEQ:
             if (t->len == strlen(op->a) && !memcmp(t->cur, op->a, t->len)) t->len = 0;
@@ -913,33 +998,54 @@ static void run_ops(Txt *t, const LunaOp *op, unsigned depth)
     }
 }
 
+int vjo_luna_filter_known(unsigned filter)
+{
+    return filter == VJO_LF_NONE || filter_ops(filter) != NULL;
+}
+
 int vjo_luna_ported(const VjoLunaSite *s)
 {
     return s && s->ported && s->func < VJO_LH_COUNT && s->filter < VJO_LF_COUNT &&
            (s->filter == VJO_LF_NONE || vjo_luna_filters[s->filter]);
 }
 
-size_t vjo_luna_text(const VjoLunaSite *s, const uint8_t *raw, unsigned n, unsigned encoding, char *out,
-                     size_t cap)
+/* The decoded text, s's hookfunc clean-up (s may be NULL), commonfilter, then filter's ops. */
+static size_t text_with(const VjoLunaSite *s, unsigned filter, unsigned site_encoding, const uint8_t *raw,
+                        unsigned n, unsigned encoding, char *out, size_t cap)
 {
     char tmp[VJO_LUNA_TEXT_MAX];
     Txt t;
-    if (!out || !cap) return 0;
-    out[0] = 0;
-    if (!s || !raw || !vjo_luna_ported(s)) return 0;
     t.cap = cap < sizeof tmp ? cap : sizeof tmp;
     t.cur = out;
     t.alt = tmp;
-    t.enc = s->encoding;
+    t.enc = site_encoding;
     t.budget = LUNA_TEXT_BUDGET;
     t.bad = 0;
     t.len = vjo_hook_decode(encoding, raw, n, out, t.cap, NULL);
-    run_ops(&t, vjo_luna_post[s->func], 0);
+    if (s) run_ops(&t, vjo_luna_post[s->func], 0);
     /* commonfilter: a CP932 hit that is the one character ▽ or ▼ (2 bytes) */
     if (t.enc == VJO_HOOK_ENC_CP932 && t.len == 3 && (!memcmp(t.cur, "▽", 3) || !memcmp(t.cur, "▼", 3))) t.len = 0;
-    if (s->filter) run_ops(&t, vjo_luna_filters[s->filter], 0);
+    if (filter) run_ops(&t, filter_ops(filter), 0);
     if (t.bad) t.len = 0;
     if (t.cur != out) memcpy(out, t.cur, t.len);
     out[t.len] = 0;
     return t.len;
+}
+
+size_t vjo_luna_text(const VjoLunaSite *s, const uint8_t *raw, unsigned n, unsigned encoding, char *out,
+                     size_t cap)
+{
+    if (!out || !cap) return 0;
+    out[0] = 0;
+    if (!s || !raw || !vjo_luna_ported(s)) return 0;
+    return text_with(s, s->filter, s->encoding, raw, n, encoding, out, cap);
+}
+
+size_t vjo_luna_text_filter(const VjoLunaSite *s, unsigned filter, unsigned site_encoding, const uint8_t *raw,
+                            unsigned n, unsigned encoding, char *out, size_t cap)
+{
+    if (!out || !cap) return 0;
+    out[0] = 0;
+    if (!raw || (s && !vjo_luna_ported(s)) || !vjo_luna_filter_known(filter)) return 0;
+    return text_with(s, filter, site_encoding, raw, n, encoding, out, cap);
 }

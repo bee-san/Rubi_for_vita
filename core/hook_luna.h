@@ -96,6 +96,40 @@ unsigned vjo_luna_capture(const VjoLunaSite *s, const uint32_t regs[16], VjoHook
 size_t vjo_luna_text(const VjoLunaSite *s, const uint8_t *raw, unsigned n, unsigned encoding, char *out,
                      size_t cap);
 
+/* Rubi's own filters, for its verified entries (VjoPlaceVerified.filter, core/hook_place.h). They are
+ * numbered from VJO_RF_BASE, so one byte names either a Luna filter (VJO_LF_*, below it) or one of
+ * these, and they are written with the same ops as Luna's (core/hook_luna.c). Each one cites the
+ * emulator evidence it comes from (docs/native-hooks.md#rubis-filters). */
+#define VJO_RF_BASE 0x80u
+enum {
+    VJO_RF_PROTOTYPE = VJO_RF_BASE, /* PROTOTYPE engine: half-width kana, $t name, $d, $[base$/reading$] */
+    VJO_RF_IFENGINE,                /* IF:Lib GAME-ENGINE 3.00: #Ruby[base,reading], #Tag[..], #n */
+    VJO_RF_ANGLE_RUBY,              /* <base,reading> ruby: the base */
+    VJO_RF_BR_NEWLINE,              /* <br> is a line break */
+    VJO_RF_BACKSLASH_NEWLINE,       /* a lone \ is a line break */
+    VJO_RF_PCSG00448,               /* MARGINAL#4 IDOL OF SUPERNOVA: default names, then IFENGINE */
+    VJO_RF_PCSG00450,               /* キャプテン・アース Mind Labyrinth: 《SP ..》 voice cues */
+    VJO_RF_PCSG00469,               /* CLOCK ZERO ExTime: the default name, then IFENGINE */
+    VJO_RF_PCSG00509,               /* POSSESSION MAGENTA: ＊Ｂ name code, ^, <base,reading> */
+    VJO_RF_PCSG00540,               /* 忠臣蔵46+1 V: MSGSET name, voice, wait codes, b ruby, half-width kana */
+    VJO_RF_PCSG00817,               /* EVE burst error R: [n], [xNN] layout codes */
+    VJO_RF_PCSG00853,               /* ピリオドキューブ: default names, then IFENGINE */
+    VJO_RF_PCSG00876,               /* 7'scarlet: @@ line break, $<digit> style codes */
+    VJO_RF_PCSG01194,               /* 参千世界遊戯: shin @-markup, half-width kana */
+    VJO_RF_END
+};
+
+/* 1 when filter is VJO_LUNA_NONE or names a filter this build has (a ported Luna filter or one of
+ * Rubi's), else 0. */
+int vjo_luna_filter_known(unsigned filter);
+
+/* vjo_luna_text for a Rubi verified entry with its own filter: the raw bytes decoded, the hookfunc
+ * clean-up of s (a ported Luna site at the entry's address, or NULL: none) and Luna's commonfilter,
+ * then filter (a VJO_LF_* or VJO_RF_*) in place of s's own, as on a site whose encoding is
+ * site_encoding. An unknown filter, or an s that is not ported, gives 0 (no text). */
+size_t vjo_luna_text_filter(const VjoLunaSite *s, unsigned filter, unsigned site_encoding, const uint8_t *raw,
+                            unsigned n, unsigned encoding, char *out, size_t cap);
+
 /* Added by hooks-luna-port (core/hook_luna.c). */
 
 /* vjo_luna_capture reads through rd at most this many times per hit (a string

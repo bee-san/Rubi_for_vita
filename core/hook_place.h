@@ -73,10 +73,20 @@ typedef struct {
     uint8_t sig_len;       /* 8..16, at least the patch's bytes */
     int32_t padding;       /* added to the register's value */
     uint8_t sig[16];       /* the bytes at the site */
+    /* The text's processing (core/hook_luna.h): 0, a Luna site's at the same address if there is one,
+     * else none; or a VJO_LF_* or VJO_RF_* filter, which replaces that site's filter (its hookfunc's
+     * clean-up still runs first). */
+    uint8_t filter;
+    /* 1: the register's value + padding is the address of a 32-bit pointer to the text (one more read,
+     * as Luna's DATA_INDIRECT); 0: it is the text's address. */
+    uint8_t deref;
 } VjoPlaceVerified;
 
 /* The verified entries of title_id, contiguous; 0 and *out = NULL when none. */
 unsigned vjo_place_verified(const char *title_id, const VjoPlaceVerified **out);
+
+/* Rubi's whole list (the host tests check every entry): its entries in *out, their number returned. */
+unsigned vjo_place_verified_all(const VjoPlaceVerified **out);
 
 /* 1 when Rubi's own list has an entry for title_id (the Games page's tag), else 0. */
 int vjo_place_title_verified(const char *title_id);
