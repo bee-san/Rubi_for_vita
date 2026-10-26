@@ -28,6 +28,11 @@ int vjo_preferences_save_reading(int ocr_mode, int boost_clock, VjoArena *scratc
 /* API 31: Text source (config.ini text_source: VJO_SOURCE_AUTO auto, _HOOKS hooks, _OCR ocr), saved as the
  * others are; a game reads it as it starts (docs/native-hooks.md). 0, or -1 (an unknown source: nothing saved). */
 int vjo_preferences_save_text_source(int source, VjoArena *a);
+/* API 43, the OCR page's two OCR-skipping switches, saved together as the others are: ocr_text_gate (1 on: no OCR
+ * on a screen whose text box holds no text, docs/vita-vn-ocr.md "Text-presence gate") and hook_trust (1 on: a
+ * trusted hook's line with no OCR at all, docs/native-hooks.md "Trusted hooks"), each 0 or 1 (else -1, nothing
+ * saved); both apply when the overlay next opens. */
+int vjo_preferences_save_skips(int text_gate, int hook_trust, VjoArena *a);
 /* config.ini's text as the app's load reads it (into the arena): 0 config.ini; 1 its backup
  * (config.ini.bak, when config.ini is missing: a save that stopped between its two renames); 2 there
  * is neither (*out NULL); -1 unreadable. The installer's update patches this text and writes the

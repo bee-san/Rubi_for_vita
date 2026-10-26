@@ -85,8 +85,12 @@
 #define PREF_SELECTION 3
 #define PREF_HIGHLIGHT 4
 #define PREF_RESULTS 5
-#define PREF_SOURCE 6 /* API 31: Text source (config.ini text_source), the last card */
-#define PREFERENCES 7
+#define PREF_SOURCE 6 /* API 31: Text source (config.ini text_source) */
+/* API 43: OCR skipped where it has nothing to read: a text box without text (ocr_text_gate) and a line a trusted hook
+ * has (hook_trust), the last two cards */
+#define PREF_TRUST 7
+#define PREF_GATE 8
+#define PREFERENCES 9
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -641,6 +645,15 @@ static void set_text_source(int index)
         snprintf(preference_status, sizeof(preference_status), "Saved. It applies when a game next starts.");
 }
 
+/* API 43: Skip OCR on screens without text (ocr_text_gate) and Trusted hooks replace OCR (hook_trust), saved
+ * together; they apply when the overlay next opens. */
+static void set_skips(int text_gate, int hook_trust)
+{
+    if (text_gate == preferences.ocr_text_gate && hook_trust == preferences.hook_trust) return;
+    if (preferences_locked()) return;
+    preference_saved(vjo_preferences_save_skips(text_gate, hook_trust, &scratch));
+}
+
 /* Model size: enter cycles Small -> Normal -> Large; Left/Right step within it. */
 static void set_tier(int tier)
 {
@@ -680,6 +693,11 @@ static void toggle_preference(void)
         set_reading(preferences.ocr_mode, !preferences.ocr_boost_clock);
         return;
     }
+    if (preference_selected == PREF_GATE || preference_selected == PREF_TRUST) {
+        set_skips(preferences.ocr_text_gate ^ (preference_selected == PREF_GATE),
+                  preferences.hook_trust ^ (preference_selected == PREF_TRUST));
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? !preferences.highlight_mode : preferences.highlight_mode,
@@ -710,6 +728,11 @@ static void set_preference(int right)
         set_reading(preferences.ocr_mode, right);
         return;
     }
+    if (preference_selected == PREF_GATE || preference_selected == PREF_TRUST) {
+        set_skips(preference_selected == PREF_GATE ? right : preferences.ocr_text_gate,
+                  preference_selected == PREF_TRUST ? right : preferences.hook_trust);
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? right : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
@@ -718,7 +741,7 @@ static void set_preference(int right)
 }
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
-static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H};
+static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
@@ -893,6 +916,25 @@ static void draw_source_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, preferences_writable ? help[chosen] : "Cannot read the saved choice.");
 }
 
+/* API 43: a trusted hook (a Luna or Rubi verified site, or a string copy after four OCR agreements) answers with no
+ * OCR at all (docs/native-hooks.md "Trusted hooks"); OFF checks hooks with OCR as Rubi 0.9.7 did. */
+static void draw_trust_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Trusted hooks replace OCR");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" : preferences.hook_trust ? "ON" : "OFF",
+          preferences_writable && preferences.hook_trust);
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a hook Rubi trusts gives the line, with no OCR at all.");
+}
+
+/* API 43 (API 26's gate): a text box the text-presence gate sees no text in is not read (docs/vita-vn-ocr.md). */
+static void draw_gate_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Skip OCR on screens without text");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
+          preferences.ocr_text_gate ? "ON" : "OFF", preferences_writable && preferences.ocr_text_gate);
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a hidden text box or a picture is not read.");
+}
+
 static void draw_card(int i, int y)
 {
     switch (i) {
@@ -902,6 +944,8 @@ static void draw_card(int i, int y)
     case PREF_SELECTION: draw_selection_card(y); break;
     case PREF_HIGHLIGHT: draw_highlight_card(y); break;
     case PREF_SOURCE: draw_source_card(y); break;
+    case PREF_TRUST: draw_trust_card(y); break;
+    case PREF_GATE: draw_gate_card(y); break;
     default: draw_results_card(y); break;
     }
 }
@@ -992,7 +1036,7 @@ static void touch_preference(int x, int y)
             (x - RESULT_BADGE_X) / RESULT_BADGE_PITCH < VJO_LOCAL_MAX_DICTS)
             set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
         break;
-    default: /* the ON/OFF cards: Speed boost and Japanese characters only */
+    default: /* the ON/OFF cards: Speed boost, Japanese characters only and (API 43) the two OCR skips */
         toggle_preference();
     }
 }

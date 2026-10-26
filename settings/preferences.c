@@ -253,6 +253,16 @@ int vjo_preferences_save_text_source(int source, VjoArena *a)
     return save_keys(keys, values, 1, a);
 }
 
+int vjo_preferences_save_skips(int text_gate, int hook_trust, VjoArena *a)
+{
+    static const char *const keys[] = {"ocr_text_gate", "hook_trust"};
+    const char *values[2];
+    if ((text_gate != 0 && text_gate != 1) || (hook_trust != 0 && hook_trust != 1)) return -1;
+    values[0] = text_gate ? "on" : "off";
+    values[1] = hook_trust ? "on" : "off";
+    return save_keys(keys, values, 2, a);
+}
+
 int vjo_preferences_text(VjoArena *a, char **out, size_t *bytes)
 {
     int rc = read_text(VJO_PREFERENCES_PATH, a, out, bytes);

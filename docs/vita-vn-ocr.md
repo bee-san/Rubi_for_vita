@@ -872,7 +872,7 @@ strips read are the same with and without the refinement.
 ## Text-presence gate (API 26)
 
 ```ini
-ocr_text_gate = off   ; on: no lines where the gate sees no text
+ocr_text_gate = off   ; on (the Rubi app's Skip OCR on screens without text): no lines where the gate sees no text
 ```
 
 When the selected region holds no text (the game hid its text box, a CG screen, a menu without dialogue) the
@@ -932,11 +932,42 @@ weights may still be read ahead by the session's warm-up, as after any job that 
 | CLANNAD dialogue (2,052 lines), read once | 1.43 / 0.92 / 0.63% | unchanged |
 | CLANNAD pages without reference text (133) | 162 lines | 114 lines |
 
-**Why it is off by default.** On the text Rubi reads it changes nothing measured, and on empty regions it
-stops most junk. But it costs an estimated 0.1 s in every job, at the game's clock, and how often a player's
-region is empty (and how much junk that shows) is unmeasured. A console A/B decides: the same screens with the key
-on and off (a backlog, a reloaded save, a CG with the text box hidden), in CLANNAD and in a game the measurements
-above never read.
+**Why it is still off by default (measured, API 43).** The owner's rule (2026-10-26): no OCR when there is no text,
+with a default that loses no real line. Rubi's own job on the hooked page pool measured what the gate costs in
+lines, and it does lose some:
+
+`tools/gate_eval.py` runs `host/gate_eval.c`, the worker's job policy on the host (`core/vocr_ocr.c` with Rubi's finder,
+the gate at its pinned point, VOCR5 Normal with the 1 MB LM and the cascade, PSP regions refined, a PSP page scaled
+2x as Adrenaline shows it; measured before #307's head gate, on vita-vn-ocr `817d203` and VOCR5 v0.3.0's files: the
+gate scores the finder's boxes, which #307 does not change), on every page of vita-vn-ocr's hooked page pool (`vocr6-ingest` `pagepool/v1`: 47 games,
+31 Vita and 16 PSP, whose hook text was verified against the drawn glyphs; PCSG00007, PCSG00866 and PCSG00807 are left
+out, as they share releases with CLANNAD and vita-test, or are the pool's test title), in three regions a page: its
+own dialogue region, the one region a player would draw for the game (around the dialogue of almost every page), and
+the whole screen (Rubi's region until one is drawn). A region the gate stops loses its verified lines; each stopped
+region is read again without the gate, and a line counts as one OCR would have read when that reading matches the
+region's hook text (similarity 700 or more) [measured, host; no console claim]:
+
+| Region | Lines | Lines in regions the gate stops | of which OCR would have read |
+| --- | ---: | ---: | ---: |
+| Vita, the page's dialogue region | 52,909 | 14 (0.026 %) | 2 (0.004 %) |
+| Vita, the game's one region | 54,767 | 363 (0.66 %) | 19 (0.035 %) |
+| Vita, the whole screen | 59,702 | 624 (1.05 %) | 4 (0.007 %) |
+| PSP, the page's dialogue region | 31,952 | 113 (0.35 %) | 55 (0.17 %) |
+| PSP, the game's one region | 32,226 | 314 (0.97 %) | 44 (0.14 %) |
+| PSP, the whole screen | 36,242 | 577 (1.59 %) | 46 (0.13 %) |
+
+Most of the stopped lines are `……` (no letter: 189 of the 363 in the Vita games' one region) or one or two
+characters (「え？」: 94 more). A lower threshold does not separate them: at -96, where 39 of those 363 lines are
+still stopped, only 7 of the 90 text-free regions are. On vita-vn-ocr's text-free development and holdout regions
+(eval/linefind's 92, 90 with their screenshot here) it leaves 81 without a line, against 2 without it. Lines OCR would have read are lost in every kind of region, so
+the gate is not the default; **Skip OCR on screens without text** on the Rubi app's OCR & lookup page turns it on.
+A better gate (vita-vn-ocr's VOCR6 spotter, whose text-presence score was not ready) would be measured the same way.
+
+The cheaper check, an unchanged screen, is already in place and needs no setting: the kernel starts no background
+read for a scene it has read (the result stands for the screen until its pixels change:
+[auto-vs-press.md](auto-vs-press.md)), and a line whose pixels a job has recognized before is taken from the line
+cache, not recognized again (`VjoVocrCache`, keyed by the line's pixels). What neither catches is a new screen
+without text (a hidden box, a CG), whose junk "lines" the finder still finds: that is the gate's work.
 
 **Logs.** `gstep job gate`, once per job (its last try) whose finder found a line, or whose gate could not run:
 - kind: its mode (1: boxes);

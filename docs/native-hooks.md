@@ -388,14 +388,19 @@ keep their pinned stream first, then the newest texts. Then, by the request's `h
 - **Pinned** (a stream ID in a diagnostic request): that stream's text, without recognition; OCR when it has none.
 - **OCR only** (`VJO_HOOK_PICK_OCR`): OCR's text. The self-test's jobs (every line recognized, or the
   fallback forced) are OCR only whatever their pick.
+- **Automatic, trusted** (API 43, `VJO_GAME_OCR_S_TRUST`, `hook_trust = on`, the default): before anything
+  below, a trusted source with text answers with no OCR at all: Luna's sites and Rubi's verified sites from
+  their first line, a regular source once it has agreed with OCR four times
+  ([Trusted hooks](#trusted-hooks-api-43)). Without the bit (`hook_trust = off`) the bullets below are the
+  whole rule, Rubi 0.9.7's.
 - **Automatic, Luna** (`VJO_HOOK_PICK_AUTO`): nonempty text from an installed Luna site answers
   immediately, without initial OCR, periodic OCR or learned-source cache work. Installation still
   requires the existing port, game-version and site-placement checks. Short and unchanged text also
   skips recognition. With several nonempty Luna sites, the newest sequence wins (a tie goes to the
   lower stream ID). This does not identify a stream's semantic role, such as a speaker name versus
-  dialogue; it trusts the existing game-specific extraction and filters. Rubi's own table sites are
-  not Luna sites and still require the regular validation below, even when they borrow a Luna filter
-  (PCSG01198, #273); their verified low-memory fallback remains available. An empty, busy or filtered-empty Luna
+  dialogue; it trusts the existing game-specific extraction and filters. With `hook_trust = off`, Rubi's own
+  table sites are not Luna sites and still require the regular validation below, even when they borrow a Luna
+  filter (PCSG01198, #273); their verified low-memory fallback remains available. An empty, busy or filtered-empty Luna
   site is unavailable for this job: the remaining hooks and OCR provide the fallback.
 - **Automatic, regular hooks**: without a nonempty Luna candidate, OCR runs initially. An agreeing hook replaces its text at
   the existing normalized similarity threshold of 700/1000 and a minimum of four characters. Two
@@ -478,6 +483,97 @@ dialogue box of 60 characters against a few streams is about 10^4 cells, under a
 and the worst case, 20 streams of 256 characters against 256, 1.3 million cells, about 30-60 ms
 [estimate: the instructions of the `-Os` disassembly at 0.5-1 cycle each, not run on a console].
 
+## Trusted hooks (API 43)
+
+The owner's rule (2026-10-26): when a trusted hook supplies the text, no OCR at all. A job whose request carries
+`VJO_GAME_OCR_S_TRUST` (bit 17 of its speed word; the Shell sets it from `config.ini` `hook_trust`, on by default,
+the Rubi app's **Trusted hooks replace OCR**) first asks `vjo_hook_select_trusted` (`core/hook_select.c`):
+
+| Source | Trusted when | Why |
+| --- | --- | --- |
+| A ported Luna site | from its first line, as #274 already had it | its game version and placement were checked as the game started |
+| A Rubi verified site | from its first line | its module NID and every recorded byte matched the game's code as the game started: the exact instruction the farm proved |
+| A regular source (a string copy's caller, or a site without either check) | once its learned interval reaches 32 with a close agreement there: it agreed with OCR on two distinct lines (the lock) and passed both scheduled checks (at 8 and 16), four agreements in all, the last scoring at least 900 of 1,000 (`VJO_HOOK_TRUST_SCORE`; else a later check at 32 that does) | the measured choice below |
+
+A trusted source with text (decoded and filtered, any length, new or the same as last time) answers the job: the
+sites first, the newest text among them (a tie: the lower ID), then the learned source while a slot holds it (the
+same kind, module-relative key and encoding). Such a job (`VJO_HOOK_R_TRUSTED | VJO_HOOK_R_NO_OCR`, with `SITE`
+or `LOCKED`):
+
+- opens no model, LM or cascade file and makes no OCR memory check: its one capture pass (as every hooked
+  answer's, for the kernel's scene) keeps `VJO_GAME_RESERVE_HOOK_ONLY` (1 MiB) free instead of the OCR reserve
+  (4 MiB), so a game short of memory still gets its hooked lines;
+- gives back the weights, LM and cascade model an earlier OCR job left resident (`drop_resident`) once trusted
+  answers have run 8 jobs in a row (`TRUST_DROP_ANSWERS`): a game whose title screen was read by OCR before its
+  first hooked line holds none of them while its hook supplies the text. Not at the first answer: a job between
+  them that runs OCR (the stream busy, or its text filtered out, at that moment) would read them all again each
+  time;
+- moves no learning state, and once a trusted source has answered, a later OCR job that finds no line reads no
+  weights ahead (no warm-up: [first-ocr.md](first-ocr.md)).
+
+OCR resumes by itself, in the same job, when no trusted source has text: an empty, busy or filtered-empty site;
+a learned source whose slot another caller took (that job also unlocks it, as before); a pending disagreement
+(`misses`; a disagreement also takes the close agreement's mark back). The selection then goes on as before
+(`vjo_hook_select_before`, OCR, `vjo_hook_select_after`). Learning never stops: a regular source learns and is
+checked as in 0.9.7 until it is trusted, and the cache keeps its level: a saved interval of 32 (the same caller of
+the same executable, the cache key's SHA-256) is trusted at the next launch after its startup confirmation scores 900,
+one OCR job. With `hook_trust = off`
+(or any pick but the automatic one, the self-test's included) nothing of this runs: Rubi 0.9.7's selection, byte
+for byte the same decisions (`host/tests/test_game_hooks.c`, `host/tests/test_hook_select.c`).
+
+What trust gives up: a trusted hook's text is never checked against the screen. A screen the hook did not copy (a
+choice menu, a backlog, a CG with the box hidden) shows the hook's last line, as a Luna site's always has, and a
+trusted source that starts copying something else shows it until its slot changes hands. Choose
+`hook_trust = off` to have every hook checked with OCR again (0.9.7), or **OCR only** to use no hook.
+
+### Why four agreements (measured)
+
+`tools/hook_trust_bench.py` replays game sessions through `host/hook_trust_bench.c`: the actual game worker, core
+adapter and vita-vn-ocr runtime with the pinned models (VOCR5 Normal with Small below it, the 1 MB LM, the cascade to
+Large within 2 s: the Shell's defaults; measured before #307's head gate, on vita-vn-ocr `817d203` and VOCR5
+v0.3.0's files, with this change's selection, which #307 does not touch), one background job per new hooked line (the Shell's for API 41's new line).
+A fake of `game_ocr/hooks.h` holds one stream, which takes each page's hook text in turn; the kernel's rows are the
+page's pixels in the one region a player would draw for the game. The sessions: the first 300 pages of each of 29
+Vita titles of vita-vn-ocr's hooked page pool (`vocr6-ingest` `pagepool/v1`, hook text verified against the drawn
+glyphs; PCSG00653 has no dialogue region, and PCSG00007, PCSG00866 and PCSG00807 are left out: they share releases
+with CLANNAD and vita-test, or are the pool's test title), 8,640 lines a configuration, 64 MiB free (3 MiB for the
+tight rows). Four kinds of source: a Luna site, a Rubi verified site, a string copy's caller, and a caller one page
+behind the screen (the backlog, a line prepared ahead), which must never be trusted [measured, host; no console
+claim]:
+
+| Source | `hook_trust = off` (0.9.7) | `hook_trust = on` |
+| --- | --- | --- |
+| Luna site | 0 OCR jobs | 0 OCR jobs |
+| Rubi verified site | 1,728 OCR jobs (0.200 a line), 0.503 lines recognized a line, 19.2 CTC frames a line, the weights read 29 times; the worker's blocks 4,768 KiB at a job's peak and 4,494 KiB kept after it (means) | **0 OCR jobs**, nothing recognized or read; 47 KiB at a job's peak (its one capture strip), 0 kept |
+| String copy | the same as the verified site's | **828 OCR jobs (0.096 a line)**, 0.266 lines recognized a line, 10.9 CTC frames a line; 1,520 / 1,351 KiB; trusted in 25 of 29 sessions, from line 42 (median) |
+| The caller one page behind | 8,579 OCR jobs, never locked for long | the same: **never trusted** in 29 sessions, no wrong trusted answer |
+| Luna site, 3 MiB free | **every one of the 8,640 jobs refused**: its pass kept the 4 MiB OCR reserve | 0 refused |
+| Rubi verified site, 3 MiB free | 603 refused (lines under 4 characters, the no-memory path's limit) | 0 refused |
+
+In no session did trust add an OCR job. The four string-copy sessions never trusted (PCSG00468, PCSG00553,
+PCSG00805, PCSG00854) are those whose source kept disagreeing with OCR, so 0.9.7's recovery kept resetting it: they
+run as in 0.9.7. On the host the job takes 26 ms with OCR and well under 1 ms without; on the console a CTC frame
+of VOCR5 Normal took 2.61 ms at 444 MHz (test.4), so 19.2 frames a line is about 50 ms of recognition, before the
+finder, the model reads and the stable-text wait, against none for a trusted line [estimate].
+
+How many agreements, the same sessions:
+
+| Rule for a string copy | Sessions trusted | OCR jobs (a line) | The caller one page behind |
+| --- | --- | --- | --- |
+| 2 agreements (the lock) | 29 of 29 | 103 (0.012) | trusted in 2 sessions: 583 trusted answers, 455 wrong |
+| 3 (the lock and the check at 8) | 29 of 29 | 276 (0.032) | trusted in 1 (PCSG00648): 180 answers, 127 wrong |
+| **4 (the lock and the checks at 8 and 16)** | 28 of 29 | 626 (0.072) | never |
+| 2, 3, 4 with the 900 rule below | 29, 29, **25** | 187, 280, **828** | never |
+
+The caller one page behind agrees where a page shows the line before it and more (a box that grows by clicks):
+700-850 by coverage, rarely 900 or more (4 of its 51 agreements). A source with the screen's line agrees at 1,000
+or close (82 % of the real string copies' agreements at 900 or more). So the agreement that makes a source trusted,
+at interval 32, must also score at least `VJO_HOOK_TRUST_SCORE` (900), a disagreement takes that back, and a
+restored source is trusted only after its startup confirmation scores 900 (one OCR job a launch). The 900 was set
+after the first run's numbers, so the second run is not an independent check of it; four agreements are kept for
+that reason, although two or three with the 900 rule were never fooled here either. A source that a real game
+copies wrongly in another way than one page behind is not modelled.
+
 ## A new line starts the read
 
 API 41. A hook has the line as soon as the game copies it, but the Shell used to ask for it only once the
@@ -487,8 +583,8 @@ itself starts the read:
 
 - **The watch** (`game_ocr/main.c` `hooks_watch`). Each round of the worker's loop between jobs (its
   `vjoOcrTake` waits for a job at most 100 ms) reads the sequence numbers of the streams a job answers
-  without recognition: Luna's sites that have held text, and the learned source while its slot still holds
-  that source (`hk.sel.locked`, its key and kind). It reads them without the slots' try-locks
+  without recognition: Luna's sites that have held text, Rubi's verified sites once a trusted job (API 43) has
+  read them, and the learned source while its slot still holds that source (`hk.sel.locked`, its key and kind). It reads them without the slots' try-locks
   (`vjo_hooks_seq`), so a game thread writing one is never turned away for it. A sequence newer than every
   text the last job's snapshot saw is a new line, reported once with `vjoOcrHookLine`, with its raw length;
   at most one report every 200 ms (`HOOK_LINE_GAP_US`), and a refused one is tried again at the next round.
@@ -665,6 +761,12 @@ Hardware is paused; these are for the test issue (#230):
     finishes typing opens on it at once (`open: background result` or `open: saved local word`, not
     `background job still running`). A menu opened after the line has drawn, then L + R, shows the menu's
     text as before.
+12. API 43, trusted hooks (the debug build, `hook_trust = on`, the default): in CLANNAD the string-copy source
+    agrees with OCR on four lines (`game vocr source: hook N, flags 0x01`/`0x03`, then `0x0A` between checks),
+    then every job it answers says `flags 0x10A` (TRUSTED | NO_OCR | LOCKED), its step log has no LOAD, CHECK or
+    RECOGNIZE step, and `resident=0` in its `game vocr rc=0` line once the first trusted job ran. A screen the hook
+    did not copy (the backlog, a choice menu) shows the hook's last line; with `hook_trust = off` it shows OCR's.
+    In a game short of memory (アマツツミ): `flags 0x118` (TRUSTED | SITE | NO_OCR) from its first line.
 11. The popup shows text without hook numbers or source-status labels. Triangle does not change the
     text source. Normal jobs keep `hook_pick = VJO_HOOK_PICK_AUTO`; diagnostic jobs can still request
     a stream directly through the job protocol.
@@ -770,7 +872,8 @@ addresses can be patched as they are.
 `core/hook_place.{h,c}`, `core/hook_stream.{h,c}`, `host/tests/test_hook_place.c`,
 `host/tests/test_hook_stream.c`, `tools/hook_place_forms.txt`, `tools/gen_hook_place_fixtures.sh`; the
 selection's `core/hook_select.{h,c}`, `host/tests/test_hook_select.c`, `host/tests/test_game_hooks.c` (the
-job path) and `host/tests/hooks_none.c` (nothing installed, for the worker's other host tests).
+job path) and `host/tests/hooks_none.c` (nothing installed, for the worker's other host tests); API 43's bench,
+`host/hook_trust_bench.c` and `tools/hook_trust_bench.py`.
 The farm checks: `tools/hook_farm.py`, `host/hook_farm_check.c`, `host/tests/fixtures/hook_farm.inc` (generated),
 `tools/tests/test_hook_farm.py`.
 The PSP probe: `game_ocr/psp_probe.{h,c}`, `core/psp_probe.{h,c}`, `core/hook_luna_psp.inc` (generated by

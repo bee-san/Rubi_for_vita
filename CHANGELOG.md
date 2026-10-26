@@ -13,6 +13,27 @@ been reported.
 
 ### Added
 
+- **Trusted hooks replace OCR** (the Rubi app's OCR & lookup page, `hook_trust` in `config.ini`, on by default;
+  API 43): when a hook Rubi trusts has the line, no OCR runs at all: no model, LM or cascade is read, no OCR
+  memory is kept back (its one capture pass keeps 1 MiB instead of 4 MiB), and after eight such lines in a row the
+  weights an earlier OCR job left in the game go back to it. Trusted: LunaTranslator's sites (as since 0.9.4) and
+  Rubi's verified sites from their first line, and any other hook (a string copy) once it has agreed with OCR on four different lines, the last
+  closely. OCR comes back by itself when no trusted hook has text. On the host, over 8,640 hooked lines of 29 Vita
+  games: a verified site's OCR jobs 0.20 a line → 0 and the worker's memory kept between jobs 4.4 MiB → 0; a string
+  copy's 0.20 → 0.10 (trusted in 25 of 29 sessions); a source one line behind the screen was never trusted; with
+  3 MiB free, a Luna site's lines, all refused before, are shown. The price: a screen the hook did not copy (a
+  choice menu, the backlog) shows the hook's last line. `hook_trust = off` checks hooks with OCR as 0.9.7 did
+  ([details](docs/native-hooks.md#trusted-hooks-api-43)). Not run on a console.
+- **Skip OCR on screens without text** on the app's OCR & lookup page (`ocr_text_gate`, API 26's text-presence
+  gate, now a switch in the app): a text box that holds no text (the game hid it, a CG, a picture) is not read, so
+  no junk text is shown or recognized. It stays **off by default**: on the host, over about 96,000 verified lines
+  of 47 games' hooked pages, it also stops some real lines, mostly `……` and one- or two-character ones (「え？」);
+  of all their lines, those OCR would have read and the gate stops are 0.004-0.17 % (by platform and region), while
+  it leaves 81 of 90 text-free regions without a line (2 without it)
+  ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)). Not run on a console.
+- A host test that a mined card carries the game's screenshot end to end: the game worker's JPEG of a frame,
+  the overlay's Enter that saves the card with it, the Rubi app's export, and the Lapis note's `Picture` showing
+  that JPEG (`host/tests/test_card_screenshot.py`). The code path was already there (since 0.8.0's API 23).
 - Native text hooks for two more Vita visual novels from the hook farm's data bucket, with Rubi's own
   clean-up rules for their text: ALIA's CARNIVAL! サクラメント (`PCSG00628`) and 真 流行り神 (`PCSG00380`, a page
   record of character cells, a new way to read a hook's text). Proven in the Vita3K emulator only: Rubi's

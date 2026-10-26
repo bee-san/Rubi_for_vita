@@ -894,6 +894,24 @@ if(VJO_WITH_VOCR)
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-hooks-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_hooks COMMAND vjo-game-hooks-tests)
+  # The trusted-hook bench (docs/native-hooks.md "Trusted hooks", tools/hook_trust_bench.py): the actual worker,
+  # core adapter and runtime with the pinned models replaying hooked pages, one job a page. Built for N = 4 (the
+  # default VJO_HOOK_TRUST_INTERVAL, 32) and, for the study of N, 3 (16) and 2 (8); not a test.
+  foreach(_vjo_trust IN ITEMS 32 16 8)
+    set(_vjo_target vjo-hook-trust-bench)
+    if(NOT _vjo_trust EQUAL 32)
+      set(_vjo_target vjo-hook-trust-bench-${_vjo_trust})
+    endif()
+    add_executable(${_vjo_target} host/hook_trust_bench.c core/hook_select.c)
+    target_include_directories(${_vjo_target} PRIVATE host/tests/game_stubs host/tests core include)
+    target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    target_compile_definitions(${_vjo_target} PRIVATE VJO_HOOK_TRUST_INTERVAL=${_vjo_trust}u)
+    target_link_libraries(${_vjo_target} vjo_vocr vjo_host)
+  endforeach()
+  # The text-presence gate on many regions as the worker's job runs it (tools/gate_eval.py); not a test.
+  add_executable(vjo-gate-eval host/gate_eval.c)
+  target_compile_options(vjo-gate-eval PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_link_libraries(vjo-gate-eval vjo_vocr vjo_host)
   add_executable(vjo-game-model-broker-tests host/tests/test_game_model_broker.c host/tests/hooks_none.c
     host/tests/kernel_model_broker_boundary.c kernel/buffers.c kernel/capture.c
     kernel/scene.c kernel/ledger.c core/ledger.c)
@@ -925,6 +943,10 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-game-shot-tests vjo_vocr)
   add_test(NAME game_shot COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_game_shot.py
     $<TARGET_FILE:vjo-game-shot-tests>)
+  # A mined card carries the game's screenshot, end to end: the game worker's JPEG of a frame, the Shell's Enter that
+  # saves the card with it, the Rubi app's export, the note's Picture (docs/anki.md "The screenshot").
+  add_test(NAME card_screenshot COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_card_screenshot.py
+    $<TARGET_FILE:vjo-game-shot-tests> $<TARGET_FILE:vjo-shell-anki-tests> $<TARGET_FILE:vjo-apkg-tests>)
   # The stage benchmark (docs/performance.md): every stage of an OCR job and of the Shell's
   # lookups on the real sources. tools/bench_stages.py times it here and counts the Vita
   # compiler's instructions under qemu-arm from a Vita build; the smoke test checks that every

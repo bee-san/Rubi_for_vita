@@ -56,6 +56,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_text_gate = VJO_TEXT_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Text-presence gate" */
     c->hook_sites = 1; /* the table sites with the CALL source; off: the CALL source alone */
     c->ocr_head_gate = VJO_HEAD_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Head gate" and "Two-level head" */
+    c->hook_trust = 1; /* a trusted hook answers without OCR; off: Rubi 0.9.7's selection (docs/native-hooks.md) */
 }
 
 const char *vjo_config_default_text(void)
@@ -117,6 +118,10 @@ const char *vjo_config_default_text(void)
            "; Text hooks at table sites (Rubi's and Luna's entries): on | off (off: only\n"
            "; the string-copy hooks, to tell the two apart in a test)\n"
            "hook_sites = on\n"
+           "; Trusted hooks replace OCR (the Rubi app's card of that name): on | off.\n"
+           "; On: a Luna or Rubi verified site, or a string copy after four OCR\n"
+           "; agreements, answers with no OCR at all; off: Rubi 0.9.7's checks\n"
+           "hook_trust = on\n"
            "\n"
            "; OCR: vita-vn-ocr, offline on the Vita (docs/vita-vn-ocr.md)\n"
            "ocr_model_dir = ux0:data/VitaJPOverlay/ocr\n"
@@ -539,10 +544,12 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const sources[] VJO_DATA_TABLE(config_sources_1) = {"ocr", "auto", "hooks", NULL}; /* VJO_SOURCE_*'s order */
         c->text_source = VJO_SOURCE_AUTO; /* an unknown value: auto, with the warning */
         set_choice(c, key, val, &c->text_source, sources);
-    } else if (vjo_ieq(key, "hook_sites")) {
+    } else if (vjo_ieq(key, "hook_sites") || vjo_ieq(key, "hook_trust")) {
         static const char *const off_on[] VJO_DATA_TABLE(config_off_on_1) = {"off", "on", NULL};
-        c->hook_sites = 1; /* an unknown value: on, with the warning */
-        set_choice(c, key, val, &c->hook_sites, off_on);
+        /* hook_sites or (API 43) hook_trust: their sixth letters differ, in either case */
+        int *dst = (key[5] | 0x20) == 's' ? &c->hook_sites : &c->hook_trust;
+        *dst = 1; /* an unknown value: on, with the warning */
+        set_choice(c, key, val, dst, off_on);
     } else if (vjo_ieq(key, "reading_time")) {
         static const char *const rules[] VJO_DATA_TABLE(config_reading_time_1) = {"adaptive", "15s", NULL}; /* VJO_READING_* */
         c->reading_time = 0; /* an unknown value: adaptive, with the warning */

@@ -450,9 +450,10 @@ uint32_t vjo_selftest_stage_flags(unsigned i) { return i < 5 ? selftest_stage_fl
 static uint32_t selftest_begin_speed[8];
 void vjo_selftest_stage_begin(unsigned i, const char *model, const char *fallback, uint32_t speed)
 { if (i < 8) selftest_begin_speed[i] = speed; selftest_begins++; }
-/* shell/selftest.c's rule: no stage uses the line cache, textbox2 (stage 4) runs without helpers */
+/* shell/selftest.c's rule: no stage uses the line cache, textbox2 (stage 4) runs without helpers (its other bits
+ * kept, as there: the clock and, API 43, the trust bit) */
 uint32_t vjo_selftest_stage_speed(unsigned i, uint32_t configured)
-{ return (i == 4 ? configured & VJO_GAME_OCR_S_BOOST : configured) | VJO_GAME_OCR_S_NOCACHE; }
+{ return (i == 4 ? configured & ~VJO_GAME_OCR_S_HELPERS_MASK : configured) | VJO_GAME_OCR_S_NOCACHE; }
 /* shell/selftest.c's rule (its report lines are host/tests/selftest_writer.c's). */
 static int selftest_waits;
 int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
@@ -2124,6 +2125,21 @@ static void test_vocr_request_carries_the_job_policy(void)
     fake_recognized_text = "猫";
     TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & VJO_GAME_OCR_S_DROP_BORDERS));
     TEST_MSG("non_japanese_filter = none: speed 0x%08X", (unsigned)fake_game_request.speed);
+    mem_free();
+    /* API 43: hook_trust (on by default) rides in the speed word as VJO_GAME_OCR_S_TRUST; hook_trust = off drops it
+     * (Rubi 0.9.7's selection), and the job's pick stays automatic either way */
+    reset();
+    fake_recognized_text = "猫";
+    TEST_CHECK(cfg.hook_trust == 1);
+    TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_TRUST) &&
+               !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL) && fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
+    mem_free();
+    reset();
+    cfg.hook_trust = 0;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & VJO_GAME_OCR_S_TRUST) &&
+               fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
+    TEST_MSG("hook_trust = off: speed 0x%08X", (unsigned)fake_game_request.speed);
     mem_free();
     /* the refinement's mode: psp by default, on, off */
     static const unsigned modes[] = {VJO_GAME_OCR_REFINE_PSP, VJO_GAME_OCR_REFINE_ON, 0};
@@ -4149,9 +4165,11 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
         /* API 22: the default ocr_threads = 3 (two helpers), the default ocr_boost_clock = on (444 MHz while
          * recognizing), no line cache in any stage; textbox2 (the last) serially, to compare with textbox,
          * with the clock kept; the begin record says so. API 36: no stage drops a border line (as the gate,
-         * the user's jobs only) */
-        const uint32_t boost = VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_NOCACHE;
+         * the user's jobs only). API 43: hook_trust (on by default) rides in every job's speed word, the stages'
+         * too: their pick is OCR, which a trusted hook never answers (game_ocr/main.c) */
+        const uint32_t boost = VJO_GAME_OCR_S_BOOST | VJO_GAME_OCR_S_NOCACHE | VJO_GAME_OCR_S_TRUST;
         TEST_CHECK(selftest_speed_seen[i] == (i == 4 ? boost : 2u | boost));
+        TEST_MSG("stage %u speed 0x%08X", i, (unsigned)selftest_speed_seen[i]);
         TEST_CHECK(selftest_begin_speed[i] == selftest_speed_seen[i]);
         TEST_CHECK((selftest_flags_seen[i] & ~(stage_bits | VJO_GAME_OCR_F_SETTLE_FIRST)) == policy);
         TEST_MSG("stage %u flags 0x%08X", i, (unsigned)selftest_flags_seen[i]);

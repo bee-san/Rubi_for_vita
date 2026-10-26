@@ -1407,6 +1407,10 @@ static size_t helpers_need(const char *model, size_t block, unsigned helpers)
  * bytes each at most) and the NUL; OCR's text after it (for the log) is cut to the rest. */
 #define HOOK_SHOW_BYTES (VJO_HOOK_RAW_BYTES * 3u + 1u)
 typedef char vjo_hook_show_check[HOOK_SHOW_BYTES < VJO_GAME_OCR_TEXT_BYTES / 2u ? 1 : -1];
+/* API 43: after this many trusted answers in a row (8 lines, a minute or two of reading) the weights, LM and cascade
+ * model an OCR job left resident go back to the game. Not at the first: a job between them that runs OCR (the
+ * site's stream busy or its text filtered out at that moment) would read them all again each time. */
+#define TRUST_DROP_ANSWERS 8u
 static struct {
     VjoHookSelect sel;   /* the automatic pick's state, for the game session */
     VjoHookSelect saved; /* sel as the job found it: a job that fails changes nothing */
@@ -1415,10 +1419,16 @@ static struct {
     int cache_attempted, build_known, cache_ready;
     uint32_t mode, installed, refused; /* vjo_hooks_counts */
     uint32_t from, flags, score, streams; /* this job's result fields */
-    /* the hook watch (hooks_watch): Luna's sites that have held text (bit id - 1), the newest sequence a
-     * job's snapshot saw or the watch reported, and when it last reported one */
+    /* the hook watch (hooks_watch): the sites that answer without recognition and have held text (Luna's, and
+     * with API 43's trust Rubi's verified ones; bit id - 1), the newest sequence a job's snapshot saw or the watch
+     * reported, and when it last reported one */
     uint32_t luna_seen, watch_seen;
     uint64_t watch_sent;
+    /* API 43: a trusted source has answered in this game (VJO_GAME_OCR_S_TRUST): no warm-up reads the weights
+     * after a job that found no line, as the hook supplies the lines; and the trusted answers since the last job
+     * that ran OCR (at TRUST_DROP_ANSWERS the resident blocks go back to the game) */
+    int trusted;
+    uint32_t trusted_run;
     unsigned n;
     VjoHookCand cand[VJO_HOOK_STREAMS];
     VjoHookSnap snap;
@@ -1443,10 +1453,11 @@ static int hook_first(uint32_t a, uint32_t b, const uint32_t *seq, uint32_t want
 }
 
 /* The streams that hold text as the job begins (hk.streams: bit id - 1 each), and as candidates
- * (hk.cand) those whose text decodes to some: AUTO's Luna sites first, the stream the pick names
- * (pinned, or the locked one), then the newest texts, so a full pool cuts the oldest generic text.
- * Return whether any decoded Luna candidate is available; it needs no learned-source cache. */
-static int hooks_snapshot(uint32_t pick)
+ * (hk.cand) those whose text decodes to some: AUTO's Luna sites first (with trust, API 43, Rubi's verified
+ * sites with them), the stream the pick names (pinned, or the locked one), then the newest texts, so a full pool
+ * cuts the oldest generic text. Return whether any such site's decoded candidate is available; it answers without
+ * OCR and needs no learned-source cache. */
+static int hooks_snapshot(uint32_t pick, int trust)
 {
     uint32_t seq[VJO_HOOK_STREAMS + 1u], want = pick == VJO_HOOK_PICK_AUTO ? hk.sel.locked : pick;
     uint32_t luna = 0;
@@ -1460,8 +1471,8 @@ static int hooks_snapshot(uint32_t pick)
         if (!vjo_hooks_snap(id, &hk.snap) || !hk.snap.n) continue;
         hk.streams |= 1u << (id - 1u);
         if ((int32_t)(hk.snap.seq - hk.watch_seen) > 0) hk.watch_seen = hk.snap.seq; /* this job reads it */
-        if (pick == VJO_HOOK_PICK_AUTO && hk.snap.kind == VJO_HOOK_KIND_SITE && hk.snap.site &&
-            !vjo_hooks_verified(id))
+        if (pick == VJO_HOOK_PICK_AUTO && hk.snap.kind == VJO_HOOK_KIND_SITE &&
+            (vjo_hooks_verified(id) ? trust : hk.snap.site != NULL))
             luna |= VJO_HOOK_STREAM_BIT(id);
         if (pick == VJO_HOOK_PICK_AUTO && hk.sel.interval &&
             (hk.snap.kind == VJO_HOOK_KIND_SITE) == !!hk.sel.locked_site &&
@@ -1484,6 +1495,7 @@ static int hooks_snapshot(uint32_t pick)
          * in a tight-memory game it must reach the smaller-reserve fallback below. */
         verified = (uint32_t)vjo_hooks_verified(id);
         if (site && hk.snap.site && !verified) { site |= VJO_HOOK_CAND_LUNA; has_luna = 1; }
+        else if (site && verified && trust) has_luna = 1; /* API 43: it answers as Luna's do */
         hk.cand[hk.n++] = (VjoHookCand){id, hk.snap.seq, site, hk.pool + used, len, hk.snap.key, hk.snap.encoding, verified};
         used += len + 1u;
     }
@@ -1744,17 +1756,29 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
      * OCR's work whatever their pick. With nothing installed, none of this runs. */
     uint32_t hook_pick = (r->speed & VJO_GAME_OCR_S_NOCACHE) || (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK)
                              ? VJO_HOOK_PICK_OCR : r->hook_pick;
+    /* API 43: trusted hooks answer without OCR (the automatic pick only) */
+    int trust = (r->speed & VJO_GAME_OCR_S_TRUST) && hook_pick == VJO_HOOK_PICK_AUTO;
     if (hk.installed) {
         if (hook_pick && hook_pick <= VJO_HOOK_STREAMS) vjo_hooks_keep(hook_pick, 0); /* pinned: keeps its CALL slot */
-        if (!hooks_snapshot(hook_pick)) {
+        if (!hooks_snapshot(hook_pick, trust)) {
             int attempted = hk.cache_attempted;
             hooks_cache_prepare(hook_pick);
             /* A newly restored identity may need a different stream kept in the bounded pool. */
-            if (!attempted && hk.sel.interval) (void)hooks_snapshot(hook_pick);
+            if (!attempted && hk.sel.interval) (void)hooks_snapshot(hook_pick, trust);
         }
         hk.saved = hk.sel; /* a failed request preserves the restored provisional identity */
-        uint32_t hook_id = vjo_hook_select_before(&hk.sel, hook_pick, hk.cand, hk.n, &hk.flags);
+        uint32_t hook_id = trust ? vjo_hook_select_trusted(&hk.sel, hook_pick, hk.cand, hk.n, &hk.flags) : 0;
+        if (!hook_id) hook_id = vjo_hook_select_before(&hk.sel, hook_pick, hk.cand, hk.n, &hk.flags);
         if (hook_id) {
+            if (hk.flags & VJO_HOOK_R_TRUSTED) {
+                /* A trusted hook supplies the text: no OCR reserve for its one pass, and once it has answered
+                 * TRUST_DROP_ANSWERS jobs in a row the game gets back the weights, LM and cascade model an earlier
+                 * job left resident (the next OCR job reads them again). */
+                hk.trusted = 1;
+                job_reserve = VJO_GAME_RESERVE_HOOK_ONLY;
+                if (hk.trusted_run < TRUST_DROP_ANSWERS) hk.trusted_run++;
+                if (hk.trusted_run >= TRUST_DROP_ANSWERS && drop_resident()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+            }
             rc = run_hook_pass(r, out, &capture, &stats);
             if (rc < -199) rc = VJO_E_SOURCE; /* a native capture error, as for OCR */
             if (capture.failed)
@@ -1767,6 +1791,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
             goto done;
         }
     }
+    hk.trusted_run = 0; /* API 43: this job runs OCR: the trusted answers' run starts again */
     /* The finder's boxes refined (API 20): the mode, here or in a PSP game. */
     unsigned refine = refine_mode == VJO_GAME_OCR_REFINE_ON || (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title)
                       ? VJO_VOCR_REFINE_ALL : 0u;
@@ -1990,11 +2015,12 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     /* ocr-first: a job that read no line (or only blank ones) reads what the
      * session's first job with text would otherwise read while the user waits
      * (docs/first-ocr.md), as its check allowed; not the self-test's forced
-     * fallback, which would put the fallback in the user's model's place. Best
+     * fallback, which would put the fallback in the user's model's place, nor (API 43) in a game whose trusted
+     * hook supplies its lines: nothing is read ahead there. Best
      * effort, so its rc is not the job's: a cancellation ends the job below,
      * a block it could not release is cleanup()'s, a file it could not read the
      * next text job's (io_error says which). */
-    if (!rc && !stats.model_loaded && !stats.model_cached && !forced)
+    if (!rc && !stats.model_loaded && !stats.model_cached && !forced && !(trust && hk.trusted))
         vjo_vocr_warm(&platform, r->model_dir, use->name, &image, &resident, &policy, &stats);
     /* A native capture error (the kernel's VJO_ERR_*, an SDK code) ends the job
      * as a source failure; its exact code is in the step log (VJO_GSTEP_PASS). */

@@ -272,11 +272,12 @@ int vjoOcrModelClose(uint32_t seq)
 }
 
 /* ---- the runtime: spies ---- */
+static unsigned spy_lines = 1; /* the lines the spy finder finds (0: a region without text) */
 int vocr_find_lines_rows(const VocrLinesRows *src, int mode, void *arena, size_t bytes, VocrLineSet *out)
 {
     finds++;
     memset(out, 0, sizeof(*out));
-    out->count = 1;
+    out->count = spy_lines;
     out->lines[0] = (VocrLine){10, 2, 180, 3, 0};
     return VOCR_LINES_OK;
 }
@@ -322,6 +323,7 @@ static void reset(void)
     file_open_now = cancel_now = rows_error = 0;
     opens = finds = runs = 0; rows_calls = 0;
     spy_text = "猫";
+    spy_lines = 1;
     cache_loads = cache_saves = build_reads = 0;
     saved_cache_size = cache_load_error = cache_save_error = build_error = 0;
     cache_busy = cache_closes = 0; cache_pending = cache_cancel = fail_capture_free = 0;
@@ -345,6 +347,17 @@ static void stream(uint32_t id, uint32_t kind, uint32_t seq, const char *text)
     fs[id].kind = kind;
     fs[id].seq = seq;
     fs[id].text = text;
+}
+/* One job whose request carries speed (API 43: VJO_GAME_OCR_S_TRUST), as run() does. */
+static int run_speed(uint32_t pick, uint32_t speed, VjoGameOcrResult *out)
+{
+    VjoGameOcrRequest r = request(pick);
+    r.speed = speed;
+    vjo_game_ocr_cache_clear();
+    rows_calls = 0;
+    int rc = vjo_game_ocr_run_request(&r, out);
+    TEST_CHECK(!job_live && !capture_live && !file_open_now && !model_owned && !out->cleanup_status);
+    return rc;
 }
 /* The job read exactly one first pass over the region: from row 0 in strips, each continuing it
  * (VJO_ROWS_SIG), the last ending it (VJO_ROWS_LAST), and nothing more. */
@@ -1098,7 +1111,159 @@ static void verified_site_answers_when_ocr_has_no_memory(void)
     }
 }
 
+/* ---- API 43: trusted hooks (VJO_GAME_OCR_S_TRUST) through the worker's job path ---- */
+
+/* A Rubi verified site answers from its first line without OCR: no model opened, no line found or recognized,
+ * one first pass beside the hook-only reserve, in a game that leaves 3 MiB (under the OCR reserve: without the
+ * bit, 0.9.7's path refuses OCR and answers unconfirmed only after its memory check) and in one with room. */
+static void trusted_verified_site_answers_without_ocr(void)
+{
+    VjoGameOcrResult out;
+    const uint32_t trusted = VJO_HOOK_R_TRUSTED | VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR;
+    for (unsigned roomy = 0; roomy < 2; roomy++) {
+        reset();
+        available = roomy ? 64 * 1024 * 1024 : 3 * 1024 * 1024;
+        fake_verified = 1u << 1; /* stream 2 */
+        stream(2, VJO_HOOK_KIND_SITE, 5, LINE1);
+        stream(9, VJO_HOOK_KIND_CALL, 6, LINE2);
+        for (unsigned line = 0; line < 3; line++) {
+            if (line == 1) stream(2, VJO_HOOK_KIND_SITE, 7, LINE3);
+            /* line 2: the same text again (the overlay reopened on a new scene): answered again */
+            TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0);
+            TEST_CHECK_(!strcmp(out.text, line ? LINE3 : LINE1), "%s", out.text);
+            TEST_CHECK(out.text_from == 2 && out.hook_flags == trusted && !out.hook_score);
+            TEST_CHECK(first_pass_only() && !out.recognized && !out.lines && out.weights == VJO_GAME_OCR_WEIGHTS_NONE);
+            TEST_CHECK(!opens && !finds && !runs);
+            TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_HOOK_ONLY && out.need_workspace == capture_block);
+            TEST_CHECK(!hk.sel.interval && !hk.sel.streak); /* nothing learned without OCR */
+        }
+        /* without the bit (hook_trust = off): 0.9.7's selection, OCR first (refused in the tight game, where the
+         * verified site then answers unconfirmed) */
+        stream(2, VJO_HOOK_KIND_SITE, 8, LINE1);
+        spy_text = OCR1;
+        TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, 0, &out) == 0 && out.text_from == 2);
+        if (roomy) TEST_CHECK(runs == 1 && out.hook_flags == (VJO_HOOK_R_AGREED | VJO_HOOK_R_SITE));
+        else TEST_CHECK(!runs && out.hook_flags == (VJO_HOOK_R_UNCONFIRMED | VJO_HOOK_R_NO_OCR | VJO_HOOK_R_SITE));
+    }
+}
+
+/* A Luna site in a game short of memory: 0.9.7's answer keeps the 4 MiB OCR reserve for its pass and is refused;
+ * a trusted answer keeps the hook-only reserve and shows the line. */
+static void trusted_luna_site_in_a_tight_game(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    available = 3 * 1024 * 1024;
+    stream(2, VJO_HOOK_KIND_SITE, 1, LINE2); fs[2].luna = &fake_luna_site;
+    TEST_CHECK(run_speed(VJO_HOOK_PICK_AUTO, 0, &out) == VJO_E_OOM && !out.text[0] && !capture_allocs);
+    TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE);
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && !strcmp(out.text, LINE2));
+    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR) && !opens && !runs);
+    TEST_CHECK(out.reserve_bytes == VJO_GAME_RESERVE_HOOK_ONLY && capture_allocs == 1);
+    /* too little even for its one pass beside that reserve: refused, as any job */
+    available = VJO_GAME_RESERVE_HOOK_ONLY + 4096;
+    TEST_CHECK(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == VJO_E_OOM && !out.text_from);
+}
+
+/* The weights an earlier OCR job left resident (the title screen before the first hooked line) go back to the
+ * game once trusted answers have run TRUST_DROP_ANSWERS (8) jobs in a row; an OCR job between them starts the run
+ * again, so a site whose text is now and then unavailable does not make each OCR job read them again. A job that
+ * finds no line after a trusted answer reads none ahead (no warm-up). */
+static void trusted_answer_gives_back_the_weights(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    spy_text = OCR1;
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && !out.text_from && runs == 1);
+    TEST_CHECK(weights_live && out.resident_bytes > 0 && opens == 1);
+    fake_verified = 1u << 1;
+    for (unsigned i = 1; i <= TRUST_DROP_ANSWERS; i++) {
+        if (i == 4) { /* the site's stream busy at the snapshot: OCR (the resident weights, no read), the run again */
+            fs[2].busy = 1;
+            TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && !out.text_from);
+            TEST_CHECK(weights_live && opens == 2 && hk.trusted_run == 0);
+            fs[2].busy = 0;
+        }
+        stream(2, VJO_HOOK_KIND_SITE, i, LINE1);
+        TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && out.text_from == 2);
+        TEST_CHECK_(weights_live && out.resident_bytes > 0, "answer %u: kept", i);
+    }
+    TEST_CHECK(hk.trusted_run == TRUST_DROP_ANSWERS - 3u);
+    for (unsigned i = 0; i < 3; i++) {
+        stream(2, VJO_HOOK_KIND_SITE, 20 + i, LINE2);
+        TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && out.text_from == 2);
+        TEST_CHECK_(weights_live == (i < 2), "answer %u of the run's last three", i);
+    }
+    TEST_CHECK(!weights_live && !out.resident_bytes && runs == 2 && opens == 2);
+    /* the site's stream busy again: OCR, which finds no line here; no warm-up reads the weights back */
+    fs[2].busy = 1;
+    spy_lines = 0;
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && !out.text_from && !out.lines);
+    TEST_CHECK(!weights_live && opens == 2);
+    /* without the bit the warm-up reads them as 0.9.7's did */
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, 0, &out) == 0 && !out.lines);
+    TEST_CHECK(weights_live && opens == 3);
+}
+
+/* A CALL caller agrees with OCR on lines 1 and 2 (its lock), 10 and 26 (the checks at 8 and 16) and is then
+ * trusted: 100 fresh lines and 5 jobs on the last one again (a screen change without a new line) take 4 OCR runs,
+ * against 0.9.7's 11 (also lines 58 and 90, and each repeat). Its slot taken by another caller: OCR again. */
+static void trusted_call_source_after_four_agreements(void)
+{
+    static char lines[100][96], ocr[100][96];
+    VjoGameOcrResult out;
+    unsigned runs_with[2];
+    for (unsigned i = 0; i < 100; i++) {
+        snprintf(ocr[i], sizeof(ocr[i]), "会話の新しいページ番号%uの台詞です", i + 1);
+        snprintf(lines[i], sizeof(lines[i]), "「%s」", ocr[i]);
+    }
+    for (int trust = 0; trust < 2; trust++) {
+        reset();
+        for (unsigned i = 0; i < 105; i++) {
+            if (i < 100) {
+                stream(9, VJO_HOOK_KIND_CALL, i + 1, lines[i]);
+                spy_text = ocr[i];
+            }
+            TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, trust ? VJO_GAME_OCR_S_TRUST : 0, &out) == 0);
+            TEST_CHECK_(out.text_from == 9 && !strcmp(out.text, lines[i < 100 ? i : 99]), "line %u: %s", i + 1, out.text);
+            if (trust && i >= 26)
+                TEST_CHECK(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR) &&
+                           out.reserve_bytes == VJO_GAME_RESERVE_HOOK_ONLY && !out.recognized);
+        }
+        runs_with[trust] = runs;
+    }
+    TEST_CHECK_(runs_with[1] == 4 && runs_with[0] == 11, "trust %u, 0.9.7 %u", runs_with[1], runs_with[0]);
+    /* the source's slot now holds another caller's text (its key): not the source; OCR reads the screen */
+    fs[9].key = 0x4444;
+    stream(9, VJO_HOOK_KIND_CALL, 500, LINE1);
+    spy_text = "全然関係のない画面の文字がここに表示されている";
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && runs == 5);
+    TEST_CHECK(!out.text_from && !strcmp(out.text, spy_text) && !hk.sel.interval); /* unlocked */
+}
+
+/* The hook watch (API 41) watches a verified site once a trusted job read it, so its next line starts the read. */
+static void hook_watch_reports_trusted_verified_lines(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    fake_verified = 1u << 2; /* stream 3 */
+    stream(3, VJO_HOOK_KIND_SITE, 4, LINE1);
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, 0, &out) == 0); /* without the bit: not watched */
+    stream(3, VJO_HOOK_KIND_SITE, 5, LINE2);
+    hooks_watch();
+    TEST_CHECK(!hook_lines);
+    TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0 && out.text_from == 3);
+    stream(3, VJO_HOOK_KIND_SITE, 6, LINE3);
+    hooks_watch();
+    TEST_CHECK(hook_lines == 1 && hook_line_seq == 6);
+}
+
 TEST_LIST = {
+    {"API 43: a trusted verified site answers without OCR, also short of memory", trusted_verified_site_answers_without_ocr},
+    {"API 43: a trusted Luna site keeps the hook-only reserve", trusted_luna_site_in_a_tight_game},
+    {"API 43: a trusted answer gives the weights back; no warm-up after it", trusted_answer_gives_back_the_weights},
+    {"API 43: a CALL source is trusted after four agreements; OCR resumes when it is gone", trusted_call_source_after_four_agreements},
+    {"API 43: the hook watch reports a trusted verified site's lines", hook_watch_reports_trusted_verified_lines},
     {"OCR refused for memory: a verified site answers unconfirmed", verified_site_answers_when_ocr_has_no_memory},
     {"Luna: no initial, periodic or repeated OCR and no generic cache IO", luna_never_loads_ocr_or_generic_learning},
     {"Luna: preserve generic learning and resume it when unavailable", luna_preserves_generic_state_and_falls_back_when_unavailable},

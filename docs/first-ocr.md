@@ -136,7 +136,9 @@ worker; `L`: every thread's file appends meanwhile).
    resume, a system dialog): they go back after 5 s of the game's running time (`game_ocr/main.c`
    `inactive_long`; process time stops while a process is suspended [SDK: Kernel-Reference,
    sceKernelGetProcessTimeWide]). Nothing new is allocated: the same blocks, the same ledger items,
-   the same pages.
+   the same pages. API 43: in a game whose trusted hook has answered a job, a job that finds no line
+   reads nothing ahead, and after 8 trusted answers in a row the resident blocks go back to the game:
+   the hook supplies the lines ([native-hooks.md](native-hooks.md#trusted-hooks-api-43)).
 3. **A press waits at most 1 s for the text to hold still** (`ocr_settle_press_ms = 1000`;
    `ocr_settle_max_ms`, 2 s, for every other job). In test.2 the two press jobs waited 1,265 and
    1,490 ms for text typing out (365 and 400 changes). There a 1 s cap would not have helped: the job

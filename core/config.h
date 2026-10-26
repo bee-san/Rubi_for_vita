@@ -126,6 +126,10 @@ typedef struct {
      * before); the Shell sends the bits as they are (include/vjo_game_ocr.h VJO_GAME_OCR_S_HEAD_SHIFT). One key, not
      * two: the normal Shell's code had 100 B of its last page left (docs/memory-ledger.md). Last, as above. */
     int ocr_head_gate;        /* VJO_HEAD_* bits, 0-3 */
+    /* Native text hooks (API 43, docs/native-hooks.md "Trusted hooks"): 1 (the default) lets a trusted hook (a Luna
+     * or Rubi verified site, or a regular source after four OCR agreements) answer without OCR; 0 (hook_trust = off)
+     * selects as Rubi 0.9.7 did. The Shell sends it as VJO_GAME_OCR_S_TRUST in each job's speed word. Last, as above. */
+    int hook_trust;           /* 0/1, on by default */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

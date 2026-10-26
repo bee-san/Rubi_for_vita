@@ -110,7 +110,15 @@
 #define VJO_GAME_OCR_S_HEAD_SHIFT 18
 #define VJO_GAME_OCR_S_HEAD_GATE (1u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x40000 */
 #define VJO_GAME_OCR_S_TWO_LEVEL (2u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x80000 */
-#define VJO_GAME_OCR_S_ALL 0xD001Fu
+/* API 43, bit 20: trusted hooks answer without OCR (config.ini hook_trust, on by default; docs/native-hooks.md,
+ * "Trusted hooks"). With the automatic pick, a trusted source with text answers the job (core/hook_select.h
+ * vjo_hook_select_trusted): Luna's sites and Rubi's verified sites from their first line, a learned regular source
+ * once its interval reaches VJO_HOOK_TRUST_INTERVAL with a close agreement there. Such a job opens no model, keeps no
+ * OCR reserve (its one capture pass keeps VJO_GAME_RESERVE_HOOK_ONLY) and, after a run of them, gives back the
+ * resident weights, LM and cascade model. Without the bit a job selects as API 42's did. The Shell sets it in the
+ * user's jobs; a pick of OCR or a stream ignores it. Not bit 17 (closed draft #271's VJO_GAME_OCR_S_CHARS). */
+#define VJO_GAME_OCR_S_TRUST 0x100000u
+#define VJO_GAME_OCR_S_ALL 0x1D001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
@@ -179,6 +187,7 @@ typedef struct {
 #define VJO_HOOK_R_UNLOCK 0x20u /* this job unlocked the stream that was locked (two disagreements) */
 #define VJO_HOOK_R_CALLS_FULL 0x40u /* every CALL slot is taken: a new caller was dropped or replaced one */
 #define VJO_HOOK_R_UNCONFIRMED 0x80u /* a Rubi verified table site answered with no OCR agreement ever: OCR had no memory */
+#define VJO_HOOK_R_TRUSTED 0x100u /* API 43: a trusted source answered (VJO_GAME_OCR_S_TRUST), always with NO_OCR */
 
 /* vjoOcrModelOpen's `which`: the request's model or its fallback, or (API 20)
  * the LM of tier which - VJO_GAME_OCR_OPEN_LM + 1, up to the request's LM tier,
