@@ -370,7 +370,10 @@ reported console run. The behaviour below is checked on the host.
   PCSG00663, PCSG01081, PCSG01152): Automatic still tries their string-copy hooks, as it does in games
   with no table entry, and falls back to OCR if they provide no usable dialogue.
   **Every game** (`hooks`) is retained for existing configurations and now makes the same attempts as
-  Automatic; **OCR only** (`ocr`) installs none. PSP games still use OCR only.
+  Automatic, plus PSP text: in Adrenaline, the worker reads the dialogue page of two PSP games (Memories Off 6
+  ～T-wave～ and Memories Off ～それから～) from PSP memory, read-only, and OCR must agree before it is shown
+  (proven in the PPSSPP emulator only: [PSP text](native-hooks.md#psp-text-adrenaline)); **OCR only** (`ocr`)
+  installs none. Other PSP games use OCR only, and so do these two with Automatic.
   An install or an update keeps the file's value; installs before this one wrote `text_source =
   ocr`, so choose Automatic once to use hooks.
 - **What is shown.** Nonempty Luna hook text is preferred immediately, including short or unchanged

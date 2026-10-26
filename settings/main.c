@@ -877,13 +877,14 @@ static void draw_results_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, results_help);
 }
 
-/* API 31: where the overlay's text comes from (docs/native-hooks.md). The saved Every game choice is
- * retained for compatibility; Automatic now tries the same native hooks in every enabled Vita game. */
+/* API 31: where the overlay's text comes from (docs/native-hooks.md). The saved Every game choice tries the same
+ * native hooks as Automatic in every enabled Vita game, and also PSP text in Adrenaline (core/psp_text.h: the worker
+ * reads a profiled PSP game's page, which OCR must agree with), which Automatic does not. */
 static void draw_source_card(int y)
 {
     static const char *const names[3] = {"Automatic", "Every game", "OCR only"};
     static const char *const help[3] = {"Try hooks in every enabled Vita game, else OCR. From the next start.",
-                                        "Same as Automatic. Applies when a game next starts.",
+                                        "Automatic + PSP text in 2 PSP games (testing). From the next start.",
                                         "Screenshots only, no hooks. Applies when a game next starts."};
     int chosen = source_index(preferences.text_source);
     text(42, y + CARD_TITLE_Y, WHITE, 28, "Text source");

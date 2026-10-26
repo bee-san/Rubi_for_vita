@@ -125,6 +125,21 @@ int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)
     memcpy(out->raw, &fs[id].text, sizeof(fs[id].text)); /* the fake's raw bytes: the text's address */
     return 1;
 }
+/* PSP text's poll (game_ocr/hooks.h): psp_polls counts the calls; at a poll, psp_installs (nonzero) becomes
+ * what vjo_hooks_counts reports installed, as the real poll's profile coming does (it returns 1 then). */
+static unsigned psp_polls;
+static uint32_t psp_installs;
+int vjo_hooks_psp_poll(void)
+{
+    psp_polls++;
+    if (fake_installed == psp_installs) return 0;
+    fake_installed = psp_installs;
+    return 1;
+}
+uint32_t vjo_hooks_psp_status(void)
+{
+    return 0;
+}
 /* The hook watch's lock-free read (API 41): never refused, a busy stream included. */
 static unsigned seq_reads;
 uint32_t vjo_hooks_seq(uint32_t id, uint32_t *key, uint32_t *kind, uint32_t *bytes)
@@ -1098,7 +1113,66 @@ static void verified_site_answers_when_ocr_has_no_memory(void)
     }
 }
 
+
+/* PSP text (core/psp_text.h, game_ocr/hooks.c vjo_hooks_psp_poll): in the PSP emulator's process each OCR job
+ * polls before its snapshot, and a profile that came at that poll is the job's own (what vjo_hooks_counts reports
+ * is read again). Its stream 1 is a regular hook's: OCR must agree, twice to lock, then it answers with the first
+ * pass only; no learned-source cache in that process. A native game, a shot and the self-test's probe never poll. */
+static void psp_text_polls_first_and_must_agree(void)
+{
+    VjoGameOcrResult out;
+    reset();
+    prime_hook_cache(32); /* a saved record the PSP process must never load */
+    fake_installed = 0; fake_refused = 0; fake_mode = VJO_TEXT_SOURCE_HOOKS;
+    psp_polls = 0; psp_installs = 1u << 16;
+    fs[1].key = 0x08898920u;
+    stream(1, VJO_HOOK_KIND_SITE, 1, LINE1);
+    spy_text = OCR1;
+    /* a native Vita game: no poll, nothing installed, OCR */
+    psp_title = 0;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && !psp_polls && !snaps && !out.text_from && !out.hook_installed);
+    /* the PSP emulator: the poll first, then the stream as this job's candidate, shown once OCR agrees */
+    psp_title = 1;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && psp_polls == 1 && out.hook_installed == 1u << 16);
+    TEST_CHECK_(out.text_from == 1 && (out.hook_flags & VJO_HOOK_R_AGREED) && (out.hook_flags & VJO_HOOK_R_SITE) &&
+                !(out.hook_flags & VJO_HOOK_R_NO_OCR) && runs == 2, "from %u flags 0x%x runs %u", out.text_from,
+                out.hook_flags, runs);
+    TEST_CHECK(!strcmp(out.text, LINE1));
+    TEST_CHECK(!cache_loads && !build_reads); /* no learned source in the PSP emulator */
+    /* a second agreeing line locks; the third is answered without recognition */
+    stream(1, VJO_HOOK_KIND_SITE, 2, LINE2); spy_text = OCR2;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 1 && (out.hook_flags & VJO_HOOK_R_LOCKED));
+    stream(1, VJO_HOOK_KIND_SITE, 3, LINE3); spy_text = "読まれないはずの文字";
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && out.text_from == 1 && (out.hook_flags & VJO_HOOK_R_NO_OCR));
+    TEST_CHECK(!strcmp(out.text, LINE3) && runs == 3 && first_pass_only());
+    TEST_CHECK(psp_polls == 3 && !cache_loads && !cache_saves);
+    /* the game leaves (Adrenaline's XMB): the poll says so, the job is OCR's with no snapshot */
+    psp_installs = 0; snaps = 0; spy_text = OCR1;
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && psp_polls == 4 && !out.hook_installed && !snaps &&
+               !out.text_from && !strcmp(out.text, OCR1));
+    /* the game again (a profile comes back): nothing learned carries over; OCR must agree again */
+    psp_installs = 1u << 16;
+    stream(1, VJO_HOOK_KIND_SITE, 5, LINE3); spy_text = "全然関係のない画面の文字がここに表示されている";
+    TEST_CHECK(run(VJO_HOOK_PICK_AUTO, &out) == 0 && psp_polls == 5 && out.hook_installed == 1u << 16);
+    TEST_CHECK(!out.text_from && runs == 5 && !hk.sel.interval && !hk.sel.locked);
+    /* a shot and the self-test's probe job never poll */
+    {
+        VjoGameOcrRequest r = {.size=sizeof(r), .seq=12, .capture_seq=11, .fb_width=W, .fb_height=H, .width=W,
+                               .height=H, .flags=VJO_GAME_OCR_F_SHOT};
+        snprintf(r.shot, sizeof(r.shot), "123-456");
+        vjo_game_ocr_run_request(&r, &out);
+#if VJO_DEBUG
+        r = request(VJO_HOOK_PICK_AUTO);
+        r.flags = VJO_GAME_OCR_F_PROBE;
+        vjo_game_ocr_run_request(&r, &out);
+#endif
+        TEST_CHECK(psp_polls == 5);
+    }
+    psp_title = 0; psp_installs = 0;
+}
+
 TEST_LIST = {
+    {"PSP text: the job polls first; its stream must agree with OCR; no cache there", psp_text_polls_first_and_must_agree},
     {"OCR refused for memory: a verified site answers unconfirmed", verified_site_answers_when_ocr_has_no_memory},
     {"Luna: no initial, periodic or repeated OCR and no generic cache IO", luna_never_loads_ocr_or_generic_learning},
     {"Luna: preserve generic learning and resume it when unavailable", luna_preserves_generic_state_and_falls_back_when_unavailable},
