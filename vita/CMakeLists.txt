@@ -424,11 +424,13 @@ set(VJO_SETTINGS_SRC
   ${ROOT}/core/config.c ${ROOT}/core/utf.c ${ROOT}/core/local_dict.c ${ROOT}/core/vocr_models.c
   ${ROOT}/vita/games_storage.c ${ROOT}/vita/buttons_vita.c ${ROOT}/settings/sysapp.c ${ROOT}/settings/sysapp_gfx.c
   ${VJO_SETTINGS_ANKI_SRC})
-# API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, and the games of Luna's
+# API 31: the Games page's hook tag (core/hook_titles.c): Rubi's own entries, the worker's verified table
+# itself (core/hook_place.c: of it only vjo_place_title_verified, vjo_place_verified and the table stay
+# linked), and the games of Luna's
 # ported Vita table (core/hook_luna.c, from hooks/luna-port: of it only vjo_luna_title_ported, the title
 # list and the site table stay linked, --gc-sections drops the rest; audit-hooks-text N2: a title with a
 # ported site). Without that file only Rubi's own entries.
-list(APPEND VJO_SETTINGS_SRC ${ROOT}/core/hook_titles.c)
+list(APPEND VJO_SETTINGS_SRC ${ROOT}/core/hook_titles.c ${ROOT}/core/hook_place.c)
 if(EXISTS ${ROOT}/core/hook_luna.c)
   foreach(_vjo_luna hook_luna.c hook_re.c hook_text.c)
     if(EXISTS ${ROOT}/core/${_vjo_luna})

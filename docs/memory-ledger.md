@@ -855,7 +855,9 @@ module rows, both builds of main `f482c21` and `44d4e8d` and this change, VitaSD
 
 The normal Shell's code segment had 1,276 B of room and its data segment 3,844 B (main `50e8d4e`). A read-only table
 marked `VJO_DATA_TABLE` (`core/port.h`) is placed in the data segment (`.data.vjo.<name>`) by the
-Vita build; it stays `const` and is never written, and the host build keeps it in `.rodata`. It costs
+Vita build; it stays `const` and is never written, and the host build keeps it read-only (`.rodata`, or
+`.data.rel.ro` for a table of pointers in a position-independent build such as CI's Ubuntu GCC makes by
+default: read-only once relocated, a write faults). It costs
 nothing more at run time (one copy, loaded with the module; the Shell is loaded into SceShell only)
 and moves no page: it uses the data segment's last page, which the module holds anyway. It is the
 cheaper of the two ways to keep the Shell's pages when its code grows (the other is `-Os`, which

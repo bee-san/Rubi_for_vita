@@ -95,9 +95,10 @@ build region_select host/tests/test_region_select.c core/region_select.c core/re
 build kernel_text_source host/tests/test_kernel_text_source.c
 build hook_pick host/tests/test_hook_pick.c core/hook_pick.c
 if [ -f core/hook_luna.c ]; then
-  build hook_titles -DVJO_HOOK_LUNA=1 host/tests/test_hook_titles.c core/hook_titles.c core/hook_luna.c core/hook_re.c core/hook_text.c
+  build hook_titles -DVJO_HOOK_LUNA=1 host/tests/test_hook_titles.c core/hook_titles.c core/hook_place.c core/hook_luna.c \
+    core/hook_re.c core/hook_text.c
 else
-  build hook_titles host/tests/test_hook_titles.c core/hook_titles.c
+  build hook_titles host/tests/test_hook_titles.c core/hook_titles.c core/hook_place.c
 fi
 # API 32: the Anki screenshot's black bars (core/shottrim.c, the game worker's): 32-bit size_t and offsets.
 build shot_trim host/tests/test_shot_trim.c core/shottrim.c
