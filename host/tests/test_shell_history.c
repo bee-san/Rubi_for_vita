@@ -1631,6 +1631,54 @@ static void test_reading_time_pace(void)
     vjo_reading_rule = VJO_READING_ADAPTIVE;
 }
 
+/* The pace's floor (audit of #303): below 32 units (2 ms a character) 3/32 and 1/32 of the pace are 0, so a pace
+ * that got there could never move again and every later line of the game would get the 2 s floor, also on a
+ * recount. Lines of 489 or more characters a second or more apart, read faster than 2 ms a character (a hook
+ * returning a page of text at once), could take it there; it now stops at 32 and comes back up. The numbers are
+ * tools/reading_stats.py adaptive_credit's (tools/tests/test_reading_stats.py checks the same). */
+static void test_reading_time_pace_floor(void)
+{
+    VjoReadingTime t = {0};
+    const uint32_t game = 7;
+    uint64_t us = 1000000000;
+    reset();
+    vjo_reading_time_add(&t, us, game, 4000);
+    uint32_t lowest = 0xFFFF;
+    for (int i = 0; i < 300; i++) { /* 4,000 characters every 1.5 s: 0.375 ms a character */
+        TEST_CHECK(vjo_reading_time_add(&t, us += 1500000, game, 4000) == 1500000);
+        if (t.pace < lowest) lowest = t.pace;
+    }
+    TEST_CHECK_(lowest == VJO_READING_PACE_MIN && t.pace == VJO_READING_PACE_MIN, "lowest %u, pace %u",
+                (unsigned)lowest, (unsigned)t.pace);
+    /* then 30 characters every 30 s (1 s a character): the 2 s floor first, then the pace climbs back; the 66th
+     * line is the first credited its whole 30 s, and after 200 the pace is the reader's again */
+    int first_whole = -1;
+    uint32_t credit = 0;
+    vjo_reading_time_add(&t, us += 1500000, game, 30);
+    for (int i = 0; i < 200; i++) {
+        credit = vjo_reading_time_add(&t, us += 30000000, game, 30);
+        if (i == 0) TEST_CHECK(credit == VJO_READING_CAP_FLOOR_US);
+        if (credit == 30000000 && first_whole < 0) first_whole = i;
+    }
+    TEST_CHECK_(first_whole == 65 && credit == 30000000 && t.pace == 16668, "first whole line %d, pace %u",
+                first_whole, (unsigned)t.pace);
+    /* a pace under the floor, as a cache of 0.9.7-test.12 could hold one: the next sample lifts it to 32 */
+    t.pace = 31;
+    TEST_CHECK(vjo_reading_time_add(&t, us += 30000000, game, 30) == VJO_READING_CAP_FLOOR_US && t.pace == 32);
+    TEST_CHECK(vjo_reading_time_add(&t, us += 30000000, game, 30) == VJO_READING_CAP_FLOOR_US && t.pace == 35);
+    /* the boundary: a line that took exactly its expected time at the pace (10 characters at the start's 1.2 s:
+     * 12 s, 187,500 units of 64 us) is not slower: the pace goes down; 64 us more is slower: up */
+    static const struct { uint32_t gap; uint16_t pace; } edge[] = {{12000000, 18165}, {12000063, 18165},
+                                                                  {12000064, 20505}};
+    for (unsigned i = 0; i < sizeof(edge) / sizeof(edge[0]); i++) {
+        memset(&t, 0, sizeof(t));
+        vjo_reading_time_add(&t, us = 1000000000, game, 10);
+        TEST_CHECK(vjo_reading_time_add(&t, us + edge[i].gap, game, 10) == edge[i].gap);
+        TEST_CHECK_(t.pace == edge[i].pace, "gap %u: pace %u, want %u", (unsigned)edge[i].gap, (unsigned)t.pace,
+                    (unsigned)edge[i].pace);
+    }
+}
+
 /* A 0.9.7 file is 112 bytes, as this one; its check starts from 0x33544d45, as 15s's does: it stays valid with
  * reading_time = 15s (its counters are that rule's), and adaptive counts the history again. */
 static uint32_t check_097(const TotalFile *f)
@@ -1681,7 +1729,7 @@ static void test_reading_time_caches(void)
     TEST_CHECK(reads - before > 1 && !memcmp(&total.time, &gaps15, sizeof(gaps15)));
 }
 
-/* host/fixtures/reading_time/*.tsv (tools/reading_time_sim.py --fixtures): simulated reading timelines as
+/* host/fixtures/reading_time, its .tsv files (tools/reading_time_sim.py --fixtures): simulated reading timelines as
  * history.csv records them (breaks, suspends and standby, menus and the backlog, skip and auto mode, OCR
  * and hooks), with what each rule credits (tools/reading_stats.py's integers). Each is appended through the
  * real writer, which updates the counters, then counted again from the file: both must give those. */
@@ -1777,6 +1825,8 @@ TEST_LIST = {
      test_reading_time_adaptive},
     {"reading time adaptive: the pace converges, is clamped, and caps an AFK at the reader's line time",
      test_reading_time_pace},
+    {"reading time adaptive: the pace stops at 2 ms a character and comes back; a line at its expected time",
+     test_reading_time_pace_floor},
     {"reading time: 0.9.7's caches stay valid with 15s, adaptive counts again", test_reading_time_caches},
     {"reading time: event-timeline fixtures, the writer and a recount, both rules", test_reading_time_fixtures},
     {"reading time: window boundaries, errors and corrupt cache", test_reading_time_windows_and_retry},

@@ -54,7 +54,8 @@ uint32_t vjo_line_characters(const char *s, size_t len);
  *     than that (AFK, a suspend, standby, the next day) gives the line its cap and no more. The pace is
  *     the 75th percentile of the time a character took in this game's lines of 5 or more characters that
  *     took 1 s to 5 minutes, as a running estimate: 3/32 of itself up after a slower line, 1/32 down
- *     after a faster one; 1.2 s a character until it has learned (`pace` 0).
+ *     after a faster one; 1.2 s a character until it has learned (`pace` 0); kept between 2 ms and 4.19 s a
+ *     character (VJO_READING_PACE_MIN to 16 bits: below 32 units 1/32 of it is 0, so it could never move again).
  *   15s (Rubi 0.9.7 and older): only an interval (0, 15 s] counts, whole; a longer one gets nothing.
  * Another game's record, an invalid time or a clock set back breaks the interval. timed_chars belongs to
  * the earlier line; untimed lines never inflate the speed. Stored with the total (and the pace with it)
@@ -62,6 +63,7 @@ uint32_t vjo_line_characters(const char *s, size_t len);
 enum { VJO_READING_ADAPTIVE, VJO_READING_GAPS_15S };
 #define VJO_READING_PACE_UNIT_SHIFT 6         /* the pace's unit: 64 us a character (16 bits: to 4.19 s) */
 #define VJO_READING_PACE_START 18750u         /* 1.2 s a character, 3,000 an hour: GameSentenceMiner's 3 s cap */
+#define VJO_READING_PACE_MIN 32u              /* 2 ms a character: the smallest pace whose 1/32 step is not 0 */
 #define VJO_READING_CAP_FLOOR_US 2000000u     /* stats_util.ADAPTIVE_FLOOR_SECONDS */
 #define VJO_READING_CAP_CEILING_US 300000000u /* stats_util.ABSOLUTE_CEILING: 5 minutes */
 #define VJO_READING_GAP_15S_US 15000000u

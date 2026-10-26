@@ -161,6 +161,8 @@ uint32_t vjo_reading_time_add(VjoReadingTime *t, uint64_t us, uint32_t game, uin
             /* the line teaches the pace from its gap, not its credit (stats_util.reading_speed_sample) */
             if (n >= 5 && g >= 1000000u && g <= VJO_READING_CAP_CEILING_US) {
                 pace = g >> VJO_READING_PACE_UNIT_SHIFT > expect ? pace + 3 * (pace >> 5) : pace - (pace >> 5);
+                /* 16 bits; and never under 32 units, where 1/32 of it is 0 and no line could move it again */
+                if (pace < VJO_READING_PACE_MIN) pace = VJO_READING_PACE_MIN;
                 t->pace = (uint16_t)(pace > 0xFFFFu ? 0xFFFFu : pace);
             }
         }

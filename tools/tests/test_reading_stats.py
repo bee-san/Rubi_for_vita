@@ -1077,6 +1077,28 @@ class Adaptive(unittest.TestCase):
             pace = c(300_000_000, 5, pace)[1]
         self.assertEqual(c(600_000_000, 5, pace), (52_428_000, 0xFFFF))
 
+    def test_pace_floor_and_boundary(self):
+        """host/tests/test_shell_history.c's floor (audit of #303): under 32 units (2 ms a character) 1/32 of the
+        pace is 0 and it could never move again; it stops at rs.PACE_MIN and comes back. A line read in exactly its
+        expected time is not slower: the pace goes down; 64 us more is slower."""
+        c = rs.adaptive_credit
+        pace, lowest = 0, 0xFFFF
+        for _ in range(300):  # 4,000 characters every 1.5 s
+            self.assertEqual(c(1_500_000, 4000, pace)[0], 1_500_000)
+            pace = c(1_500_000, 4000, pace)[1]
+            lowest = min(lowest, pace)
+        self.assertEqual((lowest, pace), (rs.PACE_MIN, 32))
+        credits = []
+        for _ in range(200):  # then 30 characters every 30 s: the 2 s floor first, the reader's pace again later
+            credit, pace = c(30_000_000, 30, pace)
+            credits.append(credit)
+        self.assertEqual((credits[0], credits.index(30_000_000), credits[-1], pace),
+                         (2_000_000, 65, 30_000_000, 16_668))
+        self.assertEqual(c(30_000_000, 30, 31), (2_000_000, 32))  # a pace under the floor (a 0.9.7-test.12 cache)
+        self.assertEqual(c(30_000_000, 30, 32), (2_000_000, 35))
+        for gap, want in ((12_000_000, 18_165), (12_000_063, 18_165), (12_000_064, 20_505)):
+            self.assertEqual(c(gap, 10, 0), (gap, want))
+
     def test_rules_and_options(self):
         """adaptive by default; --time-rule break or --break-minutes N is the old rule; not both rules at once."""
         report = rs.read_history([FIXTURE])
