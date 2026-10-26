@@ -167,7 +167,8 @@ def c_lm_table():
     table = source[source.index("static const VjoVocrLm lms[VJO_VOCR_LM_TIERS]"):]
     table = table[:table.index("};")]
     out = {}
-    for m in re.finditer(r"\{(VJO_VOCR_LM\d_NAME), (VJO_VOCR_LM\d_BYTES),\s*\{([^}]*)\},\s*(\d+), (\d)\}", table):
+    for m in re.finditer(r"\{(VJO_VOCR_LM\d_NAME), (VJO_VOCR_LM\d_BYTES),\s*\{([^}]*)\},\s*(\d+), (\d), (\d+), "
+                         r"(VOCR_LM_BOS|VOCR_LM_EOS)\}", table):
         digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
         out[sizes[m.group(1)]] = (sizes[m.group(2)], digest, int(m.group(5)))
     return out
@@ -339,6 +340,15 @@ class VocrDefaults(unittest.TestCase):
         for n in range(1, 5):
             self.assertIn(f"VJO_VOCR_LM{n}_NAME", kernel)
             self.assertIn(f"VJO_VOCR_LM{n}_BYTES", kernel)
+        # each tier's decoder settings are the ones vita-vn-ocr selected it with (v0.3.7-lm6.1's settings.json):
+        # VOCR6's LMs at tiers 2 and 4, ctclm.2's at 1 and 3
+        source = (ROOT / "core/vocr_ocr.c").read_text()
+        block = source[source.index("static const VjoVocrLm lms[VJO_VOCR_LM_TIERS]"):]
+        settings = re.findall(r"\},\s*(\d+), (\d), (\d+), (VOCR_LM_BOS|VOCR_LM_EOS)\}", block[:block.index("};")])
+        self.assertEqual(settings, [("3000", "1", "500", "VOCR_LM_EOS"), ("2500", "2", "600", "VOCR_LM_BOS"),
+                                    ("3000", "3", "500", "VOCR_LM_EOS"), ("2500", "4", "600", "VOCR_LM_BOS")])
+        self.assertIn("o->alpha = lm->alpha;", source)
+        self.assertIn("o->flags = lm->flags;", source)
         # the ledger's LM block holds the largest, page-rounded
         ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
         budget = int(re.search(r"#define VJO_BUDGET_GAME_LM (\d+)u", ledger).group(1))
