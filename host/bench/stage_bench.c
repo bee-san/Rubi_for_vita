@@ -28,6 +28,7 @@
 #include "vocr.h"
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"
+#include "vocr_lines_fix.h"
 #include "vocr_ocr.h"
 #include "../../kernel/scene.h"
 
@@ -257,7 +258,8 @@ static int find(const BenchIn *in, RowSrc *src, VocrLineSet *set)
     VocrLinesRows rows = {in->w, in->h, VOCR_LINES_GREY, plane_row, src};
     size_t need = vocr_lines_arena_bytes(in->w, in->h);
     if (need > sizeof(finder_arena)) return -1;
-    return vocr_find_lines_rows(&rows, finder_mode(in), finder_arena, need, set);
+    /* API 44: the shipped default, ocr_line_fix = on (VOCR_FIX_DEFAULT; core/vocr_ocr.c's call) */
+    return vocr_find_lines_fix_rows(&rows, finder_mode(in), VOCR_FIX_DEFAULT, finder_arena, need, set);
 }
 
 static int stage_find(const BenchIn *in, unsigned iters, BenchOut *out)
@@ -461,6 +463,7 @@ static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
     if ((mode & JOB_LM) && (!lm || !in->lm || in->lm_bytes != lm->bytes)) return -1;
     if ((mode & JOB_CASCADE) && (!ci || !in->cascade || in->cascade_bytes != ci->bytes)) return -1;
     memset(&pol, 0, sizeof(pol));
+    pol.line_fix = VOCR_FIX_DEFAULT; /* API 44: main's default, ocr_line_fix = on */
     ws = vjo_vocr_job_bytes(mi->name, in->w, in->h);
     if (mode & JOB_REFINE) {
         pol.refine = VJO_VOCR_REFINE_ALL;
