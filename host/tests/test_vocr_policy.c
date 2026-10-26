@@ -906,6 +906,13 @@ static struct {
     /* API 42, the two-level head: with kana_line every run of the job's model that does not ask for the ungated
      * read reads 九カ月です (a full-size カ before 月) with no frame that ran the rare rows (vocr_extra.escaped 0) */
     int kana_line;
+    /* audit-vocr6-rubi-gate F4: with ungated_overflow the ungated runs of the job's model return VOCR_E_TEXT (their
+     * text did not fit the room left), their extras filled, as a re-read that reads more than the gated run does */
+    int ungated_overflow;
+    /* audit-vocr6-rubi-gate F10, F12: the cascade's runs read every line as counter_frames() (cascade_counter), and
+     * those that do not ask for the ungated read report cascade_gated frames skipped */
+    int cascade_counter;
+    unsigned cascade_gated;
 } wrap;
 
 /* "ルッ月です」" as a top-4 of the model's own classes: 九 3 nats under ル at frame 2 and 2 nats of
@@ -972,11 +979,14 @@ int __wrap_vocr_run(vocr_ctx *c, const vocr_image *img, char *text, size_t text_
         wrap.runs++;
         scr.clock += wrap.run_us;
     } else {
+        if (rc == VOCR_OK && wrap.cascade_counter) counter_frames(c->model, extra, text, text_cap);
+        if (rc == VOCR_OK && wrap.cascade_gated && extra && !extra->ungated) extra->gated = wrap.cascade_gated;
         if (rc == VOCR_OK && wrap.cascade_text && strlen(wrap.cascade_text) < text_cap)
             memcpy(text, wrap.cascade_text, strlen(wrap.cascade_text) + 1);
         wrap.cascade_runs++;
         scr.clock += wrap.cascade_run_us;
     }
+    if (rc == VOCR_OK && wrap.ungated_overflow && extra && extra->ungated && c == wrap.model_ctx) return VOCR_E_TEXT;
     return rc;
 }
 
@@ -2154,6 +2164,20 @@ static void test_the_two_level_head(void)
     TEST_ASSERT(RUN(&alone) == VJO_OK);
     TEST_CHECK(st.frames > 0 && st.head_escaped > 0 && !st.head_gated && !wrap.ungated_runs);
     TEST_MSG("VOCR5-N two-level alone: %u of %u frames escaped", st.head_escaped, st.frames);
+    /* audit-vocr6-rubi-gate F5: a job without the LM extras (no LM, no cascade: greedy text only) reads the kana
+     * line again with the full head too; with the gate alone (no two-level head) it does not */
+    VjoVocrPolicy greedy_two = {.head_gate = 1, .two_level = 1}, greedy_gate = {.head_gate = 1};
+    reset();
+    wrap_reset();
+    wrap.kana_line = 1;
+    TEST_ASSERT(RUN(&greedy_two) == VJO_OK);
+    TEST_CHECK(wrap.ungated_runs == 1 && st.head_rereads == 1 && !strstr(text, "カ月"));
+    TEST_MSG("greedy two-level: '%s', %u re-reads", text, st.head_rereads);
+    reset();
+    wrap_reset();
+    wrap.kana_line = 1;
+    TEST_ASSERT(RUN(&greedy_gate) == VJO_OK);
+    TEST_CHECK(!wrap.ungated_runs && !st.head_rereads && strstr(text, "九カ月です"));
 #undef RUN
     TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));
     free(ws);
@@ -2212,6 +2236,18 @@ static void test_the_head_gate(void)
     TEST_CHECK(!strcmp(text, t_ref) && !strcmp(raw, "ルッ月です」") && st.counter_lines == 1 && st.lm_lines == 1);
     TEST_CHECK(!st.head_gated); /* the reading that stands is the ungated one */
     TEST_MSG("shown '%s', logged '%s', %u re-reads, %u gated", text, raw, st.head_rereads, st.head_gated);
+    /* audit-vocr6-rubi-gate F4: the re-read's text does not fit: the line is read gated once more and that reading
+     * stands, with its re-decode and its decode, exactly as without a re-read; its skipped frames are counted */
+    reset();
+    wrap_reset();
+    wrap.counter_line = 1;
+    wrap.gated_line = 5;
+    wrap.ungated_overflow = 1;
+    TEST_ASSERT(RUN(&gate) == VJO_OK);
+    TEST_CHECK(wrap.ungated_runs == 1 && wrap.gated_runs == 2 && wrap.runs == 3 && !st.head_rereads);
+    TEST_CHECK(!strcmp(text, t_ref) && !strcmp(raw, "ルッ月です」") && st.counter_lines == 1 && st.lm_lines == 1 &&
+               st.head_gated == 5);
+    TEST_MSG("shown '%s', logged '%s', %u gated, %u runs", text, raw, st.head_gated, wrap.runs);
     /* frames skipped, but no counter context (no re-decode asked for): no re-read, the skipped frames counted */
     VjoVocrPolicy nocount = gate;
     nocount.counter_tau = nocount.counter_open = 0;
@@ -2270,6 +2306,68 @@ static void test_the_head_gate(void)
     free(ws);
 }
 
+/* audit-vocr6-rubi-gate F10, F12: the confidence cascade's reading, gated (vocr_extra.gated) with a counter context,
+ * is read again with the full head on the cascade's own context, and that reading is the cascade's: its re-decode,
+ * its decode, its frames counted (none skipped); the job's model's line, which skipped nothing, is not read again. A
+ * cascade reading that comes out empty counts its skipped frames too. */
+static void test_the_cascade_rereads_a_gated_counter_line(void)
+{
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME, VJO_VOCR_LM2_NAME};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
+    const VjoVocrLm *lm2 = vjo_vocr_lm_tier(2);
+    VjoPlatform p;
+    VjoVocrStats st;
+    static char text[1024], raw[1024];
+    unsigned char *ws = NULL;
+    size_t ws_bytes;
+    if (!have_files(dir, files, 3)) {
+        TEST_SKIP("no VOCR3-FL10, VOCR4-W20 and the 1000k LM in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    TEST_ASSERT(fl10 && w20 && lm2);
+    posix_platform_init(&cascade_pp, &p);
+    p.file_open = posix_open ? posix_open : p.file_open;
+    ws_bytes = vjo_vocr_job_bytes(w20->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name) +
+               vjo_vocr_cascade_job_bytes(w20->name);
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0}, cres = res;
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    res.ud = &res;
+    cres.ud = &cres;
+    lres.ud = &lres;
+    VjoVocrPolicy casc = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw), .cascade = w20,
+                          .cascade_res = &cres, .cascade_us = 60000000u, .cascade_conf = 1001,
+                          .counter_tau = VJO_VOCR_COUNTER_TAU, .counter_open = VJO_VOCR_COUNTER_OPEN, .head_gate = 1};
+#define RUN(pol) vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture, \
+                                     vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
+    reset();
+    wrap_reset();
+    wrap.cascade_counter = 1;
+    wrap.cascade_gated = 4;
+    TEST_ASSERT(RUN(&casc) == VJO_OK);
+    TEST_CHECK(st.cascade_lines == 1 && wrap.cascade_runs == 2 && wrap.ungated_runs == 1 && st.head_rereads == 1);
+    TEST_CHECK(strstr(text, "九") && !st.head_gated); /* the re-read's re-decode put the numeral back; it skipped nothing */
+    TEST_MSG("shown '%s', %u cascade runs, %u re-reads, %u gated", text, wrap.cascade_runs, st.head_rereads, st.head_gated);
+    /* the same cascade reading without a skipped frame: not read again */
+    reset();
+    wrap_reset();
+    wrap.cascade_counter = 1;
+    TEST_ASSERT(RUN(&casc) == VJO_OK);
+    TEST_CHECK(st.cascade_lines == 1 && wrap.cascade_runs == 1 && !wrap.ungated_runs && !st.head_rereads &&
+               strstr(text, "九"));
+    /* an empty cascade reading (W20 reads the synthetic line as nothing) with skipped frames: they are counted */
+    reset();
+    wrap_reset();
+    wrap.cascade_gated = 4;
+    TEST_ASSERT(RUN(&casc) == VJO_OK);
+    TEST_CHECK(st.cascade_lines == 1 && !text[0] && st.head_gated == 4 && !wrap.ungated_runs);
+    TEST_MSG("shown '%s', %u gated", text, st.head_gated);
+#undef RUN
+    TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_resident_drop(&cres) && !vjo_vocr_lm_drop(&lres));
+    free(ws);
+}
+
 TEST_LIST = {
     {"the_capture_block_stays_within_64_KiB_at_every_size", test_capture_block_sizes},
     {"a_zero_policy_reads_exactly_as_api19", test_zero_policy_is_api19},
@@ -2298,6 +2396,8 @@ TEST_LIST = {
     {"the_counter_redecode_feeds_the_lm_and_keeps_the_recognizer_text_off_unchanged", test_the_counter_redecode},
     {"the_head_gate_rereads_a_gated_counter_line_and_skips_frames_of_a_gated_blob", test_the_head_gate},
     {"the_two_level_head_rereads_a_kana_counter_line_and_counts_its_escaped_frames", test_the_two_level_head},
+    {"the_cascade_rereads_a_gated_counter_line_and_counts_its_skipped_frames",
+     test_the_cascade_rereads_a_gated_counter_line},
     {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},
     {"a_short_last_line_is_read", test_a_short_last_line_is_read},
     {"the_gate_stops_a_region_without_text", test_the_gate_stops_a_region_without_text},

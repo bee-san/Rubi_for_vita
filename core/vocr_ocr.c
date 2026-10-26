@@ -148,6 +148,11 @@ static void lm_opts(const VjoVocrLm *lm, vocr_lm_opts *o)
 }
 
 #define ALIGN16(x) (((x) + (size_t)15) & ~(size_t)15)
+#if defined(__vita__)
+/* include/vjo_vocr_sizes.h VJO_VOCR_VITA_STRUCTS is this build's (audit-vocr6-rubi-gate F6) */
+typedef char vjo_vocr_vita_structs_pinned[ALIGN16(sizeof(vocr_model)) + ALIGN16(sizeof(vocr_ctx)) ==
+                                          VJO_VOCR_VITA_STRUCTS ? 1 : -1];
+#endif
 /* Weights are read and hashed in pieces of this size: the game worker's kernel
  * broker stages exactly one piece per request (VJO_GAME_OCR_MODEL_CHUNK). */
 #define READ_CHUNK 32768u
@@ -1410,6 +1415,21 @@ static int reread_ungated(vocr_ctx *ctx, const vocr_image *img, vocr_extra *ex, 
     return rc;
 }
 
+/* A line of the job read again with the full head (reread_ungated, by the job's own context, which no helper uses
+ * while a line is finished): 1 when its reading then stands in ex and t (cap bytes) and its greedy text is shorter
+ * than copy_cap (the line's greedy copy, LM_LINE_TEXT; 0 with none). Else 0: it did not fit (the gate's skipped
+ * frames can read as more text), and the line is read as it was, gated, once more (the same model, options and
+ * pixels: the same bits), so ex and t hold that reading again (audit-vocr6-rubi-gate F4, F11). Negative: the job's
+ * error (VJO_E_CANCELLED, run_error's). */
+static int read_full(Lines *L, const vocr_image *img, vocr_extra *ex, char *t, size_t cap, size_t copy_cap)
+{
+    int rc = reread_ungated(L->ctx, img, ex, t, cap);
+    if (rc == VOCR_OK && (!copy_cap || strlen(t) < copy_cap)) return 1;
+    if (rc != VOCR_OK && rc != VOCR_E_TEXT) return run_error(rc);
+    rc = vocr_run(L->ctx, img, t, cap, ex);
+    return rc == VOCR_OK ? 0 : run_error(rc);
+}
+
 /* 1 if t (UTF-8) holds a full-size カ or ケ right before 月 所 年 国 条. */
 static int kana_counter(const char *t)
 {
@@ -1476,20 +1496,16 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
             unsigned contexts = 0;
             counted = counter_redecode(pol, L->model, ex, text + start, cap - start, &contexts);
             if (L->ctx && read_again(ex, contexts, L->two_level, greedy)) { /* #117: read it again without skipping */
-                rc = reread_ungated(L->ctx, img, ex, text + start, cap - start);
-                if (rc == VOCR_E_CANCELLED) return VJO_E_CANCELLED;
-                if (rc == VOCR_OK) {
-                    gn = strlen(text + start); /* the re-read's: a class a frame, always shorter than LM_LINE_TEXT */
+                rc = read_full(L, img, ex, text + start, cap - start, LM_LINE_TEXT);
+                if (rc < 0) return rc;
+                if (rc) {
+                    gn = strlen(text + start);
                     if (gn > need) need = gn;
                     memcpy(greedy, text + start, gn + 1);
                     flags = line_conf(ex, text + start);
                     st->head_rereads++;
-                    counted = gn ? counter_redecode(pol, L->model, ex, text + start, cap - start, NULL) : 0;
-                } else { /* its text does not fit (or it failed): the gated reading stands, without the re-decode */
-                    memcpy(text + start, greedy, gn + 1);
-                    counted = 0;
-                    if (rc != VOCR_E_TEXT) return run_error(rc);
-                }
+                } /* else it did not fit: the gated reading, read once more, stands, with its re-decode again */
+                counted = gn ? counter_redecode(pol, L->model, ex, text + start, cap - start, NULL) : 0;
             }
         }
         if (counted) {
@@ -1522,6 +1538,17 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
                     L->lm_on = 0;
                 }
             }
+        }
+    } else if (L->ctx && L->two_level && gn && read_again(ex, 0, 1, text + start)) {
+        /* #117, a job without the top-K (no LM, no cascade: no counter re-decode): the two-level head's reading
+         * with a full-size カ or ケ before a counter character is read again with the full head all the same
+         * (audit-vocr6-rubi-gate F5); its greedy text is the line's */
+        rc = read_full(L, img, ex, text + start, cap - start, 0);
+        if (rc < 0) return rc;
+        if (rc) {
+            gn = strlen(text + start);
+            if (gn > need) need = gn;
+            st->head_rereads++;
         }
     }
     conf = flags & VJO_VOCR_LINE_CONF;
@@ -1578,6 +1605,8 @@ static int finish_line(Lines *L, const Pending *e, size_t start, const vocr_imag
                                 if (cg[0]) counter_redecode(pol, cm, &e2, cg, LM_LINE_TEXT, NULL);
                             }
                         }
+                    }
+                    if (rc == VOCR_OK) { /* the cascade's reading that stands, empty or not: of cascade_frames */
                         st->head_gated += e2.gated;
                         st->head_escaped += e2.escaped;
                     }

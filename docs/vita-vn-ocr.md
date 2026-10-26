@@ -1002,8 +1002,8 @@ The game worker plans every recognizer of a job with what the request asks for *
 (`core/vocr_ocr.c` `run_opts`: `vocr_has_gate`, `vocr_has_two_level`): the job's own lines, its helpers' and the
 confidence cascade's re-reads. A blob without a gate section, or without a two-level trailer, reads as before, so a
 model asked for by name (VOCR3, VOCR4, v0.2.0's) is unchanged, and Small, whose blob has no trailer, runs the gate
-alone whatever the setting. Nothing in the code names a model for either path: each blob's own sections (below)
-drive them. The line cache keeps the entries of each setting apart (bits 30 and 31 of `cache_variant`).
+with `on` or `gate` and the full head with `two_level` or `off`. Nothing in the code names a model for either path:
+each blob's own sections (below) drive them. The line cache keeps the entries of each setting apart (bits 30 and 31 of `cache_variant`).
 
 - **The head gate.** The recognizer reads a line as CTC frames, about three in five of them blank, and its output
   head (96 inputs to 4,987 or 5,631 classes) is 15-40 % of a frame's time. A tiny gate on the head's input, 96 → 16 →
@@ -1025,14 +1025,16 @@ drive them. The line cache keeps the entries of each setting apart (bits 30 and 
   run the other 5,128 rows. A frame it picks reads exactly as the full head; one it does not reads over level 1's
   classes. The escape fires on 21 % (Normal) and 13 % (Large) of the frames the gate keeps, 8 % and 5 % of all
   frames. Against the gate alone the development score is +0.000 [+0.000, +0.000] (Normal) and +0.006 [−0.006,
-  +0.022] points (Large) with this overlay's beam + LM and counter re-decode, and rare-character recall at most 0.06 /
-  0.09 points lower than today's. vita-test and psp-test, read once afterwards: no line changed beyond the gate's;
+  +0.022] points (Large) with this overlay's beam + LM and counter re-decode, and rare-character recall 0.06 / 0.09
+  points lower than today's (95 % upper bounds 0.15 / 0.24). vita-test and psp-test, read once afterwards: no line changed beyond the gate's;
   CLANNAD's dialogue: Normal one more line on the cascade (+0.003 points), Large 3-5 lines where the gate alone
   changes 0-1 (+0.003 to +0.009 points). Small's was not adopted (vita-vn-ocr `docs/head2level.md`, "Why not Small").
 - **Time (estimates).** The gate: −122 / −137 / −163 ms per nominal 3-line box at 333 MHz on one core without
   prefetch credit (−19.5 / −14.9 / −7.9 %; −92 / −103 / −122 ms at 444 MHz), −45 / −51 / −60 ms on a real 89-frame Vita
   box. The two-level head, beyond the gate's: −62 / −94 ms (Normal / Large) at the development share of frames that
-  escape (−32 / −66 ms as measured on 24 development lines, which escape 3-5 times as often; −47 / −71 ms at 444 MHz).
+  escape (−32 / −66 ms as measured on 24 development lines, which escape 3-5 times as often; −47 / −71 ms at 444 MHz
+  by the clock ratio, −24 / −50 ms on the measured basis, vita-vn-ocr `docs/head2level.md`'s 444 MHz column). The
+  gate's 444 MHz figures are by the clock ratio too.
   Both from qemu instruction counts of the Vita build calibrated to VOCR3-H15's measured console rate. The sizes' times
   in the Rubi app (`tools/model_tiers.json`) subtract them: 0.51 / 0.72 / 1.82 s at 333 MHz (0.63 / 0.92 / 2.08 s with
   `ocr_head_gate = off`). No console has run either.
@@ -1043,17 +1045,29 @@ drive them. The line cache keeps the entries of each setting apart (bits 30 and 
   is read again with the full head (`vocr_extra.ungated`, `core/vocr_ocr.c` `read_again`) when its counter re-decode
   finds a counter context or, with the two-level head, its recognizer's reading holds a full-size カ or ケ before 月,
   所, 年, 国 or 条; that reading is the line's: its re-decode, its LM decode, its text and its confidence. This is the
-  rule vita-vn-ocr's `eval/head2level_dev.py counter` scores; it applies to the job's lines and to the cascade's
-  re-reads. On real development lines it read nothing again (0 in 8,233 reads per size); on vita-vn-ocr's synthetic
-  counter set it leaves 76 (Normal) and 18 (Large) of 3,969 lines worse with the gate (96 and 32 without the re-read;
-  Small 14), all of them lines cut 2-10 px into their first character, which the finder's margin avoids, and the
-  two-level head 3 and 1 lines more.
-- **Off is today's output.** With `ocr_head_gate = off` every recognizer reads with the full head on every frame:
-  Small's blob is v0.3.0's bytes and its section, and Normal's and Large's give every class v0.3.0's logit bit for
-  bit, the same class text at another class number, so the greedy text, the top-K, the LM decode and the counter
-  re-decode (which map classes by text) are v0.3.0's; only where two classes' logits tie exactly could the first
-  maximum differ (vita-vn-ocr's development sample has none). `host/tests/test_vocr.c`
-  `the_off_path_reads_v030s_logits_bit_for_bit` checks every logit of synthetic lines against v0.3.0's blobs.
+  rule vita-vn-ocr's `eval/head2level_dev.py counter` scores for the two-level head (for the gate alone, the counter
+  context alone, as `docs/headgate.md` has it); it applies to the job's lines, the cascade's re-reads and, without
+  the LM's top-K (no LM and no cascade: no counter re-decode), to the two-level head's kana lines still. A re-read
+  whose text does not fit the room left in the job's text keeps the gated reading: the line is read gated once more
+  (the same bits). On real development lines the counter-context trigger read nothing again (0 in 8,233 reads per
+  size, `docs/headgate.md`; vita-vn-ocr does not report the kana trigger on development lines, and this overlay's
+  1,074 development jobs with `on`, below, read none again); on vita-vn-ocr's synthetic counter set the re-read
+  leaves 76 (Normal) and 18 (Large) of 3,969 lines worse with the gate (96 and 32 without it; Small 14), nearly all
+  of them lines cut 2-10 px into their first character, which the finder's 3 px margin avoids (Large: 2 of its 18 at
+  the ink edge), and the two-level head 3 and 1 lines more.
+- **Off is today's output.** With `ocr_head_gate = off` every recognizer reads with the full head on every frame.
+  Small's blob is v0.3.0's bytes and its section, so its output is v0.3.0's. Normal's and Large's give every class
+  v0.3.0's logit bit for bit, the same class text at another class number, and the greedy text, the top-K, the LM
+  decode and the counter re-decode map classes by text, so their text is v0.3.0's **except on exact ties**, which
+  every decoder breaks by class number: of two classes' logits (the first maximum, the top-K's order and its last
+  place, which the beam follows) or of the counter re-decode's integer numeral costs (vita-vn-ocr
+  `runtime/vocr_post.c`: two numerals within 1/1024 nat of each other cost the same, and the frequency order puts 361
+  of the 666 pairs of its 37 numerals the other way round: audit-vocr6-rubi-gate F2 built such a line). None occurred
+  on real lines: on the 759 line boxes of the development regions below (27,556 frames a size) every top-8 logit, its
+  classes' texts and order, the confidence, the counter re-decode and the beam + 1000k LM's text were v0.3.0's at
+  every size, with no exact tie and no counter context [measured by audit-vocr6-rubi-gate on the host].
+  `host/tests/test_vocr.c` `the_off_path_reads_v030s_logits_bit_for_bit` checks every logit of synthetic lines against
+  v0.3.0's blobs (316 frames a size, 0 tied maxima).
   The game worker's whole job (`vjo-ocr` in its worker form: blank lines skipped, the beam + 1000k LM, the counter
   re-decode, the cascade at confidence 700, the refinement on PSP regions), run on the 358 regions of vita-vn-ocr's
   linefind development manifests whose screenshots are on the build host (192 Vita, 166 PSP; no protected set), gave
@@ -1086,22 +1100,33 @@ changes no code here, only pins. A size whose new blob has no gate or no trailer
 updates:
 
 1. `include/vjo_vocr_sizes.h`: `VJO_VOCR5_{S,N,L}_NAME` and `_BYTES` (or the new generation's names, with
-   `VJO_VOCR_TIERn_*` pointing at them); `VJO_VOCR_MAX_BYTES` follows the largest.
+   `VJO_VOCR_TIERn_*` pointing at them); `VJO_VOCR_MAX_BYTES` follows the largest; `VJO_VOCR_VITA_STRUCTS` when the
+   runtime's structs change (the Vita build checks it). `core/vocr_ocr.h` `VJO_VOCR_DEFAULT_MODEL`: the Normal file.
 2. `core/vocr_ocr.c` `models[]`: each blob's SHA-256 and its W8I arena with both paths on (the planning
    `vocr_arena_bytes` gives with `VOCR_HEAD_GATE_ON` and `two_level = 1` where the blob has them;
    `host/tests/test_vocr.c` `pinned_table_matches_release_files` checks it against the files).
-3. `core/vocr_models.c`: the generation, the box times (estimates with the paths on) and the job bytes;
-   `tools/model_tiers.json` the same values (`tools/tests/test_model_tiers.py` checks they agree).
-4. `tools/prepare_ocr.py`: the release tag, each asset's URL, size and SHA-256, the attribution's pin, and
+3. `kernel/game_ocr.c` `model_size()`: the broker's names, each by its macro (a new generation's macros are an edit
+   here, and the kernel plugin is rebuilt in any case). `python3 tools/docs_model_names.py` then rewrites the names'
+   lists in this file and the guide from the kernel's (`tools/tests/test_docs_model_names.py`, in ctest, fails until
+   it has).
+4. `core/vocr_models.c`: the generation, the box times (estimates with the paths on) and the job bytes;
+   `tools/model_tiers.json` the same values (`tools/tests/test_model_tiers.py` checks they agree) and
+   `host/tests/test_settings_app.c` `DETAILS`, the size buttons' strings made of them.
+5. `tools/prepare_ocr.py`: the release tag, each asset's URL, size and SHA-256, the attribution's pin and
    `VOCR_GENERATION`; the host tests' pins (`host/tests/test_tier_pins.h`, `tools/tests/test_vocr_defaults.py`
-   `TIER_PINS`) and the self-test fixtures (`vjo-selftest-writer`).
-5. `cmake/VocrOCR.cmake` and both checkouts in `.github/workflows/release.yml`: the runtime commit and each runtime
-   file's SHA-256, when the runtime changes.
-6. The memory ledger (`include/vjo_ledger_budget.h`): the weights and cascade budgets (the largest blob,
-   page-rounded), the workspace, the worker's pages if the runtime grows, and `VJO_LIMIT_GAME_JOB`, each raise
-   justified ([memory-ledger.md](memory-ledger.md)).
-7. The docs: this file's size table and models, [ocr-speed.md](ocr-speed.md), the guide's sizes and the CHANGELOG;
-   `kernel/game_ocr.c` and the names' lists here and in the guide follow `tools/docs_model_names.py`.
+   `TIER_PINS`, the release tag in `tools/tests/test_package_models.py`) and the self-test fixtures
+   (`vjo-selftest-writer DIR NAME`). `host/tests/test_vocr.c` `the_off_path_reads_v030s_logits_bit_for_bit` compares
+   the pins with v0.3.0's blobs: point it at the blobs the new ones are derived from, or retire it.
+6. `cmake/VocrOCR.cmake` and the three checkouts in `.github/workflows/release.yml` (the host, arm and vita jobs):
+   the runtime commit and each runtime file's SHA-256, when the runtime changes.
+7. The memory ledger (`include/vjo_ledger_budget.h`): the weights and cascade budgets (the largest blob,
+   page-rounded), the workspace (`host/tests/test_ledger.c`'s largest job, page-rounded), the worker's pages if the
+   runtime grows, and `VJO_LIMIT_GAME_JOB`, each raise justified ([memory-ledger.md](memory-ledger.md)). The normal
+   Shell's code had 28 B of its last page left after API 42: a pin set adds no Shell code.
+8. The docs that name the files, their sizes or blocks: this file's size table, models and attribution, [OCR
+   speed](ocr-speed.md), the guide's sizes and its names' list, [memory-ledger.md](memory-ledger.md),
+   [vita-memory.md](vita-memory.md), [offline-testing.md](offline-testing.md),
+   [settings-readability.md](settings-readability.md), [anki.md](anki.md), `README.md`'s credits and the CHANGELOG.
 
 ## Models
 

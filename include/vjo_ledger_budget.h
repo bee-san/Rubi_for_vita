@@ -553,9 +553,9 @@
  * 64 colour rows at 960 px (245,760 B) and the JPEG, at most VJO_GAME_OCR_SHOT_MAX
  * (196,608 B), page-rounded: 450,560 B, only while a shot runs. A shot is a job of
  * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
- * line or helpers (1,835,008 B of the job's worst case besides the resident weights, LM
+ * line or helpers (1,843,200 B of the job's worst case besides the resident weights, LM
  * and cascade model, which a shot keeps: 8,740,864 + 450,560 B under the job's
- * 10,575,872 B): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
+ * 10,584,064 B, API 42): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
