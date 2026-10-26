@@ -283,6 +283,7 @@
  * files are byte-identical to main's; the Rubi app's eboot.bin, which links core/hook_place.c for the Games tag,
  * is 120 B (debug) and 79 B (normal) larger. The page-record read is two exact reads of game memory into the
  * existing capture buffer: no block, thread or allocation. */
+/* PSP-TEXT-REMEASURE */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 188416u
 #else

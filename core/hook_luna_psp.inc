@@ -2,6 +2,7 @@
  * (HIllya51/LunaTranslator 51884b6, v12.1.2.12, GPL-3.0): its emfunctionhooks_1 PSP
  * table, each entry's PPSSPP address and title IDs only, for the debug build's PSP probe
  * (core/psp_probe.c). Do not edit: change the generator. */
+#include "port.h" /* VJO_DATA_TABLE; this .inc is also included directly by a host test */
 /* 415 entries (415 addresses), 354 title IDs, 431 sites (one per address and title: 13 entries name several IDs); at most 6 sites per title; 3,515 bytes. */
 #define VJO_LUNA_PSP_ENTRIES 415u
 #define VJO_LUNA_PSP_TITLES 354u
@@ -17,8 +18,9 @@ enum { VJO_LUNA_PSP_NPJH = 0, VJO_LUNA_PSP_UCJS = 1, VJO_LUNA_PSP_ULJM = 2, VJO_
  * decimal without its leading zeros: NPJH00065 is VJO_LUNA_PSP_ID(NPJH, 65)) */
 #define VJO_LUNA_PSP_ID(prefix, number) ((uint32_t)VJO_LUNA_PSP_##prefix << VJO_LUNA_PSP_NUMBER_BITS | (number##u))
 
-/* The title IDs, sorted, packed */
-static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] = {
+/* The title IDs, sorted, packed. In the debug worker's data segment (core/port.h VJO_DATA_TABLE), the counts
+ * and the addresses below in its code: the two segments' room as measured with PSP text (include/vjo_ledger_budget.h) */
+static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] VJO_DATA_TABLE(luna_psp_ids) = {
     VJO_LUNA_PSP_ID(NPJH, 65), VJO_LUNA_PSP_ID(NPJH, 122), VJO_LUNA_PSP_ID(NPJH, 50127), VJO_LUNA_PSP_ID(NPJH, 50186), VJO_LUNA_PSP_ID(NPJH, 50215),
     VJO_LUNA_PSP_ID(NPJH, 50224), VJO_LUNA_PSP_ID(NPJH, 50243), VJO_LUNA_PSP_ID(NPJH, 50247), VJO_LUNA_PSP_ID(NPJH, 50266), VJO_LUNA_PSP_ID(NPJH, 50269),
     VJO_LUNA_PSP_ID(NPJH, 50273), VJO_LUNA_PSP_ID(NPJH, 50342), VJO_LUNA_PSP_ID(NPJH, 50380), VJO_LUNA_PSP_ID(NPJH, 50381), VJO_LUNA_PSP_ID(NPJH, 50393),

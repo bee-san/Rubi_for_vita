@@ -118,6 +118,8 @@ enum {
     VJO_RF_PCSG01194,               /* 参千世界遊戯: shin @-markup, half-width kana */
     VJO_RF_PCSG00628,               /* ALIA's CARNIVAL! サクラメント: MSGSET's SNR markup, half-width kana */
     VJO_RF_PCSG00380,               /* 真 流行り神: dash pieces, the default player name */
+    VJO_RF_5PB,                     /* PSP, 5pb. script engine (Memories Off 6): %K %P %p ∬, %N, {base}[reading] */
+    VJO_RF_KID,                     /* PSP, KID engine (Memories Off ～それから～): %N, %Cxxxx %LC %FS %FE, ⑳ */
     VJO_RF_END
 };
 
