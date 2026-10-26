@@ -5,6 +5,33 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## PSP text and the PSP probe (format 4)
+
+PSP text ([native-hooks.md](native-hooks.md#psp-text-adrenaline)) is in both builds' game worker; the read-only
+PSP probe's format 4 in the debug build's only. Neither allocates, starts a thread or adds a block, and the stream
+is the existing slot 0. Their buffers are on the worker thread's existing 32 KiB stack while they run: the poll's
+chain is about 1.2 KiB (`vjo_hooks_psp_poll` 560 B, `vjo_psp_text_poll` 600 B, `read_game` 48 B), before a job's
+recognition; the probe's, after the job, about 2.6 KiB (`vjo_psp_probe_job` 520 B, `pass` 1,552 B with the profile
+step's 512-byte buffer inlined, `op_module` 512 B) [measured: `-fstack-usage`, the worker's flags at `-Os`, the
+vitasdk image's gcc 15.2]. The Shell gains #278's bounded changed-screen retry (one message string, kept in its data
+segment). Rows [measured: the build log's module rows, `tools/fast_gate.sh` on this change against main `213fd60`,
+CI's vitasdk image]:
+
+| Module (build) | main `213fd60` | this change | pages |
+|---|---:|---:|---:|
+| game worker (normal) | 134,004 + 34,872 B | 134,996 + 35,176 B | 172,032 B both |
+| game worker (debug) | 142,776 + 34,880 B | 147,424 + 36,680 B | 180,224 → 184,320 B |
+| Shell (normal) | 90,012 + 73,504 B | 90,060 + 73,584 B | 163,840 B both |
+| Shell (debug) | 102,204 + 73,464 B | 102,252 + 73,536 B | 176,128 B both |
+| kernel (both) | 42,536 + 77,756 / 37,504 + 76,068 B | the same | the same |
+
+So the debug build's worker, the test builds' and the -debug download's, takes one more page (4,096 B) in each
+game that is ON, in the game's partition; `VJO_BUDGET_WORKER_MODULE_PAGES` (debug) is raised by exactly that. Its
+two segments hold 184,104 B, more than the old 180,224 B however they are split; Luna's PSP table keeps its IDs in
+the data segment and its counts and addresses in the code segment, which leaves 32 B of code and 184 B of data
+room. The normal build's worker keeps its pages (172 B of code room left). These are binary measurements, not
+console pool, boot or CPU3 measurements.
+
 ## Head gate and two-level head (API 42, vita-vn-ocr #120 and #122)
 
 Measured with VitaSDK GCC 15.2.0 in `vitasdk/vitasdk:2026.08` (CI's digest, `tools/ci_container_build.sh`'s),
