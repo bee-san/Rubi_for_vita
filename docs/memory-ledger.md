@@ -86,6 +86,23 @@ are the same (`213fd60`, #305 and #308 change only the Shell's reading-time code
   kernel are byte for byte main's [measured: the build log's module rows and sha256, both builds, CI's artifacts of
   main `93647d3` and the fast gate's builds of #328].
 
+## VOCR6's character LMs (vita-vn-ocr #127; no API change)
+
+- **The LM budget** is the largest pinned LM, page-rounded: `vocr_lm6_o3_4000k.vlm`'s 3,603,552 B take
+  3,604,480 B (`VJO_BUDGET_GAME_LM`; ctclm.2's 3,781,072 B took 3,784,704 B): 180,224 B less. The default tier's
+  resident block is 983,040 B (`vocr_lm6_o3_1000k.vlm`, 982,320 B; ctclm.2's 987,600 B took 991,232 B).
+- **The pool.** The game's worst case goes 10,584,064 → 10,403,840 B (11.5 % of the 90,177,536 B of free USER #81
+  measured; a real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,117,696 B);
+  `VJO_LIMIT_GAME_JOB` is kept at 10,604,544 B.
+- **The decoder's workspace** at the new settings (LM weight 0.6, bonus 2.5 nats, the start-of-line context, no
+  end-of-line term) stays within `VJO_VOCR_LM_WS_BYTES` (49,152 B): `host/tests/test_vocr.c` plans every pinned
+  model with every LM tier's own settings against it (with the models dir). `vocr_lm_workspace_bytes` is 41,632 B for
+  VOCR5-N/L and 39,712 B for VOCR5-S [host measurement, #306's author, v0.3.0's blobs; the gated blobs keep their
+  class counts, which the workspace grows with].
+- **Code:** the job's LM table carries each tier's weight and flags (`core/vocr_ocr.c` `lms[]`, 8 B more per tier);
+  no module page, no Shell or kernel change, no new block, thread or allocation site. Nothing of it has run on a
+  console.
+
 ## The reading stats menu
 
 The Triangle menu retains only line provenance and today's/current-game totals. It reuses the
@@ -402,10 +419,10 @@ modules (`ctest -R memory_ledger` runs it locally):
   shell pages                         217,088      237,568    1,048,576      811,008
   shell paf                             8,192      241,664      985,088      743,424
   kernel                              155,648      245,760      245,760            0
-  game                                225,280   10,584,064   10,604,544       20,480
+  game                                225,280   10,403,840   10,604,544      200,704
 ```
 
-(The debug build's budgets, as `tools/check_memory_ledger.py` prints them on main `0b1a45b`, API 42; the normal
+(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 42 and VOCR6's LMs; the normal
 build's game permanent is 217,088 B.)
 
 Historical packaged-module output retained from PR #234 before this integration (current combined
@@ -840,7 +857,7 @@ fails a module that still exports or imports either syscall.
 | VjoGameVocr workspace | 1,220,608 at most (1,212,416 before API 42) | per job, at any region, page-rounded: since API 19 it holds no grey copy of the region (770,048 B with one at 960 × 544); since API 20 with the beam + LM decoder's extras (the top-K of every frame, the LM context and the beam workspace, 56,928 B), 4 KiB for the greedy text, and with the cascade its extras (the next size up's arena, structs and decoder: VOCR5-L's 316,160 B beside VOCR5-N; a request by name's VOCR4-W20, 296,192 B), and with the finder's boxes refined its arena (72,400 B at 960 × 544, 16,768 B at 883 × 112): 637,280 B for VOCR5-N with VOCR5-L's cascade; since API 22 ended by the line slots of the job's helpers (`ocr_threads`, at most two: the worker's own slot, 68,160 B, and per helper its recognizer arena, context and slot, 253,104 B for VOCR5-N), taken only when the memory check passes with them: 1,218,048 B for VOCR5-N with two and VOCR5-L's cascade, the largest since API 42's head gate and two-level head (1,211,648 B before) (1,191,680 B with H15 and VOCR4-W20 before VOCR5) | `vjo_vocr_job_bytes` + `vjo_vocr_refine_bytes` + `vjo_vocr_lm_job_bytes` + `vjo_vocr_cascade_job_bytes` + `vjo_vocr_helpers_bytes`; asserted in `test_ledger.c` |
 | VjoGameVocrHelper stacks+TLS | 40,960 at most | API 22: 16,384 + 4,096 per helper thread, at most two, each created for one line and deleted when its line is placed; none between jobs | `game_ocr/main.c` `pool_run` |
 | VjoGameVocrCascade | 2,478,080 at most | the confidence cascade's larger model, the next model size up of the job's since API 21 (VOCR5-L's 2,477,472 B for Normal since API 42, 2,473,696 B before; VOCR5-N for Small; Large has none; a request by name's VOCR4-W20), page-rounded; `cascade_alloc` refuses a block larger than the Large size's; `USER_RW` only, resident between jobs like the weights, read at the first doubtful line or by a job that found no line (the warm-up), taken only when the memory check passes with it. Raised from 1,560,576 B (VOCR4-W20), then from 2,473,984 B (API 42's VOCR5-L). With the weights row it counts 1,286,144 B more than a job can hold (a job's weights and its cascade's are at most Normal's and Large's: 1,191,936 + 2,478,080 B), kept so that each item's worst case is its own | `include/vjo_vocr_sizes.h`; `test_ledger.c`, `test_game_vocr.c` |
-| VjoGameVocrLM | 3,784,704 at most | the largest pinned LM (`vocr_lm_o3_4000k.vlm`, 3,781,072 B), page-rounded; `USER_RW` only, resident between jobs like the weights, taken only when the memory check passes with it (a smaller tier, or none, otherwise) | `include/vjo_vocr_sizes.h`; `tools/tests/test_vocr_defaults.py` |
+| VjoGameVocrLM | 3,604,480 at most | the largest pinned LM (`vocr_lm6_o3_4000k.vlm`, 3,603,552 B; ctclm.2's 4 MB LM was 3,781,072 B), page-rounded; `USER_RW` only, resident between jobs like the weights, taken only when the memory check passes with it (a smaller tier, or none, otherwise) | `include/vjo_vocr_sizes.h`; `tools/tests/test_vocr_defaults.py` |
 | VjoGameVocrCapture | 65,536 at most | one strip of grey rows and, per region row, its checksum, its recent states (16, or as many as fit) and two bits: at most 65,536 B at any region (`VJO_VOCR_CAPTURE_LIMIT`; 65,480 B at 960 × 544, 61,388 B at 917 × 125), per job; `USER_RW`, else CDRAM, else phycont | `vjo_vocr_capture_bytes` |
 | VjoGameShot | 450,560 at most | API 23, an Anki card's screenshot: the JPEG encoder's state (4,096 B at most), one strip of 64 colour rows at 960 px (245,760 B) and the JPEG (196,608 B at most), page-rounded, only while the screenshot runs; `USER_RW`, else CDRAM, else phycont, after its own check that the game keeps 4 MiB beside it. PR #235's trimming scans the strip and encodes its picture sub-rectangle in this same block, with no additional buffer. A screenshot is a job of the one job slot, so this block is never held with an OCR job's workspace, capture block, tall line or helpers (1,843,200 B of the job's worst case since API 42's workspace, 1,835,008 B before): not in the sum | `game_ocr/main.c` `SHOT_BLOCK_BYTES`, checked against the budget at compile time; `host/tests/test_game_shot.c` |
 | VjoGameVocrLine | 516,096 at most | a line taller than a strip (a finder band), kept whole at its own width × height, only when one occurs (41 of 372 linefind dev regions; 78,884 B at most there); sized as what fitted the API 19 job limit (2,392,064 B) with F20, the workspace and the capture block, unchanged since | `core/vocr_ocr.h` `VJO_VOCR_LINE_MAX_BYTES` |

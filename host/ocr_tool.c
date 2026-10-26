@@ -126,7 +126,7 @@ static int usage(void)
     fprintf(stderr, "Usage: vjo-ocr [--backend ncnn|vocr] [--model FILE] MODEL_DIR WIDTH HEIGHT INPUT.rgba\n"
 #ifdef VJO_WITH_VOCR
                     "       vocr: [--lines OUT.jsonl] each found line as JSON; [--blank on] skip blank lines;\n"
-                    "             [--lm vocr_lm_o3_4000k.vlm] decode with that LM (in MODEL_DIR)\n"
+                    "             [--lm vocr_lm6_o3_4000k.vlm] decode with that LM (in MODEL_DIR)\n"
                     "             [--cascade VOCR4_W20_w8.vocr [--cascade-conf 700] [--cascade-ms 2000]] read\n"
                     "             lines under that confidence again with the larger model, within that time;\n"
                     "             [--refine on] refine the finder's boxes (vita-vn-ocr's vocr_lines_refine)\n"

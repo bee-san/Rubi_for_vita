@@ -67,24 +67,25 @@ VOCR_ASSETS = {
         'f8c1abe4743a71a742e718523f4206f992d3bd4fb69de321997b2bd6f16779c0'),
 }
 
-# The character LMs of the beam + LM decoder (vita-vn-ocr #82), pre-release
-# v0.2.6-ctclm.2 (ctclm.1 is superseded: built before the protected-title filter), CC BY-SA 4.0: their ATTRIBUTION.md ships beside them. The
-# plugin pins the same sizes and hashes (core/vocr_ocr.c, include/vjo_vocr_sizes.h).
-VOCR_LM_TAG = 'v0.2.6-ctclm.2'
+# The character LMs of the beam + LM decoder (vita-vn-ocr #82, #127), pre-release
+# v0.3.7-lm6.2, CC BY-SA 4.0: tiers 2 and 4 are VOCR6's (built with the hooked games' text), tiers 1 and 3
+# ctclm.2's byte for byte; their ATTRIBUTION.md ships beside them. The plugin pins the same sizes and hashes
+# (core/vocr_ocr.c, include/vjo_vocr_sizes.h) and each tier's decoder settings (the release's settings.json).
+VOCR_LM_TAG = 'v0.3.7-lm6.2'
 VOCR_LM_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_LM_TAG}/'
 VOCR_LM_ASSETS = {
     'vocr_lm_o3_500k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_500k.vlm', 499824,
         '38ea94e0c4ec93863454387e7c2c469d209aaf21f2f6ee5d040e75a09d00d286'),
-    'vocr_lm_o3_1000k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_1000k.vlm', 987600,
-        '993000611555171daf6361e29a503b0871a5f3dd240a19555d55f16aaa3ab3d9'),
+    'vocr_lm6_o3_1000k.vlm': (VOCR_LM_BASE + 'vocr_lm6_o3_1000k.vlm', 982320,
+        '41591accf8499f1c34557e585cca382de2c4b5ca15f270c985612c32487e251f'),
     'vocr_lm_o3_2000k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_2000k.vlm', 1971568,
         'ac33e461bd346617aae27168aee47230a758f4b301d78b59eb55ca25a21bcb34'),
-    'vocr_lm_o3_4000k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_4000k.vlm', 3781072,
-        '01f49be1691a1aab5a6d33414ce7d17c3e5b2daf97dfccb0d341a380a68e5898'),
+    'vocr_lm6_o3_4000k.vlm': (VOCR_LM_BASE + 'vocr_lm6_o3_4000k.vlm', 3603552,
+        'a65841b5bdce3e3123b2d1e712deb857fb577cbd2fd8667e8fb06ab35d368335'),
 }
 VOCR_LM_ATTRIBUTION = 'ATTRIBUTION.md'
-VOCR_LM_ATTRIBUTION_PIN = {VOCR_LM_ATTRIBUTION: (VOCR_LM_BASE + VOCR_LM_ATTRIBUTION, 2538,
-    '1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c')}
+VOCR_LM_ATTRIBUTION_PIN = {VOCR_LM_ATTRIBUTION: (VOCR_LM_BASE + VOCR_LM_ATTRIBUTION, 6514,
+    '9418ed87e6d9fa196aba2315e05a0cf0dca7056482cce03577ced423e5feb1d3')}
 
 # VOCR4-W20 (vita-vn-ocr #78, pre-release v0.2.5-vocr4.1, whose SHA256SUMS lists this hash;
 # F20's shape): the Large model size before VOCR5, and the confidence cascade's model of a

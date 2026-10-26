@@ -17,10 +17,10 @@ void test_pin_model(unsigned which, uint32_t bytes, const unsigned char sha256[3
 /* every tier is the one tiny LM (its tier number aside) */
 #define VJO_VOCR_TEST_LMS 1
 static VjoVocrLm lms[VJO_VOCR_LM_TIERS] = {
-    {"TINY_lm.vlm", 0, {0}, 3000, 1},
-    {"TINY_lm.vlm", 0, {0}, 3000, 2},
-    {"TINY_lm.vlm", 0, {0}, 3000, 3},
-    {"TINY_lm.vlm", 0, {0}, 3000, 4},
+    {"TINY_lm.vlm", 0, {0}, 3000, 1, 500, 2},
+    {"TINY_lm.vlm", 0, {0}, 3000, 2, 500, 2},
+    {"TINY_lm.vlm", 0, {0}, 3000, 3, 500, 2},
+    {"TINY_lm.vlm", 0, {0}, 3000, 4, 500, 2},
 };
 void test_pin_lm(uint32_t bytes, const unsigned char sha256[32]);
 void test_pin_lm(uint32_t bytes, const unsigned char sha256[32])

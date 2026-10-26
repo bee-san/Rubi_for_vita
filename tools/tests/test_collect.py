@@ -859,7 +859,7 @@ class Collect(unittest.TestCase):
         # is absent, and none of them is kept in the zip.
         ocr, dev_ocr = "ux0/data/VitaJPOverlay/ocr/", "ux0:/data/VitaJPOverlay/ocr/"
         manifest = json.loads((self.package / "package-manifest.json").read_text())
-        for name, body in (("vocr_lm_o3_1000k.vlm", b"lm 1000k"), ("vocr_lm_o3_4000k.vlm", b"lm 4000k"),
+        for name, body in (("vocr_lm6_o3_1000k.vlm", b"lm 1000k"), ("vocr_lm6_o3_4000k.vlm", b"lm 4000k"),
                            ("LM-ATTRIBUTION.md", b"# attribution"), ("MODEL-ATTRIBUTION.md", b"# the models'"),
                            ("VOCR4_W20_w8.vocr", b"w20 weights")):
             (self.device / (ocr + name)).write_bytes(body)
@@ -877,7 +877,7 @@ class Collect(unittest.TestCase):
         folder = next(f for f in (self.package / "build/device/collect").glob("vjo-collect-*") if f.is_dir())
         record = json.loads((folder / "COLLECT.json").read_text())
         check = record["package_check"]
-        for name in ("vocr_lm_o3_1000k.vlm", "vocr_lm_o3_4000k.vlm", "LM-ATTRIBUTION.md", "MODEL-ATTRIBUTION.md",
+        for name in ("vocr_lm6_o3_1000k.vlm", "vocr_lm6_o3_4000k.vlm", "LM-ATTRIBUTION.md", "MODEL-ATTRIBUTION.md",
                      "VOCR4_W20_w8.vocr"):
             self.assertIn(dev_ocr + name, record["hashed"])
             self.assertTrue(check[dev_ocr + name]["match"], name)

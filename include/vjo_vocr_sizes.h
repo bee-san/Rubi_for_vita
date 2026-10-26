@@ -13,19 +13,19 @@
 #define VJO_VOCR3_H15_NAME "VOCR3_H15_w8.vocr"
 #define VJO_VOCR3_FL10_NAME "VOCR3_FL10_w8.vocr"
 #define VJO_VOCR_MODEL_ROOT "ux0:data/VitaJPOverlay/ocr"
-/* The character LMs of the beam + LM decoder (bee-san/vita-vn-ocr #82, pre-release
- * v0.2.6-ctclm.2, CC BY-SA 4.0), tiers 1-4, in VJO_VOCR_MODEL_ROOT; the largest
+/* The character LMs of the beam + LM decoder (bee-san/vita-vn-ocr #82, #127, pre-release
+ * v0.3.7-lm6.2, CC BY-SA 4.0: tiers 2 and 4 VOCR6's, 1 and 3 ctclm.2's), tiers 1-4, in VJO_VOCR_MODEL_ROOT; the largest
  * is the most the game worker reads. A request names the largest tier it allows
  * (VjoGameOcrRequest.flags); the worker opens one at most. */
 #define VJO_VOCR_LM_TIERS 4u
 #define VJO_VOCR_LM1_NAME "vocr_lm_o3_500k.vlm"
 #define VJO_VOCR_LM1_BYTES 499824u
-#define VJO_VOCR_LM2_NAME "vocr_lm_o3_1000k.vlm"
-#define VJO_VOCR_LM2_BYTES 987600u
+#define VJO_VOCR_LM2_NAME "vocr_lm6_o3_1000k.vlm"
+#define VJO_VOCR_LM2_BYTES 982320u
 #define VJO_VOCR_LM3_NAME "vocr_lm_o3_2000k.vlm"
 #define VJO_VOCR_LM3_BYTES 1971568u
-#define VJO_VOCR_LM4_NAME "vocr_lm_o3_4000k.vlm"
-#define VJO_VOCR_LM4_BYTES 3781072u
+#define VJO_VOCR_LM4_NAME "vocr_lm6_o3_4000k.vlm"
+#define VJO_VOCR_LM4_BYTES 3603552u
 #define VJO_VOCR_LM_MAX_BYTES VJO_VOCR_LM4_BYTES
 /* VOCR4-W20 (bee-san/vita-vn-ocr pre-release v0.2.5-vocr4.1, F20's shape, so F20's
  * bytes), in VJO_VOCR_MODEL_ROOT: the Large tier before VOCR5, and the confidence

@@ -40,14 +40,14 @@ class DocsModelNames(unittest.TestCase):
         by_name = ["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "FL10_w8.vocr", "H15_w8.vocr", "F20_w8.vocr",
                    "VOCR4_W20_w8.vocr"]
         self.assertEqual(sorted(models), sorted({*pins.TIER_FILES, *by_name}))
-        self.assertEqual(lms, ["vocr_lm_o3_500k.vlm", "vocr_lm_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm",
-                               "vocr_lm_o3_4000k.vlm"])
+        self.assertEqual(lms, ["vocr_lm_o3_500k.vlm", "vocr_lm6_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm",
+                               "vocr_lm6_o3_4000k.vlm"])
         text = names.names_text(models, lms)
         releases = {(p[5], p[4]) for p in pins.TIER_PINS.values()}
         releases |= {("VOCR3", "v0.2.5-vocr3.1"), ("VOCR1", "v0.2.0"), ("VOCR4", "v0.2.5-vocr4.1")}
         for generation, tag in sorted(releases):
             self.assertIn(f"({generation}, release {tag})", text)
-        self.assertIn("(release v0.2.6-ctclm.2)", text)
+        self.assertIn("(release v0.3.7-lm6.2)", text)
 
     def test_a_name_the_kernel_adds_makes_the_docs_stale(self):
         kernel = (ROOT / "kernel/game_ocr.c").read_text(encoding="utf-8")

@@ -34,9 +34,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import collect_word_lookup_lines as cw  # noqa: E402 (the shared reservation rules)
 
 # core/vocr_ocr.c lm_opts(): one setting for every model; the bonus per tier
-BETA = {"vocr_lm_o3_500k.vlm": 3000, "vocr_lm_o3_1000k.vlm": 3500, "vocr_lm_o3_2000k.vlm": 3000,
-        "vocr_lm_o3_4000k.vlm": 3500}
-LM_EOS = 2
+# (alpha, beta, flags) per LM: core/vocr_ocr.c lms[] (VOCR6's two tiers and ctclm.2's two), and ctclm.2's
+# own 1000k / 4000k files with their settings for the earlier measurements
+LM_BOS, LM_EOS = 1, 2
+SETTINGS = {"vocr_lm_o3_500k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_1000k.vlm": (600, 2500, LM_BOS),
+            "vocr_lm_o3_2000k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_4000k.vlm": (600, 2500, LM_BOS),
+            "vocr_lm_o3_1000k.vlm": (500, 3500, LM_EOS), "vocr_lm_o3_4000k.vlm": (500, 3500, LM_EOS)}
+BETA = {name: beta for name, (_, beta, _) in SETTINGS.items()}
 
 
 def main(argv=None):
@@ -61,11 +65,11 @@ def main(argv=None):
     reserved, is_test_vn = cw.reservation(args.vocr_repo)
     owner_test = cw.owner_test_folder_vns()
     models = args.model or ["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"]
-    lms = args.lm or ["vocr_lm_o3_4000k.vlm"]
+    lms = args.lm or ["vocr_lm6_o3_4000k.vlm"]
     every = models + ([args.cascade] if args.cascade and args.cascade not in models else [])
     ref = {m: Vocr(str(args.models / m), mode="w8i", max_width=1024) for m in every}
-    dec = {(m, l): VocrLM(ref[m], str(args.models / l), beam=8, topk=8, alpha=500, beta=BETA[l], gate=8000,
-                          flags=LM_EOS, bracket=8000) for m in every for l in lms}
+    dec = {(m, l): VocrLM(ref[m], str(args.models / l), beam=8, topk=8, alpha=SETTINGS[l][0], beta=BETA[l], gate=8000,
+                          flags=SETTINGS[l][2], bracket=8000) for m in every for l in lms}
     report = {f"{m} + {l}": {"regions": 0, "lines": 0, "decoded": 0, "changed": 0, "greedy_mismatch": 0,
                              "lm_mismatch": 0, "conf_mismatch": 0, "low_conf_lines": 0, "lm_us": 0, "load_us": [],
                              "conf_hist": [0] * 11, "cascade_lines": 0, "cascade_changed": 0,

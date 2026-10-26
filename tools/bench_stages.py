@@ -66,7 +66,7 @@ MODELS = ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr", "VOCR4_W20_w8.vocr")
 # (ocr_lm = 1000k), the confidence cascade with the next size up (ocr_cascade_ms = 2000; here
 # VOCR4-W20 beside VOCR3-H15) and the stable-text wait (ocr_settle_ms = 150);
 # host/bench/stage_bench.c stage_job's mode bits.
-LM = "vocr_lm_o3_1000k.vlm"
+LM = "vocr_lm6_o3_1000k.vlm"
 CASCADE = MODELS[2]
 JOB_FIRST, JOB_LM, JOB_CASCADE, JOB_SETTLE, JOB_REFINE = 1, 2, 4, 8, 16
 JOB_DEFAULT = JOB_LM | JOB_CASCADE | JOB_SETTLE

@@ -2,7 +2,7 @@
 """Dialogue CER of the overlay's line reading on vita-vn-ocr's development line crops.
 
 For each recognizer it scores the greedy text and the beam + LM text of each pinned LM tier, decoded
-with core/vocr_ocr.c's lm_opts(): beam 8, top-K 8, alpha 0.5, the tier's beta, gate 8, EOS, bracket 8.
+with core/vocr_ocr.c's lm_opts(): beam 8, top-K 8, the tier's alpha, beta and line flags, gate 8, bracket 8.
 It also scores the confidence the game worker records for each line (conf_min, in 1/1000) and, with
 --cascade, the overlay's confidence cascade (core/vocr_ocr.c): a line whose confidence is under --conf
 is read again by a larger recognizer, decoded with the same LM, and that reading is shown. The sweep
@@ -29,9 +29,13 @@ import time
 from pathlib import Path
 
 # core/vocr_ocr.c lms[] (the bonus per tier) and lm_opts()
-BETA = {"vocr_lm_o3_500k.vlm": 3000, "vocr_lm_o3_1000k.vlm": 3500, "vocr_lm_o3_2000k.vlm": 3000,
-        "vocr_lm_o3_4000k.vlm": 3500}
-LM_EOS = 2
+# (alpha, beta, flags) per LM: core/vocr_ocr.c lms[] (VOCR6's two tiers and ctclm.2's two), and ctclm.2's
+# own 1000k / 4000k files with their settings for the earlier measurements
+LM_BOS, LM_EOS = 1, 2
+SETTINGS = {"vocr_lm_o3_500k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_1000k.vlm": (600, 2500, LM_BOS),
+            "vocr_lm_o3_2000k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_4000k.vlm": (600, 2500, LM_BOS),
+            "vocr_lm_o3_1000k.vlm": (500, 3500, LM_EOS), "vocr_lm_o3_4000k.vlm": (500, 3500, LM_EOS)}
+BETA = {name: beta for name, (_, beta, _) in SETTINGS.items()}
 SETS = ("tv", "dn_ink", "dn_grad")
 
 
@@ -66,8 +70,8 @@ def main(argv=None):
     lms = args.lm or list(BETA)
     every = models + ([args.cascade] if args.cascade and args.cascade not in models else [])
     rt = {m: Vocr(str(args.models / m), mode="w8i", max_width=1024) for m in every}
-    dec = {(m, lm): VocrLM(rt[m], str(args.models / lm), beam=8, topk=8, alpha=500, beta=BETA[lm], gate=8000,
-                           flags=LM_EOS, bracket=8000) for m in every for lm in lms}
+    dec = {(m, lm): VocrLM(rt[m], str(args.models / lm), beam=8, topk=8, alpha=SETTINGS[lm][0], beta=BETA[lm], gate=8000,
+                           flags=SETTINGS[lm][2], bracket=8000) for m in every for lm in lms}
 
     def read(m, img):
         """(per decoder the text, the confidence, frames, host us of the run, host us per LM decode)."""
@@ -170,8 +174,9 @@ def main(argv=None):
             s["cascade"] = c
         report[m] = s
     doc = {"what": __doc__.split("\n\n")[0], "sets": sets, "dialogue_lines": len(rows), "ref_chars": ref_chars,
-           "decoder": {"beam": 8, "topk": 8, "alpha": 500, "beta": {lm: BETA[lm] for lm in lms}, "gate": 8000,
-                       "flags": "EOS", "bracket": 8000},
+           "decoder": {"beam": 8, "topk": 8, "alpha": {lm: SETTINGS[lm][0] for lm in lms},
+                       "beta": {lm: BETA[lm] for lm in lms}, "gate": 8000,
+                       "flags": {lm: "BOS" if SETTINGS[lm][2] == LM_BOS else "EOS" for lm in lms}, "bracket": 8000},
            "host": "times: host us (shared box); the A9 is not measured", "models": report}
     text = json.dumps(doc, indent=1, ensure_ascii=False) + "\n"
     if args.out:

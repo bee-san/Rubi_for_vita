@@ -80,7 +80,7 @@ def main(argv=None):
     ap.add_argument("--vocr-repo", required=True, type=Path, help="vita-vn-ocr checkout (the manifests)")
     ap.add_argument("--shots", action="append", required=True)
     ap.add_argument("--model", default="VOCR3_H15_w8.vocr")
-    ap.add_argument("--lm", default="vocr_lm_o3_1000k.vlm", help="'' for greedy decoding")
+    ap.add_argument("--lm", default="vocr_lm6_o3_1000k.vlm", help="'' for greedy decoding")
     ap.add_argument("--cascade", default="VOCR4_W20_w8.vocr", help="'' for none")
     ap.add_argument("--how", action="append", choices=HOWS, help="display paths (default x1; x2-* PSP only)")
     ap.add_argument("--limit", type=int, default=0, help="regions per manifest (0: all)")

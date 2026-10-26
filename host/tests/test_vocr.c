@@ -527,9 +527,10 @@ static void test_release_files(void)
             vocr_lm_opts lo;
             size_t need;
             if (!lm_blob[t]) continue;
-            memset(&lo, 0, sizeof(lo)); /* core/vocr_ocr.c lm_opts */
-            lo.beam = 8; lo.topk = VJO_VOCR_LM_TOPK; lo.alpha = 500; lo.beta = vjo_vocr_lm_tier(t + 1u)->beta;
-            lo.gate = 8000; lo.flags = VOCR_LM_EOS; lo.bracket = 8000;
+            memset(&lo, 0, sizeof(lo)); /* core/vocr_ocr.c lm_opts: the tier's own settings */
+            lo.beam = 8; lo.topk = VJO_VOCR_LM_TOPK; lo.alpha = vjo_vocr_lm_tier(t + 1u)->alpha;
+            lo.beta = vjo_vocr_lm_tier(t + 1u)->beta;
+            lo.gate = 8000; lo.flags = vjo_vocr_lm_tier(t + 1u)->flags; lo.bracket = 8000;
             need = vocr_lm_workspace_bytes(&m, &lm[t], &lo);
             TEST_CHECK_(need > 0 && need <= VJO_VOCR_LM_WS_BYTES, "%s with %s: LM workspace %zu B", all[i].name,
                         vjo_vocr_lm_tier(t + 1u)->name, need);

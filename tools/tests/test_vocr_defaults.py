@@ -167,7 +167,8 @@ def c_lm_table():
     table = source[source.index("static const VjoVocrLm lms[VJO_VOCR_LM_TIERS]"):]
     table = table[:table.index("};")]
     out = {}
-    for m in re.finditer(r"\{(VJO_VOCR_LM\d_NAME), (VJO_VOCR_LM\d_BYTES),\s*\{([^}]*)\},\s*(\d+), (\d)\}", table):
+    for m in re.finditer(r"\{(VJO_VOCR_LM\d_NAME), (VJO_VOCR_LM\d_BYTES),\s*\{([^}]*)\},\s*(\d+), (\d), (\d+), "
+                         r"(VOCR_LM_BOS|VOCR_LM_EOS)\}", table):
         digest = "".join("%02x" % int(b, 16) for b in re.findall(r"0x([0-9a-f]{2})", m.group(3)))
         out[sizes[m.group(1)]] = (sizes[m.group(2)], digest, int(m.group(5)))
     return out
@@ -241,8 +242,8 @@ class VocrDefaults(unittest.TestCase):
                     prepare_ocr.fetch_lms(out, src)
         # the real pin is the release's file
         url, size, sha = prepare_ocr.VOCR_LM_ATTRIBUTION_PIN[prepare_ocr.VOCR_LM_ATTRIBUTION]
-        self.assertTrue(url.endswith("/releases/download/v0.2.6-ctclm.2/ATTRIBUTION.md"))
-        self.assertEqual((size, sha), (2538, "1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c"))
+        self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.2/ATTRIBUTION.md"))
+        self.assertEqual((size, sha), (6514, "9418ed87e6d9fa196aba2315e05a0cf0dca7056482cce03577ced423e5feb1d3"))
 
     def test_the_model_sizes_attribution_comes_pinned_with_them(self):
         """fetch_tiers (--backend vocr-tiers, CI's package job) fetches v0.3.0's ATTRIBUTION.md with the
@@ -331,7 +332,7 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(set(table), set(prepare_ocr.VOCR_LM_ASSETS))
         for name, (size, sha, tier) in table.items():
             url, want_size, want_sha = prepare_ocr.VOCR_LM_ASSETS[name]
-            self.assertTrue(url.endswith("/releases/download/v0.2.6-ctclm.2/" + name), url)
+            self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.2/" + name), url)
             self.assertEqual((size, sha), (want_size, want_sha), name)
         self.assertEqual(sorted(t for _, _, t in table.values()), [1, 2, 3, 4])
         # the kernel knows the same names and sizes by tier
@@ -339,6 +340,15 @@ class VocrDefaults(unittest.TestCase):
         for n in range(1, 5):
             self.assertIn(f"VJO_VOCR_LM{n}_NAME", kernel)
             self.assertIn(f"VJO_VOCR_LM{n}_BYTES", kernel)
+        # each tier's decoder settings are the ones vita-vn-ocr selected it with (v0.3.7-lm6.2's settings.json):
+        # VOCR6's LMs at tiers 2 and 4, ctclm.2's at 1 and 3
+        source = (ROOT / "core/vocr_ocr.c").read_text()
+        block = source[source.index("static const VjoVocrLm lms[VJO_VOCR_LM_TIERS]"):]
+        settings = re.findall(r"\},\s*(\d+), (\d), (\d+), (VOCR_LM_BOS|VOCR_LM_EOS)\}", block[:block.index("};")])
+        self.assertEqual(settings, [("3000", "1", "500", "VOCR_LM_EOS"), ("2500", "2", "600", "VOCR_LM_BOS"),
+                                    ("3000", "3", "500", "VOCR_LM_EOS"), ("2500", "4", "600", "VOCR_LM_BOS")])
+        self.assertIn("o->alpha = lm->alpha;", source)
+        self.assertIn("o->flags = lm->flags;", source)
         # the ledger's LM block holds the largest, page-rounded
         ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
         budget = int(re.search(r"#define VJO_BUDGET_GAME_LM (\d+)u", ledger).group(1))
