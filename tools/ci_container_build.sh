@@ -30,10 +30,12 @@
 # image, e.g. after CI's tag moves (the job log's "Initialize containers" step prints its digest).
 set -euo pipefail
 
-# vitasdk/vitasdk:2026.08 as CI pulled it for v0.8.0-test.2 (Release run 38689391878, job "vita",
-# 2026-10-15T05:55:34Z: "Digest: sha256:fd82d88f..."): the multi-platform index. Its linux/amd64
-# image is sha256:5c0c8b36b8b28ff773ae29d1ea4240912834b130b33f187b8338dd7cdd681beb.
-IMAGE=${VJO_CI_IMAGE:-docker.io/vitasdk/vitasdk@sha256:fd82d88ff456d118eef16533ebf9a3a6ae0e292684fb8a3a35f15f0707b4692d}
+# vitasdk/vitasdk:2026.08 by the digest the workflow's `vita` job pins (`container:`), the multi-platform
+# index every release from v0.9.2 to v0.9.7 was built in (each Release run's "Initialize containers" step:
+# "Digest: sha256:8227da1b..."). Its linux/amd64 image is
+# sha256:4f726038a59f57bee7341d2b66862c72fe24f060044165c2f331da3f181f3138. Until 2026-10-26 this was
+# sha256:fd82d88f..., the tag as CI pulled it for v0.8.0-test.2 (Release run 38689391878), before it moved.
+IMAGE=${VJO_CI_IMAGE:-docker.io/vitasdk/vitasdk@sha256:8227da1b596d981f4513cd9b36bda1e43857f6dae5bcf4312c1cd40167f7d9bb}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 REV=HEAD
 OUT=

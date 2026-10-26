@@ -67,11 +67,39 @@ tmp_of() { mkdir -p "$TMP_ROOT/$1" && printf '%s' "$TMP_ROOT/$1"; } # tmp_of NAM
 TMPDIR=$(tmp_of lane)
 export TMPDIR
 
-build() { # build NAME SOURCES...
+# ARM_JOBS (default: the host's processors) steps at a time: first the builds, then the suites under
+# qemu-arm. Each step writes its own log, and the logs and results are printed in the order of the
+# steps below, as one at a time would print them; a build that fails stops the lane after them all.
+ARM_JOBS=${ARM_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)}
+STEPS=()
+bg() { # bg NAME COMMAND...: COMMAND in the background, its output in $OUT/NAME.step.log, its status in .step.rc
   local name=$1; shift
-  "$ARM_CC" "${FLAGS[@]}" -o "$OUT/$name" "$@"
+  while [ "$(jobs -rp | wc -l)" -ge "$ARM_JOBS" ]; do wait -n 2> /dev/null || sleep 0.1; done
+  rm -f "$OUT/$name.step.rc"
+  # (no errexit here: COMMAND's own status is the step's; the functions below return theirs)
+  ( set +e; "$@" > "$OUT/$name.step.log" 2>&1; echo $? > "$OUT/$name.step.rc" ) &
+  STEPS+=("$name")
+}
+steps_done() { # every step bg started, its log printed in order; 1 if any failed (with \"build\": each one named)
+  wait
+  local name rc failed=0
+  for name in "${STEPS[@]}"; do
+    cat "$OUT/$name.step.log"
+    rc=$(cat "$OUT/$name.step.rc" 2> /dev/null || echo 1)
+    if [ "$rc" != 0 ]; then
+      failed=1
+      [ "${1:-}" != build ] || echo "arm ${name#build-}: build FAILED (exit $rc)"
+    fi
+  done
+  STEPS=()
+  return $failed
+}
+compile() { # compile NAME SOURCES...: one suite for the A9 (the compiler's status)
+  local name=$1; shift
+  "$ARM_CC" "${FLAGS[@]}" -o "$OUT/$name" "$@" || return
   file "$OUT/$name" 2>/dev/null | sed -E 's/, (BuildID|for GNU|with debug_info|not stripped).*//' || true
 }
+build() { bg "build-$1" compile "$@"; } # build NAME SOURCES...
 
 build boot_guard host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c
 build ledger host/tests/test_ledger.c core/ledger.c
@@ -128,7 +156,7 @@ build psp -DNO_CTYPE -DNO_STRING host/tests/test_psp.c core/pspbubble.c core/psp
 build taicfg -DNO_CTYPE -DNO_STRING -DVJO_SOURCE_DIR="\"$PWD\"" host/tests/test_taicfg.c core/taicfg.c "${TP[@]}"
 # The Shell's logger (shell/log_vita.c) on an in-memory file system: batched appends, 32-bit sizes.
 # Its stubs come before vita_stubs (both have psp2/io/fcntl.h).
-"$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
+bg build-shell_log "$ARM_CC" -I host/tests/log_stubs "${FLAGS[@]}" -o "$OUT/shell_log" host/tests/test_shell_log.c
 # The reading history's writer (shell/history.c) and its characters column (core/reading_chars.h) on
 # the Vita's word size: 32-bit size_t, the append offsets past 4 GiB; the reading time on its timelines
 # (host/fixtures/reading_time).
@@ -155,7 +183,7 @@ build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/
 build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
 # The hook engine (game_ocr/hooks.c, audit-hooks F4): its game addresses are 32-bit, as here. Its own stubs
 # (taiHEN, modulemgr, io: host/tests/hooks_stubs, then game_stubs) instead of vita_stubs.
-"$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu99 -Wall -Wextra -Wno-unused-parameter \
+bg build-hooks_engine "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu99 -Wall -Wextra -Wno-unused-parameter \
   -I third_party/acutest/include -I host/tests -I host/tests/hooks_stubs -I host/tests/game_stubs -DVJO_HOST=1 \
   -I third_party/bearssl/inc -I "$BS" \
   -DVJO_DEBUG="$VJO_DEBUG" -o "$OUT/hooks_engine" host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c \
@@ -169,38 +197,49 @@ TESTS+=(hook_text hook_luna psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
-  "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c
-  "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_capture.o" kernel/capture.c
-  "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_scene.o" kernel/scene.c
   MODEL_DEF=()
   [ -n "${VJO_VOCR_MODEL_DIR:-}" ] && MODEL_DEF=(-DVJO_VOCR_MODEL_DIR="\"$VJO_VOCR_MODEL_DIR\"")
-  "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
-    "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
-    -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
-    "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
-    "$RT/vocr_lines_rows.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_post.c" \
-    third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
-    third_party/bearssl/src/codec/enc32be.c -lm
+  capture_parity() {
+    "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_kernel.o" host/tests/parity_kernel.c &&
+    "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_capture.o" kernel/capture.c &&
+    "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_scene.o" kernel/scene.c &&
+    "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
+      "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
+      -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
+      "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
+      "$RT/vocr_lines_rows.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_post.c" \
+      third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
+      third_party/bearssl/src/codec/enc32be.c -lm
+  }
+  bg build-capture_parity capture_parity
   TESTS+=(capture_parity)
 fi
 
-fail=0
-"${HOST_CC:-cc}" -O2 -Wall -Wextra -Wno-unused-parameter -I third_party/acutest/include -I host/tests/vita_stubs -I core \
+bg build-apkg_host "${HOST_CC:-cc}" -O2 -Wall -Wextra -Wno-unused-parameter -I third_party/acutest/include -I host/tests/vita_stubs -I core \
   -I include -I third_party/bearssl/inc -I "$BS" -DVJO_HOST=1 -o "$OUT/apkg_host" "${APKG[@]}"
-rm -rf "$OUT/apkg.arm" "$OUT/apkg.host" && mkdir -p "$OUT/apkg.arm" "$OUT/apkg.host"
-if TMPDIR=$(tmp_of apkg_write) "$QEMU" "${QEMU_ARGS[@]}" "$OUT/apkg" --write "$OUT/apkg.arm" > "$OUT/apkg_write.log" 2>&1 &&
-   TMPDIR=$(tmp_of apkg_write) "$OUT/apkg_host" --write "$OUT/apkg.host" >> "$OUT/apkg_write.log" 2>&1 &&
-   diff -r "$OUT/apkg.arm" "$OUT/apkg.host" > /dev/null; then
-  echo "arm apkg packages: $(ls "$OUT/apkg.arm" | grep -c '\.apkg$') .apkg files, identical to the host's"
-else
-  echo "arm apkg packages: FAILED"; cat "$OUT/apkg_write.log"; fail=1
-fi
 if [ -n "${VJO_PLAINTEXT_DIR:-}" ]; then
   WL=(host/tests/word_lookup_parity.c core/local_dict.c core/textjoin.c core/utf.c core/arena.c)
   WL_FLAGS=(-O2 -std=gnu99 -Wall -Wextra -Wno-unused-parameter -D_FILE_OFFSET_BITS=64 -I core -I include -DVJO_HOST=1)
-  "$ARM_CC" -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity" "${WL[@]}"
-  "${HOST_CC:-cc}" "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity_host" "${WL[@]}"
-  fx=host/fixtures/word_lookup/vocr_lines.tsv
+  bg build-word_lookup_parity "$ARM_CC" -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static "${WL_FLAGS[@]}" \
+    -o "$OUT/word_lookup_parity" "${WL[@]}"
+  bg build-word_lookup_parity_host "${HOST_CC:-cc}" "${WL_FLAGS[@]}" -o "$OUT/word_lookup_parity_host" "${WL[@]}"
+fi
+# Every build, its output in order; any that failed stops the lane here.
+steps_done build || exit 1
+
+# The runs, ARM_JOBS at a time, each printing its line (and a failure's log) as before.
+apkg_write() {
+  rm -rf "$OUT/apkg.arm" "$OUT/apkg.host" && mkdir -p "$OUT/apkg.arm" "$OUT/apkg.host"
+  if TMPDIR=$(tmp_of apkg_write) "$QEMU" "${QEMU_ARGS[@]}" "$OUT/apkg" --write "$OUT/apkg.arm" > "$OUT/apkg_write.log" 2>&1 &&
+     TMPDIR=$(tmp_of apkg_write) "$OUT/apkg_host" --write "$OUT/apkg.host" >> "$OUT/apkg_write.log" 2>&1 &&
+     diff -r "$OUT/apkg.arm" "$OUT/apkg.host" > /dev/null; then
+    echo "arm apkg packages: $(ls "$OUT/apkg.arm" | grep -c '\.apkg$') .apkg files, identical to the host's"
+  else
+    echo "arm apkg packages: FAILED"; cat "$OUT/apkg_write.log"; return 1
+  fi
+}
+word_lookup() {
+  local fx=host/fixtures/word_lookup/vocr_lines.tsv
   if TMPDIR=$(tmp_of word_lookup) "$QEMU" "${QEMU_ARGS[@]}" "$OUT/word_lookup_parity" "$VJO_PLAINTEXT_DIR" "$fx" \
        > "$OUT/word_lookup.arm" 2> "$OUT/word_lookup.log" &&
      TMPDIR=$(tmp_of word_lookup) "$OUT/word_lookup_parity_host" "$VJO_PLAINTEXT_DIR" "$fx" > "$OUT/word_lookup.host" \
@@ -209,16 +248,24 @@ if [ -n "${VJO_PLAINTEXT_DIR:-}" ]; then
     echo "arm word_lookup: $(head -1 "$OUT/word_lookup.log"), identical to the host's"
   else
     echo "arm word_lookup: FAILED"; cat "$OUT/word_lookup.log"
-    diff "$OUT/word_lookup.arm" "$OUT/word_lookup.host" | head -20 || true; fail=1
+    diff "$OUT/word_lookup.arm" "$OUT/word_lookup.host" | head -20 || true; return 1
   fi
-fi
-for t in "${TESTS[@]}"; do
-  if TMPDIR=$(tmp_of "$t") "$QEMU" "${QEMU_ARGS[@]}" "$OUT/$t" > "$OUT/$t.log" 2>&1; then
-    echo "arm $t: $(grep -c '\[ OK \]' "$OUT/$t.log") cases pass"
+}
+suite() { # suite NAME: one suite under qemu-arm
+  if TMPDIR=$(tmp_of "$1") "$QEMU" "${QEMU_ARGS[@]}" "$OUT/$1" > "$OUT/$1.log" 2>&1; then
+    echo "arm $1: $(grep -c '\[ OK \]' "$OUT/$1.log") cases pass"
   else
-    echo "arm $t: FAILED"; tail -20 "$OUT/$t.log"; fail=1
+    echo "arm $1: FAILED"; tail -20 "$OUT/$1.log"; return 1
   fi
+}
+fail=0
+bg run-apkg_write apkg_write
+[ -z "${VJO_PLAINTEXT_DIR:-}" ] || bg run-word_lookup word_lookup
+for t in "${TESTS[@]}"; do
+  bg "run-$t" suite "$t"
 done
+steps_done || fail=1
+rm -f "$OUT"/*.step.log "$OUT"/*.step.rc
 # The record the kernel writes must be the same bytes on ARM and on the host.
 TMPDIR=$(tmp_of boot_guard) "$QEMU" "${QEMU_ARGS[@]}" "$OUT/boot_guard" record_format_and_parse_round_trip > /dev/null
 # What each suite or step left in its TMPDIR (SUITE/ENTRY), and anything outside them, listed whole.

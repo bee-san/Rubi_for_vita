@@ -8,11 +8,22 @@ name: Release
 # A pull request from a fork gets no secrets: it skips the private dictionary and what needs it
 # (the release zip, the tests on the dictionary) and runs everything else (`changes`' `dicts`).
 #
+# Speed (2026-10-26, owner: "ci for rubi is too slow"): a run took 7-12 minutes, and the host jobs were
+# cancelled at their limit whenever the runner's Ubuntu mirror was slow (the ARM toolchain's 61.3 MB). Now
+# the apt packages and the Vita toolchain come from actions/cache (tools/ci_apt_cache.sh,
+# tools/ci_toolchain_cache.sh), ctest runs in parallel with the tools' Python suites one test per module,
+# the ARM lane is one job for both builds, the normal build's host job leaves the suites that never read
+# the build to the debug build's, and tools/ci_scope.py decides what a pull request needs: Markdown alone
+# builds nothing, the hooks' verified-entry table alone (core/hook_place.c) leaves out the tools' Python
+# suites, and only a change to the package's files (or to CI) makes the release zips and runs the package
+# e2e. Pushes (main, test branches), tags and manual runs still run all of it. The merge gate is local:
+# tools/fast_gate.sh (AGENTS.md).
+#
 # Two builds (docs/release-variants.md): the host and vita jobs run once for each, VJO_DEBUG=ON (the
-# debug build, the test builds' own) and OFF (the normal build, the release's main download). The
-# debug build's zip is the artifact `Rubi` (exactly one zip in it; `VitaJPOverlay` before the rename); the normal
-# build's is `Rubi-normal`. tools/package_variants.py makes the release's two zips of them;
-# the `package` job does so on every run and checks each with tools/e2e_package.py.
+# debug build, the test builds' own) and OFF (the normal build, the release's main download), and the
+# arm job runs both. The debug build's zip is the artifact `Rubi` (exactly one zip in it; `VitaJPOverlay`
+# before the rename); the normal build's is `Rubi-normal`. tools/package_variants.py makes the release's
+# two zips of them; the `package` job does so and checks each with tools/e2e_package.py.
 on:
   push:
     branches: [main]
@@ -33,36 +44,52 @@ jobs:
   changes:
     name: what changed
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       code: ${{ steps.diff.outputs.code }}
+      hooks_only: ${{ steps.diff.outputs.hooks_only }}
+      packaging: ${{ steps.diff.outputs.packaging }}
       dicts: ${{ steps.dicts.outputs.dicts }}
     steps:
       - uses: actions/checkout@v4
       - id: diff
-        name: Does anything but Markdown change?
+        name: What does the change need? (tools/ci_scope.py)
         env:
-          # Base branch tip for a pull request, previous tip for a push to main; empty or all
-          # zeros (tag, new branch, manual run) means "build everything".
+          # Base branch tip for a pull request, previous tip for a push; empty or all zeros (tag, new
+          # branch, manual run) means "build everything".
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           REF_TYPE: ${{ github.ref_type }}
+          EVENT: ${{ github.event_name }}
         run: |
-          code=true
+          full=true
           if [ -n "$BASE" ] && [ "$BASE" != "0000000000000000000000000000000000000000" ] && [ "$REF_TYPE" != "tag" ]; then
             if git fetch --no-tags --depth=1 origin "$BASE"; then
               changed=$(git diff --name-only "$BASE" HEAD)
               printf '%s\n' "$changed" | sed 's/^/  /'
-              if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qvE '\.md$'; then
-                code=false
-                echo "::notice title=builds skipped::only Markdown changed"
-              fi
+              printf '%s\n' "$changed" | python3 tools/ci_scope.py > scope.txt
+              full=false
             else
               echo "::warning::could not fetch $BASE; building everything"
             fi
           fi
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "code=$code"
+          if [ "$full" = true ]; then
+            printf 'code=true\nhooks_only=false\npackaging=true\n' > scope.txt
+          elif [ "$EVENT" != pull_request ]; then
+            # A push (main, a test branch): its zips are what test builds and releases are made of, so
+            # anything but Markdown runs all of it.
+            code=$(sed -n 's/^code=//p' scope.txt)
+            printf 'code=%s\nhooks_only=false\npackaging=%s\n' "$code" "$code" > scope.txt
+          fi
+          tee -a "$GITHUB_OUTPUT" < scope.txt
+          if grep -qx 'code=false' scope.txt; then
+            echo "::notice title=builds skipped::only Markdown changed"
+          elif grep -qx 'hooks_only=true' scope.txt; then
+            echo "::notice title=hook table only::only the hooks' verified-entry table (core/hook_place.c) changed: the host jobs leave out the tools' Python suites; the C suites, the ARM lane and the Vita builds run"
+          fi
+          if grep -qx 'code=true' scope.txt && grep -qx 'packaging=false' scope.txt; then
+            echo "::notice title=no package e2e::no file of the package changed (tools/ci_scope.py): the release zips, their artifacts and tools/e2e_package.py are left out"
+          fi
       - id: dicts
         name: Can this run read the private dictionaries?
         env:
@@ -87,22 +114,17 @@ jobs:
     name: host (${{ matrix.variant }})
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
-    runs-on: ubuntu-latest
-    # 25, not 15: the ARM lane's apt install (61.3 MB: gcc-14-arm-linux-gnueabihf, its libc, qemu-user-static)
-    # comes from the runner's Azure Ubuntu mirror after the 6-minute ctest. At the ~120 kB/s that mirror gave on
-    # 2026-10-26 it takes about 8.5 minutes, and three attempts of run 40308253058's host (debug) were cancelled
-    # at 15 minutes inside that step, ctest passed; a normal run takes 9-10 minutes.
-    timeout-minutes: 25
+    runs-on: ubuntu-24.04
+    # About 3 minutes (2026-10-26); 15 leaves room for a cache miss's apt download.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         include:
           - variant: debug
             debug: 'ON'
-            debug_num: '1'
           - variant: normal
             debug: 'OFF'
-            debug_num: '0'
     steps:
       - uses: actions/checkout@v4
       - name: Check out the pinned private OCR runtime
@@ -127,8 +149,20 @@ jobs:
           persist-credentials: false
           path: .refs/plaintext-dicts
           sparse-checkout: processed
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build python3-pil
-      - run: cmake -S . -B build/host -G Ninja -DVJO_DEBUG=${{ matrix.debug }} -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/host -j4
+      # The .deb files of the packages below, kept by actions/cache (saved as soon as they are installed,
+      # whatever the tests then do); bump the key's -vN when the list changes.
+      - id: apt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .refs/apt-host
+          key: apt-host-ubuntu-24.04-ninja-pil-v3
+      - run: bash tools/ci_apt_cache.sh .refs/apt-host ninja-build python3-pil
+      - if: ${{ steps.apt-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .refs/apt-host
+          key: apt-host-ubuntu-24.04-ninja-pil-v3
+      - run: cmake -S . -B build/host -G Ninja -DVJO_DEBUG=${{ matrix.debug }} -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/host "-j$(nproc)"
       # Anki itself imports the Rubi app's .apkg packages (host/tests/test_apkg.py): the anki
       # package (Anki 26.09.3), hash-pinned for Python 3.12, in a venv of its own. This Python is
       # not put on PATH, so CMake's Python and the image tests' Pillow stay the system's.
@@ -143,10 +177,17 @@ jobs:
           "${{ steps.anki-python.outputs.python-path }}" -m venv .venv-anki
           .venv-anki/bin/pip install --require-hashes --only-binary=:all: -r tools/requirements-anki.txt
       # VJO_REQUIRE_ANKI: the import tests fail, not skip, if the anki package cannot be imported.
-      - run: ctest --test-dir build/host --output-on-failure
+      # -j twice the processors: the tools' Python suites (one test per module, tools_*, the slowest first)
+      # spend much of their time waiting on the programs and the FTP mock they run. The normal build leaves
+      # the suites that never read the build (label variant_free) to the debug build's job; a change to the
+      # hooks' verified-entry table alone leaves out the tools' suites (label tools), whose programs have no
+      # hook table in them.
+      - name: ctest (parallel)
+        run: ctest --test-dir build/host -j$(( $(nproc) * 2 )) --output-on-failure $SELECT
         env:
           VJO_ANKI_PYTHON: ${{ github.workspace }}/.venv-anki/bin/python
           VJO_REQUIRE_ANKI: '1'
+          SELECT: ${{ needs.changes.outputs.hooks_only == 'true' && '-LE tools' || (matrix.variant == 'normal' && '-LE variant_free' || '') }}
       # What Anki imported, in the log (ctest shows a passing test's output only with -V); the
       # step fails unless the import line is there.
       - name: The packages Anki imported
@@ -158,49 +199,26 @@ jobs:
         env:
           VJO_ANKI_PYTHON: ${{ github.workspace }}/.venv-anki/bin/python
           VJO_REQUIRE_ANKI: '1'
-      # The pure-C kernel and core suites on the Vita's CPU (32-bit ARMv7, Cortex-A9) under
-      # qemu-arm: 32-bit width and atomics bugs the x86_64 suites cannot see (docs/offline-testing.md).
-      # GCC 14: the pinned vita-vn-ocr runtime's NEON kernels (#85) use vld1q_*_x2, which GCC's
-      # 32-bit ARM arm_neon.h has from GCC 14 on; Ubuntu 24.04's default cross gcc is 13.
-      - run: sudo apt-get install -y --no-install-recommends gcc-14-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static
-      # VJO_PLAINTEXT_DIR: the dictionary ctest unpacked; the lookup must give the same results on ARM.
-      # Without the dictionary only that lookup comparison is left out.
-      - env:
-          DICTS: ${{ needs.changes.outputs.dicts }}
-        run: |
-          if [ "$DICTS" != false ]; then
-            export VJO_PLAINTEXT_DIR=$PWD/build/host/plaintext
-          else
-            echo "::notice title=arm word_lookup skipped::no private dictionary in this run"
-          fi
-          VJO_DEBUG=${{ matrix.debug_num }} ARM_CC=arm-linux-gnueabihf-gcc-14 QEMU=qemu-arm-static VJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr bash tools/arm_host_tests.sh build/arm-tests
 
-  vita:
-    name: vita (${{ matrix.variant }})
+  # The pure-C kernel and core suites on the Vita's CPU (32-bit ARMv7, Cortex-A9) under qemu-arm, both
+  # builds: 32-bit width and atomics bugs the x86_64 suites cannot see (docs/offline-testing.md). Its own
+  # job (until 2026-10-26 the host jobs' last steps): one cached toolchain install for both builds, and
+  # the host jobs no longer wait for it.
+  arm:
+    name: arm (both builds)
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    container: vitasdk/vitasdk:2026.08
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - variant: debug
-            debug: 'ON'
-            artifact: Rubi
-          - variant: normal
-            debug: 'OFF'
-            artifact: Rubi-normal
+    runs-on: ubuntu-24.04
+    # 25 (#297): on a cache miss the toolchain's 61.3 MB comes from the runner's Azure Ubuntu mirror, which
+    # gave about 120 kB/s on 2026-10-26 (8.5 minutes); from the cache the job takes about 2.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get update && apt-get install -y --no-install-recommends g++ patch python3 openssh-client
       - name: Check out the pinned private OCR runtime
         uses: actions/checkout@v4
         with:
           repository: bee-san/vita-vn-ocr
-          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #112's merge: #111's counter re-decode and its header's
-          # condition for the LM, after #101's text-presence gate, #85, #83 and #82)
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (as in the host job)
           ref: 817d203a49d38dda4f73d11639cf608aed84d17e
           ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
           persist-credentials: false
@@ -215,14 +233,117 @@ jobs:
           persist-credentials: false
           path: .refs/plaintext-dicts
           sparse-checkout: processed
-      - run: WORK=$PWD/.refs/toolchain bash tools/setup_toolchain.sh
-      # The build runs every check (kernel instructions, syscall ABI, memory ledger, the Rubi
-      # app's PNG ABI and artwork); only the release zip needs the dictionary.
+      # GCC 14: the pinned vita-vn-ocr runtime's NEON kernels (#85) use vld1q_*_x2, which GCC's
+      # 32-bit ARM arm_neon.h has from GCC 14 on; Ubuntu 24.04's default cross gcc is 13.
+      - id: apt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .refs/apt-arm
+          key: apt-arm-ubuntu-24.04-gcc14-armhf-qemu-v3
+      - name: The ARM toolchain and qemu-arm (cached .debs; the mirror only on a miss)
+        run: bash tools/ci_apt_cache.sh .refs/apt-arm gcc-14-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static
+      - if: ${{ steps.apt-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .refs/apt-arm
+          key: apt-arm-ubuntu-24.04-gcc14-armhf-qemu-v3
+      # VJO_PLAINTEXT_DIR: the frozen dictionary, unpacked and checked against its pins; the lookup must
+      # give the same results on ARM. Without the dictionary only that lookup comparison is left out.
+      - name: The frozen dictionary, unpacked
+        if: ${{ needs.changes.outputs.dicts != 'false' }}
+        run: python3 tools/prepare_plaintext.py --source .refs/plaintext-dicts -o build/plaintext/plaintext.vjdict
+      - name: The debug build's suites on the A9
+        env:
+          DICTS: ${{ needs.changes.outputs.dicts }}
+        run: |
+          if [ "$DICTS" != false ]; then export VJO_PLAINTEXT_DIR=$PWD/build/plaintext; else echo "::notice title=arm word_lookup skipped::no private dictionary in this run"; fi
+          VJO_DEBUG=1 ARM_CC=arm-linux-gnueabihf-gcc-14 QEMU=qemu-arm-static VJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr bash tools/arm_host_tests.sh build/arm-debug
+      - name: The normal build's suites on the A9
+        if: ${{ !cancelled() }}
+        env:
+          DICTS: ${{ needs.changes.outputs.dicts }}
+        run: |
+          if [ "$DICTS" != false ]; then export VJO_PLAINTEXT_DIR=$PWD/build/plaintext; fi
+          VJO_DEBUG=0 ARM_CC=arm-linux-gnueabihf-gcc-14 QEMU=qemu-arm-static VJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr bash tools/arm_host_tests.sh build/arm-normal
+
+  vita:
+    name: vita (${{ matrix.variant }})
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # vitasdk/vitasdk:2026.08 by digest: the image every release from v0.9.2 to v0.9.7 was built in (each
+    # Release run's "Initialize containers" step: "Digest: sha256:8227da1b..."). The Rubi app's eboot.bin
+    # links the SDK's libraries, so a moved tag changed it without a commit here; now a new SDK is a change
+    # to this line (and to tools/ci_container_build.sh and tools/gate/vita.Dockerfile, which pin the same).
+    container: vitasdk/vitasdk@sha256:8227da1b596d981f4513cd9b36bda1e43857f6dae5bcf4312c1cd40167f7d9bb
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: debug
+            debug: 'ON'
+            artifact: Rubi
+          - variant: normal
+            debug: 'OFF'
+            artifact: Rubi-normal
+    steps:
+      - uses: actions/checkout@v4
+      # openssh-client for the private checkouts (the image has the rest of the list); the .debs cached.
+      - id: apt-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .refs/apt-vita
+          key: apt-vita-8227da1b-ssh-v3
+      - run: bash tools/ci_apt_cache.sh .refs/apt-vita g++ patch python3 openssh-client
+      - if: ${{ steps.apt-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .refs/apt-vita
+          key: apt-vita-8227da1b-ssh-v3
+      - name: Check out the pinned private OCR runtime
+        uses: actions/checkout@v4
+        with:
+          repository: bee-san/vita-vn-ocr
+          # cmake/VocrOCR.cmake VJO_VOCR_COMMIT (vita-vn-ocr #112's merge: #111's counter re-decode and its header's
+          # condition for the LM, after #101's text-presence gate, #85, #83 and #82)
+          ref: 817d203a49d38dda4f73d11639cf608aed84d17e
+          ssh-key: ${{ secrets.VOCR_SOURCE_KEY }}
+          persist-credentials: false
+          path: .refs/vita-vn-ocr
+      - name: Check out the frozen private dictionaries
+        if: ${{ needs.changes.outputs.dicts != 'false' && needs.changes.outputs.packaging == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          repository: bee-san/plaintext-dicts
+          ref: e9b6e767626bbf38da451fa3d6fa14292b63586b
+          ssh-key: ${{ secrets.PLAINTEXT_DICTS_SOURCE_KEY }}
+          persist-credentials: false
+          path: .refs/plaintext-dicts
+          sparse-checkout: processed
+      # tools/setup_toolchain.sh's result (what it adds to the image's SDK, psp2cxml-tool, the app's pinned
+      # packages), kept for this image and these scripts; restored, the script runs again and finds every
+      # step done (tools/ci_toolchain_cache.sh). It took 70-100 s of every vita job.
+      - id: toolchain-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .refs/toolchain-cache
+          key: vita-toolchain-8227da1b-${{ hashFiles('tools/setup_toolchain.sh', 'tools/setup_settings_deps.py', 'tools/ci_toolchain_cache.sh') }}
+      - run: WORK=$PWD/.refs/toolchain bash tools/ci_toolchain_cache.sh .refs/toolchain-cache
+      - if: ${{ steps.toolchain-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .refs/toolchain-cache
+          key: vita-toolchain-8227da1b-${{ hashFiles('tools/setup_toolchain.sh', 'tools/setup_settings_deps.py', 'tools/ci_toolchain_cache.sh') }}
+      # The build runs every check (kernel instructions, syscall ABI, memory ledger, offline imports, the
+      # modules' variant, the Rubi app's SELF, PNG ABI and artwork); only the release zip needs the dictionary.
       - run: |
           export PATH=$PWD/.refs/toolchain/psp2cxml-tool/mbuild:$PATH
-          cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG=${{ matrix.debug }} -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/vita -j4
+          cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG=${{ matrix.debug }} -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr && cmake --build build/vita "-j$(nproc)"
+      # The zip, for the package job and the artifact: on pushes, tags and manual runs, and for a pull
+      # request that changes the package's files (tools/ci_scope.py).
       - name: Package the release zip (with the frozen dictionary)
-        if: ${{ needs.changes.outputs.dicts != 'false' }}
+        if: ${{ needs.changes.outputs.dicts != 'false' && needs.changes.outputs.packaging == 'true' }}
         run: |
           export PATH=$PWD/.refs/toolchain/psp2cxml-tool/mbuild:$PATH
           cmake --build build/vita --target release
@@ -239,7 +360,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
-        if: ${{ needs.changes.outputs.dicts != 'false' }}
+        if: ${{ needs.changes.outputs.dicts != 'false' && needs.changes.outputs.packaging == 'true' }}
         with:
           name: ${{ matrix.artifact }}
           path: build/vita/Rubi-*.zip
@@ -254,12 +375,13 @@ jobs:
   # and each run through tools/e2e_package.py: the package's own install-vita.sh and install_ftp.sh
   # against a simulated Vita (docs/offline-testing.md). The models come from vita-vn-ocr's public
   # releases, checked against tools/prepare_ocr.py's pins: no secret is needed for them. Without the
-  # dictionary (a fork's pull request) there is no release zip, so there is nothing to package.
+  # dictionary (a fork's pull request) there is no release zip, so there is nothing to package; nor for a
+  # pull request that changes none of the package's files (tools/ci_scope.py).
   package:
     name: package e2e (both builds)
     needs: [changes, vita]
-    if: ${{ needs.changes.outputs.code == 'true' && needs.changes.outputs.dicts != 'false' }}
-    runs-on: ubuntu-latest
+    if: ${{ needs.changes.outputs.code == 'true' && needs.changes.outputs.dicts != 'false' && needs.changes.outputs.packaging == 'true' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -303,13 +425,20 @@ jobs:
           version=${version#Rubi-}
           python3 tools/package_variants.py --normal "${normal[0]}" --debug "${debug[0]}" --models ci/models \
             --version "$version" --source-revision "$(git rev-parse HEAD)" --sources . -o ci/release
+      # Both packages at once, each in its own work directory (build/e2e-package/<zip>); their logs in order.
       - name: tools/e2e_package.py on each zip
         shell: bash
         run: |
-          rc=0
+          pids=()
           for zip in ci/release/Rubi-*.zip; do
-            echo "::group::$(basename "$zip")"
-            python3 tools/e2e_package.py "$zip" || rc=1
+            python3 tools/e2e_package.py "$zip" > "ci/$(basename "$zip" .zip).e2e.log" 2>&1 &
+            pids+=($!)
+          done
+          rc=0
+          for pid in "${pids[@]}"; do wait "$pid" || rc=1; done
+          for log in ci/*.e2e.log; do
+            echo "::group::$(basename "$log" .e2e.log)"
+            cat "$log"
             echo "::endgroup::"
           done
           exit $rc

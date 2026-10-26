@@ -1125,6 +1125,13 @@ cmake -S vita -B build/vita -DCMAKE_BUILD_TYPE=Release -DVJO_VOCR_SOURCE_DIR=/pa
 cmake --build build/vita --target release
 ```
 
+`bash tools/fast_gate.sh` runs all of CI's checks at once, in containers it builds once (docker or
+podman; `tools/gate/`): both builds' host suites (`ctest -j`), the ARM lane, both Vita builds with
+their checks and, when the package's files changed, the package e2e. It is the merge gate
+([AGENTS.md](https://github.com/bee-san/Rubi_for_vita/blob/main/AGENTS.md#merge-gate-binding-owner-2026-10-26)); its comments list its options.
+`ctest -j` is safe: each test has a `TMPDIR` of its own, and the tools' Python suites are one test
+per module (`tools_<module>`).
+
 The Vita build is Release, as in CI; `vita/` uses Release when no build type (or
 an empty one) is given. A `Debug` build compiles libpng without optimisation, which fails the
 Rubi app's [PNG ABI check](settings-png-runtime.md), so the app does not
@@ -1148,7 +1155,7 @@ the dictionary separately, run `python3 tools/prepare_plaintext.py --source
 GitHub CLI access can fetch the pinned archive. Both the archive and unpacked
 file must match their committed checksums.
 
-CI builds the Vita targets in the `vitasdk/vitasdk:2026.08` container, and the
+CI builds the Vita targets in the `vitasdk/vitasdk:2026.08` container, pinned by digest, and the
 Rubi app's `eboot.bin` depends on the SDK's libraries: another VitaSDK gives
 it other bytes. `bash tools/ci_container_build.sh --compare RELEASE.zip`
 rebuilds a commit in that container, pinned by the digest CI pulled, under
