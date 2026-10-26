@@ -86,7 +86,7 @@
  * by default; never lowered); bit 3 the line cache neither read nor filled, and emptied (the
  * self-test's stages: each recognizes what it reads); API 26, bit 4 the text-presence gate (below); API 36, bit 16
  * the border rule (below); API 42, bits 18-19 the head gate and the two-level head; API 43, bit 20 trusted hooks;
- * API 44, bits 21-23 the line finder's fixes (below). Other bits are refused, as unknown flags are. */
+ * API 48, bits 21-23 the line finder's fixes (below). Other bits are refused, as unknown flags are. */
 #define VJO_GAME_OCR_S_HELPERS_MASK 0x3u
 #define VJO_GAME_OCR_S_BOOST 0x4u
 #define VJO_GAME_OCR_S_NOCACHE 0x8u
@@ -138,7 +138,7 @@
 #define VJO_GAME_OCR_S_VERTICAL (VJO_GAME_OCR_S_VERTICAL_MASK << VJO_GAME_OCR_S_VERTICAL_SHIFT) /* 0x30000000 */
 #define VJO_GAME_OCR_VERTICAL_ON 1u
 #define VJO_GAME_OCR_VERTICAL_AUTO 2u
-/* API 44, bits 21-23: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.h; core/vocr_ocr.h
+/* API 48, bits 21-23: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.h; core/vocr_ocr.h
  * VjoVocrPolicy.line_fix, config ocr_line_fix). Bit 21: the measured default, VOCR_FIX_DEFAULT (COLGAP: a line's
  * parts across a full-width space stay one line). Bit 22: VOCR_FIX_JUNK (frame strips on the region's top or bottom
  * edge and repeating ornaments are not lines; it can drop a text line in a region drawn tight, so it is opt-in).

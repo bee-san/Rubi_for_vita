@@ -1822,7 +1822,7 @@ static void test_a_short_last_line_is_read(void)
 }
 
 
-/* API 44: the line finder's fixes (vita-vn-ocr #129) reach the finder through VjoVocrPolicy.line_fix. A line of six
+/* API 48: the line finder's fixes (vita-vn-ocr #129) reach the finder through VjoVocrPolicy.line_fix. A line of six
  * glyphs, a gap of three glyph widths (wider than the frozen finder's column gap of two band heights) and three
  * more: the frozen finder (line_fix 0) keeps only the heavier part, VOCR_FIX_COLGAP the whole line (vita-vn-ocr's
  * runtime/tests/test_vocr_lines_fix.c draws the same line). */

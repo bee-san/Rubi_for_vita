@@ -762,7 +762,7 @@ much on regions drawn tight.
   the text, because in a tight region it can drop a real line.
 - `all` also splits two touching rows (Narcissu).
 - `off` is the frozen finder
-([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-44)).
+([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-48)).
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
 decode, the cascade's re-read and its place in the text still follow line order on the job's own

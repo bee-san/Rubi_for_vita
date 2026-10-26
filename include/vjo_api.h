@@ -103,11 +103,10 @@
  * at the end: the struct is 4 bytes longer); vjoOcrCaptureRows' VJO_ROWS_HOOK publishes a trusted answer's capture
  * as that scene without reading pixels. API numbers on main only grow: 47 is #335's (vertical text) and 48
  * #330's (the line finder). */
- * 44: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.c): VjoGameOcrRequest.speed bits 21-23
+ * 48: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.c): VjoGameOcrRequest.speed bits 21-23
  * (VJO_GAME_OCR_S_LINE_FIX: VOCR_FIX_DEFAULT, _JUNK, _VALLEY), VjoVocrPolicy.line_fix, config.ini ocr_line_fix.
- * Sizes and layouts are unchanged. 44 was this change's before 47 was taken (47's note); it merged after 47.
- * The plugins compare the version for equality only, and no build has had 44. */
-#define VJO_API_VERSION 44
+ * Sizes and layouts are unchanged. 47's note kept 44 for it; it merged after 47, so it is 48. */
+#define VJO_API_VERSION 48
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

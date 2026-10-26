@@ -2226,7 +2226,7 @@ static void test_vocr_request_carries_the_job_policy(void)
                fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
     TEST_MSG("hook_trust = off: speed 0x%08X", (unsigned)fake_game_request.speed);
     mem_free();
-    /* API 44: the line finder's fixes ride in the speed word: the default (on) bit 21 alone, junk bits 21 and 22,
+    /* API 48: the line finder's fixes ride in the speed word: the default (on) bit 21 alone, junk bits 21 and 22,
      * all bits 21-23, off none */
     const uint32_t lf_bits = VJO_GAME_OCR_S_LINE_FIX | VJO_GAME_OCR_S_LINE_JUNK | VJO_GAME_OCR_S_LINE_VALLEY;
     static const struct { int cfg; uint32_t want; } fixes[] = {

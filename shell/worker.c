@@ -1138,7 +1138,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     /* API 47: vertical text (ocr_vertical off, on or auto: the field's own values), in the user's jobs; the
      * self-test's stages read rows */
     if (stage < 0) request.speed |= (uint32_t)job_cfg.ocr_vertical << VJO_GAME_OCR_S_VERTICAL_SHIFT;
-    /* API 44: the line finder's fixes (ocr_line_fix = on, the default; junk adds the frame-strip rule, all also
+    /* API 48: the line finder's fixes (ocr_line_fix = on, the default; junk adds the frame-strip rule, all also
      * the touching-rows split), in the user's jobs (the self-test's stages read as before) */
     if (job_cfg.ocr_line_fix && stage < 0)
         request.speed |= VJO_GAME_OCR_S_LINE_FIX | (job_cfg.ocr_line_fix >= 2 ? VJO_GAME_OCR_S_LINE_JUNK : 0u) |

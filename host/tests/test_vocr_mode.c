@@ -70,7 +70,7 @@ static int spy_finder(const VocrLinesRows *src, void *arena, size_t bytes, VocrL
     return VOCR_LINES_OK;
 }
 
-/* API 44: the job's finder is the fixed one (vita-vn-ocr #129, runtime/vocr_lines_fix.h); fix 0 is the frozen
+/* API 48: the job's finder is the fixed one (vita-vn-ocr #129, runtime/vocr_lines_fix.h); fix 0 is the frozen
  * finder's lines, which the spy above stands for */
 int vjo_test_find_lines_fix_rows(const VocrLinesRows *src, int finder, unsigned fix, void *arena, size_t bytes,
                                  VocrLineSet *out)

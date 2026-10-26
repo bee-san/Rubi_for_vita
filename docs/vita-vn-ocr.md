@@ -1318,7 +1318,7 @@ updates:
    [vita-memory.md](vita-memory.md), [offline-testing.md](offline-testing.md),
    [settings-readability.md](settings-readability.md), [anki.md](anki.md), `README.md`'s credits and the CHANGELOG.
 
-## Line finder fixes (API 44)
+## Line finder fixes (API 48)
 
 ```ini
 ocr_line_fix = on   ; off: the frozen finder; junk: also drop frame strips (regions with a margin); all: also split touching rows
