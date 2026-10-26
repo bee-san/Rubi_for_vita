@@ -13,24 +13,24 @@ is the existing slot 0. Their buffers are on the worker thread's existing 32 KiB
 chain is about 1.2 KiB (`vjo_hooks_psp_poll` 560 B, `vjo_psp_text_poll` 600 B, `read_game` 48 B), before a job's
 recognition; the probe's, after the job, about 2.6 KiB (`vjo_psp_probe_job` 520 B, `pass` 1,552 B with the profile
 step's 512-byte buffer inlined, `op_module` 512 B) [measured: `-fstack-usage`, the worker's flags at `-Os`, the
-vitasdk image's gcc 15.2]. The Shell gains #278's bounded changed-screen retry (one message string, kept in its data
-segment). Rows [measured: the build log's module rows, `tools/fast_gate.sh` on this change against main `213fd60`,
-CI's vitasdk image]:
+vitasdk image's gcc 15.2]. The Shell gains #278's bounded changed-screen retry: its message (77 B) in the data
+segment, 52 B of code; to keep the normal Shell's code pages (main left 28 B of room), `shell/anki_queue.c`'s
+36 B `where[]` table moved to its data segment. Rows [measured: the build log's module rows, `tools/fast_gate.sh`
+on this change against main `0b1a45b`, CI's vitasdk image]:
 
-| Module (build) | main `213fd60` | this change | pages |
+| Module (build) | main `0b1a45b` | this change | pages |
 |---|---:|---:|---:|
-| game worker (normal) | 134,004 + 34,872 B | 134,996 + 35,176 B | 172,032 B both |
-| game worker (debug) | 142,776 + 34,880 B | 147,424 + 36,680 B | 180,224 → 184,320 B |
-| Shell (normal) | 90,012 + 73,504 B | 90,060 + 73,584 B | 163,840 B both |
-| Shell (debug) | 102,204 + 73,464 B | 102,252 + 73,536 B | 176,128 B both |
-| kernel (both) | 42,536 + 77,756 / 37,504 + 76,068 B | the same | the same |
+| game worker (normal) | 139,668 + 34,952 B | 140,676 + 35,256 B | 180,224 B both |
+| game worker (debug) | 148,424 + 34,960 B | 153,104 + 36,760 B | 188,416 → 192,512 B |
+| Shell (normal) | 90,084 + 73,560 B | 90,100 + 73,672 B | 163,840 B both |
+| Shell (debug) | 102,196 + 73,544 B | 102,228 + 73,664 B | 176,128 B both |
+| kernel (both) | 42,540 + 77,756 / 37,508 + 76,068 B | the same | the same |
 
 So the debug build's worker, the test builds' and the -debug download's, takes one more page (4,096 B) in each
 game that is ON, in the game's partition; `VJO_BUDGET_WORKER_MODULE_PAGES` (debug) is raised by exactly that. Its
-two segments hold 184,104 B, more than the old 180,224 B however they are split; Luna's PSP table keeps its IDs in
-the data segment and its counts and addresses in the code segment, which leaves 32 B of code and 184 B of data
-room. The normal build's worker keeps its pages (172 B of code room left). These are binary measurements, not
-console pool, boot or CPU3 measurements.
+text was already 968 B past its last page on main; Luna's PSP table keeps its IDs in the data segment and its
+counts and addresses in the code segment. The normal build's worker keeps its pages (2,684 B of code room left).
+These are binary measurements, not console pool, boot or CPU3 measurements.
 
 ## Head gate and two-level head (API 42, vita-vn-ocr #120 and #122)
 

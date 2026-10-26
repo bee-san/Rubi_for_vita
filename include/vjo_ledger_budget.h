@@ -283,9 +283,20 @@
  * files are byte-identical to main's; the Rubi app's eboot.bin, which links core/hook_place.c for the Games tag,
  * is 120 B (debug) and 79 B (normal) larger. The page-record read is two exact reads of game memory into the
  * existing capture buffer: no block, thread or allocation. */
-/* PSP-TEXT-REMEASURE */
+/* PSP text and the PSP probe's format 4 (docs/native-hooks.md "PSP text (Adrenaline)", "PSP probe (debug build)"):
+ * one more page in the DEBUG build only, 188,416 -> 192,512 B, in each game that is ON (the game's partition, never
+ * SceShell's). Both builds gain PSP text (core/psp_text.c at -Os, its two profiles in the data segment; the 5pb. and
+ * KID filters; game_ocr/hooks.c vjo_hooks_psp_poll; game_ocr/main.c's call): the normal build's worker text
+ * 139,668 -> 140,676 B and data/bss 34,952 -> 35,256 B, still its 180,224 B of pages. The debug build also links the
+ * probe's format 4 (#278's mapping check, MIPS classifier, timed read and job lines, rebased, with Rubi's profile
+ * step and the hook fields; core/psp_probe.c at -Os and Luna's PSP table, its IDs in the data segment and its counts
+ * and addresses in the code segment): text 148,424 -> 153,104 B and data/bss 34,960 -> 36,760 B (104 B left in
+ * 36,864) [measured: the build log's module rows, both builds, tools/fast_gate.sh on this change against main
+ * 0b1a45b, CI's vitasdk image]. Its text was already 968 B past its pages on main, so one page is the least this
+ * takes. The kernel's and both Shells' pages are unchanged (the normal Shell's 36 B where[] table of
+ * shell/anki_queue.c moved to its data segment to keep them). No block, thread or allocation. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 188416u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
 #else
 #define VJO_BUDGET_WORKER_MODULE_PAGES 180224u
 #endif
