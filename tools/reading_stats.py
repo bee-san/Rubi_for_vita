@@ -25,8 +25,9 @@ line's source.
 Reading time: each record's line is credited the time to the next record of the same game, at most 2.5
 times what the reader's pace would take for it (2 s to 5 minutes; the pace, per game, is learned from
 the history: docs/ocr-history.md#reading-time). This is the overlay's rule (config.ini reading_time =
-adaptive, its default), in the same integers, so the totals here are the Triangle view's. A change of
-game is a break. --time-rule break (or --break-minutes N) is Rubi 0.9.7's rule instead: a gap of more
+adaptive, its default), in the same integers, so the totals here are the Triangle view's for a history in
+time order (this tool sorts by time; the overlay breaks its interval where the clock was set back). A
+change of game is a break. --time-rule break (or --break-minutes N) is Rubi 0.9.7's rule instead: a gap of more
 than N minutes (default 5) is a break, and the record before it gets none (how long it was read is
 unknown). Characters per hour divides the characters of the records that got a time by that time; the
 totals count every record.
@@ -437,9 +438,11 @@ def read_history(paths) -> Report:
 
 # The adaptive reading time: what the overlay's Triangle view counts with config.ini's reading_time =
 # adaptive, its default (core/history_lines.c vjo_reading_time_add, docs/ocr-history.md#reading-time), in
-# the same integers, so this tool gives the view's numbers. Each line is credited the time to the next
-# record of its game, at most 2.5 times what the reader's pace would take for it, 2 s to 5 minutes. The
-# pace, per game, is a running 75th percentile of the time a character took (in 64 us units, 16 bits):
+# the same integers, so this tool gives the view's numbers (for records in time order: it sorts them, and the
+# overlay, which goes in file order, breaks an interval where the clock was set back). Each line is credited
+# the time to the next record of its game, at most 2.5 times what the reader's pace would take for it, 2 s to
+# 5 minutes. The pace, per game, is a running 75th percentile of the time a character took (in 64 us units,
+# 16 bits):
 # 3/32 up after a line of 5 or more characters read in 1 s to 5 minutes more slowly than it, 1/32 down
 # after one read faster; 1.2 s a character until it has learned, and kept between 2 ms and 4.19 s a character.
 # As GameSentenceMiner's adaptive cap

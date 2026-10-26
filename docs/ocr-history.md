@@ -266,7 +266,9 @@ python3 tools/reading_stats.py history.csv --break-minutes 10   # Rubi 0.9.7's r
 The reading time is the overlay's ([Reading time](#reading-time)): each record's
 line gets the time to the next record of its game, at most 2.5 times what the
 reader's pace would take for it, in the same integers as the overlay, so the
-tool's totals are the Triangle view's (`reading_time = adaptive`). A change of
+tool's totals are the Triangle view's (`reading_time = adaptive`) for a history in time order (the tool
+sorts the records by time; the overlay goes in file order, and a clock set back breaks its interval, so
+after one the two can differ). A change of
 game is a break. `--time-rule break` (or `--break-minutes N`) is Rubi 0.9.7's
 rule instead: a gap of more than N minutes (5 by default) is a break, and the
 record before it gets none, since how long it was read is unknown;
