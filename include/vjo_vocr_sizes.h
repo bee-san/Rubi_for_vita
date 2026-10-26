@@ -53,6 +53,12 @@
 #define VJO_VOCR5_N_BYTES 1189408u
 #define VJO_VOCR5_L_NAME "VOCR5_L_w8g2.vocr"
 #define VJO_VOCR5_L_BYTES 2477472u
+/* The runtime's two structs a job's workspace holds beside its arena (vocr_model and vocr_ctx, each 16-byte
+ * aligned: core/vocr_ocr.c's layout) as the console's compiler lays them out at the pinned runtime: 3,872 B at
+ * vita-vn-ocr 47cf3a3 (3,760 B at 817d203; measured: arm-vita-eabi-gcc, sizeof). The Vita build checks it
+ * (core/vocr_ocr.c), so a runtime pin that changes the structs fails until this is updated; the host tests
+ * reckon the console's job with it (host/tests/test_vocr.c), as a 64-bit host's structs are larger. */
+#define VJO_VOCR_VITA_STRUCTS 3872u
 /* API 21: the three model tiers the Rubi app offers (config.ini vocr_tier),
  * smallest first; tools/model_tiers.json is the same table (its "tiers", in
  * this order), and tools/tests/test_vocr_defaults.py checks the two agree. A

@@ -761,7 +761,17 @@ static void request_flags_become_the_policy(void)
     TEST_CHECK(!p.gate && p.gate_res == &gate_res);
     r.flags = 0; r.speed = VJO_GAME_OCR_S_GATE; /* API 26: the text-presence gate */
     request_policy(&r, &p);
-    TEST_CHECK(p.gate == 1 && p.gate_res == &gate_res);
+    TEST_CHECK(p.gate == 1 && p.gate_res == &gate_res && !p.head_gate && !p.two_level);
+    /* API 42: bit 18 the head gate, bit 19 the two-level head, each on its own (ocr_head_gate's values) */
+    static const struct { uint32_t speed; int head_gate, two_level; } heads[] = {
+        {VJO_GAME_OCR_S_HEAD_GATE, 1, 0}, {VJO_GAME_OCR_S_TWO_LEVEL, 0, 1},
+        {VJO_GAME_OCR_S_HEAD_GATE | VJO_GAME_OCR_S_TWO_LEVEL, 1, 1}, {0, 0, 0}};
+    for (unsigned i = 0; i < sizeof(heads) / sizeof(heads[0]); i++) {
+        r.speed = heads[i].speed;
+        request_policy(&r, &p);
+        TEST_CHECK_(p.head_gate == heads[i].head_gate && p.two_level == heads[i].two_level && !p.gate,
+                    "speed 0x%x", (unsigned)heads[i].speed);
+    }
 }
 
 /* API 26: the text-presence gate through the worker. The weights' file opens by its pinned name

@@ -243,11 +243,13 @@ static void test_tier_metadata_matches_the_runtime(void)
                    vjo_vocr_tier_parse(ids[t]) == (int)t && tier->reserve == reserve[t] && tier->name[0] &&
                    tier->tagline[0]);
         /* The console's (32-bit) job: the arena (or the finder's at 960x544, the larger) and the
-         * runtime's two structs, 3,760 B there (the #81 self-test's workspace records: VOCR3-FL10
+         * runtime's two structs, VJO_VOCR_VITA_STRUCTS there (3,872 B at vita-vn-ocr 47cf3a3, which the
+         * Vita build checks; 3,760 B at 817d203: the #81 self-test's workspace records, VOCR3-FL10
          * 128,592 = 124,832 + 3,760, VOCR3-H15 at the full screen 186,704 = 182,944 + 3,760); a
          * 64-bit host's structs are larger, so its own job may be a page more. */
         size_t finder = vocr_lines_arena_bytes(960, 544), arena = m->arena_bytes > finder ? m->arena_bytes : finder;
-        size_t vita_structs = 3760u, structs = vjo_vocr_job_bytes(m->name, 960, 544) - ((arena + 15u) & ~(size_t)15u);
+        size_t vita_structs = VJO_VOCR_VITA_STRUCTS,
+               structs = vjo_vocr_job_bytes(m->name, 960, 544) - ((arena + 15u) & ~(size_t)15u);
         TEST_CHECK_(sizeof(void *) == 4 ? structs == vita_structs : structs >= vita_structs, "structs %zu B", structs);
         size_t job = PAGE(m->bytes) + PAGE(((arena + 15u) & ~(size_t)15u) + vita_structs) +
                      PAGE(vjo_vocr_capture_bytes(960, 544));
@@ -563,8 +565,9 @@ static void *read_blob(const char *path, size_t *bytes)
  * head off, gives v0.3.0's every logit bit for bit. Small's blob is v0.3.0's bytes and a VOCG section; Normal's
  * and Large's (w8g2) have their head rows and vocabulary permuted together, so their class j is v0.3.0's class
  * perm[j], the same class text, with the same logit. So the greedy text (and the top-K, the LM decode and the
- * counter re-decode, which map classes by text) are v0.3.0's except where two classes' logits tie exactly: the
- * frames whose largest logit is tied are counted (none on these lines). Synthetic lines, every width class; needs
+ * counter re-decode, which map classes by text) are v0.3.0's except on exact ties, which the decoders break by
+ * class number: of two logits (the frames whose largest logit is tied are counted: none on these lines) or of the
+ * counter re-decode's integer numeral costs (audit-vocr6-rubi-gate F2). Synthetic lines, every width class; needs
  * v0.3.0's VOCR5_{S,N,L}_w8.vocr in VJO_VOCR_MODEL_DIR/v0.3.0 (not pinned since API 42: skipped without them). */
 static void test_off_path_reads_v030(void)
 {
