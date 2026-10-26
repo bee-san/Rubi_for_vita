@@ -78,6 +78,25 @@ change, both builds]:
 The normal Shell keeps 860 B of code room (884 B before), the debug worker 2,344 B (2,760 B). The kernel's rows are
 main's.
 
+## Line finder fixes (API 44, vita-vn-ocr #129) and the pin at f8a1856
+
+**The game worker, in the game's partition only: one text page more in each game that is ON, in both builds**
+(raised in `include/vjo_ledger_budget.h`).
+
+- **The line finder's fixes.** `vocr_lines_fix.c` replaces `vocr_lines_rows.c` in the worker, with the policy's
+  flags and the request's bits. On main `0b1a45b` that measured +1,264 B of debug text (148,424 → 149,688 B) and
+  +1,280 B of normal text (139,668 → 140,948 B), within their pages (the build log's module rows, both builds,
+  this change before the pin bump, `601a133`).
+- **The pin.** vita-vn-ocr `47cf3a3` → `f8a1856`, #135's merge. It also brings #130's `vocr.c`: a light
+  global-attention op that no pinned blob has, and that reads every blob bit for bit as before. `vocr.o` goes from
+  23,255 to 25,963 B (VitaSDK `-O2` NEON, the build's flags). By symbol: `vocr_run` +984 B, `gate_tile` 806 B new,
+  `vocr_load` +442 B, `plan` +268 B, `exp_neg` 228 B and `mat_block` 178 B new.
+- **Together** they take the worker's text past its last page in both builds. Each game that is ON then holds
+  188,416 → 192,512 B (debug) and 180,224 → 184,320 B (normal, the main download). The final module rows are in the
+  pull request.
+- **Unchanged:** data/bss; the Shell's and the kernel's pages. There is no new block, thread or allocation: the
+  fixes use the finder's own arena (`vocr_lines_arena_bytes` is unchanged).
+
 ## Head gate and two-level head (API 42, vita-vn-ocr #120 and #122)
 
 Measured with VitaSDK GCC 15.2.0 in `vitasdk/vitasdk:2026.08` (CI's digest, `tools/ci_container_build.sh`'s),

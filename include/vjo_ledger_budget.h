@@ -313,6 +313,14 @@
  * 146,676 B and 35,304 -> 35,320 B, the same pages [measured: the build log's module rows, both builds, main
  * b6c715c and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the watch reads a
  * trusted line's text into the hook pool, which no job uses between jobs. */
+/* API 44, vita-vn-ocr #129's line finder fixes and the pin at its merge (f8a1856, which also brings #130's vocr.c):
+ * one text page more in both builds, in the game's partition only. The fixes (runtime/vocr_lines_fix.c in place of
+ * vocr_lines_rows.c, the policy's flags, the request's bits) were +1,264 B of debug text and +1,280 B of normal text
+ * [measured: the build log's module rows, both builds, main 0b1a45b and this change before the pin, 601a133]. #130's
+ * vocr.c, a light attention op that no pinned blob has, is vocr.o 23,255 -> 25,963 B (VitaSDK -O2 NEON, the
+ * build's flags; vocr_run +984 B, gate_tile 806 B, vocr_load +442 B, plan +268 B by symbol). Together they take
+ * one more text page each on top of API 47's: __WORKERPAGES__ in each game that is ON. Data/bss as before. No
+ * block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
 #else
