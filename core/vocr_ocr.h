@@ -115,17 +115,21 @@ const VjoVocrModel *vjo_vocr_model(const char *name);
 const VjoVocrModel *vjo_vocr_models(unsigned *count);
 
 /* A character language model this build accepts for the beam + LM decoder
- * (bee-san/vita-vn-ocr runtime/vocr_lm.h; pre-release v0.2.6-ctclm.2): the asset's
- * exact size and SHA-256, and the per-character bonus its tier was tuned with;
- * every tier shares the rest of the recommended settings (docs/ctc-lm-decode.md:
- * beam 8, the top 8 classes a frame, LM weight 0.5, gate and bracket cost 8
- * nats, an end-of-line term). One LM serves every model. */
+ * (bee-san/vita-vn-ocr runtime/vocr_lm.h; pre-release v0.3.7-lm6.1): the asset's
+ * exact size and SHA-256, and the decoder settings its tier was selected with
+ * (vita-vn-ocr docs/vocr6-lm.md, the release's settings.json): the LM weight, the
+ * per-character bonus and the line flags (VOCR_LM_BOS: start each line from the
+ * start-of-line context; VOCR_LM_EOS: an end-of-line term). Every tier shares the
+ * rest: beam 8, the top 8 classes a frame, gate and bracket cost 8 nats. One LM
+ * serves every model. */
 typedef struct {
     const char *name;
     uint32_t bytes;
     unsigned char sha256[32];
     int beta;          /* 1/1000 nat */
     unsigned tier;     /* 1 (0.5 MB) .. VJO_VOCR_LM_TIERS (4 MB) */
+    int alpha;         /* the LM weight, 1/1000 */
+    unsigned flags;    /* VOCR_LM_BOS | VOCR_LM_EOS */
 } VjoVocrLm;
 const VjoVocrLm *vjo_vocr_lm(const char *name);
 const VjoVocrLm *vjo_vocr_lm_tier(unsigned tier); /* NULL for 0 or one out of range */

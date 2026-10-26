@@ -241,8 +241,8 @@ class VocrDefaults(unittest.TestCase):
                     prepare_ocr.fetch_lms(out, src)
         # the real pin is the release's file
         url, size, sha = prepare_ocr.VOCR_LM_ATTRIBUTION_PIN[prepare_ocr.VOCR_LM_ATTRIBUTION]
-        self.assertTrue(url.endswith("/releases/download/v0.2.6-ctclm.2/ATTRIBUTION.md"))
-        self.assertEqual((size, sha), (2538, "1de91ab9c181e204c53ae7c2796af47366026901fc8b2c268cbcef820ebaf19c"))
+        self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.1/ATTRIBUTION.md"))
+        self.assertEqual((size, sha), (3641, "c612199c55374b04cadfb43efa31f8b286f0391aa0d0cd69d5545b663551dc4d"))
 
     def test_the_model_sizes_attribution_comes_pinned_with_them(self):
         """fetch_tiers (--backend vocr-tiers, CI's package job) fetches v0.3.0's ATTRIBUTION.md with the
@@ -331,7 +331,7 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(set(table), set(prepare_ocr.VOCR_LM_ASSETS))
         for name, (size, sha, tier) in table.items():
             url, want_size, want_sha = prepare_ocr.VOCR_LM_ASSETS[name]
-            self.assertTrue(url.endswith("/releases/download/v0.2.6-ctclm.2/" + name), url)
+            self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.1/" + name), url)
             self.assertEqual((size, sha), (want_size, want_sha), name)
         self.assertEqual(sorted(t for _, _, t in table.values()), [1, 2, 3, 4])
         # the kernel knows the same names and sizes by tier

@@ -63,6 +63,18 @@ been reported.
   ([measured](docs/memory-ledger.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
   Install all of this build's plugins together (the VPK's Install does): the game worker and the Shell must
   both be API 42.
+- **New character LMs for the 1 MB (the default) and 4 MB tiers**, from bee-san/vita-vn-ocr pre-release
+  v0.3.7-lm6.1 (#127): built with the text of the owner's hooked PS Vita and PSP captures besides the open
+  corpora, and decoded with new settings (LM weight 0.6, a bonus of 2.5 nats a character, each line started
+  from the start-of-line context and no end-of-line term; `core/vocr_ocr.c` now keeps the settings per tier).
+  On vita-vn-ocr's development data (VOCR5-N with its cascade, Rubi's line path and display rules,
+  cross-validated) the hooked titles' page-path dialogue CER goes from 4.12% to 3.39% (1 MB) and 4.03% to
+  3.57% (4 MB), and their clean lines from 0.49% to 0.40%; the unseen-game development score is level (not
+  resolved). Most of the page-path gain is one title whose box decoration the finder reads as a junk line.
+  The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
+  replace (982,320 and 3,603,552 B), so the game's LM block shrinks by 180,224 B at most
+  ([vita-vn-ocr docs/vocr6-lm.md](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/vocr6-lm.md);
+  no console run yet).
 - **Reading time in the Triangle view's statistics is adaptive** (`reading_time = adaptive` in
   `config.ini`, the default): each line counts the time until the next one, at most 2.5 times what your
   own pace in that game would take for it (2 s to 5 minutes), as GameSentenceMiner counts it, without its

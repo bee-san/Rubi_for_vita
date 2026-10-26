@@ -129,7 +129,7 @@ class FrozenPlaintext(unittest.TestCase):
         vocr3 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())
                  for name in ("VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr")}
         lms = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest())
-               for name in ("vocr_lm_o3_500k.vlm", "vocr_lm_o3_4000k.vlm")}
+               for name in ("vocr_lm_o3_500k.vlm", "vocr_lm6_o3_4000k.vlm")}
         vocr4 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR4_ASSETS}
         vocr5 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5_ASSETS}
         for name in (*pins, *vocr3, *lms, *vocr4, *vocr5):

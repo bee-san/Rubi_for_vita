@@ -896,6 +896,8 @@ static struct {
     const char *cascade_text; /* the cascade's runs read this (it reads nothing on the synthetic lines) */
     int decode_rc; /* nonzero: each decode of the job's model writes "X" and returns it */
     long beta[8];  /* the per-character bonus each decoder was planned with */
+    long alpha[8]; /* and its LM weight and line flags (each tier's own: core/vocr_ocr.c lms[]) */
+    unsigned flags[8];
     int counter_line;    /* the job's model reads every line as counter_frames() (its own classes) */
     unsigned seen_top1;  /* the class the job's decoder saw on top at counter_frames()'s frame 2 */
     /* API 42, the head gate: with gated_line every run of the job's model that does not ask for the ungated
@@ -1021,7 +1023,11 @@ int __wrap_vocr_lm_init(vocr_lm_ctx *c, const vocr_model *m, const vocr_lm *lm, 
                         size_t bytes)
 {
     if (wrap.on) {
-        if (wrap.inits < sizeof(wrap.beta) / sizeof(wrap.beta[0])) wrap.beta[wrap.inits] = (long)o->beta;
+        if (wrap.inits < sizeof(wrap.beta) / sizeof(wrap.beta[0])) {
+            wrap.beta[wrap.inits] = (long)o->beta;
+            wrap.alpha[wrap.inits] = (long)o->alpha;
+            wrap.flags[wrap.inits] = o->flags;
+        }
         wrap.inits++;
     }
     return __real_vocr_lm_init(c, m, lm, o, ws, bytes);
@@ -1150,6 +1156,8 @@ static void test_the_lm_paths(void)
     TEST_ASSERT(RUN(&casc) == VJO_OK);
     TEST_CHECK(st.cascade_lines == 1 && wrap.cascade_runs == 1 && wrap.decodes == 1 && wrap.cascade_decodes == 1);
     TEST_CHECK(wrap.inits == 2 && wrap.beta[0] == lm2->beta && wrap.beta[1] == lm2->beta);
+    TEST_CHECK(wrap.alpha[0] == lm2->alpha && wrap.alpha[1] == lm2->alpha && wrap.flags[0] == lm2->flags &&
+               wrap.flags[1] == lm2->flags);
     TEST_MSG("%u + %u decodes, %u decoders planned", wrap.decodes, wrap.cascade_decodes, wrap.inits);
     /* W20 reads the synthetic line as nothing where FL10 read text: the line leaves the text
      * shown (its greedy reading the log), and the job counts it */

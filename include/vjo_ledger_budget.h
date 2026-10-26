@@ -511,10 +511,11 @@
  * the helper's line slot first, so no helper reads it; a larger one runs on the worker's thread. */
 #define VJO_BUDGET_GAME_LINE 516096u
 /* API 20: the beam + LM decoder's LM, resident like the weights while the game is the
- * active one, USER_RW only: the largest tier, 3,781,072 B (include/vjo_vocr_sizes.h),
- * page-rounded. The worker's memory check takes the largest tier the request allows
- * that fits beside the reserve, a smaller one, or none. */
-#define VJO_BUDGET_GAME_LM 3784704u
+ * active one, USER_RW only: the largest tier, 3,603,552 B (include/vjo_vocr_sizes.h; VOCR6's
+ * 4 MB LM, vita-vn-ocr #127; ctclm.2's was 3,781,072 B), page-rounded. The worker's memory
+ * check takes the largest tier the request allows that fits beside the reserve, a smaller
+ * one, or none. */
+#define VJO_BUDGET_GAME_LM 3604480u
 /* API 20: the confidence cascade's larger model, resident like the weights, USER_RW only,
  * page-rounded; taken only when the memory check passes with it. API 21: the cascade's model
  * is the next tier up of the job's (Small's is Normal's, Normal's is Large's, Large has none;
@@ -554,8 +555,8 @@
  * (196,608 B), page-rounded: 450,560 B, only while a shot runs. A shot is a job of
  * the one job slot, so it never runs beside an OCR job's workspace, capture, tall
  * line or helpers (1,843,200 B of the job's worst case besides the resident weights, LM
- * and cascade model, which a shot keeps: 8,740,864 + 450,560 B under the job's
- * 10,584,064 B, API 42): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
+ * and cascade model, which a shot keeps: 8,560,640 + 450,560 B under the job's
+ * 10,403,840 B, API 42 with VOCR6's 4 MB LM): it adds nothing to VJO_WORST_GAME_JOB. Its own memory check
  * keeps VJO_GAME_RESERVE free beside it. */
 #define VJO_BUDGET_GAME_SHOT 450560u
 #define VJO_WORST_GAME_PERMANENT (VJO_BUDGET_GAME_MODULE_PAGES + VJO_BUDGET_GAME_STACK)
@@ -583,7 +584,8 @@
  * blob's page in the weights and cascade budgets (8,192 B), the workspace's two pages (8,192 B) and the worker's
  * two text pages (8,192 B, both builds): the job's worst case 10,567,680 -> 10,584,064 B, 11.7 % of that free
  * USER (a real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,297,920 B, is 1,286,144 B
- * less). */
+ * less). VOCR6's 4 MB LM (vita-vn-ocr #127, 3,603,552 B against ctclm.2's 3,781,072 B) lowers the LM budget and
+ * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. */
 #define VJO_LIMIT_GAME_JOB 10604544u
 
 #endif

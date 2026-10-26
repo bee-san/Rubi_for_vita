@@ -295,8 +295,8 @@ the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
 `VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
 (VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
-`vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm`
-(release v0.2.6-ctclm.2)<!-- end of the names -->,
+`vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
+(release v0.3.7-lm6.1)<!-- end of the names -->,
 each with its pinned file length; it does not accept a caller-supplied file
 path. Each async Open,
 Read or Close is tied to the claimed job's PID and sequence. Reads also require
@@ -617,18 +617,25 @@ ocr_lm = 1000k   ; 4000k | 2000k | 1000k | 500k | off: the largest language mode
 
 Each line is decoded with a CTC prefix beam search and a character n-gram language model instead
 of the recognizer's best class per frame. Both come from bee-san/vita-vn-ocr #82
-(`runtime/vocr_lm.c`, `vocr.c`'s top-K extras), with its four LM tiers from the
-[v0.2.6-ctclm.2 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.2.6-ctclm.2)
-(CC BY-SA 4.0, attribution shipped as `ocr/LM-ATTRIBUTION.md`; ctclm.1 is superseded: it was built
-before the protected-title filter). While the recognizer runs, it keeps each CTC frame's 8 best
-classes and the blank's score. The decoder then searches 8 beams over them, scoring each prefix
-with the LM (`core/vocr_ocr.c` `lm_opts()`: alpha 0.5, each tier's bonus per character, a gate of
-8 and the bracket weight, as #82 recommends). With the LM's weights at 0 it gives the greedy text
-bit for bit. A line the recognizer reads as empty is never decoded.
+(`runtime/vocr_lm.c`, `vocr.c`'s top-K extras). The four LM tiers come from the
+[v0.3.7-lm6.1 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.7-lm6.1)
+(CC BY-SA 4.0, attribution shipped as `ocr/LM-ATTRIBUTION.md`):
+- the 1 MB and 4 MB tiers are VOCR6's LMs, built with the text of the owner's hooked console captures
+  besides the open corpora (vita-vn-ocr #127, `docs/vocr6-lm.md`);
+- the 0.5 MB and 2 MB tiers are v0.2.6-ctclm.2's, byte for byte (#82).
 
-The default is the 1 MB tier: with the confidence cascade (below) it reads within 0.012 points of
-the 4 MB one (0.729 % against 0.717 % on the lines measured), in a quarter of the memory and of
-the first read, as #82's calibrated costs advise for the Normal tier.
+While the recognizer runs, it keeps each CTC frame's 8 best classes and the blank's score. The
+decoder then searches 8 beams over them, scoring each prefix with the LM (`core/vocr_ocr.c`
+`lm_opts()`, with each tier's settings from `lms[]`: the 1 MB and 4 MB tiers weight the LM 0.6,
+give 2.5 nats a character and start each line from the start-of-line context without an
+end-of-line term; the 0.5 MB and 2 MB tiers keep #82's 0.5, 3 nats and end-of-line term; every tier
+has a gate of 8 and the bracket weight). With the LM's weights at 0 it gives the greedy text bit for
+bit. A line the recognizer reads as empty is never decoded.
+
+The default is the 1 MB tier. On vita-vn-ocr's development data the VOCR6 settings and LMs read the
+hooked titles' pages better than ctclm.2's at Rubi's old settings (VOCR5-N with its cascade, page
+path 4.12 % → 3.39 %, cross-validated), and are level on unseen games (#127; no console run yet).
+The measurements below are VOCR3's with ctclm.2's LMs.
 
 **Memory.** The LM is a resident `USER_RW` block (`VjoGameVocrLM`), like the weights:
 - **Reading:** read through the kernel's file broker 32 KiB at a time, with size and SHA-256 checked
@@ -648,9 +655,9 @@ the first read, as #82's calibrated costs advise for the Normal tier.
 | LM | bytes (block, page-rounded) |
 |---|---|
 | `vocr_lm_o3_500k.vlm` | 499,824 (503,808) |
-| `vocr_lm_o3_1000k.vlm` (default) | 987,600 (991,232) |
+| `vocr_lm6_o3_1000k.vlm` (default) | 982,320 (983,040) |
 | `vocr_lm_o3_2000k.vlm` | 1,971,568 (1,974,272) |
-| `vocr_lm_o3_4000k.vlm` | 3,781,072 (3,784,704) |
+| `vocr_lm6_o3_4000k.vlm` | 3,603,552 (3,604,480) |
 
 **Logs (the A/B record).**
 - `gstep job lm` per job: `kind` the tier (1 500k, 2 1000k, 3 2000k, 4 4000k), arg the lines the LM
@@ -1187,8 +1194,8 @@ the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
 `VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
 (VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
-`vocr_lm_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm_o3_4000k.vlm`
-(release v0.2.6-ctclm.2)<!-- end of the names -->.
+`vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
+(release v0.3.7-lm6.1)<!-- end of the names -->.
 `core/vocr_models.c` gives each recognizer its generation (VOCR5, VOCR3, VOCR4, or VOCR1 for
 v0.2.0's), the name of the local engine in the Rubi app.
 

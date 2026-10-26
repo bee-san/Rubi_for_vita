@@ -306,12 +306,12 @@ def job_model(a9, dev, mhz, fps, kind="default", first_job=False, given=None):
     if first_job:
         sha = ms(a9, "sha256_h15", mhz)
         lo_ms, hi_ms = CONSOLE["first_load_ms"][:2]
-        lm_bytes = 987600 if kind != "api19" else 0
+        lm_bytes = 982320 if kind != "api19" else 0
         k_lm = lm_bytes / 1155968
         part("weights" + ("" if kind == "api19" else " + LM") + ": read + SHA-256 (first job)", lo_ms * (1 + k_lm),
              hi_ms * (1 + k_lm), (lo_ms + hi_ms) / 2 * (1 + k_lm),
              f"console: {lo_ms:.0f}-{hi_ms:.0f} ms for the 1,155,968 B weights (SHA-256 alone {fmt_range(sha)}, A9)"
-             + ("" if kind == "api19" else "; the 987,600 B LM scaled by its bytes"))
+             + ("" if kind == "api19" else "; the 982,320 B LM scaled by its bytes"))
     # math.fsum: correctly rounded, so the totals are the same bits on every Python (3.12's sum()
     # compensates, older ones do not)
     lo = math.fsum(p[0] for p in parts.values())
