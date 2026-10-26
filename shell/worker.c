@@ -863,6 +863,18 @@ static unsigned vocr_top_tier(unsigned tiers)
     return top;
 }
 
+/* The model a job that ran tier `ran` read its text with, a constant string: the
+ * vertical model when its lines were columns (API 44: ocr_vertical on, or auto where
+ * the rows looked like vertical text; the worker runs it whatever the tier), else
+ * the tier's. A result without a recognized line has line[0] zeroed (the worker
+ * clears it). The name is kept in the data segment: the normal Shell's text pages
+ * had 100 B of room on main 213fd60. */
+static const char vertical_model[] VJO_DATA_TABLE(worker_vertical_model) = VJO_VOCR_VERTICAL_NAME;
+static const char *job_model(const VjoGameOcrResult *r, unsigned ran)
+{
+    return r->line[0].flags & VJO_GAME_OCR_LINE_COLUMN ? vertical_model : vjo_vocr_tier_model((int)ran);
+}
+
 /* The tiers whose model is tier t's file, t's own bit included: a size may keep
  * the model of the size below it (two sizes, one file), and a file that failed
  * for one of them fails for both. */
@@ -1085,7 +1097,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
      * directory than VJO_VOCR_MODEL_ROOT, a longer one included. */
     sceClibMemcpy(request.model_dir, job_cfg.ocr_model_dir,
                   sceClibStrnlen(job_cfg.ocr_model_dir, sizeof(request.model_dir) - 1));
-    /* The largest tier's model names the job (the kernel's log); the worker opens each by its tier. */
+    /* The largest tier's model names the job (the kernel's log); the worker opens each by its tier
+     * (and a job of columns the vertical model by its own open, API 44). */
     sceClibSnprintf(request.model, sizeof(request.model), "%s", vjo_vocr_tier_model((int)top));
     st0.size = sizeof(st0);
     if (vjoGetState(&st0) < 0) st0.done_seq = st0.stable = 0;
@@ -1122,6 +1135,9 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
      * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
     if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
+    /* API 44: vertical text (ocr_vertical off, on or auto: the field's own values), in the user's jobs; the
+     * self-test's stages read rows */
+    if (stage < 0) request.speed |= (uint32_t)job_cfg.ocr_vertical << VJO_GAME_OCR_S_VERTICAL_SHIFT;
     /* API 31: normal reads select the text automatically; diagnostic jobs force OCR. */
     request.hook_pick = stage >= 0 || flags ? VJO_HOOK_PICK_OCR : VJO_HOOK_PICK_AUTO;
     int64_t t0 = now_us();
@@ -1159,7 +1175,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
     vjo_log("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
-            rc, vjo_vocr_tier_model((int)*ran),
+            rc, job_model(result, *ran),
             !result->fallback ? "" : fallback_check_refused(result) ? " (fallback, refused too)" : " (fallback)",
             result->width, result->height, result->region_x, result->region_y, result->fb_width, result->fb_height,
             (unsigned)result->fb_format, result->lines, result->workspace_bytes,
@@ -1189,7 +1205,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
         short_activation(job_generation);
         if (failed || (want & ~short_logged)) {
             short_logged |= want;
-            vjo_log("ocr rc=%d %s: %u lines, %u ms", rc, vjo_vocr_tier_model((int)*ran), (unsigned)result->lines,
+            vjo_log("ocr rc=%d %s: %u lines, %u ms", rc, job_model(result, *ran), (unsigned)result->lines,
                     (unsigned)((now_us() - t0) / 1000));
         }
     }
@@ -1275,9 +1291,11 @@ static int run_vocr(VjoOverlayData *out)
      * smaller tier for this job. Only a file that is absent, the wrong length or
      * fails its hash (io 0: rejected after reading) leaves the tier out for this
      * game; a timeout or unavailable storage does not. Every tier with the same
-     * file is left out with it (vocr_same_file). Log only. */
-    while (out->err.rc == VJO_E_OCR_MODEL && ran >= VJO_VOCR_TIER_SMALL && ran <= VJO_VOCR_TIERS &&
-           !vocr_cancelled(NULL)) {
+     * file is left out with it (vocr_same_file). Log only. With ocr_vertical = on a
+     * job's file is the vertical model's, whatever the tier: no tier is left out for
+     * it (auto reads rows where the vertical model cannot be read, API 44). */
+    while (out->err.rc == VJO_E_OCR_MODEL && job_cfg.ocr_vertical != VJO_VERTICAL_ON && ran >= VJO_VOCR_TIER_SMALL &&
+           ran <= VJO_VOCR_TIERS && !vocr_cancelled(NULL)) {
         int file_bad = !vocr_result.io_error || vocr_result.io_error == VJO_ERR_FORMAT ||
                        (uint32_t)vocr_result.io_error == 0x80010002u; /* ENOENT */
         unsigned failed = ran, same = vocr_same_file(failed), below = tiers & ((1u << (failed - 1u)) - 1u) & ~same;
@@ -1304,8 +1322,12 @@ static int run_vocr(VjoOverlayData *out)
             /* Vita errno ENODEV and EACCES are distinct from absent/corrupt weights. */
             if ((uint32_t)vocr_result.io_error == 0x80010013u)
                 out->err.detail = MODEL_STORAGE;
-            else if ((uint32_t)vocr_result.io_error == 0x8001000Du)
-                out->err.detail = "Access to the local OCR model was denied. See log.txt for details.";
+            else if ((uint32_t)vocr_result.io_error == 0x8001000Du) {
+                /* in the data segment, for the normal Shell's text room (API 44's vertical text) */
+                static const char denied[] VJO_DATA_TABLE(worker_model_denied) =
+                    "Access to the local OCR model was denied. See log.txt for details.";
+                out->err.detail = denied;
+            }
         }
         if (out->err.rc == VJO_E_OOM) {
             out->err.detail = game_oom_detail(&vocr_result);
@@ -1325,8 +1347,8 @@ static int run_vocr(VjoOverlayData *out)
 #if VJO_DEBUG
     log_text_lines(vocr_result.text, sizeof(vocr_result.text));
 #endif
-    /* The model on this text's Anki cards: the tier's that ran. A constant string. */
-    const char *read_by = vjo_vocr_tier_model((int)ran);
+    /* The model on this text's Anki cards: the tier's that ran (the vertical model's for columns). A constant string. */
+    const char *read_by = job_model(&vocr_result, ran);
     if (!read_by) read_by = vjo_vocr_tier_model(VJO_VOCR_TIER_DEFAULT);
     refresh_model = read_by; /* this result's constant model name, also for history */
     if (job_refresh) {
@@ -1792,7 +1814,8 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
     if (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) || a->ocr_skip_blank_lines != b->ocr_skip_blank_lines ||
         a->ocr_lm != b->ocr_lm || a->ocr_cascade_ms != b->ocr_cascade_ms ||
         a->ocr_refine_lines != b->ocr_refine_lines || a->vocr_tier != b->vocr_tier ||
-        a->ocr_text_gate != b->ocr_text_gate || a->ocr_head_gate != b->ocr_head_gate)
+        a->ocr_text_gate != b->ocr_text_gate || a->ocr_head_gate != b->ocr_head_gate ||
+        a->ocr_vertical != b->ocr_vertical)
         return 0;
     return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
            !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);

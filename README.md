@@ -48,6 +48,9 @@
   top, a word's dictionary entry under it, with its reading and how common the word is. Go word by
   word with the d-pad, character by character with the left stick, or tap a word. An inflected word
   is looked up in its dictionary form (した → する).
+- **Vertical text too.** Columns of Japanese, read right to left, as in a vertical dialogue box or a manga in
+  NOBORU: in a text box drawn around them Rubi finds them by itself (**Vertical text**: Automatic) and reads them
+  with its vertical model ([how well](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console yet).
 - **Fully offline.** Rubi reads dialogue directly with [native text hooks](#native-text-hooks) where
   available, or uses its own OCR on the Vita, then looks it up in a dictionary on the memory card:
   no Wi-Fi, no computer, no account, and no network code
@@ -173,6 +176,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
 | | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all ([details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
+| | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns in every game) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -235,6 +239,7 @@ offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
+| ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | Characters read, characters/hour and active time (△ in the overlay) | not run on a console yet ([details](docs/ocr-history.md#total-characters-read)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |
 | ⚠️ | [Native text hooks](#native-text-hooks) | CLANNAD's string-copy extraction verified in the combined debug test build; game-specific hook sites and other titles remain unverified on a console |
@@ -246,7 +251,8 @@ What each build changed, and what its console run showed: the [changelog](CHANGE
 
 ## Limits
 
-- Horizontal text only: vertical text is not read.
+- Vertical text is read only in a text box drawn around it (on a whole screen Rubi reads rows), and not yet on a
+  console ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
 - One console has tested Rubi ([Supported](#supported)). OCR accuracy, battery use and CPU3 load are
   not measured on a console yet.
 - The game can stutter while Rubi reads ([FAQ](#will-it-slow-my-game-down)).
@@ -280,7 +286,7 @@ Rubi's OCR runs inside the game, in the game's own memory (for a PSP game, the e
 the home screen (SceShell) or another system app. Before each reading it checks how much memory the
 game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
-Rubi's OCR worker from its start: 212 KiB of its memory (176 KiB of module pages, 36 KiB of stack and
+Rubi's OCR worker from its start: 216 KiB of its memory (180 KiB of module pages, 36 KiB of stack and
 TLS: the normal build's figures; the debug build's pages are 8 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).

@@ -5,6 +5,7 @@
 #include "acutest.h"
 #include "client.h"
 #include "config.h"
+#include "../include/vjo_game_ocr.h" /* VJO_GAME_OCR_VERTICAL_*: ocr_vertical's values (API 44) */
 #include "entries.h"
 #include "foreground.h"
 #include "furigana.h"
@@ -887,6 +888,30 @@ static void test_config(void)
     vjo_config_parse(&c, speed, strlen(speed));
     TEST_CHECK(c.ocr_helpers == 1 && c.ocr_boost_clock == 1 && c.n_warnings == 4); /* one warning each, kept 2 */
     TEST_MSG("helpers %d clock %d, %u warnings", c.ocr_helpers, c.ocr_boost_clock, c.n_warnings);
+    /* vita-vn-ocr #99 (API 44): vertical text, VJO_VERTICAL_DEFAULT by default; off | on | auto in any case, stored
+     * as the request's field (core/config.h VJO_VERTICAL_*); anything else keeps the value with a warning that
+     * names the setting, not the value */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_DEFAULT);
+    TEST_CHECK(VJO_VERTICAL_OFF == 0 && VJO_VERTICAL_ON == (int)VJO_GAME_OCR_VERTICAL_ON &&
+               VJO_VERTICAL_AUTO == (int)VJO_GAME_OCR_VERTICAL_AUTO);
+    const char *vertical = "ocr_vertical = ON\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_ON && c.n_warnings == 0);
+    vertical = "ocr_vertical = yes\nOCR_Vertical = 1\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_ON && c.n_warnings == 2 && strstr(c.warnings[0], "ocr_vertical: invalid value") &&
+               !strstr(c.warnings[0], "yes") && strstr(c.warnings[1], "OCR_Vertical"));
+    vertical = "ocr_vertical = off\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_OFF && c.n_warnings == 2);
+    vertical = "ocr_vertical = Auto\n";
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_AUTO && c.n_warnings == 2);
+    vjo_config_defaults(&c);
+    vertical = "ocr_vertical = on\nocr_boost_clock = off\n"; /* neighbours in the parser, not one field */
+    vjo_config_parse(&c, vertical, strlen(vertical));
+    TEST_CHECK(c.ocr_vertical == VJO_VERTICAL_ON && c.ocr_boost_clock == 0 && !c.n_warnings);
 
     /* the default file parses cleanly to the defaults */
     {
@@ -915,6 +940,8 @@ static void test_config(void)
         /* Japanese characters only: OFF in both (the owner, 2026-10-20; ON before) */
         TEST_CHECK(d.japanese_only_selection == 0 && strstr(t, "\njapanese_only_selection = off\n") &&
                    !strstr(t, "japanese_only_selection = on"));
+        TEST_CHECK(d.ocr_vertical == VJO_VERTICAL_DEFAULT &&
+                   strstr(t, "\nocr_vertical = " VJO_VERTICAL_DEFAULT_TEXT "\n"));
     }
 
     /* the same button for both: the toggle keeps it */

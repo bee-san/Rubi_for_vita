@@ -469,16 +469,20 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 On the **OCR & lookup** page, select a row with Up/Down. Enter
 or touch a row changes its choice: the Model size, **Read text**, the **Speed boost while
 reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, how many
-dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), and (API 43) the two
+dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), (API 43) the two
 switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
-and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), the last two cards, applied when the
-overlay next opens.
-Touch a size, a Read text choice, a number or a Text source choice to choose it directly;
+and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), applied when the overlay next opens,
+and **Vertical text** (`ocr_vertical`, the last card: [vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
+Touch a size, a Read text choice, a number, a Text source or a Vertical text choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
 Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection and two skip cards,
-Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, or Automatic/Every
+Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, OFF/Automatic/ON on Vertical text
+(Automatic, the default, reads columns where the text box holds vertical text and rows elsewhere; ON reads
+columns in every game), or Automatic/Every
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
-as a game's worker reads it then). The page is taller
+as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the
+overlay's next open: Automatic, the default, reads columns where the text box holds vertical text
+and rows elsewhere; ON reads columns in every game). The page is taller
 than the screen: it scrolls a card at a time to keep the selected one whole, the next card shows
 at the bottom, a bar at the right shows where the view is, and a touch on a card cut at the
 bottom only scrolls it into view. Read text (`ocr_mode`, [Use in a game](#use-in-a-game)) reads
@@ -732,6 +736,11 @@ Refined lines are read wider: on the
 host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 22-23 ms more per line found with VOCR3-H15 on the console
 ([finder refinement](vita-vn-ocr.md#finder-refinement-api-20)).
+`ocr_vertical = auto` (the default; the Rubi app's **Vertical text**) reads Japanese set in columns, right to
+left, with vita-vn-ocr's vertical model, where the line finder's rows in the region look like vertical text, and
+rows everywhere else, as `off` does; `on` reads columns in every game. Draw the text box around the columns. On
+the host it read a vertical PS Vita VN's dialogue at 4.5-14 % CER, depending on how the box is drawn, and changed
+no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console).
 `ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
 #100's text-presence gate in front of the finder: a region it says holds no text (the game hid its text box, a CG
 screen) returns no line, so nothing is recognized and no junk is read off the picture. It stays off because it also
@@ -925,10 +934,11 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 180,224 B of module pages (188,416 B in the debug build; API 31's native hooks and
+holds the worker's 184,320 B of module pages (192,512 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
-API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B and API 42's head gate and
-two-level head 8,192 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
+two-level head 8,192 B and API 47's vertical text 4,096 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B
+thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game
@@ -982,7 +992,8 @@ the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
 (VOCR5, release v0.3.6-head2level.1); `VOCR3_H15_w8.vocr` and
 `VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
-(VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
+(VOCR4, release v0.2.5-vocr4.1); `VOCR5_V_w8.vocr` (VOCR5, release
+v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
 (release v0.3.7-lm6.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,

@@ -634,6 +634,7 @@ static int32_t fake_missing_io;
 static unsigned submits;
 static int fake_screen_changes; /* the next reads end with VJO_E_SCREEN_CHANGED */
 static uint16_t fake_line_flags; /* VjoGameOcrLine.flags of the fake lines (0: 0x3FF, read greedily) */
+static int fake_rows_vertical; /* API 44, ocr_vertical = auto: the worker found the rows to be vertical text */
 static uint32_t fake_cascade_frames, fake_cascade_us; /* a CASCADE step with W20's frames and time (0: none) */
 static int fake_steps; /* the steps of a resident job on main's defaults (game_ocr/main.c), as the worker reports */
 /* A clock step (game_ocr/main.c job_busy): the ARM clock before, while and after, and the boost's rc. */
@@ -759,6 +760,13 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         }
     } else if (fake_memory_fallback && top > 1u) ran = top - 1u;
     const char *ran_model = top ? vjo_vocr_tier_model((int)ran) : fake_game_request.model;
+    /* API 44: a job of columns runs the vertical model, whatever its tiers (game_ocr/main.c): ocr_vertical = on,
+     * or auto where the rows looked like vertical text and the vertical model can be read (else its rows) */
+    unsigned vmode = (fake_game_request.speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK;
+    int fake_columns = vmode == VJO_GAME_OCR_VERTICAL_ON ||
+                       (vmode == VJO_GAME_OCR_VERTICAL_AUTO && fake_rows_vertical &&
+                        !(fake_missing_model && !strcmp(fake_missing_model, VJO_VOCR_VERTICAL_NAME)));
+    if (fake_columns) ran_model = VJO_VOCR_VERTICAL_NAME;
     if (fake_missing_model && !strcmp(ran_model, fake_missing_model)) {
         fake_model_misses++;
         fake_game_result.rc = VJO_E_OCR_MODEL; /* as the worker reports an absent file */
@@ -812,7 +820,9 @@ static int fake_ocr_read(uint32_t seq, VjoGameOcrResult *out)
         fake_game_result.recognized = fake_lines;
         for (unsigned i = 0; i < fake_lines; i++)
             fake_game_result.line[i] = (VjoGameOcrLine){(uint16_t)(917 - i), 30, (uint16_t)(114 - i),
-                                                        fake_line_flags ? fake_line_flags : 0x3FFu, 52100u + i};
+                                                        (uint16_t)((fake_line_flags ? fake_line_flags : 0x3FFu) |
+                                                                   (fake_columns ? VJO_GAME_OCR_LINE_COLUMN : 0u)),
+                                                        52100u + i};
         if (fake_steps) {
             static const uint8_t ids[] = {VJO_GSTEP_MEM, VJO_GSTEP_CHECK, VJO_GSTEP_ALLOC, VJO_GSTEP_ALLOC,
                                           VJO_GSTEP_PASS, VJO_GSTEP_SIG, VJO_GSTEP_FIND, VJO_GSTEP_SETTLE,
@@ -949,6 +959,7 @@ static void reset(void)
     fake_recognized_text = NULL;
     fake_lines = 2;
     fake_line_flags = 0;
+    fake_rows_vertical = 0;
     fake_steps = 0;
     fake_clock_on = fake_clock_rc = 0;
     fake_cascade_frames = fake_cascade_us = 0;
@@ -1701,8 +1712,76 @@ static void test_vocr_model_change_invalidates_cache(void)
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
+    loaded.ocr_vertical = !loaded.ocr_vertical; /* and vertical text (another model, columns) */
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
     apply_config(); /* the same again: nothing changed */
     TEST_CHECK(cache_ok);
+}
+
+/* API 44: config.ini ocr_vertical goes into the speed word of every user job as it is (off 0, on 1, auto 2), which
+ * keeps the job's tiers, model name and the rest of its flags and speed. The text's Anki cards and the job's log
+ * line name the vertical model where its lines were columns (VJO_GAME_OCR_LINE_COLUMN): with on, and with auto where
+ * the rows looked like vertical text; else the size's model, as before. A vertical model that fails to open (on)
+ * leaves no size out of the game's ladder and is not retried with a smaller size: its file is not theirs. Off (the
+ * default) sends no vertical bit. */
+static void test_vocr_vertical_request(void)
+{
+    const uint32_t field = VJO_GAME_OCR_S_VERTICAL;
+    reset();
+    fake_recognized_text = "猫";
+    TEST_CHECK(cfg.ocr_vertical == VJO_VERTICAL_DEFAULT && run_vocr_job() == VJO_OK);
+    const uint32_t off_flags = fake_game_request.flags, off_speed = fake_game_request.speed & ~field;
+    TEST_CHECK(!(fake_game_request.speed & field) || VJO_VERTICAL_DEFAULT != VJO_VERTICAL_OFF);
+    mem_free();
+    for (int mode = VJO_VERTICAL_OFF; mode <= VJO_VERTICAL_AUTO; mode++)
+        for (int rows_vertical = 0; rows_vertical <= 1; rows_vertical++) {
+            reset();
+            cfg.ocr_vertical = mode;
+            fake_rows_vertical = rows_vertical;
+            fake_recognized_text = "猫";
+            int columns = mode == VJO_VERTICAL_ON || (mode == VJO_VERTICAL_AUTO && rows_vertical);
+            const char *model = columns ? VJO_VOCR_VERTICAL_NAME : VJO_VOCR_TIER2_NAME;
+            TEST_CHECK(run_vocr_job() == VJO_OK && cache_data[0].sentence && !strcmp(cache_data[0].sentence, "猫"));
+            TEST_CHECK_(fake_game_request.flags == off_flags && (fake_game_request.speed & ~field) == off_speed &&
+                            (fake_game_request.speed & field) == (uint32_t)mode << VJO_GAME_OCR_S_VERTICAL_SHIFT &&
+                            fake_game_request.tiers == 3u && !strcmp(fake_game_request.model, VJO_VOCR_TIER2_NAME) &&
+                            !strcmp(anki_model, model),
+                        "mode %d rows_vertical %d: flags 0x%08X (0x%08X), speed 0x%08X, tiers 0x%X, model %s, cards %s",
+                        mode, rows_vertical, (unsigned)fake_game_request.flags, (unsigned)off_flags,
+                        (unsigned)fake_game_request.speed, fake_game_request.tiers, fake_game_request.model, anki_model);
+#if VJO_DEBUG
+            TEST_CHECK(columns ? logged("game vocr rc=0 " VJO_VOCR_VERTICAL_NAME ": ") != NULL
+                               : logged("game vocr rc=0 " VJO_VOCR_TIER2_NAME ": ") != NULL);
+#endif
+            mem_free();
+        }
+    /* on, its file missing: the job fails once, no size is left out, none is tried instead */
+    reset();
+    cfg.ocr_vertical = VJO_VERTICAL_ON;
+    fake_missing_model = VJO_VOCR_VERTICAL_NAME;
+    fake_model_misses = 0;
+    TEST_CHECK(run_vocr_job() == VJO_E_OCR_MODEL && vocr_allocs == 1 && fake_model_misses == 1 && !vocr_unusable);
+    TEST_CHECK(logged("is unusable here") == NULL);
+    fake_missing_model = NULL;
+    mem_free();
+    /* auto, its file missing: the worker reads the rows (the size's model names the cards) */
+    reset();
+    cfg.ocr_vertical = VJO_VERTICAL_AUTO;
+    fake_rows_vertical = 1;
+    fake_missing_model = VJO_VOCR_VERTICAL_NAME;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && !strcmp(anki_model, VJO_VOCR_TIER2_NAME) && !vocr_unusable);
+    fake_missing_model = NULL;
+    mem_free();
+    /* off again: the sizes as before */
+    reset();
+    cfg.ocr_vertical = VJO_VERTICAL_OFF;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && fake_game_request.flags == off_flags && !(fake_game_request.speed & field) &&
+               !strcmp(fake_game_request.model, VJO_VOCR_TIER2_NAME));
+    mem_free();
 }
 
 #ifdef VJO_WITH_VOCR
@@ -8039,6 +8118,7 @@ TEST_LIST = {
 #ifdef VJO_WITH_VOCR
     {"vocr_missing_model_releases_workspace", test_vocr_missing_model_releases_workspace},
     {"vocr_storage_errors_have_specific_messages", test_vocr_storage_errors_are_specific},
+    {"vocr_vertical_request_sets_the_bit_names_the_model_and_leaves_no_size_out", test_vocr_vertical_request},
 #if VJO_DEBUG
     {"vocr_logs_memory_check_frames_and_lines", test_vocr_logs_memory_check_and_frames},
 #endif

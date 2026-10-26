@@ -293,10 +293,11 @@
  * the warm-up's condition): debug text 148,792 -> 149,208 B (2,344 B of room left) and data/bss 35,288 -> 35,312 B,
  * normal 140,004 -> 140,436 B and 35,280 -> 35,304 B, the same pages [measured: the build log's module rows, both
  * builds, main 23921ad and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
+/* VERTICAL_WORKER_NOTE */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 188416u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 180224u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 184320u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an

@@ -857,6 +857,7 @@ static uint32_t model_size(const char *name)
     if (!strcmp(name, "H15_w8.vocr")) return VJO_VOCR_H15_BYTES;
     if (!strcmp(name, "F20_w8.vocr")) return VJO_VOCR_F20_BYTES;
     if (!strcmp(name, VJO_VOCR4_W20_NAME)) return VJO_VOCR_CASCADE_BYTES;
+    if (!strcmp(name, VJO_VOCR5_V_NAME)) return VJO_VOCR5_V_BYTES;
     return 0;
 }
 
@@ -961,7 +962,8 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
      * or (API 20) a pinned LM up to the tier the request allows, or the
      * cascade's pinned model when the request gives it a time ceiling; or (API 21,
      * a request by tiers) the pinned model of one of its tiers, or of the tier
-     * above them for the cascade, by its tier. */
+     * above them for the cascade, by its tier; or (API 44) the vertical model,
+     * for a request with a VJO_GAME_OCR_S_VERTICAL mode (on or auto), by tiers or by name. */
     uint32_t size, lm_tier = which >= VJO_GAME_OCR_OPEN_LM && which < VJO_GAME_OCR_OPEN_CASCADE
                              ? which - VJO_GAME_OCR_OPEN_LM + 1u : 0u;
     uint32_t model_tier = which >= VJO_GAME_OCR_OPEN_TIER && which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS
@@ -973,12 +975,17 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
     } else if (lm_tier && lm_tier <= VJO_VOCR_LM_TIERS &&
         lm_tier <= ((request.flags >> VJO_GAME_OCR_LM_SHIFT) & VJO_GAME_OCR_LM_MASK)) name = lm_name(lm_tier);
     else if (model_tier && tier_allowed(&request, model_tier)) name = tier_name(model_tier);
+    else if (which == VJO_GAME_OCR_OPEN_VERTICAL && (request.speed & VJO_GAME_OCR_S_VERTICAL))
+        name = VJO_VOCR_VERTICAL_NAME;
     else if (request.tiers) return VJO_ERR_ARG; /* a request by tiers names no model of its own */
     else if (which == VJO_GAME_OCR_OPEN_MODEL) name = request.model;
     else if (which == VJO_GAME_OCR_OPEN_FALLBACK) name = request.fallback;
     else if (which == VJO_GAME_OCR_OPEN_CASCADE &&
              ((request.flags >> VJO_GAME_OCR_CASCADE_SHIFT) & VJO_GAME_OCR_CASCADE_MASK)) name = VJO_VOCR_CASCADE_NAME;
     else return VJO_ERR_ARG;
+    /* API 44: the vertical model opens by its own open only (a request with a vertical mode), never by the name
+     * a request gives as its model or fallback */
+    if (which != VJO_GAME_OCR_OPEN_VERTICAL && !strcmp(name, VJO_VOCR_VERTICAL_NAME)) return VJO_ERR_ARG;
     size = gate ? VJO_VOCR_GATE_BYTES : lm_tier ? lm_size(lm_tier) : model_size(name);
     if (!size || strcmp(request.model_dir, VJO_VOCR_MODEL_ROOT)) return VJO_ERR_ARG;
     model_io.seq = seq;

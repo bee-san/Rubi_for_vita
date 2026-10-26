@@ -290,8 +290,12 @@ class E2E:
         path = ocr / release.VOCR_GATE_ATTRIBUTION
         check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
               f"{release.VOCR_GATE_ATTRIBUTION} is the text-presence gate's pinned attribution ({release.VOCR_GATE_TAG})")
+        _, size, sha = release.VOCR_VERTICAL_ATTRIBUTION_PIN[release.VOCR_VERTICAL_ATTRIBUTION]
+        path = ocr / release.VOCR_VERTICAL_ATTRIBUTION
+        check(path.is_file() and path.stat().st_size == size and sha256_file(path) == sha,
+              f"{release.VOCR_VERTICAL_ATTRIBUTION} is the vertical model's pinned attribution ({release.VOCR5V_TAG})")
         expected = {name for name, *_ in models} | {"LM-ATTRIBUTION.md", release.VOCR_MODEL_ATTRIBUTION,
-                                                    release.VOCR_GATE_ATTRIBUTION}
+                                                    release.VOCR_GATE_ATTRIBUTION, release.VOCR_VERTICAL_ATTRIBUTION}
         other = sorted(rel for rel in (p.relative_to(ocr).as_posix() for p in (ocr.rglob("*") if ocr.is_dir() else ())
                                        if not p.is_dir()) if rel not in expected)
         check(not other, "ocr/ has nothing but the shipped models and their attributions"
@@ -364,7 +368,7 @@ class E2E:
                     "font_size_ja": "20", "ocr_lm": template["ocr_lm"], "ocr_cascade_ms": template["ocr_cascade_ms"],
                     # the old file's explicit choice stays, though the default is off since 2026-10-20
                     "japanese_only_selection": "on", **settings}
-            for k in ("ocr_boost_clock", "ocr_threads"):  # #93: new keys get the template's value
+            for k in ("ocr_boost_clock", "ocr_threads", "ocr_vertical"):  # #93, #99: new keys get the template's value
                 if k in template:
                     want[k] = template[k]
             for k, v in want.items():

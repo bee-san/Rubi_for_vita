@@ -24,6 +24,10 @@ enum {
     VJO_E_CANCELLED = -118,
     VJO_E_OCR_INFERENCE = -119,
     VJO_E_SCREEN_CHANGED = -120, /* the screen changed while the game read it, on every try */
+    /* API 44 (config.ini ocr_vertical = auto): the region's rows looked like vertical text, so nothing was
+     * read (core/vocr_ocr.h VjoVocrPolicy.vertical_check); the game worker reads its columns next. It never
+     * leaves the worker. */
+    VJO_E_VERTICAL = -121,
 };
 
 #endif

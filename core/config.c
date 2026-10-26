@@ -57,6 +57,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->hook_sites = 1; /* the table sites with the CALL source; off: the CALL source alone */
     c->ocr_head_gate = VJO_HEAD_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Head gate" and "Two-level head" */
     c->hook_trust = 1; /* a trusted hook answers without OCR; off: Rubi 0.9.7's selection (docs/native-hooks.md) */
+    c->ocr_vertical = VJO_VERTICAL_DEFAULT; /* docs/vita-vn-ocr.md, "Vertical text" */
 }
 
 const char *vjo_config_default_text(void)
@@ -153,6 +154,10 @@ const char *vjo_config_default_text(void)
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
            "ocr_boost_clock = on\n"
+           "; vocr: vertical text (manga, vertical dialogue): auto reads the region's columns,\n"
+           "; right to left, with the vertical model where its rows look like vertical text |\n"
+           "; on reads columns in every game | off reads rows\n"
+           "ocr_vertical = " VJO_VERTICAL_DEFAULT_TEXT "\n"
            "\n"
            "; The Rubi app's Read text. auto: recognize text in the background when the\n"
            "; region settles, so the popup is ready when you press; on_press: recognize only\n"
@@ -487,6 +492,8 @@ static void set_trigger(VjoConfig *c, const char *key, const char *val, int *dst
 static const char head_key[] VJO_DATA_TABLE(config_head_key) = "ocr_head_gate";
 static const char head_gate_name[] VJO_DATA_TABLE(config_head_gate_name) = "gate";
 static const char head_two_name[] VJO_DATA_TABLE(config_head_two_name) = "two_level";
+/* API 44's key, in the data segment: the normal Shell's text pages had 100 B of room on main 213fd60. */
+static const char vertical_key[] VJO_DATA_TABLE(config_vertical_key) = "ocr_vertical";
 
 static void set_kv(VjoConfig *c, const char *key, const char *val)
 {
@@ -616,6 +623,9 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_boost_clock")) {
         static const char *const off_on[] VJO_DATA_TABLE(config_off_on_3) = {"off", "on", NULL};
         set_choice(c, key, val, &c->ocr_boost_clock, off_on);
+    } else if (vjo_ieq(key, vertical_key)) {
+        static const char *const modes[] VJO_DATA_TABLE(config_vertical_1) = {"off", "on", "auto", NULL}; /* VJO_VERTICAL_* */
+        set_choice(c, key, val, &c->ocr_vertical, modes);
     } else if (vjo_ieq(key, "ocr_mode")) {
         if (vjo_ieq(val, "auto"))
             c->ocr_mode = VJO_OCR_AUTO;

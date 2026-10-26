@@ -5,6 +5,33 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Vertical text (API 44)
+
+`ocr_vertical` ([vita-vn-ocr.md](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) adds code to the game worker and a
+little to the kernel and the Shell, and no block, thread or stack: a job of columns takes its workspace from the job's
+own block (its 57,344 B rotation buffer, `VJO_VOCR_ROTATE_BYTES`, within `VJO_BUDGET_GAME_WORKSPACE`:
+`test_ledger.c`), and a job of rows, `off` or `auto`'s, takes what it took before. The worker's code is in every game
+that is ON, whatever the setting. Its column finder (vita-vn-ocr's `runtime/vocr_vertical.c`, `-Os`), the dark flag
+of a column (`vocr_line_dark`), the column path, auto's rule and the worker's retry took both builds' text two pages
+past main's as first linked; the pinned models' and LMs' tables (`core/vocr_ocr.c`, 672 B) and the JPEG encoder's
+(`core/jpegsw.c`, 516 B) moved to the data segment (`VJO_DATA_TABLE`: const, never written), whose last page had
+room, so each build takes one page more. In the Shell, the setting's key, the vertical model's name and one cold
+message of the OCR's (the denied model, 69 B) are in the data segment too, so its normal build keeps its exact pages.
+The module rows [measured: the build log's module rows, VitaSDK 2026.08 (gcc 15.2.0), main `213fd60` and this
+change]:
+
+| module | main `213fd60` | this change | pages |
+|---|---:|---:|---:|
+| Game worker, debug | 142,776 + 34,880 B | 147,224 + 36,072 B | 180,224 → 184,320 B |
+| Game worker, normal | 134,004 + 34,872 B | 138,340 + 36,064 B | 172,032 → 176,128 B |
+| Shell, debug | 102,204 + 73,464 B | 102,188 + 73,608 B | 176,128 B both |
+| Shell, normal | 90,012 + 73,504 B | 90,052 + 73,616 B | 163,840 B both (exact) |
+| Kernel, debug | 42,536 + 77,756 B | 42,632 + 77,756 B | 122,880 B both |
+| Kernel, normal | 37,504 + 76,068 B | 37,616 + 76,068 B | 118,784 B both |
+
+`VJO_BUDGET_WORKER_MODULE_PAGES` is raised by 4,096 B in each build, in the game's partition only. The normal
+worker has 924 B of code room and 800 B of data room left, the debug worker 232 B and 792 B; the normal Shell 60 B
+and 112 B. None of it is measured on a console.
 ## Trusted hooks and the OCR-skip switches (API 43)
 
 Trusted hooks answer without OCR ([native-hooks.md](native-hooks.md#trusted-hooks-api-43)): the selection's
