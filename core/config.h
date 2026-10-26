@@ -119,11 +119,24 @@ typedef struct {
      * reading time is measured, VJO_READING_* (core/history_lines.h): 0 adaptive (the default), 1 15s
      * (Rubi 0.9.7 and older). The Shell takes it once, as it starts. Last, as above. */
     int reading_time;
+    /* Local OCR (vocr, API 42): vita-vn-ocr #117's speed work (core/vocr_ocr.h VjoVocrPolicy.head_gate, two_level),
+     * VJO_HEAD_* bits: VJO_HEAD_GATE skips the recognizer's output head on the frames the model's gate calls blank,
+     * VJO_HEAD_TWO_LEVEL computes a two-level blob's rare rows only on the frames its escape picks. config.ini
+     * ocr_head_gate = on (both, the default) | gate | two_level | off (neither: the full head on every frame, as
+     * before); the Shell sends the bits as they are (include/vjo_game_ocr.h VJO_GAME_OCR_S_HEAD_SHIFT). One key, not
+     * two: the normal Shell's code had 100 B of its last page left (docs/memory-ledger.md). Last, as above. */
+    int ocr_head_gate;        /* VJO_HEAD_* bits, 0-3 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
 #define VJO_TEXT_GATE_DEFAULT 0
 #define VJO_TEXT_GATE_DEFAULT_TEXT "off"
+/* ocr_head_gate's bits, its values' indices (off, gate, two_level, on), and its default (docs/vita-vn-ocr.md,
+ * "Head gate" and "Two-level head": why). */
+#define VJO_HEAD_GATE 1
+#define VJO_HEAD_TWO_LEVEL 2
+#define VJO_HEAD_GATE_DEFAULT (VJO_HEAD_GATE | VJO_HEAD_TWO_LEVEL)
+#define VJO_HEAD_GATE_DEFAULT_TEXT "on"
 
 void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and

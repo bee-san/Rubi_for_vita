@@ -77,8 +77,16 @@
  * in the dialogue's hook stream between jobs (vjoOcrHookLine); the region gets a new scene at once, held
  * while the line draws, VjoState.quiet is set meanwhile and the Shell is woken with VJO_EV_REGION_QUIET, so
  * its background read starts when the game copies the line, not when the pixels settle. Sizes and layouts
- * are unchanged; the Shell's code is too. 37-40 are taken by drafts #271, #278, #281 and #282. */
-#define VJO_API_VERSION 41
+ * are unchanged; the Shell's code is too. 37-40 are taken by drafts #271, #278, #281 and #282.
+ * 42: vita-vn-ocr #117's speed work in the game worker's recognizers (docs/vita-vn-ocr.md, "Head gate" and
+ * "Two-level head"): VjoGameOcrRequest.speed bit 18 (VJO_GAME_OCR_S_HEAD_GATE) skips the output head on the CTC
+ * frames a blob's head gate calls blank, and bit 19 (VJO_GAME_OCR_S_TWO_LEVEL) runs a blob's two-level head; the
+ * Shell sets them in the user's jobs from config.ini ocr_head_gate (on, the default: both; gate; two_level; off).
+ * A line either skipped something of is read again with the full head where the counter re-decode needs it. The
+ * model sizes' files are VOCR5_S_w8g.vocr, VOCR5_N_w8g2.vocr and VOCR5_L_w8g2.vocr; the recognize step's kind is
+ * the share of frames the gate skipped, in percent. Sizes and layouts are unchanged. The interfaces of closed
+ * drafts #281 (39) and #282 (40) have builds, so this is a new number. */
+#define VJO_API_VERSION 42
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

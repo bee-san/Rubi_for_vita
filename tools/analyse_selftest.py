@@ -995,6 +995,9 @@ LOG = {
     # (its threshold + 129 << 16, VJO_GLM_READ when the job read its weights from the card), sum the rows it took
     "gate": re.compile(r"^gstep job gate kind=(\S+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
                        r".*us=(\d+)"),
+    # API 42: the recognize step (VJO_GSTEP_RECOGNIZE): kind the share of its CTC frames (bytes) that vita-vn-ocr #117's
+    # head gate skipped, percent ("-" without the gate or when it skipped none), arg the lines recognized
+    "recognize": re.compile(r"^gstep job recognize kind=(?:-|(\d+)) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) "),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
     "conf": re.compile(r"ms c(\d+)(\*?)(\^?)"),
     # API 20: the text normalised (include/vjo_game_ocr.h VJO_GSTEP_NORM); API 36: kind the lines of a border
@@ -2268,6 +2271,21 @@ def render_presses(lg):
     return L
 
 
+def headgate_line(hg):
+    """API 42: the head gate's line of the --collect summary (vita-vn-ocr #117): the jobs whose recognizers skipped
+    frames, about how many of their CTC frames (each step's share is a whole percent, rounded down) and the shares'
+    span; none when no job recognized a line. A job that skipped none (or ran without the gate) logs kind=-."""
+    if not hg.get("jobs"):
+        return None
+    sh = sorted(hg["shares"])
+    line = f"  head gate: {hg['gated']} of {hg['jobs']} job(s) skipped frames"
+    if sh:
+        pct = 100 * hg["skipped"] / hg["frames"] if hg["frames"] else 0
+        line += (f": at least {hg['skipped']:,} of {hg['frames']:,} CTC frames ({pct:.1f}%); {sh[0]}-{sh[-1]}% a job, "
+                 f"median {sh[len(sh) // 2]}%")
+    return line
+
+
 def summarise_log(text):
     """log.txt (and log.old.txt): boot, games, every OCR job, memory, speed, the dictionary, the overlay, Anki."""
     s = {"lines": 0, "boot": [], "shell_starts": 0, "games": {}, "disabled": set(), "jobs": [], "captures": {}, "memory": [],
@@ -2289,6 +2307,7 @@ def summarise_log(text):
          "refine": {"jobs": 0, "boxes": 0, "lines": 0, "split": 0, "capped": 0, "rows": 0, "us": [], "rcs": {},
                     "modes": {}},
          "gate": {"jobs": 0, "stopped": 0, "lines_stopped": 0, "scores": [], "us": [], "rcs": {}, "reads": 0},
+         "headgate": {"jobs": 0, "gated": 0, "frames": 0, "skipped": 0, "shares": []},
          "par": {"jobs": 0, "helpers": [], "on_helpers": 0, "cached": 0, "not_started": 0, "share_min": [], "share_mean": []},
          "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
          "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0},
@@ -2426,6 +2445,16 @@ def summarise_log(text):
                 rf["rcs"][rc] = rf["rcs"].get(rc, 0) + 1
             rf["us"].append(int(m.group(6)))
             continue
+        m = LOG["recognize"].match(line)
+        if m:
+            hg, share, frames = s["headgate"], int(m.group(1) or 0), int(m.group(4))
+            hg["jobs"] += 1
+            hg["frames"] += frames
+            if share:
+                hg["gated"] += 1
+                hg["shares"].append(share)
+                hg["skipped"] += share * frames // 100  # the step's share is rounded down: a lower bound
+            # no continue: the job's other parsers read this line too
         m = LOG["gate"].match(line)
         if m:
             gt, packed = s["gate"], int(m.group(4))
@@ -3581,6 +3610,9 @@ def render_collect(c):
                      + f"; {_span(gt['us'])} us a job; weights read {gt['reads']} time(s)"
                      + ("; undecided (lines kept) after " + ", ".join(f"rc {r} x{n}" for r, n in sorted(gt["rcs"].items()))
                         if gt["rcs"] else ""))
+        hl = headgate_line(lg.get("headgate") or {})
+        if hl:
+            L.append(hl)
         nm = lg.get("norm") or {}
         if nm.get("jobs"):
             L.append(norm_line(nm))

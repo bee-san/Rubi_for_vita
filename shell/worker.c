@@ -1116,6 +1116,8 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     request.speed = stage >= 0 ? vjo_selftest_stage_speed((unsigned)stage, config_speed()) : config_speed();
     /* API 26: the text-presence gate, in the user's jobs (the self-test's stages read as before) */
     if (job_cfg.ocr_text_gate && stage < 0) request.speed |= VJO_GAME_OCR_S_GATE;
+    /* API 42: vita-vn-ocr #117's head gate and two-level head, ocr_head_gate's VJO_HEAD_* bits, in the user's jobs */
+    if (stage < 0) request.speed |= (uint32_t)job_cfg.ocr_head_gate << VJO_GAME_OCR_S_HEAD_SHIFT; /* 0-3: config.c */
     /* API 36: non_japanese_filter = lines (the default) also drops a line that is only a box's border read as
      * text, in the worker (core/textnorm.h), in the user's jobs; none keeps it, as do the self-test's stages */
     if (job_cfg.non_japanese_filter && stage < 0) request.speed |= VJO_GAME_OCR_S_DROP_BORDERS;
@@ -1777,6 +1779,10 @@ static void start_cursor_job(void)
 
 /* ---------------- control thread ---------------- */
 
+/* API 42: ocr_head_gate's VJO_HEAD_* bits (core/config.h) are the request's head bits, shifted (vocr_run_one) */
+typedef char vjo_head_bits_are_the_request_bits[(VJO_HEAD_GATE << VJO_GAME_OCR_S_HEAD_SHIFT) == VJO_GAME_OCR_S_HEAD_GATE &&
+    (VJO_HEAD_TWO_LEVEL << VJO_GAME_OCR_S_HEAD_SHIFT) == VJO_GAME_OCR_S_TWO_LEVEL ? 1 : -1];
+
 static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
 {
     if (a->non_japanese_filter != b->non_japanese_filter ||
@@ -1785,7 +1791,7 @@ static int same_pipeline(const VjoConfig *a, const VjoConfig *b)
     if (sceClibStrcmp(a->ocr_model_dir, b->ocr_model_dir) || a->ocr_skip_blank_lines != b->ocr_skip_blank_lines ||
         a->ocr_lm != b->ocr_lm || a->ocr_cascade_ms != b->ocr_cascade_ms ||
         a->ocr_refine_lines != b->ocr_refine_lines || a->vocr_tier != b->vocr_tier ||
-        a->ocr_text_gate != b->ocr_text_gate)
+        a->ocr_text_gate != b->ocr_text_gate || a->ocr_head_gate != b->ocr_head_gate)
         return 0;
     return !sceClibStrcmp(a->local_dictionary_dir, b->local_dictionary_dir) &&
            !sceClibStrcmp(a->local_dictionaries, b->local_dictionaries);

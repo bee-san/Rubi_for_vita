@@ -13,6 +13,24 @@ been reported.
 
 ### Changed
 
+- **OCR: faster reads with vita-vn-ocr's head gate and two-level head** (API 42; `config.ini`
+  `ocr_head_gate = on`, the default). The recognizers skip their output layer on the CTC frames a blob's head
+  gate calls blank, about three in five (vita-vn-ocr #120, all three sizes), and Normal's and Large's compute
+  their rare characters only on the frames that may need one (#122). The sizes now run `VOCR5_S_w8g.vocr`,
+  `VOCR5_N_w8g2.vocr` and `VOCR5_L_w8g2.vocr` (vita-vn-ocr pre-release v0.3.6-head2level.1: v0.3.0's
+  recognizers, with a 1,792 B gate each and, for Normal and Large, their output rows in frequency order and a
+  1,984 B trailer; every weight is v0.3.0's), and the runtime pin is vita-vn-ocr `47cf3a3`. On vita-vn-ocr's
+  development data no score was resolved worse; the estimated time per 3-line box at 333 MHz drops from
+  0.63 / 0.92 / 2.08 s to 0.51 / 0.72 / 1.82 s (Small / Normal / Large; estimates, nothing of it has run on a
+  console). A line whose counter re-decode finds a counter, or (two-level head) whose reading holds a
+  full-size カ or ケ before 月, 所, 年, 国 or 条, is read again with the full head (a ヶ the escape missed).
+  `ocr_head_gate = gate` or `two_level` keeps one of the two, `off` neither: the full head on every frame, as
+  before ([details](docs/vita-vn-ocr.md#head-gate-and-two-level-head-api-42)). Memory: the game worker takes
+  two pages (8,192 B) more in each game that is ON, in both builds; Normal's and Large's weights blocks are a page
+  larger, the largest job's workspace two; the Shell's pages are unchanged
+  ([measured](docs/memory-ledger.md#head-gate-and-two-level-head-api-42-vita-vn-ocr-120-and-122)).
+  Install all of this build's plugins together (the VPK's Install does): the game worker and the Shell must
+  both be API 42.
 - **Reading time in the Triangle view's statistics is adaptive** (`reading_time = adaptive` in
   `config.ini`, the default): each line counts the time until the next one, at most 2.5 times what your
   own pace in that game would take for it (2 s to 5 minutes), as GameSentenceMiner counts it, without its

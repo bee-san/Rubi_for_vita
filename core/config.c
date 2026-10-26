@@ -55,6 +55,7 @@ void vjo_config_defaults(VjoConfig *c)
     c->anki_screenshot_trim_bars = 1; /* its black bars trimmed unless anki_screenshot_trim_bars = off (docs/anki.md) */
     c->ocr_text_gate = VJO_TEXT_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Text-presence gate" */
     c->hook_sites = 1; /* the table sites with the CALL source; off: the CALL source alone */
+    c->ocr_head_gate = VJO_HEAD_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Head gate" and "Two-level head" */
 }
 
 const char *vjo_config_default_text(void)
@@ -139,6 +140,10 @@ const char *vjo_config_default_text(void)
            "; vocr: no lines where a text-presence gate sees no text (a hidden text box,\n"
            "; a CG screen): on | off\n"
            "ocr_text_gate = " VJO_TEXT_GATE_DEFAULT_TEXT "\n"
+           "; vocr: skip the recognizer's output layer on blank frames (gate) and compute\n"
+           "; its rare characters only where needed (two_level): on (both) | gate |\n"
+           "; two_level | off\n"
+           "ocr_head_gate = " VJO_HEAD_GATE_DEFAULT_TEXT "\n"
            "; vocr: lines read at once (1-3), 444 MHz while reading (on | off: the Rubi\n"
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
@@ -471,6 +476,13 @@ static void set_trigger(VjoConfig *c, const char *key, const char *val, int *dst
     warn(c, "%s: invalid value", key);
 }
 
+/* API 42: ocr_head_gate's name and its values' (core/config.h VJO_HEAD_*), in the data segment (core/port.h
+ * VJO_DATA_TABLE): the normal Shell's code segment had 100 B of its last page left, and these 29 B with the key's
+ * code took it 12 B past (docs/memory-ledger.md, "Head gate and two-level head"). */
+static const char head_key[] VJO_DATA_TABLE(config_head_key) = "ocr_head_gate";
+static const char head_gate_name[] VJO_DATA_TABLE(config_head_gate_name) = "gate";
+static const char head_two_name[] VJO_DATA_TABLE(config_head_two_name) = "two_level";
+
 static void set_kv(VjoConfig *c, const char *key, const char *val)
 {
     const StrSetting *ss;
@@ -582,6 +594,11 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
     } else if (vjo_ieq(key, "ocr_text_gate")) {
         static const char *const off_on[] VJO_DATA_TABLE(config_off_on_2) = {"off", "on", NULL};
         set_choice(c, key, val, &c->ocr_text_gate, off_on);
+    } else if (vjo_ieq(key, head_key)) {
+        /* each value's index is its VJO_HEAD_* bits */
+        static const char *const heads[] VJO_DATA_TABLE(config_heads_1) = {"off", head_gate_name, head_two_name, "on",
+                                                                             NULL};
+        set_choice(c, key, val, &c->ocr_head_gate, heads);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;

@@ -433,7 +433,8 @@ class AnalyseV2(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         lines = done.stdout.splitlines()
         for start in ("gstep job check kind=10 ", "gstep job lm kind=2 arg=1 ", "gstep job cascade kind=1 arg=1 ",
-                      "gstep job recognize kind=- arg=1 ", "gstep job refine kind=2 arg=16 "):
+                      "gstep job recognize kind=- arg=1 ", "gstep job refine kind=2 arg=16 ",
+                      "gstep job recognize kind=61 arg=3 rc=0x00000000 bytes=240 "):  # API 42: the head gate's share
             self.assertTrue(any(line.startswith(start) for line in lines), (start, lines))
         # the refine step as the formatter writes it, read back by --collect: its mode, boxes, splits,
         # the boxes not split for the 16-line cap and the rows read
@@ -480,6 +481,20 @@ class AnalyseV2(unittest.TestCase):
                              + step(0, -2, 0, False))["gate"]
         self.assertEqual(gt, {"jobs": 4, "stopped": 2, "lines_stopped": 2, "scores": [-109, -100, 127],
                               "us": [120, 120, 120, 120], "rcs": {-2: 1}, "reads": 1})
+
+    def test_the_recognize_step_counts_the_frames_the_head_gate_skipped(self):
+        # API 42 (VJO_GSTEP_RECOGNIZE): kind the share of the job's CTC frames (bytes) vita-vn-ocr #117's head gate
+        # skipped, percent; "-" without the gate or when it skipped none (and in every log before API 42)
+        def step(kind, frames):
+            return (f"gstep job recognize kind={kind} arg=3 rc=0x00000000 bytes={frames} sum=0x00000000 main=0 cdram=0 "
+                    f"phycont=0 us=500000\n")
+        hg = a.summarise_log(step("61", 240) + step("-", 100) + step("57", 89))["headgate"]
+        self.assertEqual(hg, {"jobs": 3, "gated": 2, "frames": 429, "skipped": 146 + 50, "shares": [61, 57]})
+        self.assertEqual(a.headgate_line(hg), "  head gate: 2 of 3 job(s) skipped frames: at least 196 of 429 CTC "
+                                              "frames (45.7%); 57-61% a job, median 61%")
+        hg = a.summarise_log(step("-", 100))["headgate"]
+        self.assertEqual(a.headgate_line(hg), "  head gate: 0 of 1 job(s) skipped frames")
+        self.assertIsNone(a.headgate_line(a.summarise_log("")["headgate"]))
 
     def test_the_vjonet_stack_line_keeps_the_largest_and_warns_near_the_top(self):
         # shell/worker.c net_stack_check: logged at a game exit when it grew; the summary keeps the largest

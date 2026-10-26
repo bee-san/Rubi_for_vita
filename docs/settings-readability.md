@@ -465,8 +465,8 @@ y = 112 (146 with the engine row), and the cards below move up with it
 (`settings/main.c` `OCR_Y`, `OCR_H`, `SELECTION_Y`). The row has its title, with
 "estimated" below it, and three 220-pixel buttons, 54 pixels tall and 13 apart
 (from x = 232), Small, Normal and Large, each with a second line, its estimated
-time for a 3-line textbox and the game memory a job of it takes (`0.6 s, 1.0 MB`,
-`0.9 s, 1.4 MB`, `2.1 s, 2.8 MB`, from `core/vocr_models.c`). The chosen size is
+time for a 3-line textbox and the game memory a job of it takes (`0.5 s, 1.0 MB`,
+`0.7 s, 1.4 MB`, `1.8 s, 2.8 MB`, from `core/vocr_models.c`). The chosen size is
 filled in the accent colour. The card's last line names the chosen size and its
 model (`Normal: default, balanced. VOCR5-N found.`), or that file missing.
 Up/Down select the size row and the three cards (four rows); on the size row

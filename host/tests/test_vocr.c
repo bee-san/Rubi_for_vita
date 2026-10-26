@@ -508,6 +508,10 @@ static void test_release_files(void)
         o.mode = VOCR_MODE_W8I;
         TEST_CHECK(vocr_load(&m, blob, all[i].bytes) == VOCR_OK);
         TEST_CHECK(vocr_check_crc(blob, all[i].bytes) == VOCR_OK);
+        /* API 42: a blob with a head gate is pinned with the arena its gate takes, a blob with a two-level head
+         * with the arena that takes too (ocr_head_gate = on, the default, turns both on) */
+        if (vocr_has_gate(&m)) o.head_gate = VOCR_HEAD_GATE_ON;
+        if (vocr_has_two_level(&m)) o.two_level = 1;
         TEST_CHECK(vocr_arena_bytes(&m, &o) == all[i].arena_bytes);
         TEST_MSG("%s: arena %zu, pinned %u", all[i].name, vocr_arena_bytes(&m, &o), all[i].arena_bytes);
         for (unsigned c = 1; c < m.n_classes; c++) {
@@ -538,8 +542,149 @@ static void test_release_files(void)
     TEST_MSG("%u models, %u model x LM workspaces checked", checked, lm_checked);
 }
 
+/* A whole file into a 16-byte aligned buffer (*bytes its size), or NULL. */
+static void *read_blob(const char *path, size_t *bytes)
+{
+    FILE *f = fopen(path, "rb");
+    void *b = NULL;
+    long n;
+    if (!f) return NULL;
+    if (fseek(f, 0, SEEK_END) || (n = ftell(f)) <= 0 || fseek(f, 0, SEEK_SET) ||
+        posix_memalign(&b, 16, (size_t)n) || fread(b, 1, (size_t)n, f) != (size_t)n) {
+        free(b);
+        b = NULL;
+    }
+    fclose(f);
+    *bytes = b ? (size_t)n : 0;
+    return b;
+}
+
+/* API 42, the off path (ocr_head_gate = off): each size's pinned blob, read with the head gate and the two-level
+ * head off, gives v0.3.0's every logit bit for bit. Small's blob is v0.3.0's bytes and a VOCG section; Normal's
+ * and Large's (w8g2) have their head rows and vocabulary permuted together, so their class j is v0.3.0's class
+ * perm[j], the same class text, with the same logit. So the greedy text (and the top-K, the LM decode and the
+ * counter re-decode, which map classes by text) are v0.3.0's except where two classes' logits tie exactly: the
+ * frames whose largest logit is tied are counted (none on these lines). Synthetic lines, every width class; needs
+ * v0.3.0's VOCR5_{S,N,L}_w8.vocr in VJO_VOCR_MODEL_DIR/v0.3.0 (not pinned since API 42: skipped without them). */
+static void test_off_path_reads_v030(void)
+{
+    static const char *const v030[3] = {"VOCR5_S_w8.vocr", "VOCR5_N_w8.vocr", "VOCR5_L_w8.vocr"};
+    static const char *const pinned[3] = {VJO_VOCR5_S_NAME, VJO_VOCR5_N_NAME, VJO_VOCR5_L_NAME};
+    static const unsigned widths[] = {96, 233, 400, 640, 777, 1000};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    unsigned tiers = 0;
+    if (!dir[0]) {
+        TEST_SKIP("VJO_VOCR_MODEL_DIR not set");
+        return;
+    }
+    for (unsigned t = 0; t < 3; t++) {
+        char po[600], pn[600];
+        size_t bo, bn;
+        void *old_blob, *new_blob;
+        vocr_model mo, mn;
+        vocr_opts o;
+        vocr_ctx co, cn;
+        void *ao = NULL, *an = NULL;
+        unsigned *perm, moved = 0, ties = 0, frames_all = 0, bad = 0;
+        snprintf(po, sizeof(po), "%s/v0.3.0/%s", dir, v030[t]);
+        snprintf(pn, sizeof(pn), "%s/%s", dir, pinned[t]);
+        old_blob = read_blob(po, &bo);
+        new_blob = read_blob(pn, &bn);
+        if (!old_blob || !new_blob) {
+            free(old_blob);
+            free(new_blob);
+            continue;
+        }
+        TEST_ASSERT(vocr_load(&mo, old_blob, bo) == VOCR_OK && vocr_load(&mn, new_blob, bn) == VOCR_OK);
+        TEST_CHECK(!vocr_has_gate(&mo) && vocr_has_gate(&mn) && !vocr_has_two_level(&mo));
+        TEST_CHECK(vocr_has_two_level(&mn) == (t > 0)); /* Small keeps the gate alone */
+        TEST_ASSERT(mo.n_classes == mn.n_classes && mo.height == mn.height && mo.stride == mn.stride);
+        /* each new class's v0.3.0 class: the same text (class 0, the blank, stays) */
+        TEST_ASSERT((perm = malloc(mn.n_classes * sizeof(*perm))) != NULL);
+        for (unsigned j = 0; j < mn.n_classes; j++) {
+            unsigned lj, li;
+            const char *tj = vocr_class_text(&mn, j, &lj);
+            perm[j] = ~0u;
+            for (unsigned i = 0; i < mo.n_classes && perm[j] == ~0u; i++) {
+                const char *ti = vocr_class_text(&mo, i, &li);
+                if (li == lj && !memcmp(ti, tj, lj)) perm[j] = i;
+            }
+            TEST_CHECK_(perm[j] != ~0u, "%s: class %u has no v0.3.0 class", pinned[t], j);
+            if (perm[j] == ~0u) perm[j] = 0;
+            moved += perm[j] != j;
+        }
+        TEST_CHECK(perm[0] == 0 && (t == 0 ? moved == 0 : moved > 0));
+        memset(&o, 0, sizeof(o));
+        o.mode = VOCR_MODE_W8I; /* head_gate VOCR_HEAD_GATE_OFF, two_level 0: the job with ocr_head_gate = off */
+        TEST_CHECK(vocr_arena_bytes(&mo, &o) == vocr_arena_bytes(&mn, &o)); /* v0.3.0's arena */
+        TEST_ASSERT(posix_memalign(&ao, 16, vocr_arena_bytes(&mo, &o)) == 0 &&
+                    posix_memalign(&an, 16, vocr_arena_bytes(&mn, &o)) == 0);
+        TEST_ASSERT(vocr_init(&co, &mo, &o, ao, vocr_arena_bytes(&mo, &o)) == VOCR_OK &&
+                    vocr_init(&cn, &mn, &o, an, vocr_arena_bytes(&mn, &o)) == VOCR_OK);
+        for (unsigned k = 0; k < sizeof(widths) / sizeof(widths[0]); k++) {
+            const unsigned w = widths[k], h = 40;
+            unsigned char *line = malloc((size_t)w * h);
+            const unsigned cap = vocr_resized_width(&mn, w, h) / mn.stride + 1;
+            float *lo = malloc((size_t)cap * mo.n_classes * sizeof(float));
+            float *ln = malloc((size_t)cap * mn.n_classes * sizeof(float));
+            char to[1024], tn[1024];
+            vocr_image img = {line, w, h, w, VOCR_GREY8};
+            vocr_extra eo, en;
+            uint32_t r = 0x9E3779B9u ^ (w * 2654435761u);
+            TEST_ASSERT(line && lo && ln);
+            /* light paper and dark strokes of every width: glyph-like bars, some long, some dots */
+            memset(line, 230, (size_t)w * h);
+            for (unsigned x = 2; x + 3 < w;) {
+                unsigned bw, y0, y1;
+                r = r * 1664525u + 1013904223u;
+                bw = 1 + (r >> 28);
+                y0 = 4 + ((r >> 8) % 12u);
+                y1 = h - 4 - ((r >> 16) % 12u);
+                for (unsigned y = y0; y < y1; y++)
+                    for (unsigned dx = 0; dx < bw && x + dx < w; dx++) line[(size_t)y * w + x + dx] = (unsigned char)(20 + (r & 63));
+                x += bw + 1 + ((r >> 4) & 7u);
+            }
+            memset(&eo, 0, sizeof(eo));
+            memset(&en, 0, sizeof(en));
+            eo.logits = lo;
+            en.logits = ln;
+            eo.cap_frames = en.cap_frames = cap;
+            TEST_CHECK(vocr_run(&co, &img, to, sizeof(to), &eo) == VOCR_OK);
+            TEST_CHECK(vocr_run(&cn, &img, tn, sizeof(tn), &en) == VOCR_OK);
+            TEST_CHECK(eo.frames == en.frames && eo.frames > 0 && !en.gated && !en.escaped);
+            for (unsigned f = 0; f < en.frames && f < cap; f++) {
+                const float *a = lo + (size_t)f * mo.n_classes, *b = ln + (size_t)f * mn.n_classes;
+                float best = a[0];
+                unsigned at_best = 0;
+                for (unsigned j = 0; j < mn.n_classes; j++)
+                    if (memcmp(&b[j], &a[perm[j]], sizeof(float))) bad++;
+                for (unsigned i = 1; i < mo.n_classes; i++)
+                    if (a[i] > best) best = a[i];
+                for (unsigned i = 0; i < mo.n_classes; i++) at_best += a[i] == best;
+                ties += at_best > 1;
+                frames_all++;
+            }
+            if (!ties) TEST_CHECK_(!strcmp(to, tn), "%s at %u px: '%s' against v0.3.0's '%s'", pinned[t], w, tn, to);
+            free(line);
+            free(lo);
+            free(ln);
+        }
+        TEST_CHECK_(bad == 0, "%s: %u logits differ from v0.3.0's", pinned[t], bad);
+        printf("off path: %s: %u frames, every logit of %u classes v0.3.0's (%u moved), %u tied maxima\n", pinned[t],
+               frames_all, mn.n_classes, moved, ties);
+        free(perm);
+        free(ao);
+        free(an);
+        free(old_blob);
+        free(new_blob);
+        tiers++;
+    }
+    if (!tiers) TEST_SKIP("no v0.3.0 VOCR5 blobs in VJO_VOCR_MODEL_DIR/v0.3.0");
+}
+
 /* The device default is the Normal size (test_tier_pins.h: VOCR5-N, bee-san/vita-vn-ocr
- * v0.3.0's VOCR5_N_w8.vocr), Small VOCR5-S and Large VOCR5-L; each within its size's ceilings
+ * v0.3.6-head2level.1's VOCR5_N_w8g2.vocr: v0.3.0's VOCR5_N_w8.vocr with its head gate and two-level head), Small
+ * VOCR5-S and Large VOCR5-L; each within its size's ceilings
  * (the owner's int8 weights, 2026-10-14 18:09Z: Small < 1 MB, Normal <= 1.6 MB, Large
  * <= 2.5 MB; the arenas of vita-vn-ocr docs/model-tiers.md 1.3: 128 KiB, 256 KiB,
  * 1.25 MiB), and a larger size larger. VOCR3's and v0.2.0's models stay accepted
@@ -640,6 +785,7 @@ TEST_LIST = {
     {"a_changed_screen_is_read_again_then_refused", test_changed_screen_is_read_again},
     {"a_full_frame_goes_through_strips", test_full_frame_in_strips},
     {"pinned_table_matches_release_files", test_release_files},
+    {"the_off_path_reads_v030s_logits_bit_for_bit", test_off_path_reads_v030},
     {NULL, NULL}
 };
 

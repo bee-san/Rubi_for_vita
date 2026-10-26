@@ -177,6 +177,14 @@ static VjoGameOcrStep *step_add(unsigned id, unsigned kind, unsigned arg, int32_
     return s;
 }
 
+/* API 42: the share of the job's CTC frames whose output head the head gate skipped, percent (its own model's
+ * and the cascade's readings), for the recognize step's kind. */
+static unsigned head_gated_percent(const VjoVocrStats *st)
+{
+    const uint32_t all = st->frames + st->cascade_frames;
+    return all ? (unsigned)((uint64_t)st->head_gated * 100u / all) : 0u;
+}
+
 /* The confidence cascade's step (include/vjo_game_ocr.h VJO_GSTEP_CASCADE). */
 static void cascade_step(const VjoVocrStats *st)
 {
@@ -1351,6 +1359,8 @@ static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
     p->settle_first = (r->flags & VJO_GAME_OCR_F_SETTLE_FIRST) != 0;
     p->blank = (r->flags & VJO_GAME_OCR_F_BLANK) != 0;
     p->gate = (r->speed & VJO_GAME_OCR_S_GATE) != 0; /* API 26: the text-presence gate */
+    p->head_gate = (r->speed & VJO_GAME_OCR_S_HEAD_GATE) != 0; /* API 42: the head gate */
+    p->two_level = (r->speed & VJO_GAME_OCR_S_TWO_LEVEL) != 0;  /* API 42: the two-level head */
     p->gate_res = &gate_res;
     p->sleep = policy_sleep;
     /* API 22: helpers, the line cache, the clock around the recognitions. */
@@ -1956,8 +1966,9 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     /* The cache's entries are those of jobs with this LM (bits 0-2), cascade (bit 3),
      * cascade ceiling (ms, bits 4-15: at most 3,750), cascade model (since API 21 the
      * next tier up of the job's, so a Small job's is Normal's model and a Normal one's Large's: its
-     * index among the pinned models + 1, bits 16-23), refinement (bits 24-28) and the counter
-     * re-decode (bit 29). */
+     * index among the pinned models + 1, bits 16-23), refinement (bits 24-28), the counter
+     * re-decode (bit 29), the head gate (bit 30) and the two-level head (bit 31; API 42: a line either read can
+     * differ in rare frames). */
     unsigned casc_index = 0;
     if (casc) {
         unsigned count = 0;
@@ -1967,7 +1978,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     }
     policy.cache_variant = (lm ? lm->tier : 0u) | (casc ? 8u : 0u) | (uint32_t)(casc_us / 1000u) << 4 |
                            (uint32_t)casc_index << 16 | refine << 24 |
-                           (policy.counter_tau || policy.counter_open ? 1u << 29 : 0u);
+                           (policy.counter_tau || policy.counter_open ? 1u << 29 : 0u) |
+                           (policy.head_gate ? 1u << 30 : 0u) | (policy.two_level ? 1u << 31 : 0u);
     helper_pool.helpers = use_helpers;
     helper_creates = helper_create_failures = 0;
     open_which = cand[used].which;
@@ -2011,7 +2023,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         step_add(VJO_GSTEP_LOAD, stats.model_loaded ? VJO_GAME_OCR_WEIGHTS_READ : VJO_GAME_OCR_WEIGHTS_RESIDENT,
                  stats.warmed, 0, resident_bytes(), 0, stats.load_us, 1);
     if (stats.lines)
-        step_add(VJO_GSTEP_RECOGNIZE, 0, stats.recognized, rc, stats.frames, stats.tall_skipped, stats.recognize_us, 0);
+        step_add(VJO_GSTEP_RECOGNIZE, head_gated_percent(&stats), stats.recognized, rc, stats.frames, stats.tall_skipped,
+                 stats.recognize_us, 0);
     if (lm && (stats.lines || stats.lm_loaded || (stats.warmed && stats.lm_rc))) { /* also the warm-up's read */
         unsigned low = 0;
         for (unsigned i = 0; i < stats.recognized && i < VJO_VOCR_MAX_LINES; i++)
