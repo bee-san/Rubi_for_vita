@@ -10,7 +10,7 @@ and Yomichan's old bare `な` rule, which Yomitan dropped) and adds Yomitan's ru
 that Rubi lacked (しておく, 変わらん, しちゃ, 戻らなきゃ, 認めざる, 返さねば, しやがって, 聞きやしねえ,
 いたしまして, 知らねー). Most of the remaining difference is by design or in the frozen dictionary:
 Rubi's grammar-point entries, which spelling of a word heads the entry, and reading ties in Jiten's
-ranks ([remaining](#what-remains)). Rubi shows no pitch accents at all, where Yomitan with a
+ranks ([remaining](#what-remains), [#321](https://github.com/bee-san/Rubi_for_vita/issues/321)). Rubi shows no pitch accents at all, where Yomitan with a
 pitch dictionary shows one on 549 of every 1,000 taps. All of this is host measurement; nothing here
 has run on a console.
 
@@ -101,7 +101,7 @@ the table is packed ([memory ledger](../docs/memory-ledger.md#yomitans-deinflect
 ## What remains
 
 None of these is a clear bug in the lookup code; they are design choices, the frozen dictionary's data,
-or missing data, for the owner to decide ([issue](#)):
+or missing data, for the owner to decide ([#321](https://github.com/bee-san/Rubi_for_vita/issues/321)):
 
 - **Pitch accents (548.68 / 1,000).** Rubi's files have no pitch data and the popup has no pitch line;
   `VjoVocab.pitch` and the Anki card's pitch fields stay empty. Kanjium's accents (124,137 rows, 3.2 MB
