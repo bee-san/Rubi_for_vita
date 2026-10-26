@@ -137,6 +137,17 @@ Two lists name them:
     - PCSG00469 CLOCK ZERO ～終焉の一秒～ ExTime, NID 0x31270870, +0x27A9C, Thumb, r0, UTF-8, filter `RF_PCSG00469`; 2047 farm pages
     - PCSG00853 ピリオドキューブ～鳥籠のアマデウス～, NID 0xA92335D4, +0x7DF2, Thumb, r5, UTF-8, filter `RF_PCSG00853`; 749 farm pages
 
+  - LunaTranslator sites that Rubi's placement check refuses (not a function entry, or a window instruction off the allow-list), which the psandvita Vita3K farm proved at the same address and register (r12 + 8 in Luna's PCSG00745 entry; the farm's r5 is recorded). Proven in Vita3K only; patched bytes checked as above. Filter 0: Luna's filter at the address:
+    - PCSG00468 黒蝶のサイケデリカ, NID 0x4DB3D205, +0x3F538, Thumb, r1, UTF-8, filter Luna's at its address; 412 farm pages
+    - PCSG00696 アンジェリーク ルトゥール, NID 0x519F46E7, +0x87D1A, Thumb, r1, CP932, filter Luna's at its address; 127 farm pages
+    - PCSG00745 スカーレッドライダーゼクス Rev., NID 0xC30CA4C1, +0x82D4, Thumb, r5, UTF-8, filter Luna's at its address; 410 farm pages
+    - PCSG00808 悠久のティアブレイド -Lost Chronicle-, NID 0x8C990BE1, +0x3142A, Thumb, r10, UTF-8, filter Luna's at its address; 488 farm pages
+    - PCSG00852 マジきゅんっ！　ルネッサンス, NID 0x8DFD228D, +0x7F75A, Thumb, r1, CP932, filter Luna's at its address; 278 farm pages
+    - PCSG00916 Starry☆Sky ～Summer Stories～, NID 0x4813A011, +0x30114, Thumb, r0, CP932, filter Luna's at its address; 949 farm pages
+    - PCSG00935 BLACK WOLVES SAGA  -Weiβ und Schwarz-, NID 0x8EA89B16, +0x541A2, Thumb, r0, UTF-8, filter Luna's at its address; 387 farm pages
+    - PCSG01075 悠久のティアブレイド -Fragments of Memory-, NID 0x8ECBA36A, +0x31F44, Thumb, r10, UTF-8, filter Luna's at its address; 333 farm pages
+    - PCSG01221 紅色天井艶妖綺譚 二藍, NID 0x1A9CF884, +0x3B554, Thumb, r4, CP932, filter Luna's at its address; 5 farm pages
+
   An entry is hooked only when the module NID and every recorded byte match. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text
   (`vjo_luna_site_at`); the Luna site is then skipped as hooked. Two more fields, both 0 by default:

@@ -177,6 +177,34 @@ static const VjoPlaceVerified verified[] = {
     /* PCSG00853 ピリオドキューブ～鳥籠のアマデウス～ (APP_VER 01.00): Vita3K 0x81007df2, 749 farm pages (paired-vita-pcsg00853-20261023); patch: movw r0, #0x1098; adds r0, r4, r0; ldrsb.w r4, [r5]; movs.w r9, #0x0; Luna's site here (r5, filter PCSG00530) */
     {"PCSG00853", 0xA92335D4u, 0x7DF2u, 1, 5, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x41, 0xF2, 0x98, 0x00, 0x20, 0x18, 0x95, 0xF9, 0x00, 0x40, 0x5F, 0xF0, 0x00, 0x09, 0xE8, 0x90}, VJO_RF_PCSG00853, 0},
+    /* Luna sites the placement check refuses, unlocked by their signature (psandvita farm, Vita3K only): filter 0 takes Luna's filter at the address */
+    /* PCSG00468 黒蝶のサイケデリカ (APP_VER 01.00): Vita3K 0x8103f538, 412 farm pages (paired-vita-pcsg00468-20261023); patch: ldr r2, [r5]; subs r2, r4, r2; strd r7, r9, [sp]; Luna's site here (r1, filter FPCSG00468) */
+    {"PCSG00468", 0x4DB3D205u, 0x3F538u, 1, 1, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x2A, 0x68, 0xA2, 0x1A, 0xCD, 0xE9, 0x00, 0x79, 0x57, 0x1E, 0xCD, 0xE9, 0x02, 0x85, 0x72, 0x46}, 0, 0},
+    /* PCSG00696 アンジェリーク ルトゥール (APP_VER 01.00): Vita3K 0x81087d1a, 127 farm pages (paired-vita-pcsg00696-20261023); patch: ldr.w r0, [r7, #0x9c]; adds r0, #0x1; str.w r0, [r7, #0x9c]; cmp r0, #0x20; Luna's site here (r1, filter FPCSG00696) */
+    {"PCSG00696", 0x519F46E7u, 0x87D1Au, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+     {0xD7, 0xF8, 0x9C, 0x00, 0x01, 0x30, 0xC7, 0xF8, 0x9C, 0x00, 0x20, 0x28, 0x05, 0xD3, 0x00, 0x20}, 0, 0},
+    /* PCSG00745 スカーレッドライダーゼクス Rev. (APP_VER 01.00): Vita3K 0x810082d4, 410 farm pages (paired-vita-pcsg00745-20261023); patch: vcvt.s32.f32 s2, s19; ldr r0, [r4]; adds r1, r6, #0x0; Luna's site here (r12, filter PCSG01247) */
+    {"PCSG00745", 0xC30CA4C1u, 0x82D4u, 1, 5, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0xBD, 0xEE, 0xE9, 0x1A, 0x20, 0x68, 0x31, 0x1C, 0xB0, 0xEE, 0x68, 0x0A, 0x40, 0x68, 0x2A, 0x1C}, 0, 0},
+    /* PCSG00808 悠久のティアブレイド -Lost Chronicle- (APP_VER 01.00): Vita3K 0x8103142a, 488 farm pages (paired-vita-pcsg00808-20261023); patch: adds.w r6, r4, #0x40; movw r2, #0x2fa8; adds r0, r6, #0x0; movt r2, #0x8121; Luna's site here (r10, filter FPCSG00808) */
+    {"PCSG00808", 0x8C990BE1u, 0x3142Au, 1, 10, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x14, 0xF1, 0x40, 0x06, 0x42, 0xF6, 0xA8, 0x72, 0x30, 0x1C, 0xC8, 0xF2, 0x21, 0x12, 0x53, 0x46}, 0, 0},
+    /* PCSG00852 マジきゅんっ！　ルネッサンス (APP_VER 01.00): Vita3K 0x8107f75a, 278 farm pages (paired-vita-pcsg00852-20261023); patch: movw r3, #0x2980; movt r3, #0x810d; vldr s1, [r3, #12]; Luna's site here (r1, filter FPCSG00852) */
+    {"PCSG00852", 0x8DFD228Du, 0x7F75Au, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x42, 0xF6, 0x80, 0x13, 0xC8, 0xF2, 0x0D, 0x13, 0xD3, 0xED, 0x03, 0x0A, 0x96, 0x46, 0x93, 0xED}, 0, 0},
+    /* PCSG00916 Starry☆Sky ～Summer Stories～ (APP_VER 01.00): Vita3K 0x81030114, 949 farm pages (paired-vita-pcsg00916-20261023); patch: bfi r3, r2, #8, #8; sxth.w lr, r3; Luna's site here (r0, filter FPCSG00912) */
+    {"PCSG00916", 0x4813A011u, 0x30114u, 1, 0, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x62, 0xF3, 0x0F, 0x23, 0x0F, 0xFA, 0x83, 0xFE, 0x41, 0xF2, 0xC4, 0x30, 0xAD, 0xF8, 0xA8, 0xE0}, 0, 0},
+    /* PCSG00935 BLACK WOLVES SAGA  -Weiβ und Schwarz- (APP_VER 01.00): Vita3K 0x810541a2, 387 farm pages (paired-vita-pcsg00935-20261023); patch: push {r4, lr}; movw r2, #0xd3ac; adds r4, r2, #0x0; movt r4, #0x816f; Luna's site here (r0, filter PCSG00766) */
+    {"PCSG00935", 0x8EA89B16u, 0x541A2u, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x10, 0xB5, 0x4D, 0xF2, 0xAC, 0x32, 0x14, 0x1C, 0xC8, 0xF2, 0x6F, 0x14, 0x01, 0x1C, 0x14, 0xF1}, 0, 0},
+    /* PCSG01075 悠久のティアブレイド -Fragments of Memory- (APP_VER 01.00): Vita3K 0x81031f44, 333 farm pages (paired-vita-pcsg01075-20261023); patch: adds.w r6, r4, #0x40; movw r2, #0x446c; Luna's site here (r10, filter FPCSG01075) */
+    {"PCSG01075", 0x8ECBA36Au, 0x31F44u, 1, 10, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x14, 0xF1, 0x40, 0x06, 0x44, 0xF2, 0x6C, 0x42, 0x30, 0x1C, 0xC8, 0xF2, 0x22, 0x12, 0x53, 0x46}, 0, 0},
+    /* PCSG01221 紅色天井艶妖綺譚 二藍 (APP_VER 01.00): Vita3K 0x8103b554, 5 farm pages (paired-vita-pcsg01221-20261023); patch: movw r0, #0xb8c8; movt r0, #0x812f; Luna's site here (r4, filter FPCSG00852) */
+    {"PCSG01221", 0x1A9CF884u, 0x3B554u, 1, 4, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x4B, 0xF6, 0xC8, 0x00, 0xC8, 0xF2, 0x2F, 0x10, 0x02, 0x68, 0x42, 0xF6, 0x3C, 0x60, 0xC8, 0xF2}, 0, 0},
 };
 #define VERIFIED_N (sizeof(verified) / sizeof(verified[0]))
 
