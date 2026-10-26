@@ -39,6 +39,13 @@ _Static_assert(sizeof(HOOK_ENGINE) == LINE_SOURCE, "both sources' line_source ce
 /* Only fingerprints survive a call. No text or file-size-dependent memory. */
 static uint64_t previous_text;
 static uint32_t previous_game, previous_length;
+/* API 49: the newest record's place in the file, its time, and the last append's: a line that grew since (a hook
+ * that gives its text as it types: the text it was, then more, each part read at once) replaces that record, at the
+ * same time, instead of adding one. A typed line's parts come a fraction of a second apart; a reader's next line,
+ * even one that starts with the last (a page that collects its lines), comes later. */
+static SceOff previous_start, previous_end;
+static uint64_t previous_us, previous_append_us;
+#define GROWN_GAP_US 750000ull
 
 /* The reading total (docs/ocr-history.md#total-characters-read), which the overlay's Triangle view shows:
  * the characters of the lines of history.csv's first `covered` bytes. The writer adds each record's as it
@@ -164,10 +171,10 @@ int vjo_history_append(const VjoHistoryRecord *r)
     };
 #undef OFFSET
     const VjoGameOcrResult *o;
-    uint64_t hash = 14695981039346656037ull;
+    uint64_t hash = 14695981039346656037ull, prefix = 0, us;
     uint32_t game = 2166136261u;
     size_t len = 0;
-    int visible = 0, rc, closed;
+    int visible = 0, rc, closed, grown;
     uint32_t chars;
     SceOff start;
     HistoryWriter w = {.fd = -1};
@@ -178,6 +185,7 @@ int vjo_history_append(const VjoHistoryRecord *r)
         unsigned char c = (unsigned char)o->text[len++];
         hash = (hash ^ c) * 1099511628211ull;
         visible |= c > ' ';
+        if (len == previous_length) prefix = hash; /* the text's first part, as long as the newest record's */
     }
     if (len == sizeof(o->text)) return -1;
     if (!visible) { vjo_history_reset(); return 0; }
@@ -187,6 +195,15 @@ int vjo_history_append(const VjoHistoryRecord *r)
     for (size_t i = 0; i < sizeof(r->title_id) && r->title_id[i]; i++)
         game = (game ^ (unsigned char)r->title_id[i]) * 16777619u;
     if (previous_text == hash && previous_length == len && previous_game == game) return 0;
+    grown = previous_text && prefix == previous_text && previous_game == game && len > previous_length &&
+            r->time_us >= previous_append_us && r->time_us - previous_append_us < GROWN_GAP_US;
+    if (grown) { /* the newest record goes: this one takes its place, its time and its ID */
+        SceIoStat st;
+        sceClibMemset(&st, 0, sizeof(st));
+        st.st_size = previous_start;
+        if (sceIoChstat(HISTORY_PATH, &st, SCE_CST_SIZE) < 0) grown = 0;
+    }
+    us = grown ? previous_us : r->time_us;
     w.fd = sceIoOpen(HISTORY_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0666);
     if (w.fd < 0) return w.fd;
     start = sceIoLseek(w.fd, 0, SCE_SEEK_END);
@@ -199,15 +216,14 @@ int vjo_history_append(const VjoHistoryRecord *r)
     put(&w, '-');
     literal(&w, r->title_id);
     literal(&w, "\",\"");
-    sceClibSnprintf(text, sizeof(text), id_format, (unsigned long long)r->time_us,
-                    (unsigned long long)start);
+    sceClibSnprintf(text, sizeof(text), id_format, (unsigned long long)us, (unsigned long long)start);
     literal(&w, text);
     literal(&w, "\",");
     field(&w, r->name[0] ? r->name : r->title_id, r->name[0] ? sizeof(r->name) : sizeof(r->title_id));
     put(&w, ',');
     field(&w, o->text, len);
-    sceClibSnprintf(text, sizeof(text), time_format, (unsigned long long)(r->time_us / 1000000ull),
-                    (unsigned)(r->time_us % 1000000ull));
+    sceClibSnprintf(text, sizeof(text), time_format, (unsigned long long)(us / 1000000ull),
+                    (unsigned)(us % 1000000ull));
     literal(&w, text);
     field(&w, r->platform, 16);
     put(&w, ','); field(&w, r->title_id, sizeof(r->title_id));
@@ -247,17 +263,25 @@ int vjo_history_append(const VjoHistoryRecord *r)
         st.st_size = start;
         sceIoChstat(HISTORY_PATH, &st, SCE_CST_SIZE);
     } else {
+        SceOff end = start + w.written, was_end = previous_end;
         previous_text = hash;
         previous_game = game;
         previous_length = (uint32_t)len;
+        previous_start = start;
+        previous_end = end;
+        previous_us = us;
+        previous_append_us = r->time_us;
         /* the total: this record's characters, when it is the next one after the total's bytes */
         vjo_view_lock();
         if (total.state == TOTAL_KNOWN) {
-            SceOff end = start + w.written;
-            if (total.covered == start && !(end >> 32)) {
-                vjo_reading_scope_add(&total.time, &total.scope, r->time_us, game, chars);
+            if (grown && total.covered == was_end && !(end >> 32)) { /* the line it replaces was counted: its growth */
+                total.chars += vjo_reading_scope_grow(&total.time, &total.scope, us, chars);
+                total.covered = (uint32_t)end;
+                g_view.version++;
+            } else if (total.covered == start && !(end >> 32)) {
+                vjo_reading_scope_add(&total.time, &total.scope, us, game, chars);
                 total.chars += total.time.last_chars;
-                if (total.scope.end_us && r->time_us >= total.scope.end_us) total.requested = 1;
+                if (total.scope.end_us && us >= total.scope.end_us) total.requested = 1;
                 total.covered = (uint32_t)end;
                 g_view.version++;
             } else { /* the file is not the one the total is of, or has more (or 4 GiB): the control thread

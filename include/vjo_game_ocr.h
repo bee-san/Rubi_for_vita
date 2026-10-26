@@ -471,6 +471,12 @@ typedef struct {
  * expanded as core/fbgrey.h does), 4 bytes a pixel: a shot's rows, and only a shot's; never
  * with SIG or LAST (a shot publishes no capture). dst_stride >= 4 x the width. */
 #define VJO_ROWS_RGBA 0x4u
+/* API 49: no rows (n 0, dst NULL, dst_stride 0): a trusted hook answers the claimed region job (API 43), so its
+ * capture is published without reading a pixel, as the scene of the newest line a trusted hook reported
+ * (VjoState.hook_scene), while the region still shows that scene: 0, and the Shell takes the job's text for that
+ * screen. Any other scene (a menu over the line, an untrusted line since): VJO_ERR_FORMAT, and the worker reads
+ * the first pass as before. Never with another VJO_ROWS_* flag, nor for a full-frame, probe or shot job. */
+#define VJO_ROWS_HOOK 0x8u
 #define VJO_GAME_OCR_ROWS_MAX 64u  /* rows per call */
 #define VJO_GAME_OCR_KSTRIP_MAX (64u * 1024u) /* the kernel strip's largest size */
 
@@ -501,7 +507,12 @@ typedef struct {
 extern "C" {
 #endif
 int vjoOcrRegister(void); /* Current active game, verified module; retry at startup. */
-int vjoOcrTake(VjoGameOcrRequest *out); /* 0 claimed, 1 no job, <0 error. */
+/* 0 claimed, 1 no job, <0 error. With nothing queued the kernel waits for a submission at most TAKE_WAIT_US
+ * (100 ms), or (API 49) out->seq microseconds when the caller sets it lower before the call (0: TAKE_WAIT_US; at
+ * least VJO_GAME_OCR_TAKE_WAIT_MIN_US, so a buffer reused with an old job's number never spins): the worker's watch
+ * of a trusted hook polls the stream at that pace (game_ocr/main.c HOOK_WATCH_US). */
+#define VJO_GAME_OCR_TAKE_WAIT_MIN_US 4000u
+int vjoOcrTake(VjoGameOcrRequest *out);
 int vjoOcrCancelled(uint32_t seq); /* Worker: 0 active, 1 cancelled, <0 stale. */
 /* Worker: rows of the claimed job's region into dst (memory of the calling
  * process), copied by the display hook from the next frame the game shows, or
@@ -554,6 +565,10 @@ int vjoOcrHookCache(uint32_t seq, uint32_t operation, void *data);
  * drawing (lines in quick succession, a skip), the same but nobody is woken: 1. VJO_ERR_PERM for any other
  * caller; VJO_ERR_BUSY while a job is claimed. */
 int vjoOcrHookLine(uint32_t seq, uint32_t bytes);
+/* API 49, in vjoOcrHookLine's bytes: the line is a trusted source's (API 43, VJO_HOOK_R_TRUSTED): the Shell is
+ * woken even while the last line still draws (0, never 1), and the scene is VjoState.hook_scene until the region
+ * shows another, so the Shell reads it at once and VJO_ROWS_HOOK publishes it. */
+#define VJO_HOOK_LINE_TRUSTED 0x80000000u
 #ifdef __cplusplus
 }
 #endif

@@ -28,6 +28,7 @@ static void reset_change_detection(void)
 {
     scene_reset(&g.tracker);
     g.region_seq = 0; /* for another region */
+    g.hook_scene = 0; /* API 49: the tracker's numbers start again */
     g.seen_sig_seq = g.hook_sig_seq;
 }
 
@@ -261,6 +262,10 @@ int vjoGetState(VjoState *out)
         s.region_seq = g.region_seq;
         s.region_scene = scene_match_since(&g.tracker, &g.capture_sig, g.region_us);
     }
+    /* API 49: while the region still shows the trusted line's scene (the tracker holds a hooked line's number
+     * while it draws and through an icon's changes, kernel/scene.h) */
+    if (g.hook_scene == g.tracker.id && g.tracker.hook_us)
+        s.hook_scene = g.hook_scene;
     VJO_UNLOCK();
     s.width = g.crop_w;
     s.height = g.crop_h;

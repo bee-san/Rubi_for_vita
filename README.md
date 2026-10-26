@@ -174,7 +174,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries for the same word an L or R tap pages through, 1–8 (2: a word, then the same word as a character's name) | 2 |
 | | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
-| | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all ([details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
+| | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready as soon as the game writes it ([details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns in every game) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |

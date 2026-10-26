@@ -959,8 +959,8 @@ lines, and it does lose some:
 `tools/gate_eval.py` runs `host/gate_eval.c`, the worker's job policy on the host (`core/vocr_ocr.c` with Rubi's finder,
 the gate at its pinned point, VOCR5 Normal with the 1 MB LM and the cascade, PSP regions refined, a PSP page scaled
 2x as Adrenaline shows it; measured before #307's head gate, on vita-vn-ocr `817d203` and VOCR5 v0.3.0's files: the
-gate scores the finder's boxes, which #307 does not change), on every page of vita-vn-ocr's hooked page pool (`vocr6-ingest` `pagepool/v1`: 47 games,
-31 Vita and 16 PSP, whose hook text was verified against the drawn glyphs; PCSG00007, PCSG00866 and PCSG00807 are left
+gate scores the finder's boxes, which #307 does not change), on every page of vita-vn-ocr's hooked page pool (`vocr6-ingest` `pagepool/v1`: 46 games,
+30 Vita and 16 PSP, whose hook text was verified against the drawn glyphs; PCSG00007, PCSG00866 and PCSG00807 are left
 out, as they share releases with CLANNAD and vita-test, or are the pool's test title), in three regions a page: its
 own dialogue region, the one region a player would draw for the game (around the dialogue of almost every page), and
 the whole screen (Rubi's region until one is drawn). A region the gate stops loses its verified lines; each stopped
@@ -978,9 +978,15 @@ region's hook text (similarity 700 or more) [measured, host; no console claim]:
 
 Most of the stopped lines are `……` (no letter: 189 of the 363 in the Vita games' one region) or one or two
 characters (「え？」: 94 more). A lower threshold does not separate them: at -96, where 39 of those 363 lines are
-still stopped, only 7 of the 90 text-free regions are. On vita-vn-ocr's text-free development and holdout regions
+still stopped, the gate stops only 5 of the 90 text-free regions (7 are left without a line, counting the 2 where
+the finder finds none). On vita-vn-ocr's text-free development and holdout regions
 (eval/linefind's 92, 90 with their screenshot here) it leaves 81 without a line, against 2 without it. Lines OCR would have read are lost in every kind of region, so
-the gate is not the default; **Skip OCR on screens without text** on the Rubi app's OCR & lookup page turns it on.
+the gate is not the default: the owner's rule for a default is that it loses no real line, which every kind of
+region fails on both platforms. (The rule written down before the run, the user region's raw rate of stopped lines
+and at least 0.85 of the text-free regions stopped, fails too: 0.66 % on Vita, 0.97 % on PSP, and 38 of 45 Vita
+text-free regions, 0.84. The lines-OCR-would-have-read column is a measure chosen after it: on Rubi's own
+similarity, `core/hook_select.c`'s, the user region's are 0.005 % on Vita and 0.093 % on PSP [audit-rubi-ocr-skip's
+recount].) **Skip OCR on screens without text** on the Rubi app's OCR & lookup page turns it on.
 A better gate (vita-vn-ocr's VOCR6 spotter, whose text-presence score was not ready) would be measured the same way.
 
 The cheaper check, an unchanged screen, is already in place and needs no setting: the kernel starts no background

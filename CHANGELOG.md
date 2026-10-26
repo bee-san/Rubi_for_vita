@@ -13,6 +13,18 @@ been reported.
 
 ### Added
 
+- **Trusted hooks without waiting** (API 49; with **Trusted hooks replace OCR** on, the default): a trusted hook's
+  new line is ready to look up as soon as the game writes it, as with a hook on a computer. The worker polls the
+  hook every 16 ms (was 100 ms) and reports each trusted line at once (no 200 ms gap; the same text again is no new
+  line), from a site's first line on; the kernel wakes the Shell for it even while the last line still types, and the
+  job reads no pixels (no capture pass); the Shell reads it past the subtitle strip's and a failure's pacing, and with
+  the overlay open replaces the text at once (a line that grows keeps the cursor); `history.csv` keeps one record
+  for a line given as it types; a trusted string copy stays trusted when the game starts again (no confirmation
+  OCR). On the host, over 8,895 hooked lines of 30 Vita games, from the game's copy to the line and its first word
+  ready (the lookup counted as the console's 70 ms): 187 → 78 ms; clicking through, a line every 0.5 s: 8,832 of
+  the lines never read → every line in 80 ms; a verified site's first line 1.8 s → 78 ms; the open overlay's text
+  117 → 8 ms. All that is left is the 16 ms poll and the lookup ([details](docs/native-hooks.md#no-wait-for-a-trusted-line-api-49)).
+  Not run on a console.
 - **Vertical text** (`ocr_vertical` in `config.ini`, the Rubi app's **Vertical text** card on the OCR & lookup
   page): Japanese set in columns, read right to left, as in a vertical dialogue box or a manga in NOBORU, is read
   with vita-vn-ocr's vertical model VOCR5-V. **Automatic**, the default, reads the columns where the text box's
@@ -29,15 +41,16 @@ been reported.
   weights an earlier OCR job left in the game go back to it. Trusted: LunaTranslator's sites (as since 0.9.4) and
   Rubi's verified sites from their first line, and any other hook (a string copy) once it has agreed with OCR on four different lines, the last
   closely. OCR comes back by itself when no trusted hook has text. On the host, over 8,640 hooked lines of 29 Vita
-  games: a verified site's OCR jobs 0.20 a line → 0 and the worker's memory kept between jobs 4.4 MiB → 0; a string
-  copy's 0.20 → 0.10 (trusted in 25 of 29 sessions); a source one line behind the screen was never trusted; with
-  3 MiB free, a Luna site's lines, all refused before, are shown. The price: a screen the hook did not copy (a
+  games, with main's OCR (#307's head gate, #306's LM): a verified site's OCR jobs 0.19 a line → 0 and the worker's
+  memory kept between jobs 4.4 MiB → 0; a string copy's 0.19 → 0.08 (trusted in 27 of 29 sessions, no wrong answer); a source one
+  line behind the screen was never trusted (it could agree with OCR in 10 sessions and lock in 2: the other ways a
+  source can be wrong are not modelled); with 3 MiB free, a Luna site's lines, all refused before, are shown. The price: a screen the hook did not copy (a
   choice menu, the backlog) shows the hook's last line. `hook_trust = off` checks hooks with OCR as 0.9.7 did
   ([details](docs/native-hooks.md#trusted-hooks-api-43)). Not run on a console.
 - **Skip OCR on screens without text** on the app's OCR & lookup page (`ocr_text_gate`, API 26's text-presence
   gate, now a switch in the app): a text box that holds no text (the game hid it, a CG, a picture) is not read, so
   no junk text is shown or recognized. It stays **off by default**: on the host, over about 96,000 verified lines
-  of 47 games' hooked pages, it also stops some real lines, mostly `……` and one- or two-character ones (「え？」);
+  of 46 games' hooked pages, it also stops some real lines, mostly `……` and one- or two-character ones (「え？」);
   of all their lines, those OCR would have read and the gate stops are 0.004-0.17 % (by platform and region), while
   it leaves 81 of 90 text-free regions without a line (2 without it)
   ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)). Not run on a console.

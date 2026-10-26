@@ -5,6 +5,32 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Trusted hooks without waiting (API 49)
+
+A trusted line is read at once ([native-hooks.md](native-hooks.md#no-wait-for-a-trusted-line-api-49)): the kernel's
+`hook_scene` (a word of `.bss`, a word at the end of `VjoState`, which the Shell copies on its stack only), the take's
+shorter wait and the rows-less publication (code only); the worker's watch of trusted sources and its last reported
+text's hash and length, its trust and site words (four words of `.bss`), the hook pool reused for the watch's text
+(no new buffer); the Shell's pacing bypass, the cursor kept when a line grew, and history's newest record (its place,
+time and the last append's: 32 B of `.bss`). A trusted answer now takes no capture strip at all (its capture is
+published without rows); it takes API 43's strip only when the region shows another scene. No new block, thread or
+stack, no budget raised. API 43's follow-up (`same_pipeline` compares `hook_trust`, +16 B of normal Shell text) is
+part of it. The rows [measured: the build log's module rows, VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main
+`b6c715c` and this change, both builds]:
+
+| Module | main `b6c715c` | this change | pages |
+|---|---:|---:|---:|
+| worker, normal | 146,116 + 35,304 B | 146,676 + 35,320 B | 184,320 B both |
+| worker, debug | 155,032 + 35,312 B | 155,576 + 35,328 B | 192,512 B both |
+| Shell, normal | 89,300 + 73,160 B | 89,764 + 73,192 B | 163,840 B both (exact) |
+| Shell, debug | 101,548 + 73,152 B | 101,884 + 73,184 B | 176,128 B both |
+| kernel, normal | 37,624 + 76,068 B | 37,976 + 76,076 B | 118,784 B both |
+| kernel, debug | 42,656 + 77,756 B | 43,080 + 77,764 B | 122,880 B both |
+
+The debug worker keeps 72 B of its last text page (616 B before; the watch was written compactly to fit), the
+normal worker 780 B (1,340 B); the normal Shell 348 B of code room (812 B) and 536 B of data room, the debug Shell
+516 B; the normal kernel 2,984 B.
+
 ## Vertical text (API 47)
 
 `ocr_vertical` ([vita-vn-ocr.md](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) adds code to the game worker and a

@@ -66,7 +66,10 @@ typedef struct {
 
 /* Restoring clears transient state and requires one OCR confirmation. Bad data clears the state and
  * returns 0. Export includes provisional learning so an inconclusive startup never deletes a cache.
- * With no learned source export clears *out and returns 0. */
+ * With no learned source export clears *out and returns 0. API 49: export gives the trusted interval only for a
+ * strong (trusted) source, half of it for one that reached the interval without a strong agreement, and restore
+ * makes a source saved at that interval strong again, so a trusted source is trusted from the game's next start
+ * (vjo_hook_select_trusted needs no confirmation; vjo_hook_select_before still asks for it). */
 int vjo_hook_select_restore(VjoHookSelect *st, const VjoHookLearned *saved);
 int vjo_hook_select_learned(const VjoHookSelect *st, VjoHookLearned *out);
 

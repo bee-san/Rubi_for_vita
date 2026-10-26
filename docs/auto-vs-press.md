@@ -34,7 +34,11 @@ quietly when it reads differently (`background_open`: 2 s apart, 1.5 s after the
 API 41: in a game whose hook answers without OCR (a Luna site, or a source Rubi has learned), the hook's
 new line starts that background read when the game copies it, before the line has finished typing, and
 the scene it is read for holds while the line draws, so L + R as the line finishes typing usually finds
-the finished result ([native-hooks.md](native-hooks.md#a-new-line-starts-the-read)).
+the finished result ([native-hooks.md](native-hooks.md#a-new-line-starts-the-read)). API 49: with a trusted hook
+(**Trusted hooks replace OCR**, the default) each new line is read at once, within the worker's 16 ms poll, also
+while the last line still types and with the subtitle strip on, and the open overlay's text is replaced as the
+line starts, past the 2 s and 1.5 s above
+([native-hooks.md](native-hooks.md#no-wait-for-a-trusted-line-api-49)).
 
 **Only when I press.** Nothing is read while the overlay is closed (`background_wanted` is false). Each
 press of a new screen starts a job (`overlay opened`), whose first word is looked up in the same job.

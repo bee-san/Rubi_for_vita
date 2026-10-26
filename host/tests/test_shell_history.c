@@ -347,7 +347,7 @@ static void test_line_source_column(void)
         snprintf(result.text, sizeof(result.text), "%s", text);
         result.text_from = from[n % (sizeof(from) / sizeof(from[0]))];
         result.hook_flags = result.text_from ? VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR : 0u;
-        r.time_us += n;
+        r.time_us += n * 1000000ull; /* a line each (API 49: one that grows within GROWN_GAP_US replaces its record) */
         TEST_ASSERT(vjo_history_append(&r) == 1);
     }
     read_history(csv, sizeof(csv));
@@ -894,6 +894,68 @@ static uint64_t append_total_lines(VjoHistoryRecord *r, int n)
         TEST_ASSERT_(rc == 1, "append %d of %d: %d", i, n, rc);
     }
     return chars;
+}
+
+/* API 49: a line that grows (a hook that gives its text as it types, read at once each time) replaces its own
+ * record: one record, the first one's time and ID, with the whole line; the total counts it once, as a count of the
+ * file from its start does. A later line that starts with the last one's text (GROWN_GAP_US or more on), another
+ * game's, or a shorter text is a record of its own. */
+static void test_grown_line_replaces_its_record(void)
+{
+    char csv[16384], id[64];
+    reset();
+    VjoHistoryRecord r = record("前の行です");
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    TEST_CHECK(count_total() >= 1 && total.state == TOTAL_KNOWN);
+    uint64_t t0 = r.time_us + 3000000;
+    r.time_us = t0;
+    strcpy(result.text, "こん");
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    read_history(csv, sizeof(csv));
+    check_cell(csv, 2, 3, "こん");
+    snprintf(id, sizeof(id), "%s", "");
+    {
+        const char *p = row_start(csv, 2);
+        TEST_ASSERT(cell(&p, id, sizeof(id)) && cell(&p, id, sizeof(id))); /* uuid, then given_identifier */
+    }
+    static const char *const growth[] = {"こんに", "こんにちは", "こんにちは、元気？"};
+    for (unsigned i = 0; i < 3; i++) {
+        r.time_us += 50000; r.scene++; r.region_seq++;
+        strcpy(result.text, growth[i]);
+        TEST_CHECK_(vjo_history_append(&r) == 1, "growth %u", i);
+    }
+    read_history(csv, sizeof(csv));
+    check_cell(csv, 1, 3, "前の行です");
+    check_cell(csv, 2, 3, "こんにちは、元気？");
+    check_cell(csv, 2, 1, id); /* the first one's ID */
+    TEST_CHECK(!*row_start(csv, 3));
+    {
+        char sec[32];
+        snprintf(sec, sizeof(sec), "%llu.%06u", (unsigned long long)(t0 / 1000000ull), (unsigned)(t0 % 1000000ull));
+        check_cell(csv, 2, 4, sec); /* the first one's time */
+    }
+    uint64_t want = vjo_line_characters("前の行です", strlen("前の行です")) +
+                    vjo_line_characters("こんにちは、元気？", strlen("こんにちは、元気？"));
+    TEST_CHECK_(total.chars == want, "total %llu, want %llu", (unsigned long long)total.chars, (unsigned long long)want);
+    TEST_CHECK(total.covered == (uint32_t)file_size());
+    {
+        VjoReadingTime counted = total.time;
+        uint64_t chars = total.chars;
+        memset(&total, 0, sizeof(total)); unlink(total_file()); /* a count from the file's start agrees */
+        count_total();
+        TEST_CHECK(total.chars == chars && total.time.last_chars == counted.last_chars);
+        TEST_CHECK(total.time.active_us == counted.active_us && total.time.last_us == counted.last_us);
+    }
+    /* a shorter text, another game's, or one much later: records of their own */
+    strcpy(result.text, "こんにちは"); r.time_us += 50000;
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    strcpy(result.text, "こんにちは、また"); strcpy(r.title_id, "PCSG00002"); r.time_us += 50000;
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    strcpy(result.text, "こんにちは、またね"); r.time_us += GROWN_GAP_US;
+    TEST_CHECK(vjo_history_append(&r) == 1);
+    read_history(csv, sizeof(csv));
+    check_cell(csv, 3, 3, "こんにちは"); check_cell(csv, 4, 3, "こんにちは、また"); check_cell(csv, 5, 3, "こんにちは、またね");
+    TEST_CHECK(!*row_start(csv, 6));
 }
 
 static void test_total_counts_the_file_once_then_adds(void)
@@ -1847,6 +1909,7 @@ TEST_LIST = {
     {"restart IDs and files beyond 4 GiB", test_restart_and_large_offset},
     {"blank and invalid records do not touch disk", test_empty_and_invalid},
     {"total: the file counted once, in windows, then each append added", test_total_counts_the_file_once_then_adds},
+    {"API 49: a grown line replaces its record; the total counts it once", test_grown_line_replaces_its_record},
     {"total: kept between starts, only what was appended since counted", test_total_kept_between_starts},
     {"total: a torn, foreign or wrong history_total.bin is counted again", test_total_recovers_from_a_bad_kept_total},
     {"total: a replaced history.csv is counted again", test_total_of_a_replaced_file},
