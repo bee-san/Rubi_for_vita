@@ -86,6 +86,23 @@ are the same (`213fd60`, #305 and #308 change only the Shell's reading-time code
   kernel are byte for byte main's [measured: the build log's module rows and sha256, both builds, CI's artifacts of
   main `93647d3` and the fast gate's builds of #328].
 
+## VOCR6's character LMs (vita-vn-ocr #127; no API change)
+
+- **The LM budget** is the largest pinned LM, page-rounded: `vocr_lm6_o3_4000k.vlm`'s 3,603,552 B take
+  3,604,480 B (`VJO_BUDGET_GAME_LM`; ctclm.2's 3,781,072 B took 3,784,704 B): 180,224 B less. The default tier's
+  resident block is 983,040 B (`vocr_lm6_o3_1000k.vlm`, 982,320 B; ctclm.2's 987,600 B took 991,232 B).
+- **The pool.** The game's worst case goes 10,584,064 → 10,403,840 B (11.5 % of the 90,177,536 B of free USER #81
+  measured; a real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,117,696 B);
+  `VJO_LIMIT_GAME_JOB` is kept at 10,604,544 B.
+- **The decoder's workspace** at the new settings (LM weight 0.6, bonus 2.5 nats, the start-of-line context, no
+  end-of-line term) stays within `VJO_VOCR_LM_WS_BYTES` (49,152 B): `host/tests/test_vocr.c` plans every pinned
+  model with every LM tier's own settings against it (with the models dir). `vocr_lm_workspace_bytes` is 41,632 B for
+  VOCR5-N/L and 39,712 B for VOCR5-S [host measurement, #306's author, v0.3.0's blobs; the gated blobs keep their
+  class counts, which the workspace grows with].
+- **Code:** the job's LM table carries each tier's weight and flags (`core/vocr_ocr.c` `lms[]`, 8 B more per tier);
+  no module page, no Shell or kernel change, no new block, thread or allocation site. Nothing of it has run on a
+  console.
+
 ## The reading stats menu
 
 The Triangle menu retains only line provenance and today's/current-game totals. It reuses the
@@ -402,10 +419,10 @@ modules (`ctest -R memory_ledger` runs it locally):
   shell pages                         217,088      237,568    1,048,576      811,008
   shell paf                             8,192      241,664      985,088      743,424
   kernel                              155,648      245,760      245,760            0
-  game                                225,280   10,584,064   10,604,544       20,480
+  game                                225,280   10,403,840   10,604,544      200,704
 ```
 
-(The debug build's budgets, as `tools/check_memory_ledger.py` prints them on main `0b1a45b`, API 42; the normal
+(The debug build's budgets, as `tools/check_memory_ledger.py` prints them with API 42 and VOCR6's LMs; the normal
 build's game permanent is 217,088 B.)
 
 Historical packaged-module output retained from PR #234 before this integration (current combined
