@@ -1082,7 +1082,9 @@ vita-vn-ocr #103 read its held-out vertical test set once (host, C runtime, gree
 11.29 % end to end on VN regions, 0.86 % and 2.45 % on manga.
 
 **Measured through Rubi's job** (host, x86-64: `vjo-page-ocr`, the game worker's job in `core/vocr_ocr.c` on each
-region with the weights kept, on config.ini's defaults: Normal size, the 1 MB LM, the cascade within 2 s, the head
+region with the weights kept, on config.ini's defaults: Normal size, the 1 MB LM (ctclm.2's `vocr_lm_o3_1000k.vlm`, the
+default until #306: its VOCR6 LM was built with the hooked train titles' text, Yunohana SpRING!'s train pages among
+them, so it would flatter these pages), the cascade within 2 s, the head
 gate and two-level head (each where a blob has it: VOCR5-V's has neither), the counter re-decode, the text normalised
 and filtered as the Shell shows it; `tools/vertical_eval.py`, on main `93647d3` and this change; #328's re-read
 fixes since change no job of columns, as VOCR5-V has no head gate). Dialogue CER: every line
