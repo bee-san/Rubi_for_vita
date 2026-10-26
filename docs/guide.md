@@ -747,7 +747,9 @@ no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-o
 screen) returns no line, so nothing is recognized and no junk is read off the picture. It stays off because it also
 stops a few real lines, mostly very short ones (measured on the host on 46 games' hooked pages: lines OCR would
 have read, 0.004-0.17 % of all, by platform and region); it costs an estimated 0.1 s per job at the game's clock
-([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)).
+([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)). Those figures are with the frozen finder's
+lines: the gate scores the lines the finder returns, and with `ocr_line_fix = on` (API 44) it scores the fixed
+finder's, which has not been measured.
 `ocr_head_gate = on`, the default, lets the recognizer skip its output layer on the frames vita-vn-ocr #117's
 head gate calls blank, about three in five, and (Normal and Large) compute its rare characters only on the frames
 that may need one, the two-level head: an estimated 0.12 / 0.20 / 0.26 s less per 3-line box at 333 MHz (Small /
@@ -758,11 +760,13 @@ Normal / Large), with no development score resolved worse; nothing of it has run
 full-width space stay one line. On the owner's hooked PS Vita and PSP pages (host, measured), this takes the
 whole-dialogue error from 3.88% to 3.29%, and on other games' development screenshots from 3.04% to 2.34%. It gains as
 much on regions drawn tight.
+
 - `junk` also stops box frames and ornaments from being read as lines. It is for regions drawn a few pixels outside
   the text, because in a tight region it can drop a real line.
-- `all` also splits two touching rows (Narcissu).
+- `all` is `junk` plus a split of two touching rows (Narcissu), so it is for regions drawn with a margin too.
 - `off` is the frozen finder
-([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)).
+  ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)).
+
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
 decode, the cascade's re-read and its place in the text still follow line order on the job's own
@@ -944,11 +948,11 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 184,320 B of module pages (192,512 B in the debug build; API 31's native hooks and
+holds the worker's 192,512 B of module pages (200,704 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
 API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
-two-level head 8,192 B and API 47's vertical text 4,096 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B
-thread stack and TLS from its
+two-level head 8,192 B, API 47's vertical text 4,096 B and API 50's line finder fixes with vita-vn-ocr f8a1856's
+runtime 8,192 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

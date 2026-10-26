@@ -124,11 +124,13 @@ been reported.
   error from 3.88% to 3.29%, and on other games' development screenshots from 3.04% to 2.34% (host, measured;
   nothing of it has run on a console). The other settings:
   - `junk`: box frames and ornaments are not read as lines either, for regions drawn with a margin;
-  - `all`: touching rows are also split, as Narcissu's are;
+  - `all`: `junk`, and touching rows are also split, as Narcissu's are;
   - `off`: the old finder.
 
-  Install all of this build's plugins together (the VPK's Install does): the game worker and the Shell must both be
-  API 50.
+  The runtime pin is now vita-vn-ocr `f8a1856` (#135's merge; it was `47cf3a3`). Memory: the game worker takes two
+  pages more, 8 KiB, in each game that is ON, in both builds (192,512 B of module pages; 200,704 B in the debug
+  build); the Shell's and the kernel's pages are unchanged. Install all of this build's plugins together (the
+  VPK's Install does): the game worker and the Shell must both be API 50.
 
 ### Fixed
 
