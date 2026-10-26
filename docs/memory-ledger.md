@@ -30,13 +30,14 @@ main's.
 
 Measured with VitaSDK GCC 15.2.0 in `vitasdk/vitasdk:2026.08` (CI's digest, `tools/ci_container_build.sh`'s),
 Release, on the packaged SELF files of both variants (`tools/check_memory_ledger.py`, the build log's module rows),
-main `4bc2604` against this change; the main builds' rows are CI's own for that commit, byte for byte. Text +
-data/bss:
+main `6f2ac6c`, the merge's parent (CI's Release run 40358507420's artifacts), against the merged change (the fast
+gate's builds of `c519aa5`, its tree); the worker and kernel rows of main `4bc2604`, measured before the rebase,
+are the same (`213fd60`, #305 and #308 change only the Shell's reading-time code). Text + data/bss:
 
 | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
 |---|---:|---:|---:|
 | Game worker | 142,776 + 34,880 → 148,424 + 34,960 B | 134,004 + 34,872 → 139,668 + 34,952 B | debug 180,224 → **188,416 B**; normal 172,032 → **180,224 B** |
-| Shell | 102,204 + 73,464 → 102,196 + 73,544 B | 90,012 + 73,504 → 90,084 + 73,560 B | 176,128 / 163,840 B, unchanged |
+| Shell | 102,204 + 73,464 → 102,212 + 73,544 B | 90,028 + 73,504 → 90,084 + 73,560 B | 176,128 / 163,840 B, unchanged |
 | Kernel | 42,536 + 77,756 → 42,540 + 77,756 B | 37,504 + 76,068 → 37,508 + 76,068 B | 122,880 / 118,784 B, unchanged |
 
 - **The game worker, in the game's partition only: two text pages more in each game that is ON, both builds**
@@ -50,11 +51,16 @@ data/bss:
   `run_opts` 52 B, `counter_redecode` +20 B, `load_model` +8 B. Data/bss +80 B: the job's line slots (`lines`: the
   runtime's new context fields in each slot, the job's context pointer and its two-level flag). The debug worker's
   text ends 968 B past 147,456 B (36 pages), the normal one's 404 B past 139,264 B.
-- **The Shell's pages stay as they are.** The key's parsing, its request bits and `same_pipeline`'s comparison
-  are its only code (`apply_config`, `same_pipeline`, `vocr_run_one`: +40, +12 and +4 B of text in the normal build). The key's name and its two new
-  values (29 B) live in the data segment (`VJO_DATA_TABLE`, core/port.h; [below](#tables-in-the-data-segment)):
-  with them in the code segment the normal Shell's text was 90,124 B, 12 B past its last page [measured], and two
-  keys (`ocr_head_gate` and `ocr_two_level`, each `on | off`) measured 90,180 B of normal Shell text, 68 B past its last page: one page (4,096 B) more of SceShell's. The normal Shell's text keeps 28 B of its last page (90,084 of 90,112 B), its data/bss 168 B (73,560 of 73,728 B: the three tables, 49 B, and the 4 B the field adds to each of the Shell's three copies of the configuration); the debug Shell's text is 8 B smaller than main's (LTO's layout), its data/bss 80 B larger.
+- **The Shell's pages stay as they are.** The key's parsing, its request bits and `same_pipeline`'s comparison are its
+  only code (`apply_config`, `same_pipeline`, `vocr_run_one`: +40, +12 and +4 B of text in the normal build,
+  `arm-vita-eabi-nm -S` against main `4bc2604`; the module's text +56 B against `6f2ac6c`). The key's name and its two
+  new values (29 B) live in the data segment (`VJO_DATA_TABLE`, core/port.h; [below](#tables-in-the-data-segment)):
+  with them in the code segment the normal Shell's text was 90,124 B, 12 B past its last page [measured], and two keys
+  (`ocr_head_gate` and `ocr_two_level`, each `on | off`) measured 90,180 B of normal Shell text, 68 B past its last
+  page: one page (4,096 B) more of SceShell's. The normal Shell's text keeps 28 B of its last page (90,084 of 90,112
+  B), its data/bss 168 B (73,560 of 73,728 B: the three tables, 49 B, and the 4 B the field adds to each of the
+  Shell's three copies of the configuration); the debug Shell's text is 8 B larger than main's (188 B of its last page
+  left), its data/bss 80 B larger.
 - **The models.** Normal's blob is 3,776 B larger than v0.3.0's (1,189,408 B), one weights page more (1,191,936 B);
   Large's 3,776 B (2,477,472 B) take its block one page more too (2,478,080 B, the weights and cascade budgets);
   Small's 1,792 B (821,584 B) stay in its 823,296 B block.
