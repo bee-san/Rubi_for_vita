@@ -296,7 +296,7 @@ the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
 (VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
-(release v0.3.7-lm6.1)<!-- end of the names -->,
+(release v0.3.7-lm6.2)<!-- end of the names -->,
 each with its pinned file length; it does not accept a caller-supplied file
 path. Each async Open,
 Read or Close is tied to the claimed job's PID and sequence. Reads also require
@@ -618,7 +618,7 @@ ocr_lm = 1000k   ; 4000k | 2000k | 1000k | 500k | off: the largest language mode
 Each line is decoded with a CTC prefix beam search and a character n-gram language model instead
 of the recognizer's best class per frame. Both come from bee-san/vita-vn-ocr #82
 (`runtime/vocr_lm.c`, `vocr.c`'s top-K extras). The four LM tiers come from the
-[v0.3.7-lm6.1 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.7-lm6.1)
+[v0.3.7-lm6.2 pre-release](https://github.com/bee-san/vita-vn-ocr/releases/tag/v0.3.7-lm6.2)
 (CC BY-SA 4.0, attribution shipped as `ocr/LM-ATTRIBUTION.md`):
 - the 1 MB and 4 MB tiers are VOCR6's LMs, built with the text of the owner's hooked console captures
   besides the open corpora (vita-vn-ocr #127, `docs/vocr6-lm.md`);
@@ -1207,7 +1207,7 @@ the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
 (VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
-(release v0.3.7-lm6.1)<!-- end of the names -->.
+(release v0.3.7-lm6.2)<!-- end of the names -->.
 `core/vocr_models.c` gives each recognizer its generation (VOCR5, VOCR3, VOCR4, or VOCR1 for
 v0.2.0's), the name of the local engine in the Rubi app.
 

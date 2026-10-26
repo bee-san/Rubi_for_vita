@@ -14,7 +14,7 @@
 #define VJO_VOCR3_FL10_NAME "VOCR3_FL10_w8.vocr"
 #define VJO_VOCR_MODEL_ROOT "ux0:data/VitaJPOverlay/ocr"
 /* The character LMs of the beam + LM decoder (bee-san/vita-vn-ocr #82, #127, pre-release
- * v0.3.7-lm6.1, CC BY-SA 4.0: tiers 2 and 4 VOCR6's, 1 and 3 ctclm.2's), tiers 1-4, in VJO_VOCR_MODEL_ROOT; the largest
+ * v0.3.7-lm6.2, CC BY-SA 4.0: tiers 2 and 4 VOCR6's, 1 and 3 ctclm.2's), tiers 1-4, in VJO_VOCR_MODEL_ROOT; the largest
  * is the most the game worker reads. A request names the largest tier it allows
  * (VjoGameOcrRequest.flags); the worker opens one at most. */
 #define VJO_VOCR_LM_TIERS 4u

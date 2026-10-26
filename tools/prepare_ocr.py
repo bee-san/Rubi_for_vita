@@ -68,10 +68,10 @@ VOCR_ASSETS = {
 }
 
 # The character LMs of the beam + LM decoder (vita-vn-ocr #82, #127), pre-release
-# v0.3.7-lm6.1, CC BY-SA 4.0: tiers 2 and 4 are VOCR6's (built with the hooked games' text), tiers 1 and 3
+# v0.3.7-lm6.2, CC BY-SA 4.0: tiers 2 and 4 are VOCR6's (built with the hooked games' text), tiers 1 and 3
 # ctclm.2's byte for byte; their ATTRIBUTION.md ships beside them. The plugin pins the same sizes and hashes
 # (core/vocr_ocr.c, include/vjo_vocr_sizes.h) and each tier's decoder settings (the release's settings.json).
-VOCR_LM_TAG = 'v0.3.7-lm6.1'
+VOCR_LM_TAG = 'v0.3.7-lm6.2'
 VOCR_LM_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_LM_TAG}/'
 VOCR_LM_ASSETS = {
     'vocr_lm_o3_500k.vlm': (VOCR_LM_BASE + 'vocr_lm_o3_500k.vlm', 499824,
@@ -84,8 +84,8 @@ VOCR_LM_ASSETS = {
         'a65841b5bdce3e3123b2d1e712deb857fb577cbd2fd8667e8fb06ab35d368335'),
 }
 VOCR_LM_ATTRIBUTION = 'ATTRIBUTION.md'
-VOCR_LM_ATTRIBUTION_PIN = {VOCR_LM_ATTRIBUTION: (VOCR_LM_BASE + VOCR_LM_ATTRIBUTION, 3641,
-    'c612199c55374b04cadfb43efa31f8b286f0391aa0d0cd69d5545b663551dc4d')}
+VOCR_LM_ATTRIBUTION_PIN = {VOCR_LM_ATTRIBUTION: (VOCR_LM_BASE + VOCR_LM_ATTRIBUTION, 6514,
+    '9418ed87e6d9fa196aba2315e05a0cf0dca7056482cce03577ced423e5feb1d3')}
 
 # VOCR4-W20 (vita-vn-ocr #78, pre-release v0.2.5-vocr4.1, whose SHA256SUMS lists this hash;
 # F20's shape): the Large model size before VOCR5, and the confidence cascade's model of a

@@ -984,7 +984,7 @@ the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
 `H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
 (VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
-(release v0.3.7-lm6.1)<!-- end of the names -->.
+(release v0.3.7-lm6.2)<!-- end of the names -->.
 Since API 21 a job asks by model size: the broker opens its sizes' models and,
 when the request sets a cascade ceiling, the next size up, each by its size,
 never by a name or a path. A request by name (the host tools) opens only its own
@@ -1275,7 +1275,7 @@ its entries; its kanji lines: Bee's Ultimate Kanji Dictionary (Jiten and KANJIDI
 CC BY-SA 4.0; its grammar summaries: written from Bee's Ultimate Grammar Dictionary, whose
 sources include Yokubi and NINJAL's 日本語文型データベース (CC BY 4.0)
 ([attribution](plaintext-attribution.txt)). The beam + LM decoder's character
-LMs (bee-san/vita-vn-ocr v0.3.7-lm6.1; the 1 MB and 4 MB ones also carry n-gram counts of the owner's
+LMs (bee-san/vita-vn-ocr v0.3.7-lm6.2; the 1 MB and 4 MB ones also carry n-gram counts of the owner's
 hooked console captures): CC BY-SA 4.0, with their sources and changes in
 `ocr/LM-ATTRIBUTION.md`, which ships beside them. The model sizes' VOCR5 recognizers
 (bee-san/vita-vn-ocr v0.3.0, with their head gates and two-level heads in v0.3.6-head2level.1) were trained in

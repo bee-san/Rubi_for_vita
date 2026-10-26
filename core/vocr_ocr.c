@@ -99,7 +99,7 @@ static const VjoVocrModel models[] = {
 #endif /* VJO_VOCR_TEST_MODELS */
 #define N_MODELS (sizeof(models) / sizeof(models[0]))
 
-/* The LM tiers of bee-san/vita-vn-ocr pre-release v0.3.7-lm6.1 (CC BY-SA 4.0,
+/* The LM tiers of bee-san/vita-vn-ocr pre-release v0.3.7-lm6.2 (CC BY-SA 4.0,
  * ATTRIBUTION.md ships with them) and the settings each was selected with
  * (vita-vn-ocr docs/vocr6-lm.md, #127; the release's settings.json): tiers 2 and 4
  * are VOCR6's LMs built with the hooked games' text (LM weight 0.6, bonus 2.5 nats,

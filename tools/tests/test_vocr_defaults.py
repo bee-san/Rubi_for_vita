@@ -242,8 +242,8 @@ class VocrDefaults(unittest.TestCase):
                     prepare_ocr.fetch_lms(out, src)
         # the real pin is the release's file
         url, size, sha = prepare_ocr.VOCR_LM_ATTRIBUTION_PIN[prepare_ocr.VOCR_LM_ATTRIBUTION]
-        self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.1/ATTRIBUTION.md"))
-        self.assertEqual((size, sha), (3641, "c612199c55374b04cadfb43efa31f8b286f0391aa0d0cd69d5545b663551dc4d"))
+        self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.2/ATTRIBUTION.md"))
+        self.assertEqual((size, sha), (6514, "9418ed87e6d9fa196aba2315e05a0cf0dca7056482cce03577ced423e5feb1d3"))
 
     def test_the_model_sizes_attribution_comes_pinned_with_them(self):
         """fetch_tiers (--backend vocr-tiers, CI's package job) fetches v0.3.0's ATTRIBUTION.md with the
@@ -332,7 +332,7 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(set(table), set(prepare_ocr.VOCR_LM_ASSETS))
         for name, (size, sha, tier) in table.items():
             url, want_size, want_sha = prepare_ocr.VOCR_LM_ASSETS[name]
-            self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.1/" + name), url)
+            self.assertTrue(url.endswith("/releases/download/v0.3.7-lm6.2/" + name), url)
             self.assertEqual((size, sha), (want_size, want_sha), name)
         self.assertEqual(sorted(t for _, _, t in table.values()), [1, 2, 3, 4])
         # the kernel knows the same names and sizes by tier
@@ -340,7 +340,7 @@ class VocrDefaults(unittest.TestCase):
         for n in range(1, 5):
             self.assertIn(f"VJO_VOCR_LM{n}_NAME", kernel)
             self.assertIn(f"VJO_VOCR_LM{n}_BYTES", kernel)
-        # each tier's decoder settings are the ones vita-vn-ocr selected it with (v0.3.7-lm6.1's settings.json):
+        # each tier's decoder settings are the ones vita-vn-ocr selected it with (v0.3.7-lm6.2's settings.json):
         # VOCR6's LMs at tiers 2 and 4, ctclm.2's at 1 and 3
         source = (ROOT / "core/vocr_ocr.c").read_text()
         block = source[source.index("static const VjoVocrLm lms[VJO_VOCR_LM_TIERS]"):]

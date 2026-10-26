@@ -47,7 +47,7 @@ class DocsModelNames(unittest.TestCase):
         releases |= {("VOCR3", "v0.2.5-vocr3.1"), ("VOCR1", "v0.2.0"), ("VOCR4", "v0.2.5-vocr4.1")}
         for generation, tag in sorted(releases):
             self.assertIn(f"({generation}, release {tag})", text)
-        self.assertIn("(release v0.3.7-lm6.1)", text)
+        self.assertIn("(release v0.3.7-lm6.2)", text)
 
     def test_a_name_the_kernel_adds_makes_the_docs_stale(self):
         kernel = (ROOT / "kernel/game_ocr.c").read_text(encoding="utf-8")

@@ -64,7 +64,7 @@ been reported.
   Install all of this build's plugins together (the VPK's Install does): the game worker and the Shell must
   both be API 42.
 - **New character LMs for the 1 MB (the default) and 4 MB tiers**, from bee-san/vita-vn-ocr pre-release
-  v0.3.7-lm6.1 (#127): built with the text of the owner's hooked PS Vita and PSP captures besides the open
+  v0.3.7-lm6.2 (#127): built with the text of the owner's hooked PS Vita and PSP captures besides the open
   corpora, and decoded with new settings (LM weight 0.6, a bonus of 2.5 nats a character, each line started
   from the start-of-line context and no end-of-line term; `core/vocr_ocr.c` now keeps the settings per tier).
   On vita-vn-ocr's development data (VOCR5-N with its cascade, Rubi's line path and display rules,

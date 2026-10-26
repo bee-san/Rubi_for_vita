@@ -115,7 +115,7 @@ const VjoVocrModel *vjo_vocr_model(const char *name);
 const VjoVocrModel *vjo_vocr_models(unsigned *count);
 
 /* A character language model this build accepts for the beam + LM decoder
- * (bee-san/vita-vn-ocr runtime/vocr_lm.h; pre-release v0.3.7-lm6.1): the asset's
+ * (bee-san/vita-vn-ocr runtime/vocr_lm.h; pre-release v0.3.7-lm6.2): the asset's
  * exact size and SHA-256, and the decoder settings its tier was selected with
  * (vita-vn-ocr docs/vocr6-lm.md, the release's settings.json): the LM weight, the
  * per-character bonus and the line flags (VOCR_LM_BOS: start each line from the
