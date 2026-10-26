@@ -184,8 +184,10 @@ size_t vjo_hook_decode(unsigned encoding, const uint8_t *src, size_t n, char *ds
                     step = 2;
                 }
                 /* else: a lead byte without its trail byte, dropped alone */
+            } else if (b == 0xA0) {
+                cp = VJO_HOOK_CP932_A0; /* Windows' cp932: what Luna's filters see; vjo_hook_clean drops it */
             }
-            /* 0x80, 0xA0 and 0xFD-0xFF: dropped */
+            /* 0x80 and 0xFD-0xFF: dropped */
         }
         if (cp) {
             char o[4];
@@ -236,6 +238,11 @@ size_t vjo_hook_clean(char *text, size_t n)
             }
         }
         if ((c < 0x20 && c != '\n' && c != '\r' && c != '\t') || c == 0x7F) continue;
+        /* the decoder's CP932 0xA0 (U+F8F0, EF A3 B0) that no filter turned into what its game draws */
+        if (c == 0xEF && i + 1 < n && (unsigned char)text[i] == 0xA3 && (unsigned char)text[i + 1] == 0xB0) {
+            i += 2;
+            continue;
+        }
         text[w++] = (char)c;
     }
     text[w] = 0;

@@ -68,7 +68,8 @@ typedef struct {
     uint32_t module_nid;   /* the main module's NID (taiGetModuleInfo) */
     uint32_t off;          /* segment 0 offset */
     uint8_t thumb;
-    uint8_t reg;           /* the register holding the text's address (0..12) */
+    uint8_t reg;           /* the register holding the text's address (r0-r12, sp, lr; 15: the site's own
+                            * address, for a static at a fixed distance from the code: padding is that distance) */
     uint8_t encoding;      /* VJO_HOOK_ENC_* */
     uint8_t sig_len;       /* 8..16, at least the patch's bytes */
     int32_t padding;       /* added to the register's value */
@@ -77,10 +78,31 @@ typedef struct {
      * else none; or a VJO_LF_* or VJO_RF_* filter, which replaces that site's filter (its hookfunc's
      * clean-up still runs first). */
     uint8_t filter;
-    /* 1: the register's value + padding is the address of a 32-bit pointer to the text (one more read,
-     * as Luna's DATA_INDIRECT); 0: it is the text's address. */
-    uint8_t deref;
+    /* How the text is read at the register's value + padding (VJO_PLACE_READ_*): the string there, through a
+     * 32-bit pointer there (one more read, as Luna's DATA_INDIRECT), or a page record of 16-bit cells. */
+    uint8_t read;
+    /* The game version the entry was proven in, its param.sfo APP_VER as game_ocr/hooks.c reads it ("01.00" ->
+     * 0x0100): another version refuses the entry; an APP_VER that cannot be read leaves it to the module NID and
+     * the bytes, which pin the build anyway (a game's update changes its eboot and so its NID); 0: the version was
+     * not recorded. In the row's tail padding: the row is 40 bytes on the Vita either way. */
+    uint16_t app_ver;
 } VjoPlaceVerified;
+
+/* VjoPlaceVerified.read */
+#define VJO_PLACE_READ_STRING 0u /* the NUL-terminated string at the address, in the entry's encoding */
+#define VJO_PLACE_READ_DEREF 1u  /* the address holds the string's 32-bit pointer (an unreadable one: no text) */
+/* A page record of 16-bit cells (the engines of PCSG00380 and PCSG00914): a 32-bit count of cells at the
+ * address + VJO_PLACE_CELLS_COUNT, the cells from + VJO_PLACE_CELLS_DATA, each little-endian: its low byte the
+ * character's first CP932 byte, its high byte the second one, or 0 for a single-byte character
+ * (vjo_place_cells). Exactly count cells are read (none past the record: a longer page left there is not
+ * read), at most VJO_HOOK_RAW_BYTES / 2. */
+#define VJO_PLACE_READ_CELLS 2u
+#define VJO_PLACE_CELLS_COUNT 0x14u
+#define VJO_PLACE_CELLS_DATA 0x20u
+
+/* The CP932 bytes of n cells at p, in place (they never grow): each cell's low byte, then its high byte
+ * unless 0; a cell whose low byte is 0 ends the text. Returns the bytes. */
+unsigned vjo_place_cells(uint8_t *p, unsigned n);
 
 /* The verified entries of title_id, contiguous; 0 and *out = NULL when none. */
 unsigned vjo_place_verified(const char *title_id, const VjoPlaceVerified **out);
@@ -92,9 +114,18 @@ unsigned vjo_place_verified_all(const VjoPlaceVerified **out);
 int vjo_place_title_verified(const char *title_id);
 
 /* The check for a verified entry v in a module with NID module_nid: its bytes (sig_len at
- * code + v->off, inside the code) and its NID exactly as recorded. VJO_PLACE_OK or the reason. */
+ * code + v->off, inside the code) and its NID exactly as recorded. VJO_PLACE_OK or the reason. The
+ * entry's version is the caller's to check (vjo_place_verified_version). */
 int vjo_place_check_verified(const VjoPlaceVerified *v, const uint8_t *code, uint32_t code_size,
                              uint32_t seg_base, uint32_t module_nid);
+
+/* Whether v may be tried in a game whose APP_VER is app_ver (0: unreadable): 0 only when both are known
+ * and differ. An unreadable APP_VER does not refuse an entry, unlike a Luna site that names its version
+ * (vjo_luna_version_ok): the entry's NID and bytes are checked either way, and a Luna site has neither. */
+static inline int vjo_place_verified_version(const VjoPlaceVerified *v, uint16_t app_ver)
+{
+    return !v->app_ver || !app_ver || v->app_ver == app_ver;
+}
 
 /* The CALL source's prefilter, in the hooked string function (a game thread): may the n bytes at p,
  * which the game has just copied, be a line of Japanese text? Reads at most 16 bytes. 1 when the

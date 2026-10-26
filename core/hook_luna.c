@@ -616,9 +616,10 @@ _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one
  * bytes (OP_KANA: ｷｮｰｽｹ -> きょーすけ); $t<name>$d is a name in its own nameplate (PCSG00007 event 3),
  * $t<name>@ a name drawn inline (PCSG00206); $d a line break; $[base$/reading$] ruby (PCSG00206 event
  * 367); $L1 (config labels), $A1, $S<nnn>..$S, $w, $C[rrggbb] are not drawn (PCSG00620 event 81); ＿ is a
- * blank indent and leading line breaks place the text (PCSG00620 event 80). */
+ * blank indent and leading line breaks place the text (PCSG00620 event 80); ･ is the middle dot ・ between
+ * katakana words, not Luna's … (PCSG00620: all 12 in its 995 farm pages, e.g. セブンズ･カオス, page 375). */
 static const LunaOp r_PROTOTYPE[] VJO_DATA_TABLE(rubi_PROTOTYPE) = {
-    SPECIAL(OP_KANA), SUB("\\$t([^$@\n]*)\\$d", "$1\n"), SUB("\\$t([^$@\n]*)@", "$1"), REP("$d", "\n"),
+    REP("･", "・"), SPECIAL(OP_KANA), SUB("\\$t([^$@\n]*)\\$d", "$1\n"), SUB("\\$t([^$@\n]*)@", "$1"), REP("$d", "\n"),
     SUB("\\$\\[(.*?)\\$/(.*?)\\$\\]", "$1"), SUB("\\$[LA]\\d|\\$S\\d\\d\\d|\\$S|\\$w|\\$C\\[[0-9A-Fa-f]*\\]", ""),
     REP("＿", "　"), SPECIAL(OP_TRIM), END};
 /* The IF:Lib GAME-ENGINE 3.00 titles (Otomate, Rejet, Design Factory): #Ruby[base,reading] (PCSG00935
@@ -650,9 +651,10 @@ static const LunaOp r_PCSG00509[] VJO_DATA_TABLE(rubi_PCSG00509) = {
     REP("＊Ｂ", "鈴"), REP("^", "\n"), RCALL(ANGLE_RUBY), END};
 /* PCSG00540 (ADV::MSGSET): c<id>.<nameplate>r[v<voice>.]<body>, narration r<body>; w<ms>. a timed pause;
  * b<reading>.<base> ruby; plain hiragana are half-width kana, and ･ ﾞ ﾟ are drawn … ！ ？ (events 1-5, 51,
- * 53, 55). The name goes on its own line. */
+ * 53, 55). The name goes on its own line. A 0xA0 byte (the decoder's VJO_HOOK_CP932_A0) is a blank cell, U+3000
+ * (the farm's glyph cells: 170 of its 1037 pages, e.g. pages 42, 81). */
 static const LunaOp r_PCSG00540[] VJO_DATA_TABLE(rubi_PCSG00540) = {
-    SUB("^c\\d+\\.([^\n]*?)r", "$1\n"), SUB("^r", ""), SUB("^v[^.\n]*\\.", ""), SUB("\nv[^.\n]*\\.", "\n"),
+    REP("\xef\xa3\xb0", "　"), SUB("^c\\d+\\.([^\n]*?)r", "$1\n"), SUB("^r", ""), SUB("^v[^.\n]*\\.", ""), SUB("\nv[^.\n]*\\.", "\n"),
     SUB("w\\d+\\.", ""), SUB("b[^.<>\n]*\\.<([^<>\n]*)>", "$1"), SPECIAL(OP_KANA), END};
 /* PCSG00817: [n] is a line break; [wNNN] [hNNN] [cRRGGBB] [e] and the other [x] codes are not drawn
  * (session 458160a9, events 1-59, event 432). */
@@ -671,6 +673,25 @@ static const LunaOp r_PCSG00876[] VJO_DATA_TABLE(rubi_PCSG00876) = {REP("@@", "\
 static const LunaOp r_PCSG01194[] VJO_DATA_TABLE(rubi_PCSG01194) = {
     SUB("@v[^.@\n]*\\.", ""), SUB("@p\\d+\\.", ""), REP("@r", "\n"), SPECIAL(OP_KANA), SPECIAL(OP_TRIM), END};
 
+/* PCSG00628 (ADV::MSGSET's SNR markup, as PCSG00540's without its c<id>. nameplate code): <name>r[v<voice>.]<body>,
+ * narration r<body>; r is a line break, v<voice>. a voice file, b<reading>.<base> ruby (an r before the base is a
+ * line break before it), [ ] group a dash run, |, k and y wait for a click, !X is the ASCII character X; plain
+ * hiragana are half-width kana, ･ ﾞ ﾟ drawn … ！ ？, and a 0xA0 byte is a blank cell, as in PCSG00540 (farm events
+ * 1, 20, 31, 89, 148, 207; main.snr). z<n>. (a text size) and u<n>. (a character by its decimal code point, e.g.
+ * u9829. ♥) are in main.snr (the farm's survey) but in none of its 1208 hook pages: both dropped, as no op writes
+ * a code point. A lowercase letter after ! is still read as a code first (!r a line break): none in the pages. */
+static const LunaOp r_PCSG00628[] VJO_DATA_TABLE(rubi_PCSG00628) = {
+    REP("\xef\xa3\xb0", "　"), SUB("rv[^.\n]*\\.", "r"), SUB("[zu]\\d+\\.", ""), SUB("b[^.<>\n]*\\.", ""),
+    SUB("<([^<>\n]*)>", "$1"), SUB("[\\[\\]|ky]", ""), REP("r", "\n"), SUB("!(.)", "$1"), SPECIAL(OP_KANA),
+    SPECIAL(OP_TRIM), END};
+
+/* PCSG00380 (Nippon Ichi's foaf4 page record, VJO_PLACE_READ_CELLS): ㊤㊥㊦ (CP932 0x8785-0x8787) are the pieces of
+ * a long dash, one ― cell each (event 93016: もの――); ㌫ and ㍊ (0x876C, 0x876D) are the player's family and given
+ * name, drawn as the defaults 北條 and 紗希 (page 37: 6 glyphs for 北條紗希も、, page 158: 26 for its line); the
+ * \x04 button-icon codes are controls vjo_hook_clean drops; a page's last hit ends with a line break. */
+static const LunaOp r_PCSG00380[] VJO_DATA_TABLE(rubi_PCSG00380) = {
+    REP("㊤", "―"), REP("㊥", "―"), REP("㊦", "―"), REP("㌫", "北條"), REP("㍊", "紗希"), SPECIAL(OP_TRIM), END};
+
 static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_TABLE(rubi_filters) = {
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
@@ -679,6 +700,7 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_T
     [VJO_RF_PCSG00509 - VJO_RF_BASE] = r_PCSG00509, [VJO_RF_PCSG00540 - VJO_RF_BASE] = r_PCSG00540,
     [VJO_RF_PCSG00817 - VJO_RF_BASE] = r_PCSG00817, [VJO_RF_PCSG00853 - VJO_RF_BASE] = r_PCSG00853,
     [VJO_RF_PCSG00876 - VJO_RF_BASE] = r_PCSG00876, [VJO_RF_PCSG01194 - VJO_RF_BASE] = r_PCSG01194,
+    [VJO_RF_PCSG00628 - VJO_RF_BASE] = r_PCSG00628, [VJO_RF_PCSG00380 - VJO_RF_BASE] = r_PCSG00380,
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */

@@ -84,6 +84,7 @@ static unsigned encode(unsigned enc, const char *utf8, uint8_t *raw, unsigned ca
             if (cp < 0x80) raw[w++] = (uint8_t)cp;
             else if (cp >= 0xFF61 && cp <= 0xFF9F) raw[w++] = (uint8_t)(0xA1 + cp - 0xFF61);
             else if (cp < 0x10000 && rev932[cp]) raw[w++] = (uint8_t)(rev932[cp] >> 8), raw[w++] = (uint8_t)rev932[cp];
+            else if (cp == VJO_HOOK_CP932_A0) raw[w++] = 0xA0; /* the decoder's single byte 0xA0 */
             else TEST_CHECK_(0, "U+%04X is not in CP932", (unsigned)cp);
         }
     }
@@ -842,6 +843,18 @@ static void rubi_filters(void)
     rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "c12.大石rv01_0001.ｺﾚﾊw300.bき.<吉>だ･ﾞ", "大石\nこれは吉だ…！");
     rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "rvzen01.ｿｳｶﾟ", "そうか？");
     rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "r静かだ", "静かだ");
+    /* a 0xA0 byte: the blank cell the game draws (farm page 82: 東京都　陵南学園。, 9 glyphs) */
+    rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "r東京都\xef\xa3\xb0陵南学園｡", "東京都　陵南学園。");
+    rubi_to(VJO_RF_PROTOTYPE, VJO_HOOK_ENC_CP932, "$t猫@｢セブンズ･カオスﾅのニャ！｣", "猫「セブンズ・カオスなのニャ！」");
+    /* PCSG00628: the voice after the name, a ruby with a line break before its base, waits, the 0xA0 blank,
+     * !X literals (farm events 20, 148, 207) */
+    rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "月詠rvKY_tu_0417_012.｢･･ﾞﾟ\xef\xa3\xb0ﾅぜ｣|y", "月詠\n「……！？　なぜ」");
+    rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "rｿｼﾃ､bうたたね.r<転寝>ｦ[―――]k｡", "そして、\n転寝を―――。");
+    rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "r“bヴィジター.<!V!I!S!I!T!O!R>”", "“VISITOR”");
+    /* main.snr's z<n>. (a size) and u<n>. (a code point), dropped; a voice ID's u after the name stays the voice's */
+    rubi_to(VJO_RF_PCSG00628, VJO_HOOK_ENC_CP932, "堂元rv0428_03_Tu_0018.｢z140.ﾏﾃ!!u9829.｣", "堂元\n「まて！」");
+    /* PCSG00380: the dash pieces, the player's default names (farm pages 37, 158), the page's last line break */
+    rubi_to(VJO_RF_PCSG00380, VJO_HOOK_ENC_CP932, "㌫㍊も、\n「おい、㌫㊤㊥㊦」\n", "北條紗希も、\n「おい、北條―――」");
 
     /* in place of a Luna site's filter: PCSG00448's own drops the name the hook sees before the expander */
     s = site("PCSG00448", 0x800718F8u);

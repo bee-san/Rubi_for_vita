@@ -116,6 +116,8 @@ enum {
     VJO_RF_PCSG00853,               /* ピリオドキューブ: default names, then IFENGINE */
     VJO_RF_PCSG00876,               /* 7'scarlet: @@ line break, $<digit> style codes */
     VJO_RF_PCSG01194,               /* 参千世界遊戯: shin @-markup, half-width kana */
+    VJO_RF_PCSG00628,               /* ALIA's CARNIVAL! サクラメント: MSGSET's SNR markup, half-width kana */
+    VJO_RF_PCSG00380,               /* 真 流行り神: dash pieces, the default player name */
     VJO_RF_END
 };
 
