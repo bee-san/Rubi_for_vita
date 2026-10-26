@@ -23,6 +23,7 @@
 #include "../core/vocr_ocr.h"
 #include "../core/hook_select.h"
 #include "../core/hook_cache.h"
+#include "../core/charmap_build.h"
 #include "../include/vjo_vocr_sizes.h"
 #include "../include/vjo_ledger_budget.h"
 #include "../core/ledger.h"
@@ -1351,6 +1352,36 @@ static void policy_sleep(uint32_t us)
     sceKernelDelayThread(us);
 }
 
+/* API 46 (VJO_GAME_OCR_S_CHARS, #309): the bytes of the job's characters and their cells (core/vocr_ocr.h
+ * VjoVocrChars), at the end of the job's workspace block: such a job's own memory, freed with it; none
+ * without the bit, so the worker's pages hold nothing of it. */
+#define CHARS_BYTES VJO_VOCR_CHARS_JOB_BYTES /* and its start rounded up to 16 */
+_Static_assert(sizeof(VjoCmapScratch) <= sizeof(((VjoVocrChars *)0)->scratch), "the char map builder's scratch");
+
+/* API 46: where the characters of the job's text are on the screen (core/charmap.h), after the text and its
+ * recognizer's copy, for the overlay on the game's text. The sentence is the one the Shell shows: the text
+ * filtered as the job's border rule says (bit 16: non_japanese_filter = lines) and trimmed. The frame is shown
+ * filling the screen (a PSP game's 480 x 272 frame 2x), so its pixels are mapped to the screen's here. */
+static void write_char_map(const VjoGameOcrRequest *r, VjoGameOcrResult *out, VjoVocrChars *c)
+{
+    VjoCmapSource src[VJO_VOCR_MAX_LINES];
+    unsigned n = c->n_lines < VJO_VOCR_MAX_LINES ? c->n_lines : VJO_VOCR_MAX_LINES;
+    for (unsigned i = 0; i < n; i++) {
+        const VjoVocrCharLine *l = &c->line[i];
+        src[i].cp = c->cp + l->first;
+        src[i].a = c->a + l->first;
+        src[i].b = c->b + l->first;
+        src[i].n = l->count;
+        src[i].x = r->x;
+        src[i].y0 = r->y + l->y;
+        src[i].y1 = r->y + l->y + l->h;
+    }
+    /* the last byte stays 0: the kernel refuses a result whose text[] is not terminated (kernel/game_ocr.c); the
+     * builder works in the block's scratch, idle once the job's lines are read (the sources are its arrays) */
+    if (n) vjo_cmap_build(out->text, sizeof(out->text) - 1, (r->speed & VJO_GAME_OCR_S_DROP_BORDERS) != 0, src, n,
+                          r->fb_width, r->fb_height, VJO_SCREEN_W, VJO_SCREEN_H, (VjoCmapScratch *)(void *)c->scratch);
+}
+
 static void request_policy(const VjoGameOcrRequest *r, VjoVocrPolicy *p)
 {
     sceClibMemset(p, 0, sizeof(*p));
@@ -1744,6 +1775,9 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
      * OCR's work whatever their pick. With nothing installed, none of this runs. */
     uint32_t hook_pick = (r->speed & VJO_GAME_OCR_S_NOCACHE) || (r->flags & VJO_GAME_OCR_F_FORCE_FALLBACK)
                              ? VJO_HOOK_PICK_OCR : r->hook_pick;
+    /* API 46: with the characters' places (overlay_on_text), a stream that answers without recognition is still the
+     * job's text, but the job recognizes too: OCR's characters are where it is placed (docs/overlay-on-text.md) */
+    uint32_t hook_pre = 0, hook_pre_flags = 0;
     if (hk.installed) {
         if (hook_pick && hook_pick <= VJO_HOOK_STREAMS) vjo_hooks_keep(hook_pick, 0); /* pinned: keeps its CALL slot */
         if (!hooks_snapshot(hook_pick)) {
@@ -1754,7 +1788,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         }
         hk.saved = hk.sel; /* a failed request preserves the restored provisional identity */
         uint32_t hook_id = vjo_hook_select_before(&hk.sel, hook_pick, hk.cand, hk.n, &hk.flags);
-        if (hook_id) {
+        if (hook_id && (r->speed & VJO_GAME_OCR_S_CHARS)) {
+            hook_pre = hook_id;
+            hook_pre_flags = hk.flags & ~VJO_HOOK_R_NO_OCR;
+            hk.flags = 0;
+        } else if (hook_id) {
             rc = run_hook_pass(r, out, &capture, &stats);
             if (rc < -199) rc = VJO_E_SOURCE; /* a native capture error, as for OCR */
             if (capture.failed)
@@ -1772,6 +1810,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                       ? VJO_VOCR_REFINE_ALL : 0u;
     size_t refine_bytes = refine ? vjo_vocr_refine_bytes(r->width, r->height) : 0;
     size_t capture_bytes = vjo_vocr_capture_bytes(r->width, r->height);
+    /* API 46: the characters' places, at the end of the workspace block (none without the bit) */
+    size_t chars_bytes = r->speed & VJO_GAME_OCR_S_CHARS ? CHARS_BYTES : 0;
     /* The models this job may run, in the order it tries them (API 21): a request
      * by tiers names its tiers, the largest first; one by name its model, then its
      * fallback, used only if it is another pinned model needing less memory. */
@@ -1828,7 +1868,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     uint32_t first_workspace = 0, first_weights = 0, first_release = 0;
     for (unsigned i = 0; i < n; i++) {
         casc = cascade_of(&cand[i], r, top, casc_us);
-        fits = check_with_lm(out, cand[i].m, cand[i].bytes, capture_bytes, lm_max, cand[i].tier, &casc, &lm);
+        fits = check_with_lm(out, cand[i].m, cand[i].bytes + chars_bytes, capture_bytes, lm_max, cand[i].tier, &casc,
+                             &lm);
         /* Each check is a step (include/vjo_game_ocr.h VJO_GSTEP_CHECK). A smaller
          * model's (arg 1) is the record that it runs when it passed; for a request
          * by name its sum says whether the self-test forced it (no FALLBACK step,
@@ -1869,7 +1910,7 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     size_t helper_bytes = 0, helpers_need_bytes = 0;
     if (want_helpers > VJO_VOCR_HELPERS_MAX) want_helpers = VJO_VOCR_HELPERS_MAX;
     if (fits) {
-        const size_t block = use_bytes + extra_job_bytes(use, lm, casc);
+        const size_t block = use_bytes + extra_job_bytes(use, lm, casc) + chars_bytes;
         for (use_helpers = want_helpers; use_helpers; use_helpers--) {
             size_t extra = helpers_need(use->name, block, use_helpers);
             if (extra && (int64_t)out->free_user + out->release_bytes - (int64_t)out->reserve_bytes >=
@@ -1891,7 +1932,9 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
          * unconfirmed (core/hook_select.h vjo_hook_select_no_memory), with its capture pass beside the
          * smaller VJO_GAME_RESERVE_HOOK_ONLY. A pass that fails keeps the refusal. */
         if (rc == VJO_E_OOM && hk.installed) {
-            uint32_t no_mem_flags = 0, id = vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
+            /* (API 46: the stream that answered before recognition, without places) */
+            uint32_t no_mem_flags = hook_pre_flags | (hook_pre ? VJO_HOOK_R_NO_OCR : 0u),
+                     id = hook_pre ? hook_pre : vjo_hook_select_no_memory(hook_pick, hk.cand, hk.n, &no_mem_flags);
             if (id) {
                 job_reserve = VJO_GAME_RESERVE_HOOK_ONLY;
                 int pass = run_hook_pass(r, out, &capture, &stats);
@@ -1934,7 +1977,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     capture_bytes_held = held;
     capture_memory = mem;
     workspace_uid = game_memblock_alloc(GL_WORKSPACE, VJO_GITEM_WORKSPACE, "VjoGameVocr",
-                                        PAGE_ROUND(use_bytes + lm_extra + helper_bytes), LADDER_ALL, &base, &leaked, &held,
+                                        PAGE_ROUND(use_bytes + lm_extra + helper_bytes + chars_bytes), LADDER_ALL, &base,
+                                        &leaked, &held,
                                         &mem);
     if (workspace_uid < 0) { workspace_uid = leaked; rc = VJO_E_OOM; goto done; }
     workspace_bytes_held = held;
@@ -1943,6 +1987,10 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     VjoGreySource image = {&capture, r->width, r->height, strip_source, cancelled, line_buffer};
     VjoVocrPolicy policy;
     request_policy(r, &policy);
+    if (chars_bytes) { /* API 46: after everything else in the block; the job reads without the line cache */
+        policy.chars = (VjoVocrChars *)(void *)((char *)base + ((use_bytes + lm_extra + helper_bytes + 15u) & ~(size_t)15u));
+        policy.chars->n_lines = policy.chars->n_chars = 0;
+    }
     if (lm_extra) { /* the LM (and cascade) extras, the helpers' line slots and then the greedy text */
         policy.raw = (char *)base + use_bytes + core_extra + helper_bytes;
         policy.raw_cap = VJO_GAME_OCR_TEXT_BYTES;
@@ -2053,8 +2101,13 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
                      (uint32_t)(now_wide() - t0) + 1u, 0);
 #undef CLAMP8
     }
-    /* Native hooks: a stream whose text agrees with OCR's replaces it (core/hook_select.h). */
-    if (!rc && hk.installed) {
+    /* Native hooks: a stream whose text agrees with OCR's replaces it (core/hook_select.h); (API 46) the stream that
+     * answered before recognition is the text, as without the characters' places, OCR's after it for the log. */
+    if (!rc && hook_pre) {
+        hook_show(out, hook_cand(hook_pre), 1, norm_flags(r));
+        hk.from = hook_pre;
+        hk.flags = hook_pre_flags;
+    } else if (!rc && hk.installed) {
         unsigned score = 0;
         uint32_t id = vjo_hook_select_after(&hk.sel, hook_pick, out->text, text_len(out->text, sizeof(out->text)),
                                             hk.cand, hk.n, &score, &hk.flags);
@@ -2064,6 +2117,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
             hk.from = id;
         }
     }
+    /* API 46: the char map of the text shown, OCR's or (aligned to OCR's characters) a hook's */
+    if (!rc && policy.chars && out->text[0]) write_char_map(r, out, policy.chars);
     if (stats.lines && (want_helpers || stats.cached)) {
         /* the recognized lines' share of a core: the lowest and the mean (percent; 0 unknown) */
         uint32_t lo = 100u, sum = 0, n = 0;

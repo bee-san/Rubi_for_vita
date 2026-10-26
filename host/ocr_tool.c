@@ -13,6 +13,11 @@
 #include "platform_posix.h"
 #ifdef VJO_WITH_VOCR
 #include "vocr_ocr.h"
+#include "textnorm.h"
+#include "textfilter.h"
+#include "arena.h"
+#include "charmap_build.h"
+#include "utf.h"
 #endif
 
 typedef struct { unsigned char *pixels; unsigned width, height; } Image;
@@ -50,6 +55,73 @@ static void print_line(void *ud, const VjoVocrLineInfo *l)
     fputs(", \"greedy\": ", f);
     json_text(f, l->greedy);
     fputs("}\n", f);
+}
+
+/* --chars (API 46, docs/overlay-on-text.md): the job's characters and the char map of its text, as the game worker
+ * writes them (game_ocr/main.c write_char_map; the region is the frame here, so the map's space is its pixels), and
+ * the sentence the Shell shows of it, as one JSON object: {"text", "sentence", "ocr": [[x, y, w, h, [[cp, a, b],
+ * ...]], ...], "lines": [[y0, y1, first, count], ...], "chars": [[offset, x0, x1], ...]}. */
+static void print_chars(FILE *f, const char *text, const char *hook, const VjoVocrChars *c, unsigned w, unsigned h)
+{
+    static char buf[VJO_OCR_TEXT_CAP + VJO_CMAP_MAX_BYTES + 2], shell[VJO_OCR_TEXT_CAP + VJO_CMAP_MAX_BYTES + 2];
+    static unsigned char mem[3 * VJO_OCR_TEXT_CAP];
+    static VjoCmapScratch scratch;
+    VjoCmapSource src[VJO_VOCR_MAX_LINES];
+    VjoTextNorm k;
+    VjoArena a;
+    VjoCmap m = {0};
+    unsigned n = c->n_lines < VJO_VOCR_MAX_LINES ? c->n_lines : VJO_VOCR_MAX_LINES;
+    size_t len;
+    char *t;
+    memset(buf, 0, sizeof(buf));
+    /* a hook's text (--hook-text) is the job's text, placed on OCR's characters (game_ocr/main.c hook_show with
+     * OCR's text after it, then write_char_map) */
+    snprintf(buf, VJO_OCR_TEXT_CAP, "%s", hook ? hook : text);
+    vjo_text_normalize_keep(buf, VJO_OCR_TEXT_CAP, NULL, 0, &k); /* the border rule on, as the user's jobs */
+    for (unsigned i = 0; i < n; i++) {
+        src[i].cp = c->cp + c->line[i].first;
+        src[i].a = c->a + c->line[i].first;
+        src[i].b = c->b + c->line[i].first;
+        src[i].n = c->line[i].count;
+        src[i].x = 0;
+        src[i].y0 = c->line[i].y;
+        src[i].y1 = c->line[i].y + c->line[i].h;
+    }
+    if (n) vjo_cmap_build(buf, sizeof(buf) - 1, 1, src, n, w, h, w, h, &scratch);
+    vjo_arena_init(&a, mem, sizeof(mem));
+    t = vjo_filter_lines(&a, buf, VJO_FILTER_LINES);
+    t = t ? vjo_java_trim(t) : (char *)"";
+    memset(shell, 0, sizeof(shell));
+    len = strlen(t) < VJO_OCR_TEXT_CAP ? strlen(t) : VJO_OCR_TEXT_CAP - 1;
+    memcpy(shell, t, len);
+    if (vjo_cmap_carry(shell, sizeof(shell), len, buf, sizeof(buf)) == 0 || !vjo_cmap_find(shell, sizeof(shell), len, &m))
+        m.p = NULL;
+    fputs("{\"text\": ", f);
+    json_text(f, buf);
+    fputs(", \"sentence\": ", f);
+    json_text(f, shell);
+    fputs(", \"ocr\": [", f);
+    for (unsigned i = 0; i < n; i++) {
+        const VjoVocrCharLine *l = &c->line[i];
+        fprintf(f, "%s[%u, %u, %u, %u, [", i ? ", " : "", l->x, l->y, l->w, l->h);
+        for (unsigned j = 0; j < l->count; j++)
+            fprintf(f, "%s[%u, %u, %u]", j ? ", " : "", c->cp[l->first + j], c->a[l->first + j], c->b[l->first + j]);
+        fputs("]]", f);
+    }
+    fputs("], \"lines\": [", f);
+    for (unsigned i = 0; m.p && i < m.lines; i++) {
+        unsigned y0, y1, first, count;
+        vjo_cmap_line(&m, i, &y0, &y1, &first, &count);
+        fprintf(f, "%s[%u, %u, %u, %u]", i ? ", " : "", y0, y1, first, count);
+    }
+    fputs("], \"chars\": [", f);
+    for (unsigned k2 = 0; m.p && k2 < m.chars; k2++) {
+        uint32_t off;
+        unsigned line, x0, x1;
+        vjo_cmap_get(&m, k2, &off, &line, &x0, &x1);
+        fprintf(f, "%s[%u, %u, %u]", k2 ? ", " : "", (unsigned)off, x0, x1);
+    }
+    fputs("]}\n", f);
 }
 
 /* A line taller than a strip, kept whole, as the game worker's line block. */
@@ -136,6 +208,10 @@ static int usage(void)
                     "             a model whose blob has one) as the game worker runs it by default\n"
                     "             [--two-level on] compute the rare output rows only where needed (vita-vn-ocr's\n"
                     "             two-level head, a model whose blob has one) as the game worker runs it by default\n"
+                    "             [--chars OUT.json] the characters' places and the char map of the text, as the game\n"
+                    "             worker writes them for overlay_on_text (API 46; the job reads without the line cache);\n"
+                    "             [--hook-text FILE] with --chars: FILE's UTF-8 text (a hook's) is the job's text, placed\n"
+                    "             on OCR's characters\n"
 #endif
                     "backends built:"
 #ifdef VJO_WITH_NCNN
@@ -157,7 +233,7 @@ int main(int argc, char **argv)
 #endif
     const char *model = NULL;
 #ifdef VJO_WITH_VOCR
-    const char *lines_path = NULL, *lm_name = NULL, *cascade_name = NULL;
+    const char *lines_path = NULL, *lm_name = NULL, *cascade_name = NULL, *chars_path = NULL, *hook_path = NULL;
     int blank = 0, refine = 0, counters = 0, head_gate = 0, two_level = 0;
     unsigned cascade_conf = 0, cascade_ms = 2000;
 #endif
@@ -168,6 +244,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--model")) model = argv[i+1];
 #ifdef VJO_WITH_VOCR
         else if (!strcmp(argv[i], "--lines")) lines_path = argv[i+1];
+        else if (!strcmp(argv[i], "--chars")) chars_path = argv[i+1];
+        else if (!strcmp(argv[i], "--hook-text")) hook_path = argv[i+1];
         else if (!strcmp(argv[i], "--blank")) blank = !strcmp(argv[i+1], "on");
         else if (!strcmp(argv[i], "--lm")) lm_name = argv[i+1];
         else if (!strcmp(argv[i], "--cascade")) cascade_name = argv[i+1];
@@ -228,7 +306,7 @@ int main(int argc, char **argv)
         VjoRgbaImage rgba = {im.pixels, im.width, im.height, (size_t)im.width * 4};
         VjoGreySource grey;
         vjo_grey_source_rgba(&rgba, &grey);
-        if (lines_path || blank || lm_name || cascade_name || refine || counters || head_gate || two_level) {
+        if (lines_path || chars_path || blank || lm_name || cascade_name || refine || counters || head_gate || two_level) {
             /* The game worker's form: resident weights, the job policy, the LM. */
             VjoVocrPolicy policy = {.blank = blank, .line = lines_path ? print_line : NULL,
                                     .refine = refine ? VJO_VOCR_REFINE_ALL : 0u, .short_lines = 1,
@@ -263,6 +341,9 @@ int main(int argc, char **argv)
             }
             policy.ud = lf;
             grey.line_buffer = line_buffer;
+            VjoVocrChars *chars = chars_path ? calloc(1, sizeof(VjoVocrChars)) : NULL;
+            if (chars_path && !chars) return 2;
+            policy.chars = chars;
             rc = vjo_vocr_ocr_policy(&platform, argv[i], model, &grey, &res, lws ? lws : workspace, job, capture, cap,
                                      &policy, text, sizeof(text), &st);
             if (counters) fprintf(stderr, "counters=%d,%d counter_lines=%u\n", policy.counter_tau, policy.counter_open,
@@ -284,6 +365,22 @@ int main(int argc, char **argv)
                         "cascade_us=%u cascade_load_us=%u\n", st.cascade ? st.cascade->name : "-", st.cascade_rc,
                         st.cascade_lines, st.cascade_changed, st.cascade_skipped, (unsigned)st.cascade_us,
                         (unsigned)st.cascade_load_us);
+            if (chars) {
+                FILE *cf = fopen(chars_path, "w");
+                if (!cf) return 2;
+                static char hook[VJO_OCR_TEXT_CAP];
+                size_t hn = 0;
+                FILE *hf = hook_path ? fopen(hook_path, "rb") : NULL;
+                if (hook_path && !hf) return 2;
+                if (hf) {
+                    hn = fread(hook, 1, sizeof(hook) - 1, hf);
+                    fclose(hf);
+                }
+                hook[hn] = 0;
+                print_chars(cf, rc ? "" : text, hook_path ? hook : NULL, chars, im.width, im.height);
+                fclose(cf);
+                free(chars);
+            }
             vjo_vocr_resident_drop(&res);
             vjo_vocr_resident_drop(&cres);
             vjo_vocr_lm_drop(&lres);

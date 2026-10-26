@@ -85,8 +85,14 @@
  * A line either skipped something of is read again with the full head where the counter re-decode needs it. The
  * model sizes' files are VOCR5_S_w8g.vocr, VOCR5_N_w8g2.vocr and VOCR5_L_w8g2.vocr; the recognize step's kind is
  * the share of frames the gate skipped, in percent. Sizes and layouts are unchanged. The interfaces of closed
- * drafts #281 (39) and #282 (40) have builds, so this is a new number. */
-#define VJO_API_VERSION 42
+ * drafts #281 (39) and #282 (40) have builds, so this is a new number.
+ * 46: the overlay on the game's text (docs/overlay-on-text.md, #309; closed draft #271's API 37, renumbered):
+ * VjoGameOcrRequest.speed bit 25 (VJO_GAME_OCR_S_CHARS): the game worker writes where each character of the text
+ * it returns is on the screen (core/charmap.h), after the text and its recognizer's copy in VjoGameOcrResult.text,
+ * whose last bytes were zero; the Shell sets it in the user's jobs with config.ini overlay_on_text = on. Sizes and
+ * layouts are unchanged. 43-45 and speed bits 17 and 20-24 are left to work in flight (the line finder's fixes,
+ * the text spotter, vertical text, trusted hooks). */
+#define VJO_API_VERSION 46
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

@@ -1071,6 +1071,7 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x8000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r.speed = 0x20000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 36: but bit 16) */
     r.speed = 0x100000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: but bits 18 and 19) */
+    r.speed = 0x4000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 46: but bit 25) */
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
     TEST_CHECK(VJO_GAME_OCR_S_TRIM == 0x40u); /* bit 5 is draft #228's scan screen (VJO_GAME_OCR_S_SPOT) */
     /* API 36: bit 16; bit 7 is draft #245's PSP probe, bits 8-15 draft #226's frame pacing */
@@ -1080,8 +1081,11 @@ static void invalid_capture_and_wire(void)
     TEST_CHECK(VJO_GAME_OCR_S_HEAD_GATE == 0x40000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_HEAD_GATE));
     TEST_CHECK(VJO_GAME_OCR_S_TWO_LEVEL == 0x80000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_TWO_LEVEL));
     TEST_CHECK(!((VJO_GAME_OCR_S_HEAD_GATE | VJO_GAME_OCR_S_TWO_LEVEL) & VJO_GAME_OCR_S_SHOT_ALL));
+    /* API 46: bit 25, the characters' places (docs/overlay-on-text.md), an OCR job's, never a shot's */
+    TEST_CHECK(VJO_GAME_OCR_S_CHARS == 0x2000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_CHARS));
+    TEST_CHECK(!(VJO_GAME_OCR_S_CHARS & VJO_GAME_OCR_S_SHOT_ALL));
     r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate, (API 36) the border rule, (API 42) the
-                                   * head gate and the two-level head: known */
+                                   * head gate and the two-level head, (API 46) the characters' places: known */
     uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;
@@ -1474,6 +1478,8 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     r = shot_request(); r.speed = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 26 */
     r = shot_request(); r.speed = VJO_GAME_OCR_S_DROP_BORDERS; /* API 36: an OCR job's text, never a shot's */
+    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_CHARS; /* API 46: an OCR job's text too */
     TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM | VJO_GAME_OCR_S_BOOST; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM << 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
