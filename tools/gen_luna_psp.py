@@ -108,9 +108,9 @@ def render_inc():
         " * decimal without its leading zeros: NPJH00065 is VJO_LUNA_PSP_ID(NPJH, 65)) */",
         "#define VJO_LUNA_PSP_ID(prefix, number) ((uint32_t)VJO_LUNA_PSP_##prefix << VJO_LUNA_PSP_NUMBER_BITS | (number##u))",
         "",
-        "/* The title IDs, sorted, packed. In the debug worker's data segment (core/port.h VJO_DATA_TABLE), the counts",
-        " * and the addresses below in its code: the two segments' room as measured with PSP text (include/vjo_ledger_budget.h) */",
-        "static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] VJO_DATA_TABLE(luna_psp_ids) = {",
+        "/* The title IDs, sorted, packed. This table is in the debug worker's code segment, where its pages have room",
+        " * (include/vjo_ledger_budget.h, PSP text); a table can move to the data segment with core/port.h's VJO_DATA_TABLE */",
+        "static const uint32_t vjo_luna_psp_ids[VJO_LUNA_PSP_TITLES] = {",
     ]
     for k in range(0, len(ids), IDS_PER_LINE):
         out.append("    " + " ".join(f"VJO_LUNA_PSP_ID({i[:4]}, {int(i[4:], 10)})," for i in ids[k:k + IDS_PER_LINE]))
