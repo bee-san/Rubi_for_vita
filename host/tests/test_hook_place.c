@@ -237,8 +237,8 @@ static void test_verified_amatsutsumi(void)
 
 /* Every entry of Rubi's list: a 9-character title whose entries are contiguous, a register that holds an
  * address (r0-r12, sp, lr), an encoding, a site aligned for its instruction set, 8-16 recorded bytes and at
- * least the whole patch at its address (12 at a Thumb address = 2 mod 4), deref 0 or 1, a filter this build
- * has; one entry per (title, NID, offset). */
+ * least the whole patch at its address (12 at a Thumb address = 2 mod 4), a read kind, a filter this build
+ * has, an APP_VER of two BCD bytes or none; one entry per (title, NID, offset). */
 static void test_verified_table(void)
 {
     const VjoPlaceVerified *all, *first;
@@ -247,12 +247,17 @@ static void test_verified_table(void)
     for (unsigned i = 0; i < n; i++) {
         const VjoPlaceVerified *v = &all[i];
         TEST_CHECK_(v->title && strlen(v->title) == 9, "entry %u", i);
-        TEST_CHECK_(v->reg <= 14 && v->encoding > VJO_HOOK_ENC_AUTO && v->encoding < VJO_HOOK_ENC_COUNT, "%s +%X", v->title,
+        TEST_CHECK_(v->reg <= 15 && v->encoding > VJO_HOOK_ENC_AUTO && v->encoding < VJO_HOOK_ENC_COUNT, "%s +%X", v->title,
                     (unsigned)v->off);
+        TEST_CHECK_(v->read != VJO_PLACE_READ_CELLS || v->encoding == VJO_HOOK_ENC_CP932, "%s: cells are CP932",
+                    v->title);
+        TEST_CHECK_(!v->app_ver || ((v->app_ver >> 12) < 10 && (v->app_ver >> 8 & 15u) < 10 &&
+                                    (v->app_ver >> 4 & 15u) < 10 && (v->app_ver & 15u) < 10),
+                    "%s: APP_VER %04X", v->title, (unsigned)v->app_ver);
         TEST_CHECK_(v->thumb <= 1 && !(v->off & (v->thumb ? 1u : 3u)), "%s +%X alignment", v->title, (unsigned)v->off);
         TEST_CHECK_(v->sig_len <= 16 && v->sig_len >= vjo_place_patch_bytes(0x81000000u + v->off, v->thumb),
                     "%s +%X: %u recorded bytes", v->title, (unsigned)v->off, v->sig_len);
-        TEST_CHECK_(v->deref <= 1 && vjo_luna_filter_known(v->filter), "%s +%X: filter 0x%02X", v->title,
+        TEST_CHECK_(v->read <= VJO_PLACE_READ_CELLS && vjo_luna_filter_known(v->filter), "%s +%X: filter 0x%02X", v->title,
                     (unsigned)v->off, v->filter);
         TEST_CHECK_(vjo_place_verified(v->title, &first) >= 1 && first <= v && v < first + vjo_place_verified(v->title, &first),
                     "%s: its entries are contiguous", v->title);
@@ -260,6 +265,19 @@ static void test_verified_table(void)
             TEST_CHECK_(strcmp(all[j].title, v->title) || all[j].module_nid != v->module_nid || all[j].off != v->off,
                         "%s +%X twice", v->title, (unsigned)v->off);
     }
+}
+
+/* A page record's cells as CP932 bytes, in place: double-byte cells whole, a single-byte one alone, a 0 cell
+ * the end. */
+static void test_cells(void)
+{
+    /* 「あ」, a line break, ｱ, A, then a 0 cell and a stale cell after it */
+    uint8_t c[] = {0x81, 0x75, 0x82, 0xA0, 0x81, 0x76, 0x0A, 0x00, 0xB1, 0x00, 'A', 0x00, 0x00, 0x00, 0x82, 0xA2};
+    static const uint8_t want[] = {0x81, 0x75, 0x82, 0xA0, 0x81, 0x76, 0x0A, 0xB1, 'A'};
+    TEST_CHECK(vjo_place_cells(c, 8) == sizeof want && !memcmp(c, want, sizeof want));
+    TEST_CHECK(vjo_place_cells(c, 0) == 0);
+    uint8_t one[] = {0x82, 0xA0};
+    TEST_CHECK(vjo_place_cells(one, 1) == 2 && one[0] == 0x82 && one[1] == 0xA0);
 }
 
 /* The CALL prefilter: Japanese lines pass, binary structs and Latin text do not. */
@@ -371,6 +389,7 @@ TEST_LIST = {
     {"verified", test_verified},
     {"verified: アマツツミ, a site inside a function", test_verified_amatsutsumi},
     {"verified: every entry of the list", test_verified_table},
+    {"a page record's cells", test_cells},
     {"prefilter", test_prefilter},
     {"pointer_array", test_pointer_array},
     {"reasons", test_reasons},

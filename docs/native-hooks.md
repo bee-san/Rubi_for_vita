@@ -144,7 +144,7 @@ Two lists name them:
     - PCSG00808 悠久のティアブレイド -Lost Chronicle-, NID 0x8C990BE1, +0x3142A, Thumb, r10, UTF-8, filter Luna's at its address; 488 farm pages
     - PCSG00852 マジきゅんっ！　ルネッサンス, NID 0x8DFD228D, +0x7F75A, Thumb, r1, CP932, filter Luna's at its address; 278 farm pages
     - PCSG00916 Starry☆Sky ～Summer Stories～, NID 0x4813A011, +0x30114, Thumb, r0, CP932, filter Luna's at its address; 949 farm pages
-    - PCSG00935 BLACK WOLVES SAGA  -Weiβ und Schwarz-, NID 0x8EA89B16, +0x541A2, Thumb, r0, UTF-8, filter Luna's at its address; 387 farm pages
+    - PCSG00935 BLACK WOLVES SAGA  -Weiβ und Schwarz-, NID 0x8EA89B16, +0x541A2, Thumb, r0, UTF-8, filter `RF_IFENGINE` (Luna's at its address, PCSG00766, dropped every `#n`: 270 of the bucket's 382 pages lost their line breaks); 387 farm pages
     - PCSG01075 悠久のティアブレイド -Fragments of Memory-, NID 0x8ECBA36A, +0x31F44, Thumb, r10, UTF-8, filter Luna's at its address; 333 farm pages
     - PCSG01221 紅色天井艶妖綺譚 二藍, NID 0x1A9CF884, +0x3B554, Thumb, r4, CP932, filter Luna's at its address; 5 farm pages
 
@@ -161,15 +161,50 @@ Two lists name them:
     - PCSG00876 7'scarlet, NID 0x16FEB862, +0x12B60, Thumb, r6, UTF-8, filter `RF_PCSG00876`; 1051 farm pages
     - PCSG01194 参千世界遊戯 ～Re Multi Universe Myself～, NID 0xECD30306, +0x56E24, Thumb, r0, CP932, filter `RF_PCSG01194`; 30 farm pages
 
-  An entry is hooked only when the module NID and every recorded byte match. An entry at the address of
+  - From the farm's data bucket (the hooks of its finished titles, with every approved page's hook bytes:
+    [farm checks](#farm-checks)), Rubi's own sites, proven in Vita3K only. The bucket has no segment-0 dump,
+    so only the recorded 16 bytes were checked: no branch, PC use or IT among the patched instructions
+    (disassembled with LLVM 18's `llvm-mc`). **Unchecked for these two:** a branch elsewhere in segment 0 into
+    the middle of the patched bytes, which the entries above had checked on their dumps (one would crash the
+    game when it is taken; the farm's dumps, on the owner's machine, can settle it):
+    - PCSG00628 ALIA's CARNIVAL! サクラメント (APP_VER 01.00), NID 0x1EE45F02, +0x3373C, Thumb, r5, CP932, filter
+      `RF_PCSG00628`; 1208 farm pages. Patch: `str r4, [r6, #0x2c]; movs r4, #0; str.w r9, [r6, #0xb4]`.
+    - PCSG00380 真 流行り神 (APP_VER 01.00), NID 0x9A11E118, +0x4DE9E, Thumb, r15 + 0x98E152, the cells of
+      foaf4's page record (`VJO_PLACE_READ_CELLS`), CP932, filter `RF_PCSG00380`; 1095 farm pages. The site is
+      the per-frame message-window draw, so it is hit every frame: two reads of game memory (the count, the
+      cells) and an unchanged text counts a hit only. Patch (12 bytes): `str r4, [sp, #0xa8]; movt r0,
+      #0x819d; ldr r7, [r0]; ldr.w r12, [r0, #0x4]`. The record is a static (`.bss`), which the farm read at
+      0x819DBFF0 with segment 0 at 0x81000000 (its r4, 0 at the site, + that address): r15, the site's own
+      address, + 0x98E152 is that address wherever the eboot is loaded as it was linked. A game built with an
+      SDK up to about 3.00 is a statically linked executable at 0x81000000 that cannot be relocated
+      ([h-encore's write-up](https://github.com/TheOfficialFloW/h-encore/blob/85b345e28f38d728a7ac33a35b9d6f32db93e8fc/WRITE-UP.md));
+      真 流行り神 came out in 2014. Were it relocated, the loader would also rewrite the `movt r0, #0x819d` in
+      the recorded bytes (a static's address in the record's 64 KiB), so the signature refuses the entry unless
+      it came out as in Vita3K. Every read stays inside one readable memory block (`read_game`): a wrong record
+      gives no text, or one that OCR does not agree with, never a fault.
+
+  An entry is hooked only when the module NID and every recorded byte match, and, when it names one, not in
+  another game version than it was proven in: `app_ver` is the farm's param.sfo `APP_VER` (`0x0100` for
+  01.00); another `APP_VER` refuses the entry as `version` (`vjo_place_verified_version`; `APP_VER` is read
+  for such an entry also when the title has no Luna site). One that cannot be read leaves the entry to its
+  NID and bytes, which pin the build anyway (an update changes the eboot, and so its NID); a Luna site that
+  names its version is refused then, having neither. 25 of the 30 entries name 01.00; CLANNAD's, POSSESSION
+  MAGENTA's, 忠臣蔵46+1 V's, 剣が君 for V's and 月に寄りそう乙女の作法's name none (the farm did not record it), so
+  their NID and bytes alone decide. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text
   (`vjo_luna_site_at`); the Luna site is then skipped as hooked. Two more fields, both 0 by default:
   `filter` names a filter for the entry's text, a Luna one (`VJO_LF_*`) or one of
   [Rubi's own](#rubis-filters) (`VJO_RF_*`), in place of the Luna site's filter at that address (whose
-  hookfunc clean-up still runs first; `vjo_luna_text_filter`); `deref` reads the text through a 32-bit
-  pointer at the register + padding, one exact 4-byte read, as Luna's `DATA_INDIRECT` (an unreadable
-  pointer gives no text). The host test `verified: every entry of the list` checks every entry's
-  alignment, recorded bytes against the patch, register, encoding and filter. When OCR is refused for memory
+  hookfunc clean-up still runs first; `vjo_luna_text_filter`); `read` says how the text is read at the
+  register + padding: the string there (`VJO_PLACE_READ_STRING`), through a 32-bit pointer there, one exact
+  4-byte read, as Luna's `DATA_INDIRECT` (`VJO_PLACE_READ_DEREF`; an unreadable pointer gives no text), or a
+  page record of 16-bit cells (`VJO_PLACE_READ_CELLS`: a 32-bit count at +0x14, the cells from +0x20, each
+  a character's first CP932 byte and its second one or 0; exactly that many cells are read, at most 256,
+  none past the record, and `vjo_place_cells` makes them CP932 bytes). The register may be r15, the site's
+  own address: the padding is then a static's distance from the site. The host test `verified: every entry
+  of the list` checks every entry's alignment, recorded bytes against the patch, register, encoding, read,
+  filter and `APP_VER`; `the farm's excerpts through each verified entry` runs each entry the farm's bucket
+  has pages for on its own recorded bytes ([farm checks](#farm-checks)). When OCR is refused for memory
   (`VJO_E_OOM`) with the automatic pick, a verified entry's newest text answers unconfirmed
   (`vjo_hook_select_no_memory`, `VJO_HOOK_R_UNCONFIRMED`), its capture pass beside
   `VJO_GAME_RESERVE_HOOK_ONLY`; Luna's sites and CALL callers never do.
@@ -214,8 +249,8 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 
 | Filter | Titles | What it does | Farm evidence |
 | --- | --- | --- | --- |
-| `PROTOTYPE` | PCSG00007, PCSG00206, PCSG00620 | half-width kana to hiragana (Luna's map, as its PCSG01198 filter); `$t<name>$d` to the name on its own line, `$t<name>@` to the name; `$d` to a line break; `$[base$/reading$]` to the base; drops `$L1` `$A1` `$S<nnn>` `$S` `$w` `$C[..]`; `＿` to a blank; trims | PCSG00007 events 1-3; PCSG00206 event 367; PCSG00620 events 80-82 |
-| `IFENGINE` | (with names: PCSG00448, PCSG00469, PCSG00853) | `#Ruby[base,reading]` to the base; drops `#Tag` and `#Tag[..]`; `#n` to a line break; trims | PCSG00448 events 1, 54; PCSG00853 sample 1; PCSG00935 event 1 |
+| `PROTOTYPE` | PCSG00007, PCSG00206, PCSG00620 | `･` to `・` (the middle dot between katakana words, not Luna's `…`); half-width kana to hiragana (Luna's map, as its PCSG01198 filter); `$t<name>$d` to the name on its own line, `$t<name>@` to the name; `$d` to a line break; `$[base$/reading$]` to the base; drops `$L1` `$A1` `$S<nnn>` `$S` `$w` `$C[..]`; `＿` to a blank; trims | PCSG00007 events 1-3; PCSG00206 event 367; PCSG00620 events 80-82, and its 12 `･` (page 375: セブンズ･カオス drawn セブンズ・カオス) |
+| `IFENGINE` | PCSG00935 (with names: PCSG00448, PCSG00469, PCSG00853) | `#Ruby[base,reading]` to the base; drops `#Tag` and `#Tag[..]`; `#n` to a line break; trims | PCSG00448 events 1, 54; PCSG00853 sample 1; PCSG00935 event 1, all 382 of its bucket pages |
 | `ANGLE_RUBY` | PCSG00648 (and PCSG00509) | `<base,reading>` to the base | PCSG00648 sample 5; PCSG00509 event 50 |
 | `BR_NEWLINE` | PCSG00553, PCSG00807 | `<br>` to a line break; trims | PCSG00807 sample 2; PCSG00553 events 33-37 |
 | `BACKSLASH_NEWLINE` | PCSG00787 | a lone `\` to a line break; trims | PCSG00787 event 1 |
@@ -223,18 +258,87 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00450` | キャプテン・アース Mind Labyrinth | drops `《SP QUE,1,NNNN》` voice cues | script.dat (355 uses), event 4 |
 | `PCSG00469` | CLOCK ZERO ExTime | `#Name[1]` 撫子, then `IFENGINE` | samples 80, 182, 1345 |
 | `PCSG00509` | POSSESSION MAGENTA | `＊Ｂ` 鈴; `^` to a line break; `<base,reading>` to the base | events 50, 1011 (67 pages hold `＊Ｂ`) |
-| `PCSG00540` | 忠臣蔵46+1 V | `c<id>.<name>r` to the name on its own line, narration's `r`, `v<voice>.` and `w<ms>.` dropped, `b<reading>.<base>` to the base, half-width kana (･ ﾞ ﾟ drawn … ！ ？) | events 1-5, 51, 53, 55 |
+| `PCSG00540` | 忠臣蔵46+1 V | `c<id>.<name>r` to the name on its own line, narration's `r`, `v<voice>.` and `w<ms>.` dropped, `b<reading>.<base>` to the base, half-width kana (･ ﾞ ﾟ drawn … ！ ？); a 0xA0 byte is a blank cell, `　` | events 1-5, 51, 53, 55; 0xA0 on 170 of the bucket's 1037 pages (page 82: 東京都　陵南学園。, 9 glyphs) |
+| `PCSG00628` | ALIA's CARNIVAL! サクラメント | ADV::MSGSET's SNR markup as `PCSG00540`'s without its `c<id>.`: `<name>r` to the name on its own line, `r` to a line break, `v<voice>.` dropped, `z<n>.` and `u<n>.` dropped (a size and a code point: in the farm's survey of `main.snr`, in none of its pages), `b<reading>.<base>` to the base (an `r` before the base is a line break), `[` `]` `\|` `k` `y` dropped, `!X` to the ASCII X (a lowercase X is read as a code first: none in the pages); half-width kana as `PCSG00540`; the 0xA0 blank | events 1, 20, 31, 89, 148, 207; all 1208 bucket pages |
+| `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
 | `PCSG00817` | EVE burst error R | `[n]` to a line break; drops `[wNNN]` `[hNNN]` `[cRRGGBB]` `[e]` and the other `[x]` codes | events 1-59, 432 |
 | `PCSG00853` | ピリオドキューブ | `#Name[1]` 花宮, `#Name[2]` かずは, `#Name[3]` カズハ, then `IFENGINE` | samples 78, 120, 259, 371, 464, 492 |
 | `PCSG00876` | 7'scarlet | `@@` to a line break; drops `$<digit>` style switches | scn op 0x10 records |
 | `PCSG01194` | 参千世界遊戯 | `<name>@r` to the name on its own line, `@r` to a line break, drops `@p<n>.` and `@v<voice>.`, half-width kana (･ ﾞ ﾟ drawn … ！ ？) | events 1, 11, 21-23 |
 
+**CP932's 0xA0.** Shift_JIS leaves the single byte 0xA0 undefined; Windows' cp932 (and so Luna's filters)
+reads it as U+F8F0, a private-use code point, and the decoder (`vjo_hook_decode`) does too: a filter turns it
+into what its game draws there (the MSGSET titles: a blank cell, `　`), and `vjo_hook_clean` drops one no
+filter mapped, as the decoder used to drop the byte.
+
 **Player names.** Where a hook reads a line before the game expands its player-name code (`#Name[n]`,
-`＊Ｂ`), Rubi cannot know the name the player typed. The filter writes the game's default name instead,
+`＊Ｂ`, foaf4's `㌫` `㍊`), Rubi cannot know the name the player typed. The filter writes the game's default name instead,
 the one the farm kept at name entry and saw drawn. A player who renamed the character gets that line
 with the default name: the popup then differs from the screen by that name only, and OCR agreement
 (70 % similarity) still holds for most lines. Dropping the code would cut the name out of the sentence
 instead. A per-game name setting could replace the default later.
+
+### Farm checks
+
+The farm keeps a data bucket (private: it holds the games' text) with, for each title it finished, its hook
+(`hook/rubi-hook.json`: the site, module NID, the 16 bytes there, register, encoding, `APP_VER`) and every page an
+AI reviewer approved against the frame the game drew, with the bytes the hook read
+(`raw_text_events[].raw_hex`) and the text the farm made of them (`text_clean`). `tools/hook_farm.py` runs
+Rubi's entries on them:
+
+- `tools/hook_farm.py --bucket DIR check [TITLE ...]` builds `host/hook_farm_check.c` (the worker's capture
+  rules and `vjo_hooks_text`'s path: the entry's read, the Luna site's text processing or the entry's filter,
+  `vjo_hook_clean`, on the host) and compares Rubi's text for every recorded hit with the farm's, as shown:
+  both normalised as the worker normalises what it shows (`core/textnorm.h`), white space at the two ends of
+  the text dropped (Rubi's filters trim the first line's indentation and the blank lines around a page, the
+  farm keeps them), the farm's U+F8F0 read as U+3000 and its C0 controls dropped (above). A page whose text
+  differs only by a default player name is counted apart: the farm's text dropped the name code, and its
+  own glyph counts show the name drawn. The worker shows a site's latest hit, so a page the farm built from
+  several hits (a name, then the line; lines added one by one) is compared with its hits joined.
+- `fixtures` writes `host/tests/fixtures/hook_farm.inc`: per entry, up to 5 hits of at most 128 bytes that
+  Rubi turns into exactly the farm's text, chosen to cover the codes in them. The engine test `the farm's
+  excerpts through each verified entry` installs each entry from Rubi's table in a fake main module (its NID,
+  its bytes at its offset, its `APP_VER`), puts the hit's bytes where its register points, and runs the
+  observer, the stream and `vjo_hooks_text`: 50 excerpts of 14 titles, short lines only, never a script.
+
+Single-hit pages of the bucket of 2026-10-26 (04:36Z) whose text is the farm's, as shown, with main's
+filters before this change and Rubi's now [measured: `tools/hook_farm.py check` on the host]:
+
+| Title | Pages | Single-hit | Before | Now | Default name | Hits joined |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| PCSG00007 | 562 | 561 | 561 | 561 | | 1 of 1 |
+| PCSG00380 | 1,095 | 1,092 | (no entry) | 1,060 | 32 | 0 of 3 (tutorial pages with a menu) |
+| PCSG00468 | 412 | 403 | 403 | 403 | | 9 of 9 |
+| PCSG00469 | 2,047 | 1,599 | 1,593 | 1,593 | 6 | 444 of 448 (the farm's blank lines) |
+| PCSG00509 | 1,299 | 1,299 | 1,299 | 1,299 | | |
+| PCSG00540 | 1,037 | 1,037 | 867 | 1,037 | | |
+| PCSG00553 | 1,129 | 1,128 | 1,128 | 1,128 | | 1 of 1 |
+| PCSG00620 | 995 | 972 | 960 | 972 | | 23 of 23 |
+| PCSG00628 | 1,208 | 1,208 | (no entry) | 1,208 | | |
+| PCSG00648 | 1,393 | 895 | 895 | 895 | | 498 of 498 |
+| PCSG00713 | 1,463 | 188 | 188 | 188 | | 1,275 of 1,275 |
+| PCSG00807 | 690 | 690 | 690 | 690 | | |
+| PCSG00876 | 1,049 | 1,049 | 1,049 | 1,049 | | |
+| PCSG00935 | 382 | 382 | 112 | 382 | | |
+
+That is 12,465 of the 12,503 single-hit pages, and the other 38 differ by a default name only. Exactly, before
+the shown form, 12,131 (the rest: full-width `！？` for `!?`, the ends' white space, the 0xA0 blank). The bucket's
+other 19 Vita titles have no entry, for one of these reasons (the hook bucket's inventory: `rubi-bucket-hooks`
+report):
+
+- MAGES' SC3 script text (STEINS;GATE 比翼恋理のだーりん `PCSG00146`, ROBOTICS;NOTES ELITE `PCSG00352`,
+  CHAOS;CHILD `PCSG00555`): the hook's bytes are glyph indices into a charset of 2,666 to 8,000 characters
+  per game, which no read or filter here decodes.
+- HuneX's page record (帝国海軍恋慕情 `PCSG00547`): the farm polled it from the game's
+  `sceCtrlReadBufferPositive` import stub (`mvn r0, #0; bx lr` in the patched bytes) and decodes its glyph
+  words with the game's own charset.
+- A branch among the instructions the hook would overwrite (Vita3K hooks a block without patching it):
+  `PCSG00367`, `PCSG00576`, `PCSG00611`, `PCSG00653`, `PCSG00666`, `PCSG00751`, `PCSG00753`, `PCSG00805`,
+  `PCSG00854`, `PCSG00866`, `PCSG00914`, `PCSG01110`. A site next to it needs more than the 16 bytes the
+  bucket recorded; Luna's table has other sites for some of them, which the placement check decides on the
+  console.
+- No module NID or bytes recorded: `PCSG00667` (LOVE:QUIZ, at Luna's own site 0x8003ACBA), `PCSG00917`,
+  `PCSG00918` (Starry☆Sky Autumn and Winter, Luna's sites too).
 
 ### The observer
 
@@ -243,8 +347,9 @@ with its names changed), ARM code for ARM and Thumb sites. It saves r0-r12, the 
 (with GE) and FPSCR in a 72-byte frame and d0-d31 below it (328 bytes of the game thread's stack), calls
 `vjo_hooks_observe(slot, frame)` on an 8-byte-aligned stack, and restores every register, the flags and
 the stack before it jumps to what C returned: taiHEN's next hook or the trampoline, as `TAI_CONTINUE`
-would. `vjo_hooks_observe` passes the registers to the capture (Rubi's entry: the NUL-terminated string
-at the register + padding; Luna's: `vjo_luna_capture`) with `frame[15]` set to the site's address.
+would. `vjo_hooks_observe` passes the registers to the capture (Rubi's entry: what its `read` says at the
+register + padding, the NUL-terminated string, the string its pointer there points at, or a record's cells;
+Luna's: `vjo_luna_capture`) with `frame[15]` set to the site's address.
 
 The capture reads game memory only through `read_game`: `sceKernelGetMemBlockInfoByAddr` gives the
 block that holds the address; it must be readable, and no read goes past its end (at most 512 bytes).
@@ -477,8 +582,10 @@ Stack, on the game's thread: a site hit about 564 B at most (the observer's 328 
 align it, then `vjo_hooks_observe` 56, `vjo_luna_capture` 72, `mirror` 56 and `read_game` 48; the
 memory-block syscall runs on the kernel's stack); a CALL hit about 80 B (the hook 24, `call_hit` 32, then
 the prefilter or the stream's offer 24) [measured: the C frames by `-fstack-usage` of 9fa24c5's worker,
-the same in both builds, the observer's from its code; audit-hooks section 2]. CPU time per hit, and any
-CPU3 load, are unmeasured.
+the same in both builds, the observer's from its code; audit-hooks section 2]. With the page-record read,
+`vjo_hooks_observe` is 56 B (48 B on main 0b1a45b), and a verified entry's hit adds `read_game` 48 or the
+stream's offer, under that maximum [measured: `-fstack-usage`, tools/fast_gate.sh's vitasdk image, both
+builds]. CPU time per hit, and any CPU3 load, are unmeasured; PCSG00380's site is hit every frame.
 
 ## Hidden line diagnostics
 
@@ -664,6 +771,8 @@ addresses can be patched as they are.
 `host/tests/test_hook_stream.c`, `tools/hook_place_forms.txt`, `tools/gen_hook_place_fixtures.sh`; the
 selection's `core/hook_select.{h,c}`, `host/tests/test_hook_select.c`, `host/tests/test_game_hooks.c` (the
 job path) and `host/tests/hooks_none.c` (nothing installed, for the worker's other host tests).
+The farm checks: `tools/hook_farm.py`, `host/hook_farm_check.c`, `host/tests/fixtures/hook_farm.inc` (generated),
+`tools/tests/test_hook_farm.py`.
 The PSP probe: `game_ocr/psp_probe.{h,c}`, `core/psp_probe.{h,c}`, `core/hook_luna_psp.inc` (generated by
 `tools/gen_luna_psp.py`), `host/tests/test_psp_probe.c`, `tools/tests/test_gen_luna_psp.py`.
 History: PRs #7, #10, #12, #13, #16 and the code removed in c35ebf9.

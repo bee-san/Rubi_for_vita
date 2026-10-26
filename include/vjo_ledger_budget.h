@@ -273,6 +273,16 @@
  * build log's module rows, both builds, main 4bc2604 (byte for byte CI's) and this change, vitasdk/vitasdk:2026.08's
  * gcc 15.2.0]. So each game that is ON holds 180,224 -> 188,416 B (debug) and 172,032 -> 180,224 B (normal, the main
  * download). Kept: an estimated 0.12 / 0.20 / 0.26 s less per 3-line box at 333 MHz (Small / Normal / Large). */
+/* rubi-bucket-hooks, two more verified entries from the farm's data bucket (PCSG00628, PCSG00380), their two
+ * filters, the page-record read (VJO_PLACE_READ_CELLS, vjo_place_cells), the entries' APP_VER gate, CP932 0xA0:
+ * worker text 148,424 -> 148,792 B debug (2,760 B of room left) and 139,668 -> 140,004 B normal (3,356 B),
+ * data/bss 34,960 -> 35,288 B debug and 34,952 -> 35,280 B normal (+328 B: the verified table 1,120 -> 1,200 B,
+ * the new filters' ops 132 + 84 B, PROTOTYPE's and PCSG00540's one more op each, 12 + 12 B, the filters' index
+ * 56 -> 64 B [arm-vita-eabi-nm -S]), the same pages, 188,416 and 180,224 B [measured: the build log's module
+ * rows, both builds, main 0b1a45b and this change, tools/fast_gate.sh's vitasdk image]. The kernel and Shell SELF
+ * files are byte-identical to main's; the Rubi app's eboot.bin, which links core/hook_place.c for the Games tag,
+ * is 120 B (debug) and 79 B (normal) larger. The page-record read is two exact reads of game memory into the
+ * existing capture buffer: no block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 188416u
 #else

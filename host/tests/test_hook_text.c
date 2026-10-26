@@ -81,7 +81,10 @@ static void cp932_cases(void)
     DECODES(VJO_HOOK_ENC_CP932, "A\x82\x7f" "B", 4, "A\x7f" "B");
     DECODES(VJO_HOOK_ENC_CP932, "A\x82", 2, "A");               /* cut off at n */
     DECODES(VJO_HOOK_ENC_CP932, "A\x82\0\x82\xa0", 5, "A");     /* the NUL after a lead ends it */
-    DECODES(VJO_HOOK_ENC_CP932, "\x80\xa0\xfd\xfe\xff" "C", 6, "C");
+    DECODES(VJO_HOOK_ENC_CP932, "\x80\xfd\xfe\xff" "C", 5, "C");
+    /* 0xA0, which Shift_JIS leaves undefined: Windows' cp932's U+F8F0 (vjo_hook_clean drops it unless a filter
+     * made it what the game draws) */
+    DECODES(VJO_HOOK_ENC_CP932, "A\xa0" "B\x81\x49\xa0", 6, "A\xef\xa3\xb0" "B！\xef\xa3\xb0");
     DECODES(VJO_HOOK_ENC_CP932, "\x1b\xb4", 2, "\x1bｴ");
 }
 
@@ -240,6 +243,9 @@ static void clean_controls(void)
         {"\\\\s156猫\\\\n犬\\", "\\\\s156猫\\\\n犬\\"},
         {"\\s156\\w1\\k\\c", ""},
         {"", ""},
+        /* the decoder's CP932 0xA0 (U+F8F0) no filter mapped; other private-use code points stay */
+        {"猫\xef\xa3\xb0犬\xef\xa3\xb0", "猫犬"},
+        {"猫\xef\xa3\xb1犬\xef\xa3", "猫\xef\xa3\xb1犬\xef\xa3"},
     };
     for (unsigned k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
         char text[256];

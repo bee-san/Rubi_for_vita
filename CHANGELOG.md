@@ -11,6 +11,17 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- Native text hooks for two more Vita visual novels from the hook farm's data bucket, with Rubi's own
+  clean-up rules for their text: ALIA's CARNIVAL! サクラメント (`PCSG00628`) and 真 流行り神 (`PCSG00380`, a page
+  record of character cells, a new way to read a hook's text). Proven in the Vita3K emulator only: Rubi's
+  text equals the farm's on all 1,208 farm pages of the first and on 1,060 of 1,092 of the second (the other
+  32 differ by the player's default name 北條紗希 only, which the farm's text left out)
+  ([farm checks](docs/native-hooks.md#farm-checks)).
+- `tools/hook_farm.py` checks every verified entry against the farm's recorded hook bytes and texts; the host
+  tests run 50 short excerpts of them through the worker's own hook path.
+
 ### Changed
 
 - **OCR: faster reads with vita-vn-ocr's head gate and two-level head** (API 42; `config.ini`
@@ -57,6 +68,16 @@ been reported.
   kept its own copy of their titles, CLANNAD alone, so 10 of 0.9.7's new games (リトルバスターズ！ Converted
   Edition, グリザイアの果実, 剣が君 for V …) had no tag and 17, アマツツミ among them, showed `Luna hook`; it now
   reads the game worker's own table ([#299]).
+- Hook text, from the farm's recorded pages (Vita3K only): BLACK WOLVES SAGA -Weiβ und Schwarz- (`PCSG00935`)
+  keeps its line breaks (Luna's filter at its site dropped them: 270 of its 382 farm pages differed);
+  忠臣蔵46+1 V (`PCSG00540`) keeps the blank between two sentences (CP932 byte 0xA0, which the decoder dropped:
+  170 of 1,037 pages); グリザイアの果実スピンアウト！？ (`PCSG00620`, and the PROTOTYPE engine's two others) shows
+  `・` between katakana words, not `…` (12 pages). For the entries 0.9.7 had, the farm's single-hit pages whose
+  text is the farm's, as shown: 9,745 of 10,203 before, 10,197 now; the other 6 differ by a default name only.
+- A verified entry is not tried in another game version (`APP_VER`) than it was proven in, where the farm
+  recorded it: 25 of the 30 entries (01.00); another version is refused as `version` in the debug build's
+  `hooks.log`. A param.sfo whose `APP_VER` cannot be read leaves the entry to its module NID and bytes, as
+  before.
 
 ## [0.9.7] - 2026-10-26
 

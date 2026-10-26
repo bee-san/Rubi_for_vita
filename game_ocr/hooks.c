@@ -281,18 +281,25 @@ static void site_hit(unsigned i, const uint32_t *regs)
         return;
     }
     if (si->ver) {
-        uint32_t addr = regs[si->ver->reg] + (uint32_t)si->ver->padding;
+        uint32_t addr = regs[si->ver->reg & 15u] + (uint32_t)si->ver->padding, word;
+        uint8_t w[4];
         enc = si->ver->encoding;
         unit = enc == VJO_HOOK_ENC_UTF16LE ? 2u : 1u;
-        if (si->ver->deref) { /* the text's pointer there: one exact 4-byte read (none: no text) */
-            uint8_t w[4];
-            addr = read_game(NULL, addr, w, 4, 0) == 4
-                       ? (uint32_t)w[0] | (uint32_t)w[1] << 8 | (uint32_t)w[2] << 16 | (uint32_t)w[3] << 24
-                       : 0u;
+        /* the text's pointer there, or a cell record's count: one exact 4-byte read (none: no text) */
+        word = si->ver->read && read_game(NULL, addr + (si->ver->read == VJO_PLACE_READ_CELLS ? VJO_PLACE_CELLS_COUNT
+                                                                                            : 0u), w, 4, 0) == 4
+                   ? (uint32_t)w[0] | (uint32_t)w[1] << 8 | (uint32_t)w[2] << 16 | (uint32_t)w[3] << 24
+                   : 0u;
+        if (si->ver->read == VJO_PLACE_READ_CELLS) { /* exactly its cells, as CP932 bytes */
+            if (word > sizeof(scratch) / 2u) word = sizeof(scratch) / 2u;
+            n = word && read_game(NULL, addr + VJO_PLACE_CELLS_DATA, scratch, word * 2u, 0) == word * 2u
+                    ? vjo_place_cells(scratch, word)
+                    : 0u;
+        } else {
+            n = read_game(NULL, si->ver->read ? word : addr, scratch, sizeof(scratch), unit);
+            /* the text without its NUL unit, as vjo_luna_capture counts it */
+            if (n >= unit && !scratch[n - 1] && (unit == 1 || !scratch[n - 2])) n -= unit;
         }
-        n = read_game(NULL, addr, scratch, sizeof(scratch), unit);
-        /* the text without its NUL unit, as vjo_luna_capture counts it */
-        if (n >= unit && !scratch[n - 1] && (unit == 1 || !scratch[n - 2])) n -= unit;
     } else if (si->luna) {
         n = vjo_luna_capture(si->luna, regs, read_game, NULL, scratch, sizeof(scratch), &enc);
         if (n > sizeof(scratch)) n = 0;
@@ -468,15 +475,19 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
     const uint32_t code_size = mi->segments[0].memsz;
     const VjoPlaceVerified *ver;
     const VjoLunaSite *sites;
-    unsigned nv = vjo_place_verified(title_id, &ver), nl = vjo_luna_sites(title_id, &sites);
-    uint16_t appv = nl ? app_version() : 0;
+    unsigned nv = vjo_place_verified(title_id, &ver), nl = vjo_luna_sites(title_id, &sites), need = nl;
+    uint16_t appv;
+    for (unsigned i = 0; i < nv; i++) need |= ver[i].app_ver; /* an entry that names its version */
+    appv = need ? app_version() : 0;
     DLOG("main module %s NID %08X seg0 %08X+%X APP_VER %04X; %u verified, %u Luna sites\n", tai->name,
          (unsigned)tai->module_nid, (unsigned)seg_base, (unsigned)code_size, (unsigned)appv, nv, nl);
     for (unsigned i = 0; i < nv; i++) {
         const VjoPlaceVerified *v = &ver[i];
         /* a Luna site at the same address: the entry reads the text, Luna's hookfunc and filter post-process it */
         const VjoLunaSite *same = vjo_luna_site_at(sites, nl, v->off, appv);
-        int r = vjo_place_check_verified(v, code, code_size, seg_base, tai->module_nid);
+        int r = vjo_place_verified_version(v, appv) ? vjo_place_check_verified(v, code, code_size, seg_base,
+                                                                              tai->module_nid)
+                                                     : VJO_PLACE_VERSION;
         DLOG("verified +%X %s r%u%s", (unsigned)v->off, v->thumb ? "thumb" : "arm", (unsigned)v->reg,
              same ? ", Luna's text" : "");
         if (r == VJO_PLACE_OK) r = hook_site(tai->modid, v->off, v->thumb, same, v);
