@@ -1,5 +1,5 @@
 /* vjo-page-ocr MODEL_DIR [--tier 1-3] [--lm 0-4] [--cascade on|off] [--psp] [--vertical off|on|auto]
- *               [--helpers 0-2] < JOBS > RESULTS.jsonl
+ *               [--line-fix off|on|junk|all] [--helpers 0-2] < JOBS > RESULTS.jsonl
  *
  * The game worker's job (core/vocr_ocr.c, as game_ocr/main.c sets it up on the defaults of config.ini) on many
  * regions, with the weights, the LM and the cascade's model read once and kept, as a game keeps them between
@@ -11,7 +11,9 @@
  * shows it (core/textfilter.c). API 47's vertical text (ocr_vertical): off reads rows; on reads the region's
  * columns with the vertical model (VJO_VOCR_VERTICAL_NAME), no cascade and no refinement; auto reads rows
  * checked first (VjoVocrPolicy.vertical_check) and, where they look like vertical text, the columns as on: the
- * worker's retry (game_ocr/main.c, VJO_E_VERTICAL).
+ * worker's retry (game_ocr/main.c, VJO_E_VERTICAL). API 48's line finder fixes (ocr_line_fix): --line-fix on is
+ * the worker's default (VOCR_FIX_DEFAULT), junk and all add JUNK and VALLEY; without the option the rows are the
+ * frozen finder's, as they were when API 47's figures were measured.
  *
  * JOBS: for each region a header line "ID WIDTH HEIGHT [PSP]\n" (ID without spaces; PSP 1: a PSP game's frame,
  * whose rows the job refines, as --psp), then WIDTH x HEIGHT RGBA bytes.
@@ -22,7 +24,8 @@
  * caller (tools/vertical_eval.py).
  *
  * --find-only: no recognition; for each region the row finder's lines as the job's check sees them (VOCR_LINES_
- * TEXTBOX_RECOVERY on the region's grey rows: the job's own finder, before its short-line probe), the column
+ * TEXTBOX_RECOVERY on the region's grey rows, with --line-fix's fixes: the job's own finder, before its short-line
+ * probe), the column
  * finder's columns (the vertical model's flags), and auto's verdict on the rows (vjo_vocr_rows_vertical). */
 #define _POSIX_C_SOURCE 200809L
 #include <pthread.h>
@@ -39,6 +42,7 @@
 #include "textnorm.h"
 #include "vocr_ocr.h"
 #include "vocr_lines.h"
+#include "vocr_lines_fix.h"
 #include "../include/vjo_vocr_sizes.h"
 /* API 47's vertical text; without it (a tree before it, main's for the comparison) the tool reads rows only. */
 #ifdef VJO_VOCR_LINE_COLUMN
@@ -164,7 +168,7 @@ typedef struct {
     const VjoVocrModel *model, *vertical, *cascade;
     const VjoVocrLm *lm;
     int psp, mode, head;
-    unsigned helpers, lines_cb, find_only;
+    unsigned helpers, lines_cb, find_only, line_fix;
 } Setup;
 
 static void print_set(const char *name, const VocrLineSet *set, int rc)
@@ -194,7 +198,7 @@ static void find_only(const Setup *su, const char *id, VjoGreySource *src)
         return;
     }
     t0 = now_s();
-    rrc = vocr_find_lines(&im, VOCR_LINES_TEXTBOX_RECOVERY, arena, sizeof(arena), &rows);
+    rrc = vocr_find_lines_fix(&im, VOCR_LINES_TEXTBOX_RECOVERY, su->line_fix, arena, sizeof(arena), &rows);
     row_us = (unsigned)(1e6 * (now_s() - t0));
     t0 = now_s();
 #if HAVE_VERTICAL
@@ -262,6 +266,7 @@ static int run_one(const Setup *su, const VjoPlatform *plat, const VjoVocrModel 
     pol.counter_tau = VJO_VOCR_COUNTER_TAU;
     pol.counter_open = VJO_VOCR_COUNTER_OPEN;
     pol.head_gate = pol.two_level = su->head; /* API 42, config.ini ocr_head_gate = on */
+    pol.line_fix = cols ? 0u : su->line_fix; /* API 48, config.ini ocr_line_fix (rows only) */
 #if HAVE_VERTICAL
     pol.vertical_check = check;
 #endif
@@ -299,6 +304,14 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--no-lines")) su.lines_cb = 0;
         else if (!strcmp(argv[i], "--find-only")) su.find_only = 1;
         else if (!strcmp(argv[i], "--head-gate") && v) su.head = !strcmp(v, "on"), i++;
+        else if (!strcmp(argv[i], "--line-fix") && v) {
+            su.line_fix = !strcmp(v, "on")     ? VOCR_FIX_DEFAULT
+                          : !strcmp(v, "junk") ? VOCR_FIX_DEFAULT | VOCR_FIX_JUNK
+                          : !strcmp(v, "all")  ? VOCR_FIX_DEFAULT | VOCR_FIX_JUNK | VOCR_FIX_VALLEY
+                                               : 0u;
+            if (su.line_fix == 0u && strcmp(v, "off")) goto usage;
+            i++;
+        }
         else if (!strcmp(argv[i], "--vertical") && v) {
             su.mode = !strcmp(v, "on") ? 1 : !strcmp(v, "auto") ? 2 : 0;
             i++;
@@ -407,6 +420,7 @@ int main(int argc, char **argv)
     return 0;
 usage:
     fprintf(stderr, "usage: %s MODEL_DIR [--tier 1-3] [--lm 0-4] [--cascade on|off] [--psp] [--vertical off|on|auto] "
+                    "[--line-fix off|on|junk|all] "
                     "[--helpers 0-2] [--no-lines] [--find-only] [--head-gate on|off] < JOBS\n", argv[0]);
     return 2;
 }
