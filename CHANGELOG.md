@@ -11,16 +11,54 @@ been reported.
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-10-26
+
+Native text hooks for 26 more Vita visual novels, with Rubi's own clean-up rules for their text,
+proven in the Vita3K emulator only; and today's and this game's reading stats on Triangle. Unlike
+0.9.4–0.9.6, this release is the normal build only: `Rubi-0.9.7.vpk` (the main download) and
+`Rubi-0.9.7.zip`, no -debug build.
+
+### Added
+
+- Rubi's own verified hook entries for 26 more Vita titles, from bee-san/psandvita's Vita3K screenshot
+  farm: in Vita3K each hook gave the text of every farm page of its game, each page checked against the
+  frame the game drew. 10 are games LunaTranslator's table does not list; 16 are in it, and for 15 of
+  those the entry unlocks Luna's own site, which Rubi's placement check refused, so on a console they had
+  no game-specific hook before. An entry hooks only the game version it was made from: the game's module
+  NID and 16 bytes at the site must match ([details](docs/native-hooks.md)).
+  - PROTOTYPE engine ([#293]): リトルバスターズ！ Converted Edition (`PCSG00007`), グリザイアの果実
+    -LE FRUIT DE LA GRISAIA- (`PCSG00206`), グリザイアの果実スピンアウト！？ アイドル魔法少女ちるちる☆みちる (`PCSG00620`).
+  - IF:Lib engine ([#294]): MARGINAL#4 IDOL OF SUPERNOVA (`PCSG00448`), CLOCK ZERO ～終焉の一秒～ ExTime
+    (`PCSG00469`), ピリオドキューブ～鳥籠のアマデウス～ (`PCSG00853`).
+  - Luna's sites that the placement check refused ([#295]): 黒蝶のサイケデリカ (`PCSG00468`), アンジェリーク
+    ルトゥール (`PCSG00696`), スカーレッドライダーゼクス Rev. (`PCSG00745`), 悠久のティアブレイド -Lost Chronicle-
+    (`PCSG00808`) and -Fragments of Memory- (`PCSG01075`), マジきゅんっ！　ルネッサンス (`PCSG00852`), Starry☆Sky
+    ～Summer Stories～ (`PCSG00916`), BLACK WOLVES SAGA -Weiβ und Schwarz- (`PCSG00935`), 紅色天井艶妖綺譚 二藍
+    (`PCSG01221`).
+  - Other engines ([#296]): キャプテン・アース Mind Labyrinth (`PCSG00450`), POSSESSION MAGENTA (`PCSG00509`),
+    忠臣蔵46+1 V (`PCSG00540`), 剣が君 for V (`PCSG00553`), 月に寄りそう乙女の作法 (`PCSG00648`), 百花百狼
+    ～戦国忍法帖～ (`PCSG00713`), 鏡界の白雪 (`PCSG00787`), Dance with Devils (`PCSG00807`), EVE burst error R
+    (`PCSG00817`), 7'scarlet (`PCSG00876`), 参千世界遊戯 ～Re Multi Universe Myself～ (`PCSG01194`).
+- A verified entry can have its own text filter and read its text through a pointer ([#292]). Rubi's
+  filters turn ruby into its base, engine codes into line breaks or nothing and half-width kana into
+  hiragana; a player-name code the hook sees before the game expands it becomes the game's default name,
+  so a line with a name the player typed differs from the screen by that name only
+  ([details](docs/native-hooks.md#rubis-filters)).
+
 ### Changed
 
 - Triangle now shows the selected line's source (`hooking` / `ocr`) and two reading-stat blocks:
   **TODAY · THIS GAME** and **THIS GAME · TOTAL**, each with characters, estimated active reading
   time and characters/hour. Daily/game counters update in RAM with recorded dialogue and use
-  per-game caches between restarts; technical line diagnostics no longer fill the menu.
+  per-game caches between restarts; technical line diagnostics no longer fill the menu ([#291]).
 
-- Holding **Left / Right** on the d-pad in the overlay now keeps moving the cursor, as Up / Down and
-  the left stick already did: one step at once, then after 0.35 s ten words a second. A held arrow
-  stops at the text's ends rather than going round a one-row text.
+### On the console
+
+- Not run on a console yet: the new entries are proven in Vita3K only, which says nothing about taiHEN's
+  placement or memory on a real Vita, and Triangle's stats are host-tested only. If a game misbehaves with
+  its hook, set **Text source** to **OCR only**, turn the game OFF on the Games page, or hold L as it starts.
+- The game worker keeps Rubi's verified table in its data segment: the same pages as 0.9.6 in both builds
+  ([details](docs/memory-ledger.md#tables-in-the-data-segment)).
 
 ## [0.9.6] - 2026-10-25
 
@@ -47,6 +85,9 @@ debug build are included; the normal VPK is the main download. API 41: install a
   as are which text a job shows (and when OCR checks a hook) and **Only when I press**. The debug build
   logs each report in `kernel.txt` with its byte count, which shows whether a game's lines arrive whole
   ([details](docs/native-hooks.md#a-new-line-starts-the-read), [#286]).
+- Holding **Left / Right** on the d-pad in the overlay now keeps moving the cursor, as Up / Down and
+  the left stick already did: one step at once, then after 0.35 s ten words a second. A held arrow
+  stops at the text's ends rather than going round a one-row text ([#285]).
 
 ### On the console
 
@@ -837,7 +878,8 @@ per-game regions (0.3), PSP games in Adrenaline (0.4) and faster automatic readi
 started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came in with 0.8.0-test.1
 ([#48]).
 
-[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.6...HEAD
+[Unreleased]: https://github.com/bee-san/Rubi_for_vita/compare/v0.9.7...HEAD
+[0.9.7]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.7
 [0.9.6]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.6
 [0.9.5]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.5
 [0.9.4]: https://github.com/bee-san/Rubi_for_vita/releases/tag/v0.9.4
@@ -983,5 +1025,12 @@ started from 0.6; upstream's 0.7, the furigana strip with its Anki fields, came 
 [#274]: https://github.com/bee-san/Rubi_for_vita/pull/274
 [#275]: https://github.com/bee-san/Rubi_for_vita/pull/275
 [#283]: https://github.com/bee-san/Rubi_for_vita/pull/283
+[#285]: https://github.com/bee-san/Rubi_for_vita/pull/285
 [#286]: https://github.com/bee-san/Rubi_for_vita/pull/286
 [#289]: https://github.com/bee-san/Rubi_for_vita/pull/289
+[#291]: https://github.com/bee-san/Rubi_for_vita/pull/291
+[#292]: https://github.com/bee-san/Rubi_for_vita/pull/292
+[#293]: https://github.com/bee-san/Rubi_for_vita/pull/293
+[#294]: https://github.com/bee-san/Rubi_for_vita/pull/294
+[#295]: https://github.com/bee-san/Rubi_for_vita/pull/295
+[#296]: https://github.com/bee-san/Rubi_for_vita/pull/296
