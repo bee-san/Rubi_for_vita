@@ -40,6 +40,12 @@ been reported.
   text equals the farm's on all 1,208 farm pages of the first and on 1,060 of 1,092 of the second (the other
   32 differ by the player's default name 北條紗希 only, which the farm's text left out)
   ([farm checks](docs/native-hooks.md#farm-checks)).
+- A native text hook for 蒼の彼方のフォーリズム (`PCSG00700`, APP_VER 01.00), with Rubi's own clean-up rules for
+  its text (half-width kana, `<a>(｢)`, `<ruby>(n,reading)`). Found in Vita3K with the psandvita farm's capture
+  build: the site gets each page once, 60 pages in a row. **On the console** (a PCH-2000 on 3.65, Rubi 0.9.7 with
+  this entry): the site was hooked (`1 table sites`, 0 refused); of its 19 lines in two sessions, the 15 compared
+  with OCR agreed (score 1000), the ruby line scored 771 before its rule (1000 after), 3 scored 0
+  ([details](docs/native-hooks.md#table-sites)).
 - `tools/hook_farm.py` checks every verified entry against the farm's recorded hook bytes and texts; the host
   tests run 50 short excerpts of them through the worker's own hook path.
 

@@ -293,6 +293,10 @@
  * the warm-up's condition): debug text 148,792 -> 149,208 B (2,344 B of room left) and data/bss 35,288 -> 35,312 B,
  * normal 140,004 -> 140,436 B and 35,280 -> 35,304 B, the same pages [measured: the build log's module rows, both
  * builds, main 23921ad and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
+/* PCSG00700, one more verified entry and its filter: worker text unchanged, rodata +64 B (the entry's 40 B, the
+ * filter's patterns), data +104 B (the filter's ops, the filters' index 64 -> 68 B), both builds, the same pages
+ * [measured: arm-vita-eabi-size, both builds, main cbaa4e3 and this change, VitaSDK 2026.08]. No block, thread or
+ * allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 188416u
 #else
