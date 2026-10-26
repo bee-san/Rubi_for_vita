@@ -92,7 +92,8 @@ Smaller fixes, measured on the same grid with the adaptive rule:
 - **Counting a line again in the backlog or after a menu once only** (a record whose text is one of the
   8 before it): characters 0.5 → 0.2 % (everyday OCR +3 → +1 %), time unchanged. Not done: it needs the
   last texts in the Shell, for a small gain.
-- **Sessions** (GameSentenceMiner's 30-minute break, its median per session): 2.2 → 2.1 %. Not done, by
+- **Sessions** (GameSentenceMiner's 30-minute break: a longer gap credited nothing; measured on the running
+  75th percentile, in floats, not with a median per session): 2.2 → 2.1 %. Not done, by
   the owner's decision: Rubi has no sessions.
 
 ## GameSentenceMiner's AFK rules, in order
