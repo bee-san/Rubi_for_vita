@@ -123,7 +123,11 @@
  * 144 B of data room [measured: the same rows, main 75041a0 and this change]. Yomitan's deinflection
  * rules in a packed table (docs/memory-ledger.md) make it 90,084 -> 89,228 + 73,560 -> 73,024 on main
  * 627a673, the same pages, 884 B of text room and 704 B of data room [measured: the same rows, main
- * 627a673 and this change]. Its check is
+ * 627a673 and this change]. API 47's vertical text (the request's vertical field, the model a text was read with by
+ * its lines' column flag, config.ini ocr_vertical's parse; its key, the model's name and one cold message of the
+ * OCR's in the data segment, VJO_DATA_TABLE) makes it 89,252 -> 89,300 + 73,048 -> 73,160 on main 93647d3, the same
+ * pages, 812 B of text room [measured: the same rows, main 93647d3 and this change; the debug build 101,460 ->
+ * 101,548 + 73,008 -> 73,152, the same pages]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
@@ -293,7 +297,20 @@
  * the warm-up's condition): debug text 148,792 -> 149,208 B (2,344 B of room left) and data/bss 35,288 -> 35,312 B,
  * normal 140,004 -> 140,436 B and 35,280 -> 35,304 B, the same pages [measured: the build log's module rows, both
  * builds, main 23921ad and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
-/* VERTICAL_WORKER_NOTE */
+/* API 47, vertical text (config.ini ocr_vertical off, on or auto; vita-vn-ocr #99 and #103, closed draft #223's column
+ * job): one text page more in both builds, in the game's partition only, in every game that is ON whatever the
+ * setting. vita-vn-ocr's column finder and rotation (runtime/vocr_vertical.c, built -Os), the dark flag the job
+ * computes on a column's pixels (vocr_lines.c's vocr_line_dark, linked now), the job's column path, VOCR5-V's model
+ * entry, auto's rule (core/vocr_ocr.c vjo_vocr_rows_vertical) and the worker's request and retry (game_ocr/main.c)
+ * took both builds' text two pages past their pages as first linked on main 213fd60; the pinned models' and LMs'
+ * tables (core/vocr_ocr.c models[], lms[], 672 B) and the JPEG encoder's (core/jpegsw.c, 516 B) moved to the data
+ * segment (VJO_DATA_TABLE, core/port.h: const, never written), whose last page had room, keep it to one: on main
+ * 93647d3 the debug build's text 149,208 -> 153,688 B (1,960 B of room) and data/bss 35,312 -> 36,504 B (360 B),
+ * 188,416 -> 192,512 B of pages; the normal build's text 140,436 -> 144,772 B (2,684 B) and data/bss 35,304 ->
+ * 36,496 B (368 B), 180,224 -> 184,320 B [measured: the build log's module rows, both builds, main 93647d3 (#325's
+ * figures, above) and this change, tools/fast_gate.sh's vitasdk image]. A job of columns allocates only what a job
+ * allocates (its workspace holds the 57,344 B rotation buffer: test_ledger.c), none when ocr_vertical is off. The
+ * kernel and the Shell keep their pages. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
 #else

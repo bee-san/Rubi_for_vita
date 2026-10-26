@@ -867,8 +867,8 @@ static unsigned vocr_top_tier(unsigned tiers)
  * vertical model when its lines were columns (API 47: ocr_vertical on, or auto where
  * the rows looked like vertical text; the worker runs it whatever the tier), else
  * the tier's. A result without a recognized line has line[0] zeroed (the worker
- * clears it). The name is kept in the data segment: the normal Shell's text pages
- * had 100 B of room on main 213fd60. */
+ * clears it). The name is kept in the data segment: the normal Shell's code room
+ * (docs/memory-ledger.md, "Vertical text"). */
 static const char vertical_model[] VJO_DATA_TABLE(worker_vertical_model) = VJO_VOCR_VERTICAL_NAME;
 static const char *job_model(const VjoGameOcrResult *r, unsigned ran)
 {

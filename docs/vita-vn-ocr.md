@@ -1122,7 +1122,7 @@ noise: `off` / main 1.0026 [0.9983, 1.0069] and `auto` / main 1.0039 [0.9998, 1.
 intervals). On the console the rule is a few hundred instructions a job (an estimate): nothing next to the job.
 
 **Memory.** The worker's code, in every game that is ON whatever the setting: 4,096 B more module pages in each build
-(176,128 B normal, 184,320 B debug: [memory-ledger.md](memory-ledger.md#vertical-text-api-47)). SceShell's and the
+(184,320 B normal, 192,512 B debug: [memory-ledger.md](memory-ledger.md#vertical-text-api-47)). SceShell's and the
 kernel's pages are as before. A job of columns takes the vertical model's weights (823,296 B in pages, a Small job's)
 and a workspace of VOCR5-S's shape plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + about
 3,800 (the console's runtime structs: 3,760 B before API 42's fields, an estimate) + 57,344 B, 188,416 B in pages at

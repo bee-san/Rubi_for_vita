@@ -492,7 +492,7 @@ static void set_trigger(VjoConfig *c, const char *key, const char *val, int *dst
 static const char head_key[] VJO_DATA_TABLE(config_head_key) = "ocr_head_gate";
 static const char head_gate_name[] VJO_DATA_TABLE(config_head_gate_name) = "gate";
 static const char head_two_name[] VJO_DATA_TABLE(config_head_two_name) = "two_level";
-/* API 47's key, in the data segment: the normal Shell's text pages had 100 B of room on main 213fd60. */
+/* API 47's key, in the data segment: the normal Shell's code room (docs/memory-ledger.md, "Vertical text"). */
 static const char vertical_key[] VJO_DATA_TABLE(config_vertical_key) = "ocr_vertical";
 
 static void set_kv(VjoConfig *c, const char *key, const char *val)
