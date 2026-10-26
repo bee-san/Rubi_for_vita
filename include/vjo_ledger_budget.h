@@ -253,6 +253,17 @@
  * debug and 32,976 -> 33,752 B normal, the same pages, 180,224 and 172,032 B [measured: the build log's
  * module rows, both builds, the PR rebased on main bd130a8 with this change, vitasdk/vitasdk:2026.08's gcc
  * 15.2.0]. The kernel and Shell SELF files are byte-identical to main's. No block, thread or allocation. */
+/* PRs #293-#296, 26 verified entries from the psandvita Vita3K farm (core/hook_place.c): each 40 B row and
+ * its title string took the debug build's worker text 142,600 -> 143,896 B in their code segment, 536 B past
+ * its 143,360 B of pages: 184,320 B against this budget (#293 142,744, #294 142,904, #295 143,352 B still
+ * fit; the normal build's 133,828 -> 135,124 B still fit) [measured: the build log's module rows, both builds
+ * of each PR rebased on main cf5e4c5, vitasdk/vitasdk:2026.08's gcc 15.2.0]. Rubi's verified table (28 rows,
+ * 1,120 B [arm-vita-eabi-nm -S]) is kept in the data segment instead (VJO_DATA_TABLE, core/port.h), whose last
+ * page had room (3,104 B debug, 3,112 B normal): text 142,776 B debug (584 B of room) and 134,004 B normal
+ * (1,164 B), data/bss 33,760 -> 34,880 B debug and 33,752 -> 34,872 B normal, the same pages, 180,224 and
+ * 172,032 B [measured: the build log's module rows, both builds, #296 rebased on main cf5e4c5 with this
+ * change]. Its title strings stay read-only. The kernel, Shell, RCO and Rubi app files are byte-identical to
+ * main's CI build. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 180224u
 #else

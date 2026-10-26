@@ -5,6 +5,7 @@
 
 #include "hook_luna.h" /* VJO_RF_*: a verified entry's filter */
 #include "hook_text.h"
+#include "port.h"      /* VJO_DATA_TABLE: the verified entries' table */
 
 const char *vjo_place_reason(int reason)
 {
@@ -151,8 +152,12 @@ int vjo_place_check(const uint8_t *code, uint32_t code_size, uint32_t seg_base, 
  * them (the loop's BLT goes to +0x745D0, past them): checked on the decrypted eboot, 2026-10-23. Proven on a
  * console (PCH-2000, 3.65, 2026-10-23): hooked ("1 table sites"), its stream held text, it answered the jobs
  * (core/hook_select.h vjo_hook_select_no_memory: "game vocr source: hook 1, flags 0x98", rc 0), the overlay
- * showed the game's line (checked by eye against the screen), and the game did not crash. */
-static const VjoPlaceVerified verified[] = {
+ * showed the game's line (checked by eye against the screen), and the game did not crash.
+ * The table is kept in the worker's data segment (VJO_DATA_TABLE, core/port.h), whose last page has room:
+ * in its code segment the farm's entries took the debug build's worker past its pages
+ * (include/vjo_ledger_budget.h; docs/memory-ledger.md, "Tables in the data segment"). Its title strings stay
+ * read-only. */
+static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"PCSG00415", 0xC5187D60u, 0x2CA70u, 1, 6, VJO_HOOK_ENC_CP932, 8, 0,
      {0xAB, 0xF8, 0x2C, 0x23, 0x14, 0xF5, 0x53, 0x70}, 0, 0},
     {"PCSG01198", 0x8AA413F2u, 0x745C8u, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
@@ -209,16 +214,16 @@ static const VjoPlaceVerified verified[] = {
     /* PCSG00450 キャプテン・アース Mind Labyrinth (APP_VER 01.00): Vita3K 0x8106ab56, 78 farm pages (paired-vita-pcsg00450-20261023); patch: push {r4, r5, r6, lr}; sub sp, #0x1f8; movw lr, #0x4250; movt lr, #0x8123 */
     {"PCSG00450", 0x28CB1B14u, 0x6AB56u, 1, 1, VJO_HOOK_ENC_UTF16LE, 16, 32,
      {0x70, 0xB5, 0xFE, 0xB0, 0x44, 0xF2, 0x50, 0x2E, 0xC8, 0xF2, 0x23, 0x1E, 0xDE, 0xF8, 0x00, 0xE0}, VJO_RF_PCSG00450, 1},
-    /* PCSG00509 (APP_VER ?): Vita3K 0x81012c76, 1299 farm pages (paired-vita-pcsg00509-20261023); patch: adds r2, r5, #0x0; adds.w r0, r4, #0x9c0; movs r5, #0x0; movs.w r1, #0x104; Luna's site here (r0, filter FPCSG00852) */
+    /* PCSG00509 POSSESSION MAGENTA (APP_VER ?): Vita3K 0x81012c76, 1299 farm pages (paired-vita-pcsg00509-20261023); patch: adds r2, r5, #0x0; adds.w r0, r4, #0x9c0; movs r5, #0x0; movs.w r1, #0x104; Luna's site here (r0, filter FPCSG00852) */
     {"PCSG00509", 0xA11A6741u, 0x12C76u, 1, 0, VJO_HOOK_ENC_CP932, 16, 0,
      {0x2A, 0x1C, 0x14, 0xF5, 0x1C, 0x60, 0x00, 0x25, 0x5F, 0xF4, 0x82, 0x71, 0x00, 0x23, 0xFE, 0xF7}, VJO_RF_PCSG00509, 0},
-    /* PCSG00540 (APP_VER ?): Vita3K 0x8102b90a, 1037 farm pages (paired-vita-pcsg00540-20261023); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; sub sp, #0x84; movw r4, #0x5bf8; movt r4, #0x8106 */
+    /* PCSG00540 忠臣蔵46+1 V (APP_VER ?): Vita3K 0x8102b90a, 1037 farm pages (paired-vita-pcsg00540-20261023); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; sub sp, #0x84; movw r4, #0x5bf8; movt r4, #0x8106 */
     {"PCSG00540", 0xC595CF25u, 0x2B90Au, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
      {0x2D, 0xE9, 0xF0, 0x4F, 0xA1, 0xB0, 0x45, 0xF6, 0xF8, 0x34, 0xC8, 0xF2, 0x06, 0x14, 0x24, 0x68}, VJO_RF_PCSG00540, 0},
-    /* PCSG00553 (APP_VER ?): Vita3K 0x821452b8, 1130 farm pages (paired-vita-pcsg00553-20261023); patch: mov r12, sp; push {r4, r5, r6, r7, r8, r11, r12, lr} */
+    /* PCSG00553 剣が君 for V (APP_VER ?): Vita3K 0x821452b8, 1130 farm pages (paired-vita-pcsg00553-20261023); patch: mov r12, sp; push {r4, r5, r6, r7, r8, r11, r12, lr} */
     {"PCSG00553", 0xCF234754u, 0x11452B8u, 0, 1, VJO_HOOK_ENC_UTF16LE, 16, 12,
      {0x0D, 0xC0, 0xA0, 0xE1, 0xF0, 0x59, 0x2D, 0xE9, 0x20, 0xD0, 0x4D, 0xE2, 0x0D, 0xB0, 0xA0, 0xE1}, VJO_RF_BR_NEWLINE, 0},
-    /* PCSG00648 (APP_VER ?): Vita3K 0x81026efa, 1397 farm pages (paired-vita-pcsg00648-20261023); patch: strh r0, [r4]; movw r1, #0x8638; ldrb r0, [r7]; movt r1, #0x8128; Luna's site here (r2, filter none) */
+    /* PCSG00648 月に寄りそう乙女の作法 (APP_VER ?): Vita3K 0x81026efa, 1397 farm pages (paired-vita-pcsg00648-20261023); patch: strh r0, [r4]; movw r1, #0x8638; ldrb r0, [r7]; movt r1, #0x8128; Luna's site here (r2, filter none) */
     {"PCSG00648", 0xE5819F44u, 0x26EFAu, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
      {0x20, 0x80, 0x48, 0xF2, 0x38, 0x61, 0x38, 0x78, 0xC8, 0xF2, 0x28, 0x11, 0x7A, 0x78, 0xB1, 0xF9}, VJO_RF_ANGLE_RUBY, 0},
     /* PCSG00713 百花百狼 ～戦国忍法帖～ (APP_VER 01.00): Vita3K 0x81112f46, 1464 farm pages (paired-vita-pcsg00713-20261023); patch: movs.w r10, #0x0; str.w r10, [sp, #0x1c]; add r2, sp, #0x1c; mov r0, r11 */
