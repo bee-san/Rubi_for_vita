@@ -1482,7 +1482,7 @@ pinned commit and point the build at it:
 
 ```sh
 git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr
-git -C /path/to/vita-vn-ocr checkout 47cf3a3f9a0d8398d742b98b81f5fb85fe11a9ae  # #123's merge (after #122's, #120's, #112's, #111's, #101's, #85's, #83's and #82's): the two-level head, the head gate, the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
+git -C /path/to/vita-vn-ocr checkout f8a1856c1b21bf41af744c159b54ce8203408a89  # #135's merge (after #130's, #123's, #122's, #120's, #112's, #111's, #101's, #85's, #83's and #82's): the line finder fixes, the attention op (unused by the pinned blobs), the two-level head, the head gate, the counter re-decode, the text-presence gate, the faster kernels, the refinement, the beam + LM decoder
 
 # Vita plugins and release zip (build/vita/Rubi-VERSION.zip), Release as in CI.
 # The zip needs the frozen dictionary's checkout (docs/guide.md, "Build and validation").
