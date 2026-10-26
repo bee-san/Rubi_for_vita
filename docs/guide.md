@@ -373,8 +373,16 @@ reported console run. The behaviour below is checked on the host.
   Automatic; **OCR only** (`ocr`) installs none. PSP games still use OCR only.
   An install or an update keeps the file's value; installs before this one wrote `text_source =
   ocr`, so choose Automatic once to use hooks.
-- **What is shown.** Nonempty Luna hook text is preferred immediately, including short or unchanged
-  lines, without initial or periodic OCR checks. With multiple Luna streams, the newest wins.
+- **Trusted hooks replace OCR** (the Rubi app's OCR & lookup page, `hook_trust` in `config.ini`, on by default,
+  applies when the overlay next opens): a hook Rubi trusts gives the line with no OCR at all, no model read and
+  no OCR memory kept back for it, so a game short of memory still gets its lines. Trusted: LunaTranslator's and
+  Rubi's own verified sites from their first line, and a string copy (or any other hook) once it has agreed
+  with OCR four times, on four different lines. OCR comes back by itself when no trusted hook has text (or a
+  string copy's caller is replaced). The price: a screen the hook did not copy (a choice menu, the backlog)
+  shows the hook's last line. `hook_trust = off` checks every hook with OCR as 0.9.7 did, below
+  ([details](native-hooks.md#trusted-hooks-api-43)).
+- **What is shown** with `hook_trust = off`. Nonempty Luna hook text is preferred immediately, including short
+  or unchanged lines, without initial or periodic OCR checks. With multiple Luna streams, the newest wins.
   When Luna supplies no text, regular hooks use the following validation and cache.
   A regular hook first agrees with OCR on two different dialogue lines (70 % normalized
   similarity, four characters at least). It then answers seven new readings without OCR and checks the
@@ -461,10 +469,13 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 On the **OCR & lookup** page, select a row with Up/Down. Enter
 or touch a row changes its choice: the Model size, **Read text**, the **Speed boost while
 reading (444 MHz)**, Japanese-only selection, whole-word/character highlighting, how many
-dictionaries are shown, or the **Text source** (the last card: [native text hooks](#native-text-hooks)).
+dictionaries are shown, the **Text source** ([native text hooks](#native-text-hooks)), and (API 43) the two
+switches that skip OCR where it has nothing to read: **Trusted hooks replace OCR** (`hook_trust`, ON by default)
+and **Skip OCR on screens without text** (`ocr_text_gate`, OFF by default), the last two cards, applied when the
+overlay next opens.
 Touch a size, a Read text choice, a number or a Text source choice to choose it directly;
 Left/Right choose the next smaller or larger size on the Model size row (Enter goes round them),
-Automatically/Only when I press on Read text, OFF/ON on the Speed boost and selection cards,
+Automatically/Only when I press on Read text, OFF/ON on the Speed boost, selection and two skip cards,
 Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, or Automatic/Every
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
 as a game's worker reads it then). The page is taller
@@ -721,10 +732,11 @@ Refined lines are read wider: on the
 host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 22-23 ms more per line found with VOCR3-H15 on the console
 ([finder refinement](vita-vn-ocr.md#finder-refinement-api-20)).
-`ocr_text_gate = on` puts vita-vn-ocr #100's text-presence gate in front of the finder: a region it says holds
-no text (the game hid its text box, a CG screen) returns no line, so no junk is read off the picture. On
-vita-vn-ocr's test sets and CLANNAD it changed no text read; it costs an estimated 0.1 s per job, so it is off
-until a console run shows how often it helps
+`ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
+#100's text-presence gate in front of the finder: a region it says holds no text (the game hid its text box, a CG
+screen) returns no line, so nothing is recognized and no junk is read off the picture. It stays off because it also
+stops a few real lines, mostly very short ones (measured on the host on 47 games' hooked pages: lines OCR would
+have read, 0.004-0.17 % of all, by platform and region); it costs an estimated 0.1 s per job at the game's clock
 ([text-presence gate](vita-vn-ocr.md#text-presence-gate-api-26)).
 `ocr_head_gate = on`, the default, lets the recognizer skip its output layer on the frames vita-vn-ocr #117's
 head gate calls blank, about three in five, and (Normal and Large) compute its rare characters only on the frames

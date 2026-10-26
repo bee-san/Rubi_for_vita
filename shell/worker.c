@@ -980,7 +980,8 @@ static void log_vocr_clock(const VjoGameOcrResult *r)
  * 0-1), the clock (bit 2: VJO_GAME_OCR_S_BOOST). */
 static uint32_t config_speed(void)
 {
-    return (uint32_t)job_cfg.ocr_helpers | (uint32_t)job_cfg.ocr_boost_clock << 2;
+    /* API 43: hook_trust as VJO_GAME_OCR_S_TRUST (bit 20); the self-test's stages pick OCR, which ignores it */
+    return (uint32_t)job_cfg.ocr_helpers | (uint32_t)job_cfg.ocr_boost_clock << 2 | (uint32_t)job_cfg.hook_trust << 20;
 }
 
 /* The memory check's tiers (API 21): a log line for each tier that did not fit

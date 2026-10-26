@@ -358,7 +358,13 @@ seam between two bands of rows.
    closed), and its `.tmp` until the kernel's close runs.
 
 SceShell holds no pixel and no byte of the JPEG, only the job's request and
-result (5,404 B) in the Anki job's arena. Closing the overlay cancels an
+result (5,404 B) in the Anki job's arena.
+
+The whole chain runs on the host in one test, `host/tests/test_card_screenshot.py`: the actual game worker and
+kernel transport shoot a game's frame (`docs/screenshot.jpg`) into `anki_queue/<id>.jpg`, the actual Shell's Enter
+saves the card with it (`"picture": true`), the actual Rubi app exports it, and the package's note has the Lapis
+`Picture` `<img src="vitajp_….jpg">` of that JPEG, byte for byte (48,655 B at quality 70, 36.6 dB PSNR against
+the frame) [measured, host; no console claim]. Closing the overlay cancels an
 unfinished capture; a frozen JPEG continues saving in the background.
 
 ### Avoiding the first-write delay

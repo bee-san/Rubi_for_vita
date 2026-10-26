@@ -5,6 +5,27 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## Trusted hooks and the OCR-skip switches (API 43)
+
+Trusted hooks answer without OCR ([native-hooks.md](native-hooks.md#trusted-hooks-api-43)): the selection's
+`vjo_hook_select_trusted` and its close-agreement mark (one word in each of the worker's two `VjoHookSelect`
+copies), the job path's branch, its run counter and the warm-up's condition. A trusted answer takes the one capture
+strip every hooked answer takes, beside `VJO_GAME_RESERVE_HOOK_ONLY`, and after 8 in a row gives back the resident
+blocks: no new block, thread or stack, no budget raised. The Shell parses `hook_trust` in `hook_sites`' branch and
+sends it in each job's speed word (a field in each `VjoConfig` copy). The Rubi app gains two cards. The rows
+[measured: the build log's module rows, VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main `23921ad` and this
+change, both builds]:
+
+| Module | main `23921ad` | this change | pages |
+|---|---:|---:|---:|
+| worker, normal | 140,004 + 35,280 B | 140,436 + 35,304 B | 180,224 B both |
+| worker, debug | 148,792 + 35,288 B | 149,208 + 35,312 B | 188,416 B both |
+| Shell, normal | 89,228 + 73,024 B | 89,252 + 73,048 B | 163,840 B both (exact) |
+| Shell, debug | 101,332 + 73,008 B | 101,460 + 73,008 B | 176,128 B both |
+
+The normal Shell keeps 860 B of code room (884 B before), the debug worker 2,344 B (2,760 B). The kernel's rows are
+main's.
+
 ## Head gate and two-level head (API 42, vita-vn-ocr #120 and #122)
 
 Measured with VitaSDK GCC 15.2.0 in `vitasdk/vitasdk:2026.08` (CI's digest, `tools/ci_container_build.sh`'s),

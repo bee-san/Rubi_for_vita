@@ -787,7 +787,8 @@ static void test_config(void)
     refine = "ocr_refine_lines = off\nocr_refine_lines = sometimes\n";
     vjo_config_parse(&c, refine, strlen(refine));
     TEST_CHECK(c.ocr_refine_lines == 0 && c.n_warnings == 1);
-    /* API 26: the text-presence gate, off by default (docs/vita-vn-ocr.md "Text-presence gate") */
+    /* API 26: the text-presence gate, off by default (docs/vita-vn-ocr.md "Text-presence gate": API 43's measurement
+     * on the hooked pages kept it so) */
     vjo_config_defaults(&c);
     TEST_CHECK(c.ocr_text_gate == 0 && VJO_TEXT_GATE_DEFAULT == 0);
     const char *gate = "ocr_text_gate = ON\n";
@@ -830,6 +831,22 @@ static void test_config(void)
         vjo_config_parse(&c, sites[i].text, strlen(sites[i].text));
         TEST_CHECK_(c.hook_sites == sites[i].sites && c.n_warnings == sites[i].warnings, "%s", sites[i].text);
         if (sites[i].warnings) TEST_CHECK(strstr(c.warnings[0], "hook_sites") != NULL); /* named, never the value */
+    }
+    /* API 43, hook_trust: on (1) by default, any case, an unknown or empty value on with a warning naming it;
+     * it and hook_sites share their parse, each setting its own field */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.hook_trust == 1);
+    static const struct { const char *text; int trust, sites, warnings; } trust[] = {
+        {"hook_trust = off\n", 0, 1, 0}, {"Hook_Trust = OFF\n", 0, 1, 0}, {"HOOK_TRUST = off\nhook_sites = off\n", 0, 0, 0},
+        {"hook_sites = off\nhook_trust = on\n", 1, 0, 0}, {"hook_trust = off\nhook_trust = maybe\n", 1, 1, 1},
+        {"hook_trust = off\nhook_trust =\n", 1, 1, 1}, {"hook_trust = off ; 0.9.7's checks\n", 0, 1, 0},
+        {"hook_trusted = off\n", 1, 1, 1}};
+    for (unsigned i = 0; i < sizeof(trust) / sizeof(trust[0]); i++) {
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, trust[i].text, strlen(trust[i].text));
+        TEST_CHECK_(c.hook_trust == trust[i].trust && c.hook_sites == trust[i].sites &&
+                    c.n_warnings == trust[i].warnings, "%s", trust[i].text);
+        if (trust[i].warnings) TEST_CHECK(strstr(c.warnings[0], "hook_trust") != NULL);
     }
     /* The reading statistics' time rule (docs/ocr-history.md#reading-time): adaptive (0) by default, 15s (1)
      * Rubi 0.9.7's. Any case; an unknown or empty value is adaptive, warned with the key's name. */
@@ -893,6 +910,7 @@ static void test_config(void)
                    strstr(t, "\nocr_cascade_ms = 2000\n"));
         TEST_CHECK(d.stick_lookup_ms == 200 && strstr(t, "\nstick_lookup_ms = 200\n"));
         TEST_CHECK(d.hook_sites == 1 && strstr(t, "\nhook_sites = on\n")); /* audit-hooks F3 */
+        TEST_CHECK(d.hook_trust == 1 && strstr(t, "\nhook_trust = on\n")); /* API 43 */
         TEST_CHECK(d.reading_time == 0 && strstr(t, "\nreading_time = adaptive\n"));
         /* Japanese characters only: OFF in both (the owner, 2026-10-20; ON before) */
         TEST_CHECK(d.japanese_only_selection == 0 && strstr(t, "\njapanese_only_selection = off\n") &&

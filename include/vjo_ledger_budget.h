@@ -289,6 +289,10 @@
  * files are byte-identical to main's; the Rubi app's eboot.bin, which links core/hook_place.c for the Games tag,
  * is 120 B (debug) and 79 B (normal) larger. The page-record read is two exact reads of game memory into the
  * existing capture buffer: no block, thread or allocation. */
+/* API 43, trusted hooks (core/hook_select.c vjo_hook_select_trusted, game_ocr/main.c's branch, its run counter and
+ * the warm-up's condition): debug text 148,792 -> 149,208 B (2,344 B of room left) and data/bss 35,288 -> 35,312 B,
+ * normal 140,004 -> 140,436 B and 35,280 -> 35,304 B, the same pages [measured: the build log's module rows, both
+ * builds, main 23921ad and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 188416u
 #else
@@ -539,7 +543,10 @@
  * VJO_VOCR_STRIP_BYTES, 56 KiB), freed with the job, beside this smaller reserve. A game that leaves
  * less than VJO_GAME_RESERVE free (アマツツミ, PCSG01198: 2 MiB measured on a console, 2026-10-23)
  * cannot run OCR, and would otherwise never show its hook's text. It adds nothing to
- * VJO_WORST_GAME_JOB: it is the capture block every job may hold. */
+ * VJO_WORST_GAME_JOB: it is the capture block every job may hold. API 43: a trusted hook's answer
+ * (VJO_GAME_OCR_S_TRUST, core/hook_select.h vjo_hook_select_trusted) takes the same one strip beside
+ * the same reserve, and after 8 such answers in a row gives back the resident weights, LM and cascade
+ * model: no new block, and the job's own worst case is the capture block's. */
 #define VJO_GAME_RESERVE_HOOK_ONLY (1u * 1024u * 1024u)
 /* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG
  * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), one strip of

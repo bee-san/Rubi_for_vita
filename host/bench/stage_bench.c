@@ -710,7 +710,8 @@ static const char nondefault_config[] =
     "ocr_text_gate = on\n"
     "hook_sites = off\n"
     "anki_screenshot_trim_bars = off\n"
-    "reading_time = 15s\n";
+    "reading_time = 15s\n"
+    "hook_trust = off\n";
 
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {

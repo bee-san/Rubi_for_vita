@@ -12,6 +12,20 @@
 #define VJO_HOOK_UNLOCK_MISSES 2u
 #define VJO_HOOK_INTERVAL_MIN 8u
 #define VJO_HOOK_INTERVAL_MAX 32u
+/* API 43 (VJO_GAME_OCR_S_TRUST, config.ini hook_trust): a learned regular source is trusted once its interval
+ * reaches this, that is after VJO_HOOK_LOCK_AGREEMENTS agreements and one scheduled check per doubling: 8 -> 16
+ * after its first check, 16 -> 32 after its second, so 32 is four OCR agreements on four distinct lines
+ * (docs/native-hooks.md, "Trusted hooks": why four), and once an agreement at that interval scored at least
+ * VJO_HOOK_TRUST_SCORE. One of the cache's intervals (8, 16 or 32), so a saved source keeps its level. */
+#ifndef VJO_HOOK_TRUST_INTERVAL
+#define VJO_HOOK_TRUST_INTERVAL 32u
+#endif
+typedef char vjo_hook_trust_interval_check[VJO_HOOK_TRUST_INTERVAL == 8u || VJO_HOOK_TRUST_INTERVAL == 16u ||
+                                           VJO_HOOK_TRUST_INTERVAL == 32u ? 1 : -1];
+/* The similarity (0..1000) an agreement at VJO_HOOK_TRUST_INTERVAL needs to grant trust (VjoHookSelect.strong): a
+ * source with the screen's line agrees at 1000 or close to it (OCR's misreads aside), one with a line the screen's
+ * text only contains (the line before, part of the box) at 700-850 (docs/native-hooks.md: measured). */
+#define VJO_HOOK_TRUST_SCORE 900u
 
 /* Candidate provenance in the existing site word; no extra per-stream storage. */
 #define VJO_HOOK_CAND_SITE 1u
@@ -44,6 +58,9 @@ typedef struct {
     uint32_t locked, locked_seq, streak_id, streak, misses, unchecked, locked_key;
     uint32_t locked_site, locked_encoding, interval, confirm;
     uint32_t streak_key, streak_site, streak_encoding;
+    /* API 43: 1 once the locked source agreed at VJO_HOOK_TRUST_INTERVAL with at least VJO_HOOK_TRUST_SCORE (a
+     * scheduled check, or a restored source's startup confirmation); 0 again at a disagreement. Never persisted. */
+    uint32_t strong;
     uint64_t shown_hash, streak_hash, compare_hook_hash, compare_ocr_hash;
 } VjoHookSelect;
 
@@ -68,6 +85,18 @@ unsigned vjo_hook_similarity(const char *o, size_t on, const char *h, size_t hn)
  * A successful job must still capture the region; rollback state when capture/job delivery fails. */
 uint32_t vjo_hook_select_before(VjoHookSelect *st, uint32_t pick, const VjoHookCand *c, unsigned n,
                                 uint32_t *flags);
+
+/* API 43, a trusted hook (VJO_GAME_OCR_S_TRUST, config.ini hook_trust): called before vjo_hook_select_before,
+ * with the automatic pick only. A trusted source with text answers without OCR, as Luna's sites do without the
+ * request's bit: first Luna's sites and Rubi's verified sites (c->verified: module NID and every recorded byte
+ * checked as the game started), the newest text among them (a tie: the lower ID); else the learned regular source
+ * once trusted (interval >= VJO_HOOK_TRUST_INTERVAL, strong, no pending disagreement) while a slot holds it (the same
+ * kind, key and encoding). Short and unchanged texts answer too; no check falls due. Flags: VJO_HOOK_R_TRUSTED |
+ * VJO_HOOK_R_NO_OCR, and VJO_HOOK_R_SITE for a site, VJO_HOOK_R_LOCKED for the learned source. Changes nothing
+ * but st->locked (the learned source's runtime slot, as vjo_hook_select_before records it). 0 (no trusted source
+ * has text, or another pick): the caller goes on to vjo_hook_select_before, so OCR resumes by itself. */
+uint32_t vjo_hook_select_trusted(VjoHookSelect *st, uint32_t pick, const VjoHookCand *c, unsigned n,
+                                 uint32_t *flags);
 
 /* After recognition: keep OCR on an inconclusive or rejected comparison; return an agreeing hook
  * when present. Initial learning needs two distinct normalized lines from the same stable source.
