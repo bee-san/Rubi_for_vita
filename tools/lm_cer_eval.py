@@ -36,6 +36,8 @@ SETTINGS = {"vocr_lm_o3_500k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_1000k.vlm":
             "vocr_lm_o3_2000k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_4000k.vlm": (600, 2500, LM_BOS),
             "vocr_lm_o3_1000k.vlm": (500, 3500, LM_EOS), "vocr_lm_o3_4000k.vlm": (500, 3500, LM_EOS)}
 BETA = {name: beta for name, (_, beta, _) in SETTINGS.items()}
+# the four pinned tiers (tools/prepare_ocr.py, the default); ctclm.2's old 1000k / 4000k only by --lm
+PINNED = ("vocr_lm_o3_500k.vlm", "vocr_lm6_o3_1000k.vlm", "vocr_lm_o3_2000k.vlm", "vocr_lm6_o3_4000k.vlm")
 SETS = ("tv", "dn_ink", "dn_grad")
 
 
@@ -49,7 +51,8 @@ def main(argv=None):
     ap.add_argument("--vocr-repo", required=True, type=Path, help="vita-vn-ocr with runtime/vocr_lm.c, eval/ctclm.py")
     ap.add_argument("--models", required=True, type=Path, help="directory with the .vocr and .vlm files")
     ap.add_argument("--model", action="append", help="recognizer (default VOCR3 H15 and FL10)")
-    ap.add_argument("--lm", action="append", help="LM tier (default all four)")
+    ap.add_argument("--lm", action="append", choices=sorted(SETTINGS),
+                    help="LM file (default the four pinned tiers; ctclm.2's old 1000k/4000k by name)")
     ap.add_argument("--cascade", help="the larger recognizer a low-confidence line is read again with")
     ap.add_argument("--conf", type=int, default=700, help="the cascade's confidence threshold (1/1000)")
     ap.add_argument("--sweep", default="500,600,700,800,900", help="other thresholds to report the cascade at")
@@ -67,7 +70,7 @@ def main(argv=None):
         raise SystemExit(f"lm_cer: only the development sets {SETS} are read here")
     rows = [r for s in sets for r in ctclm.load_set(s) if not r["name"]]
     models = args.model or ["VOCR3_H15_w8.vocr", "VOCR3_FL10_w8.vocr"]
-    lms = args.lm or list(BETA)
+    lms = args.lm or list(PINNED)
     every = models + ([args.cascade] if args.cascade and args.cascade not in models else [])
     rt = {m: Vocr(str(args.models / m), mode="w8i", max_width=1024) for m in every}
     dec = {(m, lm): VocrLM(rt[m], str(args.models / lm), beam=8, topk=8, alpha=SETTINGS[lm][0], beta=BETA[lm], gate=8000,
