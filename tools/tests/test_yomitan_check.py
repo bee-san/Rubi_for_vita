@@ -103,6 +103,58 @@ class PackedTable(unittest.TestCase):
         self.assertTrue({"んな", "さん", "たん", "はん", "なん"}.isdisjoint(ins))
         self.assertIn("かん", ins)
 
+    def test_limits_fail_loudly(self):
+        """A rule set the six-byte rules cannot hold stops the generator (a SystemExit, which python -O
+        keeps, not an assert it would drop) instead of writing a table that decodes to other rules. The
+        greedy packing takes many seconds, so it is stubbed: reaching it means the rules passed."""
+        base = gen_deinflect.rule_sets()
+        kana = [chr(c) for c in range(0x4E00, 0x4E00 + 100)]
+
+        class Packed(Exception):
+            pass
+
+        def reached(strings):
+            raise Packed
+
+        def rule(kana_in, kana_out="る", rules_in=()):
+            return {"kanaIn": kana_in, "kanaOut": kana_out, "rulesIn": list(rules_in), "rulesOut": ["v5"]}
+
+        def generate(edit, pack=reached):
+            data = {label: list(rules) for label, rules in base.items()}
+            edit(data)
+            saved = gen_deinflect.rule_sets, gen_deinflect.pack
+            gen_deinflect.rule_sets, gen_deinflect.pack = (lambda: data), pack
+            try:
+                gen_deinflect.generate()
+            finally:
+                gen_deinflect.rule_sets, gen_deinflect.pack = saved
+
+        too_much = {
+            "32 characters in": lambda d: d["-n"].append(rule("あ" * 31 + "ん")),
+            "32 characters out": lambda d: d["-n"].append(rule("ぁん", "あ" * 32)),
+            "not three-byte UTF-8": lambda d: d["-n"].append(rule("aん")),
+            "an empty input": lambda d: d["-n"].append(rule("")),
+            "a ninth input bit set": lambda d: [d["-n"].append(rule(kana[i] + "ん", rules_in=r)) for i, r in
+                                                enumerate([("v1", "vk"), ("vs", "vz"), ("v1", "vs"), ("vk", "vz")])],
+            "63 labels": lambda d: [d.__setitem__(f"x{i}", [rule(kana[i] + "ん")]) for i in range(63 - len(d))],
+        }
+        for name, edit in too_much.items():
+            with self.subTest(name), self.assertRaises(SystemExit):
+                generate(edit)
+        fits = {
+            "the shipped rules": lambda d: None,
+            "31 characters": lambda d: d["-n"].append(rule("あ" * 30 + "ん", "あ" * 31)),
+            "62 labels": lambda d: [d.__setitem__(f"x{i}", [rule(kana[i] + "ん")]) for i in range(62 - len(d))],
+        }
+        for name, edit in fits.items():
+            with self.subTest(name), self.assertRaises(Packed):
+                generate(edit)
+        # the strings' offsets are 11 bits: 2,048 characters of packed strings do not fit, 2,047 do
+        with self.subTest("2,048 characters"), self.assertRaises(SystemExit):
+            generate(lambda d: None, pack=lambda strings: ("あ".encode() * 2048, {}))
+        with self.subTest("2,047 characters"), self.assertRaises(KeyError):  # past the check, at the offsets
+            generate(lambda d: None, pack=lambda strings: ("あ".encode() * 2047, {}))
+
 
 if __name__ == "__main__":
     unittest.main()

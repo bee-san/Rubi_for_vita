@@ -2033,6 +2033,26 @@ static void fallback_ranks_homographs_of_equal_steps(void)
     }
 }
 
+/* A tie (the same steps, rank and article length): the first candidate in the rule table's order
+ * keeps the fallback, as equal ranks keep source order among the entries written so; only a better
+ * score replaces it. わかった gives わかつ before わかる (Yomichan's past rules: った to う, つ, る).
+ * The audit of #320 found no test that fixed this order. */
+static void fallback_ties_keep_the_first_candidate(void)
+{
+    const Row rows[] = {
+        {"わかつ", "分かつ", "わかつ", "a tie, the first", 2, 5000},
+        {"わかる", "分かる", "わかる", "a tie, the later", 2, 5000}};
+    for (int version = 2; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), version);
+        vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+        TEST_CASE_("v%d", version);
+        TEST_ASSERT(!lookup(&a, &p, &cfg, "わかった", 0, &r, &e) && r.n_vocab == 1);
+        TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], "a tie, the first"), "got %s", r.vocab[0].meanings[0]);
+    }
+}
+
 /* Yomitan's rules for spoken forms (third_party/yomitan/), each against one
  * dictionary form: the whole form matches, with its conjugation labels, and the
  * old bare imperative negative (な) no longer turns a noun into a verb. */
@@ -2091,6 +2111,7 @@ static void yomitan_rules_reach_spoken_forms(void)
 
 TEST_LIST = {
     {"fallback_ranks_homographs_of_equal_steps", fallback_ranks_homographs_of_equal_steps},
+    {"fallback_ties_keep_the_first_candidate", fallback_ties_keep_the_first_candidate},
     {"yomitan_rules_reach_spoken_forms", yomitan_rules_reach_spoken_forms},
     {"conjugation_reaches_the_popup", conjugation_reaches_the_popup},
     {"candidate_growth_fails_without_truncating_a_lookup", candidate_growth_fails_without_truncating_a_lookup},

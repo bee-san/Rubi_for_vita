@@ -29,7 +29,8 @@ Vendored sources:
            stringfilters.cpp and LICENSE, unchanged, none compiled; their SHA-256 are in
            LunaTranslator/README.md and checked by the generator
 - yomichan https://github.com/FooSoft/yomichan 2f13cf5d2ad33a627152457a3f120deb76739f60 (GPL-3.0):
-           its deinflection rules, ext/data/deinflect.json, unchanged (yomichan/README.md)
+           its deinflection rules, ext/data/deinflect.json, the same JSON reformatted one key a line
+           (yomichan/README.md)
 - yomitan  https://github.com/yomidevs/yomitan e7334a96106a6c74e6fa75bd33a5ea1219d92712, release
            26.10.12.0 (GPL-3.0-or-later): suffix rules of ext/js/language/ja/japanese-transforms.js,
            ported to Yomichan's format by tools/yomitan_check/port_yomitan_rules.mjs

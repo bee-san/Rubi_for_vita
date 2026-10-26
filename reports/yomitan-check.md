@@ -79,8 +79,11 @@ Per title the mismatch rate after this change runs from 39.8 to 100.5 per 1,000.
 2. **The bare imperative negative `な`.** Yomichan's rule turning any dictionary form + な into the form
    ("don't …") matched every な after a word: 失礼な → a verb 失礼 read しつらい, はずなのに → 恥づ,
    こうなって → 請う, しそうな → 試奏; 101 taps on main. Removing it, Sudachi reads 6 of them better and
-   1 worse (72 have the same dictionary form either way: 捨てるな, 捨てる). Yomitan
-   no longer has it; nor does Rubi (するな now highlights する, the next word な).
+   1 worse (70 show the same entry either way, spelling and reading: 捨てるな, 捨てる). Yomitan
+   no longer has it; nor does Rubi (するな now highlights する, the next word な). Read one by one, 20 of
+   the 101 are prohibitives (捨てるな！, 言うなよ), whose verb now shows without the "imperative negative"
+   label, as in Yomitan; most others are なら, なんて, なのに, なり or a sentence-final な, which the rule
+   misread (audit of #320).
 3. **Yomitan's rules for spoken forms** (`third_party/yomitan/`, ported by `port_yomitan_rules.mjs`):
    `-おく` (しておく, 聞いておいた, 言わないでおく), `-ん` (変わらん, 構わん, 言えん), `-ちゃ` (しちゃ駄目,
    近づけちゃ), `-ゃ` (戻らなきゃ, 目指しゃ, なりゃ), `-ざる`, `-ねば`, `-やがる`, `-やしない`, `-て`'s
@@ -90,10 +93,18 @@ Per title the mismatch rate after this change runs from 39.8 to 100.5 per 1,000.
    なん "what") and `-ゃ`'s や and にゃ (the particle, a cat's ニャ).
 
 Over all taps the change alters 341 shown entries: Sudachi calls 72 of them better and 19 worse (the
-rest it cannot tell apart); 264 move to Yomitan's entry and 43 away from it. Read one by one, the
-19 "worse" are mostly Sudachi splitting a phrase that both dictionaries have whole (聞き捨てならねー,
-役に立たねぇ) and two ties of equal-depth candidates (つかまれた 捕まる, かわされた 買う: Yomichan's
-one-step causative passive, which Yomitan does not have). File reads per lookup on the 50 committed
+rest it cannot tell apart); 264 move to Yomitan's entry and 43 away from it. Read one by one, 9 of the
+19 "worse" are right: Sudachi splits a form that both dictionaries match whole (聞き捨てならねー,
+役に立たねぇ, 乗りやしない), and 4 are neither better nor worse, but 6 are worse (4 of them as Yomitan reads them): two
+ties of equal-depth candidates (つかまれた 捕まる, かわされた 買う: Yomichan's one-step causative passive,
+which Yomitan does not have), 手をつかん(で) as 手をつく (`-ん`'s かん), とっておき as とる (`-おく` on a noun),
+ないねぇ as 無い無い (the particle ねぇ read as `-え`'s ない) and ものがねぇ as the phrase 物が無い, whose sense
+does not fit. Read by hand,
+40 of the 341 at random (seed 20261026) are 23 better, 16 the same and 1 worse (このまま【にしておく】
+shows にす, "negation", as Yomitan does, where main showed the grammar entry にして; the word is にする).
+Two labels can mislead although the word is right:
+the contracted progressive てん (してんの, 言ってん: 9 taps) shows `-n`, the negative, and Rubi's own ー
+rules read an elongated て (見てー, 聴かせてー) as `-tai` (audit of #320). File reads per lookup on the 50 committed
 lines are unchanged (6.12 first word, 5.50 word by word, 5.53 letter by letter; `dict_lookup_bench.py`),
 so the console estimate is too. The table grows from 569 rules to 724 and the Shell's pages do not:
 the table is packed ([memory ledger](../docs/memory-ledger.md#yomitans-deinflection-rules-a-packed-table)).
