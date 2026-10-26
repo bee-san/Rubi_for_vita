@@ -744,6 +744,11 @@ that may need one, the two-level head: an estimated 0.12 / 0.20 / 0.26 s less pe
 Normal / Large), with no development score resolved worse; nothing of it has run on a console yet. `gate` and
 `two_level` keep one of the two; `off` reads every frame with the full head, as before API 42
 ([head gate and two-level head](vita-vn-ocr.md#head-gate-and-two-level-head-api-42)).
+`ocr_finder = spotter` finds the lines with vita-vn-ocr #128's text spotter, a network trained on hooked game
+pages, instead of Rubi's finder (`grad`, the default); `ocr_spotter_refine = on` refines its boxes too. Its weights
+are a file beside the models, kept in the game's memory between jobs; without them (until vita-vn-ocr publishes
+them, every package) a job reads with Rubi's finder
+([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-45)).
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
 decode, the cascade's re-read and its place in the text still follow line order on the job's own
@@ -925,10 +930,10 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 180,224 B of module pages (188,416 B in the debug build; API 31's native hooks and
+holds the worker's 196,608 B of module pages (204,800 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
-API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B and API 42's head gate and
-two-level head 8,192 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
+two-level head 8,192 B and API 45's text spotter 16,384 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

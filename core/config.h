@@ -130,6 +130,13 @@ typedef struct {
      * or Rubi verified site, or a regular source after four OCR agreements) answer without OCR; 0 (hook_trust = off)
      * selects as Rubi 0.9.7 did. The Shell sends it as VJO_GAME_OCR_S_TRUST in each job's speed word. Last, as above. */
     int hook_trust;           /* 0/1, on by default */
+    /* Local OCR (vocr, API 45): the line finder of a job, VJO_FINDER_GRAD (Rubi's GRAD with the refinement and
+     * the short-line probe, as every build before) or VJO_FINDER_SPOTTER (vita-vn-ocr #128's text spotter,
+     * core/vocr_ocr.h VjoVocrPolicy.spot: its boxes are the lines; a job that cannot have its weights reads with
+     * GRAD); and whether the spotter's boxes are refined (VOCR_REFINE_DEFAULT; GRAD's follow ocr_refine_lines).
+     * Last, as above. */
+    int ocr_finder;           /* VJO_FINDER_* */
+    int ocr_spotter_refine;   /* 0/1 */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
@@ -141,6 +148,14 @@ typedef struct {
 #define VJO_HEAD_TWO_LEVEL 2
 #define VJO_HEAD_GATE_DEFAULT (VJO_HEAD_GATE | VJO_HEAD_TWO_LEVEL)
 #define VJO_HEAD_GATE_DEFAULT_TEXT "on"
+/* API 45: ocr_finder (config.ini grad | spotter) and ocr_spotter_refine (off | on), and their defaults
+ * (docs/vita-vn-ocr.md, "The spotter finder": GRAD until vita-vn-ocr #128's pick is measured on the page path;
+ * each default is one line here and its text the next). */
+enum { VJO_FINDER_GRAD = 0, VJO_FINDER_SPOTTER = 1 };
+#define VJO_FINDER_DEFAULT VJO_FINDER_GRAD
+#define VJO_FINDER_DEFAULT_TEXT "grad"
+#define VJO_SPOTTER_REFINE_DEFAULT 0
+#define VJO_SPOTTER_REFINE_DEFAULT_TEXT "off"
 
 void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and

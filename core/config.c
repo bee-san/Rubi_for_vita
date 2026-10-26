@@ -56,6 +56,8 @@ void vjo_config_defaults(VjoConfig *c)
     c->ocr_text_gate = VJO_TEXT_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Text-presence gate" */
     c->hook_sites = 1; /* the table sites with the CALL source; off: the CALL source alone */
     c->ocr_head_gate = VJO_HEAD_GATE_DEFAULT; /* docs/vita-vn-ocr.md, "Head gate" and "Two-level head" */
+    c->ocr_finder = VJO_FINDER_DEFAULT; /* API 45: docs/vita-vn-ocr.md, "The spotter finder" */
+    c->ocr_spotter_refine = VJO_SPOTTER_REFINE_DEFAULT;
     c->hook_trust = 1; /* a trusted hook answers without OCR; off: Rubi 0.9.7's selection (docs/native-hooks.md) */
 }
 
@@ -149,6 +151,10 @@ const char *vjo_config_default_text(void)
            "; its rare characters only where needed (two_level): on (both) | gate |\n"
            "; two_level | off\n"
            "ocr_head_gate = " VJO_HEAD_GATE_DEFAULT_TEXT "\n"
+           "; vocr: the line finder: grad (Rubi's) | spotter (vita-vn-ocr's text spotter;\n"
+           "; GRAD when its weights are missing), and the spotter's boxes refined: on | off\n"
+           "ocr_finder = " VJO_FINDER_DEFAULT_TEXT "\n"
+           "ocr_spotter_refine = " VJO_SPOTTER_REFINE_DEFAULT_TEXT "\n"
            "; vocr: lines read at once (1-3), 444 MHz while reading (on | off: the Rubi\n"
            "; app's Speed boost while reading)\n"
            "ocr_threads = 3\n"
@@ -606,6 +612,12 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const heads[] VJO_DATA_TABLE(config_heads_1) = {"off", head_gate_name, head_two_name, "on",
                                                                              NULL};
         set_choice(c, key, val, &c->ocr_head_gate, heads);
+    } else if (vjo_ieq(key, "ocr_finder")) { /* API 45 */
+        static const char *const finders[] VJO_DATA_TABLE(config_finders_1) = {"grad", "spotter", NULL};
+        set_choice(c, key, val, &c->ocr_finder, finders);
+    } else if (vjo_ieq(key, "ocr_spotter_refine")) { /* API 45 */
+        static const char *const off_on[] VJO_DATA_TABLE(config_off_on_4) = {"off", "on", NULL};
+        set_choice(c, key, val, &c->ocr_spotter_refine, off_on);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         if (vjo_ieq(val, "on")) c->ocr_skip_blank_lines = 1;
         else if (vjo_ieq(val, "off")) c->ocr_skip_blank_lines = 0;

@@ -89,8 +89,14 @@
  * 43: trusted hooks (docs/native-hooks.md, "Trusted hooks"): VjoGameOcrRequest.speed bit 20
  * (VJO_GAME_OCR_S_TRUST, config.ini hook_trust) lets a trusted source answer a job without OCR, its capture pass
  * beside VJO_GAME_RESERVE_HOOK_ONLY, and VjoGameOcrResult.hook_flags has VJO_HOOK_R_TRUSTED. Sizes and layouts
- * are unchanged. */
-#define VJO_API_VERSION 43
+ * are unchanged.
+ * 45: the text spotter as the game worker's finder (vita-vn-ocr #128, docs/vita-vn-ocr.md "The spotter finder"):
+ * VjoGameOcrRequest.speed's VJO_GAME_OCR_S_SPOT and VJO_GAME_OCR_S_SPOT_REFINE (two bits, provisional: bits 30 and
+ * 31 until this change rebases onto vocr6-finder's merge), its weights' file in the kernel's broker for such a
+ * request (VJO_GAME_OCR_OPEN_SPOT, VJO_VOCR_SPOT_NAME), a new step kind (spot) and block (VJO_GITEM_SPOT); the
+ * Shell sets the bits from config.ini ocr_finder and ocr_spotter_refine. Sizes and layouts are unchanged. 44 is
+ * VOCR6's line-finder fixes (vocr6-finder), landing first, and 46 draft #326's. */
+#define VJO_API_VERSION 45
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

@@ -2198,6 +2198,35 @@ static void gate_weights_open_only_with_the_gate(void)
         }
 }
 
+/* API 45: the text spotter's weights, the same way: a pinned name the kernel knows, at its pinned size, for a request
+ * that asks for the spotter (VJO_GAME_OCR_S_SPOT) only, by tiers or by name; its refinement bit alone opens nothing,
+ * and both bits are known to Submit. */
+static void spot_weights_open_only_with_the_spotter(void)
+{
+    for (unsigned spot = 0; spot <= 2; spot++)
+        for (unsigned tiers = 0; tiers <= 1; tiers++) {
+            setup(); VjoGameOcrRequest r = make_request();
+            r.speed = spot == 1 ? VJO_GAME_OCR_S_SPOT | VJO_GAME_OCR_S_SPOT_REFINE : spot == 2 ? VJO_GAME_OCR_S_SPOT_REFINE : 0u;
+            if (tiers) { strcpy(r.model, VJO_VOCR_TIER1_NAME); r.tiers = 1u; }
+            caller = 3; int seq = vjoOcrSubmit(&r); TEST_ASSERT(seq > 0); take((uint32_t)seq);
+            if (spot != 1) {
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == VJO_ERR_ARG && !model_opens);
+            } else {
+                expect_lm = VJO_VOCR_SPOT_NAME; expected_model_size = VJO_VOCR_SPOT_BYTES;
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == VJO_ERR_BUSY);
+                model_tick();
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT, NULL) == (int)VJO_VOCR_SPOT_BYTES &&
+                           model_opens == 1);
+                close_model(seq);
+                expect_lm = NULL;
+                /* the gate's file stays the gate's request's */
+                TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_GATE, NULL) == VJO_ERR_ARG);
+            }
+            TEST_CHECK(vjoOcrModelOpen(seq, VJO_GAME_OCR_OPEN_SPOT + 1u, NULL) == VJO_ERR_ARG);
+            TEST_CHECK(!vjoOcrModelClose(seq) && !vjoOcrComplete(&message));
+        }
+}
+
 /* API 21: a request by tiers names the model sizes its job may run (bit t - 1);
  * the game opens a size's pinned model by its tier, never by a name: the kernel
  * opens exactly the request's tiers, and with a cascade ceiling the tier above
@@ -2526,6 +2555,7 @@ TEST_LIST = {
     {"an LM tier opens by its pinned name, up to the request's tier", lm_tiers_open_up_to_the_requested_tier},
     {"the cascade's model opens by its pinned name, only with a ceiling", cascade_model_opens_only_with_a_ceiling},
     {"API 26: the gate's weights open by their pinned name, only with the gate", gate_weights_open_only_with_the_gate},
+    {"API 45: the spotter's weights open by their pinned name, only with the spotter", spot_weights_open_only_with_the_spotter},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
     {"the Large size's file opens at its pinned length only (VOCR5-L: 2,473,696 B)", the_large_size_opens_at_its_pinned_length_only},
     {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},

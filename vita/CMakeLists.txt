@@ -651,6 +651,8 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/docs/img
     ${STAGE}/third_party/LunaTranslator
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/prepare_vndb.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/reading_stats.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
+  # API 45: the text spotter's pins (tools/prepare_ocr.py reads them from this header, beside it in the zip)
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/include/vjo_vocr_sizes.h ${STAGE}/tools/
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_plaintext.py --source ${VJO_PLAINTEXT_SOURCE} --stage ${STAGE}
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_vndb.py --stage ${STAGE}
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.

@@ -539,6 +539,15 @@ if(VJO_WITH_VOCR)
   target_link_options(vjo-vocr-policy-tests PRIVATE "LINKER:--wrap=vocr_run" "LINKER:--wrap=vocr_lm_decode"
     "LINKER:--wrap=vocr_lm_init")
   add_test(NAME vocr_policy COMMAND vjo-vocr-policy-tests)
+  # API 45: the text spotter as a job's finder (core/vocr_ocr.c VjoVocrPolicy.spot): the committed random VTSP blob
+  # (host/fixtures/spotter) as its pin, and a synthetic recognizer pin whose weights no test reads.
+  add_executable(vjo-vocr-spot-tests host/tests/test_vocr_spot.c core/vocr_ocr.c)
+  target_include_directories(vjo-vocr-spot-tests PRIVATE third_party/acutest/include host/tests core include)
+  target_compile_definitions(vjo-vocr-spot-tests PRIVATE VJO_VOCR_TEST_MODELS="test_spot_models.h"
+    VJO_VOCR_SPOT_TEST="test_spot_pins.h" VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+  target_compile_options(vjo-vocr-spot-tests PRIVATE -Wall -Wextra)
+  target_link_libraries(vjo-vocr-spot-tests vjo_vocr_rt vjo_host)
+  add_test(NAME vocr_spot COMMAND vjo-vocr-spot-tests)
   add_executable(vjo-textnorm-tests host/tests/test_textnorm.c)
   target_include_directories(vjo-textnorm-tests PRIVATE third_party/acutest/include)
   target_link_libraries(vjo-textnorm-tests vjo_vocr)
@@ -882,6 +891,18 @@ if(VJO_WITH_VOCR)
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
+  # API 45: the text spotter in the actual worker (game_ocr/main.c): its weights through the broker into a block of
+  # their own, kept and given back, and GRAD whenever it cannot run; the real spotter on the committed random blob,
+  # spies for the recognizer and GRAD (host/tests/test_game_spot.c).
+  add_executable(vjo-game-spot-tests host/tests/test_game_spot.c core/vocr_ocr.c core/textnorm.c host/tests/hooks_none.c)
+  target_include_directories(vjo-game-spot-tests PRIVATE third_party/acutest/include host/tests/game_stubs host/tests)
+  target_compile_options(vjo-game-spot-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-spot-tests PRIVATE VJO_VOCR_TEST_MODELS="test_spot_models.h"
+    VJO_VOCR_SPOT_TEST="test_spot_pins.h" VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_load=test_vocr_load
+    vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
+  target_link_libraries(vjo-game-spot-tests vjo_vocr_rt vjo_host)
+  add_test(NAME game_spot COMMAND vjo-game-spot-tests)
   # Native hooks in the job path (docs/native-hooks.md): the actual worker with the resident test's spies and
   # a fake of game_ocr/hooks.h: a stream answers with the first capture pass only, or replaces OCR's agreeing
   # text; nothing installed is OCR as before.

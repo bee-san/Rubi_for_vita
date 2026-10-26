@@ -108,4 +108,37 @@
 #define VJO_VOCR_GATE_NAME "textgate_p8_c8_w8.vtd"
 #define VJO_VOCR_GATE_BYTES 1540u
 
+/* API 45: the text spotter's int8 weights (vita-vn-ocr #128, docs/textspot6.md: a VTSP version-4 blob), the
+ * game worker's alternative finder (config.ini ocr_finder = spotter): a file beside the models, read through the
+ * kernel's broker (VJO_GAME_OCR_OPEN_SPOT) by a job with VJO_GAME_OCR_S_SPOT, and its release's ATTRIBUTION.md
+ * (kept as ocr/SPOTTER-ATTRIBUTION.md). THE ONE PLACE of its pins: core/vocr_ocr.c (the SHA-256), the kernel
+ * (name and bytes), include/vjo_payload.h (PUBLISHED), cmake/VocrOCR.cmake (FORM: the VOCR_TEXTSPOT6_NO_MS
+ * default), cmake/VocrSpot.cmake, tools/prepare_ocr.py, package_release.py, package_vpk.py and e2e_package.py
+ * all read these lines, one value each (tools/tests/test_spot_pins.py checks the form of each), so pinning
+ * vita-vn-ocr's published pick changes one line per constant. Until that pre-release exists the entry is a
+ * placeholder: VJO_VOCR_SPOT_PUBLISHED 0 and a SHA-256 of zeros, which no file has, so a job with the spotter
+ * finds no weights and reads with GRAD, and no package carries the spotter. TAG: the pre-release; NAME, BYTES,
+ * SHA256: its weights; ATTRIBUTION_BYTES, _SHA256: its ATTRIBUTION.md; FORM: "trunk" (a VTDT trunk: the build
+ * leaves out every multi-scale path, -DVOCR_TEXTSPOT6_NO_MS) or "ms" (a VTMS network). */
+#ifdef VJO_VOCR_SPOT_TEST
+/* Host tests only (host/tests/test_spot_pins.h): the committed random blob's pins, a job's spotter end to end. */
+#include VJO_VOCR_SPOT_TEST
+#else
+#define VJO_VOCR_SPOT_TAG "v0.3.8-textspot6.1"
+#define VJO_VOCR_SPOT_NAME "textspot6_t64n8c16_w8.vtsp"
+#define VJO_VOCR_SPOT_BYTES 52176u
+#define VJO_VOCR_SPOT_SHA256 "0000000000000000000000000000000000000000000000000000000000000000"
+#define VJO_VOCR_SPOT_ATTRIBUTION_BYTES 0u
+#define VJO_VOCR_SPOT_ATTRIBUTION_SHA256 "0000000000000000000000000000000000000000000000000000000000000000"
+#define VJO_VOCR_SPOT_FORM "trunk"
+#define VJO_VOCR_SPOT_PUBLISHED 0
+#endif
+/* The ceilings every pin of it must stay within (vita-vn-ocr eval/textspot6_protocol.json, the rule's
+ * eligibility: a VTSP blob of at most 512,000 B, an arena of at most 262,144 B for a 960 x 544 frame), so the
+ * memory ledger's budgets (include/vjo_ledger_budget.h VJO_BUDGET_GAME_SPOT, VJO_BUDGET_GAME_WORKSPACE) hold for
+ * any pick the rule admits without a change of their own. core/vocr_ocr.c and game_ocr/main.c refuse more:
+ * a job then reads with GRAD. */
+#define VJO_VOCR_SPOT_MAX_BYTES 512000u
+#define VJO_VOCR_SPOT_ARENA_MAX 262144u
+
 #endif

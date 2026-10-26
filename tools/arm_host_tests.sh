@@ -197,6 +197,9 @@ TESTS+=(hook_text hook_luna psp_probe hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime
+  # API 45: the text spotter, pinned at its own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT); core/vocr_ocr.c
+  # links it. VJO_VOCR_SPOT_SOURCE_DIR, else the recognizer's checkout when it holds it.
+  SPOT_RT=${VJO_VOCR_SPOT_SOURCE_DIR:-$VJO_VOCR_SOURCE_DIR}/runtime
   MODEL_DEF=()
   [ -n "${VJO_VOCR_MODEL_DIR:-}" ] && MODEL_DEF=(-DVJO_VOCR_MODEL_DIR="\"$VJO_VOCR_MODEL_DIR\"")
   capture_parity() {
@@ -204,10 +207,11 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_capture.o" kernel/capture.c &&
     "$ARM_CC" "${FLAGS[@]}" -c -o "$OUT/parity_scene.o" kernel/scene.c &&
     "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu11 -Wall -Wextra -Wno-unused-parameter \
-      "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
+      "${MODEL_DEF[@]}" -I third_party/acutest/include -I core -I include -I "$RT" -I "$SPOT_RT" -I third_party/bearssl/inc -I third_party/bearssl/src \
       -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
       "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
       "$RT/vocr_lines_rows.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_post.c" \
+      "$SPOT_RT/vocr_textspot6.c" \
       third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
       third_party/bearssl/src/codec/enc32be.c -lm
   }

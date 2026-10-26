@@ -18,8 +18,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import package_vpk as vpk  # noqa: E402
+import prepare_ocr  # noqa: E402  (API 45: the text spotter's pinned name)
 # the tree's API (include/vjo_api.h): the app's stamp in these fixtures
 API = int(re.search(r"#define VJO_API_VERSION (\d+)", (ROOT / "include/vjo_api.h").read_text()).group(1))
+
+
+def kernel_index():
+    """include/vjo_payload.h's VJO_PAYLOAD_KERNEL_INDEX, (13 + VJO_PAYLOAD_SPOT_FILES): API 45's text spotter adds its
+    two files before the plugins once its pin is published (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_PUBLISHED)."""
+    header = (ROOT / "include/vjo_payload.h").read_text()
+    base = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX \((\d+) \+ VJO_PAYLOAD_SPOT_FILES\)", header).group(1))
+    return base + (2 if prepare_ocr.VOCR_SPOT_PUBLISHED else 0)
 
 
 def make_self(imports=(), strings=b""):
@@ -128,10 +137,16 @@ class BuildCheck(unittest.TestCase):
 
 class PayloadList(unittest.TestCase):
     def test_the_python_list_is_the_compiled_one(self):
+        import package_release
         files = vpk.payload_files()
-        self.assertEqual(len(files), 18)  # the bundled PSP/Vita names are a separate payload file
+        # the bundled PSP/Vita names are a separate payload file; API 45: the text spotter's two once published
+        spot = 2 if package_release.VOCR_SPOT_PUBLISHED else 0
+        self.assertEqual(len(files), 18 + spot)
         header = (ROOT / "include/vjo_payload.h").read_text()
-        kernel = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX (\d+)", header).group(1))
+        self.assertRegex(header, r"#define VJO_PAYLOAD_SPOT_FILES 2\n#else\n#define VJO_PAYLOAD_SPOT_LIST\(X\)\n"
+                                 r"#define VJO_PAYLOAD_SPOT_FILES 0\n")
+        kernel = kernel_index()
+        self.assertEqual(kernel, 13 + spot)
         self.assertEqual(files[kernel], ("ur0:tai/VitaJPOverlay_Kernel.skprx", "copy"))
         self.assertEqual(files[kernel - 1], ("ux0:data/VitaJPOverlay/dictionaries/plaintext.vjdict", "move"))
         self.assertEqual([d for d, _ in files[kernel:kernel + 4]],  # VJO_PAYLOAD_PLUGINS: the plugins and the RCO
@@ -139,13 +154,34 @@ class PayloadList(unittest.TestCase):
                           "ur0:tai/VitaJPOverlay_OCR.suprx", "ur0:data/VitaJPOverlay/vitajpoverlay.rco"])
         self.assertEqual(files[-1], ("ux0:data/VitaJPOverlay/config.ini", "template"))
         # the models are the package's shipped ones (package_release.py shipped_models), nothing else
-        import package_release
         shipped = {name for name, *_ in package_release.shipped_models()} | {"LM-ATTRIBUTION.md",
                                                                             package_release.VOCR_MODEL_ATTRIBUTION,
                                                                             package_release.VOCR_GATE_ATTRIBUTION}
+        if package_release.VOCR_SPOT_PUBLISHED:
+            shipped.add(package_release.VOCR_SPOT_ATTRIBUTION)
         self.assertEqual({d.rsplit("/", 1)[1] for d, _ in files if "/ocr/" in d}, shipped)
         # the app's own record is never in the payload (the install writes it, core/app_stamp.h)
         self.assertNotIn("ux0:data/VitaJPOverlay/vjo_app.txt", [d for d, _ in files])
+
+    def test_the_spotter_joins_the_payload_once_published(self):
+        """API 45: VJO_VOCR_SPOT_PUBLISHED 1 (include/vjo_vocr_sizes.h) puts the spotter's weights and attribution
+        after the gate's, as the compiler's #if branch does; the placeholder's 0 leaves them out."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "include").mkdir()
+            (root / "include/vjo_payload.h").write_text((ROOT / "include/vjo_payload.h").read_text())
+            sizes = (ROOT / "include/vjo_vocr_sizes.h").read_text()
+            for flag, extra in (("0", []), ("1", ["ux0:data/VitaJPOverlay/ocr/" + prepare_ocr.VOCR_SPOT_MODEL,
+                                                  "ux0:data/VitaJPOverlay/ocr/SPOTTER-ATTRIBUTION.md"])):
+                (root / "include/vjo_vocr_sizes.h").write_text(
+                    re.sub(r"^#define VJO_VOCR_SPOT_PUBLISHED [01]$", "#define VJO_VOCR_SPOT_PUBLISHED " + flag, sizes,
+                           flags=re.M))
+                with unittest.mock.patch.object(vpk, "ROOT", root):
+                    files = [d for d, _ in vpk.payload_files()]
+                gate = files.index("ux0:data/VitaJPOverlay/ocr/GATE-ATTRIBUTION.md")
+                self.assertEqual(files[gate + 1:gate + 1 + len(extra)], extra)
+                self.assertEqual(files[gate + 1 + len(extra)], "ux0:data/VitaJPOverlay/dictionaries/vndb-names.vjdict")
+                self.assertEqual(len(files), 18 + len(extra))
 
     def test_a_file_named_twice_is_refused(self):
         """core/payload.c refuses a manifest naming a file twice ("a file named twice"), so the packaging
@@ -197,7 +233,7 @@ class Package(unittest.TestCase):
                                      "worker kernel", "build " + lines[6].split()[1]])
         self.assertIn("set anki_mining on", lines)
         self.assertNotIn("set log_file on", lines)
-        kernel = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX (\d+)", (ROOT / "include/vjo_payload.h").read_text()).group(1))
+        kernel = kernel_index()
         self.assertTrue(re.fullmatch(r"file ur0:tai/VitaJPOverlay_Kernel\.skprx \d+ [0-9a-f]{64} copy", lines[7 + kernel]))
         record = vpk.installed_record(text)
         self.assertRegex(record, rf"^vjoinst1 version=0\.8\.0 variant=normal api={API} build=[0-9a-f]{{16}} manifest=[0-9a-f]{{64}}\n$")

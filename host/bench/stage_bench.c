@@ -711,7 +711,9 @@ static const char nondefault_config[] =
     "hook_sites = off\n"
     "anki_screenshot_trim_bars = off\n"
     "reading_time = 15s\n"
-    "hook_trust = off\n";
+    "hook_trust = off\n"
+    "ocr_finder = spotter\n"
+    "ocr_spotter_refine = on\n";
 
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {
