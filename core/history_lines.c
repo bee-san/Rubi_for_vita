@@ -141,16 +141,39 @@ uint32_t vjo_line_characters(const char *s, size_t len)
     return vjo_reading_characters(s, len);
 }
 
-void vjo_reading_time_add(VjoReadingTime *t, uint64_t us, uint32_t game, uint32_t chars)
+uint32_t vjo_reading_rule;
+
+uint32_t vjo_reading_time_add(VjoReadingTime *t, uint64_t us, uint32_t game, uint32_t chars)
 {
-    uint64_t gap = us - t->last_us;
-    if (t->last_us && us && game == t->last_game && gap && gap <= 15000000) {
-        t->active_us += gap;
-        t->timed_chars += t->last_chars;
+    uint32_t credit = 0;
+    if (t->last_us && us > t->last_us && game == t->last_game) {
+        uint64_t gap = us - t->last_us;
+        /* (32 bits from here: a longer gap is credited its line's cap, at most 5 minutes) */
+        uint32_t g = gap >> 32 ? 0xFFFFFFFFu : (uint32_t)gap, n = t->last_chars, cap = VJO_READING_GAP_15S_US;
+        if (vjo_reading_rule) {
+            if (g > cap) g = 0; /* 15s: a longer gap is a break, not reading */
+        } else {
+            uint32_t pace = t->pace ? t->pace : VJO_READING_PACE_START;
+            uint32_t expect = pace * n; /* the line's expected time in 64 us: under 2^28 (65,535 x 4,095) */
+            /* 2.5 times the expected time (2.5 x 64 us = 160 us), 2 s to 5 minutes */
+            cap = expect >= VJO_READING_CAP_CEILING_US / 160 ? VJO_READING_CAP_CEILING_US : expect * 160;
+            if (cap < VJO_READING_CAP_FLOOR_US) cap = VJO_READING_CAP_FLOOR_US;
+            /* the line teaches the pace from its gap, not its credit (stats_util.reading_speed_sample) */
+            if (n >= 5 && g >= 1000000u && g <= VJO_READING_CAP_CEILING_US) {
+                pace = g >> VJO_READING_PACE_UNIT_SHIFT > expect ? pace + 3 * (pace >> 5) : pace - (pace >> 5);
+                t->pace = (uint16_t)(pace > 0xFFFFu ? 0xFFFFu : pace);
+            }
+        }
+        credit = g < cap ? g : cap;
+        if (credit) {
+            t->active_us += credit;
+            t->timed_chars += n;
+        }
     }
     t->last_us = us;
     t->last_game = game;
-    t->last_chars = chars;
+    t->last_chars = (uint16_t)chars;
+    return credit;
 }
 
 void vjo_reading_scope_add(VjoReadingTime *t, VjoReadingScope *scope,
@@ -161,14 +184,14 @@ void vjo_reading_scope_add(VjoReadingTime *t, VjoReadingScope *scope,
         for (const char *p = scope->uuid; *p; p++) selected = (selected ^ (unsigned char)*p) * 16777619u;
         if (game != selected) { t->last_us = 0; t->last_chars = 0; return; }
     }
-    uint64_t before = t->active_us, timed = t->timed_chars, prev = t->last_us;
-    vjo_reading_time_add(t, us, game, chars);
+    uint64_t prev = t->last_us;
+    uint32_t timed = t->last_chars, credit = vjo_reading_time_add(t, us, game, chars);
     if (scope && us >= scope->start_us && us < scope->end_us) {
         scope->chars += chars;
         /* Midnight breaks the daily interval, rather than crediting yesterday's line today. */
-        if (prev >= scope->start_us) {
-            scope->active_us += t->active_us - before;
-            scope->timed_chars += t->timed_chars - timed;
+        if (credit && prev >= scope->start_us) {
+            scope->active_us += credit;
+            scope->timed_chars += timed;
         }
     }
 }

@@ -152,6 +152,11 @@ const char *vjo_config_default_text(void)
            "; Debugging: write ux0:data/VitaJPOverlay/log.txt (max 1 MB + one rotated file): on | off\n"
            "log_file = on\n"
            "\n"
+           "; Reading time in the overlay's statistics (Triangle), from the Vita's next start:\n"
+           "; adaptive (each line at most 2.5 times what your pace takes for it, as\n"
+           "; GameSentenceMiner counts) | 15s (only pauses of 15 s or less, Rubi 0.9.7's rule)\n"
+           "reading_time = adaptive\n"
+           "\n"
            "; ---- Anki (optional): the Rubi app's Anki page turns it on and exports the cards ----\n"
            "; on: enter (× or ○, as the Vita's settings assign it) in the overlay saves the\n"
            "; shown word as a card in a queue on the memory card; the Rubi app exports the\n"
@@ -526,6 +531,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
         static const char *const off_on[] VJO_DATA_TABLE(config_off_on_1) = {"off", "on", NULL};
         c->hook_sites = 1; /* an unknown value: on, with the warning */
         set_choice(c, key, val, &c->hook_sites, off_on);
+    } else if (vjo_ieq(key, "reading_time")) {
+        static const char *const rules[] VJO_DATA_TABLE(config_reading_time_1) = {"adaptive", "15s", NULL}; /* VJO_READING_* */
+        c->reading_time = 0; /* an unknown value: adaptive, with the warning */
+        set_choice(c, key, val, &c->reading_time, rules);
     } else if (vjo_ieq(key, "ocr_backend")) {
         /* The removed engine choice (core/config.h): vocr is the only engine. */
         const char *removed = removed_engine(val);

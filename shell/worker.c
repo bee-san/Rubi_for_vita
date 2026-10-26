@@ -3181,6 +3181,9 @@ int vjo_worker_start(void)
     if (vjo_anki_start() < 0)
         vjo_log("anki: mailbox unavailable: no card can be saved");
     apply_config(); /* logging, triggers and Anki are set up before the first game */
+#ifdef VJO_WITH_VOCR
+    vjo_reading_rule = (uint32_t)cfg.reading_time; /* once: a Shell's totals are all counted with one rule */
+#endif
     vjo_selftest_init(&cfg);
     if (vjo_selftest_armed())
         apply_config(); /* the self-test's forced settings */

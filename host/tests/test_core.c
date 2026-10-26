@@ -810,6 +810,21 @@ static void test_config(void)
         TEST_CHECK_(c.hook_sites == sites[i].sites && c.n_warnings == sites[i].warnings, "%s", sites[i].text);
         if (sites[i].warnings) TEST_CHECK(strstr(c.warnings[0], "hook_sites") != NULL); /* named, never the value */
     }
+    /* The reading statistics' time rule (docs/ocr-history.md#reading-time): adaptive (0) by default, 15s (1)
+     * Rubi 0.9.7's. Any case; an unknown or empty value is adaptive, warned with the key's name. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.reading_time == 0);
+    static const struct { const char *text; int rule, warnings; } rules[] = {
+        {"reading_time = 15s\n", 1, 0}, {"Reading_Time = 15S\n", 1, 0}, {"reading_time = adaptive\n", 0, 0},
+        {"reading_time = ADAPTIVE\n", 0, 0}, {"reading_time = 15s ; Rubi 0.9.7's\n", 1, 0},
+        {"reading_time = 15s\nreading_time = 30s\n", 0, 1}, {"reading_time = 15s\nreading_time =\n", 0, 1},
+        {"reading_time = gsm\n", 0, 1}, {"reading_time = 15\n", 0, 1}};
+    for (unsigned i = 0; i < sizeof(rules) / sizeof(rules[0]); i++) {
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, rules[i].text, strlen(rules[i].text));
+        TEST_CHECK_(c.reading_time == rules[i].rule && c.n_warnings == rules[i].warnings, "%s", rules[i].text);
+        if (rules[i].warnings) TEST_CHECK(strstr(c.warnings[0], "reading_time") != NULL);
+    }
     vjo_config_defaults(&c);
     const char *lm = "ocr_lm = 1000K\nocr_cascade_ms = 0\n";
     vjo_config_parse(&c, lm, strlen(lm));
@@ -857,6 +872,7 @@ static void test_config(void)
                    strstr(t, "\nocr_cascade_ms = 2000\n"));
         TEST_CHECK(d.stick_lookup_ms == 200 && strstr(t, "\nstick_lookup_ms = 200\n"));
         TEST_CHECK(d.hook_sites == 1 && strstr(t, "\nhook_sites = on\n")); /* audit-hooks F3 */
+        TEST_CHECK(d.reading_time == 0 && strstr(t, "\nreading_time = adaptive\n"));
         /* Japanese characters only: OFF in both (the owner, 2026-10-20; ON before) */
         TEST_CHECK(d.japanese_only_selection == 0 && strstr(t, "\njapanese_only_selection = off\n") &&
                    !strstr(t, "japanese_only_selection = on"));

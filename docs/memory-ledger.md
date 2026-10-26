@@ -14,6 +14,26 @@ snapshots use fixed state. There are no new allocations or threads, and no budge
 The game worker and kernel are unchanged. Build/module-page checks remain authoritative;
 physical-console latency, CPU3 and boot behaviour remain unmeasured.
 
+### The adaptive reading time
+
+`reading_time = adaptive` ([ocr-history.md](ocr-history.md#reading-time)) is integer arithmetic in
+`vjo_reading_time_add`, which the writer and the count already share (`vjo_reading_scope_add` with it
+inlined: 270 → 386 B in the normal build, `arm-vita-eabi-nm`), and a `reading_time` setting (its parse, a field in each
+`VjoConfig` copy, the Shell's one read of it as it starts). `VjoReadingTime` stays 32 bytes and the
+cache 112: `last_chars` is 16 bits now (a line has at most 4,095 characters) and the 16-bit pace takes
+the other half [C `sizeof`]. No allocation, thread or stack budget is added. To keep the normal Shell's
+code pages, three of `vjo_err_text`'s cold messages (the dictionary's format, the OCR model, a failed
+recognition: 292 B) move to the data segment, as its other messages did. The Shell's rows
+[measured: the build log's module rows, VitaSDK 2026.08, main `d609a4f` and this change]:
+
+| Shell | main `d609a4f` | this change | pages |
+|---|---:|---:|---:|
+| normal | 90,092 + 73,176 B | 90,012 + 73,504 B | 163,840 B both (exact) |
+| debug | 102,276 + 73,152 B | 102,204 + 73,464 B | 176,128 B both |
+
+The normal Shell has 100 B of code room now (20 B before) and 224 B of data room (552 B). The kernel
+and the game worker are byte-identical to main's.
+
 ### Previous all-game reading total
 
 Triangle also shows characters/hour and active time with a 15-second cutoff. Its state adds two

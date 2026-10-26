@@ -2,7 +2,8 @@
 """Reading statistics from Rubi's reading history (docs/ocr-history.md): the characters read and
 the characters per hour, in all, by text source (a native text hook or OCR), per game and per day.
 
-    python3 tools/reading_stats.py history.csv [MORE.csv ...] [--break-minutes 5] [--utc]
+    python3 tools/reading_stats.py history.csv [MORE.csv ...] [--time-rule adaptive|break]
+                                   [--break-minutes 5] [--utc]
 
 Copy ux0:data/VitaJPOverlay/history.csv from the Vita first (VitaShell's USB or FTP connection).
 Several files (copies made at different times) are read as one history: a record in more than one
@@ -21,11 +22,14 @@ cell (hook or ocr, the 43rd), or, in a row an older Rubi wrote (0.9.1 and before
 A record that says neither (another tracker's) is unknown. Each record's reading time goes to its
 line's source.
 
-Reading time: the time from one record to the next, credited to the first. A gap of more than
---break-minutes (default 5) between two records, or a change of game, is a break: it is not
-reading time, and the record before it gets none (how long it was read is unknown). Characters per
-hour divides the characters of the records that got a time by that time; the totals count every
-record.
+Reading time: each record's line is credited the time to the next record of the same game, at most 2.5
+times what the reader's pace would take for it (2 s to 5 minutes; the pace, per game, is learned from
+the history: docs/ocr-history.md#reading-time). This is the overlay's rule (config.ini reading_time =
+adaptive, its default), in the same integers, so the totals here are the Triangle view's. A change of
+game is a break. --time-rule break (or --break-minutes N) is Rubi 0.9.7's rule instead: a gap of more
+than N minutes (default 5) is a break, and the record before it gets none (how long it was read is
+unknown). Characters per hour divides the characters of the records that got a time by that time; the
+totals count every record.
 
 A record cut short (power lost while it was written: no line break at the file's end, or fewer
 cells than Rubi writes), even when more records were appended after it, is skipped and counted;
@@ -124,6 +128,7 @@ class Record:
     stored: bool     # the count came from the file (else this tool counted the line)
     seconds: float | None = None  # reading time credited to it, None after a break
     source: str = "unknown"       # where the line came from: hook, ocr or unknown (SOURCES)
+    us: int = 0      # the time in whole microseconds, as written (Rubi's six digits: exact)
 
 
 @dataclass
@@ -413,10 +418,13 @@ def add_row(report: Report, seen: set, names: dict, col: dict, cols, row) -> Non
         report.stored += 1
         report.mismatched += int(count) != counted
     name = row[col["name"]].strip() or uuid
+    whole, dot, frac = when.partition(".")
+    us = (int(whole) * 1_000_000 + int(frac) if whole.isascii() and whole.isdigit() and dot and len(frac) == 6
+          and frac.isascii() and frac.isdigit() else round(t * 1e6))
     # one string object per game and name, however many records: a long history stays small
     report.records.append(Record(game=names.setdefault(uuid, uuid), name=names.setdefault(name, name),
                                  time=t, characters=int(count) if stored else counted, stored=stored,
-                                 source=line_source(report, row, source_col, engine_col)))
+                                 source=line_source(report, row, source_col, engine_col), us=us))
 
 
 def read_history(paths) -> Report:
@@ -427,12 +435,51 @@ def read_history(paths) -> Report:
     return report
 
 
-def credit_time(records, break_seconds: float) -> None:
-    """Each record's reading time: the gap to the next record of the same game, unless it is over
-    break_seconds (a break). The records are in time order."""
+# The adaptive reading time: what the overlay's Triangle view counts with config.ini's reading_time =
+# adaptive, its default (core/history_lines.c vjo_reading_time_add, docs/ocr-history.md#reading-time), in
+# the same integers, so this tool gives the view's numbers. Each line is credited the time to the next
+# record of its game, at most 2.5 times what the reader's pace would take for it, 2 s to 5 minutes. The
+# pace, per game, is a running 75th percentile of the time a character took (in 64 us units, 16 bits):
+# 3/32 up after a line of 5 or more characters read in 1 s to 5 minutes more slowly than it, 1/32 down
+# after one read faster; 1.2 s a character until it has learned. As GameSentenceMiner's adaptive cap
+# (util/stats/stats_util.py adaptive_cap_seconds, reading_speed_sample), without its sessions.
+PACE_UNIT_SHIFT = 6       # VJO_READING_PACE_UNIT_SHIFT: 64 us a character
+PACE_START = 18750        # VJO_READING_PACE_START: 1.2 s a character, 3,000 an hour
+CAP_FLOOR_US = 2_000_000
+CAP_CEILING_US = 300_000_000
+CAP_PER_UNIT_US = 160     # 2.5 x 64 us
+
+
+def adaptive_credit(gap_us: int, chars: int, pace: int) -> tuple[int, int]:
+    """The microseconds credited to a line of `chars` characters whose next record came gap_us (> 0) later,
+    and the game's pace after it (0: not learned yet)."""
+    g = min(gap_us, 0xFFFFFFFF)
+    p = pace or PACE_START
+    expect = p * chars
+    cap = CAP_CEILING_US if expect >= CAP_CEILING_US // CAP_PER_UNIT_US else expect * CAP_PER_UNIT_US
+    cap = max(cap, CAP_FLOOR_US)
+    if chars >= 5 and 1_000_000 <= g <= CAP_CEILING_US:
+        p = p + 3 * (p >> 5) if (g >> PACE_UNIT_SHIFT) > expect else p - (p >> 5)
+        pace = min(p, 0xFFFF)
+    return min(g, cap), pace
+
+
+def credit_time(records, break_seconds: float | None = None) -> None:
+    """Each record's reading time: its line's share of the gap to the next record of the same game (the
+    records are in time order). With break_seconds, a gap of more than that is a break and the line gets
+    none (Rubi 0.9.7's rule: the overlay's 15 s, this tool's 5 minutes); without, the adaptive rule."""
+    paces: dict = {}
     for r, nxt in zip(records, records[1:]):
-        gap = nxt.time - r.time
-        r.seconds = gap if nxt.game == r.game and 0 <= gap <= break_seconds else None
+        if nxt.game != r.game:
+            r.seconds = None
+        elif break_seconds is not None:
+            gap = nxt.time - r.time
+            r.seconds = gap if 0 <= gap <= break_seconds else None
+        elif nxt.us > r.us:
+            credit, paces[r.game] = adaptive_credit(nxt.us - r.us, r.characters, paces.get(r.game, 0))
+            r.seconds = credit / 1e6
+        else:  # the same time, or a clock set back: no interval
+            r.seconds = None
     if records:
         records[-1].seconds = None
 
@@ -486,7 +533,7 @@ def table(rows):
             for c in cells]
 
 
-def render(report: Report, break_minutes: float, utc: bool) -> str:
+def render(report: Report, break_minutes: float | None, utc: bool) -> str:
     total, games, names, days = summarize(report.records, utc)
     skipped = []
     if report.duplicates:
@@ -505,8 +552,10 @@ def render(report: Report, break_minutes: float, utc: bool) -> str:
             + (f"; {report.mismatched:,} stored counts differ from this tool's" if report.mismatched else ""),
             f"Text source: {report.source_cells:,} records name it (line_source), {report.source_engines:,} known by "
             f"their engine (an older Rubi's), {unknown:,} unknown",
-            f"Reading time: a gap of more than {break_minutes:g} minutes between two records, or a change of game,"
-            " is a break", ""]
+            (f"Reading time: a gap of more than {break_minutes:g} minutes between two records, or a change of game,"
+             " is a break" if break_minutes is not None else
+             "Reading time: each line at most 2.5 times what your pace takes for it (2 s to 5 minutes), as the"
+             " overlay counts (adaptive); a change of game is a break"), ""]
     out += table([("All games", total)])
     out += ["", "By text source"]
     out += table([(SOURCE_LABELS[s], t) for s, t in by_source(report.records).items()])
@@ -520,21 +569,30 @@ def render(report: Report, break_minutes: float, utc: bool) -> str:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("history", nargs="+", help="history.csv files copied from the Vita")
-    ap.add_argument("--break-minutes", type=float, default=5.0,
-                    help="a longer gap between two records is a break, not reading time (default 5)")
+    ap.add_argument("--time-rule", choices=("adaptive", "break"),
+                    help="adaptive (the default, the overlay's reading_time = adaptive): each line at most 2.5 "
+                         "times what the reader's pace takes for it; break: a gap of more than --break-minutes "
+                         "is a break (Rubi 0.9.7 and older)")
+    ap.add_argument("--break-minutes", type=float,
+                    help="with --time-rule break (which it implies): a longer gap between two records is a break, "
+                         "not reading time (default 5; 0.25 is the overlay's 15s rule)")
     ap.add_argument("--utc", action="store_true", help="days in UTC instead of this computer's time zone")
     args = ap.parse_args(argv)
-    if not (args.break_minutes > 0 and math.isfinite(args.break_minutes)):
+    rule = args.time_rule or ("break" if args.break_minutes is not None else "adaptive")
+    if rule == "adaptive" and args.break_minutes is not None:
+        ap.error("--break-minutes goes with --time-rule break")
+    break_minutes = 5.0 if args.break_minutes is None else args.break_minutes
+    if rule == "break" and not (break_minutes > 0 and math.isfinite(break_minutes)):
         ap.error("--break-minutes must be a positive number")
     try:
         report = read_history(args.history)
     except HistoryError as e:
         print(f"reading_stats: {e}", file=sys.stderr)
         return 2
-    credit_time(report.records, args.break_minutes * 60.0)
+    credit_time(report.records, break_minutes * 60.0 if rule == "break" else None)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")  # a console that cannot show a game's name shows "?"
-    sys.stdout.write(render(report, args.break_minutes, args.utc))
+    sys.stdout.write(render(report, break_minutes if rule == "break" else None, args.utc))
     return 0
 
 

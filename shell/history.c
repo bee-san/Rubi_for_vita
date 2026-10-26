@@ -67,8 +67,10 @@ static struct {
     int64_t started;
 #endif
 } total;
-/* history_total.bin: the total, the bytes of history.csv it is the total of, and a check that a torn or
- * foreign file does not have */
+/* history_total.bin / reading-<game>.bin: the total, the bytes of history.csv it is the total of, and a check
+ * that a torn or foreign file does not have, nor one counted with the other reading_time rule: the check
+ * starts from the rule (VJO_READING_GAPS_15S's start is 0.9.7's, whose files it counted with that rule, so
+ * they stay valid with it; adaptive's differs, and a 0.9.7 file is counted again, from history.csv's start) */
 typedef struct {
     uint64_t chars;
     uint32_t covered, check;
@@ -78,7 +80,7 @@ typedef struct {
 _Static_assert(sizeof(TotalFile) == 112, "reading cache layout");
 static uint32_t total_file_check(const TotalFile *f)
 {
-    uint32_t check = 0x33544d45u;
+    uint32_t check = 0x33544d44u + vjo_reading_rule;
     const unsigned char *p = (const unsigned char *)f;
     for (size_t i = 0; i < sizeof(*f); i++)
         if (i < offsetof(TotalFile, check) || i >= offsetof(TotalFile, time))

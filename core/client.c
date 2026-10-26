@@ -228,6 +228,13 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         "Cannot read local dictionaries. Check the .vjdict files and local_dictionaries in config.ini.";
     static const char ocr_region[] VJO_DATA_TABLE(error_ocr_region) =
         "Local OCR needs a tight dialogue region with horizontal white text. Select a region, excluding portraits and menus.";
+    /* (and these, for the reading statistics' adaptive time: docs/memory-ledger.md) */
+    static const char dictionary_format[] VJO_DATA_TABLE(error_dictionary_format) =
+        "Invalid or incomplete local dictionary. Reconvert the Yomitan ZIP and copy the complete .vjdict file again.";
+    static const char ocr_model[] VJO_DATA_TABLE(error_ocr_model) =
+        "Local OCR model is missing or invalid. Run tools/prepare_ocr.py and copy the complete model to ocr_model_dir.";
+    static const char ocr_failed[] VJO_DATA_TABLE(error_ocr_failed) =
+        "Local OCR failed. Try a smaller dialogue region; see log.txt for details.";
     /* Lookups are the local dictionaries' and recognition the game worker's: no network. */
     const char *what = stage == VJO_STAGE_OCR ? "Text recognition" : VJO_DICT_NAME " lookup";
     VjoBuf b;
@@ -263,11 +270,10 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
         if (err->detail) vjo_buf_printf(&b, " %s", err->detail);
         break;
     case VJO_E_LOCAL_FORMAT:
-        vjo_buf_puts(&b, "Invalid or incomplete local dictionary. Reconvert the Yomitan ZIP and copy the complete .vjdict file again.");
+        vjo_buf_puts(&b, dictionary_format);
         break;
     case VJO_E_OCR_MODEL:
-        vjo_buf_puts(&b, err->detail ? err->detail :
-                     "Local OCR model is missing or invalid. Run tools/prepare_ocr.py and copy the complete model to ocr_model_dir.");
+        vjo_buf_puts(&b, err->detail ? err->detail : ocr_model);
         break;
     case VJO_E_OCR_REGION:
         vjo_buf_puts(&b, ocr_region);
@@ -283,7 +289,7 @@ const char *vjo_err_text(VjoArena *a, int stage, const VjoErr *err)
          * drops it quietly and tries again (shell/worker.c note_screen_changed). */
         return "";
     case VJO_E_OCR_INFERENCE:
-        vjo_buf_puts(&b, "Local OCR failed. Try a smaller dialogue region; see log.txt for details.");
+        vjo_buf_puts(&b, ocr_failed);
         break;
     case VJO_E_TOO_LARGE:
         if (stage == VJO_STAGE_DICT) {
