@@ -94,6 +94,12 @@ main's.
 - **Together** they take the worker's text past its last page in both builds. Each game that is ON then holds
   188,416 → 192,512 B (debug) and 180,224 → 184,320 B (normal, the main download). The final module rows are in the
   pull request.
+- **The runtime's structs.** f8a1856's `vocr.h` (#130's attention op) grows `vocr_model` + `vocr_ctx` from 3,872
+  to 3,920 B, as the console's compiler lays them out (1,872 + 2,048 B, 16-byte aligned; arm-vita-eabi-gcc 15.2.0,
+  `sizeof`). That is `VJO_VOCR_VITA_STRUCTS`, which the Vita build checks. Each tier's workspace (its pinned arena
+  plus the structs) keeps its pages: VOCR5-S 128,800 of 131,072 B, VOCR5-N 188,368 of 188,416 B, VOCR5-L 266,448
+  of 270,336 B. The finder's arena at 960×544, 83,323 B, is smaller than each (`host/tests/test_vocr.c` checks
+  every tier's job bytes with it).
 - **Unchanged:** data/bss; the Shell's and the kernel's pages. There is no new block, thread or allocation: the
   fixes use the finder's own arena (`vocr_lines_arena_bytes` is unchanged).
 

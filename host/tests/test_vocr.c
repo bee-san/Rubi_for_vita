@@ -252,7 +252,7 @@ static void test_tier_metadata_matches_the_runtime(void)
                    vjo_vocr_tier_parse(ids[t]) == (int)t && tier->reserve == reserve[t] && tier->name[0] &&
                    tier->tagline[0]);
         /* The console's (32-bit) job: the arena (or the finder's at 960x544, the larger) and the
-         * runtime's two structs, VJO_VOCR_VITA_STRUCTS there (3,872 B at vita-vn-ocr 47cf3a3, which the
+         * runtime's two structs, VJO_VOCR_VITA_STRUCTS there (3,920 B at vita-vn-ocr f8a1856, which the
          * Vita build checks; 3,760 B at 817d203: the #81 self-test's workspace records, VOCR3-FL10
          * 128,592 = 124,832 + 3,760, VOCR3-H15 at the full screen 186,704 = 182,944 + 3,760); a
          * 64-bit host's structs are larger, so its own job may be a page more. */
