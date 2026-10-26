@@ -23,9 +23,9 @@ proven in the Vita3K emulator only; and today's and this game's reading stats on
 - Rubi's own verified hook entries for 26 more Vita titles, from bee-san/psandvita's Vita3K screenshot
   farm: in Vita3K each hook gave the text of every farm page of its game, each page checked against the
   frame the game drew. 10 are games LunaTranslator's table does not list; 16 are in it, and for 15 of
-  those the entry unlocks Luna's own site, which Rubi's placement check refused, so on a console they had
-  no game-specific hook before. An entry hooks only the game version it was made from: the game's module
-  NID and 16 bytes at the site must match ([details](docs/native-hooks.md)).
+  those the entry unlocks the Luna site the farm proved, which Rubi's placement check refused. An entry
+  hooks only the game version it was made from: the game's module NID and 16 bytes at the site must match
+  ([details](docs/native-hooks.md)).
   - PROTOTYPE engine ([#293]): リトルバスターズ！ Converted Edition (`PCSG00007`), グリザイアの果実
     -LE FRUIT DE LA GRISAIA- (`PCSG00206`), グリザイアの果実スピンアウト！？ アイドル魔法少女ちるちる☆みちる (`PCSG00620`).
   - IF:Lib engine ([#294]): MARGINAL#4 IDOL OF SUPERNOVA (`PCSG00448`), CLOCK ZERO ～終焉の一秒～ ExTime
