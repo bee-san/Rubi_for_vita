@@ -268,6 +268,29 @@ arenas; their compile-time bounds and maximum-entry host tests pass. No allocati
 static runtime buffer or budget is added. These are binary and host measurements; console boot,
 heap availability and the PAF layout have not been measured for this change.
 
+## Yomitan's deinflection rules, a packed table
+
+Yomitan's rules for spoken forms (`third_party/yomitan/`) take the table from 569 rules to 724. They
+fit because the table is packed (`tools/gen_deinflect.py`): every rule string is three-byte UTF-8,
+so the strings are one blob without NULs, sharing bytes where one string contains another or
+overlaps its end (5,322 -> 4,549 B), and a rule is six bytes, not eight, with its reason in its own
+bits (the 569-byte reason table is gone). Measured with VitaSDK GCC 15.2.0, Release, on the Shell SELF's
+loaded segments, main `627a673` and this change, `check_memory_ledger.py --exact` in each variant:
+
+| Shell | Before text + data/bss | After text + data/bss | Loaded pages, unchanged |
+|---|---:|---:|---:|
+| Debug | 102,212 + 73,544 B | 101,332 + 73,008 B | 176,128 B |
+| Normal | 90,084 + 73,560 B | 89,228 + 73,024 B | 163,840 B |
+
+`arm-vita-eabi-nm -S` on the normal Shell: `deinflect_rules` 4,552 -> 4,344 B, `deinflect_strings`
+5,322 -> 4,549 B (both rodata), `deinflect_reasons` 569 B -> none, `conjugation_labels` 333 -> 355 B and
+`conjugation_offsets` 74 -> 86 B (data). The Rubi app links `core/local_dict.c` without the rules and is
+unchanged (`arm-vita-eabi-size`). The lookup's candidates per span stay bounded by the same 128-record
+scratch; over the 590,351 spans of the 64,579 taps of [the Yomitan check](../reports/yomitan-check.md)
+the new table makes 1,175,863 candidates where the old made 1,175,170 (at most 15 a span either way,
+host simulation). No allocation, thread or budget is added. These are binary and host measurements;
+nothing of it has run on a console.
+
 ## Remembered hooks (API 34, issue #241)
 
 Measured with VitaSDK GCC 15.2.0, Release, on the packaged SELF files in both variants:

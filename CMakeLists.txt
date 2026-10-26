@@ -646,6 +646,10 @@ target_link_libraries(vjo-local-bench vjo_host)
 # The overlay's lookup at many words' first characters (tools/frequency_eval.py).
 add_executable(vjo-word-forms host/word_forms.c)
 target_link_libraries(vjo-word-forms vjo_host)
+# The Shell's tap lookup at chosen characters of many lines, set up as the worker sets it up
+# (tools/yomitan_check: Rubi's lookups beside Yomitan's on the same taps).
+add_executable(vjo-dict-taps host/dict_taps.c)
+target_link_libraries(vjo-dict-taps vjo_host)
 # Which line breaks of recognized texts join and the words the lookup finds across them
 # (core/textjoin.h; tools/cross_line_eval.py).
 add_executable(vjo-cross-lines host/cross_lines.c)

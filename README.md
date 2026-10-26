@@ -377,7 +377,8 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   release v12.1.2.12 (commit 51884b6), whose source files Rubi keeps in
   [third_party/LunaTranslator/](third_party/LunaTranslator/README.md)
   ([the games](docs/hook-titles.md)).
-- **Lookups:** Yomichan's deinflection rules. The dictionary's key filter is modelled on the Bloom
+- **Lookups:** Yomichan's deinflection rules, with Yomitan's for spoken forms (しておく, 変わらん,
+  戻らなきゃ). The dictionary's key filter is modelled on the Bloom
   filter of [hoshidicts](https://github.com/Manhhao/hoshidicts), Manhhao's dictionary library, which
   bee-san's [Hachidori](https://github.com/bee-san/hachidori) app is built on; Rubi has no code of
   either.

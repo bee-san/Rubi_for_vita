@@ -2003,7 +2003,95 @@ static void conjugation_reaches_the_popup(void)
     TEST_CHECK(sizeof(VjoLocalPage) == 24);
 }
 
+/* Kana text whose entries are all spelled in kanji (no candidate is written as
+ * the text): the best-ranked homograph of the candidates with the fewest
+ * inflection steps, as among the entries written so. わかった is one step from
+ * both わかる (分かる, rank 278) and わかつ (分かつ, rank 19,788, a rule earlier
+ * in the table); main showed the first candidate's, 分かつ (the Yomitan check,
+ * reports/yomitan-check.md). Without ranks the longer article decides; a
+ * candidate with more steps never wins over one with fewer. */
+static void fallback_ranks_homographs_of_equal_steps(void)
+{
+    const Row rows[] = {
+        {"わかつ", "分かつ", "わかつ", "to divide", 2, 19788},
+        {"わかる", "分かる", "わかる", "to understand, the longer article", 2, 278}};
+    static const struct { const char *text, *v2, *v3; } cases[] = {
+        {"わかった", "to understand, the longer article", "to understand, the longer article"},
+        {"わかってる", "to understand, the longer article", "to understand, the longer article"}};
+    for (int version = 2; version <= 3; version++) {
+        VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), version);
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+            TEST_CASE_("v%d %s", version, cases[i].text);
+            TEST_ASSERT(!lookup(&a, &p, &cfg, cases[i].text, 0, &r, &e) && r.n_vocab == 1);
+            TEST_CHECK_(!strcmp(r.vocab[0].meanings[0], version == 3 ? cases[i].v3 : cases[i].v2),
+                        "got %s", r.vocab[0].meanings[0]);
+            TEST_CHECK(r.tokens[0].conjugation != 0);
+        }
+    }
+}
+
+/* Yomitan's rules for spoken forms (third_party/yomitan/), each against one
+ * dictionary form: the whole form matches, with its conjugation labels, and the
+ * old bare imperative negative (な) no longer turns a noun into a verb. */
+static void yomitan_rules_reach_spoken_forms(void)
+{
+    const Row rows[] = {
+        {"する", "する", "する", "to do", 4, 10},
+        {"かわる", "変わる", "かわる", "to change", 2, 235},
+        {"もどる", "戻る", "もどる", "to return", 2, 160},
+        {"みとめる", "認める", "みとめる", "to admit", 1, 900},
+        {"かえす", "返す", "かえす", "to return (a thing)", 2, 700},
+        {"きく", "聞く", "きく", "to hear", 2, 100},
+        {"しる", "知る", "しる", "to know", 2, 40},
+        {"いたす", "いたす", "いたす", "to do (humble)", 2, 1000},
+        {"しつらい", "失礼", "しつらい", "rudeness, read so", 4, 552},
+        {"しつれい", "失礼", "しつれい", "rudeness", 4, 552},
+        {"失礼", "失礼", "しつれい", "rudeness", 4, 552}};
+    static const struct { const char *text, *spelling, *labels; size_t span; } cases[] = {
+        {"しておく", "する", "-te → -toku", 0},
+        {"かわらん", "変わる", "-n", 0},
+        {"しちゃ", "する", "-cha", 0},
+        {"もどらなきゃ", "戻る", "negative → -ya", 0},
+        {"みとめざる", "認める", "-zaru", 0},
+        {"かえさねば", "返す", "-neba", 0},
+        {"しやがって", "する", "-yagaru → -te", 0},
+        {"ききやしねえ", "聞く", "-yashinai → -e", 0},
+        {"しらねー", "知る", "negative → -e", 0},
+        {"いたしまして", "いたす", "polite → -te", 0},
+        {"失礼な", "失礼", NULL, 6}, /* 失礼 only: な is the next word */
+        {"するな", "する", NULL, 6}};
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        VjoOverlayData out = {0};
+        uint8_t ui[12000]; VjoArena ua; VjoStyled st;
+        char rendered[4096]; size_t n = 0;
+        TEST_CASE(cases[i].text);
+        vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+        out.sentence = cases[i].text;
+        TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &out) == VJO_OK && out.list.n_entries == 1);
+        TEST_CHECK_(!strcmp(out.list.entries[0].vocab->spelling, cases[i].spelling), "got %s",
+                    out.list.entries[0].vocab->spelling);
+        TEST_CHECK_((size_t)out.list.entries[0].hl_end == (cases[i].span ? cases[i].span : strlen(cases[i].text)),
+                    "span %d", out.list.entries[0].hl_end);
+        vjo_arena_init(&ua, ui, sizeof(ui));
+        TEST_ASSERT(!vjo_styled_init(&st, &ua, VJO_BODY_UNITS, VJO_BODY_SPANS));
+        vjo_styled_entry(&st, &out.list, 0, 27, 21, 0, 1);
+        for (uint32_t u = 0; u < st.len; u++) n += (size_t)vjo_utf8_encode(st.text[u], rendered + n);
+        rendered[n] = 0;
+        if (cases[i].labels) TEST_CHECK_(strstr(rendered, cases[i].labels) != NULL, "%s", rendered);
+        else TEST_CHECK_(strstr(rendered, "Conjugation:") == NULL, "%s", rendered);
+    }
+    TEST_CHECK(opened == closed);
+}
+
 TEST_LIST = {
+    {"fallback_ranks_homographs_of_equal_steps", fallback_ranks_homographs_of_equal_steps},
+    {"yomitan_rules_reach_spoken_forms", yomitan_rules_reach_spoken_forms},
     {"conjugation_reaches_the_popup", conjugation_reaches_the_popup},
     {"candidate_growth_fails_without_truncating_a_lookup", candidate_growth_fails_without_truncating_a_lookup},
     {"prepared_words_keep_output_and_read_only_the_selected_payload", prepared_words_keep_output_and_read_only_the_selected_payload},

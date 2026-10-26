@@ -370,7 +370,14 @@ require manual testing.
 
 Longer phrases take precedence. Katakana and hiragana readings share a search
 key; full-width ASCII is folded to ASCII. Yomichan's Japanese suffix rules handle
-inflections such as `食べました`, `行った`, `高くなかった`, and `来ました`.
+inflections such as `食べました`, `行った`, `高くなかった`, and `来ました`, and
+Yomitan's for the spoken forms the old rules lack: `しておく`, `変わらん`,
+`しちゃ駄目`, `戻らなきゃ`, `認めざる`, `返さねば`, `しやがって`, `聞きやしねえ`,
+`いたしまして` and `知らねー` (`third_party/yomitan/`; the bare `な` of the old
+"imperative negative", which Yomitan no longer has, is gone: `失礼な` is 失礼, not
+a verb `失礼` read しつらい, and `するな` highlights `する`). Which of Yomitan's
+rules were taken, and why some were not, was measured on 5,000 lines of hooked
+visual-novel text against Yomitan itself ([the report](../reports/yomitan-check.md)).
 The matched original text length is retained in the entry, while the UI
 highlights the complete match by default. Rubi app → OCR & lookup → Highlight
 can instead highlight the selected character. Tapping the recognized header
@@ -384,7 +391,8 @@ the text itself first, then its inflections with fewer steps first. Kana
 text therefore shows the kana word (the particle から, the honorific さん,
 the verb する) and inflected kana its dictionary form (した → する, なってる →
 なる) rather than a homograph spelled in kanji (空, 三, 剃る, 下). Without
-such an entry, the best homograph of the first matching candidate is shown.
+such an entry, the best-ranked homograph of the candidates with the fewest
+inflection steps is shown (わかった: 分かる, not 分かつ: both one step from the text).
 
 Only one entry is shown, and one key's entries are stored in source order,
 which for the bundled Daijirin4 is reading order, not frequency (私 lists

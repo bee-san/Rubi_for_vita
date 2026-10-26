@@ -17,7 +17,6 @@ static const char conjugation_labels[] VJO_DATA_TABLE(conjugation_labels) =
     "adv\0"
     "causative\0"
     "imperative\0"
-    "imperative negative\0"
     "masu stem\0"
     "negative\0"
     "noun\0"
@@ -37,7 +36,14 @@ static const char conjugation_labels[] VJO_DATA_TABLE(conjugation_labels) =
     "-ki\0"
     "-ge\0"
     "-e\0"
+    "-n\0"
+    "-cha\0"
+    "-ya\0"
+    "-zaru\0"
+    "-neba\0"
+    "-yagaru\0"
+    "-yashinai\0"
 ;
 static const uint16_t conjugation_offsets[] VJO_DATA_TABLE(conjugation_offsets) = {
-    0, 1, 5, 11, 19, 27, 34, 39, 47, 52, 58, 64, 68, 72, 76, 80, 90, 101, 121, 131, 140, 145, 153, 158, 165, 181, 193, 214, 232, 242, 263, 274, 292, 298, 321, 325, 329
+    0, 1, 5, 11, 19, 27, 34, 39, 47, 52, 58, 64, 68, 72, 76, 80, 90, 101, 111, 120, 125, 133, 138, 145, 161, 173, 194, 212, 222, 243, 254, 272, 278, 301, 305, 309, 312, 315, 320, 324, 330, 336, 344
 };

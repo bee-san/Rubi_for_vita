@@ -77,7 +77,12 @@ class DictLookupBench(unittest.TestCase):
         joins the next line's 猫 (core/textjoin.h) and the longest span crosses it. One file: one header read; one
         key found, its bucket page, key group and the head ranking its one posting
         (another page: filler separates payloads from groups). That head page also
-        contains the whole short payload, so showing it needs no further read."""
+        contains the whole short payload, so showing it needs no further read.
+        Yomitan's -ん (third_party/yomitan/) gives 食べません four candidates more
+        (食べませる, 食べまする, and from 食べませる 食べむ and 食べます), all absent, three of
+        them again in shorter spans (the absent-hash cache answers those); the old bare な,
+        gone, gave 猫舌な the candidate 猫舌 as a verb, a key whose rules do not fit (its
+        hash present, not found)."""
         self.build(ROWS + FILLER)
         sets = self.run_bench("--modes", "first", "--rounds", "1")
         rows = bench.run(BENCH, self.dir, "main.vjdict", self.lines, "first", 1)
@@ -94,7 +99,7 @@ class DictLookupBench(unittest.TestCase):
             self.assertEqual(q["absent_reads"], 1)
             self.assertEqual(q["filtered"], 0)
         self.assertEqual((one["candidates"], one["probes"], one["hash_present"], one["miss_cached"]), (13, 13, 1, 1))
-        self.assertEqual((two["candidates"], two["probes"], two["hash_present"], two["miss_cached"]), (34, 34, 2, 5))
+        self.assertEqual((two["candidates"], two["probes"], two["hash_present"], two["miss_cached"]), (37, 37, 1, 8))
         summary = sets["sets"][str(self.lines)]["first"]["after"]
         self.assertEqual(summary["found"]["mean"], 1)
         self.assertEqual(summary["reads_by"]["head"], 1)
