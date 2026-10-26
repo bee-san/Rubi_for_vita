@@ -167,6 +167,16 @@ static const VjoPlaceVerified verified[] = {
     /* PCSG00620 グリザイアの果実スピンアウト！？ アイドル魔法少女ちるちる☆みちる (APP_VER 01.00): Vita3K 0x81031e90, 995 farm pages (paired-vita-pcsg00620-20261023); patch: ldr.w lr, [r5, #0x50]; ldr r2, [r5, #0x8]; cmp lr, r2 */
     {"PCSG00620", 0x90E7EC14u, 0x31E90u, 1, 4, VJO_HOOK_ENC_CP932, 16, 1066,
      {0xD5, 0xF8, 0x50, 0xE0, 0xAA, 0x68, 0x96, 0x45, 0x05, 0xDB, 0xBA, 0xF1, 0x00, 0x0F, 0x02, 0xD1}, VJO_RF_PROTOTYPE, 0},
+    /* IF:Lib GAME-ENGINE 3.00 (psandvita farm, Vita3K only): each title's VJO_RF_ filter writes its default names, then VJO_RF_IFENGINE; Luna's filter at the same address dropped them */
+    /* PCSG00448 MARGINAL#4 IDOL OF SUPERNOVA (APP_VER 01.00): Vita3K 0x8106d8f8, 497 farm pages (paired-vita-pcsg00448-20261023); patch: ldr.w r0, [r8, #0x354]; ldrsb.w r0, [r0, #0x5]; Luna's site here (r0, filter FPCSG00448) */
+    {"PCSG00448", 0x84668EFEu, 0x6D8F8u, 1, 0, VJO_HOOK_ENC_CP932, 16, 0,
+     {0xD8, 0xF8, 0x54, 0x03, 0x90, 0xF9, 0x05, 0x00, 0xF5, 0xF7, 0x25, 0xFC, 0x28, 0x1C, 0x25, 0xF0}, VJO_RF_PCSG00448, 0},
+    /* PCSG00469 CLOCK ZERO ～終焉の一秒～ ExTime (APP_VER 01.00): Vita3K 0x81027a9c, 2047 farm pages (paired-vita-pcsg00469-20261023); patch: push.w {r4, r5, r6, r7, r8, r11, lr}; sub sp, #0x14; movs r1, #0x0; Luna's site here (r0, filter FPCSG00815) */
+    {"PCSG00469", 0x31270870u, 0x27A9Cu, 1, 0, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x49, 0x85, 0xB0, 0x00, 0x21, 0x00, 0x91, 0x04, 0x1C, 0x04, 0x91, 0x83, 0xF1}, VJO_RF_PCSG00469, 0},
+    /* PCSG00853 ピリオドキューブ～鳥籠のアマデウス～ (APP_VER 01.00): Vita3K 0x81007df2, 749 farm pages (paired-vita-pcsg00853-20261023); patch: movw r0, #0x1098; adds r0, r4, r0; ldrsb.w r4, [r5]; movs.w r9, #0x0; Luna's site here (r5, filter PCSG00530) */
+    {"PCSG00853", 0xA92335D4u, 0x7DF2u, 1, 5, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x41, 0xF2, 0x98, 0x00, 0x20, 0x18, 0x95, 0xF9, 0x00, 0x40, 0x5F, 0xF0, 0x00, 0x09, 0xE8, 0x90}, VJO_RF_PCSG00853, 0},
 };
 #define VERIFIED_N (sizeof(verified) / sizeof(verified[0]))
 
