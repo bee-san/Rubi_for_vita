@@ -80,6 +80,11 @@ are the same (`213fd60`, #305 and #308 change only the Shell's reading-time code
   (`kernel/game_ocr.c`), and three instructions carry 42 instead of 41.
 - **No new block, thread or allocation site.** These are binary and host measurements; nothing of it has run on a
   console.
+- **The audit's fixes** (#328: a re-read that does not fit keeps the gated reading, greedy-only jobs read the kana
+  line again, the cascade's stats) add 144 B of worker text in the debug build and 128 B in the normal one (149,208 →
+  149,352 B and 140,436 → 140,564 B on main `93647d3`), the same pages; data/bss is unchanged, and the Shell and the
+  kernel are byte for byte main's [measured: the build log's module rows and sha256, both builds, CI's artifacts of
+  main `93647d3` and the fast gate's builds of #328].
 
 ## The reading stats menu
 
