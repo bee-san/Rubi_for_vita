@@ -5,26 +5,22 @@
  * 16 rows at a time, and each 2 x 2 pixels' chroma is that of their mean colour
  * (Cb and Cr are linear in R, G, B: the same values, one conversion instead of four). */
 #include "jpegsw.h"
-#include "port.h" /* VJO_DATA_TABLE */
 
 #include <string.h>
 
-/* The encoder's tables are in the worker's data segment (VJO_DATA_TABLE, core/port.h; const, never written): with
- * vertical text (API 47) the debug build's text ended past a page, and its last data page had room
- * (docs/memory-ledger.md). */
-static const uint8_t zigzag[64] VJO_DATA_TABLE(jpeg_zigzag) = {
+static const uint8_t zigzag[64] = {
     0,  1,  8,  16, 9,  2,  3,  10, 17, 24, 32, 25, 18, 11, 4,  5,
     12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6,  7,  14, 21, 28,
     35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51,
     58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63};
 
-static const uint8_t std_lum_q[64] VJO_DATA_TABLE(jpeg_lum_q) = {
+static const uint8_t std_lum_q[64] = {
     16, 11, 10, 16, 24,  40,  51,  61,  12, 12, 14, 19, 26,  58,  60,  55,
     14, 13, 16, 24, 40,  57,  69,  56,  14, 17, 22, 29, 51,  87,  80,  62,
     18, 22, 37, 56, 68,  109, 103, 77,  24, 35, 55, 64, 81,  104, 113, 92,
     49, 64, 78, 87, 103, 121, 120, 101, 72, 92, 95, 98, 112, 100, 103, 99};
 
-static const uint8_t std_chr_q[64] VJO_DATA_TABLE(jpeg_chr_q) = {
+static const uint8_t std_chr_q[64] = {
     17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99,
     24, 26, 56, 99, 99, 99, 99, 99, 47, 66, 99, 99, 99, 99, 99, 99,
     99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
@@ -35,7 +31,7 @@ static const uint8_t dc_lum_bits[16] = {0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0
 static const uint8_t dc_val[12] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 static const uint8_t dc_chr_bits[16] = {0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0};
 static const uint8_t ac_lum_bits[16] = {0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d};
-static const uint8_t ac_lum_val[162] VJO_DATA_TABLE(jpeg_ac_lum) = {
+static const uint8_t ac_lum_val[162] = {
     0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61,
     0x07, 0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xa1, 0x08, 0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52,
     0xd1, 0xf0, 0x24, 0x33, 0x62, 0x72, 0x82, 0x09, 0x0a, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x25,
@@ -48,7 +44,7 @@ static const uint8_t ac_lum_val[162] VJO_DATA_TABLE(jpeg_ac_lum) = {
     0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8,
     0xe9, 0xea, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa};
 static const uint8_t ac_chr_bits[16] = {0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 0x77};
-static const uint8_t ac_chr_val[162] VJO_DATA_TABLE(jpeg_ac_chr) = {
+static const uint8_t ac_chr_val[162] = {
     0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61,
     0x71, 0x13, 0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91, 0xa1, 0xb1, 0xc1, 0x09, 0x23, 0x33,
     0x52, 0xf0, 0x15, 0x62, 0x72, 0xd1, 0x0a, 0x16, 0x24, 0x34, 0xe1, 0x25, 0xf1, 0x17, 0x18,

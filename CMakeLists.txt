@@ -559,7 +559,7 @@ if(VJO_WITH_VOCR)
   add_test(NAME vocr_parallel COMMAND vjo-vocr-parallel-tests)
   # vita-vn-ocr #99: vertical text (a model of columns) through the actual core adapter, with real
   # vocr_run calls on tiny weights blobs the test builds and pins itself (no release files), and the
-  # job of rows today's exactly (main 93647d3's figures).
+  # job of rows today's exactly (main cbaa4e3's figures).
   add_executable(vjo-vocr-vertical-tests host/tests/test_vocr_vertical.c core/vocr_ocr.c)
   target_include_directories(vjo-vocr-vertical-tests PRIVATE third_party/acutest/include host/tests core include
     third_party/bearssl/inc)

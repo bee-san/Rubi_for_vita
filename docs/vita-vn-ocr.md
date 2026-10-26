@@ -1084,7 +1084,8 @@ vita-vn-ocr #103 read its held-out vertical test set once (host, C runtime, gree
 **Measured through Rubi's job** (host, x86-64: `vjo-page-ocr`, the game worker's job in `core/vocr_ocr.c` on each
 region with the weights kept, on config.ini's defaults: Normal size, the 1 MB LM, the cascade within 2 s, the head
 gate and two-level head (each where a blob has it: VOCR5-V's has neither), the counter re-decode, the text normalised
-and filtered as the Shell shows it; `tools/vertical_eval.py`, on main `93647d3` and this change). Dialogue CER: every line
+and filtered as the Shell shows it; `tools/vertical_eval.py`, on main `93647d3` and this change; #328's re-read
+fixes since change no job of columns, as VOCR5-V has no head gate). Dialogue CER: every line
 the job read but those over another text box of the page (a speaker's name tag), each normalised with vita-vn-ocr's
 `eval/metrics.norm`, joined in the job's order, against the page's dialogue columns right to left, with 95 % intervals
 from 10,000 page bootstrap resamples. Column recall and precision: found columns against the labelled ones at IoU ≥
@@ -1114,8 +1115,8 @@ screens of the hooked corpus's 44 other titles with pages, PS Vita and PSP (all 
 SpRING!'s and the three titles related to protected test titles), and took 1 of 2,837 PS Vita and PSP screenshots
 from VNDB (vita-vn-ocr #99's census, no test VN or session), a whole PSP screen whose row finder had found a
 portrait's blocks and no dialogue line. On a sample of 3,080 of the hooked regions (60 drawn boxes and 10 whole screens per title, seeded),
-`auto`'s and `off`'s jobs gave main `93647d3`'s text, lines, CTC frames, strips and workspace, every one of them
-(`off`'s gave main `213fd60`'s too, before the head gate). The rule took 310 ns a region on the host (median; 910 ns
+`auto`'s and `off`'s jobs gave main `cbaa4e3`'s text, lines, CTC frames, strips and workspace, every one of them
+(and main `93647d3`'s, before #328; `off`'s gave main `213fd60`'s too, before the head gate). The rule took 310 ns a region on the host (median; 910 ns
 at the 99th percentile), against a job's median of 55 ms there; on 600 of those regions, each read by main's job,
 `off`'s and `auto`'s in turn and timed three times (`vertical_eval.py abtime`), the host's job times were within its
 noise: `off` / main 1.0026 [0.9983, 1.0069] and `auto` / main 1.0039 [0.9998, 1.0080] (geometric means, 95 %
@@ -1124,8 +1125,8 @@ intervals). On the console the rule is a few hundred instructions a job (an esti
 **Memory.** The worker's code, in every game that is ON whatever the setting: 4,096 B more module pages in each build
 (184,320 B normal, 192,512 B debug: [memory-ledger.md](memory-ledger.md#vertical-text-api-47)). SceShell's and the
 kernel's pages are as before. A job of columns takes the vertical model's weights (823,296 B in pages, a Small job's)
-and a workspace of VOCR5-S's shape plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + about
-3,800 (the console's runtime structs: 3,760 B before API 42's fields, an estimate) + 57,344 B, 188,416 B in pages at
+and a workspace of VOCR5-S's shape plus the rotation buffer (`VJO_VOCR_ROTATE_BYTES`, 57,344 B): 124,832 + 3,872
+(the console's runtime structs, `VJO_VOCR_VITA_STRUCTS`) + 57,344 B, 188,416 B in pages at
 960×544; with the LM extras, the greedy text and both helpers' slots 706,320 B on the host build (708,608 B in pages),
 within `VJO_BUDGET_GAME_WORKSPACE` (1,220,608 B; `host/tests/test_ledger.c`). A
 column whose crop holds more than the rotation buffer (wider than 105 px at the full 544-px height) is left out and
@@ -1143,7 +1144,7 @@ more first, for the row finder: 49 strips (56), about 0.8 s at 60 fps. Horizonta
 
 **Off and auto are today's job** (`host/tests/test_vocr_vertical.c`): jobs of rows on a 5-line region and on #194's
 box, greedy, with the LM, with two helpers and refined, give the same text, greedy text, frames, line stats, workspace
-and strips as main `93647d3` (before vertical text) gives, hash for hash, with auto's check and without it; the stage
+and strips as main `cbaa4e3` (before vertical text) gives, hash for hash, with auto's check and without it; the stage
 benchmark's recorded job checksums are unchanged too. `test_game_vocr.c` runs the worker's auto retry, its fallback
 to rows, and the request's checks; `test_shell_worker.c` the Shell's field and model name; `test_settings_app.c` the
 app's card.

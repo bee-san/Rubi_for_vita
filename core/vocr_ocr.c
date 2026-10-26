@@ -4,7 +4,6 @@
  * The runtime (vocr.c, vocr_lines.c, vocr_lines_rows.c) is bee-san/vita-vn-ocr's,
  * at the commit cmake/VocrOCR.cmake pins. */
 #include "vocr_ocr.h"
-#include "port.h" /* VJO_DATA_TABLE */
 #include "../include/vjo_vocr_sizes.h"
 
 #include <bearssl_hash.h>
@@ -57,14 +56,11 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #endif
 #define VJO_VOCR_COLUMNS (VJO_VOCR_FINDER_COLUMNS | VJO_VOCR_COLUMN_FLAGS)
 
-/* The release table is in the worker's data segment (VJO_DATA_TABLE, core/port.h; const, never written): with
- * vertical text (API 47) the worker's text took a page more than it needs, and its last data page had room
- * (docs/memory-ledger.md, "Vertical text"). */
 #ifdef VJO_VOCR_TEST_MODELS
 /* Host lifecycle tests only (host/tests/test_game_resident.c): synthetic pins. */
 #include VJO_VOCR_TEST_MODELS
 #else
-static const VjoVocrModel models[] VJO_DATA_TABLE(vocr_models) = {
+static const VjoVocrModel models[] = {
     /* VOCR5 (vita-vn-ocr eval/vocr5_protocol.json, v0.3.0): the Small, Normal (the
      * default) and Large tiers, each its own shape; API 42: their head-gated blobs
      * (vita-vn-ocr #117, v0.3.5-headgate.1), Normal's and Large's with the two-level head
@@ -133,8 +129,7 @@ static const VjoVocrModel models[] VJO_DATA_TABLE(vocr_models) = {
  * byte for byte, with ctclm.2's settings (docs/ctc-lm-decode.md). A host test's
  * model table may bring its own (VJO_VOCR_TEST_LMS: host/tests/test_parallel_models.h). */
 #ifndef VJO_VOCR_TEST_LMS
-/* In the data segment too, as models[]. */
-static const VjoVocrLm lms[VJO_VOCR_LM_TIERS] VJO_DATA_TABLE(vocr_lms) = {
+static const VjoVocrLm lms[VJO_VOCR_LM_TIERS] = {
     {VJO_VOCR_LM1_NAME, VJO_VOCR_LM1_BYTES,
      {0x38,0xea,0x94,0xe0,0xc4,0xec,0x93,0x86,0x34,0x54,0x38,0x7e,0x7c,0x2c,0x46,0x9d,
       0x20,0x9a,0xaf,0x21,0xf2,0xf6,0xee,0x5d,0x04,0x0e,0x75,0xa0,0x9d,0x00,0xd2,0x86}, 3000, 1, 500, VOCR_LM_EOS},

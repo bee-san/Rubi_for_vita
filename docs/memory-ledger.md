@@ -11,27 +11,25 @@ uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 little to the kernel and the Shell, and no block, thread or stack: a job of columns takes its workspace from the job's
 own block (its 57,344 B rotation buffer, `VJO_VOCR_ROTATE_BYTES`, within `VJO_BUDGET_GAME_WORKSPACE`:
 `test_ledger.c`), and a job of rows, `off`'s or `auto`'s, takes what it took before. The worker's code is in every game
-that is ON, whatever the setting. Its column finder (vita-vn-ocr's `runtime/vocr_vertical.c`, `-Os`), the dark flag
-of a column (`vocr_line_dark`), the column path, auto's rule and the worker's retry took both builds' text two pages
-past main's as first linked; the pinned models' and LMs' tables (`core/vocr_ocr.c`, 672 B) and the JPEG encoder's
-(`core/jpegsw.c`, 516 B) moved to the data segment (`VJO_DATA_TABLE`: const, never written), whose last page had
-room, so each build takes one page more. In the Shell, the setting's key, the vertical model's name and one cold
-message of the OCR's (the denied model, 69 B) are in the data segment too, so its normal build keeps its exact pages.
-The module rows [measured: the build log's module rows, `tools/fast_gate.sh`'s VitaSDK image (gcc 15.2.0), main
-`93647d3` (its rows: #325's, above) and this change]:
+that is ON, whatever the setting: its column finder (vita-vn-ocr's `runtime/vocr_vertical.c`, `-Os`), the dark flag
+of a column (`vocr_line_dark`), the column path, auto's rule and the worker's retry take each build's text one page
+past main's. In the Shell, the setting's key, the vertical model's name and one cold message of the OCR's (the denied
+model, 69 B) are in the data segment (`VJO_DATA_TABLE`, as main's other keys), so its normal build keeps its exact
+pages. The module rows [measured: the build log's module rows, `tools/fast_gate.sh`'s VitaSDK image, main `cbaa4e3`
+(CI's Release run 40396574562) and this change]:
 
-| module | main `93647d3` | this change | pages |
+| module | main `cbaa4e3` | this change | pages |
 |---|---:|---:|---:|
-| Game worker, debug | 149,208 + 35,312 B | 153,688 + 36,504 B | 188,416 → 192,512 B |
-| Game worker, normal | 140,436 + 35,304 B | 144,772 + 36,496 B | 180,224 → 184,320 B |
+| Game worker, debug | 149,352 + 35,312 B | 155,016 + 35,312 B | 188,416 → 192,512 B |
+| Game worker, normal | 140,564 + 35,304 B | 146,100 + 35,304 B | 180,224 → 184,320 B |
 | Shell, debug | 101,460 + 73,008 B | 101,548 + 73,152 B | 176,128 B both |
 | Shell, normal | 89,252 + 73,048 B | 89,300 + 73,160 B | 163,840 B both (exact) |
 | Kernel, debug | 42,540 + 77,756 B | 42,652 + 77,756 B | 122,880 B both |
 | Kernel, normal | 37,508 + 76,068 B | 37,620 + 76,068 B | 118,784 B both |
 
 `VJO_BUDGET_WORKER_MODULE_PAGES` is raised by 4,096 B in each build, in the game's partition only. The normal
-worker has 2,684 B of code room and 368 B of data room left, the debug worker 1,960 B and 360 B; the normal Shell 812
-B and 568 B. None of it is measured on a console.
+worker's text has 1,356 B of its last page left, the debug worker's 632 B; the normal Shell's 812 B. None of it is
+measured on a console.
 
 ## Trusted hooks and the OCR-skip switches (API 43)
 

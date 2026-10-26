@@ -15,8 +15,8 @@
  *    policy asks (and no workspace for them);
  *  - off: a job on the model of rows gives today's job exactly. Its text, greedy text, frames, every
  *    line's stats, the workspace and the strips read hash to the figures this file's off part gives when
- *    built against main 93647d3 (before vertical text; VJO_TEST_OFF_ONLY, which leaves the rest out; main
- *    1de7b67's, before the head gate's runtime, gave other workspace figures), on a
+ *    built against main cbaa4e3 (before vertical text; VJO_TEST_OFF_ONLY, which leaves the rest out; main
+ *    93647d3's are the same; 1de7b67's, before the head gate's runtime, were other workspace figures), on a
  *    5-line region and on host/fixtures/short_line/textbox.pgm (#194's box), greedy and with the LM.
  * This makes no claim about accuracy: the tiny models read nothing real. */
 #define main acutest_main
@@ -561,9 +561,9 @@ static uint64_t job_hash(int rc, const char *text, const char *raw, const VjoVoc
 }
 
 /* ------------------------------------------------------------ off: today's job of rows */
-/* The figures main 93647d3's core gives (this file with -DVJO_TEST_OFF_ONLY, built against that tree and the
- * runtime it pins, vita-vn-ocr 47cf3a3): each job's hash. Main 1de7b67's, before API 42's runtime grew the
- * recognizer's structs, were others (the workspace is in the hash). */
+/* The figures main cbaa4e3's core gives (this file with -DVJO_TEST_OFF_ONLY, built against that tree and the
+ * runtime it pins, vita-vn-ocr 47cf3a3; main 93647d3's, before #328, the same): each job's hash. Main 1de7b67's,
+ * before API 42's runtime grew the recognizer's structs, were others (the workspace is in the hash). */
 static const struct {
     const char *what;
     uint64_t hash;
@@ -1108,7 +1108,7 @@ static void test_auto_check(void)
 #endif /* VJO_TEST_OFF_ONLY */
 
 TEST_LIST = {
-    {"off: a job of rows is today's job exactly (main 93647d3's figures)", test_off_is_todays_job},
+    {"off: a job of rows is today's job exactly (main cbaa4e3's figures)", test_off_is_todays_job},
 #ifndef VJO_TEST_OFF_ONLY
     {"columns: right to left, each read turned, light and dark, short and tall, greedy and LM, P0 and P1",
      test_columns_read_right_to_left},
