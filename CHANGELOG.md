@@ -113,14 +113,21 @@ been reported.
     Yomitan places them (`行[い]って`, `来[こ]ない`); the mined word keeps its own reading and its `<b>`. A word whose
     reading the dictionaries cannot be sure of gets none (今日, 方 alone, a single kanji in a compound, a name VNDB
     romanizes otherwise, a counter after a number). On 3,000 real visual-novel lines the rules were not chosen on,
-    1.8 readings per 1,000 kanji tokens were wrong and 174 missing, against about 46 wrong and 34 missing for
+    1.9 readings per 1,000 kanji tokens were wrong (2.1 at the measurement, recounted after its audit) and 174
+    missing, against about 46 wrong and 34 missing for
     Yomitan's `{sentence-furigana}` over the same dictionaries
     ([reports/sentence-readings.md](reports/sentence-readings.md); host measurements, the threshold for ON fixed
     before the measurement). An export then takes about 0.5 s more a card (an estimate: 17 lookups and 98 reads a
     sentence on the host); its progress counts every card.
   The Shell, the game worker and the kernel are unchanged: the code is the app's (`core/sentence_reading.c`,
   through the Look up page's `settings/app_platform.c`), with 200 KiB of static memory for the lookups. Not run on a
-  console yet.
+  console yet. After its audit: the game tag drops the whitespace, then `::` (`A: :B` is `Game::AB`, as GSM's);
+  Cancel stops one card's readings before their next lookup (a long sentence takes hundreds); a highlight inside a
+  character takes the whole character, so `<b>` is always closed; 通りに, which the longest match reads どおりに
+  after a verb too, gets no reading; three verdicts of the measurement corrected (2.12 wrong per 1,000 at the
+  protocol's commit, not 1.84; the default stays ON), `tools/sentence_readings/compare.py` checks a part read
+  unit's readings where they lie and draws Yomitan's sample itself; tests for a record's own readings, the
+  dictionaries closed after an export, the progress, and unreadable dictionaries tried once.
 - **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
   △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
   games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the
