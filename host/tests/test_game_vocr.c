@@ -2241,6 +2241,14 @@ static void auto_reads_columns_where_the_rows_are_vertical(void)
         TEST_CHECK_(rc == VJO_OK && find_steps(&out, 1) == 1 && out.recognized == 3 && !columns_bad,
                     "columns: rc %d, %u read", rc, out.recognized);
         for (unsigned i = 0; i < out.recognized; i++) TEST_CHECK(out.line[i].flags & VJO_GAME_OCR_LINE_COLUMN);
+        /* the next job of the same screen: the rows' try keeps the vertical model's weights resident (it reads none
+         * before its check), and the columns' try reads with them, from memory */
+        const unsigned reads = weight_allocations;
+        rc = vjo_game_ocr_run_request(&r, &out);
+        TEST_CHECK_(rc == VJO_OK && find_steps(&out, 2) == 1 && out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT &&
+                        weight_allocations == reads,
+                    "the next job: rc %d, weights %u (resident %u), %u weight blocks more", rc, (unsigned)out.weights,
+                    (unsigned)VJO_GAME_OCR_WEIGHTS_RESIDENT, weight_allocations - reads);
     } else {
         /* the vertical model cannot be read (a storage error, not a file one): find kind 3, the rows read (without
          * the size's file either, the rows' own I/O error, not the vertical model's); the game's next job checks

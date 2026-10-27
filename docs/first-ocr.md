@@ -32,7 +32,10 @@ vertical model to read (`rc=` its I/O error; the rows are read next). Its `bytes
 because their crop (width × height) holds more than its rotation buffer, 57,344 B (`VJO_VOCR_ROTATE_BYTES`,
 `VjoVocrStats.rotate_skipped`; 0 for rows, so a job of rows logs as before). Those are never read, so at most
 `arg=` (the columns found) minus `bytes=` were read: blank columns (the blank-line check), tall ones without the
-line block (`tall_skipped`) and a cancelled job read fewer. Step lines reach `log.txt` in the debug build only
+line block (`tall_skipped`) and a cancelled job read fewer. A job that `auto` read in more than one try keeps
+each try's `check` and `find` and the job's first pass (`pass`, `sig`), but only the last try's `alloc` and
+`free` steps (the earlier tries gave their blocks back), and its `settle` step counts every try's wait (audit
+of #335). Step lines reach `log.txt` in the debug build only
 (`shell/worker.c` `log_vocr_steps`); the normal build logs no `gstep` line.
 
 Two of the owner's figures were such times, not durations: the "weights allocation of about

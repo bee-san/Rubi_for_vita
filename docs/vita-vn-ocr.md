@@ -1160,8 +1160,8 @@ row job's blocks first, for the finder's pass only, and frees them before the co
 **Time (estimates; nothing ran on a console).** Per CTC frame VOCR5-V costs what VOCR5-S does: about 2.2 ms at 333
 MHz and 1.7 ms at 444 MHz (VOCR5-S's box estimate, calibrated to VOCR3-H15's 4.94 ms a frame in v0.8.0-test.1's logs;
 the console also measured up to 5.22 ms, about 6 % more). The capture costs more than for rows, as a column spans
-every strip of the region and each strip read waits for the game's next frame. On the box drawn once (126 × 476
-px, 2-3 columns), `on`'s job read a median of 27 strips (33 at the 90th percentile) and recognized 73 CTC frames:
+every strip of the region and each strip read waits for the game's next frame. On the box drawn once (114 or 126 × 476
+px, its two places, 2-3 columns), `on`'s job read a median of 27 strips (33 at the 90th percentile) and recognized 73 CTC frames:
 about 0.45 s of capture at 60 fps (0.9 s at 30) and 0.16 s of recognition at 333 MHz. auto's reads the region twice
 more first, for the row finder: 49 strips (56), about 0.8 s at 60 fps. Horizontal dialogue boxes read 5 strips
 (median, the same with auto). On a whole screen of columns `on` read 64 strips. Draw the text box around the text.
