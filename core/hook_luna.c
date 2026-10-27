@@ -1009,7 +1009,8 @@ static void run_ops(Txt *t, const LunaOp *op, unsigned depth)
 {
     for (; op && op->op != OP_END && !t->bad && t->len; op++) {
         long at;
-        if (op->enc && !(op->enc & (1u << t->enc))) continue;
+        /* (CP932 with its 0xA0 kept is CP932 for an op gated by encoding: audit-rubi-audit-fix-hooks A-N5) */
+        if (op->enc && !(op->enc & (1u << (t->enc & ~VJO_HOOK_DECODE_A0)))) continue;
         switch (op->op) {
         case OP_DEL:
         case OP_REP:

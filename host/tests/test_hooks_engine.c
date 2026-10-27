@@ -8,6 +8,10 @@
  * hooks.c keeps game addresses as uint32_t, as on the Vita: the fake code segment and game memory are mapped
  * below 4 GiB (MAP_32BIT on x86_64). The fake taiHEN records each hook and gives each a record whose
  * continuation is a real host function (CALL) or a marker (sites), so a test calls a hook as the game would. */
+/* The segment 0 a test maps at 0x81000000 (fixed_seg0) is freed after every test, a failed one's too (acutest runs
+ * TEST_FINI after an aborted test): with --no-exec the tests share one process (audit-rubi-audit-fix-hooks A-N3). */
+static void unmap_fixed_seg0(void);
+#define TEST_FINI unmap_fixed_seg0()
 #include "acutest.h"
 
 #include <stdint.h>
@@ -1729,7 +1733,8 @@ typedef struct {
 typedef struct {
     const char *title;
     uint32_t nid, off;
-    int thumb;        /* -1: the record says to check its mode by disassembly (PCSG00469's 0 is not its code's) */
+    int thumb;        /* 1 Thumb, 0 ARM: the record's flag, or the mode its bytes decode to where the record says to
+                       * check it by disassembly (tools/hook_farm.py MODES_BY_DISASSEMBLY) */
     unsigned reg;
     uint32_t padding; /* 0x81000000 or more: the game's address of the text, the register 0 at the site */
     unsigned encoding, read;
@@ -1763,10 +1768,14 @@ static const FarmSite *farm_entry(const char *title, const VjoPlaceVerified **en
     TEST_ASSERT_(v != NULL, "%s: Rubi's entry at the farm's +%X", title, (unsigned)fs->off);
     TEST_CHECK_(v->module_nid == fs->nid, "%s: NID %08X, the farm's %08X", title, (unsigned)v->module_nid,
                 (unsigned)fs->nid);
-    TEST_CHECK_(fs->thumb < 0 || v->thumb == (unsigned)fs->thumb, "%s: Thumb %u, the farm's %d", title,
-                (unsigned)v->thumb, fs->thumb);
-    TEST_CHECK_(v->sig_len >= 8 && v->sig_len <= fs->sig_len && !memcmp(v->sig, fs->sig, v->sig_len),
-                "%s: the %u bytes at the site are the farm's", title, (unsigned)v->sig_len);
+    /* the mode of every record (audit-rubi-audit-fix-hooks A-F1: those the farm says to check by disassembly were
+     * skipped, and a flipped flag passed for PCSG00469, PCSG00553 and PCSG00807) */
+    TEST_CHECK_((fs->thumb == 0 || fs->thumb == 1) && v->thumb == (unsigned)fs->thumb, "%s: Thumb %u, the farm's %d",
+                title, (unsigned)v->thumb, fs->thumb);
+    /* every byte the farm recorded (A-N1: 12 of the 16 passed); an entry that pins fewer, for a relocated address in
+     * them, would say why here */
+    TEST_CHECK_(v->sig_len == fs->sig_len && !memcmp(v->sig, fs->sig, v->sig_len),
+                "%s: the %u bytes at the site are the farm's %u", title, (unsigned)v->sig_len, fs->sig_len);
     /* (CP932 with its 0xA0 kept is CP932: VJO_HOOK_ENC_CP932_A0, the MSGSET titles' blank cell) */
     TEST_CHECK_((v->encoding & ~VJO_HOOK_DECODE_A0) == fs->encoding && v->read == fs->read,
                 "%s: encoding %u, read %u; the farm's %u, %u", title, (unsigned)v->encoding, (unsigned)v->read,
@@ -1785,9 +1794,12 @@ static const FarmSite *farm_entry(const char *title, const VjoPlaceVerified **en
     return fs;
 }
 
-/* A segment 0 at FARM_SEG0, size bytes (MAP_FIXED_NOREPLACE: an address already taken fails the test, nothing is
- * overwritten; under x86-64 ASan that address is shadow memory, as for test_luna_own_address). */
-static uint8_t *farm_seg0(uint32_t size)
+/* A segment 0 at FARM_SEG0 (0x81000000), size bytes, for the test that runs (MAP_FIXED_NOREPLACE: an address already
+ * taken fails the test, nothing is overwritten; under x86-64 ASan that address is shadow memory). TEST_FINI frees it
+ * after the test, whatever its outcome. */
+static uint8_t *fixed_map;
+static size_t fixed_map_size;
+static uint8_t *fixed_seg0(uint32_t size)
 {
     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
     void *p;
@@ -1796,7 +1808,14 @@ static uint8_t *farm_seg0(uint32_t size)
 #endif
     p = mmap((void *)(uintptr_t)FARM_SEG0, size, PROT_READ | PROT_WRITE, flags, -1, 0);
     TEST_ASSERT_(p == (void *)(uintptr_t)FARM_SEG0, "a segment 0 at 0x81000000 (mmap gave %p)", p);
+    fixed_map = p;
+    fixed_map_size = size;
     return p;
+}
+static void unmap_fixed_seg0(void)
+{
+    if (fixed_map) munmap(fixed_map, fixed_map_size);
+    fixed_map = NULL;
 }
 
 /* Each excerpt through the worker's own path in the game as the farm recorded it: a main module with the farm's NID
@@ -1817,7 +1836,7 @@ static void test_farm_excerpts(void)
         if (end > seg_size) seg_size = end;
     }
     seg_size = (seg_size + PAGE - 1u) & ~(PAGE - 1u);
-    seg = farm_seg0(seg_size); /* only the pages its bytes touch exist */
+    seg = fixed_seg0(seg_size); /* only the pages its bytes touch exist */
     for (unsigned k = 0; k < HOOK_FARM_FIXTURES; k++) {
         const FarmRow *row = &farm_rows[k];
         const VjoPlaceVerified *v;
@@ -1845,7 +1864,7 @@ static void test_farm_excerpts(void)
         add_block(a32(seg), seg_size, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
         vjo_hooks_start(row->title, VJO_TEXT_SOURCE_AUTO, 0);
         TEST_ASSERT_(n_sites >= 1 && site_info[0].ver == v, "%s: its entry is hooked first", row->title);
-        TEST_CHECK_(n_offs >= 1 && offs[0].offset == fs->off && (fs->thumb < 0 || offs[0].thumb == fs->thumb),
+        TEST_CHECK_(n_offs >= 1 && offs[0].offset == fs->off && offs[0].thumb == fs->thumb,
                     "%s: hooked at the farm's +%X", row->title, (unsigned)fs->off);
         TEST_ASSERT(row->n + 2u <= DATA_SIZE - 0x200u);
         memset(frame, 0, sizeof frame);
@@ -1876,7 +1895,6 @@ static void test_farm_excerpts(void)
         if (fs->padding >= FARM_SEG0) memset(p, 0, fs->data_off + row->n);
     }
     TEST_CHECK_(titles >= 13, "excerpts of %u titles", titles);
-    munmap(seg, seg_size);
 }
 
 /* TIME TRAVELERS (PCSG00062): Luna's two sites, the real table's (0x8119ADDA r7 and 0x811A6052 r8, CP932, its filter
@@ -1890,8 +1908,9 @@ static void test_farm_excerpts(void)
  * debug log; a function's entry at both hooks both, and a hit's text goes through Luna's filter. With segment 0
  * anywhere but 0x81000000 the guest address is not read, nor for a relocatable executable's unmarked site. The game's
  * own bytes there are not known here (no dump of it): its console run decides. The test maps 0x81000000 itself
- * (MAP_FIXED_NOREPLACE: an address already taken fails the test cleanly, nothing is overwritten); under x86-64 ASan
- * that address is shadow memory (0x7fff8000-0x8fff6fff), so the test cannot run in such a build. */
+ * (fixed_seg0, freed after it; MAP_FIXED_NOREPLACE: an address already taken fails the test cleanly, nothing is
+ * overwritten); under x86-64 ASan that address is shadow memory (0x7fff8000-0x8fff6fff), so the test cannot run in such
+ * a build. */
 static void test_luna_own_address(void)
 {
     enum { TT_SEG0 = 0x81000000u, TT_SIZE = 0x31258Cu, TT_MAP = 0x315000u }; /* TT_MAP: segment 0 a page higher too */
@@ -1899,7 +1918,7 @@ static void test_luna_own_address(void)
     static const char l7[] = "[\x8E\x9E\x8A\xD4/\x82\xB6\x82\xA9\x82\xF1]\x82\xF0<#FF0000>\x97\xB7</#>\x82\xB7\x82\xE9"
                              "\\n\x90\x6C";
     static const char l8[] = "<b>\x96\xA2\x97\x88</b>\x82\xCD[\x95\xCF/\x82\xA9]\x82\xED\x82\xE9";
-    static uint8_t *tt;
+    uint8_t *tt;
     const VjoLunaSite *real;
     uint32_t frame[16], inst, refused;
     VjoHookSnap s;
@@ -1908,17 +1927,9 @@ static void test_luna_own_address(void)
     TEST_ASSERT(vjo_luna_sites("PCSG00062", &real) == 2);
     TEST_ASSERT(real[0].addr == 0x8119ADDAu && real[0].reg == 7 && real[1].addr == 0x811A6052u && real[1].reg == 8);
     TEST_CHECK(real[0].addr - VJO_LUNA_SEG0 >= TT_SIZE && real[1].addr - VJO_LUNA_SEG0 >= TT_SIZE);
-    if (!tt) {
-        int flags = MAP_PRIVATE | MAP_ANONYMOUS;
-        void *p;
-#ifdef MAP_FIXED_NOREPLACE
-        flags |= MAP_FIXED_NOREPLACE;
-#endif
-        p = mmap((void *)(uintptr_t)TT_SEG0, TT_MAP + PAGE, PROT_READ | PROT_WRITE, flags, -1, 0);
-        TEST_ASSERT_(p == (void *)(uintptr_t)TT_SEG0, "a segment 0 at 0x81000000 (mmap gave %p)", p);
-        TEST_ASSERT(!mprotect((uint8_t *)p + TT_MAP, PAGE, PROT_NONE));
-        tt = p;
-    }
+    _Static_assert(TT_SEG0 == FARM_SEG0, "one fixed segment 0");
+    tt = fixed_seg0(TT_MAP + PAGE); /* freed after the test (TEST_FINI), as the farm test's */
+    TEST_ASSERT(!mprotect(tt + TT_MAP, PAGE, PROT_NONE));
 
     /* zeros at both sites: no function's entry there, refused, with the bytes the check read */
     reset();

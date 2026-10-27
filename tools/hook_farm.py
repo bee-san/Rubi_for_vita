@@ -238,14 +238,41 @@ def c_bytes(raw):
 
 
 ENC_NAMES = {"cp932": "VJO_HOOK_ENC_CP932", "utf-8": "VJO_HOOK_ENC_UTF8", "utf-16le": "VJO_HOOK_ENC_UTF16LE"}
+# The mode of the farm's records whose note says to check it by disassembly (their recorded thumb flag is not the
+# code's), decided from the 16 bytes the record holds with LLVM 18.1.8's llvm-mc (`--disassemble`, `-triple
+# thumbv7-none-eabi` and `armv7-none-eabi`): title -> (those bytes, 1 Thumb or 0 ARM). audit-rubi-audit-fix-hooks A-F1:
+# without it the engine test left these entries' mode unchecked. A record with other bytes stops `fixtures` until its
+# mode is decided here.
+MODES_BY_DISASSEMBLY = {
+    # push.w {r4-r8, r11, lr}; sub sp, #20; movs r1, #0; ... (as ARM its last two words do not decode)
+    "PCSG00469": ("2de9f04985b000210091041c049183f1", 1),
+    # adds r2, r5, #0; adds.w r0, r4, #0x9c0; ... (at +0x12C76, 2 mod 4, where no ARM instruction can start)
+    "PCSG00509": ("2a1c14f51c6000255ff482710023fef7", 1),
+    # mov r12, sp; push {r4-r8, r11, r12, lr}; sub sp, sp, #32; mov r11, sp (as Thumb its fourth halfword does not
+    # decode); the same bytes for PCSG00807 (both Rejet's Unity builds)
+    "PCSG00553": ("0dc0a0e1f0592de920d04de20db0a0e1", 0),
+    "PCSG00807": ("0dc0a0e1f0592de920d04de20db0a0e1", 0),
+}
+
+
+def farm_mode(hook):
+    """The record's mode: its thumb flag, or for a record that says to check its mode by disassembly the decided one
+    (MODES_BY_DISASSEMBLY, for exactly the bytes it was decided on)."""
+    if "check mode" not in (hook.get("mode_note") or ""):
+        return int(hook["thumb"])
+    sig, mode = MODES_BY_DISASSEMBLY.get(hook.get("title"), (None, None))
+    if sig != (hook.get("signature") or "").lower():
+        raise SystemExit("%s: the farm's record says to check its mode by disassembly: decide it from its bytes (%s) "
+                         "and add it to MODES_BY_DISASSEMBLY" % (hook.get("title"), hook.get("signature")))
+    return mode
 
 
 def farm_site(hook):
     """The farm's record of its hook (rubi-hook.json) in the terms of Rubi's VjoPlaceVerified, or None for a record
-    without a site: (offset, module NID, Thumb (-1: the record says to check its mode by disassembly, as for
-    PCSG00469's and PCSG00509's, whose recorded 0 is not the code's mode), register, padding (the farm's; an address of
-    the game's when it is 0x81000000 or more: its register is 0 at the site, VNCAPTURE_HOOK_OFFSET), encoding, read,
-    the reader's count and data offsets (a cell record's), the 16 bytes)."""
+    without a site: (offset, module NID, Thumb (farm_mode: the flag, or the mode the bytes decode to where the record
+    says to check it by disassembly), register, padding (the farm's; an address of the game's when it is 0x81000000 or
+    more: its register is 0 at the site, VNCAPTURE_HOOK_OFFSET), encoding, read, the reader's count and data offsets (a
+    cell record's), the 16 bytes)."""
     if not hook.get("segment0_offset") or not hook.get("signature") or not hook.get("module_nid"):
         return None
     reader = {k: v for k, v in (hook.get("reader") or {}).items() if k not in ("schema", "encoding", "provenance")}
@@ -270,7 +297,7 @@ def farm_site(hook):
         else:
             read = "VJO_PLACE_READ_STRING"
     sig = bytes.fromhex(hook["signature"])
-    thumb = -1 if "check mode" in (hook.get("mode_note") or "") else int(hook["thumb"])
+    thumb = farm_mode(hook)
     return (int(hook["segment0_offset"], 16), int(hook["module_nid"], 16), thumb, int(hook["register"]),
             int(hook.get("padding") or 0) & 0xFFFFFFFF, enc, read, count_off, data_off, sig)
 

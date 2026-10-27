@@ -244,8 +244,8 @@ Two lists name them:
       (`VJO_PLACE_RELOCATED`, after its bytes and NID matched; #316's audit F4). A fixed-address executable is
       loaded there and all of it where it was linked: games built with an SDK 2.60 and lower "were compiled as a
       statically linked executable, thus their loading address is always the same, namely `0x81000000`, and they
-      cannot be relocated", and a relocatable one is placed by the loader's ASLR ("ASLR is only enabled for
-      executables/modules", [h-encore's write-up](https://github.com/TheOfficialFloW/h-encore/blob/85b345e28f38d728a7ac33a35b9d6f32db93e8fc/WRITE-UP.md)),
+      cannot be relocated", and a relocatable one is placed by the loader's ASLR ("It seems like ASLR is only enabled
+      for executables/modules", [h-encore's write-up](https://github.com/TheOfficialFloW/h-encore/blob/85b345e28f38d728a7ac33a35b9d6f32db93e8fc/WRITE-UP.md)),
       so it is not expected at exactly 0x81000000 (not measured in Rubi's logs: console step 15 asks for CLANNAD's
       `seg0`, a relocatable eboot's, from two starts). What the check leaves: a relocatable eboot loaded with
       segment 0 at 0x81000000 and its data within the same 64 KiB as linked keeps the recorded `movt r0,
@@ -412,7 +412,14 @@ Rubi's entries on them:
   only, never a script; each field of Rubi's entry is checked against the record by name (#316's audit F3:
   the test had installed Rubi's own NID, bytes, register and padding, so 4 of the audit's 30 mutations of
   them passed; all 4 fail it now, and so do a mode, an SC3 entry's NID and PCSG00620's padding changed). The
-  SC3 test runs its three entries in their records' games too.
+  SC3 test runs its three entries in their records' games too. Every record's mode is checked: four of the farm's
+  records say to check their mode by disassembly (their recorded flag is not the code's), and `fixtures` writes
+  the mode their 16 bytes decode to with LLVM 18.1.8's `llvm-mc` (`tools/hook_farm.py` `MODES_BY_DISASSEMBLY`:
+  PCSG00469 and PCSG00509 Thumb, PCSG00553 and PCSG00807 ARM), so a flipped flag fails there too, and so does an
+  entry that pins fewer of the farm's 16 bytes (audit-rubi-audit-fix-hooks A-F1, A-N1). What the farm cannot pin:
+  an entry's filter on text that no farm hit holds. PCSG00713's entry has none, and none of its 2,738 farm hits
+  holds a character any of Rubi's filters change [measured: the bucket's hits, counted], so a filter there would
+  change no farm text and the test cannot see one (A-N2).
 
 Single-hit pages of the bucket of 2026-10-26 (04:36Z) whose text is the farm's, as shown, with main's
 filters before this change and Rubi's now [measured: `tools/hook_farm.py check` on the host]:

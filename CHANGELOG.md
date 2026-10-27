@@ -358,7 +358,8 @@ been reported.
     learned string copy at 32 that was not trusted at 16, with the setting off too, so a restart checked it with OCR
     once more before 32, and its first disagreement wrote the cache once more. The cache now keeps the trust in a bit
     of its own, set only with the setting on, and the interval as it is; a source trusted with it on is trusted at the
-    next start, as in 0.9.8.
+    next start, as in 0.9.8. The one write 0.9.7 never made: the first launch with the setting off after one with it
+    on saves a source that was saved trusted once more, without the bit.
   - `history.csv`: when a line the hook gives in parts grows, its record is replaced only once the file is open (an
     open that failed had lost the earlier part's record), while no count of the reading total reads the file (a count
     that read across it ended "unavailable"), and only when the file still ends with that record (a history.csv
@@ -370,8 +371,15 @@ been reported.
     counted; "the poll and the lookup are all that is left" holds for the normal build; console steps 8 and 14; the
     poll in press mode, a stream that changes often, the bench's omissions, two lines that merge, "none wrong" by
     construction. The benches' drivers leave out the protected-set titles by default.
-  Shell: 48 B of the normal build's code and 32 B of the debug build's, the same pages. Not run on a console
-  ([trusted hooks](docs/native-hooks.md#trusted-hooks-api-43)).
+  Shell: 32 B of the debug build's code; in the normal build 16 B of code and 32 B of data (a log format moved there),
+  the same pages. Not run on a console ([trusted hooks](docs/native-hooks.md#trusted-hooks-api-43)).
+- Building and testing, the audit of #397 and #401 (audit-rubi-audit-fix-hooks): the engine test checks every farm
+  record's mode, four of them decided by disassembly (`tools/hook_farm.py` `MODES_BY_DISASSEMBLY`), and every one of
+  its 16 bytes, so a flipped Thumb flag of PCSG00469, PCSG00553 or PCSG00807 or a shorter signature fails it; the 0x81000000
+  segment two tests map is freed after each, a failed one's too; `history.csv`'s rewrite is tested where
+  `SCE_O_APPEND` places only the open, which needs its second read of the file's end. One code change, with no text
+  changed today: a Luna filter's CP932-only step runs in the two entries that keep CP932's 0xA0 too. The docs say what
+  a failed rewrite can leave in the reading total and when a count can still end "unavailable".
 - **Native hooks, #316's audit.** ALIA's CARNIVAL! サクラメント (`PCSG00628`): its script's `!X` (the character X)
   is now read before any other code, as the game reads it, so a line with a Latin word in lowercase, a bracket or
   a `|` shows it (`!S!k!y` gave `S！`, now `Sky`), and `u9829.` is ♥ (other `u<n>.` code points are still dropped:
