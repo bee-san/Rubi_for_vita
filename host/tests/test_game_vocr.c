@@ -2326,24 +2326,27 @@ static void on_prefers_columns(void)
     const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
     unsigned n = check_steps(&out, s), refine_steps = 0;
     for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) refine_steps += out.step[i].id == VJO_GSTEP_REFINE;
-    TEST_CHECK_(find_steps(&out, 2) == 1 && vertical_opens >= 1 && !tier_opens[1] && !tier_opens[2] && !tier_opens[3] &&
-                    !cascade_opens && !cascade_allocations && !refine_steps,
-                "columns: %u steps of kind 2, vertical %u, tiers %u/%u/%u, cascade %u, refine steps %u",
-                find_steps(&out, 2), vertical_opens, tier_opens[1], tier_opens[2], tier_opens[3], cascade_opens,
-                refine_steps);
-    /* the columns' try's check, the last: the vertical model's job, by name (no tier), beside its reserve */
-    TEST_CHECK_(n >= 2 && !VJO_GCHECK_TIER(s[n - 1]->kind) && !s[n - 1]->rc && s[n - 1]->bytes == need_ws + need_w &&
-                    out.reserve_bytes == GAME_RESERVE && !out.fallback && out.need_workspace == need_ws &&
-                    out.need_weights == need_w,
-                "columns: %u checks, the last kind 0x%X bytes %u (want %u)", n, n ? s[n - 1]->kind : 0u,
-                n ? (unsigned)s[n - 1]->bytes : 0u, (unsigned)(need_ws + need_w));
-    if (have_v) {
-        TEST_CHECK_(rc == VJO_OK && find_steps(&out, 1) == 1 && out.lines == 3 && out.recognized == 3,
-                    "columns: rc %d, %u lines", rc, out.lines);
+    /* the columns' try's check: the vertical model's job, by name (no tier), beside a request by name's reserve */
+    const VjoGameOcrStep *vcheck = NULL;
+    for (unsigned i = 0; i < n; i++)
+        if (!VJO_GCHECK_TIER(s[i]->kind)) vcheck = s[i];
+    TEST_CHECK_(find_steps(&out, 2) == 1 && vertical_opens >= 1 && vcheck && !vcheck->rc &&
+                    vcheck->bytes == need_ws + need_w,
+                "columns: %u steps of kind 2, vertical %u, the vertical check's bytes %u (want %u)", find_steps(&out, 2),
+                vertical_opens, vcheck ? (unsigned)vcheck->bytes : 0u, (unsigned)(need_ws + need_w));
+    if (have_v) { /* the columns read: no size's model, cascade or refinement, the last check the vertical model's */
+        TEST_CHECK_(rc == VJO_OK && find_steps(&out, 1) == 1 && out.lines == 3 && out.recognized == 3 &&
+                        !tier_opens[1] && !tier_opens[2] && !tier_opens[3] && !cascade_opens && !cascade_allocations &&
+                        !refine_steps && vcheck == s[n - 1] && out.reserve_bytes == GAME_RESERVE && !out.fallback &&
+                        out.need_workspace == need_ws && out.need_weights == need_w,
+                    "columns: rc %d, %u lines, tiers %u/%u/%u, cascade %u, refine steps %u", rc, out.lines,
+                    tier_opens[1], tier_opens[2], tier_opens[3], cascade_opens, refine_steps);
         for (unsigned i = 0; i < out.recognized; i++) TEST_CHECK(out.line[i].flags & VJO_GAME_OCR_LINE_COLUMN);
-    } else {
-        TEST_CHECK_(rc == rows_rc && find_steps(&out, 3) == 1, "columns, no model file: rc %d (the rows' %d)", rc,
-                    rows_rc);
+    } else { /* no vertical model (CI): its try fails to read it (find kind 3), and the rows are read, a size's model */
+        TEST_CHECK_(rc == rows_rc && find_steps(&out, 3) == 1 && !find_steps(&out, 1) && out.lines == 7 &&
+                        tier_opens[1] + tier_opens[2] + tier_opens[3] >= 1,
+                    "columns, no model file: rc %d (the rows' %d), %u lines", rc, rows_rc, out.lines);
+        for (unsigned i = 0; i < out.recognized; i++) TEST_CHECK(!(out.line[i].flags & VJO_GAME_OCR_LINE_COLUMN));
     }
     TEST_CHECK(!memory_live && !capture_live && !line_live);
     /* too little memory for the vertical model's job (the columns' check refused): the rows, with Small, which needs
@@ -2678,10 +2681,15 @@ static void columns_job_line_block_freed_or_refused(void)
         for (unsigned job = 0; job < 2; job++) {
             int rc = vjo_game_ocr_run_request(&r, &out);
             const VjoGameOcrStep *s = recognize_step(&out);
-            TEST_CHECK_((find_steps(&out, 1) == 1 || (refuse && out.n_steps == VJO_GAME_OCR_STEPS)) &&
-                            find_steps(&out, 2) == 1 && out.lines == 3,
-                        "refuse %d, job %u: %u column finds, %u columns", refuse, job, find_steps(&out, 1),
+            /* the columns' try is the job's last unless it reads the vertical model and that file is absent (CI):
+             * then the rows' try after it is (find kind 3, the frame's 7 rows) */
+            const int columns_last = have_v || refuse;
+            TEST_CHECK_(columns_last ? (find_steps(&out, 1) == 1 || (refuse && out.n_steps == VJO_GAME_OCR_STEPS)) &&
+                                           out.lines == 3
+                                     : find_steps(&out, 3) == 1 && out.lines == 7,
+                        "refuse %d, job %u: %u column finds, %u lines", refuse, job, find_steps(&out, 1),
                         (unsigned)out.lines);
+            TEST_CHECK(find_steps(&out, 2) == 1 || (refuse && out.n_steps == VJO_GAME_OCR_STEPS));
             if (refuse) { /* every column left out (the batch, then each column, asked for once), nothing recognized,
                            * no error; the recognize step counts them as tall_skipped when the log kept it */
                 TEST_CHECK_(rc == VJO_OK && !out.text[0] && !out.recognized && (!s || (s->sum == 3 && !s->arg)),
