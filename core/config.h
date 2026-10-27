@@ -138,6 +138,11 @@ typedef struct {
      * the frame-strip rule, for regions drawn with a margin; 3 (all) also the touching-rows split; 0 (off) the
      * frozen finder. Last, as above. */
     int ocr_line_fix;         /* 0 off, 1 on, 2 junk, 3 all */
+    /* Why the open overlay waits (#358; docs/text-stability.md "Why the overlay waits"): 1 (the default) has its try
+     * after two jobs in a row that ended VJO_E_SCREEN_CHANGED (the text changed under every read) say why it still is
+     * recognizing and what helps, instead of "Recognizing…"; 0 (ocr_wait_hint = off): "Recognizing…" all along, as
+     * before. Read by the Shell only. Last, as above. */
+    int ocr_wait_hint;        /* 0/1, on by default */
 } VjoConfig;
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */

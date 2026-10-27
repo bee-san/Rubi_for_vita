@@ -262,3 +262,65 @@ learned model would have to wait out too.
   - raise `ocr_settle_ms`, which is one global setting today (per title needs code);
   - let **Only when I press** refresh the open overlay's text once the screen settles again, as
     Automatically already does (`background_open`).
+
+## Why the overlay waits (#358)
+
+**The owner's item** (#358): "Say why the user is waiting. After a few seconds of 'Recognizing…' on torn reads,
+name the cause and the fix: shrink the box, or turn on Pause the game to read." A job whose screen changed under
+every read ends `VJO_E_SCREEN_CHANGED` and is dropped quietly (#81 request 4), and the Shell tries again at
+`note_screen_changed`'s pace (at once, then 250 ms, doubling to 4 s). Until now the open overlay said
+"Recognizing…" all along, however long that went on: with an animated icon in the region, until the user gave up
+(#353).
+
+**What it says now.** As the open overlay starts a try at its text (`shell/worker.c` `start_job_kind`), once the
+last 2 jobs in a row ended that way (`WAIT_HINT_AFTER`; the press's own tries, or Automatically's just before the
+press), it says:
+
+> Recognizing… Something in the region keeps moving (an animated icon?), so the text never holds still. Press □ to
+> draw a region around just the text.
+
+- **Not an error.** The tries go on at the same pace, and the first that reads its screen shows its text and word in
+  place of the hint. It is the overlay's status line (dim, as "Recognizing…"), never the subtitle strip's.
+- **When.** From the third try in a row: with a press, two torn tries take about 3 s; a press that comes after two
+  torn background jobs says it at once, since Rubi already saw the text change under two reads.
+- **The fix it names** is the one `main` has: a region drawn around the text alone leaves an icon beside it out.
+  Pause the game to read (#355) is the other; the hint names it once that setting exists.
+- **Starting over.** A region saved or cleared (□) starts the count over, as a new game does: the old region's tears
+  say nothing of the new one's, and its next press says "Recognizing…" until two of its own jobs tear.
+- **Off.** `ocr_wait_hint = off` in `config.ini` keeps "Recognizing…" all along, as before (on by default).
+
+**Why 2.** `tools/wait_hint_replay.py` replays the rule for 1, 2 and 3 torn jobs in a row:
+- **On the owner's console** (CLANNAD, every debug build of API 20 or later: test.2-test.4, the test.4 collect's
+  `log.old.txt` and `log.txt`): none of the 75 openings that waited for a recognition met a torn job, so the hint would
+  have shown in none of them, whatever the count. The 376 background jobs had 16 torn ones, in 15 runs: 14 single, 1
+  double, each followed by a read. A wait through them would have met the hint after 15 of the runs with 1 (each
+  until the next job's result, a median 1.96 s later), after 1 with 2 (the double, 987 ms before its read), and after
+  none with 3.
+- **On the host** (rubi-spinner's #353 bench, `host/spinner_bench.c`: 184 hooked dialogue regions of 46 titles,
+  15 scenarios, L + R 3 s after the page, 20 s; `main` 892cfb9's timelines; times are the bench's estimates): all
+  1,668 runs that never show text (an icon with more frames than a row's ring holds, a picture moving in the box)
+  were torn, and every one gets the hint, after L + R:
+
+  | in a row | the hint, after L + R (median / 90th percentile / slowest) | of the 104 runs that show text after a wait: the hint first (< 1 s before the text) |
+  |---|---|---|
+  | 1 | 1.19 / 1.47 / 2.39 s | 22 (0) |
+  | **2** | **2.75 / 3.15 / 4.80 s** | 22 (4) |
+  | 3 | 4.50 / 5.15 / 9.35 s | 5 (1) |
+
+  Of the 22, 21 have an icon that turns and rests and 1 the 24-frame icon: the hint is true there (an icon is in the
+  region), and shows a median 2.2 s before the text with 2. The still page, the typing line and the 8-frame icon never
+  show it.
+- **So 2:** "a few seconds" (2.75 s) with an icon, and on the console once in 15 runs of torn reads, never in a wait
+  the owner made. 1 would follow 14 single tears that the next job read; 3 waits 1.75 s longer for the same runs.
+
+**With #353's line watch** (its bench, the same 2,760 runs): 2 runs never show text, and the hint shows in both
+(4.25 s and 9.35 s after L + R, with 2); 26 of the 1,724 runs that show text after a wait were torn on the way, and 3
+of them get the hint first (2.2-2.7 s before the text).
+
+**Its cost.** No allocation, thread or static buffer: one `VjoConfig` field, 96 B of the normal Shell's code (104 B
+of the debug one's), and the hint's 153 B and the key's 14 B in the data segment, where "Recognizing…" went too
+([memory-ledger.md](memory-ledger.md#why-the-overlay-waits-358)).
+
+**Not run on a console.** The rule and its text are host-tested (`host/tests/test_shell_worker.c`
+`open_overlay_says_why_it_waits`); whether the hint reads well over a game, and when it shows there, waits for the
+owner's test build.

@@ -368,7 +368,8 @@ class E2E:
                     "font_size_ja": "20", "ocr_lm": template["ocr_lm"], "ocr_cascade_ms": template["ocr_cascade_ms"],
                     # the old file's explicit choice stays, though the default is off since 2026-10-20
                     "japanese_only_selection": "on", **settings}
-            for k in ("ocr_boost_clock", "ocr_threads", "ocr_vertical"):  # #93, #99: new keys get the template's value
+            for k in ("ocr_boost_clock", "ocr_threads", "ocr_vertical", "ocr_wait_hint"):  # #93, #99, #358: new keys,
+                # the template's value
                 if k in template:
                     want[k] = template[k]
             for k, v in want.items():
