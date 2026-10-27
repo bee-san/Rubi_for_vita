@@ -246,7 +246,9 @@ only on a yes: [below](#archiving-older-dumps-off-the-vita)), into one timestamp
 
 - `ux0:data/VitaJPOverlay/`: `log.txt`, `log.old.txt`, `selftest-report.txt`, `selftest.txt` (the
   marker, when the test is still armed), `status.txt`, `status.prev.txt`, `kernel.txt`,
-  `kernel.prev.txt`, `config.ini` with every `*api_key` and `anki_audio_url` value (an audio source
+  `kernel.prev.txt`, `hooks.log` (the debug build's record of the native hooks at the last game start, no text:
+  `tools/hook_request.py` reads it into `hook-request.md` in the folder, and the collect prints its one line;
+  [hook requests](hook-requests.md)), `config.ini` with every `*api_key` and `anki_audio_url` value (an audio source
   URL can carry a key; the setting was removed with AnkiConnect, but an older `config.ini` can still
   hold it) replaced by its length before anything is written (also a commented-out one, a word that
   starts with a removed online dictionary's key name, `jpdb_api_keyKEY`, and a key line without `=`;

@@ -478,7 +478,11 @@ static void install_sites(const char *title_id, const tai_module_info_t *tai, co
     unsigned nv = vjo_place_verified(title_id, &ver), nl = vjo_luna_sites(title_id, &sites), need = nl;
     uint16_t appv;
     for (unsigned i = 0; i < nv; i++) need |= ver[i].app_ver; /* an entry that names its version */
-    appv = need ? app_version() : 0;
+    /* APP_VER decides only for a Luna site or an entry that names its version. The debug build reads it for every
+     * game, for hooks.log's line below: a hook request needs the player's version (docs/hook-requests.md), and the
+     * long tail is the games with no entry. Without such a site or entry no decision reads it, so both builds
+     * install the same hooks. */
+    appv = need || VJO_DEBUG ? app_version() : 0;
     DLOG("main module %s NID %08X seg0 %08X+%X APP_VER %04X; %u verified, %u Luna sites\n", tai->name,
          (unsigned)tai->module_nid, (unsigned)seg_base, (unsigned)code_size, (unsigned)appv, nv, nl);
     for (unsigned i = 0; i < nv; i++) {

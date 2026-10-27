@@ -43,6 +43,19 @@ been reported.
   after), 3 scored 0 ([details](docs/native-hooks.md#table-sites)). On `main` the entry is trusted from its first
   line (API 43), so its lines need no OCR: that mode has not run on a console for this site, and the 3 lines that
   scored 0 were not examined.
+- Hook requests ([#358](https://github.com/bee-san/Rubi_for_vita/issues/358)): a way to ask for a native text hook
+  for a game that has none, or whose hook the worker refuses. The
+  [hook request](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml) issue form asks for the
+  debug build's `ux0:data/VitaJPOverlay/hooks.log` (it holds no game text) and says how to get it: install the debug
+  build, Text source on Automatic, play the game, copy the file over USB or FTP, or run
+  `tools/install_ftp.sh --collect`. [docs/hook-requests.md](docs/hook-requests.md) has the steps, what each line of the
+  log says and how the owner's hook farm turns a request into a verified entry. `tools/hook_request.py` (in the
+  release zip) reads a `hooks.log`, a `--collect` folder or zip, or a request's text, and says what the console saw:
+  the game's main module, module NID and `APP_VER`, each site's verdict with the bytes at a refused one, the string
+  copies, and what is needed next; in a checkout it compares the log with the tree's tables, and with `--bucket` with
+  the farm's hook for the title (did the farm prove this console's build?).
+- `tools/install_ftp.sh --collect` fetches `hooks.log` too (it did not), writes `hook-request.md` into the collect's
+  folder and zip and prints its one line.
 
 ### Fixed
 
@@ -86,6 +99,10 @@ been reported.
 
 ### Changed
 
+- The debug build's `hooks.log` names the game's version (`APP_VER`) for every game whose table sites are tried; it
+  read `param.sfo` only for a game with a Luna site or an entry that names its version, and logged `APP_VER 0000`
+  for the others, the games a hook request is mostly for. The hooks installed are the same in both builds: `APP_VER`
+  decides nothing for those games, and the normal build reads it as before (host-tested; not run on a console).
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
   pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
   tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a
