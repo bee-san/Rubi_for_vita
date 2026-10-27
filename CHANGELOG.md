@@ -349,9 +349,38 @@ been reported.
 
   On the host's bench (`vjo-vertical-on-bench`, new: the user's kind of box with an icon that turns for 15 frames and
   rests for 15 or 25, every strip read the game's next frame, the Shell's retries; 12 presses each): 0.9.8's ON showed
-  the text in 0 of 12 at 30 frames a second and in 7 and 2 of 12 at 60; ON now in 12 of 12 each, at OFF's times. On a
-  box of vertical text ON reads the columns in 12 of 12, before and after. The Rubi app's ON line says "Columns, right
-  to left, unless the text is in rows." Not run on a console.
+  the text in 0 of 12 at 30 frames a second; ON now in 12 of 12 each, at OFF's times. (The bench charged a line's
+  recognition nothing; #385's audit corrected it, below: at 60 frames a second 0.9.8's ON then shows the text in 12 of
+  12, after 4.0 and 8.8 s.) On a box of vertical text ON reads the columns in 12 of 12, before and after. The Rubi app's
+  ON line says "Columns, right to left, unless the text is in rows." Not run on a console.
+- **Vertical text ON, #385's audit.**
+  - **An empty text box is OFF's job.** Between two lines, or over a CG, a box wider than tall holds no line; ON sent it
+    to the columns, which gave back the size's model and the cascade's and read the vertical model's weights, and the
+    next line read the size's model again: on the host, 6 weight reads and 3 cascade reads in 6 jobs against OFF's 1 and
+    1; with the defaults about 0.16 s more on the empty box and 0.23 s (0.47 s with the cascade) at the next line
+    (estimates, from the console's read of a 1.16 MB model). Now nothing is read there, as with OFF.
+  - **A box at least as tall as wide is read as columns at once**, as in 0.9.8, with the columns' rows read once: ON's
+    rule had read none of the 2,659 such boxes of vertical text measured as rows. On the host's bench a box of four
+    columns showed its text in 1.6-2.0 s at 30 frames a second and 1.0-2.1 s at 60, against 2.2-3.3 s and 1.8-4.7 s
+    (the rows' try first) and 0.9.8's 2.0-5.3 s and 1.3-6.3 s (estimates: each line's CTC frames at the console's
+    measured time a frame).
+  - **The columns' rectangle keeps the job's reserve** (AGENTS.md rule 3). Up to 516,096 B, it was taken outside the
+    job's memory check: it could cut 504 KiB into the 4 MiB the job leaves the game, or, with
+    `ocr_skip_blank_lines` on, take the room of the weights read after it, so that the job read the columns' text as
+    rows. Now a block larger than a column is taken only from what the game has free beyond the reserve and the
+    blocks the job has still to take; otherwise the columns are read one by one, as in 0.9.8
+    ([memory ledger](docs/memory-ledger.md)).
+  - **The step log keeps the last try's steps**: a try of rows whose rows went to the columns leaves the log with its
+    memory checks too, so that ON's and Automatic's columns keep their normalisation and parallel steps within the 20.
+  - **The bench charges recognition**: it charged none (its clock stood still while a line was read), and now charges
+    each line's CTC frames at the console's measured time a frame. Its table, the docs' account of #379 and the
+    limits are restated ([on's rule](docs/vita-vn-ocr.md#ons-rule-api-53-379)): a name above the lines and short lines
+    (4 characters or fewer) make a box columns, the box Rubi suggests on first use is read as rows in 72 % of the
+    measured pages, and an animated icon can still hold a whole screen on "Recognizing…" where its columns are too
+    many to read at once.
+  - Tests: the empty box (ON's reads equal OFF's), the columns' weights refused after their check (the rows read), the
+    longest step log of ON's and Automatic's tries, and the rectangle at a page short of room; each fails without its
+    fix. No module takes a page more ([memory ledger](docs/memory-ledger.md)). Not run on a console.
 
 - **Trusted hooks, #338's audit.**
   - With **Trusted hooks replace OCR** off (`hook_trust = off`), the hook cache is 0.9.7's again: 0.9.8 saved a

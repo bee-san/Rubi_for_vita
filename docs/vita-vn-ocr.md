@@ -1089,11 +1089,17 @@ OCR & lookup page has the choice (**Vertical text**: OFF, Automatic, ON); it app
   vertical text (below), nothing is read from them and the same job reads the region's columns instead, as `on`
   does. Elsewhere it is `off`'s job, bit for bit; with `ocr_line_fix` on (API 50), in a region at least as tall as
   wide, it reads the same text after finding the rows twice, first with the frozen finder for the check.
-- **on** (since API 53, [#379](https://github.com/bee-san/Rubi_for_vita/issues/379)): columns, preferred. A job of rows
-  whose rows are checked first, as auto's are, but the other way round: where they look like lines of horizontal text
-  ([on's rule](#ons-rule-api-53-379), below) they are read, `off`'s job exactly; everywhere else the region's columns
-  are read, as auto reads them where its rule fires. Where the vertical model cannot be read or has no room, the rows
-  are read too. Before API 53 every job read columns: horizontal text came out as columns of one character each, and
+- **on** (since API 53, [#379](https://github.com/bee-san/Rubi_for_vita/issues/379)): columns, preferred. In a region at
+  least as tall as wide (a box drawn around columns) the job reads the columns from its first try, as before API 53
+  (since #385's audit: on's rule took none of the 2,659 such regions of vertical text measured for rows, nor the 2 such
+  hooked horizontal boxes, and its rows' try first made a box of columns slower to read than before). In a wider region
+  it is a job of rows whose rows are checked first, as auto's are, but the other way round: where they look like lines
+  of horizontal text ([on's rule](#ons-rule-api-53-379), below), or where the finder finds no row at all (an empty box,
+  a CG: since #385's audit), they are read, `off`'s job exactly; everywhere else the region's columns are read, as auto
+  reads them where its rule fires. Where the vertical model cannot be read or has no room (its memory check refuses it,
+  or its weights are refused after the check), the rows are read too; a block refused after the check (the columns'
+  capture or workspace) fails the job for memory, as auto's has since API 47. Before API 53 every job read columns:
+  horizontal text came out as columns of one character each, and
   in Rubi 0.9.8 a press could stay on "Recognizing…" for good ([below](#ons-rule-api-53-379)).
 - **off**: every job reads rows, as Rubi did before.
 
@@ -1153,8 +1159,12 @@ it cannot read (absent, short, failing its hash) or fit has the job read the row
 read, the game's later jobs read rows unchecked. The tries are one job: they share its stable-text wait (at most
 `ocr_settle_max_ms`, a press's `ocr_settle_press_ms`, over all of them, as the core's own tries do), so the
 column try reads the region at once and recognizes once its rows have held still within what is left of the
-wait; and the step log keeps each try's memory check, first pass and `find` step, but only the last try's
-blocks (`alloc`, `free`), which keeps room in its 20 steps for the last try's own (audit of #335). The rule
+wait; and the step log keeps the first pass and each try's `find` step, the memory checks of every try but a try of
+rows whose rows went to the columns (it read nothing, and a later try of rows checks the sizes again: #385's audit),
+and only the last try's blocks (`alloc`, `free`). So a job of on's or auto's two tries with a press's flags (the LM,
+the cascade, the stable-text wait, two helpers, the blank-line check) keeps every step of its last try within the 20,
+its normalisation and parallel steps included (`test_game_vocr.c`; before, the rows' try's checks took their
+places); a longer job loses the steps logged last (the gate's and, API 54, the spotter's are). The rule
 was chosen on the hooked pages below, before it was checked on any other page; on the pages it was then
 checked on it was not changed.
 
@@ -1173,23 +1183,51 @@ was read. Two causes, both found on the host (nothing of this has run on a conso
   job quietly and tries again (0.9.8 said nothing else; `main` says why after two: [#358](text-stability.md#why-the-overlay-waits-358)),
   for ever. On the host (`vjo-vertical-on-bench`, `host/vertical_on_bench.c`: the job of `core/vocr_ocr.c` and the
   Shell's tries on the user's kind of box, 900 × 160 px with two lines, each strip read the game's next frame, an icon
-  after the text that turns for 15 frames and then rests for 15 or 25; 12 presses each; built against main `68041a7`
-  for 0.9.8's on, whose job read the columns at once): at 30 frames a second off and auto showed the text in 12 of 12,
-  0.9.8's on in 0 of 12 within 20 s; at 60, in 7 and 2 of 12. Its reads also came between the columns' recognitions, a
-  column fetched, recognized, the next fetched, so the icon had the whole recognition to move in.
+  after the text that turns for 15 frames and then rests for 15 or 25; 12 presses each; built against main `926e5fe`
+  for 0.9.8's on, whose job read the columns at once, each fetched on its own between the columns' recognitions): at
+  30 frames a second 0.9.8's on showed the text in 0 of 12 within 20 s, off in 12 of 12 (below). The bench's first
+  form (#385) charged a line's recognition nothing, its clock standing still while a line was read (#385's audit F1):
+  there 0.9.8's on failed from the columns' reads alone, and showed the text in 7 and 2 of 12 at 60 frames a second.
+  With each line's CTC frames charged at the console's time a frame (since #385's audit: 2.61 ms, VOCR5-N's measured
+  in test.4's logs at 444 MHz for VOCR6-N's shape, 5.04 ms for the cascade's VOCR6-L, 1.7 ms, an estimate, for VOCR5-V),
+  the icon also moves while the columns are recognized: at 60 it showed the text in 12 of 12, but after 4.0 and 8.8 s
+  (2 and 4 tries, median), and with the slower icons below in 0, 6 and 10 of 12 (after up to 17.8 s).
 - **The redraws.** Each try published the waiting view again (the text retired, the status set: two versions of it),
   so the overlay drew itself all again at every try, for as long as the tries went on: the flicker (its look on the
   console is not seen here).
 
-**What changed.** On reads rows first, by the rule below: on a horizontal box it is off's job, and the bench's box
-shows its text in 12 of 12 at 30 and 60 frames a second, at off's times, in each of its five icons (turning 15-30
-frames, resting 15-45). A job of columns reads its columns' rows once, the rectangle around them, before it recognizes
-any of them (`core/vocr_ocr.h` `VJO_VOCR_COLUMNS_BATCH`), for on and auto alike: the same pixels, readings and text as
-column by column (`host/tests/test_vocr_vertical.c`). On the bench's vertical box (`host/samples/vertical.jpg`'s four
-columns, 220 × 380 px, the icon under the last one) on reads the columns in 12 of 12 for every icon, before and after
-(auto reads that box's rows, which its rule does not take for columns: 9 and 10 of 12 with the quickest icon). And a try
-while the open overlay already waits with that status and no text publishes nothing (`shell/worker.c`
-`start_job_kind`): the view changes only when what it shows does (the wait hint once, the text).
+**What changed.** On reads rows first in a region wider than tall, by the rule below: on a horizontal box it is off's
+job. A job of columns reads its columns' rows once, the rectangle around them, before it recognizes any of them
+(`core/vocr_ocr.h` `VJO_VOCR_COLUMNS_BATCH`), for on and auto alike: the same pixels, readings and text as column by
+column (`host/tests/test_vocr_vertical.c`). Since #385's audit on reads a region at least as tall as wide as columns
+from its first try, as 0.9.8 did, but with the rectangle. And a try while the open overlay already waits with that
+status and no text publishes nothing (`shell/worker.c` `start_job_kind`): the view changes only when what it shows does
+(the wait hint once, the text). The bench (12 presses a cell; the median time from L + R to the text; deterministic:
+`--frame-us 0,0,0` gives #385's table again, with `--tall rows` for its on on the vertical box), on the horizontal box
+and on its vertical one
+(`host/samples/vertical.jpg`'s four columns, 220 × 380 px, the icon under the last one; both crops of the committed
+samples, `host/vertical_on_bench.c`):
+
+| box, frames a second, icon turns/rests | off | on, 0.9.8 | on, #385 | on now |
+|---|---:|---:|---:|---:|
+| horizontal, 30, 15/15 | 12/12, 2.0 s | **0/12** | 12/12, 2.0 s | 12/12, 2.0 s |
+| horizontal, 30, 15/25 | 12/12, 1.9 s | **0/12** | 12/12, 1.9 s | 12/12, 1.9 s |
+| horizontal, 60, 15/15 | 12/12, 1.7 s | 12/12, 4.0 s | 12/12, 1.7 s | 12/12, 1.7 s |
+| horizontal, 60, 15/25 | 12/12, 1.4 s | 12/12, 8.8 s | 12/12, 1.4 s | 12/12, 1.4 s |
+| vertical, 30, 15/15 | (rows) | 12/12, 2.0 s | 12/12, 2.2 s | 12/12, 1.6 s |
+| vertical, 30, 15/25 | (rows) | 12/12, 5.3 s | 12/12, 3.3 s | 12/12, 2.0 s |
+| vertical, 60, 15/15 | (rows) | 12/12, 1.4 s | 12/12, 4.2 s | 12/12, 1.2 s |
+| vertical, 60, 15/25 | (rows) | 12/12, 1.8 s | 12/12, 4.7 s | 12/12, 2.1 s |
+
+On the horizontal box on now is off's job in each of five icons (turning 15-30 frames, resting 15-45) at 30 and 60
+frames a second, 12 of 12 each; 0.9.8's on showed the text in 0, 0, 12, 12 and 12 of 12 at 30 (after 2.2-5.8 s where it
+did) and in 12, 12, 0, 6 and 10 of 12 at 60. On the vertical box on now reads the columns in 12 of 12 for every icon, in
+1.6-2.0 s at 30 and 1.0-2.1 s at 60, where #385's on took 2.2-3.3 s and 1.8-4.7 s and 0.9.8's 2.0-5.3 s and 1.3-6.3 s:
+faster than #385's in all 10 cells and than 0.9.8's in 9 (at 60 with the icon resting 25 frames, 2.1 s against 1.8 s;
+auto reads that box's rows, which its rule does not take for columns: with the quickest icon 4 and 12 of 12). With the
+two quicker icons at 333 MHz's time a frame (×1.33) and at twice the default, on now still shows the text in 12 of 12 in
+every cell of both boxes, as off does on the horizontal one, and 0.9.8's on in 0 of 12 at 30 frames a second on the
+horizontal box. These are the bench's estimates, not a console's.
 
 **The rule** (`core/vocr_ocr.c` `vjo_vocr_rows_horizontal`, on the rows auto's check takes: with `ocr_line_fix` on, in a
 region at least as tall as wide the frozen finder's, where a name tag beside the columns, joined to them by the fixes,
@@ -1202,35 +1240,78 @@ read as columns (a rule that allowed one such row, the first or the last, read 9
 94.6 %, also with no region of vertical text, but took 200 B of the worker's code where this one takes 126 B, and the
 debug worker's last page had 200 B left with this one).
 
-On the regions above (`vjo-page-ocr --find-only --line-fix on`, whose `horizontal` is the job's check's verdict):
+On the regions above (`vjo-page-ocr --find-only --line-fix on`, whose `horizontal` is the job's check's verdict: since
+#385's audit 1 also for a region wider than tall with no row, and 0 for one at least as tall as wide, whose columns on
+reads at once; this change's tool, the same rows and columns as #385's on every region):
 
 | regions | read as rows |
 |---|---:|
-| Yunohana SpRING!: tight, with the name tag, drawn once, whole screens (863, 863, 764, 863) | 0, 0, 0, 0 |
+| Yunohana SpRING!: tight, with the name tag, drawn once, whole screens (863, 863, 764, 863) | 4, 0, 0, 0 |
 | vita-vn-ocr #103's development regions: tight, whole pages (181, 181) | 0, 0 |
-| the hooked corpus's 44 other titles: drawn boxes (50,945) | 48,178 (94.6 %; a title 69.6-100 %, median 95.5 %) |
+| the hooked corpus's 44 other titles: drawn boxes (50,945) | 48,810 (95.8 %; a title 69.6-99.7 %, median 96.6 %) |
 | the same titles: whole screens (50,706) | 7,903 (15.6 %) |
-| VNDB's PS Vita and PSP screenshots, whole screens (2,837) | 77 (2.7 %) |
+| VNDB's PS Vita and PSP screenshots, whole screens (2,837) | 78 (2.7 %) |
+
+The 4 tight Yunohana boxes, 632 hooked drawn boxes and 1 VNDB screen read as rows since #385's audit hold no row:
+nothing to read, off's job (#385 sent them to the columns' try, whose finder found no column in any of them but 2
+hooked boxes of horizontal games). With #385's rule they were 0, 48,178 (94.6 %; a title 69.6-99.5 %, median 95.3 %)
+and 77.
 
 The rule's thresholds were tried on these same regions: no held-out set checks it. Through the job (`vertical_eval.py
-run`, `--vertical on --line-fix on`, this change against main `68041a7`): on gave main's text on every one of the 3,353
+run`, `--vertical on --line-fix on`, #385 against main `68041a7`): on gave main's text on every one of the 3,353
 Yunohana and 362 development regions, all read as columns; on 3,080 hooked horizontal regions (60 drawn boxes and 10
 whole screens a title) it read rows in 2,572 (2,493 of the 2,640 boxes), each of them off's job exactly (text, lines,
-CTC frames, strips), where main's on read columns in all of them.
+CTC frames, strips), where main's on read columns in all of them. On #385's audit's sample (420 of those vertical
+regions, 600 horizontal ones), this change's on gives the same text as #385's and 0.9.8's on all 420 vertical ones,
+and reads rows in 511 of the 600 horizontal ones (504 with #385's: 7 empty boxes), each off's job exactly; the other
+89 have #385's text.
 
-**What it costs.** On horizontal text read as rows, nothing: off's job. On vertical text, the check's passes come first,
-as auto's do, and the columns are read once: strips read (median / 90th percentile, main's on → this change's on) 23/31
-→ 36/46 on the tight boxes, 27/37 → 37/47 with the name tag, 27/33 → 45/47 drawn once, 64/93 → 60/67 on whole screens;
-on the development regions 14/25 → 18/35 and 39/75 → 58/65. On the box drawn once that is about 0.3 s more at 60 frames
-a second, 0.6 s at 30 (estimates: a strip a frame). The tall-line block (`VjoGameVocrLine`) holds the rectangle around
-the columns where it held one column (at most 57,344 B) before: 29 KB on the tight boxes (median; 51 KB at most), 34 KB
-drawn once (60 KB), 428 KB on a whole screen (516 KB), within its bound and budget, 516,096 B (`VJO_VOCR_LINE_MAX_BYTES`,
-`VJO_BUDGET_GAME_LINE`); 32 of 863 whole screens had a larger one and read column by column, as before.
+**What it costs.** On horizontal text read as rows, nothing: off's job, and an empty box between two lines too since
+#385's audit. Before it, an empty box went to the columns' try, which gave back the size's model and the cascade's and
+read the vertical model's weights, and the next text read the size's model again: with the defaults about 0.16 s
+more on the empty box (VOCR5-V's 0.82 MB), 0.23 s at the next text (VOCR6-N's 1.19 MB) and 0.47 s more where a line
+needed the cascade (VOCR6-L's 2.48 MB), estimates scaled from the console's 221-223 ms read of H15's 1.16 MB
+(`docs/first-ocr.md`). On vertical text in a region at
+least as tall as wide, less than before API 53 since #385's audit: its columns from the first try, read once. Strips
+read (median / 90th percentile, through the job on #385's audit's 420 regions; 0.9.8's on → #385's → now): 18/30 →
+29/46 → 15/23 on the tight boxes, 24/33 → 36/46 → 18/23 with the name tag, 28/32 → 45/47 → 23/23 drawn once; on whole
+screens, wider than tall, the rows' try first, 57/86 → 60/66 → 60/66. On the bench's vertical box that is 1.0-2.1 s
+against #385's 1.8-4.7 s at 60 frames a second (above). The tall-line block (`VjoGameVocrLine`) holds the rectangle
+around the columns where it held one column (at most 57,344 B) before: 29 KB on the tight boxes (median; 51 KB at
+most), 34 KB drawn once (60 KB), 428 KB on a whole screen (516 KB), within its bound and budget, 516,096 B
+(`VJO_VOCR_LINE_MAX_BYTES`, `VJO_BUDGET_GAME_LINE`); 32 of 863 whole screens had a larger one and read column by column,
+as before. Since #385's audit a block over a column's 57,344 B is taken only from the free memory beyond the job's
+reserve and the room of its weights, LM and cascade model still to come; refused, the columns are read one by one, as
+before #379 ([memory ledger](memory-ledger.md)).
 
-**Limits.** With on, a region of 5 or more lines (an NVL page, a menu), of lines far apart, or with a speaker's name or
-an icon beside its lines, is read as columns, as before: draw the box around the lines alone, or use Automatic. A short
-block of columns of one or two characters, wider than tall, could look like lines and be read as rows (none in the
-regions measured).
+**Limits** (#385's audit measured them; nothing of this has run on a console).
+
+- With on, a region of 5 or more lines (an NVL page, a menu), of lines far apart, or with a speaker's name or an icon
+  beside its lines, is read as columns, as before: draw the box around the lines alone, or use Automatic.
+- A name above the lines, in the box, makes it columns too: hooked boxes drawn to take another text box within 48 px (a
+  name plate) are read as rows in 73.4 % (15,421 of 21,006), against 96.2 % for the same pages' boxes without it;
+  constructed boxes with a name above two lines were read as columns, 4 of 4, the text wrong (generic text, a free
+  font).
+- The box Rubi suggests on first use ([#358](first-box.md): the screen's width, from the dialogue to its bottom) is
+  read as rows in 71.7 % of the hooked pages (36,527 of 50,917; a title 4.9-99.3 %, median 74.1 %): with on, draw a
+  box around the lines.
+- Short lines: of the hooked boxes in which the finder found a row, one whose longest line has 1 or 2 characters was read
+  as rows in 3 of 60, 3 characters in 14 of 203, 4 in 294 of 733 (40.1 %), 5-8 in 95.7 %: the rest as columns (a box
+  in which it found none is off's job since #385's audit: nothing to read). Read as columns, horizontal text
+  comes out wrong
+  (constructed: 「うん。」 as 「ん」「う」, 「えっ？」 as 「つ」「え」); where #385's on read columns on 30 boxes and 66 screens of
+  its audit's horizontal sample, their text was 89 % and 104 % of off's length away from it (edit distance).
+- Vertical text the rule takes for rows: tight crops of Yunohana's columns cut to 2 and 3 characters a column were read
+  as rows in 78 of 840 and 67 of 829, every one of them wider than tall (cut to 4 characters or more, in none).
+- A whole screen of columns whose rectangle is over the bound (1,878 of the 50,706 hooked whole screens, 3.7 %, read
+  with on) is read column by column, as in 0.9.8, and an animated icon on it can still keep the overlay on
+  "Recognizing…": 4 such screens with an icon after the last line showed the text in 0 of 12 at 30 and at 60 frames a
+  second (the bench), where off showed it in 12 of 12 on all 4 at 30 (3, 12, 10 and 12 of 12 at 60). Draw the box
+  around the text.
+- In a game short of memory, auto reads the vertical model's weights again at every job of vertical text, and on does
+  in a region wider than tall: the rows' try gives them back to fit the size's job, and the columns' try reads them
+  (3 of 3 jobs each, on the host's test frames). With on a region at least as tall as wide keeps them (1 read in 3
+  jobs).
 
 **The request (API 47).** `VjoGameOcrRequest.speed` bits 28-29 (`VJO_GAME_OCR_S_VERTICAL`): 0 rows, 1 columns, 2
 auto; 3 is refused, as unknown bits are, by the kernel and by the game worker. The Shell sends the setting as it is
@@ -1319,8 +1400,10 @@ px, its two places, 2-3 columns), `on`'s job read a median of 27 strips (33 at t
 about 0.45 s of capture at 60 fps (0.9 s at 30) and 0.16 s of recognition at 333 MHz. auto's reads the region twice
 more first, for the row finder: 49 strips (56), about 0.8 s at 60 fps. Horizontal dialogue boxes read 5 strips
 (median, the same with auto). On a whole screen of columns `on` read 64 strips. Since API 53 `on` checks the rows first
-too, and reads the columns once: 45 strips (47) on the box drawn once, 60 (66) on a whole screen ([on's
-rule](#ons-rule-api-53-379)). Draw the text box around the text.
+in a region wider than tall, and reads the columns once: 60 strips (66) on a whole screen; since #385's audit it reads a
+region at least as tall as wide as columns at once, as before, with the columns read once: 23 strips (23) on the box
+drawn once on #385's audit's sample, where API 53 read 45 (47) ([on's rule](#ons-rule-api-53-379)). Draw the text box
+around the text.
 
 **Off and auto are today's job** (`host/tests/test_vocr_vertical.c`; and on's, where its rows are lines of text, API 53):
 jobs of rows on a 5-line region and on #194's

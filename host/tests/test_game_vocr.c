@@ -2999,55 +2999,64 @@ static void on_columns_weights_refused_read_the_rows(void)
 
 /* #385's audit F7: the step log of on's two tries. Vertical text in a region wider than tall, with a press's flags (the
  * LM's first tier, the cascade, a 150 ms wait, two helpers, the blank-line check): the rows' try hands the job to the
- * columns' try. Its memory checks leave the log with its blocks (it read nothing, and a later try of rows checks the
- * sizes again), so no CHECK step comes before its find step of kind 2, and the columns' try keeps every step a job of
- * the vertical model alone logs on the same frame (its check, blocks, wait, LOAD, RECOGNIZE, LM, NORM and PAR); the
- * rows' try adds its find step only. Before, the rows' try's two checks (Large refused, Normal passed) took NORM's
- * and PAR's places in the 20 steps. Without the release files the columns' try cannot read the vertical model and
- * the rows' try after it reads: the same ordering, one PASS and SIG. */
+ * columns' try (auto's on the tall region the same). Its memory checks leave the log with its blocks (it read
+ * nothing, and a later try of rows checks the sizes again), so no CHECK step comes before its find step of kind 2,
+ * and the columns' try keeps every step a job of the vertical model alone logs on the same frame (its check, blocks,
+ * wait, LOAD, RECOGNIZE, LM, NORM and PAR); the rows' try adds its find step only. Before, the rows' try's two checks
+ * (Large refused, Normal passed) took NORM's and PAR's places in the 20 steps. Without the release files the columns'
+ * try cannot read the vertical model and the rows' try after it reads: the same ordering, one PASS and SIG. */
 static void on_tries_keep_the_last_try_s_steps(void)
 {
     static VjoGameOcrResult out, alone;
     const uint32_t press = 1u << VJO_GAME_OCR_LM_SHIFT | 15u << VJO_GAME_OCR_SETTLE_SHIFT | VJO_GAME_OCR_F_BLANK;
-    VjoGameOcrRequest r = setup();
-    r.tiers = VJO_VOCR_TIERS_ALL;
-    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
-    r.flags = press | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
-    r.speed = 2u | VJO_GAME_OCR_VERTICAL_ON << VJO_GAME_OCR_S_VERTICAL_SHIFT;
-    wide_columns_frame(&r);
-    (void)vjo_game_ocr_run_request(&r, &out);
-    unsigned first_check = VJO_GAME_OCR_STEPS, find2 = VJO_GAME_OCR_STEPS;
-    for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
-        if (out.step[i].id == VJO_GSTEP_CHECK && first_check == VJO_GAME_OCR_STEPS) first_check = i;
-        if (out.step[i].id == VJO_GSTEP_FIND && out.step[i].kind == 2) find2 = i;
+    for (int mode = 0; mode <= 1; mode++) { /* on in a region wider than tall, auto in the tall one */
+        const char *name = mode ? "auto" : "on";
+        VjoGameOcrRequest r = setup();
+        r.tiers = VJO_VOCR_TIERS_ALL;
+        snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER3_NAME);
+        r.flags = press | 8u << VJO_GAME_OCR_CASCADE_SHIFT;
+        r.speed = 2u | (mode ? VJO_GAME_OCR_VERTICAL_AUTO : VJO_GAME_OCR_VERTICAL_ON) << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+        if (mode) tall_columns_frame(&r);
+        else wide_columns_frame(&r);
+        (void)vjo_game_ocr_run_request(&r, &out);
+        unsigned first_check = VJO_GAME_OCR_STEPS, find2 = VJO_GAME_OCR_STEPS;
+        for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+            if (out.step[i].id == VJO_GSTEP_CHECK && first_check == VJO_GAME_OCR_STEPS) first_check = i;
+            if (out.step[i].id == VJO_GSTEP_FIND && out.step[i].kind == 2) find2 = i;
+        }
+        TEST_CHECK_(find2 < VJO_GAME_OCR_STEPS && first_check > find2 && count_steps(&out, VJO_GSTEP_PASS) == 1 &&
+                        count_steps(&out, VJO_GSTEP_SIG) == 1 && out.n_steps <= VJO_GAME_OCR_STEPS,
+                    "%s: %u steps: the first CHECK at %u, find kind 2 at %u; PASS %u, SIG %u", name,
+                    (unsigned)out.n_steps, first_check, find2, count_steps(&out, VJO_GSTEP_PASS),
+                    count_steps(&out, VJO_GSTEP_SIG));
+        TEST_CHECK(!memory_live && !capture_live && !line_live);
+        if (!VJO_VOCR_MODEL_DIR[0]) continue;
+        TEST_CHECK_(out.rc == VJO_OK && find_steps(&out, 1) == 1 && out.recognized == 3 && out.text[0],
+                    "%s: rc %d, %u columns read, text %d", name, out.rc, (unsigned)out.recognized, out.text[0] != 0);
+        TEST_CHECK(!drop_resident());
+        /* the columns' try's own steps: a job of the vertical model alone, by name, the same flags without the
+         * cascade (which a job of columns never takes) */
+        const unsigned h = r.height;
+        r = setup();
+        r.tiers = 0;
+        snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_VERTICAL_NAME);
+        snprintf(model_path, sizeof(model_path), "%s/%s", r.model_dir, r.model); /* its open by name */
+        r.flags = press;
+        r.speed = 2u;
+        if (h == 232u) tall_columns_frame(&r);
+        else wide_columns_frame(&r);
+        (void)vjo_game_ocr_run_request(&r, &alone);
+        TEST_CHECK_(alone.rc == VJO_OK && !strcmp(alone.text, out.text) && alone.n_steps < VJO_GAME_OCR_STEPS,
+                    "%s, alone: rc %d, %u steps, the same text %d", name, alone.rc, (unsigned)alone.n_steps,
+                    !strcmp(alone.text, out.text));
+        for (unsigned id = VJO_GSTEP_MEM; id < VJO_GSTEP_COUNT; id++)
+            TEST_CHECK_(count_steps(&out, id) == count_steps(&alone, id) + (id == VJO_GSTEP_FIND),
+                        "%s, step %u: %u, the columns alone %u", name, id, count_steps(&out, id),
+                        count_steps(&alone, id));
+        TEST_CHECK(count_steps(&out, VJO_GSTEP_NORM) == 1 && count_steps(&out, VJO_GSTEP_PAR) == 1 &&
+                   count_steps(&out, VJO_GSTEP_LM) == 1 && count_steps(&out, VJO_GSTEP_SETTLE) == 1);
+        TEST_CHECK(!drop_resident());
     }
-    TEST_CHECK_(find2 < VJO_GAME_OCR_STEPS && first_check > find2 && count_steps(&out, VJO_GSTEP_PASS) == 1 &&
-                    count_steps(&out, VJO_GSTEP_SIG) == 1 && out.n_steps <= VJO_GAME_OCR_STEPS,
-                "%u steps: the first CHECK at %u, find kind 2 at %u; PASS %u, SIG %u", (unsigned)out.n_steps, first_check,
-                find2, count_steps(&out, VJO_GSTEP_PASS), count_steps(&out, VJO_GSTEP_SIG));
-    TEST_CHECK(!memory_live && !capture_live && !line_live);
-    if (!VJO_VOCR_MODEL_DIR[0]) return;
-    TEST_CHECK_(out.rc == VJO_OK && find_steps(&out, 1) == 1 && out.recognized == 3 && out.text[0],
-                "on: rc %d, %u columns read, text %d", out.rc, (unsigned)out.recognized, out.text[0] != 0);
-    TEST_CHECK(!drop_resident());
-    /* the columns' try's own steps: a job of the vertical model alone, by name, the same flags without the cascade
-     * (which a job of columns never takes) */
-    r = setup();
-    r.tiers = 0;
-    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_VERTICAL_NAME);
-    snprintf(model_path, sizeof(model_path), "%s/%s", r.model_dir, r.model); /* its open by name */
-    r.flags = press;
-    r.speed = 2u;
-    wide_columns_frame(&r);
-    (void)vjo_game_ocr_run_request(&r, &alone);
-    TEST_CHECK_(alone.rc == VJO_OK && !strcmp(alone.text, out.text) && alone.n_steps < VJO_GAME_OCR_STEPS,
-                "alone: rc %d, %u steps, the same text %d", alone.rc, (unsigned)alone.n_steps, !strcmp(alone.text, out.text));
-    for (unsigned id = VJO_GSTEP_MEM; id < VJO_GSTEP_COUNT; id++)
-        TEST_CHECK_(count_steps(&out, id) == count_steps(&alone, id) + (id == VJO_GSTEP_FIND),
-                    "step %u: on %u, the columns alone %u", id, count_steps(&out, id), count_steps(&alone, id));
-    TEST_CHECK(count_steps(&out, VJO_GSTEP_NORM) == 1 && count_steps(&out, VJO_GSTEP_PAR) == 1 &&
-               count_steps(&out, VJO_GSTEP_LM) == 1 && count_steps(&out, VJO_GSTEP_SETTLE) == 1);
-    TEST_CHECK(!drop_resident());
 }
 
 /* #385's audit F5 (AGENTS.md rule 3): a job of columns' rectangle (#379: the tall-line block for its columns together)
@@ -3409,7 +3418,7 @@ static int step_index(const VjoGameOcrResult *o, unsigned id, unsigned arg)
 static void tier_release_counts_other_sizes_as_free(void)
 {
     VjoGameOcrRequest r = setup(); VjoGameOcrResult out;
-    const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
+    const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS] = {NULL};
     for (unsigned t = 1; t <= VJO_VOCR_TIERS; t++) {
         char path[600]; FILE *f;
         snprintf(path, sizeof(path), "%s/%s", VJO_VOCR_MODEL_DIR, tier_names[t - 1u]);
