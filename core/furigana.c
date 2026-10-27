@@ -47,12 +47,12 @@ static int pieces(const char *ruby, Piece *out)
     return n;
 }
 
-/* 来 read く (来る) as conjugated: き before た/て/ま/ち (来た, 来ます,
- * 来ちゃう), こ before な/ず/さ/ら/い/よ and れ except in れば (来ない,
+/* 来 read く (来る) as conjugated: き before た/て/ま/ち/なさ (来た, 来ます,
+ * 来ちゃう, 来なさい), こ before な/ず/さ/ら/い/よ and れ except in れば (来ない,
  * 来させる, 来られる, 来い, 来よう, 来れる); else く (来る, 来れば). */
 static const char *kuru(const char *next, size_t n)
 {
-    static const char *const ki[] = {"た", "て", "ま", "ち"};
+    static const char *const ki[] = {"た", "て", "ま", "ち", "なさ"}; /* 来なさい: き */
     static const char *const ko[] = {"な", "ず", "さ", "ら", "い", "よ"};
     for (unsigned k = 0; k < sizeof(ki) / sizeof(ki[0]); k++)
         if (vjo_starts_withn(next, n, ki[k]))

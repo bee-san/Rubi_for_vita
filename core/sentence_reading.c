@@ -11,7 +11,14 @@
 #define FIT_STEPS 4096 /* tries of a reading's fit before it counts as undecided (as core/anki.c's furigana) */
 #define WORD_RUBIES 32 /* readings of one word (its kanji runs) */
 
-static const VjoReadingRules default_rules = {VJO_READINGS_RATIO, VJO_READINGS_PART_RATIO, 1, 1, 1, 1};
+void vjo_reading_rules_default(VjoReadingRules *r)
+{
+    r->ratio = VJO_READINGS_RATIO;
+    r->part_ratio = VJO_READINGS_PART_RATIO;
+    r->rare = VJO_READINGS_RARE;
+    r->counters = r->variants = r->anchor = r->compounds = r->parts = r->phrases = r->shorter = r->names =
+        r->inline_readings = 1;
+}
 
 /* ---------------- a word's reading on its text ---------------- */
 
@@ -56,7 +63,7 @@ static int same_kana(uint32_t a, uint32_t b)
     return a == b || (a == 0x30FC && vowel(b)) || (b == 0x30FC && vowel(a));
 }
 
-/* A reading: kana only (a kanji character's article has its spelling for one: no reading). */
+/* A reading: kana only (a kanji character's article, or a name without one, has its spelling for one). */
 static int kana_only(const Cps *r)
 {
     if (!r->n)
@@ -116,11 +123,6 @@ static void fit(Fit *f, int i, int j)
     }
 }
 
-/* The readings of the kanji of the text as written (s, sb's bytes) from its dictionary form w read r (Yomitan's
- * distributeFuriganaInflected): the text is written as w up to where its inflection starts (the stem); each of
- * its kanji runs is a run of w there and reads as it, conjugated (来[こ]ない). A dictionary form whose reading
- * fits it in two ways reads as a whole, only uninflected (物の怪[もののけ]). The count, or -1 when a kanji run
- * of the text gets no reading (out then holds nothing usable). Readings point into rb or are static. */
 /* 何 read なに as a word of its own: なん before the sounds of た, だ and な rows that follow it in speech (何だ,
  * 何で, 何の, 何と, 何て, 何なの), なに before anything else (何が, 何を, 何も); before a kanji (a counter: 何人,
  * 何回) it is not decided. 1 なん, 0 なに, -1 undecided. */
@@ -138,6 +140,12 @@ static int reads_nan(const char *next, size_t n)
     return 0;
 }
 
+/* The readings of the kanji of the text as written (s, sb's bytes) from its dictionary form w read r (Yomitan's
+ * distributeFuriganaInflected): the text is written as w up to where its inflection starts (the stem); each of
+ * its kanji runs is a run of w there and reads as it, conjugated (来[こ]ない; the kana after the word, after,
+ * decide 何's). A dictionary form whose reading fits it in two ways reads as a whole, only uninflected
+ * (物の怪[もののけ]). The count, or -1 when a kanji run of the text gets no reading. Readings point into rb or are
+ * static. */
 static int place(const char *sb, const Cps *s, const Cps *w, const char *rb, const Cps *r, const char *after,
                  size_t after_len, VjoRuby *out, int cap)
 {
@@ -209,8 +217,8 @@ static int place(const char *sb, const Cps *s, const Cps *w, const char *rb, con
     return n;
 }
 
-/* The readings of text (n bytes) as the word spelling read reading: -1 when they do not fit (or a part is
- * longer than WORD_MAX), else their count (0: no kanji). */
+/* The readings of text (n bytes, followed by after) as the word spelling read reading: -1 when they do not fit
+ * (or a part is longer than WORD_MAX), else their count (0: no kanji). */
 static int word_rubies(const char *text, size_t n, const char *after, size_t after_len, const char *spelling,
                        const char *reading, VjoRuby *out, int cap)
 {
@@ -223,9 +231,10 @@ static int word_rubies(const char *text, size_t n, const char *after, size_t aft
     return place(text, &s, &w, reading, &r, after, after_len, out, cap);
 }
 
-int vjo_word_rubies(const char *surface, size_t n, const char *spelling, const char *reading, VjoRuby *out, int cap)
+int vjo_word_rubies(const char *surface, size_t n, const char *after, size_t after_len, const char *spelling,
+                    const char *reading, VjoRuby *out, int cap)
 {
-    int k = word_rubies(surface, n, "", 0, spelling, reading, out, cap);
+    int k = word_rubies(surface, n, after ? after : "", after ? after_len : 0, spelling, reading, out, cap);
     return k < 0 ? 0 : k;
 }
 
@@ -249,7 +258,7 @@ static int same_rubies(const VjoRuby *a, int na, const VjoRuby *b, int nb)
 }
 
 /* A spoken shortening of a reading: the reading less some of its う, ー or っ (ほんとに of ほんとうに, だいじょぶ
- * of だいじょうぶ), which the word's kanji spelling does not write (it is written in kana). */
+ * of だいじょうぶ), which the word's kanji spelling does not write. */
 static int shortening(const char *full, const char *short_)
 {
     size_t nf = strlen(full), ns = strlen(short_), i = 0, j = 0;
@@ -264,6 +273,135 @@ static int shortening(const char *full, const char *short_)
             return 0;
     }
     return j == ns;
+}
+
+/* ---------------- names: VNDB's romanized readings ---------------- */
+
+/* Hepburn romaji (VNDB's: long vowels doubled, ou, ii; n before a consonant; a hyphen before an honorific) as
+ * hiragana into out (cap bytes): its length, or -1 for anything else (a foreign name, a letter it does not know). */
+static int romaji_kana(const char *s, size_t n, char *out, size_t cap)
+{
+    static const char *const table[] = {
+        /* three letters, then two, then one: the longest first */
+        "kya\0きゃ", "kyu\0きゅ", "kyo\0きょ", "sha\0しゃ", "shu\0しゅ", "sho\0しょ", "shi\0し", "chi\0ち",
+        "cha\0ちゃ", "chu\0ちゅ", "cho\0ちょ", "tsu\0つ", "nya\0にゃ", "nyu\0にゅ", "nyo\0にょ", "hya\0ひゃ",
+        "hyu\0ひゅ", "hyo\0ひょ", "mya\0みゃ", "myu\0みゅ", "myo\0みょ", "rya\0りゃ", "ryu\0りゅ", "ryo\0りょ",
+        "gya\0ぎゃ", "gyu\0ぎゅ", "gyo\0ぎょ", "bya\0びゃ", "byu\0びゅ", "byo\0びょ", "pya\0ぴゃ", "pyu\0ぴゅ",
+        "pyo\0ぴょ", "ka\0か", "ki\0き", "ku\0く", "ke\0け", "ko\0こ", "sa\0さ", "su\0す", "se\0せ", "so\0そ",
+        "ta\0た", "te\0て", "to\0と", "na\0な", "ni\0に", "nu\0ぬ", "ne\0ね", "no\0の", "ha\0は", "hi\0ひ",
+        "fu\0ふ", "he\0へ", "ho\0ほ", "ma\0ま", "mi\0み", "mu\0む", "me\0め", "mo\0も", "ya\0や", "yu\0ゆ",
+        "yo\0よ", "ra\0ら", "ri\0り", "ru\0る", "re\0れ", "ro\0ろ", "wa\0わ", "wo\0を", "ga\0が", "gi\0ぎ",
+        "gu\0ぐ", "ge\0げ", "go\0ご", "za\0ざ", "ji\0じ", "zu\0ず", "ze\0ぜ", "zo\0ぞ", "ja\0じゃ", "ju\0じゅ",
+        "jo\0じょ", "da\0だ", "de\0で", "do\0ど", "ba\0ば", "bi\0び", "bu\0ぶ", "be\0べ", "bo\0ぼ", "pa\0ぱ",
+        "pi\0ぴ", "pu\0ぷ", "pe\0ぺ", "po\0ぽ", "a\0あ", "i\0い", "u\0う", "e\0え", "o\0お"};
+    size_t i = 0, used = 0;
+    while (i < n) {
+        char c = s[i] >= 'A' && s[i] <= 'Z' ? (char)(s[i] + 32) : s[i];
+        const char *kana = NULL;
+        size_t take = 0;
+        if (c == '\'') { /* n' */
+            i++;
+            continue;
+        }
+        if (c == 'n' && (i + 1 == n || !strchr("aiueoy'", s[i + 1] | 32))) {
+            kana = "ん";
+            take = 1;
+        } else if (c != 'n' && i + 1 < n && (s[i + 1] | 32) == c && strchr("kstpcgzdbhfjmrw", c)) {
+            kana = "っ"; /* a doubled consonant */
+            take = 1;
+        } else if (c == 't' && i + 2 < n && (s[i + 1] | 32) == 'c' && (s[i + 2] | 32) == 'h') {
+            kana = "っ"; /* tch */
+            take = 1;
+        } else {
+            for (unsigned k = 0; k < sizeof(table) / sizeof(table[0]) && !kana; k++) {
+                size_t m = strlen(table[k]);
+                size_t j = 0;
+                while (j < m && i + j < n && ((s[i + j] >= 'A' && s[i + j] <= 'Z') ? s[i + j] + 32 : s[i + j]) == table[k][j])
+                    j++;
+                if (j == m) {
+                    kana = table[k] + m + 1;
+                    take = m;
+                }
+            }
+        }
+        if (!kana)
+            return -1;
+        if (used + strlen(kana) >= cap)
+            return -1;
+        memcpy(out + used, kana, strlen(kana));
+        used += strlen(kana);
+        i += take;
+    }
+    out[used] = 0;
+    return (int)used;
+}
+
+/* Kana as compared with a romanized reading: katakana as hiragana, ぢ づ を as じ ず お (Hepburn writes them so). */
+static uint32_t name_kana(uint32_t c)
+{
+    c = fold(c);
+    return c == 0x3062 ? 0x3058 : c == 0x3065 ? 0x305A : c == 0x3092 ? 0x304A : c;
+}
+
+static int same_name_reading(const char *a, size_t na, const char *b, size_t nb)
+{
+    size_t i = 0, j = 0;
+    while (i < na && j < nb)
+        if (name_kana(vjo_utf8_next(a, na, &i)) != name_kana(vjo_utf8_next(b, nb, &j)))
+            return 0;
+    return i == na && j == nb;
+}
+
+/* A name entry's definition (VNDB's: each character "Romaji Name (漢字 名)", then its game and its page) against
+ * the word's reading of text (n bytes, the whole of it): 0 when some character's part written as the text is read
+ * so (or none is: an alias, a name of a role), 1 when every one that is reads otherwise. */
+static int name_disagrees(const char *def, const char *text, size_t n, const char *reading)
+{
+    const char *line = def;
+    int seen = 0, agree = 0;
+    while (*line) {
+        const char *end = strchr(line, '\n'), *open, *close;
+        if (!end)
+            end = line + strlen(line);
+        open = memchr(line, '(', (size_t)(end - line));
+        close = open ? memchr(open, ')', (size_t)(end - open)) : NULL;
+        if (open && close && open > line && close == end - 1) {
+            /* the parts: romaji split at spaces and hyphens, the original at spaces */
+            const char *rp[8], *kp[8];
+            size_t rl[8], kl[8];
+            int nr = 0, nk = 0;
+            const char *q = line, *rend = open - 1;
+            while (q < rend && nr < 8) {
+                const char *b = q;
+                while (q < rend && *q != ' ' && *q != '-')
+                    q++;
+                rp[nr] = b;
+                rl[nr++] = (size_t)(q - b);
+                while (q < rend && (*q == ' ' || *q == '-'))
+                    q++;
+            }
+            q = open + 1;
+            while (q < close && nk < 8) {
+                const char *b = q;
+                while (q < close && *q != ' ')
+                    q++;
+                kp[nk] = b;
+                kl[nk++] = (size_t)(q - b);
+                while (q < close && *q == ' ')
+                    q++;
+            }
+            for (int k = 0; nr == nk && k < nk; k++) {
+                char kana[WORD_BYTES];
+                int m;
+                if (kl[k] != n || memcmp(kp[k], text, n) || (m = romaji_kana(rp[k], rl[k], kana, sizeof(kana))) < 0)
+                    continue;
+                seen = 1;
+                agree |= same_name_reading(kana, (size_t)m, reading, strlen(reading));
+            }
+        }
+        line = *end ? end + 1 : end;
+    }
+    return seen && !agree;
 }
 
 /* ---------------- the sentence ---------------- */
@@ -306,29 +444,21 @@ static uint32_t first_char(const char *s, size_t at, size_t len)
     return at < len ? vjo_utf8_next(s, len, &at) : 0;
 }
 
-/* The character that ends s[0, at) (at > 0, a character boundary). */
+/* The character that ends s[0, at) (0 for at 0). */
 static uint32_t char_before(const char *s, size_t at)
 {
-    size_t i = at - 1;
+    size_t i;
+    if (!at)
+        return 0;
+    i = at - 1;
     while (i > 0 && ((unsigned char)s[i] & 0xC0) == 0x80)
         i--;
     return vjo_utf8_next(s, at, &i);
 }
 
-/* Where the run of kanji that ends text[from, end) starts, when it starts after from; 0 otherwise. */
-static size_t kanji_run_start(const char *s, size_t from, size_t end)
+static int katakana(uint32_t c)
 {
-    size_t i = from, start = 0;
-    while (i < end) {
-        size_t at = i;
-        if (vjo_is_kanji(vjo_utf8_next(s, end, &i))) {
-            if (!start)
-                start = at;
-        } else {
-            start = 0;
-        }
-    }
-    return start > from ? start : 0;
+    return c >= 0x30A1 && c <= 0x30FC && !vjo_is_kanji(c);
 }
 
 typedef struct {
@@ -363,6 +493,7 @@ static int entry_at(Parse *ps, const char *text, size_t cursor, Entry *e)
     size_t mark = vjo_arena_mark(ps->scratch), len = strlen(text), at = cursor;
     VjoDictResult res;
     VjoErr err;
+    const VjoVocab *v;
     int rc, units = 0;
     memset(&err, 0, sizeof(err));
     ps->st->lookups++;
@@ -377,19 +508,24 @@ static int entry_at(Parse *ps, const char *text, size_t cursor, Entry *e)
     }
     while (at < len && units < res.tokens[0].len16)
         units += vjo_utf16_units(vjo_utf8_next(text, len, &at));
+    v = &res.vocab[res.tokens[0].vocab];
     e->end = at;
-    e->rank = res.vocab[res.tokens[0].vocab].rank;
+    e->rank = v->rank;
     e->conjugation = res.tokens[0].conjugation;
-    e->ok = copy_word(e->spelling, res.vocab[res.tokens[0].vocab].spelling) &&
-            copy_word(e->reading, res.vocab[res.tokens[0].vocab].reading);
-    vjo_snprintf(e->dictionary, sizeof(e->dictionary), "%s",
-                 res.vocab[res.tokens[0].vocab].dictionary ? res.vocab[res.tokens[0].vocab].dictionary : "");
+    e->ok = copy_word(e->spelling, v->spelling) && copy_word(e->reading, v->reading);
+    vjo_snprintf(e->dictionary, sizeof(e->dictionary), "%s", v->dictionary ? v->dictionary : "");
     vjo_arena_release(ps->scratch, mark);
     return 1;
 }
 
+/* Rare: unranked, or ranked past rules.rare. */
+static int rare(const Parse *ps, int rank)
+{
+    return !rank || rank > ps->rules->rare;
+}
+
 /* An entry is among the top ones beside the chosen one (rank best): Jiten's rank within ratio of it, or the
- * chosen one has none (an unranked entry beside a ranked one is not). */
+ * chosen one has none, or ratio 0 (every entry). */
 static int as_frequent(int rank, int best, int ratio)
 {
     if (!best || !ratio)
@@ -397,17 +533,32 @@ static int as_frequent(int rank, int best, int ratio)
     return rank && (long long)rank <= (long long)ratio * best;
 }
 
-/* Does an entry for the whole of text[0, n), as frequent as one ranked best, read its kanji otherwise than
- * mine (nm of them)? 1 yes, 0 no, VJO_E_TOO_LARGE when they cannot all be read, < 0 on failure. With best < 0:
- * the most frequent entries of the text, against mine, which must be rarer than them by part_ratio. */
-static int others_disagree(Parse *ps, const char *text, size_t n, const char *after, size_t after_len,
-                           const Entry *mine, const VjoRuby *rm, int nm, int best, int ratio)
+/* mine's readings inside w[o, o + n), as offsets into it: how many, into rm */
+static int inside(const VjoRuby *r, int k, size_t o, size_t n, VjoRuby *rm)
+{
+    int nm = 0;
+    for (int j = 0; j < k; j++)
+        if (r[j].start >= o && r[j].end <= o + n) {
+            rm[nm] = r[j];
+            rm[nm].start -= o;
+            rm[nm++].end -= o;
+        }
+    return nm;
+}
+
+/* Does another entry of text[o, o + n) of the word w (its readings r, k of them; mine its entry), as frequent as
+ * mine within ratio (0: any entry), read its kanji otherwise than the word does? after: what follows the text.
+ * 1 yes, 0 no, < 0 a failed lookup (VJO_E_TOO_LARGE: the entries could not all be read). */
+static int others_disagree(Parse *ps, const char *w, size_t o, size_t n, const char *after, size_t after_len,
+                           const Entry *mine, const VjoRuby *r, int k, int ratio)
 {
     size_t mark = vjo_arena_mark(ps->scratch), units = 0, i = 0;
+    const char *text = w + o;
     char *copy = vjo_arena_strndup(ps->scratch, text, n);
+    VjoRuby rm[WORD_RUBIES];
     VjoDictResult res;
     VjoErr err;
-    int rc, verdict = 0, top = 0;
+    int rc, verdict = 0, nm = inside(r, k, o, n, rm);
     if (!copy)
         return VJO_E_OOM;
     while (i < n)
@@ -419,83 +570,189 @@ static int others_disagree(Parse *ps, const char *text, size_t n, const char *af
         vjo_arena_release(ps->scratch, mark);
         return rc;
     }
-    if (best < 0) { /* the part's most frequent entry, ranked */
-        for (int t = 0; t < res.n_tokens; t++) {
-            int rank = res.vocab[res.tokens[t].vocab].rank;
-            if (res.tokens[t].pos16 == 0 && (size_t)res.tokens[t].len16 == units && rank && (!top || rank < top))
-                top = rank;
-        }
-        if (!top || (mine->rank && (long long)mine->rank <= (long long)ps->rules->part_ratio * top)) {
-            vjo_arena_release(ps->scratch, mark);
-            return 0;
-        }
-        best = top;
-    }
     for (int t = 0; t < res.n_tokens && !verdict; t++) {
         const VjoVocab *v = &res.vocab[res.tokens[t].vocab];
         VjoRuby ro[WORD_RUBIES];
-        int k;
-        /* (another dictionary's unranked entry, a character's name in VNDB's, is as frequent as any) */
-        if (res.tokens[t].pos16 != 0 || (size_t)res.tokens[t].len16 != units ||
-            !(as_frequent(v->rank, best, ratio) ||
-              (!v->rank && strcmp(v->dictionary ? v->dictionary : "", mine->dictionary))) ||
-            (!strcmp(v->spelling, mine->spelling) && !strcmp(v->reading, mine->reading)) ||
+        int ko;
+        if (res.tokens[t].pos16 != 0 || (size_t)res.tokens[t].len16 != units)
+            continue;
+        /* (another dictionary's unranked entry beside the word's, such as a character's name, is as frequent) */
+        if (!as_frequent(v->rank, mine->rank, ratio) &&
+            !(!v->rank && strcmp(v->dictionary ? v->dictionary : "", mine->dictionary)))
+            continue;
+        if ((!strcmp(v->spelling, mine->spelling) && !strcmp(v->reading, mine->reading)) ||
             (ps->rules->variants && shortening(mine->reading, v->reading)))
             continue;
-        k = word_rubies(text, n, after, after_len, v->spelling, v->reading, ro, WORD_RUBIES);
-        if (k > 0 && !same_rubies(rm, nm, ro, k))
+        ko = word_rubies(text, n, after, after_len, v->spelling, v->reading, ro, WORD_RUBIES);
+        if (ko > 0 && !same_rubies(rm, nm, ro, ko))
             verdict = 1;
+        /* another dictionary's entry of the text whose reading is no kana: a name (VNDB's names have none) whose
+         * characters' romanized names read it otherwise (一樹: Kazuki, the word いちじゅ) */
+        else if (ko < 0 && ps->rules->names && strcmp(v->dictionary ? v->dictionary : "", mine->dictionary) && !o &&
+                 v->n_meanings && name_disagrees(v->meanings[0], text, n, mine->reading))
+            verdict = 2;
     }
     vjo_arena_release(ps->scratch, mark);
     return verdict;
 }
 
-/* A whole entry ending in kana after its last kanji (今日は): the part up to its last kanji (今日), or 0 when
- * it ends otherwise. */
-static size_t kanji_part(const char *s, size_t n)
+/* Does a part of the word w, w[o, o + n), as the overlay looks it up on its own (its entry at its start), overrule
+ * it: an entry part_ratio times as frequent as mine (or mine unranked), over at least the part's first run of
+ * kanji, that reads its kanji otherwise? 1 yes, 0 no, < 0 a failed lookup. */
+static int part_overrules(Parse *ps, const char *w, size_t o, size_t n, const char *after, size_t after_len,
+                          const Entry *mine, const VjoRuby *r, int k)
 {
-    size_t i = 0, last = 0;
-    int kana_tail = 0;
-    while (i < n) {
-        uint32_t c = vjo_utf8_next(s, n, &i);
-        if (vjo_is_kanji(c)) {
-            last = i;
-            kana_tail = 1;
-        } else if (!(c >= 0x3041 && c <= 0x3096)) {
-            kana_tail = 0; /* anything but hiragana after it (katakana, a letter) */
-        }
+    size_t mark = vjo_arena_mark(ps->scratch), run = 0;
+    char *copy = vjo_arena_strndup(ps->scratch, w + o, n);
+    VjoRuby rm[WORD_RUBIES], ro[WORD_RUBIES];
+    Entry e;
+    int got, nm, ko, verdict = 0;
+    if (!copy)
+        return VJO_E_OOM;
+    got = entry_at(ps, copy, 0, &e);
+    vjo_arena_release(ps->scratch, mark);
+    if (got <= 0)
+        return got;
+    while (run < n) { /* the part's first run of kanji ends here */
+        size_t q = run;
+        if (!vjo_is_kanji(vjo_utf8_next(w + o, n, &q)))
+            break;
+        run = q;
     }
-    return last && last < n && kana_tail ? last : 0;
+    if (!e.ok || !e.rank || (mine->rank && (long long)mine->rank <= (long long)ps->rules->part_ratio * e.rank) ||
+        e.end < run)
+        return 0;
+    nm = inside(r, k, o, e.end, rm);
+    ko = word_rubies(w + o, e.end, e.end < n ? w + o + e.end : after, e.end < n ? n - e.end : after_len, e.spelling,
+                     e.reading, ro, WORD_RUBIES);
+    if (ko > 0 && !same_rubies(rm, nm, ro, ko))
+        verdict = 1;
+    return verdict;
 }
 
-/* One matched word, text[0, n) (with kanji), the overlay's entry e: its readings into out (at most cap),
- * readings copied into keep. Returns how many (0: none, counted in st), or < 0 on failure. */
+/* One matched word, text[0, n) (with kanji), followed by after; e its entry; bound: in a compound the lookup
+ * split (it starts after kanji or katakana, or ends before a kanji: 授業中, 春原君), where a kanji's reading as a
+ * word of its own says little. Its readings into out (at most cap), copied into keep. Returns how many (0: none,
+ * counted in st), or < 0 on failure. */
+/* The kanji characters of s[0, n). */
+static int kanji_count(const char *s, size_t n)
+{
+    size_t i = 0;
+    int k = 0;
+    while (i < n)
+        k += vjo_is_kanji(vjo_utf8_next(s, n, &i));
+    return k;
+}
+
+/* A particle a whole entry may end with after one kanji (彼の, 俺が, 外に, 誰が, 私か): the lookup's longest match
+ * can take a rare phrase entry over the common word and its particle. */
+static int particle(const char *s, size_t n)
+{
+    static const char *const kana[] = {"の", "が", "に", "を", "は", "と", "で", "も", "へ", "か", "や"};
+    for (unsigned k = 0; k < sizeof(kana) / sizeof(kana[0]); k++)
+        if (n == strlen(kana[k]) && !memcmp(s, kana[k], n))
+            return 1;
+    return 0;
+}
+
+/* A particle a match from kana may start with (は行って, が目を, と書かれた, と一緒に). */
+static int particle_char(uint32_t c)
+{
+    static const uint16_t p[] = {0x306F, 0x304C, 0x3092, 0x306B, 0x3068, 0x306E, 0x3067, 0x3082, 0x3078, 0x3084};
+    for (unsigned k = 0; k < sizeof(p) / sizeof(p[0]); k++) /* は が を に と の で も へ や */
+        if (c == p[k])
+            return 1;
+    return 0;
+}
+
+/* A phrase's first word: one kanji, a particle, then another kanji (木の下: このした, of 木 き; 目を開く) */
+static int phrase_head(const char *text, size_t re, size_t n)
+{
+    size_t q = re, at;
+    uint32_t c;
+    if (kanji_count(text, re) != 1 || re >= n)
+        return 0;
+    at = q;
+    c = vjo_utf8_next(text, n, &q);
+    (void)at;
+    return particle_char(c) && q < n && vjo_is_kanji(first_char(text, q, n));
+}
+
 static int word(Parse *ps, const char *text, size_t n, const char *after, size_t after_len, int bound,
                 const Entry *e, VjoRuby *out, int cap)
 {
+    const VjoReadingRules *ru = ps->rules;
     VjoRuby r[WORD_RUBIES];
-    int k, rc;
-    size_t part;
+    /* (a single kanji in a compound gets none: parse()) */
+    int k, rc, compound = 0;
+    unsigned *why = &ps->st->ambiguous;
+    size_t i = 0;
     ps->st->words++;
     if (!e->ok || (k = word_rubies(text, n, after, after_len, e->spelling, e->reading, r, WORD_RUBIES)) <= 0) {
         ps->st->unplaced++;
+        if (ps->st->trace)
+            ps->st->trace(ps->st->trace_ud, "unplaced", text, n, e->spelling, e->reading);
         return 0;
     }
-    /* the top entries disagree: another as frequent reads the kanji otherwise; in a compound the lookup split
-     * (the word goes on a run of kanji or katakana: 授業中, 春原君) its own readings as a word do not count, so
-     * every entry does (中: なか, ちゅう, じゅう) */
-    rc = others_disagree(ps, text, n, after, after_len, e, r, k, e->rank, bound && ps->rules->compounds ? 0 : ps->rules->ratio);
-    /* a whole entry ending in kana whose kanji part, far more frequent, reads otherwise (今日は, 今日) */
-    if (!rc && ps->rules->part_ratio > 0 && !e->conjugation && (part = kanji_part(text, n)) > 0) {
-        int kp = 0;
-        while (kp < k && r[kp].end <= part)
-            kp++;
-        if (kp == k || r[kp].start >= part) {
-            rc = others_disagree(ps, text, part, text + part, n - part, e, r, kp, -1, ps->rules->ratio);
-            if (rc == 1) {
-                ps->st->part++;
-                return 0;
-            }
+    /* A: another entry of the same text, about as frequent (in a compound: any), reads its kanji otherwise */
+    rc = others_disagree(ps, text, 0, n, after, after_len, e, r, k, compound ? 0 : ru->ratio);
+    /* B, C: each run of kanji of a longer word, as a word of its own (B: the run alone; C: a later run with the
+     * kana after it), far more frequent than the word, reads it otherwise (今日 of 今日は, 解明 of 解明して, 開ける
+     * of 目を開ける); in a compound, the first run's every entry (中 of 中に in 今晩中に) */
+    while (!rc && i < n) {
+        size_t rs = i, re, ce, j = i;
+        if (!vjo_is_kanji(vjo_utf8_next(text, n, &j))) {
+            i = j;
+            continue;
+        }
+        re = j;
+        while (re < n) {
+            size_t q = re;
+            if (!vjo_is_kanji(vjo_utf8_next(text, n, &q)))
+                break;
+            re = q;
+        }
+        ce = re;
+        while (ce < n) {
+            size_t q = ce;
+            if (vjo_is_kanji(vjo_utf8_next(text, n, &q)))
+                break;
+            ce = q;
+        }
+        /* B: a run of two kanji or more (今日 of 今日は, 解明 of 解明して, 自然 of 自然に), or one kanji with a
+         * particle after it, the whole entry (彼 of 彼の: かの, 外 of 外に: ほかに); a single kanji of a verb or a
+         * compound word reads otherwise on its own (立 of 立ち上がる) */
+        if (ru->parts && (rs > 0 || re < n) &&
+            (kanji_count(text + rs, re - rs) > 1 || (rs == 0 && !e->conjugation && particle(text + re, n - re)) ||
+             (rs == 0 && phrase_head(text, re, n)) || (compound && rs == 0))) {
+            rc = compound && rs == 0 ? others_disagree(ps, text, rs, re - rs, text + re, n - re, e, r, k, 0)
+                                     : part_overrules(ps, text, rs, re - rs, text + re, n - re, e, r, k);
+            why = compound && rs == 0 ? &ps->st->compound : &ps->st->part;
+        }
+        if (!rc && ru->phrases && rs > 0 && ce > re) {
+            rc = part_overrules(ps, text, rs, ce - rs, ce < n ? text + ce : after, ce < n ? n - ce : after_len, e, r,
+                                k);
+            why = &ps->st->phrase;
+        }
+        i = re;
+    }
+    /* D: a rare inflected match, a few characters shorter (its kanji kept), is a common word that reads its kanji
+     * otherwise (扱い of 扱いだ read as 扱ぐ's past, 深い of 深いた as 深く's) */
+    if (!rc && ru->shorter && e->conjugation && rare(ps, e->rank)) {
+        /* (a character shorter, then two, three: 同じ of 同じタイ, read as 同じる's 同じたい) */
+        size_t sub = n, last = 0, q = 0;
+        while (q < n) { /* where the word's last kanji ends */
+            if (vjo_is_kanji(vjo_utf8_next(text, n, &q)))
+                last = q;
+        }
+        for (int tries = 0; !rc && tries < 3; tries++) {
+            sub--;
+            while (sub > 0 && ((unsigned char)text[sub] & 0xC0) == 0x80)
+                sub--;
+            if (sub <= last)
+                break;
+            rc = part_overrules(ps, text, 0, sub, text + sub, n - sub, e, r, k);
+            why = &ps->st->shorter;
         }
     }
     if (rc == VJO_E_TOO_LARGE) {
@@ -505,38 +762,331 @@ static int word(Parse *ps, const char *text, size_t n, const char *after, size_t
     if (rc < 0)
         return rc;
     if (rc) {
-        ps->st->ambiguous++;
+        static const char *const names[] = {"ambiguous", "compound", "part", "phrase", "shorter", "name"};
+        unsigned *counters[] = {&ps->st->ambiguous, &ps->st->compound, &ps->st->part, &ps->st->phrase,
+                                &ps->st->shorter, &ps->st->name};
+        if (rc == 2)
+            why = &ps->st->name;
+        else if (why == &ps->st->ambiguous && compound)
+            why = &ps->st->compound;
+        (*why)++;
+        for (unsigned j = 0; ps->st->trace && j < sizeof(names) / sizeof(names[0]); j++)
+            if (counters[j] == why)
+                ps->st->trace(ps->st->trace_ud, names[j], text, n, e->spelling, e->reading);
         return 0;
     }
+    if (ps->st->trace)
+        ps->st->trace(ps->st->trace_ud, "read", text, n, e->spelling, e->reading);
     if (k > cap)
         return VJO_E_TOO_LARGE;
-    for (int i = 0; i < k; i++) {
-        out[i] = r[i];
-        if (!(out[i].reading = vjo_arena_strndup(ps->keep, r[i].reading, r[i].reading_len)))
+    for (int j = 0; j < k; j++) {
+        out[j] = r[j];
+        if (!(out[j].reading = vjo_arena_strndup(ps->keep, r[j].reading, r[j].reading_len)))
             return VJO_E_OOM;
     }
     ps->st->read++;
     return k;
 }
 
-int vjo_sentence_rubies(VjoArena *keep, VjoArena *scratch, const VjoPlatform *p, const VjoConfig *cfg,
-                        const VjoReadingRules *rules, const char *text, size_t from, size_t to, VjoRuby *out,
-                        int cap, VjoReadingStats *st)
+static int hiragana(uint32_t c)
 {
-    size_t base = vjo_arena_mark(scratch), keep_base = vjo_arena_mark(keep), pos = from;
-    VjoReadingStats unused;
-    Parse ps;
-    char *copy;
-    int n = 0, rc = 0;
+    return c >= 0x3041 && c <= 0x309F;
+}
+
+static int kana(uint32_t c)
+{
+    return hiragana(c) || katakana(c);
+}
+
+/* Kana a noun's particle or copula starts with (私は, 嘘だ, 変な, 猫じゃ, 嘘っ, 今まで, 今さ, 今くらい): what follows a
+ * single kanji matched alone when it is a word of its own. */
+static int follower(uint32_t c)
+{
+    static const uint16_t f[] = {0x304C, 0x306E, 0x3092, 0x306B, 0x306F, 0x3078, 0x3068, 0x3067, 0x3082, 0x3084,
+                                 0x304B, 0x306D, 0x3088, 0x3060, 0x306A, 0x3058, 0x305E, 0x3063, 0x3055,
+                                 0x307E, 0x307B, 0x304F, 0x3050, 0x3070};
+    /* が の を に は へ と で も や か ね よ だ な じ ぞ っ さ ま ほ く ぐ ば (not わ: 終わっ) */
+    for (unsigned k = 0; k < sizeof(f) / sizeof(f[0]); k++)
+        if (c == f[k])
+            return 1;
+    return 0;
+}
+
+/* A number and 日 as one entry: a date's day or a count of days (１日: ついたち, いちにち), not told apart. */
+static int days(const char *s, size_t n)
+{
+    return n > 3 && !memcmp(s + n - 3, "\xE6\x97\xA5", 3) /* 日 */ && all_numerals(s, n - 3);
+}
+
+static size_t chars(const char *s, size_t n)
+{
+    size_t i = 0, k = 0;
+    while (i < n) {
+        vjo_utf8_next(s, n, &i);
+        k++;
+    }
+    return k;
+}
+
+static int digit(uint32_t c)
+{
+    return (c >= '0' && c <= '9') || (c >= 0xFF10 && c <= 0xFF19);
+}
+
+/* No reading in brackets after the word (s: the text after it), or one that is the word's last reading r. */
+static int inline_agrees(const char *s, size_t n, const VjoRuby *r)
+{
+    size_t i = 0, start, end;
+    uint32_t c = n ? vjo_utf8_next(s, n, &i) : 0;
+    int kana_only = 1;
+    if (c != '(' && c != 0xFF08)
+        return 1;
+    start = i;
+    for (;;) {
+        size_t at = i;
+        if (i >= n || i - start > 64)
+            return 1; /* no closing bracket near: not a reading */
+        c = vjo_utf8_next(s, n, &i);
+        if (c == ')' || c == 0xFF09) {
+            end = at;
+            break;
+        }
+        kana_only &= kana(c) || c == 0x30FC;
+    }
+    if (!kana_only || end == start)
+        return 1;
+    i = start;
+    {
+        size_t j = 0;
+        while (i < end && j < r->reading_len)
+            if (fold(vjo_utf8_next(s, end, &i)) != fold(vjo_utf8_next(r->reading, r->reading_len, &j)))
+                return 0;
+        return i == end && j == r->reading_len;
+    }
+}
+
+#define MAX_DEPTH 4 /* parse()'s recursion: the text before a split compound's word */
+
+/* The words of text[from, to) (text: NUL-terminated at `to`, so that no lookup reads past it; follow: the
+ * character after it in the sentence, 0 for none), their readings appended to out (*n of cap so far). 0, or < 0
+ * on failure. */
+static int parse(Parse *ps, const char *text, size_t from, size_t to, uint32_t follow, VjoRuby *out, int cap, int *n,
+                 int depth)
+{
+    const VjoReadingRules *rules = ps->rules;
+    size_t pos = from;
     /* a run of numbers just before: where it ends (0: none), its first reading and its words with one */
     size_t number_end = 0;
     int number_first = 0;
     unsigned number_read = 0;
+    while (pos < to) {
+        size_t seg = pos, i;
+        int kanji = 0;
+        uint32_t cp;
+        while (seg < to) {
+            i = seg;
+            cp = vjo_utf8_next(text, to, &i);
+            if (boundary(cp))
+                break;
+            kanji |= vjo_is_kanji(cp);
+            seg = i;
+        }
+        if (seg == pos) { /* a boundary */
+            vjo_utf8_next(text, to, &pos);
+            number_end = 0;
+            continue;
+        }
+        if (!kanji) { /* nothing here takes a reading */
+            pos = seg;
+            number_end = 0;
+            continue;
+        }
+        while (pos < seg) {
+            Entry e;
+            size_t end;
+            int got = entry_at(ps, text, pos, &e), before = *n, k = 0, rc;
+            if (got < 0)
+                return ps->st->failed++, got;
+            if (got) {
+                uint32_t c0 = first_char(text, pos, to);
+                end = e.end > seg ? seg : e.end;
+                /* A match of kana alone (はあっ in はあっという間に) gives way to the lookup one character on when
+                 * that reaches further, over kanji: its kana take no reading either way. */
+                if (rules->anchor && kana(c0) && !has_kanji(text + pos, end - pos)) {
+                    size_t q = pos;
+                    Entry a;
+                    vjo_utf8_next(text, to, &q);
+                    if (q < end && has_kanji(text + q, seg - q)) {
+                        if ((got = entry_at(ps, text, q, &a)) < 0)
+                            return ps->st->failed++, got;
+                        if (got && a.end > end && has_kanji(text + q, (a.end > seg ? seg : a.end) - q)) {
+                            pos = q;
+                            e = a;
+                            end = a.end > seg ? seg : a.end;
+                            ps->st->anchored++;
+                        }
+                        got = 1;
+                    }
+                }
+                /* A match from kana with kanji after it gives way to the lookup at its first kanji: after a
+                 * particle when that reaches as far (ガ目 of が目を: 目を逸らす, ト書 of と書かれた), else when it
+                 * is rare and the other part_ratio times as frequent (この家 of この家は: 家) */
+                c0 = first_char(text, pos, to);
+                if (rules->anchor && kana(c0) && has_kanji(text + pos, end - pos)) {
+                    size_t q = pos, at = pos;
+                    Entry a;
+                    while (q < end) {
+                        at = q;
+                        if (vjo_is_kanji(vjo_utf8_next(text, end, &q)))
+                            break;
+                    }
+                    if ((got = entry_at(ps, text, at, &a)) < 0)
+                        return ps->st->failed++, got;
+                    if (got && a.end >= end &&
+                        ((particle_char(c0) && at == pos + 3) ||
+                         (rare(ps, e.rank) && a.rank && (!e.rank || (long long)a.rank * rules->part_ratio <= e.rank)))) {
+                        pos = at;
+                        e = a;
+                        end = a.end > seg ? seg : a.end;
+                        ps->st->anchored++;
+                    }
+                    got = 1;
+                }
+                /* A match that ends inside a run of kanji whose later kanji starts a longer word part_ratio times as
+                 * frequent (夢の世 of 夢の世界: 世界; 初任 of 初任務: 任務) took that word's first kanji: the text before
+                 * that kanji is parsed on its own, and the word from there (以前 of 以前述べた stays: 前述 is rarer). */
+                if (rules->anchor && depth < MAX_DEPTH && end < seg && vjo_is_kanji(first_char(text, end, to)) &&
+                    vjo_is_kanji(char_before(text, end))) {
+                    size_t q = pos;
+                    vjo_utf8_next(text, end, &q);
+                    while (q < end) {
+                        size_t at = q;
+                        Entry a;
+                        int got2;
+                        if (!vjo_is_kanji(vjo_utf8_next(text, end, &q)))
+                            continue;
+                        if ((got2 = entry_at(ps, text, at, &a)) < 0)
+                            return ps->st->failed++, got2;
+                        if (got2 && a.end > end && a.rank &&
+                            (!e.rank || (long long)a.rank * rules->part_ratio <= e.rank)) {
+                            size_t mark = vjo_arena_mark(ps->scratch);
+                            char *head = vjo_arena_strndup(ps->scratch, text, at);
+                            if (!head)
+                                return VJO_E_OOM;
+                            ps->st->anchored++;
+                            rc = parse(ps, head, pos, at, first_char(text, at, to), out, cap, n, depth + 1);
+                            vjo_arena_release(ps->scratch, mark);
+                            if (rc < 0)
+                                return rc;
+                            pos = at;
+                            e = a;
+                            end = a.end > seg ? seg : a.end;
+                            before = *n;
+                            number_end = 0;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                end = pos;
+                cp = vjo_utf8_next(text, to, &end);
+                ps->st->unmatched += (unsigned)vjo_is_kanji(cp);
+            }
+            if (got && end > pos && has_kanji(text + pos, end - pos)) {
+                uint32_t first = first_char(text, pos, to), prev = char_before(text, pos);
+                uint32_t last = char_before(text, end), next = end < to ? first_char(text, end, to) : follow;
+                int bound = (vjo_is_kanji(first) && (vjo_is_kanji(prev) || katakana(prev))) ||
+                            (vjo_is_kanji(last) && vjo_is_kanji(next));
+                int lone = vjo_is_kanji(first) && chars(text + pos, end - pos) == 1;
+                ps->st->words++;
+                if (bound && rules->compounds && kanji_count(text + pos, end - pos) == 1) {
+                    /* a single kanji in a compound the lookup split: its reading as a word says little (中 of
+                     * 授業中, 君 of 春原君, 箱 of マッチ箱: ばこ) */
+                    ps->st->compound++;
+                    if (ps->st->trace)
+                        ps->st->trace(ps->st->trace_ud, "compound", text + pos, end - pos, e.spelling, e.reading);
+                } else if (lone && hiragana(next) && (rare(ps, e.rank) || !follower(next)) && rules->shorter) {
+                    /* a single kanji matched alone before kana that is no particle or copula (or rare): the lookup did
+                     * not find the word's inflection (働 of 働かな: どう, 下 of 下さーい: した, 行 of 行こっ) */
+                    ps->st->shorter++;
+                    if (ps->st->trace)
+                        ps->st->trace(ps->st->trace_ud, "shorter", text + pos, end - pos, e.spelling, e.reading);
+                } else if (rules->counters &&
+                           (days(text + pos, end - pos) || (digit(prev) && digit(first)) ||
+                            (digit(last) && digit(next)) ||
+                            (numeral(prev) && !numeral(first) && pos > number_end))) {
+                    /* a number and 日 (a date's day or a count of days), a match that starts or ends inside a number
+                     * (第２ of 第２１, ５分 of ４５分), a word after a number another match ends with (人 of もう１人) */
+                    ps->st->counters++;
+                    if (ps->st->trace)
+                        ps->st->trace(ps->st->trace_ud, "counters", text + pos, end - pos, e.spelling, e.reading);
+                } else {
+                    ps->st->words--; /* word() counts it */
+                    k = word(ps, text + pos, end - pos, text + end, to - end, bound, &e, out + *n, cap - *n);
+                }
+                if (k < 0) {
+                    if (k == VJO_E_TOO_LARGE && *n == cap)
+                        k = 0; /* no room for more: the rest stays without */
+                    else
+                        return ps->st->failed++, k;
+                }
+                /* the text's own reading in brackets after the word (嚇(おど)し, 賓客(ひんきゃく)): the word's last
+                 * reading must be it */
+                if (k > 0 && rules->inline_readings && out[*n + k - 1].end == end - pos &&
+                    !inline_agrees(text + end, to - end, &out[*n + k - 1])) {
+                    ps->st->read--;
+                    ps->st->inline_readings++;
+                    if (ps->st->trace)
+                        ps->st->trace(ps->st->trace_ud, "inline", text + pos, end - pos, e.spelling, e.reading);
+                    k = 0;
+                }
+                for (int j = 0; j < k; j++)
+                    out[*n + j].start += pos, out[*n + j].end += pos;
+                *n += k;
+            }
+            /* a number's counter, and the number: no reading (三本: さんぼん, 一回: いっかい) */
+            if (all_numerals(text + pos, end - pos)) {
+                if (number_end != pos) {
+                    number_first = before;
+                    number_read = 0;
+                }
+                number_read += (unsigned)(k > 0);
+                number_end = end;
+            } else {
+                size_t q = pos;
+                if (rules->counters && number_end && number_end == pos && vjo_is_kanji(vjo_utf8_next(text, end, &q))) {
+                    unsigned dropped = number_read + (unsigned)(k > 0);
+                    ps->st->read -= dropped;
+                    ps->st->counters += dropped;
+                    *n = number_first;
+                }
+                number_end = 0;
+            }
+            pos = end;
+        }
+    }
+    return 0;
+}
+
+int vjo_sentence_rubies(VjoArena *keep, VjoArena *scratch, const VjoPlatform *p, const VjoConfig *cfg,
+                        const VjoReadingRules *rules, const char *text, size_t from, size_t to, VjoRuby *out,
+                        int cap, VjoReadingStats *st)
+{
+    size_t base = vjo_arena_mark(scratch), keep_base = vjo_arena_mark(keep);
+    VjoReadingRules defaults;
+    VjoReadingStats unused;
+    Parse ps;
+    char *copy;
+    int n = 0, rc;
     memset(&unused, 0, sizeof(unused));
+    if (!rules) {
+        vjo_reading_rules_default(&defaults);
+        rules = &defaults;
+    }
     ps.keep = keep;
     ps.scratch = scratch;
     ps.p = p;
-    ps.rules = rules ? rules : &default_rules;
+    ps.rules = rules;
     ps.st = st ? st : &unused;
     if (from > to || to > strlen(text))
         return VJO_E_PARSE;
@@ -549,103 +1099,7 @@ int vjo_sentence_rubies(VjoArena *keep, VjoArena *scratch, const VjoPlatform *p,
     }
     memcpy(ps.cfg, cfg, sizeof(*ps.cfg));
     ps.cfg->local_dictionary_results = 1;
-    while (pos < to && rc >= 0) {
-        size_t seg = pos, i;
-        int kanji = 0;
-        uint32_t cp;
-        while (seg < to) {
-            i = seg;
-            cp = vjo_utf8_next(copy, to, &i);
-            if (boundary(cp))
-                break;
-            kanji |= vjo_is_kanji(cp);
-            seg = i;
-        }
-        if (seg == pos) { /* a boundary */
-            vjo_utf8_next(copy, to, &pos);
-            number_end = 0;
-            continue;
-        }
-        if (!kanji) { /* nothing here takes a reading */
-            pos = seg;
-            number_end = 0;
-            continue;
-        }
-        while (pos < seg && rc >= 0) {
-            Entry e;
-            size_t end;
-            int got = entry_at(&ps, copy, pos, &e), before = n, k = 0;
-            if (got < 0) {
-                ps.st->failed++;
-                rc = got;
-                break;
-            }
-            if (got) {
-                end = e.end > seg ? seg : e.end;
-                /* A match from kana that ends inside a run of kanji (と一 of と一緒に: ト一) splits a word the
-                 * lookup at the run's start may hold whole (一緒に): that one, if it reaches further. */
-                if (ps.rules->anchor && end < seg && !vjo_is_kanji(first_char(copy, pos, to))) {
-                    size_t run = kanji_run_start(copy, pos, end);
-                    if (run && vjo_is_kanji(first_char(copy, end, to))) {
-                        Entry a;
-                        int got2 = entry_at(&ps, copy, run, &a);
-                        if (got2 < 0) {
-                            ps.st->failed++;
-                            rc = got2;
-                            break;
-                        }
-                        if (got2 && a.end > end) {
-                            pos = run; /* the kana before it: no reading */
-                            e = a;
-                            end = a.end > seg ? seg : a.end;
-                            ps.st->anchored++;
-                        }
-                    }
-                }
-            } else {
-                end = pos;
-                cp = vjo_utf8_next(copy, to, &end);
-                ps.st->unmatched += (unsigned)vjo_is_kanji(cp);
-            }
-            if (got && end > pos && has_kanji(copy + pos, end - pos)) {
-                uint32_t first = first_char(copy, pos, to), prev = pos > from ? char_before(copy, pos) : 0;
-                int bound = vjo_is_kanji(first) && (vjo_is_kanji(prev) || (prev >= 0x30A1 && prev <= 0x30FC));
-                k = word(&ps, copy + pos, end - pos, copy + end, to - end, bound, &e, out + n, cap - n);
-                if (k < 0) {
-                    if (k == VJO_E_TOO_LARGE && n == cap) {
-                        k = 0; /* no room for more: the rest stays without */
-                    } else {
-                        ps.st->failed++;
-                        rc = k;
-                        break;
-                    }
-                }
-                for (int j = 0; j < k; j++)
-                    out[n + j].start += pos, out[n + j].end += pos;
-                n += k;
-            }
-            /* a number's counter, and the number: no reading (三本: さんぼん, 一回: いっかい) */
-            if (all_numerals(copy + pos, end - pos)) {
-                if (number_end != pos) {
-                    number_first = before;
-                    number_read = 0;
-                }
-                number_read += (unsigned)(k > 0);
-                number_end = end;
-            } else {
-                size_t q = pos;
-                if (ps.rules->counters && number_end && number_end == pos &&
-                    vjo_is_kanji(vjo_utf8_next(copy, end, &q))) {
-                    unsigned dropped = number_read + (unsigned)(k > 0);
-                    ps.st->read -= dropped;
-                    ps.st->counters += dropped;
-                    n = number_first;
-                }
-                number_end = 0;
-            }
-            pos = end;
-        }
-    }
+    rc = parse(&ps, copy, from, to, first_char(text, to, strlen(text)), out, cap, &n, 0);
     vjo_arena_release(scratch, base);
     if (rc < 0) {
         vjo_arena_release(keep, keep_base);
@@ -752,7 +1206,8 @@ char *vjo_sentence_furigana(VjoArena *a, VjoArena *scratch, const VjoPlatform *p
     if (k >= 0)
         n += k;
     if (k >= 0 && hl) { /* the mined word: the card's own reading */
-        k = vjo_word_rubies(t + o[0], (size_t)(o[1] - o[0]), note->spelling, note->reading, r + n, cap - n);
+        k = vjo_word_rubies(t + o[0], (size_t)(o[1] - o[0]), t + o[1], len - (size_t)o[1], note->spelling,
+                            note->reading, r + n, cap - n);
         for (int j = 0; j < k; j++)
             r[n + j].start += (size_t)o[0], r[n + j].end += (size_t)o[0];
         n += k;

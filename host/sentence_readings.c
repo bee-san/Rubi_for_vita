@@ -3,13 +3,19 @@
  * tools/sentence_readings/ and its console estimates.
  *
  *   vjo-sentence-readings --dir DIR --dicts plaintext.vjdict,vndb-names.vjdict [--ratio N] [--part-ratio N]
- *                         [--no-counters] [--no-variants] [--no-anchor] [--no-compounds] [--cache KIB] < lines.tsv > readings.tsv
+ *                         [--rare N] [--no-RULE ...] [--cache KIB] < lines.tsv > readings.tsv
  *
- * Each input line is `id<TAB>text` (a line break in the text as \n). Each output line is `id<TAB>readings
- * <TAB>lookups<TAB>reads`, readings `start:end:reading` in code points, separated by spaces. On stderr: the
+ * RULE: counters, variants, anchor, compounds, parts, phrases, shorter, names or inline (core/sentence_reading.h
+ * VjoReadingRules), each on by default. --trace FILE: each matched word with kanji, `id<TAB>what<TAB>text<TAB>
+ * spelling<TAB>reading` (what: read, or why it got none).
+ *
+ * Each input line is `id<TAB>text` (a line break in the text as \n, a backslash as \\). Each output line is
+ * `id<TAB>readings<TAB>lookups<TAB>reads`, readings `start:end:reading` in code points, separated by spaces. On
+ * stderr: the
  * totals (VjoReadingStats), the file reads and bytes the lookups made, the reads an app cache of KIB KiB
  * (4 KiB blocks, least recently used first) would have left (default 256), and the host time. One session
  * keeps the dictionaries open, as an export does. */
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +27,14 @@
 #include "utf.h"
 
 #define BLOCK 4096u
+
+static FILE *trace_out;
+static const char *trace_id;
+static void trace(void *ud, const char *why, const char *text, size_t n, const char *spelling, const char *reading)
+{
+    (void)ud;
+    fprintf(trace_out, "%s\t%s\t%.*s\t%s\t%s\n", trace_id, why, (int)n, text, spelling, reading);
+}
 #define MAX_FILES 8
 
 static uint8_t scratch_mem[VJO_READINGS_SCRATCH + 64 * 1024], keep_mem[64 * 1024];
@@ -95,12 +109,13 @@ static int counted_open(void *ud, const char *path, VjoFile *out)
     return 0;
 }
 
+/* \n a line break, \\ a backslash */
 static void unescape(char *s)
 {
     char *w = s;
     for (char *r = s; *r; r++) {
-        if (r[0] == '\\' && r[1] == 'n') {
-            *w++ = '\n';
+        if (r[0] == '\\' && (r[1] == 'n' || r[1] == '\\')) {
+            *w++ = r[1] == 'n' ? '\n' : '\\';
             r++;
         } else {
             *w++ = *r;
@@ -125,13 +140,15 @@ int main(int argc, char **argv)
     PosixPlatform pp = {0};
     VjoPlatform p;
     VjoConfig cfg;
-    VjoReadingRules rules = {VJO_READINGS_RATIO, VJO_READINGS_PART_RATIO, 1, 1, 1, 1};
+    VjoReadingRules rules;
     VjoReadingStats st;
     const char *dir = NULL, *dicts = NULL;
     int cache_kib = 256;
     unsigned long long lines = 0, lookups_before;
     struct timespec t0, t1;
     memset(&st, 0, sizeof(st));
+    vjo_reading_rules_default(&rules);
+    st.trace = NULL;
     for (int i = 1; i < argc; i++) {
         int more = i + 1 < argc;
         if (!strcmp(argv[i], "--dir") && more)
@@ -142,24 +159,37 @@ int main(int argc, char **argv)
             rules.ratio = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--part-ratio") && more)
             rules.part_ratio = atoi(argv[++i]);
-        else if (!strcmp(argv[i], "--no-counters"))
-            rules.counters = 0;
-        else if (!strcmp(argv[i], "--no-variants"))
-            rules.variants = 0;
-        else if (!strcmp(argv[i], "--no-anchor"))
-            rules.anchor = 0;
-        else if (!strcmp(argv[i], "--no-compounds"))
-            rules.compounds = 0;
-        else if (!strcmp(argv[i], "--cache") && more)
+        else if (!strcmp(argv[i], "--rare") && more)
+            rules.rare = atoi(argv[++i]);
+        else if (!strncmp(argv[i], "--no-", 5)) {
+            static const struct { const char *name; size_t off; } flags[] = {
+                {"counters", offsetof(VjoReadingRules, counters)}, {"variants", offsetof(VjoReadingRules, variants)},
+                {"anchor", offsetof(VjoReadingRules, anchor)}, {"compounds", offsetof(VjoReadingRules, compounds)},
+                {"parts", offsetof(VjoReadingRules, parts)}, {"phrases", offsetof(VjoReadingRules, phrases)},
+                {"shorter", offsetof(VjoReadingRules, shorter)}, {"names", offsetof(VjoReadingRules, names)},
+                {"inline", offsetof(VjoReadingRules, inline_readings)}};
+            unsigned f = 0;
+            while (f < sizeof(flags) / sizeof(flags[0]) && strcmp(argv[i] + 5, flags[f].name))
+                f++;
+            if (f == sizeof(flags) / sizeof(flags[0]))
+                return 2;
+            *(int *)((char *)&rules + flags[f].off) = 0;
+        }
+        else if (!strcmp(argv[i], "--trace") && more) {
+            if (!(trace_out = fopen(argv[++i], "w")))
+                return 1;
+        } else if (!strcmp(argv[i], "--cache") && more)
             cache_kib = atoi(argv[++i]);
         else {
             fprintf(stderr, "usage: vjo-sentence-readings --dir DIR --dicts A.vjdict[,B.vjdict] [--ratio N] "
-                            "[--part-ratio N] [--no-counters] [--no-variants] [--no-anchor] [--no-compounds] [--cache KIB] < lines.tsv\n");
+                            "[--part-ratio N] [--rare N] [--no-RULE] [--cache KIB] < lines.tsv\n");
             return 2;
         }
     }
     if (!dir || !dicts || rules.ratio < 1 || cache_kib < 0)
         return 2;
+    if (trace_out)
+        st.trace = trace;
     vjo_config_defaults(&cfg);
     snprintf(cfg.local_dictionary_dir, sizeof(cfg.local_dictionary_dir), "%s", dir);
     snprintf(cfg.local_dictionaries, sizeof(cfg.local_dictionaries), "%s", dicts);
@@ -191,6 +221,7 @@ int main(int argc, char **argv)
         vjo_arena_init(&keep, keep_mem, sizeof(keep_mem));
         line_reads = 0;
         lookups_before = st.lookups;
+        trace_id = line;
         n = vjo_sentence_rubies(&keep, &scratch, &p, &cfg, &rules, text, 0, strlen(text), r, 1024, &st);
         printf("%s\t", line);
         for (int k = 0; k < n; k++)
@@ -204,10 +235,10 @@ int main(int argc, char **argv)
     clock_gettime(CLOCK_MONOTONIC, &t1);
     vjo_local_session_close(p.local_session);
     fprintf(stderr,
-            "lines %llu lookups %u words %u read %u ambiguous %u part %u counters %u unplaced %u unchecked %u "
-            "unmatched %u anchored %u failed %u\n",
-            lines, st.lookups, st.words, st.read, st.ambiguous, st.part, st.counters, st.unplaced, st.unchecked,
-            st.unmatched, st.anchored, st.failed);
+            "lines %llu lookups %u words %u read %u ambiguous %u compound %u part %u phrase %u shorter %u name %u inline %u counters %u "
+            "unplaced %u unchecked %u unmatched %u anchored %u failed %u\n",
+            lines, st.lookups, st.words, st.read, st.ambiguous, st.compound, st.part, st.phrase, st.shorter, st.name,
+            st.inline_readings, st.counters, st.unplaced, st.unchecked, st.unmatched, st.anchored, st.failed);
     fprintf(stderr, "reads %llu bytes %llu; with a %d KiB block cache: %llu reads; host %.3f s\n", reads, bytes,
             cache_kib, lru_cap ? misses : reads,
             (double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) / 1e9);
