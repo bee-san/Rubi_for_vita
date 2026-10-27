@@ -3479,7 +3479,9 @@ def render_collect(c):
     # it could not enter the folder: test.3's, #138, while the Shell read the stamp in it)
     missing = [m for m in c["record"].get("missing") or [] if not m.startswith(APP_FOLDER + "/")]
     if missing:
-        L.append(f"  not on the Vita: {', '.join(missing)}")
+        # hooks.log is the debug build's only, written with a hook text source (docs/hook-requests.md)
+        notes = {"ux0:/data/VitaJPOverlay/hooks.log": " (the debug build's)"}
+        L.append(f"  not on the Vita: {', '.join(m + notes.get(m, '') for m in missing)}")
     for e in c["record"].get("errors") or []:
         L.append(f"  collect error: {e}")
     if c.get("app"):

@@ -19,14 +19,17 @@ In a Rubi checkout (--rubi, by default the one this file is in) it also compares
 farm's data bucket (vita/<ID> <title>/hook/rubi-hook.json, read as tools/hook_farm.py reads it): did the farm prove
 the build this console runs?
 
---out FILE writes the report (Markdown, or JSON with --json) to FILE and prints a one-line summary instead (what
-install_ftp.sh --collect does: hook-request.md). Exit 0, or 2 when SOURCE holds no hooks.log.
+--json gives the same as data, its hex as the log writes it ("0x1EE45F02") and APP_VER as "01.00" (the farm's
+rubi-hook.json writes the same values, its hex mostly in lower case; compare them as numbers). --out FILE writes the
+report (Markdown, or JSON with --json) to FILE and prints a one-line summary instead (what install_ftp.sh --collect
+does: hook-request.md). Exit 0, or 2 when SOURCE holds no hooks.log or cannot be read.
 """
 import argparse
 import json
 import re
 import sys
 import zipfile
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +39,9 @@ DOC = "https://github.com/bee-san/Rubi_for_vita/blob/main/docs/hook-requests.md"
 FORM = "https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml"
 MODES = {0: "ocr", 1: "auto", 2: "hooks"}  # VJO_TEXT_SOURCE_* (include/vjo_api.h)
 LUNA_SEG0 = 0x80004000  # core/hook_luna.h VJO_LUNA_SEG0: a Luna address's segment-0 offset is address - this
+# The title ID prefixes of Japanese PS Vita releases: the farm works on Japanese releases of visual novels, and an entry
+# is tried only in the title ID it was made for (core/hook_place.c vjo_place_verified)
+JAPANESE = ("PCSG", "PCSH", "VLJM", "VLJS")
 SITE_STREAMS = 8  # include/vjo_game_ocr.h VJO_HOOK_SITE_STREAMS: streams 1-8 are table sites, 9-20 string-copy callers
 # VJO_PLACE_* (core/hook_place.h, vjo_place_reason), as a player or a maintainer reads them
 REASONS = {
@@ -90,11 +96,28 @@ def app_ver_text(code):
     return f"{code >> 8:02X}.{code & 0xFF:02X}" if code else None
 
 
+QUOTE = re.compile(r"^ {0,3}> ?")
+
+
 def extract(text):
     """The hooks.log in text: a fenced block that holds its first line (an issue's form puts it in one), else the
-    text from that line on (in Markdown, up to the next heading). (log, strict), log None when there is none; strict
-    when the text is the log itself, so a line the grammar does not know is reported."""
+    text from that line on (in Markdown, up to the next heading); in a reply that quotes it (every line `> `), the
+    quoted text. (log, strict), log None when there is none; strict when the text is the log itself, so a line the
+    grammar does not know is reported."""
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    found = unquoted(lines)
+    if found[0] is not None or not any(QUOTE.match(x) for x in lines):
+        return found
+    while any(QUOTE.match(x) for x in lines):  # a quote in a quote too
+        lines = [QUOTE.sub("", x, count=1) for x in lines]
+        found = unquoted(lines)
+        if found[0] is not None:
+            return found[0], False
+    return None, False
+
+
+def unquoted(lines):
+    """extract()'s reading of lines as they are: (log, strict) or (None, False)."""
     block, fence = None, None
     for line in lines:
         m = FENCE.match(line)
@@ -307,14 +330,25 @@ def rubi_tables(title, root=ROOT):
             "luna": [r for r in luna_rows(luna.read_text(encoding="utf-8")) if r["title"] == title]}
 
 
+class Unreadable(Exception):
+    """A source, or a farm file, that cannot be read: its message says which and why."""
+
+
 def farm_hook(bucket, title):
     """The farm bucket's hook for title, in tools/hook_farm.py's layout: (folder name, rubi-hook.json or None), or
-    False when the bucket has no folder for it."""
+    False when the bucket has no folder for it. A rubi-hook.json that is not a JSON object raises Unreadable."""
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import hook_farm  # the repository's (the release zip has none: its tools/ never read a bucket)
     for tid, folder in hook_farm.titles(str(bucket)):
         if tid == title:
-            return Path(folder).name, hook_farm.load_json(str(Path(folder) / "hook" / "rubi-hook.json"))
+            path = Path(folder) / "hook" / "rubi-hook.json"
+            try:
+                hook = hook_farm.load_json(str(path))
+            except (OSError, ValueError) as e:
+                raise Unreadable(f"{path}: not a rubi-hook.json ({e})") from None
+            if hook is not None and not isinstance(hook, dict):
+                raise Unreadable(f"{path}: not a rubi-hook.json (a JSON {type(hook).__name__}, not an object)")
+            return Path(folder).name, hook
     return False
 
 
@@ -327,14 +361,22 @@ def hex_int(value):
 
 # ---- log.txt of a collect ----
 
+SHELL_START = re.compile(r"^Rubi shell started \(kernel API \d+(?P<normal>, the normal build: a short log)?\)$")
+
+
 def log_readings(text, title):
-    """log.txt's last session of title: its `hooks in` line and the debug build's job sources (numbers only)."""
+    """log.txt's last session of title: its `hooks in` line and the debug build's job sources (numbers only); and
+    whether log.txt's last game start is another title's or its last boot the normal build's (then hooks.log is from
+    an earlier session: the normal build, and OCR only, write none and remove none)."""
     lines = text.replace("\r", "").split("\n")
+    games = [m.group("title") for x in lines if (m := GAME_START.match(x))]
+    boots = [bool(m.group("normal")) for x in lines if (m := SHELL_START.match(x))]
     starts = [i for i, x in enumerate(lines) if (m := GAME_START.match(x)) and m.group("title") == title]
+    out = {"sessions": len(starts), "hooks_in": None, "ocr": 0, "site": 0, "call": 0, "streams": {},
+           "last_game": games[-1] if games else None, "last_boot_normal": boots[-1] if boots else None}
     if not starts:
-        return None
+        return out
     end = next((j for j in range(starts[-1] + 1, len(lines)) if GAME_START.match(lines[j])), len(lines))
-    out = {"sessions": len(starts), "hooks_in": None, "ocr": 0, "site": 0, "call": 0, "streams": {}}
     for x in lines[starts[-1]:end]:
         if (m := HOOKS_IN.match(x)) and m.group("title") == title:
             out["hooks_in"] = x
@@ -363,15 +405,18 @@ def read_source(source):
                         log.read_bytes().decode("utf-8", "replace") if log.is_file() else None, str(d / "hooks.log"))
         return None, None, str(p)
     if zipfile.is_zipfile(p):
-        with zipfile.ZipFile(p) as z:
-            names = set(z.namelist())
-            want = f"{COLLECT_DIR}/hooks.log"
-            hooks = sorted(n for n in names if n == want or n.endswith("/" + want))
-            if not hooks:
-                return None, None, str(p)
-            log = hooks[0][:-len("hooks.log")] + "log.txt"
-            return (z.read(hooks[0]).decode("utf-8", "replace"),
-                    z.read(log).decode("utf-8", "replace") if log in names else None, f"{p}:{hooks[0]}")
+        try:
+            with zipfile.ZipFile(p) as z:
+                names = set(z.namelist())
+                want = f"{COLLECT_DIR}/hooks.log"
+                hooks = sorted(n for n in names if n == want or n.endswith("/" + want))
+                if not hooks:
+                    return None, None, str(p)
+                log = hooks[0][:-len("hooks.log")] + "log.txt"
+                return (z.read(hooks[0]).decode("utf-8", "replace"),
+                        z.read(log).decode("utf-8", "replace") if log in names else None, f"{p}:{hooks[0]}")
+        except (zipfile.BadZipFile, zlib.error, RuntimeError, EOFError, NotImplementedError) as e:
+            raise Unreadable(f"{p}: a damaged zip ({e})") from None
     return p.read_bytes().decode("utf-8", "replace"), None, str(p)
 
 
@@ -382,8 +427,9 @@ def assess(log, tables=None, farm=None, readings=None):
     m, sites = log["module"], log["sites"]
     if log["nothing"]:
         if log["nothing"].startswith("the PSP emulator"):
-            return ("a PSP game: Rubi has no native PSP hooks in this version",
-                    ["Keep the request: PSP hooks are later work, and the PSP probe's lines (if any) help it."])
+            return ("a PSP game: Rubi has no native hooks for PSP games yet",
+                    ["A request cannot become an entry for a PSP game yet: Rubi has no hook path for PSP games "
+                     "(the PSP probe's lines in the log, if any, help that later work)."])
         return (f"no game to hook ({log['nothing']})",
                 ["Send the hooks.log of a PS Vita game: a PSP game or a homebrew app has no main module the worker "
                  "hooks."])
@@ -392,8 +438,18 @@ def assess(log, tables=None, farm=None, readings=None):
         steps.append("hook_sites = off in config.ini: no table site was tried. Delete the line (or set it on), start "
                      "the game again and send the new hooks.log.")
     if m and not m["app_ver"]:
-        steps.append("The log has no APP_VER (0000: param.sfo had none, or the debug build of Rubi 0.9.8 or older, "
-                     "which reads it only for a game with entries): give the game's version in the request.")
+        steps.append("The log has no APP_VER (0000: param.sfo had none, or a debug build made before #367, "
+                     "v0.9.8-test.2 and older, which read it only for a game with a Luna site or an entry that names "
+                     "its version): give the game's version in the request.")
+    if readings and readings["sessions"] == 0 and readings["last_game"]:
+        steps.append(f"log.txt has no start of {log['title']}, and its last game start is {readings['last_game']}'s: "
+                     "this hooks.log may be from an earlier session (the normal build and OCR only write none).")
+    elif readings and readings["last_game"] and readings["last_game"] != log["title"]:
+        steps.append(f"log.txt's last game start is {readings['last_game']}'s, not {log['title']}'s: this hooks.log "
+                     "is from before that start (a game that is OFF, the normal build and OCR only write none).")
+    elif readings and readings["last_boot_normal"]:
+        steps.append("log.txt's last boot is the normal build's, which writes no hooks.log: this one is from an "
+                     "earlier debug session.")
     hooked = [s for s in sites if s["outcome"] == "hooked"]
     refused_entries = [s for s in sites if s["kind"] == "verified" and s["outcome"] == "refused"]
     if log["sites_off"]:
@@ -406,6 +462,11 @@ def assess(log, tables=None, farm=None, readings=None):
         verdict = "a LunaTranslator site is installed (Luna's sites are not verified on a console)"
         steps.append("Say whether the popup shows the dialogue. The farm can prove a site and make it a verified entry "
                      "with Rubi's own text clean-up.")
+    elif refused_entries and all(s["reason"] in ("tai", "full") for s in refused_entries):
+        reasons = ", ".join(sorted({s["reason"] for s in refused_entries}))
+        verdict = (f"Rubi's verified entry matches this build but was not installed ({reasons}: taiHEN refused it, "
+                   "or all site slots were taken)")
+        steps.append("That is a bug of Rubi, not a hook request: send this log in an issue.")
     elif refused_entries:
         reasons = ", ".join(sorted({s["reason"] for s in refused_entries}))
         verdict = f"Rubi's verified entry is refused here ({reasons}): this console runs another build of the game"
@@ -421,7 +482,13 @@ def assess(log, tables=None, farm=None, readings=None):
                          "find the site in this build.")
     else:
         verdict = "Rubi has no entry for this game"
-        steps.append("The farm needs to find a hook for this game: its title ID, APP_VER and module NID are above.")
+        steps.append("The farm needs to find a hook for this game: its title ID, APP_VER and module NID are above. It "
+                     "works on Japanese releases of visual novels, a bounded number of attempts each, and a hook must "
+                     "pass Rubi's checks, so not every request gets an entry.")
+    if log["title"] and not log["title"].startswith(JAPANESE) and not log["sites_off"]:
+        steps.append(f"{log['title']} is not a Japanese release (PCSG, PCSH, VLJM, VLJS): the farm works on Japanese "
+                     "releases, and an entry is tried only in the title ID it was made for, so an entry from the "
+                     "Japanese release would not reach this one.")
     calls = sum(i["hooked"] for i in log["imports"])
     if readings and readings["site"] + readings["call"]:
         verdict += f"; a hook answered {readings['site'] + readings['call']} of the readings log.txt names"
@@ -462,7 +529,7 @@ def farm_steps(farm, log):
            f"{hook.get('segment0_offset')}, r{hook.get('register')}, {hook.get('encoding')}, module NID "
            f"{hook.get('module_nid')}, APP_VER {hook.get('app_ver')}."]
     if nid is None:
-        out.append("The farm recorded no module NID: it must dump the module first (psandvita docs/rubi-export.md).")
+        out.append("The farm recorded no module NID: it must dump the game's main module first.")
     elif nid == m["nid"]:
         out.append("The farm proved this console's build (the same module NID): an entry made from it installs here.")
     else:
@@ -496,7 +563,7 @@ def report(log, source, verdict, steps, readings=None):
         names = [i["name"] or f"{i['lib']:08X}/{i['nid']:08X}" for i in log["imports"] if i["hooked"]]
         rows.append(("String copies", f"{len(names)} of {len(log['imports'])} imports hooked"
                                       + (f" ({', '.join(names)})" if names else "")))
-    if readings:
+    if readings and readings["sessions"]:
         rows.append(("log.txt, the game's last session", (f"`{readings['hooks_in']}`" if readings["hooks_in"]
                                                           else "no `hooks in` line")
                      + f"; job sources: {readings['ocr']} OCR, {readings['site']} table site, "
@@ -565,7 +632,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     try:
         text, log_txt, source = read_source(args.source)
-    except OSError as e:
+    except (OSError, Unreadable) as e:
         print(f"hook_request: {e}", file=sys.stderr)
         return 2
     body, strict = extract(text) if text is not None else (None, False)
@@ -585,6 +652,9 @@ def main(argv=None):
         except ImportError:
             print("hook_request: --bucket needs a Rubi checkout (tools/hook_farm.py)", file=sys.stderr)
             return 2
+        except Unreadable as e:
+            print(f"hook_request: {e}", file=sys.stderr)
+            return 2
     readings = log_readings(log_txt, log["title"]) if log_txt and log["title"] else None
     verdict, steps = assess(log, tables, farm, readings)
     if args.json:
@@ -593,7 +663,11 @@ def main(argv=None):
     else:
         out = report(log, source, verdict, steps, readings)
     if args.out:
-        Path(args.out).write_text(out, encoding="utf-8")
+        try:
+            Path(args.out).write_text(out, encoding="utf-8")
+        except OSError as e:
+            print(f"hook_request: cannot write {args.out}: {e}", file=sys.stderr)
+            return 2
         print(f"{summary_line(log, verdict)} Report: {args.out}. To ask for a hook for this game: {DOC}")
     else:
         sys.stdout.write(out)

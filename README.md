@@ -221,8 +221,9 @@ offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
 
 **Your game has no hook, or its hook is refused?** Ask for one with a
 [hook request](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml): play the game once
-with the debug build and send its `hooks.log` (no game text in it). The owner's hook farm turns a request into a
-verified entry; [how it works](docs/hook-requests.md).
+with the debug build and send its `hooks.log` (no game text in it). The owner's hook farm can turn a request into a
+verified entry: it works on the Japanese releases of visual novels, and not every request gets one
+([how it works](docs/hook-requests.md)).
 
 ## Supported
 
