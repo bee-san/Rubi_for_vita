@@ -181,8 +181,16 @@ class FormYaml:
             raise ValueError("a more-indented line in a folded scalar")
         return "\n".join(" ".join(p.split("\n")) for p in "\n".join(body).split("\n\n"))
 
-    @staticmethod
-    def scalar(s):
+    # Plain scalars YAML 1.1 (PyYAML, and GitHub's parser) reads as something other than a string: a boolean, null, a
+    # number in any of its forms (01.00 is the float 1.0), a time (1:30) or a date. The subset reads true, false and a
+    # decimal integer; any other of these is refused, so it can never pass here as a string while GitHub sees a
+    # boolean or a number (dropdown options Yes / No, placeholder 01.00, label on: audit-rubi-358-hooktemplate F5).
+    YAML11 = re.compile(r"(?i:y|n|yes|no|on|off|true|false|~|null)|[-+]?\.(?i:inf|nan)"
+                        r"|[-+]?(?:[0-9][0-9_]*(?:[.:][0-9_.:]*)?|\.[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)?"
+                        r"|[-+]?0[xXoObB][0-9a-fA-F_]+|\d{4}-\d\d?-\d\d?(?:[Tt ].*)?")
+
+    @classmethod
+    def scalar(cls, s):
         s = s.strip()
         if s.startswith('"'):
             return json.loads(s)  # one line; the form's escapes are JSON's
@@ -192,14 +200,19 @@ class FormYaml:
             return [json.loads(x) for x in s[1:-1].split(",")] if s[1:-1].strip() else []
         if s in ("true", "false"):
             return s == "true"
-        if re.fullmatch(r"-?\d+", s):
+        if re.fullmatch(r"[1-9][0-9]*|0", s):
             return int(s)
+        if cls.YAML11.fullmatch(s):
+            raise ValueError(f"YAML reads {s!r} as a boolean, null, a number or a date: quote it")
         if re.match(r"[-'{&*!|>%@`?:]", s) or ": " in s or " #" in s or s.endswith(":"):
             raise ValueError(f"not a plain scalar of the subset: {s!r}")
         return s
 
 
 TOP_KEYS = {"name", "description", "title", "labels", "assignees", "body", "projects", "type"}
+# The type GitHub wants for each attribute and validation (its form schema): a boolean where one is meant, an integer
+# where one is meant, every other value a string (options: strings, or checkbox options' mappings).
+BOOLEANS, INTEGERS = {"required", "multiple"}, {"default", "min_length"}
 ATTRIBUTES = {"markdown": {"value"}, "textarea": {"label", "description", "placeholder", "value", "render"},
               "input": {"label", "description", "placeholder", "value"},
               "dropdown": {"label", "description", "multiple", "options", "default"},
@@ -280,9 +293,38 @@ class IssueForm(unittest.TestCase):
                     self.assertNotIn(o["label"].lower(), labels)
                     labels.add(o["label"].lower())
         self.assertTrue(ids, "at least one field that is not markdown")
+        for el in body:  # every value the type GitHub wants
+            for key, value in list(el["attributes"].items()) + list((el.get("validations") or {}).items()):
+                want = bool if key in BOOLEANS else int if key in INTEGERS else (list if key == "options" else str)
+                self.assertIs(type(value), want, (el.get("id"), key, value))
+                if key == "options":
+                    for o in value:
+                        if isinstance(o, dict):
+                            self.assertIs(type(o["label"]), str, o)
+                            self.assertIs(type(o.get("required", False)), bool, o)
+                        else:
+                            self.assertIs(type(o), str, o)
         log = next(el for el in body if el.get("id") == "hooks-log")
         self.assertEqual((log["type"], log["attributes"]["render"], log["validations"]["required"]),
                          ("textarea", "text", True), "the log comes as a fenced block, which the tool reads")
+
+    def test_what_yaml_would_type_is_refused(self):
+        """The edits GitHub would read as booleans, null or numbers fail here too, without PyYAML (the gate's image)."""
+        form = FORM.read_text(encoding="utf-8")
+        edits = [form.replace('        - "I can\'t tell"\n', "        - Yes\n        - No\n"),
+                 form.replace('      placeholder: "01.00"', "      placeholder: 01.00"),
+                 form.replace("      label: Game\n", "      label: on\n"),
+                 form.replace("      label: Game\n", "      label: ~\n"),
+                 form.replace('      placeholder: "PCSG00628"', "      placeholder: 2026-10-27"),
+                 form.replace('      placeholder: "PCSG00628"', "      placeholder: 0x1F")]
+        for k, text in enumerate(edits):
+            self.assertNotEqual(text, form, k)
+            with self.assertRaises(ValueError, msg=k):
+                FormYaml(text).load()
+        for word in ("plain text", "Rubi v0.9.8", "PCSG00628", "1.0.2 (Default)", "x 1"):
+            self.assertEqual(FormYaml.scalar(word), word)
+        self.assertEqual((FormYaml.scalar("true"), FormYaml.scalar("12"), FormYaml.scalar('"01.00"')),
+                         (True, 12, "01.00"))
 
     def test_it_names_the_paths_the_code_writes_and_fetches(self):
         form, text = load_form()
@@ -294,7 +336,8 @@ class IssueForm(unittest.TestCase):
         for doc in (intro, DOC.read_text(encoding="utf-8")):
             self.assertIn(hr.DEVICE_PATH, doc)
             self.assertIn(f"ftp://VITA_IP:1337/{ftp}", doc)  # curl's URL, as collect_vita.py builds it
-            self.assertIn("data/VitaJPOverlay/hooks.log", doc)  # the memory card's drive over USB
+            usb = ftp.split(":/", 1)[1]  # the card's own path: on the computer, its drive's (VitaShell's USB)
+            self.assertRegex(doc, rf"drive[^\n]*`{re.escape(usb)}`|`{re.escape(usb)}`[^\n]*drive")
             self.assertIn("bash tools/install_ftp.sh --collect VITA_IP", doc)
             self.assertIn("hook-request.md", doc)
             self.assertIn("-debug.vpk", doc)
@@ -316,6 +359,13 @@ class IssueForm(unittest.TestCase):
         self.assertEqual((j["title"], j["module"]["nid"], j["module"]["app_ver"]), ("PCSG00628", "0x1EE45F02", "01.00"))
         self.assertEqual((j["unknown"], j["warnings"]), ([], []))
         self.assertEqual([s["outcome"] for s in j["sites"]], ["hooked", "skipped", "refused", "refused", "refused"])
+        # a reply that quotes the log (GitHub's Quote reply: every line "> "), once or twice
+        for quote in ("> ", "> > "):
+            reply = "Same here:\n\n" + "".join(quote + x + "\n" for x in a_log().splitlines())
+            r = subprocess.run([sys.executable, str(TOOL), "-", "--json"], input=reply, capture_output=True, text=True,
+                               timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual(json.loads(r.stdout)["module"]["nid"], "0x1EE45F02")
         # an empty box: no log, a message, exit 2
         issue = rendered_issue(form, {"game": "a game", "title-id": "PCSG00628"})
         r = subprocess.run([sys.executable, str(TOOL), "-"], input=issue, capture_output=True, text=True, timeout=60)
@@ -410,8 +460,12 @@ class LogGrammar(unittest.TestCase):
             ("T0000001: text source 1, sites off\nsites off (hook_sites = off): no table site\n" + imports_lines(8)
              + "sites off; CALL imports hooked 8 of 8\n", "table sites were off", "Delete the line"),
             ("PSPEMU004: text source 1\nnothing: the PSP emulator's process\npsp probe 1: start: text source 1\n",
-             "a PSP game", "PSP hooks are later work"),
+             "a PSP game", "no hook path for PSP games"),
             ("PSPEMU004: text source 1\nthe PSP emulator's process: no hooks; PSP text off\n", "a PSP game", "PSP"),
+            (head + mod % ("0101", 1, 0) + "verified +100 thumb r6 tai 80010002\n refused: tai\n bytes 00112233\n"
+             + tail % (0, 1), "matches this build but was not installed (tai", "a bug of Rubi"),
+            (head + mod % ("0101", 1, 0) + "verified +100 thumb r6 refused: full\n bytes 00112233\n" + tail % (0, 1),
+             "was not installed (full", "a bug of Rubi"),
             (": text source 1\nnothing: no title ID\n", "no game to hook (no title ID)", "PS Vita game"),
         ]
         for text, verdict, step in cases:
@@ -422,6 +476,12 @@ class LogGrammar(unittest.TestCase):
             self.assertTrue(any(step in s for s in steps), (text, steps))
         self.assertEqual(hr.parse(cases[-1][0])["title"], None)
         self.assertEqual(len(hr.parse(cases[8][0])["psp_probe"]), 1)
+        # a release that is not Japanese: the farm's entry (from the Japanese release) would not reach it
+        for title, said in (("PCSE00001", True), ("PCSB00001", True), ("PCSG00001", False), ("VLJM00001", False)):
+            _, steps = hr.assess(hr.parse(cases[0][0].replace("T0000001", title)))
+            self.assertEqual(any("is not a Japanese release" in x for x in steps), said, title)
+        _, steps = hr.assess(hr.parse(cases[0][0]))
+        self.assertTrue(any("not every request gets an entry" in x for x in steps), steps)
 
     def test_a_log_that_stops_or_does_not_add_up(self):
         cut = a_log().split("luna 8001A39A")[0]  # the game stopped while the worker installed
@@ -621,6 +681,49 @@ class Sources(unittest.TestCase):
             z.writestr("x/log.txt", "nothing")
         self.assertEqual(self.run_tool(zpath).returncode, 2)
 
+    def test_what_cannot_be_read_exits_2_with_a_message(self):
+        """A collect zip whose hooks.log fails its CRC, --out into a folder that is not there, and a farm bucket whose
+        rubi-hook.json is not one: a message and exit 2, never a traceback (audit-rubi-358-hooktemplate F7)."""
+        damaged = self.dir / "damaged.zip"
+        with zipfile.ZipFile(damaged, "w", zipfile.ZIP_STORED) as z:
+            z.writestr(f"c/{hr.COLLECT_DIR}/hooks.log", a_log())
+        data = bytearray(damaged.read_bytes())
+        at = data.index(b"PCSG00628: text source 1")
+        data[at] ^= 0x01  # its bytes, not its header: the CRC check fails as it is read
+        damaged.write_bytes(bytes(data))
+        bucket = self.dir / "bucket"
+        hook = bucket / "vita/PCSG00628 a title/hook"
+        hook.mkdir(parents=True)
+        cases = [(None, (damaged,), "a damaged zip"),
+                 (None, (self.collect, "--out", self.dir / "no/such/folder/hook-request.md"), "cannot write"),
+                 ("{not json", (self.collect, "--bucket", bucket), "not a rubi-hook.json (Expecting"),
+                 ("[1, 2]", (self.collect, "--bucket", bucket), "not a rubi-hook.json (a JSON list")]
+        for body, args, said in cases:
+            if body is not None:
+                (hook / "rubi-hook.json").write_text(body)
+            r = self.run_tool(*args)
+            self.assertEqual((r.returncode, r.stdout), (2, ""), (args, r.stderr))
+            self.assertTrue(r.stderr.startswith("hook_request: ") and said in r.stderr, r.stderr)
+            self.assertNotIn("Traceback", r.stderr)
+
+    def test_a_hooks_log_older_than_the_last_game_start(self):
+        """hooks.log has no time, and the normal build (or a game that is OFF, or OCR only) writes none and removes
+        none: log.txt says when it may be an earlier session's (audit-rubi-358-hooktemplate N9)."""
+        log = self.collect / hr.COLLECT_DIR / "log.txt"
+        for text, said in ((LOG_TXT, None),
+                           (LOG_TXT + "game PCSG00999 started: dictionary local, trigger l+r\n",
+                            "log.txt's last game start is PCSG00999's, not PCSG00628's"),
+                           (LOG_TXT + "Rubi shell started (kernel API 51, the normal build: a short log)\n",
+                            "log.txt's last boot is the normal build's"),
+                           (LOG_TXT.replace("PCSG00628", "PCSG00777"), "log.txt has no start of PCSG00628")):
+            log.write_text(text, encoding="utf-8")
+            steps = json.loads(self.run_tool(self.collect, "--json").stdout)["next"]
+            stale = [x for x in steps if x.startswith("log.txt")]
+            if said is None:
+                self.assertEqual(stale, [], steps)
+            else:
+                self.assertTrue(stale and said in stale[0], steps)
+
     def test_the_main_function_in_process(self):
         with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()):
             self.assertEqual(hr.main([str(self.collect / hr.COLLECT_DIR / "hooks.log")]), 0)
@@ -641,7 +744,7 @@ class Package(unittest.TestCase):
         self.assertIn("${ROOT}/docs/hook-requests.md", docs)
         # the packaged tool needs nothing the package lacks: no import of the repository's other tools
         imports = set(re.findall(r"^import (\w+)|^from (\w+)", TOOL.read_text(encoding="utf-8"), re.M))
-        self.assertEqual({a or b for a, b in imports}, {"argparse", "json", "re", "sys", "zipfile", "pathlib"})
+        self.assertEqual({a or b for a, b in imports}, {"argparse", "json", "re", "sys", "zipfile", "zlib", "pathlib"})
         script = (ROOT / "tools/install_ftp.sh").read_text(encoding="utf-8")
         self.assertIn('python3 tools/hook_request.py "$OUT" --out "$OUT/hook-request.md"', script)
 

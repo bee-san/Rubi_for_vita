@@ -112,6 +112,17 @@ been reported.
   が, を) is checked against the filter block a longer span has just loaded, where the names dictionary answers
   "absent" without reading an index page (0.27 reads); and the Shell reads a file with one `sceIoPread` instead of
   a seek and a read (its saving unmeasured). Not run on a console.
+  decides nothing for those games, and the normal build reads it as before (host-tested; not run on a console). As
+  every change to the hook code does, it renews the hook definitions' revision, so a string-copy source Rubi had
+  learned for a game is confirmed with OCR once more after the update.
+- Hook requests, #367's audit: the form, [docs/hook-requests.md](docs/hook-requests.md) and the README say what the
+  farm does and does not (Japanese releases of visual novels, a bounded number of attempts, no PSP path yet: not every
+  request gets an entry), which debug zips write `hook-request.md` (test builds after v0.9.8-test.2), and that a
+  `--collect` zip (logs with text, Anki cards, settings, taiHEN configurations, crash dumps) is sent privately, never
+  attached to a public request. `tools/hook_request.py` says so too (a release that is not Japanese, a PSP game, an
+  entry refused as `tai` or `full`: a bug report), reads a reply that quotes the log, warns when `log.txt` shows the
+  log is from an earlier session, and exits 2 with a message, never a traceback, on a damaged zip, an unwritable
+  `--out` or a malformed farm `rubi-hook.json`.
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
   pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
   tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a

@@ -1,11 +1,18 @@
 # Hook requests
 
 A native text hook reads a game's own text, so the popup shows exactly what the game draws instead of OCR's
-reading of the screen ([native text hooks](../README.md#native-text-hooks)). Rubi 0.9.8 has game-specific entries for
-188 Vita title IDs: LunaTranslator's table and Rubi's own verified entries. Every other Vita game is read with OCR,
-after Rubi tries its string copies. That long tail grows fastest when the people who play those games ask for them,
-because each request brings what a verified entry needs from the player's own console: the debug build's
-`hooks.log`. The owner's hook farm does the rest.
+reading of the screen. Rubi has game-specific entries for the Vita title IDs the README counts
+([native text hooks](../README.md#native-text-hooks)): LunaTranslator's table and Rubi's own verified entries. On the
+Rubi app's **Games** page a game with one is tagged **Hook** (Rubi's verified entry) or **Luna hook** (a
+LunaTranslator site); every other Vita game is read with OCR, after Rubi tries its string copies. That long tail grows
+fastest when the people who play those games ask for them, because each request brings what a verified entry needs
+from the player's own console: the debug build's `hooks.log`.
+
+The owner's hook farm can turn a request into a verified entry. It works on the Japanese releases of visual novels
+(title IDs PCSG, PCSH, VLJM, VLJS), gives each title a bounded number of attempts, and its hook must pass Rubi's checks
+(below), so not every request gets an entry. An entry is tried only in the title ID it was made for, so one made from
+the Japanese release does not reach a Western one. PSP games have no native hooks yet, so a request cannot become
+an entry for one.
 
 **[Open a hook request](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml)** (a GitHub
 form; it asks for the steps below).
@@ -17,10 +24,12 @@ form; it asks for the steps below).
    has the debug one: the newest pre-release on the [releases page](https://github.com/bee-san/Rubi_for_vita/releases),
    `Rubi-<version>-debug.vpk` ([#351](https://github.com/bee-san/Rubi_for_vita/issues/351) says what the current one
    carries). Close the Rubi app if it is open, install the VPK with VitaShell, open Rubi, choose **Update** on its
-   Install page and restart the Vita. Your settings, games and cards stay; the release's VPK, installed the same way,
-   takes you back.
+   Install page and restart the Vita. Over a release the page's title says it goes back from the release to the test
+   build's version (a test build sorts before its release): Update is still the button. Your settings, games and cards
+   stay; the release's VPK, installed the same way, takes you back.
 2. **Check two settings** in the Rubi app: the game is **ON** on the **Games** page, and **OCR & lookup → Text
-   source** is **Automatic** (with **OCR only** nothing is written). Leave `hook_sites` out of `config.ini`, or on:
+   source** is **Automatic** or **Every game** (with **OCR only** nothing is written). Leave `hook_sites` out of
+   `config.ini`, or on:
    with `hook_sites = off` no table site is tried, and the log says so.
 3. **Start the game** and play until its first dialogue is on screen, then close it. The worker writes the log as
    the game starts, before the game's own code runs.
@@ -33,13 +42,16 @@ form; it asks for the steps below).
      `ux0:/data/VitaJPOverlay/`.
    - With the debug build's zip extracted on a computer (`Rubi-<version>-debug.zip`, Python 3.9+, bash and curl):
      `bash tools/install_ftp.sh --collect VITA_IP` fetches it with every other log
-     ([what it collects](self-test.md#collecting-everything---collect)) and writes `hook-request.md`, what
-     `tools/hook_request.py` reads in it, beside them, with a one-line summary at the end of its output.
+     ([what it collects](self-test.md#collecting-everything---collect)). A zip that has `tools/hook_request.py` (test
+     builds after v0.9.8-test.2) also writes `hook-request.md`, what the tool reads in the log, beside them, with a
+     one-line summary at the end of its output; v0.9.8-test.1 and test.2 fetch the log but write no report, and
+     older zips do not fetch it: copy it over USB or FTP then.
 5. **[Open the form](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml)**: the game, its
-   title ID, your Rubi version, what the popup shows now, and the whole `hooks.log` pasted into its box. One request
-   per title ID: look for an open one first and add your log to it.
+   title ID, your Rubi version, what the popup shows now, and the whole `hooks.log` pasted into its box
+   (`hook-request.md` may be attached). One request per title ID: look for an open one first and add your log to it.
 
-Never attach the game or any file of it (its `eboot.bin`, a dump): the farm needs only `hooks.log`.
+Never attach the game or any file of it (its `eboot.bin`, a dump): the farm needs only `hooks.log`. A `--collect` zip
+holds much more ([privacy](#privacy)): never attach it to the public issue.
 
 ### What `hooks.log` says
 
@@ -86,9 +98,10 @@ its first instructions safely), `window` (an instruction there is not on the pla
 has not ported), `version` (an entry for another `APP_VER`), `full` (all 8 site slots taken), `tai` (taiHEN refused
 it). How the worker decides: [native-hooks.md](native-hooks.md#table-sites).
 
-The debug build of Rubi 0.9.8 and older reads `APP_VER` only for a game that has an entry or a Luna site that needs
-it, so for any other game the line says `APP_VER 0000`; later debug builds read it for every game. Give the version
-in the form then (Game version).
+Debug builds made before [#367](https://github.com/bee-san/Rubi_for_vita/pull/367) (v0.9.8-test.2 and older) read
+`APP_VER` only for a game with a Luna site or an entry that names its version, so for any other game the line says
+`APP_VER 0000`; later debug builds read it for every game whose sites are tried. Give the version in the form then
+(Game version).
 
 ## What happens to a request
 
@@ -96,16 +109,17 @@ in the form then (Game version).
    what is needed: nothing (Rubi's verified entry is installed: a problem with its text is a bug report), a newer
    build (this checkout has entries the player's build had not), or the farm: no entry for the title, LunaTranslator's
    sites refused, or an entry for another build of the game (`signature` or `version`: the module NID and `APP_VER`
-   say which build the player has).
+   say which build the player has). An entry that matches but is refused as `tai` or `full` is a bug report.
 2. **The farm.** The owner's hook farm (bee-san/psandvita, private) runs the Japanese release of the title in the
-   Vita3K emulator: an engineer agent finds or builds a hook at the first text box, and reviewers approve its text
-   page by page against the frames the game drew. It farms Japanese visual novels. Its result
-   for the title is `rubi-hook.json` in its data bucket: the module NID, segment-0 offset, register, encoding, the 16
-   bytes at the site and `APP_VER`. With `--bucket`, `tools/hook_request.py` says whether the farm proved the
-   player's build: the same module NID, and at a site the log has bytes for, the same bytes.
-3. **The entry.** The farm's `scripts/rubi_export.py --titles <ID> --rubi <a Rubi checkout>` checks that taiHEN can
-   move the instructions at the site (on the farm's dump of segment 0) and prints the entry's row for
-   `core/hook_place.c` (its `docs/rubi-export.md`). A pull request adds it, with Rubi's clean-up filter for the
+   Vita3K emulator: it finds or builds a hook at the first text box, and an AI reviewer approves its text page by
+   page against the frames the game drew. It takes Japanese visual novels, gives a title a bounded number of
+   attempts and may end it without a hook. Its result for the title is `rubi-hook.json` in its data bucket: the module
+   NID, segment-0 offset, register, encoding, the 16 bytes at the site and `APP_VER`. With `--bucket`,
+   `tools/hook_request.py` says whether the farm proved the player's build: the same module NID, and at a site the log
+   has bytes for, the same bytes.
+3. **The entry.** The farm's export checks that taiHEN can move the instructions at the site (on its dump of the
+   game's code) and that Rubi has a reader for the hook, and writes the entry's row for `core/hook_place.c`; a hook
+   that fails either needs another site first. A pull request adds the row, with Rubi's clean-up filter for the
    game's text codes where it needs one ([Rubi's filters](native-hooks.md#rubis-filters)) and the farm checks'
    numbers (`tools/hook_farm.py --bucket DIR check <ID>`, [farm checks](native-hooks.md#farm-checks)).
 4. **The console check.** The entry ships in the next test build ([#351](https://github.com/bee-san/Rubi_for_vita/issues/351)).
@@ -122,7 +136,7 @@ gh issue view N -R bee-san/Rubi_for_vita --json body -q .body | python3 tools/ho
 python3 tools/hook_request.py build/device/collect/vjo-collect-YYYYMMDD-HHMMSSZ.zip
 # against the farm's bucket: did it prove this build?
 python3 tools/hook_request.py --bucket ~/farm-bucket hooks.log
-# as data (the farm's spellings: "0x1EE45F02", "01.00"), for a farm queue or a PR body
+# as data (hex as the log writes it, "0x1EE45F02", and APP_VER as "01.00"), for a farm queue or a PR body
 python3 tools/hook_request.py --json hooks.log
 ```
 
@@ -133,7 +147,9 @@ the file. Requests carry the `hook request` label.
 
 ## Privacy
 
-`hooks.log` holds no text and nothing personal. The debug build's `log.txt` holds the text Rubi read, and a
-`--collect` zip also holds your Anki queue (your cards: words and sentences) and your settings (API keys
-redacted, [what it collects](self-test.md#collecting-everything---collect)): attach those only if you are happy to
-share them publicly, or send them to the owner privately ([Discord](http://discord.skerritt.blog)).
+`hooks.log` and `hook-request.md` hold no text and nothing personal: those two are what a public request carries. A
+`--collect` zip holds much more ([what it collects](self-test.md#collecting-everything---collect)): the debug build's
+`log.txt` (the text Rubi read), your Anki queue (your cards: words and sentences), your settings (API keys
+redacted), both taiHEN configurations (your other plugins), and every crash dump on the card, a memory image of the
+crashed process (a game's or the home screen's, [crash dumps](self-test.md#crash-dumps)). Never attach it to a public
+issue; send it to the owner privately if asked ([Discord](http://discord.skerritt.blog)).

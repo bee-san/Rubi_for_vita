@@ -212,9 +212,11 @@ configuration). Over the same build, Check and repair leaves your `config.ini` a
 another build's and its Install page offers **Update**. **Uninstall** is on the same page: it removes
 the overlay's lines (with a dated backup first) and keeps the files and your settings and cards.
 
-The release also has `Rubi-<version>-debug.vpk`, the test builds' own build with every log
-line, the self-test and the timings. Install it only when asked for a full log; either installs over
-the other and the settings carry over ([release-variants](release-variants.md)).
+Releases up to 0.9.6 also have `Rubi-<version>-debug.vpk`, the test builds' own build with every log
+line, the self-test and the timings; 0.9.7 and later releases are the normal build only, and every test build (a
+pre-release) has the debug one. Install it only when asked for a full log, or for a
+[hook request](hook-requests.md); either installs over the other and the settings carry over
+([release-variants](release-variants.md)).
 
 Open **Rubi** from LiveArea to enable or disable individual games. Older builds call it **Overlay**
 (the 0.8.0 test builds) or **JP Overlay Settings** (0.7.12 and older); the title ID (`VJOSET001`) is
@@ -423,8 +425,8 @@ reported console run. The behaviour below is checked on the host.
   game's next start. A safe boot ([boot safety](boot-safety.md)) installs no hook anywhere.
 - **A game without a hook** (or whose hook the worker refuses): ask for one with a
   [hook request](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml). Play the game once with
-  the debug build and Text source on Automatic, then send its `hooks.log`; `tools/install_ftp.sh --collect` fetches it
-  and writes `hook-request.md` beside it ([hook requests](hook-requests.md)).
+  the debug build and Text source on Automatic, then send its `hooks.log`; `tools/install_ftp.sh --collect` fetches it,
+  and from a debug zip made after v0.9.8-test.2 writes `hook-request.md` beside it ([hook requests](hook-requests.md)).
 - **Table sites off, for a test**: `hook_sites = off` in `config.ini` (no setting in the app; `on` by
   default) installs no table site in any game, only the string copies, from a game's next start, so a
   console run can tell the two apart; `kernel.txt`'s `text source N` is then 256 more than the mode
