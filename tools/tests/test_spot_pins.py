@@ -3,7 +3,7 @@ include/vjo_vocr_sizes.h's VJO_VOCR_SPOT_* lines are the one place of its tag, n
 whether it is published, its arena for a 960 x 544 frame and its post-pass's steps: C (core/vocr_ocr.c, the kernel,
 include/vjo_payload.h), CMake (cmake/VocrOCR.cmake's VOCR_TEXTSPOT6_NO_MS default) and the tools (prepare_ocr.py,
 package_release.py, package_vpk.py, e2e_package.py) read them, so pinning the published pick changes one line per
-constant. Until then the pin is a placeholder that fetches, packages and installs nothing."""
+constant. A placeholder pin (VJO_VOCR_SPOT_PUBLISHED 0) fetches, packages and installs nothing."""
 import hashlib
 import re
 import sys
@@ -51,20 +51,40 @@ class Pins(unittest.TestCase):
         # a name the kernel's request field holds (kernel/game_ocr.c checks it at compile time)
         self.assertLess(len(pin["name"]) + 1, 32)
 
-    def test_the_placeholder_is_unpublished_and_fetches_nothing(self):
-        """Until vita-vn-ocr's pick (v0.3.9-textspot7.1) is pinned, the textspot6 research blob's placeholder stands:
-        its hashes are zeros, which no file has (core/vocr_ocr.c reads with GRAD), and nothing is fetched or packaged
-        for it."""
+    def test_the_pin_is_vita_vn_ocrs_published_pick(self):
+        """textspot7's pick, vita-vn-ocr pre-release v0.3.9-textspot7.1 (vocr6-spotter3's RUBI_PINS.md): its weights
+        and ATTRIBUTION.md at their published sizes and SHA-256, a trunk blob (built with VOCR_TEXTSPOT6_NO_MS), fetched
+        with the models and shipped by every package."""
         pin = prepare_ocr.spot_pin()
-        if pin["published"]:
-            self.skipTest("the spotter's pin is published")
-        self.assertEqual((pin["tag"], pin["sha256"], pin["attribution_sha256"]),
-                         ("v0.3.8-textspot6.1", "0" * 64, "0" * 64))
-        self.assertFalse(prepare_ocr.VOCR_SPOT_PUBLISHED)
-        with mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
+        self.assertEqual(pin, {"tag": "v0.3.9-textspot7.1", "name": "textspot7_t64_w8.vtsp", "bytes": 52176,
+                               "sha256": "78330f96c9e02646b2108b896cc035544e70fbb7d9fd896981bcf2f9ab365a3e",
+                               "attribution_bytes": 4007,
+                               "attribution_sha256": "053c12b54d6c35a8e15cc01d4562447830bba362220caae8a922858e4e56d3f8",
+                               "form": "trunk", "published": True})
+        self.assertTrue(prepare_ocr.VOCR_SPOT_PUBLISHED)
+        self.assertEqual(prepare_ocr.VOCR_SPOT_ASSETS[prepare_ocr.VOCR_SPOT_MODEL],
+                         ("https://github.com/bee-san/vita-vn-ocr/releases/download/v0.3.9-textspot7.1/"
+                          "textspot7_t64_w8.vtsp", 52176, pin["sha256"]))
+        self.assertEqual(prepare_ocr.VOCR_SPOT_ATTRIBUTION_PIN[prepare_ocr.VOCR_SPOT_ATTRIBUTION][1:],
+                         (4007, pin["attribution_sha256"]))
+        shipped = {name: role for name, _, _, role in package_release.shipped_models()}
+        self.assertEqual(shipped[prepare_ocr.VOCR_SPOT_MODEL], "text spotter (ocr_finder = spotter)")
+
+    def test_a_placeholder_pin_fetches_nothing(self):
+        """VJO_VOCR_SPOT_PUBLISHED 0 (a placeholder: SHA-256 zeros, which no file has, so core/vocr_ocr.c reads with
+        GRAD) fetches nothing and ships nothing."""
+        text = with_pin(SIZES.read_text(), PUBLISHED="0", SHA256='"' + "0" * 64 + '"',
+                        ATTRIBUTION_SHA256='"' + "0" * 64 + '"', ATTRIBUTION_BYTES="0u")
+        with tempfile.TemporaryDirectory() as tmp:
+            header = Path(tmp) / "vjo_vocr_sizes.h"
+            header.write_text(text)
+            pin = prepare_ocr.spot_pin(header)
+        self.assertFalse(pin["published"])
+        with mock.patch.object(prepare_ocr, "VOCR_SPOT_PUBLISHED", False), \
+             mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
             self.assertEqual(prepare_ocr.fetch_spot(Path("/nonexistent")), [])
-        self.assertNotIn(prepare_ocr.VOCR_SPOT_MODEL, {name for name, *_ in package_release.shipped_models()})
-        self.assertIn("#define VJO_VOCR_SPOT_PUBLISHED 0", SIZES.read_text())
+        with mock.patch.object(package_release, "VOCR_SPOT_PUBLISHED", False):
+            self.assertNotIn(prepare_ocr.VOCR_SPOT_MODEL, {name for name, *_ in package_release.shipped_models()})
 
     def test_a_published_pin_is_checked(self):
         """VJO_VOCR_SPOT_PUBLISHED 1 needs real hashes and the attribution's size; malformed or doubled lines are
@@ -73,8 +93,7 @@ class Pins(unittest.TestCase):
         good = with_pin(text, PUBLISHED="1", SHA256='"' + "ab" * 32 + '"', ATTRIBUTION_SHA256='"' + "cd" * 32 + '"',
                         ATTRIBUTION_BYTES="2952u")
         bad = {
-            "a placeholder hash": with_pin(text, PUBLISHED="1", ATTRIBUTION_SHA256='"' + "cd" * 32 + '"',
-                                           ATTRIBUTION_BYTES="2952u"),
+            "a placeholder hash": with_pin(good, SHA256='"' + "0" * 64 + '"'),
             "no attribution size": with_pin(good, ATTRIBUTION_BYTES="0u"),
             "upper-case hex": with_pin(good, SHA256='"' + "AB" * 32 + '"'),
             "a short hash": with_pin(good, SHA256='"abcd"'),

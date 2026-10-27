@@ -373,7 +373,11 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   captures (vita-vn-ocr #127). The optional text-presence gate's weights (`ocr_text_gate`, off by
   default) were trained on synthetic text in fonts and text pools free for non-commercial use only and on
   VNDB screenshots, so they are for non-commercial use only too: their attribution ships beside them as
-  `ocr/GATE-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)).
+  `ocr/GATE-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)). The optional text spotter's
+  weights (`ocr_finder = spotter`, off by default; vita-vn-ocr #128) were trained on the owner's hooked game pages, on
+  synthetic frames in fonts and text pools free for non-commercial use only and on VNDB screenshots, so they are for
+  non-commercial use only as well: their attribution ships beside them as `ocr/SPOTTER-ATTRIBUTION.md`
+  ([details](docs/vita-vn-ocr.md#the-spotter-finder-api-53)).
 - **Dictionary:** Bee's Ultimate Dictionary. English definitions from Daijirin4 and Sankoku8
   (© Sanseido) and [JMdict](https://www.edrdg.org/) (EDRDG, CC BY-SA 4.0); frequency ranks from
   [Jiten](https://jiten.moe) (CC BY-SA 4.0); kanji lines from Bee's Ultimate Kanji Dictionary
@@ -415,8 +419,9 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
 
 ## License
 
-Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The OCR's recognizer weights and the text-presence gate's
-are data files Rubi reads, not part of its code, and are for non-commercial use only
-(`ocr/MODEL-ATTRIBUTION.md`, `ocr/GATE-ATTRIBUTION.md`, [details](docs/vita-vn-ocr.md#models)). The dictionary data,
+Rubi's code is GPL-3.0 ([LICENSE](LICENSE)). The OCR's recognizer weights, the text-presence gate's and the text
+spotter's are data files Rubi reads, not part of its code, and are for non-commercial use only
+(`ocr/MODEL-ATTRIBUTION.md`, `ocr/GATE-ATTRIBUTION.md`, `ocr/SPOTTER-ATTRIBUTION.md`,
+[details](docs/vita-vn-ocr.md#models)). The dictionary data,
 the language models and the third-party code keep their own licences
 ([attribution](docs/plaintext-attribution.txt), [third_party/](third_party/README.md)).

@@ -1451,8 +1451,8 @@ re-decode, the LM, the cascade, the text rules) is the same job. **Off by defaul
 the pick is not resolved better than `rubi,fix=1` (GRAD + refine with the line fixes, what Rubi ships) on unseen
 development games, so it ships behind its setting (below). `ocr_finder = grad` is the job's own finder path as `main`
 has it, untouched; it is also what a job reads with whenever the spotter cannot run. It is a config.ini line only, as
-`ocr_refine_lines` and `ocr_head_gate` are: while the pin is a placeholder (below) every package's `spotter` reads
-with GRAD, so the Rubi app's OCR page gets no switch for it.
+`ocr_refine_lines` and `ocr_head_gate` are: the Rubi app's OCR page has no switch for it. Every package ships its
+weights (below), so `ocr_finder = spotter` in `config.ini` is all it takes.
 
 - **What it reads.** The region's first pass (the capture the Shell is told of, as for GRAD), then the game's whole
   frame, 960×544 (a PSP game in Adrenaline: the console's view, its picture as the screen shows it), through the same
@@ -1492,16 +1492,18 @@ with GRAD, so the Rubi app's OCR page gets no switch for it.
   time) and reads it again only when it changed. A job without the spotter gives the block back, and so does every
   path that gives back the resident weights (a job without memory, the game leaving the front, eight trusted hook
   answers in a row, the plugin's stop).
-- **The pin is a placeholder** until vita-vn-ocr's pick is published as `v0.3.9-textspot7.1`
-  (`textspot7_t64_w8.vtsp`, 52,176 B) and its hashes are taken: today the entries are the textspot6 research blob's
-  (`textspot6_t64n8c16_w8.vtsp`, 52,176 B, the same shape). Its pins are the `VJO_VOCR_SPOT_*` lines of
-  `include/vjo_vocr_sizes.h`, the one place C, CMake and the tools read: the tag, the name, the bytes and SHA-256, the
-  attribution's bytes and SHA-256, the form (`trunk`: the build leaves out every multi-scale path,
-  `-DVOCR_TEXTSPOT6_NO_MS`, cmake `VJO_VOCR_SPOT_NO_MS`), `VJO_VOCR_SPOT_PUBLISHED`, the arena for a 960×544 frame
-  (`VJO_VOCR_SPOT_ARENA`, what the memory ledger counts) and the post-pass's steps (`VJO_VOCR_SPOT_POST`). While
-  `PUBLISHED` is 0 the hashes are zeros (no file has them: a job with the spotter reads with GRAD),
-  `tools/prepare_ocr.py` fetches nothing for it and no package or one-VPK payload carries it
-  (`tools/tests/test_spot_pins.py`); pinning the pick changes one line per constant.
+- **The pin** is vita-vn-ocr's pre-release `v0.3.9-textspot7.1`: `textspot7_t64_w8.vtsp` (52,176 B, SHA-256
+  `78330f96…365a3e`; textspot6's `base_t64n8c16` retrained on the hooked pool's train, guard and hval splits, as
+  textspot7's rule requires of its pick) and its `ATTRIBUTION.md` (4,007 B, `053c12b5…56d3f8`), shipped as
+  `ocr/SPOTTER-ATTRIBUTION.md`: like the recognizers', **its weights are for non-commercial use only** (their
+  training inputs' terms). Its pins are the `VJO_VOCR_SPOT_*` lines of `include/vjo_vocr_sizes.h`, the one place C,
+  CMake and the tools read: the tag, the name, the bytes and SHA-256, the attribution's bytes and SHA-256, the form
+  (`trunk`: the build leaves out every multi-scale path, `-DVOCR_TEXTSPOT6_NO_MS`, cmake `VJO_VOCR_SPOT_NO_MS`),
+  `VJO_VOCR_SPOT_PUBLISHED`, the arena for a 960×544 frame (`VJO_VOCR_SPOT_ARENA`, 244,607 B, measured on this blob:
+  what the memory ledger counts) and the post-pass's steps (`VJO_VOCR_SPOT_POST`). `tools/prepare_ocr.py --backend
+  vocr-tiers` fetches both files with the models, each checked, and every package and the one-VPK payload carry them
+  (`tools/tests/test_spot_pins.py`); another pick changes one line per constant. (With `PUBLISHED` 0, a placeholder,
+  the hashes are zeros, which no file has: nothing is fetched or packaged, and `spotter` reads with GRAD.)
 - **The runtime** is vita-vn-ocr's `runtime/vocr_textspot6.c` and `runtime/vocr_textspot7.c` (and their headers),
   pinned in `cmake/VocrOCR.cmake` at their own commit (`VJO_VOCR_SPOT_COMMIT`, the head of vita-vn-ocr's
   `feat/textspot7`, `a7e929e`) until its pull request merges and one commit pins every runtime file again (see
@@ -1730,8 +1732,9 @@ steps below cover a source build or adding another model.
    sizes' models with theirs, v0.3.6-head2level.1's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
    (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), the text-presence
    gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`,
-   and the vertical model `VOCR5_V_w8.vocr` with v0.3.2-vertical.1's `ATTRIBUTION.md` as
-   `ocr/VERTICAL-ATTRIBUTION.md`.
+   the vertical model `VOCR5_V_w8.vocr` with v0.3.2-vertical.1's `ATTRIBUTION.md` as
+   `ocr/VERTICAL-ATTRIBUTION.md`, and the text spotter's `textspot7_t64_w8.vtsp` with v0.3.9-textspot7.1's
+   `ATTRIBUTION.md` as `ocr/SPOTTER-ATTRIBUTION.md` (`ocr_finder = spotter`, off by default).
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/`, the attributions included, or let the
    FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8g2.vocr --set vocr_tier=normal VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:

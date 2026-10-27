@@ -269,8 +269,9 @@ only on a yes: [below](#archiving-older-dumps-off-the-vita)), into one timestamp
   LIST time ([crash dumps](#crash-dumps));
 - the listing of each directory, and the SHA-256 of the installed plugins, RCO, settings VPK, OCR
   models, the beam + LM decoder's LMs (`*.vlm`), their `LM-ATTRIBUTION.md`, the model sizes'
-  `MODEL-ATTRIBUTION.md`, the vertical model's `VERTICAL-ATTRIBUTION.md`, and the text-presence gate's
-  weights (`*.vtd`) and `GATE-ATTRIBUTION.md`
+  `MODEL-ATTRIBUTION.md`, the vertical model's `VERTICAL-ATTRIBUTION.md`, the text-presence gate's
+  weights (`*.vtd`) and `GATE-ATTRIBUTION.md`, and the text spotter's weights (`*.vtsp`) and
+  `SPOTTER-ATTRIBUTION.md`
   (downloaded to a
   temporary file and deleted, never kept), compared with the package's `package-manifest.json`; the
   dictionary is compared by size.

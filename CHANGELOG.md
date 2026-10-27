@@ -24,8 +24,9 @@ been reported.
   read through the same strips as your region, each row checked, so a screen that changes while it is read starts the
   job again. Its weights (52,176 B) are a file beside the models, read once into the game's memory and kept, as the LM
   is; when they are missing, wrong or there is no memory for them, or the spotter refuses, the job reads with Rubi's
-  finder as before, and never steps down a model size. Until the pick's release is pinned, its pin is a placeholder,
-  so no package carries the weights and `spotter` reads with Rubi's finder. Memory (exact bytes, [memory
+  finder as before, and never steps down a model size. Every package ships the weights (vita-vn-ocr
+  `v0.3.9-textspot7.1`'s `textspot7_t64_w8.vtsp`) with their attribution, `ocr/SPOTTER-ATTRIBUTION.md`: like the
+  recognizers', they are for non-commercial use only. Memory (exact bytes, [memory
   ledger](docs/memory-ledger.md#the-spotter-finder-api-53-vita-vn-ocr-128)): its block, 57,344 B, and its part of the
   job's scratch, at most 313,392 B (the largest job 128,816 B more), only in jobs that use it; its code, 16 KiB more
   of the OCR worker's pages in every game that is ON, whichever finder it uses (208,896 B; 20 KiB more, 221,184 B, in

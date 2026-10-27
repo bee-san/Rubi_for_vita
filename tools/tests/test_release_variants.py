@@ -347,7 +347,8 @@ class PackageVariants(unittest.TestCase):
         gate_att = b"the gate's attribution fixture"  # API 26: the text-presence gate's
         self.enterContext(mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", {prepare.VOCR_GATE_ATTRIBUTION: (
             "https://fixture.invalid/G", len(gate_att), hashlib.sha256(gate_att).hexdigest())}))
-        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR_LM_ASSETS", "VOCR_GATE_ASSETS")
+        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR_LM_ASSETS", "VOCR_GATE_ASSETS",
+                  "VOCR_SPOT_ASSETS")  # API 53: the text spotter's weights, once its pin is published
         for mod in (prepare, release):
             for table in tables:
                 pinned = {name: spec for name in getattr(mod, table)}
@@ -362,6 +363,10 @@ class PackageVariants(unittest.TestCase):
         self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
             "https://fixture.invalid/V", len(vertical_att), hashlib.sha256(vertical_att).hexdigest())}))
         (self.models / prepare.VOCR_VERTICAL_ATTRIBUTION).write_bytes(vertical_att)
+        spot_att = b"the text spotter's attribution fixture"  # API 53 (ocr_finder = spotter)
+        self.enterContext(mock.patch.object(release, "VOCR_SPOT_ATTRIBUTION_PIN", {prepare.VOCR_SPOT_ATTRIBUTION: (
+            "https://fixture.invalid/S", len(spot_att), hashlib.sha256(spot_att).hexdigest())}))
+        (self.models / prepare.VOCR_SPOT_ATTRIBUTION).write_bytes(spot_att)
         self.dictionary = b"VJDICT2\0synthetic dictionary fixture"
         snapshot = {"bytes": len(self.dictionary), "sha256": hashlib.sha256(self.dictionary).hexdigest()}
         self.enterContext(mock.patch.object(release, "load_manifest", return_value=snapshot))

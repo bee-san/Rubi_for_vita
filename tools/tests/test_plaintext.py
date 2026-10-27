@@ -133,7 +133,8 @@ class FrozenPlaintext(unittest.TestCase):
         vocr4 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR4_ASSETS}
         vocr5 = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5_ASSETS}
         vocr5v = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR5V_ASSETS}
-        for name in (*pins, *vocr3, *lms, *vocr4, *vocr5, *vocr5v):
+        spot = {name: ("fixture", len(payload), hashlib.sha256(payload).hexdigest()) for name in release.VOCR_SPOT_ASSETS}
+        for name in (*pins, *vocr3, *lms, *vocr4, *vocr5, *vocr5v, *spot):
             (models / name).write_bytes(payload)
         (models / "ATTRIBUTION.md").write_text("CC BY-SA 4.0 fixture")
         att = {"ATTRIBUTION.md": ("fixture", 20, hashlib.sha256(b"CC BY-SA 4.0 fixture").hexdigest())}
@@ -145,12 +146,15 @@ class FrozenPlaintext(unittest.TestCase):
         gate_att = {"GATE-ATTRIBUTION.md": ("fixture", 12, hashlib.sha256(b"gate fixture").hexdigest())}
         (models / "VERTICAL-ATTRIBUTION.md").write_text("vertical fixture")
         vertical_att = {"VERTICAL-ATTRIBUTION.md": ("fixture", 16, hashlib.sha256(b"vertical fixture").hexdigest())}
+        (models / "SPOTTER-ATTRIBUTION.md").write_text("spotter fixture")  # API 53: the text spotter's
+        spot_att = {"SPOTTER-ATTRIBUTION.md": ("fixture", 15, hashlib.sha256(b"spotter fixture").hexdigest())}
         output = self.root / "package.zip"
         with mock.patch.object(release, "VOCR_ASSETS", pins), mock.patch.object(release, "VOCR3_ASSETS", vocr3), \
              mock.patch.object(release, "VOCR_LM_ATTRIBUTION_PIN", att), \
              mock.patch.object(release, "VOCR_MODEL_ATTRIBUTION_PIN", model_att), \
              mock.patch.object(release, "VOCR_GATE_ASSETS", gate), mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
              mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", vertical_att), \
+             mock.patch.object(release, "VOCR_SPOT_ASSETS", spot), mock.patch.object(release, "VOCR_SPOT_ATTRIBUTION_PIN", spot_att), \
              mock.patch.object(release, "VOCR_LM_ASSETS", lms), mock.patch.object(release, "VOCR4_ASSETS", vocr4), \
              mock.patch.object(release, "VOCR5_ASSETS", vocr5), mock.patch.object(release, "VOCR5V_ASSETS", vocr5v), \
              mock.patch.object(convert, "convert", side_effect=AssertionError("No packaging conversion")), \

@@ -771,8 +771,8 @@ much on regions drawn tight.
 default): a network trained on hooked game pages reads the game's whole screen, and a post-pass keeps the lines whose
 centre is in your region, joins the pieces of a line and grows each over the ink at its ends. It is off by default:
 on vita-vn-ocr's unseen development games it is not resolved better than Rubi's finder with the line fixes (host,
-measured). Its weights are a file beside the models, kept in the game's memory between jobs; without them (until the
-pick's release is pinned, every package) a job reads with Rubi's finder, as it does whenever the spotter cannot run
+measured). Its weights are a file beside the models (`ocr/textspot7_t64_w8.vtsp`, in every package), kept in the
+game's memory between jobs; without them a job reads with Rubi's finder, as it does whenever the spotter cannot run
 ([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-53)).
 
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
@@ -1322,4 +1322,8 @@ beside them ([details](vita-vn-ocr.md#models)). The text-presence gate's weights
 whether `ocr_text_gate` is on or off) were trained on non-commercial fonts and text and on VNDB
 screenshots: they are for non-commercial use only too, and their attribution is in
 `ocr/GATE-ATTRIBUTION.md`, which ships beside them
-([details](vita-vn-ocr.md#text-presence-gate-api-26)).
+([details](vita-vn-ocr.md#text-presence-gate-api-26)). The text spotter's weights (`ocr/textspot7_t64_w8.vtsp`,
+bee-san/vita-vn-ocr v0.3.9-textspot7.1; every package ships them, read only with `ocr_finder = spotter`) were trained
+on the owner's hooked game pages, on synthetic frames in non-commercial fonts and text and on VNDB screenshots: they
+are for non-commercial use only too, and their attribution is in `ocr/SPOTTER-ATTRIBUTION.md`, which ships beside
+them ([details](vita-vn-ocr.md#the-spotter-finder-api-53)).

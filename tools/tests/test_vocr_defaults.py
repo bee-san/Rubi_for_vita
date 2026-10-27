@@ -282,7 +282,17 @@ class VocrDefaults(unittest.TestCase):
                                                                 hashlib.sha256(gate_att).hexdigest())}
             (src / prepare_ocr.VOCR_GATE_MODEL).write_bytes(gate)
             (src / prepare_ocr.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
+            # API 53: the text spotter's weights and its release's attribution (kept as SPOTTER-ATTRIBUTION.md)
+            spot, spot_att = b"spotter fixture", b"the spotter's attribution"
+            spot_pin = {prepare_ocr.VOCR_SPOT_MODEL: ("https://fixture.invalid/s", len(spot), hashlib.sha256(spot).hexdigest())}
+            spot_att_pin = {prepare_ocr.VOCR_SPOT_ATTRIBUTION: ("https://fixture.invalid/sa", len(spot_att),
+                                                                hashlib.sha256(spot_att).hexdigest())}
+            (src / prepare_ocr.VOCR_SPOT_MODEL).write_bytes(spot)
+            (src / prepare_ocr.VOCR_SPOT_ATTRIBUTION).write_bytes(spot_att)
+            spot_files = [prepare_ocr.VOCR_SPOT_MODEL, prepare_ocr.VOCR_SPOT_ATTRIBUTION] if prepare_ocr.VOCR_SPOT_PUBLISHED else []
             with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), mock.patch.dict(prepare_ocr.VOCR5V_ASSETS, vpins), \
+                 mock.patch.object(prepare_ocr, "VOCR_SPOT_ASSETS", spot_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_SPOT_ATTRIBUTION_PIN", spot_att_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_VERTICAL_ATTRIBUTION_PIN", vatt_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ASSETS", gate_pin), \
@@ -292,7 +302,7 @@ class VocrDefaults(unittest.TestCase):
                 self.assertEqual(sorted(p.name for p in paths),
                                  sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md", prepare_ocr.VOCR_GATE_MODEL,
                                          "GATE-ATTRIBUTION.md", prepare_ocr.VOCR_VERTICAL_MODEL,
-                                         prepare_ocr.VOCR_VERTICAL_ATTRIBUTION]))
+                                         prepare_ocr.VOCR_VERTICAL_ATTRIBUTION, *spot_files]))
                 self.assertEqual((out / "GATE-ATTRIBUTION.md").read_bytes(), gate_att)
                 self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
                 self.assertFalse((out / "ATTRIBUTION.md").exists())  # the LMs' name stays theirs
@@ -508,9 +518,10 @@ class VocrDefaults(unittest.TestCase):
                      "VOCR4_FL10_w8.vocr", "VOCR4_H15_w8.vocr", "VOCR4_W20_w8.vocr"):
             if name not in TIER_FILES:
                 self.assertNotIn(name, shipped)
+        spot = {prepare_ocr.VOCR_SPOT_MODEL} if prepare_ocr.VOCR_SPOT_PUBLISHED else set()
         self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
                          {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL,
-                          prepare_ocr.VOCR_VERTICAL_MODEL})  # the LMs, the gate (API 26), VOCR5-V (API 47)
+                          prepare_ocr.VOCR_VERTICAL_MODEL, *spot})  # the LMs, the gate (API 26), VOCR5-V (47), the spotter (53)
 
 
 class RuntimePinEverywhere(unittest.TestCase):

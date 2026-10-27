@@ -12,8 +12,8 @@ v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 VOCR5_N_w8g2.vocr, VOCR5_L_w8g2.vocr) and their release's attribution, v0.3.6-head2level.1's ATTRIBUTION.md
 kept as MODEL-ATTRIBUTION.md, and the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
 with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, and (API 53) the text spotter's weights with
-their release's ATTRIBUTION.md kept as SPOTTER-ATTRIBUTION.md, pinned in include/vjo_vocr_sizes.h (a placeholder,
-fetched by nothing, until vita-vn-ocr publishes them), which a package ships. --backend vocr-tests
+their release's ATTRIBUTION.md kept as SPOTTER-ATTRIBUTION.md, pinned in include/vjo_vocr_sizes.h (v0.3.9-textspot7.1;
+a placeholder pin, VJO_VOCR_SPOT_PUBLISHED 0, fetches nothing), which a package ships. --backend vocr-tests
 fetches what the host tests read from VJO_VOCR_MODEL_DIR (CMakeLists.txt: their real-model checks): every pinned
 recognizer, the four LMs, v0.3.0's three VOCR5 recognizers in a v0.3.0/ subdirectory (the off-path check's) and the
 gate's weights (which tools/fast_gate.sh's models lane hands to cmake/VocrGate.cmake); with --check it downloads

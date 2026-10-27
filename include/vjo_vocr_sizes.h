@@ -126,27 +126,27 @@
  * include/vjo_payload.h (PUBLISHED), cmake/VocrOCR.cmake (FORM: the VOCR_TEXTSPOT6_NO_MS default),
  * tools/prepare_ocr.py, package_release.py, package_vpk.py and e2e_package.py all read these lines, one value each
  * (tools/tests/test_spot_pins.py checks the form of each), so pinning vita-vn-ocr's published pick changes one line
- * per constant. Until that pre-release's hashes are taken the entry is a placeholder: VJO_VOCR_SPOT_PUBLISHED 0 and
- * a SHA-256 of zeros, which no file has, so a job with the spotter finds no weights and reads with GRAD, and no
- * package carries the spotter. TAG: the pre-release; NAME, BYTES, SHA256: its weights; ATTRIBUTION_BYTES, _SHA256:
- * its ATTRIBUTION.md; FORM: "trunk" (a VTDT trunk: the build leaves out every multi-scale path,
- * -DVOCR_TEXTSPOT6_NO_MS) or "ms" (a VTMS network); ARENA: its arena for a 960 x 544 frame read at its blob's scale
- * (vocr_textspot6_arena_bytes(m, 960, 544): every smaller frame's is at most this; 244,607 B for the t64n8c16
- * shape [measured: the runtime at the pin, vita-vn-ocr's base_t64n8c16 seed 1 blob]), what the memory ledger
- * counts (a blob that needs more reads with GRAD); POST: the post-pass's steps (vita-vn-ocr runtime/vocr_textspot7.h
+ * per constant. The pick is vita-vn-ocr's pre-release v0.3.9-textspot7.1 (textspot6's base_t64n8c16, retrained on the
+ * hooked pool's train, guard and hval splits); with VJO_VOCR_SPOT_PUBLISHED 0 an entry is a placeholder (a SHA-256 of
+ * zeros, which no file has: a job with the spotter reads with GRAD, and no package carries the spotter). TAG: the
+ * pre-release; NAME, BYTES, SHA256: its weights; ATTRIBUTION_BYTES, _SHA256: its ATTRIBUTION.md; FORM: "trunk" (a
+ * VTDT trunk: the build leaves out every multi-scale path, -DVOCR_TEXTSPOT6_NO_MS) or "ms" (a VTMS network); ARENA:
+ * its arena for a 960 x 544 frame read at its blob's scale (vocr_textspot6_arena_bytes(m, 960, 544): every smaller
+ * frame's is at most this; 244,607 B [measured: the runtime at the pin on this blob]), what the memory ledger counts
+ * (a blob that needs more reads with GRAD); POST: the post-pass's steps (vita-vn-ocr runtime/vocr_textspot7.h
  * VOCR_T7_*: decode D, VOCR_T7_JOIN10 | VOCR_T7_EXTEND). */
 #ifdef VJO_VOCR_SPOT_TEST
 /* Host tests only (host/tests/test_spot_pins.h): the committed random blob's pins, a job's spotter end to end. */
 #include VJO_VOCR_SPOT_TEST
 #else
-#define VJO_VOCR_SPOT_TAG "v0.3.8-textspot6.1"
-#define VJO_VOCR_SPOT_NAME "textspot6_t64n8c16_w8.vtsp"
+#define VJO_VOCR_SPOT_TAG "v0.3.9-textspot7.1"
+#define VJO_VOCR_SPOT_NAME "textspot7_t64_w8.vtsp"
 #define VJO_VOCR_SPOT_BYTES 52176u
-#define VJO_VOCR_SPOT_SHA256 "0000000000000000000000000000000000000000000000000000000000000000"
-#define VJO_VOCR_SPOT_ATTRIBUTION_BYTES 0u
-#define VJO_VOCR_SPOT_ATTRIBUTION_SHA256 "0000000000000000000000000000000000000000000000000000000000000000"
+#define VJO_VOCR_SPOT_SHA256 "78330f96c9e02646b2108b896cc035544e70fbb7d9fd896981bcf2f9ab365a3e"
+#define VJO_VOCR_SPOT_ATTRIBUTION_BYTES 4007u
+#define VJO_VOCR_SPOT_ATTRIBUTION_SHA256 "053c12b54d6c35a8e15cc01d4562447830bba362220caae8a922858e4e56d3f8"
 #define VJO_VOCR_SPOT_FORM "trunk"
-#define VJO_VOCR_SPOT_PUBLISHED 0
+#define VJO_VOCR_SPOT_PUBLISHED 1
 #define VJO_VOCR_SPOT_ARENA 244607u
 #define VJO_VOCR_SPOT_POST 0x0Cu
 #endif
