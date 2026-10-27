@@ -229,6 +229,10 @@ class E2EPackageEdges(unittest.TestCase):
         vertical_attribution = b"the vertical model's attribution"
         vertical_att = {"VERTICAL-ATTRIBUTION.md": ("https://fixture.invalid/v", len(vertical_attribution),
                                                     hashlib.sha256(vertical_attribution).hexdigest())}
+        # API 53: the text spotter's attribution, its pin published (its weights are a shipped model, like m.vocr)
+        spot_attribution = b"the text spotter's attribution"
+        spot_att = {"SPOTTER-ATTRIBUTION.md": ("https://fixture.invalid/s", len(spot_attribution),
+                                               hashlib.sha256(spot_attribution).hexdigest())}
         release = e2e_package.release
         worker_dbg = len(check_variant.debug_only_strings(ROOT, "worker"))  # the worker's sources' debug-only strings
         cases = (  # (what, fake_package's arguments, the ocr/ files, the failed checks in order: a part of each)
@@ -267,6 +271,10 @@ class E2EPackageEdges(unittest.TestCase):
              ["VERTICAL-ATTRIBUTION.md is the vertical model's pinned attribution"]),
             ("the vertical model's attribution missing", {}, {"VERTICAL-ATTRIBUTION.md": None},
              ["VERTICAL-ATTRIBUTION.md is the vertical model's pinned attribution"]),
+            ("the spotter's attribution altered", {}, {"SPOTTER-ATTRIBUTION.md": b"the text spotter's attributioN"},
+             ["SPOTTER-ATTRIBUTION.md is the text spotter's pinned attribution"]),
+            ("the spotter's attribution missing", {}, {"SPOTTER-ATTRIBUTION.md": None},
+             ["SPOTTER-ATTRIBUTION.md is the text spotter's pinned attribution"]),
             ("an extra model, a name the broker accepts (P9)", {}, {"FL10_w8.vocr": blob},
              ["ocr/ has nothing but the shipped models and their attributions (other files: FL10_w8.vocr)"]),
             ("an extra LM and a file in a subdirectory", {}, {"x.vlm": b"lm", "old/m.vocr": blob},
@@ -282,13 +290,17 @@ class E2EPackageEdges(unittest.TestCase):
                 mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", gate_att), \
                 mock.patch.object(release, "VOCR_GATE_ATTRIBUTION", "GATE-ATTRIBUTION.md"), \
                 mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", vertical_att), \
-                mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION", "VERTICAL-ATTRIBUTION.md"):
+                mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION", "VERTICAL-ATTRIBUTION.md"), \
+                mock.patch.object(release, "VOCR_SPOT_PUBLISHED", True), \
+                mock.patch.object(release, "VOCR_SPOT_ATTRIBUTION_PIN", spot_att), \
+                mock.patch.object(release, "VOCR_SPOT_ATTRIBUTION", "SPOTTER-ATTRIBUTION.md"):
             for what, kwargs, files, want in cases:
                 ocr = {name: data for name, data in {"m.vocr": blob, "LM-ATTRIBUTION.md": attribution,
                                                      "MODEL-ATTRIBUTION.md": model_attribution,
                                                      "VOCR6-ATTRIBUTION.md": vocr6_attribution,
                                                      "GATE-ATTRIBUTION.md": gate_attribution,
-                                                     "VERTICAL-ATTRIBUTION.md": vertical_attribution, **files}.items()
+                                                     "VERTICAL-ATTRIBUTION.md": vertical_attribution,
+                                                     "SPOTTER-ATTRIBUTION.md": spot_attribution, **files}.items()
                        if data is not None}
                 with self.subTest(what), tempfile.TemporaryDirectory() as tmp, \
                         contextlib.redirect_stdout(io.StringIO()):

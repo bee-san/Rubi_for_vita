@@ -72,6 +72,14 @@ def payload_files():
     strings = {"VJO_PAYLOAD_DATA": "ux0:data/VitaJPOverlay/", "VJO_PAYLOAD_OCR": "ux0:data/VitaJPOverlay/ocr/",
                "VJO_PAYLOAD_HOOKS": "ux0:data/VitaJPOverlay/hooks/"}
     block = header[header.index("#define VJO_PAYLOAD_FILE_LIST(X)"):header.index("#define VJO_PAYLOAD_COUNT_ONE")]
+    # API 53: the text spotter's entries stand where VJO_PAYLOAD_SPOT_LIST(X) does, as the compiler reads it: its
+    # #if branch's when include/vjo_vocr_sizes.h's pin is published (VJO_VOCR_SPOT_PUBLISHED 1), none before.
+    published = re.findall(r"^#define VJO_VOCR_SPOT_PUBLISHED ([01])$", sizes, re.M)
+    if len(published) != 1 or block.count("VJO_PAYLOAD_SPOT_LIST(X)") != 1:
+        raise ValueError("include/vjo_payload.h, vjo_vocr_sizes.h: cannot read the text spotter's payload entries")
+    spot = header[header.index("#if VJO_VOCR_SPOT_PUBLISHED"):header.index("#define VJO_PAYLOAD_SPOT_FILES 2")]
+    block = block.replace("VJO_PAYLOAD_SPOT_LIST(X)",
+                          spot.split("VJO_PAYLOAD_SPOT_LIST(X)", 1)[1] if published[0] == "1" else "")
     out = []
     for args, kind in re.findall(r"X\((.+?), VJO_PAYLOAD_(COPY|MOVE|TEMPLATE)\)", block):
         dest = ""

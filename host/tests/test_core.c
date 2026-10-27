@@ -830,6 +830,31 @@ static void test_config(void)
         TEST_CHECK(c.ocr_line_fix == fixes[k].want && c.n_warnings == fixes[k].warnings);
         TEST_MSG("%s: %d, %d warnings", fixes[k].text, c.ocr_line_fix, c.n_warnings);
     }
+    /* API 53: the finder, the spotter by default (docs/vita-vn-ocr.md "The spotter finder"), and the spotter's
+     * refinement, off by default. Any case; an unknown or empty value keeps the one before, warned with the key's name. */
+    vjo_config_defaults(&c);
+    TEST_CHECK(c.ocr_finder == VJO_FINDER_SPOTTER && VJO_FINDER_DEFAULT == VJO_FINDER_SPOTTER && !c.ocr_spotter_refine &&
+               !VJO_SPOTTER_REFINE_DEFAULT);
+    static const struct { const char *text, *key; int finder, refine, warnings; } finders[] = {
+        {"ocr_finder = spotter\n", NULL, VJO_FINDER_SPOTTER, 0, 0},
+        {"OCR_Finder = SPOTTER\nocr_spotter_refine = On\n", NULL, VJO_FINDER_SPOTTER, 1, 0},
+        {"ocr_finder = spotter\nocr_finder = grad\n", NULL, VJO_FINDER_GRAD, 0, 0},
+        {"ocr_finder = spotter ; vita-vn-ocr's text spotter\n", NULL, VJO_FINDER_SPOTTER, 0, 0},
+        {"ocr_finder = spotter\nocr_finder = textdet\n", "ocr_finder", VJO_FINDER_SPOTTER, 0, 1},
+        {"ocr_finder =\n", "ocr_finder", VJO_FINDER_SPOTTER, 0, 1},
+        {"ocr_finder = grad\n", NULL, VJO_FINDER_GRAD, 0, 0},
+        {"ocr_spotter_refine = on\nocr_spotter_refine = maybe\n", "ocr_spotter_refine", VJO_FINDER_SPOTTER, 1, 1},
+        {"ocr_spotter_refine = on\nocr_spotter_refine = OFF\n", NULL, VJO_FINDER_SPOTTER, 0, 0}};
+    for (unsigned i = 0; i < sizeof(finders) / sizeof(finders[0]); i++) {
+        vjo_config_defaults(&c);
+        vjo_config_parse(&c, finders[i].text, strlen(finders[i].text));
+        TEST_CHECK_(c.ocr_finder == finders[i].finder && c.ocr_spotter_refine == finders[i].refine &&
+                    c.n_warnings == finders[i].warnings && !c.ocr_text_gate, "%s", finders[i].text);
+        if (finders[i].key) TEST_CHECK(strstr(c.warnings[0], finders[i].key) != NULL); /* named, never the value */
+    }
+    /* the template names both, with their defaults (docs/config.example.ini is the same text) */
+    TEST_CHECK(strstr(vjo_config_default_text(), "\nocr_finder = " VJO_FINDER_DEFAULT_TEXT "\n") != NULL &&
+               strstr(vjo_config_default_text(), "\nocr_spotter_refine = " VJO_SPOTTER_REFINE_DEFAULT_TEXT "\n") != NULL);
     /* API 31, audit-hooks F3: the hooks' table sites, on by default; off makes the Shell send
      * VJO_TEXT_SOURCE_NO_SITES (only the string copies hooked). Any case; an unknown value is on, warned. */
     vjo_config_defaults(&c);

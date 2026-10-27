@@ -12,7 +12,8 @@ v0.2.5-vocr4.1, H15_w8.vocr, FL10_w8.vocr and F20_w8.vocr from v0.2.0) instead;
 VOCR6_N_w8_2l.vocr, VOCR6_L_w8_2l.vocr) and their releases' attributions, v0.3.6-head2level.1's ATTRIBUTION.md
 kept as MODEL-ATTRIBUTION.md and v0.4.0-vocr6.1's as VOCR6-ATTRIBUTION.md, and the text-presence gate's weights
 (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1) with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which
-a package ships. --backend vocr-tests
+a package ships, and (API 53) the text spotter's weights with their release's ATTRIBUTION.md kept as
+SPOTTER-ATTRIBUTION.md, pinned in include/vjo_vocr_sizes.h. --backend vocr-tests
 fetches what the host tests read from VJO_VOCR_MODEL_DIR (CMakeLists.txt: their real-model checks): every pinned
 recognizer, the four LMs, the off-path check's references (v0.3.0's VOCR5-S in a v0.3.0/ subdirectory, VOCR6's plain
 Normal and Large in v0.4.0-vocr6.1/) and the
@@ -208,6 +209,55 @@ VOCR_GATE_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
 VOCR_GATE_ATTRIBUTION_PIN = {VOCR_GATE_ATTRIBUTION: (VOCR_GATE_BASE + VOCR_GATE_ATTRIBUTION_ASSET, 3706,
     '44a353c76e19c6bdabcb9dbd06d14867696dcb59ce0460db22d09749af687f6e')}
 
+# API 53: the text spotter (vita-vn-ocr #149, docs/textspot8.md), the game worker's default finder
+# (ocr_finder = spotter; grad turns it off): its int8 weights (a VTSP blob) and its release's ATTRIBUTION.md, which ships beside them as
+# ocr/SPOTTER-ATTRIBUTION.md. Their pins are the VJO_VOCR_SPOT_* lines of include/vjo_vocr_sizes.h, the one place
+# that C, CMake and these tools all read (a copy of this script beside a copy of that header, as a release zip's
+# tools/ holds them, reads that one). An unpublished entry (VJO_VOCR_SPOT_PUBLISHED 0) fetches nothing, and no
+# package carries the spotter then.
+VOCR_SPOT_HEADER_NAME = 'vjo_vocr_sizes.h'
+VOCR_SPOT_HEADERS = (Path(__file__).resolve().parent.parent / 'include' / VOCR_SPOT_HEADER_NAME,
+                     Path(__file__).resolve().parent / VOCR_SPOT_HEADER_NAME)
+VOCR_SPOT_FIELDS = {  # the macro after VJO_VOCR_SPOT_, and the form of its value
+    'TAG': r'"(v[0-9][0-9A-Za-z.\-]*)"', 'NAME': r'"([A-Za-z0-9_.\-]+\.vtsp)"', 'BYTES': r'(\d+)u',
+    'SHA256': r'"([0-9a-f]{64})"', 'ATTRIBUTION_BYTES': r'(\d+)u', 'ATTRIBUTION_SHA256': r'"([0-9a-f]{64})"',
+    'FORM': r'"(trunk|ms)"', 'PUBLISHED': r'([01])'}
+
+
+def spot_pin(header=None):
+    """The spotter's pins: include/vjo_vocr_sizes.h's VJO_VOCR_SPOT_* lines (each exactly once, in its form) as
+    {'tag', 'name', 'bytes', 'sha256', 'attribution_bytes', 'attribution_sha256', 'form', 'published'}, or None when
+    no copy of the header is here."""
+    paths = [Path(header)] if header else [p for p in VOCR_SPOT_HEADERS if p.is_file()]
+    if not paths:
+        return None
+    text = paths[0].read_text(encoding='utf-8')
+    pin = {}
+    for field, form in VOCR_SPOT_FIELDS.items():
+        found = re.findall(rf'^#define VJO_VOCR_SPOT_{field} (\S+)$', text, re.M)
+        value = re.fullmatch(form, found[0]) if len(found) == 1 else None
+        if not value:
+            raise ValueError(f'{paths[0]}: VJO_VOCR_SPOT_{field} is not one line of the form {form} ({found})')
+        pin[field.lower()] = int(value.group(1)) if field.endswith('BYTES') or field == 'PUBLISHED' else value.group(1)
+    pin['published'] = bool(pin['published'])
+    if pin['published'] and (set(pin['sha256']) == {'0'} or set(pin['attribution_sha256']) == {'0'} or
+                             not pin['attribution_bytes']):
+        raise ValueError(f'{paths[0]}: VJO_VOCR_SPOT_PUBLISHED 1 with a placeholder hash or size')
+    return pin
+
+
+VOCR_SPOT_PIN = spot_pin()
+VOCR_SPOT_PUBLISHED = bool(VOCR_SPOT_PIN and VOCR_SPOT_PIN['published'])
+VOCR_SPOT_TAG = VOCR_SPOT_PIN['tag'] if VOCR_SPOT_PIN else None
+VOCR_SPOT_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR_SPOT_TAG}/'
+VOCR_SPOT_MODEL = VOCR_SPOT_PIN['name'] if VOCR_SPOT_PIN else None
+VOCR_SPOT_ASSETS = {VOCR_SPOT_MODEL: (VOCR_SPOT_BASE + VOCR_SPOT_MODEL, VOCR_SPOT_PIN['bytes'],
+                                      VOCR_SPOT_PIN['sha256'])} if VOCR_SPOT_PIN else {}
+VOCR_SPOT_ATTRIBUTION = 'SPOTTER-ATTRIBUTION.md'
+VOCR_SPOT_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
+VOCR_SPOT_ATTRIBUTION_PIN = {VOCR_SPOT_ATTRIBUTION: (VOCR_SPOT_BASE + VOCR_SPOT_ATTRIBUTION_ASSET,
+    VOCR_SPOT_PIN['attribution_bytes'], VOCR_SPOT_PIN['attribution_sha256'])} if VOCR_SPOT_PIN else {}
+
 # The model generation of each release: vita-vn-ocr's name for the family of models a release
 # publishes (it calls v0.2.0's FL10 "VOCR1"). A .vocr blob carries no generation of its own, so
 # the pins carry it: core/vocr_models.c per file (the Rubi app names the local OCR engine
@@ -315,8 +365,8 @@ def fetch_tiers(directory, source=None):
     attributions (MODEL-ATTRIBUTION.md: VOCR5's, Small's and the base VOCR6 starts from; VOCR6-ATTRIBUTION.md:
     VOCR6's, Normal's and Large's), with the text-presence gate's weights and attribution
     (GATE-ATTRIBUTION.md), and the vertical model (VOCR_VERTICAL_MODEL, config.ini ocr_vertical) and its
-    release's attribution (VERTICAL-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched
-    once."""
+    release's attribution (VERTICAL-ATTRIBUTION.md), and, once published, the text spotter's
+    (SPOTTER-ATTRIBUTION.md): what a package ships. A model two sizes share is fetched once."""
     names = dict.fromkeys(tier['model'] for tier in model_tiers()['tiers'])
     paths = [fetch_vocr(directory, name, source) for name in names]
     paths.append(fetch_release_asset(directory, VOCR_MODEL_ATTRIBUTION, VOCR_MODEL_ATTRIBUTION_PIN,
@@ -327,7 +377,18 @@ def fetch_tiers(directory, source=None):
     paths.append(fetch_vocr(directory, VOCR_VERTICAL_MODEL, source))
     paths.append(fetch_release_asset(directory, VOCR_VERTICAL_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION_PIN,
                                      VOCR5V_TAG, source, 'ATTRIBUTION.md'))
+    paths += fetch_spot(directory, source)
     return paths
+
+
+def fetch_spot(directory, source=None):
+    """The text spotter's weights (VOCR_SPOT_MODEL) and their attribution (SPOTTER-ATTRIBUTION.md), pinned; nothing
+    while its pin is unpublished (VOCR_SPOT_PUBLISHED false)."""
+    if not VOCR_SPOT_PUBLISHED:
+        return []
+    return [fetch_release_asset(directory, VOCR_SPOT_MODEL, VOCR_SPOT_ASSETS, VOCR_SPOT_TAG, source),
+            fetch_release_asset(directory, VOCR_SPOT_ATTRIBUTION, VOCR_SPOT_ATTRIBUTION_PIN, VOCR_SPOT_TAG, source,
+                                VOCR_SPOT_ATTRIBUTION_ASSET)]
 
 
 def fetch_gate(directory, source=None):
@@ -350,11 +411,13 @@ def test_models():
     the plugin's, core/vocr_ocr.c), the four LMs, the off-path check's references (host/tests/test_vocr.c:
     v0.3.0's VOCR5-S in v0.3.0/, VOCR6's plain Normal and Large in v0.4.0-vocr6.1/), and the text-presence gate's
     weights, which the host builds take from cmake/VocrGate.cmake (tools/fast_gate.sh's models lane gives it this
-    copy: VJO_VOCR_GATE_BLOB). A name is the file's path under the directory. No attribution: no test reads one."""
+    copy: VJO_VOCR_GATE_BLOB), and (API 53) the text spotter's published weights (host/tests/test_spot_release.c). A
+    name is the file's path under the directory. No attribution: no test reads one."""
     tables = ((VOCR6_ASSETS, VOCR6_TAG), (VOCR5_ASSETS, VOCR5_TAG), (VOCR5V_ASSETS, VOCR5V_TAG),
               (VOCR4_ASSETS, VOCR4_TAG), (VOCR3_ASSETS, VOCR3_TAG), (VOCR_ASSETS, VOCR_TAG),
               (VOCR_LM_ASSETS, VOCR_LM_TAG), (VOCR5_V030_TEST_ASSETS, VOCR5_V030_TAG),
-              (VOCR6_PLAIN_TEST_ASSETS, VOCR6_TAG), (VOCR_GATE_ASSETS, VOCR_GATE_TAG))
+              (VOCR6_PLAIN_TEST_ASSETS, VOCR6_TAG), (VOCR_GATE_ASSETS, VOCR_GATE_TAG)) + \
+        (((VOCR_SPOT_ASSETS, VOCR_SPOT_TAG),) if VOCR_SPOT_PUBLISHED else ())
     return [(name, assets, tag) for assets, tag in tables for name in assets]
 
 
@@ -482,8 +545,13 @@ def main():
     if args.backend == 'vocr-tiers':
         for path in fetch_tiers(args.output, args.source):
             print('Verified', path.name)
+        if not VOCR_SPOT_PUBLISHED:
+            print('The text spotter (ocr_finder = spotter):', 'its pin is unpublished',
+                  VOCR_SPOT_TAG or '', '(include/vjo_vocr_sizes.h VJO_VOCR_SPOT_PUBLISHED): not fetched')
+        keep = [VOCR_MODEL_ATTRIBUTION, VOCR6_ATTRIBUTION, VOCR_GATE_ATTRIBUTION, VOCR_VERTICAL_ATTRIBUTION] + \
+            ([VOCR_SPOT_ATTRIBUTION] if VOCR_SPOT_PUBLISHED else [])
         print('Models ready in', args.output, '- copy them to ux0:data/VitaJPOverlay/ocr/ (keep',
-              f'{VOCR_MODEL_ATTRIBUTION}, {VOCR6_ATTRIBUTION}, {VOCR_GATE_ATTRIBUTION} and {VOCR_VERTICAL_ATTRIBUTION}',
+              ', '.join(keep[:-1]), 'and', keep[-1],
               'beside them: their training data\'s licences and their terms)')
         return
     if args.backend == 'vocr':

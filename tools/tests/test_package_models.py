@@ -66,7 +66,14 @@ class PackageModels(unittest.TestCase):
         self.vertical_attribution = b"the vertical model's attribution fixture"
         self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
             "https://fixture.invalid/V", len(self.vertical_attribution), hashlib.sha256(self.vertical_attribution).hexdigest())}))
+        # API 53: the text spotter's weights and attribution, its pin published
+        self.spot = b"tiny spotter fixture, not spotter weights"
+        self.spot_attribution = b"the spotter's attribution fixture"
+        self.enterContext(mock.patch.object(release, "VOCR_SPOT_ATTRIBUTION_PIN", {prepare.VOCR_SPOT_ATTRIBUTION: (
+            "https://fixture.invalid/SA", len(self.spot_attribution), hashlib.sha256(self.spot_attribution).hexdigest())}))
         for module in (prepare, release):
+            self.enterContext(mock.patch.object(module, "VOCR_SPOT_ASSETS", {prepare.VOCR_SPOT_MODEL: (
+                "https://fixture.invalid/S", len(self.spot), hashlib.sha256(self.spot).hexdigest())}))
             self.enterContext(mock.patch.object(module, "VOCR_ASSETS", old))
             self.enterContext(mock.patch.object(module, "VOCR3_ASSETS", vocr3))
             self.enterContext(mock.patch.object(module, "VOCR_LM_ASSETS", lms))
@@ -110,6 +117,8 @@ class PackageModels(unittest.TestCase):
         (self.models / prepare.VOCR_GATE_MODEL).write_bytes(self.gate)
         (self.models / prepare.VOCR_GATE_ATTRIBUTION).write_bytes(self.gate_attribution)
         (self.models / prepare.VOCR_VERTICAL_ATTRIBUTION).write_bytes(self.vertical_attribution)
+        (self.models / prepare.VOCR_SPOT_MODEL).write_bytes(self.spot)
+        (self.models / prepare.VOCR_SPOT_ATTRIBUTION).write_bytes(self.spot_attribution)
 
     def package_fixture(self, settings=None, write_models=True, vpk=b"synthetic package fixture", record=None):
         """The release package of a synthetic base archive and the fixture models (written first
@@ -185,7 +194,14 @@ class PackageModels(unittest.TestCase):
                 self.assertIn(name, manifest["models"])
                 self.assertEqual(archive.read(release.DATA + "ocr/" + name), self.fixture_of(name))
             self.assertEqual(sorted(manifest["models"]), sorted({*sizes, *prepare.VOCR_LM_ASSETS, prepare.VOCR_GATE_MODEL,
-                                                           prepare.VOCR_VERTICAL_MODEL}))
+                                                           prepare.VOCR_VERTICAL_MODEL, prepare.VOCR_SPOT_MODEL}))
+            # API 53: the text spotter's weights and their release's attribution, its pin published
+            spot = manifest["models"][prepare.VOCR_SPOT_MODEL]
+            self.assertEqual((spot["release"], spot["bytes"], spot["role"], "tier" in spot),
+                             ("bee-san/vita-vn-ocr " + prepare.VOCR_SPOT_TAG, len(self.spot),
+                              "text spotter (ocr_finder = spotter)", False))
+            self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_SPOT_MODEL), self.spot)
+            self.assertEqual(archive.read(release.DATA + "ocr/" + prepare.VOCR_SPOT_ATTRIBUTION), self.spot_attribution)
             # API 26: the text-presence gate's weights and their release's attribution ship beside the models
             gate = manifest["models"][prepare.VOCR_GATE_MODEL]
             self.assertEqual((gate["release"], gate["bytes"], gate["role"]),

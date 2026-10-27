@@ -797,8 +797,16 @@ that may need one, the two-level head: an estimated 0.12 / 0.20 / 0.26 s less pe
 Normal / Large), with no development score resolved worse; nothing of it has run on a console yet. `gate` and
 `two_level` keep one of the two; `off` reads every frame with the full head, as before API 42
 ([head gate and two-level head](vita-vn-ocr.md#head-gate-and-two-level-head-api-42)).
-`ocr_line_fix = on`, the default, runs the line finder with vita-vn-ocr #129's column fix: a line's parts across a
-full-width space stay one line. On the owner's hooked PS Vita and PSP pages (host, measured), this takes the
+`ocr_finder = spotter`, the default, finds the lines with vita-vn-ocr's text spotter (#149), a small network
+trained on hooked game pages and on MeikiOCR's line boxes, instead of Rubi's finder (`grad`). On other games'
+development screenshots (host, measured) it takes the whole-dialogue error of Rubi's finder from 2.38% to 1.03%
+(0.99% with VOCR6), and on a fresh set of 41 games from 4.29% to 1.86%. `ocr_spotter_refine = on` refines its
+boxes too. Its weights are a file beside the models, kept in the game's memory between jobs; without them a job
+reads with Rubi's finder, as does a region the spotter sees as vertical text under `ocr_vertical = auto`
+([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-53)).
+
+`ocr_line_fix` tunes Rubi's finder (`grad`, also the spotter's fallback): `ocr_line_fix = on`, the default, runs it
+with vita-vn-ocr #129's column fix: a line's parts across a full-width space stay one line. On the owner's hooked PS Vita and PSP pages (host, measured), this takes the
 whole-dialogue error from 3.88% to 3.29%, and on other games' development screenshots from 3.04% to 2.34%. It gains as
 much on regions drawn tight.
 
@@ -1066,11 +1074,11 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 192,512 B of module pages (200,704 B in the debug build; API 31's native hooks and
+holds the worker's 208,896 B of module pages (217,088 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
 API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
-two-level head 8,192 B, API 47's vertical text 4,096 B and API 50's line finder fixes with vita-vn-ocr f8a1856's
-runtime 8,192 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+two-level head 8,192 B, API 47's vertical text 4,096 B, API 50's line finder fixes with vita-vn-ocr f8a1856's
+runtime 8,192 B and API 53's text spotter 16,384 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

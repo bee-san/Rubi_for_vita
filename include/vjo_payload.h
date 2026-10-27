@@ -28,6 +28,18 @@ enum { VJO_PAYLOAD_COPY = 0, VJO_PAYLOAD_MOVE = 1, VJO_PAYLOAD_TEMPLATE = 2 };
 #define VJO_PAYLOAD_DATA "ux0:data/VitaJPOverlay/"
 #define VJO_PAYLOAD_OCR VJO_PAYLOAD_DATA "ocr/"
 #define VJO_PAYLOAD_HOOKS VJO_PAYLOAD_DATA "hooks/" /* the SC3 hooks' charsets (vjo_game_ocr.h VJO_GAME_OCR_SC3_DIR) */
+/* API 53: the text spotter's weights and attribution (ocr_finder = spotter), in the payload once vita-vn-ocr publishes
+ * them (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_PUBLISHED); until then no package carries them, so the list leaves them
+ * out (tools/package_vpk.py reads this block as the compiler does). */
+#if VJO_VOCR_SPOT_PUBLISHED
+#define VJO_PAYLOAD_SPOT_LIST(X)                                                        \
+    X(VJO_PAYLOAD_OCR VJO_VOCR_SPOT_NAME, VJO_PAYLOAD_COPY)                             \
+    X(VJO_PAYLOAD_OCR "SPOTTER-ATTRIBUTION.md", VJO_PAYLOAD_COPY)
+#define VJO_PAYLOAD_SPOT_FILES 2
+#else
+#define VJO_PAYLOAD_SPOT_LIST(X)
+#define VJO_PAYLOAD_SPOT_FILES 0
+#endif
 #define VJO_PAYLOAD_FILE_LIST(X)                                                        \
     X(VJO_PAYLOAD_OCR VJO_VOCR_TIER1_NAME, VJO_PAYLOAD_COPY)                            \
     X(VJO_PAYLOAD_OCR VJO_VOCR_TIER2_NAME, VJO_PAYLOAD_COPY)                            \
@@ -43,6 +55,7 @@ enum { VJO_PAYLOAD_COPY = 0, VJO_PAYLOAD_MOVE = 1, VJO_PAYLOAD_TEMPLATE = 2 };
     X(VJO_PAYLOAD_OCR "GATE-ATTRIBUTION.md", VJO_PAYLOAD_COPY)                          \
     X(VJO_PAYLOAD_OCR VJO_VOCR_VERTICAL_NAME, VJO_PAYLOAD_COPY)                         \
     X(VJO_PAYLOAD_OCR "VERTICAL-ATTRIBUTION.md", VJO_PAYLOAD_COPY)                      \
+    VJO_PAYLOAD_SPOT_LIST(X)                                                            \
     X(VJO_PAYLOAD_HOOKS "PCSG00146.sc3", VJO_PAYLOAD_COPY)                              \
     X(VJO_PAYLOAD_HOOKS "PCSG00352.sc3", VJO_PAYLOAD_COPY)                              \
     X(VJO_PAYLOAD_HOOKS "PCSG00555.sc3", VJO_PAYLOAD_COPY)                              \
@@ -56,7 +69,7 @@ enum { VJO_PAYLOAD_COPY = 0, VJO_PAYLOAD_MOVE = 1, VJO_PAYLOAD_TEMPLATE = 2 };
 
 #define VJO_PAYLOAD_COUNT_ONE(dest, kind) +1
 enum { VJO_PAYLOAD_COUNT = 0 VJO_PAYLOAD_FILE_LIST(VJO_PAYLOAD_COUNT_ONE) };
-#define VJO_PAYLOAD_KERNEL_INDEX 19 /* ur0:tai/VitaJPOverlay_Kernel.skprx: the first plugin */
+#define VJO_PAYLOAD_KERNEL_INDEX (19 + VJO_PAYLOAD_SPOT_FILES) /* ur0:tai/VitaJPOverlay_Kernel.skprx: the first plugin */
 #define VJO_PAYLOAD_PLUGINS 4      /* the three plugins and the RCO, hashed at every start */
 
 /* The package's own settings (package_release.py --set, a test build's anki_mining = on) a payload

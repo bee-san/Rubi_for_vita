@@ -301,6 +301,17 @@ class E2E:
         expected = {name for name, *_ in models} | {"LM-ATTRIBUTION.md", release.VOCR_MODEL_ATTRIBUTION,
                                                     release.VOCR6_ATTRIBUTION, release.VOCR_GATE_ATTRIBUTION,
                                                     release.VOCR_VERTICAL_ATTRIBUTION}
+        # API 53: the text spotter's weights (in shipped_models) and attribution, its pin published; an unpublished
+        # pin ships neither (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_PUBLISHED)
+        spot = ocr / release.VOCR_SPOT_ATTRIBUTION
+        if release.VOCR_SPOT_PUBLISHED:
+            _, size, sha = release.VOCR_SPOT_ATTRIBUTION_PIN[release.VOCR_SPOT_ATTRIBUTION]
+            check(spot.is_file() and spot.stat().st_size == size and sha256_file(spot) == sha,
+                  f"{release.VOCR_SPOT_ATTRIBUTION} is the text spotter's pinned attribution ({release.VOCR_SPOT_TAG})")
+            expected.add(release.VOCR_SPOT_ATTRIBUTION)
+        else:
+            check(not spot.exists() and not (ocr / release.VOCR_SPOT_MODEL).exists(),
+                  f"no text spotter while its pin is unpublished ({release.VOCR_SPOT_TAG})")
         other = sorted(rel for rel in (p.relative_to(ocr).as_posix() for p in (ocr.rglob("*") if ocr.is_dir() else ())
                                        if not p.is_dir()) if rel not in expected)
         check(not other, "ocr/ has nothing but the shipped models and their attributions"
@@ -503,9 +514,10 @@ class E2E:
               "A the zip lists the .apkg packages (the analysis counts 1) but does not copy them")
         check(not any(s.encode() in blob for s in SECRETS), "A no credential is in any file of the zip")
         m = re.search(r"installed files: (\d+) of (\d+) match the package", a)
-        # the hashed files (plugins, RCO, weights, LMs, the attributions), the VPK, and the dictionary by size
+        # the hashed files (plugins, RCO, weights, LMs, the attributions; API 53: the spotter's .vtsp), the VPK, and
+        # the dictionary by size
         n_hashed = sum(1 for x in self.device_files
-                       if x.endswith((".vocr", ".vlm", ".vtd", "-ATTRIBUTION.md", ".skprx", ".suprx", ".rco"))) + 2
+                       if x.endswith((".vocr", ".vlm", ".vtd", ".vtsp", "-ATTRIBUTION.md", ".skprx", ".suprx", ".rco"))) + 2
         check(m and m.group(1) == m.group(2) and int(m.group(1)) == n_hashed,
               f"A analysis: {m.group(0) if m else 'no installed-files line'} (want {n_hashed} of {n_hashed})")
         check("installed files:" in a and not re.search(r"DIFFER|absent", a.split("installed files:")[1].split("\n\n")[0]),

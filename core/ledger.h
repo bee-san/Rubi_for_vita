@@ -17,9 +17,9 @@
 #define VJO_LEDGER_POOL_GAME        3 /* the game's partition: worker pages, stack, weights, workspace */
 #define VJO_LEDGER_POOLS            4
 
-/* The most items one process keeps: the Shell's eleven since line history's block
- * (VJO_SL_PAF_HISTORY); the game worker's ten, the kernel's five. */
-#define VJO_LEDGER_MAX_ITEMS 11
+/* The most items one process keeps: the game worker's twelve since API 53's text spotter (VjoGameVocrSpot; eleven
+ * since #368's SC3 charset), the Shell's eleven since line history's block (VJO_SL_PAF_HISTORY), the kernel's five. */
+#define VJO_LEDGER_MAX_ITEMS 12
 
 typedef struct {
     const char *name; /* for logs: "VjoNet stack+TLS" */
