@@ -805,6 +805,25 @@ static void test_cards_and_order(void)
     free(t.buf);
 }
 
+/* uuids longer than the table keeps (23 bytes; another tool's, or an edited file's) that share those bytes are told
+ * apart by the whole uuid's hash, as the Shell's count tells them apart (record_line's FNV-1a of the cell). */
+static void test_long_uuids_stay_apart(void)
+{
+    Text t = {0};
+    uint64_t t0 = 1792220400000000ull;
+    for (int i = 0; i < 6; i++)
+        record(&t, "vita", i % 2 ? "ABCDEFGHIJKLMNOPQR1" : "ABCDEFGHIJKLMNOPQR2", "G", i % 2 ? "あいう" : "かきくけこ",
+               t0 + (uint64_t)i * 1000000ull, 0);
+    vjo_stats_reset(&s, 0, 0);
+    scan_windows(&s, &t, 4096);
+    TEST_CHECK_(s.games == 2, "%u games", (unsigned)s.games);
+    TEST_CHECK(s.games == 2 && s.game[0].chars + s.game[1].chars == 24 && s.game[0].chars != s.game[1].chars);
+    TEST_CHECK(!strcmp(s.game[0].uuid, "vita-ABCDEFGHIJKLMNOPQR") && !strcmp(s.game[1].uuid, s.game[0].uuid));
+    /* each game's lines alternate with the other's: no line gets a time, as in the Shell's count of each */
+    TEST_CHECK(s.game[0].time.active_us == 0 && s.game[1].time.active_us == 0);
+    free(t.buf);
+}
+
 /* More games than the table holds: their characters count in All games, and every other game's as before. */
 static void test_full_tables(void)
 {
@@ -838,4 +857,5 @@ TEST_LIST = {
     {"the calendar", test_calendar},
     {"cards per game and the games' order", test_cards_and_order},
     {"more games than the table", test_full_tables},
+    {"uuids that share their first 23 bytes stay apart", test_long_uuids_stay_apart},
     {NULL, NULL}};

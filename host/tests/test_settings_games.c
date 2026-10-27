@@ -108,11 +108,13 @@ typedef struct {
     char page_title[64], page_help[2][96], page_badge[4];    /* #333: the game page: its title, cards' help, ON/OFF */
     int lf_chosen;                                           /* #333: the line finder choice drawn chosen (0 Default,
                                                               * 1 Spotter, 2-5 Off On Junk All), -1 */
+    int stats_shown;                                         /* the Stats page's shows so far (each counts) */
     int loads, frees, waits, icon_opens, icon_reads, scans, glyphs, measures, live;
     long ns;
 } Frame;
 typedef struct {
     int frames, exited, main_rc, searches, search_terms;
+    int stats_quits; /* the Stats page's quits when the app's process ended (its count stopped and joined) */
     int budget_size, budget_calls; /* sceAppMgrGetBudgetInfo's info->size, and its calls */
     /* GPU rules broken, and other totals */
     int free_while_drawing, free_in_flight, stale_fields, drawn_after_free, double_free, pool_empty;
@@ -264,7 +266,8 @@ static long since(const struct timespec *t)
  * (card() sets it back). */
 static uint64_t frame_us = 16667u;
 uint64_t sceKernelGetProcessTimeWide(void) { return (uint64_t)frame * frame_us; }
-int sceKernelExitProcess(int status) { session->exited = status; return 0; }
+extern int vjo_stats_stub_quits; /* settings_stubs/stats_page_stub.c */
+int sceKernelExitProcess(int status) { session->exited = status; session->stats_quits = vjo_stats_stub_quits; return 0; }
 /* settings/sysapp.c's heap, and the budget the harness reports (main.c logs both;
  * budget_rc < 0: refused, as for an ordinary app). */
 int _newlib_heap_size_user = 8 * 1024 * 1024;
@@ -309,7 +312,7 @@ int sceCtrlSetSamplingMode(int mode) { int old = sampling_mode; sampling_mode = 
 /* A test's failed read (e.g. 0x80340020): the SDK leaves the caller's pad as it was. */
 static int peek_error;
 /* The Anki page stub's record (settings_stubs/anki_page_stub.c). */
-extern int vjo_anki_stub_rows, vjo_stats_stub_rows;
+extern int vjo_anki_stub_rows, vjo_stats_stub_rows, vjo_stats_stub_shown, vjo_stats_stub_quits;
 int sceTouchSetSamplingState(int port, int state) { (void)port; (void)state; return 0; }
 static int live_textures(void);
 /* The loop reads the pad first: a frame starts here. */
@@ -353,6 +356,7 @@ int sceDisplayWaitVblankStart(void)
     cur.live = live_textures();
     cur.anki_rows = vjo_anki_stub_rows;
     cur.stats_rows = vjo_stats_stub_rows;
+    cur.stats_shown = vjo_stats_stub_shown;
     if (frame < MAX_FRAMES) session->shown[frame] = cur;
     frame++;
     return 0;
@@ -1412,7 +1416,9 @@ static void list_keys_only_on_the_games_page(void)
     tap(DOWN, 8);
     tap(SCE_CTRL_LTRIGGER, 8);
     hold(0, 8);
+    int before_stats = at - 1;
     tap(SCE_CTRL_SELECT, 8); /* Stats (#312) */
+    int on_stats = at - 1;
     tap(DOWN, 8);
     tap(SCE_CTRL_LTRIGGER, 8);
     hold(0, 8);
@@ -1423,6 +1429,12 @@ static void list_keys_only_on_the_games_page(void)
     tap(SCE_CTRL_SELECT, 8); /* Games again */
     int after = at - 1, frames = run(at);
     TEST_CHECK(frames == at);
+    /* Select onto Stats shows it once (each show counts what is new); leaving the app stops its count */
+    TEST_CHECK_(session->shown[before_stats].stats_shown == 0 && session->shown[on_stats].stats_shown == 1 &&
+                session->shown[after].stats_shown == 1, "Stats shown %d, %d, %d times",
+                session->shown[before_stats].stats_shown, session->shown[on_stats].stats_shown,
+                session->shown[after].stats_shown);
+    TEST_CHECK_(session->stats_quits == 1, "the Stats page's quit ran %d times at exit", session->stats_quits);
     TEST_CHECK_(selected_of(before) == 1 && selected_of(after) == 1 && top_of(after) == 0, "selection %d -> %d, top %d",
                 selected_of(before), selected_of(after), top_of(after));
 }
