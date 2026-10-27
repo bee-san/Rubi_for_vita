@@ -1082,6 +1082,9 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x40000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     TEST_CHECK(VJO_GAME_OCR_S_VERTICAL == 0x30000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_VERTICAL) ==
                                                             VJO_GAME_OCR_S_VERTICAL);
+    /* API 47: the vertical field's 3 names no mode: refused here, as the game worker refuses it (the Shell sends 0-2) */
+    r.speed = VJO_GAME_OCR_S_VERTICAL; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.speed = VJO_GAME_OCR_S_VERTICAL | VJO_GAME_OCR_S_TRUST; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     setup(); r = make_request();
     TEST_CHECK(VJO_GAME_OCR_S_TRIM == 0x40u); /* bit 5 is draft #228's scan screen (VJO_GAME_OCR_S_SPOT) */
     /* API 36: bit 16; bit 7 is draft #245's PSP probe, bits 8-15 draft #226's frame pacing */

@@ -97,6 +97,15 @@ pages. The module rows [measured: the build log's module rows, `tools/fast_gate.
 worker's text has 1,340 B of its last page left, the debug worker's 616 B; the normal Shell's 812 B. None of it is
 measured on a console.
 
+The audit's fixes (auto's tries share the job's stable-text wait and report the last try's model, the step log keeps
+the last try's steps, the kernel refuses the field's 3) add 240 B of worker text in both builds on today's main
+(160,648 → 160,888 B debug and 151,748 → 151,988 B normal: 2,952 and 3,660 B of the last page left; on main
+`b6c715c`, before API 49 and 50, +256 and +240 B), the same pages, and 16 B of normal-kernel text on `b6c715c`
+(37,624 → 37,640 B; the debug kernel's 42,656 B unchanged), the same pages; the Shell's code is unchanged
+[measured: the build log's module rows, both builds, the fixes on main `241e09f` (whose plugins main `16fa362`
+keeps; main's rows: `include/vjo_ledger_budget.h`, API 50) and on `b6c715c` (the fast gate's builds)]. No block,
+thread or allocation.
+
 ## Trusted hooks and the OCR-skip switches (API 43)
 
 Trusted hooks answer without OCR ([native-hooks.md](native-hooks.md#trusted-hooks-api-43)): the selection's

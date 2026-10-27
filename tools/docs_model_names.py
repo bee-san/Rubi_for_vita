@@ -99,12 +99,14 @@ def block():
 
 
 def stale(root=ROOT, docs=DOCS):
-    """The documents whose names are not the kernel's (or that hold no names at all)."""
+    """The documents whose names are not the kernel's (or that hold no names at all, or a copy of a block left
+    without its BEGIN, which no rewrite reaches: #335's merge left one such stale list in docs/vita-vn-ocr.md)."""
     want = block()
     out = []
     for doc in docs:
-        found = BLOCK.findall((Path(root) / doc).read_text(encoding="utf-8"))
-        if not found or any(b != want for b in found):
+        text = (Path(root) / doc).read_text(encoding="utf-8")
+        found = BLOCK.findall(text)
+        if not found or any(b != want for b in found) or text.count(END) != len(found):
             out.append(doc)
     return out
 

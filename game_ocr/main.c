@@ -254,6 +254,22 @@ static int game_memblock_free(int item, unsigned gitem, SceUID uid, uint32_t byt
     return 0;
 }
 
+/* API 47: an auto try that hands the job to its next try (vjo_game_ocr_run_request's again:) has given back every
+ * block it took (cleanup): its ALLOC and FREE steps, from `from` on, leave the log, so that the try that reads the
+ * text keeps room for its own steps (the log holds VJO_GAME_OCR_STEPS: two tries' blocks filled it before the last
+ * try's recognize, LM and wait steps); the try's memory check, first pass and FIND step stay. */
+static void steps_drop_blocks(unsigned from)
+{
+    unsigned w = from, n;
+    if (!log_to || from >= log_to->n_steps) return;
+    n = log_to->n_steps < VJO_GAME_OCR_STEPS ? log_to->n_steps : VJO_GAME_OCR_STEPS;
+    for (unsigned i = from; i < n; i++)
+        if (log_to->step[i].id != VJO_GSTEP_ALLOC && log_to->step[i].id != VJO_GSTEP_FREE)
+            log_to->step[w++] = log_to->step[i];
+    if (w < n) sceClibMemset(&log_to->step[w], 0, (n - w) * sizeof(log_to->step[0]));
+    log_to->n_steps = w;
+}
+
 static uint32_t model_seq;
 static int model_owned;
 static uint32_t quitting, active_seq;
@@ -1756,6 +1772,9 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     int rc = VJO_E_SOURCE;
     VjoVocrStats stats = {0};
     uint32_t tried_strips = 0, tried_us = 0, tried_find_us = 0; /* API 47, auto: the tries before the last */
+    uint32_t tried_settle_us = 0, tried_settle_passes = 0;      /* and the stable-text wait they spent */
+    int retried = 0;
+    unsigned try_steps = 0; /* the step log's length as the try began */
     Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
     if (blocked || workspace_uid >= 0 || capture_uid >= 0 || shot_uid >= 0 || model_owned) {
         rc = VJO_E_OCR_UNAVAILABLE; goto done;
@@ -1838,7 +1857,11 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     hk.trusted_run = 0; /* API 43: this job runs OCR: the trusted answers' run starts again */
     /* API 47, auto: the job again from here, as columns (its rows looked like vertical text), or as rows (the
      * columns' model could not be read or fit): each try its own check and blocks, the last one's result. */
-again:;
+again:
+    try_steps = out->n_steps;
+    /* each try's own step down (API 47: auto's last try's, which the Shell names the model by) */
+    out->fallback = 0;
+    out->model_need_workspace = out->model_need_weights = out->model_release_bytes = 0;
     /* The finder's boxes refined (API 20): the mode, here or in a PSP game; never columns (API 47). */
     unsigned refine = !vertical && (refine_mode == VJO_GAME_OCR_REFINE_ON ||
                                     (refine_mode == VJO_GAME_OCR_REFINE_PSP && psp_title))
@@ -2028,6 +2051,16 @@ again:;
     VjoGreySource image = {&capture, r->width, r->height, strip_source, cancelled, line_buffer};
     VjoVocrPolicy policy;
     request_policy(r, &policy);
+    if (retried) {
+        /* API 47, auto's next try: the same job, so the same stable-text wait, as the core's own tries share it
+         * (docs/text-stability.md): at most ocr_settle_max_ms (a press's ocr_settle_press_ms) over all of them.
+         * The try before has just read the region (and waited first where the request asked): this one reads it
+         * at once, its first pass the job's capture, and recognizes once the rows have held still settle_us,
+         * within what is left of the wait (1 us: none, it reads anyway). */
+        const uint32_t max = policy.settle_max_us ? policy.settle_max_us : VJO_VOCR_SETTLE_MAX_US;
+        policy.settle_first = 0;
+        if (policy.settle_us) policy.settle_max_us = tried_settle_us < max ? max - tried_settle_us : 1u;
+    }
     if (lm_extra) { /* the LM (and cascade) extras, the helpers' line slots and then the greedy text */
         policy.raw = (char *)base + use_bytes + core_extra + helper_bytes;
         policy.raw_cap = VJO_GAME_OCR_TEXT_BYTES;
@@ -2077,8 +2110,8 @@ again:;
      * model cannot be read here (absent, short, failing its hash: this game's jobs read rows from now on). The
      * same request again, as columns or as rows, after this try's blocks are freed; its capture and finder
      * time are the job's too. */
-    if (!stats.stuck &&
-        (rc == VJO_E_VERTICAL || (rc == VJO_E_OCR_MODEL && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO))) {
+    if (!stats.stuck && ((rc == VJO_E_VERTICAL && policy.vertical_check) /* only a checked try: at most one retry */
+                         || (rc == VJO_E_OCR_MODEL && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO))) {
         if (rc == VJO_E_VERTICAL) {
             step_add(VJO_GSTEP_FIND, 2, stats.lines, 0, 0, stats.dark, stats.find_us, 0);
         } else {
@@ -2091,10 +2124,14 @@ again:;
         tried_strips += stats.strips;
         tried_us += stats.capture_us;
         tried_find_us += stats.find_us;
+        tried_settle_us += stats.settle_us;
+        tried_settle_passes += stats.settle_passes;
+        retried = 1;
         vertical = rc == VJO_E_VERTICAL;
         check = 0;
         sceClibMemset(&stats, 0, sizeof(stats));
         if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+        steps_drop_blocks(try_steps);
         goto again;
     }
     /* ocr-first: a job that read no line (or only blank ones) reads what the
@@ -2119,10 +2156,11 @@ again:;
     step_add(VJO_GSTEP_FIND, stats.columns, stats.lines, rc == VJO_E_OCR_REGION ? rc : 0, stats.rotate_skipped,
              stats.dark, stats.find_us, 0);
     if (policy.settle_us)
-        step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes,
+        step_add(VJO_GSTEP_SETTLE, 0, stats.settle_passes + tried_settle_passes, /* the job's whole wait (API 47) */
                  stats.settled ? VJO_GSETTLE_HELD : stats.settle_timeout ? VJO_GSETTLE_TIMEOUT : VJO_GSETTLE_NONE,
                  stats.settle_changes, (stats.cycling_rows > 0xFFFFu ? 0xFFFFu : stats.cycling_rows) << 16 |
-                 (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles), stats.settle_us ? stats.settle_us : 1u, 0);
+                 (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles),
+                 stats.settle_us + tried_settle_us ? stats.settle_us + tried_settle_us : 1u, 0);
     for (unsigned i = 0; i < stats.blank && i < VJO_VOCR_BLANK_LOGGED; i++) {
         const VjoVocrBlankStat *b = &stats.blank_line[i];
         step_add(VJO_GSTEP_BLANK, 0, b->index, (int32_t)stats.blank, (uint32_t)b->width << 16 | b->height,

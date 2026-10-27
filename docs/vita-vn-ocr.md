@@ -1030,13 +1030,16 @@ OCR & lookup page has the choice (**Vertical text**: OFF, Automatic, ON); it app
 
 - **auto** (the default): a job of rows, as before, whose line finder's rows are checked first. Where they look like
   vertical text (below), nothing is read from them and the same job reads the region's columns instead, as `on`
-  does. Elsewhere it is `off`'s job, bit for bit.
+  does. Elsewhere it is `off`'s job, bit for bit; with `ocr_line_fix` on (API 50), in a region at least as tall as
+  wide, it reads the same text after finding the rows twice, first with the frozen finder for the check.
 - **on**: every job of every game reads columns. Horizontal text inside the region is then read as columns of one
   character each: turn it back for horizontal games.
 - **off**: every job reads rows, as Rubi did before.
 
 Draw the text box (□) around the vertical text: the check and the columns are the region's. On a whole screen the
-column finder takes a picture's edges and the menu for columns too, and auto keeps rows (measured below).
+column finder takes a picture's edges and the menu for columns too, and auto keeps rows on the measured dialogue
+screens (below); a screen or box of short rows lined up one under another can still look like vertical text to
+it (limits, below).
 
 **How a job reads columns** (`core/vocr_ocr.c`, a model whose `finder_mode` has `VJO_VOCR_FINDER_COLUMNS`; closed
 draft #223's job, on today's main):
@@ -1069,15 +1072,21 @@ text when either holds:
 
 - the region is at least as tall as wide (a box drawn around columns), with 2 rows or more, 60 % of them at most 4
   times as wide as tall;
-- 5 rows or more, 70 % of them at most 3.5 times as wide as tall and each over 80 % of its width inside the median
-  span of those rows (their median left and right edges).
+- 5 rows or more, 70 % of them at most 3.5 times as wide as tall and each with at least 80 % of its width inside
+  the median span of those rows (their median left and right edges; of an even count, the upper of the two
+  middle ones).
 
 It is integer arithmetic on at most 16 boxes: no memory, no strip, a few hundred instructions. Then the job returns
 `VJO_E_VERTICAL` to the game worker, which frees the try's blocks and runs the request again with the vertical model
 (`game_ocr/main.c`, `again:`): its own memory check, a request by name's reserve, the column job. A vertical model
 it cannot read (absent, short, failing its hash) or fit has the job read the rows instead; after a file it could not
-read, the game's later jobs read rows unchecked. The rule was chosen on the hooked pages below, before it was checked
-on any other page; on the pages it was then checked on it was not changed.
+read, the game's later jobs read rows unchecked. The tries are one job: they share its stable-text wait (at most
+`ocr_settle_max_ms`, a press's `ocr_settle_press_ms`, over all of them, as the core's own tries do), so the
+column try reads the region at once and recognizes once its rows have held still within what is left of the
+wait; and the step log keeps each try's memory check, first pass and `find` step, but only the last try's
+blocks (`alloc`, `free`), which keeps room in its 20 steps for the last try's own (audit of #335). The rule
+was chosen on the hooked pages below, before it was checked on any other page; on the pages it was then
+checked on it was not changed.
 
 **The request (API 47).** `VjoGameOcrRequest.speed` bits 28-29 (`VJO_GAME_OCR_S_VERTICAL`): 0 rows, 1 columns, 2
 auto; 3 is refused, as unknown bits are, by the kernel and by the game worker. The Shell sends the setting as it is
@@ -1154,8 +1163,8 @@ row job's blocks first, for the finder's pass only, and frees them before the co
 **Time (estimates; nothing ran on a console).** Per CTC frame VOCR5-V costs what VOCR5-S does: about 2.2 ms at 333
 MHz and 1.7 ms at 444 MHz (VOCR5-S's box estimate, calibrated to VOCR3-H15's 4.94 ms a frame in v0.8.0-test.1's logs;
 the console also measured up to 5.22 ms, about 6 % more). The capture costs more than for rows, as a column spans
-every strip of the region and each strip read waits for the game's next frame. On the box drawn once (126 × 476
-px, 2-3 columns), `on`'s job read a median of 27 strips (33 at the 90th percentile) and recognized 73 CTC frames:
+every strip of the region and each strip read waits for the game's next frame. On the box drawn once (114 or 126 × 476
+px, its two places, 2-3 columns), `on`'s job read a median of 27 strips (33 at the 90th percentile) and recognized 73 CTC frames:
 about 0.45 s of capture at 60 fps (0.9 s at 30) and 0.16 s of recognition at 333 MHz. auto's reads the region twice
 more first, for the row finder: 49 strips (56), about 0.8 s at 60 fps. Horizontal dialogue boxes read 5 strips
 (median, the same with auto). On a whole screen of columns `on` read 64 strips. Draw the text box around the text.
@@ -1178,9 +1187,20 @@ app's card.
 - auto misses vertical text whose finder rows do not look like columns (9 % of the tight boxes above, 16 % of
   vita-vn-ocr's development regions; then rows are read), and a whole screen is mostly read as rows. Set `on` for a
   vertical game.
+- auto takes for vertical text some horizontal layouts its measured pages do not have: 5 or more short rows lined
+  up one under another (a game's menu of short items at 24 px, a list of names, a status panel; on a whole screen
+  or in a box) and a tall box around 2 or more short lines. On such a screen it reads columns, which gives no
+  sensible text, and reads the vertical model's weights in place of the size's. Found on constructed screens
+  (generic words in a free font, the row finder and the rule of this build; audit of #335): the rows of vertical
+  text it fired on in Yunohana SpRING! overlap (the median region's median gap between rows: -0.07 to -0.13 of a
+  row's height), those constructed rows have gaps of 0.33-0.6, a difference a later rule could use (its cost in
+  recall unmeasured). Set `off`
+  for a game of such screens that never sets text in columns.
 - The self-test's stages (the debug build, [self-test](self-test.md)) read rows whatever the setting.
 - With `auto`, a region that holds vertical text in some screens and rows in others reads the other model's weights
-  (0.8 or 1.2 MB, from the card) at each change.
+  (0.8 or 1.2 MB, from the card) at each change, and a job of columns gives back the confidence cascade's
+  resident model (Normal's is VOCR5-L, 2.4 MB), which the next job of rows reads again at its first doubtful
+  line.
 ## Head gate and two-level head (API 42)
 
 ```ini
@@ -1459,13 +1479,6 @@ the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
 v0.3.2-vertical.1); and the character LMs `vocr_lm_o3_500k.vlm`,
 `vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
 (release v0.3.7-lm6.2)<!-- end of the names -->.
-the recognizers `VOCR5_N_w8g2.vocr`, `VOCR5_S_w8g.vocr` and `VOCR5_L_w8g2.vocr`
-(VOCR5, release v0.3.6-head2level.1); `VOCR3_H15_w8.vocr` and
-`VOCR3_FL10_w8.vocr` (VOCR3, release v0.2.5-vocr3.1); `FL10_w8.vocr`,
-`H15_w8.vocr` and `F20_w8.vocr` (VOCR1, release v0.2.0); `VOCR4_W20_w8.vocr`
-(VOCR4, release v0.2.5-vocr4.1); and the character LMs `vocr_lm_o3_500k.vlm`,
-`vocr_lm6_o3_1000k.vlm`, `vocr_lm_o3_2000k.vlm` and `vocr_lm6_o3_4000k.vlm`
-(release v0.3.7-lm6.2)<!-- end of the names -->.
 `core/vocr_models.c` gives each recognizer its generation (VOCR5, VOCR3, VOCR4, or VOCR1 for
 v0.2.0's), the name of the local engine in the Rubi app.
 
@@ -1541,15 +1554,12 @@ steps below cover a source build or adding another model.
    GitHub CLI (`gh auth login`) is only tried when a public download fails (a draft
    release). `--from FILE` checks a copy downloaded another way.
    `tools/package_release.py --models ocr` needs the first two lines' files: it ships
-   the LMs with their attribution as `ocr/LM-ATTRIBUTION.md` (CC BY-SA 4.0), and the
-   sizes' models with theirs, v0.3.0's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
+   the LMs with their attribution as `ocr/LM-ATTRIBUTION.md` (CC BY-SA 4.0), the
+   sizes' models with theirs, v0.3.6-head2level.1's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
    (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), the text-presence
    gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`,
    and the vertical model `VOCR5_V_w8.vocr` with v0.3.2-vertical.1's `ATTRIBUTION.md` as
    `ocr/VERTICAL-ATTRIBUTION.md`.
-   sizes' models with theirs, v0.3.6-head2level.1's `ATTRIBUTION.md`, as `ocr/MODEL-ATTRIBUTION.md`
-   (kept under that name in `ocr/` too, beside the LMs' `ATTRIBUTION.md`), and the text-presence
-   gate's `textgate_p8_c8_w8.vtd` with v0.3.2-textgate.1's `ATTRIBUTION.md` as `ocr/GATE-ATTRIBUTION.md`.
 3. Copy the files to `ux0:data/VitaJPOverlay/ocr/`, the attributions included, or let the
    FTP installer do it: `tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8g2.vocr --set vocr_tier=normal VITA_IP`.
 4. In `ux0:data/VitaJPOverlay/config.ini`:

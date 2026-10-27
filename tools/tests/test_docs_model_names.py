@@ -113,6 +113,19 @@ class DocsModelNames(unittest.TestCase):
             with self.assertRaises(ValueError):
                 names.write(d)
 
+    def test_a_copy_left_without_its_begin_is_stale(self):
+        """An older list left after a block (its END, no BEGIN; audit of #335) is never rewritten: stale."""
+        with tempfile.TemporaryDirectory() as d:
+            for doc in names.DOCS:
+                (Path(d) / doc).parent.mkdir(parents=True, exist_ok=True)
+                (Path(d) / doc).write_text((ROOT / doc).read_text(encoding="utf-8"), encoding="utf-8")
+            doc = Path(d) / "docs/vita-vn-ocr.md"
+            text = doc.read_text(encoding="utf-8")
+            self.assertEqual(names.stale(d), [])
+            copy = names.block()[len(names.BEGIN) + 1:].replace("`F20_w8.vocr`", "`F21_w8.vocr`")
+            doc.write_text(text.replace(names.block(), names.block() + ".\n" + copy, 1), encoding="utf-8")
+            self.assertEqual(names.stale(d), ["docs/vita-vn-ocr.md"])
+
 
 if __name__ == "__main__":
     unittest.main()

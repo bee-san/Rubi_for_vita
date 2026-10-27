@@ -740,7 +740,7 @@ host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 `ocr_vertical = auto` (the default; the Rubi app's **Vertical text**) reads Japanese set in columns, right to
 left, with vita-vn-ocr's vertical model, where the line finder's rows in the region look like vertical text, and
 rows everywhere else, as `off` does; `on` reads columns in every game. Draw the text box around the columns. On
-the host it read a vertical PS Vita VN's dialogue at 4.5-14 % CER, depending on how the box is drawn, and changed
+the host it read a vertical PS Vita VN's dialogue at 4.5-23 % CER, depending on how the box is drawn, and changed
 no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console).
 `ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
 #100's text-presence gate in front of the finder: a region it says holds no text (the game hid its text box, a CG

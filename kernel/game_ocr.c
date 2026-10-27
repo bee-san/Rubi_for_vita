@@ -364,6 +364,8 @@ int vjoOcrSubmit(const VjoGameOcrRequest *user_request)
         next.model_dir[sizeof(next.model_dir)-1] != 0 ||
         next.fallback[sizeof(next.fallback)-1] != 0 || (next.flags & ~VJO_GAME_OCR_F_ALL) ||
         (next.tiers & ~VJO_VOCR_TIERS_ALL) || (next.speed & ~(shot ? VJO_GAME_OCR_S_SHOT_ALL : VJO_GAME_OCR_S_ALL)) ||
+        /* API 47: the vertical field's 3 names no mode, as the game worker refuses it */
+        ((next.speed >> VJO_GAME_OCR_S_VERTICAL_SHIFT) & VJO_GAME_OCR_S_VERTICAL_MASK) > VJO_GAME_OCR_VERTICAL_AUTO ||
         /* API 31: an OCR job's hook pick is automatic, a stream or OCR only; a shot answers from no text */
         (shot ? !shot_id_ok(next.shot) || (next.flags & ~(VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_FULL)) ||
                     next.tiers || next.hook_pick
