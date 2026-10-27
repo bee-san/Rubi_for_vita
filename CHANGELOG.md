@@ -92,8 +92,8 @@ been reported.
   12 CALL streams are held by other callers, a new caller takes the one written least recently. Two races gave it the
   newest one instead. A caller that wrote while the new one searched got a stamp after the clock reading the search
   began with, so its stream looked about 2^32 old. And a stream written, or taken by another new caller, after the
-  search had chosen it was taken anyway. The stream that lost its slot (an active one, perhaps the dialogue's, unless
-  it was kept for agreeing with OCR) started its hits over and took a slot back at its next copy; its text was never
+  search had chosen it was taken anyway. The stream that lost its slot (any not kept for agreeing with OCR, so the
+  dialogue's too before it agreed) started its hits over and took a slot back at its next copy; its text was never
   wrong. The search now compares the stamps in the clock's serial order, as the job does, without reading the clock,
   and checks its choice under the stream's lock: a stream written since is no longer the oldest, and the new caller's
   copy is dropped, as for a busy stream. The stamps and lengths, which the search and the worker's hook watch read
@@ -103,8 +103,8 @@ been reported.
   state; a suite that runs each interleaving at the search's own points on every run
   (`host/tests/test_hook_stream_seams.c`, also on the ARM lane), 5 of whose 10 tests fail on `main` with the two
   seams added; and a check of
-  the watch's reads in the race test, which `main` failed in 145, 198 and 196 runs of 200 on two CPUs, four CPUs and
-  unpinned (none on one CPU). The fix passed 3,700 runs of the whole suite (one to four CPUs, unpinned, 8 copies at
+  the watch's reads in the race test, which `main` failed in 151, 187 and 200 runs of 200 on two CPUs, four CPUs and
+  unpinned (none on one CPU). The fix passed 3,900 runs of the whole suite (one to four CPUs, unpinned, 8 copies at
   once, beside busy loops, gcc and clang). Changing `core/hook_stream.c` changes the hook definition SHA-256, so
   consoles learn each game's hooks again; seven PRs since 0.9.8 have changed it already, so the next release does
   that anyway. Not run on a console.
