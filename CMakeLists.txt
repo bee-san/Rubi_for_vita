@@ -571,7 +571,8 @@ target_include_directories(vjo-hook-text-tests PRIVATE third_party/acutest/inclu
 target_link_libraries(vjo-hook-text-tests vjo_core)
 target_compile_options(vjo-hook-text-tests PRIVATE -Wall -Wextra)
 add_test(NAME hook_text COMMAND vjo-hook-text-tests)
-add_executable(vjo-hook-luna-tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c)
+add_executable(vjo-hook-luna-tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c
+               core/textnorm.c)
 target_include_directories(vjo-hook-luna-tests PRIVATE third_party/acutest/include core host/tests)
 target_compile_options(vjo-hook-luna-tests PRIVATE -Wall -Wextra)
 add_test(NAME hook_luna COMMAND vjo-hook-luna-tests)

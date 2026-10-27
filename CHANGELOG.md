@@ -271,6 +271,25 @@ been reported.
   box of vertical text ON reads the columns in 12 of 12, before and after. The Rubi app's ON line says "Columns, right
   to left, unless the text is in rows." Not run on a console.
 
+- **Native hooks, #316's audit.** ALIA's CARNIVAL! サクラメント (`PCSG00628`): its script's `!X` (the character X)
+  is now read before any other code, as the game reads it, so a line with a Latin word in lowercase, a bracket or
+  a `|` shows it (`!S!k!y` gave `S！`, now `Sky`), and `u9829.` is ♥ (other `u<n>.` code points are still dropped:
+  the farm's survey of the script names only that one). None of the farm's 1,208 pages of the game has either, so
+  their text is unchanged. CP932's byte 0xA0 is the blank cell of the two games that draw one (忠臣蔵46+1 V,
+  ALIA's CARNIVAL!) and, as in 0.9.7, nothing in any other game's text: 0.9.8 decoded it everywhere and could
+  change a line with that byte through Luna's filters or a string copy (none of the farm's other games has one).
+  真 流行り神 (`PCSG00380`), whose hook reads a fixed address beside the game's code, is hooked only when the
+  game's code is at 0x81000000, where the farm proved it, and refused as `relocated` otherwise (OCR then reads
+  the game). As every change to the hook code does, this renews the hook definitions' revision, so a string-copy
+  source Rubi had learned for a game is confirmed with OCR once more. Not run on a console
+  ([CP932's 0xA0](docs/native-hooks.md#rubis-filters)).
+- Building and testing (#316's audit F3, N5): the engine test runs each verified entry in the game as the farm
+  recorded its hook (the farm's module NID, code bytes, register and padding, in `host/tests/fixtures/hook_farm.inc`
+  from `tools/hook_farm.py fixtures`), not in one made from Rubi's own entry, so a wrong NID, byte, register,
+  padding or mode fails it (the audit's 4 surviving mutations, and 3 more, all fail now); `tools/hook_farm.py
+  fixtures` writes the committed file byte for byte again (it had added the SC3 games' excerpts, which
+  `tools/sc3_charset.py` writes), and its own tests catch a checker without `vjo_hook_clean`, a comparison that
+  keeps the white space at a text's ends, and a page's text given to another hit than its last.
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
   read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
@@ -480,9 +499,13 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   record of character cells, a new way to read a hook's text). Proven in the Vita3K emulator only: Rubi's
   text equals the farm's on all 1,208 farm pages of the first and on 1,060 of 1,092 of the second (the other
   32 differ by the player's default name 北條紗希 only, which the farm's text left out)
-  ([farm checks](docs/native-hooks.md#farm-checks)).
-- `tools/hook_farm.py` checks every verified entry against the farm's recorded hook bytes and texts; the host
-  tests run 50 short excerpts of them through the worker's own hook path.
+  ([farm checks](docs/native-hooks.md#farm-checks)). Unlike the other entries', their games' code was not there to
+  check for a jump from elsewhere into the hook's patched bytes (the farm's bucket has no dump of it): if one is
+  taken, the game crashes.
+- `tools/hook_farm.py` checks the verified entries whose games the farm's bucket has pages for (14 of the 30)
+  against the farm's recorded hook bytes and texts; the host tests run 50 short excerpts of them through the
+  worker's own hook path.
+
 ### Changed
 
 - **OCR: faster reads with vita-vn-ocr's head gate and two-level head** (API 42; `config.ini`

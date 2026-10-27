@@ -5,6 +5,25 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## #316's audit: the hook fixes (no API change)
+
+The game worker only, in every game that is ON: no block, thread, stack or allocation, and no module takes a page more.
+`RF_PCSG00628`'s 15 new ops and their strings (`r628_esc`, 109 B) are in the data segment (`VJO_DATA_TABLE`), as
+Rubi's other filters are. The code: the decoder's 0xA0 branch (a select on the encoding, `VJO_HOOK_ENC_CP932_A0`,
+which the two MSGSET entries name: no code chooses it), `vjo_hook_clean` without its U+F8F0 drop, and the r15 entry's
+check. Measured with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows), main
+`9ad8eb5` against this change:
+
+| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+|---|---:|---:|---:|
+| Game worker | 179,712 + 36,416 → 179,712 + 36,704 B | 170,780 + 36,408 → 170,764 + 36,696 B | 217,088 / 208,896 B, unchanged |
+| Kernel, Shell | the SELF files byte-identical | the SELF files byte-identical | unchanged |
+
+The worker keeps 512 B (debug) and 1,268 B (normal) of its last text page and 160 B / 168 B of its last data page. On
+main `3d095b4`, before API 54's four text pages, the debug worker had 40 B left, and the first form of this change took
+96 B, a page past its budget: the decoder's flag as a parameter kept a register and a stack slot through its loop
+(48 B); as an encoding that the two entries name, with a select in the branch, it is 14 B (+16 B in all there).
+
 ## SC3 text, #368's audit's follow-up (no API change)
 
 The charset's load ([native-hooks.md](native-hooks.md#sc3-text)) tries a timed-out read again, keeps a failed close as
@@ -74,9 +93,10 @@ data/bss), main `84dbad9` against this change:
 | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
 |---|---:|---:|---:|
 | Game worker | 163,528 + 35,880 → 163,512 + 35,880 B | 154,548 + 35,864 B, unchanged | 200,704 / 192,512 B, unchanged |
-| Kernel, Shell | unchanged | unchanged | unchanged |
+| Kernel, Shell | the SELF files byte-identical | the SELF files byte-identical | unchanged |
 
 The worker keeps 328 B (debug) and 1,100 B (normal) of its last text page.
+
 
 ## The box suggested on first use (API 52, #358)
 

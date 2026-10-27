@@ -189,7 +189,7 @@ build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 # positions and 32-bit longs, LunaTranslator's table and its ports on the Vita's word size.
 build hook_text -I third_party/bearssl/inc -I "$BS" host/tests/test_hook_text.c core/hook_text.c core/utf.c core/text_rows.c "$BS/hash/sha2small.c" \
   "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
-build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c
+build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c core/textnorm.c
 # The debug build's PSP probe (core/psp_probe.c): its reads' bounds in 32-bit arithmetic.
 build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
 # The hook engine (game_ocr/hooks.c, audit-hooks F4): its game addresses are 32-bit, as here. Its own stubs
