@@ -165,7 +165,8 @@ const VjoVocrLm *vjo_vocr_lm_tier(unsigned tier)
 }
 
 /* The job models whose own decoder settings for an LM differ from its tier's (vjo_vocr_lm_settings): vita-vn-ocr's
- * check of Rubi's settings on VOCR6's final blobs (vocr6-final-lm, #151; eval/vocr6_final_lm_protocol.json's
+ * check of Rubi's settings on VOCR6's final blobs (vocr6-final-lm, #151, merged as 92a65cf: its record
+ * eval/vocr6_final_lm_result_20261027.json, "rubi", per job model and LM tier; eval/vocr6_final_lm_protocol.json's
  * pre-registered rule: a grid setting by 2-fold CV, resolved better on the objective and not resolved worse on any
  * guard, #109's counter set included). It kept every LM tier's settings for VOCR6-N and VOCR6-L (VOCR5-S, Small's,
  * reported only, keeps them too) but VOCR6-N's with ctclm.2's 2000k LM: LM weight 0.4, bonus 1.5 nats, the

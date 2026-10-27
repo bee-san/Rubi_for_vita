@@ -675,8 +675,9 @@ follows the tier's new decoder settings, not its blob: the VOCR6 blob at ctclm.2
 ctclm.2's 1 MB blob at the new settings drops it (audit-vocr6-lm-rubi). vita-vn-ocr's check of the settings on VOCR6's
 blobs kept the 1 MB tier's (below), so the crafted line still reads 「九月です」 there.
 
-**The gate and the counters, as 0.9.8 ran them** (measured on the host, vita-vn-ocr vocr6-final-lm,
-`counter_loss_vocr5_N_1000k`): VOCR5-N as 0.9.8 reads a line (its head gate and two-level head on, the counter
+**The gate and the counters, as 0.9.8 ran them** (measured on the host, vita-vn-ocr vocr6-final-lm, #151 merged as
+`92a65cf`: `eval/vocr6_final_lm_result_20261027.json` there, `reports.counter_loss_vocr5_N_1000k` and
+`reports.gateon_vocr5_1000k`): VOCR5-N as 0.9.8 reads a line (its head gate and two-level head on, the counter
 re-read, the 1 MB LM, no cascade) keeps the counter in 2,940 of the 3,969 crops, against 3,015 with the gate off: it
 loses it on 75 crops and gains it on none. All 75 are bare and …」 forms whose left edge cuts 2-10 px into the ink (8 /
 19 / 19 / 24 / 5 crops at 2 / 4 / 6 / 8 / 10 px; no 「…」 crop). With the gate on none of their greedy texts starts with
@@ -686,7 +687,7 @@ same comparison is 3,064 → 2,987 crops for Normal, 3,127 → 3,093 for Small a
 +0.15, +0.06 and +0.06 points, each resolved). The finder's 3 px margin keeps a region's edge off the ink, which these
 crops cut into.
 
-**VOCR6's blobs as pinned** (the same report, `gateon_final_1000k_ship_on_minus_off`): Normal and Large have no gate,
+**VOCR6's blobs as pinned** (the same record, `reports.gateon_final_1000k_ship_on_minus_off`): Normal and Large have no gate,
 and their two-level head loses no counter: the 1 MB LM keeps it in 3,322 crops for VOCR6-N with its cascade and 3,326
 for VOCR6-L, with the paths on or off. Small, VOCR5-S with its gate cascading into VOCR6-N, keeps it in 3,243 against
 3,257 with its gate off.
@@ -741,8 +742,9 @@ The measurements below are VOCR3's with ctclm.2's LMs.
 
 ### VOCR6's settings (vita-vn-ocr #151)
 
-vita-vn-ocr's vocr6-final-lm checked Rubi's decoder settings on VOCR6's final blobs under a pre-registered rule
-(`eval/vocr6_final_lm_protocol.json`: keep the shipped settings unless a grid setting, chosen by 2-fold
+vita-vn-ocr's vocr6-final-lm (#151, merged as `92a65cf`; its record `eval/vocr6_final_lm_result_20261027.json`, whose
+`rubi` entry is what runs here, per job model and LM tier) checked Rubi's decoder settings on VOCR6's final blobs
+under a pre-registered rule (`eval/vocr6_final_lm_protocol.json`: keep the shipped settings unless a grid setting, chosen by 2-fold
 cross-validation, or a counter threshold is resolved better on the objective and not resolved worse on any guard,
 #109's counter set included), at every LM tier, for each job model with its cascade:
 - **Kept:** every tier's settings for VOCR6-L, and for VOCR6-N at the 0.5, 1 and 4 MB tiers; the counter re-decode's
