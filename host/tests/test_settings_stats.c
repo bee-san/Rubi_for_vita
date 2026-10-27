@@ -623,6 +623,19 @@ static void the_cache_is_read_on_and_checked(void)
     char want[96];
     snprintf(want, sizeof(want), "counted from %zu ", was);
     TEST_CHECK_(strstr(logs, want) && strstr(logs, "the cache read, then saved"), "%s", logs);
+    /* bytes after the counted ones that do not start a record (another program's line, or a record glued to a cut
+     * one): the file is not the one counted, as the Shell's own count decides it (shell/history.c) */
+    size_t counted_len = history_len;
+    history_len += (size_t)snprintf(history + history_len, sizeof(history) - history_len, "junk\n");
+    record("PCSG00415", "CLANNAD", "「次」", jst(27, 23, 1, 0));
+    write_history();
+    logs[0] = 0;
+    show();
+    TEST_CHECK_(strstr(logs, "is not the one counted") && strstr(logs, "counted from 0 "), "%s", logs);
+    memmove(history + counted_len, history + counted_len + 5, history_len - counted_len - 5);
+    history_len -= 5;
+    write_history(); /* (the same records without the junk: counted again from the start, the file being shorter) */
+    show();
     /* nothing new: nothing counted, nothing written */
     logs[0] = 0;
     show();
@@ -697,13 +710,16 @@ static void cards_count_per_game(void)
     write_card("", "00000000000000000000000000000004", NULL, NULL); /* damaged: All games only */
     write_card("", "0000000000000000000000000000000z", "vita", "PCSG00062"); /* not a card's name */
     write_card("", "00000000000000000000000000000005", "vita", "PCSE99999"); /* a game with no line */
+    FILE *v2 = fopen("ux0:data/VitaJPOverlay/anki_queue/00000000000000000000000000000006.json", "wb");
+    fprintf(v2, "{\"version\":2,\"spelling\":\"犬\"}"); /* a record of version 2: it names no game */
+    fclose(v2);
     opens_of_cards = 0;
     show();
-    TEST_CHECK_(opens_of_cards == 5, "%d opens", opens_of_cards); /* each card once, also the one in both */
-    TEST_CHECK_(strstr(logs, "5 cards, 5 read") != NULL, "%s", logs);
+    TEST_CHECK_(opens_of_cards == 6, "%d opens", opens_of_cards); /* each card once, also the one in both */
+    TEST_CHECK_(strstr(logs, "6 cards, 6 read") != NULL, "%s", logs);
     for (int i = 0; i < 4; i++)
         frame(SCE_CTRL_DOWN); /* All games */
-    TEST_CHECK(text_with("5 cards, ") != NULL);
+    TEST_CHECK(text_with("6 cards, ") != NULL);
     int found = 0;
     for (int i = 0; i < 6; i++) {
         frame(SCE_CTRL_DOWN);
@@ -712,11 +728,11 @@ static void cards_count_per_game(void)
         found += text_with("vita-PCSE99999") != NULL && text_with("no lines read") != NULL && text_with("; 1 card") != NULL;
     }
     TEST_CHECK_(found >= 3, "%d", found);
-    /* the next count reads again only the card whose record could not be read */
+    /* the next count reads again only the card whose record could not be read (not the one that names no game) */
     opens_of_cards = 0;
     logs[0] = 0;
     show();
-    TEST_CHECK_(opens_of_cards == 1 && strstr(logs, "5 cards, 1 read"), "%d: %s", opens_of_cards, logs);
+    TEST_CHECK_(opens_of_cards == 1 && strstr(logs, "6 cards, 1 read"), "%d: %s", opens_of_cards, logs);
     /* once it is whole, its game counts */
     write_card("", "00000000000000000000000000000004", "vita", "PCSG00062");
     logs[0] = 0;

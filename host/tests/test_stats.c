@@ -227,7 +227,7 @@ static void check_parity(const Text *t, const char *what, int32_t tz)
 {
     int cut = !t->len || t->buf[t->len - 1] != '\n';
     for (size_t k = 0; k < sizeof(games) / sizeof(games[0]); k++) {
-        char uuid[32];
+        char uuid[VJO_STATS_UUID];
         snprintf(uuid, sizeof(uuid), "%s-%s", games[k].platform, games[k].tid);
         int g = find_game(&s, uuid);
         if (g < 0)
@@ -301,6 +301,97 @@ static void test_windows_and_resume(void)
         scan_windows(&s, &t, 4096);
         TEST_CHECK_(!memcmp(&s, &s2, sizeof(s)), "stopped at %zu", stop);
     }
+    free(t.buf);
+}
+
+/* A count stopped at any byte, cached and resumed, gives one count's result: every byte of a small file with every
+ * kind of damage, both rules (audit follow-up: a '"' at a line's start as a window's last byte, whose next byte says
+ * whether it starts a record, was skipped when the window had no other record start, as a file of its header alone
+ * does). */
+static void test_resume_at_every_byte(void)
+{
+    static unsigned char cache[1 << 20];
+    for (int rule = VJO_READING_ADAPTIVE; rule <= VJO_READING_GAPS_15S; rule++) {
+        Text t = {0};
+        int differ = 0;
+        vjo_reading_rule = (uint32_t)rule;
+        random_history(&t, 40, 1234 + (unsigned)rule, 1);
+        vjo_stats_reset(&s2, 540, (uint32_t)rule);
+        scan_windows(&s2, &t, 1 << 20);
+        for (size_t stop = 1; stop < t.len; stop++) {
+            Text part = {t.buf, stop, 0};
+            char keep = t.buf[stop];
+            t.buf[stop] = 0;
+            vjo_stats_reset(&s, 540, (uint32_t)rule);
+            scan_windows(&s, &part, 2048);
+            t.buf[stop] = keep;
+            s.history_bytes = stop; /* (the page's: the file's size when it was counted) */
+            size_t n = vjo_stats_cache_write(&s, cache, sizeof(cache));
+            TEST_ASSERT(n && vjo_stats_cache_read(&s, cache, n, 540, (uint32_t)rule) == VJO_STATS_CACHE_OK);
+            s.history_bytes = 0;
+            scan_windows(&s, &t, 2048);
+            if (memcmp(&s, &s2, sizeof(s)) && differ++ < 3)
+                TEST_CHECK_(0, "rule %d, stopped at %zu: %llu records, one count %llu", rule, stop,
+                            (unsigned long long)s.records, (unsigned long long)s2.records);
+        }
+        TEST_CHECK_(!differ, "rule %d: %d of %zu stops differ", rule, differ, t.len - 1);
+        free(t.buf);
+    }
+    vjo_reading_rule = VJO_READING_ADAPTIVE;
+    /* the same in the middle of a file: a window that holds no record start and ends in one's first byte */
+    Text t = {0};
+    char big[4000];
+    memset(big, 'a', sizeof(big) - 1);
+    big[sizeof(big) - 1] = 0;
+    record(&t, "vita", "PCSG00415", "CLANNAD", big, 1792220400000000ull, 0);
+    record(&t, "vita", "PCSG00415", "CLANNAD", "あいうえお", 1792220410000000ull, 0);
+    size_t second = (size_t)(strstr(t.buf, "\"vita-PCSG00415\",\"vjo-1792220410000000") - t.buf);
+    vjo_stats_reset(&s2, 0, 0);
+    scan_windows(&s2, &t, 1 << 20);
+    for (size_t at = second - 2100; at < second; at += 97) {
+        vjo_stats_reset(&s, 0, 0);
+        s.covered = at; /* (a count from a byte inside the long record: its windows end at every offset) */
+        for (size_t w = 1; w < 2100 && s.covered < second; w += 1) {
+            if (s.covered + w == second + 1) { /* the window's last byte is the second record's '"' */
+                char buf[4096];
+                uint64_t base = s.covered - 1;
+                memcpy(buf, t.buf + base, (size_t)(second + 1 - base));
+                vjo_stats_scan(&s, buf, (size_t)(second + 1 - base), base, VJO_STATS_SCAN_MORE);
+                TEST_CHECK_(s.covered == second, "from %zu: the next window starts at %llu, not at the record's %zu", at,
+                            (unsigned long long)s.covered, second);
+                break;
+            }
+        }
+    }
+    free(t.buf);
+}
+
+/* A full day table (decades of days) drops its oldest rollup, so today still counts. */
+static void test_a_full_day_table_drops_the_oldest(void)
+{
+    Text t = {0};
+    uint64_t day0 = (uint64_t)vjo_stats_days_from_civil(2000, 1, 1) * 86400000000ull + 3600000000ull;
+    for (int d = 0; d < VJO_STATS_DAYS + 3; d++)
+        record(&t, "vita", "PCSG00415", "CLANNAD", "あ", day0 + (uint64_t)d * 86400000000ull, 0);
+    vjo_stats_reset(&s, 0, 0);
+    scan_windows(&s, &t, 1 << 20);
+    int32_t first = vjo_stats_days_from_civil(2000, 1, 1), last = first + VJO_STATS_DAYS + 2;
+    TEST_CHECK(s.days == VJO_STATS_DAYS && s.days_full == 3);
+    TEST_CHECK(s.day[0].day == first + 3 && s.day[s.days - 1].day == last);
+    TEST_CHECK(vjo_stats_game_day(&s, 0, last).chars == 1 && vjo_stats_game_day(&s, 0, first).chars == 0);
+    TEST_CHECK(s.game[0].chars == VJO_STATS_DAYS + 3); /* the total keeps every record */
+    /* and a record older than every day kept is not added */
+    Text o = {0};
+    record(&o, "vita", "PCSG00415", "CLANNAD", "い", day0, 0);
+    size_t was = s.covered;
+    (void)was;
+    VjoStats copy = s;
+    char buf[1024];
+    size_t header = (size_t)(strchr(o.buf, '\n') - o.buf) + 1;
+    memcpy(buf, o.buf + header - 1, o.len - header + 1);
+    vjo_stats_scan(&s, buf, o.len - header + 1, copy.covered ? copy.covered : 1, VJO_STATS_SCAN_END);
+    TEST_CHECK(s.days == VJO_STATS_DAYS && s.day[0].day == first + 3 && s.days_full == 4);
+    free(o.buf);
     free(t.buf);
 }
 
@@ -735,6 +826,8 @@ static void test_full_tables(void)
 TEST_LIST = {
     {"each game equals the Shell's count: total and today, both rules, random files", test_parity_with_the_shell},
     {"any windows, and resumed from a cache at any of them, count the same", test_windows_and_resume},
+    {"resumed from a count stopped at any byte: one count's result", test_resume_at_every_byte},
+    {"a full day table drops the oldest day, not today's", test_a_full_day_table_drops_the_oldest},
     {"a record not yet whole waits; one a power loss cut is damaged", test_cut_records},
     {"local days in the counts' zone; a line across midnight is its first day's", test_days_and_midnight},
     {"invalid times, other games and clocks set back break the interval", test_breaks},

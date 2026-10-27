@@ -16,6 +16,7 @@
 #include "app_prefs.h"
 #include "preferences.h"
 #include "../core/anki_queue.h"
+#include "../core/history_read.h"
 #include "../core/json.h"
 #include "../core/stats.h"
 #include "../core/stick_scroll.h"
@@ -142,13 +143,18 @@ static int load_cache(int32_t tz, uint32_t rule)
     return rc;
 }
 
-/* The cache's checks of history.csv (fd, size bytes): the bytes it counted are still the file's first. */
+/* The cache's checks of history.csv (fd, size bytes): the bytes it counted are still the file's first, and where it
+ * stopped is its end or a record's start (as the Shell checks its own count: shell/history.c vjo_history_total_step). */
 static int same_history(SceUID fd, uint64_t size)
 {
+    char at[3];
     if (!stats.covered)
         return 1;
     if (size < stats.covered || stats.history_bytes < stats.covered)
         return 0; /* a shorter file than the one counted: another one */
+    /* (with a single byte after it, whether a record starts there is not known yet: the scan waits for the next) */
+    if (size - stats.covered >= 2 && (read_at(fd, at, 3, stats.covered - 1) || !vjo_history_record_start(at, 1, 3, 0)))
+        return 0;
     if (read_at(fd, work, stats.head_len, 0) || vjo_stats_check(work, stats.head_len) != stats.head_check)
         return 0;
     if (read_at(fd, work, stats.tail_len, stats.covered - stats.tail_len) ||
@@ -157,31 +163,34 @@ static int same_history(SceUID fd, uint64_t size)
     return 1;
 }
 
-/* After a count: the checks of the bytes it counted, for the next one. */
-static void set_checks(SceUID fd, uint64_t size)
+/* After a count: the checks of the bytes it counted, for the next one. 0, or -1 when they could not be read: then the
+ * counts are shown but not cached (the next count starts from the cache kept on the card). */
+static int set_checks(SceUID fd, uint64_t size)
 {
-    stats.head_len = stats.covered < CHECK_HEAD ? (uint32_t)stats.covered : CHECK_HEAD;
-    stats.tail_len = stats.covered < CHECK_TAIL ? (uint32_t)stats.covered : CHECK_TAIL;
+    uint32_t head = stats.covered < CHECK_HEAD ? (uint32_t)stats.covered : CHECK_HEAD;
+    uint32_t tail = stats.covered < CHECK_TAIL ? (uint32_t)stats.covered : CHECK_TAIL;
+    if (read_at(fd, work, head, 0))
+        return -1;
+    stats.head_check = vjo_stats_check(work, head);
+    if (read_at(fd, work, tail, stats.covered - tail))
+        return -1;
+    stats.tail_check = vjo_stats_check(work, tail);
+    stats.head_len = head;
+    stats.tail_len = tail;
     stats.history_bytes = size;
-    if (read_at(fd, work, stats.head_len, 0))
-        stats.head_len = 0;
-    stats.head_check = vjo_stats_check(work, stats.head_len);
-    if (read_at(fd, work, stats.tail_len, stats.covered - stats.tail_len))
-        stats.tail_len = 0;
-    stats.tail_check = vjo_stats_check(work, stats.tail_len);
-    if ((!stats.head_len || !stats.tail_len) && stats.covered) {
-        vjo_stats_reset(&stats, stats.tz_minutes, stats.rule); /* (a read failed: the next count starts over) */
-    }
+    return 0;
 }
 
-/* history.csv counted from where the cache stopped: its bytes, or -1 (the error in *err). */
-static int64_t count_history(uint64_t *from, int *err, int *records_before)
+/* history.csv counted from where the cache stopped: its bytes, or -1 (the error in *err). *cacheable: the counts can be
+ * cached (their checks were read). */
+static int64_t count_history(uint64_t *from, int *err, int *records_before, int *cacheable)
 {
     SceUID fd = sceIoOpen(VJO_STATS_HISTORY_PATH, SCE_O_RDONLY, 0);
     SceOff end;
     uint64_t size, pos;
     char msg[96];
     *err = 0;
+    *cacheable = 1;
     *records_before = (int)stats.records;
     if (fd < 0) {
         if (fd != MISSING) {
@@ -226,7 +235,7 @@ static int64_t count_history(uint64_t *from, int *err, int *records_before)
                  (unsigned long long)(size / 1024));
         set_progress(msg);
     }
-    set_checks(fd, size);
+    *cacheable = set_checks(fd, size) == 0;
     sceIoClose(fd);
     return *err ? -1 : (int64_t)size;
 }
@@ -258,18 +267,19 @@ static void list_cards(const char *dir, int archive, VjoStatsCard *list, uint32_
     sceIoDclose(d);
 }
 
-/* A card's game, from its record's platform and title ID (core/anki_queue.h; docs/anki.md). */
+/* A card's game, from its record's platform and title ID (core/anki_queue.h; docs/anki.md): VJO_STATS_NO_GAME for a
+ * record that names none, VJO_STATS_UNREAD for one that cannot be read (gone, damaged, being written). */
 static uint16_t card_game(const VjoStatsCard *c, VjoArena *a)
 {
     static const char hex[] = "0123456789abcdef";
     char name[40], path[128];
-    uint16_t game = VJO_STATS_NO_GAME;
+    uint16_t game = VJO_STATS_UNREAD;
     for (int i = 0; i < 16; i++) {
         name[2 * i] = hex[c->id[i] >> 4];
         name[2 * i + 1] = hex[c->id[i] & 15];
     }
     name[32] = 0;
-    for (int tries = 0; tries < 2 && game == VJO_STATS_NO_GAME; tries++) {
+    for (int tries = 0; tries < 2 && game == VJO_STATS_UNREAD; tries++) {
         /* (an export may have moved it from the queue to the archive since the list was read) */
         int archive = c->pad ^ tries;
         snprintf(path, sizeof(path), "%s/%s.json", archive ? VJO_QUEUE_EXPORTED_DIR : VJO_QUEUE_DIR, name);
@@ -285,10 +295,10 @@ static uint16_t card_game(const VjoStatsCard *c, VjoArena *a)
             int p = vjo_json_obj_get(&j, 0, "platform"), t = vjo_json_obj_get(&j, 0, "title_id");
             char *platform = p >= 0 && vjo_json_is_type(&j, p, JSMN_STRING) ? vjo_json_str(a, &j, p) : NULL;
             char *title = t >= 0 && vjo_json_is_type(&j, t, JSMN_STRING) ? vjo_json_str(a, &j, t) : NULL;
-            if (platform && title)
-                game = vjo_stats_card_game(&stats, platform, title);
-        }
-        tries = 2; /* there: whatever it says (a damaged record is a card of no game) */
+            game = platform && title ? vjo_stats_card_game(&stats, platform, title) : VJO_STATS_NO_GAME;
+            tries = 2; /* read: whatever it says */
+        } else if (text)
+            tries = 2; /* there, but damaged: read again at the next count */
         sceIoClose(fd);
         vjo_arena_release(a, mark);
     }
@@ -310,7 +320,7 @@ static int count_cards(void)
     vjo_arena_init(&a, work + VJO_STATS_CARDS * sizeof(VjoStatsCard), sizeof(work) - VJO_STATS_CARDS * sizeof(VjoStatsCard));
     for (uint32_t k = 0; k < n && !stopped(); k++) {
         int at = vjo_stats_card_find(&stats, list[k].id);
-        if (at >= 0 && stats.card[at].game != VJO_STATS_NO_GAME) {
+        if (at >= 0 && stats.card[at].game != VJO_STATS_UNREAD) {
             list[k].game = stats.card[at].game;
         } else { /* a new card, or one whose record could not be read (read again: it may be whole now) */
             list[k].game = card_game(&list[k], &a);
@@ -319,7 +329,7 @@ static int count_cards(void)
                 set_progress(msg);
             }
         }
-        unknown += list[k].game == VJO_STATS_NO_GAME;
+        unknown += list[k].game >= VJO_STATS_UNREAD;
     }
     if (stopped())
         return read; /* the cache keeps its last list */
@@ -370,7 +380,7 @@ static int worker_main(SceSize args, void *argp)
                                            "of another time zone"};
     static const char *const save_text[] = {"saved", "unchanged", "not saved"};
     uint64_t now, from = 0, t0 = sceKernelGetProcessTimeWide(), t1, t2;
-    int err = 0, before = 0, read_cards, save = 1;
+    int err = 0, before = 0, read_cards, save = 1, cacheable;
     char msg[240];
     (void)args;
     (void)argp;
@@ -380,11 +390,13 @@ static int worker_main(SceSize args, void *argp)
     uint64_t covered = stats.covered;
     uint32_t cards_before = stats.cards;
     set_progress("Counting history.csv…");
-    int64_t bytes = count_history(&from, &err, &before);
+    int64_t bytes = count_history(&from, &err, &before, &cacheable);
     t1 = sceKernelGetProcessTimeWide();
     read_cards = count_cards();
     t2 = sceKernelGetProcessTimeWide();
-    if (why || stats.covered != covered || read_cards || stats.cards != cards_before)
+    if (!cacheable)
+        save = 2;
+    else if (why || stats.covered != covered || read_cards || stats.cards != cards_before)
         save = save_cache() < 0 ? 2 : 0;
     vjo_log("stats: history.csv %lld B, %llu B counted from %llu in %u ms (%llu records; in all %llu, %llu damaged, "
             "%llu without a time); %u cards, %d read, in %u ms; the cache %s, then %s%s",
@@ -460,12 +472,12 @@ static VjoConfig cfg;
 static int goal, goal_writable = 1, selected, top_row, stick_move, day14 = 13;
 static int32_t year_day = INT32_MIN;
 
-/* Today, in the counts' time zone (until the first count: the Vita's now). */
+/* Today, in the counts' time zone (until the first count: the Vita's now); 1970-01-01 when the clock cannot be read. */
 static int32_t day_now(void)
 {
     uint64_t now;
-    int32_t tz = local_offset(&now);
-    return vjo_stats_day_in(now, counted ? view_tz : tz);
+    int32_t tz = local_offset(&now), day = vjo_stats_day_in(now, counted ? view_tz : tz);
+    return day == INT32_MIN ? 0 : day;
 }
 
 /* The days around today and the streak (stats is the page's: no count runs). */
@@ -967,8 +979,6 @@ void vjo_stats_page_frame(const VjoStatsUi *ui, uint32_t pressed, int touch_x, i
         count_rule = cfg.reading_time;
         start();
     }
-    if (today == INT32_MIN) /* (no clock: the days are not drawn wrong, from day 0) */
-        today = 0;
     if (touch_y >= VIEW_Y && touch_y < VIEW_END && touch_x >= 24 && touch_x < 936)
         touch(touch_x, touch_y, scratch);
     status[0] = '\0';
