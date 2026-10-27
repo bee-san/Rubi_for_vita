@@ -111,8 +111,12 @@
  * VJO_ROWS_HOOK also publishes the region's current scene once the region shows another than the trusted line's
  * (49 refused it with VJO_ERR_FORMAT, and the worker read the first pass: a strip beside VJO_GAME_RESERVE_HOOK_ONLY,
  * which a game with 1 MiB free refused, so the job failed although the hook had its text). FORMAT now means only
- * that the region has no screen yet. Sizes and layouts are unchanged. */
-#define VJO_API_VERSION 51
+ * that the region has no screen yet. Sizes and layouts are unchanged.
+ * 52: the pause for the frame (config.ini ocr_pause, #348; docs/game-pause.md): VjoGameOcrRequest.speed bit 30
+ * (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region copied from one frame in one display
+ * call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block (VJO_GITEM_FRAME), which the job reads from;
+ * the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. This is #355's: #354 merged first, as 51. */
+#define VJO_API_VERSION 52
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

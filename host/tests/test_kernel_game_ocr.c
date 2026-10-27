@@ -35,6 +35,8 @@ static uint32_t fb_fmt;
 static unsigned fb_w = FB_W, fb_h = FB_H;
 static int frames_come, frame_pid, in_hook, user_block_ok, hook_copy_fail, kstrip_alloc_fail;
 static int stall_copy; /* the hook starts the copy and has not finished it (another core) */
+static unsigned slow_copy_us; /* API 51: each read of a frame row in the hook takes this long (the clock moves) */
+static unsigned hook_row_reads; /* the hook's reads of the game's frame (rows) */
 static int gone_after_frame; /* the game exits right after its frame, while the rows call is in the kernel */
 static unsigned frees_seen_at_exit;
 static unsigned rows_events, capture_events, hook_frames, kstrip_allocs, kstrip_frees;
@@ -102,6 +104,8 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
 {
     if (bits == MEV_ROWS) { /* a rows call waits for the game's next frame, without the lock */
         TEST_ASSERT(uid == g.mevf && !locks && syscall_depth == 1 && timeout && *timeout <= 50000);
+        /* the hook's start, as game_ocr_rows_hook writes it before its claim (API 51's watchdog reads it) */
+        if (stall_copy && rows.job.frame && rows.state == ROWS_PENDING) rows.frame_start = (uint32_t)model_clock | 1u;
         if (stall_copy && __sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_COPYING)) {
             model_clock += *timeout;
             return SCE_KERNEL_ERROR_WAIT_TIMEOUT;
@@ -416,6 +420,7 @@ int ksceKernelMemcpyUserToKernel(void *dst, const void *src, SceSize bytes)
 {
     TEST_CHECK(syscall_depth <= 1);
     if (copy_in_fail || !src) return -1;
+    if (in_hook) { hook_row_reads++; model_clock += slow_copy_us; } /* the game's frame, a row at a time */
     memcpy(dst, src, bytes); return 0;
 }
 int ksceKernelMemcpyKernelToUser(void *dst, const void *src, SceSize bytes)
@@ -467,6 +472,7 @@ static void setup(void)
     fb_fmt = VJO_FB_A8B8G8R8; fb_w = FB_W; fb_h = FB_H;
     frames_come = 0; frame_pid = 7; in_hook = 0; user_block_ok = 1; hook_copy_fail = kstrip_alloc_fail = 0;
     stall_copy = gone_after_frame = 0;
+    slow_copy_us = hook_row_reads = 0;
     kledger_init();
     rows_events = capture_events = hook_frames = kstrip_allocs = kstrip_frees = 0;
     quiet_events = 0;
@@ -1078,8 +1084,14 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x100000; TEST_CHECK(vjoOcrSubmit(&r) > 0); /* API 43: bit 20, a trusted hook may answer (S_TRUST) */
     r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: but bits 18 and 19; API 43: 20; API 50: 21-23) */
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
-    r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 25 (bits 24-27 in flight elsewhere; 21-23 are API 50's), 30-31 */
-    r.speed = 0x40000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 25 (bits 24-27 in flight elsewhere; 21-23 are API 50's), 31 */
+    r.speed = 0x80000000u; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    /* API 51: bit 30, the pause for the frame, an OCR job's, never a shot's */
+    TEST_CHECK(VJO_GAME_OCR_S_PAUSE == 0x40000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_PAUSE) &&
+               !(VJO_GAME_OCR_S_PAUSE & VJO_GAME_OCR_S_SHOT_ALL));
+    setup(); r = make_request();
+    r.speed = VJO_GAME_OCR_S_PAUSE; TEST_CHECK(vjoOcrSubmit(&r) > 0);
+    setup(); r = make_request();
     TEST_CHECK(VJO_GAME_OCR_S_VERTICAL == 0x30000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_VERTICAL) ==
                                                             VJO_GAME_OCR_S_VERTICAL);
     /* API 47: the vertical field's 3 names no mode: refused here, as the game worker refuses it (the Shell sends 0-2) */
@@ -2670,7 +2682,190 @@ static void hook_cache_failures_preserve_previous_file(void)
     TEST_CHECK(shot_fs[main].data[0] == 0x71 && !shot_syncs);
 }
 
+
+/* ---- API 51: the pause for the frame (VJO_ROWS_FRAME, docs/game-pause.md) ---- */
+static uint32_t submit_paused(uint32_t flags)
+{
+    VjoGameOcrRequest r = make_request();
+    r.speed = VJO_GAME_OCR_S_PAUSE;
+    r.flags = flags;
+    caller = 3;
+    int seq = vjoOcrSubmit(&r);
+    TEST_ASSERT(seq > 0);
+    return (uint32_t)seq;
+}
+#define FRAME_FLAGS (VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_FRAME)
+/* One display call copies every row of the region from the frame the game submits (the game waits in it that long:
+ * the pause, info.copy_us), straight into the worker's block, and publishes the first pass; the hook returns, no
+ * kernel block is taken, nothing is left armed. */
+static void pause_copies_the_region_in_one_display_call(void)
+{
+    setup(); uint32_t seq = submit_paused(0); take(seq);
+    VjoGameOcrRowsInfo info;
+    frames_come = 1; slow_copy_us = 50;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == 32);
+    TEST_CHECK(rows_match(user_rows, 0, 32, 40, 0) && user_rows[32] == 0xCC);
+    TEST_CHECK(hook_frames == 1 && hook_row_reads == 32 && !in_hook); /* one display call, every row, and it returned */
+    TEST_CHECK(info.rc == 32 && info.armed && info.copy_us == 32u * 50u); /* the game's wait: the copy's time */
+    TEST_MSG("copy_us %u", (unsigned)info.copy_us);
+    TEST_CHECK(g.done_seq == request.capture_seq && g.region_seq == request.capture_seq && capture_events == 1);
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.frame_start && !allocations && !kstrip_allocs && !locks && !syscall_depth);
+    /* later reads of the job (none are needed: the worker reads its block) still work as before */
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 3, 5, VJO_GAME_OCR_SRC_HOOK, 0, 32, user_rows, &info) == 5 && rows_match(user_rows, 3, 5, 32, 0));
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0 && !game_ocr_capture_busy_locked());
+    TEST_CHECK(VJO_GAME_OCR_PAUSE_ROWS < VJO_GAME_OCR_ROWS_MAX && VJO_GAME_OCR_PAUSE_MAX_US == 100000u);
+    /* the capture's scene signature is the one a strip-by-strip first pass of the same frame builds */
+    SceneSig frozen_sig = g.capture_sig;
+    uint32_t frozen_scene = g.capture_scene;
+    seq = submit(); take(seq);
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 16, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG, 40, user_rows, &info) == 16);
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 16, 16, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | VJO_ROWS_LAST, 40, user_rows, &info) == 16);
+    TEST_CHECK(!memcmp(&frozen_sig, &g.capture_sig, sizeof(frozen_sig)) && g.capture_scene == frozen_scene);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+/* Anything but the whole region, from row 0, through the hook, in a job that asked for the pause, is refused before it
+ * is armed (ARG): another shape, the kernel strip, colour, a shot, a probe, a job without the bit. A game whose frames
+ * come from its pad calls (VJO_GAME_STATIC_FB, no display call to wait in) is refused too (UNSUPPORTED). */
+static void pause_refuses_other_shapes_and_games(void)
+{
+    setup(); uint32_t seq = submit_paused(0); take(seq);
+    VjoGameOcrRowsInfo info;
+    frames_come = 100;
+    TEST_CHECK(rows_call(seq, 0, 31, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 1, 31, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | VJO_ROWS_FRAME, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_FRAME, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS | VJO_ROWS_RGBA, 128, user_rows, &info) ==
+               VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_KSTRIP, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 31, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, VJO_MAX_W + 1u, user_rows, &info) == VJO_ERR_ARG);
+    /* its destination must be one block of the caller: 31 rows of 200 run past it */
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 200, user_rows, &info) == VJO_ERR_ARG);
+    g.game_active = VJO_GAME_STATIC_FB;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_UNSUPPORTED);
+    g.game_active = VJO_GAME;
+    TEST_CHECK(!hook_frames && rows.state == ROWS_IDLE && user_rows[0] == 0xCC && !locks && !syscall_depth && !capture_events);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* a job that did not ask for it */
+    seq = submit(); take(seq);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_ARG);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* a probe (the self-test's): never */
+    seq = submit_paused(VJO_GAME_OCR_F_PROBE); take(seq);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_ARG);
+    TEST_CHECK(!hook_frames && rows.state == ROWS_IDLE && user_rows[0] == 0xCC);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+/* The cap: a copy whose rows take long stops at VJO_GAME_OCR_PAUSE_MAX_US (looked at every VJO_GAME_OCR_PAUSE_ROWS
+ * rows), so the game's display call returns within the cap and one chunk; the call is VJO_ERR_TIMEOUT, nothing is
+ * published, and the job's first pass then reads as without the pause. */
+static void pause_stops_at_its_cap(void)
+{
+    setup(); uint32_t seq = submit_paused(0); take(seq);
+    VjoGameOcrRowsInfo info;
+    frames_come = 1; slow_copy_us = 7000; /* 16 rows: 112 ms, past the 100 ms cap */
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_TIMEOUT);
+    TEST_CHECK(hook_frames == 1 && hook_row_reads == VJO_GAME_OCR_PAUSE_ROWS && !in_hook);
+    TEST_CHECK(info.copy_us >= VJO_GAME_OCR_PAUSE_MAX_US &&
+               info.copy_us <= VJO_GAME_OCR_PAUSE_MAX_US + VJO_GAME_OCR_PAUSE_ROWS * slow_copy_us);
+    TEST_MSG("copy_us %u", (unsigned)info.copy_us);
+    TEST_CHECK(!capture_events && !g.region_seq && rows.state == ROWS_IDLE && !rows.frame_start && !locks);
+    /* the job reads on, strip by strip, from row 0 */
+    slow_copy_us = 0; frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | VJO_ROWS_LAST, 40, user_rows, &info) == 32);
+    TEST_CHECK(rows_match(user_rows, 0, 32, 40, 0) && capture_events == 1 && g.region_seq == request.capture_seq);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+}
+/* Every other way a copy can end returns the game's display call at once: the hook cannot write the block (COPY),
+ * another frame size (FORMAT), the job cancelled before a frame came (CANCELLED, no copy), no frame at all
+ * (TIMEOUT), the game exiting right after its frame (its call returns; the state is tidied). */
+static void pause_every_other_end_returns_the_display_call(void)
+{
+    setup(); uint32_t seq = submit_paused(0); take(seq);
+    VjoGameOcrRowsInfo info;
+    hook_copy_fail = 1; frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_COPY);
+    TEST_CHECK(hook_frames == 1 && !in_hook && rows.state == ROWS_IDLE && !capture_events && !rows.frame_start);
+    hook_copy_fail = 0; fb_w = 24; frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_FORMAT);
+    TEST_CHECK(hook_frames == 2 && !in_hook && rows.state == ROWS_IDLE && !capture_events);
+    fb_w = FB_W;
+    uint64_t before = model_clock;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_TIMEOUT);
+    TEST_CHECK(model_clock - before >= ROWS_WAIT_US && !info.copy_us && rows.state == ROWS_IDLE);
+    caller = 3; TEST_CHECK(vjoOcrCancel(seq) == 0);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_CANCELLED);
+    frames_come = 1; game_frame();
+    TEST_CHECK(user_rows[0] == 0xCC && rows.state == ROWS_IDLE && hook_frames == 3);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* the game exits right after the frame that copied it: the call returns, nothing stays armed */
+    setup(); seq = submit_paused(0); take(seq);
+    frames_come = 1; gone_after_frame = 1;
+    rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info);
+    TEST_CHECK(hook_frames == 1 && !in_hook && rows.state == ROWS_IDLE && !rows.in_call && !locks && !syscall_depth);
+    TEST_CHECK(!rows.frame_start);
+}
+/* The watchdog (the kernel worker's rows tick): a frame copy still running past PAUSE_WATCHDOG_US, twice its cap,
+ * which the copy's own cap should never allow, turns the pause off until the kernel restarts: every later frame copy
+ * is refused (UNSUPPORTED) and jobs read strip by strip. A copy that is only slow, an ordinary strip's copy and an
+ * idle state never trip it. The stalled copy's rows call gives it up as any other (BUSY), and the tick returns the
+ * state to IDLE once it ends. */
+static void pause_watchdog_turns_pausing_off(void)
+{
+    setup(); uint32_t seq = submit(); take(seq);
+    unsigned k0 = klogs;
+    /* an ordinary strip copying for seconds: not the watchdog's (it is the abandoned-copy path's) */
+    rows.state = ROWS_COPYING; rows.pid = 7; rows.job.frame = 0; rows.frame_start = (uint32_t)model_clock | 1u;
+    model_clock += 10u * PAUSE_WATCHDOG_US;
+    game_ocr_rows_tick();
+    TEST_CHECK(!pause_off);
+    /* a frame copy within twice its cap: no */
+    rows.job.frame = 1; rows.frame_start = (uint32_t)model_clock | 1u;
+    model_clock += PAUSE_WATCHDOG_US - 1000u;
+    game_ocr_rows_tick();
+    TEST_CHECK(!pause_off && klogs == k0);
+    /* past it: off, logged once */
+    model_clock += 2000u;
+    game_ocr_rows_tick();
+    TEST_CHECK(pause_off && klogs == k0 + 1 && strstr(last_klog, "ocr pause") != NULL);
+    game_ocr_rows_tick();
+    TEST_CHECK(klogs == k0 + 1);
+    rows.state = ROWS_IDLE; rows.frame_start = 0; rows.job.frame = 0;
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* from now on: refused before it is armed, and the strips work as before */
+    seq = submit_paused(0); take(seq);
+    VjoGameOcrRowsInfo info;
+    frames_come = 1;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_UNSUPPORTED);
+    TEST_CHECK(!hook_frames && rows.state == ROWS_IDLE && !info.armed);
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, VJO_ROWS_SIG | VJO_ROWS_LAST, 40, user_rows, &info) == 32);
+    caller = 7; TEST_CHECK(vjoOcrComplete(&message) == 0);
+    /* a copy that stalls in the game's display call: its call gives it up (BUSY, abandoned), the tick turns the pause
+     * off, and once the copy ends the state is IDLE again */
+    setup(); TEST_CHECK(!pause_off); /* the module's start: on again */
+    seq = submit_paused(0); take(seq);
+    stall_copy = 1;
+    TEST_CHECK(rows_call(seq, 0, 32, VJO_GAME_OCR_SRC_HOOK, FRAME_FLAGS, 40, user_rows, &info) == VJO_ERR_BUSY);
+    TEST_CHECK(rows.state == ROWS_COPYING && rows.abandoned && rows.job.frame && rows.frame_start);
+    TEST_CHECK(!pause_off);
+    game_ocr_rows_tick();
+    TEST_CHECK(pause_off && strstr(last_klog, "ocr pause") != NULL);
+    rows.state = ROWS_DONE; rows.frame_start = 0; /* the copy ends */
+    game_ocr_rows_tick();
+    TEST_CHECK(rows.state == ROWS_IDLE && !rows.abandoned);
+    stall_copy = 0;
+}
+
 TEST_LIST = {
+    {"API 51: the pause copies the whole region in one display call and publishes it", pause_copies_the_region_in_one_display_call},
+    {"API 51: the pause refuses any other shape, a job without it and a game with no display call", pause_refuses_other_shapes_and_games},
+    {"API 51: the pause stops at its cap; the job then reads strip by strip", pause_stops_at_its_cap},
+    {"API 51: every other end of the pause returns the game's display call", pause_every_other_end_returns_the_display_call},
+    {"API 51: the watchdog turns pausing off when a copy outlives twice its cap", pause_watchdog_turns_pausing_off},
     {"hook cache: bounded authenticated broker and recoverable replacement", hook_cache_persists_with_bounded_broker},
     {"hook cache: copy IO size cancellation and close failures", hook_cache_failures_preserve_previous_file},
     {"one worker thread per game: a second copy's is refused (#138)", second_worker_thread_is_refused},

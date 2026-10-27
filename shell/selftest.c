@@ -301,11 +301,11 @@ int vjo_selftest_stage_wait(unsigned i, int rc, const VjoGameOcrResult *r)
 static const char *const step_names[] = {
     "none", "mem", "check", "alloc", "free", "pass", "tear", "sig", "find", "load", "recognize", "fallback",
     "fb", "probe", "settle", "blank", "norm", "lm", "cascade", "refine", "par", "clock", "pace", "shot", "save",
-    "gate", "trim"};
+    "gate", "trim", "pause"};
 static const char *const mem_names[] = {"-", "user", "cdram", "phycont", "kernel"};
 static const char *const src_names[] = {"-", "hook", "kstrip", "user"};
 static const char *const item_names[] = {"-", "capture", "workspace", "weights", "probe", "line", "lm", "cascade",
-                                         "shot"};
+                                         "shot", "frame"};
 /* Every step and block has its name (a new one without fails the build). */
 typedef char vjo_step_names_complete[sizeof(step_names) / sizeof(step_names[0]) == VJO_GSTEP_COUNT ? 1 : -1];
 typedef char vjo_item_names_complete[sizeof(item_names) / sizeof(item_names[0]) == VJO_GITEM_COUNT ? 1 : -1];

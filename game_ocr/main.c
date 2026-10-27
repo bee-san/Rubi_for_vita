@@ -78,6 +78,11 @@ static SceUID cascade_uid = -1;
 /* API 23: a shot's block (its colour strip, the encoder and the JPEG), only while a shot runs. */
 static SceUID shot_uid = -1;
 static uint32_t shot_bytes_held;
+/* API 51 (ocr_pause, docs/game-pause.md): a paused job's frame block, the region's grey rows from one frame,
+ * only while that job runs (freed as soon as the kernel refuses the copy). */
+static SceUID frame_uid = -1;
+static uint32_t frame_bytes_held;
+static unsigned char *frame_base;
 /* A rows call returned BUSY: the display hook may still write into the capture
  * (or tall-line) block, so neither is freed (they go with the process). */
 static int hook_owns_capture;
@@ -94,7 +99,7 @@ static void *line_base;
  * fields (workspace_bytes, resident_bytes, capture_bytes, the step log) rather
  * than printed here. */
 enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_LM, GL_CASCADE, GL_HELPERS, GL_SHOT,
-       GL_COUNT };
+       GL_FRAME, GL_COUNT };
 static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
     [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
@@ -106,6 +111,7 @@ static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_CASCADE] = {"VjoGameVocrCascade", VJO_LEDGER_POOL_GAME},
     [GL_HELPERS] = {"VjoGameVocrHelper stacks+TLS", VJO_LEDGER_POOL_GAME},
     [GL_SHOT] = {"VjoGameShot", VJO_LEDGER_POOL_GAME},
+    [GL_FRAME] = {"VjoGameVocrFrame", VJO_LEDGER_POOL_GAME},
 };
 VjoLedger g_game_ledger;
 
@@ -154,6 +160,9 @@ static int free_sample(int32_t *main_bytes, int32_t *cdram, int32_t *phycont)
  * verified one stays for the next job (blocks_kept). */
 static unsigned blocks_held;
 static unsigned blocks_kept(void);
+/* API 51: the frame block's ALLOC and FREE steps are left out (its PAUSE step has its memory, bytes and refusal), so
+ * a paused job's log keeps the room the kernel's PACE step takes after it (VJO_GAME_OCR_STEPS). */
+static int steps_quiet;
 
 static VjoGameOcrStep *step_add(unsigned id, unsigned kind, unsigned arg, int32_t rc, uint32_t bytes,
                                 uint32_t sum, uint32_t us, int sample)
@@ -227,13 +236,13 @@ static SceUID game_memblock_alloc(int item, unsigned gitem, const char *name, ui
         uint32_t rounded = ROUND_TO(bytes, ladder[i].unit);
         if (!(which & (1u << i))) continue;
         uid = sceKernelAllocMemBlock(name, ladder[i].type, rounded, NULL);
-        if (uid >= 0) blocks_held++; /* from here its FREE step has a slot */
-        step_add(VJO_GSTEP_ALLOC, ladder[i].mem, gitem, uid, rounded, 0, 0, 1);
+        if (uid >= 0 && !steps_quiet) blocks_held++; /* from here its FREE step has a slot */
+        if (!steps_quiet) step_add(VJO_GSTEP_ALLOC, ladder[i].mem, gitem, uid, rounded, 0, 0, 1);
         if (uid < 0) continue;
         if (sceKernelGetMemBlockBase(uid, base) < 0 || !*base || ((uintptr_t)*base & 15u)) {
             *base = NULL;
             if (sceKernelFreeMemBlock(uid) < 0) *leaked = uid;
-            else blocks_held--;
+            else if (!steps_quiet) blocks_held--;
             return -1;
         }
         vjo_ledger_add(&g_game_ledger, item, rounded);
@@ -247,9 +256,9 @@ static SceUID game_memblock_alloc(int item, unsigned gitem, const char *name, ui
 static int game_memblock_free(int item, unsigned gitem, SceUID uid, uint32_t bytes)
 {
     int rc = sceKernelFreeMemBlock(uid);
-    step_add(VJO_GSTEP_FREE, 0, gitem, rc, bytes, 0, 0, 1);
+    if (!steps_quiet) step_add(VJO_GSTEP_FREE, 0, gitem, rc, bytes, 0, 0, 1);
     if (rc < 0) return -1;
-    if (blocks_held) blocks_held--;
+    if (blocks_held && !steps_quiet) blocks_held--;
     vjo_ledger_sub(&g_game_ledger, item, bytes);
     return 0;
 }
@@ -400,12 +409,117 @@ static int capture_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, 
     }
 }
 
+/* ---- API 51: the pause for the frame (VJO_GAME_OCR_S_PAUSE, config.ini ocr_pause; docs/game-pause.md) ----
+ * A job that asks for it and holds its frame block asks the kernel, at its first pass, for the whole region at once
+ * (VJO_ROWS_FRAME): the display hook copies every row from the frame the game submits, inside that one display call,
+ * which waits as long (the game's pause, at most VJO_GAME_OCR_PAUSE_MAX_US), into the frame block. Every later read
+ * of the job comes from the block (strip_source), and the core sees the region frozen (VjoGreySource.frozen): no
+ * stable-text check after the finder, no tear, a tall line read in place. Refused or cut short, the block goes back
+ * to the game at once and the job reads strip by strip, as without the pause. Nothing here waits for the game: the
+ * pause is the kernel's copy in the game's own thread, and it ends with that copy. */
+static struct {
+    int asked;         /* the job asked for the pause (VJO_GAME_OCR_S_PAUSE) and reached its memory check */
+    int held;          /* the frame block is held: the copy may be asked for at the first pass */
+    int tried;         /* the copy was asked for (once a job) */
+    int frozen;        /* every read of the job is from the block */
+    int32_t rc;        /* why not: the kernel's error (VJO_ERR_*), VJO_E_OOM */
+    uint32_t rows, us; /* the rows the display call copied, and its time: how long the game waited */
+    uint32_t bytes;    /* the frame block's */
+    uint32_t mem;      /* its VJO_GAME_OCR_MEM_* */
+} pz;
+/* The job's frame copies over all its tries (API 47's auto may read twice): its captures are then its rows calls. */
+static unsigned pause_frames;
+
+/* The frame block back to the game (a refused copy, the job's end); kept while the hook may still write it
+ * (a rows call that outlived its copy: hook_owns_capture, as the capture block is). 0, or -1 when its free failed. */
+static int frame_release(void)
+{
+    int rc;
+    pz.held = pz.frozen = 0;
+    if (frame_uid < 0 || hook_owns_capture) return 0;
+    steps_quiet = 1;
+    rc = game_memblock_free(GL_FRAME, VJO_GITEM_FRAME, frame_uid, frame_bytes_held);
+    steps_quiet = 0;
+    if (rc < 0) return -1;
+    frame_uid = -1;
+    frame_bytes_held = 0;
+    frame_base = NULL;
+    return 0;
+}
+
+/* The copy at the first pass: 0 (frozen, or refused: the job reads on as before), or the error that ends the job (a
+ * cancellation; a copy that outlived its call, after which no job runs in this game). */
+static int pause_copy(Capture *c)
+{
+    const VjoGameOcrRequest *r = c->r;
+    VjoGameOcrRows req;
+    unsigned busy = 0;
+    int rc;
+    pz.tried = 1;
+    for (;;) {
+        sceClibMemset(&req, 0, sizeof(req));
+        req.size = sizeof(req);
+        req.seq = r->seq;
+        req.n = r->height;
+        req.mode = VJO_GAME_OCR_SRC_HOOK;
+        req.flags = VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_FRAME;
+        req.dst_stride = r->width;
+        sceClibMemset(&c->last, 0, sizeof(c->last));
+        c->last.size = sizeof(c->last);
+        rc = vjoOcrCaptureRows(&req, frame_base, &c->last);
+        /* a previous copy not tidied yet (capture_rows' rule) */
+        if (rc == VJO_ERR_BUSY && !c->last.armed && busy++ < ROWS_BUSY_TRIES && !cancelled(NULL)) {
+            sceKernelDelayThread(ROWS_BUSY_DELAY_US);
+            continue;
+        }
+        break;
+    }
+    pz.us = c->last.copy_us;
+    if (rc == (int)r->height) {
+        pz.frozen = 1;
+        pause_frames++;
+        pz.rows = r->height;
+        c->pass_bytes += r->height * r->width;
+        c->pass_strips++;
+        c->pass_us += c->last.wait_us;
+        return 0;
+    }
+    pz.rc = rc < 0 ? rc : VJO_E_SOURCE;
+    if (rc == VJO_ERR_BUSY && c->last.armed) {
+        /* the hook may still write the block: it is never freed, and this worker takes no more jobs */
+        blocked = hook_owns_capture = 1;
+        pz.held = 0;
+        c->failed = rc;
+        return rc;
+    }
+    if (rc == VJO_ERR_CANCELLED) {
+        frame_release();
+        return VJO_E_CANCELLED;
+    }
+    return frame_release() ? VJO_E_OCR_UNAVAILABLE : 0; /* the job reads on, strip by strip */
+}
+
+/* VjoGreySource.frozen: the region from one frame, while every read of the job comes from it. */
+static const unsigned char *frozen_region(void *ud)
+{
+    (void)ud;
+    return pz.frozen ? frame_base : NULL;
+}
+
 static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t stride, unsigned flags)
 {
     Capture *c = ud;
     int rc;
     if (cancelled(NULL)) return VJO_E_CANCELLED;
-    rc = capture_rows(c, y, n, dst, stride, flags);
+    /* API 51: the first pass's first strip is the pause's copy, once a job */
+    if (pz.held && !pz.tried && (flags & VJO_STRIP_FIRST) && !y && (rc = pause_copy(c)) < 0) return rc;
+    if (pz.frozen) {
+        for (unsigned r = 0; r < n; r++)
+            sceClibMemcpy(dst + (size_t)r * stride, frame_base + (size_t)(y + r) * c->r->width, c->r->width);
+        rc = (int)n;
+    } else {
+        rc = capture_rows(c, y, n, dst, stride, flags);
+    }
     /* The first pass is in: one step for it, and the kernel's publication (the
      * job's first; a retry's is the same source, its count is the TEAR step's). */
     if (rc > 0 && (flags & VJO_STRIP_LAST) && !c->logged) {
@@ -420,6 +534,11 @@ static int strip_source(void *ud, unsigned y, unsigned n, unsigned char *dst, si
 typedef char vjo_line_column_check[VJO_VOCR_LINE_COLUMN == VJO_GAME_OCR_LINE_COLUMN ? 1 : -1];
 /* The core never asks for more than the ledger counts. */
 typedef char vjo_line_budget_check[VJO_VOCR_LINE_MAX_BYTES <= VJO_BUDGET_GAME_LINE ? 1 : -1];
+/* API 51: a frame block holds the largest region, and the worst case counts the larger of it and a tall line's
+ * block (a job holds one or the other: include/vjo_ledger_budget.h VJO_BUDGET_GAME_LINE_OR_FRAME). */
+typedef char vjo_frame_budget_check[PAGE_ROUND((uint32_t)VJO_OCR_MAX_WIDTH * VJO_OCR_MAX_HEIGHT) <= VJO_BUDGET_GAME_FRAME &&
+                                    VJO_BUDGET_GAME_FRAME <= VJO_BUDGET_GAME_LINE_OR_FRAME &&
+                                    VJO_BUDGET_GAME_LINE <= VJO_BUDGET_GAME_LINE_OR_FRAME ? 1 : -1];
 typedef char vjo_capture_budget_check[VJO_VOCR_CAPTURE_LIMIT <= VJO_BUDGET_GAME_CAPTURE ? 1 : -1];
 typedef char vjo_lm_budget_check[PAGE_ROUND(VJO_VOCR_LM_MAX_BYTES) <= VJO_BUDGET_GAME_LM ? 1 : -1];
 /* The weights and the cascade's model: at most the largest pinned model each (since API 21
@@ -873,6 +992,7 @@ static int cleanup(void)
         if (game_memblock_free(GL_SHOT, VJO_GITEM_SHOT, shot_uid, shot_bytes_held) < 0) rc = VJO_E_OCR_UNAVAILABLE;
         else { shot_uid = -1; shot_bytes_held = 0; }
     }
+    if (frame_release() < 0) rc = VJO_E_OCR_UNAVAILABLE; /* API 51: a frame copy wrote here (kept as the capture is) */
     file_close(NULL);
     if (model_owned) rc = VJO_E_OCR_UNAVAILABLE;
     /* Between jobs a weights (or LM) block holds verified bytes or nothing. */
@@ -1777,7 +1897,10 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     int retried = 0;
     unsigned try_steps = 0; /* the step log's length as the try began */
     Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
-    if (blocked || workspace_uid >= 0 || capture_uid >= 0 || shot_uid >= 0 || model_owned) {
+    uint32_t paused_us = 0; /* API 51: the game's waits for this job's frame copies (auto's earlier tries') */
+    sceClibMemset(&pz, 0, sizeof(pz));
+    pause_frames = 0;
+    if (blocked || workspace_uid >= 0 || capture_uid >= 0 || shot_uid >= 0 || frame_uid >= 0 || model_owned) {
         rc = VJO_E_OCR_UNAVAILABLE; goto done;
     }
     /* The refinement's mode (bits 12-13): 3 is refused here, as unknown bits are. */
@@ -1860,6 +1983,8 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
      * columns' model could not be read or fit): each try its own check and blocks, the last one's result. */
 again:
     try_steps = out->n_steps;
+    paused_us += pz.us; /* an earlier try's copy (API 47's auto: rows, then columns) */
+    sceClibMemset(&pz, 0, sizeof(pz));
     /* each try's own step down (API 47: auto's last try's, which the Shell names the model by) */
     out->fallback = 0;
     out->model_need_workspace = out->model_need_weights = out->model_release_bytes = 0;
@@ -1974,6 +2099,22 @@ retry_smaller:
     unsigned use_helpers = 0;
     size_t helper_bytes = 0, helpers_need_bytes = 0;
     if (want_helpers > VJO_VOCR_HELPERS_MAX) want_helpers = VJO_VOCR_HELPERS_MAX;
+    /* API 51, the pause (ocr_pause, docs/game-pause.md): its frame block, the region's grey rows, when it fits beside
+     * everything the check chose, with that check's reserve, and without the resident blocks the check counted as
+     * released (so it never makes the job give back another model's weights); asked for before the helpers, so a game
+     * short of memory may read its lines one after the other for it, never with a smaller model, LM or cascade. */
+    uint32_t frame_need = 0;
+    if (fits && (r->speed & VJO_GAME_OCR_S_PAUSE)) {
+        pz.asked = 1;
+        frame_need = PAGE_ROUND((uint32_t)r->width * r->height);
+        if ((int64_t)out->free_user - (int64_t)out->reserve_bytes >=
+            (int64_t)out->need_workspace + out->need_weights + frame_need) {
+            out->need_workspace += frame_need;
+        } else {
+            frame_need = 0;
+            pz.rc = VJO_E_OOM;
+        }
+    }
     if (fits) {
         const size_t block = use_bytes + extra_job_bytes(use, lm, casc);
         for (use_helpers = want_helpers; use_helpers; use_helpers--) {
@@ -2049,8 +2190,26 @@ retry_smaller:
     if (workspace_uid < 0) { workspace_uid = leaked; rc = VJO_E_OOM; goto done; }
     workspace_bytes_held = held;
     workspace_memory = mem;
+    if (frame_need) { /* API 51: refused, the job reads as without the pause */
+        void *fb = NULL;
+        SceUID fu;
+        steps_quiet = 1;
+        fu = game_memblock_alloc(GL_FRAME, VJO_GITEM_FRAME, "VjoGameVocrFrame", (uint32_t)r->width * r->height,
+                                 LADDER_ALL, &fb, &leaked, &held, &mem);
+        steps_quiet = 0;
+        if (fu < 0) {
+            frame_uid = leaked; /* a block whose base could not be read and that could not be freed: cleanup's */
+            pz.rc = fu < -1 ? fu : VJO_E_OOM; /* the last rung's native error */
+        } else {
+            frame_uid = fu;
+            frame_bytes_held = pz.bytes = held;
+            pz.mem = mem;
+            frame_base = fb;
+            pz.held = 1;
+        }
+    }
     VjoPlatform platform = {.file_open=file_open, .now_us=now_us};
-    VjoGreySource image = {&capture, r->width, r->height, strip_source, cancelled, line_buffer};
+    VjoGreySource image = {&capture, r->width, r->height, strip_source, cancelled, line_buffer, frozen_region};
     VjoVocrPolicy policy;
     request_policy(r, &policy);
     if (retried) {
@@ -2178,6 +2337,11 @@ retry_smaller:
                  stats.settle_changes, (stats.cycling_rows > 0xFFFFu ? 0xFFFFu : stats.cycling_rows) << 16 |
                  (stats.cycles > 0xFFFFu ? 0xFFFFu : stats.cycles),
                  stats.settle_us + tried_settle_us ? stats.settle_us + tried_settle_us : 1u, 0);
+    if (pz.asked) /* API 51: kind 1 frozen; sum the reason | the block's memory << 8; us the game's waits (1: none) */
+        step_add(VJO_GSTEP_PAUSE, pz.frozen ? 1u : 0u, pz.rows, pz.frozen ? 0 : pz.rc, pz.bytes,
+                 (pz.frozen ? VJO_GPAUSE_FROZEN : pz.tried ? VJO_GPAUSE_REFUSED : pz.held ? VJO_GPAUSE_UNUSED
+                                                                              : VJO_GPAUSE_NO_ROOM) | pz.mem << 8,
+                 paused_us + pz.us ? paused_us + pz.us : 1u, 0);
     for (unsigned i = 0; i < stats.blank && i < VJO_VOCR_BLANK_LOGGED; i++) {
         const VjoVocrBlankStat *b = &stats.blank_line[i];
         step_add(VJO_GSTEP_BLANK, 0, b->index, (int32_t)stats.blank, (uint32_t)b->width << 16 | b->height,
@@ -2277,7 +2441,9 @@ done:
     if (!(r && (r->flags & (VJO_GAME_OCR_F_PROBE | VJO_GAME_OCR_F_SHOT)))) { /* (theirs are their own) */
         out->source = capture.pass_strips ? capture.mode : VJO_GAME_OCR_SRC_NONE;
         out->strip_rows = stats.strip_rows;
-        out->captures = stats.strips + tried_strips;
+        /* API 51: a paused job's captures are the game's frames it read (its rows calls, the frame copy one), not its
+         * reads of the frame block */
+        out->captures = pause_frames ? capture.pass_strips : stats.strips + tried_strips;
         out->tears = stats.tears;
         out->capture_us = stats.capture_us + tried_us;
         out->region_sum = stats.region_sum;

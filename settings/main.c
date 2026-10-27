@@ -90,8 +90,9 @@
  * has (hook_trust) */
 #define PREF_TRUST 7
 #define PREF_GATE 8
-#define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical), the last card */
-#define PREFERENCES 10
+#define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical) */
+#define PREF_PAUSE 10   /* API 51: Pause the game to read (config.ini ocr_pause), the last card */
+#define PREFERENCES 11
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -669,6 +670,14 @@ static void set_vertical(int index)
     preference_saved(vjo_preferences_save_vertical(vertical_choice[index], &scratch));
 }
 
+/* API 51, Pause the game to read (config.ini ocr_pause, docs/game-pause.md): applies when the overlay next opens. */
+static void set_pause(int on)
+{
+    if (on == preferences.ocr_pause) return;
+    if (preferences_locked()) return;
+    preference_saved(vjo_preferences_save_pause(on, &scratch));
+}
+
 /* Model size: enter cycles Small -> Normal -> Large; Left/Right step within it. */
 static void set_tier(int tier)
 {
@@ -717,6 +726,10 @@ static void toggle_preference(void)
                   preferences.hook_trust ^ (preference_selected == PREF_TRUST));
         return;
     }
+    if (preference_selected == PREF_PAUSE) {
+        set_pause(!preferences.ocr_pause);
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? !preferences.japanese_only_selection : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? !preferences.highlight_mode : preferences.highlight_mode,
@@ -756,6 +769,10 @@ static void set_preference(int right)
                   preference_selected == PREF_TRUST ? right : preferences.hook_trust);
         return;
     }
+    if (preference_selected == PREF_PAUSE) {
+        set_pause(right);
+        return;
+    }
     change_preference(preferences.vocr_tier,
         preference_selected == PREF_SELECTION ? right : preferences.japanese_only_selection,
         preference_selected == PREF_HIGHLIGHT ? (right ? VJO_HIGHLIGHT_CHARACTER : VJO_HIGHLIGHT_WORD)
@@ -765,7 +782,7 @@ static void set_preference(int right)
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
 static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H,
-                                             CARD_H};
+                                             CARD_H, CARD_H};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
@@ -975,6 +992,16 @@ static void draw_vertical_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, preferences_writable ? help[chosen] : "Cannot read the saved choice.");
 }
 
+/* API 51: the game's frame held while Rubi copies the text box from it, so the OCR reads one still picture
+ * (docs/game-pause.md); OFF reads it strip by strip over a few frames, as before. */
+static void draw_pause_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Pause the game to read");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
+          preferences.ocr_pause ? "ON" : "OFF", preferences_writable && preferences.ocr_pause);
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a brief pause, so an animated icon can't spoil a read.");
+}
+
 static void draw_card(int i, int y)
 {
     switch (i) {
@@ -987,6 +1014,7 @@ static void draw_card(int i, int y)
     case PREF_TRUST: draw_trust_card(y); break;
     case PREF_GATE: draw_gate_card(y); break;
     case PREF_VERTICAL: draw_vertical_card(y); break;
+    case PREF_PAUSE: draw_pause_card(y); break;
     default: draw_results_card(y); break;
     }
 }
@@ -1083,7 +1111,7 @@ static void touch_preference(int x, int y)
             (x - RESULT_BADGE_X) / RESULT_BADGE_PITCH < VJO_LOCAL_MAX_DICTS)
             set_dictionary_results((x - RESULT_BADGE_X) / RESULT_BADGE_PITCH + 1);
         break;
-    default: /* the ON/OFF cards: Speed boost, Japanese characters only and (API 43) the two OCR skips */
+    default: /* the ON/OFF cards: Speed boost, Japanese characters only, (API 43) the two OCR skips, (API 51) the pause */
         toggle_preference();
     }
 }

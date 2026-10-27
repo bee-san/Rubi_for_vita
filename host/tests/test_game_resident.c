@@ -21,6 +21,11 @@ static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((al
 static unsigned char pixels[W*H*4];
 static unsigned char capture_mem_block[64*1024] __attribute__((aligned(64)));
 static int capture_live;
+/* API 51, the pause: the worker's frame block, and the kernel's frame copies (VJO_ROWS_FRAME) */
+static unsigned char frame_mem_block[64*1024] __attribute__((aligned(64)));
+static int frame_live, frame_alloc_failure, frame_refuse, frame_busy_armed, frame_gone_first;
+static unsigned frame_block, frame_allocs, frame_calls, strip_calls, spin; /* spin: a spinner moves at each frame */
+static int frame_cancel; /* the Shell cancels while the copy waits for its frame */
 static unsigned capture_block, capture_allocs;
 static int64_t available;
 static unsigned live_bytes, peak_bytes, job_block, weights_block;
@@ -45,6 +50,14 @@ int sceKernelGetFreeMemorySize(SceKernelFreeMemorySizeInfo *out)
 { out->size_user = (int)(available - live_bytes); return free_query_error; }
 SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *opts)
 {
+    if (!strcmp(name, "VjoGameVocrFrame")) { /* API 51: on the ladder (USER_RW, CDRAM, phycont) */
+        TEST_CHECK(!frame_live && !(size & 4095));
+        if (frame_alloc_failure || type != SCE_KERNEL_MEMBLOCK_TYPE_USER_RW) return -1;
+        TEST_CHECK(size <= sizeof(frame_mem_block));
+        frame_live = 1; frame_block = size; frame_allocs++;
+        live_bytes += size; if (live_bytes > peak_bytes) peak_bytes = live_bytes;
+        return 13;
+    }
     TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW && !(size & 4095));
     if (!strcmp(name, "VjoGameVocrCapture")) {
         TEST_CHECK(!capture_live && size <= sizeof(capture_mem_block));
@@ -71,12 +84,14 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
 {
     if (uid == 11) { TEST_CHECK(capture_live); *base = capture_mem_block; return 0; }
+    if (uid == 13) { TEST_CHECK(frame_live); *base = frame_mem_block; return 0; }
     TEST_CHECK(uid == 10 ? weights_live : uid == 9 && job_live);
     *base = uid == 10 ? (void *)weights_memory : (void *)job_memory; return 0;
 }
 int sceKernelFreeMemBlock(SceUID uid)
 {
     if (uid == 11) { TEST_CHECK(capture_live); capture_live = 0; live_bytes -= capture_block; return 0; }
+    if (uid == 13) { TEST_CHECK(frame_live); frame_live = 0; live_bytes -= frame_block; return 0; }
     if (uid == 10) {
         TEST_CHECK(weights_live);
         if (weights_free_failure) return -1;
@@ -126,13 +141,50 @@ int vjoOcrCancelled(uint32_t seq)
 static unsigned complete_failures; /* the next completions the kernel refuses (BUSY) */
 int vjoOcrComplete(const VjoGameOcrResult *out)
 {
-    TEST_CHECK(!job_live && !capture_live);
+    TEST_CHECK(!job_live && !capture_live && (!frame_live || hook_owns_capture));
     if (complete_failures) { complete_failures--; return VJO_ERR_BUSY; }
     return 0;
 }
-/* The kernel's rows: grey of the pixels, straight into the worker's capture block. */
+/* A spinner beside the text, rows 40-49, columns 150-169: a new shade at every frame the game shows. */
+static void spinner_moves(void)
+{
+    if (!spin) return;
+    spin++;
+    for (unsigned y = 40; y < 50; y++)
+        for (unsigned x = 150; x < 170; x++) {
+            unsigned char *q = pixels + (y * W + x) * 4;
+            q[0] = q[1] = q[2] = (unsigned char)(spin * 37u + 11u);
+        }
+}
+/* The kernel's rows: grey of the pixels, straight into the worker's capture block. Each call is one frame of the
+ * game (16,667 us). API 51: a frame copy (VJO_ROWS_FRAME) is every row of the region from one frame, into the
+ * worker's frame block, in one call. */
 int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
 {
+    if (req->flags & VJO_ROWS_FRAME) {
+        frame_calls++;
+        TEST_CHECK(req->seq == 12 && !req->y && req->n == H && req->flags == (VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_FRAME));
+        TEST_CHECK(req->mode == VJO_GAME_OCR_SRC_HOOK && req->dst_stride == W && frame_live && capture_live);
+        TEST_CHECK(dst == (void *)frame_mem_block); /* the kernel checks the request's VJO_GAME_OCR_S_PAUSE */
+        info->armed = 1;
+        if (frame_cancel) { cancel_now = 1; info->armed = 0; return VJO_ERR_CANCELLED; }
+        if (frame_busy_armed) return VJO_ERR_BUSY; /* its copy outlived the call */
+        if (frame_refuse) { info->armed = frame_refuse != VJO_ERR_UNSUPPORTED; return frame_refuse; }
+        clock_value += 16667u;
+        spinner_moves();
+        for (unsigned r = 0; r < H; r++)
+            for (unsigned x = 0; x < W; x++) {
+                const unsigned char *q = pixels + (r * W + x) * 4;
+                ((unsigned char *)dst)[r * req->dst_stride + x] = (unsigned char)((77u*q[0] + 150u*q[1] + 29u*q[2]) >> 8);
+            }
+        info->fb_width = W; info->fb_height = H; info->fb_pitch = W;
+        info->copy_us = 1234; /* the game's wait in its display call */
+        return (int)req->n;
+    }
+    strip_calls++;
+    if (frame_gone_first) TEST_CHECK(!frame_live); /* a refused copy's block goes back before the job reads on */
+    clock_value += 16667u;
+    spinner_moves();
     TEST_CHECK(req->seq == 12 && req->y < H && req->n && req->n <= H - req->y && capture_live);
     for (unsigned r = 0; r < req->n; r++)
         for (unsigned x = 0; x < W; x++) {
@@ -246,6 +298,10 @@ static void reset(void)
     spy_lines = 1; free_query_error = 0;
     clock_value = 0;
     memset(pixels, 0, sizeof(pixels));
+    frame_uid = -1; frame_base = NULL; frame_bytes_held = 0; hook_owns_capture = 0;
+    memset(&pz, 0, sizeof(pz));
+    frame_live = frame_alloc_failure = frame_refuse = frame_busy_armed = frame_gone_first = frame_cancel = 0;
+    frame_block = frame_allocs = frame_calls = strip_calls = spin = 0;
 }
 static int run_with(const char *name, const char *fallback, VjoGameOcrResult *out)
 {
@@ -714,7 +770,122 @@ static void fallback_file_failure_and_other_resident_model(void)
     TEST_CHECK(weights_frees == 1 && weights_allocs == 2 && !out.release_bytes);
 }
 
+
+/* ---- API 51: the pause for the frame (VJO_GAME_OCR_S_PAUSE; docs/game-pause.md) ---- */
+/* The request a job with the stable-text wait (150 ms, at most 200 ms) sends, with or without the pause. */
+static VjoGameOcrRequest paused(int pause)
+{
+    VjoGameOcrRequest r = request("FL10_w8.vocr");
+    r.flags |= 15u << VJO_GAME_OCR_SETTLE_SHIFT | 4u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    if (pause) r.speed |= VJO_GAME_OCR_S_PAUSE;
+    current = r;
+    return r;
+}
+static const VjoGameOcrStep *pause_step(const VjoGameOcrResult *out)
+{
+    for (unsigned i = 0; i < out->n_steps; i++)
+        if (out->step[i].id == VJO_GSTEP_PAUSE) return &out->step[i];
+    return NULL;
+}
+/* A spinner in the region that never comes back to a shade it showed: read strip by strip, every re-read the
+ * stable-text wait asks for tears the region and the job shows nothing (VJO_E_SCREEN_CHANGED: the report of #348).
+ * Paused, the region is one frame, copied in one call into the frame block; the job reads it there, waits for
+ * nothing, shows its text, and gives the block back. */
+static void the_pause_reads_one_frame_beside_a_spinner(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset(); spin = 1;
+    r = paused(0);
+    (void)vjo_game_ocr_run_request(&r, &out); /* its last try reads once, the wait's budget spent (no re-read) */
+    TEST_CHECK(out.tears > 0 && strip_calls > 3 && !frame_calls && !frame_allocs && !pause_step(&out));
+    TEST_MSG("strip by strip: %u strips, %u tears, rc %d", strip_calls, out.tears, out.rc);
+    reset(); spin = 1;
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫"));
+    TEST_CHECK(frame_calls == 1 && !strip_calls && !out.tears && out.captures == 1); /* one frame, nothing else */
+    TEST_CHECK(frame_allocs == 1 && !frame_live && frame_block == PAGE_ROUND(W * H));
+    const VjoGameOcrStep *ps = pause_step(&out);
+    TEST_CHECK(ps && ps->kind == 1 && ps->arg == H && !ps->rc && ps->bytes == PAGE_ROUND(W * H) &&
+               ps->sum == (VJO_GPAUSE_FROZEN | VJO_GAME_OCR_MEM_USER << 8) && ps->us == 1234);
+    /* the block's own ALLOC and FREE are not logged: the PAUSE step has them */
+    TEST_CHECK(step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_FRAME) < 0 && step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_FRAME) < 0);
+    TEST_CHECK(out.need_workspace == job_of("FL10_w8.vocr") + PAGE_ROUND(W * H)); /* the check counted it */
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_FRAME) == 0 && vjo_ledger_peak(&g_game_ledger, GL_FRAME) == PAGE_ROUND(W * H));
+    /* the next job, without the pause, reads strip by strip again */
+    spin = 0; strip_calls = 0;
+    r = paused(0);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && strip_calls >= 1 && frame_calls == 1 && !pause_step(&out));
+}
+/* A copy the kernel refuses (a game it does not pause, the watchdog's switch: UNSUPPORTED) or cuts at its cap
+ * (TIMEOUT): the frame block goes back to the game at once, the job reads strip by strip as without the pause, and
+ * the step says why. */
+static void a_refused_pause_reads_as_before(void)
+{
+    const int why[] = {VJO_ERR_UNSUPPORTED, VJO_ERR_TIMEOUT, VJO_ERR_COPY};
+    for (unsigned i = 0; i < 3; i++) {
+        VjoGameOcrResult out;
+        VjoGameOcrRequest r;
+        reset();
+        frame_refuse = why[i]; frame_gone_first = 1;
+        r = paused(1);
+        TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫"));
+        TEST_CHECK(frame_calls == 1 && strip_calls >= 1 && frame_allocs == 1 && !frame_live);
+        const VjoGameOcrStep *ps = pause_step(&out);
+        TEST_CHECK(ps && !ps->kind && ps->rc == why[i] && (ps->sum & 0xFFu) == VJO_GPAUSE_REFUSED && !ps->arg);
+        TEST_MSG("refusal %u: kind %u rc 0x%08X sum %u", i, ps ? ps->kind : 9u, ps ? (unsigned)ps->rc : 0u, ps ? ps->sum : 9u);
+    }
+}
+/* No room for the frame block beside the job (its memory check, with its reserve), or a refused allocation: the job
+ * runs as without the pause, with the same model; the pause never costs a model, LM or cascade. */
+static void without_room_the_job_reads_as_before(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset();
+    TEST_CHECK(!run("FL10_w8.vocr", &out)); /* the weights resident from here */
+    available = live_bytes + GAME_RESERVE + job_of("FL10_w8.vocr") + PAGE_ROUND(W * H) - 4096;
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫"));
+    TEST_CHECK(!frame_allocs && !frame_calls && strip_calls >= 1 && out.weights == VJO_GAME_OCR_WEIGHTS_RESIDENT);
+    TEST_CHECK(out.need_workspace == job_of("FL10_w8.vocr") && !out.fallback);
+    const VjoGameOcrStep *ps = pause_step(&out);
+    TEST_CHECK(ps && !ps->kind && ps->rc == VJO_E_OOM && ps->sum == VJO_GPAUSE_NO_ROOM && !ps->bytes);
+    /* room for it: paused */
+    available += 4096;
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && frame_calls == 1 && (ps = pause_step(&out)) && ps->kind == 1);
+    /* the allocation refused after a passed check: as without room */
+    available = 64*1024*1024; frame_alloc_failure = 1; frame_calls = 0;
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !frame_calls && (ps = pause_step(&out)) &&
+               ps->sum == VJO_GPAUSE_NO_ROOM && ps->rc == VJO_E_OOM);
+}
+/* A job cancelled while its copy waits for a frame ends cancelled with the block given back; a copy that outlived its
+ * call (the hook may still write the block) ends the job, keeps the block for the game's life and takes no more jobs,
+ * as for the capture block. */
+static void a_cancelled_or_stuck_copy(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset(); frame_cancel = 1;
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_CANCELLED && !out.text[0] && !frame_live && !strip_calls);
+    TEST_CHECK(!blocked && !out.cleanup_status);
+    reset(); frame_busy_armed = 1;
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) != VJO_OK && !out.text[0] && !strip_calls);
+    TEST_CHECK(blocked && hook_owns_capture && frame_live); /* never freed under the hook */
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_E_OCR_UNAVAILABLE && frame_calls == 1);
+    hook_owns_capture = 0; frame_live = 0; frame_uid = -1; capture_live = 0; capture_uid = -1; blocked = 0;
+}
+
 TEST_LIST = {
+    {"API 51: the pause reads one frame beside a spinner that tears every strip-by-strip read", the_pause_reads_one_frame_beside_a_spinner},
+    {"API 51: a refused or cut pause gives its block back and reads as before", a_refused_pause_reads_as_before},
+    {"API 51: without room for its block the job reads as before, with the same model", without_room_the_job_reads_as_before},
+    {"API 51: a cancelled copy, and one that outlived its call", a_cancelled_or_stuck_copy},
     {"a job without lines warms the weights; the forced fallback keeps the model", a_job_without_lines_warms_the_weights},
     {"another model's weights go when the job needs their memory", another_models_weights_go_when_the_job_needs_them},
     {"the fallback runs only when the configured model does not fit", fallback_runs_only_when_the_model_does_not_fit},

@@ -2247,6 +2247,19 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_MSG("ocr_line_fix %d: speed 0x%08X", fixes[k].cfg, (unsigned)fake_game_request.speed);
         mem_free();
     }
+    /* API 51: ocr_pause (off by default) rides in the speed word as VJO_GAME_OCR_S_PAUSE only when on */
+    reset();
+    fake_recognized_text = "猫";
+    TEST_CHECK(!cfg.ocr_pause);
+    TEST_CHECK(run_vocr_job() == VJO_OK && !(fake_game_request.speed & VJO_GAME_OCR_S_PAUSE));
+    mem_free();
+    reset();
+    cfg.ocr_pause = 1;
+    fake_recognized_text = "猫";
+    TEST_CHECK(run_vocr_job() == VJO_OK && (fake_game_request.speed & VJO_GAME_OCR_S_PAUSE) &&
+               !(fake_game_request.speed & ~VJO_GAME_OCR_S_ALL));
+    TEST_MSG("ocr_pause = on: speed 0x%08X", (unsigned)fake_game_request.speed);
+    mem_free();
     /* the refinement's mode: psp by default, on, off */
     static const unsigned modes[] = {VJO_GAME_OCR_REFINE_PSP, VJO_GAME_OCR_REFINE_ON, 0};
     for (unsigned i = 0; i < 3; i++) {
@@ -4292,6 +4305,17 @@ static void test_selftest_stages_run_in_one_job_and_finish(void)
     TEST_CHECK(run_vocr_job() == VJO_E_OOM);
     TEST_CHECK(selftest_ends == 5 && selftest_rcs[0] == VJO_E_OOM && selftest_rcs[1] == VJO_E_OOM && selftest_done);
     fail_vocr_user = 0; fake_recognized_text = NULL; selftest_armed = 0; selftest_stage_count = 0;
+    mem_free();
+    /* API 51: no stage pauses the game, whatever ocr_pause says (the user's jobs only, as the gate) */
+    reset();
+    cfg.ocr_pause = 1;
+    selftest_armed = 1; selftest_done = 0; selftest_stage_count = 5;
+    selftest_begins = selftest_ends = submits = 0;
+    fake_recognized_text = "猫";
+    job_selftest = 1;
+    TEST_CHECK(run_vocr_job() == VJO_OK && selftest_ends == 5);
+    for (unsigned i = 0; i < 5; i++) TEST_CHECK(!(selftest_speed_seen[i] & VJO_GAME_OCR_S_PAUSE));
+    fake_recognized_text = NULL; selftest_armed = 0; selftest_stage_count = 0;
     mem_free();
 }
 #endif
