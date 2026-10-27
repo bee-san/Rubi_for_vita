@@ -311,6 +311,25 @@ been reported.
   box of vertical text ON reads the columns in 12 of 12, before and after. The Rubi app's ON line says "Columns, right
   to left, unless the text is in rows." Not run on a console.
 
+- **Trusted hooks, #338's audit.**
+  - With **Trusted hooks replace OCR** off (`hook_trust = off`), the hook cache is 0.9.7's again: 0.9.8 saved a
+    learned string copy at 32 that was not trusted at 16, with the setting off too, so a restart checked it with OCR
+    once more before 32, and its first disagreement wrote the cache once more. The cache now keeps the trust in a bit
+    of its own, set only with the setting on, and the interval as it is; a source trusted with it on is trusted at the
+    next start, as in 0.9.8.
+  - `history.csv`: when a line the hook gives in parts grows, its record is replaced only once the file is open (an
+    open that failed had lost the earlier part's record), while no count of the reading total reads the file (a count
+    that read across it ended "unavailable"), and only when the file still ends with that record (a history.csv
+    replaced meanwhile was extended with zeros). A write that fails after the truncation still loses the line's
+    record, as the docs now say.
+  - The debug build writes a hooked job's source line with its result lines, one append fewer before the line is
+    ready (estimated 9-47 ms an append; the normal build has none there).
+  - The docs: `docs/ocr-history.md` says a record can be replaced and that lines clicked through are now read and
+    counted; "the poll and the lookup are all that is left" holds for the normal build; console steps 8 and 14; the
+    poll in press mode, a stream that changes often, the bench's omissions, two lines that merge, "none wrong" by
+    construction. The benches' drivers leave out the protected-set titles by default.
+  Shell: 48 B of the normal build's code and 32 B of the debug build's, the same pages. Not run on a console
+  ([trusted hooks](docs/native-hooks.md#trusted-hooks-api-43)).
 - **Native hooks, #316's audit.** ALIA's CARNIVAL! サクラメント (`PCSG00628`): its script's `!X` (the character X)
   is now read before any other code, as the game reads it, so a line with a Latin word in lowercase, a bracket or
   a `|` shows it (`!S!k!y` gave `S！`, now `Sky`), and `u9829.` is ♥ (other `u<n>.` code points are still dropped:
@@ -500,8 +519,9 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   OCR). On the host, over 8,895 hooked lines of 30 Vita games, from the game's copy to the line and its first word
   ready (the lookup counted as the console's 70 ms): 187 → 78 ms; clicking through, a line every 0.5 s: 8,832 of
   the lines never read → every line in 80 ms; a verified site's first line 1.8 s → 78 ms; the open overlay's text
-  117 → 8 ms. All that is left is the 16 ms poll and the lookup ([details](docs/native-hooks.md#no-wait-for-a-trusted-line-api-49)).
-  Not run on a console.
+  117 → 8 ms. In the normal build all that is left is the 16 ms poll and the lookup; the debug build (every test
+  build) also writes its result lines before the line is ready, one append per file (estimated 9-94 ms more)
+  ([details](docs/native-hooks.md#no-wait-for-a-trusted-line-api-49)). Not run on a console.
 - **Vertical text** (`ocr_vertical` in `config.ini`, the Rubi app's **Vertical text** card on the OCR & lookup
   page): Japanese set in columns, read right to left, as in a vertical dialogue box or a manga in NOBORU, is read
   with vita-vn-ocr's vertical model VOCR5-V. **Automatic**, the default, reads the columns where the text box's
@@ -519,7 +539,8 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   Rubi's verified sites from their first line, and any other hook (a string copy) once it has agreed with OCR on four different lines, the last
   closely. OCR comes back by itself when no trusted hook has text. On the host, over 8,640 hooked lines of 29 Vita
   games, with main's OCR (#307's head gate, #306's LM): a verified site's OCR jobs 0.19 a line → 0 and the worker's
-  memory kept between jobs 4.4 MiB → 0; a string copy's 0.19 → 0.08 (trusted in 27 of 29 sessions, no wrong answer); a source one
+  memory kept between jobs 4.4 MiB → 0; a string copy's 0.19 → 0.08 (trusted in 27 of 29 sessions; its answers are the page's own line by the bench's
+  construction, so "no wrong answer" tests nothing); a source one
   line behind the screen was never trusted (it could agree with OCR in 10 sessions and lock in 2: the other ways a
   source can be wrong are not modelled); with 3 MiB free, a Luna site's lines, all refused before, are shown. The price: a screen the hook did not copy (a
   choice menu, the backlog) shows the hook's last line. `hook_trust = off` checks hooks with OCR as 0.9.7 did

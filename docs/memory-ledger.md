@@ -5,6 +5,31 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## #338's audit: the trusted hooks' fixes (no API change)
+
+No block, thread, stack or allocation; no module takes a page more. Measured with VitaSDK GCC 15.2.0 in the gate's
+pinned image (`tools/check_memory_ledger.py`'s module rows), main `70deda7` against this change:
+
+| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+|---|---:|---:|---:|
+| Game worker | 179,760 + 36,704 → 179,840 + 36,712 B | 170,828 + 36,696 → 170,876 + 36,704 B | 217,088 / 208,896 B, unchanged |
+| Shell | 98,244 + 77,792 → 98,276 + 77,792 B | 85,972 + 77,696 → 85,988 + 77,728 B | 176,128 / 163,840 B, unchanged |
+| Kernel | unchanged | unchanged | unchanged |
+
+- **The Shell** (SceShell's pages, AGENTS.md rule 1): `shell/history.c`'s grown-line rewrite is main's steps
+  reordered (the open first, the truncation inside the count's odd window), with the two steps the order needs: the
+  check that the file still ends with the record it replaces (else a file replaced or shortened since would be extended
+  with zeros) and a second read of its end after the truncation (the next write's place whether the console's
+  `SCE_O_APPEND` places each write or only the open). 48 B of the normal Shell's text, 32 B of which the normal
+  build's short job line pays back (its format, `worker_short_format`, in the data segment: +32 B there): +16 B of text,
+  28 B left of its last page; and, with the debug build's hook source line moved into the result's batch (#338's audit
+  F2), 32 B of the debug Shell's (28 B left). `vjo_history_append`'s frame 504 → 528 B on VjoNet's fixed 20 KiB stack (`-fstack-usage`, the normal
+  Shell's flags without LTO). Two other forms were measured and left: the rewrite without the end's check (+16 B of
+  normal text instead of +48 B, but it extends a replaced file with zeros, the audit's P6) and the record's start set
+  from the earlier one with a seek to it (+48 B debug and +80 B normal on main `4c5ad04`, a page past both budgets there).
+- **The worker**: the cache's trust bit (`VjoHookLearned.trusted`, bit 1 of the 96-byte record's site word) and
+  `vjo_hook_select_learned`'s trust argument.
+
 ## A game's own line finder (#333)
 
 A game's own line finder ([guide](guide.md#a-games-own-page)) is read by the Shell with the game's ON/OFF, into the

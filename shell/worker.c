@@ -1206,6 +1206,16 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     job_game_us += now_us() - t0; /* the done line's (net_job) */
 #endif
     vocr_note_capture();
+#if VJO_DEBUG
+    /* The result's lines (about 21: the job, its capture, memory, speed and lines,
+     * the tiers that did not fit, and every game-worker step), formatted from the
+     * result alone, go out with one append per file instead of one each: a file
+     * append costs 12-46 ms on the console (#81's self-test timestamps). The hook's
+     * source line with them (#338's audit F2: it was an append of its own, before the text). */
+    VjoLogBatch batch;
+    char batch_buf[4096];
+    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
+#endif
     if (stage < 0 && !flags && result->seq && rc != VJO_E_CANCELLED &&
         !job_cancelled && job_generation == game_generation) /* a user job's result for this session's pick */
         hook_note(result, request.hook_pick);
@@ -1221,13 +1231,6 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
      * outlives this call. */
     *ran = result->fallback < top ? top - result->fallback : VJO_VOCR_TIER_SMALL;
 #if VJO_DEBUG
-    /* The result's lines (about 21: the job, its capture, memory, speed and lines,
-     * the tiers that did not fit, and every game-worker step), formatted from the
-     * result alone, go out with one append per file instead of one each: a file
-     * append costs 12-46 ms on the console (#81's self-test timestamps). */
-    VjoLogBatch batch;
-    char batch_buf[4096];
-    vjo_log_batch_begin(&batch, batch_buf, sizeof(batch_buf));
     vjo_log("game vocr rc=%d %s%s: %ux%u at %u,%u of %ux%u fmt 0x%08X, lines=%u USER workspace=%u weights=%s resident=%u, "
             "find=%u ms load=%u ms recognize=%u ms frames=%u io=0x%08X stat=0x%08X cleanup=%d",
             rc, job_model(result, *ran),
@@ -1259,8 +1262,10 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
         unsigned want = rc != VJO_OK ? 0u : SHORT_FIRST_JOB | (result->lines ? SHORT_FIRST_TEXT : 0u);
         short_activation(job_generation);
         if (failed || (want & ~short_logged)) {
+            /* in the data segment: it pays for #338's audit F3 (shell/history.c) in the normal Shell's full code pages */
+            static const char short_format[] VJO_DATA_TABLE(worker_short_format) = "ocr rc=%d %s: %u lines, %u ms";
             short_logged |= want;
-            vjo_log("ocr rc=%d %s: %u lines, %u ms", rc, job_model(result, *ran), (unsigned)result->lines,
+            vjo_log(short_format, rc, job_model(result, *ran), (unsigned)result->lines,
                     (unsigned)((now_us() - t0) / 1000));
         }
     }

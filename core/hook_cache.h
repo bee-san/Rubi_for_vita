@@ -14,6 +14,9 @@ typedef struct {
     uint32_t mode; /* the applied text-source word, flags included */
 } VjoHookCacheKey;
 
+/* A record's learning: the source's kind (bit 0 of its site word) and, bit 1, whether it was saved trusted
+ * (VjoHookLearned.trusted, #338's audit F1); its key, encoding and interval. A record with bit 1 set is refused by
+ * builds before it, which read the whole file as invalid (fresh learning; their definition revision differs anyway). */
 /* A missing, truncated, corrupt, stale or otherwise invalid cache yields 0. */
 int vjo_hook_cache_get(const uint8_t *data, size_t n, const VjoHookCacheKey *key, VjoHookLearned *out);
 

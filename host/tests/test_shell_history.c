@@ -75,10 +75,13 @@ int sceIoClose(int fd)
     int rc = native(close(fd));
     return close_error ? -74 : rc;
 }
+/* on_chstat: a hook at each size change, before it (#338's audit F3: when the grown line's truncation comes) */
+static void (*on_chstat)(SceOff size);
 int sceIoChstat(const char *file, SceIoStat *st, int flags)
 {
     TEST_CHECK(!strcmp(file, "ux0:data/VitaJPOverlay/history.csv"));
     TEST_CHECK(flags == SCE_CST_SIZE);
+    if (on_chstat) on_chstat(st->st_size);
     return rollback_error ? -75 : native(truncate(path, st->st_size));
 }
 
@@ -156,6 +159,7 @@ static void reset(void)
     memset(&total, 0, sizeof(total)); /* the Shell's start: the total not read yet */
     unlink(total_file());
     on_read = NULL;
+    on_chstat = NULL;
     notifies = total_reads = total_writes = total_write_error = 0;
     opens = writes = short_bytes = read_opens = reads = read_limit = 0;
     open_error = write_error_after = sync_error = close_error = rollback_error = read_open_error = read_error = 0;
@@ -956,6 +960,111 @@ static void test_grown_line_replaces_its_record(void)
     read_history(csv, sizeof(csv));
     check_cell(csv, 3, 3, "こんにちは"); check_cell(csv, 4, 3, "こんにちは、また"); check_cell(csv, 5, 3, "こんにちは、またね");
     TEST_CHECK(!*row_start(csv, 6));
+}
+
+static unsigned records_in_file(void) /* data rows (row 0 is the header) */
+{
+    static char csv[1u << 20];
+    unsigned n = 0;
+    read_history(csv, sizeof(csv));
+    while (*row_start(csv, n + 1)) n++;
+    return n;
+}
+/* A line's first part, then its record about to be replaced by the whole line (3 s, then 50 ms later) */
+static VjoHistoryRecord grown_line_start(void)
+{
+    VjoHistoryRecord r = record("前の行です");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    r.time_us += 3000000; strcpy(result.text, "こんに");
+    TEST_ASSERT(vjo_history_append(&r) == 1);
+    TEST_ASSERT(records_in_file() == 2);
+    r.time_us += 50000; strcpy(result.text, "こんにちは");
+    return r;
+}
+static int chstat_seq_odd, chstat_calls;
+static void note_chstat(SceOff size) { (void)size; chstat_calls++; chstat_seq_odd += total.seq & 1u; }
+/* #338's audit F3, its probes: the grown line's rewrite opens the file before it truncates it (P1), truncates inside
+ * the writer's odd window (P3), never while a count reads the file (P3), and only while the file still ends with the
+ * record it replaces (P6); a write that fails after the truncation is the one loss left (P2, documented). */
+static void test_grown_line_rewrite_fails_safely(void)
+{
+    VjoHistoryRecord r;
+    off_t before;
+    /* P1: the open fails: nothing truncated, both records kept, the next line a record of its own */
+    reset();
+    r = grown_line_start();
+    before = file_size();
+    open_error = 1;
+    on_chstat = note_chstat; chstat_calls = 0;
+    TEST_CHECK(vjo_history_append(&r) == -71);
+    open_error = 0;
+    TEST_CHECK(file_size() == before && records_in_file() == 2 && !chstat_calls && !(total.seq & 1u));
+    r.time_us += 5000000; strcpy(result.text, "次の行です");
+    TEST_CHECK(vjo_history_append(&r) == 1 && records_in_file() == 3);
+    /* the rewrite's truncation is inside the odd window, and it is the line's one record afterwards */
+    reset();
+    r = grown_line_start();
+    on_chstat = note_chstat; chstat_calls = chstat_seq_odd = 0;
+    TEST_CHECK(vjo_history_append(&r) == 1 && records_in_file() == 2);
+    TEST_CHECK(chstat_calls == 1 && chstat_seq_odd == 1 && !(total.seq & 1u));
+    on_chstat = NULL;
+    /* P2: a write that fails after the truncation rolls back to where the replaced record began: the line's earlier
+     * record is gone with it (the one loss left: docs/ocr-history.md), the line before it kept, the file whole */
+    reset();
+    r = grown_line_start();
+    write_error_after = writes + 1;
+    TEST_CHECK(vjo_history_append(&r) == -72);
+    write_error_after = 0;
+    TEST_CHECK(records_in_file() == 1 && !(total.seq & 1u));
+    {
+        char csv[16384];
+        read_history(csv, sizeof(csv));
+        check_cell(csv, 1, 3, "前の行です");
+        TEST_CHECK(csv[strlen(csv) - 1] == '\n');
+    }
+    r.time_us += 50000; strcpy(result.text, "こんにちは、元気？"); /* the line again: a record of its own */
+    TEST_CHECK(vjo_history_append(&r) == 1 && records_in_file() == 2);
+    /* P3: a count that reads the file meanwhile (its file open between two windows): no truncation, the line's part
+     * and the whole line both kept, and the count ends known, not unavailable */
+    reset();
+    {
+        VjoHistoryRecord c = record("前の行です");
+        char line[200];
+        for (int i = 0; i < 400; i++) { /* several windows of records */
+            snprintf(line, sizeof(line), "行%03dの文章はここにあります。長い文章を書いておくと窓が増えます。", i);
+            strcpy(result.text, line);
+            c.time_us += 3000000;
+            TEST_ASSERT(vjo_history_append(&c) == 1);
+        }
+        c.time_us += 3000000; strcpy(result.text, "こんに");
+        TEST_ASSERT(vjo_history_append(&c) == 1);
+        memset(&total, 0, sizeof(total)); unlink(total_file()); /* a count from the start (a Shell restart) */
+        vjo_arena_init(&count_scratch, count_mem, sizeof(count_mem));
+        vjo_history_total_want();
+        TEST_ASSERT(vjo_history_total_step(&count_scratch) == 1 && total.fd > 0); /* its first window */
+        c.time_us += 50000; strcpy(result.text, "こんにちは");
+        on_chstat = note_chstat; chstat_calls = 0;
+        TEST_CHECK(vjo_history_append(&c) == 1 && !chstat_calls); /* the whole line: a record of its own */
+        on_chstat = NULL;
+        for (unsigned steps = 0; (vjo_history_total_step(&count_scratch) || total.state == TOTAL_COUNTING) &&
+                                 steps < 10000; steps++) {}
+        TEST_CHECK(total.state == TOTAL_KNOWN && records_in_file() == 402);
+        TEST_MSG("state %d (KNOWN %d, FAILED %d)", total.state, TOTAL_KNOWN, TOTAL_FAILED);
+    }
+    /* P6: history.csv replaced by a shorter file since the first part: nothing truncated or extended, the line a
+     * record of its own after the new file's header, no NUL byte */
+    reset();
+    r = grown_line_start();
+    TEST_ASSERT(truncate(path, 0) == 0); /* the user replaces history.csv (VitaShell, FTP) with an empty one */
+    on_chstat = note_chstat; chstat_calls = 0;
+    TEST_CHECK(vjo_history_append(&r) == 1 && !chstat_calls && records_in_file() == 1);
+    on_chstat = NULL;
+    {
+        char csv[16384];
+        size_t n = read_history(csv, sizeof(csv));
+        TEST_CHECK(n > 0 && strlen(csv) == n && !strncmp(csv, "uuid,", 5));
+        check_cell(csv, 1, 3, "こんにちは");
+    }
 }
 
 static void test_total_counts_the_file_once_then_adds(void)
@@ -1910,6 +2019,7 @@ TEST_LIST = {
     {"blank and invalid records do not touch disk", test_empty_and_invalid},
     {"total: the file counted once, in windows, then each append added", test_total_counts_the_file_once_then_adds},
     {"API 49: a grown line replaces its record; the total counts it once", test_grown_line_replaces_its_record},
+    {"#338's audit F3: a grown line's rewrite opens first, never under a count, only over its own record", test_grown_line_rewrite_fails_safely},
     {"total: kept between starts, only what was appended since counted", test_total_kept_between_starts},
     {"total: a torn, foreign or wrong history_total.bin is counted again", test_total_recovers_from_a_bad_kept_total},
     {"total: a replaced history.csv is counted again", test_total_of_a_replaced_file},

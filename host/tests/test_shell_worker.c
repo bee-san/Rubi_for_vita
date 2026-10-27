@@ -1563,6 +1563,17 @@ static void test_native_hooks_automatic_text_source_and_diagnostics(void)
     (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
     TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO && result.text_from == 9);
     TEST_CHECK(DLOGGED("game vocr source: hook 9, flags 0x0A, score 820, streams 0x00901, pick 0"));
+#if VJO_DEBUG
+    /* #338's audit F2: the debug build's source line goes out in the result's batch, one append per file for both,
+     * before the text is ready (it was an append of its own): a hooked job's lines in one append, as an OCR job's */
+    {
+        unsigned appends0 = log_appends, lines0 = log_count;
+        (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
+        TEST_CHECK_(log_appends - appends0 == 1 && log_count - lines0 >= 2, "%u lines in %u appends",
+                    log_count - lines0, log_appends - appends0);
+        TEST_CHECK(DLOGGED("game vocr source: hook 9, flags 0x0A, score 820, streams 0x00901, pick 0"));
+    }
+#endif
     (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, 0);
     TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
     (void)vocr_run_one(&result, VJO_GAME_OCR_F_FULL, vocr_tiers(), &ran, -1);
@@ -2219,9 +2230,10 @@ static void test_vocr_job_log_is_appended_in_batches(void)
     batched_lines = 0;
     TEST_CHECK(run_vocr_job() == VJO_OK);
     unsigned lines = log_count - lines0, appends = log_appends - appends0;
-    /* rc, capture, memory, speed, cascade speed, lines, 15 steps: 21 in one append; 2 text lines in one */
-    TEST_CHECK(batched_lines == 23);
-    TEST_CHECK(lines - appends == 23 - 2);
+    /* the session's hooks line (#338's audit F2: in the result's batch, as is a hooked job's source line), rc, capture,
+     * memory, speed, cascade speed, lines, 15 steps: 22 in one append; 2 text lines in one */
+    TEST_CHECK(batched_lines == 24);
+    TEST_CHECK(lines - appends == 24 - 2);
     TEST_CHECK(!open_batch);
     TEST_MSG("%u lines, %u appends, %u batched", lines, appends, batched_lines);
     printf("\n  a job's %u log lines: %u appends of log.txt (line by line: %u)\n", lines, appends, lines);
@@ -5694,8 +5706,6 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     view_invariant = 0;
 }
 
-/* ocr_mode = on_press recognizes only when the overlay opens: the open
- * overlay keeps its text and runs no refresh, however the screen settles. */
 /* API 49: a trusted hook's line (VjoState.hook_scene, the kernel's while the region shows it) is read at once.
  * Overlay closed: past the subtitles' SUBTITLE_GAP_US and a failure's backoff, which still hold an untrusted
  * screen back. Open: its refresh starts right after the last refresh and lookup (REFRESH_GAP_US, REFRESH_IDLE_US
@@ -5754,6 +5764,8 @@ static void test_trusted_hook_line_is_read_at_once(void)
     mem_free();
 }
 
+/* ocr_mode = on_press recognizes only when the overlay opens: the open
+ * overlay keeps its text and runs no refresh, however the screen settles. */
 static void test_on_press_overlay_never_refreshes(void)
 {
     cursor_setup();
