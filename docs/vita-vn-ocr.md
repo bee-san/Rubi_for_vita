@@ -101,7 +101,10 @@ tier large did not fit in PCSG00415 (need 19582976, free 12000000); using normal
 with need = the size's workspace, weights and reserve, and free = the game's free
 USER plus the blocks it would release. The `--collect` summary groups these lines
 per size and game (`model sizes that did not fit (log only, never shown)`). Only
-when no size fits does a job fail with the usual out-of-memory message.
+when no size fits does a job fail with the usual out-of-memory message. A job of
+vertical text whose rows went to the columns (`ocr_vertical` auto or on) logs no such
+line: its rows' try's checks leave the step log with its blocks (#385's audit F7), and
+the vertical model, not a smaller size, read the text.
 
 **The cascade** (#89) reads the lines a job doubts again with the next size up,
 when its model fits too: Small's is VOCR6-N, Normal's VOCR6-L, Large has none. Its re-reads are decoded with the
@@ -1189,7 +1192,10 @@ was read. Two causes, both found on the host (nothing of this has run on a conso
   form (#385) charged a line's recognition nothing, its clock standing still while a line was read (#385's audit F1):
   there 0.9.8's on failed from the columns' reads alone, and showed the text in 7 and 2 of 12 at 60 frames a second.
   With each line's CTC frames charged at the console's time a frame (since #385's audit: 2.61 ms, VOCR5-N's measured
-  in test.4's logs at 444 MHz for VOCR6-N's shape, 5.04 ms for the cascade's VOCR6-L, 1.7 ms, an estimate, for VOCR5-V),
+  in test.4's logs at 444 MHz for VOCR6-N's shape, 5.04 ms for the cascade's VOCR6-L, 1.7 ms, an estimate, for VOCR5-V;
+  test.4's are a job's recognition time over its frames with two helpers, and the bench recognizes one line at a
+  time, its line callback turning the helpers off), and since #411's audit the first line of each of the core's
+  attempts too (an attempt that tore after a line had left the next one's first line uncharged),
   the icon also moves while the columns are recognized: at 60 it showed the text in 12 of 12, but after 4.0 and 8.8 s
   (2 and 4 tries, median), and with the slower icons below in 0, 6 and 10 of 12 (after up to 17.8 s).
 - **The redraws.** Each try published the waiting view again (the text retired, the status set: two versions of it),
@@ -1203,8 +1209,9 @@ column (`host/tests/test_vocr_vertical.c`). Since #385's audit on reads a region
 from its first try, as 0.9.8 did, but with the rectangle. And a try while the open overlay already waits with that
 status and no text publishes nothing (`shell/worker.c` `start_job_kind`): the view changes only when what it shows does
 (the wait hint once, the text). The bench (12 presses a cell; the median time from L + R to the text; deterministic:
-`--frame-us 0,0,0` gives #385's table again, with `--tall rows` for its on on the vertical box), on the horizontal box
-and on its vertical one
+`--frame-us 0,0,0` gives #385's table again, with `--tall rows` for its on on the vertical box), with the press as
+0.9.8 and #385 read it, its rows still for 150 ms first within 1 s (`--settle-ms 150`; since #413 a press reads
+without that wait, below), on the horizontal box and on its vertical one
 (`host/samples/vertical.jpg`'s four columns, 220 × 380 px, the icon under the last one; both crops of the committed
 samples, `host/vertical_on_bench.c`):
 
@@ -1213,7 +1220,7 @@ samples, `host/vertical_on_bench.c`):
 | horizontal, 30, 15/15 | 12/12, 2.0 s | **0/12** | 12/12, 2.0 s | 12/12, 2.0 s |
 | horizontal, 30, 15/25 | 12/12, 1.9 s | **0/12** | 12/12, 1.9 s | 12/12, 1.9 s |
 | horizontal, 60, 15/15 | 12/12, 1.7 s | 12/12, 4.0 s | 12/12, 1.7 s | 12/12, 1.7 s |
-| horizontal, 60, 15/25 | 12/12, 1.4 s | 12/12, 8.8 s | 12/12, 1.4 s | 12/12, 1.4 s |
+| horizontal, 60, 15/25 | 12/12, 2.0 s | 12/12, 8.8 s | 12/12, 2.0 s | 12/12, 2.0 s |
 | vertical, 30, 15/15 | (rows) | 12/12, 2.0 s | 12/12, 2.2 s | 12/12, 1.6 s |
 | vertical, 30, 15/25 | (rows) | 12/12, 5.3 s | 12/12, 3.3 s | 12/12, 2.0 s |
 | vertical, 60, 15/15 | (rows) | 12/12, 1.4 s | 12/12, 4.2 s | 12/12, 1.2 s |
@@ -1225,9 +1232,21 @@ did) and in 12, 12, 0, 6 and 10 of 12 at 60. On the vertical box on now reads th
 1.6-2.0 s at 30 and 1.0-2.1 s at 60, where #385's on took 2.2-3.3 s and 1.8-4.7 s and 0.9.8's 2.0-5.3 s and 1.3-6.3 s:
 faster than #385's in all 10 cells and than 0.9.8's in 9 (at 60 with the icon resting 25 frames, 2.1 s against 1.8 s;
 auto reads that box's rows, which its rule does not take for columns: with the quickest icon 4 and 12 of 12). With the
-two quicker icons at 333 MHz's time a frame (×1.33) and at twice the default, on now still shows the text in 12 of 12 in
-every cell of both boxes, as off does on the horizontal one, and 0.9.8's on in 0 of 12 at 30 frames a second on the
-horizontal box. These are the bench's estimates, not a console's.
+two quicker icons at 333 MHz's time a frame (×1.33), off and on now show the text on the horizontal box in 3 of 12 at
+60 frames a second with the icon resting 25 frames (the other 9 presses torn for 20 s, 7 tries each) and in 12 of 12 in
+the other cells of both boxes; at twice the default in 12 of 12 in every cell; 0.9.8's on in 0 of 12 at 30 frames a
+second on the horizontal box at both. These are the bench's estimates, not a console's.
+
+**A press without the stable-text wait** (since #413: opening the overlay confirms that the text is ready; the bench's
+default, `--settle-ms 0`). Without the wait the job does not learn an icon's rows (`core/vocr_ocr.c` `stream_check`
+tolerates a row that goes back to a recent state only while the wait is on), so every change of the icon between two
+reads of its rows tears the read, and the Shell's tries of a press are presses too. On the horizontal box with the
+quickest icon (turning 15 frames, resting 15) off and on showed the text in 12 of 12 after 5.0 s at 30 frames a second
+(5 tries, median) and in **0 of 12** within 20 s at 60 (9 torn tries each), where the wait gave 2.0 and 1.7 s; at twice
+the default time a frame also 0 of 12 at 30. With the slower icons the press was quicker than with the wait: 0.6-1.9 s
+at 30 and 0.7-1.2 s at 60, 12 of 12. On the vertical box on read the columns in 12 of 12 in 0.7-1.9 s; auto, which reads
+that box's rows, showed it in 0 of 12 at 30 and 60 with the quickest icon. The bench's estimates, not a console's;
+#413 is not changed here (keeping the icon's rows learned for a press without the wait would give its tolerance back).
 
 **The rule** (`core/vocr_ocr.c` `vjo_vocr_rows_horizontal`, on the rows auto's check takes: with `ocr_line_fix` on, in a
 region at least as tall as wide the frozen finder's, where a name tag beside the columns, joined to them by the fixes,
