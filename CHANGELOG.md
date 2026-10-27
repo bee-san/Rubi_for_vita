@@ -21,6 +21,16 @@ been reported.
   screen's current scene without reading pixels, so a trusted hook (a Luna site, a Rubi verified site, a string copy
   that earned trust) needs no game memory at all. It still reads the strip only while the region has no screen yet.
   Not run on a console yet.
+- Building and testing (no change to the app or the plugins): the hook streams' race tests
+  (`host/tests/test_hook_stream.c`) pass or fail by what the code does, no longer by how the threads were scheduled
+  (#344). `replacement_race` failed now and then in CI (`call_replaced > 0`) with nothing wrong: offers never wait,
+  so while one thread held the oldest slot's lock off the CPU, every other caller's hits were dropped and no slot
+  changed hands (12 to 29 runs in 1,000 on one to four CPUs, measured on the fleet box). And the job thread often
+  read before the game threads began: in `concurrent` it read nothing in 378 of 500 runs on one CPU, so a torn read
+  could not have been seen. The threads now start together at a barrier and race until the checks have something
+  to check (every caller has had a slot, the job has read text), and a failed check prints the race's counters. A
+  race put in on purpose (the key check under the slot's lock removed) is caught more often: in 49 runs of 1,000
+  on four CPUs (7 before), 772 unpinned (366 before).
 
 ### Changed
 
