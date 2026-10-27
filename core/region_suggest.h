@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #include "../include/vjo_api.h" /* VjoRect */
+#include "suggest_kana.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,9 +47,7 @@ int vjo_region_suggest(const VjoSuggestLine *line, unsigned n, unsigned fb_w, un
  * w or h 0. */
 void vjo_region_screen(const VjoRect *r, uint16_t box[4]);
 
-/* The kana and kanji of a UTF-8 text, as the Shell's line filter counts Japanese (core/utf.h
- * vjo_is_japanese_char: U+3040-30FF and U+4E00-9FAF), at most 65535. */
-uint16_t vjo_suggest_kana(const char *s);
+/* vjo_suggest_kana: core/suggest_kana.h (core/vocr_ocr.c's header, without include/vjo_api.h). */
 
 #ifdef __cplusplus
 }

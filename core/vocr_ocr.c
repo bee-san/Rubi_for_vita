@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "fbgrey.h"
-#include "region_suggest.h" /* #358: a line's kana and kanji (vjo_suggest_kana) */
+#include "suggest_kana.h" /* #358: a line's kana and kanji (vjo_suggest_kana) */
 #include "vocr.h"
 #include "vocr_lines.h"
 #include "vocr_lines_rows.h"

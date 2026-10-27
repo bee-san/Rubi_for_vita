@@ -344,6 +344,7 @@ static void card(const char *config)
     unlink(VJO_PREFERENCES_PATH ".tmp");
     unlink(VJO_PREFERENCES_REGION_PATH); /* #358: no region.ini (Suggest a text box ON) */
     unlink(VJO_PREFERENCES_REGION_PATH ".tmp");
+    unlink(VJO_PREFERENCES_REGION_PATH ".bak");
     unsigned n;
     const VjoVocrModelInfo *info = vjo_vocr_model_infos(&n);
     for (unsigned i = 0; i < n; i++) put_model(info[i].name, (long)info[i].bytes);
@@ -1405,18 +1406,20 @@ static void test_suggest_a_text_box_saved_in_region_ini(void)
         TEST_CHECK_(b && !strcmp(b->text, "OFF"), "an old box for every game: '%s'", b ? b->text : "(none)");
     }
     TEST_CHECK_(!strcmp(shown[4].region, "PCSB00001 = full\n"), "ON: region.ini '%s'", shown[4].region);
-    /* a region.ini that cannot be read: "--", nothing saved (a directory where the file is) */
+    /* a region.ini that cannot be read (its close fails, as a card error would): "--", nothing saved */
     card("vocr_tier = small\n");
-    TEST_ASSERT(mkdir(VJO_PREFERENCES_REGION_PATH, 0777) == 0);
+    put_file(VJO_PREFERENCES_REGION_PATH, game);
+    close_fails = "region.ini";
     static const Input locked[] = {OCR_PAGE, PRESS(SCE_CTRL_UP), PRESS(SCE_CTRL_CROSS)};
     frames = run(locked, (int)(sizeof(locked) / sizeof(locked[0])));
+    close_fails = NULL;
     TEST_ASSERT(frames == (int)(sizeof(locked) / sizeof(locked[0])));
     {
         const Text *b = text_at(4, card_top(4, 10) + 32, 812, 920);
         TEST_CHECK_(b && !strcmp(b->text, "--") && shows(4, "Cannot read region.ini."), "unreadable: '%s'",
                     b ? b->text : "(none)");
+        TEST_CHECK_(!strcmp(shown[4].region, game), "unreadable: region.ini '%s'", shown[4].region);
     }
-    rmdir(VJO_PREFERENCES_REGION_PATH);
 }
 
 /* engine.c on its own: the card of a parsed config.ini, its status line, the sizes' lines. */
