@@ -179,21 +179,23 @@ build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 build hook_text -I third_party/bearssl/inc -I "$BS" host/tests/test_hook_text.c core/hook_text.c core/utf.c core/text_rows.c "$BS/hash/sha2small.c" \
   "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
 build hook_luna -I host/tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c
-# The debug build's PSP probe (core/psp_probe.c): its reads' bounds in 32-bit arithmetic.
-build psp_probe host/tests/test_psp_probe.c core/psp_probe.c
+# The debug build's PSP probe (core/psp_probe.c): its reads' bounds in 32-bit arithmetic. PSP text
+# (core/psp_text.c): its poll and the engines' filters, on the Vita's word size.
+build psp_probe host/tests/test_psp_probe.c core/psp_probe.c core/psp_text.c
+build psp_text host/tests/test_psp_text.c core/psp_text.c core/hook_luna.c core/hook_re.c core/hook_text.c
 # The hook engine (game_ocr/hooks.c, audit-hooks F4): its game addresses are 32-bit, as here. Its own stubs
 # (taiHEN, modulemgr, io: host/tests/hooks_stubs, then game_stubs) instead of vita_stubs.
 bg build-hooks_engine "$ARM_CC" -O2 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static -std=gnu99 -Wall -Wextra -Wno-unused-parameter \
   -I third_party/acutest/include -I host/tests -I host/tests/hooks_stubs -I host/tests/game_stubs -DVJO_HOST=1 \
   -I third_party/bearssl/inc -I "$BS" \
   -DVJO_DEBUG="$VJO_DEBUG" -o "$OUT/hooks_engine" host/tests/test_hooks_engine.c core/hook_place.c core/hook_stream.c \
-  core/hook_luna.c core/hook_re.c core/hook_text.c core/sfo.c "$BS/hash/sha2small.c" \
+  core/hook_luna.c core/hook_re.c core/hook_text.c core/sfo.c core/psp_text.c "$BS/hash/sha2small.c" \
   "$BS/codec/dec32be.c" "$BS/codec/enc32be.c"
 
 TESTS=(boot_guard ledger fbgrey kernel_capture kernel_input kernel_lifecycle kernel_game_ocr kernel_loader region_select)
 [ "$VJO_DEBUG" = 0 ] || TESTS+=(kernel_meminfo)
 TESTS+=(touch_hold text_rows text_join linebreak history_lines hook_select hook_cache stick_cursor cursor_nav settings_layout shell_log shell_history shell_divide apkg psp taicfg shot_trim)
-TESTS+=(hook_text hook_luna psp_probe hooks_engine)
+TESTS+=(hook_text hook_luna psp_probe psp_text hooks_engine)
 TESTS+=(kernel_text_source hook_pick hook_titles) # API 31's plumbing (hooks/api)
 if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
   RT=$VJO_VOCR_SOURCE_DIR/runtime

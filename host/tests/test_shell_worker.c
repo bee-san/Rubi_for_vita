@@ -4432,7 +4432,7 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
     mem_free();
 
     cursor_setup();
-    fake_screen_changes = 3;
+    fake_screen_changes = 2;
     open_overlay();
     TEST_ASSERT(job_running);
     finish_current_job(); /* the first: again at once */
@@ -4444,13 +4444,26 @@ static void test_screen_changed_is_retried_quietly_at_a_bounded_pace(void)
     TEST_CHECK(!job_running);
     test_now += 1000; control_tick(0);
     TEST_ASSERT(job_running && !open_retry);
-    finish_current_job(); /* the third: 500 ms */
-    test_now += 500000; control_tick(0);
-    TEST_ASSERT(job_running);
-    finish_current_job();
+    finish_current_job(); /* the third reads the screen */
     check_current_definition("cat", 0);
     check_quiet();
     close_overlay(); mem_free();
+
+    /* A sustained animated capture stops the foreground wait; no indefinite spinner or more jobs
+     * while the message is open. Closing it lets Auto recover and reopening uses the new text. */
+    cursor_setup();
+    fake_screen_changes = 3;
+    open_overlay(); finish_current_job(); finish_current_job();
+    test_now += 250000; control_tick(0); finish_current_job();
+    TEST_CHECK(!job_running && !open_retry && !view_waiting && !view_job_text && !g_view.list &&
+               g_view.status_is_error && strstr(g_view.status, "screen keeps changing"));
+    for (int tick = 0; tick < 20; tick++) { test_now += 1000000; control_tick(0); TEST_CHECK(!job_running); }
+    close_overlay(); control_tick(0);
+    TEST_ASSERT(job_running);
+    finish_current_job();
+    open_overlay();
+    check_current_definition("cat", 0);
+    check_quiet(); close_overlay(); mem_free();
 
     cursor_setup();
     fake_screen_changes = 2;

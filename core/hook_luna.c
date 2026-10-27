@@ -684,6 +684,21 @@ static const LunaOp r_PCSG00876[] VJO_DATA_TABLE(rubi_PCSG00876) = {REP("@@", "\
  * (events 1, 11, 21-23; main.snr: 10,909 @v, 2,242 @p). Luna lists the site with no filter ("too complex"). */
 static const LunaOp r_PCSG01194[] VJO_DATA_TABLE(rubi_PCSG01194) = {
     SUB("@v[^.@\n]*\\.", ""), SUB("@p\\d+\\.", ""), REP("@r", "\n"), SPECIAL(OP_KANA), SPECIAL(OP_TRIM), END};
+/* PSP games under Adrenaline (core/psp_text.c's profiles), written from the psandvita PPSSPP farm's runs
+ * (hooked-b2/psp/<title>/hook/RUBI-HOOK.md and every event's bytes in pages.jsonl.zst). Proven in PPSSPP only. */
+/* 5pb. script engine, Memories Off 6 NPJH50382: %K waits for a key and %P (%p) ends the page, neither drawn (1,951
+ * %K, 1,931 %P, 20 %p in 1,967 events); ∬ is a script code that draws nothing (48 times; event 390 ends its line
+ * with six, none drawn); %N is a line break and {base}[reading] ruby in the engine's other games
+ * (NPJH50551, NPJH50621 event 362). A leading 【name】 is kept: event 185 draws none, other pages a nameplate. */
+static const LunaOp r_5PB[] VJO_DATA_TABLE(rubi_5PB) = {
+    DEL("%K"), DEL("%P"), DEL("%p"), DEL("∬"), REP("%N", "\n"), SUB("\\{([^{}\n]*)\\}\\[[^\\[\\]\n]*\\]", "$1"),
+    SPECIAL(OP_TRIM), END};
+/* KID engine, Memories Off ～それから～ NPJH50132: %N is a line break; %CFFFF (a colour), %LC (centred) and
+ * %FS..%FE (a caption) draw nothing (events 92 and 910); ⑳ is the narrow space drawn between a surname and a
+ * given name (session 6e106a6c events 12 and 14). */
+static const LunaOp r_KID[] VJO_DATA_TABLE(rubi_KID) = {
+    REP("%N", "\n"), SUB("%C[0-9A-F][0-9A-F][0-9A-F][0-9A-F]", ""), DEL("%LC"), DEL("%FS"), DEL("%FE"),
+    REP("⑳", " "), SPECIAL(OP_TRIM), END};
 
 /* PCSG00628 (ADV::MSGSET's SNR markup, as PCSG00540's without its c<id>. nameplate code): <name>r[v<voice>.]<body>,
  * narration r<body>; r is a line break, v<voice>. a voice file, b<reading>.<base> ruby (an r before the base is a
@@ -738,6 +753,7 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_T
     [VJO_RF_PCSG00415 - VJO_RF_BASE] = r_PCSG00415,
     [VJO_RF_PCSG00020 - VJO_RF_BASE] = r_PCSG00020,
     [VJO_RF_PCSG00700 - VJO_RF_BASE] = r_PCSG00700,
+    [VJO_RF_5PB - VJO_RF_BASE] = r_5PB, [VJO_RF_KID - VJO_RF_BASE] = r_KID,
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */
