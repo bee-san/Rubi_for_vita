@@ -330,9 +330,9 @@
  * as above]. No block, thread or allocation. */
 /* MAGES' SC3 text (docs/native-hooks.md "SC3 text": core/hook_sc3.c at -Os, the SC3 read and decode in
  * game_ocr/hooks.c, the charset's load in game_ocr/main.c, three verified entries and three charset pins in the data
- * segment): debug text 160,888 -> 162,088 B (1,752 B of room left) and data/bss 35,328 -> 35,624 B, normal 151,988 ->
- * 153,204 B (2,444 B) and 35,320 -> 35,608 B, the same pages [measured: the build log's module rows, both builds, main
- * 892cfb9 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameSc3, is in the game pool
+ * segment): debug text 161,016 -> 162,232 B (1,608 B of room left) and data/bss 35,328 -> 35,624 B, normal 152,084 ->
+ * 153,268 B (2,380 B) and 35,320 -> 35,608 B, the same pages [measured: the build log's module rows, both builds, main
+ * 199fe31 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameSc3, is in the game pool
  * below. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
@@ -463,8 +463,8 @@
  * vitasdk image]. No block, thread or allocation; the worker's API 43 strip is now taken only on a region without a
  * screen yet. */
 /* An SC3 hook's charset open (VJO_GAME_OCR_OPEN_SC3: the path from the caller's title, loader_title, and the open's
- * size rule) adds 196 B of text in both builds, no data, no buffer: 43,096 -> 43,292 B (debug) and 37,992 ->
- * 38,188 B (normal), the same pages [measured: the build log's module rows, both builds, main 892cfb9 and this
+ * size rule) adds 196 B of text in both builds, no data, no buffer: 43,160 -> 43,356 B (debug) and 38,008 ->
+ * 38,204 B (normal), the same pages [measured: the build log's module rows, both builds, main 199fe31 and this
  * change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
