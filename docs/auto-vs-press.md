@@ -91,7 +91,9 @@ job, of both modes. Nothing is recognized until every row of the region has read
   (`shell/worker.c` `vocr_run_one`). When that runs out the job reads the region anyway.
 - A row that changes after the wait, while the job finds or reads its lines, is a tear: that capture is
   dropped and the job tries again, waiting first, up to three captures (`VJO_VOCR_TRIES`), then fails
-  with `VJO_E_SCREEN_CHANGED` and is retried quietly later.
+  with `VJO_E_SCREEN_CHANGED` and is retried quietly later. From the third try in a row the open overlay
+  says why it still is recognizing, and what helps (#358,
+  [text-stability.md](text-stability.md#why-the-overlay-waits-358)).
 
 **Reading before the line has finished.** A typewriter pause longer than the window (150 ms and about
 one pass) passes the wait, and a pause longer than the whole job leaves its text with the line so far:
