@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "fbgrey.h"
+#include "port.h"         /* VJO_DATA_TABLE */
 #include "suggest_kana.h" /* #358: a line's kana and kanji (vjo_suggest_kana) */
 #include "vocr.h"
 #include "vocr_lines.h"
@@ -59,11 +60,13 @@ typedef char vjo_vocr_pins_fit[VJO_VOCR_FL10_BYTES <= VJO_VOCR_MAX_BYTES && VJO_
 #endif
 #define VJO_VOCR_COLUMNS (VJO_VOCR_FINDER_COLUMNS | VJO_VOCR_COLUMN_FLAGS)
 
+/* The pinned models (#379: in the data segment, VJO_DATA_TABLE, whose last page had room: the worker's code pages are
+ * full; the table stays const). */
 #ifdef VJO_VOCR_TEST_MODELS
 /* Host lifecycle tests only (host/tests/test_game_resident.c): synthetic pins. */
 #include VJO_VOCR_TEST_MODELS
 #else
-static const VjoVocrModel models[] = {
+static const VjoVocrModel models[] VJO_DATA_TABLE(vocr_models) = {
     /* The three tiers (include/vjo_vocr_sizes.h), the arena each plans with ocr_head_gate's default, on:
      * Small, VOCR5-S (vita-vn-ocr eval/vocr5_protocol.json, v0.3.0) with its head gate (API 42, vita-vn-ocr #117,
      * v0.3.5-headgate.1, carried by v0.3.6-head2level.1): v0.3.0's arena and the gate's frame indices (+48 B,
@@ -320,6 +323,27 @@ int vjo_vocr_rows_vertical(const void *lines, unsigned n, unsigned w, unsigned h
         }
     }
     return 10u * inside >= 7u * n;
+}
+
+/* API 53, ocr_vertical = on (#379; VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON): the row finder's rows of
+ * horizontal text are its lines, a few of them one under another, each many characters wide; on vertical text it
+ * finds a character of each column side by side, a row each, or a band over the page. The rows are horizontal text
+ * when there are 1 to 4 of them, each at least 3 times as wide as tall and at most 96 px tall, each next to the one
+ * above it (at most twice the taller one's height between them) and over part of its span, and auto's rule does not
+ * take them for vertical text. Chosen so that none of the 3,715 regions of vertical text measured would be read as
+ * rows (docs/vita-vn-ocr.md "Vertical text"). Integers only, at most 4 rows. */
+int vjo_vocr_rows_horizontal(const void *lines, unsigned n, unsigned w, unsigned h)
+{
+    const VocrLine *ln = lines;
+    if (!ln || !n || n > 4u) return 0;
+    for (unsigned i = 0; i < n; i++) {
+        const VocrLine *a = &ln[i ? i - 1u : 0u], *b = &ln[i]; /* the finder's rows run top to bottom */
+        unsigned taller = a->h > b->h ? a->h : b->h;
+        if (b->w < 3u * b->h || b->h > 96u ||
+            (i && (b->y > a->y + a->h + 2u * taller || b->x >= a->x + a->w || a->x >= b->x + b->w)))
+            return 0;
+    }
+    return !vjo_vocr_rows_vertical(lines, n, w, h);
 }
 
 static int layout(const VjoVocrModel *m, unsigned w, unsigned h, Layout *l)
@@ -1142,6 +1166,41 @@ static const unsigned char *line_pixels(Stream *s, const VocrLine *ln, size_t *s
         *stride = ln->w;
         return buf;
     }
+}
+
+/* #379: a job of columns' columns, fetched together (core/vocr_ocr.h VJO_VOCR_COLUMNS_BATCH): the rectangle around
+ * every column the rotation buffer holds (*all), which the job reads through the line buffer as a tall line is
+ * (line_pixels: each row once, checked as always), each column then a part of it. 0 when there is no such rectangle
+ * (fewer than two columns, inside a strip, more bytes than the bound): each column is then read as before. */
+#ifdef VJO_VOCR_TEST_MODELS
+/* Host tests: a smaller bound than the line block's, so that a region the tests draw is read column by column. */
+static size_t test_batch_bytes = VJO_VOCR_COLUMNS_BATCH;
+void vjo_vocr_test_batch_bytes(size_t bytes);
+void vjo_vocr_test_batch_bytes(size_t bytes)
+{
+    test_batch_bytes = bytes ? bytes : VJO_VOCR_COLUMNS_BATCH;
+}
+#define COLUMNS_BATCH test_batch_bytes
+#else
+#define COLUMNS_BATCH VJO_VOCR_COLUMNS_BATCH
+#endif
+static unsigned gather_box(const Stream *s, const VocrLineSet *set, VocrLine *all)
+{
+    unsigned x1 = 0, y1 = 0, n = 0;
+    all->x = s->w;
+    all->y = s->h;
+    for (unsigned i = 0; i < set->count; i++) {
+        const VocrLine *c = &set->lines[i];
+        if ((size_t)c->w * c->h > VJO_VOCR_ROTATE_BYTES) continue; /* left out (rotate_skipped) */
+        n++;
+        if (c->x < all->x) all->x = c->x;
+        if (c->y < all->y) all->y = c->y;
+        if (c->x + c->w > x1) x1 = c->x + c->w;
+        if (c->y + c->h > y1) y1 = c->y + c->h;
+    }
+    all->w = x1 - all->x;
+    all->h = y1 - all->y;
+    return n >= 2 && all->h > s->strip_rows && (size_t)all->w * all->h <= COLUMNS_BATCH ? n : 0;
 }
 
 /* The recognizer's options of a job: W8I, and with VjoVocrPolicy.head_gate the head gate (vita-vn-ocr #117,
@@ -2044,6 +2103,7 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         st->cascade_rc = 0;
     }
     st->cached = st->dispatched = st->run_failures = st->rotate_skipped = 0;
+    st->gathered = 0;
     st->gate_ran = st->gate_stopped = st->gate_rows = 0;
     st->counter_lines = 0;
     st->head_gated = st->head_rereads = st->head_escaped = 0;
@@ -2077,8 +2137,12 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
                                          ws + l->scratch_off, l->finder, &set);
     /* API 47, auto (VjoVocrPolicy.vertical_check): rows that look like vertical text are not read, and no
      * weights are (nor the gate's score, made for rows): the caller reads the region's columns instead
-     * (game_ocr/main.c). */
-    if (!rc && pol->vertical_check && !cols && vjo_vocr_rows_vertical(set.lines, set.count, w, im->height)) {
+     * (game_ocr/main.c). API 53, on (#379): rows that do not look like horizontal text, the same; checked on the
+     * same rows as auto's (in a region at least as tall as wide, the frozen finder's: a name tag beside the columns
+     * joined to them by the fixes made one wide row of 3 of 863 such boxes of vertical text). */
+    if (!rc && pol->vertical_check && !cols &&
+        (pol->vertical_check == VJO_VOCR_CHECK_ON ? !vjo_vocr_rows_horizontal(set.lines, set.count, w, im->height)
+                                                  : vjo_vocr_rows_vertical(set.lines, set.count, w, im->height))) {
         s->gate = NULL;
         st->find_us = clock_us(p) - t0;
         st->lines = set.count;
@@ -2199,6 +2263,13 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     }
 
     L->t0 = clock_us(p);
+    /* #379: a job of columns in a region taller than a strip fetches its columns together, at its first one, before
+     * any is recognized (gather_box); in one strip the strip holds every column already. gather: the rectangle still
+     * to fetch; gblock: fetched. */
+    VocrLine gbox;
+    const unsigned char *gblock = NULL;
+    const unsigned gather_n = cols ? gather_box(s, &set, &gbox) : 0u;
+    unsigned gather = gather_n;
     for (unsigned i = 0, li = 0; i < set.count; i++) {
         const VocrLine *box = &set.lines[i];
         const unsigned char *box_pixels;
@@ -2210,7 +2281,22 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
             st->rotate_skipped++; /* a column larger than the rotation buffer: left out, never read */
             continue;
         }
-        box_pixels = line_pixels(s, box, &box_stride);
+    fetch:
+        if (gblock) { /* its part of the rectangle */
+            box_pixels = gblock + (size_t)(box->y - gbox.y) * gbox.w + (box->x - gbox.x);
+            box_stride = gbox.w;
+            st->tall += box->h > s->strip_rows;
+        } else {
+            box_pixels = line_pixels(s, gather ? &gbox : box, &box_stride);
+            if (gather && !s->err) { /* the rectangle, at the first column (counted as no tall line) */
+                st->tall--;
+                gather = 0;
+                gblock = box_pixels;
+                st->gathered = gblock ? gather_n : 0u;
+                if (!gblock) st->tall_skipped--; /* refused: column by column, this one first */
+                goto fetch;
+            }
+        }
         if (s->err) { rc = s->err; goto fail; }
         if (!box_pixels) continue; /* taller than a strip and no line buffer: left out */
         parts.count = 1;

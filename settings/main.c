@@ -738,8 +738,8 @@ static void set_suggest(int on)
 }
 
 /* API 47, Vertical text (config.ini ocr_vertical, docs/vita-vn-ocr.md "Vertical text"): its three choices left to
- * right, OFF (rows, as before), Automatic (columns where the rows look like vertical text), ON (columns in every
- * game); the Shell reads it each time the overlay opens. */
+ * right, OFF (rows, as before), Automatic (columns where the rows look like vertical text), ON (columns, but rows
+ * where the text box plainly holds rows of text: API 53, #379); the Shell reads it each time the overlay opens. */
 static const int vertical_choice[3] = {VJO_VERTICAL_OFF, VJO_VERTICAL_AUTO, VJO_VERTICAL_ON};
 
 static int vertical_index(int mode) { return mode == VJO_VERTICAL_AUTO ? 1 : mode == VJO_VERTICAL_ON ? 2 : 0; }
@@ -1056,7 +1056,7 @@ static void draw_vertical_card(int y)
     static const char *const names[3] = {"OFF", "Automatic", "ON"};
     static const char *const help[3] = {"Rows only: horizontal text, as before.",
                                         "Columns where the text box holds vertical text.",
-                                        "Columns, right to left, in every game: vertical text."};
+                                        "Columns, right to left, unless the text is in rows."};
     int chosen = vertical_index(preferences.ocr_vertical);
     text(42, y + CARD_TITLE_Y, WHITE, 28, "Vertical text");
     for (int i = 0; i < 3; i++)

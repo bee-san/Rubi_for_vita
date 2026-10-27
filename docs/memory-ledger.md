@@ -337,6 +337,33 @@ the last try's steps, the kernel refuses the field's 3) add 240 B of worker text
 keeps; main's rows: `include/vjo_ledger_budget.h`, API 50) and on `b6c715c` (the fast gate's builds)]. No block,
 thread or allocation.
 
+**Vertical text ON prefers columns (API 53, #379).** No block, thread or stack is added. A job of columns now asks
+the tall-line block (`VjoGameVocrLine`, the same one, freed with the job) for the rectangle around its columns, where it
+asked for one column at a time: at most `VJO_VOCR_COLUMNS_BATCH` = `VJO_VOCR_LINE_MAX_BYTES`, 516,096 B, the block's
+bound and `VJO_BUDGET_GAME_LINE` as before, so the game's worst case is unchanged; a larger rectangle, or a refused
+block, has each column read alone, as before. On the host's measured regions the rectangle was 29-34 KB on drawn boxes
+(median; 153 KB at most) and 428 KB on whole screens (516 KB at most), where a column's was at most 57,344 B
+([on's rule](vita-vn-ocr.md#ons-rule-api-53-379)). On's rows try first is a job of rows, the size's own blocks, freed
+before its columns try takes the vertical model's, as auto's tries do.
+
+The code had no room: `main` `d25c48c` (after VOCR6, #373, #387 and #386) left the debug worker 152 B of its last code
+page and the debug Shell 20 B. So two read-only tables move to the data segments (`VJO_DATA_TABLE`), whose last pages had
+room: the game worker's pinned model table (`core/vocr_ocr.c` `models`, 480 B) and one debug log line of the Shell's
+(52 B), and on's rule is the plain one (126 B; one that allowed a name or an icon beside the lines took 200 B). The
+module rows [measured: `tools/check_memory_ledger.py`, both builds, `main` `d25c48c` and this change,
+`tools/fast_gate.sh`'s VitaSDK image]:
+
+| module | `main` `d25c48c` | this change | pages |
+|---|---:|---:|---:|
+| Game worker, debug | 163,688 + 35,880 B | 163,800 + 36,360 B | 200,704 B both |
+| Game worker, normal | 154,724 + 35,864 B | 154,884 + 36,344 B | 192,512 B both |
+| Shell, debug | 98,284 + 77,608 B | 98,260 + 77,664 B | 176,128 B both |
+| Shell, normal | 85,948 + 77,488 B | 85,980 + 77,488 B | 163,840 B both |
+
+The worker's code segment grows by 112 B (debug) and 160 B (normal), the change's code less the table's 480 B moved out;
+the debug worker has 40 B of its last code page left and 504 B of its data page, the normal one 764 and 520 B; the debug
+Shell 44 and 160 B, the normal Shell 36 and 336 B. None of it is measured on a console.
+
 ## Trusted hooks and the OCR-skip switches (API 43)
 
 Trusted hooks answer without OCR ([native-hooks.md](native-hooks.md#trusted-hooks-api-43)): the selection's

@@ -1336,10 +1336,10 @@ static int run_vocr(VjoOverlayData *out)
      * smaller tier for this job. Only a file that is absent, the wrong length or
      * fails its hash (io 0: rejected after reading) leaves the tier out for this
      * game; a timeout or unavailable storage does not. Every tier with the same
-     * file is left out with it (vocr_same_file). Log only. With ocr_vertical = on a
-     * job's file is the vertical model's, whatever the tier: no tier is left out for
-     * it (auto reads rows where the vertical model cannot be read, API 47). */
-    while (out->err.rc == VJO_E_OCR_MODEL && job_cfg.ocr_vertical != VJO_VERTICAL_ON && ran >= VJO_VOCR_TIER_SMALL &&
+     * file is left out with it (vocr_same_file). Log only. With ocr_vertical = on or
+     * auto the worker reads rows where the vertical model cannot be read (API 53: on
+     * too), so a model that fails is a size's, whatever the setting. */
+    while (out->err.rc == VJO_E_OCR_MODEL && ran >= VJO_VOCR_TIER_SMALL &&
            ran <= VJO_VOCR_TIERS && !vocr_cancelled(NULL)) {
         int file_bad = !vocr_result.io_error || vocr_result.io_error == VJO_ERR_FORMAT ||
                        (uint32_t)vocr_result.io_error == 0x80010002u; /* ENOENT */
@@ -1788,10 +1788,16 @@ static void start_job_kind(const char *why, int lookup, int refresh)
     status = cfg.ocr_wait_hint && (unsigned)screen_changed_streak >= WAIT_HINT_AFTER ? WAIT_HINT : RECOGNIZING;
     if (!refresh) {
         /* Retire the previous lookup before OCR, then recreate result arenas
-         * after all capture/model/inference allocations have been freed. */
-        retire_local_text(0); /* atomic request exclusion and view detachment */
-        if (ov != OV_CLOSED)
-            view_publish(1, NULL, status, 0);
+         * after all capture/model/inference allocations have been freed. #379: not
+         * again while the open overlay already waits with this status and no text
+         * (a job whose screen changed under it, tried again): that retires nothing,
+         * and the view published again had the overlay draw it all again at every
+         * try, for as long as the tries went on. */
+        if (!view_waiting || local_text_valid || sceClibStrcmp(g_view.status, status)) {
+            retire_local_text(0); /* atomic request exclusion and view detachment */
+            if (ov != OV_CLOSED)
+                view_publish(1, NULL, status, 0);
+        }
         mem_free();
     }
     vjo_dlog("job start (%s)%s", why, refresh ? ", refresh" : lookup ? "" : ", OCR only");
@@ -1983,7 +1989,11 @@ static int cancel_outdated_job(const VjoState *st)
         shows_screen(job_capture_scene, job_capture_seq, st))
         return 0;
     job_cancelled = 1;
-    vjo_dlog("job cancelled: the screen changed since its capture");
+    {   /* (in the data segment: the debug Shell's code pages are full, #379) */
+        static const char cancelled_line[] VJO_DATA_TABLE(job_cancelled_line) =
+            "job cancelled: the screen changed since its capture";
+        vjo_dlog("%s", cancelled_line);
+    }
     return 1;
 }
 

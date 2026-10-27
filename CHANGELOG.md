@@ -167,6 +167,34 @@ been reported.
     ux0:data/VitaJPOverlay/ocr" for all of them.
 
   Host-tested, not run on a console. No module takes a page more ([memory ledger](docs/memory-ledger.md)).
+- **Vertical text: ON no longer stays on "Recognizing…" on a horizontal text box** (API 53,
+  [#379](https://github.com/bee-san/Rubi_for_vita/issues/379); a user's PS Vita Slim, Rubi 0.9.8, 遙かなる時空の中で
+  Ultimate, `PCSG01157`). ON read every region as columns: on a horizontal box the column finder found up to 16 one-
+  or two-character columns, and the job read the box's rows once for each of them, a strip a frame, between their
+  recognitions. An animated icon in the box that rested for less than all that tore every try, which the Shell drops
+  quietly and tries again, so the text never came; a job of rows reads its lines once. And each try published the
+  waiting overlay again, which redrew it at every try: the flicker at its bottom. Now:
+  - **ON prefers columns.** It reads the region's rows first, as Automatic does, and the columns unless the rows are
+    plainly lines of horizontal text (1 to 4 wide rows, one under another): then it is OFF's job exactly. Where the vertical model cannot be read or has no room, ON reads the rows too, as
+    Automatic does (it failed before), and a size whose model fails is left out with ON as with the others. On the
+    host the rule read none of 3,715 regions of vertical text as rows (Yunohana SpRING!'s 3,353: tight boxes, boxes with
+    the name tag, boxes drawn once and whole screens; vita-vn-ocr #103's 362 development regions; through the job, the
+    same text as before on every one), and read 94.6 % of 50,945 hooked horizontal dialogue boxes of 44
+    titles as rows (15.6 % of whole screens; [on's rule](docs/vita-vn-ocr.md#ons-rule-api-53-379)). The rule was
+    chosen on these regions: nothing held out checks it. A box with a speaker's name or an icon beside its lines is
+    still read as columns: draw it around the lines.
+  - **A job of columns reads its columns' rows once**, the rectangle around them (Automatic's columns too), before it
+    recognizes them: the same text as column by column, from fewer strips (4 columns over 3 strips: 18 → 11 in the
+    host test).
+  - **A retry no longer redraws the waiting overlay**: the view is published again only when what it shows changes
+    (the wait hint, the text).
+
+  On the host's bench (`vjo-vertical-on-bench`, new: the user's kind of box with an icon that turns for 15 frames and
+  rests for 15 or 25, every strip read the game's next frame, the Shell's retries; 12 presses each): 0.9.8's ON showed
+  the text in 0 of 12 at 30 frames a second and in 7 and 2 of 12 at 60; ON now in 12 of 12 each, at OFF's times. On a
+  box of vertical text ON reads the columns in 12 of 12, before and after. The Rubi app's ON line says "Columns, right
+  to left, unless the text is in rows." Not run on a console.
+
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
   read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then

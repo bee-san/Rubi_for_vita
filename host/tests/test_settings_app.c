@@ -1306,7 +1306,7 @@ static void test_vertical_text_by_keys_and_touch(void)
         check_room(f);
     }
     TEST_CHECK(shows(4, "Columns where the text box holds vertical text.") &&
-               shows(6, "Columns, right to left, in every game") && shows(10, "Rows only: horizontal text, as before."));
+               shows(6, "Columns, right to left, unless the text is in rows.") && shows(10, "Rows only: horizontal text, as before."));
     const Text *st = text_at(6, ROOM_END + 4 + 22, 40, 41);
     TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the overlay next opens."), "the status line: '%s'",
                 st ? st->text : "(none)");
