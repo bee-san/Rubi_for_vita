@@ -583,7 +583,9 @@ typedef struct {
     /* API 47 (config.ini ocr_vertical = auto): a job of rows checks the finder's rows first
      * (vjo_vocr_rows_vertical); where they look like vertical text it reads nothing, opens no weights and
      * returns VJO_E_VERTICAL, and the caller reads the region's columns with the model of columns. 0: off,
-     * exactly as before; a model of columns ignores it. */
+     * exactly as before; a model of columns ignores it. API 50: with line_fix too, a region at least as tall as
+     * wide is checked on the frozen finder's rows (the rule's), then, where they are not vertical text, found
+     * again with line_fix's fixes and read; a wider region is found once, with them. */
     int vertical_check;
     /* API 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.h): VOCR_FIX_* flags for
      * vocr_find_lines_fix_rows, the finder with COLGAP (a line's parts across a full-width space stay one line; the

@@ -131,8 +131,8 @@
  * vertical text, nothing is recognized and the job reads the region's columns as with 1; where the vertical
  * model cannot be read, its rows as with 0. 3 is refused. A line read as a column carries VJO_GAME_OCR_LINE_COLUMN
  * in VjoGameOcrLine.flags. The Shell sets the field in the user's jobs (the self-test's stages read rows). Not
- * bits 21-27: VOCR6's line-finder fixes and spotter finder (in flight) and draft #326's text overlay (test.17)
- * have them, so all of them can merge. */
+ * bits 21-27: API 50's line-finder fixes have 21-23, and VOCR6's spotter finder and draft #326's text overlay
+ * (test.17, in flight) the others, so all of them can merge. */
 #define VJO_GAME_OCR_S_VERTICAL_SHIFT 28u
 #define VJO_GAME_OCR_S_VERTICAL_MASK 0x3u
 #define VJO_GAME_OCR_S_VERTICAL (VJO_GAME_OCR_S_VERTICAL_MASK << VJO_GAME_OCR_S_VERTICAL_SHIFT) /* 0x30000000 */
