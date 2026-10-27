@@ -6,7 +6,6 @@
 
 #include "../core/regions.h"
 #define BACKUP VJO_PREFERENCES_PATH ".bak"
-#define TEMP VJO_PREFERENCES_PATH ".tmp"
 #define MISSING ((int)0x80010002u)
 
 static int read_text(const char *path, VjoArena *a, char **out, size_t *bytes)
@@ -57,14 +56,23 @@ int vjo_preferences_load(VjoConfig *cfg, VjoArena *a)
     return rc;
 }
 
-/* Publishes next (len bytes) as config.ini: checked temp write + sync,
- * the old primary as the backup, rename. A failed final publication
- * restores the old primary. */
-static int publish(const char *next, int len, int primary)
+int vjo_prefs_read_file(const char *path, VjoArena *a, char **out, size_t *bytes)
 {
+    return read_text(path, a, out, bytes);
+}
+
+/* Publishes next (len bytes) as path: checked temp write (path.tmp) + sync,
+ * the old primary as the backup (path.bak), rename. A failed final
+ * publication restores the old primary. */
+int vjo_prefs_publish_file(const char *path, const char *next, int len, int primary)
+{
+    char temp[96], backup[96];
+    if (snprintf(temp, sizeof(temp), "%s.tmp", path) >= (int)sizeof(temp) ||
+        snprintf(backup, sizeof(backup), "%s.bak", path) >= (int)sizeof(backup))
+        return -1;
     sceIoMkdir("ux0:data", 0777);
     sceIoMkdir("ux0:data/VitaJPOverlay", 0777);
-    SceUID fd = sceIoOpen(TEMP, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    SceUID fd = sceIoOpen(temp, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (fd < 0) return -1;
     int used = 0;
     while (used < len) {
@@ -76,18 +84,23 @@ static int publish(const char *next, int len, int primary)
     if (used != len || close_rc < 0 || sceIoSync("ux0:", 0) < 0) return -1;
     if (primary) {
         SceIoStat st;
-        int stat_rc = sceIoGetstat(BACKUP, &st);
-        if (stat_rc >= 0) { if (sceIoRemove(BACKUP) < 0) return -1; }
+        int stat_rc = sceIoGetstat(backup, &st);
+        if (stat_rc >= 0) { if (sceIoRemove(backup) < 0) return -1; }
         else if (stat_rc != MISSING) return -1;
-        if (sceIoRename(VJO_PREFERENCES_PATH, BACKUP) < 0) return -1;
+        if (sceIoRename(path, backup) < 0) return -1;
     }
-    if (sceIoRename(TEMP, VJO_PREFERENCES_PATH) < 0) {
+    if (sceIoRename(temp, path) < 0) {
         /* Keep the last known primary available to the running overlay. */
-        if (primary) sceIoRename(BACKUP, VJO_PREFERENCES_PATH);
+        if (primary) sceIoRename(backup, path);
         sceIoSync("ux0:", 0);
         return -1;
     }
     return sceIoSync("ux0:", 0) < 0 ? -1 : 0;
+}
+
+static int publish(const char *next, int len, int primary)
+{
+    return vjo_prefs_publish_file(VJO_PREFERENCES_PATH, next, len, primary);
 }
 
 /* The removed online dictionaries' API keys and the removed Anki settings
@@ -161,8 +174,9 @@ static int line_key(const char *line, size_t n, char key[40])
     return e < n && line[e] == '=';
 }
 
-int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values,
-                          int n, char *out, size_t cap)
+/* config_rules: config.ini's removed-feature lines go or are replaced (vjo_config_removed_line); app.ini has none. */
+static int patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values, int n,
+                      char *out, size_t cap, int config_rules)
 {
     size_t i = 0, used = 0;
     unsigned seen = 0;
@@ -188,7 +202,7 @@ int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys,
                 if (!strcmp(key, keys[j])) k = j;
         if (k >= 0 && (seen & (1u << k))) continue; /* a duplicate goes */
         /* a removed feature's line (core/config.h vjo_config_removed_line) goes or is replaced */
-        removed = k < 0 ? vjo_config_removed_line(text + begin, i - begin, &replacement) : VJO_LINE_KEEP;
+        removed = k < 0 && config_rules ? vjo_config_removed_line(text + begin, i - begin, &replacement) : VJO_LINE_KEEP;
         if (removed == VJO_LINE_DROP || removed == VJO_LINE_DROP_SETTING) continue;
         int w = k >= 0 ? snprintf(out + used, cap - used, "%s = %s\n", keys[k], values[k])
                 : removed == VJO_LINE_REPLACE ? snprintf(out + used, cap - used, "%s", replacement)
@@ -205,6 +219,18 @@ int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys,
         used += (size_t)w;
     }
     return used > VJO_CONFIG_TEXT_MAX ? -1 : (int)used;
+}
+
+int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values,
+                          int n, char *out, size_t cap)
+{
+    return patch_keys(text, len, keys, values, n, out, cap, 1);
+}
+
+int vjo_ini_patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values, int n,
+                       char *out, size_t cap)
+{
+    return patch_keys(text, len, keys, values, n, out, cap, 0);
 }
 
 /* Saves `n` keys (vjo_config_patch_keys: each replaced where it is, appended

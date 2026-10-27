@@ -57,6 +57,10 @@ typedef struct {
     /* Progress (may be NULL): cards written of total, then the step. */
     void (*progress)(void *ud, int done, int total, const char *step);
     int (*stopped)(void *ud); /* may be NULL; 1: stop, VJO_E_CANCELLED */
+    /* The note's tags besides vita-jp-overlay, which every note has (may be NULL: none): tag names separated by
+     * single ASCII spaces, none of them with a space, U+3000 or a control character inside (Anki splits tags on
+     * spaces), in a; NULL or "" for none. Called once for each note, after load, with its note. */
+    const char *(*tags)(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note);
 } VjoApkgOps;
 
 typedef struct {

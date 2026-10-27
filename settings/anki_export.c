@@ -596,18 +596,25 @@ static int remove_orphans(const SceDateTime *made)
     return n;
 }
 
-int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult *r, char *msg, size_t cap)
+int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExportUi *ui, VjoExportResult *r,
+                   char *msg, size_t cap)
 {
     List l;
     Out o;
     VjoApkgOps ops;
     VjoApkgResult pr;
     VjoApkgClock clock;
+    VjoAppPrefs defaults;
     SceDateTime t;
     SceRtcTick tick;
     char tmp[VJO_EXPORT_PATH_MAX + 4];
     int rc, queued, archived = 0, made = 0;
     size_t base = vjo_arena_mark(a);
+    if (!prefs) {
+        vjo_app_prefs_defaults(&defaults);
+        prefs = &defaults;
+    }
+    (void)prefs; /* the settings the export follows (#311, #314) read it */
     memset(r, 0, sizeof(*r));
     memset(&l, 0, sizeof(l));
     msg[0] = '\0';

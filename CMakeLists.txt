@@ -759,6 +759,13 @@ target_link_libraries(vjo-preferences-tests vjo_host)
 target_compile_options(vjo-preferences-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_compile_definitions(vjo-preferences-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME preferences COMMAND vjo-preferences-tests)
+# The Rubi app's own settings file, app.ini (settings/app_prefs.c): its lines as config.ini's, its saves through
+# config.ini's file layer (settings/preferences.c) without config.ini's removed-key rules, every row of its table.
+add_executable(vjo-app-prefs-tests host/tests/test_app_prefs.c settings/app_prefs.c settings/preferences.c)
+target_include_directories(vjo-app-prefs-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_link_libraries(vjo-app-prefs-tests vjo_host)
+target_compile_options(vjo-app-prefs-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME app_prefs COMMAND vjo-app-prefs-tests)
 # The Rubi app's actual input/draw loop (settings/main.c) with a scripted SDK
 # boundary: the OCR card's Model size, its status line naming the size's model;
 # then the same app with a later package's model table (generation VOCR6 for
@@ -855,7 +862,7 @@ add_test(NAME settings_install COMMAND vjo-settings-install-tests)
 # memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep
 # settings_stubs/anki_page_stub.c.
 add_executable(vjo-settings-anki-tests host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
-  settings/preferences.c shell/files.c)
+  settings/app_prefs.c settings/preferences.c shell/files.c)
 target_include_directories(vjo-settings-anki-tests PRIVATE third_party/acutest/include host/tests/settings_stubs
   host/tests/install_stubs host/tests/vita_stubs)
 target_compile_definitions(vjo-settings-anki-tests PRIVATE VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS)

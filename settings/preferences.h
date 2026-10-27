@@ -61,4 +61,14 @@ int vjo_preferences_publish_text(const char *next, size_t len, VjoArena *scratch
  * break, over VJO_CONFIG_TEXT_MAX). */
 int vjo_config_patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values,
                           int n, char *out, size_t cap);
+/* The same for another of the app's INI files (app.ini, settings/app_prefs.h): no config.ini rule
+ * (vjo_config_removed_line) applies to its other lines, which are all kept verbatim. */
+int vjo_ini_patch_keys(const char *text, size_t len, const char *const *keys, const char *const *values, int n,
+                       char *out, size_t cap);
+/* The file layer of the saves above, for another file of ux0:data/VitaJPOverlay/ (app.ini): a whole text file of at
+ * most VJO_PREFERENCES_TEXT_MAX bytes and no NUL into the arena (NUL-terminated): 0, 1 when it does not exist, -1
+ * unreadable; and its publication as config.ini's is (path.tmp written and synced, the old file as path.bak when
+ * primary says there is one, then renamed; a failed rename puts the old one back): 0 or -1. */
+int vjo_prefs_read_file(const char *path, VjoArena *a, char **out, size_t *bytes);
+int vjo_prefs_publish_file(const char *path, const char *next, int len, int primary);
 #endif

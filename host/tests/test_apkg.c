@@ -478,7 +478,7 @@ static char *snapshot(void)
 static int run(int all, VjoExportResult *r, char *msg)
 {
     vjo_arena_init(&A, mem, sizeof(mem));
-    return vjo_export_run(&A, all, &ui, r, msg, 300);
+    return vjo_export_run(&A, all, NULL, &ui, r, msg, 300);
 }
 
 /* ---------------- the package, read here ---------------- */
@@ -664,6 +664,71 @@ static void test_lapis_fields(void)
         for (size_t i = 0; i < len; i++)
             seps += all[i] == 0x1F;
         TEST_CHECK(seps == 21);
+    }
+}
+
+/* Occurrences of s in the n bytes at p. */
+static int occurrences(const uint8_t *p, size_t n, const char *s)
+{
+    size_t k = strlen(s);
+    int found = 0;
+    for (size_t i = 0; i + k <= n; i++)
+        found += !memcmp(p + i, s, k);
+    return found;
+}
+
+/* VjoApkgOps.tags (#314, #311): each note's tags are " vita-jp-overlay ", then the hook's, between spaces; a NULL
+ * hook, a NULL or an empty answer give the first alone. The package is stored, so its collection's records are its
+ * bytes as they are. */
+static const char *tags_of_note(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note)
+{
+    (void)ud;
+    (void)c;
+    if (!strcmp(note->spelling, "猫"))
+        return vjo_arena_strndup(a, "duplicate Game::SOME_GAME", 25);
+    return !strcmp(note->spelling, "犬") ? "" : NULL;
+}
+
+static void test_note_tags(void)
+{
+    static uint8_t file[256 * 1024];
+    const Card *cards[3] = {&cat, &dog, &eat};
+    VjoApkgCard list[3];
+    VjoApkgOps ops;
+    VjoApkgResult pr;
+    VjoApkgClock clock = {1791790205, 2026, 10, 12, 9, 30, 5};
+    Out o;
+    FILE *f;
+    size_t n;
+    for (int hook = 0; hook < 2; hook++) {
+        reset();
+        memset(list, 0, sizeof(list));
+        for (int i = 0; i < 3; i++) {
+            from_hex(queue_card(cards[i], 0), list[i].id);
+            list[i].time = cards[i]->time;
+        }
+        vjo_apkg_sort(list, 3);
+        mkdir(VJO_EXPORT_DIR, 0777);
+        memset(&o, 0, sizeof(o));
+        o.ui = &ui;
+        TEST_ASSERT((o.fd = sceIoOpen(VJO_EXPORT_DIR "/tags.apkg", SCE_O_RDWR | SCE_O_CREAT | SCE_O_TRUNC, 0666)) >= 0);
+        memset(&ops, 0, sizeof(ops));
+        ops.ud = &o;
+        ops.load = load;
+        ops.write = out_write;
+        ops.read = out_read;
+        ops.tags = hook ? tags_of_note : NULL;
+        vjo_arena_init(&A, mem, sizeof(mem));
+        TEST_ASSERT(vjo_apkg_write(&A, &ops, list, 3, &clock, &pr) == 0 && pr.cards == 3);
+        TEST_CHECK(vjo_apkg_verify(&A, &ops, pr.bytes, list, 3, &pr) == 0);
+        sceIoClose(o.fd);
+        TEST_ASSERT((f = fopen(VJO_EXPORT_DIR "/tags.apkg", "rb")) != NULL);
+        n = fread(file, 1, sizeof(file), f);
+        fclose(f);
+        TEST_ASSERT(n == pr.bytes);
+        TEST_CHECK(occurrences(file, n, " vita-jp-overlay ") == 3);
+        TEST_CHECK(occurrences(file, n, " vita-jp-overlay duplicate Game::SOME_GAME ") == hook);
+        TEST_MSG("hook %d", hook);
     }
 }
 
@@ -859,7 +924,7 @@ static void test_a_package_that_reads_back_wrong_never_gets_its_name(void)
             io.corrupt_read = bad == 0;
             io.fail_open_read = bad == 1;
             crash_point = "apkg_renamed";
-            vjo_export_run(&A, 0, &ui, &r, msg, sizeof(msg));
+            vjo_export_run(&A, 0, NULL, &ui, &r, msg, sizeof(msg));
             _exit(0);
         }
         TEST_ASSERT(pid > 0 && waitpid(pid, &status, 0) == pid);
@@ -1180,7 +1245,7 @@ static void test_screenshot_io_and_memory_failures_keep_the_card(void)
     put_file(path, mem, jpeg(mem, 7, 16000));
     snprintf(before, sizeof(before), "%s", snapshot());
     vjo_arena_init(&A, mem, 8192); /* enough for the text; not the JPEG */
-    TEST_CHECK(vjo_export_run(&A, 0, &ui, &r, msg, sizeof(msg)) != VJO_OK);
+    TEST_CHECK(vjo_export_run(&A, 0, NULL, &ui, &r, msg, sizeof(msg)) != VJO_OK);
     TEST_CHECK(r.unreadable == 1 && !r.missing_picture && !strcmp(before, snapshot()));
     TEST_CHECK(strstr(logs, "out of memory reading 16000 bytes") != NULL);
     TEST_CHECK(run(0, &r, msg) == VJO_OK && r.media == 1 && !r.missing_picture);
@@ -1594,6 +1659,7 @@ TEST_LIST = {
     {"zip_crc_and_reader", test_zip_crc_and_reader},
     {"guid_and_media_name", test_guid_and_media_name},
     {"lapis_fields", test_lapis_fields},
+    {"note_tags", test_note_tags},
     {"export_writes_a_dated_verified_package_and_clears_the_queue",
      test_export_writes_a_dated_verified_package_and_clears_the_queue},
     {"one_card_and_every_record_version", test_one_card_and_every_record_version},

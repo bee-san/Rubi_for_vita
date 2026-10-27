@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #include "../core/apkg.h"
+#include "app_prefs.h"
 
 #define VJO_EXPORT_DATA_DIR "ux0:data/VitaJPOverlay"
 #define VJO_EXPORT_QUEUE_DIR VJO_QUEUE_DIR
@@ -64,8 +65,9 @@ typedef struct {
     char name[64];   /* its file name */
 } VjoExportResult;
 
-/* Exports the queue (all: and the archive) into a new package; a one- or
- * two-sentence result for the screen in msg. Returns r->rc. */
-int vjo_export_run(VjoArena *a, int all, const VjoExportUi *ui, VjoExportResult *r, char *msg, size_t cap);
+/* Exports the queue (all: and the archive) into a new package, following the app's own settings (prefs, app.ini:
+ * settings/app_prefs.h; NULL: the defaults); a one- or two-sentence result for the screen in msg. Returns r->rc. */
+int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExportUi *ui, VjoExportResult *r,
+                   char *msg, size_t cap);
 
 #endif
