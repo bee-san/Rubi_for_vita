@@ -14,18 +14,19 @@ arena in the job's workspace. On the worker's stack (32 KiB) the job's frame gro
 with the line sets it watches) and a finder's run takes `look_alike`'s 360 B on its way [measured: `arm-vita-eabi-gcc
 -Os -fstack-usage`, the build's flags]. In the Shell the log line's string is in the data segment (`VJO_DATA_TABLE`);
 its code is `note_screen_changed`'s call. No budget is raised. The module rows [measured: the build log's module rows,
-VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main `2f68854` and this change, both builds]:
+VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main `199fe31` and this change, both builds]:
 
-| Module | main `2f68854` | this change | pages |
+| Module | main `199fe31` | this change | pages |
 |---|---:|---:|---:|
 | worker, debug | 161,016 + 35,328 B | 163,752 + 35,328 B | 200,704 B both |
 | worker, normal | 152,084 + 35,320 B | 154,804 + 35,320 B | 192,512 B both (exact) |
-| Shell, debug | 101,988 + 73,200 B | 102,020 + 73,392 B | 176,128 B both |
-| Shell, normal | 89,884 + 73,232 B | 89,916 + 73,424 B | 163,840 B both (exact) |
+| Shell, debug | 102,092 + 73,408 B | 102,124 + 73,592 B | 176,128 B both |
+| Shell, normal | 89,980 + 73,416 B | 89,996 + 73,608 B | 163,840 B both (exact) |
 | kernel | 43,160 + 77,764 B (debug), 38,008 + 76,076 B (normal) | the same | 122,880 / 118,784 B |
 
 The debug worker keeps 88 B of its last text page (2,824 B before), the normal worker 844 B (3,564 B); the normal
-Shell 196 B of code room (228 B) and 304 B of data room (496 B). Of the worker's text, `core/vocr_ocr.c` is 2,678 B
+Shell 116 B of code room (132 B) and 120 B of data room (312 B). The next change that adds worker code takes the debug
+worker a page further, a budget raise of its own (AGENTS.md rule 10). Of the worker's text, `core/vocr_ocr.c` is 2,678 B
 (17,886 → 20,564 B at `-Os`: `run_job` 6,852 → 7,920 B, the row checks' `stream_read` 684 → 996 B, `lines_alike`
 428 B, `relook` 200 B, `hold_still` 186 B, `watch_pause` 124 B and smaller helpers); the rest is the step's kind in
 `game_ocr/main.c`.
