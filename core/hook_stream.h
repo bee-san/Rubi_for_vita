@@ -65,7 +65,10 @@ VjoStreamSlot *vjo_stream_caller(VjoStreamSlot *slots, unsigned n, uint32_t key)
 int vjo_stream_offer_caller(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint32_t key,
                             const uint8_t *src, unsigned n, unsigned encoding);
 
-/* Job time: no other caller may take s from now on (the stream agreed with OCR, or the Shell pinned it). */
+/* Job time: no other caller may take s from now on (the stream agreed with OCR, or the Shell pinned it). Call it
+ * with s's try-lock held (game_ocr/hooks.c vjo_hooks_keep): a new caller taking s holds that lock, so a keep that
+ * landed after its checks could let a thread of the same caller pass s over as kept and take a second slot (#366's
+ * audit-b, F3). */
 void vjo_stream_keep(VjoStreamSlot *s);
 
 /* Job time: copies the slot under its try-lock. 1 copied; 0 empty (no text yet) or busy. */

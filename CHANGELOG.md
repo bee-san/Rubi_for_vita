@@ -263,30 +263,39 @@ been reported.
 
 - **Native hooks: an active string-copy stream no longer loses its slot to a new caller in a race** (#366). When all
   12 CALL streams are held by other callers, a new caller takes the one written least recently. Two races gave it the
-  newest one instead. A caller that wrote while the new one searched got a stamp after the clock reading the search
-  began with, so its stream looked about 2^32 old. And a stream written, or taken by another new caller, after the
+  newest one instead: a caller that wrote while the new one searched got a stamp after the clock reading the search
+  began with, so its stream looked about 2^32 old; and a stream written, or taken by another new caller, after the
   search had chosen it was taken anyway. The stream that lost its slot (any not kept for agreeing with OCR, so the
   dialogue's too before it agreed) started its hits over and took a slot back at its next copy; its text was never
-  wrong. The search now compares the stamps in the clock's serial order, as the job does, without reading the clock,
-  and checks its choice under the stream's lock: a stream written since is no longer the oldest, and the new caller's
-  copy is dropped, as for a busy stream. The stamps and lengths, which the search and the worker's hook watch read
-  without the lock, are now written atomically. Their plain writes against those atomic reads were a data race in C11
-  terms: ThreadSanitizer found 13-14 in 5 runs of the race test on `main` (two measurements) and none now (clang 18,
-  the fleet box). A stream that has had text also no longer reads as empty to the watch while a new caller takes it.
-  Tests: the issue's state; a suite that runs each interleaving at the search's own points on every run
-  (`host/tests/test_hook_stream_seams.c`, also on the ARM lane), 7 of whose 13 tests fail on `main` with its three
-  seams added; and a check of the watch's reads in the race test, which `main` failed in most runs on two or more CPUs
-  (107-200 of 200, two measurements) and in none on one. The fix passed 3,900 runs of the whole suite (one to four
-  CPUs, unpinned, 8 copies at once, beside busy loops, gcc and clang). #366's audit added: the stamp is published last
-  with release order and the search reads it with acquire order, so a search that sees a stream's new stamp also sees
-  which caller took it; on a CPU that reorders memory accesses, such as the A9, a caller with two threads could
-  otherwise take two slots (reasoned: x86 cannot show it, and none was seen in 60 runs with two to four threads a
-  caller), and seam tests for a caller's second slot and for the watch's reads while a slot changes hands. A new
-  caller still waits while the least recently written stream is busy and every other caller keeps the CPUs busy (up to
-  0.48 s on the host's hammer test, 0.45 s before #366); passing a busy stream over ended that wait but gave callers
-  with two threads two slots, so it was not taken ([details](docs/native-hooks.md)). Changing `core/hook_stream.c`
-  changes the hook definition SHA-256, so consoles learn each game's hooks again; seven PRs since 0.9.8 have changed
-  it already, so the next release does that anyway. Not run on a console.
+  wrong. Not run on a console.
+  - **The fix:** the search compares the stamps in the clock's serial order, as the job does, without reading the
+    clock, and checks its choice under the stream's lock: a stream written since is no longer the oldest, and the new
+    caller's copy is dropped, as for a busy stream. The stamps and lengths, which the search and the worker's hook
+    watch read without the lock, are written atomically, the stamp last with release order, which the search reads
+    with acquire order (so a search that sees a stream's new stamp also sees which caller took it, on the A9 too).
+    Their plain writes against those atomic reads were a data race in C11 terms: ThreadSanitizer found 13-14 in 5 runs
+    of the race test on `main` (two measurements) and none now (clang 18, the fleet box). A stream that has had text
+    no longer reads as empty to the watch while a new caller takes it.
+  - **One stream per caller** (#366's audits): a keep (a stream that agreed with OCR, or a diagnostic pin) takes the
+    stream's lock, as an agreeing one already did, so it never lands while a new caller is taking the stream, where it
+    could let that caller's other thread take a second one. Should a caller still hold two, the job shows the one it
+    writes: it showed the other one's old line, with trust on every job and without OCR (the host's job tests).
+  - **The wait:** a new caller still waits while the least recently written stream is busy and every other caller
+    keeps the CPUs busy. On the host's hammer test, on three or four CPUs, its longest wait was 0.21-0.48 s against
+    0.04-0.05 s before #366, whose quick takes were then mostly the newest stream's; on one CPU about 0.45 s for both;
+    with callers that sleep between copies, no longer than before. Passing a busy stream over ended the wait, but gave
+    callers with two threads two streams (223 to 3,880 times in 20 runs of 500 ms), so it was not taken
+    ([details](docs/native-hooks.md)).
+  - **Tests:** the issue's state; a suite that runs each interleaving at the search's own points on every run
+    (`host/tests/test_hook_stream_seams.c`, also on the ARM lane), 7 of whose 15 tests fail on `main` with its four
+    seams added; a check of the watch's reads in the race test, which `main` failed in most runs on two or more CPUs
+    (107-200 of 200, two measurements) and in none on one; the job with two streams of one caller
+    (`host/tests/test_game_hooks.c`). The fix passed 3,900 runs of the whole race suite (one to four CPUs, unpinned, 8
+    copies at once, beside busy loops, gcc and clang). The release and acquire orders compile to the same x86 code, so
+    no host test can show them.
+  - **Learned hooks reset once:** `core/hook_stream.c` is an input of the hook definition SHA-256, so consoles learn
+    each game's hooks again; twelve PRs since 0.9.8, up to this one, have changed it, so the next release does that
+    anyway.
 - **A game short of memory reads with the next smaller model** (#324). The console reports a game's free memory in
   whole MiB (あおかな, `PCSG00700`, on a PCH-2000: each of 78 samples was 1, 2, 3 or 4 MiB), so a job that passed its
   memory check with less than 1 MiB to spare saw a whole MiB less once it had taken its own blocks: its model's

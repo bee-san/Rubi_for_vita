@@ -1592,7 +1592,7 @@ static int hook_first(uint32_t a, uint32_t b, const uint32_t *seq, uint32_t want
 static int hooks_snapshot(uint32_t pick, int trust)
 {
     uint32_t seq[VJO_HOOK_STREAMS + 1u], want = pick == VJO_HOOK_PICK_AUTO ? hk.sel.locked : pick;
-    uint32_t luna = 0;
+    uint32_t luna = 0, matched = 0;
     uint8_t order[VJO_HOOK_STREAMS];
     unsigned k = 0;
     int has_luna = 0;
@@ -1606,10 +1606,14 @@ static int hooks_snapshot(uint32_t pick, int trust)
         if (pick == VJO_HOOK_PICK_AUTO && hk.snap.kind == VJO_HOOK_KIND_SITE &&
             (vjo_hooks_verified(id) ? trust : hk.snap.site != NULL))
             luna |= VJO_HOOK_STREAM_BIT(id);
+        /* a restored source has no runtime slot until this launch supplies it. Of two slots holding the learned
+         * source (a race could give a CALL caller a second one, which keeps the text it was taken with), the newest:
+         * the one its caller writes (#366's audit-b, F1; core/hook_select.c takes the first one in this order) */
         if (pick == VJO_HOOK_PICK_AUTO && hk.sel.interval &&
             (hk.snap.kind == VJO_HOOK_KIND_SITE) == !!hk.sel.locked_site &&
-            hk.snap.key == hk.sel.locked_key && hk.snap.encoding == hk.sel.locked_encoding)
-            want = id; /* a restored source has no runtime slot until this launch supplies it */
+            hk.snap.key == hk.sel.locked_key && hk.snap.encoding == hk.sel.locked_encoding &&
+            (!matched || (int32_t)(hk.snap.seq - seq[matched]) > 0))
+            want = matched = id;
         seq[id] = hk.snap.seq;
         for (at = k; at && hook_first(id, order[at - 1u], seq, want, luna); at--) order[at] = order[at - 1u];
         order[at] = (uint8_t)id;
