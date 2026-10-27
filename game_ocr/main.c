@@ -1784,7 +1784,8 @@ static void hooks_sc3_load(void)
     sc3_uid = game_memblock_alloc(GL_SC3, VJO_GITEM_SC3, "VjoGameSc3", pin->bytes, LADDER_USER, &base, &leaked, &held,
                                   &mem);
     if (sc3_uid < 0) {
-        sc3_uid = leaked; /* a block whose base could not be read nor freed stays recorded (freed next, or at the stop) */
+        /* a block whose base could not be read nor freed stays recorded: freed at the next try, or at the stop */
+        sc3_uid = leaked;
         return;
     }
     sc3_bytes_held = held;

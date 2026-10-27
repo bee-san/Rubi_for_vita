@@ -72,7 +72,8 @@ static int sc3_live;
 static unsigned sc3_block;
 /* #368's audit: the charset's read answers BUSY while sc3_read_busy (the kernel's file worker stalled) or fails with
  * sc3_read_error; its close answers BUSY sc3_close_busy times; its block's base cannot be read while sc3_base_fail
- * and its free fails sc3_free_fail times; sc3_allocs counts the blocks taken, sc3_double those taken while one is live */
+ * and its free fails sc3_free_fail times; sc3_allocs counts the blocks taken, sc3_double those taken while one is
+ * live */
 static int sc3_read_busy, sc3_read_error, sc3_base_fail;
 static unsigned sc3_close_busy, sc3_free_fail, sc3_allocs, sc3_double;
 const VjoSc3Pin *vjo_hooks_sc3_want(void) { return sc3_set_file ? NULL : sc3_want; }
