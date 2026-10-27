@@ -306,6 +306,8 @@ def job_model(a9, dev, mhz, fps, kind="default", first_job=False, given=None):
     if first_job:
         sha = ms(a9, "sha256_h15", mhz)
         lo_ms, hi_ms = CONSOLE["first_load_ms"][:2]
+        # ctclm.2's 1 MB LM's bytes: the host bundle docs/benchmarks/pipeline-stages-20261015.json's default and
+        # baseline first-job rows were measured with it (the console check this reproduces is API 19's, with no LM)
         lm_bytes = 987600 if kind != "api19" else 0
         k_lm = lm_bytes / 1155968
         part("weights" + ("" if kind == "api19" else " + LM") + ": read + SHA-256 (first job)", lo_ms * (1 + k_lm),

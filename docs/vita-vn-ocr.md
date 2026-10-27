@@ -638,7 +638,12 @@ hooked titles' pages better than ctclm.2's at Rubi's old settings (VOCR5-N with 
 path 4.12 % → 3.39 %, cross-validated), and are level on unseen games (#127; no console run yet). They
 ship under VOCR6's adoption rule as the conductor ruled it (2026-10-26 16:38Z): better on the hooked
 titles' held-out pages and not worse on the unseen-game development sets (game-bootstrap 95 % interval).
-The measurements below are VOCR3's with ctclm.2's LMs.
+These LM figures, and the counter set's below, were measured with VOCR5 v0.3.0's blobs and no head gate. Rubi runs the
+gated blobs with `ocr_head_gate = on` by default (API 42, [below](#head-gate-and-two-level-head-api-42)), which was
+validated with ctclm.2's 1 MB LM at its old settings; the gate skips about 0.2 % of the frames that are not blank, so
+the difference is probably small, but the default combination of the gate and the new settings has not been
+measured. Larger is not always better here: the 2 MB tier is ctclm.2's at its old settings, and on the hooked titles'
+pages it reads worse than the new 1 MB default (vita-vn-ocr: 3.96 % against 3.39 %).
 
 **Counters.** On #109's synthetic counter set ([counters](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/counters.md):
 189 lines of public text with a numeral before ヶ月, ヶ所 …, in three forms and seven left-edge cuts, 3,969
@@ -648,7 +653,12 @@ keeps the small ke in 3,015 crops against ctclm.2's 3,104: it loses 121 crops th
 3 px margin before the line's first ink (the uncut form), 27 against 36 errors in 7,320 characters [measured on
 the host, 2026-10-26; the same run's real development lines, which hold no counter: teacher_val 108 → 110,
 devnative 112 → 104, whole dialogue 2,841 → 2,835 errors]. On a crafted counter line
-(`host/tests/test_vocr_policy.c`) the 1 MB tier reads 「九月です」 where ctclm.2's 2 MB tier reads 「九ヶ月です」.
+(`host/tests/test_vocr_policy.c`) the 1 MB tier reads 「九月です」 where ctclm.2's 2 MB tier reads 「九ヶ月です」. The loss
+follows the tier's new decoder settings, not its blob: the VOCR6 blob at ctclm.2's settings keeps the ヶ, and
+ctclm.2's 1 MB blob at the new settings drops it (audit-vocr6-lm-rubi); vita-vn-ocr's retune of the settings for VOCR6
+(#127) checks counters.
+
+The measurements below are VOCR3's with ctclm.2's LMs.
 
 **Memory.** The LM is a resident `USER_RW` block (`VjoGameVocrLM`), like the weights:
 - **Reading:** read through the kernel's file broker 32 KiB at a time, with size and SHA-256 checked

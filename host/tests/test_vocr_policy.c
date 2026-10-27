@@ -768,7 +768,8 @@ static void test_the_cascade_reads_doubtful_lines_again(void)
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
     /* ctclm.2's LM (tier 3, unchanged since API 20): these checks need an LM that keeps the synthetic line's
-     * text. VOCR6's game-text LM (tier 2 since vita-vn-ocr #127) reads it as nothing: a junk line to it. */
+     * text. Tier 2 since vita-vn-ocr #127 (VOCR6's blob at its new settings, 600 / 2500 / BOS) reads it as nothing:
+     * the settings do that, ctclm.2's own 1 MB blob at them too (audit-vocr6-lm-rubi F7). */
     const VjoVocrLm *lm = vjo_vocr_lm_tier(3);
     VjoPlatform p;
     VjoVocrStats st, alone_st;
@@ -1118,15 +1119,15 @@ static void test_the_cascade_ceiling_counts_spent_reread_and_rest(void)
  * decoded; a decode that fails leaves the greedy line (one that does not fit
  * keeps the LM on, any other error turns it off for the job); the greedy text
  * kept for the log has the shown text's line breaks; each tier is planned with
- * its own per-character bonus (500k 3000, 1000k 3500). */
+ * its own settings (beta: 500k 3000, 1000k 2500; alpha and flags: tier 2's reach both decoders). */
 static void test_the_lm_paths(void)
 {
     static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_CASCADE_NAME, VJO_VOCR_LM1_NAME,
                                         VJO_VOCR_LM2_NAME, VJO_VOCR_LM3_NAME};
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME), *w20 = vjo_vocr_model(VJO_VOCR_CASCADE_NAME);
-    /* lm3, ctclm.2's (unchanged since API 20), for the checks that need the synthetic lines' text kept: VOCR6's
-     * game-text tier 2 (vita-vn-ocr #127) reads these bars as nothing, a junk line to it */
+    /* lm3, ctclm.2's (unchanged since API 20), for the checks that need the synthetic lines' text kept: tier 2's
+     * settings since vita-vn-ocr #127 (600 / 2500 / BOS) read these bars as nothing (audit-vocr6-lm-rubi F7) */
     const VjoVocrLm *lm1 = vjo_vocr_lm_tier(1), *lm2 = vjo_vocr_lm_tier(2), *lm3 = vjo_vocr_lm_tier(3);
     VjoPlatform p;
     VjoVocrStats st;
@@ -2074,8 +2075,9 @@ static void test_the_counter_redecode(void)
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
     /* lmc is ctclm.2's LM (tier 3, unchanged since API 20): the crafted line's ヶ is that LM's own choice.
-     * VOCR6's game-text tier 2 (vita-vn-ocr #127) reads this crafted line 「九月です」: checked below for the
-     * re-decode's part only (#109's counter set: docs/vita-vn-ocr.md, the LM section). */
+     * Tier 2 (vita-vn-ocr #127) reads this crafted line 「九月です」 today: its new settings (600 / 2500 / BOS) drop
+     * the ヶ, with VOCR6's blob or ctclm.2's (audit-vocr6-lm-rubi F7); asserted below, with the re-decode's part
+     * (#109's counter set: docs/vita-vn-ocr.md, the LM section). */
     const VjoVocrLm *lmc = vjo_vocr_lm_tier(3), *lm6 = vjo_vocr_lm_tier(2);
     VjoPlatform p;
     VjoVocrStats st;
@@ -2127,7 +2129,9 @@ static void test_the_counter_redecode(void)
     TEST_CHECK(st.counter_lines == 1 && st.lm_lines == 1 && wrap.decodes == 1 && !strcmp(raw, "ルッ月です」"));
     TEST_CHECK(!strcmp(text, "「九ヶ月です」")); /* the LM itself takes ヶ after 九 */
     TEST_MSG("shown '%s'", text);
-    /* VOCR6's game-text LM (tier 2): the same re-decode feeds it the same edited top-K (its text is its own) */
+    /* tier 2 (VOCR6's LM, vita-vn-ocr #127): the same re-decode feeds it the same edited top-K. Its reading of the
+     * crafted line is 「九月です」: the default tier's known counter loss (its settings', audit-vocr6-lm-rubi F7).
+     * When vita-vn-ocr's retune of the settings keeps the ヶ, the expectation goes back to 「九ヶ月です」. */
     {
         VjoVocrPolicy on6 = on;
         on6.lm = lm6;
@@ -2139,6 +2143,7 @@ static void test_the_counter_redecode(void)
         TEST_CHECK(st.counter_lines == 1 && st.lm_lines == 1 && st.lm == lm6 && wrap.decodes == 1 &&
                    !strcmp(raw, "ルッ月です」") &&
                    wrap.seen_top1 == counter_class(((const vocr_ctx *)wrap.model_ctx)->model, "九"));
+        TEST_CHECK(!strcmp(text, "「九月です」"));
         TEST_MSG("tier 2 shows '%s'", text);
         TEST_CHECK(!vjo_vocr_lm_drop(&lres) && !lres.data);
     }
@@ -2284,8 +2289,8 @@ static void test_the_head_gate(void)
     static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM3_NAME};
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
-    /* ctclm.2's LM (tier 3, unchanged since API 20): the crafted counter line's ヶ is its own choice (VOCR6's
-     * game-text tier 2 reads 「九月です」 there: test_the_counter_redecode) */
+    /* ctclm.2's LM (tier 3, unchanged since API 20): the crafted counter line's ヶ is its own choice (tier 2 reads
+     * 「九月です」 there, its settings': test_the_counter_redecode) */
     const VjoVocrLm *lmc = vjo_vocr_lm_tier(3);
     VjoPlatform p;
     VjoVocrStats st;

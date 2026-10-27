@@ -369,7 +369,8 @@ game ([#109](https://github.com/bee-san/Rubi_for_vita/pull/109)).
   OCR-Synthetic-Multilingual-v1 (CC BY 4.0) and on fonts and text that are free for non-commercial
   use only, so their weights are for non-commercial use only: their attribution and terms ship
   beside them as `ocr/MODEL-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#models)). Its character
-  language models are CC BY-SA 4.0. The optional text-presence gate's weights (`ocr_text_gate`, off by
+  language models are CC BY-SA 4.0; the 1 MB and 4 MB ones also carry n-gram counts of the owner's hooked console
+  captures (vita-vn-ocr #127). The optional text-presence gate's weights (`ocr_text_gate`, off by
   default) were trained on synthetic text in fonts and text pools free for non-commercial use only and on
   VNDB screenshots, so they are for non-commercial use only too: their attribution ships beside them as
   `ocr/GATE-ATTRIBUTION.md` ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)).
