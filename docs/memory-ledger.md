@@ -346,22 +346,22 @@ block, has each column read alone, as before. On the host's measured regions the
 ([on's rule](vita-vn-ocr.md#ons-rule-api-53-379)). On's rows try first is a job of rows, the size's own blocks, freed
 before its columns try takes the vertical model's, as auto's tries do.
 
-The code had no room: `main` `68041a7` (after VOCR6, #373) left the debug worker 184 B of its last code page and the
-debug Shell 28 B. So two read-only tables move to the data segments (`VJO_DATA_TABLE`), whose last pages had room: the
-game worker's pinned model table (`core/vocr_ocr.c` `models`, 480 B) and one debug log line of the Shell's (52 B), and
-on's rule is the plain one (126 B; one that allowed a name or an icon beside the lines took 200 B). The module rows
-[measured: `tools/check_memory_ledger.py`, both builds, `main` `68041a7` and this change, `tools/fast_gate.sh`'s VitaSDK
-image]:
+The code had no room: `main` `313666a` (after VOCR6, #373, and #387) left the debug worker 152 B of its last code page
+and the debug Shell 28 B. So two read-only tables move to the data segments (`VJO_DATA_TABLE`), whose last pages had
+room: the game worker's pinned model table (`core/vocr_ocr.c` `models`, 480 B) and one debug log line of the Shell's
+(52 B), and on's rule is the plain one (126 B; one that allowed a name or an icon beside the lines took 200 B). The
+module rows [measured: `tools/check_memory_ledger.py`, both builds, `main` `313666a` and this change,
+`tools/fast_gate.sh`'s VitaSDK image]:
 
-| module | `main` `68041a7` | this change | pages |
+| module | `main` `313666a` | this change | pages |
 |---|---:|---:|---:|
-| Game worker, debug | 163,656 + 35,880 B | 163,768 + 36,360 B | 200,704 B both |
-| Game worker, normal | 154,692 + 35,864 B | 154,852 + 36,344 B | 192,512 B both |
+| Game worker, debug | 163,688 + 35,880 B | 163,800 + 36,360 B | 200,704 B both |
+| Game worker, normal | 154,724 + 35,864 B | 154,884 + 36,344 B | 192,512 B both |
 | Shell, debug | 102,372 + 73,664 B | 102,356 + 73,712 B | 176,128 B both |
 | Shell, normal | 90,044 + 73,520 B | 90,076 + 73,520 B | 163,840 B both |
 
 The worker's code segment grows by 112 B (debug) and 160 B (normal), the change's code less the table's 480 B moved out;
-the debug worker has 72 B of its last code page left and 504 B of its data page, the normal one 796 and 520 B; the debug
+the debug worker has 40 B of its last code page left and 504 B of its data page, the normal one 764 and 520 B; the debug
 Shell 44 and 16 B, the normal Shell 36 and 208 B. None of it is measured on a console.
 
 ## Trusted hooks and the OCR-skip switches (API 43)

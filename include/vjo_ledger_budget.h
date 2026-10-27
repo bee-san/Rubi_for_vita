@@ -374,18 +374,12 @@
  * text 163,656 -> 163,688 B debug (152 B of room left) and 154,692 -> 154,724 B normal (924 B), data/bss unchanged,
  * the same pages; the kernel's and the Shell's rows unchanged [measured: the build log's module rows, both builds,
  * main 68041a7 and this change, tools/fast_gate.sh's vitasdk image]. No new block, thread or allocation. */
-/* API 53 (#379, vertical text ON prefers columns; a job of columns reads its columns' rows once, in batches): worker
- * text 122,554 -> 123,432 B (normal) and 126,776 -> 127,640 B (debug), its code segment 153,220 B (normal: 2,428 B of
- * the last page left) and 162,136 B (debug: 1,704 B), data unchanged, the same pages [measured: arm-vita-eabi-size -A
- * and tools/check_memory_ledger.py on both builds' VitaJPOverlay_OCR, main 19986c7 and this change, tools/fast_gate.sh's
- * vitasdk image]. No block, thread or allocation: the batch is the tall-line block (VJO_BUDGET_GAME_LINE, its bound
- * unchanged). */
 /* API 53 (#379, vertical text ON prefers columns; a job of columns reads its columns' rows once): the worker's code
- * segment 163,656 -> 163,768 B (debug: 72 B of the last page left) and 154,692 -> 154,852 B (normal: 796 B), its data
+ * segment 163,688 -> 163,800 B (debug: 40 B of the last page left) and 154,724 -> 154,884 B (normal: 764 B), its data
  * segment 35,880 -> 36,360 B and 35,864 -> 36,344 B (core/vocr_ocr.c's pinned model table, 480 B, moved there:
  * VJO_DATA_TABLE), the same pages; the Shell's 102,372 + 73,664 -> 102,356 + 73,712 B (debug: one debug log line, 52
  * B, moved to its data segment) and 90,044 -> 90,076 B (normal), the same pages [measured: tools/check_memory_ledger.py
- * on both builds, main 68041a7 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the
+ * on both builds, main 313666a and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the
  * columns' rectangle is the tall-line block (VJO_BUDGET_GAME_LINE, its bound unchanged). */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
