@@ -119,9 +119,13 @@
  * 53: vertical text ON prefers columns (#379; docs/vita-vn-ocr.md "Vertical text"): a request with
  * VJO_GAME_OCR_S_VERTICAL 1 reads the region's rows first, as 2 does, and its columns unless the rows look like
  * horizontal text (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON); with 1 or 2 a job of columns whose model cannot be
- * read or has no room reads the rows; the find step's kinds 4 and 5 say so. A job of columns reads its columns' rows
+ * read or has no room (its memory check refuses it, or its weights after the check) reads the rows; the find step's
+ * kinds 4 and 5 say so (a block refused after the check, the columns' capture or workspace, fails the job for memory,
+ * as since API 47). A job of columns reads its columns' rows
  * once, the rectangle around them (VJO_VOCR_COLUMNS_BATCH), no longer once per column. The Shell leaves out a size whose model failed
- * with ON too. Sizes and layouts are unchanged. 52 is #369's (merged first), so this is 53.
+ * with ON too. Sizes and layouts are unchanged. 52 is #369's (merged first), so this is 53. #385's audit (no new API:
+ * the request and result are unchanged): with 1, a region at least as tall as wide is read as columns from the job's
+ * first try, and a wider one with no row at all as rows (nothing to read).
  * 54: the text spotter as the game worker's line finder (vita-vn-ocr #149 textspot8, #128 textspot6;
  * docs/vita-vn-ocr.md "The spotter finder"): VjoGameOcrRequest.speed bit 24 (VJO_GAME_OCR_S_SPOT) and bit 26
  * (VJO_GAME_OCR_S_SPOT_REFINE), its weights' file in the kernel's broker for such a request (VJO_GAME_OCR_OPEN_SPOT,

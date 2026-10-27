@@ -1337,7 +1337,11 @@ static void test_rows_horizontal_rule(void)
     TEST_CHECK(!horizontal_of(two, 4, 300, 287) && !horizontal_of(three, 3, 114, 358)); /* four or three of its rows */
     TEST_CHECK(!horizontal_of(screen, 6, 960, 544) && !horizontal_of(screen, 5, 960, 544)); /* more than 4 rows */
     TEST_CHECK(horizontal_of(screen, 2, 960, 544)); /* two lines of it */
-    TEST_CHECK(!horizontal_of(psp, 0, 358, 94) && !vjo_vocr_rows_horizontal(NULL, 2, 358, 94));
+    TEST_CHECK(!vjo_vocr_rows_horizontal(NULL, 2, 358, 94));
+    /* #385's audit F3: no row in a region wider than tall (a box between lines, a CG) is nothing to read, off's job;
+     * in a region at least as tall as wide, the columns' (which find none either on an empty box) */
+    TEST_CHECK(horizontal_of(psp, 0, 358, 94) && horizontal_of(psp, 0, 95, 94) && vjo_vocr_rows_horizontal(NULL, 0, 960, 544));
+    TEST_CHECK(!horizontal_of(psp, 0, 94, 94) && !horizontal_of(psp, 0, 83, 287));
     {   /* a speaker's name above the lines, an icon below them: not lines (on reads the columns) */
         static const unsigned name[3][4] = {{12, 0, 60, 24}, {12, 30, 300, 24}, {12, 60, 280, 24}};
         static const unsigned icon[3][4] = {{12, 0, 300, 24}, {12, 30, 280, 24}, {280, 60, 24, 24}};
@@ -1380,8 +1384,9 @@ static void draw_lines(unsigned n)
 }
 
 /* API 53, on's check (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON): a job of rows reads rows of horizontal text
- * as without the check, hash for hash; elsewhere (vertical text, five lines or more, nothing) it reads nothing and
- * opens no weights (VJO_E_VERTICAL: the game worker reads the columns next). A model of columns ignores it. */
+ * as without the check, hash for hash; elsewhere (vertical text, five lines or more, nothing in a region at least as
+ * tall as wide) it reads nothing and opens no weights (VJO_E_VERTICAL: the game worker reads the columns next); a
+ * region wider than tall with no row reads nothing as off does (#385's audit F3). A model of columns ignores it. */
 static void test_on_check(void)
 {
     static const unsigned glyphs[4] = {6, 4, 7, 3};
@@ -1418,9 +1423,14 @@ static void test_on_check(void)
     draw_columns(RW, RH, 4, glyphs, 20, 26, 20, 225); /* wider than tall */
     rc = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
     TEST_CHECK_(rc == VJO_E_VERTICAL && !st.recognized, "wide columns: rc %d, %u read", rc, st.recognized);
-    fill(300, 100, 20); /* nothing: no row, so nothing to read as rows */
+    fill(300, 100, 20); /* nothing in a wide region (#385's audit F3): off's job, nothing read, no weights opened */
+    vjo_vocr_resident_drop(&res);
     rc = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
-    TEST_CHECK_(rc == VJO_E_VERTICAL && !st.lines, "blank: rc %d, %u rows", rc, st.lines);
+    TEST_CHECK_(rc == VJO_OK && !st.lines && !text[0] && !st.model_loaded && !st.model_cached,
+                "blank, wide: rc %d, %u rows, weights read %d", rc, st.lines, st.model_loaded);
+    fill(100, 300, 20); /* nothing in a tall one: its columns' (which find none either) */
+    rc = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
+    TEST_CHECK_(rc == VJO_E_VERTICAL && !st.lines, "blank, tall: rc %d, %u rows", rc, st.lines);
     draw_columns(RW, RH, 4, glyphs, 20, 26, 20, 225); /* the model of columns reads its columns, check or not */
     rc = job(M_COLS, &o, text, sizeof text, NULL, 0, &st);
     TEST_CHECK_(rc == VJO_OK && st.columns == 1 && st.recognized == 4, "model of columns: rc %d, %u read", rc,

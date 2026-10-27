@@ -277,8 +277,10 @@ static int game_memblock_free(int item, unsigned gitem, SceUID uid, uint32_t byt
  * text keeps room for its own steps (the log holds VJO_GAME_OCR_STEPS: two tries' blocks filled it before the last
  * try's recognize, LM and wait steps); the try's memory check, first pass and FIND step stay. A FREE step of a block
  * the try did not take (an earlier job's resident weights, LM or cascade model its check counted as free) stays too:
- * that block is gone from the game's memory for good (#382's audit N1). */
-static void steps_drop_blocks(unsigned from)
+ * that block is gone from the game's memory for good (#382's audit N1). checks (#385's audit F7): its CHECK steps
+ * leave too, for a try of rows whose rows went to the columns (it read nothing, and a later try of rows checks the
+ * sizes again): on's and auto's two or three tries had filled the log before the last try's NORM and PAR steps. */
+static void steps_drop_blocks(unsigned from, int checks)
 {
     unsigned w = from, n, taken = 0; /* a bit per VJO_GITEM_*: an ALLOC step of it from `from` on */
     if (!log_to || from >= log_to->n_steps) return;
@@ -286,7 +288,8 @@ static void steps_drop_blocks(unsigned from)
     for (unsigned i = from; i < n; i++) {
         const VjoGameOcrStep *s = &log_to->step[i];
         if (s->id == VJO_GSTEP_ALLOC) taken |= 1u << (s->arg & 31u);
-        else if (s->id != VJO_GSTEP_FREE || !(taken >> (s->arg & 31u) & 1u)) log_to->step[w++] = *s;
+        else if ((s->id != VJO_GSTEP_FREE || !(taken >> (s->arg & 31u) & 1u)) && (!checks || s->id != VJO_GSTEP_CHECK))
+            log_to->step[w++] = *s;
     }
     if (w < n) sceClibMemset(&log_to->step[w], 0, (n - w) * sizeof(log_to->step[0]));
     log_to->n_steps = w;
@@ -467,7 +470,28 @@ typedef char vjo_weights_budget_check[PAGE_ROUND(VJO_VOCR_MAX_BYTES) <= VJO_BUDG
 typedef char vjo_cascade_budget_check[PAGE_ROUND(VJO_VOCR_MAX_BYTES) <= VJO_BUDGET_GAME_CASCADE &&
                                       VJO_VOCR_CASCADE_BYTES <= VJO_VOCR_MAX_BYTES ? 1 : -1];
 
-/* One block for a line taller than a strip (VjoGreySource.line_buffer). */
+/* #385's audit F5 (AGENTS.md rule 3): the job's model and LM while its core runs (else NULL), whose blocks the core
+ * takes after it has fetched lines when they are not resident (with ocr_skip_blank_lines on, at the first line not
+ * blank) */
+static const VjoVocrModel *job_model;
+static const VjoVocrLm *job_lm;
+static int64_t free_user_after_reserve(void);
+/* A tall-line block of at most this many bytes (a column's bound, the rotation buffer's: every block a job could ask
+ * for before #379) is taken from the ladder as before; a larger one keeps the job's reserve (line_buffer). The host
+ * tests lower it: their frames' rectangles are smaller. */
+#ifndef VJO_GAME_LINE_UNCHECKED
+#define VJO_GAME_LINE_UNCHECKED VJO_VOCR_ROTATE_BYTES
+#endif
+typedef char vjo_line_unchecked_check[VJO_GAME_LINE_UNCHECKED <= VJO_VOCR_ROTATE_BYTES ? 1 : -1];
+
+/* One block for a line taller than a strip (VjoGreySource.line_buffer). A block larger than one column's (the
+ * rotation buffer's bound: #379's rectangle of a job's columns, or a rare band of rows) is taken only from what the
+ * game has free beyond the job's reserve and the job's weights still to come, which its memory check counted and the
+ * line block is not in, and for a job of columns its LM's too (#385's audit F5: the rectangle, up to 504 KiB, cut
+ * into a job of columns' 4 MiB reserve, or with the blank-line check took its weights' room, so they were refused and
+ * it read the columns' text as rows). Refused, the columns are read one by one, each in a block of its own, as before
+ * #379; such a band of rows is left out and counted (tall_skipped), so a job of rows keeps no LM's or cascade's room
+ * for it: those blocks keep the reserve themselves, and their refusal only costs the LM's or the cascade's reading. */
 static void *line_buffer(void *ud, size_t bytes)
 {
     void *base = NULL;
@@ -482,6 +506,13 @@ static void *line_buffer(void *ud, size_t bytes)
         line_base = NULL;
     }
     if (bytes > VJO_VOCR_LINE_MAX_BYTES) return NULL;
+    if (bytes > VJO_GAME_LINE_UNCHECKED) {
+        int64_t to_come = PAGE_ROUND(bytes);
+        if (job_model && resident.model != job_model) to_come += PAGE_ROUND(job_model->bytes);
+        if (job_lm && lm_res.lm != job_lm && (job_model->finder_mode & VJO_VOCR_FINDER_COLUMNS))
+            to_come += PAGE_ROUND(job_lm->bytes);
+        if (free_user_after_reserve() < to_come) return NULL;
+    }
     line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, "VjoGameVocrLine", (uint32_t)bytes, LADDER_ALL,
                                    &base, &leaked, &held, &mem);
     if (line_uid < 0) {
@@ -2016,6 +2047,10 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         }
     }
     hk.trusted_run = 0; /* API 43: this job runs OCR: the trusted answers' run starts again */
+    /* #385's audit F6: on reads a region at least as tall as wide as columns from its first try, as API 47's on did:
+     * its rule takes none of the 2,659 such regions of vertical text measured for rows (nor the 2 such hooked
+     * horizontal boxes), and the rows' try first made a drawn box of columns slower to read than before API 53 */
+    if (check == VJO_VOCR_CHECK_ON && r->height >= r->width) { vertical = 1; check = 0; }
     /* API 47, auto: the job again from here, as columns (its rows looked like vertical text), or as rows (the
      * columns' model could not be read or fit): each try its own check and blocks, the last one's result. */
 again:
@@ -2316,9 +2351,13 @@ retry_smaller:
     helper_creates = helper_create_failures = 0;
     open_which = cand[used].which;
     open_cascade = casc != NULL;
+    job_model = use; /* #385's audit F5: the blocks the core may still take (line_buffer) */
+    job_lm = lm;
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
+    job_model = NULL;
+    job_lm = NULL;
     /* #324: the check passed, yet the model's weights could not be had: out of memory before any were read or
      * held (every job-level VJO_E_OOM comes before them: core/vocr_ocr.c's weights block, the finder's arena, the
      * workspace or the capture; an LM's or the cascade's only sets lm_rc / cascade_rc). weights_alloc checks the
@@ -2335,7 +2374,8 @@ retry_smaller:
      * be had (auto's and on's columns: the rows, whose sizes check again). The same request again, as columns or as
      * rows (again). Either retry is the same job (#324's audit): after this try's blocks are freed, its capture,
      * finder time and stable-text wait are the job's too, the next try waits only for what is left of it (retried),
-     * the freed blocks' steps leave the log (steps_drop_blocks), and the capture is kept: its PASS and SIG steps are
+     * the freed blocks' steps leave the log (steps_drop_blocks; a try of rows whose rows went to the columns, its
+     * memory checks too: #385's audit F7), and the capture is kept: its PASS and SIG steps are
      * logged once, its source mode stays. A try reached so checks nothing: at most rows, columns, rows. */
     if (smaller || (!stats.stuck && ((rc == VJO_E_VERTICAL && policy.vertical_check) || (rc == VJO_E_OCR_MODEL && vertical) ||
                                      (rc == VJO_E_OOM && vertical && !cancelled(NULL))))) {
@@ -2364,7 +2404,7 @@ retry_smaller:
         }
         sceClibMemset(&stats, 0, sizeof(stats));
         if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
-        steps_drop_blocks(try_steps);
+        steps_drop_blocks(try_steps, vertical); /* a try of rows that hands over to the columns: its checks too */
         if (smaller) goto retry_smaller;
         goto again;
     }

@@ -132,7 +132,10 @@
  * vertical text, nothing is recognized and the job reads the region's columns as with 1; where the vertical
  * model cannot be read, its rows as with 0. API 53 (#379): 1 prefers columns: its rows are checked first as with 2,
  * and its columns read unless they look like horizontal text (vjo_vocr_rows_horizontal; else they are read as with
- * 0); with 1 and 2, where the vertical model cannot be read or has no room, the rows as with 0. 3 is refused. A line
+ * 0); with 1 and 2, where the vertical model cannot be read or has no room (its memory check refuses it, or its
+ * weights after the check: find kinds 3 and 5), the rows as with 0. #385's audit: with 1, a region at least as tall
+ * as wide is read as with 1 before API 53, its columns at once, and a wider one with no row at all as with 0. 3 is
+ * refused. A line
  * read as a column carries VJO_GAME_OCR_LINE_COLUMN
  * in VjoGameOcrLine.flags. The Shell sets the field in the user's jobs (the self-test's stages read rows). Not
  * bits 21-27: API 50's line-finder fixes have 21-23, and VOCR6's spotter finder and draft #326's text overlay

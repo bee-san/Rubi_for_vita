@@ -283,8 +283,9 @@ What each build changed, and what its console run showed: the [changelog](CHANGE
 
 ## Limits
 
-- Vertical text is read only in a text box drawn around it (on a whole screen Rubi reads rows), and not yet on a
-  console ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
+- Vertical text is read only in a text box drawn around it: on a whole screen Automatic reads rows, and ON reads columns
+  on most screens, a horizontal game's too (84 % of the hooked ones measured), which gives no sensible text. Not run on
+  a console yet ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
 - One console has tested Rubi ([Supported](#supported)). OCR accuracy, battery use and CPU3 load are
   not measured on a console yet.
 - The game can stutter while Rubi reads ([FAQ](#will-it-slow-my-game-down)).

@@ -432,6 +432,14 @@
  * kernel and Shell SELF files byte-identical to main's [measured: the build log's module rows, both builds, main
  * 2eb2d98 and this change, tools/fast_gate.sh's vitasdk image; on main cc25de3 it was -16 B debug, +16 B normal]. No
  * block, thread or allocation. */
+/* #385's audit fixes (game_ocr/main.c: on reads a tall region's columns at once; a tall-line block over a column's
+ * bound keeps the job's reserve and its weights' room, a job of columns' its LM's too, job_model/job_lm; a hand-over
+ * try's checks leave the step log; core/vocr_ocr.c: no row in a wide region is off's job): worker text 179,856 ->
+ * 180,048 B debug (176 B of room left) and 170,924 -> 171,100 B normal (932 B), data/bss 36,712 -> 36,720 B and
+ * 36,704 -> 36,712 B, the same
+ * pages; the kernel's and the Shell's rows unchanged [measured: tools/check_memory_ledger.py, both builds, main
+ * e4c1a02 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the rectangle is the
+ * tall-line block (VJO_BUDGET_GAME_LINE, its bound unchanged). */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
