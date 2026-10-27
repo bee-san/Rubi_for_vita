@@ -999,7 +999,7 @@ static void draw_pause_card(int y)
     text(42, y + CARD_TITLE_Y, WHITE, 28, "Pause the game to read");
     badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
           preferences.ocr_pause ? "ON" : "OFF", preferences_writable && preferences.ocr_pause);
-    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a brief pause, so an animated icon can't spoil a read.");
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a brief pause, so an icon can't spoil a read. Draw a box.");
 }
 
 static void draw_card(int i, int y)

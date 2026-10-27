@@ -386,6 +386,8 @@ enum {
 #define VJO_GPAUSE_NO_ROOM 1u  /* the frame block did not fit beside the job (its memory check) or was refused */
 #define VJO_GPAUSE_REFUSED 2u  /* the kernel refused the copy or could not finish it (rc says why) */
 #define VJO_GPAUSE_UNUSED 3u   /* the job ended before its first pass (cancelled, a wait that failed) */
+#define VJO_GPAUSE_CAPPED 4u   /* not asked: an earlier copy in this game reached the cap (rc VJO_ERR_TIMEOUT); the game
+                                  is not paused again until it next starts */
 /* VJO_GSTEP_ALLOC/FREE arg: which block. */
 #define VJO_GITEM_CAPTURE 1u   /* "VjoGameVocrCapture": the strip and the row checksums */
 #define VJO_GITEM_WORKSPACE 2u /* "VjoGameVocr": the finder's then the recognizer's arena */

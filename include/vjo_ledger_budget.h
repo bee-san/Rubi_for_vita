@@ -581,7 +581,8 @@
  * the copy or cannot finish it, the worker frees the block before the job reads on, so a job holds this block or a
  * tall line's, never both: the worst case counts the larger (game_ocr/main.c checks both at compile time). Taken only
  * when it fits beside everything the job's memory check chose, with that check's reserve (never at the cost of a model
- * tier, the LM, the cascade or a helper), on the same ladder (USER_RW, CDRAM, phycont), freed with the job. */
+ * tier, the LM or the cascade, nor of another model's resident weights; it may cost a helper), on the same ladder
+ * (USER_RW, CDRAM, phycont), freed with the job. */
 #define VJO_BUDGET_GAME_FRAME 524288u
 #define VJO_BUDGET_GAME_LINE_OR_FRAME VJO_BUDGET_GAME_FRAME
 /* API 20: the beam + LM decoder's LM, resident like the weights while the game is the

@@ -41,12 +41,13 @@ been reported.
 
 - **Pause the game to read** (API 52, #348; `ocr_pause` in `config.ini`, the Rubi app's last card on the OCR & lookup
   page, OFF by default): each reading copies the text box from one frame at once, inside that frame's display call,
-  which the game waits in for as long, and the OCR reads that still copy. A spinning or blinking icon in the box can
-  no longer make the job give up with the screen changed under it and show nothing. On the host, through the real job
+  which the game waits in for as long, and the OCR reads that still copy. A spinning icon or an animated background
+  in the box can no longer make the job give up with the screen changed under it and show nothing. On the host, through the real job
   and line finder, an 852 × 135 box with a spinner of 20 shades read strip by strip failed after 2.15 s and 129 frames;
   paused it reached the recognizer at the first frame (the release models read its 3 lines, `test_alloc_sim.c`). The
   game's wait per reading is an estimated 2.4-6.4 ms for a dialogue box and 10.8-29.0 ms for a whole screen at
-  333 MHz, at most 100 ms. A kernel watchdog turns pausing off until the next boot if a copy ever runs past 200 ms.
+  333 MHz (draw a text box first), at most 100 ms: a copy that reaches it turns pausing off for that game until it
+  next starts, and a kernel watchdog turns it off until the next boot if a copy ever runs past 200 ms.
   No game thread is suspended, and nothing waits for another thread. PSP games in Adrenaline read as before. The job
   holds one block of the region's size more (at most 524,288 B, only when it fits; the memory ledger counts it in
   place of a tall line's block). While it is OFF in a Vita game, the open overlay's hint for text that keeps changing

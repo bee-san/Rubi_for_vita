@@ -1360,7 +1360,7 @@ static void test_pause_card_by_keys_and_touch(void)
     const Text *off = text_at(2, card_top(2, 10) + 32, 812, 920), *on = text_at(4, card_top(4, 10) + 32, 812, 920);
     TEST_CHECK_(off && !strcmp(off->text, "OFF") && on && !strcmp(on->text, "ON"), "badges '%s', '%s'",
                 off ? off->text : "(none)", on ? on->text : "(none)");
-    TEST_CHECK(shows(2, "ON: a brief pause, so an animated icon can't spoil a read."));
+    TEST_CHECK(shows(2, "ON: a brief pause, so an icon can't spoil a read. Draw a box."));
     const Text *st = text_at(4, ROOM_END + 4 + 22, 40, 41);
     TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the overlay next opens."), "the status line: '%s'",
                 st ? st->text : "(none)");

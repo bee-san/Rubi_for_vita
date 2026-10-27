@@ -429,6 +429,9 @@ static struct {
 } pz;
 /* The job's frame copies over all its tries (API 47's auto may read twice): its captures are then its rows calls. */
 static unsigned pause_frames;
+/* A frame copy reached the cap (VJO_GAME_OCR_PAUSE_MAX_US, VJO_ERR_TIMEOUT): the game waited that long for nothing, and
+ * would at every reading. No copy is asked again in this game (this process, the worker's life; the audit's F2). */
+static int pause_capped;
 
 /* The frame block back to the game (a refused copy, the job's end); kept while the hook may still write it
  * (a rows call that outlived its copy: hook_owns_capture, as the capture block is). 0, or -1 when its free failed. */
@@ -475,6 +478,7 @@ static int pause_copy(Capture *c)
         break;
     }
     pz.us = c->last.copy_us;
+    if (rc == VJO_ERR_TIMEOUT && pz.us >= VJO_GAME_OCR_PAUSE_MAX_US) pause_capped = 1; /* (a frame that never came: 0 us) */
     if (rc == (int)r->height) {
         pz.frozen = 1;
         pause_frames++;
@@ -1536,6 +1540,16 @@ static size_t helpers_need(const char *model, size_t block, unsigned helpers)
     return PAGE_ROUND(block + hb) - PAGE_ROUND(block) + (size_t)helpers * VJO_BUDGET_GAME_HELPER_STACK;
 }
 
+/* The most helpers, want at most, whose memory fits in room (one fewer at a time; 0: none, the serial job). */
+static unsigned helpers_fit(const char *model, size_t block, unsigned want, int64_t room)
+{
+    for (; want; want--) {
+        size_t extra = helpers_need(model, block, want);
+        if (extra && room >= (int64_t)extra) break;
+    }
+    return want;
+}
+
 /* ---- native text hooks: which text a job shows (docs/native-hooks.md, core/hook_select.h) ----
  * With hooks installed in this game (game_ocr/hooks.c), a job begins with a snapshot of the streams'
  * texts. vjo_hook_select_before may name a stream that answers the job without recognition: the job
@@ -2106,9 +2120,11 @@ retry_smaller:
     uint32_t frame_need = 0;
     if (fits && (r->speed & VJO_GAME_OCR_S_PAUSE)) {
         pz.asked = 1;
-        frame_need = PAGE_ROUND((uint32_t)r->width * r->height);
-        if ((int64_t)out->free_user - (int64_t)out->reserve_bytes >=
-            (int64_t)out->need_workspace + out->need_weights + frame_need) {
+        frame_need = pause_capped ? 0 : PAGE_ROUND((uint32_t)r->width * r->height);
+        if (pause_capped) {
+            pz.rc = VJO_ERR_TIMEOUT; /* an earlier copy reached the cap: VJO_GPAUSE_CAPPED */
+        } else if ((int64_t)out->free_user - (int64_t)out->reserve_bytes >=
+                   (int64_t)out->need_workspace + out->need_weights + frame_need) {
             out->need_workspace += frame_need;
         } else {
             frame_need = 0;
@@ -2117,12 +2133,19 @@ retry_smaller:
     }
     if (fits) {
         const size_t block = use_bytes + extra_job_bytes(use, lm, casc);
-        for (use_helpers = want_helpers; use_helpers; use_helpers--) {
-            size_t extra = helpers_need(use->name, block, use_helpers);
-            if (extra && (int64_t)out->free_user + out->release_bytes - (int64_t)out->reserve_bytes >=
-                             (int64_t)out->need_workspace + out->need_weights + (int64_t)extra)
-                break;
+        /* free memory beside everything the job takes so far (its frame block too), and what releasing another
+         * model's blocks would add */
+        const int64_t room = (int64_t)out->free_user - (int64_t)out->reserve_bytes - (int64_t)out->need_workspace -
+                             (int64_t)out->need_weights;
+        int64_t release = (int64_t)out->release_bytes;
+        /* API 52 (the audit's F1): the frame block never makes the job give back another model's blocks. They count
+         * for the helpers only where, without the frame block, its helpers would need them too: the frame block may
+         * cost a helper instead (the release below then finds the job fits beside them) */
+        if (frame_need) {
+            const unsigned h = helpers_fit(use->name, block, want_helpers, room + (int64_t)frame_need + release);
+            if (!h || room + (int64_t)frame_need >= (int64_t)helpers_need(use->name, block, h)) release = 0;
         }
+        use_helpers = helpers_fit(use->name, block, want_helpers, room + release);
         if (use_helpers) {
             helper_bytes = vjo_vocr_helpers_bytes(use->name, use_helpers);
             helpers_need_bytes = helpers_need(use->name, block, use_helpers);
@@ -2344,8 +2367,8 @@ retry_smaller:
                  stats.settle_us + tried_settle_us ? stats.settle_us + tried_settle_us : 1u, 0);
     if (pz.asked) /* API 52: kind 1 frozen; sum the reason | the block's memory << 8; us the game's waits (1: none) */
         step_add(VJO_GSTEP_PAUSE, pz.frozen ? 1u : 0u, pz.rows, pz.frozen ? 0 : pz.rc, pz.bytes,
-                 (pz.frozen ? VJO_GPAUSE_FROZEN : pz.tried ? VJO_GPAUSE_REFUSED : pz.held ? VJO_GPAUSE_UNUSED
-                                                                              : VJO_GPAUSE_NO_ROOM) | pz.mem << 8,
+                 (pz.frozen ? VJO_GPAUSE_FROZEN : pz.tried ? VJO_GPAUSE_REFUSED : pause_capped ? VJO_GPAUSE_CAPPED
+                                                       : pz.held ? VJO_GPAUSE_UNUSED : VJO_GPAUSE_NO_ROOM) | pz.mem << 8,
                  paused_us + pz.us ? paused_us + pz.us : 1u, 0);
     for (unsigned i = 0; i < stats.blank && i < VJO_VOCR_BLANK_LOGGED; i++) {
         const VjoVocrBlankStat *b = &stats.blank_line[i];

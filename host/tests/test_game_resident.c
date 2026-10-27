@@ -26,6 +26,7 @@ static unsigned char frame_mem_block[64*1024] __attribute__((aligned(64)));
 static int frame_live, frame_alloc_failure, frame_refuse, frame_busy_armed, frame_gone_first;
 static unsigned frame_block, frame_allocs, frame_calls, strip_calls, spin; /* spin: a spinner moves at each frame */
 static int frame_cancel; /* the Shell cancels while the copy waits for its frame */
+static unsigned frame_refuse_us; /* a refused copy's time in the game's display call (the cap's: past 100 ms) */
 static unsigned capture_block, capture_allocs;
 static int64_t available;
 static unsigned live_bytes, peak_bytes, job_block, weights_block;
@@ -171,7 +172,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
         info->armed = 1;
         if (frame_cancel) { cancel_now = 1; info->armed = 0; return VJO_ERR_CANCELLED; }
         if (frame_busy_armed) return VJO_ERR_BUSY; /* its copy outlived the call */
-        if (frame_refuse) { info->armed = frame_refuse != VJO_ERR_UNSUPPORTED; return frame_refuse; }
+        if (frame_refuse) { info->armed = frame_refuse != VJO_ERR_UNSUPPORTED; info->copy_us = frame_refuse_us; return frame_refuse; }
         clock_value += 16667u;
         spinner_moves();
         for (unsigned r = 0; r < H; r++)
@@ -305,6 +306,7 @@ static void reset(void)
     memset(&pz, 0, sizeof(pz));
     frame_live = frame_alloc_failure = frame_refuse = frame_busy_armed = frame_gone_first = frame_cancel = 0;
     frame_block = frame_allocs = frame_calls = strip_calls = spin = 0;
+    frame_refuse_us = 0; pause_capped = 0;
 }
 static int run_with(const char *name, const char *fallback, VjoGameOcrResult *out)
 {
@@ -912,6 +914,74 @@ static void weights_refused_after_the_check_the_smaller_models_try_copies_its_ow
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_FRAME) == 0);
 }
 
+/* The audit's F2: a copy that reached the cap (VJO_ERR_TIMEOUT after VJO_GAME_OCR_PAUSE_MAX_US in the game's display
+ * call) made the game wait for nothing, and would at every reading: the game is not paused again until it next
+ * starts. Later jobs ask for no copy and take no block, and their step says why (CAPPED). A frame that never came
+ * (TIMEOUT with no wait) changes nothing. */
+static void a_copy_that_reaches_the_cap_turns_the_pause_off_for_the_game(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    const VjoGameOcrStep *ps;
+    reset();
+    frame_refuse = VJO_ERR_TIMEOUT; /* no frame came: no wait */
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && frame_calls == 1 && !pause_capped);
+    frame_refuse_us = VJO_GAME_OCR_PAUSE_MAX_US + 900u; /* the cap: the game waited 100.9 ms */
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫") && frame_calls == 2);
+    TEST_CHECK(pause_capped && !frame_live && strip_calls >= 1);
+    ps = pause_step(&out);
+    TEST_CHECK(ps && !ps->kind && ps->rc == VJO_ERR_TIMEOUT && (ps->sum & 0xFFu) == VJO_GPAUSE_REFUSED &&
+               ps->us == VJO_GAME_OCR_PAUSE_MAX_US + 900u);
+    frame_refuse = 0; frame_refuse_us = 0;
+    const unsigned allocs = frame_allocs;
+    r = paused(1);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫"));
+    TEST_CHECK(frame_calls == 2 && frame_allocs == allocs && out.need_workspace == job_of("FL10_w8.vocr"));
+    ps = pause_step(&out);
+    TEST_CHECK_(ps && !ps->kind && ps->rc == VJO_ERR_TIMEOUT && ps->sum == VJO_GPAUSE_CAPPED && !ps->bytes && ps->us == 1,
+                "capped: kind %u rc 0x%08X sum %u bytes %u us %u", ps ? ps->kind : 9u, ps ? (unsigned)ps->rc : 0u,
+                ps ? ps->sum : 9u, ps ? ps->bytes : 9u, ps ? ps->us : 9u);
+}
+/* The audit's F1: the frame block takes free memory only. Another model's weights resident (FL10), a job of H15 with
+ * two helpers, and free memory where H15's job has room for its frame block or its helpers, not both: without the
+ * pause both helpers fit, and FL10 stays until H15 is read; with it, the same, with fewer helpers. (Before, the
+ * helpers counted FL10's block as free, and the frame block made the job give it back before its own blocks.) */
+static void the_frame_block_never_makes_the_job_give_back_another_models_weights(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    const uint32_t h15 = job_of("H15_w8.vocr") + weights_of("H15_w8.vocr"), f = PAGE_ROUND(W * H);
+    const uint32_t e2 = (uint32_t)helpers_need("H15_w8.vocr", vjo_vocr_job_bytes("H15_w8.vocr", W, H), 2);
+    TEST_ASSERT(e2 > 0 && f > 0);
+    for (int pause = 0; pause < 2; pause++) {
+        reset();
+        available = GAME_RESERVE + h15 - 1; /* FL10 runs: H15 does not fit */
+        TEST_CHECK(!run_with("H15_w8.vocr", "FL10_w8.vocr", &out) && out.fallback);
+        TEST_ASSERT(resident.model == vjo_vocr_model("FL10_w8.vocr"));
+        available = (int64_t)live_bytes + GAME_RESERVE + h15 + (f > e2 ? f : e2); /* free beside FL10's block */
+        r = paused(pause);
+        snprintf(r.model, sizeof(r.model), "H15_w8.vocr");
+        snprintf(r.fallback, sizeof(r.fallback), "FL10_w8.vocr");
+        r.speed |= 2u; /* two helpers */
+        served = "H15_w8.vocr";
+        current = r;
+        TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !out.fallback && !strcmp(out.text, "猫"));
+        const int freed = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_WEIGHTS),
+                  workspace = step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_WORKSPACE);
+        TEST_CHECK_(workspace >= 0 && freed > workspace, "pause %d: FL10 freed at step %d, the workspace taken at %d",
+                    pause, freed, workspace);
+        TEST_CHECK(resident.model == vjo_vocr_model("H15_w8.vocr") && !frame_live);
+        if (pause)
+            TEST_CHECK_(frame_calls == 1 && out.need_workspace >= job_of("H15_w8.vocr") + f &&
+                        out.need_workspace < job_of("H15_w8.vocr") + f + e2, "paused: need %u (job %u, frame %u, helpers %u)",
+                        out.need_workspace, job_of("H15_w8.vocr"), f, e2);
+        else
+            TEST_CHECK(!frame_calls && out.need_workspace == job_of("H15_w8.vocr") + e2);
+    }
+}
+
 TEST_LIST = {
     {"API 52: the pause reads one frame beside a spinner that tears every strip-by-strip read", the_pause_reads_one_frame_beside_a_spinner},
     {"API 52: a refused or cut pause gives its block back and reads as before", a_refused_pause_reads_as_before},
@@ -919,6 +989,9 @@ TEST_LIST = {
     {"API 52: a cancelled copy, and one that outlived its call", a_cancelled_or_stuck_copy},
     {"API 52, #324: weights refused after the check: the smaller model's try copies its own frame",
      weights_refused_after_the_check_the_smaller_models_try_copies_its_own_frame},
+    {"API 52: a copy that reaches the cap turns the pause off for the game", a_copy_that_reaches_the_cap_turns_the_pause_off_for_the_game},
+    {"API 52: the frame block never makes the job give back another model's weights",
+     the_frame_block_never_makes_the_job_give_back_another_models_weights},
     {"a job without lines warms the weights; the forced fallback keeps the model", a_job_without_lines_warms_the_weights},
     {"another model's weights go when the job needs their memory", another_models_weights_go_when_the_job_needs_them},
     {"the fallback runs only when the configured model does not fit", fallback_runs_only_when_the_model_does_not_fit},

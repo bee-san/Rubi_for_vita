@@ -2572,6 +2572,33 @@ static void test_a_refused_freeze_reads_as_before(void)
     TEST_CHECK(scr.n_log == n && !memcmp(first, scr.log, n * sizeof(first[0])));
     TEST_CHECK(a.settle_passes == b.settle_passes && a.tears == b.tears && a.tries == b.tries);
 }
+/* The audit's F3c: the same for a region inside one strip, which a job reads twice strip by strip (the second read
+ * sees a screen that changed while it was read): with the frozen callback there but answering NULL it reads it twice
+ * too, as main does (the re-read is skipped only once a freeze took). */
+static void test_a_refused_freeze_reads_a_one_strip_region_as_before(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000};
+    VjoVocrStats a, b;
+    Read first[LOG_MAX];
+    unsigned n;
+    const unsigned h = 60;
+    TEST_ASSERT(vjo_vocr_strip_rows(W, h) >= h); /* one strip */
+    reset();
+    im.height = h;
+    scr.blink_every = 8;
+    const int ra = run(&pol, &a);
+    memcpy(first, scr.log, sizeof(first));
+    n = scr.n_log;
+    reset();
+    im.height = h;
+    scr.blink_every = 8;
+    im.frozen = frozen_region; /* scr.freeze 0: it answers NULL */
+    const int rb = run(&pol, &b);
+    im.height = H;
+    TEST_CHECK_(!b.frozen && n >= 2 && scr.n_log == n && !memcmp(first, scr.log, n * sizeof(first[0])),
+                "%u reads without the callback, %u with it", n, scr.n_log);
+    TEST_CHECK(ra == rb && a.settle_passes == b.settle_passes && a.tears == b.tears && a.tries == b.tries);
+}
 /* A line taller than a strip is read from the frozen region, the region's own rows at its x and y (no line buffer:
  * this source has none, so strip by strip the line is left out). */
 static unsigned tall_seen, tall_in_place;
@@ -2605,6 +2632,7 @@ TEST_LIST = {
     {"API 52: a frozen region is read once, without a wait or a tear", test_a_frozen_region_is_read_once_without_waiting},
     {"API 52: a frozen first pass forgets the wait before it", test_a_frozen_first_pass_forgets_the_wait_before_it},
     {"API 52: a refused freeze reads exactly as before", test_a_refused_freeze_reads_as_before},
+    {"API 52: a refused freeze reads a one-strip region exactly as before", test_a_refused_freeze_reads_a_one_strip_region_as_before},
     {"API 52: a tall line is read from the frozen region in place", test_a_tall_line_is_read_from_the_frozen_region},
     {"the_capture_block_stays_within_64_KiB_at_every_size", test_capture_block_sizes},
     {"a_zero_policy_reads_exactly_as_api19", test_zero_policy_is_api19},
