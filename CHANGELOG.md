@@ -15,13 +15,20 @@ been reported.
 
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
   pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
-  tests' fake memory, fixed in #341), unseen until a release check ran them. It runs when `VJO_VOCR_MODEL_DIR` or
+  tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a
+  release check ran them. It runs when `VJO_VOCR_MODEL_DIR` or
   its cache holds every pinned model the tests read, each checked by size and SHA-256
   (`tools/prepare_ocr.py --backend vocr-tests`, `--check` to only check); `--models on` fetches them first.
 - Packaging (no change to the app or the plugins): a release zip packaged again from the same artifacts and models is
   the same bytes. 0.9.8's was not: `package-manifest.json` took the time of the run and the names dictionary's staged
   files the filesystem's order, so the published zip's SHA-256 matched neither the Release run's nor another machine's
   (same files; the VPKs were the same bytes). Both are fixed (`tools/package_release.py`).
+- Building and testing, #343's audit: the set also holds v0.3.0's three VOCR5 recognizers in `v0.3.0/`, so the lane
+  runs the off-path check (each size's blob read with `ocr_head_gate = off` gives v0.3.0's logits bit for bit), which
+  it skipped; the lane checks the models again in its container (a symlink to a file outside the directory fails
+  there by name, not as test failures) and gives its build the gate's checked weights. The game worker's tests cover
+  the tall-line block (`VjoGameVocrLine`) where only the models reached it, and without them (CI): auto's columns
+  try gives it back before the rows' try, a job of columns at its end, and a refused one leaves the columns out.
 
 ## [0.9.8] - 2026-10-27
 

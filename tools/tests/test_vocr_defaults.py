@@ -535,13 +535,14 @@ class TestModels(unittest.TestCase):
     def test_the_set_is_every_pin_the_plugin_reads(self):
         """Every recognizer the plugin pins (shipped or not: the tests run FL10, H15, F20, VOCR3's and VOCR4-W20
         as well as the sizes' and VOCR5-V), its four LMs and the gate's weights, each at the plugin's own size and
-        SHA-256; no attribution and nothing else."""
+        SHA-256, and v0.3.0's three VOCR5 recognizers under v0.3.0/; no attribution and nothing else."""
         models = {name: assets[name][1:] for name, assets, _ in prepare_ocr.test_models()}
         self.assertEqual(len(models), len(prepare_ocr.test_models()))  # each file once
         want = {name: (size, sha) for name, (size, sha, _) in c_table().items()}
         want.update({name: (size, sha) for name, (size, sha, _) in c_lm_table().items()})
         _, size, sha = prepare_ocr.VOCR_GATE_ASSETS[prepare_ocr.VOCR_GATE_MODEL]
         want[prepare_ocr.VOCR_GATE_MODEL] = (size, sha)
+        want.update({f"v0.3.0/{name}": (size, sha) for name, (_, size, sha) in prepare_ocr.VOCR5_V030_ASSETS.items()})
         self.assertEqual(models, want)
         sizes = macros()
         for macro in ("VJO_VOCR_TIER1_NAME", "VJO_VOCR_TIER2_NAME", "VJO_VOCR_TIER3_NAME", "VJO_VOCR_CASCADE_NAME",
@@ -549,6 +550,24 @@ class TestModels(unittest.TestCase):
             self.assertIn(sizes[macro], models, macro)
         for name in ("FL10_w8.vocr", "H15_w8.vocr"):  # host/tests/test_game_vocr.c's and test_capture_parity.c's
             self.assertIn(name, models)
+
+    def test_the_off_path_blobs_are_what_test_vocr_reads(self):
+        """host/tests/test_vocr.c's off-path check reads v0.3.0's blobs as VJO_VOCR_MODEL_DIR/v0.3.0/<name> and skips
+        without them (the models lane would pass without running it): the set holds those names there, from
+        release v0.3.0, each its sizes' blob without the head gate (a size its gated blob's, less the gate)."""
+        source = (ROOT / "host" / "tests" / "test_vocr.c").read_text(encoding="utf-8")
+        body = source[source.index("static void test_off_path_reads_v030(void)"):]
+        names = re.search(r"v030\[3\] = \{([^}]*)\}", body).group(1)
+        self.assertIn('"%s/v0.3.0/%s"', body)
+        read = re.findall(r'"([^"]+)"', names)
+        self.assertEqual(sorted(read), sorted(prepare_ocr.VOCR5_V030_ASSETS))
+        tags = {name: tag for name, _, tag in prepare_ocr.test_models()}
+        for name in read:
+            self.assertEqual(tags[f"v0.3.0/{name}"], "v0.3.0")
+        for old, new in (("VOCR5_S_w8.vocr", "VOCR5_S_w8g.vocr"), ("VOCR5_N_w8.vocr", "VOCR5_N_w8g2.vocr"),
+                         ("VOCR5_L_w8.vocr", "VOCR5_L_w8g2.vocr")):
+            self.assertLess(prepare_ocr.VOCR5_V030_ASSETS[old][1], prepare_ocr.VOCR5_ASSETS[new][1])
+            self.assertTrue(prepare_ocr.VOCR5_V030_ASSETS[old][0].endswith("/releases/download/v0.3.0/" + old))
 
     def _fixture(self, tmp, names=("A_w8.vocr", "B_w8.vocr", "c.vlm", "d.vtd")):
         """Pins of small fixture files in tmp/src, as test_models() gives them."""
@@ -613,6 +632,54 @@ class TestModels(unittest.TestCase):
                 self.assertEqual((code, text.splitlines()[-1]), (0, f"4 of 4 pinned test models verified in {out}"))
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(run("--backend", "vocr-lm", "--check", "--output", str(out))[0], 2)  # its own set only
+
+    def test_a_file_in_a_subdirectory_is_its_releases_asset_of_its_own_name(self):
+        """v0.3.0/ (the off-path check's): a --from directory holds the release's file at its own name, the public
+        download is the pinned URL; either way the file lands at its path under --output, and --check finds it
+        there (and only there)."""
+        import hashlib  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+        from unittest import mock  # noqa: PLC0415
+        with tempfile.TemporaryDirectory() as tmp:
+            data = b"fixture v0.3.0 blob"
+            pin = ("https://fixture.invalid/v0.3.0/E_w8.vocr", len(data), hashlib.sha256(data).hexdigest())
+            models = [("v0.3.0/E_w8.vocr", {"v0.3.0/E_w8.vocr": pin}, "v0.3.0")]
+            src = Path(tmp) / "src"
+            src.mkdir()
+            (src / "E_w8.vocr").write_bytes(data)  # as a release's download directory holds it
+            (src / "v0.3.0").mkdir()
+            (src / "v0.3.0" / "E_w8.vocr").write_bytes(b"not it")
+            served = []
+
+            class Response:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *exc):
+                    return False
+
+                def read(self, n):
+                    return data[:n]
+
+            def urlopen(request, timeout):
+                served.append(request.full_url)
+                return Response()
+
+            with mock.patch.object(prepare_ocr, "test_models", return_value=models):
+                out = Path(tmp) / "from"
+                with mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
+                    paths = prepare_ocr.fetch_test_models(out, src)
+                self.assertEqual(paths, [out / "v0.3.0" / "E_w8.vocr"])
+                self.assertEqual((out / "v0.3.0" / "E_w8.vocr").read_bytes(), data)
+                self.assertEqual(prepare_ocr.check_models(out, models), [])
+                out = Path(tmp) / "public"
+                with mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=urlopen):
+                    self.assertEqual(prepare_ocr.fetch_test_models(out), [out / "v0.3.0" / "E_w8.vocr"])
+                self.assertEqual(served, [pin[0]])
+                self.assertEqual(prepare_ocr.check_models(out, models), [])
+                (out / "E_w8.vocr").write_bytes((out / "v0.3.0" / "E_w8.vocr").read_bytes())
+                (out / "v0.3.0" / "E_w8.vocr").unlink()  # beside, not in v0.3.0/: missing
+                self.assertEqual(prepare_ocr.check_models(out, models), ["v0.3.0/E_w8.vocr: missing (v0.3.0)"])
 
 
 if __name__ == "__main__":

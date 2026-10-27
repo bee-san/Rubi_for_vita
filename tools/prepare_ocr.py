@@ -13,8 +13,10 @@ VOCR5_N_w8g2.vocr, VOCR5_L_w8g2.vocr) and their release's attribution, v0.3.6-he
 kept as MODEL-ATTRIBUTION.md, and the text-presence gate's weights (textgate_p8_c8_w8.vtd, v0.3.2-textgate.1)
 with their release's ATTRIBUTION.md kept as GATE-ATTRIBUTION.md, which a package ships. --backend vocr-tests
 fetches what the host tests read from VJO_VOCR_MODEL_DIR (CMakeLists.txt: their real-model checks): every pinned
-recognizer, the four LMs and the gate's weights; with --check it downloads nothing, and says which of them the
---output directory lacks or holds other bytes of (exit status 1), as tools/fast_gate.sh's models lane asks first.
+recognizer, the four LMs, v0.3.0's three VOCR5 recognizers in a v0.3.0/ subdirectory (the off-path check's) and the
+gate's weights (which tools/fast_gate.sh's models lane hands to cmake/VocrGate.cmake); with --check it downloads
+nothing, and says which of them the --output directory lacks or holds other bytes of (exit status 1), as
+tools/fast_gate.sh's models lane asks first.
 Each file comes from the release's public download; only when that fails (a draft release) is an authenticated
 GitHub CLI (`gh auth login`) tried. --from takes a copy downloaded by other means.
 Every file is checked against its pinned size and SHA-256.
@@ -119,6 +121,23 @@ VOCR5_ASSETS = {
         '41c3543ff8dddd45dc953a6a5f5d579ef9ca779f0e43196406be59c1d985c5b5'),
 }
 VOCR_DEFAULT_MODEL = 'VOCR5_N_w8g2.vocr'  # the default model size's (Normal's), tools/model_tiers.json
+# v0.3.0's VOCR5 recognizers, the three sizes' blobs before their head gate and two-level head: no longer the
+# plugin's (API 42 pins the blobs above), but host/tests/test_vocr.c's off-path check reads them from
+# VJO_VOCR_MODEL_DIR/v0.3.0/ (each size's pinned blob read with ocr_head_gate = off gives their every logit). The
+# pins v0.3.0's (the model sizes' from #167 until #307); the host tests' set only (--backend vocr-tests), never
+# shipped.
+VOCR5_V030_TAG = 'v0.3.0'
+VOCR5_V030_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR5_V030_TAG}/'
+VOCR5_V030_DIR = 'v0.3.0'
+VOCR5_V030_ASSETS = {
+    'VOCR5_S_w8.vocr': (VOCR5_V030_BASE + 'VOCR5_S_w8.vocr', 819792,
+        'f175bfcb8cec65d69e85dd5f2cf707c9a711ada7203c0d1099cd2d0142978b8d'),
+    'VOCR5_N_w8.vocr': (VOCR5_V030_BASE + 'VOCR5_N_w8.vocr', 1185632,
+        '20be179def8033171435ba62388657b3d3c932b365093737948c636e025e3bdc'),
+    'VOCR5_L_w8.vocr': (VOCR5_V030_BASE + 'VOCR5_L_w8.vocr', 2473696,
+        '50413b37dbd85b2acb0908967bdeaf7ca67803850e0627a7b7cc3d274edc0ba3'),
+}
+VOCR5_V030_TEST_ASSETS = {f'{VOCR5_V030_DIR}/{name}': pin for name, pin in VOCR5_V030_ASSETS.items()}
 # VOCR5-V (vita-vn-ocr #99): vertical text in VOCR5-S's shape, reading a column turned 90 degrees
 # anticlockwise. No model size runs it: a job of columns does (config.ini ocr_vertical on or auto). Pre-release
 # v0.3.2-vertical.1, whose SHA256SUMS lists this hash.
@@ -298,17 +317,21 @@ def fetch_lms(directory, source=None):
 def test_models():
     """(name, asset table, release tag) of every file the host tests read from VJO_VOCR_MODEL_DIR: each pinned
     recognizer, shipped or not (every release table here, which tools/tests/test_vocr_defaults.py holds equal to
-    the plugin's, core/vocr_ocr.c), the four LMs and the text-presence gate's weights. No attribution: no test
-    reads one."""
+    the plugin's, core/vocr_ocr.c), the four LMs, v0.3.0's three VOCR5 recognizers in its v0.3.0/ subdirectory
+    (VOCR5_V030_ASSETS: host/tests/test_vocr.c's off-path check), and the text-presence gate's weights, which the
+    host builds take from cmake/VocrGate.cmake (tools/fast_gate.sh's models lane gives it this copy:
+    VJO_VOCR_GATE_BLOB). A name is the file's path under the directory. No attribution: no test reads one."""
     tables = ((VOCR5_ASSETS, VOCR5_TAG), (VOCR5V_ASSETS, VOCR5V_TAG), (VOCR4_ASSETS, VOCR4_TAG),
               (VOCR3_ASSETS, VOCR3_TAG), (VOCR_ASSETS, VOCR_TAG), (VOCR_LM_ASSETS, VOCR_LM_TAG),
-              (VOCR_GATE_ASSETS, VOCR_GATE_TAG))
+              (VOCR5_V030_TEST_ASSETS, VOCR5_V030_TAG), (VOCR_GATE_ASSETS, VOCR_GATE_TAG))
     return [(name, assets, tag) for assets, tag in tables for name in assets]
 
 
 def fetch_test_models(directory, source=None):
-    """test_models(), each fetched as the other backends fetch theirs (a valid copy in `directory` is kept)."""
-    return [fetch_release_asset(directory, name, assets, tag, source) for name, assets, tag in test_models()]
+    """test_models(), each fetched as the other backends fetch theirs (a valid copy in `directory` is kept); a file
+    in a subdirectory (v0.3.0/) is its release's asset of the file's own name."""
+    return [fetch_release_asset(directory, name, assets, tag, source, Path(name).name)
+            for name, assets, tag in test_models()]
 
 
 def check_models(directory, models):
@@ -393,7 +416,8 @@ def main():
     ap.add_argument('--backend', choices=('ncnn', 'vocr', 'vocr-tiers', 'vocr-lm', 'vocr-tests'), default='ncnn',
                     help="vocr-tiers: the three model sizes' recognizers (Small, Normal, Large); "
                          "vocr-lm: the beam + LM decoder's four LMs and their ATTRIBUTION.md; "
-                         "vocr-tests: every pinned recognizer, the LMs and the gate's weights (VJO_VOCR_MODEL_DIR)")
+                         "vocr-tests: every pinned recognizer, the LMs, v0.3.0's three (v0.3.0/) and the gate's "
+                         "weights (VJO_VOCR_MODEL_DIR)")
     ap.add_argument('--ncnn-source', type=Path)
     ap.add_argument('--model', choices=sorted({**VOCR5_ASSETS, **VOCR3_ASSETS, **VOCR4_ASSETS, **VOCR_ASSETS,
                                                **VOCR5V_ASSETS}),
