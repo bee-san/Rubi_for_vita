@@ -127,6 +127,11 @@ static VjoPlatform plat;
 static int dict_close_pending; /* control thread: close after an in-flight lookup */
 static char title_id[12];   /* set while a game is active ("" otherwise) */
 static char job_title[12];  /* the job's game (title_id when the job started), for its log lines */
+/* #333: the active game's own ocr_line_fix (ocr_line_fix.ini, vjo_game_enabled), -1: config.ini's. apply_config
+ * puts it in cfg, so the user's jobs, same_pipeline and the game's start line all have the value its jobs use.
+ * activate_game sets it at each start or resume, before its apply_config; between two games it may still hold the
+ * last one's, which no job uses (no game is active: title_id is ""). */
+static int title_line_fix = -1;
 /* Scene IDs survive kernel resets. A foreground boundary must also reject
  * results captured for the preceding game, even before a new scene arrives. */
 static uint32_t game_generation;
@@ -1921,6 +1926,8 @@ static void apply_config(void)
 {
     VjoConfig previous = cfg;
     vjo_config_load(&cfg, &scratch);
+    if (title_line_fix >= 0)
+        cfg.ocr_line_fix = title_line_fix; /* #333: the game's own, in place of config.ini's */
     if (vjo_selftest_armed())
         cfg.ocr_mode = VJO_OCR_AUTO; /* the first settled screen is recognized unasked */
     if (!same_pipeline(&previous, &cfg)) {
@@ -2924,7 +2931,7 @@ static void activate_game(SceUID pid, const VjoGameId *id)
         hook_pid = pid;
         hook_logged[0] = 0;
     }
-    if (!vjo_game_enabled(tid, id->psp, &scratch)) {
+    if (!vjo_game_enabled(tid, id->psp, &title_line_fix, &scratch)) {
         title_id[0] = '\0';
         vjoSetGameActive(pid, VJO_GAME_NONE);
         vjo_log("%s: Rubi disabled; game input passes through", tid);
@@ -2945,11 +2952,13 @@ static void activate_game(SceUID pid, const VjoGameId *id)
     backoff_note(&refresh_backoff, 0);
     vjoSetGameActive(pid, mode);
     {
-        /* once a game start: in the data segment, for the normal Shell's code room (#358) */
+        /* once a game start: in the data segment, for the normal Shell's code room (#358). #333: the line finder this
+         * game's jobs use (its own from ocr_line_fix.ini, else config.ini's); the dictionary's name went: it has been
+         * VJO_DICT_NAME in every build since the online dictionaries' removal (2026-10-15) */
         static const char started[] VJO_DATA_TABLE(worker_game_started) =
-            "game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s";
+            "game %s started: trigger %s, subtitles %s, ocr_mode %s, ocr_line_fix %s";
         vjo_log(started, title_id, vjo_trigger_name(cfg.toggle_button), vjo_trigger_name(cfg.subtitle_button),
-                cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press");
+                cfg.ocr_mode == VJO_OCR_AUTO ? "auto" : "on_press", vjo_line_fix_names[cfg.ocr_line_fix]);
     }
     vjo_ledger_shell_log("start");
     vjo_selftest_game(tid, 1, mode, &game_region);

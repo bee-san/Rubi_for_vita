@@ -1058,12 +1058,14 @@ class DiagnosticsNeverDecide(unittest.TestCase):
 
 class GameStartLines(unittest.TestCase):
     """log.txt's "game ... started" lines (shell/worker.c on_game_start): before the online dictionaries'
-    removal they named the API key's state, "(key set|MISSING)"; since, they do not (audit N6, M24)."""
+    removal they named the API key's state, "(key set|MISSING)"; since, they do not (audit N6, M24). #333's name no
+    dictionary (always VJO_DICT_NAME) and end with the line finder the game's jobs use."""
 
     OLD = ("game PCSG00415 started: dictionary Local dictionaries (key MISSING), trigger l+r, subtitles select+r, "
            "ocr_mode auto\n")
     NEW = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
     RELAY = "game NPXS10028 started: dictionary Hachidori relay, trigger select, subtitles select+l, ocr_mode on_press\n"
+    LINE_FIX = "game ULJM05674 started: trigger l+r, subtitles select+r, ocr_mode auto, ocr_line_fix all\n"
 
     def test_both_forms_are_read(self):
         for text in (self.OLD, self.NEW):
@@ -1075,18 +1077,34 @@ class GameStartLines(unittest.TestCase):
                                        "NPXS10028": {"starts": 1, "ocr_mode": "on_press",
                                                      "dictionary": "Hachidori relay"}})
 
+    def test_the_line_finder_of_each_start(self):
+        # #333: a game's own line finder (the Rubi app's game page) at one start, config.ini's at the next (a resume
+        # after its row went back to Default), and an older build's line beside them
+        on = self.LINE_FIX.replace("ocr_line_fix all", "ocr_line_fix on")
+        vita = "game PCSG00940 started: trigger select, subtitles select+l, ocr_mode on_press, ocr_line_fix on\n"
+        lg = a.summarise_log(self.LINE_FIX + vita + on + self.NEW)
+        self.assertEqual(lg["games"], {"ULJM05674": {"starts": 2, "ocr_mode": "auto", "ocr_line_fix": ["all", "on"]},
+                                       "PCSG00940": {"starts": 1, "ocr_mode": "on_press", "ocr_line_fix": ["on"]},
+                                       "PCSG00415": {"starts": 1, "ocr_mode": "auto",
+                                                     "dictionary": "Local dictionaries"}})
+        self.assertEqual([a._game_settings(g) for g in lg["games"].values()],
+                         ["ocr_mode auto, ocr_line_fix all -> on", "ocr_mode on_press, ocr_line_fix on",
+                          "ocr_mode auto, Local dictionaries"])
+        # the presses' windows still read the line's ocr_mode (not "auto," with the comma)
+        self.assertEqual(a.LOG["game"].match(self.LINE_FIX).group(6), "auto")
+
     def test_the_shell_writes_the_new_form(self):
-        # the format string the analyser reads, as shell/worker.c has it: the dictionary's name is
-        # core/config.h's VJO_DICT_NAME, the only dictionary since the Hachidori relay's removal
+        # the format string the analyser reads, as shell/worker.c has it (#333: in the data segment, and the
+        # value the game's jobs use, config.ini's or the game's own, after ocr_mode)
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
-        # (in the data segment since #358: a VJO_DATA_TABLE string, logged as vjo_log(started, ...))
-        self.assertIn('"game %s started: dictionary " VJO_DICT_NAME ", trigger %s, subtitles %s, ocr_mode %s";', worker)
-        self.assertIn("vjo_log(started, title_id,", worker)
-        self.assertIn('#define VJO_DICT_NAME "Local dictionaries"\n', (ROOT / "core/config.h").read_text(encoding="utf-8"))
+        self.assertIn('static const char started[] VJO_DATA_TABLE(worker_game_started) =\n'
+                      '            "game %s started: trigger %s, subtitles %s, ocr_mode %s, ocr_line_fix %s";', worker)
+        self.assertIn("vjo_log(started, title_id, ", worker)
+        self.assertIn("vjo_line_fix_names[cfg.ocr_line_fix]);", worker)
         self.assertNotIn("(key %s)", worker)
-        line = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
+        line = "game PCSG00415 started: trigger l+r, subtitles select+r, ocr_mode auto, ocr_line_fix on\n"
         self.assertEqual(a.summarise_log(line)["games"],
-                         {"PCSG00415": {"starts": 1, "ocr_mode": "auto", "dictionary": "Local dictionaries"}})
+                         {"PCSG00415": {"starts": 1, "ocr_mode": "auto", "ocr_line_fix": ["on"]}})
 
 class OverlayCloseLines(unittest.TestCase):
     """log.txt's "overlay closed" lines (shell/overlay.cpp close_page), before and after row navigation (#81)."""

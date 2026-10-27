@@ -8,13 +8,20 @@
 #define VJO_SETTINGS_TITLE_ID "VJOSET001"
 typedef struct {
     char title_id[VJO_TITLE_ID_SIZE];
-    int enabled;
+    int enabled; /* games.ini: 1 ON, 0 OFF; ocr_line_fix.ini (#333): the value's index in vjo_line_fix_names */
 } VjoGameRule;
 typedef struct {
     int default_enabled;
     int count;
     VjoGameRule rules[VJO_GAMES_MAX];
 } VjoGames;
+/* #333: a game's own value of config.ini's ocr_line_fix lives in ux0:data/VitaJPOverlay/ocr_line_fix.ini
+ * (vita/games_storage.h VJO_LINE_FIX_PATH), in games.ini's format and through its reader: one "TITLEID = value"
+ * line per game, a value config.ini's ocr_line_fix takes (lowercase), and no default line (config.ini's applies
+ * to every game without its own). games.ini itself keeps its two values: every earlier kernel, Shell and Rubi
+ * app reads games.ini strictly, so a line of another kind there would make it unreadable to them, every game OFF.
+ * The names, in config.ini's order (core/config.h ocr_line_fix: 0 off, 1 on, 2 junk, 3 all); NULL-terminated. */
+extern const char *const vjo_line_fix_names[];
 int vjo_game_id_valid(const char *id);
 /* Adrenaline is allowed: its PSP games share NPXS10028. */
 int vjo_game_is_candidate(const char *id);
@@ -38,9 +45,23 @@ int vjo_games_enabled(const VjoGames *games, const char *id);
  * the rule of NPXS10028, the shared PSP row, applies before the default. */
 int vjo_games_enabled_as(const VjoGames *games, const char *id, int psp);
 int vjo_games_set(VjoGames *games, const char *id, int enabled);
-/* Strict parsing: callers must not use partially parsed data on error. */
-int vjo_games_parse(VjoGames *games, const char *text, size_t len);
+/* Strict parsing: callers must not use partially parsed data on error. line_fix 0: games.ini's text; 1 (#333):
+ * ocr_line_fix.ini's, whose values are vjo_line_fix_names and which has no default line (an error). The kernel's
+ * build reads games.ini only. */
+int vjo_games_parse_kind(VjoGames *games, const char *text, size_t len, int line_fix);
+static inline int vjo_games_parse(VjoGames *games, const char *text, size_t len)
+{ return vjo_games_parse_kind(games, text, len, 0); }
 int vjo_games_format(const VjoGames *games, char *out, size_t cap);
+/* #333: id's own row's value, else (psp != 0) the shared PSP row's (NPXS10028), as vjo_games_enabled_as finds
+ * a rule; -1 when neither has one. Any ID: the caller's is the Shell's key (shell/game.c). */
+int vjo_games_row_as(const VjoGames *games, const char *id, int psp);
+#ifndef VJO_KERNEL /* the kernel reads games.ini only */
+static inline int vjo_line_fix_parse(VjoGames *games, const char *text, size_t len)
+{ return vjo_games_parse_kind(games, text, len, 1); }
+/* The file's text: a comment, then "TITLEID = value" for each row, in order. Its length, or -1 when cap is too
+ * small or a row is invalid. */
+int vjo_line_fix_format(const VjoGames *games, char *out, size_t cap);
+#endif
 
 /* ---- the Rubi app's only (core/games_app.c, linked into the app and the
  * host tests, never into a plugin: a plugin linked without --gc-sections, as
@@ -55,4 +76,8 @@ const char *vjo_game_reject_reason(const char *id);
  * ON. The rules keep their order. The number of rules removed, -1 for a
  * count out of range (games unchanged). */
 int vjo_games_disable_all(VjoGames *games);
+/* #333, ocr_line_fix.ini's table: id's own value set (0-3, vjo_line_fix_names' index), or its row removed
+ * (value -1: config.ini's, or the shared PSP row's, applies again). 0, or -1 for a bad ID or value or a full
+ * table (unchanged). */
+int vjo_line_fix_set(VjoGames *games, const char *id, int value);
 #endif

@@ -112,6 +112,18 @@
 #define OFF RGBA8(244, 160, 167, 255)
 static VjoInstalledGame library[VJO_GAMES_MAX];
 static VjoGames policy, saved;
+/* #333: ocr_line_fix.ini's table (each game's own line finder, core/games.h vjo_line_fix_parse), as last read or
+ * saved; line_fix_writable 0 while the file cannot be read (nothing is written over it then). */
+static VjoGames line_fix, line_fix_saved;
+static int line_fix_writable = 1;
+/* #333: a game's own page (its ON/OFF and its line finder), opened from the Games list by holding Enter, or a
+ * touch, on its row for GAME_HOLD_US: the library index of its game, -1 for the list. game_row: the selected
+ * setting. A press or touch let go sooner toggles the game as before, on its release. */
+#define GAME_HOLD_US 500000u
+#define GAME_SETTINGS 2 /* ON/OFF, the line finder */
+static int game_view = -1, game_row;
+static int held_game = -1, touched_game = -1; /* the game Enter / a touch went down on, -1 */
+static uint64_t held_since, touched_since;
 /* Two bounded copies of a Shell-readable config.ini, in the app process. */
 static unsigned char scratch_mem[64 * 1024];
 static VjoArena scratch;
@@ -399,6 +411,11 @@ static void footer(const char *message, int error, const char *controls)
 /* The console's enter and cancel buttons (read once at start) and the hints that name them. */
 static VjoButtons buttons;
 static char preference_hints[96], game_hints[96], games_empty_hints[96];
+/* #333: the selected game row's "Hold ×: settings" (at a fixed x, so a frame measures no text for it) and the game
+ * page's hints */
+#define LINE_FIX_TAG_X 360
+#define HOLD_HINT_X 600
+static char hold_hint[32], game_page_hints[96];
 
 static void read_buttons(void)
 {
@@ -409,6 +426,9 @@ static void read_buttons(void)
              buttons.enter_glyph, buttons.cancel_glyph);
     snprintf(games_empty_hints, sizeof(games_empty_hints), "Square: filter   Start: refresh   Select: page   %s: exit",
              buttons.cancel_glyph);
+    snprintf(hold_hint, sizeof(hold_hint), "Hold %s: settings", buttons.enter_glyph);
+    snprintf(game_page_hints, sizeof(game_page_hints), "Up/Down: setting   Left/Right or %s: choose   %s: back",
+             buttons.enter_glyph, buttons.cancel_glyph);
 }
 
 static const VjoAnkiUi anki_ui = {text, wrapped_text, focus_card, badge, footer_at, header,
@@ -550,11 +570,11 @@ static void save(void)
 
 /* Enter: the game is turned ON or OFF. No taiHEN configuration changes: the
  * kernel plugin loads the OCR worker into every game that is ON when it starts
- * (#138, Agent A), PSP bubbles and Adrenaline included. */
-static void toggle(void)
+ * (#138, Agent A), PSP bubbles and Adrenaline included. index: the game's
+ * library row (the list's selection, or the game page's game). */
+static void toggle_game(int index)
 {
-    if (!count) return;
-    VjoInstalledGame *g = &library[visible[selected]];
+    VjoInstalledGame *g = &library[index];
     int on = row_on(g);
     if (vjo_games_set(&policy, g->id, !on) < 0) {
         status_error = 1;
@@ -562,6 +582,11 @@ static void toggle(void)
         return;
     }
     save();
+}
+
+static void toggle(void)
+{
+    if (count) toggle_game(visible[selected]);
 }
 
 /* The rules with this choice ("= enabled" or "= disabled"), ", " between them
@@ -621,6 +646,108 @@ static void change_filter(void)
     filter = (filter + 1) % 3;
     selected = offset = 0;
     rebuild();
+}
+
+/* ---- #333: a game's own page: its ON/OFF and its line finder (config.ini ocr_line_fix for this game alone) ---- */
+
+/* The line finder's choices on the page, left to right: Default (no row: config.ini's, or a PSP game the shared
+ * PSP row's), then vjo_line_fix_names' four (a choice's index - 1 is its value). */
+static const char *const line_fix_labels[5] = {"Default", "Off", "On", "Junk", "All"};
+
+/* The game's own row in ocr_line_fix.ini (-1: none), and the value its jobs use as the Shell reads them
+ * (shell/game.c): its own, else a PSP game's shared row's (NPXS10028), else -1, config.ini's. */
+static int own_line_fix(const VjoInstalledGame *g) { return vjo_games_row_as(&line_fix, g->id, 0); }
+static int used_line_fix(const VjoInstalledGame *g) { return vjo_games_row_as(&line_fix, g->id, psp_row(g)); }
+
+static const char game_page_status[] = "This game's own settings. They apply when it next starts or resumes.";
+static char list_status[sizeof(status)]; /* the list's status while the page shows its own */
+static int list_status_error;
+
+static void open_game_page(int index)
+{
+    game_view = index;
+    game_row = 1; /* the line finder: what the page is for; Up goes to its ON/OFF */
+    memcpy(list_status, status, sizeof(status));
+    list_status_error = status_error;
+    status_error = 0;
+    snprintf(status, sizeof(status), "%s", game_page_status);
+}
+
+static void close_game_page(void)
+{
+    game_view = -1;
+    if (!strcmp(status, game_page_status)) { /* nothing was saved there: the list's own status again */
+        memcpy(status, list_status, sizeof(status));
+        status_error = list_status_error;
+    }
+    rebuild(); /* the list as its filter has it now */
+}
+
+/* value: -1 Default (the row goes), 0-3 vjo_line_fix_names'. Saved at once, as games.ini's choices are. */
+static void set_line_fix(int value)
+{
+    const VjoInstalledGame *g = &library[game_view];
+    if (value < -1 || value > 3 || value == own_line_fix(g)) return;
+    if (!line_fix_writable) {
+        status_error = 1;
+        snprintf(status, sizeof(status), "Cannot read ocr_line_fix.ini. Repair or delete it first; nothing was saved.");
+        return;
+    }
+    if (vjo_line_fix_set(&line_fix, g->id, value) < 0) {
+        status_error = 1;
+        snprintf(status, sizeof(status), "512 games have a line finder of their own. No change saved.");
+        return;
+    }
+    if (vjo_line_fix_file_save(&line_fix, &scratch) < 0) {
+        status_error = 1;
+        /* A final sync can fail after publication: show what the card holds. */
+        line_fix = line_fix_saved;
+        if (vjo_line_fix_file_load(&line_fix, &scratch) >= 0) line_fix_saved = line_fix;
+        else line_fix = line_fix_saved;
+        snprintf(status, sizeof(status), "Save not confirmed. Check your choice, then retry.");
+        return;
+    }
+    status_error = 0;
+    line_fix_saved = line_fix;
+    vjo_log("games: %s's line finder: %s", g->id, value < 0 ? "Default" : vjo_line_fix_names[value]);
+    snprintf(status, sizeof(status), "Saved. It applies when the game next starts or resumes.");
+}
+
+/* The line finder card's help: what the game's own choice does, or what Default gives it. */
+static void line_fix_help(const VjoInstalledGame *g, char *out, size_t cap)
+{
+    static const char *const what[4] = {"Off: the line finder without its fixes, as before.",
+                                        "On: a line's parts across a wide space stay one line.",
+                                        "Junk: also no box frames read as lines. Draw the box with a margin.",
+                                        "All: Junk, and touching rows split (Narcissu). Box with a margin."};
+    int own = own_line_fix(g), shared = -1;
+    if (own >= 0) {
+        snprintf(out, cap, "%s", what[own]);
+        return;
+    }
+    if (psp_row(g) && strcmp(g->id, VJO_PSP_EMULATOR)) shared = vjo_games_row_as(&line_fix, VJO_PSP_EMULATOR, 0);
+    if (shared >= 0) snprintf(out, cap, "Default: %s, as PSP games without their own.", line_fix_labels[shared + 1]);
+    else if (preferences_writable)
+        snprintf(out, cap, "Default: config.ini's ocr_line_fix, %s.", line_fix_labels[preferences.ocr_line_fix + 1]);
+    else snprintf(out, cap, "Default: config.ini's ocr_line_fix (config.ini cannot be read).");
+}
+
+/* Left/Right on the page: the setting's previous or next choice (OFF/ON on its ON/OFF card). */
+static void game_page_step(int right)
+{
+    if (game_row == 0) {
+        if (row_on(&library[game_view]) != right) toggle_game(game_view);
+        return;
+    }
+    int choice = own_line_fix(&library[game_view]) + 1 + (right ? 1 : -1);
+    if (choice >= 0 && choice <= 4) set_line_fix(choice - 1);
+}
+
+/* Enter on the page: ON/OFF toggles; the line finder goes to its next choice, after All back to Default. */
+static void game_page_enter(void)
+{
+    if (game_row == 0) toggle_game(game_view);
+    else set_line_fix((own_line_fix(&library[game_view]) + 2) % 5 - 1);
 }
 
 /* The catalog is read here only: at start and on Start. Icons and title
@@ -1325,6 +1452,14 @@ static void draw(void)
         else if ((hook = vjo_hook_title_listed(g->id)) != VJO_HOOK_TITLE_NONE)
             text(260, y + 36, ACCENT, 16, hook == VJO_HOOK_TITLE_RUBI ? "Hook" : "Luna hook");
         text(90, y + 36, DIM, 16, g->id);
+        /* #333: a line finder of the game's own (or a PSP game's shared row's), and how to reach its page */
+        int lf = used_line_fix(g);
+        if (lf >= 0) {
+            char tag[24];
+            snprintf(tag, sizeof(tag), "Line finder: %s", line_fix_labels[lf + 1]);
+            text(LINE_FIX_TAG_X, y + 36, ACCENT, 16, tag);
+        }
+        if (index == selected) text(HOLD_HINT_X, y + 36, DIM, 16, hold_hint);
     }
     if (!count) wrapped_text(42, GAMES_Y + 42, 870, WHITE, 28, 34, 2,
                              game_query[0] ? "No matching games. Change or clear the search below."
@@ -1348,6 +1483,64 @@ static void draw(void)
     } else footer(status, status_error, games_empty_hints);
     vita2d_end_drawing();
     vita2d_swap_buffers();
+}
+
+/* #333: a game's own page, in the Games tab: the game's card (its title, ID and tag), then its two settings as the
+ * OCR & lookup page's cards: its ON/OFF and its line finder, whose five choices sit side by side. */
+#define GP_CARD_Y 112
+#define GP_CARD_H 74
+#define GP_ROW_Y 194
+#define GP_ROW_PITCH 76
+#define LF_BADGE_X 368
+#define LF_BADGE_W 104
+#define LF_BADGE_PITCH 112
+
+static void draw_game_page(void)
+{
+    const VjoInstalledGame *g = &library[game_view];
+    int on = row_on(g), own = own_line_fix(g), hook, y = GP_ROW_Y;
+    char help[96];
+    vita2d_start_drawing();
+    vita2d_clear_screen();
+    header();
+    vita2d_draw_rectangle(24, GP_CARD_Y, 912, GP_CARD_H, CARD);
+    wrapped_text(42, GP_CARD_Y + 32, 878, WHITE, 26, 28, 1, g->title);
+    text(42, GP_CARD_Y + 62, DIM, 20, g->id);
+    if (psp_row(g))
+        text(220, GP_CARD_Y + 62, ACCENT, 20, "PSP");
+    else if ((hook = vjo_hook_title_listed(g->id)) != VJO_HOOK_TITLE_NONE)
+        text(220, GP_CARD_Y + 62, ACCENT, 20, hook == VJO_HOOK_TITLE_RUBI ? "Hook" : "Luna hook");
+    focus_card(y, CARD_H, game_row == 0);
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Rubi in this game");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !writable ? "--" : on ? "ON" : "OFF", writable && on);
+    text(42, y + CARD_HELP_Y, DIM, 24, "OFF: no overlay and no OCR in this game.");
+    y += GP_ROW_PITCH;
+    focus_card(y, CARD_H, game_row == 1);
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Line finder");
+    for (int i = 0; i < 5; i++)
+        badge(LF_BADGE_X + i * LF_BADGE_PITCH, y + CARD_BADGE_Y, LF_BADGE_W, CARD_BADGE_H, line_fix_labels[i],
+              line_fix_writable && own == i - 1);
+    if (line_fix_writable) line_fix_help(g, help, sizeof(help));
+    else snprintf(help, sizeof(help), "ocr_line_fix.ini cannot be read: repair or delete it.");
+    text(42, y + CARD_HELP_Y, line_fix_writable ? DIM : OFF, 24, help);
+    footer(status, status_error, game_page_hints);
+    vita2d_end_drawing();
+    vita2d_swap_buffers();
+}
+
+/* A touch at x, y on the game page: a card is selected; its ON/OFF card toggles, as the OCR page's do, and a line
+ * finder choice is taken. */
+static void touch_game_page(int x, int y)
+{
+    for (int r = 0; r < GAME_SETTINGS; r++) {
+        int dy = y - (GP_ROW_Y + r * GP_ROW_PITCH);
+        if (x < 24 || x >= 936 || dy < 0 || dy >= CARD_H) continue;
+        game_row = r;
+        if (r == 0) toggle_game(game_view);
+        else if (dy >= CARD_BADGE_Y && dy < CARD_BADGE_Y + CARD_BADGE_H && x >= LF_BADGE_X &&
+                 (x - LF_BADGE_X) % LF_BADGE_PITCH < LF_BADGE_W && (x - LF_BADGE_X) / LF_BADGE_PITCH < 5)
+            set_line_fix((x - LF_BADGE_X) / LF_BADGE_PITCH - 1);
+    }
 }
 
 /* The native keyboard owns input until it closes: no list toggles, tab changes or app exit.
@@ -1473,9 +1666,17 @@ int main(void)
     int load = vjo_games_file_load(&policy, &scratch);
     writable = load >= 0;
     saved = policy;
+    /* #333: each game's own line finder; nothing is written over a file that cannot be read */
+    int line_fix_load = vjo_line_fix_file_load(&line_fix, &scratch);
+    line_fix_writable = line_fix_load >= 0;
+    line_fix_saved = line_fix;
     load_preferences();
     vjo_log_enable(preferences.log_file);
     log_start();
+    if (line_fix_load || line_fix.count)
+        vjo_log("games: ocr_line_fix.ini %s: %d game%s with a line finder of their own",
+                line_fix_load < 0 ? "unreadable, not changed" : line_fix_load ? "recovered from its backup" : "read",
+                line_fix.count, line_fix.count == 1 ? "" : "s");
     /* The Install page (docs/one-vpk-install.md): the app opens on it when the overlay is not installed,
      * is another build's, is damaged or was interrupted, or cannot be installed yet. */
     int open_install = vjo_install_page_start();
@@ -1529,14 +1730,19 @@ int main(void)
         /* An install runs: the app neither leaves nor changes page (install_page.h). */
         int installing = vjo_install_page_busy();
         uint32_t triggers = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER;
-        if (page == PAGE_GAMES && (pad.buttons & triggers) == triggers) {
+        if (page == PAGE_GAMES && game_view < 0 && (pad.buttons & triggers) == triggers) {
             direction = 0; /* L+R opens search once, never a page jump or a repeated dialog. */
             if (!search_held) {
                 search_held = 1;
+                held_game = touched_game = -1; /* a held Enter or touch is the dialog's now */
                 search_games(&stick_state, &previous, &touched, &repeat_at);
                 continue;
             }
         } else search_held = 0;
+        if ((pressed & buttons.cancel) && page == PAGE_GAMES && game_view >= 0) { /* #333: the game page goes back */
+            close_game_page();
+            pressed &= ~buttons.cancel;
+        }
         if ((pressed & buttons.cancel) && !page_holds_cancel() && !installing) break;
         if ((pressed & SCE_CTRL_SELECT) && !installing) {
             int next = (page + 1) % PAGES;
@@ -1544,6 +1750,8 @@ int main(void)
             /* The new page takes no move from a stick still pushed, this frame or until it is let go. */
             vjo_stick_latch(&stick_state);
             stick = 0;
+            held_game = touched_game = -1;
+            if (game_view >= 0) close_game_page(); /* #333: the Games tab opens on its list again */
             show_page(next); /* (it reads the page being left: Look up closes its dictionaries) */
             page = next;
         }
@@ -1559,17 +1767,35 @@ int main(void)
             if (pressed & SCE_CTRL_LEFT) set_preference(0);
             if (pressed & SCE_CTRL_RIGHT) set_preference(1);
             if (pressed & SCE_CTRL_START) load_preferences();
+        } else if (game_view >= 0) { /* #333: a game's own page */
+            if (pressed & SCE_CTRL_UP) game_row = (game_row + GAME_SETTINGS - 1) % GAME_SETTINGS;
+            if (pressed & SCE_CTRL_DOWN) game_row = (game_row + 1) % GAME_SETTINGS;
+            if (!(pressed & (SCE_CTRL_UP | SCE_CTRL_DOWN))) game_row = vjo_stick_step(game_row, GAME_SETTINGS, stick);
+            if (pressed & buttons.enter) game_page_enter();
+            if (pressed & SCE_CTRL_LEFT) game_page_step(0);
+            if (pressed & SCE_CTRL_RIGHT) game_page_step(1);
         } else {
-            if (pressed & buttons.enter) toggle();
+            /* #333: Enter toggles the selected game as it is let go; held GAME_HOLD_US, it opens the game's page.
+             * A selection moved meanwhile does neither. */
+            if ((pressed & buttons.enter) && count) {
+                held_game = visible[selected];
+                held_since = now;
+            }
+            if (held_game >= 0 && (!(pad.buttons & buttons.enter) || now - held_since >= GAME_HOLD_US)) {
+                int same = count && visible[selected] == held_game;
+                if (same && (pad.buttons & buttons.enter)) open_game_page(held_game);
+                else if (same) toggle();
+                held_game = -1;
+            }
             if (pressed & SCE_CTRL_TRIANGLE) toggle_default();
             if (pressed & SCE_CTRL_SQUARE) change_filter();
             if (pressed & SCE_CTRL_START) scan();
         }
-        if (page == PAGE_GAMES && direction && ((pressed & direction) || now >= repeat_at)) {
+        if (page == PAGE_GAMES && game_view < 0 && direction && ((pressed & direction) || now >= repeat_at)) {
             /* A key just pressed acts at once; one held repeats. */
             list_key(pressed & direction ? pressed & direction : direction);
             repeat_at = now + ((pressed & direction) ? 350000 : 90000);
-        } else if (page == PAGE_GAMES && stick) {
+        } else if (page == PAGE_GAMES && game_view < 0 && stick) {
             move(stick); /* the d-pad first (VitaShell takes Up first, from either) */
         }
         previous = pad.buttons;
@@ -1585,6 +1811,8 @@ int main(void)
                     show_page(tab);
                     vjo_stick_latch(&stick_state);
                     stick = 0;
+                    held_game = -1;
+                    if (game_view >= 0) close_game_page(); /* #333 */
                 }
                 page = tab;
             }
@@ -1595,6 +1823,7 @@ int main(void)
             else if (page == PAGE_OCR && x >= 24 && x < 936 && y >= PREF_VIEW_Y && y < PREF_VIEW_END)
                 touch_preference(x, y); /* the OCR & lookup page's cards */
             else if (page != PAGE_GAMES) { /* no game actions on the other pages */ }
+            else if (game_view >= 0) touch_game_page(x, y); /* #333 */
             else if (y >= GAME_NAV_Y && y < GAME_NAV_Y + GAME_NAV_H) {
                 if (x >= 24 && x < 444) {
                     search_games(&stick_state, &previous, &touched, &repeat_at);
@@ -1613,9 +1842,18 @@ int main(void)
                 int row = (y - GAMES_Y) / GAME_PITCH;
                 if ((y - GAMES_Y) % GAME_PITCH < GAME_H && offset + row < count) {
                     selected = offset + row;
-                    toggle();
+                    touched_game = visible[selected]; /* #333: toggled as it is let go, below */
+                    touched_since = now;
                 }
             }
+        }
+        /* #333: a touch on a game's row toggles that game as it is let go; held GAME_HOLD_US, it opens its page. */
+        if (touched_game >= 0 && (!touch.reportNum || now - touched_since >= GAME_HOLD_US)) {
+            if (page == PAGE_GAMES && game_view < 0) {
+                if (touch.reportNum) open_game_page(touched_game);
+                else toggle_game(touched_game);
+            }
+            touched_game = -1;
         }
         touched = touch.reportNum != 0;
         if (vjo_install_page_runs() != install_runs) { /* an install changed the card: the banner says what is there now */
@@ -1652,7 +1890,9 @@ int main(void)
                 continue;
             }
         }
-        else if (page == PAGE_OCR) draw_preferences(); else draw();
+        else if (page == PAGE_OCR) draw_preferences();
+        else if (game_view >= 0) draw_game_page(); /* #333 */
+        else draw();
         sceDisplayWaitVblankStart();
     }
     vjo_anki_page_quit();

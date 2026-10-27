@@ -10,7 +10,7 @@
 #include "../core/pspbubble.h"
 #include "../vita/games_storage.h"
 
-int vjo_game_enabled(const char *tid, int psp, VjoArena *scratch)
+int vjo_game_enabled(const char *tid, int psp, int *line_fix, VjoArena *scratch)
 {
     size_t mark = vjo_arena_mark(scratch);
     VjoGames *games = vjo_arena_alloc(scratch, sizeof(*games));
@@ -18,6 +18,9 @@ int vjo_game_enabled(const char *tid, int psp, VjoArena *scratch)
     int enabled = rc >= 0 && vjo_games_enabled_as(games, tid, psp);
     if (rc < 0) vjo_log("games.ini unreadable: OCR disabled until settings are repaired");
     else if (rc > 0) vjo_log("games.ini recovered from backup");
+    /* #333: an enabled game's own ocr_line_fix (ocr_line_fix.ini, read into the same table), its bubble's own row
+     * first, then the shared PSP row's, as for ON/OFF; -1 without one, or a file that cannot be read */
+    *line_fix = enabled && vjo_line_fix_file_read(games, scratch) == 0 ? vjo_games_row_as(games, tid, psp) : -1;
     vjo_arena_release(scratch, mark);
     return enabled;
 }
@@ -87,8 +90,11 @@ int vjo_game_identify(SceUID pid, VjoGameId *g)
 
 /* The game's name for MiscInfo: its title (app parameter 9, else 10);
  * "PSP" for the PSP emulator, which every Adrenaline game shares; "" when
- * neither is readable. Both are logged until a device run shows which
- * one is the full title. */
+ * neither is readable. The debug build logged both until a console run
+ * showed which one is the title: in the owner's test.1-test.4 logs (115 game
+ * starts, four Vita titles) parameter 9 was refused (0x80801000) and empty
+ * every time, and parameter 10 held the title. #333 took the log line's
+ * bytes for the debug Shell's code room; the order is unchanged. */
 void vjo_title_name(SceUID pid, const char *tid, char *name, int size)
 {
     char p9[128], p10[128];
@@ -97,7 +103,6 @@ void vjo_title_name(SceUID pid, const char *tid, char *name, int size)
     sceClibMemset(p10, 0, sizeof(p10));
     r9 = sceAppMgrAppParamGetString(pid, 9, p9, sizeof(p9) - 1);
     r10 = sceAppMgrAppParamGetString(pid, 10, p10, sizeof(p10) - 1);
-    vjo_dlog("title %s: param 9 = \"%s\" (0x%08X), param 10 = \"%s\" (0x%08X)", tid, p9, r9, p10, r10);
     if (!sceClibStrcmp(tid, VJO_PSP_EMULATOR))
         sceClibSnprintf(name, size, "PSP");
     else if (r9 >= 0 && p9[0])

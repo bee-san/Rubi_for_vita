@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static unsigned char memory[40 * 1024];
 static VjoArena arena;
@@ -339,8 +340,125 @@ static void test_disable_all(void)
     TEST_CHECK(vjo_games_disable_all(&g) == -1 && g.default_enabled == 1);
 }
 
+/* #333: ocr_line_fix.ini, a game's own value of config.ini's ocr_line_fix: games.ini's format and parser with
+ * config.ini's four names (lowercase, a row's value its index), no default line; the lookup is a row's own, else a
+ * PSP game's shared row's (NPXS10028), else -1; the Rubi app's set removes a row for Default; its format reads back
+ * as the same rows. games.ini keeps its own two values. */
+static void test_line_fix_table(void)
+{
+    VjoGames g, back;
+    char out[VJO_GAMES_TEXT_MAX + 1];
+    TEST_CHECK(!strcmp(vjo_line_fix_names[0], "off") && !strcmp(vjo_line_fix_names[1], "on") &&
+               !strcmp(vjo_line_fix_names[2], "junk") && !strcmp(vjo_line_fix_names[3], "all") && !vjo_line_fix_names[4]);
+    const char *ini = "# a comment\r\n ULJM05674 = all\nPCSG00415=off\n; another\n\nNPXS10028 = junk \nPCSG00940 = on\n"
+                      "PCSG00415 = on\n"; /* the last row wins, as in games.ini */
+    TEST_ASSERT(vjo_line_fix_parse(&g, ini, strlen(ini)) == 0);
+    TEST_CHECK(g.count == 4);
+    static const struct { const char *id; int psp, want; } rows[] = {
+        {"ULJM05674", 1, 3}, {"ULJM05674", 0, 3}, {"PCSG00415", 0, 1}, {"PCSG00940", 0, 1}, {"PCSG00001", 0, -1},
+        {"PSPEMU005", 1, 2}, {"PSPEMU005", 0, -1}, {"NPXS10028", 0, 2}, {"GAME", 0, -1}, {"VJOSET001", 0, -1}};
+    for (unsigned i = 0; i < sizeof(rows) / sizeof(rows[0]); i++)
+        TEST_CHECK_(vjo_games_row_as(&g, rows[i].id, rows[i].psp) == rows[i].want, "%s psp %d: %d", rows[i].id,
+                    rows[i].psp, vjo_games_row_as(&g, rows[i].id, rows[i].psp));
+    /* every value, and each kind of bad line: the whole file is refused, as games.ini's is */
+    static const char *const bad[] = {"default = on", "PCSG00415 = enabled", "PCSG00415 = disabled", "PCSG00415 = ON",
+                                      "PCSG00415 = valley", "PCSG00415 =", "PCSG00415 all", "= all",
+                                      "PCSG004151234 = all", "../x = all", "PCSG00415 = all extra"};
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
+        TEST_CHECK_(vjo_line_fix_parse(&g, bad[i], strlen(bad[i])) < 0, "'%s'", bad[i]);
+    TEST_CHECK(vjo_line_fix_parse(&g, "a\0b", 3) < 0);
+    /* and games.ini does not take them: its values stay enabled and disabled */
+    TEST_CHECK(vjo_games_parse(&g, "PCSG00415 = all", 15) < 0 && vjo_games_parse(&g, "PCSG00415 = enabled", 19) == 0);
+    TEST_CHECK(vjo_line_fix_parse(&g, "", 0) == 0 && g.count == 0); /* no rows (the reader refuses an empty file) */
+    /* the app's set: a value, then Default removes the row, the others keep their order */
+    vjo_games_defaults(&g);
+    TEST_CHECK(vjo_line_fix_set(&g, "ULJM05674", 3) == 0 && vjo_line_fix_set(&g, "PCSG00415", 0) == 0 &&
+               vjo_line_fix_set(&g, "PCSG00940", 2) == 0 && g.count == 3);
+    TEST_CHECK(vjo_line_fix_set(&g, "PCSG00415", 1) == 0 && g.count == 3 && vjo_games_row_as(&g, "PCSG00415", 0) == 1);
+    TEST_CHECK(vjo_line_fix_set(&g, "PCSG00415", -1) == 0 && g.count == 2 && vjo_games_row_as(&g, "PCSG00415", 0) == -1);
+    TEST_CHECK(!strcmp(g.rules[0].title_id, "ULJM05674") && !strcmp(g.rules[1].title_id, "PCSG00940") &&
+               !g.rules[2].title_id[0] && !g.rules[2].enabled);
+    TEST_CHECK(vjo_line_fix_set(&g, "PCSG00415", -1) == 0 && g.count == 2); /* no row: nothing to remove */
+    TEST_CHECK(vjo_line_fix_set(&g, "PCSG00415", 4) < 0 && vjo_line_fix_set(&g, "PCSG00415", -2) < 0 &&
+               vjo_line_fix_set(&g, "../x", 1) < 0 && g.count == 2);
+    int n = vjo_line_fix_format(&g, out, sizeof(out));
+    TEST_ASSERT(n > 0);
+    TEST_CHECK(strstr(out, "\nULJM05674 = all\nPCSG00940 = junk\n") != NULL && out[0] == '#');
+    TEST_CHECK(!strstr(out, "default") && !strstr(out, "enabled"));
+    TEST_ASSERT(vjo_line_fix_parse(&back, out, (size_t)n) == 0);
+    TEST_CHECK(back.count == 2 && vjo_games_row_as(&back, "ULJM05674", 0) == 3 && vjo_games_row_as(&back, "PCSG00940", 0) == 2);
+    TEST_CHECK(vjo_games_parse(&back, out, (size_t)n) < 0); /* never a games.ini */
+    TEST_CHECK(vjo_line_fix_format(&g, out, 8) < 0);
+    g.rules[0].enabled = 4;
+    TEST_CHECK(vjo_line_fix_format(&g, out, sizeof(out)) < 0);
+    /* a full table: 512 rows fit the file's limit and read back; a 513th is refused */
+    vjo_games_defaults(&g);
+    for (int i = 0; i < VJO_GAMES_MAX; i++) {
+        char id[VJO_TITLE_ID_SIZE];
+        snprintf(id, sizeof(id), "GAME%07d", i);
+        TEST_ASSERT(vjo_line_fix_set(&g, id, i % 4) == 0);
+    }
+    TEST_CHECK(vjo_line_fix_set(&g, "EXTRA", 1) < 0 && g.count == VJO_GAMES_MAX);
+    n = vjo_line_fix_format(&g, out, sizeof(out));
+    TEST_ASSERT(n > 0 && n <= VJO_GAMES_TEXT_MAX);
+    TEST_ASSERT(vjo_line_fix_parse(&back, out, (size_t)n) == 0);
+    TEST_CHECK(back.count == VJO_GAMES_MAX && vjo_games_row_as(&back, "GAME0000511", 0) == 3);
+}
+
+/* #333: the app saves ocr_line_fix.ini as games.ini is saved (a temporary file, sync, the old one as the backup) and
+ * reads it back, from its backup when a save stopped between the renames; the Shell's read takes the file alone; an
+ * unreadable file is -1 and is not written over by the load; games.ini is never touched. */
+static void test_line_fix_storage(void)
+{
+    VjoGames g, back;
+    reset_files();
+    unlink(VJO_LINE_FIX_PATH); unlink(VJO_LINE_FIX_BACKUP); unlink(VJO_LINE_FIX_PATH ".tmp");
+    TEST_CHECK(vjo_line_fix_file_load(&g, &arena) == 0 && g.count == 0); /* neither file: no rows */
+    TEST_CHECK(vjo_line_fix_file_read(&g, &arena) < 0);                  /* the Shell: nothing to read */
+    TEST_ASSERT(vjo_line_fix_set(&g, "ULJM05674", 3) == 0);
+    TEST_ASSERT(vjo_line_fix_file_save(&g, &arena) == 0);
+    TEST_CHECK(access(VJO_GAMES_PATH, F_OK) != 0 && access(VJO_GAMES_BACKUP, F_OK) != 0); /* games.ini untouched */
+    memset(&back, 0x55, sizeof(back));
+    TEST_CHECK(vjo_line_fix_file_read(&back, &arena) == 0 && vjo_games_row_as(&back, "ULJM05674", 1) == 3);
+    TEST_CHECK(vjo_line_fix_file_load(&back, &arena) == 0 && back.count == 1 && arena.used == 0);
+    /* the second save keeps the first as the backup */
+    TEST_ASSERT(vjo_line_fix_set(&g, "PCSG00415", 0) == 0 && vjo_line_fix_file_save(&g, &arena) == 0);
+    TEST_ASSERT(vjo_line_fix_file_load(&back, &arena) == 0 && back.count == 2);
+    FILE *f = fopen(VJO_LINE_FIX_BACKUP, "rb");
+    TEST_ASSERT(f != NULL);
+    char text[256];
+    size_t n = fread(text, 1, sizeof(text) - 1, f);
+    fclose(f);
+    text[n] = 0;
+    TEST_CHECK(strstr(text, "ULJM05674 = all\n") && !strstr(text, "PCSG00415"));
+    /* a save cut short after the old file became the backup: the app reads the backup; the Shell reads nothing */
+    renames = 0; rename_fail = 2;
+    TEST_ASSERT(vjo_line_fix_set(&g, "PCSG00940", 1) == 0);
+    TEST_CHECK(vjo_line_fix_file_save(&g, &arena) < 0);
+    rename_fail = 0;
+    TEST_CHECK(vjo_line_fix_file_load(&back, &arena) == 1 && back.count == 2 && vjo_games_row_as(&back, "PCSG00940", 0) < 0);
+    TEST_CHECK(vjo_line_fix_file_read(&back, &arena) < 0);
+    TEST_ASSERT(vjo_line_fix_file_save(&g, &arena) == 0); /* the next save puts it back */
+    TEST_CHECK(vjo_line_fix_file_read(&back, &arena) == 0 && back.count == 3);
+    /* a file that cannot be read (a hand-written line of another kind): -1, kept as it is */
+    unlink(VJO_LINE_FIX_BACKUP);
+    f = fopen(VJO_LINE_FIX_PATH, "wb");
+    TEST_ASSERT(f && fputs("ULJM05674 = valley\n", f) >= 0 && fclose(f) == 0);
+    TEST_CHECK(vjo_line_fix_file_load(&back, &arena) < 0 && vjo_line_fix_file_read(&back, &arena) < 0);
+    f = fopen(VJO_LINE_FIX_PATH, "rb");
+    TEST_ASSERT(f != NULL);
+    n = fread(text, 1, sizeof(text) - 1, f);
+    fclose(f);
+    text[n] = 0;
+    TEST_CHECK(!strcmp(text, "ULJM05674 = valley\n"));
+    TEST_CHECK(arena.used == 0);
+    unlink(VJO_LINE_FIX_PATH); unlink(VJO_LINE_FIX_BACKUP);
+}
+
 TEST_LIST = {
     {"per-title blacklist and selected-only policies", test_policy},
+    {"#333: ocr_line_fix.ini's rows: parse, lookup, set and format", test_line_fix_table},
+    {"#333: ocr_line_fix.ini on the card: save, load, backup, never games.ini", test_line_fix_storage},
     {"PSP titles: NPXS10028, PSPEMU* bubbles, disc IDs", test_psp_titles},
     {"PSP games without a rule follow the shared PSP row", test_psp_shared_row},
     {"the app's reasons for skipping a folder match the candidate rule", test_reject_reasons},

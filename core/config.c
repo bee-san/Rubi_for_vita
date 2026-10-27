@@ -5,6 +5,7 @@
 
 #include "../include/vjo_vocr_sizes.h"
 #include "port.h"
+#include "games.h"
 #include "local_dict.h"
 #include "textfilter.h"
 #include "utf.h"
@@ -643,8 +644,8 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
                                                                              NULL};
         set_choice(c, key, val, &c->ocr_head_gate, heads);
     } else if (vjo_ieq(key, "ocr_line_fix")) {
-        static const char *const fixes[] VJO_DATA_TABLE(config_line_fix_1) = {"off", "on", "junk", "all", NULL};
-        set_choice(c, key, val, &c->ocr_line_fix, fixes);
+        /* #333: the names ocr_line_fix.ini's rows take too (core/games.c, in the data segment) */
+        set_choice(c, key, val, &c->ocr_line_fix, vjo_line_fix_names);
     } else if (vjo_ieq(key, finder_key)) { /* API 54 */
         static const char *const finders[] VJO_DATA_TABLE(config_finders_1) = {finder_grad, finder_spotter, NULL};
         set_choice(c, key, val, &c->ocr_finder, finders);
