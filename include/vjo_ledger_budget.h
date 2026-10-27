@@ -412,12 +412,14 @@
  * flags], other features' code and speed, not this change's to trade. The job's limit is kept, as API 47's and API 50's
  * pages kept it. No block, thread or allocation: the line checksums take the row states' place in the job's capture
  * block. */
-/* test/combined (the combined test build, never merged): main + every open draft; the worker's pages are
- * this branch's own, measured on its builds (MEASURE_PLACEHOLDER). */
+/* test/combined (the combined test build v0.9.8-test.N, never merged): main + every open draft (#318, #326, #355,
+ * #359), in the game's partition only: 217,088 B of pages (debug: 180,040 + 36,328 B) and 204,800 B (normal:
+ * 165,996 + 36,248 B) [measured: the gate's module rows, both builds, bbed1b0]. The kernel's and both Shells'
+ * pages are main's (some of the drafts' Shell strings are in .rodata here: shell/worker.c). No block, thread or alloc. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 196608u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
