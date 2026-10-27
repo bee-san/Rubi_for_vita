@@ -711,8 +711,10 @@ static void draw_today(const VjoStatsUi *ui, int y, unsigned bg)
     ui->text(42, y + 30, ui->white, 28, "Today");
     if (counted)
         summary(line, sizeof(line), &today_all);
-    else
+    else if (running)
         snprintf(line, sizeof(line), "Counting history.csv…");
+    else /* (the count could not start: the status line says why) */
+        snprintf(line, sizeof(line), "Not counted yet. Start: count");
     ui->text(150, y + 30, counted ? ui->white : ui->dim, 24, line);
     /* the goal's bar */
     uint32_t p = vjo_stats_goal_progress(&today_all, goal);

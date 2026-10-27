@@ -145,9 +145,12 @@ static unsigned thread_stack;
 SceUID sceKernelCreateMutex(const char *n, unsigned int a, int c, void *o) { (void)n; (void)a; (void)c; (void)o; return 0x100; }
 int sceKernelLockMutex(SceUID u, int c, void *t) { (void)u; (void)c; (void)t; return 0; }
 int sceKernelUnlockMutex(SceUID u, int c) { (void)u; (void)c; return 0; }
+static int fail_create;
 SceUID sceKernelCreateThread(const char *n, int (*e)(SceSize, void *), int p, unsigned int s, unsigned int a, int af, void *o)
 {
     (void)n; (void)a; (void)o;
+    if (fail_create)
+        return (int)0x80020001u;
     thread_entry = e;
     thread_priority = p;
     thread_stack = s;
@@ -787,6 +790,23 @@ static void no_history_yet(void)
     TEST_CHECK(strstr(drawn.footer, "Cannot read history.csv (0x80010005)") && drawn.footer_error);
 }
 
+/* A count that cannot start (no thread): said, Today says it is not counted, and Start tries again. */
+static void a_count_that_cannot_start(void)
+{
+    reset();
+    fail_create = 1;
+    vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
+    vjo_stats_page_show(&scratch);
+    frame(0);
+    fail_create = 0;
+    TEST_CHECK(strstr(drawn.footer, "Could not start the count (0x80020001)") && drawn.footer_error);
+    TEST_CHECK(text_with("Not counted yet. Start: count") != NULL && !text_with("Counting history.csv"));
+    frame(SCE_CTRL_START); /* Start counts */
+    run_worker();
+    frame(0);
+    TEST_CHECK(strstr(drawn.footer, "No reading yet") && text_with("0 characters, 0 min") != NULL);
+}
+
 static void a_new_day_and_quit(void)
 {
     reset();
@@ -814,6 +834,7 @@ TEST_LIST = {
     {"cards_count_per_game", cards_count_per_game},
     {"cards_without_history", cards_without_history},
     {"no_history_yet", no_history_yet},
+    {"a_count_that_cannot_start", a_count_that_cannot_start},
     {"a_new_day_and_quit", a_new_day_and_quit},
     {NULL, NULL},
 };
