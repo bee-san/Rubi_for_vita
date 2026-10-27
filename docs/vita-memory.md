@@ -469,11 +469,13 @@ measured on the console]:
 | Anki export arena (2 MiB, `settings/anki_export.h` `VJO_EXPORT_MEM`; the app has no SceNet pool since the AnkiConnect page was removed), config scratch, game list | about 2.2 MiB |
 | PSP rows (`settings/psp.c`): a bubble target's blocks and PARAM.SFO, two taiHEN configurations | 306,800 B |
 | Stats tab (#312, `settings/stats_page.c`, `core/stats.h`): its counts (512 games, 16,384 game-days, 16,384 cards: 958,576 B), the work memory its count reads history.csv and the cache with (1 MiB) and its rows (111,184 B); the count's thread stack (64 KiB) | about 2.1 MiB |
-| Code, stacks, PVF atlas | about 2 MiB |
-| **Total** | **about 27 MiB of 50 MiB** |
+| Look up tab (#313, `settings/lookup*.c`): a lookup block as the Shell's (64 KiB: the dictionary session, then the lookup's arena), its scratch (48 KiB), a card's arena (128 KiB), the history window (64 KiB), the 200 lines' table (30,400 B), the entry's rows and the glyph widths (49,984 B), the text: 433,008 B of tables [measured: the objects' `.bss`, `arm-vita-eabi-size`]; with its code the app's segments grow by 477,808 B (`tools/check_settings_self.py`, main `926e5fe` → #313: 7,000,280 → 7,478,088 B in the debug build, 6,999,848 → 7,477,576 B in the normal one) | about 0.45 MiB |
+| Code, stacks, PVF atlas (two atlases for a frame after one is full: `settings/main.c` `font_tick`, #313) | about 2.3 MiB |
+| **Total** | **about 27.5 MiB of 50 MiB** |
 
 The Games search uses a bounded 257-byte UTF-8 query and two 65-unit UTF-16 buffers on the
-app's stack (`settings/search.c`), not the Shell or a game's memory. The native IME module is
+app's stack (`settings/search.c`), not the Shell or a game's memory; the Look up tab's keyboard (#313) the same with
+129-unit buffers and a 513-byte text. The native IME module is
 loaded only during text entry when not already loaded, and released afterwards; its additional
 runtime memory is unmeasured on a console. These sizes come from the source, not console samples.
 

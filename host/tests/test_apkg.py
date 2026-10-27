@@ -169,7 +169,7 @@ class TestPackages(unittest.TestCase):
         cls.out = pathlib.Path(cls.tmp.name)
         subprocess.run([BINARY, "--write", str(cls.out)], check=True)
         cls.expected = json.loads((cls.out / "expected.json").read_text())
-        cls.pkg = {name: Package(cls.out / f"{name}.apkg") for name in ("first", "second", "all", "many")}
+        cls.pkg = {name: Package(cls.out / f"{name}.apkg") for name in ("first", "second", "all", "many", "app")}
 
     def test_zip(self):
         for name, p in self.pkg.items():
@@ -275,6 +275,23 @@ class TestPackages(unittest.TestCase):
                 self.assertEqual(same[1:], note[1:], "the same GUID, type, time, tags and fields")
         self.assertEqual(len(everything), len(self.expected["first"]) + len(self.expected["second"]))
 
+    def test_cards_the_app_saved(self):
+        """#313: cards of the Rubi app's Look up page (settings/app_queue.c), as any card: their GUIDs from their
+        records' IDs, no picture; a typed word with no sentence and the date it was saved, a word of an earlier line
+        with the line and its game; the other dictionary's entry in the glossary."""
+        notes = self.pkg["app"].notes()
+        self.assertEqual({n[1] for n in notes}, {guid_of(i) for i in self.expected["app"]})
+        self.assertEqual(self.pkg["app"].media, {})
+        by_misc = {n[6].split("\x1f")[21]: n[6].split("\x1f") for n in notes}
+        typed, line = by_misc["2026-10-27 15:04"], by_misc["CLANNAD (2026-10-28 00:30)"]
+        for fields, word in ((typed, ("猫", "猫[ねこ]", "ねこ")), (line, ("犬", "犬[いぬ]", "いぬ"))):
+            self.assertEqual((fields[0], fields[1], fields[2], fields[10]), word + ("",))
+            self.assertIn('data-dictionary="JMdict"', fields[5])
+            self.assertIn('data-dictionary="VNDB names"', fields[11])
+            self.assertEqual(fields[20], "1234")
+        self.assertEqual((typed[7], typed[8]), ("", ""))
+        self.assertEqual(line[7], "<b>犬</b>が鳴いた")
+
     def test_fields_of_known_cards(self):
         by_word = {n[7]: n[6].split("\x1f") for n in self.pkg["first"].notes()}
         cat = by_word["猫"]
@@ -347,6 +364,13 @@ r["notes_after_all"] = col.note_count()
 r["notetypes"] = sorted(m["name"] for m in col.models.all())
 r["media_after_all"] = sorted(f for f in os.listdir(col.media.dir()) if f.startswith("vitajp_"))
 log = imp(col, "many"); r["many_new"] = len(log.new)
+col.close()
+# #313: the Rubi app's cards, in a new profile: both added, no picture on either
+col = new_col()
+log = imp(col, "app"); r["app_new"] = len(log.new)
+answers = [col.get_card(c).answer() for c in col.find_cards('"deck:Vita JP Overlay"')]
+r["app_answers"] = len(answers); r["app_img"] = sum("<img" in a for a in answers)
+r["app_line"] = sum("<b>犬</b>が鳴いた" in a and "CLANNAD (2026-10-28 00:30)" in a for a in answers)
 col.close()
 # A profile that has Lapis from its own package, restyled since (newer): a
 # package of that note type alone (first.apkg's, without notes, its styling
@@ -474,6 +498,12 @@ class TestAnkiImport(unittest.TestCase):
         self.assertEqual(r["notes_after_all"], len(self.expected["first"]) + len(self.expected["second"]))
         self.assertEqual(r["notetypes"].count("Lapis"), 1)
         self.assertEqual(r["many_new"], self.expected["many"])
+
+    def test_the_apps_cards_import(self):
+        """#313: the cards the Look up page saved are imported as Anki imports any: two notes, two cards, no
+        picture; the earlier line's card shows the line and its game."""
+        r = self.r
+        self.assertEqual((r["app_new"], r["app_answers"], r["app_img"], r["app_line"]), (2, 2, 0, 1))
 
     def test_an_edited_and_reviewed_note_is_left_alone(self):
         # (the package's note is never newer than one the user edited: Anki's IfNewer keeps the edit)

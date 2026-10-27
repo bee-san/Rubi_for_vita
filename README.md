@@ -63,6 +63,9 @@
 - **Anki cards with screenshots.** With card mining on, press Enter on a word to save it with its
   sentence and a picture of the game's screen. The app exports the cards as one `.apkg` file of
   [Lapis](https://github.com/donkuri/lapis) notes for Anki.
+- **Look up and mine later.** The Rubi app's **Look up** tab, beside the suspended game: type a word or a sentence
+  with the Vita's keyboard, or open one of a game's last 200 lines, and look its words up with the overlay's
+  dictionaries; Enter saves a word as a card, without a picture ([details](docs/guide.md#look-up)).
 - **Fast or accurate, now or when you ask.** Choose a Small, Normal or Large model (a game short of
   memory gets the next smaller one by itself), and whether Rubi reads each new screen in the
   background, so the popup is ready when you press, or only when you press L + R.
@@ -158,6 +161,9 @@ Enter and Cancel are your Vita's own buttons: × and ○ on most consoles, ○ a
    a word: it is saved with its sentence and a screenshot. **Export cards** on the Anki page writes
    them into `ux0:data/VitaJPOverlay/anki/<date>_<time>-<N>cards.apkg`: copy that file to a computer
    (VitaShell's USB or FTP connection) and open it in Anki.
+5. **Look up later.** Suspend the game and open the Rubi app: on its **Look up** tab, type a word (Triangle), or
+   pick an earlier line of a game (L/R), and look its words up; Enter saves the word as a card, without a picture
+   ([details](docs/guide.md#look-up)).
 
 Every control, setting and file is in the [guide](docs/guide.md#use-in-a-game).
 
@@ -186,6 +192,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Duplicates**: a card of a word you mined before gets Anki's `duplicate` tag (Tag), stays in the queue (Skip) or is exported as before (Keep); the page counts them, "N queued, M already mined" ([details](docs/anki.md#duplicates)) | Tag |
 | | **Known words**: Import reads `known_words.txt`, which `tools/known_words.py` writes from your Anki collection; their cards get the tag `known` ([details](docs/anki.md#known-words)) | none |
 | | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
+| Look up | No setting: type a word (Triangle), or open an earlier line of a game (L/R); Enter saves its word as a card, without a picture, with Card mining ON or OFF ([details](docs/guide.md#look-up)) | |
 | Stats | Your reading from `history.csv`: today, the last 14 days, the year's heatmap, the streak, all games and each game (characters, reading time, characters/hour, cards mined), counted as △ counts ([details](docs/guide.md#stats)) | |
 | | **Daily goal**: Off, 2,000 to 50,000 characters or 15 to 120 minutes a day; a day at the goal counts for the streak (with none, any day with reading). Kept in the app's own `app.ini` | Off |
 | Install | **Install**, **Update** or **Check and repair**, and **Uninstall** | |
@@ -253,6 +260,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
+| ❓ | The app's Look up tab: typed search, a game's earlier lines, cards from them | not run on a console yet; measured on the host ([details](docs/guide.md#look-up)) |
 | ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | The text box suggested on first use (Use this box?) | not run on a console yet; measured on the host ([details](docs/first-box.md)) |
 | ❓ | Characters read, characters/hour and active time (△ in the overlay) | not run on a console yet ([details](docs/ocr-history.md#total-characters-read)) |

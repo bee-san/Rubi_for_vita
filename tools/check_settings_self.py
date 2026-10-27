@@ -19,7 +19,11 @@ priority, a worker off CPU3) built and packaged. This reads, without dependencie
 - libvita2d's calls of sceGxmVshInitialize and sceSharedFbGetInfo going to settings/sysapp_gfx.c's
   wrappers (the link's --wrap), which make its system start wait for SceShell's hand-over with a
   pause and fall back to the app's own parameter buffer: without them the app does not open with
-  no game running (owner, 2026-10-16), and the build gave no sign.
+  no game running (owner, 2026-10-16), and the build gave no sign;
+- a font's glyph atlas made through settings/vita2d_textures.c's wrapper of
+  vita2d_create_empty_texture_format (libvita2d's texture_atlas_create calls it, never the function itself):
+  its two stale fields cleared, so that freeing a font while the app runs (settings/main.c font_tick) frees
+  nothing else (libvita2d #28).
 
 The memory sum is a lower bound from the build and docs/vita-memory.md section 5.4's estimates,
 not a measurement: the console's own numbers are the app's start line in log.txt.
@@ -47,11 +51,15 @@ MODULE_INFO_SIZE = 0x5C       # sce_module_info_raw (src/sce-elf-defs.h)
 # What the app holds besides its heap and its segments, by source (docs/vita-memory.md section
 # 5.4; estimates, not measured on a console): libvita2d a8f15ab's GXM rings, depth and stencil,
 # shader patcher, index and clear buffers, parameter buffer and pool; at most 5 icon textures of
-# 256 KiB (settings/icons.h); the 512 x 512 glyph atlas; the main thread's default 256 KiB stack,
-# the Anki worker's 128 KiB (settings/anki_page.c) and the Stats count's 64 KiB (settings/stats_page.c, #312;
-# the Stats tab's tables are in the segments: its counts, its cache's work memory and its rows, about 2 MiB).
-FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024, "glyph_atlas": 512 * 512,
+# 256 KiB (settings/icons.h); two 512 x 512 glyph atlases (a font whose atlas is full and the one that replaced it,
+# until the next frame: settings/main.c font_tick, #313); the main thread's default 256 KiB stack, the Anki worker's
+# 128 KiB (settings/anki_page.c) and the Stats count's 64 KiB (settings/stats_page.c, #312; the Stats tab's tables are
+# in the segments: its counts, its cache's work memory and its rows, about 2 MiB; so are the Look up tab's, #313).
+FIXED = {"libvita2d": 10_424_320, "icons": 5 * 256 * 1024, "glyph_atlas": 2 * 512 * 512,
          "stacks": 256 * 1024 + 128 * 1024 + 64 * 1024}
+# libvita2d's glyph atlas texture and the wrapper it is made through (settings/vita2d_textures.c).
+ATLAS_FUNCTION = "texture_atlas_create"
+TEXTURE_FUNCTION = "vita2d_create_empty_texture_format"
 
 
 class Invalid(ValueError):
@@ -223,6 +231,27 @@ def graphics_calls(elf):
     return counts
 
 
+def atlas_calls(elf):
+    """The glyph atlas's texture is made through the wrapper: texture_atlas_create calls
+    __wrap_vita2d_create_empty_texture_format, never the function itself. The places it calls the wrapper from."""
+    wrapper = "__wrap_" + TEXTURE_FUNCTION
+    atlas = elf["symbols"].get(ATLAS_FUNCTION)
+    require(atlas, f"{ATLAS_FUNCTION} is not in the ELF: libvita2d's fonts have no atlas to check")
+    require(elf["symbols"].get(wrapper), f"{wrapper} is not defined (settings/vita2d_textures.c)")
+    start = atlas[0][0] & ~1
+    end = start + atlas[0][1]
+    require(atlas[0][1] > 0, f"{ATLAS_FUNCTION} has no size in the symbol table")
+    inside = [(place, name) for place, name in elf["relocations"] if start <= place < end]
+    direct = [place for place, name in inside if name == TEXTURE_FUNCTION]
+    if direct:
+        raise Invalid(f"{ATLAS_FUNCTION} calls {TEXTURE_FUNCTION} at 0x{direct[0]:08x}, not {wrapper}: the link's "
+                      f"--wrap={TEXTURE_FUNCTION} is missing, so a font freed while the app runs may free another "
+                      "block (settings/vita2d_textures.c)")
+    calls = [place for place, name in inside if name == wrapper]
+    require(calls, f"{ATLAS_FUNCTION} does not call {wrapper} (settings/vita2d_textures.c, the link's --wrap)")
+    return len(calls)
+
+
 def check(self_path, elf_path):
     sce = read_self(Path(self_path).read_bytes())
     require(sce["is_used"] == 1, "control info 6 is not in use")
@@ -246,6 +275,7 @@ def check(self_path, elf_path):
                             f"{budget} B budget")
     calls = thread_calls(elf)
     graphics = graphics_calls(elf)
+    graphics[TEXTURE_FUNCTION + " (the glyph atlas)"] = atlas_calls(elf)
     return {"attribute": f"0x{sce['attribute']:02X}", "budget_bytes": budget, "phycont_bytes": 0,
             "main_thread": {"priority": f"0x{sce['priority']:08X}", "cpu_mask": f"0x{sce['cpu_mask']:08X}"},
             "heap_bytes": heap, "segment_bytes": sce["segments"],

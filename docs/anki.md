@@ -380,6 +380,30 @@ Not in the record, and why: **the previous and next dialogue.** The Shell
 keeps only the text on screen (one 4 KiB copy); the next line is not known when
 Enter is pressed. The record has the whole textbox, every line of it.
 
+### Cards from the Look up page
+
+The Rubi app's **Look up** page (#313, [the guide](guide.md#look-up)) saves a card with Enter, as the overlay
+does, whether Card mining is ON or OFF: a word typed with the keyboard, or a word of an earlier line of
+`history.csv`. Its writer (`settings/app_queue.c`) keeps the overlay's rules (`shell/anki_queue.c`): the record
+(version 4, `vjo_queue_encode`) to `<id>.json.tmp`, flushed, closed, renamed, the memory card synced; the ID the
+record's SHA-256; the same card queued, exported or found by AnkiConnect before, with or without a picture, is not
+saved again ("Already queued", "Already exported"). A stop at any of its writes leaves the card whole or not
+there, as the overlay's (`host/tests/test_anki_restart.py`). What its record holds:
+
+- **No picture** (`"picture": false`): the screen of that moment is gone.
+- `sentence`: the line (as the page shows it: filtered by `non_japanese_filter`, trimmed), or the typed text when it
+  is longer than the word; a word typed alone has none (`""`, its offsets -1).
+- `game`, `title_id`, `platform`: the line's (from its `history.csv` row); `null` for a typed search.
+- `misc`: the game and the line's local date (`CLANNAD (2026-10-27 14:46)`); a typed search the date it is saved.
+- `ocr_engine`, `ocr_model`: the line's (`vocr` and the model that read it, or `hook` and no model); `null` for a
+  typed search.
+- `time`: when Enter was pressed, to the minute.
+- `more`: the other dictionaries' entries the page shows below the word, while the record stays within 32 KiB.
+
+The ID covers the whole record (the minute, the picture flag, the sentence), so a card made on the page and one made
+in the overlay for the same word are two cards; roadmap 4's word key (#314) is what finds the same word mined on both
+sides. The export takes these cards as any other (`host/tests/test_apkg.py` imports them into Anki).
+
 ## The screenshot
 
 With **Screenshots** ON (`anki_screenshot = on`, the default), Enter keeps a

@@ -479,7 +479,7 @@ yet.
 The **Rubi** app shows five games per page, with compact titles, visible
 IDs and ON/OFF badges. The last page may have fewer games. Games are listed by letter (#,
 A–Z, kana by row, then other characters), alphabetically within it, capital
-and small letters together. Tap the **Games**, **OCR & lookup**, **Anki**, **Stats**
+and small letters together. Tap the **Games**, **OCR & lookup**, **Anki**, **Look up**, **Stats**
 or **Install** tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
 Icons load one per frame for the current page only, with at most five textures
@@ -499,7 +499,7 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
-| Select or touch a page tab | Switch between the Games, OCR & lookup, [Anki](anki.md#setup-and-use), [Stats](#stats) and Install pages |
+| Select or touch a page tab | Switch between the Games, OCR & lookup, [Anki](anki.md#setup-and-use), [Look up](#look-up), [Stats](#stats) and Install pages |
 | Cancel | Exit |
 
 On the **OCR & lookup** page, select a row with Up/Down. Enter
@@ -975,6 +975,46 @@ overlay or the app uses the network for Anki. `anki_host` and
 `anki_audio_url` (AnkiConnect, removed) are ignored, and the installer and the
 app's next save remove them. See [docs/anki.md](anki.md) for the fields, the queue, the package
 and memory.
+
+### Look up
+
+The Rubi app's **Look up** page (#313) looks words up beside the suspended game, with the overlay's own dictionaries
+and lookup, and saves them as Anki cards: a word you type, or a word of an earlier line of a game. L or R, or a tap on
+**Search** or **Earlier lines**, goes from one to the other; each keeps its text and cursor.
+
+- **Search.** Triangle (or, before anything is typed, Enter or a tap on the text box) opens the Vita keyboard for a word or a sentence
+  of up to 128 characters; every language's keyboard is offered, Japanese among them, whatever the system's
+  keyboards are. The text is looked up as the overlay looks up its text: the word at the cursor, longest match first,
+  in its dictionary form (した → する), in `local_dictionaries`' order with the same ranking, the other dictionaries'
+  entries for the word below it (`local_dictionary_results`). The entry shows its headword, reading, frequency
+  badge (`frequency_badge`), the conjugation line, the definitions, and the kanji and grammar lines.
+- **Earlier lines.** The most recent game's last 200 lines in `history.csv`, newest first, each with its local
+  time; Square, or a tap on the game's name, goes to the next game. The lines are those the overlay's line history
+  shows: Read text: Automatically's ([OCR history](ocr-history.md)), filtered as the overlay shows a text
+  (`non_japanese_filter`), none the same as the one after it. Enter, or a tap, opens a line with the same word
+  cursor as Search; Cancel goes back to the list. A big file is read from its end back, a part of it each frame
+  (at most its last 8 MiB): the list grows while the status line says it is reading. Start reads the file again.
+- **A card.** Enter on an entry saves it to the Anki queue, as the overlay's Enter does, **without a picture** (the
+  screen of that moment is gone), whether Card mining is ON or OFF: it is the page's own explicit press. The
+  sentence is the line, or the typed text when it is longer than the word (a word typed alone has none); the game,
+  title ID and platform are the line's (a typed search has none); MiscInfo is the game and the line's local date (a
+  typed search: the date it is saved). **Export cards** on the Anki page exports them with the others
+  ([the cards](anki.md#cards-from-the-look-up-page)).
+
+| Control | Action |
+| --- | --- |
+| Triangle | Search: type a word or a sentence |
+| Left / Right | Move the cursor by the matched word (a character with **Highlight: Character**); held, it repeats and stops at the text's ends |
+| Left stick | Left/right: a character a step, the word looked up once the cursor rests (`stick_lookup_ms`); up/down: scroll the entry |
+| Touch the text | Look up the word that starts at the character touched |
+| Up / Down, right stick | Scroll the entry (in the list: choose a line; Left/Right a page of lines) |
+| Enter | Save the entry as a card (Search with no text yet: the keyboard; the list: open the line) |
+| Square | Earlier lines: the next game |
+| Cancel | An open line: back to the list; else exit the app |
+
+The page uses no network and allocates nothing: its memory is static, about 420 KiB of the app's 50 MiB
+([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)), and leaving the page closes the
+dictionaries' files. The Shell, the game worker and the kernel are unchanged. Not run on a console yet.
 
 ### Stats
 

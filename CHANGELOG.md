@@ -13,6 +13,29 @@ been reported.
 
 ### Added
 
+- **A Look up tab in the Rubi app** (#313; [guide](docs/guide.md#look-up)): look a word up and mine it later, beside
+  the suspended game. **Search**: Triangle opens the Vita keyboard (every language's keyboard, 128 characters) for a
+  word or a sentence, looked up with the overlay's own lookup and dictionaries (`local_dictionaries`, their order and
+  ranking, the other dictionaries' entries below the word); Left/Right move by the matched word, the stick a
+  character, a tap to a character. **Earlier lines**: a game's last 200 lines in `history.csv`, newest first, the
+  most recent game's first (Square: the next game), read from the file's end a part of it each frame; Enter opens a
+  line with the same word cursor. **Enter saves a card**, as the overlay's Enter does but **without a picture**, with
+  Card mining ON or OFF: its sentence the line (or the typed text when it is longer than the word), its game, title ID
+  and platform the line's, MiscInfo the line's date; **Export cards** exports it with the others
+  ([anki.md](docs/anki.md#cards-from-the-look-up-page)).
+  - **The same lookup as the overlay's:** on the 50 real VOCR lines of `host/fixtures/word_lookup`, walked word by word,
+    the app and the overlay's own pipeline (over the Shell's memory layout) reach the same cursors and show the same
+    entry at each: 2,917 lookups in three settings [measured on the host: `host/tests/test_lookup_parity.c`].
+  - **Cards:** the app's writer keeps the overlay's rules (a temporary file, flushed, renamed, the card synced; the ID
+    the record's SHA-256); a stop at each of its writes leaves the card whole or not there
+    (`host/tests/test_anki_restart.py`), and Anki imports its cards (`host/tests/test_apkg.py`).
+  - **No setting:** nothing that users see today changes; the page is new. The tab bar lays itself out from its
+    labels (six tabs).
+  - **Memory:** the app's own, static: about 420 KiB (a 64 KiB lookup block as the Shell's, a 128 KiB card arena, a
+    64 KiB history window; [vita-memory.md](docs/vita-memory.md#54-the-rubi-app-a-system-application)). The glyph
+    atlas of the app's font holds about 500 characters (an estimate) and drops new ones once full; the app now loads
+    the font again, with an empty atlas, before it would be full. The Shell, the game worker and the kernel are
+    byte-identical. Not run on a console yet.
 - **Duplicates at export** (#314, roadmap 4 stage A; [anki.md](docs/anki.md#duplicates)). Mining a word again from
   another line made another card, and nothing said so. The export now finds a card **whose word an earlier card
   has**, queued or exported before: the word is the record's dictionary form and reading (every inflection is one
