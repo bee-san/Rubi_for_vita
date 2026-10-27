@@ -29,14 +29,17 @@ directory.
    text-only cards. **Trim black bars**, below that, is ON by default too
    (`anki_screenshot_trim_bars`): the picture leaves out the black borders
    around the game's picture, as a PSP game shown smaller than the screen has
-   them ([black bars](#black-bars)). The page's five rows scroll a row at a time.
+   them ([black bars](#black-bars)). **Duplicates**, below it, says what an export does with a card of
+   a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)). The page's six rows
+   scroll a row at a time.
 2. In a game, open the overlay, select a word and press Enter. The status line
    shows `Saving card…`, then `Saved for Anki`. Enter again on the same
    entry says `Already queued`. In a local character lookup, Enter saves
    the match at the cursor. A line above the entry counts the queue:
    `Anki queue: 3 · export in the Rubi app`.
 3. Back in the Rubi app (it opens beside the suspended game), **Export
-   cards (N queued)** writes the package. Its progress is shown;
+   cards (N queued)** writes the package (**N queued, M already mined** when M of them are words
+   you mined before: [duplicates](#duplicates)). Its progress is shown;
    Cancel stops it, and then nothing has changed. When it is done the page says
    where the file is: `Exported 12 cards (34 KB) to 2026-10-15_143000-12cards.apkg`.
 4. Copy the file from `ux0:data/VitaJPOverlay/anki/` to a computer or phone,
@@ -78,6 +81,11 @@ collection that has the earlier ones adds nothing twice.
 | `Could not write a complete file (memory card full? see log.txt). The queue is unchanged.` | No package; the queue is as it was |
 | `Stopped. No file was made; the queue is unchanged.` | Cancel during the export |
 | `No cards queued: save words in the overlay first.` | Nothing to export |
+| `… 2 tagged duplicate (mined before).` | Duplicates: Tag. Two cards' words were mined before; their notes have Anki's `duplicate` tag ([below](#duplicates)) |
+| `… 1 already mined stays queued (Duplicates: Skip).` | Duplicates: Skip. That card is not in the package and stays in the queue; the next export checks it again |
+| `No new cards: the 3 queued are words already mined, and stay queued (Duplicates: Skip).` | Duplicates: Skip, and every queued card is a word mined before: no package |
+| `… Not checked for duplicates: too many cards for memory.` | Duplicates: Tag, but every card's word did not fit in the export's memory: the cards are exported without the tag |
+| `Not enough memory to check every card for duplicates. Nothing was changed; …` | Duplicates: Skip, and the same: nothing is exported (with Keep, the cards export unchecked) |
 
 With `log_file = on` the app writes every storage call that fails, with its
 error code, and each export's counts to `log.txt` (lines starting
@@ -124,7 +132,8 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 
 The other fields (`ExpressionAudio`, `SelectionText`, `DefinitionPicture`,
 `SentenceAudio`, `Hint` and the `Is…Card` switches) stay empty. Every note has
-the tag `vita-jp-overlay`. The bundled dictionary, Bee's Ultimate Dictionary,
+the tag `vita-jp-overlay`, and one whose word an earlier card has also `duplicate`
+([below](#duplicates)). The bundled dictionary, Bee's Ultimate Dictionary,
 gives every entry its Jiten global frequency rank
 ([frequency ranks](local-dictionaries.md#frequency-ranks)): a ranked entry
 fills `Frequency` and `FreqSort`; an unranked one leaves `Frequency` empty, and
@@ -153,8 +162,50 @@ by a package that has it: use **Export cards** (the queue only) for new cards,
 **Export all cards** when you want everything.
 
 Saving the same word from two different texts makes two cards, as two Enter
-presses do; Anki keeps both (its browser marks notes whose first field is the
-same as Duplicate).
+presses do. The export finds the second one ([duplicates](#duplicates)): by default its
+note has Anki's `duplicate` tag, so it can be found in Anki's browser (`tag:duplicate`)
+and kept, suspended or deleted there.
+
+### Duplicates
+
+Mining a word again, from another line, is the most common waste of a mining session. The Rubi
+app's **Duplicates** (the Anki page, below **Trim black bars**) says what an export does with a
+card **whose word an earlier card has**:
+
+| Choice | The card |
+| --- | --- |
+| **Tag** (the default) | Exported, with Anki's own `duplicate` tag (the one its browser's Find Duplicates gives) besides `vita-jp-overlay`. No card is lost |
+| **Skip** | Not exported: it stays in the queue, and the next export checks it again. The overlay's `Anki queue: N` still counts it |
+| **Keep** | Exported as every card was before: nothing is checked |
+
+- **The word** is the record's dictionary form and its reading (`spelling`, `reading`): every inflection of
+  a word is one word (食べた and 食べて are both 食べる), and so is it from any line, game or day. Katakana
+  count as hiragana (ネコ is ねこ), the long vowel mark as written (コーヒー is not コオヒイ), the middle dot
+  `・` is left out (ジョン・スミス is ジョンスミス), and a card without a reading is read by its spelling.
+  Two cards of 方, one read かた and one ほう, are two words. The key is the first 64 bits of the SHA-256 of
+  the two, folded, with a tab between them (`core/word_key.h`).
+- **Earlier** is the package's order: the record's time (to the minute), then its ID. Every card counts,
+  queued or already exported (`anki_queue/exported/`), so a word mined again weeks after its first card was
+  exported is found too. The first card of a word is never a duplicate; a record that cannot be read has
+  no word.
+- **Export all cards** follows the same rule: the same notes are tagged in it as in the packages before
+  (with Skip, the duplicates are not in it).
+- **The Anki page** counts them: **Export cards (12 queued, 3 already mined)**. When it is shown it reads
+  the words of at most 64 new cards itself (it waits for them: `log.txt`'s `anki: words counted in N ms`
+  has the time, not measured on a console yet); with more, the count shows after the next export, which
+  reads every one.
+- **The setting** is `anki_duplicates = tag | skip | keep` in `ux0:data/VitaJPOverlay/app.ini`, the Rubi
+  app's own settings file. The overlay never reads it (a key it did not know in `config.ini` would show
+  "unknown setting" there); its lines are written as `config.ini`'s are.
+- **The cache.** Each card's word is kept in `ux0:data/VitaJPOverlay/anki_words.bin`, so that an export or
+  the page does not read every record again: about 20 B a card, written again when a word was read, and
+  only ever a copy of the records (a card's ID is its record's checksum, so its word never changes). A
+  missing or damaged one is rebuilt from the records; it can be deleted at any time.
+
+Nothing in the overlay changes: it marks a word only while its list is shown, as before ([#314](https://github.com/bee-san/Rubi_for_vita/issues/314)
+plans a mark for a word you have, in the popup, if it fits the Shell's pages). None of this has run on a
+console yet; the host suites check it (`test_apkg.c`, `test_settings_anki.c`, `test_anki.c` `word_key`)
+and Anki 26.09.3 imports the tag (`test_apkg.py`).
 
 ### The package
 

@@ -1320,12 +1320,20 @@ class AnkiExportLines(unittest.TestCase):
         # the app's prefix (settings/applog.c), and an earlier build's, "overlay app: " (before the Rubi rename)
         self.assertIn('snprintf(line, sizeof(line), "Rubi app: ")', (ROOT / "settings/applog.c").read_text(encoding="utf-8"))
         for prefix in ("Rubi app: ", "overlay app: "):
-            line = prefix + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000, 9)
+            line = prefix + (fmt.group(1) + fmt.group(2)) % ("queued", -113, 5, 3, 1, 2, 4, 6, 7, 8, 1000, 2000, 9,
+                                                              3, "tag", "", 4321)
             m = a.LOG["anki_export"].match(line)
             self.assertEqual([m.group(g) for g in range(1, 11)], ["queued", "-113", "5", "3", "1", "2", "4", "6", "7", "8"])
-            self.assertEqual(m.group(11), "9")
-        # the app's own idea of an error, which export_result follows
-        self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture;", page)
+            self.assertEqual((m.group(11), m.group(12), m.group(13), m.group(14)), ("9", "3", "tag", None))
+            # #314: Skip, and an export too large to check
+            line = prefix + (fmt.group(1) + fmt.group(2)) % ("all", 0, 5, 0, 0, 0, 0, 0, 0, 0, 1000, 2000, 0, 2, "skip",
+                                                              ", not checked", 10)
+            m = a.LOG["anki_export"].match(line)
+            self.assertEqual((m.group(12), m.group(13), m.group(14)), ("2", "skip", ", not checked"))
+        # the app's own idea of an error, which export_result follows (#314: "not checked" is one, as a missing
+        # screenshot is: the package is whole, its result line says what it lacks)
+        self.assertIn("result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture || "
+                      "r.unchecked;", page)
         export = (ROOT / "settings/anki_export.c").read_text(encoding="utf-8")
         for words in ('"anki export: %s did not verify (%d): removed, nothing cleared"',
                       '"anki export: %s: 99 packages are named for this second already"',
@@ -1338,6 +1346,21 @@ class AnkiExportLines(unittest.TestCase):
             self.assertTrue(a.EXPORT_TROUBLE.search(
                 prefix + "anki export: ux0:data/VitaJPOverlay/anki: 99 packages are named for this second already"))
         self.assertIsNone(a.EXPORT_TROUBLE.search("overlay app: " + self.VERIFIED.strip()))
+
+    def test_duplicates_are_reported(self):
+        """#314: what Duplicates did, in the export summary; a successful export with duplicates is no problem."""
+        log = (export_line(swept=0).rstrip() + ", 0 without screenshots, 2 duplicates (tag), 15 ms\n" +
+               export_line(swept=0).rstrip() + ", 0 without screenshots, 1 duplicates (skip), 9 ms\n" +
+               export_line(swept=0).rstrip() + ", 0 without screenshots, 0 duplicates (tag), not checked, 9 ms\n" +
+               export_line(swept=0).rstrip() + ", 0 without screenshots, 0 duplicates (keep), 9 ms\n")
+        lg = a.summarise_log(log)
+        an = lg["anki"]
+        self.assertEqual((an["export_duplicates_tag"], an["export_duplicates_skip"], an["export_unchecked"]), (2, 1, 1))
+        self.assertEqual((an["export_ok"], lg["trouble"]), (4, {}))
+        text = "\n".join(a.export_summary(an))
+        self.assertIn("tagged duplicate (a word mined before): 2 card(s)", text)
+        self.assertIn("left out as duplicates (Duplicates: Skip; the queued ones stay queued): 1 card(s)", text)
+        self.assertIn("1 export(s) not checked for duplicates (too many cards for memory)", text)
 
     def test_recovered_text_is_reported_without_claiming_cards_stayed_queued(self):
         line = export_line(swept=0).rstrip() + ", 2 without screenshots\n"

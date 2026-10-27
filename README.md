@@ -183,6 +183,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
+| | **Duplicates**: a card of a word you mined before gets Anki's `duplicate` tag (Tag), stays in the queue (Skip) or is exported as before (Keep); the page counts them, "N queued, M already mined" ([details](docs/anki.md#duplicates)) | Tag |
 | | **Export cards** and **Export all cards**: write them into one `.apkg` file | |
 | Stats | Your reading from `history.csv`: today, the last 14 days, the year's heatmap, the streak, all games and each game (characters, reading time, characters/hour, cards mined), counted as △ counts ([details](docs/guide.md#stats)) | |
 | | **Daily goal**: Off, 2,000 to 50,000 characters or 15 to 120 minutes a day; a day at the goal counts for the streak (with none, any day with reading). Kept in the app's own `app.ini` | Off |

@@ -299,6 +299,8 @@ static void reset(void)
     statuses = 0;
     rm_rf(VJO_EXPORT_QUEUE_DIR);
     rm_rf(VJO_EXPORT_DIR);
+    unlink(VJO_EXPORT_DATA_DIR "/anki_words.bin"); /* #314's cache of the cards' words */
+    unlink(VJO_EXPORT_DATA_DIR "/anki_words.bin.tmp");
     TEST_ASSERT(mkdir(VJO_EXPORT_QUEUE_DIR, 0777) == 0);
     memset(mem, 0xA5, sizeof(mem));
     vjo_arena_init(&A, mem, sizeof(mem));
@@ -479,6 +481,16 @@ static int run(int all, VjoExportResult *r, char *msg)
 {
     vjo_arena_init(&A, mem, sizeof(mem));
     return vjo_export_run(&A, all, NULL, &ui, r, msg, 300);
+}
+
+/* The same with app.ini's Duplicates (#314), in an arena of `bytes` (0: the whole). */
+static int run_dupes(int all, int duplicates, size_t bytes, VjoExportResult *r, char *msg)
+{
+    VjoAppPrefs p;
+    vjo_app_prefs_defaults(&p);
+    p.anki_duplicates = duplicates;
+    vjo_arena_init(&A, mem, bytes ? bytes : sizeof(mem));
+    return vjo_export_run(&A, all, &p, &ui, r, msg, 300);
 }
 
 /* ---------------- the package, read here ---------------- */
@@ -732,6 +744,242 @@ static void test_note_tags(void)
     }
 }
 
+/* ---------------- #314: duplicates ---------------- */
+
+static int card_in(const char *dir, const char *id, const char *ext);
+
+/* Notes in the package at path whose tags are tags (" vita-jp-overlay duplicate ": every tag between spaces). */
+static int notes_tagged(const char *path, const char *tags)
+{
+    static uint8_t file[1 << 20];
+    FILE *f = fopen(path, "rb");
+    size_t n;
+    TEST_ASSERT(f != NULL);
+    n = fread(file, 1, sizeof(file), f);
+    fclose(f);
+    return occurrences(file, n, tags);
+}
+#define DUPLICATE_TAGS " vita-jp-overlay duplicate "
+
+/* A card of word w (spelling, reading) from another line, t seconds after cat, in the queue (archive 0) or not. */
+static const char *queue_word(const char *spelling, const char *reading, const char *sentence, int64_t t)
+{
+    Card c = cat;
+    c.spelling = spelling;
+    c.reading = reading;
+    c.sentence = sentence;
+    c.hl_start = 0;
+    c.hl_end = (int)strlen(spelling) < (int)strlen(sentence) ? (int)strlen(spelling) : (int)strlen(sentence);
+    c.time = cat.time + t;
+    return queue_card(&c, 0);
+}
+
+/* The words of the queue and the archive (vjo_export_words) in the whole arena. */
+static int words(VjoWords *w, int max_reads)
+{
+    vjo_arena_init(&A, mem, sizeof(mem));
+    return vjo_export_words(&A, &ui, max_reads, w);
+}
+
+static int earlier(const VjoWords *w, const char *spelling, const char *reading, int64_t t, const char *hex)
+{
+    uint8_t id[16];
+    from_hex(hex, id);
+    return vjo_words_earlier(w, vjo_word_key(spelling, reading), cat.time + t, id);
+}
+
+/* Tag (the default): a card whose word an earlier card has, queued or exported, gets Anki's duplicate tag; the
+ * earlier one does not; another reading, spelling or katakana for hiragana is the rule's (core/word_key.h). */
+static void test_duplicates_are_tagged(void)
+{
+    VjoExportResult r;
+    VjoWords w;
+    char msg[300], first[VJO_QUEUE_ID_SIZE], again[VJO_QUEUE_ID_SIZE];
+    reset();
+    snprintf(first, sizeof(first), "%s", queue_word("猫", "ねこ", "猫が好き", 0));
+    snprintf(again, sizeof(again), "%s", queue_word("猫", "ねこ", "猫を見た", 120)); /* another line, later */
+    queue_word("猫", "びょう", "猫", 180);                                       /* another reading: another word */
+    queue_word("犬", "いぬ", "犬だ", 240);
+    TEST_ASSERT(words(&w, 0) == 0);
+    TEST_CHECK(w.n == 4 && w.queued == 4 && w.duplicates == 1 && w.read == 4 && !w.unreadable);
+    TEST_CHECK(!earlier(&w, "猫", "ねこ", 0, first) && earlier(&w, "猫", "ねこ", 120, again));
+    TEST_CHECK(earlier(&w, "猫", "ネコ", 300, again) && !earlier(&w, "猫", "びょう", 180, again));
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 4 && r.moved == 4 && r.duplicates == 1 && !r.unchecked);
+    TEST_CHECK(strstr(msg, "Exported 4 cards (") && strstr(msg, " 1 tagged duplicate (mined before)."));
+    TEST_MSG("%s", msg);
+    TEST_CHECK(notes_tagged(r.path, DUPLICATE_TAGS) == 1 && notes_tagged(r.path, " vita-jp-overlay ") == 4);
+    /* the same word, now exported: a new card of it (katakana reading) is tagged, alone in its package */
+    queue_word("猫", "ネコ", "ネコがいる", 600);
+    queue_word("鳥", "とり", "鳥", 660);
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 2 && r.duplicates == 1 && notes_tagged(r.path, DUPLICATE_TAGS) == 1);
+    TEST_MSG("%s", msg);
+    /* every card again: the same notes tagged as before (2 of the six) */
+    TEST_ASSERT(run(1, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 6 && r.duplicates == 2 && notes_tagged(r.path, DUPLICATE_TAGS) == 2);
+    TEST_MSG("%d cards, %d duplicates: %s", r.cards, r.duplicates, msg);
+}
+
+/* Skip: a duplicate stays queued and is checked again at each export; with only duplicates queued, no package. */
+static void test_skip_leaves_duplicates_queued(void)
+{
+    VjoExportResult r;
+    char msg[300], dupe[VJO_QUEUE_ID_SIZE];
+    reset();
+    queue_word("猫", "ねこ", "猫が好き", 0);
+    snprintf(dupe, sizeof(dupe), "%s", queue_word("猫", "ねこ", "猫を見た", 60));
+    queue_word("犬", "いぬ", "犬だ", 120);
+    TEST_ASSERT(run_dupes(0, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 2 && r.moved == 2 && r.duplicates == 1 && notes_tagged(r.path, DUPLICATE_TAGS) == 0);
+    TEST_CHECK(strstr(msg, "Exported 2 cards (") && strstr(msg, " 1 already mined stays queued (Duplicates: Skip)."));
+    TEST_MSG("%s", msg);
+    TEST_CHECK(card_in(VJO_EXPORT_QUEUE_DIR, dupe, "json") && count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 1);
+    /* again: the earlier card is exported now, and the duplicate still stays */
+    TEST_ASSERT(run_dupes(0, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 0 && r.duplicates == 1 && !r.path[0] && count_dir(VJO_EXPORT_DIR, ".apkg") == 1);
+    TEST_CHECK(!strcmp(msg, "No new cards: the 1 queued is a word already mined, and stays queued (Duplicates: Skip)."));
+    TEST_MSG("%s", msg);
+    TEST_CHECK(card_in(VJO_EXPORT_QUEUE_DIR, dupe, "json"));
+    /* every card, Skip: the duplicate is not in it */
+    TEST_ASSERT(run_dupes(1, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 2 && r.duplicates == 1 && strstr(msg, " 1 already mined stays queued (Duplicates: Skip)."));
+    TEST_MSG("%s", msg);
+    /* Tag, the same queue: it goes, tagged */
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 1 && r.moved == 1 && r.duplicates == 1 && notes_tagged(r.path, DUPLICATE_TAGS) == 1);
+    /* every card, Skip: the archived duplicate is not in it either */
+    TEST_ASSERT(run_dupes(1, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 2 && r.duplicates == 1 && strstr(msg, " 1 already mined is not in it (Duplicates: Skip)."));
+    TEST_MSG("%s", msg);
+}
+
+/* Keep: as before #314, nothing checked: no tag, and no word read or cached. */
+static void test_keep_checks_nothing(void)
+{
+    VjoExportResult r;
+    char msg[300];
+    reset();
+    unlink(WORDS_PATH);
+    queue_word("猫", "ねこ", "猫が好き", 0);
+    queue_word("猫", "ねこ", "猫を見た", 60);
+    TEST_ASSERT(run_dupes(0, VJO_DUPLICATES_KEEP, 0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 2 && !r.duplicates && notes_tagged(r.path, DUPLICATE_TAGS) == 0 && !strstr(msg, "duplicate"));
+    TEST_CHECK(present(WORDS_PATH) == 0 && !strstr(logs, "words of"));
+    TEST_MSG("%s", logs);
+}
+
+/* The same word twice in one minute (the record's time): the card of the smaller ID is the earlier, the package's
+ * order; exactly one is tagged. */
+static void test_the_same_minute_is_ordered_by_id(void)
+{
+    VjoExportResult r;
+    VjoWords w;
+    char msg[300], a[VJO_QUEUE_ID_SIZE], b[VJO_QUEUE_ID_SIZE];
+    reset();
+    snprintf(a, sizeof(a), "%s", queue_word("猫", "ねこ", "猫が好き", 0));
+    snprintf(b, sizeof(b), "%s", queue_word("猫", "ねこ", "猫を見た", 0));
+    TEST_ASSERT(words(&w, 0) == 0);
+    TEST_CHECK(w.duplicates == 1);
+    TEST_CHECK(earlier(&w, "猫", "ねこ", 0, a) == (strcmp(a, b) > 0) && earlier(&w, "猫", "ねこ", 0, b) == (strcmp(b, a) > 0));
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.duplicates == 1 && notes_tagged(r.path, DUPLICATE_TAGS) == 1);
+}
+
+static void put_bytes(const char *path, const uint8_t *p, size_t n)
+{
+    FILE *f = fopen(path, "wb");
+    TEST_ASSERT(f && fwrite(p, 1, n, f) == n);
+    fclose(f);
+}
+
+static size_t get_bytes(const char *path, uint8_t *p, size_t cap)
+{
+    FILE *f = fopen(path, "rb");
+    size_t n;
+    if (!f)
+        return 0;
+    n = fread(p, 1, cap, f);
+    fclose(f);
+    return n;
+}
+
+/* The words' cache (anki_words.bin): a second count reads no record; a damaged, short, foreign or unordered cache
+ * is read again from the records and written anew; a card that is gone leaves it; max_reads keeps what it read. */
+static void test_the_words_cache(void)
+{
+    static uint8_t good[4096], bad[4096];
+    VjoWords w;
+    size_t n;
+    char gone[VJO_QUEUE_ID_SIZE], path[256];
+    reset();
+    unlink(WORDS_PATH);
+    queue_word("猫", "ねこ", "猫が好き", 0);
+    queue_word("猫", "ねこ", "猫を見た", 60);
+    snprintf(gone, sizeof(gone), "%s", queue_word("犬", "いぬ", "犬だ", 120));
+    TEST_ASSERT(words(&w, 0) == 0 && w.read == 3 && w.n == 3 && w.duplicates == 1);
+    n = get_bytes(WORDS_PATH, good, sizeof(good));
+    TEST_CHECK(n == 16 + 3 * 20 && !memcmp(good, "RubiWd1\n", 8) && present(WORDS_TEMP) == 0);
+    TEST_ASSERT(words(&w, 0) == 0 && w.read == 0 && w.n == 3 && w.duplicates == 1);
+    TEST_CHECK(get_bytes(WORDS_PATH, bad, sizeof(bad)) == n && !memcmp(good, bad, n)); /* not written again */
+    /* damaged in each way: read again, written as before */
+    for (int k = 0; k < 5; k++) {
+        memcpy(bad, good, n);
+        size_t m = n;
+        if (k == 0)
+            bad[16 + 25] ^= 1; /* a key's bit: the checksum */
+        else if (k == 1)
+            m = n - 7; /* short */
+        else if (k == 2)
+            bad[3] = 'X'; /* another magic */
+        else if (k == 3) { /* two entries swapped: not in ID order, with their checksum made right */
+            uint8_t t[20];
+            uint32_t crc;
+            memcpy(t, bad + 16, 20);
+            memcpy(bad + 16, bad + 36, 20);
+            memcpy(bad + 36, t, 20);
+            crc = vjo_crc32(0, bad + 16, n - 16);
+            be_put(bad + 12, crc, 4);
+        } else
+            be_put(bad + 8, 4, 4); /* a count its size is not */
+        put_bytes(WORDS_PATH, bad, m);
+        logs[0] = '\0';
+        TEST_ASSERT(words(&w, 0) == 0);
+        TEST_CHECK_(w.read == 3 && w.n == 3 && w.duplicates == 1 && strstr(logs, "anki_words.bin ignored"),
+                    "damage %d: %d read: %s", k, w.read, logs);
+        TEST_CHECK(get_bytes(WORDS_PATH, bad, sizeof(bad)) == n && !memcmp(good, bad, n));
+    }
+    /* a card that is gone (its record removed by hand): its word leaves the cache */
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, gone);
+    TEST_ASSERT(unlink(path) == 0);
+    TEST_ASSERT(words(&w, 0) == 0 && w.read == 0 && w.n == 2);
+    TEST_CHECK(get_bytes(WORDS_PATH, bad, sizeof(bad)) == 16 + 2 * 20);
+    /* a count that may read 2 records of 3 new ones: incomplete (1), the 2 cached; the next reads the third */
+    queue_word("鳥", "とり", "鳥", 180);
+    queue_word("魚", "さかな", "魚", 240);
+    queue_word("猫", "ねこ", "猫だ", 300);
+    TEST_CHECK(words(&w, 2) == 1 && get_bytes(WORDS_PATH, bad, sizeof(bad)) == 16 + 4 * 20);
+    TEST_ASSERT(words(&w, 2) == 0 && w.read == 1 && w.n == 5 && w.duplicates == 2);
+    /* an unreadable record (edited): no word, read again each time, and counted */
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, queue_word("羊", "ひつじ", "羊", 360));
+    {
+        FILE *f = fopen(path, "r+b");
+        TEST_ASSERT(f && fputc('X', f) != EOF);
+        fclose(f);
+    }
+    TEST_ASSERT(words(&w, 0) == 0 && w.unreadable == 1 && w.read == 0 && w.n == 5);
+    TEST_ASSERT(words(&w, 0) == 0 && w.unreadable == 1);
+    /* no room for the words: VJO_E_OOM, the cache as it was */
+    n = get_bytes(WORDS_PATH, good, sizeof(good));
+    vjo_arena_init(&A, mem, 64);
+    TEST_CHECK(vjo_export_words(&A, &ui, 0, &w) == VJO_E_OOM);
+    TEST_CHECK(get_bytes(WORDS_PATH, bad, sizeof(bad)) == n && !memcmp(good, bad, n));
+    /* a stop: VJO_E_CANCELLED */
+    stop_at_status = 0;
+    TEST_CHECK(words(&w, 0) == VJO_E_CANCELLED);
+    stop_at_status = -1;
+}
+
 static void test_export_writes_a_dated_verified_package_and_clears_the_queue(void)
 {
     VjoExportResult r;
@@ -982,8 +1230,9 @@ static void test_a_card_left_out_of_the_package_stays_queued(void)
     snprintf(ids[0], sizeof(ids[0]), "%s", queue_card(&cat, 0));
     snprintf(ids[1], sizeof(ids[1]), "%s", queue_card(&dog, 0));
     snprintf(ids[2], sizeof(ids[2]), "%s", queue_card(&eat, 0));
-    /* three reads while listing, then one per card while writing: the fifth is the second written */
-    io.fail_json_read_at = 5;
+    /* three reads for the cards' words (#314: Duplicates, Tag by default), three while listing, then one per card
+     * while writing: the eighth is the second written */
+    io.fail_json_read_at = 8;
     TEST_ASSERT(run(0, &r, msg) == VJO_OK);
     TEST_MSG("%s\n%s", msg, logs);
     for (int i = 0; i < 3; i++) {
@@ -1025,7 +1274,16 @@ static void test_more_cards_than_a_package_holds(void)
         TEST_CHECK(card_in(VJO_EXPORT_QUEUE_DIR, newest[i], "json"));
     printf("measure: %d cards: %u bytes, arena peak %u of %u\n", N, (unsigned)r.bytes, (unsigned)A.peak,
            (unsigned)sizeof(mem));
-    TEST_CHECK(run(0, &r, msg) == VJO_OK && r.cards == 5 && r.left == 0 && r.moved == 5);
+    /* #314: no room for the 20,005 cards' words (their cache, 480,120 B) in 300,000 B: Skip changes nothing, Tag
+     * exports without the check and says so (the package itself fits) */
+    TEST_CHECK(run_dupes(0, VJO_DUPLICATES_SKIP, 300000, &r, msg) == VJO_E_OOM && !r.cards &&
+               strstr(msg, "Not enough memory to check every card for duplicates. Nothing was changed"));
+    TEST_MSG("%s", msg);
+    TEST_CHECK(count_dir(VJO_EXPORT_QUEUE_DIR, ".json") == 5 && count_dir(VJO_EXPORT_DIR, ".apkg") == 1 &&
+               count_dir(VJO_EXPORT_DIR, ".tmp") == 0);
+    TEST_CHECK(run_dupes(0, VJO_DUPLICATES_TAG, 300000, &r, msg) == VJO_OK && r.cards == 5 && r.left == 0 &&
+               r.moved == 5 && r.unchecked && strstr(msg, " Not checked for duplicates: too many cards for memory."));
+    TEST_MSG("%s", msg);
     /* everything again: a package holds the oldest VJO_APKG_MAX_CARDS, and says so */
     TEST_CHECK(run(1, &r, msg) == VJO_OK && r.cards == VJO_APKG_MAX_CARDS && r.left == 5 &&
                strstr(msg, "5 newer are not in it: a package holds 20000 cards at most."));
@@ -1613,6 +1871,16 @@ static int write_packages(const char *dir)
     b.reading = "いぬごや";
     b.time += 60;
     snprintf(saved[n++], VJO_QUEUE_ID_SIZE, "%s", queue_card(&b, 0));
+    /* #314: 犬 again, from another line: a duplicate of the first package's 犬, so tagged (as 猫 is in the first:
+     * the version 1 record's 猫, without a time, is earlier) */
+    {
+        Card again = dog;
+        again.sentence = "犬が走る";
+        again.hl_start = 0;
+        again.hl_end = 3;
+        again.time += 120;
+        snprintf(saved[n++], VJO_QUEUE_ID_SIZE, "%s", queue_card(&again, 0));
+    }
     if (run(0, &r, msg) != VJO_OK)
         return fprintf(stderr, "%s\n%s", msg, logs), 1;
     snprintf(path, sizeof(path), "%s/second.apkg", dir);
@@ -1648,7 +1916,9 @@ static int write_packages(const char *dir)
     fprintf(f, "],\"second\":[");
     for (int i = 4; i < n; i++)
         fprintf(f, "%s\"%s\"", i > 4 ? "," : "", saved[i]);
-    fprintf(f, "],\"many\":700,\"notetype_id\":%lld,\"deck_id\":%lld,\"deck\":\"%s\"}\n", vjo_lapis_notetype_id,
+    /* the cards whose notes have the duplicate tag (#314): 猫 (version 3) after version 1's, and 犬 again */
+    fprintf(f, "],\"duplicates\":[\"%s\",\"%s\"]", saved[0], saved[n - 1]);
+    fprintf(f, ",\"many\":700,\"notetype_id\":%lld,\"deck_id\":%lld,\"deck\":\"%s\"}\n", vjo_lapis_notetype_id,
             vjo_lapis_deck_id, vjo_lapis_deck_name);
     fclose(f);
     return 0;
@@ -1660,6 +1930,11 @@ TEST_LIST = {
     {"guid_and_media_name", test_guid_and_media_name},
     {"lapis_fields", test_lapis_fields},
     {"note_tags", test_note_tags},
+    {"duplicates_are_tagged", test_duplicates_are_tagged},
+    {"skip_leaves_duplicates_queued", test_skip_leaves_duplicates_queued},
+    {"keep_checks_nothing", test_keep_checks_nothing},
+    {"the_same_minute_is_ordered_by_id", test_the_same_minute_is_ordered_by_id},
+    {"the_words_cache", test_the_words_cache},
     {"export_writes_a_dated_verified_package_and_clears_the_queue",
      test_export_writes_a_dated_verified_package_and_clears_the_queue},
     {"one_card_and_every_record_version", test_one_card_and_every_record_version},

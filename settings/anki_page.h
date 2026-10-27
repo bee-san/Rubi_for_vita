@@ -1,7 +1,9 @@
 /* The Rubi app's Anki page: card mining on/off, the cards' screenshots
  * on/off (anki_screenshot, API 23) and their black bars trimmed or kept
- * (anki_screenshot_trim_bars, API 32), and the export of the queued cards (or all
- * of them) as Lapis notes in a new .apkg file under
+ * (anki_screenshot_trim_bars, API 32), what the export does with a word mined
+ * before (#314: Duplicates, app.ini's anki_duplicates: tag, skip or keep), and
+ * the export of the queued cards (or all of them; "N queued, M already mined")
+ * as Lapis notes in a new .apkg file under
  * ux0:data/VitaJPOverlay/anki/ (settings/anki_export.h), which Anki imports
  * on any computer or phone; a card's screenshot goes into its Picture field.
  * Nothing is sent anywhere: the app uses no network. */

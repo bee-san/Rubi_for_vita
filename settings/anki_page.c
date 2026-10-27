@@ -4,6 +4,7 @@
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/cpu.h>
+#include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -19,7 +20,7 @@
 
 #define WORKER_STACK (64 * 1024)
 
-/* Five rows (API 23 added Screenshots, API 32 their black bars), then the 3-line status box,
+/* Six rows (API 23 added Screenshots, API 32 their black bars, #314 Duplicates), then the 3-line status box,
  * which ends above the controls line main.c draws at y 535: the export rows' help is one line.
  * The rows are more than the room above the box: they scroll a row at a time, the selected one
  * always whole, as the OCR page's cards do (a row cut at the room's bottom shows there is more,
@@ -33,15 +34,29 @@
 #define FOOTER_H 92
 #define SCROLL_X 942
 #define SCROLL_W 6
-enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_EXPORT, ROW_ALL, ROWS };
-static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H, ACTION_H, ACTION_H};
+enum { ROW_MINING, ROW_SHOT, ROW_TRIM, ROW_DUPES, ROW_EXPORT, ROW_ALL, ROWS };
+static const int row_height[ROWS] = {CARD_H, CARD_H, CARD_H, CARD_H, ACTION_H, ACTION_H};
 static int top_row; /* the first row in view */
+/* A choice row's badges (#314 Duplicates), as the OCR page's three-choice cards (main.c's Text source): from x 440,
+ * 160 px apart, 152 px wide, each choice shown and the chosen one lit. */
+#define CHOICE_X 440
+#define CHOICE_PITCH 160
+#define CHOICE_W 152
+static const char *const dupes_name[3] = {"Tag", "Skip", "Keep"}; /* VJO_DUPLICATES_*'s order */
+static const char *const dupes_help[3] = {"A word you mined before gets Anki's duplicate tag.",
+                                          "A word you mined before stays queued, not exported.",
+                                          "Every card is exported, with no duplicate check."};
+/* #314: the words the page reads itself, at most, when it is shown (the export reads every one): the new cards' since
+ * it last looked, on the main thread, which waits for them (log.txt's "anki: words counted in N ms"; not measured on
+ * a console) */
+#define WORDS_ON_SHOW 64
 
 static VjoConfig cfg;           /* the settings shown (main thread) */
 static VjoAppPrefs app;         /* the app's own (app.ini, settings/app_prefs.h), shown (main thread) */
 static int writable, app_writable, selected;
 static int stick_move;          /* the left stick's move for the next frame (vjo_anki_page_stick) */
 static VjoExportCounts counts = {-1, -1};
+static int mined = -1;          /* #314: queued cards whose word an earlier card has (-1: not known) */
 static char note[200];          /* the page's own status (saves) */
 static int note_error;
 
@@ -56,6 +71,8 @@ static unsigned char export_mem[VJO_EXPORT_MEM] __attribute__((aligned(16)));
 /* log.txt: settings/applog.c (settings/anki_export.c logs its storage errors there too). */
 
 /* ---------------- the worker ---------------- */
+
+static void count_mined(void);
 
 static void set_progress(void *ud, const char *msg)
 {
@@ -81,6 +98,7 @@ static int worker_main(SceSize args, void *argp)
     VjoArena arena;
     VjoExportResult r;
     VjoAppPrefs prefs;
+    uint64_t t0;
     char msg[360];
     int what;
     size_t n;
@@ -91,17 +109,20 @@ static int worker_main(SceSize args, void *argp)
     prefs = job_app;
     sceKernelUnlockMutex(lock, 1);
     vjo_arena_init(&arena, export_mem, sizeof(export_mem));
+    t0 = sceKernelGetProcessTimeWide();
     vjo_export_run(&arena, what, &prefs, &ui, &r, msg, sizeof(msg));
     vjo_log("anki: export (%s) rc=%d: %d cards, %d moved, %d kept, %d unreadable, %d too large, %d left, "
-            "%d stopped, %d swept, %u bytes, arena peak %u, %d without screenshots",
+            "%d stopped, %d swept, %u bytes, arena peak %u, %d without screenshots, %d duplicates (%s)%s, %u ms",
             what ? "all" : "queued", r.rc, r.cards, r.moved, r.kept, r.unreadable, r.too_large, r.left, r.stopped,
-            r.swept, (unsigned)r.bytes, (unsigned)arena.peak, r.missing_picture);
+            r.swept, (unsigned)r.bytes, (unsigned)arena.peak, r.missing_picture, r.duplicates,
+            vjo_app_prefs_value("anki_duplicates", prefs.anki_duplicates), r.unchecked ? ", not checked" : "",
+            (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000u));
     sceKernelLockMutex(lock, 1, NULL);
     n = (size_t)snprintf(result, sizeof(result), "%s", msg);
     if (r.rc == 0 && r.cards && n < sizeof(result))
         snprintf(result + n, sizeof(result) - n, " Copy it from %s/ by VitaShell's FTP or USB (or the SD2Vita "
                  "card, when it is ux0:) and open it in Anki.", VJO_EXPORT_DIR);
-    result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture;
+    result_error = r.rc != 0 || r.kept || r.unreadable || r.too_large || r.missing_picture || r.unchecked;
     progress[0] = '\0';
     finished = 1;
     sceKernelUnlockMutex(lock, 1);
@@ -151,6 +172,7 @@ static void reap(void)
     worker = -1;
     running = 0;
     vjo_export_count(&counts);
+    count_mined(); /* (Skip leaves the duplicates queued) */
 }
 
 static void cancel(void)
@@ -160,6 +182,22 @@ static void cancel(void)
     sceKernelLockMutex(lock, 1, NULL);
     cancelled = 1;
     sceKernelUnlockMutex(lock, 1);
+}
+
+/* #314: the queue's cards whose word an earlier card has, for the export row (in the export's memory: no export
+ * runs). Not known (-1) when more of their words than WORDS_ON_SHOW are still to be read; the next export reads them. */
+static void count_mined(void)
+{
+    VjoArena arena;
+    VjoWords w;
+    uint64_t t0 = sceKernelGetProcessTimeWide();
+    int rc;
+    vjo_arena_init(&arena, export_mem, sizeof(export_mem));
+    rc = vjo_export_words(&arena, NULL, WORDS_ON_SHOW, &w);
+    mined = rc ? -1 : w.duplicates;
+    /* (the main thread's time: the page waits for it) */
+    vjo_log("anki: words counted in %u ms: rc %d, %d read, %d already mined%s", (unsigned)((sceKernelGetProcessTimeWide() -
+            t0) / 1000u), rc, rc ? 0 : w.read, mined, rc == 1 ? " (more to read: the next export reads them)" : "");
 }
 
 /* ---------------- settings ---------------- */
@@ -189,7 +227,28 @@ void vjo_anki_page_show(VjoArena *scratch)
     if (!running) {
         vjo_log_enable(cfg.log_file);
         vjo_export_count(&counts);
+        count_mined();
     }
+}
+
+/* #314: Duplicates, in app.ini (the overlay never reads it). */
+static void set_duplicates(int value, VjoArena *scratch)
+{
+    static const char *const keys[1] = {"anki_duplicates"};
+    int values[1] = {value}, rc, read_rc;
+    if (value < 0 || value > 2 || value == app.anki_duplicates)
+        return;
+    if (!app_writable) {
+        snprintf(note, sizeof(note), "Cannot read app.ini. The choice has not been changed.");
+        note_error = 1;
+        return;
+    }
+    rc = vjo_app_prefs_save(keys, values, 1, scratch);
+    read_rc = vjo_app_prefs_load(&app, scratch);
+    app_writable = read_rc >= 0;
+    note_error = rc < 0 || read_rc < 0 || app.anki_duplicates != value;
+    snprintf(note, sizeof(note), "%s", note_error ? "Save not confirmed. Check the choice shown, then retry."
+                                                  : "Saved. The next export uses it.");
 }
 
 /* ---------------- input and drawing ---------------- */
@@ -209,10 +268,12 @@ static void activate(int row, VjoArena *scratch)
 {
     if (running)
         return;
-    if (row < ROW_EXPORT)
+    if (row < ROW_DUPES)
         save(row == ROW_MINING ? !cfg.anki_mining : cfg.anki_mining,
              row == ROW_SHOT ? !cfg.anki_screenshot : cfg.anki_screenshot,
              row == ROW_TRIM ? !cfg.anki_screenshot_trim_bars : cfg.anki_screenshot_trim_bars, scratch);
+    else if (row == ROW_DUPES) /* Enter: the next choice, round */
+        set_duplicates((app.anki_duplicates + 1) % 3, scratch);
     else
         start(row == ROW_ALL);
 }
@@ -253,10 +314,16 @@ static void count_text(char *out, size_t cap, int n, const char *what)
 /* Row i at y (busy: an export runs; busy_text its progress; total every card). */
 static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *busy_text, int total)
 {
-    static const char *const titles[ROW_EXPORT] = {"Card mining", "Screenshots", "Trim black bars"};
+    static const char *const titles[ROW_DUPES] = {"Card mining", "Screenshots", "Trim black bars"};
     char line[260];
     ui->card(y, row_height[i], selected == i);
-    if (i < ROW_EXPORT) {
+    if (i == ROW_DUPES) { /* #314: each choice shown, the chosen one lit */
+        ui->text(42, y + 30, ui->white, 28, "Duplicates");
+        for (int k = 0; k < 3; k++)
+            ui->badge(CHOICE_X + k * CHOICE_PITCH, y + 6, CHOICE_W, 34, dupes_name[k],
+                      app_writable && app.anki_duplicates == k);
+        ui->text(42, y + 60, ui->dim, 24, app_writable ? dupes_help[app.anki_duplicates] : "Cannot read app.ini.");
+    } else if (i < ROW_EXPORT) {
         ui->text(42, y + 30, ui->white, 28, titles[i]);
         ui->badge(812, y + 6, 108, 34, !writable ? "--" : row_on(i) ? "ON" : "OFF", writable && row_on(i));
         if (i == ROW_MINING)
@@ -269,6 +336,8 @@ static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *bu
     } else if (i == ROW_EXPORT) { /* the queued cards */
         if (counts.queued < 0)
             snprintf(line, sizeof(line), "Export cards (queue unreadable)");
+        else if (mined > 0 && !busy) /* #314 */
+            snprintf(line, sizeof(line), "Export cards (%d queued, %d already mined)", counts.queued, mined);
         else
             snprintf(line, sizeof(line), "Export cards (%d queued)", counts.queued);
         ui->text(42, y + 30, counts.queued < 0 ? ui->off : ui->white, 28, line);
@@ -301,10 +370,12 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
         selected = vjo_stick_step(selected, ROWS, stick);
     if (pressed & ui->buttons->enter)
         activate(selected, scratch);
-    /* Left/Right: OFF/ON on the three settings' rows */
-    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < ROW_EXPORT && !busy &&
+    /* Left/Right: OFF/ON on the three settings' rows; the choice to the left or right on Duplicates */
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected < ROW_DUPES && !busy &&
         !!(pressed & SCE_CTRL_RIGHT) != row_on(selected))
         activate(selected, scratch);
+    if ((pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && selected == ROW_DUPES && !busy)
+        set_duplicates(app.anki_duplicates + (pressed & SCE_CTRL_RIGHT ? 1 : -1), scratch);
     if ((pressed & ui->buttons->cancel) && busy)
         cancel();
     /* A touch on a row in view chooses it and acts as Enter does; on a row cut at the room's bottom it only
@@ -312,8 +383,13 @@ void vjo_anki_page_frame(const VjoAnkiUi *ui, uint32_t pressed, int touch_x, int
     if (touch_y >= VIEW_Y && touch_y < VIEW_END && touch_x >= 24 && touch_x < 936)
         for (int r = top_row; r < ROWS && row_y(r) < VIEW_END; r++)
             if (touch_y >= row_y(r) && touch_y < row_y(r) + row_height[r]) {
+                int dy = touch_y - row_y(r), k = (touch_x - CHOICE_X) / CHOICE_PITCH;
                 selected = r;
-                if (row_whole(r))
+                /* Duplicates: a touch on a choice takes it; the rest of the row only selects it */
+                if (r == ROW_DUPES && row_whole(r) && !busy && dy >= 6 && dy < 40 && touch_x >= CHOICE_X &&
+                    (touch_x - CHOICE_X) % CHOICE_PITCH < CHOICE_W && k < 3)
+                    set_duplicates(k, scratch);
+                else if (r != ROW_DUPES && row_whole(r))
                     activate(r, scratch);
                 break;
             }

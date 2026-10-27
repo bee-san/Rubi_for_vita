@@ -960,10 +960,12 @@ LOG = {
     # (the normal build's line names no word: "anki: save rc=0, 12 ms", docs/release-variants.md)
     "anki_save": re.compile(r"^anki: save (?:(.+) )?rc=(-?\d+), (?:\d+-byte screenshot, )?(\d+) ms"),
     # settings/anki_page.c worker_main: each export's result and counts (export_result); the first builds with the
-    # export had no stop count, and builds before #161 no count of the screenshots no card named that it removed
+    # export had no stop count, and builds before #161 no count of the screenshots no card named that it removed;
+    # #314's: the duplicates (12), what Duplicates did with them (13: tag, skip or keep) and ", not checked" (14)
     "anki_export": re.compile(r"^(?:Rubi|overlay) app: anki: export \((all|queued)\) rc=(-?\d+): (\d+) cards, (\d+) moved"
                               r"(?:, (\d+) kept, (\d+) unreadable, (\d+) too large, (\d+) left(?:, (\d+) stopped)?"
-                              r"(?:, (\d+) swept)?)?(?:, \d+ bytes, arena peak \d+(?:, (\d+) without screenshots)?)?"),
+                              r"(?:, (\d+) swept)?)?(?:, \d+ bytes, arena peak \d+(?:, (\d+) without screenshots"
+                              r"(?:, (\d+) duplicates \((tag|skip|keep)\)(, not checked)?)?)?)?"),
     "anki_queue": re.compile(r"^anki: queue (-?\d+) card\(s\)"),
     # API 23, shell/anki.c take_shot: a card's screenshot, made by the game worker (rc, the JPEG's quality, bytes,
     # the block, free USER, strips, source, the strips' ms, encoding ms, write ms, the whole)
@@ -1369,6 +1371,12 @@ def export_summary(a):
         t += f"; removed from the queue: {_n(a['export_swept'], 'screenshot')} no card named"
     if a.get("export_missing_picture"):
         t += f"; exported without screenshots: {a['export_missing_picture']} card(s) (original records preserved)"
+    if a.get("export_duplicates_tag"):  # #314
+        t += f"; tagged duplicate (a word mined before): {a['export_duplicates_tag']} card(s)"
+    if a.get("export_duplicates_skip"):
+        t += f"; left out as duplicates (Duplicates: Skip; the queued ones stay queued): {a['export_duplicates_skip']} card(s)"
+    if a.get("export_unchecked"):
+        t += f"; {a['export_unchecked']} export(s) not checked for duplicates (too many cards for memory)"
     lines = [t]
     for p in a.get("export_problems", []):
         if p["rc"]:
@@ -2671,6 +2679,11 @@ def summarise_log(text):
                 an["export_swept"] += int(m.group(10) or 0)
                 if int(m.group(11) or 0):
                     an["export_missing_picture"] = an.get("export_missing_picture", 0) + int(m.group(11))
+                if int(m.group(12) or 0) and m.group(13) in ("tag", "skip"):  # #314
+                    k = "export_duplicates_" + m.group(13)
+                    an[k] = an.get(k, 0) + int(m.group(12))
+                if m.group(14):
+                    an["export_unchecked"] = an.get("export_unchecked", 0) + 1
                 if result in ("fail", "partial") and len(an["export_problems"]) < 10:
                     an["export_problems"].append({"what": m.group(1), "rc": int(m.group(2)), "cards": int(m.group(3)),
                                                   "kept": int(m.group(5) or 0), "unreadable": int(m.group(6) or 0),
