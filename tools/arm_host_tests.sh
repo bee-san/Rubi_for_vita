@@ -184,7 +184,7 @@ APKG=(host/tests/test_apkg.c settings/app_queue.c settings/cards.c core/apkg.c c
       core/textjoin.c core/anki_queue.c core/json.c
       core/entries.c core/furigana.c core/pitch.c core/utf.c core/arena.c core/jpegsw.c core/word_key.c "$BS/hash/sha1.c" "$BS/hash/sha2small.c"
       "$BS/codec/dec32be.c" "$BS/codec/enc32be.c" core/sentence_reading.c core/local_dict.c settings/app_platform.c
-      core/config.c)
+      core/config.c core/games.c) # (#311's readings test makes a VjoConfig; config.c reads games.c's finder names)
 build apkg -I third_party/bearssl/inc -I "$BS" "${APKG[@]}"
 # The native hooks (core/hook_text.c, hook_re.c, hook_luna.c): the decoders, the regex VM's 16-bit
 # positions and 32-bit longs, LunaTranslator's table and its ports on the Vita's word size.
