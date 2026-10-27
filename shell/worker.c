@@ -2830,8 +2830,11 @@ static void on_command(void)
             close_overlay();
             break;
         }
-        if (cmd != VJO_CMD_CLEAR_REGION)
-            vjo_log("region set for %s: %u,%u,%u,%u", title_id, r.x, r.y, r.w, r.h);
+        if (cmd != VJO_CMD_CLEAR_REGION) {
+            /* in the data segment, for the normal Shell's code room (#358) */
+            static const char set[] VJO_DATA_TABLE(worker_region_set) = "region set for %s: %u,%u,%u,%u";
+            vjo_log(set, title_id, r.x, r.y, r.w, r.h);
+        }
         else
             vjo_log("region for %s: full screen", title_id);
         if (vjo_region_save(title_id, cmd != VJO_CMD_CLEAR_REGION ? &r : NULL, &scratch) < 0)

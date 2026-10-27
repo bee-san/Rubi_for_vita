@@ -67,7 +67,7 @@ There the user can draw a box with □ as before; the overlay asks once per acti
 
 Not measured: on a console (the time, how the question feels, real games' first screens), and games outside the
 pool's 42. The rule reads only what the job already returns (no pixel, no allocation): a pass over at most 16 lines
-after the job's recognition, not timed. It adds 1,104 B of code to the worker and 120 B to the normal Shell (below).
+after the job's recognition, not timed. It adds 1,088 B of code to the worker and 88 B to the normal Shell (below).
 
 ## Memory
 

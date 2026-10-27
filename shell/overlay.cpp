@@ -717,7 +717,7 @@ static void region_hint(int force)
     /* #358: the suggested box's question while it is drawn as suggested or resized (Enter takes it as it is then;
      * cancel takes its corner back, as for any box: drawing by hand from there) */
     static const char suggest[] VJO_DATA_TABLE(region_suggest_hint) =
-        "<font color=\"#ffd24a\">Use this box?</font><font color=\"#ffffff\"> %s yes · %s draw your own</font>";
+        "<font color=\"#ffd24a\">Use this box? %s yes · %s draw your own</font>"; /* one tag: the data segment's room */
     int x, y, w = 0, h = 0, corner = vjo_rsel_box(&s_rsel, &x, &y, &w, &h);
     int64_t now = sceKernelGetProcessTimeWide();
     char hint[192]; /* the longest is 144 B */
