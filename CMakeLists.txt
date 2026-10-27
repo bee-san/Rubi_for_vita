@@ -1013,7 +1013,7 @@ add_test(NAME settings_lookup COMMAND vjo-settings-lookup-tests)
 # The Cards page's storage (#315, settings/cards.c) on real files, with failures injected: the list and its
 # windows, a card's view, Delete, Empty deleted, Fix sentence (the word found again) and Drop picture, every
 # order of their steps, the intent files' recovery after a stop between any two, and the export after it.
-add_executable(vjo-cards-tests host/tests/test_cards.c settings/cards.c settings/anki_export.c)
+add_executable(vjo-cards-tests host/tests/test_cards.c settings/cards.c settings/anki_export.c settings/app_platform.c)
 target_include_directories(vjo-cards-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-cards-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-cards-tests vjo_host)

@@ -61,7 +61,7 @@ reading of Sudachi's. Per 1,000 of those:
 
 The protocol above (with the rules' code) was committed and pushed as `cf2e273` at 17:15:51Z on 2026-10-27. The
 test lines were drawn at 17:16:03Z, and the code was measured on them unchanged. After the rebases onto main (the
-last onto `9ad8eb5`) the commit is `df45363`: the protocol's text and the engine's code are the same, byte for byte.
+last onto `13bc976`) the commit is `efaa72a`: the protocol's text and the engine's code are the same, byte for byte.
 
 - *Right* is Sudachi's reading, or another the reviewer judged right where the two differ.
 - *Rubi:* 603 tokens differed from Sudachi. Of them 577 were judged right: 218 where Sudachi was wrong
