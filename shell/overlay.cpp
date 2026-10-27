@@ -50,6 +50,7 @@ extern "C" {
 #include "../include/vjo_ledger_budget.h"
 #include "history.h"
 }
+#include "lookup_shown.h"
 
 #include "../core/region_select.h"
 #include "../core/stick_cursor.h"
@@ -166,6 +167,7 @@ static uint32_t s_hdr_lead;
 #if VJO_DEBUG
 static int64_t s_frame_max_us, s_key_max_us; /* slowest frame; slowest arrow key's row walk */
 static int s_frames, s_moves, s_stick_max; /* largest stick deflection from centre (either stick) */
+static VjoShown s_shown; /* the lookups shown and their press-to-screen times (lookup_shown.h) */
 #define COUNT_MOVE() s_moves++
 #else
 #define COUNT_MOVE() ((void)0)
@@ -425,6 +427,10 @@ static void render(int new_content)
         s_cursor_text_len = 0;
         s_cursor_text[0] = 0;
     }
+#if VJO_DEBUG
+    /* the lookup asked for, shown now for the cursor drawn: its press-to-screen time (no line until the close) */
+    vjo_shown_take(&s_shown, &g_view, cursor_matches);
+#endif
     s_n_entries = l ? l->n_entries : 0;
     if (s_local_cursor_mode) {
         s_n_entries = cursor_matches && s_n_entries ? 1 : 0;
@@ -864,12 +870,31 @@ static void open_page(void)
 #if VJO_DEBUG
     s_frame_max_us = s_key_max_us = 0;
     s_stick_max = 0;
+    sceClibMemset(&s_shown, 0, sizeof(s_shown));
 #endif
     s_prev_buttons = ~0u; /* ignore buttons already held when opening */
     s_arrow_repeat_us = 0;
     s_prev_touch = 1;
     touch_write(vjo_touch_hold(&s_touch)); /* own front input throughout the overlay, not just crops */
 }
+
+#if VJO_DEBUG
+/* The close line: its counts and timings, and the press-to-screen figure (lookup_shown.h). One line of 380 B
+ * at most, longer than vjo_log's 254 B, so formatted here, in a frame of its own: its buffer is on the paf
+ * thread's stack only while it formats, never under close_page's other calls (the deepest chain from frame
+ * stays render's). */
+static __attribute__((noinline)) void log_close_line(void)
+{
+    char line[384];
+    vjo_log_raw(line, sceClibSnprintf(line, sizeof(line),
+                                      "overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
+                                      "%d without layout, slowest key %d us, %d stick moves, %d deferred lookups after %u ms"
+                                      VJO_SHOWN_FORMAT "\n",
+                                      s_frames, s_moves, s_stick_max, (int)(s_frame_max_us / 1000), s_nav.row_moves,
+                                      s_nav.wraps, s_nav.no_layout, (int)s_key_max_us, s_stick.moves, s_stick.lookups,
+                                      s_stick.rest_us / 1000u, VJO_SHOWN_ARGS(&s_shown)));
+}
+#endif
 
 /* handback: the control thread's VJO_TOUCH_* for this close (worker.c
  * close_overlay_for). The hold is given back for what is in front now
@@ -895,10 +920,7 @@ static void close_page(int handback)
     s_page = NULL;
     s_panel = s_region_layer = s_region_rect = NULL;
 #if VJO_DEBUG
-    vjo_log("overlay closed: %d frames, %d word moves, stick %d, slowest frame %d ms, %d row moves, %d wraps, "
-            "%d without layout, slowest key %d us, %d stick moves, %d deferred lookups after %u ms", s_frames,
-            s_moves, s_stick_max, (int)(s_frame_max_us / 1000), s_nav.row_moves, s_nav.wraps, s_nav.no_layout,
-            (int)s_key_max_us, s_stick.moves, s_stick.lookups, s_stick.rest_us / 1000u);
+    log_close_line();
 #endif
     /* The next open keeps this cursor only when it is the worker's and no word
      * of the stick's is due (core/stick_cursor.h vjo_stick_cursor_kept); else it
@@ -1012,7 +1034,8 @@ static void input_header_touch(void)
     s_cursor_byte = (uint32_t)byte;
     s_nav.words.count = 0; /* a tap starts a new navigation path */
     COUNT_MOVE();
-    vjo_dlog("header touch cursor=%u generation=%u", s_cursor_byte, s_text_generation);
+    /* (no line here: an append on this thread, before the tap's lookup, would hold both the game's frame and the
+     * lookup; the lookup's own line says its cursor, and the close line counts the moves: #360) */
     post_cursor_now();
     render(0);
 }

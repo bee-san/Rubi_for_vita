@@ -38,14 +38,14 @@ keep: anything a user-facing feature or a recovery needs stays.
 | a model file unusable (`game vocr: … is unusable here`) | `worker.c` `run_vocr` | **keep**, written after the job's result |
 | the 444 MHz boost: before, during, after | `worker.c` (the step log's clock step) | **reduced**: `clock: 333 -> 444 MHz while reading, 333 after` (or `left as it is`, `refused`), for each activation's first job that recognized a line not in the line cache (the game worker writes its clock step then, done or failed) and when it changes |
 | the recognized text, raw and as shown | `worker.c` `log_text_lines` | **drop** (the normal log has no recognized or looked-up text: the Anki save line names no word either) |
-| the dictionary lookup line (text at the cursor, entry, reads, time) | `worker.c` `log_lookup` | **reduced**: `lookup … failed: rc=…` only, written after the lookup's result |
-| the job's done line (time, arena peak, game time, log time and appends) | `worker.c` `net_job` | **drop** |
+| the dictionary lookup line (text at the cursor, entry, reads, time) | `worker.c` `log_lookup` | **reduced**: `lookup … failed: rc=…` only, written after the lookup's result (the debug build's full line is written after its result too, #360: [below](#the-debug-builds-job-lines-after-the-result-360)) |
+| the job's done line (time, arena peak, game time, log time and appends, the lines held until the result) | `worker.c` `net_job` | **drop** |
 | job start / cancel / open / refresh / dropped-screen / subtitle traces; the workspace line; `%s: system app, not a game` | `worker.c` | **drop** |
 | input block on/off, the overlay's close with its `t=` | `worker.c` | **drop**; a refused block (the overlay cannot open) is logged |
-| the overlay's close counters (frames, moves, stick, slowest frame and key) | `overlay.cpp` | **drop** (the counters too) |
+| the overlay's close counters (frames, moves, stick, slowest frame and key; the lookups shown and their press-to-screen time, #360) | `overlay.cpp`, `lookup_shown.h` | **drop** (the counters too: the normal build keeps no time and does no work per lookup for them) |
 | the left stick's cursor and its deferred lookup (`stick_lookup_ms`, #138) | `overlay.cpp`, `core/stick_cursor.h` | **keep**: a control; its counts on the close line (`stick moves`, `deferred lookups`) are the debug build's, as the line is |
 | the front touch region's on/off and hand-back trace | `overlay.cpp` | **drop**; a refusal is logged |
-| the region selector's corner and box lines; a header tap's cursor (`header touch cursor=`) | `overlay.cpp` | **drop**; the saved region (`region set for …`) is kept |
+| the region selector's corner and box lines | `overlay.cpp` | **drop**; the saved region (`region set for …`) is kept. A header tap's cursor line (`header touch cursor=`) is gone from both builds (#360: an append on the paf thread before the tap's lookup; the lookup's own line says its cursor) |
 | every Paf allocation | `memory.cpp` | **reduced**: refusals only (the reserve guard's line is kept) |
 | the ledger's per-item table at boot, game start and exit | `ledger.c` | **reduced**: the two pool lines stay |
 | Anki: the queue count, the arena peak, the record's bytes | `anki.c`, `anki_queue.c` | **drop**; each save is kept without its word (`anki: save rc=0, 12 ms`; the debug build's names it), and every error |
@@ -238,6 +238,19 @@ network thread's wait timing out at random) [measured: host suites]:
 | debug | 376 (98) | 3,593 | 2,061 | 1,236 | 1,236 | 11 |
 | normal | 376 (98) | 147 | 98 | 63 | **0** | 5 |
 
+The same session on main `199fe31` (it has grown since: 554 jobs, 99 lookups) and with #360's held lines in the
+debug build (below):
+
+| build | jobs (lookups) | lines | appends | the network thread's | in a job's result path | lines in one append, at most |
+|---|---:|---:|---:|---:|---:|---:|
+| debug, main `199fe31` | 554 (99) | 3,599 | 2,065 | 1,241 | 1,241 | 11 |
+| debug, #360 | 554 (99) | 3,599 | **1,488** | **664** | **287** | 11 |
+| normal (both) | 554 (99) | 149 | 101 | 64 | **0** | 4 |
+
+The debug build's 287 are its recognitions' lines, written before the job holds its own (`vocr_run_one`'s batch, and in
+some jobs a hook's or an unusable model's line between its exchanges: below); the harness counts an append in the
+result path only while the job's result is neither published (`job_done`) nor taken.
+
 `normal_build_writes_a_jobs_lines_after_its_result` walks each case: an activation's first job (held
 through its exchange, its lookup and a timeout before the result was taken; written by the next
 timeout), a quiet job, a failed job the overlay waits for, a failed lookup, lookups that keep held
@@ -252,6 +265,77 @@ own, and one while the job runs; `every_job_post_finds_job_running` that every j
 `job_running`, over the whole session (both builds), in which no configure writes held lines and the
 network thread takes the log's lock without a line far fewer times than it runs jobs. Not measured: a
 console run of the normal build.
+
+## The debug build's job lines after the result (#360)
+
+The owner runs the debug build. Its lookups wrote their two lines to the memory card before they published the word:
+the `lookup cursor at …` line (`log_lookup`, in `run_cursor_job`) and the `job N done …` line (`net_job`), both before
+`job_done = 1`, each an open/append/close of `log.txt` (and of `status.txt` while it is under 64 KiB).
+**test.4's console log** [measured: the owner's `vjo-collect-20261017-112501Z.zip`, `log.txt`, its 338 cursor lookups
+with their done lines]: the lookup line said 32 ms (median), its done line 53.5 ms (the gap, median 18 ms, is the
+lookup line's append: its time is taken before it), 17.0 ms an append (median of the done lines' `log ms / appends`;
+297 of them counted one append, 41 two), and the done line's own append came after its time: about 34 ms of the
+press-to-word path were the two lines (est. from those medians: 2 × 17 ms).
+
+Now the network thread holds them (`shell/worker.c` `net_log_hold`, `NetHeld`: a log batch and its 2 KiB buffer on
+`net_main`'s stack): a lookup's lines from the start of its job, an OCR job's from the end of its recognition (its
+text's lines, its result arena's line, its first word's lookup), and the done line, which says how many lines it held
+before it, still held when it was logged (`…, log L ms in K appends, N held`: `K` and `L` count the appends of every
+thread before the done line, which the held ones no longer are in; a line of another thread, or a full batch, writes
+earlier ones before the result, and they are not in `N`). It publishes the result (`job_done`, the control thread notified), then writes
+them at once, one append per file: the same bytes in the same order as line by line, `status.txt` first as for any
+batch (`shell/log_vita.c` `batch_flush_locked`), within milliseconds of the result. The lookup line is formatted into
+the batch before the result is published: it reads the result arena (`out->list.entries[0]`), which the control
+thread may reset once `job_done` is set. The recognition's own lines (`vocr_run_one`'s batch, `game vocr rc=`, its
+capture, memory, speed, lines and steps) still go out before the result, as one append each, as before: the batch is
+never open across an exchange with the game worker (`exchange_batch_ok`). Another thread's line, a configure (the
+debug build's, as main's, writes an open batch) or a line the batch cannot take (24 lines, 2 KiB) writes the held
+lines first, on that thread, in their order. A crash between the result and the write loses those lines only (at most
+24 lines or 2 KiB); with another thread's batch open (the ledger's table at a game start or exit, microseconds) the
+begin is refused and the lines go out one by one, as before (`0 held`).
+
+The worst case the batch holds: a lookup's line and its done line (255 B each at most with their newline, `vjo_log`'s
+cap) and, with a new result arena, its Paf and workspace lines: about 650 B; an OCR job's text lines (one or two per recognized line, its raw and shown forms, at
+most 202 and 208 B: `log_text_lines`' 60 characters each), its arena's and workspace's lines, its lookup's and its
+done line: a box of 3 lines at most about 1.8 KiB with every line at its longest, typically under 1 KiB; past 2 KiB or
+24 lines the batch writes what it holds and goes on holding (one more append before the result), as the normal
+build's does. Its stack: `net_main`'s frame 312 → 2,440 B, VjoNet's deepest chain 5,664 →
+7,792 B of its 16,384 B stack in the debug build (8,592 B left), the normal build's 5,392 B unchanged, the paf
+thread's deepest chain from its frame callback 1,124 B in both, unchanged (the close line's 384 B buffer is in a frame
+of its own, under none of `close_page`'s other calls) [measured: `-fstack-usage -fcallgraph-info=su` of the Shell's and
+`vjo_core_vita`'s C sources with each object's flags, on main `199fe31` and this change (main `bf5da10` changes no
+Shell source), a static lower bound without the SDK's frames; `VjoNet stack: at least N` in `log.txt` gives the
+console's].
+
+**The press-to-screen figure** (the debug build's close line; `shell/lookup_shown.h`). A lookup the overlay asks for
+(a cursor move, a tap, a dictionary page, a line history step: `post_local_lookup`) records its `cursor_seq` and the
+process time in the view, under its lock; the control thread publishes a lookup's result with its `cursor_seq` and the
+time its job published it (`view_publish`, `job_done_us`); the overlay's render that draws that result for the cursor
+it shows takes the figure, once (`vjo_shown_take`: two loads a render, a few instructions a lookup). The paf thread
+logs nothing per lookup: the figures go into the overlay's existing close line,
+
+```
+overlay closed: 3733 frames, 52 word moves, …, 5 deferred lookups after 250 ms, lookups shown 48: mean 52 ms (12 ms after the result), max 120 ms
+```
+
+(illustrative numbers: no console has logged it yet): the lookups whose word was drawn while the overlay was open, the
+mean ms from their press to the render that drew them, the mean of that after their result's publication (the control
+thread's wake and the wait for the next frame: the frame path's share), and the largest. A request replaced before
+its result (a second move) counts once, for the last; one whose result was drawn for another cursor (the stick moved
+on meanwhile) and one a close forgets before it was drawn count not at all; the render sets the text, and
+paf lays it out in the frame or two after (`LAYOUT_RETRY_FRAMES`), which the figure leaves out. No histogram (≤ 16,
+33, 50, 100 ms): in a measured build its counters and format took 80 B more of the debug Shell's text and 56 B of its
+data, more than the last text page has left (28 B) [measured: the module rows with and without it]. `--collect`'s analysis sums
+the closes (`lookups shown (N of them): …`). The normal build has none of it (no time taken, nothing per lookup).
+
+Memory: no new allocation, thread or budget; the debug Shell 102,140 → 102,372 B of text (the module's pages: 102,400
+B, 28 B left) and 73,408 → 73,560 B of data/bss (73,728, 168 B left), the done line's and the figure's formats in
+the data segment (`VJO_DATA_TABLE`); the normal build's three plugins byte for byte main's (sha256) [measured: both
+builds' module rows (`tools/check_memory_ledger.py`) in the fast gate's VitaSDK image, main `e2c49ee` and this change].
+Host tests: `debug_build_writes_a_lookups_lines_after_its_result`, `debug_build_writes_an_ocr_jobs_lines_after_its_result`
+(at `job_done` none of the held lines is in `log.txt` and the control thread can take the result; then one append, in
+their order), `the_done_line_has_the_exchange_and_log_times`, `debug_build_lookup_shown_figure` (the request, its
+result, a superseded request, a close, the clock's wrap, the format). Not run on a console.
 
 ## Building
 

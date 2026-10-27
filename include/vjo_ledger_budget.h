@@ -93,7 +93,10 @@
  * main 75041a0, the same pages [measured: the build log's module rows, main 75041a0 and this change].
  * Yomitan's deinflection rules in a packed table (docs/memory-ledger.md) make it 102,212 -> 101,332 text
  * and 73,544 -> 73,008 data/bss on main 627a673, the same pages [measured: the same rows, main 627a673
- * and this change]. */
+ * and this change]. #360's job lines after the result and the close line's press-to-screen figure (the debug
+ * build's only; docs/release-variants.md) make it 102,140 -> 102,372 text and 73,408 -> 73,560 data/bss on
+ * main e2c49ee, the same pages (28 and 168 B left), the normal build's plugins byte for byte main's
+ * [measured: the same rows, both builds, main e2c49ee and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else

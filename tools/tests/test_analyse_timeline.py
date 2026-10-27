@@ -184,6 +184,46 @@ class TimelineTest(unittest.TestCase):
         # the self-test's job shows nothing: no result path
         self.assertNotIn("result_path", at.analyse(LOG)["jobs"][3])
 
+    def test_held_lines_are_written_after_the_result(self):
+        """#360: the debug build's done line says how many lines before it were held with it until after the
+        result (`N held`): those (the text's, the arena's, the lookup's) and the done line are out of the result
+        path; the recognition's batch stays in it. A lookup holds its line too: none of its appends is left."""
+        steps = [gstep("mem", 10 + k) for k in range(5)]
+        job = ["job start (auto: screen settled)", job_line(), *steps,
+               "game vocr text 0: SENTINEL-TEXT-6", "game vocr text 1: SENTINEL-TEXT-7",
+               "result arenas Paf allocation: free=2589816 requested=65536 reserve=1572864 success=1",
+               "local dictionary workspace: 65536 bytes",
+               "lookup first word at 0: 2 chars, dictionary 1/1, page 1/1, 13 reads 45429 B, rc=0, 65 ms; \"x\" -> x",
+               "job 0 done rc=0 in 900 ms, arena peak 53552, dictionary page 1/1, game 800 ms, log 40 ms in 2 appends, "
+               "5 held"]
+        lookup = ["lookup cursor at 3: 1 chars, dictionary 1/1, page 1/1, 3 reads 12288 B, rc=0, 30 ms; \"y\" -> y",
+                  "job 0 done rc=0 in 31 ms, arena peak 53552, dictionary page 1/1, game 0 ms, log 0 ms in 0 appends, "
+                  "1 held"]
+        head = ["Rubi shell started (kernel API 51)", "game PCSG00415 started: dictionary Local dictionaries, "
+                "trigger l+r, subtitles select+r, ocr_mode auto"]
+        res = at.analyse("\n".join(head + job + lookup) + "\n")
+        ocr, look = res["jobs"]
+        rp = ocr["result_path"]
+        # the result's batch (1 group) only: the text, the Paf line, the workspace and the lookup were held
+        self.assertEqual((rp["net_groups"], rp["held"], rp["appends"], rp["done_line_appends"]), (1, 5, 2, 0))
+        self.assertEqual(rp["est_ms"], 40.0)  # 2 of the job's 2 appends, at 20 ms
+        lp = look["result_path"]
+        self.assertEqual((lp["net_groups"], lp["held"], lp["appends"], lp["done_line_appends"], lp["est_ms"]),
+                         (0, 1, 0, 0, 0.0))
+        text = at.render(res, show_jobs=True)
+        self.assertIn("result path: 2 of the 2 appends (the network thread's 1 after the exchange, each twice: "
+                      "status.txt too), est. 40 ms at the job's 20.0 ms an append, and the done line's 0; 5 line(s) "
+                      "held with the done line, written after the result", text)
+        self.assertNotIn("SENTINEL", text + json.dumps(res))
+        # a batch that filled up wrote its first lines before the result: their group stays
+        job = at.ShellJob("auto", "ocr", 1, 0)
+        for k in range(30):
+            job.note_line(f"game vocr text {k}: y")
+        job.held = 6
+        self.assertEqual((job.net_groups, job.result_groups()), (2, 1))  # 24 written, 6 held (old model: 24 + 6)
+        job.held = 0  # the batch held nothing before the done line: every group was written before it
+        self.assertEqual(job.result_groups(), 2)
+
     def test_a_batch_ends_at_its_lines_and_its_buffer(self):
         """30 result lines in a row: two batches (24 lines each at most); 10 text lines of 190 B: two (1,536 B)."""
         job = at.ShellJob("auto", "ocr", 1, 0)

@@ -102,7 +102,7 @@ class CheckVariant(unittest.TestCase):
 
     def test_every_marker_is_a_format_string_of_this_tree(self):
         """A marker renamed in the sources but not here would fail every Vita build; catch it on the host."""
-        sources = {"shell": ("shell", "*.c*"), "kernel": ("kernel", "*.c"), "app": ("settings", "*.c")}
+        sources = {"shell": ("shell", "*.[ch]*"), "kernel": ("kernel", "*.c"), "app": ("settings", "*.c")}
         for part, markers in list(variant.DEBUG_MARKERS.items()) + list(variant.NORMAL_MARKERS.items()):
             d, pattern = sources[part]
             text = "".join(p.read_text(encoding="utf-8") for p in sorted((ROOT / d).glob(pattern)))
