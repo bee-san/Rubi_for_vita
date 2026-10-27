@@ -143,7 +143,9 @@ if [ "$MODELS" != off ]; then
     # a directory the caller names is never written: only the cache's is filled (--models on)
     hint="--models on fetches them"
     [ -z "${VJO_VOCR_MODEL_DIR:-}" ] || hint="tools/prepare_ocr.py --backend vocr-tests --output DIR fetches them"
-    MODELS_WHY=${MODELS_WHY:-"$(tail -1 "$LOGS/models-check.log") (${LOGS#"$ROOT"/}/models-check.log; $hint)"}
+    count=$(sed -n '$s/ in .*//p' "$LOGS/models-check.log")
+    bad=$(sed '$d' "$LOGS/models-check.log" | head -3 | paste -sd ';' -)
+    MODELS_WHY=${MODELS_WHY:-"${count:-the check failed} (${bad:+$bad; }${LOGS#"$ROOT"/}/models-check.log; $hint)"}
     if [ "$MODELS" = on ]; then MODELS=fail; else MODELS=skip; fi
   fi
 fi
