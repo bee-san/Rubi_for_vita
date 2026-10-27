@@ -102,12 +102,11 @@ been reported.
   stream that has had text also no longer reads as empty to the watch while a new caller takes it. Tests: the issue's
   state; a suite that runs each interleaving at the search's own points on every run
   (`host/tests/test_hook_stream_seams.c`, also on the ARM lane), 5 of whose 10 tests fail on `main` with the two
-  seams added; and a check of
-  the watch's reads in the race test, which `main` failed in 151, 187 and 200 runs of 200 on two CPUs, four CPUs and
-  unpinned (none on one CPU). The fix passed 3,900 runs of the whole suite (one to four CPUs, unpinned, 8 copies at
-  once, beside busy loops, gcc and clang). Changing `core/hook_stream.c` changes the hook definition SHA-256, so
-  consoles learn each game's hooks again; seven PRs since 0.9.8 have changed it already, so the next release does
-  that anyway. Not run on a console.
+  seams added; and a check of the watch's reads in the race test, which `main` failed in 151, 187 and 200 runs of
+  200 on two CPUs, four CPUs and unpinned (none on one CPU). The fix passed 3,900 runs of the whole suite (one to four
+  CPUs, unpinned, 8 copies at once, beside busy loops, gcc and clang). Changing `core/hook_stream.c` changes the hook
+  definition SHA-256, so consoles learn each game's hooks again; seven PRs since 0.9.8 have changed it already, so the
+  next release does that anyway. Not run on a console.
 - **A game short of memory reads with the next smaller model** (#324). The console reports a game's free memory in
   whole MiB (あおかな, `PCSG00700`, on a PCH-2000: each of 78 samples was 1, 2, 3 or 4 MiB), so a job that passed its
   memory check with less than 1 MiB to spare saw a whole MiB less once it had taken its own blocks: its model's
