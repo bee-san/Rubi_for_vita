@@ -400,12 +400,25 @@
  * (2,108 B) and 35,536 -> 35,600 B, the same pages [measured: check_memory_ledger.py's module rows, both
  * builds, main 2a92864 and this change, tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameVocrFrame, is
  * VJO_BUDGET_GAME_FRAME's; no thread. */
+ * below. */
+/* #353, the stable-text wait's line watch (core/vocr_ocr.c: the watched lines' checksums, the finder's looks, reading
+ * anyway; game_ocr/main.c's step kind): one text page more in both builds, in the game's partition only, in every game
+ * that is ON. On main 84dbad9 the debug build's text 163,528 -> 166,152 B (1,784 B of room), 200,704 -> 204,800 B
+ * of pages, the normal build's 154,548 -> 157,188 B (2,556 B), 192,512 -> 196,608 B; data/bss unchanged (35,880 and
+ * 35,864 B) [measured: the build log's module rows, both builds, main 84dbad9 and this change, tools/fast_gate.sh's
+ * vitasdk image]. Its 2,624 / 2,640 B of text (core/vocr_ocr.c 17,886 -> 20,480 B, already -Os) did not fit the 312 /
+ * 1,100 B main left. Besides the recognizer's runtime, the worker's code still at -O2 is the JPEG encoder (-O2 by its own
+ * choice, above), the arena, the hook text decoder and Luna's table code, whose capture runs inside the game's hooked
+ * function: their objects' text is 3,142 B smaller at -Os [measured: the four objects at -O2 and -Os, the debug build's
+ * flags], other features' code and speed, not this change's to trade. The job's limit is kept, as API 47's and API 50's
+ * pages kept it. No block, thread or allocation: the line checksums take the row states' place in the job's capture
+ * block. */
 /* test/combined (the combined test build, never merged): main + every open draft; the worker's pages are
  * this branch's own, measured on its builds (MEASURE_PLACEHOLDER). */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 204800u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 196608u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an

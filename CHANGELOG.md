@@ -196,6 +196,30 @@ been reported.
     ux0:data/VitaJPOverlay/ocr" for all of them.
 
   Host-tested, not run on a console. No module takes a page more ([memory ledger](docs/memory-ledger.md)).
+
+- An animated icon or a moving picture in the OCR region no longer keeps the text from being shown (#353, from a
+  user's report: a spinning "wait" icon in the region, the overlay empty while the log had read the dialogue). An
+  icon with more frames than the stable-text wait keeps of a row (16) never settled, so every job tore and was
+  dropped, and the overlay said "Recognizing…" for as long as one waited. Once the region keeps changing, a job now
+  watches its found lines' own pixels: a change elsewhere sends the line finder again, other lines (text typing on, a
+  new line) are watched in their place, and at the wait's limit the lines are read anyway, then found again once they
+  would have settled (twice `ocr_settle_ms` after they were found): a line that typed on meanwhile (by more than a
+  quarter of its height) ends the job, and the next one reads it whole. On 184 hooked pages of 46 games with such an
+  icon or picture, through the kernel's change detection, the job and the Shell's decisions on a computer
+  (`host/spinner_bench.c`, `tools/spinner_eval.py`; times estimated, no console run): shown in 0-5 of the 184
+  before, 179-181 now (the still pages' text in 177-181), median 0.3-1.8 s and 90 % within 1.6-2.5 s after L + R; no
+  region shown before is lost, and an icon that rests between its turns is shown in 13 and 7 more regions. Of the
+  1,777 runs that showed the whole line before, 4 (text
+  typed slowly, or with pauses) now show part of it first, and the next job reads the whole line 0.4-2.3 s later
+  ([details](docs/text-stability.md#animated-icons-and-moving-pictures-353)). No new block or allocation: the line
+  checksums take the row states' place in the job's capture block (its size unchanged). The watch's code takes the
+  worker one page more, 4 KiB in each game that is ON, in both builds: 196,608 B of module pages (204,800 B in the
+  debug build) ([ledger](docs/memory-ledger.md#the-line-watch-353)).
+- The log says when text was recognized but never shown: the third job in a row whose screen changed under every read
+  logs (both builds) `ocr: screen changed under 3 jobs in a row; N line(s) not shown` (the overlay says why it waits:
+  #358, above). The debug build's `gstep job settle` says what the line watch did (its kind), and
+  `tools/analyse_selftest.py --collect` sums it.
+
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
   read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
