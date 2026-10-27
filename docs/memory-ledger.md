@@ -389,17 +389,17 @@ uses the spotter, and the spotter's code to the game worker, in every game that 
   flow: four text pages more in each build. Data/bss stay in their pages.
 
 Measured with the gate's Vita image (VitaSDK gcc 15.2.0), Release, on the packaged SELF files
-(`tools/check_memory_ledger.py`, the build log's module rows), main `d25c48c` (API 52: after VOCR6, #373, #369's
-suggested box, #387 and #386) and this change, both builds;
+(`tools/check_memory_ledger.py`, the build log's module rows), main `3d095b4` (API 53: after VOCR6, #373, #369's
+suggested box, #387, #386 and #385; #390 after it changes no module) and this change, both builds;
 text + data/bss:
 
 | Module | Debug: main → this change | Normal: main → this change | Loaded pages, debug / normal |
 |---|---:|---:|---:|
-| Game worker | 163,688 + 35,880 → 179,568 + 35,936 B | 154,724 + 35,864 → 170,588 + 35,928 B | 200,704 → **217,088** / 192,512 → **208,896** B |
-| Shell | 98,284 + 77,608 → 98,188 + 77,672 B | 85,948 + 77,488 → 85,868 + 77,552 B | 176,128 / 163,840 B, unchanged |
+| Game worker | 163,800 + 36,360 → 179,712 + 36,416 B | 154,884 + 36,344 → 170,780 + 36,408 B | 200,704 → **217,088** / 192,512 → **208,896** B |
+| Shell | 98,260 + 77,664 → 98,164 + 77,728 B | 85,980 + 77,488 → 85,900 + 77,552 B | 176,128 / 163,840 B, unchanged |
 | Kernel | 43,356 + 77,772 → 43,432 + 77,780 B | 38,204 + 76,084 → 38,280 + 76,092 B | 122,880 / 118,784 B, unchanged |
 
-The worker's code ends 656 B under its last page in the debug build, 1,444 B in the normal one. Built with the
+The worker's code ends 512 B under its last page in the debug build, 1,252 B in the normal one. Built with the
 spotter's multi-scale paths too (`-DVJO_VOCR_SPOT_NO_MS=OFF`, for a pin of the `ms` form), the worker's text would be
 about 11,900 B more, three more pages (measured on the earlier main `796168e`); `trunk`, the pinned form, builds
 without them, and `cmake/VocrOCR.cmake` refuses `ms` with them left out.
@@ -411,8 +411,8 @@ their keys and choices in the data segment) and sets the two request bits from t
 now read one shared choice table through `set_choice`, with the same values and the same warning, and the three
 off / on tables became that one (`core/config.c`): the Shell's code is **80 B smaller** than main's in the normal build
 and 96 B in the debug build, its data/bss 64 B larger (the finder's names and table, the three `VjoConfig` copies'
-two fields, the ledger's item), the same pages; the normal Shell's code keeps 148 B of its last page (68 B on main),
-the debug build's 116 B (20 B), and its data/bss 272 B (336 B) and 152 B (216 B). The kernel only accepts the open kind (`VJO_GAME_OCR_OPEN_SPOT`, 19, at the pinned size, for a
+two fields, the ledger's item), the same pages; the normal Shell's code keeps 116 B of its last page (36 B on main),
+the debug build's 140 B (44 B), and its data/bss 272 B (336 B) and 96 B (160 B). The kernel only accepts the open kind (`VJO_GAME_OCR_OPEN_SPOT`, 19, at the pinned size, for a
 request with the spotter's bit) and the two bits: 76 B of code and 8 B of data/bss in each build, the same pages. No thread, static buffer or
 other block is added. These are binary
 measurements; console boot, memory and timing have not been measured for this change.

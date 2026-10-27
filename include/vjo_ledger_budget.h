@@ -386,10 +386,10 @@
  * finder"): vita-vn-ocr's runtime/vocr_textspot6.c at the runtime's -O2, built with VOCR_TEXTSPOT6_NO_MS (only the
  * trunk form the pin uses; cmake/VocrOCR.cmake VJO_VOCR_SPOT_NO_MS), with the vocr_line_dark it calls, and its use
  * (core/vocr_ocr.c, game_ocr/main.c's block and job flow) in the game's partition only: four text pages more in each
- * build. Debug text 163,688 -> 179,568 B and data/bss 35,880 -> 35,936 B, 200,704 -> 217,088 B of pages; normal
- * 154,724 -> 170,588 B and 35,864 -> 35,928 B, 192,512 -> 208,896 B (656 / 1,444 B of text room left) [measured:
- * the build log's module rows, both builds, main d25c48c (after VOCR6, #373, #369's suggested box, #387 and #386)
- * and this change, tools/fast_gate.sh's vitasdk image].
+ * build. Debug text 163,800 -> 179,712 B and data/bss 36,360 -> 36,416 B, 200,704 -> 217,088 B of pages; normal
+ * 154,884 -> 170,780 B and 36,344 -> 36,408 B, 192,512 -> 208,896 B (512 / 1,252 B of text room left) [measured:
+ * the build log's module rows, both builds, main 3d095b4 (after VOCR6, #373, #369, #387, #386 and #385; #390 after
+ * it changes no module) and this change, tools/fast_gate.sh's vitasdk image].
  * Its weights are a block of their own (VJO_BUDGET_GAME_SPOT), never static; data/bss keep their pages. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
