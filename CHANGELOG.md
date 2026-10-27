@@ -199,7 +199,8 @@ been reported.
 - **Normal and Large are VOCR6** (vita-vn-ocr #125, pre-release v0.4.0-vocr6.1): VOCR5-N's and VOCR5-L's shapes,
   fine-tuned again on the owner's hooked PS Vita and PSP games, replace VOCR5-N and VOCR5-L as the Normal (the default)
   and Large model sizes (`VOCR6_N_w8_2l.vocr`, 1,187,616 B; `VOCR6_L_w8_2l.vocr`, 2,475,680 B). Small stays VOCR5-S:
-  VOCR6's Small read the hooked games better but other games' lines a little worse. Measured on a computer through
+  VOCR6's Small read the hooked games better but other games a little worse (VOCR5's development score, +0.070
+  points, resolved). Measured on a computer through
   Rubi's shipped path (dialogue CER, 95 % intervals):
   - the hooked games' held-out pages: Normal 1.008 → 0.936 % (−0.072 points, −0.111 to −0.038), Large 0.990 → 0.917 %
     (−0.073, −0.118 to −0.036), three seeds each;
@@ -395,8 +396,9 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   the gated blobs with `ocr_head_gate = on` and these settings, was measured after this release (vita-vn-ocr #151, on
   a computer): VOCR5-N as this release runs it keeps the counter in 2,940 of the 3,969 crops against 3,015 with the
   gate off (75 lost, none gained: crops cut 2-10 px into the line's first character, where the gate skips the edge
-  frames the counter re-decode needs, so nothing is read again), and real development and held-out lines move by
-  +0.004 to +0.012 points ([details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)). The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
+  frames the counter re-decode needs, so nothing is read again), and on real development and held-out lines its
+  objective (half the held-out pages' CER, half the development score) moves by +0.004 to +0.012 points (Large's
+  resolved worse, and Normal's held-out pages alone, +0.007 points; [details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)). The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
   replace (982,320 and 3,603,552 B), so the game's LM block shrinks by 180,224 B at most. An update leaves
   ctclm.2's `vocr_lm_o3_1000k.vlm` and `vocr_lm_o3_4000k.vlm` (about 4.8 MB) in `ux0:data/VitaJPOverlay/ocr/`:
   nothing reads them any more, so they may be deleted

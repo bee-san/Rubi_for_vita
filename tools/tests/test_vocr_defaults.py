@@ -391,6 +391,24 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(macros()["VJO_VOCR_LM3_NAME"], "vocr_lm_o3_2000k.vlm")
         self.assertIn("vjo_vocr_lm_settings(job ? job->name : NULL, lm, &o->alpha, &o->beta, &o->flags);", source)
         self.assertEqual(source.count("lm_opts(mi, pol->lm, &o);") + source.count("lm_opts(job, st->lm, &o);"), 2)
+        # the host eval tools decode as the worker does (audit-vocr6-rubi-pin F5): each pinned LM's tier settings and
+        # each job model's own, both read from the C tables above
+        flag = {"VOCR_LM_BOS": 1, "VOCR_LM_EOS": 2}
+        sizes = macros()
+        names = [name for name, _ in sorted(table.items(), key=lambda kv: kv[1][2])]  # tier order
+        tiers = {name: (int(a), int(b), flag[f]) for name, (b, _, a, f) in zip(names, settings)}
+        own = {(sizes[m], sizes[lm]): (int(a), int(b), sum(flag[x.strip()] for x in f.split("|")))
+               for m, lm, b, a, f in retuned}
+        import lm_cer_eval  # noqa: PLC0415
+        import lm_lines_eval  # noqa: PLC0415
+        for tool in (lm_cer_eval, lm_lines_eval):
+            for name, want in tiers.items():
+                self.assertEqual(tool.SETTINGS[name], want, (tool.__name__, name))
+            self.assertEqual(tool.MODEL_SETTINGS, own, tool.__name__)
+            for (model, lm), want in own.items():
+                self.assertEqual(tool.settings(model, lm), want, tool.__name__)
+            for name, want in tiers.items():  # another model: the tier's
+                self.assertEqual(tool.settings("VOCR5_S_w8g.vocr", name), want, tool.__name__)
         # the ledger's LM block holds the largest, page-rounded
         ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
         budget = int(re.search(r"#define VJO_BUDGET_GAME_LM (\d+)u", ledger).group(1))
