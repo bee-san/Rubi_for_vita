@@ -42,7 +42,7 @@ class Scope(unittest.TestCase):
         for path in ("tools/install_ftp.sh", "tools/install-vita.sh", "tools/package_release.py", "tools/e2e_package.py",
                      "tools/model_tiers.json", "docs/config.example.ini", "compat/adrenaline_vsh/main.c",
                      "include/vjo_api.h", "tools/tests/ftp_mock.py", "tools/hook_request.py",
-                     "tools/lookup_tables.txt"):
+                     "tools/lookup_tables.txt", "docs/plaintext-dictionaries.json"):
             self.check([path], True, False, True)
 
     def test_ci_itself_runs_everything(self):

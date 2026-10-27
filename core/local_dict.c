@@ -751,7 +751,7 @@ static int rank_posting(Workspace *w, Dictionary *d, const Record *r, uint32_t h
      * compares the head's strings (spelled_or_read): with table hints made
      * with these tables (d->hints 3) the posting's table bits say what it
      * finds, RULE_TABLES' bits 7 and 11 shifted onto RANK_USUAL and
-     * RANK_PREFERRED (posting_at leaves bits 8-10 zero); otherwise the head is
+     * RANK_PREFERRED (posting_at refuses bits 8-10, 12-15); otherwise the head is
      * read for such a key. It is read in any file for kana text whose entry is
      * spelled otherwise yet normalizes to the key (it may or may not be
      * spelled as the text is). */

@@ -2085,6 +2085,29 @@ static void table_hints_rank_table_keys_as_the_head_does(void)
         TEST_CHECK_(!strcmp(refused, strcmp(cases[t].text, "人") && strcmp(cases[t].text, "犬") ? want : plain),
                     "version 1 with the bits: %s", refused);
     }
+    {
+        /* under version 2 only bits 7 and 11 are the tables': any other rule bit past the inflection rules'
+         * (8-10, 12-15) is refused where a lookup reads it, as version 1 refuses every one */
+        static const uint16_t others[] = {1u << 8, 1u << 10, 1u << 12, 1u << 15};
+        for (size_t b = 0; b < sizeof(others) / sizeof(others[0]); b++) {
+            char out[256];
+            VjoArena a; VjoPlatform p; VjoConfig cfg;
+            setup(&a, &p, &cfg);
+            build(&fixtures[0], "main.vjdict", rows, n, 3);
+            add_table_hints(&fixtures[0], vjo_local_preferred_table(), vjo_local_usual_table(), id);
+            shown("main.vjdict", "人", 0, out, sizeof(out));
+            TEST_CHECK_(!strncmp(out, "人|ひと|", strlen("人|ひと|")), "%s", out);
+            for (uint32_t slot = 0, count = (uint32_t)(fixtures[0].bytes[4100] | fixtures[0].bytes[4101] << 8);
+                 slot < count; slot++) {
+                const uint8_t *rec = fixtures[0].bytes + 4096 + 16 + slot * 24;
+                size_t group = (size_t)(rec[8] | rec[9] << 8 | rec[10] << 16), key_len = (size_t)(rec[20] | rec[21] << 8);
+                if (key_len == strlen("人") && !memcmp(fixtures[0].bytes + group, "人", key_len))
+                    put16(fixtures[0].bytes + group + key_len + 12, others[b]); /* 人's first posting */
+            }
+            shown("main.vjdict", "人", 0, out, sizeof(out));
+            TEST_CHECK_(!strcmp(out, want), "bit 0x%x: %s", others[b], out);
+        }
+    }
 }
 
 /* The Shell reserves the session ahead of the resettable lookup arena, in
