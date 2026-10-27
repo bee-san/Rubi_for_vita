@@ -839,6 +839,14 @@ static void rubi_filters(void)
     /* PCSG01194 events 1 and 21: a name, a pause and a voice, half-width kana; narration from @r */
     rubi_to(VJO_RF_PCSG01194, VJO_HOOK_ENC_CP932, "男@r@p10.@vA_男a6_04.｢ぎｬﾞ｣", "男\n「ぎゃ！」");
     rubi_to(VJO_RF_PCSG01194, VJO_HOOK_ENC_CP932, "@rｿﾝﾅ･･私ﾊ･･ﾞ", "そんな……私は……！");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "<a>(｢)……ｿﾛｿﾛ､行ｶﾅｷｬ｣", "「……そろそろ、行かなきゃ」");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "<a>(｢)ｵｲ､泣ｸﾅﾖ｡ｻｯｷ言ｯﾀﾛ､ｿｳｲｳﾉﾊナシだｯﾃ｣",
+            "「おい、泣くなよ。さっき言ったろ、そういうのはナシだって」");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "ぼﾝﾔﾘﾄソフトフォｰカスﾉｶｶｯﾀ世界ﾆ､描ｷ出ｻﾚﾙセピア色ﾉ光景｡",
+            "ぼんやりとソフトフォーカスのかかった世界に、描き出されるセピア色の光景。");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "日本ﾉ南､南洋ﾉ更ﾆ南ﾆ位置ｽﾙ､四ﾂﾉ島ｶﾗﾅﾙ街､<ruby>(2,ｼﾄｳ)四島市――｡",
+            "日本の南、南洋の更に南に位置する、四つの島からなる街、四島市――。");
+    rubi_to(VJO_RF_PCSG00700, VJO_HOOK_ENC_CP932, "<f>ｱ</f>(ｲ)<c>ｳ</c>", "あ(い)う");
     /* PCSG00540: a named line with a voice, a pause and b ruby; narration with and without a voice */
     rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "c12.大石rv01_0001.ｺﾚﾊw300.bき.<吉>だ･ﾞ", "大石\nこれは吉だ…！");
     rubi_to(VJO_RF_PCSG00540, VJO_HOOK_ENC_CP932, "rvzen01.ｿｳｶﾟ", "そうか？");
