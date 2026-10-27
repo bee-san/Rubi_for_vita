@@ -103,11 +103,12 @@
    "wrong": 26,
    "wrong (differs from sudachi)": 603
   },
-  "rebased_as": "efaa72a"
+  "rebased_as": "e6810d8"
  },
  "measured_on": {
   "base": "9ad8eb5",
-  "note": "as rebased: main with #386 lookups; test readings unchanged line for line, one dev line gains a reading"
+  "also": "73db61e",
+  "note": "as rebased: main with #386 lookups; test readings unchanged line for line, one dev line gains a reading; on 73db61e (#398, #402) both sets identical to 9ad8eb5 line for line"
  },
  "export_time_estimate": {
   "lines": 3000,
