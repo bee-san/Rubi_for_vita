@@ -69,12 +69,13 @@ either (`VJO_DEBUG=0` for the normal one), and the Vita3K smokes build each in i
 
 What a run leaves out (2026-10-26, `tools/ci_scope.py`, the same rules as `tools/fast_gate.sh`): a pull
 request that changes Markdown alone builds nothing; one that changes only the hooks' verified-entry table
-(`core/hook_place.c` and its suites) leaves out the tools' Python suites (label `tools`), whose programs
-have no hook table in them; and one that changes none of the package's files makes no release zip, no
-artifact and no package e2e. The normal build's `host` job leaves the suites that never read the build
-(label `variant_free`) to the debug build's. Pushes (`main`, test branches), tags and manual runs run all of
-it. The apt packages and `tools/setup_toolchain.sh`'s result come from `actions/cache`
-(`tools/ci_apt_cache.sh`, `tools/ci_toolchain_cache.sh`); a miss falls back to the mirror and the full setup.
+(`core/hook_place.c` and its suites) leaves out the tools' Python suites whose programs do not read the
+table (label `tools`: all but `tools_hook_request` and `tools_hook_farm`); and one that changes none of
+the package's files makes no release zip, no artifact and no package e2e. The normal build's `host` job
+leaves the suites that never read the build (label `variant_free`) to the debug build's. Pushes (`main`,
+test branches), tags and manual runs run all of it. The apt packages and `tools/setup_toolchain.sh`'s
+result come from `actions/cache` (`tools/ci_apt_cache.sh`, `tools/ci_toolchain_cache.sh`); a miss falls
+back to the mirror and the full setup.
 
 ### CI's Vita build in its container
 
@@ -160,11 +161,11 @@ hooks' are not listed here):
 | cursor_nav | 15 | the cursor over several lines (the owner, 2026-10-16): the d-pad's Left/Right across rows to the text's ends, and the stick's four directions and the d-pad's from every character of eleven layouts, its left/right a character at a time (2026-10-20), with 32-bit offsets and float cells |
 | settings_layout | 14 | the Rubi app's text layouts (rows that end between phrases since 2026-10-16), icon PNG check and title letters (`settings/text_layout.c`, `settings/icons.c`, `settings/letter.c`): 32-bit `size_t` in the chunk walk, chunk lengths that would wrap it, each check against an unmapped page |
 | shell_log | 15 (14 normal) | the Shell's logger (`shell/log_vita.c`) on an in-memory file system: a batch of lines gives the files the same bytes as line by line through `status.txt`'s 64 KiB cap and `log.txt`'s 1 MiB rotation, with 32-bit sizes; every append counted with its time (a job's done line) |
-| apkg | 23 | the Rubi app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`, and since #315 the Cards page's storage, `settings/cards.c`, which the export calls first): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure, the sweep of screenshots no card names (#161) with its 64-bit file-time arithmetic on a 32-bit CPU; the five packages it writes (`--write`; #315's `edited`: a fixed sentence, a dropped picture, a deleted card) are byte-identical to the host build's |
+| apkg | 23 | the Rubi app's `.apkg` export (`core/sqlw.c`, `core/zipw.c`, `core/apkg.c`, `settings/anki_export.c`, and since #315 the Cards page's storage, `settings/cards.c`, which the export calls first): 32-bit `size_t` in the SQLite B-tree, its overflow pages and the ZIP offsets, every storage failure, the sweep of screenshots no card names (#161) with its 64-bit file-time arithmetic on a 32-bit CPU; the six packages it writes (`--write`: first, second, all, many, app and #315's `edited`: a fixed sentence, a dropped picture, a deleted card) are byte-identical to the host build's |
 | psp | 10 | Adrenaline bubbles (`core/pspbubble.c`), PSP images (`core/psptarget.c`: EBOOT.PBP, ISO 9660, CSO and ZSO with LZ4; deflate only where zlib is, so not here) and the title IDs a bubble's row may carry (`core/taicfg.c` `vjo_tai_title_ok`) on synthetic files: 32-bit offsets into images, ARM's unsigned `char`, the damaged-image fuzz against reads outside the file |
 | taicfg | 6 | the one-VPK install's `config.txt` editor (`core/taicfg.c`, #158) on its fixtures and a seeded corpus, each result checked with taiHEN's own parser, on the Vita's word size |
 | shot_trim | 12 | the Anki screenshot's black bars (`core/shottrim.c`, API 32): the scan's 32-bit offsets and row strides, its bar arithmetic on frames of 960 × 544, 480 × 272 and under 27 rows, Adrenaline's layouts, 400 random frames whose every pixel that is not black must stay in the picture, and the guess on any strip height (an exact guess is the decision) |
-| hook_stream_seams | 13 | the native hooks' CALL slots (`core/hook_stream.c`, #366): each interleaving of a new caller's replacement with another thread's step, run at the replacement's own points, with the A9's atomics and the clock's serial order in 32-bit arithmetic |
+| hook_stream_seams | 15 | the native hooks' CALL slots (`core/hook_stream.c`, #366): each interleaving of a new caller's replacement with another thread's step, run at the replacement's own points, with the A9's atomic instructions (one thread: their results, not their ordering) and the clock's serial order in 32-bit arithmetic |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 

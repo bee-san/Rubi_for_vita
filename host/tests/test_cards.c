@@ -52,6 +52,7 @@ void vjo_log(const char *fmt, ...)
 /* Every call that changes the card is counted; the fail_at-th fails (0: none), as does every one of the
  * kind fail_call on a path containing fail_path. */
 static int changes, fail_at;
+static int syncs_ok; /* with fail_call "sync": this many syncs pass first */
 static const char *fail_call, *fail_path, *fail_stat;
 static int writing[64]; /* fds opened for writing */
 #define EIO_RC ((int)0x80010005u)
@@ -151,19 +152,37 @@ int sceIoSyncByFd(int fd, int flag)
 int sceIoSync(const char *device, unsigned flags)
 {
     (void)device, (void)flags;
+    if (fail_call && !strcmp(fail_call, "sync") && syncs_ok > 0) {
+        syncs_ok--;
+        changes++;
+        return 0;
+    }
     return failing("sync", NULL) ? EIO_RC : 0;
 }
 static DIR *dirs[8];
 static char dir_paths[8][256];
 static const char *fail_dopen;
+/* dread_order 0: readdir's order; 1: by name; -1: by name, the last first (what the code does must not depend on
+ * the order a directory lists its files in) */
+static int dread_order;
+static struct dirent **dir_list[8];
+static int dir_n[8], dir_at[8];
+static int by_name(const struct dirent **x, const struct dirent **y) { return strcmp((*x)->d_name, (*y)->d_name); }
 int sceIoDopen(const char *p)
 {
     if (fail_dopen && !strcmp(p, fail_dopen))
         return EIO_RC;
     for (int i = 0; i < 8; i++)
-        if (!dirs[i]) {
-            if (!(dirs[i] = opendir(p)))
+        if (!dirs[i] && !dir_list[i]) {
+            if (dread_order) {
+                if ((dir_n[i] = scandir(p, &dir_list[i], NULL, by_name)) < 0) {
+                    dir_list[i] = NULL;
+                    return native(-1);
+                }
+                dir_at[i] = 0;
+            } else if (!(dirs[i] = opendir(p))) {
                 return native(-1);
+            }
             snprintf(dir_paths[i], sizeof(dir_paths[i]), "%s", p);
             return 100 + i;
         }
@@ -171,8 +190,15 @@ int sceIoDopen(const char *p)
 }
 int sceIoDread(int fd, SceIoDirent *ent)
 {
-    struct dirent *e = readdir(dirs[fd - 100]);
+    int k = fd - 100;
+    struct dirent *e;
     char path[600];
+    if (dir_list[k])
+        e = dir_at[k] == dir_n[k] ? NULL : dir_list[k][dread_order > 0 ? dir_at[k] : dir_n[k] - 1 - dir_at[k]];
+    else
+        e = readdir(dirs[k]);
+    if (dir_list[k] && e)
+        dir_at[k]++;
     if (!e)
         return 0;
     memset(ent, 0, sizeof(*ent));
@@ -183,8 +209,16 @@ int sceIoDread(int fd, SceIoDirent *ent)
 }
 int sceIoDclose(int fd)
 {
-    int rc = closedir(dirs[fd - 100]);
-    dirs[fd - 100] = NULL;
+    int k = fd - 100, rc = 0;
+    if (dir_list[k]) {
+        for (int i = 0; i < dir_n[k]; i++)
+            free(dir_list[k][i]);
+        free(dir_list[k]);
+        dir_list[k] = NULL;
+    } else {
+        rc = closedir(dirs[k]);
+        dirs[k] = NULL;
+    }
     return rc;
 }
 int sceRtcGetCurrentClockLocalTime(SceDateTime *t)
@@ -211,7 +245,7 @@ static void reset(void)
     TEST_ASSERT(vjo_test_remove_tree(data) == 0);
     TEST_ASSERT(mkdir("ux0:data", 0777) == 0 && mkdir("ux0:data/VitaJPOverlay", 0777) == 0);
     TEST_ASSERT(mkdir(VJO_QUEUE_DIR, 0777) == 0);
-    changes = fail_at = 0;
+    changes = fail_at = dread_order = 0;
     fail_call = fail_path = fail_stat = fail_dopen = NULL;
     logs[0] = '\0';
     arena();
@@ -383,10 +417,13 @@ static int list_of(int which, const VjoCardRow *bound, int cap)
     return vjo_cards_list(&A, which, bound, &list, NULL);
 }
 
+/* settings/app_platform.c's clock (#311: the export's sentence readings, none here: no dictionaries) */
+uint64_t sceKernelGetProcessTimeWide(void) { return 0; }
+
 static int export_now(int all, VjoExportResult *r, char *msg)
 {
     arena();
-    return vjo_export_run(&A, all, NULL, &(VjoExportUi){NULL, NULL, NULL}, r, msg, 300);
+    return vjo_export_run(&A, all, NULL, NULL, &(VjoExportUi){NULL, NULL, NULL}, r, msg, 300);
 }
 
 /* ---------------- tests ---------------- */
@@ -429,9 +466,10 @@ static void the_list_is_newest_first_with_its_marks(void)
     TEST_CHECK((table[1].flags & VJO_CARD_PICTURE) && !(table[0].flags & VJO_CARD_PICTURE));
     /* the edited one: shown with its word, not exportable */
     TEST_CHECK((table[2].flags & VJO_CARD_UNREADABLE) && !strcmp(table[2].word, "犬"));
-    /* the two 猫 are marked, the others not */
+    /* of the two 猫 (the same minute), the later in the export's order (time, then ID) is the one mined before: marked,
+     * as the export tags it duplicate (#314); the others not */
     for (int i = 0; i < 5; i++)
-        TEST_CHECK_(!!(table[i].flags & VJO_CARD_DUPLICATE) == (i >= 3), "row %d: duplicate %d", i,
+        TEST_CHECK_(!!(table[i].flags & VJO_CARD_DUPLICATE) == (i == 4), "row %d: duplicate %d", i,
                     !!(table[i].flags & VJO_CARD_DUPLICATE));
     TEST_CHECK(vjo_cards_order(&table[0], &table[1]) < 0 && vjo_cards_order(&table[1], &table[0]) > 0 &&
                vjo_cards_order(&table[2], &table[2]) == 0);
@@ -471,11 +509,62 @@ static void duplicates_follow_the_word_key(void)
     TEST_ASSERT(list_of(VJO_CARDS_QUEUED, NULL, VJO_CARDS_MAX) == 0 && list.n == 7);
     for (int i = 0; i < list.n; i++) {
         const VjoCardRow *r = &table[i];
-        int want = strcmp(r->word, "方") != 0;
-        TEST_CHECK_(!!(r->flags & VJO_CARD_DUPLICATE) == want, "%s (%s): duplicate %d", r->word, r->reading,
-                    !!(r->flags & VJO_CARD_DUPLICATE));
+        /* each word's later cards (newer time) are marked: コーヒー's second, かな's second and third; 方 twice, but
+         * with two readings: two words */
+        int want = (!strcmp(r->word, "コーヒー") && r->time == 1791790200) ||
+                   (!strcmp(r->word, "かな") && r->time >= 1791790400);
+        TEST_CHECK_(!!(r->flags & VJO_CARD_DUPLICATE) == want, "%s (%s) at %u: duplicate %d", r->word, r->reading,
+                    r->time, !!(r->flags & VJO_CARD_DUPLICATE));
         TEST_CHECK(r->key == vjo_word_key(r->word, r->reading));
     }
+    /* a word of an exported card, mined again: marked (the export tags it) */
+    {
+        Card e = dog;
+        e.spelling = "鳥", e.reading = "とり", e.time = 1791780000;
+        card_in(VJO_QUEUE_EXPORTED_DIR, &e);
+        e.time = 1791790800;
+        queue(&e);
+        TEST_ASSERT(list_of(VJO_CARDS_QUEUED, NULL, VJO_CARDS_MAX) == 0 && list.n == 8);
+        TEST_CHECK(!strcmp(table[0].word, "鳥") && (table[0].flags & VJO_CARD_DUPLICATE));
+    }
+}
+
+/* A stop is a stop wherever the list is: among the cards, or in the word index read after them (the page's Cancel
+ * while "Checking for words mined before"): VJO_E_CANCELLED, never a list with the window's own duplicate marks. */
+static int stops_from, stop_calls;
+static int stop_at(void *ud)
+{
+    (void)ud;
+    return ++stop_calls >= stops_from;
+}
+static int list_stopping_at(int from)
+{
+    VjoExportUi ui = {NULL, NULL, stop_at};
+    memset(&list, 0, sizeof(list));
+    list.rows = table;
+    list.cap = VJO_CARDS_MAX;
+    arena();
+    stops_from = from;
+    stop_calls = 0;
+    return vjo_cards_list(&A, VJO_CARDS_QUEUED, NULL, &list, &ui);
+}
+static void a_stop_while_the_words_are_read_stops_the_list(void)
+{
+    int rc;
+    reset();
+    queue(&cat);
+    queue(&dog);
+    queue(&eat);
+    TEST_CHECK(list_stopping_at(2) == VJO_E_CANCELLED); /* among the cards */
+    /* the three cards read (a check each), then the word index's first check */
+    rc = list_stopping_at(4);
+    TEST_CHECK_(rc == VJO_E_CANCELLED, "rc %d after %d checks", rc, stop_calls);
+    rc = list_stopping_at(1 << 30);
+    TEST_CHECK_(rc == 0 && list.n == 3 && stop_calls > 4, "rc %d, %d cards, %d checks", rc, list.n, stop_calls);
+    /* the index cached: the next list reads no record for it, and a stop there still stops the list */
+    rc = list_stopping_at(4);
+    TEST_CHECK_(rc == VJO_E_CANCELLED, "rc %d after %d checks", rc, stop_calls);
+    TEST_CHECK(list_stopping_at(1 << 30) == 0 && list.n == 3);
 }
 
 /* More cards than the table: the newest cap, then each window the next cap older than the last one's last
@@ -511,6 +600,33 @@ static void a_long_list_is_read_a_window_at_a_time(void)
     TEST_ASSERT(n_seen == 8);
     for (int i = 0; i < 8; i++)
         TEST_CHECK_(!strcmp(seen[i], order[i]), "card %d: %s, want %s", i, seen[i], order[i]);
+    /* #315's audit (mutant M14): five cards of one word in one minute (other sentences): only their IDs order them,
+     * and the windows still have each one once */
+    {
+        uint8_t ids[16][16];
+        int n_ids = 0, windows = 0;
+        reset();
+        for (int i = 0; i < 5; i++) {
+            Card c = cat;
+            char sentence[32];
+            snprintf(sentence, sizeof(sentence), "猫が%d匹", i);
+            c.sentence = sentence;
+            queue(&c);
+        }
+        TEST_ASSERT(list_of(VJO_CARDS_QUEUED, NULL, 2) == 0 && list.total == 5);
+        for (;;) {
+            windows++;
+            for (int i = 0; i < list.n && n_ids < 16; i++)
+                memcpy(ids[n_ids++], table[i].id, 16);
+            if (!list.older || windows > 5)
+                break;
+            bound = table[list.n - 1];
+            TEST_ASSERT(list_of(VJO_CARDS_QUEUED, &bound, 2) == 0);
+        }
+        TEST_CHECK_(n_ids == 5 && windows == 3, "%d cards in %d windows", n_ids, windows);
+        for (int i = 1; i < n_ids; i++) /* (each once, in the IDs' order) */
+            TEST_CHECK_(memcmp(ids[i - 1], ids[i], 16) < 0, "cards %d and %d", i - 1, i);
+    }
 }
 
 /* A card's view: its word and reading, game and date, its sentence with the word's offsets, its meanings
@@ -743,6 +859,47 @@ static void a_fixed_sentence_is_a_new_card_with_the_old_picture(void)
                 in(VJO_QUEUE_EXPORTED_DIR, now, "jpg"), "%s", msg);
 }
 
+/* #315's audit (mutants M4, M4b): a picture already at the new card's name, which a stopped try left (no record names
+ * it yet). Of other bytes: removed first, then the copy renamed in (never over it: the stub's rename checks), the new
+ * card's picture the old one's. Of the same bytes: kept as it is (the same file), with no .tmp left. */
+static void a_picture_left_at_the_new_name_is_replaced_or_kept(void)
+{
+    uint8_t id[16];
+    char old[VJO_QUEUE_ID_SIZE], now[VJO_QUEUE_ID_SIZE], path[256], pic1[401], pic2[401];
+    struct stat st1, st2;
+    VjoCardChange ch;
+    for (int same = 0; same < 2; same++) {
+        /* the change once, for the new card's ID; then the old card again, alone */
+        reset();
+        snprintf(old, sizeof(old), "%s", queue(&cat));
+        id_of(old, id);
+        arena();
+        TEST_ASSERT(vjo_cards_fix_sentence(&A, id, "白い猫が好きだ", &ch) == 0 && ch.done == VJO_CARDS_CHANGED);
+        vjo_cards_hex(ch.id, now);
+        reset();
+        TEST_ASSERT(!strcmp(queue(&cat), old));
+        snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", old);
+        TEST_ASSERT(get(path, pic1, sizeof(pic1)) == 400);
+        if (!same)
+            memset(pic1, 'x', 400);
+        snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", now);
+        put(path, pic1, 400);
+        TEST_ASSERT(stat(path, &st1) == 0);
+        arena();
+        TEST_ASSERT(vjo_cards_fix_sentence(&A, id, "白い猫が好きだ", &ch) == 0);
+        vjo_cards_hex(ch.id, path);
+        TEST_CHECK_(ch.done == VJO_CARDS_CHANGED && !strcmp(path, now) && ch.picture, "same %d: done %d", same, ch.done);
+        snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", now);
+        TEST_ASSERT(get(path, pic2, sizeof(pic2)) == 400 && stat(path, &st2) == 0);
+        snprintf(path, sizeof(path), VJO_CARDS_DELETED_DIR "/%s.jpg", old);
+        TEST_ASSERT(get(path, pic1, sizeof(pic1)) == 400);
+        TEST_CHECK_(!memcmp(pic1, pic2, 400), "same %d: the new card's picture is not the old one's", same);
+        TEST_CHECK_(!same || st1.st_ino == st2.st_ino, "a picture of the same bytes was written again");
+        TEST_CHECK(files(VJO_QUEUE_DIR, ".tmp") == 0 && files(VJO_CARDS_DELETED_DIR, ".fix") == 0);
+        every_picture_is_there();
+    }
+}
+
 /* The word not in the new sentence: the card keeps no bold (offsets -1), and the export's Sentence has no
  * <b>. A sentence with readings other than the sentence (a removed online dictionary's) goes: null. */
 static void a_fix_without_the_word_has_no_bold(void)
@@ -972,7 +1129,7 @@ static void a_failure_at_any_step_of_a_change_loses_nothing(void)
             TEST_CHECK_(old_there || new_there, "kind %d, step %d of %d (rc %d): neither card", kind, k, steps, rc);
             every_picture_is_there();
             arena();
-            vjo_cards_recover(&A);
+            vjo_cards_recover(&A, NULL);
             TEST_CHECK_(files(VJO_CARDS_DELETED_DIR, ".fix") == 0, "kind %d, step %d: an intent left", kind, k);
             TEST_CHECK_(files(VJO_QUEUE_DIR, ".json") == 2, "kind %d, step %d: %d cards queued", kind, k,
                         files(VJO_QUEUE_DIR, ".json"));
@@ -1014,7 +1171,7 @@ static void recovery_settles_each_stopped_change(void)
     TEST_ASSERT(list_of(VJO_CARDS_QUEUED, NULL, VJO_CARDS_MAX) == 0); /* (a list does not settle it: the page's job does) */
     TEST_CHECK(list.n == 2);
     arena();
-    TEST_CHECK(vjo_cards_recover(&A) == 0 && !there(intent));
+    TEST_CHECK(vjo_cards_recover(&A, NULL) == 0 && !there(intent));
     TEST_CHECK(!in(VJO_QUEUE_DIR, a, "json") && !in(VJO_QUEUE_DIR, a, "jpg") && in(VJO_QUEUE_DIR, b, "json") &&
                in(VJO_CARDS_DELETED_DIR, a, "json") && in(VJO_CARDS_DELETED_DIR, a, "jpg"));
     /* the new card not made (a stop between steps 2 and 3): undone, its picture removed */
@@ -1027,34 +1184,43 @@ static void recovery_settles_each_stopped_change(void)
     put(VJO_QUEUE_DIR "/fedcba9876543210fedcba9876543210.jpg.tmp", "\xFF\xD8", 2);
     put(VJO_QUEUE_DIR "/fedcba9876543210fedcba9876543210.json.tmp", "{", 1);
     arena();
-    TEST_CHECK(vjo_cards_recover(&A) == 0 && !there(intent) && files(VJO_QUEUE_DIR, ".json") == 1 &&
+    TEST_CHECK(vjo_cards_recover(&A, NULL) == 0 && !there(intent) && files(VJO_QUEUE_DIR, ".json") == 1 &&
                in(VJO_QUEUE_DIR, a, "json") && in(VJO_QUEUE_DIR, a, "jpg") && files(VJO_QUEUE_DIR, ".jpg") == 1 &&
                files(VJO_QUEUE_DIR, ".tmp") == 0);
     /* an intent's own .tmp, and a damaged intent */
     put(VJO_CARDS_DELETED_DIR "/0123456789abcdef0123456789abcdef.fix.tmp", "0123", 4);
     put(intent, "not an id", 9);
     arena();
-    TEST_CHECK(vjo_cards_recover(&A) == 0 && files(VJO_CARDS_DELETED_DIR, ".fix") == 0 &&
+    TEST_CHECK(vjo_cards_recover(&A, NULL) == 0 && files(VJO_CARDS_DELETED_DIR, ".fix") == 0 &&
                files(VJO_CARDS_DELETED_DIR, ".tmp") == 0 && in(VJO_QUEUE_DIR, a, "json"));
-    /* one that cannot be settled: kept; the export changes nothing and says so */
+    /* one that cannot be settled: kept, its old card held: the export leaves it queued and says so (#315's audit) */
     put(intent, "fedcba9876543210fedcba9876543210\n", 33);
     fail_call = "remove";
     fail_path = ".fix";
-    arena();
-    TEST_CHECK(vjo_cards_recover(&A) == 1 && there(intent));
-    TEST_CHECK(export_now(0, &r, msg) == VJO_E_LOCAL_IO && strstr(msg, "could not be finished") &&
-               in(VJO_QUEUE_DIR, a, "json") && !there(VJO_EXPORT_DIR));
-    /* deleted/ that cannot be read: the same */
+    {
+        static VjoCardsHeld held;
+        uint8_t ida[16];
+        id_of(a, ida);
+        arena();
+        TEST_CHECK(vjo_cards_recover(&A, &held) == 1 && there(intent) && held.n == 1 && !held.incomplete &&
+                   vjo_cards_is_held(&held, ida));
+    }
+    TEST_CHECK(export_now(0, &r, msg) == 0 && strstr(msg, "did not finish") && r.cards == 0 &&
+               in(VJO_QUEUE_DIR, a, "json") && !there(VJO_EXPORT_DIR "/x"));
+    TEST_MSG("%s", msg);
+    /* deleted/ that cannot be read: the cards to hold are not known, so nothing is changed */
     fail_call = fail_path = NULL;
     fail_dopen = VJO_CARDS_DELETED_DIR;
     arena();
-    TEST_CHECK(vjo_cards_recover(&A) == 1);
+    TEST_CHECK(vjo_cards_recover(&A, NULL) == 1);
+    TEST_CHECK(export_now(0, &r, msg) == VJO_E_LOCAL_IO && strstr(msg, "could not be finished") &&
+               in(VJO_QUEUE_DIR, a, "json"));
     fail_dopen = NULL;
     TEST_ASSERT(export_now(0, &r, msg) == 0 && r.cards == 1 && !there(intent));
     /* no deleted/ at all: nothing to do */
     reset();
     arena();
-    TEST_CHECK(vjo_cards_recover(&A) == 0);
+    TEST_CHECK(vjo_cards_recover(&A, NULL) == 0);
 }
 
 /* The export never reads deleted/: a deleted card is in no package, Export all cards included. */
@@ -1075,6 +1241,395 @@ static void the_export_ignores_deleted_cards(void)
     TEST_CHECK(in(VJO_CARDS_DELETED_DIR, a, "json") && in(VJO_CARDS_DELETED_DIR, a, "jpg"));
 }
 
+/* ---------------- #315's audit (audit-rubi-rm5): its scenarios ---------------- */
+
+/* S2b: every sync fails from the new record's on: the change is made (the files say so), and reported made with the
+ * memory card's sync not confirmed, never as "nothing changed". */
+static void a_change_whose_sync_fails_is_reported_made(void)
+{
+    uint8_t id[16];
+    char a[VJO_QUEUE_ID_SIZE], now[VJO_QUEUE_ID_SIZE];
+    VjoCardChange ch;
+    reset();
+    snprintf(a, sizeof(a), "%s", queue(&cat));
+    id_of(a, id);
+    syncs_ok = 1; /* the intent's commit syncs first: it passes; every sync after it (the record's, the moves') fails */
+    fail_call = "sync";
+    arena();
+    TEST_CHECK(vjo_cards_fix_sentence(&A, id, "白い猫が好き", &ch) == 0);
+    TEST_CHECK(ch.done == VJO_CARDS_CHANGED && ch.unsynced && !ch.old_left);
+    fail_call = NULL;
+    syncs_ok = 0;
+    vjo_cards_hex(ch.id, now);
+    TEST_CHECK(in(VJO_QUEUE_DIR, now, "json") && !in(VJO_QUEUE_DIR, a, "json") && in(VJO_CARDS_DELETED_DIR, a, "json"));
+    every_picture_is_there();
+}
+
+/* S7a: an intent that cannot be read (EIO, every time) no longer stops every export: its old card is held (stays
+ * queued), the other cards are exported; once it is readable again, it is settled. */
+static void an_unreadable_intent_holds_only_its_card(void)
+{
+    static VjoCardsHeld held;
+    char a[VJO_QUEUE_ID_SIZE], intent[256], msg[300];
+    uint8_t ida[16];
+    VjoExportResult r;
+    reset();
+    snprintf(a, sizeof(a), "%s", queue(&cat));
+    queue(&dog);
+    id_of(a, ida);
+    mkdir(VJO_CARDS_DELETED_DIR, 0777);
+    snprintf(intent, sizeof(intent), VJO_CARDS_DELETED_DIR "/%s.fix", a);
+    put(intent, "fedcba9876543210fedcba9876543210\n", 33);
+    fail_call = "read-open";
+    fail_path = ".fix";
+    arena();
+    TEST_CHECK(vjo_cards_recover(&A, &held) == 1 && held.n == 1 && vjo_cards_is_held(&held, ida) && there(intent));
+    TEST_CHECK(export_now(0, &r, msg) == 0 && r.cards == 1 && r.held == 1 && strstr(msg, "did not finish"));
+    TEST_MSG("%s", msg);
+    TEST_CHECK(in(VJO_QUEUE_DIR, a, "json") && in(VJO_QUEUE_DIR, a, "jpg") && files(VJO_QUEUE_DIR, ".json") == 1);
+    /* the list marks it; readable again: settled (the change made no card: the old one kept, exported next) */
+    TEST_ASSERT(list_of(VJO_CARDS_QUEUED, NULL, VJO_CARDS_MAX) == 0 && list.n == 1);
+    fail_call = fail_path = NULL;
+    TEST_CHECK(export_now(0, &r, msg) == 0 && r.cards == 1 && !r.held && !there(intent));
+}
+
+/* S7b: a damaged intent (0 bytes, garbage) beside a queued card of the old card's word, reading and time (its fixed
+ * card, maybe): kept, the old card held, so the export never has both; beside no such card: removed (the change made
+ * no card), the old card exported. */
+static void a_damaged_intent_never_doubles_a_card(void)
+{
+    static VjoCardsHeld held;
+    char a[VJO_QUEUE_ID_SIZE], b[VJO_QUEUE_ID_SIZE], intent[256], path[256], copy[256], msg[300];
+    uint8_t id[16];
+    VjoCardChange ch;
+    VjoExportResult r;
+    for (int k = 0; k < 2; k++) {
+        /* both cards queued: a stop between steps 3 and 4, then the intent damaged */
+        reset();
+        snprintf(a, sizeof(a), "%s", queue(&cat));
+        id_of(a, id);
+        arena();
+        TEST_ASSERT(vjo_cards_fix_sentence(&A, id, "白い猫が好き", &ch) == 0 && ch.done == VJO_CARDS_CHANGED);
+        vjo_cards_hex(ch.id, b);
+        snprintf(path, sizeof(path), VJO_CARDS_DELETED_DIR "/%s.json", a);
+        snprintf(copy, sizeof(copy), VJO_QUEUE_DIR "/%s.json", a);
+        TEST_ASSERT(rename(path, copy) == 0);
+        snprintf(path, sizeof(path), VJO_CARDS_DELETED_DIR "/%s.jpg", a);
+        snprintf(copy, sizeof(copy), VJO_QUEUE_DIR "/%s.jpg", a);
+        TEST_ASSERT(rename(path, copy) == 0);
+        snprintf(intent, sizeof(intent), VJO_CARDS_DELETED_DIR "/%s.fix", a);
+        put(intent, k ? "garbage, not an ID at all" : "", k ? 25 : 0);
+        arena();
+        TEST_CHECK(vjo_cards_recover(&A, &held) == 1 && vjo_cards_is_held(&held, id) && there(intent));
+        TEST_CHECK(export_now(0, &r, msg) == 0 && r.cards == 1 && r.held == 1 && in(VJO_QUEUE_EXPORTED_DIR, b, "json") &&
+                   !in(VJO_QUEUE_EXPORTED_DIR, a, "json") && in(VJO_QUEUE_DIR, a, "json"));
+        TEST_MSG("damaged %d: %s", k, msg);
+        /* the user deletes the old card on the Cards page: the intent then goes */
+        arena();
+        TEST_ASSERT(vjo_cards_delete(&A, id) == 0);
+        arena();
+        TEST_CHECK(vjo_cards_recover(&A, &held) == 0 && !held.n && !there(intent));
+    }
+    /* beside no card of its word and time: the change made no card; removed, the old card exported */
+    reset();
+    snprintf(a, sizeof(a), "%s", queue(&cat));
+    queue(&dog);
+    mkdir(VJO_CARDS_DELETED_DIR, 0777);
+    snprintf(intent, sizeof(intent), VJO_CARDS_DELETED_DIR "/%s.fix", a);
+    put(intent, "garbage", 7);
+    arena();
+    TEST_CHECK(vjo_cards_recover(&A, &held) == 0 && !held.n && !there(intent));
+    TEST_CHECK(export_now(0, &r, msg) == 0 && r.cards == 2 && !r.held);
+}
+
+/* S9b, S9c: Delete never takes a picture an exported record of the same card names (the queue's, when exported/ has
+ * only the record), and leaves no copy in exported/ that no record names (deleted/ holding one already). */
+static void delete_keeps_an_exported_records_picture(void)
+{
+    uint8_t id[16];
+    char a[VJO_QUEUE_ID_SIZE], from[256], to[256];
+    reset();
+    snprintf(a, sizeof(a), "%s", queue(&cat));
+    id_of(a, id);
+    mkdir(VJO_QUEUE_EXPORTED_DIR, 0777);
+    snprintf(from, sizeof(from), VJO_QUEUE_DIR "/%s.json", a);
+    snprintf(to, sizeof(to), VJO_QUEUE_EXPORTED_DIR "/%s.json", a);
+    TEST_ASSERT(link(from, to) == 0); /* the same record queued and exported, its picture in the queue only */
+    arena();
+    TEST_ASSERT(vjo_cards_delete(&A, id) == 0);
+    TEST_CHECK(!in(VJO_QUEUE_DIR, a, "json") && in(VJO_QUEUE_DIR, a, "jpg") && in(VJO_QUEUE_EXPORTED_DIR, a, "json"));
+    every_picture_is_there();
+    /* a picture in exported/ ahead of its record (an export stopped between the two moves), and deleted/ holding
+     * a copy from an earlier delete: nothing left in exported/ */
+    reset();
+    snprintf(a, sizeof(a), "%s", queue(&cat));
+    id_of(a, id);
+    arena();
+    TEST_ASSERT(vjo_cards_delete(&A, id) == 0); /* deleted/ has its record and picture */
+    queue(&cat); /* mined again: the same card */
+    mkdir(VJO_QUEUE_EXPORTED_DIR, 0777);
+    snprintf(from, sizeof(from), VJO_QUEUE_DIR "/%s.jpg", a);
+    snprintf(to, sizeof(to), VJO_QUEUE_EXPORTED_DIR "/%s.jpg", a);
+    TEST_ASSERT(rename(from, to) == 0);
+    arena();
+    TEST_ASSERT(vjo_cards_delete(&A, id) == 0);
+    TEST_CHECK(!in(VJO_QUEUE_EXPORTED_DIR, a, "jpg") && in(VJO_CARDS_DELETED_DIR, a, "jpg") &&
+               files(VJO_QUEUE_EXPORTED_DIR, ".jpg") == 0);
+}
+
+/* S10: a queued card that is in exported/ too (a removal an export could not make) is not changed: its note may be
+ * in Anki, and a changed card would be a second note. Delete removes the queued copy. */
+static void a_card_exported_too_is_not_changed(void)
+{
+    uint8_t id[16];
+    char a[VJO_QUEUE_ID_SIZE], from[256], to[256], msg[300];
+    VjoCardChange ch;
+    VjoExportResult r;
+    reset();
+    snprintf(a, sizeof(a), "%s", queue(&cat));
+    id_of(a, id);
+    mkdir(VJO_QUEUE_EXPORTED_DIR, 0777);
+    snprintf(from, sizeof(from), VJO_QUEUE_DIR "/%s.json", a);
+    snprintf(to, sizeof(to), VJO_QUEUE_EXPORTED_DIR "/%s.json", a);
+    TEST_ASSERT(link(from, to) == 0);
+    arena();
+    TEST_CHECK(vjo_cards_fix_sentence(&A, id, "白い猫が好き", &ch) == VJO_E_PARSE && ch.exported);
+    arena();
+    TEST_CHECK(vjo_cards_drop_picture(&A, id, &ch) == VJO_E_PARSE && ch.exported);
+    TEST_CHECK(files(VJO_QUEUE_DIR, ".json") == 1 && !there(VJO_CARDS_DELETED_DIR "/x"));
+    TEST_ASSERT(export_now(1, &r, msg) == 0 && r.cards == 1);
+}
+
+/* S11: the old card could not be moved (old_left); the fixed card cannot be deleted before that change is settled,
+ * and a fixed card deleted by hand (VitaShell) meanwhile is taken as made: the old one is retired, not kept. */
+static void a_fixed_card_is_not_deleted_before_its_change_settles(void)
+{
+    static VjoCardsHeld held;
+    uint8_t id[16], idb[16];
+    char a[VJO_QUEUE_ID_SIZE], b[VJO_QUEUE_ID_SIZE], from[256], to[256];
+    VjoCardChange ch;
+    reset();
+    snprintf(a, sizeof(a), "%s", queue(&cat));
+    id_of(a, id);
+    char moving[64];
+    snprintf(moving, sizeof(moving), "anki_queue/%s.json", a);
+    fail_call = "rename";
+    fail_path = moving; /* the old record's move into deleted/ keeps failing (not the intent's, nor the new card's) */
+    arena();
+    TEST_ASSERT(vjo_cards_fix_sentence(&A, id, "白い猫が好き", &ch) == 0 && ch.done == VJO_CARDS_CHANGED && ch.old_left);
+    vjo_cards_hex(ch.id, b);
+    id_of(b, idb);
+    arena();
+    TEST_CHECK(vjo_cards_delete(&A, idb) == VJO_CARDS_E_PENDING && in(VJO_QUEUE_DIR, b, "json"));
+    arena();
+    TEST_CHECK(vjo_cards_fix_sentence(&A, idb, "黒い猫が好き", &ch) == VJO_E_LOCAL_IO && ch.pending);
+    arena();
+    TEST_CHECK(vjo_cards_recover(&A, &held) == 1 && vjo_cards_is_held(&held, id)); /* still failing: held */
+    /* the fixed card moved by hand into deleted/, the moves working again: the change is undone and the old card
+     * stays (a record of the new ID in deleted/ is no new card: it may be an older copy, a_sentence_fixed_back_...) */
+    snprintf(from, sizeof(from), VJO_QUEUE_DIR "/%s.json", b);
+    snprintf(to, sizeof(to), VJO_CARDS_DELETED_DIR "/%s.json", b);
+    TEST_ASSERT(rename(from, to) == 0);
+    fail_call = fail_path = NULL;
+    arena();
+    TEST_CHECK(vjo_cards_recover(&A, &held) == 0 && !held.n);
+    TEST_CHECK(in(VJO_QUEUE_DIR, a, "json") && in(VJO_QUEUE_DIR, a, "jpg") && files(VJO_QUEUE_DIR, ".json") == 1 &&
+               files(VJO_CARDS_DELETED_DIR, ".fix") == 0);
+    every_picture_is_there();
+}
+
+/* A sentence fixed back to what it was is the first card again (the same record, the same ID), whose record is in
+ * deleted/ since the first fix. A change of it that fails before its record is committed, or a stop there, keeps
+ * the card it changes: that copy in deleted/ is no new card (the audit's fuzz, seed 28, on the follow-up). */
+static void a_sentence_fixed_back_keeps_its_card_when_its_change_fails(void)
+{
+    char a[VJO_QUEUE_ID_SIZE], b[VJO_QUEUE_ID_SIZE], now[VJO_QUEUE_ID_SIZE], path[256], line[40];
+    static char pic[VJO_QUEUE_PICTURE_MAX];
+    uint8_t id[16], idb[16];
+    VjoCardChange ch;
+    VjoCardsHeld held;
+    long n;
+    reset();
+    snprintf(a, sizeof(a), "%s", queue(&cat));
+    id_of(a, id);
+    arena();
+    TEST_ASSERT(vjo_cards_fix_sentence(&A, id, "白い猫が好き", &ch) == 0 && ch.done == VJO_CARDS_CHANGED);
+    vjo_cards_hex(ch.id, b);
+    memcpy(idb, ch.id, 16);
+    TEST_ASSERT(in(VJO_CARDS_DELETED_DIR, a, "json") && in(VJO_QUEUE_DIR, b, "json"));
+    /* back to the first sentence (its new card is a again), the new record's commit failing */
+    snprintf(path, sizeof(path), "anki_queue/%s.json.tmp", a);
+    fail_call = "open";
+    fail_path = path;
+    arena();
+    TEST_CHECK(vjo_cards_fix_sentence(&A, idb, cat.sentence, &ch) != 0 && ch.done == 0);
+    fail_call = fail_path = NULL;
+    TEST_CHECK_(in(VJO_QUEUE_DIR, b, "json") && in(VJO_QUEUE_DIR, b, "jpg") && !in(VJO_QUEUE_DIR, a, "json") &&
+                !in(VJO_QUEUE_DIR, a, "jpg") && files(VJO_CARDS_DELETED_DIR, ".fix") == 0, "%s", logs);
+    every_picture_is_there();
+    /* the same change stopped after its picture's copy, before its record: the recovery keeps b */
+    snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", b);
+    TEST_ASSERT((n = get(path, pic, sizeof(pic))) > 0);
+    snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s.jpg", a);
+    put(path, pic, (size_t)n);
+    snprintf(line, sizeof(line), "%s\n", a);
+    snprintf(path, sizeof(path), VJO_CARDS_DELETED_DIR "/%s.fix", b);
+    put(path, line, 33);
+    arena();
+    TEST_CHECK(vjo_cards_recover(&A, &held) == 0 && !held.n);
+    TEST_CHECK(in(VJO_QUEUE_DIR, b, "json") && !in(VJO_QUEUE_DIR, a, "json") && !in(VJO_QUEUE_DIR, a, "jpg") &&
+               files(VJO_CARDS_DELETED_DIR, ".fix") == 0);
+    every_picture_is_there();
+    /* and with nothing failing: a again, b retired */
+    arena();
+    TEST_CHECK(vjo_cards_fix_sentence(&A, idb, cat.sentence, &ch) == 0 && ch.done == VJO_CARDS_CHANGED);
+    vjo_cards_hex(ch.id, now);
+    TEST_CHECK(!strcmp(now, a) && in(VJO_QUEUE_DIR, a, "json") && in(VJO_QUEUE_DIR, a, "jpg") &&
+               !in(VJO_QUEUE_DIR, b, "json") && in(VJO_CARDS_DELETED_DIR, b, "json"));
+    every_picture_is_there();
+}
+
+/* F4 of #315's audit: two changes in a row, a card's (a -> b) and then its new card's (b -> c), both unsettled (an
+ * earlier build allowed the second before the first was settled). Whichever order deleted/ lists them in, the first
+ * is settled first and only c is left; when the first cannot be settled, the second waits (both old cards held), so
+ * the export never takes b beside c, nor a beside c. */
+static void chained_changes_settle_in_their_order(void)
+{
+    for (int order = -1; order <= 1; order += 2)
+        for (int first_fails = 0; first_fails < 2; first_fails++) {
+            const char *who[2];
+            char a[VJO_QUEUE_ID_SIZE], b[VJO_QUEUE_ID_SIZE], c[VJO_QUEUE_ID_SIZE], from[256], to[256], line[40],
+                moving[64], msg[300];
+            uint8_t id[16];
+            VjoCardChange ch;
+            VjoCardsHeld held;
+            VjoExportResult r;
+            int rc;
+            reset();
+            snprintf(a, sizeof(a), "%s", queue(&cat));
+            id_of(a, id);
+            arena();
+            TEST_ASSERT(vjo_cards_fix_sentence(&A, id, "白い猫が好き", &ch) == 0 && ch.done == VJO_CARDS_CHANGED);
+            vjo_cards_hex(ch.id, b);
+            memcpy(id, ch.id, 16);
+            arena();
+            TEST_ASSERT(vjo_cards_fix_sentence(&A, id, "黒い猫が好き", &ch) == 0 && ch.done == VJO_CARDS_CHANGED);
+            vjo_cards_hex(ch.id, c);
+            /* a and b back in the queue, and both intents: what the two changes leave when neither old card moved */
+            who[0] = a;
+            who[1] = b;
+            for (int k = 0; k < 2; k++) {
+                for (int e = 0; e < 2; e++) {
+                    snprintf(from, sizeof(from), VJO_CARDS_DELETED_DIR "/%s.%s", who[k], e ? "jpg" : "json");
+                    snprintf(to, sizeof(to), VJO_QUEUE_DIR "/%s.%s", who[k], e ? "jpg" : "json");
+                    TEST_ASSERT(rename(from, to) == 0);
+                }
+                snprintf(line, sizeof(line), "%s\n", k ? c : b);
+                snprintf(from, sizeof(from), VJO_CARDS_DELETED_DIR "/%s.fix", who[k]);
+                put(from, line, 33);
+            }
+            dread_order = order;
+            if (first_fails) { /* a's move into deleted/ keeps failing */
+                snprintf(moving, sizeof(moving), "anki_queue/%s.json", a);
+                fail_call = "rename";
+                fail_path = moving;
+            }
+            arena();
+            rc = vjo_cards_recover(&A, &held);
+            if (!first_fails) {
+                TEST_CHECK_(rc == 0 && !held.n, "order %d: rc %d, %d held", order, rc, held.n);
+                TEST_CHECK_(!in(VJO_QUEUE_DIR, a, "json") && !in(VJO_QUEUE_DIR, b, "json") &&
+                                in(VJO_QUEUE_DIR, c, "json") && files(VJO_QUEUE_DIR, ".json") == 1 &&
+                                files(VJO_CARDS_DELETED_DIR, ".fix") == 0,
+                            "order %d: %d queued", order, files(VJO_QUEUE_DIR, ".json"));
+            } else {
+                uint8_t ida[16], idb2[16];
+                id_of(a, ida);
+                id_of(b, idb2);
+                TEST_CHECK_(rc == 2 && held.n == 2 && vjo_cards_is_held(&held, ida) && vjo_cards_is_held(&held, idb2),
+                            "order %d: rc %d, %d held", order, rc, held.n);
+                TEST_CHECK(files(VJO_QUEUE_DIR, ".json") == 3 && files(VJO_CARDS_DELETED_DIR, ".fix") == 2);
+                /* the export takes c alone */
+                TEST_ASSERT(export_now(0, &r, msg) == 0);
+                TEST_CHECK_(r.cards == 1 && r.held == 2 && in(VJO_QUEUE_EXPORTED_DIR, c, "json"), "order %d: %s", order,
+                            msg);
+                fail_call = fail_path = NULL;
+                arena();
+                TEST_CHECK(vjo_cards_recover(&A, &held) == 0 && !held.n);
+                TEST_CHECK(files(VJO_QUEUE_DIR, ".json") == 0 && files(VJO_CARDS_DELETED_DIR, ".fix") == 0 &&
+                           files(VJO_QUEUE_EXPORTED_DIR, ".json") == 1 && in(VJO_QUEUE_EXPORTED_DIR, c, "json"));
+            }
+            every_picture_is_there();
+            dread_order = 0;
+        }
+    /* an earlier build's: b -> c finished (b retired, c queued) before a -> b was settled. b was made: a later card
+     * of a's word and time is queued (c), so a retires; without one, b's record in deleted/ would be no new card */
+    {
+        char a[VJO_QUEUE_ID_SIZE], b[VJO_QUEUE_ID_SIZE], c[VJO_QUEUE_ID_SIZE], from[256], to[256], line[40];
+        uint8_t id[16];
+        VjoCardChange ch;
+        VjoCardsHeld held;
+        reset();
+        snprintf(a, sizeof(a), "%s", queue(&cat));
+        id_of(a, id);
+        arena();
+        TEST_ASSERT(vjo_cards_fix_sentence(&A, id, "白い猫が好き", &ch) == 0 && ch.done == VJO_CARDS_CHANGED);
+        vjo_cards_hex(ch.id, b);
+        memcpy(id, ch.id, 16);
+        arena();
+        TEST_ASSERT(vjo_cards_fix_sentence(&A, id, "黒い猫が好き", &ch) == 0 && ch.done == VJO_CARDS_CHANGED);
+        vjo_cards_hex(ch.id, c);
+        for (int e = 0; e < 2; e++) {
+            snprintf(from, sizeof(from), VJO_CARDS_DELETED_DIR "/%s.%s", a, e ? "jpg" : "json");
+            snprintf(to, sizeof(to), VJO_QUEUE_DIR "/%s.%s", a, e ? "jpg" : "json");
+            TEST_ASSERT(rename(from, to) == 0);
+        }
+        snprintf(line, sizeof(line), "%s\n", b);
+        snprintf(from, sizeof(from), VJO_CARDS_DELETED_DIR "/%s.fix", a);
+        put(from, line, 33);
+        arena();
+        TEST_CHECK(vjo_cards_recover(&A, &held) == 0 && !held.n);
+        TEST_CHECK(in(VJO_QUEUE_DIR, c, "json") && files(VJO_QUEUE_DIR, ".json") == 1 &&
+                   in(VJO_CARDS_DELETED_DIR, a, "json") && files(VJO_CARDS_DELETED_DIR, ".fix") == 0);
+        every_picture_is_there();
+    }
+}
+
+/* S12: a word that occurs more than 64 times: the same text leaves the card as it was, and an edit elsewhere keeps
+ * the bold on the same occurrence. */
+static void the_word_is_found_among_many(void)
+{
+    static char sentence[1024], edited[1100];
+    Card c = cat;
+    uint8_t id[16];
+    char a[VJO_QUEUE_ID_SIZE], now[VJO_QUEUE_ID_SIZE];
+    VjoCardChange ch;
+    VjoAnkiNote n;
+    int picture, used = 0;
+    for (int i = 0; i < 100; i++)
+        used += snprintf(sentence + used, sizeof(sentence) - (size_t)used, "猫");
+    reset();
+    c.sentence = sentence;
+    c.hl_start = 69 * 3;
+    c.hl_end = 70 * 3; /* the 70th of 100 */
+    snprintf(a, sizeof(a), "%s", queue(&c));
+    id_of(a, id);
+    changes = 0;
+    arena();
+    TEST_CHECK(vjo_cards_fix_sentence(&A, id, sentence, &ch) == 0 && ch.done == VJO_CARDS_UNCHANGED && changes == 0);
+    snprintf(edited, sizeof(edited), "%s。", sentence);
+    arena();
+    TEST_ASSERT(vjo_cards_fix_sentence(&A, id, edited, &ch) == 0 && ch.done == VJO_CARDS_CHANGED && ch.word_found);
+    vjo_cards_hex(ch.id, now);
+    arena();
+    TEST_ASSERT(record(VJO_QUEUE_DIR, now, &n, &picture) >= 0);
+    TEST_CHECK_(n.hl_start == 69 * 3 && n.hl_end == 70 * 3, "bold at %d..%d", n.hl_start, n.hl_end);
+    {
+        int s0 = -1, e0 = -1;
+        TEST_CHECK(vjo_cards_find_word(sentence, 69 * 3, 70 * 3, edited, &s0, &e0) == 0 && s0 == 69 * 3);
+    }
+}
+
 TEST_LIST = {
     {"the_list_is_newest_first_with_its_marks", the_list_is_newest_first_with_its_marks},
     {"duplicates_follow_the_word_key", duplicates_follow_the_word_key},
@@ -1092,6 +1647,17 @@ TEST_LIST = {
     {"a_failure_at_any_step_of_a_change_loses_nothing", a_failure_at_any_step_of_a_change_loses_nothing},
     {"recovery_settles_each_stopped_change", recovery_settles_each_stopped_change},
     {"the_export_ignores_deleted_cards", the_export_ignores_deleted_cards},
+    {"a_change_whose_sync_fails_is_reported_made", a_change_whose_sync_fails_is_reported_made},
+    {"an_unreadable_intent_holds_only_its_card", an_unreadable_intent_holds_only_its_card},
+    {"a_damaged_intent_never_doubles_a_card", a_damaged_intent_never_doubles_a_card},
+    {"delete_keeps_an_exported_records_picture", delete_keeps_an_exported_records_picture},
+    {"a_card_exported_too_is_not_changed", a_card_exported_too_is_not_changed},
+    {"a_fixed_card_is_not_deleted_before_its_change_settles", a_fixed_card_is_not_deleted_before_its_change_settles},
+    {"the_word_is_found_among_many", the_word_is_found_among_many},
+    {"a_sentence_fixed_back_keeps_its_card_when_its_change_fails", a_sentence_fixed_back_keeps_its_card_when_its_change_fails},
+    {"chained_changes_settle_in_their_order", chained_changes_settle_in_their_order},
+    {"a_stop_while_the_words_are_read_stops_the_list", a_stop_while_the_words_are_read_stops_the_list},
+    {"a_picture_left_at_the_new_name_is_replaced_or_kept", a_picture_left_at_the_new_name_is_replaced_or_kept},
     {NULL, NULL},
 };
 

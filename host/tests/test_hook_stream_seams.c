@@ -1,16 +1,17 @@
 /* The CALL slots' replacement (core/hook_stream.c, replace()) at each point where another thread can act, one
  * interleaving at a time (#366). This suite includes core/hook_stream.c with VJO_STREAM_SEAM defined, and at a seam
- * (the scan about to read slot i; the scan's choice made, before its try-lock; the slot the new caller's, before its
- * text) it runs one step of another thread on this one: a caller's store, another caller's replacement, the job
- * keeping, reading or watching a slot. Single-threaded and exact: each interleaving happens on every run, where the
- * threaded races of test_hook_stream.c hit a window a few loads wide only now and then. The worker builds the seams as
- * nothing. */
+ * (the scan about to read slot i; the scan's choice made, before its try-lock; the slot's lock held and every check
+ * passed, before the new caller's key; the slot the new caller's, before its text) it runs one step of another thread
+ * on this one: a caller's store, another caller's replacement, the job keeping, reading or watching a slot. Single-
+ * threaded and exact: each interleaving happens on every run, where the threaded races of test_hook_stream.c hit a
+ * window a few loads wide only now and then. The worker builds the seams as nothing. */
 #include "acutest.h"
 
 #include <string.h>
 
 static void seam_scan(unsigned i);
 static void seam_chosen(unsigned i);
+static void seam_taking(unsigned i);
 static void seam_replacing(unsigned i);
 #define VJO_STREAM_SEAM(point, i) seam_##point(i)
 #include "../../core/hook_stream.c"
@@ -20,10 +21,11 @@ static void seam_replacing(unsigned i);
 #define KEY_C 0xC0u /* the new caller whose hit the tests follow */
 #define KEY_D 0xD0u
 
-enum { AT_SCAN = 1, AT_CHOSEN, AT_REPLACING };
+enum { AT_SCAN = 1, AT_CHOSEN, AT_TAKING, AT_REPLACING };
 static struct {
-    int point;          /* AT_SCAN: before the scan reads slot `at`; AT_CHOSEN: the scan chose slot `at`; AT_REPLACING:
-                           slot `at` is the new caller's, before its text */
+    int point;          /* AT_SCAN: before the scan reads slot `at`; AT_CHOSEN: the scan chose slot `at`; AT_TAKING:
+                           slot `at`'s lock held, every check passed, before the new caller's key; AT_REPLACING: slot
+                           `at` is the new caller's, before its text */
     unsigned at;
     void (*step)(void); /* the other thread's step; NULL once it has run */
     unsigned ran;       /* steps run: a test checks its interleaving happened */
@@ -39,6 +41,7 @@ static void seam_run(int point, unsigned i)
 }
 static void seam_scan(unsigned i) { seam_run(AT_SCAN, i); }
 static void seam_chosen(unsigned i) { seam_run(AT_CHOSEN, i); }
+static void seam_taking(unsigned i) { seam_run(AT_TAKING, i); }
 static void seam_replacing(unsigned i) { seam_run(AT_REPLACING, i); }
 
 static VjoStreamSlot slots[2];
@@ -77,8 +80,22 @@ static void a_writes(void) { TEST_CHECK(offer(KEY_A, "aaa2") == 1); }
 static void b_writes(void) { TEST_CHECK(offer(KEY_B, "bbb2") == 1); }
 static void d_takes_a(void) { TEST_CHECK(offer(KEY_D, "dddd") == 1 && slots[0].key == KEY_D); }
 static void c_takes_a(void) { TEST_CHECK(offer(KEY_C, "cccc") == 1 && slots[0].key == KEY_C); } /* C's other thread */
-static void job_keeps_a(void) { vjo_stream_keep(&slots[0]); }
+/* The job keeps A's slot as game_ocr/hooks.c vjo_hooks_keep does (an agreeing stream, or a pin): under its try-lock;
+ * busy, not now */
+static void job_keeps_a(void)
+{
+    if (!vjo_stream_try_lock(&slots[0])) return;
+    vjo_stream_keep(&slots[0]);
+    vjo_stream_unlock(&slots[0]);
+}
 static void job_locks_a(void) { TEST_CHECK(vjo_stream_try_lock(&slots[0]) == 1); } /* the job reading it */
+static int c2_rc; /* the result of the hit of C's other thread */
+static void c2_offers(void) { c2_rc = offer(KEY_C, "ccc2"); }
+static void job_keeps_a_then_c2_offers(void)
+{
+    job_keeps_a();
+    c2_offers();
+}
 static void a_writes_c_takes_b(void)
 {
     a_writes();
@@ -245,7 +262,8 @@ static void test_scan_then_caller_elsewhere(void)
  * thread of C's own caller taking it, its lock held. C's hit is dropped, never waiting, and B's slot (the next least
  * recently written) is not taken: passing a busy slot over gave a caller with two threads two slots when its other
  * thread was the one holding A's lock (measured: #366's audit follow-up). Once A's lock is free, C's next hit takes A's
- * slot. */
+ * slot. This pins the rule, not the invariant (one slot per caller: taking_meets_my_other_thread); a rule that ends
+ * the wait without a second slot would take B's here instead (#366's audit-b, N1). */
 static void test_scan_meets_a_busy_slot(void)
 {
     setup(0);
@@ -256,6 +274,40 @@ static void test_scan_meets_a_busy_slot(void)
     TEST_CHECK(c.call_replaced == 0 && c.call_dropped == 1 && slots[0].lock == 1 && slots[1].lock == 0);
     vjo_stream_unlock(&slots[0]);
     TEST_CHECK(offer(KEY_C, "cccc") == 1 && slots[0].key == KEY_C && c.call_replaced == 1 && locks_free());
+}
+
+/* (#366's audit-b, N1: F2's invariant) C holds A's lock, every check passed, about to take it, when C's other thread
+ * offers: the other thread's hit is dropped (A busy), and C ends with A's slot only, B keeping its own. A scan that
+ * passed busy slots over took B for the other thread here: a second slot for C. */
+static void test_taking_meets_my_other_thread(void)
+{
+    setup(0);
+    c2_rc = 99;
+    arm(AT_TAKING, 0, c2_offers);
+    TEST_CHECK(offer(KEY_C, "cccc") == 1 && seam.ran == 1);
+    TEST_CHECK_(c2_rc == -1, "C's other thread: %d (-1, dropped)", c2_rc);
+    TEST_CHECK_(slots[0].key == KEY_C && slots[1].key == KEY_B && !memcmp(slots[1].raw, "bbbb", 4),
+                "one slot for C: slot 0 key %#x, slot 1 key %#x", (unsigned)slots[0].key, (unsigned)slots[1].key);
+    TEST_CHECK(c.call_replaced == 1 && c.call_dropped == 1 && locks_free());
+}
+
+/* (#366's audit-b, F3) The job keeps A (a pin, or an agreeing stream) while C holds A's lock taking it: the keep takes
+ * A's try-lock, finds it busy and keeps nothing now. C's other thread then offers: A is not kept, so it is still the
+ * least recently written, busy: dropped. One slot for C. A keep without the lock landed here and let the other thread
+ * pass A over as kept and take B. The next pinned job's keep (a pin keeps the slot's ID, whichever caller holds it)
+ * keeps A, now C's; an agreeing stream's keep, keyed to the caller the job saw, would not (#366's audit-c, N5). */
+static void test_taking_then_kept_meets_my_other_thread(void)
+{
+    setup(0);
+    c2_rc = 99;
+    arm(AT_TAKING, 0, job_keeps_a_then_c2_offers);
+    TEST_CHECK(offer(KEY_C, "cccc") == 1 && seam.ran == 1);
+    TEST_CHECK_(c2_rc == -1, "C's other thread: %d (-1, dropped)", c2_rc);
+    TEST_CHECK_(slots[0].key == KEY_C && slots[1].key == KEY_B, "one slot for C: slot 0 key %#x, slot 1 key %#x",
+                (unsigned)slots[0].key, (unsigned)slots[1].key);
+    TEST_CHECK(slots[0].kept == 0 && c.call_replaced == 1 && locks_free());
+    job_keeps_a();
+    TEST_CHECK(slots[0].kept == 1 && slots[0].key == KEY_C);
 }
 
 /* (audit-rubi-366 N1) The worker's hook watch reads a slot without its lock while a new caller takes it: until the new
@@ -282,6 +334,8 @@ TEST_LIST = {
     {"chosen_then_written_and_caller_elsewhere", test_chosen_then_written_and_caller_elsewhere},
     {"scan_then_caller_elsewhere", test_scan_then_caller_elsewhere},
     {"scan_meets_a_busy_slot", test_scan_meets_a_busy_slot},
+    {"taking_meets_my_other_thread", test_taking_meets_my_other_thread},
+    {"taking_then_kept_meets_my_other_thread", test_taking_then_kept_meets_my_other_thread},
     {"replacing_while_watched", test_replacing_while_watched},
     {NULL, NULL},
 };

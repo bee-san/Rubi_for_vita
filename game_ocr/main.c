@@ -277,8 +277,10 @@ static int game_memblock_free(int item, unsigned gitem, SceUID uid, uint32_t byt
  * text keeps room for its own steps (the log holds VJO_GAME_OCR_STEPS: two tries' blocks filled it before the last
  * try's recognize, LM and wait steps); the try's memory check, first pass and FIND step stay. A FREE step of a block
  * the try did not take (an earlier job's resident weights, LM or cascade model its check counted as free) stays too:
- * that block is gone from the game's memory for good (#382's audit N1). */
-static void steps_drop_blocks(unsigned from)
+ * that block is gone from the game's memory for good (#382's audit N1). checks (#385's audit F7): its CHECK steps
+ * leave too, for a try of rows whose rows went to the columns (it read nothing, and a later try of rows checks the
+ * sizes again): on's and auto's two or three tries had filled the log before the last try's NORM and PAR steps. */
+static void steps_drop_blocks(unsigned from, int checks)
 {
     unsigned w = from, n, taken = 0; /* a bit per VJO_GITEM_*: an ALLOC step of it from `from` on */
     if (!log_to || from >= log_to->n_steps) return;
@@ -286,7 +288,8 @@ static void steps_drop_blocks(unsigned from)
     for (unsigned i = from; i < n; i++) {
         const VjoGameOcrStep *s = &log_to->step[i];
         if (s->id == VJO_GSTEP_ALLOC) taken |= 1u << (s->arg & 31u);
-        else if (s->id != VJO_GSTEP_FREE || !(taken >> (s->arg & 31u) & 1u)) log_to->step[w++] = *s;
+        else if ((s->id != VJO_GSTEP_FREE || !(taken >> (s->arg & 31u) & 1u)) && (!checks || s->id != VJO_GSTEP_CHECK))
+            log_to->step[w++] = *s;
     }
     if (w < n) sceClibMemset(&log_to->step[w], 0, (n - w) * sizeof(log_to->step[0]));
     log_to->n_steps = w;
@@ -467,7 +470,28 @@ typedef char vjo_weights_budget_check[PAGE_ROUND(VJO_VOCR_MAX_BYTES) <= VJO_BUDG
 typedef char vjo_cascade_budget_check[PAGE_ROUND(VJO_VOCR_MAX_BYTES) <= VJO_BUDGET_GAME_CASCADE &&
                                       VJO_VOCR_CASCADE_BYTES <= VJO_VOCR_MAX_BYTES ? 1 : -1];
 
-/* One block for a line taller than a strip (VjoGreySource.line_buffer). */
+/* #385's audit F5 (AGENTS.md rule 3): the job's model and LM while its core runs (else NULL), whose blocks the core
+ * takes after it has fetched lines when they are not resident (with ocr_skip_blank_lines on, at the first line not
+ * blank) */
+static const VjoVocrModel *job_model;
+static const VjoVocrLm *job_lm;
+static int64_t free_user_after_reserve(void);
+/* A tall-line block of at most this many bytes (a column's bound, the rotation buffer's: every block a job could ask
+ * for before #379) is taken from the ladder as before; a larger one keeps the job's reserve (line_buffer). The host
+ * tests lower it: their frames' rectangles are smaller. */
+#ifndef VJO_GAME_LINE_UNCHECKED
+#define VJO_GAME_LINE_UNCHECKED VJO_VOCR_ROTATE_BYTES
+#endif
+typedef char vjo_line_unchecked_check[VJO_GAME_LINE_UNCHECKED <= VJO_VOCR_ROTATE_BYTES ? 1 : -1];
+
+/* One block for a line taller than a strip (VjoGreySource.line_buffer). A block larger than one column's (the
+ * rotation buffer's bound: #379's rectangle of a job's columns, or a rare band of rows) is taken only from what the
+ * game has free beyond the job's reserve and the job's weights still to come, which its memory check counted and the
+ * line block is not in, and for a job of columns its LM's too (#385's audit F5: the rectangle, up to 504 KiB, cut
+ * into a job of columns' 4 MiB reserve, or with the blank-line check took its weights' room, so they were refused and
+ * it read the columns' text as rows). Refused, the columns are read one by one, each in a block of its own, as before
+ * #379; such a band of rows is left out and counted (tall_skipped), so a job of rows keeps no LM's or cascade's room
+ * for it: those blocks keep the reserve themselves, and their refusal only costs the LM's or the cascade's reading. */
 static void *line_buffer(void *ud, size_t bytes)
 {
     void *base = NULL;
@@ -482,6 +506,13 @@ static void *line_buffer(void *ud, size_t bytes)
         line_base = NULL;
     }
     if (bytes > VJO_VOCR_LINE_MAX_BYTES) return NULL;
+    if (bytes > VJO_GAME_LINE_UNCHECKED) {
+        int64_t to_come = PAGE_ROUND(bytes);
+        if (job_model && resident.model != job_model) to_come += PAGE_ROUND(job_model->bytes);
+        if (job_lm && lm_res.lm != job_lm && (job_model->finder_mode & VJO_VOCR_FINDER_COLUMNS))
+            to_come += PAGE_ROUND(job_lm->bytes);
+        if (free_user_after_reserve() < to_come) return NULL;
+    }
     line_uid = game_memblock_alloc(GL_LINE, VJO_GITEM_LINE, "VjoGameVocrLine", (uint32_t)bytes, LADDER_ALL,
                                    &base, &leaked, &held, &mem);
     if (line_uid < 0) {
@@ -1592,7 +1623,7 @@ static int hook_first(uint32_t a, uint32_t b, const uint32_t *seq, uint32_t want
 static int hooks_snapshot(uint32_t pick, int trust)
 {
     uint32_t seq[VJO_HOOK_STREAMS + 1u], want = pick == VJO_HOOK_PICK_AUTO ? hk.sel.locked : pick;
-    uint32_t luna = 0;
+    uint32_t luna = 0, matched = 0;
     uint8_t order[VJO_HOOK_STREAMS];
     unsigned k = 0;
     int has_luna = 0;
@@ -1606,10 +1637,14 @@ static int hooks_snapshot(uint32_t pick, int trust)
         if (pick == VJO_HOOK_PICK_AUTO && hk.snap.kind == VJO_HOOK_KIND_SITE &&
             (vjo_hooks_verified(id) ? trust : hk.snap.site != NULL))
             luna |= VJO_HOOK_STREAM_BIT(id);
+        /* a restored source has no runtime slot until this launch supplies it. Of two slots holding the learned
+         * source (a race could give a CALL caller a second one, which keeps the text it was taken with), the newest:
+         * the one its caller writes (#366's audit-b, F1; core/hook_select.c takes the first one in this order) */
         if (pick == VJO_HOOK_PICK_AUTO && hk.sel.interval &&
             (hk.snap.kind == VJO_HOOK_KIND_SITE) == !!hk.sel.locked_site &&
-            hk.snap.key == hk.sel.locked_key && hk.snap.encoding == hk.sel.locked_encoding)
-            want = id; /* a restored source has no runtime slot until this launch supplies it */
+            hk.snap.key == hk.sel.locked_key && hk.snap.encoding == hk.sel.locked_encoding &&
+            (!matched || (int32_t)(hk.snap.seq - seq[matched]) > 0))
+            want = matched = id;
         seq[id] = hk.snap.seq;
         for (at = k; at && hook_first(id, order[at - 1u], seq, want, luna); at--) order[at] = order[at - 1u];
         order[at] = (uint8_t)id;
@@ -1814,7 +1849,7 @@ static void hooks_cache_save(void)
     VjoHookLearned learned;
     int n, has;
     if (!hk.cache_ready) return;
-    has = vjo_hook_select_learned(&hk.sel, &learned);
+    has = vjo_hook_select_learned(&hk.sel, hk.trust_on, &learned); /* trusted only with hook_trust = on */
     if (!memcmp(&learned, &hk.cached, sizeof(learned))) return;
     /* Attempt only when the chosen identity or learned interval changes. A failed write must not
      * become a write per reading; OCR selection and in-session confidence remain usable. */
@@ -1927,6 +1962,12 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
     uint32_t tried_settle_us = 0, tried_settle_passes = 0;      /* and the stable-text wait they spent */
     int retried = 0;
     unsigned try_steps = 0; /* the step log's length as the try began */
+    /* API 54, the spotter across the job's tries (audit-vocr6-spotter2-rubi F3): its weights read in the job and
+     * their load time, and why the rows' try left its lines to GRAD when auto's columns try follows (spot_handed:
+     * VJO_E_VERTICAL for the hand-over, or the try's refusal), so the job's spot step says it */
+    unsigned spot_read = 0;
+    uint32_t spot_load_us = 0;
+    int spot_handed = 0;
     Capture capture = {r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
     if (blocked || workspace_uid >= 0 || capture_uid >= 0 || shot_uid >= 0 || model_owned) {
         rc = VJO_E_OCR_UNAVAILABLE; goto done;
@@ -2012,6 +2053,10 @@ int vjo_game_ocr_run_request(const VjoGameOcrRequest *r, VjoGameOcrResult *out)
         }
     }
     hk.trusted_run = 0; /* API 43: this job runs OCR: the trusted answers' run starts again */
+    /* #385's audit F6: on reads a region at least as tall as wide as columns from its first try, as API 47's on did:
+     * its rule takes none of the 2,659 such regions of vertical text measured for rows (nor the 2 such hooked
+     * horizontal boxes), and the rows' try first made a drawn box of columns slower to read than before API 53 */
+    if (check == VJO_VOCR_CHECK_ON && r->height >= r->width) { vertical = 1; check = 0; }
     /* API 47, auto: the job again from here, as columns (its rows looked like vertical text), or as rows (the
      * columns' model could not be read or fit): each try its own check and blocks, the last one's result. */
 again:
@@ -2027,26 +2072,31 @@ again:
      * checked before the memory check, as their parsed form sizes its part of the job's scratch (vjo_vocr_spot_bytes).
      * A job that cannot have them (missing, wrong, refused, no memory) reads with GRAD and gives the block back; so
      * does a job without the spotter. Its boxes are refined by their own setting (VJO_GAME_OCR_S_SPOT_REFINE), GRAD's
-     * by refine_mode. */
-    int want_spot = (r->speed & VJO_GAME_OCR_S_SPOT) != 0, spot = 0, spot_rc = 0;
-    unsigned spot_read = 0;
+     * by refine_mode. With ocr_vertical = on there is no spotter: on's job is GRAD's rows and on's check (#379's
+     * measured rule; audit-vocr6-spotter2-rubi F1). A try of columns reads without it: it keeps a verified block that
+     * fits beside it, for the next job of rows, and takes no part of the scratch or refinement for it (F2). */
+    int want_spot = (r->speed & VJO_GAME_OCR_S_SPOT) && vmode != VJO_GAME_OCR_VERTICAL_ON, spot = 0, spot_rc = 0;
     unsigned spot_refine = want_spot && (r->speed & VJO_GAME_OCR_S_SPOT_REFINE) ? VJO_VOCR_REFINE_ALL : 0u;
-    uint32_t spot_load_us = 0;
     size_t spot_bytes = 0;
     if (!want_spot && drop_spot()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; } /* a no-op when it holds nothing */
-    if (want_spot) {
+    if (want_spot && !vertical) {
         VjoPlatform spot_platform = {.file_open = file_open, .now_us = now_us};
         VjoGreySource spot_cancel = {&capture, r->width, r->height, strip_source, cancelled, line_buffer};
         uint64_t s0 = now_wide();
-        spot_rc = vjo_vocr_spot_load(&spot_platform, r->model_dir, &spot_res, &spot_cancel, &spot_read);
-        spot_load_us = (uint32_t)(now_wide() - s0);
+        unsigned read = 0;
+        spot_rc = vjo_vocr_spot_load(&spot_platform, r->model_dir, &spot_res, &spot_cancel, &read);
+        spot_read |= read;
+        spot_load_us += (uint32_t)(now_wide() - s0);
         if (spot_rc == VJO_E_CANCELLED || spot_rc == VJO_E_OCR_UNAVAILABLE) { rc = spot_rc; goto done; }
         if (!spot_rc && !(spot_bytes = vjo_vocr_spot_bytes(&spot_res, r->width, r->height, r->fb_width, r->fb_height)))
             spot_rc = VJO_E_OOM; /* an arena over VJO_VOCR_SPOT_ARENA_MAX: never this pin's */
         spot = !spot_rc;
         if (!spot && drop_spot()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
+    } else if (want_spot) {
+        spot = spot_res.verified && spot_uid >= 0; /* a try of columns: kept if it fits (below), never read */
     }
-    size_t refine_bytes = refine || (spot && spot_refine) ? vjo_vocr_refine_bytes(r->width, r->height) : 0;
+    const int spot_rows = spot && !vertical; /* the spotter finds this try's lines */
+    size_t refine_bytes = refine || (spot_rows && spot_refine) ? vjo_vocr_refine_bytes(r->width, r->height) : 0;
     size_t capture_bytes = vjo_vocr_capture_bytes(r->width, r->height);
     /* The models this job may run, in the order it tries them (API 21): a request
      * by tiers names its tiers, the largest first; one by name its model, then its
@@ -2149,7 +2199,7 @@ retry_smaller:
     if (spot && fits) {
         const uint32_t held = spot_resident_bytes();
         const size_t block = use_bytes + extra_job_bytes(use, lm, casc);
-        size_t with = vjo_vocr_job_bytes_spot(use->name, r->width, r->height, spot_bytes) + refine_bytes;
+        size_t with = vjo_vocr_job_bytes_spot(use->name, r->width, r->height, spot_rows ? spot_bytes : 0) + refine_bytes;
         uint32_t grow = with > use_bytes ? PAGE_ROUND(block + (with - use_bytes)) - PAGE_ROUND(block) : 0u;
         if (with > refine_bytes && out->release_bytes >= held &&
             (int64_t)out->free_user + out->release_bytes - held - (int64_t)out->reserve_bytes >=
@@ -2159,7 +2209,7 @@ retry_smaller:
             out->release_bytes -= held; /* kept: not given back */
         } else {
             spot = 0;
-            spot_rc = VJO_E_OOM;
+            if (spot_rows) spot_rc = VJO_E_OOM; /* a try of columns gives the block back without a refusal */
         }
     }
     if (want_spot && !spot && drop_spot()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
@@ -2280,7 +2330,7 @@ retry_smaller:
     policy.refine = refine;
     policy.vertical_check = check; /* API 47, auto (API 53, on: VJO_VOCR_CHECK_ON): the rows checked first */
     policy.short_lines = 1; /* #194: a box's short last line */
-    if (spot) { /* API 54: the spotter finds the lines; the region is cut from the game's frame, its scale's */
+    if (spot_rows) { /* API 54: the spotter finds the lines; the region is cut from the game's frame, its scale's */
         policy.spot = 1;
         policy.spot_res = &spot_res;
         policy.spot_refine = spot_refine;
@@ -2305,16 +2355,20 @@ retry_smaller:
             if (&all[k] == casc) casc_index = k + 1u;
     }
     policy.cache_variant = (lm ? lm->tier : 0u) | (casc ? 8u : 0u) | (uint32_t)(casc_us / 1000u) << 4 |
-                           (uint32_t)casc_index << 16 | (spot ? spot_refine : refine) << 24 |
+                           (uint32_t)casc_index << 16 | (spot_rows ? spot_refine : refine) << 24 |
                            (policy.counter_tau || policy.counter_open ? 1u << 29 : 0u) |
                            (policy.head_gate ? 1u << 30 : 0u) | (policy.two_level ? 1u << 31 : 0u);
     helper_pool.helpers = use_helpers;
     helper_creates = helper_create_failures = 0;
     open_which = cand[used].which;
     open_cascade = casc != NULL;
+    job_model = use; /* #385's audit F5: the blocks the core may still take (line_buffer) */
+    job_lm = lm;
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
+    job_model = NULL;
+    job_lm = NULL;
     /* #324: the check passed, yet the model's weights could not be had: out of memory before any were read or
      * held (every job-level VJO_E_OOM comes before them: core/vocr_ocr.c's weights block, the finder's arena, the
      * workspace or the capture; an LM's or the cascade's only sets lm_rc / cascade_rc). weights_alloc checks the
@@ -2331,7 +2385,8 @@ retry_smaller:
      * be had (auto's and on's columns: the rows, whose sizes check again). The same request again, as columns or as
      * rows (again). Either retry is the same job (#324's audit): after this try's blocks are freed, its capture,
      * finder time and stable-text wait are the job's too, the next try waits only for what is left of it (retried),
-     * the freed blocks' steps leave the log (steps_drop_blocks), and the capture is kept: its PASS and SIG steps are
+     * the freed blocks' steps leave the log (steps_drop_blocks; a try of rows whose rows went to the columns, its
+     * memory checks too: #385's audit F7), and the capture is kept: its PASS and SIG steps are
      * logged once, its source mode stays. A try reached so checks nothing: at most rows, columns, rows. */
     if (smaller || (!stats.stuck && ((rc == VJO_E_VERTICAL && policy.vertical_check) || (rc == VJO_E_OCR_MODEL && vertical) ||
                                      (rc == VJO_E_OOM && vertical && !cancelled(NULL))))) {
@@ -2339,6 +2394,8 @@ retry_smaller:
             try_from = used + 1u;
         } else if (rc == VJO_E_VERTICAL) {
             step_add(VJO_GSTEP_FIND, 2, stats.lines, 0, 0, stats.dark, stats.find_us, 0);
+            /* API 54: why the spotter left the rows to auto's check, for the columns' try's spot step */
+            if (want_spot) spot_handed = spot_rc ? spot_rc : stats.spot_rc; /* VJO_E_VERTICAL, or its refusal */
         } else if (rc == VJO_E_OOM) {
             step_add(VJO_GSTEP_FIND, 5, stats.lines, rc, 0, 0, stats.find_us, 0);
         } else {
@@ -2360,7 +2417,7 @@ retry_smaller:
         }
         sceClibMemset(&stats, 0, sizeof(stats));
         if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
-        steps_drop_blocks(try_steps);
+        steps_drop_blocks(try_steps, vertical); /* a try of rows that hands over to the columns: its checks too */
         if (smaller) goto retry_smaller;
         goto again;
     }
@@ -2478,8 +2535,8 @@ retry_smaller:
         out->suggest_rows = vjo_vocr_suggest(&stats, r->fb_width, r->fb_height);
     /* API 54: the spotter's step, the last one (a full log drops it first): whether it found the lines or why GRAD
      * did, the boxes, its scratch and weights (read or kept), and its weights' load time in ms << 16 */
-    if (want_spot)
-        spot_step(&stats, spot_rc, spot_read, spot_load_us);
+    if (want_spot) /* a try of columns: the rows' try's reason (spot_handed); a try of rows: its own */
+        spot_step(&stats, vertical ? spot_handed : spot_rc, spot_read, spot_load_us);
     /* A helper that could not be joined may still run in the workspace: keep it,
      * and take no more jobs (core/vocr_ocr.h VjoVocrPool). */
     if (stats.stuck) { blocked = 1; hook_owns_workspace = 1; }

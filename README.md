@@ -184,13 +184,16 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Highlight**: Whole word or Character | Whole word |
 | | **Dictionaries shown**: how many dictionaries' entries for the same word are shown, the best match first and the others below it (the right stick scrolls to them), 1–8 (2: a word and the same word as a character's name; which comes first: `names_first`, [details](docs/local-dictionaries.md#names-and-words)) | 2 |
 | | **Text source**: Automatic (tries hooks in every enabled native Vita game, with OCR fallback), Every game (same attempts), or OCR only; applies when the game next starts ([hook support](#native-text-hooks)) | Automatic |
-| | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready as soon as the game writes it ([details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
+| | **Trusted hooks replace OCR**: a hook Rubi trusts gives the line with no OCR at all, ready within a poll (16 ms) and the first word's lookup of the game writing it (measured on a computer; not run on a console yet; [details](docs/native-hooks.md#trusted-hooks-api-43)) | ON |
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns, but rows where the box plainly holds lines of text) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
 | | **Suggest a text box**: a game without a box of its own is offered the one Rubi finds around its dialogue, once each time it starts or resumes ([details](docs/first-box.md)) | ON |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
+| | **Card type**: what the card's front shows: the word, its sentence, both, or the word with the sentence a tap away ([card types](docs/anki.md#card-type)) | Word |
+| | **Game tag**: each card is tagged with its game, `Game::CLANNAD` | ON |
+| | **Sentence readings**: readings over the sentence's kanji on the card's back, where the dictionaries are sure of them ([how often they are wrong](docs/anki.md#sentence-readings)) | ON |
 | | **Duplicates**: a card of a word you mined before gets Anki's `duplicate` tag (Tag), stays in the queue (Skip) or is exported as before (Keep); the page counts them, "N queued, M already mined" ([details](docs/anki.md#duplicates)) | Tag |
 | | **Cards: N queued**: each card before it is exported, newest first, with its sentence and picture; delete it, fix its sentence or drop its picture ([details](docs/anki.md#the-cards-page)) | |
 | | **Known words**: Import reads `known_words.txt`, which `tools/known_words.py` writes from your Anki collection; their cards get the tag `known` ([details](docs/anki.md#known-words)) | none |
@@ -280,8 +283,9 @@ What each build changed, and what its console run showed: the [changelog](CHANGE
 
 ## Limits
 
-- Vertical text is read only in a text box drawn around it (on a whole screen Rubi reads rows), and not yet on a
-  console ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
+- Vertical text is read only in a text box drawn around it: on a whole screen Automatic reads rows, and ON reads columns
+  on most screens, a horizontal game's too (84 % of the hooked ones measured), which gives no sensible text. Not run on
+  a console yet ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)).
 - One console has tested Rubi ([Supported](#supported)). OCR accuracy, battery use and CPU3 load are
   not measured on a console yet.
 - The game can stutter while Rubi reads ([FAQ](#will-it-slow-my-game-down)).
@@ -316,7 +320,7 @@ the home screen (SceShell) or another system app. Before each reading it checks 
 game has free, leaves the game a reserve, and uses a smaller model when the chosen one doesn't fit;
 if even the smallest doesn't, it says so (a tighter text box helps). A game that is ON carries
 Rubi's OCR worker from its start: 240 KiB of its memory (204 KiB of module pages, 36 KiB of stack and
-TLS: the normal build's figures; the debug build's pages are 12 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or
+TLS: the normal build's figures; the debug build's pages are 8 KiB more). If a game or homebrew app won't start with it, turn it OFF in the app, or
 hold L while you start it. The guide has every byte, in
 [Memory and troubleshooting](docs/guide.md#memory-and-troubleshooting).
 
@@ -373,6 +377,7 @@ and copy them to the memory card; up to eight are used, in your order
   [Read text: automatically or on a press](docs/auto-vs-press.md) · [The OCR](docs/vita-vn-ocr.md) ·
   [The one-VPK install](docs/one-vpk-install.md) · [Safe boot](docs/boot-safety.md) ·
   [Vita memory](docs/vita-memory.md) · [Hook requests](docs/hook-requests.md)
+- [The roadmap](docs/roadmap.md): what is left to build, ranked, and what of it is built.
 
 ## Contributing
 

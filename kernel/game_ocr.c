@@ -1030,7 +1030,7 @@ static int model_open_locked(SceUID pid, uint32_t seq, uint32_t which, VjoGameOc
      * a request by tiers) the pinned model of one of its tiers, or of the tier
      * above them for the cascade, by its tier; or (API 47) the vertical model,
      * for a request with a VJO_GAME_OCR_S_VERTICAL mode (on or auto), by tiers or by name;
-     * or (API 26, 52) the gate's or the spotter's pinned weights, for a request that asks for it. */
+     * or (API 26, 54) the gate's or the spotter's pinned weights, for a request that asks for it. */
     uint32_t size, lm_tier = which >= VJO_GAME_OCR_OPEN_LM && which < VJO_GAME_OCR_OPEN_CASCADE
                              ? which - VJO_GAME_OCR_OPEN_LM + 1u : 0u;
     uint32_t model_tier = which >= VJO_GAME_OCR_OPEN_TIER && which < VJO_GAME_OCR_OPEN_TIER + VJO_VOCR_TIERS

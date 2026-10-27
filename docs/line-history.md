@@ -240,5 +240,5 @@ rule 5).
 
 The Rubi app's **Look up** page (#313, [the guide](guide.md#look-up)) shows more of them, away from the game: a
 game's last 200 lines in `history.csv`, newest first, kept as this line history keeps them (filtered, trimmed, none
-the same as the one after it), for any game of the file's last 8 MiB; each opens with the same word cursor, and Enter
+the same as the one after it), for any game of the file's last 8 MiB (32 games at most); each opens with the same word cursor, and Enter
 saves its word as a card without a picture ([the cards](anki.md#cards-from-the-look-up-page)).

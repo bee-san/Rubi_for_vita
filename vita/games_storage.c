@@ -63,7 +63,15 @@ int vjo_line_fix_file_read(VjoGames *g, VjoArena *scratch) { return read_policy(
 
 int vjo_line_fix_file_load(VjoGames *g, VjoArena *scratch)
 {
-    return load(g, scratch, line_fix_path, VJO_LINE_FIX_BACKUP, 1);
+    int rc = load(g, scratch, line_fix_path, VJO_LINE_FIX_BACKUP, 1);
+    /* The backup read while the file is there but cannot be read (a hand edit): the Shell reads the file alone, so
+     * no rows, and -1, so that nothing is written over it (audit-rubi-333 F1). With the file missing (a save cut
+     * short) 1 stays: the caller puts the backup's rows back. */
+    if (rc == 1 && !missing(line_fix_path)) {
+        vjo_games_defaults(g);
+        return -1;
+    }
+    return rc;
 }
 
 static int save(const VjoGames *g, VjoArena *scratch, const char *path, const char *temp, const char *backup,

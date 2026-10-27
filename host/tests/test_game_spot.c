@@ -35,6 +35,7 @@ static uint64_t clock_value, mtime, spot_mtime;
 static int file_open_now, spot_missing, spot_corrupt, spot_size_delta;
 static uint32_t opened_which;
 static unsigned opens, spot_opens, spot_reads, model_reads, grad_calls, runs;
+static int grad_vertical; /* GRAD's spy returns rows auto's rule takes for vertical text (6 narrow rows stacked) */
 static VjoGameOcrRequest current;
 
 /* ---- the Vita SDK and kernel transport, as the worker sees them ---- */
@@ -116,7 +117,8 @@ int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
 {
     uint32_t size;
     TEST_CHECK(seq == 12 && !file_open_now);
-    TEST_ASSERT(which == VJO_GAME_OCR_OPEN_MODEL || which == VJO_GAME_OCR_OPEN_SPOT);
+    /* (the vertical model: auto's columns try, test_spot_models.h's synthetic VOCR5-V with FL10's bytes) */
+    TEST_ASSERT(which == VJO_GAME_OCR_OPEN_MODEL || which == VJO_GAME_OCR_OPEN_SPOT || which == VJO_GAME_OCR_OPEN_VERTICAL);
     if (which == VJO_GAME_OCR_OPEN_SPOT) {
         TEST_CHECK(current.speed & VJO_GAME_OCR_S_SPOT); /* the kernel opens it for such a request only */
         spot_opens++;
@@ -154,6 +156,11 @@ int test_vocr_find_lines_rows(const VocrLinesRows *src, int mode, void *arena, s
     (void)src; (void)mode; (void)arena; (void)bytes;
     grad_calls++;
     memset(out, 0, sizeof(*out));
+    if (grad_vertical) { /* auto's rule (vjo_vocr_rows_vertical): 5 or more narrow rows over one span */
+        out->count = 6;
+        for (unsigned k = 0; k < 6; k++) out->lines[k] = (VocrLine){100, 10 * k, 30, 9, 0};
+        return VOCR_LINES_OK;
+    }
     out->count = 1;
     out->lines[0] = (VocrLine){10, 40, 400, 30, 0};
     return VOCR_LINES_OK;
@@ -236,6 +243,7 @@ static void reset(void)
     mtime = 0x1234; spot_mtime = 0x5678;
     file_open_now = spot_missing = spot_corrupt = spot_size_delta = 0;
     opens = spot_opens = spot_reads = model_reads = grad_calls = runs = 0;
+    grad_vertical = 0;
     clock_value = 0;
 }
 static VjoGameOcrRequest request(uint32_t speed, uint32_t flags)
@@ -264,6 +272,29 @@ static const VjoGameOcrStep *step_of(const VjoGameOcrResult *out, unsigned id)
     return NULL;
 }
 static uint32_t spot_block(void) { return PAGE_ROUND(vjo_vocr_spot_block_bytes()); }
+/* The runtime's boxes of each orientation on the frame, read halved (the spotter's hand-over counts them all). */
+static void spot_counts(unsigned *vertical, unsigned *horizontal)
+{
+    static unsigned char arena[256 * 1024];
+    vocr_textspot6 m;
+    VocrTextspot6Set set;
+    VocrLinesImage im = {grey, W, H, W, VOCR_LINES_GREY};
+    TEST_ASSERT(vocr_textspot6_load(&m, spot_blob, sizeof(spot_blob)) == VOCR_LINES_OK);
+    size_t a = vocr_textspot6_arena_bytes_flags(&m, W, H, VOCR_TEXTSPOT6_SCALE2);
+    TEST_ASSERT(a && a <= sizeof(arena));
+    TEST_ASSERT(vocr_textspot6_find(&m, &im, VOCR_TEXTSPOT6_SCALE2, arena, a, &set) == VOCR_LINES_OK);
+    *vertical = *horizontal = 0;
+    for (unsigned i = 0; i < set.count; i++) {
+        if (set.boxes[i].vertical) (*vertical)++;
+        else (*horizontal)++;
+    }
+}
+static unsigned find_steps(const VjoGameOcrResult *out, unsigned kind)
+{
+    unsigned n = 0;
+    for (uint32_t i = 0; i < out->n_steps; i++) n += out->step[i].id == VJO_GSTEP_FIND && out->step[i].kind == kind;
+    return n;
+}
 
 /* ---- tests ---- */
 static void a_spot_job_finds_its_lines_with_the_spotter(void)
@@ -403,11 +434,85 @@ static void the_worker_stop_and_a_refused_job_give_the_block_back(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 
+/* audit-vocr6-spotter2-rubi F1: ocr_vertical = on has no spotter. On's job is GRAD's rows and on's check (#379's
+ * measured rule): the spotter's weights are not opened, no block is held or taken, no spot step is logged, and the
+ * job (here GRAD's one horizontal row, read) is the one without the spotter's bit, byte for byte in its text and its
+ * workspace. */
+static void on_reads_without_the_spotter(void)
+{
+    VjoGameOcrResult with, without;
+    const uint32_t on = (uint32_t)VJO_GAME_OCR_VERTICAL_ON << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    load_fixtures();
+    reset();
+    TEST_CHECK(run(on, &without) == VJO_OK);
+    const unsigned grad_without = grad_calls, block_on = blocks[9].size;
+    reset();
+    TEST_CHECK(run(on | VJO_GAME_OCR_S_SPOT, &with) == VJO_OK);
+    TEST_CHECK_(!spot_opens && !spot_reads && !blocks[14].allocs && !blocks[14].live, "spot opens %u, block allocs %u",
+                spot_opens, blocks[14].allocs);
+    TEST_CHECK(!step_of(&with, VJO_GSTEP_SPOT) && !step_of(&without, VJO_GSTEP_SPOT));
+    TEST_CHECK_(with.workspace_bytes == without.workspace_bytes && blocks[9].size == block_on,
+                "workspace %u against %u, its block %u against %u", with.workspace_bytes, without.workspace_bytes,
+                blocks[9].size, block_on);
+    TEST_CHECK(!strcmp(with.text, without.text) && with.text[0] && grad_calls == grad_without && with.lines == 1);
+    /* a block an earlier job of rows kept is given back by on's job (the spotter has no part in it) */
+    reset();
+    TEST_CHECK(run(VJO_GAME_OCR_S_SPOT, &with) == VJO_OK && blocks[14].live);
+    TEST_CHECK(run(on | VJO_GAME_OCR_S_SPOT, &with) == VJO_OK && !blocks[14].live && !spot_res.verified);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+}
+
+/* audit-vocr6-spotter2-rubi F2, F3: auto on a region whose spotter boxes are mostly vertical (the fixture blob on
+ * this region) and whose GRAD rows auto's rule takes for vertical text. The rows' try hands over (the spotter's
+ * VJO_E_VERTICAL), auto's check sends the job to its columns try, which reads the region's columns with the vertical
+ * model (synthetic) and never runs the spotter: its workspace is the one without the spotter's bit, the spotter's
+ * block is kept for the next job of rows, and the job's spot step says why GRAD's rows decided (VJO_E_VERTICAL, the
+ * weights read in this job). The next job of rows reads none of them again. */
+static void autos_columns_try_keeps_the_block_and_says_why(void)
+{
+    VjoGameOcrResult with, without;
+    const uint32_t autov = (uint32_t)VJO_GAME_OCR_VERTICAL_AUTO << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    unsigned v = 0, h = 0;
+    load_fixtures();
+    spot_counts(&v, &h);
+    TEST_ASSERT_(v > h, "the fixture's boxes on this region: %u vertical, %u horizontal", v, h);
+    reset();
+    grad_vertical = 1;
+    TEST_CHECK(run(autov, &without) == VJO_OK);
+    TEST_CHECK(find_steps(&without, 2) == 1); /* auto's hand-over to the columns' try (GRAD's rows) */
+    const unsigned block_without = blocks[9].size; /* the workspace block the columns' try allocated */
+    reset();
+    grad_vertical = 1;
+    TEST_CHECK(run(autov | VJO_GAME_OCR_S_SPOT, &with) == VJO_OK);
+    TEST_CHECK(find_steps(&with, 2) == 1 && spot_opens == 1 && spot_reads > 0);
+    TEST_CHECK_(with.workspace_bytes == without.workspace_bytes && blocks[9].size == block_without,
+                "the columns' try's workspace %u against %u, its block %u against %u", with.workspace_bytes,
+                without.workspace_bytes, blocks[9].size, block_without);
+    const VjoGameOcrStep *s = step_of(&with, VJO_GSTEP_SPOT);
+    TEST_CHECK_(s && !s->kind && !s->arg && s->rc == VJO_E_VERTICAL && (s->bytes & VJO_GLM_READ),
+                "spot step: kind %u rc %d bytes 0x%X", s ? s->kind : 0u, s ? (int)s->rc : 0, s ? (unsigned)s->bytes : 0u);
+    TEST_CHECK(blocks[14].live && spot_res.verified); /* kept for the next job of rows */
+    /* with the spotter's refinement asked for too: the columns' try takes no refinement arena for it */
+    grad_vertical = 1;
+    TEST_CHECK(run(autov | VJO_GAME_OCR_S_SPOT | VJO_GAME_OCR_S_SPOT_REFINE, &with) == VJO_OK);
+    TEST_CHECK_(find_steps(&with, 2) == 1 && blocks[9].size == block_without,
+                "with its refinement: the columns' try's block %u against %u", blocks[9].size, block_without);
+    TEST_CHECK(spot_opens == 2); /* each job's rows' try opens the file (its size and time); no columns' try does */
+    const unsigned reads = spot_reads;
+    grad_vertical = 0; /* GRAD's rows now horizontal: the next job reads rows */
+    TEST_CHECK(run(autov | VJO_GAME_OCR_S_SPOT, &with) == VJO_OK);
+    TEST_CHECK_(spot_reads == reads && spot_opens == 3, "the next job: %u reads (kept: %u), %u opens", spot_reads,
+                reads, spot_opens);
+    TEST_CHECK(!vjo_game_ocr_worker_stop());
+}
+
 TEST_LIST = {
     {"a job with the spotter reads its boxes, keeps its weights and gives them back", a_spot_job_finds_its_lines_with_the_spotter},
     {"a missing or wrong spotter reads with GRAD", a_missing_or_wrong_spotter_reads_with_grad},
     {"no memory for the spotter reads with GRAD", no_memory_for_the_spotter_reads_with_grad},
     {"the spotter's boxes are refined by its own bit", its_refinement_follows_its_own_bit},
     {"the worker's stop and a refused job give the spotter's block back", the_worker_stop_and_a_refused_job_give_the_block_back},
+    {"ocr_vertical = on reads without the spotter", on_reads_without_the_spotter},
+    {"auto's columns try keeps the spotter's block, takes none of its scratch and says why", autos_columns_try_keeps_the_block_and_says_why},
     {NULL, NULL}
 };

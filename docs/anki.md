@@ -29,11 +29,15 @@ directory.
    text-only cards. **Trim black bars**, below that, is ON by default too
    (`anki_screenshot_trim_bars`): the picture leaves out the black borders
    around the game's picture, as a PSP game shown smaller than the screen has
-   them ([black bars](#black-bars)). **Duplicates**, below it, says what an export does with a card of
-   a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)); **Cards: N queued**
-   opens the [Cards page](#the-cards-page): each card before it is exported, to delete it, fix its
-   sentence or drop its picture; and **Known words** imports the words you know from Anki
-   ([below](#known-words)). The page's eight rows scroll a row at a time.
+   them ([black bars](#black-bars)). Then three choices for the exported cards
+   ([below](#card-type-game-tag-and-sentence-readings)): **Card type** (Word, the default; Sentence, Both or
+   Click: what the card's front shows), **Game tag** (ON: each note gets its game's tag) and **Sentence
+   readings** (ON: readings over the sentence's kanji). **Duplicates**, below them, says what an export does
+   with a card of a word you mined before: Tag (the default), Skip or Keep ([below](#duplicates)). These four
+   settings are the app's own, in `ux0:data/VitaJPOverlay/app.ini`, which the overlay never reads; the next
+   export follows them. **Cards: N queued** opens the [Cards page](#the-cards-page): each card before it is
+   exported, to delete it, fix its sentence or drop its picture; and **Known words** imports the words you know
+   from Anki ([below](#known-words)). The page's eleven rows scroll a row at a time.
 2. In a game, open the overlay, select a word and press Enter. The status line
    shows `Saving card…`, then `Saved for Anki`. Enter again on the same
    entry says `Already queued`. In a local character lookup, Enter saves
@@ -86,6 +90,9 @@ collection that has the earlier ones adds nothing twice.
 | `… 2 tagged duplicate (mined before).` | Duplicates: Tag. Two cards' words were mined before; their notes have Anki's `duplicate` tag ([below](#duplicates)) |
 | `… 1 already mined stays queued (Duplicates: Skip).` | Duplicates: Skip. That card is not in the package and stays in the queue; the next export checks it again |
 | `No new cards: the 3 queued are words already mined, and stay queued (Duplicates: Skip).` | Duplicates: Skip, and every queued card is a word mined before: no package |
+| `… 1 stays queued: a change of it did not finish (see log.txt).` | A change on the [Cards page](#the-cards-page) stopped and could not be settled yet: that card waits in the queue, not in the package; the next export settles it, or deleting it on the Cards page does |
+| `No cards to export: a change of the one queued did not finish (see log.txt); it stays queued.` | The same, for every queued card: no package |
+| `A change of a card that stopped could not be finished (see log.txt). Nothing was changed.` | `anki_queue/deleted/` could not be read, so which cards a stopped change left is not known: no package, the queue unchanged |
 | `… Not checked for duplicates: too many cards for memory.` | Duplicates: Tag, but every card's word did not fit in the export's memory: the cards are exported without the tag |
 | `Not enough memory to check every card for duplicates. Nothing was changed; …` | Duplicates: Skip, and the same: nothing is exported (with Keep, the cards export unchecked) |
 
@@ -100,11 +107,11 @@ mistake in the sentence or a word saved twice no longer has to reach Anki as it 
 VitaShell.
 
 - **The list.** Each card shows its word, its reading, its game, the date and time of its Enter press, a camera
-  when it has a picture, "Same word as another card" when another card has the same word (#314's word key, as the export's
-  [Duplicates](#duplicates) finds them: katakana as hiragana, a missing reading the spelling's), and "Not
+  when it has a picture, "Mined before: tagged duplicate" for a card the export's [Duplicates](#duplicates) finds (an earlier card,
+  queued or exported, has its word: #314's word key), "A change of it did not finish" for a card held (below), and "Not
   exportable" for a record the export would keep (edited by hand, damaged, or a newer build's). Up/Down and the
   left stick move, L and R jump six cards (a page), Left and Right show the queue or the **exported** cards,
-  Square shows only the cards whose word another card has, Start reads the list again, and Cancel goes back to
+  Square shows only the cards of a word mined before, Start reads the list again, and Cancel goes back to
   the Anki page. A touch on a card opens it.
 - **A card.** Enter opens it: its sentence with the word in the accent colour, the first lines of its
   definition, and its picture, decoded when the card opens and scaled to fit the box beside the text. L and R
@@ -112,7 +119,8 @@ VitaShell.
 - **Delete** (twice: the first press asks) moves the card into `anki_queue/deleted/`. The export never reads
   that folder, nor does the overlay's `Already queued` check, so the word can be saved again.
   **Triangle** on the list (twice) empties `deleted/` for good.
-- **Fix sentence** opens the Vita's keyboard with the sentence, on several lines (at most 2,048 characters);
+- **Fix sentence** opens the Vita's keyboard with the sentence, on several lines (at most 2,048 UTF-16 units: a
+  character each, two for one beyond U+FFFF such as an emoji);
   its done button saves it. The word is found again in the new text (the same occurrence when it occurs as
   often as before, else the one nearest where it was; a line break inside it may be gone or new). When the word
   is gone, the card has no bold, and the page says so.
@@ -131,26 +139,40 @@ Every step keeps the rule that a record never names a picture that is not there:
 4. The old record moves into `deleted/`, then its picture, then the intent file goes.
 
 When the new card is there already (queued, exported, or an earlier build's `<id>.duplicate.json`), steps 2
-and 3 are skipped and only the old card retires. Delete moves the record first, then the picture: a stop
-between the two leaves only a picture no card names, which the export's sweep removes 10 minutes later.
+and 3 are skipped and only the old card retires. Delete moves the record first, then the picture: a stop (or a
+failed move) between the two leaves only a picture no card names, which the sweep of the next export that writes a
+package removes, once the picture is 10 minutes old (an export with no card to write sweeps nothing).
 
 Before the Cards page reads the queue, and before an export does, an intent file left by a stop is settled:
-with the new record there, step 4 is finished; without it, the intent and the new card's picture are removed
-and the old card stays. So the queue holds the old card or the new one, never neither and never both for an
-export. An intent that cannot be settled (a storage error) is kept, and the export says `A change of a card that
-stopped could not be finished (see log.txt). Nothing was changed.` until it is.
+with the new record there (queued or exported), step 4 is finished; without it, the intent and the new card's picture
+are removed and the old card stays. A record of the new ID in `deleted/` is no new card: a sentence fixed back to what
+it was is that sentence's first card again, whose record has been in `deleted/` since the first fix (only when a
+later card of the same word and time is queued was the new card made and then changed again, which an earlier build
+allowed). Two changes in a row, a card's and then its fixed card's, are settled in that order; the second waits
+while the first cannot be settled. So the queue holds the old card or the new one, never neither and never both for
+an export. An intent that cannot be settled now (a storage error, a file
+that cannot be read, or a damaged one beside a card of the same word and time, which may be the fixed one) is
+kept, and its old card is held: the export leaves it queued (`… 1 stays queued: a change of it did not finish (see
+log.txt).`) and the Cards page marks it; deleting it there settles the intent. The fixed card of a change whose old
+card could not be moved yet is not deleted or changed until that change is settled. Only when `deleted/` itself
+cannot be read does the export change nothing (`A change of a card that stopped could not be finished`). A queued
+card that is in `exported/` too (a removal an export could not make) is not changed either: its note may be in
+Anki, so a changed card would be a second note.
 
-Duplicates are found among the cards the page holds at once, the newest 2,000 (a window; L and R past its first
-or last page read the next one).
+The duplicate mark is the export's own: with each list the page reads #314's word index (`anki_words.bin`, every
+queued and exported card's word, only the new records after the first time) and marks a card when an earlier card
+has its word, so **Duplicates: Tag** tags the marked cards and Skip leaves them queued. When the index cannot be read
+(no memory for it, a folder that cannot be read, or a stop), the page marks every card of a word but the earliest
+among the cards it holds at once, the newest 2,000.
 
 What the host checks: the storage on real files with a failure injected at each storage call of every change
 (`host/tests/test_cards.c`: the list and its windows, a card's view, each action, an edit that changes nothing,
 a fix whose new card exists, the recovery of each state a stop leaves, the export afterwards), a stop between
 every two steps in a fresh process, then an export straight away and an export 10 minutes later
 (`test_anki_restart.py`: no card lost, each card once in the package, no record naming a missing picture, no
-intent left), the page itself (`test_settings_anki.c`), the picture's decoder with libjpeg where its headers
-are (`test_card_picture.c`), and a fixed card imported by Anki 26.09.3 with its new sentence and its picture
-(`test_apkg.py`). None of it has run on a console yet.
+intent left), the page itself (`test_settings_anki.c`), the picture's decoder with libjpeg
+(`test_card_picture.c`, in the fast gate and CI's host job, which have libjpeg's headers), and a fixed card imported
+by Anki 26.09.3 with its new sentence and its picture (`test_apkg.py`). None of it has run on a console yet.
 
 ## The Lapis note
 
@@ -183,7 +205,7 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 | `ExpressionReading` | The reading in kana |
 | `MainDefinition` | The entry shown, as Yomitan writes one dictionary's glossary: `<div class="yomitan-glossary"><ol><li data-dictionary="JMdict">…</li></ol></div>`, so Lapis names its page after the dictionary |
 | `Sentence` | The recognized text, the word in `<b>`, its lines joined where the game wrapped the sentence (a speaker's name line and a new sentence keep their `<br>`; [words split over two lines](touch-lookup.md#words-split-over-two-lines)). The queue keeps the text as recognized, so this happens at export, also for cards queued before |
-| `SentenceFurigana` | Empty, as Lapis's README asks (Lapis then shows `{{furigana:Sentence}}`); only a card queued with the removed online dictionaries, which gave readings per word, fills it |
+| `SentenceFurigana` | With **Sentence readings** ON (the default), the sentence (joined as `Sentence` is) with the readings of its words in Anki's furigana syntax, `今日は<b>学校[がっこう]</b>へ 行[い]って`, the mined word in `<b>` with the card's own reading, so that Lapis's back shows them over the kanji ([below](#sentence-readings)); a word the dictionaries cannot read for certain has none. Empty when the sentence gets no reading or the setting is OFF, as Lapis's README asks (Lapis then shows `{{furigana:Sentence}}`); a card queued with the removed online dictionaries, which gave readings per word, keeps its own |
 | `Picture` | `<img src="vitajp_….jpg">`: the card's screenshot, when it has one ([below](#the-screenshot)) |
 | `Glossary` | Every dictionary's entry for the word, the shown one first, when there are two or more (Dictionaries shown above 1); Lapis hides the ones `MainDefinition` has |
 | `PitchPosition`, `PitchCategories` | Pitch accents, when the dictionary has them (Yomitan's `[2]` markup and `heiban,kifuku`) |
@@ -191,10 +213,12 @@ The fields are filled as Lapis's README asks Yomitan to fill them:
 | `FreqSort` | The rank; `9999999` without one, as Yomitan's `{frequency-harmonic-rank}`, so sorting by it puts such cards last |
 | `MiscInfo` | The game's name and the local date and time of the Enter press: `CLANNAD (2026-10-14 17:12)` |
 
-The other fields (`ExpressionAudio`, `SelectionText`, `DefinitionPicture`,
-`SentenceAudio`, `Hint` and the `Is…Card` switches) stay empty. Every note has
-the tag `vita-jp-overlay`, one whose word an earlier card has also `duplicate`
-([below](#duplicates)), and one of a word you know `known` ([below](#known-words)). The bundled dictionary, Bee's Ultimate Dictionary,
+`IsSentenceCard`, `IsWordAndSentenceCard` and `IsClickCard` follow **Card type**: `x` in the one of the chosen
+type, none for a Word card ([below](#card-type)). The other fields (`ExpressionAudio`, `SelectionText`,
+`DefinitionPicture`, `SentenceAudio`, `Hint` and `IsAudioCard`) stay empty. Every note has the tag
+`vita-jp-overlay`, with **Game tag** ON its game's tag, `Game::CLANNAD` ([below](#game-tag)), one whose word an
+earlier card has also `duplicate` ([below](#duplicates)), and one of a word you know `known`
+([below](#known-words)). The bundled dictionary, Bee's Ultimate Dictionary,
 gives every entry its Jiten global frequency rank
 ([frequency ranks](local-dictionaries.md#frequency-ranks)): a ranked entry
 fills `Frequency` and `FreqSort`; an unranked one leaves `Frequency` empty, and
@@ -207,6 +231,91 @@ none imports pitch accents ([local dictionaries](local-dictionaries.md)).
 jpdb.io and jiten.moe, the online dictionaries that also gave pitch accents and
 readings per word, have been removed; cards they queued before still export
 with all of theirs.
+
+### Card type, game tag and sentence readings
+
+Three settings of the Rubi app's Anki page (#311) decide what an export makes of each card. They are the
+app's own: `ux0:data/VitaJPOverlay/app.ini`, beside `config.ini`, which the overlay never reads (a key the
+overlay does not know in `config.ini` shows "unknown setting" in the open overlay), in `config.ini`'s line
+format:
+
+```ini
+anki_card_type = word            ; word (the default), sentence, word_sentence or click
+anki_game_tag = on               ; on (the default) or off
+anki_sentence_readings = on      ; on (the default) or off
+```
+
+They are applied at export, from what each card's record keeps (its whole sentence, the word's place in it
+and its game), so they apply to cards queued before too, and **Export all cards** makes every card again with
+the settings of the moment. Anki keeps a note it has (the same GUID, [below](#exporting-again-guids)): to
+change the type, tags or readings of notes already in your collection, choose to update existing notes when
+importing, or change them in Anki.
+
+#### Card type
+
+What the card's front shows, as Lapis's own switches choose it (Lapis 1.7.0's front template):
+
+| Card type | Front | Field set to `x` |
+| --- | --- | --- |
+| **Word** (the default, as before) | The word | none |
+| **Sentence** | The sentence, the word in bold | `IsSentenceCard` |
+| **Both** | The word, the sentence under it | `IsWordAndSentenceCard` |
+| **Click** | The word; a tap (or C) shows the sentence | `IsClickCard` |
+
+The back is the same for all four.
+
+#### Game tag
+
+With **Game tag** ON (the default), each note has its game's tag beside `vita-jp-overlay`, in
+GameSentenceMiner's form (its `_prepare_anki_tags`, under the parent tag `Game`): `Game::` and the game's name as
+the card's record has it, without its spaces (Anki splits tags on ASCII spaces and U+3000, so both go, as do tabs,
+line breaks and other whitespace) and then without `::` (which would nest the tag), in GSM's order, so `A: :B` gives
+`Game::AB`. `CLANNAD` gives `Game::CLANNAD`,
+`グリザイアの果実　-LE FRUIT DE LA GRISAIA-` gives `Game::グリザイアの果実-LEFRUITDELAGRISAIA-`. A record without a
+game (versions 1 and 2) gets no game tag. Tags of Rubi's and GSM's cards match only where both tools name the
+game the same way.
+
+#### Sentence readings
+
+With **Sentence readings** ON (the default), the export fills `SentenceFurigana` with the readings of the
+sentence's words, from the dictionaries the overlay uses (`config.ini`'s `local_dictionary_dir` and
+`local_dictionaries`, in that order; `core/sentence_reading.c`), and Lapis's back shows them over the kanji:
+
+- **The parse** is Yomitan's for its `{sentence-furigana}`: from the sentence's start, the overlay's own lookup
+  at each position (the longest match, with deinflection), the next word where the match ends. The sentence is
+  joined as `Sentence` is (a line the game wrapped is one line).
+- **The reading on the word as written.** A word's reading goes on its kanji as Yomitan's
+  `distributeFuriganaInflected` places it: as the dictionary form reads them, up to where the inflection
+  starts, so 行って from 行く is `行[い]って`, and 来る, 良い and 行く (ゆく) as conjugated (`来[こ]ない`,
+  `来[き]ます`, `来[き]なさい`, `良[よ]かった`). 何 is なん before だ, で, の and the like (`何[なん]で`), なに
+  before the rest. Kana never takes a reading.
+- **The mined word** takes the card's own reading and keeps its `<b>`.
+- **No guessing.** A missing reading is better than a wrong one, so a word gets none when its reading depends
+  on what the dictionaries cannot tell: another entry of the same text, about as frequent (Jiten's ranks
+  within 4 times), reads its kanji otherwise (今日: きょう or こんにち; 明日; 方 alone: ほう or かた); it is a
+  single kanji inside a compound the lookup split (中 of 授業中, 君 of 春原君, 箱 of マッチ箱: ばこ); a part of
+  it, as a word of its own, is far more frequent and reads otherwise (今日は read こんにちは, 自然に read じねんに,
+  彼の read かの); it is a character's name that VNDB's names dictionary romanizes otherwise (一樹 read いちじゅ
+  is Kazuki); it is a counter after a number (三本), a number and 日 (a date or a count of days), or a match
+  that starts or ends inside a number; the game's text gives another reading in brackets after it; or no
+  dictionary has it. A word whose reading the parse did not find at all gets none either.
+
+On 3,000 real visual-novel lines that the rules were not chosen on, the readings were wrong for
+**1.9 per 1,000 kanji tokens** (2.1 at the measurement, as recounted after its audit) and missing for 174;
+Yomitan's `{sentence-furigana}` over the same dictionaries gives more readings (34 per 1,000 missing) and more wrong
+ones (about 46 per 1,000)
+([reports/sentence-readings.md](../reports/sentence-readings.md): the protocol, the threshold fixed before the
+measurement, the comparison with a morphological analyser). That is why it is ON by default. Host
+measurements; not run on a console yet.
+
+**Time.** An export looks up each card's sentence again: on the host 17 lookups and 98 file reads a line of
+29 characters on average (the 3,000 test lines), about 0.5 s a card on the console by the lookup's fit in
+[docs/lookup-performance.md](lookup-performance.md) (13.1 ms + 2.98 ms a read; an estimate: the app's lookups
+have not been timed on a console). The export's progress then counts every card; Cancel stops it before the next
+lookup, also inside one long sentence (hundreds of lookups), and nothing changes. With the setting OFF an export takes as long as before. A record that already has readings (one of the
+removed online dictionaries) keeps its own. Dictionaries that cannot be read give the cards no readings, and
+`log.txt` says so; the export goes on. Each export's `log.txt` line counts the notes given readings, the words
+read and left without, the lookups and the time.
 
 ### Exporting again: GUIDs
 
@@ -235,7 +344,7 @@ card **whose word an earlier card has**:
 
 | Choice | The card |
 | --- | --- |
-| **Tag** (the default) | Exported, with Anki's own `duplicate` tag (the one its browser's Find Duplicates gives) besides `vita-jp-overlay`. No card is lost |
+| **Tag** (the default) | Exported, with the tag `duplicate` (the one an English Anki's Find Duplicates adds; a Japanese one adds 重複) besides `vita-jp-overlay`. No card is lost |
 | **Skip** | Not exported: it stays in the queue, and the next export checks it again. The overlay's `Anki queue: N` still counts it |
 | **Keep** | Exported as every card was before: nothing is checked |
 
@@ -248,7 +357,7 @@ card **whose word an earlier card has**:
 - **Earlier** is the package's order: the record's time (to the minute), then its ID. Every card counts,
   queued or already exported (`anki_queue/exported/`), so a word mined again weeks after its first card was
   exported is found too. The first card of a word is never a duplicate; a record that cannot be read has
-  no word.
+  no word, unless it was read before it was damaged (the cache keeps that word: below).
 - **Export all cards** follows the same rule: the same notes are tagged in it as in the packages before
   (with Skip, the duplicates are not in it).
 - **The Anki page** counts them: **Export cards (12 queued, 3 already mined)**. When it is shown it reads
@@ -261,10 +370,16 @@ card **whose word an earlier card has**:
 - **The cache.** Each card's word is kept in `ux0:data/VitaJPOverlay/anki_words.bin`, so that an export or
   the page does not read every record again: about 20 B a card, written again when a word was read, and
   only ever a copy of the records (a card's ID is its record's checksum, so its word never changes). A
-  missing or damaged one is rebuilt from the records; it can be deleted at any time.
+  missing or damaged one is rebuilt from the records; it can be deleted at any time. So the first export
+  after an update to this version reads every card's record once, the exported ones too ("Checking for
+  words mined before… N of M"; its time is in `log.txt`'s export line, not measured on a console), and the
+  later ones only the new cards'. A word once read stays while its card's file is there, even when the
+  record is damaged later (edited by hand: the export leaves it queued and names it in `log.txt`): with
+  Skip, a later card of that word then stays queued too, until the damaged record is fixed or removed. A
+  record that cannot be read is not cached: each count reads it again, and it counts toward the page's 64.
 
 Nothing in the overlay changes: it marks a word only while its list is shown, as before (a mark in the
-popup for a word you have, #314's stage B, does not fit the Shell's pages: [below](#not-in-the-popup)). None
+popup for a word you have, #314's stage B, is not built: [below](#not-in-the-popup)). None
 of this has run on a console yet; the host suites check it (`test_apkg.c`, `test_settings_anki.c`,
 `test_anki.c` `word_key`) and Anki 26.09.3 imports the tag (`test_apkg.py`).
 
@@ -279,7 +394,11 @@ suspended or deleted in Anki:
    note type has an `Expression` field, and its `ExpressionReading` (Lapis's, and many mining note types'):
    `--word-field` and `--reading-field` choose others, `--deck` and `--note-type` keep some notes, and
    `--reviewed` only those with a card that is not new. It also reads a `.colpkg` or `.apkg`, and Anki's
-   **Notes in Plain Text** export (`--word-column`, `--reading-column`). It writes `known_words.txt`.
+   **Notes in Plain Text** export (`--word-column`, `--reading-column`; `--deck` and `--note-type` need its
+   **Include deck name** and **Include notetype name** columns, and say so). Fields are read as Anki shows
+   them: no HTML or ruby readings in a word, a reading in furigana form (`漢字[かんじ]`) as its kana. A word
+   starting with `#` is left out (the app reads such a line as a comment) and counted. It writes
+   `known_words.txt`.
 2. Copy it to `ux0:data/VitaJPOverlay/known_words.txt`, then on the Anki page choose **Known words**:
    **Import**. The page says how many words it read; it keeps them in `anki_known.bin` (8 B a word), and a
    later export tags every card of them `known` (whatever **Duplicates** says). Import again after a new
@@ -295,22 +414,29 @@ page says how many were. Anki 26.09.3's own collection and its plain-text export
 ### Not in the popup
 
 #314's stage B, a mark in the overlay's popup for a word you have (a marker file per word written at
-Enter, and one `sceIoGetstat` after each lookup, a dim √), is not built: it needs Shell code the Shell's
-pages do not have, and AGENTS.md lets those pages only shrink. Measured on main `030c7ea` with the gate's
-pinned Vita toolchain (VitaSDK GCC 15.2.0; `tools/check_memory_ledger.py`'s module rows), a minimal version
-of it (the key and its fold linked into the Shell at `-Os`, the marker at save, the stat in both lookup
-jobs, the mark and its colour; no log line, no app-side sync) adds 840 B of text to the normal Shell and
-824 B to the debug one:
+Enter, and one `sceIoGetstat` after each lookup, a dim √), is not built: the design #314 specifies needs
+Shell code the Shell's pages do not have, and AGENTS.md lets those pages only shrink. Measured on main
+`030c7ea` with the gate's pinned Vita toolchain (VitaSDK GCC 15.2.0; `tools/check_memory_ledger.py`'s module
+rows), a minimal version of it (the key and its fold linked into the Shell at `-Os`, the marker at save, the
+stat in both lookup jobs, the mark and its colour; no log line, no app-side sync) adds 840 B of text to the
+normal Shell and 824 B to the debug one:
 
 | Shell | main (text + data/bss) | with the minimal stage B | pages |
 | --- | ---: | ---: | --- |
 | normal | 85,980 + 77,488 B (36 B of code room) | 86,820 + 77,488 B | 163,840 → 167,936 B: over its budget |
 | debug | 98,260 + 77,664 B (44 B of code room) | 99,084 + 77,664 B | 176,128 → 180,224 B: over its budget |
 
-Moving cold strings to the data segment, as #303, #307 and #385 did, cannot make that room: the data segment
-has 336 B (normal) and 160 B (debug) of room, and every cold Shell file is already built `-Os`. So, as #314
-planned, stage B does not merge, and the duplicate and known tags at export (above) stand alone
+That design does not fit: moving cold strings to the data segment, as #303, #307 and #385 did, cannot pay
+for it (the data segments had 336 B and 160 B of room), and every cold Shell file is already built `-Os`. So,
+as #314 planned, it does not merge, and the duplicate and known tags at export (above) stand alone
 ([memory ledger](memory-ledger.md#duplicate-aware-mining-314-the-rubi-app-only)).
+
+A smaller split is possible and is neither built nor measured: the Rubi app keeps the markers, named by the
+dictionary entry's own spelling and reading (no fold, no key in the Shell), and the Shell only stats the
+shown entry's marker after a lookup. Its audit (audit-rubi-rm4) estimates it at about 135-175 B of Shell code
+[estimate]. Main `33fdf30` leaves the Shell 28 B of code room in both builds, and 96 B (normal) and 32 B
+(debug) of data room [measured: the module rows], and the Shell changes of the moment spend the same bytes.
+Whether stage B gets an item of its own is the owner's call.
 
 ### The package
 
@@ -807,13 +933,23 @@ budget), not one of the plugins, so it is not in the plugins' [memory
 ledger](memory-ledger.md). Its Anki page holds a static 2 MiB arena for an
 export (`VJO_EXPORT_MEM`: the list of cards, 32 B each for up to 20,000, the
 writers' state, about 40 KiB, and one card's work at a time) and a 64 KiB stack
-for the one worker thread that exports while the page keeps drawing. It uses no
+for the one worker thread that exports while the page keeps drawing. The sentence readings (#311) add two
+static blocks, the lookups' scratch (`VJO_READINGS_SCRATCH`, 192 KiB: one lookup's 64 KiB result and 48 KiB
+scratch budgets, and the longest sentence's copies and readings, host test
+`a_longest_sentence_fits_its_scratch`) and the dictionaries' session (8 KiB), and the page a copy of
+`config.ini`'s settings for the export's dictionaries (1,376 B); a card's field itself is made in the export's
+arena, among its card's work. Their deepest call path takes 27,136 B of the worker's 64 KiB stack (41 %), from
+the thread's entry through the export, the package's writer and the readings (`parse` 2,960 B five times, then
+`part_overrules`, `word_rubies` and 65 frames of `fit`) [estimate: `-fstack-usage -fcallgraph-info=su` with the
+app's own flags, arm-vita-eabi-gcc 15.2.0, the indirect calls added by hand and newlib's printf as 1 KiB; the
+stack is not painted on a console]. It uses no
 network. Measured on the host (`vjo-apkg-tests`, "measure:" lines): an export
 of 20,005 cards (the 20,000 a package holds, 10,182,874 B) peaked at 1,121,712 B of
 the 2 MiB (804,713 B before [duplicates](#duplicates), whose check holds every card's
 word, 24 B each, while the cards are listed); one of 700 cards, some with 9 KB
 definitions, peaked at 187,111 B and wrote a 606,426 B package. An import of 65,536
-[known words](#known-words) peaks at 541,704 B. These are host measurements; a physical Vita has not
+[known words](#known-words) peaks at 541,704 B, and Export all of the 20,005 cards with those
+65,536 known words loaded, the export's worst case, at 1,646,000 B. These are host measurements; a physical Vita has not
 run this code yet.
 
 The [Cards page](#the-cards-page)'s jobs run on that thread with that arena, one at a
@@ -825,10 +961,11 @@ each picture: at most 32,592 B for a 960 × 544 screenshot shown at 480 × 272 [
 host, libjpeg-turbo 2.1.5; the Vita's 3.2.0 not measured]; a progressive JPEG's
 coefficient arrays may take up to 4 MiB of it (`VJO_CARD_PICTURE_JPEG_MEM`), else the card
 shows no picture. Its static memory, in the app's segments: the list's table of 2,000 rows
-of 128 B (256,000 B), two card views and the keyboard's buffers, 307,364 B of `.bss` in
-all, and 29,741 B of code; libjpeg's decoder adds about 290 KB of code [measured: the debug
-build's ELF against main `9ad8eb5`'s, arm-vita-eabi-size; section 5.4 of
-[vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)].
+of 128 B (256,000 B), two card views, the keyboard's buffers and the held cards' list (4,104 B),
+311,484 B of `.bss` in all, and 33,412 B of code; libjpeg's decoder adds about 290 KB of code
+[measured: the debug build's ELF, arm-vita-eabi-size: at #315 against main `9ad8eb5`'s, and at
+its audit's follow-up against main `dd94591b`'s, 4,288 B of code and 4,128 B of `.bss` more; section
+5.4 of [vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)].
 
 ## Not included
 

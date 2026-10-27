@@ -459,6 +459,19 @@ static void test_line_fix_storage(void)
     fclose(f);
     text[n] = 0;
     TEST_CHECK(!strcmp(text, "ULJM05674 = valley\n"));
+    /* the same beside a good backup (audit-rubi-333 F1): still -1 and no rows, as the Shell reads it, so the app
+     * writes nothing over the hand-edited file and shows none of the backup's rows */
+    f = fopen(VJO_LINE_FIX_BACKUP, "wb");
+    TEST_ASSERT(f && fputs("ULJM05674 = all\n", f) >= 0 && fclose(f) == 0);
+    memset(&back, 0x55, sizeof(back));
+    TEST_CHECK(vjo_line_fix_file_load(&back, &arena) < 0 && back.count == 0 && vjo_line_fix_file_read(&g, &arena) < 0);
+    /* the backup alone (a save cut short): 1 with its rows, which a save puts back where the Shell reads them */
+    unlink(VJO_LINE_FIX_PATH);
+    TEST_CHECK(vjo_line_fix_file_load(&back, &arena) == 1 && vjo_games_row_as(&back, "ULJM05674", 0) == G(3));
+    TEST_CHECK(vjo_line_fix_file_read(&g, &arena) < 0);
+    TEST_ASSERT(vjo_line_fix_file_save(&back, &arena) == 0);
+    TEST_CHECK(vjo_line_fix_file_read(&g, &arena) == 0 && vjo_games_row_as(&g, "ULJM05674", 0) == G(3));
+    TEST_CHECK(vjo_line_fix_file_load(&back, &arena) == 0);
     TEST_CHECK(arena.used == 0);
     unlink(VJO_LINE_FIX_PATH); unlink(VJO_LINE_FIX_BACKUP);
 }

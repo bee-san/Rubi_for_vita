@@ -204,6 +204,20 @@ static void test_bubble_behind_the_emulator_id(void)
     char name[32];
     vjo_title_name(0x40010003, g.key, name, sizeof(name));
     TEST_CHECK(!strcmp(name, "PSP"));
+    /* A Vita game's name (#333's audit, n21): parameter 9 when it has one, else 10, else "" (a console's answers:
+     * 9 refused, 10 the title) */
+    char title[128];
+    process("PCSG00415", "PCSG00415", "PCSG00415");
+    snprintf(title9, sizeof(title9), "Synthetic Nine");
+    snprintf(title10, sizeof(title10), "Synthetic Ten");
+    vjo_title_name(0x40010003, "PCSG00415", title, sizeof(title));
+    TEST_CHECK_(!strcmp(title, "Synthetic Nine"), "%s", title);
+    title9[0] = '\0';
+    vjo_title_name(0x40010003, "PCSG00415", title, sizeof(title));
+    TEST_CHECK_(!strcmp(title, "Synthetic Ten"), "%s", title);
+    title10[0] = '\0';
+    vjo_title_name(0x40010003, "PCSG00415", title, sizeof(title));
+    TEST_CHECK_(!title[0], "%s", title);
     process("NPXS10028", NULL, NULL);
     g = identify();
     TEST_CHECK(!strcmp(g.key, "NPXS10028") && g.psp);
@@ -352,6 +366,16 @@ static void test_line_fix(void)
         lf = 99;
         TEST_CHECK_(vjo_game_enabled("PCSG00940", 0, &lf, &a) && lf == -1 && a.used == 0, "'%s': %d", bad[i], lf);
     }
+    /* the file alone, never its backup (audit-rubi-333 F1): with a good backup beside a missing or an unreadable
+     * file, -1 (the Rubi app puts the file back from the backup as it starts, settings/main.c) */
+    put_file(VJO_LINE_FIX_BACKUP, "PCSG00940 = all\n", 16);
+    unlink(VJO_LINE_FIX_PATH);
+    lf = 99;
+    TEST_CHECK(vjo_game_enabled("PCSG00940", 0, &lf, &a) && lf == -1 && a.used == 0);
+    put_file(VJO_LINE_FIX_PATH, "PCSG00940 = ALL\n", 16);
+    lf = 99;
+    TEST_CHECK(vjo_game_enabled("PCSG00940", 0, &lf, &a) && lf == -1 && a.used == 0);
+    unlink(VJO_LINE_FIX_BACKUP);
     /* a games.ini row of the line fix kind is games.ini's error, as before: the Shell disables the game */
     put_file(VJO_GAMES_PATH, "PCSG00940 = all\n", 16);
     lf = 99;

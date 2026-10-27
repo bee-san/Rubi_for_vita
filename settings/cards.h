@@ -20,8 +20,10 @@
  *   picture has no copy; a new record that exists already (queued, exported or an earlier build's
  *   <id>.duplicate.json: the Shell's find() set) skips steps 1-3. vjo_cards_recover, before the
  *   Cards page lists the queue and before an export scans it, finishes steps 4-5 for an intent
- *   whose new record exists and otherwise removes it and the new card's files: a stop anywhere
- *   leaves the old card or the new one, never neither, and never both for an export.
+ *   whose new record exists (queued or exported; one only in deleted/ is an older copy, unless a
+ *   later card of the same word and time is queued) and otherwise removes it and the new card's
+ *   files, a card's change before its fixed card's: a stop anywhere leaves the old card or the new
+ *   one, never neither, and never both for an export.
  *
  * Nothing here renames over a file. Every storage call that fails is logged (vjo_log, log.txt). The
  * calls are made by the Anki page's worker thread, one at a time (settings/anki_page.c). */
@@ -46,7 +48,9 @@ enum { VJO_CARDS_QUEUED = 0, VJO_CARDS_EXPORTED = 1 };
 #define VJO_CARD_PICTURE 1u    /* its record says a picture goes with it */
 #define VJO_CARD_UNREADABLE 2u /* not exportable: its name is not its checksum, a damaged record, a version this
                                 * build does not know, or a read that failed (log.txt) */
-#define VJO_CARD_DUPLICATE 4u  /* another card of the window has the same word: #314's word key (core/word_key.h) */
+#define VJO_CARD_DUPLICATE 4u  /* a word mined before: an earlier card, queued or exported, has it (#314's rule, the
+                                * export's Duplicates: settings/anki_export.h) */
+#define VJO_CARD_HELD 8u       /* a change of it did not finish (VjoCardsHeld): the export leaves it queued */
 #define VJO_CARD_NO_GAME 0xFF  /* a row's game: none, or more games than the window keeps */
 
 /* A row of the list: 128 B. word and reading are cut at a character when longer (the order uses
@@ -76,9 +80,24 @@ typedef struct {
 /* -1, 0, 1: row a is newer than b, the same card, older (time, then word, reading and ID). */
 int vjo_cards_order(const VjoCardRow *a, const VjoCardRow *b);
 
-/* Finishes or undoes what a stop left of a Fix sentence or Drop picture (deleted/<old>.fix): before
- * every list and export. Returns the intents it could not settle (logged; 0 normally). */
-int vjo_cards_recover(VjoArena *a);
+/* The old cards of the changes a recovery could not settle (an intent that cannot be read, a damaged one beside a
+ * card that may be its new one, a move that keeps failing): an export leaves them queued, as the Cards page marks
+ * them, so that a package never has an old card and its new one. */
+#define VJO_CARDS_HELD_MAX 256
+typedef struct {
+    int n;
+    int incomplete; /* more were to hold than fit, or deleted/ could not be read: an export then holds every card it
+                     * cannot tell (it exports nothing queued: anki_export.c) */
+    uint8_t id[VJO_CARDS_HELD_MAX][16];
+} VjoCardsHeld;
+/* Finishes or undoes what a stop left of a Fix sentence or Drop picture (deleted/<old>.fix): before every list and
+ * export. An intent naming no usable new card (damaged, or not readable) is removed when its old card is not queued,
+ * or, damaged, when no other queued card has the old card's word, reading and time (the change made no card); else
+ * it is kept and its old card held. Returns the intents it could not settle (logged; 0 normally); held (may be NULL)
+ * receives their old cards. */
+int vjo_cards_recover(VjoArena *a, VjoCardsHeld *held);
+/* id is one of held's. */
+int vjo_cards_is_held(const VjoCardsHeld *held, const uint8_t id[16]);
 
 /* The newest list->cap cards of the queue or exported/ (which), older than *bound when bound is
  * given (the window after the one that ended there), into list (newest first, duplicates marked);
@@ -121,6 +140,10 @@ typedef struct {
     int word_found;    /* Fix sentence: the word is in the new sentence (bold), else no bold */
     int picture_lost;  /* Fix sentence: the old picture was missing or damaged, so the new card has none */
     int old_left;      /* the new card was made, but the old one could not be moved (intent kept: recovery) */
+    int unsynced;      /* the new card was made, but the memory card did not confirm a write (its sync failed) */
+    int exported;      /* refused (VJO_E_PARSE): the card is in exported/ too, so a change would be a second note */
+    int pending;       /* refused (VJO_E_LOCAL_IO): the card is the new card of a change not settled yet */
+    int held;          /* refused (VJO_E_LOCAL_IO): an earlier change of this card is not settled (its intent kept) */
 } VjoCardChange;
 enum {
     VJO_CARDS_CHANGED = 1,   /* a new card replaced the old one */
@@ -128,8 +151,11 @@ enum {
     VJO_CARDS_EXISTED = 3    /* the new card was there already (queued, exported or duplicate): the old one retired */
 };
 
-/* Moves a queued card into deleted/: its record, then its picture. 0, or VJO_E_* (nothing moved, or
- * only its record: then its picture is a JPEG no card names, which the export sweeps). */
+/* Moves a queued card into deleted/: its record, then its picture (one an exported record of the same card still
+ * names stays). 0, VJO_CARDS_E_PENDING (it is the new card of a change whose old card is not retired yet: nothing
+ * moved; the recovery tries that first), or VJO_E_* (nothing moved, or only its record: then its picture is a JPEG no
+ * card names, which the export sweeps). */
+#define VJO_CARDS_E_PENDING 1
 int vjo_cards_delete(VjoArena *a, const uint8_t id[16]);
 /* Removes deleted/'s files for good (an intent file of a change not yet settled stays). The files
  * removed in *removed; 0, or VJO_E_LOCAL_IO (some could not be: logged). */

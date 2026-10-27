@@ -1563,10 +1563,23 @@ static void test_native_hooks_automatic_text_source_and_diagnostics(void)
     (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
     TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO && result.text_from == 9);
     TEST_CHECK(DLOGGED("game vocr source: hook 9, flags 0x0A, score 820, streams 0x00901, pick 0"));
+#if VJO_DEBUG
+    /* #338's audit F2: the debug build's source line goes out in the result's batch, one append per file for both,
+     * before the text is ready (it was an append of its own): a hooked job's lines in one append, as an OCR job's */
+    {
+        unsigned appends0 = log_appends, lines0 = log_count;
+        (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, -1);
+        TEST_CHECK_(log_appends - appends0 == 1 && log_count - lines0 >= 2, "%u lines in %u appends",
+                    log_count - lines0, log_appends - appends0);
+        TEST_CHECK(DLOGGED("game vocr source: hook 9, flags 0x0A, score 820, streams 0x00901, pick 0"));
+    }
+#endif
     (void)vocr_run_one(&result, 0, vocr_tiers(), &ran, 0);
     TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
+    TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == 15u);
     (void)vocr_run_one(&result, VJO_GAME_OCR_F_FULL, vocr_tiers(), &ran, -1);
     TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_OCR);
+    TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == 15u);
 
     activate(PS_GAME_PID, "PCSG00415", VJO_GAME);
     unsigned pushes = text_source_pushes;
@@ -1810,6 +1823,10 @@ static void test_vocr_model_change_invalidates_cache(void)
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
     loaded.ocr_line_fix = loaded.ocr_line_fix == 2 ? 1 : 2; /* API 50: and the line finder's fixes */
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
+    loaded.ocr_finder = !loaded.ocr_finder; /* API 54: and the finder (#333's audit: no game's own here) */
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
@@ -2219,9 +2236,10 @@ static void test_vocr_job_log_is_appended_in_batches(void)
     batched_lines = 0;
     TEST_CHECK(run_vocr_job() == VJO_OK);
     unsigned lines = log_count - lines0, appends = log_appends - appends0;
-    /* rc, capture, memory, speed, cascade speed, lines, 15 steps: 21 in one append; 2 text lines in one */
-    TEST_CHECK(batched_lines == 23);
-    TEST_CHECK(lines - appends == 23 - 2);
+    /* the session's hooks line (#338's audit F2: in the result's batch, as is a hooked job's source line), rc, capture,
+     * memory, speed, cascade speed, lines, 15 steps: 22 in one append; 2 text lines in one */
+    TEST_CHECK(batched_lines == 24);
+    TEST_CHECK(lines - appends == 24 - 2);
     TEST_CHECK(!open_batch);
     TEST_MSG("%u lines, %u appends, %u batched", lines, appends, batched_lines);
     printf("\n  a job's %u log lines: %u appends of log.txt (line by line: %u)\n", lines, appends, lines);
@@ -2406,21 +2424,26 @@ static void test_vocr_request_carries_the_job_policy(void)
         TEST_MSG("%d ms / %d ms: flags 0x%08X", units[i].ms, units[i].max_ms, (unsigned)fake_game_request.flags);
         mem_free();
     }
-    /* ocr-first: a job the open overlay waits for (not Auto's, a refresh's or the self-test's)
-     * waits at most ocr_settle_press_ms (1 s by default), ocr_settle_max_ms if that is less;
-     * 0 is the job's own limit. */
+    /* A press confirms the screen is ready: neither stability wait is sent,
+     * regardless of the saved press limit. Background reads and refreshes keep
+     * their full wait, including on a screen the kernel has not called stable. */
     static const struct { int press, max_ms, prepares, refresh; unsigned max; } press[] = {
-        {1000, 2000, 0, 0, 20}, {1000, 2000, 1, 0, 40}, {1000, 2000, 0, 1, 40}, {0, 2000, 0, 0, 40},
-        {1000, 500, 0, 0, 10}, {300, 2000, 0, 0, 6}};
+        {1000, 2000, 0, 0, 0}, {1000, 2000, 1, 0, 40}, {1000, 2000, 0, 1, 40}, {0, 2000, 0, 0, 0},
+        {1000, 500, 0, 0, 0}, {300, 2000, 0, 0, 0}};
     for (unsigned i = 0; i < sizeof(press) / sizeof(press[0]); i++) {
         reset();
         cfg.ocr_settle_press_ms = press[i].press;
         cfg.ocr_settle_max_ms = press[i].max_ms;
-        job_prepares = press[i].prepares;
-        job_refresh = press[i].refresh;
+        ov = press[i].prepares ? OV_CLOSED : OV_OPEN;
+        state.stable = 0;
         fake_recognized_text = "猫";
-        TEST_CHECK(run_vocr_job() == VJO_OK);
+        start_job_kind("policy", 1, press[i].refresh);
+        VjoGameOcrResult result;
+        unsigned ran;
+        TEST_CHECK(vocr_run_one(&result, 0, vocr_tiers(), &ran, -1) == VJO_OK);
         TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == press[i].max);
+        TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == (press[i].max ? 15u : 0u));
+        TEST_CHECK(!!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST) == !!press[i].max);
         TEST_MSG("press %d ms, max %d ms, prepares %d, refresh %d: flags 0x%08X", press[i].press, press[i].max_ms,
                  press[i].prepares, press[i].refresh, (unsigned)fake_game_request.flags);
         job_refresh = 0;
@@ -2507,6 +2530,10 @@ static void test_a_games_own_line_fix(void)
     loaded.ocr_line_fix = 3;
     apply_config();
     TEST_CHECK(!cache_ok && cfg.ocr_line_fix == 3);
+    cache_ok = 1;
+    loaded.ocr_finder = VJO_FINDER_SPOTTER; /* config.ini's finder, which this game has not replaced */
+    apply_config();
+    TEST_CHECK(!cache_ok && cfg.ocr_finder == VJO_FINDER_SPOTTER);
     /* a game turned OFF has none (its file is not read): the next enabled game's own is read afresh */
     game_enabled = 0;
     game_line_fix = VJO_LINE_FINDER_GRAD(2);
@@ -5694,8 +5721,6 @@ static void test_open_overlay_refreshes_its_text_quietly(void)
     view_invariant = 0;
 }
 
-/* ocr_mode = on_press recognizes only when the overlay opens: the open
- * overlay keeps its text and runs no refresh, however the screen settles. */
 /* API 49: a trusted hook's line (VjoState.hook_scene, the kernel's while the region shows it) is read at once.
  * Overlay closed: past the subtitles' SUBTITLE_GAP_US and a failure's backoff, which still hold an untrusted
  * screen back. Open: its refresh starts right after the last refresh and lookup (REFRESH_GAP_US, REFRESH_IDLE_US
@@ -5754,6 +5779,8 @@ static void test_trusted_hook_line_is_read_at_once(void)
     mem_free();
 }
 
+/* ocr_mode = on_press recognizes only when the overlay opens: the open
+ * overlay keeps its text and runs no refresh, however the screen settles. */
 static void test_on_press_overlay_never_refreshes(void)
 {
     cursor_setup();
@@ -6527,6 +6554,40 @@ static void test_the_refreshes_backoff_outlasts_a_close_with_no_job(void)
     TEST_CHECK(!refresh_backoff.us && !refresh_backoff.until);
     check_shown("猫犬鳥", "cat", 0);
     close_overlay(); mem_free();
+}
+
+/* L+R is confirmation that the screen is ready, in either OCR mode. A
+ * background read still waiting for stability yields, even before capture;
+ * its replacement reads without waiting and keeps automatic hook selection. */
+static void test_opening_trusts_the_players_unsettled_screen(void)
+{
+    for (int mode = 0; mode < 2; mode++) for (int busy = 0; busy < 3; busy++) {
+        cursor_setup();
+        cfg.ocr_mode = loaded.ocr_mode = mode ? VJO_OCR_AUTO : VJO_OCR_ON_PRESS;
+        if (busy) {
+            start_job("background", 1);
+            if (busy == 2) {
+                job_captured = 1;
+                job_capture_scene = state.scene;
+                job_capture_seq = state.region_seq;
+            }
+        }
+        state.stable = state.quiet = 0;
+        on_trigger();
+        TEST_ASSERT(job_running && g_view.open && input_blocked);
+        if (busy) {
+            TEST_CHECK(job_cancelled && ov == OV_OPEN_OLD_JOB);
+            finish_by_tick();
+            TEST_ASSERT(job_running && !job_cancelled && ov == OV_OPEN && !job_prepares);
+        }
+        finish_by_tick();
+        TEST_CHECK(!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST));
+        TEST_CHECK(!(fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT));
+        TEST_CHECK(fake_game_request.hook_pick == VJO_HOOK_PICK_AUTO);
+        TEST_CHECK(!state.stable && !state.quiet); /* no global scene state is forged */
+        check_shown("猫犬鳥", "cat", 0);
+        close_overlay(); mem_free();
+    }
 }
 
 /* #179's audit, O4: an opening during Auto's job (OV_OPEN_OLD_JOB) on a screen
@@ -8969,6 +9030,7 @@ TEST_LIST = {
     {"subtitles_on_during_an_ocr_job_leave_no_wait_behind", test_subtitles_on_during_an_ocr_job_leave_no_wait_behind},
     {"the_previous_games_text_is_never_the_strips", test_the_previous_games_text_is_never_the_strips},
     {"the_refreshes_backoff_outlasts_a_close_with_no_job", test_the_refreshes_backoff_outlasts_a_close_with_no_job},
+    {"opening_trusts_the_players_unsettled_screen", test_opening_trusts_the_players_unsettled_screen},
     {"an_opening_during_autos_job_on_a_changed_screen_gets_its_own",
      test_an_opening_during_autos_job_on_a_changed_screen_gets_its_own},
     {"a_region_drawn_during_a_lookup_or_refresh_gives_the_strip_its_sentence (#182 a)",

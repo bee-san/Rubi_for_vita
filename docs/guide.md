@@ -381,8 +381,10 @@ reported console run. The behaviour below is checked on the host.
   Rubi's own verified sites from their first line, and a string copy (or any other hook) once it has agreed
   with OCR four times, on four different lines. OCR comes back by itself when no trusted hook has text (or a
   string copy's caller is replaced). The price: a screen the hook did not copy (a choice menu, the backlog)
-  shows the hook's last line. `hook_trust = off` checks every hook with OCR as 0.9.7 did, below
-  ([details](native-hooks.md#trusted-hooks-api-43)). A trusted line is also read at once (API 49): within 16 ms of
+  shows the hook's last line. A string copy that earned trust is trusted again at the game's next start (the hook
+  cache keeps that apart from its learned interval). `hook_trust = off` checks every hook with OCR as 0.9.7 did, below,
+  its cache's interval and writes included, but for one write at the first launch with it off after one with it on
+  (a source saved trusted is saved again without the trust) ([details](native-hooks.md#trusted-hooks-api-43)). A trusted line is also read at once (API 49): within 16 ms of
   the game's copy, without waiting for the screen to settle or the line to finish typing, so L + R opens on it with
   its first word looked up, and the open overlay shows each new line as it starts
   ([details](native-hooks.md#no-wait-for-a-trusted-line-api-49)).
@@ -541,17 +543,21 @@ API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and th
 removed engine choice's `ocr_backend` line goes).
 
 On the **Anki** page the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
-Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), **Duplicates**
-(Tag, Skip or Keep: Enter takes the next, Left/Right the one beside it, a touch the one touched; the Rubi app's
-own `app.ini`, which the overlay never reads: [duplicates](anki.md#duplicates)), **Cards: N queued** (Enter opens
-the [Cards page](anki.md#the-cards-page)), **Known words** (Import: `known_words.txt`, which
+Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), then the
+exported cards' **Card type** (Word, Sentence, Both or Click: Enter takes the next, Left/Right the one beside it,
+a touch the one touched), **Game tag** and **Sentence readings** (ON/OFF), **Duplicates** (Tag, Skip or Keep: as
+Card type: [duplicates](anki.md#duplicates)), all four the Rubi app's own, in `app.ini`, which the overlay never
+reads (`anki_card_type`, `anki_game_tag`, `anki_sentence_readings`, `anki_duplicates`;
+[card type, game tag and sentence readings](anki.md#card-type-game-tag-and-sentence-readings)), **Cards: N queued**
+(Enter opens the [Cards page](anki.md#the-cards-page)), **Known words** (Import: `known_words.txt`, which
 `tools/known_words.py` writes from Anki; [known words](anki.md#known-words)), then
-**Export cards** and **Export all cards**. Eight rows are more than the room above the page's status
+**Export cards** and **Export all cards**. Eleven rows are more than the room above the page's status
 box: they scroll a row at a time as the OCR page's cards do, a bar at the right shows where the view is,
 and a touch on the row cut at the bottom only scrolls it into view ([Anki](anki.md#setup-and-use)).
 
 The **Cards page** lists the queued cards, newest first: Up/Down and the left stick choose, L/R a page of
-six, Left/Right the queue or the exported cards (read only), Square only the words on two cards, Start reads
+six, Left/Right the queue or the exported cards (read only), Square only the cards of a word mined before (the
+ones [Duplicates](anki.md#duplicates) finds), Start reads
 again, Enter opens a card (its sentence with the word marked, its definition, its picture; L/R the card before
 or after it), and Cancel goes back. On a queued card, Left/Right choose **Delete**, **Fix sentence** (the
 keyboard, on several lines; its done button saves) or **Drop picture**, and Enter does it; Delete and Drop
@@ -679,7 +685,8 @@ bubble, whatever it holds.
 ### A game's own page
 
 Hold Enter, or a touch, on a game in the list for half a second: its page opens, with its title and ID and two
-settings (#333). A shorter press or tap still turns the game ON or OFF, as it is let go.
+settings (#333). A shorter press or tap still turns the game ON or OFF, as it is let go; a finger that slides off the
+game's card first does neither.
 
 - **Rubi in this game**: its ON or OFF, as on the list.
 - **Line finder**: what cuts this game's text box into lines, `config.ini`'s `ocr_finder` and `ocr_line_fix` for this
@@ -692,18 +699,22 @@ settings (#333). A shorter press or tap still turns the game ON or OFF, as it is
 Up/Down select a setting; Left/Right or Enter choose (Enter goes round the line finder's choices); touch a choice to
 take it; Cancel goes back to the list, and Select or a tab to another page. A choice is saved at once and applies
 when the game next starts or resumes, as its ON/OFF does; the list then shows `Line finder: On` (for example) on the
-game's card.
+game's card. With the app's red banner up (the installed overlay is not the app's build), the page says that an
+overlay from before it ignores its line finder.
 
 Which to choose: keep **Default** unless a game reads badly. The spotter is the measured best overall, and on Narcissu
 too, whose rows touch. On the owner's hooked pages (host, measured: VOCR5-N, the 1 MB LM and the cascade, regions drawn
 with a margin; counted from the per-page records of the runs behind vita-vn-ocr #129 and #149, the spotter as #149
 chose it, before its weights were trained again with these pages), Narcissu (`ULJM05674`) read with 63 errors in 4,959
 characters with the spotter, 137 with All, and 677 with On. Over the 46 hooked games the spotter made 2,135 errors in
-162,471 characters (1.31%), All 2,445 (1.50%), Junk 3,083 (1.90%), On 5,349 (3.29%) and Off 6,296 (3.88%); on 93 other
-games' screenshots 0.97% against All's 1.50% and On's 2.34%. On 17 of the 46 games and 23 of the 93, one of Rubi's
-finder's values made fewer errors than the spotter (the best of the four, picked on the same pages), by up to 35
-errors a game: such a game is the one to give **On** (or another value) here. Draw the box a few pixels outside the text for Junk and All, which can drop a real
-line in a box drawn tight. Rubi has no list of games that get another value: a game gets one only when you choose it.
+162,471 characters (1.31%), All 2,445 (1.50%), Junk 3,083 (1.90%), On 5,349 (3.29%) and Off 6,296 (3.88%); on the 92
+other games of #149's development set 251 errors in 25,455 characters (0.99%), against All's 1.52% and On's 2.38%.
+Rubi's finder with All made fewer errors than the spotter on 17 of the 46 hooked games and 23 of the 92 (On on 16 and
+22), by up to 35 errors a game, but on 12 of those 23 by only one or two. These per-game counts are an upper bound on
+what a choice gains: each game was scored on the pages it was compared on, and a small difference may not hold on
+other pages. So a player could give a game that reads worse with the spotter Rubi's finder: **All** with a box drawn
+a few pixels outside the text, or **On** in a box drawn tight (Junk and All can drop a real line there). Rubi has no
+list of games that get another value: a game gets one only when you choose it.
 
 PSP games follow the same rows as their ON/OFF. A bubble's own choice applies to it; without one it takes the line
 finder of the shared row **Adrenaline / PSP games without a setting of their own** (`NPXS10028`), and without that,
@@ -711,14 +722,17 @@ finder of the shared row **Adrenaline / PSP games without a setting of their own
 game it is, so give the game a bubble for a choice of its own.
 
 The choices are kept in `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, one line a game in `games.ini`'s form
-(`PCSG00001 = on`; the values are `spotter`, `off`, `on`, `junk` and `all`), with a backup (`ocr_line_fix.ini.bak`)
-as `games.ini` has: the app reads it after a save that was cut short, and its next save puts the file back. They
-are not in `games.ini` itself: earlier builds read that file strictly, and a line they do not know would make it
-unreadable to them (its backup's choices, or every game OFF). A file the app cannot read (a line edited by hand that
-is not one of the five values, say) is left as it is, and the page says so; the Shell then uses `config.ini`'s line
-finder for every game. The game's start line in `log.txt` names what its jobs use: `game PCSG00001 started: trigger
-l+r, subtitles select+r, ocr_mode auto, ocr_finder grad, ocr_line_fix on` (with the spotter, `ocr_line_fix` is its
-fallback's). Not run on a console yet.
+(`PCSG00001 = on`; the values are `spotter`, `off`, `on`, `junk` and `all`, in lower case), with a backup
+(`ocr_line_fix.ini.bak`) as `games.ini` has. The Shell reads `ocr_line_fix.ini` alone: after a save that was cut
+short (the Vita turned off during it) left only the backup, games use `config.ini`'s line finder until the Rubi app
+next starts, which puts the file back from the backup. The choices are not in `games.ini` itself: earlier builds
+read that file strictly, and a line they do not know would make it unreadable to them (its backup's choices, or
+every game OFF). A file the app cannot read is left as it is, beside its backup if it has one, and a game's page says
+so; the Shell then uses `config.ini`'s line finder for every game. One line it cannot read makes the whole file so: a
+value in capitals, a byte-order mark, a comment after a value, a line that is not one of the five values. The game's
+start line in `log.txt` names what its jobs use: `game PCSG00001 started: trigger l+r, subtitles select+r, ocr_mode
+auto, ocr_finder grad, ocr_line_fix on` (with the spotter, `ocr_line_fix` is its fallback's). Not run on a console
+yet.
 
 ## Settings and dictionaries
 
@@ -834,7 +848,8 @@ host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 `ocr_vertical = auto` (the default; the Rubi app's **Vertical text**) reads Japanese set in columns, right to
 left, with vita-vn-ocr's vertical model, where the line finder's rows in the region look like vertical text, and
 rows everywhere else, as `off` does; `on` reads columns, and rows only where they are plainly lines of horizontal
-text (since API 53, #379: before, columns everywhere). Draw the text box around the columns. On
+text or where the box holds no line at all (since API 53, #379: before, columns everywhere; a box at least as tall as
+wide is always read as columns, since #385's audit at once). Draw the text box around the columns. On
 the host it read a vertical PS Vita VN's dialogue at 4.5-23 % CER, depending on how the box is drawn, and changed
 no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console).
 `ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
@@ -1022,10 +1037,11 @@ the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
 The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
-ON/OFF, **Trim black bars** ON/OFF, **Duplicates** (Tag, Skip or Keep), **Cards: N queued** (the
-[Cards page](anki.md#the-cards-page): each queued card, to delete it, fix its sentence or drop its picture before
-it is exported), **Known words** (Import), **Export cards (N queued, M already mined)** and **Export all cards**
-(eight rows, which scroll a row at a time). An export writes the cards as
+ON/OFF, **Trim black bars** ON/OFF, the cards' **Card type**, **Game tag** and **Sentence readings**
+([card type, game tag and sentence readings](anki.md#card-type-game-tag-and-sentence-readings)), **Duplicates**
+(Tag, Skip or Keep), **Cards: N queued** (the [Cards page](anki.md#the-cards-page): each queued card, to delete it,
+fix its sentence or drop its picture before it is exported), **Known words** (Import), **Export cards (N queued, M
+already mined)** and **Export all cards** (eleven rows, which scroll a row at a time). An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into
@@ -1078,9 +1094,11 @@ and lookup, and saves them as Anki cards: a word you type, or a word of an earli
 | Square | Earlier lines: the next game |
 | Cancel | An open line: back to the list; else exit the app |
 
-The page uses no network and allocates nothing: its memory is static, about 420 KiB of the app's 50 MiB
-([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)), and leaving the page closes the
-dictionaries' files. The Shell, the game worker and the kernel are unchanged. Not run on a console yet.
+The page uses no network, and its own memory is static: about 430 KiB of the app's 50 MiB
+([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)); leaving the page closes the dictionaries'
+files. The many characters it draws and measures make the app load its font again now and then, with an empty glyph
+atlas (libvita2d's holds about 500, an estimate), each time leaving 4 KiB of its heap behind. Earlier lines lists at
+most 32 games. The Shell, the game worker and the kernel are unchanged. Not run on a console yet.
 
 ### Stats
 
@@ -1100,14 +1118,18 @@ no sessions: a day, a game and all games.
 | **All games** | The totals of every game, the cards mined and the cards per 10,000 characters, and the lines recorded |
 | A row per game | Its name and the last day read; today's characters, time and characters/hour; in all the same, its cards (by the title ID the card was mined in) and cards per 10,000 characters. The game read last comes first |
 
-- **Start** counts again; the page counts what is new each time it is shown. The first count reads all of
-  `history.csv` on a thread of its own (the status line says how far it is); then the counts are kept in
-  `ux0:data/VitaJPOverlay/stats_cache.bin`, and the next count reads only the lines added since. A `history.csv` that
-  is not the one counted (replaced or shorter), another time zone, another `reading_time` or a damaged cache is
-  counted again from its start. 20 MB of history (44,769 lines) took 40 ms on a computer [measured on the host, an
+- The page counts what is new each time it is shown. The first count reads all of `history.csv` on a thread of its
+  own (the status line says how far it is); then the counts are kept in `ux0:data/VitaJPOverlay/stats_cache.bin`, and
+  the next count reads only the lines added since. The cache compares `history.csv`'s first 1 KiB, the 256 B before
+  where it stopped and the line that follows there: a file that differs in them, or is shorter, is counted again from
+  its start, and so is everything after a change of time zone or `reading_time`, or with a damaged cache. A change
+  elsewhere in the file (an edit on a computer that keeps its length) is not seen: **Start** counts everything again
+  from the start, the cards too. 20 MB of history (44,769 lines) took 40 ms on a computer [measured on the host, an
   AMD EPYC 9R14 core; the Vita's time is unmeasured: the app runs on its CPU3 while the game is suspended].
 - **The goal** is kept in the app's own settings file, `ux0:data/VitaJPOverlay/app.ini`
   (`stats_daily_goal = off | 2000_characters | … | 120_minutes`), never in `config.ini`: the overlay does not read it.
+- A day is a day in the time zone of the count: in a zone with daylight saving (Japan has none) the days of the
+  other half of the year are counted an hour off, from midnight to midnight of the offset the Vita has now.
 - The page only reads `history.csv` and the cards; it writes `stats_cache.bin` and `app.ini` only. A line read across
   midnight is its first day's, with its time, as `tools/reading_stats.py` counts it; △'s **Today** leaves such a line
   out. A record a power loss cut is skipped, as △ skips it.
@@ -1132,12 +1154,11 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 208,896 B of module pages (221,184 B in the debug build; API 31's native hooks and
+holds the worker's 208,896 B of module pages (217,088 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
 API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
 two-level head 8,192 B, API 47's vertical text 4,096 B, API 50's line finder fixes with vita-vn-ocr f8a1856's
-runtime 8,192 B, API 54's text spotter 16,384 B and the debug build's 4,096 B for the hook farm's 20 verified
-entries, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+runtime 8,192 B and API 54's text spotter 16,384 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

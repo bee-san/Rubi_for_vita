@@ -377,21 +377,34 @@ static void the_job_reads_the_runtimes_boxes(void)
     }
 }
 
-/* API 54: with ocr_vertical checking for columns (VjoVocrPolicy.vertical_check), the spotter's own box counts decide
- * whether its boxes are the lines or GRAD's rows go to the vertical check: auto hands over a region it calls vertical
- * more often than horizontal, on (API 53, #379: columns unless the rows look horizontal) every region it does not call
- * mostly horizontal; off never. Each frame is checked against the runtime's own counts; the random blob's frames below
- * give all three cases (vita-vn-ocr's twin on them: the text box 43 vertical / 21 horizontal boxes, the small inverted
- * crop 0 / 1, the uniform grey 1 / 1), and the test checks that each case occurred. */
+/* audit-vocr6-spotter2-rubi F2: a model of columns reads without the spotter, so its job with the spotter's part is
+ * its job (the rotation buffer kept), whatever that part; a model of rows grows by what the part exceeds its scratch. */
+static void a_model_of_columns_takes_no_part_of_the_spotters_scratch(void)
+{
+    const size_t big = vjo_vocr_spot_bytes_max();
+    TEST_CHECK(vjo_vocr_job_bytes_spot(VJO_VOCR_VERTICAL_NAME, 960, 544, big) ==
+               vjo_vocr_job_bytes(VJO_VOCR_VERTICAL_NAME, 960, 544));
+    TEST_CHECK(vjo_vocr_job_bytes_spot(VJO_VOCR_VERTICAL_NAME, TB_W, TB_H, big) ==
+               vjo_vocr_job_bytes(VJO_VOCR_VERTICAL_NAME, TB_W, TB_H));
+    TEST_CHECK(vjo_vocr_job_bytes_spot("FL10_w8.vocr", 960, 544, big) > vjo_vocr_job_bytes("FL10_w8.vocr", 960, 544));
+    TEST_CHECK(vjo_vocr_job_bytes_spot("FL10_w8.vocr", 960, 544, 0) == vjo_vocr_job_bytes("FL10_w8.vocr", 960, 544));
+}
+
+/* API 54: with ocr_vertical = auto (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_AUTO) the spotter's own box counts
+ * decide whether its boxes are the lines or GRAD's rows go to auto's check: it hands over a region it calls vertical
+ * more often than horizontal. With on (VJO_VOCR_CHECK_ON, #379) the spotter is not set up at all, whatever its boxes
+ * (audit-vocr6-spotter2-rubi F1): on's job is GRAD's rows and on's check; off never hands over. Each frame is checked
+ * against the runtime's own counts; the random blob's frames below give all three count cases (vita-vn-ocr's twin on
+ * them: the text box 43 vertical / 21 horizontal boxes, the small inverted crop 0 / 1, the uniform grey 1 / 1). */
 static void vertical_text_checks_hand_over_by_the_spotters_counts(void)
 {
     static const struct { unsigned w, h, x0, y0; int invert, uniform; } frames[] = {
-        {TB_W, TB_H, 0, 0, 0, 0},   /* mostly vertical boxes: auto and on hand over */
-        {120u, 40u, 500, 60, 1, 0}, /* mostly horizontal: neither does */
-        {TB_W, TB_H, 0, 0, 0, 90},  /* as many of each: on hands over, auto does not */
+        {TB_W, TB_H, 0, 0, 0, 0},   /* mostly vertical boxes: auto hands over */
+        {120u, 40u, 500, 60, 1, 0}, /* mostly horizontal: auto does not */
+        {TB_W, TB_H, 0, 0, 0, 90},  /* as many of each: auto does not */
     };
     static const int checks[] = {0, VJO_VOCR_CHECK_AUTO, VJO_VOCR_CHECK_ON};
-    unsigned seen_both = 0, seen_neither = 0, seen_on_only = 0;
+    unsigned seen_more_vertical = 0, seen_more_horizontal = 0, seen_tie = 0;
     load_blob();
     load_textbox();
     for (unsigned k = 0; k < sizeof(frames) / sizeof(frames[0]); k++) {
@@ -418,23 +431,27 @@ static void vertical_text_checks_hand_over_by_the_spotters_counts(void)
             }
             pol.vertical_check = checks[c];
             int rc = job(&pol, 0, &st);
-            int handed = checks[c] == VJO_VOCR_CHECK_ON ? horizontal <= vertical
-                         : checks[c] == VJO_VOCR_CHECK_AUTO ? vertical > horizontal : 0;
-            if (handed) /* GRAD's rows decide: the job reads them, or (VJO_E_VERTICAL) the worker reads columns next */
+            if (checks[c] == VJO_VOCR_CHECK_ON) /* no spotter: GRAD's rows and on's check (read, or columns next) */
+                TEST_CHECK_(!st.spot_ran && !st.spot_rc && !st.spot_bytes && !st.spot_boxes &&
+                                (rc == VJO_OK || rc == VJO_E_VERTICAL),
+                            "frame %u on: rc %d spot_rc %d ran %u bytes %zu", k, rc, st.spot_rc, st.spot_ran,
+                            st.spot_bytes);
+            else if (checks[c] == VJO_VOCR_CHECK_AUTO && vertical > horizontal) /* GRAD's rows and auto's check */
                 TEST_CHECK_(st.spot_rc == VJO_E_VERTICAL && !st.spot_ran && (rc == VJO_OK || rc == VJO_E_VERTICAL),
-                            "frame %u check %d (%u vertical, %u horizontal): rc %d spot_rc %d ran %u", k, checks[c],
-                            vertical, horizontal, rc, st.spot_rc, st.spot_ran);
+                            "frame %u auto (%u vertical, %u horizontal): rc %d spot_rc %d ran %u", k, vertical,
+                            horizontal, rc, st.spot_rc, st.spot_ran);
             else
                 TEST_CHECK_(rc == VJO_OK && st.spot_ran == 1 && !st.spot_rc,
                             "frame %u check %d (%u vertical, %u horizontal): rc %d spot_rc %d ran %u", k, checks[c],
                             vertical, horizontal, rc, st.spot_rc, st.spot_ran);
         }
-        seen_both += vertical > horizontal;
-        seen_neither += horizontal > vertical;
-        seen_on_only += vertical == horizontal;
+        seen_more_vertical += vertical > horizontal;
+        seen_more_horizontal += horizontal > vertical;
+        seen_tie += vertical == horizontal;
     }
-    TEST_CHECK_(seen_both == 1 && seen_neither == 1 && seen_on_only == 1, "cases: both %u, neither %u, on only %u",
-                seen_both, seen_neither, seen_on_only);
+    TEST_CHECK_(seen_more_vertical == 1 && seen_more_horizontal == 1 && seen_tie == 1,
+                "cases: more vertical %u, more horizontal %u, tie %u", seen_more_vertical, seen_more_horizontal,
+                seen_tie);
 }
 
 /* The scale its blob's rule gives the frame the region is cut from: every region of a 960 x 544 frame halved
@@ -581,5 +598,6 @@ TEST_LIST = {
      its_refinement_is_its_own_and_the_gate_and_probe_are_grads},
     {"its_scratch_is_sized_exactly", its_scratch_is_sized_exactly},
     {"vertical_text_checks_hand_over_by_the_spotters_counts", vertical_text_checks_hand_over_by_the_spotters_counts},
+    {"a_model_of_columns_takes_no_part_of_the_spotters_scratch", a_model_of_columns_takes_no_part_of_the_spotters_scratch},
     {NULL, NULL}
 };

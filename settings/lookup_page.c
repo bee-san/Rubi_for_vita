@@ -92,6 +92,8 @@ static int char_width(uint32_t cp, int px)
     n = vjo_utf8_encode(cp, buf);
     buf[n] = '\0';
     w = s_ui->text_width((float)px, buf);
+    if (w <= 0 && cp > ' ')
+        return w; /* (a glyph its font could not hold: measured again next time, not kept) */
     if (width_entries >= WIDTH_SLOTS * 3 / 4) { /* full: forgotten, measured again as they come */
         memset(widths, 0, sizeof(widths));
         width_entries = 0;
@@ -180,7 +182,7 @@ typedef struct {
 #define BODY_ROWS 400
 static Row body[BODY_ROWS];
 static int body_rows, body_top, body_cut; /* body_cut: the entry had more rows than BODY_ROWS */
-static char pool[2048];                   /* the strings the rows are made of besides the entry's own */
+static char pool[4096];                   /* the strings the rows are made of besides the entry's own */
 static size_t pool_used;
 
 static const char *pool_put(const char *s)
@@ -260,6 +262,7 @@ static void vocab_rows(const VjoVocab *v, const VjoEntry *e, const char *source)
     if (strcmp(v->spelling, v->reading)) {
         char reading[160];
         snprintf(reading, sizeof(reading), " (%s)", v->reading);
+        vjo_utf8_trim_partial(reading); /* (a reading too long for it: cut on a character) */
         const char *p = pool_put(reading);
         add_piece(r, p, strlen(p), JA_PX, READING, x);
         x += measure(p, strlen(p), JA_PX);
@@ -337,6 +340,12 @@ static void build_body(void)
     for (int i = 0; i < l->n_more; i++) {
         blank();
         vocab_rows(l->more[i], NULL, NULL); /* its definition names its dictionary ("[title]") */
+    }
+    if (body_cut && body_rows) { /* more rows than BODY_ROWS: the last one says so */
+        Row *r = &body[body_rows - 1];
+        memset(r, 0, sizeof(*r));
+        r->height = (uint8_t)line_height(EN_PX);
+        add_piece(r, "…", strlen("…"), EN_PX, s_ui->dim, 0);
     }
 }
 
@@ -421,15 +430,22 @@ static VjoLookupSource line_source;
 static int line_index = -1;
 static int panel = -1; /* the text the lookups have: MODE_SEARCH, MODE_LINES (the open line), -1 none */
 
+/* The panel the lookups have is let go: its cursor kept, to be looked up again when it comes back. */
+static void leave_panel(void)
+{
+    if (panel == MODE_SEARCH)
+        search_cursor = vjo_lookup_cursor();
+    else if (panel == MODE_LINES)
+        line_cursor = vjo_lookup_cursor();
+    panel = -1;
+}
+
 static void use_panel(int which)
 {
     size_t keep;
     if (panel == which)
         return;
-    if (panel == MODE_SEARCH)
-        search_cursor = vjo_lookup_cursor();
-    else if (panel == MODE_LINES)
-        line_cursor = vjo_lookup_cursor();
+    leave_panel();
     panel = which;
     keep = which == MODE_SEARCH ? search_cursor : line_cursor;
     vjo_lookup_set_text(which == MODE_SEARCH ? search_raw : line_raw, which == MODE_SEARCH);
@@ -517,10 +533,10 @@ static void open_line(int i)
         vjo_lookup_history_open(cfg.non_japanese_filter);
         return;
     }
+    leave_panel(); /* (the Search text's cursor is kept for L back to it) */
     line_index = i;
     line_cursor = 0;
     line_open = 1;
-    panel = -1;
     use_panel(MODE_LINES);
     status[0] = '\0';
     status_error = 0;
@@ -589,9 +605,11 @@ static void text_input(const VjoLookupInput *in)
         size_t was = vjo_lookup_cursor();
         stick.due = 0; /* an arrow takes the frame (core/stick_cursor.h) */
         if (vjo_lookup_step(dx, 0)) {
-            /* a held key stops at the text's ends: only a fresh press goes round */
-            if (!(in->pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) && (dx > 0 ? vjo_lookup_cursor() < was
-                                                                            : vjo_lookup_cursor() > was))
+            /* Round the text's ends only as the overlay goes round them (core/text_rows.h): a text on one displayed
+             * row, and a fresh press (a held key stops there). The step has no layout (the line breaks stand for
+             * the rows), so a text the page wraps into more rows stops here. */
+            int round = dx > 0 ? vjo_lookup_cursor() < was : vjo_lookup_cursor() > was;
+            if (round && (!(in->pressed & (SCE_CTRL_LEFT | SCE_CTRL_RIGHT)) || text_rows > 1))
                 vjo_lookup_at(was);
             else
                 vjo_lookup_at(vjo_lookup_cursor());
@@ -951,11 +969,7 @@ void vjo_lookup_page_show(VjoArena *scratch)
     }
     /* The text is looked up again at its cursor, with the settings as they are now: the dictionaries, their order
      * and count, names_first (#321), the filter, the cursor's rules (any of them may have changed meanwhile). */
-    if (panel == MODE_SEARCH)
-        search_cursor = vjo_lookup_cursor();
-    else if (panel == MODE_LINES)
-        line_cursor = vjo_lookup_cursor();
-    panel = -1;
+    leave_panel();
     cfg = loaded;
     configured = 1;
     vjo_lookup_configure(&cfg);

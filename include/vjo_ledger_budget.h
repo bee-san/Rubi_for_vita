@@ -107,7 +107,11 @@
  * data segment) makes it 98,164 + 77,728 -> 98,212 + 77,792 on main 9ad8eb5, the same pages (92 and 32 B left)
  * [measured: the same rows, main 9ad8eb5 and this change]. #321's audit (the particle's する check before the depth
  * test, lookup_pages +24 B) makes it 98,244 + 77,792 on main 099b156, the same pages (60 and 32 B left)
- * [measured: the same rows, main 099b156 and this change]. */
+ * [measured: the same rows, main 099b156 and this change]. #338's audit fixes (shell/history.c's grown-line
+ * rewrite reordered: the file opened before the truncation, the truncation inside the count's odd window and only over
+ * the file's own last record, the end read again after it; the debug build's hook source line in the result's log
+ * batch) make it 98,244 -> 98,276 text on main 70deda7, the same data and pages (28 B left) [measured: the same rows, main
+ * 70deda7 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -149,7 +153,11 @@
  * notice in the data segment) makes it 85,900 + 77,552 -> 85,940 + 77,696 on main 9ad8eb5, the same pages, 76 B of
  * text room and 128 B of data room [measured: the same rows, main 9ad8eb5 and this change]. #321's audit (above,
  * lookup_pages +28 B) makes it 85,972 + 77,696 on main 099b156, 44 B of text room [measured: the same rows, main
- * 099b156 and this change]. Its check is exact (--exact): this must equal its pages. */
+ * 099b156 and this change].
+ * #338's audit's history rewrite (above), with the short job line's format moved to the data segment (32 B), makes it
+ * 85,972 + 77,696 -> 85,988 + 77,728 on main 70deda7, the same pages, 28 B of text room [measured: the same rows, main 70deda7 and this change]: main's steps reordered, with the end's check and
+ * its second read, which a file replaced since and an SCE_O_APPEND that places only the open need. Its check is exact
+ * (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
@@ -400,6 +408,11 @@
  * the build log's module rows, both builds, main 3d095b4 (after VOCR6, #373, #369, #387, #386 and #385; #390 after
  * it changes no module) and this change, tools/fast_gate.sh's vitasdk image].
  * Its weights are a block of their own (VJO_BUDGET_GAME_SPOT), never static; data/bss keep their pages. */
+/* #396's audit (no spotter with ocr_vertical = on; a try of columns keeps the spotter's block without its scratch or
+ * refinement; the job's spot step across its tries): worker text 180,048 -> 180,208 B debug (16 B of the last page
+ * left) and 171,100 -> 171,244 B normal (788 B), data/bss unchanged, the same pages; the kernel's and the Shell's rows
+ * unchanged [measured: the build log's module rows, both builds, main 5e18b60 and this change, tools/fast_gate.sh's
+ * vitasdk image]. No block, thread or allocation. */
 /* #316's audit fixes (PCSG00628's !X escapes and u9829. as 15 more ops of its filter and their 109 B of strings, in the
  * data segment; CP932 0xA0 decoded only in VJO_HOOK_ENC_CP932_A0, the two MSGSET entries' encoding, and vjo_hook_clean's
  * U+F8F0 drop gone; an r15 entry only with segment 0 at 0x81000000): worker text 179,712 B debug unchanged (512 B of
@@ -414,22 +427,40 @@
  * 170,812 B normal (1,220 B), data/bss unchanged, the same pages; the kernel's and the Shell's rows unchanged
  * [measured: the build log's module rows, both builds, main b88772c and this change, tools/fast_gate.sh's vitasdk
  * image]. No block, thread or allocation. */
+/* #338's audit fixes (the cache's trust bit, VjoHookLearned.trusted; vjo_hook_select_learned's trust argument, the
+ * interval saved as it is): worker text 179,760 -> 179,840 B debug (384 B of room left) and 170,828 -> 170,876 B
+ * normal (1,156 B), data/bss 36,704 -> 36,712 B and 36,696 -> 36,704 B, the same pages [measured: the build log's
+ * module rows, both builds, main 70deda7 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or
+ * allocation; the cache's record keeps its 96 B. */
+/* The audit of #397 and #401 (core/hook_luna.c run_ops: an op gated by encoding reads VJO_HOOK_ENC_CP932_A0 as CP932):
+ * every module's row unchanged (worker text 179,856 B debug, 368 B of room left, and 170,924 B normal, 1,108 B), the
+ * kernel and Shell SELF files byte-identical to main's [measured: the build log's module rows, both builds, main
+ * 2eb2d98 and this change, tools/fast_gate.sh's vitasdk image; on main cc25de3 it was -16 B debug, +16 B normal]. No
+ * block, thread or allocation. */
+/* #385's audit fixes (game_ocr/main.c: on reads a tall region's columns at once; a tall-line block over a column's
+ * bound keeps the job's reserve and its weights' room, a job of columns' its LM's too, job_model/job_lm; a hand-over
+ * try's checks leave the step log; core/vocr_ocr.c: no row in a wide region is off's job): worker text 179,856 ->
+ * 180,048 B debug (176 B of room left) and 170,924 -> 171,100 B normal (932 B), data/bss 36,712 -> 36,720 B and
+ * 36,704 -> 36,712 B, the same
+ * pages; the kernel's and the Shell's rows unchanged [measured: tools/check_memory_ledger.py, both builds, main
+ * e4c1a02 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the rectangle is the
+ * tall-line block (VJO_BUDGET_GAME_LINE, its bound unchanged). */
 /* The psandvita hook farm's 20 verified entries of 2026-10-27 and their filters (#394: core/hook_place.c; core/hook_luna.c
- * PROTOTYPE_NAMELINE, PCSG00472, AOZORA_RUBY, CARET_NEWLINE, PCSG01250 and one more PROTOTYPE op): data only, the
- * worker's code unchanged. As #394 wrote them they add .rodata +304 B normal and +288 B debug (most of it the 20
- * titles' strings: Luna's ID table is a char[][10], which shares none) and .data +976 B in both (the 20 rows' 800 B,
- * the new ops, the filters' index 76 -> 96 B): merged on main 70deda7 the worker's data/bss was 37,672 B normal and
- * 37,680 B debug, 808 / 816 B past its 9 pages, with 900 B of the normal build's last text page free. So the filters'
- * index, PCSG00628's ops and escapes (#316's audit) and the five arrays the batch added or grew, 853 B
- * [arm-vita-eabi-nm -S], are read-only data again (core/hook_luna.c): the normal build, the release's main download,
- * keeps its pages, text 170,828 -> 171,996 B (36 B of room left) and data/bss 36,696 -> 36,816 B (48 B); the debug
- * build's text 179,760 -> 180,912 B takes one page more (3,408 B of room), data/bss 36,704 -> 36,824 B (40 B), so its
- * worker holds 217,088 -> 221,184 B in each game that is ON, in the game's partition, never SceShell's (without the
- * move its data took that page instead: 180,048 + 37,680 B) [measured: tools/check_memory_ledger.py's module rows and
- * arm-vita-eabi-size -A, both builds, main 70deda7 and this change, tools/fast_gate.sh's vitasdk image]. The kernel's
+ * PROTOTYPE_NAMELINE, PCSG00472, AOZORA_RUBY, CARET_NEWLINE, PCSG01250 and one more PROTOTYPE op): data, 1,288 B in
+ * the normal worker (.rodata +304 B, most of it the 20 titles' strings: Luna's ID table is a char[][10], which shares
+ * none; .data +976 B: the 20 rows' 800 B, the new ops, the filters' index 76 -> 96 B), against 788 + 152 = 940 B of
+ * room in the last pages of its code and data segments on main b55c5f5. As #394 wrote them (all in the data segment)
+ * the worker took one page more in the normal build and two in the debug build (171,548 + 37,688 B, 212,992 B;
+ * 180,496 + 37,696 B, 225,280 B). So the filters' index, PCSG00628's ops and escapes (#316's audit) and the five arrays
+ * the batch adds or grows, 853 B [arm-vita-eabi-nm -S], are read-only data again, and core/hook_luna.c is built for
+ * size as core/hook_re.c is (vita/CMakeLists.txt: the filters' ops and Luna sites' reads, control code; its object's
+ * text 5,612 -> 4,168 B and rodata 13,595 -> 13,347 B, normal build): both builds keep their pages. Normal text
+ * 171,244 -> 170,780 B (1,252 B of room) and data/bss 36,712 -> 36,832 B (32 B); debug text 180,208 -> 179,744 B
+ * (480 B) and data/bss 36,720 -> 36,840 B (24 B) [measured: tools/check_memory_ledger.py's module rows and
+ * arm-vita-eabi-size -A, both builds, main b55c5f5 and this change, tools/fast_gate.sh's vitasdk image]. The kernel's
  * and the Shell's rows unchanged. No block, thread or allocation. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 221184u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
 #define VJO_BUDGET_WORKER_MODULE_PAGES 208896u
 #endif

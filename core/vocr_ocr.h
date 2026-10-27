@@ -143,8 +143,9 @@ typedef struct {
 int vjo_vocr_rows_vertical(const void *lines, unsigned n, unsigned w, unsigned h);
 /* API 53, config.ini ocr_vertical = on (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON, #379): whether the row
  * finder's n lines on a w x h region look like horizontal text, lines of it one under another, so that on's job reads
- * them as rows; elsewhere it reads the region's columns. Geometry only (core/vocr_ocr.c: the rule;
- * docs/vita-vn-ocr.md "Vertical text": how it was measured). */
+ * them as rows (no line at all in a region wider than tall too: nothing to read, off's job); elsewhere it reads the
+ * region's columns. Geometry only (core/vocr_ocr.c: the rule; docs/vita-vn-ocr.md "Vertical text": how it was
+ * measured). */
 int vjo_vocr_rows_horizontal(const void *lines, unsigned n, unsigned w, unsigned h);
 
 /* The model named `name` (a file name in ocr_model_dir), or NULL. */
@@ -667,7 +668,8 @@ typedef struct {
      * again with line_fix's fixes and read; a wider region is found once, with them. */
     /* API 53 (config.ini ocr_vertical = on, #379): vertical_check VJO_VOCR_CHECK_ON has a job of rows return
      * VJO_E_VERTICAL, reading nothing, wherever its rows do not look like horizontal text
-     * (vjo_vocr_rows_horizontal), and read them where they do: on prefers columns. Its rows are checked as auto's
+     * (vjo_vocr_rows_horizontal: a region wider than tall with no row at all is off's job, nothing to read), and read
+     * them where they do: on prefers columns. Its rows are checked as auto's
      * are (with line_fix, a region at least as tall as wide on the frozen finder's rows, then found again with the
      * fixes and read). VJO_VOCR_CHECK_AUTO (1) is API 47's auto. */
     int vertical_check;
@@ -688,7 +690,11 @@ typedef struct {
      * must hold vjo_vocr_job_bytes_spot(). spot_refine: VOCR_REFINE_* steps on its boxes in place of refine, which is
      * GRAD's (ocr_spotter_refine; 0: as found). When it cannot run (no verified weights, an arena over
      * VJO_VOCR_SPOT_ARENA_MAX, no room, a refusal), the job finds its lines with GRAD, refine and the gate, exactly as
-     * without it, and says why in stats->spot_rc. spot 0: off, exactly as before. */
+     * without it, and says why in stats->spot_rc. A model of columns reads without it, and so does a job with
+     * vertical_check VJO_VOCR_CHECK_ON (ocr_vertical = on: GRAD's rows and on's check, #379's measured rule, decide,
+     * as without the spotter; stats->spot_rc stays 0). With VJO_VOCR_CHECK_AUTO a region whose boxes it calls
+     * vertical more often than horizontal goes to GRAD's rows and auto's check (stats->spot_rc VJO_E_VERTICAL).
+     * spot 0: off, exactly as before. */
     int spot;
     VjoVocrSpotResident *spot_res;
     unsigned spot_refine;

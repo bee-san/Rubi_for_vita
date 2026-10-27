@@ -32,6 +32,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "../../core/vocr_models.h"
+#include "../../core/utf.h"
 #include "../../core/config.h" /* VJO_VERTICAL_* (API 47) */
 #include "../../include/vjo_vocr_sizes.h"
 #include "../../core/app_stamp.h"
@@ -139,7 +140,13 @@ typedef struct {
  * its state in statics, so it runs in a forked child, and the frames it shows
  * come back through shared memory. */
 typedef struct { int frames, exited, main_rc, finis, font_loads, font_frees, font_free_in_frame, font_free_unwaited,
-                 dead_font_uses; Frame shown[MAX_FRAMES]; } Session;
+                 dead_font_uses, most_glyphs, fonts_both, most_fonts;
+                 int lookup_shows, lookup_leaves, lookup_frames; uint32_t lookup_pressed[16], lookup_held[16];
+                 Frame shown[MAX_FRAMES]; } Session;
+/* settings_stubs/lookup_page_stub.c's records and controls (#313: main.c's Look up wiring) */
+extern int vjo_lookup_stub_shows, vjo_lookup_stub_leaves, vjo_lookup_stub_frames, vjo_lookup_stub_keyboard_at,
+           vjo_lookup_stub_hold_cancel_to;
+extern uint32_t vjo_lookup_stub_pressed[16], vjo_lookup_stub_held[16];
 static Session *session;
 static Frame *shown;
 static const Input *script;
@@ -244,17 +251,38 @@ int sceDisplayWaitVblankStart(void)
 int vita2d_init(void) { return 0; }
 int vita2d_fini(void) { finis++; return 0; }
 void vita2d_set_clear_color(unsigned int color) { (void)color; }
-/* The fonts: each load a font of its own, alive until freed; a font is freed only between frames, after a wait for
- * the GPU (settings/main.c font_tick), and never drawn or measured with once freed. */
-#define FONTS 16
+/* The fonts: each load a font of its own, alive until freed; a font that drew is freed only between frames, after a
+ * wait for the GPU (settings/main.c font_tick: one that only measured, whose atlas the GPU never reads, at any time),
+ * and none is drawn or measured with once freed; the most alive at once (their atlases: 256 KiB each). */
+#define FONTS 96
 static int font_live[FONTS], font_loads, font_frees, font_free_in_frame, font_free_unwaited, dead_font_uses,
-           in_frame, waited;
+           in_frame, waited, fonts_alive, most_fonts;
+/* Each font's distinct characters, as libvita2d's atlas would hold them (its glyph table), the most any font had,
+ * and the fonts that drew and those that measured. */
+#define FONT_GLYPHS 4096
+static uint32_t font_glyph[FONTS][FONT_GLYPHS];
+static int font_glyphs[FONTS], font_drew[FONTS], font_measured[FONTS], most_glyphs;
 void vita2d_start_drawing(void) { memset(&drawing, 0, sizeof(drawing)); in_frame = 1; waited = 0; }
 void vita2d_end_drawing(void) { in_frame = 0; }
 static void font_use(vita2d_pvf *font)
 {
     int i = (int)((int *)font - font_live);
     if (i < 0 || i >= FONTS || !font_live[i]) dead_font_uses++;
+}
+static void font_holds(vita2d_pvf *font, const char *text, int drawn)
+{
+    int f = (int)((int *)font - font_live);
+    size_t n = strlen(text), i = 0;
+    if (f < 0 || f >= FONTS) return;
+    (drawn ? font_drew : font_measured)[f] = 1;
+    while (i < n) {
+        uint32_t cp = vjo_utf8_next(text, n, &i);
+        int k = 0;
+        if (cp == '\n') continue; /* (libvita2d never adds it) */
+        while (k < font_glyphs[f] && font_glyph[f][k] != cp) k++;
+        if (k == font_glyphs[f] && k < FONT_GLYPHS) font_glyph[f][font_glyphs[f]++] = cp;
+        if (font_glyphs[f] > most_glyphs) most_glyphs = font_glyphs[f];
+    }
 }
 void vita2d_swap_buffers(void) {}
 void vita2d_clear_screen(void) {}
@@ -274,20 +302,24 @@ vita2d_pvf *vita2d_load_default_pvf(void)
 {
     if (font_fails || font_loads >= FONTS) return NULL;
     font_live[font_loads] = 1;
+    if (++fonts_alive > most_fonts) most_fonts = fonts_alive;
     return (vita2d_pvf *)&font_live[font_loads++];
 }
 void vita2d_free_pvf(vita2d_pvf *font)
 {
+    int f = (int)((int *)font - font_live);
     font_use(font);
-    font_live[(int *)font - font_live] = 0;
+    font_live[f] = 0;
+    fonts_alive--;
     font_frees++;
-    font_free_in_frame += in_frame;
-    font_free_unwaited += !waited;
+    font_free_in_frame += in_frame && font_drew[f];
+    font_free_unwaited += !waited && font_drew[f];
 }
 /* Stub metrics: 10 units for an ASCII character, 18 for any other, at scale 1. */
 int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
 {
     font_use(font);
+    font_holds(font, text, 0);
     int units = 0;
     for (const unsigned char *p = (const unsigned char *)text; *p; p++)
         if (*p < 0x80) units += 10;
@@ -297,6 +329,7 @@ int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text)
 {
     font_use(font);
+    font_holds(font, text, 1);
     if (drawing.texts < (int)(sizeof(drawing.text) / sizeof(drawing.text[0]))) {
         Text *t = &drawing.text[drawing.texts++];
         t->x = x; t->y = y; t->color = color; t->scale = scale;
@@ -400,6 +433,14 @@ static int run_to(const Input *inputs, int n, int code)
         session->font_free_in_frame = font_free_in_frame;
         session->font_free_unwaited = font_free_unwaited;
         session->dead_font_uses = dead_font_uses;
+        session->most_glyphs = most_glyphs;
+        session->most_fonts = most_fonts;
+        session->lookup_shows = vjo_lookup_stub_shows;
+        session->lookup_leaves = vjo_lookup_stub_leaves;
+        session->lookup_frames = vjo_lookup_stub_frames;
+        memcpy(session->lookup_pressed, vjo_lookup_stub_pressed, sizeof(session->lookup_pressed));
+        memcpy(session->lookup_held, vjo_lookup_stub_held, sizeof(session->lookup_held));
+        for (int k = 0; k < FONTS; k++) session->fonts_both += font_drew[k] && font_measured[k];
         _exit(0);
     }
     int status = 0;
@@ -1766,52 +1807,124 @@ static void test_the_tab_bar(void)
     tabs_of(14, 5);
 }
 
-/* libvita2d's glyph atlas keeps every glyph a font drew or measured and drops new ones once it is full: main.c counts
- * the distinct characters drawn or measured with the font and, before a text that would take them past 400, loads
- * the font again (an empty atlas) and draws on with that one; the old one is freed before the next frame, after a
- * wait for the GPU (font_tick); log.txt says so. No text is ever drawn or measured with a freed font, and no atlas
- * holds more than 400 characters. A page that draws the same characters again (the Games page) never switches. */
-extern int vjo_lookup_stub_glyphs;
-static void test_a_full_glyph_atlas_gets_an_empty_one(void)
+/* libvita2d's glyph atlas keeps every glyph a font drew or measured and drops new ones once it is full: main.c draws
+ * with one font and measures with another, counts the distinct characters each has had and, before a text that would
+ * take one past 350, loads that one again (an empty atlas) and goes on with it; the replaced ones are freed between
+ * frames, after a wait for the GPU (font_tick); log.txt says so. No font ever holds more than 350 characters, none
+ * both draws and measures, and none is used once freed. The drawing font switches once a frame at most, the
+ * measuring one as often as a frame's layout needs (1,000 new characters in one string: three switches). A page that
+ * draws the same characters again (the Games page) never switches. */
+extern int vjo_lookup_stub_glyphs, vjo_lookup_stub_measures;
+static void test_full_glyph_atlases_get_empty_ones(void)
 {
     static const Input idle[] = {{0, 0, 0, 0}};
-    Input in[2 * 3 + 12];
+    Input in[2 * 4 + 12];
     int n = 0;
     card(NULL);
     TEST_ASSERT(run(idle, 1) >= 1);
-    TEST_CHECK_(session->font_loads == 1 && session->font_frees == 1, "an idle app: %d loads, %d frees",
-                session->font_loads, session->font_frees);
-    for (int i = 0; i < 3; i++) /* Select to the Look up page, whose stub draws 100 new characters a frame */
+    TEST_CHECK_(session->font_loads == 2 && session->font_frees == 2 && !session->fonts_both,
+                "an idle app: %d loads, %d frees, %d fonts both drawing and measuring", session->font_loads,
+                session->font_frees, session->fonts_both);
+    for (int i = 0; i < 3; i++) /* Select to the Look up page, whose stub draws and measures new characters */
         in[n++] = (Input){SCE_CTRL_SELECT, 0, 0, 0}, in[n++] = (Input){0, 0, 0, 0};
     for (int i = 0; i < 12; i++)
         in[n++] = (Input){0, 0, 0, 0};
-    vjo_lookup_stub_glyphs = 100;
+    vjo_lookup_stub_glyphs = 100;    /* 100 new characters drawn a frame: 1,400 in 14 frames */
+    vjo_lookup_stub_measures = 1000; /* 1,000 new ones measured a frame, one a call as the page does: 14,000 */
     TEST_ASSERT(run(in, n) == n);
-    vjo_lookup_stub_glyphs = 0;
-    /* about 1,300 new characters with the pages' own: three switches (a fourth font at most); every font freed, the
-     * replaced ones between frames after a wait, the last one at the exit */
-    TEST_CHECK_(session->font_loads >= 4 && session->font_loads <= 5 && session->font_frees == session->font_loads,
+    vjo_lookup_stub_glyphs = vjo_lookup_stub_measures = 0;
+    /* drawing: 1,400 characters, 350 a font: four switches at least, one a frame at most; measuring: 14,000, two or
+     * three switches each frame */
+    TEST_CHECK_(session->font_loads >= 2 + 4 + 39 && session->font_frees == session->font_loads,
                 "%d loads, %d frees", session->font_loads, session->font_frees);
     TEST_CHECK_(!session->font_free_in_frame && !session->font_free_unwaited && !session->dead_font_uses,
                 "%d frees in a frame, %d without a wait, %d uses of a freed font", session->font_free_in_frame,
                 session->font_free_unwaited, session->dead_font_uses);
-    char log[4096] = "";
+    TEST_CHECK_(!session->fonts_both, "%d fonts both drew and measured", session->fonts_both);
+    TEST_CHECK_(session->most_glyphs <= 350, "a font held %d characters", session->most_glyphs);
+    /* four atlases at most (tools/check_settings_self.py FIXED): the two fonts, a drawing font replaced this frame,
+     * and for a moment the new measuring font before the one it replaces is freed */
+    TEST_CHECK_(session->most_fonts >= 3 && session->most_fonts <= 4, "%d fonts alive at once", session->most_fonts);
+    char log[8192] = "";
     FILE *f = fopen("ux0:data/VitaJPOverlay/log.txt", "rb");
     if (f) {
         log[fread(log, 1, sizeof(log) - 1, f)] = '\0';
         fclose(f);
     }
-    TEST_CHECK_(strstr(log, "font: an empty glyph atlas after 400 characters (1 time)") &&
-                    strstr(log, "font: an empty glyph atlas after 400 characters (3 times)"), "log.txt: %s", log);
-    /* the Games page alone, the same characters frame after frame: one font */
+    /* a line a frame with switches, the counts so far: the drawing font's first, the measuring font's three at once */
+    TEST_CHECK_(strstr(log, "font: an empty glyph atlas to draw with after 350 characters (1 time)\n") &&
+                    strstr(log, "font: an empty glyph atlas to measure with after 350 characters (3 times)\n"),
+                "log.txt: %s", log);
+    /* rows of 30 new characters a string, as the page measures a row: no font past 350 */
+    vjo_lookup_stub_glyphs = 30;
+    vjo_lookup_stub_measures = -30;
+    TEST_ASSERT(run(in, n) == n);
+    vjo_lookup_stub_glyphs = vjo_lookup_stub_measures = 0;
+    TEST_CHECK_(session->most_glyphs <= 350, "a font held %d characters", session->most_glyphs);
+    TEST_CHECK(!session->dead_font_uses && !session->fonts_both && session->font_frees == session->font_loads);
+    /* the Games page alone, the same characters frame after frame: the two fonts */
     static const Input games[24];
     TEST_ASSERT(run(games, 24) == 24);
-    TEST_CHECK(session->font_loads == 1 && !session->dead_font_uses);
+    TEST_CHECK(session->font_loads == 2 && !session->dead_font_uses);
+}
+
+/* main.c's Look up wiring (#313; the audit's M16b, M20, M28, M29): the page is shown when Select or its tab brings it
+ * and told when it is left (its dictionaries' files closed), whichever page comes next; Cancel is the page's while it
+ * holds it (an open earlier line); and after its keyboard, the button that closed the keyboard, still down, is no new
+ * press: here Circle, which would close the app. */
+#define TABS_TO_LOOKUP PRESS(SCE_CTRL_SELECT), PRESS(SCE_CTRL_SELECT), PRESS(SCE_CTRL_SELECT) /* Games -> Look up */
+static void test_the_look_up_page_s_wiring(void)
+{
+    card(NULL);
+    /* shown, left by Select (to Stats), shown by its tab, left by a tab (Games) */
+    {
+        Input in[2 * 8];
+        int n = 0;
+        static const Input lead[] = {TABS_TO_LOOKUP, PRESS(SCE_CTRL_SELECT)};
+        memcpy(in, lead, sizeof(lead));
+        n = (int)(sizeof(lead) / sizeof(lead[0]));
+        TEST_ASSERT(run(in, n) == n);
+        TEST_CHECK_(session->lookup_shows == 1 && session->lookup_leaves == 1, "Select: shown %d, left %d",
+                    session->lookup_shows, session->lookup_leaves);
+        Tabs t = tabs_of(1, 1); /* (frame 1: OCR & lookup, after the first Select) */
+        Input taps[] = {TAP(t.x[3] + t.w[3] / 2, TAB_Y + 20), TAP(t.x[0] + t.w[0] / 2, TAB_Y + 20),
+                        TAP(t.x[3] + t.w[3] / 2, TAB_Y + 20), TAP(t.x[3] + t.w[3] / 2, TAB_Y + 20)};
+        TEST_ASSERT(run(taps, 8) == 8);
+        /* the second tap on its own tab while shown: no second show */
+        TEST_CHECK_(session->lookup_shows == 2 && session->lookup_leaves == 1, "tabs: shown %d, left %d",
+                    session->lookup_shows, session->lookup_leaves);
+    }
+    /* Cancel held by the page: Circle pressed on it (frame 6) does not close the app, and the page gets it; once the
+     * page lets go, Circle (frame 8) closes the app */
+    {
+        static const Input in[] = {TABS_TO_LOOKUP, PRESS(SCE_CTRL_CIRCLE), PRESS(SCE_CTRL_CIRCLE), {0, 0, 0, 0}};
+        vjo_lookup_stub_hold_cancel_to = 3; /* while fewer than three of its frames have run: frames 4, 5 and 6 */
+        int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
+        vjo_lookup_stub_hold_cancel_to = 0;
+        TEST_CHECK_(frames == 8, "the app closed at frame %d, not 8", frames);
+        TEST_CHECK_(session->lookup_frames == 4 && session->lookup_pressed[2] == SCE_CTRL_CIRCLE,
+                    "%d frames of the page, its third's press %08X", session->lookup_frames, session->lookup_pressed[2]);
+    }
+    /* the keyboard (the page's second frame, frame 5, the keyboard's own): Circle down in the frame after it (6), as
+     * the keyboard's closing press, is no press (the page sees it held, not pressed) and does not close the app */
+    {
+        static const Input in[] = {TABS_TO_LOOKUP, {SCE_CTRL_CIRCLE, 0, 0, 0}, {SCE_CTRL_CIRCLE, 0, 0, 0}, {0, 0, 0, 0},
+                                   {0, 0, 0, 0}};
+        vjo_lookup_stub_keyboard_at = 2;
+        int frames = run(in, (int)(sizeof(in) / sizeof(in[0])));
+        vjo_lookup_stub_keyboard_at = 0;
+        TEST_CHECK_(frames == (int)(sizeof(in) / sizeof(in[0])), "the app closed at frame %d of %d", frames,
+                    (int)(sizeof(in) / sizeof(in[0])));
+        TEST_CHECK_(session->lookup_frames >= 3 && session->lookup_pressed[2] == 0 &&
+                        session->lookup_held[2] == SCE_CTRL_CIRCLE,
+                    "after the keyboard: pressed %08X, held %08X", session->lookup_pressed[2], session->lookup_held[2]);
+    }
 }
 
 TEST_LIST = {
     {"the_tab_bar_six_tabs_fit_their_labels_and_their_touches", test_the_tab_bar},
-    {"a_full_glyph_atlas_gets_an_empty_one", test_a_full_glyph_atlas_gets_an_empty_one},
+    {"the_look_up_page_s_wiring_show_leave_cancel_and_the_keyboard", test_the_look_up_page_s_wiring},
+    {"full_glyph_atlases_get_empty_ones", test_full_glyph_atlases_get_empty_ones},
     {"one_engine_VOCR_its_model_size_on_top_no_lens", test_one_engine_its_model_size_on_top},
     {"a_tap_in_the_cards_top_band_focuses_it_and_chooses_nothing", test_the_cards_top_band_focuses_it},
     {"exit_ends_the_process_without_vita2d_fini", test_exit_ends_the_process_without_vita2d_fini},

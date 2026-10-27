@@ -100,17 +100,25 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
   clock first, so that stream's newer stamp looked about 2^32 old. The stamps compare in the clock's serial order, as
   the job's do (within 2^31 new texts of each other: a stream silent for longer ranks as new). **A new caller can
   wait** while the least recently written slot stays busy: its caller off the CPU with the lock held, while the other
-  callers keep every CPU busy writing. On the host's hammer test (12 callers copying text in tight loops, or spinning
-  100 µs between copies, with new ones beside them) its longest wait was 0.18-0.48 s, against 0.04-0.45 s before #366,
-  whose takes were then almost all of the newest stream's slot; with callers that sleep between copies (1 ms, 100 µs,
-  a frame) it waited no longer than before (at most 17 ms). Passing a busy slot over would end the wait, but it gave
-  callers with two or more threads two slots (223 to 3,880 times in 20 runs of 500 ms, against none), one of which
-  keeps a stale text the job can take for the learned source; so a busy oldest slot still drops the hit. The console's
-  rate of string copies with every slot taken is unmeasured. A stream that agreed with OCR, and a stream pinned by a
-  diagnostic request, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. An agreeing stream
-  is kept only while its slot still holds the caller the job's snapshot saw (checked under the slot's lock), so a slot
-  another caller took during the job is not kept for the new one. The job's result says `VJO_HOOK_R_CALLS_FULL` (0x40
-  in `hook_flags`, the debug log's `flags`) once a caller found every slot taken (`vjo_hooks_call_stats`: hits dropped
+  callers keep every CPU busy writing. On the host's hammer test (12 callers copying text in tight loops, with new
+  ones beside them; three measurements: the author's and #366's two audits') its longest wait on three or four CPUs
+  was 0.15-0.49 s, against 0.04-0.16 s before #366, whose quick takes were then almost all of the newest stream's
+  slot, and on one CPU about 0.45 s for both; callers spinning 100 µs between copies, 0.12-0.18 s against 0.05-0.07 s;
+  with callers that sleep between copies (1 ms, 100 µs, a frame) at most 17 ms for both, but for one run of 40 ms
+  against 4 ms (a frame, four CPUs). Passing a busy slot over would end the wait, but it gave callers with two or more
+  threads two slots (223 to 5,980 times in 20 runs of 500 ms, two measurements, against none), and the second one
+  keeps the text it was taken with; so a busy oldest slot still drops the hit. Should a caller still hold two slots,
+  the job takes the newer of them for the learned source, the one its caller writes, whenever it can read that one
+  (`hooks_snapshot`, #366's audit-b; a busy newest slot leaves the job only the other): before, it took the last in ID
+  order, so with trust it showed the second slot's old line on every job, without OCR. The console's rate of string
+  copies with every slot taken is unmeasured. A stream that agreed with OCR, and a stream pinned by a diagnostic
+  request, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. Both keep it under the slot's
+  try-lock (busy: at the next such job), so a keep never lands while a new caller is taking the slot, where a pin
+  could let that caller's other thread pass the slot over as kept and take a second one (#366's audit-b, shown with a
+  seam test; no current Shell sends a pin: its requests carry the automatic pick or OCR's). An agreeing stream is kept
+  only while its slot still holds the caller the job's snapshot saw (checked under the slot's lock), so a slot another
+  caller took during the job is not kept for the new one. The job's result says `VJO_HOOK_R_CALLS_FULL` (0x40 in
+  `hook_flags`, the debug log's `flags`) once a caller found every slot taken (`vjo_hooks_call_stats`: hits dropped
   for lack of a slot, callers that replaced one).
 
 No syscall, no allocation and no waiting in this path: the slot's try-lock is taken or the hit is
@@ -291,8 +299,8 @@ Two lists name them:
       (`VJO_PLACE_RELOCATED`, after its bytes and NID matched; #316's audit F4). A fixed-address executable is
       loaded there and all of it where it was linked: games built with an SDK 2.60 and lower "were compiled as a
       statically linked executable, thus their loading address is always the same, namely `0x81000000`, and they
-      cannot be relocated", and a relocatable one is placed by the loader's ASLR ("ASLR is only enabled for
-      executables/modules", [h-encore's write-up](https://github.com/TheOfficialFloW/h-encore/blob/85b345e28f38d728a7ac33a35b9d6f32db93e8fc/WRITE-UP.md)),
+      cannot be relocated", and a relocatable one is placed by the loader's ASLR ("It seems like ASLR is only enabled
+      for executables/modules", [h-encore's write-up](https://github.com/TheOfficialFloW/h-encore/blob/85b345e28f38d728a7ac33a35b9d6f32db93e8fc/WRITE-UP.md)),
       so it is not expected at exactly 0x81000000 (not measured in Rubi's logs: console step 15 asks for CLANNAD's
       `seg0`, a relocatable eboot's, from two starts). What the check leaves: a relocatable eboot loaded with
       segment 0 at 0x81000000 and its data within the same 64 KiB as linked keeps the recorded `movt r0,
@@ -464,10 +472,18 @@ Rubi's entries on them:
   only, never a script; each field of Rubi's entry is checked against the record by name (#316's audit F3:
   the test had installed Rubi's own NID, bytes, register and padding, so 4 of the audit's 30 mutations of
   them passed; all 4 fail it now, and so do a mode, an SC3 entry's NID and PCSG00620's padding changed). The
-  SC3 test runs its three entries in their records' games too. The excerpts and the 37 records were generated
-  from a folder of the bucket's pages for the 14 titles below, the three SC3 titles and the hook farm's 20 of
-  2026-10-27 (PCSG00272 gives no excerpt, only its record: each of its pages also holds its speaker site's hit);
-  the 14 titles' 50 excerpts and the other 17 records come out as before.
+  SC3 test runs its three entries in their records' games too. Every record's mode is checked: five of the farm's
+  records say to check their mode by disassembly (their recorded flag is not the code's), and `fixtures` writes
+  the mode their 16 bytes decode to with LLVM 18.1.8's `llvm-mc` (`tools/hook_farm.py` `MODES_BY_DISASSEMBLY`:
+  PCSG00469 and PCSG00509 Thumb, PCSG00553, PCSG00807 and the hook farm's PCSG00706 ARM), so a flipped flag fails there too, and so does an
+  entry that pins fewer of the farm's 16 bytes (audit-rubi-audit-fix-hooks A-F1, A-N1), but for PCSG00505's 8, whose
+  next 8 the test checks are a `movw`/`movt` pair of one register in the farm's bytes (a relocated address). What the farm cannot pin:
+  an entry's filter on text that no farm hit holds. PCSG00713's entry has none, and none of its 2,738 farm hits
+  holds a character any of Rubi's filters change [measured: the bucket's hits, counted], so a filter there would
+  change no farm text and the test cannot see one (A-N2).
+  The excerpts and the 37 records were generated from a folder of the bucket's pages for the 14 titles below, the
+  three SC3 titles and the hook farm's 20 of 2026-10-27 (PCSG00272 gives no excerpt, only its record: each of its
+  pages also holds its speaker site's hit); the 14 titles' 50 excerpts and the other 17 records come out as before.
 
 Single-hit pages of the bucket of 2026-10-26 (04:36Z) whose text is the farm's, as shown, with main's
 filters before this change and Rubi's now [measured: `tools/hook_farm.py check` on the host]:
@@ -786,15 +802,26 @@ OCR resumes by itself, in the same job, when no trusted source has text: an empt
 a learned source whose slot another caller took (that job also unlocks it, as before); a pending disagreement
 (`misses`). The selection then goes on as before (`vjo_hook_select_before`, OCR, `vjo_hook_select_after`), and
 such a job's disagreement takes the close agreement's mark back. A trusted source that has text is not compared
-again: no job of it runs OCR, so in its session only its slot changing hands, or a job without its text whose OCR
-then disagrees, ends its trust. Learning never stops: a regular source learns and is checked as in 0.9.7 until it is
-trusted. The cache keeps the trust (API 49): it saves the interval 32 only for a trusted source (16 for one that
-reached 32 without the close agreement, or with a pending disagreement), and a source restored at 32 (the same
-caller of the same executable, the cache key's SHA-256) is trusted at once at the next launch, with no startup
-confirmation (API 43 ran one OCR job a launch for it; `vjo_hook_select_before` still asks for it with
-`hook_trust = off`). With `hook_trust = off`
+again: no job of it runs OCR, so only its slot changing hands, or `hook_trust = off`, ends its trust (a job without
+its text compares nothing: `vjo_hook_select_after` compares the learned source only when the job holds its text;
+#338's audit N1). With trust kept between launches (below) that holds for as long as the cache entry lives: the same
+executable, hook definitions and text source. Learning never stops: a regular source learns and is checked as in
+0.9.7 until it is trusted. The cache keeps the trust (API 49) in a bit of its own (`VjoHookLearned.trusted`, bit 1 of
+the record's site word): with `hook_trust = on` a trusted source (at 32 with the close agreement and no pending
+disagreement) is saved trusted, and one restored so (the same caller of the same executable, the cache key's
+SHA-256) is trusted at once at the next launch, with no startup confirmation (API 43 ran one OCR job a launch for it;
+`vjo_hook_select_before` still asks for it with `hook_trust = off`). The interval is saved as it is, as 0.9.7 saved it
+(#338's audit F1: API 49 had saved a source at 32 that was not trusted at 16, whatever the setting, so with
+`hook_trust = off` a restart's cadence and the cache's writes differed from 0.9.7's: a write at a first
+disagreement, one more confirmation before 32). With `hook_trust = off` nothing is saved trusted: a record saved trusted
+in a launch with it on is saved again untrusted at that launch's first save (one write), and the cadence is 0.9.7's.
+With `hook_trust = off`
 (or any pick but the automatic one, the self-test's included) nothing of this runs: Rubi 0.9.7's selection, byte
-for byte the same decisions (`host/tests/test_game_hooks.c`, `host/tests/test_hook_select.c`).
+for byte the same decisions and cache writes (`host/tests/test_game_hooks.c` `remembered_hook_worker_cadence`, which
+API 49 had changed and expects 0.9.7's again, and `remembered_trust_is_its_own_bit`; `host/tests/test_hook_select.c`,
+`host/tests/test_hook_cache.c`). Every change to the hook code renews the hook definitions' revision
+(`cmake/HookRevision.cmake`), and the cache key holds it, so a build with such a change (API 49's and this one
+included) restores nothing from an earlier build's cache: every source learns again at its first launch.
 
 What trust gives up: a trusted hook's text is never checked against the screen. A screen the hook did not copy (a
 choice menu, a backlog, a CG with the box hidden) shows the hook's last line, as a Luna site's always has, and a
@@ -820,7 +847,7 @@ claim]:
 | --- | --- | --- |
 | Luna site | 0 OCR jobs | 0 OCR jobs |
 | Rubi verified site | 1,620 OCR jobs (0.188 a line), 0.449 lines recognized a line, 17.5 CTC frames a line, the weights read 29 times; the worker's blocks 4,747 KiB at a job's peak and 4,487 KiB kept after it (means) | **0 OCR jobs**, nothing recognized or read, 0 KiB at a job's peak (API 49: no capture strip), 0 kept |
-| String copy | the same as the verified site's | **656 OCR jobs (0.076 a line)**, 0.185 lines recognized a line, 8.0 CTC frames a line; 1,313 / 1,202 KiB; trusted in 27 of 29 sessions, from line 43 (median), 6,444 trusted answers, none wrong |
+| String copy | the same as the verified site's | **656 OCR jobs (0.076 a line)**, 0.185 lines recognized a line, 8.0 CTC frames a line; 1,313 / 1,202 KiB; trusted in 27 of 29 sessions, from line 43 (median), 6,444 trusted answers, none wrong (true by construction: the bench's string copy holds the page's own line, #338's audit N6; only the caller one page behind tests the rule) |
 | The caller one page behind | 8,579 OCR jobs | the same: **never trusted**, no wrong trusted answer |
 | Luna site, 3 MiB free | **every one of the 8,640 jobs refused**: its pass kept the 4 MiB OCR reserve | 0 refused |
 | Rubi verified site, 3 MiB free | 603 refused (lines under 4 characters, the no-memory path's limit) | 0 refused |
@@ -995,8 +1022,13 @@ in place with its lookup):
 Before, a line waited for the watch's report (58 ms on average: the take's 100 ms wait), then the job's capture pass
 (three frames for the region), then the lookup; a line written while the last one drew (clicks) woke nobody, and a
 site's first line, or one that grows, waited for the pixels to settle. With API 49 the report comes 8 ms after the
-copy on average (16 at most), the job's text with it (no frame waited for), then the lookup's 70 ms: the poll and the
-lookup are all that is left.
+copy on average (16 at most), the job's text with it (no frame waited for), then the lookup's 70 ms: in the normal
+build (the release's main download) the poll and the lookup are all that is left. The bench's network thread is the
+normal build's, which writes no log line on that path (release-variants.md). The debug build, which every test build
+is, also writes the job's result lines, with the hook's source line, in one append per file before the text is ready
+(#338's audit F2; #360 moved its text, lookup and done lines after the result): one append of `log.txt`, and one of
+`status.txt` while that is under 64 KiB, 9-47 ms each on the console ([performance.md](performance.md)), so an
+estimated 9-94 ms more there, not in the bench.
 
 **The poll.** The same sessions, reading, with the watch's pace built 4, 8, 16 and 33 ms (`vjo-hook-latency-bench-*`):
 
@@ -1019,8 +1051,26 @@ Limits:
 - A text that comes back (the same line after another text, or a backlog that copies it again) is a new line again;
   only the same text twice in a row is not.
 - The poll wakes the worker 63 times a second instead of 10 while a game has table sites or a trusted source;
-  that cost is not measured on a console.
-- History: a line given in parts more than 750 ms apart is two records.
+  that cost is not measured on a console. It runs with **Only when I press L + R** too, once the first press's job
+  has carried `VJO_GAME_OCR_S_TRUST`: every job carries it (`config_speed`), while that mode reads nothing in the
+  background, so there the 63 wakeups a second find no read behind them and a trusted line wakes the Shell for none
+  (#338's audit N3; not gated, a cost to measure on a console).
+- A trusted stream whose text changes often (a name or choice site beside the dialogue's: 114 of the 190 Vita titles
+  in [hook-titles.md](hook-titles.md) had more than one ported or verified site at `3388f7a` [the audit's count], their
+  roles unlabelled; a learned
+  caller that also copies other strings) makes every distinct text a line at once: a job with a lookup in the Shell,
+  the open overlay's text replaced and its cursor reset, and a `history.csv` record unless its job is cancelled. API
+  41's 200 ms gap and its no-wakeup-while-drawing rule used to bound this; the bench has one stream (#338's audit N5).
+- The bench leaves out the Shell's `game_job_lock` (an Anki screenshot's exchange holds it), the overlay's open path
+  (its `config.ini` re-read, `vjoSetInputBlock`), the history append between jobs and the worker's lowest-priority
+  scheduling, which can stretch its 16 ms wait while the game's threads run; its `vjoGetState` and `change_detection`
+  are copies of `kernel/main.c`'s (`host/hook_latency_bench.c`), and no host test compiles `kernel/main.c`, so its
+  two `hook_scene` lines are tested through the copy only (#338's audit N7).
+- History: a line given in parts more than 750 ms apart is two records. The converse: two lines are one record when
+  the second starts with the whole first and comes under 750 ms after it (the first line's record is replaced; #338's
+  audit N9). In the bench's 30 titles' pool 225 of 8,910 consecutive page pairs have the next text start with the whole
+  previous one, 198 of them in PCSG00648, whose box adds its lines (the record is the box, nothing lost), and 3 after a
+  line of 3 characters or fewer [the audit's count, not re-measured].
 
 No block, thread or buffer: a few words of `.bss` (the kernel's `hook_scene`, the worker's trust and the last
 reported text's hash, the Shell's newest record's place: 32 B of data), and the code, within the modules' declared
@@ -1155,9 +1205,10 @@ Hardware is paused; these are for the test issue (#230):
    On a fresh cache, confirm two distinct lines, then seven hook-only readings and a checked eighth;
    successful scheduled checks step to 16 and 32. Close/reopen the unchanged seventh line and confirm
    the next new line is still the eighth, rather than resetting or promoting the interval.
-8. Restart the same exact game build: one startup confirmation, then the saved interval with a fresh
-   counter. A menu, blank screen, missing hook, or inconclusive OCR retains the learned identity and
-   requires confirmation when comparable dialogue returns.
+8. Restart the same exact game build with `hook_trust = off`: one startup confirmation, then the saved interval
+   with a fresh counter. A menu, blank screen, missing hook, or inconclusive OCR retains the learned identity and
+   requires confirmation when comparable dialogue returns. With `hook_trust = on` (the default) a source saved
+   trusted needs no startup confirmation (step 14); one saved untrusted gets it, as here.
 9. With Only when I press L + R, and with the subtitle strip: the same texts and confidence rules.
 10. Check one comparable disagreement, then agreement: OCR fallback first, then resume at eight. Two
     consecutive disagreements on fresh dialogue must unlock. Inconclusive and unchanged repeated readings
@@ -1186,8 +1237,13 @@ Hardware is paused; these are for the test issue (#230):
     `trusted hook's capture, scene N` (no `first pass in`), all before the line has finished typing; L + R at once
     opens on it with its first word looked up. Click through several lines quickly: each one is read (a `hook line …
     trusted` and a job each), and the overlay shows the last. With the overlay open and the game on auto: each line
-    replaces the text as it starts. Close the game and start it again: the first line is trusted at once (no OCR job
-    before it). `history.csv` has one record a line.
+    replaces the text as it starts. Close the game and start it again: the first dialogue line is trusted at once (no
+    confirmation OCR for it: the game's first job, its title screen's, still runs OCR and loads the cache). `history.csv`
+    has one record a line. The debug build writes the job's result lines and the hook's source line in one append
+    per file (two while `status.txt` is under 64 KiB) before the text is ready (#338's audit F2): on a short line the
+    "before it has finished typing" can fail by those appends (9-47 ms each, [performance.md](performance.md)), the
+    debug build's own cost; `kernel.txt`'s `hook line … trusted` and `trusted hook's capture` times are the kernel's,
+    before them.
 15. #349, a Luna entry at Vita3K's guest address (the debug build, `text_source = auto`, `hook_trust = on`, the
     default): TIME TRAVELERS (`PCSG00062`). `hooks.log` shows `main module tt1_rom NID … seg0 81000000+31258C
     APP_VER 0100; 0 verified, 2 Luna sites` (the 01.01 update is another build, `eboot` in its Vita3K log: `main module
@@ -1220,6 +1276,12 @@ Hardware is paused; these are for the test issue (#230):
     and `[―――]` dash runs included. For both, play through menus, a save and a load: a crash that **OCR only**
     does not have is what a branch elsewhere into their patched bytes would look like (unchecked: the farm's
     bucket has no dump of their code).
+18. #338's audit (the debug build, CLANNAD, Automatically): with `hook_trust = off`, once step 7's source is at 32,
+    close and start the game twice: at each start one confirmation (`flags 0x01` or `0x03`, OCR), then hook-only
+    lines (`0x0A`) at once at 32, as 0.9.7 (API 49 restarted it at 16 when no check at 32 had scored 900, or a
+    disagreement had followed). Then `hook_trust = on`: after one close agreement at 32 the source's jobs say `flags 0x10A`, and
+    from the next start at once (no confirmation). A line the hook gives in parts (step 14): one `history.csv`
+    record, with its first part's ID and time.
 
 ## PSP probe (debug build)
 

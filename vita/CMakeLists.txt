@@ -327,8 +327,11 @@ if(VJO_WITH_VOCR)
   target_sources(VitaJPOverlay_OCR PRIVATE ${ROOT}/core/hook_select.c ${ROOT}/core/hook_cache.c)
   set_source_files_properties(${ROOT}/core/hook_select.c ${ROOT}/core/hook_cache.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The job path decodes a stream's text (vjo_hooks_text): for a Luna site through its filter, whose
-  # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size.
-  set_source_files_properties(${ROOT}/core/hook_re.c PROPERTIES COMPILE_OPTIONS "-Os")
+  # regular expressions (core/hook_re.c, in the engine's list) are control code too: for size. So are
+  # core/hook_luna.c's filter ops and Luna sites' reads (run_ops, vjo_luna_capture: a few per hit or job): -Os
+  # makes room for the hook farm's 20 entries of #394 in both builds' pages (its text 5,612 -> 4,168 B and rodata
+  # 13,595 -> 13,347 B, the normal build's object; docs/memory-ledger.md, "The hook farm's 20 verified entries").
+  set_source_files_properties(${ROOT}/core/hook_re.c ${ROOT}/core/hook_luna.c PROPERTIES COMPILE_OPTIONS "-Os")
   # MAGES' SC3 text (core/hook_sc3.c): a hit's span and the job's decoder, for size too.
   set_source_files_properties(${ROOT}/core/hook_sc3.c PROPERTIES COMPILE_OPTIONS "-Os")
   # The read-only PSP probe (docs/native-hooks.md "PSP probe (debug build)"): the debug build's worker only,
@@ -411,7 +414,9 @@ add_custom_target(vjo_rco ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/vitajpoverlay.
 include(${ROOT}/cmake/SettingsPNG.cmake)
 # The Anki page (settings/anki_page.c): the export of the queue (settings/anki_export.c) as Lapis
 # notes in an .apkg (core/apkg.c: SQLite, ZIP and the Lapis note type, core/sqlw.c, zipw.c, lapis.c),
-# made from the queue's records (core/anki_queue.c) with core/anki.c's fields. No network.
+# made from the queue's records (core/anki_queue.c) with core/anki.c's fields, and the readings over their
+# sentences from the local dictionaries (#311: core/sentence_reading.c, its files through settings/app_platform.c,
+# the Look up page's, below). No network.
 # The Cards page (#315, settings/cards_page.c): the queue's cards listed, one deleted, its sentence fixed or its
 # picture dropped (settings/cards.c), its picture decoded by the SDK's libjpeg (settings/card_picture.c).
 set(VJO_SETTINGS_ANKI_SRC
@@ -419,7 +424,8 @@ set(VJO_SETTINGS_ANKI_SRC
   ${ROOT}/settings/cards.c ${ROOT}/settings/cards_page.c ${ROOT}/settings/card_picture.c
   ${ROOT}/core/anki.c ${ROOT}/core/textjoin.c ${ROOT}/core/anki_queue.c ${ROOT}/core/apkg.c ${ROOT}/core/sqlw.c ${ROOT}/core/zipw.c
   ${ROOT}/core/lapis.c ${ROOT}/core/json.c ${ROOT}/core/entries.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
-  ${ROOT}/core/word_key.c)
+  ${ROOT}/core/word_key.c
+  ${ROOT}/core/sentence_reading.c) # #311: readings over a card's sentence
 # The Stats tab (settings/stats_page.c, #312): history.csv counted with the Triangle view's own reading-time rule
 # (core/history_lines.c's vjo_reading_time_add, the Shell's; of it the link keeps what the tab calls), per game and
 # per day (core/stats.c) and the record reader (core/history_read.c); the goal is app.ini's (settings/app_prefs.c).

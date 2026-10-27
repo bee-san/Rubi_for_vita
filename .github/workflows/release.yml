@@ -166,14 +166,15 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .refs/apt-host
-          key: apt-host-ubuntu-24.04-ninja-pil-v3
-      - run: bash tools/ci_apt_cache.sh .refs/apt-host ninja-build python3-pil
+          key: apt-host-ubuntu-24.04-ninja-pil-jpeg-v4
+      # libjpeg's headers: the card picture's decoder test (test_card_picture.c), required (VJO_REQUIRE_JPEG)
+      - run: bash tools/ci_apt_cache.sh .refs/apt-host ninja-build python3-pil libjpeg-turbo8-dev
       - if: ${{ steps.apt-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: .refs/apt-host
-          key: apt-host-ubuntu-24.04-ninja-pil-v3
-      - run: cmake -S . -B build/host -G Ninja -DVJO_DEBUG=${{ matrix.debug }} -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr -DVJO_VOCR_SPOT_SOURCE_DIR=$PWD/.refs/vita-vn-ocr-spot && cmake --build build/host "-j$(nproc)"
+          key: apt-host-ubuntu-24.04-ninja-pil-jpeg-v4
+      - run: cmake -S . -B build/host -G Ninja -DVJO_DEBUG=${{ matrix.debug }} -DVJO_REQUIRE_JPEG=ON -DVJO_VOCR_SOURCE_DIR=$PWD/.refs/vita-vn-ocr -DVJO_VOCR_SPOT_SOURCE_DIR=$PWD/.refs/vita-vn-ocr-spot && cmake --build build/host "-j$(nproc)"
       # Anki itself imports the Rubi app's .apkg packages (host/tests/test_apkg.py): the anki
       # package (Anki 26.09.3), hash-pinned for Python 3.12, in a venv of its own. This Python is
       # not put on PATH, so CMake's Python and the image tests' Pillow stay the system's.
@@ -191,8 +192,8 @@ jobs:
       # -j twice the processors: the tools' Python suites (one test per module, tools_*, the slowest first)
       # spend much of their time waiting on the programs and the FTP mock they run. The normal build leaves
       # the suites that never read the build (label variant_free) to the debug build's job; a change to the
-      # hooks' verified-entry table alone leaves out the tools' suites (label tools), whose programs have no
-      # hook table in them.
+      # hooks' verified-entry table alone leaves out the tools' suites whose programs do not read it (label
+      # tools: all but tools_hook_request and tools_hook_farm).
       - name: ctest (parallel)
         run: ctest --test-dir build/host -j$(( $(nproc) * 2 )) --output-on-failure $SELECT
         env:

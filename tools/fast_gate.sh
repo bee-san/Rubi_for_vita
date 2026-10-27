@@ -209,8 +209,10 @@ if [ "$ENGINE" != none ]; then
   # writer syncs every append): on the overlay each sync waits for whatever else the machine writes, and with
   # the fleet's training and gates on the same disk shell_history took 98-120+ s of its 120 s TIMEOUT, in every
   # host lane, on main too (2026-10-27); on tmpfs 2.2 s against 40.2 s on the overlay in the same minute. Only
-  # where the files are changes: CI's runners and CONTAINER_ENGINE=none keep their own TMPDIR.
-  USER_ARGS+=(--tmpfs /tmp:rw,exec,nosuid,nodev,mode=1777)
+  # where the files are changes: CI's runners and CONTAINER_ENGINE=none keep their own TMPDIR. At most 2 GiB a
+  # lane, so a runaway suite fails instead of filling the machine's memory: the lanes' peaks were 143,616 KiB
+  # (host-debug), 132,144 KiB (models) and 99,280 KiB (arm-debug) [measured, #315's audit, 2026-10-27].
+  USER_ARGS+=(--tmpfs /tmp:rw,exec,nosuid,nodev,mode=1777,size=2g)
 fi
 run_lane() { # run_lane NAME host|vita SCRIPT: SCRIPT in that image (or here), its log in LOGS/NAME.log
   local name=$1 kind=$2 script=$3 t0 rc
@@ -249,12 +251,16 @@ echo "fast gate: $(git rev-parse --short HEAD)${DIRTY:+ + local changes} against
 # ---- host: build and every suite, both builds
 anki='export VJO_ANKI_PYTHON=/opt/anki/bin/python VJO_REQUIRE_ANKI=1'
 [ "$ENGINE" != none ] || anki='[ -z "${VJO_ANKI_PYTHON:-}" ] || export VJO_REQUIRE_ANKI=1'
+# the card picture's decoder test: the image has libjpeg's headers, so without them the configure fails; with
+# CONTAINER_ENGINE=none it is built where this machine has them
+jpeg=-DVJO_REQUIRE_JPEG=ON
+[ "$ENGINE" != none ] || jpeg=
 for v in debug normal; do
   dbg=$([ $v = debug ] && echo ON || echo OFF)
   select=$([ $v = normal ] && echo "-LE variant_free" || true)
   run_lane host-$v host "
 cmake -S . -B $(q "$OUT/host-$v") -G Ninja -DVJO_DEBUG=$dbg -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
-  -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS")
+  -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") $jpeg
 cmake --build $(q "$OUT/host-$v") -j$JOBS
 $anki
 ctest --test-dir $(q "$OUT/host-$v") -j$JOBS --output-on-failure $select" &
@@ -272,8 +278,8 @@ if ! seen=\$(python3 tools/prepare_ocr.py --backend vocr-tests --check --output 
   exit 1
 fi
 cmake -S . -B $(q "$OUT/models-debug") -G Ninja -DVJO_DEBUG=ON -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
-  -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") -DVJO_VOCR_MODEL_DIR=$(q "$MODEL_DIR") \\
-  -DVJO_VOCR_GATE_BLOB=$(q "$MODEL_DIR/textgate_p8_c8_w8.vtd")
+  -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") -DVJO_VOCR_MODEL_DIR=$(q "$MODEL_DIR") \\
+  -DVJO_VOCR_GATE_BLOB=$(q "$MODEL_DIR/textgate_p8_c8_w8.vtd") $jpeg
 cmake --build $(q "$OUT/models-debug") -j$JOBS
 $anki
 ctest --test-dir $(q "$OUT/models-debug") -j$JOBS --output-on-failure -LE variant_free" &

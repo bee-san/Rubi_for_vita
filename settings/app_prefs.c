@@ -22,9 +22,15 @@ static const char *const daily_goals[] = {"off", "2000_characters", "5000_charac
                                           "60_minutes", "120_minutes", NULL};
 _Static_assert(sizeof(daily_goals) / sizeof(daily_goals[0]) == VJO_GOALS + 1, "a name for each VJO_GOAL_*");
 
+static const char *const card_types[] = {"word", "sentence", "word_sentence", "click", NULL}; /* VJO_CARD_*'s */
+static const char *const off_on[] = {"off", "on", NULL};
+
 static const Row rows[] = {
     {"anki_duplicates", offsetof(VjoAppPrefs, anki_duplicates), duplicates},
     {"stats_daily_goal", offsetof(VjoAppPrefs, stats_daily_goal), daily_goals},
+    {"anki_card_type", offsetof(VjoAppPrefs, anki_card_type), card_types},
+    {"anki_game_tag", offsetof(VjoAppPrefs, anki_game_tag), off_on},
+    {"anki_sentence_readings", offsetof(VjoAppPrefs, anki_sentence_readings), off_on},
 };
 #define ROWS ((int)(sizeof(rows) / sizeof(rows[0])))
 

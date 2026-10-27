@@ -337,6 +337,7 @@ int vjo_gstep_format(char *buf, size_t cap, const char *who, const VjoGameOcrSte
              * of a border dropped (core/textnorm.h); API 42: the share of the frames the head gate skipped,
              * percent (a job without it, or that skipped none, "-" as before); API 47: find's 1 columns, 2 rows
              * that looked like vertical text, 3 auto's columns without the vertical model (rows, "-", as before);
+             * API 53: 4 on's rows, 5 the columns without room (the rows next);
              * API 54: 1 when the spotter found the lines */
             sceClibSnprintf(kindbuf, sizeof(kindbuf), "%u", (unsigned)s->kind);
             kind = kindbuf;

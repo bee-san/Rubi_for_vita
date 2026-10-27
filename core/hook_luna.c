@@ -621,8 +621,8 @@ static const LunaOp *const vjo_luna_post[VJO_LH_COUNT] = {
  * docs/memory-ledger.md, "Tables in the data segment"). Since the hook farm's 20 entries of 2026-10-27 filled that
  * page, the filters' index, PCSG00628's ops and escapes (#316's audit) and the five arrays that batch added or grew
  * (PROTOTYPE_NAMELINE with PROTOTYPE in it, PCSG00472 with IFENGINE, AOZORA_RUBY, CARET_NEWLINE, PCSG01250), 853 B,
- * are read-only data again, which the normal build's last code page holds (docs/memory-ledger.md, "The hook farm's
- * 20 verified entries"). Their strings stay read-only. */
+ * are read-only data again, and this file is built for size in the worker (vita/CMakeLists.txt), so both builds keep
+ * their pages (docs/memory-ledger.md, "The hook farm's 20 verified entries"). Their strings stay read-only. */
 _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one byte");
 #define RCALL(f) {OP_CALL, 0, VJO_RF_##f, NULL, NULL}
 
@@ -1053,7 +1053,8 @@ static void run_ops(Txt *t, const LunaOp *op, unsigned depth)
 {
     for (; op && op->op != OP_END && !t->bad && t->len; op++) {
         long at;
-        if (op->enc && !(op->enc & (1u << t->enc))) continue;
+        /* (CP932 with its 0xA0 kept is CP932 for an op gated by encoding: audit-rubi-audit-fix-hooks A-N5) */
+        if (op->enc && !(op->enc & (1u << (t->enc & ~VJO_HOOK_DECODE_A0)))) continue;
         switch (op->op) {
         case OP_DEL:
         case OP_REP:

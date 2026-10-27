@@ -1217,6 +1217,14 @@ static void a0_only_where_named(void)
         text_a0_entry(f, (const uint8_t *)"r\x93\x8c\x8b\x9e", 5, b, sizeof b);
         TEST_CHECK_(!strcmp(b, "東京"), "filter 0x%02X without the byte: [%s]", f, b);
     }
+    /* in VJO_HOOK_ENC_CP932_A0 a Luna filter's CP932-only op runs as in CP932 (audit-rubi-audit-fix-hooks A-N5: the
+     * encoding gate shifted by 0x13 skipped it): FPCSG00855's #n removal, its E_SJ form */
+    {
+        static const uint8_t fx[] = "\x88\xea#n\x93\xf1"; /* 一#n二 */
+        text_a0_entry(VJO_LF_FPCSG00855, fx, sizeof fx - 1, a, sizeof a);
+        text_a0(NULL, VJO_LF_FPCSG00855, fx, sizeof fx - 1, b, sizeof b);
+        TEST_CHECK_(!strcmp(a, "一二") && !strcmp(b, "一二"), "FPCSG00855: [%s] in CP932_A0, [%s] in CP932", a, b);
+    }
     /* every title's ported CP932 sites */
     for (unsigned t = 0; vjo_luna_title(t); t++) {
         const VjoLunaSite *all;

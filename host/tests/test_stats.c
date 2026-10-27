@@ -227,7 +227,7 @@ static void check_parity(const Text *t, const char *what, int32_t tz)
 {
     int cut = !t->len || t->buf[t->len - 1] != '\n';
     for (size_t k = 0; k < sizeof(games) / sizeof(games[0]); k++) {
-        char uuid[32];
+        char uuid[VJO_STATS_UUID];
         snprintf(uuid, sizeof(uuid), "%s-%s", games[k].platform, games[k].tid);
         int g = find_game(&s, uuid);
         if (g < 0)
@@ -301,6 +301,131 @@ static void test_windows_and_resume(void)
         scan_windows(&s, &t, 4096);
         TEST_CHECK_(!memcmp(&s, &s2, sizeof(s)), "stopped at %zu", stop);
     }
+    free(t.buf);
+}
+
+/* A count stopped at any byte, cached and resumed, gives one count's result: every byte of a small file with every
+ * kind of damage, both rules (audit follow-up: a '"' at a line's start as a window's last byte, whose next byte says
+ * whether it starts a record, was skipped when the window had no other record start, as a file of its header alone
+ * does). */
+static void test_resume_at_every_byte(void)
+{
+    static unsigned char cache[1 << 20];
+    for (int rule = VJO_READING_ADAPTIVE; rule <= VJO_READING_GAPS_15S; rule++) {
+        Text t = {0};
+        int differ = 0;
+        vjo_reading_rule = (uint32_t)rule;
+        random_history(&t, 40, 1234 + (unsigned)rule, 1);
+        vjo_stats_reset(&s2, 540, (uint32_t)rule);
+        scan_windows(&s2, &t, 1 << 20);
+        for (size_t stop = 1; stop < t.len; stop++) {
+            Text part = {t.buf, stop, 0};
+            char keep = t.buf[stop];
+            t.buf[stop] = 0;
+            vjo_stats_reset(&s, 540, (uint32_t)rule);
+            scan_windows(&s, &part, 2048);
+            t.buf[stop] = keep;
+            s.history_bytes = stop; /* (the page's: the file's size when it was counted) */
+            size_t n = vjo_stats_cache_write(&s, cache, sizeof(cache));
+            TEST_ASSERT(n && vjo_stats_cache_read(&s, cache, n, 540, (uint32_t)rule) == VJO_STATS_CACHE_OK);
+            s.history_bytes = 0;
+            scan_windows(&s, &t, 2048);
+            if (memcmp(&s, &s2, sizeof(s)) && differ++ < 3)
+                TEST_CHECK_(0, "rule %d, stopped at %zu: %llu records, one count %llu", rule, stop,
+                            (unsigned long long)s.records, (unsigned long long)s2.records);
+        }
+        TEST_CHECK_(!differ, "rule %d: %d of %zu stops differ", rule, differ, t.len - 1);
+        free(t.buf);
+    }
+    vjo_reading_rule = VJO_READING_ADAPTIVE;
+    /* (audit-rubi-rm2 F1) two counts in a row, at a record's start and one byte after it, then the rest: one count's
+     * result, at every record start, both rules */
+    for (int rule = VJO_READING_ADAPTIVE; rule <= VJO_READING_GAPS_15S; rule++) {
+        Text t = {0};
+        int chains = 0, differ = 0;
+        vjo_reading_rule = (uint32_t)rule;
+        random_history(&t, 40, 77 + (unsigned)rule, 1);
+        vjo_stats_reset(&s2, 0, (uint32_t)rule);
+        scan_windows(&s2, &t, 1 << 20);
+        for (size_t b = 1; b + 1 < t.len; b++) {
+            if (!(t.buf[b] == '"' && t.buf[b - 1] == '\n'))
+                continue;
+            chains++;
+            vjo_stats_reset(&s, 0, (uint32_t)rule);
+            for (size_t stop = b; stop <= b + 1; stop++) {
+                Text part = {t.buf, stop, 0};
+                char keep = t.buf[stop];
+                t.buf[stop] = 0;
+                scan_windows(&s, &part, 2048);
+                t.buf[stop] = keep;
+                s.history_bytes = stop;
+                size_t n = vjo_stats_cache_write(&s, cache, sizeof(cache));
+                TEST_ASSERT(n && vjo_stats_cache_read(&s, cache, n, 0, (uint32_t)rule) == VJO_STATS_CACHE_OK);
+                s.history_bytes = 0;
+            }
+            scan_windows(&s, &t, 2048);
+            if (memcmp(&s, &s2, sizeof(s)) && differ++ < 3)
+                TEST_CHECK_(0, "rule %d: counts at %zu and %zu, then the rest: %llu records, one count %llu", rule, b,
+                            b + 1, (unsigned long long)s.records, (unsigned long long)s2.records);
+        }
+        TEST_CHECK_(chains > 30 && !differ, "rule %d: %d of %d chains differ", rule, differ, chains);
+        free(t.buf);
+    }
+    vjo_reading_rule = VJO_READING_ADAPTIVE;
+    /* the same in the middle of a file: a window that holds no record start and ends in one's first byte */
+    Text t = {0};
+    char big[4000];
+    memset(big, 'a', sizeof(big) - 1);
+    big[sizeof(big) - 1] = 0;
+    record(&t, "vita", "PCSG00415", "CLANNAD", big, 1792220400000000ull, 0);
+    record(&t, "vita", "PCSG00415", "CLANNAD", "あいうえお", 1792220410000000ull, 0);
+    size_t second = (size_t)(strstr(t.buf, "\"vita-PCSG00415\",\"vjo-1792220410000000") - t.buf);
+    vjo_stats_reset(&s2, 0, 0);
+    scan_windows(&s2, &t, 1 << 20);
+    for (size_t at = second - 2100; at < second; at += 97) {
+        vjo_stats_reset(&s, 0, 0);
+        s.covered = at; /* (a count from a byte inside the long record: its windows end at every offset) */
+        for (size_t w = 1; w < 2100 && s.covered < second; w += 1) {
+            if (s.covered + w == second + 1) { /* the window's last byte is the second record's '"' */
+                char buf[4096];
+                uint64_t base = s.covered - 1;
+                memcpy(buf, t.buf + base, (size_t)(second + 1 - base));
+                vjo_stats_scan(&s, buf, (size_t)(second + 1 - base), base, VJO_STATS_SCAN_MORE);
+                TEST_CHECK_(s.covered == second, "from %zu: the next window starts at %llu, not at the record's %zu", at,
+                            (unsigned long long)s.covered, second);
+                break;
+            }
+        }
+    }
+    free(t.buf);
+}
+
+/* A full day table (decades of days) drops its oldest rollup, so today still counts. */
+static void test_a_full_day_table_drops_the_oldest(void)
+{
+    Text t = {0};
+    uint64_t day0 = (uint64_t)vjo_stats_days_from_civil(2000, 1, 1) * 86400000000ull + 3600000000ull;
+    for (int d = 0; d < VJO_STATS_DAYS + 3; d++)
+        record(&t, "vita", "PCSG00415", "CLANNAD", "あ", day0 + (uint64_t)d * 86400000000ull, 0);
+    vjo_stats_reset(&s, 0, 0);
+    scan_windows(&s, &t, 1 << 20);
+    int32_t first = vjo_stats_days_from_civil(2000, 1, 1), last = first + VJO_STATS_DAYS + 2;
+    TEST_CHECK(s.days == VJO_STATS_DAYS && s.days_full == 3);
+    TEST_CHECK(s.day[0].day == first + 3 && s.day[s.days - 1].day == last);
+    TEST_CHECK(vjo_stats_game_day(&s, 0, last).chars == 1 && vjo_stats_game_day(&s, 0, first).chars == 0);
+    TEST_CHECK(s.game[0].chars == VJO_STATS_DAYS + 3); /* the total keeps every record */
+    /* and a record older than every day kept is not added */
+    Text o = {0};
+    record(&o, "vita", "PCSG00415", "CLANNAD", "い", day0, 0);
+    size_t was = s.covered;
+    (void)was;
+    VjoStats copy = s;
+    char buf[1024];
+    size_t header = (size_t)(strchr(o.buf, '\n') - o.buf) + 1;
+    memcpy(buf, o.buf + header - 1, o.len - header + 1);
+    vjo_stats_scan(&s, buf, o.len - header + 1, copy.covered ? copy.covered : 1, VJO_STATS_SCAN_END);
+    TEST_CHECK(s.days == VJO_STATS_DAYS && s.day[0].day == first + 3 && s.days_full == 4);
+    free(o.buf);
     free(t.buf);
 }
 
@@ -645,6 +770,11 @@ static void test_goal_and_streak(void)
     days_read(more, 3, 10, 1);
     vjo_stats_streak(&s, today, VJO_GOAL_OFF, &current, &best);
     TEST_CHECK(current == 3 && best == 3);
+    /* (audit-rubi-rm2 F4.5) days after today (a clock set back, then forward): in no streak, nor in the best */
+    int32_t ahead[] = {today - 2, today - 1, today, today + 1, today + 2, today + 3};
+    days_read(ahead, 6, 10, 1);
+    vjo_stats_streak(&s, today, VJO_GOAL_OFF, &current, &best);
+    TEST_CHECK_(current == 3 && best == 3, "%d %d", current, best);
     vjo_stats_streak(&s, today, VJO_GOAL_15MIN, &current, &best);
     TEST_CHECK(current == 0 && best == 0);
     VjoStatsCount none = {0, 0, 0}, two = {2000, 0, 0}, mins = {0, 30 * 60000000ull, 0};
@@ -714,6 +844,25 @@ static void test_cards_and_order(void)
     free(t.buf);
 }
 
+/* uuids longer than the table keeps (23 bytes; another tool's, or an edited file's) that share those bytes are told
+ * apart by the whole uuid's hash, as the Shell's count tells them apart (record_line's FNV-1a of the cell). */
+static void test_long_uuids_stay_apart(void)
+{
+    Text t = {0};
+    uint64_t t0 = 1792220400000000ull;
+    for (int i = 0; i < 6; i++)
+        record(&t, "vita", i % 2 ? "ABCDEFGHIJKLMNOPQR1" : "ABCDEFGHIJKLMNOPQR2", "G", i % 2 ? "あいう" : "かきくけこ",
+               t0 + (uint64_t)i * 1000000ull, 0);
+    vjo_stats_reset(&s, 0, 0);
+    scan_windows(&s, &t, 4096);
+    TEST_CHECK_(s.games == 2, "%u games", (unsigned)s.games);
+    TEST_CHECK(s.games == 2 && s.game[0].chars + s.game[1].chars == 24 && s.game[0].chars != s.game[1].chars);
+    TEST_CHECK(!strcmp(s.game[0].uuid, "vita-ABCDEFGHIJKLMNOPQR") && !strcmp(s.game[1].uuid, s.game[0].uuid));
+    /* each game's lines alternate with the other's: no line gets a time, as in the Shell's count of each */
+    TEST_CHECK(s.game[0].time.active_us == 0 && s.game[1].time.active_us == 0);
+    free(t.buf);
+}
+
 /* More games than the table holds: their characters count in All games, and every other game's as before. */
 static void test_full_tables(void)
 {
@@ -735,6 +884,8 @@ static void test_full_tables(void)
 TEST_LIST = {
     {"each game equals the Shell's count: total and today, both rules, random files", test_parity_with_the_shell},
     {"any windows, and resumed from a cache at any of them, count the same", test_windows_and_resume},
+    {"resumed from a count stopped at any byte: one count's result", test_resume_at_every_byte},
+    {"a full day table drops the oldest day, not today's", test_a_full_day_table_drops_the_oldest},
     {"a record not yet whole waits; one a power loss cut is damaged", test_cut_records},
     {"local days in the counts' zone; a line across midnight is its first day's", test_days_and_midnight},
     {"invalid times, other games and clocks set back break the interval", test_breaks},
@@ -745,4 +896,5 @@ TEST_LIST = {
     {"the calendar", test_calendar},
     {"cards per game and the games' order", test_cards_and_order},
     {"more games than the table", test_full_tables},
+    {"uuids that share their first 23 bytes stay apart", test_long_uuids_stay_apart},
     {NULL, NULL}};
