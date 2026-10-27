@@ -332,10 +332,10 @@
  * the build log's module rows, both builds, the fixes on main 241e09f, whose plugins main 16fa362 keeps; main's rows
  * as above]. No block, thread or allocation. */
 /* API 51, the pause for the frame (ocr_pause, game_ocr/main.c pause_copy, strip_source's copy, the frame block's
- * memory check and step; core/vocr_ocr.c's frozen region): debug text 160,888 -> 161,928 B (1,912 B of room left) and
- * data/bss 35,328 -> 35,384 B, normal 151,988 -> 153,028 B (2,620 B) and 35,320 -> 35,376 B, the same pages
- * [measured: the build log's module rows, both builds, main 892cfb9 and this change, tools/fast_gate.sh's vitasdk
- * image]. Its one block, VjoGameVocrFrame, is VJO_BUDGET_GAME_FRAME's; no thread. */
+ * memory check and step; core/vocr_ocr.c's frozen region): debug text 160,888 -> 162,008 B (1,832 B of room left) and
+ * data/bss 35,328 -> 35,392 B, normal 151,988 -> 153,076 B (2,572 B) and 35,320 -> 35,384 B, the same pages
+ * [measured: the build log's module rows, both builds, main 892cfb9 and this change (the gate's run on 20d4874),
+ * tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameVocrFrame, is VJO_BUDGET_GAME_FRAME's; no thread. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else

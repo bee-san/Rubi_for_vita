@@ -74,7 +74,9 @@ strip, rc -120, 72 display calls and nothing shown. Paused, rc 0: one display ca
      recognizer. No tall-line block is needed.
 
    A job asked on a screen still changing (`F_SETTLE_FIRST`) still waits on the live screen first, as before, then
-   copies its frame.
+   copies its frame. With `ocr_vertical = auto`, a region whose rows look like vertical text is read again as
+   columns, a second try with its own blocks: it copies its frame again, so that job makes the game wait twice (the
+   step's us is the sum).
 5. **Read as before.** The job reads strip by strip, exactly as with the setting OFF, when:
    - the kernel refuses the copy or cannot finish it;
    - the block does not fit;
