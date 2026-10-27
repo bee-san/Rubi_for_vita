@@ -340,7 +340,6 @@
  * filter's patterns), data +104 B (the filter's ops, the filters' index 64 -> 68 B), both builds, the same pages
  * [measured: arm-vita-eabi-size, both builds, main cbaa4e3 and this change; rebased on main 892cfb9, VitaSDK 2026.08]. No block, thread or
  * allocation. */
-/* API 51, the pause for the frame (ocr_pause, game_ocr/main.c pause_copy, strip_source's copy, the frame block's
 /* API 52, the pause for the frame (ocr_pause, game_ocr/main.c pause_copy, strip_source's copy, the frame block's
  * memory check, its step and the cap's switch; core/vocr_ocr.c's frozen region): debug text 161,016 ->
  * 162,344 B (1,496 B of room left) and data/bss 35,328 -> 35,400 B, normal 152,084 -> 153,412 B
