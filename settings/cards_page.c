@@ -101,6 +101,7 @@ static uint8_t job_id[16];
 static char job_sentence[VJO_CARD_SENTENCE_MAX + 4]; /* (the keyboard's 2,048 units are at most 6,144 bytes) */
 static const VjoCardRow *job_bound;
 static VjoCardChange job_change;
+static VjoCardsHeld job_held;         /* the recovery's held cards (#315's audit): marked in the list */
 static VjoCardPixels job_pixels;
 static int after_job;                 /* after_id is to be selected (and opened, in the card view) once a list is read */
 static uint8_t after_id[16];
@@ -118,11 +119,14 @@ static void run_job(VjoArena *a, const VjoExportUi *eui)
     const uint8_t *jpeg;
     job_unsettled = 0;
     if (job != JOB_LOAD)
-        job_unsettled = vjo_cards_recover(a);
+        job_unsettled = vjo_cards_recover(a, &job_held);
     switch (job) {
     case JOB_LIST:
         job_rc = vjo_cards_list(a, job_which, job_bound, &list, eui);
         job_deleted = vjo_cards_deleted_files();
+        for (int i = 0; !job_rc && job_which == VJO_CARDS_QUEUED && i < list.n; i++)
+            if (vjo_cards_is_held(&job_held, table[i].id))
+                table[i].flags |= VJO_CARD_HELD;
         break;
     case JOB_LOAD:
         job_rc = vjo_cards_load(a, job_which, job_id, &views[!shown]);
@@ -311,8 +315,8 @@ static void say(int error, const char *fmt, const char *word)
 static void unsettled_note(void)
 {
     if (job_unsettled)
-        snprintf(note, sizeof(note), "A change that stopped could not be finished (see log.txt); it is tried again "
-                 "before the next list and export.");
+        snprintf(note, sizeof(note), "A change that stopped could not be finished (see log.txt): its card stays "
+                 "queued, marked, and it is tried again before the next list and export.");
     note_error = note_error || job_unsettled;
 }
 
@@ -404,6 +408,11 @@ void vjo_cards_page_job_done(void)
     }
     t = row_of_id(job_id);
     if (kind == JOB_DELETE) {
+        if (job_rc == VJO_CARDS_E_PENDING) {
+            say(1, "%s is the fixed card of a change that has not finished (see log.txt): it is tried again first; "
+                   "delete it after.", t >= 0 ? word_of(&table[t]) : "The card");
+            return;
+        }
         if (job_rc) {
             say(1, "%s was not deleted (see log.txt): exported or deleted meanwhile? Start reads the list again.",
                 t >= 0 ? word_of(&table[t]) : "The card");
@@ -428,6 +437,10 @@ void vjo_cards_page_job_done(void)
         }
         free_picture();
         view = VIEW_LIST;
+        if (!list.n && window > 0) { /* (the window's last card: the newer window, at its end) */
+            select_last = 1;
+            read_list(window - 1);
+        }
         return;
     }
     /* Fix sentence, Drop picture */
@@ -435,6 +448,15 @@ void vjo_cards_page_job_done(void)
         const char *w = t >= 0 ? word_of(&table[t]) : "the card";
         if (job_rc == VJO_E_TOO_LARGE)
             say(1, "Nothing changed: %s would be over 32 KiB of text.", w);
+        else if (job_change.held)
+            say(1, "Nothing changed: an earlier change of %s has not finished (see log.txt); the export leaves it "
+                   "queued. Delete it if its fixed card is listed too.", w);
+        else if (job_change.pending)
+            say(1, "Nothing changed: %s is the fixed card of a change that has not finished (see log.txt); it is "
+                   "tried again first.", w);
+        else if (job_change.exported)
+            say(1, "Nothing changed: %s was exported already (its note may be in Anki, and a changed card would be a "
+                   "second note). Delete removes this queued copy.", w);
         else if (job_rc == VJO_E_PARSE && kind == JOB_FIX && !job_sentence[0])
             say(1, "Nothing changed: a card needs a sentence (%s).", w);
         else
@@ -460,6 +482,10 @@ void vjo_cards_page_job_done(void)
     if (job_change.old_left) {
         size_t n = strlen(note);
         snprintf(note + n, sizeof(note) - n, " The old card could not be moved yet (see log.txt).");
+        note_error = 1;
+    } else if (job_change.unsynced) {
+        size_t n = strlen(note);
+        snprintf(note + n, sizeof(note) - n, " The memory card did not confirm the write (see log.txt).");
         note_error = 1;
     }
     unsettled_note();
@@ -564,7 +590,8 @@ static int fix_sentence(void)
     const VjoCardView *v = &views[shown];
     int rc;
     if (v->sentence_cut || units_of(v->sentence) > EDIT_UNITS) {
-        snprintf(note, sizeof(note), "This sentence is too long for the keyboard (2,048 characters at most).");
+        snprintf(note, sizeof(note), "This sentence is too long for the keyboard: 2,048 UTF-16 units at most (a "
+                                     "character each, two for one beyond U+FFFF such as an emoji).");
         note_error = 1;
         return 0;
     }
@@ -901,7 +928,8 @@ static void draw_list(const VjoAnkiUi *ui, const char *progress)
                                     : "Stopped. Start reads the list again.");
     } else if (!count) {
         ui->wrapped(COL_X, ROWS_Y + 30, 870, ui->white, 24, 28, 2,
-                    dup_only ? "No word is on two of these cards. Square shows them all."
+                    dup_only ? "No card here is of a word mined before. Square shows them all."
+                    : window > 0 ? "No cards in this part of the list now: L shows the newer ones."
                     : which == VJO_CARDS_EXPORTED ? "No exported cards yet."
                                                   : "No cards queued. Save words in the overlay with Card mining ON.");
     }
@@ -920,10 +948,12 @@ static void draw_list(const VjoAnkiUi *ui, const char *progress)
                  row->game < list.n_games ? list.games[row->game] : "");
         vita2d_disable_clipping();
         ui->text(640, y + 21, ui->dim, 18, row->date);
-        if (row->flags & VJO_CARD_UNREADABLE)
+        if (row->flags & VJO_CARD_HELD)
+            ui->text(640, y + 38, ui->off, 16, "A change of it did not finish");
+        else if (row->flags & VJO_CARD_UNREADABLE)
             ui->text(640, y + 38, ui->off, 16, "Not exportable");
         else if (row->flags & VJO_CARD_DUPLICATE)
-            ui->text(640, y + 38, ui->accent, 16, "Same word as another card");
+            ui->text(640, y + 38, ui->accent, 16, "Mined before: tagged duplicate");
         if (row->flags & VJO_CARD_PICTURE)
             camera(ui, 892, y + 12, ui->accent);
     }

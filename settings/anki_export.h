@@ -63,6 +63,7 @@ typedef struct {
     int too_large;   /* left in the queue: no room in memory to make their note */
     int missing_picture; /* exported without an absent/damaged screenshot; original record preserved */
     int left;        /* over VJO_APKG_MAX_CARDS: the newest, left for the next export */
+    int held;        /* #315: left in the queue: a Cards page change of them did not finish (settings/cards.h) */
     int swept;       /* screenshots no card names, removed from the queue (#161) */
     int media;       /* screenshot files in it */
     int duplicates;  /* #314: cards whose word an earlier card has: tagged duplicate (Tag) or left out (Skip) */

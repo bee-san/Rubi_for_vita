@@ -1036,6 +1036,8 @@ typedef struct {
     int skipped_queued, skipped_archived; /* duplicates left out: in the queue (they stay), in the archive */
     const uint64_t *known; /* #314 stage C: the known words' keys (anki_known.bin), sorted */
     int n_known;
+    const VjoCardsHeld *held; /* #315: queued cards a change of which did not finish: they stay queued */
+    int n_held;
 } List;
 
 /* VjoApkgCard.flags: its note's tags (export_tags) */
@@ -1088,6 +1090,13 @@ static int list_card(void *ud, const char *hex)
     if (status_every(l->ui, "Reading the cards", ++l->seen, l->total) < 0)
         return -1;
     memset(&c, 0, sizeof(c));
+    if (!l->archive && l->held && l->held->n) { /* #315: never an old card beside its new one */
+        from_hex(hex, c.id);
+        if (vjo_cards_is_held(l->held, c.id)) {
+            l->n_held++;
+            return 0;
+        }
+    }
     if (read_card(l->a, l->archive, hex, &note, &picture, 0) < 0) {
         l->unreadable++;
         vjo_arena_release(l->a, mark);
@@ -1573,9 +1582,16 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
     msg[0] = '\0';
     remove_stale_temps();
     /* 0. a Cards page change a stop left (#315, settings/cards.h): finished or undone first, so the queue holds
-     * the old card or the new one, never both; one that cannot be settled now stops the export (nothing changed) */
-    if (vjo_cards_recover(a)) {
+     * the old card or the new one, never both; the old card of one that cannot be settled now stays queued (held),
+     * and when the cards to hold are not known (deleted/ unreadable), nothing is changed */
+    if (!(l.held = (VjoCardsHeld *)vjo_arena_alloc(a, sizeof(VjoCardsHeld)))) {
+        snprintf(msg, cap, "Not enough memory to read the cards. Nothing was changed.");
+        return r->rc = VJO_E_OOM;
+    }
+    vjo_cards_recover(a, (VjoCardsHeld *)l.held);
+    if (l.held->incomplete) {
         snprintf(msg, cap, "A change of a card that stopped could not be finished (see log.txt). Nothing was changed.");
+        vjo_arena_release(a, base);
         return r->rc = VJO_E_LOCAL_IO;
     }
     /* 1. the cards: each read once and checked, the oldest VJO_APKG_MAX_CARDS kept */
@@ -1656,6 +1672,7 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
     }
     r->unreadable = l.unreadable;
     r->left = l.left;
+    r->held = l.n_held;
     r->duplicates = l.skipped_queued + l.skipped_archived;
     if (rc < 0) {
         snprintf(msg, cap, "Cannot read the queue (see log.txt). Nothing was changed.");
@@ -1668,6 +1685,12 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
         snprintf(msg, cap, "No new cards: the %d queued %s already mined, and stay%s queued (Duplicates: Skip).",
                  l.skipped_queued, l.skipped_queued == 1 ? "is a word" : "are words",
                  l.skipped_queued == 1 ? "s" : "");
+        vjo_arena_release(a, base);
+        return r->rc = VJO_OK;
+    }
+    if (!l.n && !l.unreadable && l.n_held) { /* #315: every queued card is one a change of which did not finish */
+        snprintf(msg, cap, "No cards to export: a change of %s did not finish (see log.txt); %s queued.",
+                 l.n_held == 1 ? "the one queued" : "every queued card", l.n_held == 1 ? "it stays" : "they stay");
         vjo_arena_release(a, base);
         return r->rc = VJO_OK;
     }
@@ -1872,6 +1895,10 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoConf
         if (r->unreadable + r->too_large)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d stay queued; see log.txt.",
                      r->unreadable + r->too_large);
+        if (r->held) /* #315 */
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
+                     " %d stay%s queued: a change of %s did not finish (see log.txt).", r->held, r->held == 1 ? "s" : "",
+                     r->held == 1 ? "it" : "them");
         if (r->left)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
                      all ? " %d newer are not in it: a package holds %d cards at most."

@@ -141,7 +141,8 @@ been reported.
   labels for the fifth tab. Only the app changes: the Shell, the game worker, the kernel and the RCO are byte-identical
   to main's in both builds. Not run on a console yet.
 - A Cards page in the Rubi app (#315): **Cards: N queued** on the Anki page lists the queued cards newest first,
-  with their word, reading, game and date, a camera for a card with a picture and a mark for a word on two cards;
+  with their word, reading, game and date, a camera for a card with a picture and a mark for a word mined before
+  (the export's duplicate);
   Left/Right show the exported cards instead, read only. A card opens with its sentence (the word marked), the first
   lines of its definition and its picture. A queued card can be deleted (into `anki_queue/deleted/`, which Triangle
   empties), its sentence fixed with the keyboard (the word found again in the new text) or its picture dropped.
@@ -153,10 +154,22 @@ been reported.
     card or the new one, never both and never neither; a record never names a picture that is not there. Tested on
     the host with a failure at each storage call and a stop between each two steps in a fresh process, and an
     edited card imported by Anki 26.09.3 with its new sentence and its picture.
-  - **Memory, in the app only** (the Shell, the game worker and the kernel are unchanged): 307,364 B of static
-    memory (the list's 2,000-row table, two card views, the keyboard's buffers) and a picture texture of at most
-    442,368 B while a card is open; libjpeg's decoder adds about 290 KB of code [measured: the ELF] and at most
-    32,592 B of heap for a screenshot [measured, host].
+  - **Memory, in the app only** (the Shell, the game worker and the kernel are unchanged): 311,484 B of static
+    memory (the list's 2,000-row table, two card views, the keyboard's buffers, the held cards' list) and a picture
+    texture of at most 442,368 B while a card is open; libjpeg's decoder adds about 290 KB of code [measured: the
+    ELF] and at most 32,592 B of heap for a screenshot [measured, host].
+  - **Its audit's follow-up** (audit-rubi-rm5): a change that cannot be finished holds only its card: the export
+    leaves that card queued and says so (`… 1 stays queued: a change of it did not finish`) and the page marks it
+    (before, one unreadable intent stopped every export); a change whose new record is there is reported as made,
+    even when the memory card did not confirm it. A fixed card is not deleted or fixed again before its change is
+    settled, and two changes in a row are settled in their order (a second fix had made the export take two cards).
+    A sentence fixed back to what it was keeps its card when that change fails. A card both queued and exported is
+    read only, and deleting a card keeps the picture an exported record names. The word is found again past its 64th
+    occurrence. The duplicate mark is the export's: a word mined before, queued or exported, its earliest card not
+    marked. Cancel while the words are read stops the list, and deleting the only card of a later part of the list
+    goes back to the newer part. `test_card_picture.c` runs in the fast gate and CI's host job now (libjpeg's headers,
+    `VJO_REQUIRE_JPEG`), new tests kill the audit's surviving mutants, and the fast gate's `/tmp` is capped at 2 GiB a
+    lane. 4,288 B more code and 4,128 B more static memory [measured: the debug build's ELF].
   - Not run on a console yet.
 
 - **A text box suggested on first use** (#358; API 52; [first-box.md](docs/first-box.md)). A game with no box of its

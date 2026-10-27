@@ -1023,9 +1023,15 @@ target_link_libraries(vjo-cards-tests vjo_host)
 add_test(NAME cards COMMAND vjo-cards-tests)
 # A card's picture decoded by libjpeg as the app decodes it (settings/card_picture.c): its scale to the
 # page's box, a grey picture, a damaged or cut file returned as an error (setjmp), never an exit; where
-# libjpeg's headers are (the Vita build links the SDK's libjpeg-turbo; CI's runner and the fast gate's
-# image may have none: the test then is not built).
-find_package(JPEG QUIET)
+# libjpeg's headers are (the Vita build links the SDK's libjpeg-turbo). The fast gate's image and CI's host
+# job have them (libjpeg-turbo8-dev) and set VJO_REQUIRE_JPEG, so there the test is never left out (#315's
+# audit, F3); elsewhere it is built only when they are found.
+option(VJO_REQUIRE_JPEG "Fail the configure without libjpeg's headers (the card_picture test)" OFF)
+if(VJO_REQUIRE_JPEG)
+  find_package(JPEG REQUIRED)
+else()
+  find_package(JPEG QUIET)
+endif()
 if(JPEG_FOUND)
   add_executable(vjo-card-picture-tests host/tests/test_card_picture.c settings/card_picture.c)
   target_include_directories(vjo-card-picture-tests PRIVATE third_party/acutest/include)
