@@ -60,7 +60,8 @@ VjoStreamSlot *vjo_stream_caller(VjoStreamSlot *slots, unsigned n, uint32_t key)
  * written since the scan read it (its caller's new text, another new caller that took it: no longer the least
  * recently written, #366), the hit is dropped too (call_dropped); and the key is checked again, so a hit of a
  * caller whose slot was just given to another one is dropped too (call_dropped), never written into the
- * other's stream. 1 new text, 0 identical, -1 dropped. */
+ * other's stream, and a caller whose other thread took a slot meanwhile takes no second one.
+ * 1 new text, 0 identical, -1 dropped. */
 int vjo_stream_offer_caller(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint32_t key,
                             const uint8_t *src, unsigned n, unsigned encoding);
 
