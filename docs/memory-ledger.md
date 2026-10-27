@@ -28,19 +28,21 @@ allocation; no module takes a page more; no budget raised.**
   code pages, which have room, where its data page has less.
 - **The Rubi app** (its own process, not SceShell's): the game page and the file's table, 16,816 B more `.bss` (the
   table's two copies, 8,200 B each, as `games.ini`'s two; the list's status while the page shows its own) and
-  5,364 B (normal) / 5,488 B (debug) more code.
+  5,352 B (normal) / 5,416 B (debug) more code.
 - **Measured** with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text
-  + data/bss; the app's ELF with `arm-vita-eabi-size`), main `686f800` against this change:
+  + data/bss; the app's ELF with `arm-vita-eabi-size`), main `030c7ea` against this change:
 
   | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
   |---|---:|---:|---:|
-  | Shell | 102,372 + 73,664 → 102,364 + 73,704 B | 90,044 + 73,520 → 90,044 + 73,648 B | 176,128 / 163,840 B, unchanged |
+  | Shell | 98,260 + 77,664 → 98,252 + 77,704 B | 85,980 + 77,488 → 85,964 + 77,608 B | 176,128 / 163,840 B, unchanged |
   | Kernel | 43,356 + 77,772 → 43,432 + 77,772 B | 38,204 + 76,084 → 38,280 + 76,084 B | 122,880 / 118,784 B, unchanged |
-  | Game worker | 163,688 + 35,880 B, unchanged | 154,724 + 35,864 B, unchanged | unchanged |
-  | Rubi app (ELF: text, data, bss) | 590,844, 8,824, 6,397,520 → 596,332, 8,896, 6,414,336 B | 590,444, 8,816, 6,397,488 → 595,808, 8,888, 6,414,304 B | its own process |
+  | Game worker | 163,800 + 36,360 B, unchanged | 154,884 + 36,344 B, unchanged | unchanged |
+  | Rubi app (ELF: text, data, bss) | 597,684, 8,848, 6,397,536 → 603,100, 8,912, 6,414,352 B | 597,284, 8,840, 6,397,504 → 602,636, 8,904, 6,414,320 B | its own process |
 
-  Room left in the last pages: the normal Shell 68 B of code (68 before) and 80 B of data (208); the debug Shell 36 B
-  of code (28) and 24 B of data (64); the debug kernel 1,624 B of code and 52 B of data.
+  Room left in the last pages: the normal Shell 52 B of code (36 before) and 216 B of data (336); the debug Shell 52 B
+  of code (44) and 120 B of data (160); the debug kernel 1,624 B of code and 52 B of data. (On main `686f800`, before
+  #386 moved a page of the Shell from its code to its data, the same change measured 90,044 + 73,520 → 90,044 + 73,648 B
+  normal and 102,372 + 73,664 → 102,364 + 73,704 B debug, the same pages.)
 - **Time:** at a game's start or resume the Shell opens and reads one more small file (at most 12 KiB; a missing one
   is one failed open), unmeasured on the console. Nothing changes per job or per frame.
 

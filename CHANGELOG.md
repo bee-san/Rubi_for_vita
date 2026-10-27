@@ -32,9 +32,9 @@ been reported.
     names the dictionary (Local dictionaries in every build since the online ones went); `tools/analyse_selftest.py`
     reads both forms. The debug build no longer logs the title's app parameters 9 and 10 (answered: 115 starts in
     test.1–test.4, parameter 9 always refused).
-  - **Memory:** the normal Shell takes 128 B of data and no code (its title name is read with less, and its tables
-    moved to the data segment), the debug Shell 40 B of data and 8 B less code; no module takes a page more, and
-    nothing is allocated ([memory ledger](docs/memory-ledger.md)).
+  - **Memory:** the normal Shell takes 120 B of data and 16 B less code (its title name is read with less, and its
+    tables moved to the data segment), the debug Shell 40 B of data and 8 B less code; no module takes a page more,
+    and nothing is allocated ([memory ledger](docs/memory-ledger.md)).
   - Not run on a console yet.
 
 - **A Look up tab in the Rubi app** (#313; [guide](docs/guide.md#look-up)): look a word up and mine it later, beside
