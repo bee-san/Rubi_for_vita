@@ -25,7 +25,8 @@ is one pinned recognizer, and this package's come from two generations:
   VOCR5-L's shapes fine-tuned again on the owner's hooked PS Vita and PSP games, published as the v0.4.0-vocr6.1
   pre-release, each with #122's two-level head and no head gate ([Head gate and two-level
   head](#head-gate-and-two-level-head-api-42), [Models](#models)). VOCR6's Small was not adopted: it read the hooked
-  games better but other games' lines a little worse, so Small keeps VOCR5-S.
+  games better but other games a little worse (VOCR5's development score, +0.070 [+0.004, +0.138] points),
+  so Small keeps VOCR5-S.
 
 A later generation's blobs replace them
 through the pins, with no change
@@ -658,8 +659,10 @@ These LM figures, and the counter set's below, were measured with VOCR5 v0.3.0's
 combination 0.9.8 ran by default, VOCR5's gated blobs with `ocr_head_gate = on` (API 42,
 [below](#head-gate-and-two-level-head-api-42)) and the new 1 MB settings, was measured since (vita-vn-ocr's
 vocr6-final-lm, #151, on the host; [VOCR6's settings](#vocr6s-settings-vita-vn-ocr-151)): on real development and
-hval lines it moved the scores by +0.004 to +0.012 points (Large's alone resolved), and on #109's counter set it lost
-counters ([Counters](#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109), below). Larger is not always better here: the 2 MB tier is ctclm.2's at its old settings, and on the hooked titles'
+hval lines it moved vocr6-final-lm's objective (half the hval pages' CER, half the development score) by +0.004 to
++0.012 points (Small +0.008 [−0.014, +0.033] and Normal +0.004 [−0.003, +0.012] with their cascades; Large +0.012
+[+0.001, +0.024], the one resolved worse); Normal's hval pages alone were resolved worse too, +0.007 [+0.000, +0.015]
+(`reports.gateon_vocr5_1000k`). On #109's counter set it lost counters ([Counters](#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109), below). Larger is not always better here: the 2 MB tier is ctclm.2's at its old settings, and on the hooked titles'
 pages it reads worse than the new 1 MB default (vita-vn-ocr: 3.96 % against 3.39 %).
 
 **Counters.** On #109's synthetic counter set ([counters](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/counters.md):
@@ -1443,7 +1446,8 @@ for Small, VOCR6-N and VOCR6-L for Normal and Large) updated:
 7. The memory ledger (`include/vjo_ledger_budget.h`): the weights and cascade budgets (the largest blob,
    page-rounded), the workspace (`host/tests/test_ledger.c`'s largest job, page-rounded), the worker's pages if the
    runtime grows, and `VJO_LIMIT_GAME_JOB`, each raise justified ([memory-ledger.md](memory-ledger.md)). A pin set adds
-   no Shell code: the normal Shell keeps only a few hundred bytes of its last text page.
+   no Shell code: the normal Shell keeps 68 B of its last text page (90,044 of 90,112 B [measured: the normal Vita
+   builds of VOCR6's pin set, #373, and of main `1c9d048` before it]).
 8. The docs that name the files, their sizes or blocks: this file's size table, models and attribution, [OCR
    speed](ocr-speed.md), the guide's sizes and its names' list, [memory-ledger.md](memory-ledger.md),
    [vita-memory.md](vita-memory.md), [offline-testing.md](offline-testing.md),

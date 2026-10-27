@@ -120,7 +120,7 @@ VOCR5_ASSETS = {
 # model sizes, VOCR5-N's and VOCR5-L's shapes fine-tuned again on the owner's hooked PS Vita and PSP games, each
 # with #122's two-level head (the output rows in frequency order, a 1,984 B VOC2 trailer) and no head gate (#120's
 # rule rejected it on VOCR6's logits), pre-release v0.4.0-vocr6.1, whose SHA256SUMS lists these hashes. Small
-# stays VOCR5-S: VOCR6-S read other games' lines a little worse.
+# stays VOCR5-S: VOCR6-S read other games a little worse (VOCR5's development score, +0.070 points, resolved).
 VOCR6_TAG = 'v0.4.0-vocr6.1'
 VOCR6_BASE = f'https://github.com/{VOCR_REPO}/releases/download/{VOCR6_TAG}/'
 VOCR6_ASSETS = {
@@ -174,7 +174,8 @@ VOCR_VERTICAL_ATTRIBUTION_PIN = {VOCR_VERTICAL_ATTRIBUTION: (VOCR5V_BASE + 'ATTR
 # their terms (non-commercial use only). The package ships it beside the weights as
 # ocr/MODEL-ATTRIBUTION.md, and it is kept under that name in a models directory too: the LMs' release
 # names its own attribution ATTRIBUTION.md as well (VOCR_LM_ATTRIBUTION). It covers Small's VOCR5-S, and the VOCR5
-# checkpoints VOCR6's Normal and Large start from (VOCR6's own refers to it: "everything v0.3.0's ATTRIBUTION.md lists").
+# checkpoints VOCR6's Normal and Large start from: VOCR6's ATTRIBUTION.md refers to v0.3.0's ("everything v0.3.0's
+# ATTRIBUTION.md lists", 3,158 B, not shipped), whose training sources this file, v0.3.6-head2level.1's, lists too.
 VOCR_MODEL_ATTRIBUTION = 'MODEL-ATTRIBUTION.md'
 VOCR_MODEL_ATTRIBUTION_TAG = VOCR5_TAG
 VOCR_MODEL_ATTRIBUTION_ASSET = 'ATTRIBUTION.md'  # its name in the release
