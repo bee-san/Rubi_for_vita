@@ -53,6 +53,7 @@ void vjo_hooks_counts(uint32_t *mode, uint32_t *installed, uint32_t *refused)
 }
 int vjo_hooks_verified(uint32_t id) { return kind_verified && id == 2u; }
 void vjo_hooks_keep(uint32_t id, uint32_t key) { (void)id; (void)key; }
+int vjo_hooks_psp_poll(void) { return 0; } /* #318's PSP text poll: no PSP emulator here (psp_title 0) */
 void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced) { *dropped = *replaced = 0; }
 int vjo_hooks_build_id(uint8_t out[32]) { memset(out, 0xa7, 32); return 1; }
 int vjo_hooks_snap(uint32_t id, VjoHookSnap *out)

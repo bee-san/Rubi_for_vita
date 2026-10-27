@@ -2280,11 +2280,13 @@ static void check_chars_in_lines(const VjoVocrChars *c)
 }
 static void test_the_characters_places(void)
 {
-    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM2_NAME};
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM3_NAME};
     static const char *const want[] = {"ル", "ッ", "月", "で", "す", "」"};
     const char *dir = VJO_VOCR_MODEL_DIR;
     const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
-    const VjoVocrLm *lm2 = vjo_vocr_lm_tier(2);
+    /* ctclm.2's LM (tier 3, unchanged since API 20): the crafted counter line's ヶ is its own choice; tier 2 (VOCR6's,
+     * vita-vn-ocr #127) reads 「九月です」 there (test_the_counter_redecode). test/combined: #326 was written before it. */
+    const VjoVocrLm *lm2 = vjo_vocr_lm_tier(3);
     VjoPlatform p;
     VjoVocrStats st;
     static char text[1024], raw[1024];
@@ -2292,7 +2294,7 @@ static void test_the_characters_places(void)
     unsigned char *ws = NULL;
     size_t ws_bytes;
     if (!have_files(dir, files, 2)) {
-        TEST_SKIP("no VOCR3-FL10 and the 1000k LM in VJO_VOCR_MODEL_DIR");
+        TEST_SKIP("no VOCR3-FL10 and the 2000k LM in VJO_VOCR_MODEL_DIR");
         return;
     }
     TEST_ASSERT(fl10 && lm2);
