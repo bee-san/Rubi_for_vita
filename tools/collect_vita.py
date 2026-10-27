@@ -14,6 +14,8 @@ with curl as the installer does:
                            .apkg packages) is listed only
                            vjo_app.txt (the record of the Rubi app the plugins came with)
                            installed.txt (the one-VPK install's record, core/payload.h)
+                           hooks.log (the debug build's record of the native hooks at the last game
+                           start, never text: docs/native-hooks.md, docs/hook-requests.md)
   ur0:data/VitaJPOverlay/  boot.txt
   ux0:app/VJOSET001/       vjo_app.txt (the installed Rubi app's stamp, core/app_stamp.h); its eboot.bin
                            is hashed, never kept. Both are read as install_ftp.sh --check-app reads them
@@ -64,7 +66,10 @@ APP = f"{APPS}/VJOSET001"  # the Rubi app (Rubi.vpk; JPOverlaySettings.vpk befor
 APP_STAMP, APP_EBOOT = f"{APP}/vjo_app.txt", f"{APP}/eboot.bin"
 FILES = [f"{DATA}/{n}" for n in ("log.txt", "log.old.txt", "selftest-report.txt", "selftest.txt", "status.txt",
                                   "status.prev.txt", "kernel.txt", "kernel.prev.txt", "config.ini", "games.ini",
-                                  "region.ini", "vjo_app.txt", "installed.txt")]
+                                  "region.ini", "vjo_app.txt", "installed.txt",
+                                  # the game worker's record of the native hooks (the debug build's; never text): a
+                                  # hook request sends it (docs/hook-requests.md)
+                                  "hooks.log")]
 FILES += ["ur0:/data/VitaJPOverlay/boot.txt", "ur0:/tai/config.txt", "ur0:/tai/config.txt.vjo-bak",
           "ux0:/tai/config.txt", "ux0:/tai/config.txt.vjo-bak"]
 # curl's exits for a file that is not there: 9, a CWD on the way refused (VitaShell's FTP enters a folder only if

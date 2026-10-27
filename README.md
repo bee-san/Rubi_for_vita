@@ -216,6 +216,12 @@ supply it. Both text sources work
 offline. The [guide](docs/guide.md#native-text-hooks) explains the settings; the
 [technical design](docs/native-hooks.md) covers string-copy hooks and game-specific hook sites.
 
+**Your game has no hook, or its hook is refused?** Ask for one with a
+[hook request](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml): play the game once
+with the debug build and send its `hooks.log` (no game text in it). The owner's hook farm can turn a request into a
+verified entry: it works on the Japanese releases of visual novels, and not every request gets one
+([how it works](docs/hook-requests.md)).
+
 ## Supported
 
 ✅ verified on a console · ⚠️ works with caveats, or partly verified · ❓ untested, or an estimate only
@@ -340,7 +346,7 @@ and copy them to the memory card; up to eight are used, in your order
 - [Anki cards](docs/anki.md) · [Your own dictionaries](docs/local-dictionaries.md) ·
   [Read text: automatically or on a press](docs/auto-vs-press.md) · [The OCR](docs/vita-vn-ocr.md) ·
   [The one-VPK install](docs/one-vpk-install.md) · [Safe boot](docs/boot-safety.md) ·
-  [Vita memory](docs/vita-memory.md)
+  [Vita memory](docs/vita-memory.md) · [Hook requests](docs/hook-requests.md)
 
 ## Contributing
 
@@ -349,7 +355,8 @@ Bug reports, ideas and pull requests are welcome in
 [Discord](http://discord.skerritt.blog). With a bug, the logs help most: from a computer, with
 VitaShell's FTP on, `bash tools/install_ftp.sh --collect VITA_IP` gathers them into one zip
 ([what it collects](docs/self-test.md#collecting-everything---collect)). A good first contribution:
-try Rubi on a Vita Slim, a PS TV or a game nobody has tested yet, and send that zip in an issue. To
+try Rubi on a Vita Slim, a PS TV or a game nobody has tested yet, and send that zip in an issue; for a game
+without a text hook, a [hook request](docs/hook-requests.md) with its `hooks.log`. To
 build and test Rubi, see the guide's [Build and validation](docs/guide.md#build-and-validation);
 [AGENTS.md](AGENTS.md) has the rules every change follows.
 

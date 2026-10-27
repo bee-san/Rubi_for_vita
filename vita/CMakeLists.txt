@@ -652,7 +652,7 @@ add_custom_target(release
   COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/docs/config.example.ini ${STAGE}/config.ini
   COMMAND ${CMAKE_COMMAND} -E make_directory ${STAGE}/tools ${STAGE}/docs/benchmarks ${STAGE}/docs/img
     ${STAGE}/third_party/LunaTranslator
-  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/prepare_vndb.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/reading_stats.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
+  COMMAND ${CMAKE_COMMAND} -E copy ${ROOT}/tools/convert_dictionary.py ${ROOT}/tools/install_dictionary.py ${ROOT}/tools/prepare_ocr.py ${ROOT}/tools/prepare_jmdict.py ${ROOT}/tools/prepare_plaintext.py ${ROOT}/tools/prepare_vndb.py ${ROOT}/tools/package_release.py ${ROOT}/tools/install_ftp.sh ${ROOT}/tools/migrate_config.py ${ROOT}/tools/patch_tai_config.py ${ROOT}/tools/analyse_selftest.py ${ROOT}/tools/analyse_timeline.py ${ROOT}/tools/reading_stats.py ${ROOT}/tools/model_tiers.json ${ROOT}/tools/collect_vita.py ${ROOT}/tools/hook_request.py ${ROOT}/tools/app_stamp.py ${ROOT}/tools/check_variant.py ${ROOT}/tools/package_variants.py ${ROOT}/tools/package_vpk.py ${STAGE}/tools/
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_plaintext.py --source ${VJO_PLAINTEXT_SOURCE} --stage ${STAGE}
   COMMAND ${Python3_EXECUTABLE} ${ROOT}/tools/prepare_vndb.py --stage ${STAGE}
   # The record of the app these plugins come with (core/app_stamp.h): the VPK's own vjo_app.txt.
@@ -666,6 +666,7 @@ add_custom_target(release
   # Keep the guide's feature and recovery links usable in the downloaded ZIP.
   COMMAND ${CMAKE_COMMAND} -E copy
     ${ROOT}/docs/line-history.md ${ROOT}/docs/native-hooks.md ${ROOT}/docs/hook-titles.md
+    ${ROOT}/docs/hook-requests.md
     ${ROOT}/docs/text-detector.md ${ROOT}/docs/memory-ledger.md ${ROOT}/docs/boot-safety.md
     ${ROOT}/docs/worker-loading.md ${ROOT}/docs/ingame-capture.md ${ROOT}/docs/performance.md
     ${ROOT}/docs/auto-vs-press.md ${ROOT}/docs/first-ocr.md ${ROOT}/docs/ocr-speed.md

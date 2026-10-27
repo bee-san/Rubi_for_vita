@@ -588,7 +588,8 @@ static void test_call_hooks(void)
     }
     vjo_hooks_counts(&mode, &inst, &refused);
     TEST_CHECK(mode == VJO_TEXT_SOURCE_HOOKS && inst == CALL_IMPORTS && refused == 0);
-    TEST_CHECK(n_offs == 0 && sfo_opens == 0);
+    /* no table entry: APP_VER decides nothing; the debug build reads it for hooks.log only */
+    TEST_CHECK(n_offs == 0 && sfo_opens == (VJO_DEBUG ? 1u : 0u));
     TEST_CHECK(slots[VJO_HOOK_SITE_STREAMS].kind == VJO_HOOK_KIND_CALL && slots[0].kind == VJO_HOOK_KIND_SITE);
 
     memset(d, 0x55, sizeof(d));
@@ -971,7 +972,11 @@ static void test_word(void)
         TEST_CHECK_(n_imp == cases[c].imports && n_offs == cases[c].sites, "case %u: %u imports, %u sites", c, n_imp,
                     n_offs);
         TEST_CHECK_(inst == (cases[c].sites << 16 | cases[c].imports), "case %u: installed %08X", c, (unsigned)inst);
-        TEST_CHECK_(sfo_opens == (cases[c].sites ? 1u : 0u), "case %u: param.sfo read only for Luna's sites", c);
+        /* APP_VER: for Luna's sites (the normal build), for every native game whose sites are tried (the debug
+         * build's hooks.log), never with hook_sites = off */
+        TEST_CHECK_(sfo_opens == (VJO_DEBUG ? (cases[c].imports && !(cases[c].mode & VJO_TEXT_SOURCE_NO_SITES) ? 1u : 0u)
+                                            : (cases[c].sites ? 1u : 0u)),
+                    "case %u: param.sfo read %u", c, sfo_opens);
         TEST_CHECK_(live == (cases[c].imports ? 1u : 0u), "case %u: live", c);
 #if VJO_DEBUG
         TEST_CHECK_(log_opens == (cases[c].mode != VJO_TEXT_SOURCE_OCR), "case %u: hooks.log", c);
@@ -999,7 +1004,7 @@ static void test_auto_all_native(void)
     t_ver = &v;
     t_nver = 1;
     vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
-    TEST_CHECK(n_imp == 8 && n_offs == 1 && sfo_opens == 0);
+    TEST_CHECK(n_imp == 8 && n_offs == 1 && sfo_opens == (VJO_DEBUG ? 1u : 0u)); /* the entry names no version */
     reset();
     put_site(0x200, 1, NULL);
     l = luna_site(0x200, 1, 0, 1, 0);
@@ -1036,7 +1041,8 @@ static void test_auto_all_native(void)
             reset();
             vjo_hooks_start(none[i], VJO_TEXT_SOURCE_AUTO, 0);
             TEST_CHECK_(n_imp == 8 && n_offs == 0 && live, "%s: generic hooks in auto", none[i]);
-            TEST_CHECK_(sfo_opens == (i < 7 ? 1u : 0u), "%s: APP_VER only when there are Luna sites", none[i]);
+            TEST_CHECK_(sfo_opens == (i < 7 || VJO_DEBUG ? 1u : 0u),
+                        "%s: APP_VER when there are Luna sites (and for hooks.log in the debug build)", none[i]);
             TEST_CHECK_(i < 7 ? n_refused > 0 : n_refused == 0, "%s: refuse unported sites", none[i]);
         }
     }
@@ -1439,6 +1445,46 @@ static void test_app_version(void)
     TEST_CHECK(app_version() == 0 && sfo_opens == 0);
 }
 
+/* A hook request (docs/hook-requests.md) needs the player's version, and most requests are for games with no entry:
+ * the debug build's hooks.log names APP_VER for every game whose table sites are tried, entries or none, and the
+ * hooks are the same in both builds (APP_VER decides nothing without a Luna site or an entry that names it). */
+static void test_app_ver_for_requests(void)
+{
+    static const struct {
+        const char *title, *sfo, *line;
+        unsigned entry; /* 1: a verified entry that names no version */
+    } cases[] = {
+        {UNLISTED, "01.02", "main module TestGame NID 12345678 seg0 %08X+4000 APP_VER 0102; 0 verified, 0 Luna sites\n", 0},
+        {UNLISTED, NULL, "main module TestGame NID 12345678 seg0 %08X+4000 APP_VER 0000; 0 verified, 0 Luna sites\n", 0},
+        {TITLE, "01.00", "main module TestGame NID 12345678 seg0 %08X+4000 APP_VER 0100; 1 verified, 0 Luna sites\n", 1},
+    };
+    for (unsigned c = 0; c < sizeof cases / sizeof cases[0]; c++) {
+        VjoPlaceVerified v;
+        uint32_t mode, inst, refused;
+        char want[160];
+        reset();
+        put_site(0x100, 1, NULL);
+        if (cases[c].entry) {
+            v = verified_entry(0x100, mod.nid, 6, 0);
+            t_ver = &v;
+            t_nver = 1;
+        }
+        if (cases[c].sfo) set_sfo(cases[c].sfo);
+        vjo_hooks_start(cases[c].title, VJO_TEXT_SOURCE_AUTO, 0);
+        vjo_hooks_counts(&mode, &inst, &refused);
+        TEST_CHECK_(mode == VJO_TEXT_SOURCE_AUTO && inst == (cases[c].entry << 16 | CALL_IMPORTS) && refused == 0,
+                    "case %u: installed %08X, refused %u", c, (unsigned)inst, (unsigned)refused);
+        TEST_CHECK_(n_offs == cases[c].entry && n_imp == CALL_IMPORTS, "case %u: the same hooks in both builds", c);
+#if VJO_DEBUG
+        snprintf(want, sizeof(want), cases[c].line, (unsigned)a32(code));
+        TEST_CHECK_(sfo_opens == 1 && strstr(logbuf, want) != NULL, "case %u: %s", c, logbuf);
+#else
+        (void)want;
+        TEST_CHECK_(sfo_opens == 0 && log_opens == 0, "case %u: the normal build reads no APP_VER for it", c);
+#endif
+    }
+}
+
 static void test_exact_build_identity(void)
 {
     static const uint8_t abc_sha[32] = {
@@ -1649,7 +1695,8 @@ static void test_verified_version(void)
         if (cases[k].sfo) set_sfo(cases[k].sfo);
         vjo_hooks_start(TITLE, VJO_TEXT_SOURCE_AUTO, 0);
         vjo_hooks_counts(NULL, &inst, &refused);
-        TEST_CHECK_(sfo_opens == (cases[k].app_ver ? 1u : 0u), "case %u: APP_VER read once, for the entry's", k);
+        TEST_CHECK_(sfo_opens == (cases[k].app_ver || VJO_DEBUG ? 1u : 0u),
+                    "case %u: APP_VER read once, for the entry's (and hooks.log's in the debug build)", k);
         TEST_CHECK_((inst >> 16) == (unsigned)cases[k].hooked && refused == (unsigned)!cases[k].hooked &&
                         n_offs == (unsigned)cases[k].hooked,
                     "case %u: app_ver %04X, APP_VER %s: hooked %u, refused %u", k, (unsigned)cases[k].app_ver,
@@ -2124,5 +2171,6 @@ TEST_LIST = {
     {"vjo_hooks_keep: only while the slot holds the caller the job saw", test_keep_key},
     {"vjo_hooks_stop: newest first, once; STOP_FAIL while a thread is inside", test_stop},
     {"APP_VER of param.sfo", test_app_version},
+    {"hooks.log names APP_VER for a hook request; the same hooks in both builds", test_app_ver_for_requests},
     {NULL, NULL},
 };

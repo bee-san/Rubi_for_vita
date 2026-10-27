@@ -1,7 +1,8 @@
 /* shell/platform_vita.c on the host: the Shell's VjoPlatform, all that is left of it since the
  * network went (the local dictionaries' files through sceIo, and the process clock). The SDK's
- * sceIo calls are stubbed over real files: reads come back short to exercise the loop, an open or a
- * seek can be made to fail, and every descriptor is counted (audit-overlay-shell-slim-3 N6). */
+ * sceIo calls are stubbed over real files: reads (sceIoPread, the offset with each read) come back
+ * short to exercise the loop, an open or the size's seek can be made to fail, and every descriptor
+ * and seek is counted (audit-overlay-shell-slim-3 N6). */
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -20,7 +21,8 @@
 uint32_t vjo_dict_reads, vjo_dict_read_bytes; /* shell/worker.c's: the lookup log's counts */
 
 static uint64_t clock_now;
-static int fail_open, fail_seek, fail_seek_set, open_fds, max_read, reads, eof_reads;
+static int fail_open, fail_seek, open_fds, max_read, reads, eof_reads, seeks;
+static SceOff read_at[8]; /* the offsets of the first sceIoPread calls since reset */
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_now; }
 int sceIoOpen(const char *path, int flags, unsigned mode)
 {
@@ -31,19 +33,21 @@ int sceIoOpen(const char *path, int flags, unsigned mode)
     return fd;
 }
 int sceIoClose(int fd) { open_fds--; return close(fd); }
-int sceIoRead(int fd, void *data, size_t len)
+int sceIoPread(int fd, void *data, size_t len, SceOff off)
 {
+    if (reads < 8) read_at[reads] = off;
     reads++;
+    if (off < 0) return (int)0x80010016; /* EINVAL */
     if (max_read && len > (size_t)max_read) len = (size_t)max_read; /* the SDK may return less */
-    int got = (int)read(fd, data, len);
+    int got = (int)pread(fd, data, len, off);
     /* at the end of the file: 0 once, then an error, so a reader that loops on 0 stops (and is seen) */
     if (got == 0 && eof_reads++) return (int)0x80010005; /* EIO */
     return got;
 }
 SceOff sceIoLseek(int fd, SceOff off, int whence)
 {
+    seeks++;
     if (fail_seek && whence == SCE_SEEK_END) return (SceOff)(int)0x80010016; /* EINVAL */
-    if (fail_seek_set && whence == SCE_SEEK_SET) return (SceOff)(int)0x80010016;
     return lseek(fd, off, whence);
 }
 
@@ -55,7 +59,8 @@ static const char contents[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 static void reset(void)
 {
     clock_now = 0;
-    fail_open = fail_seek = fail_seek_set = open_fds = max_read = reads = eof_reads = 0;
+    fail_open = fail_seek = open_fds = max_read = reads = eof_reads = seeks = 0;
+    memset(read_at, 0, sizeof(read_at));
     vjo_dict_reads = vjo_dict_read_bytes = 0;
     TEST_ASSERT(snprintf(path, sizeof(path), "%s/%d.bin", vjo_test_tmpdir_path, (int)getpid()) < (int)sizeof(path));
     FILE *f = fopen(path, "wb");
@@ -83,25 +88,29 @@ static void test_a_file_reads_exactly_what_it_holds(void)
     char buf[64];
     reset();
     vjo_platform_vita(&p);
-    max_read = 5; /* every sceIoRead returns at most 5 bytes: the loop must ask again */
+    max_read = 5; /* every sceIoPread returns at most 5 bytes: the loop must ask again, further on */
     memset(&f, 0, sizeof(f));
     TEST_ASSERT(p.file_open(p.ud, path, &f) == 0);
     TEST_CHECK(f.size == sizeof(contents) - 1 && f.read && f.close && open_fds == 1);
+    TEST_CHECK(seeks == 1); /* the size, at the open */
     memset(buf, 0, sizeof(buf));
     TEST_CHECK(f.read(f.ctx, 10, buf, 17) == 0 && !memcmp(buf, contents + 10, 17));
+    TEST_CHECK_(reads == 4 && read_at[0] == 10 && read_at[1] == 15 && read_at[2] == 20 && read_at[3] == 25,
+                "%d calls at %lld, %lld, %lld, %lld", reads, (long long)read_at[0], (long long)read_at[1],
+                (long long)read_at[2], (long long)read_at[3]);
     TEST_CHECK(vjo_dict_reads == 1 && vjo_dict_read_bytes == 17);
+    /* the descriptor's own position is not the read's: none of it is a seek */
     TEST_CHECK(f.read(f.ctx, 0, buf, 3) == 0 && !memcmp(buf, "012", 3));
-    TEST_CHECK(vjo_dict_reads == 2 && vjo_dict_read_bytes == 20);
+    TEST_CHECK(vjo_dict_reads == 2 && vjo_dict_read_bytes == 20 && seeks == 1);
     /* past the end: a short read is an error, not a partial success, and the end is not read again */
     reads = 0;
     TEST_CHECK(f.read(f.ctx, sizeof(contents) - 4, buf, 8) == -1);
-    TEST_CHECK_(reads == 2, "%d sceIoRead calls for a read that meets the end", reads); /* 3 bytes, then 0 */
-    /* a seek that fails reads nothing at a wrong offset */
-    fail_seek_set = 1;
+    TEST_CHECK_(reads == 2, "%d sceIoPread calls for a read that meets the end", reads); /* 3 bytes, then 0 */
+    /* an error at the first call: nothing more is read */
     reads = 0;
-    TEST_CHECK(f.read(f.ctx, 0, buf, 3) == -1 && reads == 0);
-    fail_seek_set = 0;
-    TEST_CHECK(f.read(f.ctx, (uint64_t)INT64_MAX + 1, buf, 1) == -1); /* an offset SceOff cannot hold */
+    TEST_CHECK(f.read(f.ctx, (uint64_t)sizeof(contents) + 100, buf, 3) == -1 && reads == 1);
+    reads = 0;
+    TEST_CHECK(f.read(f.ctx, (uint64_t)INT64_MAX + 1, buf, 1) == -1 && reads == 0); /* an offset SceOff cannot hold */
     f.close(f.ctx);
     TEST_CHECK(open_fds == 0);
     unlink(path);

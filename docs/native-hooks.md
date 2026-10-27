@@ -971,7 +971,13 @@ instead of `vocr`, and `line_source` `hook` instead of `ocr`: `shell/history.c`;
 module's name, NID and segment 0, `APP_VER`, each site with its verdict, reason and first 16 bytes, and
 each CALL import hooked or not. A Luna site's line has the segment-0 offset its address was read at
 (`luna 8119ADDA r7 +19ADDA hooked, stream 1`; no offset when neither reading is inside segment 0, refused
-as `range`). No text is in it. Job results carry the counts; the Shell's debug log
+as `range`). No text is in it. The debug build reads `APP_VER` for every game whose table sites are
+tried, for this line (a [hook request](hook-requests.md) needs the player's version, and most requests are for games
+with no entry); the decisions read it only for a Luna site or an entry that names its version, so both builds install
+the same hooks (the engine test `hooks.log names APP_VER for a hook request`; debug builds before #367,
+v0.9.8-test.2 and older, read it only for them, and logged `APP_VER 0000` for other games). `tools/install_ftp.sh --collect` fetches `hooks.log`, and
+`tools/hook_request.py` reads it: what the console saw, and what a verified entry for the game needs
+([hook requests](hook-requests.md)). Job results carry the counts; the Shell's debug log
 shows them (hooks-api). API 41: the debug build's `kernel.txt` has a line for each new line the hook watch
 reports, its sequence, raw length and held scene (`hook line: seq N, B bytes, scene S`, with `, no wakeup`
 for a line reported while the last one was still drawing), no text.
@@ -1115,8 +1121,8 @@ its prefix's index (5 prefixes, `ULJM` ...) and its number. Which register, enco
 has is in Luna's source, found by its address.
 
 **Where.** Appended to `ux0:data/VitaJPOverlay/hooks.log`, which the worker rewrites at each game start
-when the text source is not `ocr` ([Logs](#logs)); `tools/install_ftp.sh --collect` does not fetch it
-yet, so copy it with VitaShell (FTP or USB). Each line is written before the probe's next read, so if a
+when the text source is not `ocr` ([Logs](#logs)); `tools/install_ftp.sh --collect` fetches it, or copy it with
+VitaShell (FTP or USB). Each line is written before the probe's next read, so if a
 read faulted the log would end at the step that caused it.
 
 **How to read it.** Every line starts `psp probe 1:` (the 1 is the format's version); every number is raw,
@@ -1167,6 +1173,8 @@ job path) and `host/tests/hooks_none.c` (nothing installed, for the worker's oth
 `host/hook_trust_bench.c` and `tools/hook_trust_bench.py`.
 The farm checks: `tools/hook_farm.py`, `host/hook_farm_check.c`, `host/tests/fixtures/hook_farm.inc` (generated),
 `tools/tests/test_hook_farm.py`.
+Hook requests: `.github/ISSUE_TEMPLATE/hook-request.yml`, `tools/hook_request.py`, `tools/tests/test_hook_request.py`
+([hook-requests.md](hook-requests.md)).
 SC3 text: `core/hook_sc3.{h,c}`, `core/hook_sc3_pins.inc` and `third_party/sc3-charsets/` (both written by
 `tools/sc3_charset.py`), `host/tests/test_hook_sc3.c`, `host/tests/fixtures/hook_sc3_farm.inc` (generated),
 `tools/tests/test_sc3_charset.py`; the kernel's open in `kernel/game_ocr.c`, the load in `game_ocr/main.c`.

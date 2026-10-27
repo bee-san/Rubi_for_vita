@@ -212,9 +212,11 @@ configuration). Over the same build, Check and repair leaves your `config.ini` a
 another build's and its Install page offers **Update**. **Uninstall** is on the same page: it removes
 the overlay's lines (with a dated backup first) and keeps the files and your settings and cards.
 
-The release also has `Rubi-<version>-debug.vpk`, the test builds' own build with every log
-line, the self-test and the timings. Install it only when asked for a full log; either installs over
-the other and the settings carry over ([release-variants](release-variants.md)).
+Releases up to 0.9.6 also have `Rubi-<version>-debug.vpk`, the test builds' own build with every log
+line, the self-test and the timings; 0.9.7 and later releases are the normal build only, and every test build (a
+pre-release) has the debug one. Install it only when asked for a full log, or for a
+[hook request](hook-requests.md); either installs over the other and the settings carry over
+([release-variants](release-variants.md)).
 
 Open **Rubi** from LiveArea to enable or disable individual games. Older builds call it **Overlay**
 (the 0.8.0 test builds) or **JP Overlay Settings** (0.7.12 and older); the title ID (`VJOSET001`) is
@@ -413,7 +415,7 @@ reported console run. The behaviour below is checked on the host.
   PCSG00415: text source auto, 1 table sites and 8 string copies hooked, 0 sites refused`; the normal
   build only where something was hooked or refused); the debug build also rewrites
   `ux0:data/VitaJPOverlay/hooks.log` at each game start (each site's verdict and why, each string copy
-  hooked or not, no text: [native-hooks.md](native-hooks.md#logs)), and adds to `log.txt` each job's source, flags,
+  hooked or not, the game's version, no text: [native-hooks.md](native-hooks.md#logs)), and adds to `log.txt` each job's source, flags,
   agreement score, the streams with text and the pick (`game vocr source: hook 9, flags 0x03, score
   1000, streams 0x00901, pick 0`) and logs the shown text, a hook's too. The normal build logs no
   hook text, as it logs no OCR text. `history.csv` gets the text shown, with `hook` instead of `vocr`
@@ -422,6 +424,10 @@ reported console run. The behaviour below is checked on the host.
 - **If a game misbehaves with hooks**, hold L while starting it (no Rubi in it at all), turn it OFF
   on the Games page, or set Text source to OCR only (`text_source = ocr`): each applies at the
   game's next start. A safe boot ([boot safety](boot-safety.md)) installs no hook anywhere.
+- **A game without a hook** (or whose hook the worker refuses): ask for one with a
+  [hook request](https://github.com/bee-san/Rubi_for_vita/issues/new?template=hook-request.yml). Play the game once with
+  the debug build and Text source on Automatic, then send its `hooks.log`; `tools/install_ftp.sh --collect` fetches it,
+  and from a debug zip made after v0.9.8-test.2 writes `hook-request.md` beside it ([hook requests](hook-requests.md)).
 - **Table sites off, for a test**: `hook_sites = off` in `config.ini` (no setting in the app; `on` by
   default) installs no table site in any game, only the string copies, from a game's next start, so a
   console run can tell the two apart; `kernel.txt`'s `text source N` is then 256 more than the mode

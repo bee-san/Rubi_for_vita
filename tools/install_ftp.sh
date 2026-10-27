@@ -39,11 +39,12 @@
 #      Compares ux0:app/VJOSET001/vjo_app.txt and eboot.bin with the package's stamp and VPK; exit 0 yes,
 #      1 no, 2 cannot tell. An install ends with the same check, in a box.)
 #   tools/install_ftp.sh --collect 192.168.1.50  (everything the overlay wrote, read-only: the logs,
-#      the self-test report, status/kernel/boot records, config.ini with its API keys and audio
-#      source URL redacted, both
+#      the self-test report, status/kernel/boot records, the debug build's hooks.log, config.ini with its API keys
+#      and audio source URL redacted, both
 #      taiHEN configs, the Anki queue, crash dumps and the installed files' hashes, into one
 #      timestamped folder and zip under build/device/collect/, then analyse_selftest.py --collect on it,
-#      which dates each crash dump against the boot; in a terminal it then offers to archive the ones
+#      which dates each crash dump against the boot, and with a hooks.log tools/hook_request.py, whose
+#      hook-request.md a hook request sends (docs/hook-requests.md); in a terminal it then offers to archive the ones
 #      from before the boot off the Vita, docs/self-test.md#crash-dumps)
 #   tools/install_ftp.sh --archive-dumps 192.168.1.50 (the newest collect's crash dumps from before its
 #      boot: each checked against that collect's copy, then deleted from ux0:data; nothing else on the Vita is written)
@@ -235,6 +236,12 @@ if [ $COLLECT = 1 ]; then
   python3 tools/analyse_selftest.py --collect "$OUT" --json > "$OUT/analysis.json" 2>/dev/null || true
   # each job's timeline, stage by stage (docs/first-ocr.md): numbers only, no recognized text
   [ -f tools/analyse_timeline.py ] && { python3 tools/analyse_timeline.py --collect "$OUT" --jobs > "$OUT/timeline.txt" 2>&1 || true; }
+  # the debug build's hooks.log, as a hook request reads it (docs/hook-requests.md): the game's main module, its
+  # version and each hook site's verdict, never text; hook-request.md goes into the zip, its one line is printed below
+  hooks_line=
+  if [ -f tools/hook_request.py ] && [ -f "$OUT/ux0/data/VitaJPOverlay/hooks.log" ]; then
+    hooks_line=$(python3 tools/hook_request.py "$OUT" --out "$OUT/hook-request.md" 2>&1) || true
+  fi
   python3 - "$OUT" <<'PY'
 import sys, zipfile
 from pathlib import Path
@@ -247,6 +254,7 @@ PY
   cat "$OUT/analysis.txt"
   echo
   echo "analysis exit $verdict (0: the self-test passed or did not run, 1: it failed, read no text in your region or stopped part way)"
+  [ -z "$hooks_line" ] || echo "$hooks_line"
   echo "Send this one file: $(pwd)/$OUT.zip"
   # The crash dumps the analysis placed before this boot (docs/self-test.md#crash-dumps): in a terminal, an offer to
   # archive them off the Vita, each checked against this collect's copy first. The collect itself wrote nothing there.
