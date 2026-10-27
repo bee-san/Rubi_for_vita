@@ -378,21 +378,24 @@ static void history_done(void)
 
 static int starts(const char *s, const char *prefix) { return s && !strncmp(s, prefix, strlen(prefix)); }
 
-/* The queue's records, decoded: their number, and the one whose spelling and sentence are those (NULL: any). */
+/* The queue's records, decoded: their number, and (out) the one whose sentence is that (NULL: any), decoded once the
+ * directory is read (its order is the file system's: tmpfs's differs from a disk's), with misc and game pointing at
+ * those keys in its JSON (the game and the OCR facts are in the file, not in the note the export reads). */
 static int queued(VjoAnkiNote *out, const char *sentence)
 {
-    static uint8_t mem[256 * 1024];
+    static uint8_t mem[256 * 1024], keep[256 * 1024];
+    static char raw[VJO_QUEUE_TEXT_MAX + 1];
     VjoArena a;
     DIR *d = opendir(VJO_QUEUE_DIR);
     struct dirent *e;
-    int n = 0;
+    size_t raw_len = 0;
+    int n = 0, found = 0, picture = 1;
     if (!d) return 0;
     while ((e = readdir(d))) {
         char path[512], json[VJO_QUEUE_TEXT_MAX + 1];
         FILE *f;
         size_t len;
         VjoAnkiNote note;
-        int picture = 1;
         if (strlen(e->d_name) != 37 || strcmp(e->d_name + 32, ".json")) continue;
         n++;
         snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s", e->d_name);
@@ -401,18 +404,23 @@ static int queued(VjoAnkiNote *out, const char *sentence)
         fclose(f);
         json[len] = '\0';
         vjo_arena_init(&a, mem, sizeof(mem));
+        picture = 1;
         TEST_ASSERT(vjo_queue_decode(&a, json, len, &note, &picture) == 4 && !picture);
         TEST_CHECK(strstr(json, "\"picture\":false") != NULL);
-        if (out && (!sentence || !strcmp(note.sentence, sentence))) {
-            /* (the game and the OCR facts are in the file, not in the note the export reads) */
-            *out = note;
-            static char raw[VJO_QUEUE_TEXT_MAX + 1];
+        if (out && !found && (!sentence || !strcmp(note.sentence, sentence))) {
             memcpy(raw, json, len + 1);
-            out->misc = strstr(raw, "\"misc\":") ? strstr(raw, "\"misc\":") : out->misc;
-            out->game = strstr(raw, "\"game\":");
+            raw_len = len;
+            found = 1;
         }
     }
     closedir(d);
+    if (out && found) {
+        vjo_arena_init(&a, keep, sizeof(keep));
+        TEST_ASSERT(vjo_queue_decode(&a, raw, raw_len, out, &picture) == 4);
+        out->misc = strstr(raw, "\"misc\":");
+        out->game = strstr(raw, "\"game\":");
+    }
+    TEST_CHECK_(!out || found, "no queued card has the sentence '%s'", sentence ? sentence : "(any)");
     return n;
 }
 
