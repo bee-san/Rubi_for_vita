@@ -1281,8 +1281,8 @@ around the columns where it held one column (at most 57,344 B) before: 29 KB on 
 most), 34 KB drawn once (60 KB), 428 KB on a whole screen (516 KB), within its bound and budget, 516,096 B
 (`VJO_VOCR_LINE_MAX_BYTES`, `VJO_BUDGET_GAME_LINE`); 32 of 863 whole screens had a larger one and read column by column,
 as before. Since #385's audit a block over a column's 57,344 B is taken only from the free memory beyond the job's
-reserve and the room of its weights, LM and cascade model still to come; refused, the columns are read one by one, as
-before #379 ([memory ledger](memory-ledger.md)).
+reserve and the room of its weights still to read (a job of columns', its LM's too); refused, the columns are read one
+by one, as before #379 ([memory ledger](memory-ledger.md)).
 
 **Limits** (#385's audit measured them; nothing of this has run on a console).
 

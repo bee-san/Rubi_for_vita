@@ -369,7 +369,7 @@ been reported.
     job's memory check: it could cut 504 KiB into the 4 MiB the job leaves the game, or, with
     `ocr_skip_blank_lines` on, take the room of the weights read after it, so that the job read the columns' text as
     rows. Now a block larger than a column is taken only from what the game has free beyond the reserve and the
-    blocks the job has still to take; otherwise the columns are read one by one, as in 0.9.8
+    weights (and LM) the job has still to read; otherwise the columns are read one by one, as in 0.9.8
     ([memory ledger](docs/memory-ledger.md)).
   - **The step log keeps the last try's steps**: a try of rows whose rows went to the columns leaves the log with its
     memory checks too, so that ON's and Automatic's columns keep their normalisation and parallel steps within the 20.

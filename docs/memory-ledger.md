@@ -586,10 +586,11 @@ on, whose job reads the weights only at its first line that is not blank, after 
 take the weights' room, so that they were refused and the job read the columns' text as rows (find kind 5). Now
 `line_buffer` (`game_ocr/main.c`) takes a block larger than one column's bound (`VJO_VOCR_ROTATE_BYTES`, 57,344 B:
 every block a job could ask for before #379) only when the game's free USER memory, less the job's reserve
-(`free_user_after_reserve`), holds it and the blocks the job has still to take: its weights, LM and cascade model
-where they are not resident (`job_model`, `job_lm`, `job_casc`, set while the core runs). Refused, the job reads its
-columns one by one, each in a block of its own, as before #379 (a band of rows that large, a finder's band over a
-picture, is left out and counted: `tall_skipped`). A block of a column's size or less is taken as before. The worst
+(`free_user_after_reserve`), holds it and the weights the job has still to read where they are not resident, and for
+a job of columns its LM's too (`job_model`, `job_lm`, set while the core runs). Refused, the job reads its columns one
+by one, each in a block of its own, as before #379; a band of rows that large (a finder's band over a picture, rare:
+78,884 B at most on the linefind development regions) is left out and counted (`tall_skipped`), so a job of rows keeps
+no LM's or cascade's room for it (those blocks keep the reserve themselves, and their refusal costs only their reading). A block of a column's size or less is taken as before. The worst
 case is unchanged (`VJO_BUDGET_GAME_LINE`); `host/tests/test_game_vocr.c` `columns_rectangle_keeps_the_reserve` holds a
 job at a page less than its rectangle beyond its check (the frames' rectangles are under a column's bound, so that file
 checks blocks over a page: `VJO_GAME_LINE_UNCHECKED`), with and without the blank-line check: the rectangle refused,
@@ -603,11 +604,11 @@ the columns ([vertical text](vita-vn-ocr.md#ons-rule-api-53-379)): no block, thr
 
 | module | `main` `e4c1a02` | this change | pages |
 |---|---:|---:|---:|
-| Game worker, debug | 179,856 + 36,712 B | 180,128 + 36,728 B | 217,088 B both |
-| Game worker, normal | 170,924 + 36,704 B | 171,164 + 36,720 B | 208,896 B both |
+| Game worker, debug | 179,856 + 36,712 B | 180,048 + 36,720 B | 217,088 B both |
+| Game worker, normal | 170,924 + 36,704 B | 171,100 + 36,712 B | 208,896 B both |
 
-The worker's code grows by 272 B (debug) and 240 B (normal), its data/bss by 16 B (the three pointers); the debug worker
-keeps 96 B of its last code page and 136 B of its data page, the normal one 868 and 144 B. The Shell's and the kernel's
+The worker's code grows by 192 B (debug) and 176 B (normal), its data/bss by 8 B (the two pointers); the debug worker
+keeps 176 B of its last code page and 144 B of its data page, the normal one 932 and 152 B. The Shell's and the kernel's
 rows are main's. None of it is measured on a console.
 
 ## Trusted hooks and the OCR-skip switches (API 43)
