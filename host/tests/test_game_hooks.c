@@ -1408,6 +1408,59 @@ static void trusted_call_source_after_four_agreements(void)
     TEST_CHECK(!out.text_from && !strcmp(out.text, spy_text) && !hk.sel.interval); /* unlocked */
 }
 
+/* #366's audit-b, F1: two CALL slots holding one caller (a race could give it a second, which keeps the text it was
+ * taken with while the caller writes the other). Learned on stream 9 (with trust: trusted; without: locked), the
+ * second slot appears on stream 14 with an old line, and the caller's next lines land in stream 9; then the other way
+ * round, learned on 14, with the caller's lines landing in a second slot on 9. Every job shows the current line, from
+ * the slot the caller writes (the newest), never the second slot's old one. Before, the job took the last of the
+ * slots in ID order: with trust, the old line on every job, without OCR. */
+static void second_slot_of_the_learned_caller(void)
+{
+    static char lines[60][96], ocr[60][96];
+    static const char *const varied[10] = {
+        "今日は朝から雨が降っていて外に出られない", "駅前の喫茶店で待ち合わせることにしようか",
+        "それは本当に君が自分で決めたことなのか", "図書館の奥にある古い本棚を調べてみよう",
+        "明日の試験のために今夜は早く寝ることにする", "窓の外で猫が静かにこちらを見つめていた",
+        "先生の話を最後まで聞いてから判断しなさい", "海沿いの道を自転車で走るのが好きだった",
+        "誰にも言えない秘密をひとつだけ持っている", "夕焼けの空が赤く染まって綺麗だったね"};
+    VjoGameOcrResult out;
+    for (unsigned i = 0; i < 60; i++) {
+        if (i < 40) snprintf(ocr[i], sizeof(ocr[i]), "会話の新しいページ番号%uの台詞です", i + 1);
+        else snprintf(ocr[i], sizeof(ocr[i]), "%s", varied[i % 10]); /* unlike each other and the old line */
+        snprintf(lines[i], sizeof(lines[i]), "「%s」", ocr[i]);
+    }
+    for (int trust = 0; trust < 2; trust++)
+        for (int below = 0; below < 2; below++) {
+            const uint32_t learned = below ? 14 : 9, second = below ? 9 : 14, writes = below ? second : learned;
+            const uint32_t speed = trust ? VJO_GAME_OCR_S_TRUST : 0;
+            TEST_CASE_("%s, the second slot %s the learned one", trust ? "trusted" : "hook_trust = off",
+                       below ? "below" : "above");
+            reset();
+            fs[learned].key = 0x5910u;
+            for (unsigned i = 0; i < 40; i++) {
+                stream(learned, VJO_HOOK_KIND_CALL, i + 1, lines[i]);
+                spy_text = ocr[i];
+                TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, speed, &out) == 0 && out.text_from == learned);
+            }
+            TEST_ASSERT(hk.sel.interval && hk.sel.locked == learned);
+            if (trust) TEST_ASSERT(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
+            fs[second].key = 0x5910u; /* the second slot: the caller's old line (above), or its next ones (below) */
+            stream(second, VJO_HOOK_KIND_CALL, 41, lines[40]);
+            for (unsigned i = 41; i < 60; i++) {
+                stream(writes, VJO_HOOK_KIND_CALL, i + 1, lines[i]);
+                spy_text = ocr[i];
+                TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, speed, &out) == 0);
+                TEST_CHECK_(out.text_from == writes && !strcmp(out.text, lines[i]),
+                            "line %u: stream %u (%u), flags %#x: %s", i + 1, (unsigned)out.text_from, (unsigned)writes,
+                            (unsigned)out.hook_flags, out.text);
+                if (trust)
+                    TEST_CHECK(out.hook_flags == (VJO_HOOK_R_TRUSTED | VJO_HOOK_R_LOCKED | VJO_HOOK_R_NO_OCR));
+            }
+            TEST_CHECK_(hk.sel.interval && hk.sel.locked == writes, "locked %u (%u), interval %u",
+                        (unsigned)hk.sel.locked, (unsigned)writes, (unsigned)hk.sel.interval);
+        }
+}
+
 /* The hook watch (API 41) watches a verified site once a trusted job read it, so its next line starts the read. */
 static void hook_watch_reports_trusted_verified_lines(void)
 {
@@ -1754,6 +1807,8 @@ TEST_LIST = {
     {"API 43: a trusted Luna site keeps the hook-only reserve", trusted_luna_site_in_a_tight_game},
     {"API 43: a trusted answer gives the weights back; no warm-up after it", trusted_answer_gives_back_the_weights},
     {"API 43: a CALL source is trusted after four agreements; OCR resumes when it is gone", trusted_call_source_after_four_agreements},
+    {"#366's audit-b: of two slots holding the learned caller, the one it writes (trusted or not, either order)",
+     second_slot_of_the_learned_caller},
     {"API 43: the hook watch reports a trusted verified site's lines", hook_watch_reports_trusted_verified_lines},
     {"API 49: a trusted line is reported at once, from its first, once per text; the watch's pace", trusted_watch_reports_at_once},
     {"API 49: the learned source is reported flagged once trusted, restored ones by identity", trusted_watch_learned_source},

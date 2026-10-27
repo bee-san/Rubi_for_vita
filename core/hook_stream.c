@@ -4,8 +4,9 @@
 #include "hook_place.h"
 
 /* A test's seam (host/tests/test_hook_stream_seams.c): another thread's step at a point of replace() (scan: before slot
- * i's loads; chosen: the scan chose slot i, before its try-lock; replacing: slot i is the new caller's, before its
- * text), run on the test's own thread. Nothing in the worker. */
+ * i's loads; chosen: the scan chose slot i, before its try-lock; taking: slot i's lock held and every check passed,
+ * before the new caller's key; replacing: slot i is the new caller's, before its text), run on the test's own thread.
+ * Nothing in the worker. */
 #ifndef VJO_STREAM_SEAM
 #define VJO_STREAM_SEAM(point, i) ((void)0)
 #endif
@@ -123,6 +124,7 @@ static int replace(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint
         vjo_stream_unlock(v);
         return drop(c, 1);
     } else {
+        VJO_STREAM_SEAM(taking, (unsigned)(v - slots)); /* every check passed, the slot's lock held, the old key */
         __atomic_store_n(&v->key, key, __ATOMIC_RELEASE);
         v->hits = 0; /* a new caller's stream: its text is new (fresh), its hits its own */
         __atomic_add_fetch(&c->call_replaced, 1u, __ATOMIC_RELAXED);

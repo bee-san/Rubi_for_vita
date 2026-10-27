@@ -741,9 +741,12 @@ foreach(_vjo_suite IN LISTS _vjo_tool_suites)
   add_test(NAME ${_vjo_test} COMMAND ${Python3_EXECUTABLE} -m unittest discover
     -s ${CMAKE_SOURCE_DIR}/tools/tests -p ${_vjo_suite_module}.py -v)
   list(APPEND _vjo_tool_tests ${_vjo_test})
-  # Label tools: a change to the hooks' verified-entry table alone leaves these out in CI
-  # (tools/ci_scope.py hooks_only; their programs have no hook table in them).
-  set_property(TEST ${_vjo_test} APPEND PROPERTY LABELS tools)
+  # Label tools: a change to the hooks' verified-entry table alone leaves these out in CI (tools/ci_scope.py
+  # hooks_only), but for the two whose programs read that table, core/hook_place.c: tools/hook_request.py parses its
+  # entries, tools/hook_farm.py compiles it (#366's audit-b, N3).
+  if(NOT _vjo_suite_module MATCHES "^test_hook_(request|farm)$")
+    set_property(TEST ${_vjo_test} APPEND PROPERTY LABELS tools)
+  endif()
   # A suite that never reads this build (its programs, VJO_CLI and the rest below, or build/host) gives
   # the same result in both builds: label variant_free, which the normal build's CI job and
   # tools/fast_gate.sh leave to the debug build's run (ctest -LE variant_free).

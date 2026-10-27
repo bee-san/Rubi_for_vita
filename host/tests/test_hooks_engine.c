@@ -1354,6 +1354,14 @@ static void test_keep_key(void)
     /* a key the slot never held */
     vjo_hooks_keep(11, 0x7777u);
     TEST_CHECK(slots[10].kept == 0);
+    /* pinned (key 0, a diagnostic pick): under the slot's lock as well (#366's audit-b, F3): busy, not now, the lock
+     * left as it was; free, kept, whichever caller holds it */
+    slots[11].lock = 1;
+    vjo_hooks_keep(12, 0);
+    TEST_CHECK(slots[11].kept == 0 && slots[11].lock == 1);
+    slots[11].lock = 0;
+    vjo_hooks_keep(12, 0);
+    TEST_CHECK(slots[11].kept == 1 && slots[11].lock == 0);
 }
 
 /* vjo_hooks_stop: live off, every hook released newest first (CALL imports, then the sites), each once; then
