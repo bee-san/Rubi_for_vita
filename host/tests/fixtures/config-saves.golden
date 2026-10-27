@@ -1,0 +1,2476 @@
+# The Rubi app's saves of the config fixtures (host/tests/test_preferences.c config_saves_golden; VJO_UPDATE_GOLDEN=1 rewrites this file)
+= host/tests/fixtures/config-old-app-test2.ini
+  preferences: 4408 bytes, fnv1a b4b67828d90f9e73
+  anki_keys: 4514 bytes, fnv1a f5848322d422106e
+  clean: 4461 bytes, fnv1a 47587792d8b74838
+  app_ini: 4605 bytes, fnv1a 6599f955c1bcfc8c
+= host/tests/fixtures/config-test3-owner.ini
+  preferences: 3860 bytes, fnv1a 771c60d65e0212d5
+  anki_keys: 3913 bytes, fnv1a 4c02da3444b2e7e1
+  clean: 3860 bytes, fnv1a 771c60d65e0212d5
+  app_ini: 3943 bytes, fnv1a 2359cf9439a1788b
+= docs/config.example.ini
+  preferences: 6482 bytes, fnv1a 536d654bc466c7c7
+  anki_keys: 6482 bytes, fnv1a d16fa2e1841bb497
+  clean: 6482 bytes, fnv1a 536d654bc466c7c7
+  app_ini: 6482 bytes, fnv1a d16fa2e1841bb497
+> ; a comment
+  removed_line: K
+  preferences: "; a comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "; a comment\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> # a comment
+  removed_line: K
+  preferences: "# a comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "# a comment\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+>    ; an indented comment
+  removed_line: K
+  preferences: "   ; an indented comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "   ; an indented comment\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> \t# a tabbed comment
+  removed_line: K
+  preferences: "\t# a tabbed comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "\t# a tabbed comment\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> bogus = 1
+  removed_line: K
+  preferences: "bogus = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "bogus = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> bogus line
+  removed_line: K
+  preferences: "bogus line\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "bogus line\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> Bogus_Setting = 1
+  removed_line: K
+  preferences: "Bogus_Setting = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "Bogus_Setting = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> key with spaces = 1
+  removed_line: K
+  preferences: "key with spaces = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "key with spaces = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> = value
+  removed_line: K
+  preferences: "= value\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "= value\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+>  = value
+  removed_line: K
+  preferences: " = value\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: " = value\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ==
+  removed_line: K
+  preferences: "==\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "==\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja
+  removed_line: K
+  preferences: "font_size_ja\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja =
+  removed_line: K
+  preferences: "font_size_ja =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 20 ; inline comment
+  removed_line: K
+  preferences: "font_size_ja = 20 ; inline comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 20 ; inline comment\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 20 # inline comment
+  removed_line: K
+  preferences: "font_size_ja = 20 # inline comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 20 # inline comment\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 20;not a comment
+  removed_line: K
+  preferences: "font_size_ja = 20;not a comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 20;not a comment\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 20 \t; tabbed comment
+  removed_line: K
+  preferences: "font_size_ja = 20 \t; tabbed comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 20 \t; tabbed comment\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja=20
+  removed_line: K
+  preferences: "font_size_ja=20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja=20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+>   font_size_ja  =  20 \x20
+  removed_line: K
+  preferences: "  font_size_ja  =  20  \njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "  font_size_ja  =  20  \nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> \tfont_size_ja\t=\t20\t
+  removed_line: K
+  preferences: "\tfont_size_ja\t=\t20\t\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "\tfont_size_ja\t=\t20\t\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> FONT_SIZE_JA = 20
+  removed_line: K
+  preferences: "FONT_SIZE_JA = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "FONT_SIZE_JA = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 20\r
+  removed_line: K
+  preferences: "font_size_ja = 20\r\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 20\r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 20\r\nfont_size_en = 12\r\n
+  removed_line: K K
+  preferences: "font_size_ja = 20\r\nfont_size_en = 12\r\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 20\r\nfont_size_en = 12\r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> \xEF\xBB\xBFfont_size_ja = 20
+  removed_line: K
+  preferences: "\xEF\xBB\xBFfont_size_ja = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "\xEF\xBB\xBFfont_size_ja = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+>  \xEF\xBB\xBF font_size_ja = 20
+  removed_line: K
+  preferences: " \xEF\xBB\xBF font_size_ja = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: " \xEF\xBB\xBF font_size_ja = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> \xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20
+  removed_line: K
+  preferences: "\xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "\xEF\xBB\xBF\xEF\xBB\xBFfont_size_ja = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12
+  removed_line: K K
+  preferences: "font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 20\n\xEF\xBB\xBFfont_size_en = 12\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> \xEF\xBB\xBF
+  removed_line: K
+  preferences: "\xEF\xBB\xBF\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "\xEF\xBB\xBF\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_mining\r= off
+  removed_line: K
+  preferences: "anki_mining\r= off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining\r= off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier\r= large
+  removed_line: K
+  preferences: "vocr_tier = large\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier\r= large\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier \r= large
+  removed_line: K
+  preferences: "vocr_tier = large\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier \r= large\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> highlight_mode\r=character
+  removed_line: K
+  preferences: "highlight_mode = character\njapanese_only_selection = off\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "highlight_mode\r=character\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> japanese_only_selection \r = on
+  removed_line: K
+  preferences: "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "japanese_only_selection \r = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_results\r\t= 3
+  removed_line: K
+  preferences: "local_dictionary_results = 3\njapanese_only_selection = off\nhighlight_mode = word\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_results\r\t= 3\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model\r= FL10_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = small\n"
+  anki_keys: "vocr_model\r= FL10_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size\r= 3
+  removed_line: K
+  preferences: "font_size\r= 3\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size\r= 3\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> jpdb_api_key\r= secret-17
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jpdb_api_key\r= secret-17\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend\r= lens
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend\r= lens\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> font_size_ja = 20\nfont_size_ja = 30
+  removed_line: K K
+  preferences: "font_size_ja = 20\nfont_size_ja = 30\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 20\nfont_size_ja = 30\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 20\nfont_size_ja = 99
+  removed_line: K K
+  preferences: "font_size_ja = 20\nfont_size_ja = 99\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 20\nfont_size_ja = 99\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5
+  removed_line: K K K K K
+  preferences: "bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "bogus1 = 1\nbogus2 = 2\nbogus3 = 3\nbogus4 = 4\nbogus5 = 5\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1
+  removed_line: K
+  preferences: "an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "an_unknown_key_much_longer_than_the_thirty_two_bytes_a_warning_shows = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> https://example.invalid/path?a=b
+  removed_line: K
+  preferences: "https://example.invalid/path?a=b\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "https://example.invalid/path?a=b\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_dir = ux0:data/mine
+  removed_line: K
+  preferences: "local_dictionary_dir = ux0:data/mine\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_dir = ux0:data/mine\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_dir = ux0:data/mine ; not a comment here
+  removed_line: K
+  preferences: "local_dictionary_dir = ux0:data/mine ; not a comment here\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_dir = ux0:data/mine ; not a comment here\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_dir =
+  removed_line: K
+  preferences: "local_dictionary_dir =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_dir =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> LOCAL_DICTIONARY_DIR = ux0:data/Mine
+  removed_line: K
+  preferences: "LOCAL_DICTIONARY_DIR = ux0:data/Mine\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "LOCAL_DICTIONARY_DIR = ux0:data/Mine\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_model_dir = ux0:data/models
+  removed_line: K
+  preferences: "ocr_model_dir = ux0:data/models\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_model_dir = ux0:data/models\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_model_dir = ux0:data/models # not a comment here
+  removed_line: K
+  preferences: "ocr_model_dir = ux0:data/models # not a comment here\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_model_dir = ux0:data/models # not a comment here\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_model_dir =
+  removed_line: K
+  preferences: "ocr_model_dir =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_model_dir =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = a.vjdict
+  removed_line: K
+  preferences: "local_dictionaries = a.vjdict\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = a.vjdict\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = a.vjdict,b.vjdict
+  removed_line: K
+  preferences: "local_dictionaries = a.vjdict,b.vjdict\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = a.vjdict,b.vjdict\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = a.vjdict, b.vjdict ; mine
+  removed_line: K
+  preferences: "local_dictionaries = a.vjdict, b.vjdict ; mine\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = a.vjdict, b.vjdict ; mine\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = plaintext.vjdict,vndb-names.vjdict
+  removed_line: K
+  preferences: "local_dictionaries = plaintext.vjdict,vndb-names.vjdict\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = plaintext.vjdict,vndb-names.vjdict\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = ../a.vjdict
+  removed_line: K
+  preferences: "local_dictionaries = ../a.vjdict\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = ../a.vjdict\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = a.txt
+  removed_line: K
+  preferences: "local_dictionaries = a.txt\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = a.txt\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = /abs.vjdict
+  removed_line: K
+  preferences: "local_dictionaries = /abs.vjdict\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = /abs.vjdict\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict
+  removed_line: K
+  preferences: "local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict
+  removed_line: K
+  preferences: "local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = a.vjdict,b.vjdict,c.vjdict,d.vjdict,e.vjdict,f.vjdict,g.vjdict,h.vjdict,i.vjdict\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries =
+  removed_line: K
+  preferences: "local_dictionaries =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = ,
+  removed_line: K
+  preferences: "local_dictionaries = ,\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "local_dictionaries = ,\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_results = 1
+  removed_line: K
+  preferences: "local_dictionary_results = 1\njapanese_only_selection = off\nhighlight_mode = word\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_results = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_results = 8
+  removed_line: K
+  preferences: "local_dictionary_results = 8\njapanese_only_selection = off\nhighlight_mode = word\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_results = 8\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_results = 0
+  removed_line: K
+  preferences: "local_dictionary_results = 2\njapanese_only_selection = off\nhighlight_mode = word\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_results = 0\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_results = 9
+  removed_line: K
+  preferences: "local_dictionary_results = 2\njapanese_only_selection = off\nhighlight_mode = word\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_results = 9\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_results = two
+  removed_line: K
+  preferences: "local_dictionary_results = 2\njapanese_only_selection = off\nhighlight_mode = word\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_results = two\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_results =
+  removed_line: K
+  preferences: "local_dictionary_results = 2\njapanese_only_selection = off\nhighlight_mode = word\nvocr_tier = normal\n"
+  anki_keys: "local_dictionary_results =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> non_japanese_filter = lines
+  removed_line: K
+  preferences: "non_japanese_filter = lines\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "non_japanese_filter = lines\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> non_japanese_filter = none
+  removed_line: K
+  preferences: "non_japanese_filter = none\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "non_japanese_filter = none\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> non_japanese_filter = LINES
+  removed_line: K
+  preferences: "non_japanese_filter = LINES\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "non_japanese_filter = LINES\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> non_japanese_filter = None ; mine
+  removed_line: K
+  preferences: "non_japanese_filter = None ; mine\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "non_japanese_filter = None ; mine\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> non_japanese_filter = all
+  removed_line: K
+  preferences: "non_japanese_filter = all\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "non_japanese_filter = all\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> non_japanese_filter =
+  removed_line: K
+  preferences: "non_japanese_filter =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "non_japanese_filter =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> japanese_only_selection = on
+  removed_line: K
+  preferences: "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "japanese_only_selection = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> japanese_only_selection = off
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "japanese_only_selection = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> japanese_only_selection = ON
+  removed_line: K
+  preferences: "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "japanese_only_selection = ON\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> japanese_only_selection = maybe
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "japanese_only_selection = maybe\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> japanese_only_selection = on\njapanese_only_selection = maybe
+  removed_line: K K
+  preferences: "japanese_only_selection = on\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "japanese_only_selection = on\njapanese_only_selection = maybe\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> highlight_mode = word
+  removed_line: K
+  preferences: "highlight_mode = word\njapanese_only_selection = off\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "highlight_mode = word\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> highlight_mode = character
+  removed_line: K
+  preferences: "highlight_mode = character\njapanese_only_selection = off\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "highlight_mode = character\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> HIGHLIGHT_MODE = CHARACTER
+  removed_line: K
+  preferences: "highlight_mode = character\njapanese_only_selection = off\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "HIGHLIGHT_MODE = CHARACTER\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> highlight_mode = Word
+  removed_line: K
+  preferences: "highlight_mode = word\njapanese_only_selection = off\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "highlight_mode = Word\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> highlight_mode = sentence
+  removed_line: K
+  preferences: "highlight_mode = word\njapanese_only_selection = off\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "highlight_mode = sentence\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> highlight_mode =
+  removed_line: K
+  preferences: "highlight_mode = word\njapanese_only_selection = off\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "highlight_mode =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> frequency_badge = on
+  removed_line: K
+  preferences: "frequency_badge = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "frequency_badge = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> frequency_badge = off
+  removed_line: K
+  preferences: "frequency_badge = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "frequency_badge = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> frequency_badge = Off
+  removed_line: K
+  preferences: "frequency_badge = Off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "frequency_badge = Off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> frequency_badge = 1
+  removed_line: K
+  preferences: "frequency_badge = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "frequency_badge = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> names_first = off
+  removed_line: K
+  preferences: "names_first = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "names_first = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> names_first = on
+  removed_line: K
+  preferences: "names_first = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "names_first = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> names_first = auto
+  removed_line: K
+  preferences: "names_first = auto\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "names_first = auto\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> names_first = AUTO
+  removed_line: K
+  preferences: "names_first = AUTO\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "names_first = AUTO\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> names_first = first
+  removed_line: K
+  preferences: "names_first = first\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "names_first = first\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 8
+  removed_line: K
+  preferences: "font_size_ja = 8\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 8\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 40
+  removed_line: K
+  preferences: "font_size_ja = 40\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 40\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 7
+  removed_line: K
+  preferences: "font_size_ja = 7\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 7\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = 41
+  removed_line: K
+  preferences: "font_size_ja = 41\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = 41\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = -8
+  removed_line: K
+  preferences: "font_size_ja = -8\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = -8\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_ja = big
+  removed_line: K
+  preferences: "font_size_ja = big\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_ja = big\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_en = 8
+  removed_line: K
+  preferences: "font_size_en = 8\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_en = 8\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_en = 40
+  removed_line: K
+  preferences: "font_size_en = 40\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_en = 40\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_en = 41
+  removed_line: K
+  preferences: "font_size_en = 41\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_en = 41\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size_en = 12px
+  removed_line: K
+  preferences: "font_size_en = 12px\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size_en = 12px\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> stick_lookup_ms = 0
+  removed_line: K
+  preferences: "stick_lookup_ms = 0\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "stick_lookup_ms = 0\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> stick_lookup_ms = 1000
+  removed_line: K
+  preferences: "stick_lookup_ms = 1000\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "stick_lookup_ms = 1000\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> stick_lookup_ms = 1001
+  removed_line: K
+  preferences: "stick_lookup_ms = 1001\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "stick_lookup_ms = 1001\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> stick_lookup_ms = -5
+  removed_line: K
+  preferences: "stick_lookup_ms = -5\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "stick_lookup_ms = -5\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> stick_lookup_ms = 20 ms
+  removed_line: K
+  preferences: "stick_lookup_ms = 20 ms\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "stick_lookup_ms = 20 ms\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = select
+  removed_line: K
+  preferences: "toggle_button = select\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = select\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = start
+  removed_line: K
+  preferences: "toggle_button = start\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = start\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = l+r
+  removed_line: K
+  preferences: "toggle_button = l+r\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = l+r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = select+l
+  removed_line: K
+  preferences: "toggle_button = select+l\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = select+l\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = select+r
+  removed_line: K
+  preferences: "toggle_button = select+r\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = select+r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = rear_double_tap
+  removed_line: K
+  preferences: "toggle_button = rear_double_tap\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = rear_double_tap\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = Select+R
+  removed_line: K
+  preferences: "toggle_button = Select+R\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = Select+R\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = L+R
+  removed_line: K
+  preferences: "toggle_button = L+R\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = L+R\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = triangle
+  removed_line: K
+  preferences: "toggle_button = triangle\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = triangle\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button =
+  removed_line: K
+  preferences: "toggle_button =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> subtitle_button = select
+  removed_line: K
+  preferences: "subtitle_button = select\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "subtitle_button = select\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> subtitle_button = start
+  removed_line: K
+  preferences: "subtitle_button = start\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "subtitle_button = start\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> subtitle_button = l+r
+  removed_line: K
+  preferences: "subtitle_button = l+r\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "subtitle_button = l+r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> subtitle_button = select+l
+  removed_line: K
+  preferences: "subtitle_button = select+l\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "subtitle_button = select+l\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> subtitle_button = select+r
+  removed_line: K
+  preferences: "subtitle_button = select+r\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "subtitle_button = select+r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> subtitle_button = rear_double_tap
+  removed_line: K
+  preferences: "subtitle_button = rear_double_tap\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "subtitle_button = rear_double_tap\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> subtitle_button = REAR_DOUBLE_TAP
+  removed_line: K
+  preferences: "subtitle_button = REAR_DOUBLE_TAP\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "subtitle_button = REAR_DOUBLE_TAP\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> subtitle_button = circle
+  removed_line: K
+  preferences: "subtitle_button = circle\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "subtitle_button = circle\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = select+r
+  removed_line: K
+  preferences: "toggle_button = select+r\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = select+r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = start\nsubtitle_button = start
+  removed_line: K K
+  preferences: "toggle_button = start\nsubtitle_button = start\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = start\nsubtitle_button = start\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> toggle_button = select+l\nsubtitle_button = select+l
+  removed_line: K K
+  preferences: "toggle_button = select+l\nsubtitle_button = select+l\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "toggle_button = select+l\nsubtitle_button = select+l\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> subtitle_button = l+r
+  removed_line: K
+  preferences: "subtitle_button = l+r\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "subtitle_button = l+r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> text_source = ocr
+  removed_line: K
+  preferences: "text_source = ocr\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "text_source = ocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> text_source = auto
+  removed_line: K
+  preferences: "text_source = auto\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "text_source = auto\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> text_source = hooks
+  removed_line: K
+  preferences: "text_source = hooks\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "text_source = hooks\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> text_source = HOOKS
+  removed_line: K
+  preferences: "text_source = HOOKS\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "text_source = HOOKS\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> text_source = lens
+  removed_line: K
+  preferences: "text_source = lens\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "text_source = lens\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> text_source = ocr\ntext_source = maybe
+  removed_line: K K
+  preferences: "text_source = ocr\ntext_source = maybe\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "text_source = ocr\ntext_source = maybe\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> text_source =
+  removed_line: K
+  preferences: "text_source =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "text_source =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hook_sites = on
+  removed_line: K
+  preferences: "hook_sites = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hook_sites = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hook_sites = off
+  removed_line: K
+  preferences: "hook_sites = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hook_sites = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> Hook_Sites = OFF
+  removed_line: K
+  preferences: "Hook_Sites = OFF\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "Hook_Sites = OFF\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hook_sites = 0
+  removed_line: K
+  preferences: "hook_sites = 0\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hook_sites = 0\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hook_sites = off\nhook_sites = maybe
+  removed_line: K K
+  preferences: "hook_sites = off\nhook_sites = maybe\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hook_sites = off\nhook_sites = maybe\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hook_trust = on
+  removed_line: K
+  preferences: "hook_trust = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hook_trust = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hook_trust = off
+  removed_line: K
+  preferences: "hook_trust = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hook_trust = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> HOOK_TRUST = Off
+  removed_line: K
+  preferences: "HOOK_TRUST = Off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "HOOK_TRUST = Off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hook_trust = off\nhook_trust =
+  removed_line: K K
+  preferences: "hook_trust = off\nhook_trust =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hook_trust = off\nhook_trust =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hook_trusted = off
+  removed_line: K
+  preferences: "hook_trusted = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hook_trusted = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_mode = auto
+  removed_line: K
+  preferences: "ocr_mode = auto\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_mode = auto\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_mode = on_press
+  removed_line: K
+  preferences: "ocr_mode = on_press\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_mode = on_press\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_mode = ON_PRESS
+  removed_line: K
+  preferences: "ocr_mode = ON_PRESS\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_mode = ON_PRESS\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_mode = On_Press ; mine
+  removed_line: K
+  preferences: "ocr_mode = On_Press ; mine\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_mode = On_Press ; mine\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_mode = press
+  removed_line: K
+  preferences: "ocr_mode = press\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_mode = press\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_mode =
+  removed_line: K
+  preferences: "ocr_mode =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_mode =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier = small
+  removed_line: K
+  preferences: "vocr_tier = small\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier = small\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier = normal
+  removed_line: K
+  preferences: "vocr_tier = normal\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier = normal\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier = large
+  removed_line: K
+  preferences: "vocr_tier = large\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier = large\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier = Large
+  removed_line: K
+  preferences: "vocr_tier = large\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier = Large\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier = huge
+  removed_line: K
+  preferences: "vocr_tier = normal\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier = huge\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier =
+  removed_line: K
+  preferences: "vocr_tier = normal\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_ms = 0
+  removed_line: K
+  preferences: "ocr_settle_ms = 0\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_ms = 0\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_ms = 150
+  removed_line: K
+  preferences: "ocr_settle_ms = 150\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_ms = 150\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_ms = 1000
+  removed_line: K
+  preferences: "ocr_settle_ms = 1000\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_ms = 1000\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_ms = 1001
+  removed_line: K
+  preferences: "ocr_settle_ms = 1001\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_ms = 1001\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_ms = -5
+  removed_line: K
+  preferences: "ocr_settle_ms = -5\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_ms = -5\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_ms = soon
+  removed_line: K
+  preferences: "ocr_settle_ms = soon\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_ms = soon\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_max_ms = 100
+  removed_line: K
+  preferences: "ocr_settle_max_ms = 100\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_max_ms = 100\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_max_ms = 10000
+  removed_line: K
+  preferences: "ocr_settle_max_ms = 10000\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_max_ms = 10000\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_max_ms = 99
+  removed_line: K
+  preferences: "ocr_settle_max_ms = 99\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_max_ms = 99\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_max_ms = 10001
+  removed_line: K
+  preferences: "ocr_settle_max_ms = 10001\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_max_ms = 10001\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = 0
+  removed_line: K
+  preferences: "ocr_settle_press_ms = 0\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = 0\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = 100
+  removed_line: K
+  preferences: "ocr_settle_press_ms = 100\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = 100\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = 1000
+  removed_line: K
+  preferences: "ocr_settle_press_ms = 1000\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = 1000\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = 10000
+  removed_line: K
+  preferences: "ocr_settle_press_ms = 10000\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = 10000\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = 1
+  removed_line: K
+  preferences: "ocr_settle_press_ms = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = 24
+  removed_line: K
+  preferences: "ocr_settle_press_ms = 24\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = 24\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = 99
+  removed_line: K
+  preferences: "ocr_settle_press_ms = 99\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = 99\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = 10001
+  removed_line: K
+  preferences: "ocr_settle_press_ms = 10001\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = 10001\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = -5
+  removed_line: K
+  preferences: "ocr_settle_press_ms = -5\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = -5\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = soon
+  removed_line: K
+  preferences: "ocr_settle_press_ms = soon\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = soon\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_settle_press_ms = 400\nocr_settle_press_ms = 99
+  removed_line: K K
+  preferences: "ocr_settle_press_ms = 400\nocr_settle_press_ms = 99\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_settle_press_ms = 400\nocr_settle_press_ms = 99\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_skip_blank_lines = on
+  removed_line: K
+  preferences: "ocr_skip_blank_lines = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_skip_blank_lines = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_skip_blank_lines = off
+  removed_line: K
+  preferences: "ocr_skip_blank_lines = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_skip_blank_lines = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_skip_blank_lines = maybe
+  removed_line: K
+  preferences: "ocr_skip_blank_lines = maybe\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_skip_blank_lines = maybe\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_lm = off
+  removed_line: K
+  preferences: "ocr_lm = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_lm = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_lm = 500k
+  removed_line: K
+  preferences: "ocr_lm = 500k\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_lm = 500k\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_lm = 1000k
+  removed_line: K
+  preferences: "ocr_lm = 1000k\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_lm = 1000k\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_lm = 2000k
+  removed_line: K
+  preferences: "ocr_lm = 2000k\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_lm = 2000k\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_lm = 4000k
+  removed_line: K
+  preferences: "ocr_lm = 4000k\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_lm = 4000k\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_lm = 1000K
+  removed_line: K
+  preferences: "ocr_lm = 1000K\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_lm = 1000K\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_lm = 8000k
+  removed_line: K
+  preferences: "ocr_lm = 8000k\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_lm = 8000k\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_lm = 1000
+  removed_line: K
+  preferences: "ocr_lm = 1000\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_lm = 1000\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_cascade_ms = 0
+  removed_line: K
+  preferences: "ocr_cascade_ms = 0\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_cascade_ms = 0\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_cascade_ms = 250
+  removed_line: K
+  preferences: "ocr_cascade_ms = 250\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_cascade_ms = 250\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_cascade_ms = 3750
+  removed_line: K
+  preferences: "ocr_cascade_ms = 3750\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_cascade_ms = 3750\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_cascade_ms = 3751
+  removed_line: K
+  preferences: "ocr_cascade_ms = 3751\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_cascade_ms = 3751\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_cascade_ms = -1
+  removed_line: K
+  preferences: "ocr_cascade_ms = -1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_cascade_ms = -1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_refine_lines = off
+  removed_line: K
+  preferences: "ocr_refine_lines = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_refine_lines = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_refine_lines = on
+  removed_line: K
+  preferences: "ocr_refine_lines = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_refine_lines = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_refine_lines = psp
+  removed_line: K
+  preferences: "ocr_refine_lines = psp\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_refine_lines = psp\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_refine_lines = PSP
+  removed_line: K
+  preferences: "ocr_refine_lines = PSP\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_refine_lines = PSP\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_refine_lines = sometimes
+  removed_line: K
+  preferences: "ocr_refine_lines = sometimes\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_refine_lines = sometimes\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_text_gate = on
+  removed_line: K
+  preferences: "ocr_text_gate = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_text_gate = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_text_gate = off
+  removed_line: K
+  preferences: "ocr_text_gate = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_text_gate = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> OCR_TEXT_GATE = ON
+  removed_line: K
+  preferences: "OCR_TEXT_GATE = ON\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "OCR_TEXT_GATE = ON\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_text_gate = maybe
+  removed_line: K
+  preferences: "ocr_text_gate = maybe\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_text_gate = maybe\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_head_gate = on
+  removed_line: K
+  preferences: "ocr_head_gate = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_head_gate = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_head_gate = off
+  removed_line: K
+  preferences: "ocr_head_gate = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_head_gate = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_head_gate = gate
+  removed_line: K
+  preferences: "ocr_head_gate = gate\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_head_gate = gate\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_head_gate = two_level
+  removed_line: K
+  preferences: "ocr_head_gate = two_level\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_head_gate = two_level\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_head_gate = Two_Level
+  removed_line: K
+  preferences: "ocr_head_gate = Two_Level\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_head_gate = Two_Level\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_head_gate = sometimes
+  removed_line: K
+  preferences: "ocr_head_gate = sometimes\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_head_gate = sometimes\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_two_level = off
+  removed_line: K
+  preferences: "ocr_two_level = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_two_level = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_line_fix = off
+  removed_line: K
+  preferences: "ocr_line_fix = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_line_fix = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_line_fix = on
+  removed_line: K
+  preferences: "ocr_line_fix = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_line_fix = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_line_fix = junk
+  removed_line: K
+  preferences: "ocr_line_fix = junk\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_line_fix = junk\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_line_fix = all
+  removed_line: K
+  preferences: "ocr_line_fix = all\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_line_fix = all\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_line_fix = ALL
+  removed_line: K
+  preferences: "ocr_line_fix = ALL\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_line_fix = ALL\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_line_fix = valley
+  removed_line: K
+  preferences: "ocr_line_fix = valley\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_line_fix = valley\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_line_fix = spotter
+  removed_line: K
+  preferences: "ocr_line_fix = spotter\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_line_fix = spotter\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_finder = grad
+  removed_line: K
+  preferences: "ocr_finder = grad\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_finder = grad\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_finder = spotter
+  removed_line: K
+  preferences: "ocr_finder = spotter\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_finder = spotter\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> OCR_Finder = SPOTTER
+  removed_line: K
+  preferences: "OCR_Finder = SPOTTER\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "OCR_Finder = SPOTTER\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_finder = textdet
+  removed_line: K
+  preferences: "ocr_finder = textdet\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_finder = textdet\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_finder =
+  removed_line: K
+  preferences: "ocr_finder =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_finder =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_spotter_refine = on
+  removed_line: K
+  preferences: "ocr_spotter_refine = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_spotter_refine = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_spotter_refine = off
+  removed_line: K
+  preferences: "ocr_spotter_refine = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_spotter_refine = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_spotter_refine = maybe
+  removed_line: K
+  preferences: "ocr_spotter_refine = maybe\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_spotter_refine = maybe\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_threads = 1
+  removed_line: K
+  preferences: "ocr_threads = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_threads = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_threads = 2
+  removed_line: K
+  preferences: "ocr_threads = 2\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_threads = 2\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_threads = 3
+  removed_line: K
+  preferences: "ocr_threads = 3\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_threads = 3\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_threads = 0
+  removed_line: K
+  preferences: "ocr_threads = 0\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_threads = 0\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_threads = 4
+  removed_line: K
+  preferences: "ocr_threads = 4\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_threads = 4\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_threads = x
+  removed_line: K
+  preferences: "ocr_threads = x\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_threads = x\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_boost_clock = on
+  removed_line: K
+  preferences: "ocr_boost_clock = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_boost_clock = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_boost_clock = off
+  removed_line: K
+  preferences: "ocr_boost_clock = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_boost_clock = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_boost_clock = OFF
+  removed_line: K
+  preferences: "ocr_boost_clock = OFF\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_boost_clock = OFF\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_boost_clock = maybe
+  removed_line: K
+  preferences: "ocr_boost_clock = maybe\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_boost_clock = maybe\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_wait_hint = on
+  removed_line: K
+  preferences: "ocr_wait_hint = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_wait_hint = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_wait_hint = off
+  removed_line: K
+  preferences: "ocr_wait_hint = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_wait_hint = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> OCR_Wait_Hint = OFF
+  removed_line: K
+  preferences: "OCR_Wait_Hint = OFF\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "OCR_Wait_Hint = OFF\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_wait_hint = maybe
+  removed_line: K
+  preferences: "ocr_wait_hint = maybe\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_wait_hint = maybe\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_wait_hints = off
+  removed_line: K
+  preferences: "ocr_wait_hints = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_wait_hints = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_wait = off
+  removed_line: K
+  preferences: "ocr_wait = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_wait = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_vertical = off
+  removed_line: K
+  preferences: "ocr_vertical = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_vertical = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_vertical = on
+  removed_line: K
+  preferences: "ocr_vertical = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_vertical = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_vertical = auto
+  removed_line: K
+  preferences: "ocr_vertical = auto\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_vertical = auto\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_vertical = Auto
+  removed_line: K
+  preferences: "ocr_vertical = Auto\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_vertical = Auto\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_vertical = yes
+  removed_line: K
+  preferences: "ocr_vertical = yes\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_vertical = yes\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> OCR_Vertical = 1
+  removed_line: K
+  preferences: "OCR_Vertical = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "OCR_Vertical = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> reading_time = adaptive
+  removed_line: K
+  preferences: "reading_time = adaptive\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "reading_time = adaptive\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> reading_time = 15s
+  removed_line: K
+  preferences: "reading_time = 15s\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "reading_time = 15s\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> Reading_Time = 15S
+  removed_line: K
+  preferences: "Reading_Time = 15S\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "Reading_Time = 15S\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> reading_time = 30s
+  removed_line: K
+  preferences: "reading_time = 30s\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "reading_time = 30s\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> reading_time =
+  removed_line: K
+  preferences: "reading_time =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "reading_time =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> log_file = on
+  removed_line: K
+  preferences: "log_file = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "log_file = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> log_file = off
+  removed_line: K
+  preferences: "log_file = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "log_file = off\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> log_file = OFF
+  removed_line: K
+  preferences: "log_file = OFF\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "log_file = OFF\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> log_file = 1
+  removed_line: K
+  preferences: "log_file = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "log_file = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_mining = on
+  removed_line: K
+  preferences: "anki_mining = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_mining = off
+  removed_line: K
+  preferences: "anki_mining = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_mining = ON
+  removed_line: K
+  preferences: "anki_mining = ON\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_mining = yes
+  removed_line: K
+  preferences: "anki_mining = yes\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_screenshot = on
+  removed_line: K
+  preferences: "anki_screenshot = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_screenshot = off\nanki_mining = on\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_screenshot = off
+  removed_line: K
+  preferences: "anki_screenshot = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_screenshot = off\nanki_mining = on\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_screenshot = maybe
+  removed_line: K
+  preferences: "anki_screenshot = maybe\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_screenshot = off\nanki_mining = on\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_screenshot_trim_bars = on
+  removed_line: K
+  preferences: "anki_screenshot_trim_bars = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_screenshot_trim_bars = on\nanki_mining = on\nanki_screenshot = off\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_screenshot_trim_bars = off
+  removed_line: K
+  preferences: "anki_screenshot_trim_bars = off\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_screenshot_trim_bars = on\nanki_mining = on\nanki_screenshot = off\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> Anki_Screenshot_Trim_Bars = OFF
+  removed_line: K
+  preferences: "Anki_Screenshot_Trim_Bars = OFF\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_screenshot_trim_bars = on\nanki_mining = on\nanki_screenshot = off\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_screenshot_trim_bars = x
+  removed_line: K
+  preferences: "anki_screenshot_trim_bars = x\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_screenshot_trim_bars = on\nanki_mining = on\nanki_screenshot = off\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_mining = on ; a comment
+  removed_line: K
+  preferences: "anki_mining = on ; a comment\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary = local
+  removed_line: K
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary = LOCAL
+  removed_line: K
+  preferences: "dictionary = LOCAL\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = LOCAL\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary = local ; mine
+  removed_line: K
+  preferences: "dictionary = local ; mine\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local ; mine\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary = jpdb
+  removed_line: R(dictionary = local\n)
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\n"
+  app_ini: "dictionary = jpdb\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> dictionary = JITEN ; old
+  removed_line: R(dictionary = local\n)
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\n"
+  app_ini: "dictionary = JITEN ; old\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> Dictionary = Jpdb\r
+  removed_line: R(dictionary = local\n)
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\n"
+  app_ini: "Dictionary = Jpdb\r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> dictionary = jiten # x
+  removed_line: R(dictionary = local\n)
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\n"
+  app_ini: "dictionary = jiten # x\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> dictionary = hachidori
+  removed_line: R(dictionary = local\n)
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\n"
+  app_ini: "dictionary = hachidori\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> DICTIONARY = Hachidori ; relay\r
+  removed_line: R(dictionary = local\n)
+  preferences: "dictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\n"
+  app_ini: "DICTIONARY = Hachidori ; relay\r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> dictionary = hachidorix
+  removed_line: K
+  preferences: "dictionary = hachidorix\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = hachidorix\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary = jpdbx
+  removed_line: K
+  preferences: "dictionary = jpdbx\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = jpdbx\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary = relay
+  removed_line: K
+  preferences: "dictionary = relay\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = relay\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary =
+  removed_line: K
+  preferences: "dictionary =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary
+  removed_line: K
+  preferences: "dictionary\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionaryx = jpdb
+  removed_line: K
+  preferences: "dictionaryx = jpdb\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionaryx = jpdb\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary = hachidori\nhachidori_host = 192.168.1.20:19633
+  removed_line: R(dictionary = local\n) K
+  preferences: "dictionary = local\nhachidori_host = 192.168.1.20:19633\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nhachidori_host = 192.168.1.20:19633\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\nhachidori_host = 192.168.1.20:19633"
+  app_ini: "dictionary = hachidori\nhachidori_host = 192.168.1.20:19633\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori
+  removed_line: K R(dictionary = local\n)
+  preferences: "hachidori_host = anki.local ; LAN\ndictionary = local\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hachidori_host = anki.local ; LAN\ndictionary = local\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "hachidori_host = anki.local ; LAN\ndictionary = local\n"
+  app_ini: "hachidori_host = anki.local ; LAN\nDICTIONARY = Hachidori\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jpdb_api_key = secret-1
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jpdb_api_key = secret-1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jiten_api_key = secret-2 ; mine
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jiten_api_key = secret-2 ; mine\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> api_key = secret-3
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "api_key = secret-3\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> JPDB_API_KEY=secret-4
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "JPDB_API_KEY=secret-4\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jiten_api_key secret-5
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jiten_api_key secret-5\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jpdb_api_key: secret-6
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jpdb_api_key: secret-6\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+>   Jiten_Api_Key\tsecret-7
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "  Jiten_Api_Key\tsecret-7\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jpdb_api_key secret-8 ; x = y
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jpdb_api_key secret-8 ; x = y\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jpdb_api_keysecret-9
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jpdb_api_keysecret-9\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> api_keys = secret-10
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "api_keys = secret-10\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jpdb_api_key =
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jpdb_api_key =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jpdb_api_key
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jpdb_api_key\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jpdb_api_key_old = secret-11
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jpdb_api_key_old = secret-11\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> \xEF\xBB\xBFjpdb_api_key = secret-12
+  removed_line: D
+  preferences: "\xEF\xBB\xBF\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "\xEF\xBB\xBF\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "\xEF\xBB\xBF"
+  app_ini: "\xEF\xBB\xBFjpdb_api_key = secret-12\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jpdb_api_ke = secret-13
+  removed_line: K
+  preferences: "jpdb_api_ke = secret-13\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "jpdb_api_ke = secret-13\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> lens_api_key = secret-14
+  removed_line: K
+  preferences: "lens_api_key = secret-14\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "lens_api_key = secret-14\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> my_api_key = secret-15
+  removed_line: K
+  preferences: "my_api_key = secret-15\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "my_api_key = secret-15\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ; jpdb_api_key = secret-16
+  removed_line: K
+  preferences: "; jpdb_api_key = secret-16\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "; jpdb_api_key = secret-16\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_host = 192.168.1.23
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_host = 192.168.1.23\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ANKI_HOST=10.0.0.2
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ANKI_HOST=10.0.0.2\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_host = auto
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_host = auto\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_host =
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_host =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_host
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_host\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_audio_url = https://a.invalid/?k=secret-20
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_audio_url = https://a.invalid/?k=secret-20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_audio_url https://a.invalid/?k=secret-21
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_audio_url https://a.invalid/?k=secret-21\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_audio_url
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_audio_url\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_deck = Mining
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_deck = Mining\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_deck = Mining #1 ; main
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_deck = Mining #1 ; main\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_deck\r
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_deck\r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_note_type = Lapis
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_note_type = Lapis\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_tags = a b
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_tags = a b\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ANKI_TAGS
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ANKI_TAGS\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_field_word = Word
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_field_word = Word\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> Anki_Field_Word = Word
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "Anki_Field_Word = Word\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_field_misc_info = X
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_field_misc_info = X\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> anki_field = x
+  removed_line: K
+  preferences: "anki_field = x\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_field = x\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_fields = x
+  removed_line: K
+  preferences: "anki_fields = x\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_fields = x\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_hosts = x
+  removed_line: K
+  preferences: "anki_hosts = x\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_hosts = x\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_hosts
+  removed_line: K
+  preferences: "anki_hosts\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_hosts\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_mining\n
+  removed_line: K
+  preferences: "anki_mining\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_backend = vocr
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = VOCR
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = VOCR\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = lens
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = lens\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = Lens
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = Lens\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = vocr2
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = vocr2\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = VOCR2
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = VOCR2\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = meiki
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = meiki\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> OCR_BACKEND = meiki ; old
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "OCR_BACKEND = meiki ; old\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = ncnn
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = ncnn\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = NCNN
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = NCNN\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = vocr3
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = vocr3\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = google
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = google\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend =
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend
+  removed_line: K
+  preferences: "ocr_backend\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_backend\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_backend lens
+  removed_line: K
+  preferences: "ocr_backend lens\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_backend lens\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_backendx = lens
+  removed_line: K
+  preferences: "ocr_backendx = lens\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "ocr_backendx = lens\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> log_host = 192.168.1.5
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "log_host = 192.168.1.5\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> log_host =
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "log_host =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> LOG_HOST=10.0.0.1 ; pc\r
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "LOG_HOST=10.0.0.1 ; pc\r\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> log_host
+  removed_line: K
+  preferences: "log_host\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "log_host\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> log_host 10.0.0.1
+  removed_line: K
+  preferences: "log_host 10.0.0.1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "log_host 10.0.0.1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> log_hosts = x
+  removed_line: K
+  preferences: "log_hosts = x\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "log_hosts = x\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> log_host =\nLOG_HOST=
+  removed_line: S S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "log_host =\nLOG_HOST=\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> frequency_filter=500
+  removed_line: K
+  preferences: "frequency_filter=500\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "frequency_filter=500\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> frequency_filter = 3
+  removed_line: K
+  preferences: "frequency_filter = 3\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "frequency_filter = 3\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> FREQUENCY_FILTER = 5
+  removed_line: K
+  preferences: "FREQUENCY_FILTER = 5\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "FREQUENCY_FILTER = 5\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size = 20
+  removed_line: K
+  preferences: "font_size = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size = 3
+  removed_line: K
+  preferences: "font_size = 3\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size = 3\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size
+  removed_line: K
+  preferences: "font_size\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> font_size x = 1
+  removed_line: K
+  preferences: "font_size x = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "font_size x = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hw_jpeg = on
+  removed_line: K
+  preferences: "hw_jpeg = on\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hw_jpeg = on\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hw_jpeg=1
+  removed_line: K
+  preferences: "hw_jpeg=1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hw_jpeg=1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> combo_delay_ms = 0
+  removed_line: K
+  preferences: "combo_delay_ms = 0\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "combo_delay_ms = 0\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> combo_delay_ms = 10
+  removed_line: K
+  preferences: "combo_delay_ms = 10\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "combo_delay_ms = 10\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hachidori_host = 192.168.1.20
+  removed_line: K
+  preferences: "hachidori_host = 192.168.1.20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hachidori_host = 192.168.1.20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hachidori_host = http://not a host
+  removed_line: K
+  preferences: "hachidori_host = http://not a host\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hachidori_host = http://not a host\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hachidori_host =
+  removed_line: K
+  preferences: "hachidori_host =\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hachidori_host =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> hachidori_host
+  removed_line: K
+  preferences: "hachidori_host\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "hachidori_host\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = FL10_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = small\n"
+  anki_keys: "vocr_model = FL10_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = VOCR3_FL10_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = small\n"
+  anki_keys: "vocr_model = VOCR3_FL10_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = VOCR2_FL10_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = small\n"
+  anki_keys: "vocr_model = VOCR2_FL10_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = H15_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = H15_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = VOCR3_H15_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = VOCR3_H15_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = F20_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = large\n"
+  anki_keys: "vocr_model = F20_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = VOCR4_W20_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = large\n"
+  anki_keys: "vocr_model = VOCR4_W20_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = VOCR9_X_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = VOCR9_X_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = FL10
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = FL10\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = FL10_w8.bin
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = FL10_w8.bin\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = dir/FL10_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = dir/FL10_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = .vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = .vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = meiki-stream-int8.mnn
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = meiki-stream-int8.mnn\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model =
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_fallback_model = VOCR3_FL10_w8.vocr
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_fallback_model = VOCR3_FL10_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_fallback_model = none
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_fallback_model = none\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_fallback_model =
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_fallback_model =\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_fallback_model
+  removed_line: K
+  preferences: "vocr_fallback_model\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_fallback_model\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier = large\nvocr_model = FL10_w8.vocr
+  removed_line: K K
+  preferences: "vocr_tier = large\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier = large\nvocr_model = FL10_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = FL10_w8.vocr\nvocr_tier = large
+  removed_line: K K
+  preferences: "vocr_tier = large\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_model = FL10_w8.vocr\nvocr_tier = large\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = FL10_w8.vocr\nvocr_tier = huge
+  removed_line: K K
+  preferences: "vocr_tier = small\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_model = FL10_w8.vocr\nvocr_tier = huge\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_tier = huge\nvocr_model = W20_w8.vocr
+  removed_line: K K
+  preferences: "vocr_tier = large\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\n"
+  anki_keys: "vocr_tier = huge\nvocr_model = W20_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr
+  removed_line: K K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = large\n"
+  anki_keys: "vocr_model = FL10_w8.vocr\nvocr_model = F20_w8.vocr\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20
+  removed_line: R(dictionary = local\n) D S S K D K
+  preferences: "dictionary = local\nfont_size_ja = 20\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = large\n"
+  anki_keys: "dictionary = local\nvocr_model = F20_w8.vocr\nfont_size_ja = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\nvocr_model = F20_w8.vocr\nfont_size_ja = 20"
+  app_ini: "dictionary = jpdb\njpdb_api_key = secret-30\nocr_backend = lens\nlog_host = 10.0.0.1\nvocr_model = F20_w8.vocr\nanki_host = auto\nfont_size_ja = 20\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99
+  removed_line: S S R(dictionary = local\n) S K K
+  preferences: "dictionary = local\nbogus = 1\nfont_size_ja = 99\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "dictionary = local\nbogus = 1\nfont_size_ja = 99\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: "dictionary = local\nbogus = 1\nfont_size_ja = 99"
+  app_ini: "ocr_backend = vocr2\nlog_host = x\ndictionary = jiten\nocr_backend = meiki\nbogus = 1\nfont_size_ja = 99\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+> jpdb_api_key = SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS...[1515 bytes, fnv1a 239b4405b1ac6eb7]
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "jpdb_api_key = SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS...[1586 bytes, fnv1a b8ebeb6fe986e49f]"
+> font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1515 bytes, fnv1a 9bb3a4e11799b4b1]
+  removed_line: K
+  preferences: "font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1616 bytes, fnv1a e558494eaf9e7672]"
+  anki_keys: "font_size_ja = 99999999999999999999999999999999999999999999999999999999999999999...[1586 bytes, fnv1a 05ddff08f3745bf9]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[619 bytes, fnv1a 780be23635715869]
+  removed_line: K
+  preferences: "frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[720 bytes, fnv1a c2194adeac64fa7a]"
+  anki_keys: "frequency_filter = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[690 bytes, fnv1a 8e5ab71bcc2bde51]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> anki_audio_url = https://xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1525 bytes, fnv1a 662f1ed7e297a041]
+  removed_line: D
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "anki_audio_url = https://xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1596 bytes, fnv1a 0fd02243015c00e9]"
+> dictionary = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 42438c3462c961e2]
+  removed_line: K
+  preferences: "dictionary = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[714 bytes, fnv1a 0c5b020be70ab7df]"
+  anki_keys: "dictionary = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[684 bytes, fnv1a 169866f0afae5590]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_backend = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[614 bytes, fnv1a 083e677aa20fd2fd]
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "ocr_backend = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[685 bytes, fnv1a 147fcfc25a3e42cd]"
+> log_host = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[611 bytes, fnv1a ffa99aab22b09349]
+  removed_line: S
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "anki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: ""
+  app_ini: "log_host = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[682 bytes, fnv1a 6edc43e10a203cf1]"
+> vocr_model = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[613 bytes, fnv1a 1b017f76d9ce7d7e]
+  removed_line: K
+  preferences: "japanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "vocr_model = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[684 bytes, fnv1a 1fae58124e5614e4]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1508 bytes, fnv1a 64b8d09eaf3629bc]
+  removed_line: K
+  preferences: "bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1609 bytes, fnv1a f2758acd41c35091]"
+  anki_keys: "bogus = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...[1579 bytes, fnv1a 377746533994435a]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[531 bytes, fnv1a ba2526befd514680]
+  removed_line: K
+  preferences: "local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[632 bytes, fnv1a e3d1269e7525ad35]"
+  anki_keys: "local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[602 bytes, fnv1a 453a5578bb999646]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[532 bytes, fnv1a 9e67b788711b7053]
+  removed_line: K
+  preferences: "local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[633 bytes, fnv1a cc6526b08f7f2b3c]"
+  anki_keys: "local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[603 bytes, fnv1a 9601e2d4a330d423]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[533 bytes, fnv1a 45ad0ed8319fa4f6]
+  removed_line: K
+  preferences: "local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[634 bytes, fnv1a 202f7756df7924c3]"
+  anki_keys: "local_dictionaries = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa...[604 bytes, fnv1a 2ac37527d5029ebc]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  removed_line: K
+  preferences: "local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddd...[283 bytes, fnv1a d9a052a3caacf2e4]"
+  anki_keys: "local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddd...[253 bytes, fnv1a 83acd5ef3646fb9b]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  removed_line: K
+  preferences: "local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddd...[284 bytes, fnv1a fd4a585102a68f0e]"
+  anki_keys: "local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddd...[254 bytes, fnv1a 5f2378cabcdc8e8d]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  removed_line: K
+  preferences: "local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddd...[285 bytes, fnv1a 8b1d06081ba02e54]"
+  anki_keys: "local_dictionary_dir = ux0:ddddddddddddddddddddddddddddddddddddddddddddddddddddd...[255 bytes, fnv1a 856538ba2347ca0b]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  removed_line: K
+  preferences: "ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...[277 bytes, fnv1a b3ec9bd9649b23b6]"
+  anki_keys: "ocr_model_dir = ux0:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...[247 bytes, fnv1a ff3be557e95cf0a5]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
+  removed_line: K
+  preferences: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
+  removed_line: K
+  preferences: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1
+  removed_line: K
+  preferences: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1\njapanese_only_selection = off\nhighlight_mode = word\nlocal_dictionary_results = 2\nvocr_tier = normal\n"
+  anki_keys: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk = 1\nanki_mining = on\nanki_screenshot = off\nanki_screenshot_trim_bars = on\n"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
+> kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1104 bytes, fnv1a 4624722fa327c0cd]
+  removed_line: K
+  preferences: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1205 bytes, fnv1a 49ef4f1bb8da6fbe]"
+  anki_keys: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...[1175 bytes, fnv1a 94c0c3f51ee94b7d]"
+  clean: (unchanged)
+  app_ini: (as anki_keys)
