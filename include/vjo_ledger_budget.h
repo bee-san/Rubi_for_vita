@@ -358,11 +358,17 @@
  * tools/fast_gate.sh's vitasdk image]. Its one block, VjoGameVocrFrame, is VJO_BUDGET_GAME_FRAME's; no thread. */
 /* test/combined (the combined test build v0.9.8-test.N, never merged): main + every open draft, #318 (PSP text,
  * measured on main 627a673), #326 (API 46, the overlay on the game's text, measured on main e2100e0) and #355 (API 51,
- * the pause for the frame, measured on main 892cfb9), in the game's partition only (MEASURE_PLACEHOLDER). */
+ * the pause for the frame, measured on main 892cfb9), in the game's partition only: the debug worker's text
+ * 160,888 -> 174,488 B and data/bss 35,328 -> 35,776 B, 200,704 -> 212,992 B of pages (three more; 1,640 B of text
+ * room left); the normal worker's 151,988 -> 160,476 B and 35,320 -> 35,688 B, 192,512 -> 200,704 B (two more;
+ * 3,364 B left) [measured: the build log's module rows, both builds of this branch at 71824d3, tools/fast_gate.sh's
+ * vitasdk image; main's rows as the API 47 audit entry above gives them]. The kernel's and both Shells' pages are
+ * main's (the normal Shell 93,540 + 69,376 B in 163,840 B: #326 moves s_cursor_text into the PAF UI block). No
+ * block, thread or allocation beyond the PRs'. (v0.9.8-test.1, without #355: 212,992 / 196,608 B.) */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 212992u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 196608u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
