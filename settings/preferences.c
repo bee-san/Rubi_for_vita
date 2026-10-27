@@ -272,6 +272,15 @@ int vjo_preferences_save_vertical(int mode, VjoArena *a)
     return save_keys(keys, values, 1, a);
 }
 
+int vjo_preferences_save_overlay_on_text(int on, VjoArena *a)
+{
+    static const char *const keys[] = {"overlay_on_text"};
+    const char *values[1];
+    if (on != 0 && on != 1) return -1;
+    values[0] = on ? "on" : "off"; /* core/config.c's */
+    return save_keys(keys, values, 1, a);
+}
+
 int vjo_preferences_text(VjoArena *a, char **out, size_t *bytes)
 {
     int rc = read_text(VJO_PREFERENCES_PATH, a, out, bytes);

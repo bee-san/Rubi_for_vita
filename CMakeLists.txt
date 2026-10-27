@@ -49,7 +49,8 @@ set(CORE_SRC
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
   shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
-  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c)
+  core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c
+  core/charmap.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
 target_link_libraries(vjo_core PUBLIC bearssl vjo_taihen_parser)
@@ -197,6 +198,15 @@ if(VJO_WITH_VOCR)
   target_link_libraries(vjo-ledger-tests vjo_vocr)
 endif()
 add_test(NAME ledger COMMAND vjo-ledger-tests)
+# API 46, the char map (core/charmap.c, core/charmap_build.c; docs/overlay-on-text.md): the worker's writer against
+# the Shell's sentence, the hand-over, the transforms, hits, spans and the popup's place.
+if(VJO_WITH_VOCR)
+  add_executable(vjo-charmap-tests host/tests/test_charmap.c)
+  target_include_directories(vjo-charmap-tests PRIVATE third_party/acutest/include)
+  target_compile_options(vjo-charmap-tests PRIVATE -Wall -Wextra)
+  target_link_libraries(vjo-charmap-tests vjo_vocr vjo_host)
+  add_test(NAME charmap COMMAND vjo-charmap-tests)
+endif()
 # Boot-safety guard: the record (core) and the real kernel-side code with the
 # ur0 file and the clock replaced, boot after simulated boot.
 add_executable(vjo-boot-guard-tests host/tests/test_boot_guard.c core/boot_guard.c kernel/boot.c)
@@ -904,6 +914,7 @@ if(VJO_WITH_VOCR)
   # The actual game worker and core adapter with synthetic pinned weights and a
   # spy runtime: the resident-weights lifecycle runs without release files (CI).
   add_executable(vjo-game-resident-tests host/tests/test_game_resident.c core/vocr_ocr.c core/textnorm.c
+    core/charmap_build.c
     host/tests/hooks_none.c)
   target_include_directories(vjo-game-resident-tests PRIVATE third_party/acutest/include
     host/tests/game_stubs host/tests)
@@ -918,7 +929,8 @@ if(VJO_WITH_VOCR)
   # Native hooks in the job path (docs/native-hooks.md): the actual worker with the resident test's spies and
   # a fake of game_ocr/hooks.h: a stream answers with the first capture pass only, or replaces OCR's agreeing
   # text; nothing installed is OCR as before.
-  add_executable(vjo-game-hooks-tests host/tests/test_game_hooks.c core/vocr_ocr.c core/textnorm.c)
+  add_executable(vjo-game-hooks-tests host/tests/test_game_hooks.c core/vocr_ocr.c core/textnorm.c
+    core/charmap_build.c)
   target_include_directories(vjo-game-hooks-tests PRIVATE third_party/acutest/include host/tests/game_stubs host/tests)
   target_compile_options(vjo-game-hooks-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
   target_compile_definitions(vjo-game-hooks-tests PRIVATE

@@ -352,6 +352,14 @@
  * main 627a673, CI's vitasdk image]. The debug text had 2,760 B of room on main and this adds 6,088 B, so one page
  * is the least this takes. The kernel's and both Shells' pages are unchanged (the normal Shell's 36 B where[]
  * table of shell/anki_queue.c moved to its data segment to keep them). No block, thread or allocation. */
+/* API 46, the overlay on the game's text (docs/overlay-on-text.md, #309): one text page more in both builds, in the
+ * game's partition only. vita-vn-ocr's runtime/vocr_charbox.c (#114, -Os), the char map's writer (core/charmap_build.c
+ * and core/charmap.c's writer, -Os) and the job's calls (core/vocr_ocr.c line_chars in finish_line, game_ocr/main.c
+ * write_char_map) take the debug build's text 148,792 -> 155,040 B (155,648 B of pages) and the normal build's
+ * 140,004 -> 146,252 B (147,456 B); data/bss unchanged (35,288 and 35,280 B): a job's characters are its own memory,
+ * at the end of its workspace block (VJO_BUDGET_GAME_WORKSPACE), only with overlay_on_text on [measured: the build
+ * log's module rows, both builds of main e2100e0 and this change, the gate's vitasdk container]. So each game that
+ * is ON holds 188,416 -> 192,512 B (debug) and 180,224 -> 184,320 B (normal), the setting on or off. */
 /* test/combined (the combined test build, never merged): main + every open draft; the worker's pages are
  * this branch's own, measured on its builds (MEASURE_PLACEHOLDER). */
 #if VJO_DEBUG
@@ -412,7 +420,7 @@
 #define VJO_PAF_HEAP 5242880u                      /* [measured, docs/meiki-ocr.md on experiment/meiki-ocr] */
 #define VJO_PAF_FREE_MEASURED 2557952u             /* 2,498 KiB free beside CLANNAD, 2026-10-10 [measured, same] */
 #define VJO_PAF_RESERVE (1536u * 1024u)            /* shell/memory.cpp RESERVE */
-#define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,368 B file; 5,632 B before the region cursor) and the Paf Plugin object [estimate] */
+#define VJO_BUDGET_PAF_PLUGIN 8192u                /* the RCO (6,640 B file with API 46's six marks, 6,000 B on main e2100e0 [measured]) and the Paf Plugin object [estimate] */
 /* One result arena, the local dictionary's lookup (worker.c LOCAL_RESULT_ARENA_SIZE): the only result
  * memory since the network paths, Google Lens and the Hachidori relay, were removed (they took
  * 2 x 262,144 B arenas and a connection pool: 571,888 B with two slots, 548,096 B with one). */
@@ -428,7 +436,11 @@
  * on main dcb7b31) [measured, host, test_shell_anki.c]. anki.c checks its arena against this at compile time. */
 #define VJO_BUDGET_PAF_ANKI 131072u
 #define VJO_HEADER_RANGE_BYTES 2048u              /* 512 entry starts and lengths, uint16_t each, in the open page's UI block */
-#define VJO_BUDGET_PAF_UI 20480u                   /* text/spans 18,016 B + ranges 2,048 B (source bounds, test_ledger.c) */
+/* The open page's UI block: text/spans 18,016 B + ranges 2,048 B (source bounds, test_ledger.c) + (API 46) the
+ * cursor's copy of the text and its char map, VJO_STRIP_MAX, moved here from the Shell's data pages
+ * (shell/overlay.cpp s_cursor_text; docs/overlay-on-text.md): 4,096 B more of the PAF heap while the overlay page
+ * is open, whether overlay_on_text is on or off, for 4,096 B less of SceShell's permanent data pages. */
+#define VJO_BUDGET_PAF_UI 24576u
 /* Line history (shell/worker.c history_open, docs/line-history.md): one visit's block, from the overlay's
  * first Up past its text's top row until the return to the current text (or the overlay's close): the
  * table (core/history_lines.h VjoHistory, 34 line pointers and two counts) and the worker's three words
@@ -553,8 +565,11 @@
  * runtime's model and context: two pages more. Kept: an estimated 0.20 / 0.26 s less per 3-line box (Normal /
  * Large; docs/vita-vn-ocr.md "Head gate and two-level head"). The worker takes
  * helpers only when its memory check passes with them, one fewer at a time down to none.
- * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544). */
-#define VJO_BUDGET_GAME_WORKSPACE 1220608u
+ * API 19 holds no grey copy of the region (it was 770,048 B with one at 960x544).
+ * API 46 (overlay_on_text, docs/overlay-on-text.md) ends the block with a job's characters and their cells
+ * (core/vocr_ocr.h VJO_VOCR_CHARS_JOB_BYTES, 4,368 B on the host build): 1,222,416 B for VOCR5-N with VOCR5-L's
+ * cascade, one page more (host/tests/test_ledger.c); a job without the setting takes none of it. */
+#define VJO_BUDGET_GAME_WORKSPACE 1224704u
 /* API 22: one thread per line a helper recognizes, created for the line and deleted once it is
  * placed (game_ocr/main.c pool_run): at most VJO_VOCR_HELPERS_MAX at once, none between jobs.
  * Its deepest chain: vocr_run 600 + run_head 1,320 + mm_i16 616 = 2,536 B with the Vita compiler
@@ -649,14 +664,17 @@
  * A game with less runs fewer helpers, a smaller LM, no cascade or none of them, then a smaller
  * tier (game_ocr/main.c), never a smaller tier for the helpers. */
 #define VJO_LIMIT_GAME_WEIGHTS 2502656u
-#define VJO_LIMIT_GAME_WORKSPACE 1220608u
+/* API 46 (overlay_on_text): the workspace's one page more for a job's characters (VJO_BUDGET_GAME_WORKSPACE). */
+#define VJO_LIMIT_GAME_WORKSPACE 1224704u
 /* API 34 adds the measured 8192 B of worker module pages to the prior ceiling, and vita-vn-ocr #109's
  * counter re-decode its 4,096 B. API 42 (vita-vn-ocr #120's head gate, #122's two-level head) adds the Large
  * blob's page in the weights and cascade budgets (8,192 B), the workspace's two pages (8,192 B) and the worker's
  * two text pages (8,192 B, both builds): the job's worst case 10,567,680 -> 10,584,064 B, 11.7 % of that free
  * USER (a real peak, VOCR5-N with VOCR5-L's cascade, the 4 MB LM and both helpers, 9,297,920 B, is 1,286,144 B
  * less). VOCR6's 4 MB LM (vita-vn-ocr #127, 3,603,552 B against ctclm.2's 3,781,072 B) lowers the LM budget and
- * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. */
+ * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept.
+ * test/combined: API 46 (overlay_on_text, draft #326) adds the workspace's page for a job's characters (a job
+ * of rows only: columns get no places), within this ceiling (the ledger's game row, this branch). */
 #define VJO_LIMIT_GAME_JOB 10604544u
 
 #endif

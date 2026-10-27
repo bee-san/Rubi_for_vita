@@ -717,7 +717,8 @@ static const char nondefault_config[] =
     "reading_time = 15s\n"
     "hook_trust = off\n"
     "ocr_line_fix = all\n"
-    "ocr_wait_hint = off\n";
+    "ocr_wait_hint = off\n"
+    "overlay_on_text = on\n"; /* API 46 */
 
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {

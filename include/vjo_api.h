@@ -111,8 +111,20 @@
  * VJO_ROWS_HOOK also publishes the region's current scene once the region shows another than the trusted line's
  * (49 refused it with VJO_ERR_FORMAT, and the worker read the first pass: a strip beside VJO_GAME_RESERVE_HOOK_ONLY,
  * which a game with 1 MiB free refused, so the job failed although the hook had its text). FORMAT now means only
- * that the region has no screen yet. Sizes and layouts are unchanged. */
-#define VJO_API_VERSION 51
+ * that the region has no screen yet. Sizes and layouts are unchanged.
+ * 46: the overlay on the game's text (docs/overlay-on-text.md, #309; closed draft #271's API 37, renumbered):
+ * VjoGameOcrRequest.speed bit 25 (VJO_GAME_OCR_S_CHARS): the game worker writes where each character of the text
+ * it returns is on the screen (core/charmap.h), after the text and its recognizer's copy in VjoGameOcrResult.text,
+ * whose last bytes were zero; the Shell sets it in the user's jobs with config.ini overlay_on_text = on. Sizes and
+ * layouts are unchanged. 43-45 and speed bits 17 and 20-24 are left to work in flight (the line finder's fixes,
+ * the text spotter, vertical text, trusted hooks).
+ * 53: test/combined, the combined test build (v0.9.8-test.3 on; never merged, never main's): main's API 51 with
+ * every open draft: #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS), #355's API 52 (speed bit 30,
+ * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE) and #318 (no interface change). v0.9.8-test.1 was 51 and
+ * test.2 was 52 (with main's 50); main has 51 (#354) and #355's branch 52, so this build takes 53, a number no
+ * other build has. With the characters' places a job selects without API 43's trusted answers (game_ocr/main.c):
+ * it recognizes to place a hook's text. */
+#define VJO_API_VERSION 53
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

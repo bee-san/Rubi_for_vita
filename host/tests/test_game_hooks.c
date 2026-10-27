@@ -1503,6 +1503,41 @@ static void psp_text_polls_first_and_must_agree(void)
     psp_title = 0; psp_installs = 0;
 }
 
+/* API 46 (overlay_on_text, VJO_GAME_OCR_S_CHARS): a stream that answers before recognition (here a Luna site) is
+ * still the job's text, but the job recognizes too, for the characters' places: OCR's text follows it for the log,
+ * and its flags lose VJO_HOOK_R_NO_OCR. A locked regular stream's answer, the same. With no memory for OCR, the
+ * stream that answered shows without places, as without the bit (its flags with VJO_HOOK_R_NO_OCR again). */
+static void chars_recognize_under_a_hook_answer(void)
+{
+    VjoGameOcrResult out;
+    VjoGameOcrRequest r;
+    reset();
+    stream(2, VJO_HOOK_KIND_SITE, 1, "はい"); fs[2].luna = &fake_luna_site;
+    spy_text = OCR1;
+    r = request(VJO_HOOK_PICK_AUTO);
+    r.speed = VJO_GAME_OCR_S_CHARS;
+    vjo_game_ocr_cache_clear();
+    rows_calls = 0;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK_(!strcmp(out.text, "はい") && out.text_from == 2, "%s from %u", out.text, (unsigned)out.text_from);
+    TEST_CHECK_(out.hook_flags == VJO_HOOK_R_SITE, "flags %08X", (unsigned)out.hook_flags);
+    TEST_CHECK(runs == 1 && out.recognized == 1 && !first_pass_only());
+    TEST_CHECK(!strcmp(vjo_text_raw(out.text, sizeof(out.text)), OCR1)); /* OCR's text after it, for the log */
+    TEST_CHECK(!job_live && !capture_live && !file_open_now && !model_owned && !out.cleanup_status);
+    /* the same job without the bit: the first pass only, as before */
+    TEST_ASSERT(run(VJO_HOOK_PICK_AUTO, &out) == 0 && runs == 1 && first_pass_only());
+    TEST_CHECK(out.text_from == 2 && out.hook_flags == (VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR));
+    /* no memory for OCR: the stream that answered, without places */
+    available = 2 * 1024 * 1024;
+    vjo_game_ocr_cache_clear();
+    rows_calls = 0;
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
+    TEST_CHECK(!strcmp(out.text, "はい") && out.text_from == 2 && runs == 1);
+    TEST_CHECK_(out.hook_flags == (VJO_HOOK_R_SITE | VJO_HOOK_R_NO_OCR), "flags %08X", (unsigned)out.hook_flags);
+    TEST_CHECK(first_pass_only() && out.reserve_bytes == VJO_GAME_RESERVE_HOOK_ONLY);
+    TEST_CHECK(!job_live && !capture_live && !file_open_now && !model_owned && !out.cleanup_status);
+}
+
 TEST_LIST = {
     {"API 43: a trusted verified site answers without OCR, also short of memory", trusted_verified_site_answers_without_ocr},
     {"API 43: a trusted Luna site keeps the hook-only reserve", trusted_luna_site_in_a_tight_game},
@@ -1537,5 +1572,6 @@ TEST_LIST = {
     {"the shown text is the stream's whole text", shown_text_is_whole},
     {"a full pool keeps the pick's stream and the newest", full_pool_keeps_the_pick_and_the_newest},
     {"an agreeing or pinned stream keeps its CALL slot; CALLS_FULL", keep_and_calls_full},
+    {"overlay_on_text: a hook's answer is still recognized for its places (API 46)", chars_recognize_under_a_hook_answer},
     {NULL, NULL}
 };

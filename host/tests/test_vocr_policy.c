@@ -2178,6 +2178,100 @@ static void test_the_counter_redecode(void)
     free(ws);
 }
 
+/* API 46, VjoVocrPolicy.chars: every line's greedy characters and their cells along it, in order inside the line's
+ * crop. With the LM they are the top-K's top-1 before the counter re-decode edits it (counter_frames()'s
+ * ル ッ 月 で す 」, while the text shown is 「九ヶ月です」); without it the run's own classes. */
+static unsigned utf8_cp(const char *s)
+{
+    const unsigned char *u = (const unsigned char *)s;
+    return u[0] < 0x80 ? u[0] : u[0] < 0xE0 ? (u[0] & 0x1Fu) << 6 | (u[1] & 0x3Fu)
+                                             : (u[0] & 0x0Fu) << 12 | (u[1] & 0x3Fu) << 6 | (u[2] & 0x3Fu);
+}
+static void check_chars_in_lines(const VjoVocrChars *c)
+{
+    unsigned total = 0;
+    for (unsigned i = 0; i < c->n_lines; i++) {
+        const VjoVocrCharLine *l = &c->line[i];
+        TEST_CHECK_(l->first == total && l->count > 0 && l->count <= VJO_VOCR_CHARS_LINE, "line %u: %u at %u", i,
+                    l->count, l->first);
+        for (unsigned k = l->first; k < l->first + l->count; k++) {
+            TEST_CHECK_(c->a[k] < c->b[k] && c->a[k] >= l->x && c->b[k] <= l->x + l->w + 1u, "char %u: %u-%u in %u+%u", k,
+                        c->a[k], c->b[k], l->x, l->w);
+            if (k > l->first) TEST_CHECK_(c->a[k] >= c->a[k - 1] && c->b[k] >= c->b[k - 1], "char %u out of order", k);
+        }
+        total += l->count;
+    }
+    TEST_CHECK(total == c->n_chars);
+}
+static void test_the_characters_places(void)
+{
+    static const char *const files[] = {VJO_VOCR3_FL10_NAME, VJO_VOCR_LM2_NAME};
+    static const char *const want[] = {"ル", "ッ", "月", "で", "す", "」"};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    const VjoVocrModel *fl10 = vjo_vocr_model(VJO_VOCR3_FL10_NAME);
+    const VjoVocrLm *lm2 = vjo_vocr_lm_tier(2);
+    VjoPlatform p;
+    VjoVocrStats st;
+    static char text[1024], raw[1024];
+    static VjoVocrChars chars;
+    unsigned char *ws = NULL;
+    size_t ws_bytes;
+    if (!have_files(dir, files, 2)) {
+        TEST_SKIP("no VOCR3-FL10 and the 1000k LM in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    TEST_ASSERT(fl10 && lm2);
+    posix_platform_init(&cascade_pp, &p);
+    p.file_open = posix_open ? posix_open : p.file_open;
+    ws_bytes = vjo_vocr_job_bytes(fl10->name, W, H) + vjo_vocr_lm_job_bytes(fl10->name);
+    TEST_ASSERT(posix_memalign((void **)&ws, 64, ws_bytes) == 0);
+    VjoVocrResident res = {test_alloc, free_weights, NULL, NULL, NULL, 0, 0, 0};
+    VjoVocrLmResident lres = {test_alloc, free_lm, NULL, NULL, NULL, 0, 0, 0};
+    res.ud = &res;
+    lres.ud = &lres;
+    VjoVocrPolicy on = {.lm = lm2, .lm_res = &lres, .raw = raw, .raw_cap = sizeof(raw),
+                        .counter_tau = VJO_VOCR_COUNTER_TAU, .counter_open = VJO_VOCR_COUNTER_OPEN, .chars = &chars};
+    VjoVocrPolicy plain = {.chars = &chars};
+#define RUN(pol) vjo_vocr_ocr_policy(&p, dir, fl10->name, &im, &res, ws, ws_bytes, capture, \
+                                     vjo_vocr_capture_bytes(W, H), (pol), text, sizeof(text), &st)
+    reset();
+    wrap_reset();
+    wrap.counter_line = 1;
+    memset(&chars, 0, sizeof(chars));
+    TEST_ASSERT(RUN(&on) == VJO_OK);
+    TEST_CHECK(!strcmp(text, "「九ヶ月です」") && st.counter_lines == 1);
+    TEST_CHECK_(chars.n_lines == 1 && chars.n_chars == 6, "%u lines, %u characters", chars.n_lines, chars.n_chars);
+    for (unsigned k = 0; k < 6 && k < chars.n_chars; k++)
+        TEST_CHECK_(chars.cp[k] == utf8_cp(want[k]), "char %u: U+%04X, want %s", k, chars.cp[k], want[k]);
+    check_chars_in_lines(&chars);
+    /* without the LM, the real model on the three synthetic lines: its own classes, a line each it read */
+    reset();
+    scr.three_lines = 1;
+    wrap.on = 0;
+    memset(&chars, 0, sizeof(chars));
+    TEST_ASSERT(RUN(&plain) == VJO_OK);
+    TEST_CHECK_(chars.n_lines >= 1 && chars.n_lines <= st.recognized, "%u lines of %u", chars.n_lines, st.recognized);
+    check_chars_in_lines(&chars);
+    /* a screen that changes under the read (a retried job: VJO_VOCR_TRIES): only the final try's lines, at the
+     * final try's rows (the audit's probe, audit-overlay-boxes F2) */
+    for (unsigned after = 0; after <= 12; after++) {
+        reset();
+        scr.three_lines = 1;
+        scr.change_after = after;
+        memset(&chars, 0, sizeof(chars)); /* game_ocr/main.c request_policy: once a job */
+        if (RUN(&plain) != VJO_OK) continue;
+        TEST_CHECK_(chars.n_lines <= st.recognized, "change_after %u: %u lines of places, %u recognized (%u tries)",
+                    after, chars.n_lines, st.recognized, st.tries);
+        for (unsigned i = 1; i < chars.n_lines; i++)
+            TEST_CHECK_(chars.line[i].y > chars.line[i - 1].y, "change_after %u: line %u at %u after %u", after, i,
+                        chars.line[i].y, chars.line[i - 1].y);
+        check_chars_in_lines(&chars);
+    }
+#undef RUN
+    TEST_CHECK(!vjo_vocr_resident_drop(&res) && !vjo_vocr_lm_drop(&lres));
+    free(ws);
+}
+
 /* API 42: the two-level head (vita-vn-ocr #117 item 2, VjoVocrPolicy.two_level), on the real VOCR5-N blob with it
  * (when the model directory has it). Its runs compute the rare rows on part of the frames only (VjoVocrStats
  * head_escaped); a line its run read with a full-size カ or ケ before a counter character, where its escape can have
@@ -2495,6 +2589,7 @@ TEST_LIST = {
     {"the_two_level_head_rereads_a_kana_counter_line_and_counts_its_escaped_frames", test_the_two_level_head},
     {"the_cascade_rereads_a_gated_counter_line_and_counts_its_skipped_frames",
      test_the_cascade_rereads_a_gated_counter_line},
+    {"the_characters_places_are_the_lines_greedy_characters_in_order (API 46)", test_the_characters_places},
     {"refined_boxes_match_the_whole_set_refinement", test_refined_boxes_match_the_whole_set_refinement},
     {"a_short_last_line_is_read", test_a_short_last_line_is_read},
     {"the_line_fix_keeps_a_line_across_a_wide_gap", test_the_line_fix_keeps_a_line_across_a_wide_gap},
