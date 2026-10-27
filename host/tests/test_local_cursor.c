@@ -20,7 +20,8 @@ typedef struct {
 typedef struct {
     const char *name;
     uint8_t bytes[32768];
-    size_t size;
+    size_t size;      /* the file's: past bytes[], add_wide_filter's blocks read as all ones */
+    uint64_t filter;  /* add_filter's first block (0: none) */
     uint64_t payload[24];
     uint32_t payload_size[24];
     int n_payload, active;
@@ -30,6 +31,15 @@ static uint8_t arena_mem[64 * 1024];
 static int opened, closed, reads, payload_reads, fail_read, opens_by[VJO_LOCAL_MAX_DICTS];
 static size_t read_bytes;
 static int payload_touches; /* reads starting at a payload, of any length */
+/* Reads by what they fetch, each fixture's (read_file): page 0 (the header, and the filter
+ * directory when no session holds it), the index's one bucket page and the first filter blocks. */
+static int page0_reads[VJO_LOCAL_MAX_DICTS], bucket_reads[VJO_LOCAL_MAX_DICTS], block_reads[VJO_LOCAL_MAX_DICTS][8];
+static void count_reset(void)
+{
+    memset(page0_reads, 0, sizeof(page0_reads));
+    memset(bucket_reads, 0, sizeof(bucket_reads));
+    memset(block_reads, 0, sizeof(block_reads));
+}
 
 static void put16(uint8_t *p, uint16_t x) { p[0] = (uint8_t)x; p[1] = (uint8_t)(x >> 8); }
 static void put32(uint8_t *p, uint32_t x) { put16(p, (uint16_t)x); put16(p + 2, (uint16_t)(x >> 16)); }
@@ -174,6 +184,23 @@ static void add_filter(Fixture *f, const Row *rows, int n, const uint32_t *start
     put64(f->bytes + 144, off); put32(f->bytes + 152, (uint32_t)n); put32(f->bytes + 156, 0);
     for (int b = 0; b < blocks; b++) put32(f->bytes + 256 + b * 4, starts[b]);
     f->size = off + (size_t)blocks * 4096;
+    f->filter = off;
+    put64(f->bytes + 40, f->size);
+}
+/* A filter of `blocks` blocks, more than a fixture holds (up to 960): every key in block 0, with
+ * its bits there, and blocks 1.. (prefixes from 0xf0000000, above every fixture key's) all ones,
+ * those past bytes[] as read_file returns them. */
+static void add_wide_filter(Fixture *f, const Row *rows, int n, int blocks)
+{
+    size_t off = (f->size + 4095) / 4096 * 4096, stored;
+    uint32_t start = 0;
+    TEST_ASSERT(blocks > 1 && blocks <= 960 && off + 4096 <= sizeof(f->bytes));
+    add_filter(f, rows, n, &start, 1, 0);
+    stored = sizeof(f->bytes) - (off + 4096);
+    memset(f->bytes + off + 4096, 0xff, stored);
+    put32(f->bytes + 136, (uint32_t)blocks);
+    for (int b = 1; b < blocks; b++) put32(f->bytes + 256 + b * 4, 0xf0000000u + (uint32_t)b);
+    f->size = off + (size_t)blocks * 4096;
     put64(f->bytes + 40, f->size);
 }
 /* The converter's posting hints (tools/convert_dictionary.py posting_hint) into a
@@ -232,16 +259,25 @@ static void add_hints(Fixture *f)
 static int read_file(void *ctx, uint64_t off, void *dst, size_t n)
 {
     Fixture *f = ctx;
+    int i = (int)(f - fixtures);
+    size_t stored;
     reads++;
     TEST_CHECK(f->active > 0);
     if (fail_read == reads) return -1;
     if (off > f->size || n > f->size - (size_t)off) return -1;
     read_bytes += n;
-    for (int i = 0; i < f->n_payload; i++) {
-        if (off == f->payload[i] && n == f->payload_size[i]) payload_reads++;
-        if (off == f->payload[i]) payload_touches++;
+    if (off == 0) page0_reads[i]++;
+    else if (off == 4096) bucket_reads[i]++;
+    else if (f->filter && off >= f->filter && (off - f->filter) / 4096 < 8) block_reads[i][(off - f->filter) / 4096]++;
+    for (int k = 0; k < f->n_payload; k++) {
+        if (off == f->payload[k] && n == f->payload_size[k]) payload_reads++;
+        if (off == f->payload[k]) payload_touches++;
     }
-    memcpy(dst, f->bytes + (size_t)off, n); return 0;
+    stored = off < sizeof(f->bytes) ? sizeof(f->bytes) - (size_t)off : 0;
+    if (stored > n) stored = n;
+    if (stored) memcpy(dst, f->bytes + (size_t)off, stored);
+    memset((uint8_t *)dst + stored, 0xff, n - stored); /* add_wide_filter's blocks past bytes[] */
+    return 0;
 }
 static void close_file(void *ctx)
 {
@@ -263,6 +299,7 @@ static void setup(VjoArena *a, VjoPlatform *p, VjoConfig *cfg)
 {
     memset(fixtures, 0, sizeof(fixtures));
     memset(opens_by, 0, sizeof(opens_by));
+    count_reset();
     opened = closed = reads = payload_reads = fail_read = 0;
     read_bytes = 0;
     fixture_title = "Jiten";
@@ -1526,7 +1563,9 @@ static void key_filter_shows_what_the_plain_file_shows(void)
 
 /* No false negative: a candidate whose prefix is in another block (した -> する), a
  * one-character candidate and a full filter all search the index as before, in
- * format 2 and in format 3. */
+ * format 2 and in format 3; a one-character candidate checked against the block its
+ * text's longer span loaded (手 after 手を) finds its key there, as the converter put
+ * every key's bits, a one-character key's too, into the block of its range. */
 static void key_filter_never_hides_a_key(void)
 {
     /* 𠮟る and 😀😀: code points beyond the BMP clamp to 0xffff in the prefix
@@ -1548,9 +1587,11 @@ static void key_filter_never_hides_a_key(void)
             for (size_t t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
                 shown("plain.vjdict", texts[t], 0, plain, sizeof(plain));
                 shown("main.vjdict", texts[t], 0, filtered, sizeof(filtered));
-                if (fill == 2 && t == 4) {
+                if (fill == 2 && (t == 3 || t == 4)) {
                     /* A zeroed (corrupt) block hides the keys of its range, 𠮟る here: the
-                     * proof that this format's lookups consult the filter at all. */
+                     * proof that this format's lookups consult the filter at all; and 手,
+                     * the one-character span after 手を, which read the block: the proof
+                     * that one-character candidates consult the block it loaded. */
                     TEST_CHECK_(!strcmp(filtered, "none"), "v%d %s: %s, not hidden by a zeroed block", version,
                                 texts[t], filtered);
                     continue;
@@ -1605,6 +1646,219 @@ static void key_filter_descriptor_is_validated(void)
         shown("main.vjdict", "猫舌", 0, out, sizeof(out));
         TEST_CHECK_(!strcmp(out, "猫舌|ねこじた|cat tongue|2"), "v%d %s", version, out);
     }
+}
+
+/* A lookup at the start of text in cfg's dictionaries, Dictionaries shown being their number (every
+ * one is searched at the matched span), as text: page 0's entry, then each page's dictionary and entry
+ * offset. With p's session (at arena_mem's start) or without one (its own memory, leaving the
+ * session's bytes alone). */
+static void stacked(const VjoPlatform *p, const VjoConfig *cfg, const char *text, char *out, size_t cap)
+{
+    static uint8_t plain_mem[64 * 1024];
+    size_t skip = vjo_local_session_size();
+    VjoArena a; VjoDictResult r; VjoErr e; VjoLocalPages pages;
+    int rc, n;
+    if (p->local_session) vjo_arena_init(&a, arena_mem + skip, sizeof(arena_mem) - skip);
+    else vjo_arena_init(&a, plain_mem, sizeof(plain_mem));
+    rc = vjo_local_lookup_pages(&a, p, cfg, text, 0, cfg->local_dictionary_results, &pages, &r, &e);
+    n = snprintf(out, cap, "rc %d", rc);
+    if (!rc && r.n_vocab)
+        n += snprintf(out + n, cap - (size_t)n, " %s|%s|%s", r.vocab[0].spelling, r.vocab[0].reading,
+                      r.vocab[0].meanings[0]);
+    for (int i = 0; !rc && i < pages.count && (size_t)n < cap; i++)
+        n += snprintf(out + n, cap - (size_t)n, " [%d@%llu]", (int)pages.page[i].dict,
+                      (unsigned long long)pages.page[i].entry_off);
+}
+
+static void session_start(VjoPlatform *p)
+{
+    memset(arena_mem, 0, vjo_local_session_size());
+    p->local_session = (VjoLocalSession *)arena_mem;
+}
+
+/* The words the pool tests look up, and the keys of their files. */
+static const Row pool_rows[] = {{"猫舌", "猫舌", "ねこじた", "cat tongue", 0, 0}, {"猫", "猫", "ねこ", "cat", 0, 0},
+    {"犬小屋", "犬小屋", "いぬごや", "kennel", 0, 0}, {"犬", "犬", "いぬ", "dog", 0, 0},
+    {"鳥", "鳥", "とり", "bird", 0, 0}, {"見る", "見る", "みる", "to see", 1, 0}};
+static const char *pool_texts[] = {"猫舌", "猫", "犬小屋", "犬", "鳥", "見ました", "猫舌と犬"};
+#define POOL_TEXTS (int)(sizeof(pool_texts) / sizeof(pool_texts[0]))
+
+/* The session's pool holds every file's filter directory (1, 2 and 8 files, in local_dictionaries
+ * order): a session reads each file's page 0 once, when it opens it, and its lookups show what
+ * lookups without a session show. Each file's two blocks split at its own prefix, with its keys'
+ * bits in them: a lookup that took another file's directory, or its own from another offset of the
+ * pool, would test a key in the wrong block and hide it. */
+static void session_pool_holds_every_directory_that_fits(void)
+{
+    const char *splits[VJO_LOCAL_MAX_DICTS] = {"猫", "鳥", "犬小", "猫舌", "見", "犬", "鳥", "猫"};
+    const int counts[] = {1, 2, VJO_LOCAL_MAX_DICTS};
+    for (size_t c = 0; c < sizeof(counts) / sizeof(counts[0]); c++) {
+        char names[VJO_LOCAL_MAX_DICTS][24], plain[POOL_TEXTS][512], pooled[512];
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        int n = counts[c];
+        setup(&a, &p, &cfg);
+        cfg.local_dictionaries[0] = 0;
+        cfg.local_dictionary_results = n;
+        for (int i = 0; i < n; i++) {
+            uint32_t split[2] = {0, prefix_of(splits[i])};
+            snprintf(names[i], sizeof(names[i]), "d%d.vjdict", i);
+            build(&fixtures[i], names[i], pool_rows, 6, 3);
+            add_filter(&fixtures[i], pool_rows, 6, split, 2, 0);
+            if (i) strcat(cfg.local_dictionaries, ",");
+            strcat(cfg.local_dictionaries, names[i]);
+        }
+        for (int t = 0; t < POOL_TEXTS; t++) stacked(&p, &cfg, pool_texts[t], plain[t], sizeof(plain[t]));
+        TEST_CHECK(!strncmp(plain[0], "rc 0 猫舌|", strlen("rc 0 猫舌|")) && !strncmp(plain[2], "rc 0 犬小屋|", strlen("rc 0 犬小屋|")));
+        int start_opened = opened, start_closed = closed;
+        session_start(&p);
+        count_reset();
+        for (int round = 0; round < 2; round++)
+            for (int t = 0; t < POOL_TEXTS; t++) {
+                stacked(&p, &cfg, pool_texts[t], pooled, sizeof(pooled));
+                TEST_CHECK_(!strcmp(plain[t], pooled), "%d files, %s: %s, without a session %s", n, pool_texts[t],
+                            pooled, plain[t]);
+            }
+        for (int i = 0; i < n; i++)
+            TEST_CHECK_(page0_reads[i] == 1, "%d files: file %d read its page 0 %d times", n, i, page0_reads[i]);
+        TEST_CHECK(opened - start_opened == n && closed == start_closed);
+        vjo_local_session_close(p.local_session);
+        TEST_CHECK(opened == closed);
+    }
+}
+
+/* A directory that does not fit in what the earlier files left of the pool is read from page 0 at
+ * each lookup, as without a session, and a later one that still fits is pooled: a.vjdict's 250
+ * blocks, b's 10 and c's 2, in two orders of local_dictionaries (a changed order is a new session,
+ * which fills its pool anew). */
+static void session_pool_skips_a_directory_that_does_not_fit(void)
+{
+    static const struct { const char *names; int pooled[3]; } orders[] = {
+        {"a.vjdict,b.vjdict,c.vjdict", {1, 0, 1}}, /* a 0..250, b's 10 do not fit, c 250..252 */
+        {"b.vjdict,a.vjdict,c.vjdict", {0, 1, 1}}, /* b 0..10, a's 250 do not fit, c 10..12 */
+    };
+    const char *texts[] = {"猫舌", "犬小屋", "見ました", "猫舌と犬"}; /* each searches every file's filter */
+    const uint32_t split[2] = {0, prefix_of("猫")};
+    char plain[4][512], pooled[512];
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "a.vjdict", pool_rows, 6, 3);
+    add_wide_filter(&fixtures[0], pool_rows, 6, 250);
+    build(&fixtures[1], "b.vjdict", pool_rows, 6, 3);
+    add_wide_filter(&fixtures[1], pool_rows, 6, 10);
+    build(&fixtures[2], "c.vjdict", pool_rows, 6, 3);
+    add_filter(&fixtures[2], pool_rows, 6, split, 2, 0);
+    cfg.local_dictionary_results = 3;
+    for (size_t o = 0; o < sizeof(orders) / sizeof(orders[0]); o++) {
+        strcpy(cfg.local_dictionaries, orders[o].names);
+        p.local_session = NULL;
+        for (int t = 0; t < 4; t++) stacked(&p, &cfg, texts[t], plain[t], sizeof(plain[t]));
+        session_start(&p);
+        count_reset();
+        for (int round = 0; round < 2; round++)
+            for (int t = 0; t < 4; t++) {
+                stacked(&p, &cfg, texts[t], pooled, sizeof(pooled));
+                TEST_CHECK_(!strcmp(plain[t], pooled), "%s, %s: %s, without a session %s", orders[o].names, texts[t],
+                            pooled, plain[t]);
+            }
+        for (int i = 0; i < 3; i++) /* the open's read, then one a lookup when it is not in the pool */
+            TEST_CHECK_(page0_reads[i] == (orders[o].pooled[i] ? 1 : 1 + 8), "%s: %c.vjdict read its page 0 %d times",
+                        orders[o].names, 'a' + i, page0_reads[i]);
+        vjo_local_session_close(p.local_session);
+        TEST_CHECK(opened == closed);
+    }
+}
+
+/* A one-character candidate never picks or reads a filter block: alone (猫: no longer span loaded
+ * one), with its prefix outside the loaded block's range, or once the page cache has dropped the
+ * block, it searches the index as before; in the loaded block, still held, it is answered there with
+ * no read. The filter has no false negatives (the converter, as add_filter, puts every key's bits,
+ * a one-character key's too, into the block whose range holds its prefix), so the answer is the
+ * index's: every lookup shows what the same files without a filter show. */
+static void one_character_candidates_use_only_the_block_they_find_loaded(void)
+{
+    /* the names' files lack 猫 and 猫が; the words' file has 猫 and no 猫が */
+    const Row names[] = {{"渚", "渚", "なぎさ", "a name", 0, 0}, {"古河", "古河", "ふるかわ", "a family name", 0, 0}};
+    const Row words[] = {{"猫", "猫", "ねこ", "cat", 0, 0}, {"犬", "犬", "いぬ", "dog", 0, 0}};
+    static const struct {
+        const char *what, *text;
+        int files;          /* names' files, then the words' */
+        uint32_t split;     /* the names' files' second block's first prefix (0: one block) */
+        int name_buckets;   /* each names' file's bucket-page reads in the lookup */
+        int name_blocks[2]; /* and its two blocks' reads */
+    } cases[] = {
+        {"in the held block", "猫が", 2, 0, 0, {1, 0}},
+        {"alone", "猫", 2, 0, 1, {0, 0}},
+        {"outside the block's range", "猫が", 2, 0x732b0001u /* 猫 << 16 | 1 */, 1, {0, 1}},
+        {"its block dropped from the page cache", "猫が", 5, 0, 1, {1, 0}},
+    };
+    for (size_t k = 0; k < sizeof(cases) / sizeof(cases[0]); k++) {
+        char list[256] = "", unfiltered[512], filtered[512], session[512];
+        int n = cases[k].files;
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        TEST_CASE(cases[k].what);
+        setup(&a, &p, &cfg);
+        for (int filter = 0; filter < 2; filter++) {
+            for (int i = 0; i < n; i++) {
+                static char file_names[VJO_LOCAL_MAX_DICTS][24];
+                uint32_t starts[2] = {0, cases[k].split};
+                const Row *rows = i < n - 1 ? names : words;
+                snprintf(file_names[i], sizeof(file_names[i]), "f%d.vjdict", i);
+                build(&fixtures[i], file_names[i], rows, 2, 3);
+                if (filter) add_filter(&fixtures[i], rows, 2, starts, i < n - 1 && cases[k].split ? 2 : 1, 0);
+                if (!filter) snprintf(list + strlen(list), sizeof(list) - strlen(list), "%s%s", i ? "," : "", file_names[i]);
+            }
+            strcpy(cfg.local_dictionaries, list);
+            cfg.local_dictionary_results = n;
+            stacked(&p, &cfg, cases[k].text, filter ? filtered : unfiltered, sizeof(filtered));
+        }
+        TEST_CHECK_(!strncmp(unfiltered, "rc 0 猫|ねこ|cat", strlen("rc 0 猫|ねこ|cat")), "%s", unfiltered);
+        TEST_CHECK_(!strcmp(filtered, unfiltered), "%s, without a filter %s", filtered, unfiltered);
+        session_start(&p);
+        stacked(&p, &cfg, "犬", session, sizeof(session)); /* opens the files: page 0 and the pool */
+        count_reset();
+        stacked(&p, &cfg, cases[k].text, session, sizeof(session));
+        TEST_CHECK_(!strcmp(session, unfiltered), "%s, without a filter %s", session, unfiltered);
+        for (int i = 0; i < n - 1; i++) {
+            TEST_CHECK_(bucket_reads[i] == cases[k].name_buckets, "names' file %d: %d bucket-page reads", i, bucket_reads[i]);
+            for (int b = 0; b < 2; b++)
+                TEST_CHECK_(block_reads[i][b] == cases[k].name_blocks[b], "names' file %d: block %d read %d times", i, b,
+                            block_reads[i][b]);
+        }
+        /* the words' file: its block once for 猫が (nothing for 猫 alone), 猫's bits are set: its index */
+        TEST_CHECK_(block_reads[n - 1][0] == (strlen(cases[k].text) > strlen("猫")) && bucket_reads[n - 1] == 1,
+                    "the words' file: block %d, bucket page %d", block_reads[n - 1][0], bucket_reads[n - 1]);
+        vjo_local_session_close(p.local_session);
+        TEST_CHECK(opened == closed);
+    }
+}
+
+/* A one-character span's longer candidates pick the block of their own prefix, as at a longer span:
+ * ね (alone, nothing loaded) and its masu stem's ねる, whose prefix opens the names' file's second
+ * block. Had ね picked its block (the first), ねる would be out of that block's range: unfiltered. */
+static void one_character_spans_leave_the_block_to_longer_candidates(void)
+{
+    const Row names[] = {{"渚", "渚", "なぎさ", "a name", 0, 0}, {"古河", "古河", "ふるかわ", "a family name", 0, 0}};
+    const Row words[] = {{"ねる", "寝る", "ねる", "to sleep", 1, 0}, {"犬", "犬", "いぬ", "dog", 0, 0}};
+    const uint32_t split[2] = {0, prefix_of("ねる")}, one = 0;
+    char out[512];
+    VjoArena a; VjoPlatform p; VjoConfig cfg;
+    setup(&a, &p, &cfg);
+    build(&fixtures[0], "names.vjdict", names, 2, 3);
+    add_filter(&fixtures[0], names, 2, split, 2, 0);
+    build(&fixtures[1], "words.vjdict", words, 2, 3);
+    add_filter(&fixtures[1], words, 2, &one, 1, 0);
+    strcpy(cfg.local_dictionaries, "names.vjdict,words.vjdict");
+    cfg.local_dictionary_results = 2;
+    session_start(&p);
+    stacked(&p, &cfg, "犬", out, sizeof(out)); /* opens the files */
+    count_reset();
+    stacked(&p, &cfg, "ね", out, sizeof(out));
+    TEST_CHECK_(!strncmp(out, "rc 0 寝る|ねる|to sleep", strlen("rc 0 寝る|ねる|to sleep")), "%s", out);
+    TEST_CHECK_(block_reads[0][0] == 0 && block_reads[0][1] == 1, "the names' blocks read %d and %d times",
+                block_reads[0][0], block_reads[0][1]);
+    TEST_CHECK(block_reads[1][0] == 1);
+    vjo_local_session_close(p.local_session);
+    TEST_CHECK(opened == closed);
 }
 
 /* Posting hints rank every posting exactly as its payload's head does (#127's
@@ -2124,6 +2378,10 @@ TEST_LIST = {
     {"key_filter_shows_what_the_plain_file_shows", key_filter_shows_what_the_plain_file_shows},
     {"key_filter_never_hides_a_key", key_filter_never_hides_a_key},
     {"key_filter_descriptor_is_validated", key_filter_descriptor_is_validated},
+    {"session_pool_holds_every_directory_that_fits", session_pool_holds_every_directory_that_fits},
+    {"session_pool_skips_a_directory_that_does_not_fit", session_pool_skips_a_directory_that_does_not_fit},
+    {"one_character_candidates_use_only_the_block_they_find_loaded", one_character_candidates_use_only_the_block_they_find_loaded},
+    {"one_character_spans_leave_the_block_to_longer_candidates", one_character_spans_leave_the_block_to_longer_candidates},
     {"read_page_refuses_short_locators", read_page_refuses_short_locators},
     {"dictionary_title_names_its_entries", dictionary_title_names_its_entries},
     {"whole_text_lookup_names_a_list_every_entry_has", whole_text_lookup_names_a_list_every_entry_has},

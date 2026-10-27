@@ -168,6 +168,30 @@ The filter costs 0.91-1.00 reads and 0 bytes of RAM, and adds 904 KiB to the bun
 Results for every mode and set:
 [dict-key-filter-20261015.json](benchmarks/dict-key-filter-20261015.json).
 
+### Directory pool, one-character candidates (#360)
+
+With both bundled dictionaries (Dictionaries shown 2), the session kept one file's filter directory, so
+the two files evicted each other's and nearly every lookup read both pages 0 again (1.88 reads); now
+its pool holds both directories (226 + 10 of its 256 blocks), copied as each file opens. A
+one-character candidate is checked against the filter block a longer span loaded, when the page cache
+still holds it, at no read: the names dictionary answers "absent" for most of its は or が, which read
+one of its bucket pages before (0.26 index reads a lookup fewer; on the 50 committed VOCR lines, Right
+through each, 147 of the names dictionary's 266 one-character candidates, and none of
+`plaintext.vjdict`'s, which are keys). The Shell's file reads became one `sceIoPread` each instead of
+an `sceIoLseek` and an `sceIoRead` (one syscall fewer a read; the time it saves is unmeasured: a read's
+cost is the memory card's). On every one of the 64,579 taps of rubi-dict-check's corpus (5,000 lines
+of 46 games), each tap's shown result identical, a cursor lookup of the console's default (host;
+console times are estimates at the test.4 fit, 13.1 ms + 2.98 ms a read):
+
+| | reads/lookup (p50 / p95) | header | filter | index | group | head | payload | console ms p50 / mean (est.) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| before (main `99ed7ec`) | 8.12 (8 / 12) | 1.88 | 1.99 | 1.77 | 1.10 | 0.39 | 1.00 | 37.2 / 37.8 |
+| the pool | 6.24 (6 / 10) | 0 | 1.99 | 1.77 | 1.10 | 0.39 | 1.00 | 31.2 / 32.2 |
+| the pool and one-character candidates | **5.98** (5 / 10) | 0 | 1.98 | 1.51 | 1.10 | 0.39 | 1.00 | 28.6 / 31.4 |
+
+A word the lookahead located still costs 1.04 reads; locating one (its prepare) costs 4.98 reads
+instead of 7.13. Measured with `vjo-dict-stage-bench` and `tools/dict_stage_report.py` (#361).
+
 ### Posting hints
 
 Format 3's posting hints ([format](local-dictionaries.md)) rank a key's entries without reading
