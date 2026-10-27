@@ -145,9 +145,12 @@ static unsigned thread_stack;
 SceUID sceKernelCreateMutex(const char *n, unsigned int a, int c, void *o) { (void)n; (void)a; (void)c; (void)o; return 0x100; }
 int sceKernelLockMutex(SceUID u, int c, void *t) { (void)u; (void)c; (void)t; return 0; }
 int sceKernelUnlockMutex(SceUID u, int c) { (void)u; (void)c; return 0; }
+static int fail_create;
 SceUID sceKernelCreateThread(const char *n, int (*e)(SceSize, void *), int p, unsigned int s, unsigned int a, int af, void *o)
 {
     (void)n; (void)a; (void)o;
+    if (fail_create)
+        return (int)0x80020001u;
     thread_entry = e;
     thread_priority = p;
     thread_stack = s;
@@ -194,7 +197,8 @@ void vita2d_swap_buffers(void) {}
 
 /* ---------------- what a frame draws (main.c's helpers, recorded) ---------------- */
 
-typedef struct { int x, y; unsigned color; float px; int clipped; char s[320]; } Text; /* clipped: drawn inside a row cut at the room's end */
+/* clipped: drawn inside a row cut at the room's end; width: a wrapped line's room (0: a plain text) */
+typedef struct { int x, y; unsigned color; float px; int clipped, width; char s[320]; } Text;
 typedef struct { int y, height, focus; } Card;
 typedef struct { int x, y, width, height; unsigned color; } Rect;
 static struct {
@@ -219,15 +223,17 @@ static int width_of(const char *s, float px)
 static void d_text(int x, int y, unsigned color, float px, const char *s)
 {
     if (drawn.texts < 96) {
-        drawn.text[drawn.texts] = (Text){x, y, color, px, clipping, ""};
+        drawn.text[drawn.texts] = (Text){x, y, color, px, clipping, 0, ""};
         snprintf(drawn.text[drawn.texts++].s, 320, "%s", s);
     }
 }
 static int d_width(float px, const char *s) { return width_of(s, px); }
 static void d_wrapped(int x, int y, int width, unsigned color, float px, int line_height, int lines, const char *s)
 {
-    (void)width; (void)line_height; (void)lines;
+    (void)line_height; (void)lines;
     d_text(x, y, color, px, s);
+    if (drawn.texts)
+        drawn.text[drawn.texts - 1].width = width;
 }
 static void d_card(int y, int height, int focus)
 {
@@ -457,6 +463,41 @@ static void each_game_shows_the_triangle_views_numbers(void)
             TEST_CHECK_(text_with(line) != NULL, "rule %d %s: want \"%s\"", rule, names[g], line);
         }
         TEST_CHECK(text_with("last read Tue 20 Oct") != NULL && text_with("read today") != NULL);
+        /* (audit-rubi-rm2 F4.1) the Today row: all games' today, the sum of each game's Triangle view today; and All
+         * games: the sum of their totals */
+        VjoStatsCount sum_day = {0, 0, 0}, sum_total = {0, 0, 0};
+        for (int g = 0; g < 3; g++) {
+            VjoStatsCount total, day;
+            shell_count(tids[g], &total, &day);
+            sum_day.chars += day.chars, sum_day.active_us += day.active_us, sum_day.timed_chars += day.timed_chars;
+            sum_total.chars += total.chars, sum_total.active_us += total.active_us;
+            sum_total.timed_chars += total.timed_chars;
+        }
+        char want_today[200], want_all[200];
+        summary(want_today, sizeof(want_today), &sum_day);
+        summary(want_all, sizeof(want_all), &sum_total);
+        TEST_ASSERT(sum_day.chars > 0 && (rule || sum_day.active_us > 0));
+        const Text *today_line = NULL, *title = NULL;
+        for (int i = 0; i < 12 && !title; i++) {
+            frame(i ? SCE_CTRL_UP : 0);
+            for (int k = 0; k < drawn.texts; k++)
+                if (!strcmp(drawn.text[k].s, "Today") && drawn.text[k].x == 42 && drawn.text[k].y == VIEW_Y + 30)
+                    title = &drawn.text[k];
+        }
+        TEST_ASSERT(title != NULL);
+        for (int i = 0; i < drawn.texts; i++)
+            if (drawn.text[i].x == 150 && drawn.text[i].y == VIEW_Y + 30)
+                today_line = &drawn.text[i];
+        TEST_CHECK_(today_line && !strcmp(today_line->s, want_today), "rule %d: Today row \"%s\", the games' sum \"%s\"",
+                    rule, today_line ? today_line->s : "(none)", want_today);
+        int all_seen = 0;
+        for (int i = 0; i < 6 && !all_seen; i++) {
+            frame(SCE_CTRL_DOWN);
+            const Text *t = text_with("All games");
+            for (int k = 0; t && k < drawn.texts; k++)
+                all_seen |= drawn.text[k].y == t->y + 28 && !strcmp(drawn.text[k].s, want_all);
+        }
+        TEST_CHECK_(all_seen, "rule %d: All games \"%s\"", rule, want_all);
         /* config.ini's rule is the count's: the log names the records */
         TEST_CHECK(strstr(logs, "stats: history.csv ") != NULL);
     }
@@ -602,6 +643,16 @@ static void the_days_and_the_year(void)
     /* a touch on a cell chooses its day: the year's first is a Thursday (row 4 of column 0) */
     const Text *year = text_with("2026");
     int card_top = year ? year->y - 30 : 0;
+    /* (audit-rubi-rm2 F4.7) the cells' columns are weeks from Sunday: 1 Jan (a Thursday) in column 0's row 4, and the
+     * chosen day, Tue 20 Oct (day 292 of the year), outlined in column 42's row 2 */
+    int jan1 = 0, chosen = 0;
+    for (int k = 0; k < drawn.rects; k++) {
+        const Rect *r = &drawn.rect[k];
+        jan1 |= r->width == 12 && r->height == 12 && r->x == 72 && r->y == card_top + 42 + 4 * 14;
+        chosen |= r->width == 16 && r->height == 2 && r->color == WHITE && r->x == 72 + 42 * 14 - 2 &&
+                  r->y == card_top + 42 + 2 * 14 - 2;
+    }
+    TEST_CHECK(jan1 && chosen);
     touch(0, 72 + 3, card_top + 42 + 4 * 14 + 3);
     TEST_CHECK(text_with("Thu 1 Jan: 0 characters") != NULL);
 }
@@ -623,6 +674,30 @@ static void the_cache_is_read_on_and_checked(void)
     char want[96];
     snprintf(want, sizeof(want), "counted from %zu ", was);
     TEST_CHECK_(strstr(logs, want) && strstr(logs, "the cache read, then saved"), "%s", logs);
+    /* bytes after the counted ones that do not start a record (another program's line, or a record glued to a cut
+     * one): the file is not the one counted, as the Shell's own count decides it (shell/history.c) */
+    size_t counted_len = history_len;
+    history_len += (size_t)snprintf(history + history_len, sizeof(history) - history_len, "junk\n");
+    record("PCSG00415", "CLANNAD", "「次」", jst(27, 23, 1, 0));
+    write_history();
+    logs[0] = 0;
+    show();
+    TEST_CHECK_(strstr(logs, "is not the one counted") && strstr(logs, "counted from 0 "), "%s", logs);
+    memmove(history + counted_len, history + counted_len + 5, history_len - counted_len - 5);
+    history_len -= 5;
+    write_history(); /* (the same records without the junk: counted again from the start, the file being shorter) */
+    show();
+    /* (audit-rubi-rm2 F4.6) an edit in the file's first 1 KiB, the same length: counted again from the start */
+    {
+        char *first_line = strstr(history, "「朝だよ、起きて」");
+        TEST_ASSERT(first_line && first_line - history < 1024);
+        first_line[3] = (char)0xE3, first_line[4] = (char)0x81, first_line[5] = (char)0x82; /* 朝 -> あ (3 bytes each) */
+        write_history();
+        logs[0] = 0;
+        show();
+        TEST_CHECK_(strstr(logs, "is not the one counted") && strstr(logs, "counted from 0 ") &&
+                    strstr(logs, "then saved"), "%s", logs); /* (saved: the next show counts nothing again) */
+    }
     /* nothing new: nothing counted, nothing written */
     logs[0] = 0;
     show();
@@ -670,6 +745,150 @@ static void the_cache_is_read_on_and_checked(void)
     TEST_CHECK_(strstr(logs, "(1 records;") != NULL, "%s", logs);
 }
 
+/* The page's In all line for game tid, and what it would be with the Shell's count of the same file. */
+static void in_all(const char *tid, const char *name, char *got, size_t cap, char *want, size_t wcap)
+{
+    VjoStatsCount total, day;
+    char text[200];
+    got[0] = 0;
+    for (int i = 0; i < 12 && !got[0]; i++) {
+        frame(i ? SCE_CTRL_DOWN : 0);
+        const Text *n = text_with(name), *t = text_with("In all: ");
+        if (n && t)
+            snprintf(got, cap, "%s", t->s);
+    }
+    vjo_reading_rule = VJO_READING_ADAPTIVE;
+    shell_count(tid, &total, &day);
+    summary(text, sizeof(text), &total);
+    snprintf(want, wcap, "In all: %s", text);
+}
+
+/* (audit-rubi-rm2) A count that sees only a record's first byte, its '"' at the file's end, leaves it for the next
+ * count: the record is counted once it is whole, not lost. */
+static void a_record_seen_by_its_first_byte_is_counted(void)
+{
+    char got[320], want[260];
+    reset();
+    three_games();
+    show();
+    size_t was = history_len;
+    record("PCSG00415", "CLANNAD", "「最後の台詞です」", jst(27, 23, 20, 0));
+    size_t whole = history_len;
+    history_len = was + 1; /* only its first byte */
+    write_history();
+    show();
+    history_len = whole;
+    write_history();
+    show();
+    in_all("PCSG00415", "CLANNAD", got, sizeof(got), want, sizeof(want));
+    TEST_CHECK_(strstr(got, want) != NULL, "page \"%s\", Shell \"%s\"; %s", got, want, logs);
+}
+
+/* (audit-rubi-rm2) Start counts again from the start: also a history.csv edited in place, which the cache's checks
+ * (its first 1 KiB and the 256 B before where it stopped) cannot see. */
+static void start_counts_everything_again(void)
+{
+    char got[320], want[260];
+    reset();
+    three_games();
+    show();
+    /* a CLANNAD line after the cache's first 1 KiB, well before its last 256 B */
+    char *p = history + 1500, *rec;
+    for (;;) {
+        p = strstr(p, "かきくけこさしすせそ\",17"); /* the line cell, followed by its time (not raw_line's copy) */
+        TEST_ASSERT(p != NULL && (size_t)(p - history) + 300 < history_len);
+        for (rec = p; rec > history && !(rec[-1] == '\n' && rec[0] == '"'); rec--)
+            ;
+        if (!strncmp(rec, "\"vita-PCSG00415\"", 16))
+            break;
+        p++;
+    }
+    memcpy(p, "ABCDEFGHIJKLMNOPQRSTUVWXYZABCD", 30); /* 10 kana -> 30 Latin letters (each counts) */
+    write_history();
+    show(); /* a show counts only what is new: nothing */
+    in_all("PCSG00415", "CLANNAD", got, sizeof(got), want, sizeof(want));
+    TEST_CHECK_(strstr(got, want) == NULL, "page \"%s\", Shell \"%s\"", got, want);
+    logs[0] = 0;
+    frame(SCE_CTRL_START);
+    run_worker();
+    in_all("PCSG00415", "CLANNAD", got, sizeof(got), want, sizeof(want));
+    TEST_CHECK_(strstr(got, want) != NULL, "page \"%s\", Shell \"%s\"; %s", got, want, logs);
+    TEST_CHECK_(strstr(logs, "counted from 0 ") && strstr(logs, "the cache not read (Start: counted again), then saved"),
+                "%s", logs);
+}
+
+/* Every text the frame drew fits its room in the stub metrics, which draw Latin wider than the firmware's font: a
+ * wrapped line its width (else it is cut with "..."), any other text the card (to x 932). */
+static void check_fits(const char *what)
+{
+    for (int i = 0; i < drawn.texts; i++) {
+        const Text *t = &drawn.text[i];
+        int w = width_of(t->s, t->px);
+        if (t->width)
+            TEST_CHECK_(w <= t->width, "%s: \"%s\" %d px in a room of %d", what, t->s, w, t->width);
+        else
+            TEST_CHECK_(t->x + w <= 932, "%s: \"%s\" ends at %d", what, t->s, t->x + w);
+    }
+}
+
+/* (audit-rubi-rm2) The largest numbers a reader could have (98,765,432 characters, 123,456 hours, 50,000-character
+ * goals met, a streak of 1,234 days, a game read last year) fit every line, in every row, focused or not. */
+static void big_numbers_fit_their_rows(void)
+{
+    static unsigned char bytes[2 << 20];
+    reset();
+    three_games();
+    show();
+    /* the cache the count wrote, its numbers made as large as a decade of reading */
+    FILE *f = fopen("ux0:data/VitaJPOverlay/stats_cache.bin", "rb");
+    TEST_ASSERT(f != NULL);
+    size_t n = fread(bytes, 1, sizeof(bytes), f);
+    fclose(f);
+    static VjoStats big;
+    TEST_ASSERT(vjo_stats_cache_read(&big, bytes, n, 540, VJO_READING_ADAPTIVE) == VJO_STATS_CACHE_OK);
+    for (uint32_t g = 0; g < big.games; g++) {
+        big.game[g].chars = 98765432;
+        big.game[g].lines = 9876543;
+        big.game[g].time.active_us = 123456ull * 3600000000ull + 7 * 60000000ull;
+        big.game[g].time.timed_chars = 97000000;
+    }
+    for (uint32_t k = 0; k < big.days; k++)
+        big.day[k].n = (VjoStatsCount){123456, 23ull * 3600000000ull + 59 * 60000000ull, 120000};
+    big.game[2].last_day = vjo_stats_days_from_civil(2025, 12, 31); /* last year: its date has its year */
+    n = vjo_stats_cache_write(&big, bytes, sizeof(bytes));
+    TEST_ASSERT(n > 0);
+    f = fopen("ux0:data/VitaJPOverlay/stats_cache.bin", "wb");
+    TEST_ASSERT(f && fwrite(bytes, 1, n, f) == n && !fclose(f));
+    FILE *ini = fopen("ux0:data/VitaJPOverlay/app.ini", "wb");
+    fprintf(ini, "stats_daily_goal = 50000_characters\n");
+    fclose(ini);
+    show();
+    /* (today: two games read, each day's rollup 123,456 characters in 23 h 59 min) */
+    TEST_CHECK(text_with("Goal met: 50,000 characters") != NULL && text_with("246,912 characters, 47 h 58 min") != NULL);
+    int rows = ROW_GAMES + 3, seen = 0;
+    for (int r = 0; r < rows; r++) {
+        char what[32];
+        snprintf(what, sizeof(what), "row %d", r);
+        check_fits(what);
+        seen += text_with("In all: 98,765,432 characters, 123456 h 07 min, 785/hour") != NULL;
+        seen += 100 * (text_with("last read Wed 31 Dec 2025") != NULL);
+        frame(SCE_CTRL_DOWN);
+    }
+    TEST_CHECK_(seen % 100 > 0 && seen >= 100, "%d", seen);
+    /* each goal's line on the Today row: from Off, Right through every one */
+    frame(SCE_CTRL_DOWN); /* (from Today) the Daily goal row */
+    for (int i = 0; i < 6; i++)
+        frame(SCE_CTRL_LEFT);
+    TEST_CHECK(!strcmp(drawn.badge, "Off"));
+    for (int g = 0; g < VJO_GOALS; g++) {
+        frame(SCE_CTRL_UP); /* Today */
+        check_fits("Today with a goal");
+        TEST_CHECK(g ? text_with("Goal met: ") != NULL : text_with("No daily goal") != NULL);
+        frame(SCE_CTRL_DOWN);
+        frame(SCE_CTRL_RIGHT);
+    }
+}
+
 static void write_card(const char *dir, const char *id, const char *platform, const char *tid)
 {
     char path[256];
@@ -697,26 +916,29 @@ static void cards_count_per_game(void)
     write_card("", "00000000000000000000000000000004", NULL, NULL); /* damaged: All games only */
     write_card("", "0000000000000000000000000000000z", "vita", "PCSG00062"); /* not a card's name */
     write_card("", "00000000000000000000000000000005", "vita", "PCSE99999"); /* a game with no line */
+    FILE *v2 = fopen("ux0:data/VitaJPOverlay/anki_queue/00000000000000000000000000000006.json", "wb");
+    fprintf(v2, "{\"version\":2,\"spelling\":\"犬\"}"); /* a record of version 2: it names no game */
+    fclose(v2);
     opens_of_cards = 0;
     show();
-    TEST_CHECK_(opens_of_cards == 5, "%d opens", opens_of_cards); /* each card once, also the one in both */
-    TEST_CHECK_(strstr(logs, "5 cards, 5 read") != NULL, "%s", logs);
+    TEST_CHECK_(opens_of_cards == 6, "%d opens", opens_of_cards); /* each card once, also the one in both */
+    TEST_CHECK_(strstr(logs, "6 cards, 6 read") != NULL, "%s", logs);
     for (int i = 0; i < 4; i++)
         frame(SCE_CTRL_DOWN); /* All games */
-    TEST_CHECK(text_with("5 cards, ") != NULL);
+    TEST_CHECK(text_with("6 cards mined, ") != NULL);
     int found = 0;
     for (int i = 0; i < 6; i++) {
         frame(SCE_CTRL_DOWN);
-        found += text_with("2 cards, ") != NULL && text_with("CLANNAD") != NULL;
-        found += text_with("1 card, ") != NULL && text_with("TIME TRAVELERS") != NULL;
-        found += text_with("vita-PCSE99999") != NULL && text_with("no lines read") != NULL && text_with("; 1 card") != NULL;
+        found += text_with("2 cards mined, ") != NULL && text_with("CLANNAD") != NULL;
+        found += text_with("1 card mined, ") != NULL && text_with("TIME TRAVELERS") != NULL;
+        found += text_with("vita-PCSE99999") != NULL && text_with("no lines read") != NULL && text_with("1 card mined") != NULL;
     }
     TEST_CHECK_(found >= 3, "%d", found);
-    /* the next count reads again only the card whose record could not be read */
+    /* the next count reads again only the card whose record could not be read (not the one that names no game) */
     opens_of_cards = 0;
     logs[0] = 0;
     show();
-    TEST_CHECK_(opens_of_cards == 1 && strstr(logs, "5 cards, 1 read"), "%d: %s", opens_of_cards, logs);
+    TEST_CHECK_(opens_of_cards == 1 && strstr(logs, "6 cards, 1 read"), "%d: %s", opens_of_cards, logs);
     /* once it is whole, its game counts */
     write_card("", "00000000000000000000000000000004", "vita", "PCSG00062");
     logs[0] = 0;
@@ -726,7 +948,7 @@ static void cards_count_per_game(void)
         if (text_with("TIME TRAVELERS"))
             break;
     }
-    TEST_CHECK(text_with("2 cards, ") != NULL && text_with("TIME TRAVELERS") != NULL);
+    TEST_CHECK(text_with("2 cards mined, ") != NULL && text_with("TIME TRAVELERS") != NULL);
 }
 
 /* Cards but no history.csv (Read text: Only when I press L + R keeps none): the cards count, and each record is read
@@ -745,7 +967,7 @@ static void cards_without_history(void)
     TEST_CHECK_(opens_of_cards == 0, "%d", opens_of_cards);
     for (int i = 0; i < 5; i++)
         frame(SCE_CTRL_DOWN);
-    TEST_CHECK(text_with("vita-PCSG00415") != NULL && text_with("no lines read") != NULL && text_with("; 2 cards") != NULL);
+    TEST_CHECK(text_with("vita-PCSG00415") != NULL && text_with("no lines read") != NULL && text_with("2 cards mined") != NULL);
 }
 
 static void no_history_yet(void)
@@ -769,6 +991,41 @@ static void no_history_yet(void)
     show();
     fail_open = NULL;
     TEST_CHECK(strstr(drawn.footer, "Cannot read history.csv (0x80010005)") && drawn.footer_error);
+}
+
+/* (audit-rubi-rm2 F4.8) app.ini that cannot be read: the goal shows "--", is never saved, and the page says why. */
+static void an_unreadable_app_ini_saves_no_goal(void)
+{
+    reset();
+    three_games();
+    FILE *f = fopen("ux0:data/VitaJPOverlay/app.ini", "wb");
+    fprintf(f, "stats_daily_goal = 5000_characters\n");
+    fclose(f);
+    fail_open = "app.ini";
+    show();
+    frame(SCE_CTRL_DOWN); /* the Daily goal row */
+    TEST_CHECK(!strcmp(drawn.badge, "--") && text_with("Cannot read app.ini.") != NULL);
+    frame(SCE_CTRL_RIGHT);
+    TEST_CHECK(strstr(drawn.footer, "Cannot read app.ini. The goal has not been changed.") && drawn.footer_error);
+    fail_open = NULL;
+    TEST_CHECK(app_ini_says("stats_daily_goal = 5000_characters\n") && !app_ini_says("10000"));
+}
+
+/* A count that cannot start (no thread): said, Today says it is not counted, and Start tries again. */
+static void a_count_that_cannot_start(void)
+{
+    reset();
+    fail_create = 1;
+    vjo_arena_init(&scratch, scratch_mem, sizeof(scratch_mem));
+    vjo_stats_page_show(&scratch);
+    frame(0);
+    fail_create = 0;
+    TEST_CHECK(strstr(drawn.footer, "Could not start the count (0x80020001)") && drawn.footer_error);
+    TEST_CHECK(text_with("Not counted yet. Start: count") != NULL && !text_with("Counting history.csv"));
+    frame(SCE_CTRL_START); /* Start counts */
+    run_worker();
+    frame(0);
+    TEST_CHECK(strstr(drawn.footer, "No reading yet") && text_with("0 characters, 0 min") != NULL);
 }
 
 static void a_new_day_and_quit(void)
@@ -795,9 +1052,14 @@ TEST_LIST = {
     {"the_goal_is_saved_in_app_ini", the_goal_is_saved_in_app_ini},
     {"the_days_and_the_year", the_days_and_the_year},
     {"the_cache_is_read_on_and_checked", the_cache_is_read_on_and_checked},
+    {"a_record_seen_by_its_first_byte_is_counted", a_record_seen_by_its_first_byte_is_counted},
+    {"start_counts_everything_again", start_counts_everything_again},
     {"cards_count_per_game", cards_count_per_game},
+    {"big_numbers_fit_their_rows", big_numbers_fit_their_rows},
     {"cards_without_history", cards_without_history},
     {"no_history_yet", no_history_yet},
+    {"an_unreadable_app_ini_saves_no_goal", an_unreadable_app_ini_saves_no_goal},
+    {"a_count_that_cannot_start", a_count_that_cannot_start},
     {"a_new_day_and_quit", a_new_day_and_quit},
     {NULL, NULL},
 };

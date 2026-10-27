@@ -29,8 +29,8 @@ adaptive, its default), in the same integers, so the totals here are the Triangl
 time order (this tool sorts by time; the overlay breaks its interval where the clock was set back). A
 change of game is a break. --time-rule break (or --break-minutes N) is Rubi 0.9.7's rule instead: a gap of more
 than N minutes (default 5) is a break, and the record before it gets none (how long it was read is
-unknown). Characters per hour divides the characters of the records that got a time by that time; the
-totals count every record.
+unknown). With either rule two records at one time make no interval, as in the overlay. Characters per
+hour divides the characters of the records that got a time by that time; the totals count every record.
 
 A record cut short (power lost while it was written: no line break at the file's end, or fewer
 cells than Rubi writes), even when more records were appended after it, is skipped and counted;
@@ -478,8 +478,9 @@ def credit_time(records, break_seconds: float | None = None) -> None:
         if nxt.game != r.game:
             r.seconds = None
         elif break_seconds is not None:
+            # (two records at one time: no interval, as the overlay's 15s rule and 0.9.7's have it)
             gap = nxt.time - r.time
-            r.seconds = gap if 0 <= gap <= break_seconds else None
+            r.seconds = gap if 0 < gap <= break_seconds else None
         elif nxt.us > r.us:
             credit, paces[r.game] = adaptive_credit(nxt.us - r.us, r.characters, paces.get(r.game, 0))
             r.seconds = credit / 1e6

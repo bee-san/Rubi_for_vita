@@ -425,7 +425,9 @@ interval, speed is `—` and time is `0 min`. Hook and OCR records follow the sa
 For an external report with the same numbers, run `python3 tools/reading_stats.py history.csv`
 (with `reading_time = 15s`: `--break-minutes 0.25`). On the Vita, the Rubi app's **Stats** page counts the same file
 with the same rule, per game and per local day, for every game together too
-([guide](guide.md#stats); `core/stats.c`, #312): each game's numbers there are this view's for that game.
+([guide](guide.md#stats); `core/stats.c`, #312): each game's numbers there are this view's for that game. (This view
+tells a game by a 32-bit hash of its ID, so two IDs with the same hash count as one game here, not on the Stats page; no
+two of `PCSA00000`-`PCSH99999` share one.)
 
 The tool sorts by timestamp; the overlay follows append order so that backward clock changes break
 an interval. The tool also accepts some externally edited CSV formats; the overlay reads Rubi's native

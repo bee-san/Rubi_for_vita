@@ -1101,14 +1101,18 @@ no sessions: a day, a game and all games.
 | **All games** | The totals of every game, the cards mined and the cards per 10,000 characters, and the lines recorded |
 | A row per game | Its name and the last day read; today's characters, time and characters/hour; in all the same, its cards (by the title ID the card was mined in) and cards per 10,000 characters. The game read last comes first |
 
-- **Start** counts again; the page counts what is new each time it is shown. The first count reads all of
-  `history.csv` on a thread of its own (the status line says how far it is); then the counts are kept in
-  `ux0:data/VitaJPOverlay/stats_cache.bin`, and the next count reads only the lines added since. A `history.csv` that
-  is not the one counted (replaced or shorter), another time zone, another `reading_time` or a damaged cache is
-  counted again from its start. 20 MB of history (44,769 lines) took 40 ms on a computer [measured on the host, an
+- The page counts what is new each time it is shown. The first count reads all of `history.csv` on a thread of its
+  own (the status line says how far it is); then the counts are kept in `ux0:data/VitaJPOverlay/stats_cache.bin`, and
+  the next count reads only the lines added since. The cache compares `history.csv`'s first 1 KiB, the 256 B before
+  where it stopped and the line that follows there: a file that differs in them, or is shorter, is counted again from
+  its start, and so is everything after a change of time zone or `reading_time`, or with a damaged cache. A change
+  elsewhere in the file (an edit on a computer that keeps its length) is not seen: **Start** counts everything again
+  from the start, the cards too. 20 MB of history (44,769 lines) took 40 ms on a computer [measured on the host, an
   AMD EPYC 9R14 core; the Vita's time is unmeasured: the app runs on its CPU3 while the game is suspended].
 - **The goal** is kept in the app's own settings file, `ux0:data/VitaJPOverlay/app.ini`
   (`stats_daily_goal = off | 2000_characters | … | 120_minutes`), never in `config.ini`: the overlay does not read it.
+- A day is a day in the time zone of the count: in a zone with daylight saving (Japan has none) the days of the
+  other half of the year are counted an hour off, from midnight to midnight of the offset the Vita has now.
 - The page only reads `history.csv` and the cards; it writes `stats_cache.bin` and `app.ini` only. A line read across
   midnight is its first day's, with its time, as `tools/reading_stats.py` counts it; △'s **Today** leaves such a line
   out. A record a power loss cut is skipped, as △ skips it.
