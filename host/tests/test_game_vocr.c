@@ -25,8 +25,14 @@ static unsigned gate_opens; /* API 26: opens of the gate's weights */
 static int open_gate_missing; /* API 26: the gate's file is not on the card */
 static unsigned char cascade_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static int cascade_live; static unsigned cascade_block, cascade_allocations, cascade_frees, cascade_opens;
+/* the block of a line taller than a strip (game_ocr/main.c line_buffer, "VjoGameVocrLine"): a job of columns takes
+ * one for most of its columns (API 47); one at most, any memory type */
+static unsigned char line_memory[VJO_VOCR_LINE_MAX_BYTES + 4096] __attribute__((aligned(64)));
+static int line_live; static unsigned line_block, line_allocs, line_frees;
 static unsigned tier_opens[VJO_VOCR_TIERS + 1]; /* API 21: model opens by tier (VJO_GAME_OCR_OPEN_TIER) */
 static unsigned vertical_opens; /* API 47: the vertical model's (VJO_GAME_OCR_OPEN_VERTICAL) */
+static int grow_on_vertical_open; /* the game frees this much as the vertical model is opened (its memory moves
+                                   * between auto's tries) */
 static int drop_on_workspace; /* bytes the game takes when the job's workspace block is allocated */
 static unsigned char pixels[200*272*4]; /* 200 x frame_h */
 static unsigned frame_h = 60; /* rows of the fake frame (over 64: two strips) */
@@ -50,6 +56,9 @@ static uint64_t clock_value;
 static unsigned frame_us; /* each rows call waits this long for its frame (0: none) */
 static unsigned change_at_rows; /* at this rows call the line moves down 6 rows (the player advanced); 0: never */
 static unsigned clear_at_rows;  /* at this rows call the box empties (the player advanced to an empty box); 0: never */
+/* until this rows call the screen keeps changing (text typing out, a video): the frame's first pixel takes a new
+ * dim grey at each call, never one of its recent states; then it is black again and holds still. 0: never */
+static unsigned flicker_rows;
 
 SceUID sceKernelGetProcessId(void) { return 7; }
 uint64_t sceKernelGetProcessTimeWide(void) { return clock_value++; }
@@ -68,6 +77,12 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
         if (type == SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW) { TEST_CHECK(!(size % (1024*1024))); if (refuse_phycont) return (int)0x80024302u; }
         TEST_CHECK(!capture_live && size <= sizeof(capture_mem));
         capture_allocs++; capture_live = 1; capture_block = size; live_bytes += size; return 11;
+    }
+    if (!strcmp(name, "VjoGameVocrLine")) { /* a line taller than a strip, kept whole: at most one block */
+        TEST_CHECK(!line_live && size <= sizeof(line_memory));
+        line_allocs++;
+        if (alloc_failure) return (int)0x80024302u;
+        line_live = 1; line_block = size; live_bytes += size; return 14;
     }
     if (!strcmp(name, "VjoGameVocrCascade")) { /* the cascade's model, at most one block, USER only */
         TEST_CHECK(type == SCE_KERNEL_MEMBLOCK_TYPE_USER_RW);
@@ -109,6 +124,7 @@ int sceKernelGetMemBlockBase(SceUID uid, void **base)
     if (uid == 10) { TEST_CHECK(weights_live); *base = weights_memory; return 0; }
     if (uid == 12) { TEST_CHECK(lm_live); *base = lm_memory; return 0; }
     if (uid == 13) { TEST_CHECK(cascade_live); *base = cascade_memory; return 0; }
+    if (uid == 14) { TEST_CHECK(line_live); *base = line_memory; return 0; }
     TEST_CHECK(uid == 9 && memory_live); *base = base_failure ? NULL : workspace; return base_failure ? -1 : 0;
 }
 int sceKernelFreeMemBlock(SceUID uid)
@@ -125,6 +141,10 @@ int sceKernelFreeMemBlock(SceUID uid)
     if (uid == 13) {
         TEST_CHECK(cascade_live); if (free_failure) return -1;
         cascade_live = 0; cascade_frees++; live_bytes -= cascade_block; return 0;
+    }
+    if (uid == 14) {
+        TEST_CHECK(line_live); if (free_failure) return -1;
+        line_live = 0; line_frees++; live_bytes -= line_block; return 0;
     }
     TEST_CHECK(uid == 9 && memory_live); if (free_failure) return -1;
     memory_live = 0; frees++; live_bytes -= job_block; return 0;
@@ -222,6 +242,8 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
         for (unsigned y = 21; y < 45; y++) for (unsigned x = 10; x < 190; x += 6) memset(pixels + (y * 200 + x) * 4, 235, 6);
     }
     if (clear_at_rows && rows_calls == clear_at_rows) memset(pixels, 0, sizeof(pixels));
+    if (flicker_rows && rows_calls <= flicker_rows + 1u)
+        pixels[0] = pixels[1] = pixels[2] = rows_calls <= flicker_rows ? (unsigned char)(1u + (rows_calls * 5u) % 31u) : 0;
     if (req->mode == VJO_GAME_OCR_SRC_KSTRIP) kstrip_calls++;
     info->fb_width = 200; info->fb_height = frame_h; info->fb_pitch = 200; info->fb_format = 0; info->wait_us = 16000;
     info->armed = 1;
@@ -280,6 +302,7 @@ int vjoOcrModelOpen(uint32_t seq, uint32_t which, VjoGameOcrModelInfo *info)
     } else if (which == VJO_GAME_OCR_OPEN_VERTICAL) { /* API 47: the vertical model, by its own open */
         char v_path[600];
         vertical_opens++;
+        available += grow_on_vertical_open;
         snprintf(v_path, sizeof(v_path), "%s/%s", VJO_VOCR_MODEL_DIR[0] ? VJO_VOCR_MODEL_DIR : ".", VJO_VOCR_VERTICAL_NAME);
         model = fopen(v_path, "rb");
     } else if (which >= VJO_GAME_OCR_OPEN_TIER) { /* API 21: a model size's pinned model, by its tier */
@@ -348,8 +371,9 @@ static VjoGameOcrRequest setup(void)
     gate_opens = 0; memset(&gate_res, 0, sizeof(gate_res));
     cascade_res.model = NULL; cascade_res.data = NULL; cascade_res.capacity = 0; cascade_res.size = cascade_res.stamp = 0;
     cascade_uid = -1; cascade_live = 0; cascade_allocations = cascade_frees = cascade_opens = 0; test_cascade_conf = 0;
+    line_live = 0; line_allocs = line_frees = 0;
     memset(tier_opens, 0, sizeof(tier_opens)); vertical_opens = 0; tiered = 0; job_reserve = GAME_RESERVE; drop_on_workspace = 0;
-    columns_bad = 0; missing_open_rc = -123; /* API 47, auto */
+    columns_bad = 0; missing_open_rc = -123; grow_on_vertical_open = 0; /* API 47, auto */
     psp_title = 0;
     weight_allocations = weight_frees = 0; weights_live = 0; live_bytes = 0;
     model_mtime = 0x1234567; model_stat_error = 0;
@@ -364,7 +388,7 @@ static VjoGameOcrRequest setup(void)
     available = 16*1024*1024;
     memset(pixels, 0, sizeof(pixels)); strcpy(own_title, "PCSG00415");
     frame_at = NULL; frame_info_calls = 0; frame_w = 200;
-    change_at_rows = clear_at_rows = 0; blocks_held = 0; frame_h = 60;
+    change_at_rows = clear_at_rows = flicker_rows = 0; blocks_held = 0; frame_h = 60;
     /* API 22: no helper, no stuck job, an empty line cache, the clock as the game set it */
     hook_owns_workspace = 0; vjo_vocr_unstick();
     for (unsigned k = 0; k <= VJO_VOCR_HELPERS_MAX; k++) { helper_uid[k] = -1; helper_job[k].fn = NULL; }
@@ -2200,6 +2224,11 @@ static void auto_reads_columns_where_the_rows_are_vertical(void)
     FILE *vf = fopen(v_path, "rb");
     int have_v = vf != NULL;
     if (vf) fclose(vf);
+    /* the Large size's file (a request by every tier tries it first): a models' directory with it reads the rows */
+    snprintf(v_path, sizeof(v_path), "%s/%s", VJO_VOCR_MODEL_DIR[0] ? VJO_VOCR_MODEL_DIR : ".", VJO_VOCR_TIER3_NAME);
+    vf = fopen(v_path, "rb");
+    const int have_t = vf != NULL, rows_rc = have_t ? VJO_OK : VJO_E_OCR_MODEL;
+    if (vf) fclose(vf);
     r = setup();
     r.tiers = VJO_VOCR_TIERS_ALL;
     r.flags = 1u << VJO_GAME_OCR_LM_SHIFT;
@@ -2213,9 +2242,10 @@ static void auto_reads_columns_where_the_rows_are_vertical(void)
                     "columns: rc %d, %u read", rc, out.recognized);
         for (unsigned i = 0; i < out.recognized; i++) TEST_CHECK(out.line[i].flags & VJO_GAME_OCR_LINE_COLUMN);
     } else {
-        /* the vertical model cannot be read (a storage error, not a file one): find kind 3, the rows read (here no
-         * tier model either: the rows' own I/O error, not the vertical model's); the game's next job checks again */
-        TEST_CHECK_(rc == VJO_E_OCR_MODEL && !columns_bad && find_steps(&out, 3) == 1 &&
+        /* the vertical model cannot be read (a storage error, not a file one): find kind 3, the rows read (without
+         * the size's file either, the rows' own I/O error, not the vertical model's); the game's next job checks
+         * again */
+        TEST_CHECK_(rc == rows_rc && !columns_bad && find_steps(&out, 3) == 1 &&
                     tier_opens[3] + tier_opens[2] + tier_opens[1] >= 1, "no vertical model: rc %d, columns_bad %d",
                     rc, columns_bad);
         unsigned v = vertical_opens;
@@ -2225,14 +2255,14 @@ static void auto_reads_columns_where_the_rows_are_vertical(void)
         /* the file absent (ENOENT): the same, and the game's later jobs read rows without checking them */
         missing_open_rc = (int)0x80010002u;
         rc = vjo_game_ocr_run_request(&r, &out);
-        TEST_CHECK_(rc == VJO_E_OCR_MODEL && columns_bad && find_steps(&out, 3) == 1, "ENOENT: rc %d, columns_bad %d",
+        TEST_CHECK_(rc == rows_rc && columns_bad && find_steps(&out, 3) == 1, "ENOENT: rc %d, columns_bad %d",
                     rc, columns_bad);
         v = vertical_opens;
         rc = vjo_game_ocr_run_request(&r, &out);
         TEST_CHECK_(!find_steps(&out, 2) && !find_steps(&out, 3) && vertical_opens == v,
                     "later job: %u steps of kind 2, %u opens", find_steps(&out, 2), vertical_opens - v);
     }
-    TEST_CHECK(!memory_live && !capture_live);
+    TEST_CHECK(!memory_live && !capture_live && !line_live);
     /* horizontal text (the tests' 200 x 60 frame of two lines): auto is off's job */
     for (int mode = 0; mode <= 1; mode++) {
         r = setup();
@@ -2250,6 +2280,73 @@ static void auto_reads_columns_where_the_rows_are_vertical(void)
     TEST_CHECK_(out.rc == off.rc && out.lines == off.lines && out.recognized == off.recognized &&
                 !strcmp(out.text, off.text) && out.n_steps == off.n_steps, "auto: rc %d %u lines, off: rc %d %u lines",
                 out.rc, out.lines, off.rc, off.lines);
+}
+
+/* API 47, auto's tries report the last one's model: a try's step down to a smaller size (VjoGameOcrResult.fallback,
+ * from which the Shell names the size that ran on cards, in history.csv and the log, and the first model's needs) is
+ * its own, never an earlier try's. Here the rows' first try steps down to Normal (Large does not fit), its rows look
+ * like vertical text, the columns' try cannot read the vertical model (no file) as the game frees memory, and the
+ * rows' last try reads with Large, its largest size: no fallback. (With the vertical model's file the columns' try
+ * reads, a request by name with nothing to step down to: no fallback either.) */
+static void auto_tries_report_the_last_ones_model(void)
+{
+    VjoGameOcrRequest r = setup();
+    VjoGameOcrResult out;
+    r.tiers = VJO_VOCR_TIERS_ALL;
+    r.flags = 1u << VJO_GAME_OCR_LM_SHIFT;
+    r.speed = VJO_GAME_OCR_VERTICAL_AUTO << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    tall_columns_frame(&r);
+    available = (int)(12u * 1024u * 1024u);             /* Normal's 8 MiB reserve and its job, not Large's 16 MiB */
+    grow_on_vertical_open = (int)(16u * 1024u * 1024u); /* then room for Large */
+    (void)vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK_(find_steps(&out, 2) == 1 && vertical_opens == 1, "%u steps of kind 2, %u vertical opens",
+                find_steps(&out, 2), vertical_opens);
+    TEST_CHECK_(!out.fallback && !out.model_need_workspace && !out.model_need_weights && !out.model_release_bytes,
+                "fallback %u, the first model's needs %u + %u B (release %u B): an earlier try's", (unsigned)out.fallback,
+                (unsigned)out.model_need_workspace, (unsigned)out.model_need_weights, (unsigned)out.model_release_bytes);
+    TEST_CHECK(!memory_live && !capture_live && !line_live);
+}
+
+/* API 47, auto's retry and the stable-text wait: a job waits at most ocr_settle_max_ms (or a press's
+ * ocr_settle_press_ms) over all its tries (docs/text-stability.md), and auto's tries are the job's too. The text
+ * types out for longer than the limit allows the rows to hold still, then holds: the rows' try spends the whole
+ * limit waiting (it never held still for the wait), and its rows look like vertical text. The columns' try, and
+ * here (no vertical model to read) the rows' try after it, read the screen at once: the job waits no longer than
+ * the same request with ocr_vertical = on, which makes one try, plus the extra tries' own passes; its wait step
+ * counts every try's wait. */
+static void auto_retry_shares_the_wait(void)
+{
+    const uint32_t wait = VJO_GAME_OCR_F_SETTLE_FIRST | 30u << VJO_GAME_OCR_SETTLE_SHIFT | /* 300 ms, at most 800 ms */
+                          16u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    uint64_t took[2] = {0, 0};
+    uint32_t waited = 0;
+    VjoGameOcrRequest r;
+    VjoGameOcrResult out;
+    for (int mode = 0; mode <= 1; mode++) { /* on (one try), then auto (the rows' try, then the columns') */
+        r = setup();
+        r.tiers = VJO_VOCR_TIERS_ALL;
+        r.flags = wait;
+        r.speed = (mode ? VJO_GAME_OCR_VERTICAL_AUTO : VJO_GAME_OCR_VERTICAL_ON) << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+        tall_columns_frame(&r);
+        frame_us = 8000;     /* each rows call waits for the game's next frame */
+        flicker_rows = 75;   /* about 600 ms of a changing screen, then still */
+        const uint64_t t0 = clock_value;
+        (void)vjo_game_ocr_run_request(&r, &out);
+        took[mode] = clock_value - t0;
+        if (mode) { /* each try's find step: the rows' (kind 2), the columns' (1, or 3 without the vertical model) */
+            TEST_CHECK_(find_steps(&out, 2) == 1 && find_steps(&out, 1) + find_steps(&out, 3) == 1,
+                        "auto: %u, %u and %u steps of kinds 2, 1 and 3", find_steps(&out, 2), find_steps(&out, 1),
+                        find_steps(&out, 3));
+            for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+                if (out.step[i].id == VJO_GSTEP_SETTLE) waited = out.step[i].us;
+        }
+        TEST_CHECK(!memory_live && !capture_live && !line_live);
+    }
+    /* the extra tries cost their own passes (a finder's two each, 4 rows calls a pass here), never another wait */
+    TEST_CHECK_(took[1] < took[0] + 300000u, "auto took %llu us, on %llu us: %lld us more (a wait is 300,000)",
+                (unsigned long long)took[1], (unsigned long long)took[0], (long long)(took[1] - took[0]));
+    TEST_CHECK_(waited >= 800000u && waited < 800000u + 4u * 4u * 8000u + 1000u,
+                "the job's wait step: %u us (the limit 800,000)", (unsigned)waited);
 }
 
 /* The cascade (#89) reads doubtful lines again with the next size up, when that
@@ -2796,6 +2893,8 @@ TEST_LIST = {
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
     {"API 47: auto reads the columns where the rows look like vertical text, rows elsewhere",
      auto_reads_columns_where_the_rows_are_vertical},
+    {"API 47: auto's retry waits no longer than one try: the job's stable-text wait is shared", auto_retry_shares_the_wait},
+    {"API 47: auto's tries report the last one's model, never an earlier try's step down", auto_tries_report_the_last_ones_model},
     {"API 47: a job of columns runs the vertical model alone: one check, its own open, no cascade or refinement",
      vertical_job_runs_the_vertical_model_alone},
     {"the request's flags become the job's policy", request_flags_become_the_policy},

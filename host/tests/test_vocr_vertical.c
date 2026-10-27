@@ -55,6 +55,7 @@ void vjo_vocr_test_gate_columns(int on);
 #define M_COLS1 "TINYV1_w8.vocr"
 #define M_COLSD "TINYVD_w8.vocr" /* P1 with the finder's own dark flags (no VOCR_COLUMNS_NO_DARK) */
 #define M_COLSG "TINYVG_w8.vocr" /* M_COLS with scratch room for the text-presence gate's arena */
+#define M_CASC "TINYC_w8.vocr"   /* a second model of rows: the cascade's (JobOpts.cascade 2) */
 
 /* ------------------------------------------------------------ the tiny blobs
  * (vita-vn-ocr runtime/tests/test_vocr.c's builder: height 8, stride 4) */
@@ -269,6 +270,8 @@ static void setup_files(void)
             test_pin_model(3, (uint32_t)n, sha, (uint32_t)vocr_arena_bytes(&m, &o));
             write_file(M_COLSG, blob, n, sha); /* 256 KiB more arena: the gate's fits beside the finder's */
             test_pin_model(4, (uint32_t)n, sha, (uint32_t)vocr_arena_bytes(&m, &o) + 262144u);
+            write_file(M_CASC, blob, n, sha); /* the same blob as a second model of rows, a cascade's */
+            test_pin_model(5, (uint32_t)n, sha, (uint32_t)vocr_arena_bytes(&m, &o));
         }
 #endif
     }
@@ -520,8 +523,11 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
         pol.gate_res = &gate_res;
     }
 #endif
-    if (o->cascade) { /* the model of rows reads doubtful lines again: never a model of columns' */
-        pol.cascade = vjo_vocr_model(M_ROWS);
+    /* the model of rows reads doubtful lines again (cascade 2: the second model of rows, which a job of rows really
+     * runs): never a model of columns' */
+    const char *casc = o->cascade == 2 ? M_CASC : M_ROWS;
+    if (o->cascade) {
+        pol.cascade = vjo_vocr_model(casc);
         pol.cascade_res = &cres;
         pol.cascade_us = 4000000u;
         pol.cascade_conf = 1001u;
@@ -530,7 +536,7 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
      * cascade extras, the helpers' line slots (each part only where asked) */
     ws_bytes = vjo_vocr_job_bytes(model, rw, rh) + (o->refine ? vjo_vocr_refine_bytes(rw, rh) : 0) +
                (o->lm || o->cascade ? vjo_vocr_lm_job_bytes(model) : 0) +
-               (o->cascade ? vjo_vocr_cascade_job_bytes(M_ROWS) : 0) +
+               (o->cascade ? vjo_vocr_cascade_job_bytes(casc) : 0) +
                (o->helpers ? vjo_vocr_helpers_bytes(model, (unsigned)o->helpers) : 0);
     TEST_ASSERT(ws_bytes && posix_memalign(&ws, 16, ws_bytes) == 0);
     memset(ws, 0xA5, ws_bytes);
@@ -1045,6 +1051,7 @@ static void test_rows_vertical_rule(void)
         static const unsigned fewer[5][4] = {{0, 0, 40, 10}, {0, 10, 40, 10}, {0, 20, 41, 10}, {0, 30, 41, 10},
                                              {0, 40, 41, 10}};
         TEST_CHECK(rule_of(fewer, 5, 100, 100) == 0); /* 40 % */
+        TEST_CHECK(rule_of(fewer, 4, 100, 100) == 0 && rule_of(edge, 4, 100, 100) == 1); /* 2 of 4 (50 %), 3 of 4 */
     }
     {   /* the wide branch's edges: 3.5 times as wide as tall (35 x 10) is small, 36 x 10 not; 70 % of the rows
          * small and each over 80 % inside the median span */
@@ -1153,6 +1160,50 @@ static void test_auto_check_with_the_line_fix(void)
     TEST_CHECK_(rc == VJO_OK && rc2 == VJO_OK && checked == st.lines && read_checked == st.recognized && checked >= 2,
                 "rc %d / %d, %u / %u rows", rc, rc2, checked, st.lines);
 }
+
+/* auto's check (VjoVocrPolicy.vertical_check) on rows the rule leaves alone changes nothing of the job of rows,
+ * whatever else its policy asks: greedy, the LM, the confidence cascade with a second model of rows (every line
+ * doubtful, so each is read again), helpers, the line cache, the refinement and the short-line probe; hash for
+ * hash, and the cascade's own figures, against the same job in this build without the check, from the same
+ * resident state (the golden jobs above have no cascade: a job of rows has a larger model to read again with). */
+static void test_check_changes_no_row_job(void)
+{
+    static const JobOpts opts[] = {{0}, {.lm = 1}, {.cascade = 2}, {.lm = 1, .cascade = 2},
+                                   {.lm = 1, .cascade = 2, .helpers = 2}, {.lm = 1, .cache = 1},
+                                   {.lm = 1, .cascade = 2, .refine = 1, .short_lines = 1}};
+    char text[2][VJO_OCR_TEXT_CAP], raw[2][VJO_OCR_TEXT_CAP];
+    VjoVocrStats st[2];
+    setup_files();
+    for (unsigned frame = 0; frame < 3; frame++)
+        for (unsigned i = 0; i < sizeof opts / sizeof opts[0]; i++) {
+            uint64_t h[2];
+            int rc[2];
+            for (int check = 0; check <= 1; check++) {
+                JobOpts o = opts[i];
+                o.check = check;
+                if (!frame) draw_rows();
+                else if (frame == 1) TEST_ASSERT(load_pgm(VJO_SOURCE_DIR "/host/fixtures/short_line/textbox.pgm") == 0);
+                else draw_big_row();
+                vjo_vocr_resident_drop(&res); /* each job from no resident weights, LM, cascade model or cache */
+                vjo_vocr_resident_drop(&cres);
+                vjo_vocr_lm_drop(&lres);
+                memset(&cache, 0, sizeof cache);
+                raw[check][0] = '\0';
+                rc[check] = job(M_ROWS, &o, text[check], sizeof text[check], o.lm ? raw[check] : NULL,
+                                sizeof raw[check], &st[check]);
+                h[check] = job_hash(rc[check], text[check], o.lm ? raw[check] : NULL, &st[check]);
+            }
+            TEST_CHECK_(rc[0] == VJO_OK && rc[1] == VJO_OK && h[0] == h[1] && !strcmp(text[0], text[1]) &&
+                            st[0].cascade_lines == st[1].cascade_lines && st[0].cascade_frames == st[1].cascade_frames &&
+                            st[0].cascade_changed == st[1].cascade_changed && st[0].lm_lines == st[1].lm_lines,
+                        "frame %u, policy %u: rc %d/%d, hash 0x%016llx/0x%016llx, cascade lines %u/%u", frame, i, rc[0],
+                        rc[1], (unsigned long long)h[0], (unsigned long long)h[1], st[0].cascade_lines,
+                        st[1].cascade_lines);
+            if (opts[i].cascade) /* the cascade really ran: the test would see it go */
+                TEST_CHECK_(st[0].cascade_lines >= 1, "frame %u, policy %u: the cascade read %u lines", frame, i,
+                            st[0].cascade_lines);
+        }
+}
 #endif /* VJO_TEST_OFF_ONLY */
 
 TEST_LIST = {
@@ -1170,6 +1221,7 @@ TEST_LIST = {
     {"auto: the rule on the row finder's rows, vertical and horizontal, and its edges", test_rows_vertical_rule},
     {"auto: rows of vertical text read nothing (VJO_E_VERTICAL); horizontal rows are today's job", test_auto_check},
     {"API 50 with auto: a tall box's rows checked as the frozen finder finds them, then read with the fix", test_auto_check_with_the_line_fix},
+    {"auto: the check changes no job of rows it leaves alone, the cascade's included", test_check_changes_no_row_job},
 #endif
     {NULL, NULL}
 };

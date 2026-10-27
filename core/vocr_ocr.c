@@ -248,8 +248,9 @@ static int columns_of(const VjoVocrModel *m)
  * screens taken for vertical text, and checked on pages it never saw):
  *   - a region at least as tall as wide (a box drawn around columns) with 2 rows or more, 60 % of them at most 4
  *     times as wide as tall; or
- *   - any region with 5 rows or more, 70 % of them at most 3.5 times as wide as tall and each over 80 % of its
- *     width inside the median span of those rows (their median left and right edges).
+ *   - any region with 5 rows or more, 70 % of them at most 3.5 times as wide as tall and each with at least 80 %
+ *     of its width inside the median span of those rows (their median left and right edges; of an even
+ *     count, the upper of the two middle ones).
  * Integers only, at most 16 rows (VJO_VOCR_MAX_LINES): no memory, a few hundred instructions. */
 static unsigned median_of(unsigned *v, unsigned n)
 {
