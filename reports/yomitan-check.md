@@ -17,9 +17,9 @@ has run on a console.
 **#321** ([below](#321-what-remained)) fixed what of the rest is the lookup's, measured the same way: a particle
 before a form of する or a katakana word is the particle (気がした, のマンション), ranks of another word are hidden,
 a frequent word comes before a character's name spelled as the text (わたし: 私), and four of the audit's lookups.
-It changes 754 shown entries: SudachiPy calls 662 better and none worse, and 619 of them move away from
+It changes 753 shown entries: SudachiPy calls 661 better and none worse, and 619 of them move away from
 Yomitan's first entry, which reads those particles into the next word too, so the mismatch with Yomitan rises to
-75.26 per 1,000 while SudachiPy's disagreement with the shown entry falls from 285.28 to 275.03 (Yomitan's:
+75.27 per 1,000 while SudachiPy's disagreement with the shown entry falls from 285.28 to 275.04 (Yomitan's:
 286.47).
 
 ## How it was measured
@@ -120,21 +120,21 @@ the table is packed ([memory ledger](../docs/memory-ledger.md#yomitans-deinflect
 ## #321: what remained
 
 [#321](https://github.com/bee-san/Rubi_for_vita/issues/321) listed what #320 left: the classes below, and its
-audit's lookups. Measured the same way, main `757153c` against #321's change, on the 64,579 taps and, for what
+audit's lookups. Measured the same way, main `68041a7` against #321's change, on the 64,579 taps and, for what
 changes elsewhere, on 330,517 taps of 27,970 lines of the same 46 games (`build_corpus.py --lines 40000 --seed
 321`: every train page the pool has, so it holds the 5,000):
 
 | | main | #321 |
 |---|---:|---:|
-| Shown entry differs from Yomitan's first, per 1,000 taps | 65.76 | **75.26** |
-| SudachiPy's token disagrees with the shown entry, per 1,000 (Yomitan's first entry: 286.47) | 285.28 | **275.03** |
+| Shown entry differs from Yomitan's first, per 1,000 taps | 65.76 | **75.27** |
+| SudachiPy's token disagrees with the shown entry, per 1,000 (Yomitan's first entry: 286.47) | 285.28 | **275.04** |
 | Rubi's rank is none of Jiten's values Yomitan shows (same headword), per 1,000 | 9.60 | 4.89 |
 | A name first, the word of its span second, per 1,000 | 4.78 | 3.31 |
 
 The mismatch with Yomitan rises because #321 departs from Yomitan's first entry where both read a particle into
-the next word: of the 754 shown entries it changes (spans or headwords), 619 move away from Yomitan's and 6 toward
-it, and SudachiPy calls 662 better, 92 the same (わたし: it cannot tell a name from 私) and none worse. On the 330,517
-taps, 3,967 shown entries change: 3,499 better, 465 the same, 3 worse (below). By change, on the 64,579 taps (the
+the next word: of the 753 shown entries it changes (spans or headwords), 619 move away from Yomitan's and 5 toward
+it, and SudachiPy calls 661 better, 92 the same (わたし: it cannot tell a name from 私) and none worse. On the 330,517
+taps, 3,962 shown entries change: 3,494 better, 465 the same, 3 worse (below). By change, on the 64,579 taps (the
 330,517 in brackets):
 
 - **A particle before a katakana word**, 457 taps (2,341): one of が も は に の か と で を へ や な in hiragana

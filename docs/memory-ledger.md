@@ -159,22 +159,24 @@ the code takes a page fewer.
   compare in `deinflect`.
 - **The lookup** (`lookup_pages`, `-Os`): the particle before a katakana word (once a lookup, on the text's first
   two characters), the particle before a form of する (per candidate: two compares, then one `memcmp`),
-  `names_first`'s order at a span, and a later shallower candidate replacing a deeper one: `lookup_pages` 5,108 →
-  5,384 B normal, 5,120 → 5,416 B debug; `read_entry`'s hidden rank +16 B; `take_postings`' fewer steps first
+  `names_first`'s order at a span, and a later shallower candidate replacing a deeper one: `lookup_pages` 5,128 →
+  5,400 B normal, 5,144 → 5,424 B debug; `read_entry`'s hidden rank +16 B; `take_postings`' fewer steps first
   +2 B. `particle_forms` (44 B) is in the data segment.
 - **`names_first`**: its parse shares `ocr_vertical`'s branch and values (`apply_config` +32 B normal, +28 B debug;
   the key, 12 B, in the data segment) and a field in each of the three `VjoConfig` copies (4 B each).
 
 Measured with VitaSDK GCC 15.2.0 in the pinned image (`tools/fast_gate.sh`'s; `tools/check_memory_ledger.py`'s
-module rows, text + data/bss; `arm-vita-eabi-nm -S` for the symbols), main `757153c` against this change:
+module rows, text + data/bss; `arm-vita-eabi-nm -S` for the symbols), main `68041a7` against this change:
 
 | Shell | main | #321 | Loaded pages |
 |---|---:|---:|---:|
-| Debug | 102,372 + 73,568 B (102,400 + 73,728) | 98,276 + 77,544 B (98,304 + 77,824) | 176,128 B, unchanged |
-| Normal | 90,020 + 73,432 B (90,112 + 73,728) | 85,932 + 77,424 B (86,016 + 77,824) | 163,840 B, unchanged (`--exact`) |
+| Debug | 102,372 + 73,664 B (102,400 + 73,728) | 98,284 + 77,608 B (98,304 + 77,824) | 176,128 B, unchanged |
+| Normal | 90,044 + 73,520 B (90,112 + 73,728) | 85,948 + 77,488 B (86,016 + 77,824) | 163,840 B, unchanged (`--exact`) |
 
-Room left: the debug Shell's code 28 B (as on main), its data 280 B (160 B on main); the normal Shell's code 84 B
-(92 B), its data 400 B (296 B). The kernel, the game worker and the Rubi app are unchanged. The VjoNet thread's
+Room left: the debug Shell's code 20 B (28 B on main), its data 216 B (64 B); the normal Shell's code 68 B (68 B),
+its data 336 B (208 B). The kernel and the game worker are byte-identical to main's in both builds. The Rubi app,
+which links `core/config.c` and `core/local_dict.c` but none of the rules, grows by 234 B (normal) and 155 B (debug)
+of `eboot.bin`, in its own process. The VjoNet thread's
 frames are unchanged (`lookup_pages` 1,584 B, `deinflect` 272 B, `take_postings` 416 B, `read_entry` 64 B;
 `-fstack-usage` with the Shell's flags, both builds). Candidates per span (`deinflect()` on every span the taps
 scan, host, ASan/UBSan, the audit of #320's harness): 1,175,231 → 1,175,510 on the 64,579 taps, 5,810,009 →

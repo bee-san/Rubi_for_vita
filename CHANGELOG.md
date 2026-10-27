@@ -102,8 +102,8 @@ been reported.
 ### Fixed
 
 - Lookups: what the Yomitan check left (#321; [the report](reports/yomitan-check.md#321-what-remained)). Measured on
-  its 64,579 taps of 5,000 hooked lines: 754 shown entries change, SudachiPy calls 662 better and none worse; on
-  330,517 taps of 27,970 lines of the same games, 3,967 change, 3,499 better and 3 worse. Host only: not run on a
+  its 64,579 taps of 5,000 hooked lines: 753 shown entries change, SudachiPy calls 661 better and none worse; on
+  330,517 taps of 27,970 lines of the same games, 3,962 change, 3,494 better and 3 worse. Host only: not run on a
   console.
   - **A particle before a katakana word** is the particle: のマンション showed 飲む (`-ん`), にエントリー 煮える,
     とセンパイ 渡船, はデート 派手 (457 taps). Not before ァ, ッ or ー (はァ, へッ).

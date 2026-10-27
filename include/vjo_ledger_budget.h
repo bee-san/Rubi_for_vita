@@ -100,9 +100,9 @@
  * ranks the lookup tables' words from their postings' bits; the tables, moved to core/lookup_tables.inc, are the
  * same bytes) make it 102,372 -> 102,388 text on main 2bb09c4, the same data and pages (12 B left) [measured: the
  * same rows, main 2bb09c4 and this change]. #321's lookups (docs/memory-ledger.md, "Lookups: #321") put the rule
- * table (deinflect_rules, 4,266 B) in the data segment and its bucket offsets in 130 B (from 514): @DEBUG_ROW@, a
- * text page fewer and a data page more, the same 176,128 B (@DEBUG_ROOM@) [measured: the same rows, main @MAIN@ and
- * this change]. */
+ * table (deinflect_rules, 4,266 B) in the data segment and its bucket offsets in 130 B (from 514): 102,372 + 73,664
+ * -> 98,284 + 77,608 on main 68041a7, a text page fewer and a data page more, the same 176,128 B (20 and 216 B left)
+ * [measured: the same rows, main 68041a7 and this change]. */
 #if VJO_DEBUG
 #define VJO_BUDGET_SHELL_MODULE_PAGES 176128u
 #else
@@ -138,9 +138,9 @@
  * pages, 812 B of text room [measured: the same rows, main 796168e and this change; the debug build 101,460 ->
  * 101,548 + 73,008 -> 73,152, the same pages]. The table hints (#360) leave it 90,020 + 73,416 on main
  * 2bb09c4, the same text bytes, 92 B of text room [measured: the same rows, main 2bb09c4 and this change].
- * #321's lookups (above) make it @NORMAL_ROW@, a text page fewer and a data page more, the same 163,840 B,
- * @NORMAL_ROOM@ [measured: the same rows, main @MAIN@ and this change]. Its check is exact (--exact): this
- * must equal its pages. */
+ * #321's lookups (above) make it 90,044 + 73,520 -> 85,948 + 77,488 on main 68041a7, a text page fewer and a data
+ * page more, the same 163,840 B, 68 B of text room and 336 B of data room [measured: the same rows, main 68041a7 and
+ * this change]. Its check is exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
