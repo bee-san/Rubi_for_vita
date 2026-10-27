@@ -59,15 +59,11 @@ typedef char config_fits_scratch[(SCRATCH_SIZE >= VJO_CONFIG_TEXT_MAX + 1) ? 1 :
  * doubling up to SCREEN_RETRY_MAX_MS. The try itself waits in the game for the
  * text to hold still (vocr_run_one's request). Nothing is shown for either,
  * until WAIT_HINT_AFTER in a row: then the open overlay says why it waits
- * (ocr_wait_hint, #358: start_job_kind). test/combined, draft #318 (#278's fix): after
- * SCREEN_OPEN_TRIES in a row the open overlay stops waiting and shows its message;
- * closed-overlay prefetch and quiet refreshes retain their backoff. */
+ * (ocr_wait_hint, #358: start_job_kind). test/combined: main's #364 here, not draft #318's
+ * stop after three tries (#278's), which #364 supersedes: the tries go on with the hint. */
 #define SCREEN_RETRY_MS      250u
 #define SCREEN_RETRY_MAX_MS 4000u
 #define WAIT_HINT_AFTER 2u /* #358: measured (docs/text-stability.md "Why the overlay waits") */
-#define SCREEN_OPEN_TRIES 3
-static const char SCREEN_CHANGED_MESSAGE[] VJO_DATA_TABLE(SCREEN_CHANGED_MESSAGE) =
-    "The screen keeps changing. Close and reopen the overlay when the text stops.";
 
 VjoView g_view;
 
@@ -2374,7 +2370,16 @@ static void on_cursor_done(void)
  * worker reads a region again up to VJO_VOCR_TRIES times), so nothing is
  * shown for it, no error either. The next try starts at once, from the
  * second in a row SCREEN_RETRY_MS later, doubling up to SCREEN_RETRY_MAX_MS;
- * a job that reads its screen ends the run. */
+ * a job that reads its screen ends the run. #353: the third in a row says so in
+ * the log (both builds), with the lines its game worker had recognized and that
+ * are not shown (the string in the data segment: the normal Shell's code room);
+ * the open overlay says why it waits from WAIT_HINT_AFTER on (#358,
+ * start_job_kind). */
+#ifdef VJO_WITH_VOCR
+static const char SCREEN_MOVING_LOG[] VJO_DATA_TABLE(SCREEN_MOVING_LOG) =
+    "ocr: the screen changed under every read of %d jobs in a row, the last with %u line(s) recognized and not "
+    "shown: an animated icon or a moving picture in the region? (docs/text-stability.md)";
+#endif
 static void note_screen_changed(const char *what)
 {
     uint32_t wait_ms = screen_changed_streak ? SCREEN_RETRY_MS << (screen_changed_streak - 1) : 0;
@@ -2385,6 +2390,10 @@ static void note_screen_changed(const char *what)
     screen_retry_until = now_us() + (int64_t)wait_ms * 1000;
     vjo_dlog("%s dropped: the screen changed under it (%d in a row), next try in %u ms", what,
             screen_changed_streak, (unsigned)wait_ms);
+#ifdef VJO_WITH_VOCR
+    if (screen_changed_streak == 3) /* (the network thread's result: read after job_done) */
+        vjo_log(SCREEN_MOVING_LOG, screen_changed_streak, (unsigned)vocr_result.recognized);
+#endif
 }
 
 /* A refresh ended (#81 request 4). Whatever happened, the shown text stays
@@ -2574,20 +2583,14 @@ static void on_job_done(void)
             retire_local_text(1);
         job_cancelled = 0;
         stable_pending = game_active(); /* only the current game's next screen (Auto) */
-        if (ov != OV_CLOSED && stable_pending &&
-            (d->err.rc != VJO_E_SCREEN_CHANGED || screen_changed_streak < SCREEN_OPEN_TRIES)) {
-            ov = OV_OPEN; /* the overlay waits for this screen's */
+        if (ov != OV_CLOSED && stable_pending) { /* the overlay waits for this screen's */
+            ov = OV_OPEN;
             if (now_us() < screen_retry_until)
                 open_retry = 1; /* "Recognizing…" stays until background_open retries */
             else
                 start_job("the screen changed during the last one", 1);
-        } else {
-            if (ov != OV_CLOSED && stable_pending) { /* SCREEN_OPEN_TRIES in a row: the open overlay stops waiting */
-                ov = OV_OPEN;
-                open_retry = view_waiting = view_job_text = 0;
-                view_publish(1, NULL, SCREEN_CHANGED_MESSAGE, 1);
-            }
-            if (subtitles) vjo_strip_set_busy(0);
+        } else if (subtitles) {
+            vjo_strip_set_busy(0);
         }
         strip_after_wait(); /* a region drawn during it: the strip's job for the new region (#182) */
         return;

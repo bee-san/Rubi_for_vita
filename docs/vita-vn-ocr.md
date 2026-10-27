@@ -415,7 +415,10 @@ console game's hook reads, and how soft, is still unmeasured (#81's
 
 **Logs.** Each job adds `gstep job settle` (rc 1: the rows held still, 2: the
 limit ran out first; arg: passes read waiting; bytes: row changes seen, i.e.
-text typing out; the high half of sum: rows that toggled; us: the wait) and a
+text typing out; the high half of sum: rows that toggled; us: the wait; #353,
+kind: 1 when the job watched its lines' own pixels, + 2 when it read them anyway
+at the limit, + 4 × the finder's runs that checked them,
+[text-stability.md](text-stability.md#animated-icons-and-moving-pictures-353)) and a
 `gstep job blank` line for each of the first four skipped lines (its index,
 size, contrast and edges; rc: the job's total). `tools/analyse_selftest.py
 --collect` sums them up: how often the rows held still or the limit ran out,

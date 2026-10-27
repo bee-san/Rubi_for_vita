@@ -61,6 +61,17 @@ static struct {
     unsigned frozen_at;    /* the frame the copy is of (0: none yet) */
     unsigned frozen_reads; /* reads served from it */
     int tall;              /* one band of strokes 80 rows tall (10-89), taller than a strip, instead of the line */
+    /* #353: an icon of spin frames, one a frame, each a grey level of its own (a prime number of them, more than a
+     * row's ring holds: however often the job reads its rows, no row goes back to a state it holds), spin_h rows
+     * from icon_y (0: 70) and 16 px from spin_x (0: 370) */
+    unsigned spin, spin_h, spin_x;
+    /* #353 (audit-rubi-spinner F2): with two_lines, the second line shows only from line2_frame, set line2_after
+     * frames after a first capture is published (0: from the start) */
+    unsigned line2_after, line2_frame;
+    /* F1: dense, the glyphs fill their 12 px cells to 2 px of the next one (a typed character's ink lands in the box's
+     * padding, as a game's do); type_phase, frames the typing is ahead (shown(frame) counts from frame + type_phase) */
+    int dense;
+    unsigned type_phase;
     Read log[LOG_MAX];
     unsigned n_log;
     int opens;
@@ -83,7 +94,7 @@ static int no_file(void *ud, const char *path, VjoFile *out)
 /* Characters shown at this frame. */
 static unsigned shown(unsigned frame)
 {
-    unsigned typed = frame;
+    unsigned typed = frame + scr.type_phase;
     if (!scr.type_every) return scr.chars;
     if (scr.pause_at && typed > scr.pause_at) {
         typed = scr.pause_at;
@@ -105,12 +116,15 @@ static unsigned char pixel(unsigned x, unsigned y, unsigned frame)
     if (scr.stripes) /* they move by 5 px once the screen changes (change_frame) */
         return (unsigned char)((x + y + (scr.change_frame && frame >= scr.change_frame ? 5u : 0u)) / 10u % 2u ? 40 : 200);
     int on_line = scr.three_lines || scr.two_lines
-                  ? (y >= 6 && y < 30) || (y >= 37 && y < 61) || (scr.three_lines && y >= 68 && y < 92)
+                  ? (y >= 6 && y < 30) ||
+                        (y >= 37 && y < 61 && (!scr.line2_after || (scr.line2_frame && frame >= scr.line2_frame))) ||
+                        (scr.three_lines && y >= 68 && y < 92)
                   : y >= 30 && y < 54;
     if (on_line && text_on) {
         unsigned c = x >= 20 ? (x - 20) / 12 : 99, k = x >= 20 ? (x - 20) % 12 : 99;
         int other = scr.change_frame && frame >= scr.change_frame;
-        if (c < shown(frame) && (k < 2 || (other && k == 6) || (k == 4 && (y & 3) == 0))) v = 235;
+        if (c < shown(frame) && (k < 2 || (other && k == 6) || (k == 4 && (y & 3) == 0) || (scr.dense && k >= 9 && k <= 10)))
+            v = 235;
     }
     if (scr.blink_every && x >= 370 && x < 386) {
         unsigned state = frame / scr.blink_every, iy = scr.icon_y ? scr.icon_y : 30;
@@ -121,6 +135,11 @@ static unsigned char pixel(unsigned x, unsigned y, unsigned frame)
         } else if (y >= iy + 2 + state % scr.icon_states * 3 && y < iy + 14 + state % scr.icon_states * 3) {
             v = 200;
         }
+    }
+    if (scr.spin) {
+        unsigned x0 = scr.spin_x ? scr.spin_x : 370u, y0 = scr.icon_y ? scr.icon_y : 70u;
+        unsigned h = scr.spin_h ? scr.spin_h : 4u;
+        if (x >= x0 && x < x0 + 16u && y >= y0 && y < y0 + h) v = (unsigned char)(40u + frame % scr.spin * 7u);
     }
     if (scr.noise) v = (unsigned char)(v ^ (frame * 37u & 0x1Fu));
     return v;
@@ -161,6 +180,7 @@ static int strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t st
     if (flags & VJO_STRIP_LAST) { /* the first capture is published: the game goes on */
         if (scr.resume_for && !scr.resumed_at) scr.resumed_at = scr.frame;
         if (scr.change_after && !scr.change_frame) scr.change_frame = scr.frame + scr.change_after;
+        if (scr.line2_after && !scr.line2_frame) scr.line2_frame = scr.frame + scr.line2_after;
     }
     for (unsigned r = 0; r < n; r++)
         for (unsigned x = 0; x < W; x++) dst[(size_t)r * stride + x] = pixel(x, y + r, scr.frame);
@@ -314,17 +334,28 @@ static void test_blinking_icon_does_not_block(void)
 }
 
 /* A region that never holds still (a video behind the text): the wait gives up
- * after settle_max_us, once for the job, which then reads as before. */
+ * after settle_max_us, once for the job. Since #353 the job then watches its
+ * lines: their own pixels keep changing too (every pixel changes here), so it
+ * reads them anyway once the finder finds them alike twice, settle_us apart,
+ * waiting at most settle_us and a finder's run past its budget (API 19's job,
+ * and the jobs before #353, ended VJO_E_SCREEN_CHANGED after three tries). */
 static void test_never_still_times_out_once(void)
 {
     VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 400000, .settle_first = 1};
     VjoVocrStats st;
+    uint64_t t0;
     reset();
     scr.noise = 1;
-    TEST_CHECK(run(&pol, &st) == VJO_E_SCREEN_CHANGED);
-    TEST_CHECK(!st.settled && st.settle_timeout && st.tries == VJO_VOCR_TRIES);
-    TEST_CHECK(st.settle_us >= 400000 && st.settle_us < 400000 + 3u * FRAME_US);
-    TEST_MSG("waited %u us", (unsigned)st.settle_us);
+    t0 = scr.clock;
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL); /* the lines were found and read (no weights here) */
+    /* audit-rubi-spinner F2: the job's whole time, the finder's runs while it waits included, is its budget and the
+     * try that follows (its first pass and its finder) */
+    TEST_CHECK_(scr.clock - t0 <= 400000u + 7u * FRAME_US, "the job took %llu us (budget 400000)",
+                (unsigned long long)(scr.clock - t0));
+    TEST_CHECK(!st.settled && st.settle_timeout && st.watched && st.read_anyway && st.lines == 1);
+    TEST_CHECK(st.settle_us >= 400000 && st.settle_us < 400000 + 150000u + 12u * FRAME_US);
+    TEST_MSG("waited %u us, tries %u, %u finder runs, read anyway %u", (unsigned)st.settle_us, st.tries,
+             st.watch_looks, st.read_anyway);
 }
 
 /* The player advances the text after the job's first pass was published: the
@@ -408,9 +439,11 @@ static void test_the_wait_ends_on_the_first_pass_due(void)
 
 /* The waiting budget is the job's, not each wait's: the first wait settles
  * after about 370 ms of a 600 ms budget; typing resumes once the capture is
- * published (7 more characters, 350 ms), so the retry's wait runs out of the
- * rest instead of settling, and the job waits no more than its budget (and the
- * pass under way) in all. */
+ * published (7 more characters, 350 ms), so the job's line watch (#353) runs
+ * out of the rest instead of settling, and the job waits no more than its
+ * budget in all, plus once settle_us and the finder's run that find its lines
+ * alike twice (read anyway), and the pass or finder's run under way at the
+ * limit (12 frames for both here). */
 static void test_the_waiting_budget_is_the_jobs(void)
 {
     VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 600000, .settle_first = 1};
@@ -420,10 +453,10 @@ static void test_the_waiting_budget_is_the_jobs(void)
     scr.pause_at = 12;   /* 4 characters, then still */
     scr.resume_for = 21; /* 7 more once the first capture is published */
     (void)run(&pol, &st);
-    TEST_CHECK(scr.resumed_at > 0 && st.tries >= 2 && st.settle_timeout);
-    TEST_CHECK(st.settle_us >= 600000 && st.settle_us <= 600000 + 3u * FRAME_US);
-    TEST_MSG("waited %u us in all (budget 600000), timeout %u, tries %u", (unsigned)st.settle_us, st.settle_timeout,
-             st.tries);
+    TEST_CHECK(scr.resumed_at > 0 && st.watched && st.settle_timeout);
+    TEST_CHECK(st.settle_us >= 600000 && st.settle_us <= 600000 + 150000u + 12u * FRAME_US);
+    TEST_MSG("waited %u us in all (budget 600000), timeout %u, tries %u, read anyway %u", (unsigned)st.settle_us,
+             st.settle_timeout, st.tries, st.read_anyway);
 }
 
 /* An icon that goes through three grey levels: each of its rows changes twice
@@ -695,6 +728,241 @@ static void test_a_frozen_clock_ends_the_wait(void)
                    st.strips < VJO_VOCR_SETTLE_READS + 16u && st.lines == 1);
         TEST_MSG("settle_first %d: %u strips, timeout %u", first, st.strips, st.settle_timeout);
     }
+}
+
+/* ---- #353: the line watch (core/vocr_ocr.c): an icon of more frames than a row's ring holds, a moving picture ---- */
+
+/* The last read that ended a first pass (the capture the Shell is told of last), or -1. */
+static int last_published(unsigned *frame)
+{
+    int at = -1;
+    for (unsigned i = 0; i < scr.n_log; i++)
+        if (scr.log[i].flags & VJO_STRIP_LAST) {
+            *frame = scr.log[i].frame;
+            at = (int)i;
+        }
+    return at;
+}
+
+/* An icon of 29 frames below the line (its own rows, outside the line's box): before the watch the wait ran out and
+ * every try tore (VJO_E_SCREEN_CHANGED). The wait learns what it can for half the job's budget, then watches the line's
+ * own pixels, which hold, and the finder finds the same line again: the job reads it, settled, within its budget and
+ * with no try of its own; the capture it published shows the screen as read. Without the wait (API 19) every change
+ * is still a tear. */
+static void test_a_many_frame_icon_outside_the_line_is_waited_out(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 1000000, .settle_first = 1, .sleep = sleep_us};
+    VjoVocrPolicy zero;
+    VjoVocrStats st;
+    unsigned at = 0, pubs = 0;
+    reset();
+    scr.spin = 29;
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL); /* the line was found and read (no weights here) */
+    TEST_CHECK(st.watched && st.settled && !st.settle_timeout && !st.read_anyway && st.lines == 1 && st.tries == 1);
+    TEST_CHECK(st.settle_us >= 500000 && st.settle_us < 1000000 && st.watch_looks >= 2 && !st.watch_finds);
+    for (unsigned i = 0; i < scr.n_log; i++) pubs += (scr.log[i].flags & VJO_STRIP_LAST) != 0;
+    TEST_CHECK(last_published(&at) >= 0 && pubs == 1 && at > 500000u / FRAME_US);
+    TEST_MSG("waited %u us, %u finder runs, published once at frame %u; lines %u settled %u timeout %u anyway %u "
+             "tries %u finds %u changes %u tears %u cycles %u", (unsigned)st.settle_us, st.watch_looks, at, st.lines, st.settled,
+             st.settle_timeout, st.read_anyway, st.tries, st.watch_finds, st.settle_changes, st.tears, st.cycles);
+    memset(&zero, 0, sizeof(zero));
+    reset();
+    scr.spin = 29;
+    TEST_CHECK(run(&zero, &st) == VJO_E_SCREEN_CHANGED && !st.watched && st.tries == VJO_VOCR_TRIES);
+}
+
+/* The same icon right after the line's last character, in its rows: the finder takes it into the line, whose own
+ * pixels then never hold still. At the wait's limit the job finds the line again, alike, and reads it anyway (its
+ * changes are no tears any more), waiting at most settle_us and a finder's run past its budget. */
+static void test_a_many_frame_icon_after_the_last_character_is_read_anyway(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 1000000, .settle_first = 1, .sleep = sleep_us};
+    VjoVocrStats st;
+    reset();
+    scr.spin = 29;
+    scr.spin_x = 20u + 25u * 12u + 4u; /* 4 px after the 25th character */
+    scr.icon_y = 30;
+    scr.spin_h = 24;                   /* the line's rows */
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL);
+    TEST_CHECK(st.watched && st.read_anyway && st.settle_timeout && !st.settled && st.lines == 1);
+    TEST_CHECK(st.settle_us >= 1000000 && st.settle_us <= 1000000 + 150000u + 12u * FRAME_US);
+    TEST_MSG("waited %u us, tries %u, %u finder runs, %u changes read anyway", (unsigned)st.settle_us, st.tries,
+             st.watch_looks, st.watch_ignored);
+}
+
+/* Text typing out (a character every 3 frames, 1.25 s) beside that icon: the wait watches the line from half its
+ * budget on, while it still types; the finder finds a longer line at each look and watches that one instead, so
+ * the job's first pass, and its lines, come only once the line is whole and has held still. */
+static void test_typing_beside_a_many_frame_icon_is_read_whole(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
+    VjoVocrStats st;
+    unsigned at = 0, first = 0, typed = 25u * 3u;
+    reset();
+    scr.type_every = 3;
+    scr.spin = 29;
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL);
+    TEST_CHECK(st.watched && st.settled && !st.read_anyway && st.lines == 1 && st.tries == 1);
+    while (first < scr.n_log && !(scr.log[first].flags & VJO_STRIP_FIRST)) first++;
+    TEST_ASSERT(first < scr.n_log && last_published(&at) >= 0);
+    TEST_CHECK(scr.log[first].frame > typed + 150000u / FRAME_US && at > typed); /* nothing published while it typed */
+    TEST_MSG("typed by frame %u, first pass from frame %u, published at %u; waited %u us, %u finder runs", typed,
+             scr.log[first].frame, at, (unsigned)st.settle_us, st.watch_looks);
+}
+
+/* The player advances the text while the job watches its line beside that icon: the line's own pixels change, so
+ * the job watches the new line from a new line phase, and the capture it publishes last shows the new text. */
+static void test_a_page_turned_while_the_line_is_watched_is_read_again(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_first = 1, .sleep = sleep_us};
+    VjoVocrStats st;
+    unsigned at = 0;
+    reset();
+    scr.spin = 29;
+    scr.change_frame = 75; /* during the line phase (the wait watches from 1 s, frame 60) */
+    TEST_CHECK(run(&pol, &st) == VJO_E_OCR_MODEL);
+    TEST_CHECK(st.watched && st.settled && st.lines == 1 && st.settle_changes > 0);
+    TEST_CHECK(last_published(&at) >= 0 && at > scr.change_frame);
+    TEST_MSG("published at frame %u (the text changed at %u); %u finder runs, %u found again; rc lines %u settled %u "
+             "timeout %u anyway %u tries %u tears %u watched %u", at, scr.change_frame, st.watch_looks, st.watch_finds,
+             st.lines, st.settled, st.settle_timeout, st.read_anyway, st.tries, st.tears, st.watched);
+}
+
+/* (a) The checksums' memory is bounded and fixed: a region that never holds still, read for the job's whole budget
+ * and then anyway, uses its capture block (the strip, each row's checksum and recent states, the watch's included)
+ * and its workspace only: nothing past either is written, and the block's size is the region's alone. */
+static void test_the_watch_stays_within_the_capture_block(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 2000000, .settle_first = 1};
+    VjoVocrStats st;
+    const size_t cap = vjo_vocr_capture_bytes(W, H), job = vjo_vocr_job_bytes("FL10_w8.vocr", W, H);
+    VjoPlatform p = {0};
+    VjoVocrResident res = {0};
+    char text[128];
+    unsigned past = 0;
+    TEST_ASSERT(cap + 4096u <= sizeof(capture) && job + 4096u <= sizeof(ws_mem));
+    reset();
+    scr.noise = 1;
+    scr.spin = 29;
+    memset(capture, 0xA5, sizeof(capture));
+    memset(ws_mem, 0x5A, sizeof(ws_mem));
+    p.file_open = no_file;
+    p.now_us = now;
+    TEST_CHECK(vjo_vocr_ocr_policy(&p, "missing", "FL10_w8.vocr", &im, &res, ws_mem, job, capture, cap, &pol, text,
+                                   sizeof(text), &st) == VJO_E_OCR_MODEL);
+    for (size_t i = cap; i < sizeof(capture); i++) past += capture[i] != 0xA5;
+    for (size_t i = job; i < job + 4096u; i++) past += ws_mem[i] != 0x5A;
+    TEST_CHECK(!past && st.watched && st.capture == cap && st.strips > 100);
+    TEST_MSG("%u strips over %u us, %u bytes past the blocks", st.strips, (unsigned)st.settle_us, past);
+}
+
+/* audit-rubi-spinner F2: what only a job that reads its lines shows (with the release weights: the models lane). The
+ * lines the job read last (pol.line: a try that begins again starts the list over). */
+static struct {
+    unsigned n, right[VJO_VOCR_MAX_LINES];
+} read_lines;
+static void keep_read_line(void *ud, const VjoVocrLineInfo *info)
+{
+    (void)ud;
+    if (!info->index) read_lines.n = 0;
+    if (read_lines.n < VJO_VOCR_MAX_LINES) read_lines.right[read_lines.n++] = info->x + info->w;
+}
+
+/* FL10's job with the policy, the weights read from VJO_VOCR_MODEL_DIR; -1 without them (the test skips). */
+static int run_read(VjoVocrPolicy *pol, VjoVocrStats *st, uint64_t *took)
+{
+    static PosixPlatform pp;
+    static VjoPlatform posix;
+    VjoPlatform p;
+    VjoVocrResident res = {test_alloc, test_release, NULL, NULL, NULL, 0, 0, 0};
+    const char *dir = VJO_VOCR_MODEL_DIR;
+    char path[600], text[256];
+    uint64_t t0 = scr.clock;
+    FILE *f;
+    int rc;
+    snprintf(path, sizeof(path), "%s/FL10_w8.vocr", dir);
+    if (!dir[0] || !(f = fopen(path, "rb"))) return -1;
+    fclose(f);
+    posix_platform_init(&pp, &posix);
+    p = posix;
+    p.now_us = now; /* the screen's clock: a strip read is a frame */
+    pol->line = keep_read_line;
+    read_lines.n = 0;
+    rc = vjo_vocr_ocr_policy(&p, dir, "FL10_w8.vocr", &im, &res, ws_mem, vjo_vocr_job_bytes("FL10_w8.vocr", W, H),
+                             capture, vjo_vocr_capture_bytes(W, H), pol, text, sizeof(text), st);
+    free(res.data);
+    if (took) *took = scr.clock - t0;
+    return rc;
+}
+
+/* F1: a slow typewriter (a character every 8, 10 or 15 frames, the 25 of the line in 3-6 s; its glyphs dense, so each
+ * new one's ink lands in the line box's padding), at every other phase of its typing, without an icon and with one of
+ * many frames below the line (rows of its own: the region never holds still). At 8 and 10 frames the
+ * region never holds still for the job's waits, so it watches its line and, once its budget is spent, reads it anyway;
+ * at 15 each try's wait holds between two characters and the next one tears it, as without the watch. A line read
+ * anyway must keep its place, its end within a quarter of its height, over twice settle_us from its find: it typed on,
+ * so the job never gives it before it is whole (it cannot be whole within the job: VJO_E_SCREEN_CHANGED). With a moving
+ * line's end allowed 2.5 line heights, no look at the lines once read, or a look only settle_us after their find, it
+ * read some half typed. (A pause between characters longer than the wait's window, about 17 frames, passes it with or
+ * without the watch: docs/text-stability.md, "The gap this leaves".) */
+static void test_a_slow_typewriter_is_never_read_half_typed(void)
+{
+    static const unsigned every[] = {8, 10, 15};
+    unsigned runs = 0, anyway = 0;
+    for (unsigned icon = 0; icon < 2; icon++)
+    for (unsigned k = 0; k < sizeof(every) / sizeof(every[0]); k++)
+        for (unsigned phase = 0; phase < every[k]; phase += 2) {
+            VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 1000000, .settle_first = 1, .sleep = sleep_us};
+            VjoVocrStats st;
+            int rc;
+            reset();
+            scr.type_every = every[k];
+            scr.type_phase = phase;
+            scr.dense = 1;
+            scr.spin = icon ? 29u : 0u; /* and an icon of many frames below the line: the region never holds still */
+            rc = run_read(&pol, &st, NULL);
+            if (rc == -1) {
+                TEST_SKIP("no FL10_w8.vocr in VJO_VOCR_MODEL_DIR");
+                return;
+            }
+            runs++;
+            anyway += st.read_anyway != 0;
+            TEST_CHECK_(rc != VJO_OK || (read_lines.n == 1 && read_lines.right[0] >= 20u + 24u * 12u),
+                        "a character every %u frames, phase %u, icon %u: rc %d, %u line(s) read, the last ending at %u "
+                        "(the whole line: %u)", every[k], phase, icon, rc, read_lines.n,
+                        read_lines.n ? read_lines.right[read_lines.n - 1] : 0u, 20u + 25u * 12u);
+        }
+    TEST_CHECK(anyway > 0); /* the read anyway was tried, not only torn tries */
+    TEST_MSG("%u runs, %u of them read anyway", runs, anyway);
+}
+
+/* F2: an icon of many frames in the first line's rows (its own pixels never hold still: read anyway at the limit),
+ * and a second line that shows 5 frames after the try's capture is published, while the first line is read. The look
+ * at the lines once read sees two lines where one was watched: the screen changed, so the job reads again, and what it
+ * gives is the screen with both lines, never the first alone. */
+static void test_a_line_that_shows_while_the_lines_are_read_anyway_is_not_left_out(void)
+{
+    VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 600000, .settle_first = 1, .sleep = sleep_us};
+    VjoVocrStats st;
+    int rc;
+    reset();
+    scr.two_lines = 1;
+    scr.line2_after = 5;
+    scr.spin = 29;
+    scr.spin_x = 20u + 25u * 12u + 4u;
+    scr.icon_y = 6;
+    scr.spin_h = 24;
+    rc = run_read(&pol, &st, NULL);
+    if (rc == -1) {
+        TEST_SKIP("no FL10_w8.vocr in VJO_VOCR_MODEL_DIR");
+        return;
+    }
+    TEST_ASSERT(scr.line2_frame > 0);
+    TEST_CHECK_(rc != VJO_OK || read_lines.n == 2, "rc %d, %u line(s) read (the screen has 2 from frame %u)", rc,
+                read_lines.n, scr.line2_frame);
+    TEST_CHECK(st.watched && st.read_anyway && st.tears >= 1);
+    TEST_MSG("rc %d, tries %u, tears %u, %u finder runs, %u line(s) read", rc, st.tries, st.tears, st.watch_looks,
+             read_lines.n);
 }
 
 /* A 2x upscale with bilinear filtering, as a PSP game's 480x272 frame reaches
@@ -2744,6 +3012,16 @@ TEST_LIST = {
     {"at_most_64_rows_are_taken_for_an_icon", test_at_most_64_rows_are_taken_for_an_icon},
     {"with_the_wait_a_folded_match_is_a_change", test_with_the_wait_a_folded_match_is_a_change},
     {"a_frozen_clock_ends_the_wait", test_a_frozen_clock_ends_the_wait},
+    {"a_many_frame_icon_outside_the_line_is_waited_out", test_a_many_frame_icon_outside_the_line_is_waited_out},
+    {"a_many_frame_icon_after_the_last_character_is_read_anyway",
+     test_a_many_frame_icon_after_the_last_character_is_read_anyway},
+    {"typing_beside_a_many_frame_icon_is_read_whole", test_typing_beside_a_many_frame_icon_is_read_whole},
+    {"a_page_turned_while_the_line_is_watched_is_read_again",
+     test_a_page_turned_while_the_line_is_watched_is_read_again},
+    {"the_watch_stays_within_the_capture_block", test_the_watch_stays_within_the_capture_block},
+    {"a_slow_typewriter_is_never_read_half_typed", test_a_slow_typewriter_is_never_read_half_typed},
+    {"a_line_that_shows_while_the_lines_are_read_anyway_is_not_left_out",
+     test_a_line_that_shows_while_the_lines_are_read_anyway_is_not_left_out},
     {"the_last_reread_starts_the_span_after_the_first_pass", test_the_last_reread_starts_the_span_after_the_first_pass},
     {"the_wait_ends_on_the_first_pass_due", test_the_wait_ends_on_the_first_pass_due},
     {"the_waiting_budget_is_the_jobs_not_each_waits", test_the_waiting_budget_is_the_jobs},

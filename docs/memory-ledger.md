@@ -5,6 +5,32 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## The line watch (#353)
+
+The stable-text wait's line watch ([text-stability.md](text-stability.md#animated-icons-and-moving-pictures-353)) adds
+code to the game worker and a log line to the Shell, and no block, thread or allocation: the line checksums take the
+row states' place in the job's capture block (its size, `vjo_vocr_capture_bytes`, unchanged), the finder's runs its own
+arena in the job's workspace. On the worker's stack (32 KiB) the job's frame grows from 1,512 to 2,616 B (`run_job`,
+with the line sets it watches) and a finder's run takes `look_alike`'s 360 B on its way [measured: `arm-vita-eabi-gcc
+-Os -fstack-usage`, the build's flags]. In the Shell the log line's string is in the data segment (`VJO_DATA_TABLE`);
+its code is `note_screen_changed`'s call. No budget is raised. The module rows [measured: the build log's module rows,
+VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main `2a92864` and this change rebased on it, both builds]:
+
+| Module | main `2a92864` | this change | pages |
+|---|---:|---:|---:|
+| worker, debug | 161,144 + 35,544 B | 163,784 + 35,544 B | 200,704 B both |
+| worker, normal | 152,196 + 35,536 B | 154,836 + 35,536 B | 192,512 B both (exact) |
+| Shell, debug | 102,092 + 73,408 B | 102,124 + 73,592 B | 176,128 B both |
+| Shell, normal | 89,980 + 73,416 B | 89,996 + 73,608 B | 163,840 B both (exact) |
+| kernel | 43,160 + 77,764 B (debug), 38,008 + 76,076 B (normal) | the same | 122,880 / 118,784 B |
+
+The debug worker keeps 56 B of its last text page (2,696 B before), the normal worker 812 B (3,452 B); the normal
+Shell 116 B of code room (132 B) and 120 B of data room (312 B). The next change that adds worker code or rodata (a
+hook entry adds 32-64 B of rodata) takes the debug worker a page further, a budget raise of its own (AGENTS.md rule
+10), unless it trims. Of the worker's text, `core/vocr_ocr.c` is 2,594 B (17,886 → 20,480 B at `-Os`: `run_job` 6,852
+→ 7,856 B, the row checks' `stream_read` 684 → 996 B, `lines_alike` 410 B, `relook` 200 B, `hold_still` 186 B,
+`watch_pause` 124 B and smaller helpers); the rest is the step's kind in `game_ocr/main.c`.
+
 ## Why the overlay waits (#358)
 
 The open overlay's wait hint ([text-stability.md](text-stability.md#why-the-overlay-waits-358)) is Shell code and

@@ -81,6 +81,9 @@ been reported.
   text; the normal build's keeps its pages, and so do both Shells ([memory ledger](docs/memory-ledger.md#psp-text-and-the-psp-probe-format-4)).
   A Vita game's remembered hook (`hooks.cache`) is learned again once after this build: the hook engine's files
   changed, so their revision did.
+- Draft #318's bound on the open overlay's changed-screen retries (#278's fix: stop after three with "The screen
+  keeps changing…") is not in this build: `main`'s #364 (the open overlay says why it waits, #358) supersedes it,
+  and the tries go on with its hint.
 
 - **Pause the game to read** (API 52, #348; `ocr_pause` in `config.ini`, the Rubi app's last card on the OCR & lookup
   page, OFF by default): each reading copies the text box from one frame at once, inside that frame's display call,
@@ -105,9 +108,27 @@ been reported.
   the UID error for a missing block. It now accepts exactly that error behind a readable, non-wrapping mapping
   (#278's fix), runs with Automatic or Every game (OCR only turns it off), logs Rubi's PSP text profile check and
   each job's text source, and writes format 4 to `psp_probe.log`. Not run on a console in this form.
-- **The open overlay no longer waits for ever on a screen that keeps changing:** after three captures in a row
-  refused because the screen changed (34 of 47 PSP jobs in #248), it says so ("The screen keeps changing. Close and
-  reopen the overlay when the text stops."); reading in the background keeps its own backoff (#278's fix).
+- An animated icon or a moving picture in the OCR region no longer keeps the text from being shown (#353, from a
+  user's report: a spinning "wait" icon in the region, the overlay empty while the log had read the dialogue). An
+  icon with more frames than the stable-text wait keeps of a row (16) never settled, so every job tore and was
+  dropped, and the overlay said "Recognizing…" for as long as one waited. Once the region keeps changing, a job now
+  watches its found lines' own pixels: a change elsewhere sends the line finder again, other lines (text typing on, a
+  new line) are watched in their place, and at the wait's limit the lines are read anyway, then found again once they
+  would have settled (twice `ocr_settle_ms` after they were found): a line that typed on meanwhile ends the job, and
+  the next one reads it whole. On 184 hooked pages of 46 games with such an icon or picture, through the kernel's
+  change detection, the job and the Shell's decisions on a computer (`host/spinner_bench.c`, `tools/spinner_eval.py`;
+  times estimated, no console run): shown in 0-5 of the 184 before, 179-181 now (the still pages' text in 177-181),
+  median 0.3-1.8 s and 90 % within 1.6-2.5 s after L + R; no region shown before is lost, and an icon that rests
+  between its turns is shown in 13 and 7 more regions. Of the 1,777 runs that showed the whole line before, 4 (text
+  typed slowly, or with pauses) now show part of it first, and the whole line 0.4-2.3 s later
+  ([details](docs/text-stability.md#animated-icons-and-moving-pictures-353)). No new memory: the line checksums take
+  the row states' place in the job's capture block (its size unchanged); the debug worker keeps 56 B of its last code
+  page ([ledger](docs/memory-ledger.md#the-line-watch-353)).
+- The log says when text was recognized but never shown: the third job in a row whose screen changed under every
+  read logs (both builds) `ocr: the screen changed under every read of 3 jobs in a row, the last with N line(s)
+  recognized and not shown` (the overlay says why it waits: #358, above). The debug build's `gstep job settle` says
+  what the line watch did (its kind), and `tools/analyse_selftest.py --collect` sums it.
+
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
   read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then

@@ -313,7 +313,8 @@ enum {
                             rows' checksum, bytes copied */
     VJO_GSTEP_SETTLE,    /* API 20, the stable-text wait: rc VJO_GSETTLE_*, arg passes read waiting, bytes row
                             changes to a new state seen (text typing out), sum = distinct rows that went back
-                            to their previous state (an icon) << 16 | such returns (at most 0xFFFF), us the wait */
+                            to their previous state (an icon) << 16 | such returns (at most 0xFFFF), us the wait;
+                            #353: kind the line watch (VJO_GSETTLE_K_*) */
     VJO_GSTEP_BLANK,     /* API 20, a found line skipped as blank: arg its index, rc the job's skipped lines,
                             bytes = width << 16 | height, sum = contrast (98th - 2nd percentile grey) << 16 |
                             sharp edges per 10,000 pixels (core/vocr_ocr.h VjoVocrInk), us the job's time
@@ -395,6 +396,13 @@ enum {
 #define VJO_GPAUSE_UNUSED 3u   /* the job ended before its first pass (cancelled, a wait that failed) */
 #define VJO_GPAUSE_CAPPED 4u   /* not asked: an earlier copy in this game reached the cap (rc VJO_ERR_TIMEOUT); the game
                                   is not paused again until it next starts */
+/* VJO_GSTEP_SETTLE kind (rubi-spinner, #353; log only, 0 before it): the line watch. LINES: the region kept changing,
+ * so the wait (HELD: the lines held) and the tear check took the found lines' own pixels, the finder deciding whether
+ * a change elsewhere was text (core/vocr_ocr.c); ANYWAY: their own pixels kept changing past the limit (TIMEOUT), and
+ * the job read them once the finder found them alike twice; bits 2-7: the finder's runs that checked them. */
+#define VJO_GSETTLE_K_LINES 0x01u
+#define VJO_GSETTLE_K_ANYWAY 0x02u
+#define VJO_GSETTLE_K_LOOKS_MAX 63u
 /* VJO_GSTEP_ALLOC/FREE arg: which block. */
 #define VJO_GITEM_CAPTURE 1u   /* "VjoGameVocrCapture": the strip and the row checksums */
 #define VJO_GITEM_WORKSPACE 2u /* "VjoGameVocr": the finder's then the recognizer's arena */
