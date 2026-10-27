@@ -976,7 +976,7 @@ through files for the selected word. Bee's Ultimate Dictionary combines its
 word, grammar and kanji sources in one file; the names are a second file. Only
 the page on screen is held in memory. A character's name spelled as the text
 (なぎさ) comes before the word spelled otherwise (渚), but not before one of the
-1,024 most frequent words (わたし shows 私 first): `config.ini` `names_first`,
+1,023 most frequent words (わたし shows 私 first): `config.ini` `names_first`,
 `auto` by default, `on` for names first always, `off` for the word first
 ([names and words](local-dictionaries.md#names-and-words)).
 

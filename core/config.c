@@ -82,7 +82,7 @@ const char *vjo_config_default_text(void)
            "; word in each other dictionary, in the order above. L/R tap pages; one is in memory.\n"
            "local_dictionary_results = 2\n"
            "; A character's name spelled as the text (わたし) before a word spelled otherwise\n"
-           "; (私): auto (the name second when the word is among the 1,024 most frequent) |\n"
+           "; (私): auto (the name second when the word is among the 1,023 most frequent) |\n"
            "; on (names first, as Rubi 0.9.8) | off (the word first)\n"
            "names_first = " VJO_NAMES_DEFAULT_TEXT "\n"
            "\n"

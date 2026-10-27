@@ -726,7 +726,7 @@ static int particle_suru(const Candidate *c)
 
 /* names_first (core/config.h): at one span, a word spelled otherwise (私 for わたし) before an entry
  * spelled as the text in another dictionary (the character's name わたし). auto: when the word is
- * among the 1,024 most frequent (an own rank's freq_key of 6,912 or more); on: never (Rubi 0.9.8,
+ * among the 1,023 most frequent (an own rank's freq_key of 6,912 or more: rank 1,024 has 6,911); on: never (Rubi 0.9.8,
  * as Yomitan); off: always. */
 static int word_first(const VjoConfig *cfg, uint32_t score)
 {
@@ -1428,13 +1428,16 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
             for (int c = phase; c < (phase ? candidates : 1); c++) {
                 int before = w->n_matches;
                 Query q = {0};
-                /* Candidates come in breadth-first order: fewer inflections first (a two-step
-                 * rule's may come before one-step ones: continue, not break). */
-                if (((found >> d) & 1) && w->candidates[c].depth > depth) continue;
+                /* Before the depth test: every candidate of the span is seen in the first dictionary
+                 * phase 1 reads, so the span's particle does not depend on how many are shown (#321's
+                 * audit: がされ was its masu stem with one, が with two). */
                 if (phase && lead && particle_suru(&w->candidates[c])) {
                     particle = 1;
                     continue;
                 }
+                /* Candidates come in breadth-first order: fewer inflections first (a two-step
+                 * rule's may come before one-step ones: continue, not break). */
+                if (((found >> d) & 1) && w->candidates[c].depth > depth) continue;
                 q.strict = 1;
                 q.fallback = &fallback[d];
                 q.fallback_score = &fallback_score[d];
@@ -1455,7 +1458,8 @@ static int lookup_pages(VjoArena *a, const VjoPlatform *p, const VjoConfig *cfg,
         /* A particle and a form of する (がした, もせず, にしておく): the particle, unless an entry is
          * spelled as the whole span (がする, もしかして). Not another word's inflection, which is rarely
          * meant (にさせる: 似る, はせず: 馳せる; but かすれた: 掠れる), nor a kanji homograph of the whole
-         * span (はそう: 破窓, かして: 貸し手). */
+         * span (はそう: 破窓, かして: 貸し手). It goes back to the particle's own span, where it is never
+         * taken again: no candidate of a lone particle is a form of す or する (tools_yomitan_check). */
         if (particle && !exact) {
             k = 2;
             continue;

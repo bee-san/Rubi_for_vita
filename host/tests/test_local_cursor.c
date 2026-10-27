@@ -2590,7 +2590,10 @@ static void yomitan_check_remaining_lookups(void)
         {"のむ", "飲む", "のむ", "to drink", 2, 300},
         {"はぁ", "はぁ", "はぁ", "huh?", 0, 1072},
         {"手", "手", "て", "hand", 0, 151},
-        {"手をつく", "手を突く", "てをつく", "to put one's hands down", 2, 7572}};
+        {"手をつく", "手を突く", "てをつく", "to put one's hands down", 2, 7572},
+        /* #321's audit: a long vowel mark is not a katakana word's start (へー, not へ) */
+        {"へ", "へ", "へ", "the particle へ", 0, 30},
+        {"へー", "へー", "へー", "huh, really", 0, 600}};
     static const struct { const char *text, *spelling, *labels; size_t span; } cases[] = {
         /* the progressive's てる contracted before の or だ, not -ん's negative */
         {"してんの", "する", "-te → progressive or perfect", 9},
@@ -2612,7 +2615,9 @@ static void yomitan_check_remaining_lookups(void)
         {"のマンション", "の", NULL, 3},
         {"はァ？", "はぁ", NULL, 6},
         /* -ん's かん is left out: 手を + つかんで */
-        {"手をつかんで", "手", NULL, 3}};
+        {"手をつかんで", "手", NULL, 3},
+        /* #321's audit: a long vowel mark is not a katakana word (へー, not へ) */
+        {"へー。", "へー", NULL, 6}};
     VjoArena a; VjoPlatform p; VjoConfig cfg;
     setup(&a, &p, &cfg);
     build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
@@ -2646,15 +2651,20 @@ static void normalised_spelling_ranks_are_not_shown(void)
 }
 
 /* #321, names_first: at one span, a name spelled as the text (d1, as vndb-names.vjdict) and a word the
- * first dictionary spells otherwise. auto (the default): the word first when it is among the 1,024 most
- * frequent (私, 32), the name first otherwise (渚, 32,728); on: the name first (Rubi 0.9.8); off: the word. */
+ * first dictionary spells otherwise. auto (the default): the word first when its own rank is 1,023 or better
+ * (私, 32; 当たる at the cut, 1,023), the name first otherwise (苺 just past it, 1,024; 渚, 32,728); on: the
+ * name first (Rubi 0.9.8); off: the word. */
 static void names_first_orders_a_name_and_a_word(void)
 {
-    const Row d0[] = {{"わたし", "私", "わたし", "I, me", 0, 32}, {"なぎさ", "渚", "なぎさ", "a beach", 0, 32728}};
+    const Row d0[] = {{"わたし", "私", "わたし", "I, me", 0, 32}, {"なぎさ", "渚", "なぎさ", "a beach", 0, 32728},
+                      {"あたる", "当たる", "あたる", "to hit", 0, 1023}, {"いちご", "苺", "いちご", "a strawberry", 0, 1024}};
     const Row d1[] = {{"わたし", "わたし", "わたし", "a character named Watashi", 0, 0},
-                      {"なぎさ", "なぎさ", "なぎさ", "a character named Nagisa", 0, 0}};
+                      {"なぎさ", "なぎさ", "なぎさ", "a character named Nagisa", 0, 0},
+                      {"あたる", "あたる", "あたる", "a character named Ataru", 0, 0},
+                      {"いちご", "いちご", "いちご", "a character named Ichigo", 0, 0}};
     static const struct { int mode; const char *text; int first; } cases[] = {
         {VJO_NAMES_AUTO, "わたしは", 0}, {VJO_NAMES_AUTO, "なぎさは", 1},
+        {VJO_NAMES_AUTO, "あたるは", 0}, {VJO_NAMES_AUTO, "いちごは", 1},
         {VJO_NAMES_ON, "わたしは", 1}, {VJO_NAMES_ON, "なぎさは", 1},
         {VJO_NAMES_OFF, "わたしは", 0}, {VJO_NAMES_OFF, "なぎさは", 0}};
     VjoConfig parsed;
@@ -2672,8 +2682,8 @@ static void names_first_orders_a_name_and_a_word(void)
             TEST_CASE_("names_first %d, %s, %d shown", cases[i].mode, cases[i].text, limit);
             setup(&a, &p, &cfg); set_names(&cfg, 2);
             cfg.names_first = cases[i].mode;
-            build(&fixtures[0], page_names[0], d0, 2, 3);
-            build(&fixtures[1], page_names[1], d1, 2, 2);
+            build(&fixtures[0], page_names[0], d0, 4, 3);
+            build(&fixtures[1], page_names[1], d1, 4, 2);
             TEST_ASSERT(!pages_lookup(&a, &p, &cfg, cases[i].text, 0, limit, &pages, &r, &e));
             TEST_ASSERT(pages.count == limit && r.n_vocab == 1);
             TEST_CHECK_(pages.page[0].dict == cases[i].first, "page 0 is d%d", pages.page[0].dict);
@@ -2683,10 +2693,42 @@ static void names_first_orders_a_name_and_a_word(void)
     }
 }
 
+/* #321's audit: page 0 is vjo_local_lookup_at's single result (local_dict.h), so the shown entry is the same
+ * whatever Dictionaries shown is, although one result ends the search at the first dictionary that has an
+ * entry and more read on. A particle before a form of する (がされ: が + される, the candidates がす and がする
+ * two steps deep) was read whole when a one-step candidate of the first dictionary matched (the made-up
+ * がされる here) and only one was shown, the particle when a second dictionary saw the deeper candidates.
+ * And an entry spelled as the whole span keeps it (にして, the grammar entry, not に): only a second
+ * dictionary, which has no such entry, reads the span's forms of する at all. */
+static void page_zero_is_the_same_for_any_number_shown(void)
+{
+    const Row d0[] = {{"が", "が", "が", "the subject particle", 0, 5},
+                      {"がされる", "がされる", "がされる", "a verb made up for this test", 1, 0},
+                      {"に", "に", "に", "the particle に", 0, 3},
+                      {"にして", "にして", "にして", "grammar: as; by way of", 0, 2950}};
+    const Row d1[] = {{"なぎさ", "なぎさ", "なぎさ", "a character named Nagisa", 0, 0}};
+    static const struct { const char *text, *spelling; uint16_t len16; } cases[] = {{"がされ", "が", 1},
+                                                                                   {"にして", "にして", 3}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        for (int limit = 1; limit <= 8; limit *= 2) {
+            VjoArena a; VjoPlatform p; VjoConfig cfg; VjoDictResult r; VjoErr e; VjoLocalPages pages;
+            TEST_CASE_("%s, %d shown", cases[i].text, limit);
+            setup(&a, &p, &cfg); set_names(&cfg, 2);
+            build(&fixtures[0], page_names[0], d0, 4, 3);
+            build(&fixtures[1], page_names[1], d1, 1, 2);
+            TEST_ASSERT(!pages_lookup(&a, &p, &cfg, cases[i].text, 0, limit, &pages, &r, &e) && pages.count == 1);
+            TEST_CHECK_(pages.page[0].dict == 0 && pages.page[0].len16 == cases[i].len16 && !pages.page[0].conjugation,
+                        "page 0 is d%d over %d", pages.page[0].dict, pages.page[0].len16);
+            TEST_CHECK_(!strcmp(r.vocab[0].spelling, cases[i].spelling), "shows %s", r.vocab[0].spelling);
+        }
+    }
+}
+
 TEST_LIST = {
     {"yomitan_check_remaining_lookups", yomitan_check_remaining_lookups},
     {"normalised_spelling_ranks_are_not_shown", normalised_spelling_ranks_are_not_shown},
     {"names_first_orders_a_name_and_a_word", names_first_orders_a_name_and_a_word},
+    {"page_zero_is_the_same_for_any_number_shown", page_zero_is_the_same_for_any_number_shown},
     {"fallback_ranks_homographs_of_equal_steps", fallback_ranks_homographs_of_equal_steps},
     {"fallback_ties_keep_the_first_candidate", fallback_ties_keep_the_first_candidate},
     {"yomitan_rules_reach_spoken_forms", yomitan_rules_reach_spoken_forms},
