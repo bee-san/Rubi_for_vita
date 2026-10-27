@@ -6,7 +6,8 @@
  * docs/text-stability.md "Animated icons and moving pictures"):
  * - the game's picture, 60 frames a second: a region (a hooked page's dialogue region, or --synthetic's box) with an
  *   icon drawn over it in each frame (beside the text, or right after its last line; at a constant or a variable
- *   speed), a moving background, or the last line typing out;
+ *   speed), a moving background, or the last line typing out (a character every 3 frames; audit-rubi-spinner's
+ *   scenarios: every 10 or 15 frames, pauses of 30 frames, an icon that follows the typed end);
  * - the kernel's change detection, kernel/scene.c itself: the display hook's region signature every 8th frame
  *   (VJO_CHECK_EVERY_FRAMES), the kernel worker's scene_update every 4th poll of 16 ms, its settled and quiet events,
  *   and a capture's scene as kernel/game_ocr.c publishes it (scene_capture; VjoState.region_scene: scene_match_since);
@@ -91,23 +92,34 @@ enum { BG_NONE, BG_OUTSIDE, BG_BEHIND };
 typedef struct {
     const char *name;
     int spin, at, bg, typing;
+    /* (audit-rubi-spinner's scenarios, F1) the typing line: frames a character (0: 3), a pause after so many characters
+     * and its frames; follow: the icon right after the typed end */
+    int type_every, pause_every, pause_frames, follow;
 } Scenario;
 static const Scenario scenarios[] = {
-    {"still", SP_NONE, 0, BG_NONE, 0},
-    {"inline-sprite8", SP_SPRITE8, AT_INLINE, BG_NONE, 0},
-    {"inline-sprite24", SP_SPRITE24, AT_INLINE, BG_NONE, 0},
-    {"inline-smooth", SP_SMOOTH, AT_INLINE, BG_NONE, 0},
-    {"inline-variable", SP_VARIABLE, AT_INLINE, BG_NONE, 0},
-    {"inline-pausing", SP_PAUSING, AT_INLINE, BG_NONE, 0},
-    {"beside-sprite8", SP_SPRITE8, AT_BESIDE, BG_NONE, 0},
-    {"beside-sprite24", SP_SPRITE24, AT_BESIDE, BG_NONE, 0},
-    {"beside-smooth", SP_SMOOTH, AT_BESIDE, BG_NONE, 0},
-    {"beside-variable", SP_VARIABLE, AT_BESIDE, BG_NONE, 0},
-    {"beside-pausing", SP_PAUSING, AT_BESIDE, BG_NONE, 0},
-    {"bg-outside", SP_NONE, 0, BG_OUTSIDE, 0},
-    {"bg-behind", SP_NONE, 0, BG_BEHIND, 0},
-    {"typing", SP_NONE, 0, BG_NONE, 1},
-    {"typing-beside-variable", SP_VARIABLE, AT_BESIDE, BG_NONE, 1},
+    {"still", SP_NONE, 0, BG_NONE, 0, 0, 0, 0, 0},
+    {"inline-sprite8", SP_SPRITE8, AT_INLINE, BG_NONE, 0, 0, 0, 0, 0},
+    {"inline-sprite24", SP_SPRITE24, AT_INLINE, BG_NONE, 0, 0, 0, 0, 0},
+    {"inline-smooth", SP_SMOOTH, AT_INLINE, BG_NONE, 0, 0, 0, 0, 0},
+    {"inline-variable", SP_VARIABLE, AT_INLINE, BG_NONE, 0, 0, 0, 0, 0},
+    {"inline-pausing", SP_PAUSING, AT_INLINE, BG_NONE, 0, 0, 0, 0, 0},
+    {"beside-sprite8", SP_SPRITE8, AT_BESIDE, BG_NONE, 0, 0, 0, 0, 0},
+    {"beside-sprite24", SP_SPRITE24, AT_BESIDE, BG_NONE, 0, 0, 0, 0, 0},
+    {"beside-smooth", SP_SMOOTH, AT_BESIDE, BG_NONE, 0, 0, 0, 0, 0},
+    {"beside-variable", SP_VARIABLE, AT_BESIDE, BG_NONE, 0, 0, 0, 0, 0},
+    {"beside-pausing", SP_PAUSING, AT_BESIDE, BG_NONE, 0, 0, 0, 0, 0},
+    {"bg-outside", SP_NONE, 0, BG_OUTSIDE, 0, 0, 0, 0, 0},
+    {"bg-behind", SP_NONE, 0, BG_BEHIND, 0, 0, 0, 0, 0},
+    {"typing", SP_NONE, 0, BG_NONE, 1, 0, 0, 0, 0},
+    {"typing-beside-variable", SP_VARIABLE, AT_BESIDE, BG_NONE, 1, 0, 0, 0, 0},
+    {"typing-slow10", SP_NONE, 0, BG_NONE, 1, 10, 0, 0, 0},
+    {"typing-slow15", SP_NONE, 0, BG_NONE, 1, 15, 0, 0, 0},
+    {"typing-pauses", SP_NONE, 0, BG_NONE, 1, 3, 5, 30, 0},
+    {"typing-slow10-beside-variable", SP_VARIABLE, AT_BESIDE, BG_NONE, 1, 10, 0, 0, 0},
+    {"typing-pauses-beside-variable", SP_VARIABLE, AT_BESIDE, BG_NONE, 1, 3, 5, 30, 0},
+    {"typing-slow10-follow-smooth", SP_SMOOTH, AT_INLINE, BG_NONE, 1, 10, 0, 0, 1},
+    {"typing-pauses-follow-smooth", SP_SMOOTH, AT_INLINE, BG_NONE, 1, 3, 5, 30, 1},
+    {"typing-pauses-follow-sprite8", SP_SPRITE8, AT_INLINE, BG_NONE, 1, 3, 5, 30, 1},
 };
 #define N_SCENARIOS (sizeof(scenarios) / sizeof(scenarios[0]))
 
@@ -170,6 +182,16 @@ static int clampi(int v, int lo, int hi)
     return v < lo ? lo : v > hi ? hi : v;
 }
 
+/* Characters of the typing line shown at frame f (audit-rubi-spinner's slow typewriters and pauses). */
+static unsigned typed_chars(const Scenario *sc, unsigned f)
+{
+    unsigned te = sc->type_every ? (unsigned)sc->type_every : 3u, pe = (unsigned)sc->pause_every, cycle, in;
+    if (!pe) return f / te + 1u;
+    cycle = pe * te + (unsigned)sc->pause_frames;
+    in = f % cycle / te;
+    return f / cycle * pe + (in < pe ? in : pe) + 1u;
+}
+
 /* Row y of frame f, as RGB. */
 static void render_row(Picture *p, unsigned y, unsigned f, unsigned char *out)
 {
@@ -180,7 +202,7 @@ static void render_row(Picture *p, unsigned y, unsigned f, unsigned char *out)
         /* the last line types out from frame 0, a character (about the line's height) every 3 frames */
         const Box *b = &rg->box[p->type_line];
         if (y >= b->y && y < b->y + b->h) {
-            unsigned reveal = b->x + (f / 3u + 1u) * (b->h > 4 ? b->h - 4 : b->h);
+            unsigned reveal = b->x + typed_chars(sc, f) * (b->h > 4 ? b->h - 4 : b->h);
             for (unsigned x = reveal; x < b->x + b->w && x < rg->w; x++)
                 out[3 * x] = out[3 * x + 1] = out[3 * x + 2] = p->empty[y];
         }
@@ -196,6 +218,19 @@ static void render_row(Picture *p, unsigned y, unsigned f, unsigned char *out)
                 s *= 1.0 - (c > 1.0 ? 1.0 : c);
             }
             for (int k = 0; k < 3; k++) out[3 * x + k] = (unsigned char)clampi(out[3 * x + k] + (int)lrint(s), 0, 255);
+        }
+    }
+    if (sc->follow && sc->typing && p->type_line < rg->nbox) { /* the icon right after the typed end */
+        const Box *b = &rg->box[p->type_line];
+        double end = b->x + (double)typed_chars(sc, f) * (b->h > 4 ? b->h - 4 : b->h), cx;
+        if (end > b->x + b->w) end = b->x + b->w;
+        cx = end + 0.6 * p->r + p->r;
+        if (cx + p->r > rg->w) cx = rg->w - p->r - 1.0;
+        if (cx != p->cx) {
+            p->cx = cx;
+            p->x0 = clampi((int)floor(p->cx - p->r) - 1, 0, (int)rg->w);
+            p->x1 = clampi((int)ceil(p->cx + p->r) + 1, 0, (int)rg->w);
+            p->cov_frame = ~0u;
         }
     }
     if (sc->spin != SP_NONE && (int)y >= p->y0 && (int)y < p->y1) {
