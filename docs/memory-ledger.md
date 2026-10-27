@@ -5,6 +5,22 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## #324's retry, its audit's follow-up (no API change)
+
+The retry after a model's refused weights (#324) now runs in API 47's retry block: the tries' totals, the shared
+stable-text wait, the step log's drop of the given-back blocks and the kept capture are one copy of code for both
+(`game_ocr/main.c`). No block, thread, stack or allocation; no module takes a page more.
+
+Measured with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text +
+data/bss), main `84dbad9` against this change:
+
+| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+|---|---:|---:|---:|
+| Game worker | 163,528 + 35,880 → 163,512 + 35,880 B | 154,548 + 35,864 B, unchanged | 200,704 / 192,512 B, unchanged |
+| Kernel, Shell | unchanged | unchanged | unchanged |
+
+The worker keeps 328 B (debug) and 1,100 B (normal) of its last text page.
+
 ## The box suggested on first use (API 52, #358)
 
 [The box](first-box.md) rides in the result: no block, thread, stack or allocation, and no module takes a page more.

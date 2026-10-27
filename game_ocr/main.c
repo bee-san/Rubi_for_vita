@@ -2170,13 +2170,26 @@ retry_smaller:
     rc = vjo_vocr_ocr_policy(&platform, r->model_dir, use->name, &image, &resident, base,
                              use_bytes + core_extra + helper_bytes,
                              capture_base, capture_bytes_held, &policy, out->text, sizeof(out->text), &stats);
+    /* #324: the check passed, yet the model's weights could not be had: out of memory before any were read or
+     * held (every job-level VJO_E_OOM comes before them: core/vocr_ocr.c's weights block, the finder's arena, the
+     * workspace or the capture; an LM's or the cascade's only sets lm_rc / cascade_rc). weights_alloc checks the
+     * game's free memory again once this job's own blocks are taken, and the console reports that memory in whole
+     * MiB (every sample of あおかな, PCSG00700, 2026-10-26: 1, 2, 3 or 4 MiB), so the second look can see a whole MiB
+     * less than the check did: a job that passed with less than 1 MiB to spare finds its weights refused, whatever
+     * its tier's reserve. A smaller model may still fit: give back this job's blocks and check again from the next
+     * one (retry_smaller), each at most once, as a model that did not fit the check would have been. */
+    const int smaller = rc == VJO_E_OOM && !stats.stuck && !forced && used + 1u < n && !cancelled(NULL);
     /* API 47, auto: the rows looked like vertical text (nothing was read: no weights, no line), or its columns'
      * model cannot be read here (absent, short, failing its hash: this game's jobs read rows from now on). The
-     * same request again, as columns or as rows, after this try's blocks are freed; its capture and finder
-     * time are the job's too. */
-    if (!stats.stuck && ((rc == VJO_E_VERTICAL && policy.vertical_check) /* only a checked try: at most one retry */
-                         || (rc == VJO_E_OCR_MODEL && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO))) {
-        if (rc == VJO_E_VERTICAL) {
+     * same request again, as columns or as rows (again). Either retry is the same job (#324's audit): after this
+     * try's blocks are freed, its capture, finder time and stable-text wait are the job's too, the next try waits
+     * only for what is left of it (retried), the freed blocks' steps leave the log (steps_drop_blocks), and the
+     * capture is kept: its PASS and SIG steps are logged once, its source mode stays. */
+    if (smaller || (!stats.stuck && ((rc == VJO_E_VERTICAL && policy.vertical_check) /* a checked try: one retry */
+                                     || (rc == VJO_E_OCR_MODEL && vertical && vmode == VJO_GAME_OCR_VERTICAL_AUTO)))) {
+        if (smaller) {
+            try_from = used + 1u;
+        } else if (rc == VJO_E_VERTICAL) {
             step_add(VJO_GSTEP_FIND, 2, stats.lines, 0, 0, stats.dark, stats.find_us, 0);
         } else {
             step_add(VJO_GSTEP_FIND, 3, stats.lines, io_error, 0, 0, stats.find_us, 0);
@@ -2191,27 +2204,15 @@ retry_smaller:
         tried_settle_us += stats.settle_us;
         tried_settle_passes += stats.settle_passes;
         retried = 1;
-        vertical = rc == VJO_E_VERTICAL;
-        check = 0;
+        if (!smaller) { /* (a smaller model's try is of rows: a job of columns has one model) */
+            vertical = rc == VJO_E_VERTICAL;
+            check = 0;
+        }
         sceClibMemset(&stats, 0, sizeof(stats));
         if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
         steps_drop_blocks(try_steps);
+        if (smaller) goto retry_smaller;
         goto again;
-    }
-    /* The check passed, yet the model's weights could not be had: out of memory before any were read or
-     * held. weights_alloc checks the game's free memory again once this job's own blocks are taken, and the
-     * console reports that memory in whole MiB (every sample of あおかな, PCSG00700, 2026-10-26: 1, 2, 3 or
-     * 4 MiB), so the second look can see a whole MiB less than the check did: a job that passed with less
-     * than 1 MiB to spare finds its weights refused, whatever its tier's reserve. A smaller model may still
-     * fit: give back this job's blocks and check again from the next one, each at most once, as a model
-     * that did not fit the check would have been. */
-    if (rc == VJO_E_OOM && !stats.model_loaded && !stats.model_cached && !stats.stuck && !forced &&
-        used + 1u < n && !cancelled(NULL)) {
-        if (cleanup()) { rc = VJO_E_OCR_UNAVAILABLE; goto done; }
-        try_from = used + 1u;
-        sceClibMemset(&stats, 0, sizeof(stats));
-        capture = (Capture){r, VJO_GAME_OCR_SRC_HOOK, {0}, 0, 0, 0, 0, 0, 0, 0};
-        goto retry_smaller;
     }
     /* ocr-first: a job that read no line (or only blank ones) reads what the
      * session's first job with text would otherwise read while the user waits

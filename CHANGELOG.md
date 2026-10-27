@@ -88,6 +88,18 @@ been reported.
 
 ### Fixed
 
+- **A game short of memory reads with the next smaller model** (#324). The console reports a game's free memory in
+  whole MiB (あおかな, `PCSG00700`, on a PCH-2000: each of 78 samples was 1, 2, 3 or 4 MiB), so a job that passed its
+  memory check with less than 1 MiB to spare saw a whole MiB less once it had taken its own blocks: its model's
+  weights were refused and the job failed for memory, with no smaller model tried. Now it gives its blocks back and
+  checks the next smaller model, each at most once. On that console, with a debug test build of 0.9.7 and 1 MiB
+  reserves (#280, not merged), 7 jobs that passed Normal's check read with Small, where 15 had failed before; with
+  `main`'s reserves it has not run on a console. #324's audit: that retry is the same job. It waits no longer than the
+  job's stable-text wait (`ocr_settle_max_ms`): it waited again from the start (by the code, up to the whole limit
+  again for each smaller model); on the host, with text typing out for 1.9 s at 60 Hz, the job took 2.27 s against
+  Small alone's 2.05 s, and now 2.12 s. Its captures and finder time count every try, and the debug build's step log
+  keeps the try that read (a full log of 20 steps had dropped its last steps, such as the text's normalisation; the
+  refused try's blocks are no longer listed). No module takes a page more ([memory ledger](docs/memory-ledger.md)).
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
   read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then

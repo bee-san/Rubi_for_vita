@@ -54,7 +54,7 @@ when a job may recognize, in every job of both modes:
 - **Tears.** A row that changes after the wait is a tear. The job reads again, up to 3 tries
   (`VJO_VOCR_TRIES`), then fails with `VJO_E_SCREEN_CHANGED` and is retried later.
 - **The limit.** A job waits at most `ocr_settle_max_ms` = 2000 ms over all its tries (`ocr_vertical = auto`'s
-  column try included, API 47), or
+  column try included, API 47, and the next smaller model's after a model's weights were refused, #324), or
   `ocr_settle_press_ms` = 1000 ms for a press (since test.3). Then it reads anyway.
 
 The gap this leaves is known ([auto-vs-press.md](auto-vs-press.md#what-settled-means)): a

@@ -323,7 +323,12 @@ Facts:
   Kernel-Reference, 'sceKernelAllocMemBlock'].
 - The game worker today: free `sizeMain` − the reserve (4, 8 or 16 MiB by model size since API 21)
   must cover the page-rounded weights and workspace, or that size is refused before anything is
-  allocated and the next smaller one is tried [`game_ocr/main.c`].
+  allocated and the next smaller one is tried [`game_ocr/main.c`]. A size that passed can still
+  have its weights refused: the weights' block checks the free memory again once the job's own
+  blocks are taken, and the console reports it in whole MiB (every one of 78 samples in あおかな,
+  `PCSG00700`, on a PCH-2000 was 1, 2, 3 or 4 MiB [measured: #324]), so the second look can see a
+  whole MiB less. The job then gives its blocks back and checks the next smaller size, each size
+  at most once, within the same job's stable-text wait (#324 and its audit).
 
 Rules:
 

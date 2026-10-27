@@ -38,6 +38,9 @@ static unsigned vertical_opens; /* API 47: the vertical model's (VJO_GAME_OCR_OP
 static int grow_on_vertical_open; /* the game frees this much as the vertical model is opened (its memory moves
                                    * between auto's tries) */
 static int drop_on_workspace; /* bytes the game takes when the job's workspace block is allocated */
+/* bytes the game takes once, when the drop_at_allocation-th workspace block of the test is allocated (0: never): the
+ * memory a try's check saw is gone by the time its weights are asked for (#324's retry) */
+static int drop_once; static unsigned drop_at_allocation;
 static unsigned char pixels[200*272*4]; /* 200 x frame_h */
 static unsigned frame_h = 60; /* rows of the fake frame (over 64: two strips) */
 /* The capture block and the memory-type ladder: which types refuse. */
@@ -130,6 +133,7 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
     if (alloc_failure) return (int)0x80024302u;
     TEST_CHECK(size <= sizeof(workspace));
     available -= drop_on_workspace; /* the game allocates right after the job's check */
+    if (drop_at_allocation && allocations == drop_at_allocation) available -= drop_once;
     memory_live = 1; job_block = size; live_bytes += size; return 9;
 }
 int sceKernelGetMemBlockBase(SceUID uid, void **base)
@@ -388,6 +392,7 @@ static VjoGameOcrRequest setup(void)
     line_live = 0; line_allocs = line_frees = 0;
     refuse_line = vertical_absent = 0; line_refused = line_asks = workspace_beside_line = 0;
     memset(tier_opens, 0, sizeof(tier_opens)); vertical_opens = 0; tiered = 0; job_reserve = GAME_RESERVE; drop_on_workspace = 0;
+    drop_once = 0; drop_at_allocation = 0;
     columns_bad = 0; missing_open_rc = -123; grow_on_vertical_open = 0; /* API 47, auto */
     psp_title = 0;
     weight_allocations = weight_frees = 0; weights_live = 0; live_bytes = 0;
@@ -2012,6 +2017,23 @@ static uint32_t tier_need(const VjoGameOcrRequest *r, unsigned t, size_t extra)
                  vjo_vocr_capture_bytes(r->width, r->height), NULL, NULL, t);
     return o.need_workspace + o.need_weights + o.reserve_bytes;
 }
+/* The same with LM lm beside the model (the check's with_lm choice when that LM fits). */
+static uint32_t tier_lm_need(const VjoGameOcrRequest *r, unsigned t, const VjoVocrLm *lm)
+{
+    VjoGameOcrResult o;
+    const VjoVocrModel *m = vjo_vocr_model(tier_names[t - 1u]);
+    memset(&o, 0, sizeof(o));
+    o.free_user = INT32_MAX;
+    check_memory(&o, m, vjo_vocr_job_bytes(m->name, r->width, r->height), vjo_vocr_capture_bytes(r->width, r->height),
+                 lm, NULL, t);
+    return o.need_workspace + o.need_weights + o.reserve_bytes;
+}
+static unsigned count_steps(const VjoGameOcrResult *out, unsigned id)
+{
+    unsigned n = 0;
+    for (unsigned i = 0; i < out->n_steps && i < VJO_GAME_OCR_STEPS; i++) n += out->step[i].id == id;
+    return n;
+}
 static unsigned check_steps(const VjoGameOcrResult *out, const VjoGameOcrStep **steps)
 {
     unsigned n = 0;
@@ -2074,6 +2096,98 @@ static void weights_refused_after_the_check_retry_the_next_smaller_model(void)
         unsigned n = check_steps(&out, s);
         TEST_CHECK_(n == 2 && s[0]->rc && VJO_GCHECK_TIER(s[1]->kind) == 1 && !s[1]->rc, "%u checks", n);
     }
+    free_mib = 0;
+}
+
+/* #324's audit F1: the retry after a model's refused weights is the same job. It shares the job's stable-text wait
+ * (at most ocr_settle_max_ms over all its tries, docs/text-stability.md), as auto's tries do (API 47), and its
+ * captures count every try's. The text types out for about 1.9 s at 60 Hz, then holds, and the job was asked while it
+ * changed (wait first; 150 ms of stillness, within 2 s): Normal, at its whole-MiB edge, waits out the whole limit,
+ * then its weights are refused; Small reads at once, within what is left of the wait (nothing). The job takes no
+ * longer than Small alone at the same memory plus the refused try's own passes (before: Small waited again, about
+ * 217 ms more, and the wait step said it held), and its wait step counts both tries' wait. */
+static void weights_refused_retry_shares_the_wait(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Release weights absent; the weights' own check is not reached"); return; }
+    const uint32_t mib = 1024u * 1024u;
+    const uint32_t wait = VJO_GAME_OCR_F_SETTLE_FIRST | 15u << VJO_GAME_OCR_SETTLE_SHIFT | /* 150 ms, at most 2 s */
+                          40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    static VjoGameOcrResult out[2];
+    const VjoGameOcrStep *settle[2] = {NULL, NULL};
+    uint64_t took[2] = {0, 0};
+    for (int retry = 0; retry <= 1; retry++) { /* Small alone, then Normal (its weights refused) and Small */
+        VjoGameOcrRequest r = setup();
+        r.tiers = 1u << (VJO_VOCR_TIER_SMALL - 1u) | (retry ? 1u << (VJO_VOCR_TIER_NORMAL - 1u) : 0u);
+        snprintf(r.model, sizeof(r.model), "%s", retry ? VJO_VOCR_TIER2_NAME : VJO_VOCR_TIER1_NAME);
+        r.flags = wait;
+        const uint32_t f = (tier_need(&r, 2, 0) + mib - 1u) / mib * mib; /* Normal's whole-MiB edge, as above */
+        line();
+        free_mib = 1;
+        available = (int)(f + 4096u);
+        frame_us = 16667;   /* each rows call waits for the game's next frame */
+        flicker_rows = 115; /* about 1.9 s of a changing screen, then still */
+        const uint64_t t0 = clock_value;
+        int rc = vjo_game_ocr_run_request(&r, &out[retry]);
+        took[retry] = clock_value - t0;
+        TEST_CHECK_(rc == VJO_OK && out[retry].lines >= 1 && out[retry].fallback == (unsigned)retry,
+                    "%s: rc %d, %u lines, fallback %u", retry ? "retry" : "Small alone", rc, out[retry].lines,
+                    (unsigned)out[retry].fallback);
+        /* every rows call is one of the job's captures, whichever try made it */
+        TEST_CHECK_(out[retry].captures == rows_calls, "%s: %u captures, %u rows calls",
+                    retry ? "retry" : "Small alone", (unsigned)out[retry].captures, rows_calls);
+        for (unsigned i = 0; i < out[retry].n_steps && i < VJO_GAME_OCR_STEPS; i++)
+            if (out[retry].step[i].id == VJO_GSTEP_SETTLE) settle[retry] = &out[retry].step[i];
+        TEST_CHECK(!memory_live && !capture_live && !line_live);
+        TEST_CHECK(!drop_resident());
+    }
+    TEST_ASSERT(settle[0] != NULL && settle[1] != NULL);
+    /* the whole wait was the refused try's: the job waited 2 s, timed out, and the retry read at once */
+    TEST_CHECK_(settle[1]->us >= 2000000u && settle[1]->rc == VJO_GSETTLE_TIMEOUT && settle[0]->rc == VJO_GSETTLE_TIMEOUT,
+                "the wait step: %u us, rc %d (Small alone: %u us, rc %d)", (unsigned)settle[1]->us,
+                (int)settle[1]->rc, (unsigned)settle[0]->us, (int)settle[0]->rc);
+    /* the refused try costs its own passes (the finder's and the wait's last, a few frames), never another wait */
+    TEST_CHECK_(took[1] < took[0] + 120000u, "the retry took %llu us, Small alone %llu us: %lld us more",
+                (unsigned long long)took[1], (unsigned long long)took[0], (long long)(took[1] - took[0]));
+    free_mib = 0;
+}
+
+/* #324's audit F2: the retry's step log is the job's that read the text, as API 47's tries' is. The refused try
+ * gives back its blocks, so its ALLOC and FREE steps leave the log, and the capture is kept: its PASS and SIG steps
+ * are logged once. On a still box at 60 Hz with the stable-text wait (150 ms, within 2 s), the log is Small alone's
+ * at the same memory with one CHECK step more, Normal's (passed): the last try's LOAD, RECOGNIZE and NORM steps are
+ * there (before, 20 steps filled the log and NORM was left out). A passed check followed by the next model's
+ * (include/vjo_game_ocr.h VJO_GSTEP_CHECK) is what says the weights were refused. */
+static void weights_refused_retry_keeps_the_last_try_s_steps(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Release weights absent; the weights' own check is not reached"); return; }
+    const uint32_t mib = 1024u * 1024u;
+    static VjoGameOcrResult out[2];
+    for (int retry = 0; retry <= 1; retry++) { /* Small alone, then Normal (its weights refused) and Small */
+        VjoGameOcrRequest r = setup();
+        r.tiers = 1u << (VJO_VOCR_TIER_SMALL - 1u) | (retry ? 1u << (VJO_VOCR_TIER_NORMAL - 1u) : 0u);
+        snprintf(r.model, sizeof(r.model), "%s", retry ? VJO_VOCR_TIER2_NAME : VJO_VOCR_TIER1_NAME);
+        r.flags = 15u << VJO_GAME_OCR_SETTLE_SHIFT | 40u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+        const uint32_t f = (tier_need(&r, 2, 0) + mib - 1u) / mib * mib;
+        line();
+        free_mib = 1;
+        available = (int)(f + 4096u);
+        frame_us = 16667;
+        int rc = vjo_game_ocr_run_request(&r, &out[retry]);
+        TEST_CHECK_(rc == VJO_OK && out[retry].fallback == (unsigned)retry, "%s: rc %d, fallback %u",
+                    retry ? "retry" : "Small alone", rc, (unsigned)out[retry].fallback);
+        TEST_CHECK(!memory_live && !capture_live);
+        TEST_CHECK(!drop_resident());
+    }
+    TEST_CHECK_(count_steps(&out[1], VJO_GSTEP_PASS) == 1 && count_steps(&out[1], VJO_GSTEP_SIG) == 1,
+                "%u PASS and %u SIG steps", count_steps(&out[1], VJO_GSTEP_PASS), count_steps(&out[1], VJO_GSTEP_SIG));
+    TEST_CHECK_(count_steps(&out[1], VJO_GSTEP_LOAD) == 1 && count_steps(&out[1], VJO_GSTEP_RECOGNIZE) == 1 &&
+                    count_steps(&out[1], VJO_GSTEP_NORM) == 1,
+                "%u steps: LOAD %u, RECOGNIZE %u, NORM %u", (unsigned)out[1].n_steps,
+                count_steps(&out[1], VJO_GSTEP_LOAD), count_steps(&out[1], VJO_GSTEP_RECOGNIZE),
+                count_steps(&out[1], VJO_GSTEP_NORM));
+    for (unsigned id = VJO_GSTEP_MEM; id < VJO_GSTEP_COUNT; id++)
+        TEST_CHECK_(count_steps(&out[1], id) == count_steps(&out[0], id) + (id == VJO_GSTEP_CHECK),
+                    "step %u: %u, Small alone %u", id, count_steps(&out[1], id), count_steps(&out[0], id));
     free_mib = 0;
 }
 static const uint32_t tier_reserve[] = {0, VJO_GAME_RESERVE_SMALL, VJO_GAME_RESERVE_NORMAL, VJO_GAME_RESERVE_LARGE};
@@ -2427,6 +2541,57 @@ static void auto_retry_shares_the_wait(void)
                 (unsigned long long)took[1], (unsigned long long)took[0], (long long)(took[1] - took[0]));
     TEST_CHECK_(waited >= 800000u && waited < 800000u + 4u * 4u * 8000u + 1000u,
                 "the job's wait step: %u us (the limit 800,000)", (unsigned)waited);
+}
+
+/* #324's audit F2 on the longest path, and N2 (the free memory checked again for the next model): auto's rows look
+ * like vertical text, the columns cannot be read (no vertical model: ENOENT), the rows' try checks Normal with the
+ * LM, and the game takes more than the LM's bytes meanwhile, so Normal's weights are refused; Small reads with the
+ * LM, after a 150 ms wait. Each try's blocks leave the log with it, so the last try's ALLOC steps, its wait, LOAD,
+ * RECOGNIZE and LM steps are within the 20 steps (before: none of them; the refused try's blocks and the second PASS
+ * and SIG took their places). Small's check is made on the memory as it is then: its result's free memory is the
+ * game's less what it took (the first sample saw all of it). */
+static void weights_refused_retry_after_auto_s_tries(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Release weights absent; the weights' own check is not reached"); return; }
+    VjoGameOcrRequest r = setup();
+    VjoGameOcrResult out;
+    r.tiers = 1u << (VJO_VOCR_TIER_NORMAL - 1u) | 1u << (VJO_VOCR_TIER_SMALL - 1u);
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+    r.flags = 1u << VJO_GAME_OCR_LM_SHIFT | 15u << VJO_GAME_OCR_SETTLE_SHIFT; /* the LM's first tier, 150 ms still */
+    r.speed = VJO_GAME_OCR_VERTICAL_AUTO << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    tall_columns_frame(&r);
+    vertical_absent = 1;
+    missing_open_rc = (int)0x80010002u; /* ENOENT */
+    const VjoVocrLm *lm = vjo_vocr_lm_tier(1);
+    TEST_ASSERT(lm != NULL);
+    const uint32_t need_n = tier_lm_need(&r, 2, lm), need_s = tier_lm_need(&r, 1, lm);
+    const uint32_t take = (uint32_t)PAGE_ROUND(lm->bytes) + 65536u; /* Normal's slack at its weights is the LM's */
+    TEST_ASSERT(need_n - take >= need_s); /* Small and the LM still fit */
+    available = (int)need_n;
+    drop_once = (int)take;
+    drop_at_allocation = 3; /* at the rows' last try's workspace: the rows' first try's is 1, the columns' 2 */
+    int rc = vjo_game_ocr_run_request(&r, &out);
+    TEST_CHECK_(rc == VJO_OK && out.lines >= 1 && out.fallback == 1u && find_steps(&out, 2) == 1 &&
+                    find_steps(&out, 3) == 1 && vertical_opens == 1 && allocations == 4u,
+                "rc %d, %u lines, fallback %u, find steps of kinds 2 and 3: %u, %u; %u vertical opens, %u workspaces", rc,
+                out.lines, (unsigned)out.fallback, find_steps(&out, 2), find_steps(&out, 3), vertical_opens, allocations);
+    TEST_CHECK_(out.free_user == (int32_t)(need_n - take), "Small checked at %d B free (the game's: %u B)",
+                (int)out.free_user, need_n - take);
+    unsigned weights = 0, lm_block = 0;
+    for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+        weights += out.step[i].id == VJO_GSTEP_ALLOC && out.step[i].arg == VJO_GITEM_WEIGHTS;
+        lm_block += out.step[i].id == VJO_GSTEP_ALLOC && out.step[i].arg == VJO_GITEM_LM;
+    }
+    TEST_CHECK_(weights == 1 && lm_block == 1 && count_steps(&out, VJO_GSTEP_SETTLE) == 1 &&
+                    count_steps(&out, VJO_GSTEP_LOAD) == 1 && count_steps(&out, VJO_GSTEP_RECOGNIZE) == 1 &&
+                    count_steps(&out, VJO_GSTEP_LM) == 1 && count_steps(&out, VJO_GSTEP_PASS) == 1 &&
+                    count_steps(&out, VJO_GSTEP_SIG) == 1,
+                "%u steps: ALLOC of the weights %u and the LM %u, SETTLE %u, LOAD %u, RECOGNIZE %u, LM %u, PASS %u, "
+                "SIG %u", (unsigned)out.n_steps, weights, lm_block, count_steps(&out, VJO_GSTEP_SETTLE),
+                count_steps(&out, VJO_GSTEP_LOAD), count_steps(&out, VJO_GSTEP_RECOGNIZE),
+                count_steps(&out, VJO_GSTEP_LM), count_steps(&out, VJO_GSTEP_PASS), count_steps(&out, VJO_GSTEP_SIG));
+    TEST_CHECK(!memory_live && !capture_live && !line_live && weights_live && lm_live);
+    TEST_CHECK(!drop_resident());
 }
 
 /* Whether the Large size's file is here (a request by every tier reads its rows with it first): the rows' result. */
@@ -3101,6 +3266,12 @@ TEST_LIST = {
      tier_ladder_takes_the_largest_size_that_fits},
     {"model tiers: weights refused after the check (free memory in whole MiB): the next smaller model",
      weights_refused_after_the_check_retry_the_next_smaller_model},
+    {"#324's audit: the retry after refused weights shares the job's wait and counts every try's captures",
+     weights_refused_retry_shares_the_wait},
+    {"#324's audit: the retry's step log is the job's that read: one PASS and SIG, no refused try's blocks",
+     weights_refused_retry_keeps_the_last_try_s_steps},
+    {"#324's audit: after auto's tries the retry keeps its own steps, and checks the memory as it is then",
+     weights_refused_retry_after_auto_s_tries},
     {"model tiers: the cascade is the next size up, the reserve the largest held, files by tier",
      tier_cascade_is_the_next_size_up},
     {"model tiers: two sizes with one model open it as the job's own tier", two_sizes_with_one_model_open_as_the_job_s_own_tier},
