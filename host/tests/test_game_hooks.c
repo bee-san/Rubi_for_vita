@@ -1508,8 +1508,12 @@ static void sc3_charset_loads_once(void)
     /* the next jobs read nothing again */
     TEST_ASSERT(run_speed(VJO_HOOK_PICK_AUTO, VJO_GAME_OCR_S_TRUST, &out) == 0);
     TEST_CHECK(sc3_opens == 1 && sc3_sets == 1 && sc3_live);
-    /* the worker's stop gives it back, after the engine forgets it */
-    TEST_CHECK(vjo_game_ocr_worker_stop() == VJO_OK && !sc3_live && sc3_uid < 0 && sc3_sets == 2 && !sc3_set_file);
+    /* #382/#387's audit N6: a stop whose free of the charset fails says so and keeps it recorded; the next frees it */
+    sc3_free_fail = 1;
+    TEST_CHECK(vjo_game_ocr_worker_stop() == VJO_E_OCR_UNAVAILABLE && sc3_live && sc3_uid == 12 && !sc3_set_file);
+    TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_SC3) == 8192u);
+    /* the worker's stop gives it back, after the engine forgets it (each stop: so 3 sets in all) */
+    TEST_CHECK(vjo_game_ocr_worker_stop() == VJO_OK && !sc3_live && sc3_uid < 0 && sc3_sets == 3 && !sc3_set_file);
     TEST_CHECK(vjo_ledger_current(&g_game_ledger, GL_SC3) == 0);
     /* refused by the engine (not the pinned file), missing (an error), short: the block goes back, no retry */
     for (unsigned k = 0; k < 3; k++) {

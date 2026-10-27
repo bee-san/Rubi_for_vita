@@ -372,8 +372,24 @@ int vjoOcrModelRead(uint32_t seq, uint32_t offset, uint32_t n, void *out)
 int vjoOcrShotWrite(uint32_t seq, uint32_t off, uint32_t bytes, const void *src)
 { (void)seq; (void)off; (void)bytes; (void)src; TEST_CHECK(0); return -1; }
 int vjoOcrShotSave(uint32_t seq, uint32_t bytes) { (void)seq; (void)bytes; TEST_CHECK(0); return -1; }
+/* #382's audit N3: at the close_at-th close of a model file (1: the first), the job is cancelled (close_cancels) or the
+ * screen shows columns (close_columns: tall_columns_frame's pixels, the frame's size unchanged); 0: never */
+static unsigned model_closes, close_at; static int close_cancels, close_columns;
+static void tall_columns_pixels(void);
 int vjoOcrModelClose(uint32_t seq)
-{ TEST_CHECK(seq == 12); if (close_busy) return VJO_ERR_BUSY; if (!model) return 0; if (close_failure) return -789; int rc = fclose(model); model = NULL; return rc; }
+{
+    TEST_CHECK(seq == 12);
+    if (close_busy) return VJO_ERR_BUSY;
+    if (!model) return 0;
+    if (close_failure) return -789;
+    int rc = fclose(model);
+    model = NULL;
+    if (close_at && ++model_closes == close_at) {
+        if (close_cancels) cancel_job = 1;
+        if (close_columns) tall_columns_pixels();
+    }
+    return rc;
+}
 
 static VjoGameOcrRequest setup(void)
 {
@@ -393,6 +409,7 @@ static VjoGameOcrRequest setup(void)
     refuse_line = vertical_absent = 0; line_refused = line_asks = workspace_beside_line = 0;
     memset(tier_opens, 0, sizeof(tier_opens)); vertical_opens = 0; tiered = 0; job_reserve = GAME_RESERVE; drop_on_workspace = 0;
     drop_once = 0; drop_at_allocation = 0;
+    model_closes = close_at = 0; close_cancels = close_columns = 0;
     columns_bad = 0; missing_open_rc = -123; grow_on_vertical_open = 0; /* API 47, auto */
     psp_title = 0;
     weight_allocations = weight_frees = 0; weights_live = 0; live_bytes = 0;
@@ -2381,9 +2398,8 @@ static void on_prefers_columns(void)
 /* API 47: a frame of three columns of seven glyph-like cells (light on dark), 200 x 232, the region the whole
  * frame (the fake capture's rows are 200 wide): taller than wide; the row finder finds a row for each cell
  * across the columns. */
-static void tall_columns_frame(VjoGameOcrRequest *r)
+static void tall_columns_pixels(void)
 {
-    frame_h = r->fb_height = r->height = 232;
     memset(pixels, 0, sizeof(pixels));
     for (unsigned c = 0; c < 3; c++) {
         unsigned x0 = 200u - 30u - (c + 1u) * 32u;
@@ -2398,6 +2414,11 @@ static void tall_columns_frame(VjoGameOcrRequest *r)
                     memset(pixels + ((size_t)(cy + y) * 200u + x0 + (s * 5u + v * 9u) % 22u) * 4u, 235, 8);
         }
     }
+}
+static void tall_columns_frame(VjoGameOcrRequest *r)
+{
+    frame_h = r->fb_height = r->height = 232;
+    tall_columns_pixels();
 }
 
 static unsigned find_steps(const VjoGameOcrResult *out, unsigned kind)
@@ -2602,7 +2623,115 @@ static void weights_refused_retry_after_auto_s_tries(void)
                 "SIG %u", (unsigned)out.n_steps, weights, lm_block, count_steps(&out, VJO_GSTEP_SETTLE),
                 count_steps(&out, VJO_GSTEP_LOAD), count_steps(&out, VJO_GSTEP_RECOGNIZE),
                 count_steps(&out, VJO_GSTEP_LM), count_steps(&out, VJO_GSTEP_PASS), count_steps(&out, VJO_GSTEP_SIG));
+    /* #382's audit N2: this path needs 21 steps (MEM, 4 CHECK, PASS, SIG, 3 FIND, 4 ALLOC, SETTLE, LOAD, RECOGNIZE,
+     * LM, NORM and the 2 FREE steps of the job's blocks) for the log's 20: the last one in, NORM, is the one left out
+     * (step_add keeps the FREE steps' slots), as the CHANGELOG says. */
+    TEST_CHECK_(out.n_steps == VJO_GAME_OCR_STEPS && count_steps(&out, VJO_GSTEP_FREE) == 2,
+                "%u steps, %u FREE (NORM %u)", (unsigned)out.n_steps, count_steps(&out, VJO_GSTEP_FREE),
+                count_steps(&out, VJO_GSTEP_NORM));
     TEST_CHECK(!memory_live && !capture_live && !line_live && weights_live && lm_live);
+    TEST_CHECK(!drop_resident());
+}
+
+/* #382's audit N1: a block the refused try gave back that an earlier job had left resident keeps its FREE step. A
+ * Small job leaves its weights resident; the next job of Normal or Small passes Normal's check by counting them as
+ * free, releases them, and is refused Normal's weights (4 KiB taken at its workspace); Small reads its weights again.
+ * The released weights are gone from the game for good, so their FREE step stays in the log (steps_drop_blocks drops
+ * only the steps of the blocks the try took itself; before, it dropped this one too). */
+static void weights_refused_retry_keeps_a_resident_block_s_free_step(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Release weights absent; the weights' own check is not reached"); return; }
+    VjoGameOcrRequest r = setup();
+    VjoGameOcrResult out;
+    r.tiers = 1u << (VJO_VOCR_TIER_SMALL - 1u);
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER1_NAME);
+    line();
+    TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == VJO_OK && weights_live && weight_allocations == 1u);
+    const uint32_t small = weights_block;
+    r.tiers = 1u << (VJO_VOCR_TIER_NORMAL - 1u) | 1u << (VJO_VOCR_TIER_SMALL - 1u);
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+    available = (int)tier_need(&r, 2, 0); /* Normal's need, Small's resident weights counted as free */
+    allocations = 0;
+    drop_once = 4096;
+    drop_at_allocation = 1;
+    int rc = vjo_game_ocr_run_request(&r, &out);
+    unsigned freed = 0;
+    for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        freed += out.step[i].id == VJO_GSTEP_FREE && out.step[i].arg == VJO_GITEM_WEIGHTS && !out.step[i].rc &&
+                 out.step[i].bytes == small;
+    TEST_CHECK_(rc == VJO_OK && out.fallback == 1u && weight_allocations == 2u && weight_frees == 1u &&
+                    out.weights == VJO_GAME_OCR_WEIGHTS_READ,
+                "rc %d, fallback %u, %u weight blocks taken, %u freed", rc, (unsigned)out.fallback, weight_allocations,
+                weight_frees);
+    TEST_CHECK_(freed == 1u, "the given-back weights' FREE steps in the log: %u (of %u steps)", freed,
+                (unsigned)out.n_steps);
+    TEST_CHECK(!memory_live && !capture_live);
+    TEST_CHECK(!drop_resident());
+}
+
+/* #382's audit N3: a job cancelled as its refused weights' file closes ends cancelled: it checks and takes nothing
+ * for the next model (the retry's !cancelled), and Small's file is never opened. */
+static void weights_refused_then_cancelled_retries_nothing(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Release weights absent; the weights' own check is not reached"); return; }
+    VjoGameOcrRequest r = setup();
+    VjoGameOcrResult out;
+    const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
+    r.tiers = 1u << (VJO_VOCR_TIER_NORMAL - 1u) | 1u << (VJO_VOCR_TIER_SMALL - 1u);
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+    line();
+    available = (int)tier_need(&r, 2, 0);
+    drop_once = 4096;
+    drop_at_allocation = 1;
+    close_at = 1;
+    close_cancels = 1;
+    int rc = vjo_game_ocr_run_request(&r, &out);
+    const unsigned checks = check_steps(&out, s);
+    TEST_CHECK_(rc == VJO_E_CANCELLED && checks == 1u && allocations == 1u && !tier_opens[1],
+                "rc %d, %u checks, %u workspaces, Small opened %u times", rc, checks, allocations, tier_opens[1]);
+    TEST_CHECK(!memory_live && !capture_live && !weights_live);
+}
+
+/* #382's audit N3, the reverse order of the tries: the rows' try's Normal weights are refused, and as their file
+ * closes the screen turns to columns; Small's try (still a checked one: the retry keeps vertical and check) finds
+ * that its rows look like vertical text, the columns cannot be read (no vertical model: ENOENT), and the rows' last
+ * try reads them unchecked. The job is one: one PASS and SIG, every rows call a capture, at most 20 steps. */
+static void weights_refused_then_auto_s_tries(void)
+{
+    if (!VJO_VOCR_MODEL_DIR[0]) { TEST_MSG("Release weights absent; the weights' own check is not reached"); return; }
+    VjoGameOcrRequest r = setup();
+    VjoGameOcrResult out;
+    const VjoGameOcrStep *s[VJO_GAME_OCR_STEPS];
+    r.tiers = 1u << (VJO_VOCR_TIER_NORMAL - 1u) | 1u << (VJO_VOCR_TIER_SMALL - 1u);
+    snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
+    r.speed = VJO_GAME_OCR_VERTICAL_AUTO << VJO_GAME_OCR_S_VERTICAL_SHIFT;
+    tall_columns_frame(&r);
+    memset(pixels, 0, sizeof(pixels)); /* first, two lines of horizontal text in the tall region */
+    for (unsigned y = 10; y < 30; y++)
+        for (unsigned x = 10; x < 190; x += 6) memset(pixels + ((size_t)y * 200u + x) * 4u, 235, 8);
+    for (unsigned y = 36; y < 54; y++)
+        for (unsigned x = 10; x < 120; x += 6) memset(pixels + ((size_t)y * 200u + x) * 4u, 235, 8);
+    vertical_absent = 1;
+    missing_open_rc = (int)0x80010002u; /* ENOENT */
+    TEST_ASSERT(tier_need(&r, 2, 0) - 4096u >= tier_need(&r, 1, 0));
+    available = (int)tier_need(&r, 2, 0);
+    drop_once = 4096;
+    drop_at_allocation = 1;
+    close_at = 1;
+    close_columns = 1;
+    int rc = vjo_game_ocr_run_request(&r, &out);
+    const unsigned checks = check_steps(&out, s);
+    TEST_CHECK_(rc == VJO_OK && out.fallback == 1u && find_steps(&out, 2) == 1 && find_steps(&out, 3) == 1 &&
+                    vertical_opens == 1 && columns_bad,
+                "rc %d, fallback %u, find steps of kinds 2 and 3: %u, %u; %u vertical opens, columns_bad %d", rc,
+                (unsigned)out.fallback, find_steps(&out, 2), find_steps(&out, 3), vertical_opens, columns_bad);
+    TEST_CHECK_(checks == 5u && tier_opens[2] == 1 && tier_opens[1] == 1, "%u checks (N, S | V | N, S), opens N %u S %u",
+                checks, tier_opens[2], tier_opens[1]);
+    TEST_CHECK_(count_steps(&out, VJO_GSTEP_PASS) == 1 && count_steps(&out, VJO_GSTEP_SIG) == 1 &&
+                    out.n_steps <= VJO_GAME_OCR_STEPS && out.captures == rows_calls,
+                "PASS %u, SIG %u, %u steps, %u captures of %u rows calls", count_steps(&out, VJO_GSTEP_PASS),
+                count_steps(&out, VJO_GSTEP_SIG), (unsigned)out.n_steps, (unsigned)out.captures, rows_calls);
+    TEST_CHECK(!memory_live && !capture_live && !line_live);
     TEST_CHECK(!drop_resident());
 }
 
@@ -3299,6 +3428,11 @@ TEST_LIST = {
      weights_refused_retry_keeps_the_last_try_s_steps},
     {"#324's audit: after auto's tries the retry keeps its own steps, and checks the memory as it is then",
      weights_refused_retry_after_auto_s_tries},
+    {"#382's audit: a resident block the refused try gave back keeps its FREE step",
+     weights_refused_retry_keeps_a_resident_block_s_free_step},
+    {"#382's audit: a job cancelled as its refused weights close retries nothing", weights_refused_then_cancelled_retries_nothing},
+    {"#382's audit: refused weights, then auto's tries on the smaller model: one job, its check kept",
+     weights_refused_then_auto_s_tries},
     {"model tiers: the cascade is the next size up, the reserve the largest held, files by tier",
      tier_cascade_is_the_next_size_up},
     {"model tiers: two sizes with one model open it as the job's own tier", two_sizes_with_one_model_open_as_the_job_s_own_tier},

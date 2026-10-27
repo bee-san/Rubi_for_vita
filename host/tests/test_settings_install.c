@@ -2338,7 +2338,7 @@ static void this_build_damaged_is_a_repair(void)
         char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
         int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
         dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
-        TEST_CHECK(what == 0 ? has_line(plan, n, "Replace 1 of the plugins")
+        TEST_CHECK(what == 0 ? has_line(plan, n, "Replace 1 of the plugin files (the 3 plugins and their RCO)")
                              : has_line(plan, n, "vjo_app.txt (the plugins' record of their app) is written again: it is missing or names another build of this app."));
         TEST_CHECK(!has_line(plan, n, "does not undo the update"));
         vjo_install_page_start();
@@ -2749,6 +2749,21 @@ static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
     dump_lines((const char (*)[VJO_INSTALL_LINE])plan, np);
     TEST_CHECK(has_line((const char (*)[VJO_INSTALL_LINE])plan, np,
                         "1. Copy 2 data files to ux0:data/VitaJPOverlay (the plugins already match)."));
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && installed_files(1));
+    TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+    /* #387's audit N7: the plugins another build's, the data files the package's: the plugins alone, their count the
+     * plugin files' (the 3 plugins and the RCO) */
+    for (int i = VJO_PAYLOAD_KERNEL_INDEX; i < VJO_PAYLOAD_COUNT; i++) {
+        if (vjo_payload_kind(i) != VJO_PAYLOAD_COPY) continue;
+        size_t n = payload_bytes(i, 0, bytes, sizeof(bytes));
+        put(vjo_payload_dest(i), bytes, n);
+    }
+    s = scan_now();
+    np = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])plan, np);
+    TEST_CHECK(has_line((const char (*)[VJO_INSTALL_LINE])plan, np,
+                        "1. Replace 4 of the plugin files (the 3 plugins and their RCO) in ur0:tai and ur0:data/VitaJPOverlay "
+                        "(the data files already match the package's sizes; every file is checked by SHA-256 first)."));
     TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && installed_files(1));
     TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
     /* an uninstall keeps the files, the charsets with them */

@@ -400,6 +400,11 @@
  * of the debug worker's last text page left, its first form took 96 B, a page past this budget: the decoder's flag as
  * a parameter cost 48 B there, as an encoding the two entries name with a select in its 0xA0 branch 14 B (+16 B in
  * all). The kernel and Shell SELF files are byte-identical to main's. No block, thread or allocation. */
+/* #382's and #387's audit (the step log keeps the FREE step of a block a retried try gave back for good:
+ * game_ocr/main.c steps_drop_blocks): worker text 179,712 -> 179,760 B debug (464 B of room left) and 170,764 ->
+ * 170,812 B normal (1,220 B), data/bss unchanged, the same pages; the kernel's and the Shell's rows unchanged
+ * [measured: the build log's module rows, both builds, main b88772c and this change, tools/fast_gate.sh's vitasdk
+ * image]. No block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 217088u
 #else
