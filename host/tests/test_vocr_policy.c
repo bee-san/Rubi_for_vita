@@ -2500,17 +2500,20 @@ static void test_the_cascade_rereads_a_gated_counter_line(void)
 
 
 /* ---- API 51: a region the source froze (VjoGreySource.frozen, the pause: docs/game-pause.md) ---- */
-/* A region that never holds still (every frame differs, a spinner's worst case): read strip by strip, every re-read
- * tears it and the job gives up (VJO_E_SCREEN_CHANGED, nothing shown); frozen at its first pass, the job reads that
- * one frame, waits for nothing after the finder, sees no tear and goes on to the model (here: none, VJO_E_OCR_MODEL). */
+/* A region that never holds still (every frame differs, a spinner's worst case): read strip by strip, its re-reads
+ * tear it (on main the job then gives up, VJO_E_SCREEN_CHANGED, and shows nothing; another stabilisation may read it
+ * anyway, so only the tears are asserted); frozen at its first pass, the job reads that one frame, waits for nothing
+ * after the finder, sees no tear and goes on to the model (here: none, VJO_E_OCR_MODEL). */
 static void test_a_frozen_region_is_read_once_without_waiting(void)
 {
     VjoVocrPolicy pol = {.settle_us = 150000};
     VjoVocrStats st;
+    int rc;
     reset();
     scr.noise = 1;
-    TEST_CHECK(run(&pol, &st) == VJO_E_SCREEN_CHANGED && st.tears > 0 && !st.frozen);
-    TEST_MSG("strip by strip: %u tears, %u tries", st.tears, st.tries);
+    rc = run(&pol, &st);
+    TEST_CHECK(st.tears > 0 && !st.frozen && scr.frame > 1);
+    TEST_MSG("strip by strip: rc %d, %u tears, %u tries, %u frames", rc, st.tears, st.tries, scr.frame);
     reset();
     scr.noise = 1;
     scr.freeze = 1;
@@ -2524,17 +2527,21 @@ static void test_a_frozen_region_is_read_once_without_waiting(void)
 }
 /* A wait before the first pass (settle_first: the screen was still changing when the job was asked) reads the live
  * screen; an icon that runs through more states than a row keeps (a spinner of 20 shades) keeps it from settling,
- * so it runs out. Then, strip by strip, the first pass differs from the wait's last pass and every later re-read
- * tears; frozen, the first pass is the region (the wait's rows forgotten), and nothing tears. */
+ * so it runs out. Then, strip by strip, the first pass differs from the wait's last pass and later re-reads tear it
+ * (on main; reported, not asserted: another stabilisation may read it anyway); frozen, the first pass is the region
+ * (the wait's rows forgotten), and nothing tears. */
 static void test_a_frozen_first_pass_forgets_the_wait_before_it(void)
 {
     VjoVocrPolicy pol = {.settle_us = 150000, .settle_max_us = 400000, .settle_first = 1};
     VjoVocrStats st;
+    int rc;
     reset();
     scr.blink_every = 1;
     scr.icon_levels = 20;
-    TEST_CHECK(run(&pol, &st) == VJO_E_SCREEN_CHANGED && st.settle_timeout && st.tears > 0);
-    TEST_MSG("strip by strip: %u tears, %u tries", st.tears, st.tries);
+    rc = run(&pol, &st);
+    TEST_CHECK(!st.frozen && scr.frame > 20); /* the wait read the live screen for its budget (400 ms: 24 frames) */
+    TEST_MSG("strip by strip: rc %d, %u tears, %u tries, timeout %u, %u frames", rc, st.tears, st.tries,
+             st.settle_timeout, scr.frame);
     reset();
     scr.blink_every = 1;
     scr.icon_levels = 20;

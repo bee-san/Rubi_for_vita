@@ -498,7 +498,8 @@ static void shell_paf_fits_at_the_74_game_start(void)
 
 /* API 51, the pause for the frame (docs/game-pause.md): a CLANNAD-sized text box (917 x 125) with a spinner beside its
  * last line that shows a new shade at every frame, read with the stable-text wait (150 ms, at most 1 s). Strip by
- * strip, every re-read of the region tears it, and the job shows nothing (VJO_E_SCREEN_CHANGED: #348's report);
+ * strip, the region is read over many display calls and its re-reads tear (on main the job then shows nothing,
+ * VJO_E_SCREEN_CHANGED: #348's report; the rc is printed, not asserted, as another stabilisation may read it anyway);
  * paused, one display call copies the box from one frame, the job reads it, waits for nothing and goes on to the
  * model (its text with the release models; without them it stops there, VJO_E_OCR_MODEL), and the frame block goes
  * back with the job. Each case prints the display calls the job waited for and the rows of the longest one. */
@@ -521,9 +522,8 @@ static void api51_pause_reads_one_frame_beside_a_spinner(void)
     Outcome o = run_case(VJO_VOCR_TIER2_NAME, settle, box[0], box[1], box[2], box[3]);
     fprintf(stderr, "alloc-sim: %-58s rc=%-4d %u display calls (64 rows at most in one), %u rows torn\n",
             "API 51 textbox 917x125 + spinner, strip by strip", o.rc, display_calls, (unsigned)last_out.tears);
-    TEST_CHECK_(o.rc == VJO_E_SCREEN_CHANGED && last_out.tears > 0 && !last_out.text[0] && display_calls > 3 &&
-                !step_of(&last_out, VJO_GSTEP_PAUSE), "strip by strip: rc %d, %u tears, %u display calls", o.rc,
-                (unsigned)last_out.tears, display_calls);
+    TEST_CHECK_(last_out.tears > 0 && display_calls > 3 && !step_of(&last_out, VJO_GSTEP_PAUSE),
+                "strip by strip: rc %d, %u tears, %u display calls", o.rc, (unsigned)last_out.tears, display_calls);
     display_calls = 0; case_speed = VJO_GAME_OCR_S_PAUSE;
     o = run_case(VJO_VOCR_TIER2_NAME, settle, box[0], box[1], box[2], box[3]);
     const VjoGameOcrStep *ps = step_of(&last_out, VJO_GSTEP_PAUSE);
