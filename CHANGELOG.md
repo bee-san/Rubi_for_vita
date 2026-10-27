@@ -103,6 +103,15 @@ been reported.
   read `param.sfo` only for a game with a Luna site or an entry that names its version, and logged `APP_VER 0000`
   for the others, the games a hook request is mostly for. The hooks installed are the same in both builds: `APP_VER`
   decides nothing for those games, and the normal build reads it as before (host-tested; not run on a console).
+- **A cold dictionary lookup makes about 2 file reads fewer** (#360, change 3), with the same entries shown. With
+  both bundled dictionaries, a cursor lookup that the lookahead has not located made 8.12 reads and now makes 5.98
+  (host, all 64,579 taps of rubi-dict-check's corpus, each tap's result byte-identical; est. 37.2 → 28.6 ms median on
+  the console at the test.4 fit); the lookahead's own work for a word drops from 7.13 reads to 4.98. The open overlay's
+  dictionary session now keeps every dictionary's key-filter directory (226 + 10 blocks in the same 1,024 B that
+  held one), so the two files no longer re-read their page 0 at each lookup (1.88 reads); a one-character word (は,
+  が, を) is checked against the filter block a longer span has just loaded, where the names dictionary answers
+  "absent" without reading an index page (0.27 reads); and the Shell reads a file with one `sceIoPread` instead of
+  a seek and a read (its saving unmeasured). Not run on a console.
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
   pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
   tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a

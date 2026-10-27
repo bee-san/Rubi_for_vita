@@ -1,5 +1,6 @@
 #include "local_dict.h"
 
+#include <stddef.h>
 #include <string.h>
 #include "port.h"
 #include "textjoin.h"
@@ -38,7 +39,9 @@
 #define FILTER_DESCRIPTOR 128u
 #define FILTER_DIRECTORY 256u
 #define FILTER_MAX_BLOCKS ((PAGE_SIZE - FILTER_DIRECTORY) / 4u)
-#define DIRECTORY_CACHE_BLOCKS 256u /* shipped dictionary: 226; larger files use page 0 */
+/* The session's pool of filter directories, 4 bytes a block: the shipped
+ * dictionaries' 226 + 10 fit; a directory that does not is read from page 0. */
+#define DIRECTORY_POOL_BLOCKS 256u
 #define FILTER_BITS (PAGE_SIZE * 8u)
 #define FILTER_HASHES 7u
 #define NO_BLOCK UINT32_MAX
@@ -113,6 +116,10 @@ typedef struct {
     char freq_title[FREQ_TITLE_SIZE];  /* v3: the frequency list's name; "" without one */
     char title[TITLE_SIZE];            /* v2/v3: the dictionary's own name; "" without one */
     uint8_t hints;                     /* v3 with posting hints: most postings ranked without their head */
+    /* Where the session holds the filter directory: its copy's byte offset in
+     * the session's pool, from the session's start (0: not in the pool, read
+     * from page 0). In the padding after hints (PoolKeepsTheSize below). */
+    uint16_t pool;
     /* The key filter (filter_blocks 0: none): where its blocks start, and the one
      * block this lookup's candidates use (NO_BLOCK: none yet), covering prefixes
      * [lo, hi). */
@@ -127,13 +134,19 @@ struct VjoLocalSession {
     char dir[sizeof(((VjoConfig *)0)->local_dictionary_dir)];
     char names[sizeof(((VjoConfig *)0)->local_dictionaries)];
     int count;
-    uint8_t directory[DIRECTORY_CACHE_BLOCKS * 4u];
-    int directory_dict;
+    /* The configured files' filter directories, in local_dictionaries order,
+     * copied from page 0 as each file opens: every one that fits in what the
+     * earlier ones left (Dictionary.pool). */
+    uint8_t directory[DIRECTORY_POOL_BLOCKS * 4u];
     VjoLocalPages located[16];
     uint32_t text_generation;
     int located_count, located_next, limit;
 };
 typedef char SessionFits[(sizeof(VjoLocalSession) <= 7u * 1024u) ? 1 : -1];
+/* Dictionary.pool takes the padding after hints: the filter's offset is where it would be
+ * without it; and it can hold any offset in the session. */
+typedef char PoolKeepsTheSize[(offsetof(Dictionary, filter) == ((offsetof(Dictionary, hints) + 8u) & ~(size_t)7u) &&
+    sizeof(VjoLocalSession) <= UINT16_MAX) ? 1 : -1];
 
 size_t vjo_local_session_size(void) { return sizeof(VjoLocalSession); }
 
@@ -265,8 +278,10 @@ static int range_ok(Dictionary *d, uint64_t off, size_t n)
     return off <= d->file.size && n <= d->file.size - off;
 }
 
-/* The page at base (a PAGE_SIZE multiple below the file size) in the shared LRU cache. */
-static int cached_page(Workspace *w, Dictionary *d, uint64_t base, Page **out)
+/* The page at base (a PAGE_SIZE multiple below the file size) in the shared LRU
+ * cache. held: only a page the cache holds already (a one-character candidate's
+ * filter block, filter_check); 1 when it holds none, and nothing is read. */
+static int cached_page(Workspace *w, Dictionary *d, uint64_t base, Page **out, int held)
 {
     Page *page = NULL, *victim = &w->pages[0];
     for (int i = 0; i < CACHE_PAGES; i++) {
@@ -276,6 +291,7 @@ static int cached_page(Workspace *w, Dictionary *d, uint64_t base, Page **out)
     }
     if (!page) {
         uint64_t remaining = d->file.size - base;
+        if (held) return 1;
         page = victim;
         page->dict = NULL;
         page->off = base;
@@ -297,7 +313,7 @@ static int cached_read(Workspace *w, Dictionary *d, uint64_t off, void *dst, siz
         uint64_t base = off & ~(uint64_t)(PAGE_SIZE - 1);
         size_t pos = (size_t)(off - base), take;
         Page *page;
-        int rc = cached_page(w, d, base, &page);
+        int rc = cached_page(w, d, base, &page, 0);
         if (rc) return rc;
         take = page->len - pos;
         if (take > n) take = n;
@@ -407,25 +423,20 @@ static uint32_t filter_prefix(const char *key, size_t len)
     return (c0 < 0xffffu ? c0 : 0xffffu) << 16 | (c1 < 0xffffu ? c1 : 0xffffu);
 }
 
-/* The filter block of prefix: the last directory entry at or below it. */
+/* The filter block of prefix: the last directory entry at or below it. The
+ * directory is the session pool's copy (no read), or page 0's through the page
+ * cache: without a session, or a file whose directory did not fit the pool. */
 static int filter_resolve(Workspace *w, Dictionary *d, uint32_t prefix)
 {
-    Page *page0;
-    VjoLocalSession *s = w->session;
     const uint8_t *directory;
-    int di = (int)(d - w->dicts) + 1;
     uint32_t lo = 0, hi = d->filter_blocks;
-    int rc;
-    READ_KIND(VJO_READ_HEADER);
-    if (s && s->directory_dict == di) directory = s->directory;
+    if (d->pool) directory = (const uint8_t *)w->session + d->pool;
     else {
-        if ((rc = cached_page(w, d, 0, &page0))) return rc;
+        Page *page0;
+        int rc;
+        READ_KIND(VJO_READ_HEADER);
+        if ((rc = cached_page(w, d, 0, &page0, 0))) return rc;
         directory = page0->bytes + FILTER_DIRECTORY;
-        if (s && d->filter_blocks <= DIRECTORY_CACHE_BLOCKS) {
-            memcpy(s->directory, directory, d->filter_blocks * 4u);
-            s->directory_dict = di;
-            directory = s->directory;
-        }
     }
     while (hi - lo > 1) {
         uint32_t mid = lo + (hi - lo) / 2;
@@ -443,8 +454,10 @@ static int filter_resolve(Workspace *w, Dictionary *d, uint32_t prefix)
  * the file's last pages and at most 960 (the directory then ends inside page 0).
  * The directory itself is not checked: a block read through it stays inside the
  * filter, and like any corrupt part of a file a corrupt filter can only hide
- * entries. */
-static int open_header(Workspace *w, Dictionary *d)
+ * entries. With a session, the directory goes into its pool now, while page 0
+ * is at hand, if it fits in the *pooled blocks the earlier files left: then no
+ * lookup of the session reads page 0 again. */
+static int open_header(Workspace *w, Dictionary *d, VjoLocalSession *s, uint32_t *pooled)
 {
     const uint8_t *f;
     Page *page0;
@@ -457,7 +470,7 @@ static int open_header(Workspace *w, Dictionary *d)
     if (d->file.size < HEADER_SIZE) return VJO_E_LOCAL_FORMAT;
     if (!d->file.read || !d->file.close) return VJO_E_LOCAL_IO;
     READ_KIND(VJO_READ_HEADER);
-    if ((rc = cached_page(w, d, 0, &page0)) || (rc = parse_header(d, page0->bytes, page0->len))) return rc;
+    if ((rc = cached_page(w, d, 0, &page0, 0)) || (rc = parse_header(d, page0->bytes, page0->len))) return rc;
     if (d->version == 3 && !memcmp(page0->bytes + HINTS_DESCRIPTOR, "VJPH", 4)) {
         if (u32(page0->bytes + HINTS_DESCRIPTOR + 4) != 1) return VJO_E_LOCAL_FORMAT;
         d->hints = 1;
@@ -471,6 +484,11 @@ static int open_header(Workspace *w, Dictionary *d)
         d->file.size - off != (uint64_t)blocks * PAGE_SIZE) return VJO_E_LOCAL_FORMAT;
     d->filter = off;
     d->filter_blocks = blocks;
+    if (s && *pooled + blocks <= DIRECTORY_POOL_BLOCKS) {
+        d->pool = (uint16_t)(offsetof(VjoLocalSession, directory) + *pooled * 4u);
+        memcpy((uint8_t *)s + d->pool, page0->bytes + FILTER_DIRECTORY, blocks * 4u);
+        *pooled += blocks;
+    }
     return VJO_OK;
 }
 
@@ -478,21 +496,28 @@ static int open_header(Workspace *w, Dictionary *d)
  * all set in its block (no index read). One block serves a lookup: the first
  * candidate with two characters or more picks it (at the cursor, the longest
  * span: the cursor's two characters, which nearly every candidate keeps).
- * A one-character candidate, nearly always a key, or one with another block's
- * prefix (an inflection such as した -> する) searches the index as before. */
+ * A one-character candidate (nearly always a key in a dictionary of words, nearly
+ * never in one of names) never picks or reads a block: it is checked only when
+ * its prefix is in the picked block's range and the page cache still holds that
+ * block, which costs no read. Any other one, and one with another block's
+ * prefix (an inflection such as した -> する), searches the index as before. */
 static int filter_check(Workspace *w, Dictionary *d, const Candidate *c, uint64_t hash, int *absent)
 {
     uint32_t prefix, h1 = (uint32_t)hash, h2 = (uint32_t)(hash >> 32) | 1u;
     Page *block;
-    int rc;
+    int rc, one;
     *absent = 0;
     if (!d->filter_blocks) return VJO_OK;
     prefix = filter_prefix(c->key, c->len);
-    if (!(prefix & 0xffffu)) return VJO_OK; /* one character: no key has a second code point 0 */
-    if (d->block == NO_BLOCK && (rc = filter_resolve(w, d, prefix))) return rc;
+    one = !(prefix & 0xffffu); /* one character: no key has a second code point 0 */
+    if (d->block == NO_BLOCK) {
+        if (one) return VJO_OK;
+        if ((rc = filter_resolve(w, d, prefix))) return rc;
+    }
     if (prefix < d->lo || prefix >= d->hi) return VJO_OK; /* the last block's hi: UINT32_MAX */
     READ_KIND(VJO_READ_FILTER);
-    if ((rc = cached_page(w, d, d->filter + (uint64_t)d->block * PAGE_SIZE, &block))) return rc;
+    if ((rc = cached_page(w, d, d->filter + (uint64_t)d->block * PAGE_SIZE, &block, one)))
+        return rc < 0 ? rc : VJO_OK; /* 1: a one-character candidate's block is not held */
     for (uint32_t k = 0; k < FILTER_HASHES; k++) {
         uint32_t bit = (h1 + k * h2) & (FILTER_BITS - 1u);
         if (!(block->bytes[bit >> 3] & (1u << (bit & 7u)))) {
@@ -522,6 +547,7 @@ static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig
     VjoLocalSession *s = p->local_session;
     const char *names = cfg->local_dictionaries;
     char name[64];
+    uint32_t pooled = 0;
     if (session_matches(p, cfg)) {
         w->n_dicts = s->count;
         memcpy(w->dicts, s->dicts, (size_t)s->count * sizeof(Dictionary));
@@ -537,7 +563,7 @@ static int open_dictionaries(Workspace *w, const VjoPlatform *p, const VjoConfig
         int rc = open_file(p, cfg, name, d, err);
         if (rc) return rc;
         w->n_dicts++; /* close even if header validation fails */
-        if ((rc = open_header(w, d))) return rc;
+        if ((rc = open_header(w, d, s, &pooled))) return rc;
     }
     if (s) {
         memcpy(s->dicts, w->dicts, (size_t)w->n_dicts * sizeof(Dictionary));

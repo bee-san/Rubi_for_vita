@@ -291,10 +291,18 @@ without returning a shortened candidate set. The allocation stays at 64 KiB.
 The [follow-up benchmark](../reports/dictionary-cache-experiments.md) records the
 read savings and the smaller scratch high-water mark.
 The Shell reuses open files and parsed headers between selections. The session also
-keeps one filter directory (up to 256 blocks; larger directories use the page cache)
-and 16 word-location records, including misses. Together these occupy 6,784 bytes
+keeps the configured files' filter directories in one 1,024-byte pool, in
+`local_dictionaries` order, each copied from page 0 as the file opens: every one that
+fits in what the earlier ones left (256 blocks in all; the bundled files' 226 + 10
+fit). A lookup then reads no page 0, whichever file it searches; a file whose
+directory does not fit reads its page 0 through the page cache at each lookup, as
+every file did before (when the session kept one directory, the two bundled files
+evicted each other's: 1.88 page-0 reads a lookup). The session keeps 16
+word-location records too, including misses. Together these occupy 6,784 bytes
 inside the existing 64 KiB allocation [measured Vita build;
-[lookup report](../reports/dictionary-lookahead.md)]. Definitions and the four page
+[lookup report](../reports/dictionary-lookahead.md); the pool took the single
+directory's bytes and its bookkeeping the padding of each file's record, so the
+size did not change]. Definitions and the four page
 buffers are not retained in this cache. Auto keeps the session with its recognized
 text, including while preparing words before the overlay opens. Closing the overlay
 ends it after any in-flight lookup. Freeing results, a new full OCR job, a changed
@@ -321,7 +329,7 @@ zero leaves locator caching disabled.
 | Other dictionaries' page locators (Dictionaries shown 2–8) | 208 bytes in the result arena; none for 1 |
 | Lookup scratch, including page caches and deinflection candidates | At most 48 KiB; compile-time checked |
 | Local worker result arena | One 64 KiB arena; none for OCR-only jobs |
-| Session, filter directory and word locators | 6,784 bytes inside that 64 KiB allocation on Vita [measured]; at most 7 KiB [compile-time bound] |
+| Session, filter directories and word locators | 6,784 bytes inside that 64 KiB allocation on Vita [measured]; at most 7 KiB [compile-time bound] |
 | Network worker result arenas | none since Google Lens and the Hachidori relay were removed (they were two 256 KiB arenas, plus a connection pool) |
 | Persistent recognized text / UI character copy | 4 KiB each |
 | Enabled dictionary files | 8 |
@@ -715,12 +723,18 @@ read it as before.
   character's whole range in one block when the range fits one.
 
 A lookup uses one block per file: the one for its cursor's first two
-characters, read through the shared page cache when the first candidate needs
-it. A candidate with two or more characters whose prefix is in that block's
-range, and whose bits are not all set, is not a key, so its index page is not
-read. Every other candidate searches the index as before: a one-character
-candidate, or one whose prefix lies outside the block's range (an inflection
-such as した → する).
+characters, read through the shared page cache when the first candidate
+with two characters or more needs it (its directory from the session's pool, or
+from page 0). A candidate with two or more characters whose prefix is in that
+block's range, and whose bits are not all set, is not a key, so its index page is
+not read. A one-character candidate never picks or reads a block: one whose prefix
+is in the range of the block a longer candidate picked, while the page cache still
+holds that block, is checked against it the same way at no read (the names
+dictionary has nearly none of は, が, を: 0.27 reads a lookup saved); one that comes
+first or finds no block held searches the index as before (in a dictionary of
+words it is nearly always a key, and reading a block for it would cost more than
+it saves: +0.17 reads a lookup, measured by #360's plan). So does a candidate whose
+prefix lies outside the block's range (an inflection such as した → する).
 
 A Bloom filter has no false negatives, so lookups show exactly the same entries
 with or without it (`tools/dict_lookup_bench.py` checks every lookup of the
