@@ -211,6 +211,15 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     {"PCSG01221", 0x1A9CF884u, 0x3B554u, 1, 4, VJO_HOOK_ENC_CP932, 16, 0,
      {0x4B, 0xF6, 0xC8, 0x00, 0xC8, 0xF2, 0x2F, 0x10, 0x02, 0x68, 0x42, 0xF6, 0x3C, 0x60, 0xC8, 0xF2}, 0, 0, 0x0100u},
     /* Other engines (psandvita farm, Vita3K only): Rubi filters per title; PCSG00450 reads through the message's text pointer */
+    /* PCSG00020 極限脱出ＡＤＶ 善人シボウデス (APP_VER 01.00): Vita3K 0x811ac998, 30 farm pages (paired-vita-pcsg00020-20261023),
+     * Chunsoft's skp2v engine (Lua 5.1 + luabind): the entry of GUI.Message::setText (r1 = one click segment's text, UTF-8,
+     * <K> its click wait, <P> the box's clear after it), which Message:talk calls; a box's segments add up on the screen
+     * until its <P>, so a hit is the newest segment. The eboot is linked at 0x81000000 (ET_SCE_EXEC): Luna's 0x810DE344
+     * is that address, inside Lua's lstrlib match() (the subject of every pattern match), not segment 0 + 0x10DA344.
+     * RF_PCSG00020 is Luna's filter (<tags> removed). patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; vpush {s16-s23}; no branch
+     * in segment 0 into it */
+    {"PCSG00020", 0xF98BA0BAu, 0x1AC998u, 1, 1, VJO_HOOK_ENC_UTF8, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x2D, 0xED, 0x08, 0x8A, 0xBB, 0xB0, 0x83, 0x46, 0x0C, 0x1C, 0x0B, 0xF5}, VJO_RF_PCSG00020, 0, 0x0100u},
     /* PCSG00380 真 流行り神 (APP_VER 01.00): Vita3K 0x8104de9e, 1095 farm pages (paired-vita-pcsg00380-20261023), the
      * per-frame message-window draw (r4 = 0 there); the page is foaf4's static record at 0x819dbff0, 0x98e152 past
      * the site (r15): its cells (VJO_PLACE_READ_CELLS); patch (12): str r4, [sp, #0xa8]; movt r0, #0x819d; ldr r7,

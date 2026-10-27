@@ -701,6 +701,9 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_T
     [VJO_RF_PCSG00817 - VJO_RF_BASE] = r_PCSG00817, [VJO_RF_PCSG00853 - VJO_RF_BASE] = r_PCSG00853,
     [VJO_RF_PCSG00876 - VJO_RF_BASE] = r_PCSG00876, [VJO_RF_PCSG01194 - VJO_RF_BASE] = r_PCSG01194,
     [VJO_RF_PCSG00628 - VJO_RF_BASE] = r_PCSG00628, [VJO_RF_PCSG00380 - VJO_RF_BASE] = r_PCSG00380,
+    /* PCSG00020's verified entry is another site than Luna's (core/hook_place.c), with Luna's filter for the title:
+     * <K> (a click wait) and <P> (the box cleared after it) end its segments; Luna's own test has <red>..<end> */
+    [VJO_RF_PCSG00020 - VJO_RF_BASE] = f_PCSG00020,
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */

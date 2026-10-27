@@ -11,6 +11,17 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- A native text hook for 極限脱出ＡＤＶ 善人シボウデス (Zero Escape: Virtue's Last Reward, `PCSG00020`, APP_VER
+  01.00), where users reported OCR never worked and took forever. Its LunaTranslator site could never install: the
+  eboot is linked at a fixed 0x81000000, so Luna's address is that address, and Rubi's table read it as an offset
+  past the end of the game's code. That site is also inside Lua's pattern matcher, which sees every string, not only
+  dialogue. The new site is the entry of the engine's `GUI.Message::setText`, one call per click segment (UTF-8,
+  `<K>`/`<P>` and colour tags removed); a box that grows by clicks shows its newest segment. Found and proven in
+  the Vita3K emulator with the psandvita farm (30 pages an AI reviewer approved against the frames the game drew),
+  not run on a console ([details](docs/native-hooks.md#table-sites)).
+
 ### Changed
 
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
