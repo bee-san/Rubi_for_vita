@@ -137,7 +137,8 @@ kernel, Shell and OCR plugins and RCO byte for byte (`c8fc5018…`, `a1a0eee9…
 
 `tools/arm_host_tests.sh` builds the pure-C kernel and core suites with a Linux ARM toolchain
 (`-mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -static`, the flags vita-vn-ocr's runtime lane
-uses) and runs them with `qemu-arm -cpu cortex-a9`:
+uses) and runs them with `qemu-arm -cpu cortex-a9`. Some of its suites (`TESTS` in the script; most of the native
+hooks' are not listed here):
 
 | suite | cases | what the ARM build adds over x86_64 |
 |---|---|---|
@@ -163,6 +164,7 @@ uses) and runs them with `qemu-arm -cpu cortex-a9`:
 | psp | 10 | Adrenaline bubbles (`core/pspbubble.c`), PSP images (`core/psptarget.c`: EBOOT.PBP, ISO 9660, CSO and ZSO with LZ4; deflate only where zlib is, so not here) and the title IDs a bubble's row may carry (`core/taicfg.c` `vjo_tai_title_ok`) on synthetic files: 32-bit offsets into images, ARM's unsigned `char`, the damaged-image fuzz against reads outside the file |
 | taicfg | 6 | the one-VPK install's `config.txt` editor (`core/taicfg.c`, #158) on its fixtures and a seeded corpus, each result checked with taiHEN's own parser, on the Vita's word size |
 | shot_trim | 12 | the Anki screenshot's black bars (`core/shottrim.c`, API 32): the scan's 32-bit offsets and row strides, its bar arithmetic on frames of 960 × 544, 480 × 272 and under 27 rows, Adrenaline's layouts, 400 random frames whose every pixel that is not black must stay in the picture, and the guess on any strip height (an exact guess is the decision) |
+| hook_stream_seams | 13 | the native hooks' CALL slots (`core/hook_stream.c`, #366): each interleaving of a new caller's replacement with another thread's step, run at the replacement's own points, with the A9's atomics and the clock's serial order in 32-bit arithmetic |
 | capture_parity | 2 | with `VJO_VOCR_SOURCE_DIR`: API 18's and API 19's capture give the recognizer identical bytes on the Vita's CPU (procedural frames; `tools/capture_parity.py` adds the eval crops) |
 | word_lookup | 1,321 lookups | with `VJO_PLAINTEXT_DIR`: `core/local_dict.c` with the bundled dictionary at every Japanese letter of the real VOCR lines in `host/fixtures/word_lookup` gives output identical to the host build's (entries, spans, definitions; `host/tests/word_lookup_parity.c`) |
 
