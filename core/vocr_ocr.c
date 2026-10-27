@@ -555,8 +555,8 @@ typedef struct {
      * to a new state since they were recorded (an icon with many frames, a picture moving behind it, text replaced
      * in place); lcycled, bit i: they went back to a recent state (an icon drawn at its end); finds, how often the
      * job found its lines again from a new first pass; confirmed, the wait's line phase held its lines and found
-     * them again alike (wait_lines); graced, the job waited once past its budget to read anyway (watch_verify). */
-    int watch_ok, watch, moved, have_spans, confirmed, graced;
+     * them again alike (wait_lines). */
+    int watch_ok, watch, moved, have_spans, confirmed;
     int reading, read_tear; /* the lines are being read (after the wait), and a row changed then */
     int last_try;           /* the job's last try (VJO_VOCR_TRIES) */
     uint32_t anyway_mask;   /* WATCH_ANYWAY: the watched lines whose own changes are no tears (the ones that moved) */
@@ -833,21 +833,21 @@ static int stream_error(const Stream *s, int fallback)
 static int probe_short_lines(Stream *s, VocrLineSet *set);
 
 /* Two finds of a line alike: the same polarity, and each edge within a quarter of the line's height (2 px at least):
- * less than a character, so a line that typed on is another line. mv (a line whose own pixels kept changing: an
- * icon drawn at its end that the finder takes into it, a picture moving behind it): within half its height on its
- * sides and start, and 2.5 times its height at its end (on hooked pages with an icon after their last line, that
- * line's end moves by more than its height in 26 of 146 lines with the icon's frames, by more than 3 times in 2;
- * host/spinner_bench.c --find). A column (cols) is measured by its width, and ends at its bottom. */
+ * less than a character, so a line that typed on is another line. mv (a line whose own pixels changed: an icon drawn in
+ * its box, a picture moving behind it): within half its height on its sides and start, but its end still within a
+ * quarter (audit-rubi-spinner F1: a line typing on changes its own pixels too, and a character, even a half-width one,
+ * is more than that). An icon after the last character that the finder takes into the box (its end moving by more than
+ * the line's height in 26 of 146 such hooked lines with the icon's frames, host/spinner_bench.c --find) then costs a
+ * look or a try more, never a line read half typed. A column (cols) is measured by its width, and ends at its bottom. */
 static int line_alike(const VocrLine *p, const VocrLine *q, int mv, int cols)
 {
     /* along the line: its start a and length l (x and w for a row, y and h for a column); across it: c and z */
     const unsigned pa = cols ? p->y : p->x, pl = cols ? p->h : p->w, pc = cols ? p->x : p->y, pz = cols ? p->w : p->h;
     const unsigned qa = cols ? q->y : q->x, ql = cols ? q->h : q->w, qc = cols ? q->x : q->y, qz = cols ? q->w : q->h;
-    const unsigned size = pz < qz ? pz : qz;
-    unsigned t = mv ? size / 2u : size / 4u;
-    if (t < 2u) t = 2u;
+    const unsigned size = pz < qz ? pz : qz, te = size / 4u < 2u ? 2u : size / 4u;
+    const unsigned t = mv && size / 2u > te ? size / 2u : te;
     return p->dark == q->dark && DIFF(pc, qc) <= t && DIFF(pc + pz, qc + qz) <= t && DIFF(pa, qa) <= t &&
-           DIFF(pa + pl, qa + ql) <= (mv ? size * 5u / 2u : t);
+           DIFF(pa + pl, qa + ql) <= te;
 }
 
 /* At most twice as wide as tall (a column: as tall as wide): an icon's box, or one or two characters. */
@@ -1010,27 +1010,25 @@ static int wait_lines(Stream *s, const Finder *f)
 
 /* The watch's verification, after the try's finder (set; raw, its own lines): VJO_OK once its lines may be read,
  * RETRY_WATCH when they are to be watched from a new line phase (the next first pass tells the Shell of a capture
- * that shows them), else why the try ends (VJO_E_SCREEN_CHANGED: other lines past the wait's limit).
- *  - Lines alike the ones the line phase confirmed, none of whose pixels changed since, are read at once: their
- *    pixels have read the same from the line phase through this find's first pass, the try's capture.
+ * that shows them), else why the try ends (VJO_E_SCREEN_CHANGED: other lines too often).
+ *  - Lines alike the ones the line phase confirmed are read at once: their pixels have read the same from the line
+ *    phase through this find's first pass, the try's capture. One whose pixels changed meanwhile, its place alike (an
+ *    icon in it that rests between its turns), is read anyway.
  *  - Others, while the waiting budget lasts, are watched from a new line phase (at most WATCH_FINDS times a job;
  *    then a change is a tear).
  *  - The budget spent while the lines' own pixels kept changing (an icon the finder takes into a line, a picture
- *    moving behind the text): lines alike the ones found at least settle_us before (lines_alike, loose) are read
- *    anyway, their changes no tears any more; others are watched for settle_us, and the finder decides. */
+ *    moving behind the text): the try's lines (the watched ones if alike, lines_alike loose) are read anyway, their
+ *    changes no tears any more. Once read, the finder must find them alike again, settle_us after they were found at
+ *    the earliest, as the stable-text wait's span (recognize's final look). */
 static int watch_verify(Stream *s, const Finder *f, const VocrLineSet *set, const VocrLineSet *raw)
 {
-    int rc;
-    if (s->confirmed && s->have_spans && lines_alike(&s->spans_raw, raw, 0, s->lmoved | s->lcycled, f->cols)) {
-        s->confirmed = 0;
+    const int confirmed = s->confirmed && s->have_spans;
+    s->confirmed = 0;
+    if (confirmed && lines_alike(&s->spans_raw, raw, 0, s->lmoved | s->lcycled, f->cols)) {
         s->st->settled = 1;
-        /* a line that held still moved again while the try found it, its place alike (an icon in it that rests
-         * between its turns): read now, its own changes no tears (the others' still are; the finder checks them once
-         * read) */
-        if (s->lmoved) read_anyway(s, s->lmoved);
+        if (s->lmoved) read_anyway(s, s->lmoved); /* (the others' changes are still tears) */
         return VJO_OK;
     }
-    s->confirmed = 0;
     if (s->settle_left) {
         if (s->finds >= WATCH_FINDS) {
             s->st->tears++;
@@ -1041,24 +1039,7 @@ static int watch_verify(Stream *s, const Finder *f, const VocrLineSet *set, cons
         s->st->watch_finds++;
         return RETRY_WATCH;
     }
-    if (!s->have_spans || !lines_alike(&s->spans_raw, raw, 1, s->lmoved | s->lcycled, f->cols)) {
-        watch_set(s, set, raw);
-        if (s->graced) { /* (the job waited past its budget once already) */
-            s->st->tears++;
-            return VJO_E_SCREEN_CHANGED;
-        }
-    }
-    if (!s->graced && clock_us(s->p) - s->found_us < s->pol->settle_us) {
-        /* found too recently to tell an icon from text that types on: watched for settle_us, then found again
-         * (once a job: it waits at most settle_us and a finder's run past its budget) */
-        s->graced = 1;
-        if ((rc = watch_pause(s, s->found_us + s->pol->settle_us - clock_us(s->p))) != VJO_OK) return rc;
-        if ((rc = look_alike(s, f, 1, 1, 1)) <= 0) {
-            if (rc) return rc;
-            s->st->tears++;
-            return VJO_E_SCREEN_CHANGED;
-        }
-    }
+    if (!s->have_spans || !lines_alike(&s->spans_raw, raw, 1, s->lmoved | s->lcycled, f->cols)) watch_set(s, set, raw);
     read_anyway(s, s->lmoved | s->lcycled); /* the lines that kept moving */
     return VJO_OK;
 }
@@ -2802,13 +2783,17 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
     if (rc) goto fail;
     if (busy_on) pol->busy(pol->busy_ud, 0);
     st->recognize_us = clock_us(p) - L->t0 - st->cascade_us; /* the re-reads are cascade_us */
-    /* #353: rows changed while the watched lines were read: the finder (in the scratch, which the recognizer is done
-     * with) says whether they are still the same lines; if not, the screen changed under them. */
-    if (s->watch && s->moved) {
+    /* #353: rows changed while the watched lines were read, or they were read anyway: the finder (in the scratch, which
+     * the recognizer is done with) says whether they are still the same lines; if not, the screen changed under them.
+     * Lines read anyway are found again twice settle_us after they were found at the earliest: the span the stable-text
+     * wait and its check take together without the watch (a line that types on, a character a quarter of a second
+     * apart, is then another line: audit-rubi-spinner F1/F2), and once more settle_us later if not then alike (an icon
+     * beside a line can change how the finder cuts it while it turns). */
+    if (s->watch == WATCH_ANYWAY || (s->watch && s->moved)) {
         const int anyway = s->watch == WATCH_ANYWAY;
-        rc = look_alike(s, finder, anyway, anyway, 0);
-        /* read anyway: an icon beside a line can change how the finder cuts it while it turns; another look
-         * settle_us later, then the lines are what they were or the screen changed under them */
+        const uint32_t due = s->found_us + 2u * pol->settle_us;
+        rc = anyway && (int32_t)(due - clock_us(p)) > 0 ? watch_pause(s, due - clock_us(p)) : VJO_OK;
+        if (!rc) rc = look_alike(s, finder, anyway, anyway, 0);
         if (!rc && anyway && (rc = watch_pause(s, pol->settle_us)) == VJO_OK) rc = look_alike(s, finder, 1, 1, 0);
         if (rc < 0) return rc;
         if (!rc) {
