@@ -26,7 +26,7 @@ name: Release
 # two zips of them; the `package` job does so and checks each with tools/e2e_package.py.
 on:
   push:
-    branches: [main]
+    branches: [main, test/combined]
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -384,7 +384,9 @@ jobs:
     needs: [changes, vita]
     if: ${{ needs.changes.outputs.code == 'true' && needs.changes.outputs.dicts != 'false' && needs.changes.outputs.packaging == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
+    permissions:
+      contents: write  # the combined test build's pre-release (the test/combined branch only)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -453,6 +455,29 @@ jobs:
           path: build/e2e-package/*/*.log
           if-no-files-found: ignore
           retention-days: 7
+
+      # The combined test build only (test/combined, a scratch branch: main plus the drafts that wait for the owner's
+      # console test; never merged): package both builds under the test version in .github/test-build-version with
+      # card mining on, as the test builds are, check them, and publish the pre-release.
+      - name: Combined test build
+        if: ${{ github.ref == 'refs/heads/test/combined' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(tr -d '[:space:]' < .github/test-build-version)
+          case $version in 0.9.8-test.[1-9]|0.9.8-test.[1-9][0-9]) ;; *) echo "::error::bad test version '$version'"; exit 1 ;; esac
+          normal=(ci/normal/Rubi-*.zip)
+          debug=(ci/debug/Rubi-*-debug.zip)
+          python3 tools/package_variants.py --normal "${normal[0]}" --debug "${debug[0]}" --models ci/models \
+            --version "$version" --source-revision ${{ github.sha }} --sources . \
+            --set anki_mining=on -o ci/test
+          for zip in ci/test/Rubi-*.zip; do python3 tools/e2e_package.py "$zip"; done
+          ls -l ci/test
+          (cd ci/test && sha256sum -- *)
+          gh release create "v$version" ci/test/* --prerelease --target ${{ github.sha }} \
+            --title "$version: combined test build (everything waiting for a console test)" \
+            --notes-file .github/test-release.md
 
 # A release is published explicitly after these gates. tools/package_variants.py (tools/package_release.py
 # for each build) combines the two builds' binaries with checksum-pinned models and the frozen
