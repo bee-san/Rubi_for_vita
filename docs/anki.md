@@ -961,10 +961,11 @@ each picture: at most 32,592 B for a 960 × 544 screenshot shown at 480 × 272 [
 host, libjpeg-turbo 2.1.5; the Vita's 3.2.0 not measured]; a progressive JPEG's
 coefficient arrays may take up to 4 MiB of it (`VJO_CARD_PICTURE_JPEG_MEM`), else the card
 shows no picture. Its static memory, in the app's segments: the list's table of 2,000 rows
-of 128 B (256,000 B), two card views and the keyboard's buffers, 307,364 B of `.bss` in
-all, and 29,741 B of code; libjpeg's decoder adds about 290 KB of code [measured: the debug
-build's ELF against main `9ad8eb5`'s, arm-vita-eabi-size; section 5.4 of
-[vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)].
+of 128 B (256,000 B), two card views, the keyboard's buffers and the held cards' list (4,104 B),
+311,484 B of `.bss` in all, and 33,412 B of code; libjpeg's decoder adds about 290 KB of code
+[measured: the debug build's ELF, arm-vita-eabi-size: at #315 against main `9ad8eb5`'s, and at
+its audit's follow-up against main `dd94591b`'s, 4,288 B of code and 4,128 B of `.bss` more; section
+5.4 of [vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)].
 
 ## Not included
 
