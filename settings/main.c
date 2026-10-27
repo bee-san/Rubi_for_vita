@@ -92,8 +92,9 @@
 #define PREF_TRUST 7
 #define PREF_GATE 8
 #define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical) */
-#define PREF_SUGGEST 10 /* #358: Suggest a text box (region.ini's line for every game: preferences.h), the last card */
-#define PREFERENCES 11
+#define PREF_SUGGEST 10 /* #358: Suggest a text box (region.ini's line for every game: preferences.h) */
+#define PREF_ONTEXT 11 /* API 46: Overlay on the game's text (config.ini overlay_on_text), the last card */
+#define PREFERENCES 12
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -751,6 +752,13 @@ static void set_vertical(int index)
     preference_saved(vjo_preferences_save_vertical(vertical_choice[index], &scratch));
 }
 
+/* API 46: the popup on the game's own text (config.ini overlay_on_text, docs/overlay-on-text.md). */
+static void set_on_text(int on)
+{
+    if (on == preferences.overlay_on_text || preferences_locked()) return;
+    preference_saved(vjo_preferences_save_overlay_on_text(on, &scratch));
+}
+
 /* Model size: enter cycles Small -> Normal -> Large; Left/Right step within it. */
 static void set_tier(int tier)
 {
@@ -799,6 +807,10 @@ static void toggle_preference(void)
                   preferences.hook_trust ^ (preference_selected == PREF_TRUST));
         return;
     }
+    if (preference_selected == PREF_ONTEXT) {
+        set_on_text(!preferences.overlay_on_text);
+        return;
+    }
     if (preference_selected == PREF_SUGGEST) {
         set_suggest(!suggest_on);
         return;
@@ -842,6 +854,10 @@ static void set_preference(int right)
                   preference_selected == PREF_TRUST ? right : preferences.hook_trust);
         return;
     }
+    if (preference_selected == PREF_ONTEXT) {
+        set_on_text(right);
+        return;
+    }
     if (preference_selected == PREF_SUGGEST) {
         set_suggest(right);
         return;
@@ -855,7 +871,7 @@ static void set_preference(int right)
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
 static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H,
-                                             CARD_H, CARD_H};
+                                             CARD_H, CARD_H, CARD_H};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
@@ -1014,14 +1030,13 @@ static void draw_results_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, results_help);
 }
 
-/* API 31: where the overlay's text comes from (docs/native-hooks.md). The saved Every game choice tries the same
- * native hooks as Automatic in every enabled Vita game, and also PSP text in Adrenaline (core/psp_text.h: the worker
- * reads a profiled PSP game's page, which OCR must agree with), which Automatic does not. */
+/* API 31: where the overlay's text comes from (docs/native-hooks.md). The saved Every game choice is
+ * retained for compatibility; Automatic now tries the same native hooks in every enabled Vita game. */
 static void draw_source_card(int y)
 {
     static const char *const names[3] = {"Automatic", "Every game", "OCR only"};
     static const char *const help[3] = {"Try hooks in every enabled Vita game, else OCR. From the next start.",
-                                        "Automatic + PSP text in 2 PSP games (testing). From the next start.",
+                                        "Same as Automatic. Applies when a game next starts.",
                                         "Screenshots only, no hooks. Applies when a game next starts."};
     int chosen = source_index(preferences.text_source);
     text(42, y + CARD_TITLE_Y, WHITE, 28, "Text source");
@@ -1076,6 +1091,16 @@ static void draw_suggest_card(int y)
                                                       : "ON: a game without a box is offered the one Rubi finds.");
 }
 
+/* API 46 (#309): the overlay on the game's own text: the word marked where the game shows it, taps on the game's
+ * text, the popup beside the word (docs/overlay-on-text.md). Off by default until a console run has checked it. */
+static void draw_ontext_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Overlay on the game's text");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
+          preferences.overlay_on_text ? "ON" : "OFF", preferences_writable && preferences.overlay_on_text);
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: words marked where the game shows them; tap one.");
+}
+
 static void draw_card(int i, int y)
 {
     switch (i) {
@@ -1089,6 +1114,7 @@ static void draw_card(int i, int y)
     case PREF_GATE: draw_gate_card(y); break;
     case PREF_VERTICAL: draw_vertical_card(y); break;
     case PREF_SUGGEST: draw_suggest_card(y); break;
+    case PREF_ONTEXT: draw_ontext_card(y); break;
     default: draw_results_card(y); break;
     }
 }

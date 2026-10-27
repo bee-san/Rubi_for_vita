@@ -229,7 +229,7 @@ if [ -n "${VJO_VOCR_SOURCE_DIR:-}" ]; then
       -o "$OUT/capture_parity" host/tests/test_capture_parity.c host/tests/parity_api18.c host/tests/parity_api19.c \
       "$OUT/parity_kernel.o" "$OUT/parity_capture.o" "$OUT/parity_scene.o" "$OUT/parity_suggest.o" "$RT/vocr.c" "$RT/vocr_lines.c" \
       "$RT/vocr_lines_rows.c" "$RT/vocr_lines_fix.c" "$RT/vocr_lm.c" "$RT/vocr_lines_refine.c" "$RT/vocr_textgate.c" "$RT/vocr_post.c" \
-      "$RT/vocr_vertical.c" third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
+      "$RT/vocr_vertical.c" "$RT/vocr_charbox.c" third_party/bearssl/src/hash/sha2small.c third_party/bearssl/src/codec/dec32be.c \
       third_party/bearssl/src/codec/enc32be.c -lm
   }
   bg build-capture_parity capture_parity

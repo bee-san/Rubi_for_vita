@@ -20,6 +20,17 @@ been reported.
   OCR before it is shown, as any regular hook's; every other PSP game, and Automatic, stay OCR. Nothing is hooked
   or patched in the PSP game and no PSP plugin is added. Proven in the PPSSPP emulator only, **not run on a
   console** ([native-hooks.md](docs/native-hooks.md#psp-text-adrenaline), #240).
+- **The overlay on the game's text** (API 46, #309; testing, off by default: the Rubi app's OCR & lookup page,
+  **Overlay on the game's text**, or `overlay_on_text = on`). As GameSentenceMiner's overlay does on a PC, the
+  overlay works on the game's own text: the word at the cursor is marked where the game draws it and the game's
+  lines are underlined, a tap on a character looks its word up, Up and Down go to the game's line above or below,
+  and the dictionary popup is a 196 px band beside the text instead of the full screen. The places come from the
+  OCR's own CTC frames (vita-vn-ocr #114): on the hooked corpus's held-out pages a tap at a glyph's middle selects
+  the right character for 97.3% of 43,294 characters, against 81-82% for a line box cut by glyph widths
+  ([measured](docs/overlay-on-text.md#where-the-places-come-from)). A native hook's text is placed on OCR's
+  characters, so with the setting on every read recognizes (also in hooked games) and skips the line cache.
+  Off, nothing of it runs; the game worker's code is one page (4,096 B) larger in each game that is ON, SceShell's
+  pages are unchanged. Nothing of it has run on a console. It builds on closed draft #271 (API 37).
 - **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
   △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
   games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the

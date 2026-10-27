@@ -180,6 +180,8 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Skip OCR on screens without text**: a text box that holds no text (hidden, a picture) is not read; it also skips a few very short lines, which is why it is off ([details](docs/vita-vn-ocr.md#text-presence-gate-api-26)) | OFF |
 | | **Vertical text**: Automatic (columns where the text box holds vertical text), ON (columns in every game) or OFF (rows only) ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) | Automatic |
 | | **Suggest a text box**: a game without a box of its own is offered the one Rubi finds around its dialogue, once each time it starts or resumes ([details](docs/first-box.md)) | ON |
+| | **Dictionaries shown**: how many dictionaries' entries for the same word an L or R tap pages through, 1–8 (2: a word, then the same word as a character's name) | 2 |
+| | **Overlay on the game's text** (testing): the word is marked where the game shows it, a tap on the game's text looks it up, and the popup sits beside the text ([details](docs/overlay-on-text.md)) | OFF |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -251,6 +253,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | Read text: Only when I press L + R | not run on a console by a 0.8.0 build |
 | ⚠️ | Speed boost while reading | the clock goes to 444 MHz and back; the time it saves is unmeasured |
 | ❓ | Tapping a word in the game | not checked on a console yet |
+| ❓ | Overlay on the game's text (off by default) | not run on a console yet ([details](docs/overlay-on-text.md)) |
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
 | ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | The text box suggested on first use (Use this box?) | not run on a console yet; measured on the host ([details](docs/first-box.md)) |

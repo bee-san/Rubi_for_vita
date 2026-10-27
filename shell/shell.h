@@ -67,6 +67,13 @@ typedef struct {
     int highlight_mode;       /* whole matched word or selected source character */
     int frequency_badge;      /* config frequency_badge: the entry's frequency rank is shown */
     int stick_lookup_ms;      /* config stick_lookup_ms: the left stick's lookup waits for the cursor to rest */
+    /* API 46, the overlay on the game's text (docs/overlay-on-text.md): config overlay_on_text; the shown text
+     * whose char map (core/charmap.h) follows its NUL, or NULL (worker.c local_text); its sequence (a new map of
+     * the same text moves it on); stale: the screen no longer shows what the map was read from */
+    int on_text;
+    const char *cmap_text;
+    unsigned cmap_seq;
+    int cmap_stale;
     uint32_t cursor_byte;     /* byte offset in the immutable trimmed header */
     uint32_t text_generation; /* changes for OCR text/foreground, not cursor moves */
     int dict_page;            /* local: dictionary page shown or requested at the cursor */

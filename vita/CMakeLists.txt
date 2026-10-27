@@ -149,7 +149,8 @@ add_library(vjo_core_vita STATIC
   ${ROOT}/core/anki.c ${ROOT}/core/anki_queue.c ${ROOT}/core/local_dict.c
   ${ROOT}/core/ocr_lines.c ${ROOT}/core/games.c ${ROOT}/core/furigana.c ${ROOT}/core/pitch.c
   ${ROOT}/core/ledger.c ${ROOT}/core/app_stamp.c ${ROOT}/core/pspbubble.c
-  ${ROOT}/core/hook_pick.c) # API 31: text-source config helpers
+  ${ROOT}/core/hook_pick.c # API 31: text-source config helpers
+  ${ROOT}/core/charmap.c) # API 46: the char map the open overlay reads (docs/overlay-on-text.md)
 target_include_directories(vjo_core_vita PUBLIC ${ROOT}/core ${ROOT}/include)
 target_link_libraries(vjo_core_vita PUBLIC vjo_bearssl)
 target_compile_options(vjo_core_vita PRIVATE -O2 -Wall -Wextra -Wno-unused-parameter -fno-builtin -fshort-wchar
@@ -186,6 +187,7 @@ set_source_files_properties(${ROOT}/core/config.c ${ROOT}/core/ledger.c ${ROOT}/
   ${ROOT}/core/pspbubble.c ${ROOT}/core/psptarget.c ${ROOT}/core/taicfg.c
   ${ROOT}/core/local_dict.c ${ROOT}/core/textjoin.c ${ROOT}/core/linebreak.c ${ROOT}/core/hook_pick.c
   ${ROOT}/core/history_lines.c ${ROOT}/core/textfilter.c
+  ${ROOT}/core/charmap.c # API 46: a few calls a key press or a tap, while the overlay is open on the text
   PROPERTIES COMPILE_OPTIONS "-Os")
 if(VJO_WITH_NCNN)
   include(${ROOT}/cmake/LocalOCR.cmake)
@@ -321,7 +323,9 @@ if(VJO_WITH_VOCR)
     ${ROOT}/core/hook_stream.c ${ROOT}/core/hook_luna.c ${ROOT}/core/hook_re.c ${ROOT}/core/hook_text.c
     ${ROOT}/core/hook_sc3.c ${ROOT}/core/sfo.c
     # PSP text (core/psp_text.h): the worker's read-only page reads in the PSP emulator's process, both builds
-    ${ROOT}/core/psp_text.c)
+    ${ROOT}/core/psp_text.c
+    # API 46: the char map's writer (core/charmap.c; core/charmap_build.c is vjo_vocr's) and the UTF-8 it reads
+    ${ROOT}/core/charmap.c ${ROOT}/core/utf.c)
   add_dependencies(VitaJPOverlay_OCR vjo_kernel_stubs)
   # API 31: which text a job shows, OCR's or a native hook stream's (core/hook_select.h), at job time.
   # For size, as the worker's control code is: 1,992 B of text and rodata at -Os (2,640 B at -O2; measured,

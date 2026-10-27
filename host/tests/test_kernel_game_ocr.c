@@ -1090,8 +1090,9 @@ static void invalid_capture_and_wire(void)
     r.speed = 0x20000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 36: but bit 16) */
     r.speed = 0x100000; TEST_CHECK(vjoOcrSubmit(&r) > 0); /* API 43: bit 20, a trusted hook may answer (S_TRUST) */
     r.speed = 0x1000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 42: but bits 18 and 19; API 43: 20; API 50: 21-23) */
+    r.speed = 0x4000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* (API 46: but bit 25) */
     r.speed = 0x20000u | VJO_GAME_OCR_S_HEAD_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 17 still */
-    r.speed = 0x2000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 25 (bits 24-27 in flight elsewhere; 21-23 are API 50's), 30-31 */
+    r.speed = 0x8000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* bit 27 (24, 26 and 27 in flight elsewhere; 21-23 are API 50's, 25 API 46's), 30-31 */
     r.speed = 0x40000000; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     TEST_CHECK(VJO_GAME_OCR_S_VERTICAL == 0x30000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_VERTICAL) ==
                                                             VJO_GAME_OCR_S_VERTICAL);
@@ -1114,9 +1115,12 @@ static void invalid_capture_and_wire(void)
     TEST_CHECK(VJO_GAME_OCR_S_LINE_FIX == 0x200000u && VJO_GAME_OCR_S_LINE_JUNK == 0x400000u &&
                VJO_GAME_OCR_S_LINE_VALLEY == 0x800000u);
     TEST_CHECK((VJO_GAME_OCR_S_ALL & 0xE00000u) == 0xE00000u && !(0xE00000u & VJO_GAME_OCR_S_SHOT_ALL));
+    /* API 46: bit 25, the characters' places (docs/overlay-on-text.md), an OCR job's, never a shot's */
+    TEST_CHECK(VJO_GAME_OCR_S_CHARS == 0x2000000u && (VJO_GAME_OCR_S_ALL & VJO_GAME_OCR_S_CHARS));
+    TEST_CHECK(!(VJO_GAME_OCR_S_CHARS & VJO_GAME_OCR_S_SHOT_ALL));
     r.speed = VJO_GAME_OCR_S_ALL; /* helpers, the clock, no line cache, the gate, (API 36) the border rule, (API 42) the
                                    * head gate and the two-level head, (API 43) trust, (API 50) the line finder's
-                                   * fixes: known */
+                                   * fixes, (API 46) the characters' places: known */
     uint32_t seq = submit(); take(seq);
     message.size--; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.size++;
     message.text[4095] = 'x'; TEST_CHECK(vjoOcrComplete(&message) == VJO_ERR_ARG); message.text[4095] = 0;
@@ -1609,6 +1613,8 @@ static void shot_requests_name_a_card_and_nothing_else(void)
     r = shot_request(); r.speed = 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_GATE; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG); /* API 26 */
     r = shot_request(); r.speed = VJO_GAME_OCR_S_DROP_BORDERS; /* API 36: an OCR job's text, never a shot's */
+    TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
+    r = shot_request(); r.speed = VJO_GAME_OCR_S_CHARS; /* API 46: an OCR job's text too */
     TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM | VJO_GAME_OCR_S_BOOST; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);
     r = shot_request(); r.speed = VJO_GAME_OCR_S_TRIM << 1; TEST_CHECK(vjoOcrSubmit(&r) == VJO_ERR_ARG);

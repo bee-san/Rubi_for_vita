@@ -115,8 +115,19 @@
  * 52: the text box suggested on first use (#358, core/region_suggest.h, docs/first-box.md): VjoGameOcrResult.
  * suggest_rows (a word before text: the result is 4 bytes longer), the band a successful job of rows on the whole
  * frame says the dialogue is in, as its rows at the screen's bottom. The request is unchanged. 51 is #354's (merged
- * first), so this is 52. */
-#define VJO_API_VERSION 52
+ * first), so this is 52.
+ * 46: the overlay on the game's text (docs/overlay-on-text.md, #309; closed draft #271's API 37, renumbered):
+ * VjoGameOcrRequest.speed bit 25 (VJO_GAME_OCR_S_CHARS): the game worker writes where each character of the text
+ * it returns is on the screen (core/charmap.h), after the text and its recognizer's copy in VjoGameOcrResult.text,
+ * whose last bytes were zero; the Shell sets it in the user's jobs with config.ini overlay_on_text = on. Sizes and
+ * layouts are unchanged. 43-45 and speed bits 17 and 20-24 are left to work in flight (the line finder's fixes,
+ * the text spotter, vertical text, trusted hooks).
+ * 54: test/combined, the combined test build (v0.9.8-test.N; never merged, never main's): main's API 52 with
+ * every open draft: #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS), #355's own number (speed bit 30,
+ * VJO_GAME_OCR_S_PAUSE, VJO_ROWS_FRAME, VJO_GSTEP_PAUSE), #318 and #359 (no interface change). test.1 was 51, test.2
+ * 52, test.3 53 (other interfaces); this build takes a number no other build has. With the characters' places a
+ * job selects without API 43's trusted answers (game_ocr/main.c): it recognizes to place a hook's text. */
+#define VJO_API_VERSION 54
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
