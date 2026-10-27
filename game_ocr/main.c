@@ -478,7 +478,8 @@ static int pause_copy(Capture *c)
         break;
     }
     pz.us = c->last.copy_us;
-    if (rc == VJO_ERR_TIMEOUT && pz.us >= VJO_GAME_OCR_PAUSE_MAX_US) pause_capped = 1; /* (a frame that never came: 0 us) */
+    /* the cap: no more copies in this game (a frame that never came is TIMEOUT too, with no wait) */
+    if (rc == VJO_ERR_TIMEOUT && pz.us >= VJO_GAME_OCR_PAUSE_MAX_US) pause_capped = 1;
     if (rc == (int)r->height) {
         pz.frozen = 1;
         pause_frames++;
@@ -2367,8 +2368,11 @@ retry_smaller:
                  stats.settle_us + tried_settle_us ? stats.settle_us + tried_settle_us : 1u, 0);
     if (pz.asked) /* API 52: kind 1 frozen; sum the reason | the block's memory << 8; us the game's waits (1: none) */
         step_add(VJO_GSTEP_PAUSE, pz.frozen ? 1u : 0u, pz.rows, pz.frozen ? 0 : pz.rc, pz.bytes,
-                 (pz.frozen ? VJO_GPAUSE_FROZEN : pz.tried ? VJO_GPAUSE_REFUSED : pause_capped ? VJO_GPAUSE_CAPPED
-                                                       : pz.held ? VJO_GPAUSE_UNUSED : VJO_GPAUSE_NO_ROOM) | pz.mem << 8,
+                 (pz.frozen ? VJO_GPAUSE_FROZEN
+                  : pz.tried ? VJO_GPAUSE_REFUSED
+                  : pause_capped ? VJO_GPAUSE_CAPPED
+                  : pz.held ? VJO_GPAUSE_UNUSED
+                            : VJO_GPAUSE_NO_ROOM) | pz.mem << 8,
                  paused_us + pz.us ? paused_us + pz.us : 1u, 0);
     for (unsigned i = 0; i < stats.blank && i < VJO_VOCR_BLANK_LOGGED; i++) {
         const VjoVocrBlankStat *b = &stats.blank_line[i];

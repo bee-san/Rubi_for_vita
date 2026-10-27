@@ -128,9 +128,10 @@
  * OCR's in the data segment, VJO_DATA_TABLE) makes it 89,252 -> 89,300 + 73,048 -> 73,160 on main 796168e, the same
  * pages, 812 B of text room [measured: the same rows, main 796168e and this change; the debug build 101,460 ->
  * 101,548 + 73,008 -> 73,152, the same pages]. API 52's ocr_pause (its key beside the text gate's in the parse, one
- * speed bit, VjoConfig's 4 B) makes it 89,884 -> 89,956 + 73,232 on main 48d6a3b, the same pages, 156 B of text room
- * [measured: the same rows, main 48d6a3b and this change; the debug build 101,988 -> 102,124 + 73,200 -> 73,224, the
- * same pages]. Its check is
+ * speed bit, VjoConfig's 4 B; #358's wait hint with the pause's clause, WAIT_HINT_PAUSE in the data segment, and the
+ * active game's STATIC_FB flag) makes it 89,980 -> 90,068 + 73,416 -> 73,648 on main 199fe31, the same pages, 44 B of
+ * text room and 80 B of data room [measured: the same rows, main 199fe31 and this change; the debug build 102,092 ->
+ * 102,220 + 73,408 -> 73,616, the same pages]. Its check is
  * exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
@@ -476,7 +477,7 @@
 /* API 52, the pause for the frame (kernel/game_ocr.c: VJO_ROWS_FRAME's checks, the hook's chunked copy and its cap,
  * the watchdog in the rows tick): debug 43,160 -> 43,736 B of text and 77,764 -> 77,788 B of data/bss, normal 38,008
  * -> 38,512 and 76,076 -> 76,092 B, the same pages [measured: check_memory_ledger.py's module rows, both builds, main
- * 48d6a3b and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the copy runs in the
+ * 199fe31 and this change, tools/fast_gate.sh's vitasdk image]. No block, thread or allocation: the copy runs in the
  * game's own display call, as a strip's does. */
 #if VJO_DEBUG
 #define VJO_BUDGET_KERNEL_MODULE_PAGES 122880u
