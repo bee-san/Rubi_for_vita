@@ -27,19 +27,18 @@ are the pins]:
 - **Code.** The game worker gains the per-model LM settings (`core/vocr_ocr.c` `lm_retuned` and
   `vjo_vocr_lm_settings`, which `lm_opts` calls for the job's decoder and its cascade's); the kernel's broker and the
   Shell's tier names are one byte longer each (`VOCR6_N_w8_2l.vocr` against `VOCR5_N_w8g2.vocr`). The module
-  rows, both builds [measured with VitaSDK GCC 15.2.0, `tools/check_memory_ledger.py`'s rows: main `8da24c8` from its
-  Release run's artifacts (40523323424; `2bb09c4` changes only the README) against this change's fast-gate builds of
-  `99346ff`, the same pinned image]:
+  rows, both builds [measured with VitaSDK GCC 15.2.0, `tools/check_memory_ledger.py`'s rows: main `1c9d048` from its
+  Release run's artifacts (40546045095) against this change's fast-gate builds of `7033637`, the same pinned image]:
 
   | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
   |---|---:|---:|---:|
-  | Game worker | 162,472 + 35,872 → 162,600 + 35,872 B | 153,508 + 35,856 → 153,636 + 35,856 B | 200,704 / 192,512 B, unchanged |
-  | Shell | 102,372 + 73,560 B, unchanged | 90,020 + 73,416 B, unchanged | 176,128 / 163,840 B, unchanged |
-  | Kernel | 43,356 + 77,764 B, unchanged | 38,204 + 76,076 B, unchanged | 122,880 / 118,784 B, unchanged |
+  | Game worker | 163,512 + 35,880 → 163,640 + 35,880 B | 154,548 + 35,864 → 154,676 + 35,864 B | 200,704 / 192,512 B, unchanged |
+  | Shell | 102,372 + 73,664 B, unchanged | 90,044 + 73,520 B, unchanged | 176,128 / 163,840 B, unchanged |
+  | Kernel | 43,356 + 77,772 B, unchanged | 38,204 + 76,084 B, unchanged | 122,880 / 118,784 B, unchanged |
 
   The worker's code grows 128 B in both builds (the settings lookup, the two decoders' extra argument) and keeps
-  1,240 B (debug) and 2,012 B (normal) of its last text page; the normal Shell keeps its 92 B of code room. The
-  kernel's longer names fit its read-only data as it was.
+  200 B (debug) and 972 B (normal) of its last text page; the normal Shell keeps its 68 B of code room. The kernel's
+  longer names fit its read-only data as it was.
 
 - **The one-VPK payload** gains `VOCR6-ATTRIBUTION.md` (4,222 B): the Rubi app's install copies one more file, with no
   new buffer (`include/vjo_payload.h`). No block, thread or allocation site is new. Nothing of it has run on a
