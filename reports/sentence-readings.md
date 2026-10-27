@@ -61,7 +61,7 @@ reading of Sudachi's. Per 1,000 of those:
 
 The protocol above (with the rules' code) was committed and pushed as `cf2e273` at 17:15:51Z on 2026-10-27. The
 test lines were drawn at 17:16:03Z, and the code was measured on them unchanged. After the rebases onto main (the
-last onto `13bc976`) the commit is `efaa72a`: the protocol's text and the engine's code are the same, byte for byte.
+last onto `73db61e`) the commit is `e6810d8`: the protocol's text and the engine's code are the same, byte for byte.
 
 - *Right* is Sudachi's reading, or another the reviewer judged right where the two differ.
 - *Rubi:* 603 tokens differed from Sudachi. Of them 577 were judged right: 218 where Sudachi was wrong
@@ -96,8 +96,9 @@ On the development lines the same code gives 812.8 right, 184.6 missing and 2.63
 
 **After the rebase onto #386's lookups** (main `9ad8eb5`: its deinflection rules and `core/local_dict.c` changed),
 the engine was run again on both sets: the test lines' readings are the same, line for line (1.77 wrong, 824.1
-right, 174.1 missing per 1,000), and one development line gains a reading, Sudachi's. The figures here are those
-as-rebased ones.
+right, 174.1 missing per 1,000), and one development line gains a reading, Sudachi's. Run again on main `73db61e`
+(#398 and #402's lookup fixes), both sets' readings, lookups and reads are the same as on `9ad8eb5`, line for line.
+The figures here are those as-rebased ones.
 
 ### After the measurement
 
