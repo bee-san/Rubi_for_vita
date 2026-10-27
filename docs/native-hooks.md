@@ -119,7 +119,9 @@ Two lists name them:
   register, encoding and 8 to 16 bytes recorded at the site, and optionally a filter and a pointer read:
   - CLANNAD PCSG00415, NID 0xC5187D60, +0x2CA70, Thumb, r6, CP932, `AB F8 2C 23 14 F5 53 70` (STRH.W r2,
     [r11, #0x32C]; ADDS.W r0, r4, #0x34C). From PR #16's `profiles/PCSG00415.vjhook`; proven in Vita3K
-    only (note 22).
+    only (note 22). Filter `RF_PCSG00415`: the line holds the script's name variables `＊Ａ` and `＊Ｂ` where
+    the game draws the protagonist's names, written as 岡崎 and 朋也 (until 0.9.8 the popup showed them as
+    `*A` and `*A*B`).
   - アマツツミ PCSG01198 (APP_VER 01.00), NID 0x8AA413F2, +0x745C8, Thumb, r2, CP932, 16 bytes from
     `09 EB 87 0E` (ADD.W lr, r9, r7, LSL #2; ADD.W lr, lr, #0x1620). Luna's site 0x800785C8, which the
     placement check refuses as no entry (it is inside a function's loop); no branch in segment 0 targets
@@ -271,6 +273,7 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00509` | POSSESSION MAGENTA | `＊Ｂ` 鈴; `^` to a line break; `<base,reading>` to the base | events 50, 1011 (67 pages hold `＊Ｂ`) |
 | `PCSG00540` | 忠臣蔵46+1 V | `c<id>.<name>r` to the name on its own line, narration's `r`, `v<voice>.` and `w<ms>.` dropped, `b<reading>.<base>` to the base, half-width kana (･ ﾞ ﾟ drawn … ！ ？); a 0xA0 byte is a blank cell, `　` | events 1-5, 51, 53, 55; 0xA0 on 170 of the bucket's 1037 pages (page 82: 東京都　陵南学園。, 9 glyphs) |
 | `PCSG00628` | ALIA's CARNIVAL! サクラメント | ADV::MSGSET's SNR markup as `PCSG00540`'s without its `c<id>.`: `<name>r` to the name on its own line, `r` to a line break, `v<voice>.` dropped, `z<n>.` and `u<n>.` dropped (a size and a code point: in the farm's survey of `main.snr`, in none of its pages), `b<reading>.<base>` to the base (an `r` before the base is a line break), `[` `]` `\|` `k` `y` dropped, `!X` to the ASCII X (a lowercase X is read as a code first: none in the pages); half-width kana as `PCSG00540`; the 0xA0 blank | events 1, 20, 31, 89, 148, 207; all 1208 bucket pages |
+| `PCSG00415` | CLANNAD | `＊Ａ` (CP932 81 96 82 60) and `＊Ｂ` (81 96 82 61), the script's name variables for the protagonist's family and given name, to 岡崎 and 朋也 (CLANNAD has no name entry) | not the farm's: a console's `history.csv` (Rubi 0.9.8, the verified site's stream): 16 of 1,347 hook lines, e.g. `「ありゃ、＊Ａ、どこいくんだよっ」` where OCR read 岡崎, `「俺はＤ組の＊Ａ＊Ｂ」` |
 | `PCSG00020` | 極限脱出ＡＤＶ 善人シボウデス | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
 | `PCSG00817` | EVE burst error R | `[n]` to a line break; drops `[wNNN]` `[hNNN]` `[cRRGGBB]` `[e]` and the other `[x]` codes | events 1-59, 432 |
@@ -513,9 +516,10 @@ same kind, module-relative key and encoding). Such a job (`VJO_HOOK_R_TRUSTED | 
 or `LOCKED`):
 
 - opens no model, LM or cascade file and makes no OCR memory check, and (API 49) reads no pixels: the kernel
-  publishes the trusted line's scene as its capture ([below](#no-wait-for-a-trusted-line-api-49)). Only when the
-  region shows another scene does it read its one capture pass (API 43's), beside `VJO_GAME_RESERVE_HOOK_ONLY`
-  (1 MiB) instead of the OCR reserve (4 MiB). So a game short of memory still gets a Luna or verified site's lines;
+  publishes the trusted line's scene as its capture ([below](#no-wait-for-a-trusted-line-api-49)), and (API 51) the
+  region's current scene once it shows another. Only when the region has no screen yet (just set, no trusted line
+  since) does it read its one capture pass (API 43's), beside `VJO_GAME_RESERVE_HOOK_ONLY` (1 MiB) instead of the OCR
+  reserve (4 MiB). So a game short of memory, even with no memory free, still gets a Luna or verified site's lines;
   a string copy earns trust only through OCR, so in a game that never has the OCR reserve free it is never trusted
   (the bench's tight rows refuse every one of its jobs, trust on or off);
 - gives back the weights, LM and cascade model an earlier OCR job left resident (`drop_resident`) once trusted
@@ -688,7 +692,12 @@ the game's copy of a line and its lookup is gone but two: the worker's poll of t
   it (the tracker keeps a hooked line's number while it draws and through an icon's changes). A trusted answer's job
   publishes its capture with `vjoOcrCaptureRows`' `VJO_ROWS_HOOK`: that scene, with no rows armed, no frame waited
   for and no signature, so the result stands for that scene alone. Once the region shows another scene (a menu over
-  the line, an untrusted line since) the kernel refuses it and the worker reads its first pass as before.
+  the line, an untrusted line since, a larger change after the line drew) it publishes that scene the same way
+  (API 51). API 49 refused it there and the worker read its first pass: a strip beside the 1 MiB hook-only reserve,
+  for the same answer, since a trusted answer is the hook's last line whatever the screen shows. あおかな
+  (`PCSG00700`), whose console runs sampled 1 to 4 MiB free (#324), refused that pass whenever it sampled 1 MiB, so a
+  press some time into a line could fail for memory although the hook had the line. Only a region without a screen
+  yet (just set, no trusted line since) is still refused, and the worker reads the pass.
 - **The Shell** (`shell/worker.c`): a hook scene is read at once, past the background read's pacing
   (`background_throttled`: the subtitle strip's 1 s between jobs, a failure's backoff, the retry after a screen that
   changed under a job) and, with the overlay open, past the refresh's (`background_open`: 2 s between refreshes, 1.5 s

@@ -679,6 +679,12 @@ add_executable(vjo-dict-bench host/dict_bench.c core/local_dict.c core/textnorm.
 target_compile_definitions(vjo-dict-bench PRIVATE VJO_LOCAL_STATS=1)
 target_link_libraries(vjo-dict-bench vjo_host)
 target_compile_options(vjo-dict-bench PRIVATE -Wall -Wextra -Wno-unused-parameter)
+# The Shell's cursor lookup at every tap of a corpus, each stage timed and every read
+# attributed (tools/dict_stage_report.py): its own local_dict.c with the counters and stage clocks on.
+add_executable(vjo-dict-stage-bench host/dict_stage_bench.c core/local_dict.c)
+target_compile_definitions(vjo-dict-stage-bench PRIVATE VJO_LOCAL_STATS=1)
+target_link_libraries(vjo-dict-stage-bench vjo_host)
+target_compile_options(vjo-dict-stage-bench PRIVATE -Wall -Wextra -Wno-unused-parameter)
 # What every lookup of the committed lines shows with the bundled dictionary
 # (tools/dict_lookup_golden.tsv): a lookup change that alters one fails.
 if(_vjo_plaintext_dir)

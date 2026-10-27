@@ -106,8 +106,13 @@
  * 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.c): VjoGameOcrRequest.speed bits 21-23
  * (VJO_GAME_OCR_S_LINE_FIX: VOCR_FIX_DEFAULT, _JUNK, _VALLEY), VjoVocrPolicy.line_fix, config.ini ocr_line_fix.
  * Sizes and layouts are unchanged. This is #330: 47's and 49's notes kept 44 and then 48 for it, and it merged
- * after 49, so it is 50. */
-#define VJO_API_VERSION 50
+ * after 49, so it is 50.
+ * 51: a trusted answer needs no memory (docs/native-hooks.md, "No wait for a trusted line"): vjoOcrCaptureRows'
+ * VJO_ROWS_HOOK also publishes the region's current scene once the region shows another than the trusted line's
+ * (49 refused it with VJO_ERR_FORMAT, and the worker read the first pass: a strip beside VJO_GAME_RESERVE_HOOK_ONLY,
+ * which a game with 1 MiB free refused, so the job failed although the hook had its text). FORMAT now means only
+ * that the region has no screen yet. Sizes and layouts are unchanged. */
+#define VJO_API_VERSION 51
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */
