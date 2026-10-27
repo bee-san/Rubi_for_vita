@@ -202,7 +202,13 @@ static void find_only(const Setup *su, const char *id, VjoGreySource *src)
     row_us = (unsigned)(1e6 * (now_s() - t0));
     t0 = now_s();
 #if HAVE_VERTICAL
-    vertical = !rrc && vjo_vocr_rows_vertical(rows.lines, rows.count, w, h);
+    if (su->line_fix && h >= w) { /* as the job: a tall region is checked on the frozen finder's rows */
+        VocrLineSet frozen;
+        memset(&frozen, 0, sizeof(frozen));
+        vertical = !rrc && !vocr_find_lines(&im, VOCR_LINES_TEXTBOX_RECOVERY, arena, sizeof(arena), &frozen) &&
+                   vjo_vocr_rows_vertical(frozen.lines, frozen.count, w, h);
+    } else
+        vertical = !rrc && vjo_vocr_rows_vertical(rows.lines, rows.count, w, h);
 #else
     vertical = 0;
 #endif

@@ -28,6 +28,7 @@
 #include "vocr.h"
 #include "vocr_lm.h"
 #include "vocr_lines.h"
+#include "vocr_lines_fix.h"
 #include "vocr_ocr.h"
 #ifndef VJO_TEST_OFF_ONLY
 #include "vocr_vertical.h"
@@ -446,6 +447,7 @@ static void on_line(void *ud, const VjoVocrLineInfo *info)
 
 typedef struct {
     int lm, line, helpers, cache, refine, short_lines, cascade, gate, check;
+    unsigned fix; /* API 50: VjoVocrPolicy.line_fix */
 } JobOpts;
 
 /* A pool of real threads (VjoVocrPool): one per line a helper runs, joined. */
@@ -509,6 +511,7 @@ static int job(const char *model, const JobOpts *o, char *text, size_t cap, char
     pol.short_lines = o->short_lines;
 #ifndef VJO_TEST_OFF_ONLY
     pol.vertical_check = o->check; /* API 47, auto */
+    pol.line_fix = o->fix;         /* API 50 */
     static VjoVocrGateResident gate_res; /* its weights: from the models' directory when a gate test put them there
                                            * (put_gate_file); without them the gate cannot decide */
     if (o->gate) {
@@ -1108,6 +1111,48 @@ static void test_auto_check(void)
             TEST_CHECK(!(st.line[k].flags & VJO_VOCR_LINE_COLUMN));
     }
 }
+
+/* API 50 beside auto: a box drawn around four columns and a speaker's name 40 px to their left (two band
+ * heights). The column fix joins each row's parts across that gap, and its joined rows do not look vertical; the
+ * frozen finder's rows do, and in a region at least as tall as wide the check takes those (core/vocr_ocr.c):
+ * vertical text still, with the fix on. A region of horizontal rows reads with the fix. */
+static void test_auto_check_with_the_line_fix(void)
+{
+    static const unsigned glyphs[4] = {6, 4, 7, 3};
+    static unsigned char grey[280u * 300u], arena[1u << 20];
+    char text[VJO_OCR_TEXT_CAP];
+    VjoVocrStats st;
+    VocrLineSet frozen, fixed;
+    setup_files();
+    vjo_vocr_resident_drop(&res);
+    draw_columns(280, 300, 4, glyphs, 20, 26, 20, 225);
+    column(280u - 20u - 4u * 38u - 40u - 20u, 8, 4, 20, 26, 9, 225); /* the name */
+    /* the premise, on the region's grey rows: the frozen rows look vertical, the fixed rows do not */
+    TEST_ASSERT(strip(NULL, 0, rh, grey, rw, VJO_STRIP_FIRST | VJO_STRIP_LAST) == (int)rh);
+    VocrLinesImage g = {grey, rw, rh, rw, VOCR_LINES_GREY};
+    memset(&frozen, 0, sizeof frozen);
+    memset(&fixed, 0, sizeof fixed);
+    TEST_ASSERT(vocr_find_lines(&g, VOCR_LINES_TEXTBOX_RECOVERY, arena, sizeof arena, &frozen) == 0);
+    TEST_ASSERT(vocr_find_lines_fix(&g, VOCR_LINES_TEXTBOX_RECOVERY, VOCR_FIX_DEFAULT, arena, sizeof arena, &fixed) == 0);
+    TEST_CHECK_(vjo_vocr_rows_vertical(frozen.lines, frozen.count, rw, rh) &&
+                    !vjo_vocr_rows_vertical(fixed.lines, fixed.count, rw, rh),
+                "frozen %u rows, fixed %u rows", frozen.count, fixed.count);
+    JobOpts o = {.check = 1, .fix = VOCR_FIX_DEFAULT};
+    int rc = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
+    TEST_CHECK_(rc == VJO_E_VERTICAL && !st.recognized && !st.model_loaded, "rc %d, %u read", rc, st.recognized);
+    o.check = 0; /* without the check: the fixed rows, read */
+    rc = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
+    TEST_CHECK_(rc == VJO_OK && st.lines == fixed.count, "rc %d, %u rows (fixed %u)", rc, st.lines, fixed.count);
+    /* horizontal rows in a wide region, checked, with the fix: read as without the check */
+    draw_rows();
+    o.check = 1;
+    rc = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
+    unsigned checked = st.lines, read_checked = st.recognized;
+    o.check = 0;
+    int rc2 = job(M_ROWS, &o, text, sizeof text, NULL, 0, &st);
+    TEST_CHECK_(rc == VJO_OK && rc2 == VJO_OK && checked == st.lines && read_checked == st.recognized && checked >= 2,
+                "rc %d / %d, %u / %u rows", rc, rc2, checked, st.lines);
+}
 #endif /* VJO_TEST_OFF_ONLY */
 
 TEST_LIST = {
@@ -1124,6 +1169,7 @@ TEST_LIST = {
     {"the text-presence gate never runs on columns (recognize's guard)", test_gate_never_runs_on_columns},
     {"auto: the rule on the row finder's rows, vertical and horizontal, and its edges", test_rows_vertical_rule},
     {"auto: rows of vertical text read nothing (VJO_E_VERTICAL); horizontal rows are today's job", test_auto_check},
+    {"API 50 with auto: a tall box's rows checked as the frozen finder finds them, then read with the fix", test_auto_check_with_the_line_fix},
 #endif
     {NULL, NULL}
 };

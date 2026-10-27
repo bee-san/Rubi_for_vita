@@ -2023,10 +2023,17 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         }
     }
     /* The finder: rows, or a model of columns' columns, right to left (vocr_vertical.h). API 50: the rows with
-     * pol->line_fix's fixes; 0 is vocr_find_lines_rows exactly (vita-vn-ocr's check-lines-fix) */
+     * pol->line_fix's fixes; 0 is vocr_find_lines_rows exactly (vita-vn-ocr's check-lines-fix). With API 47's
+     * check, a region at least as tall as wide (the rule's first case: a box drawn around columns) is checked on
+     * the frozen finder's rows, which the rule was chosen on: the column fix joins a row's parts across a gap, as
+     * between the columns and a speaker's name, and so hid 52 of 863 such regions of hooked vertical pages from
+     * it. Where they do not look vertical, its rows are found again with the fixes; a wider region is found
+     * once, with them (no hooked horizontal region of 101,651 taken for vertical text either way). */
+    const unsigned fix = cols ? 0u : pol->line_fix;
+    const int frozen_check = fix && pol->vertical_check && im->height >= w;
     rc = cols ? vocr_find_columns_rows(&region, mi->finder_mode & 0xFFu, ws + l->scratch_off, l->finder, &set)
-              : vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, pol->line_fix, ws + l->scratch_off,
-                                         l->finder, &set);
+              : vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, frozen_check ? 0u : fix,
+                                         ws + l->scratch_off, l->finder, &set);
     /* API 47, auto (VjoVocrPolicy.vertical_check): rows that look like vertical text are not read, and no
      * weights are (nor the gate's score, made for rows): the caller reads the region's columns instead
      * (game_ocr/main.c). */
@@ -2037,6 +2044,8 @@ static int recognize(const VjoPlatform *p, const char *dir, const VjoVocrModel *
         st->truncated = set.truncated;
         return VJO_E_VERTICAL;
     }
+    if (!rc && frozen_check) /* not vertical: the rows the job reads, with the fixes */
+        rc = vocr_find_lines_fix_rows(&region, (int)mi->finder_mode, fix, ws + l->scratch_off, l->finder, &set);
     if (s->gate) {
         /* Scored on the finder's boxes; under the threshold the region holds no text: no line is read
          * (a hidden text box, a CG screen). Any error keeps the lines (the job reads as without it). */
