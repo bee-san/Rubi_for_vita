@@ -350,11 +350,16 @@
  * is ON holds 188,416 -> 192,512 B (debug) and 180,224 -> 184,320 B (normal), the setting on or off. */
 /* test/combined (the combined test build v0.9.8-test.N, never merged): main + draft #318 (PSP text, the comment
  * above, measured on main 627a673) + draft #326 (API 46, the overlay on the game's text, the comment above, measured
- * on main e2100e0); the pages below are this branch's own, measured on its builds (MEASURE_PLACEHOLDER). */
+ * on main e2100e0), in the game's partition only: the debug worker's text 160,888 -> 173,400 B and data/bss
+ * 35,328 -> 35,712 B, 200,704 -> 212,992 B of pages (three more: 2,728 B of text room left); the normal worker's
+ * 151,988 -> 159,388 B and 35,320 -> 35,624 B, 192,512 -> 196,608 B (one more; 356 B left) [measured: the build log's
+ * module rows, both builds of this branch at 44d2b1f, tools/fast_gate.sh's vitasdk image; main's rows as the API 47
+ * audit entry above gives them]. The kernel's and both Shells' pages are main's (the normal Shell 93,484 + 69,360 B
+ * in 163,840 B: #326 moves s_cursor_text into the PAF UI block). No block, thread or allocation beyond the PRs'. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 212992u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 196608u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an
