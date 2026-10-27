@@ -1590,8 +1590,9 @@ static void hook_show(VjoGameOcrResult *out, const VjoHookCand *k, int ocr, unsi
 }
 
 /* API 49: a trusted answer's capture without a pixel read (VJO_ROWS_HOOK): the kernel publishes the trusted line's
- * scene while the region shows it, 0; else (a menu over the line, an untrusted line since, an older kernel's refusal)
- * the first pass as before, run_hook_pass. No memory: the answer needs no block. */
+ * scene while the region shows it, and (API 51) the region's current scene once it shows another (a menu over the
+ * line, an untrusted line since), 0; else (a region without a screen yet) the first pass as before, run_hook_pass.
+ * No memory: the answer needs no block, so a game with less than VJO_GAME_RESERVE_HOOK_ONLY free still gets it. */
 static int hook_publish(const VjoGameOcrRequest *r)
 {
     VjoGameOcrRows q;

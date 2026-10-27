@@ -501,9 +501,10 @@ same kind, module-relative key and encoding). Such a job (`VJO_HOOK_R_TRUSTED | 
 or `LOCKED`):
 
 - opens no model, LM or cascade file and makes no OCR memory check, and (API 49) reads no pixels: the kernel
-  publishes the trusted line's scene as its capture ([below](#no-wait-for-a-trusted-line-api-49)). Only when the
-  region shows another scene does it read its one capture pass (API 43's), beside `VJO_GAME_RESERVE_HOOK_ONLY`
-  (1 MiB) instead of the OCR reserve (4 MiB). So a game short of memory still gets a Luna or verified site's lines;
+  publishes the trusted line's scene as its capture ([below](#no-wait-for-a-trusted-line-api-49)), and (API 51) the
+  region's current scene once it shows another. Only when the region has no screen yet (just set, no trusted line
+  since) does it read its one capture pass (API 43's), beside `VJO_GAME_RESERVE_HOOK_ONLY` (1 MiB) instead of the OCR
+  reserve (4 MiB). So a game short of memory, even with no memory free, still gets a Luna or verified site's lines;
   a string copy earns trust only through OCR, so in a game that never has the OCR reserve free it is never trusted
   (the bench's tight rows refuse every one of its jobs, trust on or off);
 - gives back the weights, LM and cascade model an earlier OCR job left resident (`drop_resident`) once trusted
@@ -676,7 +677,12 @@ the game's copy of a line and its lookup is gone but two: the worker's poll of t
   it (the tracker keeps a hooked line's number while it draws and through an icon's changes). A trusted answer's job
   publishes its capture with `vjoOcrCaptureRows`' `VJO_ROWS_HOOK`: that scene, with no rows armed, no frame waited
   for and no signature, so the result stands for that scene alone. Once the region shows another scene (a menu over
-  the line, an untrusted line since) the kernel refuses it and the worker reads its first pass as before.
+  the line, an untrusted line since, a larger change after the line drew) it publishes that scene the same way
+  (API 51). API 49 refused it there and the worker read its first pass: a strip beside the 1 MiB hook-only reserve,
+  for the same answer, since a trusted answer is the hook's last line whatever the screen shows. あおかな
+  (`PCSG00700`), whose console runs sampled 1 to 4 MiB free (#324), refused that pass whenever it sampled 1 MiB, so a
+  press some time into a line could fail for memory although the hook had the line. Only a region without a screen
+  yet (just set, no trusted line since) is still refused, and the worker reads the pass.
 - **The Shell** (`shell/worker.c`): a hook scene is read at once, past the background read's pacing
   (`background_throttled`: the subtitle strip's 1 s between jobs, a failure's backoff, the retry after a screen that
   changed under a job) and, with the overlay open, past the refresh's (`background_open`: 2 s between refreshes, 1.5 s

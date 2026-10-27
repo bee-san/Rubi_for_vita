@@ -53,7 +53,8 @@ shorter wait and the rows-less publication (code only); the worker's watch of tr
 text's hash and length, its trust and site words (four words of `.bss`), the hook pool reused for the watch's text
 (no new buffer); the Shell's pacing bypass, the cursor kept when a line grew, and history's newest record (its place,
 time and the last append's: 32 B of `.bss`). A trusted answer now takes no capture strip at all (its capture is
-published without rows); it takes API 43's strip only when the region shows another scene. No new block, thread or
+published without rows); it takes API 43's strip only when the region shows another scene (API 51: only when the
+region has no screen yet). No new block, thread or
 stack, no budget raised. API 43's follow-up (`same_pipeline` compares `hook_trust`, +16 B of normal Shell text) is
 part of it. The rows [measured: the build log's module rows, VitaSDK 2026.08 (`tools/fast_gate.sh`'s image), main
 `b6c715c` and this change, both builds]:

@@ -586,7 +586,8 @@
  * the same reserve, and after 8 such answers in a row gives back the resident weights, LM and cascade
  * model: no new block, and the job's own worst case is the capture block's. API 49: it takes no strip at
  * all while the region shows the trusted line's scene (VJO_ROWS_HOOK publishes its capture without rows),
- * and API 43's strip otherwise. */
+ * and API 43's strip otherwise; API 51: no strip on another scene either (the kernel publishes the region's
+ * current scene), only while the region has no screen yet. */
 #define VJO_GAME_RESERVE_HOOK_ONLY (1u * 1024u * 1024u)
 /* API 23: an Anki screenshot's block (game_ocr/main.c run_shot, "VjoGameShot"): the JPEG
  * encoder's state (core/jpegsw.h VJO_JPEG_STATE_BYTES, 4,096 B at most), one strip of
