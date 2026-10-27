@@ -5,6 +5,23 @@ in CI, and printed at build time and at run time. The pools themselves, their si
 uses them are in [docs/vita-memory.md](vita-memory.md); why this exists is
 [issue #59's root cause](issue-59-root-cause.md).
 
+## #382's and #387's audit's follow-up (no API change)
+
+A try that hands the job to its next one leaves the log its blocks' steps, as before, but keeps the FREE step of a
+block it did not take: an earlier job's resident weights, LM or cascade model its check counted as free and released
+(`game_ocr/main.c` `steps_drop_blocks`). The Rubi app's plugins-only plan line names its files. No block, thread,
+stack or allocation; no module takes a page more.
+
+Measured with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text +
+data/bss), main `b88772c` against this change:
+
+| Module | Debug: main → this change | Normal: main → this change | Loaded pages |
+|---|---:|---:|---:|
+| Game worker | 179,712 + 36,704 → 179,760 + 36,704 B | 170,764 + 36,696 → 170,812 + 36,696 B | 217,088 / 208,896 B, unchanged |
+| Kernel, Shell | unchanged | unchanged | unchanged |
+
+The worker keeps 464 B (debug) and 1,220 B (normal) of its last text page.
+
 ## #316's audit: the hook fixes (no API change)
 
 The game worker only, in every game that is ON: no block, thread, stack or allocation, and no module takes a page more.

@@ -275,15 +275,19 @@ static int game_memblock_free(int item, unsigned gitem, SceUID uid, uint32_t byt
 /* API 47: an auto try that hands the job to its next try (vjo_game_ocr_run_request's again:) has given back every
  * block it took (cleanup): its ALLOC and FREE steps, from `from` on, leave the log, so that the try that reads the
  * text keeps room for its own steps (the log holds VJO_GAME_OCR_STEPS: two tries' blocks filled it before the last
- * try's recognize, LM and wait steps); the try's memory check, first pass and FIND step stay. */
+ * try's recognize, LM and wait steps); the try's memory check, first pass and FIND step stay. A FREE step of a block
+ * the try did not take (an earlier job's resident weights, LM or cascade model its check counted as free) stays too:
+ * that block is gone from the game's memory for good (#382's audit N1). */
 static void steps_drop_blocks(unsigned from)
 {
-    unsigned w = from, n;
+    unsigned w = from, n, taken = 0; /* a bit per VJO_GITEM_*: an ALLOC step of it from `from` on */
     if (!log_to || from >= log_to->n_steps) return;
     n = log_to->n_steps < VJO_GAME_OCR_STEPS ? log_to->n_steps : VJO_GAME_OCR_STEPS;
-    for (unsigned i = from; i < n; i++)
-        if (log_to->step[i].id != VJO_GSTEP_ALLOC && log_to->step[i].id != VJO_GSTEP_FREE)
-            log_to->step[w++] = log_to->step[i];
+    for (unsigned i = from; i < n; i++) {
+        const VjoGameOcrStep *s = &log_to->step[i];
+        if (s->id == VJO_GSTEP_ALLOC) taken |= 1u << (s->arg & 31u);
+        else if (s->id != VJO_GSTEP_FREE || !(taken >> (s->arg & 31u) & 1u)) log_to->step[w++] = *s;
+    }
     if (w < n) sceClibMemset(&log_to->step[w], 0, (n - w) * sizeof(log_to->step[0]));
     log_to->n_steps = w;
 }
