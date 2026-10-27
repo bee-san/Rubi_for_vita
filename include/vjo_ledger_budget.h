@@ -161,12 +161,11 @@
  * speed bit, VjoConfig's 4 B; #358's wait hint with the pause's clause, WAIT_HINT_PAUSE in the data segment, and the
  * active game's STATIC_FB flag) makes it 89,980 -> 90,068 + 73,416 -> 73,648 on main 2a92864, the same pages, 44 B of
  * text room and 80 B of data room [measured: the same rows, main 2a92864 and this change; the debug build 102,092 ->
- * 102,220 + 73,408 -> 73,616, the same pages]. test/combined (v0.9.8-test.5, main db1550c and every open draft):
- * 85,988 + 77,728 -> 90,020 + 73,696 B, a text page more and a data page fewer (#326's cursor text is the view's
+ * 102,220 + 73,408 -> 73,616, the same pages]. test/combined (v0.9.8-test.5, main dd94591 and every open draft):
+ * 85,988 + 77,728 -> 90,020 + 73,704 B, a text page more and a data page fewer (#326's cursor text is the view's
  * now, not 4,096 B of .bss; the drafts' strings in .rodata: shell/worker.c), the same 163,840 B, 92 B of text room
- * and 32 B of data room [measured: the gate's module rows, both builds, d01edd6 and its fixes; the debug build
- * 98,276 + 77,816 -> 102,164 + 73,616, the same 176,128 B]. Its check is exact (--exact): this must equal its
- * pages. */
+ * and 24 B of data room [measured: the gate's module rows, both builds, a1c44c5; the debug build 102,148 + 73,640,
+ * the same 176,128 B]. Its check is exact (--exact): this must equal its pages. */
 #define VJO_BUDGET_SHELL_MODULE_PAGES 163840u
 #endif
 /* VitaJPOverlay_OCR.suprx: 65,536 text + 8,192 data/bss [measured, API 20 build]. Raised from 45,056 B
@@ -493,10 +492,11 @@
  * pages kept it. No block, thread or allocation: the line checksums take the row states' place in the job's capture
  * block. */
 /* test/combined (the combined test build v0.9.8-test.N, never merged): main + every open draft (#318, #326, #355,
- * #359), in the game's partition only. On main db1550c (v0.9.8-test.5): 237,568 B of pages (debug: 196,496 + 37,176 B)
+ * #359), in the game's partition only. On main db1550c and dd94591 (v0.9.8-test.5): 237,568 B of pages (debug: 196,496 + 37,176 B)
  * and 225,280 B (normal: 182,468 + 37,088 B), 20,480 and 16,384 B more than main's: the drafts' code takes four text
  * pages in the debug build and three in the normal one, and their data/bss (#318's PSP text profiles, #326's char
- * map state, #359's watch) a tenth data page in both [measured: the gate's module rows, both builds, d01edd6]. The
+ * map state, #359's watch) a tenth data page in both [measured: the gate's module rows, both builds, d01edd6 and
+ * a1c44c5 (main dd94591)]. The
  * kernel's and both Shells' pages are main's (some of the drafts' Shell strings are in .rodata here: shell/worker.c).
  * No block, thread or alloc. */
 #if VJO_DEBUG
