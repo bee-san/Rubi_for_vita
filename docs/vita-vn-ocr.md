@@ -1173,7 +1173,7 @@ was read. Two causes, both found on the host (nothing of this has run on a conso
   job quietly and tries again (0.9.8 said nothing else; `main` says why after two: [#358](text-stability.md#why-the-overlay-waits-358)),
   for ever. On the host (`vjo-vertical-on-bench`, `host/vertical_on_bench.c`: the job of `core/vocr_ocr.c` and the
   Shell's tries on the user's kind of box, 900 × 160 px with two lines, each strip read the game's next frame, an icon
-  after the text that turns for 15 frames and then rests for 15 or 25; 12 presses each; built against main `19986c7`
+  after the text that turns for 15 frames and then rests for 15 or 25; 12 presses each; built against main `68041a7`
   for 0.9.8's on, whose job read the columns at once): at 30 frames a second off and auto showed the text in 12 of 12,
   0.9.8's on in 0 of 12 within 20 s; at 60, in 7 and 2 of 12. Its reads also came between the columns' recognitions, a
   column fetched, recognized, the next fetched, so the icon had the whole recognition to move in.
