@@ -1162,10 +1162,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
         request.flags |= (c ? c > VJO_GAME_OCR_CASCADE_MASK ? VJO_GAME_OCR_CASCADE_MASK : c : 1u)
                          << VJO_GAME_OCR_CASCADE_SHIFT;
     }
-    /* Opening the overlay confirms that the player wants this screen read now.
-     * Keep the wait for background reads, refreshes and diagnostic stages only;
-     * clearing SETTLE_FIRST alone would still leave settle_verify's wait. */
-    if (job_cfg.ocr_settle_ms > 0 && (job_prepares || job_refresh || stage >= 0 || flags)) {
+    if (job_cfg.ocr_settle_ms > 0) {
         uint32_t settle = (uint32_t)(job_cfg.ocr_settle_ms + 5) / 10u;
         int wait_max = job_cfg.ocr_settle_max_ms;
         request.flags |= (settle ? settle : 1u) << VJO_GAME_OCR_SETTLE_SHIFT |
@@ -1827,6 +1824,11 @@ static void start_job_kind(const char *why, int lookup, int refresh)
         job_text_generation = 0;
     job_idx = refresh ? 1 : 0;
     job_cfg = cfg; /* the control thread may reload cfg while the job runs */
+    /* Opening the overlay confirms that this screen is ready. Turn off both
+     * stability waits in this job's snapshot; background reads, refreshes and
+     * self-test jobs keep the configured wait. */
+    if (!job_prepares && !refresh)
+        job_cfg.ocr_settle_ms = 0;
     job_generation = game_generation;
     sceClibMemcpy(job_title, title_id, sizeof(job_title));
     job_title[sizeof(job_title) - 1] = '\0';
@@ -2098,7 +2100,9 @@ static void open_overlay(void)
         return;
     }
     /* Why the background result can't be used (tuning). */
-    vjo_dlog("open: %s (stable %u, quiet %u)",
+    /* Keep the debug Shell within its existing code pages (as the other log formats above). */
+    static const char open_state[] VJO_DATA_TABLE(overlay_open_state) = "open: %s (stable %u, quiet %u)";
+    vjo_dlog(open_state,
             job_running ? "background job still running"
             : !cache_ok || active < 0 ? "no background result"
                                       : "screen changed since the background result",
@@ -2112,8 +2116,7 @@ static void open_overlay(void)
          * without that wait, even before it captured anything. */
         if (!st.stable && job_prepares && !job_cursor_only)
             job_cancelled = 1;
-        else
-            cancel_outdated_job(&st);
+        cancel_outdated_job(&st);
     } else {
         start_job("overlay opened", 1);
     }

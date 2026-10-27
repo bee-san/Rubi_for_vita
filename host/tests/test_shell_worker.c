@@ -2434,11 +2434,13 @@ static void test_vocr_request_carries_the_job_policy(void)
         reset();
         cfg.ocr_settle_press_ms = press[i].press;
         cfg.ocr_settle_max_ms = press[i].max_ms;
-        job_prepares = press[i].prepares;
-        job_refresh = press[i].refresh;
+        ov = press[i].prepares ? OV_CLOSED : OV_OPEN;
         state.stable = 0;
         fake_recognized_text = "猫";
-        TEST_CHECK(run_vocr_job() == VJO_OK);
+        start_job_kind("policy", 1, press[i].refresh);
+        VjoGameOcrResult result;
+        unsigned ran;
+        TEST_CHECK(vocr_run_one(&result, 0, vocr_tiers(), &ran, -1) == VJO_OK);
         TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_MAX_SHIFT & 0xFFu) == press[i].max);
         TEST_CHECK((fake_game_request.flags >> VJO_GAME_OCR_SETTLE_SHIFT & 0xFFu) == (press[i].max ? 15u : 0u));
         TEST_CHECK(!!(fake_game_request.flags & VJO_GAME_OCR_F_SETTLE_FIRST) == !!press[i].max);
