@@ -14,14 +14,14 @@ the job's error and frees a block it could not give back before it takes another
 same places, and never two.
 
 Measured with VitaSDK GCC 15.2.0 in the gate's pinned image (`tools/check_memory_ledger.py`'s module rows, text +
-data/bss), main `72a6776` against this change:
+data/bss), main `68041a7` against this change:
 
 | Module | Debug: main → this change | Normal: main → this change | Loaded pages |
 |---|---:|---:|---:|
-| Game worker | 163,640 + 35,880 → 163,672 + 35,880 B | 154,676 + 35,864 → 154,708 + 35,864 B | 200,704 / 192,512 B, unchanged |
+| Game worker | 163,656 + 35,880 → 163,688 + 35,880 B | 154,692 + 35,864 → 154,724 + 35,864 B | 200,704 / 192,512 B, unchanged |
 | Kernel, Shell | unchanged | unchanged | unchanged |
 
-The worker keeps 168 B (debug) and 940 B (normal) of its last text page.
+The worker keeps 152 B (debug) and 924 B (normal) of its last text page.
 
 ## VOCR6's Normal and Large (vita-vn-ocr #125; no API change)
 

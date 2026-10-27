@@ -366,9 +366,9 @@
  * artifacts against this change's fast-gate builds, VitaSDK 2026.08]. No block, thread or allocation. */
 /* SC3 text, #368's audit (a timed-out charset read tried again, a failed close kept as the job's error, a block not
  * given back freed before another is taken: game_ocr/main.c hooks_sc3_load, sc3_release, hooks_cache_prepare): worker
- * text 163,640 -> 163,672 B debug (168 B of room left) and 154,676 -> 154,708 B normal (940 B), data/bss unchanged,
+ * text 163,656 -> 163,688 B debug (152 B of room left) and 154,692 -> 154,724 B normal (924 B), data/bss unchanged,
  * the same pages; the kernel's and the Shell's rows unchanged [measured: the build log's module rows, both builds,
- * main 72a6776 and this change, tools/fast_gate.sh's vitasdk image]. No new block, thread or allocation. */
+ * main 68041a7 and this change, tools/fast_gate.sh's vitasdk image]. No new block, thread or allocation. */
 #if VJO_DEBUG
 #define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
 #else
