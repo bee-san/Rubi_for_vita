@@ -301,6 +301,9 @@ static void reset(void)
     rm_rf(VJO_EXPORT_DIR);
     unlink(VJO_EXPORT_DATA_DIR "/anki_words.bin"); /* #314's cache of the cards' words */
     unlink(VJO_EXPORT_DATA_DIR "/anki_words.bin.tmp");
+    unlink(VJO_KNOWN_PATH); /* #314 stage C's known words and their index */
+    unlink(VJO_KNOWN_INDEX);
+    unlink(VJO_KNOWN_INDEX ".tmp");
     TEST_ASSERT(mkdir(VJO_EXPORT_QUEUE_DIR, 0777) == 0);
     memset(mem, 0xA5, sizeof(mem));
     vjo_arena_init(&A, mem, sizeof(mem));
@@ -978,6 +981,190 @@ static void test_the_words_cache(void)
     stop_at_status = 0;
     TEST_CHECK(words(&w, 0) == VJO_E_CANCELLED);
     stop_at_status = -1;
+}
+
+/* ---------------- #314 stage C: known words ---------------- */
+
+/* known_words.txt's lines (vjo_known_line): a word, a TAB and its reading or not; a BOM, a CR, spaces (ASCII and
+ * U+3000) around each field, blank lines and comments; what is not a word. */
+static void test_known_lines(void)
+{
+    static const struct { const char *line; int rc; const char *spelling, *reading; } cases[] = {
+        {"猫\tねこ", 1, "猫", "ねこ"},
+        {"猫\tねこ\r", 1, "猫", "ねこ"},                     /* CRLF */
+        {"\xEF\xBB\xBF猫\tねこ", 1, "猫", "ねこ"},           /* the file's BOM */
+        {"  猫 \t ねこ  ", 1, "猫", "ねこ"},                  /* ASCII spaces around the fields */
+        {"\xE3\x80\x80猫\xE3\x80\x80\tねこ\xE3\x80\x80", 1, "猫", "ねこ"}, /* U+3000 */
+        {"猫\tネコ", 1, "猫", "ねこ"},                        /* katakana: the key's fold */
+        {"猫\tねこ\tcat\t1234", 1, "猫", "ねこ"},           /* more columns: ignored */
+        {"猫", 1, "猫", NULL},                                /* no reading: the spelling alone */
+        {"猫\t", 1, "猫", NULL},
+        {"猫\t  ", 1, "猫", NULL},
+        {"ねこ", 1, "ねこ", NULL},
+        {"", 0, NULL, NULL},
+        {"\r", 0, NULL, NULL},
+        {"   \t  ", 0, NULL, NULL},
+        {"\xEF\xBB\xBF", 0, NULL, NULL},
+        {"# known words from Anki", 0, NULL, NULL},           /* comments */
+        {"   # indented", 0, NULL, NULL},
+        {"\tねこ", -1, NULL, NULL},                          /* no word */
+        {"  \tねこ", -1, NULL, NULL},
+        {"猫\x01\tねこ", -1, NULL, NULL},                    /* a control character */
+        {"猫\x7f", -1, NULL, NULL},
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        uint64_t key = 0, want = 0;
+        int rc = vjo_known_line(cases[i].line, strlen(cases[i].line), &key);
+        if (cases[i].rc > 0)
+            want = cases[i].reading ? vjo_word_key(cases[i].spelling, cases[i].reading)
+                                    : vjo_word_spelling_key(cases[i].spelling);
+        TEST_CHECK_(rc == cases[i].rc && (rc <= 0 || key == want), "case %u: rc %d", i, rc);
+    }
+    /* a NUL inside a line (the byte count says where it ends) */
+    {
+        uint64_t key;
+        TEST_CHECK(vjo_known_line("猫\0x\tねこ", 9, &key) == -1);
+    }
+    /* a field longer than VJO_KNOWN_LINE_MAX is not a word; one of exactly it is */
+    {
+        static char line[VJO_KNOWN_LINE_MAX + 8];
+        uint64_t key;
+        memset(line, 'a', sizeof(line));
+        TEST_CHECK(vjo_known_line(line, VJO_KNOWN_LINE_MAX, &key) == 1);
+        TEST_CHECK(vjo_known_line(line, VJO_KNOWN_LINE_MAX + 1, &key) == -1);
+    }
+}
+
+static void put_known(const char *text)
+{
+    put_file(VJO_KNOWN_PATH, text, strlen(text));
+}
+
+static int import_known(VjoKnownResult *k, char *msg)
+{
+    vjo_arena_init(&A, mem, sizeof(mem));
+    return vjo_known_import(&A, &ui, k, msg, 300);
+}
+
+/* The Anki page's Import: known_words.txt into anki_known.bin, its count, the result; a missing file clears the
+ * known words; a file that cannot be read, or an index that cannot be written, changes nothing. */
+static void test_known_import(void)
+{
+    static const char text[] =
+        "\xEF\xBB\xBF# known_words.txt: written by tools/known_words.py\r\n"
+        "猫\tねこ\r\n"
+        "犬\r\n"
+        "\r\n"
+        "猫\tネコ\r\n"             /* the same word again (katakana): one key */
+        "\tのみ\r\n"               /* not a word */
+        "食べる\tたべる\tto eat\r\n"
+        "最後";                     /* the last line, without a newline */
+    VjoKnownResult k;
+    char msg[300];
+    uint8_t head[16];
+    reset();
+    TEST_CHECK(vjo_known_count() == -1);
+    /* no file: no known words, and none is an error */
+    TEST_CHECK(import_known(&k, msg) == VJO_OK && k.missing && !k.words && vjo_known_count() == -1);
+    TEST_CHECK(strstr(msg, "No known_words.txt in ux0:data/VitaJPOverlay/: no known words.") != NULL);
+    TEST_MSG("%s", msg);
+    put_known(text);
+    TEST_ASSERT(import_known(&k, msg) == VJO_OK);
+    TEST_CHECK(k.words == 5 && k.keys == 4 && k.skipped == 1 && !k.over && !k.missing);
+    TEST_MSG("%d words, %d keys, %d skipped: %s", k.words, k.keys, k.skipped, msg);
+    TEST_CHECK(!strcmp(msg, "Imported 5 known words from known_words.txt: their cards get the tag known. 1 line is not "
+                            "a word (see log.txt)."));
+    TEST_MSG("%s", msg);
+    TEST_CHECK(strstr(logs, "known_words.txt line 6 is not a word") != NULL && vjo_known_count() == 4);
+    TEST_CHECK(get_bytes(VJO_KNOWN_INDEX, head, sizeof(head)) == 16 && !memcmp(head, "RubiKn1\n", 8) &&
+               present(VJO_KNOWN_INDEX ".tmp") == 0);
+    /* the file removed: Import clears them */
+    TEST_ASSERT(unlink(VJO_KNOWN_PATH) == 0);
+    TEST_CHECK(import_known(&k, msg) == VJO_OK && k.missing && vjo_known_count() == -1 && present(VJO_KNOWN_INDEX) == 0);
+    /* a file of comments only: an index of none */
+    put_known("# nothing yet\n");
+    TEST_CHECK(import_known(&k, msg) == VJO_OK && !k.words && vjo_known_count() == 0);
+    /* a file that cannot be read, a write that fails: the known words as they were */
+    put_known("猫\tねこ\n");
+    TEST_CHECK(import_known(&k, msg) == VJO_OK && vjo_known_count() == 1);
+    put_known("猫\tねこ\n犬\n");
+    for (int k2 = 0; k2 < 2; k2++) { /* the new index's rename fails (the old one is put back); the old one's */
+        io.fail_rename = k2 ? "anki_known.bin" : "anki_known.bin.tmp";
+        TEST_CHECK(import_known(&k, msg) == VJO_E_LOCAL_IO && strstr(msg, "The known words are as they were."));
+        io.fail_rename = NULL;
+        TEST_CHECK_(vjo_known_count() == 1 && present(VJO_KNOWN_INDEX) == 1 && present(VJO_KNOWN_INDEX ".tmp") == 0 &&
+                        present(VJO_KNOWN_INDEX ".bak") == 0, "case %d: %d", k2, vjo_known_count());
+    }
+    TEST_CHECK(import_known(&k, msg) == VJO_OK && vjo_known_count() == 2 && present(VJO_KNOWN_INDEX ".bak") == 0);
+    /* an import stopped between its two renames: the backup is read, and the next import replaces it */
+    TEST_ASSERT(rename(VJO_KNOWN_INDEX, VJO_KNOWN_INDEX ".bak") == 0);
+    TEST_CHECK(vjo_known_count() == 2);
+    TEST_CHECK(import_known(&k, msg) == VJO_OK && vjo_known_count() == 2 && present(VJO_KNOWN_INDEX) == 1);
+    /* a stop */
+    stop_at_status = 0;
+    TEST_CHECK(import_known(&k, msg) == VJO_E_CANCELLED && !strcmp(msg, "Stopped. The known words are as they were."));
+    stop_at_status = -1;
+    TEST_CHECK(vjo_known_count() == 2);
+    /* lines past VJO_KNOWN_MAX are left out, and said so; a line too long is not a word */
+    {
+        static char big[(VJO_KNOWN_MAX + 3) * 12 + 2000];
+        size_t n = 0;
+        for (int i = 0; i < VJO_KNOWN_MAX + 3; i++)
+            n += (size_t)snprintf(big + n, sizeof(big) - n, "w%d\n", i);
+        memset(big + n, 'x', 1500);
+        n += 1500;
+        big[n++] = '\n';
+        put_file(VJO_KNOWN_PATH, big, n);
+        TEST_ASSERT(import_known(&k, msg) == VJO_OK);
+        TEST_CHECK(k.words == VJO_KNOWN_MAX && k.keys == VJO_KNOWN_MAX && k.over == 3 && k.skipped == 1);
+        TEST_CHECK(strstr(msg, " 3 more left out: 65536 at most.") != NULL && vjo_known_count() == VJO_KNOWN_MAX);
+        TEST_MSG("%s", msg);
+        printf("measure: %d known words: import arena peak %u\n", VJO_KNOWN_MAX, (unsigned)A.peak);
+    }
+}
+
+/* The export tags `known` the cards of known words: by word (a line with a reading), by spelling alone (a line
+ * without one), beside `duplicate`; with Duplicates Keep too. A damaged index tags none, and says so. */
+static void test_known_cards_are_tagged(void)
+{
+    VjoExportResult r;
+    VjoKnownResult k;
+    char msg[300];
+    uint8_t bytes[64];
+    size_t n;
+    reset();
+    put_known("猫\tねこ\n犬\n");
+    TEST_ASSERT(import_known(&k, msg) == VJO_OK && k.keys == 2);
+    queue_word("猫", "ねこ", "猫が好き", 0);       /* known: its word */
+    queue_word("猫", "ねこ", "猫を見た", 60);      /* known, and a duplicate */
+    queue_word("猫", "びょう", "猫", 120);         /* another reading: not that word */
+    queue_word("犬", "いぬ", "犬だ", 180);         /* known by its spelling */
+    queue_word("犬", "けん", "犬", 240);           /* known by its spelling, whatever its reading */
+    queue_word("鳥", "とり", "鳥", 300);
+    TEST_ASSERT(run(0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 6 && r.known == 4 && r.duplicates == 1 && !r.known_unchecked);
+    TEST_CHECK(strstr(msg, " 4 tagged known (known_words.txt).") && strstr(msg, " 1 tagged duplicate (mined before)."));
+    TEST_MSG("%s", msg);
+    /* (DUPLICATE_TAGS is the start of the second's tags: the one duplicate is the known one) */
+    TEST_CHECK(notes_tagged(r.path, " vita-jp-overlay known ") == 3 &&
+               notes_tagged(r.path, " vita-jp-overlay duplicate known ") == 1 &&
+               notes_tagged(r.path, DUPLICATE_TAGS) == 1);
+    /* Keep: no duplicate check, the known words still tagged */
+    TEST_ASSERT(run_dupes(1, VJO_DUPLICATES_KEEP, 0, &r, msg) == VJO_OK);
+    TEST_CHECK(r.cards == 6 && r.known == 4 && !r.duplicates && notes_tagged(r.path, " vita-jp-overlay known ") == 4);
+    /* a damaged index: no card tagged known, and the result says so */
+    n = get_bytes(VJO_KNOWN_INDEX, bytes, sizeof(bytes));
+    TEST_ASSERT(n == 16 + 2 * 8);
+    bytes[20] ^= 1;
+    put_bytes(VJO_KNOWN_INDEX, bytes, n);
+    TEST_ASSERT(run(1, &r, msg) == VJO_OK);
+    TEST_CHECK(!r.known && r.known_unchecked && strstr(msg, " Not checked for known words (see log.txt).") &&
+               strstr(logs, "anki_known.bin is damaged (import known_words.txt again)"));
+    TEST_MSG("%s", msg);
+    /* no index: nothing to say */
+    TEST_ASSERT(unlink(VJO_KNOWN_INDEX) == 0);
+    TEST_ASSERT(run(1, &r, msg) == VJO_OK);
+    TEST_CHECK(!r.known && !r.known_unchecked && !strstr(msg, "known"));
 }
 
 static void test_export_writes_a_dated_verified_package_and_clears_the_queue(void)
@@ -1935,6 +2122,9 @@ TEST_LIST = {
     {"keep_checks_nothing", test_keep_checks_nothing},
     {"the_same_minute_is_ordered_by_id", test_the_same_minute_is_ordered_by_id},
     {"the_words_cache", test_the_words_cache},
+    {"known_lines", test_known_lines},
+    {"known_import", test_known_import},
+    {"known_cards_are_tagged", test_known_cards_are_tagged},
     {"export_writes_a_dated_verified_package_and_clears_the_queue",
      test_export_writes_a_dated_verified_package_and_clears_the_queue},
     {"one_card_and_every_record_version", test_one_card_and_every_record_version},
@@ -2087,12 +2277,42 @@ static int restart_step(int argc, char **argv)
     return 2;
 }
 
+/* `--known-keys FILE` (host/tests/test_apkg.py): each line of a known_words.txt as the app reads it
+ * (vjo_known_line): its number, the result (1 a word, 0 blank or a comment, -1 not a word) and its key in hex. */
+static int known_keys(const char *path)
+{
+    static char text[1 << 20];
+    FILE *f = fopen(path, "rb");
+    size_t n, at = 0;
+    int line = 0;
+    if (!f)
+        return 2;
+    n = fread(text, 1, sizeof(text), f);
+    fclose(f);
+    while (at < n) {
+        size_t end = at;
+        uint64_t key = 0;
+        char hex[VJO_WORD_KEY_HEX] = "";
+        int rc;
+        while (end < n && text[end] != '\n')
+            end++;
+        rc = vjo_known_line(text + at, end - at, &key);
+        if (rc > 0)
+            vjo_word_key_hex(key, hex);
+        printf("%d %d %s\n", ++line, rc, hex);
+        at = end + 1;
+    }
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     char out[PATH_MAX] = ""; /* (realpath's buffer: glibc's _FORTIFY_SOURCE requires PATH_MAX) */
     const char *dir;
     if (argc >= 2 && !strcmp(argv[1], "--restart-step"))
         return restart_step(argc, argv);
+    if (argc == 3 && !strcmp(argv[1], "--known-keys"))
+        return known_keys(argv[2]);
     if (argc == 3 && !strcmp(argv[1], "--write") && !realpath(argv[2], out))
         return 2;
     if (argc == 3 && !strcmp(argv[1], "--sqlw"))

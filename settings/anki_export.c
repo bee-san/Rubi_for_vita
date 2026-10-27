@@ -567,8 +567,9 @@ int vjo_export_words(VjoArena *a, const VjoExportUi *ui, int max_reads, VjoWords
     out->n = n;
     out->read = b.read;
     out->unreadable = b.unreadable;
-    vjo_log("anki export: words of %d cards, %d read, %d unreadable; %d queued, %d already mined", n, b.read,
-            b.unreadable, out->queued, out->duplicates);
+    /* (no "unreadable": a record that is has its own line, read_card's) */
+    vjo_log("anki export: words of %d cards (%d records read, %d without a word); %d queued, %d already mined", n,
+            b.read, b.unreadable, out->queued, out->duplicates);
     return 0;
 }
 
@@ -589,6 +590,382 @@ int vjo_words_earlier(const VjoWords *w, uint64_t key, int64_t time, const uint8
     return w->w[lo].time != t ? w->w[lo].time < t : w->w[lo].id < me;
 }
 
+/* ---------------- known words (#314 stage C) ---------------- */
+
+/* anki_known.bin: a 16-byte head (KNOWN_MAGIC, the keys' count and their CRC-32, big-endian), then the keys, sorted
+ * and distinct, 8 bytes each, big-endian. The app's alone: made by vjo_known_import from known_words.txt, read by the
+ * export. */
+#define KNOWN_MAGIC "RubiKn1\n"
+#define KNOWN_TEMP VJO_KNOWN_INDEX ".tmp"
+#define KNOWN_BACKUP VJO_KNOWN_INDEX ".bak" /* the old index while the new one is renamed in (never over a file) */
+#define KNOWN_CHUNK (16 * 1024) /* known_words.txt is read this much at a time, from the arena */
+
+/* The bytes of an ASCII space or U+3000 (an ideographic space) at s (n bytes left), or 0. */
+static size_t space_at(const char *s, size_t n)
+{
+    if (n && (s[0] == ' ' || s[0] == '\t'))
+        return 1;
+    return n >= 3 && (uint8_t)s[0] == 0xE3 && (uint8_t)s[1] == 0x80 && (uint8_t)s[2] == 0x80 ? 3 : 0;
+}
+
+/* [*b, *e) without the spaces (space_at) at either end. */
+static void trim(const char *s, size_t *b, size_t *e)
+{
+    size_t k;
+    while (*b < *e && (k = space_at(s + *b, *e - *b)))
+        *b += k;
+    for (;;) {
+        if (*e > *b && (s[*e - 1] == ' ' || s[*e - 1] == '\t'))
+            (*e)--;
+        else if (*e >= *b + 3 && (uint8_t)s[*e - 3] == 0xE3 && (uint8_t)s[*e - 2] == 0x80 && (uint8_t)s[*e - 1] == 0x80)
+            *e -= 3;
+        else
+            return;
+    }
+}
+
+int vjo_known_line(const char *line, size_t n, uint64_t *key)
+{
+    char word[VJO_KNOWN_LINE_MAX + 1], reading[VJO_KNOWN_LINE_MAX + 1];
+    size_t b = 0, e, rb, re, k;
+    if (n && line[n - 1] == '\r')
+        n--;
+    if (n >= 3 && !memcmp(line, "\xEF\xBB\xBF", 3)) /* the file's BOM (Notepad) */
+        b = 3;
+    /* blank, or a comment: its first character after spaces is '#' */
+    for (size_t i = b;;) {
+        if (i >= n)
+            return 0;
+        if ((k = space_at(line + i, n - i))) {
+            i += k;
+            continue;
+        }
+        if (line[i] == '#')
+            return 0;
+        break;
+    }
+    for (size_t i = b; i < n; i++)
+        if (((uint8_t)line[i] < 0x20 && line[i] != '\t') || line[i] == 0x7F)
+            return -1; /* a control character, a NUL */
+    /* the word, up to the first TAB; then the reading, up to the next */
+    for (e = b; e < n && line[e] != '\t'; e++)
+        ;
+    rb = re = e < n ? e + 1 : n;
+    while (re < n && line[re] != '\t')
+        re++;
+    trim(line, &b, &e);
+    trim(line, &rb, &re);
+    if (b == e || e - b > VJO_KNOWN_LINE_MAX || re - rb > VJO_KNOWN_LINE_MAX)
+        return -1;
+    memcpy(word, line + b, e - b);
+    word[e - b] = '\0';
+    memcpy(reading, line + rb, re - rb);
+    reading[re - rb] = '\0';
+    *key = rb == re ? vjo_word_spelling_key(word) : vjo_word_key(word, reading);
+    return 1;
+}
+
+static void key_down(uint64_t *k, int n, int i)
+{
+    for (;;) {
+        int c = 2 * i + 1;
+        uint64_t t;
+        if (c >= n)
+            return;
+        if (c + 1 < n && k[c] < k[c + 1])
+            c++;
+        if (k[i] >= k[c])
+            return;
+        t = k[i];
+        k[i] = k[c];
+        k[c] = t;
+        i = c;
+    }
+}
+
+/* Sorts n keys and drops the repeats: the distinct ones' count. */
+static int key_set(uint64_t *k, int n)
+{
+    int m = 0;
+    for (int i = n / 2 - 1; i >= 0; i--)
+        key_down(k, n, i);
+    for (int end = n - 1; end > 0; end--) {
+        uint64_t t = k[0];
+        k[0] = k[end];
+        k[end] = t;
+        key_down(k, end, 0);
+    }
+    for (int i = 0; i < n; i++)
+        if (!m || k[m - 1] != k[i])
+            k[m++] = k[i];
+    return m;
+}
+
+/* The index of n sorted keys, under its temporary name, then in place of the old one, which is kept as the backup
+ * until then and put back when the rename fails: 0, or -1 (logged; the old index stays). */
+static int known_save(const uint64_t *k, int n)
+{
+    uint8_t head[16], buf[2048];
+    uint32_t crc = 0;
+    int rc, c;
+    SceUID fd;
+    for (int i = 0; i < n; i += (int)(sizeof(buf) / 8)) {
+        int m = n - i < (int)(sizeof(buf) / 8) ? n - i : (int)(sizeof(buf) / 8);
+        for (int j = 0; j < m; j++)
+            be_put(buf + 8 * j, k[i + j], 8);
+        crc = vjo_crc32(crc, buf, (size_t)m * 8);
+    }
+    memcpy(head, KNOWN_MAGIC, 8);
+    be_put(head + 8, (uint32_t)n, 4);
+    be_put(head + 12, crc, 4);
+    if ((fd = sceIoOpen(KNOWN_TEMP, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666)) < 0)
+        return io_fail("open", KNOWN_TEMP, fd);
+    rc = write_all(fd, head, sizeof(head));
+    for (int i = 0; !rc && i < n; i += (int)(sizeof(buf) / 8)) {
+        int m = n - i < (int)(sizeof(buf) / 8) ? n - i : (int)(sizeof(buf) / 8);
+        for (int j = 0; j < m; j++)
+            be_put(buf + 8 * j, k[i + j], 8);
+        rc = write_all(fd, buf, (size_t)m * 8);
+    }
+    if ((c = sceIoClose(fd)) < 0 && !rc)
+        rc = io_fail("close", KNOWN_TEMP, c);
+    if (!rc && (c = sceIoSync("ux0:", 0)) < 0)
+        rc = io_fail("sync", "ux0:", c);
+    if (rc) {
+        sceIoRemove(KNOWN_TEMP);
+        return rc;
+    }
+    /* the old index as the backup (an older backup goes first: the index is the newer), then the new one in place */
+    if (present(VJO_KNOWN_INDEX) == 1) {
+        if (present(KNOWN_BACKUP) == 1 && (c = sceIoRemove(KNOWN_BACKUP)) < 0)
+            rc = io_fail("remove", KNOWN_BACKUP, c);
+        else if ((c = sceIoRename(VJO_KNOWN_INDEX, KNOWN_BACKUP)) < 0)
+            rc = io_fail("rename", VJO_KNOWN_INDEX, c);
+    }
+    if (!rc && (c = sceIoRename(KNOWN_TEMP, VJO_KNOWN_INDEX)) < 0) {
+        rc = io_fail("rename", KNOWN_TEMP, c);
+        if (present(KNOWN_BACKUP) == 1 && (c = sceIoRename(KNOWN_BACKUP, VJO_KNOWN_INDEX)) < 0) /* the old one back */
+            io_fail("rename", KNOWN_BACKUP, c);
+    }
+    if (rc)
+        sceIoRemove(KNOWN_TEMP);
+    else if (present(KNOWN_BACKUP) == 1 && (c = sceIoRemove(KNOWN_BACKUP)) < 0)
+        io_fail("remove", KNOWN_BACKUP, c); /* (harmless: the index is read first) */
+    if ((c = sceIoSync("ux0:", 0)) < 0)
+        io_fail("sync", "ux0:", c);
+    return rc;
+}
+
+/* The index for reading: anki_known.bin, else its backup (an import stopped between its two renames), else < 0. */
+static SceUID known_open(void)
+{
+    SceUID fd = sceIoOpen(VJO_KNOWN_INDEX, SCE_O_RDONLY, 0);
+    return fd == MISSING ? sceIoOpen(KNOWN_BACKUP, SCE_O_RDONLY, 0) : fd;
+}
+
+typedef struct {
+    uint64_t *keys;
+    int n, line_no;
+    VjoKnownResult *r;
+} KnownRead;
+
+/* A whole line of known_words.txt (too_long: more than the line buffer held). */
+static void known_add(KnownRead *k, const char *line, size_t n, int too_long)
+{
+    uint64_t key;
+    int rc = too_long ? -1 : vjo_known_line(line, n, &key);
+    k->line_no++;
+    if (rc < 0) {
+        if (k->r->skipped++ < 3)
+            vjo_log("anki known: known_words.txt line %d is not a word (skipped)", k->line_no);
+    } else if (rc > 0) {
+        if (k->n < VJO_KNOWN_MAX) {
+            k->keys[k->n++] = key;
+            k->r->words++;
+        } else {
+            k->r->over++;
+        }
+    }
+}
+
+int vjo_known_import(VjoArena *a, const VjoExportUi *ui, VjoKnownResult *r, char *msg, size_t cap)
+{
+    size_t base = vjo_arena_mark(a), len = 0;
+    char *chunk, *line;
+    KnownRead k;
+    SceUID fd;
+    int got, too_long = 0, rc = 0;
+    memset(r, 0, sizeof(*r));
+    msg[0] = '\0';
+    if ((fd = sceIoOpen(VJO_KNOWN_PATH, SCE_O_RDONLY, 0)) < 0) {
+        if (fd != MISSING) {
+            io_fail("open", VJO_KNOWN_PATH, fd);
+            snprintf(msg, cap, "Cannot read known_words.txt (see log.txt). The known words are as they were.");
+            return r->rc = VJO_E_LOCAL_IO;
+        }
+        r->missing = 1;
+        for (int i = 0; i < 2; i++) {
+            const char *path = i ? KNOWN_BACKUP : VJO_KNOWN_INDEX;
+            if (present(path) == 1 && (got = sceIoRemove(path)) < 0) {
+                io_fail("remove", path, got);
+                snprintf(msg, cap, "No known_words.txt, but the known words could not be cleared (see log.txt).");
+                return r->rc = VJO_E_LOCAL_IO;
+            }
+        }
+        snprintf(msg, cap, "No known_words.txt in %s/: no known words. tools/known_words.py makes it from Anki.",
+                 VJO_EXPORT_DATA_DIR);
+        return r->rc = VJO_OK;
+    }
+    memset(&k, 0, sizeof(k));
+    k.r = r;
+    k.keys = (uint64_t *)vjo_arena_alloc(a, sizeof(uint64_t) * VJO_KNOWN_MAX);
+    chunk = (char *)vjo_arena_alloc(a, KNOWN_CHUNK);
+    line = (char *)vjo_arena_alloc(a, VJO_KNOWN_LINE_MAX * 2 + 8); /* a line's bytes: a word, a TAB, a reading */
+    if (!k.keys || !chunk || !line) {
+        sceIoClose(fd);
+        vjo_arena_release(a, base);
+        snprintf(msg, cap, "Not enough memory to read known_words.txt. The known words are as they were.");
+        return r->rc = VJO_E_OOM;
+    }
+    for (;;) {
+        if (ui && ui->stopped && ui->stopped(ui->ud)) {
+            rc = VJO_E_CANCELLED;
+            break;
+        }
+        if ((got = sceIoRead(fd, chunk, KNOWN_CHUNK)) < 0) {
+            rc = io_error("read", VJO_KNOWN_PATH, got);
+            break;
+        }
+        if (!got)
+            break;
+        for (int i = 0; i < got; i++) {
+            if (chunk[i] == '\n') {
+                known_add(&k, line, len, too_long);
+                len = 0;
+                too_long = 0;
+            } else if (len < VJO_KNOWN_LINE_MAX * 2 + 8) {
+                line[len++] = chunk[i];
+            } else {
+                too_long = 1;
+            }
+        }
+        if (ui && ui->status) {
+            char status[64];
+            snprintf(status, sizeof(status), "Reading known_words.txt… %d words", r->words);
+            ui->status(ui->ud, status);
+        }
+    }
+    if (!rc && (len || too_long)) /* the last line, without a newline */
+        known_add(&k, line, len, too_long);
+    if ((got = sceIoClose(fd)) < 0 && !rc)
+        rc = io_error("close", VJO_KNOWN_PATH, got);
+    if (!rc) {
+        r->keys = key_set(k.keys, k.n);
+        if (known_save(k.keys, r->keys) < 0)
+            rc = VJO_E_LOCAL_IO;
+    }
+    vjo_arena_release(a, base);
+    if (rc == VJO_E_CANCELLED)
+        snprintf(msg, cap, "Stopped. The known words are as they were.");
+    else if (rc)
+        snprintf(msg, cap, "Could not read known_words.txt or write its words (see log.txt). The known words are as "
+                           "they were.");
+    else {
+        size_t m = (size_t)snprintf(msg, cap, "Imported %d known word%s from known_words.txt: their cards get the tag "
+                                    "known.", r->words, r->words == 1 ? "" : "s");
+        if (r->skipped && m < cap)
+            m += (size_t)snprintf(msg + m, cap - m, " %d line%s not a word (see log.txt).", r->skipped,
+                                  r->skipped == 1 ? " is" : "s are");
+        if (r->over && m < cap)
+            snprintf(msg + m, cap - m, " %d more left out: %d at most.", r->over, VJO_KNOWN_MAX);
+    }
+    vjo_log("anki known: import rc=%d: %d words, %d keys, %d skipped, %d over", rc, r->words, r->keys, r->skipped,
+            r->over);
+    return r->rc = rc;
+}
+
+/* The index's head: its count (0 for a file of none), or -1 (none, damaged: logged unless missing). */
+static int known_head(SceUID fd, uint8_t head[16])
+{
+    SceOff size = sceIoLseek(fd, 0, SCE_SEEK_END);
+    uint32_t n;
+    if (size < 16 || sceIoLseek(fd, 0, SCE_SEEK_SET) != 0 || read_all(fd, head, 16) < 0 || memcmp(head, KNOWN_MAGIC, 8))
+        return -1;
+    n = (uint32_t)be_get(head + 8, 4);
+    return n <= VJO_KNOWN_MAX && (uint64_t)size == 16 + (uint64_t)n * 8 ? (int)n : -1;
+}
+
+int vjo_known_count(void)
+{
+    uint8_t head[16];
+    SceUID fd = known_open();
+    int n;
+    if (fd < 0)
+        return -1;
+    n = known_head(fd, head);
+    sceIoClose(fd);
+    return n;
+}
+
+/* The index's keys into a (*out; NULL and 0 without an index): their count, or -1 (damaged: re-import), -2 (no room). */
+static int known_load(VjoArena *a, uint64_t **out)
+{
+    uint8_t head[16], buf[2048];
+    size_t mark = vjo_arena_mark(a);
+    SceUID fd = known_open();
+    uint32_t crc = 0;
+    int n, rc = 0;
+    *out = NULL;
+    if (fd < 0) {
+        if (fd != MISSING)
+            io_fail("open", VJO_KNOWN_INDEX, fd);
+        return fd == MISSING ? 0 : -1;
+    }
+    if ((n = known_head(fd, head)) < 0)
+        rc = -1;
+    else if (n && !(*out = (uint64_t *)vjo_arena_alloc(a, sizeof(uint64_t) * (size_t)n)))
+        rc = -2;
+    for (int i = 0; !rc && i < n;) {
+        int m = n - i < (int)(sizeof(buf) / 8) ? n - i : (int)(sizeof(buf) / 8);
+        if (read_all(fd, buf, (size_t)m * 8) < 0) {
+            rc = -1;
+            break;
+        }
+        crc = vjo_crc32(crc, buf, (size_t)m * 8);
+        for (int j = 0; j < m && !rc; j++, i++) {
+            (*out)[i] = be_get(buf + 8 * j, 8);
+            if (i && (*out)[i] <= (*out)[i - 1])
+                rc = -1; /* not sorted and distinct */
+        }
+    }
+    sceIoClose(fd);
+    if (!rc && crc != (uint32_t)be_get(head + 12, 4))
+        rc = -1;
+    if (rc) {
+        vjo_log("anki export: %s %s: no card is tagged known", VJO_KNOWN_INDEX,
+                rc == -2 ? "does not fit in memory" : "is damaged (import known_words.txt again)");
+        vjo_arena_release(a, mark);
+        *out = NULL;
+        return rc;
+    }
+    return n;
+}
+
+static int known_has(const uint64_t *k, int n, uint64_t key)
+{
+    int lo = 0, hi = n - 1;
+    while (lo <= hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (k[mid] == key)
+            return 1;
+        if (k[mid] < key)
+            lo = mid + 1;
+        else
+            hi = mid - 1;
+    }
+    return 0;
+}
+
 /* ---------------- the list of cards ---------------- */
 
 typedef struct {
@@ -600,10 +977,13 @@ typedef struct {
     const VjoWords *words; /* #314: every card's word (NULL: Duplicates Keep, or not checked) */
     int skip;              /* Duplicates Skip: a duplicate is left out */
     int skipped_queued, skipped_archived; /* duplicates left out: in the queue (they stay), in the archive */
+    const uint64_t *known; /* #314 stage C: the known words' keys (anki_known.bin), sorted */
+    int n_known;
 } List;
 
 /* VjoApkgCard.flags: its note's tags (export_tags) */
 #define CARD_DUPLICATE 1u
+#define CARD_KNOWN 2u
 
 static int newer(const VjoApkgCard *x, const VjoApkgCard *y)
 {
@@ -658,7 +1038,11 @@ static int list_card(void *ud, const char *hex)
     }
     from_hex(hex, c.id);
     c.time = note.unix_time > 0 ? note.unix_time : VJO_APKG_NO_TIME;
-    /* #314: a word an earlier card has: Anki's duplicate tag, or (Skip) not in this package */
+    /* #314: a word an earlier card has: Anki's duplicate tag, or (Skip) not in this package; a known word's (stage
+     * C, by its key or, for a known word without a reading, by its spelling alone): the tag known */
+    if (l->n_known && (known_has(l->known, l->n_known, vjo_word_key(note.spelling, note.reading)) ||
+                       known_has(l->known, l->n_known, vjo_word_spelling_key(note.spelling))))
+        c.flags |= CARD_KNOWN;
     if (l->words && vjo_words_earlier(l->words, vjo_word_key(note.spelling, note.reading), c.time, c.id)) {
         if (l->skip) {
             if (l->archive)
@@ -793,13 +1177,14 @@ static int out_stopped(void *ud)
 }
 
 /* A note's tags besides vita-jp-overlay (VjoApkgOps.tags): Anki's own `duplicate` (#314: the tag its browser's Find
- * Duplicates gives) for a card whose word an earlier card has. */
+ * Duplicates gives) for a card whose word an earlier card has, and `known` for a word of known_words.txt. */
 static const char *export_tags(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note)
 {
+    static const char *const tags[4] = {NULL, "duplicate", "known", "duplicate known"};
     (void)ud;
     (void)a;
     (void)note;
-    return c->flags & CARD_DUPLICATE ? "duplicate" : NULL;
+    return tags[c->flags & (CARD_DUPLICATE | CARD_KNOWN)];
 }
 
 /* ux0:data/VitaJPOverlay/anki/<YYYY-MM-DD_HHMMSS>[-all]-<N>cards[-k].apkg: a
@@ -1072,13 +1457,26 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
         }
     }
     l.skip = prefs->anki_duplicates == VJO_DUPLICATES_SKIP;
+    /* #314 stage C: the known words, whatever Duplicates says (above the words, released with them) */
+    {
+        uint64_t *known;
+        int n = known_load(a, &known);
+        if (n < 0)
+            r->known_unchecked = 1;
+        else {
+            l.known = known;
+            l.n_known = n;
+        }
+    }
     rc = scan(VJO_EXPORT_QUEUE_DIR, list_card, &l);
     if (rc >= 0 && all) {
         l.archive = 1;
         rc = scan(VJO_EXPORT_ARCHIVE_DIR, list_card, &l);
     }
-    vjo_arena_release(a, listed); /* the words */
+    vjo_arena_release(a, listed); /* the words and the known words */
     l.words = NULL;
+    l.known = NULL;
+    l.n_known = 0;
     if (ui->stopped && ui->stopped(ui->ud)) {
         snprintf(msg, cap, "Stopped. Nothing was changed.");
         vjo_arena_release(a, base);
@@ -1213,6 +1611,7 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
             else {
                 r->missing_picture += l.cards[i].missing_picture;
                 r->duplicates += !!(l.cards[i].flags & CARD_DUPLICATE); /* tagged */
+                r->known += !!(l.cards[i].flags & CARD_KNOWN);
                 if (!l.cards[i].exported)
                     to_move++;
             }
@@ -1244,7 +1643,7 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
         vjo_log("anki export: the final sync failed; the queue is checked again on the next export");
     vjo_arena_release(a, base);
     {
-        char size[24], extra[320] = "";
+        char size[24], extra[400] = "";
         size_text(r->bytes, size, sizeof(size));
         /* #314 first: what Duplicates did */
         if (l.skipped_queued)
@@ -1261,6 +1660,12 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
         if (r->unchecked)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
                      " Not checked for duplicates: too many cards for memory.");
+        if (r->known)
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra), " %d tagged known (known_words.txt).",
+                     r->known);
+        if (r->known_unchecked)
+            snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
+                     " Not checked for known words (see log.txt).");
         if (r->stopped)
             snprintf(extra + strlen(extra), sizeof(extra) - strlen(extra),
                      " Stopped while clearing: %d stay queued, for the next export too.", r->stopped);

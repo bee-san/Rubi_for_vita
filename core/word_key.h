@@ -19,6 +19,10 @@
 
 /* The key of a word (NULL spelling or reading: ""). */
 uint64_t vjo_word_key(const char *spelling, const char *reading);
+/* The key of a spelling alone, whatever its reading (#314's known words: a line of known_words.txt without a
+ * reading matches every card of its spelling): the first 64 bits of the SHA-256 of the folded spelling, without a
+ * TAB, so that it is never a word's key (a spelling has no TAB). */
+uint64_t vjo_word_spelling_key(const char *spelling);
 /* The key as 16 lowercase hex digits, its most significant digit first (the SHA-256's first byte). */
 void vjo_word_key_hex(uint64_t key, char out[VJO_WORD_KEY_HEX]);
 

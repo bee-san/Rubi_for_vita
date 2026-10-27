@@ -487,6 +487,20 @@ static void test_word_key(void)
     /* bytes that are not UTF-8 as they are, a lone lead byte at the end too */
     TEST_CHECK(vjo_word_key("\xE3\x82", "x") != vjo_word_key("", "x"));
     TEST_CHECK(vjo_word_key("\xE3\x83\xBB", "x") == vjo_word_key("", "x")); /* ・ alone */
+    /* the spelling alone (known words without a reading): the same folds, never a word's key */
+    {
+        static const struct { const char *spelling, *hex; } sp[] = {
+            {"猫", "a810bf845a307382"}, {"食べる", "2b7ce3887f50f5f1"}, {"コーヒー", "3118c7e596aedaf8"},
+            {"ジョン・スミス", "1611c782d42cad20"}, {"方", "4a5ff677e1dbd37c"},
+        };
+        for (unsigned i = 0; i < sizeof(sp) / sizeof(sp[0]); i++) {
+            vjo_word_key_hex(vjo_word_spelling_key(sp[i].spelling), hex);
+            TEST_CHECK_(!strcmp(hex, sp[i].hex), "%s: %s, want %s", sp[i].spelling, hex, sp[i].hex);
+        }
+        TEST_CHECK(vjo_word_spelling_key("ネコ") == vjo_word_spelling_key("ねこ"));
+        TEST_CHECK(vjo_word_spelling_key("ねこ") != vjo_word_key("ねこ", "ねこ"));
+        TEST_CHECK(vjo_word_spelling_key("ねこ") != vjo_word_key("ねこ", ""));
+    }
     vjo_word_key_hex(0x0123456789abcdefull, hex);
     TEST_CHECK(!strcmp(hex, "0123456789abcdef"));
     vjo_word_key_hex(0, hex);
