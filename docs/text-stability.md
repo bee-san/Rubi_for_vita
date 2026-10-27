@@ -519,10 +519,11 @@ line(s) recognized and not shown: an animated icon or a moving picture in the re
   once it types on, reads more. Faster than that, the line never holds still: a line read anyway that typed on ends
   the job as a screen change (the policy tests' `a_slow_typewriter_is_never_read_half_typed`, a character every 8, 10
   or 15 frames, with and without an icon).
-- **In-sample.** The scenarios' rules (half the budget, a quarter and half a line's height) were chosen on these 184
-  regions. On other pages of the same pool (audit-rubi-spinner's held-out run, the code before its F1 fix) the 90th
-  percentile was 1.5-2.8 s, the slowest 10.7 s (an icon of variable speed in the corner) and 12.4 s (a smooth one
-  after the text). The bench charges the finder's runs to the job at its end, not while the frames play on, and
-  plays 60 frames a second only.
+- **In-sample.** The watch's rules (half the budget, a quarter and half a line's height) were chosen on these 184
+  regions. On 92 other pages of the same 46 titles (halfway between the measured ones, as audit-rubi-spinner held
+  them out), the final code shows 89-91 of the 92 with an icon of many frames or a moving picture (`main` 0-3), a
+  median 0.4-1.9 s, a 90th percentile 1.6-2.6 s and at most 9.8 s after L + R; no region `main` showed is lost, and
+  1 of the 889 runs `main` showed whole is read short first. The bench charges the finder's runs to the job at its
+  end, not while the frames play on, and plays 60 frames a second only.
 - **The kernel's tracker** is unchanged: with such an icon the region may never settle, and Automatically reads it
   on its quiet events (a spot of 3 × 3 cells that keeps changing) instead.
