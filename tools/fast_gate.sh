@@ -45,7 +45,8 @@
 # clones and the pinned models. Without the private dictionary the gate runs what CI runs for a fork's pull
 # request and says so; the e2e then cannot run. The models lane reads VJO_VOCR_MODEL_DIR, else the cache's
 # models directory (the e2e lane's, which keeps the package's models there; `python3 tools/prepare_ocr.py
-# --backend vocr-tests --output DIR` adds the rest once, as --models on does).
+# --backend vocr-tests --output DIR` adds the rest once, as --models on does). Its container has that directory
+# only, and checks it again: a symlink there to a file outside fails the lane, by name.
 #
 # Prints one line per lane and FAST GATE: PASS or FAIL (also in OUT/result.txt); exit 0 only on PASS,
 # 2 when the gate itself cannot start.
@@ -53,7 +54,7 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT" || exit 2
 BASE='' E2E=auto MODELS=auto ARM=1 JOBS='' OUT=build/gate CLEAN=0
-usage() { sed -n '2,51p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case $1 in
     --base) [ $# -ge 2 ] || usage; BASE=$2; shift 2 ;;
@@ -234,11 +235,20 @@ $anki
 ctest --test-dir $(q "$OUT/host-$v") -j$JOBS --output-on-failure $select" &
 done
 # ---- the models lane: the debug build with the release models, whose host checks CI's job never runs (#335's
-# failed only there); the variant_free suites read no build, so no model: host-debug's run is theirs
+# failed only there); the variant_free suites read no build, so no model: host-debug's run is theirs. The models
+# are checked again where the lane runs: the container has only the directory, so a symlink in it to a file outside
+# (or a file the directory lost meanwhile) fails here, by name, not as the tests' failures. The gate's weights go to
+# cmake/VocrGate.cmake from there (VJO_VOCR_GATE_BLOB), checked, instead of its download.
 if [ "$MODELS" = run ]; then
   run_lane models host "
+if ! seen=\$(python3 tools/prepare_ocr.py --backend vocr-tests --check --output $(q "$MODEL_DIR") 2>&1); then
+  echo 'error: the lane does not see the models the gate checked (a symlink to a file outside the directory?)'
+  printf '%s\n' \"\$seen\" | sed 's/^/error: in the lane: /' | head -4 || true
+  exit 1
+fi
 cmake -S . -B $(q "$OUT/models-debug") -G Ninja -DVJO_DEBUG=ON -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
-  -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") -DVJO_VOCR_MODEL_DIR=$(q "$MODEL_DIR")
+  -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS") -DVJO_VOCR_MODEL_DIR=$(q "$MODEL_DIR") \\
+  -DVJO_VOCR_GATE_BLOB=$(q "$MODEL_DIR/textgate_p8_c8_w8.vtd")
 cmake --build $(q "$OUT/models-debug") -j$JOBS
 $anki
 ctest --test-dir $(q "$OUT/models-debug") -j$JOBS --output-on-failure -LE variant_free" &
