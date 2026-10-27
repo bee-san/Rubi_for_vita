@@ -856,10 +856,13 @@ static void rubi_filters(void)
     /* PCSG00380: the dash pieces, the player's default names (farm pages 37, 158), the page's last line break */
     rubi_to(VJO_RF_PCSG00380, VJO_HOOK_ENC_CP932, "㌫㍊も、\n「おい、㌫㊤㊥㊦」\n", "北條紗希も、\n「おい、北條―――」");
     /* PCSG00020: Message::setText's click segments (the farm's page 8, its two: <K> a click wait, <P> the box
-     * cleared after it), and Luna's own colour tag example; it is Luna's filter for the title (f_PCSG00020) */
+     * cleared after it; event 100's <F:B>, which Luna's filter keeps), and Luna's own colour tag example */
     rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "ＯＫ～。<K>", "ＯＫ～。");
     rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "それじゃあ質問を変えよう。<K><P>", "それじゃあ質問を変えよう。");
+    rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "<F:B>うるさい！<K>", "うるさい！");
     rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "<red>赤い<end>扉<K>", "赤い扉");
+    rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "<N>", "");
+    rubi_to(VJO_RF_PCSG00020, VJO_HOOK_ENC_UTF8, "a<b c>d<>", "a<b c>d<>"); /* not a tag: kept */
 
     /* in place of a Luna site's filter: PCSG00448's own drops the name the hook sees before the expander */
     s = site("PCSG00448", 0x800718F8u);

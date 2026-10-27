@@ -161,7 +161,7 @@ Two lists name them:
     - PCSG00876 7'scarlet, NID 0x16FEB862, +0x12B60, Thumb, r6, UTF-8, filter `RF_PCSG00876`; 1051 farm pages
     - PCSG01194 参千世界遊戯 ～Re Multi Universe Myself～, NID 0xECD30306, +0x56E24, Thumb, r0, CP932, filter `RF_PCSG01194`; 30 farm pages
     - PCSG00020 極限脱出ＡＤＶ 善人シボウデス (Zero Escape: Virtue's Last Reward, APP_VER 01.00), NID 0xF98BA0BA
-      (`skp2_psp2_rel`), +0x1AC998, Thumb, r1, UTF-8, filter `RF_PCSG00020`; 30 farm pages (2026-10-27). Chunsoft's skp2v
+      (`skp2_psp2_rel`), +0x1AC998, Thumb, r1, UTF-8, filter `RF_PCSG00020`; 53 farm pages (2026-10-27). Chunsoft's skp2v
       engine (Lua 5.1 + luabind): the entry of `GUI.Message::setText`, which the script's `Message:talk` calls with
       one click segment (`<K>` its click wait, `<P>` the box's clear after it). A box's segments add up on the screen
       until its `<P>`, and the worker keeps a site's latest hit, so the popup shows the newest segment, not the
@@ -271,7 +271,7 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00509` | POSSESSION MAGENTA | `＊Ｂ` 鈴; `^` to a line break; `<base,reading>` to the base | events 50, 1011 (67 pages hold `＊Ｂ`) |
 | `PCSG00540` | 忠臣蔵46+1 V | `c<id>.<name>r` to the name on its own line, narration's `r`, `v<voice>.` and `w<ms>.` dropped, `b<reading>.<base>` to the base, half-width kana (･ ﾞ ﾟ drawn … ！ ？); a 0xA0 byte is a blank cell, `　` | events 1-5, 51, 53, 55; 0xA0 on 170 of the bucket's 1037 pages (page 82: 東京都　陵南学園。, 9 glyphs) |
 | `PCSG00628` | ALIA's CARNIVAL! サクラメント | ADV::MSGSET's SNR markup as `PCSG00540`'s without its `c<id>.`: `<name>r` to the name on its own line, `r` to a line break, `v<voice>.` dropped, `z<n>.` and `u<n>.` dropped (a size and a code point: in the farm's survey of `main.snr`, in none of its pages), `b<reading>.<base>` to the base (an `r` before the base is a line break), `[` `]` `\|` `k` `y` dropped, `!X` to the ASCII X (a lowercase X is read as a code first: none in the pages); half-width kana as `PCSG00540`; the 0xA0 blank | events 1, 20, 31, 89, 148, 207; all 1208 bucket pages |
-| `PCSG00020` | 極限脱出ＡＤＶ 善人シボウデス | Luna's filter for the title (`f_PCSG00020`, `<\w+?>` removed): `<K>` (a click wait), `<P>` (the box cleared after it) and colour tags such as `<red>..<end>` | `<K>` in all 27 hits of the first session, `<P>` in 19; no colour tag on those pages (Luna's own example) |
+| `PCSG00020` | 極限脱出ＡＤＶ 善人シボウデス | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
 | `PCSG00817` | EVE burst error R | `[n]` to a line break; drops `[wNNN]` `[hNNN]` `[cRRGGBB]` `[e]` and the other `[x]` codes | events 1-59, 432 |
 | `PCSG00853` | ピリオドキューブ | `#Name[1]` 花宮, `#Name[2]` かずは, `#Name[3]` カズハ, then `IFENGINE` | samples 78, 120, 259, 371, 464, 492 |

@@ -18,8 +18,8 @@ been reported.
   eboot is linked at a fixed 0x81000000, so Luna's address is that address, and Rubi's table read it as an offset
   past the end of the game's code. That site is also inside Lua's pattern matcher, which sees every string, not only
   dialogue. The new site is the entry of the engine's `GUI.Message::setText`, one call per click segment (UTF-8,
-  `<K>`/`<P>` and colour tags removed); a box that grows by clicks shows its newest segment. Found and proven in
-  the Vita3K emulator with the psandvita farm (30 pages an AI reviewer approved against the frames the game drew),
+  `<K>`, `<P>`, `<F:B>` and other tags removed); a box that grows by clicks shows its newest segment. Found and proven in
+  the Vita3K emulator with the psandvita farm (53 pages an AI reviewer approved against the frames the game drew),
   not run on a console ([details](docs/native-hooks.md#table-sites)).
 
 ### Changed
