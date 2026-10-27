@@ -711,8 +711,23 @@ static int own_line_fix(const VjoInstalledGame *g) { return vjo_games_row_as(&li
 static int used_line_fix(const VjoInstalledGame *g) { return vjo_games_row_as(&line_fix, g->id, psp_row(g)); }
 
 static const char game_page_status[] = "This game's own settings. They apply when it next starts or resumes.";
+/* With the banner up (another build's overlay, app_check.h): an overlay from before #333 reads none of this page's line
+ * finder (audit-rubi-333 N5). */
+static const char game_page_other_build[] = "The installed overlay is not this app's build (above): one from before this "
+                                            "page ignores its line finder.";
+static const char *page_status;          /* the status the page opened with */
 static char list_status[sizeof(status)]; /* the list's status while the page shows its own */
 static int list_status_error;
+
+/* The game under a touch at x, y on the list: its library index, or -1 (a gap between cards, or no card there). */
+static int list_row_at(int x, int y)
+{
+    int row = (y - GAMES_Y) / GAME_PITCH;
+    if (x < 24 || x >= 936 || y < GAMES_Y || y >= GAMES_Y + ROWS * GAME_PITCH || (y - GAMES_Y) % GAME_PITCH >= GAME_H ||
+        offset + row >= count)
+        return -1;
+    return visible[offset + row];
+}
 
 static void open_game_page(int index)
 {
@@ -721,13 +736,14 @@ static void open_game_page(int index)
     memcpy(list_status, status, sizeof(status));
     list_status_error = status_error;
     status_error = 0;
-    snprintf(status, sizeof(status), "%s", game_page_status);
+    page_status = app_banner[0] ? game_page_other_build : game_page_status;
+    snprintf(status, sizeof(status), "%s", page_status);
 }
 
 static void close_game_page(void)
 {
     game_view = -1;
-    if (!strcmp(status, game_page_status)) { /* nothing was saved there: the list's own status again */
+    if (!strcmp(status, page_status)) { /* nothing was saved there: the list's own status again */
         memcpy(status, list_status, sizeof(status));
         status_error = list_status_error;
     }
@@ -1734,6 +1750,9 @@ int main(void)
     saved = policy;
     /* #333: each game's own line finder; nothing is written over a file that cannot be read */
     int line_fix_load = vjo_line_fix_file_load(&line_fix, &scratch);
+    /* a save cut short left only the backup, which the Shell does not read: its rows go back into the file, so the
+     * games read what their pages show (audit-rubi-333 F1); a file that cannot be read is kept and shown so (-1) */
+    int line_fix_back = line_fix_load == 1 && vjo_line_fix_file_save(&line_fix, &scratch) == 0;
     line_fix_writable = line_fix_load >= 0;
     line_fix_saved = line_fix;
     load_preferences();
@@ -1741,7 +1760,8 @@ int main(void)
     log_start();
     if (line_fix_load || line_fix.count)
         vjo_log("games: ocr_line_fix.ini %s: %d game%s with a line finder of their own",
-                line_fix_load < 0 ? "unreadable, not changed" : line_fix_load ? "recovered from its backup" : "read",
+                line_fix_load < 0 ? "unreadable, not changed" : !line_fix_load ? "read" :
+                line_fix_back ? "put back from its backup" : "only its backup read, not put back",
                 line_fix.count, line_fix.count == 1 ? "" : "s");
     /* The Install page (docs/one-vpk-install.md): the app opens on it when the overlay is not installed,
      * is another build's, is damaged or was interrupted, or cannot be installed yet. */
@@ -1914,7 +1934,11 @@ int main(void)
                 }
             }
         }
-        /* #333: a touch on a game's row toggles that game as it is let go; held GAME_HOLD_US, it opens its page. */
+        /* #333: a touch on a game's row toggles that game as it is let go; held GAME_HOLD_US, it opens its page. A
+         * finger that leaves the row first does neither (audit-rubi-333 N4). */
+        if (touched_game >= 0 && touch.reportNum &&
+            list_row_at(touch.report[0].x / 2, touch.report[0].y / 2) != touched_game)
+            touched_game = -1;
         if (touched_game >= 0 && (!touch.reportNum || now - touched_since >= GAME_HOLD_US)) {
             if (page == PAGE_GAMES && game_view < 0) {
                 if (touch.reportNum) open_game_page(touched_game);

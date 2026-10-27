@@ -1627,9 +1627,11 @@ games worse than `on` (v10972 38 → 70 errors, v6985 6 → 7), and it carries `
     cascade; regions with a margin). The spotter, the default, is best overall and on Narcissu (`ULJM05674`) too, whose
     touching rows were `all`'s case: 63 errors in its 4,959 characters, against `all`'s 137 and `on`'s 677. Over the 46
     hooked games: spotter 2,135 errors of 162,471 characters, `all` 2,445, `junk` 3,083, `on` 5,349, `off` 6,296; over
-    the 93 development games, 0.97% against `all`'s 1.50% and `on`'s 2.34%. On 17 of the 46 games and 23 of the 93 one
-    of Rubi's finder's four values made fewer errors than the spotter (the best of the four, picked on the same pages),
-    by up to 35 errors a game: those are the games a player gives their own line finder.
+    #149's 92 development games (without v12188, a hooked train title), 251 of 25,455 (0.99%), against `all`'s 1.52%
+    and `on`'s 2.38%. `all` made fewer errors than the spotter on 17 of the 46 games and 23 of the 92 (`on` on 16 and
+    22), by up to 35 errors a game, but on 12 of those 23 by one or two: an upper bound on what a player gains by
+    choosing, since each game is scored on the pages it is compared on. A player could give such a game its own line
+    finder.
   - Nothing of it has run on a console.
 
 **To test on console.**

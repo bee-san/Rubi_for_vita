@@ -21,9 +21,10 @@ been reported.
   list shows `Line finder: On` on a game with its own.
   - **Measured** (host; the per-page records of the runs behind vita-vn-ocr #129 and #149, counted; VOCR5-N, the 1 MB
     LM, the cascade): the spotter, the default, is best overall (1.31% on the 46 hooked games, against All's 1.50% and
-    On's 3.29%; 0.97% on 93 other games) and on Narcissu too (63 errors in 4,959 characters, All 137, On 677), the game
-    #333 was opened for. On 17 of the 46 and 23 of the 93 games one of Rubi's finder's values read better (the best of
-    four, picked on the same pages): those games get their own. The default is unchanged.
+    On's 3.29%; 0.99% on #149's 92 development games) and on Narcissu too (63 errors in 4,959 characters, All 137, On
+    677), the game #333 was opened for. All read better than the spotter on 17 of the 46 and 23 of the 92 games, on 12
+    of those 23 by one or two errors: an upper bound, each game scored on the pages it was compared on. A player could
+    give such a game its own. The default is unchanged.
   - **Where:** `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, one `TITLEID = spotter|off|on|junk|all` line a game in
     `games.ini`'s form, read by `games.ini`'s reader. `games.ini` is unchanged: earlier builds read it strictly, and a
     line they do not know makes it unreadable to them (its backup's choices, or every game OFF).
@@ -35,9 +36,14 @@ been reported.
   - **log.txt:** the `game … started` line ends with what the game's jobs use (`ocr_finder grad, ocr_line_fix on`),
     and no longer names the dictionary (Local dictionaries in every build since the online ones went);
     `tools/analyse_selftest.py` reads both forms. The debug build no longer logs the title's app parameters 9 and 10
-    (answered: 115 starts in test.1–test.4, parameter 9 always refused).
+    (answered: 55 game starts in test.1–test.4, parameter 9 always refused).
   - **Memory:** the normal Shell takes 40 B of code and 144 B of data, the debug Shell 48 B and 64 B; no module takes
     a page more, and nothing is allocated ([memory ledger](docs/memory-ledger.md)).
+  - **Its audit's follow-up:** the Shell reads `ocr_line_fix.ini` alone, so after a save cut short left only its
+    backup the Rubi app puts the file back as it starts, and a hand-edited file it cannot read is kept, beside its
+    backup too (before, the app showed the backup's choices and its next save deleted the edit); a touch that slides
+    off a game's card does nothing; with the app's banner up, a game's page says that an older overlay ignores its line
+    finder.
   - Not run on a console yet.
 
 - **A Look up tab in the Rubi app** (#313; [guide](docs/guide.md#look-up)): look a word up and mine it later, beside

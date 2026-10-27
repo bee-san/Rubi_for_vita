@@ -1824,6 +1824,10 @@ static void test_vocr_model_change_invalidates_cache(void)
     apply_config();
     TEST_CHECK(!cache_ok);
     cache_ok = 1;
+    loaded.ocr_finder = !loaded.ocr_finder; /* API 54: and the finder (#333's audit: no game's own here) */
+    apply_config();
+    TEST_CHECK(!cache_ok);
+    cache_ok = 1;
     apply_config(); /* the same again: nothing changed */
     TEST_CHECK(cache_ok);
 }
@@ -2519,6 +2523,10 @@ static void test_a_games_own_line_fix(void)
     loaded.ocr_line_fix = 3;
     apply_config();
     TEST_CHECK(!cache_ok && cfg.ocr_line_fix == 3);
+    cache_ok = 1;
+    loaded.ocr_finder = VJO_FINDER_SPOTTER; /* config.ini's finder, which this game has not replaced */
+    apply_config();
+    TEST_CHECK(!cache_ok && cfg.ocr_finder == VJO_FINDER_SPOTTER);
     /* a game turned OFF has none (its file is not read): the next enabled game's own is read afresh */
     game_enabled = 0;
     game_line_fix = VJO_LINE_FINDER_GRAD(2);
