@@ -1,0 +1,113 @@
+# The word lookup's two tables (core/local_dict.c rank_posting, docs/local-dictionaries.md), in one
+# place for the reader and the converter: tools/gen_lookup_tables.py writes core/lookup_tables.inc
+# from this file (local_dict.c includes it; the tools suite checks that it is current), and
+# tools/convert_dictionary.py's table hints (--table-hints, and tools/prepare_plaintext.py for the
+# bundled dictionary) mark each key's entry that a table names. After an edit:
+#   python3 tools/gen_lookup_tables.py
+# then prepare the bundled dictionary again and pin its new sha256 (docs/plaintext-dictionaries.json,
+# key_filter): its table bits and the tables' id in its page 0 change with the tables.
+#
+# A line is one pair: the key as the index holds it (normalized: katakana as hiragana, full-width ASCII
+# as ASCII), whitespace, then the value. A key is at most once in a table; '#' starts a comment.
+
+[preferred_readings]
+# Key, then the reading (or, for kana keys, the spelling) its frequent sense uses; checked to exist in
+# the bundled dictionary (word_lookup's preferred_readings_exist_in_the_bundle).
+私 わたし
+僕 ぼく
+彼 かれ
+何 なに
+今日 きょう
+一 いち
+日 ひ
+火 ひ
+水 みず
+上 うえ
+下 した
+中 なか
+後 あと
+間 あいだ
+方 ほう
+様 さま
+次 つぎ
+別 べつ
+母 はは
+兄 あに
+弟 おとうと
+大人 おとな
+学生 がくせい
+体 からだ
+頭 あたま
+腕 うで
+空 そら
+金 かね
+朝 あさ
+秋 あき
+夏 なつ
+風 かぜ
+木 き
+道 みち
+字 じ
+飯 めし
+同じ おなじ
+本気 ほんき
+大切 たいせつ
+何処 どこ
+入る はいる
+守る まもる
+怒る おこる
+こう 斯う
+そう 然う
+どう 如何
+ああ 嗚呼
+くん 君
+よう 様
+いい 良い
+ここ 此処
+そこ 其処
+あそこ 彼処
+どこ 何処
+これ 此れ
+それ 其れ
+どれ 何れ
+たち 達
+私達 わたしたち
+致す いたす
+立場 たちば
+形相 ぎょうそう
+米 こめ
+神 かみ
+服 ふく
+羽 はね
+和 わ
+性 せい
+美女 びじょ
+小路 こうじ
+
+[usual_spellings]
+# The same form, for the frequency ranks alone: in a file with ranks, the key's entry with this
+# spelling (or reading) ranks above the ranks' choice, as the more frequent entry would. Kana text
+# whose word has no entry spelled in kana ranks the kanji spellings by how often each is written, and
+# Jiten's ranks for kana text are its parser's lemma's: so the text's word lost to a homograph's
+# spelling (いつか: ５日, による: 似寄る, なくなる: 亡くなる, audit-dict-freq N1; やめる: 辞める "resign"
+# for 止める "stop", おじさん: 叔父さん "uncle" for 小父さん "mister", せい: 性 for 所為 "because of",
+# audit-dict-freq-b; measured with tools/frequency_eval.py --frequency), and Jiten ranks 身体 しんたい
+# just above the からだ visual novels use more. Unlike preferred_readings it only orders one key's
+# entries: it never makes an entry count as written as the text, so the text's own entry (無くして,
+# に依らず) still comes before its inflections' (無くす, に依る), and a file without ranks reads as
+# before. Checked like preferred_readings (word_lookup's usual_spellings_win_in_the_bundle).
+なくなる 無くなる
+いつか 何時か
+による に依る
+いえいえ 否々
+なくす 無くす
+よそ 余所
+いわば 言わば
+ほうき 箒
+いっぺん 一遍
+身体 からだ
+やめる 止める
+おじさん 小父さん
+おばさん 小母さん
+おじちゃん 小父ちゃん
+せい 所為

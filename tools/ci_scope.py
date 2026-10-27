@@ -35,6 +35,7 @@ PACKAGING = re.compile(
     r"|tools/(package_release|package_variants|package_vpk|e2e_package|prepare_ocr|prepare_plaintext|prepare_vndb"
     r"|prepare_jmdict|install_dictionary|convert_dictionary|migrate_config|patch_tai_config|collect_vita|app_stamp"
     r"|check_variant|check_adrenaline_vsh|analyse_selftest|analyse_timeline|reading_stats|hook_request|ci_scope)\.py"
+    r"|tools/lookup_tables\.txt"  # the bundled dictionary's table hints (prepare_plaintext.py)
     r"|tools/(install-vita|install_ftp|fast_gate)\.sh|tools/model_tiers\.json|tools/gate/.*"
     r"|tools/tests/(ftp_mock|test_e2e_package|test_ci_scope)\.py|tools/tests/fixtures/selftest-v2-diagnostics\.txt"
     r"|docs/config\.example\.ini|compat/adrenaline_vsh/.*|core/app_stamp\.h|core/vocr_models\.c"

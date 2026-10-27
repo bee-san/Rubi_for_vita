@@ -153,6 +153,18 @@ been reported.
   entry refused as `tai` or `full`: a bug report), reads a reply that quotes the log, warns when `log.txt` shows the
   log is from an earlier session, and exits 2 with a message, never a traceback, on a damaged zip, an unwritable
   `--out` or a malformed farm `rubi-hook.json`.
+- **Dictionary lookups of the commonest words read less** (#360, change 4): 私, 中, 日, 頭, こう and the other words of
+  the lookup's two short tables (common readings, usual spellings) are ranked without reading each of their entries.
+  Their tap read every entry's first 160 bytes, 16 reads for 私, because the tables compare the entries' spellings and
+  readings; the bundled dictionary now marks the one entry a table names (posting hints version 2, two spare bits of
+  each posting, 99 postings; [format](docs/local-dictionaries.md#binary-format-version-3-with-frequency-ranks)). The
+  entries shown are the same at every one of the 64,579 taps of 5,000 real lines (host); there, a cursor lookup makes
+  7.83 reads instead of 8.12, and the 2.7% of taps that read 4 to 17 entries' heads (18.9 reads) make 8.7 (est. 69 ->
+  39 ms on the console at test.4's 2.98 ms a read). The two tables move to `tools/lookup_tables.txt`, which the
+  converter reads too (the Shell's bytes for them are unchanged). Your own dictionaries get the marks with
+  `convert_dictionary.py --frequency … --table-hints`; a file with them is refused by Rubi 0.9.8 and older, so it is
+  not the default. The bundled dictionary's SHA-256 changes (`docs/plaintext-dictionaries.json`). Not run on a
+  console yet.
 - Building and testing (no change to the app or the plugins): the fast gate also runs the host suites with the
   pinned release models (its `models` lane), which CI has none of: #335's host tests failed only with them (the
   tests' fake memory and, without VOCR5-V, an expectation of the rows' try: both fixed in #341), unseen until a

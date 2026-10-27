@@ -52,6 +52,12 @@
 #define HINT_NORMALIZED 2u    /* the spelling normalizes to the key */
 #define HINT_READING 4u       /* the entry has a reading */
 #define HINT_FREQ_SHIFT 3     /* bits 3-15: freq_key of the payload's frequency word */
+/* Hints version 2, the table hints: a posting's rule bits 7 and 11 say that
+ * its entry is the usual_spellings or the preferred_readings value for its
+ * key (spelled or read so), and bytes 168..171 name the tables they were made
+ * with (LOOKUP_TABLES_ID, core/lookup_tables.inc). */
+#define HINTS_TABLES 168u
+#define RULE_TABLES 0x880u    /* bit 7: the usual spelling (RANK_USUAL); 11: the preferred reading (RANK_PREFERRED) */
 
 /* Cold diagnostics use the data segment's remaining room so conjugation
  * display keeps the normal Shell within its existing code pages. */
@@ -100,6 +106,13 @@ typedef struct {
     uint16_t in, out, bits;
 } DeinflectRule;
 #include "deinflect.inc"
+/* The ranking's two tables, preferred_readings and usual_spellings
+ * (rank_posting; what each is for: tools/lookup_tables.txt, their one source,
+ * which the converter's table hints read too, and tools/gen_lookup_tables.py
+ * writes this include from it): key, then value, each NUL terminated, an
+ * empty key ending each, in the data segment as before; and LOOKUP_TABLES_ID,
+ * which names them in a file with table hints. */
+#include "lookup_tables.inc"
 
 typedef struct {
     char key[VJO_LOCAL_MAX_KEY + 1];
@@ -115,7 +128,7 @@ typedef struct {
     uint32_t prefix;                   /* bytes before a payload's spelling: 4 in v3, else 0 */
     char freq_title[FREQ_TITLE_SIZE];  /* v3: the frequency list's name; "" without one */
     char title[TITLE_SIZE];            /* v2/v3: the dictionary's own name; "" without one */
-    uint8_t hints;                     /* v3 with posting hints: most postings ranked without their head */
+    uint8_t hints;                     /* v3 posting hints: 0 none; 1; 2 table hints of other tables; 3 of these */
     /* Where the session holds the filter directory: its copy's byte offset in
      * the session's pool, from the session's start (0: not in the pool, read
      * from page 0). In the padding after hints (PoolKeepsTheSize below). */
@@ -472,8 +485,10 @@ static int open_header(Workspace *w, Dictionary *d, VjoLocalSession *s, uint32_t
     READ_KIND(VJO_READ_HEADER);
     if ((rc = cached_page(w, d, 0, &page0, 0)) || (rc = parse_header(d, page0->bytes, page0->len))) return rc;
     if (d->version == 3 && !memcmp(page0->bytes + HINTS_DESCRIPTOR, "VJPH", 4)) {
-        if (u32(page0->bytes + HINTS_DESCRIPTOR + 4) != 1) return VJO_E_LOCAL_FORMAT;
-        d->hints = 1;
+        uint32_t version = u32(page0->bytes + HINTS_DESCRIPTOR + 4);
+        if (version - 1u > 1u) return VJO_E_LOCAL_FORMAT;
+        /* version 2: the table bits, used when made with these tables */
+        d->hints = (uint8_t)(version == 2 && u32(page0->bytes + HINTS_TABLES) == LOOKUP_TABLES_ID ? 3 : version);
     }
     f = page0->bytes + FILTER_DESCRIPTOR;
     if (d->version < 2 || memcmp(f, "VJKF", 4)) return VJO_OK;
@@ -610,7 +625,8 @@ static int record_at(Workspace *w, Dictionary *d, uint32_t i, Record *r, char *k
 /* One key's postings are in source order. In the bundled Daijirin4 that is
  * reading order, not use: 私 lists あたい first, する 剃る, から 空. Only one
  * entry is shown, so the postings are ranked (docs/local-dictionaries.md):
- * a common reading of a frequent word (the table below), then an entry
+ * a common reading of a frequent word (preferred_readings, in
+ * tools/lookup_tables.txt), then an entry
  * spelled exactly as the text is written (kana text: the kana word, such as
  * the particle から or the verb する; inflected text: the dictionary form),
  * then for katakana text one written so in hiragana (って for ッて), then one with a reading (Daijirin4's kanji-character articles have none),
@@ -626,6 +642,7 @@ static int record_at(Workspace *w, Dictionary *d, uint32_t i, Record *r, char *k
 #define RANK_USUAL (1u << 27) /* v3: usual_spellings' entry for the key */
 #define FREQ_KEY_SHIFT 14
 #define HEAD_BYTES 160u /* a payload's spelling (<= 32 characters) and reading */
+typedef char TableBitsAreRankFlags[((RULE_TABLES >> 7) << 27) == (RANK_USUAL | RANK_PREFERRED) ? 1 : -1];
 
 /* A frequency word's rank as 13 bits, higher for a more frequent entry and 0
  * for an unranked one: 4096 for a rank of the entry's own spelling (above
@@ -643,40 +660,6 @@ static uint32_t freq_key(uint32_t word)
     m = e >= 7 ? (rank >> (e - 7)) & 127u : (rank << (7 - e)) & 127u;
     return (word & FREQ_BORROWED ? 0u : 4096u) + 4095u - (e * 128u + m);
 }
-
-/* Key, then the reading (or, for kana keys, the spelling) its frequent sense
- * uses; checked to exist in the bundled dictionary (word_lookup's
- * preferred_readings_exist_in_the_bundle). Ends with an empty key. */
-static const char preferred_readings[] VJO_DATA_TABLE(preferred_readings) =
-    "私\0わたし\0僕\0ぼく\0彼\0かれ\0何\0なに\0今日\0きょう\0一\0いち\0日\0ひ\0火\0ひ\0水\0みず\0"
-    "上\0うえ\0下\0した\0中\0なか\0後\0あと\0間\0あいだ\0方\0ほう\0様\0さま\0次\0つぎ\0別\0べつ\0"
-    "母\0はは\0兄\0あに\0弟\0おとうと\0大人\0おとな\0学生\0がくせい\0体\0からだ\0頭\0あたま\0腕\0うで\0"
-    "空\0そら\0金\0かね\0朝\0あさ\0秋\0あき\0夏\0なつ\0風\0かぜ\0木\0き\0道\0みち\0字\0じ\0飯\0めし\0"
-    "同じ\0おなじ\0本気\0ほんき\0大切\0たいせつ\0何処\0どこ\0入る\0はいる\0守る\0まもる\0怒る\0おこる\0"
-    "こう\0斯う\0そう\0然う\0どう\0如何\0ああ\0嗚呼\0くん\0君\0よう\0様\0いい\0良い\0"
-    "ここ\0此処\0そこ\0其処\0あそこ\0彼処\0どこ\0何処\0これ\0此れ\0それ\0其れ\0どれ\0何れ\0"
-    "たち\0達\0私達\0わたしたち\0致す\0いたす\0立場\0たちば\0形相\0ぎょうそう\0"
-    "米\0こめ\0神\0かみ\0服\0ふく\0羽\0はね\0和\0わ\0性\0せい\0美女\0びじょ\0小路\0こうじ\0";
-
-/* The same form, for the frequency ranks alone: in a file with ranks, the
- * key's entry with this spelling (or reading) ranks above the ranks' choice,
- * as the more frequent entry would. Kana text whose word has no entry spelled
- * in kana ranks the kanji spellings by how often each is written, and
- * Jiten's ranks for kana text are its parser's lemma's: so the text's word
- * lost to a homograph's spelling (いつか: ５日, による: 似寄る, なくなる:
- * 亡くなる, audit-dict-freq N1; やめる: 辞める "resign" for 止める "stop",
- * おじさん: 叔父さん "uncle" for 小父さん "mister", せい: 性 for 所為 "because
- * of", audit-dict-freq-b; measured with tools/frequency_eval.py
- * --frequency), and Jiten ranks 身体 しんたい just above the からだ visual
- * novels use more. Unlike preferred_readings it only orders one key's
- * entries: it never makes an entry count as written as the text, so the
- * text's own entry (無くして, に依らず) still comes before its inflections'
- * (無くす, に依る), and a file without ranks reads as before. Checked like
- * preferred_readings (word_lookup's usual_spellings_win_in_the_bundle). */
-static const char usual_spellings[] VJO_DATA_TABLE(usual_spellings) =
-    "なくなる\0無くなる\0いつか\0何時か\0による\0に依る\0いえいえ\0否々\0なくす\0無くす\0"
-    "よそ\0余所\0いわば\0言わば\0ほうき\0箒\0いっぺん\0一遍\0身体\0からだ\0"
-    "やめる\0止める\0おじさん\0小父さん\0おばさん\0小母さん\0おじちゃん\0小父ちゃん\0せい\0所為\0";
 
 #ifdef VJO_HOST
 const char *vjo_local_preferred_table(void)
@@ -764,16 +747,21 @@ static int rank_posting(Workspace *w, Dictionary *d, const Record *r, uint32_t h
 {
     /* With hints the posting gives the score without the head, as the head
      * would: written so is "the spelling is the key", kana text compares the
-     * normalized spelling. The head is still read for a key with a preferred
-     * reading or a usual spelling (both compare the head's strings), and for
-     * kana text whose entry is spelled otherwise yet normalizes to the key (it
-     * may or may not be spelled as the text is). */
-    if (d->hints && !q->preferred && !q->usual &&
+     * normalized spelling. A key with a preferred reading or a usual spelling
+     * compares the head's strings (spelled_or_read): with table hints made
+     * with these tables (d->hints 3) the posting's table bits say what it
+     * finds, RULE_TABLES' bits 7 and 11 shifted onto RANK_USUAL and
+     * RANK_PREFERRED (posting_at leaves bits 8-10 zero); otherwise the head is
+     * read for such a key. It is read in any file for kana text whose entry is
+     * spelled otherwise yet normalizes to the key (it may or may not be
+     * spelled as the text is). */
+    if (d->hints && (d->hints == 3 || (!q->preferred && !q->usual)) &&
         !(q->key && (hint & HINT_NORMALIZED) && !(hint & HINT_SPELLING))) {
         STAT(hinted);
         *score = r->entry_len | (hint >> HINT_FREQ_SHIFT) << FREQ_KEY_SHIFT;
         if (hint & (q->key ? HINT_NORMALIZED : HINT_SPELLING)) *score |= q->key ? RANK_KANA : RANK_WRITTEN | RANK_KANA;
         if (hint & HINT_READING) *score |= RANK_READING;
+        if (d->hints == 3) *score |= (uint32_t)(r->rules >> 7) << 27;
         return VJO_OK;
     }
     char bytes[FREQ_PREFIX + HEAD_BYTES], *head = bytes + d->prefix;
@@ -831,7 +819,9 @@ static int posting_at(Workspace *w, Dictionary *d, uint64_t group, uint16_t key_
     r->entry_off = u64(post); r->entry_len = u32(post + 8); r->rules = u16(post + 12);
     r->key_off = group; r->key_len = key_len;
     if (hint) *hint = d->version == 3 ? u16(post + 14) : 0;
-    if ((d->version == 2 && u16(post + 14)) || (r->rules & ~RULE_MASK) || r->entry_off < d->data ||
+    /* the table bits (RULE_TABLES) only with hints version 2 */
+    if ((d->version == 2 && u16(post + 14)) || (r->rules & ~(d->hints > 1 ? RULE_MASK | RULE_TABLES : RULE_MASK)) ||
+        r->entry_off < d->data ||
         r->entry_len < min_entry(d) || r->entry_len > VJO_LOCAL_MAX_ENTRY ||
         !range_ok(d, r->entry_off, r->entry_len)) return VJO_E_LOCAL_FORMAT;
     return VJO_OK;

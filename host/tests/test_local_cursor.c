@@ -256,6 +256,64 @@ static void add_hints(Fixture *f)
     memcpy(f->bytes + 160, "VJPH", 4);
     put32(f->bytes + 164, 1);
 }
+/* The converter's table hints (tools/convert_dictionary.py table_bits, hints version 2): after
+ * add_hints, every posting of a key that preferred (or usual) gives a value gets rule bit 11 (or 7)
+ * when its entry is spelled or read so in the head window, as rank_posting's spelled_or_read finds
+ * it; then version 2 and the tables' id at page-0 bytes 164 and 168. preferred and usual are tables
+ * in local_dict.c's form (key, value, ..., empty key), the reader's own or a test's. */
+static size_t table_size(const char *t)
+{
+    const char *p = t;
+    while (*p) { p += strlen(p) + 1; p += strlen(p) + 1; }
+    return (size_t)(p - t) + 1;
+}
+static uint32_t fixture_tables_id(const char *preferred, const char *usual)
+{
+    const char *tables[2] = {preferred, usual};
+    uint32_t h = 2166136261u;
+    for (int t = 0; t < 2; t++)
+        for (size_t i = 0, n = table_size(tables[t]); i < n; i++) h = (h ^ (uint8_t)tables[t][i]) * 16777619u;
+    return h;
+}
+static const char *fixture_table_value(const char *t, const uint8_t *key, size_t key_len)
+{
+    for (const char *p = t; *p; p += strlen(p) + 1) {
+        const char *value = p + strlen(p) + 1;
+        if (strlen(p) == key_len && !memcmp(p, key, key_len)) return value;
+        p = value;
+    }
+    return NULL;
+}
+static void add_table_hints(Fixture *f, const char *preferred, const char *usual, uint32_t id)
+{
+    uint32_t count = (uint32_t)(f->bytes[4100] | f->bytes[4101] << 8);
+    add_hints(f);
+    for (uint32_t slot = 0; slot < count; slot++) {
+        const uint8_t *rec = f->bytes + 4096 + 16 + slot * 24;
+        size_t group = (size_t)(rec[8] | rec[9] << 8 | rec[10] << 16), key_len = (size_t)(rec[20] | rec[21] << 8);
+        uint32_t postings = (uint32_t)(rec[16] | rec[17] << 8);
+        const char *values[2] = {fixture_table_value(preferred, f->bytes + group, key_len),
+                                 fixture_table_value(usual, f->bytes + group, key_len)};
+        for (uint32_t j = 0; j < postings; j++) {
+            uint8_t *post = f->bytes + group + key_len + j * 16;
+            size_t entry = (size_t)(post[0] | post[1] << 8 | post[2] << 16);
+            size_t len = (size_t)(post[8] | post[9] << 8), n = (len < 164 ? len : 164) - 4, sp;
+            const uint8_t *head = f->bytes + entry + 4, *nul = memchr(head, 0, n);
+            uint16_t bits = 0;
+            if (!nul) continue;
+            sp = (size_t)(nul - head);
+            for (int t = 0; t < 2; t++) {
+                size_t m = values[t] ? strlen(values[t]) + 1 : 0;
+                if (m && ((sp + 1 == m && !memcmp(head, values[t], m)) ||
+                          (n - sp - 1 >= m && !memcmp(head + sp + 1, values[t], m))))
+                    bits |= t ? 0x80u : 0x800u;
+            }
+            put16(post + 12, (uint16_t)(post[12] | post[13] << 8 | bits));
+        }
+    }
+    put32(f->bytes + 164, 2);
+    put32(f->bytes + 168, id);
+}
 static int read_file(void *ctx, uint64_t off, void *dst, size_t n)
 {
     Fixture *f = ctx;
@@ -1899,19 +1957,25 @@ static void posting_hints_rank_as_the_head_does(void)
         {"やめる", "止める", "やめる", "to stop", 1, 2000}};
     const char *texts[] = {"かいとう", "から", "私", "人", "せい", "もと", "先", "かった", "かう", "ネコ", "ねこ", "猫",
                            "いぬ", "イヌ", "やめる"};
+    const uint32_t id = fixture_tables_id(vjo_local_preferred_table(), vjo_local_usual_table());
     for (size_t t = 0; t < sizeof(texts) / sizeof(texts[0]); t++) {
-        char plain[256], hinted[256];
-        int plain_reads, hinted_reads;
+        char plain[256], hinted[256], tabled[256];
+        int plain_reads, hinted_reads, tabled_reads;
         VjoArena a; VjoPlatform p; VjoConfig cfg;
         setup(&a, &p, &cfg);
         build(&fixtures[0], "plain.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
         build(&fixtures[1], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
+        build(&fixtures[2], "tables.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
         add_hints(&fixtures[1]);
+        add_table_hints(&fixtures[2], vjo_local_preferred_table(), vjo_local_usual_table(), id);
         TEST_CASE(texts[t]);
         plain_reads = shown("plain.vjdict", texts[t], 0, plain, sizeof(plain));
         hinted_reads = shown("main.vjdict", texts[t], 0, hinted, sizeof(hinted));
+        tabled_reads = shown("tables.vjdict", texts[t], 0, tabled, sizeof(tabled));
         TEST_CHECK_(!strcmp(plain, hinted), "%s vs %s", plain, hinted);
+        TEST_CHECK_(!strcmp(plain, tabled), "table hints: %s vs %s", plain, tabled);
         TEST_CHECK_(hinted_reads <= plain_reads, "%d reads, %d without hints", hinted_reads, plain_reads);
+        TEST_CHECK_(tabled_reads <= hinted_reads, "%d reads, %d with version 1", tabled_reads, hinted_reads);
         if (!strcmp(texts[t], "いぬ")) /* written as the text is, before the more frequent イヌ */
             TEST_CHECK_(!strncmp(hinted, "いぬ|", strlen("いぬ|")), "%s", hinted);
         if (!strcmp(texts[t], "イヌ"))
@@ -1922,16 +1986,104 @@ static void posting_hints_rank_as_the_head_does(void)
         TEST_CHECK_(!strcmp(plain, hinted), "no descriptor: %s vs %s", plain, hinted);
     }
     {
-        /* a descriptor of another version is refused */
+        /* a descriptor of a version this reader does not know is refused, as main's reader (version 1
+         * only) refuses version 2 */
         VjoArena a; VjoPlatform p; VjoConfig cfg;
         char out[256], want[32];
         setup(&a, &p, &cfg);
         build(&fixtures[0], "main.vjdict", rows, (int)(sizeof(rows) / sizeof(rows[0])), 3);
         add_hints(&fixtures[0]);
-        put32(fixtures[0].bytes + 164, 2);
+        put32(fixtures[0].bytes + 164, 3);
         shown("main.vjdict", "から", 0, out, sizeof(out));
         snprintf(want, sizeof(want), "rc %d", VJO_E_LOCAL_FORMAT);
         TEST_CHECK_(!strcmp(out, want), "%s", out);
+    }
+}
+
+/* Table hints (hints version 2): a key of preferred_readings or usual_spellings
+ * is ranked from its postings' table bits, exactly as its heads rank it, when
+ * page 0 names this reader's tables (the remaining head: katakana text's
+ * katakana spelling, コウ); with another tables' id its heads are read, as in
+ * version 1; a version 1 descriptor with the bits is refused where they are.
+ * The bits are trusted, as the other hints are: under this reader's id, bits
+ * made from other tables show what the bits say (私 あたし), not the heads. */
+static void table_hints_rank_table_keys_as_the_head_does(void)
+{
+    const Row rows[] = {
+        /* preferred_readings: 私 わたし over a more frequent あたし */
+        {"私", "私", "あたし", "I (casual)", 0, 1678},
+        {"私", "私", "わたし", "I", 0, 32000},
+        {"私", "私", "わたくし", "I (formal)", 0, 9000},
+        /* こう 斯う, a value that is a spelling, over the kana word written as the text is */
+        {"こう", "こう", "", "kana: so", 0, 30},
+        {"こう", "斯う", "こう", "thus", 0, 50000},
+        {"こう", "請う", "こう", "to ask", 0, 7000},
+        /* katakana text (コウ): a katakana spelling, the case the head still ranks */
+        {"こう", "コウ", "", "katakana: kou", 0, 80000},
+        /* 中 なか among three readings */
+        {"中", "中", "ちゅう", "middle", 0, 300},
+        {"中", "中", "なか", "inside", 0, 400},
+        {"中", "中", "じゅう", "throughout", 0, 200},
+        /* usual_spellings: やめる 止める over a more frequent 辞める (and for やめて) */
+        {"やめる", "辞める", "やめる", "to quit", 1, 500},
+        {"やめる", "止める", "やめる", "to stop", 1, 2000},
+        /* よそ 余所 ranks below the kana entry written as the text is: RANK_USUAL, not RANK_PREFERRED */
+        {"よそ", "よそ", "", "kana: elsewhere", 0, 9000},
+        {"よそ", "余所", "よそ", "another place", 0, 100},
+        /* 身体 からだ, a value that is a reading, over a more frequent しんたい */
+        {"身体", "身体", "しんたい", "the body (formal)", 0, 2603},
+        {"身体", "身体", "からだ", "the body", 0, 2805},
+        /* keys in neither table: 犬 has bits from the other tables below (犬 いぬ), which only
+         * their id makes the reader use */
+        {"人", "人", "", "the character", 0, 65},
+        {"人", "人", "ひと", "person", 0, 9000},
+        {"犬", "犬", "いぬ", "dog", 0, 500},
+        {"犬", "犬", "けん", "dog (Sino-Japanese)", 0, 300}};
+    /* the text; what every file shows (no hints, version 1, version 2 of these tables, version 2 of other
+     * tables); what bits made from other_* show under this reader's id */
+    static const struct { const char *text, *shows, *trusted; } cases[] = {
+        {"私", "私|わたし|", "私|あたし|"}, {"こう", "斯う|こう|", "こう|こう|"}, {"コウ", "斯う|こう|", "コウ|コウ|"},
+        {"中", "中|なか|", "中|じゅう|"}, {"やめる", "止める|やめる|", "辞める|やめる|"},
+        {"やめて", "止める|やめる|", "辞める|やめる|"}, {"よそ", "よそ|よそ|", "よそ|よそ|"},
+        {"身体", "身体|からだ|", "身体|しんたい|"}, {"人", "人|ひと|", "人|ひと|"}, {"犬", "犬|けん|", "犬|いぬ|"}};
+    static const char other_preferred[] = "私\0あたし\0犬\0いぬ\0", other_usual[] = "";
+    const int n = (int)(sizeof(rows) / sizeof(rows[0]));
+    const uint32_t id = fixture_tables_id(vjo_local_preferred_table(), vjo_local_usual_table());
+    char want[32];
+    snprintf(want, sizeof(want), "rc %d", VJO_E_LOCAL_FORMAT);
+    for (size_t t = 0; t < sizeof(cases) / sizeof(cases[0]); t++) {
+        char plain[256], v1[256], v2[256], trusted[256], other[256], refused[256];
+        int v1_reads, v2_reads;
+        VjoArena a; VjoPlatform p; VjoConfig cfg;
+        setup(&a, &p, &cfg);
+        build(&fixtures[0], "plain.vjdict", rows, n, 3);
+        build(&fixtures[1], "v1.vjdict", rows, n, 3);
+        build(&fixtures[2], "v2.vjdict", rows, n, 3);
+        build(&fixtures[3], "trusted.vjdict", rows, n, 3);
+        build(&fixtures[4], "other.vjdict", rows, n, 3);
+        build(&fixtures[5], "refused.vjdict", rows, n, 3);
+        add_hints(&fixtures[1]);
+        add_table_hints(&fixtures[2], vjo_local_preferred_table(), vjo_local_usual_table(), id);
+        add_table_hints(&fixtures[3], other_preferred, other_usual, id);
+        add_table_hints(&fixtures[4], other_preferred, other_usual, id ^ 1u);
+        add_table_hints(&fixtures[5], vjo_local_preferred_table(), vjo_local_usual_table(), id);
+        put32(fixtures[5].bytes + 164, 1); /* the bits under version 1 */
+        TEST_CASE(cases[t].text);
+        shown("plain.vjdict", cases[t].text, 0, plain, sizeof(plain));
+        v1_reads = shown("v1.vjdict", cases[t].text, 0, v1, sizeof(v1));
+        v2_reads = shown("v2.vjdict", cases[t].text, 0, v2, sizeof(v2));
+        shown("trusted.vjdict", cases[t].text, 0, trusted, sizeof(trusted));
+        shown("other.vjdict", cases[t].text, 0, other, sizeof(other));
+        shown("refused.vjdict", cases[t].text, 0, refused, sizeof(refused));
+        TEST_CHECK_(!strncmp(plain, cases[t].shows, strlen(cases[t].shows)), "%s", plain);
+        TEST_CHECK_(!strcmp(plain, v1), "version 1: %s, not %s", v1, plain);
+        TEST_CHECK_(!strcmp(plain, v2), "version 2: %s, not %s", v2, plain);
+        TEST_CHECK_(v2_reads <= v1_reads, "%d reads, %d with version 1", v2_reads, v1_reads);
+        TEST_CHECK_(!strncmp(trusted, cases[t].trusted, strlen(cases[t].trusted)), "trusted bits: %s", trusted);
+        TEST_CHECK_(!strcmp(plain, other), "another tables' id: %s, not %s", other, plain);
+        /* 人 and 犬 have no bits of these tables: their postings are read as in any version 1 file */
+        TEST_CHECK_(!strcmp(refused, strcmp(cases[t].text, "人") && strcmp(cases[t].text, "犬") ? want : plain),
+                    "version 1 with the bits: %s", refused);
     }
 }
 
@@ -2375,6 +2527,7 @@ TEST_LIST = {
     {"session_reuses_handles_headers_and_dictionary_pages", session_reuses_handles_headers_and_dictionary_pages},
     {"session_discards_changed_config_and_failed_files", session_discards_changed_config_and_failed_files},
     {"posting_hints_rank_as_the_head_does", posting_hints_rank_as_the_head_does},
+    {"table_hints_rank_table_keys_as_the_head_does", table_hints_rank_table_keys_as_the_head_does},
     {"key_filter_shows_what_the_plain_file_shows", key_filter_shows_what_the_plain_file_shows},
     {"key_filter_never_hides_a_key", key_filter_never_hides_a_key},
     {"key_filter_descriptor_is_validated", key_filter_descriptor_is_validated},

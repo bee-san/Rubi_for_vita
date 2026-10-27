@@ -41,7 +41,8 @@ class Scope(unittest.TestCase):
         self.check(["CHANGELOG.md", "README.md", "docs/guide.md", "vita/CMakeLists.txt"], True, False, True)
         for path in ("tools/install_ftp.sh", "tools/install-vita.sh", "tools/package_release.py", "tools/e2e_package.py",
                      "tools/model_tiers.json", "docs/config.example.ini", "compat/adrenaline_vsh/main.c",
-                     "include/vjo_api.h", "tools/tests/ftp_mock.py", "tools/hook_request.py"):
+                     "include/vjo_api.h", "tools/tests/ftp_mock.py", "tools/hook_request.py",
+                     "tools/lookup_tables.txt"):
             self.check([path], True, False, True)
 
     def test_ci_itself_runs_everything(self):
