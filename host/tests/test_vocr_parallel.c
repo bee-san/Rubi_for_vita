@@ -286,7 +286,7 @@ static int is_cancelled(void *ud)
     if (on_late_helper) __atomic_fetch_add(&late_cancel_calls, 1u, __ATOMIC_RELAXED);
     return __atomic_load_n(&cancel_now, __ATOMIC_ACQUIRE);
 }
-static VjoGreySource im = {NULL, W, H, strip, is_cancelled, NULL};
+static VjoGreySource im = {NULL, W, H, strip, is_cancelled, NULL, NULL};
 static unsigned char capture[64 * 1024];
 
 /* LINES lines of glyph-like strokes, each with its own spacing and length (seed

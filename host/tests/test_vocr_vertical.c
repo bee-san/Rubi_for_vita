@@ -311,7 +311,7 @@ static void *line_buffer(void *ud, size_t bytes)
     if (!line_mem) line_mem = malloc(VJO_VOCR_LINE_MAX_BYTES);
     return bytes <= VJO_VOCR_LINE_MAX_BYTES ? line_mem : NULL;
 }
-static VjoGreySource im = {NULL, 0, 0, strip, NULL, line_buffer};
+static VjoGreySource im = {NULL, 0, 0, strip, NULL, line_buffer, NULL};
 static unsigned char capture[64 * 1024];
 
 static void fill(unsigned w, unsigned h, unsigned char bg)

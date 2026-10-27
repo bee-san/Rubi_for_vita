@@ -455,7 +455,7 @@ static int stage_job(const BenchIn *in, unsigned iters, BenchOut *out)
     const VjoVocrModel *ci = in->cascade_name ? vjo_vocr_model(in->cascade_name) : NULL;
     const VjoVocrLm *lm = in->lm_name ? vjo_vocr_lm(in->lm_name) : NULL;
     StripSrc ss = {in, 0, 0};
-    VjoGreySource src = {&ss, in->w, in->h, plane_strip, NULL, tall_line};
+    VjoGreySource src = {&ss, in->w, in->h, plane_strip, NULL, tall_line, NULL};
     size_t ws, cap = vjo_vocr_capture_bytes(in->w, in->h);
     unsigned mode = in->mode;
     uint64_t t0 = 0, strips0 = 0, rows0 = 0, sim0 = 0;
@@ -716,7 +716,8 @@ static const char nondefault_config[] =
     "anki_screenshot_trim_bars = off\n"
     "reading_time = 15s\n"
     "hook_trust = off\n"
-    "ocr_line_fix = all\n";
+    "ocr_line_fix = all\n"
+    "ocr_pause = on\n";
 
 static int stage_config(const BenchIn *in, unsigned iters, BenchOut *out)
 {

@@ -149,7 +149,16 @@
 #define VJO_GAME_OCR_S_LINE_FIX 0x200000u
 #define VJO_GAME_OCR_S_LINE_JUNK 0x400000u
 #define VJO_GAME_OCR_S_LINE_VALLEY 0x800000u
-#define VJO_GAME_OCR_S_ALL 0x30FD001Fu
+/* API 51, bit 30: pause the game for its frame (config.ini ocr_pause, off by default; docs/game-pause.md, #348). The
+ * job's first pass asks for the whole region at once (VJO_ROWS_FRAME): the display hook copies every row of it from
+ * one frame, inside the game's display call, which waits that long (at most VJO_GAME_OCR_PAUSE_MAX_US), into the
+ * worker's frame block; every later read of the job is from that copy, so a spinning icon or an animated background
+ * cannot change the rows under the read, and the stable-text check after the finder (core/vocr_ocr.c settle_verify)
+ * has nothing to wait for. A game the kernel cannot pause (VJO_GAME_STATIC_FB, or the watchdog turned it off), a frame
+ * block that does not fit beside the job, or a copy that fails reads as before, strip by strip. Not bits 24-27
+ * (VOCR6's spotter finder, draft #326's text overlay: VJO_GAME_OCR_S_CHARS 0x2000000) nor 17 (closed draft #271). */
+#define VJO_GAME_OCR_S_PAUSE 0x40000000u
+#define VJO_GAME_OCR_S_ALL 0x70FD001Fu
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
@@ -350,6 +359,15 @@ enum {
                             first rows, 1 the first rows' guess, every row checked, 2 every row came to another
                             picture: read again), bytes = the picture's x << 16 | y, sum = its width << 16 | height
                             (the JPEG's), us the scan's time */
+    VJO_GSTEP_PAUSE,     /* API 51, the pause for the frame (VJO_GAME_OCR_S_PAUSE), once per job that asked for it:
+                            kind 1 when every read of the job came from one frame copied in one display call, 0 when
+                            the job read as before; arg the rows that display call copied (the region's height), rc
+                            0 or why not (the kernel's VJO_ERR_*: UNSUPPORTED a game it does not pause or the
+                            watchdog's off switch, TIMEOUT the cap or no frame, COPY the hook could not write the
+                            block; VJO_E_OOM no room for the block, or the last rung's native error), bytes the frame
+                            block's, sum VJO_GPAUSE_* | the block's VJO_GAME_OCR_MEM_* << 8, us the copies' time in the
+                            game's display calls: how long the game waited (1: none). The block's ALLOC and FREE are
+                            not logged: this step has them */
     VJO_GSTEP_COUNT
 };
 #define VJO_GLM_READ 0x80000000u     /* the LM was read from the card and checked in this job */
@@ -363,6 +381,11 @@ enum {
 #define VJO_GSETTLE_NONE 0     /* not asked for, or no line to read */
 #define VJO_GSETTLE_HELD 1     /* the rows held still settle long before the lines were read */
 #define VJO_GSETTLE_TIMEOUT 2  /* the job's waiting budget ran out first: read without it */
+/* VJO_GSTEP_PAUSE sum (API 51). */
+#define VJO_GPAUSE_FROZEN 0u   /* the region came from one frame, copied in one display call: every read is from it */
+#define VJO_GPAUSE_NO_ROOM 1u  /* the frame block did not fit beside the job (its memory check) or was refused */
+#define VJO_GPAUSE_REFUSED 2u  /* the kernel refused the copy or could not finish it (rc says why) */
+#define VJO_GPAUSE_UNUSED 3u   /* the job ended before its first pass (cancelled, a wait that failed) */
 /* VJO_GSTEP_ALLOC/FREE arg: which block. */
 #define VJO_GITEM_CAPTURE 1u   /* "VjoGameVocrCapture": the strip and the row checksums */
 #define VJO_GITEM_WORKSPACE 2u /* "VjoGameVocr": the finder's then the recognizer's arena */
@@ -372,7 +395,8 @@ enum {
 #define VJO_GITEM_LM 6u        /* "VjoGameVocrLM": the beam + LM decoder's LM (API 20) */
 #define VJO_GITEM_CASCADE 7u   /* "VjoGameVocrCascade": the confidence cascade's larger model (API 20) */
 #define VJO_GITEM_SHOT 8u      /* "VjoGameShot": a shot's colour strip, encoder and JPEG (API 23) */
-#define VJO_GITEM_COUNT 9u
+#define VJO_GITEM_FRAME 9u     /* "VjoGameVocrFrame": the region from one frame, a paused job's (API 51) */
+#define VJO_GITEM_COUNT 10u
 
 typedef struct {
     uint8_t id;      /* VJO_GSTEP_* */
@@ -489,6 +513,18 @@ typedef struct {
  * screen. Any other scene (a menu over the line, an untrusted line since): VJO_ERR_FORMAT, and the worker reads
  * the first pass as before. Never with another VJO_ROWS_* flag, nor for a full-frame, probe or shot job. */
 #define VJO_ROWS_HOOK 0x8u
+/* API 51 (VJO_GAME_OCR_S_PAUSE, docs/game-pause.md): with SIG and LAST, and only so, the whole region at once: y 0, n
+ * the region's height, through the hook (mode VJO_GAME_OCR_SRC_HOOK) into one block of the caller (dst_stride apart,
+ * at most VJO_MAX_W). The display hook copies every row from the frame the game submits, in that one display call,
+ * which waits as long: the game's pause. It stops at VJO_GAME_OCR_PAUSE_MAX_US (VJO_ERR_TIMEOUT: the rows copied so far
+ * are not the job's; it reads as before) and checks the time every VJO_GAME_OCR_PAUSE_ROWS rows. Refused (ARG) in a
+ * job without VJO_GAME_OCR_S_PAUSE, a shot, a probe, or with any other shape; (UNSUPPORTED) in a game whose frames are
+ * sampled from its pad calls (VJO_GAME_STATIC_FB: the PSP emulator under Adrenaline) or once the kernel's watchdog has
+ * turned pausing off (a copy that outlived its cap twice over, kernel/game_ocr.c game_ocr_rows_tick). The first pass
+ * is published as by any LAST strip. */
+#define VJO_ROWS_FRAME 0x10u
+#define VJO_GAME_OCR_PAUSE_MAX_US 100000u /* the most a copy holds the game's display call */
+#define VJO_GAME_OCR_PAUSE_ROWS 16u       /* rows copied between two looks at the clock */
 #define VJO_GAME_OCR_ROWS_MAX 64u  /* rows per call */
 #define VJO_GAME_OCR_KSTRIP_MAX (64u * 1024u) /* the kernel strip's largest size */
 

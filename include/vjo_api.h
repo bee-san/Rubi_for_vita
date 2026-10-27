@@ -106,8 +106,12 @@
  * 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.c): VjoGameOcrRequest.speed bits 21-23
  * (VJO_GAME_OCR_S_LINE_FIX: VOCR_FIX_DEFAULT, _JUNK, _VALLEY), VjoVocrPolicy.line_fix, config.ini ocr_line_fix.
  * Sizes and layouts are unchanged. This is #330: 47's and 49's notes kept 44 and then 48 for it, and it merged
- * after 49, so it is 50. */
-#define VJO_API_VERSION 50
+ * after 49, so it is 50.
+ * 51: the pause for the frame (config.ini ocr_pause, #348; docs/game-pause.md): VjoGameOcrRequest.speed bit 30
+ * (VJO_GAME_OCR_S_PAUSE), and vjoOcrCaptureRows' VJO_ROWS_FRAME, the whole region copied from one frame in one display
+ * call (at most VJO_GAME_OCR_PAUSE_MAX_US), into the worker's frame block (VJO_GITEM_FRAME), which the job reads from;
+ * the step log's VJO_GSTEP_PAUSE. Sizes and layouts are unchanged. */
+#define VJO_API_VERSION 51
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

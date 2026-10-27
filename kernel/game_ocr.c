@@ -84,7 +84,15 @@ static struct {
     int in_call;                    /* a rows call is between arming and its last use of the state and
                                        the kernel strip: nobody else resets or frees them meanwhile */
     uint64_t gone_us;               /* when its process exited during the call */
+    volatile uint32_t frame_start;  /* API 51: a frame copy's start (the system time's low 32 bits, | 1) while
+                                       the hook copies it, else 0: the watchdog's (game_ocr_rows_tick) */
 } rows;
+/* API 51 (VJO_ROWS_FRAME, docs/game-pause.md): set by the watchdog when a frame copy held the game's display call
+ * for longer than PAUSE_WATCHDOG_US, which its own cap (VJO_GAME_OCR_PAUSE_MAX_US, checked between chunks) should
+ * never allow; from then on, until the kernel module restarts (the next boot), every frame copy is refused
+ * (VJO_ERR_UNSUPPORTED) and jobs read strip by strip, as without ocr_pause. */
+static int pause_off;
+#define PAUSE_WATCHDOG_US (2u * VJO_GAME_OCR_PAUSE_MAX_US)
 /* A frame has to come within this; cancellation is checked every slice. */
 #define ROWS_WAIT_US 1500000u
 #define ROWS_SLICE_US 50000u
@@ -176,6 +184,7 @@ void game_ocr_init(void)
     waiters = 0;
     model_reset_locked();
     memset(&rows, 0, sizeof(rows));
+    pause_off = 0;
 }
 
 /* A job is queued or claimed, or a model or rows call is in flight: the state
@@ -491,20 +500,50 @@ int vjoOcrTake(VjoGameOcrRequest *out)
 }
 
 /* Display hook, game context, no lock: the armed rows of this process from
- * this frame (see the rows state machine above). */
+ * this frame (see the rows state machine above). API 51, a frame copy
+ * (VJO_ROWS_FRAME, docs/game-pause.md): every row of the region from this one
+ * frame, VJO_GAME_OCR_PAUSE_ROWS at a time, the clock looked at between them, so
+ * the game's display call waits at most VJO_GAME_OCR_PAUSE_MAX_US and a chunk:
+ * that wait is the game's pause, and it ends when this function returns, on
+ * every path (the copy done, its cap, a copy error, another frame size). */
 void game_ocr_rows_hook(SceUID pid, uintptr_t base, uint32_t pitch, uint32_t fmt, uint32_t w, uint32_t h)
 {
+    int64_t start;
     if (__atomic_load_n(&rows.state, __ATOMIC_ACQUIRE) != ROWS_PENDING || pid != rows.pid)
         return;
-    if (!__sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_COPYING))
+    start = ksceKernelGetSystemTimeWide();
+    /* the watchdog's: written before the claim, so a COPYING it sees has it (one hook caller at a time:
+     * display.c frame_busy) */
+    if (rows.job.frame) __atomic_store_n(&rows.frame_start, (uint32_t)start | 1u, __ATOMIC_RELAXED);
+    if (!__sync_bool_compare_and_swap(&rows.state, ROWS_PENDING, ROWS_COPYING)) {
+        __atomic_store_n(&rows.frame_start, 0u, __ATOMIC_RELAXED);
         return;
-    rows.copy_start_us = ksceKernelGetSystemTimeWide();
+    }
+    rows.copy_start_us = start;
     rows.fb_pitch = pitch;
     rows.fb_fmt = fmt;
     rows.fb_w = w;
     rows.fb_h = h;
-    rows.rc = capture_grey_rows(base, pitch, fmt, w, h, &rows.job);
+    if (!rows.job.frame) {
+        rows.rc = capture_grey_rows(base, pitch, fmt, w, h, &rows.job);
+    } else {
+        OcrRowsJob part = rows.job;
+        int rc = 0;
+        for (uint32_t done = 0; done < rows.job.n; done += part.n) {
+            if (done && (uint64_t)(ksceKernelGetSystemTimeWide() - start) >= VJO_GAME_OCR_PAUSE_MAX_US) {
+                rc = VJO_ERR_TIMEOUT; /* the cap: the game goes on; the job reads as before */
+                break;
+            }
+            part.y = rows.job.y + done;
+            part.n = rows.job.n - done < VJO_GAME_OCR_PAUSE_ROWS ? rows.job.n - done : VJO_GAME_OCR_PAUSE_ROWS;
+            part.dst_user = rows.job.dst_user + (uintptr_t)done * rows.job.stride;
+            if ((rc = capture_grey_rows(base, pitch, fmt, w, h, &part)) < 0)
+                break;
+        }
+        rows.rc = rc < 0 ? rc : (int)rows.job.n;
+    }
     rows.copy_end_us = ksceKernelGetSystemTimeWide();
+    __atomic_store_n(&rows.frame_start, 0u, __ATOMIC_RELAXED);
     __atomic_store_n(&rows.state, ROWS_DONE, __ATOMIC_RELEASE);
     if (g.mevf > 0) ksceKernelSetEventFlag(g.mevf, MEV_ROWS);
 }
@@ -542,7 +581,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
     SceUID pid = ksceKernelGetProcessId();
     uint64_t deadline;
     uint32_t span = 0, kbytes = 0, bpp;
-    int rc = 0, armed = 0, kalloc = 0, rgba;
+    int rc = 0, armed = 0, kalloc = 0, rgba, frame;
     ENTER_SYSCALL(state);
     memset(&info, 0, sizeof(info));
     info.size = sizeof(info);
@@ -553,6 +592,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
      * publishes no capture. */
     rgba = (req.flags & VJO_ROWS_RGBA) != 0;
     bpp = rgba ? 4u : 1u;
+    frame = (req.flags & VJO_ROWS_FRAME) != 0; /* API 51: the whole region from one frame (the pause) */
     VJO_LOCK();
     sync_locked();
     if (pid <= 0 || pid != request_pid) rc = VJO_ERR_PERM;
@@ -585,12 +625,20 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         }
         goto out; /* no rows: the info says none were armed */
     }
-    else if (!req.n || req.n > VJO_GAME_OCR_ROWS_MAX || req.y >= request.height || req.n > request.height - req.y ||
-             req.dst_stride < request.width * bpp || req.dst_stride > VJO_MAX_W * bpp ||
-             (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_RGBA)) ||
-             ((req.flags & VJO_ROWS_LAST) && !(req.flags & VJO_ROWS_SIG)) ||
-             rgba != !!(request.flags & VJO_GAME_OCR_F_SHOT) || (rgba && (req.flags & VJO_ROWS_SIG)) ||
-             (req.mode != VJO_GAME_OCR_SRC_HOOK && req.mode != VJO_GAME_OCR_SRC_KSTRIP))
+    else if (frame && (req.flags != (VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_FRAME) || req.y || req.n != request.height ||
+                       req.mode != VJO_GAME_OCR_SRC_HOOK || req.dst_stride < request.width || req.dst_stride > VJO_MAX_W ||
+                       !(request.speed & VJO_GAME_OCR_S_PAUSE) ||
+                       (request.flags & (VJO_GAME_OCR_F_SHOT | VJO_GAME_OCR_F_PROBE))))
+        rc = VJO_ERR_ARG; /* API 51: the whole region at once, the first pass, only for a job that asked for the pause */
+    else if (frame && (pause_off || g.game_active == VJO_GAME_STATIC_FB))
+        rc = VJO_ERR_UNSUPPORTED; /* its frames come from pad calls (no display call to wait in), or the watchdog's */
+    else if (!frame && (!req.n || req.n > VJO_GAME_OCR_ROWS_MAX || req.y >= request.height ||
+                        req.n > request.height - req.y ||
+                        req.dst_stride < request.width * bpp || req.dst_stride > VJO_MAX_W * bpp ||
+                        (req.flags & ~(VJO_ROWS_SIG | VJO_ROWS_LAST | VJO_ROWS_RGBA)) ||
+                        ((req.flags & VJO_ROWS_LAST) && !(req.flags & VJO_ROWS_SIG)) ||
+                        rgba != !!(request.flags & VJO_GAME_OCR_F_SHOT) || (rgba && (req.flags & VJO_ROWS_SIG)) ||
+                        (req.mode != VJO_GAME_OCR_SRC_HOOK && req.mode != VJO_GAME_OCR_SRC_KSTRIP)))
         rc = VJO_ERR_ARG;
     else if ((req.flags & VJO_ROWS_SIG) && !(req.y == 0 || (rows.sig_seq == req.seq && req.y == rows.sig_next)))
         rc = VJO_ERR_ARG; /* the first pass runs from row 0, in order */
@@ -598,7 +646,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
      * is not tidied yet: the kernel worker returns it to IDLE within a tick. */
     else if (rows.state != ROWS_IDLE) rc = VJO_ERR_BUSY;
     else {
-        /* <= 61,440 B grey, 245,760 B in colour (64 rows of 960 px): no wrap */
+        /* <= 61,440 B grey, 245,760 B in colour (64 rows of 960 px), 522,240 B for a frame (544 rows): no wrap */
         uint64_t bytes = (uint64_t)(req.n - 1u) * req.dst_stride + request.width * bpp;
         span = (uint32_t)bytes;
         if (bytes > 0xFFFFFFFFu || !user_range_ok(pid, (uintptr_t)dst, span)) rc = VJO_ERR_ARG;
@@ -628,6 +676,7 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *user_req, void *dst, VjoGameOcrRowsI
         }
         rows.job.sig = (req.flags & VJO_ROWS_SIG) != 0;
         rows.job.rgba = rgba;
+        rows.job.frame = frame;
         if (rows.job.sig && req.y == 0) {
             g.region_seq = 0; /* capture_sig gets rewritten */
             g.capture_begin_us = ksceKernelGetSystemTimeWide();
@@ -736,6 +785,9 @@ info_out:
     if (rgba && rc > 0)
         klog_d("ocr job %u: shot rows %u..%u (%s), waited %u us, copy %u us, t=%u ms", req.seq, req.y, req.y + req.n,
                req.mode == VJO_GAME_OCR_SRC_KSTRIP ? "kernel strip" : "hook", info.wait_us, info.copy_us, shot_ms());
+    if (frame) /* API 51: how long the game's display call waited (the pause) */
+        klog_d("ocr job %u: the frame's %u rows in one display call, %u us (rc 0x%08X)", req.seq, req.n, info.copy_us,
+               (unsigned)rc);
 out:
     info.rc = rc;
     info.armed = (uint32_t)armed;
@@ -1386,6 +1438,21 @@ int vjoOcrShotSave(uint32_t seq, uint32_t bytes)
 void game_ocr_rows_tick(void)
 {
     VJO_LOCK();
+    /* API 51's watchdog (docs/game-pause.md): a frame copy holds the game's display call for at most
+     * VJO_GAME_OCR_PAUSE_MAX_US and one chunk (game_ocr_rows_hook looks at the clock between chunks). One still
+     * copying after PAUSE_WATCHDOG_US means that bound did not hold (a row read that itself stalls). Nothing may stop
+     * a copy from outside the game's thread, and its rows call gives it up as any other (ROWS_COPY_WAIT_US, BUSY,
+     * tidied below once it ends); from now on no frame copy is armed again until the kernel restarts (the next
+     * boot), so every later job reads strip by strip, as without the pause. The state first: a COPYING seen here
+     * has its frame_start, written before the hook's claim. */
+    if (!pause_off && __atomic_load_n(&rows.state, __ATOMIC_ACQUIRE) == ROWS_COPYING && rows.job.frame) {
+        uint32_t s = __atomic_load_n(&rows.frame_start, __ATOMIC_RELAXED);
+        if (s && (uint32_t)ksceKernelGetSystemTimeWide() - s > PAUSE_WATCHDOG_US) {
+            pause_off = 1;
+            klog("ocr pause: a frame copy has held the game's display call over %u ms; no more pauses until the next "
+                 "boot", PAUSE_WATCHDOG_US / 1000u);
+        }
+    }
     /* A rows copy whose process exited during it, or that outlived its call:
      * nobody waits for it now. */
     if ((rows.orphan || rows.abandoned) && rows.state == ROWS_DONE && !rows.in_call) {

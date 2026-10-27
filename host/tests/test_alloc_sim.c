@@ -44,6 +44,10 @@ static uint64_t clock_us;
 static FILE *file;
 static uint32_t frame[FB_W * FB_H];
 static int in_hook, hook_copy_fails;
+/* API 51 (docs/game-pause.md): a spinner in the text box, a new shade at each frame the game shows, and the display
+ * calls a job's rows waited for */
+static int spinner;
+static unsigned display_calls, spinner_frames;
 
 /* ---- the pools ---- */
 static uint32_t kd_largest;      /* the largest KERNEL_RW block the kernel pool grants */
@@ -210,6 +214,12 @@ int ksceKernelWaitEventFlag(SceUID uid, unsigned bits, unsigned wait, unsigned *
 {
     (void)uid; (void)wait; (void)out;
     if (bits == MEV_ROWS) { /* the game shows its next frame: the display hook runs in its thread */
+        if (spinner) { /* 24 x 24 px right of the last line, inside the text box: never a shade it showed before */
+            uint32_t v = 40u + (++spinner_frames * 37u) % 200u;
+            for (unsigned y = 490; y < 514; y++)
+                for (unsigned x = 906; x < 930; x++) frame[y * FB_W + x] = 0xFF000000u | v << 16 | v << 8 | v;
+        }
+        display_calls++;
         in_hook = 1;
         game_ocr_rows_hook(7, (uintptr_t)frame, FB_W, 0x00000000u, FB_W, FB_H);
         in_hook = 0;
@@ -318,11 +328,13 @@ static void reset_worker(void)
     resident.model = NULL; resident.data = NULL; resident.capacity = 0;
     model_owned = 0; model_seq = 0; quitting = active_seq = 0;
     worker_started = claim_outstanding = blocked = io_error = stat_error = hook_owns_capture = 0;
+    frame_uid = -1; frame_base = NULL; frame_bytes_held = 0; memset(&pz, 0, sizeof(pz));
 }
 
+static VjoGameOcrResult last_out; /* the last case's result */
+static uint32_t case_speed;       /* API 51: the next case's speed word (VJO_GAME_OCR_S_PAUSE) */
 static Outcome run_case(const char *model, uint32_t flags, uint16_t rx, uint16_t ry, uint16_t rw, uint16_t rh)
 {
-    static VjoGameOcrResult out;
     Outcome o;
     memset(&o, 0, sizeof(o));
     reset_worker();
@@ -335,23 +347,23 @@ static Outcome run_case(const char *model, uint32_t flags, uint16_t rx, uint16_t
     g.ocr_epoch = 1; g.fb_w = FB_W; g.fb_h = FB_H; g.done_seq = g.capture_seq = 11;
     g.region = (VjoRect){rx, ry, rw, rh};
     caller = 7; TEST_ASSERT(!vjoOcrRegister()); caller = 3;
-    VjoGameOcrRequest request = {.size = sizeof(request), .flags = flags};
+    VjoGameOcrRequest request = {.size = sizeof(request), .flags = flags, .speed = case_speed};
     strcpy(request.model_dir, VJO_VOCR_MODEL_ROOT);
     strcpy(request.model, model);
     int seq = vjoOcrSubmit(&request);
     TEST_ASSERT(seq > 0);
     caller = 7;
     TEST_ASSERT(!vjoOcrTake(&request));
-    o.rc = vjo_game_ocr_run_request(&request, &out);
-    TEST_CHECK(!vjoOcrComplete(&out));
+    o.rc = vjo_game_ocr_run_request(&request, &last_out);
+    TEST_CHECK(!vjoOcrComplete(&last_out));
     o.kd_peak = kd_peak;
     o.user_peak = user_peak;
-    o.capture_bytes = out.capture_bytes;
-    o.capture_memory = out.capture_memory;
-    o.source = out.source;
-    o.lines = out.lines;
-    for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
-        if (out.step[i].id == VJO_GSTEP_ALLOC && out.step[i].rc < 0) o.refused_steps++;
+    o.capture_bytes = last_out.capture_bytes;
+    o.capture_memory = last_out.capture_memory;
+    o.source = last_out.source;
+    o.lines = last_out.lines;
+    for (unsigned i = 0; i < last_out.n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        if (last_out.step[i].id == VJO_GSTEP_ALLOC && last_out.step[i].rc < 0) o.refused_steps++;
     /* every block went back: nothing held after the job (weights stay resident) */
     TEST_CHECK(kd_taken == 0 && cdram_used == 0 && phycont_used == 0);
     TEST_CHECK(user_used == (int64_t)(resident.data ? weights_bytes_held : 0));
@@ -483,7 +495,54 @@ static void shell_paf_fits_at_the_74_game_start(void)
     TEST_CHECK(need <= PAF_FREE_74 - reserve);
 }
 
+
+/* API 51, the pause for the frame (docs/game-pause.md): a CLANNAD-sized text box (917 x 125) with a spinner beside its
+ * last line that shows a new shade at every frame, read with the stable-text wait (150 ms, at most 1 s). Strip by
+ * strip, every re-read of the region tears it, and the job shows nothing (VJO_E_SCREEN_CHANGED: #348's report);
+ * paused, one display call copies the box from one frame, the job reads it, waits for nothing and goes on to the
+ * model (its text with the release models; without them it stops there, VJO_E_OCR_MODEL), and the frame block goes
+ * back with the job. Each case prints the display calls the job waited for and the rows of the longest one. */
+static const VjoGameOcrStep *step_of(const VjoGameOcrResult *r, unsigned id)
+{
+    for (unsigned i = 0; i < r->n_steps && i < VJO_GAME_OCR_STEPS; i++)
+        if (r->step[i].id == id) return &r->step[i];
+    return NULL;
+}
+static void api51_pause_reads_one_frame_beside_a_spinner(void)
+{
+    const uint16_t box[4] = {1536, 48188, 62600, 15059};
+    const uint32_t settle = 15u << VJO_GAME_OCR_SETTLE_SHIFT | 20u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
+    const int models = have_models();
+    make_frame();
+    kd_largest = KD_GRANTED_74;
+    user_free = USER_FREE_CLANNAD; cdram_free = 128 << 20; phycont_free = 16 << 20; refuse = 0; hook_copy_fails = 0;
+    spinner = 1; spinner_frames = 0;
+    display_calls = 0; case_speed = 0;
+    Outcome o = run_case(VJO_VOCR_TIER2_NAME, settle, box[0], box[1], box[2], box[3]);
+    fprintf(stderr, "alloc-sim: %-58s rc=%-4d %u display calls (64 rows at most in one), %u rows torn\n",
+            "API 51 textbox 917x125 + spinner, strip by strip", o.rc, display_calls, (unsigned)last_out.tears);
+    TEST_CHECK_(o.rc == VJO_E_SCREEN_CHANGED && last_out.tears > 0 && !last_out.text[0] && display_calls > 3 &&
+                !step_of(&last_out, VJO_GSTEP_PAUSE), "strip by strip: rc %d, %u tears, %u display calls", o.rc,
+                (unsigned)last_out.tears, display_calls);
+    display_calls = 0; case_speed = VJO_GAME_OCR_S_PAUSE;
+    o = run_case(VJO_VOCR_TIER2_NAME, settle, box[0], box[1], box[2], box[3]);
+    const VjoGameOcrStep *ps = step_of(&last_out, VJO_GSTEP_PAUSE);
+    fprintf(stderr, "alloc-sim: %-58s rc=%-4d %u display call(s), %u rows in the longest, %u lines%s\n",
+            "API 51 textbox 917x125 + spinner, paused", o.rc, display_calls, ps ? ps->arg : 0u, o.lines,
+            models ? "" : " (no release models: stops at the model)");
+    TEST_CHECK_(ps && ps->kind == 1 && ps->arg == last_out.height && (ps->sum & 0xFFu) == VJO_GPAUSE_FROZEN &&
+                ps->sum >> 8 == VJO_GAME_OCR_MEM_USER && !ps->rc &&
+                ps->bytes == PAGE_ROUND(last_out.width * last_out.height), "the pause step");
+    TEST_CHECK_(display_calls == 1 && last_out.captures == 1 && !last_out.tears && o.kd_peak == 0,
+                "paused: %u display calls, %u captures, %u tears", display_calls, (unsigned)last_out.captures,
+                (unsigned)last_out.tears);
+    if (models) TEST_CHECK_(o.rc == 0 && o.lines >= 3 && last_out.text[0], "paused: rc %d, %u lines", o.rc, o.lines);
+    else TEST_CHECK_(o.rc == VJO_E_OCR_MODEL, "paused without models: rc %d", o.rc);
+    spinner = 0; case_speed = 0;
+}
+
 TEST_LIST = {
+    {"API 51 the pause reads one frame beside a spinner that tears every strip-by-strip read", api51_pause_reads_one_frame_beside_a_spinner},
     {"API 18 kernel capture refused at the full screen under #74's pool", api18_kernel_capture_is_refused_at_the_full_screen},
     {"API 19 OCR takes no kernel memory under #74's pools", api19_runs_with_no_kernel_memory},
     {"API 19 ladder under refusals, each rung logged", api19_ladder_under_refusals},
