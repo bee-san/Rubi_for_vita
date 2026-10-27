@@ -30,6 +30,14 @@ been reported.
   `<K>`, `<P>`, `<F:B>` and other tags removed); a box that grows by clicks shows its newest segment. Found and proven in
   the Vita3K emulator with the psandvita farm (53 pages an AI reviewer approved against the frames the game drew),
   not run on a console ([details](docs/native-hooks.md#table-sites)).
+- A native text hook for 蒼の彼方のフォーリズム (`PCSG00700`, APP_VER 01.00), with Rubi's own clean-up rules for
+  its text (half-width kana, `<a>(｢)`, `<ruby>(n,reading)`). Found in Vita3K with the psandvita farm's capture
+  build: the site gets each page once, 60 pages in a row. **On the console** (a PCH-2000 on 3.65, Rubi 0.9.7 with
+  this entry, before trusted hooks, API 43): the site was hooked (`1 table sites`, 0 refused); of its 19 lines in
+  two sessions, the 15 compared with OCR agreed (score 1000), the ruby line scored 771 before its rule (1000
+  after), 3 scored 0 ([details](docs/native-hooks.md#table-sites)). On `main` the entry is trusted from its first
+  line (API 43), so its lines need no OCR: that mode has not run on a console for this site, and the 3 lines that
+  scored 0 were not examined.
 
 ### Fixed
 

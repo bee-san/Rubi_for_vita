@@ -174,6 +174,15 @@ Two lists name them:
       0x10DA344 as Luna's table reads it, which is past the segment's end, so it was refused as out of range on
       every console.
 
+  - Found with the psandvita farm's Vita3K capture build, then tested on a console:
+    - PCSG00700 蒼の彼方のフォーリズム (APP_VER 01.00, eboot SHA-256 d1d827ee…), NID 0x3BB91404 (`vita_app`),
+      +0x74D48, Thumb, r1, CP932, filter `RF_PCSG00700`. The site is the entry of the function that sets a page's
+      script string on the text window (a `strlen` probe found it: the page's one call returns to 0x81074d6a); it
+      gets each page once (60 pages in a row in Vita3K). Patch (8 bytes): `push.w {r4-r11, lr}; sub sp, #0x1c;
+      movs.w r10, #0`, no branch into it in the dumped segment 0. On a PCH-2000 (3.65, Rubi 0.9.7 with this
+      entry, 2026-10-26): `hooks in PCSG00700: text source auto, 1 table sites and 3 string copies hooked, 0 sites
+      refused`; of the site's 19 lines in two sessions, the 15 compared with OCR scored 1000, the ruby line 771
+      before `RF_PCSG00700` had its ruby rule (then 1000), 3 scored 0.
   - From the farm's data bucket (the hooks of its finished titles, with every approved page's hook bytes:
     [farm checks](#farm-checks)), Rubi's own sites, proven in Vita3K only. The bucket has no segment-0 dump,
     so only the recorded 16 bytes were checked: no branch, PC use or IT among the patched instructions
@@ -295,6 +304,7 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00415` | CLANNAD | `＊Ａ` (CP932 81 96 82 60) and `＊Ｂ` (81 96 82 61), the script's name variables for the protagonist's family and given name, to 岡崎 and 朋也 (CLANNAD has no name entry) | not the farm's: a console's `history.csv` (Rubi 0.9.8, the verified site's stream): 16 of 1,347 hook lines, e.g. `「ありゃ、＊Ａ、どこいくんだよっ」` where OCR read 岡崎, `「俺はＤ組の＊Ａ＊Ｂ」` |
 | `PCSG00020` | 極限脱出ＡＤＶ 善人シボウデス | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
+| `PCSG00700` | 蒼の彼方のフォーリズム | `<a>(X)` to X (a spoken line opens `<a>(｢)`); `<ruby>(n,reading)` and `<ruby2>(..)` dropped, leaving the base; any other `<tag>` dropped (the eboot's tag table also names `f`, `c`, `parallel`); half-width kana to hiragana | Vita3K: 31 of the first 60 pages; console: `<ruby>(2,しとう)四島市` drawn 四島市 (the other tags in no page seen) |
 | `PCSG00817` | EVE burst error R | `[n]` to a line break; drops `[wNNN]` `[hNNN]` `[cRRGGBB]` `[e]` and the other `[x]` codes | events 1-59, 432 |
 | `PCSG00853` | ピリオドキューブ | `#Name[1]` 花宮, `#Name[2]` かずは, `#Name[3]` カズハ, then `IFENGINE` | samples 78, 120, 259, 371, 464, 492 |
 | `PCSG00876` | 7'scarlet | `@@` to a line break; drops `$<digit>` style switches | scn op 0x10 records |

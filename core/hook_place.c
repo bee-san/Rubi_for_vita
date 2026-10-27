@@ -247,6 +247,9 @@ static const VjoPlaceVerified verified[] VJO_DATA_TABLE(place_verified) = {
     /* PCSG00648 月に寄りそう乙女の作法 (APP_VER ?): Vita3K 0x81026efa, 1397 farm pages (paired-vita-pcsg00648-20261023); patch: strh r0, [r4]; movw r1, #0x8638; ldrb r0, [r7]; movt r1, #0x8128; Luna's site here (r2, filter none) */
     {"PCSG00648", 0xE5819F44u, 0x26EFAu, 1, 2, VJO_HOOK_ENC_CP932, 16, 0,
      {0x20, 0x80, 0x48, 0xF2, 0x38, 0x61, 0x38, 0x78, 0xC8, 0xF2, 0x28, 0x11, 0x7A, 0x78, 0xB1, 0xF9}, VJO_RF_ANGLE_RUBY, 0, 0},
+    /* PCSG00700 蒼の彼方のフォーリズム (APP_VER 01.00): Vita3K 0x81074d48, the page's text set on the text window (r1 = its script string), one hit a page; console-tested (PCH-2000, 3.65, 2026-10-26); patch: push.w {r4, r5, r6, r7, r8, r9, r10, r11, lr}; sub sp, #0x1c; movs.w r10, #0x0 */
+    {"PCSG00700", 0x3BB91404u, 0x74D48u, 1, 1, VJO_HOOK_ENC_CP932, 16, 0,
+     {0x2D, 0xE9, 0xF0, 0x4F, 0x87, 0xB0, 0x5F, 0xF0, 0x00, 0x0A, 0x87, 0x69, 0x89, 0x46, 0x87, 0xF8}, VJO_RF_PCSG00700, 0, 0x0100u},
     /* PCSG00713 百花百狼 ～戦国忍法帖～ (APP_VER 01.00): Vita3K 0x81112f46, 1464 farm pages (paired-vita-pcsg00713-20261023); patch: movs.w r10, #0x0; str.w r10, [sp, #0x1c]; add r2, sp, #0x1c; mov r0, r11 */
     {"PCSG00713", 0x08B1647Cu, 0x112F46u, 1, 6, VJO_HOOK_ENC_UTF8, 16, 0,
      {0x5F, 0xF0, 0x00, 0x0A, 0xCD, 0xF8, 0x1C, 0xA0, 0x07, 0xAA, 0x58, 0x46, 0x03, 0x21, 0x09, 0xF7}, 0, 0, 0x0100u},
