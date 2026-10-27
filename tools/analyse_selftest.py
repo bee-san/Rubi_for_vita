@@ -935,10 +935,10 @@ LOG = {
     # shell/worker.c: the dictionary's display name, "Local dictionaries" (core/config.h VJO_DICT_NAME;
     # builds with the removed Hachidori relay could say "Hachidori relay"); builds before the online
     # dictionaries' removal add its API key's state, "(key set|MISSING)". #333's builds name no dictionary (it was
-    # always VJO_DICT_NAME) and end with the line finder the game's jobs use: its own (ocr_line_fix.ini), else
-    # config.ini's ocr_line_fix
+    # always VJO_DICT_NAME) and end with the line finder the game's jobs use, as config.ini's two keys: its own
+    # (ocr_line_fix.ini), else config.ini's ocr_finder and ocr_line_fix
     "game": re.compile(r"^game (\S+) started: (?:dictionary (.+?)(?: \(key (\S+)\))?, )?trigger (\S+), subtitles (\S+), "
-                       r"ocr_mode ([^\s,]+)(?:, ocr_line_fix (\S+))?"),
+                       r"ocr_mode ([^\s,]+)(?:, ocr_finder ([^\s,]+))?(?:, ocr_line_fix (\S+))?"),
     # ("JP Overlay disabled" in builds before the Rubi rename)
     "disabled": re.compile(r"^(\S+): (?:Rubi|JP Overlay) disabled"),
     # shell/game.c vjo_game_identify: a PSP game's start (the process's title ID, AppMgr's app name, the
@@ -2637,8 +2637,8 @@ def summarise_log(text):
                 g = s["games"].setdefault(m.group(1), {"starts": 0, "ocr_mode": m.group(6)})
                 if m.group(2):  # builds before #333 named the dictionary
                     g["dictionary"] = m.group(2)
-                if m.group(7):  # #333: each start's line finder, in order (a resume reads the game's own again)
-                    g.setdefault("ocr_line_fix", []).append(m.group(7))
+                if m.group(8):  # #333: each start's line finder, in order (a resume reads the game's own again)
+                    g.setdefault("line_finder", []).append(f"{m.group(7) or '?'} {m.group(8)}")
                 g["starts"] += 1
             elif key == "disabled":
                 s["disabled"].add(m.group(1))
@@ -3536,12 +3536,12 @@ def norm_line(nm):
 
 
 def _game_settings(g):
-    """A game's start lines as the summary prints them: its ocr_mode, the line finder its starts used (#333: one value
-    when they agree, else each start's in order) and the dictionary builds before #333 named."""
+    """A game's start lines as the summary prints them: its ocr_mode, the line finder its starts used (#333: ocr_finder
+    and ocr_line_fix, once when they agree, else each start's in order) and the dictionary builds before #333 named."""
     parts = [f"ocr_mode {g['ocr_mode']}"]
-    fixes = g.get("ocr_line_fix")
-    if fixes:
-        parts.append("ocr_line_fix " + (fixes[0] if len(set(fixes)) == 1 else " -> ".join(fixes)))
+    finders = g.get("line_finder")
+    if finders:
+        parts.append("line finder " + (finders[0] if len(set(finders)) == 1 else " -> ".join(finders)))
     if g.get("dictionary"):
         parts.append(g["dictionary"])
     return ", ".join(parts)

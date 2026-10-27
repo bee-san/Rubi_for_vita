@@ -321,12 +321,14 @@ static void test_line_fix(void)
     unlink(VJO_LINE_FIX_PATH);
     /* no file at all: every game ON, none with its own */
     TEST_CHECK(vjo_game_enabled("PCSG00415", 0, &lf, &a) && lf == -1 && a.used == 0);
-    static const char ini[] = "# Rubi\nULJS00378 = all\nPCSG00415 = off\nNPXS10028 = junk\nPCSG00940 = on\n";
+    static const char ini[] = "# Rubi\nULJS00378 = all\nPCSG00415 = off\nNPXS10028 = junk\nPCSG00940 = on\n"
+                              "PCSG00628 = spotter\n";
     put_file(VJO_LINE_FIX_PATH, ini, sizeof(ini) - 1);
     static const struct { const char *id; int psp, want; } cases[] = {
-        {"PCSG00415", 0, 0}, {"PCSG00940", 0, 1}, {"PCSG00001", 0, -1}, /* Vita games: their own, else none */
-        {"ULJS00378", 1, 3}, {"PSPEMU005", 1, 2}, {"PSPEMUCFW", 1, 2},   /* PSP games: their own, else the shared */
-        {"NPXS10028", 1, 2}, {"GAME", 0, -1},                            /* the shared row itself; no title ID */
+        {"PCSG00415", 0, 1}, {"PCSG00940", 0, 2}, {"PCSG00001", 0, -1}, /* Vita games: their own, else none */
+        {"PCSG00628", 0, VJO_LINE_FINDER_SPOTTER},
+        {"ULJS00378", 1, 4}, {"PSPEMU005", 1, 3}, {"PSPEMUCFW", 1, 3},   /* PSP games: their own, else the shared */
+        {"NPXS10028", 1, 3}, {"GAME", 0, -1},                            /* the shared row itself; no title ID */
         {"PSPEMU005", 0, -1}};                                           /* not a PSP game: no shared row */
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         lf = 99;
@@ -341,10 +343,10 @@ static void test_line_fix(void)
     lf = 99;
     TEST_CHECK(!vjo_game_enabled("PCSG00415", 0, &lf, &a) && lf == -1 && opens == 1); /* games.ini only */
     lf = 99;
-    TEST_CHECK(vjo_game_enabled("PCSG00940", 0, &lf, &a) && lf == 1);
+    TEST_CHECK(vjo_game_enabled("PCSG00940", 0, &lf, &a) && lf == VJO_LINE_FINDER_GRAD(1));
     /* a file the Shell cannot use: -1 everywhere, the games still ON */
     static const char *const bad[] = {"default = all\n", "PCSG00940 = valley\n", "PCSG00940 = enabled\n",
-                                      "PCSG00940 = ON\n", "PCSG00940 all\n", "../x = all\n", ""};
+                                      "PCSG00940 = ON\n", "PCSG00940 = grad\n", "PCSG00940 all\n", "../x = all\n", ""};
     for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
         put_file(VJO_LINE_FIX_PATH, bad[i], strlen(bad[i]));
         lf = 99;

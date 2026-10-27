@@ -100,12 +100,16 @@ static const char *const on_off[] VJO_DATA_TABLE(games_on_off) = {"disabled", "e
 #endif
 
 #ifndef VJO_KERNEL
-/* In the data segment: the Shell's code pages are full (core/port.h); config.c's ocr_line_fix reads them too. */
-const char *const vjo_line_fix_names[] VJO_DATA_TABLE(line_fix_names) = {"off", "on", "junk", "all", NULL};
+/* In the data segment: the Shell's code pages are full (core/port.h). By value (games.h VJO_LINE_FINDER_*): the
+ * spotter, then Rubi's finder with config.ini's ocr_line_fix values in their order, which config.c reads too. */
+const char *const vjo_line_finder_names[] VJO_DATA_TABLE(line_finder_names) = {"spotter", "off", "on", "junk", "all",
+                                                                                 NULL};
+typedef char vjo_line_finder_names_fit[sizeof(vjo_line_finder_names) / sizeof(vjo_line_finder_names[0]) ==
+                                       VJO_LINE_FINDERS + 1 ? 1 : -1];
 #endif
 
 /* A file in games.ini's format whose rows take one of names (NULL-terminated; a row's value is its index):
- * games.ini's on_off, or (#333, line_fix != 0) ocr_line_fix.ini's vjo_line_fix_names, which has no default line.
+ * games.ini's on_off, or (#333, line_fix != 0) ocr_line_fix.ini's vjo_line_finder_names, which has no default line.
  * One function for both, so the Shell's one reader (vita/games_storage.c) has it once. */
 int vjo_games_parse_kind(VjoGames *g, const char *text, size_t len, int line_fix)
 {
@@ -113,7 +117,7 @@ int vjo_games_parse_kind(VjoGames *g, const char *text, size_t len, int line_fix
     const char *const *names = on_off;
     (void)line_fix;
 #else
-    const char *const *names = line_fix ? vjo_line_fix_names : on_off;
+    const char *const *names = line_fix ? vjo_line_finder_names : on_off;
 #endif
     size_t pos = 0;
     vjo_games_defaults(g);
@@ -155,14 +159,15 @@ int vjo_games_parse_kind(VjoGames *g, const char *text, size_t len, int line_fix
 int vjo_line_fix_format(const VjoGames *g, char *out, size_t cap)
 {
     if (!out || !cap || g->count < 0 || g->count > VJO_GAMES_MAX) return -1;
-    int n = vjo_snprintf(out, cap, "# Rubi: a game's own ocr_line_fix (off, on, junk or all), set on its page in the "
-                                   "Rubi app\n# A game without a line here uses config.ini's.\n");
+    int n = vjo_snprintf(out, cap, "# Rubi: a game's own line finder, set on its page in the Rubi app: off, on, junk "
+                                   "or all (Rubi's finder,\n# config.ini's ocr_finder = grad, with that ocr_line_fix) "
+                                   "or spotter. A game without a line here uses config.ini's.\n");
     if (n < 0 || (size_t)n >= cap) return -1;
     size_t used = (size_t)n;
     for (int i = 0; i < g->count; i++) {
         int v = g->rules[i].enabled;
-        if (!vjo_game_id_valid(g->rules[i].title_id) || v < 0 || v > 3) return -1;
-        n = vjo_snprintf(out + used, cap - used, "%s = %s\n", g->rules[i].title_id, vjo_line_fix_names[v]);
+        if (!vjo_game_id_valid(g->rules[i].title_id) || v < 0 || v >= VJO_LINE_FINDERS) return -1;
+        n = vjo_snprintf(out + used, cap - used, "%s = %s\n", g->rules[i].title_id, vjo_line_finder_names[v]);
         if (n < 0 || (size_t)n >= cap - used) return -1;
         used += (size_t)n;
     }

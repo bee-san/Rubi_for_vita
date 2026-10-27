@@ -648,11 +648,16 @@ static void change_filter(void)
     rebuild();
 }
 
-/* ---- #333: a game's own page: its ON/OFF and its line finder (config.ini ocr_line_fix for this game alone) ---- */
+/* ---- #333: a game's own page: its ON/OFF and its line finder (config.ini's ocr_finder and ocr_line_fix for this
+ * game alone) ---- */
 
-/* The line finder's choices on the page, left to right: Default (no row: config.ini's, or a PSP game the shared
- * PSP row's), then vjo_line_fix_names' four (a choice's index - 1 is its value). */
-static const char *const line_fix_labels[5] = {"Default", "Off", "On", "Junk", "All"};
+/* The line finder's choices on the page, left to right: Default (no row: config.ini's, or a PSP game the shared PSP
+ * row's), the spotter, then Rubi's finder with each ocr_line_fix value: in the values' order (core/games.h
+ * VJO_LINE_FINDER_*), so a choice's value is its place less one (-1 for Default); and each value's label. */
+#define LINE_FINDER_CHOICES (VJO_LINE_FINDERS + 1)
+static const char *const finder_labels[VJO_LINE_FINDERS] = {"Spotter", "Off", "On", "Junk", "All"};
+static int choice_value(int choice) { return choice - 1; } /* choice 0: Default */
+static int choice_of(int value) { return value + 1; }
 
 /* The game's own row in ocr_line_fix.ini (-1: none), and the value its jobs use as the Shell reads them
  * (shell/game.c): its own, else a PSP game's shared row's (NPXS10028), else -1, config.ini's. */
@@ -683,11 +688,11 @@ static void close_game_page(void)
     rebuild(); /* the list as its filter has it now */
 }
 
-/* value: -1 Default (the row goes), 0-3 vjo_line_fix_names'. Saved at once, as games.ini's choices are. */
+/* value: -1 Default (the row goes), else a VJO_LINE_FINDER_* value. Saved at once, as games.ini's choices are. */
 static void set_line_fix(int value)
 {
     const VjoInstalledGame *g = &library[game_view];
-    if (value < -1 || value > 3 || value == own_line_fix(g)) return;
+    if (value < -1 || value >= VJO_LINE_FINDERS || value == own_line_fix(g)) return;
     if (!line_fix_writable) {
         status_error = 1;
         snprintf(status, sizeof(status), "Cannot read ocr_line_fix.ini. Repair or delete it first; nothing was saved.");
@@ -709,27 +714,37 @@ static void set_line_fix(int value)
     }
     status_error = 0;
     line_fix_saved = line_fix;
-    vjo_log("games: %s's line finder: %s", g->id, value < 0 ? "Default" : vjo_line_fix_names[value]);
+    vjo_log("games: %s's line finder: %s", g->id, value < 0 ? "Default" : vjo_line_finder_names[value]);
     snprintf(status, sizeof(status), "Saved. It applies when the game next starts or resumes.");
+}
+
+/* config.ini's line finder as a value (the spotter, or Rubi's finder with its ocr_line_fix), -1 when unreadable. */
+static int config_line_finder(void)
+{
+    if (!preferences_writable) return -1;
+    return preferences.ocr_finder == VJO_FINDER_SPOTTER ? VJO_LINE_FINDER_SPOTTER
+                                                        : VJO_LINE_FINDER_GRAD(preferences.ocr_line_fix);
 }
 
 /* The line finder card's help: what the game's own choice does, or what Default gives it. */
 static void line_fix_help(const VjoInstalledGame *g, char *out, size_t cap)
 {
-    static const char *const what[4] = {"Off: the line finder without its fixes, as before.",
-                                        "On: a line's parts across a wide space stay one line.",
-                                        "Junk: also no box frames read as lines. Draw the box with a margin.",
-                                        "All: Junk, and touching rows split (Narcissu). Box with a margin."};
-    int own = own_line_fix(g), shared = -1;
+    static const char *const what[VJO_LINE_FINDERS] = {
+        "Spotter: vita-vn-ocr's text spotter finds the lines.",
+        "Off: Rubi's finder without its fixes, as before.",
+        "On: Rubi's finder; a line's parts across a wide gap stay one line.",
+        "Junk: Rubi's finder, no box frames as lines. Box with a margin.",
+        "All: Junk, and touching rows split. Box with a margin."};
+    int own = own_line_fix(g), shared = -1, config = config_line_finder();
     if (own >= 0) {
         snprintf(out, cap, "%s", what[own]);
         return;
     }
     if (psp_row(g) && strcmp(g->id, VJO_PSP_EMULATOR)) shared = vjo_games_row_as(&line_fix, VJO_PSP_EMULATOR, 0);
-    if (shared >= 0) snprintf(out, cap, "Default: %s, as PSP games without their own.", line_fix_labels[shared + 1]);
-    else if (preferences_writable)
-        snprintf(out, cap, "Default: config.ini's ocr_line_fix, %s.", line_fix_labels[preferences.ocr_line_fix + 1]);
-    else snprintf(out, cap, "Default: config.ini's ocr_line_fix (config.ini cannot be read).");
+    if (shared >= 0) snprintf(out, cap, "Default: %s, as PSP games without their own.", finder_labels[shared]);
+    else if (config == VJO_LINE_FINDER_SPOTTER) snprintf(out, cap, "Default: config.ini's, the spotter.");
+    else if (config >= 0) snprintf(out, cap, "Default: config.ini's, Rubi's finder, %s.", finder_labels[config]);
+    else snprintf(out, cap, "Default: config.ini's (it cannot be read).");
 }
 
 /* Left/Right on the page: the setting's previous or next choice (OFF/ON on its ON/OFF card). */
@@ -739,15 +754,15 @@ static void game_page_step(int right)
         if (row_on(&library[game_view]) != right) toggle_game(game_view);
         return;
     }
-    int choice = own_line_fix(&library[game_view]) + 1 + (right ? 1 : -1);
-    if (choice >= 0 && choice <= 4) set_line_fix(choice - 1);
+    int choice = choice_of(own_line_fix(&library[game_view])) + (right ? 1 : -1);
+    if (choice >= 0 && choice < LINE_FINDER_CHOICES) set_line_fix(choice_value(choice));
 }
 
 /* Enter on the page: ON/OFF toggles; the line finder goes to its next choice, after All back to Default. */
 static void game_page_enter(void)
 {
     if (game_row == 0) toggle_game(game_view);
-    else set_line_fix((own_line_fix(&library[game_view]) + 2) % 5 - 1);
+    else set_line_fix(choice_value((choice_of(own_line_fix(&library[game_view])) + 1) % LINE_FINDER_CHOICES));
 }
 
 /* The catalog is read here only: at start and on Start. Icons and title
@@ -1456,7 +1471,7 @@ static void draw(void)
         int lf = used_line_fix(g);
         if (lf >= 0) {
             char tag[24];
-            snprintf(tag, sizeof(tag), "Line finder: %s", line_fix_labels[lf + 1]);
+            snprintf(tag, sizeof(tag), "Line finder: %s", finder_labels[lf]);
             text(LINE_FIX_TAG_X, y + 36, ACCENT, 16, tag);
         }
         if (index == selected) text(HOLD_HINT_X, y + 36, DIM, 16, hold_hint);
@@ -1486,19 +1501,23 @@ static void draw(void)
 }
 
 /* #333: a game's own page, in the Games tab: the game's card (its title, ID and tag), then its two settings as the
- * OCR & lookup page's cards: its ON/OFF and its line finder, whose five choices sit side by side. */
+ * OCR & lookup page's cards: its ON/OFF, and its line finder, whose six choices sit in a row below the card's title
+ * (as Read text's two), its help line under them. */
 #define GP_CARD_Y 112
 #define GP_CARD_H 74
-#define GP_ROW_Y 194
-#define GP_ROW_PITCH 76
-#define LF_BADGE_X 368
-#define LF_BADGE_W 104
-#define LF_BADGE_PITCH 112
+#define GP_ROW_Y 194                        /* the ON/OFF card's top */
+#define GP_LF_Y (GP_ROW_Y + CARD_H + PREF_GAP) /* the line finder card's top */
+#define GP_LF_H 112
+#define LF_BADGE_X 42
+#define LF_BADGE_DY 42
+#define LF_BADGE_W 138
+#define LF_BADGE_PITCH 146
+#define LF_HELP_DY 104
 
 static void draw_game_page(void)
 {
     const VjoInstalledGame *g = &library[game_view];
-    int on = row_on(g), own = own_line_fix(g), hook, y = GP_ROW_Y;
+    int on = row_on(g), chosen = choice_of(own_line_fix(g)), hook;
     char help[96];
     vita2d_start_drawing();
     vita2d_clear_screen();
@@ -1510,19 +1529,18 @@ static void draw_game_page(void)
         text(220, GP_CARD_Y + 62, ACCENT, 20, "PSP");
     else if ((hook = vjo_hook_title_listed(g->id)) != VJO_HOOK_TITLE_NONE)
         text(220, GP_CARD_Y + 62, ACCENT, 20, hook == VJO_HOOK_TITLE_RUBI ? "Hook" : "Luna hook");
-    focus_card(y, CARD_H, game_row == 0);
-    text(42, y + CARD_TITLE_Y, WHITE, 28, "Rubi in this game");
-    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !writable ? "--" : on ? "ON" : "OFF", writable && on);
-    text(42, y + CARD_HELP_Y, DIM, 24, "OFF: no overlay and no OCR in this game.");
-    y += GP_ROW_PITCH;
-    focus_card(y, CARD_H, game_row == 1);
-    text(42, y + CARD_TITLE_Y, WHITE, 28, "Line finder");
-    for (int i = 0; i < 5; i++)
-        badge(LF_BADGE_X + i * LF_BADGE_PITCH, y + CARD_BADGE_Y, LF_BADGE_W, CARD_BADGE_H, line_fix_labels[i],
-              line_fix_writable && own == i - 1);
+    focus_card(GP_ROW_Y, CARD_H, game_row == 0);
+    text(42, GP_ROW_Y + CARD_TITLE_Y, WHITE, 28, "Rubi in this game");
+    badge(812, GP_ROW_Y + CARD_BADGE_Y, 108, CARD_BADGE_H, !writable ? "--" : on ? "ON" : "OFF", writable && on);
+    text(42, GP_ROW_Y + CARD_HELP_Y, DIM, 24, "OFF: no overlay and no OCR in this game.");
+    focus_card(GP_LF_Y, GP_LF_H, game_row == 1);
+    text(42, GP_LF_Y + CARD_TITLE_Y, WHITE, 28, "Line finder");
+    for (int i = 0; i < LINE_FINDER_CHOICES; i++)
+        badge(LF_BADGE_X + i * LF_BADGE_PITCH, GP_LF_Y + LF_BADGE_DY, LF_BADGE_W, CARD_BADGE_H,
+              i ? finder_labels[choice_value(i)] : "Default", line_fix_writable && chosen == i);
     if (line_fix_writable) line_fix_help(g, help, sizeof(help));
     else snprintf(help, sizeof(help), "ocr_line_fix.ini cannot be read: repair or delete it.");
-    text(42, y + CARD_HELP_Y, line_fix_writable ? DIM : OFF, 24, help);
+    text(42, GP_LF_Y + LF_HELP_DY, line_fix_writable ? DIM : OFF, 24, help);
     footer(status, status_error, game_page_hints);
     vita2d_end_drawing();
     vita2d_swap_buffers();
@@ -1532,14 +1550,16 @@ static void draw_game_page(void)
  * finder choice is taken. */
 static void touch_game_page(int x, int y)
 {
-    for (int r = 0; r < GAME_SETTINGS; r++) {
-        int dy = y - (GP_ROW_Y + r * GP_ROW_PITCH);
-        if (x < 24 || x >= 936 || dy < 0 || dy >= CARD_H) continue;
-        game_row = r;
-        if (r == 0) toggle_game(game_view);
-        else if (dy >= CARD_BADGE_Y && dy < CARD_BADGE_Y + CARD_BADGE_H && x >= LF_BADGE_X &&
-                 (x - LF_BADGE_X) % LF_BADGE_PITCH < LF_BADGE_W && (x - LF_BADGE_X) / LF_BADGE_PITCH < 5)
-            set_line_fix((x - LF_BADGE_X) / LF_BADGE_PITCH - 1);
+    if (x < 24 || x >= 936) return;
+    if (y >= GP_ROW_Y && y < GP_ROW_Y + CARD_H) {
+        game_row = 0;
+        toggle_game(game_view);
+    } else if (y >= GP_LF_Y && y < GP_LF_Y + GP_LF_H) {
+        int dy = y - GP_LF_Y, i = (x - LF_BADGE_X) / LF_BADGE_PITCH;
+        game_row = 1;
+        if (dy >= LF_BADGE_DY && dy < LF_BADGE_DY + CARD_BADGE_H && x >= LF_BADGE_X &&
+            (x - LF_BADGE_X) % LF_BADGE_PITCH < LF_BADGE_W && i < LINE_FINDER_CHOICES)
+            set_line_fix(choice_value(i));
     }
 }
 

@@ -164,11 +164,12 @@ const char *vjo_config_default_text(void)
            "; its rare characters only where needed (two_level): on (both) | gate |\n"
            "; two_level | off\n"
            "ocr_head_gate = " VJO_HEAD_GATE_DEFAULT_TEXT "\n"
-           "; vocr: line finder fixes: on | junk | all | off (a game's own, from its page\n"
-           "; in the Rubi app, replaces this in that game: ocr_line_fix.ini)\n"
+           "; vocr: line finder fixes: on | junk | all | off\n"
            "ocr_line_fix = " VJO_LINE_FIX_DEFAULT_TEXT "\n"
            "; vocr: the line finder: spotter (vita-vn-ocr's text spotter) | grad (Rubi's;\n"
-           "; also the spotter's fallback), and the spotter's boxes refined: on | off\n"
+           "; also the spotter's fallback), and the spotter's boxes refined: on | off.\n"
+           "; A game's own Line finder (its page in the Rubi app: ocr_line_fix.ini)\n"
+           "; replaces ocr_finder and ocr_line_fix in that game\n"
            "ocr_finder = " VJO_FINDER_DEFAULT_TEXT "\n"
            "ocr_spotter_refine = " VJO_SPOTTER_REFINE_DEFAULT_TEXT "\n"
            "; vocr: lines read at once (1-3), 444 MHz while reading (on | off: the Rubi\n"
@@ -525,6 +526,7 @@ static const char finder_key[] VJO_DATA_TABLE(config_finder_key) = "ocr_finder";
 static const char spot_refine_key[] VJO_DATA_TABLE(config_spot_refine_key) = "ocr_spotter_refine";
 static const char finder_grad[] VJO_DATA_TABLE(config_finder_grad) = "grad";
 static const char finder_spotter[] VJO_DATA_TABLE(config_finder_spotter) = "spotter";
+const char *const vjo_finder_names[] VJO_DATA_TABLE(config_finders_1) = {finder_grad, finder_spotter, NULL};
 
 /* API 54: one off/on choice table for every off/on setting (their index is the value: off 0, on 1), and the
  * settings that parsed off/on by hand read it through set_choice, the same values and warning: the Shell's code
@@ -645,11 +647,10 @@ static void set_kv(VjoConfig *c, const char *key, const char *val)
                                                                              NULL};
         set_choice(c, key, val, &c->ocr_head_gate, heads);
     } else if (vjo_ieq(key, "ocr_line_fix")) {
-        /* #333: the names ocr_line_fix.ini's rows take too (core/games.c, in the data segment) */
-        set_choice(c, key, val, &c->ocr_line_fix, vjo_line_fix_names);
+        /* off, on, junk, all: #333's per-game names after the spotter's (core/games.h), one table */
+        set_choice(c, key, val, &c->ocr_line_fix, vjo_line_finder_names + 1);
     } else if (vjo_ieq(key, finder_key)) { /* API 54 */
-        static const char *const finders[] VJO_DATA_TABLE(config_finders_1) = {finder_grad, finder_spotter, NULL};
-        set_choice(c, key, val, &c->ocr_finder, finders);
+        set_choice(c, key, val, &c->ocr_finder, vjo_finder_names);
     } else if (vjo_ieq(key, "ocr_skip_blank_lines")) {
         set_choice(c, key, val, &c->ocr_skip_blank_lines, off_on);
     } else if (vjo_ieq(key, "ocr_threads")) {

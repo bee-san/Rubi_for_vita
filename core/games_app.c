@@ -36,7 +36,8 @@ int vjo_games_disable_all(VjoGames *g)
 
 int vjo_line_fix_set(VjoGames *g, const char *id, int value)
 {
-    if (!vjo_game_id_valid(id) || value < -1 || value > 3 || g->count < 0 || g->count > VJO_GAMES_MAX) return -1;
+    if (!vjo_game_id_valid(id) || value < -1 || value >= VJO_LINE_FINDERS || g->count < 0 || g->count > VJO_GAMES_MAX)
+        return -1;
     for (int i = 0; i < g->count; i++) {
         if (strcmp(g->rules[i].title_id, id)) continue;
         if (value >= 0) {

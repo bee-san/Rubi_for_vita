@@ -232,8 +232,9 @@ int vjo_game_identify(SceUID pid, VjoGameId *g);
 void vjo_title_name(SceUID pid, const char *tid, char *name, int size);
 /* Reloaded on game start/resume before capture or input filtering activates;
  * a PSP game with no rule of its own follows the shared PSP row. #333: *line_fix
- * is the game's own ocr_line_fix from ocr_line_fix.ini (0-3, the same rows'
- * order), or -1: config.ini's. */
+ * is the game's own line finder from ocr_line_fix.ini (core/games.h
+ * VJO_LINE_FINDER_*: 0 the spotter, 1-4 Rubi's finder with ocr_line_fix 0-3;
+ * the same rows' order), or -1: config.ini's. */
 int vjo_game_enabled(const char *tid, int psp, int *line_fix, VjoArena *scratch);
 
 /* anki.c: Anki card mining with an offline file queue, one job at a time */

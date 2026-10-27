@@ -1065,7 +1065,7 @@ class GameStartLines(unittest.TestCase):
            "ocr_mode auto\n")
     NEW = "game PCSG00415 started: dictionary Local dictionaries, trigger l+r, subtitles select+r, ocr_mode auto\n"
     RELAY = "game NPXS10028 started: dictionary Hachidori relay, trigger select, subtitles select+l, ocr_mode on_press\n"
-    LINE_FIX = "game ULJM05674 started: trigger l+r, subtitles select+r, ocr_mode auto, ocr_line_fix all\n"
+    LINE_FIX = "game ULJM05674 started: trigger l+r, subtitles select+r, ocr_mode auto, ocr_finder grad, ocr_line_fix all\n"
 
     def test_both_forms_are_read(self):
         for text in (self.OLD, self.NEW):
@@ -1080,31 +1080,36 @@ class GameStartLines(unittest.TestCase):
     def test_the_line_finder_of_each_start(self):
         # #333: a game's own line finder (the Rubi app's game page) at one start, config.ini's at the next (a resume
         # after its row went back to Default), and an older build's line beside them
-        on = self.LINE_FIX.replace("ocr_line_fix all", "ocr_line_fix on")
-        vita = "game PCSG00940 started: trigger select, subtitles select+l, ocr_mode on_press, ocr_line_fix on\n"
+        on = self.LINE_FIX.replace("ocr_finder grad, ocr_line_fix all", "ocr_finder spotter, ocr_line_fix on")
+        vita = ("game PCSG00940 started: trigger select, subtitles select+l, ocr_mode on_press, ocr_finder spotter, "
+                "ocr_line_fix on\n")
         lg = a.summarise_log(self.LINE_FIX + vita + on + self.NEW)
-        self.assertEqual(lg["games"], {"ULJM05674": {"starts": 2, "ocr_mode": "auto", "ocr_line_fix": ["all", "on"]},
-                                       "PCSG00940": {"starts": 1, "ocr_mode": "on_press", "ocr_line_fix": ["on"]},
+        self.assertEqual(lg["games"], {"ULJM05674": {"starts": 2, "ocr_mode": "auto",
+                                                     "line_finder": ["grad all", "spotter on"]},
+                                       "PCSG00940": {"starts": 1, "ocr_mode": "on_press", "line_finder": ["spotter on"]},
                                        "PCSG00415": {"starts": 1, "ocr_mode": "auto",
                                                      "dictionary": "Local dictionaries"}})
         self.assertEqual([a._game_settings(g) for g in lg["games"].values()],
-                         ["ocr_mode auto, ocr_line_fix all -> on", "ocr_mode on_press, ocr_line_fix on",
+                         ["ocr_mode auto, line finder grad all -> spotter on", "ocr_mode on_press, line finder spotter on",
                           "ocr_mode auto, Local dictionaries"])
-        # the presses' windows still read the line's ocr_mode (not "auto," with the comma)
-        self.assertEqual(a.LOG["game"].match(self.LINE_FIX).group(6), "auto")
+        # the presses' windows still read the line's ocr_mode (not "auto," with the comma), and its two keys
+        m = a.LOG["game"].match(self.LINE_FIX)
+        self.assertEqual((m.group(6), m.group(7), m.group(8)), ("auto", "grad", "all"))
 
     def test_the_shell_writes_the_new_form(self):
         # the format string the analyser reads, as shell/worker.c has it (#333: in the data segment, and the
         # value the game's jobs use, config.ini's or the game's own, after ocr_mode)
         worker = (ROOT / "shell/worker.c").read_text(encoding="utf-8")
         self.assertIn('static const char started[] VJO_DATA_TABLE(worker_game_started) =\n'
-                      '            "game %s started: trigger %s, subtitles %s, ocr_mode %s, ocr_line_fix %s";', worker)
+                      '            "game %s started: trigger %s, subtitles %s, ocr_mode %s, ocr_finder %s, ocr_line_fix %s";',
+                      worker)
         self.assertIn("vjo_log(started, title_id, ", worker)
-        self.assertIn("vjo_line_fix_names[cfg.ocr_line_fix]);", worker)
+        self.assertIn("vjo_finder_names[cfg.ocr_finder], vjo_line_finder_names[VJO_LINE_FINDER_GRAD(cfg.ocr_line_fix)]);",
+                      worker)
         self.assertNotIn("(key %s)", worker)
-        line = "game PCSG00415 started: trigger l+r, subtitles select+r, ocr_mode auto, ocr_line_fix on\n"
+        line = "game PCSG00415 started: trigger l+r, subtitles select+r, ocr_mode auto, ocr_finder spotter, ocr_line_fix on\n"
         self.assertEqual(a.summarise_log(line)["games"],
-                         {"PCSG00415": {"starts": 1, "ocr_mode": "auto", "ocr_line_fix": ["on"]}})
+                         {"PCSG00415": {"starts": 1, "ocr_mode": "auto", "line_finder": ["spotter on"]}})
 
 class OverlayCloseLines(unittest.TestCase):
     """log.txt's "overlay closed" lines (shell/overlay.cpp close_page), before and after row navigation (#81)."""

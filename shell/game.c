@@ -18,8 +18,9 @@ int vjo_game_enabled(const char *tid, int psp, int *line_fix, VjoArena *scratch)
     int enabled = rc >= 0 && vjo_games_enabled_as(games, tid, psp);
     if (rc < 0) vjo_log("games.ini unreadable: OCR disabled until settings are repaired");
     else if (rc > 0) vjo_log("games.ini recovered from backup");
-    /* #333: an enabled game's own ocr_line_fix (ocr_line_fix.ini, read into the same table), its bubble's own row
-     * first, then the shared PSP row's, as for ON/OFF; -1 without one, or a file that cannot be read */
+    /* #333: an enabled game's own line finder (ocr_line_fix.ini, read into the same table: core/games.h
+     * VJO_LINE_FINDER_*), its bubble's own row first, then the shared PSP row's, as for ON/OFF; -1 without one, or a
+     * file that cannot be read */
     *line_fix = enabled && vjo_line_fix_file_read(games, scratch) == 0 ? vjo_games_row_as(games, tid, psp) : -1;
     vjo_arena_release(scratch, mark);
     return enabled;

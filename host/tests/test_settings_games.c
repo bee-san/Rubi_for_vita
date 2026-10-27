@@ -78,9 +78,13 @@ int vjo_settings_main(void); /* settings/main.c's main(), renamed for the harnes
 #define HINT_Y 535
 #define DEFAULT_BADGE_Y (112 + 8 + 38 / 2 + 9) /* badge(174, DEFAULT_Y + 8, 108, 38): its label's baseline */
 #define STATUS_Y 467
-/* #333: settings/main.c's game page: its two cards' tops (GP_ROW_Y, + GP_ROW_PITCH) */
+/* #333: settings/main.c's game page: its two cards' tops (GP_ROW_Y, GP_LF_Y), the line finder's six choices
+ * (LF_BADGE_*: x 42 + i * 146, 42 below the card's top, 138 x 34) and its help line (104 below its top) */
 #define GP_ONOFF_Y 194
-#define GP_LF_Y 270
+#define GP_LF_Y 266
+#define LF_X(i) (42 + (i) * 146)
+#define LF_BADGE_Y (GP_LF_Y + 42)
+#define LF_HELP_Y (GP_LF_Y + 104)
 #define SELECTED RGBA8(35, 56, 70, 255)
 #define ACCENT RGBA8(91, 220, 207, 255)
 #define CDRAM_BLOCK (256 * 1024)
@@ -102,7 +106,8 @@ typedef struct {
     int stats_rows;                                          /* and to the Stats page (#312) */
     char lf_tag[ROWS][24], hold_hint[ROWS][24];              /* #333: a card's "Line finder: X", the selected's hint */
     char page_title[64], page_help[2][96], page_badge[4];    /* #333: the game page: its title, cards' help, ON/OFF */
-    int lf_chosen;                                           /* #333: the line finder choice drawn chosen, -1 */
+    int lf_chosen;                                           /* #333: the line finder choice drawn chosen (0 Default,
+                                                              * 1 Spotter, 2-5 Off On Junk All), -1 */
     int loads, frees, waits, icon_opens, icon_reads, scans, glyphs, measures, live;
     long ns;
 } Frame;
@@ -481,9 +486,9 @@ void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int colo
     for (int r = 0; r < ROWS; r++)
         if ((int)x == 24 && (int)w == 912 && (int)h == GAME_H && (int)y == GAMES_Y + r * GAME_PITCH && color == SELECTED)
             cur.focus = r;
-    /* #333: the game page's line finder choices, badge(368 + i * 112, 270 + 6, 104, 34) */
-    if ((int)y == GP_LF_Y + 6 && (int)w == 104 && (int)h == 34 && color == ACCENT && (int)x >= 368)
-        cur.lf_chosen = ((int)x - 368) / 112;
+    /* #333: the game page's line finder choices, badge(LF_X(i), LF_BADGE_Y, 138, 34) */
+    if ((int)y == LF_BADGE_Y && (int)w == 138 && (int)h == 34 && color == ACCENT && (int)x >= LF_X(0))
+        cur.lf_chosen = ((int)x - LF_X(0)) / 146;
     if ((int)x == 24 && (int)w == 4 && color == ACCENT) cur.bar_y = (int)y; /* focus_card's left edge */
 }
 vita2d_pvf *vita2d_load_default_pvf(void) { return (vita2d_pvf *)&font_dummy; }
@@ -525,8 +530,7 @@ int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, flo
     }
     /* #333: the game page (settings/main.c GP_*): its title, its two cards' help lines and its ON/OFF badge */
     if (x == 42 && y == 112 + 32) copy(cur.page_title, sizeof(cur.page_title), text);
-    if (x == 42 && (y == GP_ONOFF_Y + 60 || y == GP_LF_Y + 60))
-        copy(cur.page_help[y == GP_LF_Y + 60], sizeof(cur.page_help[0]), text);
+    if (x == 42 && (y == GP_ONOFF_Y + 60 || y == LF_HELP_Y)) copy(cur.page_help[y == LF_HELP_Y], sizeof(cur.page_help[0]), text);
     if (y == GP_ONOFF_Y + 6 + 17 + 9 && x > 812 && x < 920) copy(cur.page_badge, sizeof(cur.page_badge), text);
     if (y == DEFAULT_BADGE_Y && x > 174 && x < 282) copy(cur.default_badge, sizeof(cur.default_badge), text);
     if (y == HINT_Y) {
@@ -3090,8 +3094,9 @@ static int line_fix_seen(const char *id, int psp)
 static int frames_at_60hz(unsigned us) { return (int)((us + 16666u) / 16667u); }
 
 /* The list: Enter toggles a game as it is let go, and held GAME_HOLD_US (0.5 s) it opens the game's page instead,
- * on its line finder; nothing toggles while it is held. On the page, Right goes Default -> Off -> On -> Junk -> All
- * (and stops there), each saved at once into ocr_line_fix.ini (never games.ini), with the status and log.txt line;
+ * on its line finder; nothing toggles while it is held. On the page, Right goes Default -> Spotter -> Off -> On ->
+ * Junk -> All (and stops there), each saved at once into ocr_line_fix.ini (never games.ini), with the status and
+ * log.txt line;
  * Cancel goes back to the list (the app stays open), where the game's card says its line finder and the selected
  * card how to reach the page. The Shell reads the value the page shows. */
 static void a_held_enter_opens_the_games_page(void)
@@ -3110,6 +3115,8 @@ static void a_held_enter_opens_the_games_page(void)
     hold(ENTER, frames_at_60hz(500000) + 10);
     int held = at - 12, opened = at - 1;
     hold(0, 5);
+    tap(SCE_CTRL_RIGHT, 5);
+    int spotter = at - 1;
     tap(SCE_CTRL_RIGHT, 5);
     int off = at - 1;
     tap(SCE_CTRL_RIGHT, 5);
@@ -3131,16 +3138,19 @@ static void a_held_enter_opens_the_games_page(void)
     const Frame *f = &session->shown[opened];
     TEST_CHECK_(!strcmp(f->page_title, g->title) && !strcmp(f->bar_title, "Line finder") && f->lf_chosen == 0,
                 "'%s', '%s', %d", f->page_title, f->bar_title, f->lf_chosen);
-    TEST_CHECK_(!strcmp(f->page_help[1], "Default: config.ini's ocr_line_fix, On.") && !strcmp(f->page_badge, "OFF") &&
+    TEST_CHECK_(!strcmp(f->page_help[1], "Default: config.ini's, the spotter.") && !strcmp(f->page_badge, "OFF") &&
                 !strcmp(f->page_help[0], "OFF: no overlay and no OCR in this game."), "'%s' '%s'", f->page_help[1], f->page_badge);
     TEST_CHECK_(!strcmp(f->hints, "Up/Down: setting   Left/Right or ×: choose   ○: back"), "%s", f->hints);
     snprintf(both, sizeof(both), "%s %s", f->status[0], f->status[1]);
     TEST_CHECK_(strstr(both, "This game's own settings. They apply when it next starts or resumes.") != NULL, "%s", both);
-    TEST_CHECK_(session->shown[off].lf_chosen == 1 &&
-                !strcmp(session->shown[off].page_help[1], "Off: the line finder without its fixes, as before."), "%d '%s'",
+    TEST_CHECK_(session->shown[spotter].lf_chosen == 1 &&
+                !strcmp(session->shown[spotter].page_help[1], "Spotter: vita-vn-ocr's text spotter finds the lines."),
+                "%d '%s'", session->shown[spotter].lf_chosen, session->shown[spotter].page_help[1]);
+    TEST_CHECK_(session->shown[off].lf_chosen == 2 &&
+                !strcmp(session->shown[off].page_help[1], "Off: Rubi's finder without its fixes, as before."), "%d '%s'",
                 session->shown[off].lf_chosen, session->shown[off].page_help[1]);
-    TEST_CHECK(session->shown[all].lf_chosen == 4 && session->shown[still].lf_chosen == 4 &&
-               !strcmp(session->shown[all].page_help[1], "All: Junk, and touching rows split (Narcissu). Box with a margin."));
+    TEST_CHECK(session->shown[all].lf_chosen == 5 && session->shown[still].lf_chosen == 5 &&
+               !strcmp(session->shown[all].page_help[1], "All: Junk, and touching rows split. Box with a margin."));
     snprintf(both, sizeof(both), "%s %s", session->shown[all].status[0], session->shown[all].status[1]);
     TEST_CHECK_(!strcmp(both, "Saved. It applies when the game next starts or resumes. "), "%s", both);
     /* back on the list: the game's card names its line finder, the selected card the page's button */
@@ -3157,19 +3167,20 @@ static void a_held_enter_opens_the_games_page(void)
     char want[128];
     snprintf(want, sizeof(want), "\n%s = all\n", g->id);
     TEST_CHECK_(ini && ini[0] == '#' && strstr(ini, want) && !strstr(ini, "default"), "%s", ini ? ini : "(none)");
-    TEST_CHECK(line_fix_seen(g->id, 0) == 3 && line_fix_seen(list[1].id, 0) == -1);
+    TEST_CHECK(line_fix_seen(g->id, 0) == VJO_LINE_FINDER_GRAD(3) && line_fix_seen(list[1].id, 0) == -1);
     const char *games_ini = slurp("ux0:data/VitaJPOverlay/games.ini", NULL);
     snprintf(want, sizeof(want), "\n%s = disabled\n", g->id);
     TEST_CHECK_(games_ini && strstr(games_ini, want) && !strstr(games_ini, "all"), "%s", games_ini ? games_ini : "(none)");
-    static const char *const values[] = {"off", "on", "junk", "all"};
-    for (int k = 0; k < 4; k++) {
+    static const char *const values[] = {"spotter", "off", "on", "junk", "all"};
+    for (int k = 0; k < 5; k++) {
         snprintf(want, sizeof(want), "games: %s's line finder: %s", g->id, values[k]);
         TEST_CHECK_(logged_lines(want) == 1, "%s", want);
     }
-    TEST_CHECK(logged_lines("games: VJOT") == 4); /* the fifth Right changed nothing */
+    TEST_CHECK(logged_lines("games: VJOT") == 5); /* the sixth Right changed nothing */
 }
 
-/* On the page: Left back to Default removes the game's row (the Shell then reads config.ini's); Up selects its
+/* On the page: Left back to Default (through the spotter) removes the game's row (the Shell then reads config.ini's);
+ * Up selects its
  * ON/OFF card, where Enter, Left and Right turn the game OFF and ON as the list does (games.ini); a touch on a choice
  * takes it. On the list, a touch on a card toggles that game as it is let go, and held 0.5 s opens its page; Select
  * leaves the page, and the Games tab shows the list again. */
@@ -3195,6 +3206,8 @@ static void the_games_page_by_touch_and_its_on_off(void)
     int released = at - 1;
     tap(SCE_CTRL_LEFT, 5); /* Junk -> On */
     tap(SCE_CTRL_LEFT, 5); /* -> Off */
+    tap(SCE_CTRL_LEFT, 5); /* -> Spotter */
+    int spot = at - 1;
     tap(SCE_CTRL_LEFT, 5); /* -> Default */
     int dflt = at - 1;
     tap(SCE_CTRL_UP, 5); /* the ON/OFF card */
@@ -3203,7 +3216,7 @@ static void the_games_page_by_touch_and_its_on_off(void)
     int off = at - 1;
     tap(SCE_CTRL_RIGHT, 5);
     int on = at - 1;
-    script[at++] = (Input){0, 1, 368 + 4 * 112 + 20, GP_LF_Y + 20, 0}; /* the All choice */
+    script[at++] = (Input){0, 1, LF_X(5) + 20, LF_BADGE_Y + 10, 0}; /* the All choice */
     hold(0, 5);
     int touched = at - 1;
     tap(SCE_CTRL_SELECT, 5); /* the next tab: the page closes */
@@ -3224,26 +3237,26 @@ static void the_games_page_by_touch_and_its_on_off(void)
                 "'%s'", session->shown[shown].lf_tag[i1]);
     TEST_CHECK(!strcmp(session->shown[touching].badge[i0], "ON") && !strcmp(session->shown[tapped].badge[i0], "OFF"));
     TEST_CHECK(!session->shown[tapped].page_title[0]);
-    TEST_CHECK_(!strcmp(session->shown[opened].page_title, games[1].title) && session->shown[opened].lf_chosen == 3,
+    TEST_CHECK_(!strcmp(session->shown[opened].page_title, games[1].title) && session->shown[opened].lf_chosen == 4,
                 "'%s' %d", session->shown[opened].page_title, session->shown[opened].lf_chosen);
     TEST_CHECK(!strcmp(session->shown[released].page_title, games[1].title) &&
                !strcmp(session->shown[released].badge[i1], "")); /* let go: no toggle behind the page */
-    TEST_CHECK(session->shown[dflt].lf_chosen == 0);
+    TEST_CHECK(session->shown[spot].lf_chosen == 1 && session->shown[dflt].lf_chosen == 0);
     TEST_CHECK_(!strcmp(session->shown[up].bar_title, "Rubi in this game") && !strcmp(session->shown[up].page_badge, "ON"),
                 "'%s' '%s'", session->shown[up].bar_title, session->shown[up].page_badge);
     TEST_CHECK(!strcmp(session->shown[off].page_badge, "OFF") && !strcmp(session->shown[on].page_badge, "ON"));
-    TEST_CHECK(session->shown[touched].lf_chosen == 4 && !strcmp(session->shown[touched].bar_title, "Line finder"));
+    TEST_CHECK(session->shown[touched].lf_chosen == 5 && !strcmp(session->shown[touched].bar_title, "Line finder"));
     TEST_CHECK(!session->shown[ocr].page_title[0] && !session->shown[ocr].lf_tag[i1][0]);
     TEST_CHECK_(!session->shown[back].page_title[0] && !strcmp(session->shown[back].lf_tag[i1], "Line finder: All"),
                 "'%s' '%s'", session->shown[back].page_title, session->shown[back].lf_tag[i1]);
     TEST_CHECK(!strcmp(session->shown[again].page_title, games[1].title) && !session->shown[tabbed].page_title[0] &&
                !strcmp(session->shown[tabbed].lf_tag[i1], "Line finder: All"));
-    TEST_CHECK(line_fix_seen("VJOT00001", 0) == 3 && line_fix_seen("VJOT00000", 0) == -1);
+    TEST_CHECK(line_fix_seen("VJOT00001", 0) == VJO_LINE_FINDER_GRAD(3) && line_fix_seen("VJOT00000", 0) == -1);
     TEST_CHECK(!shell_sees("ux0:data/VitaJPOverlay/games.ini", "VJOT00000", 0) &&
                shell_sees("ux0:data/VitaJPOverlay/games.ini", "VJOT00001", 0));
     /* the log: the file's two rows read at the start, and each change */
     CHECK_LINE("games: ocr_line_fix.ini", "games: ocr_line_fix.ini read: 1 game with a line finder of their own");
-    TEST_CHECK(logged_lines("games: VJOT00001's line finder: ") == 4); /* on, off, Default, all */
+    TEST_CHECK(logged_lines("games: VJOT00001's line finder: ") == 5); /* on, off, spotter, Default, all */
     CHECK_LINE("games: VJOT00001's line finder: D", "games: VJOT00001's line finder: Default");
 }
 
@@ -3278,10 +3291,10 @@ static void psp_games_follow_the_shared_rows_line_finder(void)
                 !strcmp(session->shown[page].page_help[1], "Default: Junk, as PSP games without their own."), "'%s'",
                 session->shown[page].page_help[1]);
     TEST_CHECK_(session->shown[vita].lf_chosen == 0 &&
-                !strcmp(session->shown[vita].page_help[1], "Default: config.ini's ocr_line_fix, On."), "'%s'",
+                !strcmp(session->shown[vita].page_help[1], "Default: config.ini's, the spotter."), "'%s'",
                 session->shown[vita].page_help[1]);
-    TEST_CHECK(line_fix_seen("PSPEMU005", 1) == 2 && line_fix_seen("ULJS00378", 1) == 3 &&
-               line_fix_seen("PSPEMUCFW", 1) == 2 && line_fix_seen("VJOT00000", 0) == -1);
+    TEST_CHECK(line_fix_seen("PSPEMU005", 1) == VJO_LINE_FINDER_GRAD(2) && line_fix_seen("ULJS00378", 1) == VJO_LINE_FINDER_GRAD(3) &&
+               line_fix_seen("PSPEMUCFW", 1) == VJO_LINE_FINDER_GRAD(2) && line_fix_seen("VJOT00000", 0) == -1);
 }
 
 /* An ocr_line_fix.ini the app cannot read (a hand-written line of another kind): the page says so and shows no
@@ -3319,6 +3332,28 @@ static void an_unreadable_line_fix_file_is_kept(void)
     TEST_CHECK(now && !strcmp(now, ini) && access(LINE_FIX_INI ".bak", F_OK) != 0);
     CHECK_LINE("games: ocr_line_fix.ini",
                "games: ocr_line_fix.ini unreadable, not changed: 0 games with a line finder of their own");
+}
+
+/* Default's help names config.ini's line finder: Rubi's finder with its ocr_line_fix when config.ini says
+ * ocr_finder = grad (the spotter otherwise, above). */
+static void default_names_config_inis_finder(void)
+{
+    card(2, NULL);
+    static const char cfg[] = "ocr_finder = grad\nocr_line_fix = junk\n";
+    put_file("ux0:data/VitaJPOverlay/config.ini", cfg, sizeof(cfg) - 1);
+    spec_list();
+    at = 0;
+    hold(0, 10);
+    goto_row("VJOT00000");
+    hold(ENTER, frames_at_60hz(500000) + 2);
+    int page = at - 1;
+    hold(0, 3);
+    tap(CANCEL, 3);
+    int frames = run(at);
+    TEST_CHECK(frames == at);
+    TEST_CHECK_(session->shown[page].lf_chosen == 0 &&
+                !strcmp(session->shown[page].page_help[1], "Default: config.ini's, Rubi's finder, Junk."), "'%s'",
+                session->shown[page].page_help[1]);
 }
 
 /* A held Enter whose selection moves before it is let go neither toggles nor opens a page; the move goes on. */
@@ -3397,6 +3432,7 @@ TEST_LIST = {
     {"#333: PSP games follow the shared row's line finder", psp_games_follow_the_shared_rows_line_finder},
     {"#333: an unreadable ocr_line_fix.ini is kept", an_unreadable_line_fix_file_is_kept},
     {"#333: a held Enter that moves does nothing", a_held_enter_that_moves_does_nothing},
+    {"#333: Default names config.ini's finder", default_names_config_inis_finder},
     {NULL, NULL}
 };
 
