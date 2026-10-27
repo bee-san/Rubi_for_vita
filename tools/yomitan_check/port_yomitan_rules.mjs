@@ -9,7 +9,8 @@
 // iru (the old -te rules' input), and the intermediate -ば, -ゃ, -ん and -ます, which the old
 // rules do not have, as none (the old -ba and polite rules read the text itself, which has
 // none). Rules the old table already has (with the same bits) are left out, and so is the old
-// bare imperative negative (な) that Yomitan no longer has: tools/gen_deinflect.py removes it.
+// bare imperative negative (な) that Yomitan no longer has, and the old -toku rules that Yomitan's
+// -おく replaces: tools/gen_deinflect.py removes them.
 // Rubi's own additions (the long vowel mark forms of -え, which Yomitan reaches by turning ー
 // into the vowel before its rules run) are in the same file under "rubi".
 import {readFileSync} from 'node:fs';
@@ -28,10 +29,15 @@ const old = JSON.parse(readFileSync(new URL('../../third_party/yomichan/deinflec
 // and which rules to take. Left out, measured on 5,000 hooked visual-novel lines
 // (reports/yomitan-check.md): imperative negative slang (んな -> る: みんな read as 見る),
 // -ん's さん, たん, はん and なん (the honorific さん, たん of りったん, ごはん, なん "what"),
-// and -ゃ's や -> えば and にゃ -> ねば (the particle や, a cat's ニャ).
-const SKIP = {'-ん': ['さん', 'たん', 'はん', 'なん'], '-ゃ': ['や', 'にゃ']};
+// and -ゃ's や -> えば and にゃ -> ねば (the particle や, a cat's ニャ). And (#321) -ん's かん:
+// on 27,970 lines it read 12 taps wrongly (手をつかんで as 手をつく, なんだかわかんない as 乾く,
+// 宙に浮かんだ as 宙に浮く) and 2 rightly (しておかん).
+const SKIP = {'-ん': ['さん', 'たん', 'はん', 'なん', 'かん'], '-ゃ': ['や', 'にゃ']};
+// -おく is taken whole: its とく -> て and どく -> で reach every te-form through -て (行っとく:
+// 行って, 行く), so the old -toku rules, which go to a few dictionary forms in one step and miss
+// 行く's 行って, are removed below (#321).
 const FAMILIES = [
-    ['-おく', '-toku', (r) => !['とく', 'どく'].includes(r.kanaIn)], // the old -toku has とく/どく
+    ['-おく', '-toku', () => true],
     ['-て', '-te', (r) => r.kanaIn === 'まして'],
     ['-え', '-e', () => true],
     ['-ん', '-n', (r) => !SKIP['-ん'].includes(r.kanaIn)],
@@ -88,10 +94,17 @@ for (const r of [...old['-e'], ...(add['-e'] ?? [])]) {
         prolonged.push({...r, kanaIn});
     }
 }
+// Rubi's own, too: the progressive's てる/でる contracted before の or だ (してんの, 言ってんだ,
+// 読んでんの), read as -ん's negative otherwise (#321; Yomitan does so too).
+const contracted = [
+    {kanaIn: 'てん', kanaOut: 'て', rulesIn: [], rulesOut: ['iru']},
+    {kanaIn: 'でん', kanaOut: 'で', rulesIn: [], rulesOut: ['iru']},
+];
 const out = {
     source: 'yomidevs/yomitan ext/js/language/ja/japanese-transforms.js (GPL-3.0-or-later), ported by tools/yomitan_check/port_yomitan_rules.mjs',
-    remove: [{reason: 'imperative negative', kanaIn: 'な', kanaOut: ''}],
+    remove: [{reason: 'imperative negative', kanaIn: 'な', kanaOut: ''},
+        ...old['-toku'].map((r) => ({reason: '-toku', kanaIn: r.kanaIn, kanaOut: r.kanaOut}))],
     add,
-    rubi: {'-e': prolonged},
+    rubi: {'-e': prolonged, 'progressive or perfect': contracted},
 };
 process.stdout.write(`${JSON.stringify(out, null, 1)}\n`);

@@ -33,3 +33,26 @@ int vjo_games_disable_all(VjoGames *g)
     g->default_enabled = 0;
     return removed;
 }
+
+int vjo_line_fix_set(VjoGames *g, const char *id, int value)
+{
+    if (!vjo_game_id_valid(id) || value < -1 || value >= VJO_LINE_FINDERS || g->count < 0 || g->count > VJO_GAMES_MAX)
+        return -1;
+    for (int i = 0; i < g->count; i++) {
+        if (strcmp(g->rules[i].title_id, id)) continue;
+        if (value >= 0) {
+            g->rules[i].enabled = value;
+            return 0;
+        }
+        /* Default: the row goes, the others keep their order */
+        memmove(g->rules + i, g->rules + i + 1, sizeof(g->rules[0]) * (size_t)(g->count - i - 1));
+        memset(&g->rules[--g->count], 0, sizeof(g->rules[0]));
+        return 0;
+    }
+    if (value < 0) return 0; /* no row to remove */
+    if (g->count >= VJO_GAMES_MAX) return -1;
+    VjoGameRule *r = &g->rules[g->count++];
+    memcpy(r->title_id, id, strlen(id) + 1);
+    r->enabled = value;
+    return 0;
+}

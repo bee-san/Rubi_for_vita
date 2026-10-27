@@ -287,19 +287,78 @@ static void test_policy(void)
     static unsigned char mem[64 * 1024];
     VjoArena a;
     VjoGames g;
+    int lf;
     card();
     vjo_arena_init(&a, mem, sizeof(mem));
     vjo_games_defaults(&g);
     TEST_ASSERT(vjo_games_set(&g, "NPXS10028", 0) == 0);
     TEST_ASSERT(vjo_games_set(&g, "PSPEMU005", 1) == 0);
     TEST_ASSERT(vjo_games_file_save(&g, &a) == 0);
-    TEST_CHECK(!vjo_game_enabled("ULJS00378", 1, &a) && vjo_game_enabled("PSPEMU005", 1, &a));
-    TEST_CHECK(!vjo_game_enabled("NPXS10028", 1, &a) && vjo_game_enabled("PCSG00415", 0, &a));
+    TEST_CHECK(!vjo_game_enabled("ULJS00378", 1, &lf, &a) && vjo_game_enabled("PSPEMU005", 1, &lf, &a));
+    TEST_CHECK(!vjo_game_enabled("NPXS10028", 1, &lf, &a) && vjo_game_enabled("PCSG00415", 0, &lf, &a));
     TEST_ASSERT(vjo_games_set(&g, "ULJS00378", 1) == 0 && vjo_games_set(&g, "NPXS10028", 1) == 0);
     TEST_ASSERT(vjo_games_set(&g, "PSPEMU005", 0) == 0);
     TEST_ASSERT(vjo_games_file_save(&g, &a) == 0);
-    TEST_CHECK(vjo_game_enabled("ULJS00378", 1, &a) && !vjo_game_enabled("PSPEMU005", 1, &a) &&
-               vjo_game_enabled("PSPEMU006", 1, &a));
+    TEST_CHECK(vjo_game_enabled("ULJS00378", 1, &lf, &a) && !vjo_game_enabled("PSPEMU005", 1, &lf, &a) &&
+               vjo_game_enabled("PSPEMU006", 1, &lf, &a));
+    unlink(VJO_GAMES_PATH);
+    unlink(VJO_GAMES_BACKUP);
+}
+
+/* #333: an enabled game's own ocr_line_fix from ocr_line_fix.ini (the Rubi app's game page writes it): the game's
+ * own row, a PSP game's shared row (NPXS10028) after its own, else -1 (config.ini's); a disabled game's file is not
+ * read; a file that cannot be read, or has a line of another kind, gives -1 and leaves the game ON; the scratch
+ * arena is given back. */
+static void test_line_fix(void)
+{
+    static unsigned char mem[64 * 1024];
+    VjoArena a;
+    int lf = 99;
+    card();
+    vjo_arena_init(&a, mem, sizeof(mem));
+    unlink(VJO_GAMES_PATH);
+    unlink(VJO_GAMES_BACKUP);
+    unlink(VJO_LINE_FIX_PATH);
+    /* no file at all: every game ON, none with its own */
+    TEST_CHECK(vjo_game_enabled("PCSG00415", 0, &lf, &a) && lf == -1 && a.used == 0);
+    static const char ini[] = "# Rubi\nULJS00378 = all\nPCSG00415 = off\nNPXS10028 = junk\nPCSG00940 = on\n"
+                              "PCSG00628 = spotter\n";
+    put_file(VJO_LINE_FIX_PATH, ini, sizeof(ini) - 1);
+    static const struct { const char *id; int psp, want; } cases[] = {
+        {"PCSG00415", 0, 1}, {"PCSG00940", 0, 2}, {"PCSG00001", 0, -1}, /* Vita games: their own, else none */
+        {"PCSG00628", 0, VJO_LINE_FINDER_SPOTTER},
+        {"ULJS00378", 1, 4}, {"PSPEMU005", 1, 3}, {"PSPEMUCFW", 1, 3},   /* PSP games: their own, else the shared */
+        {"NPXS10028", 1, 3}, {"GAME", 0, -1},                            /* the shared row itself; no title ID */
+        {"PSPEMU005", 0, -1}};                                           /* not a PSP game: no shared row */
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        lf = 99;
+        TEST_CHECK_(vjo_game_enabled(cases[i].id, cases[i].psp, &lf, &a) && lf == cases[i].want && a.used == 0,
+                    "%s psp %d: %d, want %d", cases[i].id, cases[i].psp, lf, cases[i].want);
+    }
+    /* a disabled game: -1, and ocr_line_fix.ini is not opened */
+    VjoGames g;
+    vjo_games_defaults(&g);
+    TEST_ASSERT(vjo_games_set(&g, "PCSG00415", 0) == 0 && vjo_games_file_save(&g, &a) == 0);
+    opens = 0;
+    lf = 99;
+    TEST_CHECK(!vjo_game_enabled("PCSG00415", 0, &lf, &a) && lf == -1 && opens == 1); /* games.ini only */
+    lf = 99;
+    TEST_CHECK(vjo_game_enabled("PCSG00940", 0, &lf, &a) && lf == VJO_LINE_FINDER_GRAD(1));
+    /* a file the Shell cannot use: -1 everywhere, the games still ON */
+    static const char *const bad[] = {"default = all\n", "PCSG00940 = valley\n", "PCSG00940 = enabled\n",
+                                      "PCSG00940 = ON\n", "PCSG00940 = grad\n", "PCSG00940 all\n", "../x = all\n", ""};
+    for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        put_file(VJO_LINE_FIX_PATH, bad[i], strlen(bad[i]));
+        lf = 99;
+        TEST_CHECK_(vjo_game_enabled("PCSG00940", 0, &lf, &a) && lf == -1 && a.used == 0, "'%s': %d", bad[i], lf);
+    }
+    /* a games.ini row of the line fix kind is games.ini's error, as before: the Shell disables the game */
+    put_file(VJO_GAMES_PATH, "PCSG00940 = all\n", 16);
+    lf = 99;
+    TEST_CHECK(!vjo_game_enabled("PCSG00940", 0, &lf, &a) && lf == -1 && logged("games.ini unreadable") != NULL);
+    unlink(VJO_GAMES_PATH);
+    unlink(VJO_GAMES_BACKUP);
+    unlink(VJO_LINE_FIX_PATH);
 }
 
 /* ---- descriptions and AppMgr names nobody should write (after audit-overlay-adrbubble's cases) ---- */
@@ -395,6 +454,7 @@ TEST_LIST = {
     {"a PSP game by its description or its ID", test_bubble_by_its_own_id},
     {"Vita games and system apps unchanged", test_vita_games_and_system_apps},
     {"the policy: own row, shared PSP row, default", test_policy},
+    {"#333: a game's own ocr_line_fix, from ocr_line_fix.ini", test_line_fix},
     {"long and damaged descriptions", long_and_damaged_descriptions},
     {"a description that cannot be read", an_unreadable_description},
     {"AppMgr names that are no game's", names_that_are_no_games},

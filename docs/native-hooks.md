@@ -89,21 +89,29 @@ Each hook calls the game's function first (`TAI_CONTINUE`), then looks at the by
   With a minimum of 8 bytes it refused real text: ソラユメ, 逢魔が刻, イヴァン, ジャンル, ダンベル, チンピラ,
   佐伯世羅, 森嶋永遠 (8 bytes each in CP932) and 18分前 in UTF-8, so the minimum is 20 (5 words)
   [measured: `$HERD/shared/artifacts/hooks-fix-engine/prefilter_false_refusals*.txt`];
-- the text then goes to its caller's stream: the stream key is the caller's return address (LR). A new
-  caller claims a free CALL slot (9-20). When all 12 hold other callers, it takes the one written least
-  recently (a slot that never had text first, then the earliest sequence stamp) that is not kept, under that slot's try-lock: the slot's
-  key, hits and text become the new caller's, so a job's snapshot sees another key for that ID; a busy
-  slot, or every slot kept, drops the hit, never waiting. The new caller looks for that slot without the slots'
-  locks while other callers write them, so under the lock its choice is checked: a slot written since it looked
-  (its caller's new text, or another new caller that took it) is no longer the least recently written, and the hit
-  is dropped too. Before #366 the newest stream could lose its slot that way, and also when its caller wrote while
-  the new one looked: the search read the clock first, so that stream's newer stamp looked about 2^32 old. The
-  stamps compare in the clock's serial order, as the job's do. A stream that agreed with OCR, and a stream pinned by a
-  diagnostic request, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. An agreeing
-  stream is kept only while its slot still holds the caller the job's snapshot saw (checked under the
-  slot's lock), so a slot another caller took during the job is not kept for the new one. The job's
-  result says `VJO_HOOK_R_CALLS_FULL` (0x40 in `hook_flags`, the debug log's `flags`) once a caller found
-  every slot taken (`vjo_hooks_call_stats`: hits dropped for lack of a slot, callers that replaced one).
+- the text then goes to its caller's stream: the stream key is the caller's return address (LR). A new caller claims a
+  free CALL slot (9-20). When all 12 hold other callers, it takes the one written least recently (a slot that never
+  had text first, then the earliest sequence stamp) that is not kept, under that slot's try-lock: the slot's key, hits
+  and text become the new caller's, so a job's snapshot sees another key for that ID; a busy slot, or every slot kept,
+  drops the hit, never waiting. The new caller looks for that slot without the slots' locks while other callers write
+  them, so under the lock its choice is checked: a slot written since it looked (its caller's new text, or another new
+  caller that took it) is no longer the least recently written, and the hit is dropped too. Before #366 the newest
+  stream could lose its slot that way, and also when its caller wrote while the new one looked: the search read the
+  clock first, so that stream's newer stamp looked about 2^32 old. The stamps compare in the clock's serial order, as
+  the job's do (within 2^31 new texts of each other: a stream silent for longer ranks as new). **A new caller can
+  wait** while the least recently written slot stays busy: its caller off the CPU with the lock held, while the other
+  callers keep every CPU busy writing. On the host's hammer test (12 callers copying text in tight loops, or spinning
+  100 µs between copies, with new ones beside them) its longest wait was 0.18-0.48 s, against 0.04-0.45 s before #366,
+  whose takes were then almost all of the newest stream's slot; with callers that sleep between copies (1 ms, 100 µs,
+  a frame) it waited no longer than before (at most 17 ms). Passing a busy slot over would end the wait, but it gave
+  callers with two or more threads two slots (223 to 3,880 times in 20 runs of 500 ms, against none), one of which
+  keeps a stale text the job can take for the learned source; so a busy oldest slot still drops the hit. The console's
+  rate of string copies with every slot taken is unmeasured. A stream that agreed with OCR, and a stream pinned by a
+  diagnostic request, is kept (`vjo_hooks_keep`, from the job path): never given to another caller. An agreeing stream
+  is kept only while its slot still holds the caller the job's snapshot saw (checked under the slot's lock), so a slot
+  another caller took during the job is not kept for the new one. The job's result says `VJO_HOOK_R_CALLS_FULL` (0x40
+  in `hook_flags`, the debug log's `flags`) once a caller found every slot taken (`vjo_hooks_call_stats`: hits dropped
+  for lack of a slot, callers that replaced one).
 
 No syscall, no allocation and no waiting in this path: the slot's try-lock is taken or the hit is
 dropped (and counted). Our own worker's string calls are not hooked: only the main module's imports are.
@@ -185,7 +193,8 @@ Two lists name them:
   - Other engines from the psandvita Vita3K farm, Rubi's own sites (proven in Vita3K only; patched bytes checked as above):
     - PCSG00450 キャプテン・アース Mind Labyrinth, NID 0x28CB1B14, +0x6AB56, Thumb, r1 + 32 (deref), UTF-16LE, filter `RF_PCSG00450`; 78 farm pages
     - PCSG00509 POSSESSION MAGENTA, NID 0xA11A6741, +0x12C76, Thumb, r0, CP932, filter `RF_PCSG00509`; 1299 farm pages
-    - PCSG00540 忠臣蔵46+1 V, NID 0xC595CF25, +0x2B90A, Thumb, r1, CP932, filter `RF_PCSG00540`; 1037 farm pages
+    - PCSG00540 忠臣蔵46+1 V, NID 0xC595CF25, +0x2B90A, Thumb, r1, CP932 with its 0xA0 (`VJO_HOOK_ENC_CP932_A0`), filter
+      `RF_PCSG00540`; 1037 farm pages
     - PCSG00553 剣が君 for V, NID 0xCF234754, +0x11452B8, ARM, r1 + 12, UTF-16LE, filter `RF_BR_NEWLINE`; 1130 farm pages
     - PCSG00648 月に寄りそう乙女の作法, NID 0xE5819F44, +0x26EFA, Thumb, r2, CP932, filter `RF_ANGLE_RUBY`; 1397 farm pages
     - PCSG00713 百花百狼 ～戦国忍法帖～, NID 0x08B1647C, +0x112F46, Thumb, r6, UTF-8, filter none; 1464 farm pages
@@ -266,7 +275,8 @@ Two lists name them:
     (disassembled with LLVM 18's `llvm-mc`). **Unchecked for these two:** a branch elsewhere in segment 0 into
     the middle of the patched bytes, which the entries above had checked on their dumps (one would crash the
     game when it is taken; the farm's dumps, on the owner's machine, can settle it):
-    - PCSG00628 ALIA's CARNIVAL! サクラメント (APP_VER 01.00), NID 0x1EE45F02, +0x3373C, Thumb, r5, CP932, filter
+    - PCSG00628 ALIA's CARNIVAL! サクラメント (APP_VER 01.00), NID 0x1EE45F02, +0x3373C, Thumb, r5, CP932 with its 0xA0
+      (`VJO_HOOK_ENC_CP932_A0`), filter
       `RF_PCSG00628`; 1208 farm pages. Patch: `str r4, [r6, #0x2c]; movs r4, #0; str.w r9, [r6, #0xb4]`.
     - PCSG00380 真 流行り神 (APP_VER 01.00), NID 0x9A11E118, +0x4DE9E, Thumb, r15 + 0x98E152, the cells of
       foaf4's page record (`VJO_PLACE_READ_CELLS`), CP932, filter `RF_PCSG00380`; 1095 farm pages. The site is
@@ -274,20 +284,31 @@ Two lists name them:
       cells) and an unchanged text counts a hit only. Patch (12 bytes): `str r4, [sp, #0xa8]; movt r0,
       #0x819d; ldr r7, [r0]; ldr.w r12, [r0, #0x4]`. The record is a static (`.bss`), which the farm read at
       0x819DBFF0 with segment 0 at 0x81000000 (its r4, 0 at the site, + that address): r15, the site's own
-      address, + 0x98E152 is that address wherever the eboot is loaded as it was linked. A game built with an
-      SDK up to about 3.00 is a statically linked executable at 0x81000000 that cannot be relocated
-      ([h-encore's write-up](https://github.com/TheOfficialFloW/h-encore/blob/85b345e28f38d728a7ac33a35b9d6f32db93e8fc/WRITE-UP.md));
-      真 流行り神 came out in 2014. Were it relocated, the loader would also rewrite the `movt r0, #0x819d` in
-      the recorded bytes (a static's address in the record's 64 KiB), so the signature refuses the entry unless
-      it came out as in Vita3K. Every read stays inside one readable memory block (`read_game`): a wrong record
-      gives no text, or one that OCR does not agree with, never a fault.
+      address, + 0x98E152 is that address only where the eboot is loaded as it was linked. Nothing the farm
+      recorded says whether this eboot is a fixed-address executable (its ELF type or SDK is in no file of the
+      bucket), so the worker makes sure of what it can: an entry whose register is r15 is installed only when
+      segment 0 is at 0x81000000, where the farm read the record, and is otherwise refused as `relocated`
+      (`VJO_PLACE_RELOCATED`, after its bytes and NID matched; #316's audit F4). A fixed-address executable is
+      loaded there and all of it where it was linked: games built with an SDK 2.60 and lower "were compiled as a
+      statically linked executable, thus their loading address is always the same, namely `0x81000000`, and they
+      cannot be relocated", and a relocatable one is placed by the loader's ASLR ("ASLR is only enabled for
+      executables/modules", [h-encore's write-up](https://github.com/TheOfficialFloW/h-encore/blob/85b345e28f38d728a7ac33a35b9d6f32db93e8fc/WRITE-UP.md)),
+      so it is not expected at exactly 0x81000000 (not measured in Rubi's logs: console step 15 asks for CLANNAD's
+      `seg0`, a relocatable eboot's, from two starts). What the check leaves: a relocatable eboot loaded with
+      segment 0 at 0x81000000 and its data within the same 64 KiB as linked keeps the recorded `movt r0,
+      #0x819d` (the high half of a static's address), so its bytes pass, and the hook reads another place (a
+      larger shift rewrites the `movt` and the signature refuses it). Every read stays inside one readable memory
+      block (`read_game`): a wrong record gives no text or a wrong line, never a fault, and with
+      `hook_trust = on` a verified site's line is shown without OCR.
 
   An entry is hooked only when the module NID and every recorded byte match, and, when it names one, not in
   another game version than it was proven in: `app_ver` is the farm's param.sfo `APP_VER` (`0x0100` for
   01.00); another `APP_VER` refuses the entry as `version` (`vjo_place_verified_version`; `APP_VER` is read
   for such an entry also when the title has no Luna site). One that cannot be read leaves the entry to its
   NID and bytes, which pin the build anyway (an update changes the eboot, and so its NID); a Luna site that
-  names its version is refused then, having neither. 51 of the 56 entries name 01.00; CLANNAD's, POSSESSION
+  names its version is refused then, having neither. The gate's one cost: a patch that changes only the game's
+  data and raises its `APP_VER`, with the eboot byte for byte the same, refuses an entry that would still work
+  (#316's audit N6; no such patch is known for these games). 51 of the 56 entries name 01.00; CLANNAD's, POSSESSION
   MAGENTA's, 忠臣蔵46+1 V's, 剣が君 for V's and 月に寄りそう乙女の作法's name none (the farm did not record it), so
   their NID and bytes alone decide. An entry at the address of
   a ported Luna site that this version may try takes that site's hookfunc and filter for its text
@@ -301,10 +322,13 @@ Two lists name them:
   a character's first CP932 byte and its second one or 0; exactly that many cells are read, at most 256,
   none past the record, and `vjo_place_cells` makes them CP932 bytes), or an SC3 string through its end token
   (`VJO_PLACE_READ_SC3`, [SC3 text](#sc3-text)). The register may be r15, the site's
-  own address: the padding is then a static's distance from the site. The host test `verified: every entry
+  own address: the padding is then a static's distance from the site, and the entry is tried only with segment
+  0 at 0x81000000 (`relocated` otherwise: PCSG00380 above). The host test `verified: every entry
   of the list` checks every entry's alignment, recorded bytes against the patch, register, encoding, read,
   filter and `APP_VER`; `the farm's excerpts through each verified entry` runs each entry the farm's bucket
-  has pages for on its own recorded bytes ([farm checks](#farm-checks)). When OCR is refused for memory
+  has pages for in the game as the farm recorded its hook: the farm's NID, its 16 bytes at its offset, the hit
+  where the farm's register and padding point, which Rubi's entry must hook at the farm's offset and read
+  ([farm checks](#farm-checks)). When OCR is refused for memory
   (`VJO_E_OOM`) with the automatic pick, a verified entry's newest text answers unconfirmed
   (`vjo_hook_select_no_memory`, `VJO_HOOK_R_UNCONFIRMED`), its capture pass beside
   `VJO_GAME_RESERVE_HOOK_ONLY`; Luna's sites and CALL callers never do.
@@ -368,7 +392,7 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 
 | Filter | Titles | What it does | Farm evidence |
 | --- | --- | --- | --- |
-| `PROTOTYPE` | PCSG00007, PCSG00206, PCSG00620, PCSG00183, PCSG00785 | `･` to `・` (the middle dot between katakana words, not Luna's `…`); half-width kana to hiragana (Luna's map, as its PCSG01198 filter); `$t<name>$d` to the name on its own line, `$t<name>@` to the name; `$d` to a line break; `$[base$/reading$]` to the base; drops `$L1` `$A1` `$S<nnn>` `$S` `$w` `$C[..]`, a `$t` neither form took (PCSG00183's `$t<name>｢..｣`, the name drawn inline) and `$K<n>`; `＿` to a blank; trims | PCSG00007 events 1-3; PCSG00206 event 367; PCSG00620 events 80-82, and its 12 `･` (page 375: セブンズ･カオス drawn セブンズ・カオス); PCSG00183 page 6 (`$t母親｢..｣`, 7 of its 12 pages), its title card's `$K130..$K0` (session ada5e786 event 35); PCSG00785 page 1 |
+| `PROTOTYPE` | PCSG00007, PCSG00206, PCSG00620, PCSG00183, PCSG00785 | `･` to `・` (the middle dot between katakana words, not Luna's `…`); half-width kana to hiragana (Luna's map, as its PCSG01198 filter); `$t<name>$d` to the name on its own line, `$t<name>@` to the name; `$d` to a line break; `$[base$/reading$]` to the base; drops `$L1` `$A1` `$S<nnn>` `$S` `$w` `$C[..]`, a `$t` neither form took (PCSG00183's `$t<name>｢..｣`, the name drawn inline) and `$K<n>`; `＿` to a blank; trims | PCSG00007 events 1-3; PCSG00206 event 367; PCSG00620 events 80-82, and its 12 `･` (page 375: セブンズ･カオス drawn セブンズ・カオス): the `･` rule is proven on PCSG00620's pages only (PCSG00007's in the bucket have none, PCSG00206 is not in it, nor do the hook farm's PCSG00183, PCSG00785, PCSG00988 and PCSG01000 pages hold one); the others share the engine; PCSG00183 page 6 (`$t母親｢..｣`, 7 of its 12 pages), its title card's `$K130..$K0` (session ada5e786 event 35); PCSG00785 page 1 |
 | `IFENGINE` | PCSG00935, PCSG00428, PCSG00530, PCSG00826, and Otomate's STCM2 lines PCSG00602, PCSG00629, PCSG00755 (with names: PCSG00448, PCSG00469, PCSG00853; with `ゞ` `ゝ`: PCSG00472's) | `#Ruby[base,reading]` to the base; drops `#Tag` and `#Tag[..]`; `#n` to a line break; trims | PCSG00448 events 1, 54; PCSG00853 sample 1; PCSG00935 event 1, all 382 of its bucket pages; PCSG00428 page 2 (`#Speed[5]#Effect[0]#Scale[1]..#n`); PCSG00530's centred card (seven `　#n` spacer lines); PCSG00602 page 17 (`#Color[16]..#Color[0]`) |
 | `ANGLE_RUBY` | PCSG00648 (and PCSG00509) | `<base,reading>` to the base | PCSG00648 sample 5; PCSG00509 event 50 |
 | `BR_NEWLINE` | PCSG00553, PCSG00807, PCSG00706 | `<br>` to a line break; trims | PCSG00807 sample 2; PCSG00553 events 33-37; PCSG00706 page 5 (all 42 of its pages hold `<br>`) |
@@ -381,7 +405,7 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00469` | CLOCK ZERO ExTime | `#Name[1]` 撫子, then `IFENGINE` | samples 80, 182, 1345 |
 | `PCSG00509` | POSSESSION MAGENTA | `＊Ｂ` 鈴; `^` to a line break; `<base,reading>` to the base | events 50, 1011 (67 pages hold `＊Ｂ`) |
 | `PCSG00540` | 忠臣蔵46+1 V | `c<id>.<name>r` to the name on its own line, narration's `r`, `v<voice>.` and `w<ms>.` dropped, `b<reading>.<base>` to the base, half-width kana (･ ﾞ ﾟ drawn … ！ ？); a 0xA0 byte is a blank cell, `　` | events 1-5, 51, 53, 55; 0xA0 on 170 of the bucket's 1037 pages (page 82: 東京都　陵南学園。, 9 glyphs) |
-| `PCSG00628` | ALIA's CARNIVAL! サクラメント | ADV::MSGSET's SNR markup as `PCSG00540`'s without its `c<id>.`: `<name>r` to the name on its own line, `r` to a line break, `v<voice>.` dropped, `z<n>.` and `u<n>.` dropped (a size and a code point: in the farm's survey of `main.snr`, in none of its pages), `b<reading>.<base>` to the base (an `r` before the base is a line break), `[` `]` `\|` `k` `y` dropped, `!X` to the ASCII X (a lowercase X is read as a code first: none in the pages); half-width kana as `PCSG00540`; the 0xA0 blank | events 1, 20, 31, 89, 148, 207; all 1208 bucket pages |
+| `PCSG00628` | ALIA's CARNIVAL! サクラメント | ADV::MSGSET's SNR markup as `PCSG00540`'s without its `c<id>.`: first `!X` to the character X, before any other code (`!r` `!v` `!b` `!k` `!y` `!z` `!u` `![` `!]` `!\|` `!<` `!>` `!.` `!!` to full-width forms no other rule reads, which the shown text's normalisation makes ASCII; any other `!X` to X last); `<name>r` to the name on its own line, `r` to a line break, `v<voice>.` dropped, `u9829.` to ♥, other `u<n>.` (a code point) and `z<n>.` (a size) dropped (in the farm's survey of `main.snr`, in none of its pages: no rule writes another code point), `b<reading>.<base>` to the base (an `r` before the base is a line break), `[` `]` `\|` `k` `y` dropped; half-width kana as `PCSG00540`; the 0xA0 blank | events 1, 20, 31, 89, 148, 207; all 1208 bucket pages; the escapes as the farm's RUBI-HOOK.md reads `main.snr` (`!L!v!1!.`, `![`/`!]`, "lowercase ASCII is otherwise always a code"; #316's audit F1) |
 | `PCSG00415` | CLANNAD | `＊Ａ` (CP932 81 96 82 60) and `＊Ｂ` (81 96 82 61), the script's name variables for the protagonist's family and given name, to 岡崎 and 朋也 (CLANNAD has no name entry) | not the farm's: a console's `history.csv` (Rubi 0.9.8, the verified site's stream): 16 of 1,347 hook lines, e.g. `「ありゃ、＊Ａ、どこいくんだよっ」` where OCR read 岡崎, `「俺はＤ組の＊Ａ＊Ｂ」` |
 | `PCSG00020`, `PCSG00883` | 極限脱出ＡＤＶ 善人シボウデス (and the Double Pack's) | any `<tag>` or `<tag:arg>` dropped: `<K>` (a click wait), `<P>` (the box cleared after it), `<N>` (a segment of its own), `<F:B>` (a line drawn larger), colour tags such as `<red>..<end>`. Luna's filter for the title (`<\w+?>`) keeps `<F:B>` | 113 hits in two sessions: `<K>` 66, `<P>` 45, `<N>` 2, `<F:B>` 1 (`<F:B>うるさい！<K>`); no colour tag on those pages (Luna's own example) |
 | `PCSG00380` | 真 流行り神 | `㊤㊥㊦` (0x8785-0x8787, the pieces of a long dash) to `―` each; `㌫` `㍊` (0x876C, 0x876D, the player's family and given name) to the defaults 北條 and 紗希; trims (a page's last hit ends with a line break); the `\x04` button-icon codes are controls `vjo_hook_clean` drops | event 93016; pages 37 (6 glyphs: 北條紗希も、) and 158 (26) |
@@ -393,10 +417,16 @@ that farm's). **Proven in Vita3K only, not on a console.** Host test: `rubi_filt
 | `PCSG00472` | DIABOLIK LOVERS VANDEAD CARNIVAL (and PCSG00272, PCSG00382, PCSG00476) | `ゞ` (CP932 0x8155) to `!?` and `ゝ` (0x8154) to `!!`, the font's one-cell glyphs, as Luna's filter for these titles' sites writes them; then `IFENGINE` (one array: `IFENGINE` is it from its third op) | PCSG00472 pages 12, 14 (`あぁゞ　ざけんなゝ` drawn あぁ⁉　ざけんな‼; the farm writes the one cell ⁉ ‼); PCSG00476 pages 17 and 21 (its reviewer read `っ……ゞ` and `わあっゞ` as っ……!? and わあっ!?; the farm's text kept the ゞ) |
 | `PCSG01250` | スキとスキとでサンカク恋愛 | `/ruby:base&reading/` to the base; `#n` to a line break; drops `#Tag` and `#Tag[..]` (the layout parser's `#Size[..]`, `#Pos[..]`, in none of the farm's pages), with Luna's patterns for the title; the parser's `/size:` `/pos:` `/color:` prefixes are added after the site | page 18 (`/ruby:和呂田 茜&わろた あかね/` drawn 和呂田 茜) |
 
-**CP932's 0xA0.** Shift_JIS leaves the single byte 0xA0 undefined; Windows' cp932 (and so Luna's filters)
-reads it as U+F8F0, a private-use code point, and the decoder (`vjo_hook_decode`) does too: a filter turns it
-into what its game draws there (the MSGSET titles: a blank cell, `　`), and `vjo_hook_clean` drops one no
-filter mapped, as the decoder used to drop the byte.
+**CP932's 0xA0.** Shift_JIS leaves the single byte 0xA0 undefined, and the decoder (`vjo_hook_decode`) drops
+it, as Rubi always has, except in `VJO_HOOK_ENC_CP932_A0`: the encoding of the two entries whose games draw a blank
+cell there, 忠臣蔵46+1 V's and ALIA's CARNIVAL! サクラメント's, for their filters (`RF_PCSG00540`, `RF_PCSG00628`), whose first
+rule (`A0_BLANK` in `core/hook_luna.c`) makes Windows' cp932 reading of it, U+F8F0, the blank `　`. Every other path
+gives the text it gave before #316, for any text: Luna's sites and filters, Rubi's other filters and entries, and the
+string copies (#316's audit F2: decoded as U+F8F0 everywhere, a lone 0xA0 changed 286 of the audit's 83,400 random
+texts outside the two filters, though no other CP932 title of the bucket has one [the audit's measurements]; host test
+`a lone CP932 0xA0`: 0 of 10,600 texts of 155 CP932 sites and 110 filters now, 136 on main `3d095b4` [measured]). A
+host test checks that only those two entries keep the byte, and only with those filters. LunaTranslator itself, on
+Windows' cp932, would give its filters U+F8F0 there; the port keeps the byte out of them, as 0.9.7 did.
 
 **Player names.** Where a hook reads a line before the game expands its player-name code (`#Name[n]`,
 `＊Ｂ`, foaf4's `㌫` `㍊`), Rubi cannot know the name the player typed. The filter writes the game's default name instead,
@@ -423,13 +453,21 @@ Rubi's entries on them:
   own glyph counts show the name drawn. The worker shows a site's latest hit, so a page the farm built from
   several hits (a name, then the line; lines added one by one) is compared with its hits joined.
 - `fixtures` writes `host/tests/fixtures/hook_farm.inc`: per entry, up to 5 hits of at most 128 bytes that
-  Rubi turns into exactly the farm's text, chosen to cover the codes in them. The engine test `the farm's
-  excerpts through each verified entry` installs each entry from Rubi's table in a fake main module (its NID,
-  its bytes at its offset, its `APP_VER`), puts the hit's bytes where its register points, and runs the
-  observer, the stream and `vjo_hooks_text`: 78 excerpts of 33 titles, short lines only, never a script. They
-  were generated from a folder of the bucket's pages for the 14 titles below and the hook farm's 20 of 2026-10-27
-  (PCSG00272 gives none: each of its pages also holds its speaker site's hit); the 14 titles' 50 excerpts come
-  out as before. The whole bucket has more titles since (99 excerpts on main, 127 with the hook farm's).
+  Rubi turns into exactly the farm's text, chosen to cover the codes in them (none for the SC3 entries, whose
+  excerpts `tools/sc3_charset.py --fixtures` writes), and for every title Rubi has an entry for at the farm's
+  site the farm's record of that hook: its module NID, offset, mode, register, padding, encoding, reader and
+  16 bytes (`rubi-hook.json`). The engine test `the farm's excerpts through each verified entry` makes the
+  game of that record (a main module with the farm's NID and the farm's bytes at the farm's offset, segment 0
+  at 0x81000000 as in the farm's Vita3K, the farm's `APP_VER`), puts the hit's bytes where the farm's register
+  and padding point, and runs Rubi's entry: it must hook the farm's offset in the farm's mode, and the
+  observer, the stream and `vjo_hooks_text` must give the farm's text: 78 excerpts of 33 titles, short lines
+  only, never a script; each field of Rubi's entry is checked against the record by name (#316's audit F3:
+  the test had installed Rubi's own NID, bytes, register and padding, so 4 of the audit's 30 mutations of
+  them passed; all 4 fail it now, and so do a mode, an SC3 entry's NID and PCSG00620's padding changed). The
+  SC3 test runs its three entries in their records' games too. The excerpts and the 37 records were generated
+  from a folder of the bucket's pages for the 14 titles below, the three SC3 titles and the hook farm's 20 of
+  2026-10-27 (PCSG00272 gives no excerpt, only its record: each of its pages also holds its speaker site's hit);
+  the 14 titles' 50 excerpts and the other 17 records come out as before.
 
 Single-hit pages of the bucket of 2026-10-26 (04:36Z) whose text is the farm's, as shown, with main's
 filters before this change and Rubi's now [measured: `tools/hook_farm.py check` on the host]:
@@ -533,8 +571,12 @@ reader halted at its page 11 on one).
   tables (27,732 B) would take about seven more pages in every game that is ON [estimate: the tables' bytes]; on the
   card each costs memory only in its own game.
 - **The load** (`game_ocr/main.c` `hooks_sc3_load`): at the first job of a game with an SC3 site hooked, before the
-  job's snapshot; a read that was cancelled or timed out again at a later job (three tries in all), any other outcome
-  once a session. The worker cannot always open `ux0:` itself ([worker-loading.md](worker-loading.md)),
+  job's snapshot; an open or a read that was cancelled or timed out again at a later job (three tries in all; a read's
+  timeout since #368's audit), any other outcome once a session. A close that fails is the job's I/O error (the
+  broker is still the charset's, so the job's own files cannot open: a job that needs them fails and says so, while a
+  trusted SC3 line still answers, and the hook cache waits for a later job), and a block an earlier try could not
+  give back is freed before another is taken. The
+  worker cannot always open `ux0:` itself ([worker-loading.md](worker-loading.md)),
   so the kernel's file broker opens it: `vjoOcrModelOpen` with `VJO_GAME_OCR_OPEN_SC3`, for which the kernel builds
   the path from the title ID it reads for the calling process (`loader_title`, the loader's
   `ksceKernelSysrootGetProcessTitleId`; the caller names no path), at most 16,384 B, one read through its staging
@@ -1029,8 +1071,9 @@ audit-hooks section 3].
 An SC3 site ([SC3 text](#sc3-text)) adds the worker's one block outside this rule, `VjoGameSc3`: its game's charset,
 8 or 16 KiB, from the first job until the worker stops, in those three games only; and 1,216 / 1,184 B of text
 (debug / normal) and 296 / 288 B of data/bss to every game's worker, in the same pages (200,704 and 192,512 B)
-[measured: the build log's module rows on main `199fe31` and this change, both builds; memory-ledger.md "SC3 text"].
-Its hit reads into the same 512-byte capture buffer.
+[measured: the build log's module rows on main `199fe31` and this change, both builds; memory-ledger.md "SC3 text"];
+against its parent on main (`19986c7` → `e2c49ee`), +1,200 / +1,168 B of text and +288 / +280 B of data/bss
+[measured the same way]. Its hit reads into the same 512-byte capture buffer.
 
 Stack, on the game's thread: a site hit about 564 B at most (the observer's 328 B frame and up to 4 B to
 align it, then `vjo_hooks_observe` 56, `vjo_luna_capture` 72, `mirror` 56 and `read_game` 48; the
@@ -1168,6 +1211,15 @@ Hardware is paused; these are for the test issue (#230):
     game runs through several scenes and a chapter change. With the file removed: the first job allocates and frees
     the block, no later job tries again, and OCR reads the lines. The same for ROBOTICS;NOTES ELITE `PCSG00352` and
     CHAOS;CHILD `PCSG00555` (a 16,384 B block).
+17. #316's audit (the debug build, `auto`): アマツツミ (`PCSG01198`)'s `hooks.log` first line says `APP_VER 0100`
+    (the first console reading of `app_version()`; its entry names 01.00, so a misread one refuses it as
+    `version`). 真 流行り神 (`PCSG00380`), if a console has it: `seg0 81000000` and `verified +4DE9E thumb r15`
+    hooked, a dialogue page's text in the overlay from the hook (`flags 0x118`) and 北條紗希 where the game
+    draws the player's name; `seg0` anything else and `refused: relocated` (then OCR reads the game) is what the
+    check is for. ALIA's CARNIVAL! サクラメント (`PCSG00628`): the hook's lines match the screen, Latin words
+    and `[―――]` dash runs included. For both, play through menus, a save and a load: a crash that **OCR only**
+    does not have is what a branch elsewhere into their patched bytes would look like (unchecked: the farm's
+    bucket has no dump of their code).
 
 ## PSP probe (debug build)
 

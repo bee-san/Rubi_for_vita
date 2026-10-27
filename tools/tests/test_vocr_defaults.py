@@ -294,6 +294,14 @@ class VocrDefaults(unittest.TestCase):
                                                                 hashlib.sha256(gate_att).hexdigest())}
             (src / prepare_ocr.VOCR_GATE_MODEL).write_bytes(gate)
             (src / prepare_ocr.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
+            # API 54: the text spotter's weights and attribution, its pin published (a --from directory holds the
+            # attribution as SPOTTER-ATTRIBUTION.md)
+            spot, spot_att = b"spotter fixture", b"the spotter's attribution"
+            spot_pin = {prepare_ocr.VOCR_SPOT_MODEL: ("https://fixture.invalid/s", len(spot), hashlib.sha256(spot).hexdigest())}
+            spot_att_pin = {prepare_ocr.VOCR_SPOT_ATTRIBUTION: ("https://fixture.invalid/sa", len(spot_att),
+                                                                hashlib.sha256(spot_att).hexdigest())}
+            (src / prepare_ocr.VOCR_SPOT_MODEL).write_bytes(spot)
+            (src / prepare_ocr.VOCR_SPOT_ATTRIBUTION).write_bytes(spot_att)
             with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins5), mock.patch.dict(prepare_ocr.VOCR6_ASSETS, pins6), \
                  mock.patch.dict(prepare_ocr.VOCR5V_ASSETS, vpins), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
@@ -301,12 +309,17 @@ class VocrDefaults(unittest.TestCase):
                  mock.patch.object(prepare_ocr, "VOCR_VERTICAL_ATTRIBUTION_PIN", vatt_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ASSETS", gate_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ATTRIBUTION_PIN", gate_att_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_SPOT_PUBLISHED", True), \
+                 mock.patch.object(prepare_ocr, "VOCR_SPOT_ASSETS", spot_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR_SPOT_ATTRIBUTION_PIN", spot_att_pin), \
                  mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
                 paths = prepare_ocr.fetch_tiers(out, src)
                 self.assertEqual(sorted(p.name for p in paths),
                                  sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md", "VOCR6-ATTRIBUTION.md",
                                          prepare_ocr.VOCR_GATE_MODEL, "GATE-ATTRIBUTION.md",
-                                         prepare_ocr.VOCR_VERTICAL_MODEL, prepare_ocr.VOCR_VERTICAL_ATTRIBUTION]))
+                                         prepare_ocr.VOCR_VERTICAL_MODEL, prepare_ocr.VOCR_VERTICAL_ATTRIBUTION,
+                                         prepare_ocr.VOCR_SPOT_MODEL, prepare_ocr.VOCR_SPOT_ATTRIBUTION]))
+                self.assertEqual((out / prepare_ocr.VOCR_SPOT_ATTRIBUTION).read_bytes(), spot_att)
                 self.assertEqual((out / "GATE-ATTRIBUTION.md").read_bytes(), gate_att)
                 self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
                 self.assertEqual((out / "VOCR6-ATTRIBUTION.md").read_bytes(), att6)
@@ -391,6 +404,24 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual(macros()["VJO_VOCR_LM3_NAME"], "vocr_lm_o3_2000k.vlm")
         self.assertIn("vjo_vocr_lm_settings(job ? job->name : NULL, lm, &o->alpha, &o->beta, &o->flags);", source)
         self.assertEqual(source.count("lm_opts(mi, pol->lm, &o);") + source.count("lm_opts(job, st->lm, &o);"), 2)
+        # the host eval tools decode as the worker does (audit-vocr6-rubi-pin F5): each pinned LM's tier settings and
+        # each job model's own, both read from the C tables above
+        flag = {"VOCR_LM_BOS": 1, "VOCR_LM_EOS": 2}
+        sizes = macros()
+        names = [name for name, _ in sorted(table.items(), key=lambda kv: kv[1][2])]  # tier order
+        tiers = {name: (int(a), int(b), flag[f]) for name, (b, _, a, f) in zip(names, settings)}
+        own = {(sizes[m], sizes[lm]): (int(a), int(b), sum(flag[x.strip()] for x in f.split("|")))
+               for m, lm, b, a, f in retuned}
+        import lm_cer_eval  # noqa: PLC0415
+        import lm_lines_eval  # noqa: PLC0415
+        for tool in (lm_cer_eval, lm_lines_eval):
+            for name, want in tiers.items():
+                self.assertEqual(tool.SETTINGS[name], want, (tool.__name__, name))
+            self.assertEqual(tool.MODEL_SETTINGS, own, tool.__name__)
+            for (model, lm), want in own.items():
+                self.assertEqual(tool.settings(model, lm), want, tool.__name__)
+            for name, want in tiers.items():  # another model: the tier's
+                self.assertEqual(tool.settings("VOCR5_S_w8g.vocr", name), want, tool.__name__)
         # the ledger's LM block holds the largest, page-rounded
         ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
         budget = int(re.search(r"#define VJO_BUDGET_GAME_LM (\d+)u", ledger).group(1))
@@ -540,8 +571,9 @@ class VocrDefaults(unittest.TestCase):
             if name not in TIER_FILES:
                 self.assertNotIn(name, shipped)
         self.assertEqual(set(shipped) - {t["model"] for t in tiers["tiers"]},
-                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL,
-                          prepare_ocr.VOCR_VERTICAL_MODEL})  # the LMs, the gate (API 26), VOCR5-V (API 47)
+                         {*prepare_ocr.VOCR_LM_ASSETS, prepare_ocr.VOCR_GATE_MODEL, prepare_ocr.VOCR_VERTICAL_MODEL,
+                          *([prepare_ocr.VOCR_SPOT_MODEL] if prepare_ocr.VOCR_SPOT_PUBLISHED else [])})
+        # the LMs, the gate (API 26), VOCR5-V (API 47) and the text spotter (API 54, its pin published)
 
 
 class RuntimePinEverywhere(unittest.TestCase):
@@ -551,12 +583,16 @@ class RuntimePinEverywhere(unittest.TestCase):
     def test_the_workflow_and_the_docs_check_out_the_cmake_pin(self):
         cmake = (ROOT / "cmake" / "VocrOCR.cmake").read_text(encoding="utf-8")
         pin = re.search(r"^set\(VJO_VOCR_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
+        # API 54: the text spotter's runtime is pinned apart (VJO_VOCR_SPOT_COMMIT) until the recognizer's pin holds it
+        spot = re.search(r"^set\(VJO_VOCR_SPOT_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
         flow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         refs = re.findall(r"repository: bee-san/vita-vn-ocr\n(?:\s+#.*\n)*\s+ref: ([0-9a-f]{40})", flow)
         self.assertTrue(refs, "no vita-vn-ocr checkout found in release.yml")
-        self.assertEqual(set(refs), {pin}, refs)
+        self.assertEqual(set(refs), {pin, spot}, refs)
+        self.assertEqual(refs.count(spot), refs.count(pin) if spot != pin else len(refs), refs)
         docs = (ROOT / "docs" / "vita-vn-ocr.md").read_text(encoding="utf-8")
         self.assertIn(f"git -C /path/to/vita-vn-ocr checkout {pin}", docs)
+        self.assertIn(f"git -C /path/to/vita-vn-ocr-spot checkout {spot}", docs)
 
 
 class TestModels(unittest.TestCase):
@@ -577,6 +613,10 @@ class TestModels(unittest.TestCase):
         want.update({f"v0.3.0/{name}": (size, sha) for name, (_, size, sha) in prepare_ocr.VOCR5_V030_ASSETS.items()})
         want.update({f"v0.4.0-vocr6.1/{name}": (size, sha)
                      for name, (_, size, sha) in prepare_ocr.VOCR6_PLAIN_ASSETS.items()})
+        # API 54: the text spotter's published weights (host/tests/test_spot_release.c), at the plugin's own pin
+        sizes = macros()
+        if prepare_ocr.VOCR_SPOT_PUBLISHED:
+            want[sizes["VJO_VOCR_SPOT_NAME"]] = (sizes["VJO_VOCR_SPOT_BYTES"], sizes["VJO_VOCR_SPOT_SHA256"])
         self.assertEqual(models, want)
         sizes = macros()
         for macro in ("VJO_VOCR_TIER1_NAME", "VJO_VOCR_TIER2_NAME", "VJO_VOCR_TIER3_NAME", "VJO_VOCR_CASCADE_NAME",

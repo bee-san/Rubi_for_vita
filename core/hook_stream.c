@@ -3,8 +3,9 @@
 
 #include "hook_place.h"
 
-/* A test's seam (host/tests/test_hook_stream_seams.c): another thread's step at a point of replace(), run on the
- * test's own thread. Nothing in the worker. */
+/* A test's seam (host/tests/test_hook_stream_seams.c): another thread's step at a point of replace() (scan: before slot
+ * i's loads; chosen: the scan chose slot i, before its try-lock; replacing: slot i is the new caller's, before its
+ * text), run on the test's own thread. Nothing in the worker. */
 #ifndef VJO_STREAM_SEAM
 #define VJO_STREAM_SEAM(point, i) ((void)0)
 #endif
@@ -17,9 +18,11 @@ static void copy_bytes(uint8_t *dst, const uint8_t *src, unsigned n)
 }
 
 /* n bytes at src as s's latest text; s's lock is held. fresh: a new caller's first text, new whatever s held. 1 new
- * text, 0 identical (a hit only). seq and n are also read without the lock (replace()'s scan, the worker's hook watch:
- * game_ocr/hooks.c vjo_hooks_seq), so they are stored atomically (#366), and seq once, never 0 ("never had text"),
- * even as the clock wraps. */
+ * text, 0 identical (a hit only). seq is also read without the lock by replace()'s scan and the worker's hook watch
+ * (game_ocr/hooks.c vjo_hooks_seq), n by the watch, so both are stored atomically (#366), and seq once, never 0
+ * ("never had text"), even as the clock wraps. seq is published with release order, last: a thread that reads it
+ * (acquire) sees everything stored before it, the slot's key above all when a new caller took the slot (replace()'s
+ * check for this caller's slot elsewhere). */
 static int store(VjoStreamSlot *s, VjoStreamClock *c, const uint8_t *src, unsigned n, unsigned encoding, int fresh)
 {
     uint32_t h = vjo_place_hash(src, n), seq;
@@ -33,7 +36,7 @@ static int store(VjoStreamSlot *s, VjoStreamClock *c, const uint8_t *src, unsign
     s->encoding = encoding;
     seq = __atomic_add_fetch(&c->clock, 1u, __ATOMIC_RELAXED);
     if (!seq) seq = __atomic_add_fetch(&c->clock, 1u, __ATOMIC_RELAXED); /* 0 means "never" */
-    __atomic_store_n(&s->seq, seq, __ATOMIC_RELAXED);
+    __atomic_store_n(&s->seq, seq, __ATOMIC_RELEASE);
     return 1;
 }
 
@@ -79,7 +82,13 @@ VjoStreamSlot *vjo_stream_caller(VjoStreamSlot *slots, unsigned n, uint32_t key)
  * a busy slot. Seqs compare in the clock's serial order, as the job compares them (core/hook_select.c,
  * game_ocr/main.c: within 2^31 new texts of each other), and the clock is not read: a scan that read it first (before
  * #366) gave a slot written during the scan, whose seq came after that reading, an age of about 2^32, and the newest
- * stream lost its slot. */
+ * stream lost its slot. A busy oldest slot drops the hit rather than giving the next oldest away: two threads of one
+ * caller that chose the same slot contend for its lock, and one that chose another slot finds the first one's key
+ * under its own lock (below). Passing busy slots over gave callers with several threads two slots, one keeping a
+ * stale text (#366's audit, F2: 223 to 3,880 times in 20 runs of the host's hammer test, against none); the cost of
+ * not doing so is a new caller's wait while the oldest slot stays busy and the other callers never pause. The scan
+ * reads each seq with acquire order (store()'s release): a slot whose new seq it sees, it sees with the key stored
+ * before it, so the other thread's slot is found below on a CPU that reorders memory accesses (the A9) too. */
 static int replace(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint32_t key, const uint8_t *src,
                    unsigned n, unsigned encoding)
 {
@@ -90,7 +99,7 @@ static int replace(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint
         uint32_t seq;
         VJO_STREAM_SEAM(scan, i);
         if (__atomic_load_n(&slots[i].kept, __ATOMIC_ACQUIRE)) continue;
-        seq = __atomic_load_n(&slots[i].seq, __ATOMIC_RELAXED);
+        seq = __atomic_load_n(&slots[i].seq, __ATOMIC_ACQUIRE);
         if (!v || (vseq && (!seq || (int32_t)(seq - vseq) < 0))) {
             v = &slots[i];
             vseq = seq;
@@ -117,6 +126,7 @@ static int replace(VjoStreamSlot *slots, unsigned count, VjoStreamClock *c, uint
         __atomic_store_n(&v->key, key, __ATOMIC_RELEASE);
         v->hits = 0; /* a new caller's stream: its text is new (fresh), its hits its own */
         __atomic_add_fetch(&c->call_replaced, 1u, __ATOMIC_RELAXED);
+        VJO_STREAM_SEAM(replacing, (unsigned)(v - slots)); /* the old text's seq until store() gives the new one */
         r = store(v, c, src, n, encoding, 1);
     }
     vjo_stream_unlock(v);

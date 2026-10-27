@@ -38,8 +38,15 @@ enum {
     VJO_PLACE_VERSION = 7,   /* the entry is for another version of the game */
     VJO_PLACE_FULL = 8,      /* no stream slot left */
     VJO_PLACE_TAI = 9,       /* taiHookFunctionOffset refused it */
+    VJO_PLACE_RELOCATED = 10, /* a verified entry that reads a static at a fixed distance from its code (register 15)
+                               * in a segment 0 that is not at VJO_PLACE_FIXED_SEG0, where it was proven */
     VJO_PLACE_COUNT
 };
+
+/* Where a fixed-address executable's segment 0 is linked, and so loaded: such an eboot "cannot be relocated"
+ * (h-encore's write-up, 85b345e: games built with an SDK 2.60 and lower). An entry whose register is 15 reads a
+ * static at the distance the farm saw from its site, true only where the eboot is loaded as it was linked. */
+#define VJO_PLACE_FIXED_SEG0 0x81000000u
 
 /* A short name for a reason (the debug log). */
 const char *vjo_place_reason(int reason);
@@ -69,8 +76,9 @@ typedef struct {
     uint32_t off;          /* segment 0 offset */
     uint8_t thumb;
     uint8_t reg;           /* the register holding the text's address (r0-r12, sp, lr; 15: the site's own
-                            * address, for a static at a fixed distance from the code: padding is that distance) */
-    uint8_t encoding;      /* VJO_HOOK_ENC_* */
+                            * address, for a static at a fixed distance from the code: padding is that distance,
+                            * and the entry is tried only with segment 0 at VJO_PLACE_FIXED_SEG0) */
+    uint8_t encoding;      /* VJO_HOOK_ENC_* (VJO_HOOK_ENC_CP932_A0: CP932 with its 0xA0 byte, for a filter that maps it) */
     uint8_t sig_len;       /* 8..16, at least the patch's bytes */
     int32_t padding;       /* added to the register's value */
     uint8_t sig[16];       /* the bytes at the site */
@@ -119,8 +127,9 @@ unsigned vjo_place_verified_all(const VjoPlaceVerified **out);
 int vjo_place_title_verified(const char *title_id);
 
 /* The check for a verified entry v in a module with NID module_nid: its bytes (sig_len at
- * code + v->off, inside the code) and its NID exactly as recorded. VJO_PLACE_OK or the reason. The
- * entry's version is the caller's to check (vjo_place_verified_version). */
+ * code + v->off, inside the code) and its NID exactly as recorded, and for an entry that reads a static from
+ * its site's own address (register 15) segment 0 at VJO_PLACE_FIXED_SEG0 (VJO_PLACE_RELOCATED: #316's audit F4).
+ * VJO_PLACE_OK or the reason. The entry's version is the caller's to check (vjo_place_verified_version). */
 int vjo_place_check_verified(const VjoPlaceVerified *v, const uint8_t *code, uint32_t code_size,
                              uint32_t seg_base, uint32_t module_nid);
 

@@ -13,6 +13,106 @@ been reported.
 
 ### Added
 
+- **A game's own line finder** (#333; [guide](docs/guide.md#a-games-own-page)). The finder (`ocr_finder`, the
+  spotter by default since API 54) and Rubi's finder's fixes (`ocr_line_fix`, API 50) were one choice for every game,
+  and the best one depends on the game. Now each game can have its own. Hold Enter, or a touch, on a game in the Rubi
+  app's Games list for half a second: its page has the game's ON/OFF and its **Line finder**: Default (`config.ini`'s),
+  Spotter, or Rubi's finder with Off, On, Junk or All. A press or tap let go sooner still turns the game ON or OFF; the
+  list shows `Line finder: On` on a game with its own.
+  - **Measured** (host; the per-page records of the runs behind vita-vn-ocr #129 and #149, counted; VOCR5-N, the 1 MB
+    LM, the cascade): the spotter, the default, is best overall (1.31% on the 46 hooked games, against All's 1.50% and
+    On's 3.29%; 0.97% on 93 other games) and on Narcissu too (63 errors in 4,959 characters, All 137, On 677), the game
+    #333 was opened for. On 17 of the 46 and 23 of the 93 games one of Rubi's finder's values read better (the best of
+    four, picked on the same pages): those games get their own. The default is unchanged.
+  - **Where:** `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, one `TITLEID = spotter|off|on|junk|all` line a game in
+    `games.ini`'s form, read by `games.ini`'s reader. `games.ini` is unchanged: earlier builds read it strictly, and a
+    line they do not know makes it unreadable to them (its backup's choices, or every game OFF).
+  - **When:** the Shell reads it with the game's ON/OFF as the game starts or resumes, and the value replaces
+    `config.ini`'s two keys in the user's jobs (with Spotter, `ocr_line_fix` stays `config.ini`'s, for its fallback);
+    `same_pipeline` compares them, and the self-test reads as before. A PSP game without its own follows the shared
+    PSP row (Adrenaline / PSP games without a setting of their own), as its ON/OFF does.
+  - **No built-in table:** a game without its own uses `config.ini`'s.
+  - **log.txt:** the `game … started` line ends with what the game's jobs use (`ocr_finder grad, ocr_line_fix on`),
+    and no longer names the dictionary (Local dictionaries in every build since the online ones went);
+    `tools/analyse_selftest.py` reads both forms. The debug build no longer logs the title's app parameters 9 and 10
+    (answered: 115 starts in test.1–test.4, parameter 9 always refused).
+  - **Memory:** the normal Shell takes 40 B of code and 144 B of data, the debug Shell 48 B and 64 B; no module takes
+    a page more, and nothing is allocated ([memory ledger](docs/memory-ledger.md)).
+  - Not run on a console yet.
+
+- **A Look up tab in the Rubi app** (#313; [guide](docs/guide.md#look-up)): look a word up and mine it later, beside
+  the suspended game. **Search**: Triangle opens the Vita keyboard (every language's keyboard, 128 characters) for a
+  word or a sentence, looked up with the overlay's own lookup and dictionaries (`local_dictionaries`, their order and
+  ranking, the other dictionaries' entries below the word); Left/Right move by the matched word, the stick a
+  character, a tap to a character. **Earlier lines**: a game's last 200 lines in `history.csv`, newest first, the
+  most recent game's first (Square: the next game), read from the file's end a part of it each frame; Enter opens a
+  line with the same word cursor. **Enter saves a card**, as the overlay's Enter does but **without a picture**, with
+  Card mining ON or OFF: its sentence the line (or the typed text when it is longer than the word), its game, title ID
+  and platform the line's, MiscInfo the line's date; **Export cards** exports it with the others
+  ([anki.md](docs/anki.md#cards-from-the-look-up-page)).
+  - **The same lookup as the overlay's:** on the 50 real VOCR lines of `host/fixtures/word_lookup`, walked word by word,
+    the app and the overlay's own pipeline (over the Shell's memory layout) reach the same cursors and show the same
+    entry at each: 2,917 lookups in three settings [measured on the host: `host/tests/test_lookup_parity.c`].
+  - **Cards:** the app's writer keeps the overlay's rules (a temporary file, flushed, renamed, the card synced; the ID
+    the record's SHA-256); a stop at each of its writes leaves the card whole or not there
+    (`host/tests/test_anki_restart.py`), and Anki imports its cards (`host/tests/test_apkg.py`).
+  - **No setting:** nothing that users see today changes; the page is new. The tab bar lays itself out from its
+    labels (six tabs).
+  - **Memory:** the app's own, static: about 420 KiB (a 64 KiB lookup block as the Shell's, a 128 KiB card arena, a
+    64 KiB history window; [vita-memory.md](docs/vita-memory.md#54-the-rubi-app-a-system-application)). The glyph
+    atlas of the app's font holds about 500 characters (an estimate) and drops new ones once full; the app now loads
+    the font again, with an empty atlas, before it would be full. The Shell, the game worker and the kernel are
+    byte-identical. Not run on a console yet.
+- **Duplicates at export** (#314, roadmap 4 stage A; [anki.md](docs/anki.md#duplicates)). Mining a word again from
+  another line made another card, and nothing said so. The export now finds a card **whose word an earlier card
+  has**, queued or exported before: the word is the record's dictionary form and reading (every inflection is one
+  word; katakana count as hiragana, `・` is left out). The Rubi app's new **Duplicates** row (Anki page) says what
+  it does: **Tag** (the default) gives the note Anki's own `duplicate` tag, so no card is lost and Anki's browser
+  finds them (`tag:duplicate`); **Skip** leaves the card in the queue, checked again at each export; **Keep**
+  exports every card as before. The page says **Export cards (12 queued, 3 already mined)**. The choice is in the
+  Rubi app's own settings file, `ux0:data/VitaJPOverlay/app.ini` (#381; the overlay never reads it), and each
+  card's word is cached in `anki_words.bin` (20 B a card) so that a count reads only new records. The overlay,
+  the game worker and the kernel are unchanged (the same module rows). Anki 26.09.3 imports the tag
+  (`test_apkg.py`). Not run on a console yet.
+- **Known words** (#314, stage C; [anki.md](docs/anki.md#known-words)). `tools/known_words.py` writes
+  `known_words.txt` from an Anki collection (or a `.colpkg`/`.apkg`, or Anki's Notes in Plain Text export): each
+  note's Expression and ExpressionReading by default. On the Rubi app's Anki page, **Known words: Import** reads it
+  (one word a line, an optional TAB and reading; up to 65,536 words) into `anki_known.bin`, and the export tags the
+  cards of those words `known`: by word and reading, or for a line without a reading every card of that spelling.
+  Checked with Anki 26.09.3's own collection and plain-text export (`test_apkg.py`). The overlay is unchanged: the
+  popup's mark for a word you have (#314's stage B) does not fit the Shell's pages, so it is not built. Not run on a
+  console yet.
+- **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
+  △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
+  games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the
+  **Last 14 days** as bars; **This year** as a heatmap of characters a day; **All games**; and a row per game, the one
+  read last first, with today, in all, its cards mined and cards per 10,000 characters, and the last day read.
+  **Daily goal**: Off (the default), 2,000 to 50,000 characters or 15 to 120 minutes a day, in the app's own
+  `app.ini`; a day at the goal counts for the streak, or with no goal any day with reading. No sessions. The count
+  runs on its own thread and is kept in `stats_cache.bin`, so the next one reads only what was added; a replaced or
+  shorter `history.csv`, another time zone or `reading_time`, or a damaged cache counts it again. 20 MB of history
+  took 40 ms on a computer [measured on the host]; the Vita's time is unmeasured. The tab bar lays itself out from its
+  labels for the fifth tab. Only the app changes: the Shell, the game worker, the kernel and the RCO are byte-identical
+  to main's in both builds. Not run on a console yet.
+- A Cards page in the Rubi app (#315): **Cards: N queued** on the Anki page lists the queued cards newest first,
+  with their word, reading, game and date, a camera for a card with a picture and a mark for a word on two cards;
+  Left/Right show the exported cards instead, read only. A card opens with its sentence (the word marked), the first
+  lines of its definition and its picture. A queued card can be deleted (into `anki_queue/deleted/`, which Triangle
+  empties), its sentence fixed with the keyboard (the word found again in the new text) or its picture dropped.
+  Before, a card saved by mistake or with an OCR mistake reached Anki as it was, unless its files were deleted in
+  VitaShell.
+  - **Safe at every step:** a changed card is a new card (its ID is its record's checksum); an intent file
+    (`deleted/<old>.fix`) is committed first, the new picture and record next, the old card retired last. Before
+    the page lists the queue and before an export, a stop's intent is finished or undone, so the export has the old
+    card or the new one, never both and never neither; a record never names a picture that is not there. Tested on
+    the host with a failure at each storage call and a stop between each two steps in a fresh process, and an
+    edited card imported by Anki 26.09.3 with its new sentence and its picture.
+  - **Memory, in the app only** (the Shell, the game worker and the kernel are unchanged): 307,364 B of static
+    memory (the list's 2,000-row table, two card views, the keyboard's buffers) and a picture texture of at most
+    442,368 B while a card is open; libjpeg's decoder adds about 290 KB of code [measured: the ELF] and at most
+    32,592 B of heap for a screenshot [measured, host].
+  - Not run on a console yet.
+
 - **A text box suggested on first use** (#358; API 52; [first-box.md](docs/first-box.md)). A game with no box of its
   own is read on its whole screen, picture and buttons included, which first-time users took for recognition that did
   not work. Now the first time the overlay is open over such a game's text, it opens the region mode with a box drawn
@@ -28,6 +128,22 @@ been reported.
   writes `region = full` in `region.ini`, the line for every game without its own. Not run on a console yet.
   The worker takes 1,040 B more of its pages and the normal Shell 24 B of code and 88 B of data; no module takes a
   page more, and nothing is allocated ([memory ledger](docs/memory-ledger.md)).
+- **The text lines are found by a small network: vita-vn-ocr's text spotter** (`ocr_finder = spotter`, the new
+  default; `grad` is Rubi's finder as before, which also stays the spotter's fallback). Trained on the owner's hooked
+  PS Vita and PSP pages and on MeikiOCR's line boxes of other games' screenshots (vita-vn-ocr #149, textspot8), it finds
+  the lines inside your region, and the recognizer reads them as before. On other games' screenshots (host, measured
+  through Rubi's path) it takes the dialogue error from Rubi's finder's 2.38% to 1.03% (0.99% with VOCR6), and on a
+  fresh set of 41 games from 4.29% to 1.86%; on the hooked test game and on CLANNAD's dialogue it is level with Rubi's
+  finder (0.97% against 0.98% and 0.95%), and with CLANNAD's speaker names it reads 1.17% against 2.83%. It no longer
+  merges the lines of a translucent box over a busy picture,
+  and an animated icon next to the text costs it less; it still misreads side-by-side choice buttons. Its weights
+  (52,176 B) are a file beside the models, read once into the game's memory and kept; when they are missing or there
+  is no memory for them, and for a region it sees as vertical text under `ocr_vertical = auto`, the job reads with
+  Rubi's finder. Memory (exact bytes, [memory ledger](docs/memory-ledger.md#the-spotter-finder-api-54)): its block,
+  57,344 B, and its part of the job's scratch, only in jobs that use it; its code, 16 KiB more of the OCR
+  worker's pages in every game that is ON (208,896 B, 217,088 B in the debug build). Its time is
+  estimated at 82 ms for a 900×150 text box and 105 ms for 900×200 at 333 MHz (vita-vn-ocr's cycle model; nothing of
+  it has run on a console) ([the spotter finder](docs/vita-vn-ocr.md#the-spotter-finder-api-54); API 54).
 - The open overlay says why it is still recognizing (#358). When the text changed under every read of two jobs in a
   row (an animated icon, a moving picture or text still typing in the region), its next try says "Recognizing…
   Something in the region keeps moving (an animated icon? text still typing?). If a region around just the text
@@ -98,8 +214,9 @@ been reported.
   (Luna's filter joined the lines). New clean-ups: the speaker on a line of its own in 果つることなき未来ヨリ and ISLAND,
   DIABOLIK LOVERS' one-cell `!?` and `!!` (written ゞ and ゝ in the script), Aozora ruby (`｜神奈《かんな》`: the base),
   スキとスキとでサンカク恋愛's `/ruby:base&reading/` and layout codes, and 三国恋戦記's speaker without an end code.
-  The entries are data in the game worker: the normal build keeps its pages, the debug build's worker takes one 4 KiB
-  page more in each game that is ON (the 20 titles' strings did not fit its last code page;
+  The entries are data in the game worker: the normal build keeps its pages (the filters' index and some of Rubi's
+  filters are read-only data again, to make room in its last data page), the debug build's worker takes one 4 KiB
+  page more in each game that is ON (its last code page could not hold them;
   [memory ledger](docs/memory-ledger.md#the-hook-farms-20-verified-entries-no-api-change)).
   In 忍び、恋うつつ, 薄桜鬼 真改 and BROTHERS CONFLICT the game sets a page one line at a time, so the popup shows the
   page's last line. **Proven in the Vita3K emulator only, not run on a console**: 671 pages an AI reviewer approved
@@ -108,6 +225,30 @@ been reported.
   ([details](docs/native-hooks.md#farm-checks)).
 
 ### Fixed
+
+- Lookups: what the Yomitan check left (#321; [the report](reports/yomitan-check.md#321-what-remained)). Measured on
+  its 64,579 taps of 5,000 hooked lines: 753 shown entries change, SudachiPy calls 661 better and none worse; on
+  330,517 taps of 27,970 lines of the same games, 3,962 change, 3,494 better and 3 worse. Host only: not run on a
+  console.
+  - **A particle before a katakana word** is the particle: のマンション showed 飲む (`-ん`), にエントリー 煮える,
+    とセンパイ 渡船, はデート 派手 (457 taps). Not before ァ, ッ or ー (はァ, へッ).
+  - **A particle before a form of する** is the particle: 気がした showed 賀する, もせず 模する, 目にした the grammar
+    entry にす, はしない 馳す, 気のせい のす (198 taps). An entry spelled as the whole span stays (がする, もしかして).
+  - **Ranks of another word** are no longer shown: だと showed ダト's #73,969, にす ニス's, イル いる's #37 (223 taps; a
+    spelling-only Jiten row that matched only after kana normalisation, as Yomitan shows none).
+  - **わたし shows 私 first**, the character named わたし below it: a character's name spelled as the text still comes
+    first (なぎさ, いのり, ミユキ in their games), but not before one of the 1,023 most frequent words. `config.ini`
+    `names_first = on` keeps Rubi 0.9.8's order, `off` puts every word first ([the measurement](docs/local-dictionaries.md#names-and-words)).
+  - 行っとく shows 行く, not 行う (`-おく` through `-て`, as Yomitan: 言っとく says `-te → -toku`, as 言っておく);
+    してんの and 言ってんだ say `-te → progressive or perfect`, not `-n`, the negative; かわされた shows 交わす, not 買う
+    (Yomichan's one-step causative passive counts two steps); 手をつかんで shows 手, not 手をつく (`-ん`'s かん left
+    out).
+  - Kept as they are, and why: [what remains](reports/yomitan-check.md#what-remains) (pitch accents, reading ties,
+    the prohibitive な, names' ranks).
+  - #321's audit: with Dictionaries shown 1, a particle before a form of する is the particle too, as with 2 (a
+    one-step match of the first dictionary kept the whole span before; not seen on the 27,970 lines). With 1, the
+    first entry can still differ from 2 for `names_first = off` (8 of 759,994 character positions; [names and
+    words](docs/local-dictionaries.md#names-and-words)). Host only.
 
 - **Native hooks: an active string-copy stream no longer loses its slot to a new caller in a race** (#366). When all
   12 CALL streams are held by other callers, a new caller takes the one written least recently. Two races gave it the
@@ -119,15 +260,22 @@ been reported.
   and checks its choice under the stream's lock: a stream written since is no longer the oldest, and the new caller's
   copy is dropped, as for a busy stream. The stamps and lengths, which the search and the worker's hook watch read
   without the lock, are now written atomically. Their plain writes against those atomic reads were a data race in C11
-  terms: ThreadSanitizer found 14 in 5 runs of the race test on `main` and none now (clang 18, the fleet box). A
-  stream that has had text also no longer reads as empty to the watch while a new caller takes it. Tests: the issue's
-  state; a suite that runs each interleaving at the search's own points on every run
-  (`host/tests/test_hook_stream_seams.c`, also on the ARM lane), 5 of whose 10 tests fail on `main` with the two
-  seams added; and a check of the watch's reads in the race test, which `main` failed in 151, 187 and 200 runs of
-  200 on two CPUs, four CPUs and unpinned (none on one CPU). The fix passed 3,900 runs of the whole suite (one to four
-  CPUs, unpinned, 8 copies at once, beside busy loops, gcc and clang). Changing `core/hook_stream.c` changes the hook
-  definition SHA-256, so consoles learn each game's hooks again; seven PRs since 0.9.8 have changed it already, so the
-  next release does that anyway. Not run on a console.
+  terms: ThreadSanitizer found 13-14 in 5 runs of the race test on `main` (two measurements) and none now (clang 18,
+  the fleet box). A stream that has had text also no longer reads as empty to the watch while a new caller takes it.
+  Tests: the issue's state; a suite that runs each interleaving at the search's own points on every run
+  (`host/tests/test_hook_stream_seams.c`, also on the ARM lane), 7 of whose 13 tests fail on `main` with its three
+  seams added; and a check of the watch's reads in the race test, which `main` failed in most runs on two or more CPUs
+  (107-200 of 200, two measurements) and in none on one. The fix passed 3,900 runs of the whole suite (one to four
+  CPUs, unpinned, 8 copies at once, beside busy loops, gcc and clang). #366's audit added: the stamp is published last
+  with release order and the search reads it with acquire order, so a search that sees a stream's new stamp also sees
+  which caller took it; on a CPU that reorders memory accesses, such as the A9, a caller with two threads could
+  otherwise take two slots (reasoned: x86 cannot show it, and none was seen in 60 runs with two to four threads a
+  caller), and seam tests for a caller's second slot and for the watch's reads while a slot changes hands. A new
+  caller still waits while the least recently written stream is busy and every other caller keeps the CPUs busy (up to
+  0.48 s on the host's hammer test, 0.45 s before #366); passing a busy stream over ended that wait but gave callers
+  with two threads two slots, so it was not taken ([details](docs/native-hooks.md)). Changing `core/hook_stream.c`
+  changes the hook definition SHA-256, so consoles learn each game's hooks again; seven PRs since 0.9.8 have changed
+  it already, so the next release does that anyway. Not run on a console.
 - **A game short of memory reads with the next smaller model** (#324). The console reports a game's free memory in
   whole MiB (あおかな, `PCSG00700`, on a PCH-2000: each of 78 samples was 1, 2, 3 or 4 MiB), so a job that passed its
   memory check with less than 1 MiB to spare saw a whole MiB less once it had taken its own blocks: its model's
@@ -139,7 +287,71 @@ been reported.
   again for each smaller model); on the host, with text typing out for 1.9 s at 60 Hz, the job took 2.27 s against
   Small alone's 2.05 s, and now 2.12 s. Its captures and finder time count every try, and the debug build's step log
   keeps the try that read (a full log of 20 steps had dropped its last steps, such as the text's normalisation; the
-  refused try's blocks are no longer listed). No module takes a page more ([memory ledger](docs/memory-ledger.md)).
+  refused try's blocks are no longer listed, while a block it gave back for good keeps its free step; after auto's
+  vertical-text tries the job needs 21 steps, and the normalisation's is still the one left out). No module takes a
+  page more ([memory ledger](docs/memory-ledger.md)).
+- **SC3 text, #368's audit.** In STEINS;GATE 比翼恋理のだーりん, ROBOTICS;NOTES ELITE and CHAOS;CHILD:
+  - A charset read that timed out (the memory card's file worker stalled for 2 s) is tried again at a later job, as
+    an open is, three tries in all. Before, one such stall at the first job turned the game's hook off for the
+    session, and OCR read it.
+  - A charset close that fails is now the job's error. Before, the job failed with no cause given (I/O 0), so the
+    Shell took the model file for missing or damaged and used a smaller model until the game next started or resumed.
+    Now that happens for that one job only, and the remembered hook (the hook cache) is read at the next job, where
+    before it was not read for the rest of the session.
+  - A charset block the worker could not give back is freed before it takes another (nearly unreachable).
+  - The app's Install page names the data files it copies and where they go: "the data files (… MB: the OCR models,
+    the names dictionary and the text hooks' charsets) to ux0:data/VitaJPOverlay", and for a repair their folder, for
+    example "Copy 1 data file to ux0:data/VitaJPOverlay/hooks". It used to say "the OCR models … to
+    ux0:data/VitaJPOverlay/ocr" for all of them.
+
+  Host-tested, not run on a console. No module takes a page more ([memory ledger](docs/memory-ledger.md)).
+- **Vertical text: ON no longer stays on "Recognizing…" on a horizontal text box** (API 53,
+  [#379](https://github.com/bee-san/Rubi_for_vita/issues/379); a user's PS Vita Slim, Rubi 0.9.8, 遙かなる時空の中で
+  Ultimate, `PCSG01157`). ON read every region as columns: on a horizontal box the column finder found up to 16 one-
+  or two-character columns, and the job read the box's rows once for each of them, a strip a frame, between their
+  recognitions. An animated icon in the box that rested for less than all that tore every try, which the Shell drops
+  quietly and tries again, so the text never came; a job of rows reads its lines once. And each try published the
+  waiting overlay again, which redrew it at every try: the flicker at its bottom. Now:
+  - **ON prefers columns.** It reads the region's rows first, as Automatic does, and the columns unless the rows are
+    plainly lines of horizontal text (1 to 4 wide rows, one under another): then it is OFF's job exactly. Where the vertical model cannot be read or has no room, ON reads the rows too, as
+    Automatic does (it failed before), and a size whose model fails is left out with ON as with the others. On the
+    host the rule read none of 3,715 regions of vertical text as rows (Yunohana SpRING!'s 3,353: tight boxes, boxes with
+    the name tag, boxes drawn once and whole screens; vita-vn-ocr #103's 362 development regions; through the job, the
+    same text as before on every one), and read 94.6 % of 50,945 hooked horizontal dialogue boxes of 44
+    titles as rows (15.6 % of whole screens; [on's rule](docs/vita-vn-ocr.md#ons-rule-api-53-379)). The rule was
+    chosen on these regions: nothing held out checks it. A box with a speaker's name or an icon beside its lines is
+    still read as columns: draw it around the lines.
+  - **A job of columns reads its columns' rows once**, the rectangle around them (Automatic's columns too), before it
+    recognizes them: the same text as column by column, from fewer strips (4 columns over 3 strips: 18 → 11 in the
+    host test).
+  - **A retry no longer redraws the waiting overlay**: the view is published again only when what it shows changes
+    (the wait hint, the text).
+
+  On the host's bench (`vjo-vertical-on-bench`, new: the user's kind of box with an icon that turns for 15 frames and
+  rests for 15 or 25, every strip read the game's next frame, the Shell's retries; 12 presses each): 0.9.8's ON showed
+  the text in 0 of 12 at 30 frames a second and in 7 and 2 of 12 at 60; ON now in 12 of 12 each, at OFF's times. On a
+  box of vertical text ON reads the columns in 12 of 12, before and after. The Rubi app's ON line says "Columns, right
+  to left, unless the text is in rows." Not run on a console.
+
+- **Native hooks, #316's audit.** ALIA's CARNIVAL! サクラメント (`PCSG00628`): its script's `!X` (the character X)
+  is now read before any other code, as the game reads it, so a line with a Latin word in lowercase, a bracket or
+  a `|` shows it (`!S!k!y` gave `S！`, now `Sky`), and `u9829.` is ♥ (other `u<n>.` code points are still dropped:
+  the farm's survey of the script names only that one). None of the farm's 1,208 pages of the game has either, so
+  their text is unchanged. CP932's byte 0xA0 is the blank cell of the two games that draw one (忠臣蔵46+1 V,
+  ALIA's CARNIVAL!) and, as in 0.9.7, nothing in any other game's text: 0.9.8 decoded it everywhere and could
+  change a line with that byte through Luna's filters or a string copy (none of the farm's other games has one).
+  真 流行り神 (`PCSG00380`), whose hook reads a fixed address beside the game's code, is hooked only when the
+  game's code is at 0x81000000, where the farm proved it, and refused as `relocated` otherwise (OCR then reads
+  the game). As every change to the hook code does, this renews the hook definitions' revision, so a string-copy
+  source Rubi had learned for a game is confirmed with OCR once more. Not run on a console
+  ([CP932's 0xA0](docs/native-hooks.md#rubis-filters)).
+- Building and testing (#316's audit F3, N5): the engine test runs each verified entry in the game as the farm
+  recorded its hook (the farm's module NID, code bytes, register and padding, in `host/tests/fixtures/hook_farm.inc`
+  from `tools/hook_farm.py fixtures`), not in one made from Rubi's own entry, so a wrong NID, byte, register,
+  padding or mode fails it (the audit's 4 surviving mutations, and 3 more, all fail now); `tools/hook_farm.py
+  fixtures` writes the committed file byte for byte again (it had added the SC3 games' excerpts, which
+  `tools/sc3_charset.py` writes), and its own tests catch a checker without `vjo_hook_clean`, a comparison that
+  keeps the white space at a text's ends, and a page's text given to another hit than its last.
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
   arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
   read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
@@ -192,7 +404,8 @@ been reported.
 - **Normal and Large are VOCR6** (vita-vn-ocr #125, pre-release v0.4.0-vocr6.1): VOCR5-N's and VOCR5-L's shapes,
   fine-tuned again on the owner's hooked PS Vita and PSP games, replace VOCR5-N and VOCR5-L as the Normal (the default)
   and Large model sizes (`VOCR6_N_w8_2l.vocr`, 1,187,616 B; `VOCR6_L_w8_2l.vocr`, 2,475,680 B). Small stays VOCR5-S:
-  VOCR6's Small read the hooked games better but other games' lines a little worse. Measured on a computer through
+  VOCR6's Small read the hooked games better but other games a little worse (VOCR5's development score, +0.070
+  points, resolved). Measured on a computer through
   Rubi's shipped path (dialogue CER, 95 % intervals):
   - the hooked games' held-out pages: Normal 1.008 → 0.936 % (−0.072 points, −0.111 to −0.038), Large 0.990 → 0.917 %
     (−0.073, −0.118 to −0.036), three seeds each;
@@ -348,9 +561,12 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   record of character cells, a new way to read a hook's text). Proven in the Vita3K emulator only: Rubi's
   text equals the farm's on all 1,208 farm pages of the first and on 1,060 of 1,092 of the second (the other
   32 differ by the player's default name 北條紗希 only, which the farm's text left out)
-  ([farm checks](docs/native-hooks.md#farm-checks)).
-- `tools/hook_farm.py` checks every verified entry against the farm's recorded hook bytes and texts; the host
-  tests run 50 short excerpts of them through the worker's own hook path.
+  ([farm checks](docs/native-hooks.md#farm-checks)). Unlike the other entries', their games' code was not there to
+  check for a jump from elsewhere into the hook's patched bytes (the farm's bucket has no dump of it): if one is
+  taken, the game crashes.
+- `tools/hook_farm.py` checks the verified entries whose games the farm's bucket has pages for (14 of the 30)
+  against the farm's recorded hook bytes and texts; the host tests run 50 short excerpts of them through the
+  worker's own hook path.
 
 ### Changed
 
@@ -388,8 +604,9 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   the gated blobs with `ocr_head_gate = on` and these settings, was measured after this release (vita-vn-ocr #151, on
   a computer): VOCR5-N as this release runs it keeps the counter in 2,940 of the 3,969 crops against 3,015 with the
   gate off (75 lost, none gained: crops cut 2-10 px into the line's first character, where the gate skips the edge
-  frames the counter re-decode needs, so nothing is read again), and real development and held-out lines move by
-  +0.004 to +0.012 points ([details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)). The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
+  frames the counter re-decode needs, so nothing is read again), and on real development and held-out lines its
+  objective (half the held-out pages' CER, half the development score) moves by +0.004 to +0.012 points (Large's
+  resolved worse, and Normal's held-out pages alone, +0.007 points; [details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)). The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
   replace (982,320 and 3,603,552 B), so the game's LM block shrinks by 180,224 B at most. An update leaves
   ctclm.2's `vocr_lm_o3_1000k.vlm` and `vocr_lm_o3_4000k.vlm` (about 4.8 MB) in `ux0:data/VitaJPOverlay/ocr/`:
   nothing reads them any more, so they may be deleted

@@ -25,7 +25,8 @@ is one pinned recognizer, and this package's come from two generations:
   VOCR5-L's shapes fine-tuned again on the owner's hooked PS Vita and PSP games, published as the v0.4.0-vocr6.1
   pre-release, each with #122's two-level head and no head gate ([Head gate and two-level
   head](#head-gate-and-two-level-head-api-42), [Models](#models)). VOCR6's Small was not adopted: it read the hooked
-  games better but other games' lines a little worse, so Small keeps VOCR5-S.
+  games better but other games a little worse (VOCR5's development score, +0.070 [+0.004, +0.138] points),
+  so Small keeps VOCR5-S.
 
 A later generation's blobs replace them
 through the pins, with no change
@@ -658,8 +659,10 @@ These LM figures, and the counter set's below, were measured with VOCR5 v0.3.0's
 combination 0.9.8 ran by default, VOCR5's gated blobs with `ocr_head_gate = on` (API 42,
 [below](#head-gate-and-two-level-head-api-42)) and the new 1 MB settings, was measured since (vita-vn-ocr's
 vocr6-final-lm, #151, on the host; [VOCR6's settings](#vocr6s-settings-vita-vn-ocr-151)): on real development and
-hval lines it moved the scores by +0.004 to +0.012 points (Large's alone resolved), and on #109's counter set it lost
-counters ([Counters](#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109), below). Larger is not always better here: the 2 MB tier is ctclm.2's at its old settings, and on the hooked titles'
+hval lines it moved vocr6-final-lm's objective (half the hval pages' CER, half the development score) by +0.004 to
++0.012 points (Small +0.008 [−0.014, +0.033] and Normal +0.004 [−0.003, +0.012] with their cascades; Large +0.012
+[+0.001, +0.024], the one resolved worse); Normal's hval pages alone were resolved worse too, +0.007 [+0.000, +0.015]
+(`reports.gateon_vocr5_1000k`). On #109's counter set it lost counters ([Counters](#counters-a-numeral-or-a--the-line-lost-vita-vn-ocr-109), below). Larger is not always better here: the 2 MB tier is ctclm.2's at its old settings, and on the hooked titles'
 pages it reads worse than the new 1 MB default (vita-vn-ocr: 3.96 % against 3.39 %).
 
 **Counters.** On #109's synthetic counter set ([counters](https://github.com/bee-san/vita-vn-ocr/blob/main/docs/counters.md):
@@ -1074,7 +1077,7 @@ A job it stopped logs `find` with arg 0 and no `recognize` step. A job whose fin
 ## Vertical text (vita-vn-ocr #99)
 
 ```ini
-ocr_vertical = auto   ; on: always read columns; off: always rows (Rubi 0.9.7 and older)
+ocr_vertical = auto   ; on: columns, but rows where they are lines of text; off: always rows (Rubi 0.9.7 and older)
 ```
 
 **What it reads.** Japanese set in columns, read right to left: a vertical dialogue box or NVL page (Yunohana
@@ -1086,8 +1089,12 @@ OCR & lookup page has the choice (**Vertical text**: OFF, Automatic, ON); it app
   vertical text (below), nothing is read from them and the same job reads the region's columns instead, as `on`
   does. Elsewhere it is `off`'s job, bit for bit; with `ocr_line_fix` on (API 50), in a region at least as tall as
   wide, it reads the same text after finding the rows twice, first with the frozen finder for the check.
-- **on**: every job of every game reads columns. Horizontal text inside the region is then read as columns of one
-  character each: turn it back for horizontal games.
+- **on** (since API 53, [#379](https://github.com/bee-san/Rubi_for_vita/issues/379)): columns, preferred. A job of rows
+  whose rows are checked first, as auto's are, but the other way round: where they look like lines of horizontal text
+  ([on's rule](#ons-rule-api-53-379), below) they are read, `off`'s job exactly; everywhere else the region's columns
+  are read, as auto reads them where its rule fires. Where the vertical model cannot be read or has no room, the rows
+  are read too. Before API 53 every job read columns: horizontal text came out as columns of one character each, and
+  in Rubi 0.9.8 a press could stay on "Recognizing…" for good ([below](#ons-rule-api-53-379)).
 - **off**: every job reads rows, as Rubi did before.
 
 Draw the text box (□) around the vertical text: the check and the columns are the region's. On a whole screen the
@@ -1105,8 +1112,11 @@ draft #223's job, on today's main):
   `VOCR_COLUMNS_NO_DARK`: the finder reads no column's rows for its dark flag (a column spans every strip of the
   region), and the job computes the same flag (`vocr_line_dark`) on the pixels it fetches for the column. The finder's
   arena is the larger of the two finders': 83,619 B at 960×544 (GRAD's 83,323 B), under the model's 124,832 B.
-- **Each column is a line.** It is fetched as a line is (from the strip, or, taller than a strip, as most columns
-  are, through the tall-line block), turned 90° anticlockwise (`vocr_column_rotate`, its top to the left) into the
+- **Each column is a line.** In a region taller than a strip (most of them) the columns are fetched together before any
+  is read (#379): the rectangle around them is read through the tall-line block as a tall line is, each row once and
+  checked as always, and each column is a part of it (a rectangle over `VJO_VOCR_COLUMNS_BATCH`, 516,096 B, or a block
+  refused: each column on its own, as before); in a region inside one strip, from the strip. Each is turned 90°
+  anticlockwise (`vocr_column_rotate`, its top to the left) into the
   job's rotation buffer, and from there it is the line: the blank-line check, the line cache, the helpers' copies,
   `vocr_run` (grey, inverted for dark text), the counter re-decode and the LM decoder take the turned strip. The
   column's box on the screen stays the line's geometry (`game vocr lines:` in the log), and its line flags carry
@@ -1148,14 +1158,89 @@ blocks (`alloc`, `free`), which keeps room in its 20 steps for the last try's ow
 was chosen on the hooked pages below, before it was checked on any other page; on the pages it was then
 checked on it was not changed.
 
+### On's rule (API 53, #379)
+
+**What went wrong** ([#379](https://github.com/bee-san/Rubi_for_vita/issues/379), a user's report: a PS Vita Slim,
+Rubi 0.9.8, 遙かなる時空の中で Ultimate, `PCSG01157`, whose dialogue is horizontal). With **Vertical text: ON** the
+overlay stayed on "Recognizing…", even with the text box drawn, and its lower part flickered; with Automatic the text
+was read. Two causes, both found on the host (nothing of this has run on a console):
+
+- **The columns' reads.** On's job read the region's columns, and on a horizontal box the column finder takes each
+  character, or two stacked, for a column: up to 16. Each was fetched on its own, a pass over its rows each, so the
+  job read the box's rows up to 16 times over after its checks, a strip a frame. Every row read is checked against its
+  first read ([text stability](text-stability.md)), and an animated icon in the box that rests for less than all those
+  reads tore every try, where a job of rows, reading its few lines once, finished in the rest. The Shell drops such a
+  job quietly and tries again (0.9.8 said nothing else; `main` says why after two: [#358](text-stability.md#why-the-overlay-waits-358)),
+  for ever. On the host (`vjo-vertical-on-bench`, `host/vertical_on_bench.c`: the job of `core/vocr_ocr.c` and the
+  Shell's tries on the user's kind of box, 900 × 160 px with two lines, each strip read the game's next frame, an icon
+  after the text that turns for 15 frames and then rests for 15 or 25; 12 presses each; built against main `68041a7`
+  for 0.9.8's on, whose job read the columns at once): at 30 frames a second off and auto showed the text in 12 of 12,
+  0.9.8's on in 0 of 12 within 20 s; at 60, in 7 and 2 of 12. Its reads also came between the columns' recognitions, a
+  column fetched, recognized, the next fetched, so the icon had the whole recognition to move in.
+- **The redraws.** Each try published the waiting view again (the text retired, the status set: two versions of it),
+  so the overlay drew itself all again at every try, for as long as the tries went on: the flicker (its look on the
+  console is not seen here).
+
+**What changed.** On reads rows first, by the rule below: on a horizontal box it is off's job, and the bench's box
+shows its text in 12 of 12 at 30 and 60 frames a second, at off's times, in each of its five icons (turning 15-30
+frames, resting 15-45). A job of columns reads its columns' rows once, the rectangle around them, before it recognizes
+any of them (`core/vocr_ocr.h` `VJO_VOCR_COLUMNS_BATCH`), for on and auto alike: the same pixels, readings and text as
+column by column (`host/tests/test_vocr_vertical.c`). On the bench's vertical box (`host/samples/vertical.jpg`'s four
+columns, 220 × 380 px, the icon under the last one) on reads the columns in 12 of 12 for every icon, before and after
+(auto reads that box's rows, which its rule does not take for columns: 9 and 10 of 12 with the quickest icon). And a try
+while the open overlay already waits with that status and no text publishes nothing (`shell/worker.c`
+`start_job_kind`): the view changes only when what it shows does (the wait hint once, the text).
+
+**The rule** (`core/vocr_ocr.c` `vjo_vocr_rows_horizontal`, on the rows auto's check takes: with `ocr_line_fix` on, in a
+region at least as tall as wide the frozen finder's, where a name tag beside the columns, joined to them by the fixes,
+made one wide row of 3 of 863 such boxes of vertical text): the rows are lines of horizontal text when there are 1 to 4
+of them, each at least 3 times as wide as tall and at most 96 px tall, each next to the one above it (at most twice the
+taller one's height between them) and over part of its span, and auto's rule does not take them for vertical text.
+Integer arithmetic on at most 4 boxes. Elsewhere on's job returns `VJO_E_VERTICAL`, as auto's does, and the worker
+reads the columns. A speaker's name or an icon in the box beside the lines makes a row too short for it: such a box is
+read as columns (a rule that allowed one such row, the first or the last, read 96.2 % of the boxes below as rows, not
+94.6 %, also with no region of vertical text, but took 200 B of the worker's code where this one takes 126 B, and the
+debug worker's last page had 200 B left with this one).
+
+On the regions above (`vjo-page-ocr --find-only --line-fix on`, whose `horizontal` is the job's check's verdict):
+
+| regions | read as rows |
+|---|---:|
+| Yunohana SpRING!: tight, with the name tag, drawn once, whole screens (863, 863, 764, 863) | 0, 0, 0, 0 |
+| vita-vn-ocr #103's development regions: tight, whole pages (181, 181) | 0, 0 |
+| the hooked corpus's 44 other titles: drawn boxes (50,945) | 48,178 (94.6 %; a title 69.6-100 %, median 95.5 %) |
+| the same titles: whole screens (50,706) | 7,903 (15.6 %) |
+| VNDB's PS Vita and PSP screenshots, whole screens (2,837) | 77 (2.7 %) |
+
+The rule's thresholds were tried on these same regions: no held-out set checks it. Through the job (`vertical_eval.py
+run`, `--vertical on --line-fix on`, this change against main `68041a7`): on gave main's text on every one of the 3,353
+Yunohana and 362 development regions, all read as columns; on 3,080 hooked horizontal regions (60 drawn boxes and 10
+whole screens a title) it read rows in 2,572 (2,493 of the 2,640 boxes), each of them off's job exactly (text, lines,
+CTC frames, strips), where main's on read columns in all of them.
+
+**What it costs.** On horizontal text read as rows, nothing: off's job. On vertical text, the check's passes come first,
+as auto's do, and the columns are read once: strips read (median / 90th percentile, main's on → this change's on) 23/31
+→ 36/46 on the tight boxes, 27/37 → 37/47 with the name tag, 27/33 → 45/47 drawn once, 64/93 → 60/67 on whole screens;
+on the development regions 14/25 → 18/35 and 39/75 → 58/65. On the box drawn once that is about 0.3 s more at 60 frames
+a second, 0.6 s at 30 (estimates: a strip a frame). The tall-line block (`VjoGameVocrLine`) holds the rectangle around
+the columns where it held one column (at most 57,344 B) before: 29 KB on the tight boxes (median; 51 KB at most), 34 KB
+drawn once (60 KB), 428 KB on a whole screen (516 KB), within its bound and budget, 516,096 B (`VJO_VOCR_LINE_MAX_BYTES`,
+`VJO_BUDGET_GAME_LINE`); 32 of 863 whole screens had a larger one and read column by column, as before.
+
+**Limits.** With on, a region of 5 or more lines (an NVL page, a menu), of lines far apart, or with a speaker's name or
+an icon beside its lines, is read as columns, as before: draw the box around the lines alone, or use Automatic. A short
+block of columns of one or two characters, wider than tall, could look like lines and be read as rows (none in the
+regions measured).
+
 **The request (API 47).** `VjoGameOcrRequest.speed` bits 28-29 (`VJO_GAME_OCR_S_VERTICAL`): 0 rows, 1 columns, 2
 auto; 3 is refused, as unknown bits are, by the kernel and by the game worker. The Shell sends the setting as it is
 in the user's jobs (`ocr_vertical`'s values are the field's: `core/config.h` `VJO_VERTICAL_*`); the self-test's
 stages and the Anki screenshot never carry it. A job of columns runs the vertical model alone, whatever its tiers,
 with a request by name's 4 MiB reserve (the Small size's) and no smaller model to step down to, and opens it as
 `VJO_GAME_OCR_OPEN_VERTICAL`, which the kernel's broker allows only for a request with a vertical mode, never by the
-name a request gives as its model or fallback. With `on`, a vertical model that fails to open fails the job; no size
-is left out of the game's ladder for it. API 27 (#213, reverted by #222) and draft #223's API 29 had this in the flags'
+name a request gives as its model or fallback. A vertical model that cannot be read or has no room has the job read
+the rows instead, with `on` as with `auto` since API 53 (before it, `on`'s job failed; no size is left out of the game's
+ladder for it either way). API 27 (#213, reverted by #222) and draft #223's API 29 had this in the flags'
 bit 15, which stays undefined.
 
 **The model.** VOCR5-V (`VOCR5_V_w8.vocr`, vita-vn-ocr #99, pre-release
@@ -1233,9 +1318,12 @@ every strip of the region and each strip read waits for the game's next frame. O
 px, its two places, 2-3 columns), `on`'s job read a median of 27 strips (33 at the 90th percentile) and recognized 73 CTC frames:
 about 0.45 s of capture at 60 fps (0.9 s at 30) and 0.16 s of recognition at 333 MHz. auto's reads the region twice
 more first, for the row finder: 49 strips (56), about 0.8 s at 60 fps. Horizontal dialogue boxes read 5 strips
-(median, the same with auto). On a whole screen of columns `on` read 64 strips. Draw the text box around the text.
+(median, the same with auto). On a whole screen of columns `on` read 64 strips. Since API 53 `on` checks the rows first
+too, and reads the columns once: 45 strips (47) on the box drawn once, 60 (66) on a whole screen ([on's
+rule](#ons-rule-api-53-379)). Draw the text box around the text.
 
-**Off and auto are today's job** (`host/tests/test_vocr_vertical.c`): jobs of rows on a 5-line region and on #194's
+**Off and auto are today's job** (`host/tests/test_vocr_vertical.c`; and on's, where its rows are lines of text, API 53):
+jobs of rows on a 5-line region and on #194's
 box, greedy, with the LM, with two helpers and refined, give the same text, greedy text, frames, line stats, workspace
 and strips as main `cbaa4e3` (before vertical text) gives, hash for hash, with auto's check and without it; the stage
 benchmark's recorded job checksums are unchanged too. `test_game_vocr.c` runs the worker's auto retry, its fallback
@@ -1247,7 +1335,9 @@ app's card.
 - Nothing has run on a console: the accuracy, the capture time and the memory above are the host's and estimates.
 - NOBORU's portrait mode, which turns the whole page on the screen (the Vita held upright), is not read: its columns
   reach the frame as rows of turned characters. Read in NOBORU's landscape view (fit to width).
-- With `on`, horizontal text in the region (a speaker's name box, a menu) is read as columns of one character.
+- With `on`, horizontal text the rule does not take for lines (5 lines or more, an NVL page or a menu; lines far apart)
+  is read as columns of one character, and so is a speaker's name box beside columns ([on's rule](#ons-rule-api-53-379)).
+  Before API 53 all horizontal text was.
 - Furigana beside a column is dropped when the finder takes it for a narrow column (under 55 % of the median
   column's width), and read with the column when it merges into it.
 - auto misses vertical text whose finder rows do not look like columns (9 % of the tight boxes above, 16 % of
@@ -1443,7 +1533,8 @@ for Small, VOCR6-N and VOCR6-L for Normal and Large) updated:
 7. The memory ledger (`include/vjo_ledger_budget.h`): the weights and cascade budgets (the largest blob,
    page-rounded), the workspace (`host/tests/test_ledger.c`'s largest job, page-rounded), the worker's pages if the
    runtime grows, and `VJO_LIMIT_GAME_JOB`, each raise justified ([memory-ledger.md](memory-ledger.md)). A pin set adds
-   no Shell code: the normal Shell keeps only a few hundred bytes of its last text page.
+   no Shell code: the normal Shell keeps 68 B of its last text page (90,044 of 90,112 B [measured: the normal Vita
+   builds of VOCR6's pin set, #373, and of main `1c9d048` before it]).
 8. The docs that name the files, their sizes or blocks: this file's size table, models and attribution, [OCR
    speed](ocr-speed.md), the guide's sizes and its names' list, [memory-ledger.md](memory-ledger.md),
    [vita-memory.md](vita-memory.md), [offline-testing.md](offline-testing.md),
@@ -1519,12 +1610,163 @@ games worse than `on` (v10972 38 → 70 errors, v6985 6 → 7), and it carries `
   reads 0.6-0.7% more CTC frames on hval and development (host, measured), because a line's parts stay together.
   What that costs on the console is an estimate; nothing of it has run on a console.
 - **The host tool.** `vjo-ocr --line-fix on|junk|all` reads a region as the worker does with the setting.
+- **A game's own line finder (#333).** One finder and one `ocr_line_fix` for every game make a player choose for the
+  game that reads worst. A game can have its own instead: the Rubi app's game page (hold Enter on the game:
+  [the guide](guide.md#a-games-own-page)) writes `TITLEID = spotter` (or `off`, `on`, `junk`, `all`: Rubi's finder,
+  `ocr_finder = grad`, with that `ocr_line_fix`) into `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, and the Shell reads it
+  with the game's ON/OFF as the game starts or resumes (`shell/game.c` `vjo_game_enabled`). From then on it replaces
+  `config.ini`'s two keys in `cfg` (`shell/worker.c` `apply_config`; with `spotter`, `ocr_line_fix` stays
+  `config.ini`'s, for its fallback), so it is what the user's jobs send (the bits above and API 54's), what
+  `same_pipeline` compares and what the game's start line in `log.txt` names
+  (`..., ocr_mode auto, ocr_finder grad, ocr_line_fix on`); the self-test's stages carry no bits, as before. A PSP game
+  without a row of its own takes the shared PSP row's (`NPXS10028`), as its ON/OFF does; a game started from inside
+  Adrenaline is `PSPEMUCFW`'s. A game with no row uses `config.ini`'s: there is no table of games in the build, since
+  a rule for one title cannot pass #129's rule across titles and would need measuring again with each model.
+  - **What the choice is worth, measured** (host; the per-page records of the runs behind #129 and #149, counted: the
+    spotter as #149 chose it, before its weights were trained again with the hooked pages; VOCR5-N, the 1 MB LM, the
+    cascade; regions with a margin). The spotter, the default, is best overall and on Narcissu (`ULJM05674`) too, whose
+    touching rows were `all`'s case: 63 errors in its 4,959 characters, against `all`'s 137 and `on`'s 677. Over the 46
+    hooked games: spotter 2,135 errors of 162,471 characters, `all` 2,445, `junk` 3,083, `on` 5,349, `off` 6,296; over
+    the 93 development games, 0.97% against `all`'s 1.50% and `on`'s 2.34%. On 17 of the 46 games and 23 of the 93 one
+    of Rubi's finder's four values made fewer errors than the spotter (the best of the four, picked on the same pages),
+    by up to 35 errors a game: those are the games a player gives their own line finder.
+  - Nothing of it has run on a console.
 
 **To test on console.**
 - A line with a full-width space after ！: one line with `on`, two parts with `off`.
 - A box whose frame or ornament touches the region, with `junk` and a margin.
 - A Narcissu page with `all`.
 - The job time with the setting on and off.
+- #333: Narcissu with its own **Line finder** set to All on its page in the Rubi app, then a Vita game left on Default,
+  in one session. `log.txt`'s start lines say `ocr_finder grad, ocr_line_fix all` and `ocr_finder spotter, ocr_line_fix
+  on`; Narcissu's touching rows come out as two lines (two crops in `game vocr lines:`), and the other game's text is
+  as before. Then Narcissu on Default (the spotter): the same rows as two lines too, as measured on the host. And the
+  job time on the same Narcissu page with All and with Default.
+
+## The spotter finder (API 54)
+
+```ini
+ocr_finder = spotter       ; spotter (the default): vita-vn-ocr's text spotter | grad: Rubi's line finder
+ocr_spotter_refine = off   ; on: the spotter's boxes refined (VOCR_REFINE_DEFAULT)
+```
+
+`ocr_finder = spotter` replaces the line finding inside the player's region, and only that, with vita-vn-ocr's text
+spotter: textspot8's pick (vita-vn-ocr #149, `docs/textspot8.md` there), a 52 KB network trained on the owner's
+hooked pages and on MeikiOCR's line boxes of 52,785 other screenshots, read with its "crop" decode (the region alone).
+Everything after the lines (the blank-line check, the cache, the recognizer, the counter re-decode, the LM, the
+cascade, the text rules) is the same job. `ocr_finder = grad` is the job's own finder path as before, untouched
+(`ocr_line_fix` and `ocr_refine_lines` apply to it); it is also what a job reads with whenever the spotter cannot run.
+
+**What it does, measured in vita-vn-ocr** (host numbers through Rubi's path, `eval/pagepath.py`: VOCR5-N W8I, the
+1 MB LM, the cascade, `core/textnorm.c` and the line filter, in the console view; whole-dialogue CER with 95%
+cluster-bootstrap intervals: VN clusters, titles on hval, pages for the test title and CLANNAD). The rule chose on the
+selected run (seed 3, trained on the hooked train pages); the shipped weights are that recipe retrained on the train,
+guard and hval pages, as the rule says, and were read once on the test sets:
+
+| regions | `grad` (`rubi,fix=1`, Rubi's finder) | `spotter` | difference |
+|---|---:|---:|---|
+| development: 92 games outside the hooked corpus (1,143), the selected run | 2.38% | **0.99%** | −1.39 [−3.96, +0.16] |
+| hval: other pages of 46 hooked titles (6,327), the selected run | 3.29% | **1.31%** | −1.98 [−5.38, −0.11] |
+| a fresh set of 41 games no spotter trained on (516), the selected run, read once | 4.29% | **1.86%** | −2.43 [−5.69, −0.30] |
+| development, the shipped weights | 2.38% | **1.03%** | −1.34 [−3.93, +0.21] |
+| development, the shipped weights, VOCR6-N → L as the recognizer | 2.41% | **0.99%** | −1.43 [−4.03, +0.15] |
+| the hooked test title Dance with Devils (2,055), the shipped weights, read once | 0.98% | **0.97%** | −0.01 [−0.26, +0.22] |
+| CLANNAD, each page's region: 2,052 dialogue lines, read once | **0.95%** | 0.97% | +0.02 [−0.21, +0.21] |
+| CLANNAD, each page's region: all 3,048 lines, speaker names included | 2.83% | **1.17%** | −1.67 [−2.00, −1.37] |
+
+- Its gain is largest where Rubi's finder merges the lines of a translucent box over a busy picture, or misses a
+  line; it still misreads side-by-side choice buttons, and a region it finds no line in reads nothing (a hidden text
+  box, a CG screen: 36 of 66 development text-free regions with the shipped weights, against GRAD + refine's 5 of
+  66).
+- An animated icon right after the text (a spinner, a page cursor) lies inside its line box less often than inside
+  Rubi's finder's (86% / 92% of 276 development regions with the shipped weights, trained / unseen icon shapes,
+  against 98% / 96%), and the text beside it reads with a third to a half of the errors (0.78% / 1.37% against 2.33%
+  / 2.98%; vita-vn-ocr `docs/textspot8.md`, "Spinners").
+- None of it has run on a console.
+
+**How it reads.**
+- **The region's rows.** `vocr_textspot6_find_rows` on the region's rows (`stream_row`): one pass from row 0, which
+  is the capture's first pass (the scene the Shell is told of), then each box's rows once, for its dark flag. The
+  region is read at the scale the blob's rule gives the frame it is cut from (`VOCR_TEXTSPOT6_SCALE2` for every
+  960×544 frame, Adrenaline's PSP picture included: halved, as the spotter was trained). Its horizontal boxes, in its
+  reading order (blocks top to bottom, each block's lines in order), with their dark flags, are the lines, at most 16
+  (more are cut and counted as `truncated`). Every line's rows are read again, each checked, when it is recognized,
+  so a screen that changes under a line starts the job over as with GRAD.
+- **Vertical text.** With `ocr_vertical = auto` (the default), a region whose boxes the spotter calls vertical more
+  often than horizontal goes to GRAD's rows, which auto's rule checks as without the spotter (the columns are then read
+  with the vertical model). Measured in vita-vn-ocr on the spotter's crop decode with the shipped weights: 0 of
+  1,677 horizontal development and confirmation regions, 160 of 181 vertical development regions (77 of 84 VN pages,
+  83 of 97 manga windows; the other 21 are read as the spotter's rows). With
+  `ocr_vertical = on`, which prefers columns ([on's rule](#ons-rule-api-53-379)), GRAD's rows decide unless most of
+  the spotter's boxes are horizontal (none, or as many vertical as horizontal ones, goes to on's check on GRAD's
+  rows); a job of columns reads without the spotter. This on rule was not measured on the spotter's boxes: it hands
+  every case that is not clearly horizontal to on's own measured check.
+- **What it leaves out.** GRAD's short-line probe (#194) and the text-presence gate are GRAD's: a job whose spotter
+  finds the lines runs neither and reads no gate weights. `ocr_spotter_refine = on` refines its boxes
+  (`VOCR_REFINE_DEFAULT`); off, the default, reads them as found (the measured better decode: the rule's
+  representatives of crop and crop+refine read development at 0.99% and 1.21%).
+- **When it cannot run, GRAD does.** No weights file, another size or SHA-256, weights the build refuses, no memory
+  for its block, no room for its scratch beside the tier, the LM and the cascade, or a refusal by the runtime: the
+  job finds its lines with GRAD, refines them by `ocr_refine_lines`, and its `spot` step says why. A job never fails
+  or steps down a model size for the spotter.
+- **Its weights** are a file beside the models, `ocr/textspot8_t64n8c16_w8.vtsp` (52,176 B, vita-vn-ocr pre-release
+  `v0.3.10-textspot8.1`), with its release's `ATTRIBUTION.md` as `ocr/SPOTTER-ATTRIBUTION.md`; the kernel's broker
+  opens it only for a request with the spotter's bit (`VJO_GAME_OCR_OPEN_SPOT`), at its pinned size. The worker
+  reads them into a block of their own (`VjoGameVocrSpot`, USER_RW, through the memory ledger's wrapper), checks the
+  SHA-256, parses them once (`vocr_textspot6_load`) and keeps both between jobs, as the LM is kept: each later job
+  opens the file (its size and time) and reads it again only when it changed. A job with `grad` gives the block back,
+  and so does every path that gives back the resident weights.
+- **The pins** are the `VJO_VOCR_SPOT_*` lines of `include/vjo_vocr_sizes.h`, the one place C, CMake and the tools
+  read: the tag, the name, the bytes and SHA-256, the attribution's bytes and SHA-256, the form (`trunk`: the build
+  leaves out every multi-scale path, `-DVOCR_TEXTSPOT6_NO_MS`) and `VJO_VOCR_SPOT_PUBLISHED`
+  (`tools/tests/test_spot_pins.py`).
+- **The runtime** is vita-vn-ocr's `runtime/vocr_textspot6.c` (and its headers), pinned in `cmake/VocrOCR.cmake` at
+  vita-vn-ocr main's merge of textspot6 (`VJO_VOCR_SPOT_COMMIT`, `4674e54`) until the recognizer's pin holds it
+  (see [Build](#build)). It is built into the game worker only, at the runtime's `-O2`; the Shell links no OCR
+  runtime.
+
+**Memory** (exact bytes; [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-54)):
+
+| item | bytes |
+|---|---|
+| its block: the weights and their parsed form (3,964 B on the Vita), page-rounded | 57,344 (at most 516,096, `VJO_BUDGET_GAME_SPOT`) |
+| its part of the job's scratch: its arena at the region's size, and its 1,684 B result, each 16-byte aligned | a 900×150 or 900×200 dialogue box: 235,119 B arena; a full 960×544 region: 244,607 B; at most 262,144 + 1,696 (`VJO_VOCR_SPOT_ARENA_MAX`) |
+
+The scratch is shared, one after the other, with GRAD's arena and the recognizer's, so a job grows only by what the
+spotter's part exceeds the larger of them. Only a job with the spotter takes either, and only beside what its memory
+check chose.
+
+**Time (estimates: vita-vn-ocr `eval/textspot6_a9_20261026.json`, its forced-scale rows for this shape, t64n8c16:
+regions read halved as Rubi reads them, dark flags on, the Vita compiler's `-O2` code priced by the Cortex-A9 cycle
+model; nothing of it has run on a console):** 82 / 62 ms for a 900×150 region, 105 / 79 ms for 900×200, 151 / 113 ms
+for 900×300 and 264 / 198 ms for a full 960×544 region, at 333 / 444 MHz on one core. It runs during the finder's
+pass, before the 444 MHz boost (which starts with the first recognized line), so read the 333 MHz figure for a game at
+the default clock. Rubi's finding (GRAD with the textbox recovery) took about 100 ms a text box on the console
+(v0.8.0-test.1's logs, measured).
+
+**Code**: in the game worker, with its use, 16,384 B more of text pages in each build (208,896 B of
+pages, 217,088 B in the debug build), carried by every game that is ON whichever finder it uses [measured: the
+module rows in [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-54)].
+
+**Logs.** `gstep job spot`, once per job (its last try) whose request asks for the spotter:
+- kind: 1 when it found the lines, 0 when GRAD did;
+- arg: the lines it gave the recognizer (before any refinement);
+- rc: 0, or why GRAD found them (`VJO_E_OCR_MODEL`: no file, another file, or one the build refuses; `VJO_E_OOM`: no
+  block, no room for its scratch; `VJO_E_VERTICAL`: it saw vertical text under `ocr_vertical = auto`; a runtime's
+  `VOCR_LINES_E_*`);
+- bytes: its part of the scratch, with bit 31 (`VJO_GLM_READ`) when the job read its weights from the card, bit 30
+  (`VJO_GLM_RESIDENT`) when they were kept from an earlier job;
+- sum: every box it returned (vertical ones too) | 0x8000 when it had more than it keeps (64), its weights' load in
+  ms from bit 16; us: its time (its pass, its decode and its boxes' dark flags).
+
+Its block's `alloc` and `free` steps name it `spot`. `tools/analyse_selftest.py --collect` counts its jobs, those it
+found the lines of, its lines and boxes, its time and its weights' reads.
+
+**To test on the console**: the same screens with `ocr_finder = spotter` and `grad` (CLANNAD's text box, a PSP game
+in Adrenaline, a translucent box over a busy picture, a choice menu, a text box with a spinner or page cursor), the
+`spot` step's kind 1 and its time against `find`'s, the weights read once per game session (`VJO_GLM_READ` once,
+then `VJO_GLM_RESIDENT`), a vertical page with `ocr_vertical = auto` (the step's rc `VJO_E_VERTICAL`, the columns
+read), and a game short of memory reading with GRAD (the step's rc `VJO_E_OOM`) without stepping down a model size.
 
 ## Models
 
@@ -1692,6 +1934,24 @@ cmake --build build/host && ctest --test-dir build/host --output-on-failure
 `vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`, `vocr_post.c`,
 `vocr_post.h`, `vocr_vertical.c`, `vocr_vertical.h`: vita-vn-ocr #103's column finder, the same file at the pin) against their
 SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. For the host tests that run
+`vocr_post.h`) against their
+SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. The text spotter's files
+(`vocr_textspot6.c`, `vocr_textspot6.h` and the headers they include from their own directory, `vocr_textspot.h`,
+`vocr_lines.h`, `vocr_lines_rows.h`: [the spotter finder](#the-spotter-finder-api-54)) are pinned at their own
+commit, `VJO_VOCR_SPOT_COMMIT` (`4674e54`, vita-vn-ocr main after #147, whose runtime differs from the recognizer's
+pin only by the spotter's own files; the five files are byte-identical at the earlier pin `a54a5b2`): they are taken from
+`-DVJO_VOCR_SPOT_SOURCE_DIR=/path/to/a/checkout` of that commit, else from `VJO_VOCR_SOURCE_DIR` when it holds them at
+their pins, else from `.refs/vita-vn-ocr-spot`, else CMake downloads those five files at that commit from the public
+repository into the build directory and checks each (`tools/fast_gate.sh` and CI pass a checkout):
+
+```sh
+git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr-spot
+git -C /path/to/vita-vn-ocr-spot checkout 4674e54b79ac87d9dbcc3e7ba2bfc670c9e3b52c  # main, textspot6 merged: the spotter
+# then add -DVJO_VOCR_SPOT_SOURCE_DIR=/path/to/vita-vn-ocr-spot to either configure above
+```
+
+`-DVJO_VOCR_SPOT_NO_MS` (default: on for a pinned trunk blob, `VJO_VOCR_SPOT_FORM "trunk"`) builds the spotter
+without its multi-scale networks. For the host tests that run
 the text-presence gate, `cmake/VocrGate.cmake` downloads its pinned weights from the release at configure time and
 checks them (or takes `-DVJO_VOCR_GATE_BLOB=FILE`; without either, those tests skip); the plugins read the file
 from `ocr/` at run time. Copying those files to

@@ -115,8 +115,21 @@
  * 52: the text box suggested on first use (#358, core/region_suggest.h, docs/first-box.md): VjoGameOcrResult.
  * suggest_rows (a word before text: the result is 4 bytes longer), the band a successful job of rows on the whole
  * frame says the dialogue is in, as its rows at the screen's bottom. The request is unchanged. 51 is #354's (merged
- * first), so this is 52. */
-#define VJO_API_VERSION 52
+ * first), so this is 52.
+ * 53: vertical text ON prefers columns (#379; docs/vita-vn-ocr.md "Vertical text"): a request with
+ * VJO_GAME_OCR_S_VERTICAL 1 reads the region's rows first, as 2 does, and its columns unless the rows look like
+ * horizontal text (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON); with 1 or 2 a job of columns whose model cannot be
+ * read or has no room reads the rows; the find step's kinds 4 and 5 say so. A job of columns reads its columns' rows
+ * once, the rectangle around them (VJO_VOCR_COLUMNS_BATCH), no longer once per column. The Shell leaves out a size whose model failed
+ * with ON too. Sizes and layouts are unchanged. 52 is #369's (merged first), so this is 53.
+ * 54: the text spotter as the game worker's line finder (vita-vn-ocr #149 textspot8, #128 textspot6;
+ * docs/vita-vn-ocr.md "The spotter finder"): VjoGameOcrRequest.speed bit 24 (VJO_GAME_OCR_S_SPOT) and bit 26
+ * (VJO_GAME_OCR_S_SPOT_REFINE), its weights' file in the kernel's broker for such a request (VJO_GAME_OCR_OPEN_SPOT,
+ * VJO_VOCR_SPOT_NAME), a new step kind (spot) and block (VJO_GITEM_SPOT); the Shell sets the bits from config.ini
+ * ocr_finder (spotter by default) and ocr_spotter_refine. Sizes and layouts are unchanged. API 45 was this change's
+ * number while it waited (draft branch feat/vocr6-spotter-finder), then 52 and 53, which #369 and #385 took (merged
+ * first); main's numbers only grow, so it is 54. */
+#define VJO_API_VERSION 54
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

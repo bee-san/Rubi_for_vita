@@ -138,7 +138,8 @@ typedef struct {
 /* Each run is one process of the app, as on the console: settings/main.c keeps
  * its state in statics, so it runs in a forked child, and the frames it shows
  * come back through shared memory. */
-typedef struct { int frames, exited, main_rc, finis; Frame shown[MAX_FRAMES]; } Session;
+typedef struct { int frames, exited, main_rc, finis, font_loads, font_frees, font_free_in_frame, font_free_unwaited,
+                 dead_font_uses; Frame shown[MAX_FRAMES]; } Session;
 static Session *session;
 static Frame *shown;
 static const Input *script;
@@ -146,7 +147,6 @@ static int script_frames, frame, exited = -1;
 static int finis;      /* vita2d_fini calls in this process */
 static int font_fails; /* vita2d_load_default_pvf returns NULL */
 static Frame drawing;
-static int font_dummy;
 
 uint64_t sceKernelGetProcessTimeWide(void) { return (uint64_t)frame * 16667u; }
 int sceKernelExitProcess(int status) { exited = status; return 0; }
@@ -244,11 +244,21 @@ int sceDisplayWaitVblankStart(void)
 int vita2d_init(void) { return 0; }
 int vita2d_fini(void) { finis++; return 0; }
 void vita2d_set_clear_color(unsigned int color) { (void)color; }
-void vita2d_start_drawing(void) { memset(&drawing, 0, sizeof(drawing)); }
-void vita2d_end_drawing(void) {}
+/* The fonts: each load a font of its own, alive until freed; a font is freed only between frames, after a wait for
+ * the GPU (settings/main.c font_tick), and never drawn or measured with once freed. */
+#define FONTS 16
+static int font_live[FONTS], font_loads, font_frees, font_free_in_frame, font_free_unwaited, dead_font_uses,
+           in_frame, waited;
+void vita2d_start_drawing(void) { memset(&drawing, 0, sizeof(drawing)); in_frame = 1; waited = 0; }
+void vita2d_end_drawing(void) { in_frame = 0; }
+static void font_use(vita2d_pvf *font)
+{
+    int i = (int)((int *)font - font_live);
+    if (i < 0 || i >= FONTS || !font_live[i]) dead_font_uses++;
+}
 void vita2d_swap_buffers(void) {}
 void vita2d_clear_screen(void) {}
-void vita2d_wait_rendering_done(void) {}
+void vita2d_wait_rendering_done(void) { waited = 1; }
 /* libvita2d keeps the last clip rectangle and applies it while clipping is on. */
 static int clipping, clip_top, clip_bottom;
 void vita2d_enable_clipping(void) { clipping = 1; }
@@ -260,12 +270,24 @@ void vita2d_draw_rectangle(float x, float y, float w, float h, unsigned int colo
     if (drawing.rects < (int)(sizeof(drawing.rect) / sizeof(drawing.rect[0])))
         drawing.rect[drawing.rects++] = (Rect){(int)x, (int)y, (int)w, (int)h, color, clipping, clip_top, clip_bottom};
 }
-vita2d_pvf *vita2d_load_default_pvf(void) { return font_fails ? NULL : (vita2d_pvf *)&font_dummy; }
-void vita2d_free_pvf(vita2d_pvf *font) { (void)font; }
+vita2d_pvf *vita2d_load_default_pvf(void)
+{
+    if (font_fails || font_loads >= FONTS) return NULL;
+    font_live[font_loads] = 1;
+    return (vita2d_pvf *)&font_live[font_loads++];
+}
+void vita2d_free_pvf(vita2d_pvf *font)
+{
+    font_use(font);
+    font_live[(int *)font - font_live] = 0;
+    font_frees++;
+    font_free_in_frame += in_frame;
+    font_free_unwaited += !waited;
+}
 /* Stub metrics: 10 units for an ASCII character, 18 for any other, at scale 1. */
 int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
 {
-    (void)font;
+    font_use(font);
     int units = 0;
     for (const unsigned char *p = (const unsigned char *)text; *p; p++)
         if (*p < 0x80) units += 10;
@@ -274,7 +296,7 @@ int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text)
 }
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text)
 {
-    (void)font;
+    font_use(font);
     if (drawing.texts < (int)(sizeof(drawing.text) / sizeof(drawing.text[0]))) {
         Text *t = &drawing.text[drawing.texts++];
         t->x = x; t->y = y; t->color = color; t->scale = scale;
@@ -373,6 +395,11 @@ static int run_to(const Input *inputs, int n, int code)
         session->frames = frame;
         session->exited = exited;
         session->finis = finis;
+        session->font_loads = font_loads;
+        session->font_frees = font_frees;
+        session->font_free_in_frame = font_free_in_frame;
+        session->font_free_unwaited = font_free_unwaited;
+        session->dead_font_uses = dead_font_uses;
         _exit(0);
     }
     int status = 0;
@@ -1306,7 +1333,7 @@ static void test_vertical_text_by_keys_and_touch(void)
         check_room(f);
     }
     TEST_CHECK(shows(4, "Columns where the text box holds vertical text.") &&
-               shows(6, "Columns, right to left, in every game") && shows(10, "Rows only: horizontal text, as before."));
+               shows(6, "Columns, right to left, unless the text is in rows.") && shows(10, "Rows only: horizontal text, as before."));
     const Text *st = text_at(6, ROOM_END + 4 + 22, 40, 41);
     TEST_CHECK_(st && !strcmp(st->text, "Saved. It applies when the overlay next opens."), "the status line: '%s'",
                 st ? st->text : "(none)");
@@ -1676,7 +1703,115 @@ static void test_dictionaries_card_names_the_bundled_dictionary(void)
     TEST_CHECK(!shown[1].backend[0]); /* looking saves nothing */
 }
 
+/* The tab bar, laid out from its labels since the fifth tab (#312's Stats, #313's Look up): six tabs
+ * from x 24 to at most 936, in order, TAB_GAP apart, each at least its label's width with 10 px each side (the stub's
+ * labels do not fit an equal share), each label centred in its tab on the old baseline and never cut, the page's own
+ * filled. A touch on a tab shows its page; one in the gap between two tabs does nothing. */
+#define TAB_Y 52
+#define TAB_H 48
+#define TABS 6
+static const char *const TAB_LABELS[TABS] = {"Games", "OCR & lookup", "Anki", "Look up", "Stats", "Install"};
+typedef struct { int n, x[TABS], w[TABS]; } Tabs;
+static Tabs tabs_of(int f, int active)
+{
+    Tabs t = {0};
+    for (int i = 0; i < shown[f].rects; i++) {
+        const Rect *r = &shown[f].rect[i];
+        if (r->y != TAB_Y || r->h != TAB_H) continue;
+        if (t.n < TABS) {
+            t.x[t.n] = r->x;
+            t.w[t.n] = r->w;
+            TEST_CHECK_(r->color == (t.n == active ? ACCENT : CARD), "frame %d: tab %d colour %08X", f, t.n, r->color);
+            const Text *l = text_at(f, TAB_Y + 33, r->x, r->x + r->w);
+            TEST_CHECK_(l && !strcmp(l->text, TAB_LABELS[t.n]) && !l->clipped && l->x >= r->x + 10 &&
+                            l->x + width(l) <= r->x + r->w - 10 && abs(2 * l->x + width(l) - (2 * r->x + r->w)) <= 1 &&
+                            l->color == (t.n == active ? BG_COLOR : WHITE),
+                        "frame %d: tab %d's label '%s'", f, t.n, l ? l->text : "(none)");
+        }
+        t.n++;
+    }
+    TEST_CHECK_(t.n == TABS, "frame %d: %d tabs", f, t.n);
+    TEST_CHECK_(t.x[0] == 24 && t.x[TABS - 1] + t.w[TABS - 1] <= 936, "frame %d: the bar from %d to %d", f, t.x[0],
+                t.x[TABS - 1] + t.w[TABS - 1]);
+    for (int i = 1; i < TABS && i < t.n; i++)
+        TEST_CHECK_(t.x[i] >= t.x[i - 1] + t.w[i - 1] + 8, "frame %d: tab %d at %d, after %d+%d", f, i, t.x[i],
+                    t.x[i - 1], t.w[i - 1]);
+    return t;
+}
+static void test_the_tab_bar(void)
+{
+    Input in[2 * 9];
+    int n = 0;
+    card(NULL);
+    /* the layout, on the Games page; then a touch on each tab's middle (the Anki page's stub draws nothing: not it),
+     * and one in a gap */
+    in[n++] = (Input){0, 0, 0, 0};
+    in[n++] = (Input){0, 0, 0, 0};
+    TEST_ASSERT(run(in, n) >= 2);
+    Tabs t = tabs_of(0, 0);
+    static const int order[] = {1, 3, 4, 5, 0, 4}; /* OCR & lookup, Look up, Stats, Install, Games, Stats */
+    n = 0;
+    for (int k = 0; k < 6; k++) {
+        in[n++] = (Input){0, 1, t.x[order[k]] + t.w[order[k]] / 2, TAB_Y + 20};
+        in[n++] = (Input){0, 0, 0, 0};
+    }
+    in[n++] = (Input){0, 1, t.x[1] + t.w[1] + 4, TAB_Y + 20}; /* frame 12: the gap after OCR & lookup: nothing */
+    in[n++] = (Input){0, 0, 0, 0};
+    in[n++] = (Input){SCE_CTRL_SELECT, 0, 0, 0}; /* frame 14: Select from Stats: Install */
+    in[n++] = (Input){0, 0, 0, 0};
+    TEST_ASSERT(run(in, n) >= n);
+    for (int k = 0; k < 6; k++)
+        tabs_of(2 * k, order[k]);
+    tabs_of(12, 4);
+    tabs_of(14, 5);
+}
+
+/* libvita2d's glyph atlas keeps every glyph a font drew or measured and drops new ones once it is full: main.c counts
+ * the distinct characters drawn or measured with the font and, before a text that would take them past 400, loads
+ * the font again (an empty atlas) and draws on with that one; the old one is freed before the next frame, after a
+ * wait for the GPU (font_tick); log.txt says so. No text is ever drawn or measured with a freed font, and no atlas
+ * holds more than 400 characters. A page that draws the same characters again (the Games page) never switches. */
+extern int vjo_lookup_stub_glyphs;
+static void test_a_full_glyph_atlas_gets_an_empty_one(void)
+{
+    static const Input idle[] = {{0, 0, 0, 0}};
+    Input in[2 * 3 + 12];
+    int n = 0;
+    card(NULL);
+    TEST_ASSERT(run(idle, 1) >= 1);
+    TEST_CHECK_(session->font_loads == 1 && session->font_frees == 1, "an idle app: %d loads, %d frees",
+                session->font_loads, session->font_frees);
+    for (int i = 0; i < 3; i++) /* Select to the Look up page, whose stub draws 100 new characters a frame */
+        in[n++] = (Input){SCE_CTRL_SELECT, 0, 0, 0}, in[n++] = (Input){0, 0, 0, 0};
+    for (int i = 0; i < 12; i++)
+        in[n++] = (Input){0, 0, 0, 0};
+    vjo_lookup_stub_glyphs = 100;
+    TEST_ASSERT(run(in, n) == n);
+    vjo_lookup_stub_glyphs = 0;
+    /* about 1,300 new characters with the pages' own: three switches (a fourth font at most); every font freed, the
+     * replaced ones between frames after a wait, the last one at the exit */
+    TEST_CHECK_(session->font_loads >= 4 && session->font_loads <= 5 && session->font_frees == session->font_loads,
+                "%d loads, %d frees", session->font_loads, session->font_frees);
+    TEST_CHECK_(!session->font_free_in_frame && !session->font_free_unwaited && !session->dead_font_uses,
+                "%d frees in a frame, %d without a wait, %d uses of a freed font", session->font_free_in_frame,
+                session->font_free_unwaited, session->dead_font_uses);
+    char log[4096] = "";
+    FILE *f = fopen("ux0:data/VitaJPOverlay/log.txt", "rb");
+    if (f) {
+        log[fread(log, 1, sizeof(log) - 1, f)] = '\0';
+        fclose(f);
+    }
+    TEST_CHECK_(strstr(log, "font: an empty glyph atlas after 400 characters (1 time)") &&
+                    strstr(log, "font: an empty glyph atlas after 400 characters (3 times)"), "log.txt: %s", log);
+    /* the Games page alone, the same characters frame after frame: one font */
+    static const Input games[24];
+    TEST_ASSERT(run(games, 24) == 24);
+    TEST_CHECK(session->font_loads == 1 && !session->dead_font_uses);
+}
+
 TEST_LIST = {
+    {"the_tab_bar_six_tabs_fit_their_labels_and_their_touches", test_the_tab_bar},
+    {"a_full_glyph_atlas_gets_an_empty_one", test_a_full_glyph_atlas_gets_an_empty_one},
     {"one_engine_VOCR_its_model_size_on_top_no_lens", test_one_engine_its_model_size_on_top},
     {"a_tap_in_the_cards_top_band_focuses_it_and_chooses_nothing", test_the_cards_top_band_focuses_it},
     {"exit_ends_the_process_without_vita2d_fini", test_exit_ends_the_process_without_vita2d_fini},

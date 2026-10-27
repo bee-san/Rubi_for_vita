@@ -143,7 +143,27 @@ typedef struct {
      * recognizing and what helps, instead of "Recognizing…"; 0 (ocr_wait_hint = off): "Recognizing…" all along, as
      * before. Read by the Shell only. Last, as above. */
     int ocr_wait_hint;        /* 0/1, on by default */
+    /* Lookups (#321; docs/local-dictionaries.md "Names and words"): at one span, whether an entry spelled as the
+     * text in a later dictionary (a character's name, わたし) comes before a word the first dictionary spells
+     * otherwise (私): VJO_NAMES_*, auto (the default) puts the word first when it is among the 1,023 most
+     * frequent. Read by the Shell's lookups only. Last, as above. */
+    int names_first;
+    /* Local OCR (vocr, API 54): the line finder of a job, VJO_FINDER_GRAD (Rubi's GRAD with the refinement and
+     * the short-line probe, as every build before) or VJO_FINDER_SPOTTER (vita-vn-ocr's text spotter (#149, #128),
+     * core/vocr_ocr.h VjoVocrPolicy.spot: its boxes are the lines; a job that cannot have its weights reads with
+     * GRAD); and whether the spotter's boxes are refined (VOCR_REFINE_DEFAULT; GRAD's follow ocr_refine_lines).
+     * Last, as above. */
+    int ocr_finder;           /* VJO_FINDER_* */
+    int ocr_spotter_refine;   /* 0/1 */
 } VjoConfig;
+
+/* names_first's values, in ocr_vertical's order (off, on, auto: config.c parses both with one table), and its
+ * default (the measurement: docs/local-dictionaries.md "Names and words"). */
+#define VJO_NAMES_OFF 0
+#define VJO_NAMES_ON 1
+#define VJO_NAMES_AUTO 2
+#define VJO_NAMES_DEFAULT VJO_NAMES_AUTO
+#define VJO_NAMES_DEFAULT_TEXT "auto"
 
 /* ocr_text_gate's default (docs/vita-vn-ocr.md, "Text-presence gate": why). */
 #define VJO_TEXT_GATE_DEFAULT 0
@@ -168,6 +188,17 @@ typedef struct {
 /* ocr_line_fix's default (docs/vita-vn-ocr.md, "Line finder fixes": the measurements). */
 #define VJO_LINE_FIX_DEFAULT 1
 #define VJO_LINE_FIX_DEFAULT_TEXT "on"
+/* API 54: ocr_finder (config.ini grad | spotter) and ocr_spotter_refine (off | on), and their defaults
+ * (docs/vita-vn-ocr.md, "The spotter finder": vita-vn-ocr #149's pick, measured on the page path, reads every
+ * unseen-game set better than GRAD and is the default; GRAD stays its fallback and ocr_finder = grad the switch;
+ * each default is one line here and its text the next). */
+enum { VJO_FINDER_GRAD = 0, VJO_FINDER_SPOTTER = 1 };
+/* ocr_finder's names by value (core/config.c; the Shell's game start line names the finder with them, #333) */
+extern const char *const vjo_finder_names[];
+#define VJO_FINDER_DEFAULT VJO_FINDER_SPOTTER
+#define VJO_FINDER_DEFAULT_TEXT "spotter"
+#define VJO_SPOTTER_REFINE_DEFAULT 0
+#define VJO_SPOTTER_REFINE_DEFAULT_TEXT "off"
 
 void vjo_config_defaults(VjoConfig *c);
 /* Parses INI text over the defaults; invalid values keep the default and

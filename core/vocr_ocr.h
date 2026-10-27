@@ -128,11 +128,24 @@ typedef struct {
  * (width x height) is left out, never read, and counted (VjoVocrStats.rotate_skipped): one wider than
  * 105 px at the full 544-px height. */
 #define VJO_VOCR_ROTATE_BYTES VJO_VOCR_STRIP_BYTES
+/* #379: a job of columns in a region taller than a strip fetches its columns together, before it recognizes any: the
+ * rectangle around them, at most this many bytes (the line block's bound, VJO_VOCR_LINE_MAX_BYTES), read through
+ * line_buffer as a tall line is, each row once and checked as always; each column is a part of it. Before, each column
+ * was read on its own, a pass over its rows each, between the recognitions: a box of 16 one-character columns read its
+ * rows 16 times, a strip a frame, and an animated icon resting for less than that tore every try (VJO_E_SCREEN_CHANGED)
+ * where a job of rows, reading them once, did not. A larger rectangle, or a block refused, has each column read as
+ * before. */
+#define VJO_VOCR_COLUMNS_BATCH VJO_VOCR_LINE_MAX_BYTES
 /* API 47, config.ini ocr_vertical = auto (VjoVocrPolicy.vertical_check): whether the row finder's n lines
  * (vita-vn-ocr's VocrLine, vocr_lines.h) on a w x h region look like vertical text read as rows, so that the
  * job reads its columns instead. Geometry only (core/vocr_ocr.c: the rule; docs/vita-vn-ocr.md "Vertical
  * text": how it was measured). */
 int vjo_vocr_rows_vertical(const void *lines, unsigned n, unsigned w, unsigned h);
+/* API 53, config.ini ocr_vertical = on (VjoVocrPolicy.vertical_check VJO_VOCR_CHECK_ON, #379): whether the row
+ * finder's n lines on a w x h region look like horizontal text, lines of it one under another, so that on's job reads
+ * them as rows; elsewhere it reads the region's columns. Geometry only (core/vocr_ocr.c: the rule;
+ * docs/vita-vn-ocr.md "Vertical text": how it was measured). */
+int vjo_vocr_rows_horizontal(const void *lines, unsigned n, unsigned w, unsigned h);
 
 /* The model named `name` (a file name in ocr_model_dir), or NULL. */
 const VjoVocrModel *vjo_vocr_model(const char *name);
@@ -186,6 +199,48 @@ typedef struct {
     int verified;            /* 1: data holds the pinned weights */
     uint64_t size, stamp;    /* of the file they were read from */
 } VjoVocrGateResident;
+
+/* API 54: the text spotter's weights (VjoVocrPolicy.spot_res; vita-vn-ocr #128, runtime/vocr_textspot6.c), kept
+ * between jobs as the LM's are: the file VJO_VOCR_SPOT_NAME in the job's model directory, of its pinned size and
+ * SHA-256 (include/vjo_vocr_sizes.h), then parsed once (vocr_textspot6_load: its header, its CRC-32 over every byte,
+ * its tables), both in one block of vjo_vocr_spot_block_bytes() that alloc gives (16-byte aligned, or NULL: no
+ * memory). The weights are never a static array (52-450 KB: pages in every game). vjo_vocr_spot_load opens the file
+ * in every job that uses the spotter and reads and checks it again only when its size or stamp changed or nothing
+ * verified is held; a missing, wrong or refused file, or a failed read, releases the block (memory is held only
+ * for verified weights). The caller owns it (the worker: a static) and zero-initializes its state fields. */
+typedef struct {
+    void *(*alloc)(void *ud, size_t bytes);
+    int (*release)(void *ud);    /* 0, or nonzero when the block could not be freed (it stays held, unused) */
+    void *ud;
+    int verified;                /* 1: data holds the pinned weights and their parsed form */
+    unsigned char *data;         /* the block held, or NULL */
+    size_t capacity;
+    uint64_t size, stamp;        /* VjoFile.size and .stamp of the file they were read from */
+} VjoVocrSpotResident;
+/* The block's bytes: the weights (VJO_VOCR_SPOT_BYTES, 16-byte aligned), then their parsed form. */
+size_t vjo_vocr_spot_block_bytes(void);
+/* Verified, parsed weights in res (see VjoVocrSpotResident). VJO_OK; VJO_E_OCR_MODEL (missing, wrong size or hash,
+ * refused by the runtime), VJO_E_OOM (no block), VJO_E_CANCELLED (im's cancel test; im may be NULL),
+ * VJO_E_OCR_UNAVAILABLE (a block that could not be released). *read: 1 when this call read the file (else they
+ * were resident: the file is unchanged). A job without them reads with GRAD. */
+int vjo_vocr_spot_load(const VjoPlatform *platform, const char *model_dir, VjoVocrSpotResident *res,
+                       const VjoGreySource *im, unsigned *read);
+/* Releases the block: 0, or the release callback's failure (the block is then still held, and unverified). */
+int vjo_vocr_spot_drop(VjoVocrSpotResident *res);
+/* The spotter's part of a job's scratch for a width x height region cut from a frame_w x frame_h frame (0 x 0: the
+ * Vita's 960 x 544): its arena, vocr_textspot6_arena_bytes_flags() at the scale its blob's rule gives that frame
+ * (VOCR_TEXTSPOT6_SCALE2 for a half-scale blob and any frame wider than its half_above: every 960 x 544 one), and
+ * its result, each 16-byte aligned; 0 when res holds no verified weights, the region is not one the job takes, or
+ * the arena is over VJO_VOCR_SPOT_ARENA_MAX (the job then reads with GRAD). */
+size_t vjo_vocr_spot_bytes(const VjoVocrSpotResident *res, unsigned width, unsigned height, unsigned frame_w,
+                           unsigned frame_h);
+/* vjo_vocr_job_bytes() with the spotter's scratch of spot_bytes (vjo_vocr_spot_bytes; 0: without it): the scratch
+ * is the largest of the finder's arena, the spotter's and the recognizer's, which use it one after the other. The
+ * refinement's arena, the LM extras, the cascade's and the helpers' follow it as without the spotter. */
+size_t vjo_vocr_job_bytes_spot(const char *model, unsigned width, unsigned height, size_t spot_bytes);
+/* The most vjo_vocr_spot_bytes() gives for any pin this build admits (VJO_VOCR_SPOT_ARENA_MAX and the result): the
+ * memory ledger's worst case (host/tests/test_ledger.c, include/vjo_ledger_budget.h VJO_BUDGET_GAME_WORKSPACE). */
+size_t vjo_vocr_spot_bytes_max(void);
 
 /* More job workspace a job on `model` needs to decode with an LM: the top-K
  * buffers, the decoder's structs and its workspace (bounded by
@@ -373,6 +428,15 @@ typedef struct {
     /* Vertical text (a model of columns, VJO_VOCR_FINDER_COLUMNS). */
     unsigned columns;        /* 1: the lines were columns, each read turned 90 degrees */
     unsigned rotate_skipped; /* columns left out: more than VJO_VOCR_ROTATE_BYTES */
+    /* #379: the columns fetched together, the rectangle around them read once (VJO_VOCR_COLUMNS_BATCH); 0: none */
+    unsigned gathered;
+    /* The text spotter (VjoVocrPolicy.spot, API 54), of the last try. */
+    unsigned spot_ran;       /* 1: it found this try's lines (0: GRAD did, or the job has no spotter) */
+    int spot_rc;             /* 0, or why it could not (VJO_E_*, VOCR_LINES_E_*, VOCR_TEXTSPOT_E_BLOB): GRAD found them */
+    unsigned spot_boxes;     /* every box it returned, vertical ones too (no recognizer here reads those) */
+    unsigned spot_truncated; /* 1: it had more candidates than VOCR_TEXTSPOT_MAX_BOXES */
+    size_t spot_bytes;       /* its arena and result in the job's scratch (0: it did not run) */
+    uint32_t spot_us;        /* its time: its pass over the region, its decode and its boxes' dark flags */
 } VjoVocrStats;
 
 /* Each found line, for host tools (VjoVocrPolicy.line): valid during the call. A column (a model of
@@ -601,6 +665,11 @@ typedef struct {
      * exactly as before; a model of columns ignores it. API 50: with line_fix too, a region at least as tall as
      * wide is checked on the frozen finder's rows (the rule's), then, where they are not vertical text, found
      * again with line_fix's fixes and read; a wider region is found once, with them. */
+    /* API 53 (config.ini ocr_vertical = on, #379): vertical_check VJO_VOCR_CHECK_ON has a job of rows return
+     * VJO_E_VERTICAL, reading nothing, wherever its rows do not look like horizontal text
+     * (vjo_vocr_rows_horizontal), and read them where they do: on prefers columns. Its rows are checked as auto's
+     * are (with line_fix, a region at least as tall as wide on the frozen finder's rows, then found again with the
+     * fixes and read). VJO_VOCR_CHECK_AUTO (1) is API 47's auto. */
     int vertical_check;
     /* API 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.h): VOCR_FIX_* flags for
      * vocr_find_lines_fix_rows, the finder with COLGAP (a line's parts across a full-width space stay one line; the
@@ -608,7 +677,25 @@ typedef struct {
      * as it can drop a text line in a region drawn tight) and VALLEY (two touching rows split; opt-in). The same
      * arena, rows and dark flags as vocr_find_lines_rows. 0: the frozen finder, exactly as before. */
     unsigned line_fix;
+    /* API 54: the text spotter (vita-vn-ocr #128, runtime/vocr_textspot6.c, docs/vita-vn-ocr.md "The spotter finder")
+     * as the job's finder in place of GRAD, and so of GRAD's short-line probe and text gate: vocr_textspot6_find_rows
+     * on the region's rows (stream_row: one pass from row 0, the capture's first, then each box's rows for its dark
+     * flag), at the scale its blob's rule gives the frame the region is cut from (spot_frame_w x spot_frame_h; 0: the
+     * Vita's 960 x 544, which a half-scale blob reads halved, VOCR_TEXTSPOT6_SCALE2, as it was trained). Its horizontal
+     * boxes, in its reading order, with their dark flags, are the lines (at most VJO_VOCR_MAX_LINES: truncated past
+     * them). Its weights are spot_res's, loaded before the job (vjo_vocr_spot_load: their parsed form sizes its arena),
+     * and its arena and result take the job's scratch, which the recognizer's arena reuses after it: the workspace
+     * must hold vjo_vocr_job_bytes_spot(). spot_refine: VOCR_REFINE_* steps on its boxes in place of refine, which is
+     * GRAD's (ocr_spotter_refine; 0: as found). When it cannot run (no verified weights, an arena over
+     * VJO_VOCR_SPOT_ARENA_MAX, no room, a refusal), the job finds its lines with GRAD, refine and the gate, exactly as
+     * without it, and says why in stats->spot_rc. spot 0: off, exactly as before. */
+    int spot;
+    VjoVocrSpotResident *spot_res;
+    unsigned spot_refine;
+    unsigned spot_frame_w, spot_frame_h;
 } VjoVocrPolicy;
+#define VJO_VOCR_CHECK_AUTO 1 /* VjoVocrPolicy.vertical_check: API 47's auto, columns where the rows look vertical */
+#define VJO_VOCR_CHECK_ON 2   /* API 53's on: columns unless the rows look horizontal */
 #define VJO_VOCR_COUNTER_TAU 6000
 #define VJO_VOCR_COUNTER_OPEN 4000
 #define VJO_VOCR_SETTLE_MAX_US 2000000u

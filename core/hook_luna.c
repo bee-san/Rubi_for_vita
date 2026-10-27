@@ -616,10 +616,13 @@ static const LunaOp *const vjo_luna_post[VJO_LH_COUNT] = {
  * line-break code becomes "\n" (what the game draws); a player-name code the hook sees before the game
  * expands it becomes the game's default name (Rubi cannot know a name the player typed: such a line then
  * differs from the screen by that name only). docs/native-hooks.md#rubis-filters has the evidence.
- * The ops arrays and their index (776 B) are kept in the worker's data segment (VJO_DATA_TABLE, core/port.h),
- * whose last page has room: in its code segment they took the debug build's worker 8 B past its pages
- * (include/vjo_ledger_budget.h; docs/memory-ledger.md, "Tables in the data segment"). Their strings stay
- * read-only. */
+ * The ops arrays are kept in the worker's data segment (VJO_DATA_TABLE, core/port.h), whose last page had room: in
+ * its code segment they took the debug build's worker 8 B past its pages (include/vjo_ledger_budget.h;
+ * docs/memory-ledger.md, "Tables in the data segment"). Since the hook farm's 20 entries of 2026-10-27 filled that
+ * page, the filters' index, PCSG00628's ops and escapes (#316's audit) and the five arrays that batch added or grew
+ * (PROTOTYPE_NAMELINE with PROTOTYPE in it, PCSG00472 with IFENGINE, AOZORA_RUBY, CARET_NEWLINE, PCSG01250), 853 B,
+ * are read-only data again, which the normal build's last code page holds (docs/memory-ledger.md, "The hook farm's
+ * 20 verified entries"). Their strings stay read-only. */
 _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one byte");
 #define RCALL(f) {OP_CALL, 0, VJO_RF_##f, NULL, NULL}
 
@@ -636,11 +639,11 @@ _Static_assert(VJO_LF_COUNT <= VJO_RF_BASE, "Luna's filters and Rubi's share one
  * 0x8106a260 and 0x8106a6d8 r1) draw the speaker of $t<name>@ on a line of its own above the body, not inline as
  * PCSG00206 does (PCSG01000 page 1: $tガキＢ@「お前怖いのか？」, ガキＢ over 「お前怖いのか？」; PCSG00988 page 5:
  * $t？？？@『…』): their filter, PROTOTYPE_NAMELINE, is this array from its first op, which writes that line break;
- * PROTOTYPE starts at its second (one array: no RCALL and END of its own, 24 B of the worker's data segment). The
+ * PROTOTYPE starts at its second (one array: no RCALL and END of its own, 24 B less; read-only data). The
  * rest is PROTOTYPE's: PCSG00988's plain hiragana are half-width kana, ISLAND's full width (OP_KANA leaves them); a
  * centred line's 　$A1 is at the text's start (ISLAND's prologue, \n\n\n\n\n　$A1初めに、音があった。), which the trim
  * takes. */
-static const LunaOp r_PROTOTYPE_NAMELINE[] VJO_DATA_TABLE(rubi_PROTOTYPE) = {
+static const LunaOp r_PROTOTYPE_NAMELINE[] = {
     SUBW("\\$t([^$@\n]*)@", "$1\n"), /* PROTOTYPE_NAMELINE's own op; PROTOTYPE from here: */
     REP("･", "・"), SPECIAL(OP_KANA), SUB("\\$t([^$@\n]*)\\$d", "$1\n"), SUB("\\$t([^$@\n]*)@", "$1"), REP("$d", "\n"),
     SUB("\\$\\[(.*?)\\$/(.*?)\\$\\]", "$1"), SUB("\\$[LA]\\d|\\$S\\d\\d\\d|\\$S|\\$w|\\$C\\[[0-9A-Fa-f]*\\]", ""),
@@ -654,8 +657,8 @@ static const LunaOp r_PROTOTYPE_NAMELINE[] VJO_DATA_TABLE(rubi_PROTOTYPE) = {
  * font draws ゞ (CP932 0x8155) as one !? cell and ゝ (0x8154) as one !! cell (PCSG00472 page 14: あぁゞ　ざけんなゝ drawn
  * あぁ!?　ざけんな!!; PCSG00476 page 17: っ……ゞ drawn っ……!?), as Luna's filter for these titles' sites writes them,
  * and for LIMITED V EDITION PCSG00272's and RE:VICE[D] PCSG00382's (Luna's PCSG00472): their filter, PCSG00472, is
- * this array from its first op; IFENGINE starts at its third (one array, 24 B of data less). */
-static const LunaOp r_PCSG00472[] VJO_DATA_TABLE(rubi_IFENGINE) = {
+ * this array from its first op; IFENGINE starts at its third (one array, 24 B less; read-only data). */
+static const LunaOp r_PCSG00472[] = {
     REP("ゞ", "!?"), REP("ゝ", "!!"), /* PCSG00472's own ops; IFENGINE from here: */
     SUB("#Ruby\\[([^,\\]]*),[^\\]]*\\]", "$1"), SUB("#[A-Z][A-Za-z]*(\\[[^\\]\n]*\\])?", ""), REP("#n", "\n"),
     SPECIAL(OP_TRIM), END};
@@ -682,10 +685,14 @@ static const LunaOp r_PCSG00509[] VJO_DATA_TABLE(rubi_PCSG00509) = {
     REP("＊Ｂ", "鈴"), REP("^", "\n"), RCALL(ANGLE_RUBY), END};
 /* PCSG00540 (ADV::MSGSET): c<id>.<nameplate>r[v<voice>.]<body>, narration r<body>; w<ms>. a timed pause;
  * b<reading>.<base> ruby; plain hiragana are half-width kana, and ･ ﾞ ﾟ are drawn … ！ ？ (events 1-5, 51,
- * 53, 55). The name goes on its own line. A 0xA0 byte (the decoder's VJO_HOOK_CP932_A0) is a blank cell, U+3000
- * (the farm's glyph cells: 170 of its 1037 pages, e.g. pages 42, 81). */
+ * 53, 55). The name goes on its own line. A 0xA0 byte is a blank cell, U+3000 (the farm's glyph cells: 170 of its
+ * 1037 pages, e.g. pages 42, 81): A0_BLANK, its first op (the entry decodes the byte for it). */
+/* The decoder's VJO_HOOK_CP932_A0 (CP932's 0xA0 byte) as the blank cell the MSGSET titles draw, U+3000. Only their
+ * entries' text has it: their encoding is VJO_HOOK_ENC_CP932_A0 (core/hook_place.c); for every other entry, filter,
+ * Luna site and string copy the decoder drops the byte, as it always did (#316's audit F2). */
+#define A0_BLANK REP("\xef\xa3\xb0", "　")
 static const LunaOp r_PCSG00540[] VJO_DATA_TABLE(rubi_PCSG00540) = {
-    REP("\xef\xa3\xb0", "　"), SUB("^c\\d+\\.([^\n]*?)r", "$1\n"), SUB("^r", ""), SUB("^v[^.\n]*\\.", ""), SUB("\nv[^.\n]*\\.", "\n"),
+    A0_BLANK, SUB("^c\\d+\\.([^\n]*?)r", "$1\n"), SUB("^r", ""), SUB("^v[^.\n]*\\.", ""), SUB("\nv[^.\n]*\\.", "\n"),
     SUB("w\\d+\\.", ""), SUB("b[^.<>\n]*\\.<([^<>\n]*)>", "$1"), SPECIAL(OP_KANA), END};
 /* PCSG00817: [n] is a line break; [wNNN] [hNNN] [cRRGGBB] [e] and the other [x] codes are not drawn
  * (session 458160a9, events 1-59, event 432). */
@@ -706,13 +713,24 @@ static const LunaOp r_PCSG01194[] VJO_DATA_TABLE(rubi_PCSG01194) = {
 
 /* PCSG00628 (ADV::MSGSET's SNR markup, as PCSG00540's without its c<id>. nameplate code): <name>r[v<voice>.]<body>,
  * narration r<body>; r is a line break, v<voice>. a voice file, b<reading>.<base> ruby (an r before the base is a
- * line break before it), [ ] group a dash run, |, k and y wait for a click, !X is the ASCII character X; plain
- * hiragana are half-width kana, ･ ﾞ ﾟ drawn … ！ ？, and a 0xA0 byte is a blank cell, as in PCSG00540 (farm events
- * 1, 20, 31, 89, 148, 207; main.snr). z<n>. (a text size) and u<n>. (a character by its decimal code point, e.g.
- * u9829. ♥) are in main.snr (the farm's survey) but in none of its 1208 hook pages: both dropped, as no op writes
- * a code point. A lowercase letter after ! is still read as a code first (!r a line break): none in the pages. */
-static const LunaOp r_PCSG00628[] VJO_DATA_TABLE(rubi_PCSG00628) = {
-    REP("\xef\xa3\xb0", "　"), SUB("rv[^.\n]*\\.", "r"), SUB("[zu]\\d+\\.", ""), SUB("b[^.<>\n]*\\.", ""),
+ * line break before it), [ ] group a dash run, |, k and y wait for a click; plain hiragana are half-width kana, ･ ﾞ ﾟ
+ * drawn … ！ ？, and a 0xA0 byte is a blank cell, as in PCSG00540 (farm events 1, 20, 31, 89, 148, 207; main.snr).
+ * !X is the ASCII character X, read before any other code (the farm's RUBI-HOOK.md: lowercase ASCII is otherwise
+ * always a code; literal brackets are ![ and !], !! is !): the X that one of the ops below reads as a code becomes
+ * its full-width form first, which no op reads (r628_esc; the shown text's textnorm makes it ASCII again), and the
+ * last op drops the ! before any other X. z<n>. is a text size, u<n>. a character by its decimal code point: u9829.
+ * is ♥ (the farm's survey of main.snr names it), any other u<n>. is dropped with the z codes (no op writes a code
+ * point; none of either is in the 1208 hook pages). #316's audit F1: the escapes were read last, so !r was a line
+ * break, !k !y ![ !] !| gone, !b !< !> read as ruby. */
+static const char r628_esc[] = /* (this and its ops: read-only data, above) */
+    "!!\0！\0!r\0ｒ\0!v\0ｖ\0!b\0ｂ\0!k\0ｋ\0!y\0ｙ\0!z\0ｚ\0!u\0ｕ\0![\0［\0!]\0］\0!|\0｜\0!<\0＜\0!>\0＞\0!.\0．\0"
+    "u9829.\0♥";
+#define ESC628(k) {OP_REP, 0, 0, r628_esc + 7 * (k), r628_esc + 7 * (k) + 3} /* "!X\0" then X's 3-byte form */
+_Static_assert(sizeof r628_esc == 7 * 14 + 7 + 4, "14 escapes of 7 bytes, then u9829. and ♥");
+static const LunaOp r_PCSG00628[] = {
+    A0_BLANK, ESC628(0), ESC628(1), ESC628(2), ESC628(3), ESC628(4), ESC628(5), ESC628(6), ESC628(7), ESC628(8),
+    ESC628(9), ESC628(10), ESC628(11), ESC628(12), ESC628(13), SUB("rv[^.\n]*\\.", "r"),
+    {OP_REP, 0, 0, r628_esc + 7 * 14, r628_esc + 7 * 14 + 7}, SUB("[zu]\\d+\\.", ""), SUB("b[^.<>\n]*\\.", ""),
     SUB("<([^<>\n]*)>", "$1"), SUB("[\\[\\]|ky]", ""), REP("r", "\n"), SUB("!(.)", "$1"), SPECIAL(OP_KANA),
     SPECIAL(OP_TRIM), END};
 
@@ -748,23 +766,23 @@ static const LunaOp r_PCSG00700[] VJO_DATA_TABLE(rubi_PCSG00700) = {
 /* あまつみそらに！ 雲のはたてに PCSG00638 (PROTOTYPE's Key port, the message window's page, 0x8102e6f4 r6): Aozora Bunko's
  * ruby, ｜base《reading》, and 《reading》 after a kanji with no ｜ (the kanji are the base); the base is drawn, the reading
  * small above it (farm page 4: ｜神奈《かんな》は … 舟を｜漕《こ》ぎはじめた。, drawn 神奈は … 漕ぎはじめた。). */
-static const LunaOp r_AOZORA_RUBY[] VJO_DATA_TABLE(rubi_AOZORA_RUBY) = {
+static const LunaOp r_AOZORA_RUBY[] = {
     SUBW("｜([^｜《》\n]*)《[^《》\n]*》", "$1"), SUBW("([一-鿿々〆ヵヶ])《[^《》\n]*》", "$1"), END};
 
 /* 学園CLUB ～ヒミツのナイトクラブ～ PCSG01065 (Luna's site 0x80029854 r1, the message copier's page buffer): ^ is a line
  * break on the screen (farm page 2: 小さな扉をくぐる。^わたしは足元に荷物を置くと、^庭園の…, three lines); Luna's filter
  * there (FPCSG00852) drops it, joining the lines. */
-static const LunaOp r_CARET_NEWLINE[] VJO_DATA_TABLE(rubi_CARET_NEWLINE) = {REP("^", "\n"), END};
+static const LunaOp r_CARET_NEWLINE[] = {REP("^", "\n"), END};
 
 /* スキとスキとでサンカク恋愛 PCSG01250 (ENTERGRAM, the text command's argument, 0x81014ca4 r8): /ruby:base&reading/ is ruby
  * (farm page 18: /ruby:和呂田 茜&わろた あかね/, the base drawn) and #n a line break, as Luna's PCSG01250_T filter for its
  * <text ..> site reads them (its patterns, shared); the engine's layout parser (0x81012b22) also reads #Size[..] and
  * #Pos[..], which are not drawn (in none of the farm's pages). Its /size:, /pos: and /color: prefixes are added after
  * this site, so the hook never sees them. The speaker's 【name】 is another command. */
-static const LunaOp r_PCSG01250[] VJO_DATA_TABLE(rubi_PCSG01250) = {
+static const LunaOp r_PCSG01250[] = {
     SUB("/ruby:(.*?)&(.*?)/", "$1"), REP("#n", "\n"), SUB("#\\w+(\\[.+?\\])?", ""), END};
 
-static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_TABLE(rubi_filters) = {
+static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] = { /* read-only data (above) */
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
     [VJO_RF_BACKSLASH_NEWLINE - VJO_RF_BASE] = r_BACKSLASH_NEWLINE, [VJO_RF_PCSG00448 - VJO_RF_BASE] = r_PCSG00448,
@@ -1117,7 +1135,9 @@ int vjo_luna_ported(const VjoLunaSite *s)
            (s->filter == VJO_LF_NONE || vjo_luna_filters[s->filter]);
 }
 
-/* The decoded text, s's hookfunc clean-up (s may be NULL), commonfilter, then filter's ops. */
+/* The decoded text, s's hookfunc clean-up (s may be NULL), commonfilter, then filter's ops. CP932's 0xA0 is decoded
+ * as VJO_HOOK_CP932_A0 only in VJO_HOOK_ENC_CP932_A0, the encoding of the two entries whose filters map it (A0_BLANK),
+ * and dropped in every other. */
 static size_t text_with(const VjoLunaSite *s, unsigned filter, unsigned site_encoding, const uint8_t *raw,
                         unsigned n, unsigned encoding, char *out, size_t cap)
 {
@@ -1132,7 +1152,8 @@ static size_t text_with(const VjoLunaSite *s, unsigned filter, unsigned site_enc
     t.len = vjo_hook_decode(encoding, raw, n, out, t.cap, NULL);
     if (s) run_ops(&t, vjo_luna_post[s->func], 0);
     /* commonfilter: a CP932 hit that is the one character ▽ or ▼ (2 bytes) */
-    if (t.enc == VJO_HOOK_ENC_CP932 && t.len == 3 && (!memcmp(t.cur, "▽", 3) || !memcmp(t.cur, "▼", 3))) t.len = 0;
+    if ((t.enc | VJO_HOOK_DECODE_A0) == VJO_HOOK_ENC_CP932_A0 && t.len == 3 &&
+        (!memcmp(t.cur, "▽", 3) || !memcmp(t.cur, "▼", 3))) t.len = 0;
     if (filter) run_ops(&t, filter_ops(filter), 0);
     if (t.bad) t.len = 0;
     if (t.cur != out) memcpy(out, t.cur, t.len);

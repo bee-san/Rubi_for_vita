@@ -9,7 +9,9 @@
  * short-line probe, the refinement on PSP titles only (--psp; ocr_refine_lines = psp), the text normalised as
  * the worker returns it (core/textnorm.c, the border rule: non_japanese_filter = lines) and filtered as the Shell
  * shows it (core/textfilter.c). API 47's vertical text (ocr_vertical): off reads rows; on reads the region's
- * columns with the vertical model (VJO_VOCR_VERTICAL_NAME), no cascade and no refinement; auto reads rows
+ * columns with the vertical model (VJO_VOCR_VERTICAL_NAME), no cascade and no refinement, and since API 53 (#379) its
+ * rows checked first, read as off where they look like horizontal text ("switched" 0) and columns elsewhere
+ * ("switched" 1, as auto's); auto reads rows
  * checked first (VjoVocrPolicy.vertical_check) and, where they look like vertical text, the columns as on: the
  * worker's retry (game_ocr/main.c, VJO_E_VERTICAL). API 50's line finder fixes (ocr_line_fix): --line-fix on is
  * the worker's default (VOCR_FIX_DEFAULT), junk and all add JUNK and VALLEY; without the option the rows are the
@@ -29,7 +31,8 @@
  * TEXTBOX_RECOVERY on the region's grey rows, with --line-fix's fixes: the job's own finder, before its short-line
  * probe), the column finder's columns (the vertical model's flags), and auto's verdict as the job's check gives it
  * (vjo_vocr_rows_vertical; with --line-fix, a region at least as tall as wide is checked on the frozen finder's
- * rows, as the job does, so the printed rows are not the ones checked there). */
+ * rows, as the job does, so the printed rows are not the ones checked there), and on's (API 53, "horizontal":
+ * vjo_vocr_rows_horizontal on the same rows: 1 reads them as rows). */
 #define _POSIX_C_SOURCE 200809L
 #include <pthread.h>
 #include <stdint.h>
@@ -54,6 +57,13 @@
 #else
 #define HAVE_VERTICAL 0
 #define VJO_E_VERTICAL (-121)
+#endif
+/* API 53's on (#379): the rows checked first (VJO_VOCR_CHECK_ON), the columns unless they look horizontal; a tree
+ * before it reads on's columns at once. */
+#ifdef VJO_VOCR_CHECK_ON
+#define HAVE_ON_CHECK 1
+#else
+#define HAVE_ON_CHECK 0
 #endif
 
 static double now_s(void)
@@ -192,7 +202,7 @@ static void find_only(const Setup *su, const char *id, VjoGreySource *src)
     VocrLinesImage im = {grey, w, h, w, VOCR_LINES_GREY};
     VocrLineSet rows, cols;
     double t0;
-    int rrc, crc, vertical;
+    int rrc, crc, vertical, horizontal = 0;
     unsigned row_us, col_us;
     memset(&rows, 0, sizeof(rows));
     memset(&cols, 0, sizeof(cols));
@@ -208,10 +218,17 @@ static void find_only(const Setup *su, const char *id, VjoGreySource *src)
     if (su->line_fix && h >= w) { /* as the job: a tall region is checked on the frozen finder's rows */
         VocrLineSet frozen;
         memset(&frozen, 0, sizeof(frozen));
-        vertical = !rrc && !vocr_find_lines(&im, VOCR_LINES_TEXTBOX_RECOVERY, arena, sizeof(arena), &frozen) &&
-                   vjo_vocr_rows_vertical(frozen.lines, frozen.count, w, h);
-    } else
+        int frc = rrc || vocr_find_lines(&im, VOCR_LINES_TEXTBOX_RECOVERY, arena, sizeof(arena), &frozen);
+        vertical = !frc && vjo_vocr_rows_vertical(frozen.lines, frozen.count, w, h);
+#if HAVE_ON_CHECK
+        horizontal = !frc && vjo_vocr_rows_horizontal(frozen.lines, frozen.count, w, h); /* on's verdict, the same */
+#endif
+    } else {
         vertical = !rrc && vjo_vocr_rows_vertical(rows.lines, rows.count, w, h);
+#if HAVE_ON_CHECK
+        horizontal = !rrc && vjo_vocr_rows_horizontal(rows.lines, rows.count, w, h);
+#endif
+    }
 #else
     vertical = 0;
 #endif
@@ -223,8 +240,9 @@ static void find_only(const Setup *su, const char *id, VjoGreySource *src)
     crc = -1;
 #endif
     col_us = (unsigned)(1e6 * (now_s() - t0));
-    printf("{\"id\": \"%s\", \"rc\": 0, \"w\": %u, \"h\": %u, \"vertical\": %d, \"rows_us\": %u, "
-           "\"rule_ns\": %.0f, \"cols_us\": %u", id, w, h, vertical, row_us, rule_ns, col_us);
+    printf("{\"id\": \"%s\", \"rc\": 0, \"w\": %u, \"h\": %u, \"vertical\": %d, \"horizontal\": %d, "
+           "\"rows_us\": %u, \"rule_ns\": %.0f, \"cols_us\": %u", id, w, h, vertical, horizontal, row_us, rule_ns,
+           col_us);
     print_set("rows", &rows, rrc);
     print_set("cols", &cols, crc);
     puts("}");
@@ -373,13 +391,15 @@ int main(int argc, char **argv)
             continue;
         }
         memset(&first, 0, sizeof(first));
-        if (su.mode == 1) {
+        if (su.mode == 1 && !HAVE_ON_CHECK) {
             rc = run_one(&job, &plat, su.vertical, &src, &vres, 0, text, sizeof(text), raw, sizeof(raw), &st, &kept,
                          &ws);
         } else {
-            rc = run_one(&job, &plat, su.model, &src, &res, su.mode == 2, text, sizeof(text), raw, sizeof(raw), &st,
-                         &kept, &ws);
-            if (rc == VJO_E_VERTICAL) { /* auto: the rows looked like vertical text; the worker reads the columns */
+            /* off: rows; auto: rows checked (1), on: rows checked the other way (API 53: VJO_VOCR_CHECK_ON, 2) */
+            rc = run_one(&job, &plat, su.model, &src, &res, su.mode == 1 ? 2 : su.mode == 2, text, sizeof(text), raw,
+                         sizeof(raw), &st, &kept, &ws);
+            if (rc == VJO_E_VERTICAL) { /* auto: the rows looked like vertical text (on: not like horizontal text);
+                                         * the worker reads the columns */
                 switched = 1;
                 first = st;
                 ws_first = ws;

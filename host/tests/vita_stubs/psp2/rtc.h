@@ -10,4 +10,6 @@ int sceRtcGetCurrentTick(SceRtcTick *tick);
 int sceRtcGetCurrentClockLocalTime(SceDateTime *time);
 int sceRtcGetTick(const SceDateTime *date, SceRtcTick *tick);
 int sceRtcConvertLocalTimeToUtc(const SceRtcTick *local, SceRtcTick *utc);
+int sceRtcConvertUtcToLocalTime(const SceRtcTick *utc, SceRtcTick *local); /* the Rubi app's Stats and Look up tabs */
+int sceRtcSetTick(SceDateTime *date, const SceRtcTick *tick); /* the Look up tab */
 #endif

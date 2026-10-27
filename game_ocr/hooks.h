@@ -69,9 +69,10 @@ int vjo_hooks_build_id(uint8_t out[32]);
 void vjo_hooks_keep(uint32_t id, uint32_t key);
 
 /* Job time: since the game started, with every CALL slot held by other callers: dropped, the CALL hits that
- * took no slot (the least recently written one not kept was busy, or every slot was kept; also a hit whose
- * slot went to another caller just before it wrote); replaced, the callers that took the least recently
- * written slot that was not kept (audit-hooks F2). */
+ * took no slot (the least recently written one not kept was busy, kept since, or written since the hit chose it, so no
+ * longer the least recently written: #366; or every slot was kept; or this caller's other thread had taken a slot;
+ * also a hit whose slot went to another caller just before it wrote); replaced, the callers that took the least
+ * recently written slot that was not kept (audit-hooks F2). */
 void vjo_hooks_call_stats(uint32_t *dropped, uint32_t *replaced);
 
 /* Job time: stream id's latest text, copied out under its slot's try-lock. 1 when copied; 0 when the

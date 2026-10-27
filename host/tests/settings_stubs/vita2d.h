@@ -32,10 +32,17 @@ vita2d_pvf *vita2d_load_default_pvf(void);
 void vita2d_free_pvf(vita2d_pvf *font);
 int vita2d_pvf_draw_text(vita2d_pvf *font, int x, int y, unsigned int color, float scale, const char *text);
 int vita2d_pvf_text_width(vita2d_pvf *font, float scale, const char *text);
+typedef unsigned int SceGxmTextureFormat;
+vita2d_texture *vita2d_create_empty_texture_format(unsigned int w, unsigned int h, SceGxmTextureFormat format);
 vita2d_texture *vita2d_load_PNG_file(const char *filename);
 vita2d_texture *vita2d_load_PNG_buffer(const void *buffer);
 void vita2d_free_texture(vita2d_texture *texture);
 unsigned int vita2d_texture_get_width(const vita2d_texture *texture);
 unsigned int vita2d_texture_get_height(const vita2d_texture *texture);
 void vita2d_draw_texture_scale(const vita2d_texture *texture, float x, float y, float x_scale, float y_scale);
+/* #315: the Cards page's picture, an empty texture its pixels are copied into (the SDK's value). */
+#define SCE_GXM_TEXTURE_FORMAT_U8U8U8_BGR 0x98000000u
+vita2d_texture *vita2d_create_empty_texture_format(unsigned int w, unsigned int h, unsigned int format);
+void *vita2d_texture_get_datap(const vita2d_texture *texture);
+unsigned int vita2d_texture_get_stride(const vita2d_texture *texture);
 #endif

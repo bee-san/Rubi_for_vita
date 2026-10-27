@@ -41,7 +41,8 @@ release build has no reported console run. How the game worker uses the hooks, a
   when a job asks for it.
 - **Decoding** (`core/hook_text.c`): bytes that are not valid in the encoding are dropped (Windows'
   decoder, Luna's, substitutes a character); CP932's user-defined rows (F040-F9FC) have no glyph and are
-  dropped too.
+  dropped too, and so is its single byte 0xA0, which Windows' cp932 reads as U+F8F0, except in two of Rubi's own
+  entries, whose filters make it the blank their games draw ([CP932's 0xA0](native-hooks.md#rubis-filters)).
 
 Regenerate this file's table part with `python3 tools/gen_luna_vita.py --doc` (and the C table with
 `python3 tools/gen_luna_vita.py`); ctest's `hook_luna_table` fails when either is stale.

@@ -82,9 +82,25 @@ static void cp932_cases(void)
     DECODES(VJO_HOOK_ENC_CP932, "A\x82", 2, "A");               /* cut off at n */
     DECODES(VJO_HOOK_ENC_CP932, "A\x82\0\x82\xa0", 5, "A");     /* the NUL after a lead ends it */
     DECODES(VJO_HOOK_ENC_CP932, "\x80\xfd\xfe\xff" "C", 5, "C");
-    /* 0xA0, which Shift_JIS leaves undefined: Windows' cp932's U+F8F0 (vjo_hook_clean drops it unless a filter
-     * made it what the game draws) */
-    DECODES(VJO_HOOK_ENC_CP932, "A\xa0" "B\x81\x49\xa0", 6, "A\xef\xa3\xb0" "B！\xef\xa3\xb0");
+    /* 0xA0, which Shift_JIS leaves undefined: dropped, as before #316, except in VJO_HOOK_ENC_CP932_A0 (CP932 with
+     * VJO_HOOK_DECODE_A0: a filter that makes it what its game draws, core/hook_luna.c A0_BLANK; #316's audit F2),
+     * Windows' cp932's U+F8F0. As a trail byte it is a character's (あ, 82 A0) either way. The flag with another
+     * encoding is no encoding: no text. */
+    DECODES(VJO_HOOK_ENC_CP932, "A\xa0" "B\x81\x49\xa0", 6, "AB！");
+    DECODES(VJO_HOOK_ENC_CP932_A0, "A\xa0" "B\x81\x49\xa0", 6, "A\xef\xa3\xb0" "B！\xef\xa3\xb0");
+    DECODES(VJO_HOOK_ENC_CP932, "\x82\xa0\xa0", 3, "あ");
+    DECODES(VJO_HOOK_ENC_CP932_A0, "\x82\xa0\xa0", 3, "あ\xef\xa3\xb0");
+    TEST_CHECK(VJO_HOOK_ENC_CP932_A0 == (VJO_HOOK_ENC_CP932 | VJO_HOOK_DECODE_A0));
+    DECODES(VJO_HOOK_ENC_UTF8 | VJO_HOOK_DECODE_A0, "A\xa0" "B", 3, "");
+    DECODES(VJO_HOOK_ENC_UTF16LE | VJO_HOOK_DECODE_A0, "\xa0\x00", 2, "");
+    {
+        char out[16];
+        unsigned used = 99;
+        TEST_CHECK(dec(VJO_HOOK_ENC_AUTO, "A\xa0", 2, out, sizeof out, &used) == 1 && used == VJO_HOOK_ENC_CP932 &&
+                   !strcmp(out, "A")); /* AUTO: CP932, its 0xA0 dropped */
+        TEST_CHECK(dec(VJO_HOOK_ENC_CP932_A0, "A\xa0", 2, out, sizeof out, &used) == 4 &&
+                   used == VJO_HOOK_ENC_CP932_A0);
+    }
     DECODES(VJO_HOOK_ENC_CP932, "\x1b\xb4", 2, "\x1bｴ");
 }
 
@@ -243,8 +259,8 @@ static void clean_controls(void)
         {"\\\\s156猫\\\\n犬\\", "\\\\s156猫\\\\n犬\\"},
         {"\\s156\\w1\\k\\c", ""},
         {"", ""},
-        /* the decoder's CP932 0xA0 (U+F8F0) no filter mapped; other private-use code points stay */
-        {"猫\xef\xa3\xb0犬\xef\xa3\xb0", "猫犬"},
+        /* private-use code points stay, U+F8F0 too (#316's audit F2: no path but the filters that map it makes one) */
+        {"猫\xef\xa3\xb0犬\xef\xa3\xb0", "猫\xef\xa3\xb0犬\xef\xa3\xb0"},
         {"猫\xef\xa3\xb1犬\xef\xa3", "猫\xef\xa3\xb1犬\xef\xa3"},
         /* マブラヴ オルタネイティヴ PCSG00777, a verified entry with no filter: its message's \x03 (a reveal pause) and
          * \x01 (the click wait that ends it) are controls (the psandvita farm's page 3, as its reviewer read it) */
@@ -256,6 +272,14 @@ static void clean_controls(void)
         size_t n = vjo_hook_clean(text, strlen(text));
         TEST_CHECK_(n == strlen(cases[k].want) && !strcmp(text, cases[k].want),
                     "[%s] -> [%s], want [%s]", cases[k].raw, text, cases[k].want);
+    }
+    /* The plain path (the CALL source, a site with neither filter nor Luna site): a CP932 0xA0 before a command's
+     * letter leaves the command a command, as before #316 (#316's audit: A\<A0>w30.B gave A\w30.B there) */
+    {
+        char text[64];
+        size_t n = dec(VJO_HOOK_ENC_CP932, "A\\\xa0w30.B", 8, text, sizeof text, NULL);
+        n = vjo_hook_clean(text, n);
+        TEST_CHECK_(n == 3 && !strcmp(text, "A.B"), "got [%s]", text);
     }
     /* The same count history.csv saves: the command's letter and digits are not reading. */
     char text[] = "\\s156「ばーーーっっ!」\\w10\\k";

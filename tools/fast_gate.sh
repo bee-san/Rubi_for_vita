@@ -40,7 +40,9 @@
 # machine's (a lane whose tools are missing fails).
 #
 # Inputs: VJO_VOCR_SOURCE_DIR (else .refs/vita-vn-ocr at cmake/VocrOCR.cmake's pin, else a clone in the
-# cache) and VJO_PLAINTEXT_SOURCE (else .refs/plaintext-dicts at docs/plaintext-dictionaries.json's revision,
+# cache), VJO_VOCR_SPOT_SOURCE_DIR (the text spotter's pin, VJO_VOCR_SPOT_COMMIT: the same checkout when the two
+# pins are one commit, else .refs/vita-vn-ocr-spot at it, else a clone in the cache) and VJO_PLAINTEXT_SOURCE (else
+# .refs/plaintext-dicts at docs/plaintext-dictionaries.json's revision,
 # else a sparse clone in the cache over SSH). RUBI_GATE_CACHE (default ~/.cache/rubi-fast-gate) keeps those
 # clones and the pinned models. Without the private dictionary the gate runs what CI runs for a fork's pull
 # request and says so; the e2e then cannot run. The models lane reads VJO_VOCR_MODEL_DIR, else the cache's
@@ -54,7 +56,7 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT" || exit 2
 BASE='' E2E=auto MODELS=auto ARM=1 JOBS='' OUT=build/gate CLEAN=0
-usage() { sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case $1 in
     --base) [ $# -ge 2 ] || usage; BASE=$2; shift 2 ;;
@@ -125,6 +127,22 @@ else
 fi
 case $VOCR in /*) ;; *) VOCR=$ROOT/$VOCR ;; esac
 case $DICTS in ''|/*) ;; *) DICTS=$ROOT/$DICTS ;; esac
+# API 54: the text spotter's files, pinned at their own commit (cmake/VocrOCR.cmake VJO_VOCR_SPOT_COMMIT) until
+# vita-vn-ocr's spotter merges: the recognizer's checkout when that is the same commit, else
+# VJO_VOCR_SPOT_SOURCE_DIR, .refs/vita-vn-ocr-spot at the pin, or a clone in the cache.
+SPOT_PIN=$(sed -n 's/^set(VJO_VOCR_SPOT_COMMIT \([0-9a-f]\{40\}\))$/\1/p' cmake/VocrOCR.cmake)
+[ -n "$SPOT_PIN" ] || die "no pinned text spotter commit (VJO_VOCR_SPOT_COMMIT) in cmake/VocrOCR.cmake"
+if [ -n "${VJO_VOCR_SPOT_SOURCE_DIR:-}" ]; then
+  SPOT=$VJO_VOCR_SPOT_SOURCE_DIR
+elif [ "$SPOT_PIN" = "$VOCR_PIN" ]; then
+  SPOT=$VOCR
+elif [ -f .refs/vita-vn-ocr-spot/runtime/vocr_textspot6.c ] && at_pin .refs/vita-vn-ocr-spot "$SPOT_PIN"; then
+  SPOT=$ROOT/.refs/vita-vn-ocr-spot
+else
+  SPOT=$CACHE/vita-vn-ocr-${SPOT_PIN:0:12}
+  clone_pin https://github.com/bee-san/vita-vn-ocr.git "$SPOT_PIN" "$SPOT" || die "cannot fetch vita-vn-ocr $SPOT_PIN"
+fi
+case $SPOT in /*) ;; *) SPOT=$ROOT/$SPOT ;; esac
 if [ "$E2E" = on ] && [ -z "$DICTS" ]; then E2E=blocked; fi
 
 # ---- the real models (the models lane): every pinned one the host tests read, checked before a lane starts
@@ -178,7 +196,7 @@ if [ "$ENGINE" != none ]; then
   VITA_IMAGE=$(image vita tools/gate/vita.Dockerfile tools/setup_toolchain.sh tools/setup_settings_deps.py) || exit 2
   # Every path a lane reads, at its own path inside the container; files are made as this user.
   MOUNTS=(-v "$ROOT:$ROOT" -v "$CACHE:$CACHE")
-  for d in "$VOCR" ${DICTS:+"$DICTS"} "$(cd "$(git rev-parse --git-common-dir)" && pwd)"; do
+  for d in "$VOCR" "$SPOT" ${DICTS:+"$DICTS"} "$(cd "$(git rev-parse --git-common-dir)" && pwd)"; do
     case $d/ in "$ROOT"/*|"$CACHE"/*) ;; *) MOUNTS+=(-v "$d:$d") ;; esac
   done
   if [ "$MODELS" = run ]; then # the models lane only reads them
@@ -186,6 +204,13 @@ if [ "$ENGINE" != none ]; then
   fi
   USER_ARGS=(--user "$(id -u):$(id -g)")
   [ "$ENGINE" != podman ] || USER_ARGS+=(--userns=keep-id)
+  # The lanes' TMPDIR (/tmp: every suite's own directory, the compilers' temporary files) in memory, not in the
+  # container's overlay on the machine's disk. The suites write real files and sync them (the Shell's history
+  # writer syncs every append): on the overlay each sync waits for whatever else the machine writes, and with
+  # the fleet's training and gates on the same disk shell_history took 98-120+ s of its 120 s TIMEOUT, in every
+  # host lane, on main too (2026-10-27); on tmpfs 2.2 s against 40.2 s on the overlay in the same minute. Only
+  # where the files are changes: CI's runners and CONTAINER_ENGINE=none keep their own TMPDIR.
+  USER_ARGS+=(--tmpfs /tmp:rw,exec,nosuid,nodev,mode=1777)
 fi
 run_lane() { # run_lane NAME host|vita SCRIPT: SCRIPT in that image (or here), its log in LOGS/NAME.log
   local name=$1 kind=$2 script=$3 t0 rc
@@ -229,7 +254,7 @@ for v in debug normal; do
   select=$([ $v = normal ] && echo "-LE variant_free" || true)
   run_lane host-$v host "
 cmake -S . -B $(q "$OUT/host-$v") -G Ninja -DVJO_DEBUG=$dbg -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
-  -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS")
+  -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS")
 cmake --build $(q "$OUT/host-$v") -j$JOBS
 $anki
 ctest --test-dir $(q "$OUT/host-$v") -j$JOBS --output-on-failure $select" &
@@ -268,8 +293,8 @@ if [ "$ARM" = 1 ]; then
     [ "$ENGINE" != none ] || tools=
     for n in 1 0; do
       v=$([ $n = 1 ] && echo debug || echo normal)
-      run_lane arm-$v host "$plain VJO_DEBUG=$n $tools VJO_VOCR_SOURCE_DIR=$(q "$VOCR") ARM_JOBS=$JOBS \\
-  bash tools/arm_host_tests.sh $(q "$OUT/arm-$v")" &
+      run_lane arm-$v host "$plain VJO_DEBUG=$n $tools VJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
+  VJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") ARM_JOBS=$JOBS bash tools/arm_host_tests.sh $(q "$OUT/arm-$v")" &
     done
     wait
   ) &
@@ -286,7 +311,7 @@ for v in debug normal; do
   B=$OUT/vita-$v
   run_lane vita-$v vita "$path
 cmake -S vita -B $(q "$B") -DCMAKE_BUILD_TYPE=Release -DVJO_DEBUG=$dbg -DVJO_VOCR_SOURCE_DIR=$(q "$VOCR") \\
-  -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS")
+  -DVJO_VOCR_SPOT_SOURCE_DIR=$(q "$SPOT") -DVJO_PLAINTEXT_SOURCE=$(q "$DICTS")
 cmake --build $(q "$B") -j$JOBS
 $release
 python3 tools/check_memory_ledger.py --variant $v --kernel $(q "$B/VitaJPOverlay_Kernel.skprx") \\

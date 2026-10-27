@@ -725,7 +725,14 @@ static void bundled_dictionary_deinflects(void)
         {"返さねばならない", "返さねば", "返す"}, {"しやがって", "しやがって", "する"},
         {"聞きやしねえ", "聞きやしねえ", "聞く"}, {"出来やしない", "出来やしない", "出来る"},
         {"知らねー", "知らねー", "知らない"}, {"できねーよ", "できねー", "出来る"},
-        {"改めまして", "改めまして", "改める"}};
+        {"改めまして", "改めまして", "改める"},
+        /* #321, from the Yomitan check's lines: -おく's とく through -て, the causative passive as two
+         * steps, a particle before a form of する or a katakana word, -ん's かん left out */
+        {"行っとく", "行っとく", "行く"}, {"かわされた", "かわされた", "交わす"}, {"飛ばされた", "飛ばされた", "飛ばす"},
+        {"がした", "が", "が"}, {"もせず", "も", "も"}, {"にしておく", "に", "に"}, {"はしない", "は", "は"},
+        {"のせいだ", "の", "の"}, {"かしたら", "か", "か"}, {"がする", "がする", "がする"},
+        {"のマンション", "の", "の"}, {"にエントリー", "に", "に"}, {"とセンパイ", "と", "と"},
+        {"手をつかんで", "手", "手"}};
     VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
     setup(&cfg, &p, &pp);
     for (auto &c : cases) {
@@ -737,6 +744,26 @@ static void bundled_dictionary_deinflects(void)
         std::string span(d.sentence, (size_t)d.list.entries[0].hl_end);
         TEST_CHECK_(span == c[1] && !strcmp(d.list.entries[0].vocab->spelling, c[2]), "%s: %s, entry %s",
                     c[0], span.c_str(), d.list.entries[0].vocab->spelling);
+    }
+}
+
+/* #321: an entry whose rank came from a spelling-only Jiten row only after kana normalisation shows no
+ * rank (だと had ダト's #73,969, もか モカ's, のな ノナ's); one of its own reading keeps it. */
+static void normalised_spelling_ranks_in_the_bundle(void)
+{
+    static const struct { const char *text, *spelling; int ranked; } cases[] = {
+        {"だと", "だと", 0}, {"もか", "もか", 0}, {"のな", "のな", 0}, {"猫", "猫", 1}, {"一緒に", "一緒に", 1}};
+    VjoConfig cfg; VjoPlatform p; PosixPlatform pp;
+    setup(&cfg, &p, &pp);
+    for (auto &c : cases) {
+        VjoArena a; VjoOverlayData d;
+        TEST_CASE(c.text);
+        vjo_arena_init(&a, arena_mem, sizeof(arena_mem));
+        TEST_ASSERT(vjo_overlay_ocr_text(&a, &cfg, c.text, &d) == VJO_OK);
+        TEST_ASSERT(vjo_overlay_lookup_at(&a, &p, &cfg, 0, &d) == VJO_OK && d.list.n_entries == 1);
+        const VjoVocab *v = d.list.entries[0].vocab;
+        TEST_CHECK_(!strcmp(v->spelling, c.spelling), "shows %s", v->spelling);
+        TEST_CHECK_((v->rank != VJO_NO_RANK) == c.ranked, "%s: rank %d", c.text, v->rank);
     }
 }
 
@@ -1099,6 +1126,7 @@ TEST_LIST = {
     {"preferred_readings_exist_in_the_bundle", preferred_readings_exist_in_the_bundle},
     {"usual_spellings_win_in_the_bundle", usual_spellings_win_in_the_bundle},
     {"bundled_dictionary_deinflects", bundled_dictionary_deinflects},
+    {"normalised_spelling_ranks_in_the_bundle", normalised_spelling_ranks_in_the_bundle},
     {"real_lines_walk_word_by_word", real_lines_walk_word_by_word},
     {"expected_entries_at_real_lines", expected_entries_at_real_lines},
     {"touch_and_left_right_follow_the_words", touch_and_left_right_follow_the_words},

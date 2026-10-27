@@ -479,8 +479,8 @@ yet.
 The **Rubi** app shows five games per page, with compact titles, visible
 IDs and ON/OFF badges. The last page may have fewer games. Games are listed by letter (#,
 A–Z, kana by row, then other characters), alphabetically within it, capital
-and small letters together. Tap the **Games**, **OCR & lookup**
-or **Anki** tab, or press Select, to change pages. Choices save automatically to
+and small letters together. Tap the **Games**, **OCR & lookup**, **Anki**, **Look up**, **Stats**
+or **Install** tab, or press Select, to change pages. Choices save automatically to
 `ux0:data/VitaJPOverlay/games.ini` and take effect on game start/resume.
 Icons load one per frame for the current page only, with at most five textures
 kept. Changing pages releases the previous page's icons; a card
@@ -490,16 +490,17 @@ unreadable ([details and memory](settings-readability.md#the-games-list)).
 | Control | Action |
 | --- | --- |
 | Up / Down | Select a game (held: repeats) |
-| Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, after a sixth of a second 60 rows a second, at whatever rate the app draws; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup and Anki pages, where it stops at the first and last card while Up / Down wrap round |
+| Left stick up / down | As Up / Down, as in VitaShell: pushed past half way it moves one row, then, held, after a sixth of a second 60 rows a second, at whatever rate the app draws; how far it is pushed beyond that does not change the speed. Also on the OCR & lookup, Anki and Stats pages, where it stops at the first and last card while Up / Down wrap round |
 | L / R | Page up / page down; the selection keeps its row (held: repeats) |
 | L + R together, or touch the search field | Open the Vita keyboard and search all indexed games by title or title ID. Latin matching ignores case; Japanese text is matched as entered. The Enabled/Disabled filter still applies. Cancel keeps the current search; accept an empty query or touch Clear to show all games again |
 | Touch Prev / Next | Change the five-game page; the page number is shown between them |
 | Left / Right | Left: first game of this letter, or of the previous one when already there; Right: first game of the next letter. Letters: # (digits, symbols), A–Z, kana by row (か for が, ア for ヴ), others by first character |
-| Enter or touch a game | Toggle OCR and overlay input for that game |
+| Enter or touch a game | Toggle OCR and overlay input for that game, as the button or the finger is let go |
+| Hold Enter, or a touch, on a game for half a second | Open [the game's own page](#a-games-own-page): its ON/OFF and its **Line finder** (the spotter, or Rubi's finder with its fixes). The selected game's card says "Hold ×: settings" (○ on a console whose Enter is ○) |
 | Triangle or touch the default row | Default ON or OFF. OFF turns every game OFF, including those turned ON one by one; ON turns every game ON except those turned OFF one by one. The status line names them ([details](settings-readability.md#games-missing-from-the-list-and-default-off-138)) |
 | Square | Filter all, enabled or disabled games |
 | Start | Refresh the installed-title list (the only time it is read, with the app's start) |
-| Select or touch a page tab | Switch between Games, OCR/lookup and [Anki](anki.md#setup-and-use) pages |
+| Select or touch a page tab | Switch between the Games, OCR & lookup, [Anki](anki.md#setup-and-use), [Look up](#look-up), [Stats](#stats) and Install pages |
 | Cancel | Exit |
 
 On the **OCR & lookup** page, select a row with Up/Down. Enter
@@ -518,7 +519,7 @@ Whole word/Character on the Highlight card, 1–8 on Dictionaries shown, Automat
 game/OCR only on Text source (`text_source`: its save says it applies when a game next starts,
 as a game's worker reads it then), or OFF/Automatic/ON on Vertical text (`ocr_vertical`, from the
 overlay's next open: Automatic, the default, reads columns where the text box holds vertical text
-and rows elsewhere; ON reads columns in every game). The page is taller
+and rows elsewhere; ON reads columns, but rows where the box plainly holds lines of text). The page is taller
 than the screen: it scrolls a card at a time to keep the selected one whole, the next card shows
 at the bottom, a bar at the right shows where the view is, and a touch on a card cut at the
 bottom only scrolls it into view. Read text (`ocr_mode`, [Use in a game](#use-in-a-game)) reads
@@ -540,10 +541,22 @@ API keys go, `dictionary = jpdb`, `jiten` or `hachidori` becomes `local`, and th
 removed engine choice's `ocr_backend` line goes).
 
 On the **Anki** page the rows are **Card mining**, **Screenshots** and **Trim black bars** (ON/OFF:
-Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), then
-**Export cards** and **Export all cards**. Five rows are more than the room above the page's status
+Enter, Left/Right or a touch; `anki_mining`, `anki_screenshot`, `anki_screenshot_trim_bars`), **Duplicates**
+(Tag, Skip or Keep: Enter takes the next, Left/Right the one beside it, a touch the one touched; the Rubi app's
+own `app.ini`, which the overlay never reads: [duplicates](anki.md#duplicates)), **Cards: N queued** (Enter opens
+the [Cards page](anki.md#the-cards-page)), **Known words** (Import: `known_words.txt`, which
+`tools/known_words.py` writes from Anki; [known words](anki.md#known-words)), then
+**Export cards** and **Export all cards**. Eight rows are more than the room above the page's status
 box: they scroll a row at a time as the OCR page's cards do, a bar at the right shows where the view is,
 and a touch on the row cut at the bottom only scrolls it into view ([Anki](anki.md#setup-and-use)).
+
+The **Cards page** lists the queued cards, newest first: Up/Down and the left stick choose, L/R a page of
+six, Left/Right the queue or the exported cards (read only), Square only the words on two cards, Start reads
+again, Enter opens a card (its sentence with the word marked, its definition, its picture; L/R the card before
+or after it), and Cancel goes back. On a queued card, Left/Right choose **Delete**, **Fix sentence** (the
+keyboard, on several lines; its done button saves) or **Drop picture**, and Enter does it; Delete and Drop
+picture ask for a second press. Triangle on the list (twice) empties `anki_queue/deleted/`, where deleted and
+replaced cards wait ([how each change is made safe](anki.md#the-cards-page)).
 
 Japanese-only selection (**Japanese characters only**) is **OFF by default** (the
 owner's choice, 2026-10-20; ON before): every visible character is selectable, the
@@ -663,6 +676,50 @@ many bubbles is not measured on a console yet. A folder in `ux0:app` that is not
 named like a title ID (nine capital letters and digits) is never taken for a
 bubble, whatever it holds.
 
+### A game's own page
+
+Hold Enter, or a touch, on a game in the list for half a second: its page opens, with its title and ID and two
+settings (#333). A shorter press or tap still turns the game ON or OFF, as it is let go.
+
+- **Rubi in this game**: its ON or OFF, as on the list.
+- **Line finder**: what cuts this game's text box into lines, `config.ini`'s `ocr_finder` and `ocr_line_fix` for this
+  game alone. **Default** (the start) uses `config.ini`'s: the text spotter unless you changed it. **Spotter** is
+  vita-vn-ocr's text spotter ([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-54)). **Off**, **On**,
+  **Junk** and **All** are Rubi's own finder (`ocr_finder = grad`) with that `ocr_line_fix`
+  ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)). The card says what the chosen one does, or what
+  Default gives this game.
+
+Up/Down select a setting; Left/Right or Enter choose (Enter goes round the line finder's choices); touch a choice to
+take it; Cancel goes back to the list, and Select or a tab to another page. A choice is saved at once and applies
+when the game next starts or resumes, as its ON/OFF does; the list then shows `Line finder: On` (for example) on the
+game's card.
+
+Which to choose: keep **Default** unless a game reads badly. The spotter is the measured best overall, and on Narcissu
+too, whose rows touch. On the owner's hooked pages (host, measured: VOCR5-N, the 1 MB LM and the cascade, regions drawn
+with a margin; counted from the per-page records of the runs behind vita-vn-ocr #129 and #149, the spotter as #149
+chose it, before its weights were trained again with these pages), Narcissu (`ULJM05674`) read with 63 errors in 4,959
+characters with the spotter, 137 with All, and 677 with On. Over the 46 hooked games the spotter made 2,135 errors in
+162,471 characters (1.31%), All 2,445 (1.50%), Junk 3,083 (1.90%), On 5,349 (3.29%) and Off 6,296 (3.88%); on 93 other
+games' screenshots 0.97% against All's 1.50% and On's 2.34%. On 17 of the 46 games and 23 of the 93, one of Rubi's
+finder's values made fewer errors than the spotter (the best of the four, picked on the same pages), by up to 35
+errors a game: such a game is the one to give **On** (or another value) here. Draw the box a few pixels outside the text for Junk and All, which can drop a real
+line in a box drawn tight. Rubi has no list of games that get another value: a game gets one only when you choose it.
+
+PSP games follow the same rows as their ON/OFF. A bubble's own choice applies to it; without one it takes the line
+finder of the shared row **Adrenaline / PSP games without a setting of their own** (`NPXS10028`), and without that,
+`config.ini`'s. A PSP game started from inside Adrenaline is Adrenaline's (`PSPEMUCFW`): Rubi does not know which
+game it is, so give the game a bubble for a choice of its own.
+
+The choices are kept in `ux0:data/VitaJPOverlay/ocr_line_fix.ini`, one line a game in `games.ini`'s form
+(`PCSG00001 = on`; the values are `spotter`, `off`, `on`, `junk` and `all`), with a backup (`ocr_line_fix.ini.bak`)
+as `games.ini` has: the app reads it after a save that was cut short, and its next save puts the file back. They
+are not in `games.ini` itself: earlier builds read that file strictly, and a line they do not know would make it
+unreadable to them (its backup's choices, or every game OFF). A file the app cannot read (a line edited by hand that
+is not one of the five values, say) is left as it is, and the page says so; the Shell then uses `config.ini`'s line
+finder for every game. The game's start line in `log.txt` names what its jobs use: `game PCSG00001 started: trigger
+l+r, subtitles select+r, ocr_mode auto, ocr_finder grad, ocr_line_fix on` (with the spotter, `ocr_line_fix` is its
+fallback's). Not run on a console yet.
+
 ## Settings and dictionaries
 
 `ux0:data/VitaJPOverlay/config.ini` is reloaded when the overlay opens. A line
@@ -776,7 +833,8 @@ host, 12 % more recognizer frames in PSP regions shown 2×, an estimated
 ([finder refinement](vita-vn-ocr.md#finder-refinement-api-20)).
 `ocr_vertical = auto` (the default; the Rubi app's **Vertical text**) reads Japanese set in columns, right to
 left, with vita-vn-ocr's vertical model, where the line finder's rows in the region look like vertical text, and
-rows everywhere else, as `off` does; `on` reads columns in every game. Draw the text box around the columns. On
+rows everywhere else, as `off` does; `on` reads columns, and rows only where they are plainly lines of horizontal
+text (since API 53, #379: before, columns everywhere). Draw the text box around the columns. On
 the host it read a vertical PS Vita VN's dialogue at 4.5-23 % CER, depending on how the box is drawn, and changed
 no horizontal job's text ([vertical text](vita-vn-ocr.md#vertical-text-vita-vn-ocr-99); not run on a console).
 `ocr_text_gate = on` (the Rubi app's **Skip OCR on screens without text**; off by default) puts vita-vn-ocr
@@ -793,8 +851,16 @@ that may need one, the two-level head: an estimated 0.12 / 0.20 / 0.26 s less pe
 Normal / Large), with no development score resolved worse; nothing of it has run on a console yet. `gate` and
 `two_level` keep one of the two; `off` reads every frame with the full head, as before API 42
 ([head gate and two-level head](vita-vn-ocr.md#head-gate-and-two-level-head-api-42)).
-`ocr_line_fix = on`, the default, runs the line finder with vita-vn-ocr #129's column fix: a line's parts across a
-full-width space stay one line. On the owner's hooked PS Vita and PSP pages (host, measured), this takes the
+`ocr_finder = spotter`, the default, finds the lines with vita-vn-ocr's text spotter (#149), a small network
+trained on hooked game pages and on MeikiOCR's line boxes, instead of Rubi's finder (`grad`). On other games'
+development screenshots (host, measured) it takes the whole-dialogue error of Rubi's finder from 2.38% to 1.03%
+(0.99% with VOCR6), and on a fresh set of 41 games from 4.29% to 1.86%. `ocr_spotter_refine = on` refines its
+boxes too. Its weights are a file beside the models, kept in the game's memory between jobs; without them a job
+reads with Rubi's finder, as does a region the spotter sees as vertical text under `ocr_vertical = auto`
+([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-54)).
+
+`ocr_line_fix` tunes Rubi's finder (`grad`, also the spotter's fallback): `ocr_line_fix = on`, the default, runs it
+with vita-vn-ocr #129's column fix: a line's parts across a full-width space stay one line. On the owner's hooked PS Vita and PSP pages (host, measured), this takes the
 whole-dialogue error from 3.88% to 3.29%, and on other games' development screenshots from 3.04% to 2.34%. It gains as
 much on regions drawn tight.
 
@@ -803,6 +869,9 @@ much on regions drawn tight.
 - `all` is `junk` plus a split of two touching rows (Narcissu), so it is for regions drawn with a margin too.
 - `off` is the frozen finder
   ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)).
+- A game can have its own line finder, which replaces `ocr_finder` and `ocr_line_fix` in its jobs: the **Line
+  finder** on [its page in the Rubi app](#a-games-own-page) (#333), for a game that reads better with Rubi's finder
+  than with the spotter.
 
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
@@ -905,7 +974,11 @@ Up to eight dictionary files can be enabled in priority order. The Rubi
 app's **Dictionaries shown** (`local_dictionary_results`, 1–8, default 2) pages
 through files for the selected word. Bee's Ultimate Dictionary combines its
 word, grammar and kanji sources in one file; the names are a second file. Only
-the page on screen is held in memory.
+the page on screen is held in memory. A character's name spelled as the text
+(なぎさ) comes before the word spelled otherwise (渚), but not before one of the
+1,023 most frequent words (わたし shows 私 first): `config.ini` `names_first`,
+`auto` by default, `on` for names first always, `off` for the word first
+([names and words](local-dictionaries.md#names-and-words)).
 
 The subtitle strip (Select + R) shows the recognized text, without readings,
 and adds no lookups for it. Recognition and dictionary lookup make no network
@@ -949,8 +1022,10 @@ the game wrapped), the game, its title ID and platform, the time, and the OCR
 engine and model.
 
 The Rubi app's **Anki** page has card mining ON/OFF, **Screenshots**
-ON/OFF, **Trim black bars** ON/OFF, **Export cards (N queued)** and **Export all cards**
-(five rows, which scroll a row at a time). An export writes the cards as
+ON/OFF, **Trim black bars** ON/OFF, **Duplicates** (Tag, Skip or Keep), **Cards: N queued** (the
+[Cards page](anki.md#the-cards-page): each queued card, to delete it, fix its sentence or drop its picture before
+it is exported), **Known words** (Import), **Export cards (N queued, M already mined)** and **Export all cards**
+(eight rows, which scroll a row at a time). An export writes the cards as
 notes of [Lapis](https://github.com/donkuri/lapis) 1.7.0 (GPL-3.0, its
 templates bundled unchanged), in the deck **Vita JP Overlay** (the name from before the rename,
 kept so that Anki adds the cards to the same deck as before, not to a second one), into
@@ -966,6 +1041,78 @@ overlay or the app uses the network for Anki. `anki_host` and
 `anki_audio_url` (AnkiConnect, removed) are ignored, and the installer and the
 app's next save remove them. See [docs/anki.md](anki.md) for the fields, the queue, the package
 and memory.
+
+### Look up
+
+The Rubi app's **Look up** page (#313) looks words up beside the suspended game, with the overlay's own dictionaries
+and lookup, and saves them as Anki cards: a word you type, or a word of an earlier line of a game. L or R, or a tap on
+**Search** or **Earlier lines**, goes from one to the other; each keeps its text and cursor.
+
+- **Search.** Triangle (or, before anything is typed, Enter or a tap on the text box) opens the Vita keyboard for a word or a sentence
+  of up to 128 characters; every language's keyboard is offered, Japanese among them, whatever the system's
+  keyboards are. The text is looked up as the overlay looks up its text: the word at the cursor, longest match first,
+  in its dictionary form (した → する), in `local_dictionaries`' order with the same ranking, the other dictionaries'
+  entries for the word below it (`local_dictionary_results`). The entry shows its headword, reading, frequency
+  badge (`frequency_badge`), the conjugation line, the definitions, and the kanji and grammar lines.
+- **Earlier lines.** The most recent game's last 200 lines in `history.csv`, newest first, each with its local
+  time; Square, or a tap on the game's name, goes to the next game. The lines are those the overlay's line history
+  shows: Read text: Automatically's ([OCR history](ocr-history.md)), filtered as the overlay shows a text
+  (`non_japanese_filter`), none the same as the one after it. Enter, or a tap, opens a line with the same word
+  cursor as Search; Cancel goes back to the list. A big file is read from its end back, a part of it each frame
+  (at most its last 8 MiB): the list grows while the status line says it is reading. Start reads the file again.
+- **A card.** Enter on an entry saves it to the Anki queue, as the overlay's Enter does, **without a picture** (the
+  screen of that moment is gone), whether Card mining is ON or OFF: it is the page's own explicit press. The
+  sentence is the line, or the typed text when it is longer than the word (a word typed alone has none); the game,
+  title ID and platform are the line's (a typed search has none); MiscInfo is the game and the line's local date (a
+  typed search: the date it is saved). **Export cards** on the Anki page exports them with the others
+  ([the cards](anki.md#cards-from-the-look-up-page)).
+
+| Control | Action |
+| --- | --- |
+| Triangle | Search: type a word or a sentence |
+| Left / Right | Move the cursor by the matched word (a character with **Highlight: Character**); held, it repeats and stops at the text's ends |
+| Left stick | Left/right: a character a step, the word looked up once the cursor rests (`stick_lookup_ms`); up/down: scroll the entry |
+| Touch the text | Look up the word that starts at the character touched |
+| Up / Down, right stick | Scroll the entry (in the list: choose a line; Left/Right a page of lines) |
+| Enter | Save the entry as a card (Search with no text yet: the keyboard; the list: open the line) |
+| Square | Earlier lines: the next game |
+| Cancel | An open line: back to the list; else exit the app |
+
+The page uses no network and allocates nothing: its memory is static, about 420 KiB of the app's 50 MiB
+([vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)), and leaving the page closes the
+dictionaries' files. The Shell, the game worker and the kernel are unchanged. Not run on a console yet.
+
+### Stats
+
+The Rubi app's **Stats** page shows your reading from `ux0:data/VitaJPOverlay/history.csv`, the lines the overlay
+keeps with **Read text: Automatically** ([OCR history](ocr-history.md)), and the cards in the Anki queue. It counts
+them as the overlay's △ view does, with `config.ini`'s `reading_time` (adaptive, the default:
+[reading time](ocr-history.md#reading-time)), so each game's **Today** and **In all** are the numbers △ shows in that
+game: today in this game, and this game's total. Days are the Vita's own calendar days, in its time zone. There are
+no sessions: a day, a game and all games.
+
+| Row | What it shows |
+| --- | --- |
+| **Today** | All games today: characters, reading time and characters per hour; the daily goal's bar; the streak, the days in a row that count (ending today, or yesterday while today does not count yet) and the best |
+| **Daily goal** | Off (the default), 2,000, 5,000, 10,000, 20,000 or 50,000 characters, or 15, 30, 60 or 120 minutes of reading a day. Left/Right (or a tap on its sides) choose, Enter goes round. A day counts for the streak when it meets the goal, or with no goal when anything was read |
+| **Last 14 days** | A bar of characters a day, today's at the right, a day at the goal in the accent colour, the goal's line across them; Left/Right choose a day (L/R a week) and the row says its characters, time and characters/hour |
+| **This year** | A heatmap of the year's days, a column a week from Sunday, in four shades by the year's best day; Left/Right choose a day, L/R a week, or tap one |
+| **All games** | The totals of every game, the cards mined and the cards per 10,000 characters, and the lines recorded |
+| A row per game | Its name and the last day read; today's characters, time and characters/hour; in all the same, its cards (by the title ID the card was mined in) and cards per 10,000 characters. The game read last comes first |
+
+- **Start** counts again; the page counts what is new each time it is shown. The first count reads all of
+  `history.csv` on a thread of its own (the status line says how far it is); then the counts are kept in
+  `ux0:data/VitaJPOverlay/stats_cache.bin`, and the next count reads only the lines added since. A `history.csv` that
+  is not the one counted (replaced or shorter), another time zone, another `reading_time` or a damaged cache is
+  counted again from its start. 20 MB of history (44,769 lines) took 40 ms on a computer [measured on the host, an
+  AMD EPYC 9R14 core; the Vita's time is unmeasured: the app runs on its CPU3 while the game is suspended].
+- **The goal** is kept in the app's own settings file, `ux0:data/VitaJPOverlay/app.ini`
+  (`stats_daily_goal = off | 2000_characters | … | 120_minutes`), never in `config.ini`: the overlay does not read it.
+- The page only reads `history.csv` and the cards; it writes `stats_cache.bin` and `app.ini` only. A line read across
+  midnight is its first day's, with its time, as `tools/reading_stats.py` counts it; △'s **Today** leaves such a line
+  out. A record a power loss cut is skipped, as △ skips it.
+- It counts at most 512 games (more count in **All games** only), 16,384 days of games and 16,384 cards (its
+  memory: about 2.1 MiB of the app's own, [vita-memory.md](vita-memory.md#54-the-rubi-app-a-system-application)).
 
 ## Memory and troubleshooting
 
@@ -985,11 +1132,12 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 192,512 B of module pages (204,800 B in the debug build; API 31's native hooks and
+holds the worker's 208,896 B of module pages (221,184 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
 API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
-two-level head 8,192 B, API 47's vertical text 4,096 B and API 50's line finder fixes with vita-vn-ocr f8a1856's
-runtime 8,192 B, the debug build's 4,096 B for the hook farm's 20 verified entries, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+two-level head 8,192 B, API 47's vertical text 4,096 B, API 50's line finder fixes with vita-vn-ocr f8a1856's
+runtime 8,192 B, API 54's text spotter 16,384 B and the debug build's 4,096 B for the hook farm's 20 verified
+entries, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

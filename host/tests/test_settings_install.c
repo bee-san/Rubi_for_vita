@@ -2338,7 +2338,7 @@ static void this_build_damaged_is_a_repair(void)
         char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
         int n = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
         dump_lines((const char (*)[VJO_INSTALL_LINE])plan, n);
-        TEST_CHECK(what == 0 ? has_line(plan, n, "Replace 1 of the plugins")
+        TEST_CHECK(what == 0 ? has_line(plan, n, "Replace 1 of the plugin files (the 3 plugins and their RCO)")
                              : has_line(plan, n, "vjo_app.txt (the plugins' record of their app) is written again: it is missing or names another build of this app."));
         TEST_CHECK(!has_line(plan, n, "does not undo the update"));
         vjo_install_page_start();
@@ -2687,6 +2687,92 @@ static void a_payload_the_folder_refuses_is_installed_from_app0(void)
     TEST_CHECK(unlink("app0:payload") == 0);
 }
 
+/* #368's audit (its test I1, and N4): an install of 0.9.8 (every payload file but the SC3 hooks' charsets, and no
+ * hooks/ folder) is an Update; its plan names the data files and where they go (it said "the OCR models ... to
+ * ux0:data/VitaJPOverlay/ocr"), and the update writes the charsets into hooks/ with the rest; then Installed. A
+ * charset deleted by hand is a Check and repair whose plan names its folder, hooks/ (it said "1 OCR model file to
+ * ux0:data/VitaJPOverlay/ocr"); an OCR model's names ocr/, the names dictionary's dictionaries/, and two files in two
+ * folders the data's own. An uninstall keeps every file, the charsets too. */
+static void an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them(void)
+{
+    static unsigned char bytes[1 << 20];
+    static const char *const sc3[] = {VJO_PAYLOAD_HOOKS "PCSG00146.sc3", VJO_PAYLOAD_HOOKS "PCSG00352.sc3",
+                                      VJO_PAYLOAD_HOOKS "PCSG00555.sc3"};
+    static const struct { const char *path, *line; } one[] = {
+        {VJO_PAYLOAD_HOOKS "PCSG00352.sc3", "1. Copy 1 data file to ux0:data/VitaJPOverlay/hooks (the plugins already match)."},
+        {VJO_PAYLOAD_OCR VJO_VOCR_TIER1_NAME, "1. Copy 1 data file to ux0:data/VitaJPOverlay/ocr (the plugins already match)."},
+        {VJO_PAYLOAD_DATA "dictionaries/vndb-names.vjdict",
+         "1. Copy 1 data file to ux0:data/VitaJPOverlay/dictionaries (the plugins already match)."}};
+    static char plan[VJO_INSTALL_LINES][VJO_INSTALL_LINE];
+    VjoInstallResult r;
+    unsigned hooks = 0;
+    char cfg[2048];
+    fresh_card(0);
+    snprintf(cfg, sizeof(cfg), "*KERNEL\n%s\n*main\n%s\n", K, S);
+    put_text("ur0:tai/config.txt", cfg);
+    for (int i = 0; i < VJO_PAYLOAD_COUNT; i++) {
+        if (vjo_payload_kind(i) == VJO_PAYLOAD_TEMPLATE) continue;
+        if (strstr(vjo_payload_dest(i), "/hooks/")) { hooks++; continue; }
+        size_t n = payload_bytes(i, 0, bytes, sizeof(bytes));
+        put(vjo_payload_dest(i), bytes, n);
+    }
+    TEST_CHECK(hooks == 3 && !there("ux0:data/VitaJPOverlay/hooks"));
+    put_text(VJO_APP_STAMP_PACKAGE, "vjoapp1 api=" VJO_STR(VJO_API_VERSION) " build=fedcba9876543210\n");
+    VjoInstallScan s = scan_now();
+    TEST_CHECK_(s.state == VJO_INSTALL_UPDATE, "state %d %s", s.state, s.title);
+    int np = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])plan, np);
+    TEST_CHECK(has_line((const char (*)[VJO_INSTALL_LINE])plan, np,
+                        "1. Copy the 3 plugins and their RCO to ur0:tai and ur0:data/VitaJPOverlay, and the data files ("));
+    TEST_CHECK(has_line((const char (*)[VJO_INSTALL_LINE])plan, np,
+                        " MB: the OCR models, the names dictionary and the text hooks' charsets) to ux0:data/VitaJPOverlay; "));
+    TEST_CHECK(!has_line((const char (*)[VJO_INSTALL_LINE])plan, np, "VitaJPOverlay/ocr"));
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0);
+    TEST_CHECK(installed_files(1));
+    for (unsigned k = 0; k < 3; k++) TEST_CHECK_(there(sc3[k]), "%s", sc3[k]);
+    TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+    /* one data file deleted by hand: a Check and repair, whose plan names the file's folder */
+    for (unsigned k = 0; k < sizeof(one) / sizeof(one[0]); k++) {
+        TEST_ASSERT(remove(one[k].path) == 0);
+        s = scan_now();
+        TEST_CHECK_(s.state == VJO_INSTALL_REPAIR, "%s: state %d %s", one[k].path, s.state, s.title);
+        np = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+        dump_lines((const char (*)[VJO_INSTALL_LINE])plan, np);
+        TEST_CHECK_(has_line((const char (*)[VJO_INSTALL_LINE])plan, np, one[k].line), "%s", one[k].path);
+        TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && installed_files(1));
+        TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+    }
+    /* two, in two folders: the data's own */
+    TEST_ASSERT(remove(sc3[0]) == 0 && remove(VJO_PAYLOAD_OCR VJO_VOCR_TIER2_NAME) == 0);
+    s = scan_now();
+    np = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])plan, np);
+    TEST_CHECK(has_line((const char (*)[VJO_INSTALL_LINE])plan, np,
+                        "1. Copy 2 data files to ux0:data/VitaJPOverlay (the plugins already match)."));
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && installed_files(1));
+    TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+    /* #387's audit N7: the plugins another build's, the data files the package's: the plugins alone, their count the
+     * plugin files' (the 3 plugins and the RCO) */
+    for (int i = VJO_PAYLOAD_KERNEL_INDEX; i < VJO_PAYLOAD_COUNT; i++) {
+        if (vjo_payload_kind(i) != VJO_PAYLOAD_COPY) continue;
+        size_t n = payload_bytes(i, 0, bytes, sizeof(bytes));
+        put(vjo_payload_dest(i), bytes, n);
+    }
+    s = scan_now();
+    np = vjo_install_plan(&s, VJO_INSTALL_ACT_INSTALL, plan, VJO_INSTALL_LINES);
+    dump_lines((const char (*)[VJO_INSTALL_LINE])plan, np);
+    TEST_CHECK(has_line((const char (*)[VJO_INSTALL_LINE])plan, np,
+                        "1. Replace 4 of the plugin files (the 3 plugins and their RCO) in ur0:tai and ur0:data/VitaJPOverlay "
+                        "(the data files already match the package's sizes; every file is checked by SHA-256 first)."));
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_INSTALL, &r) == 0 && installed_files(1));
+    TEST_CHECK(scan_now().state == VJO_INSTALL_INSTALLED);
+    /* an uninstall keeps the files, the charsets with them */
+    s = scan_now();
+    TEST_CHECK(run(&s, VJO_INSTALL_ACT_UNINSTALL, &r) == 0 && installed_files(1));
+    for (unsigned k = 0; k < 3; k++) TEST_CHECK_(there(sc3[k]), "kept: %s", sc3[k]);
+    TEST_CHECK(scan_now().state == VJO_INSTALL_NOT_INSTALLED);
+}
+
 TEST_LIST = {
     {"a_payload_the_folder_refuses_is_installed_from_app0", a_payload_the_folder_refuses_is_installed_from_app0},
     {"the_diff_at_its_line_bound", the_diff_at_its_line_bound},
@@ -2749,6 +2835,7 @@ TEST_LIST = {
     {"the_manifest_is_exactly_the_builds", the_manifest_is_exactly_the_builds},
     {"package_settings_are_applied", package_settings_are_applied},
     {"the_page_shows_the_plan_and_runs_it", the_page_shows_the_plan_and_runs_it},
+    {"an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them", an_update_of_0_9_8_adds_the_charsets_and_the_plan_names_them},
     {NULL, NULL}};
 
 int main(int argc, char **argv)

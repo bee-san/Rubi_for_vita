@@ -42,6 +42,7 @@ typedef struct {
     uint8_t picture;  /* include the record's screenshot in this package */
     uint8_t skipped;  /* set by vjo_apkg_write: it could not be read again or its note made (no room) */
     uint8_t missing_picture; /* intact record, unavailable JPEG: export text, preserve record and GUID */
+    uint8_t flags;    /* the caller's own (settings/anki_export.c: the note's tags, #314); this file never reads it */
 } VjoApkgCard;
 
 typedef struct {

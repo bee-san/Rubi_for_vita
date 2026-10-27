@@ -44,11 +44,12 @@ target_compile_options(vjo_taihen_parser PRIVATE -w)
 
 set(CORE_SRC
   core/arena.c core/utf.c core/text_hit.c core/text_rows.c core/json.c
-  core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/entries.c core/config.c core/regions.c
+  core/textfilter.c core/textjoin.c core/linebreak.c core/history_lines.c core/history_read.c core/stats.c
+  core/entries.c core/config.c core/regions.c
   core/client.c core/styled.c
   core/anki.c core/anki_queue.c core/local_dict.c core/ocr_lines.c
   core/games.c core/games_app.c core/sfo.c core/furigana.c core/pitch.c core/ledger.c core/vocr_models.c core/app_stamp.c
-  shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c
+  shell/game_ocr_client.c core/sqlw.c core/zipw.c core/lapis.c core/apkg.c core/word_key.c
   core/pspbubble.c core/psptarget.c core/taicfg.c core/jpegsw.c core/shottrim.c core/payload.c core/hook_select.c core/hook_cache.c)
 add_library(vjo_core STATIC ${CORE_SRC})
 target_include_directories(vjo_core PUBLIC core include)
@@ -93,6 +94,10 @@ if(VJO_WITH_NCNN OR VJO_WITH_VOCR)
     find_package(Threads REQUIRED)
     add_executable(vjo-page-ocr host/page_ocr.c)
     target_link_libraries(vjo-page-ocr vjo_vocr vjo_host Threads::Threads)
+    # #379: L + R on a region with an animated icon, frame by frame, with the Shell's retries (docs/vita-vn-ocr.md).
+    add_executable(vjo-vertical-on-bench host/vertical_on_bench.c)
+    target_link_libraries(vjo-vertical-on-bench vjo_vocr vjo_host m)
+    target_compile_options(vjo-vertical-on-bench PRIVATE -Wall -Wextra)
   endif()
 endif()
 
@@ -342,6 +347,35 @@ if(_vjo_plaintext)
   set(_vjo_plaintext_dir ${CMAKE_BINARY_DIR}/plaintext)
 endif()
 
+# The Rubi app's history.csv reader (core/history_read.c: the Look up page's earlier lines, #313, the Stats page,
+# #312) against the Shell's own (core/history_lines.c) on random files, whole and in windows.
+add_executable(vjo-history-read-tests host/tests/test_history_read.c)
+target_include_directories(vjo-history-read-tests PRIVATE third_party/acutest/include)
+target_link_libraries(vjo-history-read-tests vjo_host)
+target_compile_options(vjo-history-read-tests PRIVATE -Wall -Wextra)
+add_test(NAME history_read COMMAND vjo-history-read-tests)
+# The Rubi app's sceIo VjoPlatform (settings/app_platform.c) over the host's files: opens, sizes, short reads.
+add_executable(vjo-app-platform-tests host/tests/test_app_platform.c settings/app_platform.c)
+target_include_directories(vjo-app-platform-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_link_libraries(vjo-app-platform-tests vjo_host)
+target_compile_options(vjo-app-platform-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+add_test(NAME app_platform COMMAND vjo-app-platform-tests)
+if(_vjo_plaintext_dir) # the bundled dictionary's lookups through it, against the host's platform
+  set_tests_properties(app_platform PROPERTIES FIXTURES_REQUIRED plaintext
+    ENVIRONMENT "VJO_PLAINTEXT_DIR=${_vjo_plaintext_dir}")
+endif()
+# #313: the Look up page's lookups (settings/lookup.c) are the overlay's, on the golden lines of the word lookup test.
+add_executable(vjo-lookup-parity-tests host/tests/test_lookup_parity.c settings/lookup.c settings/app_platform.c)
+target_include_directories(vjo-lookup-parity-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_options(vjo-lookup-parity-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_compile_definitions(vjo-lookup-parity-tests PRIVATE VJO_WORD_FIXTURES="${CMAKE_SOURCE_DIR}/host/fixtures/word_lookup")
+target_link_libraries(vjo-lookup-parity-tests vjo_host)
+add_test(NAME lookup_parity COMMAND vjo-lookup-parity-tests)
+set_tests_properties(lookup_parity PROPERTIES SKIP_RETURN_CODE 77)
+if(_vjo_plaintext_dir)
+  set_tests_properties(lookup_parity PROPERTIES FIXTURES_REQUIRED plaintext
+    ENVIRONMENT "VJO_PLAINTEXT_DIR=${_vjo_plaintext_dir};VJO_REQUIRE_PLAINTEXT=1")
+endif()
 add_executable(vjo-text-hit-tests host/tests/test_text_hit.c)
 target_include_directories(vjo-text-hit-tests PRIVATE third_party/acutest/include)
 target_link_libraries(vjo-text-hit-tests vjo_host)
@@ -426,6 +460,20 @@ target_include_directories(vjo-history-writer PRIVATE host/tests/vita_stubs)
 target_compile_definitions(vjo-history-writer PRIVATE VJO_HOST=1)
 target_compile_options(vjo-history-writer PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-history-writer PRIVATE vjo_core) # shell/history.c also contains the line-history reader
+# The Rubi app's Stats tab, its counts (core/stats.c, #312): each game's equal to the Shell's count of the same
+# history.csv (core/history_lines.c, the Triangle view's), any windows, a cache at any of them, cut and damaged
+# records, local days and midnight, the timelines of tools/reading_time_sim.py, the cache's checks, the streak.
+add_executable(vjo-stats-tests host/tests/test_stats.c)
+target_include_directories(vjo-stats-tests PRIVATE third_party/acutest/include)
+target_compile_definitions(vjo-stats-tests PRIVATE VJO_FIXTURES="${CMAKE_SOURCE_DIR}/host/fixtures")
+target_compile_options(vjo-stats-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-stats-tests vjo_core)
+add_test(NAME stats COMMAND vjo-stats-tests)
+# The same counts as a tool (vjo-stats FILE: JSON), for tools/tests/test_stats_tab.py (VJO_STATS_TOOL: against
+# tools/reading_stats.py and the Shell's own count) and #312's parse-time measurement (--synthetic, --bench).
+add_executable(vjo-stats host/stats_tool.c)
+target_compile_options(vjo-stats PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-stats vjo_core)
 # Line history (docs/line-history.md): history.csv's records read back from a window of the file,
 # this game's lines newest first, filtered and deduplicated as the overlay shows them.
 add_executable(vjo-history-lines-tests host/tests/test_history_lines.c)
@@ -437,7 +485,21 @@ add_test(NAME history_lines COMMAND vjo-history-lines-tests)
 # writers) on real files; host/tests/test_apkg.py opens its packages with Python's zipfile and sqlite3
 # and imports them into Anki itself (the `anki` package, tools/requirements-anki.txt) when it is there:
 # VJO_ANKI_PYTHON names a Python that has it, VJO_REQUIRE_ANKI=1 makes its absence a failure (CI).
-add_executable(vjo-apkg-tests host/tests/test_apkg.c)
+# The Look up page's earlier lines (settings/lookup_history.c): history.csv read back from its end, a window at a time.
+add_executable(vjo-lookup-history-tests host/tests/test_lookup_history.c settings/lookup_history.c)
+target_include_directories(vjo-lookup-history-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_options(vjo-lookup-history-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-lookup-history-tests vjo_host)
+add_test(NAME lookup_history COMMAND vjo-lookup-history-tests)
+# The Rubi app's queue writer (settings/app_queue.c: the Look up page's cards, #313): saved once, as the overlay saves
+# them, every storage failure; its restart steps for host/tests/test_anki_restart.py.
+add_executable(vjo-app-queue-tests host/tests/test_app_queue.c settings/app_queue.c)
+target_include_directories(vjo-app-queue-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_options(vjo-app-queue-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-app-queue-tests vjo_host)
+add_test(NAME app_queue COMMAND vjo-app-queue-tests)
+add_executable(vjo-apkg-tests host/tests/test_apkg.c settings/app_queue.c settings/cards.c) # (#315: the
+# export settles Cards changes)
 target_include_directories(vjo-apkg-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
 target_compile_options(vjo-apkg-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-apkg-tests vjo_host)
@@ -495,7 +557,7 @@ add_test(NAME memory_ledger COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/to
 # Each step is a fresh process: the overlay's saves and the Rubi app's exports, stopped at each
 # storage boundary, never lose a card.
 add_test(NAME anki_restart COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_anki_restart.py
-  $<TARGET_FILE:vjo-shell-anki-tests> $<TARGET_FILE:vjo-apkg-tests>)
+  $<TARGET_FILE:vjo-shell-anki-tests> $<TARGET_FILE:vjo-apkg-tests> $<TARGET_FILE:vjo-app-queue-tests>)
 add_test(NAME apkg_packages COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/host/tests/test_apkg.py
   $<TARGET_FILE:vjo-apkg-tests>)
 # The Lapis note type in core/lapis_notetype.inc is third_party/lapis's, generated by tools/gen_lapis.py.
@@ -509,7 +571,8 @@ target_include_directories(vjo-hook-text-tests PRIVATE third_party/acutest/inclu
 target_link_libraries(vjo-hook-text-tests vjo_core)
 target_compile_options(vjo-hook-text-tests PRIVATE -Wall -Wextra)
 add_test(NAME hook_text COMMAND vjo-hook-text-tests)
-add_executable(vjo-hook-luna-tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c)
+add_executable(vjo-hook-luna-tests host/tests/test_hook_luna.c core/hook_luna.c core/hook_re.c core/hook_text.c
+               core/textnorm.c)
 target_include_directories(vjo-hook-luna-tests PRIVATE third_party/acutest/include core host/tests)
 target_compile_options(vjo-hook-luna-tests PRIVATE -Wall -Wextra)
 add_test(NAME hook_luna COMMAND vjo-hook-luna-tests)
@@ -568,6 +631,24 @@ if(VJO_WITH_VOCR)
   target_link_options(vjo-vocr-policy-tests PRIVATE "LINKER:--wrap=vocr_run" "LINKER:--wrap=vocr_lm_decode"
     "LINKER:--wrap=vocr_lm_init")
   add_test(NAME vocr_policy COMMAND vjo-vocr-policy-tests)
+  # API 54: the text spotter as a job's finder (core/vocr_ocr.c VjoVocrPolicy.spot): the committed random VTSP blob
+  # (host/fixtures/spotter) as its pin, and a synthetic recognizer pin whose weights no test reads.
+  add_executable(vjo-vocr-spot-tests host/tests/test_vocr_spot.c core/vocr_ocr.c core/region_suggest.c)
+  target_include_directories(vjo-vocr-spot-tests PRIVATE third_party/acutest/include host/tests core include)
+  target_compile_definitions(vjo-vocr-spot-tests PRIVATE VJO_VOCR_TEST_MODELS="test_spot_models.h"
+    VJO_VOCR_SPOT_TEST="test_spot_pins.h" VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+  target_compile_options(vjo-vocr-spot-tests PRIVATE -Wall -Wextra)
+  target_link_libraries(vjo-vocr-spot-tests vjo_vocr_rt vjo_host)
+  add_test(NAME vocr_spot COMMAND vjo-vocr-spot-tests)
+  # API 54: the pinned spotter's own weights from VJO_VOCR_MODEL_DIR (the models lane; skipped without it): the
+  # worker's load takes them, their budgets hold, and they find both lines of host/fixtures/short_line's text box.
+  add_executable(vjo-spot-release-tests host/tests/test_spot_release.c core/vocr_ocr.c core/region_suggest.c)
+  target_include_directories(vjo-spot-release-tests PRIVATE third_party/acutest/include host/tests core include)
+  target_compile_definitions(vjo-spot-release-tests PRIVATE VJO_VOCR_MODEL_DIR="${VJO_VOCR_MODEL_DIR}"
+    VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+  target_compile_options(vjo-spot-release-tests PRIVATE -Wall -Wextra)
+  target_link_libraries(vjo-spot-release-tests vjo_vocr_rt vjo_host)
+  add_test(NAME spot_release COMMAND vjo-spot-release-tests)
   add_executable(vjo-textnorm-tests host/tests/test_textnorm.c)
   target_include_directories(vjo-textnorm-tests PRIVATE third_party/acutest/include)
   target_link_libraries(vjo-textnorm-tests vjo_vocr)
@@ -647,7 +728,7 @@ foreach(_vjo_suite IN LISTS _vjo_tool_suites)
   # the same result in both builds: label variant_free, which the normal build's CI job and
   # tools/fast_gate.sh leave to the debug build's run (ctest -LE variant_free).
   file(READ ${_vjo_suite} _vjo_suite_text)
-  if(NOT _vjo_suite_text MATCHES "VJO_(CLI|BENCH|SELFTEST_WRITER|DICT_BENCH|TAICFG|HISTORY_WRITER|CAPTURE_PARITY)|build/host")
+  if(NOT _vjo_suite_text MATCHES "VJO_(CLI|BENCH|SELFTEST_WRITER|DICT_BENCH|TAICFG|HISTORY_WRITER|STATS_TOOL|CAPTURE_PARITY)|build/host")
     set_property(TEST ${_vjo_test} APPEND PROPERTY LABELS variant_free)
   endif()
 endforeach()
@@ -677,6 +758,7 @@ endif()
 string(APPEND _vjo_tool_env ";VJO_DICT_BENCH=$<TARGET_FILE:vjo-dict-bench>")
 string(APPEND _vjo_tool_env ";VJO_TAICFG=$<TARGET_FILE:vjo-taicfg>")
 string(APPEND _vjo_tool_env ";VJO_HISTORY_WRITER=$<TARGET_FILE:vjo-history-writer>")
+string(APPEND _vjo_tool_env ";VJO_STATS_TOOL=$<TARGET_FILE:vjo-stats>")
 if(VJO_WITH_VOCR)
   string(APPEND _vjo_tool_env ";VJO_CAPTURE_PARITY=$<TARGET_FILE:vjo-capture-parity-tests>")
 endif()
@@ -781,8 +863,9 @@ foreach(_vjo_variant IN ITEMS app vocr6)
   add_executable(${_vjo_target} host/tests/test_settings_app.c settings/main.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
     settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
-    vita/buttons_vita.c
-    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
+    vita/buttons_vita.c host/tests/settings_stubs/stats_page_stub.c
+    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
+    host/tests/settings_stubs/lookup_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
   target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -824,8 +907,9 @@ foreach(_vjo_games IN ITEMS tests bench)
   add_executable(${_vjo_target} host/tests/test_settings_games.c ${_vjo_main} settings/catalog.c settings/psp.c settings/engine.c
     settings/preferences.c settings/icons.c settings/text_layout.c settings/letter.c settings/app_check.c
     settings/applog.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c vita/games_storage.c
-    vita/buttons_vita.c
-    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c)
+    vita/buttons_vita.c host/tests/settings_stubs/stats_page_stub.c
+    host/tests/settings_stubs/anki_page_stub.c host/tests/settings_stubs/install_page_stub.c
+    host/tests/settings_stubs/lookup_page_stub.c)
   target_include_directories(${_vjo_target} PRIVATE third_party/acutest/include host/tests/settings_stubs
     host/tests/vita_stubs host/tests)
   target_compile_options(${_vjo_target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
@@ -868,13 +952,65 @@ add_test(NAME settings_install COMMAND vjo-settings-install-tests)
 # memory card, on its worker thread, run when the test says. The harnesses that drive main.c keep
 # settings_stubs/anki_page_stub.c.
 add_executable(vjo-settings-anki-tests host/tests/test_settings_anki.c settings/anki_page.c settings/anki_export.c
-  settings/app_prefs.c settings/preferences.c shell/files.c)
+  settings/app_prefs.c settings/preferences.c shell/files.c
+  settings/cards.c settings/cards_page.c settings/search.c host/tests/settings_stubs/search_dialog_stub.c
+  host/tests/settings_stubs/card_picture_stub.c)
 target_include_directories(vjo-settings-anki-tests PRIVATE third_party/acutest/include host/tests/settings_stubs
   host/tests/install_stubs host/tests/vita_stubs)
 target_compile_definitions(vjo-settings-anki-tests PRIVATE VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS)
 target_compile_options(vjo-settings-anki-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(vjo-settings-anki-tests vjo_host)
 add_test(NAME settings_anki COMMAND vjo-settings-anki-tests)
+# The Rubi app's Stats tab itself (settings/stats_page.c, #312): each game's row as the Triangle view shows it (the
+# Shell's count of the same history.csv), the rows and their scrolling, the goal in app.ini (settings/app_prefs.c,
+# never config.ini), the 14 days and the year, touch, the cache and its checks, the cards per game, on a temporary
+# memory card, its count on the page's worker thread run when the test says.
+add_executable(vjo-settings-stats-tests host/tests/test_settings_stats.c settings/stats_page.c settings/app_prefs.c
+  settings/preferences.c)
+target_include_directories(vjo-settings-stats-tests PRIVATE third_party/acutest/include host/tests/settings_stubs
+  host/tests/install_stubs host/tests/vita_stubs host/tests)
+target_compile_definitions(vjo-settings-stats-tests PRIVATE VJO_TEST_CREATE_STUBS VJO_TEST_MUTEX_STUBS VJO_TEST_THREAD_STUBS)
+target_compile_options(vjo-settings-stats-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-settings-stats-tests vjo_host)
+add_test(NAME settings_stats COMMAND vjo-settings-stats-tests)
+# libvita2d's plain textures through the app's wrapper (settings/vita2d_textures.c, #313): no stale render target or
+# depth buffer, so that a font freed while the app runs frees nothing else.
+add_executable(vjo-settings-textures-tests host/tests/test_settings_textures.c settings/vita2d_textures.c)
+target_include_directories(vjo-settings-textures-tests PRIVATE third_party/acutest/include host/tests/settings_stubs)
+target_compile_options(vjo-settings-textures-tests PRIVATE -Wall -Wextra)
+add_test(NAME settings_textures COMMAND vjo-settings-textures-tests)
+# The Rubi app's Look up page itself (settings/lookup_page.c, #313): its frames recorded through the helpers main.c
+# gives it, on a temporary memory card with config.ini, two small dictionaries, history.csv and the Anki queue; the
+# keyboard is settings_stubs/search_dialog_stub.c's. The harnesses that drive main.c keep settings_stubs/lookup_page_stub.c.
+add_executable(vjo-settings-lookup-tests host/tests/test_settings_lookup.c settings/lookup_page.c settings/lookup.c
+  settings/lookup_history.c settings/app_queue.c settings/app_platform.c settings/search.c settings/preferences.c
+  host/tests/settings_stubs/search_dialog_stub.c)
+target_include_directories(vjo-settings-lookup-tests PRIVATE third_party/acutest/include host/tests/settings_stubs
+  host/tests/install_stubs host/tests/vita_stubs host/tests)
+target_compile_options(vjo-settings-lookup-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-settings-lookup-tests vjo_host)
+add_test(NAME settings_lookup COMMAND vjo-settings-lookup-tests)
+# The Cards page's storage (#315, settings/cards.c) on real files, with failures injected: the list and its
+# windows, a card's view, Delete, Empty deleted, Fix sentence (the word found again) and Drop picture, every
+# order of their steps, the intent files' recovery after a stop between any two, and the export after it.
+add_executable(vjo-cards-tests host/tests/test_cards.c settings/cards.c settings/anki_export.c)
+target_include_directories(vjo-cards-tests PRIVATE third_party/acutest/include host/tests/vita_stubs)
+target_compile_options(vjo-cards-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(vjo-cards-tests vjo_host)
+add_test(NAME cards COMMAND vjo-cards-tests)
+# A card's picture decoded by libjpeg as the app decodes it (settings/card_picture.c): its scale to the
+# page's box, a grey picture, a damaged or cut file returned as an error (setjmp), never an exit; where
+# libjpeg's headers are (the Vita build links the SDK's libjpeg-turbo; CI's runner and the fast gate's
+# image may have none: the test then is not built).
+find_package(JPEG QUIET)
+if(JPEG_FOUND)
+  add_executable(vjo-card-picture-tests host/tests/test_card_picture.c settings/card_picture.c)
+  target_include_directories(vjo-card-picture-tests PRIVATE third_party/acutest/include)
+  target_compile_options(vjo-card-picture-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_link_libraries(vjo-card-picture-tests vjo_host JPEG::JPEG)
+  target_compile_definitions(vjo-card-picture-tests PRIVATE VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+  add_test(NAME card_picture COMMAND vjo-card-picture-tests)
+endif()
 # The same engine on a memory card folder, for the one-VPK e2e (a real VPK extracted as VitaShell installs it).
 add_executable(vjo-install-e2e host/install_e2e.c settings/install.c settings/preferences.c)
 target_include_directories(vjo-install-e2e PRIVATE host/tests/install_stubs host/tests/settings_stubs host/tests/vita_stubs
@@ -940,6 +1076,20 @@ if(VJO_WITH_VOCR)
     vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
   target_link_libraries(vjo-game-resident-tests vjo_vocr_rt vjo_host)
   add_test(NAME game_resident_weights COMMAND vjo-game-resident-tests)
+  # API 54: the text spotter in the actual worker (game_ocr/main.c): its weights through the broker into a block of
+  # their own, kept and given back, and GRAD whenever it cannot run; the real spotter on the committed random blob,
+  # spies for the recognizer and GRAD (host/tests/test_game_spot.c).
+  add_executable(vjo-game-spot-tests host/tests/test_game_spot.c core/vocr_ocr.c core/textnorm.c core/region_suggest.c
+    host/tests/hooks_none.c)
+  target_include_directories(vjo-game-spot-tests PRIVATE third_party/acutest/include host/tests/game_stubs host/tests)
+  target_compile_options(vjo-game-spot-tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+  target_compile_definitions(vjo-game-spot-tests PRIVATE VJO_VOCR_TEST_MODELS="test_spot_models.h"
+    VJO_VOCR_SPOT_TEST="test_spot_pins.h" VJO_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    vocr_find_lines_rows=test_vocr_find_lines_rows vocr_find_lines_fix_rows=test_vocr_find_lines_fix_rows
+    vocr_load=test_vocr_load
+    vocr_arena_bytes=test_vocr_arena_bytes vocr_init=test_vocr_init vocr_run=test_vocr_run)
+  target_link_libraries(vjo-game-spot-tests vjo_vocr_rt vjo_host)
+  add_test(NAME game_spot COMMAND vjo-game-spot-tests)
   # Native hooks in the job path (docs/native-hooks.md): the actual worker with the resident test's spies and
   # a fake of game_ocr/hooks.h: a stream answers with the first capture pass only, or replaces OCR's agreeing
   # text; nothing installed is OCR as before.
