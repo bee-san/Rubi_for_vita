@@ -963,7 +963,9 @@ static void weights_refused_after_the_check_the_smaller_models_try_copies_its_ow
     weights_refusals = 1;
     TEST_CHECK(vjo_game_ocr_run_request(&r, &out) == VJO_OK && !strcmp(out.text, "猫"));
     TEST_CHECK(out.fallback == 1 && weights_allocs == 2 && resident.model == vjo_vocr_model("FL10_w8.vocr"));
-    TEST_CHECK_(frame_calls == 2 && !strip_calls && !out.tears && out.captures == 1,
+    /* test/combined: main's #382 keeps the job's capture across the retry: each try's frame copy is one of its
+     * captures */
+    TEST_CHECK_(frame_calls == 2 && !strip_calls && !out.tears && out.captures == 2,
                 "%u frame copies, %u strips, %u tears, %u captures", frame_calls, strip_calls, out.tears, out.captures);
     TEST_CHECK(frame_allocs == 2 && !frame_live && !capture_live && !job_live && !out.cleanup_status);
     const VjoGameOcrStep *ps = pause_step(&out);

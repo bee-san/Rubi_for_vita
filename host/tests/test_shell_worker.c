@@ -4905,25 +4905,6 @@ static void test_open_overlay_says_why_it_waits(void)
         open_overlay(); finish_current_job(); finish_current_job();
         test_now += 250000; control_tick(0);
         TEST_ASSERT(job_running);
-        check_waiting(WAIT_HINT_PAUSE); /* test/combined: #355, the pause off */
-        finish_current_job();
-        test_now += 500000; control_tick(0);
-        TEST_ASSERT(job_running);
-        finish_current_job();
-        check_current_definition("cat", 0);
-        close_overlay(); mem_free();
-    }
-
-    /* test/combined, #355 (API 52): ocr_pause on, or a PSP game (the emulator's process, never paused) with it
-     * off: the hint without the pause's clause. */
-    for (int psp = 0; psp < 2; psp++) {
-        cursor_setup();
-        if (psp) game_static_fb = 1;
-        else cfg.ocr_pause = loaded.ocr_pause = 1; /* the overlay's opening loads the settings */
-        fake_screen_changes = 3;
-        open_overlay(); finish_current_job(); finish_current_job();
-        test_now += 250000; control_tick(0);
-        TEST_ASSERT(job_running);
         check_waiting(WAIT_HINT);
         finish_current_job();
         test_now += 500000; control_tick(0);

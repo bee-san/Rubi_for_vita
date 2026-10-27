@@ -1799,11 +1799,17 @@ static int net_busy(void)
 #define WAIT_HINT_TEXT \
     "Recognizing… Something in the region keeps moving (an animated icon? text still typing?). If a region around " \
     "just the text leaves it out, press □ to draw one."
+#if VJO_DEBUG /* test/combined: the debug Shell's data pages are full with every draft (16 B over): .rodata */
+static const char WAIT_HINT[] = WAIT_HINT_TEXT;
+#else
 static const char WAIT_HINT[] VJO_DATA_TABLE(WAIT_HINT) = WAIT_HINT_TEXT;
+#endif
 /* API 52: the same, and the pause (docs/game-pause.md), while ocr_pause is off in a game it works in: it reads the
  * region from one frame, which an animated icon cannot change. Never in the PSP emulator's process (game_static_fb),
  * where the kernel refuses it. */
-static const char WAIT_HINT_PAUSE[] VJO_DATA_TABLE(WAIT_HINT_PAUSE) =
+/* test/combined: in .rodata (the code segment), not the data segment: with every draft the Shell's data
+ * pages are full and its code pages have room (SceShell's pages may only shrink: AGENTS.md rule 1) */
+static const char WAIT_HINT_PAUSE[] =
     WAIT_HINT_TEXT " Or turn on Pause the game to read in the Rubi app.";
 /* API 52: the active game is the PSP emulator's (VJO_GAME_STATIC_FB, activate_game): no pause, so no WAIT_HINT_PAUSE */
 static int game_static_fb;
@@ -2446,7 +2452,9 @@ static void on_cursor_done(void)
  * data segment, its call where the streak is still in a register, and the pace's
  * zero folded into its shift (the same waits). */
 #ifdef VJO_WITH_VOCR
-static const char SCREEN_MOVING_LOG[] VJO_DATA_TABLE(SCREEN_MOVING_LOG) =
+/* test/combined: in .rodata (the code segment), not the data segment: with every draft the Shell's data
+ * pages are full and its code pages have room (SceShell's pages may only shrink: AGENTS.md rule 1) */
+static const char SCREEN_MOVING_LOG[] =
     "ocr: screen changed under 3 jobs in a row; %u line(s) not shown";
 #endif
 static void note_screen_changed(const char *what)

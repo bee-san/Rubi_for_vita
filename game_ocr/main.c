@@ -113,6 +113,8 @@ static void *line_base;
  * than printed here. */
 enum { GL_MODULE = 0, GL_STACK, GL_WEIGHTS, GL_WORKSPACE, GL_CAPTURE, GL_LINE, GL_LM, GL_CASCADE, GL_HELPERS, GL_SHOT,
        GL_SC3, GL_FRAME, GL_COUNT };
+/* test/combined: every item recorded (core/ledger.c ignores the ones past VJO_LEDGER_MAX_ITEMS) */
+typedef char gl_count_fits_the_ledger[GL_COUNT <= VJO_LEDGER_MAX_ITEMS ? 1 : -1];
 static const VjoLedgerItemDef ledger_defs[GL_COUNT] = {
     [GL_MODULE] = {"OCR worker pages", VJO_LEDGER_POOL_GAME},
     [GL_STACK] = {"VjoGameVocr stack+TLS", VJO_LEDGER_POOL_GAME},
