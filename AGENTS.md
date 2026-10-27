@@ -93,12 +93,14 @@ thread, static buffer or taiHEN registration.
    game"): never into SceShell, a system app (the PSP emulator's `NPXS10028` and Adrenaline's
    `PSPEMUCFW` are games), VitaShell or the Rubi app, and nothing while L is held at the start
    ([docs/worker-loading.md](docs/worker-loading.md)). Installers write no worker line and remove
-   the ones older installs left (the Rubi app's Install page and `install-vita.sh` share one
-   editor, `core/taicfg.c`, checked with taiHEN's own parser: [docs/one-vpk-install.md](docs/one-vpk-install.md));
-   a leftover line is harmless, as the worker keeps one copy per process. `*ALL` loads
-   a module into SceShell and every system app as well, where its pages are permanent: never use
-   it. Any module that can still be loaded elsewhere returns `SCE_KERNEL_START_NO_RESIDENT` there,
-   and a process keeps one copy of the worker.
+   the ones older installs left (the Rubi app's Install page edits `config.txt` with `core/taicfg.c`,
+   `install-vita.sh` with `tools/patch_tai_config.py`, which keeps the same rules: both write the same
+   bytes, tested on one set of fixtures and checked with taiHEN's own parser:
+   [docs/one-vpk-install.md](docs/one-vpk-install.md#the-configtxt-editor)); a leftover line is
+   harmless, as the worker keeps one copy per process. `*ALL` loads a module into SceShell and
+   every system app as well, where its pages are permanent: never use it. Any module that can still
+   be loaded elsewhere returns `SCE_KERNEL_START_NO_RESIDENT` there, and a process keeps one copy of
+   the worker.
 3. **Preflight, reserve, free.** In the game, check `sceKernelGetFreeMemorySize` (`sizeMain` for
    `USER_RW`), round to 4 KiB, keep a reserve, allocate per job and free when the job ends; a
    failed allocation after a passed check is normal and must degrade, never crash. Few games

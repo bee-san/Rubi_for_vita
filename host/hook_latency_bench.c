@@ -6,7 +6,7 @@
  * selection, core/hook_select.c), the actual kernel transport and change detection (kernel/game_ocr.c through
  * host/hook_latency_kernel.c, kernel/scene.c and kernel/capture.c's signature of a frame this bench draws: a dialogue
  * box that types each line, a "next" icon blinking once it is typed), and the actual Shell client
- * (shell/game_ocr_client.c's exchange). The Shell's control and network threads are a model of shell/worker.c's
+ * (shell/game_ocr_client.c's exchange). The Shell's control and job (VjoNet) threads are a model of shell/worker.c's
  * auto_prefetch, background_throttled, background_open, cancel_outdated_job, on_job_done, on_refresh_done,
  * claim_cache_for, shows_screen and vocr_note_capture, with each build's rules (API 49's hook_scene below
  * #if VJO_API_VERSION >= 49); host/tests/test_shell_worker.c checks the real ones. kernel/main.c's change_detection,
@@ -577,7 +577,7 @@ static void game_main(void)
     }
 }
 
-/* ---------------- the Shell (a model of shell/worker.c's control and network threads) ---------------- */
+/* ---------------- the Shell (a model of shell/worker.c's control and job (VjoNet) threads) ---------------- */
 #define POLL_TIMEOUT_US 50000ull
 #define SUBTITLE_GAP_US 1000000ull
 #define REFRESH_GAP_US 2000000ull
