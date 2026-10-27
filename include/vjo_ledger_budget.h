@@ -328,10 +328,24 @@
  * text 160,648 -> 160,888 B (2,952 B of room left), normal 151,748 -> 151,988 B (3,660 B), the same pages [measured:
  * the build log's module rows, both builds, the fixes on main 241e09f, whose plugins main 16fa362 keeps; main's rows
  * as above]. No block, thread or allocation. */
+/* API 53, the text spotter as the finder (ocr_finder = spotter, off by default; docs/memory-ledger.md, "The spotter
+ * finder"), in the game's partition only, in every game that is ON whatever the setting: vita-vn-ocr #128's
+ * runtime/vocr_textspot6.c at the runtime's -O2, built with VOCR_TEXTSPOT6_NO_MS (only the trunk form the pin uses;
+ * cmake/VocrOCR.cmake VJO_VOCR_SPOT_NO_MS), 13,532 B of code and read-only data [arm-vita-eabi-size, its object],
+ * textspot7's post-pass (runtime/vocr_textspot7.c at -O2, its object 6,296 B, of which the link keeps the streamed
+ * form, vocr_textspot7_post_rows with assign_join and join: 2,696 B; its image form and fallback F are left out since
+ * vita-vn-ocr a7e929e), and their use (core/vocr_ocr.c at -Os 17,886 -> 20,290 B: the frame's stream, the spotter's
+ * lines, its weights and sizes; game_ocr/main.c's block, frame rows and job flow 17,363 -> 18,698 B, the normal
+ * build's objects) take the debug build's text 161,016 -> 180,448 B and the normal build's 152,084 -> 171,548 B,
+ * data/bss 35,328 -> 35,384 B and 35,320 -> 35,376 B: five text pages more in the debug build, 221,184 B (3,872 B of
+ * text room left), four in the normal build, 208,896 B (484 B left) [measured: the build log's module rows, both
+ * builds, main 2f68854 and this change, the gate's Vita image (VitaSDK gcc 15.2.0)]. Its weights are a block of their
+ * own (VJO_BUDGET_GAME_SPOT), never static; data/bss keep their pages. The kernel (the frame's rows,
+ * VJO_ROWS_FRAME: +172 / +140 B of text) and the Shell (ocr_finder: +144 / +88 B) keep theirs. */
 #if VJO_DEBUG
-#define VJO_BUDGET_WORKER_MODULE_PAGES 200704u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 221184u
 #else
-#define VJO_BUDGET_WORKER_MODULE_PAGES 192512u
+#define VJO_BUDGET_WORKER_MODULE_PAGES 208896u
 #endif
 /* The kernel loads the worker only into games ON in games.ini (#138, kernel/loader.c:
  * never SceShell, a system app, VitaShell or the Rubi app); a *TITLEID line an

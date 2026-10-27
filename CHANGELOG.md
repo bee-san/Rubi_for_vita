@@ -11,6 +11,28 @@ been reported.
 
 ## [Unreleased]
 
+### Added
+
+- **An alternative line finder, vita-vn-ocr's text spotter on the whole screen** (`ocr_finder = spotter` in
+  `config.ini`; off by default: `grad`, Rubi's finder, stays). textspot7's pick (vita-vn-ocr #128): a small network
+  trained on the owner's hooked PS Vita and PSP pages finds the text on the game's whole screen, then a post-pass keeps
+  the lines whose centre is in your region, joins the pieces of one line and grows each line over the ink at its ends;
+  the recognizer reads those lines as before. On vita-vn-ocr's host measurements (the pick before its final
+  retraining) its page-path dialogue error on unseen development games is 1.18 % against 2.38 % for Rubi's finder with
+  the line fixes, but that difference is not resolved (its 95 % interval crosses 0), which is why it is off by default
+  (on a fresh confirmation set: 1.92 % against 4.29 %, resolved; nothing of it has run on a console). The screen is read through the same strips as your
+  region, each row checked, so a screen that changes while it is read starts the job again. Its weights (52,176 B)
+  are a file beside the models, read once into the game's memory and kept, as the LM is; when they are missing, wrong
+  or there is no memory for them, or the spotter refuses, the job reads with Rubi's finder as before, and never steps
+  down a model size. Until the pick's release is pinned, its pin is a placeholder, so no package carries the weights
+  and `spotter` reads with Rubi's finder. Memory (exact bytes, [memory
+  ledger](docs/memory-ledger.md#the-spotter-finder-api-53-vita-vn-ocr-128)): its block, 57,344 B, and its part of
+  the job's scratch, at most 313,392 B (the largest job 128,816 B more), only in jobs that use it; its code, 16 KiB more
+  of the OCR worker's pages in every game that is ON, whichever finder it uses (208,896 B; 20 KiB more, 221,184 B, in
+  the debug build). Its time is estimated at 264 ms for the spotter and at most 34 ms for the post-pass per screen at 333 MHz
+  (vita-vn-ocr's cycle model), and reading the screen about 110-260 ms of strip waits (an estimate from the measured
+  strip times) ([the spotter finder](docs/vita-vn-ocr.md#the-spotter-finder-api-53); API 53).
+
 ### Fixed
 
 - **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
@@ -110,20 +132,6 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   ([farm checks](docs/native-hooks.md#farm-checks)).
 - `tools/hook_farm.py` checks every verified entry against the farm's recorded hook bytes and texts; the host
   tests run 50 short excerpts of them through the worker's own hook path.
-- **An alternative line finder, vita-vn-ocr's text spotter** (`ocr_finder = spotter` in `config.ini`; the default
-  stays `grad`, Rubi's finder): a small network trained on the owner's hooked PS Vita and PSP pages (vita-vn-ocr
-  #128) finds the text lines inside your region, which the recognizer then reads as before. It reads the region
-  halved, as it was trained on the 960×544 screen (a PSP game in Adrenaline too), and gives the recognizer its
-  horizontal lines in its reading order; `ocr_spotter_refine = on` also tightens and splits its boxes. Its weights
-  (about 50-450 KB) are a file beside the models, read once into the game's memory and kept, as the LM is; when they
-  are missing, wrong or there is no memory for them, the job reads with Rubi's finder as before, and never steps down a
-  model size. Until vita-vn-ocr publishes its pick (pre-release `v0.3.8-textspot6.1`), its pin is a placeholder, so no
-  package carries the weights and `spotter` reads with Rubi's finder. Memory (exact bytes, [memory
-  ledger](docs/memory-ledger.md#the-spotter-finder-api-45)): its block, at most 516,096 B, and its part of the job's
-  scratch, at most 79,392 B more for a full screen, only in jobs that use it; its code, 16 KiB more of the OCR worker's
-  pages in every game that is ON, whichever finder it uses (196,608 B, 204,800 B in the debug build). Its time is
-  estimated at 79-105 ms for a 900×200 text box at 333 MHz (vita-vn-ocr's cycle model; nothing of it has run on a
-  console) ([the spotter finder](docs/vita-vn-ocr.md#the-spotter-finder-api-45); API 45).
 
 ### Changed
 

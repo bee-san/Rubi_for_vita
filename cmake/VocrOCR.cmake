@@ -89,12 +89,12 @@ message(STATUS "vita-vn-ocr runtime: ${_vocr_rt} (pinned ${VJO_VOCR_COMMIT})")
 # .refs/vita-vn-ocr-spot, else the eight files at VJO_VOCR_SPOT_COMMIT downloaded from the public repository into the
 # build directory, each checked against its hash (tools/fast_gate.sh and CI pass a checkout; other tools need nothing
 # new).
-set(VJO_VOCR_SPOT_COMMIT 6b01ae5576c24e914a129b5eded484ad891a709c)
+set(VJO_VOCR_SPOT_COMMIT a7e929e7b220f9fa5feaedb5c46ba8afe9407b7e)
 set(VJO_VOCR_SPOT_SOURCE_DIR "" CACHE PATH "Checkout of github.com/bee-san/vita-vn-ocr at ${VJO_VOCR_SPOT_COMMIT} (the text spotter)")
 set(_vocr_spot_pins
   vocr_textspot6.c 678e88b60a8347b2019c054f74eb9c741b0bf871b97505f70c682a8e34bb018c
   vocr_textspot6.h 526d6d19796c3aa314d3ec14655129c5ef2dbab75125d2b31225c7e78620b512
-  vocr_textspot7.c 95420d9948f8d13906d593cad89880e836e342e605430c5f48f80edeb7397414
+  vocr_textspot7.c 6464d504da913faaf0de2f17e7d58e3e8913301f3d2bb7da3b8b15df5d99a9ee
   vocr_textspot7.h b2725bb031b03cc90ce69ace645a88ffe2b81dc8225af07e9104ca017f81af59
   vocr_textspot.h a25ef000164af61610a6f5201fb9e345f8a67cf6525d2f16bae44afca712dd57
   vocr_lines.h 4f768c9a7aaa1f9e3b8f16990be23c3b098b675cf6316df7eb20dc6198b9f37d

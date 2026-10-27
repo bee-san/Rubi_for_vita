@@ -106,14 +106,15 @@ static void test_budget_table_is_consistent(void)
                VJO_LIMIT_GAME_WEIGHTS == (2500000u + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE);
     /* the PAF limit is the measured free heap minus the runtime reserve */
     TEST_CHECK(VJO_LIMIT_SHELL_PAF == VJO_PAF_FREE_MEASURED - VJO_PAF_RESERVE && VJO_PAF_FREE_MEASURED < VJO_PAF_HEAP);
-    /* API 53: the text spotter's block: the largest blob the protocol admits and its parsed form on the Vita
-     * (sizeof(vocr_textspot6), 3,964 B with the Vita compiler; core/vocr_ocr.c checks it on 32-bit builds),
-     * page-rounded; the pin within it; counted in the game job's worst case */
+    /* API 53: the text spotter's block: exactly the pin's blob and its parsed form on the Vita (sizeof(vocr_textspot6),
+     * 3,964 B with the Vita compiler; core/vocr_ocr.c checks the sum on 32-bit builds), page-rounded; within the
+     * protocol's ceilings; counted in the game job's worst case. (The host tests' own pin is the fixture's: this
+     * suite reads the tree's.) */
     TEST_CHECK(VJO_BUDGET_GAME_SPOT % VJO_LEDGER_PAGE == 0 &&
-               VJO_BUDGET_GAME_SPOT == (((VJO_VOCR_SPOT_MAX_BYTES + 15u) & ~15u) + ((3964u + 15u) & ~15u) +
+               VJO_BUDGET_GAME_SPOT == (((VJO_VOCR_SPOT_BYTES + 15u) & ~15u) + ((3964u + 15u) & ~15u) +
                                         VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE);
     TEST_CHECK(VJO_VOCR_SPOT_BYTES <= VJO_VOCR_SPOT_MAX_BYTES && VJO_VOCR_SPOT_MAX_BYTES == 512000u &&
-               VJO_VOCR_SPOT_ARENA_MAX == 262144u);
+               VJO_VOCR_SPOT_ARENA <= VJO_VOCR_SPOT_ARENA_MAX && VJO_VOCR_SPOT_ARENA_MAX == 262144u);
     TEST_CHECK(VJO_WORST_GAME_JOB == VJO_BUDGET_GAME_WEIGHTS + VJO_BUDGET_GAME_WORKSPACE + VJO_BUDGET_GAME_CAPTURE +
                                      VJO_BUDGET_GAME_LINE + VJO_BUDGET_GAME_LM + VJO_BUDGET_GAME_CASCADE +
                                      VJO_BUDGET_GAME_HELPERS + VJO_BUDGET_GAME_SPOT);

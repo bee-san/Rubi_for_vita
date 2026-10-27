@@ -999,8 +999,9 @@ LOG = {
     # head gate skipped, percent ("-" without the gate or when it skipped none), arg the lines recognized
     "recognize": re.compile(r"^gstep job recognize kind=(?:-|(\d+)) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) "),
     # API 53: the text spotter as the finder (VJO_GSTEP_SPOT): kind 1 when it found the lines (0: GRAD did), arg the
-    # boxes it gave the recognizer, rc why GRAD did, bytes its scratch | VJO_GLM_READ / _RESIDENT (its weights), sum
-    # every box it returned | 0x8000 more than it keeps | its weights' load ms << 16, us its time
+    # lines it gave the recognizer, rc why GRAD did, bytes its scratch | VJO_GLM_READ / _RESIDENT (its weights), sum
+    # every box it found on the frame (bits 0-6) | 0x80 more than it keeps | the frame's strips << 8 | its weights'
+    # load ms << 16, us its time
     "spot": re.compile(r"^gstep job spot kind=(\d+) arg=(\d+) rc=0x([0-9A-Fa-f]+) bytes=(\d+) sum=0x([0-9A-Fa-f]+) "
                        r".*us=(\d+)"),
     # per-line confidence (API 20): " c912" or " c412*" (the LM changed the line) after a line's time
@@ -2314,7 +2315,7 @@ def summarise_log(text):
          "gate": {"jobs": 0, "stopped": 0, "lines_stopped": 0, "scores": [], "us": [], "rcs": {}, "reads": 0},
          "headgate": {"jobs": 0, "gated": 0, "frames": 0, "skipped": 0, "shares": []},
          "spot": {"jobs": 0, "ran": 0, "boxes": 0, "lines": 0, "us": [], "load_ms": [], "rcs": {}, "reads": 0,
-                  "kept": 0},
+                  "kept": 0, "strips": []},
          "par": {"jobs": 0, "helpers": [], "on_helpers": 0, "cached": 0, "not_started": 0, "share_min": [], "share_mean": []},
          "clock": {"jobs": 0, "raised": 0, "kept": 0, "during": [], "after": [], "before": []},
          "pace": {"jobs": 0, "max_ms": [], "slow": 0, "frames": 0, "before_max_ms": [], "before_slow": 0, "before_frames": 0},
@@ -2489,8 +2490,9 @@ def summarise_log(text):
             if m.group(1) == "1":
                 sp["ran"] += 1
                 sp["lines"] += int(m.group(2))
-                sp["boxes"] += packed_sum & 0x7FFF
+                sp["boxes"] += packed_sum & 0x7F
                 sp["us"].append(int(m.group(6)))
+                sp["strips"].append((packed_sum >> 8) & 0xFF)  # the frame's strips (0: the region was the frame)
             sp["load_ms"].append(packed_sum >> 16)
             continue
         m = LOG["norm"].match(line)
@@ -3639,7 +3641,9 @@ def render_collect(c):
         sp = lg.get("spot") or {}
         if sp.get("jobs"):
             L.append(f"  text spotter (ocr_finder = spotter): {sp['jobs']} job(s), {sp['ran']} found their lines with it "
-                     f"({sp['lines']} line(s) of {sp['boxes']} box(es))" + (f"; {_span(sp['us'])} us a job" if sp["us"] else "")
+                     f"({sp['lines']} line(s) of {sp['boxes']} box(es) on the frame)"
+                     + (f"; {_span(sp['us'])} us a job" if sp["us"] else "")
+                     + (f", the frame's strips {_span(sp['strips'])}" if sp.get("strips") else "")
                      + f"; weights read {sp['reads']} time(s), kept {sp['kept']}"
                      + (f" (load {_span(sp['load_ms'])} ms)" if sp["reads"] else "")
                      + ("; GRAD found them after " + ", ".join(f"rc {r} x{n}" for r, n in sorted(sp["rcs"].items()))

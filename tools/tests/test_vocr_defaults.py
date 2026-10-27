@@ -518,12 +518,18 @@ class RuntimePinEverywhere(unittest.TestCase):
     (audit-vocr6-finder-h B1: a pin bump that missed the workflow failed every GitHub build job at configure)."""
 
     def test_the_workflow_and_the_docs_check_out_the_cmake_pin(self):
+        """API 53: the text spotter's files are pinned at their own commit (VJO_VOCR_SPOT_COMMIT) until its PR
+        merges: its checkouts (.refs/vita-vn-ocr-spot) are at that pin, every other one at VJO_VOCR_COMMIT."""
         cmake = (ROOT / "cmake" / "VocrOCR.cmake").read_text(encoding="utf-8")
         pin = re.search(r"^set\(VJO_VOCR_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
+        spot = re.search(r"^set\(VJO_VOCR_SPOT_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
         flow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-        refs = re.findall(r"repository: bee-san/vita-vn-ocr\n(?:\s+#.*\n)*\s+ref: ([0-9a-f]{40})", flow)
+        refs = re.findall(r"repository: bee-san/vita-vn-ocr\n(?:\s+#.*\n)*\s+ref: ([0-9a-f]{40})\n"
+                          r"(?:\s+[a-z-]+: .*\n)*?\s+path: (\S+)", flow)
         self.assertTrue(refs, "no vita-vn-ocr checkout found in release.yml")
-        self.assertEqual(set(refs), {pin}, refs)
+        for ref, path in refs:
+            self.assertEqual(ref, spot if path == ".refs/vita-vn-ocr-spot" else pin, (ref, path))
+        self.assertEqual({path for _, path in refs}, {".refs/vita-vn-ocr", ".refs/vita-vn-ocr-spot"}, refs)
         docs = (ROOT / "docs" / "vita-vn-ocr.md").read_text(encoding="utf-8")
         self.assertIn(f"git -C /path/to/vita-vn-ocr checkout {pin}", docs)
 

@@ -24,7 +24,7 @@ API = int(re.search(r"#define VJO_API_VERSION (\d+)", (ROOT / "include/vjo_api.h
 
 
 def kernel_index():
-    """include/vjo_payload.h's VJO_PAYLOAD_KERNEL_INDEX, (13 + VJO_PAYLOAD_SPOT_FILES): API 53's text spotter adds its
+    """include/vjo_payload.h's VJO_PAYLOAD_KERNEL_INDEX, (15 + VJO_PAYLOAD_SPOT_FILES): API 53's text spotter adds its
     two files before the plugins once its pin is published (include/vjo_vocr_sizes.h VJO_VOCR_SPOT_PUBLISHED)."""
     header = (ROOT / "include/vjo_payload.h").read_text()
     base = int(re.search(r"#define VJO_PAYLOAD_KERNEL_INDEX \((\d+) \+ VJO_PAYLOAD_SPOT_FILES\)", header).group(1))
@@ -147,7 +147,7 @@ class PayloadList(unittest.TestCase):
         self.assertRegex(header, r"#define VJO_PAYLOAD_SPOT_FILES 2\n#else\n#define VJO_PAYLOAD_SPOT_LIST\(X\)\n"
                                  r"#define VJO_PAYLOAD_SPOT_FILES 0\n")
         kernel = kernel_index()
-        self.assertEqual(kernel, 13 + spot)
+        self.assertEqual(kernel, 15 + spot)
         self.assertEqual(files[kernel], ("ur0:tai/VitaJPOverlay_Kernel.skprx", "copy"))
         self.assertEqual(files[kernel - 1], ("ux0:data/VitaJPOverlay/dictionaries/plaintext.vjdict", "move"))
         self.assertEqual([d for d, _ in files[kernel:kernel + 4]],  # VJO_PAYLOAD_PLUGINS: the plugins and the RCO
@@ -167,7 +167,7 @@ class PayloadList(unittest.TestCase):
 
     def test_the_spotter_joins_the_payload_once_published(self):
         """API 53: VJO_VOCR_SPOT_PUBLISHED 1 (include/vjo_vocr_sizes.h) puts the spotter's weights and attribution
-        after the gate's, as the compiler's #if branch does; the placeholder's 0 leaves them out."""
+        after the vertical model's, as the compiler's #if branch does; the placeholder's 0 leaves them out."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "include").mkdir()
@@ -180,10 +180,11 @@ class PayloadList(unittest.TestCase):
                            flags=re.M))
                 with unittest.mock.patch.object(vpk, "ROOT", root):
                     files = [d for d, _ in vpk.payload_files()]
-                gate = files.index("ux0:data/VitaJPOverlay/ocr/GATE-ATTRIBUTION.md")
-                self.assertEqual(files[gate + 1:gate + 1 + len(extra)], extra)
-                self.assertEqual(files[gate + 1 + len(extra)], "ux0:data/VitaJPOverlay/dictionaries/vndb-names.vjdict")
-                self.assertEqual(len(files), 18 + len(extra))
+                vertical = files.index("ux0:data/VitaJPOverlay/ocr/VERTICAL-ATTRIBUTION.md")
+                self.assertEqual(files[vertical + 1:vertical + 1 + len(extra)], extra)
+                self.assertEqual(files[vertical + 1 + len(extra)],
+                                 "ux0:data/VitaJPOverlay/dictionaries/vndb-names.vjdict")
+                self.assertEqual(len(files), 20 + len(extra))
 
     def test_a_file_named_twice_is_refused(self):
         """core/payload.c refuses a manifest naming a file twice ("a file named twice"), so the packaging

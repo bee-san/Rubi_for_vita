@@ -498,14 +498,16 @@ class AnalyseV2(unittest.TestCase):
 
     def test_the_spot_step_counts_the_spotters_jobs_and_grads(self):
         # API 53 (VJO_GSTEP_SPOT): kind 1 when the spotter found the lines, arg its lines, rc why GRAD did instead,
-        # bytes its scratch | VJO_GLM_READ / VJO_GLM_RESIDENT, sum its boxes | 0x8000 more than it keeps | load ms << 16
-        def step(kind, arg, rc, weights, boxes, load_ms, us):
-            return (f"gstep job spot kind={kind} arg={arg} rc=0x{rc & 0xFFFFFFFF:08X} bytes={236816 | weights} "
-                    f"sum=0x{boxes | load_ms << 16:08X} main=0 cdram=0 phycont=0 us={us}\n")
-        sp = a.summarise_log(step(1, 3, 0, 0x80000000, 7, 12, 81000) + step(1, 16, 0, 0x40000000, 0x8000 | 64, 0, 99000)
-                             + step(0, 0, -3, 0, 0, 2, 1))["spot"]
-        self.assertEqual(sp, {"jobs": 3, "ran": 2, "boxes": 71, "lines": 19, "us": [81000, 99000],
-                              "load_ms": [12, 0, 2], "rcs": {-3: 1}, "reads": 1, "kept": 1})
+        # bytes its scratch | VJO_GLM_READ / VJO_GLM_RESIDENT, sum its boxes on the frame | 0x80 more than it keeps |
+        # the frame's strips << 8 | load ms << 16
+        def step(kind, arg, rc, weights, boxes, strips, load_ms, us):
+            return (f"gstep job spot kind={kind} arg={arg} rc=0x{rc & 0xFFFFFFFF:08X} bytes={313392 | weights} "
+                    f"sum=0x{boxes | strips << 8 | load_ms << 16:08X} main=0 cdram=0 phycont=0 us={us}\n")
+        sp = a.summarise_log(step(1, 3, 0, 0x80000000, 7, 17, 12, 381000)
+                             + step(1, 16, 0, 0x40000000, 0x80 | 64, 0, 0, 299000)
+                             + step(0, 0, -3, 0, 0, 0, 2, 1))["spot"]
+        self.assertEqual(sp, {"jobs": 3, "ran": 2, "boxes": 71, "lines": 19, "us": [381000, 299000],
+                              "load_ms": [12, 0, 2], "rcs": {-3: 1}, "reads": 1, "kept": 1, "strips": [17, 0]})
 
     def test_the_vjonet_stack_line_keeps_the_largest_and_warns_near_the_top(self):
         # shell/worker.c net_stack_check: logged at a game exit when it grew; the summary keeps the largest

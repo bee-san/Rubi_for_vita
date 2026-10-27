@@ -87,6 +87,9 @@ static int hook_owns_capture;
 /* A helper thread could not be joined (core/vocr_ocr.h VjoVocrStats.stuck): it may
  * still run in the job's workspace, so that block is never freed either. */
 static int hook_owns_workspace;
+/* API 53: a frame-row copy (the spotter's, VJO_ROWS_FRAME) outlived its call: the hook may still write the frame's
+ * strip, which is in the job's workspace, so that block is never freed (as the capture block, hook_owns_capture). */
+static int hook_owns_frame;
 static uint32_t workspace_bytes_held, weights_bytes_held, capture_bytes_held, line_bytes_held, lm_bytes_held;
 static uint32_t cascade_bytes_held;
 static uint32_t capture_memory, workspace_memory; /* VJO_GAME_OCR_MEM_* of the blocks held */
@@ -420,7 +423,11 @@ static int capture_rows(Capture *c, unsigned y, unsigned n, unsigned char *dst, 
         c->failed = rc;
         /* An armed request's copy outlived the call: the hook may still write dst, so the
          * block is never freed and this worker takes no more jobs. */
-        if (rc == VJO_ERR_BUSY && c->last.armed) blocked = hook_owns_capture = 1;
+        if (rc == VJO_ERR_BUSY && c->last.armed) {
+            blocked = 1;
+            if (c->frame) hook_owns_frame = 1; /* API 53: its rows go to the workspace, not the capture block */
+            else hook_owns_capture = 1;
+        }
         return rc == VJO_ERR_CANCELLED ? VJO_E_CANCELLED : rc < 0 ? rc : VJO_E_SOURCE;
     }
 }
@@ -935,7 +942,7 @@ static const VjoVocrModel *cascade_of(const Candidate *c, const VjoGameOcrReques
 static int cleanup(void)
 {
     int rc = 0;
-    if (workspace_uid >= 0 && !hook_owns_workspace) {
+    if (workspace_uid >= 0 && !hook_owns_workspace && !hook_owns_frame) {
         if (game_memblock_free(GL_WORKSPACE, VJO_GITEM_WORKSPACE, workspace_uid, workspace_bytes_held) < 0)
             rc = VJO_E_OCR_UNAVAILABLE;
         else { workspace_uid = -1; workspace_bytes_held = 0; workspace_memory = 0; }

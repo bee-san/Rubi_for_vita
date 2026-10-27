@@ -1,8 +1,9 @@
-"""API 53: the text spotter's pins (vita-vn-ocr #128; config.ini ocr_finder = spotter). include/vjo_vocr_sizes.h's
-VJO_VOCR_SPOT_* lines are the one place of its tag, name, bytes, SHA-256, attribution, form and whether it is published:
-C (core/vocr_ocr.c, the kernel, include/vjo_payload.h), CMake (cmake/VocrOCR.cmake's VOCR_TEXTSPOT6_NO_MS default) and
-the tools (prepare_ocr.py, package_release.py, package_vpk.py, e2e_package.py) read them, so pinning the published pick
-changes one line per constant. Until then the pin is a placeholder that fetches, packages and installs nothing."""
+"""API 53: the text spotter's pins (vita-vn-ocr #128, textspot7's pick; config.ini ocr_finder = spotter).
+include/vjo_vocr_sizes.h's VJO_VOCR_SPOT_* lines are the one place of its tag, name, bytes, SHA-256, attribution, form,
+whether it is published, its arena for a 960 x 544 frame and its post-pass's steps: C (core/vocr_ocr.c, the kernel,
+include/vjo_payload.h), CMake (cmake/VocrOCR.cmake's VOCR_TEXTSPOT6_NO_MS default) and the tools (prepare_ocr.py,
+package_release.py, package_vpk.py, e2e_package.py) read them, so pinning the published pick changes one line per
+constant. Until then the pin is a placeholder that fetches, packages and installs nothing."""
 import hashlib
 import re
 import sys
@@ -41,12 +42,19 @@ class Pins(unittest.TestCase):
         maximum = int(re.search(r"^#define VJO_VOCR_SPOT_MAX_BYTES (\d+)u$", text, re.M).group(1))
         self.assertTrue(32 < pin["bytes"] <= maximum == 512000)
         self.assertEqual(int(re.search(r"^#define VJO_VOCR_SPOT_ARENA_MAX (\d+)u$", text, re.M).group(1)), 262144)
+        # its arena for a 960 x 544 frame (the memory ledger's figure: t64n8c16's 244,607 B) within the rule's, and the
+        # post-pass's steps: decode D, VOCR_T7_JOIN10 | VOCR_T7_EXTEND (vita-vn-ocr runtime/vocr_textspot7.h), one line
+        # each, as the C code reads them
+        arena = re.findall(r"^#define VJO_VOCR_SPOT_ARENA (\d+)u$", text, re.M)
+        self.assertEqual(arena, ["244607"])
+        self.assertEqual(re.findall(r"^#define VJO_VOCR_SPOT_POST (0x[0-9A-F]+)u$", text, re.M), ["0x0C"])
         # a name the kernel's request field holds (kernel/game_ocr.c checks it at compile time)
         self.assertLess(len(pin["name"]) + 1, 32)
 
     def test_the_placeholder_is_unpublished_and_fetches_nothing(self):
-        """The pre-release v0.3.8-textspot6.1 does not exist yet: the placeholder's hashes are zeros, which no file
-        has (core/vocr_ocr.c reads with GRAD), and nothing is fetched or packaged for it."""
+        """Until vita-vn-ocr's pick (v0.3.9-textspot7.1) is pinned, the textspot6 research blob's placeholder stands:
+        its hashes are zeros, which no file has (core/vocr_ocr.c reads with GRAD), and nothing is fetched or packaged
+        for it."""
         pin = prepare_ocr.spot_pin()
         if pin["published"]:
             self.skipTest("the spotter's pin is published")
@@ -103,13 +111,16 @@ class Pins(unittest.TestCase):
 
     def test_the_build_takes_the_form_and_the_runtime_pins_from_cmake(self):
         """cmake/VocrOCR.cmake's VOCR_TEXTSPOT6_NO_MS default reads VJO_VOCR_SPOT_FORM, and the spotter's runtime
-        files are pinned at their own commit (until vita-vn-ocr merges them), which tools/fast_gate.sh and CI read."""
+        files (textspot6's spotter, textspot7's post-pass and the headers they read) are pinned at their own commit
+        (until vita-vn-ocr merges them), which tools/fast_gate.sh and CI read."""
         cmake = (ROOT / "cmake/VocrOCR.cmake").read_text()
         self.assertIn('REGEX "^#define VJO_VOCR_SPOT_FORM \\"(trunk|ms)\\"$"', cmake)
         commit = re.search(r"^set\(VJO_VOCR_SPOT_COMMIT ([0-9a-f]{40})\)$", cmake, re.M).group(1)
-        for name in ("vocr_textspot6.c", "vocr_textspot6.h", "vocr_textspot.h"):
-            self.assertRegex(cmake, rf"\n  {re.escape(name)} [0-9a-f]{{64}}\n")
+        for name in ("vocr_textspot6.c", "vocr_textspot6.h", "vocr_textspot7.c", "vocr_textspot7.h", "vocr_textspot.h",
+                     "vocr_lines_refine.h"):
+            self.assertRegex(cmake, rf"\n  {re.escape(name)} [0-9a-f]{{64}}(\n|\))")
         self.assertIn('"${_vocr_spot_rt}/vocr_textspot6.c"', cmake)
+        self.assertIn('"${_vocr_spot_rt}/vocr_textspot7.c"', cmake)
         gate = (ROOT / "tools/fast_gate.sh").read_text()
         self.assertIn("s/^set(VJO_VOCR_SPOT_COMMIT", gate)
         workflow = (ROOT / ".github/workflows/release.yml").read_text()

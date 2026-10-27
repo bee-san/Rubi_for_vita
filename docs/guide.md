@@ -767,6 +767,14 @@ much on regions drawn tight.
 - `off` is the frozen finder
   ([line finder fixes](vita-vn-ocr.md#line-finder-fixes-api-50)).
 
+`ocr_finder = spotter` finds the lines with vita-vn-ocr #128's text spotter instead of Rubi's finder (`grad`, the
+default): a network trained on hooked game pages reads the game's whole screen, and a post-pass keeps the lines whose
+centre is in your region, joins the pieces of a line and grows each over the ink at its ends. It is off by default:
+on vita-vn-ocr's unseen development games it is not resolved better than Rubi's finder with the line fixes (host,
+measured). Its weights are a file beside the models, kept in the game's memory between jobs; without them (until the
+pick's release is pinned, every package) a job reads with Rubi's finder, as it does whenever the spotter cannot run
+([the spotter finder](vita-vn-ocr.md#the-spotter-finder-api-53)).
+
 Recognition runs up to three lines at once (`ocr_threads = 3`, the default; `1` reads one line
 after another), each on its own thread at the lowest priority on the game's cores. Each line's LM
 decode, the cascade's re-read and its place in the text still follow line order on the job's own
@@ -948,11 +956,11 @@ app and other system titles, should a configuration line load it there.
 Candidate games keep only an idle worker, at the lowest user priority so every
 game thread preempts a recognition, until the Shell confirms their per-game
 policy; disabled games load no weights and allocate no OCR workspace. Each game that is ON
-holds the worker's 192,512 B of module pages (200,704 B in the debug build; API 31's native hooks and
+holds the worker's 208,896 B of module pages (221,184 B in the debug build; API 31's native hooks and
 their job path added 61,440 B and 65,536 B, the debug build's PSP probe 4,096 B more, [native-hooks.md](native-hooks.md#memory),
 API 34's remembered hooks 8,192 B, vita-vn-ocr #109's counter re-decode 4,096 B, API 42's head gate and
-two-level head 8,192 B, API 47's vertical text 4,096 B and API 50's line finder fixes with vita-vn-ocr f8a1856's
-runtime 8,192 B, [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
+two-level head 8,192 B, API 47's vertical text 4,096 B, API 50's line finder fixes with vita-vn-ocr f8a1856's
+runtime 8,192 B and API 53's text spotter 16,384 B (20,480 B in the debug build), [memory-ledger.md](memory-ledger.md)) and its 36,864 B thread stack and TLS from its
 start, homebrew included (ON by the default): an app that fails to start with them turns OFF
 in the Rubi app, or starts with L held.
 Games started from inside Adrenaline share its process (`PSPEMUCFW`); a game

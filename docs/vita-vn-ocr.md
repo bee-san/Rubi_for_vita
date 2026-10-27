@@ -1437,123 +1437,138 @@ games worse than `on` (v10972 38 → 70 errors, v6985 6 → 7), and it carries `
 - A box whose frame or ornament touches the region, with `junk` and a margin.
 - A Narcissu page with `all`.
 - The job time with the setting on and off.
-## The spotter finder (API 45)
+## The spotter finder (API 53)
 
 ```ini
-ocr_finder = grad          ; grad: Rubi's line finder | spotter: vita-vn-ocr's text spotter
-ocr_spotter_refine = off   ; on: the spotter's boxes refined (VOCR_REFINE_DEFAULT)
+ocr_finder = grad          ; grad: Rubi's line finder | spotter: vita-vn-ocr's text spotter on the whole screen
 ```
 
-`ocr_finder = spotter` replaces the line finding inside the player's region, and only that, with vita-vn-ocr's text
-spotter (#128, `docs/textspot6.md` there: a VTSP version-4 network trained on the owner's hooked pages, whose
-"crop" decode is this one). Everything after the lines (the blank-line check, the cache, the recognizer, the counter
-re-decode, the LM, the cascade, the text rules) is the same job. `ocr_finder = grad` is the job's own finder path as
-`main` has it, untouched; it is also what a job reads with whenever the spotter cannot run. Both settings are
-config.ini lines only, as `ocr_refine_lines` and `ocr_head_gate` are: while the pin is a placeholder (below) every
-package's `spotter` reads with GRAD, so the Rubi app's OCR page gets no switch for it until vita-vn-ocr publishes the
-weights.
+`ocr_finder = spotter` finds the lines of the player's region with vita-vn-ocr's textspot7 pick (#128,
+`docs/textspot7.md` there): its text spotter (`base_t64n8c16`, a VTSP version-4 network trained on the owner's hooked
+pages) on the game's **whole frame**, then its decode **D**, a post-pass that keeps, joins and grows the spotter's
+boxes in the region. Everything after the lines (the blank-line check, the cache, the recognizer, the counter
+re-decode, the LM, the cascade, the text rules) is the same job. **Off by default** (`grad`): by textspot7's rule
+the pick is not resolved better than `rubi,fix=1` (GRAD + refine with the line fixes, what Rubi ships) on unseen
+development games, so it ships behind its setting (below). `ocr_finder = grad` is the job's own finder path as `main`
+has it, untouched; it is also what a job reads with whenever the spotter cannot run. It is a config.ini line only, as
+`ocr_refine_lines` and `ocr_head_gate` are: while the pin is a placeholder (below) every package's `spotter` reads
+with GRAD, so the Rubi app's OCR page gets no switch for it.
 
-- **What it reads.** `vocr_textspot6_find_rows` on the region's rows (`stream_row`): one pass from row 0, which is
-  the capture's first pass (the scene the Shell is told of), then each box's rows once, for its dark flag. The region
-  is read at the scale the blob's rule gives the frame it is cut from (`VOCR_TEXTSPOT6_SCALE2` for a half-scale blob
-  and every 960×544 frame, Adrenaline's PSP picture included: halved, as the spotter was trained; a ≤480×272 frame
-  at its own size). Its horizontal boxes, in its reading order (blocks top to bottom, each block's lines in order),
-  with their dark flags, are the lines, at most 16 (the line set's maximum: more are cut and counted as
-  `truncated`). Vertical boxes are left out: no recognizer here reads a column. Every line's rows are read again,
-  each checked, when it is recognized, so a screen that changes under a line starts the job over as with GRAD (rows
-  outside every box are read once; the stable-text wait's passes read them all).
-- **What it leaves out.** GRAD's short-line probe (#194) and the text-presence gate are GRAD's: a job whose spotter
-  finds the lines runs neither and reads no gate weights. The refinement is its own setting: `ocr_spotter_refine =
-  on` refines its boxes (`VOCR_REFINE_DEFAULT`, on the pixels the job holds, as for GRAD's), off (the default) reads
-  them as found; `ocr_refine_lines` applies to GRAD's boxes only. Which is better is the spotter's measured decode
-  (crop or crop+refine) to decide, with its default.
+- **What it reads.** The region's first pass (the capture the Shell is told of, as for GRAD), then the game's whole
+  frame, 960×544 (a PSP game in Adrenaline: the console's view, its picture as the screen shows it), through the same
+  capture path: strips of grey rows from the kernel (`VJO_ROWS_FRAME`: the frame's rows instead of the region's, the
+  same hook and kernel-strip ladder, 59 rows a strip), into the job's own workspace, never the whole frame at once.
+  `vocr_textspot6_find_rows` reads it row by row in one pass, at its blob's scale (no SCALE flag: the half-scale blob
+  halves a 960×544 frame, as it was trained, and reads a 480×272 one at its own size). Every frame row is checked as
+  the region's are: its checksum kept at its first read and compared at every later one, and a frame row inside the
+  region also against the region's capture, so a screen that changes between the capture and the spotter's read
+  starts the job over (`VJO_E_SCREEN_CHANGED` after three tries, as with GRAD). A region that is the whole frame is
+  read once: the spotter's pass is its first.
+- **The region's lines, D's post-pass.** Each horizontal box whose centre lies in the region gets its dark flag
+  (`vocr_line_dark_rows` on its frame rows: the frame's other boxes are never read again); then
+  `vocr_textspot7_post_rows` with the region (its own rows), `VOCR_T7_JOIN10 | VOCR_T7_EXTEND`: the boxes whose centre
+  lies in the region, clipped to it (a box whose centre lies outside gives no line, though it crosses into the
+  region); boxes of one row with a gap of at most one line height joined; each box grown over the inked columns at
+  its ends (at most 1.5 heights, to the region's edge or the next box). Its boxes, in the spotter's reading order,
+  are the lines, at most 16 (the line set's maximum: more are cut and counted as `truncated`). Vertical boxes are
+  left out: no recognizer here reads a column found this way (with `ocr_vertical = auto`, a region the spotter saw
+  only columns in is GRAD's, whose check may read it as columns). Every line's rows are read again, each checked,
+  when it is recognized.
+- **What it leaves out.** D has no refinement, and GRAD's own steps are GRAD's: the refinement (`ocr_refine_lines`),
+  the line fixes (`ocr_line_fix`), the short-line probe (#194) and the text-presence gate run only on GRAD's path.
+  (The earlier, unmerged spotter branch, API 45, read the region alone and had `ocr_spotter_refine`; that setting is
+  gone: a config.ini line naming it is an unknown setting, warned and ignored.)
 - **When it cannot run, GRAD does.** No weights file, another size or SHA-256 (the placeholder pin below: every
   file), weights the build refuses (a multi-scale blob in a `VOCR_TEXTSPOT6_NO_MS` build), no memory for its block,
-  no room for its scratch beside the tier, the LM and the cascade, or a refusal by the runtime: the job finds its
-  lines with GRAD, refines them by `ocr_refine_lines`, and its `spot` step says why. A job never fails or steps down
-  a model size for the spotter. (A refusal by the runtime itself comes after the job set its scratch up for the
-  spotter, without the gate: GRAD then reads that job without `ocr_text_gate`'s check; every other refusal comes
-  before, and the job is GRAD's as on `main`.)
+  no room for its scratch beside the tier, the LM and the cascade, a frame the spotter does not take, or a refusal by
+  the runtime: that try's lines are GRAD's path's, exactly as without the setting (the refinement, fixes, probe and
+  gate included), and the `spot` step says why. A job never fails or steps down a model size for the spotter. A row
+  that cannot be read is the job's error, as on GRAD's path.
 - **Its weights** are a file beside the models, `ocr/<VJO_VOCR_SPOT_NAME>`, with its release's `ATTRIBUTION.md` as
   `ocr/SPOTTER-ATTRIBUTION.md`; the kernel's broker opens it only for a request with the spotter's bit
-  (`VJO_GAME_OCR_OPEN_SPOT`), at its pinned size. They are 50-450 KB (the candidates' VTSP blobs: t64n8c16 52,176 B,
-  qS4 118,096 B, qL5 448,304 B), so never a static array: the worker reads them into a block of their own
-  (`VjoGameVocrSpot`, USER_RW, through the memory ledger's wrapper), checks the SHA-256, and parses them once
-  (`vocr_textspot6_load`: the header and a bitwise CRC-32 over every byte, est. tens of ms for the largest, which a
-  job would otherwise pay again), keeping both in the block between jobs, as the LM is kept: each later job opens the
-  file (its size and time) and reads it again only when it changed. A job without the spotter gives the block back,
-  and so does every path that gives back the resident weights (a job without memory, the game leaving the front,
-  eight trusted hook answers in a row since API 43, the plugin's stop). Kept rather than read per job: the card and the hash read about 5 MB/s (VOCR3-H15's 1,155,968 B
-  first load took 0.23 s in v0.8.0-test.1's console logs, the owner's 2026-10-14 notes), so 10 ms for t64n8c16's
-  and 90 ms for qL5's in every job (estimates), the order of the spotter's own time; kept, it holds 57,344-454,656 B
-  of the game's memory (the block, page-rounded) while the game is in front, against the default LM's 1 MB block.
-- **The pin is a placeholder** until vita-vn-ocr publishes its pick as pre-release `v0.3.8-textspot6.1`. Its pins are
-  the `VJO_VOCR_SPOT_*` lines of `include/vjo_vocr_sizes.h`, the one place C, CMake and the tools read: the tag, the
-  name, the bytes and SHA-256, the attribution's bytes and SHA-256, the form (`trunk`: the build leaves out every
-  multi-scale path, `-DVOCR_TEXTSPOT6_NO_MS`, cmake `VJO_VOCR_SPOT_NO_MS`; `ms`: a multi-scale network) and
-  `VJO_VOCR_SPOT_PUBLISHED`. While it is 0, the hashes are zeros (no file has them: a job with the spotter reads with
-  GRAD), `tools/prepare_ocr.py` fetches nothing for it and no package or one-VPK payload carries it
+  (`VJO_GAME_OCR_S_SPOT`, `VJO_GAME_OCR_OPEN_SPOT`), at its pinned size. The worker reads them into a block of their
+  own (`VjoGameVocrSpot`, USER_RW, through the memory ledger's wrapper), checks the SHA-256 and parses them once
+  (`vocr_textspot6_load`), keeping both between jobs as the LM is kept: each later job opens the file (its size and
+  time) and reads it again only when it changed. A job without the spotter gives the block back, and so does every
+  path that gives back the resident weights (a job without memory, the game leaving the front, eight trusted hook
+  answers in a row, the plugin's stop).
+- **The pin is a placeholder** until vita-vn-ocr's pick is published as `v0.3.9-textspot7.1`
+  (`textspot7_t64_w8.vtsp`, 52,176 B) and its hashes are taken: today the entries are the textspot6 research blob's
+  (`textspot6_t64n8c16_w8.vtsp`, 52,176 B, the same shape). Its pins are the `VJO_VOCR_SPOT_*` lines of
+  `include/vjo_vocr_sizes.h`, the one place C, CMake and the tools read: the tag, the name, the bytes and SHA-256, the
+  attribution's bytes and SHA-256, the form (`trunk`: the build leaves out every multi-scale path,
+  `-DVOCR_TEXTSPOT6_NO_MS`, cmake `VJO_VOCR_SPOT_NO_MS`), `VJO_VOCR_SPOT_PUBLISHED`, the arena for a 960×544 frame
+  (`VJO_VOCR_SPOT_ARENA`, what the memory ledger counts) and the post-pass's steps (`VJO_VOCR_SPOT_POST`). While
+  `PUBLISHED` is 0 the hashes are zeros (no file has them: a job with the spotter reads with GRAD),
+  `tools/prepare_ocr.py` fetches nothing for it and no package or one-VPK payload carries it
   (`tools/tests/test_spot_pins.py`); pinning the pick changes one line per constant.
-- **The runtime** is vita-vn-ocr's `runtime/vocr_textspot6.c` (and its headers), pinned in `cmake/VocrOCR.cmake` at
-  its own commit (`VJO_VOCR_SPOT_COMMIT`, the head of vita-vn-ocr's `feat/textspot6`) until its pull request merges
-  and one commit pins every runtime file again (see [Build](#build)). It is built into the game worker only, at the
-  runtime's `-O2`; the Shell links no OCR runtime.
+- **The runtime** is vita-vn-ocr's `runtime/vocr_textspot6.c` and `runtime/vocr_textspot7.c` (and their headers),
+  pinned in `cmake/VocrOCR.cmake` at their own commit (`VJO_VOCR_SPOT_COMMIT`, the head of vita-vn-ocr's
+  `feat/textspot7`, `a7e929e`) until its pull request merges and one commit pins every runtime file again (see
+  [Build](#build)). They are built into the game worker only, at the runtime's `-O2`; the Shell links no OCR runtime.
 
-**Memory** (exact bytes; [memory-ledger.md](memory-ledger.md)):
+**Memory** (exact bytes; [memory-ledger.md](memory-ledger.md#the-spotter-finder-api-53-vita-vn-ocr-128)):
 
 | item | bytes |
 |---|---|
-| its block: the weights and their parsed form (3,964 B on the Vita), page-rounded | 57,344 for the placeholder's 52,176 B; at most 516,096 (`VJO_BUDGET_GAME_SPOT`: the protocol's 512,000 B ceiling) |
-| its part of the job's scratch: its arena at the region's size and scale, and its 1,684 B result, each 16-byte aligned | at a full 960×544 region: 244,607 B arena (t64n8c16), 256,247 B (qS4, qM4, qL5); a 900×200 dialogue box: 235,119 / 168,239 B; at most 262,144 + 1,696 (`VJO_VOCR_SPOT_ARENA_MAX`) |
+| its block: the weights and their parsed form (3,964 B on the Vita), page-rounded | 57,344 (`VJO_BUDGET_GAME_SPOT`, the pin's 52,176 B) |
+| its part of the job's scratch: the spotter's arena for the frame, its result, the post-pass's boxes and arena, and (a region smaller than the frame) the frame's strip and its rows' state, each 16-byte aligned | 313,392 at most (a region of the frame's width, a row shorter); 252,256 for a full-screen region; t64n8c16's arena for a 960×544 frame 244,607 (`VJO_VOCR_SPOT_ARENA`), the frame's strip 56,640, the post-pass's arena 2,880 at 960 px |
 
 The scratch is shared, one after the other, with GRAD's arena and the recognizer's, so a job grows only by what the
-spotter's part exceeds the larger of them: at 960×544 with VOCR5-N (its job's 189,360 B with API 42's head gate
-and two-level head) by up to 79,392 B, with VOCR5-L (267,440 B) by up to 1,312 B. The ledger's largest job (VOCR5-N
-with VOCR5-L's cascade, the 4 MB LM, both helpers) is 1,297,440 B with the spotter at its ceiling: the workspace
-budget and limit rise 1,220,608 → 1,298,432 B and the game job's limit by that, the block and the worker's four text
-pages, 10,604,544 → 11,214,848 B (12.4 % of the 90,177,536 B free USER the least
-any job saw in CLANNAD). Only a job with the spotter takes either, and only beside what its memory check chose.
+spotter's part exceeds the larger of them: the ledger's largest job (VOCR5-N with VOCR5-L's cascade, the 4 MB LM and
+both helpers) is 1,347,056 B on the host build (1,218,240 B without the spotter): the workspace budget and limit rise
+1,220,608 → 1,347,584 B, and the game job's worst case to 10,588,160 B, under its kept limit. Only a job with the
+spotter takes either, and only beside what its memory check chose.
 
-**Time (estimates: vita-vn-ocr `eval/textspot6_a9_20261026.json`, its forced-scale rows: regions read halved as
-Rubi reads them, dark flags on, the Vita compiler's `-O2` code priced by the Cortex-A9 cycle model; nothing of it
-has run on a console):**
+**Time (estimates: vita-vn-ocr's A9 cycle model on the Vita compiler's `-O2` code, high bound; nothing of it has run
+on a console).** At 333 MHz, on one core, per 960×544 frame:
+- the spotter: **264.2 ms** (t64n8c16, its decode and dark flags on the whole frame: `eval/textspot6_a9_20261026.json`,
+  the row of record in `eval/textspot7_a9_20261027.json`);
+- D's post-pass: **at most 33.5 ms** on the five largest development regions (t64n8c16's 32.0 ms), 4.3 ms on the mean
+  one (`eval/textspot7_a9_20261027.json`; timed on the region in memory, `vocr_textspot7_post`: Rubi's streamed form,
+  `_post_rows`, reads the same pixels through the region's rows, untimed);
+- together within the protocol's 300 ms (296.3 ms for t64n8c16).
 
-| shape (VTSP bytes) | 900×150 | 900×200 | 900×300 | 960×544 |
-|---|---|---|---|---|
-| t64n8c16 (52,176) | 82 / 62 ms | 105 / 79 ms | 151 / 113 ms | 264 / 198 ms |
-| qS4 (118,096) | 62 / 46 ms | 79 / 59 ms | 112 / 84 ms | 199 / 149 ms |
-| qL5 (448,304) | 75 / 56 ms | 95 / 71 ms | 135 / 101 ms | 237 / 178 ms |
+It runs before the 444 MHz boost (which starts with the first recognized line), so read the 333 MHz figures for a
+game at the default clock. Rubi's finding (GRAD with the textbox recovery) took about 100 ms a text box on the console,
+and 0.43 s for a full screen of 5 lines (v0.8.0-test.1's logs, measured; the owner's 2026-10-14 notes).
 
-At 333 / 444 MHz, on one core. It runs during the finder's pass, before the 444 MHz boost (which starts with the
-first recognized line), so read the 333 MHz column for a game at the default clock. Rubi's finding (GRAD with the
-textbox recovery) took about 100 ms a text box on the console, and 0.43 s for a full screen of 5 lines (v0.8.0-test.1's
-logs, measured; the owner's 2026-10-14 notes). The rows' blobs are random (a network's time does not follow its
-weights, only its decode's boxes do); the weights' load and the file's open in each job are not in them.
+**The frame's capture is unmeasured on a console (estimate).** A strip costs about one of the game's frames: each is
+copied by the display hook from the next frame the game shows (11-26 ms a strip on the console, #81's logs;
+[first OCR](first-ocr.md): 21.9 ms). The frame is 10 strips (59 rows each), so its pass adds about 110-260 ms of
+strip waits beside the region's own first pass (a dialogue box: two strips), and each line's dark flag and growth read
+its rows again (about a strip each where they are not held). A full-screen region's one pass replaces GRAD's two
+(20 strips). The spotter's network computes on each strip as it arrives, so its 264 ms and the waits partly overlap
+(unmeasured).
 
-**Code** (vita-vn-ocr `code_size`, the spotter's own kept sections, Vita gcc 15.2.0): 24,964 B of text at `-O2`,
-13,020 B with `VOCR_TEXTSPOT6_NO_MS` (11,944 B less). In the game worker, with its use: four text pages more in each
-build (196,608 B of pages, 204,800 B in the debug build), carried by every game that is ON whichever finder it uses,
-and three more again without `VOCR_TEXTSPOT6_NO_MS` [measured: the module rows in
-[memory-ledger.md](memory-ledger.md#the-spotter-finder-api-45)].
+**Code** in the game worker: four text pages more in the normal build (208,896 B of pages) and five in the debug
+build (221,184 B), carried by every game that is ON whichever finder it uses [measured: the module rows in
+[memory-ledger.md](memory-ledger.md#the-spotter-finder-api-53-vita-vn-ocr-128)]: `vocr_textspot6.c` 13,532 B with
+`VOCR_TEXTSPOT6_NO_MS`, `vocr_textspot7.c`'s streamed post-pass 2,696 B (its image form and fallback are left out by
+the link), and their use.
 
 **Logs.** `gstep job spot`, once per job (its last try) whose request asks for the spotter:
-- kind: 1 when it found the lines, 0 when GRAD did;
-- arg: the lines it gave the recognizer (before any refinement);
-- rc: 0, or why GRAD found them (`VJO_E_OCR_MODEL`: no file, another file, or one the build refuses; `VJO_E_OOM`: no
-  block, no room for its scratch; a runtime's `VOCR_LINES_E_*`);
+- kind: 1 when it found the lines, 0 when GRAD's path did;
+- arg: the lines it gave the recognizer;
+- rc: 0, or why GRAD's path found them (`VJO_E_OCR_MODEL`: no file, another file, or one the build refuses;
+  `VJO_E_OOM`: no block, no room for its scratch, a frame it does not take; `VJO_E_VERTICAL`: only columns in the
+  region, with `ocr_vertical = auto`; a runtime's `VOCR_LINES_E_*`);
 - bytes: its part of the scratch, with bit 31 (`VJO_GLM_READ`) when the job read its weights from the card, bit 30
   (`VJO_GLM_RESIDENT`) when they were kept from an earlier job;
-- sum: every box it returned (vertical ones too) | 0x8000 when it had more than it keeps (64), its weights' load in
-  ms from bit 16; us: its time (its pass, its decode and its boxes' dark flags).
+- sum: every box it found on the frame (bits 0-6, vertical ones and the region's others too) | 0x80 when it had more
+  than it keeps (64) | the frame's strips it read << 8 (0: the region was the frame) | its weights' load in ms from
+  bit 16; us: its time (the region's first pass, the frame's pass and network, its decode, the dark flags and the
+  post-pass).
 
 Its block's `alloc` and `free` steps name it `spot`. `tools/analyse_selftest.py --collect` counts its jobs, those it
-found the lines of, its lines and boxes, its time and its weights' reads.
+found the lines of, its lines and boxes, its time, the frame's strips and its weights' reads.
 
 **To test on the console** (the test issue lists them with the pinned pick): the same screens with `ocr_finder =
-grad` and `spotter` (CLANNAD's text box, a PSP game in Adrenaline, a backlog, a choice menu), the `spot` step's kind
-1 and its time against `find`'s, the weights read once per game session (`VJO_GLM_READ` once, then
-`VJO_GLM_RESIDENT`), and a game short of memory reading with GRAD (the step's rc `VJO_E_OOM`) without stepping down
-a model size.
+grad` and `spotter` (CLANNAD's text box drawn tight and with a margin, the whole screen, a PSP game in Adrenaline, a
+backlog, a choice menu), the `spot` step's kind 1, its time and the frame's strips against `find`'s, a screen that
+changes while it reads (the job read again), the weights read once per game session (`VJO_GLM_READ` once, then
+`VJO_GLM_RESIDENT`), and a game short of memory reading with GRAD (the step's rc `VJO_E_OOM`) without stepping down a
+model size.
 
 ## Models
 
@@ -1665,7 +1680,24 @@ cmake --build build/host && ctest --test-dir build/host --output-on-failure
 `vocr_lines.c`, `vocr_lines.h`, `vocr_lines_rows.c`, `vocr_lines_rows.h`, `vocr_lm.c`,
 `vocr_lm.h`, `vocr_lines_refine.c`, `vocr_lines_refine.h`, `vocr_textgate.c`, `vocr_textgate.h`, `vocr_post.c`,
 `vocr_post.h`, `vocr_vertical.c`, `vocr_vertical.h`: vita-vn-ocr #103's column finder, the same file at the pin) against their
-SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. For the host tests that run
+SHA-256 at that commit, and refuses others unless `-DVJO_VOCR_ALLOW_UNPINNED=ON`. The text spotter's files
+(`vocr_textspot6.c` and `.h`, `vocr_textspot7.c` and `.h`, and the headers they include from their own directory,
+`vocr_textspot.h`, `vocr_lines.h`, `vocr_lines_rows.h`, `vocr_lines_refine.h`: [the spotter
+finder](#the-spotter-finder-api-53)) are pinned at their own commit, `VJO_VOCR_SPOT_COMMIT` (`a7e929e`, vita-vn-ocr's
+`feat/textspot7`, a descendant of the recognizer's pin whose runtime differs from it only by the spotter's files and
+by `vocr.c`, which is not taken from it), until it merges: they are taken from
+`-DVJO_VOCR_SPOT_SOURCE_DIR=/path/to/a/checkout` of that commit, else from `VJO_VOCR_SOURCE_DIR` when it holds them at
+their pins, else from `.refs/vita-vn-ocr-spot`, else CMake downloads those eight files at that commit from the public
+repository into the build directory and checks each (`tools/fast_gate.sh` and CI pass a checkout):
+
+```sh
+git clone https://github.com/bee-san/vita-vn-ocr /path/to/vita-vn-ocr-spot
+git -C /path/to/vita-vn-ocr-spot checkout a7e929e7b220f9fa5feaedb5c46ba8afe9407b7e  # feat/textspot7: the spotter
+# then add -DVJO_VOCR_SPOT_SOURCE_DIR=/path/to/vita-vn-ocr-spot to either configure above
+```
+
+`-DVJO_VOCR_SPOT_NO_MS` (default: on for a pinned trunk blob, `VJO_VOCR_SPOT_FORM "trunk"`) builds the spotter
+without its multi-scale networks. For the host tests that run
 the text-presence gate, `cmake/VocrGate.cmake` downloads its pinned weights from the release at configure time and
 checks them (or takes `-DVJO_VOCR_GATE_BLOB=FILE`; without either, those tests skip); the plugins read the file
 from `ocr/` at run time. Copying those files to

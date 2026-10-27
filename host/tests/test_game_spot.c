@@ -28,7 +28,8 @@
 #define H 60u /* the text box's first line: a region where the spotter's part is pages over GRAD's scratch */
 #define TB_H 135u
 static unsigned char frame[FW * FH]; /* the game's frame: the text box at (RX, RY) on a pattern */
-static unsigned frame_rows_asked, frame_rows_fail, region_x = RX, region_y = RY, region_w = W, region_h = H;
+static unsigned frame_rows_asked, frame_rows_fail, frame_rows_armed_busy, region_x = RX, region_y = RY, region_w = W,
+    region_h = H;
 static unsigned char spot_blob[VJO_VOCR_SPOT_BYTES];
 static unsigned char job_memory[1024 * 1024] __attribute__((aligned(64)));
 static unsigned char weights_memory[TEST_FL10_BYTES + 4096] __attribute__((aligned(64)));
@@ -118,6 +119,10 @@ int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *
                    req->n <= FH - req->y && req->dst_stride >= FW && blocks[9].live);
         frame_rows_asked += req->n;
         if (frame_rows_fail) return (int)0x80010005u; /* a native error: the job's (VJO_E_SOURCE) */
+        if (frame_rows_armed_busy) { /* the hook's copy outlived the call: it may still write dst */
+            info->armed = 1;
+            return VJO_ERR_BUSY;
+        }
         for (unsigned r = 0; r < req->n; r++)
             memcpy((unsigned char *)dst + (size_t)r * req->dst_stride, frame + (size_t)(req->y + r) * FW, FW);
     } else {
@@ -266,7 +271,8 @@ static void reset(void)
     live_bytes = 0;
     mtime = 0x1234; spot_mtime = 0x5678;
     file_open_now = spot_missing = spot_corrupt = spot_size_delta = 0;
-    frame_rows_asked = frame_rows_fail = 0;
+    frame_rows_asked = frame_rows_fail = frame_rows_armed_busy = 0;
+    hook_owns_frame = hook_owns_capture = hook_owns_workspace = 0;
     region_x = RX; region_y = RY; region_w = W; region_h = H;
     opens = spot_opens = spot_reads = model_reads = grad_calls = runs = 0;
     clock_value = 0;
@@ -453,6 +459,26 @@ static void a_frame_row_that_cannot_be_read_is_the_jobs_error(void)
     TEST_CHECK(!vjo_game_ocr_worker_stop());
 }
 
+/* A frame-row copy that outlived its call (BUSY with the request armed): the display hook may still write the
+ * frame's strip, which lies in the job's workspace, so the workspace is never freed (it goes with the process) and
+ * the worker takes no more jobs, as for the region's capture block; the capture block itself is freed. */
+static void a_frame_copy_that_outlives_its_call_keeps_the_workspace(void)
+{
+    VjoGameOcrResult out;
+    load_fixtures();
+    reset();
+    frame_rows_armed_busy = 1;
+    VjoGameOcrRequest r = request(VJO_GAME_OCR_S_SPOT, 0);
+    TEST_CHECK(vjo_game_ocr_run_request(&r, &out) != VJO_OK && !out.text[0]);
+    TEST_CHECK(blocked && hook_owns_frame && !hook_owns_capture && blocks[9].live && !blocks[11].live && !grad_calls);
+    TEST_CHECK(!file_open_now && !model_owned);
+    TEST_CHECK(!vjo_game_ocr_worker_stop() && blocks[9].live); /* never freed: the hook may still write it */
+    blocks[9].live = 0; /* (the process's exit takes it) */
+    live_bytes -= blocks[9].size;
+    hook_owns_frame = 0;
+    blocked = 0;
+}
+
 static void the_worker_stop_and_a_refused_job_give_the_block_back(void)
 {
     VjoGameOcrResult out;
@@ -475,6 +501,7 @@ TEST_LIST = {
     {"no memory for the spotter reads with GRAD", no_memory_for_the_spotter_reads_with_grad},
     {"the spotter's boxes are not refined", the_spotters_boxes_are_not_refined},
     {"a frame row that cannot be read is the job's error", a_frame_row_that_cannot_be_read_is_the_jobs_error},
+    {"a frame copy that outlives its call keeps the workspace", a_frame_copy_that_outlives_its_call_keeps_the_workspace},
     {"the worker's stop and a refused job give the spotter's block back", the_worker_stop_and_a_refused_job_give_the_block_back},
     {NULL, NULL}
 };

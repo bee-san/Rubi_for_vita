@@ -64,7 +64,7 @@ enum { VJO_PAYLOAD_COPY = 0, VJO_PAYLOAD_MOVE = 1, VJO_PAYLOAD_TEMPLATE = 2 };
 
 #define VJO_PAYLOAD_COUNT_ONE(dest, kind) +1
 enum { VJO_PAYLOAD_COUNT = 0 VJO_PAYLOAD_FILE_LIST(VJO_PAYLOAD_COUNT_ONE) };
-#define VJO_PAYLOAD_KERNEL_INDEX (13 + VJO_PAYLOAD_SPOT_FILES) /* ur0:tai/VitaJPOverlay_Kernel.skprx: the first plugin */
+#define VJO_PAYLOAD_KERNEL_INDEX (15 + VJO_PAYLOAD_SPOT_FILES) /* ur0:tai/VitaJPOverlay_Kernel.skprx: the first plugin */
 #define VJO_PAYLOAD_PLUGINS 4      /* the three plugins and the RCO, hashed at every start */
 
 /* The package's own settings (package_release.py --set, a test build's anki_mining = on) a payload
