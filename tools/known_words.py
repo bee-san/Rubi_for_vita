@@ -18,8 +18,10 @@ SOURCE is one of:
   (its ExpressionReading); without one, no reading: the word then matches every card of its spelling. --word-column
   and --reading-column (the note's field numbers, from 1) choose others.
 
-Each field is read as Anki shows it: without HTML, its character references decoded, and a word's furigana
-(漢字[かんじ]) without the readings. Empty words are left out, and repeated lines kept once. Copy the file to
+Each field is read as Anki shows it: without HTML (a plain-text export made without HTML is kept as it is), its
+character references decoded, a word's furigana (漢字[かんじ], or HTML ruby's readings) without the readings, a
+reading in furigana form (漢字[かんじ]) as its kana. Empty words, and words starting with # (the Rubi app reads such
+a line as a comment), are left out, and repeated lines kept once. Copy the file to
 ux0:data/VitaJPOverlay/known_words.txt on the Vita, then on the Rubi app's Anki page choose Known words: Import. The
 next export tags the cards of those words `known`.
 
@@ -31,6 +33,7 @@ import html
 import io
 import json
 import os
+import pathlib
 import re
 import sqlite3
 import sys
@@ -38,16 +41,26 @@ import tempfile
 import zipfile
 
 TAG = re.compile(r"<[^>]*>")
+BREAK = re.compile(r"<br\s*/?>", re.I)
+# HTML ruby's readings and fallback parentheses (<ruby>漢字<rt>かんじ</rt></ruby>): what is shown above the word
+RUBY_TEXT = re.compile(r"<(rt|rp)\b[^>]*>.*?</\1\s*>", re.I | re.S)
 RUBY = re.compile(r"\[[^\]]*\]")
+# Anki's furigana syntax, as its {{kana:}} filter reads it: a base (after a space) and its reading in brackets
+FURIGANA = re.compile(r" ?([^ >]+?)\[(.+?)\]")
 SPACES = re.compile(r"[ \t\r\n\u00a0\u3000]+")
 
 
-def clean(value, word=False):
-    """A field as text: no HTML, its references decoded, spaces collapsed; a word without its furigana's readings
-    (Anki's 漢字[かんじ] and the spaces before each part)."""
-    text = html.unescape(TAG.sub("", value.replace("<br>", " ").replace("<br/>", " ").replace("<br />", " ")))
+def clean(value, word=False, reading=False, as_html=True):
+    """A field as text: no HTML (as_html: a plain-text export's fields are text already), its references decoded,
+    spaces collapsed; a word without its furigana's readings (Anki's 漢字[かんじ] and the spaces before each part, or
+    HTML ruby's <rt>), a reading in kana (漢字[かんじ] is かんじ, as Anki's kana: filter shows it)."""
+    text = value
+    if as_html:
+        text = html.unescape(TAG.sub("", RUBY_TEXT.sub("", BREAK.sub(" ", text))))
     if word and "[" in text:
         text = RUBY.sub("", text).replace(" ", "")
+    elif reading and "[" in text:
+        text = FURIGANA.sub(r"\2", text).replace(" ", "")
     return SPACES.sub(" ", text).strip()
 
 
@@ -77,7 +90,8 @@ def open_collection(path, tmp):
                 raise SourceError("no collection.anki21 or collection.anki2 in this package")
     elif not magic.startswith(b"SQLite format 3"):
         raise SourceError("not an Anki collection")
-    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    # (a file: URI percent-encodes '#', '?', '%' and spaces: a raw path would cut there and open it read-write)
+    return sqlite3.connect(pathlib.Path(path).resolve().as_uri() + "?mode=ro", uri=True)
 
 
 def note_types(db):
@@ -135,8 +149,8 @@ def from_collection(db, args):
         if not deck_ok or (args.reviewed and not reviewed):
             continue
         values = flds.split("\x1f")
-        word = clean(values[w], True) if w < len(values) else ""
-        reading = clean(values[r]) if r is not None and r < len(values) else ""
+        word = clean(values[w], word=True) if w < len(values) else ""
+        reading = clean(values[r], reading=True) if r is not None and r < len(values) else ""
         yield word, reading
     if not found:
         raise SourceError(f"no note type with a field named {args.word_field!r}: choose one with --word-field")
@@ -161,6 +175,13 @@ def from_plain_text(path, args):
     for key in ("guid column", "notetype column", "deck column", "tags column"):
         if key in meta and meta[key].isdigit():
             special[int(meta[key]) - 1] = key.split()[0]
+    # a filter needs its column: never keep every note silently, or none
+    if args.deck and "deck" not in special.values():
+        raise SourceError("--deck needs the export's deck column: export again with \"Include deck name\" ticked")
+    if args.note_type and "notetype" not in special.values():
+        raise SourceError("--note-type needs the export's note type column: export again with \"Include notetype "
+                          "name\" ticked")
+    as_html = meta.get("html", "true").lower() != "false"
     for row in csv.reader(body, delimiter=sep, quotechar='"'):
         if not row:
             continue
@@ -174,14 +195,15 @@ def from_plain_text(path, args):
         fields = [v for c, v in enumerate(row) if c not in special]
         w = args.word_column - 1
         r = args.reading_column - 1 if args.reading_column else (2 if "lapis" in notetype.lower() else None)
-        word = clean(fields[w], True) if 0 <= w < len(fields) else ""
-        reading = clean(fields[r]) if r is not None and 0 <= r < len(fields) else ""
+        word = clean(fields[w], word=True, as_html=as_html) if 0 <= w < len(fields) else ""
+        reading = clean(fields[r], reading=True, as_html=as_html) if r is not None and 0 <= r < len(fields) else ""
         yield word, reading
 
 
 def known_words(source, args):
-    """The (word, reading) pairs of source, each once, in its order."""
-    seen, out = set(), []
+    """The (word, reading) pairs of source, each once, in its order; and the words left out because the Rubi app
+    would read their line as a comment (a word starting with '#')."""
+    seen, out, hashes = set(), [], 0
     with tempfile.TemporaryDirectory() as tmp:
         with open(source, "rb") as f:
             magic = f.read(16)
@@ -199,8 +221,11 @@ def known_words(source, args):
         if not word or (word, reading) in seen:
             continue
         seen.add((word, reading))
+        if word.startswith("#"):
+            hashes += 1
+            continue
         out.append((word, reading))
-    return out
+    return out, hashes
 
 
 def main(argv=None):
@@ -219,7 +244,7 @@ def main(argv=None):
                    help="a plain text export's reading field, from 1 (default: 3 for a Lapis note type, else none)")
     args = p.parse_args(argv)
     try:
-        words = known_words(args.source, args)
+        words, hashes = known_words(args.source, args)
     except (SourceError, sqlite3.DatabaseError, zipfile.BadZipFile, UnicodeDecodeError, OSError) as e:
         print(f"known_words.py: {args.source}: {e}", file=sys.stderr)
         return 2
@@ -231,6 +256,9 @@ def main(argv=None):
     with_reading = sum(1 for _, r in words if r)
     print(f"{args.output}: {len(words)} words, {with_reading} with a reading; copy it to "
           "ux0:data/VitaJPOverlay/known_words.txt, then Known words: Import on the Rubi app's Anki page")
+    if hashes:
+        print(f"{hashes} word(s) starting with # left out: the Rubi app reads such a line as a comment",
+              file=sys.stderr)
     return 0
 
 

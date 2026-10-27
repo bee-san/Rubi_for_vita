@@ -468,6 +468,8 @@ static void test_word_key(void)
     TEST_CHECK(vjo_word_key("ネコ", "ネコ") == vjo_word_key("ねこ", "ねこ"));
     TEST_CHECK(vjo_word_key("ヴァイオリン", "ヴァイオリン") == vjo_word_key("ゔぁいおりん", "ゔぁいおりん"));
     TEST_CHECK(vjo_word_key("ヽヾ", "ヽヾ") == vjo_word_key("ゝゞ", "ゝゞ"));
+    TEST_CHECK(vjo_word_key("ヵヶ", "ヵヶ") == vjo_word_key("ゕゖ", "ゕゖ")); /* the range's end (audit-rubi-rm4 W1) */
+    TEST_CHECK(vjo_word_key("ヷ", "ヷ") != vjo_word_key("\xE3\x82\x97", "\xE3\x82\x97")); /* U+30F7 not to U+3097 */
     TEST_CHECK(vjo_word_key("ヷ", "ヷ") != vjo_word_key("わ", "わ")); /* ヷ-ヺ have no hiragana: as written */
     /* the long vowel mark is not a vowel */
     TEST_CHECK(vjo_word_key("コーヒー", "コーヒー") != vjo_word_key("コオヒイ", "コオヒイ"));

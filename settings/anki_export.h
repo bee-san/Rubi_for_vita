@@ -31,7 +31,8 @@
 #define VJO_EXPORT_ARCHIVE_DIR VJO_QUEUE_EXPORTED_DIR
 #define VJO_EXPORT_DIR VJO_EXPORT_DATA_DIR "/anki"
 #define VJO_EXPORT_PATH_MAX 128
-/* The export's memory: the card list (32 B a card) and one card's work. */
+/* The export's memory: the card list (32 B a card), every card's word while they are listed (#314: 24 B a card), the
+ * known words' keys (8 B each, at most VJO_KNOWN_MAX) and one card's work. */
 #define VJO_EXPORT_MEM (2u * 1024u * 1024u)
 /* A screenshot no card names is removed only when its file time is this much older than the
  * package's: a save still finishing has its record within seconds of its JPEG (anki_export.c). */
@@ -76,9 +77,10 @@ typedef struct {
  * settings/app_prefs.h; NULL: the defaults); a one- or two-sentence result for the screen in msg. Returns r->rc.
  *
  * Duplicates (#314, prefs->anki_duplicates): a card is a duplicate when an earlier card, queued or exported, has its
- * word (core/word_key.h): earlier in the package's order, by the record's time, then its ID. Tag gives it Anki's
- * `duplicate` tag; Skip leaves it out of the package (a queued one stays queued, and is checked again by the next
- * export); Keep checks nothing, as before #314. */
+ * word (core/word_key.h): earlier in the package's order, by the record's time, then its ID. Tag gives it the tag
+ * `duplicate`; Skip leaves it out of the package (a queued one stays queued, and is checked again by the next
+ * export); Keep checks nothing, as before #314. A card's word is kept once read (anki_words.bin), even when its
+ * record is damaged later: with Skip, a later card of that word stays queued until that record is fixed or removed. */
 int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExportUi *ui, VjoExportResult *r,
                    char *msg, size_t cap);
 
@@ -143,7 +145,8 @@ typedef struct {
  * old one; nothing changes when the file cannot be read or the index cannot be written). A one-sentence result in
  * msg. Returns r->rc. */
 int vjo_known_import(VjoArena *a, const VjoExportUi *ui, VjoKnownResult *r, char *msg, size_t cap);
-/* The keys in anki_known.bin (its head only), or -1 when there is none or it is damaged. */
+/* The keys in anki_known.bin (read whole and checked, as the export reads it), -1 when there is none, -2 when it is
+ * damaged (import known_words.txt again). */
 int vjo_known_count(void);
 
 #endif

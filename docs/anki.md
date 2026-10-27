@@ -235,7 +235,7 @@ card **whose word an earlier card has**:
 
 | Choice | The card |
 | --- | --- |
-| **Tag** (the default) | Exported, with Anki's own `duplicate` tag (the one its browser's Find Duplicates gives) besides `vita-jp-overlay`. No card is lost |
+| **Tag** (the default) | Exported, with the tag `duplicate` (the one an English Anki's Find Duplicates adds; a Japanese one adds 重複) besides `vita-jp-overlay`. No card is lost |
 | **Skip** | Not exported: it stays in the queue, and the next export checks it again. The overlay's `Anki queue: N` still counts it |
 | **Keep** | Exported as every card was before: nothing is checked |
 
@@ -248,7 +248,7 @@ card **whose word an earlier card has**:
 - **Earlier** is the package's order: the record's time (to the minute), then its ID. Every card counts,
   queued or already exported (`anki_queue/exported/`), so a word mined again weeks after its first card was
   exported is found too. The first card of a word is never a duplicate; a record that cannot be read has
-  no word.
+  no word, unless it was read before it was damaged (the cache keeps that word: below).
 - **Export all cards** follows the same rule: the same notes are tagged in it as in the packages before
   (with Skip, the duplicates are not in it).
 - **The Anki page** counts them: **Export cards (12 queued, 3 already mined)**. When it is shown it reads
@@ -261,10 +261,16 @@ card **whose word an earlier card has**:
 - **The cache.** Each card's word is kept in `ux0:data/VitaJPOverlay/anki_words.bin`, so that an export or
   the page does not read every record again: about 20 B a card, written again when a word was read, and
   only ever a copy of the records (a card's ID is its record's checksum, so its word never changes). A
-  missing or damaged one is rebuilt from the records; it can be deleted at any time.
+  missing or damaged one is rebuilt from the records; it can be deleted at any time. So the first export
+  after an update to this version reads every card's record once, the exported ones too ("Checking for
+  words mined before… N of M"; its time is in `log.txt`'s export line, not measured on a console), and the
+  later ones only the new cards'. A word once read stays while its card's file is there, even when the
+  record is damaged later (edited by hand: the export leaves it queued and names it in `log.txt`): with
+  Skip, a later card of that word then stays queued too, until the damaged record is fixed or removed. A
+  record that cannot be read is not cached: each count reads it again, and it counts toward the page's 64.
 
 Nothing in the overlay changes: it marks a word only while its list is shown, as before (a mark in the
-popup for a word you have, #314's stage B, does not fit the Shell's pages: [below](#not-in-the-popup)). None
+popup for a word you have, #314's stage B, is not built: [below](#not-in-the-popup)). None
 of this has run on a console yet; the host suites check it (`test_apkg.c`, `test_settings_anki.c`,
 `test_anki.c` `word_key`) and Anki 26.09.3 imports the tag (`test_apkg.py`).
 
@@ -279,7 +285,11 @@ suspended or deleted in Anki:
    note type has an `Expression` field, and its `ExpressionReading` (Lapis's, and many mining note types'):
    `--word-field` and `--reading-field` choose others, `--deck` and `--note-type` keep some notes, and
    `--reviewed` only those with a card that is not new. It also reads a `.colpkg` or `.apkg`, and Anki's
-   **Notes in Plain Text** export (`--word-column`, `--reading-column`). It writes `known_words.txt`.
+   **Notes in Plain Text** export (`--word-column`, `--reading-column`; `--deck` and `--note-type` need its
+   **Include deck name** and **Include notetype name** columns, and say so). Fields are read as Anki shows
+   them: no HTML or ruby readings in a word, a reading in furigana form (`漢字[かんじ]`) as its kana. A word
+   starting with `#` is left out (the app reads such a line as a comment) and counted. It writes
+   `known_words.txt`.
 2. Copy it to `ux0:data/VitaJPOverlay/known_words.txt`, then on the Anki page choose **Known words**:
    **Import**. The page says how many words it read; it keeps them in `anki_known.bin` (8 B a word), and a
    later export tags every card of them `known` (whatever **Duplicates** says). Import again after a new
@@ -295,22 +305,29 @@ page says how many were. Anki 26.09.3's own collection and its plain-text export
 ### Not in the popup
 
 #314's stage B, a mark in the overlay's popup for a word you have (a marker file per word written at
-Enter, and one `sceIoGetstat` after each lookup, a dim √), is not built: it needs Shell code the Shell's
-pages do not have, and AGENTS.md lets those pages only shrink. Measured on main `030c7ea` with the gate's
-pinned Vita toolchain (VitaSDK GCC 15.2.0; `tools/check_memory_ledger.py`'s module rows), a minimal version
-of it (the key and its fold linked into the Shell at `-Os`, the marker at save, the stat in both lookup
-jobs, the mark and its colour; no log line, no app-side sync) adds 840 B of text to the normal Shell and
-824 B to the debug one:
+Enter, and one `sceIoGetstat` after each lookup, a dim √), is not built: the design #314 specifies needs
+Shell code the Shell's pages do not have, and AGENTS.md lets those pages only shrink. Measured on main
+`030c7ea` with the gate's pinned Vita toolchain (VitaSDK GCC 15.2.0; `tools/check_memory_ledger.py`'s module
+rows), a minimal version of it (the key and its fold linked into the Shell at `-Os`, the marker at save, the
+stat in both lookup jobs, the mark and its colour; no log line, no app-side sync) adds 840 B of text to the
+normal Shell and 824 B to the debug one:
 
 | Shell | main (text + data/bss) | with the minimal stage B | pages |
 | --- | ---: | ---: | --- |
 | normal | 85,980 + 77,488 B (36 B of code room) | 86,820 + 77,488 B | 163,840 → 167,936 B: over its budget |
 | debug | 98,260 + 77,664 B (44 B of code room) | 99,084 + 77,664 B | 176,128 → 180,224 B: over its budget |
 
-Moving cold strings to the data segment, as #303, #307 and #385 did, cannot make that room: the data segment
-has 336 B (normal) and 160 B (debug) of room, and every cold Shell file is already built `-Os`. So, as #314
-planned, stage B does not merge, and the duplicate and known tags at export (above) stand alone
+That design does not fit: moving cold strings to the data segment, as #303, #307 and #385 did, cannot pay
+for it (the data segments had 336 B and 160 B of room), and every cold Shell file is already built `-Os`. So,
+as #314 planned, it does not merge, and the duplicate and known tags at export (above) stand alone
 ([memory ledger](memory-ledger.md#duplicate-aware-mining-314-the-rubi-app-only)).
+
+A smaller split is possible and is neither built nor measured: the Rubi app keeps the markers, named by the
+dictionary entry's own spelling and reading (no fold, no key in the Shell), and the Shell only stats the
+shown entry's marker after a lookup. Its audit (audit-rubi-rm4) estimates it at about 135-175 B of Shell code
+[estimate]. Main `33fdf30` leaves the Shell 28 B of code room in both builds, and 96 B (normal) and 32 B
+(debug) of data room [measured: the module rows], and the Shell changes of the moment spend the same bytes.
+Whether stage B gets an item of its own is the owner's call.
 
 ### The package
 
@@ -813,7 +830,8 @@ of 20,005 cards (the 20,000 a package holds, 10,182,874 B) peaked at 1,121,712 B
 the 2 MiB (804,713 B before [duplicates](#duplicates), whose check holds every card's
 word, 24 B each, while the cards are listed); one of 700 cards, some with 9 KB
 definitions, peaked at 187,111 B and wrote a 606,426 B package. An import of 65,536
-[known words](#known-words) peaks at 541,704 B. These are host measurements; a physical Vita has not
+[known words](#known-words) peaks at 541,704 B, and Export all of the 20,005 cards with those
+65,536 known words loaded, the export's worst case, at 1,646,000 B. These are host measurements; a physical Vita has not
 run this code yet.
 
 The [Cards page](#the-cards-page)'s jobs run on that thread with that arena, one at a
