@@ -52,16 +52,19 @@ been reported.
   ([anki.md](docs/anki.md#cards-from-the-look-up-page)).
   - **The same lookup as the overlay's:** on the 50 real VOCR lines of `host/fixtures/word_lookup`, walked word by word,
     the app and the overlay's own pipeline (over the Shell's memory layout) reach the same cursors and show the same
-    entry at each: 2,917 lookups in three settings [measured on the host: `host/tests/test_lookup_parity.c`].
+    entry at each: 2,965 lookups in three settings, a line's rows without Japanese left out as the overlay leaves them
+    out [measured on the host: `host/tests/test_lookup_parity.c`].
   - **Cards:** the app's writer keeps the overlay's rules (a temporary file, flushed, renamed, the card synced; the ID
     the record's SHA-256); a stop at each of its writes leaves the card whole or not there
     (`host/tests/test_anki_restart.py`), and Anki imports its cards (`host/tests/test_apkg.py`).
   - **No setting:** nothing that users see today changes; the page is new. The tab bar lays itself out from its
     labels (six tabs).
-  - **Memory:** the app's own, static: about 420 KiB (a 64 KiB lookup block as the Shell's, a 128 KiB card arena, a
-    64 KiB history window; [vita-memory.md](docs/vita-memory.md#54-the-rubi-app-a-system-application)). The glyph
-    atlas of the app's font holds about 500 characters (an estimate) and drops new ones once full; the app now loads
-    the font again, with an empty atlas, before it would be full. The Shell, the game worker and the kernel are
+  - **Memory:** the app's own, static: about 430 KiB (a 64 KiB lookup block as the Shell's, a 128 KiB card arena, a
+    64 KiB history window; [vita-memory.md](docs/vita-memory.md#54-the-rubi-app-a-system-application)). A font's
+    glyph atlas holds about 500 characters (an estimate) and drops new ones once full, so the app now measures text
+    with a second font, never drawn with, and loads either font again, with an empty atlas, before it holds 350
+    characters: four atlases of 256 KiB at most, and each font replaced leaves 4 KiB of the heap (libvita2d's
+    `int_htab_free`; the log counts the switches). The Shell, the game worker and the kernel are
     byte-identical. Not run on a console yet.
 - **Duplicates at export** (#314, roadmap 4 stage A; [anki.md](docs/anki.md#duplicates)). Mining a word again from
   another line made another card, and nothing said so. The export now finds a card **whose word an earlier card

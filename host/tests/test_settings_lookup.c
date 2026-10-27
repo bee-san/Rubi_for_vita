@@ -10,6 +10,7 @@
  * Text widths are the settings harness's stub metrics (Latin 10, other characters 18 units per 18-unit em), not the
  * firmware's PVF fonts. Each test runs in its own process (acutest's default): the page keeps its state in statics,
  * as on the console. */
+#define _GNU_SOURCE /* memmem */
 #define main acutest_main
 #include "acutest.h"
 #undef main
@@ -154,8 +155,14 @@ void vita2d_clear_screen(void) {}
 void vita2d_end_drawing(void) {}
 void vita2d_swap_buffers(void) {}
 
+/* A character whose first measure gives 0, as from a font whose glyph atlas is full (libvita2d skips the glyph). */
+static const char *zero_once;
 static int stub_width(float px, const char *s)
 {
+    if (zero_once && !strcmp(s, zero_once)) {
+        zero_once = NULL;
+        return 0;
+    }
     int units = 0;
     for (const unsigned char *p = (const unsigned char *)s; *p; p++)
         if (*p < 0x80) units += 10;
@@ -705,7 +712,168 @@ static void leaving_closes_the_dictionaries(void)
     TEST_CHECK(open_files == 0);
 }
 
+/* Each mode keeps its text and cursor (the guide): Search's cursor stays where it was when an earlier line is opened
+ * and L goes back to Search (the audit's F1), and the line's when L goes back to it. */
+static void each_mode_keeps_its_cursor(void)
+{
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    history_line("CLANNAD", "猫がいた", 1793080000);
+    history_done();
+    show();
+    keyboard_types("猫が好き");
+    frame(SCE_CTRL_TRIANGLE);
+    frame(SCE_CTRL_RIGHT);
+    frame(SCE_CTRL_RIGHT); /* 好 */
+    TEST_ASSERT(shown("好") && shown("好")->color == HIGHLIGHT);
+    frame(SCE_CTRL_RTRIGGER); /* Earlier lines: the list */
+    settle();
+    frame(SCE_CTRL_CROSS); /* the line opened */
+    TEST_CHECK(shown("猫") && shown("猫")->color == HIGHLIGHT && shown("がいた"));
+    frame(SCE_CTRL_RIGHT); /* its が */
+    TEST_CHECK(shown("が") && shown("が")->color == HIGHLIGHT);
+    frame(SCE_CTRL_LTRIGGER); /* back to Search: still on 好 */
+    TEST_CHECK_(shown("好") && shown("好")->color == HIGHLIGHT, "Search's cursor: %s highlighted",
+                shown("猫") && shown("猫")->color == HIGHLIGHT ? "猫" : "not 好");
+    frame(SCE_CTRL_RTRIGGER); /* the line again: still on が */
+    TEST_CHECK(shown("が") && shown("が")->color == HIGHLIGHT && shown("猫") && shown("猫")->color == WHITE);
+}
+
+/* An opened line is shown as the overlay shows a text: its rows without Japanese left out (non_japanese_filter, the
+ * default), so the card's sentence is the dialogue (the audit's M6); a typed text is kept as typed. */
+static void an_opened_line_is_filtered_as_the_overlay_shows_it(void)
+{
+    VjoAnkiNote note;
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    history_line("CLANNAD", "Tomoya\n「猫が鳴いた」", 1793080000);
+    history_done();
+    show();
+    frame(SCE_CTRL_RTRIGGER);
+    settle();
+    TEST_CHECK(shown("「猫が鳴いた」") != NULL); /* the list's start: the line as shown */
+    frame(SCE_CTRL_CROSS);
+    TEST_CHECK(!shown_with("Tomoya") && shown("「") && shown("猫が鳴いた」"));
+    frame(SCE_CTRL_RIGHT); /* 猫 */
+    frame(SCE_CTRL_CROSS);
+    TEST_ASSERT(queued(&note, "「猫が鳴いた」") == 1);
+    /* typed: kept as typed */
+    frame(SCE_CTRL_LTRIGGER);
+    keyboard_types("Tomoya 猫");
+    frame(SCE_CTRL_TRIANGLE);
+    frame(0); /* (the keyboard's frames drew the page as it was) */
+    TEST_CHECK(shown("T") && shown("T")->color == HIGHLIGHT && shown("omoya 猫")); /* (its pieces around the cursor) */
+}
+
+/* A line read again must be the same record: another game's of the same size and time at its place (the file
+ * replaced) is no line (the audit's M12), and the list is read again. */
+static void a_replaced_line_of_another_game_is_not_opened(void)
+{
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    history_line("CLANNAD", "猫がいた", 1793080000);
+    history_done();
+    show();
+    frame(SCE_CTRL_RTRIGGER);
+    settle();
+    /* the file replaced: the same bytes but the game's (vita-PCSG00415 -> vita-PCSG00416, same length, same time) */
+    FILE *f = fopen("ux0:data/VitaJPOverlay/history.csv", "r+b");
+    char buf[4096];
+    TEST_ASSERT(f);
+    size_t n = fread(buf, 1, sizeof(buf), f);
+    char *at = memmem(buf, n, "vita-PCSG00415", 14);
+    TEST_ASSERT(at && at == strstr(buf, "\n\"vita-PCSG00415") + 2);
+    at[13] = '6';
+    TEST_ASSERT(fseek(f, 0, SEEK_SET) == 0 && fwrite(buf, 1, n, f) == n && fclose(f) == 0);
+    frame(SCE_CTRL_CROSS);
+    TEST_CHECK(!vjo_lookup_page_holds_cancel() && !strcmp(drawn.footer, "history.csv changed: it is read again.") &&
+               drawn.footer_error);
+}
+
+/* A card keeps the other dictionaries' entries while its record stays within 32 KiB (the overlay's rule): eight
+ * dictionaries of 7 KB entries for the word, the card saved with fewer (the audit's M22). */
+static void a_card_keeps_stacked_entries_while_it_fits(void)
+{
+    static char big[7001];
+    VjoAnkiNote note;
+    char names[512] = "", name[32];
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    for (int d = 0; d < 8; d++) {
+        memset(big, 'a' + d, sizeof(big) - 1);
+        memcpy(big, "[D]\n", 4);
+        snprintf(name, sizeof(name), "d%d.vjdict", d);
+        put_dictionary(name, "猫", "猫", "ねこ", big, name);
+        snprintf(names + strlen(names), sizeof(names) - strlen(names), "%s%s", d ? "," : "", name);
+    }
+    FILE *f = fopen(VJO_PREFERENCES_PATH, "wb");
+    TEST_ASSERT(f && fprintf(f, "local_dictionaries = %s\nlocal_dictionary_results = 8\n", names) > 0 && !fclose(f));
+    show();
+    keyboard_types("猫");
+    frame(SCE_CTRL_TRIANGLE);
+    frame(SCE_CTRL_CROSS);
+    TEST_CHECK_(!strcmp(drawn.footer, "Saved for Anki, without a picture: export it on the Anki page."), "%s",
+                drawn.footer);
+    TEST_ASSERT(queued(&note, "") == 1);
+    TEST_CHECK_(note.n_more >= 1 && note.n_more < 7, "%d other entries kept", note.n_more);
+    struct stat st;
+    char path[600];
+    DIR *d = opendir(VJO_QUEUE_DIR);
+    struct dirent *e;
+    while (d && (e = readdir(d)))
+        if (strlen(e->d_name) == 37) {
+            snprintf(path, sizeof(path), VJO_QUEUE_DIR "/%s", e->d_name);
+            TEST_CHECK(stat(path, &st) == 0 && st.st_size <= VJO_QUEUE_TEXT_MAX && st.st_size > 7000 * 2);
+        }
+    if (d)
+        closedir(d);
+}
+
+/* Left/Right go round the text's ends only on one displayed row, and for a fresh press (the overlay's rule): a typed
+ * text wrapped into two rows stops at its last word (the audit's N4). */
+static void the_ends_go_round_on_one_row_only(void)
+{
+    char longer[512] = "";
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    show();
+    keyboard_types("猫が好き"); /* one row */
+    frame(SCE_CTRL_TRIANGLE);
+    frame(SCE_CTRL_LEFT); /* from the first word, a fresh Left: round to the last */
+    TEST_CHECK(shown("き") && shown("き")->color == HIGHLIGHT);
+    for (int i = 0; i < 60; i++) /* 60 kana: wider than a row of 872 px at 26 px (stub metrics) */
+        strcat(longer, "あ");
+    strcat(longer, "猫");
+    keyboard_types(longer);
+    frame(SCE_CTRL_TRIANGLE);
+    frame(SCE_CTRL_LEFT); /* two rows: Left at the first character stays */
+    const Text *first = NULL;
+    for (int i = 0; i < drawn.texts; i++)
+        if (drawn.text[i].color == HIGHLIGHT && drawn.text[i].y < 240) first = &drawn.text[i];
+    TEST_CHECK_(first && first->x == 42 && !strcmp(first->s, "あ"), "highlighted: %s at %d", first ? first->s : "(none)",
+                first ? first->x : -1);
+}
+
+/* A width a font could not give (0: its glyph atlas full) is not kept: the character is measured again, and the text
+ * after it is placed by its real width (the audit's F2). */
+static void a_zero_width_is_measured_again(void)
+{
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    show();
+    keyboard_types("猫が好き");
+    zero_once = "好";
+    frame(SCE_CTRL_TRIANGLE);
+    frame(0);
+    TEST_CHECK(zero_once == NULL); /* it was measured, and gave 0 */
+    frame(SCE_CTRL_RIGHT);
+    frame(SCE_CTRL_RIGHT); /* 好 highlighted: き after it, at its real place */
+    const Text *ki = shown("き");
+    TEST_CHECK_(ki && ki->x == 42 + stub_width(26, "猫が好"), "き at %d, not %d", ki ? ki->x : -1,
+                42 + stub_width(26, "猫が好"));
+}
+
 TEST_LIST = {
+    {"a zero width is measured again", a_zero_width_is_measured_again},
+    {"each mode keeps its text and cursor", each_mode_keeps_its_cursor},
+    {"an opened line is filtered as the overlay shows it", an_opened_line_is_filtered_as_the_overlay_shows_it},
+    {"a replaced line of another game is not opened", a_replaced_line_of_another_game_is_not_opened},
+    {"a card keeps stacked entries while it fits 32 KiB", a_card_keeps_stacked_entries_while_it_fits},
+    {"the ends go round on one row only", the_ends_go_round_on_one_row_only},
     {"Search: the keyboard, the entry and the stacked one, the scroll", search_by_the_keyboard},
     {"the cursor by word, by the stick and by a tap", the_cursor_by_word_stick_and_tap},
     {"a card from a typed text", a_card_from_a_typed_text},
