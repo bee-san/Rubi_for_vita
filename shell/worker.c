@@ -1164,11 +1164,7 @@ static int vocr_run_one(VjoGameOcrResult *result, uint32_t flags, unsigned tiers
     }
     if (job_cfg.ocr_settle_ms > 0) {
         uint32_t settle = (uint32_t)(job_cfg.ocr_settle_ms + 5) / 10u;
-        /* A job the open overlay waits for (not Auto's, a refresh or the self-test's)
-         * waits at most ocr_settle_press_ms: test.2's waited up to 1.5 s (docs/first-ocr.md). */
         int wait_max = job_cfg.ocr_settle_max_ms;
-        if (!job_prepares && !job_refresh && job_cfg.ocr_settle_press_ms > 0 && job_cfg.ocr_settle_press_ms < wait_max)
-            wait_max = job_cfg.ocr_settle_press_ms;
         request.flags |= (settle ? settle : 1u) << VJO_GAME_OCR_SETTLE_SHIFT |
                          (uint32_t)(wait_max + 25) / 50u << VJO_GAME_OCR_SETTLE_MAX_SHIFT;
         if (!st0.stable) request.flags |= VJO_GAME_OCR_F_SETTLE_FIRST;
@@ -1828,6 +1824,11 @@ static void start_job_kind(const char *why, int lookup, int refresh)
         job_text_generation = 0;
     job_idx = refresh ? 1 : 0;
     job_cfg = cfg; /* the control thread may reload cfg while the job runs */
+    /* Opening the overlay confirms that this screen is ready. Turn off both
+     * stability waits in this job's snapshot; background reads, refreshes and
+     * self-test jobs keep the configured wait. */
+    if (!job_prepares && !refresh)
+        job_cfg.ocr_settle_ms = 0;
     job_generation = game_generation;
     sceClibMemcpy(job_title, title_id, sizeof(job_title));
     job_title[sizeof(job_title) - 1] = '\0';
@@ -2099,7 +2100,9 @@ static void open_overlay(void)
         return;
     }
     /* Why the background result can't be used (tuning). */
-    vjo_dlog("open: %s (stable %u, quiet %u)",
+    /* Keep the debug Shell within its existing code pages (as the other log formats above). */
+    static const char open_state[] VJO_DATA_TABLE(overlay_open_state) = "open: %s (stable %u, quiet %u)";
+    vjo_dlog(open_state,
             job_running ? "background job still running"
             : !cache_ok || active < 0 ? "no background result"
                                       : "screen changed since the background result",
@@ -2108,6 +2111,11 @@ static void open_overlay(void)
     view_waiting = 1;
     if (job_running) {
         ov = OV_OPEN_OLD_JOB; /* a cancelled one is followed by a new one */
+        /* An unsettled screen may have a background read still waiting in the
+         * game worker. Cancel it and let on_job_done start the overlay's read
+         * without that wait, even before it captured anything. */
+        if (!st.stable && job_prepares && !job_cursor_only)
+            job_cancelled = 1;
         cancel_outdated_job(&st);
     } else {
         start_job("overlay opened", 1);

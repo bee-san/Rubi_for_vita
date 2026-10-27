@@ -35,11 +35,13 @@ console logs or marked est. The logs hold the owner's reading, so only counts ar
 - **A hooked line** (API 41). A new line in a hook stream that answers without OCR starts the job
   at once, as a quiet screen, and its scene holds while the line types out
   ([native-hooks.md](native-hooks.md#a-new-line-starts-the-read)). A job that reads it with OCR
-  still waits for the stable text below. A press with no result for its screen starts a job at once,
-  whatever the tracker says. If a background job is still running, the press waits for it instead.
+  still waits for the stable text below when reading in the background. Opening the overlay confirms
+  that the player wants the screen read now: a press with no result starts a job without the stability
+  wait, whatever the tracker says. On an unsettled screen, a running background read is cancelled and
+  replaced with that immediate read once cancellation completes. Completed results are still reused.
 
 **The game worker's stable-text wait** (`core/vocr_ocr.c` `settle_wait`, `settle_verify`) decides
-when a job may recognize, in every job of both modes:
+when a background read, quiet refresh or diagnostic job may recognize:
 - **The rule.** Every grey row of the region has an FNV-1a checksum. Nothing is recognized until
   every row has read the same over passes spanning `ocr_settle_ms` = 150 ms.
 - **Two paths.**
@@ -54,8 +56,10 @@ when a job may recognize, in every job of both modes:
 - **Tears.** A row that changes after the wait is a tear. The job reads again, up to 3 tries
   (`VJO_VOCR_TRIES`), then fails with `VJO_E_SCREEN_CHANGED` and is retried later.
 - **The limit.** A job waits at most `ocr_settle_max_ms` = 2000 ms over all its tries (`ocr_vertical = auto`'s
-  column try included, API 47, and the next smaller model's after a model's weights were refused, #324), or
-  `ocr_settle_press_ms` = 1000 ms for a press (since test.3). Then it reads anyway.
+  column try included, API 47, and the next smaller model's after a model's weights were refused, #324);
+  then it reads anyway. Reads started for the open overlay skip both waits: the player's press is
+  confirmation that the text is ready. The saved `ocr_settle_press_ms` setting remains compatible
+  with older builds but no longer delays these reads. Actual screen-change detection and retries stay on.
 
 The gap this leaves is known ([auto-vs-press.md](auto-vs-press.md#what-settled-means)): a
 typewriter pause longer than the window passes as settled.
