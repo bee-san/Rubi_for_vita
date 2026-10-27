@@ -1349,7 +1349,7 @@ static void cleanup_gives_back_unverified_blocks(void)
 }
 
 /* The weights block and the cascade's block hold the largest pinned model, the Large
- * size's (test_tier_pins.h: VOCR5-L, 2,473,696 B, 2,473,984 B page-rounded, the ledger's
+ * size's (test_tier_pins.h: VOCR6-L, 2,475,680 B, 2,478,080 B page-rounded, the ledger's
  * VJO_BUDGET_GAME_WEIGHTS and VJO_BUDGET_GAME_CASCADE), and refuse a byte more before
  * asking the game for anything; each block keeps the job's reserve. Before VOCR5
  * both stopped at F20's 1,558,016 B. */
@@ -2883,8 +2883,8 @@ static void tier_jobs_open_their_models_by_tier(void)
     }
     TEST_MSG("text '%s'", out.text);
     /* The line is a known text now (the line cache, API 22) unless the cascade read it as nothing: a line
-     * the cascade changed is kept only with a text (core/vocr_ocr.c), and VOCR5-L reads the test's dashes
-     * as nothing where VOCR5-N reads something. */
+     * the cascade changed is kept only with a text (core/vocr_ocr.c), and the Large size's model may read the
+     * test's dashes as nothing where Normal's reads something. */
     unsigned cached = 0;
     for (unsigned i = 0; i < VJO_VOCR_CACHE_LINES; i++) cached += line_cache.line[i].key != 0;
     TEST_CHECK_(cached <= 1u && (cached || (apart && !out.text[0])), "%u cached, text '%s'", cached, out.text);
@@ -3087,7 +3087,13 @@ static void another_sizes_weights_stay_beside_its_reserve(void)
         snprintf(r.model, sizeof(r.model), "%s", VJO_VOCR_TIER2_NAME);
         available = (int)(live_bytes + tier_need(&r, 2, 0) - (tight ? 4096u : 0u));
         TEST_ASSERT(vjo_game_ocr_run_request(&r, &out) == 0);
-        TEST_CHECK(out.text[0] && !out.fallback && resident.model == h15 && out.reserve_bytes == VJO_GAME_RESERVE_NORMAL);
+        /* the job read its line with Normal's model: its recognize step, not its text (VOCR6-N reads this synthetic
+         * line as nothing, where VOCR5-N read something) */
+        const VjoGameOcrStep *rs = recognize_step(&out);
+        TEST_CHECK(rs && rs->arg >= 1 && rs->bytes > 0 && !out.fallback && resident.model == h15 &&
+                   out.reserve_bytes == VJO_GAME_RESERVE_NORMAL);
+        TEST_MSG("recognized %u line(s), %u frames; text '%s'", rs ? (unsigned)rs->arg : 0u, rs ? (unsigned)rs->bytes : 0u,
+                 out.text);
         int freed = step_index(&out, VJO_GSTEP_FREE, VJO_GITEM_WEIGHTS),
             workspace = step_index(&out, VJO_GSTEP_ALLOC, VJO_GITEM_WORKSPACE);
         TEST_CHECK(workspace >= 0 && freed >= 0 && (tight ? freed < workspace : freed > workspace));
@@ -3252,7 +3258,7 @@ TEST_LIST = {
     {"the memory check: the cascade and the LM, else the LM, else the cascade; a resident LM given back counts",
      memory_check_choices},
     {"cleanup gives back LM and cascade blocks never verified", cleanup_gives_back_unverified_blocks},
-    {"the weights and cascade blocks hold the Large size's model (VOCR5-L: 2,473,696 B), not a byte more", the_weights_blocks_hold_the_large_size_and_no_more},
+    {"the weights and cascade blocks hold the Large size's model (VOCR6-L: 2,475,680 B), not a byte more", the_weights_blocks_hold_the_large_size_and_no_more},
     {"the cascade step carries its figures, each clamped to its field", the_cascade_step_carries_its_figures},
     {"the beam + LM decoder: read once, resident, a smaller tier when tight, given back when off", lm_jobs},
     {"the confidence cascade: doubtful lines read again, its model resident, given back, left when tight", cascade_jobs},

@@ -101,7 +101,7 @@ static void test_budget_table_is_consistent(void)
     TEST_CHECK(VJO_VOCR_TIER1_BYTES <= VJO_VOCR_TIER2_BYTES && VJO_VOCR_TIER2_BYTES <= VJO_VOCR_TIER3_BYTES);
     TEST_CHECK(VJO_VOCR_TIER1_BYTES != VJO_VOCR_TIER2_BYTES || !strcmp(VJO_VOCR_TIER1_NAME, VJO_VOCR_TIER2_NAME));
     TEST_CHECK(VJO_VOCR_TIER2_BYTES != VJO_VOCR_TIER3_BYTES || !strcmp(VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME));
-    /* the Large size's release file (test_tier_pins.h; VOCR5-L's 2,473,696 B: 2,473,984 B), page-rounded, under
+    /* the Large size's release file (test_tier_pins.h; VOCR6-L's 2,475,680 B: 2,478,080 B), page-rounded, under
      * the 2.5 MB weights limit (the owner's ceiling) */
     TEST_CHECK(VJO_BUDGET_GAME_WEIGHTS == (test_tier_pins[2].bytes + VJO_LEDGER_PAGE - 1) / VJO_LEDGER_PAGE * VJO_LEDGER_PAGE &&
                VJO_LIMIT_GAME_WEIGHTS == 2502656u &&

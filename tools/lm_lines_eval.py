@@ -41,6 +41,14 @@ SETTINGS = {"vocr_lm_o3_500k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_1000k.vlm":
             "vocr_lm_o3_2000k.vlm": (500, 3000, LM_EOS), "vocr_lm6_o3_4000k.vlm": (600, 2500, LM_BOS),
             "vocr_lm_o3_1000k.vlm": (500, 3500, LM_EOS), "vocr_lm_o3_4000k.vlm": (500, 3500, LM_EOS)}
 BETA = {name: beta for name, (_, beta, _) in SETTINGS.items()}
+# a job model's own settings for an LM, where they differ from its tier's (core/vocr_ocr.c lm_retuned: vita-vn-ocr
+# #151, VOCR6-N with the 2000k LM); the worker's decoder and its cascade's take them
+MODEL_SETTINGS = {("VOCR6_N_w8_2l.vocr", "vocr_lm_o3_2000k.vlm"): (400, 1500, LM_BOS | LM_EOS)}
+
+
+def settings(model, lm):
+    """(alpha, beta, flags) a job on `model` decodes `lm` with (core/vocr_ocr.c vjo_vocr_lm_settings)."""
+    return MODEL_SETTINGS.get((model, lm), SETTINGS[lm])
 
 
 def main(argv=None):
@@ -68,8 +76,17 @@ def main(argv=None):
     lms = args.lm or ["vocr_lm6_o3_4000k.vlm"]
     every = models + ([args.cascade] if args.cascade and args.cascade not in models else [])
     ref = {m: Vocr(str(args.models / m), mode="w8i", max_width=1024) for m in every}
-    dec = {(m, l): VocrLM(ref[m], str(args.models / l), beam=8, topk=8, alpha=SETTINGS[l][0], beta=BETA[l], gate=8000,
-                          flags=SETTINGS[l][2], bracket=8000) for m in every for l in lms}
+    dec = {}
+
+    def decoder(reader, lm, job):
+        """The decoder of `reader`'s top-K in a job on model `job`: its settings for lm (settings(): the worker decodes
+        a cascade's re-reads with the job's model's)."""
+        alpha, beta, flags = settings(job, lm)
+        key = (reader, lm, alpha, beta, flags)
+        if key not in dec:
+            dec[key] = VocrLM(ref[reader], str(args.models / lm), beam=8, topk=8, alpha=alpha, beta=beta, gate=8000,
+                              flags=flags, bracket=8000)
+        return dec[key]
     report = {f"{m} + {l}": {"regions": 0, "lines": 0, "decoded": 0, "changed": 0, "greedy_mismatch": 0,
                              "lm_mismatch": 0, "conf_mismatch": 0, "low_conf_lines": 0, "lm_us": 0, "load_us": [],
                              "conf_hist": [0] * 11, "cascade_lines": 0, "cascade_changed": 0,
@@ -123,12 +140,12 @@ def main(argv=None):
                             x, y, w, h = ln["box"]
                             g = grey[y:y + h, x:x + w]
                             out = ref[m].run_topk(g, 8, invert=bool(ln["dark"]))
-                            want_lm = dec[(m, l)].decode(out["topv"], out["topc"], out["blank"]) if out["text"] else ""
+                            want_lm = decoder(m, l, m).decode(out["topv"], out["topc"], out["blank"]) if out["text"] else ""
                             conf = min(1000, max(0, int(out["conf_min"] * 1000 + 0.5))) if out["text"] else 1000
                             r["greedy_mismatch"] += out["text"] != ln["greedy"]
                             if casc and conf < args.conf:  # read again: the larger model's reading is shown
                                 big = ref[casc].run_topk(g, 8, invert=bool(ln["dark"]))
-                                shown = (dec[(casc, l)].decode(big["topv"], big["topc"], big["blank"])
+                                shown = (decoder(casc, l, m).decode(big["topv"], big["topc"], big["blank"])
                                          if big["text"] else "")
                                 big_conf = min(1000, max(0, int(big["conf_min"] * 1000 + 0.5))) if big["text"] else 1000
                                 r["cascade_lines"] += 1

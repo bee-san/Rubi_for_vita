@@ -149,6 +149,33 @@ been reported.
 
 ### Changed
 
+- **Normal and Large are VOCR6** (vita-vn-ocr #125, pre-release v0.4.0-vocr6.1): VOCR5-N's and VOCR5-L's shapes,
+  fine-tuned again on the owner's hooked PS Vita and PSP games, replace VOCR5-N and VOCR5-L as the Normal (the default)
+  and Large model sizes (`VOCR6_N_w8_2l.vocr`, 1,187,616 B; `VOCR6_L_w8_2l.vocr`, 2,475,680 B). Small stays VOCR5-S:
+  VOCR6's Small read the hooked games better but other games' lines a little worse. Measured on a computer through
+  Rubi's shipped path (dialogue CER, 95 % intervals):
+  - the hooked games' held-out pages: Normal 1.008 → 0.936 % (−0.072 points, −0.111 to −0.038), Large 0.990 → 0.917 %
+    (−0.073, −0.118 to −0.036), three seeds each;
+  - other games level: VOCR5's development score 1.482 → 1.451 (Normal) and 1.439 → 1.442 (Large), neither resolved;
+  - CLANNAD's lines 0.66 → 0.44 % and 0.60 → 0.36 %, read once; but every VOCR6 model has seen CLANNAD's glyph raster
+    in two hooked games (Grisaia Spinout, Little Busters!), so that is not an unseen-game result;
+  - vita-test + psp-test, read once: fixed lines 0.49 → 0.49 % and 0.47 → 0.43 %, whole dialogue 2.83 → 2.63 % and
+    2.72 → 2.52 % (PSP alone not better); Collar x Malice, a vita-test game's release, and Key's games were trained on;
+  - Small changes only through its cascade, which now reads with VOCR6-N: other games level, CLANNAD's pages worse
+    (5.84 → 6.16 %, +0.32 points, resolved).
+
+  Their blobs carry the two-level head and no head gate (vita-vn-ocr rejected the gate on VOCR6's logits): with
+  `ocr_head_gate = on` they run the two-level head alone, and `ocr_head_gate = gate` now reads them with the full head.
+  Estimated box times, one core at 333 / 444 MHz: Small 0.52 / 0.41 s, Normal 0.79 / 0.62 s, Large 1.87 / 1.46 s (the
+  app shows 0.5, 0.8 and 1.9 s; about 30 and 80 ms more for Normal and Large than VOCR5's with both paths, which had a
+  gate). A Normal job with the 2 MB LM (`ocr_lm = 2000k`) decodes with VOCR6-N's own settings for it (vita-vn-ocr #151:
+  LM weight 0.4, bonus 1.5 nats, both line flags); every other size and LM tier keeps its settings, the default 1 MB
+  LM's included. Normal's weights block is a page smaller (1,187,840 B), Large's the same (2,478,080 B), and no budget
+  changes: the game worker's code is 128 B larger in both builds, in the same pages, and the Shell and the kernel are
+  unchanged (measured on both Vita builds). VOCR6's attribution ships as `ocr/VOCR6-ATTRIBUTION.md`: non-commercial use only, trained
+  on copyrighted game data, which is not redistributed. An update leaves 0.9.8's `VOCR5_N_w8g2.vocr` and
+  `VOCR5_L_w8g2.vocr` (3,666,880 B) in `ux0:data/VitaJPOverlay/ocr/`: nothing reads them any more, so they may be
+  deleted. Nothing of VOCR6 has run on a console ([details](docs/vita-vn-ocr.md#models)).
 - **The debug build shows a looked-up word without waiting for its log lines** (#360, change 2). Its lookup wrote
   its `lookup …` line and its `job N done` line to the memory card before it published the word: in the owner's
   test.4 log a cursor lookup's done line came 53.5 ms after its start against the lookup's own 32 ms (medians, 338
@@ -317,8 +344,12 @@ build only: `Rubi-0.9.8.vpk` (the main download) and `Rubi-0.9.8.zip`.
   On vita-vn-ocr's synthetic counter lines (#109: 九ヶ月, 三ヶ所 …) the 1 MB LM keeps the small ke slightly less
   often than ctclm.2's (3,015 against 3,104 of 3,969 crops), mostly where the region's edge cuts into the line
   ([details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)); the loss comes from the new decoder settings, which
-  vita-vn-ocr retunes for VOCR6. These figures are VOCR5 v0.3.0's without the head gate; the default combination,
-  the gated blobs with `ocr_head_gate = on` and these settings, is unmeasured. The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
+  vita-vn-ocr retunes for VOCR6. These figures are VOCR5 v0.3.0's without the head gate. The default combination,
+  the gated blobs with `ocr_head_gate = on` and these settings, was measured after this release (vita-vn-ocr #151, on
+  a computer): VOCR5-N as this release runs it keeps the counter in 2,940 of the 3,969 crops against 3,015 with the
+  gate off (75 lost, none gained: crops cut 2-10 px into the line's first character, where the gate skips the edge
+  frames the counter re-decode needs, so nothing is read again), and real development and held-out lines move by
+  +0.004 to +0.012 points ([details](docs/vita-vn-ocr.md#beam--lm-decoding-api-20)). The 0.5 MB and 2 MB tiers keep ctclm.2's LMs and settings. Both new blobs are smaller than the ones they
   replace (982,320 and 3,603,552 B), so the game's LM block shrinks by 180,224 B at most. An update leaves
   ctclm.2's `vocr_lm_o3_1000k.vlm` and `vocr_lm_o3_4000k.vlm` (about 4.8 MB) in `ux0:data/VitaJPOverlay/ocr/`:
   nothing reads them any more, so they may be deleted

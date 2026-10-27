@@ -23,7 +23,7 @@
 #   tools/install_ftp.sh --add-kernel-plugin NoPowerLimits.skprx 192.168.1.50
 #     (also uploads another kernel plugin to ur0:tai/ and adds it under *KERNEL;
 #      --uninstall leaves such plugins in place)
-#   tools/install_ftp.sh --vocr-model ocr/VOCR5_N_w8g2.vocr --set vocr_tier=normal 192.168.1.50
+#   tools/install_ftp.sh --vocr-model ocr/VOCR6_N_w8_2l.vocr --set vocr_tier=normal 192.168.1.50
 #     (also uploads vita-vn-ocr weights to ux0:data/VitaJPOverlay/ocr/, for a
 #      build made with VJO_WITH_VOCR: each model size's file, tools/model_tiers.json;
 #      see docs/vita-vn-ocr.md)
@@ -121,6 +121,7 @@ if [ -n "$PACKAGE_DIR" ]; then
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/*.vtd \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/LM-ATTRIBUTION.md \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/MODEL-ATTRIBUTION.md \
+               "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/VOCR6-ATTRIBUTION.md \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/GATE-ATTRIBUTION.md \
                "$PACKAGE_DIR"/ux0/data/VitaJPOverlay/ocr/VERTICAL-ATTRIBUTION.md; do
     [ -f "$model" ] && VOCR_MODELS+=("$model")

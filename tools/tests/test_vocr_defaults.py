@@ -1,6 +1,6 @@
-"""The device default is the Normal model size, VOCR5_N_w8g2.vocr from bee-san/vita-vn-ocr v0.3.6-head2level.1
-(v0.3.0's recognizer with its head gate and two-level head), with Small (VOCR5_S_w8g.vocr) and Large
-(VOCR5_L_w8g2.vocr) the other sizes (tools/model_tiers.json;
+"""The device default is the Normal model size, VOCR6_N_w8_2l.vocr from bee-san/vita-vn-ocr v0.4.0-vocr6.1
+(VOCR6-N with its two-level head), with Small (VOCR5_S_w8g.vocr, v0.3.6-head2level.1: VOCR5-S with its head gate) and
+Large (VOCR6_L_w8_2l.vocr) the other sizes (tools/model_tiers.json;
 tools/tests/test_model_tiers.py checks the C tiers against it); VOCR3's, VOCR4-W20 and v0.2.0's
 models stay pinned (host tools) but are not shipped; every pinned model fits the Large size's
 ceilings and the game worker's weights block (VJO_VOCR_MAX_BYTES, the largest pin); and the game
@@ -22,21 +22,22 @@ H15_V020_SHA256 = "316ebc377ec34520440991c5085199d8e74031f01a867938be90a60c1e3f0
 VOCR3_H15_SHA256 = "cb3c61a8f91f9aeeb3efcc0e79313f664112f25c4bd55865bae9df52522b360c"
 VOCR3_FL10_SHA256 = "87fb4d0c18416f5f3771cecd274c8db3cf69b8b4a4ee9f204edebb4b82079154"
 # The model sizes' pins, the one place a test states them: per tier its file, exact size, SHA-256
-# (the release's SHA256SUMS), W8I arena, release and generation. VOCR5's are vita-vn-ocr
-# eval/vocr5_protocol.json's "tiers" (exact sizes and arenas), released as v0.3.0, with their head gate since
-# API 42 (vita-vn-ocr #117: v0.3.0's bytes + a 1,792 B section; the arena with the gate on, +48 B), released as
-# v0.3.5-headgate.1, and Normal's and Large's with their two-level head too (#117 item 2: the output rows in
-# frequency order, the gate, a 1,984 B VOC2 trailer; the arena with it on, +1,456 B more), released with Small's
-# gated file as v0.3.6-head2level.1; a tier whose VOCR5 candidate did not beat its incumbent keeps that model, the
-# VOCR4 one of v0.2.5-vocr4.1.
+# (the release's SHA256SUMS), W8I arena, release and generation. Small is VOCR5-S (vita-vn-ocr
+# eval/vocr5_protocol.json, released as v0.3.0) with its head gate since API 42 (vita-vn-ocr #117: v0.3.0's bytes +
+# a 1,792 B section; the arena with the gate on, +48 B), released as v0.3.5-headgate.1 and again, byte for byte, as
+# v0.3.6-head2level.1. Normal and Large are VOCR6-N and VOCR6-L (vita-vn-ocr #125, docs/vocr6.md: VOCR5's shapes
+# fine-tuned on the owner's hooked games), each with #122's two-level head (the output rows in frequency order, a
+# 1,984 B VOC2 trailer; the arena with it on, +1,456 B) and no head gate (#146: rejected on VOCR6's logits), released
+# as v0.4.0-vocr6.1. VOCR6-S was not adopted, so Small keeps VOCR5-S: a tier whose new candidate did not beat its
+# incumbent keeps that model.
 # The other tests read the tiers from here, tools/model_tiers.json or the C tier macros.
 TIER_PINS = {
     "small": ("VOCR5_S_w8g.vocr", 821584, "76a1bc5de5cd0419a7edad31bc198af8016bda5592a7e595de75697671d3e928", 124880,
               "v0.3.6-head2level.1", "VOCR5"),
-    "normal": ("VOCR5_N_w8g2.vocr", 1189408, "f0c8e52c9c1d9f2a714d5ca3ecfba9c0b031ee7ac51a522a2c29fd558d51761b", 184448,
-               "v0.3.6-head2level.1", "VOCR5"),
-    "large": ("VOCR5_L_w8g2.vocr", 2477472, "41c3543ff8dddd45dc953a6a5f5d579ef9ca779f0e43196406be59c1d985c5b5", 262528,
-              "v0.3.6-head2level.1", "VOCR5"),
+    "normal": ("VOCR6_N_w8_2l.vocr", 1187616, "929652e33da10fee3b7bd3991a557e8bbf1a16fba83eb5775bbd0298ab65c4d6", 184400,
+               "v0.4.0-vocr6.1", "VOCR6"),
+    "large": ("VOCR6_L_w8_2l.vocr", 2475680, "b051fd4f3abe6451927d74b1d1209f44a3072ab755ee9e1b9363368f00feb45b", 262480,
+              "v0.4.0-vocr6.1", "VOCR6"),
 }
 TIER_FILES = [TIER_PINS[t][0] for t in ("small", "normal", "large")]
 
@@ -200,9 +201,12 @@ class VocrDefaults(unittest.TestCase):
         """The three sizes' recognizers, pinned by URL, size and SHA-256 in the packager and by size,
         SHA-256 and arena in the game worker, as their release publishes them, and the C tier macros
         name them; the Large size's is the largest pin and the weights blocks' limit (VJO_VOCR_MAX_BYTES).
-        VOCR5's release, v0.3.6-head2level.1, holds exactly the VOCR5 sizes' files."""
+        VOCR5's release table, v0.3.6-head2level.1, holds exactly the VOCR5 size's file (Small's), VOCR6's,
+        v0.4.0-vocr6.1, exactly the VOCR6 sizes' (Normal's and Large's)."""
         self.assertEqual(prepare_ocr.VOCR5_TAG, "v0.3.6-head2level.1")
         self.assertEqual(prepare_ocr.VOCR_GENERATION[prepare_ocr.VOCR5_TAG], "VOCR5")
+        self.assertEqual(prepare_ocr.VOCR6_TAG, "v0.4.0-vocr6.1")
+        self.assertEqual(prepare_ocr.VOCR_GENERATION[prepare_ocr.VOCR6_TAG], "VOCR6")
         table, sizes = c_table(), macros()
         for n, tier in enumerate(("small", "normal", "large"), 1):
             name, size, sha, arena, tag, generation = TIER_PINS[tier]
@@ -214,6 +218,7 @@ class VocrDefaults(unittest.TestCase):
             self.assertEqual(table[name], (size, sha, arena), name)
             self.assertEqual((sizes[f"VJO_VOCR_TIER{n}_NAME"], sizes[f"VJO_VOCR_TIER{n}_BYTES"]), (name, size), tier)
         self.assertEqual(set(prepare_ocr.VOCR5_ASSETS), {p[0] for p in TIER_PINS.values() if p[4] == "v0.3.6-head2level.1"})
+        self.assertEqual(set(prepare_ocr.VOCR6_ASSETS), {p[0] for p in TIER_PINS.values() if p[4] == "v0.4.0-vocr6.1"})
         self.assertEqual(sizes["VJO_VOCR_MAX_BYTES"], max(size for size, _, _ in table.values()))
         self.assertEqual(sizes["VJO_VOCR_MAX_BYTES"], sizes["VJO_VOCR_TIER3_BYTES"])
 
@@ -248,10 +253,10 @@ class VocrDefaults(unittest.TestCase):
         self.assertEqual((size, sha), (6514, "9418ed87e6d9fa196aba2315e05a0cf0dca7056482cce03577ced423e5feb1d3"))
 
     def test_the_model_sizes_attribution_comes_pinned_with_them(self):
-        """fetch_tiers (--backend vocr-tiers, CI's package job) fetches v0.3.0's ATTRIBUTION.md with the
-        sizes' models and keeps it as MODEL-ATTRIBUTION.md: the LMs' release names its attribution
-        ATTRIBUTION.md too, and both land in one models directory. A --from directory may hold it under
-        either name, the release's only when that copy is this one."""
+        """fetch_tiers (--backend vocr-tiers, CI's package job) fetches v0.3.6-head2level.1's ATTRIBUTION.md with the
+        sizes' models and keeps it as MODEL-ATTRIBUTION.md, and v0.4.0-vocr6.1's as VOCR6-ATTRIBUTION.md: the LMs'
+        release names its attribution ATTRIBUTION.md too, and all land in one models directory. A --from directory may
+        hold each under either name, the release's only when that copy is this one."""
         import hashlib  # noqa: PLC0415
         import tempfile  # noqa: PLC0415
         from unittest import mock  # noqa: PLC0415
@@ -263,6 +268,13 @@ class VocrDefaults(unittest.TestCase):
                 blob = ("fixture " + name).encode()
                 pins[name] = ("https://fixture.invalid/" + name, len(blob), hashlib.sha256(blob).hexdigest())
                 (src / name).write_bytes(blob)
+            pins5 = {name: pin for name, pin in pins.items() if name in prepare_ocr.VOCR5_ASSETS}
+            pins6 = {name: pin for name, pin in pins.items() if name in prepare_ocr.VOCR6_ASSETS}
+            self.assertEqual(len(pins5) + len(pins6), len(pins))  # each size's model in one of the two releases
+            att6 = b"VOCR6's attribution fixture"  # its release's ATTRIBUTION.md, kept as VOCR6-ATTRIBUTION.md
+            att6_pin = {prepare_ocr.VOCR6_ATTRIBUTION: ("https://fixture.invalid/V6", len(att6),
+                                                        hashlib.sha256(att6).hexdigest())}
+            (src / prepare_ocr.VOCR6_ATTRIBUTION).write_bytes(att6)
             vblob = b"fixture " + prepare_ocr.VOCR_VERTICAL_MODEL.encode()  # #99: fetched with them
             vpins = {prepare_ocr.VOCR_VERTICAL_MODEL: ("https://fixture.invalid/V", len(vblob), hashlib.sha256(vblob).hexdigest())}
             (src / prepare_ocr.VOCR_VERTICAL_MODEL).write_bytes(vblob)
@@ -282,19 +294,22 @@ class VocrDefaults(unittest.TestCase):
                                                                 hashlib.sha256(gate_att).hexdigest())}
             (src / prepare_ocr.VOCR_GATE_MODEL).write_bytes(gate)
             (src / prepare_ocr.VOCR_GATE_ATTRIBUTION).write_bytes(gate_att)
-            with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins), mock.patch.dict(prepare_ocr.VOCR5V_ASSETS, vpins), \
+            with mock.patch.dict(prepare_ocr.VOCR5_ASSETS, pins5), mock.patch.dict(prepare_ocr.VOCR6_ASSETS, pins6), \
+                 mock.patch.dict(prepare_ocr.VOCR5V_ASSETS, vpins), \
                  mock.patch.object(prepare_ocr, "VOCR_MODEL_ATTRIBUTION_PIN", att_pin), \
+                 mock.patch.object(prepare_ocr, "VOCR6_ATTRIBUTION_PIN", att6_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_VERTICAL_ATTRIBUTION_PIN", vatt_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ASSETS", gate_pin), \
                  mock.patch.object(prepare_ocr, "VOCR_GATE_ATTRIBUTION_PIN", gate_att_pin), \
                  mock.patch.object(prepare_ocr.urllib.request, "urlopen", side_effect=AssertionError("no network")):
                 paths = prepare_ocr.fetch_tiers(out, src)
                 self.assertEqual(sorted(p.name for p in paths),
-                                 sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md", prepare_ocr.VOCR_GATE_MODEL,
-                                         "GATE-ATTRIBUTION.md", prepare_ocr.VOCR_VERTICAL_MODEL,
-                                         prepare_ocr.VOCR_VERTICAL_ATTRIBUTION]))
+                                 sorted([*dict.fromkeys(TIER_FILES), "MODEL-ATTRIBUTION.md", "VOCR6-ATTRIBUTION.md",
+                                         prepare_ocr.VOCR_GATE_MODEL, "GATE-ATTRIBUTION.md",
+                                         prepare_ocr.VOCR_VERTICAL_MODEL, prepare_ocr.VOCR_VERTICAL_ATTRIBUTION]))
                 self.assertEqual((out / "GATE-ATTRIBUTION.md").read_bytes(), gate_att)
                 self.assertEqual((out / "MODEL-ATTRIBUTION.md").read_bytes(), att)
+                self.assertEqual((out / "VOCR6-ATTRIBUTION.md").read_bytes(), att6)
                 self.assertFalse((out / "ATTRIBUTION.md").exists())  # the LMs' name stays theirs
                 # the LMs' ATTRIBUTION.md under the release's name is not this file: refused
                 (out / "MODEL-ATTRIBUTION.md").unlink()
@@ -313,6 +328,13 @@ class VocrDefaults(unittest.TestCase):
         self.assertLessEqual({pin[4] for pin in TIER_PINS.values() if pin[5] == "VOCR5"}, {prepare_ocr.VOCR5_TAG})
         self.assertIn('X(VJO_PAYLOAD_OCR "MODEL-ATTRIBUTION.md", VJO_PAYLOAD_COPY)',
                       (ROOT / "include/vjo_payload.h").read_text())  # the one-VPK install copies it too
+        # VOCR6's: v0.4.0-vocr6.1's ATTRIBUTION.md (its SHA256SUMS), the release every VOCR6 size comes from
+        url, size, sha = prepare_ocr.VOCR6_ATTRIBUTION_PIN[prepare_ocr.VOCR6_ATTRIBUTION]
+        self.assertTrue(url.endswith("/releases/download/v0.4.0-vocr6.1/ATTRIBUTION.md"))
+        self.assertEqual((size, sha), (4222, "44459773ecb1ec7da2e8325c6885221b122f771ccc34ca89d3a578e2b4c02a96"))
+        self.assertLessEqual({pin[4] for pin in TIER_PINS.values() if pin[5] == "VOCR6"}, {prepare_ocr.VOCR6_TAG})
+        self.assertIn('X(VJO_PAYLOAD_OCR "VOCR6-ATTRIBUTION.md", VJO_PAYLOAD_COPY)',
+                      (ROOT / "include/vjo_payload.h").read_text())
 
     def test_the_gate_pins_agree_python_and_c(self):
         """API 26: the text-presence gate's weights: one size and hash in tools/prepare_ocr.py, the plugin
@@ -358,8 +380,17 @@ class VocrDefaults(unittest.TestCase):
         settings = re.findall(r"\},\s*(\d+), (\d), (\d+), (VOCR_LM_BOS|VOCR_LM_EOS)\}", block[:block.index("};")])
         self.assertEqual(settings, [("3000", "1", "500", "VOCR_LM_EOS"), ("2500", "2", "600", "VOCR_LM_BOS"),
                                     ("3000", "3", "500", "VOCR_LM_EOS"), ("2500", "4", "600", "VOCR_LM_BOS")])
-        self.assertIn("o->alpha = lm->alpha;", source)
-        self.assertIn("o->flags = lm->flags;", source)
+        # a job model's own settings for one LM where vita-vn-ocr's check on its logits changed them (vocr6-final-lm,
+        # #151's result: VOCR6-N with the 2000k LM, alpha 400 / beta 1500 / BOS + EOS; every other cell kept), which
+        # lm_opts applies to the job's decoder and its cascade's
+        block = source[source.index("} lm_retuned[] = {"):]
+        retuned = re.findall(r"\{(VJO_\w+_NAME), (VJO_VOCR_LM\d_NAME), (\d+), (\d+), ([A-Z_ |]+)\}",
+                             block[:block.index("};")])
+        self.assertEqual(retuned, [("VJO_VOCR6_N_NAME", "VJO_VOCR_LM3_NAME", "1500", "400", "VOCR_LM_BOS | VOCR_LM_EOS")])
+        self.assertEqual(macros()["VJO_VOCR6_N_NAME"], TIER_PINS["normal"][0])
+        self.assertEqual(macros()["VJO_VOCR_LM3_NAME"], "vocr_lm_o3_2000k.vlm")
+        self.assertIn("vjo_vocr_lm_settings(job ? job->name : NULL, lm, &o->alpha, &o->beta, &o->flags);", source)
+        self.assertEqual(source.count("lm_opts(mi, pol->lm, &o);") + source.count("lm_opts(job, st->lm, &o);"), 2)
         # the ledger's LM block holds the largest, page-rounded
         ledger = (ROOT / "include/vjo_ledger_budget.h").read_text()
         budget = int(re.search(r"#define VJO_BUDGET_GAME_LM (\d+)u", ledger).group(1))
@@ -457,7 +488,7 @@ class VocrDefaults(unittest.TestCase):
             self.assertIn(shape, name, name)
         self.assertEqual(prepare_ocr.VOCR_GENERATION, {"v0.2.0": "VOCR1", "v0.2.5-vocr3.1": "VOCR3",
                                                        "v0.2.5-vocr4.1": "VOCR4", "v0.3.6-head2level.1": "VOCR5",
-                                                       prepare_ocr.VOCR5V_TAG: "VOCR5"})
+                                                       prepare_ocr.VOCR5V_TAG: "VOCR5", "v0.4.0-vocr6.1": "VOCR6"})
         self.assertEqual(meta[prepare_ocr.VOCR_DEFAULT_MODEL][0], TIER_PINS["normal"][5])
         tiers = prepare_ocr.model_tiers()["tiers"]
         self.assertEqual([meta[t["model"]][0] for t in tiers], [TIER_PINS[t["id"]][5] for t in tiers])
@@ -535,7 +566,8 @@ class TestModels(unittest.TestCase):
     def test_the_set_is_every_pin_the_plugin_reads(self):
         """Every recognizer the plugin pins (shipped or not: the tests run FL10, H15, F20, VOCR3's and VOCR4-W20
         as well as the sizes' and VOCR5-V), its four LMs and the gate's weights, each at the plugin's own size and
-        SHA-256, and v0.3.0's three VOCR5 recognizers under v0.3.0/; no attribution and nothing else."""
+        SHA-256, and the off-path check's references, v0.3.0's VOCR5-S under v0.3.0/ and VOCR6's plain Normal and
+        Large under v0.4.0-vocr6.1/; no attribution and nothing else."""
         models = {name: assets[name][1:] for name, assets, _ in prepare_ocr.test_models()}
         self.assertEqual(len(models), len(prepare_ocr.test_models()))  # each file once
         want = {name: (size, sha) for name, (size, sha, _) in c_table().items()}
@@ -543,6 +575,8 @@ class TestModels(unittest.TestCase):
         _, size, sha = prepare_ocr.VOCR_GATE_ASSETS[prepare_ocr.VOCR_GATE_MODEL]
         want[prepare_ocr.VOCR_GATE_MODEL] = (size, sha)
         want.update({f"v0.3.0/{name}": (size, sha) for name, (_, size, sha) in prepare_ocr.VOCR5_V030_ASSETS.items()})
+        want.update({f"v0.4.0-vocr6.1/{name}": (size, sha)
+                     for name, (_, size, sha) in prepare_ocr.VOCR6_PLAIN_ASSETS.items()})
         self.assertEqual(models, want)
         sizes = macros()
         for macro in ("VJO_VOCR_TIER1_NAME", "VJO_VOCR_TIER2_NAME", "VJO_VOCR_TIER3_NAME", "VJO_VOCR_CASCADE_NAME",
@@ -552,22 +586,25 @@ class TestModels(unittest.TestCase):
             self.assertIn(name, models)
 
     def test_the_off_path_blobs_are_what_test_vocr_reads(self):
-        """host/tests/test_vocr.c's off-path check reads v0.3.0's blobs as VJO_VOCR_MODEL_DIR/v0.3.0/<name> and skips
-        without them (the models lane would pass without running it): the set holds those names there, from
-        release v0.3.0, each its sizes' blob without the head gate (a size its gated blob's, less the gate)."""
+        """host/tests/test_vocr.c's off-path check reads each size's reference as VJO_VOCR_MODEL_DIR/<refs[size]> and
+        skips without them (the models lane would pass without running it): the set holds exactly those paths
+        (tools/prepare_ocr.py OFF_PATH_REFERENCES), each from the release that published it (v0.3.0's VOCR5-S for
+        Small, v0.4.0-vocr6.1's plain VOCR6 blobs for Normal and Large), each its size's pinned blob without the speed
+        sections (smaller than it, and the same shape's name)."""
         source = (ROOT / "host" / "tests" / "test_vocr.c").read_text(encoding="utf-8")
-        body = source[source.index("static void test_off_path_reads_v030(void)"):]
-        names = re.search(r"v030\[3\] = \{([^}]*)\}", body).group(1)
-        self.assertIn('"%s/v0.3.0/%s"', body)
-        read = re.findall(r'"([^"]+)"', names)
-        self.assertEqual(sorted(read), sorted(prepare_ocr.VOCR5_V030_ASSETS))
-        tags = {name: tag for name, _, tag in prepare_ocr.test_models()}
-        for name in read:
-            self.assertEqual(tags[f"v0.3.0/{name}"], "v0.3.0")
-        for old, new in (("VOCR5_S_w8.vocr", "VOCR5_S_w8g.vocr"), ("VOCR5_N_w8.vocr", "VOCR5_N_w8g2.vocr"),
-                         ("VOCR5_L_w8.vocr", "VOCR5_L_w8g2.vocr")):
-            self.assertLess(prepare_ocr.VOCR5_V030_ASSETS[old][1], prepare_ocr.VOCR5_ASSETS[new][1])
-            self.assertTrue(prepare_ocr.VOCR5_V030_ASSETS[old][0].endswith("/releases/download/v0.3.0/" + old))
+        body = source[source.index("static void test_off_path_reads_the_plain_blobs(void)"):]
+        read = tuple(re.findall(r'"([^"]+)"', re.search(r"refs\[3\] = \{([^}]*)\}", body).group(1)))
+        self.assertIn('snprintf(po, sizeof(po), "%s/%s", dir, refs[t]);', body)
+        self.assertEqual(read, prepare_ocr.OFF_PATH_REFERENCES)
+        tags = {name: (assets[name], tag) for name, assets, tag in prepare_ocr.test_models()}
+        for tier, ref in zip(("small", "normal", "large"), read):
+            name, size, _, _, _, generation = TIER_PINS[tier]
+            (url, ref_size, _), tag = tags[ref]
+            directory, file = ref.split("/")
+            self.assertEqual((directory, tag), ("v0.3.0", "v0.3.0") if tier == "small" else ("v0.4.0-vocr6.1",) * 2)
+            self.assertTrue(url.endswith(f"/releases/download/{tag}/{file}"), url)
+            self.assertLess(ref_size, size, ref)
+            self.assertTrue(file.startswith(name[:len(generation) + 2]), (file, name))  # VOCR5_S, VOCR6_N, VOCR6_L
 
     def _fixture(self, tmp, names=("A_w8.vocr", "B_w8.vocr", "c.vlm", "d.vtd")):
         """Pins of small fixture files in tmp/src, as test_models() gives them."""

@@ -1761,7 +1761,7 @@ static void test_vocr_config(void)
     const char ini[] = "ocr_backend = VOCR\nvocr_model = FL10_w8.vocr\n";
     const char bad[] = "vocr_model = ../H15_w8.vocr\nvocr_model = H15_w8.bin\nvocr_model =\n";
     vjo_config_defaults(&c);
-    /* Normal (VOCR5-N) by default; a job runs Small (VOCR5-S) when the game's memory has no room for it. */
+    /* Normal (VOCR6-N) by default; a job runs Small (VOCR5-S) when the game's memory has no room for it. */
     TEST_CHECK(c.vocr_tier == VJO_VOCR_TIER_NORMAL && c.log_file == 1);
     TEST_CHECK(!strcmp(vjo_vocr_tier_model(c.vocr_tier), VJO_VOCR_TIER2_NAME) &&
                !strcmp(vjo_vocr_tier_model(VJO_VOCR_TIER_SMALL), VJO_VOCR_TIER1_NAME) &&

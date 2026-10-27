@@ -586,15 +586,15 @@ static void check_boost(int f, int y, const char *label, int on)
     TEST_CHECK_(filled == (on ? 1 : 2), "frame %d: the badge %s", f, on ? "is not filled" : "is filled");
 }
 
-static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR5-N found.";
+static const char *const NORMAL_STATUS = "Normal: default, balanced. VOCR6-N found.";
 static const char *const SMALL_STATUS = "Small: fastest. VOCR5-S found.";
-static const char *const LARGE_STATUS = "Large: most accurate. VOCR5-L found.";
-/* This package's estimates (core/vocr_models.c): VOCR5-S, VOCR5-N, VOCR5-L. */
-static const char *const DETAILS[3] = {"0.5 s, 1.0 MB", "0.7 s, 1.4 MB", "1.8 s, 2.8 MB"};
+static const char *const LARGE_STATUS = "Large: most accurate. VOCR6-L found.";
+/* This package's estimates (core/vocr_models.c): VOCR5-S, VOCR6-N, VOCR6-L (two generations, each named). */
+static const char *const DETAILS[3] = {"0.5 s, 1.0 MB", "0.8 s, 1.4 MB", "1.9 s, 2.8 MB"};
 
 /* This package: one engine, VOCR; the OCR card is its Model size, Normal chosen,
  * each size with its estimates from the models' metadata, and the status line
- * naming the size's model (its generation in the name, VOCR5-N). No engine
+ * naming the size's model (its generation in the name, VOCR6-N). No engine
  * choice and nothing of Google Lens: the overlay is offline (owner 2026-10-15). */
 static void test_one_engine_its_model_size_on_top(void)
 {
@@ -625,7 +625,7 @@ static void test_one_engine_its_model_size_on_top(void)
 /* API 21: the Model size. Touch a size to choose and save it (its edges and the
  * gaps between them only focus the row); the controller starts on it, Left and
  * Right step through the sizes, Enter (× here) goes round them, Down and Up leave
- * the row and come back. The status line names the size's model: VOCR5-L for
+ * the row and come back. The status line names the size's model: VOCR6-L for
  * Large. */
 static void test_model_size_touch_keys_and_save(void)
 {
@@ -794,33 +794,33 @@ static void test_status_follows_the_configured_models(void)
     card("vocr_tier = large\n");
     remove_model(VJO_VOCR_TIER3_NAME);
     run(in, 2);
-    check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
+    check_status(1, "VOCR6-L missing. Reinstall the package.", OFF);
     put_model(VJO_VOCR_TIER3_NAME, VJO_VOCR_TIER3_BYTES - 1);
     run(in, 2);
-    check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
+    check_status(1, "VOCR6-L missing. Reinstall the package.", OFF);
     /* nothing at or below the chosen size: the chosen size's model, a red line */
     remove_model(VJO_VOCR_TIER2_NAME);
     remove_model(VJO_VOCR_TIER1_NAME);
     run(in, 2);
-    check_status(1, "VOCR5-L missing. Reinstall the package.", OFF);
+    check_status(1, "VOCR6-L missing. Reinstall the package.", OFF);
     /* a larger size's file missing does not matter to a smaller choice, unless the smaller size has
      * the same model (a size that kept the model of the size above it) */
     card("vocr_tier = normal\n");
     remove_model(VJO_VOCR_TIER3_NAME);
     run(in, 2);
     if (strcmp(VJO_VOCR_TIER2_NAME, VJO_VOCR_TIER3_NAME)) check_status(1, NORMAL_STATUS, DIM);
-    else check_status(1, "VOCR5-N missing. Reinstall the package.", OFF);
+    else check_status(1, "VOCR6-N missing. Reinstall the package.", OFF);
     /* Normal's file missing: Normal named missing */
     card(NULL);
     remove_model(VJO_VOCR_TIER2_NAME);
     run(in, 2);
-    check_status(1, "VOCR5-N missing. Reinstall the package.", OFF);
+    check_status(1, "VOCR6-N missing. Reinstall the package.", OFF);
     /* a model file that cannot be closed again is not counted as found */
     card(NULL);
     close_fails = VJO_VOCR_TIER2_NAME;
     run(in, 2);
     close_fails = NULL;
-    check_status(1, "VOCR5-N missing. Reinstall the package.", OFF);
+    check_status(1, "VOCR6-N missing. Reinstall the package.", OFF);
     /* the earlier generations' files that are no size's any more: their absence changes nothing */
     card(NULL);
     {

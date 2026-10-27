@@ -347,7 +347,8 @@ class PackageVariants(unittest.TestCase):
         gate_att = b"the gate's attribution fixture"  # API 26: the text-presence gate's
         self.enterContext(mock.patch.object(release, "VOCR_GATE_ATTRIBUTION_PIN", {prepare.VOCR_GATE_ATTRIBUTION: (
             "https://fixture.invalid/G", len(gate_att), hashlib.sha256(gate_att).hexdigest())}))
-        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR_LM_ASSETS", "VOCR_GATE_ASSETS")
+        tables = ("VOCR_ASSETS", "VOCR3_ASSETS", "VOCR4_ASSETS", "VOCR5_ASSETS", "VOCR5V_ASSETS", "VOCR6_ASSETS", "VOCR_LM_ASSETS",
+                  "VOCR_GATE_ASSETS")
         for mod in (prepare, release):
             for table in tables:
                 pinned = {name: spec for name in getattr(mod, table)}
@@ -362,6 +363,10 @@ class PackageVariants(unittest.TestCase):
         self.enterContext(mock.patch.object(release, "VOCR_VERTICAL_ATTRIBUTION_PIN", {prepare.VOCR_VERTICAL_ATTRIBUTION: (
             "https://fixture.invalid/V", len(vertical_att), hashlib.sha256(vertical_att).hexdigest())}))
         (self.models / prepare.VOCR_VERTICAL_ATTRIBUTION).write_bytes(vertical_att)
+        vocr6_att = b"VOCR6's attribution fixture"
+        self.enterContext(mock.patch.object(release, "VOCR6_ATTRIBUTION_PIN", {prepare.VOCR6_ATTRIBUTION: (
+            "https://fixture.invalid/V6", len(vocr6_att), hashlib.sha256(vocr6_att).hexdigest())}))
+        (self.models / prepare.VOCR6_ATTRIBUTION).write_bytes(vocr6_att)
         self.dictionary = b"VJDICT2\0synthetic dictionary fixture"
         snapshot = {"bytes": len(self.dictionary), "sha256": hashlib.sha256(self.dictionary).hexdigest()}
         self.enterContext(mock.patch.object(release, "load_manifest", return_value=snapshot))

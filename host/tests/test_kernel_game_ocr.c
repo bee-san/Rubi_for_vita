@@ -2507,7 +2507,7 @@ static void model_tiers_open_by_tier_only(void)
     }
 }
 
-/* The Large size's file (test_tier_pins.h: VOCR5-L's 2,473,696 B), the largest pin: the broker opens it at
+/* The Large size's file (test_tier_pins.h: VOCR6-L's 2,475,680 B), the largest pin: the broker opens it at
  * exactly that length and reads it to its last byte in 32 KiB pieces; a file one byte
  * longer (or shorter) is refused at the open, before any byte reaches the game. */
 static void the_large_size_opens_at_its_pinned_length_only(void)
@@ -2764,7 +2764,7 @@ TEST_LIST = {
     {"an SC3 hook's charset opens by the caller's own title ID, up to its limit", sc3_charset_opens_by_the_callers_title},
     {"model tiers open by their tier only: the request's, the cascade's next one up; none by name", model_tiers_open_by_tier_only},
     {"API 47: the vertical model opens only for a job with a vertical mode, by tiers or by name; never a shot's", vertical_model_opens_only_for_a_vertical_job},
-    {"the Large size's file opens at its pinned length only (VOCR5-L: 2,473,696 B)", the_large_size_opens_at_its_pinned_length_only},
+    {"the Large size's file opens at its pinned length only (VOCR6-L: 2,475,680 B)", the_large_size_opens_at_its_pinned_length_only},
     {"removed_Meiki_and_VOCR2_models_are_not_in_the_broker_allowlist",removed_models_are_refused},
     {"exact_pin_keeps_canonical_path_and_final_chunk_bounds",exact_pin_keeps_canonical_path_and_final_chunk_bounds},
     {"model broker permissions canonical paths bounds and cleanup acknowledgement", model_permissions_paths_and_bounds},
