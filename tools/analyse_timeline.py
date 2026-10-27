@@ -38,7 +38,12 @@ the debug build writes a job's result lines and its text's as a batch each (#100
 alone. The other threads' appends meanwhile (the overlay opening, the control thread) delay it only
 where the network thread waited for the log's lock, which the log does not say. The estimate prices
 the result path's appends at the job's own mean (log ms / appends). The normal build holds its few
-lines until after the result (shell/worker.c net_main) and logs no timing at all.
+lines until after the result (shell/worker.c net_main) and logs no timing at all. The debug build since
+#360 holds a lookup's lines and an OCR job's after its recognition (its text's, its lookup's) until the
+job has published its result, then writes them with its done line, whose `N held` says how many of them
+came before it: those and the done line are not in the result path (shell/worker.c net_job). Lines held earlier
+that another thread's line wrote first (the control thread's `subtitle text ready`, on that thread) still count as
+the network thread's group here: an upper bound, as it may have waited for the log's lock meanwhile.
 
 Sessions: a game process from its `game TITLE started` to the next start; kernel.txt's `game pid`
 lines (--collect) count the processes.
@@ -66,7 +71,7 @@ CAPTURE = re.compile(r"^game vocr capture: (.+?) into (\S+), (\d+) B block, (\d+
                      r"(\d+) rows changed")
 JOB_START = re.compile(r"^job start \((.*)\)(, refresh|, OCR only)?$")
 JOB_DONE = re.compile(r"^job (\d+) done rc=(-?\d+) in (\d+) ms(?:, arena peak (\d+))?"
-                      r"(?:.*?, game (\d+) ms, log (\d+) ms in (\d+) appends)?")
+                      r"(?:.*?, game (\d+) ms, log (\d+) ms in (\d+) appends(?:, (\d+) held)?)?")
 TEXT_READY = re.compile(r"^subtitle text ready in (\d+) ms")
 LOOKUP = re.compile(r"^lookup (first word|cursor|on open|page) at \d+: .*?, (\d+) reads (\d+) B, rc=(-?\d+), (\d+) ms")
 GAME_START = re.compile(r"^game (\S+) started: ")
@@ -221,6 +226,8 @@ class ShellJob:
         self.net_groups = self.other_groups = 0
         self.status_open = False
         self._batch = None  # the network thread's open batch: [kind, lines, bytes]
+        self._net_line_groups = []  # for each of the network thread's lines, its group (an append)
+        self.held = None  # the debug build's (#360) lines held with the done line until after the result
 
     def note_line(self, line):
         """One log line of the job's window, as the logger wrote it (shell/log_vita.c)."""
@@ -234,12 +241,22 @@ class ShellJob:
             else:
                 self._batch = [kind, 1, n]
                 self.net_groups += 1
+            self._net_line_groups.append(self.net_groups)
             return
         self._batch = None  # the batch so far went out before this line
         if line.startswith(NET_SINGLE):
             self.net_groups += 1
+            self._net_line_groups.append(self.net_groups)
         else:
             self.other_groups += 1
+
+    def result_groups(self):
+        """The network thread's appends before the result: every group, less those whose lines were all held with
+        the done line (#360: its last `held` lines before it), which went out after the result."""
+        if not self.held:
+            return self.net_groups
+        before = self._net_line_groups[:max(len(self._net_line_groups) - self.held, 0)]
+        return len(set(before))
 
     def as_dict(self):
         game_end = round(sum(g.timeline()["end_ms"] or 0 for g in self.games), 1)
@@ -253,10 +270,11 @@ class ShellJob:
         # the result path (the debug build's lines; the self-test's job shows nothing, so it has none)
         if self.appends is not None and not self.stages:
             per_group = 2 if self.status_open else 1
-            net = self.net_groups * per_group
+            groups = self.result_groups()
+            net = groups * per_group
             d["result_path"] = {
-                "net_groups": self.net_groups, "other_groups": self.other_groups, "status_open": self.status_open,
-                "appends": net, "done_line_appends": per_group,
+                "net_groups": groups, "other_groups": self.other_groups, "status_open": self.status_open,
+                "held": self.held, "appends": net, "done_line_appends": 0 if self.held is not None else per_group,
                 "est_ms": round(self.log_ms * min(net, self.appends) / self.appends, 1) if self.appends else 0.0,
                 "per_append_ms": round(self.log_ms / self.appends, 1) if self.appends else None}
         if self.done_ms is not None:
@@ -337,6 +355,7 @@ def parse_log(text):
             job.arena_peak = int(m.group(4) or 0)
             if m.group(5) is not None:
                 job.game_ms, job.log_ms, job.appends = int(m.group(5)), int(m.group(6)), int(m.group(7))
+                job.held = int(m.group(8)) if m.group(8) is not None else None
             jobs.append(job)
             if session is not None:
                 session["jobs"] += 1
@@ -502,10 +521,13 @@ def render_job(j, out):
                    f"({fmt_ms(j['lookup_ms'])} ms); {j['log_lines']} log lines{extra}")
         rp = j.get("result_path")
         if rp:
+            held = rp.get("held")
             out.append(f"      result path: {rp['appends']} of the {j['appends']} appends (the network thread's "
                        f"{rp['net_groups']} after the exchange{', each twice: status.txt too' if rp['status_open'] else ''}), "
                        f"est. {fmt_ms(rp['est_ms'])} ms at the job's {rp['per_append_ms']} ms an append, and the done "
-                       f"line's {rp['done_line_appends']}")
+                       f"line's {rp['done_line_appends']}"
+                       + (f"; {held} line(s) held with the done line, written after the result" if held is not None
+                          else ""))
 
 
 def render(res, show_jobs=False):

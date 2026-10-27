@@ -134,7 +134,10 @@ start and taken before that line's own log appends. Two gaps are not in them:
   0.04-0.3 s.
 - **After:** `net_job` logs a job's `done` line, one append to `log.txt` and one to `status.txt`
   while that is under 64 KiB, before it tells the control thread, which notices within its 50 ms
-  poll (`POLL_TIMEOUT_US`) and then shows the word.
+  poll (`POLL_TIMEOUT_US`) and then shows the word. Since #360 the debug build holds the `done` line (and
+  the job's text and lookup lines) and writes them after it has told the control thread: a `done` line
+  that ends `, N held` adds the poll only to the bound below
+  ([release-variants.md](release-variants.md#the-debug-builds-job-lines-after-the-result-360)).
 
 A press that waited for a running job has no exact time, as the log has no time for a job's start. The
 analysis gives that job's whole time plus 142 ms, the done line's two appends at their most measured

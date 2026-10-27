@@ -108,6 +108,18 @@ been reported.
 
 ### Changed
 
+- **The debug build shows a looked-up word without waiting for its log lines** (#360, change 2). Its lookup wrote
+  its `lookup …` line and its `job N done` line to the memory card before it published the word: in the owner's
+  test.4 log a cursor lookup's done line came 53.5 ms after its start against the lookup's own 32 ms (medians, 338
+  lookups), at 17 ms an append, so about 34 ms of every word step were the two lines (est.). The network thread now
+  holds a job's lines (a lookup's, and an OCR job's text, first-word lookup and done line; its recognition's own lines
+  go out as before) in a 2 KiB batch on its stack and writes them right after the result is out, one append per file,
+  the same lines in the same order; the done line ends `…, N held`. The lookups' results are unchanged (byte-identical
+  at all 64,579 taps of the dictionary corpus). The overlay's close line also gives a press-to-screen figure, `lookups
+  shown N: mean M ms (A ms after the result), max X ms`, from each lookup's press to the frame that drew its word,
+  counted without a log line on the overlay's thread; and a header tap no longer logs its cursor from that thread.
+  The normal build is unchanged (its plugins byte for byte). Not run on a console yet
+  ([details](docs/release-variants.md#the-debug-builds-job-lines-after-the-result-360)).
 - The debug build's `hooks.log` names the game's version (`APP_VER`) for every game whose table sites are tried; it
   read `param.sfo` only for a game with a Luna site or an entry that names its version, and logged `APP_VER 0000`
   for the others, the games a hook request is mostly for. The hooks installed are the same in both builds: `APP_VER`
