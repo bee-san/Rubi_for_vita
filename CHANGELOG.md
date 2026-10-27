@@ -13,6 +13,13 @@ been reported.
 
 ### Added
 
+- **PSP text in Adrenaline (testing, off by default):** with **Text source → Every game**, Rubi's game worker reads
+  the dialogue page of two PSP games straight from PSP memory, read-only: Memories Off 6 ～T-wave～ (`NPJH50382`
+  / `ULJM05467`) and Memories Off ～それから～ (`NPJH50132` / `ULJM05350`). It reads only while the running game's
+  ID and the code at the hook site are exactly what the psandvita PPSSPP farm found, and the text must agree with
+  OCR before it is shown, as any regular hook's; every other PSP game, and Automatic, stay OCR. Nothing is hooked
+  or patched in the PSP game and no PSP plugin is added. Proven in the PPSSPP emulator only, **not run on a
+  console** ([native-hooks.md](docs/native-hooks.md#psp-text-adrenaline), #240).
 - **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
   △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
   games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the
@@ -99,8 +106,24 @@ been reported.
   only, not run on a console** (the psandvita farm's 1,498, 606 and 395 approved pages); without the file the games
   read by OCR as before.
 
+### Changed (draft #318, test build only)
+
+- The debug build's game worker takes one more page (4,096 B) in each game that is ON, for the probe and PSP
+  text; the normal build's keeps its pages, and so do both Shells ([memory ledger](docs/memory-ledger.md#psp-text-and-the-psp-probe-format-4)).
+  A Vita game's remembered hook (`hooks.cache`) is learned again once after this build: the hook engine's files
+  changed, so their revision did.
+
 ### Fixed
 
+- **The PSP probe (debug build) stopped before reading anything on the console** (#248): the view of PSP RAM has no
+  memory-block UID (`sceKernelFindMemBlockByAddr` answers `0x80024501`, `SCE_KERNEL_ERROR_INVALID_UID`), while its
+  mapping is readable (`sceKernelGetMemBlockInfoByAddr`: base `0x70000000`, 32 MiB, uncached), and the probe took
+  the UID error for a missing block. It now accepts exactly that error behind a readable, non-wrapping mapping
+  (#278's fix), runs with Automatic or Every game (OCR only turns it off), logs Rubi's PSP text profile check and
+  each job's text source, and writes format 4 to `psp_probe.log`. Not run on a console in this form.
+- **The open overlay no longer waits for ever on a screen that keeps changing:** after three captures in a row
+  refused because the screen changed (34 of 47 PSP jobs in #248), it says so ("The screen keeps changing. Close and
+  reopen the overlay when the text stops."); reading in the background keeps its own backoff (#278's fix).
 - **Native hooks: an active string-copy stream no longer loses its slot to a new caller in a race** (#366). When all
   12 CALL streams are held by other callers, a new caller takes the one written least recently. Two races gave it the
   newest one instead. A caller that wrote while the new one searched got a stamp after the clock reading the search

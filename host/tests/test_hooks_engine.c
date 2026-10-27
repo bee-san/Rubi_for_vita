@@ -32,6 +32,9 @@ static unsigned test_luna_sites(const char *title_id, const VjoLunaSite **sites)
 #define VJO_IMPORT_READY(fn) test_ready((const void *)(uintptr_t)(fn))
 #define vjo_place_verified test_place_verified
 #define vjo_luna_sites test_luna_sites
+/* PSP text's view (Adrenaline's 0x68000000 + ...) moved onto memory this test maps below 4 GiB */
+static uint32_t test_psp_vita(uint32_t psp);
+#define VJO_PSP_VITA_ADDR(a) test_psp_vita(a)
 #include "../../game_ocr/hooks.c"
 #undef vjo_place_verified
 #undef vjo_luna_sites
@@ -426,6 +429,9 @@ static void reset(void)
     sc3_pin = NULL;
     sc3_table = NULL;
     sc3_count = 0;
+    psp_text_on = 0;
+    psp_profile = NULL;
+    psp_status = 0;
 #if VJO_DEBUG
     dlog = -1;
 #endif
@@ -2148,6 +2154,124 @@ static void test_clean_stream_text(void)
     }
 }
 
+/* ---- PSP text (core/psp_text.h): the worker's own page reads in the PSP emulator's process ---- */
+
+#define PSP_USER 0x08800000u
+#define PSP_USER_SIZE 0x00400000u /* PSP 0x08800000-0x08C00000: both profiles' sites and buffers */
+static uint8_t *psp_user, *psp_adr;
+
+static uint32_t test_psp_vita(uint32_t psp)
+{
+    if (psp >= PSP_USER && psp - PSP_USER < PSP_USER_SIZE) return a32(psp_user) + (psp - PSP_USER);
+    if (psp >= VJO_PSP_ADRENALINE_ADDR && psp - VJO_PSP_ADRENALINE_ADDR < PAGE) return a32(psp_adr) + (psp & 0xFFFu);
+    return 0xFFFFF000u; /* no block holds it */
+}
+
+static uint8_t *psp_at(uint32_t psp) { return (uint8_t *)(uintptr_t)test_psp_vita(psp); }
+
+/* the view's two mappings, readable, as the console reported them (#248), with SceAdrenaline empty (the XMB) */
+static void psp_setup(void)
+{
+    if (!psp_user) psp_user = low_map(PSP_USER_SIZE, 0);
+    if (!psp_adr) psp_adr = low_map(PAGE, 0);
+    TEST_ASSERT_(psp_user && psp_adr, "memory below 4 GiB");
+    memset(psp_user, 0, PSP_USER_SIZE);
+    memset(psp_adr, 0, PAGE);
+    add_block(a32(psp_user), PSP_USER_SIZE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+    add_block(a32(psp_adr), PAGE, SCE_KERNEL_MEMORY_ACCESS_R | SCE_KERNEL_MEMORY_ACCESS_W);
+}
+
+static void psp_game(const char *id, const VjoPspProfile *p)
+{
+    memset(psp_adr + 0x98, 0, VJO_PSP_TITLEID_LEN);
+    if (id) memcpy(psp_adr + 0x98, id, strlen(id));
+    for (unsigned k = 0; p && k < VJO_PSP_CODE_WORDS; k++) memcpy(psp_at(p->site) + 4u * k, &p->code[k], 4);
+}
+
+static void test_psp_text(void)
+{
+    const VjoPspProfile *mo6 = vjo_psp_text_profile("ULJM05467"), *mo = vjo_psp_text_profile("ULJM05350");
+    static const char page1[] = "\x82\xA0\x82\xA2%K%P", page2[] = "\x82\xA4\x82\xA6\x82\xA8%K%P"; /* あい, うえお */
+    static const struct {
+        const char *title;
+        unsigned word;
+        int psp;
+    } off[] = {
+        {"PSPEMUCFW", VJO_TEXT_SOURCE_AUTO, 1},                           /* Automatic: no PSP text */
+        {"PSPEMUCFW", VJO_TEXT_SOURCE_OCR, 1},                            /* OCR only */
+        {"PSPEMUCFW", VJO_TEXT_SOURCE_HOOKS | VJO_TEXT_SOURCE_NO_SITES, 1}, /* hook_sites = off */
+        {"PSPEMUCFW", VJO_TEXT_SOURCE_HOOKS | 0x200u, 1},                 /* an unknown flag: OCR */
+        {TITLE, VJO_TEXT_SOURCE_HOOKS, 0},                                /* a native game */
+    };
+    VjoHookSnap snap;
+    char text[256];
+    uint32_t mode = 9, inst = 9, seq;
+    TEST_ASSERT(mo6 && mo && mo6 != mo);
+    for (unsigned c = 0; c < sizeof(off) / sizeof(off[0]); c++) {
+        reset();
+        psp_setup();
+        psp_game("ULJM05467", mo6);
+        memcpy(psp_at(mo6->buffer), page1, sizeof page1);
+        vjo_hooks_start(off[c].title, off[c].word, off[c].psp);
+        mb_calls = 0;
+        TEST_CHECK_(!vjo_hooks_psp_poll() && !mb_calls && vjo_hooks_psp_status() == VJO_PSP_TEXT_OFF, "case %u", c);
+        TEST_CHECK_(!vjo_hooks_snap(1, &snap), "case %u: no stream", c);
+    }
+
+    /* Every game in the PSP emulator's process: nothing installed and nothing read at its start */
+    reset();
+    psp_setup();
+    vjo_hooks_start("PSPEMUCFW", VJO_TEXT_SOURCE_HOOKS, 1);
+    vjo_hooks_counts(&mode, &inst, NULL);
+    TEST_CHECK(mode == VJO_TEXT_SOURCE_HOOKS && !inst && !n_offs && !n_imp && !mb_calls && !live && psp_text_on);
+    /* Adrenaline's XMB: the title ID only */
+    TEST_CHECK(!vjo_hooks_psp_poll() && vjo_hooks_psp_status() == VJO_PSP_TEXT_NO_TITLE && mb_calls == 1);
+    /* Memories Off 6: its code, its page; stream 1 holds the page, a site's stream with no hook */
+    psp_game("ULJM05467", mo6);
+    memcpy(psp_at(mo6->buffer), page1, sizeof page1);
+    mb_calls = 0;
+    TEST_CHECK(vjo_hooks_psp_poll() == 1 && vjo_hooks_psp_status() == VJO_PSP_TEXT_OK && mb_calls == 4);
+    vjo_hooks_counts(&mode, &inst, NULL);
+    TEST_CHECK(inst == 1u << 16 && !n_offs && !vjo_hooks_verified(1));
+    TEST_ASSERT(vjo_hooks_snap(1, &snap));
+    TEST_CHECK(snap.kind == VJO_HOOK_KIND_SITE && snap.key == mo6->site && !snap.site && snap.n == 8 &&
+               snap.encoding == VJO_HOOK_ENC_CP932 && !memcmp(snap.raw, page1, 8));
+    TEST_CHECK(vjo_hooks_text(&snap, text, sizeof text) == strlen("あい") && !strcmp(text, "あい")); /* the 5pb. filter */
+    seq = snap.seq;
+    /* the same page again: no new text; a new page: a new one */
+    TEST_CHECK(!vjo_hooks_psp_poll() && vjo_hooks_snap(1, &snap) && snap.seq == seq);
+    memcpy(psp_at(mo6->buffer), page2, sizeof page2);
+    TEST_CHECK(!vjo_hooks_psp_poll() && vjo_hooks_snap(1, &snap) && snap.seq != seq && snap.n == 10);
+    TEST_CHECK(vjo_hooks_text(&snap, text, sizeof text) && !strcmp(text, "うえお"));
+    /* the page cleared (a scene change): the last page stays the stream's; a page without its NUL is not taken */
+    seq = snap.seq;
+    memset(psp_at(mo6->buffer), 0, 16);
+    TEST_CHECK(!vjo_hooks_psp_poll() && vjo_hooks_psp_status() == VJO_PSP_TEXT_EMPTY && vjo_hooks_snap(1, &snap) &&
+               snap.seq == seq);
+    memset(psp_at(mo6->buffer), 'A', VJO_PSP_TEXT_MAX);
+    TEST_CHECK(!vjo_hooks_psp_poll() && vjo_hooks_psp_status() == VJO_PSP_TEXT_UNENDED && vjo_hooks_snap(1, &snap) &&
+               snap.seq == seq);
+    /* another game in the same emulator: Memories Off 6's text never answers for it; its own page, its own key */
+    psp_game("NPJH50132", mo);
+    TEST_CHECK(!vjo_hooks_psp_poll() && vjo_hooks_psp_status() == VJO_PSP_TEXT_EMPTY && !vjo_hooks_snap(1, &snap));
+    memcpy(psp_at(mo->buffer), "%LC%CFFFF%FS\x82\xA0%FE", 18); /* あ, a caption */
+    TEST_CHECK(!vjo_hooks_psp_poll() && vjo_hooks_snap(1, &snap) && snap.key == mo->site);
+    TEST_CHECK(vjo_hooks_text(&snap, text, sizeof text) && !strcmp(text, "あ")); /* the KID filter */
+    /* another revision (one word of the site differs): no profile, no stream, nothing more read */
+    psp_at(mo->site)[5] ^= 0x10;
+    mb_calls = 0;
+    TEST_CHECK(vjo_hooks_psp_poll() == 1 && vjo_hooks_psp_status() == VJO_PSP_TEXT_CODE && mb_calls == 2);
+    vjo_hooks_counts(&mode, &inst, NULL);
+    TEST_CHECK(!inst && !vjo_hooks_snap(1, &snap));
+    /* the view not mapped (an emulator going away): nothing */
+    psp_at(mo->site)[5] ^= 0x10;
+    TEST_CHECK(vjo_hooks_psp_poll() == 1 && vjo_hooks_snap(1, &snap));
+    n_blocks = 0;
+    TEST_CHECK(vjo_hooks_psp_poll() == 1 && vjo_hooks_psp_status() == VJO_PSP_TEXT_NO_VIEW && !vjo_hooks_snap(1, &snap));
+    /* stop: no hook to release, the wait as for any engine that had a stream */
+    TEST_CHECK(!vjo_hooks_stop() && !n_released);
+}
+
 TEST_LIST = {
     {"a verified entry at a Luna site's address takes Luna's text processing", test_verified_takes_luna_text},
     {"a verified entry: deref, its own filter in place of a Luna site's", test_verified_deref_and_filter},
@@ -2172,5 +2296,6 @@ TEST_LIST = {
     {"vjo_hooks_stop: newest first, once; STOP_FAIL while a thread is inside", test_stop},
     {"APP_VER of param.sfo", test_app_version},
     {"hooks.log names APP_VER for a hook request; the same hooks in both builds", test_app_ver_for_requests},
+    {"PSP text: Every game in the PSP emulator; the profile's page in stream 1; another game, revision, no view", test_psp_text},
     {NULL, NULL},
 };

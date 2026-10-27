@@ -152,6 +152,8 @@ enum {
     VJO_RF_PCSG00415,               /* CLANNAD: the name variables ＊Ａ ＊Ｂ to 岡崎 朋也 */
     VJO_RF_PCSG00020,               /* 極限脱出ＡＤＶ 善人シボウデス: <K>, <P>, <N>, <F:B> and colour tags dropped */
     VJO_RF_PCSG00700,               /* 蒼の彼方のフォーリズム: <a>(｢) opens a line, half-width kana */
+    VJO_RF_5PB,                     /* PSP, 5pb. script engine (Memories Off 6): %K %P %p ∬, %N, {base}[reading] */
+    VJO_RF_KID,                     /* PSP, KID engine (Memories Off ～それから～): %N, %Cxxxx %LC %FS %FE, ⑳ */
     VJO_RF_END
 };
 

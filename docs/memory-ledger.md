@@ -321,6 +321,34 @@ change, both builds]:
 The normal Shell keeps 860 B of code room (884 B before), the debug worker 2,344 B (2,760 B). The kernel's rows are
 main's.
 
+## PSP text and the PSP probe (format 4)
+
+PSP text ([native-hooks.md](native-hooks.md#psp-text-adrenaline)) is in both builds' game worker; the read-only
+PSP probe's format 4 in the debug build's only. Neither allocates, starts a thread or adds a block, and the stream
+is the existing slot 0. Their buffers are on the worker thread's existing 32 KiB stack while they run: the poll's
+chain is about 1.2 KiB (`vjo_hooks_psp_poll` 560 B, `vjo_psp_text_poll` 600 B, `read_game` 48 B), before a job's
+recognition; the probe's, after the job, about 2.6 KiB (`vjo_psp_probe_job` 520 B, `pass` 1,552 B with the profile
+step's 512-byte buffer inlined, `op_module` 512 B) [measured: `-fstack-usage`, the worker's flags at `-Os`, the
+vitasdk image's gcc 15.2]. The Shell gains #278's bounded changed-screen retry: its message (77 B) in the data
+segment, 52 B of code; to keep the normal Shell's code pages (main left 28 B of room), `shell/anki_queue.c`'s
+36 B `where[]` table moved to its data segment. Rows [measured: the build log's module rows, `tools/fast_gate.sh`
+on this change against main `627a673`, CI's vitasdk image]:
+
+| Module (build) | main `627a673` | this change | pages |
+|---|---:|---:|---:|
+| game worker (normal) | 140,004 + 35,280 B | 141,012 + 35,584 B | 180,224 B both |
+| game worker (debug) | 148,792 + 35,288 B | 154,880 + 35,672 B | 188,416 → 192,512 B |
+| Shell (normal) | 90,084 + 73,560 B | 90,100 + 73,672 B | 163,840 B both |
+| Shell (debug) | 102,196 + 73,544 B | 102,228 + 73,664 B | 176,128 B both |
+| kernel (both) | 42,540 + 77,756 / 37,508 + 76,068 B | the same | the same |
+
+So the debug build's worker, the test builds' and the -debug download's, takes one more page (4,096 B) in each
+game that is ON, in the game's partition; `VJO_BUDGET_WORKER_MODULE_PAGES` (debug) is raised by exactly that. Its
+text had 2,760 B of room on main and this adds 6,088 B; Luna's PSP table (3,515 B) is in the code segment, whose
+new page has room (768 B of code and 1,192 B of data room left). The normal build's worker keeps its pages
+(2,348 B of code room left).
+These are binary measurements, not console pool, boot or CPU3 measurements.
+
 ## Head gate and two-level head (API 42, vita-vn-ocr #120 and #122)
 
 Measured with VitaSDK GCC 15.2.0 in `vitasdk/vitasdk:2026.08` (CI's digest, `tools/ci_container_build.sh`'s),
