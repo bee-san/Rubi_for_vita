@@ -852,6 +852,16 @@ class Time(unittest.TestCase):
         rs.credit_time(records, 300.0)
         self.assertEqual([r.seconds for r in records], [300.0, None, None])
 
+    def test_two_records_at_one_time(self):
+        """Two records at one time make no interval, with either rule, as the overlay's count has it
+        (core/history_lines.c: a later time only): the first gets no time and leaves characters per hour."""
+        for break_seconds in (300.0, None):
+            records = [rs.Record(game="g", name="g", time=t, characters=5, stored=True, us=int(t * 1e6))
+                       for t in (10.0, 10.0, 20.0)]
+            rs.credit_time(records, break_seconds)
+            self.assertIsNone(records[0].seconds, break_seconds)
+            self.assertIsNotNone(records[1].seconds, break_seconds)
+
     def test_local_days(self):
         """Days in this computer's time zone unless --utc: at UTC-10 (TZ=HST10, a POSIX zone that needs no
         zoneinfo files) the fixture's two days are 10-16 and 10-17, in UTC 10-17 and 10-18."""

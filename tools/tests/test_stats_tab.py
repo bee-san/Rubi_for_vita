@@ -75,8 +75,8 @@ class SameAsReadingStats(unittest.TestCase):
         for i in range(n):
             if rnd.random() < 0.2:
                 game = rnd.randrange(len(GAMES))
-            us += int(rnd.choice([0.1, 0.9, 1, 3, 5, 15, 15.000001, 42, 80, 150, 299, 301, 1800, 7200, 86400]) * 1e6)
-            us += rnd.randrange(1000)
+            us += int(rnd.choice([0, 0.1, 0.9, 1, 3, 5, 15, 15.000001, 42, 80, 150, 299, 301, 1800, 7200, 86400]) * 1e6)
+            us += rnd.choice([0, 0, rnd.randrange(1000)])  # (two records at one time too)
             text = f'{i}猫\n"台詞", ABC{"あ" * rnd.randrange(40)}' if rnd.random() < 0.5 else "「" + "漢" * (1 + i % 60) + "」"
             records.append((*GAMES[game], us, text))
         path = self.dir / f"random-{seed}.csv"
@@ -106,7 +106,7 @@ class SameAsReadingStats(unittest.TestCase):
             self.assertEqual(g["timed_chars"], timed_of(recs), (path.name, rule, uuid))
             if rule == "adaptive":
                 self.assertEqual(g["active_us"], us_of(recs), (path.name, rule, uuid))
-            else:  # (the tool's 15 s is a float compare of seconds: a microsecond a record)
+            else:  # (the tool's 15 s compares seconds as floats: at most a microsecond a record)
                 self.assertLessEqual(abs(g["active_us"] - us_of(recs)), len(recs), (path.name, rule, uuid))
         days = {}
         for r in records:
