@@ -17,6 +17,10 @@
 
 #define VJO_WORD_KEY_HEX 17 /* 16 lowercase hex digits and a NUL */
 
+/* (Two different pairs share a key by construction only through a TAB inside a field, (a<TAB>b, c) and (a, b<TAB>c),
+ * or fields of middle dots alone; no dictionary entry has either. A spelling key equals the word key of (x, y) for
+ * the spelling "x<TAB>y" only.) */
+
 /* The key of a word (NULL spelling or reading: ""). */
 uint64_t vjo_word_key(const char *spelling, const char *reading);
 /* The key of a spelling alone, whatever its reading (#314's known words: a line of known_words.txt without a

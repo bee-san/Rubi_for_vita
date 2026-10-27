@@ -86,6 +86,7 @@ static struct {
     const char *fail_remove; /* a remove whose path contains this fails */
     time_t package_time;     /* nonzero: every .apkg's st_mtime (the calendar cases; 32-bit on the ARM lane) */
     int fd;                  /* the package's (the last one opened for writing) */
+    int fail_dopen_at, dopens; /* the Nth directory opened fails (EIO) */
     int syncs;
 } io;
 
@@ -254,6 +255,8 @@ static DIR *dirs[4];
 static char dir_paths[4][256];
 int sceIoDopen(const char *p)
 {
+    if (io.fail_dopen_at && ++io.dopens == io.fail_dopen_at)
+        return (int)0x80010005u;
     for (int i = 0; i < 4; i++)
         if (!dirs[i]) {
             if (!(dirs[i] = opendir(p)))
@@ -889,6 +892,27 @@ static void test_skip_leaves_duplicates_queued(void)
     TEST_ASSERT(run_dupes(1, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_OK);
     TEST_CHECK(r.cards == 2 && r.duplicates == 1 && strstr(msg, " 1 already mined is not in it (Duplicates: Skip)."));
     TEST_MSG("%s", msg);
+    /* the same duplicate both archived and still queued (an export stopped between its moves): one card, counted
+     * once, as queued */
+    {
+        char from[256], to[256];
+        snprintf(from, sizeof(from), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, dupe);
+        snprintf(to, sizeof(to), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, dupe);
+        TEST_ASSERT(card_in(VJO_EXPORT_ARCHIVE_DIR, dupe, "json"));
+        {
+            char text[4096];
+            FILE *f = fopen(from, "rb");
+            size_t n;
+            TEST_ASSERT(f != NULL);
+            n = fread(text, 1, sizeof(text), f);
+            fclose(f);
+            put_file(to, text, n);
+        }
+        TEST_ASSERT(run_dupes(1, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_OK);
+        TEST_CHECK(r.cards == 2 && r.duplicates == 1 && strstr(msg, " 1 already mined stays queued (Duplicates: Skip).") &&
+                   !strstr(msg, "is not in it"));
+        TEST_MSG("%s", msg);
+    }
 }
 
 /* Keep: as before #314, nothing checked: no tag, and no word read or cached. */
@@ -1139,6 +1163,24 @@ static void test_known_import(void)
     TEST_CHECK(import_known(&k, msg) == VJO_E_CANCELLED && !strcmp(msg, "Stopped. The known words are as they were."));
     stop_at_status = -1;
     TEST_CHECK(vjo_known_count() == 2);
+    /* audit-rubi-rm4 E15: no file clears the index and a stopped import's backup both */
+    TEST_ASSERT(rename(VJO_KNOWN_INDEX, VJO_KNOWN_INDEX ".bak") == 0 && vjo_known_count() == 2);
+    TEST_ASSERT(unlink(VJO_KNOWN_PATH) == 0);
+    TEST_CHECK(import_known(&k, msg) == VJO_OK && k.missing && vjo_known_count() == -1 &&
+               present(VJO_KNOWN_INDEX) == 0 && present(VJO_KNOWN_INDEX ".bak") == 0);
+    /* audit-rubi-rm4 N5: a long third column is ignored as the others are, not the line's ruin */
+    {
+        static char line[3000];
+        size_t n = (size_t)snprintf(line, sizeof(line), "長い\tながい\t");
+        memset(line + n, 'x', 2000);
+        n += 2000;
+        line[n++] = '\t';
+        line[n++] = 'y';
+        line[n++] = '\n';
+        put_file(VJO_KNOWN_PATH, line, n);
+        TEST_CHECK(import_known(&k, msg) == VJO_OK && k.words == 1 && !k.skipped && vjo_known_count() == 1);
+        TEST_MSG("%d words, %d skipped", k.words, k.skipped);
+    }
     /* lines past VJO_KNOWN_MAX are left out, and said so; a line too long is not a word */
     {
         static char big[(VJO_KNOWN_MAX + 3) * 12 + 2000];
@@ -1191,14 +1233,89 @@ static void test_known_cards_are_tagged(void)
     TEST_ASSERT(n == 16 + 2 * 8);
     bytes[20] ^= 1;
     put_bytes(VJO_KNOWN_INDEX, bytes, n);
+    TEST_CHECK(vjo_known_count() == -2); /* audit-rubi-rm4 N9: the page shows no count the export would not use */
     TEST_ASSERT(run(1, &r, msg) == VJO_OK);
     TEST_CHECK(!r.known && r.known_unchecked && strstr(msg, " Not checked for known words (see log.txt).") &&
                strstr(logs, "anki_known.bin is damaged (import known_words.txt again)"));
     TEST_MSG("%s", msg);
+    /* audit-rubi-rm4 E10: keys out of order, with their checksum right: tags none (a search in it would miss some) */
+    {
+        uint64_t k1 = vjo_word_key("猫", "ねこ"), k2 = vjo_word_spelling_key("犬"), hi = k1 > k2 ? k1 : k2;
+        uint64_t lo = k1 > k2 ? k2 : k1;
+        uint8_t idx[32];
+        memcpy(idx, "RubiKn1\n", 8);
+        be_put(idx + 8, 2, 4);
+        be_put(idx + 16, hi, 8); /* descending */
+        be_put(idx + 24, lo, 8);
+        be_put(idx + 12, vjo_crc32(0, idx + 16, 16), 4);
+        put_bytes(VJO_KNOWN_INDEX, idx, sizeof(idx));
+        TEST_CHECK(vjo_known_count() == -2);
+        TEST_ASSERT(run(1, &r, msg) == VJO_OK);
+        TEST_CHECK(!r.known && r.known_unchecked);
+        TEST_MSG("%d known: %s", r.known, msg);
+    }
     /* no index: nothing to say */
     TEST_ASSERT(unlink(VJO_KNOWN_INDEX) == 0);
     TEST_ASSERT(run(1, &r, msg) == VJO_OK);
     TEST_CHECK(!r.known && !r.known_unchecked && !strstr(msg, "known"));
+}
+
+/* audit-rubi-rm4 E4, E8 and F5: a directory that cannot be read while the words are read writes no cache; a card in
+ * both directories (an export stopped between its moves) is one word; a word once read is kept in the cache although
+ * its record is damaged later, so with Skip a later card of it stays queued until that record is fixed or removed. */
+static void test_the_words_and_their_records(void)
+{
+    VjoExportResult r;
+    VjoWords w;
+    char msg[300], a[VJO_QUEUE_ID_SIZE], b[VJO_QUEUE_ID_SIZE], path[256], to[256];
+    /* E4 */
+    reset();
+    mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777);
+    queue_word("猫", "ねこ", "猫が好き", 0);
+    queue_word("犬", "いぬ", "犬だ", 60);
+    io.fail_dopen_at = 4; /* the two counts, the queue's words, then the archive's words */
+    TEST_CHECK(words(&w, 0) == VJO_E_LOCAL_IO);
+    TEST_CHECK(present(WORDS_PATH) == 0 && present(WORDS_TEMP) == 0);
+    io.fail_dopen_at = io.dopens = 0;
+    TEST_CHECK(words(&w, 0) == 0 && w.read == 2 && present(WORDS_PATH) == 1);
+    /* E8 */
+    reset();
+    snprintf(a, sizeof(a), "%s", queue_word("猫", "ねこ", "猫が好き", 0));
+    mkdir(VJO_EXPORT_ARCHIVE_DIR, 0777);
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, a);
+    snprintf(to, sizeof(to), "%s/%s.json", VJO_EXPORT_ARCHIVE_DIR, a);
+    {
+        uint8_t text[4096];
+        size_t n = get_bytes(path, text, sizeof(text));
+        put_bytes(to, text, n);
+    }
+    for (int k = 0; k < 2; k++) { /* read from the records, then from the cache */
+        TEST_ASSERT(words(&w, 0) == 0);
+        TEST_CHECK_(w.n == 1 && w.queued == 1 && w.duplicates == 0, "pass %d: %d words, %d duplicates", k, w.n,
+                    w.duplicates);
+    }
+    /* F5 */
+    reset();
+    snprintf(a, sizeof(a), "%s", queue_word("猫", "ねこ", "猫が好き", 0));
+    TEST_ASSERT(words(&w, 0) == 0 && w.n == 1); /* (the page's count: its word is cached) */
+    snprintf(path, sizeof(path), "%s/%s.json", VJO_EXPORT_QUEUE_DIR, a);
+    {
+        FILE *f = fopen(path, "r+b");
+        TEST_ASSERT(f && fputc('X', f) != EOF); /* edited by hand: no longer its checksum */
+        fclose(f);
+    }
+    snprintf(b, sizeof(b), "%s", queue_word("猫", "ねこ", "猫を見た", 60));
+    TEST_ASSERT(words(&w, 0) == 0);
+    TEST_CHECK(w.n == 2 && w.duplicates == 1 && w.unreadable == 0); /* the damaged card's word, from the cache */
+    TEST_CHECK(run_dupes(0, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_E_PARSE && !r.cards);
+    TEST_CHECK(!strcmp(msg, "1 card could not be read (see log.txt); they stay queued. 1 already mined stays queued "
+                            "(Duplicates: Skip)."));
+    TEST_MSG("%s", msg);
+    TEST_CHECK(card_in(VJO_EXPORT_QUEUE_DIR, b, "json"));
+    /* the damaged record removed: its word leaves the cache, and the later card is no duplicate any more */
+    TEST_ASSERT(unlink(path) == 0);
+    TEST_CHECK(run_dupes(0, VJO_DUPLICATES_SKIP, 0, &r, msg) == VJO_OK && r.cards == 1 && !r.duplicates);
+    TEST_MSG("%s", msg);
 }
 
 static void test_export_writes_a_dated_verified_package_and_clears_the_queue(void)
@@ -1505,10 +1622,23 @@ static void test_more_cards_than_a_package_holds(void)
     TEST_CHECK(run_dupes(0, VJO_DUPLICATES_TAG, 300000, &r, msg) == VJO_OK && r.cards == 5 && r.left == 0 &&
                r.moved == 5 && r.unchecked && strstr(msg, " Not checked for duplicates: too many cards for memory."));
     TEST_MSG("%s", msg);
-    /* everything again: a package holds the oldest VJO_APKG_MAX_CARDS, and says so */
-    TEST_CHECK(run(1, &r, msg) == VJO_OK && r.cards == VJO_APKG_MAX_CARDS && r.left == 5 &&
-               strstr(msg, "5 newer are not in it: a package holds 20000 cards at most."));
+    /* everything again: a package holds the oldest VJO_APKG_MAX_CARDS, and says so; with the most known words an
+     * import keeps (their keys loaded beside every card's word: the export's worst case, audit-rubi-rm4 N4) */
+    {
+        static char known[VJO_KNOWN_MAX * 8];
+        VjoKnownResult k;
+        size_t n = 0;
+        for (int i = 0; i < VJO_KNOWN_MAX; i++)
+            n += (size_t)snprintf(known + n, sizeof(known) - n, "k%d\n", i);
+        put_file(VJO_KNOWN_PATH, known, n);
+        vjo_arena_init(&A, mem, sizeof(mem));
+        TEST_ASSERT(vjo_known_import(&A, &ui, &k, msg, 300) == VJO_OK && k.keys == VJO_KNOWN_MAX);
+    }
+    TEST_CHECK(run(1, &r, msg) == VJO_OK && r.cards == VJO_APKG_MAX_CARDS && r.left == 5 && !r.known &&
+               !r.known_unchecked && strstr(msg, "5 newer are not in it: a package holds 20000 cards at most."));
     TEST_MSG("%s", msg);
+    printf("measure: %d cards, all, and %d known words: arena peak %u of %u\n", N, VJO_KNOWN_MAX, (unsigned)A.peak,
+           (unsigned)sizeof(mem));
 }
 
 /* An interrupted export's temporary file, of any name, goes with the next. */
@@ -2241,6 +2371,7 @@ TEST_LIST = {
     {"keep_checks_nothing", test_keep_checks_nothing},
     {"the_same_minute_is_ordered_by_id", test_the_same_minute_is_ordered_by_id},
     {"the_words_cache", test_the_words_cache},
+    {"the_words_and_their_records", test_the_words_and_their_records},
     {"known_lines", test_known_lines},
     {"known_import", test_known_import},
     {"known_cards_are_tagged", test_known_cards_are_tagged},

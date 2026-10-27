@@ -67,7 +67,7 @@ been reported.
   another line made another card, and nothing said so. The export now finds a card **whose word an earlier card
   has**, queued or exported before: the word is the record's dictionary form and reading (every inflection is one
   word; katakana count as hiragana, `・` is left out). The Rubi app's new **Duplicates** row (Anki page) says what
-  it does: **Tag** (the default) gives the note Anki's own `duplicate` tag, so no card is lost and Anki's browser
+  it does: **Tag** (the default) gives the note the tag `duplicate`, so no card is lost and Anki's browser
   finds them (`tag:duplicate`); **Skip** leaves the card in the queue, checked again at each export; **Keep**
   exports every card as before. The page says **Export cards (12 queued, 3 already mined)**. The choice is in the
   Rubi app's own settings file, `ux0:data/VitaJPOverlay/app.ini` (#381; the overlay never reads it), and each
@@ -81,7 +81,11 @@ been reported.
   cards of those words `known`: by word and reading, or for a line without a reading every card of that spelling.
   Checked with Anki 26.09.3's own collection and plain-text export (`test_apkg.py`). The overlay is unchanged: the
   popup's mark for a word you have (#314's stage B) does not fit the Shell's pages, so it is not built. Not run on a
-  console yet.
+  console yet. After its audit: `tools/known_words.py` opens a collection under any path read-only (a `#` or `?` in
+  it no longer cuts the path), reads HTML ruby and furigana readings, refuses `--deck`/`--note-type` on a
+  plain-text export without that column, keeps a plain-text export without HTML as text and leaves out words
+  starting with `#`; the import ignores long extra columns; the page says when the known words' index is damaged;
+  an unchecked export is shown as an error; Skip counts a card left in both directories once.
 - **A Stats page in the Rubi app** (#312; [guide](docs/guide.md#stats)). Your reading from `history.csv`, counted as
   △ counts it (`reading_time`, adaptive by default), so each game's numbers are △'s for that game: **Today** for all
   games (characters, reading time, characters/hour) with the daily goal's bar and the streak (current and best); the

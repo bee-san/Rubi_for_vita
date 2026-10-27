@@ -795,7 +795,7 @@ int vjo_known_import(VjoArena *a, const VjoExportUi *ui, VjoKnownResult *r, char
     char *chunk, *line;
     KnownRead k;
     SceUID fd;
-    int got, too_long = 0, rc = 0;
+    int got, too_long = 0, tabs = 0, rc = 0;
     memset(r, 0, sizeof(*r));
     msg[0] = '\0';
     if ((fd = sceIoOpen(VJO_KNOWN_PATH, SCE_O_RDONLY, 0)) < 0) {
@@ -843,7 +843,11 @@ int vjo_known_import(VjoArena *a, const VjoExportUi *ui, VjoKnownResult *r, char
             if (chunk[i] == '\n') {
                 known_add(&k, line, len, too_long);
                 len = 0;
-                too_long = 0;
+                too_long = tabs = 0;
+            } else if (tabs == 2) {
+                continue; /* past the second TAB: the columns vjo_known_line ignores, however long */
+            } else if (chunk[i] == '\t' && ++tabs == 2) {
+                continue;
             } else if (len < VJO_KNOWN_LINE_MAX * 2 + 8) {
                 line[len++] = chunk[i];
             } else {
@@ -898,14 +902,33 @@ static int known_head(SceUID fd, uint8_t head[16])
 
 int vjo_known_count(void)
 {
-    uint8_t head[16];
+    uint8_t head[16], buf[2048];
     SceUID fd = known_open();
+    uint64_t last = 0;
+    uint32_t crc = 0;
     int n;
     if (fd < 0)
         return -1;
+    /* the whole index, as the export reads it (audit-rubi-rm4 N9: the page shows no count the export would not use) */
     n = known_head(fd, head);
+    for (int i = 0; n > 0 && i < n;) {
+        int m = n - i < (int)(sizeof(buf) / 8) ? n - i : (int)(sizeof(buf) / 8);
+        if (read_all(fd, buf, (size_t)m * 8) < 0) {
+            n = -1;
+            break;
+        }
+        crc = vjo_crc32(crc, buf, (size_t)m * 8);
+        for (int j = 0; j < m && n > 0; j++, i++) {
+            uint64_t key = be_get(buf + 8 * j, 8);
+            if (i && key <= last)
+                n = -1;
+            last = key;
+        }
+    }
+    if (n > 0 && crc != (uint32_t)be_get(head + 12, 4))
+        n = -1;
     sceIoClose(fd);
-    return n;
+    return n < 0 ? -2 : n;
 }
 
 /* The index's keys into a (*out; NULL and 0 without an index): their count, or -1 (damaged: re-import), -2 (no room). */
@@ -1046,10 +1069,13 @@ static int list_card(void *ud, const char *hex)
         c.flags |= CARD_KNOWN;
     if (l->words && vjo_words_earlier(l->words, vjo_word_key(note.spelling, note.reading), c.time, c.id)) {
         if (l->skip) {
-            if (l->archive)
-                l->skipped_archived++;
-            else
+            char path[VJO_EXPORT_PATH_MAX];
+            card_path(path, 0, hex, "json");
+            /* (an archived card still queued, an export stopped between its moves, was counted in the queue's pass) */
+            if (!l->archive)
                 l->skipped_queued++;
+            else if (present(path) != 1)
+                l->skipped_archived++;
             vjo_arena_release(l->a, mark);
             return 0;
         }
@@ -1177,8 +1203,8 @@ static int out_stopped(void *ud)
     return o->ui->stopped && o->ui->stopped(o->ui->ud);
 }
 
-/* A note's tags besides vita-jp-overlay (VjoApkgOps.tags): Anki's own `duplicate` (#314: the tag its browser's Find
- * Duplicates gives) for a card whose word an earlier card has, and `known` for a word of known_words.txt. */
+/* A note's tags besides vita-jp-overlay (VjoApkgOps.tags): `duplicate` (#314: the tag an English Anki's Find
+ * Duplicates adds) for a card whose word an earlier card has, and `known` for a word of known_words.txt. */
 static const char *export_tags(void *ud, VjoArena *a, const VjoApkgCard *c, const VjoAnkiNote *note)
 {
     static const char *const tags[4] = {NULL, "duplicate", "known", "duplicate known"};
@@ -1507,8 +1533,11 @@ int vjo_export_run(VjoArena *a, int all, const VjoAppPrefs *prefs, const VjoExpo
         return r->rc = VJO_OK;
     }
     if (!l.n) {
-        snprintf(msg, cap, "%d card%s could not be read (see log.txt); they stay queued.", l.unreadable,
-                 l.unreadable == 1 ? "" : "s");
+        size_t m = (size_t)snprintf(msg, cap, "%d card%s could not be read (see log.txt); they stay queued.",
+                                    l.unreadable, l.unreadable == 1 ? "" : "s");
+        if (l.skipped_queued && m < cap) /* (a word an unreadable card has, from the cache: docs/anki.md) */
+            snprintf(msg + m, cap - m, " %d already mined stay%s queued (Duplicates: Skip).", l.skipped_queued,
+                     l.skipped_queued == 1 ? "s" : "");
         vjo_arena_release(a, base);
         return r->rc = VJO_E_PARSE;
     }

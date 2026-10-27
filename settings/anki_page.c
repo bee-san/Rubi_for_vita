@@ -63,7 +63,7 @@ static int writable, app_writable, selected;
 static int stick_move;          /* the left stick's move for the next frame (vjo_anki_page_stick) */
 static VjoExportCounts counts = {-1, -1};
 static int mined = -1;          /* #314: queued cards whose word an earlier card has (-1: not known) */
-static int known_n = -1;        /* #314 stage C: the known words' keys (anki_known.bin; -1: none) */
+static int known_n = -1;        /* #314 stage C: the known words' keys (anki_known.bin; -1: none, -2: damaged) */
 static char note[200];          /* the page's own status (saves) */
 static int note_error;
 
@@ -435,8 +435,9 @@ static void draw_row(const VjoAnkiUi *ui, int i, int y, int busy, const char *bu
             snprintf(line, sizeof(line), "%d known word%s: their cards get the tag known.", known_n,
                      known_n == 1 ? "" : "s");
         else
-            snprintf(line, sizeof(line), "%s", !known_n ? "known_words.txt had no words."
-                                                        : "Imports known_words.txt (tools/known_words.py makes it).");
+            snprintf(line, sizeof(line), "%s", !known_n            ? "known_words.txt had no words."
+                                               : known_n == -2     ? "The known words cannot be read: Import again."
+                                                                   : "Imports known_words.txt (tools/known_words.py makes it).");
         ui->wrapped(42, y + 62, 870, ui->dim, 22, 24, 1, on ? busy_text : line);
     } else if (i == ROW_EXPORT) { /* the queued cards */
         if (counts.queued < 0)

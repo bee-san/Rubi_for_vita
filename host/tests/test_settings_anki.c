@@ -1226,6 +1226,84 @@ static void the_export_row_counts_words_mined_before(void)
     TEST_CHECK(threads_created == 3);
 }
 
+/* audit-rubi-rm4 P1, P2, P10: while an export runs, the Duplicates row saves nothing, by Enter, Left/Right or a touch on
+ * any of its choices, and the export row shows no "already mined" count (the job is changing the queue). */
+static void a_busy_page_changes_no_choice(void)
+{
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    queue_line("猫", "猫が好き", 0, 0);
+    queue_line("猫", "猫を見た", 1, 0);
+    queue_line("犬", "犬だ", 2, 0);
+    show();
+    for (int i = 0; i < EXPORT; i++)
+        frame(SCE_CTRL_DOWN);
+    TEST_CHECK(focused() == EXPORT && text_starting("Export cards (3 queued, 1 already mined)"));
+    frame(SCE_CTRL_CROSS);
+    TEST_ASSERT(vjo_anki_page_busy());
+    frame(0);
+    TEST_CHECK(text_starting("Export cards (3 queued)") && !text_starting("Export cards (3 queued, 1"));
+    for (int i = 0; i < EXPORT - DUPES; i++)
+        frame(SCE_CTRL_UP);
+    TEST_CHECK(focused() == DUPES);
+    writes_opened = renames = 0;
+    frame(SCE_CTRL_RIGHT);
+    frame(SCE_CTRL_LEFT);
+    frame(SCE_CTRL_CROSS);
+    frame(0);
+    for (int k = 1; k < 3; k++)
+        touch(0, 440 + k * 160 + 20, row_top_at(DUPES, first_row()) + 20);
+    TEST_CHECK(writes_opened == 0 && renames == 0 && !there(VJO_APP_PREFS_PATH));
+    TEST_CHECK(badge_k(DUPES, 0)->active && !badge_k(DUPES, 1)->active && !badge_k(DUPES, 2)->active);
+    run_worker();
+    frame(0);
+    TEST_CHECK(!vjo_anki_page_busy() && strstr(drawn.footer, " 1 tagged duplicate (mined before)."));
+    /* idle again: the same touch takes Skip */
+    touch(0, 440 + 160 + 20, row_top_at(DUPES, first_row()) + 20);
+    check_dupes(VJO_DUPLICATES_SKIP);
+}
+
+/* audit-rubi-rm4 P7, P9, N9: an export that could not check its duplicates (too many words for memory: here a cache
+ * whose count does not fit) or its known words (a damaged index) is shown as an error, as the app's other incomplete
+ * results are; the Known words row says a damaged index cannot be read, rather than its count. */
+static void unchecked_exports_are_errors(void)
+{
+    FILE *f;
+    reset(VJO_BUTTON_ASSIGN_CROSS);
+    queue_line("猫", "猫が好き", 0, 0);
+    /* a cache of 100,000 words (2,400,000 B of them: more than the export's 2 MiB) */
+    TEST_ASSERT((f = fopen(VJO_EXPORT_DATA_DIR "/anki_words.bin", "wb")) != NULL);
+    {
+        static const unsigned char head[16] = {'R', 'u', 'b', 'i', 'W', 'd', '1', '\n', 0x00, 0x01, 0x86, 0xA0};
+        TEST_ASSERT(fwrite(head, 1, 16, f) == 16 && ftruncate(fileno(f), 16 + 100000 * 20) == 0);
+    }
+    fclose(f);
+    show();
+    for (int i = 0; i < EXPORT; i++)
+        frame(SCE_CTRL_DOWN);
+    TEST_CHECK(focused() == EXPORT);
+    frame(SCE_CTRL_CROSS);
+    run_worker();
+    frame(0);
+    TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") &&
+               strstr(drawn.footer, " Not checked for duplicates: too many cards for memory.") && drawn.footer_error);
+    TEST_MSG("%s", drawn.footer);
+    TEST_ASSERT(unlink(VJO_EXPORT_DATA_DIR "/anki_words.bin") == 0);
+    /* a damaged index of known words */
+    TEST_ASSERT((f = fopen(VJO_EXPORT_DATA_DIR "/anki_known.bin", "wb")) != NULL);
+    fputs("RubiKn1\n\0\0\0\1\0\0\0\0abcdefgh", f); /* one key, its checksum wrong */
+    fclose(f);
+    queue_line("犬", "犬だ", 1, 0);
+    show();
+    frame(0);
+    TEST_CHECK(focused() == EXPORT && text_starting("The known words cannot be read: Import again.") != NULL);
+    frame(SCE_CTRL_CROSS);
+    run_worker();
+    frame(0);
+    TEST_CHECK(strstr(drawn.footer, "Exported 1 card (") && strstr(drawn.footer, " Not checked for known words") &&
+               drawn.footer_error);
+    TEST_MSG("%s", drawn.footer);
+}
+
 /* #314 stage C, the Known words row: Enter (or a touch) imports known_words.txt on the page's worker, the row says
  * so meanwhile, then the result and the count; Left/Right do nothing there; the next export tags the known words'
  * cards known. */
@@ -1969,6 +2047,8 @@ TEST_LIST = {
     {"an_unreadable_app_ini_is_never_written", an_unreadable_app_ini_is_never_written},
     {"the_export_row_counts_words_mined_before", the_export_row_counts_words_mined_before},
     {"the_known_words_row_imports_the_file", the_known_words_row_imports_the_file},
+    {"a_busy_page_changes_no_choice", a_busy_page_changes_no_choice},
+    {"unchecked_exports_are_errors", unchecked_exports_are_errors},
     {"the_cards_row_opens_the_queue_newest_first", the_cards_row_opens_the_queue_newest_first},
     {"a_card_shows_its_sentence_definition_and_picture", a_card_shows_its_sentence_definition_and_picture},
     {"delete_and_drop_picture_ask_for_a_second_press", delete_and_drop_picture_ask_for_a_second_press},

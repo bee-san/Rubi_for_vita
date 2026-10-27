@@ -115,6 +115,27 @@ class PlainText(unittest.TestCase):
         words, _ = run(FIXTURES / "anki-plain-notetype.txt", "--word-column", "2", "--note-type", "Lapis")
         self.assertEqual(words[:2], [("猫", "ねこ"), ("部屋", "へや")])
 
+    def test_a_filter_needs_its_column(self):
+        """audit-rubi-rm4 F3: without the deck or note type column, --deck and --note-type fail (exit 2) and say
+        which column to include, rather than keep every note or none."""
+        self.assertEqual(run(FIXTURES / "anki-plain.txt", "--deck", "Nope")[1], 2)
+        self.assertEqual(run(FIXTURES / "anki-plain.txt", "--note-type", "Lapis")[1], 2)
+        p = subprocess.run([sys.executable, str(ROOT / "tools/known_words.py"), str(FIXTURES / "anki-plain.txt"),
+                            "--deck", "Nope", "-o", os.devnull], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn('"Include deck name"', p.stderr)
+        p = subprocess.run([sys.executable, str(ROOT / "tools/known_words.py"), str(FIXTURES / "anki-plain.txt"),
+                            "--note-type", "Lapis", "-o", os.devnull], capture_output=True, text=True)
+        self.assertIn('"Include notetype name"', p.stderr)
+
+    def test_plain_text_without_html_is_kept_as_text(self):
+        """audit-rubi-rm4 N5: an export made without HTML (#html:false) is text already: a literal <b> or &amp; in
+        it is the field's own."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "notes.txt"
+            src.write_text("#separator:tab\n#html:false\n<b>\tx\n a&amp;b \tx\n", encoding="utf-8")
+            self.assertEqual(run(src)[0], [("<b>",), ("a&amp;b",)])
+
     def test_quoting_and_html(self):
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / "notes.txt"
@@ -124,6 +145,23 @@ class PlainText(unittest.TestCase):
                            "Lapis\t今日[きょう]\tz\tきょう\t\n", encoding="utf-8")
             words, _ = run(src)
             self.assertEqual(words, [("猫& x", "ねこ"), ("今日", "きょう")])
+
+    def test_ruby_furigana_and_hash_words(self):
+        """audit-rubi-rm4 F4 and N5: HTML ruby's readings (<rt>, <rp>) are not part of the word; a reading in
+        furigana form is its kana; a word starting with # is left out (the app reads such a line as a comment)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "notes.txt"
+            src.write_text("#separator:tab\n#html:true\n#notetype column:1\n"
+                           "Lapis\t<ruby>漢字<RP>(</RP><rt>かんじ</rt><rp>)</rp></ruby>\tz\tかんじ\n"
+                           "Lapis\t食べる\tz\t 食[た]べる\n"
+                           "Lapis\t日本語\tz\t日本[にほん] 語[ご]\n"
+                           "Lapis\t#タグ\tz\tたぐ\n", encoding="utf-8")
+            words, _ = run(src)
+            self.assertEqual(words, [("漢字", "かんじ"), ("食べる", "たべる"), ("日本語", "にほんご")])
+            p = subprocess.run([sys.executable, str(ROOT / "tools/known_words.py"), str(src), "-o",
+                                str(Path(tmp) / "out.txt")], capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0)
+            self.assertIn("1 word(s) starting with # left out", p.stderr)
 
 
 class Collections(unittest.TestCase):
@@ -165,6 +203,21 @@ class Collections(unittest.TestCase):
 
     def test_schema_11(self):
         self.check(11)
+
+    def test_paths_a_uri_would_cut(self):
+        """audit-rubi-rm4 F2: a collection under a path with '#', '?', '%' or a space is opened read-only, as it is:
+        nothing is created beside it."""
+        notes = [("Lapis", LAPIS, ["猫", "猫[ねこ]", "ねこ", "", "", ""], [("Mining", 2)])]
+        for folder in ("a b#c", "p%41q", "q?x", "User 1"):
+            with tempfile.TemporaryDirectory() as tmp:
+                d = Path(tmp) / folder
+                d.mkdir()
+                path = d / "collection.anki2"
+                collection(path, 18, notes, ["Mining"])
+                before = sorted(p.name for p in Path(tmp).iterdir())
+                self.assertEqual(run(path)[0], [("猫", "ねこ")], folder)
+                self.assertEqual(sorted(p.name for p in Path(tmp).iterdir()), before, folder)
+                self.assertEqual(sorted(p.name for p in d.iterdir()), ["collection.anki2"], folder)
 
     def test_what_it_cannot_read(self):
         with tempfile.TemporaryDirectory() as tmp:
