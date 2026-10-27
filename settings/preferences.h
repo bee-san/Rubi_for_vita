@@ -35,6 +35,9 @@ int vjo_preferences_save_text_source(int source, VjoArena *a);
 int vjo_preferences_save_skips(int text_gate, int hook_trust, VjoArena *a);
 /* API 47: config.ini ocr_vertical (core/config.h VJO_VERTICAL_*), published as the other saves are. */
 int vjo_preferences_save_vertical(int mode, VjoArena *a);
+/* API 46: the overlay on the game's text (config.ini overlay_on_text: 1 on, 0 off; docs/overlay-on-text.md),
+ * saved as the others are; the Shell reads it when the overlay opens. 0, or -1 (another value: nothing saved). */
+int vjo_preferences_save_overlay_on_text(int on, VjoArena *a);
 /* config.ini's text as the app's load reads it (into the arena): 0 config.ini; 1 its backup
  * (config.ini.bak, when config.ini is missing: a save that stopped between its two renames); 2 there
  * is neither (*out NULL); -1 unreadable. The installer's update patches this text and writes the

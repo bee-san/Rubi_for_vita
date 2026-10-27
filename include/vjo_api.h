@@ -106,8 +106,19 @@
  * 50: the line finder's fixes (bee-san/vita-vn-ocr #129, runtime/vocr_lines_fix.c): VjoGameOcrRequest.speed bits 21-23
  * (VJO_GAME_OCR_S_LINE_FIX: VOCR_FIX_DEFAULT, _JUNK, _VALLEY), VjoVocrPolicy.line_fix, config.ini ocr_line_fix.
  * Sizes and layouts are unchanged. This is #330: 47's and 49's notes kept 44 and then 48 for it, and it merged
- * after 49, so it is 50. */
-#define VJO_API_VERSION 50
+ * after 49, so it is 50.
+ * 46: the overlay on the game's text (docs/overlay-on-text.md, #309; closed draft #271's API 37, renumbered):
+ * VjoGameOcrRequest.speed bit 25 (VJO_GAME_OCR_S_CHARS): the game worker writes where each character of the text
+ * it returns is on the screen (core/charmap.h), after the text and its recognizer's copy in VjoGameOcrResult.text,
+ * whose last bytes were zero; the Shell sets it in the user's jobs with config.ini overlay_on_text = on. Sizes and
+ * layouts are unchanged. 43-45 and speed bits 17 and 20-24 are left to work in flight (the line finder's fixes,
+ * the text spotter, vertical text, trusted hooks).
+ * 51: test/combined, the combined test build (v0.9.8-test.N; never merged, never main's): main's API 50 with draft
+ * #326's API 46 (speed bit 25, VJO_GAME_OCR_S_CHARS) and draft #318 (no interface change). A new number keeps
+ * main's API 50 builds (0.9.8) and test.17's API 46 from exchanging requests with an interface that differs from
+ * theirs, as API 33 did for 31 and 32. With the characters' places a job selects without API 43's trusted
+ * answers (game_ocr/main.c): it recognizes to place a hook's text. */
+#define VJO_API_VERSION 51
 
 /* API 31: the text source (config.ini text_source; docs/native-hooks.md). The kernel holds the Shell's
  * choice; a game worker reads it once, as its game starts, so a change applies at a game's next start. */

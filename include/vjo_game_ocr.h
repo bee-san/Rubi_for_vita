@@ -109,7 +109,7 @@
  * The Shell sets them in the user's jobs from config.ini ocr_head_gate, whose value is the two bits
  * (core/config.h VJO_HEAD_*: on, the default, both; gate; two_level; off neither), shifted by
  * VJO_GAME_OCR_S_HEAD_SHIFT; the self-test's stages read as before, as with the text gate. Not bit 17 (closed
- * draft #271's VJO_GAME_OCR_S_CHARS). */
+ * draft #271's VJO_GAME_OCR_S_CHARS, now bit 25). */
 #define VJO_GAME_OCR_S_HEAD_SHIFT 18
 #define VJO_GAME_OCR_S_HEAD_GATE (1u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x40000 */
 #define VJO_GAME_OCR_S_TWO_LEVEL (2u << VJO_GAME_OCR_S_HEAD_SHIFT) /* 0x80000 */
@@ -149,7 +149,14 @@
 #define VJO_GAME_OCR_S_LINE_FIX 0x200000u
 #define VJO_GAME_OCR_S_LINE_JUNK 0x400000u
 #define VJO_GAME_OCR_S_LINE_VALLEY 0x800000u
-#define VJO_GAME_OCR_S_ALL 0x30FD001Fu
+/* API 46, bit 25: the characters' places (docs/overlay-on-text.md, core/charmap.h; #309): the game worker writes where
+ * each character of the sentence it returns is on the frame, a char map after the text and its recognizer's copy
+ * in VjoGameOcrResult.text, keyed to the sentence the Shell shows (the text filtered as bit 16 says, then
+ * trimmed). The Shell sets it in the user's jobs with config overlay_on_text = on. Not bit 17 (closed draft #271's
+ * number, now the trusted hooks') or bits 20-24 (the line finder's fixes, the text spotter, vertical text: in
+ * flight), so all of them can merge. */
+#define VJO_GAME_OCR_S_CHARS 0x2000000u
+#define VJO_GAME_OCR_S_ALL 0x32FD001Fu /* test/combined: main's 0x30FD001F and API 46's bit 25 */
 /* API 32, bit 6, a shot's only bit (VJO_GAME_OCR_F_SHOT; refused on an OCR job, as every other bit is on a
  * shot): trim the frame's black bars (config.ini anki_screenshot_trim_bars, core/shottrim.h): the JPEG is of
  * the picture between the letterbox or pillarbox bars the game worker finds as it reads the frame's rows.
