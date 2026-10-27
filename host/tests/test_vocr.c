@@ -52,7 +52,7 @@ static int strip(void *ud, unsigned y, unsigned n, unsigned char *dst, size_t st
     return (int)n;
 }
 static int cancelled(void *ud) { (void)ud; return cancel_now; }
-static VjoGreySource im = {NULL, W, H, strip, cancelled, NULL};
+static VjoGreySource im = {NULL, W, H, strip, cancelled, NULL, NULL};
 static unsigned char capture[64 * 1024];
 
 static void fill(unsigned char v)
@@ -458,7 +458,7 @@ static void test_full_frame_in_strips(void)
     unsigned counts[2] = {0, 0};
     size_t bytes = vjo_vocr_workspace_bytes(VJO_VOCR_DEFAULT_MODEL, 960, 544);
     void *ws = NULL;
-    VjoGreySource full = {counts, 960, 544, full_strip, NULL, NULL};
+    VjoGreySource full = {counts, 960, 544, full_strip, NULL, NULL, NULL};
     TEST_ASSERT(posix_memalign(&ws, 64, bytes) == 0);
     p.file_open = no_file;
     TEST_CHECK(vjo_vocr_ocr(&p, "missing", VJO_VOCR_DEFAULT_MODEL, &full, ws, bytes, capture,

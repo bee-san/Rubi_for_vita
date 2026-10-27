@@ -182,6 +182,7 @@ when the overlay next opens; a game's ON or OFF applies when the game next start
 | | **Suggest a text box**: a game without a box of its own is offered the one Rubi finds around its dialogue, once each time it starts or resumes ([details](docs/first-box.md)) | ON |
 | | **Dictionaries shown**: how many dictionaries' entries for the same word an L or R tap pages through, 1–8 (2: a word, then the same word as a character's name) | 2 |
 | | **Overlay on the game's text** (testing): the word is marked where the game shows it, a tap on the game's text looks it up, and the popup sits beside the text ([details](docs/overlay-on-text.md)) | OFF |
+| | **Pause the game to read**: each reading copies the text box from one frame at once, the game waiting a moment (an estimated 2-6 ms for a drawn text box, 11-29 ms for the whole screen: draw a box with □ first), so a spinning icon in it can't stop the read ([details](docs/game-pause.md)) | OFF |
 | Anki | **Card mining**: Enter saves the word as a card | OFF |
 | | **Screenshots**: each card keeps a picture of the game's screen | ON |
 | | **Trim black bars**: the picture leaves out the black borders around the game's picture (a PSP game shown smaller than the screen) | ON |
@@ -257,6 +258,7 @@ verified entry: it works on the Japanese releases of visual novels, and not ever
 | ❓ | Earlier lines (▲ on the text's top row) | not run on a console yet ([line history](docs/line-history.md)) |
 | ❓ | Vertical text (columns, right to left) | not run on a console yet; measured on the host ([vertical text](docs/vita-vn-ocr.md#vertical-text-vita-vn-ocr-99)) |
 | ❓ | The text box suggested on first use (Use this box?) | not run on a console yet; measured on the host ([details](docs/first-box.md)) |
+| ❓ | Pause the game to read | not run on a console yet; the game's wait per reading is an estimate ([details](docs/game-pause.md)) |
 | ❓ | Characters read, characters/hour and active time (△ in the overlay) | not run on a console yet ([details](docs/ocr-history.md#total-characters-read)) |
 | ❓ | The Rubi app's Stats tab: days, heatmap, streak, daily goal, each game | not run on a console yet; measured on the host ([details](docs/guide.md#stats)) |
 | ❓ | Default OFF on the Games page | 0.8.0's has not run on a console |

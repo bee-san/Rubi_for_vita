@@ -16,6 +16,10 @@ static unsigned test_cascade_conf; /* 0: the default; 1001: every line is doubtf
 static unsigned char workspace[2*1024*1024] __attribute__((aligned(64)));
 static unsigned char weights_memory[VJO_VOCR_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static unsigned char capture_mem[1024*1024] __attribute__((aligned(64)));
+/* API 52, the pause: the worker's frame block, and the kernel's frame copies into it (VJO_ROWS_FRAME) */
+static unsigned char frame_memory[128 * 1024] __attribute__((aligned(64)));
+static int frame_live;
+static unsigned frame_block, frame_allocs, frame_copies;
 static unsigned char lm_memory[VJO_VOCR_LM_MAX_BYTES + 4096] __attribute__((aligned(64)));
 static int lm_live; static unsigned lm_block, lm_allocations, lm_frees, lm_opens, last_which;
 #ifndef VJO_VOCR_GATE_TEST_DIR
@@ -92,6 +96,11 @@ SceUID sceKernelAllocMemBlock(const char *name, int type, unsigned size, void *o
         TEST_CHECK(!capture_live && size <= sizeof(capture_mem));
         capture_allocs++; capture_live = 1; capture_block = size; live_bytes += size; return 11;
     }
+    if (!strcmp(name, "VjoGameVocrFrame")) { /* API 52: the pause's frame block, USER first on its ladder */
+        if (type != SCE_KERNEL_MEMBLOCK_TYPE_USER_RW || alloc_failure) return (int)0x80024302u;
+        TEST_CHECK(!frame_live && size <= sizeof(frame_memory));
+        frame_allocs++; frame_live = 1; frame_block = size; live_bytes += size; return 15;
+    }
     if (!strcmp(name, "VjoGameVocrLine")) { /* a line taller than a strip, kept whole: at most one block */
         TEST_CHECK(!line_live);
         line_allocs++;
@@ -143,10 +152,12 @@ int sceKernelGetMemBlockBase(SceUID uid, void **base)
     if (uid == 12) { TEST_CHECK(lm_live); *base = lm_memory; return 0; }
     if (uid == 13) { TEST_CHECK(cascade_live); *base = cascade_memory; return 0; }
     if (uid == 14) { TEST_CHECK(line_live); *base = line_memory; return 0; }
+    if (uid == 15) { TEST_CHECK(frame_live); *base = frame_memory; return 0; }
     TEST_CHECK(uid == 9 && memory_live); *base = base_failure ? NULL : workspace; return base_failure ? -1 : 0;
 }
 int sceKernelFreeMemBlock(SceUID uid)
 {
+    if (uid == 15) { TEST_CHECK(frame_live); if (free_failure) return -1; frame_live = 0; live_bytes -= frame_block; return 0; }
     if (uid == 11) { TEST_CHECK(capture_live); if (free_failure) return -1; capture_live = 0; capture_frees++; live_bytes -= capture_block; return 0; }
     if (uid == 10) {
         TEST_CHECK(weights_live); if (free_failure) return -1;
@@ -250,6 +261,20 @@ int vjoOcrComplete(const VjoGameOcrResult *out)
 /* The kernel's rows call: grey rows of the 200x60 region into the worker's block. */
 int vjoOcrCaptureRows(const VjoGameOcrRows *req, void *dst, VjoGameOcrRowsInfo *info)
 {
+    if (req->flags & VJO_ROWS_FRAME) { /* API 52: the whole region from one frame, into the frame block */
+        TEST_CHECK(req->size == sizeof(*req) && req->seq == 12 && !req->y && req->n == frame_h && info);
+        TEST_CHECK(frame_live && dst == (void *)frame_memory && req->dst_stride == 200 && capture_live);
+        rows_calls++; frame_copies++;
+        clock_value += frame_us;
+        info->fb_width = 200; info->fb_height = frame_h; info->fb_pitch = 200; info->fb_format = 0; info->wait_us = 16000;
+        info->armed = 1; info->copy_us = 1234; /* the game's wait in its display call */
+        for (unsigned r = 0; r < req->n; r++)
+            for (unsigned x = 0; x < 200; x++) {
+                const unsigned char *p = pixels + (r * 200 + x) * 4;
+                ((unsigned char *)dst)[r * req->dst_stride + x] = (unsigned char)((77u*p[0] + 150u*p[1] + 29u*p[2]) >> 8);
+            }
+        return (int)req->n;
+    }
     TEST_CHECK(req->size == sizeof(*req) && req->seq == 12 && req->y < frame_h && req->n && req->n <= frame_h - req->y);
     TEST_CHECK(req->dst_stride >= 200 && info && info->size == sizeof(*info));
     TEST_CHECK(capture_live && (unsigned char *)dst >= capture_mem && (unsigned char *)dst < capture_mem + capture_block);
@@ -394,6 +419,8 @@ static VjoGameOcrRequest setup(void)
     memset(tier_opens, 0, sizeof(tier_opens)); vertical_opens = 0; tiered = 0; job_reserve = GAME_RESERVE; drop_on_workspace = 0;
     drop_once = 0; drop_at_allocation = 0;
     columns_bad = 0; missing_open_rc = -123; grow_on_vertical_open = 0; /* API 47, auto */
+    frame_live = 0; frame_block = frame_allocs = frame_copies = 0; /* API 52, the pause */
+    frame_uid = -1; frame_base = NULL; frame_bytes_held = 0; pause_capped = 0; memset(&pz, 0, sizeof(pz));
     psp_title = 0;
     weight_allocations = weight_frees = 0; weights_live = 0; live_bytes = 0;
     model_mtime = 0x1234567; model_stat_error = 0;
@@ -2396,6 +2423,33 @@ static unsigned find_steps(const VjoGameOcrResult *out, unsigned kind)
     return n;
 }
 
+/* The audit's F3b: auto with the pause. Each try copies its own frame into its own block: the rows' (which look
+ * vertical here), the columns' and, without the vertical model, the rows' again. The step's us is their copies' sum,
+ * the last try's region is frozen, and the job's captures are its copies. */
+static void auto_with_the_pause_copies_each_tries_frame(void)
+{
+    VjoGameOcrRequest r;
+    VjoGameOcrResult out;
+    r = setup();
+    r.tiers = VJO_VOCR_TIERS_ALL;
+    r.flags = 1u << VJO_GAME_OCR_LM_SHIFT;
+    r.speed = VJO_GAME_OCR_VERTICAL_AUTO << VJO_GAME_OCR_S_VERTICAL_SHIFT | VJO_GAME_OCR_S_PAUSE;
+    tall_columns_frame(&r);
+    (void)vjo_game_ocr_run_request(&r, &out);
+    const VjoGameOcrStep *ps = NULL;
+    unsigned finds = 0;
+    for (unsigned i = 0; i < out.n_steps && i < VJO_GAME_OCR_STEPS; i++) {
+        if (out.step[i].id == VJO_GSTEP_PAUSE) ps = &out.step[i];
+        finds += out.step[i].id == VJO_GSTEP_FIND;
+    }
+    TEST_CHECK_(find_steps(&out, 2) == 1 && frame_copies >= 2 && frame_copies == finds && frame_allocs == frame_copies,
+                "%u copies, %u blocks, %u find steps", frame_copies, frame_allocs, finds);
+    TEST_CHECK(!frame_live && !memory_live && !capture_live);
+    TEST_CHECK_(ps && ps->kind == 1 && ps->arg == frame_h && ps->us == 1234u * frame_copies && out.captures == frame_copies,
+                "pause step: kind %u, rows %u, us %u; captures %u", ps ? ps->kind : 9u, ps ? ps->arg : 0u,
+                ps ? ps->us : 0u, out.captures);
+}
+
 /* API 47, auto (VJO_GAME_OCR_VERTICAL_AUTO): a job of rows whose finder's rows look like vertical text reads no
  * weights for them, logs a find step of kind 2 and reads the region's columns with the vertical model, opened by
  * its own open, as with on (find kind 1, lines marked VJO_GAME_OCR_LINE_COLUMN); with no vertical model to read
@@ -3242,6 +3296,7 @@ TEST_LIST = {
     {"the job policy rides in the flags: the wait, its step, unknown bits refused", policy_in_the_flags},
     {"API 47: auto reads the columns where the rows look like vertical text, rows elsewhere",
      auto_reads_columns_where_the_rows_are_vertical},
+    {"API 52: auto with the pause copies each try's frame", auto_with_the_pause_copies_each_tries_frame},
     {"API 47: auto's retry waits no longer than one try: the job's stable-text wait is shared", auto_retry_shares_the_wait},
     {"API 47: auto's tries report the last one's model, never an earlier try's step down", auto_tries_report_the_last_ones_model},
     {"API 47: auto's columns try gives its tall-line block back before the rows' try (no vertical model)",

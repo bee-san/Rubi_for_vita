@@ -93,8 +93,9 @@
 #define PREF_GATE 8
 #define PREF_VERTICAL 9 /* API 47: Vertical text (config.ini ocr_vertical) */
 #define PREF_SUGGEST 10 /* #358: Suggest a text box (region.ini's line for every game: preferences.h) */
-#define PREF_ONTEXT 11 /* API 46: Overlay on the game's text (config.ini overlay_on_text), the last card */
-#define PREFERENCES 12
+#define PREF_ONTEXT 11 /* API 46: Overlay on the game's text (config.ini overlay_on_text) */
+#define PREF_PAUSE 12  /* #355: Pause the game to read (config.ini ocr_pause), the last card (test/combined) */
+#define PREFERENCES 13
 #define PREF_GAP 4
 #define PREF_VIEW_Y OCR_Y /* the cards' room: below the tabs */
 #define PREF_VIEW_END 422 /* to above the status line */
@@ -759,6 +760,14 @@ static void set_on_text(int on)
     preference_saved(vjo_preferences_save_overlay_on_text(on, &scratch));
 }
 
+/* API 52, Pause the game to read (config.ini ocr_pause, docs/game-pause.md): applies when the overlay next opens. */
+static void set_pause(int on)
+{
+    if (on == preferences.ocr_pause) return;
+    if (preferences_locked()) return;
+    preference_saved(vjo_preferences_save_pause(on, &scratch));
+}
+
 /* Model size: enter cycles Small -> Normal -> Large; Left/Right step within it. */
 static void set_tier(int tier)
 {
@@ -811,6 +820,10 @@ static void toggle_preference(void)
         set_on_text(!preferences.overlay_on_text);
         return;
     }
+    if (preference_selected == PREF_PAUSE) {
+        set_pause(!preferences.ocr_pause);
+        return;
+    }
     if (preference_selected == PREF_SUGGEST) {
         set_suggest(!suggest_on);
         return;
@@ -858,6 +871,10 @@ static void set_preference(int right)
         set_on_text(right);
         return;
     }
+    if (preference_selected == PREF_PAUSE) {
+        set_pause(right);
+        return;
+    }
     if (preference_selected == PREF_SUGGEST) {
         set_suggest(right);
         return;
@@ -871,7 +888,7 @@ static void set_preference(int right)
 
 /* ---- the page's column of cards (PREF_*), a card at a time in view ---- */
 static const int pref_height[PREFERENCES] = {OCR_H, READ_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H, CARD_H,
-                                             CARD_H, CARD_H, CARD_H};
+                                             CARD_H, CARD_H, CARD_H, CARD_H};
 static int pref_top; /* the first card in view */
 
 /* Card i's top in the column (the first card's: 0). */
@@ -1101,6 +1118,16 @@ static void draw_ontext_card(int y)
     text(42, y + CARD_HELP_Y, DIM, 24, "ON: words marked where the game shows them; tap one.");
 }
 
+/* API 52: the game's frame held while Rubi copies the text box from it, so the OCR reads one still picture
+ * (docs/game-pause.md); OFF reads it strip by strip over a few frames, as before. */
+static void draw_pause_card(int y)
+{
+    text(42, y + CARD_TITLE_Y, WHITE, 28, "Pause the game to read");
+    badge(812, y + CARD_BADGE_Y, 108, CARD_BADGE_H, !preferences_writable ? "--" :
+          preferences.ocr_pause ? "ON" : "OFF", preferences_writable && preferences.ocr_pause);
+    text(42, y + CARD_HELP_Y, DIM, 24, "ON: a brief pause, so an icon can't spoil a read. Draw a box.");
+}
+
 static void draw_card(int i, int y)
 {
     switch (i) {
@@ -1115,6 +1142,7 @@ static void draw_card(int i, int y)
     case PREF_VERTICAL: draw_vertical_card(y); break;
     case PREF_SUGGEST: draw_suggest_card(y); break;
     case PREF_ONTEXT: draw_ontext_card(y); break;
+    case PREF_PAUSE: draw_pause_card(y); break;
     default: draw_results_card(y); break;
     }
 }

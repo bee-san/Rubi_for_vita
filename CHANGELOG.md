@@ -124,6 +124,21 @@ been reported.
   A Vita game's remembered hook (`hooks.cache`) is learned again once after this build: the hook engine's files
   changed, so their revision did.
 
+- **Pause the game to read** (API 52, #348; `ocr_pause` in `config.ini`, the Rubi app's last card on the OCR & lookup
+  page, OFF by default): each reading copies the text box from one frame at once, inside that frame's display call,
+  which the game waits in for as long, and the OCR reads that still copy. A spinning icon or an animated background
+  in the box can no longer make the job give up with the screen changed under it and show nothing. On the host, through the real job
+  and line finder, an 852 × 135 box with a spinner of 20 shades read strip by strip failed after 2.15 s and 129 frames;
+  paused it reached the recognizer at the first frame (the release models read its 3 lines, `test_alloc_sim.c`). The
+  game's wait per reading is an estimated 2.4-6.4 ms for a dialogue box and 10.8-29.0 ms for a whole screen at
+  333 MHz (draw a text box first), at most 100 ms: a copy that reaches it turns pausing off for that game until it
+  next starts, and a kernel watchdog turns it off until the next boot if a copy ever runs past 200 ms.
+  No game thread is suspended, and nothing waits for another thread. PSP games in Adrenaline read as before. The job
+  holds one block of the region's size more (at most 524,288 B, only when it fits; the memory ledger counts it in
+  place of a tall line's block). While it is OFF in a Vita game, the open overlay's hint for text that keeps changing
+  (#358, above) adds "Or turn on Pause the game to read in the Rubi app." Not run on a console
+  ([details](docs/game-pause.md)).
+
 ### Fixed
 
 - **The PSP probe (debug build) stopped before reading anything on the console** (#248): the view of PSP RAM has no
@@ -227,6 +242,14 @@ been reported.
   entries stacked below the word (the right stick scrolls to them; #289), and the guide said △'s totals were
   across games, where △ shows today and the total of the game being played (the roadmap #310's "found along the
   way"). Docs only.
+- **A trusted hook's line no longer fails for memory** (API 51). When the screen had changed since the hook's line
+  arrived (a menu over the line, or a larger change some time after the line drew), a trusted hook's answer still
+  read a strip of the screen first, and that strip needed 1 MiB free in the game. A game short of memory then
+  failed the job although the hook had the line: 蒼の彼方のフォーリズム (`PCSG00700`) sampled 1 to 4 MiB free on a
+  console (#324), so a press some time into a line could fail there. The kernel now marks the answer with the
+  screen's current scene without reading pixels, so a trusted hook (a Luna site, a Rubi verified site, a string copy
+  that earned trust) needs no game memory at all. It still reads the strip only while the region has no screen yet.
+  Not run on a console yet.
 
 ### Changed
 
