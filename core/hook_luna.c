@@ -698,6 +698,12 @@ static const LunaOp r_PCSG00380[] VJO_DATA_TABLE(rubi_PCSG00380) = {
  * stream): 「ありゃ、＊Ａ、どこいくんだよっ」 where OCR read 岡崎, 「俺はＤ組の＊Ａ＊Ｂ」; 16 of 1,347 hook lines. */
 static const LunaOp r_PCSG00415[] VJO_DATA_TABLE(rubi_PCSG00415) = {REP("＊Ａ", "岡崎"), REP("＊Ｂ", "朋也"), END};
 
+/* PCSG00020 極限脱出ＡＤＶ 善人シボウデス (Chunsoft's skp2v engine): GUI.Message::setText's click segments, 0x811ac998 r1,
+ * UTF-8. <K> is a click wait, <P> the box cleared after it, <N> (a segment of its own) and <F:B> (one line drawn
+ * larger) are not drawn either (farm sessions of 2026-10-27: <K> 66, <P> 45, <N> 2, <F:B> 1 of 113 hits); Luna's
+ * filter for the title (<\w+?>) keeps <F:B>, so any <tag> or <tag:arg> goes. */
+static const LunaOp r_PCSG00020[] VJO_DATA_TABLE(rubi_PCSG00020) = {SUB("<[A-Za-z0-9_:]+>", ""), END};
+
 static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_TABLE(rubi_filters) = {
     [VJO_RF_PROTOTYPE - VJO_RF_BASE] = r_PROTOTYPE, [VJO_RF_IFENGINE - VJO_RF_BASE] = r_IFENGINE,
     [VJO_RF_ANGLE_RUBY - VJO_RF_BASE] = r_ANGLE_RUBY, [VJO_RF_BR_NEWLINE - VJO_RF_BASE] = r_BR_NEWLINE,
@@ -708,6 +714,7 @@ static const LunaOp *const vjo_rubi_filters[VJO_RF_END - VJO_RF_BASE] VJO_DATA_T
     [VJO_RF_PCSG00876 - VJO_RF_BASE] = r_PCSG00876, [VJO_RF_PCSG01194 - VJO_RF_BASE] = r_PCSG01194,
     [VJO_RF_PCSG00628 - VJO_RF_BASE] = r_PCSG00628, [VJO_RF_PCSG00380 - VJO_RF_BASE] = r_PCSG00380,
     [VJO_RF_PCSG00415 - VJO_RF_BASE] = r_PCSG00415,
+    [VJO_RF_PCSG00020 - VJO_RF_BASE] = r_PCSG00020,
 };
 
 /* A filter's ops: Luna's (VJO_LF_*) or Rubi's (VJO_RF_*); NULL for none or an unknown one. */
