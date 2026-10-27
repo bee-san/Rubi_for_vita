@@ -684,7 +684,7 @@
  * the job's worst case by 180,224 B, to 10,403,840 B (11.5 %; the real peak 9,117,696 B); the limit is kept. VOCR6's
  * Normal and Large (vita-vn-ocr #125) change no budget: Large's block and the workspace keep their pages, and Normal's
  * weights block is a page smaller, so the real peak (VOCR6-N with VOCR6-L's cascade, the 4 MB LM and both helpers) is
- * 9,113,600 B, 1,290,240 B under the worst case. */
+ * 9,113,600 B, 1,290,240 B under the worst case without an SC3 charset (10,403,840 B; 10,420,224 B with it). */
 #define VJO_LIMIT_GAME_JOB 10604544u
 
 #endif
