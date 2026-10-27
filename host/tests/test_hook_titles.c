@@ -26,7 +26,7 @@ static void test_every_verified_entry(void)
 #if VJO_HOOK_LUNA
     unsigned only_rubi = 0;
 #endif
-    TEST_CHECK(n >= 28u);
+    TEST_CHECK(n >= 30u);
     for (unsigned i = 0; i < n; i++) {
         TEST_CHECK_(vjo_hook_title_listed(all[i].title) == VJO_HOOK_TITLE_RUBI, "%s", all[i].title);
 #if VJO_HOOK_LUNA
@@ -41,6 +41,7 @@ static void test_every_verified_entry(void)
     TEST_CHECK(vjo_hook_title_listed("PCSG00469") == VJO_HOOK_TITLE_RUBI); /* CLOCK ZERO ExTime */
     TEST_CHECK(vjo_hook_title_listed("PCSG00628") == VJO_HOOK_TITLE_RUBI); /* ALIA's CARNIVAL! サクラメント */
     TEST_CHECK(vjo_hook_title_listed("PCSG00380") == VJO_HOOK_TITLE_RUBI); /* 真 流行り神 */
+    TEST_CHECK(vjo_hook_title_listed("PCSG00020") == VJO_HOOK_TITLE_RUBI); /* 極限脱出ＡＤＶ 善人シボウデス */
     TEST_CHECK(vjo_hook_title_listed("PCSG00700") == VJO_HOOK_TITLE_RUBI); /* 蒼の彼方のフォーリズム */
 #if VJO_HOOK_LUNA
     TEST_CHECK_(only_rubi == 14u, "%u verified titles are not in Luna's table (CLANNAD, 12 of the farm's, あおかな)",

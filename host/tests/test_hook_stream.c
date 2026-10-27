@@ -1,9 +1,12 @@
 /* The native hooks' stream slots (core/hook_stream.c): new text, identical copies, busy slots, the
  * CALL source's caller claim, and game threads writing while the job thread reads. */
+#define _POSIX_C_SOURCE 200809L /* pthread barriers, clock_gettime */
 #include "acutest.h"
 
 #include <pthread.h>
+#include <sched.h>
 #include <string.h>
+#include <time.h>
 
 #include "../../core/hook_place.h"
 #include "../../core/hook_stream.h"
@@ -137,61 +140,190 @@ static void test_replacement_age(void)
     TEST_CHECK(offer_from(slots, 3, &c, 0xE0u, "eeee") == 1 && slots[0].key == 0xE0u && c.call_replaced == 2);
 }
 
-/* A hit of a caller whose slot was given to another caller meanwhile (found by key, then replaced before
- * it took the lock) is dropped, never written into the new caller's stream: game threads racing for slots. */
-#define RACERS 6
+/* The two races below (#344): game threads and the job (the test's own thread) start together, at a
+ * barrier, and the game threads go on, RACE_ROUNDS hits each at least, until the job has seen what the
+ * race's checks need (the race is covered). With a fixed count of rounds a check could pass having tested
+ * nothing (the job's tries all made before a game thread began) or fail with nothing wrong: offers never
+ * wait, so while one thread held the oldest slot's lock off the CPU, every other caller's rounds could all
+ * be dropped, and no slot changed hands. Past its RACE_ROUNDS a game thread yields between hits (the job
+ * every 1024 passes), so a lock holder off the CPU soon gets back on it, even on one CPU: only a slot that
+ * stays busy (a lost unlock) keeps a race from being covered, and RACE_DEADLINE_MS then ends it. A failed
+ * check prints the race's counters. */
 #define RACE_ROUNDS 20000
+#define RACE_DEADLINE_MS 10000
+static pthread_barrier_t race_barrier;
+static unsigned race_stop, race_done; /* atomics: the job ended the race; the game threads that have stopped */
+static unsigned race_covered;         /* the race ended covered, not at its deadline */
+static long race_ended, race_elapsed; /* ms from the barrier: to the race's end, and to the last thread's */
+static struct timespec race_t0;
+
+static long race_ms(void)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (long)(now.tv_sec - race_t0.tv_sec) * 1000 + (now.tv_nsec - race_t0.tv_nsec) / 1000000;
+}
+
+/* n game threads running fn, and the job, start together. */
+static void race_start(pthread_t *t, unsigned n, void *(*fn)(void *))
+{
+    race_stop = race_done = race_covered = 0;
+    race_ended = race_elapsed = 0;
+    TEST_ASSERT(pthread_barrier_init(&race_barrier, NULL, n + 1) == 0);
+    for (unsigned w = 0; w < n; w++) TEST_ASSERT(pthread_create(&t[w], NULL, fn, (void *)(uintptr_t)w) == 0);
+    pthread_barrier_wait(&race_barrier);
+    clock_gettime(CLOCK_MONOTONIC, &race_t0);
+}
+
+/* A game thread's, before its hit i: 1 to make it (its first RACE_ROUNDS, then until the job ends the race). */
+static int race_on(unsigned i)
+{
+    if (i < RACE_ROUNDS) return 1;
+    if (__atomic_load_n(&race_stop, __ATOMIC_ACQUIRE)) return 0;
+    sched_yield();
+    return 1;
+}
+
+static void race_end(int covered)
+{
+    race_covered = covered != 0;
+    race_ended = race_ms();
+    __atomic_store_n(&race_stop, 1u, __ATOMIC_RELEASE);
+}
+
+/* The job's, after each pass of its reads: 1 to read on. The race ends once it is covered (or at
+ * RACE_DEADLINE_MS, looked at every 1024 passes, when the job yields); the job then reads on until every
+ * game thread has stopped. */
+static int race_job(unsigned pass, int covered, unsigned n)
+{
+    if (__atomic_load_n(&race_stop, __ATOMIC_RELAXED)) {
+        if (__atomic_load_n(&race_done, __ATOMIC_ACQUIRE) == n) return 0;
+    } else if (covered) {
+        race_end(1);
+    } else if (pass % 1024 == 0 && race_ms() >= RACE_DEADLINE_MS) {
+        race_end(0);
+    }
+    if (pass % 1024 == 0) sched_yield();
+    return 1;
+}
+
+static void race_join(pthread_t *t, unsigned n)
+{
+    for (unsigned w = 0; w < n; w++) pthread_join(t[w], NULL);
+    pthread_barrier_destroy(&race_barrier);
+    race_elapsed = race_ms();
+}
+
+/* A hit of a caller whose slot was given to another caller meanwhile (found by key, then replaced before
+ * it took the lock) is dropped, never written into the new caller's stream: game threads racing for slots,
+ * six callers for two. Covered: every caller has had text stored (two slots to claim: at least four callers
+ * took theirs from another one) and the job has read text. */
+#define RACERS 6
 static VjoStreamSlot race_slots[2];
 static VjoStreamClock race_clock;
+static unsigned race_had_text;        /* atomic: a bit per caller whose text has been stored */
+static unsigned race_hits[RACERS][4]; /* each caller's hits dropped, identical, stored, and made */
+static unsigned race_reads, race_tries, race_wrong;
+static VjoStreamSlot race_first_wrong; /* the first read with another caller's text */
+
 static void *racer(void *arg)
 {
     unsigned w = (unsigned)(uintptr_t)arg;
+    uint32_t key = 0x100u + w; /* one caller per thread: its text names it */
     uint8_t buf[8];
-    for (unsigned i = 0; i < RACE_ROUNDS; i++) {
-        uint32_t key = 0x100u + w; /* one caller per thread: its text names it */
-        memset(buf, (int)(0x41 + w), sizeof(buf));
+    unsigned i;
+    memset(buf, (int)(0x41 + w), sizeof(buf));
+    pthread_barrier_wait(&race_barrier);
+    for (i = 0; race_on(i); i++) {
+        int r;
         buf[7] = (uint8_t)i;
-        vjo_stream_offer_caller(race_slots, 2, &race_clock, key, buf, sizeof(buf), 0);
+        r = vjo_stream_offer_caller(race_slots, 2, &race_clock, key, buf, sizeof(buf), 0);
+        if (r == 1 && !race_hits[w][2]) __atomic_fetch_or(&race_had_text, 1u << w, __ATOMIC_RELEASE);
+        race_hits[w][r + 1]++;
     }
+    race_hits[w][3] = i;
+    __atomic_add_fetch(&race_done, 1u, __ATOMIC_RELEASE);
     return NULL;
 }
+
+/* The text is its key's caller's, whole. */
+static int race_text_ok(const VjoStreamSlot *s)
+{
+    if (s->key < 0x100u || s->key >= 0x100u + RACERS || s->n != 8) return 0;
+    for (unsigned b = 0; b < 7; b++)
+        if (s->raw[b] != (uint8_t)(0x41 + (s->key - 0x100u))) return 0;
+    return 1;
+}
+
+static void race_counters(void)
+{
+    TEST_MSG("%s at %ld ms (the last thread stopped at %ld): call_replaced %u, call_dropped %u, dropped %u, "
+             "clock %u", race_covered ? "covered" : "not covered by the deadline", race_ended, race_elapsed,
+             race_clock.call_replaced, race_clock.call_dropped, race_clock.dropped, race_clock.clock);
+    for (unsigned k = 0; k < 2; k++)
+        TEST_MSG("slot %u: lock %u, key %#x, seq %u, hits %u", k, race_slots[k].lock, race_slots[k].key,
+                 race_slots[k].seq, race_slots[k].hits);
+    TEST_MSG("the job: %u reads of %u tries, %u with another caller's text", race_reads, race_tries, race_wrong);
+    if (race_wrong)
+        TEST_MSG("the first: key %#x, %u bytes, %02x %02x .. %02x", race_first_wrong.key, race_first_wrong.n,
+                 race_first_wrong.raw[0], race_first_wrong.raw[1], race_first_wrong.raw[7]);
+    for (unsigned w = 0; w < RACERS; w++)
+        TEST_MSG("caller %#x: %u hits: %u stored, %u identical, %u dropped", 0x100u + w, race_hits[w][3],
+                 race_hits[w][2], race_hits[w][1], race_hits[w][0]);
+}
+
 static void test_replacement_race(void)
 {
     pthread_t t[RACERS];
     static VjoStreamSlot out;
-    unsigned reads = 0, wrong = 0;
+    unsigned stored = 0, dropped = 0, shown = 0;
     memset(race_slots, 0, sizeof(race_slots));
     memset(&race_clock, 0, sizeof(race_clock));
-    for (unsigned w = 0; w < RACERS; w++) pthread_create(&t[w], NULL, racer, (void *)(uintptr_t)w);
-    for (unsigned i = 0; i < RACE_ROUNDS; i++)
+    memset(race_hits, 0, sizeof(race_hits));
+    memset(&race_first_wrong, 0, sizeof(race_first_wrong));
+    race_had_text = race_reads = race_tries = race_wrong = 0;
+    race_start(t, RACERS, racer);
+    for (unsigned pass = 1;; pass++) {
+        int covered;
         for (unsigned k = 0; k < 2; k++) {
+            race_tries++;
             if (!vjo_stream_read(&race_slots[k], &out)) continue;
-            reads++;
-            /* the text is its key's caller's, whole */
-            if (out.key < 0x100u || out.key >= 0x100u + RACERS || out.n != 8) { wrong++; continue; }
-            for (unsigned b = 0; b < 7; b++)
-                if (out.raw[b] != (uint8_t)(0x41 + (out.key - 0x100u))) { wrong++; break; }
+            race_reads++;
+            if (!race_text_ok(&out) && !race_wrong++) race_first_wrong = out;
         }
-    for (unsigned w = 0; w < RACERS; w++) pthread_join(t[w], NULL);
-    TEST_CHECK(wrong == 0);
-    TEST_MSG("%u of %u reads hold another caller's text", wrong, reads);
-    TEST_CHECK(race_clock.call_replaced > 0 && race_slots[0].lock == 0 && race_slots[1].lock == 0);
-    TEST_CHECK(race_clock.call_dropped <= race_clock.dropped);
+        covered = race_reads && __atomic_load_n(&race_had_text, __ATOMIC_ACQUIRE) == (1u << RACERS) - 1;
+        if (!race_job(pass, covered, RACERS)) break;
+    }
+    race_join(t, RACERS);
+    for (unsigned w = 0; w < RACERS; w++) {
+        dropped += race_hits[w][0];
+        stored += race_hits[w][2];
+    }
+    /* the counters once, after the first failed check */
+    if (!TEST_CHECK(race_covered) && !shown++) race_counters();
+    if (!TEST_CHECK(race_wrong == 0) && !shown++) race_counters();
+    if (!TEST_CHECK(race_slots[0].lock == 0 && race_slots[1].lock == 0) && !shown++) race_counters();
+    if (!TEST_CHECK(race_clock.call_replaced >= RACERS - 2) && !shown++) race_counters();
+    if (!TEST_CHECK(race_clock.call_dropped <= race_clock.dropped) && !shown++) race_counters();
+    if (!TEST_CHECK(stored == race_clock.clock && dropped == race_clock.dropped) && !shown++) race_counters();
 }
 
 /* Game threads offering whole texts (every byte one value, the length from it) while the job
- * thread reads: a read is never torn, and every hit is stored, identical or dropped. */
+ * thread reads: a read is never torn, and every hit is stored, identical or dropped. Covered: the job has
+ * read text. */
 #define WRITERS 4
-#define ROUNDS 20000
 static VjoStreamSlot shared;
 static VjoStreamClock shared_clock;
-static unsigned results[WRITERS][3];
+static unsigned results[WRITERS][4]; /* each writer's hits dropped, identical, stored, and made */
+static unsigned shared_reads, shared_tries, shared_torn;
 
 static void *writer(void *arg)
 {
     unsigned w = (unsigned)(uintptr_t)arg;
     uint8_t buf[64];
-    for (unsigned i = 0; i < ROUNDS; i++) {
+    unsigned i;
+    pthread_barrier_wait(&race_barrier);
+    for (i = 0; race_on(i); i++) {
         uint8_t v = (uint8_t)(1 + (w * 7 + i) % 50);
         unsigned n = 4u + v;
         int r;
@@ -199,47 +331,60 @@ static void *writer(void *arg)
         r = vjo_stream_offer(&shared, &shared_clock, buf, n, 1);
         results[w][r + 1]++;
     }
+    results[w][3] = i;
+    __atomic_add_fetch(&race_done, 1u, __ATOMIC_RELEASE);
     return NULL;
+}
+
+static void shared_counters(void)
+{
+    TEST_MSG("%s at %ld ms (the last thread stopped at %ld): clock %u, dropped %u; the slot: lock %u, seq %u, "
+             "hits %u", race_covered ? "covered" : "not covered by the deadline", race_ended, race_elapsed,
+             shared_clock.clock, shared_clock.dropped, shared.lock, shared.seq, shared.hits);
+    TEST_MSG("the job: %u reads of %u tries, %u torn", shared_reads, shared_tries, shared_torn);
+    for (unsigned w = 0; w < WRITERS; w++)
+        TEST_MSG("writer %u: %u hits: %u stored, %u identical, %u dropped", w, results[w][3], results[w][2],
+                 results[w][1], results[w][0]);
 }
 
 static void test_concurrent(void)
 {
     pthread_t t[WRITERS];
     static VjoStreamSlot out;
-    unsigned reads = 0, torn = 0;
+    unsigned hits = 0, stored = 0, same = 0, dropped = 0, shown = 0;
     memset(&shared, 0, sizeof(shared));
     memset(&shared_clock, 0, sizeof(shared_clock));
     memset(results, 0, sizeof(results));
-    for (unsigned w = 0; w < WRITERS; w++) pthread_create(&t[w], NULL, writer, (void *)(uintptr_t)w);
-    for (unsigned i = 0; i < ROUNDS; i++) {
+    shared_reads = shared_tries = shared_torn = 0;
+    race_start(t, WRITERS, writer);
+    for (unsigned pass = 1; race_job(pass, shared_reads != 0, WRITERS); pass++) {
+        shared_tries++;
         if (!vjo_stream_read(&shared, &out)) continue;
-        reads++;
+        shared_reads++;
         if (out.n < 5 || out.n > 54 || out.n != 4u + out.raw[0] || out.hash != vjo_place_hash(out.raw, out.n)) {
-            torn++;
+            shared_torn++;
             continue;
         }
         for (unsigned k = 1; k < out.n; k++)
             if (out.raw[k] != out.raw[0]) {
-                torn++;
+                shared_torn++;
                 break;
             }
     }
-    for (unsigned w = 0; w < WRITERS; w++) pthread_join(t[w], NULL);
-    TEST_CHECK(torn == 0);
-    TEST_MSG("%u of %u reads torn", torn, reads);
-    {
-        unsigned stored = 0, same = 0, dropped = 0;
-        for (unsigned w = 0; w < WRITERS; w++) {
-            dropped += results[w][0];
-            same += results[w][1];
-            stored += results[w][2];
-        }
-        TEST_CHECK(stored + same + dropped == WRITERS * ROUNDS);
-        TEST_CHECK(dropped == shared_clock.dropped);
-        TEST_CHECK(stored == shared_clock.clock);
-        TEST_CHECK(shared.hits == stored + same);
-        TEST_CHECK(shared.lock == 0);
+    race_join(t, WRITERS);
+    for (unsigned w = 0; w < WRITERS; w++) {
+        hits += results[w][3];
+        dropped += results[w][0];
+        same += results[w][1];
+        stored += results[w][2];
     }
+    if (!TEST_CHECK(race_covered) && !shown++) shared_counters();
+    if (!TEST_CHECK(shared_torn == 0) && !shown++) shared_counters();
+    if (!TEST_CHECK(stored + same + dropped == hits) && !shown++) shared_counters();
+    if (!TEST_CHECK(dropped == shared_clock.dropped) && !shown++) shared_counters();
+    if (!TEST_CHECK(stored == shared_clock.clock) && !shown++) shared_counters();
+    if (!TEST_CHECK(shared.hits == stored + same) && !shown++) shared_counters();
+    if (!TEST_CHECK(shared.lock == 0) && !shown++) shared_counters();
 }
 
 TEST_LIST = {
